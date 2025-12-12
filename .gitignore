@@ -1,1 +1,38 @@
-/target
+# Rust build artifacts
+target/
+**/target/
+
+# Built binaries
+**/bin/
+**/obj/
+
+# Cargo
+Cargo.lock
+
+# Editor & IDE
+.vscode/
+.idea/
+*.sln
+*.user
+
+# OS files
+Thumbs.db
+Desktop.ini
+*.DS_Store
+
+# Log files (runtime)
+**/EnderDebugger/Logs/**
+*.log
+
+# Temp & backups
+*.tmp
+*~
+*.swp
+
+# Native libs
+**/*.so
+**/*.dylib
+**/*.dll
+
+# Node / others
+node_modules/
