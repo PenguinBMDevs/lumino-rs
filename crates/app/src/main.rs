@@ -1,42 +1,36 @@
+// Prevents additional console window on Windows in release, DO NOT REMOVE!!
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+pub mod ui;
+
+use ui::app::App;
+
 use iced::{
-    Center,
-    widget::{Column, button, column, text}
+    Size, Theme, window
 };
 
 fn main() -> iced::Result {
-    iced::run(Counter::update, Counter::view)
-}
-
-#[derive(Default)]
-struct Counter {
-    value: isize,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Message {
-    Increment,
-    Decrement,
-}
-
-impl Counter {
-    fn update(&mut self, message: Message) {
-        match message {
-            Message::Increment => {
-                self.value += 1;
+    iced::application(App::new, App::update, App::view)
+        .settings(iced::Settings {
+            /* TODO! */
+            ..Default::default()
+        })
+        .window(window::Settings {
+            size: Size {
+                width: 800.0,
+                height: 600.0,
             },
-            Message::Decrement => {
-                self.value -= 1;
-            }
-        }
-    }
+            min_size: None,
+            max_size: None,
+            visible: true,
+            resizable: true,
+            decorations: true,
+            transparent: false,
 
-    fn view(&self) -> Column<'_, Message> {
-        column![
-            button("Increment").on_press(Message::Increment),
-            text(self.value).size(50),
-            button("Decrement").on_press(Message::Decrement),
-        ]
-        .padding(20)
-        .align_x(Center)
-    }
+            /* TODO! */
+            icon: None,
+            ..Default::default()
+        })
+        .theme(Theme::TokyoNight)
+        .run()
 }
