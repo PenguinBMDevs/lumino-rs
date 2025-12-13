@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug APP",
+      "program": "${workspaceFolder}/target/debug/lumino-app.exe",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "rust: cargo build",
+      "sourceLanguages": ["rust"]
+    }
+  ]
+}
