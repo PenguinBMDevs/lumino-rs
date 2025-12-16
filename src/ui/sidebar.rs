@@ -4,8 +4,9 @@ use iced::{
     }
 };
 
+use crate::app::message::Message;
+
 use crate::ui::{
-    message::Message,
     router::{
         ROUTES,
         Route, RouteConfig,
@@ -42,7 +43,7 @@ pub fn view<'a>(
 */
 
 fn item<'a>(
-    cfg: &RouteConfig,
+    cfg: &'a RouteConfig,
     active: bool,
 ) -> Element<'a, Message> {
     let icon = iced_font_awesome::fa_icon_solid(cfg.icon)
@@ -76,8 +77,8 @@ fn item<'a>(
         .padding([12, 0])
         .style(move |_, state| {
             use button::Status::*;
-            let normal = Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.10)));
-            let darker = Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08)));
+            let normal = Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.05)));
+            let darker = Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.03)));
             let background = if active {
                 match state {
                     Hovered => darker,

@@ -1,6 +1,6 @@
 use iced::{Background, Border, Color, Element, Length, widget::{Container, Text, container}};
 
-use crate::ui::message::Message;
+use crate::app::Message;
 
 pub fn view<'a>(
     version: &'static str,

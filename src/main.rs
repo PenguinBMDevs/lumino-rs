@@ -1,21 +1,28 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-pub mod ui;
+mod app;
+mod ui;
 
-use ui::app::App;
+use app::{
+    App,
+    window::{
+        settings::PlatformSpecific,
+        Settings,
+    }
+};
 
 use iced::{
-    Size, Theme, window
+    Size, Theme
 };
 
 fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)
         .settings(iced::Settings {
-            /* TODO! */
+            antialiasing: true,
             ..Default::default()
         })
-        .window(window::Settings {
+        .window(Settings {
             size: Size {
                 width: 1024.0,
                 height: 768.0,
@@ -24,11 +31,13 @@ fn main() -> iced::Result {
             max_size: None,
             visible: true,
             resizable: true,
-            decorations: true,
+            decorations: false,
             transparent: false,
 
-            /* TODO! */
-            icon: None,
+            platform_specific: PlatformSpecific {
+                undecorated_shadow: true,
+                ..Default::default()
+            },
             ..Default::default()
         })
         .theme(Theme::TokyoNight)
