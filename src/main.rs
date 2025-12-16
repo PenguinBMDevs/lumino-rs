@@ -17,8 +17,8 @@ fn main() -> iced::Result {
         })
         .window(window::Settings {
             size: Size {
-                width: 800.0,
-                height: 600.0,
+                width: 1024.0,
+                height: 768.0,
             },
             min_size: None,
             max_size: None,
@@ -32,5 +32,7 @@ fn main() -> iced::Result {
             ..Default::default()
         })
         .theme(Theme::TokyoNight)
+        .centered()
+        .title("Lumino")
         .run()
 }
