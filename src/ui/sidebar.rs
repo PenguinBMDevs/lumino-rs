@@ -4,25 +4,25 @@ use iced::{
     }
 };
 
-use crate::app::message::Message;
-
-use crate::ui::{
-    router::{
+use crate::app::{
+    message::Message,
+    router:: {
         ROUTES,
-        Route, RouteConfig,
-    },
+        Route,
+        RouteConfig
+    }
 };
 
 /* we'll allow the sidebar to expand for showing the tab hints. */
 pub fn view<'a>(
-    current: Route
+    current: &Route
 ) -> Element<'a, Message> {
     let inner = ROUTES.iter()
         .fold(
             Column::new().spacing(4),
             |col, cfg| {
                 col.push(
-                    item(cfg, current == cfg.route)
+                    item(cfg, *current == cfg.route)
 
                 )
             }
@@ -38,7 +38,7 @@ pub fn view<'a>(
     split: 3x16
     icon: 16x16
     padding-y: 12
-    padding-left: 3+9
+    padding-left: 3+12
     padding-right: 12
 */
 

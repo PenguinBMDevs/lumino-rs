@@ -1,5 +1,7 @@
 use iced::window;
-use crate::ui::router::Route;
+
+use super::window::WindowEvent;
+use super::router::Route;
 
 #[derive(Debug, Clone)]
 pub enum StateUpdated {
@@ -7,17 +9,9 @@ pub enum StateUpdated {
     WindowId(Option<window::Id>)
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum TrafficAction {
-    WindowMinimize,
-    WindowToggleMaximize,
-    WindowClose,
-    WindowDrag,
-}
-
 #[derive(Debug, Clone)]
 pub enum Message {
     RouteUpdated(Route),
     SyncState(StateUpdated),
-    WindowTraffic(TrafficAction),
+    Window(WindowEvent),
 }

@@ -3,6 +3,7 @@
 
 mod app;
 mod ui;
+mod pages;
 
 use app::{
     App,

@@ -1,36 +1,54 @@
-pub mod router;
-pub mod toolbar;
+pub mod window;
 pub mod sidebar;
-pub mod content;
 
-use crate::app::{
-    App,
-    Message
+use crate::{
+    app::{
+        App,
+        Message,
+        router::Route
+    },
+    pages::{
+        self,
+        Page
+    }
 };
 
 use iced::{
-    Element, Length, widget::{
-        Column, Container, Row,
+    Background, Color, Element, Length, widget::{
+        Column, Container, Row, container,
     }
 };
 
 pub fn view<'a>(
     app: &App
 ) -> Element<'a, Message> {
-    let row = Row::new()
-        .push(sidebar::view(app.route))
-        .push(content::view(app.version))
-        .spacing(8)
-        .width(Length::Fill)
-        .height(Length::Fill);
+    let content = match app.route {
+        Route::Editor => app.pages.editor.view(),
+        Route::Preview => app.pages.preview.view(),
+        /* TODO */
+        _ => app.pages.editor.view(),
+    };
 
-    let main = Container::new(row)
+    let inner = Row::new()
+        .push(sidebar::view(&app.route))
+        .push(pages::view(content))
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(8);
+        .spacing(8);
+
+    let main = Container::new(inner)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(8)
+        .style(|_| container::Style {
+            background: Some(Background::Color(
+                Color::from_rgba(0.0, 0.0, 0.0, 0.2)
+            )),
+            ..Default::default()
+        });
 
     let inner = Column::new()
-        .push(toolbar::view(app.window.is_maximized))
+        .push(window::view(&app.window))
         .push(main);
 
     Container::new(inner)

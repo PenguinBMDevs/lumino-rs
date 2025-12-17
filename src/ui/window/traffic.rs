@@ -1,17 +1,6 @@
+use iced::{Background, Border, Color, Element, Length, widget::{Button, Container, Row, Svg, button, container, svg::{self, Handle}}};
 
-use iced::{Background, Border, Color, Element, Length, widget::{Button, Container, Row, Space, Svg, Text, button, container, mouse_area, svg::{self, Handle}}};
-
-use crate::app::{
-    Message,
-    TrafficAction,
-};
-
-const TOOLS: &[&'static str] = &[
-    "Files",
-    "Edit",
-    "View",
-    "Help"
-];
+use crate::app::{Message, window::{WindowEvent, traffic::TrafficAction}};
 
 #[derive(Debug, Clone)]
 struct TrafficConfig {
@@ -29,25 +18,36 @@ enum TrafficIcon {
     },
 }
 
+macro_rules! include_res {
+    ($path:literal) => {
+        include_bytes!(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                $path
+            )
+        )
+    };
+}
+
 const TRAFFICS: &[TrafficConfig] = &[
     TrafficConfig {
         icon: TrafficIcon::Static(
-            include_bytes!("../../resources/icons/min.svg")
+            include_res!("/resources/icons/min.svg")
         ),
         color: Color::from_rgba(1.0, 1.0, 1.0, 0.05),
         event: TrafficAction::WindowMinimize,
     },
     TrafficConfig {
         icon: TrafficIcon::Toggle {
-            normal: include_bytes!("../../resources/icons/max.svg"),
-            active: include_bytes!("../../resources/icons/unmax.svg"),
+            normal: include_res!("/resources/icons/max.svg"),
+            active: include_res!("/resources/icons/unmax.svg"),
         },
         color: Color::from_rgba(1.0, 1.0, 1.0, 0.05),
         event: TrafficAction::WindowToggleMaximize
     },
     TrafficConfig {
         icon: TrafficIcon::Static(
-            include_bytes!("../../resources/icons/close.svg")
+            include_res!("/resources/icons/close.svg")
         ),
         color: Color::from_rgb8(196, 43, 28),
         event: TrafficAction::WindowClose
@@ -55,51 +55,7 @@ const TRAFFICS: &[TrafficConfig] = &[
 ];
 
 pub fn view<'a>(
-    is_maxed: bool,
-) -> Element<'a, Message> {
-
-    let inner = Row::new()
-        .push(icon())
-        .push(tool())
-        .push(traffic(is_maxed));
-
-    Container::new(inner)
-        .width(Length::Fill)
-        .height(30)
-        .into()
-}
-
-fn icon<'a>() -> Element<'a, Message> {
-    Container::new(Space::new())
-        .width(60)
-        .height(30)
-        .into()
-}
-
-fn tool<'a>() -> Element<'a, Message> {
-    let inner = TOOLS.iter()
-        .fold(
-            Row::new().spacing(16),
-            |row, cfg| {
-                let tab = Text::new(*cfg).size(13);
-                row.push(tab)
-            }
-        );
-
-    let element = Container::new(inner)
-        .width(Length::Fill)
-        .height(30)
-        .padding(8);
-
-    mouse_area(element)
-        .on_press(Message::WindowTraffic(
-            TrafficAction::WindowDrag
-        ))
-        .into()
-}
-
-fn traffic<'a>(
-    is_maxed: bool,
+    is_maxed: bool
 ) -> Element<'a, Message> {
     let inner = TRAFFICS.iter()
         .fold(
@@ -109,14 +65,14 @@ fn traffic<'a>(
             }
         );
     Container::new(inner)
+        /* 45+1+45+1+45 */
         .width(137)
         .height(Length::Fill)
         .into()
-
 }
 
 /*
-TODO!: Automatically change color when received OnFocus event.
+TODO: Automatically change color when received OnFocus event.
 When the app is not focused, the entire toolbar should be darker.
 */
 fn traffic_item<'a>(
@@ -153,8 +109,10 @@ fn traffic_item<'a>(
         });
 
     Button::new(inner)
-        .on_press(Message::WindowTraffic(
-            cfg.event
+        .on_press(Message::Window(
+            WindowEvent::Traffic(
+                cfg.event
+            )
         ))
         .style(move |_, state| {
             use button::Status::*;

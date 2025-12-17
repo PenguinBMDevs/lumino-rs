@@ -21,7 +21,7 @@ edition.workspace = true
 
 [workspace.dependencies]
 iced = { version = "0.14.0", features = ["svg"] }
-iced_aw = { version = "0.13.0", features = ["full"] }
+iced_aw = { version = "0.13.0", features = ["menu", "quad"] }
 iced_font_awesome = { version = "0.4.1", features = ["v6"] }
 tracing = "0.1.43"
 

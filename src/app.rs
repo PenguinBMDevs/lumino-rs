@@ -1,5 +1,6 @@
 pub mod message;
 pub mod window;
+pub mod router;
 
 use iced::{
     Element, Task
@@ -8,26 +9,29 @@ use iced::{
 pub use message::{
     Message,
     StateUpdated,
-    TrafficAction,
 };
 
-use super::ui::{
-    self,
-    router::Route,
+use super::{
+    ui,
+    pages,
 };
+
+use router::Route;
 
 pub struct App {
-    pub version: &'static str,
+    // pub version: &'static str,
     pub route: Route,
-    pub window: window::WindowState,
+    pub window: window::Window,
+    pub pages: pages::Pages,
 }
 
 impl App {
     pub fn new() -> (Self, Task<Message>) {
         let this = Self {
-            version: env!("CARGO_PKG_VERSION"),
+            // version: env!("CARGO_PKG_VERSION"),
             route: Route::Editor,
-            window: Default::default(),
+            window: window::Window::new(),
+            pages: pages::Pages::new(),
         };
         let task = window::latest()
             .map(|id| Message::SyncState(
@@ -48,18 +52,13 @@ impl App {
             Message::RouteUpdated(route) => {
                 self.route = route;
             },
-            Message::WindowTraffic(action) => {
-                use TrafficAction::*;
-                let Some(id) = self.window.id else {
-                    return Task::none();
-                };
-                return match action {
-                    WindowToggleMaximize => window::toggle_maximize(id),
-                    WindowClose => window::close(id),
-                    WindowMinimize => window::minimize(id, true),
-                    WindowDrag => window::drag(id)
+            Message::Window(event) => {
+                use window::WindowEvent::*;
+                return match event {
+                    Traffic(r) => self.window.traffic(r),
+                    Menu(r) => self.window.menu(r),
                 }
-            }
+            },
         }
         Task::none()
     }
