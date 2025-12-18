@@ -1,15 +1,10 @@
 pub mod menu;
 pub mod traffic;
 
+pub use iced::window::{Id, Settings, latest, settings};
 use iced::{Task, Theme};
-pub use iced::window::{
-    Id, Settings, settings, latest
-};
 
-use super::{
-    Message,
-    StateUpdated,
-};
+use super::{Message, StateUpdated};
 
 use menu::MenuAction;
 use traffic::TrafficAction;
@@ -17,7 +12,7 @@ use traffic::TrafficAction;
 #[derive(Debug, Clone, Copy)]
 pub enum WindowEvent {
     Menu(MenuAction),
-    Traffic(TrafficAction)
+    Traffic(TrafficAction),
 }
 
 #[derive(Debug, Clone)]

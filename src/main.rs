@@ -2,16 +2,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
-mod ui;
 mod pages;
 mod resources;
+mod ui;
 
 use app::{
     App,
-    window::{
-        settings::PlatformSpecific,
-        Settings,
-    }
+    window::{Settings, settings::PlatformSpecific},
 };
 
 fn main() -> iced::Result {

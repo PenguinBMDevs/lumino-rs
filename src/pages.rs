@@ -29,9 +29,7 @@ impl Pages {
     }
 }
 
-pub fn view<'a>(
-    content: Element<'a, Message>
-) -> Element<'a, Message> {
+pub fn view<'a>(content: Element<'a, Message>) -> Element<'a, Message> {
     container(content)
         .width(Length::Fill)
         .height(Length::Fill)

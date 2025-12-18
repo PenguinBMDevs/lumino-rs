@@ -1,20 +1,12 @@
 pub mod message;
-pub mod window;
 pub mod router;
+pub mod window;
 
-use iced::{
-    Element, Subscription, Task, Theme
-};
+use iced::{Element, Task, Theme};
 
-pub use message::{
-    Message,
-    StateUpdated,
-};
+pub use message::{Message, StateUpdated};
 
-use super::{
-    ui,
-    pages,
-};
+use super::{pages, ui};
 
 use router::Route;
 
@@ -33,10 +25,7 @@ impl App {
             window: window::Window::new(),
             pages: pages::Pages::new(),
         };
-        let task = window::latest()
-            .map(|id| Message::SyncState(
-                StateUpdated::WindowId(id)
-            ));
+        let task = window::latest().map(|id| Message::SyncState(StateUpdated::WindowId(id)));
         (this, task)
     }
 
@@ -51,14 +40,14 @@ impl App {
             }
             Message::RouteUpdated(route) => {
                 self.route = route;
-            },
+            }
             Message::Window(event) => {
                 use window::WindowEvent::*;
                 return match event {
                     Traffic(r) => self.window.traffic(r),
                     Menu(r) => self.window.menu(r),
-                }
-            },
+                };
+            }
             Message::Null => (),
         }
         Task::none()

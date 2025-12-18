@@ -1,32 +1,26 @@
 use iced::{
-    Border, Color, Element, Theme, widget::{
-        button, column, container, row, space
-    }
+    Border, Color, Element, Theme,
+    widget::{button, column, container, row, space},
 };
 
-use crate::{app::{
-    message::Message,
-    router:: {
-        ROUTES,
-        Route,
-        RouteConfig
-    }
-}, resources::icon};
+use crate::{
+    app::{
+        message::Message,
+        router::{ROUTES, Route, RouteConfig},
+    },
+    resources::icon,
+};
 
 /* we'll allow the sidebar to expand for showing the tab hints. */
-pub fn view<'a>(
-    route: &Route
-) -> Element<'a, Message> {
-    let items = ROUTES.iter()
+pub fn view<'a>(route: &Route) -> Element<'a, Message> {
+    let items = ROUTES
+        .iter()
         .map(|cfg| item(cfg, *route == cfg.route))
         .collect::<Vec<_>>();
 
-    let inner = column(items)
-        .spacing(4);
+    let inner = column(items).spacing(4);
 
-    container(inner)
-        .width(46)
-        .into()
+    container(inner).width(46).into()
 }
 
 /*
@@ -38,10 +32,7 @@ pub fn view<'a>(
     padding-right: 12
 */
 
-fn item<'a>(
-    cfg: &'a RouteConfig,
-    active: bool,
-) -> Element<'a, Message> {
+fn item<'a>(cfg: &'a RouteConfig, active: bool) -> Element<'a, Message> {
     let split = container(space())
         .width(3)
         .height(16)
@@ -57,11 +48,7 @@ fn item<'a>(
                 .background(background)
         });
 
-    let inner = row![
-        split,
-        icon(cfg.icon)
-    ]
-        .spacing(12);
+    let inner = row![split, icon(cfg.icon)].spacing(12);
 
     button(inner)
         .width(46)
@@ -72,11 +59,9 @@ fn item<'a>(
 
             let palette = theme.extended_palette();
             let background = match (active, status) {
-                (true, Hovered) | (false, Pressed) =>
-                    palette.background.weak.color,
+                (true, Hovered) | (false, Pressed) => palette.background.weak.color,
 
-                (true, _) | (false, Hovered) =>
-                    palette.background.weaker.color,
+                (true, _) | (false, Hovered) => palette.background.weaker.color,
 
                 _ => Color::TRANSPARENT,
             };
@@ -85,7 +70,7 @@ fn item<'a>(
                 border: Border::default().rounded(6),
                 ..Default::default()
             }
-                .with_background(background)
+            .with_background(background)
         })
         .on_press(Message::RouteUpdated(cfg.route))
         .into()

@@ -1,16 +1,17 @@
-use iced::{Theme, widget::{Svg, svg}};
+use iced::{
+    Theme,
+    widget::{Svg, svg},
+};
 
 pub use Icon::*;
 
 macro_rules! include_res {
     ($path:literal) => {
-        include_bytes!(
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/resources/icons/",
-                $path
-            )
-        )
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/resources/icons/",
+            $path
+        ))
     };
 }
 
@@ -34,15 +35,13 @@ pub enum Icon {
 }
 
 pub fn view<'a>(icon: Icon) -> Svg<'a> {
-    svg(svg::Handle::from_memory(
-        bytes(icon)
-    ))
+    svg(svg::Handle::from_memory(bytes(icon)))
         .width(16)
         .height(16)
         .style(|theme: &Theme, _| {
             let palette = theme.extended_palette();
             svg::Style {
-                color: Some(palette.background.neutral.text)
+                color: Some(palette.background.neutral.text),
             }
         })
 }

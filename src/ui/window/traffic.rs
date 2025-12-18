@@ -1,7 +1,13 @@
-use iced::{Border, Color, Element, Length, Theme, widget::{button, container, row}};
+use iced::{
+    Border, Color, Element, Length, Theme,
+    widget::{button, container, row},
+};
 
 use crate::{
-    app::{Message, window::{WindowEvent, traffic::TrafficAction}},
+    app::{
+        Message,
+        window::{WindowEvent, traffic::TrafficAction},
+    },
     resources::icon,
 };
 
@@ -33,24 +39,22 @@ const TRAFFICS: &[TrafficConfig] = &[
             active: icon::WindowUnMax,
         },
         color: None,
-        event: TrafficAction::WindowToggleMaximize
+        event: TrafficAction::WindowToggleMaximize,
     },
     TrafficConfig {
         icon: TrafficIcon::Static(icon::WindowClose),
         color: Some(Color::from_rgb8(196, 43, 28)),
-        event: TrafficAction::WindowClose
+        event: TrafficAction::WindowClose,
     },
 ];
 
-pub fn view<'a>(
-    is_maxed: bool
-) -> Element<'a, Message> {
-    let items = TRAFFICS.iter()
+pub fn view<'a>(is_maxed: bool) -> Element<'a, Message> {
+    let items = TRAFFICS
+        .iter()
         .map(|cfg| traffic_item(cfg, is_maxed))
         .collect::<Vec<_>>();
 
-    let inner = row(items)
-        .spacing(1);
+    let inner = row(items).spacing(1);
 
     container(inner)
         /* 45+1+45+1+45 */
@@ -63,10 +67,7 @@ pub fn view<'a>(
 TODO: Automatically change color when received OnFocus event.
 When the app is not focused, the entire toolbar should be darker.
 */
-fn traffic_item<'a>(
-    cfg: &'a TrafficConfig,
-    is_maxed: bool,
-) -> Element<'a, Message> {
+fn traffic_item<'a>(cfg: &'a TrafficConfig, is_maxed: bool) -> Element<'a, Message> {
     let icon = icon(match cfg.icon {
         TrafficIcon::Static(r) => r,
         TrafficIcon::Toggle { normal, active } => {
@@ -77,34 +78,23 @@ fn traffic_item<'a>(
             }
         }
     })
-        .width(10)
-        .height(10);
+    .width(10)
+    .height(10);
 
-    let inner = container(icon)
-        .width(45)
-        .height(29)
-        .center(Length::Fill);
+    let inner = container(icon).width(45).height(29).center(Length::Fill);
 
     button(inner)
-        .on_press(Message::Window(
-            WindowEvent::Traffic(
-                cfg.event
-            )
-        ))
+        .on_press(Message::Window(WindowEvent::Traffic(cfg.event)))
         .style(move |theme: &Theme, status| {
             use button::Status::*;
 
             let palette = theme.extended_palette();
             let background = match status {
-                Hovered => cfg.color
-                    .unwrap_or(palette.background.weaker.color),
+                Hovered => cfg.color.unwrap_or(palette.background.weaker.color),
 
-                Pressed => cfg.color
-                    .map(|c| Color::from_rgb(
-                        c.r * 0.9,
-                        c.g * 0.9,
-                        c.b * 0.9,
-                    ))
+                Pressed => cfg
+                    .color
+                    .map(|c| Color::from_rgb(c.r * 0.9, c.g * 0.9, c.b * 0.9))
                     .unwrap_or(palette.background.weak.color),
 
                 _ => Color::TRANSPARENT,
@@ -114,7 +104,7 @@ fn traffic_item<'a>(
                 border: Border::default().rounded(0),
                 ..Default::default()
             }
-                .with_background(background)
+            .with_background(background)
         })
         .into()
 }

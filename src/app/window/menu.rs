@@ -1,7 +1,4 @@
-use iced::{
-    Task, Theme, window
-};
-
+use iced::{Task, Theme, window};
 
 use crate::app::window::Window;
 
@@ -15,9 +12,9 @@ pub enum MenuAction {
     Help(HelpAction),
 }
 
-impl ToString for MenuAction {
-    fn to_string(&self) -> String {
-        format!("{self:?}")
+impl std::fmt::Display for MenuAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
     }
 }
 
@@ -45,14 +42,13 @@ pub enum EditAction {
     Paste,
     SelectAll,
     /* */
-    Find
+    Find,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum ViewAction {
     Light,
-    Dark
-    /* */
+    Dark, /* */
 }
 
 #[derive(Debug, Clone, Copy)]

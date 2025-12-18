@@ -2,14 +2,12 @@ use iced::{Element, widget::text};
 
 use crate::{app::Message, pages::Page};
 
-pub struct EditorPage {
-
-}
+pub struct EditorPage {}
 
 impl EditorPage {
     pub fn new() -> Self {
         /* TODO */
-        Self {  }
+        Self {}
     }
 }
 
