@@ -1318,17 +1318,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "iced_font_awesome"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fd18ad9721e8095ac7b131b5c232e4211911e0defb293e62d8e5689d34bebe7"
-dependencies = [
- "iced",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "iced_fonts"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1703,7 +1692,6 @@ version = "0.1.0"
 dependencies = [
  "iced",
  "iced_aw",
- "iced_font_awesome",
  "tracing",
 ]
 
@@ -2710,12 +2698,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ryu"
-version = "1.0.20"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
-
-[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2783,19 +2765,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "serde_json"
-version = "1.0.145"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "402a6f66d8c709116cf22f558eab210f5a50187f702eb4d7e5ef38d9a7f1c79c"
-dependencies = [
- "itoa",
- "memchr",
- "ryu",
- "serde",
- "serde_core",
 ]
 
 [[package]]

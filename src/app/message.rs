@@ -14,4 +14,5 @@ pub enum Message {
     RouteUpdated(Route),
     SyncState(StateUpdated),
     Window(WindowEvent),
+    Null,
 }

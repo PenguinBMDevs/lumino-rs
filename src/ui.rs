@@ -14,8 +14,8 @@ use crate::{
 };
 
 use iced::{
-    Background, Color, Element, Length, widget::{
-        Column, Container, Row, container,
+    Element, Length, widget::{
+        column, container, row
     }
 };
 
@@ -29,29 +29,21 @@ pub fn view<'a>(
         _ => app.pages.editor.view(),
     };
 
-    let inner = Row::new()
-        .push(sidebar::view(&app.route))
-        .push(pages::view(content))
+    let main = row![
+        sidebar::view(&app.route),
+        pages::view(content)
+    ]
         .width(Length::Fill)
         .height(Length::Fill)
-        .spacing(8);
+        .spacing(8)
+        .padding(8);
 
-    let main = Container::new(inner)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(8)
-        .style(|_| container::Style {
-            background: Some(Background::Color(
-                Color::from_rgba(0.0, 0.0, 0.0, 0.2)
-            )),
-            ..Default::default()
-        });
+    let inner = column![
+        window::view(&app.window),
+        main
+    ];
 
-    let inner = Column::new()
-        .push(window::view(&app.window))
-        .push(main);
-
-    Container::new(inner)
+    container(inner)
         .width(Length::Fill)
         .height(Length::Fill)
         .into()

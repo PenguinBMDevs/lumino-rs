@@ -4,6 +4,7 @@
 mod app;
 mod ui;
 mod pages;
+mod resources;
 
 use app::{
     App,
@@ -13,18 +14,16 @@ use app::{
     }
 };
 
-use iced::{
-    Size, Theme
-};
-
 fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)
+        .title(App::title)
+        .theme(App::theme)
         .settings(iced::Settings {
             antialiasing: true,
             ..Default::default()
         })
         .window(Settings {
-            size: Size {
+            size: iced::Size {
                 width: 1024.0,
                 height: 768.0,
             },
@@ -41,8 +40,5 @@ fn main() -> iced::Result {
             },
             ..Default::default()
         })
-        .theme(Theme::TokyoNight)
-        .centered()
-        .title("Lumino")
         .run()
 }

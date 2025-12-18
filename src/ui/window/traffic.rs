@@ -1,55 +1,43 @@
-use iced::{Background, Border, Color, Element, Length, widget::{Button, Container, Row, Svg, button, container, svg::{self, Handle}}};
+use iced::{Border, Color, Element, Length, Theme, widget::{button, container, row}};
 
-use crate::app::{Message, window::{WindowEvent, traffic::TrafficAction}};
+use crate::{
+    app::{Message, window::{WindowEvent, traffic::TrafficAction}},
+    resources::icon,
+};
 
 #[derive(Debug, Clone)]
 struct TrafficConfig {
     icon: TrafficIcon,
-    color: Color,
+    color: Option<Color>,
     event: TrafficAction,
 }
 
 #[derive(Debug, Clone, Copy)]
 enum TrafficIcon {
-    Static(&'static [u8]),
+    Static(icon::Icon),
     Toggle {
-        normal: &'static [u8],
-        active: &'static [u8],
+        normal: icon::Icon,
+        active: icon::Icon,
     },
-}
-
-macro_rules! include_res {
-    ($path:literal) => {
-        include_bytes!(
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                $path
-            )
-        )
-    };
 }
 
 const TRAFFICS: &[TrafficConfig] = &[
     TrafficConfig {
-        icon: TrafficIcon::Static(
-            include_res!("/resources/icons/min.svg")
-        ),
-        color: Color::from_rgba(1.0, 1.0, 1.0, 0.05),
+        icon: TrafficIcon::Static(icon::WindowMin),
+        color: None,
         event: TrafficAction::WindowMinimize,
     },
     TrafficConfig {
         icon: TrafficIcon::Toggle {
-            normal: include_res!("/resources/icons/max.svg"),
-            active: include_res!("/resources/icons/unmax.svg"),
+            normal: icon::WindowMax,
+            active: icon::WindowUnMax,
         },
-        color: Color::from_rgba(1.0, 1.0, 1.0, 0.05),
+        color: None,
         event: TrafficAction::WindowToggleMaximize
     },
     TrafficConfig {
-        icon: TrafficIcon::Static(
-            include_res!("/resources/icons/close.svg")
-        ),
-        color: Color::from_rgb8(196, 43, 28),
+        icon: TrafficIcon::Static(icon::WindowClose),
+        color: Some(Color::from_rgb8(196, 43, 28)),
         event: TrafficAction::WindowClose
     },
 ];
@@ -57,14 +45,14 @@ const TRAFFICS: &[TrafficConfig] = &[
 pub fn view<'a>(
     is_maxed: bool
 ) -> Element<'a, Message> {
-    let inner = TRAFFICS.iter()
-        .fold(
-            Row::new().spacing(1),
-            |row, cfg| {
-                row.push(traffic_item(cfg, is_maxed))
-            }
-        );
-    Container::new(inner)
+    let items = TRAFFICS.iter()
+        .map(|cfg| traffic_item(cfg, is_maxed))
+        .collect::<Vec<_>>();
+
+    let inner = row(items)
+        .spacing(1);
+
+    container(inner)
         /* 45+1+45+1+45 */
         .width(137)
         .height(Length::Fill)
@@ -79,7 +67,7 @@ fn traffic_item<'a>(
     cfg: &'a TrafficConfig,
     is_maxed: bool,
 ) -> Element<'a, Message> {
-    let icon_raw = match cfg.icon {
+    let icon = icon(match cfg.icon {
         TrafficIcon::Static(r) => r,
         TrafficIcon::Toggle { normal, active } => {
             if is_maxed {
@@ -88,46 +76,45 @@ fn traffic_item<'a>(
                 normal
             }
         }
-    };
-
-    let icon = Svg::new(Handle::from_memory(
-        icon_raw
-    ))
+    })
         .width(10)
-        .height(10)
-        .style(|_, _| svg::Style {
-            color: Some(Color::WHITE)
-        });
+        .height(10);
 
-    let inner = Container::new(icon)
+    let inner = container(icon)
         .width(45)
         .height(29)
-        .center(Length::Fill)
-        .style(|_| container::Style {
-            text_color: Some(cfg.color),
-            ..Default::default()
-        });
+        .center(Length::Fill);
 
-    Button::new(inner)
+    button(inner)
         .on_press(Message::Window(
             WindowEvent::Traffic(
                 cfg.event
             )
         ))
-        .style(move |_, state| {
+        .style(move |theme: &Theme, status| {
             use button::Status::*;
-            let background = match state {
-                Pressed | Hovered => Some(Background::Color(cfg.color)),
-                _ => None,
+
+            let palette = theme.extended_palette();
+            let background = match status {
+                Hovered => cfg.color
+                    .unwrap_or(palette.background.weaker.color),
+
+                Pressed => cfg.color
+                    .map(|c| Color::from_rgb(
+                        c.r * 0.9,
+                        c.g * 0.9,
+                        c.b * 0.9,
+                    ))
+                    .unwrap_or(palette.background.weak.color),
+
+                _ => Color::TRANSPARENT,
             };
+
             button::Style {
-                background,
-                border: Border {
-                    radius: 0.into(),
-                    ..Default::default()
-                },
+                border: Border::default().rounded(0),
                 ..Default::default()
             }
+                .with_background(background)
         })
         .into()
 }

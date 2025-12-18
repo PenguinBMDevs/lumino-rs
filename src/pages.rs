@@ -1,4 +1,4 @@
-use iced::{Element, Length, widget::Container};
+use iced::{Element, Length, widget::container};
 
 use crate::app::Message;
 
@@ -32,7 +32,7 @@ impl Pages {
 pub fn view<'a>(
     content: Element<'a, Message>
 ) -> Element<'a, Message> {
-    Container::new(content)
+    container(content)
         .width(Length::Fill)
         .height(Length::Fill)
         .padding([0, 8])

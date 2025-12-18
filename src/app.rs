@@ -3,7 +3,7 @@ pub mod window;
 pub mod router;
 
 use iced::{
-    Element, Task
+    Element, Subscription, Task, Theme
 };
 
 pub use message::{
@@ -59,11 +59,20 @@ impl App {
                     Menu(r) => self.window.menu(r),
                 }
             },
+            Message::Null => (),
         }
         Task::none()
     }
 
     pub fn view(&self) -> Element<'_, Message> {
         ui::view(self)
+    }
+
+    pub fn theme(&self) -> Theme {
+        self.window.theme.clone()
+    }
+
+    pub fn title(&self) -> String {
+        self.window.title.clone()
     }
 }

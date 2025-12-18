@@ -1,37 +1,34 @@
+use crate::resources::icon;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Route {
     Editor,
     Preview,
     Logs,
     Audio,
-    Info,
 }
 
 #[derive(Debug, Clone)]
 pub struct RouteConfig {
     pub route: Route,
-    pub icon: &'static str,
+    pub icon: icon::Icon,
 }
 
 pub const ROUTES: &[RouteConfig] = &[
     RouteConfig {
         route: Route::Editor,
-        icon: "pen-to-square"
+        icon: icon::PenToSquare,
     },
     RouteConfig {
         route: Route::Preview,
-        icon: "chart-bar"
+        icon: icon::ChartBar,
     },
     RouteConfig {
         route: Route::Logs,
-        icon: "file-lines"
+        icon: icon::FileLines,
     },
     RouteConfig {
         route: Route::Audio,
-        icon: "volume-high"
+        icon: icon::MusicNote,
     },
-    RouteConfig {
-        route: Route::Info,
-        icon: "circle-info"
-    }
 ];

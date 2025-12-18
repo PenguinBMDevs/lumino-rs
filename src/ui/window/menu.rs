@@ -1,5 +1,5 @@
-use iced::{Background, Border, Color, Element, Length, Theme, widget::{Button, Text, button}};
-use iced_aw::{Menu, MenuBar, menu::Item, quad};
+use iced::{Background, Border, Color, Element, Length, Theme, widget::{button, column, container, space, text}};
+use iced_aw::{Menu, MenuBar, menu::{self, Item}, style::menu_bar};
 
 use crate::app::{
     Message,
@@ -14,6 +14,12 @@ enum MenuType {
     Edit,
     View,
     Help
+}
+
+impl ToString for MenuType {
+    fn to_string(&self) -> String {
+        format!("{self:?}")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -88,7 +94,10 @@ fn view_menu() -> MenuConfig {
     MenuConfig {
         class: MenuType::View,
         /* TODO */
-        items: vec![],
+        items: vec![
+            Action(View(Light)),
+            Action(View(Dark)),
+        ],
     }
 }
 
@@ -99,78 +108,108 @@ fn help_menu() -> MenuConfig {
 
     MenuConfig {
         class: MenuType::Help,
-        /* TODO */
-        items: vec![],
+        items: vec![
+            Action(Help(About)),
+        ],
     }
 }
 
 pub fn view<'a>() -> Element<'a, Message> {
-    todo!()
-    // let menus = vec![
-    //     file_menu(),
-    //     edit_menu(),
-    //     // view_menu(),
-    //     // help_menu(),
-    // ];
+    let menus = vec![
+        file_menu(),
+        edit_menu(),
+        view_menu(),
+        help_menu(),
+    ];
 
-    // let menus = menus.iter().map(|cfg| {
-    //     let items = cfg.items.iter().map(|item| {
-    //         let item: Element<'a, Message> = match item {
-    //             MenuItem::Action(r) => {
-    //                 Button::new(
-    //                     Text::new(format!("{r:?}"))
-    //                 )
-    //                     .on_press(Message::Window(
-    //                         WindowEvent::Menu(*r)
-    //                     ))
-    //                     .into()
-    //             },
-    //             MenuItem::Separator => {
-    //                 quad::Quad {
-    //                     width: Length::Fill,
-    //                     height: 1.0.into(),
-    //                     quad_color: Background::Color(
-    //                         Color::from_rgba(0.0, 0.0, 0.0, 0.1)
-    //                     ),
-    //                     ..Default::default()
-    //                 }.into()
-    //             }
-    //         };
-    //         Item::new(item)
-    //     }).collect::<Vec<_>>();
-    //     let menu = Menu::new(items).width(200);
-    //     Item::with_menu(
-    //         Button::new(
-    //             Text::new(format!("{:?}", cfg.class)).size(14)
-    //         )
-    //             .style(|theme: &Theme, status| {
-    //                 use button::Status::*;
-    //                 let palette = theme.extended_palette();
-    //                 let base = button::Style {
-    //                     text_color: Color::WHITE,
-    //                     ..Default::default()
-    //                 };
-    //                 match status {
-    //                     Active => base.with_background(Color::TRANSPARENT),
-    //                     Hovered => base.with_background(Color::from_rgb(
-    //                         palette.primary.weak.color.r * 1.2,
-    //                         palette.primary.weak.color.g * 1.2,
-    //                         palette.primary.weak.color.b * 1.2,
-    //                     )),
-    //                     Disabled => base.with_background(Color::from_rgb(0.5, 0.5, 0.5)),
-    //                     Pressed => base.with_background(palette.primary.weak.color),
-    //                     // Status::Disabled => base.with_background(Color::from_rgb(1.0, 0.0, 0.0)),
-    //                     // Status::Pressed => base.with_background(Color::from_rgb(0.0, 1.0, 0.0)),
-    //                     // _ => iced::widget::button::primary(theme, status)
-    //                 }
-    //             }),
-    //         menu
-    //     )
-    // }).collect::<Vec<_>>();
+    let menus = menus.iter().map(|cfg| {
+        let items = cfg.items.iter().map(|item| {
+            let inner: Element<'a, Message> = match item {
+                MenuItem::Action(r) => base_button(
+                    r.to_string(),
+                    Message::Window(
+                        WindowEvent::Menu(*r)
+                    )
+                )
+                    .width(Length::Fill)
+                    .into(),
+                MenuItem::Separator => base_split(),
+            };
+            Item::new(inner)
+        }).collect::<Vec<_>>();
+        Item::with_menu(
+            base_button(
+                cfg.class.to_string(),
+                Message::Null
+            )
+                .padding([2, 8]),
+            Menu::new(items)
+                .width(200)
+                .offset(12.0)
+        )
+    }).collect::<Vec<_>>();
 
-    // MenuBar::new(menus)
-    //     .spacing(1)
-    //     .close_on_background_click_global(true)
-    //     .close_on_item_click_global(true)
-    //     .into()
+    MenuBar::new(menus)
+        .close_on_background_click_global(true)
+        .close_on_item_click_global(true)
+        .draw_path(menu::DrawPath::Backdrop)
+        .spacing(1)
+        .style(|theme: &Theme, status| menu_bar::Style {
+            bar_background: Background::Color(
+                Color::TRANSPARENT
+            ),
+            ..menu_bar::primary(theme, status)
+        })
+        .into()
+}
+
+fn base_button<'a>(
+    label: impl Into<String>,
+    msg: Message
+) -> button::Button<'a, Message> {
+    let inner = text(label.into())
+        .size(14.0);
+    button(inner)
+        .style(|theme: &Theme, status| {
+            use button::Status::*;
+
+            let palette = theme.extended_palette();
+            let background = match status {
+                Hovered => palette.background.weaker.color,
+                Pressed => palette.background.weak.color,
+                _ => Color::TRANSPARENT,
+            };
+
+            button::Style {
+                border: Border::default().rounded(4),
+                text_color: palette.background.neutral.text,
+                ..Default::default()
+            }
+                .with_background(background)
+        })
+        .on_press(msg)
+}
+
+fn base_split<'a>() -> Element<'a, Message> {
+    let inner = container(space())
+        .width(Length::Fill)
+        .height(1)
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+            container::Style {
+                snap: true,
+                background: Some(Background::Color(
+                    palette.background.strongest.color
+                )),
+                ..Default::default()
+            }
+        });
+
+    column![
+        space().height(4),
+        inner,
+        space().height(4)
+    ]
+        .width(Length::Fill)
+        .into()
 }

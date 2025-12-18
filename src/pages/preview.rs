@@ -1,4 +1,4 @@
-use iced::{Element, widget::Text};
+use iced::{Element, widget::text};
 
 use crate::{app::Message, pages::Page};
 
@@ -22,6 +22,6 @@ impl Page for PreviewPage {
     }
 
     fn view<'a>(&self) -> Element<'a, Message> {
-        Text::new("This is Preview").into()
+        text("This is Preview").into()
     }
 }
