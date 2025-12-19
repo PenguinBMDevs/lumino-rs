@@ -1,6 +1,6 @@
-use iced::{Task, Theme, window};
+use iced::{Task, Theme};
 
-use crate::app::window::Window;
+use crate::app::window;
 
 use super::Message;
 
@@ -57,17 +57,17 @@ pub enum HelpAction {
     /* */
 }
 
-pub fn handle(id: window::Id, event: MenuAction, window: &mut Window) -> Task<Message> {
+pub fn handle(event: MenuAction, window: &mut window::Window) -> Task<Message> {
     use MenuAction::*;
     match event {
-        File(r) => file(id, r),
-        Edit(r) => edit(id, r),
-        View(r) => view(id, r, window),
-        Help(r) => help(id, r),
+        File(r) => file(r),
+        Edit(r) => edit(r),
+        View(r) => view(r, window),
+        Help(r) => help(r),
     }
 }
 
-fn file(id: window::Id, event: FileAction) -> Task<Message> {
+fn file(event: FileAction) -> Task<Message> {
     use FileAction::*;
     match event {
         New => (),
@@ -79,12 +79,16 @@ fn file(id: window::Id, event: FileAction) -> Task<Message> {
         /* */
         Settings => (),
         /* */
-        Exit => return window::close(id),
+        Exit => {
+            return Task::done(Message::Window(window::Event::Traffic(
+                window::TrafficAction::Close,
+            )));
+        }
     }
     Task::none()
 }
 
-fn edit(id: window::Id, event: EditAction) -> Task<Message> {
+fn edit(event: EditAction) -> Task<Message> {
     use EditAction::*;
     match event {
         Undo => (),
@@ -100,7 +104,7 @@ fn edit(id: window::Id, event: EditAction) -> Task<Message> {
     Task::none()
 }
 
-fn view(id: window::Id, event: ViewAction, window: &mut Window) -> Task<Message> {
+fn view(event: ViewAction, window: &mut window::Window) -> Task<Message> {
     use ViewAction::*;
     /* TODO */
     match event {
@@ -111,7 +115,7 @@ fn view(id: window::Id, event: ViewAction, window: &mut Window) -> Task<Message>
     Task::none()
 }
 
-fn help(id: window::Id, event: HelpAction) -> Task<Message> {
+fn help(event: HelpAction) -> Task<Message> {
     use HelpAction::*;
     match event {
         About => (),

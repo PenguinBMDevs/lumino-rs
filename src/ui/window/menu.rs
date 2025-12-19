@@ -10,8 +10,10 @@ use iced_aw::{
 
 use crate::app::{
     Message,
-    window::WindowEvent,
-    window::menu::{EditAction, FileAction, HelpAction, MenuAction, ViewAction},
+    window::{
+        self,
+        menu::{EditAction, FileAction, HelpAction, MenuAction, ViewAction},
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -117,7 +119,7 @@ pub fn view<'a>() -> Element<'a, Message> {
                 .map(|item| {
                     let inner: Element<'a, Message> = match item {
                         MenuItem::Action(r) => {
-                            base_button(r.to_string(), Message::Window(WindowEvent::Menu(*r)))
+                            base_button(r.to_string(), Message::Window(window::Event::Menu(*r)))
                                 .width(Length::Fill)
                                 .into()
                         }

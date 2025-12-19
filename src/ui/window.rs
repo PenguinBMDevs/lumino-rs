@@ -7,7 +7,7 @@ use iced::{
 use crate::{
     app::{
         Message,
-        window::{self, WindowEvent, traffic::TrafficAction},
+        window::{Event::Traffic, Window, traffic::TrafficAction},
     },
     resources::icon,
 };
@@ -15,7 +15,7 @@ use crate::{
 mod menu;
 mod traffic;
 
-pub fn view<'a>(window: &window::Window) -> Element<'a, Message> {
+pub fn view<'a>(window: &Window) -> Element<'a, Message> {
     let inner = row![
         logo(),
         menu::view(),
@@ -32,12 +32,8 @@ pub fn view<'a>(window: &window::Window) -> Element<'a, Message> {
         })
         .align_y(Center);
     mouse_area(container)
-        .on_press(Message::Window(WindowEvent::Traffic(
-            TrafficAction::WindowDrag,
-        )))
-        .on_double_click(Message::Window(WindowEvent::Traffic(
-            TrafficAction::WindowToggleMaximize,
-        )))
+        .on_press(Message::Window(Traffic(TrafficAction::Drag)))
+        .on_double_click(Message::Window(Traffic(TrafficAction::ToggleMaximize)))
         .into()
 }
 

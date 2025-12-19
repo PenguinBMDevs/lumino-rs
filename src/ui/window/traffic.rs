@@ -6,7 +6,7 @@ use iced::{
 use crate::{
     app::{
         Message,
-        window::{WindowEvent, traffic::TrafficAction},
+        window::{Event::Traffic, traffic::TrafficAction},
     },
     resources::icon,
 };
@@ -31,7 +31,7 @@ const TRAFFICS: &[TrafficConfig] = &[
     TrafficConfig {
         icon: TrafficIcon::Static(icon::WindowMin),
         color: None,
-        event: TrafficAction::WindowMinimize,
+        event: TrafficAction::Minimize,
     },
     TrafficConfig {
         icon: TrafficIcon::Toggle {
@@ -39,12 +39,12 @@ const TRAFFICS: &[TrafficConfig] = &[
             active: icon::WindowUnMax,
         },
         color: None,
-        event: TrafficAction::WindowToggleMaximize,
+        event: TrafficAction::ToggleMaximize,
     },
     TrafficConfig {
         icon: TrafficIcon::Static(icon::WindowClose),
         color: Some(Color::from_rgb8(196, 43, 28)),
-        event: TrafficAction::WindowClose,
+        event: TrafficAction::Close,
     },
 ];
 
@@ -84,7 +84,7 @@ fn traffic_item<'a>(cfg: &'a TrafficConfig, is_maxed: bool) -> Element<'a, Messa
     let inner = container(icon).width(45).height(29).center(Length::Fill);
 
     button(inner)
-        .on_press(Message::Window(WindowEvent::Traffic(cfg.event)))
+        .on_press(Message::Window(Traffic(cfg.event)))
         .style(move |theme: &Theme, status| {
             use button::Status::*;
 
