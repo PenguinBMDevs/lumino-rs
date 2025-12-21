@@ -1,9 +1,0 @@
-[package]
-name = "lumino-kdmapi"
-version.workspace = true
-rust-version.workspace = true
-homepage.workspace = true
-license.workspace = true
-edition.workspace = true
-
-[dependencies]
