@@ -20,14 +20,16 @@ license.workspace = true
 edition.workspace = true
 
 [workspace.dependencies]
-iced = { version = "0.14.0", features = ["svg"] }
-iced_aw = { version = "0.13.0", features = ["menu", "quad"] }
+iced = { version = "0.14.0", features = ["svg", "debug"] }
+iced_aw = { version = "0.13.0", features = ["menu"] }
 tracing = "0.1.43"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"]}
 
 [dependencies]
 iced = { workspace = true }
 iced_aw = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.

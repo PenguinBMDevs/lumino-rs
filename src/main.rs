@@ -5,6 +5,7 @@ mod app;
 mod pages;
 mod resources;
 mod ui;
+mod logging;
 
 use app::{
     App,
@@ -12,6 +13,9 @@ use app::{
 };
 
 fn main() -> iced::Result {
+    logging::init();
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "Hello Lumino!");
+
     iced::application(App::new, App::update, App::view)
         .title(App::title)
         .theme(App::theme)
@@ -29,10 +33,13 @@ fn main() -> iced::Result {
             max_size: None,
             visible: true,
             resizable: true,
+            // Disable native titlebar.
             decorations: false,
             transparent: false,
 
             platform_specific: PlatformSpecific {
+                // Allows the OS to draw a shadow + frame on an undecorated window.
+                // Improves UX when `decorations` is false.
                 undecorated_shadow: true,
                 ..Default::default()
             },

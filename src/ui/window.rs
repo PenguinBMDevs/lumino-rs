@@ -42,14 +42,14 @@ fn gap<'a>() -> Element<'a, Message> {
 }
 
 fn logo<'a>() -> Element<'a, Message> {
-    /* simply just a placeholer */
+    // simply just a placeholer
     let icon = icon(icon::GitHub)
-        /* 16+2=20-2 */
+        // 16+2=20-2
         .width(18)
         .height(18);
 
     container(icon)
-        /* 8+46+8 */
+        // 8+46+8
         .width(62)
         .height(30)
         .center(62)

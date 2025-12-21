@@ -81,6 +81,7 @@ fn traffic_item<'a>(cfg: &'a TrafficConfig, is_maxed: bool) -> Element<'a, Messa
     .width(10)
     .height(10);
 
+    // 45px*29px matches the actual traffic buttons on Windows.
     let inner = container(icon).width(45).height(29).center(Length::Fill);
 
     button(inner)
@@ -94,6 +95,7 @@ fn traffic_item<'a>(cfg: &'a TrafficConfig, is_maxed: bool) -> Element<'a, Messa
 
                 Pressed => cfg
                     .color
+                    // Make it darker.
                     .map(|c| Color::from_rgb(c.r * 0.9, c.g * 0.9, c.b * 0.9))
                     .unwrap_or(palette.background.weak.color),
 
@@ -101,6 +103,7 @@ fn traffic_item<'a>(cfg: &'a TrafficConfig, is_maxed: bool) -> Element<'a, Messa
             };
 
             button::Style {
+                // Remove the default rounding.
                 border: Border::default().rounded(0),
                 ..Default::default()
             }

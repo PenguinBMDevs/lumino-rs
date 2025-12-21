@@ -44,15 +44,18 @@ impl Window {
         }
     }
     pub fn traffic(&self, action: TrafficAction) -> Task<Message> {
+        tracing::debug!(?self.id, ?action, "Window traffic action");
         let Some(id) = self.id else {
             return Task::none();
         };
         traffic::handle(id, action)
     }
     pub fn menu(&mut self, action: MenuAction) -> Task<Message> {
+        tracing::debug!(?action, "Window menu action");
         menu::handle(action, self)
     }
     pub fn system(&mut self, event: WindowEvent) -> Task<Message> {
+        tracing::debug!(?self.id, ?event, "Window system event");
         let Some(id) = self.id else {
             return Task::none();
         };
@@ -68,6 +71,7 @@ impl Window {
     }
     pub fn update(&mut self, event: Update) -> Task<Message> {
         use Update::*;
+        tracing::info!(?event, "Window state updated");
         match event {
             Maximized(r) => self.is_maximized = r,
             Focused(r) => self.is_focused = r,

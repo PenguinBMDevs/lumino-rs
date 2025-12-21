@@ -4,7 +4,7 @@ use iced::{
 };
 use iced_aw::{
     Menu, MenuBar,
-    menu::{self, Item},
+    menu::Item,
     style::menu_bar,
 };
 
@@ -113,6 +113,7 @@ pub fn view<'a>() -> Element<'a, Message> {
     let menus = items
         .iter()
         .map(|cfg| {
+            // Inline to avoid verbose function return type definitions.
             let items = cfg
                 .items
                 .iter()
@@ -130,7 +131,10 @@ pub fn view<'a>() -> Element<'a, Message> {
                 .collect::<Vec<_>>();
             Item::with_menu(
                 base_button(cfg.class.to_string(), Message::Null).padding([2, 8]),
-                Menu::new(items).width(200).offset(12.0),
+                // DO NOT REMOVE `width(200)`!
+                // Removing it causes a panic. idk why.
+                // Use offset to make it flush with the titlebar.
+                Menu::new(items).width(200).offset(9.0),
             )
         })
         .collect::<Vec<_>>();
@@ -138,10 +142,11 @@ pub fn view<'a>() -> Element<'a, Message> {
     MenuBar::new(menus)
         .close_on_background_click_global(true)
         .close_on_item_click_global(true)
-        .draw_path(menu::DrawPath::Backdrop)
         .spacing(1)
         .style(|theme: &Theme, status| menu_bar::Style {
             bar_background: Background::Color(Color::TRANSPARENT),
+            // Use the default style from iced_aw.
+            // `..Default::default()` simply messes up the styles.
             ..menu_bar::primary(theme, status)
         })
         .into()
@@ -177,12 +182,12 @@ fn base_split<'a>() -> Element<'a, Message> {
         .style(|theme: &Theme| {
             let palette = theme.extended_palette();
             container::Style {
-                snap: true,
                 background: Some(Background::Color(palette.background.strongest.color)),
                 ..Default::default()
             }
         });
 
+    // Manually apply the `margin` style.
     column![space().height(4), inner, space().height(4)]
         .width(Length::Fill)
         .into()
