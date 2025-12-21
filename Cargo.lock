@@ -1725,7 +1725,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96051b46fc183dc9cd4a223960ef37b9af631b55191852a8274bfef064cda20f"
 
 [[package]]
+name = "lumino-core"
+version = "0.1.0"
+
+[[package]]
 name = "lumino-gfx-wgpu"
+version = "0.1.0"
+
+[[package]]
+name = "lumino-kdmapi"
+version = "0.1.0"
+
+[[package]]
+name = "lumino-midi"
 version = "0.1.0"
 
 [[package]]
