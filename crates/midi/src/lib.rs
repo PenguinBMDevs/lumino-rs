@@ -4,6 +4,7 @@ use std::{path::Path, sync::OnceLock};
 use api::{
     kdmapi::KdmapiEngine
 };
+use thiserror::Error;
 
 static ENGINE: OnceLock<Box<dyn MidiEngine>> = OnceLock::new();
 
@@ -14,18 +15,34 @@ pub enum MidiEngineType {
     CoreMidi,
 }
 
+#[derive(Error, Debug)]
+pub enum MidiEngineError {
+    #[error("failed to load MidiEngine {name}, reason: {reason}")]
+    LoadFailed {
+        name: String,
+        reason: String,
+    },
+    #[error("MidiEngine {name} already inited")]
+    AlreadyInited {
+        name: String,
+    },
+    #[error("failed to initialize MidiEngine {name}, reason: {reason}")]
+    InitFailed {
+        name: String,
+        reason: String,
+    },
+}
+
 pub trait MidiEngine: Send + Sync {
-    fn init(&mut self) -> Result<(), String>;
-    fn version(&self) -> Result<String, String>;
+    fn init(&mut self) -> Result<(), MidiEngineError>;
+    fn version(&self) -> Option<String>;
 }
 
-fn get_engine<'a>() -> Result<&'a dyn MidiEngine, String> {
-    Ok(ENGINE.get()
-        .ok_or("Engine not ready")?
-        .as_ref())
+fn get_engine<'a>() -> Option<&'a dyn MidiEngine> {
+    ENGINE.get().map(|v| &**v)
 }
 
-pub fn init(engine: MidiEngineType, path: &Path) -> Result<(), String> {
+pub fn init(engine: MidiEngineType, path: &Path) -> Result<(), MidiEngineError> {
     use MidiEngineType::*;
     let mut engine: Box<dyn MidiEngine> = match engine {
         Kdmapi => Box::new(KdmapiEngine::new(path)?),
@@ -38,6 +55,6 @@ pub fn init(engine: MidiEngineType, path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn version() -> Result<String, String> {
+pub fn version() -> Option<String> {
     get_engine()?.version()
 }

@@ -1747,6 +1747,8 @@ name = "lumino-midi"
 version = "0.1.0"
 dependencies = [
  "libloading 0.9.0",
+ "thiserror 2.0.17",
+ "tracing",
 ]
 
 [[package]]
@@ -1758,6 +1760,7 @@ dependencies = [
  "lumino-core",
  "lumino-gfx-wgpu",
  "lumino-midi",
+ "thiserror 2.0.17",
  "tracing",
  "tracing-subscriber",
 ]
