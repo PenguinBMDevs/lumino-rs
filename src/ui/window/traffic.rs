@@ -1,6 +1,6 @@
 use iced::{
     Border, Color, Element, Length, Theme,
-    widget::{button, container, row},
+    widget::{button, container, row, svg},
 };
 
 use crate::{
@@ -48,10 +48,10 @@ const TRAFFICS: &[TrafficConfig] = &[
     },
 ];
 
-pub fn view<'a>(is_maxed: bool) -> Element<'a, Message> {
+pub fn view<'a>(is_maxed: bool, is_focused: bool) -> Element<'a, Message> {
     let items = TRAFFICS
         .iter()
-        .map(|cfg| traffic_item(cfg, is_maxed))
+        .map(|cfg| traffic_item(cfg, is_maxed, is_focused))
         .collect::<Vec<_>>();
 
     let inner = row(items).spacing(1);
@@ -63,11 +63,7 @@ pub fn view<'a>(is_maxed: bool) -> Element<'a, Message> {
         .into()
 }
 
-/*
-TODO: Automatically change color when received OnFocus event.
-When the app is not focused, the entire toolbar should be darker.
-*/
-fn traffic_item<'a>(cfg: &'a TrafficConfig, is_maxed: bool) -> Element<'a, Message> {
+fn traffic_item<'a>(cfg: &'a TrafficConfig, is_maxed: bool, is_focused: bool) -> Element<'a, Message> {
     let icon = icon(match cfg.icon {
         TrafficIcon::Static(r) => r,
         TrafficIcon::Toggle { normal, active } => {
@@ -79,7 +75,17 @@ fn traffic_item<'a>(cfg: &'a TrafficConfig, is_maxed: bool) -> Element<'a, Messa
         }
     })
     .width(10)
-    .height(10);
+    .height(10)
+    .style(move |theme: &Theme, _| {
+        let palette = theme.extended_palette();
+        svg::Style {
+            color: Some(if is_focused {
+                palette.background.neutral.text
+            } else {
+                palette.background.strongest.color
+            }),
+        }
+    });
 
     // 45px*29px matches the actual traffic buttons on Windows.
     let inner = container(icon).width(45).height(29).center(Length::Fill);

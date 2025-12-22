@@ -15,12 +15,12 @@ use crate::{
 mod menu;
 mod traffic;
 
-pub fn view<'a>(window: &Window) -> Element<'a, Message> {
+pub fn view<'a>(window: &'a Window) -> Element<'a, Message> {
     let inner = row![
         logo(),
         menu::view(),
         gap(),
-        traffic::view(window.is_maximized)
+        traffic::view(window.is_maximized, window.is_focused)
     ]
     .align_y(Center);
     let container = container(inner)
@@ -28,7 +28,11 @@ pub fn view<'a>(window: &Window) -> Element<'a, Message> {
         .height(30)
         .style(|theme: &Theme| {
             let palette = theme.extended_palette();
-            container::Style::default().background(palette.background.neutral.color)
+            container::Style::default().background(if window.is_focused {
+                palette.background.neutral.color
+            } else {
+                palette.background.weaker.color
+            })
         })
         .align_y(Center);
     mouse_area(container)

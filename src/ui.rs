@@ -11,7 +11,7 @@ use iced::{
     widget::{column, container, row},
 };
 
-pub fn view<'a>(app: &App) -> Element<'a, Message> {
+pub fn view<'a>(app: &'a App) -> Element<'a, Message> {
     let content = match app.route {
         Route::Editor => app.pages.editor.view(),
         Route::Preview => app.pages.preview.view(),
