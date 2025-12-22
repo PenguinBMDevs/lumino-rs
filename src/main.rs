@@ -16,13 +16,6 @@ fn main() -> iced::Result {
     logging::init();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "Hello Lumino!");
 
-    lumino_midi::init(
-        lumino_midi::MidiEngineType::Kdmapi,
-        std::path::Path::new("OmniMidi.dll")
-    ).expect("Failed to init kdmapi");
-
-    tracing::info!(data = ?lumino_midi::version(), "KDMAPI Version");
-
     iced::application(App::new, App::update, App::view)
         .title(App::title)
         .theme(App::theme)

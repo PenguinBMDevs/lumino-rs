@@ -1,18 +1,20 @@
 pub mod api;
 
-use std::{path::Path, sync::OnceLock};
+use std::{path::PathBuf, sync::OnceLock};
 use api::{
-    kdmapi::KdmapiEngine
+    kdmapi::KdmapiEngine,
+    winmm::WinmmEngine,
 };
 use thiserror::Error;
 
 static ENGINE: OnceLock<Box<dyn MidiEngine>> = OnceLock::new();
 
-#[derive(Debug, Clone, Copy)]
-pub enum MidiEngineType {
-    Kdmapi,
-    Winmm,
-    CoreMidi,
+#[derive(Debug)]
+pub enum MidiEngineConfig {
+    Kdmapi { path: PathBuf },
+    Winmm { id: u32 },
+    /* TODO */
+    CoreMidi {},
 }
 
 #[derive(Error, Debug)]
@@ -42,12 +44,12 @@ fn get_engine<'a>() -> Option<&'a dyn MidiEngine> {
     ENGINE.get().map(|v| &**v)
 }
 
-pub fn init(engine: MidiEngineType, path: &Path) -> Result<(), MidiEngineError> {
-    use MidiEngineType::*;
-    let mut engine: Box<dyn MidiEngine> = match engine {
-        Kdmapi => Box::new(KdmapiEngine::new(path)?),
-        Winmm => todo!(),
-        CoreMidi => todo!(),
+pub fn init(cfg: MidiEngineConfig) -> Result<(), MidiEngineError> {
+    use MidiEngineConfig::*;
+    let mut engine: Box<dyn MidiEngine> = match cfg {
+        Kdmapi { path } => Box::new(KdmapiEngine::new(path)?),
+        Winmm { id } => Box::new(WinmmEngine::new(id)?),
+        CoreMidi {} => todo!(),
     };
     engine.init()?;
 
