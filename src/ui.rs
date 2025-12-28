@@ -15,8 +15,8 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Message> {
     let content = match app.route {
         Route::Editor => app.pages.editor.view(),
         Route::Preview => app.pages.preview.view(),
-        /* TODO */
-        _ => app.pages.editor.view(),
+        Route::Logs => app.pages.logs.view(),
+        Route::Settings => app.pages.settings.view(),
     };
 
     let main = row![sidebar::view(&app.route), pages::view(content)]

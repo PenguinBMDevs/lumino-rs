@@ -20,7 +20,7 @@ pub enum Icon {
     /* FA Regular Icons start */
     ChartBar,
     FileLines,
-    MusicNote,
+    Gear,
     PenToSquare,
     /* FA Regular Icons end */
     /* FA Brands Icons start */
@@ -50,7 +50,7 @@ fn bytes(icon: Icon) -> &'static [u8] {
     match icon {
         ChartBar => include_res!("regular/chart-bar.svg"),
         FileLines => include_res!("regular/file-lines.svg"),
-        MusicNote => include_res!("regular/music-note.svg"),
+        Gear => include_res!("regular/gear.svg"),
         PenToSquare => include_res!("regular/pen-to-square.svg"),
 
         GitHub => include_res!("brands/github.svg"),

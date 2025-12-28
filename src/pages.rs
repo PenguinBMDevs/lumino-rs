@@ -4,11 +4,8 @@ use crate::app::Message;
 
 pub mod editor;
 pub mod preview;
-/*
 pub mod logs;
-pub mod audio;
-pub mod info;
-*/
+pub mod settings;
 
 pub trait Page {
     fn update(&mut self, message: Message) -> bool;
@@ -18,6 +15,8 @@ pub trait Page {
 pub struct Pages {
     pub editor: editor::EditorPage,
     pub preview: preview::PreviewPage,
+    pub logs: logs::LogsPage,
+    pub settings: settings::SettingsPage,
 }
 
 impl Pages {
@@ -25,6 +24,8 @@ impl Pages {
         Self {
             editor: editor::EditorPage::new(),
             preview: preview::PreviewPage::new(),
+            logs: logs::LogsPage::new(),
+            settings: settings::SettingsPage::new(),
         }
     }
 }

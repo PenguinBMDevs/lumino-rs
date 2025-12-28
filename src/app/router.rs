@@ -5,7 +5,7 @@ pub enum Route {
     Editor,
     Preview,
     Logs,
-    Audio,
+    Settings,
 }
 
 #[derive(Debug, Clone)]
@@ -28,7 +28,7 @@ pub const ROUTES: &[RouteConfig] = &[
         icon: icon::FileLines,
     },
     RouteConfig {
-        route: Route::Audio,
-        icon: icon::MusicNote,
+        route: Route::Settings,
+        icon: icon::Gear,
     },
 ];
