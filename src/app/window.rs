@@ -57,6 +57,8 @@ impl Window {
     pub fn system(&mut self, event: WindowEvent) -> Task<Message> {
         tracing::debug!(?self.id, ?event, "Window system event");
         let Some(id) = self.id else {
+            #[cfg(target_os = "macos")]
+            crate::app::macos::menu::init();
             return Task::none();
         };
         use WindowEvent::*;

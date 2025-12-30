@@ -1,10 +1,11 @@
 pub mod api;
 
 use std::{path::PathBuf, sync::OnceLock};
-use api::{
-    kdmapi::KdmapiEngine,
-    winmm::WinmmEngine,
-};
+
+use api::kdmapi::KdmapiEngine;
+#[cfg(windows)]
+use api::winmm::WinmmEngine;
+
 use thiserror::Error;
 
 static ENGINE: OnceLock<Box<dyn MidiEngine>> = OnceLock::new();
@@ -17,8 +18,24 @@ pub enum MidiEngineConfig {
     CoreMidi {},
 }
 
+impl std::fmt::Display for MidiEngineConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use MidiEngineConfig::*;
+        let name = match self {
+            Kdmapi { .. } => "Kdmapi",
+            Winmm { .. } => "Winmm",
+            CoreMidi { .. } => "CoreMini",
+        };
+        write!(f, "{name}")
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum MidiEngineError {
+    #[error("engine {name} is not supported in this platform")]
+    NotSupported {
+        name: String,
+    },
     #[error("failed to load MidiEngine {name}, reason: {reason}")]
     LoadFailed {
         name: String,
@@ -48,8 +65,16 @@ pub fn init(cfg: MidiEngineConfig) -> Result<(), MidiEngineError> {
     use MidiEngineConfig::*;
     let mut engine: Box<dyn MidiEngine> = match cfg {
         Kdmapi { path } => Box::new(KdmapiEngine::new(path)?),
+        #[cfg(windows)]
         Winmm { id } => Box::new(WinmmEngine::new(id)?),
+        #[cfg(target_os = "macos")]
         CoreMidi {} => todo!(),
+        #[allow(unreachable_code)]
+        _ => return Err(
+            MidiEngineError::NotSupported {
+                name: cfg.to_string()
+            }
+        ),
     };
     engine.init()?;
 

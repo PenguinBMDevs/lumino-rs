@@ -21,7 +21,6 @@ edition.workspace = true
 lumino-core = { path = "crates/core" }
 lumino-gfx-wgpu = { path = "crates/gfx_wgpu" }
 lumino-midi = { path = "crates/midi" }
-
 tracing = "0.1.43"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"]}
 thiserror = "2.0.17"
@@ -30,12 +29,14 @@ thiserror = "2.0.17"
 lumino-core = { workspace = true }
 lumino-gfx-wgpu = { workspace = true }
 lumino-midi = { workspace = true }
-
 iced = { version = "0.14.0", features = ["svg", "debug"] }
 iced_aw = { version = "0.13.0", features = ["menu"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+muda = "0.17.1"
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.

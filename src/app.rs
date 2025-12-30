@@ -1,7 +1,9 @@
 pub mod keyboard;
+pub mod macos;
 pub mod message;
 pub mod router;
 pub mod window;
+pub mod worker;
 
 use iced::{Element, Subscription, Task, Theme};
 
@@ -60,6 +62,8 @@ impl App {
             window::events().map(|(_, r)| Message::Window(window::Event::System(r))),
             // Keyboard events, like pressing, releasing, etc.
             keyboard::listen().map(Message::Keyboard),
+            // Backend events, like menu messages on macOS.
+            worker::subscription(),
         ])
     }
 

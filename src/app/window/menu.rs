@@ -48,7 +48,8 @@ pub enum EditAction {
 #[derive(Debug, Clone, Copy)]
 pub enum ViewAction {
     Light,
-    Dark, /* */
+    Dark,
+    /* */
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -17,14 +17,14 @@ use crate::app::{
 };
 
 #[derive(Debug, Clone)]
-enum MenuType {
+pub enum MenuKind {
     File,
     Edit,
     View,
     Help,
 }
 
-impl std::fmt::Display for MenuType {
+impl std::fmt::Display for MenuKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
     }
@@ -37,9 +37,9 @@ pub enum MenuItem {
 }
 
 #[derive(Debug, Clone)]
-struct MenuConfig {
-    class: MenuType,
-    items: Vec<MenuItem>,
+pub struct MenuConfig {
+    pub kind: MenuKind,
+    pub items: Vec<MenuItem>,
 }
 
 fn file_menu() -> MenuConfig {
@@ -47,7 +47,7 @@ fn file_menu() -> MenuConfig {
     use MenuAction::File;
     use MenuItem::*;
     MenuConfig {
-        class: MenuType::File,
+        kind: MenuKind::File,
         items: vec![
             Action(File(New)),
             Action(File(Open)),
@@ -69,7 +69,7 @@ fn edit_menu() -> MenuConfig {
     use MenuItem::*;
 
     MenuConfig {
-        class: MenuType::Edit,
+        kind: MenuKind::Edit,
         items: vec![
             Action(Edit(Undo)),
             Action(Edit(Redo)),
@@ -90,7 +90,7 @@ fn view_menu() -> MenuConfig {
     use ViewAction::*;
 
     MenuConfig {
-        class: MenuType::View,
+        kind: MenuKind::View,
         /* TODO */
         items: vec![Action(View(Light)), Action(View(Dark))],
     }
@@ -102,15 +102,17 @@ fn help_menu() -> MenuConfig {
     use MenuItem::*;
 
     MenuConfig {
-        class: MenuType::Help,
+        kind: MenuKind::Help,
         items: vec![Action(Help(About))],
     }
 }
 
-pub fn view<'a>() -> Element<'a, Message> {
-    let items = [file_menu(), edit_menu(), view_menu(), help_menu()];
+pub fn menus() -> [MenuConfig; 4] {
+    [file_menu(), edit_menu(), view_menu(), help_menu()]
+}
 
-    let menus = items
+pub fn view<'a>() -> Element<'a, Message> {
+    let menus = menus()
         .iter()
         .map(|cfg| {
             // Inline to avoid verbose function return type definitions.
@@ -130,7 +132,7 @@ pub fn view<'a>() -> Element<'a, Message> {
                 })
                 .collect::<Vec<_>>();
             Item::with_menu(
-                base_button(cfg.class.to_string(), Message::Null).padding([2, 8]),
+                base_button(cfg.kind.to_string(), Message::Null).padding([2, 8]),
                 // DO NOT REMOVE `width(200)`!
                 // Removing it causes a panic. idk why.
                 // Use offset to make it flush with the titlebar.

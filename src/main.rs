@@ -16,11 +16,37 @@ fn main() -> iced::Result {
     logging::init();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "Hello Lumino!");
 
+    #[cfg(windows)]
+    let platform_settings = Settings {
+        // Disable native titlebar.
+        decorations: false,
+        platform_specific: PlatformSpecific {
+            // Allows the OS to draw a shadow + frame on an undecorated window.
+            // Improves UX when `decorations` is false.
+            undecorated_shadow: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    #[cfg(target_os = "macos")]
+    let platform_settings = Settings {
+        platform_specific: PlatformSpecific {
+            // Allows the content to be integrated with native titlebar.
+            fullsize_content_view: true,
+            // Make native titlebar transparent.
+            titlebar_transparent: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
     iced::application(App::new, App::update, App::view)
         .title(App::title)
         .theme(App::theme)
         .subscription(App::subscription)
         .settings(iced::Settings {
+            id: Some("com.buickmeow.lumino".into()),
             ..Default::default()
         })
         .window(Settings {
@@ -28,15 +54,7 @@ fn main() -> iced::Result {
                 width: 800.0,
                 height: 600.0,
             }),
-            // Disable native titlebar.
-            decorations: false,
-            platform_specific: PlatformSpecific {
-                // Allows the OS to draw a shadow + frame on an undecorated window.
-                // Improves UX when `decorations` is false.
-                undecorated_shadow: true,
-                ..Default::default()
-            },
-            ..Default::default()
+            ..platform_settings
         })
         .run()
 }

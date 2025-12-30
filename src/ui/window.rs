@@ -12,18 +12,16 @@ use crate::{
     resources::icon,
 };
 
+pub use menu::{
+    menus,
+    MenuItem,
+};
+
 mod menu;
 mod traffic;
 
 pub fn view<'a>(window: &'a Window) -> Element<'a, Message> {
-    let inner = row![
-        logo(),
-        menu::view(),
-        gap(),
-        traffic::view(window.is_maximized, window.is_focused)
-    ]
-    .align_y(Center);
-    let container = container(inner)
+    let container = container(inner(window))
         .width(Length::Fill)
         .height(30)
         .style(|theme: &Theme| {
@@ -39,6 +37,22 @@ pub fn view<'a>(window: &'a Window) -> Element<'a, Message> {
         .on_press(Message::Window(Traffic(TrafficAction::Drag)))
         .on_double_click(Message::Window(Traffic(TrafficAction::ToggleMaximize)))
         .into()
+}
+
+fn inner<'a>(window: &'a Window) -> Element<'a, Message> {
+    // Use cfg! instead of #[cfg] to avoid annoying unused warning on macOS.
+    // Unreachable branch will be optimized out anyway.
+    if cfg!(target_os = "macos") {
+        space().into()
+    } else {
+        row![
+            logo(),
+            menu::view(),
+            gap(),
+            traffic::view(window.is_maximized, window.is_focused)
+        ]
+        .align_y(Center).into()
+    }
 }
 
 fn gap<'a>() -> Element<'a, Message> {
