@@ -1,4 +1,2 @@
 pub mod kdmapi;
-
-#[cfg(windows)]
-pub mod winmm;
+pub mod native;

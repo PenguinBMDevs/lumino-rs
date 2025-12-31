@@ -1,87 +1,70 @@
 pub mod api;
 
-use std::{path::PathBuf, sync::OnceLock};
-
-use api::kdmapi::KdmapiEngine;
-#[cfg(windows)]
-use api::winmm::WinmmEngine;
-
 use thiserror::Error;
 
-static ENGINE: OnceLock<Box<dyn MidiEngine>> = OnceLock::new();
+use std::path::PathBuf;
 
-#[derive(Debug)]
-pub enum MidiEngineConfig {
-    Kdmapi { path: PathBuf },
-    Winmm { id: u32 },
-    /* TODO */
-    CoreMidi {},
-}
-
-impl std::fmt::Display for MidiEngineConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use MidiEngineConfig::*;
-        let name = match self {
-            Kdmapi { .. } => "Kdmapi",
-            Winmm { .. } => "Winmm",
-            CoreMidi { .. } => "CoreMini",
-        };
-        write!(f, "{name}")
-    }
-}
+use api::kdmapi::{
+    KdmapiMidi
+};
+use api::native::{
+    NativeMidi
+};
 
 #[derive(Error, Debug)]
-pub enum MidiEngineError {
-    #[error("engine {name} is not supported in this platform")]
-    NotSupported {
-        name: String,
-    },
-    #[error("failed to load MidiEngine {name}, reason: {reason}")]
-    LoadFailed {
-        name: String,
-        reason: String,
-    },
-    #[error("MidiEngine {name} already inited")]
-    AlreadyInited {
-        name: String,
-    },
-    #[error("failed to initialize MidiEngine {name}, reason: {reason}")]
-    InitFailed {
-        name: String,
-        reason: String,
-    },
+pub enum MidiError {
+    #[error("failed to init: {0}")]
+    InitFailed(String),
+    #[error("failed to get inputs: {0}")]
+    InputsFailed(String),
+    #[error("failed to get outputs: {0}")]
+    OutputsFailed(String),
+    #[error("device#{0} not found.")]
+    DeviceNotFound(u32),
+    #[error("failed to open output: {0}")]
+    OpenOutputFailed(String),
+    #[error("failed to send MIDI signal: {0}")]
+    SendFailed(String)
 }
 
-pub trait MidiEngine: Send + Sync {
-    fn init(&mut self) -> Result<(), MidiEngineError>;
+#[derive(Debug, Clone)]
+pub struct MidiInputInfo {
+    pub id: u32,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct MidiOutputInfo {
+    pub id: u32,
+    pub name: String,
+}
+
+pub trait MidiApi: Send + Sync {
     fn version(&self) -> Option<String>;
+    fn inputs(&self) -> Result<Vec<MidiInputInfo>, MidiError>;
+    fn outputs(&self) -> Result<Vec<MidiOutputInfo>, MidiError>;
+    fn open_output(&self, id: u32) -> Result<Box<dyn MidiOutputConnection>, MidiError>;
 }
 
-fn get_engine<'a>() -> Option<&'a dyn MidiEngine> {
-    ENGINE.get().map(|v| &**v)
+pub trait MidiOutputConnection: Send {
+    fn send(&mut self, msg: MidiMessage) -> Result<(), MidiError>;
+    fn close(self: Box<Self>);
 }
 
-pub fn init(cfg: MidiEngineConfig) -> Result<(), MidiEngineError> {
-    use MidiEngineConfig::*;
-    let mut engine: Box<dyn MidiEngine> = match cfg {
-        Kdmapi { path } => Box::new(KdmapiEngine::new(path)?),
-        #[cfg(windows)]
-        Winmm { id } => Box::new(WinmmEngine::new(id)?),
-        #[cfg(target_os = "macos")]
-        CoreMidi {} => todo!(),
-        #[allow(unreachable_code)]
-        _ => return Err(
-            MidiEngineError::NotSupported {
-                name: cfg.to_string()
-            }
-        ),
+#[derive(Clone, Copy, Debug)]
+pub struct MidiMessage(pub [u8; 3]);
+
+#[derive(Debug)]
+pub enum MidiApiKind {
+    Kdmapi { path: PathBuf },
+    Native,
+}
+
+pub fn new_api(kind: &MidiApiKind) -> Result<Box<dyn MidiApi>, MidiError> {
+    use MidiApiKind::*;
+    let engine: Box<dyn MidiApi> = match kind {
+        Kdmapi { path } => Box::new(KdmapiMidi::new(path)?),
+        Native => Box::new(NativeMidi::new()?),
     };
-    engine.init()?;
-
-    ENGINE.get_or_init(|| engine);
-    Ok(())
-}
-
-pub fn version() -> Option<String> {
-    get_engine()?.version()
+    Ok(engine)
 }

@@ -1,150 +1,151 @@
 //! Reference: https://github.com/KeppySoftware/OmniMIDI/blob/3b0b4f2/DeveloperContent/OmniMIDI.cs
 
-use std::{path::PathBuf, sync::OnceLock};
+use std::{path::Path, sync::Arc};
 use libloading::Library;
 use thiserror::Error;
 
-use crate::{MidiEngine, MidiEngineError};
-
-static LIBRARY: OnceLock<Library> = OnceLock::new();
-static SYMBOLS: OnceLock<Symbols> = OnceLock::new();
-
-const NAME: &'static str = "KDMAPI";
-
-struct Symbols {
-    return_kdmapi_ver: unsafe extern "system" fn (*mut u32, *mut u32, *mut u32, *mut u32) -> i32,
-    is_kdmapi_available: unsafe extern "system" fn() -> i32,
-    initialize_kdmapi_stream: unsafe extern "system" fn() -> i32,
-}
+use crate::{
+    MidiApi,
+    MidiError,
+    MidiInputInfo,
+    MidiOutputInfo,
+    MidiOutputConnection,
+    MidiMessage,
+};
 
 #[derive(Error, Debug)]
-enum KdmapiError {
-    /* GENERAL start */
-    #[error("{NAME} library has not been loaded")]
-    LibraryNotLoaded,
-    #[error("{NAME} library already loaded")]
-    LibraryAlreadyLoaded,
-    #[error("{NAME} symbols has not been loaded")]
-    SymbolsNotLoaded,
-    #[error("{NAME} symbols already loaded")]
-    SymbolsAlreadyLoaded,
-    /* GENERAL end */
-
-    /* ABI start */
-    #[error("{NAME} is not available")]
+pub enum KdmapiError {
+    #[error("not available")]
     NotAvailable,
-    #[error("failed to initialize {NAME} stream")]
+    #[error("failed to initialize stream")]
     InitStreamFailed,
-    #[error("failed to request {NAME} version")]
+    #[error("failed to request version")]
     GetVersionFailed,
-    /* ABI end */
 
-    #[error("failed when loading {NAME} library")]
+    #[error("failed to load: {0}")]
     Load(#[from] libloading::Error)
 }
 
-pub struct KdmapiEngine {
-    inited: bool,
+impl From<libloading::Error> for MidiError {
+    fn from(e: libloading::Error) -> Self {
+        MidiError::InitFailed(e.to_string())
+    }
 }
 
-impl KdmapiEngine {
-    pub fn new(path: PathBuf) -> Result<Self, MidiEngineError> {
-        if let Err(e) = load_library(path) {
-            return Err(MidiEngineError::LoadFailed {
-                name: NAME.into(),
-                reason: e.to_string(),
+struct Symbols {
+    /// `bool ReturnKDMAPIVer(out Int32 Major, out Int32 Minor, out Int32 Build, out Int32 Revision);`
+    return_kdmapi_ver: unsafe extern "system" fn (*mut i32, *mut i32, *mut i32, *mut i32) -> bool,
+    /// `bool IsKDMAPIAvailable();`
+    is_kdmapi_available: unsafe extern "system" fn() -> bool,
+    /// `int InitializeKDMAPIStream();`
+    initialize_kdmapi_stream: unsafe extern "system" fn() -> i32,
+    /// `int TerminateKDMAPIStream();`
+    terminate_kdmapi_stream: unsafe extern "system" fn() -> i32,
+    /// `void ResetKDMAPIStream();`
+    reset_kdmapi_stream: unsafe extern "system" fn() -> (),
+    /// `uint SendCustomEvent(uint eventtype, uint chan, uint param);`
+    send_custom_event: unsafe extern "system" fn(u32, u32, u32) -> u32,
+    /// `uint SendDirectData(uint dwMsg);`
+    send_direct_data: unsafe extern "system" fn (u32) -> u32,
+}
+
+pub struct KdmapiMidi {
+    _lib: Library,
+    sym: Arc<Symbols>,
+    version: String
+}
+
+impl KdmapiMidi {
+    pub fn new(path: &Path) -> Result<Self, MidiError> {
+        unsafe {
+            let lib = Library::new(path)?;
+            // Symbols are expected to live as long as `lib` is alive.
+            let sym = Arc::new(Symbols {
+                return_kdmapi_ver: *lib.get(b"ReturnKDMAPIVer\0")?,
+                is_kdmapi_available: *lib.get(b"IsKDMAPIAvailable\0")?,
+                initialize_kdmapi_stream: *lib.get(b"InitializeKDMAPIStream\0")?,
+                terminate_kdmapi_stream: *lib.get(b"TerminateKDMAPIStream\0")?,
+                reset_kdmapi_stream: *lib.get(b"ResetKDMAPIStream\0")?,
+                send_custom_event: *lib.get(b"SendCustomEvent\0")?,
+                send_direct_data: *lib.get(b"SendDirectData\0")?,
             });
-        }
 
-        Ok(Self {
-            inited: false,
-        })
-    }
-    fn init_inner(&self) -> Result<(), KdmapiError> {
-        let symbols = get_symbols()?;
+            if !(sym.is_kdmapi_available)() {
+                return Err(MidiError::InitFailed(
+                    KdmapiError::NotAvailable.to_string()
+                ));
+            };
+            if (sym.initialize_kdmapi_stream)() == 0 {
+                return Err(MidiError::InitFailed(
+                    KdmapiError::InitStreamFailed.to_string()
+                ));
+            };
 
-        if unsafe {
-            (symbols.is_kdmapi_available)() == 0
-        } {
-            return Err(KdmapiError::NotAvailable);
-        };
-
-        if unsafe {
-            (symbols.initialize_kdmapi_stream)() == 0
-        } {
-            return Err(KdmapiError::InitStreamFailed);
-        };
-
-        Ok(())
-    }
-    fn version_inner(&self) -> Result<String, KdmapiError> {
-        let mut major = 0;
-        let mut minor = 0;
-        let mut patch = 0;
-        let mut rev = 0;
-        let symbols = get_symbols()?;
-
-        if unsafe {
-            (symbols.return_kdmapi_ver)(
+            let mut major = 0;
+            let mut minor = 0;
+            let mut patch = 0;
+            let mut rev = 0;
+            if !(sym.return_kdmapi_ver)(
                 &mut major, &mut minor, &mut patch, &mut rev
-            ) == 0
-        } {
-            return Err(KdmapiError::GetVersionFailed);
-        };
+            ) {
+                return Err(MidiError::InitFailed(
+                    KdmapiError::GetVersionFailed.to_string()
+                ));
+            };
 
-        Ok(format!("v{major}.{minor}.{patch}.{rev}"))
+            Ok(Self {
+                _lib: lib,
+                sym,
+                version: format!("v{major}.{minor}.{patch}.{rev}"),
+            })
+        }
     }
 }
 
-impl MidiEngine for KdmapiEngine {
-    fn init(&mut self) -> Result<(), MidiEngineError> {
-        if self.inited {
-            return Err(MidiEngineError::AlreadyInited {
-                name: NAME.into()
-            });
+
+impl MidiApi for KdmapiMidi {
+    fn version(&self) -> Option<String> {
+        Some(self.version.clone())
+    }
+
+    fn inputs(&self) -> Result<Vec<MidiInputInfo>, MidiError> {
+        Ok(Vec::new())
+    }
+
+    fn outputs(&self) -> Result<Vec<MidiOutputInfo>, MidiError> {
+        Ok(Vec::from(&[
+            MidiOutputInfo {
+                id: 0,
+                name: "Default".into()
+            }
+        ]))
+    }
+
+    fn open_output(&self, id: u32) -> Result<Box<dyn MidiOutputConnection>, MidiError> {
+        if id != 0 {
+            return Err(MidiError::DeviceNotFound(id));
         }
+        Ok(Box::new(KdmapiOutputConn {
+            sym: self.sym.clone()
+        }))
+    }
+}
 
-        if let Err(e) = self.init_inner() {
-            return Err(MidiEngineError::InitFailed {
-                name: NAME.into(),
-                reason: e.to_string(),
-            });
-        }
+struct KdmapiOutputConn {
+    sym: Arc<Symbols>,
+}
 
-        self.inited = true;
+impl MidiOutputConnection for KdmapiOutputConn {
+    fn send(&mut self, msg: MidiMessage) -> Result<(), MidiError> {
+        let word = msg.0[0] as u32
+            | ((msg.0[1] as u32) << 8)
+            | ((msg.0[2] as u32) << 16);
 
+        unsafe { (self.sym.send_direct_data)(word) };
         Ok(())
     }
-    fn version(&self) -> Option<String> {
-        self.version_inner().ok()
+
+    fn close(self: Box<Self>) {
+        // Kdmapi doesn't need explict close peer.
     }
-}
-
-fn load_library(path: PathBuf) -> Result<(), KdmapiError> {
-    let lib = unsafe { Library::new(path)? };
-
-    let symbols = unsafe {
-        Symbols {
-            return_kdmapi_ver: *lib.get(b"ReturnKDMAPIVer\0")?,
-            is_kdmapi_available: *lib.get(b"IsKDMAPIAvailable\0")?,
-            initialize_kdmapi_stream: *lib.get(b"InitializeKDMAPIStream\0")?,
-        }
-    };
-
-    LIBRARY.set(lib).map_err(|_| KdmapiError::LibraryAlreadyLoaded)?;
-    SYMBOLS.set(symbols).map_err(|_| KdmapiError::SymbolsAlreadyLoaded)?;
-
-    Ok(())
-}
-
-fn get_symbols() -> Result<&'static Symbols, KdmapiError> {
-    SYMBOLS
-        .get()
-        .ok_or(KdmapiError::SymbolsNotLoaded)
-}
-
-fn get_library() -> Result<&'static Library, KdmapiError> {
-    LIBRARY
-        .get()
-        .ok_or(KdmapiError::LibraryNotLoaded)
 }
