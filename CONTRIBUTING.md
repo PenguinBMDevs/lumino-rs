@@ -16,8 +16,10 @@
 ## 提交规范
 
 - Commit Message 需遵循 [约定式提交 1.0](https://www.conventionalcommits.org/zh-hans/v1.0.0/) 标准
+  - 需标注更改范围，例如 `feat(midi):`
   - 破坏性更新需使用 `[type]!`
 - 所有提交均需使用 GPG 签名
+- 提交前请运行 `cargo clippy` 检查代码质量，运行 `cargo fmt` 格式化代码
 
 ## 版本控制策略
 
