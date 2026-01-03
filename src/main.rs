@@ -16,6 +16,19 @@ fn main() -> iced::Result {
     logging::init();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "Hello Lumino!");
 
+    let api = lumino_midi::new_api(&lumino_midi::ApiKind::Kdmapi { path: "OmniMIDI.dll".into() }).unwrap();
+    // let api = lumino_midi::new_api(&lumino_midi::ApiKind::System).unwrap();
+    let outputs = api.outputs().unwrap();
+    tracing::info!(?outputs, "Outputs");
+    let inputs = api.inputs().unwrap();
+    tracing::info!(?inputs, "Inputs");
+    let mut conn = api.open_output(0).unwrap();
+    for n in [60, 62, 64, 65, 67] {
+        conn.note_on(1, n, 100).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        conn.note_on(1, n, 0).unwrap();
+    }
+
     #[cfg(windows)]
     let platform_settings = Settings {
         // Disable native titlebar.

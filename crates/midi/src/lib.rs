@@ -4,15 +4,11 @@ use thiserror::Error;
 
 use std::path::PathBuf;
 
-use api::kdmapi::{
-    KdmapiMidi
-};
-use api::native::{
-    NativeMidi
-};
+use api::Kdmapi;
+use api::System;
 
 #[derive(Error, Debug)]
-pub enum MidiError {
+pub enum Error {
     #[error("failed to init: {0}")]
     InitFailed(String),
     #[error("failed to get inputs: {0}")]
@@ -28,43 +24,41 @@ pub enum MidiError {
 }
 
 #[derive(Debug, Clone)]
-pub struct MidiInputInfo {
+pub struct InputInfo {
     pub id: u32,
     pub name: String,
 }
 
 #[derive(Debug, Clone)]
-pub struct MidiOutputInfo {
+pub struct OutputInfo {
     pub id: u32,
     pub name: String,
 }
 
-pub trait MidiApi: Send + Sync {
+pub trait Api: Send + Sync {
     fn version(&self) -> Option<String>;
-    fn inputs(&self) -> Result<Vec<MidiInputInfo>, MidiError>;
-    fn outputs(&self) -> Result<Vec<MidiOutputInfo>, MidiError>;
-    fn open_output(&self, id: u32) -> Result<Box<dyn MidiOutputConnection>, MidiError>;
+    fn inputs(&self) -> Result<Vec<InputInfo>, Error>;
+    fn outputs(&self) -> Result<Vec<OutputInfo>, Error>;
+    fn open_output(&self, id: u32) -> Result<Box<dyn OutputConnection>, Error>;
 }
 
-pub trait MidiOutputConnection: Send {
-    fn send(&mut self, msg: MidiMessage) -> Result<(), MidiError>;
+pub trait OutputConnection: Send {
+    fn note_on(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error>;
+    fn note_off(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error>;
     fn close(self: Box<Self>);
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct MidiMessage(pub [u8; 3]);
 
 #[derive(Debug)]
-pub enum MidiApiKind {
+pub enum ApiKind {
     Kdmapi { path: PathBuf },
-    Native,
+    System,
 }
 
-pub fn new_api(kind: &MidiApiKind) -> Result<Box<dyn MidiApi>, MidiError> {
-    use MidiApiKind::*;
-    let engine: Box<dyn MidiApi> = match kind {
-        Kdmapi { path } => Box::new(KdmapiMidi::new(path)?),
-        Native => Box::new(NativeMidi::new()?),
+pub fn new_api(kind: &ApiKind) -> Result<Box<dyn Api>, Error> {
+    let engine: Box<dyn Api> = match kind {
+        ApiKind::Kdmapi { path } => Box::new(Kdmapi::new(path)?),
+        ApiKind::System => Box::new(System::new()?),
     };
     Ok(engine)
 }
