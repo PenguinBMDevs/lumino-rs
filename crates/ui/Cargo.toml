@@ -1,0 +1,17 @@
+[package]
+name = "lumino-ui"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+lumino-core = { workspace = true }
+lumino-gfx = { workspace = true }
+# crates.io
+iced_aw = { version = "0.13.0", features = ["menu"] }
+iced_wgpu = { version = "0.14.0", features = ["svg"] }
+iced_winit = "0.14.0"
+iced_widget = { version = "0.14.0", features = ["svg"] }
+iced_core = "0.14.0"

@@ -24,8 +24,8 @@ pub struct System;
 
 impl System {
     pub fn new() -> Result<Self, Error> {
-        let _ = System::input()?;
-        let _ = System::output()?;
+        let _ = Self::input()?;
+        let _ = Self::output()?;
         Ok(Self)
     }
 
@@ -48,7 +48,7 @@ impl Api for System {
     }
 
     fn inputs(&self) -> Result<Vec<InputInfo>, Error> {
-        let input = System::input()?;
+        let input = Self::input()?;
         Ok(input.ports().iter().enumerate().map(|(k, v)| InputInfo {
             id: k as u32,
             name: input.port_name(v).unwrap_or("<unknown>".into())
@@ -56,7 +56,7 @@ impl Api for System {
     }
 
     fn outputs(&self) -> Result<Vec<OutputInfo>, Error> {
-        let output = System::output()?;
+        let output = Self::output()?;
         Ok(output.ports().iter().enumerate().map(|(k, v)| OutputInfo {
             id: k as u32,
             name: output.port_name(v).unwrap_or("<unknown>".into())
@@ -64,10 +64,10 @@ impl Api for System {
     }
 
     fn open_output(&self, id: u32) -> Result<Box<dyn OutputConnection>, Error> {
-        let output = System::output()?;
+        let output = Self::output()?;
         let ports = output.ports();
         let port = ports.get(id as usize).ok_or(Error::DeviceNotFound(id))?;
-        let conn = System::connect(output, port)?;
+        let conn = Self::connect(output, port)?;
         Ok(Box::new(SystemOutputConn { conn }))
     }
 }
