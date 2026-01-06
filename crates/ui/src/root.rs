@@ -34,7 +34,8 @@ impl Root {
     pub fn update(&mut self, msg: Message) {
         match msg {
             Message::Core(r) => lumino_core::event::emit(r),
-            Message::Window(r) => self.window.handle_event(r),
+            Message::Window(r) => self.window.update(r),
+            Message::Sidebar(r) => self.sidebar.update(r),
             // Explictly drop it
             Message::Null => ()
         }
@@ -50,7 +51,7 @@ impl Root {
             row![
                 self.sidebar.view(),
                 self.editor.view(),
-            ]
+            ].padding(8)
         ];
 
         container(inner)

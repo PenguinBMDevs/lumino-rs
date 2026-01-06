@@ -206,4 +206,8 @@ impl Host {
             self.window.request_redraw();
         }
     }
+
+    pub fn update_theme(&mut self, theme: String) {
+        self.root.update(message::Window::theme(theme));
+    }
 }

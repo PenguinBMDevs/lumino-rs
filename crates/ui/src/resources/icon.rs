@@ -18,6 +18,7 @@ macro_rules! include_res {
 #[derive(Debug, Clone, Copy)]
 pub enum Icon {
     /* FA Regular Icons start */
+    AngleRight,
     FolderTree,
     WaveForm,
     /* FA Regular Icons end */
@@ -46,6 +47,7 @@ pub fn view<'a>(icon: Icon) -> Svg<'a> {
 
 fn bytes(icon: Icon) -> &'static [u8] {
     match icon {
+        AngleRight => include_res!("regular/angle-right.svg"),
         FolderTree => include_res!("regular/folder-tree.svg"),
         WaveForm => include_res!("regular/waveform.svg"),
 

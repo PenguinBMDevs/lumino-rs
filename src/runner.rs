@@ -30,6 +30,10 @@ impl winit::application::ApplicationHandler for Runner {
                 width: 800,
                 height: 600,
             })
+            .with_inner_size(winit::dpi::LogicalSize {
+                width: 1440,
+                height: 900,
+            })
             .with_title("Lumino")
             // The window should be invisible at first.
             // Make it visible when it's the right time.
@@ -105,7 +109,7 @@ impl winit::application::ApplicationHandler for Runner {
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        window_id: winit::window::WindowId,
+        _window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
         let Self::Ready {
@@ -159,6 +163,7 @@ impl winit::application::ApplicationHandler for Runner {
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let Self::Ready {
+            ui,
             window,
             ..
         } = self else {
@@ -186,21 +191,18 @@ impl winit::application::ApplicationHandler for Runner {
                             use edit::Event::*;
                             match r {
                                 _ => todo!(),
-
                             }
                         },
                         View(r) => {
                             use view::Event::*;
                             match r {
-                                _ => todo!(),
-
+                                Theme(r) => ui.update_theme(r),
                             }
                         },
                         Help(r) => {
                             use help::Event::*;
                             match r {
                                 _ => todo!(),
-
                             }
                         }
                     }

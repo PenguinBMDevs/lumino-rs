@@ -14,48 +14,48 @@ pub enum Event {
 #[macro_export]
 macro_rules! event {
     /* Window start */
-    (Window.$variant:ident) => {
+    (Window.$($rest:tt)+) => {
         $crate::event::Event::Window(
-            $crate::event::window::Event::$variant
+            $crate::event::window::Event::$($rest)+
         )
     };
     /* Window end */
 
     /* Menu File start */
-    (Menu.File.$variant:ident) => {
+    (Menu.File.$($rest:tt)+) => {
         $crate::event::Event::Menu(
             $crate::event::menu::Event::File(
-                $crate::event::menu::file::Event::$variant
+                $crate::event::menu::file::Event::$($rest)+
             )
         )
     };
     /* Menu File end */
 
     /* Menu Edit start */
-    (Menu.Edit.$variant:ident) => {
+    (Menu.Edit.$($rest:tt)+) => {
         $crate::event::Event::Menu(
             $crate::event::menu::Event::Edit(
-                $crate::event::menu::edit::Event::$variant
+                $crate::event::menu::edit::Event::$($rest)+
             )
         )
     };
     /* Menu Edit end */
 
     /* Menu View start */
-    (Menu.View.$variant:ident) => {
+    (Menu.View.$($rest:tt)+) => {
         $crate::event::Event::Menu(
             $crate::event::menu::Event::View(
-                $crate::event::menu::view::Event::$variant
+                $crate::event::menu::view::Event::$($rest)+
             )
         )
     };
     /* Menu view end */
 
     /* Menu Help start */
-    (Menu.Help.$variant:ident) => {
+    (Menu.Help.$($rest:tt)+) => {
         $crate::event::Event::Menu(
             $crate::event::menu::Event::Help(
-                $crate::event::menu::help::Event::$variant
+                $crate::event::menu::help::Event::$($rest)+
             )
         )
     };

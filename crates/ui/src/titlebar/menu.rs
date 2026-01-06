@@ -4,12 +4,13 @@ use iced_aw::{
     style::menu_bar,
 };
 use iced_core::{
-    Background, Border, Color, Length,
+    Alignment, Background, Border, Color, Length, theme::Base
 };
 use iced_widget::{button, column, container, row, space, text};
 
 use crate::{
     message,
+    resources::icon,
     Message,
     Theme,
     Renderer,
@@ -40,6 +41,8 @@ pub enum MenuItem {
     // Action(Event, Fn) or something like this for i18n.
     Action(Event),
     Separator,
+    // Submenu(Vec<MenuItem>, Fn)
+    Submenu(Vec<MenuItem>, String)
 }
 
 #[derive(Debug, Clone)]
@@ -92,8 +95,12 @@ fn view_menu() -> MenuConfig {
     MenuConfig {
         kind: MenuKind::View,
         items: vec![
-            Action(event!(Menu.View.Light)),
-            Action(event!(Menu.View.Dark)),
+            Submenu(
+                Theme::ALL
+                    .iter().map(|r| Action(event!(Menu.View.Theme(r.name().into()))))
+                    .collect::<Vec<_>>(),
+                "Theme".into()
+            )
         ]
     }
 }
@@ -115,34 +122,13 @@ fn menus() -> [MenuConfig; 4] {
 pub fn view<'a>() -> Element<'a> {
     let menus = menus()
         .iter()
-        .map(|cfg| {
-            // Inline to avoid verbose function return type definitions.
-            let items = cfg
-                .items
-                .iter()
-                .map(|item| {
-                    let inner: Element<'a> = match item {
-                        MenuItem::Action(r) => {
-                            base_button(
-                                format!("{r:?}"),
-                                Message::Core(r.clone())
-                            )
-                                .width(Length::Fill)
-                                .into()
-                        }
-                        MenuItem::Separator => base_split(),
-                    };
-                    Item::new(inner)
-                })
-                .collect::<Vec<_>>();
-            Item::with_menu(
-                base_button(cfg.kind.to_string(), message::null()).padding([2, 8]),
-                // DO NOT REMOVE `width(200)`!
-                // Removing it causes a panic. idk why.
-                // Use offset to make it flush with the titlebar.
-                Menu::new(items).width(200).offset(9.0),
-            )
-        })
+        .map(|cfg| Item::with_menu(
+            menu_button(cfg.kind.to_string()),
+            // DO NOT REMOVE `width(200)`!
+            // Removing it causes a panic. idk why.
+            // Use offset to align it with titlebar.
+            Menu::new(menu_items(&cfg.items)).width(200).offset(9.0),
+        ))
         .collect::<Vec<_>>();
 
     let inner = MenuBar::new(menus)
@@ -163,8 +149,56 @@ pub fn view<'a>() -> Element<'a> {
     ].into()
 }
 
-fn base_button<'a>(label: impl Into<String>, msg: Message) -> button::Button<'a, Message, Theme, Renderer> {
-    let inner = text(label.into()).size(14.0);
+fn menu_items<'a>(items: &Vec<MenuItem>) -> Vec<Item<'a, Message, Theme, Renderer>> {
+    items.iter().map(|item| {
+        let inner: Element<'a> = match item {
+            MenuItem::Action(r) => base_button(
+                format!("{r:?}"),
+                Some(Message::Core(r.clone()))
+            ),
+            MenuItem::Separator => base_split(),
+            MenuItem::Submenu(r, n) => return Item::with_menu(
+                submenu_button(n),
+                Menu::new(menu_items(r)).width(400).offset(12.0)
+            ),
+        };
+        Item::new(inner)
+    })
+    .collect::<Vec<_>>()
+}
+
+fn submenu_button<'a>(label: impl Into<String>) -> Element<'a> {
+    let icon = icon(icon::AngleRight)
+        .width(14)
+        .height(14);
+    let inner = row![
+        text(label.into())
+            .size(14.0)
+            .width(Length::Fill),
+        container(icon)
+            .height(20)
+            .align_y(Alignment::Center)
+    ].into();
+    button_template(inner, message::null())
+        .padding([2, 8])
+        .into()
+}
+
+fn menu_button<'a>(label: impl Into<String>) -> Element<'a> {
+    let inner = text(label.into()).size(14.0).into();
+    button_template(inner, message::null())
+        .padding([2, 8])
+        .into()
+}
+
+fn base_button<'a>(label: impl Into<String>, msg: Option<Message>) -> Element<'a> {
+    let inner = text(label.into()).size(14.0).into();
+    button_template(inner, msg.unwrap_or(message::null()))
+        .width(Length::Fill)
+        .into()
+}
+
+fn button_template<'a>(inner: Element<'a>, msg: Message) -> button::Button<'a, Message, Theme, Renderer> {
     button(inner)
         .style(|theme: &Theme, status| {
             use button::Status::*;
