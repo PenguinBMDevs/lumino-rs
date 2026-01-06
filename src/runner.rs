@@ -90,6 +90,9 @@ impl winit::application::ApplicationHandler for Runner {
 
         window.set_visible(true);
 
+        #[cfg(target_os = "macos")]
+        crate::platform::macos::init();
+
         *self = Self::Ready {
             gfx,
             ui,

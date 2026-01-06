@@ -4,6 +4,7 @@
 use winit::event_loop::EventLoop;
 
 mod logging;
+mod platform;
 mod runner;
 
 fn main() -> Result<(), winit::error::EventLoopError> {
