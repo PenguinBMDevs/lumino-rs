@@ -1,4 +1,5 @@
-use iced_widget::space;
+use iced_core::Length;
+use iced_widget::{container, space};
 
 use super::Element;
 
@@ -14,6 +15,8 @@ impl Editor {
     }
 
     pub fn view(&self) -> Element<'_> {
-        space().into()
+        container(space())
+            .width(Length::Fill)
+            .into()
     }
 }

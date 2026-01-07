@@ -20,6 +20,7 @@ pub enum Icon {
     /* FA Regular Icons start */
     AngleRight,
     FolderTree,
+    Gear,
     WaveForm,
     /* FA Regular Icons end */
     /* FA Brands Icons start */
@@ -35,8 +36,6 @@ pub enum Icon {
 
 pub fn view<'a>(icon: Icon) -> Svg<'a> {
     svg(svg::Handle::from_memory(bytes(icon)))
-        .width(16)
-        .height(16)
         .style(|theme: &Theme, _| {
             let palette = theme.extended_palette();
             svg::Style {
@@ -49,6 +48,7 @@ fn bytes(icon: Icon) -> &'static [u8] {
     match icon {
         AngleRight => include_res!("regular/angle-right.svg"),
         FolderTree => include_res!("regular/folder-tree.svg"),
+        Gear => include_res!("regular/gear.svg"),
         WaveForm => include_res!("regular/waveform.svg"),
 
         GitHub => include_res!("brands/github.svg"),

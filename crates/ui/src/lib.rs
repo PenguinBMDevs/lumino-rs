@@ -3,6 +3,7 @@ mod message;
 mod resources;
 mod root;
 mod sidebar;
+mod statusbar;
 mod titlebar;
 mod window;
 

@@ -5,6 +5,7 @@ use crate::{
     message,
     sidebar,
     titlebar,
+    statusbar,
     editor,
     window,
 };
@@ -17,6 +18,7 @@ pub type Element<'a> = iced_core::Element<'a, Message, Theme, Renderer>;
 pub struct Root {
     sidebar: sidebar::Sidebar,
     titlebar: titlebar::Titlebar,
+    statusbar: statusbar::StatusBar,
     editor: editor::Editor,
     window: window::Window,
 }
@@ -26,6 +28,7 @@ impl Root {
         Self {
             sidebar: sidebar::Sidebar::new(),
             titlebar: titlebar::Titlebar::new(),
+            statusbar: statusbar::StatusBar::new(),
             editor: editor::Editor::new(),
             window: window::Window::new(),
         }
@@ -51,7 +54,8 @@ impl Root {
             row![
                 self.sidebar.view(),
                 self.editor.view(),
-            ].padding(8)
+            ],
+            self.statusbar.view(),
         ];
 
         container(inner)

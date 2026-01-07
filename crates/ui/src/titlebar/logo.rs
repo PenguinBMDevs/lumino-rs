@@ -1,4 +1,4 @@
-use iced_core::Length;
+use iced_core::{Alignment, Length};
 use iced_widget::container;
 
 use crate::{
@@ -10,13 +10,12 @@ pub fn view<'a>() -> Element<'a> {
     // simply just a placeholer
     let icon = icon(icon::GitHub)
         // 16+2=20-2
-        .width(18)
-        .height(18);
+        .width(18);
 
     container(icon)
-        // 8+46+8
-        .width(62)
+        .width(48)
         .height(Length::Fill)
-        .center(62)
+        .align_y(Alignment::Center)
+        .align_x(Alignment::Center)
         .into()
 }

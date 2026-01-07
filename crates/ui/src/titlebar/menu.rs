@@ -4,7 +4,7 @@ use iced_aw::{
     style::menu_bar,
 };
 use iced_core::{
-    Alignment, Background, Border, Color, Length, theme::Base
+    Alignment, Background, Border, Color, Length
 };
 use iced_widget::{button, column, container, row, space, text};
 
@@ -97,7 +97,7 @@ fn view_menu() -> MenuConfig {
         items: vec![
             Submenu(
                 Theme::ALL
-                    .iter().map(|r| Action(event!(Menu.View.Theme(r.name().into()))))
+                    .iter().map(|r| Action(event!(Menu.View.Theme(r.to_string()))))
                     .collect::<Vec<_>>(),
                 "Theme".into()
             )
@@ -169,14 +169,14 @@ fn menu_items<'a>(items: &Vec<MenuItem>) -> Vec<Item<'a, Message, Theme, Rendere
 
 fn submenu_button<'a>(label: impl Into<String>) -> Element<'a> {
     let icon = icon(icon::AngleRight)
-        .width(14)
-        .height(14);
+        .width(14);
     let inner = row![
         text(label.into())
             .size(14.0)
             .width(Length::Fill),
         container(icon)
             .height(20)
+            .padding(3)
             .align_y(Alignment::Center)
     ].into();
     button_template(inner, message::null())
