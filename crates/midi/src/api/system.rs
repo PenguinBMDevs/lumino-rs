@@ -1,12 +1,6 @@
-use crate::{
-    Api,
-    Error,
-    InputInfo,
-    OutputConnection,
-    OutputInfo
-};
+use crate::{Api, Error, InputInfo, OutputConnection, OutputInfo};
 
-const IDENTIFIER: &'static str = "com.buickmeow.lumino";
+const IDENTIFIER: &str = "com.buickmeow.lumino";
 
 impl From<midir::InitError> for Error {
     fn from(e: midir::InitError) -> Self {
@@ -37,7 +31,10 @@ impl System {
         Ok(midir::MidiOutput::new(IDENTIFIER)?)
     }
 
-    fn connect(output: midir::MidiOutput, port: &midir::MidiOutputPort) -> Result<midir::MidiOutputConnection, Error> {
+    fn connect(
+        output: midir::MidiOutput,
+        port: &midir::MidiOutputPort,
+    ) -> Result<midir::MidiOutputConnection, Error> {
         Ok(output.connect(port, IDENTIFIER)?)
     }
 }
@@ -49,18 +46,28 @@ impl Api for System {
 
     fn inputs(&self) -> Result<Vec<InputInfo>, Error> {
         let input = Self::input()?;
-        Ok(input.ports().iter().enumerate().map(|(k, v)| InputInfo {
-            id: k as u32,
-            name: input.port_name(v).unwrap_or("<unknown>".into())
-        }).collect())
+        Ok(input
+            .ports()
+            .iter()
+            .enumerate()
+            .map(|(k, v)| InputInfo {
+                id: k as u32,
+                name: input.port_name(v).unwrap_or("<unknown>".into()),
+            })
+            .collect())
     }
 
     fn outputs(&self) -> Result<Vec<OutputInfo>, Error> {
         let output = Self::output()?;
-        Ok(output.ports().iter().enumerate().map(|(k, v)| OutputInfo {
-            id: k as u32,
-            name: output.port_name(v).unwrap_or("<unknown>".into())
-        }).collect())
+        Ok(output
+            .ports()
+            .iter()
+            .enumerate()
+            .map(|(k, v)| OutputInfo {
+                id: k as u32,
+                name: output.port_name(v).unwrap_or("<unknown>".into()),
+            })
+            .collect())
     }
 
     fn open_output(&self, id: u32) -> Result<Box<dyn OutputConnection>, Error> {
@@ -73,12 +80,14 @@ impl Api for System {
 }
 
 struct SystemOutputConn {
-    conn: midir::MidiOutputConnection
+    conn: midir::MidiOutputConnection,
 }
 
 impl SystemOutputConn {
     fn send(&mut self, data: &[u8; 3]) -> Result<(), Error> {
-        self.conn.send(data).map_err(|e| Error::SendFailed(e.to_string()))
+        self.conn
+            .send(data)
+            .map_err(|e| Error::SendFailed(e.to_string()))
     }
 }
 

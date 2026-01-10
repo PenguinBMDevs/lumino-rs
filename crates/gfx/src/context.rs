@@ -21,12 +21,9 @@ impl Context {
             .create_surface(target)
             .expect("Create main window surface");
 
-        let adapter = wgpu::util::initialize_adapter_from_env_or_default(
-            &instance,
-            Some(&surface),
-        )
-        .await
-        .expect("Create adapter");
+        let adapter = wgpu::util::initialize_adapter_from_env_or_default(&instance, Some(&surface))
+            .await
+            .expect("Create adapter");
 
         let adapter_features = adapter.features();
 
@@ -71,7 +68,7 @@ impl Context {
             queue,
             device,
             surface,
-            format
+            format,
         }
     }
 
@@ -87,20 +84,18 @@ impl Context {
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats: vec![],
                 desired_maximum_frame_latency: 2,
-            }
+            },
         );
     }
 
     pub fn with_frame(
         &self,
-        f: impl FnOnce(&wgpu::SurfaceTexture, &wgpu::TextureView)
+        f: impl FnOnce(&wgpu::SurfaceTexture, &wgpu::TextureView),
     ) -> Result<(), wgpu::SurfaceError> {
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
             Err(wgpu::SurfaceError::OutOfMemory) => {
-                panic!(
-                    "Swapchain error: OutOfMemory. Rendering cannot continue."
-                )
+                panic!("Swapchain error: OutOfMemory. Rendering cannot continue.")
             }
             Err(e) => return Err(e),
         };
@@ -109,9 +104,9 @@ impl Context {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let encoder = self.device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor { label: None }
-        );
+        let encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
         // Customized draw logic
         f(&frame, &view);

@@ -1,10 +1,7 @@
 use iced_core::{Alignment, Length};
 use iced_widget::container;
 
-use crate::{
-    Element,
-    resources::icon
-};
+use crate::{Element, resources::icon};
 
 pub fn view<'a>() -> Element<'a> {
     // simply just a placeholer

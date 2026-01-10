@@ -1,7 +1,7 @@
-pub mod file;
 pub mod edit;
-pub mod view;
+pub mod file;
 pub mod help;
+pub mod view;
 
 #[derive(Debug, Clone)]
 pub enum Event {

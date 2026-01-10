@@ -7,30 +7,23 @@ mod statusbar;
 mod titlebar;
 mod window;
 
-pub(crate) use root::{
-    Element,
-    Message,
-};
+pub(crate) use root::{Element, Message};
 
 use std::{sync::Arc, time::Instant};
 
 use iced_wgpu::{
-    wgpu, Engine, Renderer, graphics::{Shell, Viewport}
+    Engine, Renderer,
+    graphics::{Shell, Viewport},
+    wgpu,
 };
 
 use iced_winit::{
-    Clipboard, conversion, runtime::user_interface::{self, UserInterface}, winit
+    Clipboard, conversion,
+    runtime::user_interface::{self, UserInterface},
+    winit,
 };
 
-use iced_core::{
-    Event,
-    Font,
-    Pixels,
-    Size,
-    Theme,
-    mouse,
-    renderer,
-};
+use iced_core::{Event, Font, Pixels, Size, Theme, mouse, renderer};
 
 pub struct Host {
     window: Arc<winit::window::Window>,
@@ -50,10 +43,8 @@ impl Host {
         height: u32,
         gfx: &lumino_gfx::Context,
     ) -> Self {
-        let viewport = Viewport::with_physical_size(
-            Size::new(width, height),
-            window.scale_factor() as f32,
-        );
+        let viewport =
+            Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
 
         let clipboard = Clipboard::connect(window.clone());
 
@@ -65,7 +56,7 @@ impl Host {
                 gfx.queue.clone(),
                 gfx.format,
                 None,
-                Shell::headless()
+                Shell::headless(),
             );
             Renderer::new(engine, Font::default(), Pixels::from(16))
         };
@@ -82,38 +73,30 @@ impl Host {
         }
     }
 
-    pub fn resize(
-        &mut self,
-        width: u32,
-        height: u32,
-    ) {
+    pub fn resize(&mut self, width: u32, height: u32) {
         self.viewport = Viewport::with_physical_size(
             Size::new(width, height),
-            self.window.scale_factor() as f32
+            self.window.scale_factor() as f32,
         );
     }
 
-    pub fn redraw_requested(
-        &mut self,
-        frame: &wgpu::SurfaceTexture,
-        view: &wgpu::TextureView,
-    ) {
+    pub fn redraw_requested(&mut self, frame: &wgpu::SurfaceTexture, view: &wgpu::TextureView) {
         // Draw iced on top
         let mut interface = UserInterface::build(
             self.root.view(),
             self.viewport.logical_size(),
             std::mem::take(&mut self.cache),
-            &mut self.renderer
+            &mut self.renderer,
         );
 
         let (state, _) = interface.update(
-            &[Event::Window(
-                iced_core::window::Event::RedrawRequested(Instant::now()),
-            )],
+            &[Event::Window(iced_core::window::Event::RedrawRequested(
+                Instant::now(),
+            ))],
             self.cursor,
             &mut self.renderer,
             &mut self.clipboard,
-            &mut Vec::new()
+            &mut Vec::new(),
         );
 
         // Update the mouse cursor
@@ -122,9 +105,7 @@ impl Host {
         } = state
         {
             // Update the mouse cursor
-            if let Some(icon) =
-                iced_winit::conversion::mouse_interaction(mouse_interaction)
-            {
+            if let Some(icon) = iced_winit::conversion::mouse_interaction(mouse_interaction) {
                 self.window.set_cursor(icon);
                 self.window.set_cursor_visible(true);
             } else {
@@ -141,7 +122,8 @@ impl Host {
         );
         self.cache = interface.into_cache();
 
-        self.renderer.present(None, frame.texture.format(), &view, &self.viewport);
+        self.renderer
+            .present(None, frame.texture.format(), view, &self.viewport);
     }
 
     pub fn cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
@@ -154,18 +136,16 @@ impl Host {
     pub fn handle_events(
         &mut self,
         event: winit::event::WindowEvent,
-        modifiers: winit::keyboard::ModifiersState
+        modifiers: winit::keyboard::ModifiersState,
     ) {
         use winit::event::WindowEvent::*;
 
         match event {
-            Resized(_) => self.root.update(
-                message::Window::maximized(self.window.is_maximized())
-            ),
-            Focused(r) => self.root.update(
-                message::Window::focused(r)
-            ),
-            _ => ()
+            Resized(_) => self
+                .root
+                .update(message::Window::maximized(self.window.is_maximized())),
+            Focused(r) => self.root.update(message::Window::focused(r)),
+            _ => (),
         }
 
         // Map window event to iced event
@@ -192,7 +172,7 @@ impl Host {
                 self.cursor,
                 &mut self.renderer,
                 &mut self.clipboard,
-                &mut messages
+                &mut messages,
             );
 
             self.events.clear();

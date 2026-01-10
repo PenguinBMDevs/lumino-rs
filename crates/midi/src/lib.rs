@@ -20,7 +20,7 @@ pub enum Error {
     #[error("failed to open output: {0}")]
     OpenOutputFailed(String),
     #[error("failed to send MIDI signal: {0}")]
-    SendFailed(String)
+    SendFailed(String),
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +47,6 @@ pub trait OutputConnection: Send {
     fn note_off(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error>;
     fn close(self: Box<Self>);
 }
-
 
 #[derive(Debug)]
 pub enum ApiKind {

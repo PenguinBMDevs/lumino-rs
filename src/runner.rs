@@ -1,28 +1,29 @@
 use std::sync::Arc;
 
 use winit::{
-    event::WindowEvent, event_loop::ControlFlow, keyboard::ModifiersState, window::WindowAttributes
+    event::WindowEvent, event_loop::ControlFlow, keyboard::ModifiersState, window::WindowAttributes,
 };
 
-pub enum Runner {
-    Loading,
-    Ready {
-        // Wgpu instance
-        gfx: lumino_gfx::Context,
-        // Iced instance
-        ui: lumino_ui::Host,
+#[derive(Default)]
+pub struct Runner {
+    inner: Option<RunnerInner>,
+}
 
-        window: Arc<winit::window::Window>,
-        modifiers: ModifiersState,
-        resized: bool,
-    },
+struct RunnerInner {
+    // Wgpu instance
+    gfx: lumino_gfx::Context,
+    // Iced instance
+    ui: lumino_ui::Host,
+
+    window: Arc<winit::window::Window>,
+    modifiers: ModifiersState,
+    resized: bool,
 }
 
 impl winit::application::ApplicationHandler for Runner {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        match self {
-            Self::Loading => (),
-            _ => return,
+        if self.inner.is_some() {
+            return;
         }
 
         let mut attributes = WindowAttributes::default()
@@ -60,17 +61,11 @@ impl winit::application::ApplicationHandler for Runner {
                 .with_fullsize_content_view(true);
         }
 
-
         let window = Arc::new(
             event_loop
                 .create_window(attributes)
-                .expect("Create main window")
+                .expect("Create main window"),
         );
-
-        #[cfg(target_os = "windows")]
-        {
-            // window.
-        }
 
         let physical_size = window.inner_size();
 
@@ -78,7 +73,7 @@ impl winit::application::ApplicationHandler for Runner {
         let gfx = futures::executor::block_on(lumino_gfx::Context::new(
             window.clone(),
             physical_size.width,
-            physical_size.height
+            physical_size.height,
         ));
 
         // Initialize iced
@@ -86,7 +81,7 @@ impl winit::application::ApplicationHandler for Runner {
             window.clone(),
             physical_size.width,
             physical_size.height,
-            &gfx
+            &gfx,
         );
 
         // You should change this if you want to render continuously
@@ -97,13 +92,13 @@ impl winit::application::ApplicationHandler for Runner {
         #[cfg(target_os = "macos")]
         crate::platform::macos::init();
 
-        *self = Self::Ready {
+        self.inner = Some(RunnerInner {
             gfx,
             ui,
             window,
             modifiers: ModifiersState::default(),
             resized: false,
-        }
+        });
     }
 
     fn window_event(
@@ -112,61 +107,49 @@ impl winit::application::ApplicationHandler for Runner {
         _window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
-        let Self::Ready {
-            gfx,
-            ui,
-            window,
-            modifiers,
-            resized,
-        } = self else {
+        let Some(this) = self.inner.as_mut() else {
             return;
         };
 
         match event {
             WindowEvent::RedrawRequested => {
-                if *resized {
-                    let size = window.inner_size();
+                if this.resized {
+                    let size = this.window.inner_size();
 
-                    ui.resize(
-                        size.width,
-                        size.height,
-                    );
-                    gfx.resize(
-                        size.width,
-                        size.height
-                    );
+                    this.ui.resize(size.width, size.height);
+                    this.gfx.resize(size.width, size.height);
 
-                    *resized = false;
+                    this.resized = false;
                 }
 
-                if gfx.with_frame(|a, b| ui.redraw_requested(a, b)).is_err() {
-                    window.request_redraw();
+                if this
+                    .gfx
+                    .with_frame(|a, b| this.ui.redraw_requested(a, b))
+                    .is_err()
+                {
+                    this.window.request_redraw();
                 };
             }
             WindowEvent::CursorMoved { position, .. } => {
-                ui.cursor_moved(position);
-            },
+                this.ui.cursor_moved(position);
+            }
             WindowEvent::ModifiersChanged(new_modifiers) => {
-                *modifiers = new_modifiers.state();
+                this.modifiers = new_modifiers.state();
             }
             WindowEvent::Resized(_) => {
-                *resized = true;
+                this.resized = true;
             }
             WindowEvent::CloseRequested => {
                 event_loop.exit();
-            },
-            _ => ()
+            }
+            _ => (),
         }
 
-        ui.handle_events(event, *modifiers);
+        this.ui.handle_events(event, this.modifiers);
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let Self::Ready {
-            ui,
-            window,
-            ..
-        } = self else {
+        let Some(this) = self.inner.as_mut() else {
             return;
         };
 
@@ -175,10 +158,7 @@ impl winit::application::ApplicationHandler for Runner {
             use lumino_core::event::Event;
             match event {
                 Event::Menu(r) => {
-                    use lumino_core::event::menu::{
-                        *,
-                        Event::*,
-                    };
+                    use lumino_core::event::menu::{Event::*, *};
                     match r {
                         File(r) => {
                             use file::Event::*;
@@ -186,19 +166,19 @@ impl winit::application::ApplicationHandler for Runner {
                                 Exit => event_loop.exit(),
                                 _ => todo!(),
                             }
-                        },
+                        }
                         Edit(r) => {
                             use edit::Event::*;
                             match r {
                                 _ => todo!(),
                             }
-                        },
+                        }
                         View(r) => {
                             use view::Event::*;
                             match r {
-                                Theme(r) => ui.update_theme(r),
+                                Theme(r) => this.ui.update_theme(r),
                             }
-                        },
+                        }
                         Help(r) => {
                             use help::Event::*;
                             match r {
@@ -206,19 +186,16 @@ impl winit::application::ApplicationHandler for Runner {
                             }
                         }
                     }
-                },
+                }
                 Event::Window(r) => {
                     use lumino_core::event::window::Event::*;
+                    let w = &this.window;
                     match r {
                         Close => event_loop.exit(),
-                        Drag => {
-                            window.drag_window().expect("Drag window")
-                        },
-                        Maximize => window.set_maximized(true),
-                        Minimize => window.set_minimized(true),
-                        ToggleMaximize => window.set_maximized(
-                            !window.is_maximized()
-                        ),
+                        Drag => w.drag_window().expect("Drag window"),
+                        Maximize => w.set_maximized(true),
+                        Minimize => w.set_minimized(true),
+                        ToggleMaximize => w.set_maximized(!w.is_maximized()),
                     }
                 }
             }

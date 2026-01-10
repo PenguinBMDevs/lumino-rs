@@ -3,16 +3,11 @@ use iced_widget::{container, row};
 mod panel;
 mod route;
 
-use crate::{
-    Element,
-    Message,
-    resources::icon
-};
+use crate::{Element, Message, resources::icon};
 
 #[derive(Debug, Clone)]
 pub enum Event {
     RouteUpdated(Route),
-
 }
 
 impl Event {
@@ -30,10 +25,7 @@ pub enum Route {
 
 #[derive(Debug, Clone)]
 pub enum RouteConfig {
-    Item {
-        route: Route,
-        icon: icon::Icon,
-    },
+    Item { route: Route, icon: icon::Icon },
     Space,
 }
 
@@ -59,19 +51,13 @@ pub struct Sidebar {
 
 impl Sidebar {
     pub fn new() -> Self {
-        Self {
-            route: Route::File,
-        }
+        Self { route: Route::File }
     }
 
     pub fn view(&self) -> Element<'_> {
-        let inner = row![
-            route::view(self.route),
-            panel::view(),
-        ];
+        let inner = row![route::view(self.route), panel::view(),];
 
-        container(inner)
-            .into()
+        container(inner).into()
     }
 
     pub fn update(&mut self, event: Event) {

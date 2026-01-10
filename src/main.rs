@@ -13,6 +13,6 @@ fn main() -> Result<(), winit::error::EventLoopError> {
     // Initialize winit
     let event_loop = EventLoop::new()?;
 
-    let mut runnder = runner::Runner::Loading;
-    event_loop.run_app(&mut runnder)
+    let mut runner = runner::Runner::default();
+    event_loop.run_app(&mut runner)
 }

@@ -2,13 +2,8 @@
 
 use std::{collections::HashMap, sync::OnceLock};
 
-use lumino_core::{
-    Event,
-    event
-};
-use muda::{
-    IsMenuItem, Menu, MenuEvent, MenuId, PredefinedMenuItem as PMI, Submenu
-};
+use lumino_core::{Event, event};
+use muda::{IsMenuItem, Menu, MenuEvent, MenuId, PredefinedMenuItem as PMI, Submenu};
 
 thread_local! {
     static MENU: OnceLock<AppMenu> = OnceLock::new();
@@ -33,19 +28,14 @@ fn app_menu() -> Submenu {
             &PMI::hide_others(None),
             &PMI::show_all(None),
             &PMI::separator(),
-            &PMI::quit(None)
-        ]
-    ).expect("Build App menu")
+            &PMI::quit(None),
+        ],
+    )
+    .expect("Build App menu")
 }
 
 fn file_menu() -> Submenu {
-    Submenu::with_items(
-        "File",
-        true,
-        &[
-            &PMI::close_window(None),
-        ]
-    ).expect("Build File menu")
+    Submenu::with_items("File", true, &[&PMI::close_window(None)]).expect("Build File menu")
 }
 
 fn edit_menu() -> Submenu {
@@ -60,33 +50,29 @@ fn edit_menu() -> Submenu {
             &PMI::copy(None),
             &PMI::paste(None),
             &PMI::select_all(None),
-        ]
-    ).expect("Build Edit menu")
+        ],
+    )
+    .expect("Build Edit menu")
 }
 
 fn view_menu() -> Submenu {
-    Submenu::with_items(
-        "View",
-        true,
-        &[
-        ]
-    ).expect("Build View menu")
+    Submenu::with_items("View", true, &[]).expect("Build View menu")
 }
 
 fn help_menu() -> Submenu {
-    Submenu::with_items(
-        "Help",
-        true,
-        &[
-        ]
-    ).expect("Build Help menu")
+    Submenu::with_items("Help", true, &[]).expect("Build Help menu")
 }
 
 fn menus() -> [Submenu; 5] {
-    [app_menu(), file_menu(), edit_menu(), view_menu(), help_menu()]
+    [
+        app_menu(),
+        file_menu(),
+        edit_menu(),
+        view_menu(),
+        help_menu(),
+    ]
     // todo!()
 }
-
 
 pub fn init() {
     MENU.with(init_inner);
@@ -98,14 +84,18 @@ fn init_inner(cell: &OnceLock<AppMenu>) {
     }
 
     let menu = Menu::with_items(
-        &menus().iter().map(|r| r as &dyn IsMenuItem).collect::<Vec<_>>()
-    ).expect("Build menu");
+        &menus()
+            .iter()
+            .map(|r| r as &dyn IsMenuItem)
+            .collect::<Vec<_>>(),
+    )
+    .expect("Build menu");
 
     menu.init_for_nsapp();
 
     let app_menu = AppMenu {
         menu,
-        map: HashMap::new()
+        map: HashMap::new(),
     };
 
     let _ = cell.set(app_menu);

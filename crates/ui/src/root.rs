@@ -1,14 +1,7 @@
 use iced_core::Length;
 use iced_widget::{column, container, row};
 
-use crate::{
-    message,
-    sidebar,
-    titlebar,
-    statusbar,
-    editor,
-    window,
-};
+use crate::{editor, message, sidebar, statusbar, titlebar, window};
 
 pub type Message = message::Message;
 pub type Theme = iced_core::Theme;
@@ -40,7 +33,7 @@ impl Root {
             Message::Window(r) => self.window.update(r),
             Message::Sidebar(r) => self.sidebar.update(r),
             // Explictly drop it
-            Message::Null => ()
+            Message::Null => (),
         }
     }
 
@@ -51,10 +44,7 @@ impl Root {
     pub fn view(&self) -> Element<'_> {
         let inner = column![
             self.titlebar.view(&self.window),
-            row![
-                self.sidebar.view(),
-                self.editor.view(),
-            ],
+            row![self.sidebar.view(), self.editor.view(),],
             self.statusbar.view(),
         ];
 
@@ -62,11 +52,7 @@ impl Root {
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|theme: &Theme| container::Style {
-                background: Some(
-                    iced_core::Background::Color(
-                        theme.palette().background
-                    )
-                ),
+                background: Some(iced_core::Background::Color(theme.palette().background)),
                 ..Default::default()
             })
             .into()

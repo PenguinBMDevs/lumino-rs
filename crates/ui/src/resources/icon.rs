@@ -1,6 +1,4 @@
-use iced_widget::{
-    svg, Svg
-};
+use iced_widget::{Svg, svg};
 
 use crate::Theme;
 
@@ -8,10 +6,7 @@ pub use Icon::*;
 
 macro_rules! include_res {
     ($path:literal) => {
-        include_bytes!(concat!(
-            "../../../../resources/icons/",
-            $path
-        ))
+        include_bytes!(concat!("../../../../resources/icons/", $path))
     };
 }
 
@@ -35,13 +30,12 @@ pub enum Icon {
 }
 
 pub fn view<'a>(icon: Icon) -> Svg<'a> {
-    svg(svg::Handle::from_memory(bytes(icon)))
-        .style(|theme: &Theme, _| {
-            let palette = theme.extended_palette();
-            svg::Style {
-                color: Some(palette.background.neutral.text),
-            }
-        })
+    svg(svg::Handle::from_memory(bytes(icon))).style(|theme: &Theme, _| {
+        let palette = theme.extended_palette();
+        svg::Style {
+            color: Some(palette.background.neutral.text),
+        }
+    })
 }
 
 fn bytes(icon: Icon) -> &'static [u8] {

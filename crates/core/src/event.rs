@@ -1,4 +1,7 @@
-use std::{collections::VecDeque, sync::{Mutex, MutexGuard, OnceLock}};
+use std::{
+    collections::VecDeque,
+    sync::{Mutex, MutexGuard, OnceLock},
+};
 
 pub mod menu;
 pub mod window;
@@ -64,7 +67,7 @@ macro_rules! event {
 
 #[derive(Debug, Default)]
 pub struct EventBuffer {
-    queue: VecDeque<Event>
+    queue: VecDeque<Event>,
 }
 
 impl EventBuffer {
@@ -82,9 +85,8 @@ impl EventBuffer {
 }
 
 fn buffer<'a>() -> MutexGuard<'a, EventBuffer> {
-    EVENT_BUFFER.get_or_init(|| {
-        Mutex::new(EventBuffer::default())
-    })
+    EVENT_BUFFER
+        .get_or_init(|| Mutex::new(EventBuffer::default()))
         .lock()
         .expect("Lock core EventBuffer")
 }

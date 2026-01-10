@@ -1,11 +1,12 @@
-use tracing_subscriber::{EnvFilter, filter::filter_fn, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use tracing::Level;
+use tracing_subscriber::{
+    EnvFilter, filter::filter_fn, fmt, layer::SubscriberExt, util::SubscriberInitExt,
+};
 
 pub fn init() {
     // Controls log levels for our crates.
     // Default to INFO+ when the environment variable `RUST_LOG` is not specified.
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     let level_filter = filter_fn(|metadata| {
         if metadata.target().starts_with("lumino") {

@@ -1,14 +1,11 @@
-pub use crate::{
-    window::Event as Window,
-    sidebar::Event as Sidebar,
-};
+pub use crate::{sidebar::Event as Sidebar, window::Event as Window};
 
 #[derive(Debug, Clone)]
 pub enum Message {
     Core(lumino_core::Event),
     Window(Window),
     Sidebar(Sidebar),
-    Null
+    Null,
 }
 
 pub const fn null() -> Message {

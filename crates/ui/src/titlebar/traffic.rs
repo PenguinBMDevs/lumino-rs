@@ -1,18 +1,9 @@
 use iced_core::{Border, Color, Length};
 use iced_widget::{button, container, row, svg};
 
-use crate::{
-    Element,
-    Message,
-    Theme,
-    resources::icon,
-    window,
-};
+use crate::{Element, Message, Theme, resources::icon, window};
 
-use lumino_core::{
-    Event,
-    event
-};
+use lumino_core::{Event, event};
 
 #[derive(Debug, Clone)]
 struct TrafficConfig {
@@ -69,10 +60,12 @@ pub fn view<'a>(window: &'a window::Window) -> Element<'a> {
 fn item<'a>(cfg: &'a TrafficConfig, window: &'a window::Window) -> Element<'a> {
     let icon = icon(match cfg.icon {
         TrafficIcon::Static(r) => r,
-        TrafficIcon::Toggle { normal, active } => if window.is_maximized {
-            active
-        } else {
-            normal
+        TrafficIcon::Toggle { normal, active } => {
+            if window.is_maximized {
+                active
+            } else {
+                normal
+            }
         }
     })
     .width(10)
@@ -92,9 +85,7 @@ fn item<'a>(cfg: &'a TrafficConfig, window: &'a window::Window) -> Element<'a> {
     let inner = container(icon).width(45).height(29).center(Length::Fill);
 
     button(inner)
-        .on_press(Message::Core(
-            cfg.event.clone()
-        ))
+        .on_press(Message::Core(cfg.event.clone()))
         .style(move |theme: &Theme, status| {
             use button::Status::*;
 
