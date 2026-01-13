@@ -26,10 +26,18 @@ pub struct Window {
     pub is_focused: bool,
 }
 
+fn get_theme(theme: &str) -> Theme {
+    Theme::ALL
+        .iter()
+        .find(|t| t.to_string() == theme)
+        .cloned()
+        .unwrap_or(Window::default_theme())
+}
+
 impl Window {
-    pub fn new() -> Self {
+    pub fn new(theme: &str) -> Self {
         Self {
-            theme: Self::default_theme(),
+            theme: get_theme(theme),
             is_maximized: false,
             is_focused: true,
         }
@@ -39,13 +47,7 @@ impl Window {
     }
     pub fn update(&mut self, event: Event) {
         match event {
-            Event::Theme(r) => {
-                self.theme = Theme::ALL
-                    .iter()
-                    .find(|t| t.to_string() == r)
-                    .cloned()
-                    .unwrap_or(Self::default_theme())
-            }
+            Event::Theme(r) => self.theme = get_theme(&r),
             Event::Maximized(r) => self.is_maximized = r,
             Event::Focused(r) => self.is_focused = r,
         }

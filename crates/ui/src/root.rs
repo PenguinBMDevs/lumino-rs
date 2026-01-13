@@ -17,13 +17,13 @@ pub struct Root {
 }
 
 impl Root {
-    pub fn new() -> Self {
+    pub fn new(theme: &str) -> Self {
         Self {
             sidebar: sidebar::Sidebar::new(),
             titlebar: titlebar::Titlebar::new(),
             statusbar: statusbar::StatusBar::new(),
             editor: editor::Editor::new(),
-            window: window::Window::new(),
+            window: window::Window::new(theme),
         }
     }
 

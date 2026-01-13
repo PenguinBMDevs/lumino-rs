@@ -8,6 +8,7 @@ mod titlebar;
 mod window;
 
 pub(crate) use root::{Element, Message};
+pub(crate) use lumino_core::storage::config;
 
 use std::{sync::Arc, time::Instant};
 
@@ -41,6 +42,7 @@ impl Host {
         window: Arc<winit::window::Window>,
         width: u32,
         height: u32,
+        ui_config: &config::UiConfig,
         gfx: &lumino_gfx::Context,
     ) -> Self {
         let viewport =
@@ -63,7 +65,7 @@ impl Host {
 
         Self {
             window,
-            root: root::Root::new(),
+            root: root::Root::new(&ui_config.theme),
             renderer,
             events: Vec::new(),
             cursor: mouse::Cursor::Unavailable,
@@ -80,7 +82,11 @@ impl Host {
         );
     }
 
-    pub fn redraw_requested(&mut self, frame: &wgpu::SurfaceTexture, view: &wgpu::TextureView) {
+    pub fn redraw_requested(
+        &mut self,
+        frame: &wgpu::SurfaceTexture,
+        view: &wgpu::TextureView,
+    ) {
         // Draw iced on top
         let mut interface = UserInterface::build(
             self.root.view(),

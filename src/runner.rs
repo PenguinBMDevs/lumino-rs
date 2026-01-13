@@ -1,8 +1,14 @@
 use std::sync::Arc;
 
 use winit::{
-    event::WindowEvent, event_loop::ControlFlow, keyboard::ModifiersState, window::WindowAttributes,
+    dpi,
+    event::WindowEvent,
+    event_loop::ControlFlow,
+    keyboard::ModifiersState,
+    window::WindowAttributes,
 };
+
+use super::storage;
 
 #[derive(Default)]
 pub struct Runner {
@@ -14,6 +20,8 @@ struct RunnerInner {
     gfx: lumino_gfx::Context,
     // Iced instance
     ui: lumino_ui::Host,
+    // Storage system
+    storage: storage::Storage,
 
     window: Arc<winit::window::Window>,
     modifiers: ModifiersState,
@@ -26,19 +34,37 @@ impl winit::application::ApplicationHandler for Runner {
             return;
         }
 
+        let storage = storage::Storage::new()
+            // `expect()` is a temporary solution. remove it in the future.
+            .expect("Initialize storage");
+
+        let config = storage.config.get();
+        let ui_state = storage.ui_state.get();
+
         let mut attributes = WindowAttributes::default()
-            .with_min_inner_size(winit::dpi::LogicalSize {
+            .with_min_inner_size(dpi::LogicalSize {
                 width: 800,
                 height: 600,
             })
-            .with_inner_size(winit::dpi::LogicalSize {
-                width: 1440,
-                height: 900,
+            .with_inner_size(dpi::LogicalSize {
+                width: ui_state.w,
+                height: ui_state.h,
             })
+            .with_maximized(ui_state.is_maximized)
             .with_title("Lumino")
             // The window should be invisible at first.
             // Make it visible when it's the right time.
             .with_visible(false);
+
+        if
+            let (Some(x), Some(y)) = (ui_state.x, ui_state.y) &&
+            !ui_state.is_maximized
+        {
+            attributes = attributes
+                .with_position(dpi::LogicalPosition {
+                    x, y
+                });
+        }
 
         #[cfg(target_os = "windows")]
         {
@@ -81,6 +107,7 @@ impl winit::application::ApplicationHandler for Runner {
             window.clone(),
             physical_size.width,
             physical_size.height,
+            &config.ui,
             &gfx,
         );
 
@@ -95,6 +122,7 @@ impl winit::application::ApplicationHandler for Runner {
         self.inner = Some(RunnerInner {
             gfx,
             ui,
+            storage,
             window,
             modifiers: ModifiersState::default(),
             resized: false,
@@ -136,8 +164,19 @@ impl winit::application::ApplicationHandler for Runner {
             WindowEvent::ModifiersChanged(new_modifiers) => {
                 this.modifiers = new_modifiers.state();
             }
-            WindowEvent::Resized(_) => {
+            WindowEvent::Resized(size) => {
+                this.storage.ui_state.patch(|state| {
+                    state.w = size.width;
+                    state.h = size.height;
+                    state.is_maximized = this.window.is_maximized();
+                });
                 this.resized = true;
+            }
+            WindowEvent::Moved(pos) => {
+                this.storage.ui_state.patch(|state| {
+                    state.x = Some(pos.x);
+                    state.y = Some(pos.y);
+                });
             }
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -176,7 +215,12 @@ impl winit::application::ApplicationHandler for Runner {
                         View(r) => {
                             use view::Event::*;
                             match r {
-                                Theme(r) => this.ui.update_theme(r),
+                                Theme(r) => {
+                                    this.ui.update_theme(r.clone());
+                                    this.storage.config.patch(|state| {
+                                        state.ui.theme = r;
+                                    });
+                                },
                             }
                         }
                         Help(r) => {
@@ -199,6 +243,15 @@ impl winit::application::ApplicationHandler for Runner {
                     }
                 }
             }
+        }
+
+        // 1. this is idempotent, no need to check the `dirty` state.
+        // 2. results should be actually handled in the future.
+        if let Err(e) = this.storage.config.save() {
+            tracing::warn!("failed to save config: {e}");
+        }
+        if let Err(e) = this.storage.ui_state.save() {
+            tracing::warn!("failed to save ui_state: {e}");
         }
     }
 }
