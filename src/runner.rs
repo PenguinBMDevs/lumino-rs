@@ -203,13 +203,13 @@ impl winit::application::ApplicationHandler for Runner {
                             use file::Event::*;
                             match r {
                                 Exit => event_loop.exit(),
-                                _ => todo!(),
+                                _ => println!("{:?}", r), // 你不可以直接给我写成todo啊C，你这么写测试的时候碰到这里直接崩溃掉了啊！！！
                             }
                         }
                         Edit(r) => {
                             use edit::Event::*;
                             match r {
-                                _ => todo!(),
+                                _ => println!("{:?}", r), // 你不可以直接给我写成todo啊C，你这么写测试的时候碰到这里直接崩溃掉了啊！！！
                             }
                         }
                         View(r) => {
@@ -226,7 +226,7 @@ impl winit::application::ApplicationHandler for Runner {
                         Help(r) => {
                             use help::Event::*;
                             match r {
-                                _ => todo!(),
+                                _ => println!("{:?}", r), // 你不可以直接给我写成todo啊C，你这么写测试的时候碰到这里直接崩溃掉了啊！！！
                             }
                         }
                     }

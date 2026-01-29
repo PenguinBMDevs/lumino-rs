@@ -1,10 +1,10 @@
 use serde::{Serialize, Deserialize};
-
+/// 用户界面配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub ui: UiConfig,
 }
-
+/// 用户界面配置默认值
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -13,12 +13,13 @@ impl Default for Config {
     }
 }
 
+/// 用户界面配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiConfig {
     pub theme: String,
 
 }
-
+/// 用户界面配置默认值
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
