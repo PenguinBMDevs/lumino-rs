@@ -79,7 +79,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
     ) -> Vec<Geometry<Renderer>> { //
         let geometry = self.cache.draw(renderer, bounds.size(), |frame| {
             // 分别是横向和纵向
-            self.draw_keys(frame, bounds);
+            self.draw_keys(frame, bounds, theme);
             self.draw_bars(frame, bounds, theme);
         });
         vec![geometry] // 返回绘制结果
@@ -90,13 +90,14 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
 /// 绘制横向线，包括琴键分隔线
 impl<'a> PianoRollGrid<'a> {
     /// 绘制横向线，包括琴键分隔线
-    fn draw_keys(&self, frame: &mut Frame<Renderer>, bounds: Rectangle) {
+    fn draw_keys(&self, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &Theme) {
+        let palette = theme.extended_palette().background;
         // 视图状态
         let view = self.state;
         // 线条粗细和颜色
         let line_stroke = Stroke::default()
             .with_width(1.0)
-            .with_color(Color::from_rgb8(0x40, 0x40, 0x40));
+            .with_color(palette.strong.color);
         // 最高琴键索引
         let max_key_index = (view.key_count - 1) as f32;
         // 绘制琴键分隔线
@@ -116,8 +117,8 @@ impl<'a> PianoRollGrid<'a> {
     fn draw_bars(&self, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &Theme) {
         let view = self.state;
         let ppq = view.ppq as f32;
-        let palette = theme.palette();
-        let background = palette.background;
+        let palette = theme.extended_palette().background;
+        let background = palette.base.color;
 
         // 这里只是随便写个四四拍，这个会根据歌曲变化
         let measure_ticks = ppq * 4.0;
@@ -129,26 +130,13 @@ impl<'a> PianoRollGrid<'a> {
         // 计算第一个需要绘制的小节开始位置
         let mut current_tick = (start_tick / ppq).ceil() * ppq;
 
-        // 转换背景色值为u8，避免颜色值越界
-        let bg_r = (background.r * 255.0) as u8;
-        let bg_g = (background.g * 255.0) as u8;
-        let bg_b = (background.b * 255.0) as u8;
-
         // 线条样式，跟随主题变化
         let bar_stroke = Stroke::default()
             .with_width(1.0)
-            .with_color(Color::from_rgb8(
-                bg_r.saturating_add(25), // 根据kimi的说法，saturating_add可以防止颜色值越界
-                bg_g.saturating_add(25),
-                bg_b.saturating_add(25),
-            ));
+            .with_color(palette.strong.color);
         let beat_stroke = Stroke::default()
             .with_width(1.0)
-            .with_color(Color::from_rgb8(
-                bg_r.saturating_add(51), // 同理
-                bg_g.saturating_add(51),
-                bg_b.saturating_add(51),
-            ));
+            .with_color(palette.strong.color);
         
         // 绘制小节线和小节内拍线
         while current_tick < end_tick {
