@@ -202,14 +202,16 @@ impl winit::application::ApplicationHandler for Runner {
                         File(r) => {
                             use file::Event::*;
                             match r {
+                                // todo:文件功能
                                 Exit => event_loop.exit(),
-                                _ => println!("{:?}", r), // 你不可以直接给我写成todo啊C，你这么写测试的时候碰到这里直接崩溃掉了啊！！！
+                                _ => tracing::info!("File {:?}", r), // 你不可以直接给我写成todo啊C，你这么写测试的时候碰到这里直接崩溃掉了啊！！！
                             }
                         }
                         Edit(r) => {
                             use edit::Event::*;
                             match r {
-                                _ => println!("{:?}", r), // 你不可以直接给我写成todo啊C，你这么写测试的时候碰到这里直接崩溃掉了啊！！！
+                                // todo:编辑器功能
+                                _ => tracing::info!("Edit {:?}", r), // 你不可以直接给我写成todo啊C，你这么写测试的时候碰到这里直接崩溃掉了啊！！！
                             }
                         }
                         View(r) => {
@@ -226,7 +228,8 @@ impl winit::application::ApplicationHandler for Runner {
                         Help(r) => {
                             use help::Event::*;
                             match r {
-                                _ => println!("{:?}", r), // 你不可以直接给我写成todo啊C，你这么写测试的时候碰到这里直接崩溃掉了啊！！！
+                                // todo:帮助功能
+                                _ => tracing::info!("Help {:?}", r), // 你不可以直接给我写成todo啊C，你这么写测试的时候碰到这里直接崩溃掉了啊！！！
                             }
                         }
                     }

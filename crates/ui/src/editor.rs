@@ -129,20 +129,25 @@ impl<'a> PianoRollGrid<'a> {
         // 计算第一个需要绘制的小节开始位置
         let mut current_tick = (start_tick / ppq).ceil() * ppq;
 
+        // 转换背景色值为u8，避免颜色值越界
+        let bg_r = (background.r * 255.0) as u8;
+        let bg_g = (background.g * 255.0) as u8;
+        let bg_b = (background.b * 255.0) as u8;
+
         // 线条样式，跟随主题变化
         let bar_stroke = Stroke::default()
             .with_width(1.0)
-            .with_color(Color::from_rgb(
-                background.r + 0.1,
-                background.g + 0.1,
-                background.b + 0.1,
+            .with_color(Color::from_rgb8(
+                bg_r.saturating_add(25), // 根据kimi的说法，saturating_add可以防止颜色值越界
+                bg_g.saturating_add(25),
+                bg_b.saturating_add(25),
             ));
         let beat_stroke = Stroke::default()
             .with_width(1.0)
-            .with_color(Color::from_rgb(
-                background.r + 0.2,
-                background.g + 0.2,
-                background.b + 0.2,
+            .with_color(Color::from_rgb8(
+                bg_r.saturating_add(51), // 同理
+                bg_g.saturating_add(51),
+                bg_b.saturating_add(51),
             ));
         
         // 绘制小节线和小节内拍线
