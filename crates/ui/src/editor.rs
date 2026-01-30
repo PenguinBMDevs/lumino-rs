@@ -1,8 +1,8 @@
 use super::Element;
 use crate::{Message, Renderer, Theme};
 use iced_aw::core::renderer;
-use iced_core::{Color, Length, Point, Rectangle, mouse};
-use iced_widget::canvas::{self, Canvas, Frame, Geometry, Path, Program, Stroke};
+use iced_core::{Color, Length, Point, Rectangle, mouse, theme};
+use iced_widget::{button::background, canvas::{self, Canvas, Frame, Geometry, Path, Program, Stroke}};
 use lumino_core::event::menu::view;
 
 #[derive(Debug, Clone)]
@@ -73,14 +73,14 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         &self,
         _state: &Self::State,
         renderer: &Renderer,
-        _theme: &Theme,
+        theme: &Theme,
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry<Renderer>> { //
         let geometry = self.cache.draw(renderer, bounds.size(), |frame| {
             // 分别是横向和纵向
             self.draw_keys(frame, bounds);
-            self.draw_bars(frame, bounds);
+            self.draw_bars(frame, bounds, theme);
         });
         vec![geometry] // 返回绘制结果
     }
@@ -113,9 +113,11 @@ impl<'a> PianoRollGrid<'a> {
         }
     }
     /// 绘制纵向线，包括小节线和拍线
-    fn draw_bars(&self, frame: &mut Frame<Renderer>, bounds: Rectangle) {
+    fn draw_bars(&self, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &Theme) {
         let view = self.state;
         let ppq = view.ppq as f32;
+        let palette = theme.palette();
+        let background = palette.background;
 
         // 这里只是随便写个四四拍，这个会根据歌曲变化
         let measure_ticks = ppq * 4.0;
@@ -127,13 +129,21 @@ impl<'a> PianoRollGrid<'a> {
         // 计算第一个需要绘制的小节开始位置
         let mut current_tick = (start_tick / ppq).ceil() * ppq;
 
-        // 线条样式，但是我希望根据主题色有所变化
+        // 线条样式，跟随主题变化
         let bar_stroke = Stroke::default()
             .with_width(1.0)
-            .with_color(Color::from_rgb8(80, 80, 80));
+            .with_color(Color::from_rgb(
+                background.r + 0.1,
+                background.g + 0.1,
+                background.b + 0.1,
+            ));
         let beat_stroke = Stroke::default()
             .with_width(1.0)
-            .with_color(Color::from_rgb8(40, 40, 40));
+            .with_color(Color::from_rgb(
+                background.r + 0.2,
+                background.g + 0.2,
+                background.b + 0.2,
+            ));
         
         // 绘制小节线和小节内拍线
         while current_tick < end_tick {
