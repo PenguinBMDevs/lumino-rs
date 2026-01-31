@@ -6,7 +6,6 @@ mod sidebar;
 mod statusbar;
 mod titlebar;
 mod window;
-mod note;
 
 pub(crate) use root::{Element, Message};
 pub(crate) use lumino_core::storage::config;
