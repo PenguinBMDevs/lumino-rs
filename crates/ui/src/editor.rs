@@ -1,5 +1,6 @@
 use super::Element;
 use crate::{Message, Renderer, Theme};
+use crate::note::Note;
 use iced_aw::core::renderer;
 use iced_core::{Color, Length, Point, Rectangle, mouse, theme};
 use iced_widget::{button::background, canvas::{self, Canvas, Frame, Geometry, Path, Program, Stroke}};
@@ -76,11 +77,14 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         theme: &Theme,
         bounds: Rectangle,
         _cursor: mouse::Cursor,
-    ) -> Vec<Geometry<Renderer>> { //
+    ) -> Vec<Geometry<Renderer>> { 
+        let palette = theme.extended_palette().background;
         let geometry = self.cache.draw(renderer, bounds.size(), |frame| {
-            // 分别是横向和纵向
+            // 渲染网格以及音符，你要在卷帘上渲染什么你就在这里加
             self.draw_keys(frame, bounds, theme);
             self.draw_bars(frame, bounds, theme);
+            let note = Note::new(0.0, 0.0, 100.0, 20.0, palette.strong.color, theme);
+            note.draw(frame);
         });
         vec![geometry] // 返回绘制结果
     }
