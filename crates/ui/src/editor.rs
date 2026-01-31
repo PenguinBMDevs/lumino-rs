@@ -1,10 +1,8 @@
 use super::Element;
 use crate::{Message, Renderer, Theme};
 use crate::note::Note;
-use iced_aw::core::renderer;
-use iced_core::{Color, Length, Point, Rectangle, mouse, theme};
-use iced_widget::{button::background, canvas::{self, Canvas, Frame, Geometry, Path, Program, Stroke}};
-use lumino_core::event::menu::view;
+use iced_core::{Length, Point, Rectangle, mouse};
+use iced_widget::canvas::{self, Canvas, Frame, Geometry, Path, Program, Stroke, Event};
 
 #[derive(Debug, Clone)]
 pub struct ViewState {
@@ -16,7 +14,7 @@ pub struct ViewState {
 
     pub key_count: u16, // 键盘总键数，默认128，目前计划支持88/128/256键
     pub ppq: u16,       // 分辨率，整数，默认设定为1920，最大值65535
-    //pub scale: Scale  // TODO: 之后我们需要支持不同的调式/微分音
+    // pub scale: Scale  // TODO: 之后我们需要支持不同的调式/微分音
 }
 
 impl Default for ViewState {
@@ -37,13 +35,16 @@ impl Default for ViewState {
 pub struct Editor {
     state: ViewState,
     // 重绘逻辑：在卷帘状态更新后重绘
-    grid_cache: canvas::Cache<Renderer>, // 缓存绘制结果，避免重复绘制
+    grid_cache: canvas::Cache<Renderer>, // 缓存网格绘制结果
+    note_cache: canvas::Cache<Renderer>, // 缓存音符绘制结果（需要频繁更新）
 }
+
 impl Editor {
     pub fn new() -> Self {
         Self {
-            state: ViewState::default(), // 使用默认值坐标、缩放
-            grid_cache: canvas::Cache::new(), // 初始化缓存
+            state: ViewState::default(),      // 使用默认值坐标、缩放
+            grid_cache: canvas::Cache::new(), // 初始化网格缓存
+            note_cache: canvas::Cache::new(), // 初始化音符缓存
         }
     }
 
@@ -52,7 +53,8 @@ impl Editor {
         // container(space()).width(Length::Fill).into() ----->原来写的
         Canvas::new(PianoRollGrid {
             state: &self.state,
-            cache: &self.grid_cache,
+            grid_cache: &self.grid_cache,
+            note_cache: &self.note_cache,
         })
         .width(Length::Fill)
         .height(Length::Fill)
@@ -63,33 +65,71 @@ impl Editor {
 /// 钢琴卷帘网格绘制程序
 struct PianoRollGrid<'a> {
     state: &'a ViewState,
-    cache: &'a canvas::Cache<Renderer>, // 这里也要加上 <Renderer>
+    grid_cache: &'a canvas::Cache<Renderer>,
+    note_cache: &'a canvas::Cache<Renderer>,
 }
 
 /// 实现绘制程序接口
 impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
-    type State = ();
+    // State 存储鼠标位置
+    type State = Option<Point>;
+
+    // 实时更新位置
+    fn update(
+        &self,
+        state: &mut Self::State,
+        _event: &Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<canvas::Action<Message>> {
+        if let Some(position) = cursor.position() {
+            // 将鼠标坐标转换为 Canvas 局部坐标
+            let local_pos = Point::new(position.x - bounds.x, position.y - bounds.y);
+            *state = Some(local_pos);
+            // 清除音符缓存，强制重绘
+            self.note_cache.clear();
+            Some(canvas::Action::request_redraw())
+        } else {
+            None
+        }
+    }
+
+    // 启用鼠标交互
+    fn mouse_interaction(
+        &self,
+        _state: &Self::State,
+        _bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> mouse::Interaction {
+        mouse::Interaction::Crosshair
+    }
+
     // 绘制函数，这里是绘制 PianoRollGrid 的主要逻辑
     fn draw(
         &self,
-        _state: &Self::State,
+        state: &Self::State,
         renderer: &Renderer,
         theme: &Theme,
         bounds: Rectangle,
         _cursor: mouse::Cursor,
-    ) -> Vec<Geometry<Renderer>> { 
-        let palette = theme.extended_palette().background;
-        let geometry = self.cache.draw(renderer, bounds.size(), |frame| {
-            // 渲染网格以及音符，你要在卷帘上渲染什么你就在这里加
+    ) -> Vec<Geometry<Renderer>> {
+        // 1. 绘制缓存的网格（静态内容）
+        let grid_geometry = self.grid_cache.draw(renderer, bounds.size(), |frame| {
             self.draw_keys(frame, bounds, theme);
             self.draw_bars(frame, bounds, theme);
-            let note = Note::new(0.0, 0.0, 100.0, 20.0, palette.strong.color, theme);
-            note.draw(frame);
         });
-        vec![geometry] // 返回绘制结果
+
+        // 2. 绘制音符（动态内容，每次清除缓存后重绘）
+        let note_geometry = self.note_cache.draw(renderer, bounds.size(), |frame| {
+            if let Some(pos) = *state {
+                let note = Note::from_mouse_position(pos, self.state.scroll_x, self.state.scroll_y, theme);
+                note.draw(frame);
+            }
+        });
+
+        vec![grid_geometry, note_geometry]
     }
 }
-
 
 /// 绘制横向线，包括琴键分隔线
 impl<'a> PianoRollGrid<'a> {
@@ -117,12 +157,12 @@ impl<'a> PianoRollGrid<'a> {
             frame.stroke(&path, line_stroke);
         }
     }
+
     /// 绘制纵向线，包括小节线和拍线
     fn draw_bars(&self, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &Theme) {
         let view = self.state;
         let ppq = view.ppq as f32;
         let palette = theme.extended_palette().background;
-        let background = palette.base.color;
 
         // 这里只是随便写个四四拍，这个会根据歌曲变化
         let measure_ticks = ppq * 4.0;
@@ -141,7 +181,7 @@ impl<'a> PianoRollGrid<'a> {
         let beat_stroke = Stroke::default()
             .with_width(1.0)
             .with_color(palette.strong.color);
-        
+
         // 绘制小节线和小节内拍线
         while current_tick < end_tick {
             let screen_x = (current_tick * view.zoom_x) - view.scroll_x;
@@ -159,6 +199,24 @@ impl<'a> PianoRollGrid<'a> {
     }
 }
 
+impl Note {
+    pub fn from_mouse_position(mouse_pos: Point, _scroll_x: f32, _scroll_y: f32, theme: &Theme) -> Self {
+        let palette = theme.extended_palette().background;
+        // 鼠标坐标已经是 Canvas 局部坐标，直接使用
+        // Y坐标向上贴合（取下面的网格线）
+        let snapped_y = (mouse_pos.y / 20.0).floor() * 20.0;
+        Self::new(
+            mouse_pos.x,  // 直接使用局部坐标X
+            snapped_y,    // 对齐后的Y坐标
+            100.0,
+            20.0,
+            palette.strong.color,
+            theme,
+        )
+    }
+}
+
+#[allow(dead_code)]
 /// 判断某个琴键是否该涂黑，它不是指这里是不是黑键，而是根据你选择什么调式灵活处理
 fn is_key_dark(key: isize, _key_count: usize) -> bool {
     // 先这么写，这是12平均律

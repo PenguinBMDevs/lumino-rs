@@ -1,4 +1,4 @@
-use iced_core::{Color, Point, Rectangle, Size, theme::{self, Palette}, Theme};
+use iced_core::{Color, Point, Rectangle, Size, Theme};
 use iced_widget::canvas::{Frame, Path};
 use crate::Renderer;
 
@@ -10,13 +10,16 @@ pub struct Note {
     pub color: Color,
 }
 
-const position: Point = Point::new(0.0, 0.0);
-const size: Size = Size::new(100.0, 20.0);
-const rect: Rectangle<f32> = Rectangle::new(position, size);
+#[allow(dead_code)]
+const POSITION: Point = Point::new(0.0, 0.0);
+#[allow(dead_code)]
+const SIZE: Size = Size::new(100.0, 20.0);
+#[allow(dead_code)]
+const RECT: Rectangle<f32> = Rectangle::new(POSITION, SIZE);
 
 // 渲染到UI
 impl Note {
-    pub fn new(x: f32, y: f32, width: f32, height: f32, color: Color, theme: &Theme) -> Self {
+    pub fn new(x: f32, y: f32, width: f32, height: f32, _color: Color, theme: &Theme) -> Self {
         let palette = theme.extended_palette().background;
         Self {
             position: Point::new(x, y),
