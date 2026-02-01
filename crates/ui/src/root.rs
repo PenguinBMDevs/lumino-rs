@@ -32,9 +32,15 @@ impl Root {
             Message::Core(r) => lumino_core::event::emit(r),
             Message::Window(r) => self.window.update(r),
             Message::Sidebar(r) => self.sidebar.update(r),
+            Message::ScrollbarScrolled(new_scroll_x) => {
+                // 处理滚动条滚动，最大滚动范围设为 10000（会不会太大了awa）
+                self.editor.set_scroll_x(new_scroll_x);
+            }
             // Explictly drop it
             Message::Null => (),
         }
+        // 每帧更新编辑器状态（检查滚动条变化）
+        self.editor.update();
     }
 
     pub fn theme(&self) -> Theme {

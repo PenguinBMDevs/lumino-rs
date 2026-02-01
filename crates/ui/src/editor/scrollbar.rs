@@ -1,33 +1,71 @@
-pub mod state;
-pub mod grid;
-pub mod note;
-pub mod scrollbar;
+use iced_core::{Point, Rectangle, Theme, mouse};
+use iced_widget::canvas::{self, Frame, Path, Stroke, Event, Geometry, Program};
+use crate::{Renderer, Message};
 
-use crate::{Message, Renderer, Theme};
-use crate::Element;
-use iced_widget::canvas::{self, Canvas, Frame, Geometry, Program};
-use iced_widget::column;
-use iced_core::{Length, Rectangle, mouse};
-use std::cell::RefCell;
+// 滚动条状态
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ScrollbarState {
+    Idle,
+    HoverThumb,
+    DraggingThumb { start_x: f32, start_thumb_x: f32, bounds_width: f32 },
+}
 
-pub use state::ViewState;
-pub use grid::PianoRollGrid;
-use scrollbar::ScrollbarState;
+// 滚动条
+pub struct Scrollbar {
+    pub thumb_width: f32,
+    pub edge_width: f32,
+    pub state: ScrollbarState,
+    // 用于存储计算出的新滚动值，供外部读取
+    pub new_scroll_x: Option<f32>,
+    // 当前滑块位置比例 (0.0 ~ 1.0)
+    pub thumb_ratio: f32,
+}
 
-// 钢琴卷帘编辑器
-pub struct Editor {
-    state: ViewState,
-    grid_cache: canvas::Cache<Renderer>,
-    note_cache: canvas::Cache<Renderer>,
-    scrollbar: RefCell<scrollbar::Scrollbar>,
-    scrollbar_cache: canvas::Cache<Renderer>,
-    max_scroll: f32,
+impl Scrollbar {
+    pub fn new(thumb_width: f32) -> Self {
+        Self {
+            thumb_width,
+            edge_width: 5.0,
+            state: ScrollbarState::Idle,
+            new_scroll_x: None,
+            thumb_ratio: 0.0,
+        }
+    }
+
+    // 根据滚动位置更新滑块比例
+    pub fn update_thumb_from_scroll(&mut self, scroll_x: f32, max_scroll: f32) {
+        if max_scroll <= 0.0 {
+            self.thumb_ratio = 0.0;
+            return;
+        }
+        self.thumb_ratio = (scroll_x / max_scroll).max(0.0).min(1.0);
+    }
+
+    // 根据滑块比例计算滚动值
+    pub fn calculate_scroll_from_ratio(&self, max_scroll: f32) -> f32 {
+        self.thumb_ratio * max_scroll
+    }
+
+    // 计算实际滑块位置
+    pub fn thumb_x(&self, bounds_width: f32) -> f32 {
+        let available_width = bounds_width - self.thumb_width;
+        if available_width <= 0.0 {
+            return 0.0;
+        }
+        self.thumb_ratio * available_width
+    }
+
+    // 鼠标是否在滑块上
+    pub fn is_mouse_on_thumb(&self, mouse_x: f32, bounds_width: f32) -> bool {
+        let thumb_x = self.thumb_x(bounds_width);
+        mouse_x >= thumb_x && mouse_x <= thumb_x + self.thumb_width
+    }
 }
 
 // 滚动条视图
-struct ScrollbarView<'a> {
-    scrollbar: &'a RefCell<scrollbar::Scrollbar>,
-    max_scroll: f32,
+pub struct ScrollbarView<'a> {
+    pub scrollbar: &'a mut Scrollbar,
+    pub max_scroll: f32,
 }
 
 impl<'a> Program<Message, Theme, Renderer> for ScrollbarView<'a> {
@@ -36,14 +74,14 @@ impl<'a> Program<Message, Theme, Renderer> for ScrollbarView<'a> {
     fn update(
         &self,
         _state: &mut Self::State,
-        event: &canvas::Event,
+        event: &Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<canvas::Action<Message>> {
-        let mut scrollbar = self.scrollbar.borrow_mut();
+        let scrollbar = unsafe { &mut *(self.scrollbar as *const _ as *mut Scrollbar) };
 
         match event {
-            canvas::Event::Mouse(mouse_event) => {
+            Event::Mouse(mouse_event) => {
                 match mouse_event {
                     iced_core::mouse::Event::ButtonPressed(iced_core::mouse::Button::Left) => {
                         if let Some(position) = cursor.position() {
@@ -120,8 +158,7 @@ impl<'a> Program<Message, Theme, Renderer> for ScrollbarView<'a> {
         _bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> mouse::Interaction {
-        let scrollbar = self.scrollbar.borrow();
-        match scrollbar.state {
+        match self.scrollbar.state {
             ScrollbarState::DraggingThumb { .. } => mouse::Interaction::Grabbing,
             ScrollbarState::HoverThumb => mouse::Interaction::Pointer,
             _ => mouse::Interaction::default(),
@@ -136,75 +173,60 @@ impl<'a> Program<Message, Theme, Renderer> for ScrollbarView<'a> {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry<Renderer>> {
-        let scrollbar = self.scrollbar.borrow();
         let mut frame = Frame::new(renderer, bounds.size());
-        scrollbar.draw(&mut frame, theme, bounds);
+        self.scrollbar.draw(&mut frame, theme, bounds);
         vec![frame.into_geometry()]
     }
 }
 
-impl Editor {
-    pub fn new() -> Self {
-        Self {
-            state: ViewState::default(),
-            grid_cache: canvas::Cache::new(),
-            note_cache: canvas::Cache::new(),
-            scrollbar: RefCell::new(scrollbar::Scrollbar::new(100.0)),
-            scrollbar_cache: canvas::Cache::new(),
-            max_scroll: 1000.0,
-        }
-    }
+impl Scrollbar {
+    // 绘制滚动条
+    pub fn draw(&self, frame: &mut Frame<Renderer>, theme: &Theme, bounds: Rectangle) {
+        let palette = theme.extended_palette().background;
 
-    // 绘制钢琴卷帘
-    pub fn view(&self) -> Element<'_> {
-        let grid = Canvas::new(self.grid())
-            .width(Length::Fill)
-            .height(Length::Fill);
+        // 轨道
+        let track_rect = Rectangle::new(
+            Point::new(0.0, 0.0),
+            iced_core::Size::new(bounds.width, bounds.height),
+        );
+        let track_path = Path::rectangle(track_rect.position(), track_rect.size());
+        frame.fill(&track_path, palette.weakest.color);
 
-        let scrollbar = Canvas::new(ScrollbarView {
-            scrollbar: &self.scrollbar,
-            max_scroll: self.max_scroll,
-        })
-        .width(Length::Fill)
-        .height(Length::Fixed(20.0));
+        // 滑块颜色
+        let thumb_color = match self.state {
+            ScrollbarState::DraggingThumb { .. } => palette.strong.color,
+            ScrollbarState::HoverThumb => palette.neutral.color,
+            _ => palette.weak.color,
+        };
 
-        column![grid, scrollbar].into()
-    }
+        // 计算实际滑块位置
+        let thumb_x = self.thumb_x(bounds.width);
 
-    fn grid(&self) -> PianoRollGrid<'_> {
-        PianoRollGrid {
-            state: &self.state,
-            grid_cache: &self.grid_cache,
-            note_cache: &self.note_cache,
-        }
-    }
+        // 滑块
+        let thumb_rect = Rectangle::new(
+            Point::new(thumb_x, 2.0),
+            iced_core::Size::new(self.thumb_width, bounds.height - 4.0),
+        );
+        let thumb_path = Path::rectangle(thumb_rect.position(), thumb_rect.size());
+        frame.fill(&thumb_path, thumb_color);
 
-    // 更新视图状态
-    pub fn update(&mut self) {
-        // TODO: 实现滚动条与钢琴卷帘的联动滚动（我是真的不想写这个啊C）
-    }
+        // 边缘线
+        let edge_stroke = Stroke::default()
+            .with_width(1.0)
+            .with_color(palette.strong.color);
 
-    // 设置最大滚动值
-    pub fn set_max_scroll(&mut self, max_scroll: f32) {
-        self.max_scroll = max_scroll;
-        self.scrollbar.borrow_mut().update_thumb_from_scroll(self.state.scroll_x, max_scroll);
-    }
+        let left_edge_x = thumb_x + self.edge_width;
+        let left_line = Path::line(
+            Point::new(left_edge_x, 2.0),
+            Point::new(left_edge_x, bounds.height - 2.0),
+        );
+        frame.stroke(&left_line, edge_stroke);
 
-    // 获取当前滚动位置
-    pub fn scroll_x(&self) -> f32 {
-        self.state.scroll_x
-    }
-
-    // 设置滚动位置
-    pub fn set_scroll_x(&mut self, scroll_x: f32) {
-        self.state.scroll_x = scroll_x.max(0.0).min(self.max_scroll);
-        self.scrollbar.borrow_mut().update_thumb_from_scroll(self.state.scroll_x, self.max_scroll);
-        self.grid_cache.clear();
-    }
-}
-
-impl Default for Editor {
-    fn default() -> Self {
-        Self::new()
+        let right_edge_x = thumb_x + self.thumb_width - self.edge_width;
+        let right_line = Path::line(
+            Point::new(right_edge_x, 2.0),
+            Point::new(right_edge_x, bounds.height - 2.0),
+        );
+        frame.stroke(&right_line, edge_stroke);
     }
 }

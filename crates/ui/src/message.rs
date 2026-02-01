@@ -5,6 +5,7 @@ pub enum Message {
     Core(lumino_core::Event),
     Window(Window),
     Sidebar(Sidebar),
+    ScrollbarScrolled(f32), // 滚动条滚动事件，参数为新的scroll_x值
     Null,
 }
 

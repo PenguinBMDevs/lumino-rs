@@ -2,6 +2,7 @@ use crate::{Message, Renderer, Theme};
 use crate::editor::note::Note;
 use crate::editor::state::ViewState;
 use iced_core::{Point, Rectangle, mouse};
+use iced_wgpu::geometry;
 use iced_widget::canvas::{self, Frame, Geometry, Path, Program, Stroke, Event};
 
 /// 钢琴卷帘网格绘制程序
@@ -10,6 +11,8 @@ pub struct PianoRollGrid<'a> {
     pub grid_cache: &'a canvas::Cache<Renderer>,
     pub note_cache: &'a canvas::Cache<Renderer>,
 }
+
+
 
 /// 实现绘制程序接口
 impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
@@ -72,6 +75,8 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         vec![grid_geometry, note_geometry]
     }
 }
+
+
 
 /// 绘制横向线，包括琴键分隔线
 impl<'a> PianoRollGrid<'a> {
