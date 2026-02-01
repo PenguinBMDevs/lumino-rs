@@ -86,14 +86,12 @@ impl Sidebar {
             PanelToggled(r) => {
                 if r == Route::Settings {
                     self.route = r;
+                } else if self.panel_visible && self.panel_route == r {
+                    self.panel_visible = false;
                 } else {
-                    if self.panel_visible && self.panel_route == r {
-                        self.panel_visible = false;
-                    } else {
-                        self.panel_visible = true;
-                        self.panel_route = r;
-                        self.route = r;
-                    }
+                    self.panel_visible = true;
+                    self.panel_route = r;
+                    self.route = r;
                 }
             }
         }

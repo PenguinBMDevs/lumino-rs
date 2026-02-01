@@ -2,7 +2,7 @@ use crate::{Message, Renderer, Theme};
 use crate::editor::note::Note;
 use crate::editor::state::ViewState;
 use iced_core::{Point, Rectangle, mouse};
-use iced_wgpu::geometry;
+
 use iced_widget::canvas::{self, Frame, Geometry, Path, Program, Stroke, Event};
 
 /// 钢琴卷帘网格绘制程序
@@ -58,19 +58,20 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry<Renderer>> {
-        // 1. 绘制缓存的网格（静态内容）
-        let grid_geometry = self.grid_cache.draw(renderer, bounds.size(), |frame| {
-            self.draw_keys(frame, bounds, theme);
-            self.draw_bars(frame, bounds, theme);
-        });
+        // tracing::info!("Drawing grid with scroll_x: {}", self.state.scroll_x); // debug log
+        // 禁用缓存，直接绘制（测试用）
+        let mut frame = Frame::new(renderer, bounds.size());
+        self.draw_keys(&mut frame, bounds, theme);
+        self.draw_bars(&mut frame, bounds, theme);
+        let grid_geometry = frame.into_geometry();
 
-        // 2. 绘制音符（动态内容，每次清除缓存后重绘）
-        let note_geometry = self.note_cache.draw(renderer, bounds.size(), |frame| {
-            if let Some(pos) = *state {
-                let note = Note::from_mouse_position(pos, self.state.scroll_x, self.state.scroll_y, theme);
-                note.draw(frame);
-            }
-        });
+        // 音符同样直接绘制
+        let mut note_frame = Frame::new(renderer, bounds.size());
+        if let Some(pos) = *state {
+            let note = Note::from_mouse_position(pos, self.state.scroll_x, self.state.scroll_y, theme);
+            note.draw(&mut note_frame);
+        }
+        let note_geometry = note_frame.into_geometry();
 
         vec![grid_geometry, note_geometry]
     }
@@ -132,6 +133,7 @@ impl<'a> PianoRollGrid<'a> {
         // 绘制小节线和小节内拍线
         while current_tick < end_tick {
             let screen_x = (current_tick * view.zoom_x) - view.scroll_x;
+            // tracing::info!("Drawing bar at screen_x: {}, scroll_x: {}", screen_x, view.scroll_x); // debug log
             // 小节线和拍线的判断逻辑
             let is_measure = (current_tick % measure_ticks).abs() < 0.1;
             let stroke = if is_measure { bar_stroke } else { beat_stroke };
@@ -151,8 +153,5 @@ impl<'a> PianoRollGrid<'a> {
 fn is_key_dark(key: isize, _key_count: usize) -> bool {
     // 先这么写，这是12平均律
     let note_in_octave = key % 12;
-    match note_in_octave {
-        1 | 3 | 6 | 8 | 10 => true,
-        _ => false,
-    }
+    matches!(note_in_octave, 1 | 3 | 6 | 8 | 10)
 }

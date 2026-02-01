@@ -9,6 +9,10 @@ use super::scrollbar::{self, ScrollbarState};
 pub struct ScrollbarView<'a> {
     pub scrollbar: &'a RefCell<scrollbar::Scrollbar>,
     pub max_scroll: f32,
+    // 频率控制：上次发送消息的 scroll_x 值
+    pub last_reported_scroll: RefCell<f32>,
+    // 频率控制：最小变化阈值（像素）
+    pub report_threshold: f32,
 }
 
 impl<'a> Program<Message, Theme, Renderer> for ScrollbarView<'a> {
@@ -30,6 +34,7 @@ impl<'a> Program<Message, Theme, Renderer> for ScrollbarView<'a> {
                         if let Some(position) = cursor.position() {
                             let local_x = position.x - bounds.x;
                             let local_y = position.y - bounds.y;
+                            
                             // 检查鼠标是否在滚动条区域内（X和Y都要检查）
                             if local_y >= 0.0 && local_y <= bounds.height &&
                                scrollbar.is_mouse_on_thumb(local_x, bounds.width) {
@@ -39,6 +44,8 @@ impl<'a> Program<Message, Theme, Renderer> for ScrollbarView<'a> {
                                     start_thumb_x: thumb_x,
                                     bounds_width: bounds.width,
                                 };
+                                // 重置上次报告的值
+                                *self.last_reported_scroll.borrow_mut() = -9999.0;
                                 return Some(canvas::Action::request_redraw());
                             }
                         }
@@ -73,6 +80,14 @@ impl<'a> Program<Message, Theme, Renderer> for ScrollbarView<'a> {
                                     // 计算新的滚动位置
                                     let new_scroll = scrollbar.calculate_scroll_from_ratio(self.max_scroll);
                                     scrollbar.new_scroll_x = Some(new_scroll);
+
+                                    // 频率控制：检查变化是否超过阈值
+                                    let last_reported = *self.last_reported_scroll.borrow();
+                                    if (new_scroll - last_reported).abs() >= self.report_threshold {
+                                        *self.last_reported_scroll.borrow_mut() = new_scroll;
+                                        // 发送消息通知 Editor 更新 scroll_x
+                                        return Some(canvas::Action::publish(Message::ScrollbarScrolled(new_scroll)));
+                                    }
 
                                     return Some(canvas::Action::request_redraw());
                                 }

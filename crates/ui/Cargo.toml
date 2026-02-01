@@ -15,3 +15,4 @@ iced_wgpu = { version = "0.14.0", features = ["svg", "geometry"] }
 iced_winit = "0.14.0"
 iced_widget = { version = "0.14.0", features = ["svg"] }
 iced_core = "0.14.0"
+tracing = "0.1"  

@@ -38,7 +38,7 @@ impl Scrollbar {
             self.thumb_ratio = 0.0;
             return;
         }
-        self.thumb_ratio = (scroll_x / max_scroll).max(0.0).min(1.0);
+        self.thumb_ratio = (scroll_x / max_scroll).clamp(0.0, 1.0);
     }
 
     // 根据滑块比例计算滚动值
@@ -80,88 +80,76 @@ impl<'a> Program<Message, Theme, Renderer> for ScrollbarView<'a> {
     ) -> Option<canvas::Action<Message>> {
         let scrollbar = unsafe { &mut *(self.scrollbar as *const _ as *mut Scrollbar) };
 
-        match event {
-            Event::Mouse(mouse_event) => {
-                match mouse_event {
-                    iced_core::mouse::Event::ButtonPressed(iced_core::mouse::Button::Left) => {
-                        if let Some(position) = cursor.position() {
-                            let local_x = position.x - bounds.x;
-                            let local_y = position.y - bounds.y;
-                            // 检查鼠标是否在滚动条区域内（X和Y都要检查）
-                            if local_y >= 0.0 && local_y <= bounds.height &&
-                               scrollbar.is_mouse_on_thumb(local_x, bounds.width) {
-                                let thumb_x = scrollbar.thumb_x(bounds.width);
-                                scrollbar.state = ScrollbarState::DraggingThumb {
-                                    start_x: local_x,
-                                    start_thumb_x: thumb_x,
-                                    bounds_width: bounds.width,
-                                };
-                                return Some(canvas::Action::request_redraw());
-                            }
-                        }
-                    }
-                    iced_core::mouse::Event::ButtonReleased(iced_core::mouse::Button::Left) => {
-                        if scrollbar.state != ScrollbarState::Idle {
-                            scrollbar.state = ScrollbarState::Idle;
-                            scrollbar.new_scroll_x = None;
+        if let Event::Mouse(mouse_event) = event {
+            match mouse_event {
+                iced_core::mouse::Event::ButtonPressed(iced_core::mouse::Button::Left) => {
+                    if let Some(position) = cursor.position() {
+                        let local_x = position.x - bounds.x;
+                        let local_y = position.y - bounds.y;
+                        if local_y >= 0.0 && local_y <= bounds.height &&
+                           scrollbar.is_mouse_on_thumb(local_x, bounds.width) {
+                            let thumb_x = scrollbar.thumb_x(bounds.width);
+                            scrollbar.state = ScrollbarState::DraggingThumb {
+                                start_x: local_x,
+                                start_thumb_x: thumb_x,
+                                bounds_width: bounds.width,
+                            };
                             return Some(canvas::Action::request_redraw());
                         }
                     }
-                    iced_core::mouse::Event::CursorMoved { .. } => {
-                        if let Some(position) = cursor.position() {
-                            let local_x = position.x - bounds.x;
-                            let local_y = position.y - bounds.y;
+                }
+                iced_core::mouse::Event::ButtonReleased(iced_core::mouse::Button::Left) => {
+                    if scrollbar.state != ScrollbarState::Idle {
+                        scrollbar.state = ScrollbarState::Idle;
+                        scrollbar.new_scroll_x = None;
+                        return Some(canvas::Action::request_redraw());
+                    }
+                }
+                iced_core::mouse::Event::CursorMoved { .. } => {
+                    if let Some(position) = cursor.position() {
+                        let local_x = position.x - bounds.x;
+                        let local_y = position.y - bounds.y;
 
-                            // 首先检查鼠标是否在滚动条Y范围内
-                            if local_y < 0.0 || local_y > bounds.height {
-                                // 鼠标离开滚动条区域，结束拖拽或悬停状态
-                                if scrollbar.state != ScrollbarState::Idle {
-                                    scrollbar.state = ScrollbarState::Idle;
-                                    scrollbar.new_scroll_x = None;
+                        if local_y < 0.0 || local_y > bounds.height {
+                            if scrollbar.state != ScrollbarState::Idle {
+                                scrollbar.state = ScrollbarState::Idle;
+                                scrollbar.new_scroll_x = None;
+                                return Some(canvas::Action::request_redraw());
+                            }
+                        } else {
+                            match scrollbar.state {
+                                ScrollbarState::DraggingThumb { start_x, start_thumb_x, bounds_width } => {
+                                    let delta_x = local_x - start_x;
+                                    let new_thumb_x = start_thumb_x + delta_x;
+                                    let available_width = bounds_width - scrollbar.thumb_width;
+                                    let clamped_thumb_x = new_thumb_x.clamp(0.0, available_width);
+
+                                    if available_width > 0.0 {
+                                        scrollbar.thumb_ratio = clamped_thumb_x / available_width;
+                                    }
+
+                                    let new_scroll = scrollbar.calculate_scroll_from_ratio(self.max_scroll);
+                                    scrollbar.new_scroll_x = Some(new_scroll);
+
                                     return Some(canvas::Action::request_redraw());
                                 }
-                            } else {
-                                // 鼠标在Y范围内，处理X方向的逻辑
-                                match scrollbar.state {
-                                    ScrollbarState::DraggingThumb { start_x, start_thumb_x, bounds_width } => {
-                                        let delta_x = local_x - start_x;
-                                        let new_thumb_x = start_thumb_x + delta_x;
-
-                                        // 限制滑块在轨道内
-                                        let available_width = bounds_width - scrollbar.thumb_width;
-                                        let clamped_thumb_x = new_thumb_x.max(0.0).min(available_width);
-
-                                        // 更新比例
-                                        if available_width > 0.0 {
-                                            scrollbar.thumb_ratio = clamped_thumb_x / available_width;
-                                        }
-
-                                        // 计算新的滚动位置
-                                        let new_scroll = scrollbar.calculate_scroll_from_ratio(self.max_scroll);
-                                        scrollbar.new_scroll_x = Some(new_scroll);
-
+                                _ => {
+                                    let new_state = if scrollbar.is_mouse_on_thumb(local_x, bounds.width) {
+                                        ScrollbarState::HoverThumb
+                                    } else {
+                                        ScrollbarState::Idle
+                                    };
+                                    if scrollbar.state != new_state {
+                                        scrollbar.state = new_state;
                                         return Some(canvas::Action::request_redraw());
-                                    }
-                                    _ => {
-                                        // 更新悬停状态
-                                        let new_state = if scrollbar.is_mouse_on_thumb(local_x, bounds.width) {
-                                            ScrollbarState::HoverThumb
-                                        } else {
-                                            ScrollbarState::Idle
-                                        };
-                                        if scrollbar.state != new_state {
-                                            scrollbar.state = new_state;
-                                            return Some(canvas::Action::request_redraw());
-                                        }
                                     }
                                 }
                             }
                         }
                     }
-                    _ => {}
                 }
+                _ => {}
             }
-            _ => {}
         }
 
         None
