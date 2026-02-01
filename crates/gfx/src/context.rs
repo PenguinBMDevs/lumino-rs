@@ -49,6 +49,18 @@ impl Context {
             .await
             .expect("Request device");
 
+        // 添加于2026-02-01，尝试解决音符不跟手的问题（2方案+1回退+1旧方案）
+        let present_mode = if capabilities.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+            wgpu::PresentMode::Mailbox
+        } else if capabilities.present_modes.contains(&wgpu::PresentMode::Immediate) {
+            wgpu::PresentMode::Immediate
+        } else if capabilities.present_modes.contains(&wgpu::PresentMode::Fifo) {
+            wgpu::PresentMode::Fifo // 回退方案
+        } else {
+            wgpu::PresentMode::AutoVsync    // 旧方案
+        };
+        println!("Selected present_mode: {:?}", present_mode);
+
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
@@ -56,7 +68,7 @@ impl Context {
                 format,
                 width,
                 height,
-                present_mode: wgpu::PresentMode::AutoVsync,
+                present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats: vec![],
                 desired_maximum_frame_latency: 2,
@@ -73,6 +85,19 @@ impl Context {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
+        // 添加于2026-02-01
+        let capabilities = self.surface.get_capabilities(&self.adapter);
+        let present_mode = if capabilities.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+            wgpu::PresentMode::Mailbox
+        } else if capabilities.present_modes.contains(&wgpu::PresentMode::Immediate) {
+            wgpu::PresentMode::Immediate
+        } else if capabilities.present_modes.contains(&wgpu::PresentMode::Fifo) {
+            wgpu::PresentMode::Fifo // 回退方案
+        } else {
+            wgpu::PresentMode::AutoVsync    // 旧方案
+        };
+        println!("Selected present_mode (resize): {:?}", present_mode);
+
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
@@ -80,7 +105,7 @@ impl Context {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 width,
                 height,
-                present_mode: wgpu::PresentMode::AutoVsync,
+                present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats: vec![],
                 desired_maximum_frame_latency: 2,
