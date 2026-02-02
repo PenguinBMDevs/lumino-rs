@@ -25,3 +25,6 @@ target
 !.vscode/extensions.json
 !.vscode/tasks.json
 !.vscode/launch.json
+
+# Idea
+.idea
