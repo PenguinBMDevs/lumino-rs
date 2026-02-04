@@ -1,0 +1,27 @@
+[package]
+name = "lumino-midiloader"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
+description = "High-performance MIDI file parser for Lumino"
+authors = ["Lumino Contributors"]
+repository.workspace = true
+keywords = ["midi", "audio", "music", "parser"]
+categories = ["multimedia::audio", "parser-implementations"]
+
+[dependencies]
+memmap2 = "0.9"
+crossbeam-channel = "0.5"
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.10"
+
+[features]
+default = []
+
+[[example]]
+name = "midi_test"
+path = "examples/midi_test.rs"

@@ -1,11 +1,12 @@
 [workspace]
-members = ["crates/core", "crates/gfx", "crates/midi", "crates/ui"]
+members = ["crates/core", "crates/gfx", "crates/midi", "crates/midiloader", "crates/ui"]
 resolver = "3"
 
 [workspace.package]
 version = "0.1.0"
 rust-version = "1.92.0"
 homepage = "https://github.com/BuickMeow/lumino-rust"
+repository = "https://github.com/BuickMeow/lumino-rust"
 license = "Mulan PSL v2"
 edition = "2024"
 
@@ -21,6 +22,7 @@ edition.workspace = true
 lumino-core = { path = "crates/core" }
 lumino-gfx = { path = "crates/gfx" }
 lumino-midi = { path = "crates/midi" }
+lumino-midiloader = { path = "crates/midiloader" }
 lumino-ui = { path = "crates/ui" }
 # crates.io
 tracing = "0.1.43"
