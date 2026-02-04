@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/gfx", "crates/midi", "crates/midiloader", "crates/ui"]
+members = ["crates/core", "crates/gfx", "crates/midi", "crates/midly-fork", "crates/ui"]
 resolver = "3"
 
 [workspace.package]
@@ -22,7 +22,7 @@ edition.workspace = true
 lumino-core = { path = "crates/core" }
 lumino-gfx = { path = "crates/gfx" }
 lumino-midi = { path = "crates/midi" }
-lumino-midiloader = { path = "crates/midiloader" }
+midly = { path = "crates/midly-fork" }
 lumino-ui = { path = "crates/ui" }
 # crates.io
 tracing = "0.1.43"
@@ -47,6 +47,8 @@ winit = "0.30"
 futures = "0.3.31"
 directories = "6.0.0"
 toml = "0.9.11"
+rfd = "0.15"
+midly = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = "0.17.1"

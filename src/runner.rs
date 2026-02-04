@@ -10,6 +10,109 @@ use winit::{
 
 use super::storage;
 
+/// MIDI file information structure
+#[derive(Debug, Clone)]
+pub struct MidiInfo {
+    pub path: std::path::PathBuf,
+    pub header: midly::Header,
+    pub track_count: usize,
+    pub total_events: usize,
+    pub total_notes: usize,
+    pub duration_ticks: u64,
+}
+
+impl MidiInfo {
+    fn from_path(path: std::path::PathBuf) -> Result<Self, String> {
+        let data = std::fs::read(&path)
+            .map_err(|e| format!("Failed to read file: {}", e))?;
+        
+        tracing::debug!("Read {} bytes from {:?}", data.len(), path);
+        
+        // Try using the standard midly parser first
+        let smf = match midly::Smf::parse(&data) {
+            Ok(smf) => smf,
+            Err(e) => {
+                tracing::warn!("Standard parser failed: {}, trying mmap parser...", e);
+                // Fallback to mmap parser
+                midly::mmap::MmapSmf::parse(&data)
+                    .map_err(|e| format!("MIDI parse error: {}", e))?
+                    .to_owned()
+            }
+        };
+
+        // Calculate stats manually
+        let mut total_events = 0;
+        let mut total_notes = 0;
+        let mut duration_ticks = 0u64;
+
+        for track in &smf.tracks {
+            let mut track_ticks = 0u64;
+            for event in track {
+                total_events += 1;
+                track_ticks += event.delta.as_int() as u64;
+                
+                if let midly::TrackEventKind::Midi { 
+                    message: midly::MidiMessage::NoteOn { .. }, ..
+                } = event.kind {
+                    total_notes += 1;
+                }
+            }
+            duration_ticks = duration_ticks.max(track_ticks);
+        }
+
+        tracing::info!(
+            "Parsed MIDI: {} tracks, {} events, {} notes",
+            smf.tracks.len(),
+            total_events,
+            total_notes
+        );
+
+        Ok(Self {
+            path,
+            header: smf.header,
+            track_count: smf.tracks.len(),
+            total_events,
+            total_notes,
+            duration_ticks,
+        })
+    }
+}
+
+impl std::fmt::Display for MidiInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let format_str = match self.header.format {
+            midly::Format::SingleTrack => "Single Track",
+            midly::Format::Parallel => "Parallel",
+            midly::Format::Sequential => "Sequential",
+        };
+
+        let timing_str = match self.header.timing {
+            midly::Timing::Metrical(ticks) => format!("{} ticks/quarter", ticks.as_int()),
+            midly::Timing::Timecode(fps, subframe) => {
+                format!("{:?} fps, {} subframes", fps, subframe)
+            }
+        };
+
+        write!(
+            f,
+            "MIDI File: {}\n\
+             Format: {}\n\
+             Timing: {}\n\
+             Tracks: {}\n\
+             Total Events: {}\n\
+             Note Events: {}\n\
+             Duration: {} ticks",
+            self.path.display(),
+            format_str,
+            timing_str,
+            self.track_count,
+            self.total_events,
+            self.total_notes,
+            self.duration_ticks
+        )
+    }
+}
+
 #[derive(Default)]
 pub struct Runner {
     inner: Option<RunnerInner>,
@@ -203,7 +306,28 @@ impl winit::application::ApplicationHandler for Runner {
                             use file::Event::*;
                             match r {
                                 Exit => event_loop.exit(),
-                                _ => todo!(),
+                                Open | ImportMidi => {
+                                    // Open file dialog for MIDI files
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .add_filter("MIDI files", &["mid", "midi"])
+                                        .add_filter("All files", &["*"])
+                                        .pick_file()
+                                    {
+                                        match MidiInfo::from_path(path) {
+                                            Ok(info) => {
+                                                tracing::info!("Loaded MIDI file:\n{}", info);
+                                                // TODO: Store the MIDI info and use it in the application
+                                                // For now, just log it
+                                            }
+                                            Err(e) => {
+                                                tracing::error!("Failed to parse MIDI file: {}", e);
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => {
+                                    tracing::debug!("Unhandled file event: {:?}", r);
+                                }
                             }
                         }
                         Edit(r) => {
