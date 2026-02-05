@@ -8,7 +8,8 @@ mod platform;
 mod runner;
 mod storage;
 
-fn main() -> Result<(), winit::error::EventLoopError> {
+#[tokio::main]
+async fn main() -> Result<(), winit::error::EventLoopError> {
     logging::init();
 
     // Initialize winit

@@ -49,6 +49,7 @@ directories = "6.0.0"
 toml = "0.9.11"
 rfd = "0.15"
 midly = { workspace = true }
+tokio = { version = "1.42", features = ["full"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = "0.17.1"

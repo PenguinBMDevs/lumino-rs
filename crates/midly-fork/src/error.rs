@@ -135,7 +135,7 @@ impl fmt::Debug for Error {
 impl std::error::Error for Error {
     #[inline]
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source()
+        ErrorExt::source(self)
             .map(|e| e as &(dyn std::error::Error + 'static))
     }
 }
