@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/gfx", "crates/midi", "crates/midly-fork", "crates/ui"]
+members = ["crates/core", "crates/gfx", "crates/midi", "crates/ui"]
 resolver = "3"
 
 [workspace.package]
@@ -22,7 +22,7 @@ edition.workspace = true
 lumino-core = { path = "crates/core" }
 lumino-gfx = { path = "crates/gfx" }
 lumino-midi = { path = "crates/midi" }
-midly = { path = "crates/midly-fork" }
+midly = { git = "https://github.com/Enderman-bm/midly-fork" }
 lumino-ui = { path = "crates/ui" }
 # crates.io
 tracing = "0.1.43"

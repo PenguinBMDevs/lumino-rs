@@ -10,7 +10,7 @@ use winit::{
 
 use super::storage;
 
-// 从core crate导入MidiInfo
+// 从core导入MidiInfo
 pub use lumino_core::MidiInfo;
 
 #[derive(Default)]
@@ -19,13 +19,9 @@ pub struct Runner {
 }
 
 struct RunnerInner {
-    // Wgpu instance
     gfx: lumino_gfx::Context,
-    // Iced instance
     ui: lumino_ui::Host,
-    // Storage system
     storage: storage::Storage,
-
     window: Arc<winit::window::Window>,
     modifiers: ModifiersState,
     resized: bool,
@@ -38,8 +34,7 @@ impl winit::application::ApplicationHandler for Runner {
         }
 
         let storage = storage::Storage::new()
-            // `expect()` is a temporary solution. remove it in the future.
-            .expect("Initialize storage");
+            .expect("初始化存储失败");
 
         let config = storage.config.get();
         let ui_state = storage.ui_state.get();
@@ -55,28 +50,17 @@ impl winit::application::ApplicationHandler for Runner {
             })
             .with_maximized(ui_state.is_maximized)
             .with_title("Lumino")
-            // The window should be invisible at first.
-            // Make it visible when it's the right time.
             .with_visible(false);
 
-        if
-            let (Some(x), Some(y)) = (ui_state.x, ui_state.y) &&
-            !ui_state.is_maximized
-        {
-            attributes = attributes
-                .with_position(dpi::LogicalPosition {
-                    x, y
-                });
+        if let (Some(x), Some(y)) = (ui_state.x, ui_state.y) && !ui_state.is_maximized {
+            attributes = attributes.with_position(dpi::LogicalPosition { x, y });
         }
 
         #[cfg(target_os = "windows")]
         {
             use winit::platform::windows::WindowAttributesExtWindows;
             attributes = attributes
-                // Disable native titlebar.
                 .with_decorations(false)
-                // Allows Windows to draw a shadow + frame on an undecorated window.
-                // Improves UX when decorations is false.
                 .with_undecorated_shadow(true);
         }
 
@@ -84,28 +68,26 @@ impl winit::application::ApplicationHandler for Runner {
         {
             use winit::platform::macos::WindowAttributesExtMacOS;
             attributes = attributes
-                // Make native titlebar transparent.
                 .with_titlebar_transparent(true)
-                // Allows the content to be integrated with native titlebar.
                 .with_fullsize_content_view(true);
         }
 
         let window = Arc::new(
             event_loop
                 .create_window(attributes)
-                .expect("Create main window"),
+                .expect("创建窗口失败"),
         );
 
         let physical_size = window.inner_size();
 
-        // Initialize wgpu
+        // 初始化wgpu
         let gfx = futures::executor::block_on(lumino_gfx::Context::new(
             window.clone(),
             physical_size.width,
             physical_size.height,
         ));
 
-        // Initialize iced
+        // 初始化iced
         let ui = lumino_ui::Host::new(
             window.clone(),
             physical_size.width,
@@ -114,9 +96,7 @@ impl winit::application::ApplicationHandler for Runner {
             &gfx,
         );
 
-        // You should change this if you want to render continuously
         event_loop.set_control_flow(ControlFlow::Wait);
-
         window.set_visible(true);
 
         #[cfg(target_os = "macos")]
@@ -146,18 +126,12 @@ impl winit::application::ApplicationHandler for Runner {
             WindowEvent::RedrawRequested => {
                 if this.resized {
                     let size = this.window.inner_size();
-
                     this.ui.resize(size.width, size.height);
                     this.gfx.resize(size.width, size.height);
-
                     this.resized = false;
                 }
 
-                if this
-                    .gfx
-                    .with_frame(|a, b| this.ui.redraw_requested(a, b))
-                    .is_err()
-                {
+                if this.gfx.with_frame(|a, b| this.ui.redraw_requested(a, b)).is_err() {
                     this.window.request_redraw();
                 };
             }
@@ -207,37 +181,34 @@ impl winit::application::ApplicationHandler for Runner {
                             match r {
                                 Exit => event_loop.exit(),
                                 Open | ImportMidi => {
-                                    // Open file dialog for MIDI files
+                                    // 打开MIDI文件
                                     if let Some(path) = rfd::FileDialog::new()
-                                        .add_filter("MIDI files", &["mid", "midi"])
-                                        .add_filter("All files", &["*"])
+                                        .add_filter("MIDI文件", &["mid", "midi"])
+                                        .add_filter("所有文件", &["*"])
                                         .pick_file()
                                     {
-                                        // 异步解析MIDI文件，使用tracing输出进度
-                                        // 使用 futures::executor::block_on 在同步上下文中运行异步代码
+                                        // 解析MIDI文件
                                         let result = futures::executor::block_on(async {
                                             MidiInfo::from_path_with_progress(
                                                 path,
                                                 Some(&|progress| {
-                                                    tracing::info!("MIDI解析进度: {:.1}%", progress);
+                                                    tracing::info!("解析进度: {:.1}%", progress);
                                                 }),
                                             ).await
                                         });
-                                        
+
                                         match result {
                                             Ok(info) => {
-                                                tracing::info!("Loaded MIDI file:\n{}", info);
-                                                // TODO: Store the MIDI info and use it in the application
-                                                // For now, just log it
+                                                tracing::info!("加载成功:\n{}", info);
                                             }
                                             Err(e) => {
-                                                tracing::error!("Failed to parse MIDI file: {}", e);
+                                                tracing::error!("解析失败: {}", e);
                                             }
                                         }
                                     }
                                 }
                                 _ => {
-                                    tracing::debug!("Unhandled file event: {:?}", r);
+                                    tracing::debug!("未处理的文件事件: {:?}", r);
                                 }
                             }
                         }
@@ -255,7 +226,7 @@ impl winit::application::ApplicationHandler for Runner {
                                     this.storage.config.patch(|state| {
                                         state.ui.theme = r;
                                     });
-                                },
+                                }
                             }
                         }
                         Help(r) => {
@@ -271,7 +242,7 @@ impl winit::application::ApplicationHandler for Runner {
                     let w = &this.window;
                     match r {
                         Close => event_loop.exit(),
-                        Drag => w.drag_window().expect("Drag window"),
+                        Drag => w.drag_window().expect("拖动窗口失败"),
                         Maximize => w.set_maximized(true),
                         Minimize => w.set_minimized(true),
                         ToggleMaximize => w.set_maximized(!w.is_maximized()),
@@ -280,13 +251,11 @@ impl winit::application::ApplicationHandler for Runner {
             }
         }
 
-        // 1. this is idempotent, no need to check the `dirty` state.
-        // 2. results should be actually handled in the future.
         if let Err(e) = this.storage.config.save() {
-            tracing::warn!("failed to save config: {e}");
+            tracing::warn!("保存配置失败: {e}");
         }
         if let Err(e) = this.storage.ui_state.save() {
-            tracing::warn!("failed to save ui_state: {e}");
+            tracing::warn!("保存UI状态失败: {e}");
         }
     }
 }

@@ -2450,8 +2450,8 @@ dependencies = [
 [[package]]
 name = "midly"
 version = "0.5.3"
+source = "git+https://github.com/Enderman-bm/midly-fork#0f652b5880248a62c3cafeaa6b084f8ea02e5ac4"
 dependencies = [
- "memmap2",
  "rayon",
 ]
 

@@ -1,10 +1,6 @@
-//! MIDI文件处理模块
-//!
-//! 提供异步MIDI文件解析功能，支持实时进度回调
-
 use std::path::PathBuf;
 
-/// MIDI文件信息结构
+/// MIDI文件信息
 #[derive(Debug, Clone)]
 pub struct MidiInfo {
     pub path: PathBuf,
@@ -17,49 +13,41 @@ pub struct MidiInfo {
 }
 
 impl MidiInfo {
-    /// 异步解析MIDI文件
-    ///
-    /// # Arguments
-    /// * `path` - MIDI文件路径
+    /// 解析MIDI文件
     pub async fn from_path(path: PathBuf) -> Result<Self, String> {
         Self::from_path_with_progress(path, None).await
     }
 
-    /// 异步解析MIDI文件（带进度回调）
-    ///
-    /// # Arguments
-    /// * `path` - MIDI文件路径
-    /// * `progress_callback` - 可选的进度回调，接收0.0-100.0的进度值
+    /// 解析MIDI文件（带进度回调）
     pub async fn from_path_with_progress(
         path: PathBuf,
         progress_callback: Option<&dyn Fn(f64)>,
     ) -> Result<Self, String> {
-        // 异步读取文件
+        // 读取文件
         let data = tokio::fs::read(&path)
             .await
-            .map_err(|e| format!("Failed to read file: {}", e))?;
+            .map_err(|e| format!("读取文件失败: {}", e))?;
 
-        tracing::debug!("Read {} bytes from {:?}", data.len(), path);
+        tracing::debug!("读取了 {} 字节", data.len());
 
-        // 使用midly::parse获取懒惰迭代器
+        // 解析MIDI
         let (header, track_iter) = midly::parse(&data)
-            .map_err(|e| format!("MIDI parse error: {}", e))?;
+            .map_err(|e| format!("解析失败: {}", e))?;
 
-        // 收集所有track数据
+        // 收集所有音轨
         let tracks: Vec<_> = track_iter
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("Track parse error: {}", e))?;
+            .map_err(|e| format!("音轨解析失败: {}", e))?;
 
-        // 计算总字节数用于进度计算
+        // 计算总字节数
         let total_track_bytes: usize = tracks.iter()
             .map(|track| track.unread().len())
             .sum();
 
         let track_count = tracks.len();
-        tracing::info!("Processing {} tracks, {} total bytes",
-            track_count, total_track_bytes);
+        tracing::info!("处理 {} 个音轨，共 {} 字节", track_count, total_track_bytes);
 
-        // 遍历所有tracks
+        // 统计信息
         let mut total_events = 0;
         let mut total_notes = 0;
         let mut duration_ticks = 0u64;
@@ -69,7 +57,7 @@ impl MidiInfo {
             let track_bytes = track.unread().len();
             let mut track_ticks = 0u64;
 
-            // 处理这个track的所有事件
+            // 处理每个事件
             for event in track {
                 match event {
                     Ok(ev) => {
@@ -82,17 +70,16 @@ impl MidiInfo {
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to parse event in track {}: {}", track_idx, e);
+                        tracing::warn!("音轨 {} 事件解析失败: {}", track_idx, e);
                     }
                 }
                 total_events += 1;
             }
             duration_ticks = duration_ticks.max(track_ticks);
 
-            // 更新已处理的字节数
+            // 更新进度
             processed_bytes += track_bytes;
 
-            // 报告进度（每个track完成后报告一次）
             if let Some(callback) = progress_callback {
                 let progress = if total_track_bytes > 0 {
                     (processed_bytes as f64 / total_track_bytes as f64) * 100.0
@@ -101,17 +88,13 @@ impl MidiInfo {
                 };
                 callback(progress);
 
-                tracing::debug!("Track {}/{} parsed, progress: {:.1}%",
-                    track_idx + 1, track_count, progress);
+                tracing::debug!("音轨 {}/{} 完成，进度: {:.1}%", track_idx + 1, track_count, progress);
             }
         }
 
         tracing::info!(
-            "Parsed MIDI: {} tracks, {} events, {} notes, {} ticks",
-            track_count,
-            total_events,
-            total_notes,
-            duration_ticks
+            "解析完成: {} 个音轨, {} 个事件, {} 个音符, {} ticks",
+            track_count, total_events, total_notes, duration_ticks
         );
 
         Ok(Self {
@@ -129,27 +112,27 @@ impl MidiInfo {
 impl std::fmt::Display for MidiInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let format_str = match self.header.format {
-            midly::Format::SingleTrack => "Single Track",
-            midly::Format::Parallel => "Parallel",
-            midly::Format::Sequential => "Sequential",
+            midly::Format::SingleTrack => "单音轨",
+            midly::Format::Parallel => "并行",
+            midly::Format::Sequential => "顺序",
         };
 
         let timing_str = match self.header.timing {
-            midly::Timing::Metrical(ticks) => format!("{} ticks/quarter", ticks.as_int()),
+            midly::Timing::Metrical(ticks) => format!("{} ticks/四分音符", ticks.as_int()),
             midly::Timing::Timecode(fps, subframe) => {
-                format!("{:?} fps, {} subframes", fps, subframe)
+                format!("{:?} fps, {} 子帧", fps, subframe)
             }
         };
 
         write!(
             f,
-            "MIDI File: {}\n\
-             Format: {}\n\
-             Timing: {}\n\
-             Tracks: {}\n\
-             Total Events: {}\n\
-             Note Events: {}\n\
-             Duration: {} ticks",
+            "MIDI文件: {}\n\
+             格式: {}\n\
+             时间: {}\n\
+             音轨数: {}\n\
+             总事件数: {}\n\
+             音符事件数: {}\n\
+             时长: {} ticks",
             self.path.display(),
             format_str,
             timing_str,
