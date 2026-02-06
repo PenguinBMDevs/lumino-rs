@@ -24,7 +24,7 @@ use iced_winit::{
     winit,
 };
 
-use iced_core::{Event, Font, Pixels, Size, Theme, mouse, renderer};
+use iced_core::{Event, Font, Pixels, Size, Theme, mouse, renderer, touch};
 
 pub struct Host {
     window: Arc<winit::window::Window>,
@@ -158,7 +158,10 @@ impl Host {
         if let Some(event) =
             conversion::window_event(event, self.window.scale_factor() as f32, modifiers)
         {
-            self.events.push(event);
+            // Convert touch events to mouse events for compatibility with widgets
+            // that don't handle touch events (e.g., iced_aw MenuBar)
+            let converted_events = convert_touch_to_mouse(event);
+            self.events.extend(converted_events);
         }
 
         // If there are events pending
@@ -196,5 +199,38 @@ impl Host {
 
     pub fn update_theme(&mut self, theme: String) {
         self.root.update(message::Window::theme(theme));
+    }
+}
+
+/// Converts touch events to mouse events for compatibility with widgets
+/// that only handle mouse events (e.g., iced_aw MenuBar).
+/// Returns a vector of events (either the original event + converted mouse event,
+/// or just the original event if no conversion is needed).
+fn convert_touch_to_mouse(event: Event) -> Vec<Event> {
+    match event {
+        Event::Touch(touch_event) => match touch_event {
+            touch::Event::FingerPressed { position, .. } => {
+                vec![
+                    event,
+                    Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
+                    Event::Mouse(mouse::Event::CursorMoved { position }),
+                ]
+            }
+            touch::Event::FingerLifted { position, .. } => {
+                vec![
+                    event,
+                    Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
+                    Event::Mouse(mouse::Event::CursorMoved { position }),
+                ]
+            }
+            touch::Event::FingerMoved { position, .. } => {
+                vec![
+                    event,
+                    Event::Mouse(mouse::Event::CursorMoved { position }),
+                ]
+            }
+            _ => vec![event],
+        },
+        _ => vec![event],
     }
 }
