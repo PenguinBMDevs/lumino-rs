@@ -209,6 +209,9 @@ impl winit::application::ApplicationHandler for Runner {
             WindowEvent::CursorMoved { position, .. } => {
                 this.ui.cursor_moved(position);
             }
+            WindowEvent::Touch(touch) => {
+                this.ui.cursor_moved(touch.location);
+            }
             WindowEvent::ModifiersChanged(new_modifiers) => {
                 this.modifiers = new_modifiers.state();
             }
