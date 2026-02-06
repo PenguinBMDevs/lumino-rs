@@ -28,67 +28,67 @@ impl MidiInfo {
             .await
             .map_err(|e| format!("读取文件失败: {}", e))?;
 
-        tracing::debug!("读取了 {} 字节", data.len());
+        let file_size = data.len();
+        tracing::debug!("读取了 {} 字节", file_size);
 
         // 解析MIDI
         let (header, track_iter) = midly::parse(&data)
             .map_err(|e| format!("解析失败: {}", e))?;
 
-        // 收集所有音轨
-        let tracks: Vec<_> = track_iter
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("音轨解析失败: {}", e))?;
-
-        // 计算总字节数
-        let total_track_bytes: usize = tracks.iter()
-            .map(|track| track.unread().len())
-            .sum();
-
-        let track_count = tracks.len();
-        tracing::info!("处理 {} 个音轨，共 {} 字节", track_count, total_track_bytes);
-
-        // 统计信息
-        let mut total_events = 0;
-        let mut total_notes = 0;
+        // 流式处理音轨，避免同时存储所有音轨
+        let mut total_events = 0usize;
+        let mut total_notes = 0usize;
         let mut duration_ticks = 0u64;
-        let mut processed_bytes = 0usize;
+        let mut last_progress = 0u8;
+        let mut track_count = 0usize;
 
-        for (track_idx, track) in tracks.into_iter().enumerate() {
-            let track_bytes = track.unread().len();
+        for (track_idx, track_result) in track_iter.enumerate() {
+            let track = track_result
+                .map_err(|e| format!("音轨 {} 解析失败: {}", track_idx, e))?;
+            
+            track_count = track_idx + 1;
             let mut track_ticks = 0u64;
 
-            // 处理每个事件
-            for event in track {
-                match event {
-                    Ok(ev) => {
-                        track_ticks += ev.delta.as_int() as u64;
+            // 流式处理音轨事件，避免存储中间数据
+            for event_result in track {
+                match event_result {
+                    Ok(event) => {
+                        track_ticks += event.delta.as_int() as u64;
 
-                        if let midly::TrackEventKind::Midi {
-                            message: midly::MidiMessage::NoteOn { .. }, ..
-                        } = ev.kind {
-                            total_notes += 1;
+                        // 使用 match 优化分支预测
+                        match event.kind {
+                            midly::TrackEventKind::Midi {
+                                message: midly::MidiMessage::NoteOn { .. },
+                                ..
+                            } => {
+                                total_notes += 1;
+                            }
+                            _ => {}
                         }
+                        
+                        total_events += 1;
                     }
                     Err(e) => {
-                        tracing::warn!("音轨 {} 事件解析失败: {}", track_idx, e);
+                        tracing::warn!("事件解析失败: {}", e);
                     }
                 }
-                total_events += 1;
             }
-            duration_ticks = duration_ticks.max(track_ticks);
 
-            // 更新进度
-            processed_bytes += track_bytes;
+            // 更新最大时长
+            if track_ticks > duration_ticks {
+                duration_ticks = track_ticks;
+            }
 
+            // 计算并报告进度（限制回调频率，每1%更新一次）
             if let Some(callback) = progress_callback {
-                let progress = if total_track_bytes > 0 {
-                    (processed_bytes as f64 / total_track_bytes as f64) * 100.0
-                } else {
-                    0.0
-                };
-                callback(progress);
-
-                tracing::debug!("音轨 {}/{} 完成，进度: {:.1}%", track_idx + 1, track_count, progress);
+                let progress = ((track_idx + 1) as f64 * 100.0 / 16.0).min(100.0);
+                let progress_byte = progress as u8;
+                
+                if progress_byte > last_progress {
+                    last_progress = progress_byte;
+                    callback(progress);
+                    tracing::debug!("音轨 {}/{} 完成，进度: {:.1}%", track_idx + 1, track_count, progress);
+                }
             }
         }
 

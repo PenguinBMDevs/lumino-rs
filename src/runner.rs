@@ -187,24 +187,30 @@ impl winit::application::ApplicationHandler for Runner {
                                         .add_filter("所有文件", &["*"])
                                         .pick_file()
                                     {
-                                        // 解析MIDI文件
-                                        let result = futures::executor::block_on(async {
-                                            MidiInfo::from_path_with_progress(
-                                                path,
-                                                Some(&|progress| {
-                                                    tracing::info!("解析进度: {:.1}%", progress);
-                                                }),
-                                            ).await
+                                        // 在后台线程中异步加载MIDI文件，避免阻塞UI
+                                        tracing::info!("开始异步加载MIDI文件: {:?}", path);
+                                        
+                                        std::thread::spawn(move || {
+                                            let rt = tokio::runtime::Runtime::new().unwrap();
+                                            let result = rt.block_on(async {
+                                                MidiInfo::from_path_with_progress(
+                                                    path,
+                                                    Some(&|progress| {
+                                                        // 每10%报告一次进度，减少日志输出
+                                                        if progress as u8 % 10 == 0 {
+                                                            tracing::info!("解析进度: {:.0}%", progress);
+                                                        }
+                                                    }),
+                                                ).await
+                                            });
+                                            
+                                            // 记录加载结果
+                                            match &result {
+                                                Ok(info) => tracing::info!("MIDI加载完成: {} 个音轨, {} 个音符", 
+                                                    info.track_count, info.total_notes),
+                                                Err(e) => tracing::error!("MIDI加载失败: {}", e),
+                                            }
                                         });
-
-                                        match result {
-                                            Ok(info) => {
-                                                tracing::info!("加载成功:\n{}", info);
-                                            }
-                                            Err(e) => {
-                                                tracing::error!("解析失败: {}", e);
-                                            }
-                                        }
                                     }
                                 }
                                 _ => {
@@ -212,11 +218,8 @@ impl winit::application::ApplicationHandler for Runner {
                                 }
                             }
                         }
-                        Edit(r) => {
-                            use edit::Event::*;
-                            match r {
-                                _ => todo!(),
-                            }
+                        Edit(_r) => {
+                            // TODO: 处理编辑事件
                         }
                         View(r) => {
                             use view::Event::*;
@@ -229,11 +232,8 @@ impl winit::application::ApplicationHandler for Runner {
                                 }
                             }
                         }
-                        Help(r) => {
-                            use help::Event::*;
-                            match r {
-                                _ => todo!(),
-                            }
+                        Help(_r) => {
+                            // TODO: 处理帮助事件
                         }
                     }
                 }
