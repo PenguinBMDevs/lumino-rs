@@ -26,14 +26,6 @@ impl ConfigWrapper {
     pub fn get(&self) -> &Config {
         &self.inner
     }
-    pub fn reload(&mut self) -> io::Result<()> {
-        let bytes = fs::read(&self.path)?;
-        let inner = toml::from_slice(&bytes)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        self.inner = inner;
-        self.dirty = false;
-        Ok(())
-    }
     pub fn patch<F>(&mut self, f: F)
     where
         F: FnOnce(&mut Config),

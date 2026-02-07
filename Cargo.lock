@@ -570,9 +570,9 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chrono"
-version = "0.4.42"
+version = "0.4.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "145052bdd345b87320e369255277e3fb5152762ad123a901ef5c262dd38fe8d2"
+checksum = "fac4744fb15ae8337dc853fee7fb3f4e48c0fbaa23d0afe49c447b4fab126118"
 dependencies = [
  "iana-time-zone",
  "js-sys",
@@ -1672,9 +1672,9 @@ checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
 name = "iana-time-zone"
-version = "0.1.64"
+version = "0.1.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33e57f83510bb73707521ebaffa789ec8caf86f9657cad665b092b581d40e9fb"
+checksum = "e31bc9ad994ba00e440a8aa5c9ef0ec67d5cb5e5cb0cc7f8b744a35b389cc470"
 dependencies = [
  "android_system_properties",
  "core-foundation-sys",
@@ -1682,7 +1682,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.56.0",
 ]
 
 [[package]]
@@ -2262,6 +2262,7 @@ name = "lumino-core"
 version = "0.1.0"
 dependencies = [
  "midly",
+ "rayon",
  "serde",
  "tokio",
  "tracing",
@@ -2314,6 +2315,7 @@ version = "0.1.0"
 dependencies = [
  "iced_aw",
  "iced_core",
+ "iced_renderer",
  "iced_wgpu",
  "iced_widget",
  "iced_winit",
@@ -2449,8 +2451,8 @@ dependencies = [
 
 [[package]]
 name = "midly"
-version = "0.5.3"
-source = "git+https://github.com/Enderman-bm/midly-fork#0f652b5880248a62c3cafeaa6b084f8ea02e5ac4"
+version = "0.6.0"
+source = "git+https://github.com/Enderman-bm/midly-fork?rev=c21f746f7ab4d92538527ddf7f08904650cbc80e#c21f746f7ab4d92538527ddf7f08904650cbc80e"
 dependencies = [
  "rayon",
 ]

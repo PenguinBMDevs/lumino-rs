@@ -11,3 +11,4 @@ serde = { workspace = true }
 tokio = { version = "1.42", features = ["fs", "rt"] }
 tracing = { workspace = true }
 midly = { workspace = true }
+rayon = "1"

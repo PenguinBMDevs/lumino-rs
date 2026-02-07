@@ -187,30 +187,25 @@ impl winit::application::ApplicationHandler for Runner {
                                         .add_filter("所有文件", &["*"])
                                         .pick_file()
                                     {
-                                        // 在后台线程中异步加载MIDI文件，避免阻塞UI
-                                        tracing::info!("开始异步加载MIDI文件: {:?}", path);
+                                        // 直接在前台同步加载MIDI文件
+                                        tracing::info!("开始加载MIDI文件: {:?}", path);
                                         
-                                        std::thread::spawn(move || {
-                                            let rt = tokio::runtime::Runtime::new().unwrap();
-                                            let result = rt.block_on(async {
-                                                MidiInfo::from_path_with_progress(
-                                                    path,
-                                                    Some(&|progress| {
-                                                        // 每10%报告一次进度，减少日志输出
-                                                        if progress as u8 % 10 == 0 {
-                                                            tracing::info!("解析进度: {:.0}%", progress);
-                                                        }
-                                                    }),
-                                                ).await
-                                            });
-                                            
-                                            // 记录加载结果
-                                            match &result {
-                                                Ok(info) => tracing::info!("MIDI加载完成: {} 个音轨, {} 个音符", 
-                                                    info.track_count, info.total_notes),
-                                                Err(e) => tracing::error!("MIDI加载失败: {}", e),
+                                        let start = std::time::Instant::now();
+
+                                        let result = MidiInfo::from_path_with_progress(
+                                            path.clone(),
+                                            None,
+                                        );
+
+                                        match &result {
+                                            Ok(info) => {
+                                                let elapsed_ms = start.elapsed().as_millis();
+                                                tracing::info!("MIDI加载完成: {} 个音轨, {} 个音符, 耗时 {} ms", info.track_count, info.total_notes, elapsed_ms);
                                             }
-                                        });
+                                            Err(e) => {
+                                                tracing::error!("MIDI加载失败: {}", e);
+                                            }
+                                        }
                                     }
                                 }
                                 _ => {
@@ -237,19 +232,12 @@ impl winit::application::ApplicationHandler for Runner {
                         }
                     }
                 }
-                Event::Window(r) => {
-                    use lumino_core::event::window::Event::*;
-                    let w = &this.window;
-                    match r {
-                        Close => event_loop.exit(),
-                        Drag => w.drag_window().expect("拖动窗口失败"),
-                        Maximize => w.set_maximized(true),
-                        Minimize => w.set_minimized(true),
-                        ToggleMaximize => w.set_maximized(!w.is_maximized()),
-                    }
+                Event::Window(_r) => {
+                    {}
                 }
             }
         }
+
 
         if let Err(e) = this.storage.config.save() {
             tracing::warn!("保存配置失败: {e}");
