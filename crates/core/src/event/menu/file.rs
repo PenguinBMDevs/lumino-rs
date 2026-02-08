@@ -6,6 +6,8 @@ pub enum Event {
     Close,
     /* */
     ImportMidi,
+    MidiLoaded(crate::MidiInfo),
+    MidiLoadError(String),
     /* */
     Settings,
     /* */

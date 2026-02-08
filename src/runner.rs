@@ -9,6 +9,7 @@ use winit::{
 };
 
 use super::storage;
+use lumino_core::event;
 
 // 从core导入MidiInfo
 pub use lumino_core::MidiInfo;
@@ -187,26 +188,41 @@ impl winit::application::ApplicationHandler for Runner {
                                         .add_filter("所有文件", &["*"])
                                         .pick_file()
                                     {
-                                        // 直接在前台同步加载MIDI文件
-                                        tracing::info!("开始加载MIDI文件: {:?}", path);
+                                        // 在后台异步加载MIDI文件，不阻塞UI
+                                        tracing::info!("开始后台加载MIDI文件: {:?}", path);
                                         
-                                        let start = std::time::Instant::now();
-
-                                        let result = MidiInfo::from_path_with_progress(
-                                            path.clone(),
-                                            None,
-                                        );
-
-                                        match &result {
-                                            Ok(info) => {
-                                                let elapsed_ms = start.elapsed().as_millis();
-                                                tracing::info!("MIDI加载完成: {} 个音轨, {} 个音符, 耗时 {} ms", info.track_count, info.total_notes, elapsed_ms);
+                                        let path_clone = path.clone();
+                                        tokio::spawn(async move {
+                                            let start = std::time::Instant::now();
+                                            
+                                            let result = MidiInfo::from_path_with_progress(
+                                                path_clone.clone(),
+                                                None,
+                                            );
+                                            
+                                            match result {
+                                                Ok(info) => {
+                                                    let elapsed_ms = start.elapsed().as_millis();
+                                                    tracing::info!("MIDI加载完成: {} 个音轨, {} 个音符, 耗时 {} ms", info.track_count, info.total_notes, elapsed_ms);
+                                                    lumino_core::event::emit(event!(Menu.File.MidiLoaded(info)));
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("MIDI加载失败: {}", e);
+                                                    lumino_core::event::emit(event!(Menu.File.MidiLoadError(e)));
+                                                }
                                             }
-                                            Err(e) => {
-                                                tracing::error!("MIDI加载失败: {}", e);
-                                            }
-                                        }
+                                        });
                                     }
+                                }
+                                MidiLoaded(info) => {
+                                    // 处理MIDI加载完成
+                                    tracing::info!("MIDI文件加载完成: {}", info);
+                                    // TODO: 更新UI显示加载的MIDI信息
+                                }
+                                MidiLoadError(err) => {
+                                    // 处理MIDI加载错误
+                                    tracing::error!("MIDI文件加载失败: {}", err);
+                                    // TODO: 显示错误对话框或通知
                                 }
                                 _ => {
                                     tracing::debug!("未处理的文件事件: {:?}", r);
