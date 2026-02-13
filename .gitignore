@@ -44,3 +44,6 @@ crates/core/tests/*
 
 # Temp cloned repos
 midly-fork/
+
+# Lingma
+.lingma

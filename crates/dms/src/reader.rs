@@ -394,6 +394,14 @@ const WORKING_TIME_SEC_RAW_TYPE_ID: u16 = 0x14;
 
 /// 流式扫描 DMS 文件（边解压边提取元数据，不保留完整解压数据）
 pub fn scan_dms_streaming<R: Read>(stream: &mut R) -> Result<DmsScanResult> {
+    scan_dms_streaming_with_progress(stream, |_| {})
+}
+
+/// 流式扫描 DMS 文件（带进度回调）
+pub fn scan_dms_streaming_with_progress<R: Read, F: Fn(f64)>(
+    stream: &mut R,
+    progress_callback: F,
+) -> Result<DmsScanResult> {
     let mut header = [0u8; MAGIC_LENGTH + 4];
     stream.read_exact(&mut header)?;
 
@@ -472,6 +480,10 @@ pub fn scan_dms_streaming<R: Read>(stream: &mut R) -> Result<DmsScanResult> {
         }
 
         offset += bytes_read;
+        
+        // 调用进度回调
+        let progress = offset as f64 / decompressed_length as f64;
+        progress_callback(progress.min(1.0));
     }
 
     Ok(result)

@@ -18,15 +18,12 @@ fn send_progress(message: &str, progress: f64) {
 use crate::MidiInfo;
 
 /// 加载MIDI文件信息（带进度回调）
-///
-/// `progress_callback` 接收 0.0..=100.0 的百分比值。
+/// progress_callback 接收 0.0..=100.0 的百分比值。
 pub fn load_midi_info_with_progress(
     path: PathBuf,
     progress_callback: Option<&dyn Fn(f64)>,
 ) -> Result<MidiInfo, String> {
     // 注意：此函数在当前线程上执行阻塞 I/O
-    // 调用者预期在后台线程调用此函数（如 Runner 所做的那样）
-
     // 使用和 benchmark 完全一致的顺序扫描逻辑 (scan_midi_file)
     if let Some(cb) = progress_callback {
         cb(0.0);
@@ -130,19 +127,19 @@ pub async fn save_to_lmpj(parsed: &ParsedMidi, path: PathBuf) -> Result<(), Stri
     Ok(())
 }
 
-// DMS 加载功能
-
-
 /// 加载 DMS 文件（轻量级，低内存占用）
 pub async fn load_dms(path: PathBuf) -> Result<ParsedDms, String> {
-    send_progress("正在加载 Domino 工程文件", 0.1);
+    send_progress("正在打开 Domino 工程文件", 0.05);
 
     let path_clone = path.clone();
     let scan_result = tokio::task::spawn_blocking(move || {
-        let file =
-            std::fs::File::open(&path_clone).map_err(|e| format!("打开 DMS 文件失败: {e}"))?;
+        let file = std::fs::File::open(&path_clone)
+            .map_err(|e| format!("打开 DMS 文件失败: {e}"))?;
         let mut reader = std::io::BufReader::new(file);
-        lumino_dms::scan_dms_streaming(&mut reader).map_err(|e| format!("扫描 DMS 失败: {e}"))
+        lumino_dms::scan_dms_streaming_with_progress(&mut reader, |progress| {
+            // 将解压进度映射到 0.1 - 0.8 的范围
+            send_progress("正在解析 Domino 工程文件", 0.1 + progress * 0.7);
+        }).map_err(|e| format!("扫描 DMS 失败: {e}"))
     })
     .await
     .map_err(|e| format!("扫描 DMS 失败: {e}"))?
