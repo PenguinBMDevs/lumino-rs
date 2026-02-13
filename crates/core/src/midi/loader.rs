@@ -2,6 +2,7 @@ use crate::ParsedMidi;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use tokio::sync::mpsc;
+use crate::{DmsInfo, ParsedDms};
 
 static PROGRESS_SENDER: OnceLock<mpsc::UnboundedSender<(String, f64)>> = OnceLock::new();
 
@@ -65,11 +66,11 @@ pub async fn load_parsed_midi(path: PathBuf) -> Result<ParsedMidi, String> {
         .to_ascii_lowercase();
 
     if extension == "lmpj" {
-        send_progress("读取 LMPJ", 0.05);
+        send_progress("正在加载 Lumino 工程文件", 0.05);
         let data = tokio::fs::read(&path)
             .await
             .map_err(|e| format!("读取 LMPJ 失败: {e}"))?;
-        send_progress("解压 LMPJ", 0.2);
+        send_progress("解压 Lumino 工程文件", 0.2);
         let decoded = tokio::task::spawn_blocking(move || {
             let cursor = std::io::Cursor::new(data);
             zstd::stream::decode_all(cursor)
@@ -78,24 +79,22 @@ pub async fn load_parsed_midi(path: PathBuf) -> Result<ParsedMidi, String> {
         .map_err(|e| format!("解压 LMPJ 失败: {e}"))
         .and_then(|r| r.map_err(|e| format!("解压 LMPJ 失败: {e}")))?;
 
-        send_progress("解析 LMPJ", 0.6);
+        send_progress("解析 Lumino 工程文件", 0.6);
         let parsed: ParsedMidi =
             bincode::deserialize(&decoded).map_err(|e| format!("解析 LMPJ 失败: {e}"))?;
 
-        send_progress("完成", 1.0);
+        send_progress("Lumino 工程文件加载完成", 1.0);
         return Ok(parsed);
     }
 
-    send_progress("解析 MIDI", 0.5);
+    send_progress("正在加载 MIDI 文件", 0.5);
     let path_clone = path.clone();
-    let info = tokio::task::spawn_blocking(move || {
-        load_midi_info_with_progress(path_clone, None)
-    })
-    .await
-    .map_err(|e| format!("解析 MIDI 失败: {e}"))
-    .and_then(|r| r.map_err(|e| format!("解析 MIDI 失败: {e}")))?;
+    let info = tokio::task::spawn_blocking(move || load_midi_info_with_progress(path_clone, None))
+        .await
+        .map_err(|e| format!("解析 MIDI 失败: {e}"))
+        .and_then(|r| r.map_err(|e| format!("解析 MIDI 失败: {e}")))?;
 
-    send_progress("完成", 1.0);
+    send_progress("MIDI 文件加载完成", 1.0);
     Ok(ParsedMidi {
         info,
         midi_data: None,
@@ -131,33 +130,17 @@ pub async fn save_to_lmpj(parsed: &ParsedMidi, path: PathBuf) -> Result<(), Stri
     Ok(())
 }
 
-// ============================================================================
 // DMS 加载功能
-// ============================================================================
 
-use crate::{DmsInfo, ParsedDms};
-use lumino_dms::DmsNodeType;
-
-/// 节点头大小
-const HEADER_SIZE: usize = 6; // 2 (type_id) + 4 (data_length)
-
-/// DMS 元数据提取结果
-type DmsMetadata = (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<u32>,
-    Option<u64>,
-);
 
 /// 加载 DMS 文件（轻量级，低内存占用）
 pub async fn load_dms(path: PathBuf) -> Result<ParsedDms, String> {
-    send_progress("扫描 DMS", 0.1);
+    send_progress("正在加载 Domino 工程文件", 0.1);
 
     let path_clone = path.clone();
     let scan_result = tokio::task::spawn_blocking(move || {
-        let file = std::fs::File::open(&path_clone)
-            .map_err(|e| format!("打开 DMS 文件失败: {e}"))?;
+        let file =
+            std::fs::File::open(&path_clone).map_err(|e| format!("打开 DMS 文件失败: {e}"))?;
         let mut reader = std::io::BufReader::new(file);
         lumino_dms::scan_dms_streaming(&mut reader).map_err(|e| format!("扫描 DMS 失败: {e}"))
     })
@@ -165,7 +148,7 @@ pub async fn load_dms(path: PathBuf) -> Result<ParsedDms, String> {
     .map_err(|e| format!("扫描 DMS 失败: {e}"))?
     .map_err(|e| format!("扫描 DMS 失败: {e}"))?;
 
-    send_progress("完成", 1.0);
+    send_progress("Domino 工程文件加载完成", 1.0);
 
     let info = DmsInfo {
         path,
@@ -178,136 +161,35 @@ pub async fn load_dms(path: PathBuf) -> Result<ParsedDms, String> {
         working_time_sec: scan_result.working_time_sec,
     };
 
-    Ok(ParsedDms {
-        info,
-        data: None,
+    Ok(ParsedDms { info, data: None })
+}
+
+
+/// 将 DMS 解析结果保存为 LDMS 格式（Lumino DMS Project）
+pub async fn save_dms_to_ldms(parsed: &ParsedDms, path: PathBuf) -> Result<(), String> {
+    send_progress("保存 LDMS", 0.1);
+
+    // 构造用于序列化的数据
+    let data_for_save = ParsedDms {
+        info: parsed.info.clone(),
+        data: None, // LDMS 不需要存储原始 DMS 数据，只存储元数据
+    };
+
+    let data = bincode::serialize(&data_for_save).map_err(|e| format!("序列化 LDMS 失败: {e}"))?;
+
+    send_progress("压缩 LDMS", 0.4);
+    let compressed = tokio::task::spawn_blocking(move || {
+        let cursor = std::io::Cursor::new(data);
+        zstd::stream::encode_all(cursor, 3)
     })
-}
+    .await
+    .map_err(|e| format!("压缩 LDMS 失败: {e}"))
+    .and_then(|r| r.map_err(|e| format!("压缩 LDMS 失败: {e}")))?;
 
-/// 从轻量级数据中提取元数据
-fn extract_dms_metadata_lightweight(
-    lightweight: &lumino_dms::DmsLightweightData,
-    top_level: &[(u16, usize, usize)],
-) -> DmsMetadata {
-    let mut song_name = None;
-    let mut copyright = None;
-    let mut comment = None;
-    let mut ppqn = None;
-    let mut working_time_sec = None;
+    tokio::fs::write(&path, compressed)
+        .await
+        .map_err(|e| format!("写入 LDMS 失败: {e}"))?;
 
-    let data = lightweight.data.as_ref();
-
-    for (type_id, data_length, data_start) in top_level {
-        let node_type = DmsNodeType::from_parts(*type_id, 0, None);
-        if data_start + data_length > data.len() {
-            continue;
-        }
-        let node_data = &data[*data_start..*data_start + *data_length];
-
-        match node_type {
-            t if t == DmsNodeType::SONG_NAME => {
-                song_name = decode_gb18030(node_data);
-            }
-            t if t == DmsNodeType::SONG_COPYRIGHT => {
-                copyright = decode_gb18030(node_data);
-            }
-            t if t == DmsNodeType::SONG_COMMENT => {
-                comment = decode_gb18030(node_data);
-            }
-            t if t == DmsNodeType::SONG_PPQN => {
-                ppqn = decode_u32_le(node_data);
-            }
-            t if t == DmsNodeType::WORKING_TIME_SEC => {
-                working_time_sec = decode_u64_le(node_data);
-            }
-            _ => {}
-        }
-    }
-
-    (song_name, copyright, comment, ppqn, working_time_sec)
-}
-
-/// 统计 DMS 音符数量（轻量级扫描）
-fn count_dms_notes_lightweight(
-    lightweight: &lumino_dms::DmsLightweightData,
-    top_level: &[(u16, usize, usize)],
-) -> (u64, usize) {
-    let mut total_notes = 0u64;
-    let mut track_count = 0usize;
-
-    let data = lightweight.data.as_ref();
-
-    for (type_id, data_length, data_start) in top_level {
-        let node_type = DmsNodeType::from_parts(*type_id, 0, None);
-        if node_type == DmsNodeType::TRACK {
-            track_count += 1;
-            // 统计轨道内的音符事件
-            if *data_start + *data_length <= data.len() {
-                total_notes +=
-                    count_notes_in_track_data(&data[*data_start..*data_start + *data_length]);
-            }
-        }
-    }
-
-    (total_notes, track_count)
-}
-
-/// 统计轨道数据中的音符数量
-fn count_notes_in_track_data(track_data: &[u8]) -> u64 {
-    let mut count = 0u64;
-    let mut offset = 0usize;
-
-    // 原始 type_id（文件中存储的值，不含父节点信息）
-    // NOTE_EVENT 的原始 type_id 是 2001
-    const NOTE_EVENT_RAW_TYPE_ID: u16 = 2001;
-
-    while offset + HEADER_SIZE <= track_data.len() {
-        let type_id = u16::from_le_bytes([track_data[offset], track_data[offset + 1]]);
-        let data_length = u32::from_le_bytes([
-            track_data[offset + 2],
-            track_data[offset + 3],
-            track_data[offset + 4],
-            track_data[offset + 5],
-        ]) as usize;
-
-        if type_id == NOTE_EVENT_RAW_TYPE_ID {
-            count += 1;
-        }
-
-        offset += HEADER_SIZE + data_length;
-    }
-
-    count
-}
-
-/// GB18030 解码
-fn decode_gb18030(data: &[u8]) -> Option<String> {
-    if data.is_empty() {
-        return None;
-    }
-    let (decoded, _, had_errors) = encoding_rs::GB18030.decode(data);
-    if had_errors {
-        None
-    } else {
-        let s = decoded.to_string();
-        if s.is_empty() { None } else { Some(s) }
-    }
-}
-
-/// 小端 u32 解码
-fn decode_u32_le(data: &[u8]) -> Option<u32> {
-    if data.len() < 4 {
-        return None;
-    }
-    Some(u32::from_le_bytes([data[0], data[1], data[2], data[3]]))
-}
-
-/// 小端 u64 解码
-fn decode_u64_le(data: &[u8]) -> Option<u64> {
-    if data.len() < 8 {
-        return None;
-    }
-    Some(u64::from_le_bytes([
-        data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-    ]))
+    send_progress("LDMS 保存完成", 1.0);
+    Ok(())
 }

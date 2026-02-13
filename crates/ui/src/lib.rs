@@ -253,10 +253,7 @@ fn convert_touch_to_mouse(event: Event) -> Vec<Event> {
                 ]
             }
             touch::Event::FingerMoved { position, .. } => {
-                vec![
-                    event,
-                    Event::Mouse(mouse::Event::CursorMoved { position }),
-                ]
+                vec![event, Event::Mouse(mouse::Event::CursorMoved { position })]
             }
             _ => vec![event],
         },

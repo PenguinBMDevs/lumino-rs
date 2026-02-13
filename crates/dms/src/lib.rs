@@ -1,11 +1,13 @@
-//! DMS 文件格式解析器（Domino Music Sequence）
+// DMS 文件格式解析器 (Domino Music Sequencer)
 
 #![warn(missing_docs)]
 
+// 导入依赖
 pub mod error;
 pub mod node;
 pub mod node_type;
 pub mod reader;
+pub mod utils;
 pub mod writer;
 
 // 重导出常用类型
@@ -17,8 +19,8 @@ pub use node::{
 };
 pub use node_type::DmsNodeType;
 pub use reader::{
-    DMS_MAGIC, DmsLightweightData, DmsReader, DmsScanResult, MAGIC_LENGTH, parse_dms_data_with_progress,
-    read_dms_data, read_dms_file, read_dms_file_with_progress, read_dms_lightweight,
-    scan_dms_streaming,
+    DMS_MAGIC, DmsLightweightData, DmsReader, DmsScanResult, MAGIC_LENGTH,
+    parse_dms_data_with_progress, read_dms_data, read_dms_file, read_dms_file_with_progress,
+    read_dms_lightweight, scan_dms_streaming,
 };
 pub use writer::{DmsWriter, write_dms_file, write_dms_tree};

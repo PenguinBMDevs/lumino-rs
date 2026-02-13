@@ -5,18 +5,26 @@ use bytes::Bytes;
 use crate::error::{DmsError, Result};
 use crate::node::{DATALENGTH_SIZE, DmsCompositeNode, DmsNode, TYPEID_SIZE, create_node};
 use crate::node_type::DmsNodeType;
+use crate::utils;
 use flate2::read::ZlibDecoder;
 use std::io::{Cursor, Read};
 
 /// DMS 扫描结果（流式，不保留解压数据）
 #[derive(Debug, Default)]
 pub struct DmsScanResult {
+    /// 轨道数量
     pub track_count: usize,
+    /// 总音符数
     pub total_notes: u64,
+    /// 歌曲名称
     pub song_name: Option<String>,
+    /// 版权信息
     pub copyright: Option<String>,
+    /// 歌曲备注
     pub comment: Option<String>,
+    /// PPQN（每四分音符脉冲数）
     pub ppqn: Option<u32>,
+    /// 工作时间（秒）
     pub working_time_sec: Option<u64>,
 }
 
@@ -406,10 +414,10 @@ pub fn scan_dms_streaming<R: Read>(stream: &mut R) -> Result<DmsScanResult> {
     let mut offset = 0usize;
 
     while offset < decompressed_length {
-        let bytes_read = decoder.read(&mut buffer).map_err(|e| {
-            DmsError::Corrupted(format!("解压失败: {}", e))
-        })?;
-        
+        let bytes_read = decoder
+            .read(&mut buffer)
+            .map_err(|e| DmsError::Corrupted(format!("解压失败: {}", e)))?;
+
         if bytes_read == 0 {
             break;
         }
@@ -437,19 +445,19 @@ pub fn scan_dms_streaming<R: Read>(stream: &mut R) -> Result<DmsScanResult> {
 
             match type_id {
                 SONG_NAME_RAW_TYPE_ID => {
-                    result.song_name = decode_gb18030(node_data);
+                    result.song_name = utils::decode_gb18030(node_data);
                 }
                 SONG_COPYRIGHT_RAW_TYPE_ID => {
-                    result.copyright = decode_gb18030(node_data);
+                    result.copyright = utils::decode_gb18030(node_data);
                 }
                 SONG_COMMENT_RAW_TYPE_ID => {
-                    result.comment = decode_gb18030(node_data);
+                    result.comment = utils::decode_gb18030(node_data);
                 }
                 SONG_PPQN_RAW_TYPE_ID => {
-                    result.ppqn = decode_u32_le(node_data);
+                    result.ppqn = utils::decode_u32_le(node_data);
                 }
                 WORKING_TIME_SEC_RAW_TYPE_ID => {
-                    result.working_time_sec = decode_u64_le(node_data);
+                    result.working_time_sec = utils::decode_u64_le(node_data);
                 }
                 t if t == NOTE_EVENT_RAW_TYPE_ID => {
                     result.total_notes += 1;
@@ -467,31 +475,4 @@ pub fn scan_dms_streaming<R: Read>(stream: &mut R) -> Result<DmsScanResult> {
     }
 
     Ok(result)
-}
-
-fn decode_gb18030(data: &[u8]) -> Option<String> {
-    if data.is_empty() {
-        return None;
-    }
-    let (decoded, _, had_errors) = encoding_rs::GB18030.decode(data);
-    if had_errors {
-        None
-    } else {
-        let s = decoded.to_string();
-        if s.is_empty() { None } else { Some(s) }
-    }
-}
-
-fn decode_u32_le(data: &[u8]) -> Option<u32> {
-    if data.len() < 4 {
-        return None;
-    }
-    Some(u32::from_le_bytes([data[0], data[1], data[2], data[3]]))
-}
-
-fn decode_u64_le(data: &[u8]) -> Option<u64> {
-    if data.len() < 8 {
-        return None;
-    }
-    Some(u64::from_le_bytes([data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]]))
 }

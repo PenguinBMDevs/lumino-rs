@@ -45,7 +45,7 @@ fn file_menu() -> MenuConfig {
             Action(event!(Menu.File.Save)),
             Action(event!(Menu.File.Close)),
             Separator,
-            Action(event!(Menu.File.ImportMidi)),
+            Action(event!(Menu.File.ImportFiles)),
             Separator,
             Action(event!(Menu.File.Settings)),
             Separator,

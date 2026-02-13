@@ -7,7 +7,7 @@ pub enum Event {
     Save,
     Close,
     /* */
-    ImportMidi,
+    ImportFiles,
     MidiLoaded(crate::MidiInfo),
     MidiLoadError(String),
     MidiParsed(crate::ParsedMidi),

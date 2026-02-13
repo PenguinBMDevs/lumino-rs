@@ -1,3 +1,21 @@
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum ContextError {
+    #[error("创建 surface 失败: {0}")]
+    SurfaceCreation(String),
+    #[error("创建 adapter 失败: {0}")]
+    AdapterCreation(String),
+    #[error("获取 preferred format 失败")]
+    PreferredFormatNotFound,
+    #[error("请求 device 失败: {0}")]
+    DeviceRequest(String),
+    #[error("获取帧失败: {0}")]
+    FrameAcquisition(#[from] wgpu::SurfaceError),
+}
+
+pub type Result<T> = std::result::Result<T, ContextError>;
+
 pub struct Context {
     pub surface: wgpu::Surface<'static>,
     pub adapter: wgpu::Adapter,
@@ -11,7 +29,7 @@ impl Context {
         target: impl Into<wgpu::SurfaceTarget<'static>>,
         width: u32,
         height: u32,
-    ) -> Self {
+    ) -> Result<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -19,11 +37,11 @@ impl Context {
 
         let surface = instance
             .create_surface(target)
-            .expect("Create main window surface");
+            .map_err(|e| ContextError::SurfaceCreation(e.to_string()))?;
 
         let adapter = wgpu::util::initialize_adapter_from_env_or_default(&instance, Some(&surface))
             .await
-            .expect("Create adapter");
+            .map_err(|e| ContextError::AdapterCreation(e.to_string()))?;
 
         let adapter_features = adapter.features();
 
@@ -35,7 +53,7 @@ impl Context {
             .copied()
             .find(wgpu::TextureFormat::is_srgb)
             .or_else(|| capabilities.formats.first().copied())
-            .expect("Get preferred format");
+            .ok_or(ContextError::PreferredFormatNotFound)?;
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -47,7 +65,7 @@ impl Context {
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
             })
             .await
-            .expect("Request device");
+            .map_err(|e| ContextError::DeviceRequest(e.to_string()))?;
 
         surface.configure(
             &device,
@@ -63,13 +81,13 @@ impl Context {
             },
         );
 
-        Self {
+        Ok(Self {
             surface,
             adapter,
             queue,
             device,
             format,
-        }
+        })
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -91,23 +109,24 @@ impl Context {
     pub fn with_frame(
         &self,
         f: impl FnOnce(&wgpu::SurfaceTexture, &wgpu::TextureView),
-    ) -> Result<(), wgpu::SurfaceError> {
+    ) -> Result<()> {
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
             Err(wgpu::SurfaceError::OutOfMemory) => {
-                panic!("Swapchain error: OutOfMemory. Rendering cannot continue.")
+                tracing::error!("Swapchain error: OutOfMemory. Rendering cannot continue.");
+                return Err(ContextError::FrameAcquisition(
+                    wgpu::SurfaceError::OutOfMemory,
+                ));
             }
-            Err(e) => return Err(e),
+            Err(e) => return Err(ContextError::FrameAcquisition(e)),
         };
 
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        // 自定义绘制逻辑
         f(&frame, &view);
 
-        // 呈现帧
         frame.present();
 
         Ok(())

@@ -1,7 +1,6 @@
-//! DMS 错误类型定义
+// DMS 错误类型定义
 
 use thiserror::Error;
-
 /// DMS 操作错误
 #[derive(Error, Debug)]
 pub enum DmsError {

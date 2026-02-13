@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 wgpu = "27.0"
+thiserror = { workspace = true }
+tracing = { workspace = true }

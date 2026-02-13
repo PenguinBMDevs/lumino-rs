@@ -1,4 +1,4 @@
-//! DMS 节点数据结构
+// DMS 节点数据结构
 
 use std::io::Read;
 
@@ -740,7 +740,9 @@ impl DmsNode for DmsFloatNode {
 /// 根据类型创建节点
 pub fn create_node(node_type: DmsNodeType, layer: i32, data: Bytes) -> Result<Box<dyn DmsNode>> {
     if node_type.is_composite() {
-        Ok(Box::new(DmsCompositeNode::from_data(node_type, layer, data)?))
+        Ok(Box::new(DmsCompositeNode::from_data(
+            node_type, layer, data,
+        )?))
     } else if node_type.is_string() {
         Ok(Box::new(DmsAnsiStringNode::new(node_type, layer, data)))
     } else if node_type.is_integer() {

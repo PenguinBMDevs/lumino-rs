@@ -2,10 +2,6 @@ pub mod loader;
 
 use std::path::PathBuf;
 
-// ============================================================================
-// MIDI 数据结构
-// ============================================================================
-
 /// 解析后的MIDI数据
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ParsedMidi {
@@ -65,16 +61,13 @@ impl std::fmt::Display for MidiInfo {
     }
 }
 
-// ============================================================================
-// DMS 数据结构
-// ============================================================================
-
 /// 解析后的 DMS 数据（轻量级）
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ParsedDms {
     /// DMS 文件信息
     pub info: DmsInfo,
     /// 轻量级数据（零拷贝引用），流式扫描时为None
+    #[serde(skip)]
     data: Option<lumino_dms::DmsLightweightData>,
 }
 

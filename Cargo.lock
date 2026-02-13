@@ -2617,6 +2617,8 @@ dependencies = [
 name = "lumino-gfx"
 version = "0.1.0"
 dependencies = [
+ "thiserror 2.0.17",
+ "tracing",
  "wgpu",
 ]
 
