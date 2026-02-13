@@ -5,6 +5,16 @@ pub enum Event {
     Theme(String),
     Maximized(bool),
     Focused(bool),
+    TrafficAction(TrafficAction),
+    Drag,
+    ToggleMaximize,
+}
+
+#[derive(Debug, Clone)]
+pub enum TrafficAction {
+    Minimize,
+    ToggleMaximize,
+    Close,
 }
 
 impl Event {
@@ -16,6 +26,15 @@ impl Event {
     }
     pub const fn focused(r: bool) -> Message {
         Message::Window(Self::Focused(r))
+    }
+    pub fn traffic_action(action: &TrafficAction) -> Message {
+        Message::Window(Self::TrafficAction(action.clone()))
+    }
+    pub const fn drag() -> Message {
+        Message::Window(Self::Drag)
+    }
+    pub const fn toggle_maximize() -> Message {
+        Message::Window(Self::ToggleMaximize)
     }
 }
 
@@ -50,6 +69,9 @@ impl Window {
             Event::Theme(r) => self.theme = get_theme(&r),
             Event::Maximized(r) => self.is_maximized = r,
             Event::Focused(r) => self.is_focused = r,
+            Event::TrafficAction(_) | Event::Drag | Event::ToggleMaximize => {
+                // 这些事件由 Host 处理，不需要更新 Window 状态
+            }
         }
     }
 }

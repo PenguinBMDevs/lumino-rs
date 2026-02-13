@@ -1,8 +1,8 @@
 pub struct Context {
+    pub surface: wgpu::Surface<'static>,
     pub adapter: wgpu::Adapter,
     pub queue: wgpu::Queue,
     pub device: wgpu::Device,
-    pub surface: wgpu::Surface<'static>,
     pub format: wgpu::TextureFormat,
 }
 
@@ -64,10 +64,10 @@ impl Context {
         );
 
         Self {
+            surface,
             adapter,
             queue,
             device,
-            surface,
             format,
         }
     }
@@ -104,17 +104,10 @@ impl Context {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-        // Customized draw logic
+        // 自定义绘制逻辑
         f(&frame, &view);
 
-        // Submit the scene
-        self.queue.submit([encoder.finish()]);
-
-        // Present the frame
+        // 呈现帧
         frame.present();
 
         Ok(())

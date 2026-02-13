@@ -51,7 +51,7 @@ impl Kdmapi {
     pub fn new(path: &Path) -> Result<Self, Error> {
         unsafe {
             let lib = Library::new(path)?;
-            // Symbols are expected to live as long as `lib` is alive.
+            // Symbol 预期与 lib 的生命周期一致
             let sym = Arc::new(Symbols {
                 return_kdmapi_ver: *lib.get(b"ReturnKDMAPIVer\0")?,
                 is_kdmapi_available: *lib.get(b"IsKDMAPIAvailable\0")?,
@@ -134,6 +134,6 @@ impl OutputConnection for KdmapiOutputConn {
     }
 
     fn close(self: Box<Self>) {
-        // Kdmapi doesn't need explict close peer.
+        // Kdmapi 不需要显式关闭对等端
     }
 }

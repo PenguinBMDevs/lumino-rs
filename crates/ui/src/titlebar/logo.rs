@@ -4,7 +4,7 @@ use iced_widget::container;
 use crate::{Element, resources::icon};
 
 pub fn view<'a>() -> Element<'a> {
-    // simply just a placeholer
+    // 仅作为占位符
     let icon = icon(icon::GitHub)
         // 16+2=20-2
         .width(18);

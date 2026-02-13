@@ -1,5 +1,5 @@
-use std::{fs, io, path::PathBuf};
 use lumino_core::storage::ui_state::*;
+use std::{fs, io, path::PathBuf};
 
 #[derive(Debug)]
 pub struct UiStateWrapper {
@@ -12,7 +12,7 @@ impl UiStateWrapper {
     pub fn new(path: PathBuf) -> Self {
         let inner = match fs::read(&path) {
             Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
-            Err(_) => UiState::default()
+            Err(_) => UiState::default(),
         };
         Self {
             inner,

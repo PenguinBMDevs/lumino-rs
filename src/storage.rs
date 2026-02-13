@@ -17,8 +17,8 @@ pub struct Storage {
 
 impl Storage {
     pub fn new() -> io::Result<Self> {
-        let dirs = ProjectDirs::from(QUALIFIER, ORGANIZATION, APPLICATION)
-            .expect("Create ProjectDirs");
+        let dirs =
+            ProjectDirs::from(QUALIFIER, ORGANIZATION, APPLICATION).expect("Create ProjectDirs");
 
         let config = dirs.config_dir().to_owned();
         let preference = dirs.preference_dir().to_owned();

@@ -5,6 +5,7 @@ pub enum Message {
     Core(lumino_core::Event),
     Window(Window),
     Sidebar(Sidebar),
+    Progress(Option<(String, f64)>),
     Null,
 }
 

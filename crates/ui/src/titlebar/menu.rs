@@ -22,7 +22,7 @@ impl std::fmt::Display for MenuKind {
 
 #[derive(Debug, Clone)]
 pub enum MenuItem {
-    // Action(Event, Fn) or something like this for i18n.
+    // 用于 i18n 的 Action(Event, Fn) 或类似结构
     Action(Event),
     Separator,
     // Submenu(Vec<MenuItem>, Fn)
@@ -104,9 +104,9 @@ pub fn view<'a>() -> Element<'a> {
         .map(|cfg| {
             Item::with_menu(
                 menu_button(cfg.kind.to_string()),
-                // DO NOT REMOVE `width(200)`!
-                // Removing it causes a panic. idk why.
-                // Use offset to align it with titlebar.
+                // 不要删除 'width(200)'！
+                // 删除它会导致 panic。原因未知
+                // 使用 offset 来与标题栏对齐
                 Menu::new(menu_items(&cfg.items)).width(200).offset(9.0),
             )
         })
@@ -119,8 +119,8 @@ pub fn view<'a>() -> Element<'a> {
         .spacing(1)
         .style(|theme: &Theme, status| menu_bar::Style {
             bar_background: Background::Color(Color::TRANSPARENT),
-            // Use the default style from iced_aw.
-            // `..Default::default()` simply messes up the styles.
+            // 使用 iced_aw 的默认样式
+            // '..Default::default()' 会破坏样式
             ..menu_bar::primary(theme, status)
         });
 
@@ -214,7 +214,7 @@ fn base_split<'a>() -> Element<'a> {
             }
         });
 
-    // Manually apply the `margin` style.
+    // 手动应用 `margin` 样式
     column![space().height(4), inner, space().height(4)]
         .width(Length::Fill)
         .into()

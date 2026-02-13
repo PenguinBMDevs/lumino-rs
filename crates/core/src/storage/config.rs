@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
@@ -8,5 +8,4 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UiConfig {
     pub theme: String,
-
 }

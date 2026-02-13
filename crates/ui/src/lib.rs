@@ -1,14 +1,14 @@
 mod editor;
-mod message;
+pub mod message;
 mod resources;
 mod root;
 mod sidebar;
 mod statusbar;
 mod titlebar;
-mod window;
+pub mod window;
 
-pub(crate) use root::{Element, Message};
 pub(crate) use lumino_core::storage::config;
+pub(crate) use root::{Element, Message};
 
 use std::{sync::Arc, time::Instant};
 
@@ -35,6 +35,8 @@ pub struct Host {
     cache: user_interface::Cache,
     clipboard: Clipboard,
     viewport: Viewport,
+    pending_window_action: Option<window::TrafficAction>,
+    pending_drag: bool,
 }
 
 impl Host {
@@ -44,13 +46,14 @@ impl Host {
         height: u32,
         ui_config: &config::UiConfig,
         gfx: &lumino_gfx::Context,
+        is_progress: bool,
     ) -> Self {
         let viewport =
             Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
 
         let clipboard = Clipboard::connect(window.clone());
 
-        // Initialize iced
+        // 初始化 iced
         let renderer = {
             let engine = Engine::new(
                 &gfx.adapter,
@@ -65,13 +68,19 @@ impl Host {
 
         Self {
             window,
-            root: root::Root::new(&ui_config.theme),
+            root: if is_progress {
+                root::Root::new_progress(&ui_config.theme)
+            } else {
+                root::Root::new(&ui_config.theme)
+            },
             renderer,
             events: Vec::new(),
             cursor: mouse::Cursor::Unavailable,
             cache: user_interface::Cache::new(),
             clipboard,
             viewport,
+            pending_window_action: None,
+            pending_drag: false,
         }
     }
 
@@ -82,12 +91,8 @@ impl Host {
         );
     }
 
-    pub fn redraw_requested(
-        &mut self,
-        frame: &wgpu::SurfaceTexture,
-        view: &wgpu::TextureView,
-    ) {
-        // Draw iced on top
+    pub fn redraw_requested(&mut self, frame: &wgpu::SurfaceTexture, view: &wgpu::TextureView) {
+        // 在顶层绘制 iced
         let mut interface = UserInterface::build(
             self.root.view(),
             self.viewport.logical_size(),
@@ -105,12 +110,12 @@ impl Host {
             &mut Vec::new(),
         );
 
-        // Update the mouse cursor
+        // 更新鼠标光标
         if let user_interface::State::Updated {
             mouse_interaction, ..
         } = state
         {
-            // Update the mouse cursor
+            // 更新鼠标光标
             if let Some(icon) = iced_winit::conversion::mouse_interaction(mouse_interaction) {
                 self.window.set_cursor(icon);
                 self.window.set_cursor_visible(true);
@@ -119,7 +124,7 @@ impl Host {
             }
         }
 
-        // Draw the interface
+        // 绘制界面
         interface.draw(
             &mut self.renderer,
             &self.root.theme(),
@@ -154,16 +159,16 @@ impl Host {
             _ => (),
         }
 
-        // Map window event to iced event
+        // 将窗口事件映射到 iced 事件
         if let Some(event) =
             conversion::window_event(event, self.window.scale_factor() as f32, modifiers)
         {
             self.events.push(event);
         }
 
-        // If there are events pending
+        // 如果有待处理的事件
         if !self.events.is_empty() {
-            // We process them
+            // 我们处理这些事件
             let mut interface = UserInterface::build(
                 self.root.view(),
                 self.viewport.logical_size(),
@@ -184,14 +189,38 @@ impl Host {
             self.events.clear();
             self.cache = interface.into_cache();
 
-            // update our UI with any messages
+            // 使用任意消息更新我们的 UI
             for message in messages {
+                // 检查是否是窗口控制动作
+                if let message::Message::Window(window::Event::TrafficAction(action)) = &message {
+                    self.pending_window_action = Some(action.clone());
+                }
+                // 检查是否是拖动事件
+                if let message::Message::Window(window::Event::Drag) = &message {
+                    self.pending_drag = true;
+                }
                 self.root.update(message);
             }
 
-            // and request a redraw
+            // 并请求重新绘制
             self.window.request_redraw();
         }
+    }
+
+    /// 获取并清除待处理的窗口动作
+    pub fn take_window_action(&mut self) -> Option<window::TrafficAction> {
+        self.pending_window_action.take()
+    }
+
+    /// 获取并清除待处理的拖动标志
+    pub fn take_drag(&mut self) -> bool {
+        let drag = self.pending_drag;
+        self.pending_drag = false;
+        drag
+    }
+
+    pub fn update_progress(&mut self, progress: Option<(String, f64)>) {
+        self.root.update(message::Message::Progress(progress));
     }
 
     pub fn update_theme(&mut self, theme: String) {

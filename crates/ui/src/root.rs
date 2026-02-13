@@ -1,5 +1,5 @@
 use iced_core::Length;
-use iced_widget::{column, container, row};
+use iced_widget::{column, container, progress_bar, row, text};
 
 use crate::{editor, message, sidebar, statusbar, titlebar, window};
 
@@ -14,6 +14,8 @@ pub struct Root {
     statusbar: statusbar::StatusBar,
     editor: editor::Editor,
     window: window::Window,
+    progress: Option<(String, f64)>,
+    is_progress_window: bool,
 }
 
 impl Root {
@@ -24,6 +26,20 @@ impl Root {
             statusbar: statusbar::StatusBar::new(),
             editor: editor::Editor::new(),
             window: window::Window::new(theme),
+            progress: None,
+            is_progress_window: false,
+        }
+    }
+
+    pub fn new_progress(theme: &str) -> Self {
+        Self {
+            sidebar: sidebar::Sidebar::new(),
+            titlebar: titlebar::Titlebar::new(),
+            statusbar: statusbar::StatusBar::new(),
+            editor: editor::Editor::new(),
+            window: window::Window::new(theme),
+            progress: None,
+            is_progress_window: true,
         }
     }
 
@@ -32,7 +48,8 @@ impl Root {
             Message::Core(r) => lumino_core::event::emit(r),
             Message::Window(r) => self.window.update(r),
             Message::Sidebar(r) => self.sidebar.update(r),
-            // Explictly drop it
+            Message::Progress(p) => self.progress = p,
+            // 显式丢弃它
             Message::Null => (),
         }
     }
@@ -42,19 +59,58 @@ impl Root {
     }
 
     pub fn view(&self) -> Element<'_> {
-        let inner = column![
-            self.titlebar.view(&self.window),
-            row![self.sidebar.view(), self.editor.view(),],
-            self.statusbar.view(),
-        ];
+        if self.is_progress_window {
+            // 进度窗口只显示进度
+            if let Some((msg, progress)) = &self.progress {
+                container(
+                    column![
+                        text("MIDI 处理中...")
+                            .size(24)
+                            .style(|theme: &Theme| text::Style {
+                                color: Some(theme.extended_palette().background.neutral.text),
+                            }),
+                        text(msg).size(16).style(|theme: &Theme| text::Style {
+                            color: Some(theme.extended_palette().background.neutral.text),
+                        }),
+                        progress_bar(0.0..=1.0, *progress as f32),
+                    ]
+                    .spacing(20)
+                    .align_x(iced_core::Alignment::Center),
+                )
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .padding(30)
+                .style(|theme: &Theme| container::Style {
+                    background: Some(iced_core::Background::Color(theme.palette().background)),
+                    ..Default::default()
+                })
+                .into()
+            } else {
+                container(text("无进度").size(24).style(|theme: &Theme| text::Style {
+                    color: Some(theme.extended_palette().background.neutral.text),
+                }))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .into()
+            }
+        } else {
+            // 主窗口
+            let main_content = column![
+                self.titlebar.view(&self.window),
+                row![self.sidebar.view(), self.editor.view(),],
+                self.statusbar.view(),
+            ];
 
-        container(inner)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(|theme: &Theme| container::Style {
-                background: Some(iced_core::Background::Color(theme.palette().background)),
-                ..Default::default()
-            })
-            .into()
+            container(main_content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|theme: &Theme| container::Style {
+                    background: Some(iced_core::Background::Color(theme.palette().background)),
+                    ..Default::default()
+                })
+                .into()
+        }
     }
 }

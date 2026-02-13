@@ -26,3 +26,21 @@ target
 !.vscode/extensions.json
 !.vscode/tasks.json
 !.vscode/launch.json
+
+# Examples (demo code)
+examples/
+
+# Temp files
+temp/
+
+# Test files (large binary files)
+*.dms
+*.mid
+*.midi
+*.lmpj
+
+# Test
+crates/core/tests/*
+
+# Temp cloned repos
+midly-fork/

@@ -3,4 +3,4 @@ pub mod midi;
 pub mod storage;
 
 pub use event::Event;
-pub use midi::MidiInfo;
+pub use midi::{DmsInfo, MidiInfo, ParsedDms, ParsedMidi};

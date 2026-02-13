@@ -6,7 +6,7 @@ use iced_core::{Alignment, Length};
 use iced_widget::{container, mouse_area, row};
 
 use super::Element;
-use crate::{Message, Theme, window};
+use crate::{Theme, window};
 
 pub struct Titlebar {}
 
@@ -36,8 +36,8 @@ impl Titlebar {
             .align_y(Alignment::Start);
 
         mouse_area(inner)
-            .on_press(Message::Core(lumino_core::event!(Window.Drag)))
-            .on_double_click(Message::Core(lumino_core::event!(Window.ToggleMaximize)))
+            .on_press(window::Event::drag())
+            .on_double_click(window::Event::toggle_maximize())
             .into()
     }
 }
