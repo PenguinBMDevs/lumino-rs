@@ -1,0 +1,18 @@
+pub mod converter;
+pub mod dms;
+pub mod error;
+pub mod format;
+pub mod lmpj;
+pub mod midi;
+
+pub use converter::{
+    copy_file_sync, export_dms_from_midi_sync, export_midi_from_dms_sync,
+    export_midi_from_parsed_midi_sync,
+};
+// 重新导出简短别名，便于上层使用
+pub use dms::export_dms;
+pub use dms::export_dms_to_bytes;
+pub use error::{ExportError, ExportResult};
+pub use lmpj::save;
+pub use lmpj::save_sync;
+pub use midi::{export_midi, export_midi_to_bytes};

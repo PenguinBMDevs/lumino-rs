@@ -61,40 +61,36 @@ impl Root {
     pub fn view(&self) -> Element<'_> {
         if self.is_progress_window {
             // 进度窗口只显示进度
-            if let Some((msg, progress)) = &self.progress {
-                container(
-                    column![
-                        text("MIDI 处理中...")
-                            .size(24)
-                            .style(|theme: &Theme| text::Style {
-                                color: Some(theme.extended_palette().background.neutral.text),
-                            }),
-                        text(msg).size(16).style(|theme: &Theme| text::Style {
+            // 默认显示初始化状态，避免窗口空白
+            let (msg, progress) = self
+                .progress
+                .as_ref()
+                .map(|(m, p)| (m.as_str(), *p))
+                .unwrap_or(("正在初始化...", 0.0));
+
+            container(
+                column![
+                    text("处理中...")
+                        .size(24)
+                        .style(|theme: &Theme| text::Style {
                             color: Some(theme.extended_palette().background.neutral.text),
                         }),
-                        progress_bar(0.0..=1.0, *progress as f32),
-                    ]
-                    .spacing(20)
-                    .align_x(iced_core::Alignment::Center),
-                )
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .padding(30)
-                .style(|theme: &Theme| container::Style {
-                    background: Some(iced_core::Background::Color(theme.palette().background)),
-                    ..Default::default()
-                })
-                .into()
-            } else {
-                container(text("无进度").size(24).style(|theme: &Theme| text::Style {
-                    color: Some(theme.extended_palette().background.neutral.text),
-                }))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .into()
-            }
+                    text(msg).size(16).style(|theme: &Theme| text::Style {
+                        color: Some(theme.extended_palette().background.neutral.text),
+                    }),
+                    progress_bar(0.0..=1.0, progress as f32),
+                ]
+                .spacing(20)
+                .align_x(iced_core::Alignment::Center),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(30)
+            .style(|theme: &Theme| container::Style {
+                background: Some(iced_core::Background::Color(theme.palette().background)),
+                ..Default::default()
+            })
+            .into()
         } else {
             // 主窗口
             let main_content = column![

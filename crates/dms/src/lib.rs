@@ -1,7 +1,5 @@
 // DMS 文件格式解析器 (Domino Music Sequencer)
 
-#![warn(missing_docs)]
-
 // 导入依赖
 pub mod error;
 pub mod node;

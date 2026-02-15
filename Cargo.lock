@@ -2614,6 +2614,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumino-export"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "bytes",
+ "encoding_rs",
+ "lumino-core",
+ "lumino-dms",
+ "midly",
+ "num-bigint",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "zstd",
+]
+
+[[package]]
 name = "lumino-gfx"
 version = "0.1.0"
 dependencies = [
@@ -2647,6 +2666,8 @@ dependencies = [
  "iced_widget",
  "iced_winit",
  "lumino-core",
+ "lumino-dms",
+ "lumino-export",
  "lumino-gfx",
  "lumino-midi",
  "lumino-ui",

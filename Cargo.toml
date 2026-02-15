@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/dms", "crates/gfx", "crates/midi", "crates/ui"]
+members = ["crates/core", "crates/dms", "crates/export", "crates/gfx", "crates/midi", "crates/ui"]
 resolver = "3"
 
 [workspace.package]
@@ -21,6 +21,7 @@ edition.workspace = true
 [workspace.dependencies]
 lumino-core = { path = "crates/core" }
 lumino-dms = { path = "crates/dms" }
+lumino-export = { path = "crates/export" }
 lumino-gfx = { path = "crates/gfx" }
 lumino-midi = { path = "crates/midi" }
 midly = { git = "https://github.com/Enderman-bm/midly-fork", rev = "92c99252a173bbd8f3685b9d26039bc2ad1854ac" }
@@ -36,6 +37,8 @@ bincode = "1.3.3"
 
 [dependencies]
 lumino-core = { workspace = true }
+lumino-dms = { workspace = true }
+lumino-export = { workspace = true }
 lumino-gfx = { workspace = true }
 lumino-midi = { workspace = true }
 lumino-ui = { workspace = true }

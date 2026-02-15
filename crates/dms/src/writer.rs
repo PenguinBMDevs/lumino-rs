@@ -36,6 +36,8 @@ impl DmsWriter {
                 self.write_tree(stream, composite)?;
             }
         } else {
+            // 对于所有数据节点（包括浮点数），写入完整的 raw_data
+            // 浮点数节点的 raw_data 包含内部头（6字节）+ 浮点值
             let data = node.raw_data();
             let length = data.len() as u32;
             stream.write_all(&length.to_le_bytes())?;
@@ -53,6 +55,7 @@ impl DmsWriter {
         stream.write_all(DMS_MAGIC)?;
         stream.write_all(&(buffer.len() as u32).to_le_bytes())?;
 
+        // 使用最高压缩级别，对应 C# 的 CompressionLevel.SmallestSize
         let mut encoder = ZlibEncoder::new(stream, Compression::best());
         encoder.write_all(&buffer)?;
         encoder.finish()?;

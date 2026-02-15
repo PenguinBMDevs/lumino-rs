@@ -480,7 +480,6 @@ pub fn scan_dms_streaming_with_progress<R: Read, F: Fn(f64)>(
         }
 
         offset += bytes_read;
-        
         // 调用进度回调
         let progress = offset as f64 / decompressed_length as f64;
         progress_callback(progress.min(1.0));

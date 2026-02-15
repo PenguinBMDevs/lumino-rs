@@ -20,6 +20,11 @@ pub enum Event {
     /// DMS 文件解析失败
     DmsParseError(String),
     /* */
+    /// 导出 MIDI 文件
+    ExportMidi,
+    /// 导出 DMS 文件
+    ExportDms,
+    /* */
     Settings,
     /* */
     Exit,
