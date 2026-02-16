@@ -326,6 +326,7 @@ fn build_dms_export_from_midi(source_path: &Path) -> Result<crate::dms::DmsExpor
             name: name.or_else(|| Some(format!("Track {}", index + 1))),
             port: 0,
             channel: channel.unwrap_or(0),
+            is_drum: channel == Some(9),
             notes,
             tempos,
             controls,

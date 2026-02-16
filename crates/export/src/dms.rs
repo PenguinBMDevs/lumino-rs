@@ -2,7 +2,7 @@ use std::path::Path;
 
 use bytes::Bytes;
 use encoding_rs::GB18030;
-use lumino_dms::{DmsCompositeNode, DmsIntegerNode, DmsNode, DmsNodeType, write_dms_file};
+use lumino_dms::{DmsCompositeNode, DmsDataNode, DmsIntegerNode, DmsNode, DmsNodeType, write_dms_file};
 use num_bigint::BigInt;
 
 use crate::error::{ExportError, ExportResult};
@@ -64,6 +64,8 @@ pub struct DmsTrack {
     pub port: u8,
     /// 通道 (0-15)
     pub channel: u8,
+    /// 是否为鼓轨道
+    pub is_drum: bool,
     /// 音符事件列表
     pub notes: Vec<DmsNoteEvent>,
     /// 速度事件列表
@@ -100,22 +102,14 @@ fn build_dms_tree(data: &DmsExportData) -> ExportResult<DmsCompositeNode> {
     let mut root = DmsCompositeNode::new(DmsNodeType::ROOT, -1);
 
     // 添加歌曲名称
-    if let Some(ref name) = data.options.song_name {
-        let node = create_string_node(DmsNodeType::SONG_NAME, 0, name)?;
-        root.children_mut().push(node);
-    }
+    let song_name = data.options.song_name.as_deref().unwrap_or("");
+    let node = create_string_node(DmsNodeType::SONG_NAME, 0, song_name)?;
+    root.children_mut().push(node);
 
     // 添加版权信息
-    if let Some(ref copyright) = data.options.copyright {
-        let node = create_string_node(DmsNodeType::SONG_COPYRIGHT, 0, copyright)?;
-        root.children_mut().push(node);
-    }
-
-    // 添加歌曲备注
-    if let Some(ref comment) = data.options.comment {
-        let node = create_string_node(DmsNodeType::SONG_COMMENT, 0, comment)?;
-        root.children_mut().push(node);
-    }
+    let copyright = data.options.copyright.as_deref().unwrap_or("");
+    let node = create_string_node(DmsNodeType::SONG_COPYRIGHT, 0, copyright)?;
+    root.children_mut().push(node);
 
     // 添加 PPQN
     if let Some(ppqn) = data.options.ppqn {
@@ -123,13 +117,102 @@ fn build_dms_tree(data: &DmsExportData) -> ExportResult<DmsCompositeNode> {
         root.children_mut().push(node);
     }
 
+    // 添加默认的未知节点 (1007) - 4 bytes
+    let node = create_data_node(DmsNodeType::UNKNOWN_1007, 0, vec![0, 0, 0, 0]);
+    root.children_mut().push(node);
+
+    // 添加默认的未知节点 (1009) - 4 bytes
+    let node = create_data_node(DmsNodeType::UNKNOWN_1009, 0, vec![0, 0, 0, 0]);
+    root.children_mut().push(node);
+
+    // 添加默认的未知节点 (1012) - 8 bytes
+    let node = create_data_node(DmsNodeType::UNKNOWN_1012, 0, vec![0; 8]);
+    root.children_mut().push(node);
+
+    // 添加工作时间 (1013)
+    let node = create_integer_node(DmsNodeType::WORKING_TIME_SEC, 0, 0);
+    root.children_mut().push(node);
+
+    // 添加默认的未知节点 (1014) - 4 bytes
+    let node = create_data_node(DmsNodeType::UNKNOWN_1014, 0, vec![0, 0, 0, 0]);
+    root.children_mut().push(node);
+
+    // 添加歌曲备注 (1019)
+    let comment = data.options.comment.as_deref().unwrap_or("");
+    let node = create_string_node(DmsNodeType::SONG_COMMENT, 0, comment)?;
+    root.children_mut().push(node);
+
+    // 添加钢琴卷帘选中工具索引 (1020)
+    let node = create_integer_node(DmsNodeType::PIANO_ROLL_SEL_NOTE_TOOL_INDEX, 0, 5);
+    root.children_mut().push(node);
+
+    // 添加默认的未知节点 (1021) - 1 byte
+    let node = create_data_node(DmsNodeType::UNKNOWN_1021, 0, vec![0]);
+    root.children_mut().push(node);
+
+    // 添加默认的未知节点 (1022) - 1 byte
+    let node = create_data_node(DmsNodeType::UNKNOWN_1022, 0, vec![0]);
+    root.children_mut().push(node);
+
+    // 添加主窗口选中工具索引 (1023)
+    let node = create_integer_node(DmsNodeType::MASTER_SEL_NOTE_TOOL_INDEX, 0, 17);
+    root.children_mut().push(node);
+
+    // 添加默认的未知节点 (1024) - 1 byte
+    let node = create_data_node(DmsNodeType::UNKNOWN_1024, 0, vec![0]);
+    root.children_mut().push(node);
+
     // 添加轨道
     for track in &data.tracks {
         let track_node = build_track_node(track)?;
         root.children_mut().push(track_node);
     }
 
+    // 添加当前变量 (1006) - 空复合节点
+    let current_vars = DmsCompositeNode::new(DmsNodeType::CURRENT_VARS, 0);
+    root.children_mut().push(Box::new(current_vars));
+
+    // 添加 MIDI 输出配置 (1008)
+    let midi_out_cfg = build_midi_out_cfg_node()?;
+    root.children_mut().push(midi_out_cfg);
+
+    // 添加键盘调色板 (1017)
+    let key_palette = build_key_palette_node()?;
+    root.children_mut().push(key_palette);
+
     Ok(root)
+}
+
+/// 构建 MIDI 输出配置节点
+fn build_midi_out_cfg_node() -> ExportResult<Box<dyn DmsNode>> {
+    let mut node = DmsCompositeNode::new(DmsNodeType::MIDI_OUT_CFG, 0);
+    
+    // 端口 A 配置 - 空
+    let port_a = DmsDataNode::new(DmsNodeType::PORT_CFG_A, 0, Bytes::new());
+    node.children_mut().push(Box::new(port_a));
+    
+    // 端口 B 配置 - 4 bytes
+    let port_b = create_data_node(DmsNodeType::PORT_CFG_B, 0, vec![0; 4]);
+    node.children_mut().push(port_b);
+    
+    // 端口 C 配置 - 4 bytes
+    let port_c = create_data_node(DmsNodeType::PORT_CFG_C, 0, vec![0; 4]);
+    node.children_mut().push(port_c);
+    
+    Ok(Box::new(node))
+}
+
+/// 构建键盘调色板节点
+fn build_key_palette_node() -> ExportResult<Box<dyn DmsNode>> {
+    let mut node = DmsCompositeNode::new(DmsNodeType::KEY_PALETTE, 0);
+    
+    // 添加默认的调色板配置
+    for i in 0..7 {
+        let child = create_data_node(DmsNodeType(i as u64 | (DmsNodeType::KEY_PALETTE.0 << 16)), 0, vec![0; if i < 2 { 1 } else if i == 3 || i == 6 { 4 } else { 1 }]);
+        node.children_mut().push(child);
+    }
+    
+    Ok(Box::new(node))
 }
 
 /// 构建轨道节点
@@ -145,10 +228,91 @@ fn build_track_node(track: &DmsTrack) -> ExportResult<Box<dyn DmsNode>> {
     track_node.children_mut().push(channel_node);
 
     // 轨道名称
-    if let Some(ref name) = track.name {
-        let name_node = create_string_node(DmsNodeType::TRACK_NAME, 1, name)?;
-        track_node.children_mut().push(name_node);
-    }
+    let name = track.name.as_deref().unwrap_or("");
+    let name_node = create_string_node(DmsNodeType::TRACK_NAME, 1, name)?;
+    track_node.children_mut().push(name_node);
+
+    // 是否静音 (1003)
+    let muted_node = create_data_node(DmsNodeType::TRACK_IS_MUTED, 1, vec![0]);
+    track_node.children_mut().push(muted_node);
+
+    // 是否为鼓轨道 (1004)
+    let is_drum_value = if track.is_drum { 1u64 } else { 0u64 };
+    let is_drum_node = create_integer_node(DmsNodeType::TRACK_IS_DRUM, 1, is_drum_value);
+    track_node.children_mut().push(is_drum_node);
+
+    // 选中力度 (1006)
+    let vel_node = create_integer_node(DmsNodeType::TRACK_SELECTED_VELOCITY, 1, 100);
+    track_node.children_mut().push(vel_node);
+
+    // 选中门限 (1007)
+    let gate_node = create_integer_node(DmsNodeType::TRACK_SELECTED_GATE, 1, 0);
+    track_node.children_mut().push(gate_node);
+
+    // 鼓组名称 (1009)
+    let drum_set_name = if track.is_drum { "General MIDI Drum" } else { "" };
+    let drum_set_node = create_string_node(DmsNodeType::TRACK_DRUM_SET_NAME, 1, drum_set_name)?;
+    track_node.children_mut().push(drum_set_node);
+
+    // 洋葱皮数据 (1010) - 复合节点
+    let onionskin_node = DmsCompositeNode::new(DmsNodeType::TRACK_ONIONSKIN_DATA, 1);
+    track_node.children_mut().push(Box::new(onionskin_node));
+
+    // Tick 补偿 (1012)
+    let tick_comp_node = create_integer_node(DmsNodeType::TRACK_TICK_COMP, 1, 0);
+    track_node.children_mut().push(tick_comp_node);
+
+    // 门限补偿百分比 (1016)
+    let gate_comp_node = create_data_node(DmsNodeType::TRACK_GATE_COMP_PERCENT, 1, vec![0]);
+    track_node.children_mut().push(gate_comp_node);
+
+    // 键补偿 (1017)
+    let key_comp_node = create_string_node(DmsNodeType::TRACK_KEY_COMP, 1, "")?;
+    track_node.children_mut().push(key_comp_node);
+
+    // 洋葱皮颜色索引 (1018)
+    let onionskin_color_node = create_data_node(DmsNodeType::TRACK_ONIONSKIN_COLOR_INDEX, 1, vec![0]);
+    track_node.children_mut().push(onionskin_color_node);
+
+    // 从小节开始的 Tick 补偿 (1019)
+    let tick_comp_mea_node = create_data_node(DmsNodeType::TRACK_TICK_COMP_FROM_MEA, 1, vec![0; 2]);
+    track_node.children_mut().push(tick_comp_mea_node);
+
+    // 未知节点 (1020)
+    let unknown_1020 = create_integer_node(DmsNodeType::TRACK_UNKNOWN_1020, 1, 0);
+    track_node.children_mut().push(unknown_1020);
+
+    // 未知节点 (1021)
+    let unknown_1021 = create_data_node(DmsNodeType::TRACK_NOTE_RANGE_L, 1, vec![0]);
+    track_node.children_mut().push(unknown_1021);
+
+    // 未知节点 (1022)
+    let unknown_1022 = create_data_node(DmsNodeType::TRACK_NOTE_RANGE_H, 1, vec![0; 2]);
+    track_node.children_mut().push(unknown_1022);
+
+    // 未知节点 (1023)
+    let unknown_1023 = create_data_node(DmsNodeType::TRACK_UNKNOWN_1023, 1, vec![0]);
+    track_node.children_mut().push(unknown_1023);
+
+    // 未知节点 (1024)
+    let unknown_1024 = create_integer_node(DmsNodeType::TRACK_UNKNOWN_1024, 1, 255);
+    track_node.children_mut().push(unknown_1024);
+
+    // 未知节点 (1025)
+    let unknown_1025 = create_integer_node(DmsNodeType::TRACK_UNKNOWN_1025, 1, 1);
+    track_node.children_mut().push(unknown_1025);
+
+    // 未知节点 (1026)
+    let unknown_1026 = create_data_node(DmsNodeType::TRACK_UNKNOWN_1026, 1, vec![0; 16]);
+    track_node.children_mut().push(unknown_1026);
+
+    // 未知节点 (1027)
+    let unknown_1027 = create_integer_node(DmsNodeType::TRACK_UNKNOWN_1027, 1, 0);
+    track_node.children_mut().push(unknown_1027);
+
+    // 未知节点 (1028)
+    let unknown_1028 = create_integer_node(DmsNodeType::TRACK_UNKNOWN_1028, 1, 127);
+    track_node.children_mut().push(unknown_1028);
 
     // 添加音符事件
     for note in &track.notes {
@@ -167,6 +331,26 @@ fn build_track_node(track: &DmsTrack) -> ExportResult<Box<dyn DmsNode>> {
         let control_node = build_control_event_node(control)?;
         track_node.children_mut().push(control_node);
     }
+
+    // 添加轨道结束事件 (2009)
+    let end_of_track_node = build_end_of_track_node()?;
+    track_node.children_mut().push(end_of_track_node);
+
+    // 未知节点 (1013)
+    let unknown_1013 = create_data_node(DmsNodeType::TRACK_UNKNOWN_1013, 1, vec![0; 4]);
+    track_node.children_mut().push(unknown_1013);
+
+    // 未知节点 (1014)
+    let unknown_1014 = create_integer_node(DmsNodeType::TRACK_UNKNOWN_1014, 1, 100);
+    track_node.children_mut().push(unknown_1014);
+
+    // 未知节点 (1015)
+    let unknown_1015 = create_integer_node(DmsNodeType::TRACK_UNKNOWN_1015, 1, 480);
+    track_node.children_mut().push(unknown_1015);
+
+    // 未知节点 (1011) - 洋葱皮数据
+    let unknown_1011 = build_onionskin_data_node()?;
+    track_node.children_mut().push(unknown_1011);
 
     Ok(Box::new(track_node))
 }
@@ -232,6 +416,31 @@ fn build_control_event_node(control: &DmsControlEvent) -> ExportResult<Box<dyn D
     Ok(Box::new(event_node))
 }
 
+/// 构建轨道结束事件节点
+fn build_end_of_track_node() -> ExportResult<Box<dyn DmsNode>> {
+    let mut event_node = DmsCompositeNode::new(DmsNodeType::END_OF_TRACK_EVENT, 1);
+    
+    // Tick 位置 (0 表示轨道结束)
+    let tick_node = create_integer_node(DmsNodeType::ABS_TICK_POS, 2, 0);
+    event_node.children_mut().push(tick_node);
+    
+    Ok(Box::new(event_node))
+}
+
+/// 构建洋葱皮数据节点
+fn build_onionskin_data_node() -> ExportResult<Box<dyn DmsNode>> {
+    let mut node = DmsCompositeNode::new(DmsNodeType::TRACK_UNKNOWN_1011, 1);
+    
+    // 添加两个子节点
+    let child1 = create_data_node(DmsNodeType(0), 2, vec![0]);
+    node.children_mut().push(child1);
+    
+    let child2 = create_data_node(DmsNodeType(0), 2, vec![0]);
+    node.children_mut().push(child2);
+    
+    Ok(Box::new(node))
+}
+
 /// 创建字符串节点
 fn create_string_node(
     type_id: DmsNodeType,
@@ -257,6 +466,11 @@ fn create_integer_node(type_id: DmsNodeType, layer: i32, value: u64) -> Box<dyn 
     let mut int_node = DmsIntegerNode::new(type_id, layer, Bytes::new());
     int_node.set_integer_data(&BigInt::from(value));
     Box::new(int_node)
+}
+
+/// 创建数据节点
+fn create_data_node(type_id: DmsNodeType, layer: i32, data: Vec<u8>) -> Box<dyn DmsNode> {
+    Box::new(DmsDataNode::new(type_id, layer, Bytes::from(data)))
 }
 
 /// 创建浮点数节点

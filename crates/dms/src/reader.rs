@@ -371,26 +371,8 @@ pub fn read_dms_lightweight(bytes: &[u8]) -> Result<DmsLightweightData> {
     Ok(DmsLightweightData::new(data))
 }
 
-/// NOTE_EVENT 原始 type_id
-const NOTE_EVENT_RAW_TYPE_ID: u16 = 2001;
-
-/// TRACK 原始 type_id
-const TRACK_RAW_TYPE_ID: u16 = 1003;
-
-/// SONG_NAME 原始 type_id
-const SONG_NAME_RAW_TYPE_ID: u16 = 3;
-
-/// SONG_COPYRIGHT 原始 type_id  
-const SONG_COPYRIGHT_RAW_TYPE_ID: u16 = 4;
-
-/// SONG_COMMENT 原始 type_id
-const SONG_COMMENT_RAW_TYPE_ID: u16 = 5;
-
-/// SONG_PPQN 原始 type_id
-const SONG_PPQN_RAW_TYPE_ID: u16 = 8;
-
-/// WORKING_TIME_SEC 原始 type_id
-const WORKING_TIME_SEC_RAW_TYPE_ID: u16 = 0x14;
+// 使用 DmsNodeType 中定义的类型ID常量进行扫描
+// 注意：这些值必须与 Domino DMS 文件格式完全匹配
 
 /// 流式扫描 DMS 文件（边解压边提取元数据，不保留完整解压数据）
 pub fn scan_dms_streaming<R: Read>(stream: &mut R) -> Result<DmsScanResult> {
@@ -398,6 +380,9 @@ pub fn scan_dms_streaming<R: Read>(stream: &mut R) -> Result<DmsScanResult> {
 }
 
 /// 流式扫描 DMS 文件（带进度回调）
+/// 
+/// 使用滑动窗口机制处理大文件，避免频繁内存分配
+/// 跟踪父节点上下文以正确识别嵌套节点类型
 pub fn scan_dms_streaming_with_progress<R: Read, F: Fn(f64)>(
     stream: &mut R,
     progress_callback: F,
@@ -418,71 +403,157 @@ pub fn scan_dms_streaming_with_progress<R: Read, F: Fn(f64)>(
 
     let mut decoder = ZlibDecoder::new(stream);
     let mut result = DmsScanResult::default();
-    let mut buffer = vec![0u8; 8192];
-    let mut offset = 0usize;
+    
+    // 使用 4MB 缓冲区，减少 I/O 次数和内存移动
+    const BUF_SIZE: usize = 4 * 1048576;
+    // 最大节点数据大小（用于判断是否需要扩容）
+    const MAX_NODE_DATA: usize = 65536;
+    
+    let mut buffer: Vec<u8> = vec![0; BUF_SIZE + MAX_NODE_DATA];
+    let mut valid_len: usize = 0;
+    let mut decompressed_offset: usize = 0;
+    let mut last_progress_report: f64 = 0.0;
+    
+    // 父节点栈：用于跟踪嵌套上下文
+    // 每个元素：(基础类型ID, 结束偏移量)
+    let mut parent_stack: Vec<(u16, usize)> = Vec::with_capacity(32);
+    // 当前累计偏移量（相对于解压数据的起始位置）
+    let mut cumulative_offset: usize = 0;
 
-    while offset < decompressed_length {
-        let bytes_read = decoder
-            .read(&mut buffer)
-            .map_err(|e| DmsError::Corrupted(format!("解压失败: {}", e)))?;
+    // 预计算常量
+    let track_base = DmsNodeType::TRACK.base_type();
+    let note_event_base = DmsNodeType::NOTE_EVENT.base_type();
+    let song_name_base = DmsNodeType::SONG_NAME.base_type();
+    let song_copyright_base = DmsNodeType::SONG_COPYRIGHT.base_type();
+    let song_comment_base = DmsNodeType::SONG_COMMENT.base_type();
+    let song_ppqn_base = DmsNodeType::SONG_PPQN.base_type();
+    let working_time_base = DmsNodeType::WORKING_TIME_SEC.base_type();
+    let current_vars_base = DmsNodeType::CURRENT_VARS.base_type();
+    let midi_out_cfg_base = DmsNodeType::MIDI_OUT_CFG.base_type();
+    let key_palette_base = DmsNodeType::KEY_PALETTE.base_type();
+    let port_cfg_base = DmsNodeType::PORT_CFG.base_type();
 
-        if bytes_read == 0 {
-            break;
+    while decompressed_offset < decompressed_length {
+        // 如果有效数据较少，尝试读取更多
+        if valid_len < MAX_NODE_DATA {
+            let read_target = &mut buffer[valid_len..valid_len + BUF_SIZE];
+            match decoder.read(read_target) {
+                Ok(0) => {
+                    if valid_len == 0 {
+                        break;
+                    }
+                }
+                Ok(n) => {
+                    valid_len += n;
+                    decompressed_offset += n;
+                }
+                Err(e) => {
+                    return Err(DmsError::Corrupted(format!("解压失败: {}", e)));
+                }
+            }
         }
 
-        let chunk = &buffer[..bytes_read];
-        let mut chunk_offset = 0;
+        let mut parse_offset: usize = 0;
 
-        while chunk_offset + HEADER_SIZE <= chunk.len() {
-            let type_id = u16::from_le_bytes([chunk[chunk_offset], chunk[chunk_offset + 1]]);
+        // 解析缓冲区中的节点
+        while parse_offset + HEADER_SIZE <= valid_len {
+            let type_id = u16::from_le_bytes([buffer[parse_offset], buffer[parse_offset + 1]]);
             let data_length = u32::from_le_bytes([
-                chunk[chunk_offset + 2],
-                chunk[chunk_offset + 3],
-                chunk[chunk_offset + 4],
-                chunk[chunk_offset + 5],
+                buffer[parse_offset + 2],
+                buffer[parse_offset + 3],
+                buffer[parse_offset + 4],
+                buffer[parse_offset + 5],
             ]) as usize;
 
-            let data_start = chunk_offset + HEADER_SIZE;
+            let data_start = parse_offset + HEADER_SIZE;
             let data_end = data_start + data_length;
 
-            if data_end > chunk.len() {
+            // 数据跨越缓冲区边界，需要更多数据
+            if data_end > valid_len {
                 break;
             }
 
-            let node_data = &chunk[data_start..data_end];
+            // 当前节点在解压数据中的绝对结束位置
+            let node_end_offset = cumulative_offset + data_end;
 
-            match type_id {
-                SONG_NAME_RAW_TYPE_ID => {
-                    result.song_name = utils::decode_gb18030(node_data);
+            // 弹出已结束的父节点
+            while let Some((_, end_offset)) = parent_stack.last() {
+                if node_end_offset > *end_offset {
+                    parent_stack.pop();
+                } else {
+                    break;
                 }
-                SONG_COPYRIGHT_RAW_TYPE_ID => {
-                    result.copyright = utils::decode_gb18030(node_data);
-                }
-                SONG_COMMENT_RAW_TYPE_ID => {
-                    result.comment = utils::decode_gb18030(node_data);
-                }
-                SONG_PPQN_RAW_TYPE_ID => {
-                    result.ppqn = utils::decode_u32_le(node_data);
-                }
-                WORKING_TIME_SEC_RAW_TYPE_ID => {
-                    result.working_time_sec = utils::decode_u64_le(node_data);
-                }
-                t if t == NOTE_EVENT_RAW_TYPE_ID => {
-                    result.total_notes += 1;
-                }
-                t if t == TRACK_RAW_TYPE_ID => {
-                    result.track_count += 1;
-                }
-                _ => {}
             }
 
-            chunk_offset = data_end;
+            // 获取当前父节点的基础类型
+            let current_parent_base = parent_stack.last().map(|(base, _)| *base);
+
+            // 处理节点 - 使用预计算的常量进行快速匹配
+            if current_parent_base.is_none() {
+                match type_id {
+                    t if t == song_name_base => {
+                        result.song_name = utils::decode_gb18030(&buffer[data_start..data_end]);
+                    }
+                    t if t == song_copyright_base => {
+                        result.copyright = utils::decode_gb18030(&buffer[data_start..data_end]);
+                    }
+                    t if t == song_comment_base => {
+                        result.comment = utils::decode_gb18030(&buffer[data_start..data_end]);
+                    }
+                    t if t == song_ppqn_base => {
+                        result.ppqn = utils::decode_u32_le(&buffer[data_start..data_end]);
+                    }
+                    t if t == working_time_base => {
+                        result.working_time_sec = utils::decode_u64_le(&buffer[data_start..data_end]);
+                    }
+                    t if t == track_base => {
+                        result.track_count += 1;
+                    }
+                    _ => {}
+                }
+            }
+
+            // 检查是否为音符事件（在 TRACK 内部，基础类型 2001）
+            if current_parent_base == Some(track_base) && type_id == note_event_base {
+                result.total_notes += 1;
+            }
+
+            // 快速判断是否为复合节点
+            let is_composite = type_id == track_base
+                || type_id == current_vars_base
+                || type_id == midi_out_cfg_base
+                || type_id == key_palette_base
+                || type_id == port_cfg_base
+                || (current_parent_base == Some(track_base) && type_id >= 2001 && type_id <= 2019);
+
+            if is_composite {
+                parent_stack.push((type_id, node_end_offset));
+            }
+
+            parse_offset = data_end;
         }
 
-        offset += bytes_read;
-        // 调用进度回调
-        let progress = offset as f64 / decompressed_length as f64;
-        progress_callback(progress.min(1.0));
+        // 更新累计偏移量
+        cumulative_offset += parse_offset;
+
+        // 移动剩余数据到缓冲区开头（仅在必要时执行）
+        let remaining = valid_len - parse_offset;
+        if remaining > 0 && parse_offset > 0 {
+            buffer.copy_within(parse_offset..valid_len, 0);
+        }
+        valid_len = remaining;
+
+        // 更新父节点栈中的结束偏移量
+        for (_, end_offset) in parent_stack.iter_mut() {
+            *end_offset -= parse_offset;
+        }
+
+        // 限制进度回调频率（每 10% 报告一次）
+        let progress = decompressed_offset as f64 / decompressed_length as f64;
+        if progress - last_progress_report >= 0.1 || decompressed_offset >= decompressed_length {
+            progress_callback(progress.min(1.0));
+            last_progress_report = progress;
+        }
     }
 
     Ok(result)

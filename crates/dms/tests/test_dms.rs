@@ -11,10 +11,13 @@ fn test_magic_constant() {
 #[test]
 fn test_node_type_constants() {
     assert_eq!(DmsNodeType::ROOT.0, 0x0000);
-    assert_eq!(DmsNodeType::SONG_NAME.0, 1000);
-    assert_eq!(DmsNodeType::SONG_COPYRIGHT.0, 1001);
-    assert_eq!(DmsNodeType::SONG_PPQN.0, 1002);
+    // 注意：以下值必须与 Domino DMS 文件格式完全匹配
+    assert_eq!(DmsNodeType::SONG_NAME.0, 3);
+    assert_eq!(DmsNodeType::SONG_COPYRIGHT.0, 4);
+    assert_eq!(DmsNodeType::SONG_COMMENT.0, 5);
+    assert_eq!(DmsNodeType::SONG_PPQN.0, 8);
     assert_eq!(DmsNodeType::TRACK.0, 1003);
+    assert_eq!(DmsNodeType::NOTE_EVENT.base_type(), 2001);
 }
 
 #[test]
