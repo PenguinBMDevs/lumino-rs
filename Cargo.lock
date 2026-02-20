@@ -2720,6 +2720,7 @@ dependencies = [
  "iced_winit",
  "lumino-core",
  "lumino-gfx",
+ "tracing",
 ]
 
 [[package]]

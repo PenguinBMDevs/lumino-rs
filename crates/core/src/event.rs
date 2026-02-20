@@ -6,20 +6,22 @@ use std::{
 pub mod menu;
 pub mod window;
 
-static EVENT_BUFFER: OnceLock<Mutex<EventBuffer>> = OnceLock::new();
+static EVENT_BUFFER: OnceLock<Mutex<EventBuffer>> = OnceLock::new(); // 事件缓冲区，用于存储事件
 
 #[derive(Debug, Clone)]
+/// 事件
 pub enum Event {
-    Menu(menu::Event),
-    Window(window::Event),
+    Menu(menu::Event), // 菜单事件
+    Window(window::Event), // 窗口事件
 }
 
 #[macro_export]
+/// 事件宏
 macro_rules! event {
     /* Window start */
-    (Window.$($rest:tt)+) => {
-        $crate::event::Event::Window(
-            $crate::event::window::Event::$($rest)+
+    (Window.$($rest:tt)+) => { // 窗口事件宏
+        $crate::event::Event::Window( // 窗口事件
+            $crate::event::window::Event::$($rest)+ // 窗口事件子项
         )
     };
     /* Window end */
@@ -66,10 +68,12 @@ macro_rules! event {
 }
 
 #[derive(Debug, Default)]
+/// 事件缓冲区
 pub struct EventBuffer {
     queue: VecDeque<Event>,
 }
 
+/// 事件缓冲区实现
 impl EventBuffer {
     fn push(&mut self, event: Event) {
         self.queue.push_back(event);
@@ -84,17 +88,21 @@ impl EventBuffer {
     }
 }
 
+/// 获取事件缓冲区
 fn buffer<'a>() -> MutexGuard<'a, EventBuffer> {
+    // 获取事件缓冲区，若不存在则创建一个默认的事件缓冲区
     EVENT_BUFFER
         .get_or_init(|| Mutex::new(EventBuffer::default()))
         .lock()
         .expect("Lock core EventBuffer")
 }
 
+/// 推送事件到事件缓冲区
 pub fn emit(event: Event) {
     buffer().push(event)
 }
 
+/// 从事件缓冲区中取出所有事件
 pub fn take_events() -> Vec<Event> {
     buffer().take_all()
 }

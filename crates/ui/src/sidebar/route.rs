@@ -53,6 +53,12 @@ fn item<'a>(route: Route, svg: icon::Icon, active: bool) -> Element<'a> {
         .height(Length::Fill)
         .align_y(Alignment::Center);
 
+    let event = if route == Route::Settings {
+        Event::route_updated(route)
+    } else {
+        Event::panel_toggled(route)
+    };
+
     button(inner)
         .width(48)
         .height(48)
@@ -70,6 +76,6 @@ fn item<'a>(route: Route, svg: icon::Icon, active: bool) -> Element<'a> {
             }
             .with_background(Color::TRANSPARENT)
         })
-        .on_press(Event::route_updated(route))
+        .on_press(event)
         .into()
 }

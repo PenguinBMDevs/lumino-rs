@@ -6,6 +6,7 @@ pub enum Message {
     Window(Window),
     Sidebar(Sidebar),
     Progress(Option<(String, f64)>),
+    ScrollbarScrolled(f32), // 滚动条滚动事件，参数为新的scroll_x值
     Null,
 }
 
