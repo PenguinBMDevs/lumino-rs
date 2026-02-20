@@ -146,6 +146,19 @@ impl Editor {
     pub fn snap_precision(&self) -> f32 {
         self.state.snap_precision
     }
+
+    // 设置默认音符长度（单位：tick）
+    pub fn set_default_note_length(&mut self, length: f32) {
+        let clamped_length = length.max(1.0); // 最小长度为1 tick
+        self.state.default_note_length = clamped_length;
+        self.grid_cache.clear();
+        self.note_cache.clear();
+    }
+
+    // 获取默认音符长度（单位：tick）
+    pub fn default_note_length(&self) -> f32 {
+        self.state.default_note_length
+    }
 }
 
 impl Default for Editor {

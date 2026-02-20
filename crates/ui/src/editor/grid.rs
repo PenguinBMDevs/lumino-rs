@@ -185,7 +185,13 @@ impl<'a> PianoRollGrid<'a> {
         let end_tick = (view.scroll_x + bounds.width - keyboard_width) / view.zoom_x;
 
         // 计算第一个需要绘制的小节开始位置
-        let mut current_tick = (start_tick / ppq).ceil() * ppq;
+        // 修正：我们要绘制所有拍子，不仅仅是小节线，还要考虑 snap_precision
+        // 这里暂时保持以 ppq 为单位绘制拍子线，或者根据 snap_precision 绘制更细的网格
+        // 为了和音符对齐一致，建议至少能看到拍子线
+        // 我们需要和 default_note_length 对齐，default_note_length 是 480，即 ppq/4
+        // 所以网格线间隔应该是 ppq/4 = 480 ticks
+        let grid_gap = ppq / 4.0; // 480 ticks
+        let mut current_tick = (start_tick / grid_gap).ceil() * grid_gap;
 
         // 线条样式，跟随主题变化
         let bar_stroke = Stroke::default()
@@ -193,6 +199,9 @@ impl<'a> PianoRollGrid<'a> {
             .with_color(palette.strong.color);
         let beat_stroke = Stroke::default()
             .with_width(1.0)
+            .with_color(palette.weak.color);
+        let sub_beat_stroke = Stroke::default()
+            .with_width(0.5) // 更细的线
             .with_color(palette.weak.color);
 
         // 绘制小节线和小节内拍线
@@ -202,16 +211,32 @@ impl<'a> PianoRollGrid<'a> {
             // 只绘制在键盘右侧的线条
             if screen_x >= keyboard_width && screen_x <= bounds.width {
                 // 小节线和拍线的判断逻辑
+                // 小节线：每 4 拍
                 let is_measure = (current_tick % measure_ticks).abs() < 0.1;
-                let stroke = if is_measure { bar_stroke } else { beat_stroke };
-                // 绘制小节线和小节内拍线
+                // 拍子线：每 1 拍 (1920 ticks)
+                let is_beat = (current_tick % ppq).abs() < 0.1;
+                // 半拍子线：每 1/2 拍 (960 ticks)
+                let is_half_beat = (current_tick % (ppq/2.0)).abs() < 0.1;
+                
+                let stroke = if is_measure { 
+                    bar_stroke 
+                } else if is_beat {
+                    beat_stroke
+                } else if is_half_beat {
+                    sub_beat_stroke
+                } else {
+                    // 1/4 拍子线
+                     Stroke::default().with_width(0.5).with_color(iced_core::Color{a: 0.1, ..palette.weak.color})
+                };
+
+                // 绘制网格线
                 let path = Path::line(
                     Point::new(screen_x, 0.0),
                     Point::new(screen_x, bounds.height),
                 );
                 frame.stroke(&path, stroke);
             }
-            current_tick += ppq;
+            current_tick += grid_gap;
         }
     }
 }

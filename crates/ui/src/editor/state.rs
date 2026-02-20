@@ -11,6 +11,7 @@ pub struct ViewState {
     pub ppq: u16,       // 分辨率，整数，默认设定为1920，最大值65535
     pub keyboard_width: f32, // 键盘宽度，单位为像素，默认120
     pub snap_precision: f32, // 音符对齐精度，单位为tick，默认ppq/2（四分之一拍子线）
+    pub default_note_length: f32, // 默认音符长度（ticks），等于拍子线间隔
     // pub scale: Scale  // TODO: 之后我们需要支持不同的调式/微分音
 }
 
@@ -27,6 +28,7 @@ impl Default for ViewState {
             ppq: 1920,      // 分辨率1920
             keyboard_width: 120.0, // 键盘宽度120像素
             snap_precision: 960.0, // 对齐精度960 ticks（ppq/2，四分之一拍子线）
+            default_note_length: 960.0, // ppq/2，等于拍子线间隔
         }
     }
 }
