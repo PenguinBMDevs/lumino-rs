@@ -77,7 +77,7 @@ impl Context {
         } else {
             wgpu::PresentMode::AutoVsync    // 旧方案
         };
-        println!("Selected present_mode: {:?}", present_mode);
+        tracing::info!("Selected present_mode: {:?}", present_mode);
 
         surface.configure(
             &device,
@@ -114,7 +114,7 @@ impl Context {
         } else {
             wgpu::PresentMode::AutoVsync    // 旧方案
         };
-        println!("Selected present_mode (resize): {:?}", present_mode);
+        tracing::info!("Selected present_mode (resize): {:?}", present_mode);
 
         self.surface.configure(
             &self.device,
