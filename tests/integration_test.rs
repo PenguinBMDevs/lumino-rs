@@ -29,7 +29,7 @@ fn test_midi_to_dms_similarity() {
 
     let info = lumino_core::MidiInfo::from_path(midi_path.clone())
         .expect("解析 MIDI 文件失败");
-    
+
     println!("MIDI 文件信息:");
     println!("  音轨数量: {}", info.track_count);
     println!("  音符数量: {}", info.total_notes);
@@ -52,21 +52,21 @@ fn test_midi_to_dms_similarity() {
     // 提取语义信息进行对比
     fn extract_dms_info(node: &dyn lumino_dms::DmsNode) -> (u64, usize, Option<u32>, Option<String>) {
         use lumino_dms::DmsNodeType;
-        
+
         let mut note_count = 0u64;
         let mut track_count = 0usize;
         let mut ppqn: Option<u32> = None;
         let mut song_name: Option<String> = None;
-        
+
         fn scan_node(
-            node: &dyn lumino_dms::DmsNode, 
-            note_count: &mut u64, 
-            track_count: &mut usize, 
-            ppqn: &mut Option<u32>, 
+            node: &dyn lumino_dms::DmsNode,
+            note_count: &mut u64,
+            track_count: &mut usize,
+            ppqn: &mut Option<u32>,
             song_name: &mut Option<String>
         ) {
             let type_id = node.type_id();
-            
+
             if type_id == DmsNodeType::TRACK {
                 *track_count += 1;
             }
@@ -84,12 +84,12 @@ fn test_midi_to_dms_similarity() {
                     *song_name = str_node.string_data().ok();
                 }
             }
-            
+
             for child in node.children() {
                 scan_node(child.as_ref(), note_count, track_count, ppqn, song_name);
             }
         }
-        
+
         scan_node(node, &mut note_count, &mut track_count, &mut ppqn, &mut song_name);
         (note_count, track_count, ppqn, song_name)
     }
@@ -187,28 +187,28 @@ fn test_dms_metadata_validation() {
     // 使用完整解析来验证
     let dms_bytes = std::fs::read(&dms_path)
         .expect("读取 DMS 文件失败");
-    
+
     let root = lumino_dms::read_dms_file(&dms_bytes)
         .expect("解析 DMS 文件失败");
 
     // 提取语义信息
     fn extract_dms_info(node: &dyn lumino_dms::DmsNode) -> (u64, usize, Option<u32>, Option<String>) {
         use lumino_dms::DmsNodeType;
-        
+
         let mut note_count = 0u64;
         let mut track_count = 0usize;
         let mut ppqn: Option<u32> = None;
         let mut song_name: Option<String> = None;
-        
+
         fn scan_node(
-            node: &dyn lumino_dms::DmsNode, 
-            note_count: &mut u64, 
-            track_count: &mut usize, 
-            ppqn: &mut Option<u32>, 
+            node: &dyn lumino_dms::DmsNode,
+            note_count: &mut u64,
+            track_count: &mut usize,
+            ppqn: &mut Option<u32>,
             song_name: &mut Option<String>
         ) {
             let type_id = node.type_id();
-            
+
             if type_id == DmsNodeType::TRACK {
                 *track_count += 1;
             }
@@ -226,12 +226,12 @@ fn test_dms_metadata_validation() {
                     *song_name = str_node.string_data().ok();
                 }
             }
-            
+
             for child in node.children() {
                 scan_node(child.as_ref(), note_count, track_count, ppqn, song_name);
             }
         }
-        
+
         scan_node(node, &mut note_count, &mut track_count, &mut ppqn, &mut song_name);
         (note_count, track_count, ppqn, song_name)
     }
@@ -336,6 +336,7 @@ fn test_midi_lmpj_roundtrip() {
     let parsed_midi = lumino_core::midi::ParsedMidi {
         info: info.clone(),
         midi_data: Some(original_midi_bytes.clone()),
+        memory_manager: None,
     };
 
     let temp_dir = std::env::temp_dir();

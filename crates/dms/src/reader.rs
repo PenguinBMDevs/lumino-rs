@@ -524,7 +524,7 @@ pub fn scan_dms_streaming_with_progress<R: Read, F: Fn(f64)>(
                 || type_id == midi_out_cfg_base
                 || type_id == key_palette_base
                 || type_id == port_cfg_base
-                || (current_parent_base == Some(track_base) && type_id >= 2001 && type_id <= 2019);
+                || (current_parent_base == Some(track_base) && (2001..=2019).contains(&type_id));
 
             if is_composite {
                 parent_stack.push((type_id, node_end_offset));

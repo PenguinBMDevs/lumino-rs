@@ -2610,6 +2610,7 @@ dependencies = [
  "bincode",
  "encoding_rs",
  "lumino-dms",
+ "memmap2",
  "midly",
  "rayon",
  "serde",

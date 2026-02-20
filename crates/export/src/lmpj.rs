@@ -7,6 +7,7 @@ pub fn save_parsed_midi_to_lmpj_sync(
     let data_for_save = lumino_core::midi::ParsedMidi {
         info: parsed.info.clone(),
         midi_data: None,
+        memory_manager: None,
     };
 
     let compressed =
@@ -23,6 +24,7 @@ pub async fn save_parsed_midi_to_lmpj(
     let data_for_save = lumino_core::midi::ParsedMidi {
         info: parsed.info.clone(),
         midi_data: None,
+        memory_manager: None,
     };
 
     let compressed = tokio::task::spawn_blocking(move || {

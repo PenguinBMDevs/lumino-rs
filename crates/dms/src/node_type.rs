@@ -261,7 +261,7 @@ impl DmsNodeType {
                 | Self::MARKER_EVENT
                 | Self::SCALE_EVENT
                 | Self::CHORD_EVENT
-        ) || (self.0 >> 16 == Self::TRACK.0 && base >= 2001 && base <= 2019)
+        ) || (self.0 >> 16 == Self::TRACK.0 && (2001..=2019).contains(&base))
     }
 
     /// 是否为字符串节点

@@ -47,3 +47,8 @@ midly-fork/
 
 # Lingma
 .lingma
+
+# tests
+tests/*
+DmsExplorer/
+test-file/
