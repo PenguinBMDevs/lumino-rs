@@ -36,11 +36,19 @@ impl Note {
     pub fn from_mouse_position(mouse_pos: Point, view_state: &ViewState, theme: &Theme) -> Self {
         let palette = theme.extended_palette().background;
         // 鼠标坐标已经是 Canvas 局部坐标，直接使用
+        // 需要考虑键盘宽度偏移
+        let adjusted_x = mouse_pos.x - view_state.keyboard_width;
+        
+        // 将像素坐标转换为tick坐标，然后按精度对齐
+        let tick_x = adjusted_x / view_state.zoom_x;
+        let snapped_tick_x = (tick_x / view_state.snap_precision).round() * view_state.snap_precision;
+        let snapped_x = snapped_tick_x * view_state.zoom_x + view_state.keyboard_width;
+        
         // Y坐标向上贴合（取下面的网格线）
-        let snapped_x = (mouse_pos.x / view_state.zoom_x).floor() * view_state.zoom_x;
         let snapped_y = (mouse_pos.y / view_state.zoom_y).floor() * view_state.zoom_y;
+        
         Self::new(
-            snapped_x,    // 对齐后的X坐标
+            snapped_x,    // 对齐后的X坐标（考虑键盘宽度）
             snapped_y,    // 对齐后的Y坐标
             100.0,        // 暂时硬编码宽度，后续需要根据实际音符长度计算
             view_state.zoom_y, // 使用实际的琴键高度

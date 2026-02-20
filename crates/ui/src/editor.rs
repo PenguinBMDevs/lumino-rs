@@ -133,6 +133,19 @@ impl Editor {
     pub fn keyboard_width(&self) -> f32 {
         self.state.keyboard_width
     }
+
+    // 设置音符对齐精度（单位：tick）
+    pub fn set_snap_precision(&mut self, precision: f32) {
+        let clamped_precision = precision.max(1.0); // 最小精度为1 tick
+        self.state.snap_precision = clamped_precision;
+        self.grid_cache.clear();
+        self.note_cache.clear();
+    }
+
+    // 获取音符对齐精度（单位：tick）
+    pub fn snap_precision(&self) -> f32 {
+        self.state.snap_precision
+    }
 }
 
 impl Default for Editor {
