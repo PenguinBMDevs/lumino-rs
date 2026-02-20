@@ -17,6 +17,7 @@ use iced_wgpu::{
     graphics::{Shell, Viewport},
     wgpu,
 };
+use lumino_gfx::NoteRenderer;
 
 use iced_winit::{
     Clipboard, conversion,
@@ -26,6 +27,7 @@ use iced_winit::{
 
 use iced_core::{Event, Font, Pixels, Size, Theme, mouse, renderer, touch};
 
+/// UI 宿主 - 管理 iced 渲染和 wgpu 音符渲染
 pub struct Host {
     window: Arc<winit::window::Window>,
     root: root::Root,
@@ -37,6 +39,10 @@ pub struct Host {
     viewport: Viewport,
     pending_window_action: Option<window::TrafficAction>,
     pending_drag: bool,
+    /// wgpu 音符渲染器
+    note_renderer: NoteRenderer,
+    /// 逻辑光标位置（用于音符预览）
+    cursor_position: Option<iced_core::Point>,
 }
 
 impl Host {
@@ -66,6 +72,9 @@ impl Host {
             Renderer::new(engine, Font::default(), Pixels::from(16))
         };
 
+        // 创建 wgpu 音符渲染器
+        let note_renderer = NoteRenderer::new(&gfx.device, gfx.format);
+
         Self {
             window,
             root: if is_progress {
@@ -81,6 +90,8 @@ impl Host {
             viewport,
             pending_window_action: None,
             pending_drag: false,
+            note_renderer,
+            cursor_position: None,
         }
     }
 
@@ -91,15 +102,33 @@ impl Host {
         );
     }
 
-    pub fn redraw_requested(&mut self, frame: &wgpu::SurfaceTexture, view: &wgpu::TextureView) {
-        // 在顶层绘制 iced
+    /// 处理重绘请求 - 先渲染 iced UI，再用 wgpu 渲染音符
+    pub fn redraw_requested(
+        &mut self,
+        frame: &wgpu::SurfaceTexture,
+        view: &wgpu::TextureView,
+        gfx: &lumino_gfx::Context,
+    ) {
+        // 第一步：渲染 iced UI
+        self.render_iced_ui(frame, view);
+
+        // 第二步：用 wgpu 渲染音符（在 UI 之上）
+        self.render_notes(frame, view, gfx);
+    }
+
+    /// 渲染 iced UI
+    fn render_iced_ui(&mut self, frame: &wgpu::SurfaceTexture, texture_view: &wgpu::TextureView) {
+        // 先构建 view（这会借用 root）
+        let root_view = self.root.view();
+        
         let mut interface = UserInterface::build(
-            self.root.view(),
+            root_view,
             self.viewport.logical_size(),
             std::mem::take(&mut self.cache),
             &mut self.renderer,
         );
 
+        let mut messages = Vec::new();
         let (state, _) = interface.update(
             &[Event::Window(iced_core::window::Event::RedrawRequested(
                 Instant::now(),
@@ -107,15 +136,32 @@ impl Host {
             self.cursor,
             &mut self.renderer,
             &mut self.clipboard,
-            &mut Vec::new(),
+            &mut messages,
         );
+
+        // 绘制界面（在释放 root 借用之前）
+        let theme = self.root.theme();
+        interface.draw(
+            &mut self.renderer,
+            &theme,
+            &renderer::Style::default(),
+            self.cursor,
+        );
+        self.cache = interface.into_cache();
+
+        self.renderer
+            .present(None, frame.texture.format(), texture_view, &self.viewport);
+
+        // 处理消息（在 interface 被释放之后，root 不再被借用）
+        for message in messages {
+            self.root.update(message);
+        }
 
         // 更新鼠标光标
         if let user_interface::State::Updated {
             mouse_interaction, ..
         } = state
         {
-            // 更新鼠标光标
             if let Some(icon) = iced_winit::conversion::mouse_interaction(mouse_interaction) {
                 self.window.set_cursor(icon);
                 self.window.set_cursor_visible(true);
@@ -123,25 +169,96 @@ impl Host {
                 self.window.set_cursor_visible(false);
             }
         }
+    }
 
-        // 绘制界面
-        interface.draw(
-            &mut self.renderer,
-            &self.root.theme(),
-            &renderer::Style::default(),
-            self.cursor,
+    /// 使用 wgpu 渲染音符
+    fn render_notes(
+        &mut self,
+        _frame: &wgpu::SurfaceTexture,
+        view: &wgpu::TextureView,
+        gfx: &lumino_gfx::Context,
+    ) {
+        // 同步光标位置到 editor
+        self.root.update_editor_cursor(self.cursor_position);
+
+        // 检查鼠标是否在 Canvas 区域内（严格检查，防止覆盖菜单）
+        if let Some(pos) = self.cursor_position {
+            let canvas_offset = self.root.editor.canvas_offset;
+            let canvas_size = self.root.editor.canvas_size;
+            
+            // 检查是否在 Canvas 水平范围内
+            if pos.x < canvas_offset.x || pos.x > canvas_offset.x + canvas_size.x {
+                return;
+            }
+            // 检查是否在 Canvas 垂直范围内（包含顶部安全区域）
+            if pos.y < canvas_offset.y + 40.0 || pos.y > canvas_offset.y + canvas_size.y {
+                return;
+            }
+        } else {
+            return; // 没有鼠标位置，不渲染
+        }
+
+        // 获取需要绘制的音符实例
+        let instances = self.root.get_note_instances();
+        if instances.is_empty() {
+            return;
+        }
+
+        // 创建命令编码器
+        let mut encoder = gfx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("note_render_encoder"),
+        });
+
+        // 开始渲染通道
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("note_render_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load, // 在已有内容（UI）之上绘制
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        // 使用逻辑尺寸绘制音符（与 iced 坐标系一致）
+        let logical_size = self.viewport.logical_size();
+        
+        // 计算 Canvas 区域的裁剪矩形（限制音符只在卷帘内显示）
+        // 转换为物理像素坐标用于 scissor rect
+        let scale = self.viewport.scale_factor();
+        let canvas_offset = self.root.editor.canvas_offset;
+        let canvas_size = self.root.editor.canvas_size;
+        
+        let scissor_x = (canvas_offset.x * scale) as u32;
+        let scissor_y = (canvas_offset.y * scale) as u32;
+        let scissor_width = (canvas_size.x * scale) as u32;
+        let scissor_height = (canvas_size.y * scale) as u32;
+        
+        self.note_renderer.draw(
+            &mut render_pass,
+            &instances,
+            &gfx.device,
+            &gfx.queue,
+            (logical_size.width, logical_size.height),
+            Some((scissor_x, scissor_y, scissor_width, scissor_height)),
         );
-        self.cache = interface.into_cache();
 
-        self.renderer
-            .present(None, frame.texture.format(), view, &self.viewport);
+        // 释放 render_pass，提交命令
+        drop(render_pass);
+        gfx.queue.submit(std::iter::once(encoder.finish()));
     }
 
     pub fn cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
-        self.cursor = mouse::Cursor::Available(conversion::cursor_position(
-            position,
-            self.viewport.scale_factor(),
-        ));
+        let logical_pos = conversion::cursor_position(position, self.viewport.scale_factor());
+        self.cursor = mouse::Cursor::Available(logical_pos);
+        // 存储逻辑坐标（与 iced 一致）
+        self.cursor_position = Some(logical_pos);
     }
 
     pub fn handle_events(
@@ -163,15 +280,12 @@ impl Host {
         if let Some(event) =
             conversion::window_event(event, self.window.scale_factor() as f32, modifiers)
         {
-            // Convert touch events to mouse events for compatibility with widgets
-            // that don't handle touch events (e.g., iced_aw MenuBar)
             let converted_events = convert_touch_to_mouse(event);
             self.events.extend(converted_events);
         }
 
-        // 如果有待处理的事件
+        // 处理事件
         if !self.events.is_empty() {
-            // 我们处理这些事件
             let mut interface = UserInterface::build(
                 self.root.view(),
                 self.viewport.logical_size(),
@@ -192,20 +306,17 @@ impl Host {
             self.events.clear();
             self.cache = interface.into_cache();
 
-            // 使用任意消息更新我们的 UI
+            // 应用消息
             for message in messages {
-                // 检查是否是窗口控制动作
                 if let message::Message::Window(window::Event::TrafficAction(action)) = &message {
                     self.pending_window_action = Some(action.clone());
                 }
-                // 检查是否是拖动事件
                 if let message::Message::Window(window::Event::Drag) = &message {
                     self.pending_drag = true;
                 }
                 self.root.update(message);
             }
 
-            // 并请求重新绘制
             self.window.request_redraw();
         }
     }
@@ -231,10 +342,7 @@ impl Host {
     }
 }
 
-/// Converts touch events to mouse events for compatibility with widgets
-/// that only handle mouse events (e.g., iced_aw MenuBar).
-/// Returns a vector of events (either the original event + converted mouse event,
-/// or just the original event if no conversion is needed).
+/// 将触摸事件转换为鼠标事件（兼容性处理）
 fn convert_touch_to_mouse(event: Event) -> Vec<Event> {
     match event {
         Event::Touch(touch_event) => match touch_event {

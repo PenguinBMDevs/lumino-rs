@@ -49,7 +49,7 @@ impl RunnerInner {
 
         if self
             .gfx
-            .with_frame(|a, b| self.ui.redraw_requested(a, b))
+            .with_frame(|frame, view| self.ui.redraw_requested(frame, view, &self.gfx))
             .is_err()
         {
             self.window.request_redraw();

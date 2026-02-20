@@ -6,19 +6,25 @@ pub mod scrollbar_widget;
 
 use crate::{Element, Message};
 use iced_widget::canvas::{self, Canvas};
-use iced_widget::column;
-use iced_core::Length;
+use iced_core::{Length, Point};
+use lumino_gfx::NoteInstance;
 
 pub use state::ViewState;
 pub use grid::PianoRollGrid;
+use note::Note;
 
-// 钢琴卷帘编辑器
+/// 钢琴卷帘编辑器
 pub struct Editor {
     pub state: ViewState,
     pub grid_cache: canvas::Cache<crate::Renderer>,
-    pub note_cache: canvas::Cache<crate::Renderer>,
     pub max_scroll_x: f32,
     pub max_scroll_y: f32,
+    /// 当前鼠标在窗口中的位置
+    pub cursor_position: Option<Point>,
+    /// Canvas 在窗口中的偏移量（用于坐标转换）
+    pub canvas_offset: Point,
+    /// Canvas 尺寸（宽, 高）
+    pub canvas_size: Point,
 }
 
 impl Editor {
@@ -26,18 +32,24 @@ impl Editor {
         let mut editor = Self {
             state: ViewState::default(),
             grid_cache: canvas::Cache::new(),
-            note_cache: canvas::Cache::new(),
             max_scroll_x: 1000.0,
-            max_scroll_y: 0.0, // 稍后计算
+            max_scroll_y: 0.0,
+            cursor_position: None,
+            canvas_offset: Point::new(0.0, 0.0),
+            canvas_size: Point::new(0.0, 0.0),
         };
-        // 根据visible_key_count计算max_scroll_y
         editor.max_scroll_y = editor.state.visible_key_count as f32 * editor.state.zoom_y;
         editor
     }
 
-    // 绘制钢琴卷帘
-    pub fn view(&self, on_scroll_x: impl Fn(f32) -> Message + 'static, on_scroll_y: impl Fn(f32) -> Message + 'static) -> Element<'_> {
-        let grid = Canvas::new(self.grid())
+    /// 构建编辑器视图
+    pub fn view(
+        &self,
+        on_scroll_x: impl Fn(f32) -> Message + 'static,
+        on_scroll_y: impl Fn(f32) -> Message + 'static,
+    ) -> Element<'_> {
+        // 创建带鼠标追踪的 Canvas
+        let grid = Canvas::new(PianoRollGrid::new(&self.state, &self.grid_cache))
             .width(Length::Fill)
             .height(Length::Fill);
 
@@ -58,15 +70,93 @@ impl Editor {
         iced_widget::column![content_with_vscroll, horizontal_scrollbar].into()
     }
 
-    fn grid(&self) -> PianoRollGrid<'_> {
-        PianoRollGrid {
-            state: &self.state,
-            grid_cache: &self.grid_cache,
-            note_cache: &self.note_cache,
+    /// 获取当前需要绘制的音符实例（用于 wgpu 渲染）
+    /// 
+    /// 目前只返回鼠标位置的预览音符，后续可扩展为返回所有 MIDI 音符
+    /// 音符只在 Canvas 区域内显示
+    pub fn get_note_instances(&self, theme: &crate::Theme) -> Vec<NoteInstance> {
+        let mut instances = Vec::new();
+        
+        // 如果有鼠标位置，检查是否在 Canvas 区域内
+        if let Some(pos) = self.cursor_position {
+            // 计算 Canvas 局部坐标
+            let local_pos = Point::new(
+                pos.x - self.canvas_offset.x,
+                pos.y - self.canvas_offset.y,
+            );
+            
+            // 检查鼠标是否在 Canvas 有效区域内（考虑键盘宽度）
+            if !self.is_inside_canvas(local_pos) {
+                return instances; // 在区域外，不显示音符
+            }
+            
+            // 计算音符（基于 Canvas 局部坐标）
+            let note = Note::from_mouse_position(local_pos, &self.state, theme);
+            
+            // 转换为窗口坐标：加上 Canvas 偏移
+            let window_pos = Point::new(
+                note.position.x + self.canvas_offset.x,
+                note.position.y + self.canvas_offset.y,
+            );
+            
+            instances.push(NoteInstance::new(
+                window_pos.x,
+                window_pos.y,
+                note.size.x,
+                note.size.y,
+                [note.color.r, note.color.g, note.color.b, note.color.a],
+            ));
         }
+        
+        // TODO: 在这里添加实际的 MIDI 音符实例
+        
+        instances
+    }
+    
+    /// 检查点是否在 Canvas 有效区域内
+    /// 有效区域 = Canvas 区域减去键盘区域（左侧）和滚动条区域（底部和右侧）
+    /// 同时避开顶部可能被下拉菜单覆盖的区域
+    fn is_inside_canvas(&self, local_pos: Point) -> bool {
+        // 基本的 Canvas 边界检查
+        if local_pos.x < 0.0 || local_pos.x > self.canvas_size.x {
+            return false;
+        }
+        if local_pos.y < 0.0 || local_pos.y > self.canvas_size.y {
+            return false;
+        }
+        
+        // 检查是否在键盘区域外（x 必须大于键盘宽度）
+        if local_pos.x < self.state.keyboard_width {
+            return false;
+        }
+        
+        // 避开顶部区域（防止与下拉菜单重叠）
+        // 顶部 40 像素区域不渲染音符（给下拉菜单留空间）
+        const MENU_SAFE_ZONE: f32 = 40.0;
+        if local_pos.y < MENU_SAFE_ZONE {
+            return false;
+        }
+        
+        true
     }
 
-    // 设置最大滚动值
+    /// 更新鼠标位置（由外部调用）
+    pub fn update_cursor_position(&mut self, position: Option<Point>) {
+        self.cursor_position = position;
+    }
+
+    /// 更新 Canvas 偏移量（用于坐标转换）
+    pub fn set_canvas_offset(&mut self, offset: Point) {
+        self.canvas_offset = offset;
+    }
+    
+    /// 更新 Canvas 尺寸
+    pub fn set_canvas_size(&mut self, size: Point) {
+        self.canvas_size = size;
+    }
+
+    // ========== 滚动控制 ==========
+    
     pub fn set_max_scroll_x(&mut self, max_scroll: f32) {
         self.max_scroll_x = max_scroll;
     }
@@ -75,7 +165,6 @@ impl Editor {
         self.max_scroll_y = max_scroll;
     }
 
-    // 获取当前滚动位置
     pub fn scroll_x(&self) -> f32 {
         self.state.scroll_x
     }
@@ -84,78 +173,57 @@ impl Editor {
         self.state.scroll_y
     }
 
-    // 设置滚动位置
     pub fn set_scroll_x(&mut self, scroll_x: f32) {
         self.state.scroll_x = scroll_x.max(0.0).min(self.max_scroll_x);
         self.grid_cache.clear();
-        self.note_cache.clear();
     }
 
     pub fn set_scroll_y(&mut self, scroll_y: f32) {
         self.state.scroll_y = scroll_y.max(0.0).min(self.max_scroll_y);
         self.grid_cache.clear();
-        self.note_cache.clear();
     }
 
-    // 设置可见琴键数量（1-256）
+    // ========== 键盘设置 ==========
+
     pub fn set_visible_key_count(&mut self, count: u16) {
         let clamped_count = count.clamp(1, 256);
         self.state.visible_key_count = clamped_count;
-        // 联动更新纵向滚动范围
-        // 滚动范围应该是总高度减去视口高度，但由于这里无法直接获取视口高度，
-        // 我们将 max_scroll_y 设置为总高度，在 scrollbar_widget 中处理比例。
-        // 实际上，如果 max_scroll_y 是总高度，那么滚动到底部时，最下面的琴键会在视口顶部。
-        // 为了让最下面的琴键在视口底部，我们需要在外部（如 view 方法中）或者在 grid 绘制时处理。
-        // 目前先保持为总高度，确保能滚动到所有琴键。
         self.max_scroll_y = clamped_count as f32 * self.state.zoom_y;
-        // 确保当前滚动位置不超过新范围
         if self.state.scroll_y > self.max_scroll_y {
             self.state.scroll_y = self.max_scroll_y;
         }
         self.grid_cache.clear();
-        self.note_cache.clear();
     }
 
-    // 获取可见琴键数量
     pub fn visible_key_count(&self) -> u16 {
         self.state.visible_key_count
     }
 
-    // 设置键盘宽度
     pub fn set_keyboard_width(&mut self, width: f32) {
-        let clamped_width = width.max(0.0);
-        self.state.keyboard_width = clamped_width;
+        self.state.keyboard_width = width.max(0.0);
         self.grid_cache.clear();
-        self.note_cache.clear();
     }
 
-    // 获取键盘宽度
     pub fn keyboard_width(&self) -> f32 {
         self.state.keyboard_width
     }
 
-    // 设置音符对齐精度（单位：tick）
+    // ========== 音符设置 ==========
+
     pub fn set_snap_precision(&mut self, precision: f32) {
-        let clamped_precision = precision.max(1.0); // 最小精度为1 tick
-        self.state.snap_precision = clamped_precision;
+        self.state.snap_precision = precision.max(1.0);
         self.grid_cache.clear();
-        self.note_cache.clear();
     }
 
-    // 获取音符对齐精度（单位：tick）
     pub fn snap_precision(&self) -> f32 {
         self.state.snap_precision
     }
 
-    // 设置默认音符长度（单位：tick）
     pub fn set_default_note_length(&mut self, length: f32) {
-        let clamped_length = length.max(1.0); // 最小长度为1 tick
-        self.state.default_note_length = clamped_length;
+        self.state.default_note_length = length.max(1.0);
         self.grid_cache.clear();
-        self.note_cache.clear();
     }
 
-    // 获取默认音符长度（单位：tick）
     pub fn default_note_length(&self) -> f32 {
         self.state.default_note_length
     }

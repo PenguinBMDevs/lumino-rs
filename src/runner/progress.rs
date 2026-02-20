@@ -49,7 +49,7 @@ impl RunnerInner {
         if let Some(ref mut progress_ui) = self.progress_ui
             && let Some(ref progress_gfx) = self.progress_gfx
             && progress_gfx
-                .with_frame(|a, b| progress_ui.redraw_requested(a, b))
+                .with_frame(|frame, view| progress_ui.redraw_requested(frame, view, progress_gfx))
                 .is_err()
         {
             progress_window.request_redraw();

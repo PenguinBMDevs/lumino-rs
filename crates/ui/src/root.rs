@@ -1,5 +1,6 @@
 use iced_core::Length;
 use iced_widget::{column, container, progress_bar, row, text};
+use lumino_gfx::NoteInstance;
 
 use crate::{editor, message, sidebar, statusbar, titlebar, window};
 
@@ -12,10 +13,12 @@ pub struct Root {
     sidebar: sidebar::Sidebar,
     titlebar: titlebar::Titlebar,
     statusbar: statusbar::StatusBar,
-    editor: editor::Editor,
+    pub editor: editor::Editor,
     window: window::Window,
     progress: Option<(String, f64)>,
     is_progress_window: bool,
+    /// 是否有菜单/下拉框打开（打开时不渲染预览音符）
+    is_menu_open: bool,
 }
 
 impl Root {
@@ -28,6 +31,7 @@ impl Root {
             window: window::Window::new(theme),
             progress: None,
             is_progress_window: false,
+            is_menu_open: false,
         }
     }
 
@@ -40,6 +44,7 @@ impl Root {
             window: window::Window::new(theme),
             progress: None,
             is_progress_window: true,
+            is_menu_open: false,
         }
     }
 
@@ -56,6 +61,11 @@ impl Root {
             Message::ScrollbarScrolledY(new_scroll_y) => {
                 // 处理垂直滚动条滚动
                 self.editor.set_scroll_y(new_scroll_y);
+            }
+            Message::CanvasBoundsChanged { offset, size } => {
+                // 更新 Canvas 偏移量和尺寸
+                self.editor.set_canvas_offset(offset);
+                self.editor.set_canvas_size(iced_core::Point::new(size.width, size.height));
             }
             // 显式丢弃它
             Message::Null => (),
@@ -116,5 +126,33 @@ impl Root {
                 })
                 .into()
         }
+    }
+
+    /// 获取当前需要绘制的音符实例
+    pub fn get_note_instances(&self) -> Vec<NoteInstance> {
+        if !self.should_render_preview_note() {
+            return Vec::new();
+        }
+        self.editor.get_note_instances(&self.window.theme)
+    }
+
+    /// 更新编辑器鼠标位置
+    pub fn update_editor_cursor(&mut self, position: Option<iced_core::Point>) {
+        self.editor.update_cursor_position(position);
+    }
+
+    /// 更新编辑器 Canvas 偏移量
+    pub fn set_editor_canvas_offset(&mut self, offset: iced_core::Point) {
+        self.editor.set_canvas_offset(offset);
+    }
+    
+    /// 设置菜单打开状态（菜单打开时不渲染预览音符）
+    pub fn set_menu_open(&mut self, open: bool) {
+        self.is_menu_open = open;
+    }
+    
+    /// 获取当前是否应该渲染预览音符
+    pub fn should_render_preview_note(&self) -> bool {
+        !self.is_menu_open && !self.is_progress_window
     }
 }
