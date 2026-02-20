@@ -50,5 +50,5 @@ midly-fork/
 
 # tests
 tests/*
-DmsExplorer/
+DmsExplorer/*
 test-file/
