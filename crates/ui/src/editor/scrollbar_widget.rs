@@ -6,50 +6,111 @@ use iced_core::renderer::{self, Quad};
 use iced_core::border::Border;
 use iced_core::Background;
 
+// 滚动条方向
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ScrollbarOrientation {
+    Horizontal,
+    Vertical,
+}
+
 // 滚动条状态（存储在 Tree 中）
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ScrollbarState {
     #[default]
     Idle,
     Hover,
-    Dragging { start_x: f32, start_scroll: f32 },
+    Dragging { start_pos: f32, start_scroll: f32 },
 }
 
 // 滚动条 Widget
 pub struct ScrollbarWidget<'a> {
-    pub scroll_x: f32,
+    pub scroll: f32,
     pub max_scroll: f32,
+    pub orientation: ScrollbarOrientation,
     pub on_scroll: Box<dyn Fn(f32) -> Message + 'a>,
 }
 
 impl<'a> ScrollbarWidget<'a> {
     pub fn new(
-        scroll_x: f32,
+        scroll: f32,
         max_scroll: f32,
-        _width: f32,
+        orientation: ScrollbarOrientation,
         on_scroll: impl Fn(f32) -> Message + 'a,
     ) -> Self {
         Self {
-            scroll_x,
+            scroll,
             max_scroll,
+            orientation,
             on_scroll: Box::new(on_scroll),
         }
     }
 
+    pub fn horizontal(
+        scroll_x: f32,
+        max_scroll: f32,
+        on_scroll: impl Fn(f32) -> Message + 'a,
+    ) -> Self {
+        Self::new(scroll_x, max_scroll, ScrollbarOrientation::Horizontal, on_scroll)
+    }
+
+    pub fn vertical(
+        scroll_y: f32,
+        max_scroll: f32,
+        on_scroll: impl Fn(f32) -> Message + 'a,
+    ) -> Self {
+        Self::new(scroll_y, max_scroll, ScrollbarOrientation::Vertical, on_scroll)
+    }
+
     // 计算滑块的几何信息
     fn thumb_geometry(&self, bounds: Rectangle) -> (f32, f32, Rectangle) {
-        let track_width = bounds.width - 4.0;
-        let thumb_width = 100.0_f32.min(track_width * 0.3);
-        let thumb_x = bounds.x + 2.0 + (self.scroll_x / self.max_scroll) * (track_width - thumb_width);
-        
-        let thumb_bounds = Rectangle {
-            x: thumb_x,
-            y: bounds.y + 2.0,
-            width: thumb_width,
-            height: bounds.height - 4.0,
-        };
-        
-        (track_width, thumb_width, thumb_bounds)
+        match self.orientation {
+            ScrollbarOrientation::Horizontal => {
+                let track_width = bounds.width - 4.0;
+                // thumb 大小基于内容比例：当max_scroll越大，thumb越小
+                let thumb_width = if self.max_scroll <= 0.0 {
+                    track_width // 没有可滚动内容，thumb填满轨道
+                } else {
+                    (track_width * track_width / (track_width + self.max_scroll)).max(20.0).min(track_width)
+                };
+                // 确保 scroll 不超过 max_scroll
+                let clamped_scroll = self.scroll.clamp(0.0, self.max_scroll);
+                let thumb_x = bounds.x + 2.0 + (clamped_scroll / self.max_scroll.max(1.0)) * (track_width - thumb_width);
+                
+                let thumb_bounds = Rectangle {
+                    x: thumb_x,
+                    y: bounds.y + 2.0,
+                    width: thumb_width,
+                    height: bounds.height - 4.0,
+                };
+                
+                (track_width, thumb_width, thumb_bounds)
+            }
+            ScrollbarOrientation::Vertical => {
+                let track_height = bounds.height - 4.0;
+                // thumb 大小基于内容比例：当max_scroll越大，thumb越小
+                // 注意：这里的 max_scroll 实际上是总高度，我们需要减去视口高度（track_height）来得到真正的可滚动范围
+                let scrollable_height = (self.max_scroll - track_height).max(0.0);
+                
+                let thumb_height = if scrollable_height <= 0.0 {
+                    track_height // 没有可滚动内容，thumb填满轨道
+                } else {
+                    (track_height * track_height / self.max_scroll).max(20.0).min(track_height)
+                };
+                
+                // 确保 scroll 不超过 scrollable_height
+                let clamped_scroll = self.scroll.clamp(0.0, scrollable_height);
+                let thumb_y = bounds.y + 2.0 + (clamped_scroll / scrollable_height.max(1.0)) * (track_height - thumb_height);
+                
+                let thumb_bounds = Rectangle {
+                    x: bounds.x + 2.0,
+                    y: thumb_y,
+                    width: bounds.width - 4.0,
+                    height: thumb_height,
+                };
+                
+                (track_height, thumb_height, thumb_bounds)
+            }
+        }
     }
 }
 
@@ -63,9 +124,15 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
     }
 
     fn size(&self) -> Size<Length> {
-        Size {
-            width: Length::Fill,
-            height: Length::Fixed(20.0),
+        match self.orientation {
+            ScrollbarOrientation::Horizontal => Size {
+                width: Length::Fill,
+                height: Length::Fixed(20.0),
+            },
+            ScrollbarOrientation::Vertical => Size {
+                width: Length::Fixed(20.0),
+                height: Length::Fill,
+            },
         }
     }
 
@@ -153,14 +220,31 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                 mouse::Event::ButtonPressed(mouse::Button::Left) => {
                     if let Some(position) = cursor.position() {
                         if thumb_bounds.contains(position) {
+                            let start_pos = match self.orientation {
+                                ScrollbarOrientation::Horizontal => position.x,
+                                ScrollbarOrientation::Vertical => position.y,
+                            };
                             *state = ScrollbarState::Dragging {
-                                start_x: position.x,
-                                start_scroll: self.scroll_x,
+                                start_pos,
+                                start_scroll: self.scroll,
                             };
                             shell.request_redraw();
                         } else if bounds.contains(position) {
-                            let relative_x = (position.x - bounds.x - 2.0) / (track_width - thumb_width);
-                            let new_scroll = relative_x.clamp(0.0, 1.0) * self.max_scroll;
+                            let (track_size, thumb_size) = match self.orientation {
+                                ScrollbarOrientation::Horizontal => (track_width, thumb_width),
+                                ScrollbarOrientation::Vertical => (track_width, thumb_width), // track_width 和 thumb_width 在垂直情况下实际上是高度
+                            };
+                            let relative_pos = match self.orientation {
+                                ScrollbarOrientation::Horizontal => (position.x - bounds.x - 2.0) / (track_size - thumb_size).max(1.0),
+                                ScrollbarOrientation::Vertical => (position.y - bounds.y - 2.0) / (track_size - thumb_size).max(1.0),
+                            };
+                            
+                            let actual_max_scroll = match self.orientation {
+                                ScrollbarOrientation::Horizontal => self.max_scroll,
+                                ScrollbarOrientation::Vertical => (self.max_scroll - track_size).max(0.0),
+                            };
+                            
+                            let new_scroll = relative_pos.clamp(0.0, 1.0) * actual_max_scroll;
                             shell.publish((self.on_scroll)(new_scroll));
                         }
                     }
@@ -182,12 +266,30 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                 }
                 mouse::Event::CursorMoved { .. } => {
                     match *state {
-                        ScrollbarState::Dragging { start_x, start_scroll } => {
+                        ScrollbarState::Dragging { start_pos, start_scroll } => {
                             if let Some(position) = cursor.position() {
-                                let delta_x = position.x - start_x;
-                                let scroll_ratio = delta_x / (track_width - thumb_width);
-                                let new_scroll = (start_scroll + scroll_ratio * self.max_scroll)
-                                    .clamp(0.0, self.max_scroll);
+                                let current_pos = match self.orientation {
+                                    ScrollbarOrientation::Horizontal => position.x,
+                                    ScrollbarOrientation::Vertical => position.y,
+                                };
+                                let delta = current_pos - start_pos;
+                                let track_size = match self.orientation {
+                                    ScrollbarOrientation::Horizontal => track_width,
+                                    ScrollbarOrientation::Vertical => track_width, // 在垂直情况下是高度
+                                };
+                                let thumb_size = match self.orientation {
+                                    ScrollbarOrientation::Horizontal => thumb_width,
+                                    ScrollbarOrientation::Vertical => thumb_width, // 在垂直情况下是高度
+                                };
+                                
+                                let actual_max_scroll = match self.orientation {
+                                    ScrollbarOrientation::Horizontal => self.max_scroll,
+                                    ScrollbarOrientation::Vertical => (self.max_scroll - track_size).max(0.0),
+                                };
+                                
+                                let scroll_ratio = delta / (track_size - thumb_size).max(1.0);
+                                let new_scroll = (start_scroll + scroll_ratio * actual_max_scroll)
+                                    .clamp(0.0, actual_max_scroll);
                                 shell.publish((self.on_scroll)(new_scroll));
                             }
                         }

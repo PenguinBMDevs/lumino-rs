@@ -61,6 +61,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         // tracing::info!("Drawing grid with scroll_x: {}", self.state.scroll_x); // debug log
         // 禁用缓存，直接绘制（测试用）
         let mut frame = Frame::new(renderer, bounds.size());
+        self.draw_keyboard(&mut frame, bounds, theme);
         self.draw_keys(&mut frame, bounds, theme);
         self.draw_bars(&mut frame, bounds, theme);
         let grid_geometry = frame.into_geometry();
@@ -68,7 +69,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         // 音符同样直接绘制
         let mut note_frame = Frame::new(renderer, bounds.size());
         if let Some(pos) = *state {
-            let note = Note::from_mouse_position(pos, self.state.scroll_x, self.state.scroll_y, theme);
+            let note = Note::from_mouse_position(pos, self.state, theme);
             note.draw(&mut note_frame);
         }
         let note_geometry = note_frame.into_geometry();
@@ -81,6 +82,57 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
 
 /// 绘制横向线，包括琴键分隔线
 impl<'a> PianoRollGrid<'a> {
+    /// 绘制钢琴键盘
+    fn draw_keyboard(&self, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &Theme) {
+        let palette = theme.extended_palette().background;
+        let view = self.state;
+
+        // 键盘宽度（从状态获取）
+        let keyboard_width = view.keyboard_width;
+
+        // 最高琴键索引
+        let max_key_index = (view.visible_key_count - 1) as f32;
+
+        // 绘制琴键
+        for i in 0..view.visible_key_count {
+            let keynum = i as isize;
+
+            // 坐标计算（与分割线对齐）
+            let world_y = (max_key_index - keynum as f32) * view.zoom_y;
+            let screen_y = world_y - view.scroll_y;
+
+            // 只绘制在屏幕可见范围内的键
+            if screen_y + view.zoom_y >= 0.0 && screen_y <= bounds.height {
+                let key_height = view.zoom_y;
+                let key_y = screen_y;
+
+                // 判断是否为黑键
+                let is_black_key = is_key_dark(keynum, view.visible_key_count as usize);
+
+                // 键的颜色
+                let key_color = if is_black_key {
+                    palette.stronger.color // 黑键
+                } else {
+                    palette.base.color   // 白键
+                };
+
+                // 绘制键的矩形
+                let key_rect = Rectangle::new(
+                    Point::new(0.0, key_y),
+                    iced_core::Size::new(keyboard_width, key_height),
+                );
+                let key_path = Path::rectangle(key_rect.position(), key_rect.size());
+                frame.fill(&key_path, key_color);
+
+                // 为键添加边框
+                let border_stroke = Stroke::default()
+                    .with_width(1.0)
+                    .with_color(palette.strong.color);
+                frame.stroke(&key_path, border_stroke);
+            }
+        }
+    }
+
     /// 绘制横向线，包括琴键分隔线
     fn draw_keys(&self, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &Theme) {
         let palette = theme.extended_palette().background;
@@ -90,19 +142,29 @@ impl<'a> PianoRollGrid<'a> {
         let line_stroke = Stroke::default()
             .with_width(1.0)
             .with_color(palette.strong.color);
+
+        // 键盘宽度
+        let keyboard_width = view.keyboard_width;
+
         // 最高琴键索引
-        let max_key_index = (view.key_count - 1) as f32;
+        let max_key_index = (view.visible_key_count - 1) as f32;
         // 绘制琴键分隔线
-        for i in 0..view.key_count {
+        for i in 0..view.visible_key_count {
             let keynum = i as isize;
 
             // 坐标计算
+            // 注意：这里我们让 keynum = 0 (最低音) 在最下面，keynum = max_key_index (最高音) 在最上面
+            // 当 scroll_y = 0 时，最高音在屏幕顶部 (y=0)
             let world_y = (max_key_index - keynum as f32) * view.zoom_y;
             let screen_y = world_y - view.scroll_y;
-            // 绘制底部分割线
-            let line_y = screen_y + view.zoom_y;
-            let path = Path::line(Point::new(0.0, line_y), Point::new(bounds.width, line_y));
-            frame.stroke(&path, line_stroke);
+
+            // 只绘制在屏幕可见范围内的线
+            if screen_y + view.zoom_y >= 0.0 && screen_y <= bounds.height {
+                // 绘制底部分割线（从键盘右侧开始）
+                let line_y = screen_y + view.zoom_y;
+                let path = Path::line(Point::new(keyboard_width, line_y), Point::new(bounds.width, line_y));
+                frame.stroke(&path, line_stroke);
+            }
         }
     }
 
@@ -112,37 +174,43 @@ impl<'a> PianoRollGrid<'a> {
         let ppq = view.ppq as f32;
         let palette = theme.extended_palette().background;
 
+        // 键盘宽度
+        let keyboard_width = view.keyboard_width;
+
         // 这里只是随便写个四四拍，这个会根据歌曲变化
         let measure_ticks = ppq * 4.0;
 
-        // 计算当前视图可见范围的tick范围
+        // 计算当前视图可见范围的tick范围（只计算键盘右侧的区域）
         let start_tick = view.scroll_x / view.zoom_x;
-        let end_tick = (view.scroll_x + bounds.width) / view.zoom_x;
+        let end_tick = (view.scroll_x + bounds.width - keyboard_width) / view.zoom_x;
 
         // 计算第一个需要绘制的小节开始位置
         let mut current_tick = (start_tick / ppq).ceil() * ppq;
 
         // 线条样式，跟随主题变化
         let bar_stroke = Stroke::default()
-            .with_width(1.0)
+            .with_width(2.0)
             .with_color(palette.strong.color);
         let beat_stroke = Stroke::default()
             .with_width(1.0)
-            .with_color(palette.strong.color);
+            .with_color(palette.weak.color);
 
         // 绘制小节线和小节内拍线
         while current_tick < end_tick {
-            let screen_x = (current_tick * view.zoom_x) - view.scroll_x;
-            // tracing::info!("Drawing bar at screen_x: {}, scroll_x: {}", screen_x, view.scroll_x); // debug log
-            // 小节线和拍线的判断逻辑
-            let is_measure = (current_tick % measure_ticks).abs() < 0.1;
-            let stroke = if is_measure { bar_stroke } else { beat_stroke };
-            // 绘制小节线和小节内拍线
-            let path = Path::line(
-                Point::new(screen_x, 0.0),
-                Point::new(screen_x, bounds.height),
-            );
-            frame.stroke(&path, stroke);
+            let screen_x = (current_tick * view.zoom_x) - view.scroll_x + keyboard_width;
+            
+            // 只绘制在键盘右侧的线条
+            if screen_x >= keyboard_width && screen_x <= bounds.width {
+                // 小节线和拍线的判断逻辑
+                let is_measure = (current_tick % measure_ticks).abs() < 0.1;
+                let stroke = if is_measure { bar_stroke } else { beat_stroke };
+                // 绘制小节线和小节内拍线
+                let path = Path::line(
+                    Point::new(screen_x, 0.0),
+                    Point::new(screen_x, bounds.height),
+                );
+                frame.stroke(&path, stroke);
+            }
             current_tick += ppq;
         }
     }

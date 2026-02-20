@@ -50,8 +50,12 @@ impl Root {
             Message::Sidebar(r) => self.sidebar.update(r),
             Message::Progress(p) => self.progress = p,
             Message::ScrollbarScrolled(new_scroll_x) => {
-                // 处理滚动条滚动
+                // 处理水平滚动条滚动
                 self.editor.set_scroll_x(new_scroll_x);
+            }
+            Message::ScrollbarScrolledY(new_scroll_y) => {
+                // 处理垂直滚动条滚动
+                self.editor.set_scroll_y(new_scroll_y);
             }
             // 显式丢弃它
             Message::Null => (),
@@ -99,7 +103,7 @@ impl Root {
             // 主窗口
             let main_content = column![
                 self.titlebar.view(&self.window),
-                row![self.sidebar.view(), self.editor.view(Message::ScrollbarScrolled),],
+                row![self.sidebar.view(), self.editor.view(Message::ScrollbarScrolled, Message::ScrollbarScrolledY),],
                 self.statusbar.view(),
             ];
 

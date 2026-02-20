@@ -33,17 +33,17 @@ impl Note {
         frame.fill(&path, self.color);
     }
 
-    pub fn from_mouse_position(mouse_pos: Point, _scroll_x: f32, _scroll_y: f32, theme: &Theme) -> Self {
+    pub fn from_mouse_position(mouse_pos: Point, view_state: &ViewState, theme: &Theme) -> Self {
         let palette = theme.extended_palette().background;
         // 鼠标坐标已经是 Canvas 局部坐标，直接使用
         // Y坐标向上贴合（取下面的网格线）
-        let snspped_x = (mouse_pos.x / 20.0).floor() * 20.0; // -----|
-        let snapped_y = (mouse_pos.y / 20.0).floor() * 20.0; // ---------->这里只是一个假设值，我们后期需要把这里的20.0根据实际缩放计算！（theme.zoom_x&y）
+        let snapped_x = (mouse_pos.x / view_state.zoom_x).floor() * view_state.zoom_x;
+        let snapped_y = (mouse_pos.y / view_state.zoom_y).floor() * view_state.zoom_y;
         Self::new(
-            snspped_x,    // 对齐后的X坐标
+            snapped_x,    // 对齐后的X坐标
             snapped_y,    // 对齐后的Y坐标
-            100.0,
-            20.0,
+            100.0,        // 暂时硬编码宽度，后续需要根据实际音符长度计算
+            view_state.zoom_y, // 使用实际的琴键高度
             palette.strong.color,
             theme,
         )
