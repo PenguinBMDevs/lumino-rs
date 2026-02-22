@@ -10,6 +10,8 @@ pub enum Message {
     ScrollbarScrolledY(f32), // 垂直滚动条滚动事件，参数为新的scroll_y值
     /// Canvas 位置和尺寸更新，用于坐标转换和边界检测
     CanvasBoundsChanged { offset: iced_core::Point, size: iced_core::Size },
+    /// 菜单状态更新
+    MenuStateChanged(bool), // true = 菜单打开，false = 菜单关闭
     Null,
 }
 

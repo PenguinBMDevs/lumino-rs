@@ -133,7 +133,9 @@ fn menu_items<'a>(items: &[MenuItem]) -> Vec<Item<'a, Message, Theme, Renderer>>
         .map(|item| {
             let inner: Element<'a> = match item {
                 MenuItem::Action(r) => {
-                    base_button(format!("{r:?}"), Some(Message::Core(r.clone())))
+                    // 点击菜单项时发送菜单关闭消息
+                    let msg = Message::Core(r.clone());
+                    base_button(format!("{r:?}"), Some(msg))
                 }
                 MenuItem::Separator => base_split(),
                 MenuItem::Submenu(r, n) => {
@@ -165,7 +167,8 @@ fn submenu_button<'a>(label: impl Into<String>) -> Element<'a> {
 
 fn menu_button<'a>(label: impl Into<String>) -> Element<'a> {
     let inner = text(label.into()).size(14.0).into();
-    button_template(inner, message::null())
+    // 菜单按钮点击时打开菜单
+    button_template(inner, message::Message::MenuStateChanged(true))
         .padding([2, 8])
         .into()
 }

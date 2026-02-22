@@ -1,5 +1,5 @@
 use iced_core::Length;
-use iced_widget::{column, container, progress_bar, row, text};
+use iced_widget::{column, container, mouse_area, progress_bar, row, space, text};
 use lumino_gfx::NoteInstance;
 
 use crate::{editor, message, sidebar, statusbar, titlebar, window};
@@ -50,7 +50,11 @@ impl Root {
 
     pub fn update(&mut self, msg: Message) {
         match msg {
-            Message::Core(r) => lumino_core::event::emit(r),
+            Message::Core(r) => {
+                // 当执行菜单操作时，关闭菜单
+                self.set_menu_open(false);
+                lumino_core::event::emit(r);
+            }
             Message::Window(r) => self.window.update(r),
             Message::Sidebar(r) => self.sidebar.update(r),
             Message::Progress(p) => self.progress = p,
@@ -66,6 +70,10 @@ impl Root {
                 // 更新 Canvas 偏移量和尺寸
                 self.editor.set_canvas_offset(offset);
                 self.editor.set_canvas_size(iced_core::Point::new(size.width, size.height));
+            }
+            // 菜单状态更新
+            Message::MenuStateChanged(is_open) => {
+                self.set_menu_open(is_open);
             }
             // 显式丢弃它
             Message::Null => (),
@@ -117,14 +125,30 @@ impl Root {
                 self.statusbar.view(),
             ];
 
-            container(main_content)
+            let content = container(main_content)
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .style(|theme: &Theme| container::Style {
-                    background: Some(iced_core::Background::Color(theme.palette().background)),
+                .style(|_theme: &Theme| container::Style {
+                    background: Some(iced_core::Background::Color(iced_core::Color::TRANSPARENT)),
                     ..Default::default()
-                })
-                .into()
+                });
+
+            // 如果菜单打开，添加一个透明的覆盖层来捕获点击事件并关闭菜单
+            if self.is_menu_open {
+                let overlay = container(space())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_theme: &Theme| container::Style {
+                        background: Some(iced_core::Background::Color(iced_core::Color::TRANSPARENT)),
+                        ..Default::default()
+                    });
+
+                mouse_area(overlay)
+                    .on_press(Message::MenuStateChanged(false))
+                    .into()
+            } else {
+                content.into()
+            }
         }
     }
 
@@ -145,12 +169,12 @@ impl Root {
     pub fn set_editor_canvas_offset(&mut self, offset: iced_core::Point) {
         self.editor.set_canvas_offset(offset);
     }
-    
+
     /// 设置菜单打开状态（菜单打开时不渲染预览音符）
     pub fn set_menu_open(&mut self, open: bool) {
         self.is_menu_open = open;
     }
-    
+
     /// 获取当前是否应该渲染预览音符
     pub fn should_render_preview_note(&self) -> bool {
         !self.is_menu_open && !self.is_progress_window

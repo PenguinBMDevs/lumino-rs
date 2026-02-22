@@ -8,6 +8,7 @@ pub enum Event {
     TrafficAction(TrafficAction),
     Drag,
     ToggleMaximize,
+    FpsUpdate(f32),
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +37,9 @@ impl Event {
     pub const fn toggle_maximize() -> Message {
         Message::Window(Self::ToggleMaximize)
     }
+    pub const fn fps_update(fps: f32) -> Message {
+        Message::Window(Self::FpsUpdate(fps))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +47,7 @@ pub struct Window {
     pub theme: Theme,
     pub is_maximized: bool,
     pub is_focused: bool,
+    pub fps: Option<f32>,
 }
 
 fn get_theme(theme: &str) -> Theme {
@@ -59,6 +64,7 @@ impl Window {
             theme: get_theme(theme),
             is_maximized: false,
             is_focused: true,
+            fps: None,
         }
     }
     fn default_theme() -> Theme {
@@ -69,6 +75,11 @@ impl Window {
             Event::Theme(r) => self.theme = get_theme(&r),
             Event::Maximized(r) => self.is_maximized = r,
             Event::Focused(r) => self.is_focused = r,
+            Event::FpsUpdate(v) => {
+                if cfg!(debug_assertions) {
+                    self.fps = Some(v);
+                }
+            }
             Event::TrafficAction(_) | Event::Drag | Event::ToggleMaximize => {
                 // 这些事件由 Host 处理，不需要更新 Window 状态
             }
