@@ -1,18 +1,17 @@
-use crate::{Message, Renderer, Theme};
-use crate::editor::state::ViewState;
+use crate::{Message, Renderer, Theme, message::EditorAction};
+use crate::editor::{Editor, HitType};
 use iced_core::{Point, Rectangle, mouse};
 
 use iced_widget::canvas::{self, Frame, Geometry, Path, Program, Stroke, Event};
 
 /// 钢琴卷帘网格绘制程序
 pub struct PianoRollGrid<'a> {
-    pub state: &'a ViewState,
-    pub grid_cache: &'a canvas::Cache<Renderer>,
+    pub editor: &'a Editor,
 }
 
 impl<'a> PianoRollGrid<'a> {
-    pub fn new(state: &'a ViewState, grid_cache: &'a canvas::Cache<Renderer>) -> Self {
-        Self { state, grid_cache }
+    pub fn new(editor: &'a Editor) -> Self {
+        Self { editor }
     }
 }
 
@@ -26,7 +25,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
     fn update(
         &self,
         state: &mut Self::State,
-        _event: &Event,
+        event: &Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<canvas::Action<Message>> {
@@ -38,6 +37,23 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         if let Some(position) = cursor.position() {
             let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
             *state = Some(local_pos);
+        }
+
+        match event {
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                if let Some(position) = cursor.position() {
+                    let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
+                    return Some(canvas::Action::publish(Message::EditorAction(EditorAction::Pressed(local_pos))));
+                }
+            }
+            Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
+                return Some(canvas::Action::publish(Message::EditorAction(EditorAction::Moved(local_pos))));
+            }
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                return Some(canvas::Action::publish(Message::EditorAction(EditorAction::Released)));
+            }
+            _ => {}
         }
         
         // 发送 bounds 变化消息
@@ -53,7 +69,19 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         _bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> mouse::Interaction {
-        mouse::Interaction::Crosshair
+        use crate::editor::EditState;
+        match self.editor.edit_state {
+            EditState::Dragging { .. } => mouse::Interaction::Grabbing,
+            EditState::ResizingStart { .. } | EditState::ResizingEnd { .. } => mouse::Interaction::ResizingHorizontally,
+            EditState::Drawing { .. } => mouse::Interaction::Crosshair,
+            EditState::Idle => {
+                match self.editor.hover_state {
+                    Some((_, HitType::Start)) | Some((_, HitType::End)) => mouse::Interaction::ResizingHorizontally,
+                    Some((_, HitType::Middle)) => mouse::Interaction::Pointer,
+                    None => mouse::Interaction::Crosshair,
+                }
+            }
+        }
     }
 
     fn draw(
@@ -64,12 +92,13 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry<Renderer>> {
-        let mut frame = Frame::new(renderer, bounds.size());
-        self.draw_keyboard(&mut frame, bounds, theme);
-        self.draw_keys(&mut frame, bounds, theme);
-        self.draw_bars(&mut frame, bounds, theme);
+        let grid = self.editor.grid_cache.draw(renderer, bounds.size(), |frame| {
+            self.draw_keyboard(frame, bounds, theme);
+            self.draw_keys(frame, bounds, theme);
+            self.draw_bars(frame, bounds, theme);
+        });
         
-        vec![frame.into_geometry()]
+        vec![grid]
     }
 }
 
@@ -78,7 +107,7 @@ impl<'a> PianoRollGrid<'a> {
     /// 绘制钢琴键盘（左侧键位指示器）
     fn draw_keyboard(&self, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &Theme) {
         let palette = theme.extended_palette().background;
-        let view = self.state;
+        let view = &self.editor.state;
         let keyboard_width = view.keyboard_width;
         let max_key_index = (view.visible_key_count - 1) as f32;
 
@@ -113,7 +142,7 @@ impl<'a> PianoRollGrid<'a> {
     /// 绘制琴键分隔线（横向线）
     fn draw_keys(&self, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &Theme) {
         let palette = theme.extended_palette().background;
-        let view = self.state;
+        let view = &self.editor.state;
         let line_stroke = Stroke::default()
             .with_width(1.0)
             .with_color(palette.strong.color);
@@ -139,7 +168,7 @@ impl<'a> PianoRollGrid<'a> {
 
     /// 绘制小节线和拍线（纵向线）
     fn draw_bars(&self, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &Theme) {
-        let view = self.state;
+        let view = &self.editor.state;
         let ppq = view.ppq as f32;
         let palette = theme.extended_palette().background;
         let keyboard_width = view.keyboard_width;

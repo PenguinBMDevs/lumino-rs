@@ -1,6 +1,13 @@
 pub use crate::{sidebar::Event as Sidebar, window::Event as Window};
 
 #[derive(Debug, Clone)]
+pub enum EditorAction {
+    Pressed(iced_core::Point),
+    Moved(iced_core::Point),
+    Released,
+}
+
+#[derive(Debug, Clone)]
 pub enum Message {
     Core(lumino_core::Event),
     Window(Window),
@@ -14,6 +21,7 @@ pub enum Message {
     CanvasBoundsChanged { offset: iced_core::Point, size: iced_core::Size },
     /// 菜单状态更新
     MenuStateChanged(bool), // true = 菜单打开，false = 菜单关闭
+    EditorAction(EditorAction),
     Null,
 }
 

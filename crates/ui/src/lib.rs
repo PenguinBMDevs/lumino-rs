@@ -214,39 +214,16 @@ impl Host {
             label: Some("note_render_encoder"),
         });
 
-        // 菜单打开时，禁止更新光标与渲染音符（避免菜单被覆盖/误操作）
-        let mut should_render = true;
+        // 菜单打开时，禁止更新光标与渲染预览音符（避免菜单被覆盖/误操作）
         if !self.root.should_render_preview_note() {
             self.root.update_editor_cursor(None);
-            should_render = false;
         } else {
             // 同步光标位置到 editor
             self.root.update_editor_cursor(self.cursor_position);
-
-            // 检查鼠标是否在 Canvas 区域内（严格检查，防止覆盖菜单）
-            if let Some(pos) = self.cursor_position {
-                let canvas_offset = self.root.editor.canvas_offset;
-                let canvas_size = self.root.editor.canvas_size;
-
-                // 检查是否在 Canvas 水平范围内
-                if pos.x < canvas_offset.x || pos.x > canvas_offset.x + canvas_size.x {
-                    should_render = false;
-                }
-                // 检查是否在 Canvas 垂直范围内（包含顶部安全区域）
-                else if pos.y < canvas_offset.y + 40.0 || pos.y > canvas_offset.y + canvas_size.y {
-                    should_render = false;
-                }
-            } else {
-                should_render = false; // 没有鼠标位置，不渲染
-            }
         }
 
         // 获取需要绘制的音符实例
-        let instances = if should_render {
-            self.root.get_note_instances()
-        } else {
-            Vec::new()
-        };
+        let instances = self.root.get_note_instances();
 
         // 使用逻辑尺寸绘制音符（与 iced 坐标系一致）
         let logical_size = self.viewport.logical_size();

@@ -77,6 +77,9 @@ impl Root {
                 self.editor.set_canvas_offset(offset);
                 self.editor.set_canvas_size(iced_core::Point::new(size.width, size.height));
             }
+            Message::EditorAction(action) => {
+                self.editor.handle_action(action);
+            }
             // 菜单状态更新
             Message::MenuStateChanged(is_open) => {
                 self.set_menu_open(is_open);
@@ -168,9 +171,6 @@ impl Root {
 
     /// 获取当前需要绘制的音符实例
     pub fn get_note_instances(&self) -> Vec<NoteInstance> {
-        if !self.should_render_preview_note() {
-            return Vec::new();
-        }
         self.editor.get_note_instances(&self.window.theme)
     }
 

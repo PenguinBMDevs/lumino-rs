@@ -4,7 +4,7 @@ pub mod note;
 pub mod scrollbar;
 pub mod scrollbar_widget;
 
-use crate::{Element, Message};
+use crate::{Element, Message, message::EditorAction};
 use iced_widget::canvas::{self, Canvas};
 use iced_core::{Length, Point};
 use lumino_gfx::NoteInstance;
@@ -12,6 +12,23 @@ use lumino_gfx::NoteInstance;
 pub use state::ViewState;
 pub use grid::PianoRollGrid;
 use note::Note;
+
+#[derive(Debug, Clone, Default)]
+pub enum EditState {
+    #[default]
+    Idle,
+    Drawing { start_tick: f32, key: u16, current_tick: f32 },
+    Dragging { note_index: usize, offset_tick: f32, offset_key: i32 },
+    ResizingStart { note_index: usize, original_tick: f32, original_length: f32 },
+    ResizingEnd { note_index: usize },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HitType {
+    Start,
+    Middle,
+    End,
+}
 
 /// 钢琴卷帘编辑器
 pub struct Editor {
@@ -25,6 +42,10 @@ pub struct Editor {
     pub canvas_offset: Point,
     /// Canvas 尺寸（宽, 高）
     pub canvas_size: Point,
+    
+    pub notes: Vec<Note>,
+    pub edit_state: EditState,
+    pub hover_state: Option<(usize, HitType)>,
 }
 
 impl Editor {
@@ -37,10 +58,161 @@ impl Editor {
             cursor_position: None,
             canvas_offset: Point::new(0.0, 0.0),
             canvas_size: Point::new(0.0, 0.0),
+            notes: Vec::new(),
+            edit_state: EditState::Idle,
+            hover_state: None,
         };
         editor.max_scroll_x = editor.state.total_ticks as f32 * editor.state.zoom_x;
         editor.max_scroll_y = editor.state.visible_key_count as f32 * editor.state.zoom_y;
         editor
+    }
+
+    pub fn handle_action(&mut self, action: EditorAction) {
+        match action {
+            EditorAction::Pressed(pos) => {
+                if !self.is_inside_canvas(pos) {
+                    return;
+                }
+                let tick = self.x_to_tick(pos.x);
+                let key = self.y_to_key(pos.y);
+                let snapped_tick = self.snap_tick(tick);
+
+                if let Some((index, hit_type)) = self.hit_test_note(pos) {
+                    match hit_type {
+                        HitType::Start => {
+                            let note = &self.notes[index];
+                            self.edit_state = EditState::ResizingStart {
+                                note_index: index,
+                                original_tick: note.tick,
+                                original_length: note.length,
+                            };
+                        }
+                        HitType::End => {
+                            self.edit_state = EditState::ResizingEnd {
+                                note_index: index,
+                            };
+                        }
+                        HitType::Middle => {
+                            let note = &self.notes[index];
+                            self.edit_state = EditState::Dragging {
+                                note_index: index,
+                                offset_tick: tick - note.tick,
+                                offset_key: key as i32 - note.key as i32,
+                            };
+                        }
+                    }
+                } else {
+                    self.edit_state = EditState::Drawing {
+                        start_tick: snapped_tick,
+                        key,
+                        current_tick: snapped_tick,
+                    };
+                }
+            }
+            EditorAction::Moved(pos) => {
+                let tick = self.x_to_tick(pos.x);
+                let key = self.y_to_key(pos.y);
+                let snapped_tick = self.snap_tick(tick);
+
+                self.hover_state = self.hit_test_note(pos);
+
+                let mut new_tick_val = None;
+                let mut new_key_val = None;
+                let mut new_length_val = None;
+
+                let snap_precision = self.state.snap_precision;
+                let visible_key_count = self.state.visible_key_count;
+
+                match &mut self.edit_state {
+                    EditState::Drawing { current_tick, .. } => {
+                        *current_tick = snapped_tick;
+                    }
+                    EditState::Dragging { offset_tick, offset_key, .. } => {
+                        let new_tick = ((tick - *offset_tick) / snap_precision).round() * snap_precision;
+                        new_tick_val = Some(new_tick.max(0.0));
+                        new_key_val = Some((key as i32 - *offset_key).clamp(0, visible_key_count as i32 - 1) as u16);
+                    }
+                    EditState::ResizingStart { original_tick, original_length, .. } => {
+                        let end_tick = *original_tick + *original_length;
+                        let new_tick = snapped_tick.min(end_tick - snap_precision).max(0.0);
+                        new_tick_val = Some(new_tick);
+                        new_length_val = Some(end_tick - new_tick);
+                    }
+                    EditState::ResizingEnd { note_index, .. } => {
+                        if let Some(note) = self.notes.get(*note_index) {
+                            new_length_val = Some((snapped_tick - note.tick).max(snap_precision));
+                        }
+                    }
+                    EditState::Idle => {}
+                }
+
+                match self.edit_state {
+                    EditState::Dragging { note_index, .. } |
+                    EditState::ResizingStart { note_index, .. } |
+                    EditState::ResizingEnd { note_index, .. } => {
+                        if let Some(note) = self.notes.get_mut(note_index) {
+                            if let Some(t) = new_tick_val { note.tick = t; }
+                            if let Some(k) = new_key_val { note.key = k; }
+                            if let Some(l) = new_length_val { note.length = l; }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            EditorAction::Released => {
+                match self.edit_state {
+                    EditState::Drawing { start_tick, key, current_tick } => {
+                        let (tick, length) = if current_tick > start_tick {
+                            (start_tick, current_tick - start_tick)
+                        } else if current_tick < start_tick {
+                            (current_tick, start_tick - current_tick)
+                        } else {
+                            (start_tick, self.state.default_note_length)
+                        };
+                        let length = length.max(self.state.snap_precision);
+                        self.notes.push(Note::new(tick, key, length));
+                    }
+                    _ => {}
+                }
+                self.edit_state = EditState::Idle;
+            }
+        }
+    }
+
+    fn x_to_tick(&self, x: f32) -> f32 {
+        (x - self.state.keyboard_width + self.state.scroll_x) / self.state.zoom_x
+    }
+
+    fn y_to_key(&self, y: f32) -> u16 {
+        let max_key_index = (self.state.visible_key_count - 1) as f32;
+        let key_f32 = max_key_index - (y + self.state.scroll_y) / self.state.zoom_y;
+        key_f32.round().clamp(0.0, max_key_index) as u16
+    }
+
+    fn snap_tick(&self, tick: f32) -> f32 {
+        (tick / self.state.snap_precision).round() * self.state.snap_precision
+    }
+
+    pub fn hit_test_note(&self, pos: Point) -> Option<(usize, HitType)> {
+        let tick = self.x_to_tick(pos.x);
+        let key = self.y_to_key(pos.y);
+        
+        for (i, note) in self.notes.iter().enumerate().rev() {
+            if note.key == key && tick >= note.tick && tick <= note.tick + note.length {
+                let start_dist = (tick - note.tick).abs();
+                let end_dist = (tick - (note.tick + note.length)).abs();
+                let edge_threshold = 10.0 / self.state.zoom_x;
+
+                if end_dist < edge_threshold {
+                    return Some((i, HitType::End));
+                } else if start_dist < edge_threshold {
+                    return Some((i, HitType::Start));
+                } else {
+                    return Some((i, HitType::Middle));
+                }
+            }
+        }
+        None
     }
 
     /// 构建编辑器视图
@@ -52,7 +224,7 @@ impl Editor {
         on_zoom_y: impl Fn(f32, f32) -> Message + 'static,
     ) -> Element<'_> {
         // 创建带鼠标追踪的 Canvas
-        let grid = Canvas::new(PianoRollGrid::new(&self.state, &self.grid_cache))
+        let grid = Canvas::new(PianoRollGrid::new(self))
             .width(Length::Fill)
             .height(Length::Fill);
 
@@ -83,40 +255,71 @@ impl Editor {
     /// 音符只在 Canvas 区域内显示
     pub fn get_note_instances(&self, theme: &crate::Theme) -> Vec<NoteInstance> {
         let mut instances = Vec::new();
+        let palette = theme.extended_palette();
         
-        // 如果有鼠标位置，检查是否在 Canvas 区域内
-        if let Some(pos) = self.cursor_position {
-            // 计算 Canvas 局部坐标
-            let local_pos = Point::new(
-                pos.x - self.canvas_offset.x,
-                pos.y - self.canvas_offset.y,
-            );
+        // 默认音符颜色（更弱颜色）
+        let default_color = palette.primary.weak.color;
+        // 悬停音符颜色
+        let hover_color = palette.primary.base.color;
+        // 正在绘制/选中的音符颜色（最强颜色）
+        let active_color = palette.primary.strong.color;
+
+        // 渲染已放置的音符
+        for (i, note) in self.notes.iter().enumerate() {
+            let color = match self.edit_state {
+                EditState::Dragging { note_index, .. } |
+                EditState::ResizingStart { note_index, .. } |
+                EditState::ResizingEnd { note_index, .. } if note_index == i => active_color,
+                EditState::Idle if self.hover_state.map_or(false, |(idx, _)| idx == i) => hover_color,
+                _ => default_color,
+            };
             
-            // 检查鼠标是否在 Canvas 有效区域内（考虑键盘宽度）
-            if !self.is_inside_canvas(local_pos) {
-                return instances; // 在区域外，不显示音符
-            }
-            
-            // 计算音符（基于 Canvas 局部坐标）
-            let note = Note::from_mouse_position(local_pos, &self.state, theme);
-            
+            let mut instance = note.to_instance(&self.state, color);
             // 转换为窗口坐标：加上 Canvas 偏移
-            let window_pos = Point::new(
-                note.position.x + self.canvas_offset.x,
-                note.position.y + self.canvas_offset.y,
-            );
-            
-            instances.push(NoteInstance::new(
-                window_pos.x,
-                window_pos.y,
-                note.size.x,
-                note.size.y,
-                [note.color.r, note.color.g, note.color.b, note.color.a],
-            ));
+            instance.position[0] += self.canvas_offset.x;
+            instance.position[1] += self.canvas_offset.y;
+            instances.push(instance);
         }
-        
-        // TODO: 在这里添加实际的 MIDI 音符实例
-        
+
+        // 渲染正在绘制的音符
+        if let EditState::Drawing { start_tick, key, current_tick } = self.edit_state {
+            let (tick, length) = if current_tick > start_tick {
+                (start_tick, current_tick - start_tick)
+            } else if current_tick < start_tick {
+                (current_tick, start_tick - current_tick)
+            } else {
+                (start_tick, self.state.default_note_length)
+            };
+            let length = length.max(self.state.snap_precision);
+            let drawing_note = Note::new(tick, key, length);
+            
+            let mut instance = drawing_note.to_instance(&self.state, active_color);
+            instance.position[0] += self.canvas_offset.x;
+            instance.position[1] += self.canvas_offset.y;
+            instances.push(instance);
+        } else if let Some(pos) = self.cursor_position {
+            // 预览音符 - 仅在没有悬停在其他音符上时显示
+            if self.hover_state.is_none() {
+                let local_pos = Point::new(
+                    pos.x - self.canvas_offset.x,
+                    pos.y - self.canvas_offset.y,
+                );
+                if self.is_inside_canvas(local_pos) {
+                    let tick = self.snap_tick(self.x_to_tick(local_pos.x));
+                    let key = self.y_to_key(local_pos.y);
+                    let preview_note = Note::new(tick, key, self.state.default_note_length);
+                    
+                    let mut preview_color = default_color;
+                    preview_color.a = 0.5;
+                    
+                    let mut instance = preview_note.to_instance(&self.state, preview_color);
+                    instance.position[0] += self.canvas_offset.x;
+                    instance.position[1] += self.canvas_offset.y;
+                    instances.push(instance);
+                }
+            }
+        }
+
         instances
     }
     
