@@ -26,7 +26,7 @@ impl Note {
     /// 从鼠标位置和视图状态创建音符
     pub fn from_mouse_position(mouse_pos: Point, view_state: &ViewState, theme: &Theme) -> Self {
         // 从主题获取音符颜色
-        let color = theme.extended_palette().background.strong.color;
+        let color = theme.extended_palette().primary.strong.color;
 
         // 将鼠标坐标转换为 tick 坐标
         // screen_x = tick * zoom - scroll + keyboard_width

@@ -8,7 +8,7 @@
 //! - 其余音轨的事件按音轨顺序写入磁盘缓存
 //! - 编辑和浏览时，按需从磁盘加载
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::hash::{Hash, Hasher};
 use std::io::{BufReader, Write};
