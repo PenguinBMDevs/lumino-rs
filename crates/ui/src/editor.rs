@@ -32,12 +32,13 @@ impl Editor {
         let mut editor = Self {
             state: ViewState::default(),
             grid_cache: canvas::Cache::new(),
-            max_scroll_x: 1000.0,
+            max_scroll_x: 0.0,
             max_scroll_y: 0.0,
             cursor_position: None,
             canvas_offset: Point::new(0.0, 0.0),
             canvas_size: Point::new(0.0, 0.0),
         };
+        editor.max_scroll_x = editor.state.total_ticks as f32 * editor.state.zoom_x;
         editor.max_scroll_y = editor.state.visible_key_count as f32 * editor.state.zoom_y;
         editor
     }
@@ -47,6 +48,8 @@ impl Editor {
         &self,
         on_scroll_x: impl Fn(f32) -> Message + 'static,
         on_scroll_y: impl Fn(f32) -> Message + 'static,
+        on_zoom_x: impl Fn(f32, f32) -> Message + 'static,
+        on_zoom_y: impl Fn(f32, f32) -> Message + 'static,
     ) -> Element<'_> {
         // 创建带鼠标追踪的 Canvas
         let grid = Canvas::new(PianoRollGrid::new(&self.state, &self.grid_cache))
@@ -56,13 +59,17 @@ impl Editor {
         let horizontal_scrollbar = scrollbar_widget::ScrollbarWidget::horizontal(
             self.state.scroll_x,
             self.max_scroll_x,
+            self.state.zoom_x,
             on_scroll_x,
+            on_zoom_x,
         );
 
         let vertical_scrollbar = scrollbar_widget::ScrollbarWidget::vertical(
             self.state.scroll_y,
             self.max_scroll_y,
+            self.state.zoom_y,
             on_scroll_y,
+            on_zoom_y,
         );
 
         let content_with_vscroll = iced_widget::row![grid, vertical_scrollbar];
@@ -180,6 +187,38 @@ impl Editor {
 
     pub fn set_scroll_y(&mut self, scroll_y: f32) {
         self.state.scroll_y = scroll_y.max(0.0).min(self.max_scroll_y);
+        self.grid_cache.clear();
+    }
+
+    pub fn set_zoom_x(&mut self, zoom_x: f32, fixed_ratio: f32) {
+        let old_zoom_x = self.state.zoom_x;
+        self.state.zoom_x = zoom_x.max(0.001).min(10.0);
+        
+        let ratio = self.state.zoom_x / old_zoom_x;
+        let view_width = (self.canvas_size.x - self.state.keyboard_width).max(0.0);
+        
+        // 保持固定比例处的 tick 不变
+        let fixed_pixel = self.state.scroll_x + view_width * fixed_ratio;
+        self.state.scroll_x = fixed_pixel * ratio - view_width * fixed_ratio;
+        
+        self.max_scroll_x = self.state.total_ticks as f32 * self.state.zoom_x;
+        self.state.scroll_x = self.state.scroll_x.max(0.0).min(self.max_scroll_x);
+        self.grid_cache.clear();
+    }
+
+    pub fn set_zoom_y(&mut self, zoom_y: f32, fixed_ratio: f32) {
+        let old_zoom_y = self.state.zoom_y;
+        self.state.zoom_y = zoom_y.max(5.0).min(100.0);
+        
+        let ratio = self.state.zoom_y / old_zoom_y;
+        let view_height = self.canvas_size.y.max(0.0);
+        
+        // 保持固定比例处的 key 不变
+        let fixed_pixel = self.state.scroll_y + view_height * fixed_ratio;
+        self.state.scroll_y = fixed_pixel * ratio - view_height * fixed_ratio;
+        
+        self.max_scroll_y = self.state.visible_key_count as f32 * self.state.zoom_y;
+        self.state.scroll_y = self.state.scroll_y.max(0.0).min(self.max_scroll_y);
         self.grid_cache.clear();
     }
 

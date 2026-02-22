@@ -285,17 +285,20 @@ impl Host {
             let scale = self.viewport.scale_factor();
             let canvas_offset = self.root.editor.canvas_offset;
             let canvas_size = self.root.editor.canvas_size;
+            let physical_size = self.viewport.physical_size();
 
-            let scissor_x = (canvas_offset.x * scale) as u32;
-            let scissor_y = (canvas_offset.y * scale) as u32;
-            let scissor_width = (canvas_size.x * scale) as u32;
-            let scissor_height = (canvas_size.y * scale) as u32;
+            let scissor_x = ((canvas_offset.x * scale) as u32).min(physical_size.width);
+            let scissor_y = ((canvas_offset.y * scale) as u32).min(physical_size.height);
+            let scissor_width = ((canvas_size.x * scale) as u32).min(physical_size.width.saturating_sub(scissor_x));
+            let scissor_height = ((canvas_size.y * scale) as u32).min(physical_size.height.saturating_sub(scissor_y));
 
-            self.note_renderer.draw(
-                &mut render_pass,
-                true,
-                Some((scissor_x, scissor_y, scissor_width, scissor_height)),
-            );
+            if scissor_width > 0 && scissor_height > 0 {
+                self.note_renderer.draw(
+                    &mut render_pass,
+                    true,
+                    Some((scissor_x, scissor_y, scissor_width, scissor_height)),
+                );
+            }
         }
 
         // 释放 render_pass，提交命令

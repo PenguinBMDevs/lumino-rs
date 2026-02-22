@@ -77,7 +77,7 @@ struct DrawIndirectArgs {
     vertex_count: u32,
     instance_count: u32,
     first_vertex: u32,
-    first_instance: u32,
+    first_instanc
     // 填充以满足 32 字节对齐要求
     _padding: [u32; 4],
 }

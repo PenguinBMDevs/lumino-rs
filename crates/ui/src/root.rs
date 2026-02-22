@@ -66,6 +66,12 @@ impl Root {
                 // 处理垂直滚动条滚动
                 self.editor.set_scroll_y(new_scroll_y);
             }
+            Message::ZoomXChanged { zoom, fixed_ratio } => {
+                self.editor.set_zoom_x(zoom, fixed_ratio);
+            }
+            Message::ZoomYChanged { zoom, fixed_ratio } => {
+                self.editor.set_zoom_y(zoom, fixed_ratio);
+            }
             Message::CanvasBoundsChanged { offset, size } => {
                 // 更新 Canvas 偏移量和尺寸
                 self.editor.set_canvas_offset(offset);
@@ -121,7 +127,15 @@ impl Root {
             // 主窗口
             let main_content = column![
                 self.titlebar.view(&self.window),
-                row![self.sidebar.view(), self.editor.view(Message::ScrollbarScrolled, Message::ScrollbarScrolledY),],
+                row![
+                    self.sidebar.view(),
+                    self.editor.view(
+                        Message::ScrollbarScrolled,
+                        Message::ScrollbarScrolledY,
+                        |zoom, fixed_ratio| Message::ZoomXChanged { zoom, fixed_ratio },
+                        |zoom, fixed_ratio| Message::ZoomYChanged { zoom, fixed_ratio }
+                    )
+                ],
                 self.statusbar.view(),
             ];
 
