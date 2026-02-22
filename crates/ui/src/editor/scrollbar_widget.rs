@@ -199,7 +199,7 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
         theme: &Theme,
         _style: &renderer::Style,
         layout: iced_core::Layout<'_>,
-        cursor: mouse::Cursor,
+        _cursor: mouse::Cursor,
         _viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
@@ -220,17 +220,10 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
         // 计算滑块位置和宽度
         let (_track_width, _thumb_width, thumb_bounds) = self.thumb_geometry(bounds);
 
-        // 判断鼠标是否在滑块上
-        let is_hover = if let Some(position) = cursor.position() {
-            thumb_bounds.contains(position)
-        } else {
-            false
-        };
-
         // 根据状态选择滑块颜色
         let thumb_color = match state {
-            ScrollbarState::Dragging { .. } => palette.strong.color,
-            _ if is_hover => palette.base.color,
+            ScrollbarState::Dragging { .. } | ScrollbarState::DraggingEdge { .. } => palette.strongest.color,
+            ScrollbarState::Hover | ScrollbarState::HoverEdge(_) => palette.strong.color,
             _ => palette.base.color,
         };
 
@@ -343,11 +336,11 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                                 };
                                 let delta = current_pos - start_pos;
                                 let effective_delta = if edge == Edge::End { delta } else { -delta };
-                                
+
                                 // 限制最大拉伸距离，防止滑块超过轨道大小
                                 let max_delta = track_size - start_thumb_size;
                                 let clamped_delta = effective_delta.min(max_delta);
-                                
+
                                 let ratio = (1.0 + clamped_delta / start_thumb_size.max(1.0)).max(0.1);
                                 let new_zoom = start_zoom / ratio;
                                 let fixed_ratio = if edge == Edge::End { 0.0 } else { 1.0 };
