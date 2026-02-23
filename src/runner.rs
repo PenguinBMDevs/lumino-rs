@@ -8,6 +8,7 @@ use super::storage;
 mod menu;
 mod progress;
 mod window;
+mod audio;
 
 pub use lumino_core::ParsedDms;
 pub use lumino_core::ParsedMidi;
@@ -35,6 +36,7 @@ struct RunnerInner {
     progress_gfx: Option<lumino_gfx::Context>,
     progress_ui: Option<lumino_ui::Host>,
     progress_modifiers: ModifiersState,
+    midi_output: Option<Box<dyn lumino_midi::OutputConnection>>,
 }
 
 impl winit::application::ApplicationHandler for Runner {
@@ -73,6 +75,7 @@ impl winit::application::ApplicationHandler for Runner {
         this.process_progress_messages();
         this.update_progress_window(event_loop);
         this.handle_window_actions(event_loop);
+        this.process_audio_actions();
         this.process_core_events(event_loop);
         this.save_storage();
     }
@@ -116,6 +119,9 @@ impl Runner {
         #[cfg(target_os = "macos")]
         crate::platform::macos::init();
 
+        // 初始化 MIDI 输出
+        let midi_output = Self::init_midi_output();
+
         RunnerInner {
             gfx,
             ui,
@@ -131,6 +137,38 @@ impl Runner {
             progress_gfx: None,
             progress_ui: None,
             progress_modifiers: ModifiersState::default(),
+            midi_output,
+        }
+    }
+
+    fn init_midi_output() -> Option<Box<dyn lumino_midi::OutputConnection>> {
+        use lumino_midi::ApiKind;
+        use std::path::PathBuf;
+        
+        // 尝试使用 kdmapi (OmniMIDI)
+        let kdmapi_path = PathBuf::from("C:\\Windows\\System32\\OmniMIDI\\OmniMIDI.dll");
+        let api_kind = if kdmapi_path.exists() {
+            ApiKind::Kdmapi { path: kdmapi_path }
+        } else {
+            tracing::warn!("未找到 OmniMIDI,使用系统 MIDI API");
+            ApiKind::System
+        };
+        
+        // 初始化 MIDI API
+        let api = lumino_midi::new_api(&api_kind).ok()?;
+        
+        if let Some(version) = api.version() {
+            tracing::info!("MIDI API 版本: {}", version);
+        }
+        
+        // 获取第一个可用的输出设备
+        let outputs = api.outputs().ok()?;
+        if let Some(output) = outputs.first() {
+            tracing::info!("使用 MIDI 输出设备: {}", output.name);
+            api.open_output(output.id).ok()
+        } else {
+            tracing::warn!("未找到可用的 MIDI 输出设备");
+            None
         }
     }
 

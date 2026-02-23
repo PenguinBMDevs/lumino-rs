@@ -369,6 +369,11 @@ impl Host {
     pub fn update_theme(&mut self, theme: String) {
         self.root.update(message::Window::theme(theme));
     }
+    
+    /// 获取并清空待处理的音频动作
+    pub fn take_audio_actions(&mut self) -> Vec<message::AudioAction> {
+        self.root.take_audio_actions()
+    }
 }
 
 /// 将触摸事件转换为鼠标事件（兼容性处理）

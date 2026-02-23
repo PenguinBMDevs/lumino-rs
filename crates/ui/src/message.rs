@@ -8,6 +8,12 @@ pub enum EditorAction {
 }
 
 #[derive(Debug, Clone)]
+pub enum AudioAction {
+    PlayNote { key: u8, velocity: u8 },
+    StopNote { key: u8 },
+}
+
+#[derive(Debug, Clone)]
 pub enum Message {
     Core(lumino_core::Event),
     Window(Window),
@@ -22,6 +28,7 @@ pub enum Message {
     /// 菜单状态更新
     MenuStateChanged(bool), // true = 菜单打开，false = 菜单关闭
     EditorAction(EditorAction),
+    AudioAction(AudioAction),
     Null,
 }
 

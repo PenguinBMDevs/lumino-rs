@@ -80,6 +80,9 @@ impl Root {
             Message::EditorAction(action) => {
                 self.editor.handle_action(action);
             }
+            Message::AudioAction(_action) => {
+                // 音频动作处理（留给外层实现）
+            }
             // 菜单状态更新
             Message::MenuStateChanged(is_open) => {
                 self.set_menu_open(is_open);
@@ -172,6 +175,11 @@ impl Root {
     /// 获取当前需要绘制的音符实例
     pub fn get_note_instances(&self) -> Vec<NoteInstance> {
         self.editor.get_note_instances(&self.window.theme)
+    }
+    
+    /// 获取并清空待处理的音频动作
+    pub fn take_audio_actions(&mut self) -> Vec<message::AudioAction> {
+        self.editor.take_audio_actions()
     }
 
     /// 更新编辑器鼠标位置

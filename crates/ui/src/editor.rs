@@ -4,7 +4,7 @@ pub mod note;
 pub mod scrollbar;
 pub mod scrollbar_widget;
 
-use crate::{Element, Message, message::EditorAction};
+use crate::{Element, Message, message::{EditorAction, AudioAction}};
 use iced_widget::canvas::{self, Canvas};
 use iced_core::{Length, Point};
 use lumino_gfx::NoteInstance;
@@ -46,6 +46,7 @@ pub struct Editor {
     pub notes: Vec<Note>,
     pub edit_state: EditState,
     pub hover_state: Option<(usize, HitType)>,
+    pub pending_audio_actions: Vec<AudioAction>,
 }
 
 impl Editor {
@@ -61,6 +62,7 @@ impl Editor {
             notes: Vec::new(),
             edit_state: EditState::Idle,
             hover_state: None,
+            pending_audio_actions: Vec::new(),
         };
         editor.max_scroll_x = editor.state.total_ticks as f32 * editor.state.zoom_x;
         editor.max_scroll_y = editor.state.visible_key_count as f32 * editor.state.zoom_y;
@@ -68,6 +70,9 @@ impl Editor {
     }
 
     pub fn handle_action(&mut self, action: EditorAction) {
+        // 清空上一次的待处理音频动作
+        self.pending_audio_actions.clear();
+        
         match action {
             EditorAction::Pressed(pos) => {
                 if !self.is_inside_canvas(pos) {
@@ -107,6 +112,11 @@ impl Editor {
                         key,
                         current_tick: snapped_tick,
                     };
+                    // 播放音符音频（按下时发声）
+                    self.pending_audio_actions.push(AudioAction::PlayNote {
+                        key: key as u8,
+                        velocity: 100, // 使用固定力度
+                    });
                 }
             }
             EditorAction::Moved(pos) => {
@@ -363,6 +373,11 @@ impl Editor {
     /// 更新 Canvas 尺寸
     pub fn set_canvas_size(&mut self, size: Point) {
         self.canvas_size = size;
+    }
+    
+    /// 获取并清空待处理的音频动作
+    pub fn take_audio_actions(&mut self) -> Vec<AudioAction> {
+        std::mem::take(&mut self.pending_audio_actions)
     }
 
     // ========== 滚动控制 ==========
