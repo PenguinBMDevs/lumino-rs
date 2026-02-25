@@ -66,11 +66,14 @@ fn item<'a>(cfg: &'a TrafficConfig, window: &'a window::Window) -> Element<'a> {
             }
         }
     };
-    
+
     let icon_img: Element<'a> = icon_enum.with_size(10, 10);
 
     // 45px*29px matches the actual traffic buttons on Windows.
-    let inner = container(icon_img).width(45).height(29).center(Length::Fill);
+    let inner = container(icon_img)
+        .width(45)
+        .height(29)
+        .center(Length::Fill);
 
     button(inner)
         .on_press(window::Event::traffic_action(&cfg.action))

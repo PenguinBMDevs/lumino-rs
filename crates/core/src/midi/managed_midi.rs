@@ -131,8 +131,7 @@ impl DiskTrackCache {
         }
         let file = File::open(&track_path)?;
         let reader = BufReader::new(file);
-        let decompressed =
-            zstd::stream::decode_all(reader).map_err(std::io::Error::other)?;
+        let decompressed = zstd::stream::decode_all(reader).map_err(std::io::Error::other)?;
         let events: Vec<MidiEvent> =
             bincode::deserialize(&decompressed).map_err(std::io::Error::other)?;
         Ok(events)
@@ -210,9 +209,8 @@ impl MidiMemoryManager {
 
         // ═══════ 读取文件到内存 (mmap) ═══════
         let file = File::open(source_path).map_err(|e| format!("打开文件失败: {e}"))?;
-        let mmap = unsafe {
-            memmap2::Mmap::map(&file).map_err(|e| format!("内存映射失败: {e}"))?
-        };
+        let mmap =
+            unsafe { memmap2::Mmap::map(&file).map_err(|e| format!("内存映射失败: {e}"))? };
 
         // ═══════ 使用 midly::parse() 获取懒 TrackIter ═══════
         let (header, track_iter) =
@@ -272,8 +270,8 @@ impl MidiMemoryManager {
             let mut max_tick = 0u32;
 
             for event_result in event_iter {
-                let track_event = event_result
-                    .map_err(|e| format!("解析音轨 {} 事件失败: {e}", track_idx))?;
+                let track_event =
+                    event_result.map_err(|e| format!("解析音轨 {} 事件失败: {e}", track_idx))?;
 
                 current_tick = current_tick.saturating_add(u32::from(track_event.delta));
 
@@ -284,12 +282,12 @@ impl MidiMemoryManager {
                     if current_tick > max_tick {
                         max_tick = current_tick;
                     }
-                    if let MidiEvent::NoteOn { velocity, .. } = &midi_event {
-                        if *velocity > 0 {
-                            note_count += 1;
-                            if *velocity > 1 {
-                                high_vel_count += 1;
-                            }
+                    if let MidiEvent::NoteOn { velocity, .. } = &midi_event
+                        && *velocity > 0
+                    {
+                        note_count += 1;
+                        if *velocity > 1 {
+                            high_vel_count += 1;
                         }
                     }
                     events.push(midi_event);
@@ -315,7 +313,7 @@ impl MidiMemoryManager {
                     });
                     // 如果存在高力度音符，则完整加载到内存
                     in_memory_tracks.insert(track_idx, events.clone());
-                    
+
                     // 同样写入磁盘以备不时之需（或用于编辑）
                     disk_tx
                         .send((track_idx, events))
@@ -396,7 +394,7 @@ impl MidiMemoryManager {
     }
 
     /// 动态设置内存上限（字节）
-    /// 
+    ///
     /// 注意：这不会立即触发内存回收或重新加载，仅影响后续的加载行为。
     pub fn set_memory_limit(&mut self, limit_bytes: usize) {
         self.memory_limit = limit_bytes;
@@ -475,7 +473,6 @@ impl MidiMemoryManager {
             TrackEventKind::SysEx(_) | TrackEventKind::Escape(_) => None,
         }
     }
-
 
     /// 获取音轨数量
     pub fn track_count(&self) -> usize {
@@ -577,11 +574,7 @@ impl MidiMemoryManager {
     }
 
     /// 获取指定 tick 范围内所有内存中音轨的事件（浏览用，快速）
-    pub fn get_in_memory_events_in_range(
-        &self,
-        start_tick: u32,
-        end_tick: u32,
-    ) -> Vec<&MidiEvent> {
+    pub fn get_in_memory_events_in_range(&self, start_tick: u32, end_tick: u32) -> Vec<&MidiEvent> {
         let mut result = Vec::new();
         for events in self.in_memory_tracks.values() {
             for ev in events {
@@ -746,5 +739,4 @@ mod tests {
         };
         assert!(estimate_event_size(&note_on) > 0);
     }
-
 }

@@ -57,9 +57,13 @@ fn compression_worker(rx: mpsc::Receiver<CompressionTask>) {
             let key = compute_cache_key(&task.source_path, modified);
 
             let serialized = bincode::serialize(&track_events).map_err(std::io::Error::other)?;
-            let compressed = zstd::stream::encode_all(&mut &serialized[..], 3).map_err(std::io::Error::other)?;
+            let compressed =
+                zstd::stream::encode_all(&mut &serialized[..], 3).map_err(std::io::Error::other)?;
 
-            let track_path = task.cache_dir.join(format!("{:016x}", key)).join(format!("track_{:04x}.lmt", task.track_idx));
+            let track_path = task
+                .cache_dir
+                .join(format!("{:016x}", key))
+                .join(format!("track_{:04x}.lmt", task.track_idx));
             std::fs::write(&track_path, &compressed)?;
 
             Ok(())
@@ -125,14 +129,16 @@ pub fn load_midi_info_with_cache(
 
     for track_idx in 0..track_count as usize {
         let mut stream = crate::midi::MidiEventStream::from_path(&path)?;
-        let track_events = stream.read_track_events(track_idx)
+        let track_events = stream
+            .read_track_events(track_idx)
             .map_err(|e| format!("读取音轨失败: {e}"))?;
         drop(stream);
 
         let event_count = track_events.len() as u64;
         let track_max = track_events.iter().map(|e| e.tick()).max().unwrap_or(0);
 
-        let note_count = track_events.iter()
+        let note_count = track_events
+            .iter()
             .filter(|e| {
                 if let crate::midi::MidiEvent::NoteOn { velocity, .. } = e {
                     *velocity > 0
@@ -171,7 +177,13 @@ pub fn load_midi_info_with_cache(
     let _ = compression_thread.join();
 
     if let Some(cc) = cache
-        && let Err(e) = cc.finalize_cache(&path, track_count, division, &track_event_counts, &track_max_ticks)
+        && let Err(e) = cc.finalize_cache(
+            &path,
+            track_count,
+            division,
+            &track_event_counts,
+            &track_max_ticks,
+        )
     {
         tracing::warn!("完成缓存索引失败: {}", e);
     }
@@ -235,8 +247,7 @@ pub async fn load_parsed_midi(path: PathBuf) -> Result<ParsedMidi, String> {
 
     send_progress("正在加载并缓存 MIDI 事件...", 0.1);
 
-    let cache = TrackBasedCache::new_in_program_dir()
-        .map_err(|e| format!("创建缓存失败: {e}"))?;
+    let cache = TrackBasedCache::new_in_program_dir().map_err(|e| format!("创建缓存失败: {e}"))?;
 
     let cache_dir = cache.cache_dir().to_path_buf();
     let path_clone = path.clone();

@@ -68,14 +68,23 @@ impl Context {
             .map_err(|e| ContextError::DeviceRequest(e.to_string()))?;
 
         // 添加于2026-02-01，尝试解决音符不跟手的问题（2方案+1回退+1旧方案）
-        let present_mode = if capabilities.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+        let present_mode = if capabilities
+            .present_modes
+            .contains(&wgpu::PresentMode::Mailbox)
+        {
             wgpu::PresentMode::Mailbox
-        } else if capabilities.present_modes.contains(&wgpu::PresentMode::Immediate) {
+        } else if capabilities
+            .present_modes
+            .contains(&wgpu::PresentMode::Immediate)
+        {
             wgpu::PresentMode::Immediate
-        } else if capabilities.present_modes.contains(&wgpu::PresentMode::Fifo) {
+        } else if capabilities
+            .present_modes
+            .contains(&wgpu::PresentMode::Fifo)
+        {
             wgpu::PresentMode::Fifo // 回退方案
         } else {
-            wgpu::PresentMode::AutoVsync    // 旧方案
+            wgpu::PresentMode::AutoVsync // 旧方案
         };
         tracing::info!("Selected present_mode: {:?}", present_mode);
 
@@ -105,14 +114,23 @@ impl Context {
     pub fn resize(&mut self, width: u32, height: u32) {
         // 添加于2026-02-01
         let capabilities = self.surface.get_capabilities(&self.adapter);
-        let present_mode = if capabilities.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+        let present_mode = if capabilities
+            .present_modes
+            .contains(&wgpu::PresentMode::Mailbox)
+        {
             wgpu::PresentMode::Mailbox
-        } else if capabilities.present_modes.contains(&wgpu::PresentMode::Immediate) {
+        } else if capabilities
+            .present_modes
+            .contains(&wgpu::PresentMode::Immediate)
+        {
             wgpu::PresentMode::Immediate
-        } else if capabilities.present_modes.contains(&wgpu::PresentMode::Fifo) {
+        } else if capabilities
+            .present_modes
+            .contains(&wgpu::PresentMode::Fifo)
+        {
             wgpu::PresentMode::Fifo // 回退方案
         } else {
-            wgpu::PresentMode::AutoVsync    // 旧方案
+            wgpu::PresentMode::AutoVsync // 旧方案
         };
         tracing::info!("Selected present_mode (resize): {:?}", present_mode);
 

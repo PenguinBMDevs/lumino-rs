@@ -380,7 +380,7 @@ pub fn scan_dms_streaming<R: Read>(stream: &mut R) -> Result<DmsScanResult> {
 }
 
 /// 流式扫描 DMS 文件（带进度回调）
-/// 
+///
 /// 使用滑动窗口机制处理大文件，避免频繁内存分配
 /// 跟踪父节点上下文以正确识别嵌套节点类型
 pub fn scan_dms_streaming_with_progress<R: Read, F: Fn(f64)>(
@@ -403,17 +403,17 @@ pub fn scan_dms_streaming_with_progress<R: Read, F: Fn(f64)>(
 
     let mut decoder = ZlibDecoder::new(stream);
     let mut result = DmsScanResult::default();
-    
+
     // 使用 4MB 缓冲区，减少 I/O 次数和内存移动
     const BUF_SIZE: usize = 4 * 1048576;
     // 最大节点数据大小（用于判断是否需要扩容）
     const MAX_NODE_DATA: usize = 65536;
-    
+
     let mut buffer: Vec<u8> = vec![0; BUF_SIZE + MAX_NODE_DATA];
     let mut valid_len: usize = 0;
     let mut decompressed_offset: usize = 0;
     let mut last_progress_report: f64 = 0.0;
-    
+
     // 父节点栈：用于跟踪嵌套上下文
     // 每个元素：(基础类型ID, 结束偏移量)
     let mut parent_stack: Vec<(u16, usize)> = Vec::with_capacity(32);
@@ -504,7 +504,8 @@ pub fn scan_dms_streaming_with_progress<R: Read, F: Fn(f64)>(
                         result.ppqn = utils::decode_u32_le(&buffer[data_start..data_end]);
                     }
                     t if t == working_time_base => {
-                        result.working_time_sec = utils::decode_u64_le(&buffer[data_start..data_end]);
+                        result.working_time_sec =
+                            utils::decode_u64_le(&buffer[data_start..data_end]);
                     }
                     t if t == track_base => {
                         result.track_count += 1;

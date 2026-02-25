@@ -11,7 +11,7 @@ static EVENT_BUFFER: OnceLock<Mutex<EventBuffer>> = OnceLock::new(); // 事件�
 #[derive(Debug, Clone)]
 /// 事件
 pub enum Event {
-    Menu(menu::Event), // 菜单事件
+    Menu(menu::Event),     // 菜单事件
     Window(window::Event), // 窗口事件
 }
 

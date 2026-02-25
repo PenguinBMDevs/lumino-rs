@@ -2,7 +2,9 @@ use std::path::Path;
 
 use bytes::Bytes;
 use encoding_rs::GB18030;
-use lumino_dms::{DmsCompositeNode, DmsDataNode, DmsIntegerNode, DmsNode, DmsNodeType, write_dms_file};
+use lumino_dms::{
+    DmsCompositeNode, DmsDataNode, DmsIntegerNode, DmsNode, DmsNodeType, write_dms_file,
+};
 use num_bigint::BigInt;
 
 use crate::error::{ExportError, ExportResult};
@@ -186,32 +188,45 @@ fn build_dms_tree(data: &DmsExportData) -> ExportResult<DmsCompositeNode> {
 /// 构建 MIDI 输出配置节点
 fn build_midi_out_cfg_node() -> ExportResult<Box<dyn DmsNode>> {
     let mut node = DmsCompositeNode::new(DmsNodeType::MIDI_OUT_CFG, 0);
-    
+
     // 端口 A 配置 - 空
     let port_a = DmsDataNode::new(DmsNodeType::PORT_CFG_A, 0, Bytes::new());
     node.children_mut().push(Box::new(port_a));
-    
+
     // 端口 B 配置 - 4 bytes
     let port_b = create_data_node(DmsNodeType::PORT_CFG_B, 0, vec![0; 4]);
     node.children_mut().push(port_b);
-    
+
     // 端口 C 配置 - 4 bytes
     let port_c = create_data_node(DmsNodeType::PORT_CFG_C, 0, vec![0; 4]);
     node.children_mut().push(port_c);
-    
+
     Ok(Box::new(node))
 }
 
 /// 构建键盘调色板节点
 fn build_key_palette_node() -> ExportResult<Box<dyn DmsNode>> {
     let mut node = DmsCompositeNode::new(DmsNodeType::KEY_PALETTE, 0);
-    
+
     // 添加默认的调色板配置
     for i in 0..7 {
-        let child = create_data_node(DmsNodeType(i as u64 | (DmsNodeType::KEY_PALETTE.0 << 16)), 0, vec![0; if i < 2 { 1 } else if i == 3 || i == 6 { 4 } else { 1 }]);
+        let child = create_data_node(
+            DmsNodeType(i as u64 | (DmsNodeType::KEY_PALETTE.0 << 16)),
+            0,
+            vec![
+                0;
+                if i < 2 {
+                    1
+                } else if i == 3 || i == 6 {
+                    4
+                } else {
+                    1
+                }
+            ],
+        );
         node.children_mut().push(child);
     }
-    
+
     Ok(Box::new(node))
 }
 
@@ -250,7 +265,11 @@ fn build_track_node(track: &DmsTrack) -> ExportResult<Box<dyn DmsNode>> {
     track_node.children_mut().push(gate_node);
 
     // 鼓组名称 (1009)
-    let drum_set_name = if track.is_drum { "General MIDI Drum" } else { "" };
+    let drum_set_name = if track.is_drum {
+        "General MIDI Drum"
+    } else {
+        ""
+    };
     let drum_set_node = create_string_node(DmsNodeType::TRACK_DRUM_SET_NAME, 1, drum_set_name)?;
     track_node.children_mut().push(drum_set_node);
 
@@ -271,7 +290,8 @@ fn build_track_node(track: &DmsTrack) -> ExportResult<Box<dyn DmsNode>> {
     track_node.children_mut().push(key_comp_node);
 
     // 洋葱皮颜色索引 (1018)
-    let onionskin_color_node = create_data_node(DmsNodeType::TRACK_ONIONSKIN_COLOR_INDEX, 1, vec![0]);
+    let onionskin_color_node =
+        create_data_node(DmsNodeType::TRACK_ONIONSKIN_COLOR_INDEX, 1, vec![0]);
     track_node.children_mut().push(onionskin_color_node);
 
     // 从小节开始的 Tick 补偿 (1019)
@@ -419,25 +439,25 @@ fn build_control_event_node(control: &DmsControlEvent) -> ExportResult<Box<dyn D
 /// 构建轨道结束事件节点
 fn build_end_of_track_node() -> ExportResult<Box<dyn DmsNode>> {
     let mut event_node = DmsCompositeNode::new(DmsNodeType::END_OF_TRACK_EVENT, 1);
-    
+
     // Tick 位置 (0 表示轨道结束)
     let tick_node = create_integer_node(DmsNodeType::ABS_TICK_POS, 2, 0);
     event_node.children_mut().push(tick_node);
-    
+
     Ok(Box::new(event_node))
 }
 
 /// 构建洋葱皮数据节点
 fn build_onionskin_data_node() -> ExportResult<Box<dyn DmsNode>> {
     let mut node = DmsCompositeNode::new(DmsNodeType::TRACK_UNKNOWN_1011, 1);
-    
+
     // 添加两个子节点
     let child1 = create_data_node(DmsNodeType(0), 2, vec![0]);
     node.children_mut().push(child1);
-    
+
     let child2 = create_data_node(DmsNodeType(0), 2, vec![0]);
     node.children_mut().push(child2);
-    
+
     Ok(Box::new(node))
 }
 

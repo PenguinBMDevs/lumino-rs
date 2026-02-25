@@ -3,7 +3,7 @@ mod menu;
 mod traffic;
 
 use iced_core::{Alignment, Length};
-use iced_widget::{container, mouse_area, row, text, space};
+use iced_widget::{container, mouse_area, row, space, text};
 
 use super::Element;
 use crate::{Theme, window};

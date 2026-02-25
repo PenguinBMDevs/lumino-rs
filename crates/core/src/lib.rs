@@ -5,5 +5,5 @@ pub mod storage;
 
 pub use event::Event;
 pub use event_cache::{TrackBasedCache, TrackCacheHeader, TrackEventWindow, TrackEvents};
+pub use midi::managed_midi::{ManagerStats, MidiMemoryManager};
 pub use midi::{DmsInfo, MidiEvent, MidiInfo, ParsedDms, ParsedMidi};
-pub use midi::managed_midi::{MidiMemoryManager, ManagerStats};

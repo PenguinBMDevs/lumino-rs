@@ -1,19 +1,64 @@
-use std::fs::File;
 use memmap2::Mmap;
-use midly::{Smf, MidiMessage, MetaMessage, TrackEventKind};
+use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
+use std::fs::File;
 
 /// MIDI 事件类型（轻量级表示）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum MidiEvent {
-    NoteOn { track: usize, tick: u32, channel: u8, key: u8, velocity: u8 },
-    NoteOff { track: usize, tick: u32, channel: u8, key: u8, velocity: u8 },
-    ControlChange { track: usize, tick: u32, channel: u8, controller: u8, value: u8 },
-    ProgramChange { track: usize, tick: u32, channel: u8, program: u8 },
-    Tempo { track: usize, tick: u32, tempo: u32 },
-    TimeSignature { track: usize, tick: u32, numerator: u8, denominator: u8 },
-    KeySignature { track: usize, tick: u32, key: i8, is_major: bool },
-    TrackName { track: usize, tick: u32, name: String },
-    Other { track: usize, tick: u32, raw: Vec<u8> },
+    NoteOn {
+        track: usize,
+        tick: u32,
+        channel: u8,
+        key: u8,
+        velocity: u8,
+    },
+    NoteOff {
+        track: usize,
+        tick: u32,
+        channel: u8,
+        key: u8,
+        velocity: u8,
+    },
+    ControlChange {
+        track: usize,
+        tick: u32,
+        channel: u8,
+        controller: u8,
+        value: u8,
+    },
+    ProgramChange {
+        track: usize,
+        tick: u32,
+        channel: u8,
+        program: u8,
+    },
+    Tempo {
+        track: usize,
+        tick: u32,
+        tempo: u32,
+    },
+    TimeSignature {
+        track: usize,
+        tick: u32,
+        numerator: u8,
+        denominator: u8,
+    },
+    KeySignature {
+        track: usize,
+        tick: u32,
+        key: i8,
+        is_major: bool,
+    },
+    TrackName {
+        track: usize,
+        tick: u32,
+        name: String,
+    },
+    Other {
+        track: usize,
+        tick: u32,
+        raw: Vec<u8>,
+    },
 }
 
 impl MidiEvent {
@@ -48,15 +93,11 @@ impl MidiEventStream {
     pub fn from_path(path: &std::path::Path) -> Result<Self, String> {
         let file = File::open(path).map_err(|e| format!("打开文件失败: {e}"))?;
 
-        let mmap = unsafe {
-            Mmap::map(&file).map_err(|e| format!("内存映射失败: {e}"))?
-        };
+        let mmap = unsafe { Mmap::map(&file).map_err(|e| format!("内存映射失败: {e}"))? };
 
         let smf = Smf::parse(&mmap[..]).map_err(|e| format!("解析MIDI失败: {e}"))?;
 
-        let smf_static: Smf<'static> = unsafe {
-            std::mem::transmute(smf)
-        };
+        let smf_static: Smf<'static> = unsafe { std::mem::transmute(smf) };
 
         Ok(Self {
             _file: file,
@@ -100,7 +141,11 @@ impl MidiEventStream {
         Ok(events)
     }
 
-    pub fn scan_track_for_stats<F>(&self, track_index: usize, mut callback: F) -> Result<u32, String>
+    pub fn scan_track_for_stats<F>(
+        &self,
+        track_index: usize,
+        mut callback: F,
+    ) -> Result<u32, String>
     where
         F: FnMut(bool, u32),
     {
@@ -116,36 +161,34 @@ impl MidiEventStream {
             current_tick = current_tick.saturating_add(u32::from(event.delta));
 
             match &event.kind {
-                TrackEventKind::Midi { channel: _, message } => {
-                    match message {
-                        MidiMessage::NoteOn { key: _, vel } => {
-                            let is_note_on = vel.as_int() > 0;
-                            callback(is_note_on, current_tick);
-                        }
-                        MidiMessage::NoteOff { .. } => {
-                            callback(false, current_tick);
-                        }
-                        MidiMessage::Controller { .. } |
-                        MidiMessage::ProgramChange { .. } => {
-                            callback(false, current_tick);
-                        }
-                        _ => {}
+                TrackEventKind::Midi {
+                    channel: _,
+                    message,
+                } => match message {
+                    MidiMessage::NoteOn { key: _, vel } => {
+                        let is_note_on = vel.as_int() > 0;
+                        callback(is_note_on, current_tick);
                     }
-                }
-                TrackEventKind::Meta(meta) => {
-                    match meta {
-                        MetaMessage::Tempo { .. } |
-                        MetaMessage::TimeSignature { .. } |
-                        MetaMessage::KeySignature { .. } => {
-                            callback(false, current_tick);
-                        }
-                        MetaMessage::EndOfTrack => {
-                            max_tick = current_tick;
-                            break;
-                        }
-                        _ => {}
+                    MidiMessage::NoteOff { .. } => {
+                        callback(false, current_tick);
                     }
-                }
+                    MidiMessage::Controller { .. } | MidiMessage::ProgramChange { .. } => {
+                        callback(false, current_tick);
+                    }
+                    _ => {}
+                },
+                TrackEventKind::Meta(meta) => match meta {
+                    MetaMessage::Tempo { .. }
+                    | MetaMessage::TimeSignature { .. }
+                    | MetaMessage::KeySignature { .. } => {
+                        callback(false, current_tick);
+                    }
+                    MetaMessage::EndOfTrack => {
+                        max_tick = current_tick;
+                        break;
+                    }
+                    _ => {}
+                },
                 TrackEventKind::SysEx(_) | TrackEventKind::Escape(_) => {}
             }
         }
@@ -153,7 +196,12 @@ impl MidiEventStream {
         Ok(max_tick)
     }
 
-    fn parse_event(&self, track_index: usize, tick: u32, kind: &TrackEventKind) -> Option<MidiEvent> {
+    fn parse_event(
+        &self,
+        track_index: usize,
+        tick: u32,
+        kind: &TrackEventKind,
+    ) -> Option<MidiEvent> {
         match kind {
             TrackEventKind::Midi { channel, message } => {
                 let ch = channel.as_int();
@@ -172,13 +220,15 @@ impl MidiEventStream {
                         key: key.as_int(),
                         velocity: vel.as_int(),
                     }),
-                    MidiMessage::Controller { controller, value } => Some(MidiEvent::ControlChange {
-                        track: track_index,
-                        tick,
-                        channel: ch,
-                        controller: controller.as_int(),
-                        value: value.as_int(),
-                    }),
+                    MidiMessage::Controller { controller, value } => {
+                        Some(MidiEvent::ControlChange {
+                            track: track_index,
+                            tick,
+                            channel: ch,
+                            controller: controller.as_int(),
+                            value: value.as_int(),
+                        })
+                    }
                     MidiMessage::ProgramChange { program } => Some(MidiEvent::ProgramChange {
                         track: track_index,
                         tick,
@@ -188,34 +238,32 @@ impl MidiEventStream {
                     _ => None,
                 }
             }
-            TrackEventKind::Meta(meta) => {
-                match meta {
-                    MetaMessage::Tempo(tempo) => Some(MidiEvent::Tempo {
-                        track: track_index,
-                        tick,
-                        tempo: tempo.as_int(),
-                    }),
-                    MetaMessage::TimeSignature(num, den, _, _) => Some(MidiEvent::TimeSignature {
-                        track: track_index,
-                        tick,
-                        numerator: *num,
-                        denominator: *den,
-                    }),
-                    MetaMessage::KeySignature(key, is_major) => Some(MidiEvent::KeySignature {
-                        track: track_index,
-                        tick,
-                        key: *key,
-                        is_major: *is_major,
-                    }),
-                    MetaMessage::TrackName(name) => Some(MidiEvent::TrackName {
-                        track: track_index,
-                        tick,
-                        name: String::from_utf8_lossy(name).to_string(),
-                    }),
-                    MetaMessage::EndOfTrack => None,
-                    _ => None,
-                }
-            }
+            TrackEventKind::Meta(meta) => match meta {
+                MetaMessage::Tempo(tempo) => Some(MidiEvent::Tempo {
+                    track: track_index,
+                    tick,
+                    tempo: tempo.as_int(),
+                }),
+                MetaMessage::TimeSignature(num, den, _, _) => Some(MidiEvent::TimeSignature {
+                    track: track_index,
+                    tick,
+                    numerator: *num,
+                    denominator: *den,
+                }),
+                MetaMessage::KeySignature(key, is_major) => Some(MidiEvent::KeySignature {
+                    track: track_index,
+                    tick,
+                    key: *key,
+                    is_major: *is_major,
+                }),
+                MetaMessage::TrackName(name) => Some(MidiEvent::TrackName {
+                    track: track_index,
+                    tick,
+                    name: String::from_utf8_lossy(name).to_string(),
+                }),
+                MetaMessage::EndOfTrack => None,
+                _ => None,
+            },
             TrackEventKind::SysEx(_) | TrackEventKind::Escape(_) => None,
         }
     }

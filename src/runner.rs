@@ -5,10 +5,10 @@ use winit::{dpi, event_loop::ControlFlow, keyboard::ModifiersState, window::Wind
 
 use super::storage;
 
+mod audio;
 mod menu;
 mod progress;
 mod window;
-mod audio;
 
 pub use lumino_core::ParsedDms;
 pub use lumino_core::ParsedMidi;
@@ -144,7 +144,7 @@ impl Runner {
     fn init_midi_output() -> Option<Box<dyn lumino_midi::OutputConnection>> {
         use lumino_midi::ApiKind;
         use std::path::PathBuf;
-        
+
         // 尝试使用 kdmapi (OmniMIDI)
         let kdmapi_path = PathBuf::from("C:\\Windows\\System32\\OmniMIDI\\OmniMIDI.dll");
         let api_kind = if kdmapi_path.exists() {
@@ -153,14 +153,14 @@ impl Runner {
             tracing::warn!("未找到 OmniMIDI,使用系统 MIDI API");
             ApiKind::System
         };
-        
+
         // 初始化 MIDI API
         let api = lumino_midi::new_api(&api_kind).ok()?;
-        
+
         if let Some(version) = api.version() {
             tracing::info!("MIDI API 版本: {}", version);
         }
-        
+
         // 获取第一个可用的输出设备
         let outputs = api.outputs().ok()?;
         if let Some(output) = outputs.first() {

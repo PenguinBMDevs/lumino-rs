@@ -1,26 +1,43 @@
-pub mod state;
 pub mod grid;
 pub mod note;
 pub mod scrollbar;
 pub mod scrollbar_widget;
+pub mod state;
 
-use crate::{Element, Message, message::{EditorAction, AudioAction}};
-use iced_widget::canvas::{self, Canvas};
+use crate::{
+    Element, Message,
+    message::{AudioAction, EditorAction},
+};
 use iced_core::{Length, Point};
+use iced_widget::canvas::{self, Canvas};
 use lumino_gfx::NoteInstance;
 
-pub use state::ViewState;
 pub use grid::PianoRollGrid;
 use note::Note;
+pub use state::ViewState;
 
 #[derive(Debug, Clone, Default)]
 pub enum EditState {
     #[default]
     Idle,
-    Drawing { start_tick: f32, key: u16, current_tick: f32 },
-    Dragging { note_index: usize, offset_tick: f32, offset_key: i32 },
-    ResizingStart { note_index: usize, original_tick: f32, original_length: f32 },
-    ResizingEnd { note_index: usize },
+    Drawing {
+        start_tick: f32,
+        key: u16,
+        current_tick: f32,
+    },
+    Dragging {
+        note_index: usize,
+        offset_tick: f32,
+        offset_key: i32,
+    },
+    ResizingStart {
+        note_index: usize,
+        original_tick: f32,
+        original_length: f32,
+    },
+    ResizingEnd {
+        note_index: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -42,7 +59,7 @@ pub struct Editor {
     pub canvas_offset: Point,
     /// Canvas 尺寸（宽, 高）
     pub canvas_size: Point,
-    
+
     pub notes: Vec<Note>,
     pub edit_state: EditState,
     pub hover_state: Option<(usize, HitType)>,
@@ -72,7 +89,7 @@ impl Editor {
     pub fn handle_action(&mut self, action: EditorAction) {
         // 清空上一次的待处理音频动作
         self.pending_audio_actions.clear();
-        
+
         match action {
             EditorAction::Pressed(pos) => {
                 if !self.is_inside_canvas(pos) {
@@ -93,9 +110,7 @@ impl Editor {
                             };
                         }
                         HitType::End => {
-                            self.edit_state = EditState::ResizingEnd {
-                                note_index: index,
-                            };
+                            self.edit_state = EditState::ResizingEnd { note_index: index };
                         }
                         HitType::Middle => {
                             let note = &self.notes[index];
@@ -137,12 +152,24 @@ impl Editor {
                     EditState::Drawing { current_tick, .. } => {
                         *current_tick = snapped_tick;
                     }
-                    EditState::Dragging { offset_tick, offset_key, .. } => {
-                        let new_tick = ((tick - *offset_tick) / snap_precision).round() * snap_precision;
+                    EditState::Dragging {
+                        offset_tick,
+                        offset_key,
+                        ..
+                    } => {
+                        let new_tick =
+                            ((tick - *offset_tick) / snap_precision).round() * snap_precision;
                         new_tick_val = Some(new_tick.max(0.0));
-                        new_key_val = Some((key as i32 - *offset_key).clamp(0, visible_key_count as i32 - 1) as u16);
+                        new_key_val = Some(
+                            (key as i32 - *offset_key).clamp(0, visible_key_count as i32 - 1)
+                                as u16,
+                        );
                     }
-                    EditState::ResizingStart { original_tick, original_length, .. } => {
+                    EditState::ResizingStart {
+                        original_tick,
+                        original_length,
+                        ..
+                    } => {
                         let end_tick = *original_tick + *original_length;
                         let new_tick = snapped_tick.min(end_tick - snap_precision).max(0.0);
                         new_tick_val = Some(new_tick);
@@ -157,32 +184,40 @@ impl Editor {
                 }
 
                 match self.edit_state {
-                    EditState::Dragging { note_index, .. } |
-                    EditState::ResizingStart { note_index, .. } |
-                    EditState::ResizingEnd { note_index, .. } => {
+                    EditState::Dragging { note_index, .. }
+                    | EditState::ResizingStart { note_index, .. }
+                    | EditState::ResizingEnd { note_index, .. } => {
                         if let Some(note) = self.notes.get_mut(note_index) {
-                            if let Some(t) = new_tick_val { note.tick = t; }
-                            if let Some(k) = new_key_val { note.key = k; }
-                            if let Some(l) = new_length_val { note.length = l; }
+                            if let Some(t) = new_tick_val {
+                                note.tick = t;
+                            }
+                            if let Some(k) = new_key_val {
+                                note.key = k;
+                            }
+                            if let Some(l) = new_length_val {
+                                note.length = l;
+                            }
                         }
                     }
                     _ => {}
                 }
             }
             EditorAction::Released => {
-                match self.edit_state {
-                    EditState::Drawing { start_tick, key, current_tick } => {
-                        let (tick, length) = if current_tick > start_tick {
-                            (start_tick, current_tick - start_tick)
-                        } else if current_tick < start_tick {
-                            (current_tick, start_tick - current_tick)
-                        } else {
-                            (start_tick, self.state.default_note_length)
-                        };
-                        let length = length.max(self.state.snap_precision);
-                        self.notes.push(Note::new(tick, key, length));
-                    }
-                    _ => {}
+                if let EditState::Drawing {
+                    start_tick,
+                    key,
+                    current_tick,
+                } = self.edit_state
+                {
+                    let (tick, length) = if current_tick > start_tick {
+                        (start_tick, current_tick - start_tick)
+                    } else if current_tick < start_tick {
+                        (current_tick, start_tick - current_tick)
+                    } else {
+                        (start_tick, self.state.default_note_length)
+                    };
+                    let length = length.max(self.state.snap_precision);
+                    self.notes.push(Note::new(tick, key, length));
                 }
                 self.edit_state = EditState::Idle;
             }
@@ -206,7 +241,7 @@ impl Editor {
     pub fn hit_test_note(&self, pos: Point) -> Option<(usize, HitType)> {
         let tick = self.x_to_tick(pos.x);
         let key = self.y_to_key(pos.y);
-        
+
         for (i, note) in self.notes.iter().enumerate().rev() {
             if note.key == key && tick >= note.tick && tick <= note.tick + note.length {
                 let start_dist = (tick - note.tick).abs();
@@ -260,13 +295,17 @@ impl Editor {
     }
 
     /// 获取当前需要绘制的音符实例（用于 wgpu 渲染）
-    /// 
+    ///
     /// 目前只返回鼠标位置的预览音符，后续可扩展为返回所有 MIDI 音符
     /// 音符只在 Canvas 区域内显示
-    pub fn get_note_instances(&self, theme: &crate::Theme, _sidebar_width: f32) -> Vec<NoteInstance> {
+    pub fn get_note_instances(
+        &self,
+        theme: &crate::Theme,
+        _sidebar_width: f32,
+    ) -> Vec<NoteInstance> {
         let mut instances = Vec::new();
         let palette = theme.extended_palette();
-        
+
         // 默认音符颜色（更弱颜色）
         let default_color = palette.primary.weak.color;
         // 悬停音符颜色
@@ -277,13 +316,17 @@ impl Editor {
         // 渲染已放置的音符
         for (i, note) in self.notes.iter().enumerate() {
             let color = match self.edit_state {
-                EditState::Dragging { note_index, .. } |
-                EditState::ResizingStart { note_index, .. } |
-                EditState::ResizingEnd { note_index, .. } if note_index == i => active_color,
-                EditState::Idle if self.hover_state.map_or(false, |(idx, _)| idx == i) => hover_color,
+                EditState::Dragging { note_index, .. }
+                | EditState::ResizingStart { note_index, .. }
+                | EditState::ResizingEnd { note_index, .. }
+                    if note_index == i =>
+                {
+                    active_color
+                }
+                EditState::Idle if self.hover_state.is_some_and(|(idx, _)| idx == i) => hover_color,
                 _ => default_color,
             };
-            
+
             let mut instance = note.to_instance(&self.state, color);
             // 转换为窗口坐标：加上 Canvas 偏移
             instance.position[0] += self.canvas_offset.x;
@@ -292,7 +335,12 @@ impl Editor {
         }
 
         // 渲染正在绘制的音符
-        if let EditState::Drawing { start_tick, key, current_tick } = self.edit_state {
+        if let EditState::Drawing {
+            start_tick,
+            key,
+            current_tick,
+        } = self.edit_state
+        {
             let (tick, length) = if current_tick > start_tick {
                 (start_tick, current_tick - start_tick)
             } else if current_tick < start_tick {
@@ -302,7 +350,7 @@ impl Editor {
             };
             let length = length.max(self.state.snap_precision);
             let drawing_note = Note::new(tick, key, length);
-            
+
             let mut instance = drawing_note.to_instance(&self.state, active_color);
             instance.position[0] += self.canvas_offset.x;
             instance.position[1] += self.canvas_offset.y;
@@ -310,18 +358,16 @@ impl Editor {
         } else if let Some(pos) = self.cursor_position {
             // 预览音符 - 仅在没有悬停在其他音符上时显示
             if self.hover_state.is_none() {
-                let local_pos = Point::new(
-                    pos.x - self.canvas_offset.x,
-                    pos.y - self.canvas_offset.y,
-                );
+                let local_pos =
+                    Point::new(pos.x - self.canvas_offset.x, pos.y - self.canvas_offset.y);
                 if self.is_inside_canvas(local_pos) {
                     let tick = self.snap_tick(self.x_to_tick(local_pos.x));
                     let key = self.y_to_key(local_pos.y);
                     let preview_note = Note::new(tick, key, self.state.default_note_length);
-                    
+
                     let mut preview_color = default_color;
                     preview_color.a = 0.5;
-                    
+
                     let mut instance = preview_note.to_instance(&self.state, preview_color);
                     instance.position[0] += self.canvas_offset.x;
                     instance.position[1] += self.canvas_offset.y;
@@ -332,7 +378,7 @@ impl Editor {
 
         instances
     }
-    
+
     /// 检查点是否在 Canvas 有效区域内
     /// 有效区域 = Canvas 区域减去键盘区域（左侧）和滚动条区域（底部和右侧）
     /// 同时避开顶部可能被下拉菜单覆盖的区域
@@ -344,19 +390,19 @@ impl Editor {
         if local_pos.y < 0.0 || local_pos.y > self.canvas_size.y {
             return false;
         }
-        
+
         // 检查是否在键盘区域外（x 必须大于键盘宽度）
         if local_pos.x < self.state.keyboard_width {
             return false;
         }
-        
+
         // 避开顶部区域（防止与下拉菜单重叠）
         // 顶部 40 像素区域不渲染音符（给下拉菜单留空间）
         const MENU_SAFE_ZONE: f32 = 40.0;
         if local_pos.y < MENU_SAFE_ZONE {
             return false;
         }
-        
+
         true
     }
 
@@ -369,19 +415,19 @@ impl Editor {
     pub fn set_canvas_offset(&mut self, offset: Point) {
         self.canvas_offset = offset;
     }
-    
+
     /// 更新 Canvas 尺寸
     pub fn set_canvas_size(&mut self, size: Point) {
         self.canvas_size = size;
     }
-    
+
     /// 获取并清空待处理的音频动作
     pub fn take_audio_actions(&mut self) -> Vec<AudioAction> {
         std::mem::take(&mut self.pending_audio_actions)
     }
 
     // ========== 滚动控制 ==========
-    
+
     pub fn set_max_scroll_x(&mut self, max_scroll: f32) {
         self.max_scroll_x = max_scroll;
     }
@@ -410,15 +456,15 @@ impl Editor {
 
     pub fn set_zoom_x(&mut self, zoom_x: f32, fixed_ratio: f32) {
         let old_zoom_x = self.state.zoom_x;
-        self.state.zoom_x = zoom_x.max(0.001).min(10.0);
-        
+        self.state.zoom_x = zoom_x.clamp(0.001, 10.0);
+
         let ratio = self.state.zoom_x / old_zoom_x;
         let view_width = (self.canvas_size.x - self.state.keyboard_width).max(0.0);
-        
+
         // 保持固定比例处的 tick 不变
         let fixed_pixel = self.state.scroll_x + view_width * fixed_ratio;
         self.state.scroll_x = fixed_pixel * ratio - view_width * fixed_ratio;
-        
+
         self.max_scroll_x = self.state.total_ticks as f32 * self.state.zoom_x;
         self.state.scroll_x = self.state.scroll_x.max(0.0).min(self.max_scroll_x);
         self.grid_cache.clear();
@@ -426,15 +472,15 @@ impl Editor {
 
     pub fn set_zoom_y(&mut self, zoom_y: f32, fixed_ratio: f32) {
         let old_zoom_y = self.state.zoom_y;
-        self.state.zoom_y = zoom_y.max(5.0).min(100.0);
-        
+        self.state.zoom_y = zoom_y.clamp(5.0, 100.0);
+
         let ratio = self.state.zoom_y / old_zoom_y;
         let view_height = self.canvas_size.y.max(0.0);
-        
+
         // 保持固定比例处的 key 不变
         let fixed_pixel = self.state.scroll_y + view_height * fixed_ratio;
         self.state.scroll_y = fixed_pixel * ratio - view_height * fixed_ratio;
-        
+
         self.max_scroll_y = self.state.visible_key_count as f32 * self.state.zoom_y;
         self.state.scroll_y = self.state.scroll_y.max(0.0).min(self.max_scroll_y);
         self.grid_cache.clear();

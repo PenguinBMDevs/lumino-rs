@@ -1,8 +1,8 @@
-use crate::{Message, Renderer, Theme, message::EditorAction};
 use crate::editor::{Editor, HitType};
+use crate::{Message, Renderer, Theme, message::EditorAction};
 use iced_core::{Point, Rectangle, mouse};
 
-use iced_widget::canvas::{self, Frame, Geometry, Path, Program, Stroke, Event};
+use iced_widget::canvas::{self, Event, Frame, Geometry, Path, Program, Stroke};
 
 /// 钢琴卷帘网格绘制程序
 pub struct PianoRollGrid<'a> {
@@ -32,7 +32,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         // 报告 Canvas 位置和尺寸（用于坐标转换和边界检测）
         let bounds_pos = iced_core::Point::new(bounds.x, bounds.y);
         let bounds_size = iced_core::Size::new(bounds.width, bounds.height);
-        
+
         // 同时更新内部状态（鼠标位置）
         if let Some(position) = cursor.position() {
             let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
@@ -42,24 +42,31 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(position) = cursor.position() {
-                    let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
-                    return Some(canvas::Action::publish(Message::EditorAction(EditorAction::Pressed(local_pos))));
+                    let local_pos =
+                        iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
+                    return Some(canvas::Action::publish(Message::EditorAction(
+                        EditorAction::Pressed(local_pos),
+                    )));
                 }
             }
             Event::Mouse(mouse::Event::CursorMoved { position }) => {
                 let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
-                return Some(canvas::Action::publish(Message::EditorAction(EditorAction::Moved(local_pos))));
+                return Some(canvas::Action::publish(Message::EditorAction(
+                    EditorAction::Moved(local_pos),
+                )));
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                return Some(canvas::Action::publish(Message::EditorAction(EditorAction::Released)));
+                return Some(canvas::Action::publish(Message::EditorAction(
+                    EditorAction::Released,
+                )));
             }
             _ => {}
         }
-        
+
         // 发送 bounds 变化消息
-        Some(canvas::Action::publish(Message::CanvasBoundsChanged { 
-            offset: bounds_pos, 
-            size: bounds_size 
+        Some(canvas::Action::publish(Message::CanvasBoundsChanged {
+            offset: bounds_pos,
+            size: bounds_size,
         }))
     }
 
@@ -72,15 +79,17 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         use crate::editor::EditState;
         match self.editor.edit_state {
             EditState::Dragging { .. } => mouse::Interaction::Grabbing,
-            EditState::ResizingStart { .. } | EditState::ResizingEnd { .. } => mouse::Interaction::ResizingHorizontally,
-            EditState::Drawing { .. } => mouse::Interaction::Crosshair,
-            EditState::Idle => {
-                match self.editor.hover_state {
-                    Some((_, HitType::Start)) | Some((_, HitType::End)) => mouse::Interaction::ResizingHorizontally,
-                    Some((_, HitType::Middle)) => mouse::Interaction::Pointer,
-                    None => mouse::Interaction::Crosshair,
-                }
+            EditState::ResizingStart { .. } | EditState::ResizingEnd { .. } => {
+                mouse::Interaction::ResizingHorizontally
             }
+            EditState::Drawing { .. } => mouse::Interaction::Crosshair,
+            EditState::Idle => match self.editor.hover_state {
+                Some((_, HitType::Start)) | Some((_, HitType::End)) => {
+                    mouse::Interaction::ResizingHorizontally
+                }
+                Some((_, HitType::Middle)) => mouse::Interaction::Pointer,
+                None => mouse::Interaction::Crosshair,
+            },
         }
     }
 
@@ -92,12 +101,15 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry<Renderer>> {
-        let grid = self.editor.grid_cache.draw(renderer, bounds.size(), |frame| {
-            self.draw_keyboard(frame, bounds, theme);
-            self.draw_keys(frame, bounds, theme);
-            self.draw_bars(frame, bounds, theme);
-        });
-        
+        let grid = self
+            .editor
+            .grid_cache
+            .draw(renderer, bounds.size(), |frame| {
+                self.draw_keyboard(frame, bounds, theme);
+                self.draw_keys(frame, bounds, theme);
+                self.draw_bars(frame, bounds, theme);
+            });
+
         vec![grid]
     }
 }
@@ -193,14 +205,14 @@ impl<'a> PianoRollGrid<'a> {
 
         while current_tick < end_tick {
             let screen_x = (current_tick * view.zoom_x) - view.scroll_x + keyboard_width;
-            
+
             if screen_x >= keyboard_width && screen_x <= bounds.width {
                 let is_measure = (current_tick % measure_ticks).abs() < 0.1;
                 let is_beat = (current_tick % ppq).abs() < 0.1;
-                let is_half_beat = (current_tick % (ppq/2.0)).abs() < 0.1;
-                
-                let stroke = if is_measure { 
-                    bar_stroke 
+                let is_half_beat = (current_tick % (ppq / 2.0)).abs() < 0.1;
+
+                let stroke = if is_measure {
+                    bar_stroke
                 } else if is_beat {
                     beat_stroke
                 } else if is_half_beat {
@@ -208,7 +220,10 @@ impl<'a> PianoRollGrid<'a> {
                 } else {
                     Stroke::default()
                         .with_width(0.5)
-                        .with_color(iced_core::Color{a: 0.1, ..palette.weak.color})
+                        .with_color(iced_core::Color {
+                            a: 0.1,
+                            ..palette.weak.color
+                        })
                 };
 
                 let path = Path::line(

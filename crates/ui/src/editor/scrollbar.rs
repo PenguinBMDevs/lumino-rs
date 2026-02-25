@@ -1,13 +1,17 @@
+use crate::{Message, Renderer};
 use iced_core::{Point, Rectangle, Theme, mouse};
-use iced_widget::canvas::{self, Frame, Path, Stroke, Event, Geometry, Program};
-use crate::{Renderer, Message};
+use iced_widget::canvas::{self, Event, Frame, Geometry, Path, Program, Stroke};
 
 // 滚动条状态
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScrollbarState {
     Idle,
     HoverThumb,
-    DraggingThumb { start_x: f32, start_thumb_x: f32, bounds_width: f32 },
+    DraggingThumb {
+        start_x: f32,
+        start_thumb_x: f32,
+        bounds_width: f32,
+    },
 }
 
 // 滚动条
@@ -86,8 +90,10 @@ impl<'a> Program<Message, Theme, Renderer> for ScrollbarView<'a> {
                     if let Some(position) = cursor.position() {
                         let local_x = position.x - bounds.x;
                         let local_y = position.y - bounds.y;
-                        if local_y >= 0.0 && local_y <= bounds.height &&
-                           scrollbar.is_mouse_on_thumb(local_x, bounds.width) {
+                        if local_y >= 0.0
+                            && local_y <= bounds.height
+                            && scrollbar.is_mouse_on_thumb(local_x, bounds.width)
+                        {
                             let thumb_x = scrollbar.thumb_x(bounds.width);
                             scrollbar.state = ScrollbarState::DraggingThumb {
                                 start_x: local_x,
@@ -118,7 +124,11 @@ impl<'a> Program<Message, Theme, Renderer> for ScrollbarView<'a> {
                             }
                         } else {
                             match scrollbar.state {
-                                ScrollbarState::DraggingThumb { start_x, start_thumb_x, bounds_width } => {
+                                ScrollbarState::DraggingThumb {
+                                    start_x,
+                                    start_thumb_x,
+                                    bounds_width,
+                                } => {
                                     let delta_x = local_x - start_x;
                                     let new_thumb_x = start_thumb_x + delta_x;
                                     let available_width = bounds_width - scrollbar.thumb_width;
@@ -128,17 +138,19 @@ impl<'a> Program<Message, Theme, Renderer> for ScrollbarView<'a> {
                                         scrollbar.thumb_ratio = clamped_thumb_x / available_width;
                                     }
 
-                                    let new_scroll = scrollbar.calculate_scroll_from_ratio(self.max_scroll);
+                                    let new_scroll =
+                                        scrollbar.calculate_scroll_from_ratio(self.max_scroll);
                                     scrollbar.new_scroll_x = Some(new_scroll);
 
                                     return Some(canvas::Action::request_redraw());
                                 }
                                 _ => {
-                                    let new_state = if scrollbar.is_mouse_on_thumb(local_x, bounds.width) {
-                                        ScrollbarState::HoverThumb
-                                    } else {
-                                        ScrollbarState::Idle
-                                    };
+                                    let new_state =
+                                        if scrollbar.is_mouse_on_thumb(local_x, bounds.width) {
+                                            ScrollbarState::HoverThumb
+                                        } else {
+                                            ScrollbarState::Idle
+                                        };
                                     if scrollbar.state != new_state {
                                         scrollbar.state = new_state;
                                         return Some(canvas::Action::request_redraw());

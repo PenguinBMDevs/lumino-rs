@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// 用户界面配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -10,7 +10,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            ui: UiConfig::default()
+            ui: UiConfig::default(),
         }
     }
 }

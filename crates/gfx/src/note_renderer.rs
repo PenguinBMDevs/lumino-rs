@@ -131,88 +131,91 @@ impl NoteRenderer {
         });
 
         // 创建渲染 bind group layout
-        let render_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("note_render_bind_group_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let render_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("note_render_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
 
         // 创建计算 bind group layout
-        let cull_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("note_cull_bind_group_layout"),
-            entries: &[
-                // viewport
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+        let cull_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("note_cull_bind_group_layout"),
+                entries: &[
+                    // viewport
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // cull_info
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // cull_info
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // all_instances
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // all_instances
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // visible_instances
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // visible_instances
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // indirect_args
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // indirect_args
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
 
         // 创建渲染 pipeline layout
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("note_render_pipeline_layout"),
-            bind_group_layouts: &[&render_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("note_render_pipeline_layout"),
+                bind_group_layouts: &[&render_bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         // 创建计算 pipeline layout
         let cull_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -268,12 +271,15 @@ impl NoteRenderer {
 
         // 创建缓冲区
         let instance_buffer = Self::create_instance_buffer(device, Self::INITIAL_CAPACITY, false);
-        let visible_instance_buffer = Self::create_instance_buffer(device, Self::INITIAL_CAPACITY, true);
+        let visible_instance_buffer =
+            Self::create_instance_buffer(device, Self::INITIAL_CAPACITY, true);
 
         let indirect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("note_indirect_buffer"),
             size: std::mem::size_of::<DrawIndirectArgs>() as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::INDIRECT
+                | wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -285,7 +291,10 @@ impl NoteRenderer {
 
         let cull_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("cull_uniform"),
-            contents: bytemuck::cast_slice(&[CullUniform { instance_count: 0, _padding: [0; 3] }]),
+            contents: bytemuck::cast_slice(&[CullUniform {
+                instance_count: 0,
+                _padding: [0; 3],
+            }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -390,14 +399,14 @@ impl NoteRenderer {
             instance_count: instances.len() as u32,
             _padding: [0; 3],
         };
-        queue.write_buffer(&self.cull_uniform_buffer, 0, bytemuck::cast_slice(&[cull_info]));
+        queue.write_buffer(
+            &self.cull_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[cull_info]),
+        );
 
         // 上传实例数据
-        queue.write_buffer(
-            &self.instance_buffer,
-            0,
-            bytemuck::cast_slice(instances),
-        );
+        queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
 
         // 重置间接绘制参数 (instance_count = 0)
         let indirect_args = DrawIndirectArgs {
@@ -407,7 +416,11 @@ impl NoteRenderer {
             first_instance: 0,
             _padding: [0; 4],
         };
-        queue.write_buffer(&self.indirect_buffer, 0, bytemuck::cast_slice(&[indirect_args]));
+        queue.write_buffer(
+            &self.indirect_buffer,
+            0,
+            bytemuck::cast_slice(&[indirect_args]),
+        );
 
         // 执行 Compute Culling
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -418,7 +431,7 @@ impl NoteRenderer {
         compute_pass.set_bind_group(0, &self.cull_bind_group, &[]);
 
         // 计算工作组数量 (每组 64 个线程)
-        let workgroup_count = (instances.len() as u32 + 63) / 64;
+        let workgroup_count = (instances.len() as u32).div_ceil(64);
         compute_pass.dispatch_workgroups(workgroup_count, 1, 1);
     }
 
@@ -448,7 +461,11 @@ impl NoteRenderer {
     }
 
     /// 创建实例缓冲区
-    fn create_instance_buffer(device: &wgpu::Device, capacity: usize, is_storage: bool) -> wgpu::Buffer {
+    fn create_instance_buffer(
+        device: &wgpu::Device,
+        capacity: usize,
+        is_storage: bool,
+    ) -> wgpu::Buffer {
         let mut usage = wgpu::BufferUsages::COPY_DST;
         if is_storage {
             usage |= wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::VERTEX;
@@ -457,7 +474,11 @@ impl NoteRenderer {
         }
 
         device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some(if is_storage { "note_visible_instance_buffer" } else { "note_instance_buffer" }),
+            label: Some(if is_storage {
+                "note_visible_instance_buffer"
+            } else {
+                "note_instance_buffer"
+            }),
             size: (capacity * std::mem::size_of::<NoteInstance>()) as wgpu::BufferAddress,
             usage,
             mapped_at_creation: false,

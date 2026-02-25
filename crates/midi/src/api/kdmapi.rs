@@ -57,7 +57,8 @@ impl Kdmapi {
         unsafe {
             let lib = Library::new(path)?;
             // Symbols are expected to live as long as `lib` is alive.
-            let sym = Arc::new(Symbols { // KDMAPI 符号表
+            let sym = Arc::new(Symbols {
+                // KDMAPI 符号表
                 return_kdmapi_ver: *lib.get(b"ReturnKDMAPIVer\0")?, // KDMAPI 返回版本
                 is_kdmapi_available: *lib.get(b"IsKDMAPIAvailable\0")?, // KDMAPI 是否可用
                 initialize_kdmapi_stream: *lib.get(b"InitializeKDMAPIStream\0")?, // KDMAPI 初始化流
@@ -84,7 +85,6 @@ impl Kdmapi {
             if !(sym.return_kdmapi_ver)(&mut major, &mut minor, &mut patch, &mut rev) {
                 return Err(Error::InitFailed(KdmapiError::GetVersionFailed.to_string()));
             };
-
 
             // KDMAPI 版本
             Ok(Self {

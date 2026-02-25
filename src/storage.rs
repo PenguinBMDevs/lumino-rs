@@ -27,7 +27,8 @@ impl Storage {
         // 创建偏好设置目录
         let preference = dirs.preference_dir().to_owned();
 
-        Ok(Self { // 成功
+        Ok(Self {
+            // 成功
             config: config::ConfigWrapper::new(config.join("config.toml"))?,
             ui_state: ui_state::UiStateWrapper::new(preference.join("ui_state.json")),
         })

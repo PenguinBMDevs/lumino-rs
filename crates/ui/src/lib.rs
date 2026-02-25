@@ -210,9 +210,11 @@ impl Host {
         };
 
         // 创建命令编码器
-        let mut encoder = gfx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("note_render_encoder"),
-        });
+        let mut encoder = gfx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("note_render_encoder"),
+            });
 
         // 菜单打开时，禁止更新光标与渲染预览音符（避免菜单被覆盖/误操作）
         if !self.root.should_render_preview_note() {
@@ -266,8 +268,10 @@ impl Host {
 
             let scissor_x = ((canvas_offset.x * scale) as u32).min(physical_size.width);
             let scissor_y = ((canvas_offset.y * scale) as u32).min(physical_size.height);
-            let scissor_width = ((canvas_size.x * scale) as u32).min(physical_size.width.saturating_sub(scissor_x));
-            let scissor_height = ((canvas_size.y * scale) as u32).min(physical_size.height.saturating_sub(scissor_y));
+            let scissor_width =
+                ((canvas_size.x * scale) as u32).min(physical_size.width.saturating_sub(scissor_x));
+            let scissor_height = ((canvas_size.y * scale) as u32)
+                .min(physical_size.height.saturating_sub(scissor_y));
 
             if scissor_width > 0 && scissor_height > 0 {
                 self.note_renderer.draw(
@@ -372,7 +376,7 @@ impl Host {
     pub fn update_theme(&mut self, theme: String) {
         self.root.update(message::Window::theme(theme));
     }
-    
+
     /// 获取并清空待处理的音频动作
     pub fn take_audio_actions(&mut self) -> Vec<message::AudioAction> {
         self.root.take_audio_actions()

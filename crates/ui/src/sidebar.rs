@@ -69,9 +69,7 @@ impl Sidebar {
         let panel = if self.panel_visible {
             panel::view()
         } else {
-            iced_widget::container(iced_widget::space())
-                .width(0)
-                .into()
+            iced_widget::container(iced_widget::space()).width(0).into()
         };
 
         let inner = row![route::view(self.route), panel,];

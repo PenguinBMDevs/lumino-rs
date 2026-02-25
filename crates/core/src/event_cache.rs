@@ -72,7 +72,8 @@ impl TrackBasedCache {
     }
 
     fn get_track_path(&self, key: u64, track_index: usize) -> PathBuf {
-        self.get_cache_dir(key).join(format!("track_{:04x}.lmt", track_index))
+        self.get_cache_dir(key)
+            .join(format!("track_{:04x}.lmt", track_index))
     }
 
     pub fn get_header(&self, source_path: &Path) -> std::io::Result<Option<TrackCacheHeader>> {
@@ -86,11 +87,16 @@ impl TrackBasedCache {
         }
 
         let data = fs::read(&header_path)?;
-        let header: TrackCacheHeader = bincode::deserialize(&data).map_err(std::io::Error::other)?;
+        let header: TrackCacheHeader =
+            bincode::deserialize(&data).map_err(std::io::Error::other)?;
         Ok(Some(header))
     }
 
-    pub fn load_track(&self, source_path: &Path, track_index: usize) -> std::io::Result<Option<TrackEvents>> {
+    pub fn load_track(
+        &self,
+        source_path: &Path,
+        track_index: usize,
+    ) -> std::io::Result<Option<TrackEvents>> {
         let metadata = fs::metadata(source_path)?;
         let modified = metadata.modified()?;
         let key = Self::compute_cache_key(source_path, modified);
@@ -103,7 +109,8 @@ impl TrackBasedCache {
         let file = File::open(&track_path)?;
         let reader = BufReader::new(file);
         let compressed = zstd::stream::decode_all(reader).map_err(std::io::Error::other)?;
-        let track_events: TrackEvents = bincode::deserialize(&compressed).map_err(std::io::Error::other)?;
+        let track_events: TrackEvents =
+            bincode::deserialize(&compressed).map_err(std::io::Error::other)?;
 
         Ok(Some(track_events))
     }
@@ -134,8 +141,10 @@ impl TrackBasedCache {
 
         for track_idx in 0..track_count {
             let (event_count, max_tick) = {
-                let events = stream.read_track_events(track_idx).map_err(std::io::Error::other)?;
-                
+                let events = stream
+                    .read_track_events(track_idx)
+                    .map_err(std::io::Error::other)?;
+
                 let event_count = events.len() as u64;
                 let max_tick = events.iter().map(|e| e.tick()).max().unwrap_or(0);
 
@@ -144,8 +153,10 @@ impl TrackBasedCache {
                     events,
                 };
 
-                let serialized = bincode::serialize(&track_events).map_err(std::io::Error::other)?;
-                let compressed = zstd::stream::encode_all(&mut &serialized[..], 3).map_err(std::io::Error::other)?;
+                let serialized =
+                    bincode::serialize(&track_events).map_err(std::io::Error::other)?;
+                let compressed = zstd::stream::encode_all(&mut &serialized[..], 3)
+                    .map_err(std::io::Error::other)?;
 
                 let track_path = self.get_track_path(key, track_idx);
                 fs::write(&track_path, &compressed)?;
@@ -174,10 +185,14 @@ impl TrackBasedCache {
         Ok(header)
     }
 
-    pub fn open_window(&self, source_path: &Path, max_loaded_tracks: usize) -> std::io::Result<TrackEventWindow> {
-        let header = self.get_header(source_path)?.ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::NotFound, "缓存不存在")
-        })?;
+    pub fn open_window(
+        &self,
+        source_path: &Path,
+        max_loaded_tracks: usize,
+    ) -> std::io::Result<TrackEventWindow> {
+        let header = self
+            .get_header(source_path)?
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "缓存不存在"))?;
 
         Ok(TrackEventWindow {
             header,
@@ -213,7 +228,8 @@ impl TrackBasedCache {
         }
 
         let serialized = bincode::serialize(track_events).map_err(std::io::Error::other)?;
-        let compressed = zstd::stream::encode_all(&mut &serialized[..], 3).map_err(std::io::Error::other)?;
+        let compressed =
+            zstd::stream::encode_all(&mut &serialized[..], 3).map_err(std::io::Error::other)?;
 
         let track_path = self.get_track_path(key, track_index);
         fs::write(&track_path, &compressed)?;
@@ -290,7 +306,12 @@ impl TrackBasedCache {
             if path.is_dir() {
                 for sub_entry in fs::read_dir(&path)? {
                     let sub_entry = sub_entry?;
-                    if sub_entry.path().extension().map(|e| e == CACHE_EXTENSION).unwrap_or(false) {
+                    if sub_entry
+                        .path()
+                        .extension()
+                        .map(|e| e == CACHE_EXTENSION)
+                        .unwrap_or(false)
+                    {
                         total_size += sub_entry.metadata()?.len();
                     }
                 }
@@ -338,9 +359,15 @@ impl TrackEventWindow {
                 self.access_order.retain(|&k| k != oldest_key);
             }
 
-            let track_events = self.cache.load_track(&self.source_path, track_index)?.ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::NotFound, format!("音轨 {} 缓存不存在", track_index))
-            })?;
+            let track_events = self
+                .cache
+                .load_track(&self.source_path, track_index)?
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("音轨 {} 缓存不存在", track_index),
+                    )
+                })?;
 
             self.loaded_tracks.insert(track_index, track_events);
             self.access_order.push(track_index);
@@ -349,9 +376,9 @@ impl TrackEventWindow {
             self.access_order.push(track_index);
         }
 
-        self.loaded_tracks.get(&track_index).ok_or_else(|| {
-            std::io::Error::other("无法加载音轨")
-        })
+        self.loaded_tracks
+            .get(&track_index)
+            .ok_or_else(|| std::io::Error::other("无法加载音轨"))
     }
 
     pub fn unload_all(&mut self) {

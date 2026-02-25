@@ -61,10 +61,8 @@ impl Root {
                 // 侧边栏显示状态变化，直接设置 canvas offset 为 sidebar 宽度
                 let sidebar_width = self.sidebar.width() as f32;
                 let current_offset = self.editor.canvas_offset;
-                self.editor.set_canvas_offset(iced_core::Point::new(
-                    sidebar_width,
-                    current_offset.y
-                ));
+                self.editor
+                    .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset.y));
             }
             Message::Progress(p) => self.progress = p,
             Message::ScrollbarScrolled(new_scroll_x) => {
@@ -84,7 +82,8 @@ impl Root {
             Message::CanvasBoundsChanged { offset, size } => {
                 // 更新 Canvas 偏移量和尺寸
                 self.editor.set_canvas_offset(offset);
-                self.editor.set_canvas_size(iced_core::Point::new(size.width, size.height));
+                self.editor
+                    .set_canvas_size(iced_core::Point::new(size.width, size.height));
             }
             Message::EditorAction(action) => {
                 self.editor.handle_action(action);
@@ -170,9 +169,10 @@ impl Root {
     /// 获取当前需要绘制的音符实例
     pub fn get_note_instances(&self) -> Vec<NoteInstance> {
         let sidebar_width = self.sidebar.width() as f32;
-        self.editor.get_note_instances(&self.window.theme, sidebar_width)
+        self.editor
+            .get_note_instances(&self.window.theme, sidebar_width)
     }
-    
+
     /// 获取并清空待处理的音频动作
     pub fn take_audio_actions(&mut self) -> Vec<message::AudioAction> {
         self.editor.take_audio_actions()

@@ -1,8 +1,8 @@
-use iced_widget::image::Image;
 use iced_core::image::Handle;
+use iced_widget::image::Image;
+use image::GenericImageView;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use image::GenericImageView;
 
 pub use Icon::*;
 
@@ -60,8 +60,12 @@ impl Icon {
 
     fn data(&self) -> &'static [u8] {
         match self {
-            Icon::AngleRight => include_bytes!("../../../../resources/icons/regular/angle-right.png"),
-            Icon::FolderTree => include_bytes!("../../../../resources/icons/regular/folder-tree.png"),
+            Icon::AngleRight => {
+                include_bytes!("../../../../resources/icons/regular/angle-right.png")
+            }
+            Icon::FolderTree => {
+                include_bytes!("../../../../resources/icons/regular/folder-tree.png")
+            }
             Icon::Gear => include_bytes!("../../../../resources/icons/regular/gear.png"),
             Icon::WaveForm => include_bytes!("../../../../resources/icons/regular/waveform.png"),
             Icon::GitHub => include_bytes!("../../../../resources/icons/brands/github.png"),

@@ -1,12 +1,12 @@
-pub mod loader;
-pub mod managed_midi;
+pub mod dms;
 pub mod event;
 pub mod info;
-pub mod dms;
+pub mod loader;
+pub mod managed_midi;
 
+pub use dms::DmsInfo;
 pub use event::{MidiEvent, MidiEventStream, parse_all_midi_events};
 pub use info::MidiInfo;
-pub use dms::DmsInfo;
 
 /// 解析后的MIDI数据
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -32,7 +32,10 @@ impl ParsedMidi {
         self.events_stream()?.collect()
     }
 
-    pub fn build_track_cache(&self, cache: &crate::TrackBasedCache) -> Result<crate::TrackCacheHeader, String> {
+    pub fn build_track_cache(
+        &self,
+        cache: &crate::TrackBasedCache,
+    ) -> Result<crate::TrackCacheHeader, String> {
         let mut stream = self.events_stream()?;
         cache
             .build_cache_streaming(&self.info.path, &mut stream)
@@ -44,7 +47,10 @@ impl ParsedMidi {
         cache: &crate::TrackBasedCache,
         max_loaded_tracks: usize,
     ) -> Result<crate::TrackEventWindow, String> {
-        if !cache.has_cache(&self.info.path).map_err(|e| format!("检查缓存失败: {e}"))? {
+        if !cache
+            .has_cache(&self.info.path)
+            .map_err(|e| format!("检查缓存失败: {e}"))?
+        {
             self.build_track_cache(cache)?;
         }
 
@@ -68,9 +74,9 @@ impl ParsedMidi {
 
     /// 获取内存管理器统计
     pub fn manager_stats(&self) -> Option<managed_midi::ManagerStats> {
-        self.memory_manager.as_ref().map(|mgr| {
-            mgr.lock().unwrap().stats()
-        })
+        self.memory_manager
+            .as_ref()
+            .map(|mgr| mgr.lock().unwrap().stats())
     }
 }
 
