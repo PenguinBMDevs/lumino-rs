@@ -263,7 +263,7 @@ impl Editor {
     /// 
     /// 目前只返回鼠标位置的预览音符，后续可扩展为返回所有 MIDI 音符
     /// 音符只在 Canvas 区域内显示
-    pub fn get_note_instances(&self, theme: &crate::Theme) -> Vec<NoteInstance> {
+    pub fn get_note_instances(&self, theme: &crate::Theme, _sidebar_width: f32) -> Vec<NoteInstance> {
         let mut instances = Vec::new();
         let palette = theme.extended_palette();
         

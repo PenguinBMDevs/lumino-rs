@@ -56,7 +56,16 @@ impl Root {
                 lumino_core::event::emit(r);
             }
             Message::Window(r) => self.window.update(r),
-            Message::Sidebar(r) => self.sidebar.update(r),
+            Message::Sidebar(r) => {
+                self.sidebar.update(r);
+                // 侧边栏显示状态变化，直接设置 canvas offset 为 sidebar 宽度
+                let sidebar_width = self.sidebar.width() as f32;
+                let current_offset = self.editor.canvas_offset;
+                self.editor.set_canvas_offset(iced_core::Point::new(
+                    sidebar_width,
+                    current_offset.y
+                ));
+            }
             Message::Progress(p) => self.progress = p,
             Message::ScrollbarScrolled(new_scroll_x) => {
                 // 处理水平滚动条滚动
@@ -154,27 +163,14 @@ impl Root {
                 });
 
             // 如果菜单打开，添加一个透明的覆盖层来捕获点击事件并关闭菜单
-            if self.is_menu_open {
-                let overlay = container(space())
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .style(|_theme: &Theme| container::Style {
-                        background: Some(iced_core::Background::Color(iced_core::Color::TRANSPARENT)),
-                        ..Default::default()
-                    });
-
-                mouse_area(overlay)
-                    .on_press(Message::MenuStateChanged(false))
-                    .into()
-            } else {
-                content.into()
-            }
+            content.into()
         }
     }
 
     /// 获取当前需要绘制的音符实例
     pub fn get_note_instances(&self) -> Vec<NoteInstance> {
-        self.editor.get_note_instances(&self.window.theme)
+        let sidebar_width = self.sidebar.width() as f32;
+        self.editor.get_note_instances(&self.window.theme, sidebar_width)
     }
     
     /// 获取并清空待处理的音频动作

@@ -151,7 +151,7 @@ fn menu_items<'a>(items: &[MenuItem]) -> Vec<Item<'a, Message, Theme, Renderer>>
 }
 
 fn submenu_button<'a>(label: impl Into<String>) -> Element<'a> {
-    let icon = icon(icon::AngleRight).width(14);
+    let icon: Element<'a> = container(icon(icon::AngleRight)).width(12).height(12).center_x(Length::Fill).center_y(Length::Fill).into();
     let inner = row![
         text(label.into()).size(14.0).width(Length::Fill),
         container(icon)

@@ -79,8 +79,13 @@ impl Sidebar {
         container(inner).into()
     }
 
-    pub fn update(&mut self, event: Event) {
+    pub fn width(&self) -> u32 {
+        48 + if self.panel_visible { 200 } else { 0 }
+    }
+
+    pub fn update(&mut self, event: Event) -> bool {
         use Event::*;
+        let prev_visible = self.panel_visible;
         match event {
             RouteUpdated(r) => self.route = r,
             PanelToggled(r) => {
@@ -95,6 +100,7 @@ impl Sidebar {
                 }
             }
         }
+        self.panel_visible != prev_visible
     }
 }
 

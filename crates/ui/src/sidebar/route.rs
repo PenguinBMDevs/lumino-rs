@@ -1,5 +1,5 @@
 use iced_core::{Alignment, Color, Length};
-use iced_widget::{button, column, container, row, space, svg};
+use iced_widget::{button, column, container, row, space};
 
 use super::{Event, ROUTES, Route, RouteConfig};
 
@@ -24,7 +24,7 @@ pub fn view<'a>(active: Route) -> Element<'a> {
         .into()
 }
 
-fn item<'a>(route: Route, svg: icon::Icon, active: bool) -> Element<'a> {
+fn item<'a>(route: Route, icon_enum: icon::Icon, active: bool) -> Element<'a> {
     let split = container(space())
         .width(2)
         .height(Length::Fill)
@@ -38,16 +38,9 @@ fn item<'a>(route: Route, svg: icon::Icon, active: bool) -> Element<'a> {
             container::Style::default().background(background)
         });
 
-    let icon = icon(svg).width(20).style(move |theme: &Theme, _| {
-        let palette = theme.extended_palette();
-        let color = match active {
-            true => palette.background.neutral.text,
-            false => palette.background.strongest.color,
-        };
-        svg::Style { color: Some(color) }
-    });
+    let icon_img = icon_enum.with_size(18, 18);
 
-    let inner = row![split, icon,]
+    let inner = row![split, icon_img,]
         .spacing(12)
         .width(Length::Fill)
         .height(Length::Fill)

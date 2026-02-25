@@ -12,8 +12,10 @@ lumino-gfx = { workspace = true }
 # crates.io
 iced_renderer = { workspace = true }
 iced_aw = { version = "0.13.0", features = ["menu"] }
-iced_wgpu = { version = "0.14.0", features = ["svg", "geometry"] }
+iced_wgpu = { version = "0.14.0", features = ["geometry"] }
 iced_winit = "0.14.0"
-iced_widget = { version = "0.14.0", features = ["svg"] }
+iced_widget = { version = "0.14.0", features = ["image"] }
 iced_core = "0.14.0"
+image = "0.25"
+once_cell = "1.20"
 tracing = "0.1"  

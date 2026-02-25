@@ -346,6 +346,9 @@ impl Host {
                 self.root.update(message);
             }
 
+            // 清除缓存以确保界面重新构建（特别是侧边栏切换后）
+            self.cache = std::mem::take(&mut self.cache);
+
             self.window.request_redraw();
         }
     }
