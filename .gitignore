@@ -32,6 +32,7 @@ examples/
 
 # Temp files
 temp/
+.figma/
 
 # Test files (large binary files)
 *.dms

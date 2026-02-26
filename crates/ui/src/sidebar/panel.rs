@@ -18,11 +18,11 @@ pub fn view<'a>(
         Route::File => {
             let mut col = column![].spacing(8).padding(8);
 
-            // 自定01 text at the top
-            col = col.push(text("自定01").size(12).style(|theme: &Theme| {
+            // 音轨列表标题
+            col = col.push(text("音轨列表").size(12).style(|theme: &Theme| {
                 let palette = theme.extended_palette();
                 text::Style {
-                    color: Some(palette.background.strong.color),
+                    color: Some(palette.background.base.text),
                 }
             }));
 

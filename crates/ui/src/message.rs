@@ -1,4 +1,4 @@
-pub use crate::{sidebar::Event as Sidebar, window::Event as Window};
+pub use crate::{settings::Event as Settings, sidebar::Event as Sidebar, window::Event as Window};
 
 #[derive(Debug, Clone)]
 pub enum EditorAction {
@@ -38,6 +38,10 @@ pub enum Message {
     MenuStateChanged(bool), // true = 菜单打开，false = 菜单关闭
     EditorAction(EditorAction),
     AudioAction(AudioAction),
+    /// 设置面板事件
+    Settings(Settings),
+    /// 切换设置面板显示状态
+    ToggleSettings,
     Null,
 }
 

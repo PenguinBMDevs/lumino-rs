@@ -66,7 +66,7 @@ const ROUTES: [RouteConfig; 4] = [
 ];
 
 pub struct Sidebar {
-    route: Route,
+    pub route: Route,
     panel_visible: bool,
     panel_route: Route,
     pub tracks: Vec<Track>,
@@ -130,9 +130,7 @@ impl Sidebar {
         match event {
             RouteUpdated(r) => self.route = r,
             PanelToggled(r) => {
-                if r == Route::Settings {
-                    self.route = r;
-                } else if self.panel_visible && self.panel_route == r {
+                if self.panel_visible && self.panel_route == r {
                     self.panel_visible = false;
                 } else {
                     self.panel_visible = true;
@@ -165,6 +163,11 @@ impl Default for Sidebar {
 }
 
 impl Sidebar {
+    /// 检查当前是否为设置路由且面板可见
+    pub fn is_settings_route(&self) -> bool {
+        self.route == Route::Settings && self.panel_visible
+    }
+
     /// 从 MIDI 数据更新音轨列表
     pub fn update_tracks_from_midi(&mut self, track_infos: &[(usize, Option<String>, u64)]) {
         self.tracks.clear();

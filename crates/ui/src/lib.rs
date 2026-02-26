@@ -2,6 +2,7 @@ mod editor;
 pub mod message;
 mod resources;
 mod root;
+mod settings;
 mod sidebar;
 mod statusbar;
 mod titlebar;

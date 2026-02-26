@@ -51,11 +51,7 @@ fn item<'a>(
         .height(Length::Fill)
         .align_y(Alignment::Center);
 
-    let event = if route == Route::Settings {
-        Event::route_updated(route)
-    } else {
-        Event::panel_toggled(route)
-    };
+    let event = Event::panel_toggled(route);
 
     button(inner)
         .width(48)

@@ -1,8 +1,8 @@
 use iced_core::Length;
-use iced_widget::{column, container, mouse_area, progress_bar, row, space, text};
+use iced_widget::{column, container, progress_bar, row, text};
 use lumino_gfx::NoteInstance;
 
-use crate::{editor, editor::note::Note, message, sidebar, statusbar, titlebar, window};
+use crate::{editor, editor::note::Note, message, settings, sidebar, statusbar, titlebar, window};
 
 pub type Message = message::Message;
 pub type Theme = iced_core::Theme;
@@ -15,6 +15,7 @@ pub struct Root {
     statusbar: statusbar::StatusBar,
     pub editor: editor::Editor,
     window: window::Window,
+    settings: settings::SettingsPanel,
     progress: Option<(String, f64)>,
     is_progress_window: bool,
     /// 是否有菜单/下拉框打开（打开时不渲染预览音符）
@@ -29,6 +30,7 @@ impl Root {
             statusbar: statusbar::StatusBar::new(),
             editor: editor::Editor::new(),
             window: window::Window::new(theme),
+            settings: settings::SettingsPanel::new(),
             progress: None,
             is_progress_window: false,
             is_menu_open: false,
@@ -42,6 +44,7 @@ impl Root {
             statusbar: statusbar::StatusBar::new(),
             editor: editor::Editor::new(),
             window: window::Window::new(theme),
+            settings: settings::SettingsPanel::new(),
             progress: None,
             is_progress_window: true,
             is_menu_open: false,
@@ -119,8 +122,14 @@ impl Root {
             Message::MenuStateChanged(is_open) => {
                 self.set_menu_open(is_open);
             }
+            // 设置面板事件
+            Message::Settings(event) => {
+                self.settings.update(event);
+            }
+            // ToggleSettings 消息已废弃，设置通过侧边栏路由切换
+            Message::ToggleSettings => {}
             // 显式丢弃它
-            Message::Null => (),
+            Message::Null => ()
         }
     }
 
@@ -163,16 +172,24 @@ impl Root {
             .into()
         } else {
             // 主窗口
+            let is_settings_route = self.sidebar.is_settings_route();
+            
             let main_content = column![
                 self.titlebar.view(&self.window),
                 row![
                     self.sidebar.view(&self.window),
-                    self.editor.view(
-                        Message::ScrollbarScrolled,
-                        Message::ScrollbarScrolledY,
-                        |zoom, fixed_ratio| Message::ZoomXChanged { zoom, fixed_ratio },
-                        |zoom, fixed_ratio| Message::ZoomYChanged { zoom, fixed_ratio }
-                    )
+                    if is_settings_route {
+                        // 设置路由激活时显示设置界面
+                        settings::view(&self.settings, &self.window)
+                    } else {
+                        // 默认显示编辑器
+                        self.editor.view(
+                            Message::ScrollbarScrolled,
+                            Message::ScrollbarScrolledY,
+                            |zoom, fixed_ratio| Message::ZoomXChanged { zoom, fixed_ratio },
+                            |zoom, fixed_ratio| Message::ZoomYChanged { zoom, fixed_ratio }
+                        )
+                    }
                 ],
                 self.statusbar.view(),
             ];
