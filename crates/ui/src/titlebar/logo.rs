@@ -4,7 +4,7 @@ use iced_widget::container;
 use crate::{Element, resources::icon};
 
 pub fn view<'a>() -> Element<'a> {
-    let icon = icon::GitHub.with_size(18, 18);
+    let icon = icon::view_with_size(icon::GitHub, 18, 18);
 
     container(icon)
         .width(48)

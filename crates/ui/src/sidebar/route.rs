@@ -38,7 +38,7 @@ fn item<'a>(route: Route, icon_enum: icon::Icon, active: bool) -> Element<'a> {
             container::Style::default().background(background)
         });
 
-    let icon_img = icon_enum.with_size(18, 18);
+    let icon_img = icon::view_with_size(icon_enum, 20, 20);
 
     let inner = row![split, icon_img,]
         .spacing(12)
