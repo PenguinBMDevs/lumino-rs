@@ -248,7 +248,7 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                 shadow: iced_core::Shadow::default(),
                 snap: false,
             },
-            Background::Color(palette.strongest.color),
+            Background::Color(palette.strong.color),
         );
 
         // 计算滑块位置和宽度
@@ -257,10 +257,10 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
         // 根据状态选择滑块颜色
         let thumb_color = match state {
             ScrollbarState::Dragging { .. } | ScrollbarState::DraggingEdge { .. } => {
-                palette.strongest.color
+                palette.strong.color
             }
-            ScrollbarState::Hover | ScrollbarState::HoverEdge(_) => palette.strong.color,
-            _ => palette.base.color,
+            ScrollbarState::Hover | ScrollbarState::HoverEdge(_) => palette.base.color,
+            _ => palette.weak.color,
         };
 
         // 绘制滑块

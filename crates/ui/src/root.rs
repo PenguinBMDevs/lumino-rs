@@ -2,7 +2,7 @@ use iced_core::Length;
 use iced_widget::{column, container, mouse_area, progress_bar, row, space, text};
 use lumino_gfx::NoteInstance;
 
-use crate::{editor, message, sidebar, statusbar, titlebar, window};
+use crate::{editor, editor::note::Note, message, sidebar, statusbar, titlebar, window};
 
 pub type Message = message::Message;
 pub type Theme = iced_core::Theme;
@@ -55,14 +55,38 @@ impl Root {
                 self.set_menu_open(false);
                 lumino_core::event::emit(r);
             }
-            Message::Window(r) => self.window.update(r),
+            Message::Window(r) => {
+                // 检测主题是否变化，主题变化时需要清除 grid_cache
+                let is_theme_change = matches!(r, window::Event::Theme(_));
+                self.window.update(r);
+                if is_theme_change {
+                    self.editor.grid_cache.clear();
+                }
+            }
             Message::Sidebar(r) => {
+                // 先检查是否是音轨切换（避免所有权问题）
+                let track_selected_idx = if let sidebar::Event::TrackSelected(idx) = &r {
+                    Some(*idx)
+                } else {
+                    None
+                };
+
                 self.sidebar.update(r);
+
                 // 侧边栏显示状态变化，直接设置 canvas offset 为 sidebar 宽度
                 let sidebar_width = self.sidebar.width() as f32;
                 let current_offset = self.editor.canvas_offset;
                 self.editor
                     .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset.y));
+
+                // 如果是音轨切换，发送 Core 事件通知 Runner 加载对应音轨的音符
+                if let Some(track_idx) = track_selected_idx {
+                    lumino_core::event::emit(lumino_core::event::Event::Menu(
+                        lumino_core::event::menu::Event::File(
+                            lumino_core::event::menu::file::Event::TrackSelected(track_idx),
+                        ),
+                    ));
+                }
             }
             Message::Progress(p) => self.progress = p,
             Message::ScrollbarScrolled(new_scroll_x) => {
@@ -142,7 +166,7 @@ impl Root {
             let main_content = column![
                 self.titlebar.view(&self.window),
                 row![
-                    self.sidebar.view(),
+                    self.sidebar.view(&self.window),
                     self.editor.view(
                         Message::ScrollbarScrolled,
                         Message::ScrollbarScrolledY,
@@ -196,5 +220,33 @@ impl Root {
     /// 获取当前是否应该渲染预览音符
     pub fn should_render_preview_note(&self) -> bool {
         !self.is_menu_open && !self.is_progress_window
+    }
+
+    /// 更新音轨列表（从 MIDI 导入）
+    pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64)]) {
+        self.sidebar.update_tracks_from_midi(track_infos);
+    }
+
+    /// 设置编辑器总 ticks
+    pub fn set_total_ticks(&mut self, total_ticks: f32) {
+        self.editor.state.total_ticks = total_ticks as u32;
+        self.editor.max_scroll_x = total_ticks * self.editor.state.zoom_x;
+    }
+
+    /// 加载音符到编辑器
+    pub fn load_notes(&mut self, notes: &[(f32, u8, f32)]) {
+        self.editor.notes.clear();
+        for (tick, key, length) in notes {
+            // MIDI key (0-127) 映射到编辑器 key (0-127，反转顺序)
+            let editor_key = *key as u16;
+            self.editor.notes.push(Note::new(*tick, editor_key, *length));
+        }
+        // 清除网格缓存以强制重绘
+        self.editor.grid_cache.clear();
+    }
+
+    /// 设置当前音轨
+    pub fn set_current_track(&mut self, track_idx: usize) {
+        self.sidebar.set_selected_track(track_idx);
     }
 }

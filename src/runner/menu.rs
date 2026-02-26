@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use lumino_core::event;
+use lumino_core::ParsedMidi;
 
 use super::RunnerInner;
 
@@ -72,6 +73,10 @@ impl RunnerInner {
                 tracing::info!("MIDI文件解析完成: {}", parsed.info);
                 let _ = parsed.take_midi_data();
                 tracing::debug!("MIDI原始数据已释放，仅保留元数据");
+
+                // 将 MIDI 音符导入到编辑器
+                self.import_midi_to_editor(&parsed);
+
                 self.current_midi = Some(parsed);
             }
             MidiParseError(err) => {
@@ -88,6 +93,14 @@ impl RunnerInner {
                 self.current_midi = None;
                 self.current_dms = None;
                 tracing::info!("工程已关闭");
+            }
+            TrackSelected(track_idx) => {
+                tracing::info!("切换到音轨: {}", track_idx);
+                if let Some(memory_manager_arc) = self.current_midi.as_ref().and_then(|p| p.memory_manager.clone()) {
+                    if let Ok(mut memory_manager) = memory_manager_arc.lock() {
+                        self.load_track_to_editor(&mut memory_manager, track_idx);
+                    }
+                }
             }
             _ => {
                 tracing::debug!("未处理的文件事件: {:?}", file_event);
@@ -461,5 +474,120 @@ impl RunnerInner {
                 });
             }
         }
+    }
+
+    /// 将 MIDI 数据导入到编辑器
+    fn import_midi_to_editor(&mut self, parsed: &ParsedMidi) {
+        use lumino_core::MidiEvent;
+
+        // 获取 memory_manager
+        let Some(memory_manager_arc) = parsed.memory_manager.as_ref() else {
+            tracing::warn!("MIDI 没有 memory_manager，无法导入音符");
+            return;
+        };
+
+        let mut memory_manager: std::sync::MutexGuard<lumino_core::MidiMemoryManager> = match memory_manager_arc.lock() {
+            Ok(mgr) => mgr,
+            Err(e) => {
+                tracing::error!("无法锁定 memory_manager: {}", e);
+                return;
+            }
+        };
+
+        // 收集所有音轨信息
+        let mut track_infos = Vec::new();
+        let summaries = memory_manager.all_summaries().to_vec();
+
+        for summary in &summaries {
+            let track_idx = summary.track_index;
+
+            // 获取音轨事件以读取音轨名称
+            let track_name: Option<String> = match memory_manager.get_track_events_full(track_idx) {
+                Ok(events) => {
+                    // 查找 TrackName 事件
+                    events.iter().find_map(|e: &MidiEvent| {
+                        if let MidiEvent::TrackName { name, .. } = e {
+                            Some(name.clone())
+                        } else {
+                            None
+                        }
+                    })
+                }
+                Err(e) => {
+                    tracing::warn!("无法获取音轨 {} 事件: {}", track_idx, e);
+                    None
+                }
+            };
+
+            track_infos.push((track_idx, track_name, summary.note_count));
+        }
+
+        // 更新 UI 音轨列表
+        self.ui.update_tracks(&track_infos);
+
+        // 加载第一个有音符的音轨到编辑器
+        if let Some((first_track_idx, _, _)) = track_infos.iter().find(|(_, _, note_count)| *note_count > 0) {
+            self.load_track_to_editor(&mut memory_manager, *first_track_idx);
+        }
+
+        // 更新编辑器总 ticks
+        let total_ticks = parsed.info.duration_ticks as f32;
+        self.ui.set_total_ticks(total_ticks);
+    }
+
+    /// 加载指定音轨的音符到编辑器
+    fn load_track_to_editor(
+        &mut self,
+        memory_manager: &mut lumino_core::MidiMemoryManager,
+        track_idx: usize,
+    ) {
+        use lumino_core::MidiEvent;
+
+        let events = match memory_manager.get_track_events_full(track_idx) {
+            Ok(evs) => evs,
+            Err(e) => {
+                tracing::error!("加载音轨 {} 失败: {}", track_idx, e);
+                return;
+            }
+        };
+
+        // 构建音符列表（配对 NoteOn 和 NoteOff）
+        let mut active_notes: std::collections::HashMap<(u8, u8), u32> = std::collections::HashMap::new();
+        let mut notes = Vec::new();
+
+        for event in &events {
+            match event {
+                MidiEvent::NoteOn { track: _, tick, channel, key, velocity } => {
+                    if *velocity > 0 {
+                        // 记录音符开始
+                        active_notes.insert((*channel, *key), *tick);
+                    } else if let Some(start_tick) = active_notes.remove(&(*channel, *key)) {
+                        // velocity == 0 视为 NoteOff
+                        let length = tick.saturating_sub(start_tick) as f32;
+                        notes.push((start_tick as f32, *key, length));
+                    }
+                }
+                MidiEvent::NoteOff { track: _, tick, channel, key, .. } => {
+                    if let Some(start_tick) = active_notes.remove(&(*channel, *key)) {
+                        let length = tick.saturating_sub(start_tick) as f32;
+                        notes.push((start_tick as f32, *key, length));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // 处理未关闭的音符（到音轨结束）
+        let track_end_tick = events.iter().map(|e| e.tick()).max().unwrap_or(0);
+        for ((channel, key), start_tick) in active_notes {
+            let length = track_end_tick.saturating_sub(start_tick) as f32;
+            notes.push((start_tick as f32, key, length));
+        }
+
+        // 更新编辑器音符
+        self.ui.load_notes(&notes);
+        self.ui.set_current_track(track_idx);
+
+        tracing::info!("音轨 {} 已加载，共 {} 个音符", track_idx, notes.len());
     }
 }

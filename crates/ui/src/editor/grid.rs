@@ -123,6 +123,9 @@ impl<'a> PianoRollGrid<'a> {
         let keyboard_width = view.keyboard_width;
         let max_key_index = (view.visible_key_count - 1) as f32;
 
+        // 根据主题亮暗选择合适的键盘颜色
+        let is_light_theme = theme.extended_palette().background.weakest.color.r > 0.5;
+
         for i in 0..view.visible_key_count {
             let keynum = i as isize;
             let world_y = (max_key_index - keynum as f32) * view.zoom_y;
@@ -131,9 +134,17 @@ impl<'a> PianoRollGrid<'a> {
             if screen_y + view.zoom_y >= 0.0 && screen_y <= bounds.height {
                 let is_black_key = is_key_dark(keynum, view.visible_key_count as usize);
                 let key_color = if is_black_key {
-                    palette.stronger.color
+                    if is_light_theme {
+                        palette.strong.color
+                    } else {
+                        palette.base.color
+                    }
                 } else {
-                    palette.base.color
+                    if is_light_theme {
+                        palette.weak.color
+                    } else {
+                        palette.weakest.color
+                    }
                 };
 
                 let key_rect = Rectangle::new(
@@ -143,9 +154,14 @@ impl<'a> PianoRollGrid<'a> {
                 let key_path = Path::rectangle(key_rect.position(), key_rect.size());
                 frame.fill(&key_path, key_color);
 
-                let border_stroke = Stroke::default()
-                    .with_width(1.0)
-                    .with_color(palette.strong.color);
+                let border_stroke =
+                    Stroke::default()
+                        .with_width(1.0)
+                        .with_color(if is_light_theme {
+                            palette.strongest.color
+                        } else {
+                            palette.base.color
+                        });
                 frame.stroke(&key_path, border_stroke);
             }
         }
@@ -155,9 +171,17 @@ impl<'a> PianoRollGrid<'a> {
     fn draw_keys(&self, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &Theme) {
         let palette = theme.extended_palette().background;
         let view = &self.editor.state;
-        let line_stroke = Stroke::default()
-            .with_width(1.0)
-            .with_color(palette.strong.color);
+
+        // 根据主题亮暗选择合适的线条颜色
+        let line_color = if theme.extended_palette().background.weakest.color.r > 0.5 {
+            // 亮色主题：使用较深的颜色
+            palette.strong.color
+        } else {
+            // 暗色主题：使用较浅的颜色
+            palette.weak.color
+        };
+
+        let line_stroke = Stroke::default().with_width(1.0).with_color(line_color);
 
         let keyboard_width = view.keyboard_width;
         let max_key_index = (view.visible_key_count - 1) as f32;
@@ -193,15 +217,31 @@ impl<'a> PianoRollGrid<'a> {
         let grid_gap = ppq / 4.0;
         let mut current_tick = (start_tick / grid_gap).ceil() * grid_gap;
 
+        // 根据主题亮暗选择合适的线条颜色
+        let is_light_theme = theme.extended_palette().background.weakest.color.r > 0.5;
+
         let bar_stroke = Stroke::default()
-            .with_width(2.0)
-            .with_color(palette.strong.color);
+            .with_width(4.0)
+            .with_color(if is_light_theme {
+                palette.strongest.color
+            } else {
+                palette.base.color
+            });
         let beat_stroke = Stroke::default()
             .with_width(1.0)
-            .with_color(palette.weak.color);
+            .with_color(if is_light_theme {
+                palette.strong.color
+            } else {
+                palette.weak.color
+            });
         let sub_beat_stroke = Stroke::default()
             .with_width(0.5)
-            .with_color(palette.weak.color);
+            .with_color(if is_light_theme {
+                palette.strong.color
+            } else {
+                palette.weaker.color
+            });
+        // 后面留一个api，让用户自己可以设置
 
         while current_tick < end_tick {
             let screen_x = (current_tick * view.zoom_x) - view.scroll_x + keyboard_width;
@@ -222,7 +262,7 @@ impl<'a> PianoRollGrid<'a> {
                         .with_width(0.5)
                         .with_color(iced_core::Color {
                             a: 0.1,
-                            ..palette.weak.color
+                            ..palette.weaker.color
                         })
                 };
 

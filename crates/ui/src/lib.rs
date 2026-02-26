@@ -375,11 +375,43 @@ impl Host {
 
     pub fn update_theme(&mut self, theme: String) {
         self.root.update(message::Window::theme(theme));
+        self.cache = std::mem::take(&mut self.cache);
+        self.window.request_redraw();
     }
 
     /// 获取并清空待处理的音频动作
     pub fn take_audio_actions(&mut self) -> Vec<message::AudioAction> {
         self.root.take_audio_actions()
+    }
+
+    /// 更新音轨列表（从 MIDI 导入）
+    /// track_infos: (track_index, track_name, note_count)
+    pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64)]) {
+        self.root.update_tracks(track_infos);
+        self.cache = std::mem::take(&mut self.cache);
+        self.window.request_redraw();
+    }
+
+    /// 设置编辑器总 ticks
+    pub fn set_total_ticks(&mut self, total_ticks: f32) {
+        self.root.set_total_ticks(total_ticks);
+        self.cache = std::mem::take(&mut self.cache);
+        self.window.request_redraw();
+    }
+
+    /// 加载音符到编辑器
+    /// notes: (tick, key, length)
+    pub fn load_notes(&mut self, notes: &[(f32, u8, f32)]) {
+        self.root.load_notes(notes);
+        self.cache = std::mem::take(&mut self.cache);
+        self.window.request_redraw();
+    }
+
+    /// 设置当前音轨
+    pub fn set_current_track(&mut self, track_idx: usize) {
+        self.root.set_current_track(track_idx);
+        self.cache = std::mem::take(&mut self.cache);
+        self.window.request_redraw();
     }
 }
 

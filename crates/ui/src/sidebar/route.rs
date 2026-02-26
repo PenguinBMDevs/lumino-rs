@@ -3,13 +3,13 @@ use iced_widget::{button, column, container, row, space};
 
 use super::{Event, ROUTES, Route, RouteConfig};
 
-use crate::{Element, Theme, resources::icon};
+use crate::{Element, Theme, resources::icon, window};
 
-pub fn view<'a>(active: Route) -> Element<'a> {
+pub fn view<'a>(active: Route, window: &window::Window) -> Element<'a> {
     let items = ROUTES
         .into_iter()
         .map(|r| match r {
-            RouteConfig::Item { route, icon } => item(route, icon, route == active),
+            RouteConfig::Item { route, icon } => item(route, icon, route == active, window),
             RouteConfig::Space => space().height(Length::Fill).into(),
         })
         .collect::<Vec<_>>();
@@ -24,7 +24,12 @@ pub fn view<'a>(active: Route) -> Element<'a> {
         .into()
 }
 
-fn item<'a>(route: Route, icon_enum: icon::Icon, active: bool) -> Element<'a> {
+fn item<'a>(
+    route: Route,
+    icon_enum: icon::Icon,
+    active: bool,
+    window: &window::Window,
+) -> Element<'a> {
     let split = container(space())
         .width(2)
         .height(Length::Fill)
@@ -38,7 +43,7 @@ fn item<'a>(route: Route, icon_enum: icon::Icon, active: bool) -> Element<'a> {
             container::Style::default().background(background)
         });
 
-    let icon_img = icon::view_with_size(icon_enum, 20, 20);
+    let icon_img = icon::view_with_size_and_theme(icon_enum, 20, 20, Some(&window.theme));
 
     let inner = row![split, icon_img,]
         .spacing(12)

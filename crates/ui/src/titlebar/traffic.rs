@@ -67,7 +67,8 @@ fn item<'a>(cfg: &'a TrafficConfig, window: &'a window::Window) -> Element<'a> {
         }
     };
 
-    let icon_img: Element<'a> = icon::view_with_size(icon_enum, 10, 10);
+    let icon_img: Element<'a> =
+        icon::view_with_size_and_theme(icon_enum, 10, 10, Some(&window.theme));
 
     // 45px*29px matches the actual traffic buttons on Windows.
     let inner = container(icon_img)

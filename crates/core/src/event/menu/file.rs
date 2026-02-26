@@ -29,4 +29,7 @@ pub enum Event {
     Settings,
     /* */
     Exit,
+    /* */
+    /// 音轨切换（从侧边栏选择音轨）
+    TrackSelected(usize),
 }

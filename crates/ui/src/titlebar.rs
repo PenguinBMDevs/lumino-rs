@@ -19,7 +19,7 @@ impl Titlebar {
         let mut row = if cfg!(target_os = "macos") {
             row![]
         } else {
-            row![logo::view(), menu::view()]
+            row![logo::view(window), menu::view()]
         };
 
         // Debug 模式下显示 FPS

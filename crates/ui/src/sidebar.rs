@@ -3,12 +3,15 @@ use iced_widget::{container, row};
 mod panel;
 mod route;
 
-use crate::{Element, Message, resources::icon};
+use crate::{Element, Message, resources::icon, window};
 
 #[derive(Debug, Clone)]
 pub enum Event {
     RouteUpdated(Route),
     PanelToggled(Route),
+    TrackSelected(usize),
+    TrackMuteToggled(usize),
+    TrackOnionSkinToggled(usize),
 }
 
 impl Event {
@@ -18,6 +21,18 @@ impl Event {
 
     pub const fn panel_toggled(r: Route) -> Message {
         Message::Sidebar(Self::PanelToggled(r))
+    }
+
+    pub const fn track_selected(id: usize) -> Message {
+        Message::Sidebar(Self::TrackSelected(id))
+    }
+
+    pub const fn track_mute_toggled(id: usize) -> Message {
+        Message::Sidebar(Self::TrackMuteToggled(id))
+    }
+
+    pub const fn track_onion_skin_toggled(id: usize) -> Message {
+        Message::Sidebar(Self::TrackOnionSkinToggled(id))
     }
 }
 
@@ -54,6 +69,17 @@ pub struct Sidebar {
     route: Route,
     panel_visible: bool,
     panel_route: Route,
+    pub tracks: Vec<Track>,
+    pub selected_track: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct Track {
+    pub id: usize,
+    pub name: String,
+    pub is_conductor: bool,
+    pub is_muted: bool,
+    pub is_onion_skin_on: bool,
 }
 
 impl Sidebar {
@@ -62,17 +88,34 @@ impl Sidebar {
             route: Route::File,
             panel_visible: true,
             panel_route: Route::File,
+            tracks: vec![
+                Track {
+                    id: 0,
+                    name: "Conductor".to_string(),
+                    is_conductor: true,
+                    is_muted: false,
+                    is_onion_skin_on: true,
+                },
+                Track {
+                    id: 1,
+                    name: "Setup".to_string(),
+                    is_conductor: false,
+                    is_muted: false,
+                    is_onion_skin_on: true,
+                },
+            ],
+            selected_track: 0,
         }
     }
 
-    pub fn view(&self) -> Element<'_> {
+    pub fn view(&self, window: &window::Window) -> Element<'_> {
         let panel = if self.panel_visible {
-            panel::view()
+            panel::view(self.panel_route, &self.tracks, self.selected_track, window)
         } else {
             iced_widget::container(iced_widget::space()).width(0).into()
         };
 
-        let inner = row![route::view(self.route), panel,];
+        let inner = row![route::view(self.route, window), panel,];
 
         container(inner).into()
     }
@@ -97,6 +140,19 @@ impl Sidebar {
                     self.route = r;
                 }
             }
+            TrackSelected(id) => {
+                self.selected_track = id;
+            }
+            TrackMuteToggled(id) => {
+                if let Some(track) = self.tracks.iter_mut().find(|t| t.id == id) {
+                    track.is_muted = !track.is_muted;
+                }
+            }
+            TrackOnionSkinToggled(id) => {
+                if let Some(track) = self.tracks.iter_mut().find(|t| t.id == id) {
+                    track.is_onion_skin_on = !track.is_onion_skin_on;
+                }
+            }
         }
         self.panel_visible != prev_visible
     }
@@ -105,5 +161,33 @@ impl Sidebar {
 impl Default for Sidebar {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Sidebar {
+    /// 从 MIDI 数据更新音轨列表
+    pub fn update_tracks_from_midi(&mut self, track_infos: &[(usize, Option<String>, u64)]) {
+        self.tracks.clear();
+        for (idx, (track_idx, name, _note_count)) in track_infos.iter().enumerate() {
+            let track_name = name.as_deref().unwrap_or("Unknown");
+            self.tracks.push(Track {
+                id: *track_idx,
+                name: format!("{:02} {}", idx + 1, track_name),
+                is_conductor: *track_idx == 0, // 第一个音轨作为 conductor
+                is_muted: false,
+                is_onion_skin_on: true,
+            });
+        }
+        // 如果有音轨，默认选择第一个
+        if !self.tracks.is_empty() {
+            self.selected_track = self.tracks[0].id;
+        }
+    }
+
+    /// 设置当前选中的音轨
+    pub fn set_selected_track(&mut self, track_idx: usize) {
+        self.selected_track = track_idx;
+        // 确保选中的音轨在面板中可见
+        self.panel_visible = true;
     }
 }
