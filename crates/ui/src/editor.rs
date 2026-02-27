@@ -25,10 +25,18 @@ pub enum EditState {
         key: u16,
         current_tick: f32,
     },
+    /// 预备拖动状态：点击音符后等待判断是点击还是拖动
+    PendingDrag {
+        note_index: usize,
+        start_pos: Point,
+        original_tick: f32,
+        original_key: u16,
+    },
     Dragging {
         note_index: usize,
         offset_tick: f32,
         offset_key: i32,
+        last_played_key: u16, // 上一次播放的音高，用于避免重复播放
     },
     ResizingStart {
         note_index: usize,
@@ -114,11 +122,18 @@ impl Editor {
                         }
                         HitType::Middle => {
                             let note = &self.notes[index];
-                            self.edit_state = EditState::Dragging {
+                            // 进入预备拖动状态，等待判断是点击还是拖动
+                            self.edit_state = EditState::PendingDrag {
                                 note_index: index,
-                                offset_tick: tick - note.tick,
-                                offset_key: key as i32 - note.key as i32,
+                                start_pos: pos,
+                                original_tick: note.tick,
+                                original_key: note.key,
                             };
+                            // 播放音符音频（点击时发声）
+                            self.pending_audio_actions.push(AudioAction::PlayNote {
+                                key: note.key as u8,
+                                velocity: 100,
+                            });
                         }
                     }
                 } else {
@@ -152,18 +167,56 @@ impl Editor {
                     EditState::Drawing { current_tick, .. } => {
                         *current_tick = snapped_tick;
                     }
+                    EditState::PendingDrag {
+                        note_index,
+                        start_pos,
+                        original_tick,
+                        original_key,
+                    } => {
+                        // 计算移动距离
+                        let delta_y = pos.y - start_pos.y;
+                        let key_threshold = self.state.zoom_y * 0.5; // 半个键的高度作为阈值
+
+                        // 只有上下移动超过阈值才算拖动
+                        if delta_y.abs() > key_threshold {
+                            let start_pos = *start_pos;
+                            let note_index = *note_index;
+                            let original_tick = *original_tick;
+                            let original_key = *original_key;
+                            let tick = self.x_to_tick(start_pos.x);
+                            let key = self.y_to_key(start_pos.y);
+                            self.edit_state = EditState::Dragging {
+                                note_index,
+                                offset_tick: tick - original_tick,
+                                offset_key: key as i32 - original_key as i32,
+                                last_played_key: original_key,
+                            };
+                        }
+                    }
                     EditState::Dragging {
                         offset_tick,
                         offset_key,
+                        last_played_key,
                         ..
                     } => {
                         let new_tick =
                             ((tick - *offset_tick) / snap_precision).round() * snap_precision;
-                        new_tick_val = Some(new_tick.max(0.0));
                         new_key_val = Some(
                             (key as i32 - *offset_key).clamp(0, visible_key_count as i32 - 1)
                                 as u16,
                         );
+                        new_tick_val = Some(new_tick.max(0.0));
+
+                        // 如果音高变化，播放新的声音
+                        if let Some(new_key) = new_key_val {
+                            if new_key != *last_played_key {
+                                self.pending_audio_actions.push(AudioAction::PlayNote {
+                                    key: new_key as u8,
+                                    velocity: 100,
+                                });
+                                *last_played_key = new_key;
+                            }
+                        }
                     }
                     EditState::ResizingStart {
                         original_tick,
@@ -203,21 +256,26 @@ impl Editor {
                 }
             }
             EditorAction::Released => {
-                if let EditState::Drawing {
-                    start_tick,
-                    key,
-                    current_tick,
-                } = self.edit_state
-                {
-                    let (tick, length) = if current_tick > start_tick {
-                        (start_tick, current_tick - start_tick)
-                    } else if current_tick < start_tick {
-                        (current_tick, start_tick - current_tick)
-                    } else {
-                        (start_tick, self.state.default_note_length)
-                    };
-                    let length = length.max(self.state.snap_precision);
-                    self.notes.push(Note::new(tick, key, length));
+                match self.edit_state {
+                    EditState::Drawing {
+                        start_tick,
+                        key,
+                        current_tick,
+                    } => {
+                        let (tick, length) = if current_tick > start_tick {
+                            (start_tick, current_tick - start_tick)
+                        } else if current_tick < start_tick {
+                            (current_tick, start_tick - current_tick)
+                        } else {
+                            (start_tick, self.state.default_note_length)
+                        };
+                        let length = length.max(self.state.snap_precision);
+                        self.notes.push(Note::new(tick, key, length));
+                    }
+                    EditState::PendingDrag { .. } => {
+                        // 只是点击，没有拖动，保持音符不变
+                    }
+                    _ => {}
                 }
                 self.edit_state = EditState::Idle;
             }
@@ -455,12 +513,20 @@ impl Editor {
     }
 
     pub fn set_scroll_x(&mut self, scroll_x: f32) {
-        self.state.scroll_x = scroll_x.max(0.0).min(self.max_scroll_x);
+        // 计算实际可滚动的最大范围：总宽度 - 视口宽度
+        let total_width = self.state.total_ticks as f32 * self.state.zoom_x;
+        let viewport_width = (self.canvas_size.x - self.state.keyboard_width).max(0.0);
+        let effective_max_scroll = (total_width - viewport_width).max(0.0);
+        self.state.scroll_x = scroll_x.max(0.0).min(effective_max_scroll);
         self.grid_cache.clear();
     }
 
     pub fn set_scroll_y(&mut self, scroll_y: f32) {
-        self.state.scroll_y = scroll_y.max(0.0).min(self.max_scroll_y);
+        // 计算实际可滚动的最大范围：总高度 - 视口高度
+        let total_height = self.state.visible_key_count as f32 * self.state.zoom_y;
+        let viewport_height = self.canvas_size.y.max(0.0);
+        let effective_max_scroll = (total_height - viewport_height).max(0.0);
+        self.state.scroll_y = scroll_y.max(0.0).min(effective_max_scroll);
         self.grid_cache.clear();
     }
 

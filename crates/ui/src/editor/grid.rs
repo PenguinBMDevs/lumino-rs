@@ -62,9 +62,13 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
             }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 let (delta_x, delta_y) = match delta {
-                    mouse::ScrollDelta::Lines { x, y } => (*x * 50.0, *y * 50.0),
+                    mouse::ScrollDelta::Lines { x, y } => (*x * 30.0, *y * 30.0),
                     mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
                 };
+                // 限制最大滚动增量，避免滚动过快
+                let max_delta = 100.0;
+                let delta_x = delta_x.clamp(-max_delta, max_delta);
+                let delta_y = delta_y.clamp(-max_delta, max_delta);
                 return Some(canvas::Action::publish(Message::EditorAction(
                     EditorAction::Scrolled { delta_x, delta_y },
                 )));
@@ -88,6 +92,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         use crate::editor::EditState;
         match self.editor.edit_state {
             EditState::Dragging { .. } => mouse::Interaction::Grabbing,
+            EditState::PendingDrag { .. } => mouse::Interaction::Pointer,
             EditState::ResizingStart { .. } | EditState::ResizingEnd { .. } => {
                 mouse::Interaction::ResizingHorizontally
             }
