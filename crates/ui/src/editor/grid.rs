@@ -60,6 +60,15 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
                     EditorAction::Released,
                 )));
             }
+            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                let (delta_x, delta_y) = match delta {
+                    mouse::ScrollDelta::Lines { x, y } => (*x * 50.0, *y * 50.0),
+                    mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
+                };
+                return Some(canvas::Action::publish(Message::EditorAction(
+                    EditorAction::Scrolled { delta_x, delta_y },
+                )));
+            }
             _ => {}
         }
 
@@ -88,7 +97,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
                     mouse::Interaction::ResizingHorizontally
                 }
                 Some((_, HitType::Middle)) => mouse::Interaction::Pointer,
-                None => mouse::Interaction::Crosshair,
+                None => mouse::Interaction::default(),
             },
         }
     }

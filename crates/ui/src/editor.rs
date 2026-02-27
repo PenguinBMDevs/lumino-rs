@@ -221,6 +221,16 @@ impl Editor {
                 }
                 self.edit_state = EditState::Idle;
             }
+            EditorAction::Scrolled { delta_x, delta_y } => {
+                // 垂直滚动：滚轮上下滚动控制卷帘上下移动
+                let new_scroll_y = self.state.scroll_y - delta_y;
+                self.set_scroll_y(new_scroll_y);
+                // 水平滚动：滚轮左右滚动（如果有）控制横向移动
+                if delta_x != 0.0 {
+                    let new_scroll_x = self.state.scroll_x - delta_x;
+                    self.set_scroll_x(new_scroll_x);
+                }
+            }
         }
     }
 

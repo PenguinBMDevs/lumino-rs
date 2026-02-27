@@ -5,6 +5,7 @@ pub enum EditorAction {
     Pressed(iced_core::Point),
     Moved(iced_core::Point),
     Released,
+    Scrolled { delta_x: f32, delta_y: f32 },
 }
 
 #[derive(Debug, Clone)]
