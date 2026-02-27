@@ -8,6 +8,7 @@ pub enum Event {
     TrafficAction(TrafficAction),
     Drag,
     ToggleMaximize,
+    Close,
     FpsUpdate(f32),
 }
 
@@ -36,6 +37,9 @@ impl Event {
     }
     pub const fn toggle_maximize() -> Message {
         Message::Window(Self::ToggleMaximize)
+    }
+    pub const fn close() -> Message {
+        Message::Window(Self::Close)
     }
     pub const fn fps_update(fps: f32) -> Message {
         Message::Window(Self::FpsUpdate(fps))
@@ -80,7 +84,7 @@ impl Window {
                     self.fps = Some(v);
                 }
             }
-            Event::TrafficAction(_) | Event::Drag | Event::ToggleMaximize => {
+            Event::TrafficAction(_) | Event::Drag | Event::ToggleMaximize | Event::Close => {
                 // 这些事件由 Host 处理，不需要更新 Window 状态
             }
         }

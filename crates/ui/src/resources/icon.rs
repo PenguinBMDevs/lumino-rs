@@ -5,6 +5,26 @@ use std::collections::HashMap;
 
 pub use Icon::*;
 
+/// 图标加载错误类型
+#[derive(Debug, Clone)]
+pub enum IconError {
+    IconNotInCache(Icon),
+    SvgParseError(String),
+    PixmapCreationError,
+}
+
+impl std::fmt::Display for IconError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IconError::IconNotInCache(icon) => write!(f, "图标 {:?} 不在缓存中", icon),
+            IconError::SvgParseError(msg) => write!(f, "SVG 解析错误: {}", msg),
+            IconError::PixmapCreationError => write!(f, "无法创建 pixmap"),
+        }
+    }
+}
+
+impl std::error::Error for IconError {}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
     AngleRight,
@@ -43,31 +63,82 @@ static ICON_CACHE: Lazy<HashMap<Icon, IconData>> = Lazy::new(|| {
         Icon::Eye,
         Icon::EyeSlash,
     ] {
-        let data = render_svg_to_data(icon);
-        map.insert(icon, data);
+        match render_svg_to_data(icon) {
+            Ok(data) => {
+                map.insert(icon, data);
+            }
+            Err(e) => {
+                tracing::error!("加载图标 {:?} 失败: {}", icon, e);
+            }
+        }
     }
     map
 });
 
-pub fn view(icon: Icon) -> crate::Element<'static> {
-    let data = ICON_CACHE.get(&icon).expect("Icon not in cache");
-    let handle = Handle::from_rgba(data.width, data.height, data.rgba.clone());
-    Image::new(handle)
-        .filter_method(iced_widget::image::FilterMethod::Nearest)
-        .into()
+/// 获取图标数据，如果不在缓存中则返回错误
+fn get_icon_data(icon: Icon) -> Result<&'static IconData, IconError> {
+    ICON_CACHE
+        .get(&icon)
+        .ok_or(IconError::IconNotInCache(icon))
 }
 
+/// 渲染图标（可能 panic，仅用于向后兼容）
+pub fn view(icon: Icon) -> crate::Element<'static> {
+    match view_safe(icon) {
+        Ok(element) => element,
+        Err(e) => {
+            tracing::error!("渲染图标失败: {}", e);
+            // 返回一个空的占位符元素
+            iced_widget::Space::new()
+                .width(iced_core::Length::Fixed(24.0))
+                .height(iced_core::Length::Fixed(24.0))
+                .into()
+        }
+    }
+}
+
+/// 安全地渲染图标，返回 Result
+pub fn view_safe(icon: Icon) -> Result<crate::Element<'static>, IconError> {
+    let data = get_icon_data(icon)?;
+    let handle = Handle::from_rgba(data.width, data.height, data.rgba.clone());
+    Ok(Image::new(handle)
+        .filter_method(iced_widget::image::FilterMethod::Nearest)
+        .into())
+}
+
+/// 渲染指定尺寸的图标（可能 panic，仅用于向后兼容）
 pub fn view_with_size(icon: Icon, width: u32, height: u32) -> crate::Element<'static> {
     view_with_size_and_theme(icon, width, height, None)
 }
 
+/// 渲染指定尺寸和主题的图标（可能 panic，仅用于向后兼容）
 pub fn view_with_size_and_theme(
     icon: Icon,
     width: u32,
     height: u32,
     theme: Option<&crate::Theme>,
 ) -> crate::Element<'static> {
-    let data = ICON_CACHE.get(&icon).expect("Icon not in cache");
+    match view_with_size_and_theme_safe(icon, width, height, theme) {
+        Ok(element) => element,
+        Err(e) => {
+            tracing::error!("渲染图标失败: {}", e);
+            // 返回一个空的占位符元素
+            iced_widget::Space::new()
+                .width(iced_core::Length::Fixed(width as f32))
+                .height(iced_core::Length::Fixed(height as f32))
+                .into()
+        }
+    }
+}
+
+/// 安全地渲染指定尺寸和主题的图标，返回 Result
+pub fn view_with_size_and_theme_safe(
+    icon: Icon,
+    width: u32,
+    height: u32,
+    theme: Option<&crate::Theme>,
+) -> Result<crate::Element<'static>, IconError> {
+    let data = get_icon_data(icon)?;
     let is_dark = theme
         .map(|t| t.extended_palette().background.weakest.color.r < 0.5)
         .unwrap_or(true);
@@ -79,14 +150,14 @@ pub fn view_with_size_and_theme(
         data.rgba.clone()
     };
 
-    // 修复：使用缓存数据的原始尺寸创建 Handle，通过 Image widget 的 width/height 进行显示缩放
+    // 使用缓存数据的原始尺寸创建 Handle，通过 Image widget 的 width/height 进行显示缩放
     let handle = Handle::from_rgba(data.width, data.height, rgba);
 
-    Image::new(handle)
+    Ok(Image::new(handle)
         .width(width)
         .height(height)
         .filter_method(iced_widget::image::FilterMethod::Nearest)
-        .into()
+        .into())
 }
 
 fn invert_rgba(rgba: &[u8]) -> Vec<u8> {
@@ -101,7 +172,7 @@ fn invert_rgba(rgba: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-fn render_svg_to_data(icon: Icon) -> IconData {
+fn render_svg_to_data(icon: Icon) -> Result<IconData, IconError> {
     let svg_data = bytes(icon);
     let size = match icon {
         Icon::WindowMin | Icon::WindowMax | Icon::WindowUnMax | Icon::WindowClose => 20,
@@ -110,9 +181,14 @@ fn render_svg_to_data(icon: Icon) -> IconData {
     render_svg(svg_data, size, size)
 }
 
-fn render_svg(svg_data: &[u8], target_width: u32, target_height: u32) -> IconData {
+fn render_svg(
+    svg_data: &[u8],
+    target_width: u32,
+    target_height: u32,
+) -> Result<IconData, IconError> {
     let options = usvg::Options::default();
-    let tree = usvg::Tree::from_data(svg_data, &options).expect("Failed to parse SVG");
+    let tree =
+        usvg::Tree::from_data(svg_data, &options).map_err(|e| IconError::SvgParseError(e.to_string()))?;
 
     let svg_size = tree.size();
     let svg_width = svg_size.width() as f32;
@@ -124,18 +200,18 @@ fn render_svg(svg_data: &[u8], target_width: u32, target_height: u32) -> IconDat
 
     let transform = tiny_skia::Transform::from_scale(scale, scale);
 
-    let mut pixmap =
-        tiny_skia::Pixmap::new(target_width, target_height).expect("Failed to create pixmap");
+    let mut pixmap = tiny_skia::Pixmap::new(target_width, target_height)
+        .ok_or(IconError::PixmapCreationError)?;
     pixmap.fill(tiny_skia::Color::from_rgba8(0, 0, 0, 0));
 
     resvg::render(&tree, transform, &mut pixmap.as_mut());
 
     let rgba = pixmap.data().to_vec();
-    IconData {
+    Ok(IconData {
         rgba,
         width: target_width,
         height: target_height,
-    }
+    })
 }
 
 fn bytes(icon: Icon) -> &'static [u8] {

@@ -345,6 +345,12 @@ impl Host {
                 if let message::Message::Window(window::Event::TrafficAction(action)) = &message {
                     self.pending_window_action = Some(action.clone());
                 }
+                if let message::Message::Window(window::Event::ToggleMaximize) = &message {
+                    self.pending_window_action = Some(window::TrafficAction::ToggleMaximize);
+                }
+                if let message::Message::Window(window::Event::Close) = &message {
+                    self.pending_window_action = Some(window::TrafficAction::Close);
+                }
                 if let message::Message::Window(window::Event::Drag) = &message {
                     self.pending_drag = true;
                 }

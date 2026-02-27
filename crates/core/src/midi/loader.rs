@@ -1,5 +1,5 @@
 use crate::ParsedMidi;
-use crate::{DmsInfo, ParsedDms, TrackBasedCache, event_cache::TrackEvents};
+use crate::{DmsInfo, ParsedDms, TrackBasedCache, cache_utils::compute_cache_key, event_cache::TrackEvents};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::sync::mpsc;
@@ -73,15 +73,6 @@ fn compression_worker(rx: mpsc::Receiver<CompressionTask>) {
             tracing::warn!("缓存音轨 {} 失败: {}", task.track_idx, e);
         }
     }
-}
-
-fn compute_cache_key(path: &std::path::Path, file_modified: std::time::SystemTime) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    path.to_string_lossy().hash(&mut hasher);
-    file_modified.hash(&mut hasher);
-    hasher.finish()
 }
 
 pub fn load_midi_info_with_cache(

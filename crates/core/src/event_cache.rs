@@ -1,7 +1,6 @@
+use crate::cache_utils::compute_cache_key;
 use std::collections::HashMap;
-use std::collections::hash_map::DefaultHasher;
 use std::fs::{self, File};
-use std::hash::{Hash, Hasher};
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
@@ -56,13 +55,6 @@ impl TrackBasedCache {
         Ok(Self::new(cache_dir))
     }
 
-    fn compute_cache_key(path: &Path, file_modified: std::time::SystemTime) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        path.to_string_lossy().hash(&mut hasher);
-        file_modified.hash(&mut hasher);
-        hasher.finish()
-    }
-
     fn get_cache_dir(&self, key: u64) -> PathBuf {
         self.cache_dir.join(format!("{:016x}", key))
     }
@@ -79,7 +71,7 @@ impl TrackBasedCache {
     pub fn get_header(&self, source_path: &Path) -> std::io::Result<Option<TrackCacheHeader>> {
         let metadata = fs::metadata(source_path)?;
         let modified = metadata.modified()?;
-        let key = Self::compute_cache_key(source_path, modified);
+        let key = compute_cache_key(source_path, modified);
         let header_path = self.get_header_path(key);
 
         if !header_path.exists() {
@@ -99,7 +91,7 @@ impl TrackBasedCache {
     ) -> std::io::Result<Option<TrackEvents>> {
         let metadata = fs::metadata(source_path)?;
         let modified = metadata.modified()?;
-        let key = Self::compute_cache_key(source_path, modified);
+        let key = compute_cache_key(source_path, modified);
         let track_path = self.get_track_path(key, track_index);
 
         if !track_path.exists() {
@@ -126,7 +118,7 @@ impl TrackBasedCache {
 
         let metadata = fs::metadata(source_path)?;
         let modified = metadata.modified()?;
-        let key = Self::compute_cache_key(source_path, modified);
+        let key = compute_cache_key(source_path, modified);
         let cache_dir = self.get_cache_dir(key);
 
         if cache_dir.exists() {
@@ -220,7 +212,7 @@ impl TrackBasedCache {
 
         let metadata = fs::metadata(source_path)?;
         let modified = metadata.modified()?;
-        let key = Self::compute_cache_key(source_path, modified);
+        let key = compute_cache_key(source_path, modified);
         let cache_dir = self.get_cache_dir(key);
 
         if !cache_dir.exists() {
@@ -247,7 +239,7 @@ impl TrackBasedCache {
     ) -> std::io::Result<()> {
         let metadata = fs::metadata(source_path)?;
         let modified = metadata.modified()?;
-        let key = Self::compute_cache_key(source_path, modified);
+        let key = compute_cache_key(source_path, modified);
         let _cache_dir = self.get_cache_dir(key);
 
         let header = TrackCacheHeader {
@@ -268,7 +260,7 @@ impl TrackBasedCache {
     pub fn invalidate(&self, source_path: &Path) -> std::io::Result<()> {
         let metadata = fs::metadata(source_path)?;
         let modified = metadata.modified()?;
-        let key = Self::compute_cache_key(source_path, modified);
+        let key = compute_cache_key(source_path, modified);
         let cache_dir = self.get_cache_dir(key);
 
         if cache_dir.exists() {
