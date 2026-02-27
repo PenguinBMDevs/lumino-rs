@@ -302,11 +302,28 @@ impl Host {
     ) {
         use winit::event::WindowEvent::*;
 
-        match event {
+        match &event {
             Resized(_) => self
                 .root
                 .update(message::Window::maximized(self.window.is_maximized())),
-            Focused(r) => self.root.update(message::Window::focused(r)),
+            Focused(r) => self.root.update(message::Window::focused(*r)),
+            KeyboardInput { event, .. } => {
+                // 处理键盘事件
+                if event.state == winit::event::ElementState::Pressed {
+                    use winit::keyboard::{KeyCode, PhysicalKey};
+                    match event.physical_key {
+                        PhysicalKey::Code(KeyCode::Delete)
+                        | PhysicalKey::Code(KeyCode::Backspace) => {
+                            // 发送删除音符的消息
+                            self.root
+                                .editor
+                                .handle_action(message::EditorAction::DeletePressed);
+                            self.window.request_redraw();
+                        }
+                        _ => {}
+                    }
+                }
+            }
             _ => (),
         }
 
@@ -418,6 +435,135 @@ impl Host {
     pub fn set_current_track(&mut self, track_idx: usize) {
         self.root.set_current_track(track_idx);
         self.cache = std::mem::take(&mut self.cache);
+        self.window.request_redraw();
+    }
+
+    /// 加载指定音轨的音符到编辑器（用于 MIDI 文件）
+    /// 这会同时更新当前显示的音符和音轨存储，以便洋葱皮能显示
+    pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32)]) {
+        self.root.load_track_notes(track_idx, notes);
+        self.cache = std::mem::take(&mut self.cache);
+        self.window.request_redraw();
+    }
+
+    /// 预加载音轨音符到 track_notes（仅用于洋葱皮，不显示）
+    ///
+    /// # Arguments
+    /// * `track_idx` - 音轨索引
+    /// * `notes` - 音符列表，格式为 (tick, key, length)
+    pub fn load_track_notes_for_onion_skin(&mut self, track_idx: usize, notes: &[(f32, u8, f32)]) {
+        tracing::debug!(
+            "UI::load_track_notes_for_onion_skin: track_idx={}, notes_count={}",
+            track_idx,
+            notes.len()
+        );
+
+        // 直接保存到 editor.track_notes，不更新当前显示
+        let mut track_notes = Vec::with_capacity(notes.len());
+        for (tick, key, length) in notes {
+            use crate::editor::note::Note;
+            let editor_key = *key as u16;
+            track_notes.push(Note::new(*tick, editor_key, *length));
+        }
+
+        if !track_notes.is_empty() {
+            self.root.editor.track_notes.insert(track_idx, track_notes);
+            tracing::debug!(
+                "UI::load_track_notes_for_onion_skin: saved {} notes to track_notes[{}]",
+                notes.len(),
+                track_idx
+            );
+        }
+
+        // 不需要重绘，因为这些音符是用于洋葱皮的，不是当前显示的
+    }
+
+    // ========== 洋葱皮 API ==========
+
+    /// 启用洋葱皮功能
+    pub fn enable_onion_skin(&mut self) {
+        self.root.editor.enable_onion_skin();
+        self.window.request_redraw();
+    }
+
+    /// 禁用洋葱皮功能
+    pub fn disable_onion_skin(&mut self) {
+        self.root.editor.disable_onion_skin();
+        self.window.request_redraw();
+    }
+
+    /// 切换洋葱皮开关状态
+    pub fn toggle_onion_skin(&mut self) {
+        self.root.editor.toggle_onion_skin();
+        self.window.request_redraw();
+    }
+
+    /// 检查洋葱皮是否启用
+    pub fn is_onion_skin_enabled(&self) -> bool {
+        self.root.editor.is_onion_skin_enabled()
+    }
+
+    /// 设置音轨的洋葱皮颜色
+    ///
+    /// # Arguments
+    /// * `track_idx` - 音轨索引
+    /// * `r`, `g`, `b` - RGB 颜色分量 (0.0 - 1.0)
+    /// * `a` - 透明度 (0.0 - 1.0)，可选，默认为当前透明度
+    pub fn set_onion_skin_color(
+        &mut self,
+        track_idx: usize,
+        r: f32,
+        g: f32,
+        b: f32,
+        a: Option<f32>,
+    ) {
+        let color = if let Some(alpha) = a {
+            iced_core::Color::from_rgba(r, g, b, alpha)
+        } else {
+            let alpha = self.root.editor.onion_skin_opacity();
+            iced_core::Color::from_rgba(r, g, b, alpha)
+        };
+        self.root.editor.set_onion_skin_color(track_idx, color);
+        self.window.request_redraw();
+    }
+
+    /// 获取音轨的洋葱皮颜色
+    ///
+    /// 返回 (r, g, b, a) 元组
+    pub fn get_onion_skin_color(&self, track_idx: usize) -> (f32, f32, f32, f32) {
+        let color = self.root.editor.get_onion_skin_color(track_idx);
+        (color.r, color.g, color.b, color.a)
+    }
+
+    /// 设置洋葱皮透明度
+    ///
+    /// # Arguments
+    /// * `opacity` - 透明度值，范围 0.0（完全透明）到 1.0（完全不透明）
+    pub fn set_onion_skin_opacity(&mut self, opacity: f32) {
+        self.root.editor.set_onion_skin_opacity(opacity);
+        self.window.request_redraw();
+    }
+
+    /// 获取洋葱皮透明度
+    pub fn onion_skin_opacity(&self) -> f32 {
+        self.root.editor.onion_skin_opacity()
+    }
+
+    /// 设置是否显示所有音轨的洋葱皮
+    pub fn set_onion_skin_show_all(&mut self, show_all: bool) {
+        self.root.editor.set_onion_skin_show_all(show_all);
+        self.window.request_redraw();
+    }
+
+    /// 添加音轨到洋葱皮显示列表
+    pub fn add_onion_skin_track(&mut self, track_idx: usize) {
+        self.root.editor.add_onion_skin_track(track_idx);
+        self.window.request_redraw();
+    }
+
+    /// 从洋葱皮显示列表移除音轨
+    pub fn remove_onion_skin_track(&mut self, track_idx: usize) {
+        self.root.editor.remove_onion_skin_track(track_idx);
         self.window.request_redraw();
     }
 }

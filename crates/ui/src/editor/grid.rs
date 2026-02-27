@@ -16,7 +16,24 @@ impl<'a> PianoRollGrid<'a> {
 }
 
 /// 存储 Canvas 状态的类型
-pub type CanvasState = Option<iced_core::Point>;
+pub struct CanvasState {
+    /// 鼠标位置
+    position: Option<iced_core::Point>,
+    /// 上次点击时间（用于双击检测）
+    last_click_time: std::time::Instant,
+    /// 上次点击位置
+    last_click_pos: Option<iced_core::Point>,
+}
+
+impl Default for CanvasState {
+    fn default() -> Self {
+        Self {
+            position: None,
+            last_click_time: std::time::Instant::now(),
+            last_click_pos: None,
+        }
+    }
+}
 
 /// 实现绘制程序接口 - 只绘制网格，不绘制音符
 impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
@@ -36,7 +53,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         // 同时更新内部状态（鼠标位置）
         if let Some(position) = cursor.position() {
             let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
-            *state = Some(local_pos);
+            state.position = Some(local_pos);
         }
 
         match event {
@@ -44,9 +61,32 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
                 if let Some(position) = cursor.position() {
                     let local_pos =
                         iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
-                    return Some(canvas::Action::publish(Message::EditorAction(
-                        EditorAction::Pressed(local_pos),
-                    )));
+
+                    // 检测双击（300ms 内两次点击且位置接近）
+                    let now = std::time::Instant::now();
+                    let is_double_click = if let Some(last_pos) = state.last_click_pos {
+                        let time_delta = now.duration_since(state.last_click_time).as_millis();
+                        let pos_delta = ((local_pos.x - last_pos.x).powi(2)
+                            + (local_pos.y - last_pos.y).powi(2))
+                        .sqrt();
+                        time_delta < 300 && pos_delta < 10.0
+                    } else {
+                        false
+                    };
+
+                    if is_double_click {
+                        // 双击事件
+                        return Some(canvas::Action::publish(Message::EditorAction(
+                            EditorAction::DoubleClicked(local_pos),
+                        )));
+                    } else {
+                        // 单击事件
+                        state.last_click_time = now;
+                        state.last_click_pos = Some(local_pos);
+                        return Some(canvas::Action::publish(Message::EditorAction(
+                            EditorAction::Pressed(local_pos),
+                        )));
+                    }
                 }
             }
             Event::Mouse(mouse::Event::CursorMoved { position }) => {

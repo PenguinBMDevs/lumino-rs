@@ -5,7 +5,14 @@ pub enum EditorAction {
     Pressed(iced_core::Point),
     Moved(iced_core::Point),
     Released,
-    Scrolled { delta_x: f32, delta_y: f32 },
+    Scrolled {
+        delta_x: f32,
+        delta_y: f32,
+    },
+    /// 双击事件
+    DoubleClicked(iced_core::Point),
+    /// 删除键按下（Delete 或 Backspace）
+    DeletePressed,
 }
 
 #[derive(Debug, Clone)]

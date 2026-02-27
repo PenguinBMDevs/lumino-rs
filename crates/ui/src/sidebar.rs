@@ -12,6 +12,8 @@ pub enum Event {
     TrackSelected(usize),
     TrackMuteToggled(usize),
     TrackOnionSkinToggled(usize),
+    AddTrack,
+    AddTrackMenuToggled,
 }
 
 impl Event {
@@ -33,6 +35,14 @@ impl Event {
 
     pub const fn track_onion_skin_toggled(id: usize) -> Message {
         Message::Sidebar(Self::TrackOnionSkinToggled(id))
+    }
+
+    pub const fn add_track() -> Message {
+        Message::Sidebar(Self::AddTrack)
+    }
+
+    pub const fn add_track_menu_toggled() -> Message {
+        Message::Sidebar(Self::AddTrackMenuToggled)
     }
 }
 
@@ -71,6 +81,7 @@ pub struct Sidebar {
     panel_route: Route,
     pub tracks: Vec<Track>,
     pub selected_track: usize,
+    pub add_track_menu_open: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -105,12 +116,19 @@ impl Sidebar {
                 },
             ],
             selected_track: 0,
+            add_track_menu_open: false,
         }
     }
 
     pub fn view(&self, window: &window::Window) -> Element<'_> {
         let panel = if self.panel_visible {
-            panel::view(self.panel_route, &self.tracks, self.selected_track, window)
+            panel::view(
+                self.panel_route,
+                &self.tracks,
+                self.selected_track,
+                self.add_track_menu_open,
+                window,
+            )
         } else {
             iced_widget::container(iced_widget::space()).width(0).into()
         };
@@ -139,6 +157,7 @@ impl Sidebar {
                 }
             }
             TrackSelected(id) => {
+                tracing::debug!("Sidebar: TrackSelected id={}", id);
                 self.selected_track = id;
             }
             TrackMuteToggled(id) => {
@@ -150,6 +169,22 @@ impl Sidebar {
                 if let Some(track) = self.tracks.iter_mut().find(|t| t.id == id) {
                     track.is_onion_skin_on = !track.is_onion_skin_on;
                 }
+            }
+            AddTrack => {
+                // 添加新音轨
+                let new_id = self.tracks.len();
+                self.tracks.push(Track {
+                    id: new_id,
+                    name: format!("Track {}", new_id),
+                    is_conductor: false,
+                    is_muted: false,
+                    is_onion_skin_on: true,
+                });
+                self.selected_track = new_id;
+                self.add_track_menu_open = false;
+            }
+            AddTrackMenuToggled => {
+                self.add_track_menu_open = !self.add_track_menu_open;
             }
         }
         self.panel_visible != prev_visible
@@ -170,9 +205,11 @@ impl Sidebar {
 
     /// 从 MIDI 数据更新音轨列表
     pub fn update_tracks_from_midi(&mut self, track_infos: &[(usize, Option<String>, u64)]) {
+        tracing::info!("update_tracks_from_midi: {} tracks", track_infos.len());
         self.tracks.clear();
         for (idx, (track_idx, name, _note_count)) in track_infos.iter().enumerate() {
             let track_name = name.as_deref().unwrap_or("Unknown");
+            tracing::debug!("  track {}: id={}, name={}", idx, track_idx, track_name);
             self.tracks.push(Track {
                 id: *track_idx,
                 name: format!("{:02} {}", idx + 1, track_name),
@@ -184,6 +221,7 @@ impl Sidebar {
         // 如果有音轨，默认选择第一个
         if !self.tracks.is_empty() {
             self.selected_track = self.tracks[0].id;
+            tracing::info!("default selected_track = {}", self.selected_track);
         }
     }
 
@@ -192,5 +230,16 @@ impl Sidebar {
         self.selected_track = track_idx;
         // 确保选中的音轨在面板中可见
         self.panel_visible = true;
+    }
+
+    /// 获取所有音轨的洋葱皮开关状态
+    ///
+    /// 返回一个 HashMap，key 是音轨 ID，value 是洋葱皮是否启用
+    pub fn get_onion_skin_states(&self) -> std::collections::HashMap<usize, bool> {
+        let mut states = std::collections::HashMap::new();
+        for track in &self.tracks {
+            states.insert(track.id, track.is_onion_skin_on);
+        }
+        states
     }
 }

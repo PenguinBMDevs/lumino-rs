@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use lumino_core::event;
 use lumino_core::ParsedMidi;
+use lumino_core::event;
 
 use super::RunnerInner;
 
@@ -96,10 +96,24 @@ impl RunnerInner {
             }
             TrackSelected(track_idx) => {
                 tracing::info!("切换到音轨: {}", track_idx);
-                if let Some(memory_manager_arc) = self.current_midi.as_ref().and_then(|p| p.memory_manager.clone()) {
+                if let Some(memory_manager_arc) = self
+                    .current_midi
+                    .as_ref()
+                    .and_then(|p| p.memory_manager.clone())
+                {
+                    tracing::debug!("TrackSelected: memory_manager_arc found");
                     if let Ok(mut memory_manager) = memory_manager_arc.lock() {
+                        tracing::debug!("TrackSelected: lock acquired");
                         self.load_track_to_editor(&mut memory_manager, track_idx);
+                    } else {
+                        tracing::warn!("TrackSelected: failed to lock memory_manager");
                     }
+                } else {
+                    // 没有加载 MIDI 文件，让编辑器处理音轨切换
+                    tracing::debug!(
+                        "TrackSelected: no MIDI loaded, letting editor handle track switch"
+                    );
+                    self.ui.set_current_track(track_idx);
                 }
             }
             _ => {
@@ -486,13 +500,14 @@ impl RunnerInner {
             return;
         };
 
-        let mut memory_manager: std::sync::MutexGuard<lumino_core::MidiMemoryManager> = match memory_manager_arc.lock() {
-            Ok(mgr) => mgr,
-            Err(e) => {
-                tracing::error!("无法锁定 memory_manager: {}", e);
-                return;
-            }
-        };
+        let mut memory_manager: std::sync::MutexGuard<lumino_core::MidiMemoryManager> =
+            match memory_manager_arc.lock() {
+                Ok(mgr) => mgr,
+                Err(e) => {
+                    tracing::error!("无法锁定 memory_manager: {}", e);
+                    return;
+                }
+            };
 
         // 收集所有音轨信息
         let mut track_infos = Vec::new();
@@ -525,8 +540,20 @@ impl RunnerInner {
         // 更新 UI 音轨列表
         self.ui.update_tracks(&track_infos);
 
-        // 加载第一个有音符的音轨到编辑器
-        if let Some((first_track_idx, _, _)) = track_infos.iter().find(|(_, _, note_count)| *note_count > 0) {
+        // 预加载所有音轨的音符到 track_notes（供洋葱皮使用）
+        tracing::info!("Pre-loading all tracks for onion skin...");
+        for (track_idx, _, note_count) in &track_infos {
+            if *note_count > 0 {
+                // 加载音符但不切换到该音轨（只保存到 track_notes）
+                self.preload_track_for_onion_skin(&mut memory_manager, *track_idx);
+            }
+        }
+
+        // 加载第一个有音符的音轨到编辑器（实际显示）
+        if let Some((first_track_idx, _, _)) = track_infos
+            .iter()
+            .find(|(_, _, note_count)| *note_count > 0)
+        {
             self.load_track_to_editor(&mut memory_manager, *first_track_idx);
         }
 
@@ -543,8 +570,23 @@ impl RunnerInner {
     ) {
         use lumino_core::MidiEvent;
 
+        tracing::info!("load_track_to_editor: track_idx={}", track_idx);
+
         let events = match memory_manager.get_track_events_full(track_idx) {
-            Ok(evs) => evs,
+            Ok(events) => {
+                tracing::info!("  got {} events from track {}", events.len(), track_idx);
+                // 统计音符事件
+                let note_on_count = events
+                    .iter()
+                    .filter(|e| matches!(e, MidiEvent::NoteOn { .. }))
+                    .count();
+                let note_off_count = events
+                    .iter()
+                    .filter(|e| matches!(e, MidiEvent::NoteOff { .. }))
+                    .count();
+                tracing::info!("  NoteOn: {}, NoteOff: {}", note_on_count, note_off_count);
+                events
+            }
             Err(e) => {
                 tracing::error!("加载音轨 {} 失败: {}", track_idx, e);
                 return;
@@ -552,12 +594,19 @@ impl RunnerInner {
         };
 
         // 构建音符列表（配对 NoteOn 和 NoteOff）
-        let mut active_notes: std::collections::HashMap<(u8, u8), u32> = std::collections::HashMap::new();
+        let mut active_notes: std::collections::HashMap<(u8, u8), u32> =
+            std::collections::HashMap::new();
         let mut notes = Vec::new();
 
         for event in &events {
             match event {
-                MidiEvent::NoteOn { track: _, tick, channel, key, velocity } => {
+                MidiEvent::NoteOn {
+                    track: _,
+                    tick,
+                    channel,
+                    key,
+                    velocity,
+                } => {
                     if *velocity > 0 {
                         // 记录音符开始
                         active_notes.insert((*channel, *key), *tick);
@@ -567,7 +616,13 @@ impl RunnerInner {
                         notes.push((start_tick as f32, *key, length));
                     }
                 }
-                MidiEvent::NoteOff { track: _, tick, channel, key, .. } => {
+                MidiEvent::NoteOff {
+                    track: _,
+                    tick,
+                    channel,
+                    key,
+                    ..
+                } => {
                     if let Some(start_tick) = active_notes.remove(&(*channel, *key)) {
                         let length = tick.saturating_sub(start_tick) as f32;
                         notes.push((start_tick as f32, *key, length));
@@ -584,10 +639,82 @@ impl RunnerInner {
             notes.push((start_tick as f32, key, length));
         }
 
-        // 更新编辑器音符
-        self.ui.load_notes(&notes);
-        self.ui.set_current_track(track_idx);
+        // 更新编辑器音符（使用新的函数，同时保存到 track_notes 供洋葱皮使用）
+        self.ui.load_track_notes(track_idx, &notes);
 
         tracing::info!("音轨 {} 已加载，共 {} 个音符", track_idx, notes.len());
+    }
+
+    /// 预加载音轨音符到 track_notes（用于洋葱皮，不切换到该音轨）
+    fn preload_track_for_onion_skin(
+        &mut self,
+        memory_manager: &mut lumino_core::MidiMemoryManager,
+        track_idx: usize,
+    ) {
+        use lumino_core::MidiEvent;
+
+        tracing::debug!("Preloading track {} for onion skin", track_idx);
+
+        let events = match memory_manager.get_track_events_full(track_idx) {
+            Ok(events) => events,
+            Err(e) => {
+                tracing::warn!("预加载音轨 {} 失败: {}", track_idx, e);
+                return;
+            }
+        };
+
+        // 构建音符列表（配对 NoteOn 和 NoteOff）
+        let mut active_notes: std::collections::HashMap<(u8, u8), u32> =
+            std::collections::HashMap::new();
+        let mut notes = Vec::new();
+
+        for event in &events {
+            match event {
+                MidiEvent::NoteOn {
+                    track: _,
+                    tick,
+                    channel,
+                    key,
+                    velocity,
+                } => {
+                    if *velocity > 0 {
+                        active_notes.insert((*channel, *key), *tick);
+                    } else if let Some(start_tick) = active_notes.remove(&(*channel, *key)) {
+                        let length = tick.saturating_sub(start_tick) as f32;
+                        notes.push((start_tick as f32, *key, length));
+                    }
+                }
+                MidiEvent::NoteOff {
+                    track: _,
+                    tick,
+                    channel,
+                    key,
+                    ..
+                } => {
+                    if let Some(start_tick) = active_notes.remove(&(*channel, *key)) {
+                        let length = tick.saturating_sub(start_tick) as f32;
+                        notes.push((start_tick as f32, *key, length));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // 处理未关闭的音符
+        let track_end_tick = events.iter().map(|e| e.tick()).max().unwrap_or(0);
+        for ((channel, key), start_tick) in active_notes {
+            let length = track_end_tick.saturating_sub(start_tick) as f32;
+            notes.push((start_tick as f32, key, length));
+        }
+
+        // 只保存到 track_notes，不切换到该音轨
+        if !notes.is_empty() {
+            self.ui.load_track_notes_for_onion_skin(track_idx, &notes);
+            tracing::debug!(
+                "Preloaded track {} with {} notes for onion skin",
+                track_idx,
+                notes.len()
+            );
+        }
     }
 }

@@ -1,5 +1,6 @@
 pub mod grid;
 pub mod note;
+pub mod onion_skin;
 pub mod scrollbar;
 pub mod scrollbar_widget;
 pub mod state;
@@ -14,6 +15,7 @@ use lumino_gfx::NoteInstance;
 
 pub use grid::PianoRollGrid;
 use note::Note;
+pub use onion_skin::OnionSkinConfig;
 pub use state::ViewState;
 
 #[derive(Debug, Clone, Default)]
@@ -72,6 +74,14 @@ pub struct Editor {
     pub edit_state: EditState,
     pub hover_state: Option<(usize, HitType)>,
     pub pending_audio_actions: Vec<AudioAction>,
+
+    /// 当前编辑的音轨索引
+    pub current_track: usize,
+    /// 按音轨存储的音符（用于无 MIDI 文件时的多音轨编辑）
+    pub track_notes: std::collections::HashMap<usize, Vec<Note>>,
+
+    /// 洋葱皮配置
+    onion_skin_config: OnionSkinConfig,
 }
 
 impl Editor {
@@ -88,6 +98,9 @@ impl Editor {
             edit_state: EditState::Idle,
             hover_state: None,
             pending_audio_actions: Vec::new(),
+            current_track: 0,
+            track_notes: std::collections::HashMap::new(),
+            onion_skin_config: OnionSkinConfig::new(),
         };
         editor.max_scroll_x = editor.state.total_ticks as f32 * editor.state.zoom_x;
         editor.max_scroll_y = editor.state.visible_key_count as f32 * editor.state.zoom_y;
@@ -271,6 +284,14 @@ impl Editor {
                         };
                         let length = length.max(self.state.snap_precision);
                         self.notes.push(Note::new(tick, key, length));
+                        // 保存到当前音轨的存储
+                        self.track_notes
+                            .insert(self.current_track, self.notes.clone());
+                        tracing::debug!(
+                            "Editor: saved {} notes to track {}",
+                            self.notes.len(),
+                            self.current_track
+                        );
                     }
                     EditState::PendingDrag { .. } => {
                         // 只是点击，没有拖动，保持音符不变
@@ -287,6 +308,20 @@ impl Editor {
                 if delta_x != 0.0 {
                     let new_scroll_x = self.state.scroll_x - delta_x;
                     self.set_scroll_x(new_scroll_x);
+                }
+            }
+            EditorAction::DoubleClicked(pos) => {
+                // 双击删除鼠标位置下的音符
+                if self.is_inside_canvas(pos) {
+                    if let Some((index, _)) = self.hit_test_note(pos) {
+                        self.delete_note_by_index(index);
+                    }
+                }
+            }
+            EditorAction::DeletePressed => {
+                // 删除悬停的音符（如果有）
+                if let Some((index, _)) = self.hover_state {
+                    self.delete_note_by_index(index);
                 }
             }
         }
@@ -326,6 +361,59 @@ impl Editor {
             }
         }
         None
+    }
+
+    /// 删除指定索引的音符
+    ///
+    /// # Arguments
+    /// * `index` - 音符在 notes 列表中的索引
+    pub fn delete_note_by_index(&mut self, index: usize) {
+        if index < self.notes.len() {
+            let note = self.notes.remove(index);
+            tracing::debug!(
+                "Editor: deleted note at index {} (tick={}, key={})",
+                index,
+                note.tick,
+                note.key
+            );
+
+            // 更新当前音轨的存储
+            if !self.notes.is_empty() {
+                self.track_notes
+                    .insert(self.current_track, self.notes.clone());
+            } else {
+                // 如果音符列表为空，从 track_notes 中移除该音轨
+                self.track_notes.remove(&self.current_track);
+            }
+
+            // 清除悬停状态（如果被删除的音符正好是悬停的）
+            if let Some((hover_index, _)) = self.hover_state {
+                if hover_index == index {
+                    self.hover_state = None;
+                } else if hover_index > index {
+                    // 如果被删除的音符在悬停音符之前，调整索引
+                    self.hover_state = Some((hover_index - 1, self.hover_state.unwrap().1));
+                }
+            }
+
+            // 清除网格缓存以强制重绘
+            self.grid_cache.clear();
+        }
+    }
+
+    /// 删除鼠标位置下的音符（如果存在）
+    ///
+    /// # Arguments
+    /// * `pos` - 鼠标位置
+    /// # Returns
+    /// 是否删除了音符
+    pub fn delete_note_at(&mut self, pos: Point) -> bool {
+        if let Some((index, _)) = self.hit_test_note(pos) {
+            self.delete_note_by_index(index);
+            true
+        } else {
+            false
+        }
     }
 
     /// 构建编辑器视图
@@ -605,6 +693,230 @@ impl Editor {
 
     pub fn default_note_length(&self) -> f32 {
         self.state.default_note_length
+    }
+
+    // ========== 音轨管理 ==========
+
+    /// 切换到指定音轨（无 MIDI 文件时使用）
+    pub fn switch_to_track(&mut self, track_idx: usize) {
+        if self.current_track == track_idx {
+            return;
+        }
+
+        tracing::debug!(
+            "Editor: switching from track {} to {}",
+            self.current_track,
+            track_idx
+        );
+
+        // 保存当前音轨的音符
+        if !self.notes.is_empty() {
+            self.track_notes
+                .insert(self.current_track, self.notes.clone());
+            tracing::debug!(
+                "Editor: saved {} notes for track {}",
+                self.notes.len(),
+                self.current_track
+            );
+        }
+
+        // 切换到新音轨
+        self.current_track = track_idx;
+
+        // 加载新音轨的音符
+        self.notes = self
+            .track_notes
+            .get(&track_idx)
+            .cloned()
+            .unwrap_or_default();
+        tracing::debug!(
+            "Editor: loaded {} notes for track {}",
+            self.notes.len(),
+            track_idx
+        );
+
+        // 清除网格缓存以强制重绘
+        self.grid_cache.clear();
+    }
+
+    /// 获取当前音轨索引
+    pub fn current_track(&self) -> usize {
+        self.current_track
+    }
+
+    // ========== 洋葱皮功能 ==========
+
+    /// 获取洋葱皮配置的可变引用
+    pub fn onion_skin_config_mut(&mut self) -> &mut OnionSkinConfig {
+        &mut self.onion_skin_config
+    }
+
+    /// 获取洋葱皮配置的引用
+    pub fn onion_skin_config(&self) -> &OnionSkinConfig {
+        &self.onion_skin_config
+    }
+
+    /// 启用洋葱皮
+    pub fn enable_onion_skin(&mut self) {
+        self.onion_skin_config.enable();
+        self.grid_cache.clear();
+        tracing::debug!("Editor: onion skin enabled");
+    }
+
+    /// 禁用洋葱皮
+    pub fn disable_onion_skin(&mut self) {
+        self.onion_skin_config.disable();
+        self.grid_cache.clear();
+        tracing::debug!("Editor: onion skin disabled");
+    }
+
+    /// 切换洋葱皮开关
+    pub fn toggle_onion_skin(&mut self) {
+        self.onion_skin_config.toggle();
+        self.grid_cache.clear();
+        tracing::debug!(
+            "Editor: onion skin toggled, now {}",
+            if self.onion_skin_config.is_enabled() {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        );
+    }
+
+    /// 检查洋葱皮是否启用
+    pub fn is_onion_skin_enabled(&self) -> bool {
+        self.onion_skin_config.is_enabled()
+    }
+
+    /// 设置音轨的洋葱皮颜色
+    pub fn set_onion_skin_color(&mut self, track_idx: usize, color: iced_core::Color) {
+        self.onion_skin_config.set_track_color(track_idx, color);
+        self.grid_cache.clear();
+    }
+
+    /// 获取音轨的洋葱皮颜色
+    pub fn get_onion_skin_color(&self, track_idx: usize) -> iced_core::Color {
+        self.onion_skin_config.get_track_color(track_idx)
+    }
+
+    /// 设置洋葱皮透明度
+    pub fn set_onion_skin_opacity(&mut self, opacity: f32) {
+        self.onion_skin_config.set_opacity(opacity);
+        self.grid_cache.clear();
+    }
+
+    /// 获取洋葱皮透明度
+    pub fn onion_skin_opacity(&self) -> f32 {
+        self.onion_skin_config.opacity()
+    }
+
+    /// 设置是否显示所有音轨的洋葱皮
+    pub fn set_onion_skin_show_all(&mut self, show_all: bool) {
+        self.onion_skin_config.set_show_all_tracks(show_all);
+        self.grid_cache.clear();
+    }
+
+    /// 添加可见音轨到洋葱皮
+    pub fn add_onion_skin_track(&mut self, track_idx: usize) {
+        self.onion_skin_config.add_visible_track(track_idx);
+        self.grid_cache.clear();
+    }
+
+    /// 从洋葱皮移除音轨
+    pub fn remove_onion_skin_track(&mut self, track_idx: usize) {
+        self.onion_skin_config.remove_visible_track(track_idx);
+        self.grid_cache.clear();
+    }
+
+    /// 获取洋葱皮音符实例（用于其他音轨的音符显示）
+    ///
+    /// # Arguments
+    /// * `track_idx` - 音轨索引
+    /// * `track_onion_enabled` - 该音轨是否启用了洋葱皮开关
+    ///
+    /// # Returns
+    /// 该音轨的音符实例列表，如果不显示则返回空列表
+    pub fn get_onion_skin_instances(
+        &self,
+        track_idx: usize,
+        track_onion_enabled: bool,
+    ) -> Vec<NoteInstance> {
+        // 检查是否应该显示该音轨的洋葱皮
+        if !self
+            .onion_skin_config
+            .should_show_track(track_idx, track_onion_enabled)
+        {
+            return Vec::new();
+        }
+
+        // 不要显示当前音轨的洋葱皮（当前音轨直接显示）
+        if track_idx == self.current_track {
+            return Vec::new();
+        }
+
+        // 获取该音轨的音符
+        let notes = self.track_notes.get(&track_idx);
+        if notes.is_none() || notes.unwrap().is_empty() {
+            return Vec::new();
+        }
+
+        let notes = notes.unwrap();
+        let color = self.onion_skin_config.get_track_color(track_idx);
+        let mut instances = Vec::with_capacity(notes.len());
+
+        for note in notes {
+            let mut instance = note.to_instance(&self.state, color);
+            // 转换为窗口坐标
+            instance.position[0] += self.canvas_offset.x;
+            instance.position[1] += self.canvas_offset.y;
+            instances.push(instance);
+        }
+
+        instances
+    }
+
+    /// 获取所有洋葱皮音符实例（所有其他音轨）
+    ///
+    /// # Arguments
+    /// * `track_onion_states` - 各音轨的洋葱皮开关状态 (track_idx -> is_enabled)
+    ///
+    /// # Returns
+    /// 所有需要显示的洋葱皮音符实例
+    ///
+    /// # Note
+    /// 靠后的音轨（索引大的）会显示在上层（后渲染）
+    pub fn get_all_onion_skin_instances(
+        &self,
+        track_onion_states: &std::collections::HashMap<usize, bool>,
+    ) -> Vec<NoteInstance> {
+        if !self.is_onion_skin_enabled() {
+            return Vec::new();
+        }
+
+        let mut all_instances = Vec::new();
+
+        // 收集需要显示的音轨索引并排序（按索引从小到大）
+        // 这样索引小的先渲染，索引大的后渲染（显示在上层）
+        let mut track_indices: Vec<usize> = track_onion_states
+            .iter()
+            .filter(|(_, is_enabled)| **is_enabled)
+            .map(|(&idx, _)| idx)
+            .filter(|&idx| idx != self.current_track) // 排除当前音轨
+            .collect();
+
+        // 按索引排序，让靠后的音轨（索引大的）后渲染（上层）
+        track_indices.sort();
+
+        for track_idx in track_indices {
+            // 音轨开关状态为 true 时才显示
+            if let Some(&is_enabled) = track_onion_states.get(&track_idx) {
+                let instances = self.get_onion_skin_instances(track_idx, is_enabled);
+                all_instances.extend(instances);
+            }
+        }
+
+        all_instances
     }
 }
 

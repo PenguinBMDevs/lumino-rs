@@ -39,6 +39,8 @@ pub enum Icon {
     Clock,
     Eye,
     EyeSlash,
+    Plus,
+    EllipsisVertical,
 }
 
 struct IconData {
@@ -62,6 +64,8 @@ static ICON_CACHE: Lazy<HashMap<Icon, IconData>> = Lazy::new(|| {
         Icon::Clock,
         Icon::Eye,
         Icon::EyeSlash,
+        Icon::Plus,
+        Icon::EllipsisVertical,
     ] {
         match render_svg_to_data(icon) {
             Ok(data) => {
@@ -77,9 +81,7 @@ static ICON_CACHE: Lazy<HashMap<Icon, IconData>> = Lazy::new(|| {
 
 /// 获取图标数据，如果不在缓存中则返回错误
 fn get_icon_data(icon: Icon) -> Result<&'static IconData, IconError> {
-    ICON_CACHE
-        .get(&icon)
-        .ok_or(IconError::IconNotInCache(icon))
+    ICON_CACHE.get(&icon).ok_or(IconError::IconNotInCache(icon))
 }
 
 /// 渲染图标（可能 panic，仅用于向后兼容）
@@ -187,8 +189,8 @@ fn render_svg(
     target_height: u32,
 ) -> Result<IconData, IconError> {
     let options = usvg::Options::default();
-    let tree =
-        usvg::Tree::from_data(svg_data, &options).map_err(|e| IconError::SvgParseError(e.to_string()))?;
+    let tree = usvg::Tree::from_data(svg_data, &options)
+        .map_err(|e| IconError::SvgParseError(e.to_string()))?;
 
     let svg_size = tree.size();
     let svg_width = svg_size.width() as f32;
@@ -228,5 +230,9 @@ fn bytes(icon: Icon) -> &'static [u8] {
         Icon::Clock => include_bytes!("../../../../resources/icons/sidebar/clock.svg"),
         Icon::Eye => include_bytes!("../../../../resources/icons/sidebar/eye.svg"),
         Icon::EyeSlash => include_bytes!("../../../../resources/icons/sidebar/eye-slash.svg"),
+        Icon::Plus => include_bytes!("../../../../resources/icons/sidebar/plus.svg"),
+        Icon::EllipsisVertical => {
+            include_bytes!("../../../../resources/icons/sidebar/ellipsis-vertical.svg")
+        }
     }
 }

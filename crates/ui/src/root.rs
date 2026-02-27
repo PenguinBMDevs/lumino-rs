@@ -84,6 +84,7 @@ impl Root {
 
                 // 如果是音轨切换，发送 Core 事件通知 Runner 加载对应音轨的音符
                 if let Some(track_idx) = track_selected_idx {
+                    tracing::debug!("Root: emitting TrackSelected event for track {}", track_idx);
                     lumino_core::event::emit(lumino_core::event::Event::Menu(
                         lumino_core::event::menu::Event::File(
                             lumino_core::event::menu::file::Event::TrackSelected(track_idx),
@@ -129,7 +130,7 @@ impl Root {
             // ToggleSettings 消息已废弃，设置通过侧边栏路由切换
             Message::ToggleSettings => {}
             // 显式丢弃它
-            Message::Null => ()
+            Message::Null => (),
         }
     }
 
@@ -173,7 +174,7 @@ impl Root {
         } else {
             // 主窗口
             let is_settings_route = self.sidebar.is_settings_route();
-            
+
             let main_content = column![
                 self.titlebar.view(&self.window),
                 row![
@@ -187,7 +188,7 @@ impl Root {
                             Message::ScrollbarScrolled,
                             Message::ScrollbarScrolledY,
                             |zoom, fixed_ratio| Message::ZoomXChanged { zoom, fixed_ratio },
-                            |zoom, fixed_ratio| Message::ZoomYChanged { zoom, fixed_ratio }
+                            |zoom, fixed_ratio| Message::ZoomYChanged { zoom, fixed_ratio },
                         )
                     }
                 ],
@@ -210,8 +211,16 @@ impl Root {
     /// 获取当前需要绘制的音符实例
     pub fn get_note_instances(&self) -> Vec<NoteInstance> {
         let sidebar_width = self.sidebar.width() as f32;
-        self.editor
-            .get_note_instances(&self.window.theme, sidebar_width)
+        let mut instances = self
+            .editor
+            .get_note_instances(&self.window.theme, sidebar_width);
+
+        // 添加洋葱皮音符（其他音轨的音符）
+        let onion_states = self.sidebar.get_onion_skin_states();
+        let onion_instances = self.editor.get_all_onion_skin_instances(&onion_states);
+        instances.extend(onion_instances);
+
+        instances
     }
 
     /// 获取并清空待处理的音频动作
@@ -256,7 +265,9 @@ impl Root {
         for (tick, key, length) in notes {
             // MIDI key (0-127) 映射到编辑器 key (0-127，反转顺序)
             let editor_key = *key as u16;
-            self.editor.notes.push(Note::new(*tick, editor_key, *length));
+            self.editor
+                .notes
+                .push(Note::new(*tick, editor_key, *length));
         }
         // 清除网格缓存以强制重绘
         self.editor.grid_cache.clear();
@@ -265,5 +276,44 @@ impl Root {
     /// 设置当前音轨
     pub fn set_current_track(&mut self, track_idx: usize) {
         self.sidebar.set_selected_track(track_idx);
+        // 同时更新编辑器的当前音轨（用于无 MIDI 文件时的多音轨编辑）
+        self.editor.switch_to_track(track_idx);
+    }
+
+    /// 加载指定音轨的音符到编辑器（用于 MIDI 文件）
+    /// 这会同时更新当前显示的音符和音轨存储，以便洋葱皮能显示
+    pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32)]) {
+        tracing::debug!(
+            "Root::load_track_notes: track_idx={}, notes_count={}",
+            track_idx,
+            notes.len()
+        );
+
+        // 清空当前音符并加载新音符
+        self.editor.notes.clear();
+        let mut track_notes = Vec::with_capacity(notes.len());
+
+        for (tick, key, length) in notes {
+            let editor_key = *key as u16;
+            let note = Note::new(*tick, editor_key, *length);
+            self.editor.notes.push(note.clone());
+            track_notes.push(note);
+        }
+
+        // 保存到 track_notes，供洋葱皮使用
+        if !track_notes.is_empty() {
+            self.editor.track_notes.insert(track_idx, track_notes);
+            tracing::debug!(
+                "Root::load_track_notes: saved {} notes to track_notes[{}]",
+                notes.len(),
+                track_idx
+            );
+        }
+
+        // 更新当前音轨索引
+        self.editor.current_track = track_idx;
+
+        // 清除网格缓存以强制重绘
+        self.editor.grid_cache.clear();
     }
 }

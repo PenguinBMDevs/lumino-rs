@@ -1,7 +1,11 @@
 use iced_core::{Alignment, Border, Length, Padding};
 use iced_widget::{button, column, container, row, text};
 
-use crate::{Element, Message, Theme, resources::icon::{self, Icon}, window};
+use crate::{
+    Element, Message, Theme,
+    resources::icon::{self, Icon},
+    window,
+};
 
 /// 设置面板相关的常量定义
 mod constants {
@@ -112,7 +116,9 @@ fn render_menu_list<'a>(
     window: &window::Window,
     menu_items: &[(&'static str, Icon)],
 ) -> iced_widget::Container<'a, Message, Theme, crate::Renderer> {
-    let mut col = column![].spacing(SPACING_MENU_CONTENT).padding(PADDING_MENU);
+    let mut col = column![]
+        .spacing(SPACING_MENU_CONTENT)
+        .padding(PADDING_MENU);
 
     for (idx, (label, icon)) in menu_items.iter().enumerate() {
         let menu_item = render_menu_item(settings, window, idx, label, *icon);
@@ -135,18 +141,16 @@ fn render_menu_item<'a>(
 ) -> iced_widget::Button<'a, Message, Theme, crate::Renderer> {
     let is_selected = index == settings.selected_menu_index;
 
-    let icon_el = icon::view_with_size_and_theme(
-        icon,
-        ICON_SIZE_SMALL,
-        ICON_SIZE_SMALL,
-        Some(&window.theme),
-    );
+    let icon_el =
+        icon::view_with_size_and_theme(icon, ICON_SIZE_SMALL, ICON_SIZE_SMALL, Some(&window.theme));
 
     let label_text = render_menu_label(label, is_selected);
     let arrow = render_menu_arrow();
 
     let item_row = row![
-        container(icon_el).width(ICON_CONTAINER_WIDTH).align_x(Alignment::Center),
+        container(icon_el)
+            .width(ICON_CONTAINER_WIDTH)
+            .align_x(Alignment::Center),
         label_text,
         arrow,
     ]
@@ -182,14 +186,12 @@ fn render_menu_label<'a>(
 
 /// 渲染菜单箭头
 fn render_menu_arrow<'a>() -> iced_widget::Text<'a, Theme, crate::Renderer> {
-    text(">")
-        .size(TEXT_SIZE_ARROW)
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            text::Style {
-                color: Some(palette.background.weak.text),
-            }
-        })
+    text(">").size(TEXT_SIZE_ARROW).style(|theme: &Theme| {
+        let palette = theme.extended_palette();
+        text::Style {
+            color: Some(palette.background.weak.text),
+        }
+    })
 }
 
 /// 创建菜单项内边距
@@ -224,8 +226,7 @@ fn create_menu_button_style(
 }
 
 /// 创建菜单容器样式
-fn create_menu_container_style(
-) -> impl Fn(&Theme) -> container::Style + 'static {
+fn create_menu_container_style() -> impl Fn(&Theme) -> container::Style + 'static {
     |theme: &Theme| {
         let palette = theme.extended_palette();
         container::Style {
@@ -322,7 +323,7 @@ fn create_main_container_style() -> impl Fn(&Theme) -> container::Style + 'stati
         let palette = theme.extended_palette();
         container::Style {
             background: Some(iced_core::Background::Color(
-                palette.background.weakest.color
+                palette.background.weakest.color,
             )),
             text_color: Some(palette.background.base.text),
             snap: false,
