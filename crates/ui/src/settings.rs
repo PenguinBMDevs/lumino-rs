@@ -1,11 +1,12 @@
 use iced_core::{Alignment, Border, Length, Padding};
-use iced_widget::{button, column, container, row, text};
+use iced_widget::{button, column, container, pick_list, row, text, text_input};
 
 use crate::{
     Element, Message, Theme,
     resources::icon::{self, Icon},
     window,
 };
+use lumino_core::storage::config::SynthBackend;
 
 /// 设置面板相关的常量定义
 mod constants {
@@ -54,17 +55,24 @@ use constants::*;
 #[derive(Debug, Clone)]
 pub enum Event {
     MenuSelected(usize),
+    SynthBackendChanged(SynthBackend),
+    SoundfontPathChanged(String),
+    BrowseSoundfont,
 }
 
 #[derive(Debug, Clone)]
 pub struct SettingsPanel {
     pub selected_menu_index: usize,
+    pub synth_backend: SynthBackend,
+    pub soundfont_path: String,
 }
 
 impl SettingsPanel {
-    pub fn new() -> Self {
+    pub fn new(ui_config: &lumino_core::storage::config::UiConfig) -> Self {
         Self {
             selected_menu_index: 0,
+            synth_backend: ui_config.preferred_backend,
+            soundfont_path: ui_config.soundfont_path.clone(),
         }
     }
 
@@ -72,6 +80,23 @@ impl SettingsPanel {
         match event {
             Event::MenuSelected(idx) => {
                 self.selected_menu_index = idx;
+            }
+            Event::SynthBackendChanged(backend) => {
+                self.synth_backend = backend;
+            }
+            Event::SoundfontPathChanged(path) => {
+                self.soundfont_path = path;
+            }
+            Event::BrowseSoundfont => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("音色库文件", &["sf2", "sfz"])
+                    .add_filter("SF2 文件", &["sf2"])
+                    .add_filter("SFZ 文件", &["sfz"])
+                    .add_filter("所有文件", &["*"])
+                    .pick_file()
+                {
+                    self.soundfont_path = path.to_string_lossy().into_owned();
+                }
             }
         }
     }
@@ -82,7 +107,7 @@ pub fn view<'a>(settings: &SettingsPanel, window: &window::Window) -> Element<'a
     let menu_items = create_menu_items();
 
     let menu_list = render_menu_list(settings, window, &menu_items);
-    let content_area = render_content_area();
+    let content_area = render_content_area(settings);
 
     let main_content = row![
         menu_list,
@@ -252,23 +277,22 @@ fn create_menu_container_style() -> impl Fn(&Theme) -> container::Style + 'stati
 }
 
 /// 渲染内容区域
-fn render_content_area<'a>() -> iced_widget::Container<'a, Message, Theme, crate::Renderer> {
-    container(
-        column![
-            text("设置")
-                .size(TEXT_SIZE_TITLE)
-                .style(create_content_text_style()),
-            iced_widget::space().height(20),
-            text("设置内容区域")
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_placeholder_text_style()),
-        ]
-        .spacing(SPACING_CONTENT)
-        .padding(PADDING_CONTENT),
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .style(create_content_container_style())
+fn render_content_area<'a>(
+    settings: &SettingsPanel,
+) -> iced_widget::Container<'a, Message, Theme, crate::Renderer> {
+    let content = match settings.selected_menu_index {
+        0 => render_general_settings(),
+        1 => render_audio_settings(settings),
+        2 => render_ui_settings(),
+        3 => render_shortcut_settings(),
+        4 => render_about_settings(),
+        _ => render_placeholder("设置内容区域"),
+    };
+
+    container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(create_content_container_style())
 }
 
 /// 创建内容文本样式
@@ -330,4 +354,146 @@ fn create_main_container_style() -> impl Fn(&Theme) -> container::Style + 'stati
             ..Default::default()
         }
     }
+}
+
+fn render_placeholder<'a>(
+    content: &'a str,
+) -> iced_widget::Column<'a, Message, Theme, crate::Renderer> {
+    column![
+        text("设置")
+            .size(TEXT_SIZE_TITLE)
+            .style(create_content_text_style()),
+        iced_widget::space().height(20),
+        text(content)
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_placeholder_text_style()),
+    ]
+    .spacing(SPACING_CONTENT)
+    .padding(PADDING_CONTENT)
+}
+
+fn render_general_settings<'a>() -> iced_widget::Column<'a, Message, Theme, crate::Renderer> {
+    column![
+        text("常规")
+            .size(TEXT_SIZE_TITLE)
+            .style(create_content_text_style()),
+        iced_widget::space().height(20),
+        text("常规设置内容")
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_placeholder_text_style()),
+    ]
+    .spacing(SPACING_CONTENT)
+    .padding(PADDING_CONTENT)
+}
+
+fn render_audio_settings<'a>(
+    settings: &SettingsPanel,
+) -> iced_widget::Column<'a, Message, Theme, crate::Renderer> {
+    let synth_options = [SynthBackend::XSynth, SynthBackend::Kdmapi];
+
+    let mut col = column![
+        text("音频")
+            .size(TEXT_SIZE_TITLE)
+            .style(create_content_text_style()),
+        iced_widget::space().height(20),
+        // 合成器后端选择
+        row![
+            text("合成器:")
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            pick_list(synth_options, Some(settings.synth_backend), |backend| {
+                Message::Settings(Event::SynthBackendChanged(backend))
+            })
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+    ];
+
+    // 只在 XSynth 模式下显示音色库选择
+    if settings.synth_backend == SynthBackend::XSynth {
+        col = col.push(
+            row![
+                text("音色库:")
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                iced_widget::space().width(SPACING_MAIN),
+                text_input("选择音色库文件 (SFZ/SF2)...", &settings.soundfont_path)
+                    .width(Length::Fill)
+                    .on_input(|s| Message::Settings(Event::SoundfontPathChanged(s))),
+            ]
+            .spacing(SPACING_ICON_LABEL)
+            .align_y(Alignment::Center),
+        );
+        col = col.push(iced_widget::space().height(SPACING_CONTENT));
+        col = col.push(button("浏览...").on_press(Message::Settings(Event::BrowseSoundfont)));
+        col = col.push(iced_widget::space().height(20));
+        col = col.push(
+            text("XSynth: 内置高性能合成器，支持SFZ/SF2格式音色库")
+                .size(12.0)
+                .style(create_placeholder_text_style()),
+        );
+        col = col.push(
+            text("KDMAPI: 使用系统KDMAPI驱动，需要安装OmniMIDI")
+                .size(12.0)
+                .style(create_placeholder_text_style()),
+        );
+    } else {
+        col = col.push(
+            text("KDMAPI 模式使用系统驱动，无需音色库")
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_placeholder_text_style()),
+        );
+    }
+
+    col.spacing(SPACING_CONTENT).padding(PADDING_CONTENT)
+}
+
+fn render_ui_settings<'a>() -> iced_widget::Column<'a, Message, Theme, crate::Renderer> {
+    column![
+        text("界面")
+            .size(TEXT_SIZE_TITLE)
+            .style(create_content_text_style()),
+        iced_widget::space().height(20),
+        text("界面设置内容")
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_placeholder_text_style()),
+    ]
+    .spacing(SPACING_CONTENT)
+    .padding(PADDING_CONTENT)
+}
+
+fn render_shortcut_settings<'a>() -> iced_widget::Column<'a, Message, Theme, crate::Renderer> {
+    column![
+        text("快捷键")
+            .size(TEXT_SIZE_TITLE)
+            .style(create_content_text_style()),
+        iced_widget::space().height(20),
+        text("快捷键设置内容")
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_placeholder_text_style()),
+    ]
+    .spacing(SPACING_CONTENT)
+    .padding(PADDING_CONTENT)
+}
+
+fn render_about_settings<'a>() -> iced_widget::Column<'a, Message, Theme, crate::Renderer> {
+    column![
+        text("关于")
+            .size(TEXT_SIZE_TITLE)
+            .style(create_content_text_style()),
+        iced_widget::space().height(20),
+        text("Lumino").size(16.0).style(create_content_text_style()),
+        text("版本 1.0.0")
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_placeholder_text_style()),
+        iced_widget::space().height(10),
+        text("一个高效的MIDI编辑工具")
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_placeholder_text_style()),
+    ]
+    .spacing(SPACING_CONTENT)
+    .padding(PADDING_CONTENT)
 }

@@ -4,6 +4,7 @@ use tokio::sync::mpsc;
 use winit::{dpi, event_loop::ControlFlow, keyboard::ModifiersState, window::WindowAttributes};
 
 use super::storage;
+use lumino_core::storage::config::{SynthBackend, UiConfig};
 
 mod audio;
 mod menu;
@@ -36,7 +37,13 @@ struct RunnerInner {
     progress_gfx: Option<lumino_gfx::Context>,
     progress_ui: Option<lumino_ui::Host>,
     progress_modifiers: ModifiersState,
+    /// 保存 API 实例（用于保持 RealtimeSynth 等存活）
+    midi_api: Option<Box<dyn lumino_midi::Api>>,
     midi_output: Option<Box<dyn lumino_midi::OutputConnection>>,
+    /// 实际启用的合成器后端（可能与用户设置不同，如果发生回退）
+    active_synth_backend: SynthBackend,
+    /// MIDI 输出是否需要重新初始化（设置改变时）
+    midi_needs_reinit: bool,
 }
 
 impl winit::application::ApplicationHandler for Runner {
@@ -78,6 +85,7 @@ impl winit::application::ApplicationHandler for Runner {
         this.process_audio_actions();
         this.process_core_events(event_loop);
         this.save_storage();
+        this.reinit_midi_if_needed();
     }
 }
 
@@ -120,7 +128,7 @@ impl Runner {
         crate::platform::macos::init();
 
         // 初始化 MIDI 输出
-        let midi_output = Self::init_midi_output();
+        let (api, midi_output, active_backend) = Self::init_midi_output(&config.ui);
 
         RunnerInner {
             gfx,
@@ -137,38 +145,106 @@ impl Runner {
             progress_gfx: None,
             progress_ui: None,
             progress_modifiers: ModifiersState::default(),
+            midi_api: api,
             midi_output,
+            active_synth_backend: active_backend.unwrap_or(SynthBackend::System),
+            midi_needs_reinit: false,
         }
     }
 
-    fn init_midi_output() -> Option<Box<dyn lumino_midi::OutputConnection>> {
+    fn init_midi_output(
+        ui_config: &UiConfig,
+    ) -> (
+        Option<Box<dyn lumino_midi::Api>>,
+        Option<Box<dyn lumino_midi::OutputConnection>>,
+        Option<SynthBackend>,
+    ) {
         use lumino_midi::ApiKind;
         use std::path::PathBuf;
 
-        // 尝试使用 kdmapi (OmniMIDI)
-        let kdmapi_path = PathBuf::from("C:\\Windows\\System32\\OmniMIDI\\OmniMIDI.dll");
-        let api_kind = if kdmapi_path.exists() {
-            ApiKind::Kdmapi { path: kdmapi_path }
-        } else {
-            tracing::warn!("未找到 OmniMIDI,使用系统 MIDI API");
-            ApiKind::System
-        };
+        // 优先级顺序：XSynth -> Kdmapi -> System
+        let mut chosen_backend = None;
+
+        // 1. 尝试 XSynth
+        if let SynthBackend::XSynth = ui_config.preferred_backend {
+            if !ui_config.soundfont_path.is_empty() {
+                let path = PathBuf::from(&ui_config.soundfont_path);
+                if path.exists() {
+                    chosen_backend = Some((
+                        ApiKind::XSynth {
+                            soundfont_path: path,
+                        },
+                        SynthBackend::XSynth,
+                    ));
+                } else {
+                    tracing::warn!("XSynth 音色库文件不存在: {:?}", path);
+                }
+            } else {
+                tracing::warn!("XSynth 音色库路径未设置");
+            }
+        }
+
+        // 2. 如果 XSynth 失败或原选择是 Kdmapi，尝试 Kdmapi
+        if chosen_backend.is_none() {
+            if let SynthBackend::Kdmapi = ui_config.preferred_backend {
+                let kdmapi_path = PathBuf::from("C:\\Windows\\System32\\OmniMIDI\\OmniMIDI.dll");
+                if kdmapi_path.exists() {
+                    chosen_backend =
+                        Some((ApiKind::Kdmapi { path: kdmapi_path }, SynthBackend::Kdmapi));
+                } else {
+                    tracing::warn!("未找到 OmniMIDI");
+                }
+            } else if let SynthBackend::XSynth = ui_config.preferred_backend {
+                // XSynth 失败后尝试 Kdmapi（即使原选择是 XSynth）
+                let kdmapi_path = PathBuf::from("C:\\Windows\\System32\\OmniMIDI\\OmniMIDI.dll");
+                if kdmapi_path.exists() {
+                    tracing::info!("XSynth 不可用，回退到 KDMAPI");
+                    chosen_backend =
+                        Some((ApiKind::Kdmapi { path: kdmapi_path }, SynthBackend::Kdmapi));
+                }
+            }
+        }
+
+        // 3. 如果都失败，使用 System
+        let (api_kind, actual_backend) =
+            chosen_backend.unwrap_or((ApiKind::System, SynthBackend::System));
 
         // 初始化 MIDI API
-        let api = lumino_midi::new_api(&api_kind).ok()?;
+        let api = match lumino_midi::new_api(&api_kind) {
+            Ok(api) => api,
+            Err(e) => {
+                tracing::warn!("初始化 MIDI API 失败: {:?}", e);
+                return (None, None, Some(actual_backend));
+            }
+        };
 
         if let Some(version) = api.version() {
             tracing::info!("MIDI API 版本: {}", version);
         }
 
         // 获取第一个可用的输出设备
-        let outputs = api.outputs().ok()?;
+        let outputs = match api.outputs() {
+            Ok(outputs) => outputs,
+            Err(e) => {
+                tracing::warn!("获取 MIDI 输出设备失败: {:?}", e);
+                return (Some(api), None, Some(actual_backend));
+            }
+        };
         if let Some(output) = outputs.first() {
             tracing::info!("使用 MIDI 输出设备: {}", output.name);
-            api.open_output(output.id).ok()
+            match api.open_output(output.id) {
+                Ok(conn) => {
+                    tracing::info!("MIDI 输出连接已打开");
+                    (Some(api), Some(conn), Some(actual_backend))
+                }
+                Err(e) => {
+                    tracing::warn!("打开 MIDI 输出连接失败: {:?}", e);
+                    (Some(api), None, Some(actual_backend))
+                }
+            }
         } else {
             tracing::warn!("未找到可用的 MIDI 输出设备");
-            None
+            (Some(api), None, Some(actual_backend))
         }
     }
 

@@ -143,6 +143,7 @@ impl Editor {
                                 original_key: note.key,
                             };
                             // 播放音符音频（点击时发声）
+                            tracing::debug!("Editor: 推送 PlayNote (点击音符) key={}", note.key);
                             self.pending_audio_actions.push(AudioAction::PlayNote {
                                 key: note.key as u8,
                                 velocity: 100,
@@ -156,6 +157,7 @@ impl Editor {
                         current_tick: snapped_tick,
                     };
                     // 播放音符音频（按下时发声）
+                    tracing::debug!("Editor: 推送 PlayNote (新音符) key={}", key);
                     self.pending_audio_actions.push(AudioAction::PlayNote {
                         key: key as u8,
                         velocity: 100, // 使用固定力度
@@ -223,6 +225,7 @@ impl Editor {
                         // 如果音高变化，播放新的声音
                         if let Some(new_key) = new_key_val {
                             if new_key != *last_played_key {
+                                tracing::debug!("Editor: 推送 PlayNote (拖动变化) key={}", new_key);
                                 self.pending_audio_actions.push(AudioAction::PlayNote {
                                     key: new_key as u8,
                                     velocity: 100,
@@ -579,7 +582,11 @@ impl Editor {
 
     /// 获取并清空待处理的音频动作
     pub fn take_audio_actions(&mut self) -> Vec<AudioAction> {
-        std::mem::take(&mut self.pending_audio_actions)
+        let actions = std::mem::take(&mut self.pending_audio_actions);
+        if !actions.is_empty() {
+            tracing::debug!("Editor: 取出了 {} 个音频动作", actions.len());
+        }
+        actions
     }
 
     // ========== 滚动控制 ==========

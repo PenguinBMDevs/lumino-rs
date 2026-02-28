@@ -1,9 +1,13 @@
 //! Reference: https://github.com/KeppySoftware/OmniMIDI/blob/3b0b4f2/DeveloperContent/OmniMIDI.cs
 
 use libloading::Library;
+use std::sync::Mutex;
 use std::{path::Path, sync::Arc};
 
 use crate::{Api, Error, InputInfo, OutputConnection, OutputInfo};
+
+/// KDMAPI 全局实例（单例）
+static KDMAPI_INSTANCE: Mutex<Option<Arc<KdmapiInner>>> = Mutex::new(None);
 
 #[derive(thiserror::Error, Debug)]
 /// KDMAPI 错误处理
@@ -44,16 +48,31 @@ struct Symbols {
     send_direct_data: unsafe extern "system" fn(u32) -> u32, // KDMAPI 发送直接数据
 }
 
-/// KDMAPI 实例
-pub struct Kdmapi {
+/// KDMAPI 内部结构
+pub struct KdmapiInner {
     _lib: Library,
     sym: Arc<Symbols>,
     version: String,
 }
 
+/// KDMAPI 实例
+pub struct Kdmapi {
+    inner: Arc<KdmapiInner>,
+}
+
 /// KDMAPI 实例方法
 impl Kdmapi {
     pub fn new(path: &Path) -> Result<Self, Error> {
+        // 检查是否已经有初始化的实例
+        if let Ok(guard) = KDMAPI_INSTANCE.lock() {
+            if let Some(instance) = guard.as_ref() {
+                tracing::info!("KDMAPI 实例已存在，重用它");
+                return Ok(Self {
+                    inner: instance.clone(),
+                });
+            }
+        }
+
         unsafe {
             let lib = Library::new(path)?;
             // Symbols are expected to live as long as `lib` is alive.
@@ -86,12 +105,19 @@ impl Kdmapi {
                 return Err(Error::InitFailed(KdmapiError::GetVersionFailed.to_string()));
             };
 
-            // KDMAPI 版本
-            Ok(Self {
+            let inner = Arc::new(KdmapiInner {
                 _lib: lib,
                 sym,
                 version: format!("v{major}.{minor}.{patch}.{rev}"),
-            })
+            });
+
+            // 保存到全局实例
+            if let Ok(mut guard) = KDMAPI_INSTANCE.lock() {
+                *guard = Some(inner.clone());
+            }
+
+            // KDMAPI 版本
+            Ok(Self { inner })
         }
     }
 }
@@ -99,7 +125,7 @@ impl Kdmapi {
 /// KDMAPI 实现 API 接口
 impl Api for Kdmapi {
     fn version(&self) -> Option<String> {
-        Some(self.version.clone())
+        Some(self.inner.version.clone())
     }
     // KDMAPI 输入端口
     fn inputs(&self) -> Result<Vec<InputInfo>, Error> {
@@ -118,7 +144,7 @@ impl Api for Kdmapi {
             return Err(Error::DeviceNotFound(id));
         }
         Ok(Box::new(KdmapiOutputConn {
-            sym: self.sym.clone(),
+            sym: self.inner.sym.clone(),
         }))
     }
 }

@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use api::Kdmapi;
 use api::System;
+use api::XSynth;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -50,12 +51,14 @@ pub trait OutputConnection: Send {
 
 #[derive(Debug)]
 pub enum ApiKind {
+    XSynth { soundfont_path: PathBuf },
     Kdmapi { path: PathBuf },
     System,
 }
 
 pub fn new_api(kind: &ApiKind) -> Result<Box<dyn Api>, Error> {
     let engine: Box<dyn Api> = match kind {
+        ApiKind::XSynth { soundfont_path } => Box::new(XSynth::new(soundfont_path)?),
         ApiKind::Kdmapi { path } => Box::new(Kdmapi::new(path)?),
         ApiKind::System => Box::new(System::new()?),
     };

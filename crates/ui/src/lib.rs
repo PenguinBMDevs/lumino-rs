@@ -2,7 +2,7 @@ mod editor;
 pub mod message;
 mod resources;
 mod root;
-mod settings;
+pub mod settings;
 mod sidebar;
 mod statusbar;
 mod titlebar;
@@ -87,7 +87,7 @@ impl Host {
             root: if is_progress {
                 root::Root::new_progress(&ui_config.theme)
             } else {
-                root::Root::new(&ui_config.theme)
+                root::Root::new(ui_config)
             },
             renderer,
             events: Vec::new(),
@@ -398,9 +398,13 @@ impl Host {
     }
 
     pub fn update_theme(&mut self, theme: String) {
-        self.root.update(message::Window::theme(theme));
+        self.root.update(window::Event::theme(theme));
         self.cache = std::mem::take(&mut self.cache);
         self.window.request_redraw();
+    }
+
+    pub fn settings(&self) -> &settings::SettingsPanel {
+        &self.root.settings()
     }
 
     /// 获取并清空待处理的音频动作

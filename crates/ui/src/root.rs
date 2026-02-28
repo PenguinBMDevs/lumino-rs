@@ -3,6 +3,7 @@ use iced_widget::{column, container, progress_bar, row, text};
 use lumino_gfx::NoteInstance;
 
 use crate::{editor, editor::note::Note, message, settings, sidebar, statusbar, titlebar, window};
+use lumino_core::storage::config::UiConfig;
 
 pub type Message = message::Message;
 pub type Theme = iced_core::Theme;
@@ -23,14 +24,14 @@ pub struct Root {
 }
 
 impl Root {
-    pub fn new(theme: &str) -> Self {
+    pub fn new(ui_config: &UiConfig) -> Self {
         Self {
             sidebar: sidebar::Sidebar::new(),
             titlebar: titlebar::Titlebar::new(),
             statusbar: statusbar::StatusBar::new(),
             editor: editor::Editor::new(),
-            window: window::Window::new(theme),
-            settings: settings::SettingsPanel::new(),
+            window: window::Window::new(&ui_config.theme),
+            settings: settings::SettingsPanel::new(ui_config),
             progress: None,
             is_progress_window: false,
             is_menu_open: false,
@@ -38,13 +39,15 @@ impl Root {
     }
 
     pub fn new_progress(theme: &str) -> Self {
+        // 进度窗口使用默认配置
+        let default_config = UiConfig::default();
         Self {
             sidebar: sidebar::Sidebar::new(),
             titlebar: titlebar::Titlebar::new(),
             statusbar: statusbar::StatusBar::new(),
             editor: editor::Editor::new(),
             window: window::Window::new(theme),
-            settings: settings::SettingsPanel::new(),
+            settings: settings::SettingsPanel::new(&default_config),
             progress: None,
             is_progress_window: true,
             is_menu_open: false,
@@ -136,6 +139,10 @@ impl Root {
 
     pub fn theme(&self) -> Theme {
         self.window.theme.clone()
+    }
+
+    pub fn settings(&self) -> &settings::SettingsPanel {
+        &self.settings
     }
 
     pub fn view(&self) -> Element<'_> {

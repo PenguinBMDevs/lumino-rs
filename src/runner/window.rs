@@ -1,6 +1,7 @@
 use winit::event::WindowEvent;
 
 use super::RunnerInner;
+use lumino_core::storage::config::{SynthBackend, UiConfig};
 
 impl RunnerInner {
     pub(super) fn handle_main_window_event(
@@ -93,11 +94,84 @@ impl RunnerInner {
     }
 
     pub(super) fn save_storage(&mut self) {
+        // 获取当前 UI 中的设置
+        let new_preferred_backend = self.ui.settings().synth_backend;
+        let new_soundfont_path = self.ui.settings().soundfont_path.clone();
+
+        // 获取当前存储的配置
+        let old_config = self.storage.config.get();
+        let old_preferred_backend = old_config.ui.preferred_backend;
+        let old_soundfont_path = &old_config.ui.soundfont_path;
+
+        // 检查合成器相关设置是否改变
+        let backend_changed = new_preferred_backend != old_preferred_backend;
+        let soundfont_changed = new_soundfont_path != *old_soundfont_path;
+
+        if backend_changed || soundfont_changed {
+            tracing::info!(
+                "合成器设置已改变: backend {} -> {}, soundfont {} -> {}",
+                old_preferred_backend,
+                new_preferred_backend,
+                if old_soundfont_path.is_empty() {
+                    "(空)"
+                } else {
+                    old_soundfont_path
+                },
+                if new_soundfont_path.is_empty() {
+                    "(空)"
+                } else {
+                    &new_soundfont_path
+                }
+            );
+            // 标记需要重新初始化 MIDI
+            self.midi_needs_reinit = true;
+        }
+
+        // 保存配置
+        self.storage.config.patch(|config| {
+            config.ui.preferred_backend = new_preferred_backend;
+            config.ui.soundfont_path = new_soundfont_path;
+        });
+
         if let Err(e) = self.storage.config.save() {
             tracing::warn!("保存配置失败: {e}");
         }
         if let Err(e) = self.storage.ui_state.save() {
             tracing::warn!("保存UI状态失败: {e}");
         }
+    }
+
+    /// 如果设置改变，重新初始化 MIDI 输出
+    pub(super) fn reinit_midi_if_needed(&mut self) {
+        if !self.midi_needs_reinit {
+            return;
+        }
+
+        self.midi_needs_reinit = false;
+
+        // 获取当前配置
+        let ui_config = self.storage.config.get().ui.clone();
+
+        tracing::info!(
+            "重新初始化 MIDI 输出，使用偏好后端: {:?}",
+            ui_config.preferred_backend
+        );
+
+        // 关闭旧的 MIDI 输出
+        if let Some(old_output) = self.midi_output.take() {
+            drop(old_output);
+        }
+        // 注意：midi_api 会在新 API 创建时被替换
+
+        // 重新初始化
+        let (new_api, new_output, new_backend) = super::Runner::init_midi_output(&ui_config);
+        self.midi_api = new_api;
+        self.midi_output = new_output;
+        self.active_synth_backend = new_backend.unwrap_or(SynthBackend::System);
+
+        tracing::info!(
+            "MIDI 输出已重新初始化，实际后端: {:?}",
+            self.active_synth_backend
+        );
     }
 }
