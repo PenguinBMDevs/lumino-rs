@@ -634,7 +634,7 @@ impl RunnerInner {
 
         // 处理未关闭的音符（到音轨结束）
         let track_end_tick = events.iter().map(|e| e.tick()).max().unwrap_or(0);
-        for ((channel, key), start_tick) in active_notes {
+        for ((_channel, key), start_tick) in active_notes {
             let length = track_end_tick.saturating_sub(start_tick) as f32;
             notes.push((start_tick as f32, key, length));
         }
@@ -702,14 +702,16 @@ impl RunnerInner {
 
         // 处理未关闭的音符
         let track_end_tick = events.iter().map(|e| e.tick()).max().unwrap_or(0);
-        for ((channel, key), start_tick) in active_notes {
+        for ((_channel, key), start_tick) in active_notes {
             let length = track_end_tick.saturating_sub(start_tick) as f32;
             notes.push((start_tick as f32, key, length));
         }
 
         // 只保存到 track_notes，不切换到该音轨
         if !notes.is_empty() {
-            self.window.ui_mut().load_track_notes_for_onion_skin(track_idx, &notes);
+            self.window
+                .ui_mut()
+                .load_track_notes_for_onion_skin(track_idx, &notes);
             tracing::debug!(
                 "Preloaded track {} with {} notes for onion skin",
                 track_idx,

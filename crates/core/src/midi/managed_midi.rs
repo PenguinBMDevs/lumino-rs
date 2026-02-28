@@ -124,9 +124,8 @@ impl DiskTrackCache {
     pub fn write_track(&self, track_index: usize, events: &[MidiEvent]) -> std::io::Result<()> {
         let track_path = self.track_path(track_index);
         let serialized = bincode::serialize(events).map_err(std::io::Error::other)?;
-        let compressed =
-            zstd::stream::encode_all(&mut &serialized[..], COMPRESSION_LEVEL)
-                .map_err(std::io::Error::other)?;
+        let compressed = zstd::stream::encode_all(&mut &serialized[..], COMPRESSION_LEVEL)
+            .map_err(std::io::Error::other)?;
         let mut file = File::create(&track_path)?;
         file.write_all(&compressed)?;
         file.sync_all()?;

@@ -89,15 +89,13 @@ pub fn parse_track_event_kind(
                     key: key.as_int(),
                     velocity: vel.as_int(),
                 }),
-                MidiMessage::Controller { controller, value } => {
-                    Some(MidiEvent::ControlChange {
-                        track: track_index,
-                        tick,
-                        channel: ch,
-                        controller: controller.as_int(),
-                        value: value.as_int(),
-                    })
-                }
+                MidiMessage::Controller { controller, value } => Some(MidiEvent::ControlChange {
+                    track: track_index,
+                    tick,
+                    channel: ch,
+                    controller: controller.as_int(),
+                    value: value.as_int(),
+                }),
                 MidiMessage::ProgramChange { program } => Some(MidiEvent::ProgramChange {
                     track: track_index,
                     tick,

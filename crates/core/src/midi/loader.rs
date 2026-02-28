@@ -1,5 +1,7 @@
 use crate::ParsedMidi;
-use crate::{DmsInfo, ParsedDms, TrackBasedCache, cache_utils::compute_cache_key, event_cache::TrackEvents};
+use crate::{
+    DmsInfo, ParsedDms, TrackBasedCache, cache_utils::compute_cache_key, event_cache::TrackEvents,
+};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::sync::mpsc;

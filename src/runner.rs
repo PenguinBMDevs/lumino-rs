@@ -72,23 +72,23 @@ impl winit::application::ApplicationHandler for Runner {
         let main_window = this.window.window().clone();
         let main_ui = this.window.ui_mut();
         this.progress.process_messages(main_ui, &main_window);
-        
+
         // 更新进度窗口
         let ui_config = this.storage.config.get().ui.clone();
         this.progress.update(event_loop, &ui_config);
-        
+
         // 处理窗口动作
         this.window.handle_window_actions(event_loop);
-        
+
         // 处理音频动作
         Self::process_audio_actions(&mut this.window, &mut this.midi);
-        
+
         // 处理核心事件
         this.process_core_events(event_loop);
-        
+
         // 保存存储
         this.save_storage();
-        
+
         // 重新初始化 MIDI 如果需要
         if this.midi.needs_reinit() {
             let ui_config = this.storage.config.get().ui.clone();
@@ -105,8 +105,8 @@ impl Runner {
         let ui_state = storage.ui_state.get();
 
         // 创建主窗口管理器
-        let window = WindowManager::new(event_loop, &ui_state, &config.ui)
-            .expect("初始化窗口管理器失败");
+        let window =
+            WindowManager::new(event_loop, ui_state, &config.ui).expect("初始化窗口管理器失败");
 
         // 创建进度管理器
         let (progress, progress_tx) = ProgressManager::new();

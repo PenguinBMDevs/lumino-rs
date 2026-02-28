@@ -42,9 +42,7 @@ impl ProgressManager {
 
     /// 检查是否是进度窗口的 ID
     pub fn is_progress_window(&self, window_id: winit::window::WindowId) -> bool {
-        self.window
-            .as_ref()
-            .is_some_and(|w| w.id() == window_id)
+        self.window.as_ref().is_some_and(|w| w.id() == window_id)
     }
 
     /// 获取当前进度
@@ -120,7 +118,11 @@ impl ProgressManager {
     }
 
     /// 更新进度窗口状态
-    pub fn update(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, ui_config: &lumino_core::storage::config::UiConfig) {
+    pub fn update(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        ui_config: &lumino_core::storage::config::UiConfig,
+    ) {
         if self.progress.is_some() && self.window.is_none() {
             self.create_window(event_loop, ui_config);
         } else if self.progress.is_none() && self.window.is_some() {
@@ -173,7 +175,11 @@ impl ProgressManager {
     }
 
     /// 处理进度消息
-    pub fn process_messages(&mut self, main_ui: &mut lumino_ui::Host, main_window: &winit::window::Window) {
+    pub fn process_messages(
+        &mut self,
+        main_ui: &mut lumino_ui::Host,
+        main_window: &winit::window::Window,
+    ) {
         while let Ok((msg, progress)) = self.rx.try_recv() {
             self.handle_message(msg, progress, main_ui, main_window);
         }

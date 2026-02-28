@@ -133,7 +133,11 @@ impl WindowManager {
     }
 
     /// 处理窗口大小改变
-    fn handle_resize(&mut self, size: winit::dpi::PhysicalSize<u32>, storage: &mut super::storage::Storage) {
+    fn handle_resize(
+        &mut self,
+        size: winit::dpi::PhysicalSize<u32>,
+        storage: &mut super::storage::Storage,
+    ) {
         storage.ui_state.patch(|state| {
             state.w = size.width;
             state.h = size.height;
@@ -143,10 +147,7 @@ impl WindowManager {
     }
 
     /// 处理窗口动作（最小化、最大化、关闭）
-    pub fn handle_window_actions(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-    ) {
+    pub fn handle_window_actions(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if let Some(action) = self.ui.take_window_action() {
             use lumino_ui::window::TrafficAction;
             match action {
@@ -163,10 +164,10 @@ impl WindowManager {
             }
         }
 
-        if self.ui.take_drag() {
-            if let Err(e) = self.window.drag_window() {
-                tracing::warn!("拖动窗口失败: {}", e);
-            }
+        if self.ui.take_drag()
+            && let Err(e) = self.window.drag_window()
+        {
+            tracing::warn!("拖动窗口失败: {}", e);
         }
     }
 
@@ -190,10 +191,10 @@ impl WindowManager {
             .with_title("Lumino")
             .with_visible(false);
 
-        if let (Some(x), Some(y)) = (ui_state.x, ui_state.y) {
-            if !ui_state.is_maximized {
-                attributes = attributes.with_position(dpi::LogicalPosition { x, y });
-            }
+        if let (Some(x), Some(y)) = (ui_state.x, ui_state.y)
+            && !ui_state.is_maximized
+        {
+            attributes = attributes.with_position(dpi::LogicalPosition { x, y });
         }
 
         #[cfg(target_os = "windows")]

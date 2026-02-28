@@ -2,7 +2,7 @@ use lumino_core::storage::config::{SynthBackend, UiConfig};
 use std::path::PathBuf;
 
 /// MIDI 设备管理器
-/// 
+///
 /// 负责管理 MIDI API 和输出连接的生命周期
 pub struct MidiManager {
     /// 保存 API 实例（用于保持 RealtimeSynth 等存活）
@@ -83,10 +83,7 @@ impl MidiManager {
         self.output = new_output;
         self.active_backend = new_backend.unwrap_or(SynthBackend::System);
 
-        tracing::info!(
-            "MIDI 输出已重新初始化，实际后端: {:?}",
-            self.active_backend
-        );
+        tracing::info!("MIDI 输出已重新初始化，实际后端: {:?}", self.active_backend);
     }
 
     /// 初始化 MIDI 输出
@@ -149,10 +146,10 @@ impl MidiManager {
     /// 选择 MIDI 后端
     fn select_backend(ui_config: &UiConfig) -> Option<(lumino_midi::ApiKind, SynthBackend)> {
         // 1. 尝试 XSynth
-        if let SynthBackend::XSynth = ui_config.preferred_backend {
-            if let Some(backend) = Self::try_xsynth(ui_config) {
-                return Some(backend);
-            }
+        if let SynthBackend::XSynth = ui_config.preferred_backend
+            && let Some(backend) = Self::try_xsynth(ui_config)
+        {
+            return Some(backend);
         }
 
         // 2. 尝试 Kdmapi
@@ -179,7 +176,9 @@ impl MidiManager {
         }
 
         Some((
-            ApiKind::XSynth { soundfont_path: path },
+            ApiKind::XSynth {
+                soundfont_path: path,
+            },
             SynthBackend::XSynth,
         ))
     }
