@@ -107,226 +107,278 @@ impl Editor {
         editor
     }
 
+    /// 主入口：处理编辑器动作
     pub fn handle_action(&mut self, action: EditorAction) {
-        // 清空上一次的待处理音频动作
         self.pending_audio_actions.clear();
 
         match action {
-            EditorAction::Pressed(pos) => {
-                if !self.is_inside_canvas(pos) {
-                    return;
-                }
-                let tick = self.x_to_tick(pos.x);
-                let key = self.y_to_key(pos.y);
-                let snapped_tick = self.snap_tick(tick);
+            EditorAction::Pressed(pos) => self.handle_pressed(pos),
+            EditorAction::Moved(pos) => self.handle_moved(pos),
+            EditorAction::Released => self.handle_released(),
+            EditorAction::Scrolled { delta_x, delta_y } => self.handle_scrolled(delta_x, delta_y),
+            EditorAction::DoubleClicked(pos) => self.handle_double_clicked(pos),
+            EditorAction::DeletePressed => self.handle_delete_pressed(),
+        }
+    }
 
-                if let Some((index, hit_type)) = self.hit_test_note(pos) {
-                    match hit_type {
-                        HitType::Start => {
-                            let note = &self.notes[index];
-                            self.edit_state = EditState::ResizingStart {
-                                note_index: index,
-                                original_tick: note.tick,
-                                original_length: note.length,
-                            };
-                        }
-                        HitType::End => {
-                            self.edit_state = EditState::ResizingEnd { note_index: index };
-                        }
-                        HitType::Middle => {
-                            let note = &self.notes[index];
-                            // 进入预备拖动状态，等待判断是点击还是拖动
-                            self.edit_state = EditState::PendingDrag {
-                                note_index: index,
-                                start_pos: pos,
-                                original_tick: note.tick,
-                                original_key: note.key,
-                            };
-                            // 播放音符音频（点击时发声）
-                            tracing::debug!("Editor: 推送 PlayNote (点击音符) key={}", note.key);
-                            self.pending_audio_actions.push(AudioAction::PlayNote {
-                                key: note.key as u8,
-                                velocity: 100,
-                            });
-                        }
-                    }
-                } else {
-                    self.edit_state = EditState::Drawing {
-                        start_tick: snapped_tick,
-                        key,
-                        current_tick: snapped_tick,
-                    };
-                    // 播放音符音频（按下时发声）
-                    tracing::debug!("Editor: 推送 PlayNote (新音符) key={}", key);
-                    self.pending_audio_actions.push(AudioAction::PlayNote {
-                        key: key as u8,
-                        velocity: 100, // 使用固定力度
-                    });
+    /// 处理鼠标按下事件
+    fn handle_pressed(&mut self, pos: iced_core::Point) {
+        if !self.is_inside_canvas(pos) {
+            return;
+        }
+
+        let tick = self.x_to_tick(pos.x);
+        let key = self.y_to_key(pos.y);
+        let snapped_tick = self.snap_tick(tick);
+
+        if let Some((index, hit_type)) = self.hit_test_note(pos) {
+            self.start_note_edit(index, hit_type, pos);
+        } else {
+            self.start_drawing(snapped_tick, key);
+        }
+    }
+
+    /// 开始编辑现有音符
+    fn start_note_edit(&mut self, index: usize, hit_type: HitType, pos: iced_core::Point) {
+        let note = &self.notes[index];
+
+        match hit_type {
+            HitType::Start => {
+                self.edit_state = EditState::ResizingStart {
+                    note_index: index,
+                    original_tick: note.tick,
+                    original_length: note.length,
+                };
+            }
+            HitType::End => {
+                self.edit_state = EditState::ResizingEnd { note_index: index };
+            }
+            HitType::Middle => {
+                self.edit_state = EditState::PendingDrag {
+                    note_index: index,
+                    start_pos: pos,
+                    original_tick: note.tick,
+                    original_key: note.key,
+                };
+                self.play_note_audio(note.key, "点击音符");
+            }
+        }
+    }
+
+    /// 开始绘制新音符
+    fn start_drawing(&mut self, snapped_tick: f32, key: u16) {
+        self.edit_state = EditState::Drawing {
+            start_tick: snapped_tick,
+            key,
+            current_tick: snapped_tick,
+        };
+        self.play_note_audio(key, "新音符");
+    }
+
+    /// 播放音符音频
+    fn play_note_audio(&mut self, key: u16, context: &str) {
+        tracing::debug!("Editor: 推送 PlayNote ({}) key={}", context, key);
+        self.pending_audio_actions.push(AudioAction::PlayNote {
+            key: key as u8,
+            velocity: 100,
+        });
+    }
+
+    /// 处理鼠标移动事件
+    fn handle_moved(&mut self, pos: iced_core::Point) {
+        let tick = self.x_to_tick(pos.x);
+        let key = self.y_to_key(pos.y);
+        let snapped_tick = self.snap_tick(tick);
+
+        self.hover_state = self.hit_test_note(pos);
+
+        let (new_tick, new_key, new_length) =
+            self.calculate_edit_changes(pos, tick, key, snapped_tick);
+        self.apply_note_changes(new_tick, new_key, new_length);
+    }
+
+    /// 计算编辑状态的变化值
+    fn calculate_edit_changes(
+        &mut self,
+        pos: iced_core::Point,
+        tick: f32,
+        key: u16,
+        snapped_tick: f32,
+    ) -> (Option<f32>, Option<u16>, Option<f32>) {
+        let mut new_tick = None;
+        let mut new_key = None;
+        let mut new_length = None;
+        let mut note_to_play = None;
+
+        let snap_precision = self.state.snap_precision;
+        let visible_key_count = self.state.visible_key_count;
+
+        // 先处理可能改变 edit_state 的情况
+        if let EditState::PendingDrag {
+            note_index,
+            start_pos,
+            original_tick,
+            original_key,
+        } = self.edit_state
+        {
+            if self.should_start_dragging(pos, start_pos) {
+                let tick = self.x_to_tick(start_pos.x);
+                let key = self.y_to_key(start_pos.y);
+                self.edit_state = EditState::Dragging {
+                    note_index,
+                    offset_tick: tick - original_tick,
+                    offset_key: key as i32 - original_key as i32,
+                    last_played_key: original_key,
+                };
+            }
+        }
+
+        match &mut self.edit_state {
+            EditState::Drawing { current_tick, .. } => {
+                *current_tick = snapped_tick;
+            }
+            EditState::Dragging {
+                offset_tick,
+                offset_key,
+                last_played_key,
+                ..
+            } => {
+                let calculated_tick =
+                    ((tick - *offset_tick) / snap_precision).round() * snap_precision;
+                let calculated_key =
+                    (key as i32 - *offset_key).clamp(0, visible_key_count as i32 - 1) as u16;
+                new_key = Some(calculated_key);
+                new_tick = Some(calculated_tick.max(0.0));
+
+                if calculated_key != *last_played_key {
+                    note_to_play = Some(calculated_key);
+                    *last_played_key = calculated_key;
                 }
             }
-            EditorAction::Moved(pos) => {
-                let tick = self.x_to_tick(pos.x);
-                let key = self.y_to_key(pos.y);
-                let snapped_tick = self.snap_tick(tick);
-
-                self.hover_state = self.hit_test_note(pos);
-
-                let mut new_tick_val = None;
-                let mut new_key_val = None;
-                let mut new_length_val = None;
-
-                let snap_precision = self.state.snap_precision;
-                let visible_key_count = self.state.visible_key_count;
-
-                match &mut self.edit_state {
-                    EditState::Drawing { current_tick, .. } => {
-                        *current_tick = snapped_tick;
-                    }
-                    EditState::PendingDrag {
-                        note_index,
-                        start_pos,
-                        original_tick,
-                        original_key,
-                    } => {
-                        // 计算移动距离
-                        let delta_y = pos.y - start_pos.y;
-                        let key_threshold = self.state.zoom_y * 0.5; // 半个键的高度作为阈值
-
-                        // 只有上下移动超过阈值才算拖动
-                        if delta_y.abs() > key_threshold {
-                            let start_pos = *start_pos;
-                            let note_index = *note_index;
-                            let original_tick = *original_tick;
-                            let original_key = *original_key;
-                            let tick = self.x_to_tick(start_pos.x);
-                            let key = self.y_to_key(start_pos.y);
-                            self.edit_state = EditState::Dragging {
-                                note_index,
-                                offset_tick: tick - original_tick,
-                                offset_key: key as i32 - original_key as i32,
-                                last_played_key: original_key,
-                            };
-                        }
-                    }
-                    EditState::Dragging {
-                        offset_tick,
-                        offset_key,
-                        last_played_key,
-                        ..
-                    } => {
-                        let new_tick =
-                            ((tick - *offset_tick) / snap_precision).round() * snap_precision;
-                        new_key_val = Some(
-                            (key as i32 - *offset_key).clamp(0, visible_key_count as i32 - 1)
-                                as u16,
-                        );
-                        new_tick_val = Some(new_tick.max(0.0));
-
-                        // 如果音高变化，播放新的声音
-                        if let Some(new_key) = new_key_val {
-                            if new_key != *last_played_key {
-                                tracing::debug!("Editor: 推送 PlayNote (拖动变化) key={}", new_key);
-                                self.pending_audio_actions.push(AudioAction::PlayNote {
-                                    key: new_key as u8,
-                                    velocity: 100,
-                                });
-                                *last_played_key = new_key;
-                            }
-                        }
-                    }
-                    EditState::ResizingStart {
-                        original_tick,
-                        original_length,
-                        ..
-                    } => {
-                        let end_tick = *original_tick + *original_length;
-                        let new_tick = snapped_tick.min(end_tick - snap_precision).max(0.0);
-                        new_tick_val = Some(new_tick);
-                        new_length_val = Some(end_tick - new_tick);
-                    }
-                    EditState::ResizingEnd { note_index, .. } => {
-                        if let Some(note) = self.notes.get(*note_index) {
-                            new_length_val = Some((snapped_tick - note.tick).max(snap_precision));
-                        }
-                    }
-                    EditState::Idle => {}
-                }
-
-                match self.edit_state {
-                    EditState::Dragging { note_index, .. }
-                    | EditState::ResizingStart { note_index, .. }
-                    | EditState::ResizingEnd { note_index, .. } => {
-                        if let Some(note) = self.notes.get_mut(note_index) {
-                            if let Some(t) = new_tick_val {
-                                note.tick = t;
-                            }
-                            if let Some(k) = new_key_val {
-                                note.key = k;
-                            }
-                            if let Some(l) = new_length_val {
-                                note.length = l;
-                            }
-                        }
-                    }
-                    _ => {}
+            EditState::ResizingStart {
+                original_tick,
+                original_length,
+                ..
+            } => {
+                let end_tick = *original_tick + *original_length;
+                let calculated_tick = snapped_tick.min(end_tick - snap_precision).max(0.0);
+                new_tick = Some(calculated_tick);
+                new_length = Some(end_tick - calculated_tick);
+            }
+            EditState::ResizingEnd { note_index, .. } => {
+                if let Some(note) = self.notes.get(*note_index) {
+                    new_length = Some((snapped_tick - note.tick).max(snap_precision));
                 }
             }
-            EditorAction::Released => {
-                match self.edit_state {
-                    EditState::Drawing {
-                        start_tick,
-                        key,
-                        current_tick,
-                    } => {
-                        let (tick, length) = if current_tick > start_tick {
-                            (start_tick, current_tick - start_tick)
-                        } else if current_tick < start_tick {
-                            (current_tick, start_tick - current_tick)
-                        } else {
-                            (start_tick, self.state.default_note_length)
-                        };
-                        let length = length.max(self.state.snap_precision);
-                        self.notes.push(Note::new(tick, key, length));
-                        // 保存到当前音轨的存储
-                        self.track_notes
-                            .insert(self.current_track, self.notes.clone());
-                        tracing::debug!(
-                            "Editor: saved {} notes to track {}",
-                            self.notes.len(),
-                            self.current_track
-                        );
-                    }
-                    EditState::PendingDrag { .. } => {
-                        // 只是点击，没有拖动，保持音符不变
-                    }
-                    _ => {}
-                }
-                self.edit_state = EditState::Idle;
+            _ => {}
+        }
+
+        // 在 match 之后播放音频，避免借用冲突
+        if let Some(k) = note_to_play {
+            self.play_note_audio(k, "拖动变化");
+        }
+
+        (new_tick, new_key, new_length)
+    }
+
+    /// 检查是否应该开始拖动
+    fn should_start_dragging(&self, pos: iced_core::Point, start_pos: iced_core::Point) -> bool {
+        let delta_y = pos.y - start_pos.y;
+        let key_threshold = self.state.zoom_y * 0.5;
+        delta_y.abs() > key_threshold
+    }
+
+    /// 应用音符变化
+    fn apply_note_changes(
+        &mut self,
+        new_tick: Option<f32>,
+        new_key: Option<u16>,
+        new_length: Option<f32>,
+    ) {
+        let note_index = match self.edit_state {
+            EditState::Dragging { note_index, .. }
+            | EditState::ResizingStart { note_index, .. }
+            | EditState::ResizingEnd { note_index, .. } => note_index,
+            _ => return,
+        };
+
+        if let Some(note) = self.notes.get_mut(note_index) {
+            if let Some(t) = new_tick {
+                note.tick = t;
             }
-            EditorAction::Scrolled { delta_x, delta_y } => {
-                // 垂直滚动：滚轮上下滚动控制卷帘上下移动
-                let new_scroll_y = self.state.scroll_y - delta_y;
-                self.set_scroll_y(new_scroll_y);
-                // 水平滚动：滚轮左右滚动（如果有）控制横向移动
-                if delta_x != 0.0 {
-                    let new_scroll_x = self.state.scroll_x - delta_x;
-                    self.set_scroll_x(new_scroll_x);
-                }
+            if let Some(k) = new_key {
+                note.key = k;
             }
-            EditorAction::DoubleClicked(pos) => {
-                // 双击删除鼠标位置下的音符
-                if self.is_inside_canvas(pos) {
-                    if let Some((index, _)) = self.hit_test_note(pos) {
-                        self.delete_note_by_index(index);
-                    }
-                }
+            if let Some(l) = new_length {
+                note.length = l;
             }
-            EditorAction::DeletePressed => {
-                // 删除悬停的音符（如果有）
-                if let Some((index, _)) = self.hover_state {
-                    self.delete_note_by_index(index);
-                }
+        }
+    }
+
+    /// 处理鼠标释放事件
+    fn handle_released(&mut self) {
+        match self.edit_state {
+            EditState::Drawing {
+                start_tick,
+                key,
+                current_tick,
+            } => {
+                self.finish_drawing(start_tick, key, current_tick);
             }
+            EditState::PendingDrag { .. } => {
+                // 只是点击，没有拖动，保持音符不变
+            }
+            _ => {}
+        }
+        self.edit_state = EditState::Idle;
+    }
+
+    /// 完成绘制新音符
+    fn finish_drawing(&mut self, start_tick: f32, key: u16, current_tick: f32) {
+        let (tick, length) = if current_tick > start_tick {
+            (start_tick, current_tick - start_tick)
+        } else if current_tick < start_tick {
+            (current_tick, start_tick - current_tick)
+        } else {
+            (start_tick, self.state.default_note_length)
+        };
+
+        let length = length.max(self.state.snap_precision);
+        self.notes.push(Note::new(tick, key, length));
+        self.track_notes
+            .insert(self.current_track, self.notes.clone());
+
+        tracing::debug!(
+            "Editor: saved {} notes to track {}",
+            self.notes.len(),
+            self.current_track
+        );
+    }
+
+    /// 处理滚动事件
+    fn handle_scrolled(&mut self, delta_x: f32, delta_y: f32) {
+        let new_scroll_y = self.state.scroll_y - delta_y;
+        self.set_scroll_y(new_scroll_y);
+
+        if delta_x != 0.0 {
+            let new_scroll_x = self.state.scroll_x - delta_x;
+            self.set_scroll_x(new_scroll_x);
+        }
+    }
+
+    /// 处理双击事件
+    fn handle_double_clicked(&mut self, pos: iced_core::Point) {
+        if self.is_inside_canvas(pos) {
+            if let Some((index, _)) = self.hit_test_note(pos) {
+                self.delete_note_by_index(index);
+            }
+        }
+    }
+
+    /// 处理删除键按下事件
+    fn handle_delete_pressed(&mut self) {
+        if let Some((index, _)) = self.hover_state {
+            self.delete_note_by_index(index);
         }
     }
 

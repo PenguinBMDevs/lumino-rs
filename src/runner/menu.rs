@@ -113,7 +113,7 @@ impl RunnerInner {
                     tracing::debug!(
                         "TrackSelected: no MIDI loaded, letting editor handle track switch"
                     );
-                    self.ui.set_current_track(track_idx);
+                    self.window.ui_mut().set_current_track(track_idx);
                 }
             }
             _ => {
@@ -482,7 +482,7 @@ impl RunnerInner {
 
         match view_event {
             Theme(theme) => {
-                self.ui.update_theme(theme.clone());
+                self.window.ui_mut().update_theme(theme.clone());
                 self.storage.config.patch(|state| {
                     state.ui.theme = theme;
                 });
@@ -538,7 +538,7 @@ impl RunnerInner {
         }
 
         // 更新 UI 音轨列表
-        self.ui.update_tracks(&track_infos);
+        self.window.ui_mut().update_tracks(&track_infos);
 
         // 预加载所有音轨的音符到 track_notes（供洋葱皮使用）
         tracing::info!("Pre-loading all tracks for onion skin...");
@@ -559,7 +559,7 @@ impl RunnerInner {
 
         // 更新编辑器总 ticks
         let total_ticks = parsed.info.duration_ticks as f32;
-        self.ui.set_total_ticks(total_ticks);
+        self.window.ui_mut().set_total_ticks(total_ticks);
     }
 
     /// 加载指定音轨的音符到编辑器
@@ -640,7 +640,7 @@ impl RunnerInner {
         }
 
         // 更新编辑器音符（使用新的函数，同时保存到 track_notes 供洋葱皮使用）
-        self.ui.load_track_notes(track_idx, &notes);
+        self.window.ui_mut().load_track_notes(track_idx, &notes);
 
         tracing::info!("音轨 {} 已加载，共 {} 个音符", track_idx, notes.len());
     }
@@ -709,7 +709,7 @@ impl RunnerInner {
 
         // 只保存到 track_notes，不切换到该音轨
         if !notes.is_empty() {
-            self.ui.load_track_notes_for_onion_skin(track_idx, &notes);
+            self.window.ui_mut().load_track_notes_for_onion_skin(track_idx, &notes);
             tracing::debug!(
                 "Preloaded track {} with {} notes for onion skin",
                 track_idx,

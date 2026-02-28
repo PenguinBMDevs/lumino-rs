@@ -21,6 +21,18 @@ use crate::midi::MidiEvent;
 /// 1 GB 内存上限（字节）
 const MEMORY_LIMIT_BYTES: usize = 1024 * 1024 * 1024;
 
+/// 默认 PPQN (Pulses Per Quarter Note)
+const DEFAULT_PPQN: u16 = 480;
+
+/// 压缩级别 (1-22, 越高压缩率越好但越慢)
+const COMPRESSION_LEVEL: i32 = 3;
+
+/// 进度回调起始值 (1%)
+const PROGRESS_START: f64 = 0.01;
+
+/// 进度回调主要部分占比 (94%)
+const PROGRESS_MAIN_RATIO: f64 = 0.94;
+
 /// 估算单个 MidiEvent 在内存中的大小（字节）
 fn estimate_event_size(event: &MidiEvent) -> usize {
     match event {
@@ -113,7 +125,8 @@ impl DiskTrackCache {
         let track_path = self.track_path(track_index);
         let serialized = bincode::serialize(events).map_err(std::io::Error::other)?;
         let compressed =
-            zstd::stream::encode_all(&mut &serialized[..], 3).map_err(std::io::Error::other)?;
+            zstd::stream::encode_all(&mut &serialized[..], COMPRESSION_LEVEL)
+                .map_err(std::io::Error::other)?;
         let mut file = File::create(&track_path)?;
         file.write_all(&compressed)?;
         file.sync_all()?;
@@ -218,7 +231,7 @@ impl MidiMemoryManager {
 
         let division = match header.timing {
             midly::Timing::Metrical(ticks) => ticks.as_int(),
-            _ => 480,
+            _ => DEFAULT_PPQN,
         };
 
         // 先收集所有 track 的 EventIter（零拷贝切片引用，不解析事件）
@@ -229,7 +242,7 @@ impl MidiMemoryManager {
         let track_count = event_iters.len();
 
         if let Some(cb) = progress_callback {
-            cb(0.01);
+            cb(PROGRESS_START);
         }
 
         // ═══════ 启动后台磁盘写入线程 ═══════
@@ -241,7 +254,7 @@ impl MidiMemoryManager {
                 let track_path = disk_cache_dir.join(format!("track_{:04x}.zst", track_idx));
                 let serialized =
                     bincode::serialize(&events).map_err(|e| format!("序列化失败: {e}"))?;
-                let compressed = zstd::stream::encode_all(&mut &serialized[..], 3)
+                let compressed = zstd::stream::encode_all(&mut &serialized[..], COMPRESSION_LEVEL)
                     .map_err(|e| format!("压缩失败: {e}"))?;
                 let mut file_out =
                     File::create(&track_path).map_err(|e| format!("创建缓存文件失败: {e}"))?;
@@ -348,7 +361,8 @@ impl MidiMemoryManager {
             }
 
             if let Some(cb) = progress_callback {
-                let progress = 0.01 + 0.94 * ((track_idx + 1) as f64 / track_count as f64);
+                let progress = PROGRESS_START
+                    + PROGRESS_MAIN_RATIO * ((track_idx + 1) as f64 / track_count as f64);
                 cb(progress);
             }
         }
@@ -407,70 +421,12 @@ impl MidiMemoryManager {
         tick: u32,
         kind: &midly::TrackEventKind,
     ) -> Option<MidiEvent> {
-        use midly::{MetaMessage, MidiMessage, TrackEventKind};
+        use midly::{MetaMessage, TrackEventKind};
+
+        // 使用公共的解析函数，并过滤掉 EndOfTrack
         match kind {
-            TrackEventKind::Midi { channel, message } => {
-                let ch = channel.as_int();
-                match message {
-                    MidiMessage::NoteOn { key, vel } => Some(MidiEvent::NoteOn {
-                        track: track_index,
-                        tick,
-                        channel: ch,
-                        key: key.as_int(),
-                        velocity: vel.as_int(),
-                    }),
-                    MidiMessage::NoteOff { key, vel } => Some(MidiEvent::NoteOff {
-                        track: track_index,
-                        tick,
-                        channel: ch,
-                        key: key.as_int(),
-                        velocity: vel.as_int(),
-                    }),
-                    MidiMessage::Controller { controller, value } => {
-                        Some(MidiEvent::ControlChange {
-                            track: track_index,
-                            tick,
-                            channel: ch,
-                            controller: controller.as_int(),
-                            value: value.as_int(),
-                        })
-                    }
-                    MidiMessage::ProgramChange { program } => Some(MidiEvent::ProgramChange {
-                        track: track_index,
-                        tick,
-                        channel: ch,
-                        program: program.as_int(),
-                    }),
-                    _ => None,
-                }
-            }
-            TrackEventKind::Meta(meta) => match meta {
-                MetaMessage::Tempo(tempo) => Some(MidiEvent::Tempo {
-                    track: track_index,
-                    tick,
-                    tempo: tempo.as_int(),
-                }),
-                MetaMessage::TimeSignature(num, den, _, _) => Some(MidiEvent::TimeSignature {
-                    track: track_index,
-                    tick,
-                    numerator: *num,
-                    denominator: *den,
-                }),
-                MetaMessage::KeySignature(key, is_major) => Some(MidiEvent::KeySignature {
-                    track: track_index,
-                    tick,
-                    key: *key,
-                    is_major: *is_major,
-                }),
-                MetaMessage::TrackName(name) => Some(MidiEvent::TrackName {
-                    track: track_index,
-                    tick,
-                    name: String::from_utf8_lossy(name).to_string(),
-                }),
-                MetaMessage::EndOfTrack => None,
-                _ => None,
-            },
-            TrackEventKind::SysEx(_) | TrackEventKind::Escape(_) => None,
+            TrackEventKind::Meta(MetaMessage::EndOfTrack) => None,
+            _ => crate::midi::event::parse_track_event_kind(track_index, tick, kind),
         }
     }
 
