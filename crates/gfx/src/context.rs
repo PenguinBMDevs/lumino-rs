@@ -1,5 +1,19 @@
 use thiserror::Error;
 
+/// 根据可用的 present modes 选择最优的 present mode
+/// 优先级：Mailbox > Immediate > Fifo > AutoVsync
+fn select_present_mode(modes: &[wgpu::PresentMode]) -> wgpu::PresentMode {
+    if modes.contains(&wgpu::PresentMode::Mailbox) {
+        wgpu::PresentMode::Mailbox
+    } else if modes.contains(&wgpu::PresentMode::Immediate) {
+        wgpu::PresentMode::Immediate
+    } else if modes.contains(&wgpu::PresentMode::Fifo) {
+        wgpu::PresentMode::Fifo
+    } else {
+        wgpu::PresentMode::AutoVsync
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum ContextError {
     #[error("创建 surface 失败: {0}")]
@@ -22,6 +36,7 @@ pub struct Context {
     pub queue: wgpu::Queue,
     pub device: wgpu::Device,
     pub format: wgpu::TextureFormat,
+    present_mode: wgpu::PresentMode,
 }
 
 impl Context {
@@ -68,24 +83,7 @@ impl Context {
             .map_err(|e| ContextError::DeviceRequest(e.to_string()))?;
 
         // 添加于2026-02-01，尝试解决音符不跟手的问题（2方案+1回退+1旧方案）
-        let present_mode = if capabilities
-            .present_modes
-            .contains(&wgpu::PresentMode::Mailbox)
-        {
-            wgpu::PresentMode::Mailbox
-        } else if capabilities
-            .present_modes
-            .contains(&wgpu::PresentMode::Immediate)
-        {
-            wgpu::PresentMode::Immediate
-        } else if capabilities
-            .present_modes
-            .contains(&wgpu::PresentMode::Fifo)
-        {
-            wgpu::PresentMode::Fifo // 回退方案
-        } else {
-            wgpu::PresentMode::AutoVsync // 旧方案
-        };
+        let present_mode = select_present_mode(&capabilities.present_modes);
         tracing::info!("Selected present_mode: {:?}", present_mode);
 
         surface.configure(
@@ -108,32 +106,11 @@ impl Context {
             queue,
             device,
             format,
+            present_mode,
         })
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
-        // 添加于2026-02-01
-        let capabilities = self.surface.get_capabilities(&self.adapter);
-        let present_mode = if capabilities
-            .present_modes
-            .contains(&wgpu::PresentMode::Mailbox)
-        {
-            wgpu::PresentMode::Mailbox
-        } else if capabilities
-            .present_modes
-            .contains(&wgpu::PresentMode::Immediate)
-        {
-            wgpu::PresentMode::Immediate
-        } else if capabilities
-            .present_modes
-            .contains(&wgpu::PresentMode::Fifo)
-        {
-            wgpu::PresentMode::Fifo // 回退方案
-        } else {
-            wgpu::PresentMode::AutoVsync // 旧方案
-        };
-        tracing::info!("Selected present_mode (resize): {:?}", present_mode);
-
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
@@ -141,7 +118,7 @@ impl Context {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 width,
                 height,
-                present_mode,
+                present_mode: self.present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats: vec![],
                 desired_maximum_frame_latency: 2,
