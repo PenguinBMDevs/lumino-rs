@@ -60,6 +60,7 @@ impl RunnerInner {
 
         match file_event {
             Exit => event_loop.exit(),
+            New => self.handle_new_file(),
             Open => self.handle_open_file(),
             ImportFiles => self.handle_import_files(),
             Save => self.handle_save_file(),
@@ -71,11 +72,13 @@ impl RunnerInner {
             }
             MidiParsed(mut parsed) => {
                 tracing::info!("MIDI文件解析完成: {}", parsed.info);
+                
+                // 先导入音符到编辑器
+                self.import_midi_to_editor(&parsed);
+                
+                // 导入完成后释放原始数据
                 let _ = parsed.take_midi_data();
                 tracing::debug!("MIDI原始数据已释放，仅保留元数据");
-
-                // 将 MIDI 音符导入到编辑器
-                self.import_midi_to_editor(&parsed);
 
                 self.current_midi = Some(parsed);
             }
@@ -92,6 +95,7 @@ impl RunnerInner {
             Close => {
                 self.current_midi = None;
                 self.current_dms = None;
+                self.window.ui_mut().clear_editor();
                 tracing::info!("工程已关闭");
             }
             TrackSelected(track_idx) => {
@@ -120,6 +124,17 @@ impl RunnerInner {
                 tracing::debug!("未处理的文件事件: {:?}", file_event);
             }
         }
+    }
+
+    fn handle_new_file(&mut self) {
+        // 清空当前工程
+        self.current_midi = None;
+        self.current_dms = None;
+
+        // 清空编辑器
+        self.window.ui_mut().clear_editor();
+
+        tracing::info!("已创建新工程");
     }
 
     fn handle_open_file(&mut self) {
@@ -474,7 +489,225 @@ impl RunnerInner {
             return;
         }
 
-        tracing::warn!("没有加载的文件，无法保存");
+        // 没有加载任何文件，但有编辑器数据，保存为新建工程
+        let editor_notes = self.window.ui().get_editor_notes();
+        if editor_notes.is_empty() {
+            tracing::warn!("没有可保存的内容");
+            return;
+        }
+
+        let Some(save_path) = rfd::FileDialog::new()
+            .add_filter("Lumino MIDI Project", &["lmpj"])
+            .add_filter("MIDI 文件 (.mid)", &["mid"])
+            .add_filter("MIDI 文件 (.midi)", &["midi"])
+            .set_file_name("新建工程.lmpj")
+            .save_file()
+        else {
+            return;
+        };
+
+        let extension = save_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        match extension.as_str() {
+            "lmpj" => {
+                self.save_editor_as_lmpj(editor_notes, save_path);
+            }
+            "mid" | "midi" => {
+                self.save_editor_as_midi(editor_notes, save_path);
+            }
+            _ => {
+                tracing::warn!("不支持的保存格式: {}", extension);
+            }
+        }
+    }
+
+    /// 保存编辑器数据为 LMPJ 文件
+    fn save_editor_as_lmpj(
+        &self,
+        editor_notes: Vec<(usize, Vec<(f32, u8, f32)>)>,
+        save_path: std::path::PathBuf,
+    ) {
+        // 创建 ParsedMidi 数据结构
+        let parsed_midi = self.build_parsed_midi_from_editor(&editor_notes, &save_path);
+
+        let save_path_log = save_path.clone();
+        tokio::spawn(async move {
+            lumino_core::midi::loader::send_progress_message("准备保存 LMPJ 文件", 0.0);
+            lumino_core::midi::loader::send_progress_message("正在保存 LMPJ 文件", 0.3);
+            match lumino_export::save(&parsed_midi, save_path.clone()).await {
+                Ok(()) => {
+                    lumino_core::midi::loader::send_progress_message("LMPJ 保存成功", 1.0);
+                    tracing::info!("新建工程保存成功: {:?}", save_path_log);
+                }
+                Err(e) => {
+                    lumino_core::midi::loader::send_progress_message(
+                        &format!("保存失败: {e}"),
+                        1.0,
+                    );
+                    tracing::error!("新建工程保存失败: {}", e);
+                }
+            }
+        });
+    }
+
+    /// 保存编辑器数据为 MIDI 文件
+    fn save_editor_as_midi(
+        &self,
+        editor_notes: Vec<(usize, Vec<(f32, u8, f32)>)>,
+        save_path: std::path::PathBuf,
+    ) {
+        // 构建 MIDI 导出数据
+        let midi_data = self.build_midi_export_data(&editor_notes);
+        let save_path_log = save_path.clone();
+
+        tokio::spawn(async move {
+            lumino_core::midi::loader::send_progress_message("准备导出 MIDI 文件", 0.0);
+            lumino_core::midi::loader::send_progress_message("正在导出 MIDI 文件", 0.5);
+
+            match tokio::task::spawn_blocking(move || {
+                lumino_export::export_midi_to_bytes(&midi_data)
+            })
+            .await
+            {
+                Ok(Ok(bytes)) => {
+                    lumino_core::midi::loader::send_progress_message("正在写入文件", 0.8);
+                    match std::fs::write(&save_path_log, bytes) {
+                        Ok(()) => {
+                            lumino_core::midi::loader::send_progress_message("MIDI 导出成功", 1.0);
+                            tracing::info!("新建工程导出为 MIDI 成功: {:?}", save_path_log);
+                        }
+                        Err(e) => {
+                            lumino_core::midi::loader::send_progress_message(
+                                &format!("写入文件失败: {e}"),
+                                1.0,
+                            );
+                            tracing::error!("MIDI 导出失败: {}", e);
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    lumino_core::midi::loader::send_progress_message(
+                        &format!("导出失败: {e}"),
+                        1.0,
+                    );
+                    tracing::error!("MIDI 导出失败: {}", e);
+                }
+                Err(e) => {
+                    lumino_core::midi::loader::send_progress_message(
+                        &format!("导出失败: {e}"),
+                        1.0,
+                    );
+                    tracing::error!("MIDI 导出失败: {}", e);
+                }
+            }
+        });
+    }
+
+    /// 从编辑器音符构建 ParsedMidi
+    fn build_parsed_midi_from_editor(
+        &self,
+        editor_notes: &[(usize, Vec<(f32, u8, f32)>)],
+        save_path: &std::path::PathBuf,
+    ) -> lumino_core::ParsedMidi {
+        use lumino_core::midi::info::MidiInfo;
+
+        // 计算总音符数和最大 tick
+        let total_notes: u64 = editor_notes
+            .iter()
+            .map(|(_, notes)| notes.len() as u64)
+            .sum();
+        let max_tick = editor_notes
+            .iter()
+            .flat_map(|(_, notes)| notes.iter())
+            .map(|(tick, _, length)| tick + length)
+            .fold(0.0f32, f32::max) as u32;
+
+        // 生成 MIDI 字节流用于保存
+        let midi_export_data = self.build_midi_export_data(editor_notes);
+        let midi_bytes = match lumino_export::export_midi_to_bytes(&midi_export_data) {
+            Ok(bytes) => {
+                tracing::info!("生成 MIDI 字节流成功: {} 字节", bytes.len());
+                if !bytes.is_empty() {
+                    Some(bytes)
+                } else {
+                    tracing::warn!("生成的 MIDI 字节流为空");
+                    None
+                }
+            }
+            Err(e) => {
+                tracing::error!("生成 MIDI 字节流失败: {}", e);
+                None
+            }
+        };
+
+        tracing::info!(
+            "构建 ParsedMidi: 音轨数={}, 总音符数={}, midi_data={}",
+            editor_notes.len(),
+            total_notes,
+            if midi_bytes.is_some() { "有" } else { "无" }
+        );
+
+        lumino_core::ParsedMidi {
+            info: MidiInfo {
+                path: save_path.clone(),
+                track_count: editor_notes.len() as u16,
+                total_notes,
+                duration_ticks: max_tick,
+                division: 1920,
+                parse_progress: None,
+            },
+            midi_data: midi_bytes,
+            memory_manager: None,
+        }
+    }
+
+    /// 从编辑器音符构建 MIDI 导出数据
+    fn build_midi_export_data(
+        &self,
+        editor_notes: &[(usize, Vec<(f32, u8, f32)>)],
+    ) -> lumino_export::midi::MidiExportData {
+        use lumino_export::midi::{
+            MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTrackData,
+        };
+
+        let mut tracks = Vec::new();
+
+        for (track_idx, notes) in editor_notes {
+            let track_notes: Vec<MidiNoteEvent> = notes
+                .iter()
+                .map(|(tick, key, length)| MidiNoteEvent {
+                    tick: *tick as u32,
+                    channel: 0,
+                    key: *key,
+                    velocity: 100,
+                    duration: *length as u32,
+                })
+                .collect();
+
+            let track_data = MidiTrackData {
+                notes: track_notes,
+                tempos: vec![],
+                program_changes: vec![],
+                control_changes: vec![],
+                time_signatures: vec![],
+                key_signatures: vec![],
+                name: Some(format!("Track {}", track_idx + 1)),
+            };
+
+            tracks.push(track_data);
+        }
+
+        MidiExportData {
+            options: MidiExportOptions {
+                format: 1,
+                ppqn: 1920,
+            },
+            tracks,
+        }
     }
 
     fn handle_view_menu_event(&mut self, view_event: lumino_core::event::menu::view::Event) {
@@ -495,58 +728,167 @@ impl RunnerInner {
         use lumino_core::MidiEvent;
 
         // 获取 memory_manager
-        let Some(memory_manager_arc) = parsed.memory_manager.as_ref() else {
-            tracing::warn!("MIDI 没有 memory_manager，无法导入音符");
-            return;
-        };
+        if let Some(memory_manager_arc) = parsed.memory_manager.as_ref() {
+            // 有 memory_manager，使用原有逻辑
+            let mut memory_manager: std::sync::MutexGuard<lumino_core::MidiMemoryManager> =
+                match memory_manager_arc.lock() {
+                    Ok(mgr) => mgr,
+                    Err(e) => {
+                        tracing::error!("无法锁定 memory_manager: {}", e);
+                        return;
+                    }
+                };
 
-        let mut memory_manager: std::sync::MutexGuard<lumino_core::MidiMemoryManager> =
-            match memory_manager_arc.lock() {
-                Ok(mgr) => mgr,
-                Err(e) => {
-                    tracing::error!("无法锁定 memory_manager: {}", e);
-                    return;
-                }
-            };
+            // 收集所有音轨信息
+            let mut track_infos = Vec::new();
+            let summaries = memory_manager.all_summaries().to_vec();
 
-        // 收集所有音轨信息
-        let mut track_infos = Vec::new();
-        let summaries = memory_manager.all_summaries().to_vec();
+            for summary in &summaries {
+                let track_idx = summary.track_index;
 
-        for summary in &summaries {
-            let track_idx = summary.track_index;
-
-            // 获取音轨事件以读取音轨名称
-            let track_name: Option<String> = match memory_manager.get_track_events_full(track_idx) {
-                Ok(events) => {
-                    // 查找 TrackName 事件
-                    events.iter().find_map(|e: &MidiEvent| {
-                        if let MidiEvent::TrackName { name, .. } = e {
-                            Some(name.clone())
-                        } else {
+                // 获取音轨事件以读取音轨名称
+                let track_name: Option<String> =
+                    match memory_manager.get_track_events_full(track_idx) {
+                        Ok(events) => {
+                            // 查找 TrackName 事件
+                            events.iter().find_map(|e: &MidiEvent| {
+                                if let MidiEvent::TrackName { name, .. } = e {
+                                    Some(name.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                        }
+                        Err(e) => {
+                            tracing::warn!("无法获取音轨 {} 事件: {}", track_idx, e);
                             None
                         }
-                    })
-                }
-                Err(e) => {
-                    tracing::warn!("无法获取音轨 {} 事件: {}", track_idx, e);
-                    None
-                }
-            };
+                    };
 
-            track_infos.push((track_idx, track_name, summary.note_count));
+                track_infos.push((track_idx, track_name, summary.note_count));
+            }
+
+            // 更新 UI 音轨列表
+            self.window.ui_mut().update_tracks(&track_infos);
+
+            // 预加载所有音轨的音符到 track_notes（供洋葱皮使用）
+            tracing::info!("Pre-loading all tracks for onion skin...");
+            for (track_idx, _, note_count) in &track_infos {
+                if *note_count > 0 {
+                    // 加载音符但不切换到该音轨（只保存到 track_notes）
+                    self.preload_track_for_onion_skin(&mut memory_manager, *track_idx);
+                }
+            }
+
+            // 加载第一个有音符的音轨到编辑器（实际显示）
+            if let Some((first_track_idx, _, _)) = track_infos
+                .iter()
+                .find(|(_, _, note_count)| *note_count > 0)
+            {
+                self.load_track_to_editor(&mut memory_manager, *first_track_idx);
+            }
+        } else if let Some(midi_data) = parsed.midi_data.as_ref() {
+            // 没有 memory_manager 但有 midi_data，从 midi_data 解析音符
+            tracing::info!("从 midi_data 解析音符数据");
+            self.import_midi_data_to_editor(midi_data, parsed.info.track_count as usize);
+        } else {
+            tracing::warn!("MIDI 没有 memory_manager 也没有 midi_data，无法导入音符");
+            return;
+        }
+
+        // 更新编辑器总 ticks
+        let total_ticks = parsed.info.duration_ticks as f32;
+        self.window.ui_mut().set_total_ticks(total_ticks);
+    }
+
+    /// 从 MIDI 字节流导入音符到编辑器
+    fn import_midi_data_to_editor(&mut self, midi_data: &[u8], _track_count: usize) {
+        use midly::{Smf, TrackEventKind};
+
+        // 解析 MIDI 数据
+        let smf = match Smf::parse(midi_data) {
+            Ok(smf) => smf,
+            Err(e) => {
+                tracing::error!("解析 MIDI 数据失败: {}", e);
+                return;
+            }
+        };
+
+        // 收集音轨信息
+        let mut track_infos = Vec::new();
+        let mut track_notes_map: std::collections::HashMap<usize, Vec<(f32, u8, f32)>> =
+            std::collections::HashMap::new();
+
+        for (track_idx, track) in smf.tracks.iter().enumerate() {
+            let mut active_notes: std::collections::HashMap<(u8, u8), u32> =
+                std::collections::HashMap::new();
+            let mut notes = Vec::new();
+            let mut track_name: Option<String> = None;
+            let mut abs_tick: u32 = 0;
+
+            for event in track {
+                abs_tick += u32::from(event.delta);
+
+                match event.kind {
+                    TrackEventKind::Meta(midly::MetaMessage::TrackName(name_bytes)) => {
+                        track_name = String::from_utf8(name_bytes.to_vec()).ok();
+                    }
+                    TrackEventKind::Midi {
+                        channel,
+                        message: midly::MidiMessage::NoteOn { key, vel },
+                    } => {
+                        if vel > 0 {
+                            active_notes.insert((channel.as_int(), key.as_int()), abs_tick);
+                        } else {
+                            // velocity == 0 视为 NoteOff
+                            if let Some(start_tick) =
+                                active_notes.remove(&(channel.as_int(), key.as_int()))
+                            {
+                                let length = abs_tick.saturating_sub(start_tick) as f32;
+                                notes.push((start_tick as f32, key.as_int(), length));
+                            }
+                        }
+                    }
+                    TrackEventKind::Midi {
+                        channel,
+                        message: midly::MidiMessage::NoteOff { key, .. },
+                    } => {
+                        if let Some(start_tick) =
+                            active_notes.remove(&(channel.as_int(), key.as_int()))
+                        {
+                            let length = abs_tick.saturating_sub(start_tick) as f32;
+                            notes.push((start_tick as f32, key.as_int(), length));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // 处理未关闭的音符
+            let track_end_tick = abs_tick;
+            for ((_channel, key), start_tick) in active_notes {
+                let length = track_end_tick.saturating_sub(start_tick) as f32;
+                notes.push((start_tick as f32, key, length));
+            }
+
+            if !notes.is_empty() {
+                track_notes_map.insert(track_idx, notes.clone());
+            }
+
+            track_infos.push((track_idx, track_name, notes.len() as u64));
         }
 
         // 更新 UI 音轨列表
         self.window.ui_mut().update_tracks(&track_infos);
 
-        // 预加载所有音轨的音符到 track_notes（供洋葱皮使用）
-        tracing::info!("Pre-loading all tracks for onion skin...");
-        for (track_idx, _, note_count) in &track_infos {
-            if *note_count > 0 {
-                // 加载音符但不切换到该音轨（只保存到 track_notes）
-                self.preload_track_for_onion_skin(&mut memory_manager, *track_idx);
-            }
+        // 将所有音轨的音符导入编辑器
+        for (track_idx, notes) in track_notes_map {
+            self.window.ui_mut().load_track_notes(track_idx, &notes);
+            tracing::info!(
+                "从 midi_data 导入音轨 {}，共 {} 个音符",
+                track_idx,
+                notes.len()
+            );
         }
 
         // 加载第一个有音符的音轨到编辑器（实际显示）
@@ -554,12 +896,8 @@ impl RunnerInner {
             .iter()
             .find(|(_, _, note_count)| *note_count > 0)
         {
-            self.load_track_to_editor(&mut memory_manager, *first_track_idx);
+            self.window.ui_mut().set_current_track(*first_track_idx);
         }
-
-        // 更新编辑器总 ticks
-        let total_ticks = parsed.info.duration_ticks as f32;
-        self.window.ui_mut().set_total_ticks(total_ticks);
     }
 
     /// 加载指定音轨的音符到编辑器

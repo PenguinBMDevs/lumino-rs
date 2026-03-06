@@ -198,7 +198,7 @@ impl MidiEventStream {
     pub fn division(&self) -> u16 {
         match self.smf.header.timing {
             midly::Timing::Metrical(ticks) => ticks.as_int(),
-            _ => 480,
+            _ => 1920,
         }
     }
 

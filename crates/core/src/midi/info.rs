@@ -44,7 +44,7 @@ impl std::fmt::Display for MidiInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "MIDI文件: {}\n音轨数: {}\n音符事件数: {}\n时长: {} ticks\n分辨率: {}",
+            "MIDI文件: {} | 音轨数: {} | 音符事件数: {} | 时长: {} ticks | 分辨率: {}",
             self.path.display(),
             self.track_count,
             self.total_notes,

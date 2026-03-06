@@ -8,4 +8,4 @@ pub use cache_utils::compute_cache_key;
 pub use event::Event;
 pub use event_cache::{TrackBasedCache, TrackCacheHeader, TrackEventWindow, TrackEvents};
 pub use midi::managed_midi::{ManagerStats, MidiMemoryManager};
-pub use midi::{DmsInfo, MidiEvent, MidiInfo, ParsedDms, ParsedMidi};
+pub use midi::{DmsInfo, LmpjData, MidiEvent, MidiInfo, ParsedDms, ParsedMidi};

@@ -8,6 +8,30 @@ pub use dms::DmsInfo;
 pub use event::{MidiEvent, MidiEventStream, parse_all_midi_events};
 pub use info::MidiInfo;
 
+/// LMPJ 文件数据结构（用于序列化/反序列化）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LmpjData {
+    pub info: MidiInfo,
+    pub midi_data: Option<Vec<u8>>,
+}
+
+impl LmpjData {
+    pub fn from_parsed_midi(parsed: &ParsedMidi) -> Self {
+        Self {
+            info: parsed.info.clone(),
+            midi_data: parsed.midi_data.clone(),
+        }
+    }
+
+    pub fn to_parsed_midi(self) -> ParsedMidi {
+        ParsedMidi {
+            info: self.info,
+            midi_data: self.midi_data,
+            memory_manager: None,
+        }
+    }
+}
+
 /// 解析后的MIDI数据
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ParsedMidi {

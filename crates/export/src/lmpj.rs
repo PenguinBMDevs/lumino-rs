@@ -1,14 +1,11 @@
 use std::path::Path;
+
 /// 同步保存 `ParsedMidi` 为 LMPJ。
 pub fn save_parsed_midi_to_lmpj_sync(
     parsed: &lumino_core::midi::ParsedMidi,
     path: &Path,
 ) -> Result<(), String> {
-    let data_for_save = lumino_core::midi::ParsedMidi {
-        info: parsed.info.clone(),
-        midi_data: None,
-        memory_manager: None,
-    };
+    let data_for_save = lumino_core::LmpjData::from_parsed_midi(parsed);
 
     let compressed =
         crate::format::encode_lmpj(&data_for_save).map_err(|e| format!("压缩 LMPJ 失败: {e}"))?;
@@ -21,11 +18,7 @@ pub async fn save_parsed_midi_to_lmpj(
     parsed: &lumino_core::midi::ParsedMidi,
     path: std::path::PathBuf,
 ) -> Result<(), String> {
-    let data_for_save = lumino_core::midi::ParsedMidi {
-        info: parsed.info.clone(),
-        midi_data: None,
-        memory_manager: None,
-    };
+    let data_for_save = lumino_core::LmpjData::from_parsed_midi(parsed);
 
     let compressed = tokio::task::spawn_blocking(move || {
         crate::format::encode_lmpj(&data_for_save).map_err(|e| format!("压缩 LMPJ 失败: {e}"))

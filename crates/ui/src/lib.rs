@@ -570,6 +570,56 @@ impl Host {
         self.root.editor.remove_onion_skin_track(track_idx);
         self.window.request_redraw();
     }
+
+    /// 清空编辑器（用于新建工程）
+    pub fn clear_editor(&mut self) {
+        self.root.editor.notes.clear();
+        self.root.editor.track_notes.clear();
+        self.root.editor.current_track = 0;
+        self.root.editor.grid_cache.clear();
+        self.cache = std::mem::take(&mut self.cache);
+        self.window.request_redraw();
+        tracing::info!("UI: 编辑器已清空");
+    }
+
+    /// 获取编辑器中的所有音符数据（用于保存）
+    ///
+    /// 返回 (track_idx, notes) 列表，其中 notes 格式为 (tick, key, length)
+    pub fn get_editor_notes(&self) -> Vec<(usize, Vec<(f32, u8, f32)>)> {
+        let mut result = Vec::new();
+
+        // 先保存当前音轨的音符
+        if !self.root.editor.notes.is_empty() {
+            let current_notes: Vec<(f32, u8, f32)> = self
+                .root
+                .editor
+                .notes
+                .iter()
+                .map(|n| (n.tick, n.key as u8, n.length))
+                .collect();
+            result.push((self.root.editor.current_track, current_notes));
+        }
+
+        // 添加其他音轨的音符
+        for (&track_idx, notes) in &self.root.editor.track_notes {
+            if track_idx != self.root.editor.current_track {
+                let track_notes: Vec<(f32, u8, f32)> = notes
+                    .iter()
+                    .map(|n| (n.tick, n.key as u8, n.length))
+                    .collect();
+                result.push((track_idx, track_notes));
+            }
+        }
+
+        result
+    }
+
+    /// 获取编辑器中的音符数量（用于判断是否有内容）
+    pub fn get_editor_note_count(&self) -> usize {
+        let current_count = self.root.editor.notes.len();
+        let track_notes_count: usize = self.root.editor.track_notes.values().map(|v| v.len()).sum();
+        current_count + track_notes_count
+    }
 }
 
 /// 将触摸事件转换为鼠标事件（兼容性处理）

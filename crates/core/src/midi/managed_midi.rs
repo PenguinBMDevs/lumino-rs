@@ -22,7 +22,7 @@ use crate::midi::MidiEvent;
 const MEMORY_LIMIT_BYTES: usize = 1024 * 1024 * 1024;
 
 /// 默认 PPQN (Pulses Per Quarter Note)
-const DEFAULT_PPQN: u16 = 480;
+const DEFAULT_PPQN: u16 = 1920;
 
 /// 压缩级别 (1-22, 越高压缩率越好但越慢)
 const COMPRESSION_LEVEL: i32 = 3;

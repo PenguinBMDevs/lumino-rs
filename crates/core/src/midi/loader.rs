@@ -222,7 +222,16 @@ pub async fn load_parsed_midi(path: PathBuf) -> Result<ParsedMidi, String> {
         send_progress("解析 Lumino 工程文件", 0.5);
 
         let parsed = tokio::task::spawn_blocking(move || {
-            decode_lmpj::<ParsedMidi>(&data).map_err(|e| format!("解析 LMPJ 失败: {e}"))
+            let lmpj_data: crate::LmpjData =
+                decode_lmpj(&data).map_err(|e| format!("解析 LMPJ 失败: {e}"))?;
+            
+            tracing::info!(
+                "LMPJ 解析成功: info.path={:?}, midi_data.len={:?}",
+                lmpj_data.info.path,
+                lmpj_data.midi_data.as_ref().map(|d| d.len())
+            );
+            
+            Ok::<ParsedMidi, String>(lmpj_data.to_parsed_midi())
         })
         .await
         .map_err(|e| {
