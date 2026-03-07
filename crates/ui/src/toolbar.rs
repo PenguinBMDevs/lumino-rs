@@ -139,16 +139,18 @@ impl Toolbar {
                 })
         });
 
-        // 工具选择区域 (231px 宽)
+        // 工具选择区域 (285px 宽)
         let tools = container(
             row![
                 tool_selector(icon::MousePointer, Tool::Pointer, self.current_tool, window),
                 space().width(4),
                 tool_selector(icon::Pencil, Tool::Pencil, self.current_tool, window),
+                space().width(4),
+                tool_selector(icon::Eraser, Tool::Eraser, self.current_tool, window),
             ]
             .align_y(Alignment::Center),
         )
-        .width(231)
+        .width(285)
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
         .align_x(iced_core::alignment::Horizontal::Center)

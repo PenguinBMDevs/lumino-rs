@@ -95,4 +95,38 @@ impl Editor {
     pub fn clear_selection(&mut self) {
         self.selected_notes.clear();
     }
+
+    /// 删除所有选中的音符
+    pub fn delete_selected_notes(&mut self) {
+        if self.selected_notes.is_empty() {
+            return;
+        }
+
+        // 将选中的索引排序，从大到小删除以避免索引变化问题
+        let mut indices: Vec<usize> = self.selected_notes.iter().copied().collect();
+        indices.sort_by(|a, b| b.cmp(a));
+
+        for index in indices {
+            if index < self.notes.len() {
+                self.notes.remove(index);
+            }
+        }
+
+        tracing::debug!("Editor: deleted {} notes", self.selected_notes.len());
+
+        // 更新当前音轨的存储
+        if !self.notes.is_empty() {
+            self.track_notes
+                .insert(self.current_track, self.notes.clone());
+        } else {
+            self.track_notes.remove(&self.current_track);
+        }
+
+        // 清除选中和悬停状态
+        self.selected_notes.clear();
+        self.hover_state = None;
+
+        // 清除网格缓存以强制重绘
+        self.grid_cache.clear();
+    }
 }

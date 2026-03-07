@@ -23,6 +23,8 @@ pub struct CanvasState {
     last_click_time: std::time::Instant,
     /// 上次点击位置
     last_click_pos: Option<iced_core::Point>,
+    /// Shift 键是否按下
+    shift_pressed: bool,
 }
 
 impl Default for CanvasState {
@@ -31,6 +33,7 @@ impl Default for CanvasState {
             position: None,
             last_click_time: std::time::Instant::now(),
             last_click_pos: None,
+            shift_pressed: false,
         }
     }
 }
@@ -84,10 +87,16 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
                         state.last_click_time = now;
                         state.last_click_pos = Some(local_pos);
                         return Some(canvas::Action::publish(Message::EditorAction(
-                            EditorAction::Pressed(local_pos),
+                            EditorAction::Pressed {
+                                pos: local_pos,
+                                shift: state.shift_pressed,
+                            },
                         )));
                     }
                 }
+            }
+            Event::Keyboard(iced_core::keyboard::Event::ModifiersChanged(modifiers)) => {
+                state.shift_pressed = modifiers.shift();
             }
             Event::Mouse(mouse::Event::CursorMoved { position }) => {
                 let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
@@ -125,11 +134,24 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
 
     fn mouse_interaction(
         &self,
-        _state: &Self::State,
+        state: &Self::State,
         _bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> mouse::Interaction {
         use crate::editor::EditState;
+        use crate::toolbar::Tool;
+
+        // 橡皮擦工具的光标样式
+        if self.editor.current_tool() == Tool::Eraser {
+            if state.shift_pressed {
+                // Shift按下时显示十字准星（框选模式）
+                return mouse::Interaction::Crosshair;
+            } else {
+                // 普通橡皮擦模式显示指针
+                return mouse::Interaction::Pointer;
+            }
+        }
+
         match self.editor.edit_state {
             EditState::Dragging { .. } => mouse::Interaction::Grabbing,
             EditState::PendingDrag { .. } => mouse::Interaction::Pointer,

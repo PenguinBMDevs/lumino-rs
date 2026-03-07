@@ -5,7 +5,10 @@ pub use crate::{
 
 #[derive(Debug, Clone)]
 pub enum EditorAction {
-    Pressed(iced_core::Point),
+    Pressed {
+        pos: iced_core::Point,
+        shift: bool,
+    },
     Moved(iced_core::Point),
     Released,
     Scrolled {

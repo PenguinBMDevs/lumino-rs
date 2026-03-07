@@ -10,7 +10,7 @@ impl Editor {
         self.pending_audio_actions.clear();
 
         match action {
-            EditorAction::Pressed(pos) => self.handle_pressed(pos),
+            EditorAction::Pressed { pos, shift } => self.handle_pressed(pos, shift),
             EditorAction::Moved(pos) => self.handle_moved(pos),
             EditorAction::Released => self.handle_released(),
             EditorAction::Scrolled { delta_x, delta_y } => self.handle_scrolled(delta_x, delta_y),
@@ -20,7 +20,7 @@ impl Editor {
     }
 
     /// 处理鼠标按下事件
-    fn handle_pressed(&mut self, pos: iced_core::Point) {
+    fn handle_pressed(&mut self, pos: iced_core::Point, shift: bool) {
         if !self.is_inside_canvas(pos) {
             return;
         }
@@ -55,6 +55,20 @@ impl Editor {
                     self.start_note_edit(index, hit_type, pos);
                 } else {
                     self.start_drawing(snapped_tick, key);
+                }
+            }
+            Tool::Eraser => {
+                // 橡皮擦工具：删除音符
+                if shift {
+                    // Shift+点击：进入框选删除模式
+                    self.selected_notes.clear();
+                    self.edit_state = EditState::Selecting {
+                        start_pos: pos,
+                        current_pos: pos,
+                    };
+                } else {
+                    // 普通点击：删除单个音符
+                    self.delete_note_at(pos);
                 }
             }
             _ => {
@@ -285,8 +299,14 @@ impl Editor {
     fn handle_released(&mut self) {
         match self.edit_state {
             EditState::Selecting { .. } => {
-                // 框选结束，保持选中状态
-                tracing::debug!("框选结束，选中 {} 个音符", self.selected_notes.len());
+                // 框选结束
+                if self.current_tool == Tool::Eraser {
+                    // 橡皮擦工具：删除选中的音符
+                    self.delete_selected_notes();
+                } else {
+                    // 指针工具：保持选中状态
+                    tracing::debug!("框选结束，选中 {} 个音符", self.selected_notes.len());
+                }
             }
             EditState::Drawing {
                 start_tick,
