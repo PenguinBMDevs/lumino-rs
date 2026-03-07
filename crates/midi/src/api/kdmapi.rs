@@ -1,4 +1,4 @@
-//! Reference: https://github.com/KeppySoftware/OmniMIDI/blob/3b0b4f2/DeveloperContent/OmniMIDI.cs
+//! 参考文档：https://github.com/KeppySoftware/OmniMIDI/blob/3b0b4f2/DeveloperContent/OmniMIDI.cs
 
 use libloading::Library;
 use std::sync::Mutex;
@@ -75,7 +75,7 @@ impl Kdmapi {
 
         unsafe {
             let lib = Library::new(path)?;
-            // Symbols are expected to live as long as `lib` is alive.
+            // 符号的生命周期应该与 `lib` 一样长
             let sym = Arc::new(Symbols {
                 // KDMAPI 符号表
                 return_kdmapi_ver: *lib.get(b"ReturnKDMAPIVer\0")?, // KDMAPI 返回版本

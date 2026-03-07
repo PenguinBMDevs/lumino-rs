@@ -139,6 +139,10 @@ impl Root {
             Message::ToggleSettings => {}
             // 工具栏事件
             Message::Toolbar(event) => {
+                // 如果工具切换了，同步更新 editor 的工具状态
+                if let crate::toolbar::Event::ToolSelected(tool) = &event {
+                    self.editor.set_tool(*tool);
+                }
                 self.toolbar.update(event);
             }
             // 显式丢弃它

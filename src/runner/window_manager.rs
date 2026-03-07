@@ -2,9 +2,7 @@ use std::sync::Arc;
 use winit::{dpi, event::WindowEvent, window::WindowAttributes};
 
 use lumino_core::storage::ui_state::UiState;
-
-const MIN_WINDOW_WIDTH: u32 = 800;
-const MIN_WINDOW_HEIGHT: u32 = 600;
+use lumino_ui::constants::dimensions::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH};
 
 /// 主窗口管理器
 ///

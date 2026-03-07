@@ -1,4 +1,4 @@
-//! Tests for DMS parser
+//! DMS 解析器测试
 
 use lumino_dms::{Bytes, DmsNode, DmsNodeType, DmsReader, DmsWriter};
 
@@ -94,7 +94,7 @@ fn test_create_composite_node() {
 fn test_integer_node() {
     use lumino_dms::DmsIntegerNode;
 
-    // Create with raw data (little-endian)
+    // 使用原始数据创建（小端序）
     let data = Bytes::from(vec![0x7B, 0x00, 0x00, 0x00]); // 123 in little-endian
     let node = DmsIntegerNode::new(DmsNodeType::SONG_PPQN, 1, data);
 
@@ -105,7 +105,7 @@ fn test_integer_node() {
 
 #[test]
 fn test_roundtrip_simple() {
-    // Create a simple tree with one child
+    // 创建带有一个子节点的简单树
     use lumino_dms::{DmsCompositeNode, DmsDataNode};
 
     let mut root = DmsCompositeNode::new(DmsNodeType::ROOT, -1);
@@ -114,11 +114,11 @@ fn test_roundtrip_simple() {
 
     root.children.push(Box::new(child));
 
-    // Write to bytes
+    // 写入字节
     let writer = DmsWriter::new();
     let tree_bytes = writer.to_bytes(&root).unwrap();
 
-    // Read back
+    // 读回数据
     let reader = DmsReader::new();
     let parsed = reader.parse_data(Bytes::from(tree_bytes)).unwrap();
 

@@ -199,7 +199,7 @@ fn build_track(track_data: &MidiTrackData, include_globals: bool) -> Track<'stat
 
     collect_track_events(track_data, &mut events, include_globals);
 
-    // End of track
+    // 轨道结束
     events.push(TrackEvent {
         delta: 0.into(),
         kind: TrackEventKind::Meta(MetaMessage::EndOfTrack),
@@ -216,7 +216,7 @@ fn collect_track_events(
 ) {
     // 音符事件
     for note in &track_data.notes {
-        // Note On
+        // 音符开启
         events.push(TrackEvent {
             delta: note.tick.into(),
             kind: TrackEventKind::Midi {
@@ -228,7 +228,7 @@ fn collect_track_events(
             },
         });
 
-        // Note Off
+        // 音符关闭
         let end_tick = note.tick.saturating_add(note.duration);
         events.push(TrackEvent {
             delta: end_tick.into(),

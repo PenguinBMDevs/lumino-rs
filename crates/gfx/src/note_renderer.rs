@@ -23,7 +23,7 @@ impl NoteInstance {
     }
 }
 
-/// Viewport uniform 数据
+/// 视口 uniform 数据
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct ViewportUniform {
@@ -42,19 +42,19 @@ impl ViewportUniform {
 
 /// 顶点属性布局（静态常量）
 const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] = [
-    // position
+    // 位置
     wgpu::VertexAttribute {
         offset: 0,
         shader_location: 0,
         format: wgpu::VertexFormat::Float32x2,
     },
-    // size
+    // 尺寸
     wgpu::VertexAttribute {
         offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
         shader_location: 1,
         format: wgpu::VertexFormat::Float32x2,
     },
-    // color
+    // 颜色
     wgpu::VertexAttribute {
         offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
         shader_location: 2,
@@ -62,7 +62,7 @@ const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] = [
     },
 ];
 
-/// Cull uniform 数据
+/// 裁剪 uniform 数据
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct CullUniform {
@@ -96,9 +96,9 @@ pub struct NoteRenderer {
     indirect_buffer: wgpu::Buffer,
     /// 当前缓冲区容量（实例数量）
     capacity: usize,
-    /// Viewport uniform 缓冲区
+    /// 视口 uniform 缓冲区
     viewport_buffer: wgpu::Buffer,
-    /// Cull uniform 缓冲区
+    /// 裁剪 uniform 缓冲区
     cull_uniform_buffer: wgpu::Buffer,
     /// 渲染 Bind group
     render_bind_group: wgpu::BindGroup,
@@ -112,7 +112,7 @@ pub struct NoteRenderer {
 
 impl NoteRenderer {
     /// 初始缓冲区容量
-    const INITIAL_CAPACITY: usize = 1024;
+    const INITIAL_CAPACITY: usize = crate::constants::rendering::INITIAL_INSTANCE_CAPACITY;
     /// 顶点着色器代码 (WGSL)
     const VERTEX_SHADER: &'static str = include_str!("shaders/note.wgsl");
     /// 计算着色器代码 (WGSL)
@@ -151,7 +151,7 @@ impl NoteRenderer {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("note_cull_bind_group_layout"),
                 entries: &[
-                    // viewport
+                    // 视口
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::COMPUTE,
@@ -162,7 +162,7 @@ impl NoteRenderer {
                         },
                         count: None,
                     },
-                    // cull_info
+                    // 裁剪信息
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::COMPUTE,
@@ -173,7 +173,7 @@ impl NoteRenderer {
                         },
                         count: None,
                     },
-                    // all_instances
+                    // 全部实例
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStages::COMPUTE,
@@ -184,7 +184,7 @@ impl NoteRenderer {
                         },
                         count: None,
                     },
-                    // visible_instances
+                    // 可见实例
                     wgpu::BindGroupLayoutEntry {
                         binding: 3,
                         visibility: wgpu::ShaderStages::COMPUTE,
@@ -195,7 +195,7 @@ impl NoteRenderer {
                         },
                         count: None,
                     },
-                    // indirect_args
+                    // 间接参数
                     wgpu::BindGroupLayoutEntry {
                         binding: 4,
                         visibility: wgpu::ShaderStages::COMPUTE,

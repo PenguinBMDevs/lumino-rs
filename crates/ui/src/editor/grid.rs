@@ -137,6 +137,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
                 mouse::Interaction::ResizingHorizontally
             }
             EditState::Drawing { .. } => mouse::Interaction::Crosshair,
+            EditState::Selecting { .. } => mouse::Interaction::Crosshair,
             EditState::Idle => match self.editor.hover_state {
                 Some((_, HitType::Start)) | Some((_, HitType::End)) => {
                     mouse::Interaction::ResizingHorizontally
@@ -164,7 +165,14 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
                 self.draw_bars(frame, bounds, theme);
             });
 
-        vec![grid]
+        // 绘制框选框（不需要缓存，实时渲染）
+        let mut geometries = vec![grid];
+        
+        if let Some(selection_geom) = self.draw_selection_box(renderer, theme, bounds) {
+            geometries.push(selection_geom);
+        }
+
+        geometries
     }
 }
 
@@ -335,4 +343,59 @@ impl<'a> PianoRollGrid<'a> {
 fn is_key_dark(key: isize, _key_count: usize) -> bool {
     let note_in_octave = key % 12;
     matches!(note_in_octave, 1 | 3 | 6 | 8 | 10)
+}
+
+/// 框选框绘制
+impl<'a> PianoRollGrid<'a> {
+    fn draw_selection_box(
+        &self,
+        renderer: &Renderer,
+        theme: &Theme,
+        bounds: Rectangle,
+    ) -> Option<Geometry<Renderer>> {
+        use iced_widget::canvas::{self, Path, Stroke};
+
+        let (start_pos, current_pos) = self.editor.get_selection_box()?;
+
+        // 计算选择框的位置和尺寸
+        let min_x = start_pos.x.min(current_pos.x);
+        let max_x = start_pos.x.max(current_pos.x);
+        let min_y = start_pos.y.min(current_pos.y);
+        let max_y = start_pos.y.max(current_pos.y);
+
+        let width = max_x - min_x;
+        let height = max_y - min_y;
+
+        if width < 1.0 || height < 1.0 {
+            return None;
+        }
+
+        let palette = theme.extended_palette();
+        let selection_color = palette.secondary.strong.color;
+
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+
+        // 绘制填充（半透明）
+        let rect = Rectangle::new(
+            Point::new(min_x, min_y),
+            iced_core::Size::new(width, height),
+        );
+        let path = Path::rectangle(rect.position(), rect.size());
+
+        let fill_color = iced_core::Color {
+            r: selection_color.r,
+            g: selection_color.g,
+            b: selection_color.b,
+            a: 0.2,
+        };
+        frame.fill(&path, fill_color);
+
+        // 绘制边框
+        let stroke = Stroke::default()
+            .with_width(1.0)
+            .with_color(selection_color);
+        frame.stroke(&path, stroke);
+
+        Some(frame.into_geometry())
+    }
 }

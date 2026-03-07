@@ -25,7 +25,7 @@ pub enum MenuItem {
     // 用于 i18n 的 Action(Event, Fn) 或类似结构
     Action(Event),
     Separator,
-    // Submenu(Vec<MenuItem>, Fn)
+    // 子菜单(Vec<MenuItem>, Fn)
     Submenu(Vec<MenuItem>, String),
 }
 

@@ -137,7 +137,7 @@ impl Runner {
         let actions = window.ui_mut().take_audio_actions();
 
         if !actions.is_empty() {
-            tracing::info!("Runner: 处理 {} 个音频动作", actions.len());
+            tracing::debug!("Runner: 处理 {} 个音频动作", actions.len());
         }
 
         for action in actions {
