@@ -1,5 +1,5 @@
 use lumino_core::storage::config::{SynthBackend, UiConfig};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
 
 /// XSynth 异步初始化结果
@@ -118,12 +118,12 @@ impl MidiManager {
     
     /// 阻塞式初始化 XSynth（用于后台线程）
     fn init_xsynth_blocking(
-        soundfont_path: &PathBuf,
+        soundfont_path: &Path,
     ) -> Result<(Box<dyn lumino_midi::Api>, Box<dyn lumino_midi::OutputConnection>), String> {
         use lumino_midi::ApiKind;
         
         let api_kind = ApiKind::XSynth {
-            soundfont_path: soundfont_path.clone(),
+            soundfont_path: soundfont_path.to_path_buf(),
         };
         
         let api = lumino_midi::new_api(&api_kind)
@@ -153,13 +153,12 @@ impl MidiManager {
         
         match lumino_midi::new_api(&ApiKind::System) {
             Ok(api) => {
-                if let Ok(outputs) = api.outputs() {
-                    if let Some(output) = outputs.first() {
-                        if let Ok(conn) = api.open_output(output.id) {
-                            tracing::info!("MIDI: System 后端已就绪");
-                            return (Some(api), Some(conn), SynthBackend::System);
-                        }
-                    }
+                if let Ok(outputs) = api.outputs()
+                    && let Some(output) = outputs.first()
+                    && let Ok(conn) = api.open_output(output.id)
+                {
+                    tracing::info!("MIDI: System 后端已就绪");
+                    return (Some(api), Some(conn), SynthBackend::System);
                 }
                 (Some(api), None, SynthBackend::System)
             }
@@ -277,7 +276,7 @@ impl MidiManager {
     }
 
     /// 尝试初始化 Kdmapi（同步）
-    fn try_kdmapi(ui_config: &UiConfig) -> Option<(lumino_midi::ApiKind, SynthBackend)> {
+    fn try_kdmapi(_ui_config: &UiConfig) -> Option<(lumino_midi::ApiKind, SynthBackend)> {
         use lumino_midi::ApiKind;
 
         let kdmapi_path = PathBuf::from("C:\\Windows\\System32\\OmniMIDI\\OmniMIDI.dll");

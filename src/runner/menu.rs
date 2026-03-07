@@ -24,7 +24,29 @@ impl RunnerInner {
             Event::Menu(menu_event) => {
                 self.handle_menu_event(event_loop, menu_event);
             }
-            Event::Window(_) => {}
+            Event::Window(window_event) => {
+                self.handle_window_event(window_event);
+            }
+        }
+    }
+
+    fn handle_window_event(&mut self, window_event: lumino_core::event::window::Event) {
+        use lumino_core::event::window::Event as WindowEvent;
+        use super::dialog_manager::DialogType;
+        
+        match window_event {
+            WindowEvent::OpenCustomPrecisionDialog => {
+                tracing::info!("请求打开自定义精度对话框");
+                // 打开自定义精度对话框
+                self.dialog_manager.open_dialog(DialogType::CustomPrecision);
+            }
+            WindowEvent::CloseCustomPrecisionDialog => {
+                // 关闭对话框
+            }
+            WindowEvent::ApplyCustomPrecision(_, _) => {
+                // 应用精度（在对话框结果中处理）
+            }
+            _ => {}
         }
     }
 
@@ -611,7 +633,7 @@ impl RunnerInner {
     fn build_parsed_midi_from_editor(
         &self,
         editor_notes: &[(usize, Vec<(f32, u8, f32)>)],
-        save_path: &std::path::PathBuf,
+        save_path: &std::path::Path,
     ) -> lumino_core::ParsedMidi {
         use lumino_core::midi::info::MidiInfo;
 
@@ -653,7 +675,7 @@ impl RunnerInner {
 
         lumino_core::ParsedMidi {
             info: MidiInfo {
-                path: save_path.clone(),
+                path: save_path.to_path_buf(),
                 track_count: editor_notes.len() as u16,
                 total_notes,
                 duration_ticks: max_tick,

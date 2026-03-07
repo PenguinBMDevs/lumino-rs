@@ -18,7 +18,7 @@ mod track;
 mod tests;
 
 use crate::{
-    message::{AudioAction, EditorAction},
+    message::AudioAction,
     toolbar::Tool,
 };
 use iced_core::Point;

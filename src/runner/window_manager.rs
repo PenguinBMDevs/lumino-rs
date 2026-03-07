@@ -173,11 +173,6 @@ impl WindowManager {
         }
     }
 
-    /// 请求重绘
-    pub fn request_redraw(&self) {
-        self.window.request_redraw();
-    }
-
     /// 构建窗口属性
     fn build_window_attributes(ui_state: &UiState) -> WindowAttributes {
         let mut attributes = WindowAttributes::default()

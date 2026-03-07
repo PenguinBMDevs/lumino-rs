@@ -15,17 +15,12 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SynthBackend {
+    #[default]
     XSynth,
     Kdmapi,
     System,
-}
-
-impl Default for SynthBackend {
-    fn default() -> Self {
-        Self::XSynth
-    }
 }
 
 impl std::fmt::Display for SynthBackend {

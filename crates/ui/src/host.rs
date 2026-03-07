@@ -13,7 +13,7 @@ use iced_winit::{
     winit,
 };
 
-use iced_core::{Event, Font, Pixels, Size, Theme, mouse, renderer, touch};
+use iced_core::{Event, Font, Pixels, Size, mouse, renderer, touch};
 
 use crate::{config, root, window, message, toolbar, settings};
 
@@ -393,11 +393,11 @@ impl Host {
                     self.pending_drag = true;
                 }
                 // 处理工具栏调整大小事件
-                if let message::Message::Toolbar(toolbar::Event::ResizeDragStarted(_)) = &message {
-                    if let Some(pos) = self.cursor_position {
-                        self.is_toolbar_resizing = true;
-                        self.root.toolbar.start_resize(pos.y);
-                    }
+                if let message::Message::Toolbar(toolbar::Event::ResizeDragStarted(_)) = &message
+                    && let Some(pos) = self.cursor_position
+                {
+                    self.is_toolbar_resizing = true;
+                    self.root.toolbar.start_resize(pos.y);
                 }
                 if let message::Message::Toolbar(toolbar::Event::ResizeDragEnded) = &message {
                     self.is_toolbar_resizing = false;
@@ -436,7 +436,7 @@ impl Host {
     }
 
     pub fn settings(&self) -> &settings::SettingsPanel {
-        &self.root.settings()
+        self.root.settings()
     }
 
     /// 获取并清空待处理的音频动作
@@ -651,6 +651,33 @@ impl Host {
         let current_count = self.root.editor.notes.len();
         let track_notes_count: usize = self.root.editor.track_notes.values().map(|v| v.len()).sum();
         current_count + track_notes_count
+    }
+}
+
+/// 对话框结果
+#[derive(Debug, Clone)]
+pub enum DialogResult {
+    CustomPrecision { numerator: String, denominator: String },
+}
+
+impl Host {
+    /// 设置自定义精度对话框是否打开（用于独立对话框窗口）
+    pub fn set_custom_precision_dialog_open(&mut self, open: bool) {
+        self.root.set_custom_precision_dialog_open(open);
+        self.cache = std::mem::take(&mut self.cache);
+        self.window.request_redraw();
+    }
+
+    /// 获取并清空对话框结果
+    pub fn take_dialog_result(&mut self) -> Option<DialogResult> {
+        self.root.take_dialog_result()
+    }
+
+    /// 设置自定义精度值（用于独立对话框窗口）
+    pub fn set_custom_precision(&mut self, ticks: f32) {
+        self.root.set_custom_precision(ticks);
+        self.cache = std::mem::take(&mut self.cache);
+        self.window.request_redraw();
     }
 }
 

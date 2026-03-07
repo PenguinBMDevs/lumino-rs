@@ -223,12 +223,10 @@ impl<'a> PianoRollGrid<'a> {
                     } else {
                         palette.base.color
                     }
+                } else if is_light_theme {
+                    palette.weak.color
                 } else {
-                    if is_light_theme {
-                        palette.weak.color
-                    } else {
-                        palette.weakest.color
-                    }
+                    palette.weakest.color
                 };
 
                 let key_rect = Rectangle::new(

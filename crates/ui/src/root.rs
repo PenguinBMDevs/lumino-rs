@@ -24,6 +24,8 @@ pub struct Root {
     is_progress_window: bool,
     /// 是否有菜单/下拉框打开（打开时不渲染预览音符）
     is_menu_open: bool,
+    /// 对话框结果（用于独立窗口模式）
+    dialog_result: Option<crate::host::DialogResult>,
 }
 
 impl Root {
@@ -39,6 +41,7 @@ impl Root {
             progress: None,
             is_progress_window: false,
             is_menu_open: false,
+            dialog_result: None,
         }
     }
 
@@ -56,6 +59,7 @@ impl Root {
             progress: None,
             is_progress_window: true,
             is_menu_open: false,
+            dialog_result: None,
         }
     }
 
@@ -143,10 +147,57 @@ impl Root {
                 if let crate::toolbar::Event::ToolSelected(tool) = &event {
                     self.editor.set_tool(*tool);
                 }
+                // 如果精度设置变更了，同步更新 editor 的 snap_precision
+                if let crate::toolbar::Event::PrecisionChanged(precision) = &event {
+                    let ticks = precision.to_ticks(self.editor.state.ppq);
+                    self.editor.state.snap_precision = ticks;
+                    self.editor.state.default_note_length = ticks;
+                    tracing::debug!("Root: 音符精度同步为 {} ticks (PPQ={})", ticks, self.editor.state.ppq);
+                }
                 self.toolbar.update(event);
             }
             // 显式丢弃它
             Message::Null => (),
+            // 自定义精度对话框事件
+            Message::OpenCustomPrecisionDialog => {
+                self.toolbar.custom_precision_dialog.is_open = true;
+            }
+            Message::CloseCustomPrecisionDialog => {
+                self.toolbar.custom_precision_dialog.is_open = false;
+            }
+            Message::ConfirmCustomPrecision => {
+                // 确认自定义精度，计算并设置结果
+                let numerator = self.toolbar.custom_precision_dialog.numerator.clone();
+                let denominator = self.toolbar.custom_precision_dialog.denominator.clone();
+                
+                // 设置对话框结果（供独立窗口模式使用）
+                self.dialog_result = Some(crate::host::DialogResult::CustomPrecision {
+                    numerator,
+                    denominator,
+                });
+                
+                // 同时在主窗口应用（兼容模式）
+                if let Some(ticks) = self.toolbar.custom_precision_dialog.calculate_ticks(self.editor.state.ppq) {
+                    self.toolbar.note_precision = toolbar::NotePrecision::Custom;
+                    self.editor.state.snap_precision = ticks;
+                    self.editor.state.default_note_length = ticks;
+                    tracing::debug!("Root: 自定义精度应用为 {} ticks", ticks);
+                }
+                self.toolbar.custom_precision_dialog.is_open = false;
+            }
+            Message::CustomPrecisionNumeratorChanged(value) => {
+                // 只接受数字输入
+                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
+                    self.toolbar.custom_precision_dialog.numerator = value;
+                }
+            }
+            Message::CustomPrecisionDenominatorChanged(value) => {
+                // 只接受数字输入
+                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
+                    self.toolbar.custom_precision_dialog.denominator = value;
+                }
+            }
+
         }
     }
 
@@ -232,9 +283,136 @@ impl Root {
                     ..Default::default()
                 });
 
-            // 如果菜单打开，添加一个透明的覆盖层来捕获点击事件并关闭菜单
-            content.into()
+            // 如果自定义精度对话框打开，叠加对话框
+            if self.toolbar.custom_precision_dialog.is_open {
+                let dialog = self.view_custom_precision_dialog();
+                iced_widget::stack![content, dialog].into()
+            } else {
+                content.into()
+            }
         }
+    }
+
+    /// 渲染自定义精度对话框
+    fn view_custom_precision_dialog(&self) -> Element<'_> {
+        use iced_widget::{button, column, container, row, space, text, text_input};
+
+        let palette = self.window.theme.extended_palette();
+        let dialog = &self.toolbar.custom_precision_dialog;
+
+        let dialog_content = container(
+            column![
+                text("自定义音符精度").size(20).style(move |_theme: &Theme| text::Style {
+                    color: Some(palette.primary.strong.color),
+                }),
+                space().height(20),
+                text("输入分数形式的音符长度").size(12).style(move |_theme: &Theme| text::Style {
+                    color: Some(palette.background.neutral.text),
+                }),
+                space().height(16),
+                // 分数输入区域
+                container(
+                    row![
+                        text_input("", &dialog.numerator)
+                            .on_input(Message::CustomPrecisionNumeratorChanged)
+                            .padding(12)
+                            .width(Length::Fixed(70.0)),
+                        text(" / ").size(24).style(move |_theme: &Theme| text::Style {
+                            color: Some(palette.background.neutral.text),
+                        }),
+                        text_input("", &dialog.denominator)
+                            .on_input(Message::CustomPrecisionDenominatorChanged)
+                            .padding(12)
+                            .width(Length::Fixed(70.0)),
+                    ]
+                    .align_y(iced_core::Alignment::Center)
+                    .spacing(8),
+                )
+                .padding(16)
+                .style(move |_theme: &Theme| container::Style {
+                    background: Some(palette.background.weakest.color.into()),
+                    border: iced_core::Border {
+                        radius: 8.0.into(),
+                        width: 1.0,
+                        color: palette.background.weak.color,
+                    },
+                    ..Default::default()
+                }),
+                space().height(24),
+                row![
+                    button(text("取消").size(14))
+                        .on_press(Message::CloseCustomPrecisionDialog)
+                        .padding([10, 20])
+                        .style(move |_theme: &Theme, status| {
+                            let bg = match status {
+                                button::Status::Hovered => palette.background.strong.color,
+                                _ => palette.background.weak.color,
+                            };
+                            button::Style {
+                                background: Some(bg.into()),
+                                text_color: palette.background.neutral.text,
+                                border: iced_core::Border {
+                                    radius: 6.0.into(),
+                                    width: 0.0,
+                                    color: iced_core::Color::TRANSPARENT,
+                                },
+                                shadow: Default::default(),
+                                snap: false,
+                            }
+                        }),
+                    space().width(12),
+                    button(text("确定").size(14))
+                        .on_press(Message::ConfirmCustomPrecision)
+                        .padding([10, 20])
+                        .style(move |_theme: &Theme, status| {
+                            let bg = match status {
+                                button::Status::Hovered => palette.primary.strong.color,
+                                _ => palette.primary.base.color,
+                            };
+                            button::Style {
+                                background: Some(bg.into()),
+                                text_color: iced_core::Color::WHITE,
+                                border: iced_core::Border {
+                                    radius: 6.0.into(),
+                                    width: 0.0,
+                                    color: iced_core::Color::TRANSPARENT,
+                                },
+                                snap: false,
+                                shadow: Default::default(),
+                            }
+                        }),
+                ]
+                .align_y(iced_core::Alignment::Center),
+            ]
+            .align_x(iced_core::Alignment::Center),
+        )
+        .width(Length::Fixed(360.0))
+        .padding(32)
+        .style(move |_theme: &Theme| {
+            container::Style::default()
+                .background(palette.background.base.color)
+                .border(iced_core::Border {
+                    radius: 12.0.into(),
+                    width: 1.0,
+                    color: palette.background.strong.color,
+                })
+        });
+
+        // 使用居中容器包裹对话框，带半透明背景
+        container(dialog_content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced_core::alignment::Horizontal::Center)
+            .align_y(iced_core::alignment::Vertical::Center)
+            .style(move |_theme: &Theme| {
+                container::Style::default().background(iced_core::Color {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.5,
+                })
+            })
+            .into()
     }
 
     /// 获取当前需要绘制的音符实例
@@ -344,5 +522,23 @@ impl Root {
 
         // 清除网格缓存以强制重绘
         self.editor.grid_cache.clear();
+    }
+
+    /// 设置自定义精度对话框是否打开
+    pub fn set_custom_precision_dialog_open(&mut self, open: bool) {
+        self.toolbar.custom_precision_dialog.is_open = open;
+    }
+
+    /// 获取并清空对话框结果
+    pub fn take_dialog_result(&mut self) -> Option<crate::host::DialogResult> {
+        self.dialog_result.take()
+    }
+
+    /// 设置自定义精度值
+    pub fn set_custom_precision(&mut self, ticks: f32) {
+        self.editor.state.snap_precision = ticks;
+        self.editor.state.default_note_length = ticks;
+        self.toolbar.note_precision = toolbar::NotePrecision::Custom;
+        tracing::info!("自定义精度已设置为 {} ticks", ticks);
     }
 }

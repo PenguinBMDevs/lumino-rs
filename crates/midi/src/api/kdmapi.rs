@@ -64,13 +64,13 @@ pub struct Kdmapi {
 impl Kdmapi {
     pub fn new(path: &Path) -> Result<Self, Error> {
         // 检查是否已经有初始化的实例
-        if let Ok(guard) = KDMAPI_INSTANCE.lock() {
-            if let Some(instance) = guard.as_ref() {
-                tracing::info!("KDMAPI 实例已存在，重用它");
-                return Ok(Self {
-                    inner: instance.clone(),
-                });
-            }
+        if let Ok(guard) = KDMAPI_INSTANCE.lock()
+            && let Some(instance) = guard.as_ref()
+        {
+            tracing::info!("KDMAPI 实例已存在，重用它");
+            return Ok(Self {
+                inner: instance.clone(),
+            });
         }
 
         unsafe {

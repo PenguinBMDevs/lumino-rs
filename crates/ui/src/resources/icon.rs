@@ -209,8 +209,8 @@ fn render_svg(
         .map_err(|e| IconError::SvgParseError(e.to_string()))?;
 
     let svg_size = tree.size();
-    let svg_width = svg_size.width() as f32;
-    let svg_height = svg_size.height() as f32;
+    let svg_width = svg_size.width();
+    let svg_height = svg_size.height();
 
     let scale_x = target_width as f32 / svg_width;
     let scale_y = target_height as f32 / svg_height;

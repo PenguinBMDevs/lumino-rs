@@ -164,17 +164,16 @@ impl Editor {
             original_tick,
             original_key,
         } = self.edit_state
+            && self.should_start_dragging(pos, start_pos)
         {
-            if self.should_start_dragging(pos, start_pos) {
-                let tick = self.x_to_tick(start_pos.x);
-                let key = self.y_to_key(start_pos.y);
-                self.edit_state = EditState::Dragging {
-                    note_index,
-                    offset_tick: tick - original_tick,
-                    offset_key: key as i32 - original_key as i32,
-                    last_played_key: original_key,
-                };
-            }
+            let tick = self.x_to_tick(start_pos.x);
+            let key = self.y_to_key(start_pos.y);
+            self.edit_state = EditState::Dragging {
+                note_index,
+                offset_tick: tick - original_tick,
+                offset_key: key as i32 - original_key as i32,
+                last_played_key: original_key,
+            };
         }
 
         match &mut self.edit_state {
@@ -358,10 +357,10 @@ impl Editor {
 
     /// 处理双击事件
     fn handle_double_clicked(&mut self, pos: iced_core::Point) {
-        if self.is_inside_canvas(pos) {
-            if let Some((index, _)) = self.hit_test_note(pos) {
-                self.delete_note_by_index(index);
-            }
+        if self.is_inside_canvas(pos)
+            && let Some((index, _)) = self.hit_test_note(pos)
+        {
+            self.delete_note_by_index(index);
         }
     }
 

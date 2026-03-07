@@ -58,6 +58,16 @@ pub enum Message {
     ToggleSettings,
     /// 工具栏事件
     Toolbar(Toolbar),
+    /// 打开自定义精度对话框
+    OpenCustomPrecisionDialog,
+    /// 关闭自定义精度对话框
+    CloseCustomPrecisionDialog,
+    /// 确认自定义精度
+    ConfirmCustomPrecision,
+    /// 自定义精度分子变更
+    CustomPrecisionNumeratorChanged(String),
+    /// 自定义精度分母变更
+    CustomPrecisionDenominatorChanged(String),
     Null,
 }
 

@@ -7,6 +7,7 @@ mod menu;
 mod midi_manager;
 mod progress_manager;
 mod window_manager;
+mod dialog_manager;
 
 pub use lumino_core::ParsedDms;
 pub use lumino_core::ParsedMidi;
@@ -14,6 +15,7 @@ pub use lumino_core::ParsedMidi;
 use midi_manager::{MidiManager, handle_audio_action};
 use progress_manager::ProgressManager;
 use window_manager::WindowManager;
+use dialog_manager::{DialogManager, DialogResult};
 
 #[derive(Default)]
 pub struct Runner {
@@ -33,6 +35,8 @@ struct RunnerInner {
     current_midi: Option<ParsedMidi>,
     /// 当前加载的 DMS
     current_dms: Option<Arc<ParsedDms>>,
+    /// 对话框管理器
+    dialog_manager: DialogManager,
 }
 
 impl winit::application::ApplicationHandler for Runner {
@@ -55,11 +59,40 @@ impl winit::application::ApplicationHandler for Runner {
             return;
         };
 
+        // 首先检查是否是进度窗口
         if this.progress.is_progress_window(window_id) {
             this.progress.handle_event(event);
             return;
         }
 
+        // 检查是否是对话框窗口
+        if this.dialog_manager.is_dialog_window(window_id) {
+            let mut dialog_result = None;
+            
+            if let Some(dialog) = this.dialog_manager.get_dialog_mut(window_id) {
+                dialog.handle_event(event);
+                
+                // 检查对话框结果
+                if let Some(result) = dialog.check_result() {
+                    dialog_result = Some(result);
+                    this.dialog_manager.close_dialog(window_id);
+                }
+            }
+
+            // 请求重绘对话框
+            if let Some(dialog) = this.dialog_manager.get_dialog_mut(window_id) {
+                dialog.redraw();
+            }
+
+            // 处理对话框返回的结果
+            if let Some(result) = dialog_result {
+                let main_ui = this.window.ui_mut();
+                Self::apply_dialog_result_to_ui(main_ui, result);
+            }
+            return;
+        }
+
+        // 主窗口事件
         this.window.handle_event(event, &mut this.storage);
     }
 
@@ -83,8 +116,18 @@ impl winit::application::ApplicationHandler for Runner {
         // 处理音频动作
         Self::process_audio_actions(&mut this.window, &mut this.midi);
 
-        // 处理核心事件
+        // 处理核心事件（包括打开对话框）
         this.process_core_events(event_loop);
+
+        // 初始化新创建的对话框
+        this.dialog_manager.initialize_pending(
+            event_loop,
+            this.window.window(),
+            &this.storage.config.get().ui,
+        );
+
+        // 更新对话框
+        this.dialog_manager.update();
 
         // 保存存储
         this.save_storage();
@@ -118,6 +161,9 @@ impl Runner {
         // 创建 MIDI 管理器
         let midi = MidiManager::from_config(&config.ui);
 
+        // 创建对话框管理器
+        let dialog_manager = DialogManager::new();
+
         event_loop.set_control_flow(ControlFlow::Wait);
 
         #[cfg(target_os = "macos")]
@@ -130,6 +176,7 @@ impl Runner {
             progress,
             current_midi: None,
             current_dms: None,
+            dialog_manager,
         }
     }
 
@@ -143,6 +190,23 @@ impl Runner {
         for action in actions {
             if let Some(output) = midi.output_mut() {
                 handle_audio_action(output, action);
+            }
+        }
+    }
+
+    fn apply_dialog_result_to_ui(ui: &mut lumino_ui::Host, result: DialogResult) {
+        match result {
+            DialogResult::CustomPrecision { numerator, denominator } => {
+                tracing::info!("应用自定义精度: {}/{}", numerator, denominator);
+                
+                // 应用到主窗口的编辑器
+                if let (Ok(num), Ok(den)) = (numerator.parse::<f32>(), denominator.parse::<f32>()) {
+                    let ppq = 1920u16; // 默认PPQ
+                    let ticks = (ppq as f32) * 4.0 * num / den;
+                    
+                    ui.set_custom_precision(ticks);
+                    tracing::info!("自定义精度已应用: {} ticks", ticks);
+                }
             }
         }
     }
