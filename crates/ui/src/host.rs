@@ -101,6 +101,54 @@ impl Host {
         }
     }
 
+    pub fn new_dialog(
+        window: Arc<winit::window::Window>,
+        width: u32,
+        height: u32,
+        ui_config: &config::UiConfig,
+        gfx: &lumino_gfx::Context,
+    ) -> Self {
+        let viewport =
+            Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
+
+        let clipboard = Clipboard::connect(window.clone());
+
+        // 初始化 iced 渲染器
+        let renderer = {
+            let engine = Engine::new(
+                &gfx.adapter,
+                gfx.device.clone(),
+                gfx.queue.clone(),
+                gfx.format,
+                None,
+                Shell::headless(),
+            );
+            Renderer::new(engine, Font::default(), Pixels::from(16))
+        };
+
+        // 创建 wgpu 音符渲染器
+        let note_renderer = NoteRenderer::new(&gfx.device, gfx.format);
+
+        Self {
+            window,
+            root: root::Root::new_dialog(&ui_config.theme),
+            renderer,
+            events: Vec::new(),
+            cursor: mouse::Cursor::Unavailable,
+            cache: user_interface::Cache::new(),
+            clipboard,
+            viewport,
+            pending_window_action: None,
+            pending_drag: false,
+            note_renderer,
+            cursor_position: None,
+            last_frame_time: Instant::now(),
+            last_fps_update: Instant::now(),
+            frame_count: 0,
+            is_toolbar_resizing: false,
+        }
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         self.viewport = Viewport::with_physical_size(
             Size::new(width, height),
@@ -683,6 +731,11 @@ impl Host {
         self.root.set_custom_precision(ticks);
         self.cache = std::mem::take(&mut self.cache);
         self.window.request_redraw();
+    }
+
+    /// 获取当前 PPQ (Pulses Per Quarter note)
+    pub fn ppq(&self) -> u16 {
+        self.root.editor.state.ppq
     }
 }
 

@@ -68,20 +68,29 @@ impl winit::application::ApplicationHandler for Runner {
         // 检查是否是对话框窗口
         if this.dialog_manager.is_dialog_window(window_id) {
             let mut dialog_result = None;
+            let mut should_close = false;
             
             if let Some(dialog) = this.dialog_manager.get_dialog_mut(window_id) {
                 dialog.handle_event(event);
                 
+                // 检查对话框是否应该关闭
+                should_close = dialog.should_close();
+                
                 // 检查对话框结果
                 if let Some(result) = dialog.check_result() {
                     dialog_result = Some(result);
-                    this.dialog_manager.close_dialog(window_id);
+                    should_close = true;
                 }
             }
 
-            // 请求重绘对话框
-            if let Some(dialog) = this.dialog_manager.get_dialog_mut(window_id) {
-                dialog.redraw();
+            // 如果应该关闭，关闭对话框
+            if should_close {
+                this.dialog_manager.close_dialog(window_id);
+            } else {
+                // 请求重绘对话框
+                if let Some(dialog) = this.dialog_manager.get_dialog_mut(window_id) {
+                    dialog.redraw();
+                }
             }
 
             // 处理对话框返回的结果
@@ -201,11 +210,12 @@ impl Runner {
                 
                 // 应用到主窗口的编辑器
                 if let (Ok(num), Ok(den)) = (numerator.parse::<f32>(), denominator.parse::<f32>()) {
-                    let ppq = 1920u16; // 默认PPQ
+                    // 从编辑器状态获取实际的 PPQ 值
+                    let ppq = ui.ppq();
                     let ticks = (ppq as f32) * 4.0 * num / den;
                     
                     ui.set_custom_precision(ticks);
-                    tracing::info!("自定义精度已应用: {} ticks", ticks);
+                    tracing::info!("自定义精度已应用: {} ticks (PPQ={})", ticks, ppq);
                 }
             }
         }

@@ -26,6 +26,8 @@ pub struct Root {
     is_menu_open: bool,
     /// 对话框结果（用于独立窗口模式）
     dialog_result: Option<crate::host::DialogResult>,
+    /// 是否是对话框窗口（用于自定义精度对话框等）
+    is_dialog_window: bool,
 }
 
 impl Root {
@@ -42,6 +44,7 @@ impl Root {
             is_progress_window: false,
             is_menu_open: false,
             dialog_result: None,
+            is_dialog_window: false,
         }
     }
 
@@ -60,6 +63,26 @@ impl Root {
             is_progress_window: true,
             is_menu_open: false,
             dialog_result: None,
+            is_dialog_window: false,
+        }
+    }
+
+    pub fn new_dialog(theme: &str) -> Self {
+        // 对话框窗口使用默认配置
+        let default_config = UiConfig::default();
+        Self {
+            sidebar: sidebar::Sidebar::new(),
+            titlebar: titlebar::Titlebar::new(),
+            statusbar: statusbar::StatusBar::new(),
+            toolbar: toolbar::Toolbar::new(),
+            editor: editor::Editor::new(),
+            window: window::Window::new(theme),
+            settings: settings::SettingsPanel::new(&default_config),
+            progress: None,
+            is_progress_window: false,
+            is_menu_open: false,
+            dialog_result: None,
+            is_dialog_window: true,
         }
     }
 
@@ -160,22 +183,31 @@ impl Root {
             Message::Null => (),
             // 自定义精度对话框事件
             Message::OpenCustomPrecisionDialog => {
-                self.toolbar.custom_precision_dialog.is_open = true;
+                // 触发外部对话框窗口（通过 Core 事件）
+                lumino_core::event::emit(lumino_core::event::Event::Window(
+                    lumino_core::event::window::Event::OpenCustomPrecisionDialog,
+                ));
             }
             Message::CloseCustomPrecisionDialog => {
+                // 在对话框窗口模式下，触发关闭窗口事件
+                if self.is_dialog_window {
+                    lumino_core::event::emit(lumino_core::event::Event::Window(
+                        lumino_core::event::window::Event::CloseCustomPrecisionDialog,
+                    ));
+                }
                 self.toolbar.custom_precision_dialog.is_open = false;
             }
             Message::ConfirmCustomPrecision => {
                 // 确认自定义精度，计算并设置结果
-                let numerator = self.toolbar.custom_precision_dialog.numerator.clone();
-                let denominator = self.toolbar.custom_precision_dialog.denominator.clone();
-                
+                let tuplet_count = self.toolbar.custom_precision_dialog.tuplet_count.clone();
+                let note_value = self.toolbar.custom_precision_dialog.note_value.clone();
+
                 // 设置对话框结果（供独立窗口模式使用）
                 self.dialog_result = Some(crate::host::DialogResult::CustomPrecision {
-                    numerator,
-                    denominator,
+                    numerator: tuplet_count,
+                    denominator: note_value,
                 });
-                
+
                 // 同时在主窗口应用（兼容模式）
                 if let Some(ticks) = self.toolbar.custom_precision_dialog.calculate_ticks(self.editor.state.ppq) {
                     self.toolbar.note_precision = toolbar::NotePrecision::Custom;
@@ -186,15 +218,37 @@ impl Root {
                 self.toolbar.custom_precision_dialog.is_open = false;
             }
             Message::CustomPrecisionNumeratorChanged(value) => {
-                // 只接受数字输入
+                // 只接受数字输入（已废弃，保留兼容性）
                 if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.toolbar.custom_precision_dialog.numerator = value;
+                    self.toolbar.custom_precision_dialog.tuplet_count = value;
                 }
             }
             Message::CustomPrecisionDenominatorChanged(value) => {
-                // 只接受数字输入
+                // 只接受数字输入（已废弃，保留兼容性）
                 if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.toolbar.custom_precision_dialog.denominator = value;
+                    self.toolbar.custom_precision_dialog.note_value = value;
+                }
+            }
+            Message::CustomPrecisionTupletCountChanged(value) => {
+                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
+                    self.toolbar.custom_precision_dialog.tuplet_count = value;
+                }
+            }
+            Message::CustomPrecisionTupletTypeChanged(value) => {
+                self.toolbar.custom_precision_dialog.tuplet_type = value;
+                self.toolbar.custom_precision_dialog.tuplet_count = value.value().to_string();
+            }
+            Message::CustomPrecisionDotTypeChanged(value) => {
+                self.toolbar.custom_precision_dialog.dot_type = value;
+            }
+            Message::CustomPrecisionNoteValueChanged(value) => {
+                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
+                    self.toolbar.custom_precision_dialog.note_value = value;
+                }
+            }
+            Message::CustomPrecisionDivisorChanged(value) => {
+                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
+                    self.toolbar.custom_precision_dialog.divisor = value;
                 }
             }
 
@@ -242,6 +296,9 @@ impl Root {
                 ..Default::default()
             })
             .into()
+        } else if self.is_dialog_window {
+            // 对话框窗口 - 显示自定义精度对话框内容
+            self.view_custom_precision_dialog()
         } else {
             // 主窗口
             let is_settings_route = self.sidebar.is_settings_route();
@@ -283,136 +340,165 @@ impl Root {
                     ..Default::default()
                 });
 
-            // 如果自定义精度对话框打开，叠加对话框
-            if self.toolbar.custom_precision_dialog.is_open {
-                let dialog = self.view_custom_precision_dialog();
-                iced_widget::stack![content, dialog].into()
-            } else {
-                content.into()
-            }
+            content.into()
         }
     }
 
-    /// 渲染自定义精度对话框
+    /// 渲染自定义精度对话框（自定义贴合）
     fn view_custom_precision_dialog(&self) -> Element<'_> {
-        use iced_widget::{button, column, container, row, space, text, text_input};
+        use iced_widget::{button, column, container, pick_list, row, space, text, text_input};
 
         let palette = self.window.theme.extended_palette();
         let dialog = &self.toolbar.custom_precision_dialog;
 
-        let dialog_content = container(
-            column![
-                text("自定义音符精度").size(20).style(move |_theme: &Theme| text::Style {
-                    color: Some(palette.primary.strong.color),
-                }),
-                space().height(20),
-                text("输入分数形式的音符长度").size(12).style(move |_theme: &Theme| text::Style {
-                    color: Some(palette.background.neutral.text),
-                }),
-                space().height(16),
-                // 分数输入区域
-                container(
-                    row![
-                        text_input("", &dialog.numerator)
-                            .on_input(Message::CustomPrecisionNumeratorChanged)
-                            .padding(12)
-                            .width(Length::Fixed(70.0)),
-                        text(" / ").size(24).style(move |_theme: &Theme| text::Style {
-                            color: Some(palette.background.neutral.text),
-                        }),
-                        text_input("", &dialog.denominator)
-                            .on_input(Message::CustomPrecisionDenominatorChanged)
-                            .padding(12)
-                            .width(Length::Fixed(70.0)),
-                    ]
-                    .align_y(iced_core::Alignment::Center)
-                    .spacing(8),
-                )
-                .padding(16)
-                .style(move |_theme: &Theme| container::Style {
-                    background: Some(palette.background.weakest.color.into()),
-                    border: iced_core::Border {
-                        radius: 8.0.into(),
-                        width: 1.0,
-                        color: palette.background.weak.color,
-                    },
-                    ..Default::default()
-                }),
-                space().height(24),
-                row![
-                    button(text("取消").size(14))
-                        .on_press(Message::CloseCustomPrecisionDialog)
-                        .padding([10, 20])
-                        .style(move |_theme: &Theme, status| {
-                            let bg = match status {
-                                button::Status::Hovered => palette.background.strong.color,
-                                _ => palette.background.weak.color,
-                            };
-                            button::Style {
-                                background: Some(bg.into()),
-                                text_color: palette.background.neutral.text,
-                                border: iced_core::Border {
-                                    radius: 6.0.into(),
-                                    width: 0.0,
-                                    color: iced_core::Color::TRANSPARENT,
-                                },
-                                shadow: Default::default(),
-                                snap: false,
-                            }
-                        }),
-                    space().width(12),
-                    button(text("确定").size(14))
-                        .on_press(Message::ConfirmCustomPrecision)
-                        .padding([10, 20])
-                        .style(move |_theme: &Theme, status| {
-                            let bg = match status {
-                                button::Status::Hovered => palette.primary.strong.color,
-                                _ => palette.primary.base.color,
-                            };
-                            button::Style {
-                                background: Some(bg.into()),
-                                text_color: iced_core::Color::WHITE,
-                                border: iced_core::Border {
-                                    radius: 6.0.into(),
-                                    width: 0.0,
-                                    color: iced_core::Color::TRANSPARENT,
-                                },
-                                snap: false,
-                                shadow: Default::default(),
-                            }
-                        }),
-                ]
-                .align_y(iced_core::Alignment::Center),
-            ]
-            .align_x(iced_core::Alignment::Center),
-        )
-        .width(Length::Fixed(360.0))
-        .padding(32)
-        .style(move |_theme: &Theme| {
-            container::Style::default()
-                .background(palette.background.base.color)
-                .border(iced_core::Border {
-                    radius: 12.0.into(),
-                    width: 1.0,
-                    color: palette.background.strong.color,
-                })
-        });
+        // 输入框样式
+        let input_style = move |_theme: &Theme| container::Style {
+            background: Some(palette.background.weak.color.into()),
+            border: iced_core::Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: palette.background.strong.color,
+            },
+            ..Default::default()
+        };
 
-        // 使用居中容器包裹对话框，带半透明背景
-        container(dialog_content)
+        // 第一行：三连音数量 + 符点下拉 + 分音符 + "分音符"
+        // 当符点类型为（无）时，禁用三连音数量输入框
+        let is_tuplet_disabled = dialog.dot_type == crate::toolbar::DotType::None;
+        
+        let first_row = row![
+            // 三连音数量输入框
+            container(
+                text_input("", &dialog.tuplet_count)
+                    .on_input_maybe(if is_tuplet_disabled {
+                        None
+                    } else {
+                        Some(Message::CustomPrecisionTupletCountChanged)
+                    })
+                    .padding([6, 10])
+                    .width(Length::Fixed(50.0))
+            )
+            .width(Length::Fixed(50.0))
+            .style(input_style),
+            space().width(8),
+            // 符点类型下拉框
+            pick_list(
+                crate::toolbar::DotType::all(),
+                Some(dialog.dot_type),
+                Message::CustomPrecisionDotTypeChanged,
+            )
+            .padding([6, 8])
+            .width(Length::Fixed(100.0)),
+            space().width(8),
+            // 分音符值输入框
+            container(
+                text_input("", &dialog.note_value)
+                    .on_input(Message::CustomPrecisionNoteValueChanged)
+                    .padding([6, 10])
+                    .width(Length::Fixed(50.0))
+            )
+            .width(Length::Fixed(50.0))
+            .style(input_style),
+            space().width(8),
+            // "分音符" 标签
+            text("分音符").size(14).style(move |_theme: &Theme| text::Style {
+                color: Some(palette.background.neutral.text),
+            }),
+        ]
+        .align_y(iced_core::Alignment::Center);
+
+        // 第二行："除以" + 除数输入框
+        let second_row = row![
+            text("除以").size(14).style(move |_theme: &Theme| text::Style {
+                color: Some(palette.background.neutral.text),
+            }),
+            space().width(50),
+            container(
+                text_input("", &dialog.divisor)
+                    .on_input(Message::CustomPrecisionDivisorChanged)
+                    .padding([6, 10])
+                    .width(Length::Fixed(50.0))
+            )
+            .width(Length::Fixed(50.0))
+            .style(input_style),
+        ]
+        .align_y(iced_core::Alignment::Center);
+
+        // 左侧输入区域
+        let input_area = column![
+            first_row,
+            space().height(20),
+            second_row,
+        ]
+        .width(Length::Fixed(320.0))
+        .align_x(iced_core::Alignment::Start);
+
+        // 右侧按钮区域（垂直排列）
+        let buttons = column![
+            button(text("确定").size(14))
+                .on_press(Message::ConfirmCustomPrecision)
+                .padding([8, 32])
+                .width(Length::Fixed(100.0))
+                .style(move |_theme: &Theme, status| {
+                    let bg = match status {
+                        button::Status::Hovered => palette.primary.strong.color,
+                        _ => palette.primary.base.color,
+                    };
+                    button::Style {
+                        background: Some(bg.into()),
+                        text_color: iced_core::Color::WHITE,
+                        border: iced_core::Border {
+                            radius: 4.0.into(),
+                            width: 0.0,
+                            color: iced_core::Color::TRANSPARENT,
+                        },
+                        snap: false,
+                        shadow: Default::default(),
+                    }
+                }),
+            space().height(12),
+            button(text("取消").size(14))
+                .on_press(Message::CloseCustomPrecisionDialog)
+                .padding([8, 32])
+                .width(Length::Fixed(100.0))
+                .style(move |_theme: &Theme, status| {
+                    let bg = match status {
+                        button::Status::Hovered => palette.background.strong.color,
+                        _ => palette.background.weak.color,
+                    };
+                    button::Style {
+                        background: Some(bg.into()),
+                        text_color: palette.background.neutral.text,
+                        border: iced_core::Border {
+                            radius: 4.0.into(),
+                            width: 0.0,
+                            color: iced_core::Color::TRANSPARENT,
+                        },
+                        shadow: Default::default(),
+                        snap: false,
+                    }
+                }),
+        ]
+        .align_x(iced_core::Alignment::Center);
+
+        // 主内容区域：左侧输入 + 右侧按钮
+        let main_content = row![
+            input_area,
+            space().width(Length::Fixed(20.0)),
+            buttons,
+        ]
+        .align_y(iced_core::Alignment::Center);
+
+        let dialog_content = container(main_content)
             .width(Length::Fill)
             .height(Length::Fill)
-            .align_x(iced_core::alignment::Horizontal::Center)
-            .align_y(iced_core::alignment::Vertical::Center)
+            .padding(24)
             .style(move |_theme: &Theme| {
-                container::Style::default().background(iced_core::Color {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 0.5,
-                })
-            })
-            .into()
+                container::Style::default()
+                    .background(palette.background.base.color)
+            });
+
+        dialog_content.into()
     }
 
     /// 获取当前需要绘制的音符实例

@@ -56,3 +56,6 @@ test-file/
 
 # build
 bin/
+
+# opencode
+.opencode/

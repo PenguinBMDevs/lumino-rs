@@ -42,7 +42,9 @@ impl RunnerInner {
                 self.dialog_manager.open_dialog(DialogType::CustomPrecision);
             }
             WindowEvent::CloseCustomPrecisionDialog => {
-                // 关闭对话框
+                // 关闭自定义精度对话框
+                self.dialog_manager.mark_dialog_for_close(DialogType::CustomPrecision);
+                tracing::info!("请求关闭自定义精度对话框");
             }
             WindowEvent::ApplyCustomPrecision(_, _) => {
                 // 应用精度（在对话框结果中处理）

@@ -38,11 +38,11 @@ impl DialogWindow {
     ) -> Result<Self, String> {
         let attributes = WindowAttributes::default()
             .with_inner_size(LogicalSize {
-                width: 400.0,
-                height: 280.0,
+                width: 480.0,
+                height: 180.0,
             })
             .with_title(match dialog_type {
-                DialogType::CustomPrecision => "自定义音符精度",
+                DialogType::CustomPrecision => "自定义贴合",
             })
             .with_visible(false)
             .with_decorations(true)
@@ -67,6 +67,11 @@ impl DialogWindow {
     pub fn initialize(&mut self, ui_config: &lumino_core::storage::config::UiConfig) -> Result<(), String> {
         let physical_size = self.window.inner_size();
         
+        // 检查窗口大小是否为零
+        if physical_size.width == 0 || physical_size.height == 0 {
+            return Err("窗口大小为零，无法初始化".to_string());
+        }
+        
         let gfx = futures::executor::block_on(lumino_gfx::Context::new(
             self.window.clone(),
             physical_size.width,
@@ -74,13 +79,12 @@ impl DialogWindow {
         ))
         .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
 
-        let mut ui = lumino_ui::Host::new(
+        let mut ui = lumino_ui::Host::new_dialog(
             self.window.clone(),
             physical_size.width,
             physical_size.height,
             ui_config,
             &gfx,
-            false,
         );
 
         // 根据对话框类型初始化不同的UI内容
@@ -104,13 +108,13 @@ impl DialogWindow {
     }
 
     pub fn handle_event(&mut self, event: WindowEvent) {
-        // 处理事件 - 克隆 event 以便后续还能使用
-        if let Some(ui) = self.ui.as_mut() {
-            ui.handle_events(event.clone(), winit::keyboard::ModifiersState::default());
-        }
-
-        match event {
+        // 先处理需要特殊处理的事件
+        match &event {
             WindowEvent::Resized(size) => {
+                // 避免零大小窗口导致的 wgpu 错误
+                if size.width == 0 || size.height == 0 {
+                    return;
+                }
                 if let (Some(gfx), Some(ui)) = (self.gfx.as_mut(), self.ui.as_mut()) {
                     ui.resize(size.width, size.height);
                     gfx.resize(size.width, size.height);
@@ -119,7 +123,18 @@ impl DialogWindow {
             WindowEvent::CloseRequested => {
                 self.should_close = true;
             }
+            WindowEvent::CursorMoved { position, .. } => {
+                // 更新光标位置，使 UI 能正确响应鼠标事件
+                if let Some(ui) = self.ui.as_mut() {
+                    ui.cursor_moved(*position);
+                }
+            }
             _ => {}
+        }
+
+        // 处理事件 - 传递给 UI
+        if let Some(ui) = self.ui.as_mut() {
+            ui.handle_events(event, winit::keyboard::ModifiersState::default());
         }
     }
 
@@ -140,17 +155,28 @@ impl DialogWindow {
     }
 
     pub fn redraw(&mut self) {
-        if let (Some(gfx), Some(ui)) = (self.gfx.as_mut(), self.ui.as_mut())
-            && gfx
-                .with_frame(|frame, view| ui.redraw_requested(frame, view, gfx))
-                .is_err()
-        {
-            self.window.request_redraw();
+        // 检查窗口大小是否为零，避免 wgpu 错误
+        let size = self.window.inner_size();
+        if size.width == 0 || size.height == 0 {
+            return;
+        }
+        
+        if let (Some(gfx), Some(ui)) = (self.gfx.as_mut(), self.ui.as_mut()) {
+            match gfx.with_frame(|frame, view| ui.redraw_requested(frame, view, gfx)) {
+                Ok(_) => {}
+                Err(_) => {
+                    self.window.request_redraw();
+                }
+            }
         }
     }
 
     pub fn should_close(&self) -> bool {
         self.should_close
+    }
+
+    pub fn request_close(&mut self) {
+        self.should_close = true;
     }
 }
 
@@ -225,6 +251,28 @@ impl DialogManager {
     pub fn close_dialog(&mut self, window_id: WindowId) {
         if self.dialogs.remove(&window_id).is_some() {
             tracing::info!("对话框已关闭: {:?}", window_id);
+        }
+    }
+
+    /// 关闭特定类型的对话框
+    pub fn close_dialog_by_type(&mut self, dialog_type: DialogType) {
+        let to_remove: Vec<WindowId> = self
+            .dialogs
+            .iter()
+            .filter(|(_, dialog)| dialog.dialog_type == dialog_type)
+            .map(|(id, _)| *id)
+            .collect();
+        for window_id in to_remove {
+            self.close_dialog(window_id);
+        }
+    }
+
+    /// 设置对话框为待关闭状态
+    pub fn mark_dialog_for_close(&mut self, dialog_type: DialogType) {
+        for dialog in self.dialogs.values_mut() {
+            if dialog.dialog_type == dialog_type {
+                dialog.request_close();
+            }
         }
     }
 

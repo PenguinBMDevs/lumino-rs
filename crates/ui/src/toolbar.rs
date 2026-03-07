@@ -91,20 +91,127 @@ impl NotePrecision {
     }
 }
 
+/// 三连音类型选项
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TupletType {
+    /// 普通（无）
+    #[default]
+    None,
+    /// 三连音
+    Triplet,
+    /// 五连音
+    Quintuplet,
+    /// 六连音
+    Sextuplet,
+    /// 七连音
+    Septuplet,
+}
+
+impl std::fmt::Display for TupletType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            TupletType::None => "（无）",
+            TupletType::Triplet => "3",
+            TupletType::Quintuplet => "5",
+            TupletType::Sextuplet => "6",
+            TupletType::Septuplet => "7",
+        };
+        write!(f, "{}", name)
+    }
+}
+
+impl TupletType {
+    /// 获取所有选项
+    pub fn all() -> &'static [TupletType] {
+        &[
+            TupletType::None,
+            TupletType::Triplet,
+            TupletType::Quintuplet,
+            TupletType::Sextuplet,
+            TupletType::Septuplet,
+        ]
+    }
+
+    /// 获取数值
+    pub fn value(&self) -> u32 {
+        match self {
+            TupletType::None => 1,
+            TupletType::Triplet => 3,
+            TupletType::Quintuplet => 5,
+            TupletType::Sextuplet => 6,
+            TupletType::Septuplet => 7,
+        }
+    }
+}
+
+/// 符点类型选项
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DotType {
+    /// 无符点
+    #[default]
+    None,
+    /// 连音符
+    Tuplet,
+    /// 单符点
+    Single,
+    /// 双符点
+    Double,
+}
+
+impl std::fmt::Display for DotType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            DotType::None => "（无）",
+            DotType::Tuplet => "连音符",
+            DotType::Single => "符点",
+            DotType::Double => "双符点",
+        };
+        write!(f, "{}", name)
+    }
+}
+
+impl DotType {
+    /// 获取所有选项
+    pub fn all() -> &'static [DotType] {
+        &[DotType::None, DotType::Tuplet, DotType::Single, DotType::Double]
+    }
+
+    /// 获取倍数（符点增加原时值的多少）
+    pub fn multiplier(&self) -> f32 {
+        match self {
+            DotType::None => 1.0,
+            DotType::Tuplet => 1.0,
+            DotType::Single => 1.5,
+            DotType::Double => 1.75,
+        }
+    }
+}
+
 /// 自定义精度对话框状态
 #[derive(Debug, Clone)]
 pub struct CustomPrecisionDialog {
     pub is_open: bool,
-    pub numerator: String,   // 分子（如 1）
-    pub denominator: String, // 分母（如 4）
+    /// 三连音数量（如 "3"）
+    pub tuplet_count: String,
+    /// 三连音类型
+    pub tuplet_type: TupletType,
+    /// 符点类型
+    pub dot_type: DotType,
+    /// 分音符值（如 "64"）
+    pub note_value: String,
+    /// 除数（如 "1"）
+    pub divisor: String,
 }
 
 impl Default for CustomPrecisionDialog {
     fn default() -> Self {
         Self {
             is_open: false,
-            numerator: "1".to_string(),
-            denominator: "4".to_string(),
+            tuplet_count: "3".to_string(),
+            tuplet_type: TupletType::Triplet,
+            dot_type: DotType::None,
+            note_value: "64".to_string(),
+            divisor: "1".to_string(),
         }
     }
 }
@@ -112,17 +219,56 @@ impl Default for CustomPrecisionDialog {
 impl CustomPrecisionDialog {
     /// 计算对应的tick值（基于PPQ）
     pub fn calculate_ticks(&self, ppq: u16) -> Option<f32> {
-        let num = self.numerator.parse::<f32>().ok()?;
-        let den = self.denominator.parse::<f32>().ok()?;
-        if den == 0.0 {
+        let note_value = self.note_value.parse::<f32>().ok()?;
+        let divisor = self.divisor.parse::<f32>().ok()?;
+
+        if note_value == 0.0 || divisor == 0.0 {
             return None;
         }
-        Some((ppq as f32) * 4.0 * num / den)
+
+        // 基础时值 = (4 / 分音符值) * PPQ
+        // 例如 64分音符 = (4 / 64) * PPQ = PPQ / 16
+        let base_ticks = (ppq as f32) * 4.0 / note_value;
+
+        // 应用连音：只有当符点类型不是"（无）"时才使用三连音数量
+        // 连音将N个音符塞进N-1个的时值，比例 = (N-1) / N
+        let tuplet_ratio = if self.dot_type != DotType::None {
+            if let Ok(tuplet_count) = self.tuplet_count.parse::<f32>() {
+                if tuplet_count > 1.0 {
+                    (tuplet_count - 1.0) / tuplet_count
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            }
+        } else {
+            1.0
+        };
+
+        // 应用符点
+        let dot_multiplier = self.dot_type.multiplier();
+
+        // 应用除数
+        let final_ticks = base_ticks * tuplet_ratio * dot_multiplier / divisor;
+
+        Some(final_ticks)
     }
 
-    /// 获取显示文本（如 "1/4"）
+    /// 获取显示文本
     pub fn display_text(&self) -> String {
-        format!("{}/{}", self.numerator, self.denominator)
+        let mut text = String::new();
+        if self.tuplet_count != "1" && !self.tuplet_count.is_empty() {
+            text.push_str(&self.tuplet_count);
+            text.push(' ');
+        }
+        text.push_str(&self.note_value);
+        text.push_str("分音符");
+        if self.divisor != "1" && !self.divisor.is_empty() {
+            text.push_str(" / ");
+            text.push_str(&self.divisor);
+        }
+        text
     }
 }
 
@@ -143,10 +289,20 @@ pub enum Event {
     CloseCustomPrecisionDialog,
     /// 确认自定义精度
     ConfirmCustomPrecision,
-    /// 自定义精度分子变更
+    /// 自定义精度分子变更（已废弃）
     CustomPrecisionNumeratorChanged(String),
-    /// 自定义精度分母变更
+    /// 自定义精度分母变更（已废弃）
     CustomPrecisionDenominatorChanged(String),
+    /// 三连音数量变更
+    CustomPrecisionTupletCountChanged(String),
+    /// 三连音类型变更
+    CustomPrecisionTupletTypeChanged(TupletType),
+    /// 符点类型变更
+    CustomPrecisionDotTypeChanged(DotType),
+    /// 分音符值变更
+    CustomPrecisionNoteValueChanged(String),
+    /// 除数变更
+    CustomPrecisionDivisorChanged(String),
     /// 开始拖拽调整高度
     ResizeDragStarted(Point),
     /// 拖拽中调整高度
@@ -202,6 +358,26 @@ impl Event {
 
     pub fn custom_precision_denominator_changed(value: String) -> Message {
         Message::Toolbar(Self::CustomPrecisionDenominatorChanged(value))
+    }
+
+    pub fn custom_precision_tuplet_count_changed(value: String) -> Message {
+        Message::Toolbar(Self::CustomPrecisionTupletCountChanged(value))
+    }
+
+    pub fn custom_precision_tuplet_type_changed(value: TupletType) -> Message {
+        Message::Toolbar(Self::CustomPrecisionTupletTypeChanged(value))
+    }
+
+    pub fn custom_precision_dot_type_changed(value: DotType) -> Message {
+        Message::Toolbar(Self::CustomPrecisionDotTypeChanged(value))
+    }
+
+    pub fn custom_precision_note_value_changed(value: String) -> Message {
+        Message::Toolbar(Self::CustomPrecisionNoteValueChanged(value))
+    }
+
+    pub fn custom_precision_divisor_changed(value: String) -> Message {
+        Message::Toolbar(Self::CustomPrecisionDivisorChanged(value))
     }
 
     pub fn resize_drag_started() -> Message {
@@ -429,15 +605,38 @@ impl Toolbar {
                 tracing::debug!("工具栏: 确认自定义精度");
             }
             Event::CustomPrecisionNumeratorChanged(value) => {
-                // 只接受数字输入
+                // 已废弃，保留兼容性
                 if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.custom_precision_dialog.numerator = value;
+                    self.custom_precision_dialog.tuplet_count = value;
                 }
             }
             Event::CustomPrecisionDenominatorChanged(value) => {
-                // 只接受数字输入
+                // 已废弃，保留兼容性
                 if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.custom_precision_dialog.denominator = value;
+                    self.custom_precision_dialog.note_value = value;
+                }
+            }
+            Event::CustomPrecisionTupletCountChanged(value) => {
+                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
+                    self.custom_precision_dialog.tuplet_count = value;
+                }
+            }
+            Event::CustomPrecisionTupletTypeChanged(value) => {
+                self.custom_precision_dialog.tuplet_type = value;
+                // 同步更新数量输入框
+                self.custom_precision_dialog.tuplet_count = value.value().to_string();
+            }
+            Event::CustomPrecisionDotTypeChanged(value) => {
+                self.custom_precision_dialog.dot_type = value;
+            }
+            Event::CustomPrecisionNoteValueChanged(value) => {
+                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
+                    self.custom_precision_dialog.note_value = value;
+                }
+            }
+            Event::CustomPrecisionDivisorChanged(value) => {
+                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
+                    self.custom_precision_dialog.divisor = value;
                 }
             }
             Event::ResizeDragStarted(_) => {

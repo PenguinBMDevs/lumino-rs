@@ -64,10 +64,20 @@ pub enum Message {
     CloseCustomPrecisionDialog,
     /// 确认自定义精度
     ConfirmCustomPrecision,
-    /// 自定义精度分子变更
+    /// 自定义精度分子变更（已废弃）
     CustomPrecisionNumeratorChanged(String),
-    /// 自定义精度分母变更
+    /// 自定义精度分母变更（已废弃）
     CustomPrecisionDenominatorChanged(String),
+    /// 三连音数量变更
+    CustomPrecisionTupletCountChanged(String),
+    /// 三连音类型变更
+    CustomPrecisionTupletTypeChanged(crate::toolbar::TupletType),
+    /// 符点类型变更
+    CustomPrecisionDotTypeChanged(crate::toolbar::DotType),
+    /// 分音符值变更
+    CustomPrecisionNoteValueChanged(String),
+    /// 除数变更
+    CustomPrecisionDivisorChanged(String),
     Null,
 }
 
