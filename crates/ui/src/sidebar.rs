@@ -120,6 +120,7 @@ impl Sidebar {
         }
     }
 
+    /// 返回完整的侧边栏视图（包括路由图标栏和面板）
     pub fn view(&self, window: &window::Window) -> Element<'_> {
         let panel = if self.panel_visible {
             panel::view(
@@ -136,6 +137,11 @@ impl Sidebar {
         let inner = row![route::view(self.route, window), panel,];
 
         container(inner).into()
+    }
+
+    /// 仅返回路由图标栏视图（48px 宽）
+    pub fn route_view(&self, window: &window::Window) -> Element<'_> {
+        route::view(self.route, window)
     }
 
     pub fn width(&self) -> u32 {

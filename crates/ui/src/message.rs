@@ -1,4 +1,7 @@
-pub use crate::{settings::Event as Settings, sidebar::Event as Sidebar, window::Event as Window};
+pub use crate::{
+    settings::Event as Settings, sidebar::Event as Sidebar, toolbar::Event as Toolbar,
+    window::Event as Window,
+};
 
 #[derive(Debug, Clone)]
 pub enum EditorAction {
@@ -50,6 +53,8 @@ pub enum Message {
     Settings(Settings),
     /// 切换设置面板显示状态
     ToggleSettings,
+    /// 工具栏事件
+    Toolbar(Toolbar),
     Null,
 }
 

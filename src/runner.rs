@@ -94,6 +94,9 @@ impl winit::application::ApplicationHandler for Runner {
             let ui_config = this.storage.config.get().ui.clone();
             this.midi.reinit_if_needed(&ui_config);
         }
+
+        // 检查 XSynth 异步初始化是否完成
+        this.midi.check_async_init_complete();
     }
 }
 

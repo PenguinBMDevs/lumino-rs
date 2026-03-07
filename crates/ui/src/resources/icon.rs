@@ -41,6 +41,13 @@ pub enum Icon {
     EyeSlash,
     Plus,
     EllipsisVertical,
+    // Toolbar icons
+    Play,
+    Pause,
+    SkipBackward,
+    SkipForward,
+    MousePointer,
+    Pencil,
 }
 
 struct IconData {
@@ -66,6 +73,13 @@ static ICON_CACHE: Lazy<HashMap<Icon, IconData>> = Lazy::new(|| {
         Icon::EyeSlash,
         Icon::Plus,
         Icon::EllipsisVertical,
+        // Toolbar icons
+        Icon::Play,
+        Icon::Pause,
+        Icon::SkipBackward,
+        Icon::SkipForward,
+        Icon::MousePointer,
+        Icon::Pencil,
     ] {
         match render_svg_to_data(icon) {
             Ok(data) => {
@@ -234,5 +248,16 @@ fn bytes(icon: Icon) -> &'static [u8] {
         Icon::EllipsisVertical => {
             include_bytes!("../../../../resources/icons/sidebar/ellipsis-vertical.svg")
         }
+        // Toolbar icons
+        Icon::Play => include_bytes!("../../../../resources/icons/toolbar/play.svg"),
+        Icon::Pause => include_bytes!("../../../../resources/icons/toolbar/pause.svg"),
+        Icon::SkipBackward => {
+            include_bytes!("../../../../resources/icons/toolbar/skip-backward.svg")
+        }
+        Icon::SkipForward => include_bytes!("../../../../resources/icons/toolbar/skip-forward.svg"),
+        Icon::MousePointer => {
+            include_bytes!("../../../../resources/icons/toolbar/mouse-pointer.svg")
+        }
+        Icon::Pencil => include_bytes!("../../../../resources/icons/toolbar/pencil.svg"),
     }
 }

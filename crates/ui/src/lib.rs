@@ -6,6 +6,7 @@ pub mod settings;
 mod sidebar;
 mod statusbar;
 mod titlebar;
+mod toolbar;
 pub mod window;
 
 pub(crate) use lumino_core::storage::config;
@@ -50,6 +51,8 @@ pub struct Host {
     last_fps_update: Instant,
     /// 帧计数器
     frame_count: u32,
+    /// 是否正在拖拽调整工具栏高度
+    is_toolbar_resizing: bool,
 }
 
 impl Host {
@@ -102,6 +105,7 @@ impl Host {
             last_frame_time: Instant::now(),
             last_fps_update: Instant::now(),
             frame_count: 0,
+            is_toolbar_resizing: false,
         }
     }
 
@@ -293,6 +297,15 @@ impl Host {
         self.cursor = mouse::Cursor::Available(logical_pos);
         // 存储逻辑坐标（与 iced 一致）
         self.cursor_position = Some(logical_pos);
+
+        // 如果正在调整工具栏高度，更新工具栏高度
+        if self.is_toolbar_resizing {
+            self.root
+                .toolbar
+                .update_resize_position(logical_pos.y);
+            self.cache = std::mem::take(&mut self.cache);
+            self.window.request_redraw();
+        }
     }
 
     pub fn handle_events(
@@ -322,6 +335,18 @@ impl Host {
                         }
                         _ => {}
                     }
+                }
+            }
+            MouseInput { state, button, .. } => {
+                // 全局监听鼠标释放事件，结束工具栏拖拽状态
+                if *button == winit::event::MouseButton::Left
+                    && *state == winit::event::ElementState::Released
+                    && self.is_toolbar_resizing
+                {
+                    self.is_toolbar_resizing = false;
+                    self.root.toolbar.end_resize();
+                    self.cache = std::mem::take(&mut self.cache);
+                    self.window.request_redraw();
                 }
             }
             _ => (),
@@ -370,6 +395,17 @@ impl Host {
                 }
                 if let message::Message::Window(window::Event::Drag) = &message {
                     self.pending_drag = true;
+                }
+                // 处理工具栏调整大小事件
+                if let message::Message::Toolbar(toolbar::Event::ResizeDragStarted(_)) = &message {
+                    if let Some(pos) = self.cursor_position {
+                        self.is_toolbar_resizing = true;
+                        self.root.toolbar.start_resize(pos.y);
+                    }
+                }
+                if let message::Message::Toolbar(toolbar::Event::ResizeDragEnded) = &message {
+                    self.is_toolbar_resizing = false;
+                    self.root.toolbar.end_resize();
                 }
                 self.root.update(message);
             }

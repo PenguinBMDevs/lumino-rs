@@ -2,7 +2,9 @@ use iced_core::Length;
 use iced_widget::{column, container, progress_bar, row, text};
 use lumino_gfx::NoteInstance;
 
-use crate::{editor, editor::note::Note, message, settings, sidebar, statusbar, titlebar, window};
+use crate::{
+    editor, editor::note::Note, message, settings, sidebar, statusbar, titlebar, toolbar, window,
+};
 use lumino_core::storage::config::UiConfig;
 
 pub type Message = message::Message;
@@ -14,6 +16,7 @@ pub struct Root {
     sidebar: sidebar::Sidebar,
     titlebar: titlebar::Titlebar,
     statusbar: statusbar::StatusBar,
+    pub toolbar: toolbar::Toolbar,
     pub editor: editor::Editor,
     window: window::Window,
     settings: settings::SettingsPanel,
@@ -29,6 +32,7 @@ impl Root {
             sidebar: sidebar::Sidebar::new(),
             titlebar: titlebar::Titlebar::new(),
             statusbar: statusbar::StatusBar::new(),
+            toolbar: toolbar::Toolbar::new(),
             editor: editor::Editor::new(),
             window: window::Window::new(&ui_config.theme),
             settings: settings::SettingsPanel::new(ui_config),
@@ -45,6 +49,7 @@ impl Root {
             sidebar: sidebar::Sidebar::new(),
             titlebar: titlebar::Titlebar::new(),
             statusbar: statusbar::StatusBar::new(),
+            toolbar: toolbar::Toolbar::new(),
             editor: editor::Editor::new(),
             window: window::Window::new(theme),
             settings: settings::SettingsPanel::new(&default_config),
@@ -132,6 +137,10 @@ impl Root {
             }
             // ToggleSettings 消息已废弃，设置通过侧边栏路由切换
             Message::ToggleSettings => {}
+            // 工具栏事件
+            Message::Toolbar(event) => {
+                self.toolbar.update(event);
+            }
             // 显式丢弃它
             Message::Null => (),
         }
@@ -182,23 +191,32 @@ impl Root {
             // 主窗口
             let is_settings_route = self.sidebar.is_settings_route();
 
+            // 左侧栏（包含图标栏和音轨面板）
+            let left_bar = self.sidebar.view(&self.window);
+
+            // 主内容区域（工具栏 + 编辑器/设置）
+            let main_area: Element<'_> = if is_settings_route {
+                // 设置路由激活时显示设置界面
+                settings::view(&self.settings, &self.window)
+            } else {
+                // 默认显示工具栏 + 编辑器
+                column![
+                    self.toolbar.view(&self.window),
+                    self.editor.view(
+                        Message::ScrollbarScrolled,
+                        Message::ScrollbarScrolledY,
+                        |zoom, fixed_ratio| Message::ZoomXChanged { zoom, fixed_ratio },
+                        |zoom, fixed_ratio| Message::ZoomYChanged { zoom, fixed_ratio },
+                    )
+                ]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+            };
+
             let main_content = column![
                 self.titlebar.view(&self.window),
-                row![
-                    self.sidebar.view(&self.window),
-                    if is_settings_route {
-                        // 设置路由激活时显示设置界面
-                        settings::view(&self.settings, &self.window)
-                    } else {
-                        // 默认显示编辑器
-                        self.editor.view(
-                            Message::ScrollbarScrolled,
-                            Message::ScrollbarScrolledY,
-                            |zoom, fixed_ratio| Message::ZoomXChanged { zoom, fixed_ratio },
-                            |zoom, fixed_ratio| Message::ZoomYChanged { zoom, fixed_ratio },
-                        )
-                    }
-                ],
+                row![left_bar, main_area].height(Length::Fill),
                 self.statusbar.view(),
             ];
 
