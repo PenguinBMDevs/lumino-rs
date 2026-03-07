@@ -2,6 +2,15 @@ use lumino_core::storage::config::{SynthBackend, UiConfig};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
 
+/// MIDI API 类型别名
+type MidiApi = Box<dyn lumino_midi::Api>;
+/// MIDI 输出连接类型别名
+type MidiOutput = Box<dyn lumino_midi::OutputConnection>;
+/// MIDI 初始化结果类型别名
+type MidiInitResult = Result<(MidiApi, MidiOutput), String>;
+/// System 输出初始化结果类型别名
+type SystemOutputResult = (Option<MidiApi>, Option<MidiOutput>, SynthBackend);
+
 /// XSynth 异步初始化结果
 enum XSynthInitResult {
     Success {
@@ -117,9 +126,7 @@ impl MidiManager {
     }
     
     /// 阻塞式初始化 XSynth（用于后台线程）
-    fn init_xsynth_blocking(
-        soundfont_path: &Path,
-    ) -> Result<(Box<dyn lumino_midi::Api>, Box<dyn lumino_midi::OutputConnection>), String> {
+    fn init_xsynth_blocking(soundfont_path: &Path) -> MidiInitResult {
         use lumino_midi::ApiKind;
         
         let api_kind = ApiKind::XSynth {
@@ -142,11 +149,7 @@ impl MidiManager {
     }
     
     /// 快速初始化 System 后端（不阻塞）
-    fn init_system_output() -> (
-        Option<Box<dyn lumino_midi::Api>>,
-        Option<Box<dyn lumino_midi::OutputConnection>>,
-        SynthBackend,
-    ) {
+    fn init_system_output() -> SystemOutputResult {
         use lumino_midi::ApiKind;
         
         tracing::info!("MIDI: 快速启动 System 后端");

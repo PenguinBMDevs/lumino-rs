@@ -102,8 +102,6 @@ pub struct NoteRenderer {
     cull_uniform_buffer: wgpu::Buffer,
     /// 渲染 Bind group
     render_bind_group: wgpu::BindGroup,
-    /// 渲染 Bind group layout
-    render_bind_group_layout: wgpu::BindGroupLayout,
     /// 计算 Bind group
     cull_bind_group: wgpu::BindGroup,
     /// 计算 Bind group layout
@@ -319,6 +317,9 @@ impl NoteRenderer {
             &indirect_buffer,
         );
 
+        // render_bind_group_layout 被保留用于未来扩展，但当前未直接使用
+        let _ = render_bind_group_layout;
+
         Self {
             pipeline,
             cull_pipeline,
@@ -329,7 +330,6 @@ impl NoteRenderer {
             viewport_buffer,
             cull_uniform_buffer,
             render_bind_group,
-            render_bind_group_layout,
             cull_bind_group,
             cull_bind_group_layout,
         }

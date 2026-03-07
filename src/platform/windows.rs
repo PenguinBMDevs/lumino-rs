@@ -1,5 +1,3 @@
-#![cfg(target_os = "windows")]
-
 use winapi::shared::minwindef::{LPARAM, LRESULT, WPARAM};
 use winapi::shared::windef::{HWND, RECT};
 use winapi::um::winuser::{

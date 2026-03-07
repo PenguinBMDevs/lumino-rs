@@ -149,7 +149,7 @@ impl Root {
                 }
                 // 如果精度设置变更了，同步更新 editor 的 snap_precision
                 if let crate::toolbar::Event::PrecisionChanged(precision) = &event {
-                    let ticks = precision.to_ticks(self.editor.state.ppq);
+                    let ticks = (*precision).as_ticks(self.editor.state.ppq);
                     self.editor.state.snap_precision = ticks;
                     self.editor.state.default_note_length = ticks;
                     tracing::debug!("Root: 音符精度同步为 {} ticks (PPQ={})", ticks, self.editor.state.ppq);

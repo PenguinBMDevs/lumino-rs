@@ -2,7 +2,8 @@ use crate::{Message, Renderer};
 use iced_core::{Point, Rectangle, Theme, mouse};
 use iced_widget::canvas::{self, Event, Frame, Geometry, Path, Program, Stroke};
 
-// 滚动条状态
+// 滚动条状态 - 保留用于未来扩展
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScrollbarState {
     Idle,
@@ -14,7 +15,8 @@ pub enum ScrollbarState {
     },
 }
 
-// 滚动条
+// 滚动条 - 保留用于未来扩展
+#[allow(dead_code)]
 pub struct Scrollbar {
     pub thumb_width: f32,
     pub edge_width: f32,
@@ -25,6 +27,7 @@ pub struct Scrollbar {
     pub thumb_ratio: f32,
 }
 
+#[allow(dead_code)]
 impl Scrollbar {
     pub fn new(thumb_width: f32) -> Self {
         Self {
@@ -66,7 +69,8 @@ impl Scrollbar {
     }
 }
 
-// 滚动条视图状态
+// 滚动条视图状态 - 保留用于未来扩展
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct ScrollbarViewState {
     pub state: ScrollbarState,
@@ -124,7 +128,8 @@ impl ScrollbarViewState {
     }
 }
 
-// 滚动条视图
+// 滚动条视图 - 保留用于未来扩展
+#[allow(dead_code)]
 pub struct ScrollbarView {
     pub max_scroll: f32,
 }

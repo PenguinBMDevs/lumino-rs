@@ -17,6 +17,11 @@ use iced_core::{Event, Font, Pixels, Size, mouse, renderer, touch};
 
 use crate::{config, root, window, message, toolbar, settings};
 
+/// 音符数据: (tick, key, length)
+pub type NoteData = (f32, u8, f32);
+/// 音轨音符数据: (track_idx, notes)
+pub type TrackNotes = (usize, Vec<NoteData>);
+
 /// UI 宿主 - 管理 iced 渲染和 wgpu 音符渲染
 pub struct Host {
     window: Arc<winit::window::Window>,
@@ -617,12 +622,12 @@ impl Host {
     /// 获取编辑器中的所有音符数据（用于保存）
     ///
     /// 返回 (track_idx, notes) 列表，其中 notes 格式为 (tick, key, length)
-    pub fn get_editor_notes(&self) -> Vec<(usize, Vec<(f32, u8, f32)>)> {
+    pub fn get_editor_notes(&self) -> Vec<TrackNotes> {
         let mut result = Vec::new();
 
         // 先保存当前音轨的音符
         if !self.root.editor.notes.is_empty() {
-            let current_notes: Vec<(f32, u8, f32)> = self
+            let current_notes: Vec<NoteData> = self
                 .root
                 .editor
                 .notes
@@ -635,7 +640,7 @@ impl Host {
         // 添加其他音轨的音符
         for (&track_idx, notes) in &self.root.editor.track_notes {
             if track_idx != self.root.editor.current_track {
-                let track_notes: Vec<(f32, u8, f32)> = notes
+                let track_notes: Vec<NoteData> = notes
                     .iter()
                     .map(|n| (n.tick, n.key as u8, n.length))
                     .collect();

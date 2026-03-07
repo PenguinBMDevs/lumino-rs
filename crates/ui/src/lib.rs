@@ -13,5 +13,5 @@ pub mod host;
 
 pub(crate) use lumino_core::storage::config;
 pub(crate) use root::{Element, Message, Renderer, Theme};
-pub use host::Host;
+pub use host::{Host, NoteData, TrackNotes};
 

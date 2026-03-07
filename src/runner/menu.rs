@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use lumino_core::ParsedMidi;
 use lumino_core::event;
+use lumino_ui::TrackNotes;
 
 use super::RunnerInner;
 
@@ -550,7 +551,7 @@ impl RunnerInner {
     /// 保存编辑器数据为 LMPJ 文件
     fn save_editor_as_lmpj(
         &self,
-        editor_notes: Vec<(usize, Vec<(f32, u8, f32)>)>,
+        editor_notes: Vec<TrackNotes>,
         save_path: std::path::PathBuf,
     ) {
         // 创建 ParsedMidi 数据结构
@@ -579,7 +580,7 @@ impl RunnerInner {
     /// 保存编辑器数据为 MIDI 文件
     fn save_editor_as_midi(
         &self,
-        editor_notes: Vec<(usize, Vec<(f32, u8, f32)>)>,
+        editor_notes: Vec<TrackNotes>,
         save_path: std::path::PathBuf,
     ) {
         // 构建 MIDI 导出数据
@@ -632,7 +633,7 @@ impl RunnerInner {
     /// 从编辑器音符构建 ParsedMidi
     fn build_parsed_midi_from_editor(
         &self,
-        editor_notes: &[(usize, Vec<(f32, u8, f32)>)],
+        editor_notes: &[TrackNotes],
         save_path: &std::path::Path,
     ) -> lumino_core::ParsedMidi {
         use lumino_core::midi::info::MidiInfo;
@@ -690,7 +691,7 @@ impl RunnerInner {
     /// 从编辑器音符构建 MIDI 导出数据
     fn build_midi_export_data(
         &self,
-        editor_notes: &[(usize, Vec<(f32, u8, f32)>)],
+        editor_notes: &[TrackNotes],
     ) -> lumino_export::midi::MidiExportData {
         use lumino_export::midi::{
             MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTrackData,

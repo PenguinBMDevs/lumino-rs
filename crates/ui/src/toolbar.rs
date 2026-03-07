@@ -61,7 +61,7 @@ impl NotePrecision {
     }
 
     /// 根据PPQ计算对应的tick值
-    pub fn to_ticks(&self, ppq: u16) -> f32 {
+    pub fn as_ticks(self, ppq: u16) -> f32 {
         let ppq = ppq as f32;
         match self {
             NotePrecision::Whole => ppq * 4.0,
