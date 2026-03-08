@@ -28,6 +28,68 @@ pub struct Root {
     dialog_result: Option<crate::host::DialogResult>,
     /// 是否是对话框窗口（用于自定义精度对话框等）
     is_dialog_window: bool,
+    /// 对话框类型
+    dialog_type: DialogType,
+    /// 协作对话框状态
+    collaboration_dialog: CollaborationDialog,
+}
+
+/// 对话框类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DialogType {
+    #[default]
+    None,
+    CustomPrecision,
+    Collaboration,
+}
+
+/// 协作对话框状态
+#[derive(Debug, Clone)]
+pub struct CollaborationDialog {
+    pub is_open: bool,
+    /// 服务器地址
+    pub server_host: String,
+    /// 服务器端口
+    pub server_port: String,
+    /// 用户名
+    pub username: String,
+    /// 房间名称（创建房间用）
+    pub room_name: String,
+    /// 邀请码（加入房间用）
+    pub invite_code: String,
+    /// 当前视图状态
+    pub view_state: CollaborationViewState,
+    /// 连接状态
+    pub connection_status: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CollaborationViewState {
+    #[default]
+    Connect,      // 连接服务器界面
+    RoomActions,  // 创建/加入房间界面
+    InRoom,       // 在房间内界面
+}
+
+impl CollaborationDialog {
+    pub fn new() -> Self {
+        Self {
+            is_open: false,
+            server_host: "localhost".to_string(),
+            server_port: "3000".to_string(),
+            username: "用户".to_string(),
+            room_name: "我的房间".to_string(),
+            invite_code: String::new(),
+            view_state: CollaborationViewState::Connect,
+            connection_status: String::new(),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.is_open = false;
+        self.view_state = CollaborationViewState::Connect;
+        self.connection_status.clear();
+    }
 }
 
 impl Root {
@@ -45,6 +107,8 @@ impl Root {
             is_menu_open: false,
             dialog_result: None,
             is_dialog_window: false,
+            dialog_type: DialogType::None,
+            collaboration_dialog: CollaborationDialog::new(),
         }
     }
 
@@ -64,6 +128,8 @@ impl Root {
             is_menu_open: false,
             dialog_result: None,
             is_dialog_window: false,
+            dialog_type: DialogType::None,
+            collaboration_dialog: CollaborationDialog::new(),
         }
     }
 
@@ -83,6 +149,8 @@ impl Root {
             is_menu_open: false,
             dialog_result: None,
             is_dialog_window: true,
+            dialog_type: DialogType::CustomPrecision,
+            collaboration_dialog: CollaborationDialog::new(),
         }
     }
 
@@ -177,10 +245,91 @@ impl Root {
                     self.editor.state.default_note_length = ticks;
                     tracing::debug!("Root: 音符精度同步为 {} ticks (PPQ={})", ticks, self.editor.state.ppq);
                 }
+                // 处理打开协作对话框事件
+                if let crate::toolbar::Event::OpenCollaborationDialog = &event {
+                    tracing::info!("Root: 触发打开协作对话框");
+                    lumino_core::event::emit(lumino_core::event::Event::Window(
+                        lumino_core::event::window::Event::OpenCollaborationDialog,
+                    ));
+                }
                 self.toolbar.update(event);
             }
             // 显式丢弃它
             Message::Null => (),
+            // 协作对话框事件
+            Message::OpenCollaborationDialog => {
+                // 触发外部协作对话框窗口（通过 Core 事件）
+                lumino_core::event::emit(lumino_core::event::Event::Window(
+                    lumino_core::event::window::Event::OpenCollaborationDialog,
+                ));
+            }
+            Message::CloseCollaborationDialog => {
+                if self.is_dialog_window {
+                    lumino_core::event::emit(lumino_core::event::Event::Window(
+                        lumino_core::event::window::Event::CloseCollaborationDialog,
+                    ));
+                }
+            }
+            Message::CollaborationConnect { host, port, username, invite_code } => {
+                tracing::info!("协作: 连接服务器 {}:{}", host, port);
+                lumino_core::event::emit(lumino_core::event::Event::Window(
+                    lumino_core::event::window::Event::CollaborationConnect { host, port, username, invite_code },
+                ));
+            }
+            Message::CollaborationCreateRoom { name } => {
+                tracing::info!("协作: 创建房间 {}", name);
+                lumino_core::event::emit(lumino_core::event::Event::Window(
+                    lumino_core::event::window::Event::CollaborationCreateRoom { name },
+                ));
+            }
+            Message::CollaborationJoinRoom { invite_code } => {
+                tracing::info!("协作: 加入房间 {}", invite_code);
+                lumino_core::event::emit(lumino_core::event::Event::Window(
+                    lumino_core::event::window::Event::CollaborationJoinRoom { invite_code },
+                ));
+            }
+            Message::CollaborationDisconnect => {
+                tracing::info!("协作: 断开连接");
+                lumino_core::event::emit(lumino_core::event::Event::Window(
+                    lumino_core::event::window::Event::CollaborationDisconnect,
+                ));
+                self.collaboration_dialog.reset();
+            }
+            Message::CollaborationHostChanged(host) => {
+                self.collaboration_dialog.server_host = host;
+            }
+            Message::CollaborationPortChanged(port) => {
+                self.collaboration_dialog.server_port = port;
+            }
+            Message::CollaborationUsernameChanged(username) => {
+                self.collaboration_dialog.username = username;
+            }
+            Message::CollaborationRoomNameChanged(name) => {
+                self.collaboration_dialog.room_name = name;
+            }
+            Message::CollaborationInviteCodeChanged(code) => {
+                self.collaboration_dialog.invite_code = code;
+            }
+            Message::CollaborationCopyInviteCode => {
+                let invite_code = self.collaboration_dialog.invite_code.clone();
+                if !invite_code.is_empty() {
+                    // 复制到剪贴板
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        if let Err(e) = clipboard.set_text(&invite_code) {
+                            tracing::error!("复制邀请码失败: {}", e);
+                        } else {
+                            tracing::info!("邀请码已复制: {}", invite_code);
+                        }
+                    }
+                }
+            }
+            Message::CollaborationRemoteMouseMoved { user_id, x, y, color } => {
+                self.editor.update_remote_cursor(user_id, iced_core::Point::new(x, y), color);
+            }
+            Message::CollaborationRemoteNoteUpdate { user_id, operation } => {
+                tracing::info!("协作: 处理远端音符更新 - 用户: {}, 操作: {}", user_id, operation);
+                // 这里将来可以解析 JSON 并应用到编辑器
+            }
             // 自定义精度对话框事件
             Message::OpenCustomPrecisionDialog => {
                 // 触发外部对话框窗口（通过 Core 事件）
@@ -297,8 +446,11 @@ impl Root {
             })
             .into()
         } else if self.is_dialog_window {
-            // 对话框窗口 - 显示自定义精度对话框内容
-            self.view_custom_precision_dialog()
+            // 对话框窗口 - 根据类型显示不同内容
+            match self.dialog_type {
+                DialogType::Collaboration => self.view_collaboration_dialog(),
+                _ => self.view_custom_precision_dialog(),
+            }
         } else {
             // 主窗口
             let is_settings_route = self.sidebar.is_settings_route();
@@ -501,6 +653,281 @@ impl Root {
         dialog_content.into()
     }
 
+    /// 渲染协作对话框
+    fn view_collaboration_dialog(&self) -> Element<'_> {
+        use iced_widget::{button, column, container, row, space, text, text_input};
+
+        let palette = self.window.theme.extended_palette();
+        let dialog = &self.collaboration_dialog;
+
+        // 标题
+        let title = text("多人协作")
+            .size(20)
+            .style(move |_theme: &Theme| text::Style {
+                color: Some(palette.background.neutral.text),
+            });
+
+        // 根据当前视图状态显示不同内容
+        let content: Element<'_> = match dialog.view_state {
+            CollaborationViewState::Connect => {
+                // 连接服务器界面
+                let host_input = text_input("服务器地址", &dialog.server_host)
+                    .on_input(Message::CollaborationHostChanged)
+                    .padding(8)
+                    .width(Length::Fill);
+
+                let port_input = text_input("端口", &dialog.server_port)
+                    .on_input(Message::CollaborationPortChanged)
+                    .padding(8)
+                    .width(Length::Fixed(80.0));
+
+                let username_input = text_input("用户", &dialog.username)
+                    .on_input(Message::CollaborationUsernameChanged)
+                    .padding(8)
+                    .width(Length::Fill);
+
+                let invite_input = text_input("邀请码（可选）", &dialog.invite_code)
+                    .on_input(Message::CollaborationInviteCodeChanged)
+                    .padding(8)
+                    .width(Length::Fill);
+
+                let connect_button = button(text("连接").size(14))
+                    .on_press(Message::CollaborationConnect {
+                        host: dialog.server_host.clone(),
+                        port: dialog.server_port.parse().unwrap_or(3000),
+                        username: dialog.username.clone(),
+                        invite_code: if dialog.invite_code.trim().is_empty() { None } else { Some(dialog.invite_code.clone()) },
+                    })
+                    .padding([8, 24])
+                    .style(move |_theme: &Theme, status| {
+                        let bg = match status {
+                            button::Status::Hovered => palette.primary.strong.color,
+                            _ => palette.primary.base.color,
+                        };
+                        button::Style {
+                            background: Some(bg.into()),
+                            text_color: iced_core::Color::WHITE,
+                            border: iced_core::Border {
+                                radius: 4.0.into(),
+                                width: 0.0,
+                                color: iced_core::Color::TRANSPARENT,
+                            },
+                            snap: false,
+                            shadow: Default::default(),
+                        }
+                    });
+
+                column![
+                    row![host_input, space().width(8), port_input].align_y(iced_core::Alignment::Center),
+                    space().height(12),
+                    username_input,
+                    space().height(12),
+                    invite_input,
+                    space().height(16),
+                    connect_button,
+                ]
+                .align_x(iced_core::Alignment::Center)
+                .into()
+            }
+            CollaborationViewState::RoomActions => {
+                // 创建/加入房间界面
+                let room_name_input = text_input("房间名称", &dialog.room_name)
+                    .on_input(Message::CollaborationRoomNameChanged)
+                    .padding(8)
+                    .width(Length::Fill);
+
+                let create_button = button(text("创建房间").size(14))
+                    .on_press(Message::CollaborationCreateRoom {
+                        name: dialog.room_name.clone(),
+                    })
+                    .padding([8, 24])
+                    .width(Length::Fill)
+                    .style(move |_theme: &Theme, status| {
+                        let bg = match status {
+                            button::Status::Hovered => palette.primary.strong.color,
+                            _ => palette.primary.base.color,
+                        };
+                        button::Style {
+                            background: Some(bg.into()),
+                            text_color: iced_core::Color::WHITE,
+                            border: iced_core::Border {
+                                radius: 4.0.into(),
+                                width: 0.0,
+                                color: iced_core::Color::TRANSPARENT,
+                            },
+                            snap: false,
+                            shadow: Default::default(),
+                        }
+                    });
+
+                let or_text = text("- 或 -")
+                    .size(12)
+                    .style(move |_theme: &Theme| text::Style {
+                        color: Some(palette.background.neutral.text),
+                    });
+
+                let invite_input = text_input("邀请码", &dialog.invite_code)
+                    .on_input(Message::CollaborationInviteCodeChanged)
+                    .padding(8)
+                    .width(Length::Fill);
+
+                let join_button = button(text("加入房间").size(14))
+                    .on_press(Message::CollaborationJoinRoom {
+                        invite_code: dialog.invite_code.clone(),
+                    })
+                    .padding([8, 24])
+                    .width(Length::Fill)
+                    .style(move |_theme: &Theme, status| {
+                        let bg = match status {
+                            button::Status::Hovered => palette.background.strong.color,
+                            _ => palette.background.weak.color,
+                        };
+                        button::Style {
+                            background: Some(bg.into()),
+                            text_color: palette.background.neutral.text,
+                            border: iced_core::Border {
+                                radius: 4.0.into(),
+                                width: 0.0,
+                                color: iced_core::Color::TRANSPARENT,
+                            },
+                            snap: false,
+                            shadow: Default::default(),
+                        }
+                    });
+
+                column![
+                    room_name_input,
+                    space().height(8),
+                    create_button,
+                    space().height(16),
+                    or_text,
+                    space().height(16),
+                    invite_input,
+                    space().height(8),
+                    join_button,
+                ]
+                .align_x(iced_core::Alignment::Center)
+                .into()
+            }
+            CollaborationViewState::InRoom => {
+                // 在房间内界面
+                let room_info = column![
+                    text(format!("房间: {}", dialog.room_name))
+                        .size(16)
+                        .style(move |_theme: &Theme| text::Style {
+                            color: Some(palette.background.neutral.text),
+                        }),
+                    space().height(8),
+                    row![
+                        text("邀请码: ")
+                            .size(14)
+                            .style(move |_theme: &Theme| text::Style {
+                                color: Some(palette.background.neutral.text),
+                            }),
+                        text(&dialog.invite_code)
+                            .size(14)
+                            .style(move |_theme: &Theme| text::Style {
+                                color: Some(palette.primary.base.color),
+                            }),
+                    ]
+                    .align_y(iced_core::Alignment::Center),
+                ]
+                .align_x(iced_core::Alignment::Center);
+
+                let copy_button = button(text("复制邀请码").size(12))
+                    .on_press(Message::CollaborationCopyInviteCode)
+                    .padding([6, 16])
+                    .style(move |_theme: &Theme, status| {
+                        let bg = match status {
+                            button::Status::Hovered => palette.background.strong.color,
+                            _ => palette.background.weak.color,
+                        };
+                        button::Style {
+                            background: Some(bg.into()),
+                            text_color: palette.background.neutral.text,
+                            border: iced_core::Border {
+                                radius: 4.0.into(),
+                                width: 0.0,
+                                color: iced_core::Color::TRANSPARENT,
+                            },
+                            snap: false,
+                            shadow: Default::default(),
+                        }
+                    });
+
+                let disconnect_button = button(text("断开连接").size(14))
+                    .on_press(Message::CollaborationDisconnect)
+                    .padding([8, 24])
+                    .style(move |_theme: &Theme, status| {
+                        let bg = match status {
+                            button::Status::Hovered => palette.danger.strong.color,
+                            _ => palette.danger.base.color,
+                        };
+                        button::Style {
+                            background: Some(bg.into()),
+                            text_color: iced_core::Color::WHITE,
+                            border: iced_core::Border {
+                                radius: 4.0.into(),
+                                width: 0.0,
+                                color: iced_core::Color::TRANSPARENT,
+                            },
+                            snap: false,
+                            shadow: Default::default(),
+                        }
+                    });
+
+                column![
+                    room_info,
+                    space().height(16),
+                    copy_button,
+                    space().height(24),
+                    disconnect_button,
+                ]
+                .align_x(iced_core::Alignment::Center)
+                .into()
+            }
+        };
+
+        // 关闭按钮
+        let close_button = button(text("关闭").size(12))
+            .on_press(Message::CloseCollaborationDialog)
+            .padding([6, 16])
+            .style(move |_theme: &Theme, status| {
+                let bg = match status {
+                    button::Status::Hovered => palette.background.strong.color,
+                    _ => palette.background.weak.color,
+                };
+                button::Style {
+                    background: Some(bg.into()),
+                    text_color: palette.background.neutral.text,
+                    border: iced_core::Border {
+                        radius: 4.0.into(),
+                        width: 0.0,
+                        color: iced_core::Color::TRANSPARENT,
+                    },
+                    snap: false,
+                    shadow: Default::default(),
+                }
+            });
+
+        let dialog_content = column![
+            row![title, space().width(Length::Fill), close_button].align_y(iced_core::Alignment::Center),
+            space().height(20),
+            content,
+        ]
+        .align_x(iced_core::Alignment::Center);
+
+        container(dialog_content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(24)
+            .style(move |_theme: &Theme| {
+                container::Style::default()
+                    .background(palette.background.base.color)
+            })
+            .into()
+    }
+
     /// 获取当前需要绘制的音符实例
     pub fn get_note_instances(&self) -> Vec<NoteInstance> {
         let sidebar_width = self.sidebar.width() as f32;
@@ -567,6 +994,10 @@ impl Root {
     }
 
     /// 设置当前音轨
+    pub fn editor_ref(&self) -> &editor::Editor {
+        &self.editor
+    }
+
     pub fn set_current_track(&mut self, track_idx: usize) {
         self.sidebar.set_selected_track(track_idx);
         // 同时更新编辑器的当前音轨（用于无 MIDI 文件时的多音轨编辑）
@@ -613,6 +1044,9 @@ impl Root {
     /// 设置自定义精度对话框是否打开
     pub fn set_custom_precision_dialog_open(&mut self, open: bool) {
         self.toolbar.custom_precision_dialog.is_open = open;
+        if open {
+            self.dialog_type = DialogType::CustomPrecision;
+        }
     }
 
     /// 获取并清空对话框结果
@@ -626,5 +1060,47 @@ impl Root {
         self.editor.state.default_note_length = ticks;
         self.toolbar.note_precision = toolbar::NotePrecision::Custom;
         tracing::info!("自定义精度已设置为 {} ticks", ticks);
+    }
+
+    /// 设置协作对话框是否打开
+    pub fn set_collaboration_dialog_open(&mut self, open: bool) {
+        self.collaboration_dialog.is_open = open;
+        if open {
+            self.dialog_type = DialogType::Collaboration;
+            self.collaboration_dialog.view_state = CollaborationViewState::Connect;
+        }
+        tracing::info!("协作对话框状态: {}", open);
+    }
+
+    /// 设置协作视图状态
+    pub fn set_collaboration_view_state(
+        &mut self,
+        state: CollaborationViewState,
+        invite_code: Option<String>,
+        room_name: Option<String>,
+    ) {
+        self.collaboration_dialog.view_state = state;
+        if let Some(code) = invite_code {
+            self.collaboration_dialog.invite_code = code;
+        }
+        if let Some(name) = room_name {
+            self.collaboration_dialog.room_name = name;
+        }
+        match state {
+            CollaborationViewState::Connect => {
+                self.collaboration_dialog.connection_status = "未连接".to_string();
+            }
+            CollaborationViewState::RoomActions => {
+                self.collaboration_dialog.connection_status = "已连接，请创建或加入房间".to_string();
+            }
+            CollaborationViewState::InRoom => {
+                self.collaboration_dialog.connection_status = format!(
+                    "房间: {} | 邀请码: {}",
+                    self.collaboration_dialog.room_name,
+                    self.collaboration_dialog.invite_code
+                );
+            }
+        }
+        tracing::info!("协作视图状态已更新: {:?}", state);
     }
 }

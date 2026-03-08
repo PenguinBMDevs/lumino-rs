@@ -41,6 +41,7 @@ pub enum Icon {
     EyeSlash,
     Plus,
     EllipsisVertical,
+    Users,
     // 工具栏图标
     Play,
     Pause,
@@ -74,6 +75,7 @@ static ICON_CACHE: Lazy<HashMap<Icon, IconData>> = Lazy::new(|| {
         Icon::EyeSlash,
         Icon::Plus,
         Icon::EllipsisVertical,
+        Icon::Users,
         // 工具栏图标
         Icon::Play,
         Icon::Pause,
@@ -250,6 +252,7 @@ fn bytes(icon: Icon) -> &'static [u8] {
         Icon::EllipsisVertical => {
             include_bytes!("../../../../resources/icons/sidebar/ellipsis-vertical.svg")
         }
+        Icon::Users => include_bytes!("../../../../resources/icons/toolbar/users.svg"),
         // 工具栏图标
         Icon::Play => include_bytes!("../../../../resources/icons/toolbar/play.svg"),
         Icon::Pause => include_bytes!("../../../../resources/icons/toolbar/pause.svg"),

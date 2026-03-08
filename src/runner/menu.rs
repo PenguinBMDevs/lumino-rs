@@ -26,7 +26,52 @@ impl RunnerInner {
                 self.handle_menu_event(event_loop, menu_event);
             }
             Event::Window(window_event) => {
+                // 如果是鼠标移动，实时同步协作状态
+                if matches!(window_event, lumino_core::event::window::Event::Drag) {
+                    self.sync_collaboration_state();
+                }
                 self.handle_window_event(window_event);
+            }
+        }
+    }
+
+    /// 同步协作状态（发送鼠标位置等）
+    fn sync_collaboration_state(&mut self) {
+        if let Some(client) = &self.collaboration_client {
+            let ui = self.window.ui();
+            let editor = ui.root().editor_ref();
+            
+            if let Some(pos) = editor.cursor_position {
+                // 转换为 Canvas 相对坐标并考虑滚动
+                let local_pos = iced_core::Point::new(
+                    pos.x - editor.canvas_offset.x,
+                    pos.y - editor.canvas_offset.y
+                );
+                
+                if editor.is_inside_canvas(local_pos) {
+                    let client = client.clone();
+                    let scroll_x = editor.state.scroll_x;
+                    let scroll_y = editor.state.scroll_y;
+                    let zoom_x = editor.state.zoom_x;
+                    let zoom_y = editor.state.zoom_y;
+                    
+                    let pos = lumino_collaboration::types::MousePosition {
+                        x: local_pos.x,
+                        y: local_pos.y,
+                        view_state: Some(lumino_collaboration::types::ViewState {
+                            scroll_x,
+                            scroll_y,
+                            zoom_x,
+                            zoom_y,
+                            ..Default::default()
+                        }),
+                    };
+                    
+                    tokio::spawn(async move {
+                        let c = client.lock().await;
+                        let _ = c.send_mouse_position(pos);
+                    });
+                }
             }
         }
     }
@@ -49,7 +94,82 @@ impl RunnerInner {
             WindowEvent::ApplyCustomPrecision(_, _) => {
                 // 应用精度（在对话框结果中处理）
             }
-            _ => {}
+            WindowEvent::OpenCollaborationDialog => {
+                tracing::info!("请求打开协作对话框");
+                // 打开协作对话框
+                self.dialog_manager.open_dialog(DialogType::Collaboration);
+            }
+            WindowEvent::CloseCollaborationDialog => {
+                // 关闭协作对话框
+                self.dialog_manager.mark_dialog_for_close(DialogType::Collaboration);
+                tracing::info!("请求关闭协作对话框");
+            }
+            WindowEvent::CollaborationConnect { host, port, username, invite_code } => {
+                tracing::info!("协作: 连接到 {}:{}, 用户名: {}, 邀请码: {:?}", host, port, username, invite_code);
+                self.pending_invite_code = invite_code;
+                self.handle_collaboration_connect(host, port, username);
+            }
+            WindowEvent::CollaborationCreateRoom { name } => {
+                self.handle_collaboration_create_room(name);
+            }
+            WindowEvent::CollaborationJoinRoom { invite_code } => {
+                self.handle_collaboration_join_room(invite_code);
+            }
+            WindowEvent::CollaborationDisconnect => {
+                self.handle_collaboration_disconnect();
+            }
+            WindowEvent::CollaborationAuthenticated { user_id, invite_code } => {
+                tracing::info!("协作: 认证成功事件 - 用户ID: {}, 目前默认邀请码: {}", user_id, invite_code);
+
+                if let Some(target_invite_code) = self.pending_invite_code.take() {
+                    tracing::info!("使用首屏填写的邀请码直接加入房间: {}", target_invite_code);
+                    self.handle_collaboration_join_room(target_invite_code);
+                } else {
+                    // 更新 UI 状态为 RoomActions
+                    self.window.ui_mut().set_collaboration_view_state(
+                        lumino_ui::CollaborationViewState::RoomActions,
+                        Some(invite_code),
+                        None,
+                    );
+                }
+            }
+            WindowEvent::CollaborationRoomCreated { room_name, invite_code } => {
+                tracing::info!("协作: 房间创建成功 - 房间名: {}, 邀请码: {}", room_name, invite_code);
+                // 更新 UI 状态为 InRoom
+                self.window.ui_mut().set_collaboration_view_state(
+                    lumino_ui::CollaborationViewState::InRoom,
+                    Some(invite_code),
+                    Some(room_name),
+                );
+            }
+            WindowEvent::CollaborationRoomJoined { room_name, invite_code, user_count } => {
+                tracing::info!("协作: 加入房间成功 - 房间名: {}, 邀请码: {}, 用户数: {}", 
+                    room_name, invite_code, user_count);
+                // 更新 UI 状态为 InRoom
+                self.window.ui_mut().set_collaboration_view_state(
+                    lumino_ui::CollaborationViewState::InRoom,
+                    Some(invite_code),
+                    Some(room_name),
+                );
+            }
+            WindowEvent::CollaborationDisconnected => {
+                tracing::info!("协作: 连接断开事件");
+                // 重置 UI 状态
+                self.window.ui_mut().set_collaboration_view_state(
+                    lumino_ui::CollaborationViewState::Connect,
+                    None,
+                    None,
+                );
+            }
+            WindowEvent::CollaborationMouseUpdate { user_id, x, y, color } => {
+                self.window.ui_mut().update_remote_cursor(user_id, x, y, color);
+            }
+            WindowEvent::CollaborationNoteUpdate { user_id, operation } => {
+                self.window.ui_mut().update_remote_note(user_id, operation);
+            }
+            _ => {
+                // 其他窗口事件暂不处理
+            }
         }
     }
 
@@ -1080,6 +1200,170 @@ impl RunnerInner {
                 track_idx,
                 notes.len()
             );
+        }
+    }
+
+    /// 处理协作连接
+    fn handle_collaboration_connect(&mut self, host: String, port: u16, username: String) {
+        use super::CollaborationStatus;
+        use lumino_collaboration::client::CollaborationEvent;
+        
+        // 更新状态为连接中
+        self.collaboration_status = CollaborationStatus::Connecting;
+        
+        // 创建协作客户端配置
+        let config = lumino_collaboration::ClientConfig {
+            server_host: host.clone(),
+            server_port: port,
+            username: username.clone(),
+            auto_reconnect: true,
+            max_reconnect_attempts: 5,
+        };
+        
+        // 创建协作客户端
+        let mut client = lumino_collaboration::CollaborationClient::new(config);
+        
+        // 设置事件回调
+        client.set_event_callback(move |event| {
+            match event {
+                CollaborationEvent::Connected => {
+                    tracing::info!("协作: 已连接到服务器");
+                }
+                CollaborationEvent::Authenticated { user_id, invite_code } => {
+                    tracing::info!("协作: 认证成功! 用户ID: {}, 邀请码: {}", user_id, invite_code);
+                    // 通知 UI 切换到创建/加入房间界面
+                    lumino_core::event::emit(lumino_core::event::Event::Window(
+                        lumino_core::event::window::Event::CollaborationAuthenticated { user_id, invite_code },
+                    ));
+                }
+                CollaborationEvent::RoomCreated { room } => {
+                    tracing::info!("协作: 房间创建成功! 邀请码: {}", room.invite_code);
+                    // 通知 UI 切换到房间内界面
+                    lumino_core::event::emit(lumino_core::event::Event::Window(
+                        lumino_core::event::window::Event::CollaborationRoomCreated { 
+                            room_name: room.name, 
+                            invite_code: room.invite_code 
+                        },
+                    ));
+                }
+                CollaborationEvent::RoomJoined { room, users } => {
+                    tracing::info!("协作: 加入房间成功! 房间: {}, 用户数: {}", room.name, users.len());
+                    // 通知 UI 切换到房间内界面
+                    lumino_core::event::emit(lumino_core::event::Event::Window(
+                        lumino_core::event::window::Event::CollaborationRoomJoined { 
+                            room_name: room.name, 
+                            invite_code: room.invite_code,
+                            user_count: users.len(),
+                        },
+                    ));
+                }
+                CollaborationEvent::Disconnected => {
+                    tracing::info!("协作: 连接断开");
+                    // 通知 UI 重置状态
+                    lumino_core::event::emit(lumino_core::event::Event::Window(
+                        lumino_core::event::window::Event::CollaborationDisconnected,
+                    ));
+                }
+                CollaborationEvent::MouseUpdate { user_id, position, color } => {
+                    // 通知 UI 更新远端游标
+                    lumino_core::event::emit(lumino_core::event::Event::Window(
+                        lumino_core::event::window::Event::CollaborationMouseUpdate { 
+                            user_id, 
+                            x: position.x, 
+                            y: position.y, 
+                            color 
+                        },
+                    ));
+                }
+                CollaborationEvent::NoteBatch { user_id, operation } => {
+                    // 通知 UI 更新远端音符
+                    if let Ok(json) = serde_json::to_string(&operation) {
+                        lumino_core::event::emit(lumino_core::event::Event::Window(
+                            lumino_core::event::window::Event::CollaborationNoteUpdate { 
+                                user_id, 
+                                operation: json 
+                            },
+                        ));
+                    }
+                }
+                CollaborationEvent::Error { message } => {
+                    tracing::error!("协作错误: {}", message);
+                }
+                _ => {}
+            }
+        });
+        
+        // 使用 Arc<Mutex<>> 包装客户端以便在异步任务中共享
+        let client = std::sync::Arc::new(tokio::sync::Mutex::new(client));
+        let client_clone = client.clone();
+        
+        // 保存客户端到 RunnerInner
+        self.collaboration_client = Some(client);
+        
+        // 异步连接
+        let host_clone = host.clone();
+        let port_clone = port;
+        tokio::spawn(async move {
+            let mut c = client_clone.lock().await;
+            match c.connect(Some(host_clone), Some(port_clone)).await {
+                Ok(_) => {
+                    tracing::info!("协作: 连接成功!");
+                }
+                Err(e) => {
+                    tracing::error!("协作: 连接失败: {}", e);
+                }
+            }
+            // 保持客户端存活
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            }
+        });
+        
+        tracing::info!("协作: 正在连接到 {}:{} ...", host, port);
+    }
+
+    /// 处理创建房间
+    fn handle_collaboration_create_room(&self, name: String) {
+        tracing::info!("协作: 请求创建房间 - {}", name);
+        if let Some(client) = &self.collaboration_client {
+            let client = client.clone();
+            tokio::spawn(async move {
+                let c = client.lock().await;
+                if let Err(e) = c.create_room(name) {
+                    tracing::error!("协作: 创建房间失败: {}", e);
+                }
+            });
+        } else {
+            tracing::error!("协作: 客户端未初始化，无法创建房间");
+        }
+    }
+
+    /// 处理加入房间
+    fn handle_collaboration_join_room(&self, invite_code: String) {
+        tracing::info!("协作: 请求加入房间 - {}", invite_code);
+        if let Some(client) = &self.collaboration_client {
+            let client = client.clone();
+            tokio::spawn(async move {
+                let c = client.lock().await;
+                if let Err(e) = c.join_room(invite_code) {
+                    tracing::error!("协作: 加入房间失败: {}", e);
+                }
+            });
+        } else {
+            tracing::error!("协作: 客户端未初始化，无法加入房间");
+        }
+    }
+
+    /// 处理断开连接
+    fn handle_collaboration_disconnect(&mut self) {
+        tracing::info!("协作: 请求断开连接");
+        if let Some(client) = self.collaboration_client.take() {
+            tokio::spawn(async move {
+                let mut c = client.lock().await;
+                if let Err(e) = c.disconnect().await {
+                    tracing::error!("协作: 断开连接失败: {}", e);
+                }
+            });
         }
     }
 }

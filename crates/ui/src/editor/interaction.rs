@@ -136,6 +136,11 @@ impl Editor {
 
         self.hover_state = self.hit_test_note(pos);
 
+        // 发送鼠标移动事件到 Core
+        lumino_core::event::emit(lumino_core::event::Event::Window(
+            lumino_core::event::window::Event::Drag, // 这里借用 Drag 事件触发状态同步
+        ));
+
         let (new_tick, new_key, new_length) =
             self.calculate_edit_changes(pos, tick, key, snapped_tick);
         self.apply_note_changes(new_tick, new_key, new_length);

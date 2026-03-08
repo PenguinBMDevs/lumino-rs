@@ -149,6 +149,10 @@ impl Host {
         }
     }
 
+    pub fn root(&self) -> &root::Root {
+        &self.root
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         self.viewport = Viewport::with_physical_size(
             Size::new(width, height),
@@ -733,6 +737,39 @@ impl Host {
         self.window.request_redraw();
     }
 
+    /// 设置协作对话框是否打开（用于独立对话框窗口）
+    pub fn set_collaboration_dialog_open(&mut self, open: bool) {
+        self.root.set_collaboration_dialog_open(open);
+        self.cache = std::mem::take(&mut self.cache);
+        self.window.request_redraw();
+    }
+
+    /// 设置协作视图状态（用于独立对话框窗口）
+    pub fn set_collaboration_view_state(
+        &mut self,
+        state: crate::root::CollaborationViewState,
+        invite_code: Option<String>,
+        room_name: Option<String>,
+    ) {
+        self.root.set_collaboration_view_state(state, invite_code, room_name);
+        self.cache = std::mem::take(&mut self.cache);
+        self.window.request_redraw();
+    }
+    /// 更新远端鼠标位置
+    pub fn update_remote_cursor(&mut self, user_id: String, x: f32, y: f32, color: String) {
+        self.root.update(message::Message::CollaborationRemoteMouseMoved { 
+            user_id, x, y, color 
+        });
+        self.window.request_redraw();
+    }
+
+    /// 更新远端音符
+    pub fn update_remote_note(&mut self, user_id: String, operation: String) {
+        self.root.update(message::Message::CollaborationRemoteNoteUpdate { 
+            user_id, operation 
+        });
+        self.window.request_redraw();
+    }
     /// 获取当前 PPQ (Pulses Per Quarter note)
     pub fn ppq(&self) -> u16 {
         self.root.editor.state.ppq

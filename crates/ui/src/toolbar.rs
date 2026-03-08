@@ -303,6 +303,8 @@ pub enum Event {
     CustomPrecisionNoteValueChanged(String),
     /// 除数变更
     CustomPrecisionDivisorChanged(String),
+    /// 打开协作对话框
+    OpenCollaborationDialog,
     /// 开始拖拽调整高度
     ResizeDragStarted(Point),
     /// 拖拽中调整高度
@@ -378,6 +380,10 @@ impl Event {
 
     pub fn custom_precision_divisor_changed(value: String) -> Message {
         Message::Toolbar(Self::CustomPrecisionDivisorChanged(value))
+    }
+
+    pub const fn open_collaboration_dialog() -> Message {
+        Message::Toolbar(Self::OpenCollaborationDialog)
     }
 
     pub fn resize_drag_started() -> Message {
@@ -559,10 +565,53 @@ impl Toolbar {
             container::Style::default().background(palette.background.weakest.color)
         });
 
-        // 主工具栏内容 - 横向排列所有区域
-        let toolbar_content = container(
-            row![playback_controls, space().width(16), tools, space().width(16), precision_selector]
+        // 协作按钮区域
+        let collaboration_button = container(
+            button(
+                row![
+                    icon::view_with_size_and_theme(icon::Users, 18, 18, Some(&window.theme)),
+                    space().width(6),
+                    text("多人协作").size(14),
+                ]
                 .align_y(Alignment::Center),
+            )
+            .on_press(Event::open_collaboration_dialog())
+            .style(move |_theme: &Theme, status| {
+                let bg = match status {
+                    iced_widget::button::Status::Hovered => palette.background.weak.color,
+                    _ => palette.background.weakest.color,
+                };
+                button::Style {
+                    border: iced_core::Border {
+                        radius: 4.0.into(),
+                        width: 0.0,
+                        color: iced_core::Color::TRANSPARENT,
+                    },
+                    ..Default::default()
+                }
+                .with_background(bg)
+            })
+            .padding([8, 12]),
+        )
+        .height(content_height)
+        .align_y(iced_core::alignment::Vertical::Center)
+        .padding([0, 16])
+        .style(move |_theme: &Theme| {
+            container::Style::default().background(palette.background.weakest.color)
+        });
+
+        // 主工具栏内容 - 横向排列所有区域，协作按钮在最右边
+        let toolbar_content = container(
+            row![
+                playback_controls,
+                space().width(16),
+                tools,
+                space().width(16),
+                precision_selector,
+                space().width(Length::Fill),
+                collaboration_button,
+            ]
+            .align_y(Alignment::Center),
         )
         .width(Length::Fill)
         .height(Length::Fixed(content_height))
@@ -638,6 +687,10 @@ impl Toolbar {
                 if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
                     self.custom_precision_dialog.divisor = value;
                 }
+            }
+            Event::OpenCollaborationDialog => {
+                // 协作对话框处理由 Root 转发到外部
+                tracing::debug!("工具栏: 请求打开协作对话框");
             }
             Event::ResizeDragStarted(_) => {
                 // 拖拽开始由 Host 处理，这里只需要标记状态

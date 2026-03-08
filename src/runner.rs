@@ -37,6 +37,22 @@ struct RunnerInner {
     current_dms: Option<Arc<ParsedDms>>,
     /// 对话框管理器
     dialog_manager: DialogManager,
+    /// 协作客户端（使用 Arc<Mutex<>> 包装以支持异步访问）
+    collaboration_client: Option<std::sync::Arc<tokio::sync::Mutex<lumino_collaboration::CollaborationClient>>>,
+    /// 协作状态
+    collaboration_status: CollaborationStatus,
+    /// 待处理的加入房间邀请码
+    pub(crate) pending_invite_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum CollaborationStatus {
+    #[default]
+    Disconnected,
+    Connecting,
+    Connected,
+    InRoom,
+    Error(String),
 }
 
 impl winit::application::ApplicationHandler for Runner {
@@ -173,6 +189,10 @@ impl Runner {
         // 创建对话框管理器
         let dialog_manager = DialogManager::new();
 
+        // 初始化协作客户端
+        let collaboration_client = None;
+        let collaboration_status = CollaborationStatus::Disconnected;
+
         event_loop.set_control_flow(ControlFlow::Wait);
 
         #[cfg(target_os = "macos")]
@@ -186,6 +206,9 @@ impl Runner {
             current_midi: None,
             current_dms: None,
             dialog_manager,
+            collaboration_client,
+            collaboration_status,
+            pending_invite_code: None,
         }
     }
 

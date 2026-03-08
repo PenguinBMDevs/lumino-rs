@@ -11,6 +11,7 @@ use winit::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DialogType {
     CustomPrecision,
+    Collaboration,
 }
 
 /// 对话框结果
@@ -36,14 +37,17 @@ impl DialogWindow {
         dialog_type: DialogType,
         _parent_window: Option<&Arc<Window>>,
     ) -> Result<Self, String> {
+        let (width, height, title) = match dialog_type {
+            DialogType::CustomPrecision => (480.0, 180.0, "自定义贴合"),
+            DialogType::Collaboration => (420.0, 320.0, "多人协作"),
+        };
+        
         let attributes = WindowAttributes::default()
             .with_inner_size(LogicalSize {
-                width: 480.0,
-                height: 180.0,
+                width,
+                height,
             })
-            .with_title(match dialog_type {
-                DialogType::CustomPrecision => "自定义贴合",
-            })
+            .with_title(title)
             .with_visible(false)
             .with_decorations(true)
             .with_resizable(false);
@@ -92,6 +96,10 @@ impl DialogWindow {
             DialogType::CustomPrecision => {
                 // 初始化自定义精度对话框的UI状态
                 ui.set_custom_precision_dialog_open(true);
+            }
+            DialogType::Collaboration => {
+                // 初始化协作对话框的UI状态
+                ui.set_collaboration_dialog_open(true);
             }
         }
 

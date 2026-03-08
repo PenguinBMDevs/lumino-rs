@@ -103,6 +103,9 @@ pub struct Editor {
     current_tool: Tool,
     /// 选中的音符索引集合
     selected_notes: std::collections::HashSet<usize>,
+
+    /// 协作远端鼠标位置
+    pub remote_cursors: std::collections::HashMap<String, (Point, String)>,
 }
 
 impl Editor {
@@ -124,6 +127,7 @@ impl Editor {
             onion_skin_config: OnionSkinConfig::new(),
             current_tool: Tool::Pointer, // 默认使用框选工具
             selected_notes: std::collections::HashSet::new(),
+            remote_cursors: std::collections::HashMap::new(),
         };
         editor.max_scroll_x = editor.state.total_ticks as f32 * editor.state.zoom_x;
         editor.max_scroll_y = editor.state.visible_key_count as f32 * editor.state.zoom_y;
@@ -142,6 +146,18 @@ impl Editor {
     /// 获取当前工具
     pub fn current_tool(&self) -> Tool {
         self.current_tool
+    }
+
+    /// 更新远端鼠标位置
+    pub fn update_remote_cursor(&mut self, user_id: String, pos: Point, color: String) {
+        self.remote_cursors.insert(user_id, (pos, color));
+        self.grid_cache.clear();
+    }
+
+    /// 移除远端鼠标
+    pub fn remove_remote_cursor(&mut self, user_id: &str) {
+        self.remote_cursors.remove(user_id);
+        self.grid_cache.clear();
     }
 
     /// 更新鼠标位置（由外部调用）

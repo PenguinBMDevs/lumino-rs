@@ -152,7 +152,7 @@ impl Editor {
     /// 检查点是否在 Canvas 有效区域内
     /// 有效区域 = Canvas 区域减去键盘区域（左侧）和滚动条区域（底部和右侧）
     /// 同时避开顶部可能被下拉菜单覆盖的区域
-    pub(super) fn is_inside_canvas(&self, local_pos: Point) -> bool {
+    pub fn is_inside_canvas(&self, local_pos: Point) -> bool {
         // 基本的 Canvas 边界检查
         if local_pos.x < 0.0 || local_pos.x > self.canvas_size.x {
             return false;

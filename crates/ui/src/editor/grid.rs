@@ -194,8 +194,48 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
             geometries.push(selection_geom);
         }
 
+        // 绘制远端鼠标游标
+        for (user_id, (pos, color_str)) in &self.editor.remote_cursors {
+            let color = parse_color(color_str).unwrap_or(iced_core::Color::WHITE);
+            let mut frame = Frame::new(renderer, bounds.size());
+            
+            // 绘制游标形状（倒三角形或竖线）
+            let cursor_x = pos.x;
+            let cursor_y = pos.y;
+            
+            // 简单的竖线和点表示
+            let path = Path::line(
+                Point::new(cursor_x, 0.0),
+                Point::new(cursor_x, bounds.height),
+            );
+            frame.stroke(&path, Stroke::default().with_width(1.0).with_color(color));
+            
+            // 游标头部
+            let head_size = 8.0;
+            let head_path = Path::new(|builder| {
+                builder.move_to(Point::new(cursor_x - head_size, cursor_y));
+                builder.line_to(Point::new(cursor_x + head_size, cursor_y));
+                builder.line_to(Point::new(cursor_x, cursor_y + head_size));
+                builder.close();
+            });
+            frame.fill(&head_path, color);
+            
+            geometries.push(frame.into_geometry());
+        }
+
         geometries
     }
+}
+
+fn parse_color(hex: &str) -> Option<iced_core::Color> {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 { return None; }
+    
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    
+    Some(iced_core::Color::from_rgb8(r, g, b))
 }
 
 /// 网格绘制实现
