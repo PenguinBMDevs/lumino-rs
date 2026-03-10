@@ -119,7 +119,7 @@ impl Root {
 
                 // 如果是音轨切换，发送 Core 事件通知 Runner 加载对应音轨的音符
                 if let Some(track_idx) = track_selected_idx {
-                    tracing::debug!("Root: emitting TrackSelected event for track {}", track_idx);
+                    tracing::debug!("Root: 发射音轨选择事件，音轨 {}", track_idx);
                     lumino_core::event::emit(lumino_core::event::Event::Menu(
                         lumino_core::event::menu::Event::File(
                             lumino_core::event::menu::file::Event::TrackSelected(track_idx),

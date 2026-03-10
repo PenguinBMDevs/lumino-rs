@@ -191,14 +191,14 @@ impl Editor {
     pub fn enable_onion_skin(&mut self) {
         self.onion_skin_config.enable();
         self.grid_cache.clear();
-        tracing::debug!("Editor: onion skin enabled");
+        tracing::debug!("Editor: 洋葱皮已启用");
     }
 
     /// 禁用洋葱皮
     pub fn disable_onion_skin(&mut self) {
         self.onion_skin_config.disable();
         self.grid_cache.clear();
-        tracing::debug!("Editor: onion skin disabled");
+        tracing::debug!("Editor: 洋葱皮已禁用");
     }
 
     /// 切换洋葱皮开关
