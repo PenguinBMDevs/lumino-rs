@@ -469,6 +469,7 @@ impl MidiMemoryManager {
         }
 
         // 先检查是否在内存中
+        // TODO: 优化逻辑，避免重复查找 HashMap (使用 get().map_or 而非 contains_key + get)
         if self.in_memory_tracks.contains_key(&track_index) {
             return Ok(self.in_memory_tracks.get(&track_index).unwrap());
         }
@@ -489,6 +490,7 @@ impl MidiMemoryManager {
         let event_size = estimate_events_size(&events);
 
         // 如果加载后超过按需加载内存限制，先淘汰最旧的
+        // TODO: 检查 evict_oldest_loaded 实现，确保原子更新 lru_order
         while self.loaded_memory_used + event_size > self.loaded_memory_limit
             && !self.lru_order.is_empty()
         {

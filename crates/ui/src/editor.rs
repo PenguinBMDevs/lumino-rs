@@ -280,6 +280,8 @@ impl Editor {
         }
 
         // 获取该音轨的音符
+        // TODO: 修复逻辑 - 使用 match 或 if let 避免误读 is_none 或 unwrap
+        // 原代码: if notes.is_none() || notes.unwrap().is_empty() - 虽然 || 短路但代码可读性差
         let notes = self.track_notes.get(&track_idx);
         if notes.is_none() || notes.unwrap().is_empty() {
             return Vec::new();
