@@ -1,30 +1,49 @@
+use futures::{SinkExt, StreamExt};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::interval;
-use futures::{SinkExt, StreamExt};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use tracing::{debug, error, info};
 
+use crate::HEARTBEAT_INTERVAL_MS;
 use crate::types::*;
-use crate::{HEARTBEAT_INTERVAL_MS};
 
 /// 客户端到服务器的消息
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
 pub enum ClientMessage {
-    Auth { username: String },
-    CreateRoom { name: String },
-    JoinRoom { #[serde(rename = "inviteCode")] invite_code: String },
+    Auth {
+        username: String,
+    },
+    CreateRoom {
+        name: String,
+    },
+    JoinRoom {
+        #[serde(rename = "inviteCode")]
+        invite_code: String,
+    },
     LeaveRoom,
-    MouseMove { position: MousePosition },
-    NoteBatch { notes: NoteBatchOperation },
-    MidiEvent { event: MidiEvent },
-    MidiEventBatch { events: Vec<MidiEvent> },
-    ProjectUpdate { update: ProjectUpdate },
+    MouseMove {
+        position: MousePosition,
+    },
+    NoteBatch {
+        notes: NoteBatchOperation,
+    },
+    MidiEvent {
+        event: MidiEvent,
+    },
+    MidiEventBatch {
+        events: Vec<MidiEvent>,
+    },
+    ProjectUpdate {
+        update: ProjectUpdate,
+    },
     RequestSync,
-    Ping { timestamp: u64 },
+    Ping {
+        timestamp: u64,
+    },
 }
 
 /// 服务器到客户端的消息
@@ -32,21 +51,74 @@ pub enum ClientMessage {
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
 pub enum ServerMessage {
-    AuthSuccess { #[serde(rename = "userId")] user_id: UserId, #[serde(rename = "inviteCode")] invite_code: InviteCode },
-    AuthError { error: String },
-    RoomCreated { room: RoomInfo },
-    RoomJoined { room: RoomInfo, users: Vec<UserInfo>, #[serde(rename = "projectState")] project_state: serde_json::Value },
-    RoomError { error: String },
-    UserJoined { user: UserInfo },
-    UserLeft { #[serde(rename = "userId")] user_id: UserId },
-    MouseUpdate { #[serde(rename = "userId")] user_id: UserId, username: String, position: MousePosition, color: String },
-    NoteBatchUpdate { #[serde(rename = "userId")] user_id: UserId, operation: NoteBatchOperation },
-    MidiEventUpdate { #[serde(rename = "userId")] user_id: UserId, event: MidiEvent },
-    MidiEventBatchUpdate { #[serde(rename = "userId")] user_id: UserId, events: Vec<MidiEvent> },
-    ProjectStateUpdate { #[serde(rename = "userId")] user_id: UserId, update: ProjectUpdate },
-    FullSync { #[serde(rename = "projectState")] project_state: serde_json::Value, users: Vec<UserInfo> },
-    Pong { timestamp: u64, #[serde(rename = "serverTime")] server_time: u64 },
-    Error { error: String },
+    AuthSuccess {
+        #[serde(rename = "userId")]
+        user_id: UserId,
+        #[serde(rename = "inviteCode")]
+        invite_code: InviteCode,
+    },
+    AuthError {
+        error: String,
+    },
+    RoomCreated {
+        room: RoomInfo,
+    },
+    RoomJoined {
+        room: RoomInfo,
+        users: Vec<UserInfo>,
+        #[serde(rename = "projectState")]
+        project_state: serde_json::Value,
+    },
+    RoomError {
+        error: String,
+    },
+    UserJoined {
+        user: UserInfo,
+    },
+    UserLeft {
+        #[serde(rename = "userId")]
+        user_id: UserId,
+    },
+    MouseUpdate {
+        #[serde(rename = "userId")]
+        user_id: UserId,
+        username: String,
+        position: MousePosition,
+        color: String,
+    },
+    NoteBatchUpdate {
+        #[serde(rename = "userId")]
+        user_id: UserId,
+        operation: NoteBatchOperation,
+    },
+    MidiEventUpdate {
+        #[serde(rename = "userId")]
+        user_id: UserId,
+        event: MidiEvent,
+    },
+    MidiEventBatchUpdate {
+        #[serde(rename = "userId")]
+        user_id: UserId,
+        events: Vec<MidiEvent>,
+    },
+    ProjectStateUpdate {
+        #[serde(rename = "userId")]
+        user_id: UserId,
+        update: ProjectUpdate,
+    },
+    FullSync {
+        #[serde(rename = "projectState")]
+        project_state: serde_json::Value,
+        users: Vec<UserInfo>,
+    },
+    Pong {
+        timestamp: u64,
+        #[serde(rename = "serverTime")]
+        server_time: u64,
+    },
+    Error {
+        error: String,
+    },
 }
 
 /// 事件回调类型
@@ -57,18 +129,50 @@ pub type EventCallback = Arc<dyn Fn(CollaborationEvent) + Send + Sync>;
 pub enum CollaborationEvent {
     Connected,
     Disconnected,
-    Authenticated { user_id: UserId, invite_code: InviteCode },
-    RoomCreated { room: RoomInfo },
-    RoomJoined { room: RoomInfo, users: Vec<UserInfo> },
-    UserJoined { user: UserInfo },
-    UserLeft { user_id: UserId },
-    MouseUpdate { user_id: UserId, position: MousePosition, color: String },
-    NoteBatch { user_id: UserId, operation: NoteBatchOperation },
-    MidiEvent { user_id: UserId, event: MidiEvent },
-    MidiEventBatch { user_id: UserId, events: Vec<MidiEvent> },
-    ProjectUpdate { user_id: UserId, update: ProjectUpdate },
-    FullSync { users: Vec<UserInfo> },
-    Error { message: String },
+    Authenticated {
+        user_id: UserId,
+        invite_code: InviteCode,
+    },
+    RoomCreated {
+        room: RoomInfo,
+    },
+    RoomJoined {
+        room: RoomInfo,
+        users: Vec<UserInfo>,
+    },
+    UserJoined {
+        user: UserInfo,
+    },
+    UserLeft {
+        user_id: UserId,
+    },
+    MouseUpdate {
+        user_id: UserId,
+        position: MousePosition,
+        color: String,
+    },
+    NoteBatch {
+        user_id: UserId,
+        operation: NoteBatchOperation,
+    },
+    MidiEvent {
+        user_id: UserId,
+        event: MidiEvent,
+    },
+    MidiEventBatch {
+        user_id: UserId,
+        events: Vec<MidiEvent>,
+    },
+    ProjectUpdate {
+        user_id: UserId,
+        update: ProjectUpdate,
+    },
+    FullSync {
+        users: Vec<UserInfo>,
+    },
+    Error {
+        message: String,
+    },
 }
 
 /// 协作客户端
@@ -99,27 +203,59 @@ impl CollaborationClient {
     }
 
     /// 设置事件回调
-    pub fn set_event_callback<F>(&mut self,
-        callback: F
-    ) where F: Fn(CollaborationEvent) + Send + Sync + 'static {
+    pub fn set_event_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(CollaborationEvent) + Send + Sync + 'static,
+    {
         self.event_callback = Some(Arc::new(callback));
     }
 
     /// 连接到服务器
-    pub async fn connect(&mut self,
+    pub async fn connect(
+        &mut self,
         host: Option<String>,
-        port: Option<u16>
+        port: Option<u16>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let host = host.unwrap_or_else(|| self.config.server_host.clone());
         let port = port.unwrap_or(self.config.server_port);
 
-        let ws_url = format!("ws://{}:{}/ws", host, port);
+        // 构建 WebSocket URL
+        // 对于 Cloudflare Workers，使用 wss:// 协议
+        // 对于本地服务器，使用 ws:// 协议
+        let protocol = if host.ends_with(".workers.dev") || host.ends_with(".dpdns.org") {
+            "wss"
+        } else {
+            "ws"
+        };
+
+        // 对于标准 HTTPS 端口 (443)，不包含端口号
+        let ws_url = if port == 443 {
+            format!("{}://{}/ws", protocol, host)
+        } else {
+            format!("{}://{}:{}/ws", protocol, host, port)
+        };
+
         info!("连接到服务器: {}", ws_url);
 
         *self.state.write().await = ClientState::Connecting;
 
-        // 建立WebSocket连接
-        let (ws_stream, _) = connect_async(&ws_url).await?;
+        // 建立WebSocket连接，设置15秒超时
+        let connect_future = connect_async(&ws_url);
+        let timeout_duration = Duration::from_secs(15);
+
+        info!("开始连接，超时时间: {}秒", timeout_duration.as_secs());
+
+        let (ws_stream, _) = match tokio::time::timeout(timeout_duration, connect_future).await {
+            Ok(result) => {
+                info!("连接尝试完成");
+                result?
+            }
+            Err(_) => {
+                error!("连接超时（{}秒）", timeout_duration.as_secs());
+                return Err(format!("连接超时（{}秒）", timeout_duration.as_secs()).into());
+            }
+        };
+
         info!("WebSocket连接成功");
 
         let (write, mut read) = ws_stream.split();
@@ -131,7 +267,13 @@ impl CollaborationClient {
             username: self.config.username.clone(),
         };
         let auth_json = serde_json::to_string(&auth_msg)?;
-        write.lock().await.send(Message::Text(auth_json)).await?;
+        info!("发送认证消息: {}", auth_json);
+        write
+            .lock()
+            .await
+            .send(Message::Text(auth_json.into()))
+            .await?;
+        info!("认证消息已发送");
         *self.state.write().await = ClientState::Authenticating;
 
         // 等待认证响应
@@ -149,7 +291,10 @@ impl CollaborationClient {
                         }
                     };
                     match response {
-                        ServerMessage::AuthSuccess { user_id, invite_code } => {
+                        ServerMessage::AuthSuccess {
+                            user_id,
+                            invite_code,
+                        } => {
                             info!("认证成功: user_id={}", user_id);
                             *self.state.write().await = ClientState::Authenticated;
 
@@ -160,7 +305,7 @@ impl CollaborationClient {
 
                             self.emit_event(CollaborationEvent::Authenticated {
                                 user_id,
-                                invite_code
+                                invite_code,
                             });
                             break; // 认证成功，跳出循环
                         }
@@ -278,7 +423,7 @@ impl CollaborationClient {
 
                             debug!("发送消息: {}", json);
                             let mut w = write_clone.lock().await;
-                            if let Err(e) = w.send(Message::Text(json)).await {
+                            if let Err(e) = w.send(Message::Text(json.into())).await {
                                 error!("发送消息失败: {}", e);
                             }
                         }
@@ -292,7 +437,7 @@ impl CollaborationClient {
                         let json = serde_json::to_string(&ping).unwrap();
                         debug!("发送心跳: {}", json);
                         let mut w = write_clone.lock().await;
-                        if let Err(e) = w.send(Message::Text(json)).await {
+                        if let Err(e) = w.send(Message::Text(json.into())).await {
                             error!("发送心跳失败: {}", e);
                         }
                     }
@@ -340,7 +485,7 @@ impl CollaborationClient {
     /// 发送鼠标位置
     pub fn send_mouse_position(
         &self,
-        position: MousePosition
+        position: MousePosition,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.send_message(ClientMessage::MouseMove { position })
     }
@@ -348,23 +493,20 @@ impl CollaborationClient {
     /// 发送音符批量操作
     pub fn send_note_batch(
         &self,
-        operation: NoteBatchOperation
+        operation: NoteBatchOperation,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.send_message(ClientMessage::NoteBatch { notes: operation })
     }
 
     /// 发送MIDI事件
-    pub fn send_midi_event(
-        &self,
-        event: MidiEvent
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn send_midi_event(&self, event: MidiEvent) -> Result<(), Box<dyn std::error::Error>> {
         self.send_message(ClientMessage::MidiEvent { event })
     }
 
     /// 发送MIDI事件批量
     pub fn send_midi_event_batch(
         &self,
-        events: Vec<MidiEvent>
+        events: Vec<MidiEvent>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.send_message(ClientMessage::MidiEventBatch { events })
     }
@@ -372,7 +514,7 @@ impl CollaborationClient {
     /// 发送项目更新
     pub fn send_project_update(
         &self,
-        update: ProjectUpdate
+        update: ProjectUpdate,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.send_message(ClientMessage::ProjectUpdate { update })
     }
@@ -406,19 +548,12 @@ impl CollaborationClient {
     }
 
     // 内部方法
-    fn send_message(
-        &self,
-        msg: ClientMessage
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn send_message(&self, msg: ClientMessage) -> Result<(), Box<dyn std::error::Error>> {
         info!("排队发送消息: {:?}", msg);
-        self.message_tx
-            .send(msg)
-            .map_err(|e| e.to_string().into())
+        self.message_tx.send(msg).map_err(|e| e.to_string().into())
     }
 
-    fn emit_event(&self,
-        event: CollaborationEvent
-    ) {
+    fn emit_event(&self, event: CollaborationEvent) {
         if let Some(ref callback) = self.event_callback {
             callback(event);
         }
@@ -443,7 +578,7 @@ async fn handle_server_message(
                     info: user.clone(),
                     mouse_position: None,
                     last_active: Instant::now(),
-                }
+                },
             );
             drop(sess);
 
@@ -462,7 +597,12 @@ async fn handle_server_message(
             }
         }
 
-        ServerMessage::MouseUpdate { user_id, position, color, .. } => {
+        ServerMessage::MouseUpdate {
+            user_id,
+            position,
+            color,
+            ..
+        } => {
             let mut sess = session.write().await;
             if let Some(user) = sess.remote_users.get_mut(&user_id) {
                 user.mouse_position = Some(position.clone());
@@ -474,7 +614,7 @@ async fn handle_server_message(
                 cb(CollaborationEvent::MouseUpdate {
                     user_id,
                     position,
-                    color
+                    color,
                 });
             }
         }
@@ -536,7 +676,7 @@ async fn handle_server_message(
                             info: user.clone(),
                             mouse_position: None,
                             last_active: Instant::now(),
-                        }
+                        },
                     );
                 }
             }

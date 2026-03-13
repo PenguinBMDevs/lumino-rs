@@ -43,8 +43,6 @@ pub struct ViewState {
     pub default_note_length: f32,
 }
 
-
-
 /// 用户信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -183,78 +181,93 @@ impl From<&lumino_core::MidiEvent> for MidiEvent {
         use lumino_core::MidiEvent as CoreEvent;
 
         match event {
-            CoreEvent::NoteOn { track, tick, channel, key, velocity } => {
-                Self::NoteOn {
-                    track: *track,
-                    tick: *tick,
-                    channel: *channel,
-                    key: *key,
-                    velocity: *velocity,
-                }
-            }
-            CoreEvent::NoteOff { track, tick, channel, key, velocity } => {
-                Self::NoteOff {
-                    track: *track,
-                    tick: *tick,
-                    channel: *channel,
-                    key: *key,
-                    velocity: *velocity,
-                }
-            }
-            CoreEvent::ControlChange { track, tick, channel, controller, value } => {
-                Self::ControlChange {
-                    track: *track,
-                    tick: *tick,
-                    channel: *channel,
-                    controller: *controller,
-                    value: *value,
-                }
-            }
-            CoreEvent::ProgramChange { track, tick, channel, program } => {
-                Self::ProgramChange {
-                    track: *track,
-                    tick: *tick,
-                    channel: *channel,
-                    program: *program,
-                }
-            }
-            CoreEvent::Tempo { track, tick, tempo } => {
-                Self::Tempo {
-                    track: *track,
-                    tick: *tick,
-                    tempo: *tempo,
-                }
-            }
-            CoreEvent::TimeSignature { track, tick, numerator, denominator } => {
-                Self::TimeSignature {
-                    track: *track,
-                    tick: *tick,
-                    numerator: *numerator,
-                    denominator: *denominator,
-                }
-            }
-            CoreEvent::KeySignature { track, tick, key, is_major } => {
-                Self::KeySignature {
-                    track: *track,
-                    tick: *tick,
-                    key: *key,
-                    is_major: *is_major,
-                }
-            }
-            CoreEvent::TrackName { track, tick, name } => {
-                Self::TrackName {
-                    track: *track,
-                    tick: *tick,
-                    name: name.clone(),
-                }
-            }
-            CoreEvent::Other { track, tick, raw } => {
-                Self::Other {
-                    track: *track,
-                    tick: *tick,
-                    raw: raw.clone(),
-                }
-            }
+            CoreEvent::NoteOn {
+                track,
+                tick,
+                channel,
+                key,
+                velocity,
+            } => Self::NoteOn {
+                track: *track,
+                tick: *tick,
+                channel: *channel,
+                key: *key,
+                velocity: *velocity,
+            },
+            CoreEvent::NoteOff {
+                track,
+                tick,
+                channel,
+                key,
+                velocity,
+            } => Self::NoteOff {
+                track: *track,
+                tick: *tick,
+                channel: *channel,
+                key: *key,
+                velocity: *velocity,
+            },
+            CoreEvent::ControlChange {
+                track,
+                tick,
+                channel,
+                controller,
+                value,
+            } => Self::ControlChange {
+                track: *track,
+                tick: *tick,
+                channel: *channel,
+                controller: *controller,
+                value: *value,
+            },
+            CoreEvent::ProgramChange {
+                track,
+                tick,
+                channel,
+                program,
+            } => Self::ProgramChange {
+                track: *track,
+                tick: *tick,
+                channel: *channel,
+                program: *program,
+            },
+            CoreEvent::Tempo { track, tick, tempo } => Self::Tempo {
+                track: *track,
+                tick: *tick,
+                tempo: *tempo,
+            },
+            CoreEvent::TimeSignature {
+                track,
+                tick,
+                numerator,
+                denominator,
+            } => Self::TimeSignature {
+                track: *track,
+                tick: *tick,
+                numerator: *numerator,
+                denominator: *denominator,
+            },
+            CoreEvent::KeySignature {
+                track,
+                tick,
+                key,
+                is_major,
+            } => Self::KeySignature {
+                track: *track,
+                tick: *tick,
+                key: *key,
+                is_major: *is_major,
+            },
+            CoreEvent::TrackName { track, tick, name } => Self::TrackName {
+                track: *track,
+                tick: *tick,
+                name: name.clone(),
+            },
+            CoreEvent::Other { track, tick, raw } => Self::Other {
+                track: *track,
+                tick: *tick,
+                raw: raw.clone(),
+            },
         }
     }
 }
