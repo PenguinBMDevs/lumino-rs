@@ -1,5 +1,4 @@
 impl super::Editor {
-
     /// 切换到指定音轨（无 MIDI 文件时使用）
     pub fn switch_to_track(&mut self, track_idx: usize) {
         if self.current_track == track_idx {

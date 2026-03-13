@@ -17,10 +17,7 @@ mod track;
 #[cfg(test)]
 mod tests;
 
-use crate::{
-    message::AudioAction,
-    toolbar::Tool,
-};
+use crate::{message::AudioAction, toolbar::Tool};
 use iced_core::Point;
 use iced_widget::canvas;
 use lumino_gfx::NoteInstance;
@@ -296,14 +293,11 @@ impl Editor {
         }
 
         // 获取该音轨的音符
-        // TODO: 修复逻辑 - 使用 match 或 if let 避免误读 is_none 或 unwrap
-        // 原代码: if notes.is_none() || notes.unwrap().is_empty() - 虽然 || 短路但代码可读性差
         let notes = self.track_notes.get(&track_idx);
-        if notes.is_none() || notes.unwrap().is_empty() {
-            return Vec::new();
-        }
-
-        let notes = notes.unwrap();
+        let notes = match notes {
+            Some(notes) if !notes.is_empty() => notes,
+            _ => return Vec::new(),
+        };
         let color = self.onion_skin_config.get_track_color(track_idx);
         let mut instances = Vec::with_capacity(notes.len());
 

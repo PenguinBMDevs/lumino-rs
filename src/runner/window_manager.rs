@@ -57,7 +57,7 @@ impl WindowManager {
 
         // 在 Windows 上设置自定义拉伸区域
         #[cfg(target_os = "windows")]
-        crate::platform::windows::setup_resize_border(&window);
+        crate::platform::windows::setup_resize_border(&window)?;
 
         Ok(Self {
             window,

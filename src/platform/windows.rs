@@ -80,16 +80,17 @@ unsafe extern "system" fn window_proc(
 }
 
 /// 为窗口设置自定义拉伸区域
-pub fn setup_resize_border(window: &Window) {
+pub fn setup_resize_border(window: &Window) -> Result<(), String> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-    // TODO: 非 Windows 平台编译时此函数不应被调用，应在调用处加 #[cfg(target_os = "windows")]
     unsafe {
-        let handle = window.window_handle().expect("Failed to get window handle");
+        let handle = window
+            .window_handle()
+            .map_err(|e| format!("Failed to get window handle: {}", e))?;
         let hwnd = if let RawWindowHandle::Win32(handle) = handle.as_raw() {
             handle.hwnd.get() as HWND
         } else {
-            panic!("Not a Windows window");
+            return Err("Not a Windows window".to_string());
         };
 
         // 获取原始窗口过程
@@ -102,5 +103,7 @@ pub fn setup_resize_border(window: &Window) {
         if original_wndproc != 0 {
             ORIGINAL_WNDPROC = Some(original_wndproc);
         }
+
+        Ok(())
     }
 }

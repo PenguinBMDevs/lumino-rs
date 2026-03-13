@@ -254,10 +254,7 @@ impl Editor {
                 let note_bottom = note_y + self.state.zoom_y;
 
                 // 检查音符是否与选择框相交
-                if note_right >= min_x
-                    && note_x <= max_x
-                    && note_bottom >= min_y
-                    && note_y <= max_y
+                if note_right >= min_x && note_x <= max_x && note_bottom >= min_y && note_y <= max_y
                 {
                     self.selected_notes.insert(i);
                 }

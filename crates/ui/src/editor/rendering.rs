@@ -2,12 +2,12 @@ use iced_core::{Length, Point};
 use iced_widget::canvas::Canvas;
 use lumino_gfx::NoteInstance;
 
-use crate::{Element, Message};
 use crate::constants::dimensions::MENU_SAFE_ZONE;
 use crate::constants::editor::PREVIEW_NOTE_OPACITY;
 use crate::editor::grid::PianoRollGrid;
 use crate::editor::scrollbar_widget;
 use crate::toolbar::Tool;
+use crate::{Element, Message};
 
 use super::{EditState, Editor};
 
@@ -112,7 +112,10 @@ impl Editor {
             instances.push(instance);
         } else if let Some(pos) = self.cursor_position {
             // 预览音符 - 仅在空闲状态、没有悬停在其他音符上且使用铅笔工具时显示
-            if self.edit_state == EditState::Idle && self.hover_state.is_none() && self.current_tool == Tool::Pencil {
+            if self.edit_state == EditState::Idle
+                && self.hover_state.is_none()
+                && self.current_tool == Tool::Pencil
+            {
                 let local_pos =
                     Point::new(pos.x - self.canvas_offset.x, pos.y - self.canvas_offset.y);
                 if self.is_inside_canvas(local_pos) {
@@ -135,9 +138,7 @@ impl Editor {
     }
 
     /// 获取框选框的实例（用于渲染选择框）
-    pub fn get_selection_box(
-        &self,
-    ) -> Option<(Point, Point)> {
+    pub fn get_selection_box(&self) -> Option<(Point, Point)> {
         if let EditState::Selecting {
             start_pos,
             current_pos,

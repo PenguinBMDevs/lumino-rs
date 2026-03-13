@@ -224,13 +224,13 @@ pub async fn load_parsed_midi(path: PathBuf) -> Result<ParsedMidi, String> {
         let parsed = tokio::task::spawn_blocking(move || {
             let lmpj_data: crate::LmpjData =
                 decode_lmpj(&data).map_err(|e| format!("解析 LMPJ 失败: {e}"))?;
-            
+
             tracing::info!(
                 "LMPJ 解析成功: info.path={:?}, midi_data.len={:?}",
                 lmpj_data.info.path,
                 lmpj_data.midi_data.as_ref().map(|d| d.len())
             );
-            
+
             Ok::<ParsedMidi, String>(lmpj_data.to_parsed_midi())
         })
         .await

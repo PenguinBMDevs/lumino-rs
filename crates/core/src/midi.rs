@@ -97,11 +97,15 @@ impl ParsedMidi {
     }
 
     /// 获取内存管理器统计
-    /// TODO: 处理 Mutex 毒化，避免直接 unwrap()
     pub fn manager_stats(&self) -> Option<managed_midi::ManagerStats> {
-        self.memory_manager
-            .as_ref()
-            .map(|mgr| mgr.lock().unwrap().stats())
+        self.memory_manager.as_ref().map(|mgr| {
+            mgr.lock()
+                .map(|guard| guard.stats())
+                .unwrap_or_else(|poisoned| {
+                    let guard = poisoned.into_inner();
+                    guard.stats()
+                })
+        })
     }
 }
 
