@@ -163,7 +163,7 @@ impl Sidebar {
                 }
             }
             TrackSelected(id) => {
-                tracing::debug!("Sidebar: TrackSelected id={}", id);
+                tracing::debug!("Sidebar: 音轨选择 id={}", id);
                 self.selected_track = id;
             }
             TrackMuteToggled(id) => {

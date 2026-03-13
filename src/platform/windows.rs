@@ -83,6 +83,7 @@ unsafe extern "system" fn window_proc(
 pub fn setup_resize_border(window: &Window) {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
+    // TODO: 非 Windows 平台编译时此函数不应被调用，应在调用处加 #[cfg(target_os = "windows")]
     unsafe {
         let handle = window.window_handle().expect("Failed to get window handle");
         let hwnd = if let RawWindowHandle::Win32(handle) = handle.as_raw() {

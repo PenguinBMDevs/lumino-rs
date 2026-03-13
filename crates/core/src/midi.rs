@@ -97,6 +97,7 @@ impl ParsedMidi {
     }
 
     /// 获取内存管理器统计
+    /// TODO: 处理 Mutex 毒化，避免直接 unwrap()
     pub fn manager_stats(&self) -> Option<managed_midi::ManagerStats> {
         self.memory_manager
             .as_ref()

@@ -121,7 +121,7 @@ impl Editor {
 
     /// 播放音符音频
     fn play_note_audio(&mut self, key: u16, context: &str) {
-        tracing::debug!("Editor: 推送 PlayNote ({}) key={}", context, key);
+        tracing::debug!("Editor: 发送 PlayNote ({}) key={}", context, key);
         self.pending_audio_actions.push(AudioAction::PlayNote {
             key: key as u8,
             velocity: 100,

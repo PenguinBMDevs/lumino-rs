@@ -207,14 +207,14 @@ impl Editor {
     pub fn enable_onion_skin(&mut self) {
         self.onion_skin_config.enable();
         self.grid_cache.clear();
-        tracing::debug!("Editor: onion skin enabled");
+        tracing::debug!("Editor: 洋葱皮已启用");
     }
 
     /// 禁用洋葱皮
     pub fn disable_onion_skin(&mut self) {
         self.onion_skin_config.disable();
         self.grid_cache.clear();
-        tracing::debug!("Editor: onion skin disabled");
+        tracing::debug!("Editor: 洋葱皮已禁用");
     }
 
     /// 切换洋葱皮开关
@@ -296,6 +296,8 @@ impl Editor {
         }
 
         // 获取该音轨的音符
+        // TODO: 修复逻辑 - 使用 match 或 if let 避免误读 is_none 或 unwrap
+        // 原代码: if notes.is_none() || notes.unwrap().is_empty() - 虽然 || 短路但代码可读性差
         let notes = self.track_notes.get(&track_idx);
         if notes.is_none() || notes.unwrap().is_empty() {
             return Vec::new();

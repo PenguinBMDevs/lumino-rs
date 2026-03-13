@@ -112,7 +112,7 @@ impl Editor {
             }
         }
 
-        tracing::debug!("Editor: deleted {} notes", self.selected_notes.len());
+        tracing::debug!("Editor: 删除了 {} 个音符", self.selected_notes.len());
 
         // 更新当前音轨的存储
         if !self.notes.is_empty() {
