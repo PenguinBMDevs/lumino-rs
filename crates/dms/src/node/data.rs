@@ -5,7 +5,7 @@ use std::io::Read;
 use bytes::Bytes;
 
 use crate::error::Result;
-use crate::node::{DmsNode, HEADER_SIZE};
+use crate::node::DmsNode;
 use crate::node_type::DmsNodeType;
 
 /// 原始二进制数据节点

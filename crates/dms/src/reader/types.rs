@@ -2,7 +2,7 @@
 
 use bytes::Bytes;
 
-use crate::node::{DATALENGTH_SIZE, TYPEID_SIZE};
+use crate::node::{DATALENGTH_SIZE, DmsCompositeNode, TYPEID_SIZE};
 
 /// DMS 扫描结果（流式，不保留解压数据）
 #[derive(Debug, Default)]
@@ -100,6 +100,13 @@ impl DmsLightweightData {
         }
 
         result
+    }
+
+    /// 解析完整 DMS 节点树
+    pub fn parse_full(&self) -> Result<DmsCompositeNode, String> {
+        // TODO: Implement full parsing using lumino_dms
+        // For now, return error to allow compilation
+        Err("parse_full not yet implemented after refactoring".to_string())
     }
 }
 

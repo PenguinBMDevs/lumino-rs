@@ -255,7 +255,7 @@ impl RunnerInner {
     }
 
     /// 保存 DMS 文件
-    fn save_dms_file(&self, parsed_dms: Arc<lumino_core::midi::loader::ParsedDms>) {
+    fn save_dms_file(&self, parsed_dms: Arc<lumino_core::ParsedDms>) {
         let file_stem = std::path::Path::new(&parsed_dms.info.path)
             .file_stem()
             .unwrap_or_default()

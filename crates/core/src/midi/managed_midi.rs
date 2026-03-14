@@ -14,8 +14,6 @@
 //! - `loader`: 加载辅助函数
 //! - `manager`: MidiMemoryManager 主结构
 
-use crate::midi::MidiEvent;
-
 pub mod cache;
 pub mod loader;
 pub mod manager;

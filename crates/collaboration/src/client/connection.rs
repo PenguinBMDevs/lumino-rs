@@ -3,10 +3,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::{SinkExt, StreamExt};
+use futures::{SinkExt, StreamExt, stream::SplitSink, stream::SplitStream};
+use tokio::net::TcpStream;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::interval;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tokio_tungstenite::{
+    MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
+};
 use tracing::{error, info};
 
 use crate::HEARTBEAT_INTERVAL_MS;
@@ -93,8 +96,8 @@ impl CollaborationClient {
     /// 处理认证响应
     async fn handle_auth_response(
         &mut self,
-        read: &mut tokio_tungstenite::WebSocketStream,
-        write: &Arc<Mutex<tokio_tungstenite::WebSocketStream>>,
+        read: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+        write: &Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use tokio_tungstenite::tungstenite::protocol::Message;
 
@@ -145,7 +148,7 @@ impl CollaborationClient {
                 }
                 Some(Err(e)) => {
                     error!("WebSocket 错误: {}", e);
-                    return Err(e.into());
+                    return Err(Box::new(e));
                 }
                 Some(Ok(_)) => {
                     continue;
@@ -162,8 +165,8 @@ impl CollaborationClient {
     /// 启动消息处理循环
     async fn start_message_loop(
         &mut self,
-        mut read: tokio_tungstenite::WebSocketStream,
-        write: Arc<Mutex<tokio_tungstenite::WebSocketStream>>,
+        mut read: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+        write: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
     ) {
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
         self.shutdown_tx = Some(shutdown_tx);

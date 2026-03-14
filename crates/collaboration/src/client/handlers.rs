@@ -6,9 +6,12 @@ use std::time::Instant;
 use tokio::sync::{RwLock, mpsc};
 use tracing::{debug, error, info};
 
+use super::event::CollaborationEvent;
 use crate::client::{
-    ClientState, CollaborationEvent, CollaborationSession, EventCallback, ServerMessage,
+    ClientConfig, ClientMessage, ClientState, CollaborationClient, CollaborationSession,
+    EventCallback, ServerMessage,
 };
+use crate::types::RemoteUser;
 use crate::types::*;
 
 /// 处理服务器消息

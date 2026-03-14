@@ -142,6 +142,7 @@ pub fn create_track_summary(
 }
 
 /// 从 MIDI 文件加载数据
+#[allow(clippy::type_complexity)]
 pub fn load_midi_data(
     source_path: &Path,
     cache_base_dir: &Path,

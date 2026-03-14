@@ -4,8 +4,9 @@ use flate2::read::ZlibDecoder;
 use std::io::Read;
 
 use crate::error::{DmsError, Result};
+use crate::node::HEADER_SIZE;
 use crate::node_type::DmsNodeType;
-use crate::reader::{DmsScanResult, FileHeader, HEADER_SIZE, read_file_header};
+use crate::reader::{DmsScanResult, read_file_header};
 use crate::utils;
 
 /// 解析状态机

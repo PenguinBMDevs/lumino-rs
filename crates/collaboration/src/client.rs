@@ -27,24 +27,6 @@ pub use event::{CollaborationEvent, EventCallback};
 pub use handlers::handle_server_message;
 pub use message::{ClientMessage, ServerMessage};
 
-/// 客户端配置
-#[derive(Debug, Clone)]
-pub struct ClientConfig {
-    pub server_host: String,
-    pub server_port: u16,
-    pub username: String,
-}
-
-impl Default for ClientConfig {
-    fn default() -> Self {
-        Self {
-            server_host: "lumino.dpdns.org".to_string(),
-            server_port: 443,
-            username: "Anonymous".to_string(),
-        }
-    }
-}
-
 /// 客户端状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientState {
@@ -64,14 +46,6 @@ pub struct CollaborationSession {
     pub invite_code: Option<InviteCode>,
     pub current_room: Option<RoomInfo>,
     pub remote_users: std::collections::HashMap<UserId, RemoteUser>,
-}
-
-/// 远程用户信息
-#[derive(Debug, Clone)]
-pub struct RemoteUser {
-    pub info: UserInfo,
-    pub mouse_position: Option<MousePosition>,
-    pub last_active: Instant,
 }
 
 /// 协作客户端

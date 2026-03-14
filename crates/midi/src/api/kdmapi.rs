@@ -153,26 +153,79 @@ impl Api for Kdmapi {
 struct KdmapiOutputConn {
     sym: Arc<Symbols>,
 }
+
 // KDMAPI 输出端口连接方法
 impl KdmapiOutputConn {
     fn send(&mut self, data: &[u8; 3]) -> Result<(), Error> {
+        // MIDI 消息格式：低字节在前（小端序）
+        // 第1字节: 状态字节 (如 0x90 | channel)
+        // 第2字节: 数据1 (如 key)
+        // 第3字节: 数据2 (如 velocity)
+        // 第4字节: 0
         let word = u32::from_le_bytes([data[0], data[1], data[2], 0]);
-        unsafe { (self.sym.send_direct_data)(word) };
+
+        tracing::trace!(
+            "KDMAPI: 发送 MIDI 消息 [{:02X}, {:02X}, {:02X}] = 0x{:08X}",
+            data[0],
+            data[1],
+            data[2],
+            word
+        );
+
+        let result = unsafe { (self.sym.send_direct_data)(word) };
+
+        // 检查结果（某些 KDMAPI 实现会返回非零表示成功）
+        if result == 0 {
+            tracing::trace!("KDMAPI: 消息发送成功");
+        } else {
+            tracing::trace!("KDMAPI: 消息发送结果 = {}", result);
+        }
+
         Ok(())
     }
 }
+
 // KDMAPI 输出端口连接实现 OutputConnection 接口
 impl OutputConnection for KdmapiOutputConn {
-    // KDMAPI 输出端口连接发送音符-on 事件
     fn note_on(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
-        self.send(&[0x90 | ch, key, vel])
+        // 确保通道在有效范围内 (0-15)
+        let channel = ch & 0x0F;
+        // Note On 状态字节: 0x90 | channel
+        let status = 0x90 | channel;
+
+        tracing::debug!(
+            "KDMAPI::note_on: raw_ch={}, channel={}, key={}, vel={}",
+            ch,
+            channel,
+            key,
+            vel
+        );
+
+        // 确保 velocity 不为 0（否则会被视为 note_off）
+        let velocity = if vel == 0 { 1 } else { vel };
+
+        self.send(&[status, key & 0x7F, velocity & 0x7F])
     }
-    // KDMAPI 输出端口连接发送音符-off 事件
+
     fn note_off(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
-        self.send(&[0x80 | ch, key, vel])
+        // 确保通道在有效范围内 (0-15)
+        let channel = ch & 0x0F;
+        // Note Off 状态字节: 0x80 | channel
+        let status = 0x80 | channel;
+
+        tracing::debug!(
+            "KDMAPI::note_off: raw_ch={}, channel={}, key={}, vel={}",
+            ch,
+            channel,
+            key,
+            vel
+        );
+
+        self.send(&[status, key & 0x7F, vel & 0x7F])
     }
-    // KDMAPI 输出端口连接关闭
+
     fn close(self: Box<Self>) {
+        tracing::debug!("KDMAPI::close: 关闭连接");
         // Kdmapi 不需要显式关闭对等端
     }
 }
