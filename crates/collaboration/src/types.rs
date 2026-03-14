@@ -305,23 +305,12 @@ pub enum ClientState {
 }
 
 /// 协作会话状态
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CollaborationSession {
     pub current_room: Option<RoomInfo>,
     pub remote_users: HashMap<UserId, RemoteUser>,
     pub current_user_id: Option<UserId>,
     pub invite_code: Option<InviteCode>,
-}
-
-impl Default for CollaborationSession {
-    fn default() -> Self {
-        Self {
-            current_room: None,
-            remote_users: HashMap::new(),
-            current_user_id: None,
-            invite_code: None,
-        }
-    }
 }
 
 /// 客户端配置

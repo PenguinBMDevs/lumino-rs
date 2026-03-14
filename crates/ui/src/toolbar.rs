@@ -173,7 +173,12 @@ impl std::fmt::Display for DotType {
 impl DotType {
     /// 获取所有选项
     pub fn all() -> &'static [DotType] {
-        &[DotType::None, DotType::Tuplet, DotType::Single, DotType::Double]
+        &[
+            DotType::None,
+            DotType::Tuplet,
+            DotType::Single,
+            DotType::Double,
+        ]
     }
 
     /// 获取倍数（符点增加原时值的多少）
@@ -516,16 +521,17 @@ impl Toolbar {
             container(space().height(Length::Fixed(RESIZE_HANDLE_HEIGHT)))
                 .width(Length::Fill)
                 .style(move |_theme: &Theme| {
-                    container::Style::default()
-                        .background(if self.is_resizing {
-                            palette.primary.strong.color
-                        } else {
-                            palette.background.weakest.color
-                        })
+                    container::Style::default().background(if self.is_resizing {
+                        palette.primary.strong.color
+                    } else {
+                        palette.background.weakest.color
+                    })
                 }),
         )
         .interaction(iced_core::mouse::Interaction::ResizingVertically)
-        .on_press(Message::Toolbar(Event::ResizeDragStarted(Point::new(0.0, 0.0))))
+        .on_press(Message::Toolbar(Event::ResizeDragStarted(Point::new(
+            0.0, 0.0,
+        ))))
         .on_release(Message::Toolbar(Event::ResizeDragEnded))
         .into();
 
@@ -540,18 +546,14 @@ impl Toolbar {
             row![
                 text("精度:").size(14),
                 space().width(8),
-                pick_list(
-                    precision_options,
-                    Some(self.note_precision),
-                    |precision| {
-                        if precision == NotePrecision::Custom {
-                            // 选择自定义时，发送消息到Root打开对话框
-                            Message::OpenCustomPrecisionDialog
-                        } else {
-                            Event::precision_changed(precision)
-                        }
-                    },
-                )
+                pick_list(precision_options, Some(self.note_precision), |precision| {
+                    if precision == NotePrecision::Custom {
+                        // 选择自定义时，发送消息到Root打开对话框
+                        Message::OpenCustomPrecisionDialog
+                    } else {
+                        Event::precision_changed(precision)
+                    }
+                },)
                 .placeholder("选择精度")
                 .padding([4, 8])
                 .width(Length::Fixed(120.0)),

@@ -1,6 +1,6 @@
 use lumino_core::storage::config::{SynthBackend, UiConfig};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::{Receiver, channel};
 
 /// MIDI API 类型别名
 type MidiApi = Box<dyn lumino_midi::Api>;
@@ -56,14 +56,14 @@ impl Default for MidiManager {
 
 impl MidiManager {
     /// 从配置初始化 MIDI 管理器
-    /// 
+    ///
     /// 如果配置使用 XSynth，会先使用 System 快速启动，然后在后台初始化 XSynth
     pub fn from_config(ui_config: &UiConfig) -> Self {
         let preferred = ui_config.preferred_backend;
-        
+
         // 首先快速启动 System 后端（不阻塞 UI）
         let (api, output, backend) = Self::init_system_output();
-        
+
         let mut manager = Self {
             api,
             output,
@@ -73,87 +73,88 @@ impl MidiManager {
             xsynth_init_rx: None,
             is_xsynth_initializing: false,
         };
-        
+
         // 如果偏好 XSynth，在后台异步初始化
         if preferred == SynthBackend::XSynth {
             manager.start_xsynth_async_init(ui_config);
         }
-        
+
         manager
     }
-    
+
     /// 启动 XSynth 异步初始化
     fn start_xsynth_async_init(&mut self, ui_config: &UiConfig) {
         if self.is_xsynth_initializing {
             return;
         }
-        
+
         if ui_config.soundfont_path.is_empty() {
             tracing::warn!("XSynth 异步初始化: 音色库路径未设置");
             return;
         }
-        
+
         let path = PathBuf::from(&ui_config.soundfont_path);
         if !path.exists() {
             tracing::warn!("XSynth 异步初始化: 音色库文件不存在: {:?}", path);
             return;
         }
-        
+
         tracing::info!("XSynth: 启动后台初始化...");
         self.is_xsynth_initializing = true;
-        
+
         let (tx, rx) = channel();
         self.xsynth_init_rx = Some(rx);
-        
+
         // 在后台线程中初始化 XSynth
         std::thread::spawn(move || {
             tracing::info!("XSynth: 后台线程开始初始化");
-            
+
             let result = Self::init_xsynth_blocking(&path);
-            
+
             match &result {
                 Ok(_) => tracing::info!("XSynth: 后台初始化成功"),
                 Err(e) => tracing::warn!("XSynth: 后台初始化失败: {}", e),
             }
-            
+
             let init_result = match result {
                 Ok((api, output)) => XSynthInitResult::Success { api, output },
                 Err(e) => XSynthInitResult::Failed(e),
             };
-            
+
             let _ = tx.send(init_result);
         });
     }
-    
+
     /// 阻塞式初始化 XSynth（用于后台线程）
     fn init_xsynth_blocking(soundfont_path: &Path) -> MidiInitResult {
         use lumino_midi::ApiKind;
-        
+
         let api_kind = ApiKind::XSynth {
             soundfont_path: soundfont_path.to_path_buf(),
         };
-        
+
         let api = lumino_midi::new_api(&api_kind)
             .map_err(|e| format!("初始化 MIDI API 失败: {:?}", e))?;
-        
-        let outputs = api.outputs()
+
+        let outputs = api
+            .outputs()
             .map_err(|e| format!("获取输出设备失败: {:?}", e))?;
-        
-        let output = outputs.first()
-            .ok_or("未找到可用的 MIDI 输出设备")?;
-        
-        let conn = api.open_output(output.id)
+
+        let output = outputs.first().ok_or("未找到可用的 MIDI 输出设备")?;
+
+        let conn = api
+            .open_output(output.id)
             .map_err(|e| format!("打开输出连接失败: {:?}", e))?;
-        
+
         Ok((api, conn))
     }
-    
+
     /// 快速初始化 System 后端（不阻塞）
     fn init_system_output() -> SystemOutputResult {
         use lumino_midi::ApiKind;
-        
+
         tracing::info!("MIDI: 快速启动 System 后端");
-        
+
         match lumino_midi::new_api(&ApiKind::System) {
             Ok(api) => {
                 if let Ok(outputs) = api.outputs()
@@ -171,28 +172,28 @@ impl MidiManager {
             }
         }
     }
-    
+
     /// 检查异步初始化是否完成，如果完成则切换到 XSynth
     pub fn check_async_init_complete(&mut self) {
         if !self.is_xsynth_initializing {
             return;
         }
-        
+
         let rx = match &self.xsynth_init_rx {
             Some(rx) => rx,
             None => return,
         };
-        
+
         // 非阻塞检查接收器
         match rx.try_recv() {
             Ok(XSynthInitResult::Success { api, output }) => {
                 tracing::info!("XSynth: 异步初始化完成，切换到 XSynth 后端");
-                
+
                 // 关闭旧的输出
                 if let Some(old_output) = self.output.take() {
                     drop(old_output);
                 }
-                
+
                 self.api = Some(api);
                 self.output = Some(output);
                 self.active_backend = SynthBackend::XSynth;
@@ -248,7 +249,7 @@ impl MidiManager {
             "重新初始化 MIDI 输出，使用偏好后端: {:?}",
             ui_config.preferred_backend
         );
-        
+
         // 更新偏好后端
         self.preferred_backend = ui_config.preferred_backend;
 

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use winit::{
+    dpi::LogicalSize,
     event::WindowEvent,
     event_loop::ActiveEventLoop,
-    window::{Window, WindowId, WindowAttributes},
-    dpi::LogicalSize,
+    window::{Window, WindowAttributes, WindowId},
 };
 
 /// 对话框类型
@@ -17,7 +17,10 @@ pub enum DialogType {
 /// 对话框结果
 #[derive(Debug, Clone)]
 pub enum DialogResult {
-    CustomPrecision { numerator: String, denominator: String },
+    CustomPrecision {
+        numerator: String,
+        denominator: String,
+    },
 }
 
 /// 对话框窗口
@@ -41,12 +44,9 @@ impl DialogWindow {
             DialogType::CustomPrecision => (480.0, 180.0, "自定义贴合"),
             DialogType::Collaboration => (420.0, 320.0, "多人协作"),
         };
-        
+
         let attributes = WindowAttributes::default()
-            .with_inner_size(LogicalSize {
-                width,
-                height,
-            })
+            .with_inner_size(LogicalSize { width, height })
             .with_title(title)
             .with_visible(false)
             .with_decorations(true)
@@ -68,14 +68,17 @@ impl DialogWindow {
         })
     }
 
-    pub fn initialize(&mut self, ui_config: &lumino_core::storage::config::UiConfig) -> Result<(), String> {
+    pub fn initialize(
+        &mut self,
+        ui_config: &lumino_core::storage::config::UiConfig,
+    ) -> Result<(), String> {
         let physical_size = self.window.inner_size();
-        
+
         // 检查窗口大小是否为零
         if physical_size.width == 0 || physical_size.height == 0 {
             return Err("窗口大小为零，无法初始化".to_string());
         }
-        
+
         let gfx = futures::executor::block_on(lumino_gfx::Context::new(
             self.window.clone(),
             physical_size.width,
@@ -104,10 +107,10 @@ impl DialogWindow {
         }
 
         self.window.set_visible(true);
-        
+
         self.gfx = Some(gfx);
         self.ui = Some(ui);
-        
+
         Ok(())
     }
 
@@ -152,8 +155,14 @@ impl DialogWindow {
             && let Some(result) = ui.take_dialog_result()
         {
             match result {
-                lumino_ui::host::DialogResult::CustomPrecision { numerator, denominator } => {
-                    self.result_data = Some(DialogResult::CustomPrecision { numerator, denominator });
+                lumino_ui::host::DialogResult::CustomPrecision {
+                    numerator,
+                    denominator,
+                } => {
+                    self.result_data = Some(DialogResult::CustomPrecision {
+                        numerator,
+                        denominator,
+                    });
                 }
             }
             self.should_close = true;
@@ -168,7 +177,7 @@ impl DialogWindow {
         if size.width == 0 || size.height == 0 {
             return;
         }
-        
+
         if let (Some(gfx), Some(ui)) = (self.gfx.as_mut(), self.ui.as_mut()) {
             match gfx.with_frame(|frame, view| ui.redraw_requested(frame, view, gfx)) {
                 Ok(_) => {}
@@ -224,16 +233,17 @@ impl DialogManager {
         ui_config: &lumino_core::storage::config::UiConfig,
     ) {
         while let Some(pending) = self.pending_dialogs.pop() {
-            let mut dialog = match DialogWindow::new(event_loop, pending.dialog_type, Some(parent_window)) {
-                Ok(d) => d,
-                Err(e) => {
-                    tracing::error!("创建对话框失败: {}", e);
-                    continue;
-                }
-            };
+            let mut dialog =
+                match DialogWindow::new(event_loop, pending.dialog_type, Some(parent_window)) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        tracing::error!("创建对话框失败: {}", e);
+                        continue;
+                    }
+                };
 
             let window_id = dialog.window_id();
-            
+
             // 初始化对话框
             if let Err(e) = dialog.initialize(ui_config) {
                 tracing::error!("初始化对话框失败: {}", e);

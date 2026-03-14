@@ -15,7 +15,7 @@ use iced_winit::{
 
 use iced_core::{Event, Font, Pixels, Size, mouse, renderer, touch};
 
-use crate::{config, root, window, message, toolbar, settings};
+use crate::{config, message, root, settings, toolbar, window};
 
 /// 音符数据: (tick, key, length)
 pub type NoteData = (f32, u8, f32);
@@ -349,9 +349,7 @@ impl Host {
 
         // 如果正在调整工具栏高度，更新工具栏高度
         if self.is_toolbar_resizing {
-            self.root
-                .toolbar
-                .update_resize_position(logical_pos.y);
+            self.root.toolbar.update_resize_position(logical_pos.y);
             self.cache = std::mem::take(&mut self.cache);
             self.window.request_redraw();
         }
@@ -571,7 +569,7 @@ impl Host {
         // 不需要重绘，因为这些音符是用于洋葱皮的，不是当前显示的
     }
 
-    // ========== 洋葱皮 API ==========
+    // 洋葱皮 API
 
     /// 启用洋葱皮功能
     pub fn enable_onion_skin(&mut self) {
@@ -714,7 +712,10 @@ impl Host {
 /// 对话框结果
 #[derive(Debug, Clone)]
 pub enum DialogResult {
-    CustomPrecision { numerator: String, denominator: String },
+    CustomPrecision {
+        numerator: String,
+        denominator: String,
+    },
 }
 
 impl Host {
@@ -747,27 +748,31 @@ impl Host {
     /// 设置协作视图状态（用于独立对话框窗口）
     pub fn set_collaboration_view_state(
         &mut self,
-        state: crate::root::CollaborationViewState,
+        state: crate::state::root_state::CollaborationViewState,
         invite_code: Option<String>,
         room_name: Option<String>,
     ) {
-        self.root.set_collaboration_view_state(state, invite_code, room_name);
+        self.root
+            .set_collaboration_view_state(state, invite_code, room_name);
         self.cache = std::mem::take(&mut self.cache);
         self.window.request_redraw();
     }
     /// 更新远端鼠标位置
     pub fn update_remote_cursor(&mut self, user_id: String, x: f32, y: f32, color: String) {
-        self.root.update(message::Message::CollaborationRemoteMouseMoved { 
-            user_id, x, y, color 
-        });
+        self.root
+            .update(message::Message::CollaborationRemoteMouseMoved {
+                user_id,
+                x,
+                y,
+                color,
+            });
         self.window.request_redraw();
     }
 
     /// 更新远端音符
     pub fn update_remote_note(&mut self, user_id: String, operation: String) {
-        self.root.update(message::Message::CollaborationRemoteNoteUpdate { 
-            user_id, operation 
-        });
+        self.root
+            .update(message::Message::CollaborationRemoteNoteUpdate { user_id, operation });
         self.window.request_redraw();
     }
     /// 获取当前 PPQ (Pulses Per Quarter note)

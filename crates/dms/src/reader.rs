@@ -298,9 +298,7 @@ pub fn parse_dms_data(data: Bytes) -> Result<DmsCompositeNode> {
 /// parse_dms_data 的别名
 pub use parse_dms_data as read_dms_data;
 
-// ============================================================================
 // 轻量级解析（低内存占用）
-// ============================================================================
 
 /// 轻量级 DMS 数据结构（零拷贝，低内存）
 #[derive(Clone, Debug)]

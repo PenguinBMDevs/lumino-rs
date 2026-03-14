@@ -145,20 +145,27 @@ impl ProgressManager {
             .with_decorations(true)
             .with_visible(true);
 
-        let window = Arc::new(
-            event_loop
-                .create_window(attributes)
-                .expect("创建进度窗口失败"),
-        );
+        let window = match event_loop.create_window(attributes) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                tracing::error!("创建进度窗口失败: {}", e);
+                return;
+            }
+        };
 
         let physical_size = window.inner_size();
 
-        let gfx = futures::executor::block_on(lumino_gfx::Context::new(
+        let gfx = match futures::executor::block_on(lumino_gfx::Context::new(
             window.clone(),
             physical_size.width,
             physical_size.height,
-        ))
-        .expect("初始化进度窗口图形上下文失败");
+        )) {
+            Ok(g) => g,
+            Err(e) => {
+                tracing::error!("初始化进度窗口图形上下文失败: {}", e);
+                return;
+            }
+        };
 
         let ui = lumino_ui::Host::new(
             window.clone(),

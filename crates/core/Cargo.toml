@@ -17,6 +17,7 @@ zstd = "0.13.2"
 encoding_rs = "0.8"
 lumino-dms = { path = "../dms" }
 memmap2 = "0.9"
+ouroboros = "0.18"
 
 [dev-dependencies]
 tokio = { version = "1.42", features = ["fs", "rt", "sync", "rt-multi-thread", "macros"] }

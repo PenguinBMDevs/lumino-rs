@@ -83,11 +83,20 @@ pub enum Message {
     /// 关闭协作对话框
     CloseCollaborationDialog,
     /// 连接协作服务器
-    CollaborationConnect { host: String, port: u16, username: String, invite_code: Option<String> },
+    CollaborationConnect {
+        host: String,
+        port: u16,
+        username: String,
+        invite_code: Option<String>,
+    },
     /// 创建协作房间
-    CollaborationCreateRoom { name: String },
+    CollaborationCreateRoom {
+        name: String,
+    },
     /// 加入协作房间
-    CollaborationJoinRoom { invite_code: String },
+    CollaborationJoinRoom {
+        invite_code: String,
+    },
     /// 断开协作连接
     CollaborationDisconnect,
     /// 协作服务器地址变更

@@ -126,11 +126,6 @@ pub fn view_safe(icon: Icon) -> Result<crate::Element<'static>, IconError> {
         .into())
 }
 
-/// 渲染指定尺寸的图标（可能 panic，仅用于向后兼容）
-pub fn view_with_size(icon: Icon, width: u32, height: u32) -> crate::Element<'static> {
-    view_with_size_and_theme(icon, width, height, None)
-}
-
 /// 渲染指定尺寸和主题的图标（可能 panic，仅用于向后兼容）
 pub fn view_with_size_and_theme(
     icon: Icon,

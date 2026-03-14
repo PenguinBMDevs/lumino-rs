@@ -139,11 +139,6 @@ impl Sidebar {
         container(inner).into()
     }
 
-    /// 仅返回路由图标栏视图（48px 宽）
-    pub fn route_view(&self, window: &window::Window) -> Element<'_> {
-        route::view(self.route, window)
-    }
-
     pub fn width(&self) -> u32 {
         48 + if self.panel_visible { 200 } else { 0 }
     }

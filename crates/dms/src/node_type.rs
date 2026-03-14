@@ -8,7 +8,7 @@ impl DmsNodeType {
     /// 根节点
     pub const ROOT: Self = Self(0x0000);
 
-    // === 根级别节点 ===
+    // 根级别节点
     /// 歌曲名称 (原始ID: 1000)
     pub const SONG_NAME: Self = Self(1000);
     /// 版权信息 (原始ID: 1001)
@@ -34,7 +34,7 @@ impl DmsNodeType {
     /// 主窗口选中工具索引 (原始ID: 1023)
     pub const MASTER_SEL_NOTE_TOOL_INDEX: Self = Self(1023);
 
-    // === 根级别未知/其他节点 ===
+    // 根级别未知/其他节点
     /// 未知节点 1007
     pub const UNKNOWN_1007: Self = Self(1007);
     /// 未知节点 1009
@@ -50,7 +50,7 @@ impl DmsNodeType {
     /// 未知节点 1024
     pub const UNKNOWN_1024: Self = Self(1024);
 
-    // === 端口配置（PORT_CFG 子节点）===
+    // 端口配置（PORT_CFG 子节点）
     pub const PORT_CFG_A: Self = Self(1000 | (Self::PORT_CFG.0 << 16));
     pub const PORT_CFG_B: Self = Self(1001 | (Self::PORT_CFG.0 << 16));
     pub const PORT_CFG_C: Self = Self(1002 | (Self::PORT_CFG.0 << 16));
@@ -68,7 +68,7 @@ impl DmsNodeType {
     pub const PORT_CFG_O: Self = Self(1014 | (Self::PORT_CFG.0 << 16));
     pub const PORT_CFG_P: Self = Self(1015 | (Self::PORT_CFG.0 << 16));
 
-    // === 轨道属性（TRACK 子节点）===
+    // 轨道属性（TRACK 子节点）
     /// 轨道端口
     pub const TRACK_PORT: Self = Self(1000 | (Self::TRACK.0 << 16));
     /// 轨道通道
@@ -102,7 +102,7 @@ impl DmsNodeType {
     /// 音符范围上限
     pub const TRACK_NOTE_RANGE_H: Self = Self(1022 | (Self::TRACK.0 << 16));
 
-    // === 轨道未知节点 ===
+    // 轨道未知节点
     pub const TRACK_UNKNOWN_1005: Self = Self(1005 | (Self::TRACK.0 << 16));
     pub const TRACK_UNKNOWN_1008: Self = Self(1008 | (Self::TRACK.0 << 16));
     pub const TRACK_UNKNOWN_1011: Self = Self(1011 | (Self::TRACK.0 << 16));
@@ -119,7 +119,7 @@ impl DmsNodeType {
     pub const TRACK_UNKNOWN_1029: Self = Self(1029 | (Self::TRACK.0 << 16));
     pub const TRACK_UNKNOWN_1030: Self = Self(1030 | (Self::TRACK.0 << 16));
 
-    // === 事件类型（TRACK 子节点）===
+    // 事件类型（TRACK 子节点）
     /// 音符事件
     pub const NOTE_EVENT: Self = Self(2001 | (Self::TRACK.0 << 16));
     /// 程序变更事件
@@ -156,50 +156,50 @@ impl DmsNodeType {
     /// 绝对 Tick 位置
     pub const ABS_TICK_POS: Self = Self(1001 | (Self::TRACK.0 << 32));
 
-    // === 音符事件属性 ===
+    // 音符事件属性
     pub const NOTE_KEY_NUMBER: Self = Self(2001 | (Self::NOTE_EVENT.0 << 16));
     pub const NOTE_VELOCITY: Self = Self(2002 | (Self::NOTE_EVENT.0 << 16));
     pub const NOTE_GATE: Self = Self(2003 | (Self::NOTE_EVENT.0 << 16));
 
-    // === 控制事件属性 ===
+    // 控制事件属性
     pub const CONTROL_TYPE: Self = Self(2001 | (Self::CONTROL_EVENT.0 << 16));
     pub const CONTROL_GATE: Self = Self(2002 | (Self::CONTROL_EVENT.0 << 16));
     pub const CONTROL_VALUE: Self = Self(2003 | (Self::CONTROL_EVENT.0 << 16));
 
-    // === 注释事件属性 ===
+    // 注释事件属性
     pub const COMMENT_TEXT: Self = Self(2001 | (Self::COMMENT_EVENT.0 << 16));
 
-    // === 公式事件属性 ===
+    // 公式事件属性
     pub const FORMULA_VAR_NAME: Self = Self(2001 | (Self::FORMULA_EVENT.0 << 16));
     pub const FORMULA_EXPRESSION: Self = Self(2002 | (Self::FORMULA_EVENT.0 << 16));
 
-    // === 速度事件属性 ===
+    // 速度事件属性
     pub const TEMPO_VALUE: Self = Self(2001 | (Self::TEMPO_EVENT.0 << 16));
 
-    // === SysEx 事件属性 ===
+    // SysEx 事件属性
     pub const CUSTOM_SYSEX_DATA: Self = Self(2001 | (Self::CUSTOM_SYSEX_EVENT.0 << 16));
 
-    // === 歌词事件属性 ===
+    // 歌词事件属性
     pub const LYRICS_LYRICS: Self = Self(2001 | (Self::LYRICS_EVENT.0 << 16));
 
-    // === 提示点事件属性 ===
+    // 提示点事件属性
     pub const CUE_POINT_VALUE: Self = Self(2001 | (Self::CUE_POINT_EVENT.0 << 16));
 
-    // === 小节链接事件属性 ===
+    // 小节链接事件属性
     pub const MEASURE_LINK_MEASURE: Self = Self(2001 | (Self::MEASURE_LINK_EVENT.0 << 16));
     pub const MEASURE_LINK_KEY_COMP: Self = Self(2002 | (Self::MEASURE_LINK_EVENT.0 << 16));
 
-    // === 调号事件属性 ===
+    // 调号事件属性
     pub const KEY_SIG_INDEX: Self = Self(2001 | (Self::KEY_SIG_EVENT.0 << 16));
 
-    // === 拍号事件属性 ===
+    // 拍号事件属性
     pub const TIME_SIG_NUMERATOR: Self = Self(2001 | (Self::TIME_SIG_EVENT.0 << 16));
     pub const TIME_SIG_DENOMINATOR: Self = Self(2002 | (Self::TIME_SIG_EVENT.0 << 16));
 
-    // === 标记事件属性 ===
+    // 标记事件属性
     pub const MARKER_NAME: Self = Self(2001 | (Self::MARKER_EVENT.0 << 16));
 
-    // === 程序变更事件属性 ===
+    // 程序变更事件属性
     pub const PROGRAM_CHANGE_PROGRAM: Self = Self(2001 | (Self::PROGRAM_CHANGE_EVENT.0 << 16));
 
     /// 从原始类型 ID 和父节点构建完整类型

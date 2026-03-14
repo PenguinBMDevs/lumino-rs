@@ -3,19 +3,29 @@ use winit::event_loop::ControlFlow;
 
 use super::storage;
 
+mod async_helper;
+mod collaboration_handler;
+mod dialog_manager;
+mod file_handler;
 mod menu;
+mod midi_handler;
 mod midi_manager;
+mod midi_parser;
 mod progress_manager;
 mod window_manager;
-mod dialog_manager;
 
 pub use lumino_core::ParsedDms;
 pub use lumino_core::ParsedMidi;
 
+use crate::services::collaboration_service::CollaborationService;
+use crate::services::file_service::FileService;
+use collaboration_handler::CollaborationHandler;
+use dialog_manager::{DialogManager, DialogResult};
+use file_handler::FileHandler;
+use midi_handler::MidiHandler;
 use midi_manager::{MidiManager, handle_audio_action};
 use progress_manager::ProgressManager;
 use window_manager::WindowManager;
-use dialog_manager::{DialogManager, DialogResult};
 
 #[derive(Default)]
 pub struct Runner {
@@ -38,11 +48,22 @@ struct RunnerInner {
     /// 对话框管理器
     dialog_manager: DialogManager,
     /// 协作客户端（使用 Arc<Mutex<>> 包装以支持异步访问）
-    collaboration_client: Option<std::sync::Arc<tokio::sync::Mutex<lumino_collaboration::CollaborationClient>>>,
+    collaboration_client:
+        Option<std::sync::Arc<tokio::sync::Mutex<lumino_collaboration::CollaborationClient>>>,
     /// 协作状态
     collaboration_status: CollaborationStatus,
     /// 待处理的加入房间邀请码
     pub(crate) pending_invite_code: Option<String>,
+    /// 文件处理器
+    file_handler: FileHandler,
+    /// 协作处理器
+    collaboration_handler: CollaborationHandler,
+    /// MIDI 处理器
+    midi_handler: MidiHandler,
+    /// 文件服务
+    file_service: FileService,
+    /// 协作服务
+    collaboration_service: CollaborationService,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -85,13 +106,13 @@ impl winit::application::ApplicationHandler for Runner {
         if this.dialog_manager.is_dialog_window(window_id) {
             let mut dialog_result = None;
             let mut should_close = false;
-            
+
             if let Some(dialog) = this.dialog_manager.get_dialog_mut(window_id) {
                 dialog.handle_event(event);
-                
+
                 // 检查对话框是否应该关闭
                 should_close = dialog.should_close();
-                
+
                 // 检查对话框结果
                 if let Some(result) = dialog.check_result() {
                     dialog_result = Some(result);
@@ -170,14 +191,25 @@ impl winit::application::ApplicationHandler for Runner {
 
 impl Runner {
     fn init_inner(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) -> RunnerInner {
-        let storage = storage::Storage::new().expect("初始化存储失败");
+        let storage = match storage::Storage::new() {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("初始化存储失败: {}", e);
+                std::process::exit(1);
+            }
+        };
 
         let config = storage.config.get();
         let ui_state = storage.ui_state.get();
 
         // 创建主窗口管理器
-        let window =
-            WindowManager::new(event_loop, ui_state, &config.ui).expect("初始化窗口管理器失败");
+        let window = match WindowManager::new(event_loop, ui_state, &config.ui) {
+            Ok(w) => w,
+            Err(e) => {
+                tracing::error!("初始化窗口管理器失败: {}", e);
+                std::process::exit(1);
+            }
+        };
 
         // 创建进度管理器
         let (progress, progress_tx) = ProgressManager::new();
@@ -192,6 +224,13 @@ impl Runner {
         // 初始化协作客户端
         let collaboration_client = None;
         let collaboration_status = CollaborationStatus::Disconnected;
+
+        // 创建新的处理器和服务
+        let file_handler = FileHandler::new();
+        let collaboration_handler = CollaborationHandler::new();
+        let midi_handler = MidiHandler::new();
+        let file_service = FileService::new();
+        let collaboration_service = CollaborationService::new();
 
         event_loop.set_control_flow(ControlFlow::Wait);
 
@@ -209,6 +248,11 @@ impl Runner {
             collaboration_client,
             collaboration_status,
             pending_invite_code: None,
+            file_handler,
+            collaboration_handler,
+            midi_handler,
+            file_service,
+            collaboration_service,
         }
     }
 
@@ -228,15 +272,18 @@ impl Runner {
 
     fn apply_dialog_result_to_ui(ui: &mut lumino_ui::Host, result: DialogResult) {
         match result {
-            DialogResult::CustomPrecision { numerator, denominator } => {
+            DialogResult::CustomPrecision {
+                numerator,
+                denominator,
+            } => {
                 tracing::info!("应用自定义精度: {}/{}", numerator, denominator);
-                
+
                 // 应用到主窗口的编辑器
                 if let (Ok(num), Ok(den)) = (numerator.parse::<f32>(), denominator.parse::<f32>()) {
                     // 从编辑器状态获取实际的 PPQ 值
                     let ppq = ui.ppq();
                     let ticks = (ppq as f32) * 4.0 * num / den;
-                    
+
                     ui.set_custom_precision(ticks);
                     tracing::info!("自定义精度已应用: {} ticks (PPQ={})", ticks, ppq);
                 }

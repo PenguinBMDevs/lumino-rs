@@ -1,18 +1,19 @@
 pub mod constants;
 mod editor;
+pub mod host;
 pub mod message;
 mod resources;
 mod root;
 pub mod settings;
 mod sidebar;
+mod state;
 mod statusbar;
 mod titlebar;
 mod toolbar;
+mod view;
 pub mod window;
-pub mod host;
 
+pub use host::{Host, NoteData, TrackNotes};
 pub(crate) use lumino_core::storage::config;
 pub(crate) use root::{Element, Message, Renderer, Theme};
-pub use host::{Host, NoteData, TrackNotes};
-pub use root::CollaborationViewState;
-
+pub use state::root_state::CollaborationViewState;

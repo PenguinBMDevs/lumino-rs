@@ -1,5 +1,6 @@
 use memmap2::Mmap;
 use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
+use ouroboros::self_referencing;
 use std::fs::File;
 
 /// MIDI 事件类型（轻量级表示）
@@ -162,67 +163,104 @@ impl MidiEvent {
 /// MIDI 事件流（使用内存映射，零拷贝）
 ///
 /// 内存占用：仅操作系统页面缓存，不占用用户空间内存
+///
+/// # 安全性
+///
+/// 使用 `ouroboros` 宏安全地处理自引用结构：
+/// - `file_holder` 持有文件句柄，确保文件不会被关闭
+/// - `mmap_holder` 持有内存映射，确保内存区域有效
+/// - `smf` 引用 `mmap_holder` 中的数据，生命周期由 `ouroboros` 自动管理
+#[self_referencing]
 pub struct MidiEventStream {
-    _file: File,
-    _mmap: Mmap,
-    smf: Smf<'static>,
+    /// 文件句柄（保持文件打开）
+    file_holder: File,
+    /// 内存映射（零拷贝访问文件内容）
+    mmap_holder: Mmap,
+    /// MIDI 解析结果（引用 mmap 数据）
+    #[borrows(mmap_holder)]
+    #[covariant]
+    smf: Smf<'this>,
+    /// 当前音轨索引
     track_index: usize,
+    /// 当前事件索引
     event_index: usize,
+    /// 当前 tick
     current_tick: u32,
 }
 
 impl MidiEventStream {
+    /// 从文件路径创建 MIDI 事件流
+    ///
+    /// # 安全性
+    ///
+    /// 使用 `ouroboros` 宏安全地处理自引用结构，避免 unsafe transmute。
+    /// 内存映射的生命周期由编译器自动管理，确保引用始终有效。
+    ///
+    /// # 错误
+    ///
+    /// - 文件打开失败
+    /// - 内存映射创建失败
+    /// - MIDI 解析失败
     pub fn from_path(path: &std::path::Path) -> Result<Self, String> {
         let file = File::open(path).map_err(|e| format!("打开文件失败: {e}"))?;
 
+        // SAFETY: 内存映射操作本身是安全的，但需要确保：
+        // 1. 文件句柄在 mmap 生命周期内保持有效（由 Self::_file 字段保证）
+        // 2. 文件内容在 mmap 生命周期内不被修改（由操作系统保证）
+        // 3. 内存映射区域用于只读访问（midly::Smf::parse 只读取数据）
         let mmap = unsafe { Mmap::map(&file).map_err(|e| format!("内存映射失败: {e}"))? };
 
-        let smf = Smf::parse(&mmap[..]).map_err(|e| format!("解析MIDI失败: {e}"))?;
+        Self::try_new(
+            file,
+            mmap,
+            |mmap| Smf::parse(&mmap[..]).map_err(|e| format!("解析MIDI失败: {e}")),
+            0,
+            0,
+            0,
+        )
+        .map_err(|e| format!("创建MidiEventStream失败: {e}"))
+    }
 
-        let smf_static: Smf<'static> = unsafe { std::mem::transmute(smf) };
+    /// 获取音轨数量
+    pub fn track_count(&self) -> usize {
+        self.with_smf(|smf| smf.tracks.len())
+    }
 
-        Ok(Self {
-            _file: file,
-            _mmap: mmap,
-            smf: smf_static,
-            track_index: 0,
-            event_index: 0,
-            current_tick: 0,
+    /// 获取 MIDI 分辨率（PPQN）
+    pub fn division(&self) -> u16 {
+        self.with_smf(|smf| {
+            match smf.header.timing {
+                midly::Timing::Metrical(ticks) => ticks.as_int(),
+                _ => crate::midi::constants::DEFAULT_PPQN,
+            }
         })
     }
 
-    pub fn track_count(&self) -> usize {
-        self.smf.tracks.len()
-    }
-
-    pub fn division(&self) -> u16 {
-        match self.smf.header.timing {
-            midly::Timing::Metrical(ticks) => ticks.as_int(),
-            _ => 1920,
-        }
-    }
-
+    /// 读取指定音轨的所有事件
     pub fn read_track_events(&mut self, track_index: usize) -> Result<Vec<MidiEvent>, String> {
-        if track_index >= self.smf.tracks.len() {
-            return Err(format!("音轨索引 {} 超出范围", track_index));
-        }
-
-        let track = &self.smf.tracks[track_index];
-        let mut events = Vec::with_capacity(track.len());
-        let mut current_tick = 0u32;
-
-        for event in track {
-            current_tick = current_tick.saturating_add(u32::from(event.delta));
-
-            let midi_event = self.parse_event(track_index, current_tick, &event.kind);
-            if let Some(evt) = midi_event {
-                events.push(evt);
+        self.with_smf(|smf| {
+            if track_index >= smf.tracks.len() {
+                return Err(format!("音轨索引 {} 超出范围", track_index));
             }
-        }
 
-        Ok(events)
+            let track = &smf.tracks[track_index];
+            let mut events = Vec::with_capacity(track.len());
+            let mut current_tick = 0u32;
+
+            for event in track {
+                current_tick = current_tick.saturating_add(u32::from(event.delta));
+
+                let midi_event = Self::parse_event_static(track_index, current_tick, &event.kind);
+                if let Some(evt) = midi_event {
+                    events.push(evt);
+                }
+            }
+
+            Ok(events)
+        })
     }
 
+    /// 扫描音轨统计信息
     pub fn scan_track_for_stats<F>(
         &self,
         track_index: usize,
@@ -231,55 +269,57 @@ impl MidiEventStream {
     where
         F: FnMut(bool, u32),
     {
-        if track_index >= self.smf.tracks.len() {
-            return Err(format!("音轨索引 {} 超出范围", track_index));
-        }
-
-        let track = &self.smf.tracks[track_index];
-        let mut current_tick = 0u32;
-        let mut max_tick = 0u32;
-
-        for event in track {
-            current_tick = current_tick.saturating_add(u32::from(event.delta));
-
-            match &event.kind {
-                TrackEventKind::Midi {
-                    channel: _,
-                    message,
-                } => match message {
-                    MidiMessage::NoteOn { key: _, vel } => {
-                        let is_note_on = vel.as_int() > 0;
-                        callback(is_note_on, current_tick);
-                    }
-                    MidiMessage::NoteOff { .. } => {
-                        callback(false, current_tick);
-                    }
-                    MidiMessage::Controller { .. } | MidiMessage::ProgramChange { .. } => {
-                        callback(false, current_tick);
-                    }
-                    _ => {}
-                },
-                TrackEventKind::Meta(meta) => match meta {
-                    MetaMessage::Tempo { .. }
-                    | MetaMessage::TimeSignature { .. }
-                    | MetaMessage::KeySignature { .. } => {
-                        callback(false, current_tick);
-                    }
-                    MetaMessage::EndOfTrack => {
-                        max_tick = current_tick;
-                        break;
-                    }
-                    _ => {}
-                },
-                TrackEventKind::SysEx(_) | TrackEventKind::Escape(_) => {}
+        self.with_smf(|smf| {
+            if track_index >= smf.tracks.len() {
+                return Err(format!("音轨索引 {} 超出范围", track_index));
             }
-        }
 
-        Ok(max_tick)
+            let track = &smf.tracks[track_index];
+            let mut current_tick = 0u32;
+            let mut max_tick = 0u32;
+
+            for event in track {
+                current_tick = current_tick.saturating_add(u32::from(event.delta));
+
+                match &event.kind {
+                    TrackEventKind::Midi {
+                        channel: _,
+                        message,
+                    } => match message {
+                        MidiMessage::NoteOn { key: _, vel } => {
+                            let is_note_on = vel.as_int() > 0;
+                            callback(is_note_on, current_tick);
+                        }
+                        MidiMessage::NoteOff { .. } => {
+                            callback(false, current_tick);
+                        }
+                        MidiMessage::Controller { .. } | MidiMessage::ProgramChange { .. } => {
+                            callback(false, current_tick);
+                        }
+                        _ => {}
+                    },
+                    TrackEventKind::Meta(meta) => match meta {
+                        MetaMessage::Tempo { .. }
+                        | MetaMessage::TimeSignature { .. }
+                        | MetaMessage::KeySignature { .. } => {
+                            callback(false, current_tick);
+                        }
+                        MetaMessage::EndOfTrack => {
+                            max_tick = current_tick;
+                            break;
+                        }
+                        _ => {}
+                    },
+                    TrackEventKind::SysEx(_) | TrackEventKind::Escape(_) => {}
+                }
+            }
+
+            Ok(max_tick)
+        })
     }
 
-    fn parse_event(
-        &self,
+    /// 静态解析事件（不依赖 self）
+    fn parse_event_static(
         track_index: usize,
         tick: u32,
         kind: &TrackEventKind,
@@ -291,30 +331,84 @@ impl MidiEventStream {
         }
     }
 
-    fn next_event(&mut self) -> Option<Result<MidiEvent, String>> {
+    /// 获取下一个事件
+    fn next_event_internal(&mut self) -> Option<Result<MidiEvent, String>> {
         loop {
-            if self.track_index >= self.smf.tracks.len() {
-                return None;
-            }
+            let should_continue = self.with(|fields| {
+                let smf = &fields.smf;
+                let track_index = *fields.track_index;
+                let event_index = *fields.event_index;
+                let current_tick = *fields.current_tick;
 
-            let track = &self.smf.tracks[self.track_index];
+                if track_index >= smf.tracks.len() {
+                    return Ok(None);
+                }
 
-            if self.event_index >= track.len() {
-                self.track_index += 1;
-                self.event_index = 0;
-                self.current_tick = 0;
-                continue;
-            }
+                let track = &smf.tracks[track_index];
 
-            let event = &track[self.event_index];
-            self.event_index += 1;
-            self.current_tick = self.current_tick.saturating_add(u32::from(event.delta));
+                if event_index >= track.len() {
+                    return Ok(Some(true));
+                }
 
-            let track_idx = self.track_index;
-            let tick = self.current_tick;
+                let event = &track[event_index];
+                let new_tick = current_tick.saturating_add(u32::from(event.delta));
 
-            if let Some(midi_event) = self.parse_event(track_idx, tick, &event.kind) {
-                return Some(Ok(midi_event));
+                if Self::parse_event_static(track_index, new_tick, &event.kind).is_some() {
+                    Ok(Some(false))
+                } else {
+                    Ok(Some(true))
+                }
+            });
+
+            match should_continue {
+                Ok(None) => return None,
+                Ok(Some(false)) => {
+                    return self.with(|fields| {
+                        let smf = &fields.smf;
+                        let track_index = *fields.track_index;
+                        let event_index = *fields.event_index;
+                        let current_tick = *fields.current_tick;
+
+                        if track_index >= smf.tracks.len() {
+                            return None;
+                        }
+
+                        let track = &smf.tracks[track_index];
+                        if event_index == 0 || event_index > track.len() {
+                            return None;
+                        }
+
+                        let event = &track[event_index - 1];
+                        Self::parse_event_static(track_index, current_tick, &event.kind)
+                            .map(Ok)
+                    });
+                }
+                Ok(Some(true)) => {
+                    self.with_mut(|fields| {
+                        let smf = &fields.smf;
+                        let track_index = *fields.track_index;
+                        let event_index = *fields.event_index;
+
+                        if track_index >= smf.tracks.len() {
+                            return;
+                        }
+
+                        let track = &smf.tracks[track_index];
+
+                        if event_index >= track.len() {
+                            *fields.track_index = track_index + 1;
+                            *fields.event_index = 0;
+                            *fields.current_tick = 0;
+                        } else {
+                            let event = &track[event_index];
+                            *fields.event_index = event_index + 1;
+                            *fields.current_tick =
+                                fields.current_tick.saturating_add(u32::from(event.delta));
+                        }
+                    });
+                    continue;
+                }
+                Err(e) => return Some(Err(e)),
             }
         }
     }
@@ -324,7 +418,7 @@ impl Iterator for MidiEventStream {
     type Item = Result<MidiEvent, String>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.next_event()
+        self.next_event_internal()
     }
 }
 

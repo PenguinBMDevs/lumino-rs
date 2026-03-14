@@ -21,8 +21,7 @@ use crate::midi::MidiEvent;
 /// 1 GB 内存上限（字节）
 const MEMORY_LIMIT_BYTES: usize = 1024 * 1024 * 1024;
 
-/// 默认 PPQN (Pulses Per Quarter Note)
-const DEFAULT_PPQN: u16 = 1920;
+use crate::midi::constants::DEFAULT_PPQN;
 
 /// 压缩级别 (1-22, 越高压缩率越好但越慢)
 const COMPRESSION_LEVEL: i32 = 3;
@@ -92,7 +91,6 @@ pub enum TrackLocationSerde {
 #[derive(Debug)]
 pub struct DiskTrackCache {
     cache_dir: PathBuf,
-    #[allow(dead_code)]
     cache_key: u64,
 }
 
@@ -221,6 +219,12 @@ impl MidiMemoryManager {
 
         // ═══════ 读取文件到内存 (mmap) ═══════
         let file = File::open(source_path).map_err(|e| format!("打开文件失败: {e}"))?;
+
+        // SAFETY: 内存映射操作本身是安全的，但需要确保：
+        // 1. 文件句柄在 mmap 生命周期内保持有效（由 file 变量持有）
+        // 2. 文件内容在 mmap 生命周期内不被修改（由操作系统保证）
+        // 3. 内存映射区域用于只读访问（midly::parse 只读取数据）
+        // 4. mmap 在此作用域内有效，解析完成后立即释放
         let mmap =
             unsafe { memmap2::Mmap::map(&file).map_err(|e| format!("内存映射失败: {e}"))? };
 

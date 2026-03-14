@@ -2,6 +2,9 @@ use iced_core::Length;
 use iced_widget::{column, container, progress_bar, row, text};
 use lumino_gfx::NoteInstance;
 
+use crate::state::root_state::{CollaborationViewState, DialogType, RootState};
+use crate::view::collaboration_dialog::view_collaboration_dialog;
+use crate::view::custom_precision_dialog::view_custom_precision_dialog;
 use crate::{
     editor, editor::note::Note, message, settings, sidebar, statusbar, titlebar, toolbar, window,
 };
@@ -22,74 +25,8 @@ pub struct Root {
     settings: settings::SettingsPanel,
     progress: Option<(String, f64)>,
     is_progress_window: bool,
-    /// 是否有菜单/下拉框打开（打开时不渲染预览音符）
-    is_menu_open: bool,
-    /// 对话框结果（用于独立窗口模式）
-    dialog_result: Option<crate::host::DialogResult>,
-    /// 是否是对话框窗口（用于自定义精度对话框等）
-    is_dialog_window: bool,
-    /// 对话框类型
-    dialog_type: DialogType,
-    /// 协作对话框状态
-    collaboration_dialog: CollaborationDialog,
-}
-
-/// 对话框类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DialogType {
-    #[default]
-    None,
-    CustomPrecision,
-    Collaboration,
-}
-
-/// 协作对话框状态
-#[derive(Debug, Clone)]
-pub struct CollaborationDialog {
-    pub is_open: bool,
-    /// 服务器地址
-    pub server_host: String,
-    /// 服务器端口
-    pub server_port: String,
-    /// 用户名
-    pub username: String,
-    /// 房间名称（创建房间用）
-    pub room_name: String,
-    /// 邀请码（加入房间用）
-    pub invite_code: String,
-    /// 当前视图状态
-    pub view_state: CollaborationViewState,
-    /// 连接状态
-    pub connection_status: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum CollaborationViewState {
-    #[default]
-    Connect,      // 连接服务器界面
-    RoomActions,  // 创建/加入房间界面
-    InRoom,       // 在房间内界面
-}
-
-impl CollaborationDialog {
-    pub fn new() -> Self {
-        Self {
-            is_open: false,
-            server_host: "localhost".to_string(),
-            server_port: "3000".to_string(),
-            username: "用户".to_string(),
-            room_name: "我的房间".to_string(),
-            invite_code: String::new(),
-            view_state: CollaborationViewState::Connect,
-            connection_status: String::new(),
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.is_open = false;
-        self.view_state = CollaborationViewState::Connect;
-        self.connection_status.clear();
-    }
+    /// UI 状态
+    state: RootState,
 }
 
 impl Root {
@@ -104,11 +41,7 @@ impl Root {
             settings: settings::SettingsPanel::new(ui_config),
             progress: None,
             is_progress_window: false,
-            is_menu_open: false,
-            dialog_result: None,
-            is_dialog_window: false,
-            dialog_type: DialogType::None,
-            collaboration_dialog: CollaborationDialog::new(),
+            state: RootState::new(),
         }
     }
 
@@ -125,17 +58,17 @@ impl Root {
             settings: settings::SettingsPanel::new(&default_config),
             progress: None,
             is_progress_window: true,
-            is_menu_open: false,
-            dialog_result: None,
-            is_dialog_window: false,
-            dialog_type: DialogType::None,
-            collaboration_dialog: CollaborationDialog::new(),
+            state: RootState::new(),
         }
     }
 
     pub fn new_dialog(theme: &str) -> Self {
         // 对话框窗口使用默认配置
         let default_config = UiConfig::default();
+        let mut state = RootState::new();
+        state.is_dialog_window = true;
+        state.dialog_type = DialogType::CustomPrecision;
+
         Self {
             sidebar: sidebar::Sidebar::new(),
             titlebar: titlebar::Titlebar::new(),
@@ -146,11 +79,7 @@ impl Root {
             settings: settings::SettingsPanel::new(&default_config),
             progress: None,
             is_progress_window: false,
-            is_menu_open: false,
-            dialog_result: None,
-            is_dialog_window: true,
-            dialog_type: DialogType::CustomPrecision,
-            collaboration_dialog: CollaborationDialog::new(),
+            state,
         }
     }
 
@@ -224,7 +153,7 @@ impl Root {
             }
             // 菜单状态更新
             Message::MenuStateChanged(is_open) => {
-                self.set_menu_open(is_open);
+                self.state.is_menu_open = is_open;
             }
             // 设置面板事件
             Message::Settings(event) => {
@@ -243,7 +172,11 @@ impl Root {
                     let ticks = (*precision).as_ticks(self.editor.state.ppq);
                     self.editor.state.snap_precision = ticks;
                     self.editor.state.default_note_length = ticks;
-                    tracing::debug!("Root: 音符精度同步为 {} ticks (PPQ={})", ticks, self.editor.state.ppq);
+                    tracing::debug!(
+                        "Root: 音符精度同步为 {} ticks (PPQ={})",
+                        ticks,
+                        self.editor.state.ppq
+                    );
                 }
                 // 处理打开协作对话框事件
                 if let crate::toolbar::Event::OpenCollaborationDialog = &event {
@@ -264,16 +197,26 @@ impl Root {
                 ));
             }
             Message::CloseCollaborationDialog => {
-                if self.is_dialog_window {
+                if self.state.is_dialog_window {
                     lumino_core::event::emit(lumino_core::event::Event::Window(
                         lumino_core::event::window::Event::CloseCollaborationDialog,
                     ));
                 }
             }
-            Message::CollaborationConnect { host, port, username, invite_code } => {
+            Message::CollaborationConnect {
+                host,
+                port,
+                username,
+                invite_code,
+            } => {
                 tracing::info!("协作: 连接服务器 {}:{}", host, port);
                 lumino_core::event::emit(lumino_core::event::Event::Window(
-                    lumino_core::event::window::Event::CollaborationConnect { host, port, username, invite_code },
+                    lumino_core::event::window::Event::CollaborationConnect {
+                        host,
+                        port,
+                        username,
+                        invite_code,
+                    },
                 ));
             }
             Message::CollaborationCreateRoom { name } => {
@@ -293,25 +236,25 @@ impl Root {
                 lumino_core::event::emit(lumino_core::event::Event::Window(
                     lumino_core::event::window::Event::CollaborationDisconnect,
                 ));
-                self.collaboration_dialog.reset();
+                self.state.collaboration_dialog.reset();
             }
             Message::CollaborationHostChanged(host) => {
-                self.collaboration_dialog.server_host = host;
+                self.state.collaboration_dialog.server_host = host;
             }
             Message::CollaborationPortChanged(port) => {
-                self.collaboration_dialog.server_port = port;
+                self.state.collaboration_dialog.server_port = port;
             }
             Message::CollaborationUsernameChanged(username) => {
-                self.collaboration_dialog.username = username;
+                self.state.collaboration_dialog.username = username;
             }
             Message::CollaborationRoomNameChanged(name) => {
-                self.collaboration_dialog.room_name = name;
+                self.state.collaboration_dialog.room_name = name;
             }
             Message::CollaborationInviteCodeChanged(code) => {
-                self.collaboration_dialog.invite_code = code;
+                self.state.collaboration_dialog.invite_code = code;
             }
             Message::CollaborationCopyInviteCode => {
-                let invite_code = self.collaboration_dialog.invite_code.clone();
+                let invite_code = self.state.collaboration_dialog.invite_code.clone();
                 if !invite_code.is_empty() {
                     // 复制到剪贴板
                     if let Ok(mut clipboard) = arboard::Clipboard::new() {
@@ -323,11 +266,21 @@ impl Root {
                     }
                 }
             }
-            Message::CollaborationRemoteMouseMoved { user_id, x, y, color } => {
-                self.editor.update_remote_cursor(user_id, iced_core::Point::new(x, y), color);
+            Message::CollaborationRemoteMouseMoved {
+                user_id,
+                x,
+                y,
+                color,
+            } => {
+                self.editor
+                    .update_remote_cursor(user_id, iced_core::Point::new(x, y), color);
             }
             Message::CollaborationRemoteNoteUpdate { user_id, operation } => {
-                tracing::info!("协作: 处理远端音符更新 - 用户: {}, 操作: {}", user_id, operation);
+                tracing::info!(
+                    "协作: 处理远端音符更新 - 用户: {}, 操作: {}",
+                    user_id,
+                    operation
+                );
                 // 这里将来可以解析 JSON 并应用到编辑器
             }
             // 自定义精度对话框事件
@@ -339,68 +292,71 @@ impl Root {
             }
             Message::CloseCustomPrecisionDialog => {
                 // 在对话框窗口模式下，触发关闭窗口事件
-                if self.is_dialog_window {
+                if self.state.is_dialog_window {
                     lumino_core::event::emit(lumino_core::event::Event::Window(
                         lumino_core::event::window::Event::CloseCustomPrecisionDialog,
                     ));
                 }
-                self.toolbar.custom_precision_dialog.is_open = false;
+                self.state.custom_precision_dialog.is_open = false;
             }
             Message::ConfirmCustomPrecision => {
                 // 确认自定义精度，计算并设置结果
-                let tuplet_count = self.toolbar.custom_precision_dialog.tuplet_count.clone();
-                let note_value = self.toolbar.custom_precision_dialog.note_value.clone();
+                let tuplet_count = self.state.custom_precision_dialog.tuplet_count.clone();
+                let note_value = self.state.custom_precision_dialog.note_value.clone();
 
                 // 设置对话框结果（供独立窗口模式使用）
-                self.dialog_result = Some(crate::host::DialogResult::CustomPrecision {
+                self.state.dialog_result = Some(crate::host::DialogResult::CustomPrecision {
                     numerator: tuplet_count,
                     denominator: note_value,
                 });
 
                 // 同时在主窗口应用（兼容模式）
-                if let Some(ticks) = self.toolbar.custom_precision_dialog.calculate_ticks(self.editor.state.ppq) {
-                    self.toolbar.note_precision = toolbar::NotePrecision::Custom;
+                if let Some(ticks) = self
+                    .state
+                    .custom_precision_dialog
+                    .calculate_ticks(self.editor.state.ppq as u32)
+                {
+                    self.state.note_precision = toolbar::NotePrecision::Custom;
                     self.editor.state.snap_precision = ticks;
                     self.editor.state.default_note_length = ticks;
                     tracing::debug!("Root: 自定义精度应用为 {} ticks", ticks);
                 }
-                self.toolbar.custom_precision_dialog.is_open = false;
+                self.state.custom_precision_dialog.is_open = false;
             }
             Message::CustomPrecisionNumeratorChanged(value) => {
                 // 只接受数字输入（已废弃，保留兼容性）
                 if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.toolbar.custom_precision_dialog.tuplet_count = value;
+                    self.state.custom_precision_dialog.tuplet_count = value;
                 }
             }
             Message::CustomPrecisionDenominatorChanged(value) => {
                 // 只接受数字输入（已废弃，保留兼容性）
                 if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.toolbar.custom_precision_dialog.note_value = value;
+                    self.state.custom_precision_dialog.note_value = value;
                 }
             }
             Message::CustomPrecisionTupletCountChanged(value) => {
                 if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.toolbar.custom_precision_dialog.tuplet_count = value;
+                    self.state.custom_precision_dialog.tuplet_count = value;
                 }
             }
             Message::CustomPrecisionTupletTypeChanged(value) => {
-                self.toolbar.custom_precision_dialog.tuplet_type = value;
-                self.toolbar.custom_precision_dialog.tuplet_count = value.value().to_string();
+                self.state.custom_precision_dialog.tuplet_type = value;
+                self.state.custom_precision_dialog.tuplet_count = value.value().to_string();
             }
             Message::CustomPrecisionDotTypeChanged(value) => {
-                self.toolbar.custom_precision_dialog.dot_type = value;
+                self.state.custom_precision_dialog.dot_type = value;
             }
             Message::CustomPrecisionNoteValueChanged(value) => {
                 if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.toolbar.custom_precision_dialog.note_value = value;
+                    self.state.custom_precision_dialog.note_value = value;
                 }
             }
             Message::CustomPrecisionDivisorChanged(value) => {
                 if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.toolbar.custom_precision_dialog.divisor = value;
+                    self.state.custom_precision_dialog.divisor = value;
                 }
             }
-
         }
     }
 
@@ -445,11 +401,16 @@ impl Root {
                 ..Default::default()
             })
             .into()
-        } else if self.is_dialog_window {
+        } else if self.state.is_dialog_window {
             // 对话框窗口 - 根据类型显示不同内容
-            match self.dialog_type {
-                DialogType::Collaboration => self.view_collaboration_dialog(),
-                _ => self.view_custom_precision_dialog(),
+            match self.state.dialog_type {
+                DialogType::Collaboration => {
+                    view_collaboration_dialog(&self.state.collaboration_dialog, &self.window.theme)
+                }
+                _ => view_custom_precision_dialog(
+                    &self.state.custom_precision_dialog,
+                    &self.window.theme,
+                ),
             }
         } else {
             // 主窗口
@@ -496,438 +457,6 @@ impl Root {
         }
     }
 
-    /// 渲染自定义精度对话框（自定义贴合）
-    fn view_custom_precision_dialog(&self) -> Element<'_> {
-        use iced_widget::{button, column, container, pick_list, row, space, text, text_input};
-
-        let palette = self.window.theme.extended_palette();
-        let dialog = &self.toolbar.custom_precision_dialog;
-
-        // 输入框样式
-        let input_style = move |_theme: &Theme| container::Style {
-            background: Some(palette.background.weak.color.into()),
-            border: iced_core::Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: palette.background.strong.color,
-            },
-            ..Default::default()
-        };
-
-        // 第一行：三连音数量 + 符点下拉 + 分音符 + "分音符"
-        // 当符点类型为（无）时，禁用三连音数量输入框
-        let is_tuplet_disabled = dialog.dot_type == crate::toolbar::DotType::None;
-        
-        let first_row = row![
-            // 三连音数量输入框
-            container(
-                text_input("", &dialog.tuplet_count)
-                    .on_input_maybe(if is_tuplet_disabled {
-                        None
-                    } else {
-                        Some(Message::CustomPrecisionTupletCountChanged)
-                    })
-                    .padding([6, 10])
-                    .width(Length::Fixed(50.0))
-            )
-            .width(Length::Fixed(50.0))
-            .style(input_style),
-            space().width(8),
-            // 符点类型下拉框
-            pick_list(
-                crate::toolbar::DotType::all(),
-                Some(dialog.dot_type),
-                Message::CustomPrecisionDotTypeChanged,
-            )
-            .padding([6, 8])
-            .width(Length::Fixed(100.0)),
-            space().width(8),
-            // 分音符值输入框
-            container(
-                text_input("", &dialog.note_value)
-                    .on_input(Message::CustomPrecisionNoteValueChanged)
-                    .padding([6, 10])
-                    .width(Length::Fixed(50.0))
-            )
-            .width(Length::Fixed(50.0))
-            .style(input_style),
-            space().width(8),
-            // "分音符" 标签
-            text("分音符").size(14).style(move |_theme: &Theme| text::Style {
-                color: Some(palette.background.neutral.text),
-            }),
-        ]
-        .align_y(iced_core::Alignment::Center);
-
-        // 第二行："除以" + 除数输入框
-        let second_row = row![
-            text("除以").size(14).style(move |_theme: &Theme| text::Style {
-                color: Some(palette.background.neutral.text),
-            }),
-            space().width(50),
-            container(
-                text_input("", &dialog.divisor)
-                    .on_input(Message::CustomPrecisionDivisorChanged)
-                    .padding([6, 10])
-                    .width(Length::Fixed(50.0))
-            )
-            .width(Length::Fixed(50.0))
-            .style(input_style),
-        ]
-        .align_y(iced_core::Alignment::Center);
-
-        // 左侧输入区域
-        let input_area = column![
-            first_row,
-            space().height(20),
-            second_row,
-        ]
-        .width(Length::Fixed(320.0))
-        .align_x(iced_core::Alignment::Start);
-
-        // 右侧按钮区域（垂直排列）
-        let buttons = column![
-            button(text("确定").size(14))
-                .on_press(Message::ConfirmCustomPrecision)
-                .padding([8, 32])
-                .width(Length::Fixed(100.0))
-                .style(move |_theme: &Theme, status| {
-                    let bg = match status {
-                        button::Status::Hovered => palette.primary.strong.color,
-                        _ => palette.primary.base.color,
-                    };
-                    button::Style {
-                        background: Some(bg.into()),
-                        text_color: iced_core::Color::WHITE,
-                        border: iced_core::Border {
-                            radius: 4.0.into(),
-                            width: 0.0,
-                            color: iced_core::Color::TRANSPARENT,
-                        },
-                        snap: false,
-                        shadow: Default::default(),
-                    }
-                }),
-            space().height(12),
-            button(text("取消").size(14))
-                .on_press(Message::CloseCustomPrecisionDialog)
-                .padding([8, 32])
-                .width(Length::Fixed(100.0))
-                .style(move |_theme: &Theme, status| {
-                    let bg = match status {
-                        button::Status::Hovered => palette.background.strong.color,
-                        _ => palette.background.weak.color,
-                    };
-                    button::Style {
-                        background: Some(bg.into()),
-                        text_color: palette.background.neutral.text,
-                        border: iced_core::Border {
-                            radius: 4.0.into(),
-                            width: 0.0,
-                            color: iced_core::Color::TRANSPARENT,
-                        },
-                        shadow: Default::default(),
-                        snap: false,
-                    }
-                }),
-        ]
-        .align_x(iced_core::Alignment::Center);
-
-        // 主内容区域：左侧输入 + 右侧按钮
-        let main_content = row![
-            input_area,
-            space().width(Length::Fixed(20.0)),
-            buttons,
-        ]
-        .align_y(iced_core::Alignment::Center);
-
-        let dialog_content = container(main_content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(24)
-            .style(move |_theme: &Theme| {
-                container::Style::default()
-                    .background(palette.background.base.color)
-            });
-
-        dialog_content.into()
-    }
-
-    /// 渲染协作对话框
-    fn view_collaboration_dialog(&self) -> Element<'_> {
-        use iced_widget::{button, column, container, row, space, text, text_input};
-
-        let palette = self.window.theme.extended_palette();
-        let dialog = &self.collaboration_dialog;
-
-        // 标题
-        let title = text("多人协作")
-            .size(20)
-            .style(move |_theme: &Theme| text::Style {
-                color: Some(palette.background.neutral.text),
-            });
-
-        // 根据当前视图状态显示不同内容
-        let content: Element<'_> = match dialog.view_state {
-            CollaborationViewState::Connect => {
-                // 连接服务器界面
-                let host_input = text_input("服务器地址", &dialog.server_host)
-                    .on_input(Message::CollaborationHostChanged)
-                    .padding(8)
-                    .width(Length::Fill);
-
-                let port_input = text_input("端口", &dialog.server_port)
-                    .on_input(Message::CollaborationPortChanged)
-                    .padding(8)
-                    .width(Length::Fixed(80.0));
-
-                let username_input = text_input("用户", &dialog.username)
-                    .on_input(Message::CollaborationUsernameChanged)
-                    .padding(8)
-                    .width(Length::Fill);
-
-                let invite_input = text_input("邀请码（可选）", &dialog.invite_code)
-                    .on_input(Message::CollaborationInviteCodeChanged)
-                    .padding(8)
-                    .width(Length::Fill);
-
-                let connect_button = button(text("连接").size(14))
-                    .on_press(Message::CollaborationConnect {
-                        host: dialog.server_host.clone(),
-                        port: dialog.server_port.parse().unwrap_or(3000),
-                        username: dialog.username.clone(),
-                        invite_code: if dialog.invite_code.trim().is_empty() { None } else { Some(dialog.invite_code.clone()) },
-                    })
-                    .padding([8, 24])
-                    .style(move |_theme: &Theme, status| {
-                        let bg = match status {
-                            button::Status::Hovered => palette.primary.strong.color,
-                            _ => palette.primary.base.color,
-                        };
-                        button::Style {
-                            background: Some(bg.into()),
-                            text_color: iced_core::Color::WHITE,
-                            border: iced_core::Border {
-                                radius: 4.0.into(),
-                                width: 0.0,
-                                color: iced_core::Color::TRANSPARENT,
-                            },
-                            snap: false,
-                            shadow: Default::default(),
-                        }
-                    });
-
-                column![
-                    row![host_input, space().width(8), port_input].align_y(iced_core::Alignment::Center),
-                    space().height(12),
-                    username_input,
-                    space().height(12),
-                    invite_input,
-                    space().height(16),
-                    connect_button,
-                ]
-                .align_x(iced_core::Alignment::Center)
-                .into()
-            }
-            CollaborationViewState::RoomActions => {
-                // 创建/加入房间界面
-                let room_name_input = text_input("房间名称", &dialog.room_name)
-                    .on_input(Message::CollaborationRoomNameChanged)
-                    .padding(8)
-                    .width(Length::Fill);
-
-                let create_button = button(text("创建房间").size(14))
-                    .on_press(Message::CollaborationCreateRoom {
-                        name: dialog.room_name.clone(),
-                    })
-                    .padding([8, 24])
-                    .width(Length::Fill)
-                    .style(move |_theme: &Theme, status| {
-                        let bg = match status {
-                            button::Status::Hovered => palette.primary.strong.color,
-                            _ => palette.primary.base.color,
-                        };
-                        button::Style {
-                            background: Some(bg.into()),
-                            text_color: iced_core::Color::WHITE,
-                            border: iced_core::Border {
-                                radius: 4.0.into(),
-                                width: 0.0,
-                                color: iced_core::Color::TRANSPARENT,
-                            },
-                            snap: false,
-                            shadow: Default::default(),
-                        }
-                    });
-
-                let or_text = text("- 或 -")
-                    .size(12)
-                    .style(move |_theme: &Theme| text::Style {
-                        color: Some(palette.background.neutral.text),
-                    });
-
-                let invite_input = text_input("邀请码", &dialog.invite_code)
-                    .on_input(Message::CollaborationInviteCodeChanged)
-                    .padding(8)
-                    .width(Length::Fill);
-
-                let join_button = button(text("加入房间").size(14))
-                    .on_press(Message::CollaborationJoinRoom {
-                        invite_code: dialog.invite_code.clone(),
-                    })
-                    .padding([8, 24])
-                    .width(Length::Fill)
-                    .style(move |_theme: &Theme, status| {
-                        let bg = match status {
-                            button::Status::Hovered => palette.background.strong.color,
-                            _ => palette.background.weak.color,
-                        };
-                        button::Style {
-                            background: Some(bg.into()),
-                            text_color: palette.background.neutral.text,
-                            border: iced_core::Border {
-                                radius: 4.0.into(),
-                                width: 0.0,
-                                color: iced_core::Color::TRANSPARENT,
-                            },
-                            snap: false,
-                            shadow: Default::default(),
-                        }
-                    });
-
-                column![
-                    room_name_input,
-                    space().height(8),
-                    create_button,
-                    space().height(16),
-                    or_text,
-                    space().height(16),
-                    invite_input,
-                    space().height(8),
-                    join_button,
-                ]
-                .align_x(iced_core::Alignment::Center)
-                .into()
-            }
-            CollaborationViewState::InRoom => {
-                // 在房间内界面
-                let room_info = column![
-                    text(format!("房间: {}", dialog.room_name))
-                        .size(16)
-                        .style(move |_theme: &Theme| text::Style {
-                            color: Some(palette.background.neutral.text),
-                        }),
-                    space().height(8),
-                    row![
-                        text("邀请码: ")
-                            .size(14)
-                            .style(move |_theme: &Theme| text::Style {
-                                color: Some(palette.background.neutral.text),
-                            }),
-                        text(&dialog.invite_code)
-                            .size(14)
-                            .style(move |_theme: &Theme| text::Style {
-                                color: Some(palette.primary.base.color),
-                            }),
-                    ]
-                    .align_y(iced_core::Alignment::Center),
-                ]
-                .align_x(iced_core::Alignment::Center);
-
-                let copy_button = button(text("复制邀请码").size(12))
-                    .on_press(Message::CollaborationCopyInviteCode)
-                    .padding([6, 16])
-                    .style(move |_theme: &Theme, status| {
-                        let bg = match status {
-                            button::Status::Hovered => palette.background.strong.color,
-                            _ => palette.background.weak.color,
-                        };
-                        button::Style {
-                            background: Some(bg.into()),
-                            text_color: palette.background.neutral.text,
-                            border: iced_core::Border {
-                                radius: 4.0.into(),
-                                width: 0.0,
-                                color: iced_core::Color::TRANSPARENT,
-                            },
-                            snap: false,
-                            shadow: Default::default(),
-                        }
-                    });
-
-                let disconnect_button = button(text("断开连接").size(14))
-                    .on_press(Message::CollaborationDisconnect)
-                    .padding([8, 24])
-                    .style(move |_theme: &Theme, status| {
-                        let bg = match status {
-                            button::Status::Hovered => palette.danger.strong.color,
-                            _ => palette.danger.base.color,
-                        };
-                        button::Style {
-                            background: Some(bg.into()),
-                            text_color: iced_core::Color::WHITE,
-                            border: iced_core::Border {
-                                radius: 4.0.into(),
-                                width: 0.0,
-                                color: iced_core::Color::TRANSPARENT,
-                            },
-                            snap: false,
-                            shadow: Default::default(),
-                        }
-                    });
-
-                column![
-                    room_info,
-                    space().height(16),
-                    copy_button,
-                    space().height(24),
-                    disconnect_button,
-                ]
-                .align_x(iced_core::Alignment::Center)
-                .into()
-            }
-        };
-
-        // 关闭按钮
-        let close_button = button(text("关闭").size(12))
-            .on_press(Message::CloseCollaborationDialog)
-            .padding([6, 16])
-            .style(move |_theme: &Theme, status| {
-                let bg = match status {
-                    button::Status::Hovered => palette.background.strong.color,
-                    _ => palette.background.weak.color,
-                };
-                button::Style {
-                    background: Some(bg.into()),
-                    text_color: palette.background.neutral.text,
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    snap: false,
-                    shadow: Default::default(),
-                }
-            });
-
-        let dialog_content = column![
-            row![title, space().width(Length::Fill), close_button].align_y(iced_core::Alignment::Center),
-            space().height(20),
-            content,
-        ]
-        .align_x(iced_core::Alignment::Center);
-
-        container(dialog_content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(24)
-            .style(move |_theme: &Theme| {
-                container::Style::default()
-                    .background(palette.background.base.color)
-            })
-            .into()
-    }
-
     /// 获取当前需要绘制的音符实例
     pub fn get_note_instances(&self) -> Vec<NoteInstance> {
         let sidebar_width = self.sidebar.width() as f32;
@@ -960,12 +489,12 @@ impl Root {
 
     /// 设置菜单打开状态（菜单打开时不渲染预览音符）
     pub fn set_menu_open(&mut self, open: bool) {
-        self.is_menu_open = open;
+        self.state.is_menu_open = open;
     }
 
     /// 获取当前是否应该渲染预览音符
     pub fn should_render_preview_note(&self) -> bool {
-        !self.is_menu_open && !self.is_progress_window
+        !self.state.is_menu_open && !self.is_progress_window
     }
 
     /// 更新音轨列表（从 MIDI 导入）
@@ -1043,31 +572,31 @@ impl Root {
 
     /// 设置自定义精度对话框是否打开
     pub fn set_custom_precision_dialog_open(&mut self, open: bool) {
-        self.toolbar.custom_precision_dialog.is_open = open;
+        self.state.custom_precision_dialog.is_open = open;
         if open {
-            self.dialog_type = DialogType::CustomPrecision;
+            self.state.dialog_type = DialogType::CustomPrecision;
         }
     }
 
     /// 获取并清空对话框结果
     pub fn take_dialog_result(&mut self) -> Option<crate::host::DialogResult> {
-        self.dialog_result.take()
+        self.state.dialog_result.take()
     }
 
     /// 设置自定义精度值
     pub fn set_custom_precision(&mut self, ticks: f32) {
         self.editor.state.snap_precision = ticks;
         self.editor.state.default_note_length = ticks;
-        self.toolbar.note_precision = toolbar::NotePrecision::Custom;
+        self.state.note_precision = toolbar::NotePrecision::Custom;
         tracing::info!("自定义精度已设置为 {} ticks", ticks);
     }
 
     /// 设置协作对话框是否打开
     pub fn set_collaboration_dialog_open(&mut self, open: bool) {
-        self.collaboration_dialog.is_open = open;
+        self.state.collaboration_dialog.is_open = open;
         if open {
-            self.dialog_type = DialogType::Collaboration;
-            self.collaboration_dialog.view_state = CollaborationViewState::Connect;
+            self.state.dialog_type = DialogType::Collaboration;
+            self.state.collaboration_dialog.view_state = CollaborationViewState::Connect;
         }
         tracing::info!("协作对话框状态: {}", open);
     }
@@ -1079,28 +608,58 @@ impl Root {
         invite_code: Option<String>,
         room_name: Option<String>,
     ) {
-        self.collaboration_dialog.view_state = state;
+        self.state.collaboration_dialog.view_state = state;
         if let Some(code) = invite_code {
-            self.collaboration_dialog.invite_code = code;
+            self.state.collaboration_dialog.invite_code = code;
         }
         if let Some(name) = room_name {
-            self.collaboration_dialog.room_name = name;
+            self.state.collaboration_dialog.room_name = name;
         }
         match state {
             CollaborationViewState::Connect => {
-                self.collaboration_dialog.connection_status = "未连接".to_string();
+                self.state.collaboration_dialog.connection_status = "未连接".to_string();
             }
             CollaborationViewState::RoomActions => {
-                self.collaboration_dialog.connection_status = "已连接，请创建或加入房间".to_string();
+                self.state.collaboration_dialog.connection_status =
+                    "已连接，请创建或加入房间".to_string();
             }
             CollaborationViewState::InRoom => {
-                self.collaboration_dialog.connection_status = format!(
+                self.state.collaboration_dialog.connection_status = format!(
                     "房间: {} | 邀请码: {}",
-                    self.collaboration_dialog.room_name,
-                    self.collaboration_dialog.invite_code
+                    self.state.collaboration_dialog.room_name,
+                    self.state.collaboration_dialog.invite_code
                 );
             }
         }
         tracing::info!("协作视图状态已更新: {:?}", state);
+    }
+
+    /// 更新远程光标位置
+    pub fn update_remote_cursor(
+        &mut self,
+        user_id: u64,
+        position: iced_core::Point,
+        color: [f32; 4],
+    ) {
+        // 将颜色数组转换为字符串
+        let color_str = format!(
+            "rgba({},{},{},{})",
+            (color[0] * 255.0) as u8,
+            (color[1] * 255.0) as u8,
+            (color[2] * 255.0) as u8,
+            color[3]
+        );
+        self.editor
+            .update_remote_cursor(user_id.to_string(), position, color_str);
+    }
+
+    /// 更新远程音符
+    pub fn update_remote_note(&mut self, user_id: u64, operation: String) {
+        // 这里将来可以解析 JSON 并应用到编辑器
+        tracing::info!(
+            "协作: 处理远端音符更新 - 用户: {}, 操作: {}",
+            user_id,
+            operation
+        );
     }
 }

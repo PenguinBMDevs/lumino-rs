@@ -195,7 +195,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         }
 
         // 绘制远端鼠标游标
-        for (user_id, (pos, color_str)) in &self.editor.remote_cursors {
+        for (pos, color_str) in self.editor.remote_cursors.values() {
             let color = parse_color(color_str).unwrap_or(iced_core::Color::WHITE);
             let mut frame = Frame::new(renderer, bounds.size());
 

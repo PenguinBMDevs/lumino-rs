@@ -6,6 +6,7 @@ use winit::event_loop::EventLoop;
 mod logging;
 mod platform;
 mod runner;
+mod services;
 mod storage;
 
 #[tokio::main]

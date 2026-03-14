@@ -434,11 +434,17 @@ impl CollaborationClient {
                         let ping = ClientMessage::Ping {
                             timestamp: Instant::now().elapsed().as_millis() as u64
                         };
-                        let json = serde_json::to_string(&ping).unwrap();
-                        debug!("发送心跳: {}", json);
-                        let mut w = write_clone.lock().await;
-                        if let Err(e) = w.send(Message::Text(json.into())).await {
-                            error!("发送心跳失败: {}", e);
+                        match serde_json::to_string(&ping) {
+                            Ok(json) => {
+                                debug!("发送心跳: {}", json);
+                                let mut w = write_clone.lock().await;
+                                if let Err(e) = w.send(Message::Text(json.into())).await {
+                                    error!("发送心跳失败: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                error!("序列化心跳消息失败: {}", e);
+                            }
                         }
                     }
 

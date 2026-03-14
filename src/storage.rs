@@ -19,8 +19,8 @@ pub struct Storage {
 impl Storage {
     // 创建一个新的存储系统
     pub fn new() -> io::Result<Self> {
-        let dirs =
-            ProjectDirs::from(QUALIFIER, ORGANIZATION, APPLICATION).expect("Create ProjectDirs");
+        let dirs = ProjectDirs::from(QUALIFIER, ORGANIZATION, APPLICATION)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "无法创建项目目录"))?;
 
         // 创建配置文件目录
         let config = dirs.config_dir().to_owned();

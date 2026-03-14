@@ -1,7 +1,7 @@
 use crate::constants::editor::zoom::{MAX_ZOOM_X, MAX_ZOOM_Y, MIN_ZOOM_X, MIN_ZOOM_Y};
 
 impl super::Editor {
-    // ========== 滚动控制 ==========
+    // 滚动控制
 
     pub fn set_max_scroll_x(&mut self, max_scroll: f32) {
         self.max_scroll_x = max_scroll;
