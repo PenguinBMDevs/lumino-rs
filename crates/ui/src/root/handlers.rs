@@ -209,6 +209,19 @@ impl Root {
                 self.editor.state.ppq
             );
         }
+        // 处理撤销/重做事件
+        if matches!(event, toolbar::Event::Undo) {
+            tracing::info!("Root: 触发撤销操作");
+            lumino_core::event::emit(lumino_core::event::Event::Menu(
+                lumino_core::event::menu::Event::Edit(lumino_core::event::menu::edit::Event::Undo),
+            ));
+        }
+        if matches!(event, toolbar::Event::Redo) {
+            tracing::info!("Root: 触发重做操作");
+            lumino_core::event::emit(lumino_core::event::Event::Menu(
+                lumino_core::event::menu::Event::Edit(lumino_core::event::menu::edit::Event::Redo),
+            ));
+        }
         // 处理打开协作对话框事件
         if matches!(event, toolbar::Event::OpenCollaborationDialog) {
             tracing::info!("Root: 触发打开协作对话框");

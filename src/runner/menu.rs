@@ -9,6 +9,7 @@
 use crate::runner::RunnerInner;
 
 pub mod collaboration;
+pub mod edit;
 pub mod file;
 pub mod view;
 pub mod window;
@@ -56,8 +57,8 @@ impl RunnerInner {
             File(file_event) => {
                 self.handle_file_menu_event(event_loop, file_event);
             }
-            Edit(_) => {
-                // 处理编辑事件（占位）
+            Edit(edit_event) => {
+                self.handle_edit_menu_event(edit_event);
             }
             View(view_event) => {
                 self.handle_view_menu_event(view_event);

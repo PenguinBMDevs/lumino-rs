@@ -1,4 +1,5 @@
 pub mod grid;
+pub mod history;
 pub mod note;
 pub mod onion_skin;
 pub mod scrollbar_widget;
@@ -102,6 +103,9 @@ pub struct Editor {
 
     /// 协作远端鼠标位置
     pub remote_cursors: std::collections::HashMap<String, (Point, String)>,
+
+    /// 历史记录（用于撤销/重做）
+    history: history::History,
 }
 
 impl Editor {
@@ -124,6 +128,7 @@ impl Editor {
             current_tool: Tool::Pointer, // 默认使用框选工具
             selected_notes: std::collections::HashSet::new(),
             remote_cursors: std::collections::HashMap::new(),
+            history: history::History::new(),
         };
         editor.max_scroll_x = editor.state.total_ticks as f32 * editor.state.zoom_x;
         editor.max_scroll_y = editor.state.visible_key_count as f32 * editor.state.zoom_y;
@@ -217,13 +222,10 @@ impl Editor {
     pub fn toggle_onion_skin(&mut self) {
         self.onion_skin_config.toggle();
         self.grid_cache.clear();
-        tracing::debug!(
-            "Editor: onion skin toggled, now {}",
-            if self.onion_skin_config.is_enabled() {
-                "enabled"
-            } else {
-                "disabled"
-            }
+        tracing::info!(
+            "Editor: saved {} notes to track {}",
+            self.notes.len(),
+            self.current_track
         );
     }
 
@@ -343,5 +345,63 @@ impl Editor {
         }
 
         all_instances
+    }
+
+    /// Push current state to history
+    pub fn push_history(&mut self) {
+        let snapshot = history::EditorSnapshot::new(self.notes.clone(), self.current_track);
+        tracing::info!(
+            "推送历史记录: {} 个音符，音轨 {}",
+            snapshot.notes.len(),
+            snapshot.current_track
+        );
+        self.history.push(snapshot);
+    }
+
+    /// Undo the last action
+    pub fn undo(&mut self) -> bool {
+        let current_state = history::EditorSnapshot::new(self.notes.clone(), self.current_track);
+        tracing::info!(
+            "尝试撤销: 当前音符数 = {}, 可撤销 = {}",
+            self.notes.len(),
+            self.can_undo()
+        );
+
+        if let Some(snapshot) = self.history.undo(current_state) {
+            self.notes = snapshot.notes;
+            self.current_track = snapshot.current_track;
+            self.grid_cache.clear();
+            tracing::info!("撤销操作成功: {} 个音符", self.notes.len());
+            true
+        } else {
+            tracing::info!("没有可撤销的操作");
+            false
+        }
+    }
+
+    /// Redo the last undone action
+    pub fn redo(&mut self) -> bool {
+        let current_state = history::EditorSnapshot::new(self.notes.clone(), self.current_track);
+
+        if let Some(snapshot) = self.history.redo(current_state) {
+            self.notes = snapshot.notes;
+            self.current_track = snapshot.current_track;
+            self.grid_cache.clear();
+            tracing::info!("重做操作成功");
+            true
+        } else {
+            tracing::info!("没有可重做的操作");
+            false
+        }
+    }
+
+    /// Check if undo is available
+    pub fn can_undo(&self) -> bool {
+        self.history.can_undo()
+    }
+
+    /// Check if redo is available
+    pub fn can_redo(&self) -> bool {
+        self.history.can_redo()
     }
 }

@@ -34,6 +34,9 @@ impl Editor {
     /// * `index` - 音符在 notes 列表中的索引
     pub fn delete_note_by_index(&mut self, index: usize) {
         if index < self.notes.len() {
+            // Push to history before modifying
+            self.push_history();
+
             let note = self.notes.remove(index);
             tracing::debug!(
                 "Editor: deleted note at index {} (tick={}, key={})",
@@ -103,6 +106,9 @@ impl Editor {
         if self.selected_notes.is_empty() {
             return;
         }
+
+        // Push to history before modifying
+        self.push_history();
 
         // 将选中的索引排序，从大到小删除以避免索引变化问题
         let mut indices: Vec<usize> = self.selected_notes.iter().copied().collect();

@@ -19,6 +19,10 @@ pub enum EditorAction {
     DoubleClicked(iced_core::Point),
     /// 删除键按下（Delete 或 Backspace）
     DeletePressed,
+    /// 撤销
+    Undo,
+    /// 重做
+    Redo,
 }
 
 #[derive(Debug, Clone)]

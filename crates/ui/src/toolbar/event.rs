@@ -13,6 +13,8 @@ pub enum Event {
     Stop,
     SkipBackward,
     SkipForward,
+    Undo,
+    Redo,
     ToolSelected(Tool),
     /// 精度设置变更
     PrecisionChanged(NotePrecision),
@@ -65,6 +67,14 @@ impl Event {
 
     pub const fn skip_forward() -> Message {
         Message::Toolbar(Self::SkipForward)
+    }
+
+    pub const fn undo() -> Message {
+        Message::Toolbar(Self::Undo)
+    }
+
+    pub const fn redo() -> Message {
+        Message::Toolbar(Self::Redo)
     }
 
     pub const fn tool_selected(tool: Tool) -> Message {

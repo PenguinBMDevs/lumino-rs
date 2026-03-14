@@ -47,6 +47,8 @@ pub enum Icon {
     Pause,
     SkipBackward,
     SkipForward,
+    Undo,
+    Redo,
     MousePointer,
     Pencil,
     Eraser,
@@ -81,6 +83,8 @@ static ICON_CACHE: Lazy<HashMap<Icon, IconData>> = Lazy::new(|| {
         Icon::Pause,
         Icon::SkipBackward,
         Icon::SkipForward,
+        Icon::Undo,
+        Icon::Redo,
         Icon::MousePointer,
         Icon::Pencil,
         Icon::Eraser,
@@ -255,6 +259,8 @@ fn bytes(icon: Icon) -> &'static [u8] {
             include_bytes!("../../../../resources/icons/toolbar/skip-backward.svg")
         }
         Icon::SkipForward => include_bytes!("../../../../resources/icons/toolbar/skip-forward.svg"),
+        Icon::Undo => include_bytes!("../../../../resources/icons/toolbar/undo.svg"),
+        Icon::Redo => include_bytes!("../../../../resources/icons/toolbar/redo.svg"),
         Icon::MousePointer => {
             include_bytes!("../../../../resources/icons/toolbar/mouse-pointer.svg")
         }

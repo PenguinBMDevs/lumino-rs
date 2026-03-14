@@ -61,6 +61,12 @@ impl Toolbar {
             Event::Stop => self.is_playing = false,
             Event::SkipBackward => {}
             Event::SkipForward => {}
+            Event::Undo => {
+                tracing::debug!("工具栏: 撤销操作");
+            }
+            Event::Redo => {
+                tracing::debug!("工具栏: 重做操作");
+            }
             Event::ToolSelected(tool) => self.current_tool = tool,
             Event::PrecisionChanged(precision) => {
                 self.note_precision = precision;

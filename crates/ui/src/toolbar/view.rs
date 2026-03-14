@@ -160,10 +160,35 @@ impl Toolbar {
             container::Style::default().background(palette.background.weakest.color)
         });
 
+        // 撤销/重做按钮区域
+        let undo_redo_controls = container(
+            row![
+                tool_button(icon::Undo, Event::undo(), window),
+                space().width(4),
+                tool_button(icon::Redo, Event::redo(), window),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .width(64)
+        .height(content_height)
+        .align_y(iced_core::alignment::Vertical::Center)
+        .align_x(iced_core::alignment::Horizontal::Center)
+        .style(move |_theme: &Theme| {
+            container::Style::default()
+                .background(palette.background.weak.color)
+                .border(iced_core::Border {
+                    radius: 4.0.into(),
+                    width: 0.0,
+                    color: iced_core::Color::TRANSPARENT,
+                })
+        });
+
         // 主工具栏内容 - 横向排列所有区域，协作按钮在最右边
         let toolbar_content = container(
             row![
                 playback_controls,
+                space().width(16),
+                undo_redo_controls,
                 space().width(16),
                 tools,
                 space().width(16),

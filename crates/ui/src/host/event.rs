@@ -54,6 +54,24 @@ impl Host {
                                 .handle_action(message::EditorAction::DeletePressed);
                             self.window.request_redraw();
                         }
+                        PhysicalKey::Code(KeyCode::KeyZ) => {
+                            // Ctrl+Z: 撤销
+                            if modifiers.contains(winit::keyboard::ModifiersState::CONTROL)
+                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER)
+                            {
+                                self.root.editor.handle_action(message::EditorAction::Undo);
+                                self.window.request_redraw();
+                            }
+                        }
+                        PhysicalKey::Code(KeyCode::KeyY) => {
+                            // Ctrl+Y: 重做
+                            if modifiers.contains(winit::keyboard::ModifiersState::CONTROL)
+                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER)
+                            {
+                                self.root.editor.handle_action(message::EditorAction::Redo);
+                                self.window.request_redraw();
+                            }
+                        }
                         _ => {}
                     }
                 }

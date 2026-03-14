@@ -16,6 +16,12 @@ impl Editor {
             EditorAction::Scrolled { delta_x, delta_y } => self.handle_scrolled(delta_x, delta_y),
             EditorAction::DoubleClicked(pos) => self.handle_double_clicked(pos),
             EditorAction::DeletePressed => self.handle_delete_pressed(),
+            EditorAction::Undo => {
+                self.undo();
+            }
+            EditorAction::Redo => {
+                self.redo();
+            }
         }
     }
 
@@ -84,10 +90,11 @@ impl Editor {
 
     /// 开始编辑现有音符
     fn start_note_edit(&mut self, index: usize, hit_type: HitType, pos: iced_core::Point) {
-        let note = &self.notes[index];
-
         match hit_type {
             HitType::Start => {
+                // Push history before resizing
+                self.push_history();
+                let note = &self.notes[index];
                 self.edit_state = EditState::ResizingStart {
                     note_index: index,
                     original_tick: note.tick,
@@ -95,9 +102,12 @@ impl Editor {
                 };
             }
             HitType::End => {
+                // Push history before resizing
+                self.push_history();
                 self.edit_state = EditState::ResizingEnd { note_index: index };
             }
             HitType::Middle => {
+                let note = &self.notes[index];
                 self.edit_state = EditState::PendingDrag {
                     note_index: index,
                     start_pos: pos,
@@ -169,16 +179,19 @@ impl Editor {
             original_tick,
             original_key,
         } = self.edit_state
-            && self.should_start_dragging(pos, start_pos)
         {
-            let tick = self.x_to_tick(start_pos.x);
-            let key = self.y_to_key(start_pos.y);
-            self.edit_state = EditState::Dragging {
-                note_index,
-                offset_tick: tick - original_tick,
-                offset_key: key.saturating_sub(original_key) as i32,
-                last_played_key: original_key,
-            };
+            if self.should_start_dragging(pos, start_pos) {
+                let tick = self.x_to_tick(start_pos.x);
+                let key = self.y_to_key(start_pos.y);
+                // Push history before starting drag operation
+                self.push_history();
+                self.edit_state = EditState::Dragging {
+                    note_index,
+                    offset_tick: tick - original_tick,
+                    offset_key: key.saturating_sub(original_key) as i32,
+                    last_played_key: original_key,
+                };
+            }
         }
 
         match &mut self.edit_state {
@@ -320,6 +333,13 @@ impl Editor {
             EditState::PendingDrag { .. } => {
                 // 只是点击，没有拖动，保持音符不变
             }
+            EditState::Dragging { .. }
+            | EditState::ResizingStart { .. }
+            | EditState::ResizingEnd { .. } => {
+                // 音符移动或调整大小完成
+                // 历史记录已经在拖动/调整开始时保存
+                tracing::debug!("Editor: 音符修改完成");
+            }
             _ => {}
         }
         self.edit_state = EditState::Idle;
@@ -336,12 +356,17 @@ impl Editor {
         };
 
         let length = length.max(self.state.snap_precision);
+
+        // Push history before adding new note
+        tracing::info!("编辑器: 在添加新音符前推送历史记录");
+        self.push_history();
+
         self.notes.push(super::Note::new(tick, key, length));
         self.track_notes
             .insert(self.current_track, self.notes.clone());
 
-        tracing::debug!(
-            "Editor: saved {} notes to track {}",
+        tracing::info!(
+            "编辑器: 已保存 {} 个音符到音轨 {}",
             self.notes.len(),
             self.current_track
         );

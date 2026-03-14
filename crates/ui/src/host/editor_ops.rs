@@ -219,4 +219,11 @@ impl Host {
     pub fn take_audio_actions(&mut self) -> Vec<message::AudioAction> {
         self.root.take_audio_actions()
     }
+
+    /// 处理编辑器动作
+    pub fn handle_action(&mut self, action: message::EditorAction) {
+        self.root.editor.handle_action(action);
+        self.clear_cache();
+        self.window.request_redraw();
+    }
 }
