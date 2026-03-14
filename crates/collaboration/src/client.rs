@@ -1,6 +1,15 @@
-use futures::{SinkExt, StreamExt};
+//! 协作客户端
+//!
+//! 该模块已拆分为以下子模块：
+//! - `message`: 客户端/服务器消息定义
+//! - `event`: 协作事件定义
+//! - `connection`: 连接管理
+//! - `handlers`: 服务器消息处理器
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use futures::{SinkExt, StreamExt};
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::interval;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
@@ -9,170 +18,60 @@ use tracing::{debug, error, info};
 use crate::HEARTBEAT_INTERVAL_MS;
 use crate::types::*;
 
-/// 客户端到服务器的消息
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "camelCase")]
-pub enum ClientMessage {
-    Auth {
-        username: String,
-    },
-    CreateRoom {
-        name: String,
-    },
-    JoinRoom {
-        #[serde(rename = "inviteCode")]
-        invite_code: String,
-    },
-    LeaveRoom,
-    MouseMove {
-        position: MousePosition,
-    },
-    NoteBatch {
-        notes: NoteBatchOperation,
-    },
-    MidiEvent {
-        event: MidiEvent,
-    },
-    MidiEventBatch {
-        events: Vec<MidiEvent>,
-    },
-    ProjectUpdate {
-        update: ProjectUpdate,
-    },
-    RequestSync,
-    Ping {
-        timestamp: u64,
-    },
-}
+pub mod connection;
+pub mod event;
+pub mod handlers;
+pub mod message;
 
-/// 服务器到客户端的消息
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "camelCase")]
-pub enum ServerMessage {
-    AuthSuccess {
-        #[serde(rename = "userId")]
-        user_id: UserId,
-        #[serde(rename = "inviteCode")]
-        invite_code: InviteCode,
-    },
-    AuthError {
-        error: String,
-    },
-    RoomCreated {
-        room: RoomInfo,
-    },
-    RoomJoined {
-        room: RoomInfo,
-        users: Vec<UserInfo>,
-        #[serde(rename = "projectState")]
-        project_state: serde_json::Value,
-    },
-    RoomError {
-        error: String,
-    },
-    UserJoined {
-        user: UserInfo,
-    },
-    UserLeft {
-        #[serde(rename = "userId")]
-        user_id: UserId,
-    },
-    MouseUpdate {
-        #[serde(rename = "userId")]
-        user_id: UserId,
-        username: String,
-        position: MousePosition,
-        color: String,
-    },
-    NoteBatchUpdate {
-        #[serde(rename = "userId")]
-        user_id: UserId,
-        operation: NoteBatchOperation,
-    },
-    MidiEventUpdate {
-        #[serde(rename = "userId")]
-        user_id: UserId,
-        event: MidiEvent,
-    },
-    MidiEventBatchUpdate {
-        #[serde(rename = "userId")]
-        user_id: UserId,
-        events: Vec<MidiEvent>,
-    },
-    ProjectStateUpdate {
-        #[serde(rename = "userId")]
-        user_id: UserId,
-        update: ProjectUpdate,
-    },
-    FullSync {
-        #[serde(rename = "projectState")]
-        project_state: serde_json::Value,
-        users: Vec<UserInfo>,
-    },
-    Pong {
-        timestamp: u64,
-        #[serde(rename = "serverTime")]
-        server_time: u64,
-    },
-    Error {
-        error: String,
-    },
-}
+pub use event::{CollaborationEvent, EventCallback};
+pub use handlers::handle_server_message;
+pub use message::{ClientMessage, ServerMessage};
 
-/// 事件回调类型
-pub type EventCallback = Arc<dyn Fn(CollaborationEvent) + Send + Sync>;
-
-/// 协作事件
+/// 客户端配置
 #[derive(Debug, Clone)]
-pub enum CollaborationEvent {
-    Connected,
+pub struct ClientConfig {
+    pub server_host: String,
+    pub server_port: u16,
+    pub username: String,
+}
+
+impl Default for ClientConfig {
+    fn default() -> Self {
+        Self {
+            server_host: "lumino.dpdns.org".to_string(),
+            server_port: 443,
+            username: "Anonymous".to_string(),
+        }
+    }
+}
+
+/// 客户端状态
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClientState {
     Disconnected,
-    Authenticated {
-        user_id: UserId,
-        invite_code: InviteCode,
-    },
-    RoomCreated {
-        room: RoomInfo,
-    },
-    RoomJoined {
-        room: RoomInfo,
-        users: Vec<UserInfo>,
-    },
-    UserJoined {
-        user: UserInfo,
-    },
-    UserLeft {
-        user_id: UserId,
-    },
-    MouseUpdate {
-        user_id: UserId,
-        position: MousePosition,
-        color: String,
-    },
-    NoteBatch {
-        user_id: UserId,
-        operation: NoteBatchOperation,
-    },
-    MidiEvent {
-        user_id: UserId,
-        event: MidiEvent,
-    },
-    MidiEventBatch {
-        user_id: UserId,
-        events: Vec<MidiEvent>,
-    },
-    ProjectUpdate {
-        user_id: UserId,
-        update: ProjectUpdate,
-    },
-    FullSync {
-        users: Vec<UserInfo>,
-    },
-    Error {
-        message: String,
-    },
+    Connecting,
+    Connected,
+    Authenticating,
+    Authenticated,
+    InRoom,
+    Error,
+}
+
+/// 协作会话信息
+#[derive(Debug, Clone, Default)]
+pub struct CollaborationSession {
+    pub current_user_id: Option<UserId>,
+    pub invite_code: Option<InviteCode>,
+    pub current_room: Option<RoomInfo>,
+    pub remote_users: std::collections::HashMap<UserId, RemoteUser>,
+}
+
+/// 远程用户信息
+#[derive(Debug, Clone)]
+pub struct RemoteUser {
+    pub info: UserInfo,
+    pub mouse_position: Option<MousePosition>,
+    pub last_active: Instant,
 }
 
 /// 协作客户端
@@ -208,257 +107,6 @@ impl CollaborationClient {
         F: Fn(CollaborationEvent) + Send + Sync + 'static,
     {
         self.event_callback = Some(Arc::new(callback));
-    }
-
-    /// 连接到服务器
-    pub async fn connect(
-        &mut self,
-        host: Option<String>,
-        port: Option<u16>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let host = host.unwrap_or_else(|| self.config.server_host.clone());
-        let port = port.unwrap_or(self.config.server_port);
-
-        // 构建 WebSocket URL
-        // 对于 Cloudflare Workers，使用 wss:// 协议
-        // 对于本地服务器，使用 ws:// 协议
-        let protocol = if host.ends_with(".workers.dev") || host.ends_with(".dpdns.org") {
-            "wss"
-        } else {
-            "ws"
-        };
-
-        // 对于标准 HTTPS 端口 (443)，不包含端口号
-        let ws_url = if port == 443 {
-            format!("{}://{}/ws", protocol, host)
-        } else {
-            format!("{}://{}:{}/ws", protocol, host, port)
-        };
-
-        info!("连接到服务器: {}", ws_url);
-
-        *self.state.write().await = ClientState::Connecting;
-
-        // 建立WebSocket连接，设置15秒超时
-        let connect_future = connect_async(&ws_url);
-        let timeout_duration = Duration::from_secs(15);
-
-        info!("开始连接，超时时间: {}秒", timeout_duration.as_secs());
-
-        let (ws_stream, _) = match tokio::time::timeout(timeout_duration, connect_future).await {
-            Ok(result) => {
-                info!("连接尝试完成");
-                result?
-            }
-            Err(_) => {
-                error!("连接超时（{}秒）", timeout_duration.as_secs());
-                return Err(format!("连接超时（{}秒）", timeout_duration.as_secs()).into());
-            }
-        };
-
-        info!("WebSocket连接成功");
-
-        let (write, mut read) = ws_stream.split();
-        let write = Arc::new(Mutex::new(write));
-        *self.state.write().await = ClientState::Connected;
-
-        // 发送认证消息
-        let auth_msg = ClientMessage::Auth {
-            username: self.config.username.clone(),
-        };
-        let auth_json = serde_json::to_string(&auth_msg)?;
-        info!("发送认证消息: {}", auth_json);
-        write
-            .lock()
-            .await
-            .send(Message::Text(auth_json.into()))
-            .await?;
-        info!("认证消息已发送");
-        *self.state.write().await = ClientState::Authenticating;
-
-        // 等待认证响应
-        info!("等待认证响应...");
-        loop {
-            match read.next().await {
-                Some(Ok(Message::Text(text))) => {
-                    info!("收到认证响应: {}", text);
-                    let response: ServerMessage = match serde_json::from_str(&text) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            error!("解析认证响应失败: {}\n响应内容: {}", e, text);
-                            // 继续等待，可能下一条是认证响应
-                            continue;
-                        }
-                    };
-                    match response {
-                        ServerMessage::AuthSuccess {
-                            user_id,
-                            invite_code,
-                        } => {
-                            info!("认证成功: user_id={}", user_id);
-                            *self.state.write().await = ClientState::Authenticated;
-
-                            let mut session = self.session.write().await;
-                            session.current_user_id = Some(user_id.clone());
-                            session.invite_code = Some(invite_code.clone());
-                            drop(session);
-
-                            self.emit_event(CollaborationEvent::Authenticated {
-                                user_id,
-                                invite_code,
-                            });
-                            break; // 认证成功，跳出循环
-                        }
-                        ServerMessage::AuthError { error } => {
-                            error!("认证失败: {}", error);
-                            *self.state.write().await = ClientState::Error;
-                            return Err(error.into());
-                        }
-                        other => {
-                            info!("在认证阶段收到其他合法文本消息，忽略: {:?}", other);
-                            continue; // 忽略并继续读取
-                        }
-                    }
-                }
-                Some(Ok(Message::Close(frame))) => {
-                    error!("连接在认证前被关闭: {:?}", frame);
-                    return Err("连接被关闭".into());
-                }
-                Some(Err(e)) => {
-                    error!("WebSocket 错误: {}", e);
-                    return Err(e.into());
-                }
-                Some(Ok(other)) => {
-                    info!("收到非文本消息: {:?}", other);
-                    continue; // 忽略并继续读取
-                }
-                None => {
-                    error!("连接在认证前断开");
-                    return Err("连接断开".into());
-                }
-            }
-        }
-
-        // 启动消息处理循环
-        let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
-        self.shutdown_tx = Some(shutdown_tx);
-
-        let state = self.state.clone();
-        let session = self.session.clone();
-        let message_rx = self.message_rx.clone();
-        let event_callback = self.event_callback.clone();
-        let write_clone = write.clone();
-
-        tokio::spawn(async move {
-            info!("消息处理循环已启动");
-            let mut heartbeat = interval(Duration::from_millis(HEARTBEAT_INTERVAL_MS));
-
-            loop {
-                tokio::select! {
-                    // 处理接收到的消息
-                    msg = read.next() => {
-                        match msg {
-                            Some(Ok(Message::Text(text))) => {
-                                info!("收到服务器文本消息: {}", text);
-                                if let Err(e) = handle_server_message(
-                                    &text,
-                                    &state,
-                                    &session,
-                                    event_callback.clone()
-                                ).await {
-                                    error!("处理消息失败: {} - {}", e, text);
-                                    println!("处理消息失败: {} - {}", e, text); // Add debug print
-                                }
-                            }
-                            Some(Ok(Message::Close(frame))) => {
-                                info!("收到服务器关闭帧: {:?}", frame);
-                                *state.write().await = ClientState::Disconnected;
-                                if let Some(ref cb) = event_callback {
-                                    cb(CollaborationEvent::Disconnected);
-                                }
-                                break;
-                            }
-                            Some(Ok(Message::Ping(_))) => {
-                                debug!("收到服务器 ping");
-                            }
-                            Some(Ok(Message::Pong(_))) => {
-                                debug!("收到服务器 pong");
-                            }
-                            Some(Ok(other)) => {
-                                debug!("收到其他消息类型: {:?}", other);
-                            }
-                            Some(Err(e)) => {
-                                error!("WebSocket错误: {}", e);
-                                *state.write().await = ClientState::Error;
-                                if let Some(ref cb) = event_callback {
-                                    cb(CollaborationEvent::Error {
-                                        message: e.to_string()
-                                    });
-                                }
-                            }
-                            None => {
-                                info!("连接已关闭 (None)");
-                                *state.write().await = ClientState::Disconnected;
-                                if let Some(ref cb) = event_callback {
-                                    cb(CollaborationEvent::Disconnected);
-                                }
-                                break;
-                            }
-                        }
-                    }
-
-                    // 发送客户端消息
-                    msg = async {
-                        let mut rx = message_rx.lock().await;
-                        rx.recv().await
-                    } => {
-                        if let Some(msg) = msg {
-                            let json = match serde_json::to_string(&msg) {
-                                Ok(j) => j,
-                                Err(e) => {
-                                    error!("序列化消息失败: {}", e);
-                                    continue;
-                                }
-                            };
-
-                            debug!("发送消息: {}", json);
-                            let mut w = write_clone.lock().await;
-                            if let Err(e) = w.send(Message::Text(json.into())).await {
-                                error!("发送消息失败: {}", e);
-                            }
-                        }
-                    }
-
-                    // 心跳
-                    _ = heartbeat.tick() => {
-                        let ping = ClientMessage::Ping {
-                            timestamp: Instant::now().elapsed().as_millis() as u64
-                        };
-                        match serde_json::to_string(&ping) {
-                            Ok(json) => {
-                                debug!("发送心跳: {}", json);
-                                let mut w = write_clone.lock().await;
-                                if let Err(e) = w.send(Message::Text(json.into())).await {
-                                    error!("发送心跳失败: {}", e);
-                                }
-                            }
-                            Err(e) => {
-                                error!("序列化心跳消息失败: {}", e);
-                            }
-                        }
-                    }
-
-                    // 关闭信号
-                    _ = shutdown_rx.recv() => {
-                        info!("收到关闭信号");
-                        break;
-                    }
-                }
-            }
-            info!("消息处理循环已结束");
-        });
-
-        Ok(())
     }
 
     /// 断开连接
@@ -564,148 +212,4 @@ impl CollaborationClient {
             callback(event);
         }
     }
-}
-
-// 处理服务器消息
-async fn handle_server_message(
-    text: &str,
-    state: &Arc<RwLock<ClientState>>,
-    session: &Arc<RwLock<CollaborationSession>>,
-    callback: Option<EventCallback>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let msg: ServerMessage = serde_json::from_str(text)?;
-
-    match msg {
-        ServerMessage::UserJoined { user } => {
-            let mut sess = session.write().await;
-            sess.remote_users.insert(
-                user.id.clone(),
-                RemoteUser {
-                    info: user.clone(),
-                    mouse_position: None,
-                    last_active: Instant::now(),
-                },
-            );
-            drop(sess);
-
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::UserJoined { user });
-            }
-        }
-
-        ServerMessage::UserLeft { user_id } => {
-            let mut sess = session.write().await;
-            sess.remote_users.remove(&user_id);
-            drop(sess);
-
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::UserLeft { user_id });
-            }
-        }
-
-        ServerMessage::MouseUpdate {
-            user_id,
-            position,
-            color,
-            ..
-        } => {
-            let mut sess = session.write().await;
-            if let Some(user) = sess.remote_users.get_mut(&user_id) {
-                user.mouse_position = Some(position.clone());
-                user.last_active = Instant::now();
-            }
-            drop(sess);
-
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::MouseUpdate {
-                    user_id,
-                    position,
-                    color,
-                });
-            }
-        }
-
-        ServerMessage::NoteBatchUpdate { user_id, operation } => {
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::NoteBatch { user_id, operation });
-            }
-        }
-
-        ServerMessage::MidiEventUpdate { user_id, event } => {
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::MidiEvent { user_id, event });
-            }
-        }
-
-        ServerMessage::MidiEventBatchUpdate { user_id, events } => {
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::MidiEventBatch { user_id, events });
-            }
-        }
-
-        ServerMessage::ProjectStateUpdate { user_id, update } => {
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::ProjectUpdate { user_id, update });
-            }
-        }
-
-        ServerMessage::FullSync { users, .. } => {
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::FullSync { users });
-            }
-        }
-
-        ServerMessage::RoomCreated { room } => {
-            info!("收到 RoomCreated: {:?}", room);
-            let mut sess = session.write().await;
-            sess.current_room = Some(room.clone());
-            drop(sess);
-
-            *state.write().await = ClientState::InRoom;
-
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::RoomCreated { room });
-            }
-        }
-
-        ServerMessage::RoomJoined { room, users, .. } => {
-            info!("收到 RoomJoined: {:?}", room);
-            let mut sess = session.write().await;
-            sess.current_room = Some(room.clone());
-
-            // 添加所有用户
-            for user in &users {
-                if Some(&user.id) != sess.current_user_id.as_ref() {
-                    sess.remote_users.insert(
-                        user.id.clone(),
-                        RemoteUser {
-                            info: user.clone(),
-                            mouse_position: None,
-                            last_active: Instant::now(),
-                        },
-                    );
-                }
-            }
-            drop(sess);
-
-            *state.write().await = ClientState::InRoom;
-
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::RoomJoined { room, users });
-            }
-        }
-
-        ServerMessage::Error { error } => {
-            error!("服务器错误: {}", error);
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::Error { message: error });
-            }
-        }
-
-        _ => {
-            debug!("收到未处理的消息类型");
-        }
-    }
-
-    Ok(())
 }
