@@ -91,7 +91,6 @@ pub enum TrackLocationSerde {
 #[derive(Debug)]
 pub struct DiskTrackCache {
     cache_dir: PathBuf,
-    cache_key: u64,
 }
 
 impl DiskTrackCache {
@@ -105,10 +104,7 @@ impl DiskTrackCache {
             fs::create_dir_all(&cache_dir)?;
         }
 
-        Ok(Self {
-            cache_dir,
-            cache_key: key,
-        })
+        Ok(Self { cache_dir })
     }
 
     fn compute_key(path: &Path, modified: std::time::SystemTime) -> u64 {
@@ -167,6 +163,107 @@ impl DiskTrackCache {
 
     pub fn cache_dir(&self) -> &Path {
         &self.cache_dir
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 辅助函数：用于 MidiMemoryManager::load() 的拆分
+// ════════════════════════════════════════════════════════════════════════════
+
+/// 启动后台磁盘写入线程
+fn spawn_disk_writer(
+    disk_cache_dir: PathBuf,
+    disk_rx: mpsc::Receiver<(usize, Vec<MidiEvent>)>,
+) -> std::thread::JoinHandle<Result<(), String>> {
+    std::thread::spawn(move || -> Result<(), String> {
+        for (track_idx, events) in disk_rx {
+            let track_path = disk_cache_dir.join(format!("track_{:04x}.zst", track_idx));
+            let serialized = bincode::serialize(&events).map_err(|e| format!("序列化失败: {e}"))?;
+            let compressed = zstd::stream::encode_all(&mut &serialized[..], COMPRESSION_LEVEL)
+                .map_err(|e| format!("压缩失败: {e}"))?;
+            let mut file_out =
+                File::create(&track_path).map_err(|e| format!("创建缓存文件失败: {e}"))?;
+            file_out
+                .write_all(&compressed)
+                .map_err(|e| format!("写入缓存失败: {e}"))?;
+        }
+        Ok(())
+    })
+}
+
+/// 单个音轨的解析结果
+struct ParsedTrack {
+    events: Vec<MidiEvent>,
+    note_count: u64,
+    high_vel_count: u64,
+    max_tick: u32,
+}
+
+/// 解析单个音轨的事件
+fn parse_track_events_from_iter(
+    track_idx: usize,
+    event_iter: midly::EventIter,
+) -> Result<ParsedTrack, String> {
+    let mut events = Vec::new();
+    let mut current_tick = 0u32;
+    let mut note_count = 0u64;
+    let mut high_vel_count = 0u64;
+    let mut max_tick = 0u32;
+
+    for event_result in event_iter {
+        let track_event =
+            event_result.map_err(|e| format!("解析音轨 {} 事件失败: {e}", track_idx))?;
+
+        current_tick = current_tick.saturating_add(u32::from(track_event.delta));
+
+        if let Some(midi_event) =
+            MidiMemoryManager::parse_track_event(track_idx, current_tick, &track_event.kind)
+        {
+            if current_tick > max_tick {
+                max_tick = current_tick;
+            }
+            if let MidiEvent::NoteOn { velocity, .. } = &midi_event
+                && *velocity > 0
+            {
+                note_count += 1;
+                if *velocity > 1 {
+                    high_vel_count += 1;
+                }
+            }
+            events.push(midi_event);
+        }
+    }
+
+    Ok(ParsedTrack {
+        events,
+        note_count,
+        high_vel_count,
+        max_tick,
+    })
+}
+
+/// 创建音轨摘要
+fn create_track_summary(
+    track_idx: usize,
+    event_count: u64,
+    note_count: u64,
+    high_vel_count: u64,
+    max_tick: u32,
+    memory_bytes: usize,
+    in_memory: bool,
+) -> TrackSummary {
+    TrackSummary {
+        track_index: track_idx,
+        event_count,
+        note_count,
+        high_vel_note_count: high_vel_count,
+        max_tick,
+        memory_bytes,
+        location: if in_memory {
+            TrackLocationSerde::InMemory
+        } else {
+            TrackLocationSerde::OnDisk
+        },
     }
 }
 
@@ -251,22 +348,7 @@ impl MidiMemoryManager {
         // ═══════ 启动后台磁盘写入线程 ═══════
         let (disk_tx, disk_rx) = mpsc::channel::<(usize, Vec<MidiEvent>)>();
         let disk_cache_dir = disk_cache.cache_dir().to_path_buf();
-
-        let disk_writer = std::thread::spawn(move || -> Result<(), String> {
-            for (track_idx, events) in disk_rx {
-                let track_path = disk_cache_dir.join(format!("track_{:04x}.zst", track_idx));
-                let serialized =
-                    bincode::serialize(&events).map_err(|e| format!("序列化失败: {e}"))?;
-                let compressed = zstd::stream::encode_all(&mut &serialized[..], COMPRESSION_LEVEL)
-                    .map_err(|e| format!("压缩失败: {e}"))?;
-                let mut file_out =
-                    File::create(&track_path).map_err(|e| format!("创建缓存文件失败: {e}"))?;
-                file_out
-                    .write_all(&compressed)
-                    .map_err(|e| format!("写入缓存失败: {e}"))?;
-            }
-            Ok(())
-        });
+        let disk_writer = spawn_disk_writer(disk_cache_dir, disk_rx);
 
         // ═══════ 逐个音轨解析事件，边统计边分配 ═══════
         let memory_limit = max_ram_bytes.unwrap_or(MEMORY_LIMIT_BYTES);
@@ -278,90 +360,65 @@ impl MidiMemoryManager {
         let mut summaries: Vec<TrackSummary> = Vec::with_capacity(track_count);
 
         for (track_idx, event_iter) in event_iters.into_iter().enumerate() {
-            // 逐事件解析这一个音轨（event_iter 是 EventIter，只引用 mmap 中的切片）
-            let mut events = Vec::new();
-            let mut current_tick = 0u32;
-            let mut note_count = 0u64;
-            let mut high_vel_count = 0u64;
-            let mut max_tick = 0u32;
+            let parsed = parse_track_events_from_iter(track_idx, event_iter)?;
+            let event_count = parsed.events.len() as u64;
+            let should_try_memory = parsed.high_vel_count > 0;
 
-            for event_result in event_iter {
-                let track_event =
-                    event_result.map_err(|e| format!("解析音轨 {} 事件失败: {e}", track_idx))?;
-
-                current_tick = current_tick.saturating_add(u32::from(track_event.delta));
-
-                if let Some(midi_event) =
-                    Self::parse_track_event(track_idx, current_tick, &track_event.kind)
-                {
-                    // 统计
-                    if current_tick > max_tick {
-                        max_tick = current_tick;
-                    }
-                    if let MidiEvent::NoteOn { velocity, .. } = &midi_event
-                        && *velocity > 0
-                    {
-                        note_count += 1;
-                        if *velocity > 1 {
-                            high_vel_count += 1;
-                        }
-                    }
-                    events.push(midi_event);
-                }
-            }
-
-            let event_count = events.len() as u64;
-            let should_try_memory = high_vel_count > 0;
-
-            if should_try_memory {
-                let track_size = estimate_events_size(&events);
+            let (summary, keep_in_memory) = if should_try_memory {
+                let track_size = estimate_events_size(&parsed.events);
 
                 if memory_used + track_size <= initial_memory_limit {
                     memory_used += track_size;
-                    summaries.push(TrackSummary {
-                        track_index: track_idx,
-                        event_count,
-                        note_count,
-                        high_vel_note_count: high_vel_count,
-                        max_tick,
-                        memory_bytes: track_size,
-                        location: TrackLocationSerde::InMemory,
-                    });
-                    // 如果存在高力度音符，则完整加载到内存
-                    in_memory_tracks.insert(track_idx, events.clone());
-
-                    // 同样写入磁盘以备不时之需（或用于编辑）
-                    disk_tx
-                        .send((track_idx, events))
-                        .map_err(|e| format!("发送磁盘写入任务失败: {e}"))?;
+                    (
+                        create_track_summary(
+                            track_idx,
+                            event_count,
+                            parsed.note_count,
+                            parsed.high_vel_count,
+                            parsed.max_tick,
+                            track_size,
+                            true,
+                        ),
+                        true,
+                    )
                 } else {
-                    summaries.push(TrackSummary {
-                        track_index: track_idx,
-                        event_count,
-                        note_count,
-                        high_vel_note_count: high_vel_count,
-                        max_tick,
-                        memory_bytes: 0,
-                        location: TrackLocationSerde::OnDisk,
-                    });
-                    disk_tx
-                        .send((track_idx, events))
-                        .map_err(|e| format!("发送磁盘写入任务失败: {e}"))?;
+                    (
+                        create_track_summary(
+                            track_idx,
+                            event_count,
+                            parsed.note_count,
+                            parsed.high_vel_count,
+                            parsed.max_tick,
+                            0,
+                            false,
+                        ),
+                        false,
+                    )
                 }
             } else {
-                summaries.push(TrackSummary {
-                    track_index: track_idx,
-                    event_count,
-                    note_count,
-                    high_vel_note_count: high_vel_count,
-                    max_tick,
-                    memory_bytes: 0,
-                    location: TrackLocationSerde::OnDisk,
-                });
-                disk_tx
-                    .send((track_idx, events))
-                    .map_err(|e| format!("发送磁盘写入任务失败: {e}"))?;
+                (
+                    create_track_summary(
+                        track_idx,
+                        event_count,
+                        parsed.note_count,
+                        parsed.high_vel_count,
+                        parsed.max_tick,
+                        0,
+                        false,
+                    ),
+                    false,
+                )
+            };
+
+            summaries.push(summary);
+
+            if keep_in_memory {
+                in_memory_tracks.insert(track_idx, parsed.events.clone());
             }
+
+            disk_tx
+                .send((track_idx, parsed.events))
+                .map_err(|e| format!("发送磁盘写入任务失败: {e}"))?;
 
             if let Some(cb) = progress_callback {
                 let progress = PROGRESS_START

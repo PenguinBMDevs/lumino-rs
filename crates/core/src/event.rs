@@ -89,12 +89,13 @@ impl EventBuffer {
 }
 
 /// 获取事件缓冲区
+///
+/// 如果 mutex 被 poison（线程 panic），会尝试恢复并继续使用该锁
 fn buffer<'a>() -> MutexGuard<'a, EventBuffer> {
-    // 获取事件缓冲区，若不存在则创建一个默认的事件缓冲区
     EVENT_BUFFER
         .get_or_init(|| Mutex::new(EventBuffer::default()))
         .lock()
-        .expect("Lock core EventBuffer")
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 /// 推送事件到事件缓冲区

@@ -1,0 +1,44 @@
+//! Host 子模块 - 类型定义和工具函数
+
+use iced_core::{Event, mouse, touch};
+
+/// 音符数据: (tick, key, length)
+pub type NoteData = (f32, u8, f32);
+/// 音轨音符数据: (track_idx, notes)
+pub type TrackNotes = (usize, Vec<NoteData>);
+
+/// 对话框结果
+#[derive(Debug, Clone)]
+pub enum DialogResult {
+    CustomPrecision {
+        numerator: String,
+        denominator: String,
+    },
+}
+
+/// 将触摸事件转换为鼠标事件（兼容性处理）
+pub fn convert_touch_to_mouse(event: Event) -> Vec<Event> {
+    match event {
+        Event::Touch(touch_event) => match touch_event {
+            touch::Event::FingerPressed { position, .. } => {
+                vec![
+                    event,
+                    Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
+                    Event::Mouse(mouse::Event::CursorMoved { position }),
+                ]
+            }
+            touch::Event::FingerLifted { position, .. } => {
+                vec![
+                    event,
+                    Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
+                    Event::Mouse(mouse::Event::CursorMoved { position }),
+                ]
+            }
+            touch::Event::FingerMoved { position, .. } => {
+                vec![event, Event::Mouse(mouse::Event::CursorMoved { position })]
+            }
+            _ => vec![event],
+        },
+        _ => vec![event],
+    }
+}

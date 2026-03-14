@@ -4,11 +4,16 @@ use tokio::time::sleep;
 
 use lumino_collaboration::{
     client::{CollaborationClient, CollaborationEvent},
-    types::{ClientConfig, NoteBatchOperation, NoteAction, Note},
+    types::{ClientConfig, Note, NoteAction, NoteBatchOperation},
 };
 
 // 工具函数：创建客户端并等待连接和认证
-async fn setup_client(username: &str) -> (CollaborationClient, mpsc::UnboundedReceiver<CollaborationEvent>) {
+async fn setup_client(
+    username: &str,
+) -> (
+    CollaborationClient,
+    mpsc::UnboundedReceiver<CollaborationEvent>,
+) {
     let config = ClientConfig {
         server_host: "localhost".to_string(),
         server_port: 3000,
@@ -33,7 +38,11 @@ async fn wait_for_auth(rx: &mut mpsc::UnboundedReceiver<CollaborationEvent>) -> 
     println!("Waiting for auth...");
     while let Some(event) = rx.recv().await {
         println!("Got event during auth: {:?}", event);
-        if let CollaborationEvent::Authenticated { user_id, invite_code } = event {
+        if let CollaborationEvent::Authenticated {
+            user_id,
+            invite_code,
+        } = event
+        {
             return (user_id, invite_code);
         }
     }
@@ -57,7 +66,8 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
     let mut room_invite_code = String::new();
     let start = std::time::Instant::now();
     while start.elapsed() < Duration::from_secs(5) {
-        if let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(100), rx_a.recv()).await {
+        if let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(100), rx_a.recv()).await
+        {
             println!("A event: {:?}", event);
             if let CollaborationEvent::RoomCreated { room } = event {
                 room_created = true;
@@ -75,7 +85,8 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
     let mut joined = false;
     let start = std::time::Instant::now();
     while start.elapsed() < Duration::from_secs(5) {
-        if let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(100), rx_b.recv()).await {
+        if let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(100), rx_b.recv()).await
+        {
             println!("B event: {:?}", event);
             if let CollaborationEvent::RoomJoined { .. } = event {
                 joined = true;
@@ -125,7 +136,11 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
         }
     }
 
-    assert_eq!(b_received, total_notes, "B missed some notes. Expected {}, got {}", total_notes, b_received);
+    assert_eq!(
+        b_received, total_notes,
+        "B missed some notes. Expected {}, got {}",
+        total_notes, b_received
+    );
     println!("Test A -> B passed for {} notes/sec", rate);
 
     // Ensure connection is clean logic... (simplified here)

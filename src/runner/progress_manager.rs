@@ -45,11 +45,6 @@ impl ProgressManager {
         self.window.as_ref().is_some_and(|w| w.id() == window_id)
     }
 
-    /// 获取当前进度
-    pub fn progress(&self) -> Option<&(String, f64)> {
-        self.progress.as_ref()
-    }
-
     /// 处理进度窗口事件
     pub fn handle_event(&mut self, event: WindowEvent) {
         let Some(window) = self.window.clone() else {
@@ -223,13 +218,6 @@ impl ProgressManager {
             ui.update_progress(Some((msg, progress)));
         }
         main_window.request_redraw();
-        if let Some(ref window) = self.window {
-            window.request_redraw();
-        }
-    }
-
-    /// 请求进度窗口重绘
-    pub fn request_redraw(&self) {
         if let Some(ref window) = self.window {
             window.request_redraw();
         }

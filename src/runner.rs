@@ -71,9 +71,6 @@ pub enum CollaborationStatus {
     #[default]
     Disconnected,
     Connecting,
-    Connected,
-    InRoom,
-    Error(String),
 }
 
 impl winit::application::ApplicationHandler for Runner {

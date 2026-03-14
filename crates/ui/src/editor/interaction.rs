@@ -176,7 +176,7 @@ impl Editor {
             self.edit_state = EditState::Dragging {
                 note_index,
                 offset_tick: tick - original_tick,
-                offset_key: key as i32 - original_key as i32,
+                offset_key: key.saturating_sub(original_key) as i32,
                 last_played_key: original_key,
             };
         }
@@ -198,8 +198,9 @@ impl Editor {
             } => {
                 let calculated_tick =
                     ((tick - *offset_tick) / snap_precision).round() * snap_precision;
-                let calculated_key =
-                    (key as i32 - *offset_key).clamp(0, visible_key_count as i32 - 1) as u16;
+                let calculated_key = (key as i32 - *offset_key)
+                    .clamp(0, visible_key_count.saturating_sub(1) as i32)
+                    as u16;
                 new_key = Some(calculated_key);
                 new_tick = Some(calculated_tick.max(0.0));
 

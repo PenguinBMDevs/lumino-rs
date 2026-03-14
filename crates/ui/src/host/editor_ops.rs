@@ -1,0 +1,222 @@
+//! Host 编辑器操作子模块 - 处理音符和洋葱皮相关操作
+
+use crate::host::{Host, types::NoteData};
+use crate::{editor::note::Note, message};
+
+impl Host {
+    /// 更新音轨列表（从 MIDI 导入）
+    /// track_infos: (track_index, track_name, note_count)
+    pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64)]) {
+        self.root.update_tracks(track_infos);
+        self.clear_cache();
+        self.window.request_redraw();
+    }
+
+    /// 设置编辑器总 ticks
+    pub fn set_total_ticks(&mut self, total_ticks: f32) {
+        self.root.set_total_ticks(total_ticks);
+        self.clear_cache();
+        self.window.request_redraw();
+    }
+
+    /// 加载音符到编辑器
+    /// notes: (tick, key, length)
+    pub fn load_notes(&mut self, notes: &[(f32, u8, f32)]) {
+        self.root.load_notes(notes);
+        self.clear_cache();
+        self.window.request_redraw();
+    }
+
+    /// 设置当前音轨
+    pub fn set_current_track(&mut self, track_idx: usize) {
+        self.root.set_current_track(track_idx);
+        self.clear_cache();
+        self.window.request_redraw();
+    }
+
+    /// 加载指定音轨的音符到编辑器（用于 MIDI 文件）
+    /// 这会同时更新当前显示的音符和音轨存储，以便洋葱皮能显示
+    pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32)]) {
+        self.root.load_track_notes(track_idx, notes);
+        self.clear_cache();
+        self.window.request_redraw();
+    }
+
+    /// 预加载音轨音符到 track_notes（仅用于洋葱皮，不显示）
+    ///
+    /// # 参数
+    /// * `track_idx` - 音轨索引
+    /// * `notes` - 音符列表，格式为 (tick, key, length)
+    pub fn load_track_notes_for_onion_skin(&mut self, track_idx: usize, notes: &[(f32, u8, f32)]) {
+        tracing::debug!(
+            "UI::load_track_notes_for_onion_skin: track_idx={}, notes_count={}",
+            track_idx,
+            notes.len()
+        );
+
+        // 直接保存到 editor.track_notes，不更新当前显示
+        let mut track_notes = Vec::with_capacity(notes.len());
+        for (tick, key, length) in notes {
+            let editor_key = *key as u16;
+            track_notes.push(Note::new(*tick, editor_key, *length));
+        }
+
+        if !track_notes.is_empty() {
+            self.root.editor.track_notes.insert(track_idx, track_notes);
+            tracing::debug!(
+                "UI::load_track_notes_for_onion_skin: saved {} notes to track_notes[{}]",
+                notes.len(),
+                track_idx
+            );
+        }
+
+        // 不需要重绘，因为这些音符是用于洋葱皮的，不是当前显示的
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // 洋葱皮 API
+    // ════════════════════════════════════════════════════════════════════════════
+
+    /// 启用洋葱皮功能
+    pub fn enable_onion_skin(&mut self) {
+        self.root.editor.enable_onion_skin();
+        self.window.request_redraw();
+    }
+
+    /// 禁用洋葱皮功能
+    pub fn disable_onion_skin(&mut self) {
+        self.root.editor.disable_onion_skin();
+        self.window.request_redraw();
+    }
+
+    /// 切换洋葱皮开关状态
+    pub fn toggle_onion_skin(&mut self) {
+        self.root.editor.toggle_onion_skin();
+        self.window.request_redraw();
+    }
+
+    /// 检查洋葱皮是否启用
+    pub fn is_onion_skin_enabled(&self) -> bool {
+        self.root.editor.is_onion_skin_enabled()
+    }
+
+    /// 设置音轨的洋葱皮 RGB 颜色（透明度保持不变）
+    ///
+    /// # 参数
+    /// * `track_idx` - 音轨索引
+    /// * `r`, `g`, `b` - RGB 颜色分量 (0.0 - 1.0)
+    pub fn set_onion_skin_color_rgb(&mut self, track_idx: usize, r: f32, g: f32, b: f32) {
+        let alpha = self.root.editor.onion_skin_opacity();
+        self.root
+            .editor
+            .set_onion_skin_color(track_idx, iced_core::Color::from_rgba(r, g, b, alpha));
+        self.window.request_redraw();
+    }
+
+    /// 设置音轨的洋葱皮 RGBA 颜色
+    ///
+    /// # 参数
+    /// * `track_idx` - 音轨索引
+    /// * `r`, `g`, `b`, `a` - RGBA 颜色分量 (0.0 - 1.0)
+    pub fn set_onion_skin_color_rgba(&mut self, track_idx: usize, r: f32, g: f32, b: f32, a: f32) {
+        self.root
+            .editor
+            .set_onion_skin_color(track_idx, iced_core::Color::from_rgba(r, g, b, a));
+        self.window.request_redraw();
+    }
+
+    /// 获取音轨的洋葱皮颜色
+    ///
+    /// 返回 (r, g, b, a) 元组
+    pub fn get_onion_skin_color(&self, track_idx: usize) -> (f32, f32, f32, f32) {
+        let color = self.root.editor.get_onion_skin_color(track_idx);
+        (color.r, color.g, color.b, color.a)
+    }
+
+    /// 设置洋葱皮透明度
+    ///
+    /// # 参数
+    /// * `opacity` - 透明度值，范围 0.0（完全透明）到 1.0（完全不透明）
+    pub fn set_onion_skin_opacity(&mut self, opacity: f32) {
+        self.root.editor.set_onion_skin_opacity(opacity);
+        self.window.request_redraw();
+    }
+
+    /// 获取洋葱皮透明度
+    pub fn onion_skin_opacity(&self) -> f32 {
+        self.root.editor.onion_skin_opacity()
+    }
+
+    /// 设置是否显示所有音轨的洋葱皮
+    pub fn set_onion_skin_show_all(&mut self, show_all: bool) {
+        self.root.editor.set_onion_skin_show_all(show_all);
+        self.window.request_redraw();
+    }
+
+    /// 添加音轨到洋葱皮显示列表
+    pub fn add_onion_skin_track(&mut self, track_idx: usize) {
+        self.root.editor.add_onion_skin_track(track_idx);
+        self.window.request_redraw();
+    }
+
+    /// 从洋葱皮显示列表移除音轨
+    pub fn remove_onion_skin_track(&mut self, track_idx: usize) {
+        self.root.editor.remove_onion_skin_track(track_idx);
+        self.window.request_redraw();
+    }
+
+    /// 清空编辑器（用于新建工程）
+    pub fn clear_editor(&mut self) {
+        self.root.editor.notes.clear();
+        self.root.editor.track_notes.clear();
+        self.root.editor.current_track = 0;
+        self.root.editor.grid_cache.clear();
+        self.clear_cache();
+        self.window.request_redraw();
+        tracing::info!("UI: 编辑器已清空");
+    }
+
+    /// 获取编辑器中的所有音符数据（用于保存）
+    ///
+    /// 返回 (track_idx, notes) 列表，其中 notes 格式为 (tick, key, length)
+    pub fn get_editor_notes(&self) -> Vec<(usize, Vec<NoteData>)> {
+        let mut result = Vec::new();
+
+        // 先保存当前音轨的音符
+        if !self.root.editor.notes.is_empty() {
+            let current_notes: Vec<NoteData> = self
+                .root
+                .editor
+                .notes
+                .iter()
+                .map(|n| (n.tick, n.key as u8, n.length))
+                .collect();
+            result.push((self.root.editor.current_track, current_notes));
+        }
+
+        // 添加其他音轨的音符
+        for (&track_idx, notes) in &self.root.editor.track_notes {
+            if track_idx != self.root.editor.current_track {
+                let track_notes: Vec<NoteData> = notes
+                    .iter()
+                    .map(|n| (n.tick, n.key as u8, n.length))
+                    .collect();
+                result.push((track_idx, track_notes));
+            }
+        }
+
+        result
+    }
+
+    /// 获取编辑器中的音符数量（用于判断是否有内容）
+    pub fn get_editor_note_count(&self) -> usize {
+        let current_count = self.root.editor.notes.len();
+        let track_notes_count: usize = self.root.editor.track_notes.values().map(|v| v.len()).sum();
+        current_count + track_notes_count
+    }
+
+    /// 获取并清空待处理的音频动作
+    pub fn take_audio_actions(&mut self) -> Vec<message::AudioAction> {
+        self.root.take_audio_actions()
+    }
+}

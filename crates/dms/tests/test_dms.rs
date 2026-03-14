@@ -12,10 +12,10 @@ fn test_magic_constant() {
 fn test_node_type_constants() {
     assert_eq!(DmsNodeType::ROOT.0, 0x0000);
     // 注意：以下值必须与 Domino DMS 文件格式完全匹配
-    assert_eq!(DmsNodeType::SONG_NAME.0, 3);
-    assert_eq!(DmsNodeType::SONG_COPYRIGHT.0, 4);
-    assert_eq!(DmsNodeType::SONG_COMMENT.0, 5);
-    assert_eq!(DmsNodeType::SONG_PPQN.0, 8);
+    assert_eq!(DmsNodeType::SONG_NAME.0, 1000);
+    assert_eq!(DmsNodeType::SONG_COPYRIGHT.0, 1001);
+    assert_eq!(DmsNodeType::SONG_COMMENT.0, 1019);
+    assert_eq!(DmsNodeType::SONG_PPQN.0, 1002);
     assert_eq!(DmsNodeType::TRACK.0, 1003);
     assert_eq!(DmsNodeType::NOTE_EVENT.base_type(), 2001);
 }
@@ -136,4 +136,23 @@ fn test_invalid_magic() {
     let result = reader.read_from_bytes(invalid_data);
 
     assert!(result.is_err());
+}
+
+#[test]
+fn test_scan_dms_streaming() {
+    use lumino_dms::scan_dms_streaming;
+    use std::io::Cursor;
+
+    // 创建一个简单的 DMS 文件数据（包含魔数和解压长度）
+    let mut data = Vec::new();
+    data.extend_from_slice(lumino_dms::DMS_MAGIC); // 魔数
+    data.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // 解压长度（0）
+
+    let mut cursor = Cursor::new(data);
+    let result = scan_dms_streaming(&mut cursor);
+
+    assert!(result.is_ok());
+    let scan_result = result.unwrap();
+    assert_eq!(scan_result.track_count, 0);
+    assert_eq!(scan_result.total_notes, 0);
 }

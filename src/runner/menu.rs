@@ -2,17 +2,9 @@ use std::sync::Arc;
 
 use lumino_core::ParsedMidi;
 use lumino_core::event;
-use lumino_core::midi::constants::DEFAULT_PPQN;
-use lumino_ui::TrackNotes;
 
 use super::RunnerInner;
 use super::async_helper::run_async_task;
-
-/// MIDI 导出默认力度
-const DEFAULT_VELOCITY: u8 = 100;
-
-/// MIDI 格式类型 1
-const MIDI_FORMAT_TYPE: u16 = 1;
 
 impl RunnerInner {
     pub(super) fn process_core_events(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -523,183 +515,6 @@ impl RunnerInner {
         }
     }
 
-    /// 保存编辑器数据为 LMPJ 文件
-    fn save_editor_as_lmpj(&self, editor_notes: Vec<TrackNotes>, save_path: std::path::PathBuf) {
-        // 创建 ParsedMidi 数据结构
-        let parsed_midi = self.build_parsed_midi_from_editor(&editor_notes, &save_path);
-
-        let save_path_log = save_path.clone();
-        tokio::spawn(async move {
-            lumino_core::midi::loader::send_progress_message("准备保存 LMPJ 文件", 0.0);
-            lumino_core::midi::loader::send_progress_message("正在保存 LMPJ 文件", 0.3);
-            match lumino_export::save(&parsed_midi, save_path.clone()).await {
-                Ok(()) => {
-                    lumino_core::midi::loader::send_progress_message("LMPJ 保存成功", 1.0);
-                    tracing::info!("新建工程保存成功: {:?}", save_path_log);
-                }
-                Err(e) => {
-                    lumino_core::midi::loader::send_progress_message(
-                        &format!("保存失败: {e}"),
-                        1.0,
-                    );
-                    tracing::error!("新建工程保存失败: {}", e);
-                }
-            }
-        });
-    }
-
-    /// 保存编辑器数据为 MIDI 文件
-    fn save_editor_as_midi(&self, editor_notes: Vec<TrackNotes>, save_path: std::path::PathBuf) {
-        // 构建 MIDI 导出数据
-        let midi_data = self.build_midi_export_data(&editor_notes);
-        let save_path_log = save_path.clone();
-
-        tokio::spawn(async move {
-            lumino_core::midi::loader::send_progress_message("准备导出 MIDI 文件", 0.0);
-            lumino_core::midi::loader::send_progress_message("正在导出 MIDI 文件", 0.5);
-
-            match tokio::task::spawn_blocking(move || {
-                lumino_export::export_midi_to_bytes(&midi_data)
-            })
-            .await
-            {
-                Ok(Ok(bytes)) => {
-                    lumino_core::midi::loader::send_progress_message("正在写入文件", 0.8);
-                    match std::fs::write(&save_path_log, bytes) {
-                        Ok(()) => {
-                            lumino_core::midi::loader::send_progress_message("MIDI 导出成功", 1.0);
-                            tracing::info!("新建工程导出为 MIDI 成功: {:?}", save_path_log);
-                        }
-                        Err(e) => {
-                            lumino_core::midi::loader::send_progress_message(
-                                &format!("写入文件失败: {e}"),
-                                1.0,
-                            );
-                            tracing::error!("MIDI 导出失败: {}", e);
-                        }
-                    }
-                }
-                Ok(Err(e)) => {
-                    lumino_core::midi::loader::send_progress_message(
-                        &format!("导出失败: {e}"),
-                        1.0,
-                    );
-                    tracing::error!("MIDI 导出失败: {}", e);
-                }
-                Err(e) => {
-                    lumino_core::midi::loader::send_progress_message(
-                        &format!("导出失败: {e}"),
-                        1.0,
-                    );
-                    tracing::error!("MIDI 导出失败: {}", e);
-                }
-            }
-        });
-    }
-
-    /// 从编辑器音符构建 ParsedMidi
-    fn build_parsed_midi_from_editor(
-        &self,
-        editor_notes: &[TrackNotes],
-        save_path: &std::path::Path,
-    ) -> lumino_core::ParsedMidi {
-        use lumino_core::midi::info::MidiInfo;
-
-        // 计算总音符数和最大 tick
-        let total_notes: u64 = editor_notes
-            .iter()
-            .map(|(_, notes)| notes.len() as u64)
-            .sum();
-        let max_tick = editor_notes
-            .iter()
-            .flat_map(|(_, notes)| notes.iter())
-            .map(|(tick, _, length)| tick + length)
-            .fold(0.0f32, f32::max) as u32;
-
-        // 生成 MIDI 字节流用于保存
-        let midi_export_data = self.build_midi_export_data(editor_notes);
-        let midi_bytes = match lumino_export::export_midi_to_bytes(&midi_export_data) {
-            Ok(bytes) => {
-                tracing::info!("生成 MIDI 字节流成功: {} 字节", bytes.len());
-                if !bytes.is_empty() {
-                    Some(bytes)
-                } else {
-                    tracing::warn!("生成的 MIDI 字节流为空");
-                    None
-                }
-            }
-            Err(e) => {
-                tracing::error!("生成 MIDI 字节流失败: {}", e);
-                None
-            }
-        };
-
-        tracing::info!(
-            "构建 ParsedMidi: 音轨数={}, 总音符数={}, midi_data={}",
-            editor_notes.len(),
-            total_notes,
-            if midi_bytes.is_some() { "有" } else { "无" }
-        );
-
-        lumino_core::ParsedMidi {
-            info: MidiInfo {
-                path: save_path.to_path_buf(),
-                track_count: editor_notes.len() as u16,
-                total_notes,
-                duration_ticks: max_tick,
-                division: DEFAULT_PPQN,
-                parse_progress: None,
-            },
-            midi_data: midi_bytes,
-            memory_manager: None,
-        }
-    }
-
-    /// 从编辑器音符构建 MIDI 导出数据
-    fn build_midi_export_data(
-        &self,
-        editor_notes: &[TrackNotes],
-    ) -> lumino_export::midi::MidiExportData {
-        use lumino_export::midi::{
-            MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTrackData,
-        };
-
-        let mut tracks = Vec::new();
-
-        for (track_idx, notes) in editor_notes {
-            let track_notes: Vec<MidiNoteEvent> = notes
-                .iter()
-                .map(|(tick, key, length)| MidiNoteEvent {
-                    tick: *tick as u32,
-                    channel: 0,
-                    key: *key,
-                    velocity: DEFAULT_VELOCITY,
-                    duration: *length as u32,
-                })
-                .collect();
-
-            let track_data = MidiTrackData {
-                notes: track_notes,
-                tempos: vec![],
-                program_changes: vec![],
-                control_changes: vec![],
-                time_signatures: vec![],
-                key_signatures: vec![],
-                name: Some(format!("Track {}", track_idx + 1)),
-            };
-
-            tracks.push(track_data);
-        }
-
-        MidiExportData {
-            options: MidiExportOptions {
-                format: MIDI_FORMAT_TYPE,
-                ppqn: DEFAULT_PPQN,
-            },
-            tracks,
-        }
-    }
-
     fn handle_view_menu_event(&mut self, view_event: lumino_core::event::menu::view::Event) {
         use lumino_core::event::menu::view::Event::*;
 
@@ -740,7 +555,7 @@ impl RunnerInner {
         tracing::info!("协作: 请求创建房间 - {}", name);
         let handler = self.collaboration_handler.clone();
         tokio::spawn(async move {
-            if let Err(e) = handler.create_room(name).await {
+            if let Err(e) = handler.create_room(name) {
                 tracing::error!("协作: 创建房间失败: {}", e);
             }
         });
@@ -751,7 +566,7 @@ impl RunnerInner {
         tracing::info!("协作: 请求加入房间 - {}", invite_code);
         let handler = self.collaboration_handler.clone();
         tokio::spawn(async move {
-            if let Err(e) = handler.join_room(invite_code).await {
+            if let Err(e) = handler.join_room(invite_code) {
                 tracing::error!("协作: 加入房间失败: {}", e);
             }
         });

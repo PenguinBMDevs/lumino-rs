@@ -217,11 +217,6 @@ impl MidiManager {
         }
     }
 
-    /// 获取当前激活的后端
-    pub fn active_backend(&self) -> SynthBackend {
-        self.active_backend
-    }
-
     /// 获取 MIDI 输出连接的可变引用
     pub fn output_mut(&mut self) -> Option<&mut Box<dyn lumino_midi::OutputConnection>> {
         self.output.as_mut()
@@ -277,18 +272,6 @@ impl MidiManager {
         }
 
         tracing::info!("MIDI 输出已重新初始化，实际后端: {:?}", self.active_backend);
-    }
-
-    /// 尝试初始化 Kdmapi（同步）
-    fn try_kdmapi(_ui_config: &UiConfig) -> Option<(lumino_midi::ApiKind, SynthBackend)> {
-        use lumino_midi::ApiKind;
-
-        let kdmapi_path = PathBuf::from("C:\\Windows\\System32\\OmniMIDI\\OmniMIDI.dll");
-        if !kdmapi_path.exists() {
-            return None;
-        }
-
-        Some((ApiKind::Kdmapi { path: kdmapi_path }, SynthBackend::Kdmapi))
     }
 }
 

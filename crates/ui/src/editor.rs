@@ -1,7 +1,6 @@
 pub mod grid;
 pub mod note;
 pub mod onion_skin;
-pub mod scrollbar;
 pub mod scrollbar_widget;
 pub mod state;
 

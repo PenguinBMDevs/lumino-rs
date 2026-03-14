@@ -272,19 +272,6 @@ impl DialogManager {
         }
     }
 
-    /// 关闭特定类型的对话框
-    pub fn close_dialog_by_type(&mut self, dialog_type: DialogType) {
-        let to_remove: Vec<WindowId> = self
-            .dialogs
-            .iter()
-            .filter(|(_, dialog)| dialog.dialog_type == dialog_type)
-            .map(|(id, _)| *id)
-            .collect();
-        for window_id in to_remove {
-            self.close_dialog(window_id);
-        }
-    }
-
     /// 设置对话框为待关闭状态
     pub fn mark_dialog_for_close(&mut self, dialog_type: DialogType) {
         for dialog in self.dialogs.values_mut() {

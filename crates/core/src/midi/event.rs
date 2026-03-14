@@ -228,11 +228,9 @@ impl MidiEventStream {
 
     /// 获取 MIDI 分辨率（PPQN）
     pub fn division(&self) -> u16 {
-        self.with_smf(|smf| {
-            match smf.header.timing {
-                midly::Timing::Metrical(ticks) => ticks.as_int(),
-                _ => crate::midi::constants::DEFAULT_PPQN,
-            }
+        self.with_smf(|smf| match smf.header.timing {
+            midly::Timing::Metrical(ticks) => ticks.as_int(),
+            _ => crate::midi::constants::DEFAULT_PPQN,
         })
     }
 
@@ -379,8 +377,7 @@ impl MidiEventStream {
                         }
 
                         let event = &track[event_index - 1];
-                        Self::parse_event_static(track_index, current_tick, &event.kind)
-                            .map(Ok)
+                        Self::parse_event_static(track_index, current_tick, &event.kind).map(Ok)
                     });
                 }
                 Ok(Some(true)) => {

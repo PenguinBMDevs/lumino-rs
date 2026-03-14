@@ -57,7 +57,9 @@ impl Editor {
                     self.hover_state = None;
                 } else if hover_index > index {
                     // 如果被删除的音符在悬停音符之前，调整索引
-                    self.hover_state = Some((hover_index - 1, self.hover_state.unwrap().1));
+                    if let Some((_, second)) = self.hover_state {
+                        self.hover_state = Some((hover_index - 1, second));
+                    }
                 }
             }
 
