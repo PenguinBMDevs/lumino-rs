@@ -19,7 +19,16 @@ impl CollaborationService {
     }
 
     /// 连接到协作服务器
-    pub async fn connect(&self, host: String, port: u16, username: String) -> Result<(), String> {
+    ///
+    /// 如果提供了 invite_code，则加入房间；否则创建新房间
+    pub async fn connect(
+        &self,
+        host: String,
+        port: u16,
+        username: String,
+        room_name: Option<String>,
+        invite_code: Option<String>,
+    ) -> Result<(), String> {
         tracing::info!("协作: 正在连接到 {}:{} ...", host, port);
 
         // 创建协作客户端配置
@@ -49,12 +58,24 @@ impl CollaborationService {
             *guard = Some(client);
         }
 
-        // 异步连接
-        let host_clone = host.clone();
-        let port_clone = port;
+        // 异步连接并创建/加入房间
         tokio::spawn(async move {
             let mut c = client_clone.lock().await;
-            match c.connect(Some(host_clone), Some(port_clone)).await {
+            let result: Result<(), String> = if let Some(code) = invite_code {
+                tracing::info!("协作: 正在加入房间 (邀请码: {})...", code);
+                c.join_room_and_connect(code)
+                    .await
+                    .map_err(|e| e.to_string())
+            } else {
+                let name = room_name.unwrap_or_else(|| "默认房间".to_string());
+                tracing::info!("协作: 正在创建房间: {} ...", name);
+                c.create_room_and_connect(name)
+                    .await
+                    .map_err(|e| e.to_string())
+                    .map(|_| ())
+            };
+
+            match result {
                 Ok(_) => {
                     tracing::info!("协作: 连接成功!");
                 }
@@ -182,51 +203,14 @@ impl CollaborationService {
         }
     }
 
-    /// 创建房间
+    /// 创建房间（在新客户端上）
     pub fn create_room(&self, name: String) -> Result<(), String> {
-        let client_guard = self.client.lock().unwrap();
-        if let Some(client) = client_guard.clone() {
-            tokio::spawn(async move {
-                let c = client.lock().await;
-                if let Err(e) = c.create_room(name).await {
-                    tracing::error!("协作: 创建房间失败: {}", e);
-                }
-            });
-            Ok(())
-        } else {
-            Err("协作客户端未初始化".to_string())
-        }
+        Err("请使用 connect 方法创建房间".to_string())
     }
 
-    /// 加入房间
+    /// 加入房间（在新客户端上）
     pub fn join_room(&self, invite_code: String) -> Result<(), String> {
-        tracing::info!("协作: 准备加入房间 - {}", invite_code);
-        let client_guard = self.client.lock().unwrap();
-        if let Some(client) = client_guard.clone() {
-            tokio::spawn(async move {
-                let c = client.lock().await;
-                // 等待连接完成
-                let mut retries = 0;
-                while !c.is_connected().await && retries < 50 {
-                    tracing::debug!("协作: 等待连接完成...");
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    retries += 1;
-                }
-
-                if !c.is_connected().await {
-                    tracing::error!("协作: 连接超时，无法加入房间");
-                    return;
-                }
-
-                tracing::info!("协作: 连接已就绪，正在发送加入房间请求");
-                if let Err(e) = c.join_room(invite_code).await {
-                    tracing::error!("协作: 加入房间失败: {}", e);
-                }
-            });
-            Ok(())
-        } else {
-            Err("协作客户端未初始化".to_string())
-        }
+        Err("请使用 connect 方法加入房间".to_string())
     }
 
     /// 断开连接

@@ -51,6 +51,8 @@ impl RunnerInner {
         host: String,
         port: u16,
         username: String,
+        room_name: Option<String>,
+        invite_code: Option<String>,
     ) {
         // 更新状态为连接中
         self.collaboration_status = CollaborationStatus::Connecting;
@@ -58,7 +60,10 @@ impl RunnerInner {
         // 使用协作服务连接
         let service = self.collaboration_service.clone();
         tokio::spawn(async move {
-            if let Err(e) = service.connect(host, port, username).await {
+            if let Err(e) = service
+                .connect(host, port, username, room_name, invite_code)
+                .await
+            {
                 tracing::error!("协作连接失败: {}", e);
             }
         });

@@ -42,8 +42,9 @@ impl RunnerInner {
                     username,
                     invite_code
                 );
-                self.pending_invite_code = invite_code;
-                self.handle_collaboration_connect(host, port, username);
+                // 如果有邀请码则加入房间，否则创建房间
+                let room_name = Some("Lumino 房间".to_string());
+                self.handle_collaboration_connect(host, port, username, room_name, invite_code);
             }
             WindowEvent::CollaborationCreateRoom { name } => {
                 self.handle_collaboration_create_room(name);
