@@ -21,6 +21,10 @@ url = "2.5"
 # 异步运行时工具
 tokio-util = "0.7"
 
+# HTTP 客户端
+reqwest = { version = "0.12", features = ["json"] }
+
 [dev-dependencies]
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = "0.4"

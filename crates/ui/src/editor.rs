@@ -101,8 +101,8 @@ pub struct Editor {
     /// 选中的音符索引集合
     selected_notes: std::collections::HashSet<usize>,
 
-    /// 协作远端鼠标位置
-    pub remote_cursors: std::collections::HashMap<String, (Point, String)>,
+    /// 协作远端用户光标信息（用户ID -> (位置, 颜色, 用户名)）
+    pub remote_cursors: std::collections::HashMap<String, (Point, String, String)>,
 
     /// 历史记录（用于撤销/重做）
     history: history::History,
@@ -150,8 +150,14 @@ impl Editor {
     }
 
     /// 更新远端鼠标位置
-    pub fn update_remote_cursor(&mut self, user_id: String, pos: Point, color: String) {
-        self.remote_cursors.insert(user_id, (pos, color));
+    pub fn update_remote_cursor(
+        &mut self,
+        user_id: String,
+        pos: Point,
+        color: String,
+        username: String,
+    ) {
+        self.remote_cursors.insert(user_id, (pos, color, username));
         self.grid_cache.clear();
     }
 

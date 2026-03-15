@@ -121,6 +121,7 @@ pub enum Message {
         x: f32,
         y: f32,
         color: String,
+        username: String,
     },
     /// 协作远端音符更新
     CollaborationRemoteNoteUpdate {

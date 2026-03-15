@@ -90,6 +90,13 @@ iced_widget = { version = "0.14.0" }
 iced_core = "0.14.0"
 iced = { version = "0.14.0", features = ["image"] }
 wgpu = "27.0"
+chrono = "0.4"
+tokio-test = "0.4"
 
 [target.'cfg(windows)'.dev-dependencies]
 winapi = { version = "0.3", features = ["processthreadsapi", "psapi"] }
+
+[[test]]
+name = "collaboration_full_test"
+path = "tests/collaboration_full_test.rs"
+

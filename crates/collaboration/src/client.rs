@@ -1,22 +1,26 @@
 //! 协作客户端
 //!
-//! 该模块已拆分为以下子模块：
-//! - `message`: 客户端/服务器消息定义
-//! - `event`: 协作事件定义
-//! - `connection`: 连接管理
-//! - `handlers`: 服务器消息处理器
+//! 新架构：HTTP API + WebSocket (通过 RoomDurableObject)
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
+use tokio::net::TcpStream;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::interval;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tokio_tungstenite::{
+    MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
+};
 use tracing::{debug, error, info};
 
-use crate::HEARTBEAT_INTERVAL_MS;
+use crate::http::{CreateRoomResponse, HttpClient};
 use crate::types::*;
+
+/// 类型别名
+type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
+type WsSink = futures::stream::SplitSink<WsStream, Message>;
+type WsStreamRead = futures::stream::SplitStream<WsStream>;
 
 pub mod connection;
 pub mod event;
@@ -57,12 +61,15 @@ pub struct CollaborationClient {
     message_rx: Arc<Mutex<mpsc::UnboundedReceiver<ClientMessage>>>,
     event_callback: Option<EventCallback>,
     shutdown_tx: Option<mpsc::Sender<()>>,
+    http_client: HttpClient,
+    room_id: Option<String>,
 }
 
 impl CollaborationClient {
     /// 创建新客户端
     pub fn new(config: ClientConfig) -> Self {
         let (message_tx, message_rx) = mpsc::unbounded_channel();
+        let http_client = HttpClient::new(&config.server_host, config.server_port);
 
         Self {
             config,
@@ -72,6 +79,8 @@ impl CollaborationClient {
             message_rx: Arc::new(Mutex::new(message_rx)),
             event_callback: None,
             shutdown_tx: None,
+            http_client,
+            room_id: None,
         }
     }
 
@@ -95,61 +104,293 @@ impl CollaborationClient {
         Ok(())
     }
 
-    /// 创建房间
-    pub fn create_room(&self, name: String) -> Result<(), Box<dyn std::error::Error>> {
-        self.send_message(ClientMessage::CreateRoom { name })
+    /// 连接到服务器（兼容性方法）
+    pub async fn connect(
+        &mut self,
+        _host: Option<String>,
+        _port: Option<u16>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Err("请使用 create_room_and_connect 或 join_room_and_connect".into())
     }
 
-    /// 加入房间
-    pub fn join_room(&self, invite_code: String) -> Result<(), Box<dyn std::error::Error>> {
-        self.send_message(ClientMessage::JoinRoom { invite_code })
+    /// 创建房间（兼容性方法）
+    pub async fn create_room(&self, name: String) -> Result<(), Box<dyn std::error::Error>> {
+        Err("请使用 create_room_and_connect".into())
     }
 
-    /// 离开房间
-    pub fn leave_room(&self) -> Result<(), Box<dyn std::error::Error>> {
-        self.send_message(ClientMessage::LeaveRoom)
+    /// 加入房间（兼容性方法）
+    pub async fn join_room(&self, invite_code: String) -> Result<(), Box<dyn std::error::Error>> {
+        Err("请使用 join_room_and_connect".into())
+    }
+
+    /// 创建房间并连接
+    /// 新流程：HTTP 创建房间 -> WebSocket 连接（带 roomId）
+    pub async fn create_room_and_connect(
+        &mut self,
+        room_name: String,
+    ) -> Result<CreateRoomResponse, Box<dyn std::error::Error>> {
+        // 步骤1：HTTP 创建房间
+        info!("通过 HTTP 创建房间: {}", room_name);
+        let create_response = self
+            .http_client
+            .create_room(&room_name, &self.generate_user_id())
+            .await?;
+
+        info!(
+            "房间创建成功: id={}, invite_code={}",
+            create_response.room.id, create_response.room.invite_code
+        );
+
+        // 保存房间信息
+        self.room_id = Some(create_response.room.invite_code.clone());
+        {
+            let mut session = self.session.write().await;
+            session.invite_code = Some(create_response.room.invite_code.clone());
+            session.current_room = Some(RoomInfo {
+                id: create_response.room.id.clone(),
+                invite_code: create_response.room.invite_code.clone(),
+                name: create_response.room.name.clone(),
+                host_id: create_response.room.host_id.clone(),
+                user_count: 1,
+                max_users: 10,
+            });
+        }
+
+        // 步骤2：使用 roomId 连接 WebSocket
+        info!("使用 roomId 连接 WebSocket");
+        self.connect_with_room_id(&create_response.room.invite_code)
+            .await?;
+
+        Ok(create_response)
+    }
+
+    /// 加入房间并连接
+    pub async fn join_room_and_connect(
+        &mut self,
+        invite_code: String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        info!("准备加入房间: {}", invite_code);
+
+        // 保存房间信息
+        self.room_id = Some(invite_code.clone());
+        {
+            let mut session = self.session.write().await;
+            session.invite_code = Some(invite_code.clone());
+        }
+
+        // 使用 roomId 连接 WebSocket
+        self.connect_with_room_id(&invite_code).await?;
+
+        Ok(())
+    }
+
+    /// 使用 roomId 连接 WebSocket
+    async fn connect_with_room_id(
+        &mut self,
+        room_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let host = &self.config.server_host;
+        let port = self.config.server_port;
+
+        // 构建 WebSocket URL（带 roomId 参数）
+        let protocol =
+            if port == 443 || host.ends_with(".workers.dev") || host.ends_with(".dpdns.org") {
+                "wss"
+            } else {
+                "ws"
+            };
+
+        let ws_url = if port == 80 || port == 443 {
+            format!("{}://{}/ws?roomId={}", protocol, host, room_id)
+        } else {
+            format!("{}://{}:{}/ws?roomId={}", protocol, host, port, room_id)
+        };
+
+        info!("连接到 WebSocket: {}", ws_url);
+        *self.state.write().await = ClientState::Connecting;
+
+        // 建立 WebSocket 连接
+        let connect_future = connect_async(&ws_url);
+        let timeout_duration = Duration::from_secs(15);
+
+        let (ws_stream, _) = match tokio::time::timeout(timeout_duration, connect_future).await {
+            Ok(result) => result?,
+            Err(_) => {
+                return Err(format!("连接超时（{}秒）", timeout_duration.as_secs()).into());
+            }
+        };
+
+        info!("WebSocket 连接成功");
+        let (write, mut read) = ws_stream.split();
+        let write = Arc::new(Mutex::new(write));
+        *self.state.write().await = ClientState::Connected;
+
+        // 发送认证消息
+        let auth_msg = ClientMessage::Auth {
+            username: self.config.username.clone(),
+        };
+        let auth_json = serde_json::to_string(&auth_msg)?;
+        info!("发送认证消息");
+        write
+            .lock()
+            .await
+            .send(Message::Text(auth_json.into()))
+            .await?;
+        *self.state.write().await = ClientState::Authenticating;
+
+        // 等待认证响应
+        info!("等待认证响应...");
+        self.handle_auth_response(&mut read, &write).await?;
+
+        // 启动消息处理循环
+        self.start_message_loop(read, write).await;
+
+        Ok(())
+    }
+
+    /// 处理认证响应
+    async fn handle_auth_response(
+        &self,
+        read: &mut WsStreamRead,
+        _write: &Arc<Mutex<WsSink>>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use tokio::time::{Duration, timeout};
+
+        let auth_timeout = Duration::from_secs(10);
+
+        match timeout(auth_timeout, read.next()).await {
+            Ok(Some(Ok(Message::Text(text)))) => {
+                eprintln!("[WS] Received auth response: {}", text);
+                let msg: ServerMessage = serde_json::from_str(&text).map_err(|e| {
+                    format!("Failed to parse auth response: {} - text: {}", e, text)
+                })?;
+                match msg {
+                    ServerMessage::Authenticated { user_id, room, .. } => {
+                        let invite_code = room.invite_code.clone();
+                        info!("认证成功: user_id={}, invite_code={}", user_id, invite_code);
+                        *self.state.write().await = ClientState::Authenticated;
+
+                        let mut session = self.session.write().await;
+                        session.current_user_id = Some(user_id);
+                        session.invite_code = Some(invite_code);
+
+                        self.emit_event(CollaborationEvent::Authenticated {
+                            user_id: session.current_user_id.clone().unwrap(),
+                            invite_code: session.invite_code.clone().unwrap(),
+                        });
+
+                        Ok(())
+                    }
+                    ServerMessage::Error { error } => Err(format!("认证失败: {}", error).into()),
+                    _ => Err("意外的认证响应".into()),
+                }
+            }
+            Ok(None) => Err("连接已关闭".into()),
+            Ok(Some(Err(e))) => Err(format!("WebSocket 错误: {}", e).into()),
+            Err(_) => Err("认证超时".into()),
+            _ => Err("意外的消息类型".into()),
+        }
+    }
+
+    /// 启动消息处理循环
+    async fn start_message_loop(&self, mut read: WsStreamRead, write: Arc<Mutex<WsSink>>) {
+        let state = self.state.clone();
+        let session = self.session.clone();
+        let event_callback = self.event_callback.clone();
+        let message_rx = self.message_rx.clone();
+
+        tokio::spawn(async move {
+            let mut heartbeat = interval(Duration::from_millis(crate::HEARTBEAT_INTERVAL_MS));
+            let mut message_rx = message_rx.lock().await;
+
+            loop {
+                tokio::select! {
+                    msg = read.next() => {
+                        match msg {
+                            Some(Ok(Message::Text(text))) => {
+                                if let Err(e) = handle_server_message(
+                                    &text,
+                                    &state,
+                                    &session,
+                                    event_callback.clone()
+                                ).await {
+                                    error!("处理消息失败: {} - {}", e, text);
+                                }
+                            }
+                            Some(Ok(Message::Close(_))) => {
+                                *state.write().await = ClientState::Disconnected;
+                                break;
+                            }
+                            Some(Err(e)) => {
+                                error!("WebSocket 错误: {}", e);
+                                *state.write().await = ClientState::Error;
+                            }
+                            None => {
+                                *state.write().await = ClientState::Disconnected;
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    Some(client_msg) = message_rx.recv() => {
+                        let msg_text = match serde_json::to_string(&client_msg) {
+                            Ok(text) => {
+                                info!("发送消息: {}", text);
+                                text
+                            }
+                            Err(e) => {
+                                error!("序列化失败: {} - {:?}", e, client_msg);
+                                continue;
+                            }
+                        };
+                        let mut w = write.lock().await;
+                        if let Err(e) = w.send(Message::Text(msg_text.into())).await {
+                            error!("发送失败: {}", e);
+                        }
+                    }
+                    _ = heartbeat.tick() => {
+                        let ping = ClientMessage::Ping {
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64,
+                        };
+                        let msg_text = match serde_json::to_string(&ping) {
+                            Ok(text) => text,
+                            Err(_) => continue,
+                        };
+                        let mut w = write.lock().await;
+                        let _ = w.send(Message::Text(msg_text.into())).await;
+                    }
+                }
+            }
+        });
     }
 
     /// 发送鼠标位置
-    pub fn send_mouse_position(
+    pub async fn send_mouse_position(
         &self,
         position: MousePosition,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.send_message(ClientMessage::MouseMove { position })
+            .await
     }
 
     /// 发送音符批量操作
-    pub fn send_note_batch(
+    pub async fn send_note_batch(
         &self,
         operation: NoteBatchOperation,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.send_message(ClientMessage::NoteBatch { notes: operation })
+            .await
     }
 
-    /// 发送MIDI事件
-    pub fn send_midi_event(&self, event: MidiEvent) -> Result<(), Box<dyn std::error::Error>> {
-        self.send_message(ClientMessage::MidiEvent { event })
-    }
-
-    /// 发送MIDI事件批量
-    pub fn send_midi_event_batch(
+    /// 发送 MIDI 事件
+    pub async fn send_midi_event(
         &self,
-        events: Vec<MidiEvent>,
+        event: MidiEvent,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.send_message(ClientMessage::MidiEventBatch { events })
-    }
-
-    /// 发送项目更新
-    pub fn send_project_update(
-        &self,
-        update: ProjectUpdate,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        self.send_message(ClientMessage::ProjectUpdate { update })
-    }
-
-    /// 请求同步
-    pub fn request_sync(&self) -> Result<(), Box<dyn std::error::Error>> {
-        self.send_message(ClientMessage::RequestSync)
+        self.send_message(ClientMessage::MidiEvent { event }).await
     }
 
     /// 获取当前状态
@@ -170,20 +411,51 @@ impl CollaborationClient {
         )
     }
 
-    /// 是否在房间中
-    pub async fn is_in_room(&self) -> bool {
-        *self.state.read().await == ClientState::InRoom
-    }
-
     // 内部方法
-    fn send_message(&self, msg: ClientMessage) -> Result<(), Box<dyn std::error::Error>> {
-        info!("排队发送消息: {:?}", msg);
-        self.message_tx.send(msg).map_err(|e| e.to_string().into())
+    async fn send_message(&self, msg: ClientMessage) -> Result<(), Box<dyn std::error::Error>> {
+        let state = *self.state.read().await;
+        if !matches!(
+            state,
+            ClientState::Connected | ClientState::Authenticated | ClientState::InRoom
+        ) {
+            return Err(format!("客户端未连接，当前状态: {:?}", state).into());
+        }
+
+        self.message_tx.send(msg).map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     fn emit_event(&self, event: CollaborationEvent) {
         if let Some(ref callback) = self.event_callback {
             callback(event);
         }
+    }
+
+    fn generate_user_id(&self) -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        format!("user_{}_{}", timestamp, rand::random::<u32>())
+    }
+}
+
+// 添加随机数生成
+mod rand {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+
+    pub fn random<T: Default>() -> T {
+        let mut hasher = RandomState::new().build_hasher();
+        hasher.write_u32(std::process::id());
+        hasher.write_u128(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos(),
+        );
+        let hash = hasher.finish();
+        T::default()
     }
 }

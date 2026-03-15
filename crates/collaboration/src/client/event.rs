@@ -29,6 +29,7 @@ pub enum CollaborationEvent {
         user_id: crate::types::UserId,
         position: crate::types::MousePosition,
         color: String,
+        username: String,
     },
     NoteBatch {
         user_id: crate::types::UserId,

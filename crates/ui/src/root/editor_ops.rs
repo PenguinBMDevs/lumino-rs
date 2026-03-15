@@ -170,17 +170,17 @@ impl Root {
         user_id: u64,
         position: iced_core::Point,
         color: [f32; 4],
+        username: String,
     ) {
-        // 将颜色数组转换为字符串
+        // 将颜色数组转换为十六进制字符串
         let color_str = format!(
-            "rgba({},{},{},{})",
+            "{:02X}{:02X}{:02X}",
             (color[0] * 255.0) as u8,
             (color[1] * 255.0) as u8,
-            (color[2] * 255.0) as u8,
-            color[3]
+            (color[2] * 255.0) as u8
         );
         self.editor
-            .update_remote_cursor(user_id.to_string(), position, color_str);
+            .update_remote_cursor(user_id.to_string(), position, color_str, username);
     }
 
     /// 更新远程音符
@@ -191,5 +191,83 @@ impl Root {
             user_id,
             operation
         );
+    }
+
+    /// 应用远程笔记操作到本地编辑器
+    pub fn apply_remote_note_operation(
+        &mut self,
+        operation: &lumino_collaboration::types::NoteBatchOperation,
+    ) {
+        use lumino_collaboration::types::NoteAction;
+
+        match operation.action {
+            NoteAction::Add => {
+                for note in &operation.notes {
+                    // 转换协作音符为编辑器音符
+                    let editor_note =
+                        crate::editor::note::Note::new(note.tick, note.key, note.length);
+
+                    // 添加到对应的音轨
+                    let track_idx = note.track_index;
+                    if track_idx == self.editor.current_track {
+                        // 如果是当前音轨，直接添加到编辑器
+                        self.editor.notes.push(editor_note.clone());
+                    }
+
+                    // 更新 track_notes
+                    let track_notes = self
+                        .editor
+                        .track_notes
+                        .entry(track_idx)
+                        .or_insert_with(Vec::new);
+                    track_notes.push(editor_note);
+                }
+                self.editor.grid_cache.clear();
+                tracing::info!("协作: 已添加 {} 个远程音符", operation.notes.len());
+            }
+            NoteAction::Update => {
+                // 更新操作：根据位置匹配现有音符
+                for note in &operation.notes {
+                    if let Some(track_notes) = self.editor.track_notes.get_mut(&note.track_index) {
+                        for editor_note in track_notes.iter_mut() {
+                            // 基于 tick 和 key 匹配（简化匹配）
+                            if (editor_note.tick - note.tick).abs() < 1.0
+                                && editor_note.key == note.key
+                            {
+                                editor_note.length = note.length;
+                                break;
+                            }
+                        }
+                    }
+                }
+                self.editor.grid_cache.clear();
+                tracing::info!("协作: 已更新 {} 个远程音符", operation.notes.len());
+            }
+            NoteAction::Delete => {
+                // 删除操作：根据位置匹配删除音符
+                for note in &operation.notes {
+                    if let Some(track_notes) = self.editor.track_notes.get_mut(&note.track_index) {
+                        track_notes
+                            .retain(|n| !((n.tick - note.tick).abs() < 1.0 && n.key == note.key));
+                    }
+                }
+                // 同时更新当前显示的音符
+                if let Some(source_track) = operation.source_track {
+                    if source_track == self.editor.current_track {
+                        self.editor.notes = self
+                            .editor
+                            .track_notes
+                            .get(&source_track)
+                            .cloned()
+                            .unwrap_or_default();
+                    }
+                }
+                self.editor.grid_cache.clear();
+                tracing::info!("协作: 已删除 {} 个远程音符", operation.notes.len());
+            }
+            _ => {
+                tracing::debug!("协作: 未处理的笔记操作类型: {:?}", operation.action);
+            }
+        }
     }
 }

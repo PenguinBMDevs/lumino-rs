@@ -132,6 +132,7 @@ impl CollaborationService {
                 user_id,
                 position,
                 color,
+                username,
             } => {
                 // 通知 UI 更新远端游标
                 lumino_core::event::emit(lumino_core::event::Event::Window(
@@ -140,6 +141,7 @@ impl CollaborationService {
                         x: position.x,
                         y: position.y,
                         color,
+                        username,
                     },
                 ));
             }
@@ -159,5 +161,112 @@ impl CollaborationService {
             }
             _ => {}
         }
+    }
+
+    /// 发送鼠标位置
+    pub fn send_mouse_position(
+        &self,
+        position: lumino_collaboration::types::MousePosition,
+    ) -> Result<(), String> {
+        let client_guard = self.client.lock().unwrap();
+        if let Some(client) = client_guard.clone() {
+            tokio::spawn(async move {
+                let c = client.lock().await;
+                if let Err(e) = c.send_mouse_position(position).await {
+                    tracing::debug!("协作: 发送鼠标位置失败: {}", e);
+                }
+            });
+            Ok(())
+        } else {
+            Err("协作客户端未初始化".to_string())
+        }
+    }
+
+    /// 创建房间
+    pub fn create_room(&self, name: String) -> Result<(), String> {
+        let client_guard = self.client.lock().unwrap();
+        if let Some(client) = client_guard.clone() {
+            tokio::spawn(async move {
+                let c = client.lock().await;
+                if let Err(e) = c.create_room(name).await {
+                    tracing::error!("协作: 创建房间失败: {}", e);
+                }
+            });
+            Ok(())
+        } else {
+            Err("协作客户端未初始化".to_string())
+        }
+    }
+
+    /// 加入房间
+    pub fn join_room(&self, invite_code: String) -> Result<(), String> {
+        tracing::info!("协作: 准备加入房间 - {}", invite_code);
+        let client_guard = self.client.lock().unwrap();
+        if let Some(client) = client_guard.clone() {
+            tokio::spawn(async move {
+                let c = client.lock().await;
+                // 等待连接完成
+                let mut retries = 0;
+                while !c.is_connected().await && retries < 50 {
+                    tracing::debug!("协作: 等待连接完成...");
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    retries += 1;
+                }
+
+                if !c.is_connected().await {
+                    tracing::error!("协作: 连接超时，无法加入房间");
+                    return;
+                }
+
+                tracing::info!("协作: 连接已就绪，正在发送加入房间请求");
+                if let Err(e) = c.join_room(invite_code).await {
+                    tracing::error!("协作: 加入房间失败: {}", e);
+                }
+            });
+            Ok(())
+        } else {
+            Err("协作客户端未初始化".to_string())
+        }
+    }
+
+    /// 断开连接
+    pub fn disconnect(&self) -> Result<(), String> {
+        let client_guard = self.client.lock().unwrap();
+        if let Some(client) = client_guard.clone() {
+            tokio::spawn(async move {
+                let mut c = client.lock().await;
+                if let Err(e) = c.disconnect().await {
+                    tracing::error!("协作: 断开连接失败: {}", e);
+                }
+            });
+            Ok(())
+        } else {
+            Err("协作客户端未初始化".to_string())
+        }
+    }
+
+    /// 发送音符批量操作
+    pub fn send_note_batch(
+        &self,
+        operation: lumino_collaboration::types::NoteBatchOperation,
+    ) -> Result<(), String> {
+        let client_guard = self.client.lock().unwrap();
+        if let Some(client) = client_guard.clone() {
+            tokio::spawn(async move {
+                let c = client.lock().await;
+                if let Err(e) = c.send_note_batch(operation).await {
+                    tracing::error!("协作: 发送音符操作失败: {}", e);
+                }
+            });
+            Ok(())
+        } else {
+            Err("协作客户端未初始化".to_string())
+        }
+    }
+
+    /// 检查是否已连接
+    pub fn is_connected(&self) -> bool {
+        let client_guard = self.client.lock().unwrap();
+        client_guard.is_some()
     }
 }

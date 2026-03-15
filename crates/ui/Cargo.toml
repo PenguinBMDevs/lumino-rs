@@ -9,6 +9,7 @@ edition.workspace = true
 [dependencies]
 lumino-core = { workspace = true }
 lumino-gfx = { workspace = true }
+lumino-collaboration = { workspace = true }
 # crates.io
 iced_renderer = { workspace = true }
 iced_aw = { version = "0.13.0", features = ["menu"] }
@@ -24,3 +25,4 @@ resvg = "0.44"
 usvg = "0.44"
 tiny-skia = "0.11"
 arboard = "3.4"
+serde_json = "1.0"

@@ -361,9 +361,22 @@ impl Editor {
         tracing::info!("编辑器: 在添加新音符前推送历史记录");
         self.push_history();
 
-        self.notes.push(super::Note::new(tick, key, length));
+        let note = super::Note::new(tick, key, length);
+        self.notes.push(note.clone());
         self.track_notes
             .insert(self.current_track, self.notes.clone());
+
+        // 发送笔记同步事件到协作服务器
+        lumino_core::event::emit(lumino_core::event::Event::Window(
+            lumino_core::event::window::Event::LocalNoteAdded {
+                tick: note.tick,
+                key: note.key,
+                length: note.length,
+                velocity: 100, // 默认velocity
+                channel: 0,    // 默认channel
+                track_index: self.current_track,
+            },
+        ));
 
         tracing::info!(
             "编辑器: 已保存 {} 个音符到音轨 {}",

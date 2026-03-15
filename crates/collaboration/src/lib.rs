@@ -1,10 +1,11 @@
 /**
  * Lumino 协作客户端
  *
- * 用于连接 Node.js 协作服务器，实现多人在线协作编辑
+ * 用于连接协作服务器，实现多人在线协作编辑
  */
 pub mod client;
 pub mod handlers;
+pub mod http;
 pub mod types;
 
 pub use client::{CollaborationClient, CollaborationEvent};

@@ -30,7 +30,7 @@ impl CollaborationHandler {
             let client = client.clone();
             tokio::spawn(async move {
                 let c = client.lock().await;
-                if let Err(e) = c.create_room(name) {
+                if let Err(e) = c.create_room(name).await {
                     tracing::error!("协作: 创建房间失败: {}", e);
                 }
             });
@@ -47,7 +47,7 @@ impl CollaborationHandler {
             let client = client.clone();
             tokio::spawn(async move {
                 let c = client.lock().await;
-                if let Err(e) = c.join_room(invite_code) {
+                if let Err(e) = c.join_room(invite_code).await {
                     tracing::error!("协作: 加入房间失败: {}", e);
                 }
             });

@@ -57,10 +57,20 @@ pub enum Event {
         x: f32,
         y: f32,
         color: String,
+        username: String,
     },
-    /// 协作音符更新
+    /// 协作音符更新（来自其他用户）
     CollaborationNoteUpdate {
         user_id: String,
         operation: String, // JSON string of NoteBatchOperation
+    },
+    /// 本地笔记更新（需要同步到其他用户）
+    LocalNoteAdded {
+        tick: f32,
+        key: u16,
+        length: f32,
+        velocity: u8,
+        channel: u8,
+        track_index: usize,
     },
 }

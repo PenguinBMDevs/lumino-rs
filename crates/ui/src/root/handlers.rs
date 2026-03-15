@@ -91,16 +91,28 @@ impl Root {
                 x,
                 y,
                 color,
+                username,
             } => {
-                self.editor
-                    .update_remote_cursor(user_id, iced_core::Point::new(x, y), color);
-            }
-            message::Message::CollaborationRemoteNoteUpdate { user_id, operation } => {
-                tracing::info!(
-                    "协作: 处理远端音符更新 - 用户: {}, 操作: {}",
+                self.editor.update_remote_cursor(
                     user_id,
-                    operation
+                    iced_core::Point::new(x, y),
+                    color,
+                    username,
                 );
+            }
+            message::Message::CollaborationRemoteNoteUpdate {
+                user_id: _,
+                operation,
+            } => {
+                // 解析操作并应用到编辑器
+                if let Ok(op) = serde_json::from_str::<
+                    lumino_collaboration::types::NoteBatchOperation,
+                >(&operation)
+                {
+                    self.apply_remote_note_operation(&op);
+                } else {
+                    tracing::error!("协作: 无法解析远程笔记操作");
+                }
             }
             // 自定义精度对话框消息
             message::Message::OpenCustomPrecisionDialog => {

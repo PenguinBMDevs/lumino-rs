@@ -42,6 +42,13 @@ pub enum ClientMessage {
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
 pub enum ServerMessage {
+    Authenticated {
+        #[serde(rename = "userId")]
+        user_id: crate::types::UserId,
+        room: AuthRoomInfo,
+        user: serde_json::Value,
+        users: Vec<crate::types::UserInfo>,
+    },
     AuthSuccess {
         #[serde(rename = "userId")]
         user_id: crate::types::UserId,
@@ -110,4 +117,19 @@ pub enum ServerMessage {
     Error {
         error: String,
     },
+}
+
+/// 认证响应中的房间信息
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AuthRoomInfo {
+    pub id: String,
+    #[serde(rename = "inviteCode")]
+    pub invite_code: crate::types::InviteCode,
+    pub name: String,
+    #[serde(rename = "hostId")]
+    pub host_id: crate::types::UserId,
+    #[serde(rename = "userCount")]
+    pub user_count: u32,
+    #[serde(rename = "maxUsers")]
+    pub max_users: u32,
 }

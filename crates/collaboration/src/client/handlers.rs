@@ -53,9 +53,9 @@ pub async fn handle_server_message(
 
         ServerMessage::MouseUpdate {
             user_id,
+            username,
             position,
             color,
-            ..
         } => {
             let mut sess = session.write().await;
             if let Some(user) = sess.remote_users.get_mut(&user_id) {
@@ -69,6 +69,7 @@ pub async fn handle_server_message(
                     user_id,
                     position,
                     color,
+                    username,
                 });
             }
         }

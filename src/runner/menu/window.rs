@@ -124,13 +124,24 @@ impl RunnerInner {
                 x,
                 y,
                 color,
+                username,
             } => {
                 self.window
                     .ui_mut()
-                    .update_remote_cursor(user_id, x, y, color);
+                    .update_remote_cursor(user_id, x, y, color, username);
             }
             WindowEvent::CollaborationNoteUpdate { user_id, operation } => {
-                self.window.ui_mut().update_remote_note(user_id, operation);
+                self.handle_remote_note_update(user_id, operation);
+            }
+            WindowEvent::LocalNoteAdded {
+                tick,
+                key,
+                length,
+                velocity,
+                channel,
+                track_index,
+            } => {
+                self.handle_local_note_added(tick, key, length, velocity, channel, track_index);
             }
             _ => {
                 // 其他窗口事件暂不处理
