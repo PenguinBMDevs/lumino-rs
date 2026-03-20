@@ -100,3 +100,5 @@ winapi = { version = "0.3", features = ["processthreadsapi", "psapi"] }
 name = "collaboration_full_test"
 path = "tests/collaboration_full_test.rs"
 
+[patch.crates-io]
+softbuffer = { git = "https://github.com/rust-windowing/softbuffer", branch = "master" }
