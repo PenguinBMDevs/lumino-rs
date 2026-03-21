@@ -14,6 +14,11 @@ async fn main() -> Result<(), winit::error::EventLoopError> {
     logging::init();
 
     let event_loop = EventLoop::new()?;
+    let proxy = event_loop.create_proxy();
+    lumino_core::event::set_waker(move || {
+        let _ = proxy.send_event(());
+    });
+
     let mut runner = runner::Runner::default();
     event_loop.run_app(&mut runner)
 }

@@ -64,6 +64,8 @@ struct RunnerInner {
     file_service: FileService,
     /// 协作服务
     collaboration_service: CollaborationService,
+    /// 是否需要重启窗口（标题栏设置变更）
+    needs_window_restart: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -183,6 +185,12 @@ impl winit::application::ApplicationHandler for Runner {
 
         // 检查 XSynth 异步初始化是否完成
         this.midi.check_async_init_complete();
+
+        // 检查是否需要重启窗口（标题栏设置变更）
+        if this.needs_window_restart {
+            this.needs_window_restart = false;
+            this.restart_window(event_loop);
+        }
     }
 }
 
@@ -250,6 +258,7 @@ impl Runner {
             midi_handler,
             file_service,
             collaboration_service,
+            needs_window_restart: false,
         }
     }
 
@@ -295,15 +304,18 @@ impl RunnerInner {
         // 获取当前 UI 中的设置
         let new_preferred_backend = self.window.ui().settings().synth_backend;
         let new_soundfont_path = self.window.ui().settings().soundfont_path.clone();
+        let new_use_native_titlebar = self.window.ui().settings().use_native_titlebar;
 
         // 获取当前存储的配置
         let old_config = self.storage.config.get();
         let old_preferred_backend = old_config.ui.preferred_backend;
         let old_soundfont_path = &old_config.ui.soundfont_path;
+        let old_use_native_titlebar = old_config.ui.use_native_titlebar;
 
         // 检查合成器相关设置是否改变
         let backend_changed = new_preferred_backend != old_preferred_backend;
         let soundfont_changed = new_soundfont_path != *old_soundfont_path;
+        let titlebar_changed = new_use_native_titlebar != old_use_native_titlebar;
 
         if backend_changed || soundfont_changed {
             tracing::info!(
@@ -325,10 +337,21 @@ impl RunnerInner {
             self.midi.mark_for_reinit();
         }
 
+        if titlebar_changed {
+            tracing::info!(
+                "标题栏设置已改变: native_titlebar {} -> {}",
+                old_use_native_titlebar,
+                new_use_native_titlebar
+            );
+            // 标记需要重启窗口
+            self.needs_window_restart = true;
+        }
+
         // 保存配置
         self.storage.config.patch(|config| {
             config.ui.preferred_backend = new_preferred_backend;
             config.ui.soundfont_path = new_soundfont_path;
+            config.ui.use_native_titlebar = new_use_native_titlebar;
         });
 
         if let Err(e) = self.storage.config.save() {
@@ -336,6 +359,37 @@ impl RunnerInner {
         }
         if let Err(e) = self.storage.ui_state.save() {
             tracing::warn!("保存UI状态失败: {e}");
+        }
+    }
+
+    /// 重启窗口（标题栏设置变更后）
+    fn restart_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        tracing::info!("正在重启窗口以应用标题栏设置...");
+
+        // 保存当前窗口状态
+        let window_state = self.storage.ui_state.get();
+        let is_maximized = self.window.window().is_maximized();
+
+        // 销毁当前窗口并创建新窗口
+        let ui_state = self.storage.ui_state.get();
+        let config = self.storage.config.get();
+
+        // 创建新的窗口管理器
+        match WindowManager::new(event_loop, ui_state, &config.ui) {
+            Ok(new_window) => {
+                // 替换窗口管理器
+                self.window = new_window;
+
+                // 恢复窗口最大化状态
+                if is_maximized {
+                    self.window.window().set_maximized(true);
+                }
+
+                tracing::info!("窗口重启完成");
+            }
+            Err(e) => {
+                tracing::error!("重启窗口失败: {}", e);
+            }
         }
     }
 }

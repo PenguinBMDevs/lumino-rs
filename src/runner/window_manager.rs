@@ -27,7 +27,7 @@ impl WindowManager {
         ui_state: &UiState,
         ui_config: &lumino_core::storage::config::UiConfig,
     ) -> Result<Self, String> {
-        let attributes = Self::build_window_attributes(ui_state);
+        let attributes = Self::build_window_attributes(ui_state, ui_config.use_native_titlebar);
 
         let window = Arc::new(
             event_loop
@@ -55,9 +55,11 @@ impl WindowManager {
 
         window.set_visible(true);
 
-        // 在 Windows 上设置自定义拉伸区域
+        // 在 Windows 上设置自定义拉伸区域（仅自定义标题栏模式）
         #[cfg(target_os = "windows")]
-        crate::platform::windows::setup_resize_border(&window)?;
+        if !ui_config.use_native_titlebar {
+            crate::platform::windows::setup_resize_border(&window)?;
+        }
 
         Ok(Self {
             window,
@@ -93,6 +95,8 @@ impl WindowManager {
                 self.ui.cursor_moved(position);
             }
             WindowEvent::Touch(touch) => {
+                // 触控事件只更新 UI 光标位置，不处理窗口拖动
+                // 窗口拖动由鼠标事件处理
                 self.ui.cursor_moved(touch.location);
             }
             WindowEvent::ModifiersChanged(new_modifiers) => {
@@ -102,6 +106,7 @@ impl WindowManager {
                 self.handle_resize(size, storage);
             }
             WindowEvent::Moved(pos) => {
+                // 更新存储的位置信息
                 storage.ui_state.patch(|state| {
                     state.x = Some(pos.x);
                     state.y = Some(pos.y);
@@ -166,15 +171,17 @@ impl WindowManager {
             }
         }
 
-        if self.ui.take_drag()
-            && let Err(e) = self.window.drag_window()
-        {
-            tracing::warn!("拖动窗口失败: {}", e);
+        if self.ui.take_drag() {
+            // 使用 winit 的 drag_window 处理窗口拖动
+            if let Err(e) = self.window.drag_window() {
+                tracing::warn!("拖动窗口失败: {}", e);
+                self.ui.release_left_mouse_button();
+            }
         }
     }
 
     /// 构建窗口属性
-    fn build_window_attributes(ui_state: &UiState) -> WindowAttributes {
+    fn build_window_attributes(ui_state: &UiState, use_native_titlebar: bool) -> WindowAttributes {
         let mut attributes = WindowAttributes::default()
             .with_min_inner_size(dpi::LogicalSize {
                 width: MIN_WINDOW_WIDTH,
@@ -197,17 +204,29 @@ impl WindowManager {
         #[cfg(target_os = "windows")]
         {
             use winit::platform::windows::WindowAttributesExtWindows;
-            attributes = attributes
-                .with_decorations(false)
-                .with_undecorated_shadow(true);
+            if use_native_titlebar {
+                // 使用系统标题栏
+                attributes = attributes.with_decorations(true);
+            } else {
+                // 使用自定义标题栏
+                attributes = attributes
+                    .with_decorations(false)
+                    .with_undecorated_shadow(true);
+            }
         }
 
         #[cfg(target_os = "macos")]
         {
             use winit::platform::macos::WindowAttributesExtMacOS;
-            attributes = attributes
-                .with_titlebar_transparent(true)
-                .with_fullsize_content_view(true);
+            if use_native_titlebar {
+                // 使用系统标题栏
+                attributes = attributes.with_titlebar_transparent(false);
+            } else {
+                // 使用自定义标题栏
+                attributes = attributes
+                    .with_titlebar_transparent(true)
+                    .with_fullsize_content_view(true);
+            }
         }
 
         attributes

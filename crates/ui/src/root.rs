@@ -58,7 +58,6 @@ impl Root {
 
     /// 创建进度窗口 Root
     pub fn new_progress(theme: &str) -> Self {
-        // 进度窗口使用默认配置
         let default_config = UiConfig::default();
         Self {
             sidebar: sidebar::Sidebar::new(),
@@ -76,7 +75,6 @@ impl Root {
 
     /// 创建对话框 Root
     pub fn new_dialog(theme: &str) -> Self {
-        // 对话框窗口使用默认配置
         use crate::state::root_state::DialogType;
         let default_config = UiConfig::default();
         let mut state = RootState::new();

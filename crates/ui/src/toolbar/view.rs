@@ -131,7 +131,9 @@ impl Toolbar {
                 row![
                     icon::view_with_size_and_theme(icon::Users, 18, 18, Some(&window.theme)),
                     space().width(6),
-                    text("多人协作").size(14),
+                    text("多人协作")
+                        .size(14)
+                        .color(palette.background.weakest.text),
                 ]
                 .align_y(Alignment::Center),
             )

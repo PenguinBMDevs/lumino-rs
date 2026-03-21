@@ -51,6 +51,10 @@ pub enum Event {
     },
     /// 协作连接断开
     CollaborationDisconnected,
+    /// 协作用户离开
+    CollaborationUserLeft {
+        user_id: String,
+    },
     /// 协作鼠标位置更新
     CollaborationMouseUpdate {
         user_id: String,

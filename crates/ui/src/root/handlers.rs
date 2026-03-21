@@ -100,6 +100,9 @@ impl Root {
                     username,
                 );
             }
+            message::Message::CollaborationRemoteUserLeft { user_id } => {
+                self.editor.remove_remote_cursor(&user_id);
+            }
             message::Message::CollaborationRemoteNoteUpdate {
                 user_id: _,
                 operation,

@@ -53,6 +53,14 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         let bounds_pos = iced_core::Point::new(bounds.x, bounds.y);
         let bounds_size = iced_core::Size::new(bounds.width, bounds.height);
 
+        let new_size = iced_core::Point::new(bounds.width, bounds.height);
+        if self.editor.canvas_size != new_size || self.editor.canvas_offset != bounds_pos {
+            return Some(canvas::Action::publish(crate::Message::CanvasBoundsChanged {
+                offset: bounds_pos,
+                size: bounds_size,
+            }));
+        }
+
         // 同时更新内部状态（鼠标位置）
         if let Some(position) = cursor.position() {
             let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
@@ -201,6 +209,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
 
             let cursor_x = pos.x;
             let cursor_y = pos.y;
+
 
             // 绘制游标线（贯穿整个高度）
             let path = Path::line(

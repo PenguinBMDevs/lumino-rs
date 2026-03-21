@@ -58,6 +58,7 @@ pub enum Event {
     SynthBackendChanged(SynthBackend),
     SoundfontPathChanged(String),
     BrowseSoundfont,
+    NativeTitlebarChanged(bool),
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +66,7 @@ pub struct SettingsPanel {
     pub selected_menu_index: usize,
     pub synth_backend: SynthBackend,
     pub soundfont_path: String,
+    pub use_native_titlebar: bool,
 }
 
 impl SettingsPanel {
@@ -73,6 +75,7 @@ impl SettingsPanel {
             selected_menu_index: 0,
             synth_backend: ui_config.preferred_backend,
             soundfont_path: ui_config.soundfont_path.clone(),
+            use_native_titlebar: ui_config.use_native_titlebar,
         }
     }
 
@@ -97,6 +100,9 @@ impl SettingsPanel {
                 {
                     self.soundfont_path = path.to_string_lossy().into_owned();
                 }
+            }
+            Event::NativeTitlebarChanged(enabled) => {
+                self.use_native_titlebar = enabled;
             }
         }
     }
@@ -283,7 +289,7 @@ fn render_content_area<'a>(
     let content = match settings.selected_menu_index {
         0 => render_general_settings(),
         1 => render_audio_settings(settings),
-        2 => render_ui_settings(),
+        2 => render_ui_settings(settings),
         3 => render_shortcut_settings(),
         4 => render_about_settings(),
         _ => render_placeholder("设置内容区域"),
@@ -451,14 +457,26 @@ fn render_audio_settings<'a>(
     col.spacing(SPACING_CONTENT).padding(PADDING_CONTENT)
 }
 
-fn render_ui_settings<'a>() -> iced_widget::Column<'a, Message, Theme, crate::Renderer> {
+fn render_ui_settings<'a>(
+    settings: &SettingsPanel,
+) -> iced_widget::Column<'a, Message, Theme, crate::Renderer> {
+    // 创建复选框
+    let native_titlebar_checkbox = iced_widget::Checkbox::new(settings.use_native_titlebar)
+        .label("使用经典系统标题栏")
+        .on_toggle(|enabled| Message::Settings(Event::NativeTitlebarChanged(enabled)));
+
     column![
         text("界面")
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
         iced_widget::space().height(20),
-        text("界面设置内容")
-            .size(TEXT_SIZE_CONTENT)
+        // 使用经典系统标题栏选项
+        row![native_titlebar_checkbox,]
+            .spacing(SPACING_ICON_LABEL)
+            .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        text("启用后，将使用系统原生标题栏，隐藏 Logo 和自定义窗口控制按钮")
+            .size(12.0)
             .style(create_placeholder_text_style()),
     ]
     .spacing(SPACING_CONTENT)

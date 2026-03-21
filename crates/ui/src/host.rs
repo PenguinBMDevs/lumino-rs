@@ -39,8 +39,8 @@ pub struct Host {
     pub(crate) viewport: Viewport,
     pub(crate) pending_window_action: Option<window::TrafficAction>,
     pub(crate) pending_drag: bool,
-    /// 逻辑光标位置（用于音符预览）
-    pub(crate) cursor_position: Option<iced_core::Point>,
+    /// 逻辑光标位置（用于音符预览和触控拖动）
+    pub cursor_position: Option<iced_core::Point>,
     pub(crate) last_fps_update: Instant,
     /// 帧计数器（用于 FPS 计算）
     pub(crate) frame_count: u32,
@@ -172,5 +172,10 @@ impl Host {
             Size::new(width, height),
             self.window.scale_factor() as f32,
         );
+    }
+
+    /// 获取当前光标位置（逻辑坐标）
+    pub fn cursor_position(&self) -> Option<iced_core::Point> {
+        self.cursor_position
     }
 }

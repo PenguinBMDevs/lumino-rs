@@ -130,6 +130,7 @@ impl RunnerInner {
                 self.window
                     .ui_mut()
                     .update_remote_cursor(user_id, x, y, color, username);
+                self.window.window().request_redraw();
             }
             WindowEvent::CollaborationNoteUpdate { user_id, operation } => {
                 self.handle_remote_note_update(user_id, operation);
@@ -143,6 +144,10 @@ impl RunnerInner {
                 track_index,
             } => {
                 self.handle_local_note_added(tick, key, length, velocity, channel, track_index);
+            }
+            WindowEvent::CollaborationUserLeft { user_id } => {
+                self.window.ui_mut().remove_remote_cursor(user_id);
+                self.window.window().request_redraw();
             }
             _ => {
                 // 其他窗口事件暂不处理

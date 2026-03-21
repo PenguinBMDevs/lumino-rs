@@ -61,6 +61,15 @@ impl Host {
                 color,
                 username,
             });
+        self.clear_cache();
+        self.window.request_redraw();
+    }
+
+    /// 移除远端鼠标
+    pub fn remove_remote_cursor(&mut self, user_id: String) {
+        self.root
+            .update(message::Message::CollaborationRemoteUserLeft { user_id });
+        self.clear_cache();
         self.window.request_redraw();
     }
 
@@ -68,9 +77,9 @@ impl Host {
     pub fn update_remote_note(&mut self, user_id: String, operation: String) {
         self.root
             .update(message::Message::CollaborationRemoteNoteUpdate { user_id, operation });
+        self.clear_cache();
         self.window.request_redraw();
     }
-
     /// 应用远程笔记操作到本地编辑器
     pub fn apply_remote_note_operation(
         &mut self,

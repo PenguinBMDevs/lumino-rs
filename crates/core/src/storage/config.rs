@@ -44,6 +44,9 @@ pub struct UiConfig {
     /// 音色库路径
     #[serde(default)]
     pub soundfont_path: String,
+    /// 是否使用经典系统标题栏（默认使用自定义标题栏）
+    #[serde(default)]
+    pub use_native_titlebar: bool,
 }
 
 fn default_synth_backend() -> SynthBackend {
@@ -57,6 +60,7 @@ impl Default for UiConfig {
             theme: "Light".into(),
             preferred_backend: SynthBackend::XSynth,
             soundfont_path: String::new(),
+            use_native_titlebar: false,
         }
     }
 }

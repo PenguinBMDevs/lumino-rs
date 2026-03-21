@@ -149,6 +149,11 @@ impl CollaborationService {
                     lumino_core::event::window::Event::CollaborationDisconnected,
                 ));
             }
+            CollaborationEvent::UserLeft { user_id } => {
+                lumino_core::event::emit(lumino_core::event::Event::Window(
+                    lumino_core::event::window::Event::CollaborationUserLeft { user_id },
+                ));
+            }
             CollaborationEvent::MouseUpdate {
                 user_id,
                 position,

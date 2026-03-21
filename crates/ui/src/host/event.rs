@@ -195,4 +195,22 @@ impl Host {
         self.pending_drag = false;
         drag
     }
+
+    /// 释放鼠标左键状态（用于拖拽窗口后的状态重置）
+    pub fn release_left_mouse_button(&mut self) {
+        // 释放鼠标左键
+        self.events.push(iced_core::Event::Mouse(
+            iced_core::mouse::Event::ButtonReleased(iced_core::mouse::Button::Left),
+        ));
+        // 同时释放触控状态（如果有的话）
+        if let Some(pos) = self.cursor_position {
+            self.events.push(iced_core::Event::Touch(
+                iced_core::touch::Event::FingerLifted {
+                    id: iced_core::touch::Finger(0),
+                    position: pos,
+                },
+            ));
+        }
+        self.process_pending_events();
+    }
 }

@@ -123,6 +123,10 @@ pub enum Message {
         color: String,
         username: String,
     },
+    /// 协作用户离开
+    CollaborationRemoteUserLeft {
+        user_id: String,
+    },
     /// 协作远端音符更新
     CollaborationRemoteNoteUpdate {
         user_id: String,
