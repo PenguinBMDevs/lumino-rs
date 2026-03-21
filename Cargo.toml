@@ -20,7 +20,7 @@ midly = { git = "https://github.com/Enderman-bm/midly-fork", rev = "92c99252a173
 lumino-ui = { path = "crates/ui" }
 lumino-collaboration = { path = "crates/collaboration" }
 # crates.io
-iced_renderer = { version = "0.14.0", features = ["wgpu", "tiny-skia"] }
+iced_renderer = { version = "0.14.0", features = ["wgpu", "tiny-skia", "x11", "wayland"] }
 tracing = "0.1.43"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"]}
 thiserror = "2.0.17"
@@ -83,7 +83,7 @@ panic = "abort"
 strip = true
 
 [dev-dependencies]
-iced_renderer = { version = "0.14.0", features = ["wgpu", "tiny-skia"] }
+iced_renderer = { version = "0.14.0", features = ["wgpu", "tiny-skia", "x11", "wayland"] }
 iced_wgpu = { version = "0.14.0" }
 iced_winit = "0.14.0"
 iced_widget = { version = "0.14.0" }
@@ -100,5 +100,3 @@ winapi = { version = "0.3", features = ["processthreadsapi", "psapi"] }
 name = "collaboration_full_test"
 path = "tests/collaboration_full_test.rs"
 
-[patch.crates-io]
-softbuffer = { git = "https://github.com/rust-windowing/softbuffer", branch = "master" }
