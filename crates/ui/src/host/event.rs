@@ -55,11 +55,18 @@ impl Host {
                             self.window.request_redraw();
                         }
                         PhysicalKey::Code(KeyCode::KeyZ) => {
-                            // Ctrl+Z: 撤销
-                            if modifiers.contains(winit::keyboard::ModifiersState::CONTROL)
-                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER)
-                            {
-                                self.root.editor.handle_action(message::EditorAction::Undo);
+                            // Ctrl+Z: 撤销, Ctrl+Shift+Z: 重做
+                            let ctrl_or_cmd = modifiers
+                                .contains(winit::keyboard::ModifiersState::CONTROL)
+                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER);
+                            if ctrl_or_cmd {
+                                if modifiers.contains(winit::keyboard::ModifiersState::SHIFT) {
+                                    // Ctrl+Shift+Z: 重做
+                                    self.root.editor.handle_action(message::EditorAction::Redo);
+                                } else {
+                                    // Ctrl+Z: 撤销
+                                    self.root.editor.handle_action(message::EditorAction::Undo);
+                                }
                                 self.window.request_redraw();
                             }
                         }
