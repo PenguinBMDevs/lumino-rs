@@ -13,7 +13,6 @@ pub fn set_waker(waker: impl Fn() + Send + Sync + 'static) {
     let _ = EVENT_WAKER.set(Box::new(waker));
 }
 
-
 #[derive(Debug, Clone)]
 /// 事件
 pub enum Event {

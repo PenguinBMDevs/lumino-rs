@@ -1,3 +1,4 @@
+use crate::constants::scrollbar as scrollbar_constants;
 use crate::{Element, Message, Renderer, Theme};
 use iced_core::Background;
 use iced_core::border::Border;
@@ -105,7 +106,7 @@ impl<'a> ScrollbarWidget<'a> {
     fn thumb_geometry(&self, bounds: Rectangle) -> (f32, f32, Rectangle) {
         match self.orientation {
             ScrollbarOrientation::Horizontal => {
-                let track_width = bounds.width - 4.0;
+                let track_width = bounds.width - scrollbar_constants::TRACK_THUMB_GAP * 2.0;
                 // 注意：这里的 max_scroll 实际上是总宽度，我们需要减去视口宽度（track_width）来得到真正的可滚动范围
                 let scrollable_width = (self.max_scroll - track_width).max(0.0);
 
@@ -114,27 +115,27 @@ impl<'a> ScrollbarWidget<'a> {
                     track_width // 没有可滚动内容，thumb填满轨道
                 } else {
                     (track_width * track_width / self.max_scroll)
-                        .max(20.0)
+                        .max(scrollbar_constants::THUMB_MIN_SIZE_PX)
                         .min(track_width)
                 };
 
                 // 确保 scroll 不超过 scrollable_width
                 let clamped_scroll = self.scroll.clamp(0.0, scrollable_width);
                 let thumb_x = bounds.x
-                    + 2.0
+                    + scrollbar_constants::THUMB_TRACK_EDGE_GAP
                     + (clamped_scroll / scrollable_width.max(1.0)) * (track_width - thumb_width);
 
                 let thumb_bounds = Rectangle {
                     x: thumb_x,
-                    y: bounds.y + 2.0,
+                    y: bounds.y + scrollbar_constants::THUMB_TRACK_EDGE_GAP,
                     width: thumb_width,
-                    height: bounds.height - 4.0,
+                    height: bounds.height - scrollbar_constants::TRACK_THUMB_GAP * 2.0,
                 };
 
                 (track_width, thumb_width, thumb_bounds)
             }
             ScrollbarOrientation::Vertical => {
-                let track_height = bounds.height - 4.0;
+                let track_height = bounds.height - scrollbar_constants::TRACK_THUMB_GAP * 2.0;
                 // thumb 大小基于内容比例：当max_scroll越大，thumb越小
                 // 注意：这里的 max_scroll 实际上是总高度，我们需要减去视口高度（track_height）来得到真正的可滚动范围
                 let scrollable_height = (self.max_scroll - track_height).max(0.0);
@@ -143,20 +144,20 @@ impl<'a> ScrollbarWidget<'a> {
                     track_height // 没有可滚动内容，thumb填满轨道
                 } else {
                     (track_height * track_height / self.max_scroll)
-                        .max(20.0)
+                        .max(scrollbar_constants::THUMB_MIN_SIZE_PX)
                         .min(track_height)
                 };
 
                 // 确保 scroll 不超过 scrollable_height
                 let clamped_scroll = self.scroll.clamp(0.0, scrollable_height);
                 let thumb_y = bounds.y
-                    + 2.0
+                    + scrollbar_constants::THUMB_TRACK_EDGE_GAP
                     + (clamped_scroll / scrollable_height.max(1.0)) * (track_height - thumb_height);
 
                 let thumb_bounds = Rectangle {
-                    x: bounds.x + 2.0,
+                    x: bounds.x + scrollbar_constants::THUMB_TRACK_EDGE_GAP,
                     y: thumb_y,
-                    width: bounds.width - 4.0,
+                    width: bounds.width - scrollbar_constants::TRACK_THUMB_GAP * 2.0,
                     height: thumb_height,
                 };
 
@@ -166,7 +167,7 @@ impl<'a> ScrollbarWidget<'a> {
     }
 
     fn get_edge(&self, position: iced_core::Point, thumb_bounds: Rectangle) -> Option<Edge> {
-        let edge_width = 6.0;
+        let edge_width = scrollbar_constants::EDGE_WIDTH_PX;
         match self.orientation {
             ScrollbarOrientation::Horizontal => {
                 if position.x >= thumb_bounds.x && position.x <= thumb_bounds.x + edge_width {
@@ -190,6 +191,23 @@ impl<'a> ScrollbarWidget<'a> {
                     None
                 }
             }
+        }
+    }
+
+    /// 根据鼠标位置确定滚动条状态
+    fn determine_state_at_position(
+        &self,
+        position: iced_core::Point,
+        thumb_bounds: Rectangle,
+    ) -> ScrollbarState {
+        if thumb_bounds.contains(position) {
+            if let Some(edge) = self.get_edge(position, thumb_bounds) {
+                ScrollbarState::HoverEdge(edge)
+            } else {
+                ScrollbarState::Hover
+            }
+        } else {
+            ScrollbarState::Idle
         }
     }
 }
@@ -339,15 +357,7 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                         ScrollbarState::Dragging { .. } | ScrollbarState::DraggingEdge { .. }
                     ) {
                         let new_state = if let Some(position) = cursor.position() {
-                            if thumb_bounds.contains(position) {
-                                if let Some(edge) = self.get_edge(position, thumb_bounds) {
-                                    ScrollbarState::HoverEdge(edge)
-                                } else {
-                                    ScrollbarState::Hover
-                                }
-                            } else {
-                                ScrollbarState::Idle
-                            }
+                            self.determine_state_at_position(position, thumb_bounds)
                         } else {
                             ScrollbarState::Idle
                         };
@@ -404,15 +414,7 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                         }
                         _ => {
                             let new_state = if let Some(position) = cursor.position() {
-                                if thumb_bounds.contains(position) {
-                                    if let Some(edge) = self.get_edge(position, thumb_bounds) {
-                                        ScrollbarState::HoverEdge(edge)
-                                    } else {
-                                        ScrollbarState::Hover
-                                    }
-                                } else {
-                                    ScrollbarState::Idle
-                                }
+                                self.determine_state_at_position(position, thumb_bounds)
                             } else {
                                 ScrollbarState::Idle
                             };

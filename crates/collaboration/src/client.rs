@@ -271,12 +271,13 @@ impl CollaborationClient {
                         *self.state.write().await = ClientState::Authenticated;
 
                         let mut session = self.session.write().await;
-                        session.current_user_id = Some(user_id);
-                        session.invite_code = Some(invite_code);
+                        session.current_user_id = Some(user_id.clone());
+                        session.invite_code = Some(invite_code.clone());
 
+                        // 安全地发射事件，避免unwrap
                         self.emit_event(CollaborationEvent::Authenticated {
-                            user_id: session.current_user_id.clone().unwrap(),
-                            invite_code: session.invite_code.clone().unwrap(),
+                            user_id,
+                            invite_code,
                         });
 
                         Ok(())

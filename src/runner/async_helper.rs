@@ -1,3 +1,4 @@
+use lumino_core::CoreError;
 use lumino_core::event;
 
 /// 异步任务处理辅助函数
@@ -7,7 +8,7 @@ pub async fn run_async_task<T, F, Success, Error>(
     success_event: Success,
     error_event: Error,
 ) where
-    F: std::future::Future<Output = Result<T, String>>,
+    F: std::future::Future<Output = Result<T, CoreError>>,
     Success: FnOnce(T) -> event::Event,
     Error: FnOnce(String) -> event::Event,
 {
@@ -16,7 +17,7 @@ pub async fn run_async_task<T, F, Success, Error>(
             event::emit(success_event(result));
         }
         Err(e) => {
-            event::emit(error_event(e));
+            event::emit(error_event(e.to_string()));
         }
     }
 }

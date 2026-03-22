@@ -24,10 +24,10 @@ pub fn send_progress_message(message: &str, progress: f64) {
     send_progress(message, progress);
 }
 
-fn decode_lmpj<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
+fn decode_lmpj<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> crate::Result<T> {
     let decoded = zstd::stream::decode_all(std::io::Cursor::new(bytes))
-        .map_err(|e| format!("解压失败: {e}"))?;
-    bincode::deserialize(&decoded).map_err(|e| format!("反序列化失败: {e}"))
+        .map_err(|e| crate::CoreError::Compression(format!("解压失败: {e}")))?;
+    bincode::deserialize(&decoded).map_err(crate::CoreError::from)
 }
 
 use crate::MidiInfo;
@@ -35,7 +35,7 @@ use crate::MidiInfo;
 pub fn load_midi_info_with_progress(
     path: PathBuf,
     progress_callback: Option<&dyn Fn(f64)>,
-) -> Result<MidiInfo, String> {
+) -> crate::Result<MidiInfo> {
     load_midi_info_with_cache(path, None, progress_callback)
 }
 
@@ -81,7 +81,7 @@ pub fn load_midi_info_with_cache(
     path: PathBuf,
     cache: Option<&TrackBasedCache>,
     progress_callback: Option<&dyn Fn(f64)>,
-) -> Result<MidiInfo, String> {
+) -> crate::Result<MidiInfo> {
     if let Some(cb) = progress_callback {
         cb(0.0);
     }
@@ -124,7 +124,7 @@ pub fn load_midi_info_with_cache(
         let mut stream = crate::midi::MidiEventStream::from_path(&path)?;
         let track_events = stream
             .read_track_events(track_idx)
-            .map_err(|e| format!("读取音轨失败: {e}"))?;
+            .map_err(|e| crate::CoreError::MidiParse(format!("读取音轨失败: {e}")))?;
         drop(stream);
 
         let event_count = track_events.len() as u64;
@@ -203,7 +203,7 @@ pub fn load_midi_info_with_cache(
     })
 }
 
-pub async fn load_parsed_midi(path: PathBuf) -> Result<ParsedMidi, String> {
+pub async fn load_parsed_midi(path: PathBuf) -> crate::Result<ParsedMidi> {
     send_progress("正在准备加载文件", 0.0);
 
     let extension = path
@@ -215,15 +215,15 @@ pub async fn load_parsed_midi(path: PathBuf) -> Result<ParsedMidi, String> {
     if extension == "lmpj" {
         send_progress("正在加载 Lumino 工程文件", 0.1);
         let data = tokio::fs::read(&path).await.map_err(|e| {
-            let err = format!("读取 LMPJ 失败: {e}");
-            send_progress(&err, 1.0);
+            let err = crate::CoreError::Io(e);
+            send_progress(&err.to_string(), 1.0);
             err
         })?;
         send_progress("解析 Lumino 工程文件", 0.5);
 
         let parsed = tokio::task::spawn_blocking(move || {
-            let lmpj_data: crate::LmpjData =
-                decode_lmpj(&data).map_err(|e| format!("解析 LMPJ 失败: {e}"))?;
+            let lmpj_data: crate::LmpjData = decode_lmpj(&data)
+                .map_err(|e| crate::CoreError::FileFormat(format!("解析 LMPJ 失败: {e}")))?;
 
             tracing::info!(
                 "LMPJ 解析成功: info.path={:?}, midi_data.len={:?}",
@@ -231,16 +231,16 @@ pub async fn load_parsed_midi(path: PathBuf) -> Result<ParsedMidi, String> {
                 lmpj_data.midi_data.as_ref().map(|d| d.len())
             );
 
-            Ok::<ParsedMidi, String>(lmpj_data.to_parsed_midi())
+            Ok::<ParsedMidi, crate::CoreError>(lmpj_data.to_parsed_midi())
         })
         .await
         .map_err(|e| {
-            let err = format!("解析 LMPJ 失败: {e}");
-            send_progress(&err, 1.0);
+            let err = crate::CoreError::Other(format!("解析 LMPJ 失败: {e}"));
+            send_progress(&err.to_string(), 1.0);
             err
         })?
         .inspect_err(|e| {
-            send_progress(e, 1.0);
+            send_progress(&e.to_string(), 1.0);
         })?;
 
         send_progress("Lumino 工程文件加载完成", 1.0);
@@ -249,7 +249,11 @@ pub async fn load_parsed_midi(path: PathBuf) -> Result<ParsedMidi, String> {
 
     send_progress("正在加载并缓存 MIDI 事件...", 0.1);
 
-    let cache = TrackBasedCache::new_in_program_dir().map_err(|e| format!("创建缓存失败: {e}"))?;
+    let cache = TrackBasedCache::new_in_program_dir().map_err(|e| {
+        let err = crate::CoreError::Cache(format!("创建缓存失败: {e}"));
+        send_progress(&err.to_string(), 1.0);
+        err
+    })?;
 
     let cache_dir = cache.cache_dir().to_path_buf();
     let path_clone = path.clone();
@@ -285,16 +289,16 @@ pub async fn load_parsed_midi(path: PathBuf) -> Result<ParsedMidi, String> {
             parse_progress: Some(100.0),
         };
 
-        Ok::<_, String>((info, manager))
+        Ok::<_, crate::CoreError>((info, manager))
     })
     .await
     .map_err(|e| {
-        let err = format!("解析 MIDI 失败: {e}");
-        send_progress(&err, 1.0);
+        let err = crate::CoreError::Other(format!("解析 MIDI 失败: {e}"));
+        send_progress(&err.to_string(), 1.0);
         err
     })?
     .inspect_err(|e| {
-        send_progress(e, 1.0);
+        send_progress(&e.to_string(), 1.0);
     })?;
 
     send_progress("MIDI 加载完成", 1.0);
@@ -308,29 +312,28 @@ pub async fn load_parsed_midi(path: PathBuf) -> Result<ParsedMidi, String> {
     })
 }
 
-pub async fn load_dms(path: PathBuf) -> Result<ParsedDms, String> {
+pub async fn load_dms(path: PathBuf) -> crate::Result<ParsedDms> {
     send_progress("正在准备加载 Domino 工程文件", 0.0);
     send_progress("正在打开 Domino 工程文件", 0.05);
 
     let path_clone = path.clone();
     let scan_result = tokio::task::spawn_blocking(move || {
-        let file =
-            std::fs::File::open(&path_clone).map_err(|e| format!("打开 DMS 文件失败: {e}"))?;
+        let file = std::fs::File::open(&path_clone).map_err(crate::CoreError::Io)?;
         let mut reader = std::io::BufReader::new(file);
         lumino_dms::scan_dms_streaming_with_progress(&mut reader, |progress| {
             send_progress("正在解析 Domino 工程文件", 0.1 + progress * 0.7);
         })
-        .map_err(|e| format!("扫描 DMS 失败: {e}"))
+        .map_err(|e| crate::CoreError::FileFormat(format!("扫描 DMS 失败: {e}")))
     })
     .await
     .map_err(|e| {
-        let err = format!("扫描 DMS 失败: {e}");
-        send_progress(&err, 1.0);
+        let err = crate::CoreError::Other(format!("扫描 DMS 失败: {e}"));
+        send_progress(&err.to_string(), 1.0);
         err
     })?
     .map_err(|e| {
-        let err = format!("压缩 LDMS 失败: {e}");
-        send_progress(&err, 1.0);
+        let err = crate::CoreError::Compression(format!("压缩 LDMS 失败: {e}"));
+        send_progress(&err.to_string(), 1.0);
         err
     })?;
 
@@ -350,7 +353,7 @@ pub async fn load_dms(path: PathBuf) -> Result<ParsedDms, String> {
     Ok(ParsedDms { info, data: None })
 }
 
-pub async fn save_dms_to_ldms(parsed: &ParsedDms, path: PathBuf) -> Result<(), String> {
+pub async fn save_dms_to_ldms(parsed: &ParsedDms, path: PathBuf) -> crate::Result<()> {
     send_progress("准备保存 LDMS", 0.0);
     send_progress("保存 LDMS", 0.1);
 
@@ -360,8 +363,8 @@ pub async fn save_dms_to_ldms(parsed: &ParsedDms, path: PathBuf) -> Result<(), S
     };
 
     let data = bincode::serialize(&data_for_save).map_err(|e| {
-        let err = format!("序列化 LDMS 失败: {e}");
-        send_progress(&err, 1.0);
+        let err = crate::CoreError::from(e);
+        send_progress(&err.to_string(), 1.0);
         err
     })?;
 
@@ -372,19 +375,19 @@ pub async fn save_dms_to_ldms(parsed: &ParsedDms, path: PathBuf) -> Result<(), S
     })
     .await
     .map_err(|e| {
-        let err = format!("压缩 LDMS 失败: {e}");
-        send_progress(&err, 1.0);
+        let err = crate::CoreError::Other(format!("压缩 LDMS 失败: {e}"));
+        send_progress(&err.to_string(), 1.0);
         err
     })?
     .map_err(|e| {
-        let err = format!("压缩 LDMS 失败: {e}");
-        send_progress(&err, 1.0);
+        let err = crate::CoreError::Compression(format!("压缩 LDMS 失败: {e}"));
+        send_progress(&err.to_string(), 1.0);
         err
     })?;
 
     tokio::fs::write(&path, compressed).await.map_err(|e| {
-        let err = format!("写入 LDMS 失败: {e}");
-        send_progress(&err, 1.0);
+        let err = crate::CoreError::Io(e);
+        send_progress(&err.to_string(), 1.0);
         err
     })?;
 

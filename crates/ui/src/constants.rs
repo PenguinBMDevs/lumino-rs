@@ -45,6 +45,66 @@ pub mod editor {
     /// 可见琴键数量限制
     pub const MIN_VISIBLE_KEY_COUNT: u16 = 1;
     pub const MAX_VISIBLE_KEY_COUNT: u16 = 256;
+
+    /// 双击检测时间阈值（毫秒）
+    pub const DOUBLE_CLICK_TIME_MS: u128 = 300;
+
+    /// 双击检测距离阈值（像素）
+    pub const DOUBLE_CLICK_DISTANCE_PX: f32 = 10.0;
+
+    /// 光标箭头大小（像素）
+    pub const CURSOR_ARROW_SIZE_PX: f32 = 12.0;
+
+    /// 光标标签字体大小
+    pub const CURSOR_LABEL_FONT_SIZE: f32 = 11.0;
+
+    /// 远程光标线宽度
+    pub const REMOTE_CURSOR_LINE_WIDTH: f32 = 1.5;
+
+    /// 远程光标边框宽度
+    pub const REMOTE_CURSOR_BORDER_WIDTH: f32 = 1.0;
+
+    /// 用户名片内边距
+    pub const USERNAME_LABEL_PADDING: f32 = 4.0;
+
+    /// 用户名片高度
+    pub const USERNAME_LABEL_HEIGHT: f32 = 18.0;
+
+    /// 用户名片圆角半径
+    pub const USERNAME_LABEL_BORDER_RADIUS: f32 = 4.0;
+
+    /// 用户名片箭头偏移
+    pub const USERNAME_LABEL_ARROW_OFFSET: f32 = 4.0;
+
+    /// 用户名片文本Y偏移
+    pub const USERNAME_LABEL_TEXT_Y_OFFSET: f32 = 2.0;
+
+    /// 滚动最大增量
+    pub const SCROLL_MAX_DELTA: f32 = 100.0;
+
+    /// 滚动线条缩放系数
+    pub const SCROLL_LINES_SCALE: f32 = 30.0;
+
+    /// 小节线宽度
+    pub const BAR_LINE_WIDTH: f32 = 4.0;
+
+    /// 拍线宽度
+    pub const BEAT_LINE_WIDTH: f32 = 1.0;
+
+    /// 半拍线宽度
+    pub const HALF_BEAT_LINE_WIDTH: f32 = 0.5;
+
+    /// 网格线宽度
+    pub const GRID_LINE_WIDTH: f32 = 0.5;
+
+    /// 网格线透明度
+    pub const GRID_LINE_ALPHA: f32 = 0.1;
+
+    /// 选择框最小尺寸
+    pub const SELECTION_BOX_MIN_SIZE: f32 = 1.0;
+
+    /// 选择框填充透明度
+    pub const SELECTION_BOX_FILL_ALPHA: f32 = 0.2;
 }
 
 /// 渲染相关常量
@@ -88,6 +148,30 @@ pub mod spacing {
     pub const ICON_LABEL: f32 = 8.0;
     /// 主间距
     pub const MAIN: f32 = 16.0;
+}
+
+/// 滚动条相关常量
+pub mod scrollbar {
+    /// 边缘检测宽度（像素）
+    pub const EDGE_WIDTH_PX: f32 = 6.0;
+
+    /// 滑块最小尺寸（像素）
+    pub const THUMB_MIN_SIZE_PX: f32 = 20.0;
+
+    /// 内边距（像素）
+    pub const PADDING_PX: f32 = 4.0;
+
+    /// 轨道尺寸（像素）
+    pub const TRACK_SIZE_PX: f32 = 20.0;
+
+    /// 轨道内边距
+    pub const TRACK_PADDING: f32 = 2.0;
+
+    /// 轨道与滑块之间的间距
+    pub const TRACK_THUMB_GAP: f32 = 2.0;
+
+    /// 滑块与轨道边缘的间距
+    pub const THUMB_TRACK_EDGE_GAP: f32 = 2.0;
 }
 
 /// 洋葱皮默认颜色

@@ -1,3 +1,4 @@
+use crate::constants::editor as editor_constants;
 use crate::editor::{Editor, HitType};
 use crate::{Message, Renderer, Theme, message::EditorAction};
 use iced_core::{Point, Rectangle, mouse};
@@ -55,10 +56,12 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
 
         let new_size = iced_core::Point::new(bounds.width, bounds.height);
         if self.editor.canvas_size != new_size || self.editor.canvas_offset != bounds_pos {
-            return Some(canvas::Action::publish(crate::Message::CanvasBoundsChanged {
-                offset: bounds_pos,
-                size: bounds_size,
-            }));
+            return Some(canvas::Action::publish(
+                crate::Message::CanvasBoundsChanged {
+                    offset: bounds_pos,
+                    size: bounds_size,
+                },
+            ));
         }
 
         // 同时更新内部状态（鼠标位置）
@@ -80,7 +83,8 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
                         let pos_delta = ((local_pos.x - last_pos.x).powi(2)
                             + (local_pos.y - last_pos.y).powi(2))
                         .sqrt();
-                        time_delta < 300 && pos_delta < 10.0
+                        time_delta < editor_constants::DOUBLE_CLICK_TIME_MS
+                            && pos_delta < editor_constants::DOUBLE_CLICK_DISTANCE_PX
                     } else {
                         false
                     };
@@ -119,11 +123,14 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
             }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 let (delta_x, delta_y) = match delta {
-                    mouse::ScrollDelta::Lines { x, y } => (*x * 30.0, *y * 30.0),
+                    mouse::ScrollDelta::Lines { x, y } => (
+                        *x * editor_constants::SCROLL_LINES_SCALE,
+                        *y * editor_constants::SCROLL_LINES_SCALE,
+                    ),
                     mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
                 };
                 // 限制最大滚动增量，避免滚动过快
-                let max_delta = 100.0;
+                let max_delta = editor_constants::SCROLL_MAX_DELTA;
                 let delta_x = delta_x.clamp(-max_delta, max_delta);
                 let delta_y = delta_y.clamp(-max_delta, max_delta);
                 return Some(canvas::Action::publish(Message::EditorAction(
@@ -203,119 +210,8 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         }
 
         // 绘制远端鼠标游标
-        for (pos, color_str, username) in self.editor.remote_cursors.values() {
-            let color = parse_color(color_str).unwrap_or(iced_core::Color::WHITE);
-            let mut frame = Frame::new(renderer, bounds.size());
-
-            let cursor_x = pos.x;
-            let cursor_y = pos.y;
-
-
-            // 绘制游标线（贯穿整个高度）
-            let path = Path::line(
-                Point::new(cursor_x, 0.0),
-                Point::new(cursor_x, bounds.height),
-            );
-            frame.stroke(
-                &path,
-                Stroke::default()
-                    .with_width(1.5)
-                    .with_color(iced_core::Color { a: 0.6, ..color }),
-            );
-
-            // 绘制鼠标指针（箭头形状）
-            let arrow_size = 12.0;
-            let arrow_path = Path::new(|builder| {
-                // 箭头指向左上方
-                builder.move_to(Point::new(cursor_x, cursor_y));
-                builder.line_to(Point::new(cursor_x, cursor_y + arrow_size));
-                builder.line_to(Point::new(
-                    cursor_x + arrow_size * 0.5,
-                    cursor_y + arrow_size * 0.8,
-                ));
-                builder.line_to(Point::new(
-                    cursor_x + arrow_size * 0.8,
-                    cursor_y + arrow_size * 1.5,
-                ));
-                builder.line_to(Point::new(
-                    cursor_x + arrow_size * 1.2,
-                    cursor_y + arrow_size * 1.2,
-                ));
-                builder.line_to(Point::new(
-                    cursor_x + arrow_size * 0.9,
-                    cursor_y + arrow_size * 0.5,
-                ));
-                builder.line_to(Point::new(cursor_x + arrow_size, cursor_y));
-                builder.close();
-            });
-            frame.fill(&arrow_path, color);
-
-            // 绘制白色边框使箭头更清晰
-            let arrow_border = Path::new(|builder| {
-                builder.move_to(Point::new(cursor_x, cursor_y));
-                builder.line_to(Point::new(cursor_x, cursor_y + arrow_size));
-                builder.line_to(Point::new(
-                    cursor_x + arrow_size * 0.5,
-                    cursor_y + arrow_size * 0.8,
-                ));
-                builder.line_to(Point::new(
-                    cursor_x + arrow_size * 0.8,
-                    cursor_y + arrow_size * 1.5,
-                ));
-                builder.line_to(Point::new(
-                    cursor_x + arrow_size * 1.2,
-                    cursor_y + arrow_size * 1.2,
-                ));
-                builder.line_to(Point::new(
-                    cursor_x + arrow_size * 0.9,
-                    cursor_y + arrow_size * 0.5,
-                ));
-                builder.line_to(Point::new(cursor_x + arrow_size, cursor_y));
-                builder.close();
-            });
-            frame.stroke(
-                &arrow_border,
-                Stroke::default()
-                    .with_width(1.0)
-                    .with_color(iced_core::Color::WHITE),
-            );
-
-            // 绘制用户名片背景
-            let text_padding = 4.0;
-            let username_len = username.len() as f32 * 7.0; // 估算文本宽度
-            let label_width = username_len + text_padding * 2.0;
-            let label_height = 18.0;
-            let label_x = cursor_x + arrow_size + 4.0;
-            let label_y = cursor_y - 2.0;
-
-            let label_rect = Rectangle::new(
-                Point::new(label_x, label_y),
-                iced_core::Size::new(label_width, label_height),
-            );
-            let label_path = Path::rounded_rectangle(
-                label_rect.position(),
-                label_rect.size(),
-                iced_core::border::Radius::from(4.0),
-            );
-            frame.fill(&label_path, color);
-
-            // 绘制用户名文本
-            let text = iced_widget::canvas::Text {
-                content: username.clone(),
-                position: Point::new(label_x + text_padding, label_y + 2.0),
-                max_width: label_width,
-                line_height: iced_core::text::LineHeight::Relative(1.0),
-                size: iced_core::Pixels(11.0),
-                color: iced_core::Color::WHITE,
-                font: iced_core::Font::DEFAULT,
-                align_x: iced_core::alignment::Horizontal::Left.into(),
-                align_y: iced_core::alignment::Vertical::Top.into(),
-                shaping: iced_core::text::Shaping::Basic,
-            };
-            frame.fill_text(text);
-
-            geometries.push(frame.into_geometry());
-        }
+        let remote_cursor_geometries = self.draw_remote_cursors(renderer, bounds);
+        geometries.extend(remote_cursor_geometries);
 
         geometries
     }
@@ -503,6 +399,132 @@ fn is_key_dark(key: isize, _key_count: usize) -> bool {
 
 /// 框选框绘制
 impl<'a> PianoRollGrid<'a> {
+    /// 绘制远程光标
+    fn draw_remote_cursors(
+        &self,
+        renderer: &Renderer,
+        bounds: Rectangle,
+    ) -> Vec<Geometry<Renderer>> {
+        use iced_widget::canvas::{self, Frame, Path, Stroke};
+
+        let mut geometries = Vec::new();
+
+        for (pos, color_str, username) in self.editor.remote_cursors.values() {
+            let color = parse_color(color_str).unwrap_or(iced_core::Color::WHITE);
+            let mut frame = Frame::new(renderer, bounds.size());
+
+            let cursor_x = pos.x;
+            let cursor_y = pos.y;
+
+            // 绘制游标线（贯穿整个高度）
+            let path = Path::line(
+                Point::new(cursor_x, 0.0),
+                Point::new(cursor_x, bounds.height),
+            );
+            frame.stroke(
+                &path,
+                Stroke::default()
+                    .with_width(editor_constants::REMOTE_CURSOR_LINE_WIDTH)
+                    .with_color(iced_core::Color { a: 0.6, ..color }),
+            );
+
+            // 绘制鼠标指针（箭头形状）
+            let arrow_size = editor_constants::CURSOR_ARROW_SIZE_PX;
+            let arrow_path = Path::new(|builder| {
+                // 箭头指向左上方
+                builder.move_to(Point::new(cursor_x, cursor_y));
+                builder.line_to(Point::new(cursor_x, cursor_y + arrow_size));
+                builder.line_to(Point::new(
+                    cursor_x + arrow_size * 0.5,
+                    cursor_y + arrow_size * 0.8,
+                ));
+                builder.line_to(Point::new(
+                    cursor_x + arrow_size * 0.8,
+                    cursor_y + arrow_size * 1.5,
+                ));
+                builder.line_to(Point::new(
+                    cursor_x + arrow_size * 1.2,
+                    cursor_y + arrow_size * 1.2,
+                ));
+                builder.line_to(Point::new(
+                    cursor_x + arrow_size * 0.9,
+                    cursor_y + arrow_size * 0.5,
+                ));
+                builder.line_to(Point::new(cursor_x + arrow_size, cursor_y));
+                builder.close();
+            });
+            frame.fill(&arrow_path, color);
+
+            // 绘制白色边框使箭头更清晰
+            let arrow_border = Path::new(|builder| {
+                builder.move_to(Point::new(cursor_x, cursor_y));
+                builder.line_to(Point::new(cursor_x, cursor_y + arrow_size));
+                builder.line_to(Point::new(
+                    cursor_x + arrow_size * 0.5,
+                    cursor_y + arrow_size * 0.8,
+                ));
+                builder.line_to(Point::new(
+                    cursor_x + arrow_size * 0.8,
+                    cursor_y + arrow_size * 1.5,
+                ));
+                builder.line_to(Point::new(
+                    cursor_x + arrow_size * 1.2,
+                    cursor_y + arrow_size * 1.2,
+                ));
+                builder.line_to(Point::new(
+                    cursor_x + arrow_size * 0.9,
+                    cursor_y + arrow_size * 0.5,
+                ));
+                builder.line_to(Point::new(cursor_x + arrow_size, cursor_y));
+                builder.close();
+            });
+            frame.stroke(
+                &arrow_border,
+                Stroke::default()
+                    .with_width(editor_constants::REMOTE_CURSOR_BORDER_WIDTH)
+                    .with_color(iced_core::Color::WHITE),
+            );
+
+            // 绘制用户名片背景
+            let text_padding = editor_constants::USERNAME_LABEL_PADDING;
+            let username_len = username.len() as f32 * 7.0; // 估算文本宽度
+            let label_width = username_len + text_padding * 2.0;
+            let label_height = editor_constants::USERNAME_LABEL_HEIGHT;
+            let label_x = cursor_x + arrow_size + editor_constants::USERNAME_LABEL_ARROW_OFFSET;
+            let label_y = cursor_y - editor_constants::USERNAME_LABEL_TEXT_Y_OFFSET;
+
+            let label_rect = Rectangle::new(
+                Point::new(label_x, label_y),
+                iced_core::Size::new(label_width, label_height),
+            );
+            let label_path = Path::rounded_rectangle(
+                label_rect.position(),
+                label_rect.size(),
+                iced_core::border::Radius::from(editor_constants::USERNAME_LABEL_BORDER_RADIUS),
+            );
+            frame.fill(&label_path, color);
+
+            // 绘制用户名文本
+            let text = iced_widget::canvas::Text {
+                content: username.clone(),
+                position: Point::new(label_x + text_padding, label_y + 2.0),
+                max_width: label_width,
+                line_height: iced_core::text::LineHeight::Relative(1.0),
+                size: iced_core::Pixels(editor_constants::CURSOR_LABEL_FONT_SIZE),
+                color: iced_core::Color::WHITE,
+                font: iced_core::Font::DEFAULT,
+                align_x: iced_core::alignment::Horizontal::Left.into(),
+                align_y: iced_core::alignment::Vertical::Top.into(),
+                shaping: iced_core::text::Shaping::Basic,
+            };
+            frame.fill_text(text);
+
+            geometries.push(frame.into_geometry());
+        }
+
+        geometries
+    }
+
     fn draw_selection_box(
         &self,
         renderer: &Renderer,

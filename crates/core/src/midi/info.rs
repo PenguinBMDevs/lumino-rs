@@ -28,14 +28,14 @@ pub struct MidiInfo {
 }
 
 impl MidiInfo {
-    pub fn from_path(path: PathBuf) -> Result<Self, String> {
+    pub fn from_path(path: PathBuf) -> crate::Result<Self> {
         Self::from_path_with_progress(path, None)
     }
 
     pub fn from_path_with_progress(
         path: PathBuf,
         progress_callback: Option<&dyn Fn(f64)>,
-    ) -> Result<Self, String> {
+    ) -> crate::Result<Self> {
         super::loader::load_midi_info_with_progress(path, progress_callback)
     }
 }
