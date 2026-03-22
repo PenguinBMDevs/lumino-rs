@@ -1,4 +1,5 @@
 pub mod api;
+pub mod soundfont_cache;
 
 use thiserror::Error;
 
