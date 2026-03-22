@@ -29,9 +29,9 @@ impl super::Editor {
     }
 
     pub fn set_scroll_y(&mut self, scroll_y: f32) {
-        // 计算实际可滚动的最大范围：总高度 - 视口高度
+        // 计算实际可滚动的最大范围：总高度 - 视口高度（减去时间轴标尺高度）
         let total_height = self.state.visible_key_count as f32 * self.state.zoom_y;
-        let viewport_height = self.canvas_size.y.max(0.0);
+        let viewport_height = (self.canvas_size.y - self.state.ruler_height).max(0.0);
         let effective_max_scroll = (total_height - viewport_height).max(0.0);
         self.state.scroll_y = scroll_y.max(0.0).min(effective_max_scroll);
         self.grid_cache.clear();

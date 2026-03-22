@@ -1,8 +1,8 @@
 use crate::constants::editor as editor_constants;
+use crate::constants::editor::{MEASURE_NUMBER_FONT_SIZE, RULER_HEIGHT};
 use crate::editor::{Editor, HitType};
 use crate::{Message, Renderer, Theme, message::EditorAction};
 use iced_core::{Point, Rectangle, mouse};
-
 use iced_widget::canvas::{self, Event, Frame, Geometry, Path, Program, Stroke};
 
 /// 钢琴卷帘网格绘制程序
@@ -199,6 +199,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
             .draw(renderer, bounds.size(), |frame| {
                 self.draw_keyboard(frame, bounds, theme);
                 self.draw_keys(frame, bounds, theme);
+                self.draw_ruler(frame, bounds, theme);
                 self.draw_bars(frame, bounds, theme);
             });
 
@@ -237,17 +238,32 @@ impl<'a> PianoRollGrid<'a> {
         let palette = theme.extended_palette().background;
         let view = &self.editor.state;
         let keyboard_width = view.keyboard_width;
+        let ruler_height = view.ruler_height;
         let max_key_index = (view.visible_key_count - 1) as f32;
 
         // 根据主题亮暗选择合适的键盘颜色
         let is_light_theme = theme.extended_palette().background.weakest.color.r > 0.5;
 
+        // 绘制键盘区域背景（时间轴标尺下方）
+        let keyboard_bg_rect = Rectangle::new(
+            Point::new(0.0, ruler_height),
+            iced_core::Size::new(keyboard_width, bounds.height - ruler_height),
+        );
+        let keyboard_bg_path =
+            Path::rectangle(keyboard_bg_rect.position(), keyboard_bg_rect.size());
+        let bg_color = if is_light_theme {
+            palette.weak.color
+        } else {
+            palette.base.color
+        };
+        frame.fill(&keyboard_bg_path, bg_color);
+
         for i in 0..view.visible_key_count {
             let keynum = i as isize;
             let world_y = (max_key_index - keynum as f32) * view.zoom_y;
-            let screen_y = world_y - view.scroll_y;
+            let screen_y = world_y - view.scroll_y + ruler_height;
 
-            if screen_y + view.zoom_y >= 0.0 && screen_y <= bounds.height {
+            if screen_y + view.zoom_y >= ruler_height && screen_y <= bounds.height {
                 let is_black_key = is_key_dark(keynum, view.visible_key_count as usize);
                 let key_color = if is_black_key {
                     if is_light_theme {
@@ -298,14 +314,15 @@ impl<'a> PianoRollGrid<'a> {
         let line_stroke = Stroke::default().with_width(1.0).with_color(line_color);
 
         let keyboard_width = view.keyboard_width;
+        let ruler_height = view.ruler_height;
         let max_key_index = (view.visible_key_count - 1) as f32;
 
         for i in 0..view.visible_key_count {
             let keynum = i as isize;
             let world_y = (max_key_index - keynum as f32) * view.zoom_y;
-            let screen_y = world_y - view.scroll_y;
+            let screen_y = world_y - view.scroll_y + ruler_height;
 
-            if screen_y + view.zoom_y >= 0.0 && screen_y <= bounds.height {
+            if screen_y + view.zoom_y >= ruler_height && screen_y <= bounds.height {
                 let line_y = screen_y + view.zoom_y;
                 let path = Path::line(
                     Point::new(keyboard_width, line_y),
@@ -316,12 +333,96 @@ impl<'a> PianoRollGrid<'a> {
         }
     }
 
+    /// 绘制时间轴标尺（小节号显示区域）
+    fn draw_ruler(&self, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &Theme) {
+        let view = &self.editor.state;
+        let ppq = view.ppq as f32;
+        let palette = theme.extended_palette().background;
+        let keyboard_width = view.keyboard_width;
+        let ruler_height = view.ruler_height;
+
+        let measure_ticks = ppq * 4.0;
+        let start_tick = view.scroll_x / view.zoom_x;
+        let end_tick = (view.scroll_x + bounds.width - keyboard_width) / view.zoom_x;
+
+        let is_light_theme = theme.extended_palette().background.weakest.color.r > 0.5;
+
+        let ruler_bg_color = if is_light_theme {
+            palette.weakest.color
+        } else {
+            palette.base.color
+        };
+
+        let ruler_rect = Rectangle::new(
+            Point::new(keyboard_width, 0.0),
+            iced_core::Size::new(bounds.width - keyboard_width, ruler_height),
+        );
+        let ruler_path = Path::rectangle(ruler_rect.position(), ruler_rect.size());
+        frame.fill(&ruler_path, ruler_bg_color);
+
+        let border_stroke = Stroke::default()
+            .with_width(1.0)
+            .with_color(if is_light_theme {
+                palette.strongest.color
+            } else {
+                palette.weak.color
+            });
+        frame.stroke(&ruler_path, border_stroke);
+
+        let text_color = if is_light_theme {
+            iced_core::Color::BLACK
+        } else {
+            iced_core::Color::WHITE
+        };
+
+        let mut current_measure_tick =
+            ((start_tick / measure_ticks).floor() * measure_ticks).max(0.0);
+        let mut measure_number = (current_measure_tick / measure_ticks).ceil() as u32;
+
+        while current_measure_tick <= end_tick {
+            let screen_x = (current_measure_tick * view.zoom_x) - view.scroll_x + keyboard_width;
+
+            if screen_x >= keyboard_width && screen_x <= bounds.width {
+                let measure_text = iced_widget::canvas::Text {
+                    content: measure_number.to_string(),
+                    position: Point::new(screen_x + 4.0, 4.0),
+                    max_width: bounds.width - keyboard_width,
+                    line_height: iced_core::text::LineHeight::Relative(1.0),
+                    size: iced_core::Pixels(MEASURE_NUMBER_FONT_SIZE),
+                    color: text_color,
+                    font: iced_core::Font::DEFAULT,
+                    align_x: iced_core::alignment::Horizontal::Left.into(),
+                    align_y: iced_core::alignment::Vertical::Top.into(),
+                    shaping: iced_core::text::Shaping::Basic,
+                };
+                frame.fill_text(measure_text);
+
+                let tick_stroke = Stroke::default()
+                    .with_width(1.0)
+                    .with_color(if is_light_theme {
+                        palette.strongest.color
+                    } else {
+                        palette.weak.color
+                    });
+                let tick_path = Path::line(
+                    Point::new(screen_x, 0.0),
+                    Point::new(screen_x, ruler_height),
+                );
+                frame.stroke(&tick_path, tick_stroke);
+            }
+
+            current_measure_tick += measure_ticks;
+            measure_number += 1;
+        }
+    }
+
     /// 绘制小节线和拍线（纵向线）
     fn draw_bars(&self, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &Theme) {
         let view = &self.editor.state;
         let ppq = view.ppq as f32;
         let palette = theme.extended_palette().background;
         let keyboard_width = view.keyboard_width;
+        let ruler_height = view.ruler_height;
 
         let measure_ticks = ppq * 4.0;
         let start_tick = view.scroll_x / view.zoom_x;
@@ -381,7 +482,7 @@ impl<'a> PianoRollGrid<'a> {
                 };
 
                 let path = Path::line(
-                    Point::new(screen_x, 0.0),
+                    Point::new(screen_x, ruler_height),
                     Point::new(screen_x, bounds.height),
                 );
                 frame.stroke(&path, stroke);

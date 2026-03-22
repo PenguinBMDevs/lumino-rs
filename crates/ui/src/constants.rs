@@ -105,6 +105,12 @@ pub mod editor {
 
     /// 选择框填充透明度
     pub const SELECTION_BOX_FILL_ALPHA: f32 = 0.2;
+
+    /// 时间轴标尺高度（小节号显示区域）
+    pub const RULER_HEIGHT: f32 = 24.0;
+
+    /// 小节号字体大小
+    pub const MEASURE_NUMBER_FONT_SIZE: f32 = 12.5;
 }
 
 /// 渲染相关常量

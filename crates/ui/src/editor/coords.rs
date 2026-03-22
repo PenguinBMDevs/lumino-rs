@@ -4,10 +4,11 @@ impl super::Editor {
         tick * self.state.zoom_x + self.state.keyboard_width - self.state.scroll_x
     }
 
-    /// key 转换为 y 坐标
+    /// key 转换为 y 坐标（相对于 Canvas，包含时间轴标尺高度偏移）
     pub(super) fn key_to_y(&self, key: u16) -> f32 {
         let max_key_index = (self.state.visible_key_count - 1) as f32;
         (max_key_index - key as f32) * self.state.zoom_y - self.state.scroll_y
+            + self.state.ruler_height
     }
 
     /// x 坐标转换为 tick
@@ -15,10 +16,11 @@ impl super::Editor {
         (x - self.state.keyboard_width + self.state.scroll_x) / self.state.zoom_x
     }
 
-    /// y 坐标转换为 key
+    /// y 坐标转换为 key（输入为 Canvas 内的 y 坐标，需要减去时间轴标尺高度）
     pub(super) fn y_to_key(&self, y: f32) -> u16 {
+        let adjusted_y = y - self.state.ruler_height;
         let max_key_index = (self.state.visible_key_count - 1) as f32;
-        let key_f32 = max_key_index - (y + self.state.scroll_y) / self.state.zoom_y;
+        let key_f32 = max_key_index - (adjusted_y + self.state.scroll_y) / self.state.zoom_y;
         key_f32.round().clamp(0.0, max_key_index) as u16
     }
 

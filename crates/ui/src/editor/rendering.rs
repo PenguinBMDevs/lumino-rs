@@ -151,7 +151,7 @@ impl Editor {
     }
 
     /// 检查点是否在 Canvas 有效区域内
-    /// 有效区域 = Canvas 区域减去键盘区域（左侧）和滚动条区域（底部和右侧）
+    /// 有效区域 = Canvas 区域减去键盘区域（左侧）、时间轴标尺（顶部）和滚动条区域（底部和右侧）
     /// 同时避开顶部可能被下拉菜单覆盖的区域
     pub fn is_inside_canvas(&self, local_pos: Point) -> bool {
         // 基本的 Canvas 边界检查
@@ -167,9 +167,8 @@ impl Editor {
             return false;
         }
 
-        // 避开顶部区域（防止与下拉菜单重叠）
-        // 顶部 MENU_SAFE_ZONE 像素区域不渲染音符（给下拉菜单留空间）
-        if local_pos.y < MENU_SAFE_ZONE {
+        // 检查是否在时间轴标尺下方（y 必须大于标尺高度）
+        if local_pos.y < self.state.ruler_height {
             return false;
         }
 

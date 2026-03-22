@@ -19,7 +19,8 @@ impl Note {
     pub fn screen_bounds(&self, view_state: &ViewState) -> Rectangle {
         let x = self.tick * view_state.zoom_x - view_state.scroll_x + view_state.keyboard_width;
         let max_key_index = (view_state.visible_key_count - 1) as f32;
-        let y = (max_key_index - self.key as f32) * view_state.zoom_y - view_state.scroll_y;
+        let y = (max_key_index - self.key as f32) * view_state.zoom_y - view_state.scroll_y
+            + view_state.ruler_height;
         let width = self.length * view_state.zoom_x;
         let height = view_state.zoom_y;
         Rectangle::new(Point::new(x, y), Size::new(width, height))

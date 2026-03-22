@@ -18,6 +18,8 @@ pub struct WindowManager {
     modifiers: winit::keyboard::ModifiersState,
     /// 是否需要调整大小
     resized: bool,
+    /// 是否请求关闭窗口
+    close_requested: bool,
 }
 
 impl WindowManager {
@@ -67,6 +69,7 @@ impl WindowManager {
             ui,
             modifiers: winit::keyboard::ModifiersState::default(),
             resized: false,
+            close_requested: false,
         })
     }
 
@@ -113,7 +116,7 @@ impl WindowManager {
                 });
             }
             WindowEvent::CloseRequested => {
-                self.window.request_redraw();
+                self.close_requested = true;
             }
             _ => (),
         }
@@ -155,6 +158,12 @@ impl WindowManager {
 
     /// 处理窗口动作（最小化、最大化、关闭）
     pub fn handle_window_actions(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        // 检查系统关闭请求
+        if self.close_requested {
+            event_loop.exit();
+            return;
+        }
+
         if let Some(action) = self.ui.take_window_action() {
             use lumino_ui::window::TrafficAction;
             match action {

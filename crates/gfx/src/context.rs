@@ -45,6 +45,9 @@ impl Context {
         width: u32,
         height: u32,
     ) -> Result<Self> {
+        let width = width.max(1);
+        let height = height.max(1);
+
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -111,6 +114,9 @@ impl Context {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
