@@ -100,3 +100,7 @@ winapi = { version = "0.3", features = ["processthreadsapi", "psapi"] }
 name = "collaboration_full_test"
 path = "tests/collaboration_full_test.rs"
 
+[[test]]
+name = "collaboration_ui_test"
+path = "tests/collaboration_ui_test.rs"
+

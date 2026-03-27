@@ -40,8 +40,6 @@ temp/
 *.midi
 *.lmpj
 
-# Test
-crates/core/tests/*
 
 # Temp cloned repos
 midly-fork/
@@ -50,7 +48,6 @@ midly-fork/
 .lingma
 
 # tests
-tests/*
 DmsExplorer/*
 test-file/
 
