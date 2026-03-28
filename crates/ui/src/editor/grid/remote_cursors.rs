@@ -10,12 +10,35 @@ use iced_widget::canvas::{self, Frame, Geometry, Path, Stroke};
 pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Vec<Geometry<Renderer>> {
     let mut geometries = Vec::new();
 
-    for (pos, color_str, username) in editor.remote_cursors.values() {
+    tracing::debug!(
+        "远程光标绘制：remote_cursors 数量 = {}",
+        editor.remote_cursors.len()
+    );
+
+    for (user_id, (pos, color_str, username)) in editor.remote_cursors.iter() {
+        tracing::debug!(
+            "绘制用户 {} 的光标：位置=({}, {}), 颜色={}, 用户名={}",
+            user_id,
+            pos.x,
+            pos.y,
+            color_str,
+            username
+        );
+
         let color = super::parse_color(color_str).unwrap_or(iced_core::Color::WHITE);
         let mut frame = Frame::new(renderer, bounds.size());
 
-        let cursor_x = pos.x;
-        let cursor_y = pos.y;
+        // 减去滚动偏移，将内容空间坐标转换到当前视图
+        let cursor_x = pos.x - editor.state.scroll_x;
+        let cursor_y = pos.y - editor.state.scroll_y;
+
+        tracing::debug!(
+            "转换后坐标：scroll=({}, {}), 绘制位置=({}, {})",
+            editor.state.scroll_x,
+            editor.state.scroll_y,
+            cursor_x,
+            cursor_y
+        );
 
         // 绘制游标线（贯穿整个高度）
         draw_cursor_line(

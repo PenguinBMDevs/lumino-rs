@@ -93,11 +93,23 @@ impl Root {
                 color,
                 username,
             } => {
+                tracing::debug!(
+                    "收到远程鼠标移动：user_id={}, x={}, y={}, color={}, username={}",
+                    user_id,
+                    x,
+                    y,
+                    color,
+                    username
+                );
                 self.editor.update_remote_cursor(
                     user_id,
                     iced_core::Point::new(x, y),
                     color,
                     username,
+                );
+                tracing::debug!(
+                    "更新后 remote_cursors 数量：{}",
+                    self.editor.remote_cursors.len()
                 );
             }
             message::Message::CollaborationRemoteUserLeft { user_id } => {

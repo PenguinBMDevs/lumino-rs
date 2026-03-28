@@ -64,6 +64,7 @@ pub enum DialogType {
 pub enum CollaborationViewState {
     #[default]
     Connect, // 连接服务器界面
+    Connecting,  // 正在连接中
     RoomActions, // 创建/加入房间界面
     InRoom,      // 在房间内界面
 }

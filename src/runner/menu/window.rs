@@ -65,6 +65,15 @@ impl RunnerInner {
                     invite_code
                 );
 
+                // 清除连接状态
+                self.window
+                    .ui_mut()
+                    .root_mut()
+                    .state_mut()
+                    .collaboration_dialog
+                    .connection_status
+                    .clear();
+
                 if let Some(target_invite_code) = self.pending_invite_code.take() {
                     tracing::info!("使用首屏填写的邀请码直接加入房间: {}", target_invite_code);
                     self.handle_collaboration_join_room(target_invite_code);
@@ -92,6 +101,10 @@ impl RunnerInner {
                     Some(invite_code),
                     Some(room_name),
                 );
+                // 自动关闭协作对话框
+                self.dialog_manager
+                    .mark_dialog_for_close(DialogType::Collaboration);
+                tracing::info!("协作: 自动关闭协作对话框");
             }
             WindowEvent::CollaborationRoomJoined {
                 room_name,
@@ -110,6 +123,10 @@ impl RunnerInner {
                     Some(invite_code),
                     Some(room_name),
                 );
+                // 自动关闭协作对话框
+                self.dialog_manager
+                    .mark_dialog_for_close(DialogType::Collaboration);
+                tracing::info!("协作: 自动关闭协作对话框");
             }
             WindowEvent::CollaborationDisconnected => {
                 tracing::info!("协作: 连接断开事件");
@@ -127,6 +144,14 @@ impl RunnerInner {
                 color,
                 username,
             } => {
+                tracing::debug!(
+                    "窗口事件 - 远程鼠标更新：user_id={}, x={}, y={}, color={}, username={}",
+                    user_id,
+                    x,
+                    y,
+                    color,
+                    username
+                );
                 self.window
                     .ui_mut()
                     .update_remote_cursor(user_id, x, y, color, username);

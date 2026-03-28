@@ -161,6 +161,11 @@ impl Host {
         &self.root
     }
 
+    /// 获取 root 可变引用
+    pub fn root_mut(&mut self) -> &mut root::Root {
+        &mut self.root
+    }
+
     /// 获取设置面板引用
     pub fn settings(&self) -> &settings::SettingsPanel {
         self.root.settings()

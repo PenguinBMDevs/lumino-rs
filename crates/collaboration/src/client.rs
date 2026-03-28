@@ -179,7 +179,9 @@ impl CollaborationClient {
         }
 
         // 使用 roomId 连接 WebSocket
+        eprintln!("[DEBUG] Client B 准备调用 connect_with_room_id");
         self.connect_with_room_id(&invite_code).await?;
+        eprintln!("[DEBUG] Client B connect_with_room_id 完成");
 
         Ok(())
     }
@@ -207,6 +209,7 @@ impl CollaborationClient {
         };
 
         info!("连接到 WebSocket: {}", ws_url);
+        eprintln!("[DEBUG] 开始 WebSocket 连接到: {}", ws_url);
         *self.state.write().await = ClientState::Connecting;
 
         // 建立 WebSocket 连接
@@ -214,13 +217,18 @@ impl CollaborationClient {
         let timeout_duration = Duration::from_secs(15);
 
         let (ws_stream, _) = match tokio::time::timeout(timeout_duration, connect_future).await {
-            Ok(result) => result?,
+            Ok(result) => {
+                eprintln!("[DEBUG] WebSocket 连接成功");
+                result?
+            }
             Err(_) => {
+                eprintln!("[DEBUG] WebSocket 连接超时");
                 return Err(format!("连接超时（{}秒）", timeout_duration.as_secs()).into());
             }
         };
 
         info!("WebSocket 连接成功");
+        eprintln!("[DEBUG] 开始 WebSocket 分割");
         let (write, mut read) = ws_stream.split();
         let write = Arc::new(Mutex::new(write));
         *self.state.write().await = ClientState::Connected;
@@ -231,21 +239,91 @@ impl CollaborationClient {
         };
         let auth_json = serde_json::to_string(&auth_msg)?;
         info!("发送认证消息");
+        eprintln!("[DEBUG] 发送认证消息");
         write
             .lock()
             .await
             .send(Message::Text(auth_json.into()))
             .await?;
         *self.state.write().await = ClientState::Authenticating;
+        eprintln!("[DEBUG] 认证消息已发送，等待响应...");
 
         // 等待认证响应
         info!("等待认证响应...");
         self.handle_auth_response(&mut read, &write).await?;
 
-        // 启动消息处理循环
-        self.start_message_loop(read, write).await;
+        // 启动消息处理循环（在后台运行，不阻塞）
+        // 注意：不在这里 spawn，因为 iced runtime 可能不支持
+        // 改为返回一个后台任务，让调用者决定如何处理
+        self.start_background_loop(read, write);
 
         Ok(())
+    }
+
+    /// 启动后台循环（不阻塞）
+    fn start_background_loop(&self, mut read: WsStreamRead, write: Arc<Mutex<WsSink>>) {
+        let state = self.state.clone();
+        let session = self.session.clone();
+        let event_callback = self.event_callback.clone();
+
+        // 启动后台任务
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+            rt.block_on(async move {
+                let mut heartbeat = interval(Duration::from_millis(crate::HEARTBEAT_INTERVAL_MS));
+
+                loop {
+                    tokio::select! {
+                        msg = read.next() => {
+                            match msg {
+                                Some(Ok(Message::Text(text))) => {
+                                    if let Err(e) = handle_server_message(
+                                        &text,
+                                        &state,
+                                        &session,
+                                        event_callback.clone()
+                                    ).await {
+                                        error!("处理消息失败: {} - {}", e, text);
+                                    }
+                                }
+                                Some(Ok(Message::Close(_))) => {
+                                    *state.write().await = ClientState::Disconnected;
+                                    break;
+                                }
+                                Some(Err(e)) => {
+                                    // Tokio shutdown 产生的错误是正常的，不记录为错误
+                                    let err_msg = e.to_string();
+                                    if err_msg.contains("Tokio") && err_msg.contains("shutdown") {
+                                        debug!("WebSocket 连接关闭: {}", e);
+                                    } else {
+                                        error!("WebSocket 错误: {}", e);
+                                    }
+                                    *state.write().await = ClientState::Error;
+                                }
+                                None => {
+                                    *state.write().await = ClientState::Disconnected;
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        _ = heartbeat.tick() => {
+                            let ping = ClientMessage::Ping {
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as u64,
+                            };
+                            if let Ok(text) = serde_json::to_string(&ping) {
+                                let mut w = write.lock().await;
+                                let _ = w.send(Message::Text(text.into())).await;
+                            }
+                        }
+                    }
+                }
+            });
+        });
     }
 
     /// 处理认证响应
@@ -265,20 +343,46 @@ impl CollaborationClient {
                     format!("Failed to parse auth response: {} - text: {}", e, text)
                 })?;
                 match msg {
-                    ServerMessage::Authenticated { user_id, room, .. } => {
+                    ServerMessage::Authenticated { user_id, room, users, .. } => {
                         let invite_code = room.invite_code.clone();
                         info!("认证成功: user_id={}, invite_code={}", user_id, invite_code);
-                        *self.state.write().await = ClientState::Authenticated;
+                        *self.state.write().await = ClientState::InRoom;
 
-                        let mut session = self.session.write().await;
-                        session.current_user_id = Some(user_id.clone());
-                        session.invite_code = Some(invite_code.clone());
+                        // 构建 RoomInfo
+                        let room_info = crate::types::RoomInfo {
+                            id: room.id,
+                            invite_code: room.invite_code.clone(),
+                            name: room.name,
+                            host_id: room.host_id.clone(),
+                            user_count: room.user_count as usize,
+                            max_users: room.max_users as usize,
+                        };
 
-                        // 安全地发射事件，避免unwrap
+                        // 保存房间信息
+                        {
+                            let mut session = self.session.write().await;
+                            session.current_user_id = Some(user_id.clone());
+                            session.invite_code = Some(invite_code.clone());
+                            session.current_room = Some(room_info.clone());
+                        }
+
+                        // 发射认证事件
                         self.emit_event(CollaborationEvent::Authenticated {
-                            user_id,
-                            invite_code,
+                            user_id: user_id.clone(),
+                            invite_code: invite_code.clone(),
                         });
+
+                        // 发射房间事件（根据是否是 host 决定类型）
+                        if user_id == room.host_id {
+                            info!("用户是房间 host，发送 RoomCreated 事件");
+                            self.emit_event(CollaborationEvent::RoomCreated { room: room_info });
+                        } else {
+                            info!("用户加入现有房间，发送 RoomJoined 事件");
+                            self.emit_event(CollaborationEvent::RoomJoined {
+                                room: room_info,
+                                users,
+                            });
+                        }
 
                         Ok(())
                     }
@@ -293,88 +397,21 @@ impl CollaborationClient {
         }
     }
 
-    /// 启动消息处理循环
-    async fn start_message_loop(&self, mut read: WsStreamRead, write: Arc<Mutex<WsSink>>) {
-        let state = self.state.clone();
-        let session = self.session.clone();
-        let event_callback = self.event_callback.clone();
-        let message_rx = self.message_rx.clone();
-
-        tokio::spawn(async move {
-            let mut heartbeat = interval(Duration::from_millis(crate::HEARTBEAT_INTERVAL_MS));
-            let mut message_rx = message_rx.lock().await;
-
-            loop {
-                tokio::select! {
-                    msg = read.next() => {
-                        match msg {
-                            Some(Ok(Message::Text(text))) => {
-                                if let Err(e) = handle_server_message(
-                                    &text,
-                                    &state,
-                                    &session,
-                                    event_callback.clone()
-                                ).await {
-                                    error!("处理消息失败: {} - {}", e, text);
-                                }
-                            }
-                            Some(Ok(Message::Close(_))) => {
-                                *state.write().await = ClientState::Disconnected;
-                                break;
-                            }
-                            Some(Err(e)) => {
-                                error!("WebSocket 错误: {}", e);
-                                *state.write().await = ClientState::Error;
-                            }
-                            None => {
-                                *state.write().await = ClientState::Disconnected;
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
-                    Some(client_msg) = message_rx.recv() => {
-                        let msg_text = match serde_json::to_string(&client_msg) {
-                            Ok(text) => {
-                                info!("发送消息: {}", text);
-                                text
-                            }
-                            Err(e) => {
-                                error!("序列化失败: {} - {:?}", e, client_msg);
-                                continue;
-                            }
-                        };
-                        let mut w = write.lock().await;
-                        if let Err(e) = w.send(Message::Text(msg_text.into())).await {
-                            error!("发送失败: {}", e);
-                        }
-                    }
-                    _ = heartbeat.tick() => {
-                        let ping = ClientMessage::Ping {
-                            timestamp: std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as u64,
-                        };
-                        let msg_text = match serde_json::to_string(&ping) {
-                            Ok(text) => text,
-                            Err(_) => continue,
-                        };
-                        let mut w = write.lock().await;
-                        let _ = w.send(Message::Text(msg_text.into())).await;
-                    }
-                }
-            }
-        });
-    }
-
     /// 发送鼠标位置
     pub async fn send_mouse_position(
         &self,
         position: MousePosition,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.send_message(ClientMessage::MouseMove { position })
-            .await
+        info!("发送鼠标位置到服务器：x={}, y={}", position.x, position.y);
+        let result = self
+            .send_message(ClientMessage::MouseMove { position })
+            .await;
+        if let Err(ref e) = result {
+            error!("发送鼠标位置失败：{}", e);
+        } else {
+            info!("鼠标位置已发送到服务器");
+        }
+        result
     }
 
     /// 发送音符批量操作

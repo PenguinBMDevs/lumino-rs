@@ -57,6 +57,11 @@ pub async fn handle_server_message(
             position,
             color,
         } => {
+            info!(
+                "收到服务器 MouseUpdate: user_id={}, username={}, x={}, y={}, color={}",
+                user_id, username, position.x, position.y, color
+            );
+
             let mut sess = session.write().await;
             if let Some(user) = sess.remote_users.get_mut(&user_id) {
                 user.mouse_position = Some(position.clone());

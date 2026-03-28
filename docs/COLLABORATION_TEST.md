@@ -341,27 +341,11 @@ https://lumino-02.afeu20u3jfocas.dpdns.org/logs
 |------|------|
 | `tests/collaboration_full_test.rs` | 基础功能测试 |
 | `tests/collaboration_ui_test.rs` | UI 集成测试套件 |
-| `src/bin/collab_viz.rs` | 可视化测试工具 |
+
 | `crates/collaboration/src/client.rs` | 协作客户端实现 |
 | `crates/ui/src/editor/grid/remote_cursors.rs` | 远程光标渲染 |
 
-## 可视化测试工具
 
-除了上述命令行测试外，还提供了一个可视化测试工具 `collab_viz`，可以直观地看到两个客户端之间的协作同步效果。
-
-### 功能特点
-
-- **双面板界面**：左侧显示 Client A (Alice)，右侧显示 Client B (Bob)
-- **实时鼠标同步**：在面板上移动鼠标会同步到对面板显示远程光标
-- **音符同步**：点击面板创建音符，自动同步到对方面板
-- **事件日志**：底部显示所有协作事件的实时日志
-- **状态栏**：显示连接状态、房间信息和在线用户数
-
-### 运行方式
-
-```bash
-cargo run --bin collab_viz
-```
 
 ### 使用说明
 

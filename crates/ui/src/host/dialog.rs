@@ -184,4 +184,24 @@ impl Host {
         self.clear_cache();
         self.window.request_redraw();
     }
+
+    /// 打开协作对话框并设置为连接中状态（用于调试模式自动连接）
+    pub fn open_collaboration_dialog_with_state(
+        &mut self,
+        host: String,
+        port: u16,
+        username: String,
+    ) {
+        self.root
+            .open_collaboration_dialog_with_state(host, port, username);
+        self.clear_cache();
+        self.window.request_redraw();
+    }
+
+    /// 从另一个 Host 同步协作状态（用于对话框窗口同步主窗口状态）
+    pub fn sync_collaboration_state_from(&mut self, other: &Host) {
+        self.root.sync_collaboration_state_from(&other.root);
+        self.clear_cache();
+        self.window.request_redraw();
+    }
 }

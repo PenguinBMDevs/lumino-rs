@@ -21,6 +21,33 @@ impl RunnerInner {
         for event in events {
             self.handle_core_event(event_loop, event);
         }
+
+        // 定时同步协作状态（每 50ms 检查一次）
+        self.sync_collaboration_if_needed();
+    }
+
+    /// 根据需要同步协作状态（50ms 节流）
+    fn sync_collaboration_if_needed(&mut self) {
+        let is_connected = self.collaboration_service.is_connected();
+        tracing::debug!(
+            "sync_collaboration_if_needed: is_connected={}",
+            is_connected
+        );
+
+        if !is_connected {
+            return;
+        }
+
+        let now = std::time::Instant::now();
+        let should_sync = match self.last_collab_sync {
+            None => true,
+            Some(last) => now.duration_since(last).as_millis() >= 50,
+        };
+
+        if should_sync {
+            self.sync_collaboration_state();
+            self.last_collab_sync = Some(now);
+        }
     }
 
     /// 处理单个核心事件
@@ -36,10 +63,6 @@ impl RunnerInner {
                 self.handle_menu_event(event_loop, menu_event);
             }
             Event::Window(window_event) => {
-                // 如果是鼠标移动，实时同步协作状态
-                if matches!(window_event, lumino_core::event::window::Event::Drag) {
-                    self.sync_collaboration_state();
-                }
                 self.handle_window_event(window_event);
             }
         }

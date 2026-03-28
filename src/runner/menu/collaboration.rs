@@ -6,18 +6,29 @@ impl RunnerInner {
     /// 同步协作状态（发送鼠标位置等）
     pub(super) fn sync_collaboration_state(&mut self) {
         // 检查是否已连接
-        if !self.collaboration_service.is_connected() {
+        let is_connected = self.collaboration_service.is_connected();
+        if !is_connected {
             return;
         }
 
-        let ui = self.window.ui();
-        let editor = ui.root().editor_ref();
+        // 获取最新的鼠标位置（从 Host 而不是 Editor）
+        let cursor_pos = self.window.ui().cursor_position();
+        let editor = self.window.ui().root().editor_ref();
 
-        if let Some(pos) = editor.cursor_position {
-            // 转换为 Canvas 相对坐标并考虑滚动
+        tracing::debug!(
+            "协作同步：cursor_position={:?}, canvas_offset=({}, {}), scroll=({}, {})",
+            cursor_pos,
+            editor.canvas_offset.x,
+            editor.canvas_offset.y,
+            editor.state.scroll_x,
+            editor.state.scroll_y
+        );
+
+        if let Some(pos) = cursor_pos {
+            // 转换为 Canvas 内容空间坐标（考虑滚动偏移）
             let local_pos = iced_core::Point::new(
-                pos.x - editor.canvas_offset.x,
-                pos.y - editor.canvas_offset.y,
+                pos.x - editor.canvas_offset.x + editor.state.scroll_x,
+                pos.y - editor.canvas_offset.y + editor.state.scroll_y,
             );
 
             if editor.is_inside_canvas(local_pos) {
@@ -38,15 +49,21 @@ impl RunnerInner {
                     }),
                 };
 
+                tracing::debug!(
+                    "协作：发送鼠标位置：x={}, y={}",
+                    local_pos.x,
+                    local_pos.y
+                );
+
                 if let Err(e) = self.collaboration_service.send_mouse_position(mouse_pos) {
-                    tracing::debug!("协作: 发送鼠标位置失败: {}", e);
+                    tracing::debug!("协作：发送鼠标位置失败：{}", e);
                 }
             }
         }
     }
 
     /// 处理协作连接
-    pub(super) fn handle_collaboration_connect(
+    pub(crate) fn handle_collaboration_connect(
         &mut self,
         host: String,
         port: u16,

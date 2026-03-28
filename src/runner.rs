@@ -66,6 +66,8 @@ struct RunnerInner {
     collaboration_service: CollaborationService,
     /// 是否需要重启窗口（标题栏设置变更）
     needs_window_restart: bool,
+    /// 上次协作同步时间（用于定时发送鼠标位置）
+    last_collab_sync: Option<std::time::Instant>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -164,12 +166,16 @@ impl winit::application::ApplicationHandler for Runner {
         // 处理核心事件（包括打开对话框）
         this.process_core_events(event_loop);
 
-        // 初始化新创建的对话框
-        this.dialog_manager.initialize_pending(
-            event_loop,
-            this.window.window(),
-            &this.storage.config.get().ui,
-        );
+        // 初始化新创建的对话框（同步主窗口的协作状态）
+        {
+            let main_ui = this.window.ui();
+            this.dialog_manager.initialize_pending_with_collaboration_state(
+                event_loop,
+                this.window.window(),
+                &this.storage.config.get().ui,
+                main_ui,
+            );
+        }
 
         // 更新对话框
         this.dialog_manager.update();
@@ -242,7 +248,7 @@ impl Runner {
         #[cfg(target_os = "macos")]
         crate::platform::macos::init();
 
-        RunnerInner {
+        let mut runner = RunnerInner {
             window,
             storage,
             midi,
@@ -259,7 +265,49 @@ impl Runner {
             file_service,
             collaboration_service,
             needs_window_restart: false,
+            last_collab_sync: None,
+        };
+
+        // Debug 模式下自动连接本地服务器
+        #[cfg(debug_assertions)]
+        {
+            // 生成时间戳格式的用户名
+            let username = format!(
+                "debug_{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis()
+            );
+
+            tracing::info!(
+                "Debug 模式：自动连接协作服务器 127.0.0.1:3000，用户名: {}",
+                username
+            );
+
+            // 打开协作对话框并设置 UI 状态为正在连接
+            runner
+                .window
+                .ui_mut()
+                .open_collaboration_dialog_with_state(
+                    "127.0.0.1".to_string(),
+                    3000,
+                    username.clone(),
+                );
+
+            // 通过正常流程处理连接（这会更新 Runner 的 collaboration_status）
+            let host = "127.0.0.1".to_string();
+            let port = 3000u16;
+            runner.handle_collaboration_connect(
+                host,
+                port,
+                username,
+                Some("Lumino 房间".to_string()),
+                None,
+            );
         }
+
+        runner
     }
 
     fn process_audio_actions(window: &mut WindowManager, midi: &mut MidiManager) {

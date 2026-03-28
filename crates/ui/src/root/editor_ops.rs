@@ -149,6 +149,9 @@ impl Root {
             CollaborationViewState::Connect => {
                 self.state.collaboration_dialog.connection_status = "未连接".to_string();
             }
+            CollaborationViewState::Connecting => {
+                self.state.collaboration_dialog.connection_status = "正在连接...".to_string();
+            }
             CollaborationViewState::RoomActions => {
                 self.state.collaboration_dialog.connection_status =
                     "已连接，请创建或加入房间".to_string();

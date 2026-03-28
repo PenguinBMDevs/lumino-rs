@@ -160,6 +160,14 @@ impl CollaborationService {
                 color,
                 username,
             } => {
+                tracing::debug!(
+                    "协作事件 - 鼠标更新：user_id={}, x={}, y={}, color={}, username={}",
+                    user_id,
+                    position.x,
+                    position.y,
+                    color,
+                    username
+                );
                 // 通知 UI 更新远端游标
                 lumino_core::event::emit(lumino_core::event::Event::Window(
                     lumino_core::event::window::Event::CollaborationMouseUpdate {
@@ -256,6 +264,8 @@ impl CollaborationService {
     /// 检查是否已连接
     pub fn is_connected(&self) -> bool {
         let client_guard = self.client.lock().unwrap();
-        client_guard.is_some()
+        let is_connected = client_guard.is_some();
+        tracing::debug!("协作服务 is_connected: {}", is_connected);
+        is_connected
     }
 }

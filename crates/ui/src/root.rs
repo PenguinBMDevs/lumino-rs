@@ -56,6 +56,11 @@ impl Root {
         }
     }
 
+    /// 获取状态可变引用
+    pub fn state_mut(&mut self) -> &mut RootState {
+        &mut self.state
+    }
+
     /// 创建进度窗口 Root
     pub fn new_progress(theme: &str) -> Self {
         let default_config = UiConfig::default();

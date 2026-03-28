@@ -42,26 +42,19 @@ pub fn view_collaboration_dialog<'a>(
                 .padding(8)
                 .width(Length::Fill);
 
-            let connect_button = button(text("连接").size(14))
-                .on_press(Message::CollaborationConnect {
-                    host: state.server_host.clone(),
-                    port: state.server_port.parse().unwrap_or(3000),
-                    username: state.username.clone(),
-                    invite_code: if state.invite_code.trim().is_empty() {
-                        None
-                    } else {
-                        Some(state.invite_code.clone())
-                    },
-                })
-                .padding([8, 24])
-                .style(move |_theme: &iced_core::Theme, status| {
-                    let bg = match status {
-                        button::Status::Hovered => palette.primary.strong.color,
-                        _ => palette.primary.base.color,
-                    };
-                    button::Style {
-                        background: Some(bg.into()),
-                        text_color: iced_core::Color::WHITE,
+            // 根据连接状态显示不同的按钮
+            let (button_text, is_connecting) = if !state.connection_status.is_empty() {
+                (state.connection_status.clone(), true)
+            } else {
+                ("连接".to_string(), false)
+            };
+
+            let connect_button = if is_connecting {
+                // 连接中状态 - 禁用按钮
+                button(text(button_text).size(14)).padding([8, 24]).style(
+                    move |_theme: &iced_core::Theme, _status| button::Style {
+                        background: Some(palette.background.weak.color.into()),
+                        text_color: palette.background.neutral.text,
                         border: iced_core::Border {
                             radius: 4.0.into(),
                             width: 0.0,
@@ -69,8 +62,40 @@ pub fn view_collaboration_dialog<'a>(
                         },
                         snap: false,
                         shadow: Default::default(),
-                    }
-                });
+                    },
+                )
+            } else {
+                // 正常状态 - 可点击
+                button(text(button_text).size(14))
+                    .on_press(Message::CollaborationConnect {
+                        host: state.server_host.clone(),
+                        port: state.server_port.parse().unwrap_or(3000),
+                        username: state.username.clone(),
+                        invite_code: if state.invite_code.trim().is_empty() {
+                            None
+                        } else {
+                            Some(state.invite_code.clone())
+                        },
+                    })
+                    .padding([8, 24])
+                    .style(move |_theme: &iced_core::Theme, status| {
+                        let bg = match status {
+                            button::Status::Hovered => palette.primary.strong.color,
+                            _ => palette.primary.base.color,
+                        };
+                        button::Style {
+                            background: Some(bg.into()),
+                            text_color: iced_core::Color::WHITE,
+                            border: iced_core::Border {
+                                radius: 4.0.into(),
+                                width: 0.0,
+                                color: iced_core::Color::TRANSPARENT,
+                            },
+                            snap: false,
+                            shadow: Default::default(),
+                        }
+                    })
+            };
 
             column![
                 row![host_input, space().width(8), port_input]
@@ -81,6 +106,27 @@ pub fn view_collaboration_dialog<'a>(
                 invite_input,
                 space().height(16),
                 connect_button,
+            ]
+            .align_x(iced_core::Alignment::Center)
+            .into()
+        }
+        CollaborationViewState::Connecting => {
+            // 显示连接中的状态
+            let connecting_text =
+                text("正在连接服务器...")
+                    .size(16)
+                    .style(move |_theme: &iced_core::Theme| text::Style {
+                        color: Some(palette.primary.base.color),
+                    });
+
+            column![
+                connecting_text,
+                space().height(16),
+                text("请稍候")
+                    .size(14)
+                    .style(move |_theme: &iced_core::Theme| text::Style {
+                        color: Some(palette.background.neutral.text),
+                    }),
             ]
             .align_x(iced_core::Alignment::Center)
             .into()

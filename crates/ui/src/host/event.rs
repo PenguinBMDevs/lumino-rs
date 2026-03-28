@@ -16,6 +16,13 @@ impl Host {
         // 存储逻辑坐标（与 iced 保持一致）
         self.cursor_position = Some(logical_pos);
 
+        tracing::debug!(
+            "光标移动：物理位置=({:?}), 逻辑位置=({}, {})",
+            position,
+            logical_pos.x,
+            logical_pos.y
+        );
+
         // 如果正在调整工具栏高度，更新工具栏高度
         if self.is_toolbar_resizing {
             self.root.toolbar.update_resize_position(logical_pos.y);
