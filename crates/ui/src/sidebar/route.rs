@@ -5,11 +5,13 @@ use super::{Event, ROUTES, Route, RouteConfig};
 
 use crate::{Element, Theme, resources::icon, window};
 
-pub fn view<'a>(active: Route, window: &window::Window) -> Element<'a> {
+pub fn view<'a>(active: Route, panel_visible: bool, window: &window::Window) -> Element<'a> {
     let items = ROUTES
         .into_iter()
         .map(|r| match r {
-            RouteConfig::Item { route, icon } => item(route, icon, route == active, window),
+            RouteConfig::Item { route, icon } => {
+                item(route, icon, panel_visible && route == active, window)
+            }
             RouteConfig::Space => space().height(Length::Fill).into(),
         })
         .collect::<Vec<_>>();

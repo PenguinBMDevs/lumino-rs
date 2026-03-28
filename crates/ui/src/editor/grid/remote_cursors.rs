@@ -40,22 +40,13 @@ pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Vec<Geom
             cursor_y
         );
 
-        // 绘制游标线（贯穿整个高度）
-        draw_cursor_line(
-            &mut frame,
-            cursor_x,
-            bounds.height,
-            color,
-            editor_constants::REMOTE_CURSOR_LINE_WIDTH,
-        );
-
-        // 绘制鼠标指针（箭头形状）
-        draw_cursor_arrow(
+        // 绘制圆圈光标
+        draw_cursor_circle(
             &mut frame,
             cursor_x,
             cursor_y,
             color,
-            editor_constants::CURSOR_ARROW_SIZE_PX,
+            editor_constants::REMOTE_CURSOR_CIRCLE_RADIUS,
         );
 
         // 绘制用户名牌
@@ -65,7 +56,7 @@ pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Vec<Geom
             cursor_y,
             username,
             color,
-            editor_constants::CURSOR_ARROW_SIZE_PX,
+            editor_constants::REMOTE_CURSOR_CIRCLE_RADIUS,
         );
 
         geometries.push(frame.into_geometry());
@@ -74,58 +65,25 @@ pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Vec<Geom
     geometries
 }
 
-/// 绘制光标竖线
-fn draw_cursor_line(
-    frame: &mut Frame<Renderer>,
-    x: f32,
-    height: f32,
-    color: iced_core::Color,
-    width: f32,
-) {
-    let path = Path::line(Point::new(x, 0.0), Point::new(x, height));
-    frame.stroke(
-        &path,
-        Stroke::default()
-            .with_width(width)
-            .with_color(iced_core::Color { a: 0.6, ..color }),
-    );
-}
-
-/// 绘制光标箭头
-fn draw_cursor_arrow(
+/// 绘制圆圈光标
+fn draw_cursor_circle(
     frame: &mut Frame<Renderer>,
     x: f32,
     y: f32,
     color: iced_core::Color,
-    size: f32,
+    radius: f32,
 ) {
-    // 箭头主体
-    let arrow_path = create_arrow_path(x, y, size);
-    frame.fill(&arrow_path, color);
+    // 半透明填充
+    let circle_path = Path::circle(Point::new(x, y), radius);
+    frame.fill(&circle_path, iced_core::Color { a: 0.3, ..color });
 
-    // 白色边框
-    let arrow_border = create_arrow_path(x, y, size);
+    // 实线边框
     frame.stroke(
-        &arrow_border,
+        &circle_path,
         Stroke::default()
             .with_width(editor_constants::REMOTE_CURSOR_BORDER_WIDTH)
-            .with_color(iced_core::Color::WHITE),
+            .with_color(iced_core::Color { a: 0.8, ..color }),
     );
-}
-
-/// 创建箭头路径
-fn create_arrow_path(x: f32, y: f32, size: f32) -> Path {
-    Path::new(|builder| {
-        // 箭头指向左上方
-        builder.move_to(Point::new(x, y));
-        builder.line_to(Point::new(x, y + size));
-        builder.line_to(Point::new(x + size * 0.5, y + size * 0.8));
-        builder.line_to(Point::new(x + size * 0.8, y + size * 1.5));
-        builder.line_to(Point::new(x + size * 1.2, y + size * 1.2));
-        builder.line_to(Point::new(x + size * 0.9, y + size * 0.5));
-        builder.line_to(Point::new(x + size, y));
-        builder.close();
-    })
 }
 
 /// 绘制用户名牌
@@ -135,14 +93,14 @@ fn draw_username_label(
     cursor_y: f32,
     username: &str,
     color: iced_core::Color,
-    arrow_size: f32,
+    circle_radius: f32,
 ) {
     let text_padding = editor_constants::USERNAME_LABEL_PADDING;
     let username_len = username.len() as f32 * 7.0; // 估算文本宽度
     let label_width = username_len + text_padding * 2.0;
     let label_height = editor_constants::USERNAME_LABEL_HEIGHT;
-    let label_x = cursor_x + arrow_size + editor_constants::USERNAME_LABEL_ARROW_OFFSET;
-    let label_y = cursor_y - editor_constants::USERNAME_LABEL_TEXT_Y_OFFSET;
+    let label_x = cursor_x + circle_radius + editor_constants::USERNAME_LABEL_ARROW_OFFSET;
+    let label_y = cursor_y - label_height * 0.5;
 
     let label_rect = Rectangle::new(
         Point::new(label_x, label_y),

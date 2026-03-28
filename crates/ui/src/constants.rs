@@ -52,14 +52,11 @@ pub mod editor {
     /// 双击检测距离阈值（像素）
     pub const DOUBLE_CLICK_DISTANCE_PX: f32 = 10.0;
 
-    /// 光标箭头大小（像素）
-    pub const CURSOR_ARROW_SIZE_PX: f32 = 12.0;
+    /// 远程光标圆圈半径（像素）
+    pub const REMOTE_CURSOR_CIRCLE_RADIUS: f32 = 8.0;
 
     /// 光标标签字体大小
     pub const CURSOR_LABEL_FONT_SIZE: f32 = 11.0;
-
-    /// 远程光标线宽度
-    pub const REMOTE_CURSOR_LINE_WIDTH: f32 = 1.5;
 
     /// 远程光标边框宽度
     pub const REMOTE_CURSOR_BORDER_WIDTH: f32 = 1.0;
@@ -75,9 +72,6 @@ pub mod editor {
 
     /// 用户名片箭头偏移
     pub const USERNAME_LABEL_ARROW_OFFSET: f32 = 4.0;
-
-    /// 用户名片文本Y偏移
-    pub const USERNAME_LABEL_TEXT_Y_OFFSET: f32 = 2.0;
 
     /// 滚动最大增量
     pub const SCROLL_MAX_DELTA: f32 = 100.0;

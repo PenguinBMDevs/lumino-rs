@@ -134,7 +134,7 @@ impl Sidebar {
             iced_widget::container(iced_widget::space()).width(0).into()
         };
 
-        let inner = row![route::view(self.route, window), panel,];
+        let inner = row![route::view(self.route, self.panel_visible, window), panel,];
 
         container(inner).into()
     }
