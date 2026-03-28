@@ -64,6 +64,7 @@ tokio = { version = "1.42", features = ["full"] }
 zstd = "0.13.2"
 rgb = { workspace = true }
 iced_core = "0.14.0"
+iced = { version = "0.14.0", features = ["wgpu", "canvas"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "windef", "minwindef"] }

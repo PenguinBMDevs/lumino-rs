@@ -16,6 +16,15 @@ Lumino 项目包含以下类型的测试：
 
 ## 快速开始
 
+### 运行可视化测试工具
+
+```bash
+# 启动可视化测试工具（推荐用于观察协作效果）
+cargo run --bin collab_viz
+```
+
+可视化工具会打开一个窗口，显示两个面板（Alice 和 Bob），可以直观地看到鼠标同步和音符同步的效果。
+
 ### 运行所有测试
 
 ```bash
@@ -280,6 +289,9 @@ sleep(Duration::from_millis(2000)).await;
 ## 命令速查表
 
 ```bash
+# 启动可视化测试工具（推荐）
+cargo run --bin collab_viz
+
 # 编译测试
 cargo test --test collaboration_ui_test --no-run
 
