@@ -170,6 +170,16 @@ impl RunnerInner {
             } => {
                 self.handle_local_note_added(tick, key, length, velocity, channel, track_index);
             }
+            WindowEvent::LocalNoteMoved {
+                tick,
+                key,
+                length,
+                tick_offset,
+                key_offset,
+                track_index,
+            } => {
+                self.handle_local_note_moved(tick, key, length, tick_offset, key_offset, track_index);
+            }
             WindowEvent::CollaborationUserLeft { user_id } => {
                 self.window.ui_mut().remove_remote_cursor(user_id);
                 self.window.window().request_redraw();

@@ -190,6 +190,8 @@ impl Editor {
                     offset_tick: tick - original_tick,
                     offset_key: key.saturating_sub(original_key) as i32,
                     last_played_key: original_key,
+                    original_tick,
+                    original_key,
                 };
             }
         }
@@ -333,12 +335,36 @@ impl Editor {
             EditState::PendingDrag { .. } => {
                 // 只是点击，没有拖动，保持音符不变
             }
-            EditState::Dragging { .. }
-            | EditState::ResizingStart { .. }
-            | EditState::ResizingEnd { .. } => {
-                // 音符移动或调整大小完成
-                // 历史记录已经在拖动/调整开始时保存
-                tracing::debug!("Editor: 音符修改完成");
+            EditState::Dragging {
+                note_index,
+                original_tick,
+                original_key,
+                ..
+            } => {
+                // 音符移动完成，发送同步事件
+                if let Some(note) = self.notes.get(note_index) {
+                    let tick_offset = note.tick - original_tick;
+                    let key_offset = (note.key as i16) - (original_key as i16);
+
+                    if tick_offset.abs() > 0.001 || key_offset != 0 {
+                        lumino_core::event::emit(lumino_core::event::Event::Window(
+                            lumino_core::event::window::Event::LocalNoteMoved {
+                                tick: original_tick,
+                                key: original_key,
+                                length: note.length,
+                                tick_offset,
+                                key_offset,
+                                track_index: self.current_track,
+                            },
+                        ));
+                    }
+                }
+                tracing::debug!("Editor: 音符移动完成");
+            }
+            EditState::ResizingStart { .. } | EditState::ResizingEnd { .. } => {
+                // 音符调整大小完成
+                // 历史记录已经在调整开始时保存
+                tracing::debug!("Editor: 音符调整大小完成");
             }
             _ => {}
         }

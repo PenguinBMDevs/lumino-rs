@@ -77,4 +77,13 @@ pub enum Event {
         channel: u8,
         track_index: usize,
     },
+    /// 本地音符移动（需要同步到其他用户）
+    LocalNoteMoved {
+        tick: f32,
+        key: u16,
+        length: f32,
+        tick_offset: f32,
+        key_offset: i16,
+        track_index: usize,
+    },
 }

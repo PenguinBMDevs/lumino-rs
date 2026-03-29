@@ -173,6 +173,68 @@ impl RunnerInner {
         }
     }
 
+    /// 处理本地音符移动（同步到其他用户）
+    pub(super) fn handle_local_note_moved(
+        &self,
+        tick: f32,
+        key: u16,
+        length: f32,
+        tick_offset: f32,
+        key_offset: i16,
+        track_index: usize,
+    ) {
+        if !self.collaboration_service.is_connected() {
+            return;
+        }
+
+        // 生成唯一ID
+        let note_id = format!(
+            "note_move_{}_{}_{}_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis(),
+            tick as u64,
+            key,
+            track_index
+        );
+
+        let note = lumino_collaboration::types::Note {
+            id: note_id,
+            tick,
+            key,
+            length,
+            velocity: 100,
+            channel: 0,
+            track_index,
+        };
+
+        let operation = lumino_collaboration::types::NoteBatchOperation {
+            action: lumino_collaboration::types::NoteAction::Move,
+            notes: vec![note],
+            source_track: Some(track_index),
+            target_track: Some(track_index),
+            tick_offset: Some(tick_offset),
+            key_offset: Some(key_offset),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        };
+
+        if let Err(e) = self.collaboration_service.send_note_batch(operation) {
+            tracing::debug!("协作: 发送音符移动失败: {}", e);
+        } else {
+            tracing::info!(
+                "协作: 已发送音符移动 - tick={}, key={}, offset=({}, {})",
+                tick,
+                key,
+                tick_offset,
+                key_offset
+            );
+        }
+    }
+
     /// 处理远程笔记更新
     pub(super) fn handle_remote_note_update(&mut self, user_id: String, operation: String) {
         tracing::info!("协作: 处理远程笔记更新 - 用户: {}", user_id);

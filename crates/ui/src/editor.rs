@@ -52,6 +52,8 @@ pub enum EditState {
         offset_tick: f32,
         offset_key: i32,
         last_played_key: u16, // 上一次播放的音高，用于避免重复播放
+        original_tick: f32,
+        original_key: u16,
     },
     ResizingStart {
         note_index: usize,

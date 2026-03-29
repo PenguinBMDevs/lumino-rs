@@ -268,6 +268,36 @@ impl Root {
                 self.editor.grid_cache.clear();
                 tracing::info!("协作: 已删除 {} 个远程音符", operation.notes.len());
             }
+            NoteAction::Move => {
+                let tick_offset = operation.tick_offset.unwrap_or(0.0);
+                let key_offset = operation.key_offset.unwrap_or(0);
+                for note in &operation.notes {
+                    if let Some(track_notes) = self.editor.track_notes.get_mut(&note.track_index) {
+                        for editor_note in track_notes.iter_mut() {
+                            // 根据原始 tick+key 匹配音符
+                            if (editor_note.tick - note.tick).abs() < 1.0
+                                && editor_note.key == note.key
+                            {
+                                editor_note.tick += tick_offset;
+                                editor_note.key = (editor_note.key as i16 + key_offset).max(0) as u16;
+                                break;
+                            }
+                        }
+                    }
+                }
+                // 同时更新当前显示的音符
+                if let Some(source_track) = operation.source_track {
+                    if source_track == self.editor.current_track {
+                        if let Some(track_notes) =
+                            self.editor.track_notes.get(&source_track)
+                        {
+                            self.editor.notes = track_notes.clone();
+                        }
+                    }
+                }
+                self.editor.grid_cache.clear();
+                tracing::info!("协作: 已移动 {} 个远程音符", operation.notes.len());
+            }
             _ => {
                 tracing::debug!("协作: 未处理的笔记操作类型: {:?}", operation.action);
             }
