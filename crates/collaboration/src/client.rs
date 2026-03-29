@@ -58,7 +58,7 @@ pub struct CollaborationClient {
     state: Arc<RwLock<ClientState>>,
     session: Arc<RwLock<CollaborationSession>>,
     message_tx: mpsc::UnboundedSender<ClientMessage>,
-    message_rx: Arc<Mutex<mpsc::UnboundedReceiver<ClientMessage>>>,
+    message_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<ClientMessage>>>>,
     event_callback: Option<EventCallback>,
     shutdown_tx: Option<mpsc::Sender<()>>,
     http_client: HttpClient,
@@ -76,7 +76,7 @@ impl CollaborationClient {
             state: Arc::new(RwLock::new(ClientState::Disconnected)),
             session: Arc::new(RwLock::new(CollaborationSession::default())),
             message_tx,
-            message_rx: Arc::new(Mutex::new(message_rx)),
+            message_rx: Arc::new(Mutex::new(Some(message_rx))),
             event_callback: None,
             shutdown_tx: None,
             http_client,
@@ -253,76 +253,88 @@ impl CollaborationClient {
         self.handle_auth_response(&mut read, &write).await?;
 
         // 启动消息处理循环（在后台运行，不阻塞）
-        // 注意：不在这里 spawn，因为 iced runtime 可能不支持
-        // 改为返回一个后台任务，让调用者决定如何处理
-        self.start_background_loop(read, write);
+        self.start_background_loop(read, write).await;
 
         Ok(())
     }
 
     /// 启动后台循环（不阻塞）
-    fn start_background_loop(&self, mut read: WsStreamRead, write: Arc<Mutex<WsSink>>) {
+    /// 注意：必须在异步上下文中调用
+    async fn start_background_loop(&self, mut read: WsStreamRead, write: Arc<Mutex<WsSink>>) {
         let state = self.state.clone();
         let session = self.session.clone();
         let event_callback = self.event_callback.clone();
+        let mut message_rx = self
+            .message_rx
+            .lock()
+            .await
+            .take()
+            .expect("message_rx already consumed");
 
         // 启动后台任务
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
-            rt.block_on(async move {
-                let mut heartbeat = interval(Duration::from_millis(crate::HEARTBEAT_INTERVAL_MS));
+        tokio::spawn(async move {
+            let mut heartbeat = interval(Duration::from_millis(crate::HEARTBEAT_INTERVAL_MS));
 
-                loop {
-                    tokio::select! {
-                        msg = read.next() => {
-                            match msg {
-                                Some(Ok(Message::Text(text))) => {
-                                    if let Err(e) = handle_server_message(
-                                        &text,
-                                        &state,
-                                        &session,
-                                        event_callback.clone()
-                                    ).await {
-                                        error!("处理消息失败: {} - {}", e, text);
-                                    }
+            loop {
+                tokio::select! {
+                    msg = read.next() => {
+                        match msg {
+                            Some(Ok(Message::Text(text))) => {
+                                if let Err(e) = handle_server_message(
+                                    &text,
+                                    &state,
+                                    &session,
+                                    event_callback.clone()
+                                ).await {
+                                    error!("处理消息失败: {} - {}", e, text);
                                 }
-                                Some(Ok(Message::Close(_))) => {
-                                    *state.write().await = ClientState::Disconnected;
-                                    break;
-                                }
-                                Some(Err(e)) => {
-                                    // Tokio shutdown 产生的错误是正常的，不记录为错误
-                                    let err_msg = e.to_string();
-                                    if err_msg.contains("Tokio") && err_msg.contains("shutdown") {
-                                        debug!("WebSocket 连接关闭: {}", e);
-                                    } else {
-                                        error!("WebSocket 错误: {}", e);
-                                    }
-                                    *state.write().await = ClientState::Error;
-                                }
-                                None => {
-                                    *state.write().await = ClientState::Disconnected;
-                                    break;
-                                }
-                                _ => {}
                             }
+                            Some(Ok(Message::Close(_))) => {
+                                *state.write().await = ClientState::Disconnected;
+                                break;
+                            }
+                            Some(Err(e)) => {
+                                let err_str = e.to_string();
+                                if err_str.contains("Tokio") && err_str.contains("shutdown") {
+                                    debug!("WebSocket 连接关闭: {}", e);
+                                } else {
+                                    error!("WebSocket 错误: {}", e);
+                                }
+                                *state.write().await = ClientState::Error;
+                            }
+                            None => {
+                                *state.write().await = ClientState::Disconnected;
+                                break;
+                            }
+                            _ => {}
                         }
+                    }
 
-                        _ = heartbeat.tick() => {
-                            let ping = ClientMessage::Ping {
-                                timestamp: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_millis() as u64,
-                            };
-                            if let Ok(text) = serde_json::to_string(&ping) {
-                                let mut w = write.lock().await;
-                                let _ = w.send(Message::Text(text.into())).await;
+                    _ = heartbeat.tick() => {
+                        let ping = ClientMessage::Ping {
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64,
+                        };
+                        if let Ok(text) = serde_json::to_string(&ping) {
+                            let mut w = write.lock().await;
+                            let _ = w.send(Message::Text(text.into())).await;
+                        }
+                    }
+
+                    Some(client_msg) = message_rx.recv() => {
+                        if let Ok(text) = serde_json::to_string(&client_msg) {
+                            let mut w = write.lock().await;
+                            if let Err(e) = w.send(Message::Text(text.into())).await {
+                                error!("发送消息失败: {}", e);
+                                *state.write().await = ClientState::Error;
+                                break;
                             }
                         }
                     }
                 }
-            });
+            }
         });
     }
 

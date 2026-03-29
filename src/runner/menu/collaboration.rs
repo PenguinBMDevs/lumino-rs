@@ -25,21 +25,27 @@ impl RunnerInner {
         );
 
         if let Some(pos) = cursor_pos {
-            // 转换为 Canvas 内容空间坐标（考虑滚动偏移）
-            let local_pos = iced_core::Point::new(
-                pos.x - editor.canvas_offset.x + editor.state.scroll_x,
-                pos.y - editor.canvas_offset.y + editor.state.scroll_y,
+            // 先转换为 Canvas 视口坐标（不含滚动偏移），用于边界检查
+            let viewport_pos = iced_core::Point::new(
+                pos.x - editor.canvas_offset.x,
+                pos.y - editor.canvas_offset.y,
             );
 
-            if editor.is_inside_canvas(local_pos) {
+            if editor.is_inside_canvas(viewport_pos) {
+                // 通过边界检查后，加上滚动偏移得到内容空间坐标
+                let content_pos = iced_core::Point::new(
+                    viewport_pos.x + editor.state.scroll_x,
+                    viewport_pos.y + editor.state.scroll_y,
+                );
+
                 let scroll_x = editor.state.scroll_x;
                 let scroll_y = editor.state.scroll_y;
                 let zoom_x = editor.state.zoom_x;
                 let zoom_y = editor.state.zoom_y;
 
                 let mouse_pos = lumino_collaboration::types::MousePosition {
-                    x: local_pos.x,
-                    y: local_pos.y,
+                    x: content_pos.x,
+                    y: content_pos.y,
                     view_state: Some(lumino_collaboration::types::ViewState {
                         scroll_x,
                         scroll_y,
@@ -51,8 +57,8 @@ impl RunnerInner {
 
                 tracing::debug!(
                     "协作：发送鼠标位置：x={}, y={}",
-                    local_pos.x,
-                    local_pos.y
+                    content_pos.x,
+                    content_pos.y
                 );
 
                 if let Err(e) = self.collaboration_service.send_mouse_position(mouse_pos) {

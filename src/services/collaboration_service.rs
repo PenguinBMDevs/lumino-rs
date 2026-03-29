@@ -60,30 +60,33 @@ impl CollaborationService {
 
         // 异步连接并创建/加入房间
         tokio::spawn(async move {
-            let mut c = client_clone.lock().await;
-            let result: Result<(), String> = if let Some(code) = invite_code {
-                tracing::info!("协作: 正在加入房间 (邀请码: {})...", code);
-                c.join_room_and_connect(code)
-                    .await
-                    .map_err(|e| e.to_string())
-            } else {
-                let name = room_name.unwrap_or_else(|| "默认房间".to_string());
-                tracing::info!("协作: 正在创建房间: {} ...", name);
-                c.create_room_and_connect(name)
-                    .await
-                    .map_err(|e| e.to_string())
-                    .map(|_| ())
-            };
+            {
+                let mut c = client_clone.lock().await;
+                let result: Result<(), String> = if let Some(code) = invite_code {
+                    tracing::info!("协作: 正在加入房间 (邀请码: {})...", code);
+                    c.join_room_and_connect(code)
+                        .await
+                        .map_err(|e| e.to_string())
+                } else {
+                    let name = room_name.unwrap_or_else(|| "默认房间".to_string());
+                    tracing::info!("协作: 正在创建房间: {} ...", name);
+                    c.create_room_and_connect(name)
+                        .await
+                        .map_err(|e| e.to_string())
+                        .map(|_| ())
+                };
 
-            match result {
-                Ok(_) => {
-                    tracing::info!("协作: 连接成功!");
-                }
-                Err(e) => {
-                    tracing::error!("协作: 连接失败: {}", e);
+                match result {
+                    Ok(_) => {
+                        tracing::info!("协作: 连接成功!");
+                    }
+                    Err(e) => {
+                        tracing::error!("协作: 连接失败: {}", e);
+                    }
                 }
             }
-            // 保持客户端存活
+            // 连接完成后释放锁，让其他操作（如 send_mouse_position）可以获取
+            // client_clone 通过 Arc 保持引用，后台循环在 CollaborationClient 内部运行
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
