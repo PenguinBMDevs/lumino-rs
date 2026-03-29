@@ -159,6 +159,7 @@ impl RunnerInner {
             }
             WindowEvent::CollaborationNoteUpdate { user_id, operation } => {
                 self.handle_remote_note_update(user_id, operation);
+                self.window.window().request_redraw();
             }
             WindowEvent::LocalNoteAdded {
                 tick,
