@@ -89,7 +89,7 @@ impl WindowManager {
     }
 
     /// 处理窗口事件
-    pub fn handle_event(&mut self, event: WindowEvent, storage: &mut super::storage::Storage) {
+    pub fn handle_event(&mut self, event: WindowEvent, storage: &mut crate::storage::Storage) {
         match event {
             WindowEvent::RedrawRequested => {
                 self.handle_redraw();
@@ -146,7 +146,7 @@ impl WindowManager {
     fn handle_resize(
         &mut self,
         size: winit::dpi::PhysicalSize<u32>,
-        storage: &mut super::storage::Storage,
+        storage: &mut crate::storage::Storage,
     ) {
         storage.ui_state.patch(|state| {
             state.w = size.width;
