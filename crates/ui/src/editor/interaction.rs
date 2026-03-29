@@ -280,9 +280,21 @@ impl Editor {
 
     /// 检查是否应该开始拖动
     fn should_start_dragging(&self, pos: iced_core::Point, start_pos: iced_core::Point) -> bool {
+        let delta_x = pos.x - start_pos.x;
         let delta_y = pos.y - start_pos.y;
         let key_threshold = self.state.zoom_y * DRAG_START_THRESHOLD_RATIO;
-        delta_y.abs() > key_threshold
+        let distance = (delta_x * delta_x + delta_y * delta_y).sqrt();
+        let started = distance > key_threshold;
+        if started {
+            tracing::info!(
+                "Editor: 拖动启动 - delta=({}, {}), distance={}, threshold={}",
+                delta_x,
+                delta_y,
+                distance,
+                key_threshold
+            );
+        }
+        started
     }
 
     /// 应用音符变化
@@ -346,7 +358,13 @@ impl Editor {
                     let tick_offset = note.tick - original_tick;
                     let key_offset = (note.key as i16) - (original_key as i16);
 
+                    tracing::info!(
+                        "Editor: 音符移动完成 - original=({}, {}), current=({}, {}), offset=({}, {})",
+                        original_tick, original_key, note.tick, note.key, tick_offset, key_offset
+                    );
+
                     if tick_offset.abs() > 0.001 || key_offset != 0 {
+                        tracing::info!("Editor: 发送 LocalNoteMoved 同步事件");
                         lumino_core::event::emit(lumino_core::event::Event::Window(
                             lumino_core::event::window::Event::LocalNoteMoved {
                                 tick: original_tick,
@@ -357,9 +375,10 @@ impl Editor {
                                 track_index: self.current_track,
                             },
                         ));
+                    } else {
+                        tracing::info!("Editor: 音符偏移量为零，跳过同步");
                     }
                 }
-                tracing::debug!("Editor: 音符移动完成");
             }
             EditState::ResizingStart { .. } | EditState::ResizingEnd { .. } => {
                 // 音符调整大小完成

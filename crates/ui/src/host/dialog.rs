@@ -80,91 +80,12 @@ impl Host {
         self.clear_cache();
         self.window.request_redraw();
     }
-    /// 应用远程笔记操作到本地编辑器
+    /// 应用远程笔记操作到本地编辑器（委托给 Root 实现）
     pub fn apply_remote_note_operation(
         &mut self,
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
-        use lumino_collaboration::types::NoteAction;
-
-        match operation.action {
-            NoteAction::Add => {
-                for note in &operation.notes {
-                    // 转换协作音符为编辑器音符
-                    let editor_note =
-                        crate::editor::note::Note::new(note.tick, note.key, note.length);
-
-                    // 添加到对应的音轨
-                    let track_idx = note.track_index;
-                    if track_idx == self.root.editor.current_track {
-                        // 如果是当前音轨，直接添加到编辑器
-                        self.root.editor.notes.push(editor_note.clone());
-                        self.root.editor.grid_cache.clear();
-                    }
-
-                    // 更新 track_notes
-                    let track_notes = self
-                        .root
-                        .editor
-                        .track_notes
-                        .entry(track_idx)
-                        .or_insert_with(Vec::new);
-                    track_notes.push(editor_note);
-                }
-                tracing::info!("协作: 已添加 {} 个远程音符", operation.notes.len());
-            }
-            NoteAction::Update => {
-                // 更新操作：根据 note.id 查找并更新现有音符
-                // 由于编辑器音符没有 id，我们暂时基于位置匹配
-                for note in &operation.notes {
-                    if let Some(track_notes) =
-                        self.root.editor.track_notes.get_mut(&note.track_index)
-                    {
-                        for editor_note in track_notes.iter_mut() {
-                            // 基于 tick 和 key 匹配（简化匹配）
-                            if (editor_note.tick - note.tick).abs() < 1.0
-                                && editor_note.key == note.key
-                            {
-                                editor_note.length = note.length;
-                                editor_note.key = note.key;
-                                break;
-                            }
-                        }
-                    }
-                }
-                self.root.editor.grid_cache.clear();
-                tracing::info!("协作: 已更新 {} 个远程音符", operation.notes.len());
-            }
-            NoteAction::Delete => {
-                // 删除操作：根据位置匹配删除音符
-                for note in &operation.notes {
-                    if let Some(track_notes) =
-                        self.root.editor.track_notes.get_mut(&note.track_index)
-                    {
-                        track_notes
-                            .retain(|n| !((n.tick - note.tick).abs() < 1.0 && n.key == note.key));
-                    }
-                }
-                // 同时更新当前显示的音符
-                if let Some(source_track) = operation.source_track {
-                    if source_track == self.root.editor.current_track {
-                        self.root.editor.notes = self
-                            .root
-                            .editor
-                            .track_notes
-                            .get(&source_track)
-                            .cloned()
-                            .unwrap_or_default();
-                    }
-                }
-                self.root.editor.grid_cache.clear();
-                tracing::info!("协作: 已删除 {} 个远程音符", operation.notes.len());
-            }
-            _ => {
-                tracing::debug!("协作: 未处理的笔记操作类型: {:?}", operation.action);
-            }
-        }
-
+        self.root.apply_remote_note_operation(operation);
         self.window.request_redraw();
     }
 

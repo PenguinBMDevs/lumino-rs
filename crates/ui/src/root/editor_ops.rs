@@ -271,18 +271,41 @@ impl Root {
             NoteAction::Move => {
                 let tick_offset = operation.tick_offset.unwrap_or(0.0);
                 let key_offset = operation.key_offset.unwrap_or(0);
+                tracing::info!(
+                    "协作: Move 操作 - tick_offset={}, key_offset={}, notes数量={}, source_track={:?}",
+                    tick_offset, key_offset, operation.notes.len(), operation.source_track
+                );
+                let mut matched_count = 0;
                 for note in &operation.notes {
+                    tracing::info!(
+                        "协作: Move 查找音符 - target_tick={}, target_key={}, track={}",
+                        note.tick, note.key, note.track_index
+                    );
                     if let Some(track_notes) = self.editor.track_notes.get_mut(&note.track_index) {
-                        for editor_note in track_notes.iter_mut() {
-                            // 根据原始 tick+key 匹配音符
+                        tracing::info!("协作: track_notes 中有 {} 个音符", track_notes.len());
+                        for (i, editor_note) in track_notes.iter_mut().enumerate() {
+                            tracing::info!(
+                                "协作:   [{}] tick={}, key={}",
+                                i, editor_note.tick, editor_note.key
+                            );
                             if (editor_note.tick - note.tick).abs() < 1.0
                                 && editor_note.key == note.key
                             {
+                                tracing::info!(
+                                    "协作:   匹配成功! 更新: tick {} -> {}, key {} -> {}",
+                                    editor_note.tick,
+                                    editor_note.tick + tick_offset,
+                                    editor_note.key,
+                                    (editor_note.key as i16 + key_offset).max(0) as u16
+                                );
                                 editor_note.tick += tick_offset;
                                 editor_note.key = (editor_note.key as i16 + key_offset).max(0) as u16;
+                                matched_count += 1;
                                 break;
                             }
                         }
+                    } else {
+                        tracing::warn!("协作: track {} 不存在", note.track_index);
                     }
                 }
                 // 同时更新当前显示的音符
@@ -296,7 +319,12 @@ impl Root {
                     }
                 }
                 self.editor.grid_cache.clear();
-                tracing::info!("协作: 已移动 {} 个远程音符", operation.notes.len());
+                tracing::info!(
+                    "协作: Move 完成 - 匹配 {}/{} 个音符, current_track={}",
+                    matched_count,
+                    operation.notes.len(),
+                    self.editor.current_track
+                );
             }
             _ => {
                 tracing::debug!("协作: 未处理的笔记操作类型: {:?}", operation.action);

@@ -325,12 +325,16 @@ impl CollaborationClient {
 
                     Some(client_msg) = message_rx.recv() => {
                         if let Ok(text) = serde_json::to_string(&client_msg) {
+                            debug!("WS 发送: {}", &text[..text.len().min(100)]);
                             let mut w = write.lock().await;
                             if let Err(e) = w.send(Message::Text(text.into())).await {
                                 error!("发送消息失败: {}", e);
                                 *state.write().await = ClientState::Error;
                                 break;
                             }
+                            info!("WS 消息发送完成");
+                        } else {
+                            error!("消息序列化失败");
                         }
                     }
                 }
@@ -414,14 +418,12 @@ impl CollaborationClient {
         &self,
         position: MousePosition,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        info!("发送鼠标位置到服务器：x={}, y={}", position.x, position.y);
+        debug!("发送鼠标位置: x={}, y={}", position.x, position.y);
         let result = self
             .send_message(ClientMessage::MouseMove { position })
             .await;
         if let Err(ref e) = result {
-            error!("发送鼠标位置失败：{}", e);
-        } else {
-            info!("鼠标位置已发送到服务器");
+            error!("发送鼠标位置失败: {}", e);
         }
         result
     }
