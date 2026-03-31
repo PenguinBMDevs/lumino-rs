@@ -1,0 +1,24 @@
+[package]
+name = "lumino-export"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+lumino-dms = { path = "../dms" }
+lumino-core = { path = "../core" }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+midly = { workspace = true }
+bytes = "1.9"
+encoding_rs = "0.8"
+num-bigint = "0.4"
+tokio = { version = "1.42", features = ["fs", "rt"] }
+zstd = "0.13.2"
+bincode = "1.3.3"
+serde = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.0"

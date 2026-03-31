@@ -1,0 +1,276 @@
+//! Toolbar 视图渲染子模块
+
+use iced_core::Alignment;
+use iced_widget::{button, column, container, mouse_area, pick_list, row, space, text};
+
+use crate::resources::icon;
+use crate::toolbar::{
+    DEFAULT_HEIGHT, DotType, Event, MAX_HEIGHT, MIN_HEIGHT, NotePrecision, RESIZE_HANDLE_HEIGHT,
+    Tool, TupletType,
+};
+use crate::{Element, Message, Renderer, Theme, window};
+
+use super::Toolbar;
+
+impl Toolbar {
+    /// 渲染工具栏视图
+    pub fn view<'a>(&'a self, window: &'a window::Window) -> Element<'a> {
+        let palette = window.theme.extended_palette();
+
+        // 计算内容区域高度（总高度减去手柄高度）
+        let content_height = self.height - RESIZE_HANDLE_HEIGHT;
+
+        // 播放控制区域 (132px 宽)
+        let playback_controls = container(
+            row![
+                tool_button(icon::SkipBackward, Event::skip_backward(), window),
+                space().width(4),
+                if self.is_playing {
+                    tool_button(icon::Pause, Event::pause(), window)
+                } else {
+                    tool_button(icon::Play, Event::play(), window)
+                },
+                space().width(4),
+                tool_button(icon::SkipForward, Event::skip_forward(), window),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .width(132)
+        .height(content_height)
+        .align_y(iced_core::alignment::Vertical::Center)
+        .align_x(iced_core::alignment::Horizontal::Center)
+        .style(move |_theme: &Theme| {
+            container::Style::default()
+                .background(palette.background.weak.color)
+                .border(iced_core::Border {
+                    radius: 4.0.into(),
+                    width: 0.0,
+                    color: iced_core::Color::TRANSPARENT,
+                })
+        });
+
+        // 工具选择区域 (285px 宽)
+        let tools = container(
+            row![
+                tool_selector(icon::MousePointer, Tool::Pointer, self.current_tool, window),
+                space().width(4),
+                tool_selector(icon::Pencil, Tool::Pencil, self.current_tool, window),
+                space().width(4),
+                tool_selector(icon::Eraser, Tool::Eraser, self.current_tool, window),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .width(285)
+        .height(content_height)
+        .align_y(iced_core::alignment::Vertical::Center)
+        .align_x(iced_core::alignment::Horizontal::Center)
+        .style(move |_theme: &Theme| {
+            container::Style::default()
+                .background(palette.background.weak.color)
+                .border(iced_core::Border {
+                    radius: 4.0.into(),
+                    width: 0.0,
+                    color: iced_core::Color::TRANSPARENT,
+                })
+        });
+
+        // 调整大小手柄区域
+        let resize_handle: Element<'_> = mouse_area(
+            container(space().height(iced_widget::core::Length::Fixed(RESIZE_HANDLE_HEIGHT)))
+                .width(iced_widget::core::Length::Fill)
+                .style(move |_theme: &Theme| {
+                    container::Style::default().background(if self.is_resizing {
+                        palette.primary.strong.color
+                    } else {
+                        palette.background.weakest.color
+                    })
+                }),
+        )
+        .interaction(iced_core::mouse::Interaction::ResizingVertically)
+        .on_press(Message::Toolbar(Event::ResizeDragStarted(
+            iced_core::Point::new(0.0, 0.0),
+        )))
+        .on_release(Message::Toolbar(Event::ResizeDragEnded))
+        .into();
+
+        // 精度设置区域
+        let precision_options: Vec<NotePrecision> = NotePrecision::presets()
+            .iter()
+            .copied()
+            .chain(std::iter::once(NotePrecision::Custom))
+            .collect();
+
+        let precision_selector = container(
+            row![
+                text("精度:").size(14),
+                space().width(8),
+                pick_list(precision_options, Some(self.note_precision), |precision| {
+                    if precision == NotePrecision::Custom {
+                        // 选择自定义时，发送消息到Root打开对话框
+                        Message::OpenCustomPrecisionDialog
+                    } else {
+                        Event::precision_changed(precision)
+                    }
+                },)
+                .placeholder("选择精度")
+                .padding([4, 8])
+                .width(iced_widget::core::Length::Fixed(120.0)),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .height(content_height)
+        .align_y(iced_core::alignment::Vertical::Center)
+        .padding([0, 16])
+        .style(move |_theme: &Theme| {
+            container::Style::default().background(palette.background.weakest.color)
+        });
+
+        // 协作按钮区域
+        let collaboration_button = container(
+            button(
+                row![
+                    icon::view_with_size_and_theme(icon::Users, 18, 18, Some(&window.theme)),
+                    space().width(6),
+                    text("多人协作")
+                        .size(14)
+                        .color(palette.background.weakest.text),
+                ]
+                .align_y(Alignment::Center),
+            )
+            .on_press(Event::open_collaboration_dialog())
+            .style(move |_theme: &Theme, status| {
+                let bg = match status {
+                    iced_widget::button::Status::Hovered => palette.background.weak.color,
+                    _ => palette.background.weakest.color,
+                };
+                button::Style {
+                    border: iced_core::Border {
+                        radius: 4.0.into(),
+                        width: 0.0,
+                        color: iced_core::Color::TRANSPARENT,
+                    },
+                    ..Default::default()
+                }
+                .with_background(bg)
+            })
+            .padding([8, 12]),
+        )
+        .height(content_height)
+        .align_y(iced_core::alignment::Vertical::Center)
+        .padding([0, 16])
+        .style(move |_theme: &Theme| {
+            container::Style::default().background(palette.background.weakest.color)
+        });
+
+        // 撤销/重做按钮区域
+        let undo_redo_controls = container(
+            row![
+                tool_button(icon::Undo, Event::undo(), window),
+                space().width(4),
+                tool_button(icon::Redo, Event::redo(), window),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .width(64)
+        .height(content_height)
+        .align_y(iced_core::alignment::Vertical::Center)
+        .align_x(iced_core::alignment::Horizontal::Center)
+        .style(move |_theme: &Theme| {
+            container::Style::default()
+                .background(palette.background.weak.color)
+                .border(iced_core::Border {
+                    radius: 4.0.into(),
+                    width: 0.0,
+                    color: iced_core::Color::TRANSPARENT,
+                })
+        });
+
+        // 主工具栏内容 - 横向排列所有区域，协作按钮在最右边
+        let toolbar_content = container(
+            row![
+                playback_controls,
+                space().width(16),
+                undo_redo_controls,
+                space().width(16),
+                tools,
+                space().width(16),
+                precision_selector,
+                space().width(iced_widget::core::Length::Fill),
+                collaboration_button,
+            ]
+            .align_y(Alignment::Center),
+        )
+        .width(iced_widget::core::Length::Fill)
+        .height(iced_widget::core::Length::Fixed(content_height))
+        .padding([8, 16])
+        .style(move |_theme: &Theme| {
+            container::Style::default().background(palette.background.weakest.color)
+        });
+
+        // 组合工具栏内容和调整手柄
+        column![toolbar_content, resize_handle]
+            .width(iced_widget::core::Length::Fill)
+            .height(iced_widget::core::Length::Fixed(self.height))
+            .into()
+    }
+}
+
+/// 工具按钮
+fn tool_button<'a>(
+    icon_enum: icon::Icon,
+    on_press: Message,
+    window: &'a window::Window,
+) -> Element<'a> {
+    button(icon::view_with_size_and_theme(
+        icon_enum,
+        20,
+        20,
+        Some(&window.theme),
+    ))
+    .on_press(on_press)
+    .style(|_theme: &Theme, _status| {
+        button::Style::default().with_background(iced_core::Color::TRANSPARENT)
+    })
+    .padding(4)
+    .into()
+}
+
+/// 工具选择器
+fn tool_selector<'a>(
+    icon_enum: icon::Icon,
+    tool: Tool,
+    current_tool: Tool,
+    window: &'a window::Window,
+) -> Element<'a> {
+    let is_selected = tool == current_tool;
+    let palette = window.theme.extended_palette();
+
+    button(icon::view_with_size_and_theme(
+        icon_enum,
+        17,
+        17,
+        Some(&window.theme),
+    ))
+    .on_press(Event::tool_selected(tool))
+    .style(move |_theme: &Theme, status| {
+        let bg = if is_selected {
+            palette.background.strong.color
+        } else if status == iced_widget::button::Status::Hovered {
+            palette.background.weak.color
+        } else {
+            iced_core::Color::TRANSPARENT
+        };
+
+        button::Style {
+            border: iced_core::Border {
+                radius: 3.0.into(),
+                width: 0.0,
+                color: iced_core::Color::TRANSPARENT,
+            },
+            ..Default::default()
+        }
+        .with_background(bg)
+    })
+    .padding(iced_core::Padding::new(4.0))
+    .into()
+}

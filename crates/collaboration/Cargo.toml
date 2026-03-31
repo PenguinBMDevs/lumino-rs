@@ -1,0 +1,30 @@
+[package]
+name = "lumino-collaboration"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+lumino-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+# WebSocket客户端
+tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
+futures = "0.3"
+url = "2.5"
+
+# 异步运行时工具
+tokio-util = "0.7"
+
+# HTTP 客户端
+reqwest = { version = "0.12", features = ["json"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = "0.4"

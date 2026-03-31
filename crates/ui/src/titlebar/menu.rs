@@ -22,10 +22,10 @@ impl std::fmt::Display for MenuKind {
 
 #[derive(Debug, Clone)]
 pub enum MenuItem {
-    // Action(Event, Fn) or something like this for i18n.
+    // 用于 i18n 的 Action(Event, Fn) 或类似结构
     Action(Event),
     Separator,
-    // Submenu(Vec<MenuItem>, Fn)
+    // 子菜单(Vec<MenuItem>, Fn)
     Submenu(Vec<MenuItem>, String),
 }
 
@@ -45,7 +45,7 @@ fn file_menu() -> MenuConfig {
             Action(event!(Menu.File.Save)),
             Action(event!(Menu.File.Close)),
             Separator,
-            Action(event!(Menu.File.ImportMidi)),
+            Action(event!(Menu.File.ImportFiles)),
             Separator,
             Action(event!(Menu.File.Settings)),
             Separator,
@@ -104,9 +104,9 @@ pub fn view<'a>() -> Element<'a> {
         .map(|cfg| {
             Item::with_menu(
                 menu_button(cfg.kind.to_string()),
-                // DO NOT REMOVE `width(200)`!
-                // Removing it causes a panic. idk why.
-                // Use offset to align it with titlebar.
+                // 不要删除 'width(200)'！
+                // 删除它会导致 panic。原因未知
+                // 使用 offset 来与标题栏对齐
                 Menu::new(menu_items(&cfg.items)).width(200).offset(9.0),
             )
         })
@@ -119,8 +119,8 @@ pub fn view<'a>() -> Element<'a> {
         .spacing(1)
         .style(|theme: &Theme, status| menu_bar::Style {
             bar_background: Background::Color(Color::TRANSPARENT),
-            // Use the default style from iced_aw.
-            // `..Default::default()` simply messes up the styles.
+            // 使用 iced_aw 的默认样式
+            // '..Default::default()' 会破坏样式
             ..menu_bar::primary(theme, status)
         });
 
@@ -133,7 +133,9 @@ fn menu_items<'a>(items: &[MenuItem]) -> Vec<Item<'a, Message, Theme, Renderer>>
         .map(|item| {
             let inner: Element<'a> = match item {
                 MenuItem::Action(r) => {
-                    base_button(format!("{r:?}"), Some(Message::Core(r.clone())))
+                    // 点击菜单项时发送菜单关闭消息
+                    let msg = Message::Core(r.clone());
+                    base_button(format!("{r:?}"), Some(msg))
                 }
                 MenuItem::Separator => base_split(),
                 MenuItem::Submenu(r, n) => {
@@ -149,7 +151,12 @@ fn menu_items<'a>(items: &[MenuItem]) -> Vec<Item<'a, Message, Theme, Renderer>>
 }
 
 fn submenu_button<'a>(label: impl Into<String>) -> Element<'a> {
-    let icon = icon(icon::AngleRight).width(14);
+    let icon: Element<'a> = container(icon(icon::AngleRight))
+        .width(12)
+        .height(12)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .into();
     let inner = row![
         text(label.into()).size(14.0).width(Length::Fill),
         container(icon)
@@ -165,7 +172,8 @@ fn submenu_button<'a>(label: impl Into<String>) -> Element<'a> {
 
 fn menu_button<'a>(label: impl Into<String>) -> Element<'a> {
     let inner = text(label.into()).size(14.0).into();
-    button_template(inner, message::null())
+    // 菜单按钮点击时打开菜单
+    button_template(inner, message::Message::MenuStateChanged(true))
         .padding([2, 8])
         .into()
 }
@@ -214,7 +222,7 @@ fn base_split<'a>() -> Element<'a> {
             }
         });
 
-    // Manually apply the `margin` style.
+    // 手动应用 `margin` 样式
     column![space().height(4), inner, space().height(4)]
         .width(Length::Fill)
         .into()

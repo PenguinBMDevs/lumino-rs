@@ -1,5 +1,5 @@
 use iced_core::Length;
-use iced_widget::{container, space};
+use iced_widget::{container, row, text};
 
 use super::Element;
 use crate::Theme;
@@ -12,7 +12,9 @@ impl StatusBar {
     }
 
     pub fn view<'a>(&'a self) -> Element<'a> {
-        container(space())
+        let left = String::from("");
+
+        container(row![text(left)])
             .width(Length::Fill)
             .height(20)
             .style(|theme: &Theme| {

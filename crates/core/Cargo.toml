@@ -8,3 +8,21 @@ edition.workspace = true
 
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { version = "1.42", features = ["fs", "rt", "sync"] }
+tracing = { workspace = true }
+midly = { workspace = true }
+rayon = "1"
+bincode = "1.3.3"
+zstd = "0.13.2"
+encoding_rs = "0.8"
+lumino-dms = { path = "../dms" }
+memmap2 = "0.9"
+ouroboros = "0.18"
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1.42", features = ["fs", "rt", "sync", "rt-multi-thread", "macros"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+winapi = { version = "0.3", features = ["sysinfoapi"] }

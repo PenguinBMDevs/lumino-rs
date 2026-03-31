@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 wgpu = "27.0"
+thiserror = { workspace = true }
+tracing = { workspace = true }
+bytemuck = { version = "1.21", features = ["derive"] }

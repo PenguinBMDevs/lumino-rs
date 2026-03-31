@@ -1,5 +1,5 @@
-use std::{fs, io, path::PathBuf};
 use lumino_core::storage::config::*;
+use std::{fs, io, path::PathBuf};
 
 #[derive(Debug)]
 pub struct ConfigWrapper {
@@ -12,8 +12,7 @@ impl ConfigWrapper {
     pub fn new(path: PathBuf) -> io::Result<Self> {
         let inner = if path.exists() {
             let bytes = fs::read(&path)?;
-            toml::from_slice(&bytes)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+            toml::from_slice(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
         } else {
             Config::default()
         };
@@ -25,14 +24,6 @@ impl ConfigWrapper {
     }
     pub fn get(&self) -> &Config {
         &self.inner
-    }
-    pub fn reload(&mut self) -> io::Result<()> {
-        let bytes = fs::read(&self.path)?;
-        let inner = toml::from_slice(&bytes)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        self.inner = inner;
-        self.dirty = false;
-        Ok(())
     }
     pub fn patch<F>(&mut self, f: F)
     where

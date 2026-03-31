@@ -5,7 +5,7 @@
       "type": "lldb",
       "request": "launch",
       "name": "Debug APP",
-      "program": "${workspaceFolder}/target/debug/lumino-app.exe",
+      "program": "${workspaceFolder}/target/debug/lumino-rs.exe",
       "args": [],
       "cwd": "${workspaceFolder}",
       "preLaunchTask": "rust: cargo build",

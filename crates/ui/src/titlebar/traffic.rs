@@ -1,15 +1,13 @@
 use iced_core::{Border, Color, Length};
-use iced_widget::{button, container, row, svg};
+use iced_widget::{button, container, row};
 
-use crate::{Element, Message, Theme, resources::icon, window};
-
-use lumino_core::{Event, event};
+use crate::{Element, Theme, resources::icon, window};
 
 #[derive(Debug, Clone)]
 struct TrafficConfig {
     icon: TrafficIcon,
     color: Option<Color>,
-    event: Event,
+    action: window::TrafficAction,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -25,7 +23,7 @@ const TRAFFICS: &[TrafficConfig] = &[
     TrafficConfig {
         icon: TrafficIcon::Static(icon::WindowMin),
         color: None,
-        event: event!(Window.Minimize),
+        action: window::TrafficAction::Minimize,
     },
     TrafficConfig {
         icon: TrafficIcon::Toggle {
@@ -33,12 +31,12 @@ const TRAFFICS: &[TrafficConfig] = &[
             active: icon::WindowUnMax,
         },
         color: None,
-        event: event!(Window.ToggleMaximize),
+        action: window::TrafficAction::ToggleMaximize,
     },
     TrafficConfig {
         icon: TrafficIcon::Static(icon::WindowClose),
         color: Some(Color::from_rgb8(196, 43, 28)),
-        event: event!(Window.Close),
+        action: window::TrafficAction::Close,
     },
 ];
 
@@ -58,7 +56,7 @@ pub fn view<'a>(window: &'a window::Window) -> Element<'a> {
 }
 
 fn item<'a>(cfg: &'a TrafficConfig, window: &'a window::Window) -> Element<'a> {
-    let icon = icon(match cfg.icon {
+    let icon_enum = match cfg.icon {
         TrafficIcon::Static(r) => r,
         TrafficIcon::Toggle { normal, active } => {
             if window.is_maximized {
@@ -67,25 +65,19 @@ fn item<'a>(cfg: &'a TrafficConfig, window: &'a window::Window) -> Element<'a> {
                 normal
             }
         }
-    })
-    .width(10)
-    .height(10)
-    .style(move |theme: &Theme, _| {
-        let palette = theme.extended_palette();
-        svg::Style {
-            color: Some(if window.is_focused {
-                palette.background.neutral.text
-            } else {
-                palette.background.strongest.color
-            }),
-        }
-    });
+    };
+
+    let icon_img: Element<'a> =
+        icon::view_with_size_and_theme(icon_enum, 10, 10, Some(&window.theme));
 
     // 45px*29px matches the actual traffic buttons on Windows.
-    let inner = container(icon).width(45).height(29).center(Length::Fill);
+    let inner = container(icon_img)
+        .width(45)
+        .height(29)
+        .center(Length::Fill);
 
     button(inner)
-        .on_press(Message::Core(cfg.event.clone()))
+        .on_press(window::Event::traffic_action(&cfg.action))
         .style(move |theme: &Theme, status| {
             use button::Status::*;
 
@@ -95,7 +87,7 @@ fn item<'a>(cfg: &'a TrafficConfig, window: &'a window::Window) -> Element<'a> {
 
                 Pressed => cfg
                     .color
-                    // Make it darker.
+                    // 使其变暗
                     .map(|c| Color::from_rgb(c.r * 0.9, c.g * 0.9, c.b * 0.9))
                     .unwrap_or(palette.background.weak.color),
 
@@ -103,7 +95,7 @@ fn item<'a>(cfg: &'a TrafficConfig, window: &'a window::Window) -> Element<'a> {
             };
 
             button::Style {
-                // Remove the default rounding.
+                // 移除默认圆角
                 border: Border::default().rounded(0),
                 ..Default::default()
             }
