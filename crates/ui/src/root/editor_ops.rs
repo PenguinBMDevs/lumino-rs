@@ -42,6 +42,12 @@ impl Root {
         self.editor.max_scroll_x = total_ticks * self.editor.state.zoom_x;
     }
 
+    pub fn set_ppq(&mut self, ppq: u16) {
+        self.editor.state.ppq = ppq;
+        self.editor.state.snap_precision = (ppq as f32) / 2.0;
+        self.editor.state.default_note_length = (ppq as f32) / 2.0;
+    }
+
     /// 加载音符到编辑器
     pub fn load_notes(&mut self, notes: &[(f32, u8, f32)]) {
         self.editor.notes.clear();
@@ -61,6 +67,9 @@ impl Root {
         self.sidebar.set_selected_track(track_idx);
         // 同时更新编辑器的当前音轨（用于无 MIDI 文件时的多音轨编辑）
         self.editor.switch_to_track(track_idx);
+        
+        // 更新播放管理器中的音符数据
+        self.update_playback_notes();
     }
 
     /// 加载指定音轨的音符到编辑器（用于 MIDI 文件）
@@ -98,6 +107,59 @@ impl Root {
 
         // 清除网格缓存以强制重绘
         self.editor.grid_cache.clear();
+
+        // 更新播放管理器中的音符数据
+        self.update_playback_notes();
+    }
+
+    /// 加载 Tempo 变化事件到播放管理器
+    /// tempo_changes: Vec<(tick, tempo_in_microseconds_per_quarter_note)>
+    pub fn load_tempo_changes(&mut self, tempo_changes: Vec<(u32, u32)>) {
+        tracing::debug!(
+            "Root::load_tempo_changes: loading {} tempo changes",
+            tempo_changes.len()
+        );
+
+        let tempo_change_list: Vec<crate::playback::TempoChange> = tempo_changes
+            .into_iter()
+            .map(|(tick, tempo)| crate::playback::TempoChange {
+                tick: tick as f32,
+                tempo,
+            })
+            .collect();
+
+        // 如果有播放管理器，更新其 tempo timeline
+        if let Some(manager) = &mut self.playback_manager {
+            manager.update_tempo_changes(tempo_change_list);
+            tracing::debug!("Root::load_tempo_changes: tempo changes updated in playback manager");
+        } else {
+            self.pending_tempo_changes = Some(tempo_change_list);
+            tracing::debug!(
+                "Root::load_tempo_changes: playback manager not ready, cached tempo changes"
+            );
+        }
+    }
+
+    /// 设置 MIDI 输出连接
+    pub fn set_midi_output(&mut self, output: Box<dyn lumino_midi::OutputConnection>) {
+        if let Some(manager) = &mut self.playback_manager {
+            manager.set_midi_output(output);
+            tracing::info!("Root::set_midi_output: MIDI output connection set");
+        } else {
+            self.pending_midi_output = Some(output);
+            tracing::debug!(
+                "Root::set_midi_output: playback manager not ready, cached MIDI output"
+            );
+        }
+    }
+
+    /// 清除 MIDI 输出连接
+    pub fn clear_midi_output(&mut self) {
+        if let Some(manager) = &mut self.playback_manager {
+            manager.clear_midi_output();
+            tracing::info!("Root::clear_midi_output: MIDI output connection cleared");
+        }
+        self.pending_midi_output = None;
     }
 
     /// 设置自定义精度对话框是否打开
@@ -273,20 +335,27 @@ impl Root {
                 let key_offset = operation.key_offset.unwrap_or(0);
                 tracing::info!(
                     "协作: Move 操作 - tick_offset={}, key_offset={}, notes数量={}, source_track={:?}",
-                    tick_offset, key_offset, operation.notes.len(), operation.source_track
+                    tick_offset,
+                    key_offset,
+                    operation.notes.len(),
+                    operation.source_track
                 );
                 let mut matched_count = 0;
                 for note in &operation.notes {
                     tracing::info!(
                         "协作: Move 查找音符 - target_tick={}, target_key={}, track={}",
-                        note.tick, note.key, note.track_index
+                        note.tick,
+                        note.key,
+                        note.track_index
                     );
                     if let Some(track_notes) = self.editor.track_notes.get_mut(&note.track_index) {
                         tracing::info!("协作: track_notes 中有 {} 个音符", track_notes.len());
                         for (i, editor_note) in track_notes.iter_mut().enumerate() {
                             tracing::info!(
                                 "协作:   [{}] tick={}, key={}",
-                                i, editor_note.tick, editor_note.key
+                                i,
+                                editor_note.tick,
+                                editor_note.key
                             );
                             if (editor_note.tick - note.tick).abs() < 1.0
                                 && editor_note.key == note.key
@@ -299,7 +368,8 @@ impl Root {
                                     (editor_note.key as i16 + key_offset).max(0) as u16
                                 );
                                 editor_note.tick += tick_offset;
-                                editor_note.key = (editor_note.key as i16 + key_offset).max(0) as u16;
+                                editor_note.key =
+                                    (editor_note.key as i16 + key_offset).max(0) as u16;
                                 matched_count += 1;
                                 break;
                             }
@@ -311,9 +381,7 @@ impl Root {
                 // 同时更新当前显示的音符
                 if let Some(source_track) = operation.source_track {
                     if source_track == self.editor.current_track {
-                        if let Some(track_notes) =
-                            self.editor.track_notes.get(&source_track)
-                        {
+                        if let Some(track_notes) = self.editor.track_notes.get(&source_track) {
                             self.editor.notes = track_notes.clone();
                         }
                     }
@@ -329,6 +397,30 @@ impl Root {
             _ => {
                 tracing::debug!("协作: 未处理的笔记操作类型: {:?}", operation.action);
             }
+        }
+    }
+
+    /// 更新播放管理器中的音符数据
+    pub fn update_playback_notes(&mut self) {
+        if let Some(manager) = &mut self.playback_manager {
+            let notes: Vec<crate::playback::NoteEvent> = self
+                .editor
+                .notes
+                .iter()
+                .map(|note| crate::playback::NoteEvent {
+                    tick: note.tick,
+                    channel: 0,
+                    key: note.key as u8,
+                    velocity: 100,
+                    length: note.length,
+                })
+                .collect();
+            
+            manager.set_notes(notes);
+            tracing::debug!(
+                "Root::update_playback_notes: updated {} notes in playback manager",
+                self.editor.notes.len()
+            );
         }
     }
 }

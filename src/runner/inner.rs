@@ -186,6 +186,15 @@ impl winit::application::ApplicationHandler for Runner {
             this.needs_window_restart = false;
             this.restart_window(event_loop);
         }
+
+        // 检查播放状态：播放时使用 Poll 模式确保持续重绘，暂停时使用 Wait 模式节省资源
+        let is_playing = this.window.ui().is_playing();
+        if is_playing {
+            event_loop.set_control_flow(ControlFlow::Poll);
+            this.window.request_redraw();
+        } else {
+            event_loop.set_control_flow(ControlFlow::Wait);
+        }
     }
 }
 

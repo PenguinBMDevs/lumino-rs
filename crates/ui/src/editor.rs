@@ -63,6 +63,8 @@ pub enum EditState {
     ResizingEnd {
         note_index: usize,
     },
+    /// 擦洗状态：在时间轴上拖动来快速定位播放位置
+    Scrubbing,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -108,6 +110,12 @@ pub struct Editor {
 
     /// 历史记录（用于撤销/重做）
     history: history::History,
+
+    /// 演奏指示线位置（以 tick 为单位）
+    pub playback_position: f32,
+    
+    /// 音符数据是否已变化（需要更新播放管理器）
+    notes_changed: bool,
 }
 
 impl Editor {
@@ -131,6 +139,8 @@ impl Editor {
             selected_notes: std::collections::HashSet::new(),
             remote_cursors: std::collections::HashMap::new(),
             history: history::History::new(),
+            playback_position: 0.0,
+            notes_changed: false,
         };
         editor.max_scroll_x = editor.state.total_ticks as f32 * editor.state.zoom_x;
         editor.max_scroll_y = editor.state.visible_key_count as f32 * editor.state.zoom_y;
@@ -191,6 +201,21 @@ impl Editor {
             tracing::debug!("Editor: 取出了 {} 个音频动作", actions.len());
         }
         actions
+    }
+
+    /// 检查音符数据是否已变化
+    pub fn notes_changed(&self) -> bool {
+        self.notes_changed
+    }
+
+    /// 清除音符变化标志
+    pub fn clear_notes_changed(&mut self) {
+        self.notes_changed = false;
+    }
+
+    /// 标记音符数据已变化
+    pub fn mark_notes_changed(&mut self) {
+        self.notes_changed = true;
     }
 }
 

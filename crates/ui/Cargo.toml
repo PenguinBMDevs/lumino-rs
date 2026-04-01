@@ -9,6 +9,7 @@ edition.workspace = true
 [dependencies]
 lumino-core = { workspace = true }
 lumino-gfx = { workspace = true }
+lumino-midi = { workspace = true }
 lumino-collaboration = { workspace = true }
 # crates.io
 iced_renderer = { workspace = true }

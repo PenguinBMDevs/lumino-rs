@@ -262,6 +262,14 @@ impl MidiManager {
         self.output.as_mut()
     }
 
+    /// 创建额外的 MIDI 输出连接（用于播放引擎）
+    pub fn create_additional_output(&self) -> Option<Box<dyn lumino_midi::OutputConnection>> {
+        let api = self.api.as_ref()?;
+        let outputs = api.outputs().ok()?;
+        let output = outputs.first()?;
+        api.open_output(output.id).ok()
+    }
+
     /// 标记需要重新初始化
     pub fn mark_for_reinit(&mut self) {
         self.needs_reinit = true;

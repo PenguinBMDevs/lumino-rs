@@ -2,6 +2,7 @@ pub mod constants;
 mod editor;
 pub mod host;
 pub mod message;
+pub mod playback;
 mod resources;
 mod root;
 pub mod settings;

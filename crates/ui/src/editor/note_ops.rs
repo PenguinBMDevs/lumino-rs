@@ -68,6 +68,9 @@ impl Editor {
 
             // 清除网格缓存以强制重绘
             self.grid_cache.clear();
+            
+            // 标记音符数据已变化
+            self.mark_notes_changed();
         }
     }
 

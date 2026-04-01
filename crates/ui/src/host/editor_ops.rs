@@ -19,6 +19,14 @@ impl Host {
         self.window.request_redraw();
     }
 
+    /// 设置编辑器的 PPQ (division)
+    pub fn set_ppq(&mut self, ppq: u16) {
+        self.root.set_ppq(ppq);
+        self.clear_cache();
+        self.window.request_redraw();
+    }
+
+
     /// 加载音符到编辑器
     /// notes: (tick, key, length)
     pub fn load_notes(&mut self, notes: &[(f32, u8, f32)]) {
@@ -71,6 +79,32 @@ impl Host {
         }
 
         // 不需要重绘，因为这些音符是用于洋葱皮的，不是当前显示的
+    }
+
+    /// 加载 Tempo 变化事件到播放管理器
+    /// tempo_changes: Vec<(tick, tempo_in_microseconds_per_quarter_note)>
+    pub fn load_tempo_changes(&mut self, tempo_changes: Vec<(u32, u32)>) {
+        self.root.load_tempo_changes(tempo_changes);
+    }
+
+    /// 设置播放用 MIDI 输出连接
+    pub fn set_playback_midi_output(&mut self, output: Box<dyn lumino_midi::OutputConnection>) {
+        self.root.set_midi_output(output);
+    }
+
+    /// 清除播放用 MIDI 输出连接
+    pub fn clear_playback_midi_output(&mut self) {
+        self.root.clear_midi_output();
+    }
+
+    /// 播放管理器是否已初始化
+    pub fn has_playback_manager(&self) -> bool {
+        self.root.playback_manager.is_some()
+    }
+
+    /// 检查是否正在播放
+    pub fn is_playing(&self) -> bool {
+        self.root.is_playing()
     }
 
     // ════════════════════════════════════════════════════════════════════════════

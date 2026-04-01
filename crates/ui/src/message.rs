@@ -140,6 +140,14 @@ pub enum Message {
         user_id: String,
         operation: String,
     },
+    /// 播放/继续播放
+    Play,
+    /// 暂停播放
+    Pause,
+    /// 停止播放
+    Stop,
+    /// 播放器Tick更新（用于更新播放指示线）
+    PlaybackTick(f32),
     Null,
 }
 

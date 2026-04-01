@@ -301,7 +301,17 @@ impl RunnerInner {
 
     /// 将 MIDI 数据导入到编辑器
     pub(super) fn import_midi_to_editor(&mut self, parsed: &ParsedMidi) {
-        self.midi_handler
-            .import_midi_to_editor(self.window.ui_mut(), parsed);
+        {
+            let ui = self.window.ui_mut();
+            self.midi_handler.import_midi_to_editor(ui, parsed);
+        }
+
+        // MIDI 导入后，为播放管理器绑定一个独立的 MIDI 输出连接
+        if let Some(output) = self.midi.create_additional_output() {
+            self.window.ui_mut().set_playback_midi_output(output);
+            tracing::info!("Playback MIDI output connected");
+        } else {
+            tracing::warn!("Failed to create playback MIDI output connection");
+        }
     }
 }

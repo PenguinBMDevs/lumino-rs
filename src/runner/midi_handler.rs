@@ -56,8 +56,13 @@ impl MidiHandler {
                 track_infos.push((track_idx, track_name, summary.note_count));
             }
 
+            ui.set_ppq(parsed.info.division);
+
             // 更新 UI 音轨列表
             ui.update_tracks(&track_infos);
+
+            // 提取并加载 Tempo 变化事件
+            self.load_tempo_changes_from_memory_manager(&mut memory_manager, ui);
 
             // 预加载所有音轨的音符到 track_notes（供洋葱皮使用）
             tracing::info!("Pre-loading all tracks for onion skin...");
@@ -109,6 +114,8 @@ impl MidiHandler {
         };
 
         // 使用通用解析函数收集音轨信息和音符
+        let ppq = match smf.header.timing { midly::Timing::Metrical(ppq) => ppq.as_int() as u16, _ => 1920 }; ui.set_ppq(ppq);
+
         let (track_infos, track_notes_map) = parse_smf_to_notes(&smf);
 
         // 更新 UI 音轨列表
@@ -203,5 +210,48 @@ impl MidiHandler {
                 notes.len()
             );
         }
+    }
+
+    /// 从 memory_manager 提取并加载 Tempo 变化事件
+    fn load_tempo_changes_from_memory_manager(
+        &self,
+        memory_manager: &mut lumino_core::MidiMemoryManager,
+        ui: &mut lumino_ui::Host,
+    ) {
+        use lumino_core::MidiEvent;
+
+        let mut tempo_changes = Vec::new();
+
+        // 遍历所有音轨，提取 Tempo 事件
+        let summaries = memory_manager.all_summaries().to_vec();
+        for summary in &summaries {
+            let track_idx = summary.track_index;
+
+            if let Ok(events) = memory_manager.get_track_events_full(track_idx) {
+                for event in events {
+                    if let MidiEvent::Tempo { tick, tempo, .. } = event {
+                        tempo_changes.push((tick, tempo));
+                    }
+                }
+            }
+        }
+
+        // 按 tick 排序
+        tempo_changes.sort_by_key(|(tick, _)| *tick);
+
+        // 如果没有 tempo 事件，添加默认的 120 BPM
+        if tempo_changes.is_empty() {
+            // 120 BPM = 500000 microseconds per quarter note
+            tempo_changes.push((0, 500000));
+            tracing::info!("No tempo events found, using default 120 BPM");
+        } else {
+            tracing::info!(
+                "Loaded {} tempo changes from MIDI file",
+                tempo_changes.len()
+            );
+        }
+
+        // 加载到 UI
+        ui.load_tempo_changes(tempo_changes);
     }
 }

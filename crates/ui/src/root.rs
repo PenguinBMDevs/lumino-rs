@@ -37,6 +37,12 @@ pub struct Root {
     pub(crate) is_progress_window: bool,
     /// UI 状态
     pub(crate) state: RootState,
+    /// 播放管理器
+    pub(crate) playback_manager: Option<crate::playback::PlaybackManager>,
+    /// 延迟应用的 Tempo 变化（播放管理器未初始化时缓存）
+    pub(crate) pending_tempo_changes: Option<Vec<crate::playback::TempoChange>>,
+    /// 延迟应用的 MIDI 输出（播放管理器未初始化时缓存）
+    pub(crate) pending_midi_output: Option<Box<dyn lumino_midi::OutputConnection>>,
 }
 
 impl Root {
@@ -53,6 +59,9 @@ impl Root {
             progress: None,
             is_progress_window: false,
             state: RootState::new(),
+            playback_manager: None,
+            pending_tempo_changes: None,
+            pending_midi_output: None,
         }
     }
 
@@ -75,6 +84,9 @@ impl Root {
             progress: None,
             is_progress_window: true,
             state: RootState::new(),
+            playback_manager: None,
+            pending_tempo_changes: None,
+            pending_midi_output: None,
         }
     }
 
@@ -97,6 +109,9 @@ impl Root {
             progress: None,
             is_progress_window: false,
             state,
+            playback_manager: None,
+            pending_tempo_changes: None,
+            pending_midi_output: None,
         }
     }
 
@@ -113,5 +128,26 @@ impl Root {
     /// 获取编辑器引用
     pub fn editor_ref(&self) -> &editor::Editor {
         &self.editor
+    }
+
+    /// 更新播放状态（应在主循环中定期调用）
+    pub fn update_playback(&mut self) -> Option<f32> {
+        if let Some(manager) = &mut self.playback_manager {
+            if manager.state() != crate::playback::PlaybackState::Playing {
+                return None;
+            }
+            manager.update();
+            Some(manager.current_tick())
+        } else {
+            None
+        }
+    }
+
+    /// 获取播放状态
+    pub fn is_playing(&self) -> bool {
+        self.playback_manager
+            .as_ref()
+            .map(|m| m.state() == crate::playback::PlaybackState::Playing)
+            .unwrap_or(false)
     }
 }

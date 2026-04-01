@@ -88,6 +88,11 @@ impl WindowManager {
         &self.ui
     }
 
+    /// 请求重绘窗口
+    pub fn request_redraw(&self) {
+        self.window.request_redraw();
+    }
+
     /// 处理窗口事件
     pub fn handle_event(&mut self, event: WindowEvent, storage: &mut crate::storage::Storage) {
         match event {

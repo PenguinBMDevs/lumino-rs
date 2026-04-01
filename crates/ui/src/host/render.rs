@@ -32,6 +32,11 @@ impl Host {
 
         self.last_frame_time = now;
 
+        // 更新播放状态
+        if let Some(tick) = self.root.update_playback() {
+            self.root.update(message::Message::PlaybackTick(tick));
+        }
+
         // 第一步：使用 wgpu 渲染音符（位于 UI 层下方）
         self.render_notes(frame, view, gfx);
 

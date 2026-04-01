@@ -20,6 +20,7 @@ use iced_widget::canvas::{self, Event, Geometry, Program};
 pub mod bars;
 pub mod keyboard;
 pub mod keys;
+pub mod playback_indicator;
 pub mod remote_cursors;
 pub mod ruler;
 pub mod selection_box;
@@ -176,6 +177,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
             }
             EditState::Drawing { .. } => mouse::Interaction::Crosshair,
             EditState::Selecting { .. } => mouse::Interaction::Crosshair,
+            EditState::Scrubbing => mouse::Interaction::Grabbing,
             EditState::Idle => match self.editor.hover_state {
                 Some((_, HitType::Start)) | Some((_, HitType::End)) => {
                     mouse::Interaction::ResizingHorizontally
@@ -215,6 +217,10 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         // 绘制远端鼠标游标
         let remote_cursor_geometries = remote_cursors::draw(self.editor, renderer, bounds);
         geometries.extend(remote_cursor_geometries);
+
+        // 绘制演奏指示线（实时渲染，不缓存）
+        let playback_indicator_geom = playback_indicator::draw(self.editor, renderer, bounds);
+        geometries.push(playback_indicator_geom);
 
         geometries
     }

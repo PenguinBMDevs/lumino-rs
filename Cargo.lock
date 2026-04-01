@@ -3313,6 +3313,7 @@ dependencies = [
  "lumino-collaboration",
  "lumino-core",
  "lumino-gfx",
+ "lumino-midi",
  "once_cell",
  "resvg",
  "rfd 0.14.1",

@@ -53,7 +53,8 @@ impl Editor {
                     }
                     self.start_note_edit(index, hit_type, pos);
                 } else {
-                    // 点击空白处：开始框选
+                    // 点击空白处：移动演奏指示线并开始框选
+                    self.playback_position = snapped_tick;
                     self.selected_notes.clear();
                     self.edit_state = EditState::Selecting {
                         start_pos: pos,
@@ -156,6 +157,11 @@ impl Editor {
         lumino_core::event::emit(lumino_core::event::Event::Window(
             lumino_core::event::window::Event::Drag, // 这里借用 Drag 事件触发状态同步
         ));
+        if let EditState::Scrubbing = self.edit_state {
+            self.playback_position = snapped_tick;
+            return;
+        }
+
 
         let (new_tick, new_key, new_length) =
             self.calculate_edit_changes(pos, tick, key, snapped_tick);
@@ -439,6 +445,9 @@ impl Editor {
             self.notes.len(),
             self.current_track
         );
+        
+        // 标记音符数据已变化
+        self.mark_notes_changed();
     }
 
     /// 处理滚动事件
@@ -557,7 +566,7 @@ impl Editor {
             .cursor_position
             .filter(|pos| self.is_inside_canvas(*pos))
             .map(|pos| (self.snap_tick(self.x_to_tick(pos.x)), self.y_to_key(pos.y)))
-            .unwrap_or((0.0, 0));
+            .unwrap_or((self.playback_position, 60)); // 默认使用演奏指示线位置和中央C
 
         let mut pasted = Vec::new();
         for item in notes_value {

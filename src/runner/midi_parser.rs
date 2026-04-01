@@ -24,6 +24,11 @@ pub fn parse_midi_events_to_notes(events: &[MidiEvent]) -> Vec<(f32, u8, f32)> {
                 velocity,
             } => {
                 if *velocity > 0 {
+                    // 如果音符已经在活动状态，先结束它
+                    if let Some(start_tick) = active_notes.remove(&(*channel, *key)) {
+                        let length = tick.saturating_sub(start_tick) as f32;
+                        notes.push((start_tick as f32, *key, length));
+                    }
                     // 记录音符开始
                     active_notes.insert((*channel, *key), *tick);
                 } else if let Some(start_tick) = active_notes.remove(&(*channel, *key)) {
@@ -82,6 +87,13 @@ pub fn parse_smf_to_notes(smf: &Smf) -> (Vec<TrackInfo>, TrackNotesMap) {
                     message: midly::MidiMessage::NoteOn { key, vel },
                 } => {
                     if vel > 0 {
+                        // 如果音符已经在活动状态，先结束它
+                        if let Some(start_tick) =
+                            active_notes.remove(&(channel.as_int(), key.as_int()))
+                        {
+                            let length = abs_tick.saturating_sub(start_tick) as f32;
+                            notes.push((start_tick as f32, key.as_int(), length));
+                        }
                         active_notes.insert((channel.as_int(), key.as_int()), abs_tick);
                     } else {
                         // velocity == 0 视为 NoteOff

@@ -105,6 +105,12 @@ pub mod editor {
 
     /// 小节号字体大小
     pub const MEASURE_NUMBER_FONT_SIZE: f32 = 12.5;
+
+    /// 演奏指示线宽度
+    pub const PLAYBACK_INDICATOR_WIDTH: f32 = 2.0;
+
+    /// 演奏指示线顶部三角形大小
+    pub const PLAYBACK_INDICATOR_TRIANGLE_SIZE: f32 = 8.0;
 }
 
 /// 渲染相关常量

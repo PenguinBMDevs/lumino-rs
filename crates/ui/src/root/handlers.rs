@@ -29,7 +29,20 @@ impl Root {
                     .set_canvas_size(iced_core::Point::new(size.width, size.height));
             }
             message::Message::EditorAction(action) => {
+                let old_tick = self.editor.playback_position;
                 self.editor.handle_action(action);
+                let new_tick = self.editor.playback_position;
+                if (old_tick - new_tick).abs() > f32::EPSILON {
+                    if let Some(manager) = &mut self.playback_manager {
+                        manager.seek(new_tick);
+                    }
+                }
+                
+                // 检查音符数据是否变化，如果变化则更新播放管理器
+                if self.editor.notes_changed() {
+                    self.update_playback_notes();
+                    self.editor.clear_notes_changed();
+                }
             }
             message::Message::AudioAction(_) => {
                 // 音频动作处理（留给外层实现）
@@ -171,6 +184,25 @@ impl Root {
                     self.state.custom_precision_dialog.divisor = value;
                 }
             }
+            // 播放控制消息
+            message::Message::Play => {
+                self.handle_play();
+            }
+            message::Message::Pause => {
+                self.handle_pause();
+            }
+            message::Message::Stop => {
+                self.handle_stop();
+            }
+            message::Message::PlaybackTick(tick) => {
+                // 更新播放指示线位置
+                self.editor.playback_position = tick;
+
+                // 更新播放管理器
+                if let Some(manager) = &mut self.playback_manager {
+                    manager.update();
+                }
+            }
         }
     }
 
@@ -221,6 +253,20 @@ impl Root {
 
     /// 处理工具栏事件
     fn handle_toolbar_event(&mut self, event: toolbar::Event) {
+        // 处理播放控制
+        match &event {
+            toolbar::Event::Play => {
+                self.handle_play();
+            }
+            toolbar::Event::Pause => {
+                self.handle_pause();
+            }
+            toolbar::Event::Stop => {
+                self.handle_stop();
+            }
+            _ => {}
+        }
+
         // 如果工具切换了，同步更新 editor 的工具状态
         if let toolbar::Event::ToolSelected(tool) = &event {
             self.editor.set_tool(*tool);
@@ -257,5 +303,75 @@ impl Root {
             ));
         }
         self.toolbar.update(event);
+    }
+
+    /// 处理播放
+    fn handle_play(&mut self) {
+        // 如果播放管理器还未初始化，创建它
+        if self.playback_manager.is_none() {
+            self.init_playback_manager();
+        }
+
+        if let Some(manager) = &mut self.playback_manager {
+            manager.play();
+            tracing::info!("Root: 开始播放");
+        }
+    }
+
+    /// 处理暂停
+    fn handle_pause(&mut self) {
+        if let Some(manager) = &mut self.playback_manager {
+            manager.pause();
+            tracing::info!("Root: 暂停播放");
+        }
+    }
+
+    /// 处理停止
+    fn handle_stop(&mut self) {
+        if let Some(manager) = &mut self.playback_manager {
+            manager.stop();
+            self.editor.playback_position = 0.0;
+            tracing::info!("Root: 停止播放");
+        }
+    }
+
+    /// 初始化播放管理器
+    fn init_playback_manager(&mut self) {
+        let division = self.editor.state.ppq;
+        let mut manager = crate::playback::PlaybackManager::new(division);
+
+        // 设置音符
+        let notes: Vec<crate::playback::NoteEvent> = self
+            .editor
+            .notes
+            .iter()
+            .map(|note| {
+                crate::playback::NoteEvent {
+                    tick: note.tick,
+                    channel: 0, // 默认通道0
+                    key: note.key as u8,
+                    velocity: 100, // 默认力度
+                    length: note.length,
+                }
+            })
+            .collect();
+        manager.set_notes(notes);
+
+        // 应用缓存的 tempo 变化
+        if let Some(changes) = self.pending_tempo_changes.take() {
+            manager.set_tempo_changes(changes);
+        }
+
+        // 应用缓存的 MIDI 输出连接
+        if let Some(output) = self.pending_midi_output.take() {
+            manager.set_midi_output(output);
+        }
+
+        self.playback_manager = Some(manager);
+        tracing::info!(
+            "Root: 播放管理器已初始化 (division={}, notes={})",
+            division,
+            self.editor.notes.len()
+        );
     }
 }
