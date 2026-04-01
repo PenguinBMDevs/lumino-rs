@@ -1,9 +1,6 @@
 use std::sync::Arc;
 use winit::event_loop::ControlFlow;
 
-use crate::storage;
-use crate::services::collaboration_service::CollaborationService;
-use crate::services::file_service::FileService;
 use super::collaboration_handler::CollaborationHandler;
 use super::dialog_manager::{DialogManager, DialogResult};
 use super::file_handler::FileHandler;
@@ -11,6 +8,9 @@ use super::midi_handler::MidiHandler;
 use super::midi_manager::{MidiManager, handle_audio_action};
 use super::progress_manager::ProgressManager;
 use super::window_manager::WindowManager;
+use crate::services::collaboration_service::CollaborationService;
+use crate::services::file_service::FileService;
+use crate::storage;
 
 pub use lumino_core::ParsedDms;
 pub use lumino_core::ParsedMidi;
@@ -157,12 +157,13 @@ impl winit::application::ApplicationHandler for Runner {
         // 初始化新创建的对话框（同步主窗口的协作状态）
         {
             let main_ui = this.window.ui();
-            this.dialog_manager.initialize_pending_with_collaboration_state(
-                event_loop,
-                this.window.window(),
-                &this.storage.config.get().ui,
-                main_ui,
-            );
+            this.dialog_manager
+                .initialize_pending_with_collaboration_state(
+                    event_loop,
+                    this.window.window(),
+                    &this.storage.config.get().ui,
+                    main_ui,
+                );
         }
 
         // 更新对话框
@@ -257,43 +258,43 @@ impl Runner {
         };
 
         // Debug 模式下自动连接本地服务器
-        #[cfg(debug_assertions)]
-        {
-            // 生成时间戳格式的用户名
-            let username = format!(
-                "debug_{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis()
-            );
+        // #[cfg(debug_assertions)]
+        // {
+        //     // 生成时间戳格式的用户名
+        //     let username = format!(
+        //         "debug_{}",
+        //         std::time::SystemTime::now()
+        //             .duration_since(std::time::UNIX_EPOCH)
+        //             .unwrap_or_default()
+        //             .as_millis()
+        //     );
 
-            tracing::info!(
-                "Debug 模式：自动连接协作服务器 127.0.0.1:3000，用户名: {}",
-                username
-            );
+        //     tracing::info!(
+        //         "Debug 模式：自动连接协作服务器 127.0.0.1:3000，用户名: {}",
+        //         username
+        //     );
 
-            // 打开协作对话框并设置 UI 状态为正在连接
-            runner
-                .window
-                .ui_mut()
-                .open_collaboration_dialog_with_state(
-                    "127.0.0.1".to_string(),
-                    3000,
-                    username.clone(),
-                );
+        //     // 打开协作对话框并设置 UI 状态为正在连接
+        //     runner
+        //         .window
+        //         .ui_mut()
+        //         .open_collaboration_dialog_with_state(
+        //             "127.0.0.1".to_string(),
+        //             3000,
+        //             username.clone(),
+        //         );
 
-            // 通过正常流程处理连接（这会更新 Runner 的 collaboration_status）
-            let host = "127.0.0.1".to_string();
-            let port = 3000u16;
-            runner.handle_collaboration_connect(
-                host,
-                port,
-                username,
-                Some("Lumino 房间".to_string()),
-                None,
-            );
-        }
+        //     // 通过正常流程处理连接（这会更新 Runner 的 collaboration_status）
+        //     let host = "127.0.0.1".to_string();
+        //     let port = 3000u16;
+        //     runner.handle_collaboration_connect(
+        //         host,
+        //         port,
+        //         username,
+        //         Some("Lumino 房间".to_string()),
+        //         None,
+        //     );
+        // }
 
         runner
     }
