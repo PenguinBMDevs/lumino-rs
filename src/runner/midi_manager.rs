@@ -61,8 +61,13 @@ impl MidiManager {
     pub fn from_config(ui_config: &UiConfig) -> Self {
         let preferred = ui_config.preferred_backend;
 
-        // 首先快速启动 System 后端（不阻塞 UI）
-        let (api, output, backend) = Self::init_system_output();
+        // 快速启动初始后端（不阻塞 UI）
+        let (api, output, backend) = match preferred {
+            SynthBackend::Kdmapi => Self::init_kdmapi_output(),
+            SynthBackend::System => Self::init_system_output(),
+            // XSynth 模式下先启动 System，然后在后台初始化 XSynth
+            SynthBackend::XSynth => Self::init_system_output(),
+        };
 
         let mut manager = Self {
             api,
@@ -182,6 +187,32 @@ impl MidiManager {
         }
     }
 
+    /// 快速初始化 KDMAPI 后端（不阻塞）
+    fn init_kdmapi_output() -> SystemOutputResult {
+        use lumino_midi::ApiKind;
+
+        tracing::info!("MIDI: 快速启动 KDMAPI 后端");
+
+        let path = std::path::PathBuf::from("OmniMIDI.dll");
+
+        match lumino_midi::new_api(&ApiKind::Kdmapi { path }) {
+            Ok(api) => {
+                if let Ok(outputs) = api.outputs()
+                    && let Some(output) = outputs.first()
+                    && let Ok(conn) = api.open_output(output.id)
+                {
+                    tracing::info!("MIDI: KDMAPI 后端已就绪");
+                    return (Some(api), Some(conn), SynthBackend::Kdmapi);
+                }
+                (Some(api), None, SynthBackend::Kdmapi)
+            }
+            Err(e) => {
+                tracing::warn!("MIDI: KDMAPI 后端启动失败: {:?}", e);
+                (None, None, SynthBackend::Kdmapi)
+            }
+        }
+    }
+
     /// 检查异步初始化是否完成，如果完成则切换到 XSynth
     pub fn check_async_init_complete(&mut self) {
         if !self.is_xsynth_initializing {
@@ -273,8 +304,12 @@ impl MidiManager {
             self.active_backend = backend;
             self.start_xsynth_async_init(ui_config);
         } else {
-            // 直接初始化其他后端
-            let (api, output, backend) = Self::init_system_output();
+            // 初始化其他后端
+            let (api, output, backend) = match ui_config.preferred_backend {
+                SynthBackend::Kdmapi => Self::init_kdmapi_output(),
+                SynthBackend::System => Self::init_system_output(),
+                _ => Self::init_system_output(),
+            };
             self.api = api;
             self.output = output;
             self.active_backend = backend;

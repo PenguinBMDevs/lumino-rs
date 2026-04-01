@@ -460,7 +460,11 @@ fn render_general_settings<'a>() -> iced_widget::Column<'a, Message, Theme, crat
 fn render_audio_settings<'a>(
     settings: &SettingsPanel,
 ) -> iced_widget::Column<'a, Message, Theme, crate::Renderer> {
-    let synth_options = [SynthBackend::XSynth, SynthBackend::Kdmapi];
+    let synth_options = [
+        SynthBackend::XSynth,
+        SynthBackend::Kdmapi,
+        SynthBackend::System,
+    ];
 
     let mut col = column![
         text("音频")
@@ -597,9 +601,20 @@ fn render_audio_settings<'a>(
                 .size(12.0)
                 .style(create_placeholder_text_style()),
         );
-    } else {
+        col = col.push(
+            text("System: 使用系统默认的WinMM MIDI输出")
+                .size(12.0)
+                .style(create_placeholder_text_style()),
+        );
+    } else if settings.synth_backend == SynthBackend::Kdmapi {
         col = col.push(
             text("KDMAPI 模式使用系统驱动，无需音色库")
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_placeholder_text_style()),
+        );
+    } else if settings.synth_backend == SynthBackend::System {
+        col = col.push(
+            text("System 模式使用系统默认的WinMM MIDI输出，无需音色库")
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_placeholder_text_style()),
         );

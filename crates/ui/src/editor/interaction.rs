@@ -360,7 +360,12 @@ impl Editor {
 
                     tracing::info!(
                         "Editor: 音符移动完成 - original=({}, {}), current=({}, {}), offset=({}, {})",
-                        original_tick, original_key, note.tick, note.key, tick_offset, key_offset
+                        original_tick,
+                        original_key,
+                        note.tick,
+                        note.key,
+                        tick_offset,
+                        key_offset
                     );
 
                     if tick_offset.abs() > 0.001 || key_offset != 0 {
@@ -403,7 +408,7 @@ impl Editor {
         let length = length.max(self.state.snap_precision);
 
         // Push history before adding new note
-        tracing::info!("编辑器: 在添加新音符前推送历史记录");
+        tracing::debug!("编辑器: 在添加新音符前推送历史记录");
         self.push_history();
 
         let note = super::Note::new(tick, key, length);
@@ -423,7 +428,7 @@ impl Editor {
             },
         ));
 
-        tracing::info!(
+        tracing::debug!(
             "编辑器: 已保存 {} 个音符到音轨 {}",
             self.notes.len(),
             self.current_track

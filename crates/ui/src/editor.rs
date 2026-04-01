@@ -358,7 +358,7 @@ impl Editor {
     /// Push current state to history
     pub fn push_history(&mut self) {
         let snapshot = history::EditorSnapshot::new(self.notes.clone(), self.current_track);
-        tracing::info!(
+        tracing::debug!(
             "推送历史记录: {} 个音符，音轨 {}",
             snapshot.notes.len(),
             snapshot.current_track

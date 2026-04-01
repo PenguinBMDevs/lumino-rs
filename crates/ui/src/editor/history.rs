@@ -36,10 +36,10 @@ impl History {
 
     /// Push a new snapshot to the undo stack
     pub fn push(&mut self, snapshot: EditorSnapshot) {
-        tracing::info!("历史记录: 推送快照，包含 {} 个音符", snapshot.notes.len());
-        tracing::info!("历史记录: 推送前撤销栈大小: {}", self.undo_stack.len());
+        tracing::debug!("历史记录: 推送快照，包含 {} 个音符", snapshot.notes.len());
+        tracing::debug!("历史记录: 推送前撤销栈大小: {}", self.undo_stack.len());
         self.undo_stack.push(snapshot);
-        tracing::info!("历史记录: 推送后撤销栈大小: {}", self.undo_stack.len());
+        tracing::debug!("历史记录: 推送后撤销栈大小: {}", self.undo_stack.len());
         // Clear redo stack when new action is performed
         self.redo_stack.clear();
         // Limit the undo stack size
