@@ -58,8 +58,15 @@ pub enum ApiKind {
 }
 
 pub fn new_api(kind: &ApiKind) -> Result<Box<dyn Api>, Error> {
+    new_api_with_options(kind, None)
+}
+
+pub fn new_api_with_options(
+    kind: &ApiKind,
+    options: Option<api::xsynth::XSynthOptions>,
+) -> Result<Box<dyn Api>, Error> {
     let engine: Box<dyn Api> = match kind {
-        ApiKind::XSynth { soundfont_path } => Box::new(XSynth::new(soundfont_path)?),
+        ApiKind::XSynth { soundfont_path } => Box::new(XSynth::new(soundfont_path, options)?),
         ApiKind::Kdmapi { path } => Box::new(Kdmapi::new(path)?),
         ApiKind::System => Box::new(System::new()?),
     };

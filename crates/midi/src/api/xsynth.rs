@@ -11,6 +11,13 @@ use xsynth_realtime::{RealtimeEventSender, RealtimeSynth, SynthEvent, XSynthReal
 use crate::soundfont_cache;
 use crate::{Api, Error, InputInfo, OutputConnection, OutputInfo};
 
+pub struct XSynthOptions {
+    pub buffer_ms: f64,
+    pub threads: i32,
+    pub sample_rate: u32,
+    pub fade_out_killing: bool,
+}
+
 pub struct XSynth {
     _synth: RealtimeSynth, // 保持 synth 存活
     sender: RealtimeEventSender,
@@ -18,7 +25,7 @@ pub struct XSynth {
 }
 
 impl XSynth {
-    pub fn new(soundfont_path: &Path) -> Result<Self, Error> {
+    pub fn new(soundfont_path: &Path, options: Option<XSynthOptions>) -> Result<Self, Error> {
         tracing::info!("XSynth: 初始化，音色库路径: {:?}", soundfont_path);
 
         // 检查音色库文件是否存在
@@ -29,8 +36,22 @@ impl XSynth {
             )));
         }
 
-        let config = XSynthRealtimeConfig::default();
-        let mut synth = RealtimeSynth::open_with_default_output(config);
+        let mut rt_config = XSynthRealtimeConfig::default();
+        if let Some(opt) = options {
+            rt_config.render_window_ms = opt.buffer_ms;
+
+            // 解析线程数
+            let thread_count = match opt.threads {
+                -1 => xsynth_realtime::ThreadCount::None,
+                0 => xsynth_realtime::ThreadCount::Auto,
+                n if n > 0 => xsynth_realtime::ThreadCount::Manual(n as usize),
+                _ => xsynth_realtime::ThreadCount::Auto,
+            };
+            rt_config.multithreading = thread_count;
+            rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
+        }
+
+        let mut synth = RealtimeSynth::open_with_default_output(rt_config);
         tracing::info!("XSynth: 音频流已创建并启动");
 
         let params = synth.stream_params();

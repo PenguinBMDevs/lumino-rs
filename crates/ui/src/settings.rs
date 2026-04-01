@@ -104,6 +104,10 @@ pub enum Event {
     SoundfontPathChanged(String),
     BrowseSoundfont,
     NativeTitlebarChanged(bool),
+    XSynthBufferChanged(f64),
+    XSynthSampleRateChanged(u32),
+    XSynthThreadsChanged(i32),
+    XSynthFadeOutChanged(bool),
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +116,10 @@ pub struct SettingsPanel {
     pub synth_backend: SynthBackend,
     pub soundfont_path: String,
     pub use_native_titlebar: bool,
+    pub xsynth_buffer_ms: f64,
+    pub xsynth_sample_rate: u32,
+    pub xsynth_threads: i32,
+    pub xsynth_fade_out: bool,
 }
 
 impl SettingsPanel {
@@ -121,6 +129,10 @@ impl SettingsPanel {
             synth_backend: ui_config.preferred_backend,
             soundfont_path: ui_config.soundfont_path.clone(),
             use_native_titlebar: ui_config.use_native_titlebar,
+            xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
+            xsynth_sample_rate: ui_config.xsynth_sample_rate,
+            xsynth_threads: ui_config.xsynth_threads,
+            xsynth_fade_out: ui_config.xsynth_fade_out_killing,
         }
     }
 
@@ -148,6 +160,18 @@ impl SettingsPanel {
             }
             Event::NativeTitlebarChanged(enabled) => {
                 self.use_native_titlebar = enabled;
+            }
+            Event::XSynthBufferChanged(ms) => {
+                self.xsynth_buffer_ms = ms;
+            }
+            Event::XSynthSampleRateChanged(sr) => {
+                self.xsynth_sample_rate = sr;
+            }
+            Event::XSynthThreadsChanged(t) => {
+                self.xsynth_threads = t;
+            }
+            Event::XSynthFadeOutChanged(f) => {
+                self.xsynth_fade_out = f;
             }
         }
     }
@@ -477,6 +501,92 @@ fn render_audio_settings<'a>(
         col = col.push(iced_widget::space().height(SPACING_CONTENT));
         col = col.push(button("浏览...").on_press(Message::Settings(Event::BrowseSoundfont)));
         col = col.push(iced_widget::space().height(20));
+
+        // 采样率
+        let sample_rates = [44100u32, 48000, 88200, 96000];
+        col = col.push(
+            row![
+                text("采样率:")
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                iced_widget::space().width(SPACING_MAIN),
+                pick_list(sample_rates, Some(settings.xsynth_sample_rate), |sr| {
+                    Message::Settings(Event::XSynthSampleRateChanged(sr))
+                })
+                .width(200.0),
+            ]
+            .spacing(SPACING_ICON_LABEL)
+            .align_y(Alignment::Center),
+        );
+        col = col.push(iced_widget::space().height(SPACING_CONTENT));
+
+        // 缓冲区大小
+        col = col.push(
+            row![
+                text(format!(
+                    "缓冲区 (延迟): {:.1} ms",
+                    settings.xsynth_buffer_ms
+                ))
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(160.0),
+                iced_widget::slider(5.0..=100.0, settings.xsynth_buffer_ms, |ms| {
+                    Message::Settings(Event::XSynthBufferChanged(ms))
+                })
+                .step(1.0)
+                .width(200.0),
+            ]
+            .spacing(SPACING_ICON_LABEL)
+            .align_y(Alignment::Center),
+        );
+        col = col.push(iced_widget::space().height(SPACING_CONTENT));
+
+        // 多线程选项
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        struct ThreadOption(i32, &'static str);
+        impl std::fmt::Display for ThreadOption {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.1)
+            }
+        }
+        let thread_options = [
+            ThreadOption(-1, "关闭"),
+            ThreadOption(0, "自动"),
+            ThreadOption(1, "1 线程"),
+            ThreadOption(2, "2 线程"),
+            ThreadOption(4, "4 线程"),
+            ThreadOption(8, "8 线程"),
+        ];
+        let current_thread_option = thread_options
+            .iter()
+            .find(|o| o.0 == settings.xsynth_threads)
+            .copied()
+            .or(Some(thread_options[1]));
+
+        col = col.push(
+            row![
+                text("多线程渲染:")
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                iced_widget::space().width(SPACING_MAIN),
+                pick_list(thread_options, current_thread_option, |opt| {
+                    Message::Settings(Event::XSynthThreadsChanged(opt.0))
+                })
+                .width(200.0),
+            ]
+            .spacing(SPACING_ICON_LABEL)
+            .align_y(Alignment::Center),
+        );
+        col = col.push(iced_widget::space().height(SPACING_CONTENT));
+
+        // 音符释放淡出
+        col = col.push(
+            iced_widget::Checkbox::new(settings.xsynth_fade_out)
+                .label("释放音符时平滑淡出 (防止爆音)")
+                .on_toggle(|f| Message::Settings(Event::XSynthFadeOutChanged(f))),
+        );
+        col = col.push(iced_widget::space().height(20));
+
         col = col.push(
             text("XSynth: 内置高性能合成器，支持SFZ/SF2格式音色库")
                 .size(12.0)

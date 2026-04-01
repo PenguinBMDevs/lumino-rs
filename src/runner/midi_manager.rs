@@ -106,10 +106,11 @@ impl MidiManager {
         self.xsynth_init_rx = Some(rx);
 
         // 在后台线程中初始化 XSynth
+        let ui_config_clone = ui_config.clone();
         std::thread::spawn(move || {
             tracing::info!("XSynth: 后台线程开始初始化");
 
-            let result = Self::init_xsynth_blocking(&path);
+            let result = Self::init_xsynth_blocking(&ui_config_clone);
 
             match &result {
                 Ok(_) => tracing::info!("XSynth: 后台初始化成功"),
@@ -126,14 +127,22 @@ impl MidiManager {
     }
 
     /// 阻塞式初始化 XSynth（用于后台线程）
-    fn init_xsynth_blocking(soundfont_path: &Path) -> MidiInitResult {
-        use lumino_midi::ApiKind;
+    fn init_xsynth_blocking(ui_config: &UiConfig) -> MidiInitResult {
+        use lumino_midi::{ApiKind, api::xsynth::XSynthOptions};
 
+        let path = PathBuf::from(&ui_config.soundfont_path);
         let api_kind = ApiKind::XSynth {
-            soundfont_path: soundfont_path.to_path_buf(),
+            soundfont_path: path,
         };
 
-        let api = lumino_midi::new_api(&api_kind)
+        let options = XSynthOptions {
+            buffer_ms: ui_config.xsynth_buffer_ms,
+            threads: ui_config.xsynth_threads,
+            sample_rate: ui_config.xsynth_sample_rate,
+            fade_out_killing: ui_config.xsynth_fade_out_killing,
+        };
+
+        let api = lumino_midi::new_api_with_options(&api_kind, Some(options))
             .map_err(|e| format!("初始化 MIDI API 失败: {:?}", e))?;
 
         let outputs = api
