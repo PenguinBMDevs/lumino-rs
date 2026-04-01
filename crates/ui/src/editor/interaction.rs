@@ -16,6 +16,12 @@ impl Editor {
             EditorAction::Scrolled { delta_x, delta_y } => self.handle_scrolled(delta_x, delta_y),
             EditorAction::DoubleClicked(pos) => self.handle_double_clicked(pos),
             EditorAction::DeletePressed => self.handle_delete_pressed(),
+            EditorAction::Cut => self.cut_selected_notes(),
+            EditorAction::Copy => {
+                self.copy_selected_notes();
+            }
+            EditorAction::Paste => self.paste_notes_from_clipboard(),
+            EditorAction::SelectAll => self.select_all_notes(),
             EditorAction::Undo => {
                 self.undo();
             }
@@ -460,5 +466,134 @@ impl Editor {
         if let Some((index, _)) = self.hover_state {
             self.delete_note_by_index(index);
         }
+    }
+
+    fn cut_selected_notes(&mut self) {
+        if self.copy_selected_notes_to_clipboard() {
+            self.delete_selected_notes();
+        }
+    }
+
+    fn copy_selected_notes(&mut self) {
+        let _ = self.copy_selected_notes_to_clipboard();
+    }
+
+    fn copy_selected_notes_to_clipboard(&mut self) -> bool {
+        if self.selected_notes.is_empty() {
+            return false;
+        }
+
+        let mut indices: Vec<usize> = self.selected_notes.iter().copied().collect();
+        indices.sort_unstable();
+
+        let notes: Vec<&super::Note> = indices
+            .into_iter()
+            .filter_map(|index| self.notes.get(index))
+            .collect();
+
+        if notes.is_empty() {
+            return false;
+        }
+
+        let origin_tick = notes
+            .iter()
+            .map(|note| note.tick)
+            .fold(f32::INFINITY, f32::min);
+        let origin_key = notes.iter().map(|note| note.key).min().unwrap_or(0);
+
+        let payload = serde_json::json!({
+            "lumino": "notes",
+            "version": 1,
+            "track": self.current_track,
+            "origin_tick": origin_tick,
+            "origin_key": origin_key,
+            "notes": notes.into_iter().map(|note| serde_json::json!({
+                "tick": note.tick - origin_tick,
+                "key": note.key - origin_key,
+                "length": note.length,
+            })).collect::<Vec<_>>(),
+        });
+
+        match arboard::Clipboard::new() {
+            Ok(mut clipboard) => match clipboard.set_text(payload.to_string()) {
+                Ok(()) => {
+                    tracing::info!("Editor: 已复制 {} 个音符", self.selected_notes.len());
+                    true
+                }
+                Err(e) => {
+                    tracing::error!("Editor: 复制到剪贴板失败: {}", e);
+                    false
+                }
+            },
+            Err(e) => {
+                tracing::error!("Editor: 创建剪贴板失败: {}", e);
+                false
+            }
+        }
+    }
+
+    fn paste_notes_from_clipboard(&mut self) {
+        let Ok(mut clipboard) = arboard::Clipboard::new() else {
+            tracing::error!("Editor: 创建剪贴板失败");
+            return;
+        };
+
+        let Ok(text) = clipboard.get_text() else {
+            tracing::debug!("Editor: 剪贴板中没有可粘贴的文本");
+            return;
+        };
+
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+            tracing::debug!("Editor: 剪贴板内容不是音符数据");
+            return;
+        };
+
+        let Some(notes_value) = value.get("notes").and_then(|v| v.as_array()) else {
+            tracing::debug!("Editor: 剪贴板内容缺少 notes");
+            return;
+        };
+
+        let anchor = self
+            .cursor_position
+            .filter(|pos| self.is_inside_canvas(*pos))
+            .map(|pos| (self.snap_tick(self.x_to_tick(pos.x)), self.y_to_key(pos.y)))
+            .unwrap_or((0.0, 0));
+
+        let mut pasted = Vec::new();
+        for item in notes_value {
+            let Some(tick_offset) = item.get("tick").and_then(|v| v.as_f64()) else {
+                continue;
+            };
+            let Some(key_offset) = item.get("key").and_then(|v| v.as_u64()) else {
+                continue;
+            };
+            let Some(length) = item.get("length").and_then(|v| v.as_f64()) else {
+                continue;
+            };
+
+            let tick = (anchor.0 + tick_offset as f32).max(0.0);
+            let key = anchor.1.saturating_add(key_offset as u16);
+            let key = key.min(self.state.visible_key_count.saturating_sub(1));
+            pasted.push(super::Note::new(tick, key, length as f32));
+        }
+
+        if pasted.is_empty() {
+            return;
+        }
+
+        self.push_history();
+        self.selected_notes.clear();
+        let pasted_count = pasted.len();
+        for note in pasted {
+            self.notes.push(note);
+        }
+        self.track_notes
+            .insert(self.current_track, self.notes.clone());
+        let start = self.notes.len().saturating_sub(pasted_count);
+        for index in start..self.notes.len() {
+            self.selected_notes.insert(index);
+        }
+        self.grid_cache.clear();
+        tracing::info!("Editor: 已粘贴 {} 个音符", pasted_count);
     }
 }

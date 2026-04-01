@@ -86,6 +86,44 @@ impl Host {
                                 self.window.request_redraw();
                             }
                         }
+                        PhysicalKey::Code(KeyCode::KeyX) => {
+                            let ctrl_or_cmd = modifiers
+                                .contains(winit::keyboard::ModifiersState::CONTROL)
+                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER);
+                            if ctrl_or_cmd {
+                                self.root.editor.handle_action(message::EditorAction::Cut);
+                                self.window.request_redraw();
+                            }
+                        }
+                        PhysicalKey::Code(KeyCode::KeyC) => {
+                            let ctrl_or_cmd = modifiers
+                                .contains(winit::keyboard::ModifiersState::CONTROL)
+                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER);
+                            if ctrl_or_cmd {
+                                self.root.editor.handle_action(message::EditorAction::Copy);
+                                self.window.request_redraw();
+                            }
+                        }
+                        PhysicalKey::Code(KeyCode::KeyV) => {
+                            let ctrl_or_cmd = modifiers
+                                .contains(winit::keyboard::ModifiersState::CONTROL)
+                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER);
+                            if ctrl_or_cmd {
+                                self.root.editor.handle_action(message::EditorAction::Paste);
+                                self.window.request_redraw();
+                            }
+                        }
+                        PhysicalKey::Code(KeyCode::KeyA) => {
+                            let ctrl_or_cmd = modifiers
+                                .contains(winit::keyboard::ModifiersState::CONTROL)
+                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER);
+                            if ctrl_or_cmd {
+                                self.root
+                                    .editor
+                                    .handle_action(message::EditorAction::SelectAll);
+                                self.window.request_redraw();
+                            }
+                        }
                         _ => {}
                     }
                 }

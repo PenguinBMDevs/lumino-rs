@@ -3,6 +3,8 @@
 #[cfg(test)]
 mod tests {
     use super::super::*;
+    use crate::constants::editor::zoom;
+    use crate::toolbar::Tool;
 
     /// 测试坐标转换：tick 到 x 坐标
     #[test]
@@ -47,7 +49,8 @@ mod tests {
         let editor = Editor::new();
         let key = 60u16; // 中央 C
         let max_key_index = (editor.state.visible_key_count - 1) as f32;
-        let expected_y = (max_key_index - key as f32) * editor.state.zoom_y - editor.state.scroll_y;
+        let expected_y = (max_key_index - key as f32) * editor.state.zoom_y - editor.state.scroll_y
+            + editor.state.ruler_height;
         assert_eq!(editor.key_to_y(key), expected_y);
     }
 
@@ -73,10 +76,10 @@ mod tests {
         let snapped1 = editor.snap_tick(tick1);
         assert_eq!(snapped1, 120.0);
 
-        // 测试向上吸附
+        // 测试仍然向下吸附到最近刻度
         let tick2 = 170.0;
         let snapped2 = editor.snap_tick(tick2);
-        assert_eq!(snapped2, 240.0);
+        assert_eq!(snapped2, 120.0);
 
         // 测试正好在中间
         let tick3 = 180.0;
@@ -165,7 +168,7 @@ mod tests {
     #[test]
     fn test_scroll_boundaries() {
         let mut editor = Editor::new();
-        editor.canvas_size = iced_core::Size::new(800.0, 600.0);
+        editor.canvas_size = iced_core::Point::new(800.0, 600.0);
         editor.state.total_ticks = 1000;
 
         // 设置一个超出范围的 scroll_x
@@ -180,23 +183,23 @@ mod tests {
     #[test]
     fn test_zoom_limits() {
         let mut editor = Editor::new();
-        editor.canvas_size = iced_core::Size::new(800.0, 600.0);
+        editor.canvas_size = iced_core::Point::new(800.0, 600.0);
 
         // 测试 X 轴最小缩放
         editor.set_zoom_x(0.0001, 0.5);
-        assert!(editor.state.zoom_x >= constants::editor::zoom::MIN_ZOOM_X);
+        assert!(editor.state.zoom_x >= zoom::MIN_ZOOM_X);
 
         // 测试 X 轴最大缩放
         editor.set_zoom_x(100.0, 0.5);
-        assert!(editor.state.zoom_x <= constants::editor::zoom::MAX_ZOOM_X);
+        assert!(editor.state.zoom_x <= zoom::MAX_ZOOM_X);
 
         // 测试 Y 轴最小缩放
         editor.set_zoom_y(1.0, 0.5);
-        assert!(editor.state.zoom_y >= constants::editor::zoom::MIN_ZOOM_Y);
+        assert!(editor.state.zoom_y >= zoom::MIN_ZOOM_Y);
 
         // 测试 Y 轴最大缩放
         editor.set_zoom_y(200.0, 0.5);
-        assert!(editor.state.zoom_y <= constants::editor::zoom::MAX_ZOOM_Y);
+        assert!(editor.state.zoom_y <= zoom::MAX_ZOOM_Y);
     }
 
     /// 测试工具设置
@@ -205,18 +208,32 @@ mod tests {
         let mut editor = Editor::new();
 
         // 默认应该是指针工具
-        assert_eq!(editor.current_tool(), toolbar::Tool::Pointer);
+        assert_eq!(editor.current_tool(), Tool::Pointer);
 
         // 设置为铅笔工具
-        editor.set_tool(toolbar::Tool::Pencil);
-        assert_eq!(editor.current_tool(), toolbar::Tool::Pencil);
+        editor.set_tool(Tool::Pencil);
+        assert_eq!(editor.current_tool(), Tool::Pencil);
 
         // 添加选中状态
         editor.selected_notes.insert(0);
         assert_eq!(editor.selected_notes_count(), 1);
 
         // 切换到非指针工具应该清除选中
-        editor.set_tool(toolbar::Tool::Pencil);
+        editor.set_tool(Tool::Pencil);
         assert_eq!(editor.selected_notes_count(), 0);
+    }
+
+    /// 测试全选
+    #[test]
+    fn test_select_all_notes() {
+        let mut editor = Editor::new();
+        editor.notes.push(Note::new(0.0, 60, 480.0));
+        editor.notes.push(Note::new(480.0, 64, 480.0));
+
+        editor.select_all_notes();
+
+        assert_eq!(editor.selected_notes_count(), 2);
+        assert!(editor.is_note_selected(0));
+        assert!(editor.is_note_selected(1));
     }
 }

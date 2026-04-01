@@ -20,6 +20,26 @@ impl RunnerInner {
                 let ui = self.window.ui_mut();
                 ui.handle_action(lumino_ui::message::EditorAction::Redo);
             }
+            Cut => {
+                tracing::info!("Runner: 处理剪切操作");
+                let ui = self.window.ui_mut();
+                ui.handle_action(lumino_ui::message::EditorAction::Cut);
+            }
+            Copy => {
+                tracing::info!("Runner: 处理复制操作");
+                let ui = self.window.ui_mut();
+                ui.handle_action(lumino_ui::message::EditorAction::Copy);
+            }
+            Paste => {
+                tracing::info!("Runner: 处理粘贴操作");
+                let ui = self.window.ui_mut();
+                ui.handle_action(lumino_ui::message::EditorAction::Paste);
+            }
+            SelectAll => {
+                tracing::info!("Runner: 处理全选操作");
+                let ui = self.window.ui_mut();
+                ui.handle_action(lumino_ui::message::EditorAction::SelectAll);
+            }
             _ => {
                 tracing::debug!("Runner: 编辑事件 {:?} 未实现", event);
             }

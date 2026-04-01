@@ -19,6 +19,14 @@ pub enum EditorAction {
     DoubleClicked(iced_core::Point),
     /// 删除键按下（Delete 或 Backspace）
     DeletePressed,
+    /// 剪切
+    Cut,
+    /// 复制
+    Copy,
+    /// 粘贴
+    Paste,
+    /// 全选
+    SelectAll,
     /// 撤销
     Undo,
     /// 重做

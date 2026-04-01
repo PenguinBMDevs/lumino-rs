@@ -137,4 +137,11 @@ impl Editor {
         // 清除网格缓存以强制重绘
         self.grid_cache.clear();
     }
+
+    /// 选择全部音符
+    pub fn select_all_notes(&mut self) {
+        self.selected_notes.clear();
+        self.selected_notes.extend(0..self.notes.len());
+        self.grid_cache.clear();
+    }
 }
