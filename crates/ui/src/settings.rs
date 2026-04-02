@@ -108,6 +108,7 @@ pub enum Event {
     XSynthSampleRateChanged(u32),
     XSynthThreadsChanged(i32),
     XSynthFadeOutChanged(bool),
+    ThemeChanged(String),
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +174,9 @@ impl SettingsPanel {
             Event::XSynthFadeOutChanged(f) => {
                 self.xsynth_fade_out = f;
             }
+            Event::ThemeChanged(_) => {
+                // 主题变更由外部处理，这里不需要更新状态
+            }
         }
     }
 }
@@ -182,7 +186,7 @@ pub fn view<'a>(settings: &SettingsPanel, window: &window::Window) -> Element<'a
     let menu_items = create_menu_items();
 
     let menu_list = render_menu_list(settings, window, &menu_items);
-    let content_area = render_content_area(settings);
+    let content_area = render_content_area(settings, window);
 
     let main_content = row![
         menu_list,
@@ -354,11 +358,12 @@ fn create_menu_container_style() -> impl Fn(&Theme) -> container::Style + 'stati
 /// 渲染内容区域
 fn render_content_area<'a>(
     settings: &SettingsPanel,
+    window: &window::Window,
 ) -> iced_widget::Container<'a, Message, Theme, crate::Renderer> {
     let content = match settings.selected_menu_index {
         0 => render_general_settings(),
         1 => render_audio_settings(settings),
-        2 => render_ui_settings(settings),
+        2 => render_ui_settings(settings, window),
         3 => render_shortcut_settings(),
         4 => render_about_settings(),
         _ => render_placeholder("设置内容区域"),
@@ -625,17 +630,36 @@ fn render_audio_settings<'a>(
 
 fn render_ui_settings<'a>(
     settings: &SettingsPanel,
+    window: &window::Window,
 ) -> iced_widget::Column<'a, Message, Theme, crate::Renderer> {
     // 创建复选框
     let native_titlebar_checkbox = iced_widget::Checkbox::new(settings.use_native_titlebar)
         .label("使用经典系统标题栏")
         .on_toggle(|enabled| Message::Settings(Event::NativeTitlebarChanged(enabled)));
 
+    // 主题选项
+    let theme_options: Vec<String> = Theme::ALL.iter().map(|t| t.to_string()).collect();
+    let current_theme = window.theme.to_string();
+
     column![
         text("界面")
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
         iced_widget::space().height(20),
+        // 主题选择
+        row![
+            text("主题:")
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            pick_list(theme_options, Some(current_theme), |theme| {
+                Message::Window(window::Event::Theme(theme))
+            })
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
         // 使用经典系统标题栏选项
         row![native_titlebar_checkbox,]
             .spacing(SPACING_ICON_LABEL)

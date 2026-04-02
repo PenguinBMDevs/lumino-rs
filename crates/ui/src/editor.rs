@@ -113,7 +113,7 @@ pub struct Editor {
 
     /// 演奏指示线位置（以 tick 为单位）
     pub playback_position: f32,
-    
+
     /// 音符数据是否已变化（需要更新播放管理器）
     notes_changed: bool,
 }

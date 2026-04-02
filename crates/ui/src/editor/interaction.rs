@@ -162,7 +162,6 @@ impl Editor {
             return;
         }
 
-
         let (new_tick, new_key, new_length) =
             self.calculate_edit_changes(pos, tick, key, snapped_tick);
         self.apply_note_changes(new_tick, new_key, new_length);
@@ -445,7 +444,7 @@ impl Editor {
             self.notes.len(),
             self.current_track
         );
-        
+
         // 标记音符数据已变化
         self.mark_notes_changed();
     }

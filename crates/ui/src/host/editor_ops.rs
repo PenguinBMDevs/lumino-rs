@@ -26,7 +26,6 @@ impl Host {
         self.window.request_redraw();
     }
 
-
     /// 加载音符到编辑器
     /// notes: (tick, key, length)
     pub fn load_notes(&mut self, notes: &[(f32, u8, f32)]) {

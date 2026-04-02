@@ -359,7 +359,12 @@ impl CollaborationClient {
                     format!("Failed to parse auth response: {} - text: {}", e, text)
                 })?;
                 match msg {
-                    ServerMessage::Authenticated { user_id, room, users, .. } => {
+                    ServerMessage::Authenticated {
+                        user_id,
+                        room,
+                        users,
+                        ..
+                    } => {
                         let invite_code = room.invite_code.clone();
                         info!("认证成功: user_id={}, invite_code={}", user_id, invite_code);
                         *self.state.write().await = ClientState::InRoom;

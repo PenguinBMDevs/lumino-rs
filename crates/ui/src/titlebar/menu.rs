@@ -76,13 +76,11 @@ fn view_menu() -> MenuConfig {
     use MenuItem::*;
     MenuConfig {
         kind: MenuKind::View,
-        items: vec![Submenu(
-            Theme::ALL
-                .iter()
-                .map(|r| Action(event!(Menu.View.Theme(r.to_string()))))
-                .collect::<Vec<_>>(),
-            "Theme".into(),
-        )],
+        items: vec![
+            Action(event!(Menu.View.ZoomIn)),
+            Action(event!(Menu.View.ZoomOut)),
+            Action(event!(Menu.View.ZoomReset)),
+        ],
     }
 }
 

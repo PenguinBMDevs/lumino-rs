@@ -37,7 +37,7 @@ impl Root {
                         manager.seek(new_tick);
                     }
                 }
-                
+
                 // 检查音符数据是否变化，如果变化则更新播放管理器
                 if self.editor.notes_changed() {
                     self.update_playback_notes();

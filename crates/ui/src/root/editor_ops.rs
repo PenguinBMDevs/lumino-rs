@@ -67,7 +67,7 @@ impl Root {
         self.sidebar.set_selected_track(track_idx);
         // 同时更新编辑器的当前音轨（用于无 MIDI 文件时的多音轨编辑）
         self.editor.switch_to_track(track_idx);
-        
+
         // 更新播放管理器中的音符数据
         self.update_playback_notes();
     }
@@ -415,7 +415,7 @@ impl Root {
                     length: note.length,
                 })
                 .collect();
-            
+
             manager.set_notes(notes);
             tracing::debug!(
                 "Root::update_playback_notes: updated {} notes in playback manager",

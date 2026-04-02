@@ -2,6 +2,13 @@
 
 use crate::runner::RunnerInner;
 
+/// 缩放比例因子
+const ZOOM_FACTOR: f32 = 1.2;
+/// X轴默认缩放
+const DEFAULT_ZOOM_X: f32 = 0.1;
+/// Y轴默认缩放
+const DEFAULT_ZOOM_Y: f32 = 20.0;
+
 impl RunnerInner {
     /// 处理视图菜单事件
     pub(super) fn handle_view_menu_event(
@@ -16,6 +23,28 @@ impl RunnerInner {
                 self.storage.config.patch(|state| {
                     state.ui.theme = theme;
                 });
+            }
+            ZoomIn => {
+                let ui = self.window.ui_mut();
+                let root = ui.root_mut();
+                let new_zoom_x = root.editor.state.zoom_x * ZOOM_FACTOR;
+                let new_zoom_y = root.editor.state.zoom_y * ZOOM_FACTOR;
+                root.editor.set_zoom_x(new_zoom_x, 0.5);
+                root.editor.set_zoom_y(new_zoom_y, 0.5);
+            }
+            ZoomOut => {
+                let ui = self.window.ui_mut();
+                let root = ui.root_mut();
+                let new_zoom_x = root.editor.state.zoom_x / ZOOM_FACTOR;
+                let new_zoom_y = root.editor.state.zoom_y / ZOOM_FACTOR;
+                root.editor.set_zoom_x(new_zoom_x, 0.5);
+                root.editor.set_zoom_y(new_zoom_y, 0.5);
+            }
+            ZoomReset => {
+                let ui = self.window.ui_mut();
+                let root = ui.root_mut();
+                root.editor.set_zoom_x(DEFAULT_ZOOM_X, 0.5);
+                root.editor.set_zoom_y(DEFAULT_ZOOM_Y, 0.5);
             }
         }
     }
