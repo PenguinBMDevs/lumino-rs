@@ -45,14 +45,15 @@ impl Eq for ScheduledEvent {}
 
 impl PartialOrd for ScheduledEvent {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        // 反向排序，让小的tick先出队
-        other.tick.partial_cmp(&self.tick)
+        // 反向排序，让小的tick先出队（BinaryHeap 是最大堆）
+        Some(other.tick.total_cmp(&self.tick))
     }
 }
 
 impl Ord for ScheduledEvent {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+        // 直接使用 total_cmp 避免 unwrap
+        other.tick.total_cmp(&self.tick)
     }
 }
 
@@ -135,7 +136,7 @@ impl PlaybackEngine {
     pub fn update(&mut self) -> Vec<MidiMessage> {
         let mut messages = Vec::new();
 
-        let playback = self.playback.lock().unwrap();
+        let playback = self.playback.lock().expect("playback Mutex poisoned");
         if playback.state() != PlaybackState::Playing {
             return messages;
         }
@@ -173,7 +174,7 @@ impl PlaybackEngine {
         if self.looping {
             if let Some((loop_start, loop_end)) = self.loop_range {
                 if current_tick >= loop_end {
-                    let mut playback = self.playback.lock().unwrap();
+                    let mut playback = self.playback.lock().expect("playback Mutex poisoned");
                     playback.seek(loop_start);
                     drop(playback);
                     self.rebuild_queue();
@@ -187,7 +188,7 @@ impl PlaybackEngine {
     /// 播放
     pub fn play(&mut self) {
         let state = {
-            let playback = self.playback.lock().unwrap();
+            let playback = self.playback.lock().expect("playback Mutex poisoned");
             playback.state()
         };
 
@@ -195,19 +196,19 @@ impl PlaybackEngine {
             self.rebuild_queue();
         }
 
-        let mut playback = self.playback.lock().unwrap();
+        let mut playback = self.playback.lock().expect("playback Mutex poisoned");
         playback.play();
     }
 
     /// 暂停
     pub fn pause(&mut self) {
-        let mut playback = self.playback.lock().unwrap();
+        let mut playback = self.playback.lock().expect("playback Mutex poisoned");
         playback.pause();
     }
 
     /// 停止
     pub fn stop(&mut self) {
-        let mut playback = self.playback.lock().unwrap();
+        let mut playback = self.playback.lock().expect("playback Mutex poisoned");
         playback.stop();
         drop(playback);
         self.rebuild_queue();
@@ -215,7 +216,7 @@ impl PlaybackEngine {
 
     /// 跳转
     pub fn seek(&mut self, tick: f32) {
-        let mut playback = self.playback.lock().unwrap();
+        let mut playback = self.playback.lock().expect("playback Mutex poisoned");
         playback.seek(tick);
         drop(playback);
         self.rebuild_queue();
@@ -223,12 +224,12 @@ impl PlaybackEngine {
 
     /// 获取播放状态
     pub fn state(&self) -> PlaybackState {
-        self.playback.lock().unwrap().state()
+        self.playback.lock().expect("playback Mutex poisoned").state()
     }
 
     /// 获取当前tick
     pub fn current_tick(&self) -> f32 {
-        self.playback.lock().unwrap().current_tick()
+        self.playback.lock().expect("playback Mutex poisoned").current_tick()
     }
 }
 

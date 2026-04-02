@@ -54,7 +54,7 @@ impl CollaborationService {
 
         // 保存客户端
         {
-            let mut guard = self.client.lock().unwrap();
+            let mut guard = self.client.lock().expect("client Mutex poisoned");
             *guard = Some(client);
         }
 
@@ -205,7 +205,7 @@ impl CollaborationService {
         &self,
         position: lumino_collaboration::types::MousePosition,
     ) -> Result<(), String> {
-        let client_guard = self.client.lock().unwrap();
+        let client_guard = self.client.lock().expect("client Mutex poisoned");
         if let Some(client) = client_guard.clone() {
             tokio::spawn(async move {
                 let c = client.lock().await;
@@ -219,19 +219,19 @@ impl CollaborationService {
         }
     }
 
-    /// 创建房间（在新客户端上）
-    pub fn create_room(&self, name: String) -> Result<(), String> {
+    /// 创建房间（遗留兼容接口，实际未使用——所有调用都走 connect）
+    pub fn create_room(&self, _name: String) -> Result<(), String> {
         Err("请使用 connect 方法创建房间".to_string())
     }
 
-    /// 加入房间（在新客户端上）
-    pub fn join_room(&self, invite_code: String) -> Result<(), String> {
+    /// 加入房间（遗留兼容接口，实际未使用——所有调用都走 connect）
+    pub fn join_room(&self, _invite_code: String) -> Result<(), String> {
         Err("请使用 connect 方法加入房间".to_string())
     }
 
     /// 断开连接
     pub fn disconnect(&self) -> Result<(), String> {
-        let client_guard = self.client.lock().unwrap();
+        let client_guard = self.client.lock().expect("client Mutex poisoned");
         if let Some(client) = client_guard.clone() {
             tokio::spawn(async move {
                 let mut c = client.lock().await;
@@ -250,7 +250,7 @@ impl CollaborationService {
         &self,
         operation: lumino_collaboration::types::NoteBatchOperation,
     ) -> Result<(), String> {
-        let client_guard = self.client.lock().unwrap();
+        let client_guard = self.client.lock().expect("client Mutex poisoned");
         if let Some(client) = client_guard.clone() {
             tokio::spawn(async move {
                 let c = client.lock().await;
@@ -266,7 +266,7 @@ impl CollaborationService {
 
     /// 检查是否已连接
     pub fn is_connected(&self) -> bool {
-        let client_guard = self.client.lock().unwrap();
+        let client_guard = self.client.lock().expect("client Mutex poisoned");
         let is_connected = client_guard.is_some();
         tracing::debug!("协作服务 is_connected: {}", is_connected);
         is_connected

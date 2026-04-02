@@ -140,13 +140,13 @@ impl MidiMemoryManager {
 
         // 先检查是否在内存中
         if self.in_memory_tracks.contains_key(&track_index) {
-            // 安全地获取引用，因为刚刚检查了 key 存在
+            // 安全：contains_key 检查通过后 get 一定返回 Some
             return Ok(self.in_memory_tracks.get(&track_index).unwrap());
         }
 
         // 检查是否已经从磁盘加载
         if self.loaded_tracks.contains_key(&track_index) {
-            // 更新 LRU
+            // 更新 LRU（必须在 get 之前，避免借用冲突）
             self.touch_lru(track_index);
             return Ok(self.loaded_tracks.get(&track_index).unwrap());
         }
@@ -169,7 +169,7 @@ impl MidiMemoryManager {
         self.loaded_memory_used += event_size;
         self.loaded_tracks.insert(track_index, events);
         self.lru_order.push(track_index);
-
+        // insert 后立即 get 一定存在
         Ok(self.loaded_tracks.get(&track_index).unwrap())
     }
 
@@ -300,13 +300,9 @@ impl MidiMemoryManager {
             if let Some(events) = self.loaded_tracks.remove(&oldest) {
                 let size = estimate_events_size(&events);
                 self.loaded_memory_used = self.loaded_memory_used.saturating_sub(size);
-                self.lru_order.remove(0);
             }
-            // 如果 remove 返回 None，说明 tracks 中没有这个条目，但 lru_order 中有
-            // 这种情况下也应该从 lru_order 中移除，以保持一致性
-            else {
-                self.lru_order.remove(0);
-            }
+            // 无论 remove 是否成功，都移除 lru_order 首元素以保持一致性
+            self.lru_order.remove(0);
         }
     }
 }

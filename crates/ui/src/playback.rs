@@ -88,7 +88,7 @@ impl Timeline {
         if changes.is_empty() {
             changes.push(TempoChange::from_bpm(0.0, 120.0));
         }
-        changes.sort_by(|a, b| a.tick.partial_cmp(&b.tick).unwrap());
+        changes.sort_by(|a, b| a.tick.partial_cmp(&b.tick).expect("tempo tick NaN"));
         self.tempo_changes = changes;
     }
 
@@ -96,7 +96,7 @@ impl Timeline {
     pub fn add_tempo_change(&mut self, change: TempoChange) {
         self.tempo_changes.push(change);
         self.tempo_changes
-            .sort_by(|a, b| a.tick.partial_cmp(&b.tick).unwrap());
+            .sort_by(|a, b| a.tick.partial_cmp(&b.tick).expect("tempo tick NaN"));
     }
 
     /// 获取当前BPM（在指定tick处）

@@ -104,7 +104,7 @@ impl CollaborationClient {
         Ok(())
     }
 
-    /// 连接到服务器（兼容性方法）
+    /// 连接到服务器（遗留兼容接口，请使用 create_room_and_connect 或 join_room_and_connect）
     pub async fn connect(
         &mut self,
         _host: Option<String>,
@@ -113,13 +113,13 @@ impl CollaborationClient {
         Err("请使用 create_room_and_connect 或 join_room_and_connect".into())
     }
 
-    /// 创建房间（兼容性方法）
-    pub async fn create_room(&self, name: String) -> Result<(), Box<dyn std::error::Error>> {
+    /// 创建房间（遗留兼容接口，请使用 create_room_and_connect）
+    pub async fn create_room(&self, _name: String) -> Result<(), Box<dyn std::error::Error>> {
         Err("请使用 create_room_and_connect".into())
     }
 
-    /// 加入房间（兼容性方法）
-    pub async fn join_room(&self, invite_code: String) -> Result<(), Box<dyn std::error::Error>> {
+    /// 加入房间（遗留兼容接口，请使用 join_room_and_connect）
+    pub async fn join_room(&self, _invite_code: String) -> Result<(), Box<dyn std::error::Error>> {
         Err("请使用 join_room_and_connect".into())
     }
 
@@ -179,9 +179,9 @@ impl CollaborationClient {
         }
 
         // 使用 roomId 连接 WebSocket
-        eprintln!("[DEBUG] Client B 准备调用 connect_with_room_id");
+        tracing::debug!("Client B 准备调用 connect_with_room_id");
         self.connect_with_room_id(&invite_code).await?;
-        eprintln!("[DEBUG] Client B connect_with_room_id 完成");
+        tracing::debug!("Client B connect_with_room_id 完成");
 
         Ok(())
     }
@@ -208,8 +208,7 @@ impl CollaborationClient {
             format!("{}://{}:{}/ws?roomId={}", protocol, host, port, room_id)
         };
 
-        info!("连接到 WebSocket: {}", ws_url);
-        eprintln!("[DEBUG] 开始 WebSocket 连接到: {}", ws_url);
+        tracing::debug!("连接到 WebSocket: {}", ws_url);
         *self.state.write().await = ClientState::Connecting;
 
         // 建立 WebSocket 连接
@@ -218,17 +217,16 @@ impl CollaborationClient {
 
         let (ws_stream, _) = match tokio::time::timeout(timeout_duration, connect_future).await {
             Ok(result) => {
-                eprintln!("[DEBUG] WebSocket 连接成功");
+                tracing::debug!("WebSocket 连接成功");
                 result?
             }
             Err(_) => {
-                eprintln!("[DEBUG] WebSocket 连接超时");
+                tracing::debug!("WebSocket 连接超时");
                 return Err(format!("连接超时（{}秒）", timeout_duration.as_secs()).into());
             }
         };
 
         info!("WebSocket 连接成功");
-        eprintln!("[DEBUG] 开始 WebSocket 分割");
         let (write, mut read) = ws_stream.split();
         let write = Arc::new(Mutex::new(write));
         *self.state.write().await = ClientState::Connected;
@@ -239,14 +237,13 @@ impl CollaborationClient {
         };
         let auth_json = serde_json::to_string(&auth_msg)?;
         info!("发送认证消息");
-        eprintln!("[DEBUG] 发送认证消息");
         write
             .lock()
             .await
             .send(Message::Text(auth_json.into()))
             .await?;
         *self.state.write().await = ClientState::Authenticating;
-        eprintln!("[DEBUG] 认证消息已发送，等待响应...");
+        tracing::debug!("认证消息已发送，等待响应...");
 
         // 等待认证响应
         info!("等待认证响应...");
@@ -354,7 +351,7 @@ impl CollaborationClient {
 
         match timeout(auth_timeout, read.next()).await {
             Ok(Some(Ok(Message::Text(text)))) => {
-                eprintln!("[WS] Received auth response: {}", text);
+                tracing::debug!("Received auth response: {}", text);
                 let msg: ServerMessage = serde_json::from_str(&text).map_err(|e| {
                     format!("Failed to parse auth response: {} - text: {}", e, text)
                 })?;

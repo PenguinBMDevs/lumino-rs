@@ -46,7 +46,7 @@ impl PlaybackManager {
 
     /// 设置速度变化
     pub fn set_tempo_changes(&mut self, changes: Vec<TempoChange>) {
-        let mut playback = self.playback.lock().unwrap();
+        let mut playback = self.playback.lock().expect("playback Mutex poisoned");
         playback.set_tempo_changes(changes);
     }
 
@@ -90,7 +90,7 @@ impl PlaybackManager {
 
     /// 获取当前BPM
     pub fn current_bpm(&self) -> f64 {
-        self.playback.lock().unwrap().current_bpm()
+        self.playback.lock().expect("playback Mutex poisoned").current_bpm()
     }
 
     /// 更新播放（应在定时器中调用）

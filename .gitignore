@@ -56,3 +56,6 @@ bin/
 
 # opencode
 .opencode/
+
+# WorkBuddy
+.workbuddy/

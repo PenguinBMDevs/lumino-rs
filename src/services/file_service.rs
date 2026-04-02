@@ -10,19 +10,48 @@ pub struct FileService {
     // 可以在这里添加依赖，如配置、日志等
 }
 
+/// 辅助宏：统一处理 spawn_blocking 的结果，包括进度消息和日志。
+macro_rules! spawn_blocking_with_progress {
+    (
+        $progress_start:expr,       // 开始进度消息 (&str)
+        $progress_active:expr,      // 进行中进度消息 (&str)
+        $progress_done:expr,        // 完成进度消息 (&str)
+        $log_done:expr,             // info 日志消息 (&str)
+        $blocking_closure:expr $(,)? // spawn_blocking 闭包 (返回 impl Into<String> 或 Result<T, impl Into<String>>)
+    ) => {
+        {
+            lumino_core::midi::loader::send_progress_message($progress_start, 0.0);
+            lumino_core::midi::loader::send_progress_message($progress_active, 0.3);
+
+            match tokio::task::spawn_blocking($blocking_closure).await {
+                Ok(Ok(_)) => {
+                    lumino_core::midi::loader::send_progress_message($progress_done, 1.0);
+                    tracing::info!($log_done);
+                    Ok(())
+                }
+                Ok(Err(e)) => {
+                    let msg = format!("{}", e);
+                    lumino_core::midi::loader::send_progress_message(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                    Err(e)
+                }
+                Err(e) => {
+                    let msg = format!("{}", e);
+                    lumino_core::midi::loader::send_progress_message(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                    Err(msg)
+                }
+            }
+        }
+    };
+}
+
 impl FileService {
     pub fn new() -> Self {
         Self {}
     }
 
     /// 保存为 LMPJ 文件 (Lumino MIDI Project)
-    ///
-    /// # Arguments
-    /// * `parsed` - 解析后的 MIDI 数据
-    /// * `path` - 保存路径
-    ///
-    /// # Returns
-    /// 成功返回 Ok(())，失败返回 Err(String)
     pub async fn save_as_lmpj(&self, parsed: &ParsedMidi, path: PathBuf) -> Result<(), String> {
         lumino_core::midi::loader::send_progress_message("准备保存 LMPJ 文件", 0.0);
         lumino_core::midi::loader::send_progress_message("正在保存 LMPJ 文件", 0.3);
@@ -43,104 +72,46 @@ impl FileService {
 
     /// 保存为 MIDI 文件
     pub async fn save_as_midi(&self, source_path: PathBuf, path: PathBuf) -> Result<(), String> {
-        lumino_core::midi::loader::send_progress_message("准备导出 MIDI 文件", 0.0);
-        lumino_core::midi::loader::send_progress_message("正在导出 MIDI 文件", 0.3);
-
-        match tokio::task::spawn_blocking(move || {
-            lumino_export::export_midi_from_parsed_midi_sync(&source_path)
-        })
-        .await
-        {
-            Ok(Ok(bytes)) => {
+        spawn_blocking_with_progress!(
+            "准备导出 MIDI 文件",
+            "正在导出 MIDI 文件",
+            "MIDI 导出成功",
+            "MIDI 导出成功",
+            move || -> Result<(), String> {
+                let bytes = lumino_export::export_midi_from_parsed_midi_sync(&source_path)?;
                 lumino_core::midi::loader::send_progress_message("正在写入文件", 0.8);
-                match std::fs::write(&path, bytes) {
-                    Ok(()) => {
-                        lumino_core::midi::loader::send_progress_message("MIDI 导出成功", 1.0);
-                        tracing::info!("MIDI 导出成功");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        lumino_core::midi::loader::send_progress_message(
-                            &format!("写入文件失败: {e}"),
-                            1.0,
-                        );
-                        tracing::error!("MIDI 导出失败: {}", e);
-                        Err(e.to_string())
-                    }
-                }
+                std::fs::write(&path, bytes).map_err(|e| format!("写入文件失败: {e}"))
             }
-            Ok(Err(e)) => {
-                lumino_core::midi::loader::send_progress_message(&format!("导出失败: {e}"), 1.0);
-                tracing::error!("MIDI 导出失败: {}", e);
-                Err(e.to_string())
-            }
-            Err(e) => {
-                lumino_core::midi::loader::send_progress_message(&format!("导出失败: {e}"), 1.0);
-                tracing::error!("MIDI 导出失败: {}", e);
-                Err(e.to_string())
-            }
-        }
+        )
     }
 
     /// 保存为 DMS 文件
     pub async fn save_as_dms(&self, source_path: PathBuf, path: PathBuf) -> Result<(), String> {
-        lumino_core::midi::loader::send_progress_message("准备导出 DMS 文件", 0.0);
-        lumino_core::midi::loader::send_progress_message("正在读取 MIDI 文件", 0.2);
-
-        match tokio::task::spawn_blocking(move || {
-            lumino_core::midi::loader::send_progress_message("正在转换格式", 0.5);
-            let bytes = lumino_export::export_dms_from_midi_sync(&source_path)?;
-            lumino_core::midi::loader::send_progress_message("正在写入 DMS 文件", 0.8);
-            std::fs::write(&path, bytes).map_err(|e| format!("写入文件失败: {e}"))
-        })
-        .await
-        {
-            Ok(Ok(_)) => {
-                lumino_core::midi::loader::send_progress_message("MIDI 转 DMS 导出成功", 1.0);
-                tracing::info!("MIDI 转 DMS 导出成功");
-                Ok(())
+        spawn_blocking_with_progress!(
+            "准备导出 DMS 文件",
+            "正在读取 MIDI 文件",
+            "MIDI 转 DMS 导出成功",
+            "MIDI 转 DMS 导出成功",
+            move || -> Result<(), String> {
+                lumino_core::midi::loader::send_progress_message("正在转换格式", 0.5);
+                let bytes = lumino_export::export_dms_from_midi_sync(&source_path)?;
+                lumino_core::midi::loader::send_progress_message("正在写入 DMS 文件", 0.8);
+                std::fs::write(&path, bytes).map_err(|e| format!("写入文件失败: {e}"))
             }
-            Ok(Err(e)) => {
-                lumino_core::midi::loader::send_progress_message(&format!("导出失败: {e}"), 1.0);
-                tracing::error!("MIDI 转 DMS 导出失败: {}", e);
-                Err(e)
-            }
-            Err(e) => {
-                lumino_core::midi::loader::send_progress_message(&format!("导出失败: {e}"), 1.0);
-                tracing::error!("MIDI 转 DMS 导出失败: {}", e);
-                Err(e.to_string())
-            }
-        }
+        )
     }
 
     /// 复制 DMS 文件
     pub async fn copy_dms_file(&self, source_path: PathBuf, path: PathBuf) -> Result<(), String> {
-        lumino_core::midi::loader::send_progress_message("准备保存 DMS 文件", 0.0);
-        lumino_core::midi::loader::send_progress_message("正在复制 DMS 文件", 0.5);
-
-        let path_clone = path.clone();
-
-        match tokio::task::spawn_blocking(move || {
-            lumino_export::copy_file_sync(&source_path, &path_clone)
-        })
-        .await
-        {
-            Ok(Ok(_)) => {
-                lumino_core::midi::loader::send_progress_message("DMS 保存成功", 1.0);
-                tracing::info!("DMS 保存成功: {:?}", path);
-                Ok(())
+        spawn_blocking_with_progress!(
+            "准备保存 DMS 文件",
+            "正在复制 DMS 文件",
+            "DMS 保存成功",
+            "DMS 保存成功",
+            move || -> Result<(), String> {
+                lumino_export::copy_file_sync(&source_path, &path).map(|_| ())
             }
-            Ok(Err(e)) => {
-                lumino_core::midi::loader::send_progress_message(&format!("保存失败: {e}"), 1.0);
-                tracing::error!("DMS 保存失败: {}", e);
-                Err(e)
-            }
-            Err(e) => {
-                lumino_core::midi::loader::send_progress_message(&format!("保存失败: {e}"), 1.0);
-                tracing::error!("DMS 保存失败: {}", e);
-                Err(e.to_string())
-            }
-        }
+        )
     }
 
     /// 导出 DMS 到 MIDI
@@ -149,31 +120,16 @@ impl FileService {
         source_path: PathBuf,
         path: PathBuf,
     ) -> Result<(), String> {
-        lumino_core::midi::loader::send_progress_message("准备导出 MIDI 文件", 0.0);
-        lumino_core::midi::loader::send_progress_message("正在读取 DMS 文件", 0.2);
-
-        match tokio::task::spawn_blocking(move || {
-            let bytes = lumino_export::export_midi_from_dms_sync(&source_path)?;
-            lumino_core::midi::loader::send_progress_message("正在写入 MIDI 文件", 0.8);
-            std::fs::write(&path, bytes).map_err(|e| format!("写入文件失败: {e}"))
-        })
-        .await
-        {
-            Ok(Ok(_)) => {
-                lumino_core::midi::loader::send_progress_message("DMS 转 MIDI 导出成功", 1.0);
-                tracing::info!("DMS 转 MIDI 导出成功");
-                Ok(())
+        spawn_blocking_with_progress!(
+            "准备导出 MIDI 文件",
+            "正在读取 DMS 文件",
+            "DMS 转 MIDI 导出成功",
+            "DMS 转 MIDI 导出成功",
+            move || -> Result<(), String> {
+                let bytes = lumino_export::export_midi_from_dms_sync(&source_path)?;
+                lumino_core::midi::loader::send_progress_message("正在写入 MIDI 文件", 0.8);
+                std::fs::write(&path, bytes).map_err(|e| format!("写入文件失败: {e}"))
             }
-            Ok(Err(e)) => {
-                lumino_core::midi::loader::send_progress_message(&format!("导出失败: {e}"), 1.0);
-                tracing::error!("DMS 转 MIDI 导出失败: {}", e);
-                Err(e)
-            }
-            Err(e) => {
-                lumino_core::midi::loader::send_progress_message(&format!("导出失败: {e}"), 1.0);
-                tracing::error!("DMS 转 MIDI 导出失败: {}", e);
-                Err(e.to_string())
-            }
-        }
+        )
     }
 }

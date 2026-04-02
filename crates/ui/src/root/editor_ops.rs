@@ -284,7 +284,7 @@ impl Root {
                         .editor
                         .track_notes
                         .entry(track_idx)
-                        .or_insert_with(Vec::new);
+                        .or_default();
                     track_notes.push(editor_note);
                 }
                 self.editor.grid_cache.clear();
@@ -333,7 +333,7 @@ impl Root {
             NoteAction::Move => {
                 let tick_offset = operation.tick_offset.unwrap_or(0.0);
                 let key_offset = operation.key_offset.unwrap_or(0);
-                tracing::info!(
+                tracing::debug!(
                     "协作: Move 操作 - tick_offset={}, key_offset={}, notes数量={}, source_track={:?}",
                     tick_offset,
                     key_offset,
@@ -342,16 +342,16 @@ impl Root {
                 );
                 let mut matched_count = 0;
                 for note in &operation.notes {
-                    tracing::info!(
+                    tracing::trace!(
                         "协作: Move 查找音符 - target_tick={}, target_key={}, track={}",
                         note.tick,
                         note.key,
                         note.track_index
                     );
                     if let Some(track_notes) = self.editor.track_notes.get_mut(&note.track_index) {
-                        tracing::info!("协作: track_notes 中有 {} 个音符", track_notes.len());
+                        tracing::trace!("协作: track_notes 中有 {} 个音符", track_notes.len());
                         for (i, editor_note) in track_notes.iter_mut().enumerate() {
-                            tracing::info!(
+                            tracing::trace!(
                                 "协作:   [{}] tick={}, key={}",
                                 i,
                                 editor_note.tick,
@@ -360,7 +360,7 @@ impl Root {
                             if (editor_note.tick - note.tick).abs() < 1.0
                                 && editor_note.key == note.key
                             {
-                                tracing::info!(
+                                tracing::debug!(
                                     "协作:   匹配成功! 更新: tick {} -> {}, key {} -> {}",
                                     editor_note.tick,
                                     editor_note.tick + tick_offset,
