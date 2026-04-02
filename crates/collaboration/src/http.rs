@@ -4,6 +4,7 @@
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 /// HTTP API 客户端
 pub struct HttpClient {
@@ -78,13 +79,13 @@ impl HttpClient {
         }
 
         let text = response.text().await?;
-        eprintln!("[HTTP] Response: {}", text);
+        debug!(response = %text, "[HTTP] Response");
 
         // Debug: print the JSON structure
         let room_response: CreateRoomResponse = serde_json::from_str(&text)
             .map_err(|e| format!("JSON parse error: {} - text: {}", e, text))?;
 
-        eprintln!("[HTTP] Parsed room: {:?}", room_response.room);
+        debug!(?room_response.room, "[HTTP] Parsed room");
         Ok(room_response)
     }
 

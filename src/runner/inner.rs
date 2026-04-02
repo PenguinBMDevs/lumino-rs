@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use winit::event_loop::ControlFlow;
 
-use super::collaboration_handler::CollaborationHandler;
 use super::dialog_manager::{DialogManager, DialogResult};
 use super::file_handler::FileHandler;
 use super::midi_handler::MidiHandler;
@@ -35,17 +34,12 @@ pub(crate) struct RunnerInner {
     pub(crate) current_dms: Option<Arc<ParsedDms>>,
     /// 对话框管理器
     pub(crate) dialog_manager: DialogManager,
-    /// 协作客户端（使用 Arc<Mutex<>> 包装以支持异步访问）
-    pub(crate) collaboration_client:
-        Option<std::sync::Arc<tokio::sync::Mutex<lumino_collaboration::CollaborationClient>>>,
     /// 协作状态
     pub(crate) collaboration_status: CollaborationStatus,
     /// 待处理的加入房间邀请码
     pub(crate) pending_invite_code: Option<String>,
     /// 文件处理器
     pub(crate) file_handler: FileHandler,
-    /// 协作处理器
-    pub(crate) collaboration_handler: CollaborationHandler,
     /// MIDI 处理器
     pub(crate) midi_handler: MidiHandler,
     /// 文件服务
@@ -230,13 +224,10 @@ impl Runner {
         // 创建对话框管理器
         let dialog_manager = DialogManager::new();
 
-        // 初始化协作客户端
-        let collaboration_client = None;
         let collaboration_status = CollaborationStatus::Disconnected;
 
         // 创建新的处理器和服务
         let file_handler = FileHandler::new();
-        let collaboration_handler = CollaborationHandler::new();
         let midi_handler = MidiHandler::new();
         let file_service = FileService::new();
         let collaboration_service = CollaborationService::new();
@@ -246,7 +237,7 @@ impl Runner {
         #[cfg(target_os = "macos")]
         crate::platform::macos::init();
 
-        let mut runner = RunnerInner {
+        let runner = RunnerInner {
             window,
             storage,
             midi,
@@ -254,11 +245,9 @@ impl Runner {
             current_midi: None,
             current_dms: None,
             dialog_manager,
-            collaboration_client,
             collaboration_status,
             pending_invite_code: None,
             file_handler,
-            collaboration_handler,
             midi_handler,
             file_service,
             collaboration_service,
@@ -413,7 +402,6 @@ impl RunnerInner {
         tracing::info!("正在重启窗口以应用标题栏设置...");
 
         // 保存当前窗口状态
-        let window_state = self.storage.ui_state.get();
         let is_maximized = self.window.window().is_maximized();
 
         // 销毁当前窗口并创建新窗口
