@@ -9,7 +9,7 @@
 
 use std::{sync::Arc, time::Instant};
 
-use iced_wgpu::{Engine, Renderer, graphics::Viewport, wgpu};
+use iced_wgpu::{Engine, Renderer, graphics::Viewport};
 use lumino_gfx::NoteRenderer;
 
 use iced_winit::runtime::user_interface::Cache;

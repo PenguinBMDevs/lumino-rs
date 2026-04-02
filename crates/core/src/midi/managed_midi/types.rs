@@ -26,6 +26,13 @@ pub struct TrackSummary {
     pub location: TrackLocationSerde,
 }
 
+impl TrackSummary {
+    /// 检查音轨是否在内存中
+    pub fn is_in_memory(&self) -> bool {
+        matches!(self.location, TrackLocationSerde::InMemory)
+    }
+}
+
 /// 可序列化的音轨位置
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrackLocationSerde {

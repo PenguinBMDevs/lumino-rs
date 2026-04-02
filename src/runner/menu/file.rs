@@ -1,11 +1,27 @@
 //! Runner 文件菜单处理
 
+use std::path::Path;
 use std::sync::Arc;
 
 use lumino_core::ParsedMidi;
 use lumino_core::event;
 
 use crate::runner::{RunnerInner, async_helper::run_async_task};
+
+/// 获取文件扩展名（小写）
+fn get_file_extension(path: &Path) -> String {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
+/// 从文件路径获取文件名（不含扩展名），失败时返回 "untitled"
+fn get_file_stem(path: &Path) -> String {
+    path.file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "untitled".to_string())
+}
 
 impl RunnerInner {
     /// 处理文件菜单事件
@@ -107,11 +123,7 @@ impl RunnerInner {
             return;
         };
 
-        let extension = path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let extension = get_file_extension(&path);
 
         if extension == "dms" {
             self.load_dms_file(path);
@@ -123,9 +135,10 @@ impl RunnerInner {
     /// 加载 DMS 文件
     pub(super) fn load_dms_file(&self, path: std::path::PathBuf) {
         tracing::info!("开始后台加载 DMS 文件: {:?}", path);
+        let progress_cb = self.progress_cb.clone();
         tokio::spawn(async move {
             run_async_task(
-                lumino_core::midi::loader::load_dms(path),
+                lumino_core::midi::loader::load_dms(path, Some(&progress_cb)),
                 |parsed| event!(Menu.File.DmsParsed(Arc::new(parsed))),
                 |e| event!(Menu.File.DmsParseError(e)),
             )
@@ -136,9 +149,10 @@ impl RunnerInner {
     /// 加载 MIDI 文件
     pub(super) fn load_midi_file(&self, path: std::path::PathBuf) {
         tracing::info!("开始后台加载 MIDI 文件: {:?}", path);
+        let progress_cb = self.progress_cb.clone();
         tokio::spawn(async move {
             run_async_task(
-                lumino_core::midi::loader::load_parsed_midi(path),
+                lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb)),
                 |parsed| event!(Menu.File.MidiParsed(parsed)),
                 |e| event!(Menu.File.MidiParseError(e)),
             )
@@ -159,18 +173,15 @@ impl RunnerInner {
             return;
         };
 
-        let extension = path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let extension = get_file_extension(&path);
 
         tracing::info!("开始后台导入文件: {:?}", path);
+        let progress_cb = self.progress_cb.clone();
         tokio::spawn(async move {
             match extension.as_str() {
                 "dms" => {
                     run_async_task(
-                        lumino_core::midi::loader::load_dms(path),
+                        lumino_core::midi::loader::load_dms(path, Some(&progress_cb)),
                         |parsed| event!(Menu.File.DmsParsed(Arc::new(parsed))),
                         |e| event!(Menu.File.DmsParseError(e)),
                     )
@@ -179,7 +190,7 @@ impl RunnerInner {
                 _ => {
                     // LMPJ 和 MIDI 都使用 MIDI 加载器
                     run_async_task(
-                        lumino_core::midi::loader::load_parsed_midi(path),
+                        lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb)),
                         |parsed| event!(Menu.File.MidiParsed(parsed)),
                         |e| event!(Menu.File.MidiParseError(e)),
                     )
@@ -205,11 +216,7 @@ impl RunnerInner {
 
     /// 保存 MIDI 文件
     fn save_midi_file(&self, parsed_midi: ParsedMidi) {
-        let file_stem = std::path::Path::new(&parsed_midi.info.path)
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
+        let file_stem = get_file_stem(Path::new(&parsed_midi.info.path));
 
         let Some(save_path) = rfd::FileDialog::new()
             .add_filter("Lumino MIDI Project", &["lmpj"])
@@ -222,11 +229,7 @@ impl RunnerInner {
             return;
         };
 
-        let extension = save_path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let extension = get_file_extension(&save_path);
 
         let file_service = self.file_service.clone();
 
@@ -256,11 +259,7 @@ impl RunnerInner {
 
     /// 保存 DMS 文件
     fn save_dms_file(&self, parsed_dms: Arc<lumino_core::ParsedDms>) {
-        let file_stem = std::path::Path::new(&parsed_dms.info.path)
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
+        let file_stem = get_file_stem(Path::new(&parsed_dms.info.path));
 
         let Some(save_path) = rfd::FileDialog::new()
             .add_filter("Domino 项目", &["dms"])
@@ -271,11 +270,7 @@ impl RunnerInner {
             return;
         };
 
-        let extension = save_path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let extension = get_file_extension(&save_path);
 
         let file_service = self.file_service.clone();
         let source_path = parsed_dms.info.path.clone();

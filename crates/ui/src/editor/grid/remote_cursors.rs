@@ -123,7 +123,7 @@ fn draw_username_label(
         color: iced_core::Color::WHITE,
         font: iced_core::Font::DEFAULT,
         align_x: iced_core::alignment::Horizontal::Left.into(),
-        align_y: iced_core::alignment::Vertical::Top.into(),
+        align_y: iced_core::alignment::Vertical::Top,
         shaping: iced_core::text::Shaping::Basic,
     };
     frame.fill_text(text);

@@ -261,12 +261,15 @@ impl CollaborationClient {
         let state = self.state.clone();
         let session = self.session.clone();
         let event_callback = self.event_callback.clone();
-        let mut message_rx = self
-            .message_rx
-            .lock()
-            .await
-            .take()
-            .expect("message_rx already consumed");
+
+        // 获取 message_rx，如果已经被消费则记录错误并返回
+        let mut message_rx = match self.message_rx.lock().await.take() {
+            Some(rx) => rx,
+            None => {
+                error!("message_rx 已经被消费，后台循环无法启动");
+                return;
+            }
+        };
 
         // 启动后台任务
         tokio::spawn(async move {
@@ -308,12 +311,11 @@ impl CollaborationClient {
                     }
 
                     _ = heartbeat.tick() => {
-                        let ping = ClientMessage::Ping {
-                            timestamp: std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as u64,
-                        };
+                        let timestamp = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis() as u64)
+                            .unwrap_or(0);
+                        let ping = ClientMessage::Ping { timestamp };
                         if let Ok(text) = serde_json::to_string(&ping) {
                             let mut w = write.lock().await;
                             let _ = w.send(Message::Text(text.into())).await;
@@ -509,7 +511,8 @@ mod rand {
                 .unwrap_or_default()
                 .as_nanos(),
         );
-        let hash = hasher.finish();
+        // hash 值计算完成，用于随机化默认值
+        let _hash = hasher.finish();
         T::default()
     }
 }

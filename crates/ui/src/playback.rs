@@ -12,8 +12,25 @@ pub mod manager;
 pub use engine::{MidiMessage, NoteEvent, PlaybackEngine};
 pub use manager::PlaybackManager;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
+
+/// 提供 `Arc<Mutex<Playback>>` 访问的 trait
+///
+/// 用于消除 `lock_playback()` 方法的跨文件重复
+pub trait PlaybackAccessor {
+    fn playback(&self) -> &Arc<Mutex<Playback>>;
+
+    fn lock_playback(&self) -> Option<MutexGuard<'_, Playback>> {
+        match self.playback().lock() {
+            Ok(guard) => Some(guard),
+            Err(e) => {
+                tracing::error!("Mutex 已被污染: {}", e);
+                None
+            }
+        }
+    }
+}
 
 /// 速度变化事件
 #[derive(Debug, Clone)]
@@ -88,15 +105,16 @@ impl Timeline {
         if changes.is_empty() {
             changes.push(TempoChange::from_bpm(0.0, 120.0));
         }
-        changes.sort_by(|a, b| a.tick.partial_cmp(&b.tick).expect("tempo tick NaN"));
+        // 使用 total_cmp 进行安全的浮点数比较
+        changes.sort_by(|a, b| a.tick.total_cmp(&b.tick));
         self.tempo_changes = changes;
     }
 
     /// 添加单个速度变化
     pub fn add_tempo_change(&mut self, change: TempoChange) {
         self.tempo_changes.push(change);
-        self.tempo_changes
-            .sort_by(|a, b| a.tick.partial_cmp(&b.tick).expect("tempo tick NaN"));
+        // 使用 total_cmp 进行安全的浮点数比较
+        self.tempo_changes.sort_by(|a, b| a.tick.total_cmp(&b.tick));
     }
 
     /// 获取当前BPM（在指定tick处）
@@ -107,12 +125,14 @@ impl Timeline {
 
     /// 获取当前tempo（在指定tick处）
     fn get_tempo_at(&self, tick: f32) -> u32 {
+        // 默认120 BPM = 500000 微秒/拍
+        const DEFAULT_TEMPO: u32 = 500_000;
         self.tempo_changes
             .iter()
             .rev()
             .find(|tc| tc.tick <= tick)
             .map(|tc| tc.tempo)
-            .unwrap_or(500_000) // 默认120 BPM = 500000 微秒/拍
+            .unwrap_or(DEFAULT_TEMPO)
     }
 
     /// 将tick转换为微秒
@@ -262,14 +282,14 @@ impl Playback {
 
     /// 暂停播放
     pub fn pause(&mut self) {
-        if self.state == PlaybackState::Playing {
-            if let Some(start_time) = self.play_start_time {
-                let elapsed = start_time.elapsed().as_micros() as u64;
-                self.paused_microseconds += elapsed;
-                self.current_tick = self.timeline.microseconds_to_tick(self.paused_microseconds);
-                self.play_start_time = None;
-                self.state = PlaybackState::Paused;
-            }
+        if self.state == PlaybackState::Playing
+            && let Some(start_time) = self.play_start_time
+        {
+            let elapsed = start_time.elapsed().as_micros() as u64;
+            self.paused_microseconds += elapsed;
+            self.current_tick = self.timeline.microseconds_to_tick(self.paused_microseconds);
+            self.play_start_time = None;
+            self.state = PlaybackState::Paused;
         }
     }
 

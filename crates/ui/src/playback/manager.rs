@@ -3,7 +3,7 @@
 //! 负责协调播放引擎和MIDI输出
 
 use super::engine::{MidiMessage, NoteEvent, PlaybackEngine};
-use super::{Playback, PlaybackState, TempoChange};
+use super::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
 use std::sync::{Arc, Mutex};
 
 /// 播放管理器
@@ -28,8 +28,15 @@ impl PlaybackManager {
             midi_output: None,
         }
     }
+}
 
-    /// 设置MIDI输出
+impl PlaybackAccessor for PlaybackManager {
+    fn playback(&self) -> &Arc<Mutex<Playback>> {
+        &self.playback
+    }
+}
+
+impl PlaybackManager {
     pub fn set_midi_output(&mut self, output: Box<dyn lumino_midi::OutputConnection>) {
         self.midi_output = Some(output);
     }
@@ -46,8 +53,9 @@ impl PlaybackManager {
 
     /// 设置速度变化
     pub fn set_tempo_changes(&mut self, changes: Vec<TempoChange>) {
-        let mut playback = self.playback.lock().expect("playback Mutex poisoned");
-        playback.set_tempo_changes(changes);
+        if let Some(mut playback) = self.lock_playback() {
+            playback.set_tempo_changes(changes);
+        }
     }
 
     /// 更新速度变化（别名方法）
@@ -90,7 +98,9 @@ impl PlaybackManager {
 
     /// 获取当前BPM
     pub fn current_bpm(&self) -> f64 {
-        self.playback.lock().expect("playback Mutex poisoned").current_bpm()
+        self.lock_playback()
+            .map(|p| p.current_bpm())
+            .unwrap_or(120.0)
     }
 
     /// 更新播放（应在定时器中调用）

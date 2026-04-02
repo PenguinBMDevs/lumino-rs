@@ -14,9 +14,34 @@ use crate::storage;
 pub use lumino_core::ParsedDms;
 pub use lumino_core::ParsedMidi;
 
+/// Runner 初始化错误
+#[derive(Debug)]
+pub enum InitError {
+    Storage(std::io::Error),
+    Window(String),
+}
+
+impl std::fmt::Display for InitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InitError::Storage(e) => write!(f, "存储初始化失败: {}", e),
+            InitError::Window(e) => write!(f, "窗口初始化失败: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for InitError {}
+
+impl From<std::io::Error> for InitError {
+    fn from(e: std::io::Error) -> Self {
+        InitError::Storage(e)
+    }
+}
+
 #[derive(Default)]
 pub struct Runner {
     inner: Option<RunnerInner>,
+    init_error: Option<InitError>,
 }
 
 pub(crate) struct RunnerInner {
@@ -28,6 +53,8 @@ pub(crate) struct RunnerInner {
     pub(crate) midi: MidiManager,
     /// 进度管理器
     pub(crate) progress: ProgressManager,
+    /// 进度回调（依赖注入，替代全局 PROGRESS_SENDER）
+    pub(crate) progress_cb: lumino_core::midi::loader::ProgressCallback,
     /// 当前加载的 MIDI
     pub(crate) current_midi: Option<ParsedMidi>,
     /// 当前加载的 DMS
@@ -61,12 +88,21 @@ pub(crate) enum CollaborationStatus {
 
 impl winit::application::ApplicationHandler for Runner {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.inner.is_some() {
+        if self.inner.is_some() || self.init_error.is_some() {
             return;
         }
 
-        let inner = self.init_inner(event_loop);
-        self.inner = Some(inner);
+        match self.init_inner(event_loop) {
+            Ok(inner) => {
+                self.inner = Some(inner);
+            }
+            Err(e) => {
+                tracing::error!("Runner 初始化失败: {}", e);
+                self.init_error = Some(e);
+                // 退出事件循环，让 main 函数处理错误
+                event_loop.exit();
+            }
+        }
     }
 
     fn window_event(
@@ -193,30 +229,22 @@ impl winit::application::ApplicationHandler for Runner {
 }
 
 impl Runner {
-    fn init_inner(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) -> RunnerInner {
-        let storage = match storage::Storage::new() {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("初始化存储失败: {}", e);
-                std::process::exit(1);
-            }
-        };
+    fn init_inner(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+    ) -> Result<RunnerInner, InitError> {
+        let storage = storage::Storage::new()?;
 
         let config = storage.config.get();
         let ui_state = storage.ui_state.get();
 
         // 创建主窗口管理器
-        let window = match WindowManager::new(event_loop, ui_state, &config.ui) {
-            Ok(w) => w,
-            Err(e) => {
-                tracing::error!("初始化窗口管理器失败: {}", e);
-                std::process::exit(1);
-            }
-        };
+        let window = WindowManager::new(event_loop, ui_state, &config.ui)
+            .map_err(|e| InitError::Window(e.to_string()))?;
 
         // 创建进度管理器
         let (progress, progress_tx) = ProgressManager::new();
-        lumino_core::midi::loader::set_progress_sender(progress_tx);
+        let progress_cb = lumino_core::midi::loader::progress_from_sender(progress_tx);
 
         // 创建 MIDI 管理器
         let midi = MidiManager::from_config(&config.ui);
@@ -229,7 +257,7 @@ impl Runner {
         // 创建新的处理器和服务
         let file_handler = FileHandler::new();
         let midi_handler = MidiHandler::new();
-        let file_service = FileService::new();
+        let file_service = FileService::new(progress_cb.clone());
         let collaboration_service = CollaborationService::new();
 
         event_loop.set_control_flow(ControlFlow::Wait);
@@ -242,6 +270,7 @@ impl Runner {
             storage,
             midi,
             progress,
+            progress_cb,
             current_midi: None,
             current_dms: None,
             dialog_manager,
@@ -294,7 +323,7 @@ impl Runner {
         //     );
         // }
 
-        runner
+        Ok(runner)
     }
 
     fn process_audio_actions(window: &mut WindowManager, midi: &mut MidiManager) {
@@ -330,6 +359,11 @@ impl Runner {
                 }
             }
         }
+    }
+
+    /// 检查是否有初始化错误
+    pub fn init_error(&self) -> Option<&InitError> {
+        self.init_error.as_ref()
     }
 }
 

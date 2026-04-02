@@ -1,5 +1,5 @@
 use lumino_core::storage::config::{SynthBackend, UiConfig};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 
 /// MIDI API 类型别名
@@ -8,8 +8,16 @@ type MidiApi = Box<dyn lumino_midi::Api>;
 type MidiOutput = Box<dyn lumino_midi::OutputConnection>;
 /// MIDI 初始化结果类型别名
 type MidiInitResult = Result<(MidiApi, MidiOutput), String>;
-/// System 输出初始化结果类型别名
-type SystemOutputResult = (Option<MidiApi>, Option<MidiOutput>, SynthBackend);
+
+/// 后端初始化结果
+struct BackendInitResult {
+    /// API 实例（用于保持合成器存活）
+    api: Option<Box<dyn lumino_midi::Api>>,
+    /// MIDI 输出连接
+    output: Option<Box<dyn lumino_midi::OutputConnection>>,
+    /// 实际使用的后端类型
+    backend: SynthBackend,
+}
 
 /// XSynth 异步初始化结果
 enum XSynthInitResult {
@@ -62,7 +70,7 @@ impl MidiManager {
         let preferred = ui_config.preferred_backend;
 
         // 快速启动初始后端（不阻塞 UI）
-        let (api, output, backend) = match preferred {
+        let result = match preferred {
             SynthBackend::Kdmapi => Self::init_kdmapi_output(),
             SynthBackend::System => Self::init_system_output(),
             // XSynth 模式下先启动 System，然后在后台初始化 XSynth
@@ -70,9 +78,9 @@ impl MidiManager {
         };
 
         let mut manager = Self {
-            api,
-            output,
-            active_backend: backend,
+            api: result.api,
+            output: result.output,
+            active_backend: result.backend,
             needs_reinit: false,
             preferred_backend: preferred,
             xsynth_init_rx: None,
@@ -164,7 +172,7 @@ impl MidiManager {
     }
 
     /// 快速初始化 System 后端（不阻塞）
-    fn init_system_output() -> SystemOutputResult {
+    fn init_system_output() -> BackendInitResult {
         use lumino_midi::ApiKind;
 
         tracing::info!("MIDI: 快速启动 System 后端");
@@ -176,19 +184,31 @@ impl MidiManager {
                     && let Ok(conn) = api.open_output(output.id)
                 {
                     tracing::info!("MIDI: System 后端已就绪");
-                    return (Some(api), Some(conn), SynthBackend::System);
+                    return BackendInitResult {
+                        api: Some(api),
+                        output: Some(conn),
+                        backend: SynthBackend::System,
+                    };
                 }
-                (Some(api), None, SynthBackend::System)
+                BackendInitResult {
+                    api: Some(api),
+                    output: None,
+                    backend: SynthBackend::System,
+                }
             }
             Err(e) => {
                 tracing::warn!("MIDI: System 后端启动失败: {:?}", e);
-                (None, None, SynthBackend::System)
+                BackendInitResult {
+                    api: None,
+                    output: None,
+                    backend: SynthBackend::System,
+                }
             }
         }
     }
 
     /// 快速初始化 KDMAPI 后端（不阻塞）
-    fn init_kdmapi_output() -> SystemOutputResult {
+    fn init_kdmapi_output() -> BackendInitResult {
         use lumino_midi::ApiKind;
 
         tracing::info!("MIDI: 快速启动 KDMAPI 后端");
@@ -202,13 +222,25 @@ impl MidiManager {
                     && let Ok(conn) = api.open_output(output.id)
                 {
                     tracing::info!("MIDI: KDMAPI 后端已就绪");
-                    return (Some(api), Some(conn), SynthBackend::Kdmapi);
+                    return BackendInitResult {
+                        api: Some(api),
+                        output: Some(conn),
+                        backend: SynthBackend::Kdmapi,
+                    };
                 }
-                (Some(api), None, SynthBackend::Kdmapi)
+                BackendInitResult {
+                    api: Some(api),
+                    output: None,
+                    backend: SynthBackend::Kdmapi,
+                }
             }
             Err(e) => {
                 tracing::warn!("MIDI: KDMAPI 后端启动失败: {:?}", e);
-                (None, None, SynthBackend::Kdmapi)
+                BackendInitResult {
+                    api: None,
+                    output: None,
+                    backend: SynthBackend::Kdmapi,
+                }
             }
         }
     }
@@ -306,21 +338,21 @@ impl MidiManager {
         // 重新初始化
         if ui_config.preferred_backend == SynthBackend::XSynth {
             // 先快速启动 System，然后后台初始化 XSynth
-            let (api, output, backend) = Self::init_system_output();
-            self.api = api;
-            self.output = output;
-            self.active_backend = backend;
+            let result = Self::init_system_output();
+            self.api = result.api;
+            self.output = result.output;
+            self.active_backend = result.backend;
             self.start_xsynth_async_init(ui_config);
         } else {
             // 初始化其他后端
-            let (api, output, backend) = match ui_config.preferred_backend {
+            let result = match ui_config.preferred_backend {
                 SynthBackend::Kdmapi => Self::init_kdmapi_output(),
                 SynthBackend::System => Self::init_system_output(),
                 _ => Self::init_system_output(),
             };
-            self.api = api;
-            self.output = output;
-            self.active_backend = backend;
+            self.api = result.api;
+            self.output = result.output;
+            self.active_backend = result.backend;
         }
 
         tracing::info!("MIDI 输出已重新初始化，实际后端: {:?}", self.active_backend);

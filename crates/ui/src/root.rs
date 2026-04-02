@@ -6,10 +6,6 @@
 //! - `view`: 视图渲染
 //! - `editor_ops`: 编辑器操作
 
-use iced_core::Length;
-use iced_widget::container;
-use lumino_gfx::NoteInstance;
-
 use crate::state::root_state::RootState;
 use crate::{editor, message, settings, sidebar, statusbar, titlebar, toolbar, window};
 use lumino_core::storage::config::UiConfig;
@@ -45,58 +41,22 @@ pub struct Root {
     pub(crate) pending_midi_output: Option<Box<dyn lumino_midi::OutputConnection>>,
 }
 
+/// Root 构造参数
+struct RootInitParams {
+    theme: String,
+    ui_config: UiConfig,
+    is_progress_window: bool,
+    dialog_type: Option<crate::state::root_state::DialogType>,
+}
+
 impl Root {
-    /// 创建新的 Root
-    pub fn new(ui_config: &UiConfig) -> Self {
-        Self {
-            sidebar: sidebar::Sidebar::new(),
-            titlebar: titlebar::Titlebar::new(),
-            statusbar: statusbar::StatusBar::new(),
-            toolbar: toolbar::Toolbar::new(),
-            editor: editor::Editor::new(),
-            window: window::Window::new(&ui_config.theme),
-            settings: settings::SettingsPanel::new(ui_config),
-            progress: None,
-            is_progress_window: false,
-            state: RootState::new(),
-            playback_manager: None,
-            pending_tempo_changes: None,
-            pending_midi_output: None,
-        }
-    }
-
-    /// 获取状态可变引用
-    pub fn state_mut(&mut self) -> &mut RootState {
-        &mut self.state
-    }
-
-    /// 创建进度窗口 Root
-    pub fn new_progress(theme: &str) -> Self {
-        let default_config = UiConfig::default();
-        Self {
-            sidebar: sidebar::Sidebar::new(),
-            titlebar: titlebar::Titlebar::new(),
-            statusbar: statusbar::StatusBar::new(),
-            toolbar: toolbar::Toolbar::new(),
-            editor: editor::Editor::new(),
-            window: window::Window::new(theme),
-            settings: settings::SettingsPanel::new(&default_config),
-            progress: None,
-            is_progress_window: true,
-            state: RootState::new(),
-            playback_manager: None,
-            pending_tempo_changes: None,
-            pending_midi_output: None,
-        }
-    }
-
-    /// 创建对话框 Root
-    pub fn new_dialog(theme: &str) -> Self {
-        use crate::state::root_state::DialogType;
-        let default_config = UiConfig::default();
+    /// 内部构造函数，消除 new/new_progress/new_dialog 的重复代码
+    fn from_params(params: RootInitParams) -> Self {
         let mut state = RootState::new();
-        state.is_dialog_window = true;
-        state.dialog_type = DialogType::CustomPrecision;
+        if let Some(dt) = params.dialog_type {
+            state.is_dialog_window = true;
+            state.dialog_type = dt;
+        }
 
         Self {
             sidebar: sidebar::Sidebar::new(),
@@ -104,10 +64,10 @@ impl Root {
             statusbar: statusbar::StatusBar::new(),
             toolbar: toolbar::Toolbar::new(),
             editor: editor::Editor::new(),
-            window: window::Window::new(theme),
-            settings: settings::SettingsPanel::new(&default_config),
+            window: window::Window::new(&params.theme),
+            settings: settings::SettingsPanel::new(&params.ui_config),
             progress: None,
-            is_progress_window: false,
+            is_progress_window: params.is_progress_window,
             state,
             playback_manager: None,
             pending_tempo_changes: None,
@@ -115,9 +75,44 @@ impl Root {
         }
     }
 
+    /// 创建新的 Root
+    pub fn new(ui_config: &UiConfig) -> Self {
+        Self::from_params(RootInitParams {
+            theme: ui_config.theme.clone(),
+            ui_config: ui_config.clone(),
+            is_progress_window: false,
+            dialog_type: None,
+        })
+    }
+
+    /// 创建进度窗口 Root
+    pub fn new_progress(theme: &str) -> Self {
+        Self::from_params(RootInitParams {
+            theme: theme.to_string(),
+            ui_config: UiConfig::default(),
+            is_progress_window: true,
+            dialog_type: None,
+        })
+    }
+
+    /// 创建对话框 Root
+    pub fn new_dialog(theme: &str) -> Self {
+        Self::from_params(RootInitParams {
+            theme: theme.to_string(),
+            ui_config: UiConfig::default(),
+            is_progress_window: false,
+            dialog_type: Some(crate::state::root_state::DialogType::CustomPrecision),
+        })
+    }
+
     /// 获取当前主题
     pub fn theme(&self) -> Theme {
         self.window.theme.clone()
+    }
+
+    /// 获取状态可变引用
+    pub fn state_mut(&mut self) -> &mut RootState {
+        &mut self.state
     }
 
     /// 获取设置面板引用
@@ -148,6 +143,6 @@ impl Root {
         self.playback_manager
             .as_ref()
             .map(|m| m.state() == crate::playback::PlaybackState::Playing)
-            .unwrap_or(false)
+            .unwrap_or_default()
     }
 }

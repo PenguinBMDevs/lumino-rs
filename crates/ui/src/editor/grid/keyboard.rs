@@ -2,7 +2,6 @@
 
 use super::theme::ThemeExt;
 use crate::Renderer;
-use crate::constants::editor::RULER_HEIGHT;
 use crate::editor::Editor;
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{Frame, Path, Stroke};

@@ -172,10 +172,7 @@ pub fn load_midi_data(
     let (header, track_iter) =
         midly::parse(&mmap[..]).map_err(|e| format!("解析 MIDI 头部失败: {e}"))?;
 
-    let division = match header.timing {
-        midly::Timing::Metrical(ticks) => ticks.as_int(),
-        _ => DEFAULT_PPQN,
-    };
+    let division = extract_division(&header);
 
     // 先收集所有 track 的 EventIter
     let event_iters: Vec<_> = track_iter
@@ -206,53 +203,15 @@ pub fn load_midi_data(
     for (track_idx, event_iter) in event_iters.into_iter().enumerate() {
         let parsed = parse_track_events_from_iter(track_idx, event_iter)?;
         let event_count = parsed.events.len() as u64;
-        let should_try_memory = parsed.high_vel_count > 0;
+        let _should_try_memory = parsed.high_vel_count > 0;
 
-        let (summary, keep_in_memory) = if should_try_memory {
-            let track_size = estimate_events_size(&parsed.events);
-
-            if memory_used + track_size <= initial_memory_limit {
-                memory_used += track_size;
-                (
-                    create_track_summary(
-                        track_idx,
-                        event_count,
-                        parsed.note_count,
-                        parsed.high_vel_count,
-                        parsed.max_tick,
-                        track_size,
-                        true,
-                    ),
-                    true,
-                )
-            } else {
-                (
-                    create_track_summary(
-                        track_idx,
-                        event_count,
-                        parsed.note_count,
-                        parsed.high_vel_count,
-                        parsed.max_tick,
-                        0,
-                        false,
-                    ),
-                    false,
-                )
-            }
-        } else {
-            (
-                create_track_summary(
-                    track_idx,
-                    event_count,
-                    parsed.note_count,
-                    parsed.high_vel_count,
-                    parsed.max_tick,
-                    0,
-                    false,
-                ),
-                false,
-            )
-        };
+        let (summary, keep_in_memory) = decide_track_storage(
+            &parsed,
+            track_idx,
+            event_count,
+            &mut memory_used,
+            initial_memory_limit,
+        );
 
         summaries.push(summary);
 
@@ -304,4 +263,63 @@ pub fn load_midi_data(
         memory_used,
         loaded_memory_limit,
     ))
+}
+
+/// 提取 MIDI 时间分割值
+fn extract_division(header: &midly::Header) -> u16 {
+    match header.timing {
+        midly::Timing::Metrical(ticks) => ticks.as_int(),
+        _ => DEFAULT_PPQN,
+    }
+}
+
+/// 决定音轨存储位置（内存或磁盘）
+fn decide_track_storage(
+    parsed: &ParsedTrack,
+    track_idx: usize,
+    event_count: u64,
+    memory_used: &mut usize,
+    initial_memory_limit: usize,
+) -> (TrackSummary, bool) {
+    let should_try_memory = parsed.high_vel_count > 0;
+
+    if !should_try_memory {
+        let summary = create_track_summary(
+            track_idx,
+            event_count,
+            parsed.note_count,
+            parsed.high_vel_count,
+            parsed.max_tick,
+            0,
+            false,
+        );
+        return (summary, false);
+    }
+
+    let track_size = estimate_events_size(&parsed.events);
+
+    if *memory_used + track_size <= initial_memory_limit {
+        *memory_used += track_size;
+        let summary = create_track_summary(
+            track_idx,
+            event_count,
+            parsed.note_count,
+            parsed.high_vel_count,
+            parsed.max_tick,
+            track_size,
+            true,
+        );
+        (summary, true)
+    } else {
+        let summary = create_track_summary(
+            track_idx,
+            event_count,
+            parsed.note_count,
+            parsed.high_vel_count,
+            parsed.max_tick,
+            0,
+            false,
+        );
+        (summary, false)
+    }
 }

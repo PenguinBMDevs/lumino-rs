@@ -115,7 +115,7 @@ impl MidiHandler {
 
         // 使用通用解析函数收集音轨信息和音符
         let ppq = match smf.header.timing {
-            midly::Timing::Metrical(ppq) => ppq.as_int() as u16,
+            midly::Timing::Metrical(ppq) => ppq.as_int(),
             _ => 1920,
         };
         ui.set_ppq(ppq);

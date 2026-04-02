@@ -1,9 +1,9 @@
 //! Host 渲染子模块 - 处理 UI 和音符渲染
 
-use iced_wgpu::{Renderer, wgpu};
+use iced_wgpu::wgpu;
 use iced_winit::runtime::user_interface::{self, UserInterface};
 
-use iced_core::{Event, Size, mouse, renderer, window as iced_window};
+use iced_core::{Event, renderer, window as iced_window};
 
 use crate::host::Host;
 use crate::{message, window};

@@ -141,14 +141,20 @@ impl MidiMemoryManager {
         // 先检查是否在内存中
         if self.in_memory_tracks.contains_key(&track_index) {
             // 安全：contains_key 检查通过后 get 一定返回 Some
-            return Ok(self.in_memory_tracks.get(&track_index).unwrap());
+            return Ok(self
+                .in_memory_tracks
+                .get(&track_index)
+                .ok_or(format!("音轨 {} 内存数据意外丢失", track_index))?);
         }
 
         // 检查是否已经从磁盘加载
         if self.loaded_tracks.contains_key(&track_index) {
             // 更新 LRU（必须在 get 之前，避免借用冲突）
             self.touch_lru(track_index);
-            return Ok(self.loaded_tracks.get(&track_index).unwrap());
+            return Ok(self
+                .loaded_tracks
+                .get(&track_index)
+                .ok_or(format!("音轨 {} 加载数据意外丢失", track_index))?);
         }
 
         // 需要从磁盘加载
@@ -170,7 +176,10 @@ impl MidiMemoryManager {
         self.loaded_tracks.insert(track_index, events);
         self.lru_order.push(track_index);
         // insert 后立即 get 一定存在
-        Ok(self.loaded_tracks.get(&track_index).unwrap())
+        Ok(self
+            .loaded_tracks
+            .get(&track_index)
+            .ok_or(format!("音轨 {} 插入后数据意外丢失", track_index))?)
     }
 
     /// 获取音轨事件的完整数据（用于编辑，需要可变访问）

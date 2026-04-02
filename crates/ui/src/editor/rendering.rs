@@ -2,7 +2,6 @@ use iced_core::{Length, Point};
 use iced_widget::canvas::Canvas;
 use lumino_gfx::NoteInstance;
 
-use crate::constants::dimensions::MENU_SAFE_ZONE;
 use crate::constants::editor::PREVIEW_NOTE_OPACITY;
 use crate::editor::grid::PianoRollGrid;
 use crate::editor::scrollbar_widget;

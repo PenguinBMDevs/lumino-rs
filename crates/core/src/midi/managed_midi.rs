@@ -30,6 +30,7 @@ pub use types::{ManagerStats, TrackLocation, TrackLocationSerde, TrackSummary};
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::midi::MidiEvent;
 
     #[test]
     fn test_estimate_event_size() {

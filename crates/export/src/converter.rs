@@ -66,215 +66,265 @@ pub fn export_dms_from_midi_sync(source_path: &Path) -> Result<Vec<u8>, String> 
 }
 
 fn build_midi_export_from_dms(root: &lumino_dms::DmsCompositeNode) -> crate::midi::MidiExportData {
-    use crate::midi::{
-        MidiControlChangeEvent, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTrackData,
-        bpm_to_tempo,
-    };
-    use lumino_dms::{DmsAnsiStringNode, DmsFloatNode, DmsIntegerNode, DmsNode, DmsNodeType};
-
-    fn read_u64(node: &dyn DmsNode) -> Option<u64> {
-        node.as_any()
-            .downcast_ref::<DmsIntegerNode>()
-            .and_then(|n| n.integer_data().to_string().parse::<u64>().ok())
-    }
-
-    fn read_f64(node: &dyn DmsNode) -> Option<f64> {
-        node.as_any()
-            .downcast_ref::<DmsFloatNode>()
-            .map(|n| n.number_data())
-    }
-
-    fn read_string(node: &dyn DmsNode) -> Option<String> {
-        node.as_any()
-            .downcast_ref::<DmsAnsiStringNode>()
-            .and_then(|n| n.string_data().ok())
-    }
-
-    fn child_by_type(node: &dyn DmsNode, ty: DmsNodeType) -> Option<&dyn DmsNode> {
-        node.children()
-            .iter()
-            .find(|child| child.type_id() == ty)
-            .map(|child| child.as_ref())
-    }
-
-    /// 从子节点读取 u64 值，带默认值和范围限制
-    fn read_child_u64_clamped(
-        parent: &dyn DmsNode,
-        node_type: DmsNodeType,
-        default: u64,
-        min: u64,
-        max: u64,
-    ) -> u64 {
-        child_by_type(parent, node_type)
-            .and_then(read_u64)
-            .unwrap_or(default)
-            .clamp(min, max)
-    }
-
-    /// 从子节点读取 u32 值，带默认值和范围限制
-    fn read_child_u32_clamped(
-        parent: &dyn DmsNode,
-        node_type: DmsNodeType,
-        default: u64,
-        min: u64,
-        max: u64,
-    ) -> u32 {
-        read_child_u64_clamped(parent, node_type, default, min, max) as u32
-    }
-
-    /// 从子节点读取 f64 值，带默认值和范围限制
-    fn read_child_f64_clamped(
-        parent: &dyn DmsNode,
-        node_type: DmsNodeType,
-        default: f64,
-        min: f64,
-        max: Option<f64>,
-    ) -> f64 {
-        child_by_type(parent, node_type)
-            .and_then(read_f64)
-            .unwrap_or(default)
-            .clamp(min, max.unwrap_or(f64::MAX))
-    }
+    use crate::midi::{MidiExportOptions, MidiTrackData};
+    use lumino_dms::DmsNodeType;
 
     let mut ppqn = 1920u16;
     let mut tracks = Vec::new();
 
-    for root_child in root.children() {
-        if root_child.type_id() == DmsNodeType::SONG_PPQN
-            && let Some(value) = read_u64(root_child.as_ref())
-        {
-            ppqn = value.clamp(1, u16::MAX as u64) as u16;
+    for root_child in root.children.iter() {
+        if root_child.type_id() == DmsNodeType::SONG_PPQN {
+            if let Some(value) = read_u64(root_child.as_ref()) {
+                ppqn = value.clamp(1, u16::MAX as u64) as u16;
+            }
         }
 
         if root_child.type_id() != DmsNodeType::TRACK {
             continue;
         }
 
-        let mut channel = 0u8;
-        let mut name = None;
-        let mut notes = Vec::new();
-        let mut tempos = Vec::new();
-        let mut control_changes = Vec::new();
-
-        for track_child in root_child.children() {
-            match track_child.type_id() {
-                DmsNodeType::TRACK_CHANNEL => {
-                    if let Some(ch) = read_u64(track_child.as_ref()) {
-                        channel = ch.min(15) as u8;
-                    }
-                }
-                DmsNodeType::TRACK_NAME => {
-                    name = read_string(track_child.as_ref());
-                }
-                DmsNodeType::NOTE_EVENT => {
-                    let tick = read_child_u32_clamped(
-                        track_child.as_ref(),
-                        DmsNodeType::ABS_TICK_POS,
-                        0,
-                        0,
-                        u32::MAX as u64,
-                    );
-                    let key = read_child_u32_clamped(
-                        track_child.as_ref(),
-                        DmsNodeType::NOTE_KEY_NUMBER,
-                        60,
-                        0,
-                        127,
-                    ) as u8;
-                    let velocity = read_child_u32_clamped(
-                        track_child.as_ref(),
-                        DmsNodeType::NOTE_VELOCITY,
-                        100,
-                        0,
-                        127,
-                    ) as u8;
-                    let duration = read_child_u32_clamped(
-                        track_child.as_ref(),
-                        DmsNodeType::NOTE_GATE,
-                        1,
-                        1,
-                        u32::MAX as u64,
-                    );
-
-                    notes.push(MidiNoteEvent {
-                        tick,
-                        channel,
-                        key,
-                        velocity,
-                        duration,
-                    });
-                }
-                DmsNodeType::TEMPO_EVENT => {
-                    let tick = read_child_u32_clamped(
-                        track_child.as_ref(),
-                        DmsNodeType::ABS_TICK_POS,
-                        0,
-                        0,
-                        u32::MAX as u64,
-                    );
-                    let bpm = read_child_f64_clamped(
-                        track_child.as_ref(),
-                        DmsNodeType::TEMPO_VALUE,
-                        120.0,
-                        1.0,
-                        None,
-                    );
-
-                    tempos.push(MidiTempoEvent {
-                        tick,
-                        tempo: bpm_to_tempo(bpm),
-                    });
-                }
-                DmsNodeType::CONTROL_EVENT => {
-                    let tick = read_child_u32_clamped(
-                        track_child.as_ref(),
-                        DmsNodeType::ABS_TICK_POS,
-                        0,
-                        0,
-                        u32::MAX as u64,
-                    );
-                    let controller = read_child_u32_clamped(
-                        track_child.as_ref(),
-                        DmsNodeType::CONTROL_TYPE,
-                        0,
-                        0,
-                        127,
-                    ) as u8;
-                    let value = read_child_f64_clamped(
-                        track_child.as_ref(),
-                        DmsNodeType::CONTROL_VALUE,
-                        0.0,
-                        0.0,
-                        Some(127.0),
-                    )
-                    .round() as u8;
-
-                    control_changes.push(MidiControlChangeEvent {
-                        tick,
-                        channel,
-                        controller,
-                        value,
-                    });
-                }
-                _ => {}
-            }
-        }
-
-        tracks.push(MidiTrackData {
-            notes,
-            tempos,
-            program_changes: Vec::new(),
-            control_changes,
-            time_signatures: Vec::new(),
-            key_signatures: Vec::new(),
-            name,
-        });
+        let track_data = parse_track_from_dms(root_child.as_ref());
+        tracks.push(track_data);
     }
 
     crate::midi::MidiExportData {
         options: MidiExportOptions { format: 1, ppqn },
         tracks,
     }
+}
+
+/// 从 DMS 节点读取 u64 值
+fn read_u64(node: &dyn lumino_dms::DmsNode) -> Option<u64> {
+    use lumino_dms::DmsIntegerNode;
+    node.as_any()
+        .downcast_ref::<DmsIntegerNode>()
+        .and_then(|n| n.integer_data().to_string().parse::<u64>().ok())
+}
+
+/// 从 DMS 节点读取 f64 值
+fn read_f64(node: &dyn lumino_dms::DmsNode) -> Option<f64> {
+    use lumino_dms::DmsFloatNode;
+    node.as_any()
+        .downcast_ref::<DmsFloatNode>()
+        .map(|n| n.number_data())
+}
+
+/// 从 DMS 节点读取字符串值
+fn read_string(node: &dyn lumino_dms::DmsNode) -> Option<String> {
+    use lumino_dms::DmsAnsiStringNode;
+    node.as_any()
+        .downcast_ref::<DmsAnsiStringNode>()
+        .and_then(|n| n.string_data().ok())
+}
+
+/// 按类型查找子节点
+fn child_by_type(node: &dyn lumino_dms::DmsNode, ty: lumino_dms::DmsNodeType) -> Option<&dyn lumino_dms::DmsNode> {
+    node.children()
+        .iter()
+        .find(|child| child.type_id() == ty)
+        .map(|child| child.as_ref())
+}
+
+/// 从子节点读取 u64 值，带默认值和范围限制
+fn read_child_u64_clamped(
+    parent: &dyn lumino_dms::DmsNode,
+    node_type: lumino_dms::DmsNodeType,
+    default: u64,
+    min: u64,
+    max: u64,
+) -> u64 {
+    child_by_type(parent, node_type)
+        .and_then(read_u64)
+        .unwrap_or(default)
+        .clamp(min, max)
+}
+
+/// 从子节点读取 u32 值，带默认值和范围限制
+fn read_child_u32_clamped(
+    parent: &dyn lumino_dms::DmsNode,
+    node_type: lumino_dms::DmsNodeType,
+    default: u64,
+    min: u64,
+    max: u64,
+) -> u32 {
+    read_child_u64_clamped(parent, node_type, default, min, max) as u32
+}
+
+/// 从子节点读取 f64 值，带默认值和范围限制
+fn read_child_f64_clamped(
+    parent: &dyn lumino_dms::DmsNode,
+    node_type: lumino_dms::DmsNodeType,
+    default: f64,
+    min: f64,
+    max: Option<f64>,
+) -> f64 {
+    child_by_type(parent, node_type)
+        .and_then(read_f64)
+        .unwrap_or(default)
+        .clamp(min, max.unwrap_or(f64::MAX))
+}
+
+/// 从 DMS 节点解析单个音轨数据
+fn parse_track_from_dms(track_node: &dyn lumino_dms::DmsNode) -> crate::midi::MidiTrackData {
+    use crate::midi::{MidiControlChangeEvent, MidiNoteEvent, MidiTempoEvent, MidiTrackData, bpm_to_tempo};
+    use lumino_dms::DmsNodeType;
+
+    let mut channel = 0u8;
+    let mut name = None;
+    let mut notes = Vec::new();
+    let mut tempos = Vec::new();
+    let mut control_changes = Vec::new();
+
+    for track_child in track_node.children().iter() {
+        match track_child.type_id() {
+            DmsNodeType::TRACK_CHANNEL => {
+                if let Some(ch) = read_u64(track_child.as_ref()) {
+                    channel = ch.min(15) as u8;
+                }
+            }
+            DmsNodeType::TRACK_NAME => {
+                name = read_string(track_child.as_ref());
+            }
+            DmsNodeType::NOTE_EVENT => {
+                if let Some(event) = parse_note_event(track_child.as_ref(), channel) {
+                    notes.push(event);
+                }
+            }
+            DmsNodeType::TEMPO_EVENT => {
+                if let Some(event) = parse_tempo_event(track_child.as_ref()) {
+                    tempos.push(event);
+                }
+            }
+            DmsNodeType::CONTROL_EVENT => {
+                if let Some(event) = parse_control_event(track_child.as_ref(), channel) {
+                    control_changes.push(event);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    MidiTrackData {
+        notes,
+        tempos,
+        program_changes: Vec::new(),
+        control_changes,
+        time_signatures: Vec::new(),
+        key_signatures: Vec::new(),
+        name,
+    }
+}
+
+/// 解析音符事件
+fn parse_note_event(
+    event_node: &dyn lumino_dms::DmsNode,
+    channel: u8,
+) -> Option<crate::midi::MidiNoteEvent> {
+    use lumino_dms::DmsNodeType;
+
+    let tick = read_child_u32_clamped(
+        event_node,
+        DmsNodeType::ABS_TICK_POS,
+        0,
+        0,
+        u32::MAX as u64,
+    );
+    let key = read_child_u32_clamped(
+        event_node,
+        DmsNodeType::NOTE_KEY_NUMBER,
+        60,
+        0,
+        127,
+    ) as u8;
+    let velocity = read_child_u32_clamped(
+        event_node,
+        DmsNodeType::NOTE_VELOCITY,
+        100,
+        0,
+        127,
+    ) as u8;
+    let duration = read_child_u32_clamped(
+        event_node,
+        DmsNodeType::NOTE_GATE,
+        1,
+        1,
+        u32::MAX as u64,
+    );
+
+    Some(crate::midi::MidiNoteEvent {
+        tick,
+        channel,
+        key,
+        velocity,
+        duration,
+    })
+}
+
+/// 解析速度事件
+fn parse_tempo_event(
+    event_node: &dyn lumino_dms::DmsNode,
+) -> Option<crate::midi::MidiTempoEvent> {
+    use crate::midi::{MidiTempoEvent, bpm_to_tempo};
+    use lumino_dms::DmsNodeType;
+
+    let tick = read_child_u32_clamped(
+        event_node,
+        DmsNodeType::ABS_TICK_POS,
+        0,
+        0,
+        u32::MAX as u64,
+    );
+    let bpm = read_child_f64_clamped(
+        event_node,
+        DmsNodeType::TEMPO_VALUE,
+        120.0,
+        1.0,
+        None,
+    );
+
+    Some(MidiTempoEvent {
+        tick,
+        tempo: bpm_to_tempo(bpm),
+    })
+}
+
+/// 解析控制变更事件
+fn parse_control_event(
+    event_node: &dyn lumino_dms::DmsNode,
+    channel: u8,
+) -> Option<crate::midi::MidiControlChangeEvent> {
+    use crate::midi::MidiControlChangeEvent;
+    use lumino_dms::DmsNodeType;
+
+    let tick = read_child_u32_clamped(
+        event_node,
+        DmsNodeType::ABS_TICK_POS,
+        0,
+        0,
+        u32::MAX as u64,
+    );
+    let controller = read_child_u32_clamped(
+        event_node,
+        DmsNodeType::CONTROL_TYPE,
+        0,
+        0,
+        127,
+    ) as u8;
+    let value = read_child_f64_clamped(
+        event_node,
+        DmsNodeType::CONTROL_VALUE,
+        0.0,
+        0.0,
+        Some(127.0),
+    )
+    .round() as u8;
+
+    Some(MidiControlChangeEvent {
+        tick,
+        channel,
+        controller,
+        value,
+    })
 }
 
 fn build_dms_export_from_midi(source_path: &Path) -> Result<crate::dms::DmsExportData, String> {

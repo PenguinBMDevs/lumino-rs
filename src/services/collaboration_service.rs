@@ -2,6 +2,22 @@ use lumino_collaboration::{ClientConfig, CollaborationClient};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
 
+/// 协作服务错误消息常量
+mod messages {
+    /// 默认房间名称
+    pub const DEFAULT_ROOM_NAME: &str = "默认房间";
+    /// Mutex 污染错误消息
+    pub const MUTEX_POISONED: &str = "协作服务: client Mutex 已被污染，可能有线程 panic";
+    /// 无法获取客户端锁
+    pub const LOCK_FAILED: &str = "协作服务: 无法获取客户端锁";
+    /// 客户端未初始化
+    pub const CLIENT_NOT_INITIALIZED: &str = "协作客户端未初始化";
+    /// 遗留接口提示 - 创建房间
+    pub const USE_CONNECT_CREATE_ROOM: &str = "请使用 connect 方法创建房间";
+    /// 遗留接口提示 - 加入房间
+    pub const USE_CONNECT_JOIN_ROOM: &str = "请使用 connect 方法加入房间";
+}
+
 /// 协作服务 - 处理协作连接和事件
 ///
 /// 该服务负责处理与协作服务器的连接、房间管理和事件处理。
@@ -15,6 +31,21 @@ impl CollaborationService {
     pub fn new() -> Self {
         Self {
             client: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// 安全地获取客户端锁
+    ///
+    /// 当 Mutex 被 poison 时，记录错误并返回 None
+    fn lock_client(
+        &self,
+    ) -> Option<std::sync::MutexGuard<'_, Option<Arc<TokioMutex<CollaborationClient>>>>> {
+        match self.client.lock() {
+            Ok(guard) => Some(guard),
+            Err(e) => {
+                tracing::error!("{}: {}", messages::MUTEX_POISONED, e);
+                None
+            }
         }
     }
 
@@ -54,7 +85,9 @@ impl CollaborationService {
 
         // 保存客户端
         {
-            let mut guard = self.client.lock().expect("client Mutex poisoned");
+            let Some(mut guard) = self.lock_client() else {
+                return Err(messages::LOCK_FAILED.to_string());
+            };
             *guard = Some(client);
         }
 
@@ -68,7 +101,7 @@ impl CollaborationService {
                         .await
                         .map_err(|e| e.to_string())
                 } else {
-                    let name = room_name.unwrap_or_else(|| "默认房间".to_string());
+                    let name = room_name.unwrap_or_else(|| messages::DEFAULT_ROOM_NAME.to_string());
                     tracing::info!("协作: 正在创建房间: {} ...", name);
                     c.create_room_and_connect(name)
                         .await
@@ -205,7 +238,10 @@ impl CollaborationService {
         &self,
         position: lumino_collaboration::types::MousePosition,
     ) -> Result<(), String> {
-        let client_guard = self.client.lock().expect("client Mutex poisoned");
+        let Some(client_guard) = self.lock_client() else {
+            return Err(messages::LOCK_FAILED.to_string());
+        };
+
         if let Some(client) = client_guard.clone() {
             tokio::spawn(async move {
                 let c = client.lock().await;
@@ -215,23 +251,28 @@ impl CollaborationService {
             });
             Ok(())
         } else {
-            Err("协作客户端未初始化".to_string())
+            Err(messages::CLIENT_NOT_INITIALIZED.to_string())
         }
     }
 
     /// 创建房间（遗留兼容接口，实际未使用——所有调用都走 connect）
+    #[allow(dead_code)]
     pub fn create_room(&self, _name: String) -> Result<(), String> {
-        Err("请使用 connect 方法创建房间".to_string())
+        Err(messages::USE_CONNECT_CREATE_ROOM.to_string())
     }
 
     /// 加入房间（遗留兼容接口，实际未使用——所有调用都走 connect）
+    #[allow(dead_code)]
     pub fn join_room(&self, _invite_code: String) -> Result<(), String> {
-        Err("请使用 connect 方法加入房间".to_string())
+        Err(messages::USE_CONNECT_JOIN_ROOM.to_string())
     }
 
     /// 断开连接
     pub fn disconnect(&self) -> Result<(), String> {
-        let client_guard = self.client.lock().expect("client Mutex poisoned");
+        let Some(client_guard) = self.lock_client() else {
+            return Err(messages::LOCK_FAILED.to_string());
+        };
+
         if let Some(client) = client_guard.clone() {
             tokio::spawn(async move {
                 let mut c = client.lock().await;
@@ -241,7 +282,7 @@ impl CollaborationService {
             });
             Ok(())
         } else {
-            Err("协作客户端未初始化".to_string())
+            Err(messages::CLIENT_NOT_INITIALIZED.to_string())
         }
     }
 
@@ -250,7 +291,10 @@ impl CollaborationService {
         &self,
         operation: lumino_collaboration::types::NoteBatchOperation,
     ) -> Result<(), String> {
-        let client_guard = self.client.lock().expect("client Mutex poisoned");
+        let Some(client_guard) = self.lock_client() else {
+            return Err(messages::LOCK_FAILED.to_string());
+        };
+
         if let Some(client) = client_guard.clone() {
             tokio::spawn(async move {
                 let c = client.lock().await;
@@ -260,13 +304,17 @@ impl CollaborationService {
             });
             Ok(())
         } else {
-            Err("协作客户端未初始化".to_string())
+            Err(messages::CLIENT_NOT_INITIALIZED.to_string())
         }
     }
 
     /// 检查是否已连接
     pub fn is_connected(&self) -> bool {
-        let client_guard = self.client.lock().expect("client Mutex poisoned");
+        let Some(client_guard) = self.lock_client() else {
+            tracing::warn!("协作服务: is_connected 无法获取锁，返回 false");
+            return false;
+        };
+
         let is_connected = client_guard.is_some();
         tracing::debug!("协作服务 is_connected: {}", is_connected);
         is_connected

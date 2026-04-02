@@ -11,10 +11,9 @@
 //! - `selection_box`: 选择框渲染
 
 use crate::constants::editor as editor_constants;
-use crate::constants::editor::{MEASURE_NUMBER_FONT_SIZE, RULER_HEIGHT};
 use crate::editor::{Editor, HitType};
 use crate::{Message, Renderer, Theme, message::EditorAction};
-use iced_core::{Point, Rectangle, mouse};
+use iced_core::{Rectangle, mouse};
 use iced_widget::canvas::{self, Event, Geometry, Program};
 
 pub mod bars;
@@ -28,7 +27,6 @@ pub mod state;
 pub mod theme;
 
 pub use state::CanvasState;
-pub use theme::ThemeExt;
 
 /// 钢琴卷帘网格绘制程序
 pub struct PianoRollGrid<'a> {
@@ -38,6 +36,65 @@ pub struct PianoRollGrid<'a> {
 impl<'a> PianoRollGrid<'a> {
     pub fn new(editor: &'a Editor) -> Self {
         Self { editor }
+    }
+
+    /// 检测双击事件
+    fn detect_double_click(&self, state: &mut CanvasState, local_pos: iced_core::Point) -> bool {
+        use editor_constants::*;
+
+        let now = std::time::Instant::now();
+        let is_double_click = state.last_click_pos.is_some_and(|last_pos| {
+            let time_delta = now.duration_since(state.last_click_time).as_millis();
+            let pos_delta =
+                ((local_pos.x - last_pos.x).powi(2) + (local_pos.y - last_pos.y).powi(2)).sqrt();
+            time_delta < DOUBLE_CLICK_TIME_MS && pos_delta < DOUBLE_CLICK_DISTANCE_PX
+        });
+
+        if !is_double_click {
+            state.last_click_time = now;
+            state.last_click_pos = Some(local_pos);
+        }
+
+        is_double_click
+    }
+
+    /// 处理鼠标左键按下事件
+    fn handle_left_press(
+        &self,
+        state: &mut CanvasState,
+        local_pos: iced_core::Point,
+    ) -> Option<canvas::Action<Message>> {
+        if self.detect_double_click(state, local_pos) {
+            Some(canvas::Action::publish(Message::EditorAction(
+                EditorAction::DoubleClicked(local_pos),
+            )))
+        } else {
+            Some(canvas::Action::publish(Message::EditorAction(
+                EditorAction::Pressed {
+                    pos: local_pos,
+                    shift: state.shift_pressed,
+                },
+            )))
+        }
+    }
+
+    /// 处理滚轮滚动事件
+    fn handle_wheel_scroll(&self, delta: &mouse::ScrollDelta) -> Option<canvas::Action<Message>> {
+        use editor_constants::*;
+
+        let (delta_x, delta_y) = match delta {
+            mouse::ScrollDelta::Lines { x, y } => {
+                (*x * SCROLL_LINES_SCALE, *y * SCROLL_LINES_SCALE)
+            }
+            mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
+        };
+
+        let delta_x = delta_x.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
+        let delta_y = delta_y.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
+
+        Some(canvas::Action::publish(Message::EditorAction(
+            EditorAction::Scrolled { delta_x, delta_y },
+        )))
     }
 }
 
@@ -79,35 +136,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
                 if let Some(position) = cursor.position() {
                     let local_pos =
                         iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
-
-                    // 检测双击（300ms 内两次点击且位置接近）
-                    let now = std::time::Instant::now();
-                    let is_double_click = if let Some(last_pos) = state.last_click_pos {
-                        let time_delta = now.duration_since(state.last_click_time).as_millis();
-                        let pos_delta = ((local_pos.x - last_pos.x).powi(2)
-                            + (local_pos.y - last_pos.y).powi(2))
-                        .sqrt();
-                        time_delta < DOUBLE_CLICK_TIME_MS && pos_delta < DOUBLE_CLICK_DISTANCE_PX
-                    } else {
-                        false
-                    };
-
-                    if is_double_click {
-                        // 双击事件
-                        return Some(canvas::Action::publish(Message::EditorAction(
-                            EditorAction::DoubleClicked(local_pos),
-                        )));
-                    } else {
-                        // 单击事件
-                        state.last_click_time = now;
-                        state.last_click_pos = Some(local_pos);
-                        return Some(canvas::Action::publish(Message::EditorAction(
-                            EditorAction::Pressed {
-                                pos: local_pos,
-                                shift: state.shift_pressed,
-                            },
-                        )));
-                    }
+                    return self.handle_left_press(state, local_pos);
                 }
             }
             Event::Keyboard(iced_core::keyboard::Event::ModifiersChanged(modifiers)) => {
@@ -125,19 +154,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
                 )));
             }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                let (delta_x, delta_y) = match delta {
-                    mouse::ScrollDelta::Lines { x, y } => {
-                        (*x * SCROLL_LINES_SCALE, *y * SCROLL_LINES_SCALE)
-                    }
-                    mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
-                };
-                // 限制最大滚动增量，避免滚动过快
-                let max_delta = SCROLL_MAX_DELTA;
-                let delta_x = delta_x.clamp(-max_delta, max_delta);
-                let delta_y = delta_y.clamp(-max_delta, max_delta);
-                return Some(canvas::Action::publish(Message::EditorAction(
-                    EditorAction::Scrolled { delta_x, delta_y },
-                )));
+                return self.handle_wheel_scroll(delta);
             }
             _ => {}
         }

@@ -4,7 +4,7 @@ use crate::Renderer;
 use crate::constants::editor::SELECTION_BOX_FILL_ALPHA;
 use crate::editor::Editor;
 use iced_core::{Point, Rectangle, Size};
-use iced_widget::canvas::{self, Frame, Geometry, Path, Stroke};
+use iced_widget::canvas::{self, Geometry, Path, Stroke};
 
 /// 绘制选择框
 pub fn draw(

@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use winapi::shared::minwindef::{LPARAM, LRESULT, WPARAM};
 use winapi::shared::windef::{HWND, RECT};
 use winapi::um::winuser::{
@@ -10,7 +12,8 @@ use winit::window::Window;
 type WndProcType = unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT;
 
 /// 存储原始窗口过程的指针
-static mut ORIGINAL_WNDPROC: Option<isize> = None;
+/// 使用 OnceLock 替代 static mut，保证线程安全
+static ORIGINAL_WNDPROC: OnceLock<isize> = OnceLock::new();
 
 /// 窗口边框拉伸区域宽度（像素）
 const RESIZE_BORDER_WIDTH: i32 = 12;
@@ -70,10 +73,10 @@ unsafe extern "system" fn window_proc(
     }
 
     // 调用原始窗口过程
-    unsafe {
-        if let Some(old_proc) = ORIGINAL_WNDPROC {
-            return std::mem::transmute::<isize, WndProcType>(old_proc)(hwnd, msg, wparam, lparam);
-        }
+    if let Some(&old_proc) = ORIGINAL_WNDPROC.get() {
+        return unsafe {
+            std::mem::transmute::<isize, WndProcType>(old_proc)(hwnd, msg, wparam, lparam)
+        };
     }
 
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
@@ -101,7 +104,9 @@ pub fn setup_resize_border(window: &Window) -> Result<(), String> {
         );
 
         if original_wndproc != 0 {
-            ORIGINAL_WNDPROC = Some(original_wndproc);
+            // 使用 OnceLock::set 替代直接赋值，保证线程安全
+            // 如果已经设置过，忽略错误（保持第一次设置的值）
+            let _ = ORIGINAL_WNDPROC.set(original_wndproc);
         }
 
         Ok(())

@@ -10,7 +10,7 @@ use crate::view::{
     collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
 };
-use crate::{message, settings, sidebar, statusbar, titlebar, toolbar};
+use crate::{message, settings};
 
 impl Root {
     /// 渲染视图

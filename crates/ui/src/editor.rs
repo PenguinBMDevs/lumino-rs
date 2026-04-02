@@ -6,7 +6,9 @@ pub mod scrollbar_widget;
 pub mod state;
 
 // 新增子模块
+mod clipboard;
 mod coords;
+mod drag;
 mod interaction;
 mod note_ops;
 mod rendering;
@@ -307,6 +309,22 @@ impl Editor {
         self.grid_cache.clear();
     }
 
+    /// 将音符列表转换为窗口坐标的实例（添加 Canvas 偏移）
+    fn notes_to_window_instances<'a>(
+        &self,
+        notes: impl Iterator<Item = &'a Note>,
+        color: iced_core::Color,
+    ) -> Vec<NoteInstance> {
+        let mut instances = Vec::new();
+        for note in notes {
+            let mut instance = note.to_instance(&self.state, color);
+            instance.position[0] += self.canvas_offset.x;
+            instance.position[1] += self.canvas_offset.y;
+            instances.push(instance);
+        }
+        instances
+    }
+
     /// 获取洋葱皮音符实例（用于其他音轨的音符显示）
     pub fn get_onion_skin_instances(
         &self,
@@ -327,23 +345,15 @@ impl Editor {
         }
 
         // 获取该音轨的音符
-        let notes = self.track_notes.get(&track_idx);
-        let notes = match notes {
-            Some(notes) if !notes.is_empty() => notes,
-            _ => return Vec::new(),
+        let Some(notes) = self.track_notes.get(&track_idx) else {
+            return Vec::new();
         };
-        let color = self.onion_skin_config.get_track_color(track_idx);
-        let mut instances = Vec::with_capacity(notes.len());
-
-        for note in notes {
-            let mut instance = note.to_instance(&self.state, color);
-            // 转换为窗口坐标
-            instance.position[0] += self.canvas_offset.x;
-            instance.position[1] += self.canvas_offset.y;
-            instances.push(instance);
+        if notes.is_empty() {
+            return Vec::new();
         }
 
-        instances
+        let color = self.onion_skin_config.get_track_color(track_idx);
+        self.notes_to_window_instances(notes.iter(), color)
     }
 
     /// 获取所有洋葱皮音符实例（所有其他音轨）
@@ -355,25 +365,21 @@ impl Editor {
             return Vec::new();
         }
 
-        let mut all_instances = Vec::new();
-
-        // 收集需要显示的音轨索引并排序（按索引从小到大）
-        // 这样索引小的先渲染，索引大的后渲染（显示在上层）
+        // 收集需要显示的音轨索引并按从小到大排序
+        // 索引小的先渲染，索引大的后渲染（显示在上层）
         let mut track_indices: Vec<usize> = track_onion_states
             .iter()
             .filter(|(_, is_enabled)| **is_enabled)
             .map(|(&idx, _)| idx)
-            .filter(|&idx| idx != self.current_track) // 排除当前音轨
+            .filter(|&idx| idx != self.current_track)
             .collect();
 
-        // 按索引排序，让靠后的音轨（索引大的）后渲染（上层）
         track_indices.sort();
 
+        let mut all_instances = Vec::new();
         for track_idx in track_indices {
-            // 音轨开关状态为 true 时才显示
             if let Some(&is_enabled) = track_onion_states.get(&track_idx) {
-                let instances = self.get_onion_skin_instances(track_idx, is_enabled);
-                all_instances.extend(instances);
+                all_instances.extend(self.get_onion_skin_instances(track_idx, is_enabled));
             }
         }
 

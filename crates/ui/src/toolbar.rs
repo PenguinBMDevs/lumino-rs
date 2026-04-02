@@ -5,11 +5,6 @@
 //! - `event`: 工具栏事件枚举和工厂方法
 //! - `view`: 视图渲染逻辑
 
-use iced_core::Point;
-use iced_widget::core::Length;
-
-use crate::Message;
-
 pub mod event;
 pub mod types;
 mod view;

@@ -4,11 +4,8 @@ use iced_core::Alignment;
 use iced_widget::{button, column, container, mouse_area, pick_list, row, space, text};
 
 use crate::resources::icon;
-use crate::toolbar::{
-    DEFAULT_HEIGHT, DotType, Event, MAX_HEIGHT, MIN_HEIGHT, NotePrecision, RESIZE_HANDLE_HEIGHT,
-    Tool, TupletType,
-};
-use crate::{Element, Message, Renderer, Theme, window};
+use crate::toolbar::{Event, NotePrecision, RESIZE_HANDLE_HEIGHT, Tool};
+use crate::{Element, Message, Theme, window};
 
 use super::Toolbar;
 

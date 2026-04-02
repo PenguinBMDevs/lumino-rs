@@ -1,231 +1,207 @@
-//! Root 消息处理器子模块
+//! Root 消息处理器
 //!
-//! 包含所有消息处理逻辑，按功能分组
+//! 采用分治法策略，将消息处理逻辑拆分为专门的处理器：
+//! - PlaybackHandler: 播放控制
+//! - CollaborationHandler: 协作功能  
+//! - DialogHandler: 对话框管理
+//! - ToolbarHandler: 工具栏事件
+//!
+//! 通过 MessageRouter 按顺序分发消息。
 
+use crate::message::{EditorAction, Message};
 use crate::root::Root;
-use crate::state::root_state::{CollaborationViewState, DialogType};
-use crate::{message, sidebar, toolbar, window};
+use crate::{sidebar, window};
 
-impl Root {
-    /// 主更新入口
-    pub fn update(&mut self, msg: message::Message) {
-        match msg {
-            message::Message::Core(event) => self.handle_core_event(event),
-            message::Message::Window(event) => self.handle_window_event(event),
-            message::Message::Sidebar(event) => self.handle_sidebar_event(event),
-            message::Message::Toolbar(event) => self.handle_toolbar_event(event),
-            message::Message::Progress(progress) => self.progress = progress,
-            message::Message::ScrollbarScrolled(x) => self.editor.set_scroll_x(x),
-            message::Message::ScrollbarScrolledY(y) => self.editor.set_scroll_y(y),
-            message::Message::ZoomXChanged { zoom, fixed_ratio } => {
-                self.editor.set_zoom_x(zoom, fixed_ratio);
-            }
-            message::Message::ZoomYChanged { zoom, fixed_ratio } => {
-                self.editor.set_zoom_y(zoom, fixed_ratio);
-            }
-            message::Message::CanvasBoundsChanged { offset, size } => {
-                self.editor.set_canvas_offset(offset);
-                self.editor
-                    .set_canvas_size(iced_core::Point::new(size.width, size.height));
-            }
-            message::Message::EditorAction(action) => {
-                let old_tick = self.editor.playback_position;
-                self.editor.handle_action(action);
-                let new_tick = self.editor.playback_position;
-                if (old_tick - new_tick).abs() > f32::EPSILON {
-                    if let Some(manager) = &mut self.playback_manager {
-                        manager.seek(new_tick);
-                    }
-                }
+// 重新导出子模块
+pub mod collaboration;
+pub mod dialog;
+pub mod playback;
+pub mod toolbar;
 
-                // 检查音符数据是否变化，如果变化则更新播放管理器
-                if self.editor.notes_changed() {
-                    self.update_playback_notes();
-                    self.editor.clear_notes_changed();
-                }
-            }
-            message::Message::AudioAction(_) => {
-                // 音频动作处理（留给外层实现）
-            }
-            message::Message::MenuStateChanged(is_open) => {
-                self.state.is_menu_open = is_open;
-            }
-            message::Message::Settings(event) => {
-                self.settings.update(event);
-            }
-            message::Message::ToggleSettings => {
-                // ToggleSettings 消息已废弃
-            }
-            message::Message::Null => {}
-            // 协作相关消息
-            message::Message::OpenCollaborationDialog => {
-                self.handle_collaboration_dialog_open();
-            }
-            message::Message::CloseCollaborationDialog => {
-                self.handle_collaboration_dialog_close();
-            }
-            message::Message::CollaborationConnect {
-                host,
-                port,
-                username,
-                invite_code,
-            } => {
-                self.handle_collaboration_connect(host, port, username, invite_code);
-            }
-            message::Message::CollaborationCreateRoom { name } => {
-                self.handle_collaboration_create_room(name);
-            }
-            message::Message::CollaborationJoinRoom { invite_code } => {
-                self.handle_collaboration_join_room(invite_code);
-            }
-            message::Message::CollaborationDisconnect => {
-                self.handle_collaboration_disconnect();
-            }
-            message::Message::CollaborationHostChanged(host) => {
-                self.state.collaboration_dialog.server_host = host;
-            }
-            message::Message::CollaborationPortChanged(port) => {
-                self.state.collaboration_dialog.server_port = port;
-            }
-            message::Message::CollaborationUsernameChanged(username) => {
-                self.state.collaboration_dialog.username = username;
-            }
-            message::Message::CollaborationRoomNameChanged(name) => {
-                self.state.collaboration_dialog.room_name = name;
-            }
-            message::Message::CollaborationInviteCodeChanged(code) => {
-                self.state.collaboration_dialog.invite_code = code;
-            }
-            message::Message::CollaborationCopyInviteCode => {
-                self.handle_collaboration_copy_invite_code();
-            }
-            message::Message::CollaborationRemoteMouseMoved {
-                user_id,
-                x,
-                y,
-                color,
-                username,
-            } => {
-                tracing::debug!(
-                    "收到远程鼠标移动：user_id={}, x={}, y={}, color={}, username={}",
-                    user_id,
-                    x,
-                    y,
-                    color,
-                    username
-                );
-                self.editor.update_remote_cursor(
-                    user_id,
-                    iced_core::Point::new(x, y),
-                    color,
-                    username,
-                );
-                tracing::debug!(
-                    "更新后 remote_cursors 数量：{}",
-                    self.editor.remote_cursors.len()
-                );
-            }
-            message::Message::CollaborationRemoteUserLeft { user_id } => {
-                self.editor.remove_remote_cursor(&user_id);
-            }
-            message::Message::CollaborationRemoteNoteUpdate {
-                user_id: _,
-                operation,
-            } => {
-                // 解析操作并应用到编辑器
-                if let Ok(op) = serde_json::from_str::<
-                    lumino_collaboration::types::NoteBatchOperation,
-                >(&operation)
-                {
-                    self.apply_remote_note_operation(&op);
-                } else {
-                    tracing::error!("协作: 无法解析远程笔记操作");
-                }
-            }
-            // 自定义精度对话框消息
-            message::Message::OpenCustomPrecisionDialog => {
-                self.handle_custom_precision_dialog_open();
-            }
-            message::Message::CloseCustomPrecisionDialog => {
-                self.handle_custom_precision_dialog_close();
-            }
-            message::Message::ConfirmCustomPrecision => {
-                self.handle_confirm_custom_precision();
-            }
-            message::Message::CustomPrecisionNumeratorChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.state.custom_precision_dialog.tuplet_count = value;
-                }
-            }
-            message::Message::CustomPrecisionDenominatorChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.state.custom_precision_dialog.note_value = value;
-                }
-            }
-            message::Message::CustomPrecisionTupletCountChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.state.custom_precision_dialog.tuplet_count = value;
-                }
-            }
-            message::Message::CustomPrecisionTupletTypeChanged(value) => {
-                self.state.custom_precision_dialog.tuplet_type = value;
-                self.state.custom_precision_dialog.tuplet_count = value.value().to_string();
-            }
-            message::Message::CustomPrecisionDotTypeChanged(value) => {
-                self.state.custom_precision_dialog.dot_type = value;
-            }
-            message::Message::CustomPrecisionNoteValueChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.state.custom_precision_dialog.note_value = value;
-                }
-            }
-            message::Message::CustomPrecisionDivisorChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.state.custom_precision_dialog.divisor = value;
-                }
-            }
-            // 播放控制消息
-            message::Message::Play => {
-                self.handle_play();
-            }
-            message::Message::Pause => {
-                self.handle_pause();
-            }
-            message::Message::Stop => {
-                self.handle_stop();
-            }
-            message::Message::PlaybackTick(tick) => {
-                // 更新播放指示线位置
-                self.editor.playback_position = tick;
+// 重新导出处理器类型
+pub use collaboration::CollaborationHandler;
+pub use dialog::DialogHandler;
+pub use playback::PlaybackHandler;
+pub use toolbar::ToolbarHandler;
 
-                // 更新播放管理器
-                if let Some(manager) = &mut self.playback_manager {
-                    manager.update();
-                }
-            }
+/// 消息处理器 trait
+///
+/// 实现此 trait 的类型可以处理特定类型的消息。
+/// 如果返回 None，表示消息已处理完毕；
+/// 如果返回 Some(msg)，表示消息需要传递给下一个处理器。
+pub trait MessageHandler {
+    fn handle(&mut self, root: &mut Root, msg: Message) -> Option<Message>;
+}
+
+/// 消息路由器
+///
+/// 按顺序将消息传递给各个处理器，直到有处理器处理完毕。
+pub struct MessageRouter {
+    handlers: Vec<Box<dyn MessageHandler>>,
+}
+
+impl MessageRouter {
+    pub fn new() -> Self {
+        Self {
+            handlers: Vec::new(),
         }
     }
 
-    /// 处理核心事件
+    pub fn register(&mut self, handler: Box<dyn MessageHandler>) {
+        self.handlers.push(handler);
+    }
+
+    pub fn route(&mut self, root: &mut Root, msg: Message) {
+        let mut current_msg = Some(msg);
+
+        for handler in &mut self.handlers {
+            if let Some(msg) = current_msg {
+                current_msg = handler.handle(root, msg);
+            } else {
+                break;
+            }
+        }
+
+        // 如果还有未处理的消息，记录警告
+        if let Some(unhandled) = current_msg {
+            tracing::warn!("未处理的消息: {:?}", std::mem::discriminant(&unhandled));
+        }
+    }
+}
+
+impl Default for MessageRouter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Root {
+    /// 创建配置好的消息路由器
+    pub fn create_message_router() -> MessageRouter {
+        let mut router = MessageRouter::new();
+        router.register(Box::new(PlaybackHandler::new()));
+        router.register(Box::new(CollaborationHandler::new()));
+        router.register(Box::new(DialogHandler::new()));
+        router.register(Box::new(ToolbarHandler::new()));
+        router
+    }
+
+    /// 主更新入口 - 简化为路由分发
+    pub fn update(&mut self, msg: Message) {
+        // 使用消息路由器处理
+        let mut router = Self::create_message_router();
+        let remaining = self.route_message(msg, &mut router);
+
+        // 处理未被专门处理器处理的消息
+        if let Some(msg) = remaining {
+            self.handle_remaining_messages(msg);
+        }
+    }
+
+    /// 路由消息到专门的处理器
+    fn route_message(&mut self, msg: Message, router: &mut MessageRouter) -> Option<Message> {
+        // 尝试直接处理消息
+        if self.try_handle_direct(&msg) {
+            return None;
+        }
+
+        // 其他消息通过路由器处理
+        router.route(self, msg);
+        None
+    }
+
+    /// 直接处理不需要路由的消息
+    /// 返回 true 表示消息已被处理
+    fn try_handle_direct(&mut self, msg: &Message) -> bool {
+        match msg {
+            Message::Core(event) => {
+                self.handle_core_event(event.clone());
+                true
+            }
+            Message::Window(event) => {
+                self.handle_window_event(event.clone());
+                true
+            }
+            Message::Sidebar(event) => {
+                self.handle_sidebar_event(event.clone());
+                true
+            }
+            Message::EditorAction(action) => {
+                self.handle_editor_action(action.clone());
+                true
+            }
+            _ => self.try_handle_simple_state(msg),
+        }
+    }
+
+    /// 处理简单的状态更新消息
+    fn try_handle_simple_state(&mut self, msg: &Message) -> bool {
+        match msg {
+            Message::Progress(progress) => {
+                self.progress = progress.clone();
+                true
+            }
+            Message::ScrollbarScrolled(x) => {
+                self.editor.set_scroll_x(*x);
+                true
+            }
+            Message::ScrollbarScrolledY(y) => {
+                self.editor.set_scroll_y(*y);
+                true
+            }
+            Message::ZoomXChanged { zoom, fixed_ratio } => {
+                self.editor.set_zoom_x(*zoom, *fixed_ratio);
+                true
+            }
+            Message::ZoomYChanged { zoom, fixed_ratio } => {
+                self.editor.set_zoom_y(*zoom, *fixed_ratio);
+                true
+            }
+            Message::CanvasBoundsChanged { offset, size } => {
+                self.editor.set_canvas_offset(*offset);
+                self.editor
+                    .set_canvas_size(iced_core::Point::new(size.width, size.height));
+                true
+            }
+            Message::MenuStateChanged(is_open) => {
+                self.state.is_menu_open = *is_open;
+                true
+            }
+            Message::Settings(event) => {
+                self.settings.update(event.clone());
+                true
+            }
+            Message::ToggleSettings | Message::Null => true,
+            _ => false,
+        }
+    }
+
+    /// 处理剩余的消息（备用）
+    fn handle_remaining_messages(&mut self, msg: Message) {
+        tracing::debug!("使用备用处理器处理消息: {:?}", std::mem::discriminant(&msg));
+        // 这里可以添加其他处理逻辑
+    }
+
+    // ====================================================================
+    // 核心事件处理
+    // ====================================================================
+
     fn handle_core_event(&mut self, event: lumino_core::event::Event) {
-        // 当执行菜单操作时，关闭菜单
         self.set_menu_open(false);
         lumino_core::event::emit(event);
     }
 
-    /// 处理窗口事件
     fn handle_window_event(&mut self, event: window::Event) {
-        // 检测主题是否变化，主题变化时需要清除 grid_cache
         let is_theme_change = matches!(event, window::Event::Theme(_));
         self.window.update(event);
+
         if is_theme_change {
             self.editor.grid_cache.clear();
         }
     }
 
-    /// 处理侧边栏事件
     fn handle_sidebar_event(&mut self, event: sidebar::Event) {
-        // 先检查是否是音轨切换（避免所有权问题）
+        // 先检查是否是音轨切换
         let track_selected_idx = if let sidebar::Event::TrackSelected(idx) = &event {
             Some(*idx)
         } else {
@@ -234,13 +210,13 @@ impl Root {
 
         self.sidebar.update(event);
 
-        // 侧边栏显示状态变化，直接设置 canvas offset 为 sidebar 宽度
+        // 更新画布偏移
         let sidebar_width = self.sidebar.width() as f32;
         let current_offset = self.editor.canvas_offset;
         self.editor
             .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset.y));
 
-        // 如果是音轨切换，发送 Core 事件通知 Runner 加载对应音轨的音符
+        // 如果是音轨切换，发送 Core 事件
         if let Some(track_idx) = track_selected_idx {
             tracing::debug!("Root: 发射音轨选择事件，音轨 {}", track_idx);
             lumino_core::event::emit(lumino_core::event::Event::Menu(
@@ -251,127 +227,23 @@ impl Root {
         }
     }
 
-    /// 处理工具栏事件
-    fn handle_toolbar_event(&mut self, event: toolbar::Event) {
-        // 处理播放控制
-        match &event {
-            toolbar::Event::Play => {
-                self.handle_play();
-            }
-            toolbar::Event::Pause => {
-                self.handle_pause();
-            }
-            toolbar::Event::Stop => {
-                self.handle_stop();
-            }
-            _ => {}
+    /// 处理编辑器动作
+    fn handle_editor_action(&mut self, action: EditorAction) {
+        let old_tick = self.editor.playback_position;
+        self.editor.handle_action(action);
+        let new_tick = self.editor.playback_position;
+
+        // 检查播放位置是否变化
+        if (old_tick - new_tick).abs() > f32::EPSILON
+            && let Some(manager) = &mut self.playback_manager
+        {
+            manager.seek(new_tick);
         }
 
-        // 如果工具切换了，同步更新 editor 的工具状态
-        if let toolbar::Event::ToolSelected(tool) = &event {
-            self.editor.set_tool(*tool);
+        // 检查音符数据是否变化
+        if self.editor.notes_changed() {
+            self.update_playback_notes();
+            self.editor.clear_notes_changed();
         }
-        // 如果精度设置变更了，同步更新 editor 的 snap_precision
-        if let toolbar::Event::PrecisionChanged(precision) = &event {
-            let ticks = (*precision).as_ticks(self.editor.state.ppq);
-            self.editor.state.snap_precision = ticks;
-            self.editor.state.default_note_length = ticks;
-            tracing::debug!(
-                "Root: 音符精度同步为 {} ticks (PPQ={})",
-                ticks,
-                self.editor.state.ppq
-            );
-        }
-        // 处理撤销/重做事件
-        if matches!(event, toolbar::Event::Undo) {
-            tracing::info!("Root: 触发撤销操作");
-            lumino_core::event::emit(lumino_core::event::Event::Menu(
-                lumino_core::event::menu::Event::Edit(lumino_core::event::menu::edit::Event::Undo),
-            ));
-        }
-        if matches!(event, toolbar::Event::Redo) {
-            tracing::info!("Root: 触发重做操作");
-            lumino_core::event::emit(lumino_core::event::Event::Menu(
-                lumino_core::event::menu::Event::Edit(lumino_core::event::menu::edit::Event::Redo),
-            ));
-        }
-        // 处理打开协作对话框事件
-        if matches!(event, toolbar::Event::OpenCollaborationDialog) {
-            tracing::info!("Root: 触发打开协作对话框");
-            lumino_core::event::emit(lumino_core::event::Event::Window(
-                lumino_core::event::window::Event::OpenCollaborationDialog,
-            ));
-        }
-        self.toolbar.update(event);
-    }
-
-    /// 处理播放
-    fn handle_play(&mut self) {
-        // 如果播放管理器还未初始化，创建它
-        if self.playback_manager.is_none() {
-            self.init_playback_manager();
-        }
-
-        if let Some(manager) = &mut self.playback_manager {
-            manager.play();
-            tracing::info!("Root: 开始播放");
-        }
-    }
-
-    /// 处理暂停
-    fn handle_pause(&mut self) {
-        if let Some(manager) = &mut self.playback_manager {
-            manager.pause();
-            tracing::info!("Root: 暂停播放");
-        }
-    }
-
-    /// 处理停止
-    fn handle_stop(&mut self) {
-        if let Some(manager) = &mut self.playback_manager {
-            manager.stop();
-            self.editor.playback_position = 0.0;
-            tracing::info!("Root: 停止播放");
-        }
-    }
-
-    /// 初始化播放管理器
-    fn init_playback_manager(&mut self) {
-        let division = self.editor.state.ppq;
-        let mut manager = crate::playback::PlaybackManager::new(division);
-
-        // 设置音符
-        let notes: Vec<crate::playback::NoteEvent> = self
-            .editor
-            .notes
-            .iter()
-            .map(|note| {
-                crate::playback::NoteEvent {
-                    tick: note.tick,
-                    channel: 0, // 默认通道0
-                    key: note.key as u8,
-                    velocity: 100, // 默认力度
-                    length: note.length,
-                }
-            })
-            .collect();
-        manager.set_notes(notes);
-
-        // 应用缓存的 tempo 变化
-        if let Some(changes) = self.pending_tempo_changes.take() {
-            manager.set_tempo_changes(changes);
-        }
-
-        // 应用缓存的 MIDI 输出连接
-        if let Some(output) = self.pending_midi_output.take() {
-            manager.set_midi_output(output);
-        }
-
-        self.playback_manager = Some(manager);
-        tracing::info!(
-            "Root: 播放管理器已初始化 (division={}, notes={})",
-            division,
-            self.editor.notes.len()
-        );
     }
 }

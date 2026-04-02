@@ -1,5 +1,4 @@
 mod async_helper;
-mod collaboration_handler;
 mod dialog_manager;
 mod file_handler;
 mod inner;

@@ -3,16 +3,12 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
 use super::event::CollaborationEvent;
-use crate::client::{
-    ClientConfig, ClientMessage, ClientState, CollaborationClient, CollaborationSession,
-    EventCallback, ServerMessage,
-};
+use crate::client::{ClientState, CollaborationSession, EventCallback, ServerMessage};
 use crate::types::RemoteUser;
-use crate::types::*;
 
 /// 处理服务器消息
 pub async fn handle_server_message(

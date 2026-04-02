@@ -100,7 +100,10 @@ fn buffer<'a>() -> MutexGuard<'a, EventBuffer> {
     EVENT_BUFFER
         .get_or_init(|| Mutex::new(EventBuffer::default()))
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(|e| {
+            tracing::error!("Event mutex poisoned, recovering guard. This indicates a panic in event handling code.");
+            e.into_inner()
+        })
 }
 
 /// 推送事件到事件缓冲区

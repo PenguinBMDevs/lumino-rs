@@ -111,6 +111,18 @@ pub mod editor {
 
     /// 演奏指示线顶部三角形大小
     pub const PLAYBACK_INDICATOR_TRIANGLE_SIZE: f32 = 8.0;
+
+    /// 剪贴板格式标识
+    pub const CLIPBOARD_FORMAT: &str = "notes";
+    /// 剪贴板格式版本号
+    pub const CLIPBOARD_VERSION: u32 = 1;
+
+    /// 默认音符力度
+    pub const DEFAULT_NOTE_VELOCITY: u8 = 100;
+    /// 默认 MIDI 通道
+    pub const DEFAULT_MIDI_CHANNEL: u8 = 0;
+    /// 默认粘贴锚点音高（中央 C）
+    pub const DEFAULT_PASTE_ANCHOR_KEY: u16 = 60;
 }
 
 /// 渲染相关常量

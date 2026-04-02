@@ -2,7 +2,7 @@
 
 use super::theme::ThemeExt;
 use crate::Renderer;
-use crate::constants::editor::{MEASURE_NUMBER_FONT_SIZE, RULER_HEIGHT};
+use crate::constants::editor::MEASURE_NUMBER_FONT_SIZE;
 use crate::editor::Editor;
 use iced_core::{Point, Rectangle, Size, alignment};
 use iced_widget::canvas::{Frame, Path, Stroke, Text};
@@ -53,7 +53,7 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
                 color: text_color,
                 font: iced_core::Font::DEFAULT,
                 align_x: alignment::Horizontal::Left.into(),
-                align_y: alignment::Vertical::Top.into(),
+                align_y: alignment::Vertical::Top,
                 shaping: iced_core::text::Shaping::Basic,
             };
             frame.fill_text(measure_text);

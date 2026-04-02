@@ -2,7 +2,7 @@
 //!
 //! 负责音符调度和MIDI输出
 
-use super::{Playback, PlaybackState};
+use super::{Playback, PlaybackAccessor, PlaybackState};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::sync::{Arc, Mutex};
@@ -136,13 +136,20 @@ impl PlaybackEngine {
     pub fn update(&mut self) -> Vec<MidiMessage> {
         let mut messages = Vec::new();
 
-        let playback = self.playback.lock().expect("playback Mutex poisoned");
-        if playback.state() != PlaybackState::Playing {
+        // 获取当前播放状态和tick，然后立即释放锁
+        let (current_tick, is_playing) = {
+            let Some(playback) = self.lock_playback() else {
+                return messages;
+            };
+            (
+                playback.current_tick(),
+                playback.state() == PlaybackState::Playing,
+            )
+        };
+
+        if !is_playing {
             return messages;
         }
-
-        let current_tick = playback.current_tick();
-        drop(playback); // 尽早释放锁
 
         // 处理所有到期的事件
         while let Some(event) = self.event_queue.peek() {
@@ -150,7 +157,13 @@ impl PlaybackEngine {
                 break;
             }
 
-            let event = self.event_queue.pop().unwrap();
+            // SAFETY: peek() 返回 Some 时 pop() 一定返回 Some，因为这是单线程操作
+            let event = if let Some(e) = self.event_queue.pop() {
+                e
+            } else {
+                tracing::error!("播放引擎: 事件队列状态不一致，peek 有值但 pop 失败");
+                break;
+            };
 
             match event.event_type {
                 EventType::NoteOn {
@@ -170,66 +183,85 @@ impl PlaybackEngine {
             }
         }
 
-        // 检查循环
-        if self.looping {
-            if let Some((loop_start, loop_end)) = self.loop_range {
-                if current_tick >= loop_end {
-                    let mut playback = self.playback.lock().expect("playback Mutex poisoned");
-                    playback.seek(loop_start);
-                    drop(playback);
-                    self.rebuild_queue();
-                }
-            }
+        // 检查循环（需要在独立的作用域中处理锁）
+        if self.looping
+            && let Some((loop_start, loop_end)) = self.loop_range
+            && current_tick >= loop_end
+        {
+            // 先 seek 再 rebuild_queue，避免借用冲突
+            self.seek_playback(loop_start);
+            self.rebuild_queue();
         }
 
         messages
     }
 
+    /// 安全地跳转播放位置（内部辅助方法）
+    fn seek_playback(&self, tick: f32) {
+        if let Some(mut playback) = self.lock_playback() {
+            playback.seek(tick);
+            // playback 在此处 drop
+        }
+    }
+
     /// 播放
     pub fn play(&mut self) {
-        let state = {
-            let playback = self.playback.lock().expect("playback Mutex poisoned");
-            playback.state()
-        };
+        // 获取状态后立即释放锁
+        let state = self
+            .lock_playback()
+            .map_or(PlaybackState::Stopped, |p| p.state());
 
         if state == PlaybackState::Stopped {
             self.rebuild_queue();
         }
 
-        let mut playback = self.playback.lock().expect("playback Mutex poisoned");
-        playback.play();
+        // 重新获取锁来执行 play
+        if let Some(mut playback) = self.lock_playback() {
+            playback.play();
+        }
     }
 
     /// 暂停
     pub fn pause(&mut self) {
-        let mut playback = self.playback.lock().expect("playback Mutex poisoned");
-        playback.pause();
+        if let Some(mut playback) = self.lock_playback() {
+            playback.pause();
+        }
     }
 
     /// 停止
     pub fn stop(&mut self) {
-        let mut playback = self.playback.lock().expect("playback Mutex poisoned");
-        playback.stop();
-        drop(playback);
+        // 先停止播放
+        if let Some(mut playback) = self.lock_playback() {
+            playback.stop();
+            // playback 在此处 drop
+        }
+        // 然后重建队列
         self.rebuild_queue();
     }
 
     /// 跳转
     pub fn seek(&mut self, tick: f32) {
-        let mut playback = self.playback.lock().expect("playback Mutex poisoned");
-        playback.seek(tick);
-        drop(playback);
+        // 先跳转
+        self.seek_playback(tick);
+        // 然后重建队列
         self.rebuild_queue();
     }
 
     /// 获取播放状态
     pub fn state(&self) -> PlaybackState {
-        self.playback.lock().expect("playback Mutex poisoned").state()
+        self.lock_playback()
+            .map_or(PlaybackState::Stopped, |p| p.state())
     }
 
     /// 获取当前tick
     pub fn current_tick(&self) -> f32 {
-        self.playback.lock().expect("playback Mutex poisoned").current_tick()
+        self.lock_playback().map_or(0.0, |p| p.current_tick())
+    }
+}
+
+impl PlaybackAccessor for PlaybackEngine {
+    fn playback(&self) -> &Arc<Mutex<Playback>> {
+        &self.playback
     }
 }
 
