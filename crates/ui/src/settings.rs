@@ -33,6 +33,9 @@ pub enum Event {
     XSynthFadeOutChanged(bool),
     ThemeChanged(String),
     EraserBehaviorChanged(lumino_core::storage::config::EraserBehavior),
+    ProgramFontNameChanged(String),
+    ProgramFontPathChanged(String),
+    BrowseProgramFont,
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +49,8 @@ pub struct SettingsPanel {
     pub xsynth_threads: i32,
     pub xsynth_fade_out: bool,
     pub eraser_behavior: lumino_core::storage::config::EraserBehavior,
+    pub program_font_name: String,
+    pub program_font_path: String,
 }
 
 impl SettingsPanel {
@@ -60,6 +65,8 @@ impl SettingsPanel {
             xsynth_threads: ui_config.xsynth_threads,
             xsynth_fade_out: ui_config.xsynth_fade_out_killing,
             eraser_behavior: ui_config.eraser_behavior,
+            program_font_name: ui_config.program_font_name.clone(),
+            program_font_path: ui_config.program_font_path.clone(),
         }
     }
 
@@ -106,16 +113,37 @@ impl SettingsPanel {
             Event::EraserBehaviorChanged(behavior) => {
                 self.eraser_behavior = behavior;
             }
+            Event::ProgramFontNameChanged(name) => {
+                self.program_font_name = name;
+            }
+            Event::ProgramFontPathChanged(path) => {
+                self.program_font_path = path;
+            }
+            Event::BrowseProgramFont => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("字体文件", &["ttf", "otf", "ttc", "woff", "woff2"])
+                    .add_filter("TrueType 字体", &["ttf"])
+                    .add_filter("OpenType 字体", &["otf"])
+                    .add_filter("所有文件", &["*"])
+                    .pick_file()
+                {
+                    self.program_font_path = path.to_string_lossy().into_owned();
+                }
+            }
         }
     }
 }
 
 /// 渲染设置面板主视图
-pub fn view<'a>(settings: &SettingsPanel, window: &window::Window) -> Element<'a> {
+pub fn view<'a>(
+    settings: &SettingsPanel,
+    window: &window::Window,
+    system_fonts: &[lumino_core::font_scanner::FontInfo],
+) -> Element<'a> {
     let menu_items = create_menu_items();
 
     let menu_list = render_menu_list(settings, window, &menu_items);
-    let content_area = render_content_area(settings, window);
+    let content_area = render_content_area(settings, window, system_fonts);
 
     let main_content = row![
         menu_list,
@@ -268,11 +296,12 @@ fn create_menu_container_style() -> impl Fn(&Theme) -> container::Style + 'stati
 fn render_content_area<'a>(
     settings: &SettingsPanel,
     window: &window::Window,
+    system_fonts: &[lumino_core::font_scanner::FontInfo],
 ) -> iced_widget::Container<'a, Message, Theme, crate::Renderer> {
     let content = match settings.selected_menu_index {
         0 => general_view(settings),
         1 => audio_view(settings),
-        2 => ui_settings_view(settings, window),
+        2 => ui_settings_view(settings, window, system_fonts),
         3 => shortcuts_view(),
         4 => about_view(),
         _ => render_placeholder("设置内容区域").into(),

@@ -20,6 +20,7 @@ lumino-dms = { path = "../dms" }
 memmap2 = "0.9"
 ouroboros = "0.18"
 thiserror = { workspace = true }
+font-kit = "0.14"
 
 [dev-dependencies]
 tokio = { version = "1.42", features = ["fs", "rt", "sync", "rt-multi-thread", "macros"] }

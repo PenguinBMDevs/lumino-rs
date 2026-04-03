@@ -81,6 +81,12 @@ pub struct UiConfig {
     /// 橡皮擦工具行为模式
     #[serde(default)]
     pub eraser_behavior: EraserBehavior,
+    /// 程序字体名称（系统字体名称）
+    #[serde(default)]
+    pub program_font_name: String,
+    /// 程序字体路径（自定义字体路径，优先于 program_font_name）
+    #[serde(default)]
+    pub program_font_path: String,
 }
 
 fn default_synth_backend() -> SynthBackend {
@@ -113,6 +119,8 @@ impl Default for UiConfig {
             xsynth_threads: default_synth_threads(),
             xsynth_fade_out_killing: default_synth_fade_out(),
             eraser_behavior: EraserBehavior::default(),
+            program_font_name: String::new(),
+            program_font_path: String::new(),
         }
     }
 }

@@ -234,17 +234,23 @@ impl RunnerInner {
         let new_preferred_backend = self.window.ui().settings().synth_backend;
         let new_soundfont_path = self.window.ui().settings().soundfont_path.clone();
         let new_use_native_titlebar = self.window.ui().settings().use_native_titlebar;
+        let new_program_font_name = self.window.ui().settings().program_font_name.clone();
+        let new_program_font_path = self.window.ui().settings().program_font_path.clone();
 
         // 获取当前存储的配置
         let old_config = self.storage.config.get();
         let old_preferred_backend = old_config.ui.preferred_backend;
         let old_soundfont_path = &old_config.ui.soundfont_path;
         let old_use_native_titlebar = old_config.ui.use_native_titlebar;
+        let old_program_font_name = &old_config.ui.program_font_name;
+        let old_program_font_path = &old_config.ui.program_font_path;
 
         // 检查合成器相关设置是否改变
         let backend_changed = new_preferred_backend != old_preferred_backend;
         let soundfont_changed = new_soundfont_path != *old_soundfont_path;
         let titlebar_changed = new_use_native_titlebar != old_use_native_titlebar;
+        let font_changed = new_program_font_name != *old_program_font_name
+            || new_program_font_path != *old_program_font_path;
 
         if backend_changed || soundfont_changed {
             tracing::info!(
@@ -276,11 +282,41 @@ impl RunnerInner {
             self.needs_window_restart = true;
         }
 
+        if font_changed {
+            tracing::info!(
+                "字体设置已改变: font_name {} -> {}, font_path {} -> {}",
+                if old_program_font_name.is_empty() {
+                    "(空)"
+                } else {
+                    old_program_font_name
+                },
+                if new_program_font_name.is_empty() {
+                    "(空)"
+                } else {
+                    &new_program_font_name
+                },
+                if old_program_font_path.is_empty() {
+                    "(空)"
+                } else {
+                    old_program_font_path
+                },
+                if new_program_font_path.is_empty() {
+                    "(空)"
+                } else {
+                    &new_program_font_path
+                }
+            );
+            // 标记需要重启窗口以应用字体设置
+            self.needs_window_restart = true;
+        }
+
         // 保存配置
         self.storage.config.patch(|config| {
             config.ui.preferred_backend = new_preferred_backend;
             config.ui.soundfont_path = new_soundfont_path;
             config.ui.use_native_titlebar = new_use_native_titlebar;
+            config.ui.program_font_name = new_program_font_name;
+            config.ui.program_font_path = new_program_font_path;
         });
 
         if let Err(e) = self.storage.config.save() {

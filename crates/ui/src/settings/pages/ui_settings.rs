@@ -2,7 +2,7 @@
 
 use crate::{Element, Message, Theme};
 use iced_core::Alignment;
-use iced_widget::{column, pick_list, row, text};
+use iced_widget::{button, column, pick_list, row, text, text_input};
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
@@ -10,7 +10,11 @@ use crate::settings::SettingsPanel;
 use crate::window;
 
 /// 渲染界面设置页面
-pub fn view<'a>(settings: &SettingsPanel, window: &crate::window::Window) -> Element<'a> {
+pub fn view<'a>(
+    settings: &SettingsPanel,
+    window: &crate::window::Window,
+    system_fonts: &[lumino_core::font_scanner::FontInfo],
+) -> Element<'a> {
     // 创建复选框
     let native_titlebar_checkbox = iced_widget::Checkbox::new(settings.use_native_titlebar)
         .label("使用经典系统标题栏")
@@ -21,6 +25,86 @@ pub fn view<'a>(settings: &SettingsPanel, window: &crate::window::Window) -> Ele
     // 主题选项
     let theme_options: Vec<String> = Theme::ALL.iter().map(|t| t.to_string()).collect();
     let current_theme = window.theme.to_string();
+
+    // 字体选项 - 从系统扫描的字体列表构建
+    let font_options: Vec<String> = system_fonts.iter().map(|f| f.name.clone()).collect();
+
+    // 检查字体是否已自定义
+    let font_customized =
+        !settings.program_font_name.is_empty() || !settings.program_font_path.is_empty();
+
+    // 字体选择下拉菜单
+    let font_dropdown = pick_list(
+        font_options,
+        Some(settings.program_font_name.clone()).filter(|s| !s.is_empty()),
+        |font_name| Message::Settings(crate::settings::Event::ProgramFontNameChanged(font_name)),
+    )
+    .width(200.0)
+    .placeholder("选择系统字体...");
+
+    // 自定义字体路径输入
+    let font_path_input = text_input("或输入字体文件路径...", &settings.program_font_path)
+        .on_input(|path| Message::Settings(crate::settings::Event::ProgramFontPathChanged(path)));
+
+    // 浏览字体文件按钮
+    let browse_font_button =
+        button("浏览...").on_press(Message::Settings(crate::settings::Event::BrowseProgramFont));
+
+    // 字体设置部分
+    let font_section = column![
+        // 系统字体下拉菜单
+        row![
+            text("程序字体:")
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            font_dropdown,
+            iced_widget::space().width(SPACING_ICON_LABEL),
+            text("或").size(12.0).style(create_placeholder_text_style()),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_ICON_LABEL),
+        // 自定义路径输入
+        row![
+            font_path_input.width(250.0),
+            iced_widget::space().width(SPACING_ICON_LABEL),
+            browse_font_button,
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        // 字体设置说明
+        text("选择系统字体或指定自定义字体文件路径。如果自定义路径无效，将回退到默认字体。")
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+    ];
+
+    // 字体重启提示（当字体已自定义时显示）
+    let font_restart_warning: Element<'a> = if font_customized {
+        column![
+            iced_widget::space().height(SPACING_CONTENT),
+            // 警告提示
+            row![
+                text("⚠️")
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(|theme: &Theme| text::Style {
+                        color: Some(theme.extended_palette().primary.strong.color),
+                    }),
+                iced_widget::space().width(SPACING_ICON_LABEL),
+                text("字体设置将在重启应用后生效")
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(|theme: &Theme| text::Style {
+                        color: Some(theme.extended_palette().primary.strong.color),
+                    }),
+            ]
+            .spacing(SPACING_ICON_LABEL)
+            .align_y(Alignment::Center),
+        ]
+        .into()
+    } else {
+        iced_widget::space().height(0).width(0).into()
+    };
 
     column![
         text("界面")
@@ -41,6 +125,9 @@ pub fn view<'a>(settings: &SettingsPanel, window: &crate::window::Window) -> Ele
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
+        // 字体设置
+        font_section,
+        font_restart_warning,
         // 使用经典系统标题栏选项
         row![native_titlebar_checkbox,]
             .spacing(SPACING_ICON_LABEL)

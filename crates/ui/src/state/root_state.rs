@@ -126,6 +126,8 @@ pub struct RootState {
     pub collaboration_dialog: CollaborationDialogState,
     /// 精度设置
     pub note_precision: NotePrecision,
+    /// 系统字体列表
+    pub system_fonts: Vec<lumino_core::font_scanner::FontInfo>,
 }
 
 impl RootState {
@@ -138,6 +140,7 @@ impl RootState {
             custom_precision_dialog: CustomPrecisionDialogState::new(),
             collaboration_dialog: CollaborationDialogState::new(),
             note_precision: NotePrecision::default(),
+            system_fonts: lumino_core::font_scanner::scan_system_fonts(),
         }
     }
 }

@@ -83,7 +83,7 @@ impl Root {
         // 主内容区域（工具栏 + 编辑器/设置）
         let main_area: Element<'_> = if is_settings_route {
             // 设置路由激活时显示设置界面
-            settings::view(&self.settings, &self.window)
+            settings::view(&self.settings, &self.window, &self.state.system_fonts)
         } else {
             // 默认显示工具栏 + 编辑器
             column![
