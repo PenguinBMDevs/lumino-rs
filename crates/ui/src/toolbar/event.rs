@@ -24,10 +24,6 @@ pub enum Event {
     CloseCustomPrecisionDialog,
     /// 确认自定义精度
     ConfirmCustomPrecision,
-    /// 自定义精度分子变更（已废弃）
-    CustomPrecisionNumeratorChanged(String),
-    /// 自定义精度分母变更（已废弃）
-    CustomPrecisionDenominatorChanged(String),
     /// 三连音数量变更
     CustomPrecisionTupletCountChanged(String),
     /// 三连音类型变更
@@ -95,14 +91,6 @@ impl Event {
 
     pub const fn confirm_custom_precision() -> Message {
         Message::Toolbar(Self::ConfirmCustomPrecision)
-    }
-
-    pub fn custom_precision_numerator_changed(value: String) -> Message {
-        Message::Toolbar(Self::CustomPrecisionNumeratorChanged(value))
-    }
-
-    pub fn custom_precision_denominator_changed(value: String) -> Message {
-        Message::Toolbar(Self::CustomPrecisionDenominatorChanged(value))
     }
 
     pub fn custom_precision_tuplet_count_changed(value: String) -> Message {

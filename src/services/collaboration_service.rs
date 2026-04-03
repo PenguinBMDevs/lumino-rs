@@ -12,10 +12,6 @@ mod messages {
     pub const LOCK_FAILED: &str = "协作服务: 无法获取客户端锁";
     /// 客户端未初始化
     pub const CLIENT_NOT_INITIALIZED: &str = "协作客户端未初始化";
-    /// 遗留接口提示 - 创建房间
-    pub const USE_CONNECT_CREATE_ROOM: &str = "请使用 connect 方法创建房间";
-    /// 遗留接口提示 - 加入房间
-    pub const USE_CONNECT_JOIN_ROOM: &str = "请使用 connect 方法加入房间";
 }
 
 /// 协作服务 - 处理协作连接和事件
@@ -253,18 +249,6 @@ impl CollaborationService {
         } else {
             Err(messages::CLIENT_NOT_INITIALIZED.to_string())
         }
-    }
-
-    /// 创建房间（遗留兼容接口，实际未使用——所有调用都走 connect）
-    #[allow(dead_code)]
-    pub fn create_room(&self, _name: String) -> Result<(), String> {
-        Err(messages::USE_CONNECT_CREATE_ROOM.to_string())
-    }
-
-    /// 加入房间（遗留兼容接口，实际未使用——所有调用都走 connect）
-    #[allow(dead_code)]
-    pub fn join_room(&self, _invite_code: String) -> Result<(), String> {
-        Err(messages::USE_CONNECT_JOIN_ROOM.to_string())
     }
 
     /// 断开连接

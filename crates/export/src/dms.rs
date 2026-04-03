@@ -222,13 +222,4 @@ fn create_float_node(
     ))
 }
 
-// TODO: create_data_node 暂时保留，未来可能用于扩展数据节点类型支持
-// 目前未被调用，已标记为允许死代码
-#[allow(dead_code)]
-fn _create_data_node(type_id: DmsNodeType, layer: i32, data: Vec<u8>) -> Box<dyn DmsNode> {
-    Box::new(lumino_dms::DmsDataNode::new(
-        type_id,
-        layer,
-        Bytes::from(data),
-    ))
-}
+

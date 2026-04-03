@@ -22,7 +22,6 @@ type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 type WsSink = futures::stream::SplitSink<WsStream, Message>;
 type WsStreamRead = futures::stream::SplitStream<WsStream>;
 
-pub mod connection;
 pub mod event;
 pub mod handlers;
 pub mod message;

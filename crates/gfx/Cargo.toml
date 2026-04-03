@@ -1,7 +1,10 @@
 [package]
 name = "lumino-gfx"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
 
 [dependencies]
 wgpu = "27.0"

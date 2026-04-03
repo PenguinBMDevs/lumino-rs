@@ -64,20 +64,6 @@ impl MessageHandler for DialogHandler {
                 self.handle_confirm_custom_precision(root);
                 None
             }
-            Message::CustomPrecisionNumeratorChanged(value) => {
-                Self::update_precision_if_digit(
-                    &mut root.state.custom_precision_dialog.tuplet_count,
-                    &value,
-                );
-                None
-            }
-            Message::CustomPrecisionDenominatorChanged(value) => {
-                Self::update_precision_if_digit(
-                    &mut root.state.custom_precision_dialog.note_value,
-                    &value,
-                );
-                None
-            }
             Message::CustomPrecisionTupletCountChanged(value) => {
                 Self::update_precision_if_digit(
                     &mut root.state.custom_precision_dialog.tuplet_count,

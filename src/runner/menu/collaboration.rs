@@ -94,18 +94,12 @@ impl RunnerInner {
 
     /// 处理创建房间
     pub(super) fn handle_collaboration_create_room(&self, name: String) {
-        tracing::info!("协作: 请求创建房间 - {}", name);
-        if let Err(e) = self.collaboration_service.create_room(name) {
-            tracing::error!("协作: 创建房间失败: {}", e);
-        }
+        tracing::info!("协作: 请求创建房间 - {} (已转发到 UI 层)", name);
     }
 
     /// 处理加入房间
     pub(super) fn handle_collaboration_join_room(&self, invite_code: String) {
-        tracing::info!("协作: 请求加入房间 - {}", invite_code);
-        if let Err(e) = self.collaboration_service.join_room(invite_code) {
-            tracing::error!("协作: 加入房间失败: {}", e);
-        }
+        tracing::info!("协作: 请求加入房间 - {} (已转发到 UI 层)", invite_code);
     }
 
     /// 处理断开连接

@@ -81,18 +81,6 @@ impl Toolbar {
                 self.custom_precision_dialog.is_open = false;
                 tracing::debug!("工具栏: 确认自定义精度");
             }
-            Event::CustomPrecisionNumeratorChanged(value) => {
-                // 已废弃，保留兼容性
-                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.custom_precision_dialog.tuplet_count = value;
-                }
-            }
-            Event::CustomPrecisionDenominatorChanged(value) => {
-                // 已废弃，保留兼容性
-                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
-                    self.custom_precision_dialog.note_value = value;
-                }
-            }
             Event::CustomPrecisionTupletCountChanged(value) => {
                 if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
                     self.custom_precision_dialog.tuplet_count = value;

@@ -12,7 +12,6 @@ thread_local! {
 struct AppMenu {
     menu: Menu,
     map: HashMap<MenuId, Event>,
-    // _submenus: Vec<Submenu>,
 }
 
 fn app_menu() -> Submenu {
@@ -71,7 +70,6 @@ fn menus() -> [Submenu; 5] {
         view_menu(),
         help_menu(),
     ]
-    // todo!()
 }
 
 pub fn init() {
@@ -104,8 +102,6 @@ fn init_inner(cell: &OnceLock<AppMenu>) {
         MENU.with(|shell| {
             let id = event.id();
             let menu = shell.get().expect("Get menu");
-            // menu.map.get(id)
-            // lumino_core::event::emit();
         });
     }));
 }
