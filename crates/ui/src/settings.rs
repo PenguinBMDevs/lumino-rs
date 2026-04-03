@@ -32,6 +32,7 @@ pub enum Event {
     XSynthThreadsChanged(i32),
     XSynthFadeOutChanged(bool),
     ThemeChanged(String),
+    EraserBehaviorChanged(lumino_core::storage::config::EraserBehavior),
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +45,7 @@ pub struct SettingsPanel {
     pub xsynth_sample_rate: u32,
     pub xsynth_threads: i32,
     pub xsynth_fade_out: bool,
+    pub eraser_behavior: lumino_core::storage::config::EraserBehavior,
 }
 
 impl SettingsPanel {
@@ -57,6 +59,7 @@ impl SettingsPanel {
             xsynth_sample_rate: ui_config.xsynth_sample_rate,
             xsynth_threads: ui_config.xsynth_threads,
             xsynth_fade_out: ui_config.xsynth_fade_out_killing,
+            eraser_behavior: ui_config.eraser_behavior,
         }
     }
 
@@ -99,6 +102,9 @@ impl SettingsPanel {
             }
             Event::ThemeChanged(_) => {
                 // 主题变更由外部处理
+            }
+            Event::EraserBehaviorChanged(behavior) => {
+                self.eraser_behavior = behavior;
             }
         }
     }
@@ -264,7 +270,7 @@ fn render_content_area<'a>(
     window: &window::Window,
 ) -> iced_widget::Container<'a, Message, Theme, crate::Renderer> {
     let content = match settings.selected_menu_index {
-        0 => general_view(),
+        0 => general_view(settings),
         1 => audio_view(settings),
         2 => ui_settings_view(settings, window),
         3 => shortcuts_view(),

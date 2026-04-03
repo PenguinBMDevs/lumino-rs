@@ -169,6 +169,10 @@ impl Root {
             }
             Message::Settings(event) => {
                 self.settings.update(event.clone());
+                // 如果是橡皮擦行为变更，同步到编辑器
+                if let crate::settings::Event::EraserBehaviorChanged(behavior) = event {
+                    self.editor.set_eraser_behavior(*behavior);
+                }
                 true
             }
             Message::ToggleSettings | Message::Null => true,

@@ -175,13 +175,8 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
 
         // 橡皮擦工具的光标样式
         if self.editor.current_tool() == Tool::Eraser {
-            if state.shift_pressed {
-                // Shift按下时显示十字准星（框选模式）
-                return mouse::Interaction::Crosshair;
-            } else {
-                // 普通橡皮擦模式显示指针
-                return mouse::Interaction::Pointer;
-            }
+            // 橡皮擦始终显示十字准星，支持点击删除和框选删除
+            return mouse::Interaction::Crosshair;
         }
 
         match self.editor.edit_state {

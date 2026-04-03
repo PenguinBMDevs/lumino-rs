@@ -1,3 +1,5 @@
+use lumino_core::storage::config::EraserBehavior;
+
 #[derive(Debug, Clone)]
 pub struct ViewState {
     pub scroll_x: f32, // x轴滚动位置，对应歌曲位置，单位为tick
@@ -14,7 +16,9 @@ pub struct ViewState {
     pub snap_precision: f32,      // 音符对齐精度，单位为tick，默认ppq/2（四分之一拍子线）
     pub default_note_length: f32, // 默认音符长度（ticks），等于拍子线间隔
     pub ruler_height: f32,        // 时间轴标尺高度（小节号显示区域），单位为像素
-                                  // pub scale: Scale // TODO: 之后我们需要支持不同的调式/微分音
+    // pub scale: Scale // TODO: 之后我们需要支持不同的调式/微分音
+    /// 橡皮擦工具行为模式
+    pub eraser_behavior: EraserBehavior,
 }
 
 impl Default for ViewState {
@@ -33,6 +37,7 @@ impl Default for ViewState {
             snap_precision: 960.0,       // 对齐精度960 ticks（ppq/2，四分之一拍子线）
             default_note_length: 960.0,  // ppq/2，等于拍子线间隔
             ruler_height: 24.0,          // 时间轴标尺高度24像素
+            eraser_behavior: EraserBehavior::default(),
         }
     }
 }

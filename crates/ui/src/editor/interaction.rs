@@ -109,16 +109,37 @@ impl Editor {
         shift: bool,
         hit_result: Option<(usize, HitType)>,
     ) {
-        if shift {
-            // Shift+点击：进入框选删除模式
-            self.selected_notes.clear();
-            self.edit_state = EditState::Selecting {
-                start_pos: pos,
-                current_pos: pos,
-            };
-        } else if hit_result.is_some() {
-            // 普通点击：删除单个音符
-            self.delete_note_at(pos);
+        use lumino_core::storage::config::EraserBehavior;
+
+        match self.state.eraser_behavior {
+            EraserBehavior::Default => {
+                // 默认模式：Shift+拖动框选删除，普通点击删除单个
+                if shift {
+                    // Shift+点击：进入框选删除模式
+                    self.selected_notes.clear();
+                    self.edit_state = EditState::Selecting {
+                        start_pos: pos,
+                        current_pos: pos,
+                    };
+                } else if hit_result.is_some() {
+                    // 普通点击：删除单个音符
+                    self.delete_note_at(pos);
+                }
+            }
+            EraserBehavior::DirectSelect => {
+                // 直接框选模式：拖动框选删除，Shift+点击删除单个
+                if shift && hit_result.is_some() {
+                    // Shift+点击：删除单个音符
+                    self.delete_note_at(pos);
+                } else {
+                    // 普通拖动：进入框选删除模式
+                    self.selected_notes.clear();
+                    self.edit_state = EditState::Selecting {
+                        start_pos: pos,
+                        current_pos: pos,
+                    };
+                }
+            }
         }
     }
 

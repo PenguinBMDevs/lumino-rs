@@ -23,6 +23,25 @@ pub enum SynthBackend {
     System,
 }
 
+/// 橡皮擦工具行为模式
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum EraserBehavior {
+    /// 默认模式：Shift+拖动框选删除，普通点击删除单个
+    #[default]
+    Default,
+    /// 直接框选模式：拖动框选删除，Shift+点击删除单个
+    DirectSelect,
+}
+
+impl std::fmt::Display for EraserBehavior {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EraserBehavior::Default => write!(f, "默认 (Shift+拖动框选)"),
+            EraserBehavior::DirectSelect => write!(f, "直接框选 (无需Shift)"),
+        }
+    }
+}
+
 impl std::fmt::Display for SynthBackend {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -59,6 +78,9 @@ pub struct UiConfig {
     /// XSynth 释放音符时是否淡出(避免爆音)
     #[serde(default = "default_synth_fade_out")]
     pub xsynth_fade_out_killing: bool,
+    /// 橡皮擦工具行为模式
+    #[serde(default)]
+    pub eraser_behavior: EraserBehavior,
 }
 
 fn default_synth_backend() -> SynthBackend {
@@ -90,6 +112,7 @@ impl Default for UiConfig {
             xsynth_sample_rate: default_synth_sample_rate(),
             xsynth_threads: default_synth_threads(),
             xsynth_fade_out_killing: default_synth_fade_out(),
+            eraser_behavior: EraserBehavior::default(),
         }
     }
 }

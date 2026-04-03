@@ -77,12 +77,15 @@ impl Root {
 
     /// 创建新的 Root
     pub fn new(ui_config: &UiConfig) -> Self {
-        Self::from_params(RootInitParams {
+        let mut root = Self::from_params(RootInitParams {
             theme: ui_config.theme.clone(),
             ui_config: ui_config.clone(),
             is_progress_window: false,
             dialog_type: None,
-        })
+        });
+        // 同步橡皮擦行为配置到编辑器
+        root.editor.set_eraser_behavior(ui_config.eraser_behavior);
+        root
     }
 
     /// 创建进度窗口 Root

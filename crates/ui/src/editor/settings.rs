@@ -1,4 +1,5 @@
 use crate::constants::editor::{MAX_VISIBLE_KEY_COUNT, MIN_VISIBLE_KEY_COUNT};
+use lumino_core::storage::config::EraserBehavior;
 
 impl super::Editor {
     // 键盘设置
@@ -44,5 +45,15 @@ impl super::Editor {
 
     pub fn default_note_length(&self) -> f32 {
         self.state.default_note_length
+    }
+
+    // 橡皮擦设置
+
+    pub fn set_eraser_behavior(&mut self, behavior: EraserBehavior) {
+        self.state.eraser_behavior = behavior;
+    }
+
+    pub fn eraser_behavior(&self) -> EraserBehavior {
+        self.state.eraser_behavior
     }
 }
