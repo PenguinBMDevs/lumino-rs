@@ -1,7 +1,5 @@
-use memmap2::Mmap;
 use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
 use ouroboros::self_referencing;
-use std::fs::File;
 
 /// MIDI 事件类型（轻量级表示）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -160,24 +158,21 @@ impl MidiEvent {
     }
 }
 
-/// MIDI 事件流（使用内存映射，零拷贝）
+/// MIDI 事件流（直接读取到内存，避免内存映射导致 SIGBUS）
 ///
-/// 内存占用：仅操作系统页面缓存，不占用用户空间内存
+/// 内存占用：由于 MIDI 文件通常很小，直接读入内存以避免安全和跨平台文件锁定问题
 ///
 /// # 安全性
 ///
 /// 使用 `ouroboros` 宏安全地处理自引用结构：
-/// - `file_holder` 持有文件句柄，确保文件不会被关闭
-/// - `mmap_holder` 持有内存映射，确保内存区域有效
-/// - `smf` 引用 `mmap_holder` 中的数据，生命周期由 `ouroboros` 自动管理
+/// - `data_holder` 拥有文件数据的 Vec<u8>
+/// - `smf` 引用 `data_holder` 中的数据，生命周期由 `ouroboros` 自动管理
 #[self_referencing]
 pub struct MidiEventStream {
-    /// 文件句柄（保持文件打开）
-    file_holder: File,
-    /// 内存映射（零拷贝访问文件内容）
-    mmap_holder: Mmap,
-    /// MIDI 解析结果（引用 mmap 数据）
-    #[borrows(mmap_holder)]
+    /// 文件内容
+    data_holder: Vec<u8>,
+    /// MIDI 解析结果（引用 data_holder 数据）
+    #[borrows(data_holder)]
     #[covariant]
     smf: Smf<'this>,
     /// 当前音轨索引
@@ -194,26 +189,18 @@ impl MidiEventStream {
     /// # 安全性
     ///
     /// 使用 `ouroboros` 宏安全地处理自引用结构，避免 unsafe transmute。
-    /// 内存映射的生命周期由编译器自动管理，确保引用始终有效。
+    /// 读取文件到内存，避免 mmap 映射被外部修改引发 SIGBUS。
     ///
     /// # 错误
     ///
-    /// - 文件打开失败
-    /// - 内存映射创建失败
+    /// - 文件打开读取失败
     /// - MIDI 解析失败
     pub fn from_path(path: &std::path::Path) -> Result<Self, String> {
-        let file = File::open(path).map_err(|e| format!("打开文件失败: {e}"))?;
-
-        // SAFETY: 内存映射操作本身是安全的，但需要确保：
-        // 1. 文件句柄在 mmap 生命周期内保持有效（由 Self::_file 字段保证）
-        // 2. 文件内容在 mmap 生命周期内不被修改（由操作系统保证）
-        // 3. 内存映射区域用于只读访问（midly::Smf::parse 只读取数据）
-        let mmap = unsafe { Mmap::map(&file).map_err(|e| format!("内存映射失败: {e}"))? };
+        let data = std::fs::read(path).map_err(|e| format!("读取文件失败: {e}"))?;
 
         Self::try_new(
-            file,
-            mmap,
-            |mmap| Smf::parse(&mmap[..]).map_err(|e| format!("解析MIDI失败: {e}")),
+            data,
+            |data| Smf::parse(data).map_err(|e| format!("解析MIDI失败: {e}")),
             0,
             0,
             0,
@@ -419,7 +406,7 @@ impl Iterator for MidiEventStream {
     }
 }
 
-/// 解析全部MIDI事件（使用内存映射，低内存）
+/// 解析全部MIDI事件（读取到内存，低内存占用）
 pub fn parse_all_midi_events(path: &std::path::Path) -> Result<MidiEventStream, String> {
     MidiEventStream::from_path(path)
 }

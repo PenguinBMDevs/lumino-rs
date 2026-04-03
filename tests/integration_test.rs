@@ -2,8 +2,6 @@
 //!
 //! 测试 MIDI/DMS/LMPJ 文件格式转换的准确性和性能
 
-use std::fs::File;
-use std::io::BufReader;
 use std::path::PathBuf;
 
 /// 获取测试文件路径
@@ -75,19 +73,18 @@ fn test_midi_to_dms_similarity() {
             if type_id == DmsNodeType::NOTE_EVENT {
                 *note_count += 1;
             }
-            if type_id == DmsNodeType::SONG_PPQN {
-                if let Some(int_node) = node.as_any().downcast_ref::<lumino_dms::DmsIntegerNode>() {
-                    let val = int_node.integer_data();
-                    *ppqn = val.to_string().parse().ok();
-                }
+            if type_id == DmsNodeType::SONG_PPQN
+                && let Some(int_node) = node.as_any().downcast_ref::<lumino_dms::DmsIntegerNode>()
+            {
+                let val = int_node.integer_data();
+                *ppqn = val.to_string().parse().ok();
             }
-            if type_id == DmsNodeType::SONG_NAME {
-                if let Some(str_node) = node
+            if type_id == DmsNodeType::SONG_NAME
+                && let Some(str_node) = node
                     .as_any()
                     .downcast_ref::<lumino_dms::DmsAnsiStringNode>()
-                {
-                    *song_name = str_node.string_data().ok();
-                }
+            {
+                *song_name = str_node.string_data().ok();
             }
 
             for child in node.children() {
@@ -227,19 +224,18 @@ fn test_dms_metadata_validation() {
             if type_id == DmsNodeType::NOTE_EVENT {
                 *note_count += 1;
             }
-            if type_id == DmsNodeType::SONG_PPQN {
-                if let Some(int_node) = node.as_any().downcast_ref::<lumino_dms::DmsIntegerNode>() {
-                    let val = int_node.integer_data();
-                    *ppqn = val.to_string().parse().ok();
-                }
+            if type_id == DmsNodeType::SONG_PPQN
+                && let Some(int_node) = node.as_any().downcast_ref::<lumino_dms::DmsIntegerNode>()
+            {
+                let val = int_node.integer_data();
+                *ppqn = val.to_string().parse().ok();
             }
-            if type_id == DmsNodeType::SONG_NAME {
-                if let Some(str_node) = node
+            if type_id == DmsNodeType::SONG_NAME
+                && let Some(str_node) = node
                     .as_any()
                     .downcast_ref::<lumino_dms::DmsAnsiStringNode>()
-                {
-                    *song_name = str_node.string_data().ok();
-                }
+            {
+                *song_name = str_node.string_data().ok();
             }
 
             for child in node.children() {

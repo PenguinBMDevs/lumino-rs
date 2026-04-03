@@ -161,16 +161,12 @@ pub fn load_midi_data(
     let disk_cache = DiskTrackCache::new(cache_base_dir, source_path)
         .map_err(|e| format!("创建磁盘缓存失败: {e}"))?;
 
-    // 读取文件到内存 (mmap)
-    let file = File::open(source_path).map_err(|e| format!("打开文件失败: {e}"))?;
-
-    // SAFETY: 内存映射操作本身是安全的
-    let mmap =
-        unsafe { memmap2::Mmap::map(&file).map_err(|e| format!("内存映射失败: {e}"))? };
+    // 读取文件到内存，避免 mmap 产生的 SIGBUS 等异常
+    let file_data = std::fs::read(source_path).map_err(|e| format!("读取文件失败: {e}"))?;
 
     // 使用 midly::parse() 获取懒 TrackIter
     let (header, track_iter) =
-        midly::parse(&mmap[..]).map_err(|e| format!("解析 MIDI 头部失败: {e}"))?;
+        midly::parse(&file_data).map_err(|e| format!("解析 MIDI 头部失败: {e}"))?;
 
     let division = extract_division(&header);
 
@@ -230,9 +226,8 @@ pub fn load_midi_data(
         }
     }
 
-    // 释放 mmap
-    drop(mmap);
-    drop(file);
+    // 释放内存
+    drop(file_data);
 
     // 关闭 channel，等待后台写入完成
     drop(disk_tx);

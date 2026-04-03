@@ -34,6 +34,7 @@ impl std::fmt::Debug for DmsCompositeNode {
 impl DmsCompositeNode {
     /// 创建空复合节点
     #[inline]
+    #[must_use]
     pub fn new(type_id: DmsNodeType, layer: i32) -> Self {
         Self {
             type_id,
@@ -55,6 +56,9 @@ impl DmsCompositeNode {
         Self::from_stream_with_progress(type_id, layer, &mut cursor, length, progress_callback)
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     /// 从数据解析创建
     #[inline]
     pub fn from_data(type_id: DmsNodeType, layer: i32, data: Bytes) -> Result<Self> {
@@ -113,6 +117,7 @@ impl DmsCompositeNode {
 
     /// 计算序列化后总长度
     #[inline]
+    #[must_use]
     pub fn calculate_length(&self) -> usize {
         self.children
             .iter()

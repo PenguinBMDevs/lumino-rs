@@ -1,3 +1,9 @@
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::missing_errors_doc,
+    clippy::unused_self
+)]
+
 // DMS 文件格式解析器 (Domino Music Sequencer)
 
 // 导入依赖

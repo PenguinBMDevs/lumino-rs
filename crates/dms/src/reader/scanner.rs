@@ -21,8 +21,9 @@ pub struct ScanState {
 }
 
 impl ScanState {
+    #[must_use]
     pub fn new(decompressed_length: usize) -> Self {
-        const BUF_SIZE: usize = 4 * 1048576;
+        const BUF_SIZE: usize = 4 * 1_048_576;
         const MAX_NODE_DATA: usize = 65536;
 
         Self {
@@ -36,12 +37,16 @@ impl ScanState {
         }
     }
 
+    #[must_use]
     pub fn is_finished(&self) -> bool {
         self.decompressed_offset >= self.decompressed_length
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn read_more_data<R: Read>(&mut self, decoder: &mut ZlibDecoder<R>) -> Result<()> {
-        const BUF_SIZE: usize = 4 * 1048576;
+        const BUF_SIZE: usize = 4 * 1_048_576;
         const MAX_NODE_DATA: usize = 65536;
 
         if self.valid_len < MAX_NODE_DATA {
@@ -57,13 +62,16 @@ impl ScanState {
                     self.decompressed_offset += n;
                 }
                 Err(e) => {
-                    return Err(DmsError::Corrupted(format!("解压失败: {}", e)));
+                    return Err(DmsError::Corrupted(format!("解压失败: {e}")));
                 }
             }
         }
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     pub fn parse_nodes(&mut self, result: &mut DmsScanResult) -> Result<()> {
         let mut parse_offset: usize = 0;
 
@@ -166,7 +174,7 @@ impl ScanState {
         }
         self.valid_len = remaining;
 
-        for (_, end_offset) in self.parent_stack.iter_mut() {
+        for (_, end_offset) in &mut self.parent_stack {
             *end_offset -= parse_offset;
         }
 
@@ -174,7 +182,7 @@ impl ScanState {
     }
 
     pub fn update_progress<F: Fn(f64)>(&mut self, progress_callback: &F) {
-        let progress = self.decompressed_offset as f64 / self.decompressed_length as f64;
+        let progress = (self.decompressed_offset as f64) / (self.decompressed_length as f64);
         if progress - self.last_progress_report >= 0.1
             || self.decompressed_offset >= self.decompressed_length
         {
@@ -184,6 +192,9 @@ impl ScanState {
     }
 }
 
+/// # Errors
+///
+/// Returns an error if the operation fails.
 /// 流式扫描 DMS 文件（边解压边提取元数据，不保留完整解压数据）
 pub fn scan_dms_streaming<R: Read>(stream: &mut R) -> Result<DmsScanResult> {
     scan_dms_streaming_with_progress(stream, |_| {})

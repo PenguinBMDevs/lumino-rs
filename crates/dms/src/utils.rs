@@ -1,6 +1,7 @@
 //! 编码解码工具函数
 
 /// GB18030 解码
+#[must_use]
 pub fn decode_gb18030(data: &[u8]) -> Option<String> {
     if data.is_empty() {
         return None;
@@ -15,6 +16,7 @@ pub fn decode_gb18030(data: &[u8]) -> Option<String> {
 }
 
 /// 小端 u32 解码
+#[must_use]
 pub fn decode_u32_le(data: &[u8]) -> Option<u32> {
     if data.len() < 4 {
         return None;
@@ -23,6 +25,7 @@ pub fn decode_u32_le(data: &[u8]) -> Option<u32> {
 }
 
 /// 小端 u64 解码
+#[must_use]
 pub fn decode_u64_le(data: &[u8]) -> Option<u64> {
     if data.len() < 8 {
         return None;

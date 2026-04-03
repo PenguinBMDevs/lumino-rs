@@ -14,7 +14,8 @@ pub struct NoteInstance {
 
 impl NoteInstance {
     /// 创建新的音符实例
-    pub fn new(x: f32, y: f32, width: f32, height: f32, color: [f32; 4]) -> Self {
+    #[must_use]
+    pub const fn new(x: f32, y: f32, width: f32, height: f32, color: [f32; 4]) -> Self {
         Self {
             position: [x, y],
             size: [width, height],
@@ -32,7 +33,8 @@ pub struct ViewportUniform {
 }
 
 impl ViewportUniform {
-    pub fn new(width: f32, height: f32) -> Self {
+    #[must_use]
+    pub const fn new(width: f32, height: f32) -> Self {
         Self {
             size: [width, height],
             _padding: [0.0, 0.0],

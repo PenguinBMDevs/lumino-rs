@@ -52,7 +52,7 @@ impl Api for System {
             .enumerate()
             .map(|(k, v)| InputInfo {
                 id: k as u32,
-                name: input.port_name(v).unwrap_or("<unknown>".into()),
+                name: input.port_name(v).unwrap_or_else(|_| "<unknown>".into()),
             })
             .collect())
     }
@@ -65,7 +65,7 @@ impl Api for System {
             .enumerate()
             .map(|(k, v)| OutputInfo {
                 id: k as u32,
-                name: output.port_name(v).unwrap_or("<unknown>".into()),
+                name: output.port_name(v).unwrap_or_else(|_| "<unknown>".into()),
             })
             .collect())
     }

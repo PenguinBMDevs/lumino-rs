@@ -25,31 +25,12 @@ type WsStreamRead = futures::stream::SplitStream<WsStream>;
 pub mod event;
 pub mod handlers;
 pub mod message;
+pub mod state;
 
 pub use event::{CollaborationEvent, EventCallback};
 pub use handlers::handle_server_message;
 pub use message::{ClientMessage, ServerMessage};
-
-/// 客户端状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClientState {
-    Disconnected,
-    Connecting,
-    Connected,
-    Authenticating,
-    Authenticated,
-    InRoom,
-    Error,
-}
-
-/// 协作会话信息
-#[derive(Debug, Clone, Default)]
-pub struct CollaborationSession {
-    pub current_user_id: Option<UserId>,
-    pub invite_code: Option<InviteCode>,
-    pub current_room: Option<RoomInfo>,
-    pub remote_users: std::collections::HashMap<UserId, RemoteUser>,
-}
+pub use state::{ClientState, CollaborationSession};
 
 /// 协作客户端
 pub struct CollaborationClient {

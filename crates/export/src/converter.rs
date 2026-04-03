@@ -66,17 +66,17 @@ pub fn export_dms_from_midi_sync(source_path: &Path) -> Result<Vec<u8>, String> 
 }
 
 fn build_midi_export_from_dms(root: &lumino_dms::DmsCompositeNode) -> crate::midi::MidiExportData {
-    use crate::midi::{MidiExportOptions, MidiTrackData};
+    use crate::midi::MidiExportOptions;
     use lumino_dms::DmsNodeType;
 
     let mut ppqn = 1920u16;
     let mut tracks = Vec::new();
 
     for root_child in root.children.iter() {
-        if root_child.type_id() == DmsNodeType::SONG_PPQN {
-            if let Some(value) = read_u64(root_child.as_ref()) {
-                ppqn = value.clamp(1, u16::MAX as u64) as u16;
-            }
+        if root_child.type_id() == DmsNodeType::SONG_PPQN
+            && let Some(value) = read_u64(root_child.as_ref())
+        {
+            ppqn = value.clamp(1, u16::MAX as u64) as u16;
         }
 
         if root_child.type_id() != DmsNodeType::TRACK {
@@ -118,7 +118,10 @@ fn read_string(node: &dyn lumino_dms::DmsNode) -> Option<String> {
 }
 
 /// 按类型查找子节点
-fn child_by_type(node: &dyn lumino_dms::DmsNode, ty: lumino_dms::DmsNodeType) -> Option<&dyn lumino_dms::DmsNode> {
+fn child_by_type(
+    node: &dyn lumino_dms::DmsNode,
+    ty: lumino_dms::DmsNodeType,
+) -> Option<&dyn lumino_dms::DmsNode> {
     node.children()
         .iter()
         .find(|child| child.type_id() == ty)
@@ -166,7 +169,7 @@ fn read_child_f64_clamped(
 
 /// 从 DMS 节点解析单个音轨数据
 fn parse_track_from_dms(track_node: &dyn lumino_dms::DmsNode) -> crate::midi::MidiTrackData {
-    use crate::midi::{MidiControlChangeEvent, MidiNoteEvent, MidiTempoEvent, MidiTrackData, bpm_to_tempo};
+    use crate::midi::MidiTrackData;
     use lumino_dms::DmsNodeType;
 
     let mut channel = 0u8;
@@ -222,34 +225,12 @@ fn parse_note_event(
 ) -> Option<crate::midi::MidiNoteEvent> {
     use lumino_dms::DmsNodeType;
 
-    let tick = read_child_u32_clamped(
-        event_node,
-        DmsNodeType::ABS_TICK_POS,
-        0,
-        0,
-        u32::MAX as u64,
-    );
-    let key = read_child_u32_clamped(
-        event_node,
-        DmsNodeType::NOTE_KEY_NUMBER,
-        60,
-        0,
-        127,
-    ) as u8;
-    let velocity = read_child_u32_clamped(
-        event_node,
-        DmsNodeType::NOTE_VELOCITY,
-        100,
-        0,
-        127,
-    ) as u8;
-    let duration = read_child_u32_clamped(
-        event_node,
-        DmsNodeType::NOTE_GATE,
-        1,
-        1,
-        u32::MAX as u64,
-    );
+    let tick = read_child_u32_clamped(event_node, DmsNodeType::ABS_TICK_POS, 0, 0, u32::MAX as u64);
+    let key = read_child_u32_clamped(event_node, DmsNodeType::NOTE_KEY_NUMBER, 60, 0, 127) as u8;
+    let velocity =
+        read_child_u32_clamped(event_node, DmsNodeType::NOTE_VELOCITY, 100, 0, 127) as u8;
+    let duration =
+        read_child_u32_clamped(event_node, DmsNodeType::NOTE_GATE, 1, 1, u32::MAX as u64);
 
     Some(crate::midi::MidiNoteEvent {
         tick,
@@ -261,26 +242,12 @@ fn parse_note_event(
 }
 
 /// 解析速度事件
-fn parse_tempo_event(
-    event_node: &dyn lumino_dms::DmsNode,
-) -> Option<crate::midi::MidiTempoEvent> {
+fn parse_tempo_event(event_node: &dyn lumino_dms::DmsNode) -> Option<crate::midi::MidiTempoEvent> {
     use crate::midi::{MidiTempoEvent, bpm_to_tempo};
     use lumino_dms::DmsNodeType;
 
-    let tick = read_child_u32_clamped(
-        event_node,
-        DmsNodeType::ABS_TICK_POS,
-        0,
-        0,
-        u32::MAX as u64,
-    );
-    let bpm = read_child_f64_clamped(
-        event_node,
-        DmsNodeType::TEMPO_VALUE,
-        120.0,
-        1.0,
-        None,
-    );
+    let tick = read_child_u32_clamped(event_node, DmsNodeType::ABS_TICK_POS, 0, 0, u32::MAX as u64);
+    let bpm = read_child_f64_clamped(event_node, DmsNodeType::TEMPO_VALUE, 120.0, 1.0, None);
 
     Some(MidiTempoEvent {
         tick,
@@ -296,20 +263,8 @@ fn parse_control_event(
     use crate::midi::MidiControlChangeEvent;
     use lumino_dms::DmsNodeType;
 
-    let tick = read_child_u32_clamped(
-        event_node,
-        DmsNodeType::ABS_TICK_POS,
-        0,
-        0,
-        u32::MAX as u64,
-    );
-    let controller = read_child_u32_clamped(
-        event_node,
-        DmsNodeType::CONTROL_TYPE,
-        0,
-        0,
-        127,
-    ) as u8;
+    let tick = read_child_u32_clamped(event_node, DmsNodeType::ABS_TICK_POS, 0, 0, u32::MAX as u64);
+    let controller = read_child_u32_clamped(event_node, DmsNodeType::CONTROL_TYPE, 0, 0, 127) as u8;
     let value = read_child_f64_clamped(
         event_node,
         DmsNodeType::CONTROL_VALUE,

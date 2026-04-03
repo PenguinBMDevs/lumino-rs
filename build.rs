@@ -5,6 +5,6 @@ fn main() {
         .ok()
         .and_then(|r| String::from_utf8(r.stdout).ok())
         .map(|s| s.trim().to_string())
-        .unwrap_or("unknown".into());
+        .unwrap_or_else(|| "unknown".into());
     println!("cargo:rustc-env=GIT_HASH={}", git_hash);
 }

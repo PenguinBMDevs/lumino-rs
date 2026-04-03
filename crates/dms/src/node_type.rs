@@ -126,7 +126,7 @@ impl DmsNodeType {
     pub const PROGRAM_CHANGE_EVENT: Self = Self(2002 | (Self::TRACK.0 << 16));
     /// 控制事件
     pub const CONTROL_EVENT: Self = Self(2003 | (Self::TRACK.0 << 16));
-    /// 自定义 SysEx 事件
+    /// 自定义 `SysEx` 事件
     pub const CUSTOM_SYSEX_EVENT: Self = Self(2004 | (Self::TRACK.0 << 16));
     /// 注释事件
     pub const COMMENT_EVENT: Self = Self(2005 | (Self::TRACK.0 << 16));
@@ -203,9 +203,10 @@ impl DmsNodeType {
     pub const PROGRAM_CHANGE_PROGRAM: Self = Self(2001 | (Self::PROGRAM_CHANGE_EVENT.0 << 16));
 
     /// 从原始类型 ID 和父节点构建完整类型
+    #[must_use]
     pub fn from_parts(type_id: u16, _layer: i32, parent: Option<&DmsNodeType>) -> Self {
         if let Some(parent) = parent {
-            let result = type_id as u64 | (parent.0 << 16);
+            let result = u64::from(type_id) | (parent.0 << 16);
             let parent_high = (result & 0x0000_0000_FFFF_0000) >> 16;
             let parent_low = result & 0xFFFF_FFFF_0000_FFFF;
             if parent_high >= 2000 && parent_low == Self::ABS_TICK_POS.0 & 0xFFFF_FFFF_0000_FFFF {
@@ -213,12 +214,13 @@ impl DmsNodeType {
             }
             Self(result)
         } else {
-            Self(type_id as u64)
+            Self(u64::from(type_id))
         }
     }
 
     /// 是否为复合节点
-    pub fn is_composite(&self) -> bool {
+    #[must_use]
+    pub const fn is_composite(&self) -> bool {
         let base = self.base_type();
         matches!(
             *self,
@@ -261,11 +263,12 @@ impl DmsNodeType {
                 | Self::MARKER_EVENT
                 | Self::SCALE_EVENT
                 | Self::CHORD_EVENT
-        ) || (self.0 >> 16 == Self::TRACK.0 && (2001..=2019).contains(&base))
+        ) || (self.0 >> 16 == Self::TRACK.0 && base >= 2001 && base <= 2019)
     }
 
     /// 是否为字符串节点
-    pub fn is_string(&self) -> bool {
+    #[must_use]
+    pub const fn is_string(&self) -> bool {
         matches!(
             *self,
             Self::SONG_NAME
@@ -284,7 +287,8 @@ impl DmsNodeType {
     }
 
     /// 是否为整数节点
-    pub fn is_integer(&self) -> bool {
+    #[must_use]
+    pub const fn is_integer(&self) -> bool {
         matches!(
             *self,
             Self::SONG_PPQN
@@ -317,7 +321,8 @@ impl DmsNodeType {
     }
 
     /// 是否为浮点节点
-    pub fn is_float(&self) -> bool {
+    #[must_use]
+    pub const fn is_float(&self) -> bool {
         matches!(
             *self,
             Self::CONTROL_GATE | Self::CONTROL_VALUE | Self::TEMPO_VALUE
@@ -325,19 +330,21 @@ impl DmsNodeType {
     }
 
     /// 获取基础类型 ID（低 16 位）
-    pub fn base_type(&self) -> u16 {
+    #[must_use]
+    pub const fn base_type(&self) -> u16 {
         (self.0 & 0xFFFF) as u16
     }
 
     /// 获取完整类型 ID
-    pub fn as_u64(&self) -> u64 {
+    #[must_use]
+    pub const fn as_u64(&self) -> u64 {
         self.0
     }
 }
 
 impl From<u16> for DmsNodeType {
     fn from(value: u16) -> Self {
-        Self(value as u64)
+        Self(u64::from(value))
     }
 }
 

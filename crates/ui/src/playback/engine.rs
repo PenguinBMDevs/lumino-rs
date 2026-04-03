@@ -45,8 +45,7 @@ impl Eq for ScheduledEvent {}
 
 impl PartialOrd for ScheduledEvent {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        // 反向排序，让小的tick先出队（BinaryHeap 是最大堆）
-        Some(other.tick.total_cmp(&self.tick))
+        Some(self.cmp(other))
     }
 }
 

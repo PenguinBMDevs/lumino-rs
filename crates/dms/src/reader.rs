@@ -1,8 +1,8 @@
 //! DMS 文件读取器
 //!
 //! 该模块已拆分为以下子模块：
-//! - `types`: 类型定义（DmsScanResult, DmsParseContext, DmsLightweightData 等）
-//! - `scanner`: 流式扫描器（ScanState, scan_dms_streaming 等）
+//! - `types`: 类型定义（DmsScanResult, `DmsParseContext`, `DmsLightweightData` 等）
+//! - `scanner`: 流式扫描器（ScanState, `scan_dms_streaming` 等）
 
 use bytes::Bytes;
 use flate2::read::ZlibDecoder;
@@ -26,10 +26,14 @@ pub struct DmsReader;
 
 impl DmsReader {
     /// 创建读取器
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     /// 从流中读取并解压 DMS 数据
     pub fn read_data<R: Read>(&self, stream: &mut R) -> Result<Bytes> {
         use crate::reader::types::read_file_header;
@@ -71,6 +75,9 @@ impl DmsReader {
         )
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     /// 解析 DMS 数据为节点树
     #[inline]
     pub fn parse_data(&self, data: Bytes) -> Result<DmsCompositeNode> {
@@ -186,6 +193,9 @@ impl DmsReader {
         Ok(u16::from_le_bytes(buffer))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     /// 从流中读取数据长度
     pub fn read_data_length<R: Read>(stream: &mut R) -> Result<usize> {
         let mut buffer = [0u8; DATALENGTH_SIZE];
@@ -204,6 +214,9 @@ impl DmsReader {
         self.parse_data_with_progress(data, progress_callback)
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     /// 从字节数组读取 DMS 文件
     #[inline]
     pub fn read_from_bytes(&self, bytes: &[u8]) -> Result<DmsCompositeNode> {
@@ -226,6 +239,9 @@ pub fn read_dms_file_with_progress(
     reader.read_from_bytes_with_progress(bytes, progress_callback)
 }
 
+/// # Errors
+///
+/// Returns an error if the operation fails.
 /// 读取 DMS 文件
 #[inline]
 pub fn read_dms_file(bytes: &[u8]) -> Result<DmsCompositeNode> {
@@ -241,15 +257,21 @@ pub fn parse_dms_data_with_progress(
     reader.parse_data_with_progress(data, progress_callback)
 }
 
+/// # Errors
+///
+/// Returns an error if the operation fails.
 /// 解析已解压的 DMS 数据
 #[inline]
 pub fn parse_dms_data(data: Bytes) -> Result<DmsCompositeNode> {
     parse_dms_data_with_progress(data, None)
 }
 
-/// parse_dms_data 的别名
+/// `parse_dms_data` 的别名
 pub use parse_dms_data as read_dms_data;
 
+/// # Errors
+///
+/// Returns an error if the operation fails.
 /// 轻量级读取 DMS 文件（只解压，不解析节点树）
 pub fn read_dms_lightweight(bytes: &[u8]) -> Result<DmsLightweightData> {
     let reader = DmsReader::new();

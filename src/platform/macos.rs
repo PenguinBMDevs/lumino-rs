@@ -14,7 +14,7 @@ struct AppMenu {
     map: HashMap<MenuId, Event>,
 }
 
-fn app_menu() -> Submenu {
+fn app_menu() -> muda::Result<Submenu> {
     Submenu::with_items(
         "App",
         true,
@@ -30,14 +30,13 @@ fn app_menu() -> Submenu {
             &PMI::quit(None),
         ],
     )
-    .expect("Build App menu")
 }
 
-fn file_menu() -> Submenu {
-    Submenu::with_items("File", true, &[&PMI::close_window(None)]).expect("Build File menu")
+fn file_menu() -> muda::Result<Submenu> {
+    Submenu::with_items("File", true, &[&PMI::close_window(None)])
 }
 
-fn edit_menu() -> Submenu {
+fn edit_menu() -> muda::Result<Submenu> {
     Submenu::with_items(
         "Edit",
         true,
@@ -51,45 +50,41 @@ fn edit_menu() -> Submenu {
             &PMI::select_all(None),
         ],
     )
-    .expect("Build Edit menu")
 }
 
-fn view_menu() -> Submenu {
-    Submenu::with_items("View", true, &[]).expect("Build View menu")
+fn view_menu() -> muda::Result<Submenu> {
+    Submenu::with_items("View", true, &[])
 }
 
-fn help_menu() -> Submenu {
-    Submenu::with_items("Help", true, &[]).expect("Build Help menu")
+fn help_menu() -> muda::Result<Submenu> {
+    Submenu::with_items("Help", true, &[])
 }
 
-fn menus() -> [Submenu; 5] {
-    [
-        app_menu(),
-        file_menu(),
-        edit_menu(),
-        view_menu(),
-        help_menu(),
-    ]
+fn menus() -> muda::Result<[Submenu; 5]> {
+    Ok([
+        app_menu()?,
+        file_menu()?,
+        edit_menu()?,
+        view_menu()?,
+        help_menu()?,
+    ])
 }
 
-pub fn init() {
-    MENU.with(init_inner);
+pub fn init() -> muda::Result<()> {
+    MENU.with(init_inner)
 }
 
-fn init_inner(cell: &OnceLock<AppMenu>) {
+fn init_inner(cell: &OnceLock<AppMenu>) -> muda::Result<()> {
     if cell.get().is_some() {
-        return;
+        return Ok(());
     }
 
-    let menu = Menu::with_items(
-        &menus()
-            .iter()
-            .map(|r| r as &dyn IsMenuItem)
-            .collect::<Vec<_>>(),
-    )
-    .expect("Build menu");
+    let menu_items = menus()?;
+    let items_refs: Vec<&dyn IsMenuItem> =
+        menu_items.iter().map(|r| r as &dyn IsMenuItem).collect();
+    let menu = Menu::with_items(&items_refs)?;
 
-    menu.init_for_nsapp();
+    let _ = menu.init_for_nsapp();
 
     let app_menu = AppMenu {
         menu,
@@ -100,8 +95,13 @@ fn init_inner(cell: &OnceLock<AppMenu>) {
 
     MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
         MENU.with(|shell| {
-            let id = event.id();
-            let menu = shell.get().expect("Get menu");
+            if let Some(_menu) = shell.get() {
+                let _id = event.id();
+            } else {
+                eprintln!("Warning: MenuEvent handler called but MENU is not initialized.");
+            }
         });
     }));
+
+    Ok(())
 }

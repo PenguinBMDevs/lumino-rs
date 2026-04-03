@@ -54,12 +54,12 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
     let (mut client_a, mut rx_a) = setup_client("TestA").await;
     let (mut client_b, mut rx_b) = setup_client("TestB").await;
 
-    let (a_id, a_invite) = wait_for_auth(&mut rx_a).await;
+    let (_a_id, _a_invite) = wait_for_auth(&mut rx_a).await;
     let (_b_id, _b_invite) = wait_for_auth(&mut rx_b).await;
 
     println!("A creating room...");
     // A create room
-    client_a.create_room("TestRoom".to_string()).unwrap();
+    client_a.create_room("TestRoom".to_string()).await.unwrap();
 
     // Wait for A to create room
     let mut room_created = false;
@@ -79,7 +79,7 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
     assert!(room_created, "Room should be created in A");
 
     // B join room
-    client_b.join_room(room_invite_code).unwrap();
+    client_b.join_room(room_invite_code).await.unwrap();
 
     // Wait for B to join room
     let mut joined = false;
@@ -119,7 +119,7 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
             key_offset: None,
             timestamp: i as u64,
         };
-        client_a.send_note_batch(op).unwrap();
+        client_a.send_note_batch(op).await.unwrap();
         sleep(delay).await;
     }
 
@@ -129,10 +129,10 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
     let start = std::time::Instant::now();
 
     while b_received < total_notes && start.elapsed() < timeout {
-        if let Ok(event) = tokio::time::timeout(Duration::from_millis(100), rx_b.recv()).await {
-            if let Some(CollaborationEvent::NoteBatch { .. }) = event {
-                b_received += 1;
-            }
+        if let Ok(event) = tokio::time::timeout(Duration::from_millis(100), rx_b.recv()).await
+            && let Some(CollaborationEvent::NoteBatch { .. }) = event
+        {
+            b_received += 1;
         }
     }
 

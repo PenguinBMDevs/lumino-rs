@@ -102,6 +102,9 @@ impl DmsLightweightData {
         result
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     /// 解析完整 DMS 节点树
     pub fn parse_full(&self) -> Result<DmsCompositeNode, String> {
         // TODO: Implement full parsing using lumino_dms
@@ -115,6 +118,9 @@ pub struct FileHeader {
     pub decompressed_length: usize,
 }
 
+/// # Errors
+///
+/// Returns an error if the operation fails.
 /// 读取文件头
 pub fn read_file_header<R: std::io::Read>(stream: &mut R) -> crate::error::Result<FileHeader> {
     let mut header = [0u8; MAGIC_LENGTH + 4];

@@ -146,7 +146,7 @@ async fn test_collaboration_full() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .ok_or("用户01认证超时")?;
     let invite_code = create_result.room.invite_code.clone();
-    let room_id = create_result.room.id.clone();
+    let _room_id = create_result.room.id.clone();
 
     println!("  ✓ 用户01认证成功，ID: {}", user01_id);
     println!();
@@ -285,12 +285,12 @@ async fn test_collaboration_full() -> Result<(), Box<dyn std::error::Error>> {
     let received_note = collector02
         .contains_event(
             |e| {
-                if let CollaborationEvent::NoteBatch { user_id, operation } = e {
-                    if user_id == &user01_id && operation.action == NoteAction::Add {
-                        if let Some(n) = operation.notes.first() {
-                            return n.tick == note.tick && n.key == note.key;
-                        }
-                    }
+                if let CollaborationEvent::NoteBatch { user_id, operation } = e
+                    && user_id == &user01_id
+                    && operation.action == NoteAction::Add
+                    && let Some(n) = operation.notes.first()
+                {
+                    return n.tick == note.tick && n.key == note.key;
                 }
                 false
             },

@@ -23,6 +23,9 @@ impl DmsAnsiStringNode {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     /// 获取解码后的字符串
     pub fn string_data(&self) -> Result<String> {
         let (decoded, _, had_errors) = GB18030.decode(&self.base.raw_data);
@@ -222,6 +225,9 @@ pub struct DmsFloatNode {
 }
 
 impl DmsFloatNode {
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     /// 创建浮点数节点（自动检测精度）
     pub fn new(type_id: DmsNodeType, layer: i32, data: Bytes) -> Result<Self> {
         let mut node = Self {
@@ -268,7 +274,7 @@ impl DmsFloatNode {
         } else {
             data.get(HEADER_SIZE..HEADER_SIZE + 4)
                 .and_then(|b| b.try_into().ok())
-                .map_or(0.0, |b| f32::from_le_bytes(b) as f64)
+                .map_or(0.0, |b| f64::from(f32::from_le_bytes(b)))
         }
     }
 

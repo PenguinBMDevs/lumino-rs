@@ -2,6 +2,7 @@ mod async_helper;
 mod dialog_manager;
 mod file_handler;
 mod inner;
+mod lifecycle;
 mod menu;
 mod midi_handler;
 mod midi_manager;

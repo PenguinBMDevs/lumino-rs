@@ -339,12 +339,12 @@ async fn test_mouse_cursor_sync_internal() -> Result<(), Box<dyn std::error::Err
     let received_note_b = collector_b
         .contains_event(
             |e| {
-                if let CollaborationEvent::NoteBatch { user_id, operation } = e {
-                    if user_id == &user_a_id && operation.action == NoteAction::Add {
-                        if let Some(n) = operation.notes.first() {
-                            return n.tick == note_a.tick && n.key == note_a.key;
-                        }
-                    }
+                if let CollaborationEvent::NoteBatch { user_id, operation } = e
+                    && user_id == &user_a_id
+                    && operation.action == NoteAction::Add
+                    && let Some(n) = operation.notes.first()
+                {
+                    return n.tick == note_a.tick && n.key == note_a.key;
                 }
                 false
             },
@@ -433,12 +433,12 @@ async fn test_mouse_cursor_sync_internal() -> Result<(), Box<dyn std::error::Err
     let received_note_a = collector_a
         .contains_event(
             |e| {
-                if let CollaborationEvent::NoteBatch { user_id, operation } = e {
-                    if user_id == &user_b_id && operation.action == NoteAction::Add {
-                        if let Some(n) = operation.notes.first() {
-                            return n.tick == note_b.tick && n.key == note_b.key;
-                        }
-                    }
+                if let CollaborationEvent::NoteBatch { user_id, operation } = e
+                    && user_id == &user_b_id
+                    && operation.action == NoteAction::Add
+                    && let Some(n) = operation.notes.first()
+                {
+                    return n.tick == note_b.tick && n.key == note_b.key;
                 }
                 false
             },
@@ -607,10 +607,11 @@ async fn test_note_batch_sync_internal() -> Result<(), Box<dyn std::error::Error
     let received_batch = collector_b
         .contains_event(
             |e| {
-                if let CollaborationEvent::NoteBatch { user_id, operation } = e {
-                    if user_id == &user_a_id && operation.action == NoteAction::Add {
-                        return operation.notes.len() == 3;
-                    }
+                if let CollaborationEvent::NoteBatch { user_id, operation } = e
+                    && user_id == &user_a_id
+                    && operation.action == NoteAction::Add
+                {
+                    return operation.notes.len() == 3;
                 }
                 false
             },
@@ -730,7 +731,7 @@ async fn test_mouse_movement_sync_internal() -> Result<(), Box<dyn std::error::E
     println!("步骤3: 测试鼠标指针连续移动同步");
     println!("----------------------------------------");
 
-    let positions = vec![
+    let positions = [
         MousePosition {
             x: 100.0,
             y: 100.0,
