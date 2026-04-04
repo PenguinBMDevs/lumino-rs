@@ -11,9 +11,9 @@ libloading = "0.9.0"
 midir = "0.10.3"
 thiserror = { workspace = true }
 tracing = { workspace = true }
-xsynth-core = { git = "https://github.com/buickmeow/xsynth", rev = "402c72e33e36a356e1bc4044ccafffad380bfecf" }
-xsynth-realtime = { git = "https://github.com/buickmeow/xsynth", rev = "402c72e33e36a356e1bc4044ccafffad380bfecf" }
-xsynth-soundfonts = { git = "https://github.com/buickmeow/xsynth", rev = "402c72e33e36a356e1bc4044ccafffad380bfecf" }
+xsynth-core = { git = "https://github.com/buickmeow/xsynth", rev = "49e252331fdab0504a23148ad0cad748321bece7" }
+xsynth-realtime = { git = "https://github.com/buickmeow/xsynth", rev = "49e252331fdab0504a23148ad0cad748321bece7" }
+xsynth-soundfonts = { git = "https://github.com/buickmeow/xsynth", rev = "49e252331fdab0504a23148ad0cad748321bece7" }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = ["Win32_Media_Audio"] }

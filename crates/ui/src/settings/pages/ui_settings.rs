@@ -29,10 +29,6 @@ pub fn view<'a>(
     // 字体选项 - 从系统扫描的字体列表构建
     let font_options: Vec<String> = system_fonts.iter().map(|f| f.name.clone()).collect();
 
-    // 检查字体是否已自定义
-    let font_customized =
-        !settings.program_font_name.is_empty() || !settings.program_font_path.is_empty();
-
     // 字体选择下拉菜单
     let font_dropdown = pick_list(
         font_options,
@@ -80,32 +76,6 @@ pub fn view<'a>(
             .style(create_placeholder_text_style()),
     ];
 
-    // 字体重启提示（当字体已自定义时显示）
-    let font_restart_warning: Element<'a> = if font_customized {
-        column![
-            iced_widget::space().height(SPACING_CONTENT),
-            // 警告提示
-            row![
-                text("⚠️")
-                    .size(TEXT_SIZE_CONTENT)
-                    .style(|theme: &Theme| text::Style {
-                        color: Some(theme.extended_palette().primary.strong.color),
-                    }),
-                iced_widget::space().width(SPACING_ICON_LABEL),
-                text("字体设置将在重启应用后生效")
-                    .size(TEXT_SIZE_CONTENT)
-                    .style(|theme: &Theme| text::Style {
-                        color: Some(theme.extended_palette().primary.strong.color),
-                    }),
-            ]
-            .spacing(SPACING_ICON_LABEL)
-            .align_y(Alignment::Center),
-        ]
-        .into()
-    } else {
-        iced_widget::space().height(0).width(0).into()
-    };
-
     column![
         text("界面")
             .size(TEXT_SIZE_TITLE)
@@ -127,7 +97,6 @@ pub fn view<'a>(
         iced_widget::space().height(SPACING_CONTENT),
         // 字体设置
         font_section,
-        font_restart_warning,
         // 使用经典系统标题栏选项
         row![native_titlebar_checkbox,]
             .spacing(SPACING_ICON_LABEL)
