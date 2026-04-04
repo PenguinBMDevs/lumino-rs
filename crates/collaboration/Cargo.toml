@@ -14,7 +14,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 # WebSocket客户端
-tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 futures = "0.3"
 url = "2.5"
 
@@ -22,7 +22,7 @@ url = "2.5"
 tokio-util = "0.7"
 
 # HTTP 客户端
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

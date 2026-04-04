@@ -1,0 +1,169 @@
+name: Multi-Platform Rust Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_mode:
+        description: 'Build mode (release or debug)'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - debug
+      version:
+        description: 'Version (e.g., 0.1.0)'
+        required: true
+        type: string
+        default: '0.1.0'
+      preview_number:
+        description: 'Preview number (e.g., 1 for preview1)'
+        required: true
+        type: number
+        default: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    name: Build Linux ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            arch: x86_64
+            extension: ""
+          - target: aarch64-unknown-linux-musl
+            arch: aarch64
+            extension: ""
+          - target: armv7-unknown-linux-musleabihf
+            arch: armv7
+            extension: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+      - name: Install musl tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+      - name: Build
+        run: |
+          if [ "${{ github.event.inputs.release_mode }}" = "release" ]; then
+            cargo build --target ${{ matrix.target }} --release
+          else
+            cargo build --target ${{ matrix.target }}
+          fi
+      - name: Generate filename
+        id: filename
+        run: |
+          FILENAME="Lumino-v${{ github.event.inputs.version }}-preview${{ github.event.inputs.preview_number }}-Linux-${{ matrix.arch }}${{ matrix.extension }}"
+          echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
+      - name: Rename binary
+        run: |
+          BUILD_TYPE="${{ github.event.inputs.release_mode == 'release' && 'release' || 'debug' }}"
+          mv "target/${{ matrix.target }}/${BUILD_TYPE}/lumino-rs${{ matrix.extension }}" "${{ steps.filename.outputs.filename }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.filename.outputs.filename }}
+          path: ${{ steps.filename.outputs.filename }}
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-gnu
+            arch: x86_64
+            extension: .exe
+          - target: i686-pc-windows-gnu
+            arch: x86
+            extension: .exe
+          - target: aarch64-pc-windows-msvc
+            arch: arm64
+            extension: .exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+      - name: Install MinGW (GNU targets)
+        if: contains(matrix.target, '-gnu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64
+      - name: Build
+        run: |
+          if [ "${{ github.event.inputs.release_mode }}" = "release" ]; then
+            cargo build --target ${{ matrix.target }} --release
+          else
+            cargo build --target ${{ matrix.target }}
+          fi
+      - name: Generate filename
+        id: filename
+        run: |
+          FILENAME="Lumino-v${{ github.event.inputs.version }}-preview${{ github.event.inputs.preview_number }}-Windows-${{ matrix.arch }}${{ matrix.extension }}"
+          echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
+      - name: Rename binary
+        run: |
+          BUILD_TYPE="${{ github.event.inputs.release_mode == 'release' && 'release' || 'debug' }}"
+          mv "target/${{ matrix.target }}/${BUILD_TYPE}/lumino-rs${{ matrix.extension }}" "${{ steps.filename.outputs.filename }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.filename.outputs.filename }}
+          path: ${{ steps.filename.outputs.filename }}
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS ${{ matrix.arch }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            arch: x86_64
+            extension: ""
+          - target: aarch64-apple-darwin
+            arch: arm64
+            extension: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+      - name: Build
+        run: |
+          if [ "${{ github.event.inputs.release_mode }}" = "release" ]; then
+            cargo build --target ${{ matrix.target }} --release
+          else
+            cargo build --target ${{ matrix.target }}
+          fi
+      - name: Generate filename
+        id: filename
+        run: |
+          FILENAME="Lumino-v${{ github.event.inputs.version }}-preview${{ github.event.inputs.preview_number }}-macOS-${{ matrix.arch }}${{ matrix.extension }}"
+          echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
+      - name: Rename binary
+        run: |
+          BUILD_TYPE="${{ github.event.inputs.release_mode == 'release' && 'release' || 'debug' }}"
+          mv "target/${{ matrix.target }}/${BUILD_TYPE}/lumino-rs${{ matrix.extension }}" "${{ steps.filename.outputs.filename }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.filename.outputs.filename }}
+          path: ${{ steps.filename.outputs.filename }}
+          if-no-files-found: error
