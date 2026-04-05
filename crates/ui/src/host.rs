@@ -10,7 +10,7 @@
 use std::{sync::Arc, time::Instant};
 
 use iced_wgpu::{Engine, Renderer, graphics::Viewport};
-use lumino_gfx::NoteRenderer;
+use lumino_gfx::{GridLineInstance, GridRenderer, NoteInstance, NoteRenderer};
 
 use iced_winit::runtime::user_interface::Cache;
 use iced_winit::{Clipboard, winit};
@@ -26,6 +26,49 @@ mod render;
 pub mod types;
 
 pub use types::{DialogResult, NoteData, TrackNotes};
+
+/// 渲染缓存 - 避免每帧重复上传相同数据
+pub struct RenderCache {
+    /// 缓存的网格线实例
+    pub grid_instances: Vec<GridLineInstance>,
+    /// 缓存的音符实例
+    pub note_instances: Vec<NoteInstance>,
+    /// 网格线视口哈希（用于检测变化）
+    pub grid_viewport_hash: u64,
+    /// 音符视口哈希（用于检测变化）
+    pub note_viewport_hash: u64,
+}
+
+impl RenderCache {
+    pub fn new() -> Self {
+        Self {
+            grid_instances: Vec::new(),
+            note_instances: Vec::new(),
+            grid_viewport_hash: 0,
+            note_viewport_hash: 0,
+        }
+    }
+
+    /// 计算视口状态的哈希值
+    pub fn compute_viewport_hash(
+        scroll_x: f32,
+        scroll_y: f32,
+        zoom_x: f32,
+        zoom_y: f32,
+        canvas_width: f32,
+        canvas_height: f32,
+    ) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        scroll_x.to_bits().hash(&mut hasher);
+        scroll_y.to_bits().hash(&mut hasher);
+        zoom_x.to_bits().hash(&mut hasher);
+        zoom_y.to_bits().hash(&mut hasher);
+        canvas_width.to_bits().hash(&mut hasher);
+        canvas_height.to_bits().hash(&mut hasher);
+        hasher.finish()
+    }
+}
 
 /// UI 宿主 - 管理 iced 渲染和 wgpu 音符渲染
 pub struct Host {
@@ -46,12 +89,18 @@ pub struct Host {
     pub(crate) frame_count: u32,
     /// 是否正在拖拽调整工具栏高度
     pub(crate) is_toolbar_resizing: bool,
+    /// 是否跳过 Iced UI 渲染（用于性能测试）
+    pub skip_ui_rendering: bool,
     /// 音符渲染器
     pub(crate) note_renderer: NoteRenderer,
+    /// 网格渲染器
+    pub(crate) grid_renderer: GridRenderer,
     /// 上一帧时间
     pub(crate) last_frame_time: Instant,
     /// iced UI 树是否需要重建（事件产生了状态变更时才为 true）
     pub(crate) ui_dirty: bool,
+    /// 渲染缓存 - 避免重复上传数据
+    pub(crate) render_cache: RenderCache,
 }
 
 impl Host {
@@ -87,6 +136,8 @@ impl Host {
 
         // 创建 wgpu 音符渲染器
         let note_renderer = NoteRenderer::new(&gfx.device, gfx.format);
+        // 创建 wgpu 网格渲染器
+        let grid_renderer = GridRenderer::new(&gfx.device, gfx.format);
 
         Self {
             window,
@@ -104,12 +155,15 @@ impl Host {
             pending_window_action: None,
             pending_drag: false,
             note_renderer,
+            grid_renderer,
             cursor_position: None,
             last_frame_time: Instant::now(),
             last_fps_update: Instant::now(),
             frame_count: 0,
             is_toolbar_resizing: false,
+            skip_ui_rendering: false,
             ui_dirty: false,
+            render_cache: RenderCache::new(),
         }
     }
 
@@ -144,6 +198,8 @@ impl Host {
 
         // 创建 wgpu 音符渲染器
         let note_renderer = NoteRenderer::new(&gfx.device, gfx.format);
+        // 创建 wgpu 网格渲染器
+        let grid_renderer = GridRenderer::new(&gfx.device, gfx.format);
 
         Self {
             window,
@@ -157,12 +213,15 @@ impl Host {
             pending_window_action: None,
             pending_drag: false,
             note_renderer,
+            grid_renderer,
             cursor_position: None,
             last_frame_time: Instant::now(),
             last_fps_update: Instant::now(),
             frame_count: 0,
             is_toolbar_resizing: false,
+            skip_ui_rendering: false,
             ui_dirty: false,
+            render_cache: RenderCache::new(),
         }
     }
 

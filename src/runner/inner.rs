@@ -42,6 +42,7 @@ impl From<std::io::Error> for InitError {
 pub struct Runner {
     pub(crate) inner: Option<RunnerInner>,
     pub(crate) init_error: Option<InitError>,
+    pub(crate) test_config: Option<crate::cli::TestConfig>,
 }
 
 pub(crate) struct RunnerInner {
@@ -87,6 +88,11 @@ pub(crate) enum CollaborationStatus {
 }
 
 impl Runner {
+    /// 设置测试配置
+    pub fn set_test_config(&mut self, config: crate::cli::TestConfig) {
+        self.test_config = Some(config);
+    }
+
     pub(crate) fn init_inner(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,

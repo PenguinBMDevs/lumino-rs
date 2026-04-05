@@ -8,6 +8,8 @@ use iced_widget::canvas::{Frame, Path, Stroke};
 
 /// 绘制琴键分隔线（横向线）
 pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &crate::Theme) {
+    use iced_widget::canvas::path::Builder;
+
     let palette = theme.extended_palette().background;
     let view = &editor.state;
 
@@ -25,6 +27,9 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
     let ruler_height = view.ruler_height;
     let max_key_index = (view.visible_key_count - 1) as f32;
 
+    // 使用单个 path builder 批量绘制所有线条，减少绘制调用开销
+    let mut path_builder = Builder::new();
+
     for i in 0..view.visible_key_count {
         let keynum = i as isize;
         let world_y = (max_key_index - keynum as f32) * view.zoom_y;
@@ -32,11 +37,13 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
 
         if screen_y + view.zoom_y >= ruler_height && screen_y <= bounds.height {
             let line_y = screen_y + view.zoom_y;
-            let path = Path::line(
-                Point::new(keyboard_width, line_y),
-                Point::new(bounds.width, line_y),
-            );
-            frame.stroke(&path, line_stroke);
+            // 将线条添加到同一个 path
+            path_builder.move_to(Point::new(keyboard_width, line_y));
+            path_builder.line_to(Point::new(bounds.width, line_y));
         }
     }
+
+    // 一次性绘制所有线条
+    let path = path_builder.build();
+    frame.stroke(&path, line_stroke);
 }

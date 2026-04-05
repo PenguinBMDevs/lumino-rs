@@ -202,20 +202,29 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry<Renderer>> {
-        // 绘制网格（使用缓存）
-        let grid = self
+        // 网格线现在由 wgpu 直接渲染（见 Host::render_notes）
+        // Canvas 只绘制键盘、标尺和交互元素
+        let mut geometries = Vec::new();
+
+        // 绘制键盘（使用独立缓存）
+        let keyboard_geom = self
             .editor
-            .grid_cache
+            .keyboard_cache
             .draw(renderer, bounds.size(), |frame| {
                 keyboard::draw(self.editor, frame, bounds, theme);
-                keys::draw(self.editor, frame, bounds, theme);
-                ruler::draw(self.editor, frame, bounds, theme);
-                bars::draw(self.editor, frame, bounds, theme);
             });
+        geometries.push(keyboard_geom);
+
+        // 绘制标尺（使用独立缓存）
+        let ruler_geom = self
+            .editor
+            .ruler_cache
+            .draw(renderer, bounds.size(), |frame| {
+                ruler::draw(self.editor, frame, bounds, theme);
+            });
+        geometries.push(ruler_geom);
 
         // 绘制框选框（不需要缓存，实时渲染）
-        let mut geometries = vec![grid];
-
         if let Some(selection_geom) = selection_box::draw(self.editor, renderer, theme, bounds) {
             geometries.push(selection_geom);
         }

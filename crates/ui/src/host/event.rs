@@ -183,31 +183,40 @@ impl Host {
         self.events.clear();
         self.cache = interface.into_cache();
 
-        // 应用消息
+        // 应用消息，并检查是否有状态变更
+        let mut has_state_change = false;
         for message in messages {
-            self.process_message(message);
+            if self.process_message(message) {
+                has_state_change = true;
+            }
         }
 
-        // 标记 UI 需要重建（但不立即重建，等 render_iced_ui 时再做）
-        self.ui_dirty = true;
+        // 只有在状态真正改变时才标记 UI 需要重建
+        if has_state_change {
+            self.ui_dirty = true;
+        }
         self.window.request_redraw();
     }
 
-    /// 处理单个消息
-    fn process_message(&mut self, message: message::Message) {
+    /// 处理单个消息，返回是否有状态变更
+    fn process_message(&mut self, message: message::Message) -> bool {
         // 处理窗口动作消息
         match &message {
             message::Message::Window(window::Event::TrafficAction(action)) => {
                 self.pending_window_action = Some(action.clone());
+                return false; // 窗口动作不需要 UI 重建
             }
             message::Message::Window(window::Event::ToggleMaximize) => {
                 self.pending_window_action = Some(window::TrafficAction::ToggleMaximize);
+                return false;
             }
             message::Message::Window(window::Event::Close) => {
                 self.pending_window_action = Some(window::TrafficAction::Close);
+                return false;
             }
             message::Message::Window(window::Event::Drag) => {
                 self.pending_drag = true;
+                return false;
             }
             // 处理工具栏调整大小事件
             message::Message::Toolbar(toolbar::Event::ResizeDragStarted(_)) => {
@@ -215,15 +224,19 @@ impl Host {
                     self.is_toolbar_resizing = true;
                     self.root.toolbar.start_resize(pos.y);
                 }
+                return true; // 工具栏大小改变需要 UI 重建
             }
             message::Message::Toolbar(toolbar::Event::ResizeDragEnded) => {
                 self.is_toolbar_resizing = false;
                 self.root.toolbar.end_resize();
+                return true;
             }
             _ => {}
         }
 
+        // 其他消息交给 root 处理，假设可能有状态变更
         self.root.update(message);
+        true
     }
 
     /// 获取并清除待处理的窗口动作

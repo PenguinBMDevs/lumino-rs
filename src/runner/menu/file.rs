@@ -39,32 +39,32 @@ impl RunnerInner {
             ImportFiles => self.handle_import_files(),
             Save => self.handle_save_file(),
             MidiLoaded(info) => {
-                tracing::info!("MIDI文件加载完成: {}", info);
+                tracing::info!("MIDI 文件加载完成：{}", info);
             }
             MidiLoadError(err) => {
-                tracing::error!("MIDI文件加载失败: {}", err);
+                tracing::error!("MIDI 文件加载失败：{}", err);
             }
             MidiParsed(mut parsed) => {
-                tracing::info!("MIDI文件解析完成: {}", parsed.info);
+                tracing::info!("MIDI 文件解析完成：{}", parsed.info);
 
                 // 先导入音符到编辑器
                 self.import_midi_to_editor(&parsed);
 
                 // 导入完成后释放原始数据
                 let _ = parsed.take_midi_data();
-                tracing::debug!("MIDI原始数据已释放，仅保留元数据");
+                tracing::debug!("MIDI 原始数据已释放，仅保留元数据");
 
                 self.current_midi = Some(parsed);
             }
             MidiParseError(err) => {
-                tracing::error!("MIDI文件解析失败: {}", err);
+                tracing::error!("MIDI 文件解析失败：{}", err);
             }
             DmsParsed(parsed) => {
-                tracing::info!("DMS 文件解析完成: {}", parsed.info);
+                tracing::info!("DMS 文件解析完成：{}", parsed.info);
                 self.current_dms = Some(parsed);
             }
             DmsParseError(err) => {
-                tracing::error!("DMS 文件解析失败: {}", err);
+                tracing::error!("DMS 文件解析失败：{}", err);
             }
             Close => {
                 self.current_midi = None;
@@ -73,7 +73,7 @@ impl RunnerInner {
                 tracing::info!("工程已关闭");
             }
             TrackSelected(track_idx) => {
-                tracing::info!("切换到音轨: {}", track_idx);
+                tracing::info!("切换到音轨：{}", track_idx);
                 if let Some(memory_manager_arc) = self
                     .current_midi
                     .as_ref()
@@ -99,7 +99,7 @@ impl RunnerInner {
                 }
             }
             _ => {
-                tracing::debug!("未处理的文件事件: {:?}", file_event);
+                tracing::debug!("未处理的文件事件：{:?}", file_event);
             }
         }
     }
@@ -134,7 +134,7 @@ impl RunnerInner {
 
     /// 加载 DMS 文件
     pub(super) fn load_dms_file(&self, path: std::path::PathBuf) {
-        tracing::info!("开始后台加载 DMS 文件: {:?}", path);
+        tracing::info!("开始后台加载 DMS 文件：{:?}", path);
         let progress_cb = self.progress_cb.clone();
         tokio::spawn(async move {
             run_async_task(
@@ -148,7 +148,7 @@ impl RunnerInner {
 
     /// 加载 MIDI 文件
     pub(super) fn load_midi_file(&self, path: std::path::PathBuf) {
-        tracing::info!("开始后台加载 MIDI 文件: {:?}", path);
+        tracing::info!("开始后台加载 MIDI 文件：{:?}", path);
         let progress_cb = self.progress_cb.clone();
         tokio::spawn(async move {
             run_async_task(
@@ -175,7 +175,7 @@ impl RunnerInner {
 
         let extension = get_file_extension(&path);
 
-        tracing::info!("开始后台导入文件: {:?}", path);
+        tracing::info!("开始后台导入文件：{:?}", path);
         let progress_cb = self.progress_cb.clone();
         tokio::spawn(async move {
             match extension.as_str() {
@@ -202,13 +202,13 @@ impl RunnerInner {
 
     /// 保存文件
     pub(super) fn handle_save_file(&mut self) {
-        // 检查是否加载了MIDI文件
+        // 检查是否加载了 MIDI 文件
         if let Some(parsed_midi) = &self.current_midi {
             self.save_midi_file(parsed_midi.clone());
             return;
         }
 
-        // 检查是否加载了DMS文件
+        // 检查是否加载了 DMS 文件
         if let Some(parsed_dms) = &self.current_dms {
             self.save_dms_file(parsed_dms.clone());
         }
@@ -252,7 +252,7 @@ impl RunnerInner {
                 });
             }
             _ => {
-                tracing::warn!("不支持的保存格式: {}", extension);
+                tracing::warn!("不支持的保存格式：{}", extension);
             }
         }
     }
@@ -289,7 +289,7 @@ impl RunnerInner {
                 });
             }
             _ => {
-                tracing::warn!("不支持的保存格式: {}", extension);
+                tracing::warn!("不支持的保存格式：{}", extension);
             }
         }
     }

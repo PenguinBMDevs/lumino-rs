@@ -66,8 +66,46 @@ impl Editor {
         // 选中音符的颜色（高亮）
         let selected_color = palette.secondary.strong.color;
 
-        // 渲染已放置的音符
-        for (i, note) in self.notes.iter().enumerate() {
+        // 计算可见区域（视锥裁剪），避免遍历所有音符
+        let view = &self.state;
+        let viewport_width = self.canvas_size.x - view.keyboard_width;
+        let viewport_height = self.canvas_size.y - view.ruler_height;
+
+        // 计算可见的 tick 范围（使用 scroll_x，不需要 canvas_offset）
+        let visible_tick_start = (view.scroll_x / view.zoom_x).max(0.0);
+        let visible_tick_end =
+            ((view.scroll_x + viewport_width) / view.zoom_x).max(visible_tick_start);
+
+        // 计算可见的 key 范围（使用 scroll_y，考虑 max_key_index）
+        let max_key_index = (view.visible_key_count - 1) as f32;
+
+        // key_top 对应屏幕最上方 (Y = ruler_height)，值最大 (最高音)
+        let key_top_f32 = max_key_index - (view.scroll_y / view.zoom_y);
+        // key_bottom 对应屏幕最下方 (Y = canvas_size.y)，值最小 (最低音)
+        let key_bottom_f32 = max_key_index - ((view.scroll_y + viewport_height) / view.zoom_y);
+
+        let visible_key_max = key_top_f32.ceil() as u16 + 1; // 加 1 容错
+        let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1); // 减 1 容错
+
+        // 计算搜索范围
+        let search_start = (visible_tick_start - 19200.0).max(0.0);
+        let start_idx = self.notes.partition_point(|n| n.tick < search_start);
+        let end_idx = self.notes.partition_point(|n| n.tick <= visible_tick_end);
+
+        // 渲染已放置的音符（带视锥裁剪）
+        for i in start_idx..end_idx {
+            let note = &self.notes[i];
+            // CPU 端视锥裁剪：只处理可见范围内的音符
+            // 检查 tick 范围（音符结束位置 > 可见起始，且音符起始 < 可见结束）
+            if note.tick + note.length < visible_tick_start || note.tick > visible_tick_end {
+                continue;
+            }
+            // 检查 key 范围
+            let note_key = note.key;
+            if note_key < visible_key_min || note_key > visible_key_max {
+                continue;
+            }
+
             let color = match self.edit_state {
                 EditState::Dragging { note_index, .. }
                 | EditState::ResizingStart { note_index, .. }
@@ -85,6 +123,7 @@ impl Editor {
             // 转换为窗口坐标：加上 Canvas 偏移
             instance.position[0] += self.canvas_offset.x;
             instance.position[1] += self.canvas_offset.y;
+
             instances.push(instance);
         }
 

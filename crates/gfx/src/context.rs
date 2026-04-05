@@ -3,10 +3,10 @@ use thiserror::Error;
 /// 根据可用的 present modes 选择最优的 present mode
 /// 优先级：Mailbox > Immediate > Fifo > AutoVsync
 fn select_present_mode(modes: &[wgpu::PresentMode]) -> wgpu::PresentMode {
-    if modes.contains(&wgpu::PresentMode::Mailbox) {
-        wgpu::PresentMode::Mailbox
-    } else if modes.contains(&wgpu::PresentMode::Immediate) {
+    if modes.contains(&wgpu::PresentMode::Immediate) {
         wgpu::PresentMode::Immediate
+    } else if modes.contains(&wgpu::PresentMode::Mailbox) {
+        wgpu::PresentMode::Mailbox
     } else if modes.contains(&wgpu::PresentMode::Fifo) {
         wgpu::PresentMode::Fifo
     } else {
@@ -99,7 +99,9 @@ impl Context {
                 present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats: vec![],
-                desired_maximum_frame_latency: 2,
+                // 降低帧延迟以减少输入延迟，提高响应性
+                // 对于高帧率应用，1帧延迟比2帧更好
+                desired_maximum_frame_latency: 1,
             },
         );
 
@@ -127,7 +129,7 @@ impl Context {
                 present_mode: self.present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats: vec![],
-                desired_maximum_frame_latency: 2,
+                desired_maximum_frame_latency: 1,
             },
         );
     }

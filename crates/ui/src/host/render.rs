@@ -1,4 +1,4 @@
-//! Host 渲染子模块 - 处理 UI 和音符渲染
+//! Host 渲染子模块 - 处理 UI、网格和音符渲染
 
 use iced_wgpu::wgpu;
 use iced_winit::runtime::user_interface::{self, UserInterface};
@@ -38,10 +38,12 @@ impl Host {
         }
 
         // 第一步：使用 wgpu 渲染音符（位于 UI 层下方）
-        self.render_notes(frame, view, gfx);
+        self.render_notes_cached(frame, view, gfx);
 
         // 第二步：渲染 iced UI（仅在需要时重建 UI 树）
-        self.render_iced_ui(frame, view);
+        if !self.skip_ui_rendering {
+            self.render_iced_ui(frame, view);
+        }
     }
 
     /// 渲染 iced UI 层
@@ -114,7 +116,7 @@ impl Host {
         }
     }
 
-    /// 使用 wgpu 渲染音符
+    /// 使用 wgpu 渲染网格和音符
     fn render_notes(
         &mut self,
         _frame: &wgpu::SurfaceTexture,
@@ -134,7 +136,7 @@ impl Host {
         let mut encoder = gfx
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("note_render_encoder"),
+                label: Some("render_encoder"),
             });
 
         // 菜单打开时，禁止更新光标与渲染预览音符
@@ -146,17 +148,26 @@ impl Host {
             self.root.update_editor_cursor(self.cursor_position);
         }
 
-        // 获取需要绘制的音符实例
-        let instances = self.root.get_note_instances();
-
-        // 使用逻辑尺寸绘制音符（与 iced 坐标系保持一致）
+        // 使用逻辑尺寸绘制（与 iced 坐标系保持一致）
         let logical_size = self.viewport.logical_size();
 
-        if !instances.is_empty() {
-            // 准备渲染（执行计算剔除）
+        // ===== 准备网格线数据 =====
+        let grid_instances = self.root.get_grid_line_instances();
+        if !grid_instances.is_empty() {
+            self.grid_renderer.prepare(
+                &grid_instances,
+                &gfx.device,
+                &gfx.queue,
+                (logical_size.width, logical_size.height),
+            );
+        }
+
+        // ===== 准备音符数据 =====
+        let note_instances = self.root.get_note_instances();
+        if !note_instances.is_empty() {
             self.note_renderer.prepare(
                 &mut encoder,
-                &instances,
+                &note_instances,
                 &gfx.device,
                 &gfx.queue,
                 (logical_size.width, logical_size.height),
@@ -165,7 +176,7 @@ impl Host {
 
         // 开始渲染通道，始终清除背景
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("note_render_pass"),
+            label: Some("render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
                 resolve_target: None,
@@ -180,31 +191,183 @@ impl Host {
             occlusion_query_set: None,
         });
 
-        if !instances.is_empty() {
-            // 计算 Canvas 区域的裁剪矩形（限制音符只在钢琴卷帘内显示）
-            // 转换为物理像素坐标用于裁剪矩形
-            let scale = self.viewport.scale_factor();
-            let canvas_offset = self.root.editor.canvas_offset;
-            let canvas_size = self.root.editor.canvas_size;
-            let physical_size = self.viewport.physical_size();
+        // 计算 Canvas 区域的裁剪矩形
+        let scale = self.viewport.scale_factor();
+        let canvas_offset = self.root.editor.canvas_offset;
+        let canvas_size = self.root.editor.canvas_size;
+        let physical_size = self.viewport.physical_size();
 
-            let scissor_x = ((canvas_offset.x * scale) as u32).min(physical_size.width);
-            let scissor_y = ((canvas_offset.y * scale) as u32).min(physical_size.height);
-            let scissor_width =
-                ((canvas_size.x * scale) as u32).min(physical_size.width.saturating_sub(scissor_x));
-            let scissor_height = ((canvas_size.y * scale) as u32)
-                .min(physical_size.height.saturating_sub(scissor_y));
+        let scissor_x = ((canvas_offset.x * scale) as u32).min(physical_size.width);
+        let scissor_y = ((canvas_offset.y * scale) as u32).min(physical_size.height);
+        let scissor_width =
+            ((canvas_size.x * scale) as u32).min(physical_size.width.saturating_sub(scissor_x));
+        let scissor_height =
+            ((canvas_size.y * scale) as u32).min(physical_size.height.saturating_sub(scissor_y));
 
-            if scissor_width > 0 && scissor_height > 0 {
-                self.note_renderer.draw(
-                    &mut render_pass,
-                    true,
-                    Some((scissor_x, scissor_y, scissor_width, scissor_height)),
-                );
-            }
+        let has_scissor = scissor_width > 0 && scissor_height > 0;
+
+        // ===== 绘制网格线（在音符下方） =====
+        if !grid_instances.is_empty() && has_scissor {
+            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+            self.grid_renderer
+                .draw(&mut render_pass, grid_instances.len() as u32);
+        }
+
+        // ===== 绘制音符 =====
+        if !note_instances.is_empty() && has_scissor {
+            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+            self.note_renderer.draw(
+                &mut render_pass,
+                true,
+                Some((scissor_x, scissor_y, scissor_width, scissor_height)),
+            );
         }
 
         // 释放 render_pass 并提交命令
+        drop(render_pass);
+        gfx.queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// 使用缓存的渲染 - 避免重复上传数据
+    fn render_notes_cached(
+        &mut self,
+        _frame: &wgpu::SurfaceTexture,
+        view: &wgpu::TextureView,
+        gfx: &lumino_gfx::Context,
+    ) {
+        use crate::host::RenderCache;
+
+        // 从主题获取背景颜色
+        let bg_color = self.root.theme().palette().background;
+        let clear_color = wgpu::Color {
+            r: bg_color.r as f64,
+            g: bg_color.g as f64,
+            b: bg_color.b as f64,
+            a: bg_color.a as f64,
+        };
+
+        // 创建命令编码器
+        let mut encoder = gfx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("render_encoder"),
+            });
+
+        // 菜单打开时，禁止更新光标与渲染预览音符
+        if !self.root.should_render_preview_note() {
+            self.root.update_editor_cursor(None);
+        } else {
+            self.root.update_editor_cursor(self.cursor_position);
+        }
+
+        let logical_size = self.viewport.logical_size();
+        let scale = self.viewport.scale_factor();
+        let canvas_offset = self.root.editor.canvas_offset;
+        let canvas_size = self.root.editor.canvas_size;
+        let physical_size = self.viewport.physical_size();
+
+        // 计算视口哈希用于缓存检测
+        let editor = &self.root.editor;
+        let current_viewport_hash = RenderCache::compute_viewport_hash(
+            editor.state.scroll_x,
+            editor.state.scroll_y,
+            editor.state.zoom_x,
+            editor.state.zoom_y,
+            canvas_size.x,
+            canvas_size.y,
+        );
+
+        // ===== 准备网格线数据（带缓存）=====
+        let mut grid_changed = false;
+        let grid_instances = if current_viewport_hash != self.render_cache.grid_viewport_hash {
+            // 视口变化，重新生成网格线
+            let instances = self.root.get_grid_line_instances();
+            self.render_cache.grid_instances = instances.clone();
+            self.render_cache.grid_viewport_hash = current_viewport_hash;
+            grid_changed = true;
+            instances
+        } else {
+            // 使用缓存
+            self.render_cache.grid_instances.clone()
+        };
+
+        if grid_changed && !grid_instances.is_empty() {
+            self.grid_renderer.prepare(
+                &grid_instances,
+                &gfx.device,
+                &gfx.queue,
+                (logical_size.width, logical_size.height),
+            );
+        }
+
+        // ===== 准备音符数据（带缓存）=====
+        let mut notes_changed = false;
+        let note_instances = if current_viewport_hash != self.render_cache.note_viewport_hash {
+            // 视口变化，重新生成音符
+            let instances = self.root.get_note_instances();
+            self.render_cache.note_instances = instances.clone();
+            self.render_cache.note_viewport_hash = current_viewport_hash;
+            notes_changed = true;
+            instances
+        } else {
+            // 使用缓存
+            self.render_cache.note_instances.clone()
+        };
+
+        if notes_changed && !note_instances.is_empty() {
+            self.note_renderer.prepare(
+                &mut encoder,
+                &note_instances,
+                &gfx.device,
+                &gfx.queue,
+                (logical_size.width, logical_size.height),
+            );
+        }
+
+        // 开始渲染通道
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("render_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(clear_color),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        // 计算 Canvas 区域的裁剪矩形
+        let scissor_x = ((canvas_offset.x * scale) as u32).min(physical_size.width);
+        let scissor_y = ((canvas_offset.y * scale) as u32).min(physical_size.height);
+        let scissor_width =
+            ((canvas_size.x * scale) as u32).min(physical_size.width.saturating_sub(scissor_x));
+        let scissor_height =
+            ((canvas_size.y * scale) as u32).min(physical_size.height.saturating_sub(scissor_y));
+
+        let has_scissor = scissor_width > 0 && scissor_height > 0;
+
+        // 绘制网格线
+        if !grid_instances.is_empty() && has_scissor {
+            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+            self.grid_renderer
+                .draw(&mut render_pass, grid_instances.len() as u32);
+        }
+
+        // 绘制音符
+        if !note_instances.is_empty() && has_scissor {
+            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+            self.note_renderer.draw(
+                &mut render_pass,
+                true,
+                Some((scissor_x, scissor_y, scissor_width, scissor_height)),
+            );
+        }
+
         drop(render_pass);
         gfx.queue.submit(std::iter::once(encoder.finish()));
     }

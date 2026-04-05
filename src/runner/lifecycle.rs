@@ -1,8 +1,17 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use winit::event_loop::ControlFlow;
 
 use super::dialog_manager::DialogResult;
 use super::inner::{InitError, Runner, RunnerInner};
+
+// 测试模式全局状态
+static mut TEST_MODE_ACTIVE: bool = false;
+static mut TEST_MODE_START_TIME: Option<Instant> = None;
+static mut TEST_MODE_DURATION: Option<u64> = None;
+static mut TEST_MODE_FPS_SAMPLES: Vec<f32> = Vec::new();
+static mut TEST_MODE_LAST_FPS_UPDATE: Option<Instant> = None;
+static mut TEST_MODE_FRAME_COUNT: u32 = 0;
 
 impl winit::application::ApplicationHandler for Runner {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -13,11 +22,53 @@ impl winit::application::ApplicationHandler for Runner {
         match self.init_inner(event_loop) {
             Ok(inner) => {
                 self.inner = Some(inner);
+
+                // 如果是测试模式，自动加载 MIDI
+                if let Some(test_config) = self.test_config.take() {
+                    if let Some(this) = self.inner.as_mut() {
+                        tracing::info!("测试模式：准备加载 MIDI - {}", test_config.midi_path);
+                        let midi_path = std::path::PathBuf::from(&test_config.midi_path);
+                        let progress_cb = this.progress_cb.clone();
+                        let test_duration = test_config.test_time;
+
+                        this.window.ui_mut().skip_ui_rendering = true;
+
+                        tokio::spawn(async move {
+                            match lumino_core::midi::loader::load_parsed_midi(
+                                midi_path,
+                                Some(&progress_cb),
+                            )
+                            .await
+                            {
+                                Ok(parsed) => {
+                                    tracing::info!("测试模式：MIDI 加载完成");
+                                    // 使用现有的 MidiParsed 事件，但附带测试模式标志
+                                    lumino_core::event::emit(lumino_core::event::Event::Menu(
+                                        lumino_core::event::menu::Event::File(
+                                            lumino_core::event::menu::file::Event::MidiParsed(
+                                                parsed,
+                                            ),
+                                        ),
+                                    ));
+                                    // 设置测试模式标志
+                                    unsafe {
+                                        TEST_MODE_DURATION = test_duration;
+                                        TEST_MODE_ACTIVE = true;
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!("测试模式：MIDI 加载失败 - {e}");
+                                    eprintln!("MIDI 加载失败：{e}");
+                                    std::process::exit(1);
+                                }
+                            }
+                        });
+                    }
+                }
             }
             Err(e) => {
-                tracing::error!("Runner 初始化失败: {}", e);
+                tracing::error!("Runner 初始化失败：{}", e);
                 self.init_error = Some(e);
-                // 退出事件循环，让 main 函数处理错误
                 event_loop.exit();
             }
         }
@@ -137,11 +188,62 @@ impl winit::application::ApplicationHandler for Runner {
 
         // 检查播放状态：播放时使用 Poll 模式确保持续重绘，暂停时使用 Wait 模式节省资源
         let is_playing = this.window.ui().is_playing();
-        if is_playing {
+
+        let should_poll = is_playing || unsafe { TEST_MODE_ACTIVE };
+
+        if should_poll {
             event_loop.set_control_flow(ControlFlow::Poll);
             this.window.request_redraw();
         } else {
             event_loop.set_control_flow(ControlFlow::Wait);
+        }
+
+        // 测试模式 FPS 监测
+        unsafe {
+            if TEST_MODE_ACTIVE {
+                if TEST_MODE_START_TIME.is_none() {
+                    // MIDI 加载完成，开始测试
+                    TEST_MODE_START_TIME = Some(Instant::now());
+                    TEST_MODE_LAST_FPS_UPDATE = Some(Instant::now());
+                    tracing::info!("FPS 测试开始");
+                }
+
+                TEST_MODE_FRAME_COUNT += 1;
+                let now = Instant::now();
+
+                if let Some(last) = TEST_MODE_LAST_FPS_UPDATE {
+                    let elapsed = now.duration_since(last);
+                    if elapsed.as_millis() >= 100 {
+                        let fps = TEST_MODE_FRAME_COUNT as f32 / elapsed.as_secs_f32();
+                        TEST_MODE_FPS_SAMPLES.push(fps);
+                        TEST_MODE_FRAME_COUNT = 0;
+                        TEST_MODE_LAST_FPS_UPDATE = Some(now);
+
+                        print!(
+                            "\rFPS: {:.1} (samples: {})",
+                            fps,
+                            TEST_MODE_FPS_SAMPLES.len()
+                        );
+                        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+
+                        // 检查测试时间是否到达
+                        if let Some(duration) = TEST_MODE_DURATION {
+                            if now.duration_since(TEST_MODE_START_TIME.unwrap())
+                                >= Duration::from_secs(duration)
+                            {
+                                let avg_fps = TEST_MODE_FPS_SAMPLES.iter().sum::<f32>()
+                                    / TEST_MODE_FPS_SAMPLES.len() as f32;
+                                println!("\n\n================================");
+                                println!("FPS 测试完成");
+                                println!("平均 FPS: {:.2}", avg_fps);
+                                println!("采样次数：{}", TEST_MODE_FPS_SAMPLES.len());
+                                println!("================================");
+                                event_loop.exit();
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

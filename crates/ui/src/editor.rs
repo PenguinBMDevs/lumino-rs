@@ -80,6 +80,10 @@ pub enum HitType {
 pub struct Editor {
     pub state: ViewState,
     pub grid_cache: canvas::Cache<crate::Renderer>,
+    /// 键盘缓存（只随垂直滚动变化）
+    pub keyboard_cache: canvas::Cache<crate::Renderer>,
+    /// 标尺缓存（只随水平滚动变化）
+    pub ruler_cache: canvas::Cache<crate::Renderer>,
     pub max_scroll_x: f32,
     pub max_scroll_y: f32,
     /// 当前鼠标在窗口中的位置
@@ -125,6 +129,8 @@ impl Editor {
         let mut editor = Self {
             state: ViewState::default(),
             grid_cache: canvas::Cache::new(),
+            keyboard_cache: canvas::Cache::new(),
+            ruler_cache: canvas::Cache::new(),
             max_scroll_x: 0.0,
             max_scroll_y: 0.0,
             cursor_position: None,
@@ -330,6 +336,8 @@ impl Editor {
     pub fn get_onion_skin_notes(
         &self,
         track_onion_states: &std::collections::HashMap<usize, bool>,
+        visible_tick_start: f32,
+        visible_tick_end: f32,
     ) -> Vec<(f32, u16, f32, iced_core::Color)> {
         if !self.is_onion_skin_enabled() {
             return Vec::new();
@@ -345,6 +353,8 @@ impl Editor {
         track_indices.sort();
 
         let mut all_notes = Vec::new();
+        let search_start = (visible_tick_start - 19200.0).max(0.0);
+
         for track_idx in track_indices {
             if let Some(&is_enabled) = track_onion_states.get(&track_idx) {
                 if !self
@@ -355,7 +365,11 @@ impl Editor {
                 }
                 if let Some(notes) = self.track_notes.get(&track_idx) {
                     let color = self.onion_skin_config.get_track_color(track_idx);
-                    for note in notes {
+
+                    let start_idx = notes.partition_point(|n| n.tick < search_start);
+                    let end_idx = notes.partition_point(|n| n.tick <= visible_tick_end);
+
+                    for note in &notes[start_idx..end_idx] {
                         all_notes.push((note.tick, note.key, note.length, color));
                     }
                 }
@@ -482,5 +496,110 @@ impl Editor {
     /// Check if redo is available
     pub fn can_redo(&self) -> bool {
         self.history.can_redo()
+    }
+
+    /// 生成网格线实例（用于 wgpu 渲染）
+    pub fn get_grid_line_instances(
+        &self,
+        bar_color: iced_core::Color,
+        beat_color: iced_core::Color,
+        half_beat_color: iced_core::Color,
+        grid_color: iced_core::Color,
+        key_line_color: iced_core::Color,
+    ) -> Vec<lumino_gfx::GridLineInstance> {
+        use lumino_gfx::GridLineInstance;
+
+        let mut instances = Vec::new();
+        let view = &self.state;
+        let ppq = view.ppq as f32;
+        let keyboard_width = view.keyboard_width;
+        let ruler_height = view.ruler_height;
+
+        // 计算可见范围
+        let canvas_width = self.canvas_size.x;
+        let canvas_height = self.canvas_size.y;
+
+        // ===== 纵向网格线（小节线、拍线） =====
+        let measure_ticks = ppq * 4.0;
+        let start_tick = view.scroll_x / view.zoom_x;
+        let end_tick = (view.scroll_x + canvas_width - keyboard_width) / view.zoom_x;
+        let grid_gap = ppq / 4.0; // 十六分音符精度
+
+        let mut current_tick = (start_tick / grid_gap).ceil() * grid_gap;
+
+        while current_tick < end_tick {
+            let screen_x = (current_tick * view.zoom_x) - view.scroll_x
+                + keyboard_width
+                + self.canvas_offset.x;
+
+            // 只生成在 Canvas 区域内的线条
+            if screen_x >= self.canvas_offset.x + keyboard_width
+                && screen_x <= self.canvas_offset.x + canvas_width
+            {
+                let is_measure = (current_tick % measure_ticks).abs() < 0.1;
+                let is_beat = (current_tick % ppq).abs() < 0.1;
+                let is_half_beat = (current_tick % (ppq / 2.0)).abs() < 0.1;
+
+                let (color, width) = if is_measure {
+                    ([bar_color.r, bar_color.g, bar_color.b, bar_color.a], 4.0)
+                } else if is_beat {
+                    (
+                        [beat_color.r, beat_color.g, beat_color.b, beat_color.a],
+                        1.0,
+                    )
+                } else if is_half_beat {
+                    (
+                        [
+                            half_beat_color.r,
+                            half_beat_color.g,
+                            half_beat_color.b,
+                            half_beat_color.a,
+                        ],
+                        0.5,
+                    )
+                } else {
+                    (
+                        [grid_color.r, grid_color.g, grid_color.b, grid_color.a],
+                        0.5,
+                    )
+                };
+
+                instances.push(GridLineInstance::new(
+                    [screen_x, self.canvas_offset.y + ruler_height],
+                    [screen_x, self.canvas_offset.y + canvas_height],
+                    color,
+                    width,
+                ));
+            }
+            current_tick += grid_gap;
+        }
+
+        // ===== 横向网格线（琴键分隔线） =====
+        let max_key_index = (view.visible_key_count.saturating_sub(1)) as f32;
+
+        for i in 0..view.visible_key_count {
+            let keynum = i as isize;
+            let world_y = (max_key_index - keynum as f32) * view.zoom_y;
+            let screen_y = world_y - view.scroll_y + ruler_height + self.canvas_offset.y;
+
+            // 只生成在 Canvas 区域内的线条
+            if screen_y >= self.canvas_offset.y + ruler_height
+                && screen_y <= self.canvas_offset.y + canvas_height
+            {
+                instances.push(GridLineInstance::new(
+                    [self.canvas_offset.x + keyboard_width, screen_y],
+                    [self.canvas_offset.x + canvas_width, screen_y],
+                    [
+                        key_line_color.r,
+                        key_line_color.g,
+                        key_line_color.b,
+                        key_line_color.a,
+                    ],
+                    1.0,
+                ));
+            }
+        }
+
+        instances
     }
 }

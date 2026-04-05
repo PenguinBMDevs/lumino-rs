@@ -4,6 +4,7 @@ use super::theme::ThemeExt;
 use crate::Renderer;
 use crate::editor::Editor;
 use iced_core::{Point, Rectangle};
+use iced_widget::canvas::path::Builder;
 use iced_widget::canvas::{Frame, Path, Stroke};
 
 /// 绘制小节线和拍线（纵向线）
@@ -17,8 +18,9 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
     let start_tick = view.scroll_x / view.zoom_x;
     let end_tick = (view.scroll_x + bounds.width - keyboard_width) / view.zoom_x;
 
-    // 网格线间隔：ppq/4 = 480 ticks
+    // 网格线间隔：ppq/4 = 480 ticks（十六分音符精度，专业编曲软件标准）
     let grid_gap = ppq / 4.0;
+
     let mut current_tick = (start_tick / grid_gap).ceil() * grid_gap;
 
     // 创建不同级别的线条样式
@@ -35,6 +37,12 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
         .with_width(0.5)
         .with_color(theme.grid_line_color());
 
+    // 使用 path builder 批量绘制同级别的线条
+    let mut bar_builder = Builder::new();
+    let mut beat_builder = Builder::new();
+    let mut sub_beat_builder = Builder::new();
+    let mut grid_builder = Builder::new();
+
     while current_tick < end_tick {
         let screen_x = (current_tick * view.zoom_x) - view.scroll_x + keyboard_width;
 
@@ -43,22 +51,30 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
             let is_beat = (current_tick % ppq).abs() < 0.1;
             let is_half_beat = (current_tick % (ppq / 2.0)).abs() < 0.1;
 
-            let stroke = if is_measure {
-                bar_stroke
+            let builder = if is_measure {
+                &mut bar_builder
             } else if is_beat {
-                beat_stroke
+                &mut beat_builder
             } else if is_half_beat {
-                sub_beat_stroke
+                &mut sub_beat_builder
             } else {
-                grid_stroke
+                &mut grid_builder
             };
 
-            let path = Path::line(
-                Point::new(screen_x, ruler_height),
-                Point::new(screen_x, bounds.height),
-            );
-            frame.stroke(&path, stroke);
+            builder.move_to(Point::new(screen_x, ruler_height));
+            builder.line_to(Point::new(screen_x, bounds.height));
         }
         current_tick += grid_gap;
     }
+
+    // 批量绘制各级别线条
+    let bar_path = bar_builder.build();
+    let beat_path = beat_builder.build();
+    let sub_beat_path = sub_beat_builder.build();
+    let grid_path = grid_builder.build();
+
+    frame.stroke(&bar_path, bar_stroke);
+    frame.stroke(&beat_path, beat_stroke);
+    frame.stroke(&sub_beat_path, sub_beat_stroke);
+    frame.stroke(&grid_path, grid_stroke);
 }

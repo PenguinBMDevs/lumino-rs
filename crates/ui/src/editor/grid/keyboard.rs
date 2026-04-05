@@ -4,7 +4,19 @@ use super::theme::ThemeExt;
 use crate::Renderer;
 use crate::editor::Editor;
 use iced_core::{Point, Rectangle, Size};
-use iced_widget::canvas::{Frame, Path, Stroke};
+use iced_widget::canvas::{Frame, Geometry, Path, Stroke};
+
+/// 绘制钢琴键盘到 Geometry（用于 Canvas 绘制）
+pub fn draw_to_geometry(
+    editor: &Editor,
+    renderer: &Renderer,
+    bounds: Rectangle,
+    theme: &crate::Theme,
+) -> Geometry<Renderer> {
+    let mut frame = Frame::new(renderer, bounds.size());
+    draw(editor, &mut frame, bounds, theme);
+    frame.into_geometry()
+}
 
 /// 绘制钢琴键盘（左侧键位指示器）
 pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &crate::Theme) {

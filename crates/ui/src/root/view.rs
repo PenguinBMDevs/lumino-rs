@@ -124,27 +124,72 @@ impl Root {
             .editor
             .get_note_instances(&self.window.theme, sidebar_width);
 
-        // 添加洋葱皮音符（使用缓存）
-        if self.onion_skin_generation != self.last_rendered_onion_generation {
-            // 缓存失效，重建原始数据缓存
-            let onion_states = self.sidebar.get_onion_skin_states();
-            let notes: Vec<(f32, u16, f32, iced_core::Color)> =
-                self.editor.get_onion_skin_notes(&onion_states);
-            self.cached_onion_skin_notes = Some(notes);
-            self.last_rendered_onion_generation = self.onion_skin_generation;
-        }
+        // 计算可见区域用于洋葱皮音符的视锥裁剪
+        let view = &self.editor.state;
+        let canvas_offset = self.editor.canvas_offset;
+        let canvas_size = self.editor.canvas_size;
+        let viewport_width = canvas_size.x - view.keyboard_width;
+        let viewport_height = canvas_size.y - view.ruler_height;
 
-        // 从缓存的原始数据转换为屏幕坐标实例（每帧都做，但只遍历 Vec + 简单数学运算）
-        if let Some(ref cached) = self.cached_onion_skin_notes {
-            for &(tick, key, length, color) in cached {
-                let note = crate::editor::note::Note::new(tick, key, length);
-                let mut instance = note.to_instance(&self.editor.state, color);
-                instance.position[0] += self.editor.canvas_offset.x;
-                instance.position[1] += self.editor.canvas_offset.y;
-                instances.push(instance);
+        let visible_tick_start = (view.scroll_x / view.zoom_x).max(0.0);
+        let visible_tick_end =
+            ((view.scroll_x + viewport_width) / view.zoom_x).max(visible_tick_start);
+
+        let max_key_index = (view.visible_key_count - 1) as f32;
+        let key_top_f32 = max_key_index - (view.scroll_y / view.zoom_y);
+        let key_bottom_f32 = max_key_index - ((view.scroll_y + viewport_height) / view.zoom_y);
+
+        let visible_key_max = key_top_f32.ceil() as u16 + 1;
+        let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1);
+
+        let onion_states = self.sidebar.get_onion_skin_states();
+        let notes: Vec<(f32, u16, f32, iced_core::Color)> =
+            self.editor
+                .get_onion_skin_notes(&onion_states, visible_tick_start, visible_tick_end);
+
+        for (tick, key, length, color) in notes {
+            // 视锥裁剪：虽然在获取时做了基于 tick 的初步裁剪，这里再做精确裁剪
+            if tick + length < visible_tick_start || tick > visible_tick_end {
+                continue;
             }
+            if key < visible_key_min || key > visible_key_max {
+                continue;
+            }
+
+            let note = crate::editor::note::Note::new(tick, key, length);
+            let mut instance = note.to_instance(&self.editor.state, color);
+            instance.position[0] += canvas_offset.x;
+            instance.position[1] += canvas_offset.y;
+            instances.push(instance);
         }
 
         instances
+    }
+
+    /// 获取网格线实例（用于 wgpu 渲染）
+    pub fn get_grid_line_instances(&self) -> Vec<lumino_gfx::GridLineInstance> {
+        use crate::editor::grid::theme::ThemeExt;
+
+        // 从主题获取颜色
+        let bar_color = self.window.theme.bar_line_color();
+        let beat_color = self.window.theme.beat_line_color();
+        let half_beat_color = self.window.theme.half_beat_line_color();
+        let grid_color = self.window.theme.grid_line_color();
+
+        // 琴键分隔线颜色
+        let palette = self.window.theme.extended_palette().background;
+        let key_line_color = if self.window.theme.is_light() {
+            palette.strong.color
+        } else {
+            palette.weak.color
+        };
+
+        self.editor.get_grid_line_instances(
+            bar_color,
+            beat_color,
+            half_beat_color,
+            grid_color,
+            key_line_color,
+        )
     }
 }

@@ -32,4 +32,11 @@ pub enum Event {
     /* */
     /// 音轨切换（从侧边栏选择音轨）
     TrackSelected(usize),
+    /* */
+    /// 测试模式：MIDI 加载完成
+    #[cfg(debug_assertions)]
+    TestMidiLoaded {
+        parsed: Box<crate::ParsedMidi>,
+        test_duration: Option<u64>,
+    },
 }

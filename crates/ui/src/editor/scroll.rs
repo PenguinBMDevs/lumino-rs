@@ -25,7 +25,8 @@ impl super::Editor {
         let viewport_width = (self.canvas_size.x - self.state.keyboard_width).max(0.0);
         let effective_max_scroll = (total_width - viewport_width).max(0.0);
         self.state.scroll_x = scroll_x.max(0.0).min(effective_max_scroll);
-        self.grid_cache.clear();
+        // 水平滚动只影响标尺（和网格线，但网格线已由 wgpu 渲染）
+        self.ruler_cache.clear();
     }
 
     pub fn set_scroll_y(&mut self, scroll_y: f32) {
@@ -34,7 +35,8 @@ impl super::Editor {
         let viewport_height = (self.canvas_size.y - self.state.ruler_height).max(0.0);
         let effective_max_scroll = (total_height - viewport_height).max(0.0);
         self.state.scroll_y = scroll_y.max(0.0).min(effective_max_scroll);
-        self.grid_cache.clear();
+        // 垂直滚动只影响键盘（和网格线，但网格线已由 wgpu 渲染）
+        self.keyboard_cache.clear();
     }
 
     pub fn set_zoom_x(&mut self, zoom_x: f32, fixed_ratio: f32) {
@@ -50,7 +52,8 @@ impl super::Editor {
 
         self.max_scroll_x = self.state.total_ticks as f32 * self.state.zoom_x;
         self.state.scroll_x = self.state.scroll_x.max(0.0).min(self.max_scroll_x);
-        self.grid_cache.clear();
+        // 缩放影响标尺和网格线
+        self.ruler_cache.clear();
     }
 
     pub fn set_zoom_y(&mut self, zoom_y: f32, fixed_ratio: f32) {
@@ -66,6 +69,7 @@ impl super::Editor {
 
         self.max_scroll_y = self.state.visible_key_count as f32 * self.state.zoom_y;
         self.state.scroll_y = self.state.scroll_y.max(0.0).min(self.max_scroll_y);
-        self.grid_cache.clear();
+        // 缩放影响键盘和网格线
+        self.keyboard_cache.clear();
     }
 }

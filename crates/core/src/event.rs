@@ -16,8 +16,8 @@ pub fn set_waker(waker: impl Fn() + Send + Sync + 'static) {
 #[derive(Debug, Clone)]
 /// 事件
 pub enum Event {
-    Menu(menu::Event),     // 菜单事件
-    Window(window::Event), // 窗口事件
+    Menu(menu::Event),      // 菜单事件
+    Window(window::Event),  // 窗口事件
 }
 
 #[macro_export]

@@ -5,7 +5,19 @@ use crate::Renderer;
 use crate::constants::editor::MEASURE_NUMBER_FONT_SIZE;
 use crate::editor::Editor;
 use iced_core::{Point, Rectangle, Size, alignment};
-use iced_widget::canvas::{Frame, Path, Stroke, Text};
+use iced_widget::canvas::{Frame, Geometry, Path, Stroke, Text};
+
+/// 绘制时间轴标尺到 Geometry（用于 Canvas 绘制）
+pub fn draw_to_geometry(
+    editor: &Editor,
+    renderer: &Renderer,
+    bounds: Rectangle,
+    theme: &crate::Theme,
+) -> Geometry<Renderer> {
+    let mut frame = Frame::new(renderer, bounds.size());
+    draw(editor, &mut frame, bounds, theme);
+    frame.into_geometry()
+}
 
 /// 绘制时间轴标尺（小节号显示区域）
 pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &crate::Theme) {

@@ -1,8 +1,3 @@
-//! 音符渲染器
-//!
-//! 该模块已拆分为以下子模块：
-//! - `types`: 类型定义（NoteInstance, ViewportUniform 等）
-
 use wgpu::util::DeviceExt;
 
 pub mod types;
@@ -34,10 +29,6 @@ pub struct NoteRenderer {
     /// 计算 Bind group layout
     cull_bind_group_layout: wgpu::BindGroupLayout,
 }
-
-// 其余实现代码保持不变...
-// 为节省篇幅，这里省略了原有的 400+ 行实现代码
-// 实际项目中应该将方法拆分到各个子模块
 
 impl NoteRenderer {
     /// 初始缓冲区容量
@@ -236,8 +227,6 @@ impl NoteRenderer {
                 resource: viewport_buffer.as_entire_binding(),
             }],
         });
-
-        // 不再需要 render_bind_group_layout
 
         // 创建计算 bind group
         let cull_bind_group = Self::create_cull_bind_group(
