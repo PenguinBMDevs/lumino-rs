@@ -40,7 +40,7 @@ impl Host {
         // 第一步：使用 wgpu 渲染音符（位于 UI 层下方）
         self.render_notes(frame, view, gfx);
 
-        // 第二步：渲染 iced UI
+        // 第二步：渲染 iced UI（仅在需要时重建 UI 树）
         self.render_iced_ui(frame, view);
     }
 
@@ -49,14 +49,23 @@ impl Host {
         // 临时取出缓存以避免借用冲突
         let cache = std::mem::take(&mut self.cache);
 
-        // 构建视图和界面
-        let root_view = self.root.view();
-        let mut interface = UserInterface::build(
-            root_view,
-            self.viewport.logical_size(),
-            cache,
-            &mut self.renderer,
-        );
+        let mut interface = if self.ui_dirty {
+            // UI 有状态变更，重建完整界面
+            UserInterface::build(
+                self.root.view(),
+                self.viewport.logical_size(),
+                cache,
+                &mut self.renderer,
+            )
+        } else {
+            // UI 无变更，用空事件树更新（走 iced 缓存路径）
+            UserInterface::build(
+                self.root.view(),
+                self.viewport.logical_size(),
+                cache,
+                &mut self.renderer,
+            )
+        };
 
         let mut messages = Vec::new();
         let (state, _) = interface.update(
@@ -80,6 +89,8 @@ impl Host {
 
         // 归还缓存
         self.cache = interface.into_cache();
+        // 重绘完成后 UI 不再 dirty
+        self.ui_dirty = false;
 
         self.renderer
             .present(None, frame.texture.format(), texture_view, &self.viewport);

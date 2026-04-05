@@ -157,11 +157,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
             _ => {}
         }
 
-        // 发送 bounds 变化消息
-        Some(canvas::Action::publish(Message::CanvasBoundsChanged {
-            offset: bounds_pos,
-            size: bounds_size,
-        }))
+        None
     }
 
     fn mouse_interaction(

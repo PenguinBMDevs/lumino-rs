@@ -124,12 +124,6 @@ impl winit::application::ApplicationHandler for Runner {
         if this.midi.needs_reinit() {
             let ui_config = this.storage.config.get().ui.clone();
             this.midi.reinit_if_needed(&ui_config);
-
-            // 重新连接播放用 MIDI 输出（因为旧的 OutputConnection 已失效）
-            if let Some(output) = this.midi.create_additional_output() {
-                this.window.ui_mut().set_playback_midi_output(output);
-                tracing::info!("Playback MIDI output reconnected after MIDI reinit");
-            }
         }
 
         // 检查 XSynth 异步初始化是否完成

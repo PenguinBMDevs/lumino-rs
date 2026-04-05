@@ -8,7 +8,7 @@ impl Host {
     /// 设置自定义精度对话框是否打开（用于独立对话框窗口）
     pub fn set_custom_precision_dialog_open(&mut self, open: bool) {
         self.root.set_custom_precision_dialog_open(open);
-        self.clear_cache();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 
@@ -20,14 +20,14 @@ impl Host {
     /// 设置自定义精度值（用于独立对话框窗口）
     pub fn set_custom_precision(&mut self, ticks: f32) {
         self.root.set_custom_precision(ticks);
-        self.clear_cache();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 
     /// 设置协作对话框是否打开（用于独立对话框窗口）
     pub fn set_collaboration_dialog_open(&mut self, open: bool) {
         self.root.set_collaboration_dialog_open(open);
-        self.clear_cache();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 
@@ -40,7 +40,7 @@ impl Host {
     ) {
         self.root
             .set_collaboration_view_state(state, invite_code, room_name);
-        self.clear_cache();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 
@@ -61,7 +61,6 @@ impl Host {
                 color,
                 username,
             });
-        self.clear_cache();
         self.window.request_redraw();
     }
 
@@ -69,7 +68,6 @@ impl Host {
     pub fn remove_remote_cursor(&mut self, user_id: String) {
         self.root
             .update(message::Message::CollaborationRemoteUserLeft { user_id });
-        self.clear_cache();
         self.window.request_redraw();
     }
 
@@ -77,7 +75,6 @@ impl Host {
     pub fn update_remote_note(&mut self, user_id: String, operation: String) {
         self.root
             .update(message::Message::CollaborationRemoteNoteUpdate { user_id, operation });
-        self.clear_cache();
         self.window.request_redraw();
     }
     /// 应用远程笔记操作到本地编辑器（委托给 Root 实现）
@@ -102,7 +99,8 @@ impl Host {
     /// 更新主题
     pub fn update_theme(&mut self, theme: String) {
         self.root.update(window::Event::theme(theme));
-        self.clear_cache();
+        self.root.editor.grid_cache.clear();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 
@@ -115,14 +113,14 @@ impl Host {
     ) {
         self.root
             .open_collaboration_dialog_with_state(host, port, username);
-        self.clear_cache();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 
     /// 从另一个 Host 同步协作状态（用于对话框窗口同步主窗口状态）
     pub fn sync_collaboration_state_from(&mut self, other: &Host) {
         self.root.sync_collaboration_state_from(&other.root);
-        self.clear_cache();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 }

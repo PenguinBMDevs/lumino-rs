@@ -1,26 +1,2 @@
 [build]
 rustflags = ["--cap-lints", "warn"]
-
-# ========== Windows 目标（自动使用 MSVC link.exe，无需配置）==========
-
-# ========== Linux 目标链接器配置 ==========
-
-# 64位 Linux (GNU)
-[target.x86_64-unknown-linux-gnu]
-linker = "x86_64-w64-mingw32-gcc"
-
-# 32位 Linux (GNU)
-[target.i686-unknown-linux-gnu]
-linker = "i686-w64-mingw32-gcc"
-
-# ARM64 Linux
-[target.aarch64-unknown-linux-gnu]
-linker = "aarch64-w64-mingw32-gcc"
-
-# ARMv7 Linux
-[target.armv7-unknown-linux-gnueabihf]
-linker = "armv7-w64-mingw32-gcc"
-
-# 64位 Linux (musl 静态链接)
-[target.x86_64-unknown-linux-musl]
-linker = "x86_64-w64-mingw32-gcc"

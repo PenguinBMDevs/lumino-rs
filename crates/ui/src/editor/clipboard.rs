@@ -137,7 +137,6 @@ impl Editor {
         for index in start..start + pasted_count {
             self.selected_notes.insert(index);
         }
-        self.grid_cache.clear();
         tracing::info!("Editor: 已粘贴 {} 个音符", pasted_count);
     }
 }

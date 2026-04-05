@@ -200,8 +200,7 @@ impl Editor {
     }
 
     /// 播放音符音频
-    fn play_note_audio(&mut self, key: u16, context: &str) {
-        tracing::debug!("Editor: 发送 PlayNote ({}) key={}", context, key);
+    fn play_note_audio(&mut self, key: u16, _context: &str) {
         self.pending_audio_actions.push(AudioAction::PlayNote {
             key: key as u8,
             velocity: DEFAULT_NOTE_VELOCITY,
@@ -216,10 +215,6 @@ impl Editor {
 
         self.hover_state = self.hit_test_note(pos);
 
-        // 发送鼠标移动事件到 Core
-        lumino_core::event::emit(lumino_core::event::Event::Window(
-            lumino_core::event::window::Event::Drag, // 这里借用 Drag 事件触发状态同步
-        ));
         if let EditState::Scrubbing = self.edit_state {
             self.playback_position = snapped_tick;
             return;

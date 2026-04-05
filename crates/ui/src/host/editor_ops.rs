@@ -8,21 +8,23 @@ impl Host {
     /// track_infos: (track_index, track_name, note_count)
     pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64)]) {
         self.root.update_tracks(track_infos);
-        self.clear_cache();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 
     /// 设置编辑器总 ticks
     pub fn set_total_ticks(&mut self, total_ticks: f32) {
         self.root.set_total_ticks(total_ticks);
-        self.clear_cache();
+        self.root.editor.grid_cache.clear();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 
     /// 设置编辑器的 PPQ (division)
     pub fn set_ppq(&mut self, ppq: u16) {
         self.root.set_ppq(ppq);
-        self.clear_cache();
+        self.root.editor.grid_cache.clear();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 
@@ -30,14 +32,14 @@ impl Host {
     /// notes: (tick, key, length)
     pub fn load_notes(&mut self, notes: &[(f32, u8, f32)]) {
         self.root.load_notes(notes);
-        self.clear_cache();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 
     /// 设置当前音轨
     pub fn set_current_track(&mut self, track_idx: usize) {
         self.root.set_current_track(track_idx);
-        self.clear_cache();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 
@@ -45,7 +47,7 @@ impl Host {
     /// 这会同时更新当前显示的音符和音轨存储，以便洋葱皮能显示
     pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32)]) {
         self.root.load_track_notes(track_idx, notes);
-        self.clear_cache();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 
@@ -70,11 +72,7 @@ impl Host {
 
         if !track_notes.is_empty() {
             self.root.editor.track_notes.insert(track_idx, track_notes);
-            tracing::debug!(
-                "UI::load_track_notes_for_onion_skin: saved {} notes to track_notes[{}]",
-                notes.len(),
-                track_idx
-            );
+            self.root.invalidate_onion_skin_cache();
         }
 
         // 不需要重绘，因为这些音符是用于洋葱皮的，不是当前显示的
@@ -113,18 +111,21 @@ impl Host {
     /// 启用洋葱皮功能
     pub fn enable_onion_skin(&mut self) {
         self.root.editor.enable_onion_skin();
+        self.root.invalidate_onion_skin_cache();
         self.window.request_redraw();
     }
 
     /// 禁用洋葱皮功能
     pub fn disable_onion_skin(&mut self) {
         self.root.editor.disable_onion_skin();
+        self.root.invalidate_onion_skin_cache();
         self.window.request_redraw();
     }
 
     /// 切换洋葱皮开关状态
     pub fn toggle_onion_skin(&mut self) {
         self.root.editor.toggle_onion_skin();
+        self.root.invalidate_onion_skin_cache();
         self.window.request_redraw();
     }
 
@@ -143,18 +144,15 @@ impl Host {
         self.root
             .editor
             .set_onion_skin_color(track_idx, iced_core::Color::from_rgba(r, g, b, alpha));
+        self.root.invalidate_onion_skin_cache();
         self.window.request_redraw();
     }
 
-    /// 设置音轨的洋葱皮 RGBA 颜色
-    ///
-    /// # 参数
-    /// * `track_idx` - 音轨索引
-    /// * `r`, `g`, `b`, `a` - RGBA 颜色分量 (0.0 - 1.0)
     pub fn set_onion_skin_color_rgba(&mut self, track_idx: usize, r: f32, g: f32, b: f32, a: f32) {
         self.root
             .editor
             .set_onion_skin_color(track_idx, iced_core::Color::from_rgba(r, g, b, a));
+        self.root.invalidate_onion_skin_cache();
         self.window.request_redraw();
     }
 
@@ -172,6 +170,7 @@ impl Host {
     /// * `opacity` - 透明度值，范围 0.0（完全透明）到 1.0（完全不透明）
     pub fn set_onion_skin_opacity(&mut self, opacity: f32) {
         self.root.editor.set_onion_skin_opacity(opacity);
+        self.root.invalidate_onion_skin_cache();
         self.window.request_redraw();
     }
 
@@ -183,18 +182,21 @@ impl Host {
     /// 设置是否显示所有音轨的洋葱皮
     pub fn set_onion_skin_show_all(&mut self, show_all: bool) {
         self.root.editor.set_onion_skin_show_all(show_all);
+        self.root.invalidate_onion_skin_cache();
         self.window.request_redraw();
     }
 
     /// 添加音轨到洋葱皮显示列表
     pub fn add_onion_skin_track(&mut self, track_idx: usize) {
         self.root.editor.add_onion_skin_track(track_idx);
+        self.root.invalidate_onion_skin_cache();
         self.window.request_redraw();
     }
 
     /// 从洋葱皮显示列表移除音轨
     pub fn remove_onion_skin_track(&mut self, track_idx: usize) {
         self.root.editor.remove_onion_skin_track(track_idx);
+        self.root.invalidate_onion_skin_cache();
         self.window.request_redraw();
     }
 
@@ -205,6 +207,7 @@ impl Host {
         self.root.editor.current_track = 0;
         self.root.editor.grid_cache.clear();
         self.clear_cache();
+        self.ui_dirty = true;
         self.window.request_redraw();
         tracing::info!("UI: 编辑器已清空");
     }
@@ -256,7 +259,7 @@ impl Host {
     /// 处理编辑器动作
     pub fn handle_action(&mut self, action: message::EditorAction) {
         self.root.editor.handle_action(action);
-        self.clear_cache();
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 }

@@ -50,6 +50,8 @@ pub struct Host {
     pub(crate) note_renderer: NoteRenderer,
     /// 上一帧时间
     pub(crate) last_frame_time: Instant,
+    /// iced UI 树是否需要重建（事件产生了状态变更时才为 true）
+    pub(crate) ui_dirty: bool,
 }
 
 impl Host {
@@ -107,6 +109,7 @@ impl Host {
             last_fps_update: Instant::now(),
             frame_count: 0,
             is_toolbar_resizing: false,
+            ui_dirty: false,
         }
     }
 
@@ -159,6 +162,7 @@ impl Host {
             last_fps_update: Instant::now(),
             frame_count: 0,
             is_toolbar_resizing: false,
+            ui_dirty: false,
         }
     }
 

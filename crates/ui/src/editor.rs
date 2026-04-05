@@ -325,6 +325,46 @@ impl Editor {
         instances
     }
 
+    /// 获取所有洋葱皮音符原始数据（用于缓存）
+    /// 返回 (tick, key, length, color) 元组，不含屏幕坐标
+    pub fn get_onion_skin_notes(
+        &self,
+        track_onion_states: &std::collections::HashMap<usize, bool>,
+    ) -> Vec<(f32, u16, f32, iced_core::Color)> {
+        if !self.is_onion_skin_enabled() {
+            return Vec::new();
+        }
+
+        let mut track_indices: Vec<usize> = track_onion_states
+            .iter()
+            .filter(|(_, is_enabled)| **is_enabled)
+            .map(|(&idx, _)| idx)
+            .filter(|&idx| idx != self.current_track)
+            .collect();
+
+        track_indices.sort();
+
+        let mut all_notes = Vec::new();
+        for track_idx in track_indices {
+            if let Some(&is_enabled) = track_onion_states.get(&track_idx) {
+                if !self
+                    .onion_skin_config
+                    .should_show_track(track_idx, is_enabled)
+                {
+                    continue;
+                }
+                if let Some(notes) = self.track_notes.get(&track_idx) {
+                    let color = self.onion_skin_config.get_track_color(track_idx);
+                    for note in notes {
+                        all_notes.push((note.tick, note.key, note.length, color));
+                    }
+                }
+            }
+        }
+
+        all_notes
+    }
+
     /// 获取洋葱皮音符实例（用于其他音轨的音符显示）
     pub fn get_onion_skin_instances(
         &self,

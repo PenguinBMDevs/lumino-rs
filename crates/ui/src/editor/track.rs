@@ -37,8 +37,7 @@ impl super::Editor {
             track_idx
         );
 
-        // 清除网格缓存以强制重绘
-        self.grid_cache.clear();
+        // 音符由 wgpu 渲染，不需要清 grid cache
     }
 
     /// 获取当前音轨索引

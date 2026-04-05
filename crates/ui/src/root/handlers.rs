@@ -182,8 +182,8 @@ impl Root {
 
     /// 处理剩余的消息（备用）
     fn handle_remaining_messages(&mut self, msg: Message) {
-        tracing::debug!("使用备用处理器处理消息: {:?}", std::mem::discriminant(&msg));
-        // 这里可以添加其他处理逻辑
+        // 未处理的消息（通常意味着需要扩展处理器）
+        let _ = std::mem::discriminant(&msg);
     }
 
     // ====================================================================
@@ -201,6 +201,7 @@ impl Root {
 
         if is_theme_change {
             self.editor.grid_cache.clear();
+            self.invalidate_onion_skin_cache();
         }
     }
 
@@ -212,6 +213,9 @@ impl Root {
             None
         };
 
+        // 检查是否是洋葱皮开关
+        let onion_skin_toggled = matches!(&event, sidebar::Event::TrackOnionSkinToggled(_));
+
         self.sidebar.update(event);
 
         // 更新画布偏移
@@ -219,6 +223,11 @@ impl Root {
         let current_offset = self.editor.canvas_offset;
         self.editor
             .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset.y));
+
+        // 洋葱皮开关变化，使缓存失效
+        if onion_skin_toggled {
+            self.invalidate_onion_skin_cache();
+        }
 
         // 如果是音轨切换，发送 Core 事件
         if let Some(track_idx) = track_selected_idx {
@@ -248,6 +257,8 @@ impl Root {
         if self.editor.notes_changed() {
             self.update_playback_notes();
             self.editor.clear_notes_changed();
+            // 音符变化影响洋葱皮缓存
+            self.invalidate_onion_skin_cache();
         }
     }
 }

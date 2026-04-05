@@ -15,17 +15,10 @@ impl Host {
         // 存储逻辑坐标（与 iced 保持一致）
         self.cursor_position = Some(logical_pos);
 
-        tracing::debug!(
-            "光标移动：物理位置=({:?}), 逻辑位置=({}, {})",
-            position,
-            logical_pos.x,
-            logical_pos.y
-        );
-
         // 如果正在调整工具栏高度，更新工具栏高度
         if self.is_toolbar_resizing {
             self.root.toolbar.update_resize_position(logical_pos.y);
-            self.clear_cache();
+            self.ui_dirty = true;
             self.window.request_redraw();
         }
     }
@@ -58,6 +51,7 @@ impl Host {
                             self.root
                                 .editor
                                 .handle_action(message::EditorAction::DeletePressed);
+                            self.ui_dirty = true;
                             self.window.request_redraw();
                         }
                         PhysicalKey::Code(KeyCode::KeyZ) => {
@@ -73,6 +67,7 @@ impl Host {
                                     // Ctrl+Z: 撤销
                                     self.root.editor.handle_action(message::EditorAction::Undo);
                                 }
+                                self.ui_dirty = true;
                                 self.window.request_redraw();
                             }
                         }
@@ -82,6 +77,7 @@ impl Host {
                                 || modifiers.contains(winit::keyboard::ModifiersState::SUPER)
                             {
                                 self.root.editor.handle_action(message::EditorAction::Redo);
+                                self.ui_dirty = true;
                                 self.window.request_redraw();
                             }
                         }
@@ -91,6 +87,7 @@ impl Host {
                                 || modifiers.contains(winit::keyboard::ModifiersState::SUPER);
                             if ctrl_or_cmd {
                                 self.root.editor.handle_action(message::EditorAction::Cut);
+                                self.ui_dirty = true;
                                 self.window.request_redraw();
                             }
                         }
@@ -100,6 +97,7 @@ impl Host {
                                 || modifiers.contains(winit::keyboard::ModifiersState::SUPER);
                             if ctrl_or_cmd {
                                 self.root.editor.handle_action(message::EditorAction::Copy);
+                                self.ui_dirty = true;
                                 self.window.request_redraw();
                             }
                         }
@@ -109,6 +107,7 @@ impl Host {
                                 || modifiers.contains(winit::keyboard::ModifiersState::SUPER);
                             if ctrl_or_cmd {
                                 self.root.editor.handle_action(message::EditorAction::Paste);
+                                self.ui_dirty = true;
                                 self.window.request_redraw();
                             }
                         }
@@ -120,6 +119,7 @@ impl Host {
                                 self.root
                                     .editor
                                     .handle_action(message::EditorAction::SelectAll);
+                                self.ui_dirty = true;
                                 self.window.request_redraw();
                             }
                         }
@@ -135,8 +135,7 @@ impl Host {
                 {
                     self.is_toolbar_resizing = false;
                     self.root.toolbar.end_resize();
-                    // 清除缓存以强制重绘
-                    self.clear_cache();
+                    self.ui_dirty = true;
                     self.window.request_redraw();
                 }
             }
@@ -189,9 +188,8 @@ impl Host {
             self.process_message(message);
         }
 
-        // 清除缓存以确保界面重新构建（特别是侧边栏切换后）
-        self.clear_cache();
-
+        // 标记 UI 需要重建（但不立即重建，等 render_iced_ui 时再做）
+        self.ui_dirty = true;
         self.window.request_redraw();
     }
 

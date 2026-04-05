@@ -118,16 +118,32 @@ impl Root {
     }
 
     /// 获取当前需要绘制的音符实例
-    pub fn get_note_instances(&self) -> Vec<NoteInstance> {
+    pub fn get_note_instances(&mut self) -> Vec<NoteInstance> {
         let sidebar_width = self.sidebar.width() as f32;
         let mut instances = self
             .editor
             .get_note_instances(&self.window.theme, sidebar_width);
 
-        // 添加洋葱皮音符（其他音轨的音符）
-        let onion_states = self.sidebar.get_onion_skin_states();
-        let onion_instances = self.editor.get_all_onion_skin_instances(&onion_states);
-        instances.extend(onion_instances);
+        // 添加洋葱皮音符（使用缓存）
+        if self.onion_skin_generation != self.last_rendered_onion_generation {
+            // 缓存失效，重建原始数据缓存
+            let onion_states = self.sidebar.get_onion_skin_states();
+            let notes: Vec<(f32, u16, f32, iced_core::Color)> =
+                self.editor.get_onion_skin_notes(&onion_states);
+            self.cached_onion_skin_notes = Some(notes);
+            self.last_rendered_onion_generation = self.onion_skin_generation;
+        }
+
+        // 从缓存的原始数据转换为屏幕坐标实例（每帧都做，但只遍历 Vec + 简单数学运算）
+        if let Some(ref cached) = self.cached_onion_skin_notes {
+            for &(tick, key, length, color) in cached {
+                let note = crate::editor::note::Note::new(tick, key, length);
+                let mut instance = note.to_instance(&self.editor.state, color);
+                instance.position[0] += self.editor.canvas_offset.x;
+                instance.position[1] += self.editor.canvas_offset.y;
+                instances.push(instance);
+            }
+        }
 
         instances
     }

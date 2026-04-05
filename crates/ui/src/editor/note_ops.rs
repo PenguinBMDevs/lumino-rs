@@ -66,10 +66,7 @@ impl Editor {
                 }
             }
 
-            // 清除网格缓存以强制重绘
-            self.grid_cache.clear();
-
-            // 标记音符数据已变化
+            // 标记音符数据已变化（音符由 wgpu 渲染，不需要清 grid cache）
             self.mark_notes_changed();
         }
     }
@@ -137,14 +134,14 @@ impl Editor {
         self.selected_notes.clear();
         self.hover_state = None;
 
-        // 清除网格缓存以强制重绘
-        self.grid_cache.clear();
+        // 标记音符数据已变化（音符由 wgpu 渲染，不需要清 grid cache）
+        self.mark_notes_changed();
     }
 
     /// 选择全部音符
     pub fn select_all_notes(&mut self) {
         self.selected_notes.clear();
         self.selected_notes.extend(0..self.notes.len());
-        self.grid_cache.clear();
+        // 选择框是 Canvas 上实时渲染的叠加层，不需要清 grid cache
     }
 }
