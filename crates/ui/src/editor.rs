@@ -311,7 +311,7 @@ impl Editor {
         }
     }
 
-    /// 获取演奏指示线在屏幕上的 X 坐标（用于渲染）
+    /// 获取演奏指示线在 Canvas 坐标系中的 X 坐标（用于渲染）
     /// 返回 None 表示不需要显示指示线
     pub fn get_playback_indicator_screen_x(&self) -> Option<f32> {
         if self.auto_scroll_config.mode == AutoScrollMode::Off {
@@ -320,15 +320,14 @@ impl Editor {
 
         match self.auto_scroll_config.mode {
             AutoScrollMode::FixedIndicatorLeft => {
-                // 模式1：指示线固定在左侧指定位置
+                // 模式1：指示线固定在左侧指定位置（Canvas 坐标系）
                 let indicator_pos = self.auto_scroll_config.fixed_indicator_position as f32;
-                Some(self.state.keyboard_width + indicator_pos + self.canvas_offset.x)
+                Some(self.state.keyboard_width + indicator_pos)
             }
             AutoScrollMode::ScrollingIndicator => {
-                // 模式2：指示线跟随播放位置
+                // 模式2：指示线跟随播放位置（Canvas 坐标系）
                 let indicator_x = self.playback_position * self.state.zoom_x - self.state.scroll_x
-                    + self.state.keyboard_width
-                    + self.canvas_offset.x;
+                    + self.state.keyboard_width;
                 Some(indicator_x)
             }
             AutoScrollMode::Off => None,

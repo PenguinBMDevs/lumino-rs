@@ -47,6 +47,8 @@ pub struct Root {
     onion_skin_generation: u64,
     /// 上次渲染时的 generation
     last_rendered_onion_generation: u64,
+    /// 力度过滤阈值
+    pub(crate) velocity_filter_threshold: u8,
 }
 
 /// Root 构造参数
@@ -83,6 +85,7 @@ impl Root {
             cached_onion_skin_notes: None,
             onion_skin_generation: 0,
             last_rendered_onion_generation: 0,
+            velocity_filter_threshold: params.ui_config.velocity_filter_threshold,
         }
     }
 
@@ -96,6 +99,8 @@ impl Root {
         });
         // 同步橡皮擦行为配置到编辑器
         root.editor.set_eraser_behavior(ui_config.eraser_behavior);
+        // 同步力度过滤阈值
+        root.velocity_filter_threshold = ui_config.velocity_filter_threshold;
         root
     }
 

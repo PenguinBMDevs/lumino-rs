@@ -173,6 +173,13 @@ impl Root {
                 if let crate::settings::Event::EraserBehaviorChanged(behavior) = event {
                     self.editor.set_eraser_behavior(*behavior);
                 }
+                // 如果是力度过滤阈值变更，同步到 Root
+                if let crate::settings::Event::VelocityFilterThresholdChanged(value) = event {
+                    if let Ok(val) = value.parse::<u8>() {
+                        self.velocity_filter_threshold = val;
+                        tracing::debug!("Root: 力度过滤阈值同步为 {}", val);
+                    }
+                }
                 true
             }
             Message::ToggleSettings | Message::Null => true,

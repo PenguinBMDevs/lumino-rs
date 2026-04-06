@@ -170,6 +170,35 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(iced_widget::space().height(20));
 
+    // 力度过滤
+    col = col.push(
+        row![
+            text(format!(
+                "力度过滤阈值: {}",
+                settings.velocity_filter_threshold
+            ))
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_content_text_style())
+            .width(180.0),
+            iced_widget::slider(0..=127, settings.velocity_filter_threshold, |v| {
+                Message::Settings(crate::settings::Event::VelocityFilterThresholdChanged(
+                    v.to_string(),
+                ))
+            })
+            .step(1)
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(SPACING_CONTENT));
+    col = col.push(
+        text("力度小于等于阈值的音符将不播放（0=关闭过滤）")
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+    );
+    col = col.push(iced_widget::space().height(20));
+
     // 帮助文本
     col = col.push(
         text("XSynth: 内置高性能合成器，支持SFZ/SF2格式音色库")

@@ -40,6 +40,8 @@ pub enum Event {
     AutoScrollFixedPositionChanged(String),
     AutoScrollPageTriggerOffsetChanged(String),
     AutoScrollPageReturnPositionChanged(String),
+    // 力度过滤
+    VelocityFilterThresholdChanged(String),
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +61,8 @@ pub struct SettingsPanel {
     pub auto_scroll_fixed_position: u32,
     pub auto_scroll_page_trigger_offset: u32,
     pub auto_scroll_page_return_position: u32,
+    // 力度过滤
+    pub velocity_filter_threshold: u8,
 }
 
 impl SettingsPanel {
@@ -78,6 +82,7 @@ impl SettingsPanel {
             auto_scroll_fixed_position: ui_config.auto_scroll.fixed_indicator_position,
             auto_scroll_page_trigger_offset: ui_config.auto_scroll.page_trigger_offset,
             auto_scroll_page_return_position: ui_config.auto_scroll.page_return_position,
+            velocity_filter_threshold: ui_config.velocity_filter_threshold,
         }
     }
 
@@ -155,6 +160,12 @@ impl SettingsPanel {
             Event::AutoScrollPageReturnPositionChanged(value) => {
                 if let Ok(val) = value.parse::<u32>() {
                     self.auto_scroll_page_return_position = val;
+                }
+            }
+            // 力度过滤
+            Event::VelocityFilterThresholdChanged(value) => {
+                if let Ok(val) = value.parse::<u8>() {
+                    self.velocity_filter_threshold = val;
                 }
             }
         }

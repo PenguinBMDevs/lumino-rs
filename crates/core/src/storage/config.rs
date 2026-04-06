@@ -136,6 +136,9 @@ pub struct UiConfig {
     /// 自动滚动配置
     #[serde(default)]
     pub auto_scroll: AutoScrollConfig,
+    /// 力度过滤阈值（力度 <= 此值的音符不播放，0=关闭过滤，最大127）
+    #[serde(default = "default_velocity_filter_threshold")]
+    pub velocity_filter_threshold: u8,
 }
 
 fn default_synth_backend() -> SynthBackend {
@@ -154,6 +157,9 @@ fn default_synth_threads() -> i32 {
 fn default_synth_fade_out() -> bool {
     true
 }
+fn default_velocity_filter_threshold() -> u8 {
+    1
+}
 
 /// 用户界面配置默认值
 impl Default for UiConfig {
@@ -171,6 +177,7 @@ impl Default for UiConfig {
             program_font_name: String::new(),
             program_font_path: String::new(),
             auto_scroll: AutoScrollConfig::default(),
+            velocity_filter_threshold: default_velocity_filter_threshold(),
         }
     }
 }

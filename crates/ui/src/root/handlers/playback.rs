@@ -54,16 +54,20 @@ impl PlaybackHandler {
         let division = root.editor.state.ppq;
         let mut manager = crate::playback::PlaybackManager::new(division);
 
-        // 设置音符：合并当前音轨和所有其他音轨的音符
+        // 力度过滤阈值
+        let velocity_threshold = root.velocity_filter_threshold;
+
+        // 设置音符：合并当前音轨和所有其他音轨的音符，应用力度过滤
         let mut notes: Vec<NoteEvent> = root
             .editor
             .notes
             .iter()
+            .filter(|note| note.velocity > velocity_threshold)
             .map(|note| NoteEvent {
                 tick: note.tick,
                 channel: 0,
                 key: note.key as u8,
-                velocity: 100,
+                velocity: note.velocity,
                 length: note.length,
             })
             .collect();
@@ -75,13 +79,15 @@ impl PlaybackHandler {
                 continue;
             }
             for note in track_notes {
-                notes.push(NoteEvent {
-                    tick: note.tick,
-                    channel: 0,
-                    key: note.key as u8,
-                    velocity: 100,
-                    length: note.length,
-                });
+                if note.velocity > velocity_threshold {
+                    notes.push(NoteEvent {
+                        tick: note.tick,
+                        channel: 0,
+                        key: note.key as u8,
+                        velocity: note.velocity,
+                        length: note.length,
+                    });
+                }
             }
         }
 
@@ -100,9 +106,10 @@ impl PlaybackHandler {
 
         root.playback_manager = Some(manager);
         tracing::info!(
-            "Root: 播放管理器已初始化 (division={}, 总音符={})",
+            "Root: 播放管理器已初始化 (division={}, 总音符={}, 过滤阈值={})",
             division,
-            total_notes
+            total_notes,
+            velocity_threshold
         );
     }
 }

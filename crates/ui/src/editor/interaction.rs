@@ -27,6 +27,9 @@ impl Editor {
             EditorAction::Redo => {
                 self.redo();
             }
+            EditorAction::Scrubbed { tick } => {
+                self.playback_position = tick;
+            }
         }
     }
 

@@ -22,13 +22,13 @@ impl Root {
     }
 
     /// 加载音符到编辑器
-    pub fn load_notes(&mut self, notes: &[(f32, u8, f32)]) {
+    pub fn load_notes(&mut self, notes: &[(f32, u8, f32, u8)]) {
         self.editor.notes.clear();
-        for (tick, key, length) in notes {
+        for (tick, key, length, velocity) in notes {
             let editor_key = *key as u16;
             self.editor
                 .notes
-                .push(Note::new(*tick, editor_key, *length));
+                .push(Note::new(*tick, editor_key, *length).with_velocity(*velocity));
         }
         self.invalidate_onion_skin_cache();
     }
@@ -42,13 +42,13 @@ impl Root {
     }
 
     /// 加载指定音轨的音符到编辑器（用于 MIDI 文件）
-    pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32)]) {
+    pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32, u8)]) {
         self.editor.notes.clear();
         let mut track_notes = Vec::with_capacity(notes.len());
 
-        for (tick, key, length) in notes {
+        for (tick, key, length, velocity) in notes {
             let editor_key = *key as u16;
-            let note = Note::new(*tick, editor_key, *length);
+            let note = Note::new(*tick, editor_key, *length).with_velocity(*velocity);
             self.editor.notes.push(note.clone());
             track_notes.push(note);
         }

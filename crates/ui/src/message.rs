@@ -31,6 +31,10 @@ pub enum EditorAction {
     Undo,
     /// 重做
     Redo,
+    /// 标尺 scrubbing：设置播放位置（tick 值）
+    Scrubbed {
+        tick: f32,
+    },
 }
 
 #[derive(Debug, Clone)]

@@ -64,6 +64,18 @@ impl<'a> PianoRollGrid<'a> {
         state: &mut CanvasState,
         local_pos: iced_core::Point,
     ) -> Option<canvas::Action<Message>> {
+        // 检测标尺区域点击（时间轴 scrubbing）
+        if local_pos.y < self.editor.state.ruler_height
+            && local_pos.x >= self.editor.state.keyboard_width
+        {
+            // 标尺点击：设置播放位置（scrubbing）
+            let tick = self.editor.x_to_tick(local_pos.x);
+            let snapped_tick = self.editor.snap_tick(tick).max(0.0);
+            return Some(canvas::Action::publish(Message::EditorAction(
+                EditorAction::Scrubbed { tick: snapped_tick },
+            )));
+        }
+
         if self.detect_double_click(state, local_pos) {
             Some(canvas::Action::publish(Message::EditorAction(
                 EditorAction::DoubleClicked(local_pos),

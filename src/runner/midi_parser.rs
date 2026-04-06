@@ -5,13 +5,14 @@ use std::collections::HashMap;
 /// 音轨信息: (track_index, track_name, note_count)
 pub type TrackInfo = (usize, Option<String>, u64);
 
-/// 音轨音符映射: track_index -> notes
-pub type TrackNotesMap = HashMap<usize, Vec<(f32, u8, f32)>>;
+/// 音轨音符映射: track_index -> notes (tick, key, length, velocity)
+pub type TrackNotesMap = HashMap<usize, Vec<(f32, u8, f32, u8)>>;
 
 /// 通用的 MIDI 音符解析函数
-/// 将 MIDI 事件列表解析为音符列表
-pub fn parse_midi_events_to_notes(events: &[MidiEvent]) -> Vec<(f32, u8, f32)> {
-    let mut active_notes: HashMap<(u8, u8), u32> = HashMap::new();
+/// 将 MIDI 事件列表解析为音符列表 (tick, key, length, velocity)
+pub fn parse_midi_events_to_notes(events: &[MidiEvent]) -> Vec<(f32, u8, f32, u8)> {
+    // (channel, key) -> (start_tick, velocity)
+    let mut active_notes: HashMap<(u8, u8), (u32, u8)> = HashMap::new();
     let mut notes = Vec::new();
 
     for event in events {
@@ -25,16 +26,16 @@ pub fn parse_midi_events_to_notes(events: &[MidiEvent]) -> Vec<(f32, u8, f32)> {
             } => {
                 if *velocity > 0 {
                     // 如果音符已经在活动状态，先结束它
-                    if let Some(start_tick) = active_notes.remove(&(*channel, *key)) {
+                    if let Some((start_tick, vel)) = active_notes.remove(&(*channel, *key)) {
                         let length = tick.saturating_sub(start_tick) as f32;
-                        notes.push((start_tick as f32, *key, length));
+                        notes.push((start_tick as f32, *key, length, vel));
                     }
                     // 记录音符开始
-                    active_notes.insert((*channel, *key), *tick);
-                } else if let Some(start_tick) = active_notes.remove(&(*channel, *key)) {
+                    active_notes.insert((*channel, *key), (*tick, *velocity));
+                } else if let Some((start_tick, vel)) = active_notes.remove(&(*channel, *key)) {
                     // velocity == 0 视为 NoteOff
                     let length = tick.saturating_sub(start_tick) as f32;
-                    notes.push((start_tick as f32, *key, length));
+                    notes.push((start_tick as f32, *key, length, vel));
                 }
             }
             MidiEvent::NoteOff {
@@ -42,11 +43,13 @@ pub fn parse_midi_events_to_notes(events: &[MidiEvent]) -> Vec<(f32, u8, f32)> {
                 tick,
                 channel,
                 key,
-                ..
+                velocity,
             } => {
-                if let Some(start_tick) = active_notes.remove(&(*channel, *key)) {
+                if let Some((start_tick, vel)) = active_notes.remove(&(*channel, *key)) {
                     let length = tick.saturating_sub(start_tick) as f32;
-                    notes.push((start_tick as f32, *key, length));
+                    // NoteOff 也有 velocity，但通常用 NoteOn 的 velocity
+                    let _ = velocity;
+                    notes.push((start_tick as f32, *key, length, vel));
                 }
             }
             _ => {}
@@ -55,9 +58,9 @@ pub fn parse_midi_events_to_notes(events: &[MidiEvent]) -> Vec<(f32, u8, f32)> {
 
     // 处理未关闭的音符（到音轨结束）
     let track_end_tick = events.iter().map(|e| e.tick()).max().unwrap_or(0);
-    for ((_channel, key), start_tick) in active_notes {
+    for ((_channel, key), (start_tick, vel)) in active_notes {
         let length = track_end_tick.saturating_sub(start_tick) as f32;
-        notes.push((start_tick as f32, key, length));
+        notes.push((start_tick as f32, key, length, vel));
     }
 
     notes
@@ -69,7 +72,7 @@ pub fn parse_smf_to_notes(smf: &Smf) -> (Vec<TrackInfo>, TrackNotesMap) {
     let mut track_notes_map: TrackNotesMap = HashMap::new();
 
     for (track_idx, track) in smf.tracks.iter().enumerate() {
-        let mut active_notes: std::collections::HashMap<(u8, u8), u32> =
+        let mut active_notes: std::collections::HashMap<(u8, u8), (u32, u8)> =
             std::collections::HashMap::new();
         let mut notes = Vec::new();
         let mut track_name: Option<String> = None;
@@ -87,33 +90,36 @@ pub fn parse_smf_to_notes(smf: &Smf) -> (Vec<TrackInfo>, TrackNotesMap) {
                     message: midly::MidiMessage::NoteOn { key, vel },
                 } => {
                     if vel > 0 {
+                        let ch = channel.as_int();
+                        let k = key.as_int();
+                        let v = vel.as_int();
                         // 如果音符已经在活动状态，先结束它
-                        if let Some(start_tick) =
-                            active_notes.remove(&(channel.as_int(), key.as_int()))
-                        {
+                        if let Some((start_tick, start_vel)) = active_notes.remove(&(ch, k)) {
                             let length = abs_tick.saturating_sub(start_tick) as f32;
-                            notes.push((start_tick as f32, key.as_int(), length));
+                            notes.push((start_tick as f32, k, length, start_vel));
                         }
-                        active_notes.insert((channel.as_int(), key.as_int()), abs_tick);
+                        active_notes.insert((ch, k), (abs_tick, v));
                     } else {
                         // velocity == 0 视为 NoteOff
-                        if let Some(start_tick) =
-                            active_notes.remove(&(channel.as_int(), key.as_int()))
-                        {
+                        let ch = channel.as_int();
+                        let k = key.as_int();
+                        if let Some((start_tick, start_vel)) = active_notes.remove(&(ch, k)) {
                             let length = abs_tick.saturating_sub(start_tick) as f32;
-                            notes.push((start_tick as f32, key.as_int(), length));
+                            notes.push((start_tick as f32, k, length, start_vel));
                         }
                     }
                 }
                 TrackEventKind::Midi {
                     channel,
-                    message: midly::MidiMessage::NoteOff { key, .. },
+                    message: midly::MidiMessage::NoteOff { key, vel },
                 } => {
-                    if let Some(start_tick) = active_notes.remove(&(channel.as_int(), key.as_int()))
-                    {
+                    let ch = channel.as_int();
+                    let k = key.as_int();
+                    if let Some((start_tick, start_vel)) = active_notes.remove(&(ch, k)) {
                         let length = abs_tick.saturating_sub(start_tick) as f32;
-                        notes.push((start_tick as f32, key.as_int(), length));
+                        notes.push((start_tick as f32, k, length, start_vel));
                     }
+                    let _ = vel;
                 }
                 _ => {}
             }
@@ -121,9 +127,9 @@ pub fn parse_smf_to_notes(smf: &Smf) -> (Vec<TrackInfo>, TrackNotesMap) {
 
         // 处理未关闭的音符
         let track_end_tick = abs_tick;
-        for ((_channel, key), start_tick) in active_notes {
+        for ((_channel, key), (start_tick, vel)) in active_notes {
             let length = track_end_tick.saturating_sub(start_tick) as f32;
-            notes.push((start_tick as f32, key, length));
+            notes.push((start_tick as f32, key, length, vel));
         }
 
         if !notes.is_empty() {
