@@ -24,11 +24,11 @@ async fn main() -> Result<(), winit::error::EventLoopError> {
     });
 
     let mut runner = runner::Runner::default();
-    
+
     // 如果是测试模式，设置测试配置
     if let Some(config) = test_config {
         runner.set_test_config(config);
     }
-    
+
     event_loop.run_app(&mut runner)
 }

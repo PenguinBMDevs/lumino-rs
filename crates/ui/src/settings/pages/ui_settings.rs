@@ -105,6 +105,78 @@ pub fn view<'a>(
         text("启用后，将使用系统原生标题栏，隐藏 Logo 和自定义窗口控制按钮")
             .size(12.0)
             .style(create_placeholder_text_style()),
+        iced_widget::space().height(24),
+        // 自动滚动配置
+        text("自动滚动设置")
+            .size(TEXT_SIZE_TITLE)
+            .style(create_content_text_style()),
+        iced_widget::space().height(12),
+        // 模式1：指示线固定位置
+        row![
+            text("模式1 - 指示线固定位置:")
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            text_input("像素", &settings.auto_scroll_fixed_position.to_string())
+                .on_input(|v| Message::Settings(
+                    crate::settings::Event::AutoScrollFixedPositionChanged(v)
+                ))
+                .width(80.0),
+            iced_widget::space().width(SPACING_ICON_LABEL),
+            text("像素 (从左边缘算起)")
+                .size(12.0)
+                .style(create_placeholder_text_style()),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        // 模式2：翻页触发位置
+        row![
+            text("模式2 - 翻页触发位置:")
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            text_input(
+                "像素",
+                &settings.auto_scroll_page_trigger_offset.to_string()
+            )
+            .on_input(|v| Message::Settings(
+                crate::settings::Event::AutoScrollPageTriggerOffsetChanged(v)
+            ))
+            .width(80.0),
+            iced_widget::space().width(SPACING_ICON_LABEL),
+            text("像素 (从右边缘算起)")
+                .size(12.0)
+                .style(create_placeholder_text_style()),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        // 模式2：翻页后回到的位置
+        row![
+            text("模式2 - 翻页后位置:")
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            text_input(
+                "像素",
+                &settings.auto_scroll_page_return_position.to_string()
+            )
+            .on_input(|v| Message::Settings(
+                crate::settings::Event::AutoScrollPageReturnPositionChanged(v)
+            ))
+            .width(80.0),
+            iced_widget::space().width(SPACING_ICON_LABEL),
+            text("像素 (从左边缘算起)")
+                .size(12.0)
+                .style(create_placeholder_text_style()),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        text("设置卷帘自动滚动时演奏指示线的位置行为")
+            .size(12.0)
+            .style(create_placeholder_text_style()),
     ]
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT)

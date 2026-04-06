@@ -42,6 +42,9 @@ impl PlaybackHandler {
     fn handle_playback_tick(&self, root: &mut Root, tick: f32) {
         root.editor.playback_position = tick;
 
+        // 更新自动滚动
+        root.editor.update_auto_scroll(tick);
+
         if let Some(manager) = &mut root.playback_manager {
             manager.update();
         }

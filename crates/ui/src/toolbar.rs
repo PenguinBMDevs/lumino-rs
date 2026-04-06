@@ -31,6 +31,8 @@ pub struct Toolbar {
     pub note_precision: NotePrecision,
     /// 自定义精度对话框状态
     pub custom_precision_dialog: CustomPrecisionDialog,
+    /// 自动滚动模式
+    pub auto_scroll_mode: lumino_core::storage::config::AutoScrollMode,
 }
 
 impl Toolbar {
@@ -45,6 +47,7 @@ impl Toolbar {
             resize_start_height: DEFAULT_HEIGHT,
             note_precision: NotePrecision::default(),
             custom_precision_dialog: CustomPrecisionDialog::default(),
+            auto_scroll_mode: lumino_core::storage::config::AutoScrollMode::default(),
         }
     }
 
@@ -107,6 +110,21 @@ impl Toolbar {
             Event::OpenCollaborationDialog => {
                 // 协作对话框处理由 Root 转发到外部
                 tracing::debug!("工具栏: 请求打开协作对话框");
+            }
+            Event::AutoScrollModeChanged => {
+                // 循环切换自动滚动模式
+                self.auto_scroll_mode = match self.auto_scroll_mode {
+                    lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft => {
+                        lumino_core::storage::config::AutoScrollMode::ScrollingIndicator
+                    }
+                    lumino_core::storage::config::AutoScrollMode::ScrollingIndicator => {
+                        lumino_core::storage::config::AutoScrollMode::Off
+                    }
+                    lumino_core::storage::config::AutoScrollMode::Off => {
+                        lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft
+                    }
+                };
+                tracing::debug!("工具栏: 自动滚动模式切换为 {:?}", self.auto_scroll_mode);
             }
             Event::ResizeDragStarted(_) => {
                 // 拖拽开始由 Host 处理，这里只需要标记状态

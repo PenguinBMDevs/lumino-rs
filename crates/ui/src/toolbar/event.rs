@@ -36,6 +36,8 @@ pub enum Event {
     CustomPrecisionDivisorChanged(String),
     /// 打开协作对话框
     OpenCollaborationDialog,
+    /// 自动滚动模式切换
+    AutoScrollModeChanged,
     /// 开始拖拽调整高度
     ResizeDragStarted(Point),
     /// 拖拽中调整高度
@@ -115,6 +117,10 @@ impl Event {
 
     pub const fn open_collaboration_dialog() -> Message {
         Message::Toolbar(Self::OpenCollaborationDialog)
+    }
+
+    pub const fn auto_scroll_mode_changed() -> Message {
+        Message::Toolbar(Self::AutoScrollModeChanged)
     }
 
     pub fn resize_drag_started() -> Message {

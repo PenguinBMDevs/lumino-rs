@@ -52,6 +52,10 @@ pub enum Icon {
     MousePointer,
     Pencil,
     Eraser,
+    // 自动滚动图标
+    ArrowsLeftRight,
+    Scroll,
+    Ban,
 }
 
 struct IconData {
@@ -88,6 +92,10 @@ static ICON_CACHE: Lazy<HashMap<Icon, IconData>> = Lazy::new(|| {
         Icon::MousePointer,
         Icon::Pencil,
         Icon::Eraser,
+        // 自动滚动图标
+        Icon::ArrowsLeftRight,
+        Icon::Scroll,
+        Icon::Ban,
     ] {
         match render_svg_to_data(icon) {
             Ok(data) => {
@@ -266,5 +274,11 @@ fn bytes(icon: Icon) -> &'static [u8] {
         }
         Icon::Pencil => include_bytes!("../../../../resources/icons/toolbar/pencil.svg"),
         Icon::Eraser => include_bytes!("../../../../resources/icons/toolbar/eraser.svg"),
+        // 自动滚动图标
+        Icon::ArrowsLeftRight => {
+            include_bytes!("../../../../resources/icons/toolbar/arrows-left-right.svg")
+        }
+        Icon::Scroll => include_bytes!("../../../../resources/icons/toolbar/scroll.svg"),
+        Icon::Ban => include_bytes!("../../../../resources/icons/toolbar/ban.svg"),
     }
 }

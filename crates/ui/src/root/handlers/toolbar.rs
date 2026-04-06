@@ -25,6 +25,9 @@ impl ToolbarHandler {
         // 同步精度设置
         self.sync_toolbar_precision(root, &event);
 
+        // 同步自动滚动模式
+        self.sync_auto_scroll_mode(root, &event);
+
         // 处理撤销/重做
         self.handle_toolbar_undo_redo(root, &event);
 
@@ -158,6 +161,21 @@ impl ToolbarHandler {
             lumino_core::event::emit(lumino_core::event::Event::Window(
                 lumino_core::event::window::Event::OpenCollaborationDialog,
             ));
+        }
+    }
+
+    fn sync_auto_scroll_mode(&self, root: &mut Root, event: &crate::toolbar::Event) {
+        if matches!(event, crate::toolbar::Event::AutoScrollModeChanged) {
+            // 同步自动滚动模式到 editor（toolbar 已经切换了模式，这里同步到 editor）
+            root.editor
+                .set_auto_scroll_config(lumino_core::storage::config::AutoScrollConfig {
+                    mode: root.toolbar.auto_scroll_mode,
+                    ..root.editor.auto_scroll_config().clone()
+                });
+            tracing::debug!(
+                "Root: 自动滚动模式同步为 {:?}",
+                root.toolbar.auto_scroll_mode
+            );
         }
     }
 }

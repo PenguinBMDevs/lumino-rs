@@ -122,6 +122,54 @@ impl Toolbar {
             container::Style::default().background(palette.background.weakest.color)
         });
 
+        // 自动滚动按钮区域
+        use lumino_core::storage::config::AutoScrollMode;
+        let auto_scroll_label = match self.auto_scroll_mode {
+            AutoScrollMode::FixedIndicatorLeft => "自动滚动: 固定",
+            AutoScrollMode::ScrollingIndicator => "自动滚动: 滚动",
+            AutoScrollMode::Off => "自动滚动: 关闭",
+        };
+        let auto_scroll_icon = match self.auto_scroll_mode {
+            AutoScrollMode::FixedIndicatorLeft => icon::ArrowsLeftRight,
+            AutoScrollMode::ScrollingIndicator => icon::Scroll,
+            AutoScrollMode::Off => icon::Ban,
+        };
+        let auto_scroll_button = container(
+            button(
+                row![
+                    icon::view_with_size_and_theme(auto_scroll_icon, 18, 18, Some(&window.theme)),
+                    space().width(6),
+                    text(auto_scroll_label)
+                        .size(14)
+                        .color(palette.background.weakest.text),
+                ]
+                .align_y(Alignment::Center),
+            )
+            .on_press(Event::auto_scroll_mode_changed())
+            .style(move |_theme: &Theme, status| {
+                let bg = match status {
+                    iced_widget::button::Status::Hovered => palette.background.weak.color,
+                    _ => palette.background.weakest.color,
+                };
+                button::Style {
+                    border: iced_core::Border {
+                        radius: 4.0.into(),
+                        width: 0.0,
+                        color: iced_core::Color::TRANSPARENT,
+                    },
+                    ..Default::default()
+                }
+                .with_background(bg)
+            })
+            .padding([8, 12]),
+        )
+        .height(content_height)
+        .align_y(iced_core::alignment::Vertical::Center)
+        .padding([0, 16])
+        .style(move |_theme: &Theme| {
+            container::Style::default().background(palette.background.weakest.color)
+        });
+
         // 协作按钮区域
         let collaboration_button = container(
             button(
@@ -193,6 +241,8 @@ impl Toolbar {
                 space().width(16),
                 precision_selector,
                 space().width(iced_widget::core::Length::Fill),
+                auto_scroll_button,
+                space().width(16),
                 collaboration_button,
             ]
             .align_y(Alignment::Center),

@@ -10,10 +10,14 @@ use iced_widget::canvas::{Frame, Geometry, Path, Stroke};
 pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Geometry<Renderer> {
     let mut frame = Frame::new(renderer, bounds.size());
 
-    // 计算演奏指示线的视图坐标
-    // tick_to_x 已经包含了滚动偏移的计算
-    let view_x = editor.playback_position * editor.state.zoom_x + editor.state.keyboard_width
-        - editor.state.scroll_x;
+    // 获取演奏指示线的屏幕 X 坐标（考虑自动滚动模式）
+    let view_x = if let Some(x) = editor.get_playback_indicator_screen_x() {
+        x
+    } else {
+        // 自动滚动关闭时，使用默认计算方式
+        editor.playback_position * editor.state.zoom_x + editor.state.keyboard_width
+            - editor.state.scroll_x
+    };
 
     // 计算绘制区域（从标尺底部到画布底部）
     let start_y = 0.0;
