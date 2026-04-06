@@ -88,8 +88,8 @@ impl ToolbarHandler {
         let division = root.editor.state.ppq;
         let mut manager = PlaybackManager::new(division);
 
-        // 设置音符
-        let notes: Vec<NoteEvent> = root
+        // 设置音符：合并当前音轨和所有其他音轨的音符
+        let mut notes: Vec<NoteEvent> = root
             .editor
             .notes
             .iter()
@@ -101,6 +101,24 @@ impl ToolbarHandler {
                 length: note.length,
             })
             .collect();
+
+        // 添加其他音轨的音符
+        for (track_idx, track_notes) in &root.editor.track_notes {
+            if *track_idx == root.editor.current_track {
+                continue;
+            }
+            for note in track_notes {
+                notes.push(NoteEvent {
+                    tick: note.tick,
+                    channel: 0,
+                    key: note.key as u8,
+                    velocity: 100,
+                    length: note.length,
+                });
+            }
+        }
+
+        let total_notes = notes.len();
         manager.set_notes(notes);
 
         // 应用缓存的 tempo 变化
@@ -115,9 +133,9 @@ impl ToolbarHandler {
 
         root.playback_manager = Some(manager);
         tracing::info!(
-            "Root: 播放管理器已初始化 (division={}, notes={})",
+            "Root: 播放管理器已初始化 (division={}, 总音符={})",
             division,
-            root.editor.notes.len()
+            total_notes
         );
     }
 
