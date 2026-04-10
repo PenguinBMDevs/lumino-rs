@@ -3,6 +3,7 @@ pub mod history;
 pub mod note;
 pub mod onion_skin;
 pub mod scrollbar_widget;
+pub mod spatial_index;
 pub mod state;
 
 // 新增子模块
@@ -24,6 +25,7 @@ use iced_core::Point;
 use iced_widget::canvas;
 use lumino_core::storage::config::{AutoScrollConfig, AutoScrollMode};
 use lumino_gfx::NoteInstance;
+use std::cell::{Cell, RefCell};
 
 use note::Note;
 pub use onion_skin::OnionSkinConfig;
@@ -126,6 +128,14 @@ pub struct Editor {
 
     /// 自动滚动配置
     auto_scroll_config: AutoScrollConfig,
+
+    /// 音符空间索引（惰性更新）
+    pub note_index: RefCell<Option<spatial_index::NoteSpatialIndex>>,
+    pub note_index_dirty: Cell<bool>,
+
+    /// 其他音轨的音符空间索引（用于洋葱皮等，懒加载）
+    pub track_note_indices:
+        RefCell<std::collections::HashMap<usize, spatial_index::NoteSpatialIndex>>,
 }
 
 impl Editor {
@@ -154,6 +164,9 @@ impl Editor {
             playback_position: 0.0,
             notes_changed: false,
             auto_scroll_config: AutoScrollConfig::default(),
+            note_index: RefCell::new(None),
+            note_index_dirty: Cell::new(true),
+            track_note_indices: RefCell::new(std::collections::HashMap::new()),
         };
         editor.max_scroll_x = editor.state.total_ticks as f32 * editor.state.zoom_x;
         editor.max_scroll_y = editor.state.visible_key_count as f32 * editor.state.zoom_y;
@@ -229,6 +242,7 @@ impl Editor {
     /// 标记音符数据已变化
     pub fn mark_notes_changed(&mut self) {
         self.notes_changed = true;
+        self.note_index_dirty.set(true);
     }
 
     // ===== 自动滚动相关 =====
@@ -423,17 +437,15 @@ impl Editor {
         self.grid_cache.clear();
     }
 
-    /// 将音符列表转换为窗口坐标的实例（添加 Canvas 偏移）
-    fn notes_to_window_instances<'a>(
+    /// 将音符列表转换为逻辑实例（GPU 负责坐标变换）
+    fn notes_to_instances<'a>(
         &self,
         notes: impl Iterator<Item = &'a Note>,
         color: iced_core::Color,
     ) -> Vec<NoteInstance> {
         let mut instances = Vec::new();
         for note in notes {
-            let mut instance = note.to_instance(&self.state, color);
-            instance.position[0] += self.canvas_offset.x;
-            instance.position[1] += self.canvas_offset.y;
+            let instance = note.to_instance(color);
             instances.push(instance);
         }
         instances
@@ -446,6 +458,8 @@ impl Editor {
         track_onion_states: &std::collections::HashMap<usize, bool>,
         visible_tick_start: f32,
         visible_tick_end: f32,
+        visible_key_min: u16,
+        visible_key_max: u16,
     ) -> Vec<(f32, u16, f32, iced_core::Color)> {
         if !self.is_onion_skin_enabled() {
             return Vec::new();
@@ -461,7 +475,6 @@ impl Editor {
         track_indices.sort();
 
         let mut all_notes = Vec::new();
-        let search_start = (visible_tick_start - 19200.0).max(0.0);
 
         for track_idx in track_indices {
             if let Some(&is_enabled) = track_onion_states.get(&track_idx) {
@@ -474,10 +487,31 @@ impl Editor {
                 if let Some(notes) = self.track_notes.get(&track_idx) {
                     let color = self.onion_skin_config.get_track_color(track_idx);
 
-                    let start_idx = notes.partition_point(|n| n.tick < search_start);
-                    let end_idx = notes.partition_point(|n| n.tick <= visible_tick_end);
+                    let search_start = (visible_tick_start - 19200.0).max(0.0);
+                    let mut indices_map = self.track_note_indices.borrow_mut();
+                    let index = indices_map
+                        .entry(track_idx)
+                        .or_insert_with(|| spatial_index::NoteSpatialIndex::from_notes(notes));
 
-                    for note in &notes[start_idx..end_idx] {
+                    // 使用实际的 key 范围进行裁剪，而不是 0..127
+                    let candidates = index.query(
+                        search_start,
+                        visible_tick_end,
+                        visible_key_min,
+                        visible_key_max,
+                    );
+
+                    for &i in &candidates {
+                        let note = &notes[i];
+                        // 精确的 tick 和 key 裁剪
+                        if note.tick + note.length < visible_tick_start
+                            || note.tick > visible_tick_end
+                        {
+                            continue;
+                        }
+                        if note.key < visible_key_min || note.key > visible_key_max {
+                            continue;
+                        }
                         all_notes.push((note.tick, note.key, note.length, color));
                     }
                 }
@@ -515,7 +549,7 @@ impl Editor {
         }
 
         let color = self.onion_skin_config.get_track_color(track_idx);
-        self.notes_to_window_instances(notes.iter(), color)
+        self.notes_to_instances(notes.iter(), color)
     }
 
     /// 获取所有洋葱皮音符实例（所有其他音轨）
@@ -572,6 +606,8 @@ impl Editor {
             self.notes = snapshot.notes;
             self.current_track = snapshot.current_track;
             self.grid_cache.clear();
+            self.note_index_dirty.set(true);
+            self.track_note_indices.borrow_mut().clear();
             tracing::info!("撤销操作成功: {} 个音符", self.notes.len());
             true
         } else {
@@ -588,6 +624,8 @@ impl Editor {
             self.notes = snapshot.notes;
             self.current_track = snapshot.current_track;
             self.grid_cache.clear();
+            self.note_index_dirty.set(true);
+            self.track_note_indices.borrow_mut().clear();
             tracing::info!("重做操作成功");
             true
         } else {

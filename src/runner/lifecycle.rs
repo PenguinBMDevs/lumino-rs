@@ -6,6 +6,8 @@ use super::dialog_manager::DialogResult;
 use super::inner::{InitError, Runner, RunnerInner};
 
 // 测试模式全局状态
+// SAFETY: 这些静态变量仅在测试模式下使用，且访问由 winit 事件循环单线程执行，
+// 因此不存在数据竞争。所有 unsafe 块都遵循这一约定。
 static mut TEST_MODE_ACTIVE: bool = false;
 static mut TEST_MODE_START_TIME: Option<Instant> = None;
 static mut TEST_MODE_DURATION: Option<u64> = None;
@@ -224,13 +226,16 @@ impl winit::application::ApplicationHandler for Runner {
                             fps,
                             TEST_MODE_FPS_SAMPLES.len()
                         );
-                        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+                        if let Err(e) = std::io::Write::flush(&mut std::io::stdout()) {
+                            tracing::warn!("FPS 输出刷新失败: {}", e);
+                        }
 
                         // 检查测试时间是否到达
                         if let Some(duration) = TEST_MODE_DURATION {
-                            if now.duration_since(TEST_MODE_START_TIME.unwrap())
-                                >= Duration::from_secs(duration)
-                            {
+                            let should_exit = TEST_MODE_START_TIME
+                                .map(|start| now.duration_since(start) >= Duration::from_secs(duration))
+                                .unwrap_or(false);
+                            if should_exit {
                                 let avg_fps = TEST_MODE_FPS_SAMPLES.iter().sum::<f32>()
                                     / TEST_MODE_FPS_SAMPLES.len() as f32;
                                 println!("\n\n================================");

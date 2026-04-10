@@ -5,4 +5,4 @@ mod note_renderer;
 
 pub use context::{Context, ContextError, Result};
 pub use grid_renderer::{GridLineInstance, GridRenderer};
-pub use note_renderer::{NoteInstance, NoteRenderer};
+pub use note_renderer::{CameraUniform, CullUniform, NoteInstance, NoteRenderer, RenderUniform};

@@ -38,13 +38,11 @@ impl Note {
         Rectangle::new(Point::new(x, y), Size::new(width, height))
     }
 
-    pub fn to_instance(&self, view_state: &ViewState, color: Color) -> NoteInstance {
-        let bounds = self.screen_bounds(view_state);
+    pub fn to_instance(&self, color: Color) -> NoteInstance {
         NoteInstance::new(
-            bounds.x,
-            bounds.y,
-            bounds.width,
-            bounds.height,
+            self.tick,
+            self.key as f32,
+            self.length,
             color_to_array(color),
         )
     }

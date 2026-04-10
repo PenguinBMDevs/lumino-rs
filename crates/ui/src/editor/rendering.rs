@@ -87,13 +87,33 @@ impl Editor {
         let visible_key_max = key_top_f32.ceil() as u16 + 1; // 加 1 容错
         let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1); // 减 1 容错
 
-        // 计算搜索范围
-        let search_start = (visible_tick_start - 19200.0).max(0.0);
-        let start_idx = self.notes.partition_point(|n| n.tick < search_start);
-        let end_idx = self.notes.partition_point(|n| n.tick <= visible_tick_end);
+        if self.note_index_dirty.get() {
+            *self.note_index.borrow_mut() = Some(
+                crate::editor::spatial_index::NoteSpatialIndex::from_notes(&self.notes),
+            );
+            self.note_index_dirty.set(false);
+            tracing::debug!(
+                "Editor: rebuild spatial index for {} notes",
+                self.notes.len()
+            );
+        }
+
+        let candidates = {
+            if let Some(index) = &*self.note_index.borrow() {
+                // 加一些容差，确保音符尾部也能被包含，虽然树内部已经处理过了
+                index.query(
+                    visible_tick_start,
+                    visible_tick_end,
+                    visible_key_min,
+                    visible_key_max,
+                )
+            } else {
+                Vec::new()
+            }
+        };
 
         // 渲染已放置的音符（带视锥裁剪）
-        for i in start_idx..end_idx {
+        for &i in &candidates {
             let note = &self.notes[i];
             // CPU 端视锥裁剪：只处理可见范围内的音符
             // 检查 tick 范围（音符结束位置 > 可见起始，且音符起始 < 可见结束）
@@ -119,11 +139,7 @@ impl Editor {
                 _ => default_color,
             };
 
-            let mut instance = note.to_instance(&self.state, color);
-            // 转换为窗口坐标：加上 Canvas 偏移
-            instance.position[0] += self.canvas_offset.x;
-            instance.position[1] += self.canvas_offset.y;
-
+            let instance = note.to_instance(color);
             instances.push(instance);
         }
 
@@ -144,9 +160,7 @@ impl Editor {
             let length = length.max(self.state.snap_precision);
             let drawing_note = super::Note::new(tick, key, length);
 
-            let mut instance = drawing_note.to_instance(&self.state, active_color);
-            instance.position[0] += self.canvas_offset.x;
-            instance.position[1] += self.canvas_offset.y;
+            let instance = drawing_note.to_instance(active_color);
             instances.push(instance);
         } else if let Some(pos) = self.cursor_position {
             // 预览音符 - 仅在空闲状态、没有悬停在其他音符上且使用铅笔工具时显示
@@ -164,9 +178,7 @@ impl Editor {
                     let mut preview_color = default_color;
                     preview_color.a = PREVIEW_NOTE_OPACITY;
 
-                    let mut instance = preview_note.to_instance(&self.state, preview_color);
-                    instance.position[0] += self.canvas_offset.x;
-                    instance.position[1] += self.canvas_offset.y;
+                    let instance = preview_note.to_instance(preview_color);
                     instances.push(instance);
                 }
             }

@@ -1,43 +1,83 @@
 //! 音符渲染器类型定义
 
-/// 音符实例数据 - 每个音符对应一个实例
+/// 音符逻辑实例数据 - GPU 侧通过 CameraUniform 计算最终屏幕位置
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct NoteInstance {
-    /// 左上角位置 (x, y)
+    /// 逻辑位置: [tick, key]
     pub position: [f32; 2],
-    /// 尺寸 (width, height)
+    /// 逻辑尺寸: [length, 1.0]（height 固定为1个key，在GPU中通过 zoom_y 展开）
     pub size: [f32; 2],
     /// 颜色 (r, g, b, a)
     pub color: [f32; 4],
 }
 
 impl NoteInstance {
-    /// 创建新的音符实例
+    /// 创建新的音符逻辑实例
     #[must_use]
-    pub const fn new(x: f32, y: f32, width: f32, height: f32, color: [f32; 4]) -> Self {
+    pub const fn new(tick: f32, key: f32, length: f32, color: [f32; 4]) -> Self {
         Self {
-            position: [x, y],
-            size: [width, height],
+            position: [tick, key],
+            size: [length, 1.0],
             color,
         }
     }
 }
 
-/// 视口 uniform 数据
+/// 摄像机/视口 uniform 数据
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct ViewportUniform {
-    pub size: [f32; 2],
-    pub _padding: [f32; 2],
+pub struct CameraUniform {
+    pub scroll: [f32; 2],
+    pub zoom: [f32; 2],
+    pub viewport_size: [f32; 2],
+    pub canvas_offset: [f32; 2],
+    pub keyboard_width: f32,
+    pub ruler_height: f32,
+    pub max_key_index: f32,
+    pub _padding: f32,
 }
 
-impl ViewportUniform {
+impl CameraUniform {
     #[must_use]
-    pub const fn new(width: f32, height: f32) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new(
+        scroll_x: f32,
+        scroll_y: f32,
+        zoom_x: f32,
+        zoom_y: f32,
+        viewport_width: f32,
+        viewport_height: f32,
+        canvas_offset_x: f32,
+        canvas_offset_y: f32,
+        keyboard_width: f32,
+        ruler_height: f32,
+        max_key_index: f32,
+    ) -> Self {
         Self {
-            size: [width, height],
-            _padding: [0.0, 0.0],
+            scroll: [scroll_x, scroll_y],
+            zoom: [zoom_x, zoom_y],
+            viewport_size: [viewport_width, viewport_height],
+            canvas_offset: [canvas_offset_x, canvas_offset_y],
+            keyboard_width,
+            ruler_height,
+            max_key_index,
+            _padding: 0.0,
+        }
+    }
+}
+
+impl Default for CameraUniform {
+    fn default() -> Self {
+        Self {
+            scroll: [0.0, 0.0],
+            zoom: [1.0, 1.0],
+            viewport_size: [0.0, 0.0],
+            canvas_offset: [0.0, 0.0],
+            keyboard_width: 0.0,
+            ruler_height: 0.0,
+            max_key_index: 0.0,
+            _padding: 0.0,
         }
     }
 }
@@ -50,6 +90,15 @@ pub struct CullUniform {
     pub _padding: [u32; 3],
 }
 
+/// 合并的渲染 uniform 数据（Camera + Cull）
+/// 用于单次上传，减少 CPU-GPU 往返
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RenderUniform {
+    pub camera: CameraUniform,
+    pub cull: CullUniform,
+}
+
 /// 间接绘制参数
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -59,6 +108,18 @@ pub struct DrawIndirectArgs {
     pub first_vertex: u32,
     pub first_instance: u32,
     pub _padding: [u32; 4],
+}
+
+impl Default for DrawIndirectArgs {
+    fn default() -> Self {
+        Self {
+            vertex_count: 4,
+            instance_count: 0,
+            first_vertex: 0,
+            first_instance: 0,
+            _padding: [0; 4],
+        }
+    }
 }
 
 /// 顶点属性布局（静态常量）

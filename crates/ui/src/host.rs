@@ -101,6 +101,10 @@ pub struct Host {
     pub(crate) ui_dirty: bool,
     /// 渲染缓存 - 避免重复上传数据
     pub(crate) render_cache: RenderCache,
+    /// 上次渲染时的编辑状态（用于检测 preview / drawing 音符变化）
+    pub(crate) last_edit_state: crate::editor::EditState,
+    /// 上次渲染时的光标位置（用于检测 preview 音符变化）
+    pub(crate) last_cursor_position: Option<iced_core::Point>,
 }
 
 impl Host {
@@ -164,6 +168,8 @@ impl Host {
             skip_ui_rendering: false,
             ui_dirty: false,
             render_cache: RenderCache::new(),
+            last_edit_state: crate::editor::EditState::default(),
+            last_cursor_position: None,
         }
     }
 
@@ -222,6 +228,8 @@ impl Host {
             skip_ui_rendering: false,
             ui_dirty: false,
             render_cache: RenderCache::new(),
+            last_edit_state: crate::editor::EditState::default(),
+            last_cursor_position: None,
         }
     }
 

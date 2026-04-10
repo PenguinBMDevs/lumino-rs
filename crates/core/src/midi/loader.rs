@@ -394,7 +394,7 @@ pub async fn load_dms(
 
     let path_clone = path.clone();
     let progress_clone = progress.cloned();
-    let scan_result = tokio::task::spawn_blocking(move || {
+    let (scan_result, lightweight_data) = tokio::task::spawn_blocking(move || {
         let pcb = progress_clone.as_ref();
         let scan_cb = |msg: &str, val: f64| {
             if let Some(p) = pcb {
@@ -402,21 +402,32 @@ pub async fn load_dms(
             }
         };
 
+        // 首先流式扫描获取元数据
         let file = std::fs::File::open(&path_clone).map_err(crate::CoreError::Io)?;
         let mut reader = std::io::BufReader::new(file);
-        lumino_dms::scan_dms_streaming_with_progress(&mut reader, |progress| {
-            scan_cb("正在解析 Domino 工程文件", 0.1 + progress * 0.7);
+        let scan_result = lumino_dms::scan_dms_streaming_with_progress(&mut reader, |progress| {
+            scan_cb("正在解析 Domino 工程文件", 0.1 + progress * 0.4);
         })
-        .map_err(|e| crate::CoreError::FileFormat(format!("扫描 DMS 失败: {e}")))
+        .map_err(|e| crate::CoreError::FileFormat(format!("扫描 DMS 失败: {e}")))?;
+
+        // 然后加载完整数据
+        scan_cb("正在加载完整数据", 0.5);
+        let bytes = std::fs::read(&path_clone).map_err(crate::CoreError::Io)?;
+        let lightweight_data = lumino_dms::read_dms_lightweight(&bytes)
+            .map_err(|e| crate::CoreError::FileFormat(format!("读取 DMS 数据失败: {e}")))?;
+
+        scan_cb("数据加载完成", 0.9);
+
+        Ok::<_, crate::CoreError>((scan_result, lightweight_data))
     })
     .await
     .map_err(|e| {
-        let err = crate::CoreError::Other(format!("扫描 DMS 失败: {e}"));
+        let err = crate::CoreError::Other(format!("加载 DMS 失败: {e}"));
         cb(&err.to_string(), 1.0);
         err
     })?
     .map_err(|e| {
-        let err = crate::CoreError::Compression(format!("压缩 LDMS 失败: {e}"));
+        let err = crate::CoreError::Compression(format!("处理 DMS 失败: {e}"));
         cb(&err.to_string(), 1.0);
         err
     })?;
@@ -434,7 +445,10 @@ pub async fn load_dms(
         working_time_sec: scan_result.working_time_sec,
     };
 
-    Ok(ParsedDms { info, data: None })
+    Ok(ParsedDms {
+        info,
+        data: Some(lightweight_data),
+    })
 }
 
 pub async fn save_dms_to_ldms(

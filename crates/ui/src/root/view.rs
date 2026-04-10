@@ -126,7 +126,6 @@ impl Root {
 
         // 计算可见区域用于洋葱皮音符的视锥裁剪
         let view = &self.editor.state;
-        let canvas_offset = self.editor.canvas_offset;
         let canvas_size = self.editor.canvas_size;
         let viewport_width = canvas_size.x - view.keyboard_width;
         let viewport_height = canvas_size.y - view.ruler_height;
@@ -143,23 +142,17 @@ impl Root {
         let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1);
 
         let onion_states = self.sidebar.get_onion_skin_states();
-        let notes: Vec<(f32, u16, f32, iced_core::Color)> =
-            self.editor
-                .get_onion_skin_notes(&onion_states, visible_tick_start, visible_tick_end);
+        let notes: Vec<(f32, u16, f32, iced_core::Color)> = self.editor.get_onion_skin_notes(
+            &onion_states,
+            visible_tick_start,
+            visible_tick_end,
+            visible_key_min,
+            visible_key_max,
+        );
 
         for (tick, key, length, color) in notes {
-            // 视锥裁剪：虽然在获取时做了基于 tick 的初步裁剪，这里再做精确裁剪
-            if tick + length < visible_tick_start || tick > visible_tick_end {
-                continue;
-            }
-            if key < visible_key_min || key > visible_key_max {
-                continue;
-            }
-
             let note = crate::editor::note::Note::new(tick, key, length);
-            let mut instance = note.to_instance(&self.editor.state, color);
-            instance.position[0] += canvas_offset.x;
-            instance.position[1] += canvas_offset.y;
+            let instance = note.to_instance(color);
             instances.push(instance);
         }
 

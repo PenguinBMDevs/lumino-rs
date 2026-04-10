@@ -162,15 +162,29 @@ impl Host {
             );
         }
 
-        // ===== 准备音符数据 =====
+        let canvas_offset = self.root.editor.canvas_offset;
         let note_instances = self.root.get_note_instances();
+        let camera = lumino_gfx::CameraUniform::new(
+            self.root.editor.state.scroll_x,
+            self.root.editor.state.scroll_y,
+            self.root.editor.state.zoom_x,
+            self.root.editor.state.zoom_y,
+            logical_size.width,
+            logical_size.height,
+            canvas_offset.x,
+            canvas_offset.y,
+            self.root.editor.state.keyboard_width,
+            self.root.editor.state.ruler_height,
+            (self.root.editor.state.visible_key_count.saturating_sub(1)) as f32,
+        );
+
         if !note_instances.is_empty() {
             self.note_renderer.prepare(
                 &mut encoder,
                 &note_instances,
                 &gfx.device,
                 &gfx.queue,
-                (logical_size.width, logical_size.height),
+                camera,
             );
         }
 
@@ -282,18 +296,18 @@ impl Host {
         let grid_instances = if current_viewport_hash != self.render_cache.grid_viewport_hash {
             // 视口变化，重新生成网格线
             let instances = self.root.get_grid_line_instances();
-            self.render_cache.grid_instances = instances.clone();
+            self.render_cache.grid_instances = instances;
             self.render_cache.grid_viewport_hash = current_viewport_hash;
             grid_changed = true;
-            instances
+            &self.render_cache.grid_instances
         } else {
             // 使用缓存
-            self.render_cache.grid_instances.clone()
+            &self.render_cache.grid_instances
         };
 
         if grid_changed && !grid_instances.is_empty() {
             self.grid_renderer.prepare(
-                &grid_instances,
+                grid_instances,
                 &gfx.device,
                 &gfx.queue,
                 (logical_size.width, logical_size.height),
@@ -301,27 +315,53 @@ impl Host {
         }
 
         // ===== 准备音符数据（带缓存）=====
-        let mut notes_changed = false;
-        let note_instances = if current_viewport_hash != self.render_cache.note_viewport_hash {
-            // 视口变化，重新生成音符
+        // 逻辑坐标改造后，视口滚动不再改变 instance 数据，
+        // 只有音符增删改（note_index_dirty）、编辑状态或光标位置变化才需要重新生成
+        let note_index_dirty = self.root.editor.note_index_dirty.get();
+        let current_edit_state = self.root.editor.edit_state.clone();
+        let note_data_dirty = note_index_dirty
+            || current_edit_state != self.last_edit_state
+            || self.cursor_position != self.last_cursor_position
+            || self.render_cache.note_instances.is_empty();
+
+        let mut notes_instances_changed = false;
+        let note_instances = if note_data_dirty {
             let instances = self.root.get_note_instances();
-            self.render_cache.note_instances = instances.clone();
-            self.render_cache.note_viewport_hash = current_viewport_hash;
-            notes_changed = true;
-            instances
+            self.render_cache.note_instances = instances;
+            self.last_edit_state = current_edit_state;
+            self.last_cursor_position = self.cursor_position;
+            notes_instances_changed = true;
+            &self.render_cache.note_instances
         } else {
-            // 使用缓存
-            self.render_cache.note_instances.clone()
+            &self.render_cache.note_instances
         };
 
-        if notes_changed && !note_instances.is_empty() {
-            self.note_renderer.prepare(
+        let camera = lumino_gfx::CameraUniform::new(
+            self.root.editor.state.scroll_x,
+            self.root.editor.state.scroll_y,
+            self.root.editor.state.zoom_x,
+            self.root.editor.state.zoom_y,
+            logical_size.width,
+            logical_size.height,
+            canvas_offset.x,
+            canvas_offset.y,
+            self.root.editor.state.keyboard_width,
+            self.root.editor.state.ruler_height,
+            (self.root.editor.state.visible_key_count.saturating_sub(1)) as f32,
+        );
+
+        if notes_instances_changed && !note_instances.is_empty() {
+            self.note_renderer.prepare_instances(
                 &mut encoder,
-                &note_instances,
+                note_instances,
                 &gfx.device,
                 &gfx.queue,
-                (logical_size.width, logical_size.height),
             );
+        }
+
+        if !note_instances.is_empty() {
+            self.note_renderer
+                .prepare_pass(&mut encoder, camera, &gfx.queue);
         }
 
         // 开始渲染通道

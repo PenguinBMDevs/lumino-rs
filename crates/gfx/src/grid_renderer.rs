@@ -64,8 +64,10 @@ pub struct GridRenderer {
 }
 
 impl GridRenderer {
-    /// 初始缓冲区容量
-    const INITIAL_CAPACITY: usize = 4096;
+    /// 初始缓冲区容量（增大以支持更密集的网格）
+    const INITIAL_CAPACITY: usize = 8192;
+    /// 缓冲区扩容因子
+    const GROWTH_FACTOR: usize = 2;
     /// 顶点着色器代码
     const VERTEX_SHADER: &'static str = include_str!("shaders/grid.wgsl");
 
@@ -208,11 +210,21 @@ impl GridRenderer {
         })
     }
 
-    /// 扩容缓冲区
+    /// 扩容缓冲区（使用 saturating_mul 防止溢出）
     fn grow_buffer(&mut self, device: &wgpu::Device, required_capacity: usize) {
-        let new_capacity = (self.capacity * 2).max(required_capacity);
-        self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
-        self.capacity = new_capacity;
+        let new_capacity = self
+            .capacity
+            .saturating_mul(Self::GROWTH_FACTOR)
+            .max(required_capacity);
+        if new_capacity > self.capacity {
+            tracing::debug!(
+                "GridRenderer: growing buffer {} -> {}",
+                self.capacity,
+                new_capacity
+            );
+            self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
+            self.capacity = new_capacity;
+        }
     }
 
     /// 实例缓冲区布局
@@ -247,5 +259,43 @@ impl GridRenderer {
                 },
             ],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 测试 GridLineInstance 创建
+    #[test]
+    fn test_grid_line_instance_creation() {
+        let line = GridLineInstance::new(
+            [0.0, 0.0],
+            [100.0, 100.0],
+            [0.5, 0.5, 0.5, 1.0],
+            1.0,
+        );
+
+        assert_eq!(line.start, [0.0, 0.0]);
+        assert_eq!(line.end, [100.0, 100.0]);
+        assert_eq!(line.color, [0.5, 0.5, 0.5, 1.0]);
+        assert_eq!(line.width, 1.0);
+    }
+
+    /// 测试 GridViewportUniform 创建
+    #[test]
+    fn test_grid_viewport_uniform_creation() {
+        let viewport = GridViewportUniform::new(1920.0, 1080.0);
+
+        assert_eq!(viewport.viewport_size, [1920.0, 1080.0]);
+    }
+
+    /// 测试初始容量配置
+    #[test]
+    fn test_initial_capacity() {
+        // 验证初始容量已增大
+        assert!(GridRenderer::INITIAL_CAPACITY >= 8192);
+        // 验证扩容因子
+        assert_eq!(GridRenderer::GROWTH_FACTOR, 2);
     }
 }

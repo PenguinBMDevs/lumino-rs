@@ -106,10 +106,11 @@ impl DmsLightweightData {
     ///
     /// Returns an error if the operation fails.
     /// 解析完整 DMS 节点树
-    pub fn parse_full(&self) -> Result<DmsCompositeNode, String> {
-        // TODO: Implement full parsing using lumino_dms
-        // For now, return error to allow compilation
-        Err("parse_full not yet implemented after refactoring".to_string())
+    pub fn parse_full(&self) -> crate::error::Result<DmsCompositeNode> {
+        use crate::reader::DmsReader;
+
+        let reader = DmsReader::new();
+        reader.parse_data(self.data.clone())
     }
 }
 
