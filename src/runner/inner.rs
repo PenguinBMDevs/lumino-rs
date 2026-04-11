@@ -57,7 +57,7 @@ pub(crate) struct RunnerInner {
     /// 进度回调（依赖注入，替代全局 PROGRESS_SENDER）
     pub(crate) progress_cb: lumino_core::midi::loader::ProgressCallback,
     /// 当前加载的 MIDI
-    pub(crate) current_midi: Option<ParsedMidi>,
+    pub(crate) current_midi: Option<Arc<ParsedMidi>>,
     /// 当前加载的 DMS
     pub(crate) current_dms: Option<Arc<ParsedDms>>,
     /// 对话框管理器
@@ -78,6 +78,17 @@ pub(crate) struct RunnerInner {
     pub(crate) needs_window_restart: bool,
     /// 上次协作同步时间（用于定时发送鼠标位置）
     pub(crate) last_collab_sync: Option<std::time::Instant>,
+    /// 测试模式状态
+    pub(crate) test_mode_state: Option<TestModeState>,
+}
+
+pub(crate) struct TestModeState {
+    pub active: bool,
+    pub start_time: Option<std::time::Instant>,
+    pub duration: Option<u64>,
+    pub fps_samples: Vec<f32>,
+    pub last_fps_update: Option<std::time::Instant>,
+    pub frame_count: u32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -148,6 +159,7 @@ impl Runner {
             collaboration_service,
             needs_window_restart: false,
             last_collab_sync: None,
+            test_mode_state: None,
         };
 
         // Debug 模式下自动连接本地服务器

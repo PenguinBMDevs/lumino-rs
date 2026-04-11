@@ -11,7 +11,7 @@ pub enum Event {
     ImportFiles,
     MidiLoaded(crate::MidiInfo),
     MidiLoadError(String),
-    MidiParsed(crate::ParsedMidi),
+    MidiParsed(Arc<crate::ParsedMidi>),
     MidiParseError(String),
     ShowProgress(String, f64), // 消息和进度 0.0-1.0
     HideProgress,

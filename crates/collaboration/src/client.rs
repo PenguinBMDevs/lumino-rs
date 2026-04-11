@@ -38,7 +38,7 @@ pub struct CollaborationClient {
     state: Arc<RwLock<ClientState>>,
     session: Arc<RwLock<CollaborationSession>>,
     message_tx: mpsc::UnboundedSender<ClientMessage>,
-    message_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<ClientMessage>>>>,
+    message_rx: Option<mpsc::UnboundedReceiver<ClientMessage>>,
     event_callback: Option<EventCallback>,
     shutdown_tx: Option<mpsc::Sender<()>>,
     http_client: HttpClient,
@@ -56,7 +56,7 @@ impl CollaborationClient {
             state: Arc::new(RwLock::new(ClientState::Disconnected)),
             session: Arc::new(RwLock::new(CollaborationSession::default())),
             message_tx,
-            message_rx: Arc::new(Mutex::new(Some(message_rx))),
+            message_rx: Some(message_rx),
             event_callback: None,
             shutdown_tx: None,
             http_client,
@@ -230,26 +230,26 @@ impl CollaborationClient {
         self.handle_auth_response(&mut read, &write).await?;
 
         // 启动消息处理循环（在后台运行，不阻塞）
-        self.start_background_loop(read, write).await;
+        if let Some(message_rx) = self.message_rx.take() {
+            self.start_background_loop(read, write, message_rx).await;
+        } else {
+            tracing::error!("message_rx 已经被消费，后台循环无法启动");
+        }
 
         Ok(())
     }
 
     /// 启动后台循环（不阻塞）
     /// 注意：必须在异步上下文中调用
-    async fn start_background_loop(&self, mut read: WsStreamRead, write: Arc<Mutex<WsSink>>) {
+    async fn start_background_loop(
+        &self,
+        mut read: WsStreamRead,
+        write: Arc<Mutex<WsSink>>,
+        mut message_rx: mpsc::UnboundedReceiver<ClientMessage>,
+    ) {
         let state = self.state.clone();
         let session = self.session.clone();
         let event_callback = self.event_callback.clone();
-
-        // 获取 message_rx，如果已经被消费则记录错误并返回
-        let mut message_rx = match self.message_rx.lock().await.take() {
-            Some(rx) => rx,
-            None => {
-                error!("message_rx 已经被消费，后台循环无法启动");
-                return;
-            }
-        };
 
         // 启动后台任务
         tokio::spawn(async move {

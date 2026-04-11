@@ -3,14 +3,16 @@
 use crate::editor::note::Note;
 
 /// A snapshot of the editor state for undo/redo
+use im::Vector;
+
 #[derive(Debug, Clone)]
 pub struct EditorSnapshot {
-    pub notes: Vec<Note>,
+    pub notes: Vector<Note>,
     pub current_track: usize,
 }
 
 impl EditorSnapshot {
-    pub fn new(notes: Vec<Note>, current_track: usize) -> Self {
+    pub fn new(notes: Vector<Note>, current_track: usize) -> Self {
         Self {
             notes,
             current_track,

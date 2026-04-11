@@ -152,7 +152,9 @@ impl Host {
         let logical_size = self.viewport.logical_size();
 
         // ===== 准备网格线数据 =====
-        let grid_instances = self.root.get_grid_line_instances();
+        self.root
+            .update_grid_line_instances(&mut self.render_cache.grid_instances);
+        let grid_instances = &self.render_cache.grid_instances;
         if !grid_instances.is_empty() {
             self.grid_renderer.prepare(
                 &grid_instances,
@@ -163,20 +165,21 @@ impl Host {
         }
 
         let canvas_offset = self.root.editor.canvas_offset;
-        let note_instances = self.root.get_note_instances();
-        let camera = lumino_gfx::CameraUniform::new(
-            self.root.editor.state.scroll_x,
-            self.root.editor.state.scroll_y,
-            self.root.editor.state.zoom_x,
-            self.root.editor.state.zoom_y,
-            logical_size.width,
-            logical_size.height,
-            canvas_offset.x,
-            canvas_offset.y,
-            self.root.editor.state.keyboard_width,
-            self.root.editor.state.ruler_height,
-            (self.root.editor.state.visible_key_count.saturating_sub(1)) as f32,
-        );
+        self.root
+            .update_note_instances(&mut self.render_cache.note_instances);
+        let note_instances = &self.render_cache.note_instances;
+        let camera = lumino_gfx::CameraUniform::new(lumino_gfx::CameraParams {
+            scroll: [
+                self.root.editor.state.scroll_x,
+                self.root.editor.state.scroll_y,
+            ],
+            zoom: [self.root.editor.state.zoom_x, self.root.editor.state.zoom_y],
+            viewport: [logical_size.width, logical_size.height],
+            offset: [canvas_offset.x, canvas_offset.y],
+            keyboard_width: self.root.editor.state.keyboard_width,
+            ruler_height: self.root.editor.state.ruler_height,
+            max_key_index: (self.root.editor.state.visible_key_count.saturating_sub(1)) as f32,
+        });
 
         if !note_instances.is_empty() {
             self.note_renderer.prepare(
@@ -293,17 +296,14 @@ impl Host {
 
         // ===== 准备网格线数据（带缓存）=====
         let mut grid_changed = false;
-        let grid_instances = if current_viewport_hash != self.render_cache.grid_viewport_hash {
+        if current_viewport_hash != self.render_cache.grid_viewport_hash {
             // 视口变化，重新生成网格线
-            let instances = self.root.get_grid_line_instances();
-            self.render_cache.grid_instances = instances;
+            self.root
+                .update_grid_line_instances(&mut self.render_cache.grid_instances);
             self.render_cache.grid_viewport_hash = current_viewport_hash;
             grid_changed = true;
-            &self.render_cache.grid_instances
-        } else {
-            // 使用缓存
-            &self.render_cache.grid_instances
-        };
+        }
+        let grid_instances = &self.render_cache.grid_instances;
 
         if grid_changed && !grid_instances.is_empty() {
             self.grid_renderer.prepare(
@@ -315,40 +315,39 @@ impl Host {
         }
 
         // ===== 准备音符数据（带缓存）=====
-        // 逻辑坐标改造后，视口滚动不再改变 instance 数据，
-        // 只有音符增删改（note_index_dirty）、编辑状态或光标位置变化才需要重新生成
+        // 视口变化、音符增删改、编辑状态或光标位置变化都需要重新生成
         let note_index_dirty = self.root.editor.note_index_dirty.get();
         let current_edit_state = self.root.editor.edit_state.clone();
+        let note_viewport_changed = current_viewport_hash != self.render_cache.note_viewport_hash;
         let note_data_dirty = note_index_dirty
+            || note_viewport_changed
             || current_edit_state != self.last_edit_state
             || self.cursor_position != self.last_cursor_position
             || self.render_cache.note_instances.is_empty();
 
         let mut notes_instances_changed = false;
-        let note_instances = if note_data_dirty {
-            let instances = self.root.get_note_instances();
-            self.render_cache.note_instances = instances;
+        if note_data_dirty {
+            self.root
+                .update_note_instances(&mut self.render_cache.note_instances);
+            self.render_cache.note_viewport_hash = current_viewport_hash;
             self.last_edit_state = current_edit_state;
             self.last_cursor_position = self.cursor_position;
             notes_instances_changed = true;
-            &self.render_cache.note_instances
-        } else {
-            &self.render_cache.note_instances
-        };
+        }
+        let note_instances = &self.render_cache.note_instances;
 
-        let camera = lumino_gfx::CameraUniform::new(
-            self.root.editor.state.scroll_x,
-            self.root.editor.state.scroll_y,
-            self.root.editor.state.zoom_x,
-            self.root.editor.state.zoom_y,
-            logical_size.width,
-            logical_size.height,
-            canvas_offset.x,
-            canvas_offset.y,
-            self.root.editor.state.keyboard_width,
-            self.root.editor.state.ruler_height,
-            (self.root.editor.state.visible_key_count.saturating_sub(1)) as f32,
-        );
+        let camera = lumino_gfx::CameraUniform::new(lumino_gfx::CameraParams {
+            scroll: [
+                self.root.editor.state.scroll_x,
+                self.root.editor.state.scroll_y,
+            ],
+            zoom: [self.root.editor.state.zoom_x, self.root.editor.state.zoom_y],
+            viewport: [logical_size.width, logical_size.height],
+            offset: [canvas_offset.x, canvas_offset.y],
+            keyboard_width: self.root.editor.state.keyboard_width,
+            ruler_height: self.root.editor.state.ruler_height,
+            max_key_index: (self.root.editor.state.visible_key_count.saturating_sub(1)) as f32,
+        });
 
         if notes_instances_changed && !note_instances.is_empty() {
             self.note_renderer.prepare_instances(

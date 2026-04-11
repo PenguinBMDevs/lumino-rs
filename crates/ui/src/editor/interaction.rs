@@ -333,7 +333,7 @@ impl Editor {
 
         self.push_history();
         let note = super::Note::new(tick, key, length);
-        self.notes.push(note.clone());
+        self.notes.push_back(note.clone());
         self.track_notes
             .insert(self.current_track, self.notes.clone());
 

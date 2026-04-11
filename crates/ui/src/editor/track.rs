@@ -12,15 +12,15 @@ impl super::Editor {
         );
 
         // 保存当前音轨的音符
-        if !self.notes.is_empty() {
-            self.track_notes
-                .insert(self.current_track, self.notes.clone());
-            tracing::debug!(
-                "Editor: saved {} notes for track {}",
-                self.notes.len(),
-                self.current_track
-            );
-        }
+        self.track_notes
+            .insert(self.current_track, self.notes.clone());
+        self.track_note_indices.borrow_mut().remove(&self.current_track);
+        
+        tracing::debug!(
+            "Editor: saved {} notes for track {}",
+            self.notes.len(),
+            self.current_track
+        );
 
         // 切换到新音轨
         self.current_track = track_idx;
@@ -37,7 +37,8 @@ impl super::Editor {
             track_idx
         );
 
-        // 音符由 wgpu 渲染，不需要清 grid cache
+        // 标记音符数据已变化，触发空间索引重建和渲染更新
+        self.mark_notes_changed();
     }
 
     /// 获取当前音轨索引

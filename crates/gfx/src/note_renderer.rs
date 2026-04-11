@@ -2,7 +2,7 @@ use wgpu::util::DeviceExt;
 
 pub mod types;
 
-pub use types::{CameraUniform, CullUniform, DrawIndirectArgs, NoteInstance, RenderUniform, VERTEX_ATTRIBUTES};
+pub use types::{CameraParams, CameraUniform, CullUniform, DrawIndirectArgs, NoteInstance, RenderUniform, VERTEX_ATTRIBUTES};
 
 /// 音符渲染器 - 使用 wgpu 实例化渲染高效绘制大量音符
 pub struct NoteRenderer {

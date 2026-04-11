@@ -1,5 +1,30 @@
 use lumino_core::storage::config::EraserBehavior;
 
+/// 默认的歌曲位置 (tick)
+pub const DEFAULT_SCROLL_X: f32 = 0.0;
+/// 默认的键盘滚动位置 (pixel)
+pub const DEFAULT_SCROLL_Y: f32 = 0.0;
+/// 默认横向缩放 (Pixels per Tick) - 每像素10tick
+pub const DEFAULT_ZOOM_X: f32 = 0.1;
+/// 默认纵向缩放 (Pixels per Key) - 琴键高度20像素
+pub const DEFAULT_ZOOM_Y: f32 = 20.0;
+/// 默认分辨率 (Pulses Per Quarter note)
+pub const DEFAULT_PPQ: u16 = 1920;
+/// 默认歌曲总长度 (tick) - 默认100小节，每小节4拍
+pub const DEFAULT_TOTAL_TICKS: u32 = (DEFAULT_PPQ as u32) * 4 * 100;
+/// 默认键盘总键数
+pub const DEFAULT_KEY_COUNT: u16 = 128;
+/// 默认显示的琴键数量
+pub const DEFAULT_VISIBLE_KEY_COUNT: u16 = 128;
+/// 默认键盘宽度 (pixel)
+pub const DEFAULT_KEYBOARD_WIDTH: f32 = 120.0;
+/// 默认音符对齐精度 (tick) - 四分之一拍子线
+pub const DEFAULT_SNAP_PRECISION: f32 = (DEFAULT_PPQ as f32) / 2.0;
+/// 默认音符长度 (tick) - 等于拍子线间隔
+pub const DEFAULT_NOTE_LENGTH: f32 = (DEFAULT_PPQ as f32) / 2.0;
+/// 默认时间轴标尺高度 (pixel)
+pub const DEFAULT_RULER_HEIGHT: f32 = 24.0;
+
 #[derive(Debug, Clone)]
 pub struct ViewState {
     pub scroll_x: f32, // x轴滚动位置，对应歌曲位置，单位为tick
@@ -16,7 +41,7 @@ pub struct ViewState {
     pub snap_precision: f32,      // 音符对齐精度，单位为tick，默认ppq/2（四分之一拍子线）
     pub default_note_length: f32, // 默认音符长度（ticks），等于拍子线间隔
     pub ruler_height: f32,        // 时间轴标尺高度（小节号显示区域），单位为像素
-    // pub scale: Scale // TODO: 之后我们需要支持不同的调式/微分音
+    // pub scale: Scale // 之后我们需要支持不同的调式/微分音
     /// 橡皮擦工具行为模式
     pub eraser_behavior: EraserBehavior,
 }
@@ -25,18 +50,18 @@ impl Default for ViewState {
     fn default() -> Self {
         // 这里给个默认值，默认打开钢琴卷帘就是这样的坐标位置和大小
         Self {
-            scroll_x: 0.0,               // 歌曲位置0tick
-            scroll_y: 0.0,               // 理应把焦点放在中间音区最合适，之后看看多少像素最合适
-            zoom_x: 0.1,                 // 每像素10tick，gate1920的音符长度是1920像素
-            zoom_y: 20.0,                // 琴键高度20像素
-            total_ticks: 1920 * 4 * 100, // 默认100小节
-            key_count: 128,              // 显示为128键（不影响MIDI内部数据）
-            visible_key_count: 128,      // 显示128个琴键分割线
-            ppq: 1920,                   // 分辨率1920
-            keyboard_width: 120.0,       // 键盘宽度120像素
-            snap_precision: 960.0,       // 对齐精度960 ticks（ppq/2，四分之一拍子线）
-            default_note_length: 960.0,  // ppq/2，等于拍子线间隔
-            ruler_height: 24.0,          // 时间轴标尺高度24像素
+            scroll_x: DEFAULT_SCROLL_X,
+            scroll_y: DEFAULT_SCROLL_Y,
+            zoom_x: DEFAULT_ZOOM_X,
+            zoom_y: DEFAULT_ZOOM_Y,
+            total_ticks: DEFAULT_TOTAL_TICKS,
+            key_count: DEFAULT_KEY_COUNT,
+            visible_key_count: DEFAULT_VISIBLE_KEY_COUNT,
+            ppq: DEFAULT_PPQ,
+            keyboard_width: DEFAULT_KEYBOARD_WIDTH,
+            snap_precision: DEFAULT_SNAP_PRECISION,
+            default_note_length: DEFAULT_NOTE_LENGTH,
+            ruler_height: DEFAULT_RULER_HEIGHT,
             eraser_behavior: EraserBehavior::default(),
         }
     }

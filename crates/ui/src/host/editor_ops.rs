@@ -68,10 +68,10 @@ impl Host {
         );
 
         // 直接保存到 editor.track_notes，不更新当前显示
-        let mut track_notes = Vec::with_capacity(notes.len());
+        let mut track_notes: im::Vector<Note> = im::Vector::new();
         for (tick, key, length, velocity) in notes {
             let editor_key = *key as u16;
-            track_notes.push(Note::new(*tick, editor_key, *length).with_velocity(*velocity));
+            track_notes.push_back(Note::new(*tick, editor_key, *length).with_velocity(*velocity));
         }
 
         if !track_notes.is_empty() {

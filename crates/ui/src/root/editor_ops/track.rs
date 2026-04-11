@@ -28,9 +28,11 @@ impl Root {
             let editor_key = *key as u16;
             self.editor
                 .notes
-                .push(Note::new(*tick, editor_key, *length).with_velocity(*velocity));
+                .push_back(Note::new(*tick, editor_key, *length).with_velocity(*velocity));
         }
+        self.editor.track_note_indices.borrow_mut().remove(&self.editor.current_track);
         self.invalidate_onion_skin_cache();
+        self.editor.mark_notes_changed();
     }
 
     /// 设置当前音轨
@@ -44,21 +46,21 @@ impl Root {
     /// 加载指定音轨的音符到编辑器（用于 MIDI 文件）
     pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32, u8)]) {
         self.editor.notes.clear();
-        let mut track_notes = Vec::with_capacity(notes.len());
+        let mut track_notes: im::Vector<Note> = im::Vector::new();
 
         for (tick, key, length, velocity) in notes {
             let editor_key = *key as u16;
             let note = Note::new(*tick, editor_key, *length).with_velocity(*velocity);
-            self.editor.notes.push(note.clone());
-            track_notes.push(note);
+            self.editor.notes.push_back(note.clone());
+            track_notes.push_back(note);
         }
 
-        if !track_notes.is_empty() {
-            self.editor.track_notes.insert(track_idx, track_notes);
-        }
+        self.editor.track_notes.insert(track_idx, track_notes);
+        self.editor.track_note_indices.borrow_mut().remove(&track_idx);
 
         self.editor.current_track = track_idx;
         self.invalidate_onion_skin_cache();
+        self.editor.mark_notes_changed();
         self.update_playback_notes();
     }
 }

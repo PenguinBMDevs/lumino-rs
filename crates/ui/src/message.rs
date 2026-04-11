@@ -125,15 +125,15 @@ pub enum Message {
     CollaborationCopyInviteCode,
     /// 协作远端鼠标移动
     CollaborationRemoteMouseMoved {
-        user_id: String,
+        user_id: std::sync::Arc<str>,
         x: f32,
         y: f32,
-        color: String,
-        username: String,
+        color: std::sync::Arc<str>,
+        username: std::sync::Arc<str>,
     },
     /// 协作用户离开
     CollaborationRemoteUserLeft {
-        user_id: String,
+        user_id: std::sync::Arc<str>,
     },
     /// 协作远端音符更新
     CollaborationRemoteNoteUpdate {

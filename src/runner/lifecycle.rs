@@ -3,17 +3,7 @@ use std::time::{Duration, Instant};
 use winit::event_loop::ControlFlow;
 
 use super::dialog_manager::DialogResult;
-use super::inner::{InitError, Runner, RunnerInner};
-
-// 测试模式全局状态
-// SAFETY: 这些静态变量仅在测试模式下使用，且访问由 winit 事件循环单线程执行，
-// 因此不存在数据竞争。所有 unsafe 块都遵循这一约定。
-static mut TEST_MODE_ACTIVE: bool = false;
-static mut TEST_MODE_START_TIME: Option<Instant> = None;
-static mut TEST_MODE_DURATION: Option<u64> = None;
-static mut TEST_MODE_FPS_SAMPLES: Vec<f32> = Vec::new();
-static mut TEST_MODE_LAST_FPS_UPDATE: Option<Instant> = None;
-static mut TEST_MODE_FRAME_COUNT: u32 = 0;
+use super::inner::{InitError, Runner, RunnerInner, TestModeState};
 
 impl winit::application::ApplicationHandler for Runner {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -34,6 +24,14 @@ impl winit::application::ApplicationHandler for Runner {
                         let test_duration = test_config.test_time;
 
                         this.window.ui_mut().skip_ui_rendering = true;
+                        this.test_mode_state = Some(TestModeState {
+                            active: false,
+                            start_time: None,
+                            duration: test_duration,
+                            fps_samples: Vec::new(),
+                            last_fps_update: None,
+                            frame_count: 0,
+                        });
 
                         tokio::spawn(async move {
                             match lumino_core::midi::loader::load_parsed_midi(
@@ -44,24 +42,23 @@ impl winit::application::ApplicationHandler for Runner {
                             {
                                 Ok(parsed) => {
                                     tracing::info!("测试模式：MIDI 加载完成");
-                                    // 使用现有的 MidiParsed 事件，但附带测试模式标志
                                     lumino_core::event::emit(lumino_core::event::Event::Menu(
                                         lumino_core::event::menu::Event::File(
                                             lumino_core::event::menu::file::Event::MidiParsed(
-                                                parsed,
+                                                std::sync::Arc::new(parsed),
                                             ),
                                         ),
                                     ));
-                                    // 设置测试模式标志
-                                    unsafe {
-                                        TEST_MODE_DURATION = test_duration;
-                                        TEST_MODE_ACTIVE = true;
-                                    }
                                 }
                                 Err(e) => {
                                     tracing::error!("测试模式：MIDI 加载失败 - {e}");
-                                    eprintln!("MIDI 加载失败：{e}");
-                                    std::process::exit(1);
+                                    lumino_core::event::emit(lumino_core::event::Event::Menu(
+                                        lumino_core::event::menu::Event::File(
+                                            lumino_core::event::menu::file::Event::MidiParseError(
+                                                e.to_string(),
+                                            ),
+                                        ),
+                                    ));
                                 }
                             }
                         });
@@ -191,7 +188,8 @@ impl winit::application::ApplicationHandler for Runner {
         // 检查播放状态：播放时使用 Poll 模式确保持续重绘，暂停时使用 Wait 模式节省资源
         let is_playing = this.window.ui().is_playing();
 
-        let should_poll = is_playing || unsafe { TEST_MODE_ACTIVE };
+        let is_test_active = this.test_mode_state.as_ref().map(|s| s.active).unwrap_or(false);
+        let should_poll = is_playing || is_test_active;
 
         if should_poll {
             event_loop.set_control_flow(ControlFlow::Poll);
@@ -201,48 +199,45 @@ impl winit::application::ApplicationHandler for Runner {
         }
 
         // 测试模式 FPS 监测
-        unsafe {
-            if TEST_MODE_ACTIVE {
-                if TEST_MODE_START_TIME.is_none() {
+        if let Some(test_state) = &mut this.test_mode_state {
+            if test_state.active {
+                if test_state.start_time.is_none() {
                     // MIDI 加载完成，开始测试
-                    TEST_MODE_START_TIME = Some(Instant::now());
-                    TEST_MODE_LAST_FPS_UPDATE = Some(Instant::now());
+                    test_state.start_time = Some(Instant::now());
+                    test_state.last_fps_update = Some(Instant::now());
                     tracing::info!("FPS 测试开始");
                 }
 
-                TEST_MODE_FRAME_COUNT += 1;
+                test_state.frame_count += 1;
                 let now = Instant::now();
 
-                if let Some(last) = TEST_MODE_LAST_FPS_UPDATE {
+                if let Some(last) = test_state.last_fps_update {
                     let elapsed = now.duration_since(last);
                     if elapsed.as_millis() >= 100 {
-                        let fps = TEST_MODE_FRAME_COUNT as f32 / elapsed.as_secs_f32();
-                        TEST_MODE_FPS_SAMPLES.push(fps);
-                        TEST_MODE_FRAME_COUNT = 0;
-                        TEST_MODE_LAST_FPS_UPDATE = Some(now);
+                        let fps = test_state.frame_count as f32 / elapsed.as_secs_f32();
+                        test_state.fps_samples.push(fps);
+                        test_state.frame_count = 0;
+                        test_state.last_fps_update = Some(now);
 
-                        print!(
-                            "\rFPS: {:.1} (samples: {})",
+                        tracing::info!(
+                            "FPS: {:.1} (samples: {})",
                             fps,
-                            TEST_MODE_FPS_SAMPLES.len()
+                            test_state.fps_samples.len()
                         );
-                        if let Err(e) = std::io::Write::flush(&mut std::io::stdout()) {
-                            tracing::warn!("FPS 输出刷新失败: {}", e);
-                        }
 
                         // 检查测试时间是否到达
-                        if let Some(duration) = TEST_MODE_DURATION {
-                            let should_exit = TEST_MODE_START_TIME
+                        if let Some(duration) = test_state.duration {
+                            let should_exit = test_state.start_time
                                 .map(|start| now.duration_since(start) >= Duration::from_secs(duration))
                                 .unwrap_or(false);
                             if should_exit {
-                                let avg_fps = TEST_MODE_FPS_SAMPLES.iter().sum::<f32>()
-                                    / TEST_MODE_FPS_SAMPLES.len() as f32;
-                                println!("\n\n================================");
-                                println!("FPS 测试完成");
-                                println!("平均 FPS: {:.2}", avg_fps);
-                                println!("采样次数：{}", TEST_MODE_FPS_SAMPLES.len());
-                                println!("================================");
+                                let avg_fps = test_state.fps_samples.iter().sum::<f32>()
+                                    / test_state.fps_samples.len() as f32;
+                                tracing::info!("================================");
+                                tracing::info!("FPS 测试完成");
+                                tracing::info!("平均 FPS: {:.2}", avg_fps);
+                                tracing::info!("采样次数：{}", test_state.fps_samples.len());
+                                tracing::info!("================================");
                                 event_loop.exit();
                             }
                         }

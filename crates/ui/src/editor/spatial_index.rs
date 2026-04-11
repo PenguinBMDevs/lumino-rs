@@ -14,7 +14,8 @@ pub struct NoteRef {
 /// 用于在二维的钢琴卷帘中快速筛选出可见的音符
 #[derive(Debug, Clone)]
 pub struct NoteSpatialIndex {
-    root: Option<Arc<Node>>,
+    nodes: Vec<Node>,
+    root: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -23,8 +24,8 @@ struct Node {
     tick_max: f32,
     /// 落在此 Tick 区间内的音符，按 Key 排序
     key_sorted: Vec<NoteRef>,
-    left: Option<Arc<Node>>,
-    right: Option<Arc<Node>>,
+    left: Option<usize>,
+    right: Option<usize>,
 }
 
 impl NoteSpatialIndex {
@@ -32,11 +33,15 @@ impl NoteSpatialIndex {
     const MAX_LEAF_CAPACITY: usize = 128;
 
     pub fn new() -> Self {
-        Self { root: None }
+        Self {
+            nodes: Vec::new(),
+            root: None,
+        }
     }
 
     /// 从音符集合构建空间索引
     pub fn from_notes(notes: &[Note]) -> Self {
+        puffin::profile_function!();
         if notes.is_empty() {
             return Self::new();
         }
@@ -59,27 +64,29 @@ impl NoteSpatialIndex {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        let root = Self::build_node(note_refs);
+        let mut nodes = Vec::new();
+        let root = Self::build_node(note_refs, &mut nodes);
         Self {
-            root: Some(Arc::new(root)),
+            nodes,
+            root: Some(root),
         }
     }
 
-    fn build_node(mut note_refs: Vec<NoteRef>) -> Node {
+    fn build_node(mut note_refs: Vec<NoteRef>, nodes: &mut Vec<Node>) -> usize {
+        puffin::profile_function!();
         if note_refs.is_empty() {
-            return Node {
+            let idx = nodes.len();
+            nodes.push(Node {
                 tick_min: 0.0,
                 tick_max: 0.0,
                 key_sorted: Vec::new(),
                 left: None,
                 right: None,
-            };
+            });
+            return idx;
         }
 
-        let tick_min = note_refs
-            .first()
-            .map(|n| n.tick)
-            .unwrap_or(0.0);
+        let tick_min = note_refs.first().map(|n| n.tick).unwrap_or(0.0);
         // 考虑 length，因为查询时需要判断音符尾部是否可见
         let tick_max = note_refs
             .iter()
@@ -90,13 +97,15 @@ impl NoteSpatialIndex {
         // 如果音符数量少于阈值，停止分割，成为叶子节点
         if note_refs.len() <= Self::MAX_LEAF_CAPACITY {
             note_refs.sort_by_key(|n| n.key);
-            return Node {
+            let idx = nodes.len();
+            nodes.push(Node {
                 tick_min,
                 tick_max,
                 key_sorted: note_refs,
                 left: None,
                 right: None,
-            };
+            });
+            return idx;
         }
 
         // 按照中位数分割
@@ -104,73 +113,127 @@ impl NoteSpatialIndex {
         let right_half = note_refs.split_off(mid);
         let left_half = note_refs;
 
-        let left_node = Self::build_node(left_half);
-        let right_node = Self::build_node(right_half);
-
-        Node {
+        let idx = nodes.len();
+        nodes.push(Node {
             tick_min,
             tick_max,
             key_sorted: Vec::new(), // 非叶子节点不存储具体音符，只做路由
-            left: Some(Arc::new(left_node)),
-            right: Some(Arc::new(right_node)),
-        }
+            left: None,
+            right: None,
+        });
+
+        let left_node = Self::build_node(left_half, nodes);
+        let right_node = Self::build_node(right_half, nodes);
+
+        nodes[idx].left = Some(left_node);
+        nodes[idx].right = Some(right_node);
+
+        idx
     }
 
     /// 查询在指定视口内的音符索引
-    pub fn query(
+    pub fn update_query(
         &self,
         visible_tick_start: f32,
         visible_tick_end: f32,
         visible_key_min: u16,
         visible_key_max: u16,
-    ) -> Vec<usize> {
-        let mut result = Vec::new();
-        if let Some(root) = &self.root {
-            Self::query_node(
-                root,
+        result: &mut Vec<usize>,
+    ) {
+        puffin::profile_function!();
+        result.clear();
+        if let Some(root_idx) = self.root {
+            self.query_node_iter(
+                root_idx,
                 visible_tick_start,
                 visible_tick_end,
                 visible_key_min,
                 visible_key_max,
-                &mut result,
+                result,
             );
         }
-        result
     }
 
-    fn query_node(
-        node: &Node,
+    fn query_node_iter(
+        &self,
+        root_idx: usize,
         tick_start: f32,
         tick_end: f32,
         key_min: u16,
         key_max: u16,
         result: &mut Vec<usize>,
     ) {
-        // Tick 边界检测，如果没有交集则直接剪枝返回
-        if node.tick_max < tick_start || node.tick_min > tick_end {
-            return;
-        }
+        puffin::profile_function!();
+        let mut stack = Vec::with_capacity(32);
+        stack.push(root_idx);
 
-        // 如果是叶子节点，处理其中的音符
-        if !node.key_sorted.is_empty() {
-            // 在 key_sorted 中通过二分查找快速定位可见的 key 范围
-            let start_idx = node.key_sorted.partition_point(|n| n.key < key_min);
-            let end_idx = node.key_sorted.partition_point(|n| n.key <= key_max);
+        while let Some(node_idx) = stack.pop() {
+            let node = &self.nodes[node_idx];
+            // Tick 边界检测，如果没有交集则直接剪枝返回
+            if node.tick_max < tick_start || node.tick_min > tick_end {
+                continue;
+            }
 
-            for n in &node.key_sorted[start_idx..end_idx] {
-                // 精确的 tick 交叉检测（因为只靠节点级 AABB 可能稍微偏大）
-                if n.tick + n.length >= tick_start && n.tick <= tick_end {
-                    result.push(n.index);
+            // 如果是叶子节点，处理其中的音符
+            if !node.key_sorted.is_empty() {
+                // 在 key_sorted 中通过二分查找快速定位可见的 key 范围
+                let start_idx = node.key_sorted.partition_point(|n| n.key < key_min);
+                let end_idx = node.key_sorted.partition_point(|n| n.key <= key_max);
+
+                for n in &node.key_sorted[start_idx..end_idx] {
+                    // 精确的 tick 交叉检测（因为只靠节点级 AABB 可能稍微偏大）
+                    if n.tick + n.length >= tick_start && n.tick <= tick_end {
+                        result.push(n.index);
+                    }
                 }
             }
+
+            // 继续迭代左右子树
+            if let Some(left) = node.left {
+                stack.push(left);
+            }
+            if let Some(right) = node.right {
+                stack.push(right);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::editor::Note;
+    use std::time::Instant;
+
+    #[test]
+    fn test_spatial_index_performance() {
+        puffin::set_scopes_on(true);
+
+        // 生成大量音符用于性能测试
+        let mut notes = Vec::new();
+        let num_notes = 100_000;
+        for i in 0..num_notes {
+            notes.push(Note {
+                tick: (i % 10000) as f32 * 10.0,
+                key: (i % 128) as u16,
+                length: 20.0,
+                velocity: 100,
+            });
         }
 
-        // 继续递归左右子树
-        if let Some(left) = &node.left {
-            Self::query_node(left, tick_start, tick_end, key_min, key_max, result);
+        let start = Instant::now();
+        let index = NoteSpatialIndex::from_notes(&notes);
+        println!("Build tree took: {:?}", start.elapsed());
+
+        let mut result = Vec::new();
+        let start = Instant::now();
+        // 模拟 1000 次视口查询
+        for i in 0..1000 {
+            let tick_start = (i % 1000) as f32 * 50.0;
+            let tick_end = tick_start + 1000.0;
+            index.update_query(tick_start, tick_end, 40, 80, &mut result);
         }
-        if let Some(right) = &node.right {
-            Self::query_node(right, tick_start, tick_end, key_min, key_max, result);
-        }
+        println!("1000 queries took: {:?}", start.elapsed());
+        assert!(!result.is_empty());
     }
 }

@@ -54,23 +54,22 @@ impl MidiMemoryManager {
         progress_callback: Option<&dyn Fn(f64)>,
         max_ram_bytes: Option<usize>,
     ) -> Result<Self, String> {
-        let (disk_cache, summaries, in_memory_tracks, memory_used, loaded_memory_limit) =
-            load_midi_data(
-                source_path,
-                cache_base_dir,
-                progress_callback,
-                max_ram_bytes,
-            )?;
+        let loaded_data = load_midi_data(
+            source_path,
+            cache_base_dir,
+            progress_callback,
+            max_ram_bytes,
+        )?;
 
         Ok(Self {
-            in_memory_tracks,
+            in_memory_tracks: loaded_data.in_memory_tracks,
             loaded_tracks: HashMap::new(),
-            track_summaries: summaries,
-            disk_cache,
-            memory_used: AtomicUsize::new(memory_used),
+            track_summaries: loaded_data.summaries,
+            disk_cache: loaded_data.disk_cache,
+            memory_used: AtomicUsize::new(loaded_data.memory_used),
             memory_limit: max_ram_bytes.unwrap_or(1024 * 1024 * 1024),
             lru_order: Vec::new(),
-            loaded_memory_limit,
+            loaded_memory_limit: loaded_data.loaded_memory_limit,
             loaded_memory_used: 0,
             source_path: source_path.to_path_buf(),
         })

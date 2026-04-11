@@ -96,11 +96,11 @@ impl CollaborationHandler {
     fn handle_remote_mouse_moved(
         &self,
         root: &mut Root,
-        user_id: String,
+        user_id: std::sync::Arc<str>,
         x: f32,
         y: f32,
-        color: String,
-        username: String,
+        color: std::sync::Arc<str>,
+        username: std::sync::Arc<str>,
     ) {
         tracing::debug!(
             "收到远程鼠标移动: user_id={}, x={}, y={}, color={}, username={}",
@@ -111,18 +111,8 @@ impl CollaborationHandler {
             username
         );
 
-        // 解析颜色字符串
-        let color_array = Self::parse_color(&color);
-
-        // 解析 user_id
-        let user_id_u64: u64 = user_id.parse().unwrap_or(0);
-
-        root.update_remote_cursor(
-            user_id_u64,
-            iced_core::Point::new(x, y),
-            color_array,
-            username,
-        );
+        root.editor
+            .update_remote_cursor(user_id, x, y, color, username);
     }
 
     fn handle_remote_note_update(&self, root: &mut Root, operation: String) {

@@ -98,7 +98,7 @@ fn init_inner(cell: &OnceLock<AppMenu>) -> muda::Result<()> {
             if let Some(_menu) = shell.get() {
                 let _id = event.id();
             } else {
-                eprintln!("Warning: MenuEvent handler called but MENU is not initialized.");
+                tracing::warn!("Warning: MenuEvent handler called but MENU is not initialized.");
             }
         });
     }));

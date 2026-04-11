@@ -44,20 +44,26 @@ impl RunnerInner {
             MidiLoadError(err) => {
                 tracing::error!("MIDI 文件加载失败：{}", err);
             }
-            MidiParsed(mut parsed) => {
+            MidiParsed(parsed) => {
                 tracing::info!("MIDI 文件解析完成：{}", parsed.info);
 
                 // 先导入音符到编辑器
                 self.import_midi_to_editor(&parsed);
 
-                // 导入完成后释放原始数据
-                let _ = parsed.take_midi_data();
-                tracing::debug!("MIDI 原始数据已释放，仅保留元数据");
+                tracing::debug!("MIDI 数据已保留在 Arc 中");
 
-                self.current_midi = Some(parsed);
+                self.current_midi = Some(parsed.clone());
+
+                if let Some(state) = &mut self.test_mode_state {
+                    state.active = true;
+                }
             }
             MidiParseError(err) => {
                 tracing::error!("MIDI 文件解析失败：{}", err);
+                if self.test_mode_state.is_some() {
+                    tracing::error!("测试模式因 MIDI 加载失败而退出");
+                    event_loop.exit();
+                }
             }
             DmsParsed(parsed) => {
                 tracing::info!("DMS 文件解析完成：{}", parsed.info);
@@ -157,7 +163,7 @@ impl RunnerInner {
         tokio::spawn(async move {
             run_async_task(
                 lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb)),
-                |parsed| event!(Menu.File.MidiParsed(parsed)),
+                |parsed| event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed))),
                 |e| event!(Menu.File.MidiParseError(e)),
             )
             .await;
@@ -195,7 +201,7 @@ impl RunnerInner {
                     // LMPJ 和 MIDI 都使用 MIDI 加载器
                     run_async_task(
                         lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb)),
-                        |parsed| event!(Menu.File.MidiParsed(parsed)),
+                        |parsed| event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed))),
                         |e| event!(Menu.File.MidiParseError(e)),
                     )
                     .await;
@@ -219,7 +225,7 @@ impl RunnerInner {
     }
 
     /// 保存 MIDI 文件
-    fn save_midi_file(&self, parsed_midi: ParsedMidi) {
+    fn save_midi_file(&self, parsed_midi: Arc<ParsedMidi>) {
         let file_stem = get_file_stem(Path::new(&parsed_midi.info.path));
 
         let Some(save_path) = rfd::FileDialog::new()
@@ -351,7 +357,7 @@ impl RunnerInner {
                                 parsed_midi.info.track_count);
                             // 发送 MIDI 解析完成事件，复用 MIDI 导入逻辑
                             tracing::info!("[DMS导入] 步骤7: 发送 MidiParsed 事件");
-                            event!(Menu.File.MidiParsed(parsed_midi));
+                            event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed_midi)));
                             tracing::info!("[DMS导入] 步骤8: MidiParsed 事件发送完成");
                         }
                         Err(e) => {

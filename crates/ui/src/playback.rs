@@ -180,24 +180,32 @@ impl Timeline {
             let next_change_tick = self
                 .tempo_changes
                 .get(i + 1)
-                .map(|tc| tc.tick)
-                .unwrap_or(f32::MAX);
+                .map(|tc| tc.tick);
 
-            // 计算这个速度段最多能消耗多少时间
-            let segment_ticks = next_change_tick - tempo_change.tick;
-            let segment_microseconds =
-                (segment_ticks as f64 / self.division as f64) * tempo_change.tempo as f64;
+            if let Some(next_tick) = next_change_tick {
+                // 计算这个速度段最多能消耗多少时间
+                let segment_ticks = next_tick - tempo_change.tick;
+                let segment_microseconds =
+                    (segment_ticks as f64 / self.division as f64) * tempo_change.tempo as f64;
+                let segment_microseconds_u64 = segment_microseconds.round() as u64;
 
-            if accumulated_microseconds + segment_microseconds as u64 >= target_microseconds {
-                // 目标在此速度段内
-                let remaining = target_microseconds - accumulated_microseconds;
+                if accumulated_microseconds + segment_microseconds_u64 >= target_microseconds {
+                    // 目标在此速度段内
+                    let remaining = target_microseconds.saturating_sub(accumulated_microseconds);
+                    let ticks_in_segment =
+                        (remaining as f64 * self.division as f64) / tempo_change.tempo as f64;
+                    return tempo_change.tick + ticks_in_segment as f32;
+                }
+
+                accumulated_microseconds += segment_microseconds_u64;
+                current_tick = next_tick;
+            } else {
+                // 最后一个速度段，延伸到无限远
+                let remaining = target_microseconds.saturating_sub(accumulated_microseconds);
                 let ticks_in_segment =
                     (remaining as f64 * self.division as f64) / tempo_change.tempo as f64;
                 return tempo_change.tick + ticks_in_segment as f32;
             }
-
-            accumulated_microseconds += segment_microseconds as u64;
-            current_tick = next_change_tick;
         }
 
         current_tick

@@ -49,12 +49,13 @@ impl Editor {
     ///
     /// 目前只返回鼠标位置的预览音符，后续可扩展为返回所有 MIDI 音符
     /// 音符只在 Canvas 区域内显示
-    pub fn get_note_instances(
+    pub fn update_note_instances(
         &self,
         theme: &crate::Theme,
         _sidebar_width: f32,
-    ) -> Vec<NoteInstance> {
-        let mut instances = Vec::new();
+        instances: &mut Vec<NoteInstance>,
+    ) {
+        instances.clear();
         let palette = theme.extended_palette();
 
         // 默认音符颜色（更弱颜色）
@@ -87,9 +88,11 @@ impl Editor {
         let visible_key_max = key_top_f32.ceil() as u16 + 1; // 加 1 容错
         let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1); // 减 1 容错
 
+        // 重建空间索引（仅在音符数据变化时）
         if self.note_index_dirty.get() {
+            let notes_vec: Vec<_> = self.notes.iter().cloned().collect();
             *self.note_index.borrow_mut() = Some(
-                crate::editor::spatial_index::NoteSpatialIndex::from_notes(&self.notes),
+                crate::editor::spatial_index::NoteSpatialIndex::from_notes(&notes_vec),
             );
             self.note_index_dirty.set(false);
             tracing::debug!(
@@ -98,22 +101,25 @@ impl Editor {
             );
         }
 
-        let candidates = {
+        // 查询可见范围内的音符（每次渲染都执行，确保滚动/缩放时刷新）
+        {
+            let mut cache = self.query_cache.borrow_mut();
             if let Some(index) = &*self.note_index.borrow() {
-                // 加一些容差，确保音符尾部也能被包含，虽然树内部已经处理过了
-                index.query(
+                index.update_query(
                     visible_tick_start,
                     visible_tick_end,
                     visible_key_min,
                     visible_key_max,
-                )
+                    &mut cache,
+                );
             } else {
-                Vec::new()
+                cache.clear();
             }
-        };
+        }
+        let candidates = self.query_cache.borrow();
 
         // 渲染已放置的音符（带视锥裁剪）
-        for &i in &candidates {
+        for &i in candidates.iter() {
             let note = &self.notes[i];
             // CPU 端视锥裁剪：只处理可见范围内的音符
             // 检查 tick 范围（音符结束位置 > 可见起始，且音符起始 < 可见结束）
@@ -183,8 +189,6 @@ impl Editor {
                 }
             }
         }
-
-        instances
     }
 
     /// 获取框选框的实例（用于渲染选择框）

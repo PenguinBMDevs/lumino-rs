@@ -65,8 +65,13 @@ impl Root {
             (color[1] * 255.0) as u8,
             (color[2] * 255.0) as u8
         );
-        self.editor
-            .update_remote_cursor(user_id.to_string(), position, color_str, username);
+        self.editor.update_remote_cursor(
+            user_id.to_string().into(),
+            position.x,
+            position.y,
+            color_str.into(),
+            username.into(),
+        );
     }
 
     /// 更新远程音符
@@ -95,6 +100,23 @@ impl Root {
                 tracing::debug!("协作: 未处理的笔记操作类型: {:?}", operation.action);
             }
         }
+        
+        // 标记音符已变化，重建当前音轨的空间索引
+        self.editor.mark_notes_changed();
+        
+        // 清除所有受影响音轨的洋葱皮空间索引缓存
+        let mut affected_tracks = std::collections::HashSet::new();
+        for note in &operation.notes {
+            affected_tracks.insert(note.track_index);
+        }
+        if let Some(source_track) = operation.source_track {
+            affected_tracks.insert(source_track);
+        }
+        
+        let mut indices_map = self.editor.track_note_indices.borrow_mut();
+        for track_idx in affected_tracks {
+            indices_map.remove(&track_idx);
+        }
     }
 
     fn handle_remote_notes_add(
@@ -109,12 +131,12 @@ impl Root {
             let track_idx = note.track_index;
             if track_idx == self.editor.current_track {
                 // 如果是当前音轨，直接添加到编辑器
-                self.editor.notes.push(editor_note.clone());
+                self.editor.notes.push_back(editor_note.clone());
             }
 
             // 更新 track_notes
             let track_notes = self.editor.track_notes.entry(track_idx).or_default();
-            track_notes.push(editor_note);
+            track_notes.push_back(editor_note);
         }
         // 音符由 wgpu 渲染，不需要清 grid cache
         self.invalidate_onion_skin_cache();

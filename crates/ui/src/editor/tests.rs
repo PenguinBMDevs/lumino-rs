@@ -107,8 +107,8 @@ mod tests {
         let mut editor = Editor::new();
 
         // 添加一些音符
-        editor.notes.push(Note::new(0.0, 60, 480.0));
-        editor.notes.push(Note::new(480.0, 64, 480.0));
+        editor.notes.push_back(Note::new(0.0, 60, 480.0));
+        editor.notes.push_back(Note::new(480.0, 64, 480.0));
 
         // 选中第一个音符
         editor.selected_notes.insert(0);
@@ -128,8 +128,8 @@ mod tests {
         let mut editor = Editor::new();
 
         // 添加音符
-        editor.notes.push(Note::new(0.0, 60, 480.0));
-        editor.notes.push(Note::new(480.0, 64, 480.0));
+        editor.notes.push_back(Note::new(0.0, 60, 480.0));
+        editor.notes.push_back(Note::new(480.0, 64, 480.0));
 
         assert_eq!(editor.notes.len(), 2);
 
@@ -146,7 +146,7 @@ mod tests {
         let mut editor = Editor::new();
 
         // 在当前音轨添加音符
-        editor.notes.push(Note::new(0.0, 60, 480.0));
+        editor.notes.push_back(Note::new(0.0, 60, 480.0));
 
         // 切换到音轨 1
         editor.switch_to_track(1);
@@ -155,7 +155,7 @@ mod tests {
         assert!(editor.notes.is_empty()); // 新音轨应该为空
 
         // 在音轨 1 添加音符
-        editor.notes.push(Note::new(0.0, 64, 480.0));
+        editor.notes.push_back(Note::new(0.0, 64, 480.0));
 
         // 切换回音轨 0
         editor.switch_to_track(0);
@@ -227,8 +227,8 @@ mod tests {
     #[test]
     fn test_select_all_notes() {
         let mut editor = Editor::new();
-        editor.notes.push(Note::new(0.0, 60, 480.0));
-        editor.notes.push(Note::new(480.0, 64, 480.0));
+        editor.notes.push_back(Note::new(0.0, 60, 480.0));
+        editor.notes.push_back(Note::new(480.0, 64, 480.0));
 
         editor.select_all_notes();
 

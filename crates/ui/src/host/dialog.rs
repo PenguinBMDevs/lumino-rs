@@ -55,11 +55,11 @@ impl Host {
     ) {
         self.root
             .update(message::Message::CollaborationRemoteMouseMoved {
-                user_id,
+                user_id: user_id.into(),
                 x,
                 y,
-                color,
-                username,
+                color: color.into(),
+                username: username.into(),
             });
         self.window.request_redraw();
     }
@@ -67,7 +67,9 @@ impl Host {
     /// 移除远端鼠标
     pub fn remove_remote_cursor(&mut self, user_id: String) {
         self.root
-            .update(message::Message::CollaborationRemoteUserLeft { user_id });
+            .update(message::Message::CollaborationRemoteUserLeft {
+                user_id: user_id.into(),
+            });
         self.window.request_redraw();
     }
 

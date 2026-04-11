@@ -96,7 +96,7 @@ pub struct Editor {
     /// Canvas 尺寸（宽, 高）
     pub canvas_size: Point,
 
-    pub notes: Vec<Note>,
+    pub notes: im::Vector<Note>,
     pub edit_state: EditState,
     pub hover_state: Option<(usize, HitType)>,
     pub pending_audio_actions: Vec<AudioAction>,
@@ -104,7 +104,7 @@ pub struct Editor {
     /// 当前编辑的音轨索引
     pub current_track: usize,
     /// 按音轨存储的音符（用于无 MIDI 文件时的多音轨编辑）
-    pub track_notes: std::collections::HashMap<usize, Vec<Note>>,
+    pub track_notes: std::collections::HashMap<usize, im::Vector<Note>>,
 
     /// 洋葱皮配置
     onion_skin_config: OnionSkinConfig,
@@ -132,6 +132,7 @@ pub struct Editor {
     /// 音符空间索引（惰性更新）
     pub note_index: RefCell<Option<spatial_index::NoteSpatialIndex>>,
     pub note_index_dirty: Cell<bool>,
+    pub query_cache: RefCell<Vec<usize>>,
 
     /// 其他音轨的音符空间索引（用于洋葱皮等，懒加载）
     pub track_note_indices:
@@ -150,7 +151,7 @@ impl Editor {
             cursor_position: None,
             canvas_offset: Point::new(0.0, 0.0),
             canvas_size: Point::new(0.0, 0.0),
-            notes: Vec::new(),
+            notes: im::Vector::new(),
             edit_state: EditState::Idle,
             hover_state: None,
             pending_audio_actions: Vec::new(),
@@ -166,6 +167,7 @@ impl Editor {
             auto_scroll_config: AutoScrollConfig::default(),
             note_index: RefCell::new(None),
             note_index_dirty: Cell::new(true),
+            query_cache: RefCell::new(Vec::new()),
             track_note_indices: RefCell::new(std::collections::HashMap::new()),
         };
         editor.max_scroll_x = editor.state.total_ticks as f32 * editor.state.zoom_x;
@@ -190,13 +192,16 @@ impl Editor {
     /// 更新远端鼠标位置
     pub fn update_remote_cursor(
         &mut self,
-        user_id: String,
-        pos: Point,
-        color: String,
-        username: String,
+        user_id: std::sync::Arc<str>,
+        x: f32,
+        y: f32,
+        color: std::sync::Arc<str>,
+        username: std::sync::Arc<str>,
     ) {
-        self.remote_cursors.insert(user_id, (pos, color, username));
-        self.grid_cache.clear();
+        self.remote_cursors.insert(
+            user_id.to_string(),
+            (Point::new(x, y), color.to_string(), username.to_string()),
+        );
     }
 
     /// 移除远端鼠标
@@ -243,6 +248,7 @@ impl Editor {
     pub fn mark_notes_changed(&mut self) {
         self.notes_changed = true;
         self.note_index_dirty.set(true);
+        self.track_note_indices.borrow_mut().remove(&self.current_track);
     }
 
     // ===== 自动滚动相关 =====
@@ -448,6 +454,7 @@ impl Editor {
             let instance = note.to_instance(color);
             instances.push(instance);
         }
+
         instances
     }
 
@@ -489,19 +496,21 @@ impl Editor {
 
                     let search_start = (visible_tick_start - 19200.0).max(0.0);
                     let mut indices_map = self.track_note_indices.borrow_mut();
+                    let notes_vec: Vec<_> = notes.iter().cloned().collect();
                     let index = indices_map
                         .entry(track_idx)
-                        .or_insert_with(|| spatial_index::NoteSpatialIndex::from_notes(notes));
+                        .or_insert_with(|| spatial_index::NoteSpatialIndex::from_notes(&notes_vec));
 
-                    // 使用实际的 key 范围进行裁剪，而不是 0..127
-                    let candidates = index.query(
+                    let mut candidates = self.query_cache.borrow_mut();
+                    index.update_query(
                         search_start,
                         visible_tick_end,
                         visible_key_min,
                         visible_key_max,
+                        &mut candidates,
                     );
 
-                    for &i in &candidates {
+                    for &i in &*candidates {
                         let note = &notes[i];
                         // 精确的 tick 和 key 裁剪
                         if note.tick + note.length < visible_tick_start
@@ -606,8 +615,7 @@ impl Editor {
             self.notes = snapshot.notes;
             self.current_track = snapshot.current_track;
             self.grid_cache.clear();
-            self.note_index_dirty.set(true);
-            self.track_note_indices.borrow_mut().clear();
+            self.mark_notes_changed();
             tracing::info!("撤销操作成功: {} 个音符", self.notes.len());
             true
         } else {
@@ -624,8 +632,7 @@ impl Editor {
             self.notes = snapshot.notes;
             self.current_track = snapshot.current_track;
             self.grid_cache.clear();
-            self.note_index_dirty.set(true);
-            self.track_note_indices.borrow_mut().clear();
+            self.mark_notes_changed();
             tracing::info!("重做操作成功");
             true
         } else {
@@ -642,110 +649,5 @@ impl Editor {
     /// Check if redo is available
     pub fn can_redo(&self) -> bool {
         self.history.can_redo()
-    }
-
-    /// 生成网格线实例（用于 wgpu 渲染）
-    pub fn get_grid_line_instances(
-        &self,
-        bar_color: iced_core::Color,
-        beat_color: iced_core::Color,
-        half_beat_color: iced_core::Color,
-        grid_color: iced_core::Color,
-        key_line_color: iced_core::Color,
-    ) -> Vec<lumino_gfx::GridLineInstance> {
-        use lumino_gfx::GridLineInstance;
-
-        let mut instances = Vec::new();
-        let view = &self.state;
-        let ppq = view.ppq as f32;
-        let keyboard_width = view.keyboard_width;
-        let ruler_height = view.ruler_height;
-
-        // 计算可见范围
-        let canvas_width = self.canvas_size.x;
-        let canvas_height = self.canvas_size.y;
-
-        // ===== 纵向网格线（小节线、拍线） =====
-        let measure_ticks = ppq * 4.0;
-        let start_tick = view.scroll_x / view.zoom_x;
-        let end_tick = (view.scroll_x + canvas_width - keyboard_width) / view.zoom_x;
-        let grid_gap = ppq / 4.0; // 十六分音符精度
-
-        let mut current_tick = (start_tick / grid_gap).ceil() * grid_gap;
-
-        while current_tick < end_tick {
-            let screen_x = (current_tick * view.zoom_x) - view.scroll_x
-                + keyboard_width
-                + self.canvas_offset.x;
-
-            // 只生成在 Canvas 区域内的线条
-            if screen_x >= self.canvas_offset.x + keyboard_width
-                && screen_x <= self.canvas_offset.x + canvas_width
-            {
-                let is_measure = (current_tick % measure_ticks).abs() < 0.1;
-                let is_beat = (current_tick % ppq).abs() < 0.1;
-                let is_half_beat = (current_tick % (ppq / 2.0)).abs() < 0.1;
-
-                let (color, width) = if is_measure {
-                    ([bar_color.r, bar_color.g, bar_color.b, bar_color.a], 4.0)
-                } else if is_beat {
-                    (
-                        [beat_color.r, beat_color.g, beat_color.b, beat_color.a],
-                        1.0,
-                    )
-                } else if is_half_beat {
-                    (
-                        [
-                            half_beat_color.r,
-                            half_beat_color.g,
-                            half_beat_color.b,
-                            half_beat_color.a,
-                        ],
-                        0.5,
-                    )
-                } else {
-                    (
-                        [grid_color.r, grid_color.g, grid_color.b, grid_color.a],
-                        0.5,
-                    )
-                };
-
-                instances.push(GridLineInstance::new(
-                    [screen_x, self.canvas_offset.y + ruler_height],
-                    [screen_x, self.canvas_offset.y + canvas_height],
-                    color,
-                    width,
-                ));
-            }
-            current_tick += grid_gap;
-        }
-
-        // ===== 横向网格线（琴键分隔线） =====
-        let max_key_index = (view.visible_key_count.saturating_sub(1)) as f32;
-
-        for i in 0..view.visible_key_count {
-            let keynum = i as isize;
-            let world_y = (max_key_index - keynum as f32) * view.zoom_y;
-            let screen_y = world_y - view.scroll_y + ruler_height + self.canvas_offset.y;
-
-            // 只生成在 Canvas 区域内的线条
-            if screen_y >= self.canvas_offset.y + ruler_height
-                && screen_y <= self.canvas_offset.y + canvas_height
-            {
-                instances.push(GridLineInstance::new(
-                    [self.canvas_offset.x + keyboard_width, screen_y],
-                    [self.canvas_offset.x + canvas_width, screen_y],
-                    [
-                        key_line_color.r,
-                        key_line_color.g,
-                        key_line_color.b,
-                        key_line_color.a,
-                    ],
-                    1.0,
-                ));
-            }
-        }
-
-        instances
     }
 }

@@ -118,11 +118,10 @@ impl Root {
     }
 
     /// 获取当前需要绘制的音符实例
-    pub fn get_note_instances(&mut self) -> Vec<NoteInstance> {
+    pub fn update_note_instances(&mut self, instances: &mut Vec<NoteInstance>) {
         let sidebar_width = self.sidebar.width() as f32;
-        let mut instances = self
-            .editor
-            .get_note_instances(&self.window.theme, sidebar_width);
+        self.editor
+            .update_note_instances(&self.window.theme, sidebar_width, instances);
 
         // 计算可见区域用于洋葱皮音符的视锥裁剪
         let view = &self.editor.state;
@@ -155,12 +154,10 @@ impl Root {
             let instance = note.to_instance(color);
             instances.push(instance);
         }
-
-        instances
     }
 
     /// 获取网格线实例（用于 wgpu 渲染）
-    pub fn get_grid_line_instances(&self) -> Vec<lumino_gfx::GridLineInstance> {
+    pub fn update_grid_line_instances(&self, instances: &mut Vec<lumino_gfx::GridLineInstance>) {
         use crate::editor::grid::theme::ThemeExt;
 
         // 从主题获取颜色
@@ -177,12 +174,13 @@ impl Root {
             palette.weak.color
         };
 
-        self.editor.get_grid_line_instances(
+        self.editor.update_grid_line_instances(
             bar_color,
             beat_color,
             half_beat_color,
             grid_color,
             key_line_color,
-        )
+            instances,
+        );
     }
 }

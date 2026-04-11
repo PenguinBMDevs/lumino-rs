@@ -1,10 +1,10 @@
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicIsize, Ordering};
 
 use winapi::shared::minwindef::{LPARAM, LRESULT, WPARAM};
 use winapi::shared::windef::{HWND, RECT};
 use winapi::um::winuser::{
-    DefWindowProcW, GWL_WNDPROC, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCLIENT,
-    HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, SetWindowLongPtrW, WM_NCHITTEST,
+    CallWindowProcW, DefWindowProcW, GWL_WNDPROC, GetWindowRect, SetWindowLongPtrW, WM_NCHITTEST,
+    HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT,
 };
 use winit::window::Window;
 
@@ -12,8 +12,7 @@ use winit::window::Window;
 type WndProcType = unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT;
 
 /// 存储原始窗口过程的指针
-/// 使用 OnceLock 替代 static mut，保证线程安全
-static ORIGINAL_WNDPROC: OnceLock<isize> = OnceLock::new();
+static ORIGINAL_WNDPROC: AtomicIsize = AtomicIsize::new(0);
 
 /// 窗口边框拉伸区域宽度（像素）
 const RESIZE_BORDER_WIDTH: i32 = 12;
@@ -25,9 +24,21 @@ unsafe extern "system" fn window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    let old_proc_val = ORIGINAL_WNDPROC.load(Ordering::Relaxed);
+    let old_proc = if old_proc_val != 0 {
+        #[allow(unsafe_op_in_unsafe_fn)]
+        Some(std::mem::transmute::<isize, WndProcType>(old_proc_val))
+    } else {
+        None
+    };
+
     if msg == WM_NCHITTEST {
         // 调用原始窗口过程获取默认结果
-        let original_result = unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) };
+        let original_result = if let Some(proc) = old_proc {
+            unsafe { CallWindowProcW(Some(proc), hwnd, msg, wparam, lparam) }
+        } else {
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        };
 
         // 如果默认结果是客户区，则检查是否在拉伸区域内
         if original_result == HTCLIENT as LRESULT {
@@ -36,8 +47,9 @@ unsafe extern "system" fn window_proc(
             let screen_y = ((lparam >> 16) & 0xFFFF) as i32;
 
             // 获取窗口矩形
-            let mut rect: RECT = unsafe { std::mem::zeroed() };
-            unsafe { GetWindowRect(hwnd, &mut rect) };
+            let mut rect = std::mem::MaybeUninit::<RECT>::uninit();
+            unsafe { GetWindowRect(hwnd, rect.as_mut_ptr()) };
+            let rect = unsafe { rect.assume_init() };
 
             // 将屏幕坐标转换为窗口坐标
             let x = screen_x - rect.left;
@@ -73,13 +85,11 @@ unsafe extern "system" fn window_proc(
     }
 
     // 调用原始窗口过程
-    if let Some(&old_proc) = ORIGINAL_WNDPROC.get() {
-        return unsafe {
-            std::mem::transmute::<isize, WndProcType>(old_proc)(hwnd, msg, wparam, lparam)
-        };
+    if let Some(proc) = old_proc {
+        unsafe { CallWindowProcW(Some(proc), hwnd, msg, wparam, lparam) }
+    } else {
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
     }
-
-    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
 
 /// 为窗口设置自定义拉伸区域
@@ -96,7 +106,7 @@ pub fn setup_resize_border(window: &Window) -> Result<(), String> {
             return Err("Not a Windows window".to_string());
         };
 
-        // 获取原始窗口过程
+        // 获取原始窗口过程并设置新的窗口过程
         let original_wndproc = SetWindowLongPtrW(
             hwnd,
             GWL_WNDPROC,
@@ -104,9 +114,8 @@ pub fn setup_resize_border(window: &Window) -> Result<(), String> {
         );
 
         if original_wndproc != 0 {
-            // 使用 OnceLock::set 替代直接赋值，保证线程安全
-            // 如果已经设置过，忽略错误（保持第一次设置的值）
-            let _ = ORIGINAL_WNDPROC.set(original_wndproc);
+            // 使用 AtomicIsize 保存，允许被新窗口的 wndproc 覆盖（虽然 winit 一般共享一个 wndproc）
+            ORIGINAL_WNDPROC.store(original_wndproc, Ordering::Relaxed);
         }
 
         Ok(())

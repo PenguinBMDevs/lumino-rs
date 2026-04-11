@@ -141,23 +141,22 @@ pub fn create_track_summary(
     }
 }
 
+/// 加载后的 MIDI 数据
+pub struct LoadedMidiData {
+    pub disk_cache: DiskTrackCache,
+    pub summaries: Vec<TrackSummary>,
+    pub in_memory_tracks: std::collections::HashMap<usize, Vec<MidiEvent>>,
+    pub memory_used: usize,
+    pub loaded_memory_limit: usize,
+}
+
 /// 从 MIDI 文件加载数据
-#[allow(clippy::type_complexity)]
 pub fn load_midi_data(
     source_path: &Path,
     cache_base_dir: &Path,
     progress_callback: Option<&dyn Fn(f64)>,
     max_ram_bytes: Option<usize>,
-) -> Result<
-    (
-        DiskTrackCache,
-        Vec<TrackSummary>,
-        std::collections::HashMap<usize, Vec<MidiEvent>>,
-        usize,
-        usize,
-    ),
-    String,
-> {
+) -> Result<LoadedMidiData, String> {
     let disk_cache = DiskTrackCache::new(cache_base_dir, source_path)
         .map_err(|e| format!("创建磁盘缓存失败: {e}"))?;
 
@@ -251,13 +250,13 @@ pub fn load_midi_data(
         division,
     );
 
-    Ok((
+    Ok(LoadedMidiData {
         disk_cache,
         summaries,
         in_memory_tracks,
         memory_used,
         loaded_memory_limit,
-    ))
+    })
 }
 
 /// 提取 MIDI 时间分割值

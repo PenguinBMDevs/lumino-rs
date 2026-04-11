@@ -38,30 +38,27 @@ pub struct CameraUniform {
     pub _padding: f32,
 }
 
+pub struct CameraParams {
+    pub scroll: [f32; 2],
+    pub zoom: [f32; 2],
+    pub viewport: [f32; 2],
+    pub offset: [f32; 2],
+    pub keyboard_width: f32,
+    pub ruler_height: f32,
+    pub max_key_index: f32,
+}
+
 impl CameraUniform {
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
-    pub const fn new(
-        scroll_x: f32,
-        scroll_y: f32,
-        zoom_x: f32,
-        zoom_y: f32,
-        viewport_width: f32,
-        viewport_height: f32,
-        canvas_offset_x: f32,
-        canvas_offset_y: f32,
-        keyboard_width: f32,
-        ruler_height: f32,
-        max_key_index: f32,
-    ) -> Self {
+    pub const fn new(params: CameraParams) -> Self {
         Self {
-            scroll: [scroll_x, scroll_y],
-            zoom: [zoom_x, zoom_y],
-            viewport_size: [viewport_width, viewport_height],
-            canvas_offset: [canvas_offset_x, canvas_offset_y],
-            keyboard_width,
-            ruler_height,
-            max_key_index,
+            scroll: params.scroll,
+            zoom: params.zoom,
+            viewport_size: params.viewport,
+            canvas_offset: params.offset,
+            keyboard_width: params.keyboard_width,
+            ruler_height: params.ruler_height,
+            max_key_index: params.max_key_index,
             _padding: 0.0,
         }
     }
