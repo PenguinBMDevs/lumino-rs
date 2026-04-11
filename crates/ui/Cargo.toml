@@ -31,3 +31,4 @@ im = "15.1.0"
 puffin = "0.19.1"
 winit = { workspace = true }
 anyhow = { workspace = true }
+rayon = "1.10"

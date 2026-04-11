@@ -3533,6 +3533,7 @@ dependencies = [
  "lumino-midi",
  "once_cell",
  "puffin",
+ "rayon",
  "resvg",
  "rfd",
  "serde_json",

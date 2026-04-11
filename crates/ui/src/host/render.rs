@@ -8,6 +8,7 @@
 use iced_wgpu::wgpu;
 use iced_winit::runtime::user_interface::{self, UserInterface};
 use iced_core::{Event, renderer, window as iced_window};
+use rayon::prelude::*;
 
 use crate::host::Host;
 use crate::{message, window, RenderParams};
@@ -419,6 +420,114 @@ impl Host {
         instances
     }
 
+    /// 快速更新所有音符实例（直接上传模式）
+    ///
+    /// 这个模式避免了 CPU 端的视锥裁剪，直接上传所有音符到 GPU
+    /// 让 GPU 的 compute shader 处理裁剪，适合超密集音符场景
+    ///
+    /// 优化策略：
+    /// 1. 使用 rayon 并行迭代处理大量音符
+    /// 2. 预分配容量避免重新分配
+    /// 3. 批量收集结果后一次性扩展
+    fn update_all_note_instances_fast(&mut self) {
+        puffin::profile_function!();
+
+        // 获取编辑器数据（避免借用冲突）
+        let notes = &self.root.editor.notes;
+        let track_notes = &self.root.editor.track_notes;
+        let current_track = self.root.editor.current_track;
+        let edit_state = &self.root.editor.edit_state;
+        let default_note_length = self.root.editor.state.default_note_length;
+        let snap_precision = self.root.editor.state.snap_precision;
+
+        let instances = &mut self.render_cache.note_instances;
+        instances.clear();
+
+        // 计算总容量
+        let onion_skin_count: usize = track_notes.values().map(|n| n.len()).sum();
+        let total_capacity = notes.len() + onion_skin_count + 1; // +1 for drawing note
+        instances.reserve(total_capacity);
+
+        // 批量转换所有音符（不进行 CPU 端裁剪）
+        // 使用 rayon 并行处理大量音符
+        const PARALLEL_THRESHOLD: usize = 5000;
+        let default_color = [0.2, 0.5, 1.0, 0.9];
+
+        if notes.len() > PARALLEL_THRESHOLD {
+            // 将 im::Vector 转换为 Vec 以支持并行迭代
+            let notes_vec: Vec<_> = notes.iter().collect();
+            let parallel_instances: Vec<lumino_gfx::NoteInstance> = notes_vec
+                .par_iter()
+                .map(|note| {
+                    lumino_gfx::NoteInstance::new(
+                        note.tick,
+                        note.key as f32,
+                        note.length,
+                        default_color,
+                    )
+                })
+                .collect();
+            instances.extend(parallel_instances);
+        } else {
+            // 小数据量使用串行迭代（避免并行开销）
+            for note in notes.iter() {
+                instances.push(lumino_gfx::NoteInstance::new(
+                    note.tick,
+                    note.key as f32,
+                    note.length,
+                    default_color,
+                ));
+            }
+        }
+
+        // 添加洋葱皮音符（其他音轨的音符）
+        for (track_idx, track_notes_vec) in track_notes.iter() {
+            if *track_idx == current_track {
+                continue; // 跳过当前音轨
+            }
+
+            // 为每个音轨使用不同的颜色（基于音轨索引）
+            let track_color = match track_idx % 8 {
+                0 => [1.0, 0.5, 0.31, 0.4],   // 珊瑚红
+                1 => [0.53, 0.81, 0.92, 0.4], // 天蓝色
+                2 => [0.56, 0.93, 0.56, 0.4], // 浅绿色
+                3 => [0.93, 0.51, 0.93, 0.4], // 紫罗兰
+                4 => [1.0, 0.84, 0.0, 0.4],   // 金黄色
+                5 => [0.0, 1.0, 1.0, 0.4],    // 青色
+                6 => [1.0, 0.41, 0.71, 0.4],  // 热粉色
+                _ => [1.0, 0.65, 0.0, 0.4],   // 橙色
+            };
+
+            for note in track_notes_vec.iter() {
+                instances.push(lumino_gfx::NoteInstance::new(
+                    note.tick,
+                    note.key as f32,
+                    note.length,
+                    track_color,
+                ));
+            }
+        }
+
+        // 添加正在绘制的音符
+        if let crate::editor::EditState::Drawing { start_tick, key, current_tick } = edit_state {
+            let (tick, length) = if *current_tick > *start_tick {
+                (*start_tick, *current_tick - *start_tick)
+            } else if *current_tick < *start_tick {
+                (*current_tick, *start_tick - *current_tick)
+            } else {
+                (*start_tick, default_note_length)
+            };
+            let length = length.max(snap_precision);
+
+            instances.push(lumino_gfx::NoteInstance::new(
+                tick,
+                *key as f32,
+                length,
+                [0.4, 0.8, 1.0, 1.0], // 绘制中音符颜色
+            ));
+        }
+    }
+
     /// 渲染 iced UI 层
     fn render_iced_ui(&mut self, frame: &wgpu::SurfaceTexture, texture_view: &wgpu::TextureView) {
         puffin::profile_function!();
@@ -566,11 +675,10 @@ impl Host {
             self.render_cache.grid_viewport_hash = current_viewport_hash;
             grid_changed = true;
         }
-        let grid_instances = &self.render_cache.grid_instances;
 
-        if grid_changed && !grid_instances.is_empty() {
+        if grid_changed && !self.render_cache.grid_instances.is_empty() {
             self.grid_renderer.prepare(
-                grid_instances,
+                &self.render_cache.grid_instances,
                 &gfx.device,
                 &gfx.queue,
                 (logical_size.width, logical_size.height),
@@ -578,26 +686,60 @@ impl Host {
         }
 
         // ===== 准备音符数据（带缓存）=====
-        // 视口变化、音符增删改、编辑状态或光标位置变化都需要重新生成
+        // 优化策略：
+        // - 超密集音符（>10000）：直接上传所有音符到 GPU，让 GPU 处理裁剪
+        //   - 音符数据变化时才重新生成实例
+        //   - 视口变化只更新 camera uniform，不重新生成实例
+        // - 普通音符（<=10000）：CPU 端裁剪，只上传可见音符
+        //   - 视口变化时需要重新生成实例（因为可见集合变了）
         let note_index_dirty = self.root.editor.note_index_dirty.get();
         let current_edit_state = self.root.editor.edit_state.clone();
         let note_viewport_changed = current_viewport_hash != self.render_cache.note_viewport_hash;
-        let note_data_dirty = note_index_dirty
-            || note_viewport_changed
+
+        const DIRECT_UPLOAD_THRESHOLD: usize = 10000;
+        let total_notes = self.root.editor.notes.len();
+        let use_direct_upload = total_notes > DIRECT_UPLOAD_THRESHOLD;
+
+        // 区分"实例数据变化"和"视口变化/光标变化"
+        // 实例数据变化：需要重新生成 NoteInstance 数组
+        // 注意：光标位置变化不应该触发重新生成（除非在绘制模式）
+        let is_drawing = matches!(current_edit_state, crate::editor::EditState::Drawing { .. });
+        let cursor_changed = self.cursor_position != self.last_cursor_position;
+        let cursor_affects_notes = is_drawing && cursor_changed; // 只有绘制时光标变化才影响音符
+
+        let note_instances_dirty = note_index_dirty
             || current_edit_state != self.last_edit_state
-            || self.cursor_position != self.last_cursor_position
+            || cursor_affects_notes
             || self.render_cache.note_instances.is_empty();
 
+        // 视口变化：只需要更新 camera，不需要重新生成实例（对于直接上传模式）
+        let viewport_dirty = note_viewport_changed;
+
         let mut notes_instances_changed = false;
-        if note_data_dirty {
+
+        if note_instances_dirty {
+            // 音符数据变化，需要重新生成实例
+            if use_direct_upload {
+                self.update_all_note_instances_fast();
+            } else {
+                self.root
+                    .update_note_instances(&mut self.render_cache.note_instances);
+            }
+            self.render_cache.note_viewport_hash = current_viewport_hash;
+            self.last_edit_state = current_edit_state;
+            // 注意：last_cursor_position 在下面统一更新
+            notes_instances_changed = true;
+        } else if viewport_dirty && !use_direct_upload {
+            // 普通模式：视口变化需要重新生成实例（CPU 端裁剪）
             self.root
                 .update_note_instances(&mut self.render_cache.note_instances);
             self.render_cache.note_viewport_hash = current_viewport_hash;
-            self.last_edit_state = current_edit_state;
-            self.last_cursor_position = self.cursor_position;
             notes_instances_changed = true;
         }
-        let note_instances = &self.render_cache.note_instances;
+        // 直接上传模式：视口变化不重新生成实例，只更新 camera（在下面处理）
+
+        // 更新 last_cursor_position（即使没有重新生成实例）
+        self.last_cursor_position = self.cursor_position;
 
         let camera = lumino_gfx::CameraUniform::new(lumino_gfx::CameraParams {
             scroll: [
@@ -612,16 +754,16 @@ impl Host {
             max_key_index: (self.root.editor.state.visible_key_count.saturating_sub(1)) as f32,
         });
 
-        if notes_instances_changed && !note_instances.is_empty() {
+        if notes_instances_changed && !self.render_cache.note_instances.is_empty() {
             self.note_renderer.prepare_instances(
                 &mut encoder,
-                note_instances,
+                &self.render_cache.note_instances,
                 &gfx.device,
                 &gfx.queue,
             );
         }
 
-        if !note_instances.is_empty() {
+        if !self.render_cache.note_instances.is_empty() {
             self.note_renderer
                 .prepare_pass(&mut encoder, camera, &gfx.queue);
         }
@@ -654,14 +796,14 @@ impl Host {
         let has_scissor = scissor_width > 0 && scissor_height > 0;
 
         // 绘制网格线
-        if !grid_instances.is_empty() && has_scissor {
+        if !self.render_cache.grid_instances.is_empty() && has_scissor {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             self.grid_renderer
-                .draw(&mut render_pass, grid_instances.len() as u32);
+                .draw(&mut render_pass, self.render_cache.grid_instances.len() as u32);
         }
 
         // 绘制音符
-        if !note_instances.is_empty() && has_scissor {
+        if !self.render_cache.note_instances.is_empty() && has_scissor {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             self.note_renderer.draw(
                 &mut render_pass,
