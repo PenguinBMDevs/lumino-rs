@@ -319,6 +319,8 @@ pub async fn load_parsed_midi(
     // 为 spawn_blocking 闭包捕获进度回调的克隆
     let progress_clone = progress.cloned();
     let (info, memory_manager) = tokio::task::spawn_blocking(move || {
+        puffin::profile_scope!("load_midi_blocking");
+
         let pcb = progress_clone.as_ref();
         let cb = |msg: &str, val: f64| {
             if let Some(p) = pcb {
@@ -397,6 +399,8 @@ pub async fn load_dms(
     let path_clone = path.clone();
     let progress_clone = progress.cloned();
     let (scan_result, lightweight_data) = tokio::task::spawn_blocking(move || {
+        puffin::profile_scope!("load_dms_blocking");
+
         let pcb = progress_clone.as_ref();
         let scan_cb = |msg: &str, val: f64| {
             if let Some(p) = pcb {

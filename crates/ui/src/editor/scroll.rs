@@ -19,6 +19,24 @@ impl super::Editor {
         self.state.scroll_y
     }
 
+    /// 获取滚动位置 (x, y)
+    pub fn scroll(&self) -> (f32, f32) {
+        (self.state.scroll_x, self.state.scroll_y)
+    }
+
+    /// 获取缩放 (x, y)
+    pub fn zoom(&self) -> (f32, f32) {
+        (self.state.zoom_x, self.state.zoom_y)
+    }
+
+    pub fn zoom_x(&self) -> f32 {
+        self.state.zoom_x
+    }
+
+    pub fn zoom_y(&self) -> f32 {
+        self.state.zoom_y
+    }
+
     pub fn set_scroll_x(&mut self, scroll_x: f32) {
         // 计算实际可滚动的最大范围：总宽度 - 视口宽度
         let total_width = self.state.total_ticks as f32 * self.state.zoom_x;

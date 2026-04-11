@@ -10,6 +10,8 @@ use crate::{message, toolbar, window};
 impl Host {
     /// 处理光标移动
     pub fn cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
+        puffin::profile_function!();
+
         let logical_pos = conversion::cursor_position(position, self.viewport.scale_factor());
         self.cursor = mouse::Cursor::Available(logical_pos);
         // 存储逻辑坐标（与 iced 保持一致）
@@ -32,6 +34,9 @@ impl Host {
         use winit::event::ElementState;
         use winit::event::WindowEvent::*;
         use winit::keyboard::{KeyCode, PhysicalKey};
+
+        // 检查是否是光标移动事件 - 这些事件不需要重建UI
+        let is_cursor_move = matches!(&event, CursorMoved { .. });
 
         match &event {
             Resized(_) => {
@@ -150,12 +155,20 @@ impl Host {
             self.events.extend(converted_events);
         }
 
-        // 处理事件
-        self.process_pending_events();
+        // 处理事件 - 但光标移动事件不触发UI重建，只请求重绘
+        if is_cursor_move {
+            // 光标移动只需要重绘，不需要重建UI
+            self.window.request_redraw();
+        } else {
+            // 其他事件需要处理并可能重建UI
+            self.process_pending_events();
+        }
     }
 
     /// 处理待处理的事件队列
     fn process_pending_events(&mut self) {
+        puffin::profile_function!();
+
         if self.events.is_empty() {
             return;
         }
@@ -163,31 +176,40 @@ impl Host {
         // 临时取出缓存以避免借用冲突
         let cache = std::mem::take(&mut self.cache);
 
-        let mut interface = iced_winit::runtime::user_interface::UserInterface::build(
-            self.root.view(),
-            self.viewport.logical_size(),
-            cache,
-            &mut self.renderer,
-        );
+        let mut interface = {
+            puffin::profile_scope!("build_ui");
+            iced_winit::runtime::user_interface::UserInterface::build(
+                self.root.view(),
+                self.viewport.logical_size(),
+                cache,
+                &mut self.renderer,
+            )
+        };
 
         let mut messages = Vec::new();
 
-        let _ = interface.update(
-            &self.events,
-            self.cursor,
-            &mut self.renderer,
-            &mut self.clipboard,
-            &mut messages,
-        );
+        {
+            puffin::profile_scope!("update_ui");
+            let _ = interface.update(
+                &self.events,
+                self.cursor,
+                &mut self.renderer,
+                &mut self.clipboard,
+                &mut messages,
+            );
+        }
 
         self.events.clear();
         self.cache = interface.into_cache();
 
         // 应用消息，并检查是否有状态变更
         let mut has_state_change = false;
-        for message in messages {
-            if self.process_message(message) {
-                has_state_change = true;
+        {
+            puffin::profile_scope!("process_messages");
+            for message in messages {
+                if self.process_message(message) {
+                    has_state_change = true;
+                }
             }
         }
 

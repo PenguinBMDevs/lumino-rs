@@ -131,6 +131,8 @@ impl WindowManager {
 
     /// 处理重绘
     fn handle_redraw(&mut self) {
+        puffin::profile_function!();
+
         if self.resized {
             let size = self.window.inner_size();
             self.ui.resize(size.width, size.height);

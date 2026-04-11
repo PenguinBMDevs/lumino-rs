@@ -79,6 +79,8 @@ impl winit::application::ApplicationHandler for Runner {
         window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
+        puffin::profile_function!();
+        
         let Some(this) = self.inner.as_mut() else {
             return;
         };

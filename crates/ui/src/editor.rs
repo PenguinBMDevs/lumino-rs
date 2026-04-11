@@ -495,11 +495,22 @@ impl Editor {
                     let color = self.onion_skin_config.get_track_color(track_idx);
 
                     let search_start = (visible_tick_start - 19200.0).max(0.0);
+                    
+                    // 先检查索引是否存在，避免不必要的 Vec 创建
                     let mut indices_map = self.track_note_indices.borrow_mut();
-                    let notes_vec: Vec<_> = notes.iter().cloned().collect();
-                    let index = indices_map
-                        .entry(track_idx)
-                        .or_insert_with(|| spatial_index::NoteSpatialIndex::from_notes(&notes_vec));
+                    let needs_build = !indices_map.contains_key(&track_idx);
+                    
+                    if needs_build {
+                        // 只有在索引不存在时才创建 Vec 和索引
+                        let notes_vec: Vec<_> = notes.iter().cloned().collect();
+                        indices_map.insert(
+                            track_idx,
+                            spatial_index::NoteSpatialIndex::from_notes(&notes_vec),
+                        );
+                    }
+                    
+                    // 获取索引（现在一定存在）
+                    let index = indices_map.get(&track_idx).unwrap();
 
                     let mut candidates = self.query_cache.borrow_mut();
                     index.update_query(
@@ -510,18 +521,20 @@ impl Editor {
                         &mut candidates,
                     );
 
+                    // 直接使用 notes（im::Vector）而不是创建 notes_vec
                     for &i in &*candidates {
-                        let note = &notes[i];
-                        // 精确的 tick 和 key 裁剪
-                        if note.tick + note.length < visible_tick_start
-                            || note.tick > visible_tick_end
-                        {
-                            continue;
+                        if let Some(note) = notes.get(i) {
+                            // 精确的 tick 和 key 裁剪
+                            if note.tick + note.length < visible_tick_start
+                                || note.tick > visible_tick_end
+                            {
+                                continue;
+                            }
+                            if note.key < visible_key_min || note.key > visible_key_max {
+                                continue;
+                            }
+                            all_notes.push((note.tick, note.key, note.length, color));
                         }
-                        if note.key < visible_key_min || note.key > visible_key_max {
-                            continue;
-                        }
-                        all_notes.push((note.tick, note.key, note.length, color));
                     }
                 }
             }

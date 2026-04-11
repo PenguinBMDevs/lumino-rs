@@ -3035,6 +3035,15 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "itertools"
+version = "0.10.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
@@ -3391,6 +3400,7 @@ dependencies = [
  "memmap2",
  "midly",
  "ouroboros",
+ "puffin",
  "rayon",
  "serde",
  "serde_json",
@@ -3439,6 +3449,7 @@ name = "lumino-gfx"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "puffin",
  "thiserror 2.0.18",
  "tracing",
  "wgpu",
@@ -3462,6 +3473,7 @@ dependencies = [
 name = "lumino-rs"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bytemuck",
  "chrono",
  "clap 4.5.60",
@@ -3482,6 +3494,8 @@ dependencies = [
  "lumino-ui",
  "midly",
  "muda",
+ "puffin",
+ "puffin_http",
  "raw-window-handle",
  "rfd",
  "rgb",
@@ -3503,6 +3517,7 @@ dependencies = [
 name = "lumino-ui"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "arboard",
  "iced_aw",
  "iced_core",
@@ -3524,6 +3539,7 @@ dependencies = [
  "tiny-skia",
  "tracing",
  "usvg",
+ "winit",
 ]
 
 [[package]]
@@ -3577,6 +3593,12 @@ dependencies = [
  "lyon_path",
  "num-traits",
 ]
+
+[[package]]
+name = "lz4_flex"
+version = "0.11.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "373f5eceeeab7925e0c1098212f2fbc4d416adec9d35051a6ab251e824c1854a"
 
 [[package]]
 name = "mach2"
@@ -4842,15 +4864,32 @@ dependencies = [
 
 [[package]]
 name = "puffin"
-version = "0.20.0"
+version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84b514d95a258be801fde8a1ff1c974f4a4841d9750f5d1d6690fc07a5ad4049"
+checksum = "fa9dae7b05c02ec1a6bc9bcf20d8bc64a7dcbf57934107902a872014899b741f"
 dependencies = [
  "anyhow",
+ "bincode",
  "byteorder",
  "cfg-if",
- "itertools 0.14.0",
+ "itertools 0.10.5",
+ "lz4_flex",
+ "once_cell",
  "parking_lot",
+ "serde",
+]
+
+[[package]]
+name = "puffin_http"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "739a3c7f56604713b553d7addd7718c226e88d598979ae3450320800bd0e9810"
+dependencies = [
+ "anyhow",
+ "crossbeam-channel",
+ "log",
+ "parking_lot",
+ "puffin",
 ]
 
 [[package]]

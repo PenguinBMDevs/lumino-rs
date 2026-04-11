@@ -138,6 +138,8 @@ impl Context {
         &self,
         f: impl FnOnce(&wgpu::SurfaceTexture, &wgpu::TextureView),
     ) -> Result<()> {
+        puffin::profile_function!();
+
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
             Err(wgpu::SurfaceError::OutOfMemory) => {
