@@ -61,6 +61,10 @@ impl RunnerInner {
             }
             DmsParsed(parsed) => {
                 tracing::info!("DMS 文件解析完成：{}", parsed.info);
+
+                // 导入 DMS 到编辑器
+                self.import_dms_to_editor(&parsed);
+
                 self.current_dms = Some(parsed);
             }
             DmsParseError(err) => {
@@ -308,5 +312,62 @@ impl RunnerInner {
         } else {
             tracing::warn!("Failed to create playback MIDI output connection");
         }
+    }
+
+    /// 将 DMS 数据导入到编辑器
+    pub(super) fn import_dms_to_editor(&mut self, parsed: &Arc<lumino_core::ParsedDms>) {
+        use lumino_core::midi::loader::{load_parsed_midi, ProgressCallback};
+
+        tracing::info!("[DMS导入] 开始将 DMS 导入编辑器: {:?}", parsed.info.path);
+
+        // DMS 需要先转换为 MIDI 格式才能导入编辑器
+        // 这里我们使用 export 功能将 DMS 转为 MIDI 字节，然后解析为 ParsedMidi
+        let path = parsed.info.path.clone();
+
+        tokio::spawn(async move {
+            tracing::info!("[DMS导入] 步骤1: 导出 DMS 为 MIDI");
+            match lumino_export::export_midi_from_dms_sync(&path) {
+                Ok(midi_bytes) => {
+                    tracing::info!("[DMS导入] 步骤2: DMS 转换为 MIDI 成功，共 {} 字节", midi_bytes.len());
+
+                    // 将转换后的 MIDI 数据保存到临时文件
+                    let temp_path = std::env::temp_dir().join("lumino_dms_temp.mid");
+                    tracing::info!("[DMS导入] 步骤3: 写入临时文件: {:?}", temp_path);
+                    if let Err(e) = std::fs::write(&temp_path, &midi_bytes) {
+                        tracing::error!("[DMS导入] 写入临时 MIDI 文件失败: {}", e);
+                        return;
+                    }
+                    tracing::info!("[DMS导入] 步骤4: 临时文件写入成功");
+
+                    // 使用现有的 MIDI 加载器加载转换后的数据
+                    let progress_cb: ProgressCallback = Arc::new(|msg: &str, progress: f64| {
+                        tracing::info!("[DMS->MIDI] {}: {:.0}%", msg, progress * 100.0);
+                    });
+
+                    tracing::info!("[DMS导入] 步骤5: 开始加载 MIDI 数据");
+                    match load_parsed_midi(temp_path.clone(), Some(&progress_cb)).await {
+                        Ok(parsed_midi) => {
+                            tracing::info!("[DMS导入] 步骤6: DMS 转换的 MIDI 加载成功, 轨道数={}", 
+                                parsed_midi.info.track_count);
+                            // 发送 MIDI 解析完成事件，复用 MIDI 导入逻辑
+                            tracing::info!("[DMS导入] 步骤7: 发送 MidiParsed 事件");
+                            event!(Menu.File.MidiParsed(parsed_midi));
+                            tracing::info!("[DMS导入] 步骤8: MidiParsed 事件发送完成");
+                        }
+                        Err(e) => {
+                            tracing::error!("[DMS导入] 加载转换后的 MIDI 失败: {}", e);
+                        }
+                    }
+
+                    // 清理临时文件
+                    tracing::info!("[DMS导入] 步骤9: 清理临时文件");
+                    let _ = std::fs::remove_file(&temp_path);
+                    tracing::info!("[DMS导入] 导入流程完成");
+                }
+                Err(e) => {
+                    tracing::error!("[DMS导入] DMS 转换为 MIDI 失败: {}", e);
+                }
+            }
+        });
     }
 }

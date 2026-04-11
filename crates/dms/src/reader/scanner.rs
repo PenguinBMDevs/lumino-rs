@@ -23,11 +23,12 @@ pub struct ScanState {
 impl ScanState {
     #[must_use]
     pub fn new(decompressed_length: usize) -> Self {
-        const BUF_SIZE: usize = 4 * 1_048_576;
-        const MAX_NODE_DATA: usize = 65536;
+        // 缓冲区需要足够容纳解压后的数据
+        // 使用解压长度 + 一些额外空间
+        let buffer_size = decompressed_length + 65536;
 
         Self {
-            buffer: vec![0; BUF_SIZE + MAX_NODE_DATA],
+            buffer: vec![0; buffer_size],
             valid_len: 0,
             decompressed_offset: 0,
             decompressed_length,
@@ -45,28 +46,27 @@ impl ScanState {
     /// # Errors
     ///
     /// Returns an error if the operation fails.
-    pub fn read_more_data<R: Read>(&mut self, decoder: &mut ZlibDecoder<R>) -> Result<()> {
+    pub fn read_more_data<R: Read>(&mut self, decoder: &mut ZlibDecoder<R>) -> Result<bool> {
         const BUF_SIZE: usize = 4 * 1_048_576;
-        const MAX_NODE_DATA: usize = 65536;
 
-        if self.valid_len < MAX_NODE_DATA {
-            let read_target = &mut self.buffer[self.valid_len..self.valid_len + BUF_SIZE];
-            match decoder.read(read_target) {
-                Ok(0) => {
-                    if self.valid_len == 0 {
-                        return Ok(());
-                    }
-                }
-                Ok(n) => {
-                    self.valid_len += n;
-                    self.decompressed_offset += n;
-                }
-                Err(e) => {
-                    return Err(DmsError::Corrupted(format!("解压失败: {e}")));
-                }
+        // 总是尝试读取更多数据，直到解码器返回0
+        let read_target = &mut self.buffer[self.valid_len..self.valid_len + BUF_SIZE];
+        match decoder.read(read_target) {
+            Ok(0) => {
+                // 解码器返回0表示数据已读完
+                // 标记为已完成
+                self.decompressed_offset = self.decompressed_length;
+                Ok(true) // 返回true表示数据已读完
+            }
+            Ok(n) => {
+                self.valid_len += n;
+                self.decompressed_offset += n;
+                Ok(false) // 返回false表示还可以继续读取
+            }
+            Err(e) => {
+                Err(DmsError::Corrupted(format!("解压失败: {e}")))
             }
         }
-        Ok(())
     }
 
     /// # Errors
@@ -210,8 +210,11 @@ pub fn scan_dms_streaming_with_progress<R: Read, F: Fn(f64)>(
     let mut result = DmsScanResult::default();
     let mut state = ScanState::new(header.decompressed_length);
 
+    let mut eof_reached = false;
     while !state.is_finished() {
-        state.read_more_data(&mut decoder)?;
+        if !eof_reached {
+            eof_reached = state.read_more_data(&mut decoder)?;
+        }
         state.parse_nodes(&mut result)?;
         state.update_progress(&progress_callback);
     }
