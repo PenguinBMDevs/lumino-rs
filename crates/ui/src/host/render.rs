@@ -696,50 +696,56 @@ impl Host {
         let current_edit_state = self.root.editor.edit_state.clone();
         let note_viewport_changed = current_viewport_hash != self.render_cache.note_viewport_hash;
 
-        const DIRECT_UPLOAD_THRESHOLD: usize = 10000;
-        let total_notes = self.root.editor.notes.len();
-        let use_direct_upload = total_notes > DIRECT_UPLOAD_THRESHOLD;
-
-        // 区分"实例数据变化"和"视口变化/光标变化"
-        // 实例数据变化：需要重新生成 NoteInstance 数组
-        // 注意：光标位置变化不应该触发重新生成（除非在绘制模式）
+        // 统一使用 GPU 端裁剪策略：
+        // - 所有音符上传到 GPU（一次上传，常驻显存）
+        // - GPU compute shader 负责视锥裁剪
+        // - 视口变化只更新 camera uniform，不重新生成实例
+        //
+        // 只有以下情况才需要重新生成 NoteInstance 数组：
+        // 1. 音符增删改（note_index_dirty）
+        // 2. 首次渲染（缓存为空）
+        // 3. 绘制模式（正在绘制新音符）
         let is_drawing = matches!(current_edit_state, crate::editor::EditState::Drawing { .. });
-        let cursor_changed = self.cursor_position != self.last_cursor_position;
-        let cursor_affects_notes = is_drawing && cursor_changed; // 只有绘制时光标变化才影响音符
+        let note_data_changed = note_index_dirty
+            || self.render_cache.note_instances.is_empty()
+            || is_drawing;
 
-        let note_instances_dirty = note_index_dirty
-            || current_edit_state != self.last_edit_state
-            || cursor_affects_notes
-            || self.render_cache.note_instances.is_empty();
-
-        // 视口变化：只需要更新 camera，不需要重新生成实例（对于直接上传模式）
-        let viewport_dirty = note_viewport_changed;
+        // 调试：记录触发重新生成的原因
+        if note_data_changed {
+            if note_index_dirty {
+                tracing::debug!("Note data changed: note_index_dirty is true");
+            }
+            if self.render_cache.note_instances.is_empty() {
+                tracing::debug!("Note data changed: note_instances is empty");
+            }
+            if is_drawing {
+                tracing::debug!("Note data changed: is_drawing is true");
+            }
+        }
 
         let mut notes_instances_changed = false;
 
-        if note_instances_dirty {
+        if note_data_changed {
             // 音符数据变化，需要重新生成实例
-            if use_direct_upload {
-                self.update_all_note_instances_fast();
-            } else {
-                self.root
-                    .update_note_instances(&mut self.render_cache.note_instances);
-            }
+            puffin::profile_scope!("generate_note_instances");
+            self.update_all_note_instances_fast();
             self.render_cache.note_viewport_hash = current_viewport_hash;
-            self.last_edit_state = current_edit_state;
-            // 注意：last_cursor_position 在下面统一更新
+            self.last_edit_state = current_edit_state.clone();
+            self.last_cursor_position = self.cursor_position;
             notes_instances_changed = true;
-        } else if viewport_dirty && !use_direct_upload {
-            // 普通模式：视口变化需要重新生成实例（CPU 端裁剪）
-            self.root
-                .update_note_instances(&mut self.render_cache.note_instances);
-            self.render_cache.note_viewport_hash = current_viewport_hash;
-            notes_instances_changed = true;
-        }
-        // 直接上传模式：视口变化不重新生成实例，只更新 camera（在下面处理）
 
-        // 更新 last_cursor_position（即使没有重新生成实例）
+            // 清除 note_index_dirty 标志，防止每帧重复生成
+            // 注意：必须在重新生成成功后清除
+            if note_index_dirty {
+                self.root.editor.note_index_dirty.set(false);
+                tracing::debug!("Cleared note_index_dirty flag");
+            }
+        }
+        // 视口变化不重新生成实例，只更新 camera（在下面处理）
+
+        // 更新 last_cursor_position 和 last_edit_state（即使没有重新生成实例）
         self.last_cursor_position = self.cursor_position;
+        self.last_edit_state = current_edit_state;
 
         let camera = lumino_gfx::CameraUniform::new(lumino_gfx::CameraParams {
             scroll: [
