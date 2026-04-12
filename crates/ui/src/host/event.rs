@@ -155,9 +155,9 @@ impl Host {
             self.events.extend(converted_events);
         }
 
-        // 处理事件 - 但光标移动事件不触发UI重建，只请求重绘
+        // 处理事件 - 但光标移动事件默认不触发立刻UI重建，而是留到 render_iced_ui 中批量处理
         if is_cursor_move {
-            // 光标移动只需要重绘，不需要重建UI
+            self.ui_dirty = true;
             self.window.request_redraw();
         } else {
             // 其他事件需要处理并可能重建UI
@@ -213,7 +213,6 @@ impl Host {
             }
         }
 
-        // 只有在状态真正改变时才标记 UI 需要重建
         if has_state_change {
             self.ui_dirty = true;
         }
@@ -221,7 +220,7 @@ impl Host {
     }
 
     /// 处理单个消息，返回是否有状态变更
-    fn process_message(&mut self, message: message::Message) -> bool {
+    pub(crate) fn process_message(&mut self, message: message::Message) -> bool {
         // 处理窗口动作消息
         match &message {
             message::Message::Window(window::Event::TrafficAction(action)) => {

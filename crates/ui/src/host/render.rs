@@ -49,6 +49,8 @@ impl Host {
         // 更新播放状态
         if let Some(tick) = self.root.update_playback() {
             self.root.update(message::Message::PlaybackTick(tick));
+            // 播放时自动滚动会改变 scroll_x，需要刷新 UI（演奏指示线和小节号）
+            self.ui_dirty = true;
         }
 
         // 更新光标位置
@@ -543,7 +545,9 @@ impl Host {
             first
         };
         
-        if !self.ui_dirty && !is_first_render {
+        // 菜单打开时，不使用缓存机制，每次都重建 UI 以避免菜单闪烁
+        let is_menu_open = !self.root.should_render_preview_note();
+        if !is_menu_open && !self.ui_dirty && !is_first_render {
             // UI 没有变化且不是第一次渲染，直接 present 之前渲染的内容
             self.renderer
                 .present(None, frame.texture.format(), texture_view, &self.viewport);
@@ -566,10 +570,23 @@ impl Host {
         let mut messages = Vec::new();
         let (state, _) = {
             puffin::profile_scope!("update_interface");
+            
+            // 菜单打开时，不传递鼠标移动事件，避免菜单闪烁
+            // 只传递 RedrawRequested 事件，像最初版本一样
+            let is_menu_open = !self.root.should_render_preview_note();
+            if is_menu_open {
+                // 清空事件队列，只传递 RedrawRequested
+                self.events.clear();
+            }
+            
+            // 批量处理所有挂起的事件（例如积累的 CursorMoved），加上 RedrawRequested
+            let mut all_events = std::mem::take(&mut self.events);
+            all_events.push(Event::Window(iced_window::Event::RedrawRequested(
+                std::time::Instant::now(),
+            )));
+            
             interface.update(
-                &[Event::Window(iced_window::Event::RedrawRequested(
-                    std::time::Instant::now(),
-                ))],
+                &all_events,
                 self.cursor,
                 &mut self.renderer,
                 &mut self.clipboard,
@@ -598,8 +615,26 @@ impl Host {
             .present(None, frame.texture.format(), texture_view, &self.viewport);
 
         // 处理消息（在 interface 被释放之后）
-        for message in messages {
-            self.root.update(message);
+        // 注意：菜单打开时，不检查状态变化，避免菜单闪烁
+        let is_menu_open = !self.root.should_render_preview_note();
+        if is_menu_open {
+            // 菜单打开时，直接处理消息，不设置 ui_dirty
+            for message in messages {
+                self.root.update(message);
+            }
+        } else {
+            // 菜单关闭时，检查状态变化并设置 ui_dirty
+            let mut has_state_change = false;
+            for message in messages {
+                if self.process_message(message) {
+                    has_state_change = true;
+                }
+            }
+
+            if has_state_change {
+                self.ui_dirty = true;
+                self.window.request_redraw();
+            }
         }
 
         // 更新鼠标光标

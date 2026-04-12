@@ -96,6 +96,8 @@ impl Host {
     /// 更新进度
     pub fn update_progress(&mut self, progress: Option<(String, f64)>) {
         self.root.update(message::Message::Progress(progress));
+        self.ui_dirty = true;
+        self.window.request_redraw();
     }
 
     /// 更新主题

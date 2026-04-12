@@ -122,7 +122,7 @@ pub fn view<'a>() -> Element<'a> {
             ..menu_bar::primary(theme, status)
         });
 
-    row![inner, space().width(Length::Fill)].into()
+    inner.into()
 }
 
 fn menu_items<'a>(items: &[MenuItem]) -> Vec<Item<'a, Message, Theme, Renderer>> {
