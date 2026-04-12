@@ -63,9 +63,7 @@ impl ScanState {
                 self.decompressed_offset += n;
                 Ok(false) // 返回false表示还可以继续读取
             }
-            Err(e) => {
-                Err(DmsError::Corrupted(format!("解压失败: {e}")))
-            }
+            Err(e) => Err(DmsError::Corrupted(format!("解压失败: {e}"))),
         }
     }
 

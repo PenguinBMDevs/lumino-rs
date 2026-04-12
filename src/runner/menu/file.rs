@@ -322,7 +322,7 @@ impl RunnerInner {
 
     /// 将 DMS 数据导入到编辑器
     pub(super) fn import_dms_to_editor(&mut self, parsed: &Arc<lumino_core::ParsedDms>) {
-        use lumino_core::midi::loader::{load_parsed_midi, ProgressCallback};
+        use lumino_core::midi::loader::{ProgressCallback, load_parsed_midi};
 
         tracing::info!("[DMS导入] 开始将 DMS 导入编辑器: {:?}", parsed.info.path);
 
@@ -334,7 +334,10 @@ impl RunnerInner {
             tracing::info!("[DMS导入] 步骤1: 导出 DMS 为 MIDI");
             match lumino_export::export_midi_from_dms_sync(&path) {
                 Ok(midi_bytes) => {
-                    tracing::info!("[DMS导入] 步骤2: DMS 转换为 MIDI 成功，共 {} 字节", midi_bytes.len());
+                    tracing::info!(
+                        "[DMS导入] 步骤2: DMS 转换为 MIDI 成功，共 {} 字节",
+                        midi_bytes.len()
+                    );
 
                     // 将转换后的 MIDI 数据保存到临时文件
                     let temp_path = std::env::temp_dir().join("lumino_dms_temp.mid");
@@ -353,8 +356,10 @@ impl RunnerInner {
                     tracing::info!("[DMS导入] 步骤5: 开始加载 MIDI 数据");
                     match load_parsed_midi(temp_path.clone(), Some(&progress_cb)).await {
                         Ok(parsed_midi) => {
-                            tracing::info!("[DMS导入] 步骤6: DMS 转换的 MIDI 加载成功, 轨道数={}", 
-                                parsed_midi.info.track_count);
+                            tracing::info!(
+                                "[DMS导入] 步骤6: DMS 转换的 MIDI 加载成功, 轨道数={}",
+                                parsed_midi.info.track_count
+                            );
                             // 发送 MIDI 解析完成事件，复用 MIDI 导入逻辑
                             tracing::info!("[DMS导入] 步骤7: 发送 MidiParsed 事件");
                             event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed_midi)));

@@ -5,13 +5,13 @@
 //! 2. 多线程模式（旧）：WGPU渲染在独立线程，UI线程只生成渲染命令
 //! 3. 分离渲染模式（新）：UI线程和WGPU渲染线程完全分离，零拷贝数据共享
 
+use iced_core::{Event, renderer, window as iced_window};
 use iced_wgpu::wgpu;
 use iced_winit::runtime::user_interface::{self, UserInterface};
-use iced_core::{Event, renderer, window as iced_window};
 use rayon::prelude::*;
 
 use crate::host::Host;
-use crate::{message, window, RenderParams};
+use crate::{RenderParams, window};
 
 impl Host {
     /// 主渲染入口
@@ -48,9 +48,11 @@ impl Host {
 
         // 更新播放状态
         if let Some(tick) = self.root.update_playback() {
-            self.root.update(message::Message::PlaybackTick(tick));
+            self.root.editor.playback_position = tick;
             // 播放时自动滚动会改变 scroll_x，需要刷新 UI（演奏指示线和小节号）
-            self.ui_dirty = true;
+            if self.root.editor.update_auto_scroll(tick) {
+                self.ui_dirty = true;
+            }
         }
 
         // 更新光标位置
@@ -62,8 +64,13 @@ impl Host {
 
         // 根据渲染模式选择不同的渲染路径
         if self.use_separate_render_thread {
-            // 新架构：分离渲染线程
+            // 新架构：分离渲染线程（底层 WGPU 渲染在独立线程）
             self.redraw_separate_thread();
+
+            // iced UI 仍然需要在主线程渲染到当前 surface
+            if !self.skip_ui_rendering {
+                self.render_iced_ui(frame, view);
+            }
         } else {
             // 旧架构：单线程或旧多线程模式
             // 第一步：使用 wgpu 渲染音符和网格（位于 UI 层下方）
@@ -123,9 +130,7 @@ impl Host {
         let keyboard_instances = self.generate_keyboard_instances(
             60.0, // keyboard_width
             30.0, // ruler_height
-            scroll.1,
-            zoom.1,
-            128, // visible_key_count
+            scroll.1, zoom.1, 128, // visible_key_count
         );
 
         // 生成标尺实例
@@ -175,13 +180,8 @@ impl Host {
         // 发送渲染参数到 WGPU 线程（非阻塞）
         wgpu_thread.send_params(params);
 
-        // UI 线程继续处理 iced UI 渲染（如果需要）
-        // 注意：在分离模式下，iced UI 只渲染控件，不渲染 Canvas
-        if !self.skip_ui_rendering && self.ui_dirty {
-            // 这里应该渲染到一个独立的纹理或表面
-            // 暂时跳过，因为主要的性能瓶颈已经解决
-            self.ui_dirty = false;
-        }
+        // 注意：iced UI 渲染由 render_iced_ui 在 redraw_requested 中统一处理，
+        // 不再在此函数中跳过。
     }
 
     /// 生成网格线实例
@@ -409,7 +409,7 @@ impl Host {
                 // 根据力度计算颜色（蓝色渐变）
                 let intensity = note.velocity as f32 / 127.0;
                 let color = [0.2, 0.5 + intensity * 0.5, 1.0, 0.8 + intensity * 0.2];
-                
+
                 instances.push(lumino_gfx::NoteInstance::new(
                     note.tick,
                     note.key as f32,
@@ -511,7 +511,12 @@ impl Host {
         }
 
         // 添加正在绘制的音符
-        if let crate::editor::EditState::Drawing { start_tick, key, current_tick } = edit_state {
+        if let crate::editor::EditState::Drawing {
+            start_tick,
+            key,
+            current_tick,
+        } = edit_state
+        {
             let (tick, length) = if *current_tick > *start_tick {
                 (*start_tick, *current_tick - *start_tick)
             } else if *current_tick < *start_tick {
@@ -535,16 +540,9 @@ impl Host {
         puffin::profile_function!();
 
         // 如果 UI 没有变更，跳过 UI 重建和绘制
-        // 使用一个计数器来确保至少渲染一次 UI
-        static mut FIRST_RENDER: bool = true;
-        let is_first_render = unsafe {
-            let first = FIRST_RENDER;
-            if first {
-                FIRST_RENDER = false;
-            }
-            first
-        };
-        
+        // 使用实例字段来确保至少渲染一次 UI，避免线程不安全的 static mut
+        let is_first_render = !self.has_rendered_ui;
+
         // 菜单打开时，不使用缓存机制，每次都重建 UI 以避免菜单闪烁
         let is_menu_open = !self.root.should_render_preview_note();
         if !is_menu_open && !self.ui_dirty && !is_first_render {
@@ -570,23 +568,11 @@ impl Host {
         let mut messages = Vec::new();
         let (state, _) = {
             puffin::profile_scope!("update_interface");
-            
-            // 菜单打开时，不传递鼠标移动事件，避免菜单闪烁
-            // 只传递 RedrawRequested 事件，像最初版本一样
-            let is_menu_open = !self.root.should_render_preview_note();
-            if is_menu_open {
-                // 清空事件队列，只传递 RedrawRequested
-                self.events.clear();
-            }
-            
-            // 批量处理所有挂起的事件（例如积累的 CursorMoved），加上 RedrawRequested
-            let mut all_events = std::mem::take(&mut self.events);
-            all_events.push(Event::Window(iced_window::Event::RedrawRequested(
-                std::time::Instant::now(),
-            )));
-            
+
             interface.update(
-                &all_events,
+                &[Event::Window(iced_window::Event::RedrawRequested(
+                    std::time::Instant::now(),
+                ))],
                 self.cursor,
                 &mut self.renderer,
                 &mut self.clipboard,
@@ -611,30 +597,27 @@ impl Host {
         // 重绘完成后 UI 不再 dirty
         self.ui_dirty = false;
 
+        // 标记已完成首次渲染
+        if !self.has_rendered_ui {
+            self.has_rendered_ui = true;
+        }
+
         self.renderer
             .present(None, frame.texture.format(), texture_view, &self.viewport);
 
         // 处理消息（在 interface 被释放之后）
-        // 注意：菜单打开时，不检查状态变化，避免菜单闪烁
-        let is_menu_open = !self.root.should_render_preview_note();
-        if is_menu_open {
-            // 菜单打开时，直接处理消息，不设置 ui_dirty
-            for message in messages {
-                self.root.update(message);
+        // 无论菜单是否打开，都必须检查状态变化并设置 ui_dirty，
+        // 否则菜单关闭后新状态无法触发重绘
+        let mut has_state_change = false;
+        for message in messages {
+            if self.process_message(message) {
+                has_state_change = true;
             }
-        } else {
-            // 菜单关闭时，检查状态变化并设置 ui_dirty
-            let mut has_state_change = false;
-            for message in messages {
-                if self.process_message(message) {
-                    has_state_change = true;
-                }
-            }
+        }
 
-            if has_state_change {
-                self.ui_dirty = true;
-                self.window.request_redraw();
-            }
+        if has_state_change {
+            self.ui_dirty = true;
+            self.window.request_redraw();
         }
 
         // 更新鼠标光标
@@ -741,9 +724,8 @@ impl Host {
         // 2. 首次渲染（缓存为空）
         // 3. 绘制模式（正在绘制新音符）
         let is_drawing = matches!(current_edit_state, crate::editor::EditState::Drawing { .. });
-        let note_data_changed = note_index_dirty
-            || self.render_cache.note_instances.is_empty()
-            || is_drawing;
+        let note_data_changed =
+            note_index_dirty || self.render_cache.note_instances.is_empty() || is_drawing;
 
         // 调试：记录触发重新生成的原因
         if note_data_changed {
@@ -839,8 +821,10 @@ impl Host {
         // 绘制网格线
         if !self.render_cache.grid_instances.is_empty() && has_scissor {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            self.grid_renderer
-                .draw(&mut render_pass, self.render_cache.grid_instances.len() as u32);
+            self.grid_renderer.draw(
+                &mut render_pass,
+                self.render_cache.grid_instances.len() as u32,
+            );
         }
 
         // 绘制音符

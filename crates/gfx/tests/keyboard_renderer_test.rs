@@ -6,13 +6,13 @@ use lumino_gfx::{KeyInstance, KeyboardRenderer, KeyboardViewportUniform};
 #[test]
 fn test_keyboard_viewport_uniform_layout() {
     let uniform = KeyboardViewportUniform::new(
-        1920.0,  // viewport_width
-        1080.0,  // viewport_height
-        60.0,    // keyboard_width
-        30.0,    // ruler_height
-        100.0,   // scroll_y
-        20.0,    // zoom_y
-        128,     // visible_key_count
+        1920.0, // viewport_width
+        1080.0, // viewport_height
+        60.0,   // keyboard_width
+        30.0,   // ruler_height
+        100.0,  // scroll_y
+        20.0,   // zoom_y
+        128,    // visible_key_count
     );
 
     // 验证大小（实际大小可能因对齐而变化）
@@ -26,13 +26,7 @@ fn test_keyboard_viewport_uniform_layout() {
 /// 测试 KeyInstance 内存布局
 #[test]
 fn test_key_instance_layout() {
-    let instance = KeyInstance::new(
-        [10.0, 20.0],
-        [60.0, 20.0],
-        [1.0, 1.0, 1.0, 1.0],
-        false,
-        60,
-    );
+    let instance = KeyInstance::new([10.0, 20.0], [60.0, 20.0], [1.0, 1.0, 1.0, 1.0], false, 60);
 
     // 验证大小 (4 * 2 + 4 * 2 + 4 * 4 + 4 + 4 + 4 * 2 = 48)
     assert_eq!(std::mem::size_of::<KeyInstance>(), 48);
@@ -71,7 +65,7 @@ fn test_black_key_detection() {
 
     // 测试跨八度
     assert!(!is_key_dark(12)); // C
-    assert!(is_key_dark(13));  // C#
+    assert!(is_key_dark(13)); // C#
 }
 
 fn is_key_dark(key: isize) -> bool {
@@ -148,8 +142,16 @@ fn test_key_instance_generation_performance() {
     }
 
     let elapsed = start.elapsed();
-    println!("Generated {} key instances in {:?}", instances.len(), elapsed);
+    println!(
+        "Generated {} key instances in {:?}",
+        instances.len(),
+        elapsed
+    );
 
     // 性能要求：生成 128 个琴键实例应该在 1ms 以内
-    assert!(elapsed.as_micros() < 1000, "Key generation too slow: {:?}", elapsed);
+    assert!(
+        elapsed.as_micros() < 1000,
+        "Key generation too slow: {:?}",
+        elapsed
+    );
 }

@@ -6,14 +6,14 @@ use lumino_gfx::{RulerRenderer, RulerTickInstance, RulerViewportUniform};
 #[test]
 fn test_ruler_viewport_uniform_layout() {
     let uniform = RulerViewportUniform::new(
-        1920.0,  // viewport_width
-        1080.0,  // viewport_height
-        30.0,    // ruler_height
-        60.0,    // keyboard_width
-        100.0,   // scroll_x
-        0.1,     // zoom_x
-        1920,    // ticks_per_measure
-        480,     // ticks_per_beat
+        1920.0, // viewport_width
+        1080.0, // viewport_height
+        30.0,   // ruler_height
+        60.0,   // keyboard_width
+        100.0,  // scroll_x
+        0.1,    // zoom_x
+        1920,   // ticks_per_measure
+        480,    // ticks_per_beat
     );
 
     // 验证大小（实际大小可能因对齐而变化）
@@ -155,10 +155,18 @@ fn test_ruler_tick_generation_performance() {
     }
 
     let elapsed = start.elapsed();
-    println!("Generated {} ruler tick instances in {:?}", instances.len(), elapsed);
+    println!(
+        "Generated {} ruler tick instances in {:?}",
+        instances.len(),
+        elapsed
+    );
 
     // 性能要求：生成标尺刻度应该在 1ms 以内
-    assert!(elapsed.as_micros() < 1000, "Ruler tick generation too slow: {:?}", elapsed);
+    assert!(
+        elapsed.as_micros() < 1000,
+        "Ruler tick generation too slow: {:?}",
+        elapsed
+    );
 }
 
 /// 测试不同缩放级别下的刻度数量
@@ -170,10 +178,10 @@ fn test_ruler_tick_count_at_different_zoom_levels() {
     let ticks_per_beat = 480;
 
     let test_cases = [
-        (0.01, 10.0),   // 很远的缩放
-        (0.05, 50.0),   // 中等缩放
-        (0.1, 100.0),   // 默认缩放
-        (0.5, 500.0),   // 很大的缩放
+        (0.01, 10.0), // 很远的缩放
+        (0.05, 50.0), // 中等缩放
+        (0.1, 100.0), // 默认缩放
+        (0.5, 500.0), // 很大的缩放
     ];
 
     for (zoom_x, expected_measures) in test_cases.iter() {

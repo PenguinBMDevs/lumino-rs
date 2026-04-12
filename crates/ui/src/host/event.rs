@@ -35,9 +35,6 @@ impl Host {
         use winit::event::WindowEvent::*;
         use winit::keyboard::{KeyCode, PhysicalKey};
 
-        // 检查是否是光标移动事件 - 这些事件不需要重建UI
-        let is_cursor_move = matches!(&event, CursorMoved { .. });
-
         match &event {
             Resized(_) => {
                 self.root
@@ -155,14 +152,9 @@ impl Host {
             self.events.extend(converted_events);
         }
 
-        // 处理事件 - 但光标移动事件默认不触发立刻UI重建，而是留到 render_iced_ui 中批量处理
-        if is_cursor_move {
-            self.ui_dirty = true;
-            self.window.request_redraw();
-        } else {
-            // 其他事件需要处理并可能重建UI
-            self.process_pending_events();
-        }
+        // 处理事件：所有事件都需要进入 process_pending_events 以确保 iced 正确更新
+        // 光标移动事件如果在这里被跳过，hover 状态、按钮高亮等 UI 反馈将全部失效
+        self.process_pending_events();
     }
 
     /// 处理待处理的事件队列

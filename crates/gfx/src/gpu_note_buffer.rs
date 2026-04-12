@@ -74,7 +74,11 @@ impl GpuNoteBuffer {
     /// 增量更新单个音符
     pub fn update_note(&mut self, index: usize, instance: &crate::NoteInstance) {
         if index >= self.instance_count {
-            tracing::warn!("GpuNoteBuffer: update index {} out of range {}", index, self.instance_count);
+            tracing::warn!(
+                "GpuNoteBuffer: update index {} out of range {}",
+                index,
+                self.instance_count
+            );
             return;
         }
 
@@ -195,9 +199,8 @@ impl GpuNoteBuffer {
 
     /// 扩容缓冲区
     fn grow(&mut self, required_capacity: usize) -> bool {
-        let new_capacity = ((self.capacity * Self::GROWTH_FACTOR)
-            .max(required_capacity))
-            .min(self.max_capacity);
+        let new_capacity =
+            ((self.capacity * Self::GROWTH_FACTOR).max(required_capacity)).min(self.max_capacity);
 
         if new_capacity <= self.capacity {
             return false;
@@ -216,19 +219,16 @@ impl GpuNoteBuffer {
         // 如果有现有数据，需要复制到新缓冲区
         if self.instance_count > 0 {
             // 创建命令编码器
-            let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("gpu_note_buffer_grow"),
-            });
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("gpu_note_buffer_grow"),
+                });
 
             // 复制旧数据到新缓冲区
-            let copy_size = (self.instance_count * std::mem::size_of::<crate::NoteInstance>()) as u64;
-            encoder.copy_buffer_to_buffer(
-                &self.instance_buffer,
-                0,
-                &new_buffer,
-                0,
-                copy_size,
-            );
+            let copy_size =
+                (self.instance_count * std::mem::size_of::<crate::NoteInstance>()) as u64;
+            encoder.copy_buffer_to_buffer(&self.instance_buffer, 0, &new_buffer, 0, copy_size);
 
             // 提交命令
             self.queue.submit(std::iter::once(encoder.finish()));

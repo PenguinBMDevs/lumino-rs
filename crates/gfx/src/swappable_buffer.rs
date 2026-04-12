@@ -9,8 +9,8 @@
 //! - 百万级音符数据从 UI 线程传递到渲染线程
 //! - 避免每帧的数据拷贝开销
 
-use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 
 /// 双缓冲结构
 pub struct SwappableBuffer<T> {
@@ -42,7 +42,7 @@ impl<T: Clone> SwappableBuffer<T> {
     }
 
     /// UI 线程：获取后缓冲区写入引用
-    /// 
+    ///
     /// # Safety
     /// 必须在 UI 线程调用，且同一时间只能有一个写入者
     pub unsafe fn write_buffer(&self) -> &mut Vec<T> {
@@ -51,7 +51,7 @@ impl<T: Clone> SwappableBuffer<T> {
     }
 
     /// UI 线程：提交写入并交换缓冲区
-    /// 
+    ///
     /// 交换后，前缓冲区包含最新数据，渲染线程可以读取
     pub fn swap(&self) -> u64 {
         // 交换前后缓冲区指针
@@ -67,7 +67,7 @@ impl<T: Clone> SwappableBuffer<T> {
     }
 
     /// 渲染线程：获取前缓冲区读取引用
-    /// 
+    ///
     /// # Safety
     /// 必须在渲染线程调用，且同一时间只能有一个读取者
     pub unsafe fn read_buffer(&self) -> &Vec<T> {

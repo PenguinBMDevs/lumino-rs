@@ -23,7 +23,13 @@ pub struct KeyInstance {
 }
 
 impl KeyInstance {
-    pub fn new(position: [f32; 2], size: [f32; 2], color: [f32; 4], is_black: bool, key_index: u16) -> Self {
+    pub fn new(
+        position: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        is_black: bool,
+        key_index: u16,
+    ) -> Self {
         Self {
             position,
             size,
@@ -348,11 +354,7 @@ impl KeyboardRenderer {
 
         // 上传实例数据
         if instance_count > 0 {
-            queue.write_buffer(
-                &self.instance_buffer,
-                0,
-                bytemuck::cast_slice(&instances),
-            );
+            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instances));
         }
 
         // 更新视口 uniform
@@ -391,14 +393,9 @@ mod tests {
 
     #[test]
     fn test_key_instance_creation() {
-        let instance = KeyInstance::new(
-            [10.0, 20.0],
-            [60.0, 20.0],
-            [1.0, 1.0, 1.0, 1.0],
-            false,
-            60,
-        );
-        
+        let instance =
+            KeyInstance::new([10.0, 20.0], [60.0, 20.0], [1.0, 1.0, 1.0, 1.0], false, 60);
+
         assert_eq!(instance.position, [10.0, 20.0]);
         assert_eq!(instance.size, [60.0, 20.0]);
         assert_eq!(instance.is_black, 0.0);
@@ -425,10 +422,8 @@ mod tests {
 
     #[test]
     fn test_viewport_uniform_creation() {
-        let uniform = KeyboardViewportUniform::new(
-            1920.0, 1080.0, 60.0, 30.0, 100.0, 20.0, 128,
-        );
-        
+        let uniform = KeyboardViewportUniform::new(1920.0, 1080.0, 60.0, 30.0, 100.0, 20.0, 128);
+
         assert_eq!(uniform.viewport_size, [1920.0, 1080.0]);
         assert_eq!(uniform.keyboard_width, 60.0);
         assert_eq!(uniform.ruler_height, 30.0);

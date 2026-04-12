@@ -3,8 +3,9 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 use winapi::shared::minwindef::{LPARAM, LRESULT, WPARAM};
 use winapi::shared::windef::{HWND, RECT};
 use winapi::um::winuser::{
-    CallWindowProcW, DefWindowProcW, GWL_WNDPROC, GetWindowRect, SetWindowLongPtrW, WM_NCHITTEST,
-    HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT,
+    CallWindowProcW, DefWindowProcW, GWL_WNDPROC, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT,
+    HTBOTTOMRIGHT, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, SetWindowLongPtrW,
+    WM_NCHITTEST,
 };
 use winit::window::Window;
 

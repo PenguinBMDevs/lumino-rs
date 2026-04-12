@@ -23,7 +23,13 @@ pub struct RulerTickInstance {
 }
 
 impl RulerTickInstance {
-    pub fn new(position: [f32; 2], size: [f32; 2], color: [f32; 4], tick_type: u8, tick_value: f32) -> Self {
+    pub fn new(
+        position: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        tick_type: u8,
+        tick_value: f32,
+    ) -> Self {
         Self {
             position,
             size,
@@ -260,7 +266,13 @@ impl RulerRenderer {
     }
 
     /// 设置颜色主题
-    pub fn set_colors(&mut self, measure: [f32; 4], beat: [f32; 4], subdivision: [f32; 4], background: [f32; 4]) {
+    pub fn set_colors(
+        &mut self,
+        measure: [f32; 4],
+        beat: [f32; 4],
+        subdivision: [f32; 4],
+        background: [f32; 4],
+    ) {
         self.measure_color = measure;
         self.beat_color = beat;
         self.subdivision_color = subdivision;
@@ -279,19 +291,19 @@ impl RulerRenderer {
         ticks_per_beat: u32,
     ) -> Vec<RulerTickInstance> {
         let mut instances = Vec::new();
-        
+
         // 计算可见时间范围
         let visible_tick_start = scroll_x / zoom_x;
         let visible_tick_end = (scroll_x + viewport_width) / zoom_x;
-        
+
         // 小节线
         let measure_start = (visible_tick_start / ticks_per_measure as f32).floor() as u32;
         let measure_end = (visible_tick_end / ticks_per_measure as f32).ceil() as u32;
-        
+
         for measure in measure_start..=measure_end {
             let tick = measure as f32 * ticks_per_measure as f32;
             let x = keyboard_width + tick * zoom_x - scroll_x;
-            
+
             if x >= keyboard_width && x <= viewport_width {
                 instances.push(RulerTickInstance::new(
                     [x, 0.0],
@@ -302,20 +314,20 @@ impl RulerRenderer {
                 ));
             }
         }
-        
+
         // 拍线
         let beat_start = (visible_tick_start / ticks_per_beat as f32).floor() as u32;
         let beat_end = (visible_tick_end / ticks_per_beat as f32).ceil() as u32;
-        
+
         for beat in beat_start..=beat_end {
             let tick = beat as f32 * ticks_per_beat as f32;
             let x = keyboard_width + tick * zoom_x - scroll_x;
-            
+
             // 跳过小节线位置
             if tick % ticks_per_measure as f32 == 0.0 {
                 continue;
             }
-            
+
             if x >= keyboard_width && x <= viewport_width {
                 instances.push(RulerTickInstance::new(
                     [x, ruler_height * 0.3],
@@ -326,7 +338,7 @@ impl RulerRenderer {
                 ));
             }
         }
-        
+
         instances
     }
 
@@ -365,11 +377,7 @@ impl RulerRenderer {
 
         // 上传实例数据
         if instance_count > 0 {
-            queue.write_buffer(
-                &self.instance_buffer,
-                0,
-                bytemuck::cast_slice(&instances),
-            );
+            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instances));
         }
 
         // 更新视口 uniform
@@ -416,7 +424,7 @@ mod tests {
             0, // 小节线
             1920.0,
         );
-        
+
         assert_eq!(instance.position, [100.0, 0.0]);
         assert_eq!(instance.size, [2.0, 30.0]);
         assert_eq!(instance.tick_type, 0.0);
@@ -425,10 +433,8 @@ mod tests {
 
     #[test]
     fn test_viewport_uniform_creation() {
-        let uniform = RulerViewportUniform::new(
-            1920.0, 1080.0, 30.0, 60.0, 100.0, 0.1, 1920, 480,
-        );
-        
+        let uniform = RulerViewportUniform::new(1920.0, 1080.0, 30.0, 60.0, 100.0, 0.1, 1920, 480);
+
         assert_eq!(uniform.viewport_size, [1920.0, 1080.0]);
         assert_eq!(uniform.ruler_height, 30.0);
         assert_eq!(uniform.keyboard_width, 60.0);

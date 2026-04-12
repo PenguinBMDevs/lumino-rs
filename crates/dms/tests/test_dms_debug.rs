@@ -11,21 +11,21 @@ const TEST_TIMEOUT_SECS: u64 = 10; // 10秒超时用于调试
 #[test]
 fn test_dms_debug_header() {
     let test_path = PathBuf::from(r"E:\工程文件\MIDI创作\待编辑\warma审判曲\拼合成果.dms");
-    
+
     if !test_path.exists() {
         println!("测试文件不存在，跳过测试: {:?}", test_path);
         return;
     }
-    
+
     println!("调试 DMS 文件: {:?}", test_path);
-    
+
     // 读取文件头
     let bytes = std::fs::read(&test_path).expect("读取文件失败");
-    
+
     // 检查魔数
     let magic = &bytes[0..lumino_dms::MAGIC_LENGTH];
     println!("魔数: {:?}", std::str::from_utf8(magic));
-    
+
     // 检查解压长度
     let decompressed_len = u32::from_le_bytes([
         bytes[lumino_dms::MAGIC_LENGTH],
@@ -35,7 +35,7 @@ fn test_dms_debug_header() {
     ]);
     println!("解压长度: {} 字节", decompressed_len);
     println!("文件总大小: {} 字节", bytes.len());
-    
+
     // 尝试只读取前1KB数据看看
     println!("\n前100字节 (hex):");
     for (i, byte) in bytes.iter().take(100).enumerate() {
@@ -51,18 +51,18 @@ fn test_dms_debug_header() {
 #[test]
 fn test_dms_debug_scan() {
     let test_path = PathBuf::from(r"E:\工程文件\MIDI创作\待编辑\warma审判曲\拼合成果.dms");
-    
+
     if !test_path.exists() {
         println!("测试文件不存在，跳过测试: {:?}", test_path);
         return;
     }
-    
+
     println!("调试 DMS 扫描: {:?}", test_path);
     println!("超时时间: {} 秒", TEST_TIMEOUT_SECS);
-    
+
     let (tx, rx) = mpsc::channel();
     let path = test_path.clone();
-    
+
     let handle = thread::spawn(move || {
         let file = match std::fs::File::open(&path) {
             Ok(f) => f,
@@ -71,7 +71,7 @@ fn test_dms_debug_scan() {
                 return;
             }
         };
-        
+
         let file_size = match file.metadata() {
             Ok(m) => m.len(),
             Err(e) => {
@@ -80,9 +80,9 @@ fn test_dms_debug_scan() {
             }
         };
         println!("文件大小: {} 字节", file_size);
-        
+
         let mut reader = std::io::BufReader::new(file);
-        
+
         println!("开始扫描...");
         match lumino_dms::scan_dms_streaming(&mut reader) {
             Ok(result) => {
@@ -95,7 +95,7 @@ fn test_dms_debug_scan() {
             }
         }
     });
-    
+
     match rx.recv_timeout(Duration::from_secs(TEST_TIMEOUT_SECS)) {
         Ok(Ok(result)) => {
             handle.join().expect("线程 join 失败");

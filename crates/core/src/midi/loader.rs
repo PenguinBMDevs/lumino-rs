@@ -417,19 +417,25 @@ pub async fn load_dms(
             scan_cb("正在解析 Domino 工程文件", 0.1 + progress * 0.4);
         })
         .map_err(|e| crate::CoreError::FileFormat(format!("扫描 DMS 失败: {e}")))?;
-        tracing::info!("[DMS加载] 步骤3: 扫描完成, 轨道数={}, 音符数={}", 
-            scan_result.track_count, scan_result.total_notes);
+        tracing::info!(
+            "[DMS加载] 步骤3: 扫描完成, 轨道数={}, 音符数={}",
+            scan_result.track_count,
+            scan_result.total_notes
+        );
 
         // 然后加载完整数据
         scan_cb("正在加载完整数据", 0.5);
         tracing::info!("[DMS加载] 步骤4: 读取完整文件数据");
         let bytes = std::fs::read(&path_clone).map_err(crate::CoreError::Io)?;
         tracing::info!("[DMS加载] 步骤5: 文件大小 {} 字节", bytes.len());
-        
+
         tracing::info!("[DMS加载] 步骤6: 解压 DMS 数据");
         let lightweight_data = lumino_dms::read_dms_lightweight(&bytes)
             .map_err(|e| crate::CoreError::FileFormat(format!("读取 DMS 数据失败: {e}")))?;
-        tracing::info!("[DMS加载] 步骤7: 解压完成, 解压后大小 {} 字节", lightweight_data.len());
+        tracing::info!(
+            "[DMS加载] 步骤7: 解压完成, 解压后大小 {} 字节",
+            lightweight_data.len()
+        );
 
         scan_cb("数据加载完成", 0.9);
 

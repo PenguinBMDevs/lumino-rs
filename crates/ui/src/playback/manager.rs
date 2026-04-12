@@ -4,7 +4,7 @@
 
 use super::engine::{MidiMessage, NoteEvent, PlaybackEngine};
 use super::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
@@ -38,7 +38,7 @@ impl PlaybackManager {
     pub fn new(division: u16) -> Self {
         let playback = Arc::new(Mutex::new(Playback::new(division)));
         let engine = PlaybackEngine::new(Arc::clone(&playback));
-        
+
         let (sender, receiver) = mpsc::channel::<Command>();
 
         let thread_handle = thread::spawn(move || {
@@ -91,7 +91,11 @@ impl PlaybackManager {
                 if let Some(out) = &mut midi_output {
                     for msg in messages {
                         match msg {
-                            MidiMessage::NoteOn { channel, key, velocity } => {
+                            MidiMessage::NoteOn {
+                                channel,
+                                key,
+                                velocity,
+                            } => {
                                 let _ = out.note_on(channel, key, velocity);
                             }
                             MidiMessage::NoteOff { channel, key } => {
@@ -176,7 +180,8 @@ impl PlaybackManager {
 
     /// 获取播放状态
     pub fn state(&self) -> PlaybackState {
-        self.lock_playback().map_or(PlaybackState::Stopped, |p| p.state())
+        self.lock_playback()
+            .map_or(PlaybackState::Stopped, |p| p.state())
     }
 
     /// 获取当前tick

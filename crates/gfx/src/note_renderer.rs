@@ -2,7 +2,10 @@ use wgpu::util::DeviceExt;
 
 pub mod types;
 
-pub use types::{CameraParams, CameraUniform, CullUniform, DrawIndirectArgs, NoteInstance, RenderUniform, VERTEX_ATTRIBUTES};
+pub use types::{
+    CameraParams, CameraUniform, CullUniform, DrawIndirectArgs, NoteInstance, RenderUniform,
+    VERTEX_ATTRIBUTES,
+};
 
 /// 音符渲染器 - 使用 wgpu 实例化渲染高效绘制大量音符
 pub struct NoteRenderer {
@@ -327,7 +330,10 @@ impl NoteRenderer {
         // 更新 bind group 以反映新的数据范围（如果缓冲区没有扩容，需要更新绑定范围）
         // 注意：如果 grow_buffer 被调用，它已经在内部更新了 bind group
         // 这里只在未扩容时更新
-        if upload_count <= self.capacity && self.capacity == self.instance_buffer.size() as usize / std::mem::size_of::<NoteInstance>() {
+        if upload_count <= self.capacity
+            && self.capacity
+                == self.instance_buffer.size() as usize / std::mem::size_of::<NoteInstance>()
+        {
             self.cull_bind_group = Self::create_cull_bind_group(
                 device,
                 &self.cull_bind_group_layout,
@@ -439,9 +445,8 @@ impl NoteRenderer {
     /// 扩容缓冲区（受 max_capacity 限制）
     fn grow_buffer(&mut self, device: &wgpu::Device, required_capacity: usize) {
         let growth_factor = crate::constants::rendering::BUFFER_GROWTH_FACTOR;
-        let new_capacity = ((self.capacity.saturating_mul(growth_factor))
-            .max(required_capacity))
-        .min(self.max_capacity);
+        let new_capacity = ((self.capacity.saturating_mul(growth_factor)).max(required_capacity))
+            .min(self.max_capacity);
         if new_capacity <= self.capacity {
             return;
         }

@@ -77,10 +77,7 @@ impl RenderThreadHandle {
 
     /// 获取渲染统计
     pub fn stats(&self) -> RenderStats {
-        self.stats
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.stats.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// 关闭渲染线程
@@ -102,7 +99,7 @@ pub struct RenderStats {
 }
 
 /// 渲染线程状态
-/// 
+///
 /// 注意：这个结构体在渲染线程内部使用，不跨线程共享
 pub struct RenderThreadState {
     pub stats: Arc<Mutex<RenderStats>>,
@@ -175,7 +172,7 @@ impl RenderThreadState {
 }
 
 /// 启动渲染线程
-/// 
+///
 /// 注意：由于wgpu限制，这个函数需要在拥有窗口的线程上调用
 /// 实际实现中，渲染线程需要创建自己的窗口或使用共享纹理
 pub fn spawn_render_thread(
@@ -187,15 +184,15 @@ pub fn spawn_render_thread(
     // 1. 主线程创建窗口和Surface
     // 2. 渲染线程通过共享纹理或离屏渲染方式工作
     // 3. 或者使用生产者-消费者模式，渲染线程只准备命令缓冲区
-    
+
     // 当前实现：渲染线程只负责准备渲染数据，实际提交由主线程完成
     thread::spawn(move || {
         tracing::info!("Render thread: Started (data preparation mode)");
-        
+
         // 在这个简化版本中，渲染线程只接收命令并更新状态
         // 实际渲染仍然由主线程执行
         // 这是为了遵守wgpu的线程限制
-        
+
         tracing::info!("Render thread: Exited");
     })
 }
@@ -228,7 +225,7 @@ mod tests {
     fn test_render_thread_state() {
         let stats = Arc::new(Mutex::new(RenderStats::default()));
         let mut state = RenderThreadState::new(stats);
-        
+
         let cmd = RenderCommand::UpdateBackground {
             color: [0.5, 0.5, 0.5, 1.0],
         };

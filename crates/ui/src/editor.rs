@@ -248,7 +248,9 @@ impl Editor {
     pub fn mark_notes_changed(&mut self) {
         self.notes_changed = true;
         self.note_index_dirty.set(true);
-        self.track_note_indices.borrow_mut().remove(&self.current_track);
+        self.track_note_indices
+            .borrow_mut()
+            .remove(&self.current_track);
     }
 
     // ===== 自动滚动相关 =====
@@ -495,11 +497,11 @@ impl Editor {
                     let color = self.onion_skin_config.get_track_color(track_idx);
 
                     let search_start = (visible_tick_start - 19200.0).max(0.0);
-                    
+
                     // 先检查索引是否存在，避免不必要的 Vec 创建
                     let mut indices_map = self.track_note_indices.borrow_mut();
                     let needs_build = !indices_map.contains_key(&track_idx);
-                    
+
                     if needs_build {
                         // 只有在索引不存在时才创建 Vec 和索引
                         let notes_vec: Vec<_> = notes.iter().cloned().collect();
@@ -508,7 +510,7 @@ impl Editor {
                             spatial_index::NoteSpatialIndex::from_notes(&notes_vec),
                         );
                     }
-                    
+
                     // 获取索引（现在一定存在）
                     let index = indices_map.get(&track_idx).unwrap();
 

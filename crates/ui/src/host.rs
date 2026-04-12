@@ -13,12 +13,14 @@
 
 use std::{sync::Arc, time::Instant};
 
+use iced_core::{Font, Pixels, Size, mouse};
 use iced_wgpu::{Engine, Renderer, graphics::Viewport};
 use iced_winit::runtime::user_interface::Cache;
 use iced_winit::{Clipboard, winit};
-use iced_core::{Font, Pixels, Size, mouse};
 
-use crate::{config, root, settings, window, RenderCommand, RenderThreadHandle, spawn_render_thread};
+use crate::{
+    RenderCommand, RenderThreadHandle, config, root, settings, spawn_render_thread, window,
+};
 use crate::{RenderParams, WgpuRenderThread};
 use lumino_gfx::{AtomicSwappableBuffer, NoteInstance, SwappableBuffer};
 
@@ -74,7 +76,7 @@ impl RenderCache {
 }
 
 /// UI 宿主 - 管理 iced 渲染和 wgpu 音符渲染
-/// 
+///
 /// 线程模型：
 /// - UI线程（主线程）：处理事件、更新状态、生成渲染命令
 /// - 渲染线程（独立线程）：接收命令、管理GPU资源、执行实际渲染
@@ -122,6 +124,8 @@ pub struct Host {
     pub(crate) note_buffer: Option<AtomicSwappableBuffer<NoteInstance>>,
     /// 是否使用新的分离渲染架构
     pub(crate) use_separate_render_thread: bool,
+    /// 是否已经渲染过 UI（用于首次渲染缓存判断）
+    pub(crate) has_rendered_ui: bool,
 }
 
 impl Host {
@@ -192,6 +196,7 @@ impl Host {
             wgpu_render_thread: None,
             note_buffer: None,
             use_separate_render_thread: false,
+            has_rendered_ui: false,
         }
     }
 
@@ -257,11 +262,12 @@ impl Host {
             wgpu_render_thread: None,
             note_buffer: None,
             use_separate_render_thread: false,
+            has_rendered_ui: false,
         }
     }
 
     /// 启用独立渲染线程模式
-    /// 
+    ///
     /// 这会将WGPU渲染从UI线程分离到独立线程，提高UI响应性
     pub fn enable_render_thread(&mut self) {
         if self.render_thread.is_some() {
@@ -273,7 +279,7 @@ impl Host {
 
         // 启动渲染线程
         let thread_handle = spawn_render_thread(receiver, stats);
-        
+
         // 存储线程句柄
         handle.thread_handle = Some(thread_handle);
 

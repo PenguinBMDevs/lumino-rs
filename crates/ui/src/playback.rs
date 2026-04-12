@@ -177,10 +177,7 @@ impl Timeline {
         let mut current_tick = 0.0;
 
         for (i, tempo_change) in self.tempo_changes.iter().enumerate() {
-            let next_change_tick = self
-                .tempo_changes
-                .get(i + 1)
-                .map(|tc| tc.tick);
+            let next_change_tick = self.tempo_changes.get(i + 1).map(|tc| tc.tick);
 
             if let Some(next_tick) = next_change_tick {
                 // 计算这个速度段最多能消耗多少时间

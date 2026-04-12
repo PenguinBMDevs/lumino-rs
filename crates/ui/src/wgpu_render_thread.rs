@@ -9,13 +9,14 @@
 //! - 使用 SwappableBuffer 零拷贝共享音符数据
 //! - 使用 Arc<Atomic*> 共享状态
 
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use lumino_gfx::{
-    GridLineInstance, KeyInstance, NoteInstance, RulerTickInstance,
-};
+use lumino_gfx::{GridLineInstance, KeyInstance, NoteInstance, RulerTickInstance};
 
 /// 渲染参数 - 从 UI 线程传递到 WGPU 线程
 #[derive(Debug, Clone)]
@@ -194,7 +195,8 @@ impl WgpuRenderThread {
                     // 更新 FPS
                     if fps_update_time.elapsed().as_secs() >= 1 {
                         if let Ok(mut stats) = stats_clone.lock() {
-                            stats.average_fps = frame_count as f64 / fps_update_time.elapsed().as_secs_f64();
+                            stats.average_fps =
+                                frame_count as f64 / fps_update_time.elapsed().as_secs_f64();
                         }
                         frame_count = 0;
                         fps_update_time = Instant::now();
@@ -288,7 +290,10 @@ mod tests {
 
     #[test]
     fn test_control_command_debug() {
-        let cmd = ControlCommand::Resize { width: 1920, height: 1080 };
+        let cmd = ControlCommand::Resize {
+            width: 1920,
+            height: 1080,
+        };
         let debug_str = format!("{:?}", cmd);
         assert!(debug_str.contains("Resize"));
     }

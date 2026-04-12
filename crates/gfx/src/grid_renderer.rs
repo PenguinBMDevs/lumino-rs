@@ -269,12 +269,7 @@ mod tests {
     /// 测试 GridLineInstance 创建
     #[test]
     fn test_grid_line_instance_creation() {
-        let line = GridLineInstance::new(
-            [0.0, 0.0],
-            [100.0, 100.0],
-            [0.5, 0.5, 0.5, 1.0],
-            1.0,
-        );
+        let line = GridLineInstance::new([0.0, 0.0], [100.0, 100.0], [0.5, 0.5, 0.5, 1.0], 1.0);
 
         assert_eq!(line.start, [0.0, 0.0]);
         assert_eq!(line.end, [100.0, 100.0]);

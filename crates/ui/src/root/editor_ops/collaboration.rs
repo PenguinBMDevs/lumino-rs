@@ -100,10 +100,10 @@ impl Root {
                 tracing::debug!("协作: 未处理的笔记操作类型: {:?}", operation.action);
             }
         }
-        
+
         // 标记音符已变化，重建当前音轨的空间索引
         self.editor.mark_notes_changed();
-        
+
         // 清除所有受影响音轨的洋葱皮空间索引缓存
         let mut affected_tracks = std::collections::HashSet::new();
         for note in &operation.notes {
@@ -112,7 +112,7 @@ impl Root {
         if let Some(source_track) = operation.source_track {
             affected_tracks.insert(source_track);
         }
-        
+
         let mut indices_map = self.editor.track_note_indices.borrow_mut();
         for track_idx in affected_tracks {
             indices_map.remove(&track_idx);

@@ -30,7 +30,10 @@ impl Root {
                 .notes
                 .push_back(Note::new(*tick, editor_key, *length).with_velocity(*velocity));
         }
-        self.editor.track_note_indices.borrow_mut().remove(&self.editor.current_track);
+        self.editor
+            .track_note_indices
+            .borrow_mut()
+            .remove(&self.editor.current_track);
         self.invalidate_onion_skin_cache();
         self.editor.mark_notes_changed();
     }
@@ -56,7 +59,10 @@ impl Root {
         }
 
         self.editor.track_notes.insert(track_idx, track_notes);
-        self.editor.track_note_indices.borrow_mut().remove(&track_idx);
+        self.editor
+            .track_note_indices
+            .borrow_mut()
+            .remove(&track_idx);
 
         self.editor.current_track = track_idx;
         self.invalidate_onion_skin_cache();

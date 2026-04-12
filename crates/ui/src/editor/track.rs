@@ -14,8 +14,10 @@ impl super::Editor {
         // 保存当前音轨的音符
         self.track_notes
             .insert(self.current_track, self.notes.clone());
-        self.track_note_indices.borrow_mut().remove(&self.current_track);
-        
+        self.track_note_indices
+            .borrow_mut()
+            .remove(&self.current_track);
+
         tracing::debug!(
             "Editor: saved {} notes for track {}",
             self.notes.len(),

@@ -80,7 +80,7 @@ impl winit::application::ApplicationHandler for Runner {
         event: winit::event::WindowEvent,
     ) {
         puffin::profile_function!();
-        
+
         let Some(this) = self.inner.as_mut() else {
             return;
         };
@@ -190,7 +190,11 @@ impl winit::application::ApplicationHandler for Runner {
         // 检查播放状态：播放时使用 Poll 模式确保持续重绘，暂停时使用 Wait 模式节省资源
         let is_playing = this.window.ui().is_playing();
 
-        let is_test_active = this.test_mode_state.as_ref().map(|s| s.active).unwrap_or(false);
+        let is_test_active = this
+            .test_mode_state
+            .as_ref()
+            .map(|s| s.active)
+            .unwrap_or(false);
         let should_poll = is_playing || is_test_active;
 
         if should_poll {
@@ -229,8 +233,11 @@ impl winit::application::ApplicationHandler for Runner {
 
                         // 检查测试时间是否到达
                         if let Some(duration) = test_state.duration {
-                            let should_exit = test_state.start_time
-                                .map(|start| now.duration_since(start) >= Duration::from_secs(duration))
+                            let should_exit = test_state
+                                .start_time
+                                .map(|start| {
+                                    now.duration_since(start) >= Duration::from_secs(duration)
+                                })
                                 .unwrap_or(false);
                             if should_exit {
                                 let avg_fps = test_state.fps_samples.iter().sum::<f32>()
