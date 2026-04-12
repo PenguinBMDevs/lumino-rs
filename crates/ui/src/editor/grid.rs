@@ -214,6 +214,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry<Renderer>> {
+        puffin::profile_scope!("grid_widget_draw");
         // 网格线现在由 wgpu 直接渲染（见 Host::render_notes）
         // Canvas 只绘制键盘、标尺和交互元素
         let mut geometries = Vec::new();

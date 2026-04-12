@@ -80,6 +80,7 @@ impl winit::application::ApplicationHandler for Runner {
         event: winit::event::WindowEvent,
     ) {
         puffin::profile_function!();
+        puffin::profile_scope!("runner_window_event");
 
         let Some(this) = self.inner.as_mut() else {
             return;
@@ -132,6 +133,7 @@ impl winit::application::ApplicationHandler for Runner {
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        puffin::profile_scope!("runner_about_to_wait");
         let Some(this) = self.inner.as_mut() else {
             return;
         };

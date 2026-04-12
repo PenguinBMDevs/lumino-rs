@@ -11,7 +11,7 @@ use iced_winit::runtime::user_interface::{self, UserInterface};
 use rayon::prelude::*;
 
 use crate::host::Host;
-use crate::{window, RenderParams};
+use crate::{RenderParams, window};
 
 impl Host {
     /// 主渲染入口
@@ -72,10 +72,15 @@ impl Host {
                 if let Ok(lock) = wgpu_thread.latest_texture.lock() {
                     if let Some(ref texture) = *lock {
                         // 确保尺寸匹配，如果因为调整大小等原因不匹配则跳过这帧的复制
-                        if texture.width() == frame.texture.width() && texture.height() == frame.texture.height() {
-                            let mut encoder = gfx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                                label: Some("copy_offscreen_texture_encoder"),
-                            });
+                        if texture.width() == frame.texture.width()
+                            && texture.height() == frame.texture.height()
+                        {
+                            puffin::profile_scope!("copy_offscreen_texture");
+                            let mut encoder = gfx.device.create_command_encoder(
+                                &wgpu::CommandEncoderDescriptor {
+                                    label: Some("copy_offscreen_texture_encoder"),
+                                },
+                            );
                             encoder.copy_texture_to_texture(
                                 texture.as_image_copy(),
                                 frame.texture.as_image_copy(),
@@ -121,14 +126,15 @@ impl Host {
     /// 3. Present 到 Surface
     fn redraw_separate_thread(&mut self) {
         puffin::profile_function!();
+        puffin::profile_scope!("redraw_separate_thread");
 
-        let Some(ref wgpu_thread) = self.wgpu_render_thread else {
+        if self.wgpu_render_thread.is_none() {
             tracing::error!("redraw_separate_thread called but wgpu_render_thread is None");
             return;
         };
 
-        let Some(ref note_buffer) = self.note_buffer else {
-            tracing::error!("redraw_separate_thread called but note_buffer is None");
+        let Some(tx) = self.note_events_tx.clone() else {
+            tracing::error!("redraw_separate_thread called but note_events_tx is None");
             return;
         };
 
@@ -138,53 +144,82 @@ impl Host {
         let zoom = editor.zoom();
         let viewport_size = self.viewport.logical_size();
 
-        // 生成网格线实例
-        let grid_instances = self.generate_grid_instances(
-            viewport_size.width,
-            viewport_size.height,
-            60.0, // keyboard_width
-            30.0, // ruler_height
-            scroll.0,
-            scroll.1,
-            zoom.0,
-            zoom.1,
-        );
+        let grid_instances = {
+            puffin::profile_scope!("generate_grid_instances");
+            self.generate_grid_instances(
+                viewport_size.width,
+                viewport_size.height,
+                60.0, // keyboard_width
+                30.0, // ruler_height
+                scroll.0,
+                scroll.1,
+                zoom.0,
+                zoom.1,
+            )
+        };
 
-        // 生成琴键实例
-        let keyboard_instances = self.generate_keyboard_instances(
-            60.0, // keyboard_width
-            30.0, // ruler_height
-            scroll.1, zoom.1, 128, // visible_key_count
-        );
+        let keyboard_instances = {
+            puffin::profile_scope!("generate_keyboard_instances");
+            self.generate_keyboard_instances(
+                60.0, // keyboard_width
+                30.0, // ruler_height
+                scroll.1, zoom.1, 128, // visible_key_count
+            )
+        };
 
-        // 生成标尺实例
-        let ruler_instances = self.generate_ruler_instances(
-            viewport_size.width,
-            60.0, // keyboard_width
-            30.0, // ruler_height
-            scroll.0,
-            zoom.0,
-            1920, // ticks_per_measure
-            480,  // ticks_per_beat
-        );
+        let ruler_instances = {
+            puffin::profile_scope!("generate_ruler_instances");
+            self.generate_ruler_instances(
+                viewport_size.width,
+                60.0, // keyboard_width
+                30.0, // ruler_height
+                scroll.0,
+                zoom.0,
+                1920, // ticks_per_measure
+                480,  // ticks_per_beat
+            )
+        };
 
-        // 写入音符数据到双缓冲（后台缓冲区）
+        // 发送音符更新事件到 WGPU 线程
         {
-            puffin::profile_scope!("write_note_data");
-            let note_instances = self.generate_note_instances();
-            unsafe {
-                let write_buf = note_buffer.write_buffer();
-                write_buf.clear();
-                write_buf.extend_from_slice(&note_instances);
+            puffin::profile_scope!("update_note_data");
+            let note_index_dirty = self.root.editor.note_index_dirty.get();
+            let is_drawing = matches!(
+                self.root.editor.edit_state,
+                crate::editor::EditState::Drawing { .. }
+            );
+
+            let note_data_changed =
+                note_index_dirty || self.render_cache.note_instances.is_empty() || is_drawing;
+
+            if note_data_changed {
+                puffin::profile_scope!("update_all_note_instances_fast");
+                self.update_all_note_instances_fast();
+                let _ = tx.send(lumino_gfx::NoteEvent::Reset(
+                    self.render_cache.note_instances.clone(),
+                ));
+
+                if note_index_dirty {
+                    self.root.editor.note_index_dirty.set(false);
+                }
             }
-            // 交换缓冲区，使新数据对渲染线程可见
-            note_buffer.swap();
         }
 
         // 构建渲染参数
         let canvas_offset = self.root.editor.canvas_offset;
         let canvas_size = self.root.editor.canvas_size;
         let physical_size = self.viewport.physical_size();
+        let theme = self.root.theme();
+        use crate::editor::grid::theme::ThemeExt;
+
+        let c_bg = theme.keyboard_background_color();
+        let c_bk = theme.black_key_color();
+        let c_bar = theme.bar_line_color();
+        let c_beat = theme.beat_line_color();
+        let c_grid = theme.grid_line_color();
+        let c_kl = theme.border_color();
+
+        let bg_color = [c_bg.r as f64, c_bg.g as f64, c_bg.b as f64, c_bg.a as f64];
         let params = RenderParams {
             viewport_size: (physical_size.width, physical_size.height),
             logical_size: (viewport_size.width, viewport_size.height),
@@ -193,7 +228,13 @@ impl Host {
             zoom,
             keyboard_width: 60.0,
             ruler_height: 30.0,
-            background_color: [0.1, 0.1, 0.1, 1.0],
+            background_color: bg_color,
+            color_bg: [c_bg.r, c_bg.g, c_bg.b, c_bg.a],
+            color_bg_black_key: [c_bk.r, c_bk.g, c_bk.b, c_bk.a],
+            color_bar: [c_bar.r, c_bar.g, c_bar.b, c_bar.a],
+            color_beat: [c_beat.r, c_beat.g, c_beat.b, c_beat.a],
+            color_grid: [c_grid.r, c_grid.g, c_grid.b, c_grid.a],
+            color_key_line: [c_kl.r, c_kl.g, c_kl.b, c_kl.a],
             grid_instances,
             note_instances: vec![], // will be passed via buffer or we can just pass them? Wait, note buffer is used for zero copy, so we shouldn't pass instances here. But for the sake of fixing the error, I'll put empty vec here. Wait, `note_instances` is used in RenderParams! We shouldn't put them in params if we use double buffer. Let me fix the params logic in `WgpuRenderThread`.
             ruler_instances,
@@ -206,7 +247,9 @@ impl Host {
         };
 
         // 发送渲染参数到 WGPU 线程（非阻塞）
-        wgpu_thread.send_params(params);
+        if let Some(wgpu_thread) = &self.wgpu_render_thread {
+            wgpu_thread.send_params(params);
+        }
 
         // 注意：iced UI 渲染由 render_iced_ui 在 redraw_requested 中统一处理，
         // 不再在此函数中跳过。
@@ -424,32 +467,6 @@ impl Host {
         instances
     }
 
-    /// 生成音符实例（从编辑器状态）
-    fn generate_note_instances(&self) -> Vec<lumino_gfx::NoteInstance> {
-        puffin::profile_function!();
-
-        let editor = &self.root.editor;
-        let mut instances = Vec::new();
-
-        // 获取当前音轨的音符
-        if let Some(notes) = editor.track_notes.get(&editor.current_track) {
-            for note in notes.iter() {
-                // 根据力度计算颜色（蓝色渐变）
-                let intensity = note.velocity as f32 / 127.0;
-                let color = [0.2, 0.5 + intensity * 0.5, 1.0, 0.8 + intensity * 0.2];
-
-                instances.push(lumino_gfx::NoteInstance::new(
-                    note.tick,
-                    note.key as f32,
-                    note.length,
-                    color,
-                ));
-            }
-        }
-
-        instances
-    }
-
     /// 快速更新所有音符实例（直接上传模式）
     ///
     /// 这个模式避免了 CPU 端的视锥裁剪，直接上传所有音符到 GPU
@@ -511,32 +528,9 @@ impl Host {
         }
 
         // 添加洋葱皮音符（其他音轨的音符）
-        for (track_idx, track_notes_vec) in track_notes.iter() {
-            if *track_idx == current_track {
-                continue; // 跳过当前音轨
-            }
-
-            // 为每个音轨使用不同的颜色（基于音轨索引）
-            let track_color = match track_idx % 8 {
-                0 => [1.0, 0.5, 0.31, 0.4],   // 珊瑚红
-                1 => [0.53, 0.81, 0.92, 0.4], // 天蓝色
-                2 => [0.56, 0.93, 0.56, 0.4], // 浅绿色
-                3 => [0.93, 0.51, 0.93, 0.4], // 紫罗兰
-                4 => [1.0, 0.84, 0.0, 0.4],   // 金黄色
-                5 => [0.0, 1.0, 1.0, 0.4],    // 青色
-                6 => [1.0, 0.41, 0.71, 0.4],  // 热粉色
-                _ => [1.0, 0.65, 0.0, 0.4],   // 橙色
-            };
-
-            for note in track_notes_vec.iter() {
-                instances.push(lumino_gfx::NoteInstance::new(
-                    note.tick,
-                    note.key as f32,
-                    note.length,
-                    track_color,
-                ));
-            }
-        }
+        let onion_states = self.root.sidebar.get_onion_skin_states();
+        let onion_instances = self.root.editor.get_all_onion_skin_instances(&onion_states);
+        instances.extend(onion_instances);
 
         // 添加正在绘制的音符
         if let crate::editor::EditState::Drawing {
@@ -722,12 +716,33 @@ impl Host {
             grid_changed = true;
         }
 
-        if grid_changed && !self.render_cache.grid_instances.is_empty() {
+        if grid_changed {
+            let theme = self.root.theme();
+            use crate::editor::grid::theme::ThemeExt;
+            let c_bg = theme.keyboard_background_color();
+            let c_bk = theme.black_key_color();
+            let c_bar = theme.bar_line_color();
+            let c_beat = theme.beat_line_color();
+            let c_grid = theme.grid_line_color();
+            let c_kl = theme.border_color();
+
             self.grid_renderer.prepare(
-                &self.render_cache.grid_instances,
+                &[], // CPU instances deprecated
                 &gfx.device,
                 &gfx.queue,
                 (logical_size.width, logical_size.height),
+                editor.state.scroll_x,
+                editor.state.scroll_y,
+                editor.state.zoom_x,
+                editor.state.zoom_y,
+                editor.state.keyboard_width,
+                editor.state.ruler_height,
+                [c_bg.r, c_bg.g, c_bg.b, c_bg.a],
+                [c_bk.r, c_bk.g, c_bk.b, c_bk.a],
+                [c_bar.r, c_bar.g, c_bar.b, c_bar.a],
+                [c_beat.r, c_beat.g, c_beat.b, c_beat.a],
+                [c_grid.r, c_grid.g, c_grid.b, c_grid.a],
+                [c_kl.r, c_kl.g, c_kl.b, c_kl.a],
             );
         }
 
@@ -806,17 +821,43 @@ impl Host {
         });
 
         if notes_instances_changed && !self.render_cache.note_instances.is_empty() {
-            self.note_renderer.prepare_instances(
+            self.note_renderer.prepare_old(
                 &mut encoder,
                 &self.render_cache.note_instances,
                 &gfx.device,
                 &gfx.queue,
+                camera,
             );
-        }
-
-        if !self.render_cache.note_instances.is_empty() {
+        } else if !self.render_cache.note_instances.is_empty() {
             self.note_renderer
                 .prepare_pass(&mut encoder, camera, &gfx.queue);
+        }
+
+        let width = physical_size.width;
+        let height = physical_size.height;
+        if self.render_cache.depth_texture.is_none()
+            || self.render_cache.depth_texture.as_ref().unwrap().0 != width
+            || self.render_cache.depth_texture.as_ref().unwrap().1 != height
+        {
+            let depth_tex = gfx.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("host_depth_texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Depth32Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            self.render_cache.depth_texture = Some((
+                width,
+                height,
+                depth_tex.create_view(&wgpu::TextureViewDescriptor::default()),
+            ));
         }
 
         // 开始渲染通道
@@ -831,7 +872,14 @@ impl Host {
                 },
                 depth_slice: None,
             })],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.render_cache.depth_texture.as_ref().unwrap().2,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
             timestamp_writes: None,
             occlusion_query_set: None,
         });
@@ -847,12 +895,9 @@ impl Host {
         let has_scissor = scissor_width > 0 && scissor_height > 0;
 
         // 绘制网格线
-        if !self.render_cache.grid_instances.is_empty() && has_scissor {
+        if has_scissor {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            self.grid_renderer.draw(
-                &mut render_pass,
-                self.render_cache.grid_instances.len() as u32,
-            );
+            self.grid_renderer.draw(&mut render_pass, 1);
         }
 
         // 绘制音符

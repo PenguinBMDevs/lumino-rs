@@ -8,7 +8,7 @@ mod ruler_renderer;
 mod swappable_buffer;
 
 pub use context::{Context, ContextError, Result};
-pub use gpu_note_buffer::GpuNoteBuffer;
+pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent};
 pub use grid_renderer::{GridLineInstance, GridRenderer};
 pub use keyboard_renderer::{KeyInstance, KeyboardRenderer, KeyboardViewportUniform};
 pub use note_renderer::{

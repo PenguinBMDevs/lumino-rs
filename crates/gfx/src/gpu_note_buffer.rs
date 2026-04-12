@@ -8,6 +8,29 @@
 
 use wgpu::util::DeviceExt;
 
+/// 音符编辑事件
+#[derive(Debug, Clone)]
+pub enum NoteEvent {
+    /// 重新加载所有音符
+    Reset(Vec<crate::NoteInstance>),
+    /// 添加音符
+    Add(crate::NoteInstance),
+    /// 更新单个音符
+    Update {
+        index: usize,
+        instance: crate::NoteInstance,
+    },
+    /// 更新多个音符
+    UpdateMany {
+        start_index: usize,
+        instances: Vec<crate::NoteInstance>,
+    },
+    /// 移除音符
+    Remove(usize),
+    /// 清空所有音符
+    Clear,
+}
+
 /// GPU 音符缓冲区
 pub struct GpuNoteBuffer {
     /// 实例缓冲区（常驻 GPU 内存）
@@ -36,11 +59,17 @@ impl GpuNoteBuffer {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         let instance_buffer = Self::create_buffer(device, Self::INITIAL_CAPACITY);
 
+        let max_binding_size = device.limits().max_storage_buffer_binding_size as u64;
+        let max_buffer_size = device.limits().max_buffer_size;
+        let max_bytes = max_binding_size.min(max_buffer_size) as usize;
+        let max_capacity =
+            (max_bytes / std::mem::size_of::<crate::NoteInstance>()).min(Self::MAX_CAPACITY);
+
         Self {
             instance_buffer,
             capacity: Self::INITIAL_CAPACITY,
             instance_count: 0,
-            max_capacity: Self::MAX_CAPACITY,
+            max_capacity,
             device: std::sync::Arc::new(device.clone()),
             queue: std::sync::Arc::new(queue.clone()),
         }
@@ -48,6 +77,7 @@ impl GpuNoteBuffer {
 
     /// 批量上传所有音符（初始化时使用）
     pub fn upload_all(&mut self, instances: &[crate::NoteInstance]) {
+        puffin::profile_function!();
         if instances.is_empty() {
             self.instance_count = 0;
             return;
@@ -68,11 +98,12 @@ impl GpuNoteBuffer {
             bytemuck::cast_slice(&instances[..upload_count]),
         );
 
-        tracing::debug!("GpuNoteBuffer: uploaded {} instances", upload_count);
+        tracing::info!("Uploading {} notes", upload_count);
     }
 
     /// 增量更新单个音符
     pub fn update_note(&mut self, index: usize, instance: &crate::NoteInstance) {
+        puffin::profile_function!();
         if index >= self.instance_count {
             tracing::warn!(
                 "GpuNoteBuffer: update index {} out of range {}",
@@ -95,6 +126,7 @@ impl GpuNoteBuffer {
 
     /// 批量更新音符（用于编辑操作后的批量更新）
     pub fn update_notes(&mut self, start_index: usize, instances: &[crate::NoteInstance]) {
+        puffin::profile_function!();
         if start_index >= self.instance_count || instances.is_empty() {
             return;
         }
@@ -115,6 +147,7 @@ impl GpuNoteBuffer {
 
     /// 添加新音符（在末尾追加）
     pub fn add_note(&mut self, instance: &crate::NoteInstance) -> usize {
+        puffin::profile_function!();
         // 检查是否需要扩容
         if self.instance_count >= self.capacity {
             if !self.grow(self.capacity * Self::GROWTH_FACTOR) {
@@ -139,6 +172,7 @@ impl GpuNoteBuffer {
 
     /// 删除音符（通过将最后一个音符移动到被删除位置）
     pub fn remove_note(&mut self, index: usize) {
+        puffin::profile_function!();
         if index >= self.instance_count {
             return;
         }
@@ -199,6 +233,7 @@ impl GpuNoteBuffer {
 
     /// 扩容缓冲区
     fn grow(&mut self, required_capacity: usize) -> bool {
+        puffin::profile_function!();
         let new_capacity =
             ((self.capacity * Self::GROWTH_FACTOR).max(required_capacity)).min(self.max_capacity);
 
@@ -228,7 +263,10 @@ impl GpuNoteBuffer {
             // 复制旧数据到新缓冲区
             let copy_size =
                 (self.instance_count * std::mem::size_of::<crate::NoteInstance>()) as u64;
-            encoder.copy_buffer_to_buffer(&self.instance_buffer, 0, &new_buffer, 0, copy_size);
+            {
+                puffin::profile_scope!("grow_buffer_copy");
+                encoder.copy_buffer_to_buffer(&self.instance_buffer, 0, &new_buffer, 0, copy_size);
+            }
 
             // 提交命令
             self.queue.submit(std::iter::once(encoder.finish()));

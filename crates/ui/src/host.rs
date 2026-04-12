@@ -19,10 +19,10 @@ use iced_wgpu::{Engine, Renderer, graphics::Viewport};
 use iced_winit::runtime::user_interface::Cache;
 use iced_winit::{Clipboard, winit};
 
+use crate::WgpuRenderThread;
 use crate::{
     RenderCommand, RenderThreadHandle, config, root, settings, spawn_render_thread, window,
 };
-use crate::WgpuRenderThread;
 use lumino_gfx::{AtomicSwappableBuffer, NoteInstance, SwappableBuffer};
 
 mod dialog;
@@ -43,6 +43,8 @@ pub struct RenderCache {
     pub grid_viewport_hash: u64,
     /// 音符视口哈希（用于检测变化）
     pub note_viewport_hash: u64,
+    /// 缓存的深度纹理 (宽, 高, view)
+    pub depth_texture: Option<(u32, u32, wgpu::TextureView)>,
 }
 
 impl RenderCache {
@@ -52,6 +54,7 @@ impl RenderCache {
             note_instances: Vec::new(),
             grid_viewport_hash: 0,
             note_viewport_hash: 0,
+            depth_texture: None,
         }
     }
 
@@ -121,13 +124,13 @@ pub struct Host {
     pub(crate) use_render_thread: bool,
     /// 新的 WGPU 渲染线程（真正分离）
     pub(crate) wgpu_render_thread: Option<WgpuRenderThread>,
-    /// 音符数据双缓冲（零拷贝共享）
-    pub(crate) note_buffer: Option<AtomicSwappableBuffer<NoteInstance>>,
+    /// WGPU 渲染线程通信
+    pub(crate) note_events_tx: Option<std::sync::mpsc::Sender<lumino_gfx::NoteEvent>>,
     /// 是否使用新的分离渲染架构
     pub(crate) use_separate_render_thread: bool,
     /// 是否已经渲染过 UI（用于首次渲染缓存判断）
     pub(crate) has_rendered_ui: bool,
-    
+
     // WGPU 资源（为离屏渲染保留）
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
@@ -166,7 +169,7 @@ impl Host {
         };
 
         // 创建 wgpu 音符渲染器
-        let note_renderer = lumino_gfx::NoteRenderer::new(&gfx.device, gfx.format);
+        let note_renderer = lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format);
         // 创建 wgpu 网格渲染器
         let grid_renderer = lumino_gfx::GridRenderer::new(&gfx.device, gfx.format);
 
@@ -200,7 +203,7 @@ impl Host {
             render_thread: None,
             use_render_thread: false,
             wgpu_render_thread: None,
-            note_buffer: None,
+            note_events_tx: None,
             use_separate_render_thread: false,
             has_rendered_ui: false,
             device: gfx.device.clone(),
@@ -239,7 +242,7 @@ impl Host {
         };
 
         // 创建 wgpu 音符渲染器
-        let note_renderer = lumino_gfx::NoteRenderer::new(&gfx.device, gfx.format);
+        let note_renderer = lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format);
         // 创建 wgpu 网格渲染器
         let grid_renderer = lumino_gfx::GridRenderer::new(&gfx.device, gfx.format);
 
@@ -269,7 +272,7 @@ impl Host {
             render_thread: None,
             use_render_thread: false,
             wgpu_render_thread: None,
-            note_buffer: None,
+            note_events_tx: None,
             use_separate_render_thread: false,
             has_rendered_ui: false,
             device: gfx.device.clone(),
@@ -323,19 +326,14 @@ impl Host {
             return;
         }
 
-        // 创建音符数据双缓冲
-        let note_buffer = Arc::new(SwappableBuffer::<NoteInstance>::new(100000));
+        // 创建音符事件通道
+        let (tx, rx) = std::sync::mpsc::channel();
 
         // 启动 WGPU 渲染线程
-        match WgpuRenderThread::spawn(
-            self.device.clone(),
-            self.queue.clone(),
-            self.format,
-            note_buffer.clone(),
-        ) {
+        match WgpuRenderThread::spawn(self.device.clone(), self.queue.clone(), self.format, rx) {
             Ok(thread) => {
                 self.wgpu_render_thread = Some(thread);
-                self.note_buffer = Some(note_buffer);
+                self.note_events_tx = Some(tx);
                 self.use_separate_render_thread = true;
                 tracing::info!("Host: Separate WGPU render thread enabled");
             }
@@ -350,7 +348,7 @@ impl Host {
         if let Some(thread) = self.wgpu_render_thread.take() {
             thread.shutdown();
             self.use_separate_render_thread = false;
-            self.note_buffer = None;
+            self.note_events_tx = None;
             tracing::info!("Host: Separate WGPU render thread disabled");
         }
     }

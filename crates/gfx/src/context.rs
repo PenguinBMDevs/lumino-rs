@@ -50,6 +50,9 @@ impl Context {
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
+            flags: wgpu::InstanceFlags::DEBUG
+                | wgpu::InstanceFlags::VALIDATION
+                | wgpu::InstanceFlags::GPU_BASED_VALIDATION,
             ..Default::default()
         });
 
@@ -73,11 +76,17 @@ impl Context {
             .or_else(|| capabilities.formats.first().copied())
             .ok_or(ContextError::PreferredFormatNotFound)?;
 
+        let limits = adapter.limits();
+
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,
                 required_features: adapter_features & wgpu::Features::default(),
-                required_limits: wgpu::Limits::default(),
+                required_limits: wgpu::Limits {
+                    max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
+                    max_buffer_size: limits.max_buffer_size,
+                    ..wgpu::Limits::default()
+                },
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
                 trace: wgpu::Trace::Off,
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),

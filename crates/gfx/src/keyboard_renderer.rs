@@ -169,7 +169,7 @@ impl KeyboardRenderer {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: crate::constants::rendering::depth_stencil_state(),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
@@ -334,6 +334,7 @@ impl KeyboardRenderer {
         zoom_y: f32,
         visible_key_count: u16,
     ) {
+        puffin::profile_function!();
         // 生成琴键实例
         let instances = self.generate_key_instances(
             visible_key_count,
@@ -376,6 +377,7 @@ impl KeyboardRenderer {
 
     /// 执行渲染
     pub fn draw(&self, render_pass: &mut wgpu::RenderPass, instance_count: u32) {
+        puffin::profile_function!();
         if instance_count == 0 {
             return;
         }

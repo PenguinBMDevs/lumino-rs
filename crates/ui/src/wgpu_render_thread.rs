@@ -38,6 +38,13 @@ pub struct RenderParams {
     pub ruler_height: f32,
     /// 背景颜色
     pub background_color: [f64; 4],
+    /// 网格相关颜色 (用于 Shader)
+    pub color_bg: [f32; 4],
+    pub color_bg_black_key: [f32; 4],
+    pub color_bar: [f32; 4],
+    pub color_beat: [f32; 4],
+    pub color_grid: [f32; 4],
+    pub color_key_line: [f32; 4],
     /// 网格线实例
     pub grid_instances: Vec<GridLineInstance>,
     /// 音符实例
@@ -69,6 +76,12 @@ impl Default for RenderParams {
             keyboard_width: 60.0,
             ruler_height: 30.0,
             background_color: [0.1, 0.1, 0.1, 1.0],
+            color_bg: [0.1, 0.1, 0.1, 1.0],
+            color_bg_black_key: [0.07, 0.07, 0.07, 1.0],
+            color_bar: [0.3, 0.3, 0.3, 1.0],
+            color_beat: [0.2, 0.2, 0.2, 1.0],
+            color_grid: [0.15, 0.15, 0.15, 1.0],
+            color_key_line: [0.15, 0.15, 0.15, 1.0],
             grid_instances: Vec::new(),
             note_instances: Vec::new(),
             ruler_instances: Vec::new(),
@@ -146,7 +159,7 @@ impl WgpuRenderThread {
         device: wgpu::Device,
         queue: wgpu::Queue,
         texture_format: wgpu::TextureFormat,
-        note_buffer: Arc<lumino_gfx::SwappableBuffer<NoteInstance>>,
+        note_events_rx: std::sync::mpsc::Receiver<lumino_gfx::NoteEvent>,
     ) -> anyhow::Result<Self> {
         tracing::info!("WgpuRenderThread::spawn - Starting render thread with offscreen texture");
 
@@ -165,7 +178,7 @@ impl WgpuRenderThread {
 
             // 初始化渲染器
             let mut grid_renderer = lumino_gfx::GridRenderer::new(&device, texture_format);
-            let mut note_renderer = lumino_gfx::NoteRenderer::new(&device, texture_format);
+            let mut note_renderer = lumino_gfx::NoteRenderer::new(&device, &queue, texture_format);
             let mut keyboard_renderer = lumino_gfx::KeyboardRenderer::new(&device, texture_format);
             let mut ruler_renderer = lumino_gfx::RulerRenderer::new(&device, texture_format);
 
@@ -173,6 +186,8 @@ impl WgpuRenderThread {
             let mut frame_count = 0u64;
             let mut fps_update_time = Instant::now();
             let mut current_texture: Option<Arc<wgpu::Texture>> = None;
+            let mut depth_texture: Option<wgpu::Texture> = None;
+            let mut depth_texture_view: Option<wgpu::TextureView> = None;
             let mut current_size = (0, 0);
 
             while running_clone.load(Ordering::Relaxed) {
@@ -201,13 +216,17 @@ impl WgpuRenderThread {
 
                 // 执行渲染（离屏纹理）
                 if let Some(params) = latest_params {
+                    puffin::profile_scope!("wgpu_render_thread_frame");
                     let frame_start = Instant::now();
-                    
+
                     let width = params.viewport_size.0.max(1);
                     let height = params.viewport_size.1.max(1);
 
                     // 如果尺寸改变，重新创建离屏纹理
-                    if current_size != (width, height) || current_texture.is_none() {
+                    if current_size != (width, height)
+                        || current_texture.is_none()
+                        || depth_texture.is_none()
+                    {
                         let texture = device.create_texture(&wgpu::TextureDescriptor {
                             label: Some("offscreen_render_texture"),
                             size: wgpu::Extent3d {
@@ -219,23 +238,44 @@ impl WgpuRenderThread {
                             sample_count: 1,
                             dimension: wgpu::TextureDimension::D2,
                             format: texture_format,
-                            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                                | wgpu::TextureUsages::COPY_SRC,
                             view_formats: &[],
                         });
+                        let depth_tex = device.create_texture(&wgpu::TextureDescriptor {
+                            label: Some("depth_texture"),
+                            size: wgpu::Extent3d {
+                                width,
+                                height,
+                                depth_or_array_layers: 1,
+                            },
+                            mip_level_count: 1,
+                            sample_count: 1,
+                            dimension: wgpu::TextureDimension::D2,
+                            format: wgpu::TextureFormat::Depth32Float,
+                            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                            view_formats: &[],
+                        });
+                        depth_texture_view =
+                            Some(depth_tex.create_view(&wgpu::TextureViewDescriptor::default()));
+                        depth_texture = Some(depth_tex);
                         current_texture = Some(Arc::new(texture));
                         current_size = (width, height);
-                        
+
                         // 将新纹理共享给主线程
                         if let Ok(mut lock) = latest_texture_clone.lock() {
                             *lock = current_texture.clone();
                         }
                     }
 
-                    if let Some(texture) = &current_texture {
+                    if let (Some(texture), Some(depth_view)) =
+                        (&current_texture, &depth_texture_view)
+                    {
                         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-                        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("offscreen_render_encoder"),
-                        });
+                        let mut encoder =
+                            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                                label: Some("offscreen_render_encoder"),
+                            });
 
                         let clear_color = wgpu::Color {
                             r: params.background_color[0],
@@ -244,20 +284,57 @@ impl WgpuRenderThread {
                             a: params.background_color[3],
                         };
 
-                        // 准备渲染实例
-                        if !params.grid_instances.is_empty() {
-                            grid_renderer.prepare(&params.grid_instances, &device, &queue, params.canvas_size);
-                        }
-                        
-                        let notes_read_buf = unsafe { note_buffer.read_buffer() };
-                        if !notes_read_buf.is_empty() {
-                            note_renderer.prepare_instances(&mut encoder, &notes_read_buf, &device, &queue);
-                        }
-                        if !params.keyboard_instances.is_empty() {
-                            keyboard_renderer.prepare(&device, &queue, params.logical_size, params.keyboard_width, params.ruler_height, params.scroll.1, params.zoom.1, 128);
-                        }
-                        if !params.ruler_instances.is_empty() {
-                            ruler_renderer.prepare(&device, &queue, params.logical_size, params.keyboard_width, params.ruler_height, params.scroll.0, params.zoom.0, params.ticks_per_measure, params.ticks_per_beat);
+                        {
+                            puffin::profile_scope!("prepare_renderers");
+                            // 准备渲染实例
+                            if !params.grid_instances.is_empty() || true {
+                                grid_renderer.prepare(
+                                    &[], // 不再传递 CPU 实例
+                                    &device,
+                                    &queue,
+                                    params.canvas_size,
+                                    params.scroll.0,
+                                    params.scroll.1,
+                                    params.zoom.0,
+                                    params.zoom.1,
+                                    params.keyboard_width,
+                                    params.ruler_height,
+                                    params.color_bg,
+                                    params.color_bg_black_key,
+                                    params.color_bar,
+                                    params.color_beat,
+                                    params.color_grid,
+                                    params.color_key_line,
+                                );
+                            }
+
+                            note_renderer.process_events(&note_events_rx, &device, &queue);
+
+                            if !params.keyboard_instances.is_empty() {
+                                keyboard_renderer.prepare(
+                                    &device,
+                                    &queue,
+                                    params.logical_size,
+                                    params.keyboard_width,
+                                    params.ruler_height,
+                                    params.scroll.1,
+                                    params.zoom.1,
+                                    128,
+                                );
+                            }
+                            if !params.ruler_instances.is_empty() {
+                                ruler_renderer.prepare(
+                                    &device,
+                                    &queue,
+                                    params.logical_size,
+                                    params.keyboard_width,
+                                    params.ruler_height,
+                                    params.scroll.0,
+                                    params.zoom.0,
+                                    params.ticks_per_measure,
+                                    params.ticks_per_beat,
+                                );
+                            }
                         }
 
                         // 准备相机参数
@@ -274,56 +351,86 @@ impl WgpuRenderThread {
                         note_renderer.prepare_pass(&mut encoder, camera, &queue);
 
                         {
-                            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                                label: Some("offscreen_render_pass"),
-                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                    view: &view,
-                                    resolve_target: None,
-                                    ops: wgpu::Operations {
-                                        load: wgpu::LoadOp::Clear(clear_color),
-                                        store: wgpu::StoreOp::Store,
-                                    },
-                                    depth_slice: None,
-                                })],
-                                depth_stencil_attachment: None,
-                                timestamp_writes: None,
-                                occlusion_query_set: None,
-                            });
+                            puffin::profile_scope!("render_pass");
+                            let mut render_pass =
+                                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                    label: Some("offscreen_render_pass"),
+                                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                        view: &view,
+                                        resolve_target: None,
+                                        ops: wgpu::Operations {
+                                            load: wgpu::LoadOp::Clear(clear_color),
+                                            store: wgpu::StoreOp::Store,
+                                        },
+                                        depth_slice: None,
+                                    })],
+                                    depth_stencil_attachment: Some(
+                                        wgpu::RenderPassDepthStencilAttachment {
+                                            view: depth_view,
+                                            depth_ops: Some(wgpu::Operations {
+                                                load: wgpu::LoadOp::Clear(1.0),
+                                                store: wgpu::StoreOp::Store,
+                                            }),
+                                            stencil_ops: None,
+                                        },
+                                    ),
+                                    timestamp_writes: None,
+                                    occlusion_query_set: None,
+                                });
 
                             // 计算裁剪区域
                             let scale = params.scale_factor;
                             let scissor_x = ((params.canvas_offset.0 * scale) as u32).min(width);
                             let scissor_y = ((params.canvas_offset.1 * scale) as u32).min(height);
-                            let scissor_width = ((params.canvas_size.0 * scale) as u32).min(width.saturating_sub(scissor_x));
-                            let scissor_height = ((params.canvas_size.1 * scale) as u32).min(height.saturating_sub(scissor_y));
+                            let scissor_width = ((params.canvas_size.0 * scale) as u32)
+                                .min(width.saturating_sub(scissor_x));
+                            let scissor_height = ((params.canvas_size.1 * scale) as u32)
+                                .min(height.saturating_sub(scissor_y));
 
                             // 绘制背景网格
-                            if !params.grid_instances.is_empty() {
-                                render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-                                grid_renderer.draw(&mut render_pass, params.grid_instances.len() as u32);
+                            {
+                                render_pass.set_scissor_rect(
+                                    scissor_x,
+                                    scissor_y,
+                                    scissor_width,
+                                    scissor_height,
+                                );
+                                grid_renderer.draw(&mut render_pass, 1); // instance_count=1 for quad
                             }
 
                             // 绘制音符
-                            if !notes_read_buf.is_empty() {
-                                render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-                                note_renderer.draw(&mut render_pass, true, Some((scissor_x, scissor_y, scissor_width, scissor_height)));
-                            }
+                            render_pass.set_scissor_rect(
+                                scissor_x,
+                                scissor_y,
+                                scissor_width,
+                                scissor_height,
+                            );
+                            note_renderer.draw(
+                                &mut render_pass,
+                                true, // or dynamically check if instances > 0? Actually, true is fine, it will draw 0 instances if empty
+                                Some((scissor_x, scissor_y, scissor_width, scissor_height)),
+                            );
 
                             // 绘制键盘（不受画布裁剪限制）
                             if !params.keyboard_instances.is_empty() {
                                 render_pass.set_scissor_rect(0, 0, width, height);
-                                keyboard_renderer.draw(&mut render_pass, params.keyboard_instances.len() as u32);
+                                keyboard_renderer
+                                    .draw(&mut render_pass, params.keyboard_instances.len() as u32);
                             }
 
                             // 绘制标尺（不受画布裁剪限制）
                             if !params.ruler_instances.is_empty() {
                                 render_pass.set_scissor_rect(0, 0, width, height);
-                                ruler_renderer.draw(&mut render_pass, params.ruler_instances.len() as u32);
+                                ruler_renderer
+                                    .draw(&mut render_pass, params.ruler_instances.len() as u32);
                             }
                         }
 
                         // 提交渲染指令
-                        queue.submit(std::iter::once(encoder.finish()));
+                        {
+                            puffin::profile_scope!("submit_queue");
+                            queue.submit(std::iter::once(encoder.finish()));
+                        }
                     }
 
                     // 更新统计

@@ -9,12 +9,12 @@ pub use types::{
 
 /// 音符渲染器 - 使用 wgpu 实例化渲染高效绘制大量音符
 pub struct NoteRenderer {
+    /// GPU 音符缓冲区
+    gpu_note_buffer: crate::gpu_note_buffer::GpuNoteBuffer,
     /// 渲染管线
     pipeline: wgpu::RenderPipeline,
     /// 计算管线 (用于裁剪)
     cull_pipeline: wgpu::ComputePipeline,
-    /// 实例缓冲区 (所有实例)
-    instance_buffer: wgpu::Buffer,
     /// 可见实例缓冲区 (裁剪后)
     visible_instance_buffer: wgpu::Buffer,
     /// 间接绘制参数缓冲区
@@ -46,7 +46,7 @@ impl NoteRenderer {
     const CULL_SHADER: &'static str = include_str!("shaders/cull.wgsl");
 
     /// 创建新的音符渲染器
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("note_shader"),
             source: wgpu::ShaderSource::Wgsl(Self::VERTEX_SHADER.into()),
@@ -180,7 +180,7 @@ impl NoteRenderer {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: crate::constants::rendering::depth_stencil_state(),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
@@ -199,8 +199,10 @@ impl NoteRenderer {
         // 创建缓冲区
         let max_capacity = (device.limits().max_storage_buffer_binding_size as usize)
             / std::mem::size_of::<NoteInstance>();
+        let max_capacity = max_capacity
+            .min((device.limits().max_buffer_size as usize) / std::mem::size_of::<NoteInstance>());
 
-        let instance_buffer = Self::create_instance_buffer(device, Self::INITIAL_CAPACITY, false);
+        let gpu_note_buffer = crate::gpu_note_buffer::GpuNoteBuffer::new(device, queue);
         let visible_instance_buffer =
             Self::create_instance_buffer(device, Self::INITIAL_CAPACITY, true);
 
@@ -244,7 +246,7 @@ impl NoteRenderer {
             &cull_bind_group_layout,
             &viewport_buffer,
             &cull_uniform_buffer,
-            &instance_buffer,
+            gpu_note_buffer.buffer(),
             &visible_instance_buffer,
             &indirect_buffer,
             0,
@@ -253,7 +255,7 @@ impl NoteRenderer {
         Self {
             pipeline,
             cull_pipeline,
-            instance_buffer,
+            gpu_note_buffer,
             visible_instance_buffer,
             indirect_buffer,
             capacity: Self::INITIAL_CAPACITY,
@@ -267,8 +269,49 @@ impl NoteRenderer {
         }
     }
 
+    pub fn process_events(
+        &mut self,
+        rx: &std::sync::mpsc::Receiver<crate::NoteEvent>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> bool {
+        puffin::profile_function!();
+        let mut updated = false;
+        while let Ok(event) = rx.try_recv() {
+            updated = true;
+            match event {
+                crate::NoteEvent::Reset(instances) => {
+                    self.gpu_note_buffer.upload_all(&instances);
+                }
+                crate::NoteEvent::Add(instance) => {
+                    self.gpu_note_buffer.add_note(&instance);
+                }
+                crate::NoteEvent::Update { index, instance } => {
+                    self.gpu_note_buffer.update_note(index, &instance);
+                }
+                crate::NoteEvent::UpdateMany {
+                    start_index,
+                    instances,
+                } => {
+                    self.gpu_note_buffer.update_notes(start_index, &instances);
+                }
+                crate::NoteEvent::Remove(index) => {
+                    self.gpu_note_buffer.remove_note(index);
+                }
+                crate::NoteEvent::Clear => {
+                    self.gpu_note_buffer.clear();
+                }
+            }
+        }
+        if updated {
+            self.update_cull_info(device, queue);
+        }
+        updated
+    }
+
     /// 兼容方法：数据+camera一步准备好（内部仍拆分成两步）
-    pub fn prepare(
+    // deprecated
+    pub fn prepare_old(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         instances: &[NoteInstance],
@@ -276,38 +319,21 @@ impl NoteRenderer {
         queue: &wgpu::Queue,
         camera: CameraUniform,
     ) {
-        self.prepare_instances(encoder, instances, device, queue);
+        puffin::profile_function!();
+        self.gpu_note_buffer.upload_all(instances);
+        self.update_cull_info(device, queue);
         self.prepare_pass(encoder, camera, queue);
     }
 
-    /// 仅在音符数据真正变化时调用：负责 buffer 扩容 + instance upload
-    pub fn prepare_instances(
-        &mut self,
-        _encoder: &mut wgpu::CommandEncoder,
-        instances: &[NoteInstance],
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    ) {
-        if instances.is_empty() {
-            self.last_upload_count = 0;
+    /// 仅在音符数据真正变化时调用：负责更新 uniform
+    pub fn update_cull_info(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        puffin::profile_function!();
+        let current_count = self.gpu_note_buffer.len();
+        self.last_upload_count = current_count as u32;
+
+        if current_count == 0 {
             return;
         }
-
-        // 检查是否需要扩容
-        if instances.len() > self.capacity {
-            self.grow_buffer(device, instances.len());
-        }
-
-        let upload_count = instances.len().min(self.capacity);
-        if upload_count < instances.len() {
-            tracing::warn!(
-                "NoteRenderer: {} instances exceed max_capacity ({}), truncating",
-                instances.len(),
-                self.max_capacity
-            );
-        }
-
-        self.last_upload_count = upload_count as u32;
 
         // 上传 cull uniform
         let cull_info = CullUniform {
@@ -320,31 +346,23 @@ impl NoteRenderer {
             bytemuck::cast_slice(&[cull_info]),
         );
 
-        // 上传实例数据
-        queue.write_buffer(
-            &self.instance_buffer,
-            0,
-            bytemuck::cast_slice(&instances[..upload_count]),
-        );
-
-        // 更新 bind group 以反映新的数据范围（如果缓冲区没有扩容，需要更新绑定范围）
-        // 注意：如果 grow_buffer 被调用，它已经在内部更新了 bind group
-        // 这里只在未扩容时更新
-        if upload_count <= self.capacity
-            && self.capacity
-                == self.instance_buffer.size() as usize / std::mem::size_of::<NoteInstance>()
-        {
-            self.cull_bind_group = Self::create_cull_bind_group(
-                device,
-                &self.cull_bind_group_layout,
-                &self.viewport_buffer,
-                &self.cull_uniform_buffer,
-                &self.instance_buffer,
-                &self.visible_instance_buffer,
-                &self.indirect_buffer,
-                upload_count,
-            );
+        // 如果 GpuNoteBuffer 扩容了，或者 visible_instance_buffer 也需要扩容
+        let required_capacity = current_count;
+        if required_capacity > self.capacity {
+            self.grow_visible_buffer(device, required_capacity);
         }
+
+        // 重新绑定（如果 gpu_note_buffer 的内存变了，必须重新绑定）
+        self.cull_bind_group = Self::create_cull_bind_group(
+            device,
+            &self.cull_bind_group_layout,
+            &self.viewport_buffer,
+            &self.cull_uniform_buffer,
+            self.gpu_note_buffer.buffer(),
+            &self.visible_instance_buffer,
+            &self.indirect_buffer,
+            current_count,
+        );
     }
 
     /// 滚动/缩放等视口变化时调用：只更新 camera 并重跑 compute cull
@@ -354,6 +372,7 @@ impl NoteRenderer {
         camera: CameraUniform,
         queue: &wgpu::Queue,
     ) {
+        puffin::profile_function!();
         if self.last_upload_count == 0 {
             return;
         }
@@ -399,6 +418,7 @@ impl NoteRenderer {
         has_instances: bool,
         scissor_rect: Option<(u32, u32, u32, u32)>,
     ) {
+        puffin::profile_function!();
         if !has_instances {
             return;
         }
@@ -443,7 +463,8 @@ impl NoteRenderer {
     }
 
     /// 扩容缓冲区（受 max_capacity 限制）
-    fn grow_buffer(&mut self, device: &wgpu::Device, required_capacity: usize) {
+    fn grow_visible_buffer(&mut self, device: &wgpu::Device, required_capacity: usize) {
+        puffin::profile_function!();
         let growth_factor = crate::constants::rendering::BUFFER_GROWTH_FACTOR;
         let new_capacity = ((self.capacity.saturating_mul(growth_factor)).max(required_capacity))
             .min(self.max_capacity);
@@ -458,7 +479,6 @@ impl NoteRenderer {
             required_capacity
         );
 
-        self.instance_buffer = Self::create_instance_buffer(device, new_capacity, false);
         self.visible_instance_buffer = Self::create_instance_buffer(device, new_capacity, true);
         self.capacity = new_capacity;
 
@@ -468,7 +488,7 @@ impl NoteRenderer {
             &self.cull_bind_group_layout,
             &self.viewport_buffer,
             &self.cull_uniform_buffer,
-            &self.instance_buffer,
+            self.gpu_note_buffer.buffer(),
             &self.visible_instance_buffer,
             &self.indirect_buffer,
             self.last_upload_count as usize,
@@ -495,6 +515,7 @@ impl NoteRenderer {
         indirect_buffer: &wgpu::Buffer,
         instance_count: usize,
     ) -> wgpu::BindGroup {
+        puffin::profile_function!();
         let instance_size = std::mem::size_of::<NoteInstance>() as u64;
         let actual_data_size = (instance_count as u64) * instance_size;
         let buffer_size = instance_buffer.size();
@@ -516,7 +537,7 @@ impl NoteRenderer {
         };
 
         let visible_binding = if let Some(size) = std::num::NonZeroU64::new(actual_data_size) {
-            if actual_data_size < buffer_size {
+            if actual_data_size < visible_instance_buffer.size() {
                 wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: visible_instance_buffer,
                     offset: 0,

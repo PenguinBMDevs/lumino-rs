@@ -41,11 +41,11 @@ pub struct Root {
     pub(crate) pending_midi_output: Option<Box<dyn lumino_midi::OutputConnection>>,
     /// 洋葱皮音符原始数据缓存（tick, key, length, color）
     /// 存原始数据而非 NoteInstance，因为 NoteInstance 含屏幕坐标（随 scroll/zoom 变化）
-    cached_onion_skin_notes: Option<Vec<(f32, u16, f32, iced_core::Color)>>,
+    pub(crate) cached_onion_skin_notes: Option<Vec<(f32, u16, f32, iced_core::Color)>>,
     /// 缓存失效计数器（只有音轨数据/开关变化才递增）
-    onion_skin_generation: u64,
+    pub(crate) onion_skin_generation: u64,
     /// 上次渲染时的 generation
-    last_rendered_onion_generation: u64,
+    pub(crate) last_rendered_onion_generation: u64,
     /// 力度过滤阈值
     pub(crate) velocity_filter_threshold: u8,
 }

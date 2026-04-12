@@ -51,7 +51,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // Rust 侧 dispatch 拆成 2D 以适配 65535 上限，每组 X 方向最多 65535 个 workgroup
     let MAX_X_THREADS: u32 = 65535u * 64u;
     let index = global_id.x + global_id.y * MAX_X_THREADS;
-    if (index >= cull_info.instance_count) {
+    if (index >= cull_info.instance_count || index >= arrayLength(&all_instances)) {
         return;
     }
 
@@ -94,7 +94,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // 最终可见性测试
     if (screen_max_x >= 0.0 && screen_min_x <= camera.viewport_size.x
         && screen_max_y >= 0.0 && screen_min_y <= camera.viewport_size.y) {
+        
         let visible_index = atomicAdd(&indirect_args.instance_count, 1u);
-        visible_instances[visible_index] = instance;
+        if (visible_index < arrayLength(&visible_instances)) {
+            visible_instances[visible_index] = instance;
+        } else {
+            atomicSub(&indirect_args.instance_count, 1u);
+        }
     }
 }

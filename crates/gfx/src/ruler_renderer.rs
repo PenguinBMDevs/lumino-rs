@@ -175,7 +175,7 @@ impl RulerRenderer {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: crate::constants::rendering::depth_stencil_state(),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
@@ -355,6 +355,7 @@ impl RulerRenderer {
         ticks_per_measure: u32,
         ticks_per_beat: u32,
     ) {
+        puffin::profile_function!();
         // 生成刻度实例
         let instances = self.generate_tick_instances(
             viewport_size.0,
@@ -400,6 +401,7 @@ impl RulerRenderer {
 
     /// 执行渲染
     pub fn draw(&self, render_pass: &mut wgpu::RenderPass, instance_count: u32) {
+        puffin::profile_function!();
         if instance_count == 0 {
             return;
         }
