@@ -92,7 +92,7 @@ impl Context {
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
                 format,
                 width,
                 height,
@@ -123,7 +123,7 @@ impl Context {
             &self.device,
             &wgpu::SurfaceConfiguration {
                 format: self.format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
                 width,
                 height,
                 present_mode: self.present_mode,

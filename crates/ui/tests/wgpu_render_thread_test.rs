@@ -27,12 +27,15 @@ fn test_render_params_default() {
 fn test_render_params_clone() {
     let params = RenderParams {
         viewport_size: (1920, 1080),
+        logical_size: (1920.0, 1080.0),
+        scale_factor: 1.0,
         scroll: (100.0, 200.0),
         zoom: (0.05, 15.0),
         keyboard_width: 80.0,
         ruler_height: 40.0,
         background_color: [0.0, 0.0, 0.0, 1.0],
         grid_instances: Vec::new(),
+        note_instances: Vec::new(),
         ruler_instances: Vec::new(),
         keyboard_instances: Vec::new(),
         ticks_per_measure: 960,

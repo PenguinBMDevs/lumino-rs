@@ -16,13 +16,18 @@ use std::sync::{
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use iced_wgpu::wgpu;
 use lumino_gfx::{GridLineInstance, KeyInstance, NoteInstance, RulerTickInstance};
 
 /// 渲染参数 - 从 UI 线程传递到 WGPU 线程
 #[derive(Debug, Clone)]
 pub struct RenderParams {
-    /// 视口大小
+    /// 物理视口大小
     pub viewport_size: (u32, u32),
+    /// 逻辑视口大小
+    pub logical_size: (f32, f32),
+    /// 缩放因子
+    pub scale_factor: f32,
     /// 滚动位置 (x, y)
     pub scroll: (f32, f32),
     /// 缩放 (x, y)
@@ -35,6 +40,8 @@ pub struct RenderParams {
     pub background_color: [f64; 4],
     /// 网格线实例
     pub grid_instances: Vec<GridLineInstance>,
+    /// 音符实例
+    pub note_instances: Vec<NoteInstance>,
     /// 标尺刻度实例
     pub ruler_instances: Vec<RulerTickInstance>,
     /// 琴键实例
@@ -55,12 +62,15 @@ impl Default for RenderParams {
     fn default() -> Self {
         Self {
             viewport_size: (800, 600),
+            logical_size: (800.0, 600.0),
+            scale_factor: 1.0,
             scroll: (0.0, 0.0),
             zoom: (0.1, 20.0),
             keyboard_width: 60.0,
             ruler_height: 30.0,
             background_color: [0.1, 0.1, 0.1, 1.0],
             grid_instances: Vec::new(),
+            note_instances: Vec::new(),
             ruler_instances: Vec::new(),
             keyboard_instances: Vec::new(),
             ticks_per_measure: 1920,
@@ -123,33 +133,47 @@ pub struct WgpuRenderThread {
     command_sender: Option<std::sync::mpsc::Sender<RenderCommand>>,
     /// 线程句柄
     thread_handle: Option<JoinHandle<()>>,
+    /// 渲染完成的离屏纹理，供主线程读取
+    pub latest_texture: Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
 }
 
 impl WgpuRenderThread {
     /// 创建并启动渲染线程
     ///
-    /// 注意：由于 wgpu Surface 限制，窗口必须在渲染线程中创建
-    /// 或者使用已有的 Surface（如果在外部创建）
+    /// 采用离屏纹理架构：
+    /// WGPU 渲染线程在后台将所有内容渲染到离屏纹理中，然后主线程将该纹理复制到 Surface。
     pub fn spawn(
-        _window: Arc<winit::window::Window>,
-        _note_buffer: Arc<lumino_gfx::SwappableBuffer<NoteInstance>>,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        texture_format: wgpu::TextureFormat,
+        note_buffer: Arc<lumino_gfx::SwappableBuffer<NoteInstance>>,
     ) -> anyhow::Result<Self> {
-        tracing::info!("WgpuRenderThread::spawn - Starting render thread");
+        tracing::info!("WgpuRenderThread::spawn - Starting render thread with offscreen texture");
 
         let stats = Arc::new(Mutex::new(RenderStats::default()));
         let running = Arc::new(AtomicBool::new(true));
         let (command_sender, command_receiver) = std::sync::mpsc::channel::<RenderCommand>();
+        let latest_texture: Arc<Mutex<Option<Arc<wgpu::Texture>>>> = Arc::new(Mutex::new(None));
 
         let stats_clone = Arc::clone(&stats);
         let running_clone = Arc::clone(&running);
+        let latest_texture_clone = Arc::clone(&latest_texture);
 
         // 启动渲染线程
         let thread_handle = thread::spawn(move || {
             tracing::info!("Render thread started");
 
+            // 初始化渲染器
+            let mut grid_renderer = lumino_gfx::GridRenderer::new(&device, texture_format);
+            let mut note_renderer = lumino_gfx::NoteRenderer::new(&device, texture_format);
+            let mut keyboard_renderer = lumino_gfx::KeyboardRenderer::new(&device, texture_format);
+            let mut ruler_renderer = lumino_gfx::RulerRenderer::new(&device, texture_format);
+
             // 渲染循环
             let mut frame_count = 0u64;
             let mut fps_update_time = Instant::now();
+            let mut current_texture: Option<Arc<wgpu::Texture>> = None;
+            let mut current_size = (0, 0);
 
             while running_clone.load(Ordering::Relaxed) {
                 // 处理所有待处理的命令
@@ -162,7 +186,6 @@ impl WgpuRenderThread {
                             latest_params = Some(params);
                         }
                         RenderCommand::Control(ControlCommand::Resize { width, height }) => {
-                            // 处理窗口大小变化
                             tracing::debug!("Render thread: resize to {}x{}", width, height);
                         }
                         RenderCommand::Control(ControlCommand::Shutdown) => {
@@ -176,9 +199,132 @@ impl WgpuRenderThread {
                     break;
                 }
 
-                // 执行渲染（占位实现）
+                // 执行渲染（离屏纹理）
                 if let Some(params) = latest_params {
                     let frame_start = Instant::now();
+                    
+                    let width = params.viewport_size.0.max(1);
+                    let height = params.viewport_size.1.max(1);
+
+                    // 如果尺寸改变，重新创建离屏纹理
+                    if current_size != (width, height) || current_texture.is_none() {
+                        let texture = device.create_texture(&wgpu::TextureDescriptor {
+                            label: Some("offscreen_render_texture"),
+                            size: wgpu::Extent3d {
+                                width,
+                                height,
+                                depth_or_array_layers: 1,
+                            },
+                            mip_level_count: 1,
+                            sample_count: 1,
+                            dimension: wgpu::TextureDimension::D2,
+                            format: texture_format,
+                            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                            view_formats: &[],
+                        });
+                        current_texture = Some(Arc::new(texture));
+                        current_size = (width, height);
+                        
+                        // 将新纹理共享给主线程
+                        if let Ok(mut lock) = latest_texture_clone.lock() {
+                            *lock = current_texture.clone();
+                        }
+                    }
+
+                    if let Some(texture) = &current_texture {
+                        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("offscreen_render_encoder"),
+                        });
+
+                        let clear_color = wgpu::Color {
+                            r: params.background_color[0],
+                            g: params.background_color[1],
+                            b: params.background_color[2],
+                            a: params.background_color[3],
+                        };
+
+                        // 准备渲染实例
+                        if !params.grid_instances.is_empty() {
+                            grid_renderer.prepare(&params.grid_instances, &device, &queue, params.canvas_size);
+                        }
+                        
+                        let notes_read_buf = unsafe { note_buffer.read_buffer() };
+                        if !notes_read_buf.is_empty() {
+                            note_renderer.prepare_instances(&mut encoder, &notes_read_buf, &device, &queue);
+                        }
+                        if !params.keyboard_instances.is_empty() {
+                            keyboard_renderer.prepare(&device, &queue, params.logical_size, params.keyboard_width, params.ruler_height, params.scroll.1, params.zoom.1, 128);
+                        }
+                        if !params.ruler_instances.is_empty() {
+                            ruler_renderer.prepare(&device, &queue, params.logical_size, params.keyboard_width, params.ruler_height, params.scroll.0, params.zoom.0, params.ticks_per_measure, params.ticks_per_beat);
+                        }
+
+                        // 准备相机参数
+                        let camera = lumino_gfx::CameraUniform::new(lumino_gfx::CameraParams {
+                            scroll: [params.scroll.0, params.scroll.1],
+                            zoom: [params.zoom.0, params.zoom.1],
+                            viewport: [params.logical_size.0, params.logical_size.1],
+                            offset: [params.canvas_offset.0, params.canvas_offset.1],
+                            keyboard_width: params.keyboard_width,
+                            ruler_height: params.ruler_height,
+                            max_key_index: 127.0, // TODO: 从 params 获取
+                        });
+
+                        note_renderer.prepare_pass(&mut encoder, camera, &queue);
+
+                        {
+                            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: Some("offscreen_render_pass"),
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: &view,
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Clear(clear_color),
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                    depth_slice: None,
+                                })],
+                                depth_stencil_attachment: None,
+                                timestamp_writes: None,
+                                occlusion_query_set: None,
+                            });
+
+                            // 计算裁剪区域
+                            let scale = params.scale_factor;
+                            let scissor_x = ((params.canvas_offset.0 * scale) as u32).min(width);
+                            let scissor_y = ((params.canvas_offset.1 * scale) as u32).min(height);
+                            let scissor_width = ((params.canvas_size.0 * scale) as u32).min(width.saturating_sub(scissor_x));
+                            let scissor_height = ((params.canvas_size.1 * scale) as u32).min(height.saturating_sub(scissor_y));
+
+                            // 绘制背景网格
+                            if !params.grid_instances.is_empty() {
+                                render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+                                grid_renderer.draw(&mut render_pass, params.grid_instances.len() as u32);
+                            }
+
+                            // 绘制音符
+                            if !notes_read_buf.is_empty() {
+                                render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+                                note_renderer.draw(&mut render_pass, true, Some((scissor_x, scissor_y, scissor_width, scissor_height)));
+                            }
+
+                            // 绘制键盘（不受画布裁剪限制）
+                            if !params.keyboard_instances.is_empty() {
+                                render_pass.set_scissor_rect(0, 0, width, height);
+                                keyboard_renderer.draw(&mut render_pass, params.keyboard_instances.len() as u32);
+                            }
+
+                            // 绘制标尺（不受画布裁剪限制）
+                            if !params.ruler_instances.is_empty() {
+                                render_pass.set_scissor_rect(0, 0, width, height);
+                                ruler_renderer.draw(&mut render_pass, params.ruler_instances.len() as u32);
+                            }
+                        }
+
+                        // 提交渲染指令
+                        queue.submit(std::iter::once(encoder.finish()));
+                    }
 
                     // 更新统计
                     let frame_time = frame_start.elapsed();
@@ -215,6 +361,7 @@ impl WgpuRenderThread {
             running,
             command_sender: Some(command_sender),
             thread_handle: Some(thread_handle),
+            latest_texture,
         })
     }
 

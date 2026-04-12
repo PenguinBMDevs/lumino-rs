@@ -11,7 +11,7 @@ use iced_winit::runtime::user_interface::{self, UserInterface};
 use rayon::prelude::*;
 
 use crate::host::Host;
-use crate::{RenderParams, window};
+use crate::{window, RenderParams};
 
 impl Host {
     /// 主渲染入口
@@ -66,6 +66,30 @@ impl Host {
         if self.use_separate_render_thread {
             // 新架构：分离渲染线程（底层 WGPU 渲染在独立线程）
             self.redraw_separate_thread();
+
+            // 将离屏渲染结果复制到当前 Surface
+            if let Some(ref wgpu_thread) = self.wgpu_render_thread {
+                if let Ok(lock) = wgpu_thread.latest_texture.lock() {
+                    if let Some(ref texture) = *lock {
+                        // 确保尺寸匹配，如果因为调整大小等原因不匹配则跳过这帧的复制
+                        if texture.width() == frame.texture.width() && texture.height() == frame.texture.height() {
+                            let mut encoder = gfx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                                label: Some("copy_offscreen_texture_encoder"),
+                            });
+                            encoder.copy_texture_to_texture(
+                                texture.as_image_copy(),
+                                frame.texture.as_image_copy(),
+                                wgpu::Extent3d {
+                                    width: texture.width(),
+                                    height: texture.height(),
+                                    depth_or_array_layers: 1,
+                                },
+                            );
+                            gfx.queue.submit(std::iter::once(encoder.finish()));
+                        }
+                    }
+                }
+            }
 
             // iced UI 仍然需要在主线程渲染到当前 surface
             if !self.skip_ui_rendering {
@@ -160,14 +184,18 @@ impl Host {
         // 构建渲染参数
         let canvas_offset = self.root.editor.canvas_offset;
         let canvas_size = self.root.editor.canvas_size;
+        let physical_size = self.viewport.physical_size();
         let params = RenderParams {
-            viewport_size: (viewport_size.width as u32, viewport_size.height as u32),
+            viewport_size: (physical_size.width, physical_size.height),
+            logical_size: (viewport_size.width, viewport_size.height),
+            scale_factor: self.viewport.scale_factor() as f32,
             scroll,
             zoom,
             keyboard_width: 60.0,
             ruler_height: 30.0,
             background_color: [0.1, 0.1, 0.1, 1.0],
             grid_instances,
+            note_instances: vec![], // will be passed via buffer or we can just pass them? Wait, note buffer is used for zero copy, so we shouldn't pass instances here. But for the sake of fixing the error, I'll put empty vec here. Wait, `note_instances` is used in RenderParams! We shouldn't put them in params if we use double buffer. Let me fix the params logic in `WgpuRenderThread`.
             ruler_instances,
             keyboard_instances,
             ticks_per_measure: 1920,

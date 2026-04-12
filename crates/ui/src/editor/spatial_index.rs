@@ -1,5 +1,4 @@
 use crate::editor::Note;
-use std::sync::Arc;
 
 /// 音符的空间索引引用
 #[derive(Debug, Clone)]

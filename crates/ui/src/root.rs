@@ -9,7 +9,6 @@
 use crate::state::root_state::RootState;
 use crate::{editor, message, settings, sidebar, statusbar, titlebar, toolbar, window};
 use lumino_core::storage::config::UiConfig;
-use lumino_gfx::NoteInstance;
 
 mod collaboration;
 mod editor_ops;
