@@ -7,7 +7,43 @@ use iced_core::mouse;
 use crate::host::{Host, types::convert_touch_to_mouse};
 use crate::{message, toolbar, window};
 
+/// 检查是否按下了 Ctrl 或 Command（macOS）
+fn is_ctrl_or_cmd_pressed(modifiers: winit::keyboard::ModifiersState) -> bool {
+    modifiers.contains(winit::keyboard::ModifiersState::CONTROL)
+        || modifiers.contains(winit::keyboard::ModifiersState::SUPER)
+}
+
 impl Host {
+    /// 处理键盘快捷键，返回是否有操作
+    fn handle_keyboard_shortcuts(
+        &mut self,
+        key: winit::keyboard::KeyCode,
+        modifiers: winit::keyboard::ModifiersState,
+    ) {
+        let ctrl = is_ctrl_or_cmd_pressed(modifiers);
+        let shift = modifiers.contains(winit::keyboard::ModifiersState::SHIFT);
+
+        let action = match (key, ctrl, shift) {
+            (winit::keyboard::KeyCode::Delete | winit::keyboard::KeyCode::Backspace, ..) => {
+                Some(message::EditorAction::DeletePressed)
+            }
+            (winit::keyboard::KeyCode::KeyZ, true, false) => Some(message::EditorAction::Undo),
+            (winit::keyboard::KeyCode::KeyZ, true, true)
+            | (winit::keyboard::KeyCode::KeyY, true, _) => Some(message::EditorAction::Redo),
+            (winit::keyboard::KeyCode::KeyX, true, _) => Some(message::EditorAction::Cut),
+            (winit::keyboard::KeyCode::KeyC, true, _) => Some(message::EditorAction::Copy),
+            (winit::keyboard::KeyCode::KeyV, true, _) => Some(message::EditorAction::Paste),
+            (winit::keyboard::KeyCode::KeyA, true, _) => Some(message::EditorAction::SelectAll),
+            _ => None,
+        };
+
+        if let Some(action) = action {
+            self.root.editor.handle_action(action);
+            // 仅请求重绘，不重建UI树（编辑器操作由canvas/WGPU层处理）
+            self.window.request_redraw();
+        }
+    }
+
     /// 处理光标移动
     pub fn cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
         puffin::profile_function!();
@@ -33,7 +69,6 @@ impl Host {
     ) {
         use winit::event::ElementState;
         use winit::event::WindowEvent::*;
-        use winit::keyboard::{KeyCode, PhysicalKey};
 
         match &event {
             Resized(_) => {
@@ -45,91 +80,18 @@ impl Host {
             }
             KeyboardInput { event, .. } => {
                 // 处理键盘事件
-                if event.state == ElementState::Pressed {
-                    match event.physical_key {
-                        PhysicalKey::Code(KeyCode::Delete)
-                        | PhysicalKey::Code(KeyCode::Backspace) => {
-                            // 发送删除音符的消息
-                            self.root
-                                .editor
-                                .handle_action(message::EditorAction::DeletePressed);
-                            self.ui_dirty = true;
-                            self.window.request_redraw();
-                        }
-                        PhysicalKey::Code(KeyCode::KeyZ) => {
-                            // Ctrl+Z: 撤销, Ctrl+Shift+Z: 重做
-                            let ctrl_or_cmd = modifiers
-                                .contains(winit::keyboard::ModifiersState::CONTROL)
-                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER);
-                            if ctrl_or_cmd {
-                                if modifiers.contains(winit::keyboard::ModifiersState::SHIFT) {
-                                    // Ctrl+Shift+Z: 重做
-                                    self.root.editor.handle_action(message::EditorAction::Redo);
-                                } else {
-                                    // Ctrl+Z: 撤销
-                                    self.root.editor.handle_action(message::EditorAction::Undo);
-                                }
-                                self.ui_dirty = true;
-                                self.window.request_redraw();
-                            }
-                        }
-                        PhysicalKey::Code(KeyCode::KeyY) => {
-                            // Ctrl+Y: 重做
-                            if modifiers.contains(winit::keyboard::ModifiersState::CONTROL)
-                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER)
-                            {
-                                self.root.editor.handle_action(message::EditorAction::Redo);
-                                self.ui_dirty = true;
-                                self.window.request_redraw();
-                            }
-                        }
-                        PhysicalKey::Code(KeyCode::KeyX) => {
-                            let ctrl_or_cmd = modifiers
-                                .contains(winit::keyboard::ModifiersState::CONTROL)
-                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER);
-                            if ctrl_or_cmd {
-                                self.root.editor.handle_action(message::EditorAction::Cut);
-                                self.ui_dirty = true;
-                                self.window.request_redraw();
-                            }
-                        }
-                        PhysicalKey::Code(KeyCode::KeyC) => {
-                            let ctrl_or_cmd = modifiers
-                                .contains(winit::keyboard::ModifiersState::CONTROL)
-                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER);
-                            if ctrl_or_cmd {
-                                self.root.editor.handle_action(message::EditorAction::Copy);
-                                self.ui_dirty = true;
-                                self.window.request_redraw();
-                            }
-                        }
-                        PhysicalKey::Code(KeyCode::KeyV) => {
-                            let ctrl_or_cmd = modifiers
-                                .contains(winit::keyboard::ModifiersState::CONTROL)
-                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER);
-                            if ctrl_or_cmd {
-                                self.root.editor.handle_action(message::EditorAction::Paste);
-                                self.ui_dirty = true;
-                                self.window.request_redraw();
-                            }
-                        }
-                        PhysicalKey::Code(KeyCode::KeyA) => {
-                            let ctrl_or_cmd = modifiers
-                                .contains(winit::keyboard::ModifiersState::CONTROL)
-                                || modifiers.contains(winit::keyboard::ModifiersState::SUPER);
-                            if ctrl_or_cmd {
-                                self.root
-                                    .editor
-                                    .handle_action(message::EditorAction::SelectAll);
-                                self.ui_dirty = true;
-                                self.window.request_redraw();
-                            }
-                        }
-                        _ => {}
-                    }
+                if let (ElementState::Pressed, winit::keyboard::PhysicalKey::Code(code)) =
+                    (event.state, event.physical_key)
+                {
+                    self.handle_keyboard_shortcuts(code, modifiers);
                 }
             }
             MouseInput { state, button, .. } => {
+                // 更新鼠标按钮状态
+                if *button == winit::event::MouseButton::Left {
+                    self.is_mouse_pressed = *state == ElementState::Pressed;
+                }
+
                 // 全局监听鼠标释放事件，结束工具栏拖拽状态
                 if *button == winit::event::MouseButton::Left
                     && *state == ElementState::Released
@@ -149,19 +111,59 @@ impl Host {
             conversion::window_event(event, self.window.scale_factor() as f32, modifiers)
         {
             let converted_events = convert_touch_to_mouse(event);
-            self.events.extend(converted_events);
+
+            // 事件合并：如果新事件是 CursorMoved，且队列最后一个也是 CursorMoved，则替换
+            for event in converted_events {
+                if let iced_core::Event::Mouse(mouse::Event::CursorMoved { .. }) = &event {
+                    // 检查队列最后一个事件是否也是 CursorMoved
+                    if let Some(last) = self.events.last() {
+                        if matches!(
+                            last,
+                            iced_core::Event::Mouse(mouse::Event::CursorMoved { .. })
+                        ) {
+                            // 替换最后一个事件
+                            self.events.pop();
+                        }
+                    }
+                }
+                self.events.push(event);
+            }
         }
 
-        // 处理事件：所有事件都需要进入 process_pending_events 以确保 iced 正确更新
-        // 光标移动事件如果在这里被跳过，hover 状态、按钮高亮等 UI 反馈将全部失效
-        self.process_pending_events();
+        // 注意：事件处理推迟到 redraw_requested 中统一处理
+        // 这样可以合并同一帧内的多个事件，减少 UI 重建次数
+        // 但如果有事件需要处理，必须请求重绘以确保事件被及时处理
+        if !self.events.is_empty() {
+            self.window.request_redraw();
+        }
     }
 
     /// 处理待处理的事件队列
-    fn process_pending_events(&mut self) {
+    /// 处理待处理的事件队列
+    ///
+    /// 此函数在 redraw_requested 中调用，确保同一帧内的多个事件被合并处理
+    pub(crate) fn process_pending_events(&mut self) {
         puffin::profile_function!();
 
         if self.events.is_empty() {
+            return;
+        }
+
+        // 优化：如果只有纯输入事件（鼠标移动、光标进入/离开），且没有鼠标按钮按下，跳过UI重建
+        // 这些事件只需要更新光标位置，不需要处理UI交互
+        // 当鼠标拖拽时（按钮按下），is_mouse_pressed 为 true，所以不会被跳过
+        let is_pure_input = self.events.iter().all(|event| {
+            matches!(
+                event,
+                iced_core::Event::Mouse(mouse::Event::CursorMoved { .. })
+                    | iced_core::Event::Mouse(mouse::Event::CursorEntered)
+                    | iced_core::Event::Mouse(mouse::Event::CursorLeft)
+            )
+        });
+
+        if is_pure_input && !self.is_toolbar_resizing && !self.is_mouse_pressed {
+            puffin::profile_scope!("skip_ui_rebuild");
+            self.events.clear();
             return;
         }
 

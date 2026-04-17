@@ -8,7 +8,7 @@ impl Host {
     /// track_infos: (track_index, track_name, note_count)
     pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64)]) {
         self.root.update_tracks(track_infos);
-        self.ui_dirty = true;
+        // 仅请求重绘，不重建UI树（音轨列表数据由WGPU层处理）
         self.window.request_redraw();
     }
 
@@ -16,7 +16,7 @@ impl Host {
     pub fn set_total_ticks(&mut self, total_ticks: f32) {
         self.root.set_total_ticks(total_ticks);
         self.root.editor.grid_cache.clear();
-        self.ui_dirty = true;
+        // 仅请求重绘，不重建UI树（网格线数据由WGPU层处理）
         self.window.request_redraw();
     }
 
@@ -24,7 +24,7 @@ impl Host {
     pub fn set_ppq(&mut self, ppq: u16) {
         self.root.set_ppq(ppq);
         self.root.editor.grid_cache.clear();
-        self.ui_dirty = true;
+        // 仅请求重绘，不重建UI树（网格线数据由WGPU层处理）
         self.window.request_redraw();
     }
 
@@ -32,14 +32,14 @@ impl Host {
     /// notes: (tick, key, length, velocity)
     pub fn load_notes(&mut self, notes: &[(f32, u8, f32, u8)]) {
         self.root.load_notes(notes);
-        self.ui_dirty = true;
+        // 仅请求重绘，不重建UI树（音符数据由WGPU层处理）
         self.window.request_redraw();
     }
 
     /// 设置当前音轨
     pub fn set_current_track(&mut self, track_idx: usize) {
         self.root.set_current_track(track_idx);
-        self.ui_dirty = true;
+        // 仅请求重绘，不重建UI树（音轨切换由WGPU层处理）
         self.window.request_redraw();
     }
 
@@ -47,7 +47,7 @@ impl Host {
     /// 这会同时更新当前显示的音符和音轨存储，以便洋葱皮能显示
     pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32, u8)]) {
         self.root.load_track_notes(track_idx, notes);
-        self.ui_dirty = true;
+        // 仅请求重绘，不重建UI树（音符数据由WGPU层处理）
         self.window.request_redraw();
     }
 
@@ -211,7 +211,7 @@ impl Host {
         self.root.editor.current_track = 0;
         self.root.editor.grid_cache.clear();
         self.clear_cache();
-        self.ui_dirty = true;
+        // 仅请求重绘，不重建UI树（编辑器清空由WGPU层处理）
         self.window.request_redraw();
         tracing::info!("UI: 编辑器已清空");
     }
@@ -263,7 +263,7 @@ impl Host {
     /// 处理编辑器动作
     pub fn handle_action(&mut self, action: message::EditorAction) {
         self.root.editor.handle_action(action);
-        self.ui_dirty = true;
+        // 仅请求重绘，不重建UI树（编辑器动作由canvas/WGPU层处理）
         self.window.request_redraw();
     }
 }

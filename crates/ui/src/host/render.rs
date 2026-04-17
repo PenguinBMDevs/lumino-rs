@@ -13,6 +13,45 @@ use rayon::prelude::*;
 use crate::host::Host;
 use crate::{RenderParams, window};
 
+/// 从主题提取的网格渲染颜色
+struct GridColors {
+    bg: [f32; 4],
+    black_key: [f32; 4],
+    bar_line: [f32; 4],
+    beat_line: [f32; 4],
+    half_beat_line: [f32; 4],
+    grid_line: [f32; 4],
+    key_line: [f32; 4],
+}
+
+impl GridColors {
+    fn from_theme(theme: &crate::Theme) -> Self {
+        use crate::editor::grid::theme::ThemeExt;
+        let c_bg = theme.keyboard_background_color();
+        let c_bk = theme.black_key_color();
+        let c_bar = theme.bar_line_color();
+        let c_beat = theme.beat_line_color();
+        let c_half = theme.half_beat_line_color();
+        let c_grid = theme.grid_line_color();
+        let palette = theme.extended_palette().background;
+        let c_kl = if theme.is_light() {
+            palette.strong.color
+        } else {
+            palette.weak.color
+        };
+
+        Self {
+            bg: [c_bg.r, c_bg.g, c_bg.b, c_bg.a],
+            black_key: [c_bk.r, c_bk.g, c_bk.b, c_bk.a],
+            bar_line: [c_bar.r, c_bar.g, c_bar.b, c_bar.a],
+            beat_line: [c_beat.r, c_beat.g, c_beat.b, c_beat.a],
+            half_beat_line: [c_half.r, c_half.g, c_half.b, c_half.a],
+            grid_line: [c_grid.r, c_grid.g, c_grid.b, c_grid.a],
+            key_line: [c_kl.r, c_kl.g, c_kl.b, c_kl.a],
+        }
+    }
+}
+
 impl Host {
     /// 主渲染入口
     ///
@@ -32,6 +71,10 @@ impl Host {
         puffin::profile_function!();
         use std::time::Instant;
 
+        // 处理待处理的事件队列（合并后的）
+        // 这样可以确保同一帧内的多个事件被合并处理，减少 UI 重建次数
+        self.process_pending_events();
+
         // 计算 FPS
         self.frame_count += 1;
         let now = Instant::now();
@@ -49,9 +92,9 @@ impl Host {
         // 更新播放状态
         if let Some(tick) = self.root.update_playback() {
             self.root.editor.playback_position = tick;
-            // 播放时自动滚动会改变 scroll_x，需要刷新 UI（演奏指示线和小节号）
+            // 播放时自动滚动会改变 scroll_x，仅请求重绘（canvas/WGPU层处理）
             if self.root.editor.update_auto_scroll(tick) {
-                self.ui_dirty = true;
+                self.window.request_redraw();
             }
         }
 
@@ -69,29 +112,32 @@ impl Host {
 
             // 将离屏渲染结果复制到当前 Surface
             if let Some(ref wgpu_thread) = self.wgpu_render_thread {
-                if let Ok(lock) = wgpu_thread.latest_texture.lock() {
-                    if let Some(ref texture) = *lock {
-                        // 确保尺寸匹配，如果因为调整大小等原因不匹配则跳过这帧的复制
-                        if texture.width() == frame.texture.width()
-                            && texture.height() == frame.texture.height()
-                        {
-                            puffin::profile_scope!("copy_offscreen_texture");
-                            let mut encoder = gfx.device.create_command_encoder(
-                                &wgpu::CommandEncoderDescriptor {
+                let texture_ref = wgpu_thread
+                    .latest_texture
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.clone());
+                if let Some(texture) = texture_ref {
+                    // 确保尺寸匹配，如果因为调整大小等原因不匹配则跳过这帧的复制
+                    if texture.width() == frame.texture.width()
+                        && texture.height() == frame.texture.height()
+                    {
+                        puffin::profile_scope!("copy_offscreen_texture");
+                        let mut encoder =
+                            gfx.device
+                                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                                     label: Some("copy_offscreen_texture_encoder"),
-                                },
-                            );
-                            encoder.copy_texture_to_texture(
-                                texture.as_image_copy(),
-                                frame.texture.as_image_copy(),
-                                wgpu::Extent3d {
-                                    width: texture.width(),
-                                    height: texture.height(),
-                                    depth_or_array_layers: 1,
-                                },
-                            );
-                            gfx.queue.submit(std::iter::once(encoder.finish()));
-                        }
+                                });
+                        encoder.copy_texture_to_texture(
+                            texture.as_image_copy(),
+                            frame.texture.as_image_copy(),
+                            wgpu::Extent3d {
+                                width: texture.width(),
+                                height: texture.height(),
+                                depth_or_array_layers: 1,
+                            },
+                        );
+                        gfx.queue.submit(std::iter::once(encoder.finish()));
                     }
                 }
             }
@@ -210,22 +256,14 @@ impl Host {
         let canvas_size = self.root.editor.canvas_size;
         let physical_size = self.viewport.physical_size();
         let theme = self.root.theme();
-        use crate::editor::grid::theme::ThemeExt;
+        let colors = GridColors::from_theme(&theme);
 
-        let c_bg = theme.keyboard_background_color();
-        let c_bk = theme.black_key_color();
-        let c_bar = theme.bar_line_color();
-        let c_beat = theme.beat_line_color();
-        let c_half = theme.half_beat_line_color();
-        let c_grid = theme.grid_line_color();
-        let palette = theme.extended_palette().background;
-        let c_kl = if theme.is_light() {
-            palette.strong.color
-        } else {
-            palette.weak.color
-        };
-
-        let bg_color = [c_bg.r as f64, c_bg.g as f64, c_bg.b as f64, c_bg.a as f64];
+        let bg_color = [
+            colors.bg[0] as f64,
+            colors.bg[1] as f64,
+            colors.bg[2] as f64,
+            colors.bg[3] as f64,
+        ];
         let ppq = self.root.editor.state.ppq;
         let keyboard_width = self.root.editor.state.keyboard_width;
         let ruler_height = self.root.editor.state.ruler_height;
@@ -233,19 +271,19 @@ impl Host {
         let params = RenderParams {
             viewport_size: (physical_size.width, physical_size.height),
             logical_size: (viewport_size.width, viewport_size.height),
-            scale_factor: self.viewport.scale_factor() as f32,
+            scale_factor: self.viewport.scale_factor(),
             scroll,
             zoom,
             keyboard_width,
             ruler_height,
             background_color: bg_color,
-            color_bg: [c_bg.r, c_bg.g, c_bg.b, c_bg.a],
-            color_bg_black_key: [c_bk.r, c_bk.g, c_bk.b, c_bk.a],
-            color_bar: [c_bar.r, c_bar.g, c_bar.b, c_bar.a],
-            color_beat: [c_beat.r, c_beat.g, c_beat.b, c_beat.a],
-            color_half_beat: [c_half.r, c_half.g, c_half.b, c_half.a],
-            color_grid: [c_grid.r, c_grid.g, c_grid.b, c_grid.a],
-            color_key_line: [c_kl.r, c_kl.g, c_kl.b, c_kl.a],
+            color_bg: colors.bg,
+            color_bg_black_key: colors.black_key,
+            color_bar: colors.bar_line,
+            color_beat: colors.beat_line,
+            color_half_beat: colors.half_beat_line,
+            color_grid: colors.grid_line,
+            color_key_line: colors.key_line,
             grid_instances,
             note_instances: vec![],
             ruler_instances,
@@ -495,7 +533,7 @@ impl Host {
         // 获取编辑器数据（避免借用冲突）
         let notes = &self.root.editor.notes;
         let track_notes = &self.root.editor.track_notes;
-        let current_track = self.root.editor.current_track;
+        let _current_track = self.root.editor.current_track;
         let edit_state = &self.root.editor.edit_state;
         let default_note_length = self.root.editor.state.default_note_length;
         let snap_precision = self.root.editor.state.snap_precision;
@@ -731,19 +769,7 @@ impl Host {
 
         if grid_changed {
             let theme = self.root.theme();
-            use crate::editor::grid::theme::ThemeExt;
-            let c_bg = theme.keyboard_background_color();
-            let c_bk = theme.black_key_color();
-            let c_bar = theme.bar_line_color();
-            let c_beat = theme.beat_line_color();
-            let c_half = theme.half_beat_line_color();
-            let c_grid = theme.grid_line_color();
-            let palette = theme.extended_palette().background;
-            let c_kl = if theme.is_light() {
-                palette.strong.color
-            } else {
-                palette.weak.color
-            };
+            let colors = GridColors::from_theme(&theme);
 
             let max_key_index = (editor.state.visible_key_count.saturating_sub(1)) as f32;
             let canvas_offset = (editor.canvas_offset.x, editor.canvas_offset.y);
@@ -758,13 +784,13 @@ impl Host {
                 editor.state.zoom_y,
                 editor.state.keyboard_width,
                 editor.state.ruler_height,
-                [c_bg.r, c_bg.g, c_bg.b, c_bg.a],
-                [c_bk.r, c_bk.g, c_bk.b, c_bk.a],
-                [c_bar.r, c_bar.g, c_bar.b, c_bar.a],
-                [c_beat.r, c_beat.g, c_beat.b, c_beat.a],
-                [c_half.r, c_half.g, c_half.b, c_half.a],
-                [c_grid.r, c_grid.g, c_grid.b, c_grid.a],
-                [c_kl.r, c_kl.g, c_kl.b, c_kl.a],
+                colors.bg,
+                colors.black_key,
+                colors.bar_line,
+                colors.beat_line,
+                colors.half_beat_line,
+                colors.grid_line,
+                colors.key_line,
                 editor.state.ppq as f32,
                 max_key_index,
                 canvas_offset.0,
@@ -781,7 +807,7 @@ impl Host {
         //   - 视口变化时需要重新生成实例（因为可见集合变了）
         let note_index_dirty = self.root.editor.note_index_dirty.get();
         let current_edit_state = self.root.editor.edit_state.clone();
-        let note_viewport_changed = current_viewport_hash != self.render_cache.note_viewport_hash;
+        let _note_viewport_changed = current_viewport_hash != self.render_cache.note_viewport_hash;
 
         // 统一使用 GPU 端裁剪策略：
         // - 所有音符上传到 GPU（一次上传，常驻显存）
@@ -861,10 +887,13 @@ impl Host {
 
         let width = physical_size.width;
         let height = physical_size.height;
-        if self.render_cache.depth_texture.is_none()
-            || self.render_cache.depth_texture.as_ref().unwrap().0 != width
-            || self.render_cache.depth_texture.as_ref().unwrap().1 != height
-        {
+        let needs_depth_resize = self
+            .render_cache
+            .depth_texture
+            .as_ref()
+            .is_none_or(|(w, h, _)| *w != width || *h != height);
+
+        if needs_depth_resize {
             let depth_tex = gfx.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("host_depth_texture"),
                 size: wgpu::Extent3d {
@@ -886,6 +915,12 @@ impl Host {
             ));
         }
 
+        // 深度纹理在上面的代码块中已确保存在
+        let Some((_, _, depth_view)) = self.render_cache.depth_texture.as_ref() else {
+            tracing::error!("depth_texture should exist after resize check");
+            return;
+        };
+
         // 开始渲染通道
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("render_pass"),
@@ -899,7 +934,7 @@ impl Host {
                 depth_slice: None,
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.render_cache.depth_texture.as_ref().unwrap().2,
+                view: depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Store,
