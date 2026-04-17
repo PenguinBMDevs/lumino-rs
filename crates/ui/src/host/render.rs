@@ -216,34 +216,47 @@ impl Host {
         let c_bk = theme.black_key_color();
         let c_bar = theme.bar_line_color();
         let c_beat = theme.beat_line_color();
+        let c_half = theme.half_beat_line_color();
         let c_grid = theme.grid_line_color();
-        let c_kl = theme.border_color();
+        let palette = theme.extended_palette().background;
+        let c_kl = if theme.is_light() {
+            palette.strong.color
+        } else {
+            palette.weak.color
+        };
 
         let bg_color = [c_bg.r as f64, c_bg.g as f64, c_bg.b as f64, c_bg.a as f64];
+        let ppq = self.root.editor.state.ppq;
+        let keyboard_width = self.root.editor.state.keyboard_width;
+        let ruler_height = self.root.editor.state.ruler_height;
+        let max_key_index = (self.root.editor.state.visible_key_count.saturating_sub(1)) as f32;
         let params = RenderParams {
             viewport_size: (physical_size.width, physical_size.height),
             logical_size: (viewport_size.width, viewport_size.height),
             scale_factor: self.viewport.scale_factor() as f32,
             scroll,
             zoom,
-            keyboard_width: 60.0,
-            ruler_height: 30.0,
+            keyboard_width,
+            ruler_height,
             background_color: bg_color,
             color_bg: [c_bg.r, c_bg.g, c_bg.b, c_bg.a],
             color_bg_black_key: [c_bk.r, c_bk.g, c_bk.b, c_bk.a],
             color_bar: [c_bar.r, c_bar.g, c_bar.b, c_bar.a],
             color_beat: [c_beat.r, c_beat.g, c_beat.b, c_beat.a],
+            color_half_beat: [c_half.r, c_half.g, c_half.b, c_half.a],
             color_grid: [c_grid.r, c_grid.g, c_grid.b, c_grid.a],
             color_key_line: [c_kl.r, c_kl.g, c_kl.b, c_kl.a],
             grid_instances,
-            note_instances: vec![], // will be passed via buffer or we can just pass them? Wait, note buffer is used for zero copy, so we shouldn't pass instances here. But for the sake of fixing the error, I'll put empty vec here. Wait, `note_instances` is used in RenderParams! We shouldn't put them in params if we use double buffer. Let me fix the params logic in `WgpuRenderThread`.
+            note_instances: vec![],
             ruler_instances,
             keyboard_instances,
-            ticks_per_measure: 1920,
-            ticks_per_beat: 480,
+            ticks_per_measure: (ppq as u32) * 4,
+            ticks_per_beat: ppq as u32,
             regenerate_grid: false,
             canvas_offset: (canvas_offset.x, canvas_offset.y),
             canvas_size: (canvas_size.x, canvas_size.y),
+            ppq: ppq as f32,
+            max_key_index,
         };
 
         // 发送渲染参数到 WGPU 线程（非阻塞）
@@ -723,9 +736,17 @@ impl Host {
             let c_bk = theme.black_key_color();
             let c_bar = theme.bar_line_color();
             let c_beat = theme.beat_line_color();
+            let c_half = theme.half_beat_line_color();
             let c_grid = theme.grid_line_color();
-            let c_kl = theme.border_color();
+            let palette = theme.extended_palette().background;
+            let c_kl = if theme.is_light() {
+                palette.strong.color
+            } else {
+                palette.weak.color
+            };
 
+            let max_key_index = (editor.state.visible_key_count.saturating_sub(1)) as f32;
+            let canvas_offset = (editor.canvas_offset.x, editor.canvas_offset.y);
             self.grid_renderer.prepare(
                 &[], // CPU instances deprecated
                 &gfx.device,
@@ -741,8 +762,13 @@ impl Host {
                 [c_bk.r, c_bk.g, c_bk.b, c_bk.a],
                 [c_bar.r, c_bar.g, c_bar.b, c_bar.a],
                 [c_beat.r, c_beat.g, c_beat.b, c_beat.a],
+                [c_half.r, c_half.g, c_half.b, c_half.a],
                 [c_grid.r, c_grid.g, c_grid.b, c_grid.a],
                 [c_kl.r, c_kl.g, c_kl.b, c_kl.a],
+                editor.state.ppq as f32,
+                max_key_index,
+                canvas_offset.0,
+                canvas_offset.1,
             );
         }
 
