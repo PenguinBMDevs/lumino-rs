@@ -19,6 +19,11 @@ pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Geometry
             - editor.state.scroll_x
     };
 
+    // 如果指示线位置在钢琴键盘区域内（左侧），则不绘制
+    if view_x < editor.state.keyboard_width {
+        return frame.into_geometry();
+    }
+
     // 计算绘制区域（从标尺底部到画布底部）
     let start_y = 0.0;
     let end_y = bounds.height;
