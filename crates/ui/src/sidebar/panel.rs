@@ -4,7 +4,7 @@ use iced_widget::{button, column, container, row, scrollable, space, text};
 use crate::{
     Element, Theme,
     resources::icon::{self, Icon},
-    sidebar::{Event, Route, Track},
+    sidebar::{Event, Route, Track, RESIZE_HANDLE_WIDTH},
     window,
 };
 
@@ -13,8 +13,12 @@ pub fn view<'a>(
     tracks: &'a [Track],
     selected_track: usize,
     add_track_menu_open: bool,
-    window: &window::Window,
+    panel_width: f32,
+    is_resizing: bool,
+    window: &'a window::Window,
 ) -> Element<'a> {
+    let palette = window.theme.extended_palette();
+
     let content: Element<'a> = match route {
         Route::File => {
             let mut col = column![].spacing(8).padding(8);
@@ -309,12 +313,36 @@ pub fn view<'a>(
         _ => container(space()).into(),
     };
 
-    container(content)
-        .width(200)
+    // 调整大小手柄
+    let resize_handle = iced_widget::mouse_area(
+        container(space().width(Length::Fixed(RESIZE_HANDLE_WIDTH)))
+            .height(Length::Fill)
+            .style(move |_theme: &Theme| {
+                container::Style::default().background(if is_resizing {
+                    palette.primary.strong.color
+                } else {
+                    palette.background.weakest.color
+                })
+            }),
+    )
+    .interaction(iced_core::mouse::Interaction::ResizingHorizontally)
+    .on_press(Event::resize_drag_started())
+    .on_release(Event::resize_drag_ended());
+
+    // 面板内容 + 调整手柄（手柄在右侧）
+    let panel_with_handle = row![
+        container(content)
+            .width(Length::Fixed(panel_width - RESIZE_HANDLE_WIDTH))
+            .height(Length::Fill)
+            .style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                container::Style::default().background(palette.background.weakest.color)
+            }),
+        resize_handle,
+    ];
+
+    container(panel_with_handle)
+        .width(Length::Fixed(panel_width))
         .height(Length::Fill)
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            container::Style::default().background(palette.background.weakest.color)
-        })
         .into()
 }

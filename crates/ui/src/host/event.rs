@@ -5,7 +5,7 @@ use iced_winit::{conversion, winit};
 use iced_core::mouse;
 
 use crate::host::{Host, types::convert_touch_to_mouse};
-use crate::{message, toolbar, window};
+use crate::{message, sidebar, toolbar, window};
 
 /// 检查是否按下了 Ctrl 或 Command（macOS）
 fn is_ctrl_or_cmd_pressed(modifiers: winit::keyboard::ModifiersState) -> bool {
@@ -59,6 +59,19 @@ impl Host {
             self.ui_dirty = true;
             self.window.request_redraw();
         }
+
+        // 如果正在调整侧边栏宽度，更新侧边栏宽度
+        if self.root.sidebar.is_resizing() {
+            self.root.sidebar.update_resize_position(logical_pos.x);
+            // 同步更新编辑器的画布偏移
+            let sidebar_width = self.root.sidebar.width() as f32;
+            let current_offset = self.root.editor.canvas_offset;
+            self.root
+                .editor
+                .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset.y));
+            self.ui_dirty = true;
+            self.window.request_redraw();
+        }
     }
 
     /// 处理窗口事件
@@ -99,6 +112,16 @@ impl Host {
                 {
                     self.is_toolbar_resizing = false;
                     self.root.toolbar.end_resize();
+                    self.ui_dirty = true;
+                    self.window.request_redraw();
+                }
+
+                // 全局监听鼠标释放事件，结束侧边栏拖拽状态
+                if *button == winit::event::MouseButton::Left
+                    && *state == ElementState::Released
+                    && self.root.sidebar.is_resizing()
+                {
+                    self.root.sidebar.end_resize();
                     self.ui_dirty = true;
                     self.window.request_redraw();
                 }
@@ -226,6 +249,17 @@ impl Host {
             message::Message::Toolbar(toolbar::Event::ResizeDragEnded) => {
                 self.is_toolbar_resizing = false;
                 self.root.toolbar.end_resize();
+                return true;
+            }
+            // 处理侧边栏调整大小事件
+            message::Message::Sidebar(sidebar::Event::ResizeDragStarted(_)) => {
+                if let Some(pos) = self.cursor_position {
+                    self.root.sidebar.start_resize(pos.x);
+                }
+                return true; // 侧边栏大小改变需要 UI 重建
+            }
+            message::Message::Sidebar(sidebar::Event::ResizeDragEnded) => {
+                self.root.sidebar.end_resize();
                 return true;
             }
             _ => {}
