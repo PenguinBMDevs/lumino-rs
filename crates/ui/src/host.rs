@@ -132,6 +132,9 @@ pub struct Host {
     pub(crate) use_separate_render_thread: bool,
     /// 是否已经渲染过 UI（用于首次渲染缓存判断）
     pub(crate) has_rendered_ui: bool,
+    /// 上次渲染时的光标状态（用于检测光标移动，确保鼠标指针样式更新）
+    #[allow(dead_code)]
+    pub(crate) last_render_cursor: iced_core::mouse::Cursor,
 
     // WGPU 资源（为离屏渲染保留）
     pub(crate) device: wgpu::Device,
@@ -209,6 +212,7 @@ impl Host {
             note_events_tx: None,
             use_separate_render_thread: false,
             has_rendered_ui: false,
+            last_render_cursor: iced_core::mouse::Cursor::Unavailable,
             device: gfx.device.clone(),
             queue: gfx.queue.clone(),
             format: gfx.format,
@@ -279,6 +283,7 @@ impl Host {
             note_events_tx: None,
             use_separate_render_thread: false,
             has_rendered_ui: false,
+            last_render_cursor: iced_core::mouse::Cursor::Unavailable,
             device: gfx.device.clone(),
             queue: gfx.queue.clone(),
             format: gfx.format,
