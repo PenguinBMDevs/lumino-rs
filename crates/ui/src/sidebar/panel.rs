@@ -1,5 +1,5 @@
 use iced_core::{Alignment, Length, Padding};
-use iced_widget::{button, column, container, row, space, text};
+use iced_widget::{button, column, container, row, scrollable, space, text};
 
 use crate::{
     Element, Theme,
@@ -297,7 +297,14 @@ pub fn view<'a>(
                 col = col.push(add_track_container);
             }
 
-            container(col).into()
+            // 使用 scrollable 包裹音轨列表，支持垂直滚动
+            let scrollable_content = scrollable(col)
+                .direction(scrollable::Direction::Vertical(
+                    scrollable::Scrollbar::new().width(8).scroller_width(6),
+                ))
+                .height(Length::Fill);
+
+            container(scrollable_content).into()
         }
         _ => container(space()).into(),
     };

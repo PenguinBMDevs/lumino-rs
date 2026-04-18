@@ -149,24 +149,6 @@ impl Host {
             return;
         }
 
-        // 优化：如果只有纯输入事件（鼠标移动、光标进入/离开），且没有鼠标按钮按下，跳过UI重建
-        // 这些事件只需要更新光标位置，不需要处理UI交互
-        // 当鼠标拖拽时（按钮按下），is_mouse_pressed 为 true，所以不会被跳过
-        let is_pure_input = self.events.iter().all(|event| {
-            matches!(
-                event,
-                iced_core::Event::Mouse(mouse::Event::CursorMoved { .. })
-                    | iced_core::Event::Mouse(mouse::Event::CursorEntered)
-                    | iced_core::Event::Mouse(mouse::Event::CursorLeft)
-            )
-        });
-
-        if is_pure_input && !self.is_toolbar_resizing && !self.is_mouse_pressed {
-            puffin::profile_scope!("skip_ui_rebuild");
-            self.events.clear();
-            return;
-        }
-
         // 临时取出缓存以避免借用冲突
         let cache = std::mem::take(&mut self.cache);
 
