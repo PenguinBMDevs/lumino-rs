@@ -678,9 +678,7 @@ impl Host {
         self.renderer
             .present(None, frame.texture.format(), texture_view, &self.viewport);
 
-        // 处理消息（在 interface 被释放之后）
-        // 无论菜单是否打开，都必须检查状态变化并设置 ui_dirty，
-        // 否则菜单关闭后新状态无法触发重绘
+        // 处理消息（在 interface 被释放之后，避免借用冲突）
         let mut has_state_change = false;
         for message in messages {
             if self.process_message(message) {
@@ -688,6 +686,7 @@ impl Host {
             }
         }
 
+        // 如果状态有变更，标记 UI 需要重绘并请求下一帧
         if has_state_change {
             self.ui_dirty = true;
             self.window.request_redraw();
