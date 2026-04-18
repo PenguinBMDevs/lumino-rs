@@ -1,0 +1,78 @@
+/// 琴键实例数据
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct KeyInstance {
+    /// 位置 (x, y)
+    pub position: [f32; 2],
+    /// 大小 (width, height)
+    pub size: [f32; 2],
+    /// 颜色 (r, g, b, a)
+    pub color: [f32; 4],
+    /// 是否黑键 (0.0 = 白键, 1.0 = 黑键)
+    pub is_black: f32,
+    /// 键索引
+    pub key_index: f32,
+    /// 填充
+    pub _padding: [f32; 2],
+}
+
+impl KeyInstance {
+    pub fn new(
+        position: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        is_black: bool,
+        key_index: u16,
+    ) -> Self {
+        Self {
+            position,
+            size,
+            color,
+            is_black: if is_black { 1.0 } else { 0.0 },
+            key_index: key_index as f32,
+            _padding: [0.0; 2],
+        }
+    }
+}
+
+/// 键盘视口 Uniform
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct KeyboardViewportUniform {
+    /// 视口大小
+    pub viewport_size: [f32; 2],
+    /// 键盘宽度
+    pub keyboard_width: f32,
+    /// 时间轴高度
+    pub ruler_height: f32,
+    /// 滚动位置 Y
+    pub scroll_y: f32,
+    /// 缩放 Y
+    pub zoom_y: f32,
+    /// 可见键数量
+    pub visible_key_count: f32,
+    /// 填充
+    pub _padding: [f32; 2],
+}
+
+impl KeyboardViewportUniform {
+    pub fn new(
+        viewport_width: f32,
+        viewport_height: f32,
+        keyboard_width: f32,
+        ruler_height: f32,
+        scroll_y: f32,
+        zoom_y: f32,
+        visible_key_count: u16,
+    ) -> Self {
+        Self {
+            viewport_size: [viewport_width, viewport_height],
+            keyboard_width,
+            ruler_height,
+            scroll_y,
+            zoom_y,
+            visible_key_count: visible_key_count as f32,
+            _padding: [0.0; 2],
+        }
+    }
+}

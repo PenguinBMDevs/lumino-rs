@@ -20,6 +20,7 @@ impl PlaybackHandler {
 
         if let Some(manager) = &mut root.playback_manager {
             manager.play();
+            root.toolbar.is_playing = true;
             tracing::info!("Root: 开始播放");
         }
     }
@@ -27,6 +28,7 @@ impl PlaybackHandler {
     fn handle_pause(&self, root: &mut Root) {
         if let Some(manager) = &mut root.playback_manager {
             manager.pause();
+            root.toolbar.is_playing = false;
             tracing::info!("Root: 暂停播放");
         }
     }
@@ -34,6 +36,7 @@ impl PlaybackHandler {
     fn handle_stop(&self, root: &mut Root) {
         if let Some(manager) = &mut root.playback_manager {
             manager.stop();
+            root.toolbar.is_playing = false;
             root.editor.playback_position = 0.0;
             tracing::info!("Root: 停止播放");
         }

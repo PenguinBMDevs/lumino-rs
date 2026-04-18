@@ -384,6 +384,7 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                                 let new_scroll = (start_scroll + scroll_ratio * actual_max_scroll)
                                     .clamp(0.0, actual_max_scroll);
                                 shell.publish((self.on_scroll)(new_scroll));
+                                shell.request_redraw();
                             }
                         }
                         ScrollbarState::DraggingEdge {
@@ -410,6 +411,7 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                                 let new_zoom = start_zoom / ratio;
                                 let fixed_ratio = if edge == Edge::End { 0.0 } else { 1.0 };
                                 shell.publish((self.on_zoom)(new_zoom, fixed_ratio));
+                                shell.request_redraw();
                             }
                         }
                         _ => {

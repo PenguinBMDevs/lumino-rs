@@ -16,8 +16,12 @@ pub struct GridCameraUniform {
     pub color_bg_black_key: [f32; 4],
     pub color_bar: [f32; 4],
     pub color_beat: [f32; 4],
+    pub color_half_beat: [f32; 4],
     pub color_grid: [f32; 4],
     pub color_key_line: [f32; 4],
+    pub ppq: f32,
+    pub max_key_index: f32,
+    pub canvas_offset: [f32; 2], // (offset_x, offset_y)
 }
 
 impl GridCameraUniform {
@@ -35,8 +39,13 @@ impl GridCameraUniform {
         color_bg_black_key: [f32; 4],
         color_bar: [f32; 4],
         color_beat: [f32; 4],
+        color_half_beat: [f32; 4],
         color_grid: [f32; 4],
         color_key_line: [f32; 4],
+        ppq: f32,
+        max_key_index: f32,
+        canvas_offset_x: f32,
+        canvas_offset_y: f32,
     ) -> Self {
         Self {
             viewport_size: [viewport_width, viewport_height],
@@ -47,8 +56,12 @@ impl GridCameraUniform {
             color_bg_black_key,
             color_bar,
             color_beat,
+            color_half_beat,
             color_grid,
             color_key_line,
+            ppq,
+            max_key_index,
+            canvas_offset: [canvas_offset_x, canvas_offset_y],
         }
     }
 }
@@ -171,6 +184,11 @@ impl GridRenderer {
                 [0.2, 0.2, 0.2, 1.0],
                 [0.15, 0.15, 0.15, 1.0],
                 [0.15, 0.15, 0.15, 1.0],
+                [0.15, 0.15, 0.15, 1.0],
+                1920.0,
+                127.0,
+                0.0,
+                0.0,
             )]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -210,8 +228,13 @@ impl GridRenderer {
         color_bg_black_key: [f32; 4],
         color_bar: [f32; 4],
         color_beat: [f32; 4],
+        color_half_beat: [f32; 4],
         color_grid: [f32; 4],
         color_key_line: [f32; 4],
+        ppq: f32,
+        max_key_index: f32,
+        canvas_offset_x: f32,
+        canvas_offset_y: f32,
     ) {
         puffin::profile_function!();
         // 更新视口 uniform
@@ -228,8 +251,13 @@ impl GridRenderer {
             color_bg_black_key,
             color_bar,
             color_beat,
+            color_half_beat,
             color_grid,
             color_key_line,
+            ppq,
+            max_key_index,
+            canvas_offset_x,
+            canvas_offset_y,
         );
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[viewport]));
     }

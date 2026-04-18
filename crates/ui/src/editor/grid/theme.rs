@@ -98,37 +98,58 @@ impl ThemeExt for Theme {
     }
 
     fn bar_line_color(&self) -> iced_core::Color {
-        let palette = self.extended_palette().background;
         if self.is_light() {
-            palette.strongest.color
+            iced_core::Color {
+                a: 0.8,
+                ..iced_core::Color::BLACK
+            }
         } else {
-            palette.base.color
+            iced_core::Color {
+                a: 0.8,
+                ..iced_core::Color::WHITE
+            }
         }
     }
 
     fn beat_line_color(&self) -> iced_core::Color {
-        let palette = self.extended_palette().background;
         if self.is_light() {
-            palette.strong.color
+            iced_core::Color {
+                a: 0.4,
+                ..iced_core::Color::BLACK
+            }
         } else {
-            palette.weak.color
+            iced_core::Color {
+                a: 0.4,
+                ..iced_core::Color::WHITE
+            }
         }
     }
 
     fn half_beat_line_color(&self) -> iced_core::Color {
-        let palette = self.extended_palette().background;
         if self.is_light() {
-            palette.strong.color
+            iced_core::Color {
+                a: 0.2,
+                ..iced_core::Color::BLACK
+            }
         } else {
-            palette.weaker.color
+            iced_core::Color {
+                a: 0.2,
+                ..iced_core::Color::WHITE
+            }
         }
     }
 
     fn grid_line_color(&self) -> iced_core::Color {
-        let palette = self.extended_palette().background;
-        iced_core::Color {
-            a: 0.1,
-            ..palette.weaker.color
+        if self.is_light() {
+            iced_core::Color {
+                a: 0.1,
+                ..iced_core::Color::BLACK
+            }
+        } else {
+            iced_core::Color {
+                a: 0.1,
+                ..iced_core::Color::WHITE
+            }
         }
     }
 }

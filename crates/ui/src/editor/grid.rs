@@ -164,7 +164,14 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
                 )));
             }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                return self.handle_wheel_scroll(delta);
+                // 只有当鼠标在 Canvas 区域内时才处理滚轮事件
+                if let Some(position) = cursor.position() {
+                    let local_pos =
+                        iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
+                    if self.editor.is_inside_canvas(local_pos) {
+                        return self.handle_wheel_scroll(delta);
+                    }
+                }
             }
             _ => {}
         }

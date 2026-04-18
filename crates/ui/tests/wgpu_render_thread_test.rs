@@ -16,10 +16,12 @@ fn test_render_params_default() {
     assert!(params.grid_instances.is_empty());
     assert!(params.ruler_instances.is_empty());
     assert!(params.keyboard_instances.is_empty());
-    assert_eq!(params.ticks_per_measure, 1920);
-    assert_eq!(params.ticks_per_beat, 480);
+    assert_eq!(params.ticks_per_measure, 7680);
+    assert_eq!(params.ticks_per_beat, 1920);
     assert_eq!(params.canvas_offset, (0.0, 0.0));
     assert_eq!(params.canvas_size, (800.0, 600.0));
+    assert_eq!(params.ppq, 1920.0);
+    assert_eq!(params.max_key_index, 127.0);
 }
 
 /// 测试 RenderParams 克隆
@@ -34,6 +36,13 @@ fn test_render_params_clone() {
         keyboard_width: 80.0,
         ruler_height: 40.0,
         background_color: [0.0, 0.0, 0.0, 1.0],
+        color_bg: [0.1, 0.1, 0.1, 1.0],
+        color_bg_black_key: [0.07, 0.07, 0.07, 1.0],
+        color_bar: [0.3, 0.3, 0.3, 1.0],
+        color_beat: [0.2, 0.2, 0.2, 1.0],
+        color_half_beat: [0.15, 0.15, 0.15, 1.0],
+        color_grid: [0.15, 0.15, 0.15, 1.0],
+        color_key_line: [0.15, 0.15, 0.15, 1.0],
         grid_instances: Vec::new(),
         note_instances: Vec::new(),
         ruler_instances: Vec::new(),
@@ -43,6 +52,8 @@ fn test_render_params_clone() {
         regenerate_grid: true,
         canvas_offset: (10.0, 20.0),
         canvas_size: (1000.0, 800.0),
+        ppq: 960.0,
+        max_key_index: 127.0,
     };
 
     let cloned = params.clone();

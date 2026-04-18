@@ -2,49 +2,21 @@ use iced_widget::{container, row};
 
 mod panel;
 mod route;
+pub mod event;
 
-use crate::{Element, Message, resources::icon, window};
+pub use event::Event;
+use crate::{Element, resources::icon, window};
 
-#[derive(Debug, Clone)]
-pub enum Event {
-    RouteUpdated(Route),
-    PanelToggled(Route),
-    TrackSelected(usize),
-    TrackMuteToggled(usize),
-    TrackOnionSkinToggled(usize),
-    AddTrack,
-    AddTrackMenuToggled,
-}
-
-impl Event {
-    pub const fn route_updated(r: Route) -> Message {
-        Message::Sidebar(Self::RouteUpdated(r))
-    }
-
-    pub const fn panel_toggled(r: Route) -> Message {
-        Message::Sidebar(Self::PanelToggled(r))
-    }
-
-    pub const fn track_selected(id: usize) -> Message {
-        Message::Sidebar(Self::TrackSelected(id))
-    }
-
-    pub const fn track_mute_toggled(id: usize) -> Message {
-        Message::Sidebar(Self::TrackMuteToggled(id))
-    }
-
-    pub const fn track_onion_skin_toggled(id: usize) -> Message {
-        Message::Sidebar(Self::TrackOnionSkinToggled(id))
-    }
-
-    pub const fn add_track() -> Message {
-        Message::Sidebar(Self::AddTrack)
-    }
-
-    pub const fn add_track_menu_toggled() -> Message {
-        Message::Sidebar(Self::AddTrackMenuToggled)
-    }
-}
+/// 路由栏宽度（固定）
+pub const ROUTE_BAR_WIDTH: f32 = 48.0;
+/// 面板默认宽度
+pub const DEFAULT_PANEL_WIDTH: f32 = 200.0;
+/// 面板最小宽度
+pub const MIN_PANEL_WIDTH: f32 = 150.0;
+/// 面板最大宽度
+pub const MAX_PANEL_WIDTH: f32 = 400.0;
+/// 调整大小手柄宽度
+pub const RESIZE_HANDLE_WIDTH: f32 = 6.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Route {
@@ -82,6 +54,14 @@ pub struct Sidebar {
     pub tracks: Vec<Track>,
     pub selected_track: usize,
     pub add_track_menu_open: bool,
+    /// 面板宽度（默认 200）
+    pub panel_width: f32,
+    /// 是否正在拖拽调整宽度
+    is_resizing: bool,
+    /// 拖拽开始时的鼠标 X 坐标
+    resize_start_x: f32,
+    /// 拖拽开始时的面板宽度
+    resize_start_width: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -117,17 +97,23 @@ impl Sidebar {
             ],
             selected_track: 0,
             add_track_menu_open: false,
+            panel_width: DEFAULT_PANEL_WIDTH,
+            is_resizing: false,
+            resize_start_x: 0.0,
+            resize_start_width: DEFAULT_PANEL_WIDTH,
         }
     }
 
     /// 返回完整的侧边栏视图（包括路由图标栏和面板）
-    pub fn view(&self, window: &window::Window) -> Element<'_> {
+    pub fn view<'a>(&'a self, window: &'a window::Window) -> Element<'a> {
         let panel = if self.panel_visible {
             panel::view(
                 self.panel_route,
                 &self.tracks,
                 self.selected_track,
                 self.add_track_menu_open,
+                self.panel_width,
+                self.is_resizing,
                 window,
             )
         } else {
@@ -140,7 +126,7 @@ impl Sidebar {
     }
 
     pub fn width(&self) -> u32 {
-        48 + if self.panel_visible { 200 } else { 0 }
+        (ROUTE_BAR_WIDTH + if self.panel_visible { self.panel_width } else { 0.0 }) as u32
     }
 
     pub fn update(&mut self, event: Event) -> bool {
@@ -187,8 +173,48 @@ impl Sidebar {
             AddTrackMenuToggled => {
                 self.add_track_menu_open = !self.add_track_menu_open;
             }
+            ResizeDragStarted(_) => {
+                self.is_resizing = true;
+            }
+            ResizeDragged(_) => {
+                // 拖拽中的位置更新由 Host 通过 update_resize_position 处理
+            }
+            ResizeDragEnded => {
+                self.is_resizing = false;
+            }
         }
         self.panel_visible != prev_visible
+    }
+
+    /// 检查是否正在调整大小
+    pub fn is_resizing(&self) -> bool {
+        self.is_resizing
+    }
+
+    /// 开始调整大小，记录起始鼠标 X 坐标
+    pub fn start_resize(&mut self, cursor_x: f32) {
+        self.is_resizing = true;
+        self.resize_start_x = cursor_x;
+        self.resize_start_width = self.panel_width;
+    }
+
+    /// 更新拖拽位置（从外部传入当前鼠标 X 坐标）
+    pub fn update_resize_position(&mut self, cursor_x: f32) {
+        if self.is_resizing {
+            let delta_x = cursor_x - self.resize_start_x;
+            let new_width = self.resize_start_width + delta_x;
+            self.panel_width = new_width.clamp(MIN_PANEL_WIDTH, MAX_PANEL_WIDTH);
+        }
+    }
+
+    /// 结束调整大小
+    pub fn end_resize(&mut self) {
+        self.is_resizing = false;
+    }
+
+    /// 获取当前面板宽度
+    pub fn panel_width(&self) -> f32 {
+        self.panel_width
     }
 }
 

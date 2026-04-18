@@ -10,8 +10,12 @@ struct CameraUniform {
     color_bg_black_key: vec4<f32>,
     color_bar: vec4<f32>,
     color_beat: vec4<f32>,
+    color_half_beat: vec4<f32>,
     color_grid: vec4<f32>,
     color_key_line: vec4<f32>,
+    ppq: f32,
+    max_key_index: f32,
+    canvas_offset: vec2<f32>,
 };
 
 @group(0) @binding(0)
@@ -24,12 +28,11 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
-    // 画一个覆盖全屏幕的三角形/四边形 (0,0) to (1,1) 在NDC为(-1,1)到(1,-1)
     var pos = array<vec2<f32>, 4>(
-        vec2<f32>(-1.0, -1.0), // 左下
-        vec2<f32>( 1.0, -1.0), // 右下
-        vec2<f32>(-1.0,  1.0), // 左上
-        vec2<f32>( 1.0,  1.0)  // 右上
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>( 1.0, -1.0),
+        vec2<f32>(-1.0,  1.0),
+        vec2<f32>( 1.0,  1.0)
     );
 
     var uv = array<vec2<f32>, 4>(
@@ -49,7 +52,6 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
 fn is_black_key(key: i32) -> bool {
     let k = key % 12;
-    // 假设 0 是 C。黑键是 1(C#), 3(D#), 6(F#), 8(G#), 10(A#)
     let mk = k;
     if mk < 0 {
         let abs_k = (12 + mk) % 12;
@@ -64,20 +66,17 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let screen_x = input.uv.x * camera.viewport_size.x;
     let screen_y = input.uv.y * camera.viewport_size.y;
 
-    // 排除键盘和标尺区域 (假设由其他 shader 渲染，网格只负责工作区，这里简单 clip 或返回背景)
+    // 排除键盘和标尺区域
     if screen_x < camera.margins.x || screen_y < camera.margins.y {
         discard;
     }
 
-    // 将屏幕坐标转换为世界坐标
-    // X轴: (screen_x - margin_x + scroll_x) / zoom_x = tick
-    let world_tick = (screen_x - camera.margins.x + camera.camera_pos.x) / camera.zoom.x;
-    
-    // Y轴: (screen_y - margin_y + scroll_y) / zoom_y = key (向下为小)
-    // 假设最高键的索引，原代码为 key = max_key - y / zoom_y
-    let world_y = (screen_y - camera.margins.y + camera.camera_pos.y) / camera.zoom.y;
-    let max_key: f32 = 127.0;
-    let key_f32 = max_key - world_y;
+    // === Y轴坐标计算 - 与 note.wgsl 完全对齐 ===
+    // note.wgsl: screen_y = (max_key_index - key) * zoom_y - scroll_y + ruler_height + canvas_offset_y
+    // 反推: key = max_key_index - (screen_y - ruler_height - canvas_offset_y + scroll_y) / zoom_y
+    let local_y = screen_y - camera.margins.y - camera.canvas_offset.y + camera.camera_pos.y;
+    let world_y = local_y / camera.zoom.y;
+    let key_f32 = camera.max_key_index - world_y;
     let key_int = i32(floor(key_f32));
 
     // 计算背景色 (黑白键)
@@ -86,41 +85,59 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         bg_color = camera.color_bg_black_key;
     }
 
-    let ticks_per_measure: f32 = 1920.0;
-    let ticks_per_beat: f32 = 480.0;
-    let grid_gap: f32 = 120.0; // 1/16音符
+    // === X轴坐标计算 - 与 note.wgsl 完全对齐 ===
+    // note.wgsl: screen_x = tick * zoom_x - scroll_x + keyboard_width + canvas_offset_x
+    // 反推: tick = (screen_x - keyboard_width - canvas_offset_x + scroll_x) / zoom_x
+    let world_tick = (screen_x - camera.margins.x - camera.canvas_offset.x + camera.camera_pos.x) / camera.zoom.x;
 
-    let line_width = 1.0;
+    let ticks_per_measure = camera.ppq * 4.0;
+    let ticks_per_beat = camera.ppq;
+    let ticks_per_half_beat = camera.ppq / 2.0;
+    let ticks_per_grid = camera.ppq / 4.0;
 
-    // Y轴网格线 (琴键分隔线)
-    // 在屏幕空间中，每个键的高度是 camera.zoom.y
-    let y_mod = (screen_y - camera.margins.y + camera.camera_pos.y) % camera.zoom.y;
-    if y_mod < line_width {
+    let base_width = 1.0;
+
+    // Y轴网格线 (琴键分隔线) - 检测 key_index 是否为整数
+    let key_frac = fract(key_f32);
+    let dist_key = min(key_frac, 1.0 - key_frac);
+    if dist_key * camera.zoom.y < base_width {
         return mix(bg_color, camera.color_key_line, 0.8);
     }
 
-    // X轴网格线
-    // 检查是否靠近小节线
-    let tick_mod_measure = world_tick % ticks_per_measure;
-    let dist_measure_px = tick_mod_measure * camera.zoom.x;
-    if dist_measure_px < line_width || (ticks_per_measure * camera.zoom.x - dist_measure_px) < line_width {
+    // X轴网格线 - 检测 tick 是否在网格边界上
+    
+    // 小节线（最粗）
+    let measure_frac = fract(world_tick / ticks_per_measure);
+    let dist_measure = min(measure_frac, 1.0 - measure_frac) * ticks_per_measure * camera.zoom.x;
+    if dist_measure < base_width * 2.0 {
         return camera.color_bar;
     }
 
-    // 检查是否靠近拍子线
-    let tick_mod_beat = world_tick % ticks_per_beat;
-    let dist_beat_px = tick_mod_beat * camera.zoom.x;
-    if dist_beat_px < line_width || (ticks_per_beat * camera.zoom.x - dist_beat_px) < line_width {
-        return mix(bg_color, camera.color_beat, 0.8);
+    // 拍线 / 1/4分割线
+    let beat_frac = fract(world_tick / ticks_per_beat);
+    let dist_beat = min(beat_frac, 1.0 - beat_frac) * ticks_per_beat * camera.zoom.x;
+    if dist_beat < base_width * 1.5 {
+        // 跳过小节线位置（避免重叠）
+        if dist_measure >= base_width * 2.0 {
+            return mix(bg_color, camera.color_beat, 0.8);
+        }
     }
 
-    // 检查是否靠近细分网格线
-    let tick_mod_grid = world_tick % grid_gap;
-    let dist_grid_px = tick_mod_grid * camera.zoom.x;
-    if dist_grid_px < line_width || (grid_gap * camera.zoom.x - dist_grid_px) < line_width {
-        // 只有当 zoom 足够大时才显示细分网格，避免太密
-        if camera.zoom.x > 0.05 {
-            return mix(bg_color, camera.color_grid, 0.6);
+    // 1/8分割线（半拍线）
+    let half_frac = fract(world_tick / ticks_per_half_beat);
+    let dist_half = min(half_frac, 1.0 - half_frac) * ticks_per_half_beat * camera.zoom.x;
+    if dist_half < base_width {
+        if camera.zoom.x > 0.02 && dist_beat >= base_width * 1.5 {
+            return mix(bg_color, camera.color_half_beat, 0.7);
+        }
+    }
+
+    // 1/16细分网格线
+    let grid_frac = fract(world_tick / ticks_per_grid);
+    let dist_grid = min(grid_frac, 1.0 - grid_frac) * ticks_per_grid * camera.zoom.x;
+    if dist_grid < base_width * 0.5 {
+        if camera.zoom.x > 0.06 && dist_half >= base_width {
+            return mix(bg_color, camera.color_grid, 0.5);
         }
     }
 

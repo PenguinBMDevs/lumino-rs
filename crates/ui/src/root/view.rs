@@ -169,9 +169,15 @@ impl Root {
         // 琴键分隔线颜色
         let palette = self.window.theme.extended_palette().background;
         let key_line_color = if self.window.theme.is_light() {
-            palette.strong.color
+            iced_core::Color {
+                a: 0.2,
+                ..iced_core::Color::BLACK
+            }
         } else {
-            palette.weak.color
+            iced_core::Color {
+                a: 0.2,
+                ..iced_core::Color::WHITE
+            }
         };
 
         self.editor.update_grid_line_instances(
