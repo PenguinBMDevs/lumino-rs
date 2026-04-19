@@ -270,16 +270,31 @@ impl Editor {
             _ => return,
         };
 
+        let mut changed = false;
+
         if let Some(note) = self.notes.get_mut(note_index) {
             if let Some(t) = new_tick {
-                note.tick = t;
+                if (note.tick - t).abs() > f32::EPSILON {
+                    note.tick = t;
+                    changed = true;
+                }
             }
             if let Some(k) = new_key {
-                note.key = k;
+                if note.key != k {
+                    note.key = k;
+                    changed = true;
+                }
             }
             if let Some(l) = new_length {
-                note.length = l;
+                if (note.length - l).abs() > f32::EPSILON {
+                    note.length = l;
+                    changed = true;
+                }
             }
+        }
+
+        if changed {
+            self.note_index_dirty.set(true);
         }
     }
 

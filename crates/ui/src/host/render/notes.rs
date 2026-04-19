@@ -48,8 +48,7 @@ impl Host {
         );
 
         // 交换双缓冲区，使新数据对渲染线程可见
-        self.render_cache.note_instances_version =
-            self.render_cache.note_instances_buffer.swap();
+        self.render_cache.note_instances_version = self.render_cache.note_instances_buffer.swap();
     }
 
     /// 将音符添加到实例列表
