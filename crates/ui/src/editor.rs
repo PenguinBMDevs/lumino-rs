@@ -512,7 +512,10 @@ impl Editor {
                     }
 
                     // 获取索引（现在一定存在）
-                    let index = indices_map.get(&track_idx).unwrap();
+                    let Some(index) = indices_map.get(&track_idx) else {
+                        tracing::warn!("Note spatial index not found for track {}", track_idx);
+                        continue;
+                    };
 
                     let mut candidates = self.query_cache.borrow_mut();
                     index.update_query(

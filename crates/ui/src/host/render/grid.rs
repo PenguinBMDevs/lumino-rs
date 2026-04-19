@@ -73,8 +73,7 @@ impl Host {
 
             if y >= ruler_height && y <= viewport_height {
                 // 判断是否为黑键
-                let note_in_octave = key.rem_euclid(12);
-                let is_black = matches!(note_in_octave, 1 | 3 | 6 | 8 | 10);
+                let is_black = Host::is_black_key(key as isize);
 
                 let color = if is_black {
                     [0.15, 0.15, 0.15, 1.0]
@@ -119,8 +118,7 @@ impl Host {
                 continue;
             }
 
-            let note_in_octave = key_index.rem_euclid(12);
-            let is_black = matches!(note_in_octave, 1 | 3 | 6 | 8 | 10);
+            let is_black = Host::is_black_key(key_index);
 
             let color = if is_black {
                 [0.2, 0.2, 0.2, 1.0]

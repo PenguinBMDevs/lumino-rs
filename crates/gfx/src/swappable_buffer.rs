@@ -130,7 +130,10 @@ impl<T> MpscQueue<T> {
 
     /// 发送数据（非阻塞）
     pub fn send(&self, data: T) -> Result<(), T> {
-        let mut slot = self.slot.lock().unwrap();
+        let mut slot = match self.slot.lock() {
+            Ok(guard) => guard,
+            Err(_) => return Err(data),
+        };
         if slot.is_some() {
             // 槽位已满，丢弃旧数据
             return Err(data);
@@ -142,18 +145,21 @@ impl<T> MpscQueue<T> {
 
     /// 接收数据（阻塞）
     pub fn recv(&self) -> Option<T> {
-        let mut slot = self.slot.lock().unwrap();
+        let mut slot = self.slot.lock().ok()?;
         loop {
             if let Some(data) = slot.take() {
                 return Some(data);
             }
-            slot = self.signal.wait(slot).unwrap();
+            slot = match self.signal.wait(slot) {
+                Ok(guard) => guard,
+                Err(_) => return None,
+            };
         }
     }
 
     /// 尝试接收数据（非阻塞）
     pub fn try_recv(&self) -> Option<T> {
-        let mut slot = self.slot.lock().unwrap();
+        let mut slot = self.slot.lock().ok()?;
         slot.take()
     }
 }
