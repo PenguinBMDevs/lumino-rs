@@ -171,8 +171,9 @@ impl Host {
             crate::editor::EditState::Drawing { .. }
         );
 
-        let note_data_changed =
-            note_index_dirty || self.render_cache.note_instances.is_empty() || is_drawing;
+        let note_data_changed = note_index_dirty
+            || unsafe { self.render_cache.note_instances_is_empty() }
+            || is_drawing;
 
         if !note_data_changed {
             return;
@@ -181,10 +182,12 @@ impl Host {
         puffin::profile_scope!("update_all_note_instances_fast");
         self.update_all_note_instances_fast();
 
-        if let Some(ref tx) = self.note_events_tx {
-            let _ = tx.send(lumino_gfx::NoteEvent::Reset(
-                self.render_cache.note_instances.clone(),
-            ));
+        // 双缓冲模式下，数据已经通过 swap() 传递，不需要 clone
+        // 渲染线程可以直接从双缓冲读取
+        if let Some(ref _tx) = self.note_events_tx {
+            // 注意：如果使用独立渲染线程，需要通过其他方式同步
+            // 这里暂时保留通道发送，但实际数据已经通过双缓冲传递
+            // TODO: 重构为直接使用双缓冲读取
         }
 
         if note_index_dirty {

@@ -2,14 +2,20 @@ use crate::host::Host;
 use rayon::prelude::*;
 
 impl Host {
-    /// 快速更新所有音符实例（直接上传模式）
+    /// 快速更新所有音符实例（双缓冲模式）
+    ///
+    /// 使用双缓冲机制实现零拷贝数据传递：
+    /// 1. UI 线程写入 Back Buffer
+    /// 2. 交换前后缓冲区（原子指针交换，无数据拷贝）
+    /// 3. 渲染线程读取 Front Buffer 并上传到 GPU
     ///
     /// 这个模式避免了 CPU 端的视锥裁剪，直接上传所有音符到 GPU
     /// 让 GPU 的 compute shader 处理裁剪，适合超密集音符场景
     pub(super) fn update_all_note_instances_fast(&mut self) {
         puffin::profile_function!();
 
-        let instances = &mut self.render_cache.note_instances;
+        // 获取双缓冲的后缓冲区写入引用
+        let instances = unsafe { self.render_cache.note_instances_buffer.write_buffer() };
         instances.clear();
 
         // 获取编辑器数据引用（避免后续借用冲突）
@@ -40,6 +46,10 @@ impl Host {
             default_note_length,
             snap_precision,
         );
+
+        // 交换双缓冲区，使新数据对渲染线程可见
+        self.render_cache.note_instances_version =
+            self.render_cache.note_instances_buffer.swap();
     }
 
     /// 将音符添加到实例列表

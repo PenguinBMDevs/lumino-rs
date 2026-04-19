@@ -76,8 +76,8 @@ pub fn run_render_thread(
                 params,
             );
 
-            if let (Some(texture), Some(depth_view)) = (&current_texture, &depth_texture_view) {
-                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            if let (Some(texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
+                let _view = texture.create_view(&wgpu::TextureViewDescriptor::default());
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("offscreen_render_encoder"),
                 });

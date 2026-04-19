@@ -5,6 +5,8 @@ mod grid_renderer;
 mod keyboard_renderer;
 mod note_renderer;
 mod ruler_renderer;
+
+#[cfg(feature = "unstable-swappable-buffer")]
 mod swappable_buffer;
 
 pub use context::{Context, ContextError, Result};
@@ -15,4 +17,6 @@ pub use note_renderer::{
     CameraParams, CameraUniform, CullUniform, NoteInstance, NoteRenderer, RenderUniform,
 };
 pub use ruler_renderer::{RulerRenderer, RulerTickInstance, RulerViewportUniform};
+
+#[cfg(feature = "unstable-swappable-buffer")]
 pub use swappable_buffer::{AtomicSwappableBuffer, MpscQueue, RenderData, SwappableBuffer};

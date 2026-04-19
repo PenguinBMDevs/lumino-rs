@@ -44,7 +44,12 @@ impl<T: Clone> SwappableBuffer<T> {
     /// UI 线程：获取后缓冲区写入引用
     ///
     /// # Safety
-    /// 必须在 UI 线程调用，且同一时间只能有一个写入者
+    /// 必须在 UI 线程调用，且同一时间只能有一个写入者。
+    /// 使用内部可变性模式：通过原子指针从不可变引用获取可变访问。
+    #[expect(
+        clippy::mut_from_ref,
+        reason = "双缓冲设计需要内部可变性：通过原子指针安全地从 &self 获取 &mut Vec"
+    )]
     pub unsafe fn write_buffer(&self) -> &mut Vec<T> {
         let ptr = self.back.load(Ordering::Relaxed);
         unsafe { &mut *ptr }
@@ -62,8 +67,7 @@ impl<T: Clone> SwappableBuffer<T> {
         self.back.store(front_ptr, Ordering::Release);
 
         // 递增版本号
-        let new_version = self.version.fetch_add(1, Ordering::AcqRel) + 1;
-        new_version
+        self.version.fetch_add(1, Ordering::AcqRel) + 1
     }
 
     /// 渲染线程：获取前缓冲区读取引用
@@ -118,6 +122,12 @@ pub struct MpscQueue<T> {
     slot: std::sync::Mutex<Option<T>>,
     /// 有新数据的信号
     signal: std::sync::Condvar,
+}
+
+impl<T> Default for MpscQueue<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T> MpscQueue<T> {

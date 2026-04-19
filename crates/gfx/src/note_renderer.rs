@@ -1,10 +1,7 @@
-use wgpu::util::DeviceExt;
-
 pub mod types;
 
 pub use types::{
     CameraParams, CameraUniform, CullUniform, DrawIndirectArgs, NoteInstance, RenderUniform,
-    VERTEX_ATTRIBUTES,
 };
 
 // 子模块
