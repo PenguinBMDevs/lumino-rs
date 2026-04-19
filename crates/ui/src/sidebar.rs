@@ -137,6 +137,7 @@ impl Sidebar {
     pub fn update(&mut self, event: Event) -> bool {
         use Event::*;
         let prev_visible = self.panel_visible;
+        let prev_route = self.route;
         match event {
             RouteUpdated(r) => self.route = r,
             PanelToggled(r) => {
@@ -188,7 +189,8 @@ impl Sidebar {
                 self.is_resizing = false;
             }
         }
-        self.panel_visible != prev_visible
+        // 当面板可见性变化或路由变化时，都需要重新渲染
+        self.panel_visible != prev_visible || self.route != prev_route
     }
 
     /// 检查是否正在调整大小

@@ -123,8 +123,8 @@ impl Root {
                 true
             }
             Message::Sidebar(event) => {
-                self.handle_sidebar_event(event.clone());
-                true
+                // 返回 handle_sidebar_event 的结果，让调用者知道是否需要重新渲染
+                self.handle_sidebar_event(event.clone())
             }
             Message::EditorAction(action) => {
                 self.handle_editor_action(action.clone());
@@ -212,7 +212,7 @@ impl Root {
         }
     }
 
-    fn handle_sidebar_event(&mut self, event: sidebar::Event) {
+    fn handle_sidebar_event(&mut self, event: sidebar::Event) -> bool {
         // 先检查是否是音轨切换
         let track_selected_idx = if let sidebar::Event::TrackSelected(idx) = &event {
             Some(*idx)
@@ -223,7 +223,8 @@ impl Root {
         // 检查是否是洋葱皮开关
         let onion_skin_toggled = matches!(&event, sidebar::Event::TrackOnionSkinToggled(_));
 
-        self.sidebar.update(event);
+        // 更新 sidebar，获取是否需要重新渲染
+        let needs_redraw = self.sidebar.update(event);
 
         // 更新画布偏移
         let sidebar_width = self.sidebar.width() as f32;
@@ -245,6 +246,8 @@ impl Root {
                 ),
             ));
         }
+
+        needs_redraw
     }
 
     /// 处理编辑器动作
