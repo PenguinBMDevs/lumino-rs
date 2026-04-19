@@ -16,6 +16,9 @@ impl ToolbarHandler {
     }
 
     fn handle_toolbar_event(&self, root: &mut Root, event: crate::toolbar::Event) {
+        // 先让 toolbar 更新自身状态（包括自动滚动模式切换）
+        root.toolbar.update(event.clone());
+
         // 处理播放控制 - 直接执行，不通过消息循环
         self.handle_toolbar_playback(root, &event);
 
@@ -25,7 +28,7 @@ impl ToolbarHandler {
         // 同步精度设置
         self.sync_toolbar_precision(root, &event);
 
-        // 同步自动滚动模式
+        // 同步自动滚动模式（在 toolbar 更新之后）
         self.sync_auto_scroll_mode(root, &event);
 
         // 处理撤销/重做
@@ -33,8 +36,6 @@ impl ToolbarHandler {
 
         // 处理协作对话框
         self.handle_toolbar_collaboration(root, &event);
-
-        root.toolbar.update(event);
     }
 
     fn handle_toolbar_playback(&self, root: &mut Root, event: &crate::toolbar::Event) {

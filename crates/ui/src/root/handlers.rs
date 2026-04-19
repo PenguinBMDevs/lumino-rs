@@ -180,6 +180,31 @@ impl Root {
                         tracing::debug!("Root: 力度过滤阈值同步为 {}", val);
                     }
                 }
+                // 自动滚动配置变更，同步到编辑器
+                if let crate::settings::Event::AutoScrollFixedPositionChanged(value) = &event {
+                    if let Ok(val) = value.parse::<u32>() {
+                        let mut config = self.editor.auto_scroll_config().clone();
+                        config.fixed_indicator_position = val;
+                        self.editor.set_auto_scroll_config(config);
+                        tracing::debug!("Root: 自动滚动固定位置同步为 {}", val);
+                    }
+                }
+                if let crate::settings::Event::AutoScrollPageTriggerOffsetChanged(value) = &event {
+                    if let Ok(val) = value.parse::<u32>() {
+                        let mut config = self.editor.auto_scroll_config().clone();
+                        config.page_trigger_offset = val;
+                        self.editor.set_auto_scroll_config(config);
+                        tracing::debug!("Root: 自动滚动翻页触发偏移同步为 {}", val);
+                    }
+                }
+                if let crate::settings::Event::AutoScrollPageReturnPositionChanged(value) = &event {
+                    if let Ok(val) = value.parse::<u32>() {
+                        let mut config = self.editor.auto_scroll_config().clone();
+                        config.page_return_position = val;
+                        self.editor.set_auto_scroll_config(config);
+                        tracing::debug!("Root: 自动滚动翻页返回位置同步为 {}", val);
+                    }
+                }
                 true
             }
             Message::ToggleSettings | Message::Null => true,
