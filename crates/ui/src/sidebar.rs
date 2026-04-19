@@ -1,11 +1,11 @@
 use iced_widget::{container, row};
 
+pub mod event;
 mod panel;
 mod route;
-pub mod event;
 
-pub use event::Event;
 use crate::{Element, resources::icon, window};
+pub use event::Event;
 
 /// 路由栏宽度（固定）
 pub const ROUTE_BAR_WIDTH: f32 = 48.0;
@@ -126,7 +126,12 @@ impl Sidebar {
     }
 
     pub fn width(&self) -> u32 {
-        (ROUTE_BAR_WIDTH + if self.panel_visible { self.panel_width } else { 0.0 }) as u32
+        (ROUTE_BAR_WIDTH
+            + if self.panel_visible {
+                self.panel_width
+            } else {
+                0.0
+            }) as u32
     }
 
     pub fn update(&mut self, event: Event) -> bool {

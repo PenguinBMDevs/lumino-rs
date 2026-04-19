@@ -1,8 +1,11 @@
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
 use iced_wgpu::wgpu;
 
 use super::super::params::RenderParams;
-use crate::wgpu_render_thread::stats::RenderStats;
-use crate::wgpu_render_thread::wgpu_render_thread::CameraUniform;
+use super::super::stats::RenderStats;
+use lumino_gfx::{CameraParams, CameraUniform};
 
 /// 执行渲染通道
 #[allow(clippy::too_many_arguments)]
@@ -15,7 +18,6 @@ pub fn execute_render_pass(
     note_renderer: &mut lumino_gfx::NoteRenderer,
     keyboard_renderer: &mut lumino_gfx::KeyboardRenderer,
     ruler_renderer: &mut lumino_gfx::RulerRenderer,
-    device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) {
     let (Some(texture), Some(depth_view)) = (current_texture, depth_texture_view) else {
@@ -106,12 +108,6 @@ pub fn execute_render_pass(
             render_pass.set_scissor_rect(0, 0, width, height);
             ruler_renderer.draw(&mut render_pass, params.ruler_instances.len() as u32);
         }
-    }
-
-    // 提交渲染指令
-    {
-        puffin::profile_scope!("submit_queue");
-        queue.submit(std::iter::once(encoder.finish()));
     }
 }
 

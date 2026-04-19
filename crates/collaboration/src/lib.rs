@@ -4,9 +4,12 @@
  * 用于连接协作服务器，实现多人在线协作编辑
  */
 pub mod client;
+pub mod error;
 pub mod handlers;
 pub mod http;
 pub mod types;
+
+pub use error::{CollaborationError, Result};
 
 pub use client::{CollaborationClient, CollaborationEvent};
 pub use types::*;

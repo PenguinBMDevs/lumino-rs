@@ -56,3 +56,9 @@ impl From<&str> for CollaborationError {
         CollaborationError::Other(err.to_string())
     }
 }
+
+impl From<Box<dyn std::error::Error>> for CollaborationError {
+    fn from(err: Box<dyn std::error::Error>) -> Self {
+        CollaborationError::Other(err.to_string())
+    }
+}

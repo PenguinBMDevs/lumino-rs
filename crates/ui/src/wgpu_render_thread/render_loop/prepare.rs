@@ -1,8 +1,9 @@
+use std::sync::mpsc::Receiver;
+
 use iced_wgpu::wgpu;
 use lumino_gfx::NoteEvent;
 
 use super::super::params::RenderParams;
-use crate::wgpu_render_thread::stats::RenderStats;
 
 /// 准备渲染器实例
 pub fn prepare_renderers(
