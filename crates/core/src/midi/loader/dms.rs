@@ -98,6 +98,10 @@ pub async fn load_dms(
     })
 }
 
+/// 将 DMS 保存为 LDMS 格式（轻量级 DMS）
+/// 
+/// 这是一个实验性功能，需要启用 `ldms-export` feature 才能使用。
+#[cfg(feature = "ldms-export")]
 pub async fn save_dms_to_ldms(
     parsed: &ParsedDms,
     path: PathBuf,

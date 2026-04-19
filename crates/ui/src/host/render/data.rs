@@ -1,7 +1,7 @@
 use iced_core::Size;
 
 /// 渲染数据
-pub(super) struct RenderData {
+pub struct RenderData {
     pub scroll: (f32, f32),
     pub zoom: (f32, f32),
     pub viewport_size: Size,
@@ -11,7 +11,7 @@ pub(super) struct RenderData {
 }
 
 /// 视口信息
-pub(super) struct ViewportInfo {
+pub struct ViewportInfo {
     pub logical_size: Size,
     pub physical_size: (u32, u32),
     pub scale: f32,
@@ -20,7 +20,7 @@ pub(super) struct ViewportInfo {
 }
 
 /// 裁剪矩形
-pub(super) struct ScissorRect {
+pub struct ScissorRect {
     pub x: u32,
     pub y: u32,
     pub width: u32,
@@ -29,7 +29,7 @@ pub(super) struct ScissorRect {
 }
 
 /// 从主题提取的网格渲染颜色
-pub(super) struct GridColors {
+pub struct GridColors {
     pub bg: [f32; 4],
     pub black_key: [f32; 4],
     pub bar_line: [f32; 4],

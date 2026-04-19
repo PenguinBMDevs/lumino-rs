@@ -40,21 +40,20 @@ impl Titlebar {
 
             // Debug 模式下显示 FPS
             if let Some(fps) = window.fps {
-                row = row.push(
-                    container(
-                        text(format!("FPS: {:.1}", fps))
-                            .size(12)
-                            .style(|theme: &Theme| {
+                row =
+                    row.push(
+                        container(text(format!("FPS: {:.1}", fps)).size(12).style(
+                            |theme: &Theme| {
                                 let palette = theme.extended_palette();
                                 text::Style {
                                     color: Some(palette.primary.strong.color),
                                 }
-                            }),
-                    )
-                    .padding([0, 10])
-                    .align_y(iced_core::Alignment::Center)
-                    .height(Length::Fill),
-                );
+                            },
+                        ))
+                        .padding([0, 10])
+                        .align_y(iced_core::Alignment::Center)
+                        .height(Length::Fill),
+                    );
             }
 
             row = row.push(space().width(Length::Fill));
@@ -79,33 +78,29 @@ impl Titlebar {
                 .align_y(Alignment::Center);
 
             // 中间可拖动区域
-            let drag_area = mouse_area(
-                container(space().width(Length::Fill))
-                    .height(Length::Fill)
-            )
-            .on_press(window::Event::drag())
-            .on_double_click(window::Event::toggle_maximize());
+            let drag_area = mouse_area(container(space().width(Length::Fill)).height(Length::Fill))
+                .on_press(window::Event::drag())
+                .on_double_click(window::Event::toggle_maximize());
 
             // 右侧：FPS（如果有）+ 窗口控制按钮
             let mut right_row = row![];
 
             // Debug 模式下显示 FPS
             if let Some(fps) = window.fps {
-                right_row = right_row.push(
-                    container(
-                        text(format!("FPS: {:.1}", fps))
-                            .size(12)
-                            .style(|theme: &Theme| {
+                right_row =
+                    right_row.push(
+                        container(text(format!("FPS: {:.1}", fps)).size(12).style(
+                            |theme: &Theme| {
                                 let palette = theme.extended_palette();
                                 text::Style {
                                     color: Some(palette.primary.strong.color),
                                 }
-                            }),
-                    )
-                    .padding([0, 10])
-                    .align_y(iced_core::Alignment::Center)
-                    .height(Length::Fill),
-                );
+                            },
+                        ))
+                        .padding([0, 10])
+                        .align_y(iced_core::Alignment::Center)
+                        .height(Length::Fill),
+                    );
             }
 
             right_row = right_row.push(traffic::view(window));

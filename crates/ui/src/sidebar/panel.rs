@@ -4,7 +4,7 @@ use iced_widget::{button, column, container, row, scrollable, space, text};
 use crate::{
     Element, Theme,
     resources::icon::{self, Icon},
-    sidebar::{Event, Route, Track, RESIZE_HANDLE_WIDTH},
+    sidebar::{Event, RESIZE_HANDLE_WIDTH, Route, Track},
     window,
 };
 

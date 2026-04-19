@@ -7,12 +7,13 @@ use std::time::{Duration, Instant};
 
 use iced_wgpu::wgpu;
 
-use super::commands::{ControlCommand, RenderCommand};
-use super::params::RenderParams;
-use super::stats::RenderStats;
-use crate::wgpu_render_thread::render_loop::{
-    ensure_textures, execute_render_pass, prepare_renderers, process_commands, update_stats,
-};
+use super::super::commands::{ControlCommand, RenderCommand};
+use super::super::params::RenderParams;
+use super::super::stats::RenderStats;
+use super::commands::process_commands;
+use super::prepare::prepare_renderers;
+use super::render_pass::{execute_render_pass, update_stats};
+use super::textures::ensure_textures;
 
 /// 运行渲染线程主循环
 #[allow(clippy::too_many_arguments)]
@@ -75,8 +76,8 @@ pub fn run_render_thread(
                 params,
             );
 
-            if let (Some(texture), Some(depth_view)) = (&current_texture, &depth_texture_view) {
-                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            if let (Some(texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
+                let _view = texture.create_view(&wgpu::TextureViewDescriptor::default());
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("offscreen_render_encoder"),
                 });
@@ -103,9 +104,11 @@ pub fn run_render_thread(
                     &mut note_renderer,
                     &mut keyboard_renderer,
                     &mut ruler_renderer,
-                    &device,
                     &queue,
                 );
+
+                // 提交渲染指令
+                queue.submit(std::iter::once(encoder.finish()));
             }
 
             // 更新统计

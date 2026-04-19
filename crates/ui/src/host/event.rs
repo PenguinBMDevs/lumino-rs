@@ -162,7 +162,6 @@ impl Host {
     }
 
     /// 处理待处理的事件队列
-    /// 处理待处理的事件队列
     ///
     /// 此函数在 redraw_requested 中调用，确保同一帧内的多个事件被合并处理
     pub(crate) fn process_pending_events(&mut self) {
@@ -172,6 +171,18 @@ impl Host {
             return;
         }
 
+        // 构建 UI 并处理事件
+        let messages = self.build_ui_and_process_events();
+
+        // 处理消息并检查状态变更
+        let has_state_change = self.handle_event_messages(messages);
+
+        // 更新 UI 状态
+        self.update_ui_state(has_state_change);
+    }
+
+    /// 构建 UI 界面并处理事件，返回产生的消息
+    fn build_ui_and_process_events(&mut self) -> Vec<crate::message::Message> {
         // 临时取出缓存以避免借用冲突
         let cache = std::mem::take(&mut self.cache);
 
@@ -201,17 +212,24 @@ impl Host {
         self.events.clear();
         self.cache = interface.into_cache();
 
-        // 应用消息，并检查是否有状态变更
+        messages
+    }
+
+    /// 处理 UI 消息，返回是否有状态变更
+    fn handle_event_messages(&mut self, messages: Vec<crate::message::Message>) -> bool {
+        puffin::profile_scope!("process_messages");
+
         let mut has_state_change = false;
-        {
-            puffin::profile_scope!("process_messages");
-            for message in messages {
-                if self.process_message(message) {
-                    has_state_change = true;
-                }
+        for message in messages {
+            if self.process_message(message) {
+                has_state_change = true;
             }
         }
+        has_state_change
+    }
 
+    /// 更新 UI 状态
+    fn update_ui_state(&mut self, has_state_change: bool) {
         if has_state_change {
             self.ui_dirty = true;
         }

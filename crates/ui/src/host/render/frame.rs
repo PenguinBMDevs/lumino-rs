@@ -8,6 +8,9 @@ impl Host {
         // 这样可以确保同一帧内的多个事件被合并处理，减少 UI 重建次数
         self.process_pending_events();
 
+        // 更新播放状态和自动滚动
+        self.update_playback_state();
+
         // 计算 FPS
         self.frame_count += 1;
         let now = std::time::Instant::now();

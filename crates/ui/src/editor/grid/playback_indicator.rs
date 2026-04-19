@@ -11,16 +11,13 @@ pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Geometry
     let mut frame = Frame::new(renderer, bounds.size());
 
     // 获取演奏指示线的屏幕 X 坐标（考虑自动滚动模式）
-    let view_x = if let Some(x) = editor.get_playback_indicator_screen_x() {
-        x
-    } else {
-        // 自动滚动关闭时，使用默认计算方式
-        editor.playback_position * editor.state.zoom_x + editor.state.keyboard_width
-            - editor.state.scroll_x
-    };
+    let view_x = editor
+        .get_playback_indicator_screen_x()
+        .unwrap_or_else(|| editor.state.keyboard_width);
 
-    // 如果指示线位置在钢琴键盘区域内（左侧），则不绘制
-    if view_x < editor.state.keyboard_width {
+    // 如果指示线位置在钢琴键盘区域内（左侧）或超出画布范围，则不绘制
+    let canvas_width = bounds.width;
+    if view_x < editor.state.keyboard_width || view_x > canvas_width {
         return frame.into_geometry();
     }
 

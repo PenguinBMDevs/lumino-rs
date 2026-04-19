@@ -44,7 +44,12 @@ impl<T: Clone> SwappableBuffer<T> {
     /// UI 线程：获取后缓冲区写入引用
     ///
     /// # Safety
-    /// 必须在 UI 线程调用，且同一时间只能有一个写入者
+    /// 必须在 UI 线程调用，且同一时间只能有一个写入者。
+    /// 使用内部可变性模式：通过原子指针从不可变引用获取可变访问。
+    #[expect(
+        clippy::mut_from_ref,
+        reason = "双缓冲设计需要内部可变性：通过原子指针安全地从 &self 获取 &mut Vec"
+    )]
     pub unsafe fn write_buffer(&self) -> &mut Vec<T> {
         let ptr = self.back.load(Ordering::Relaxed);
         unsafe { &mut *ptr }
@@ -62,8 +67,7 @@ impl<T: Clone> SwappableBuffer<T> {
         self.back.store(front_ptr, Ordering::Release);
 
         // 递增版本号
-        let new_version = self.version.fetch_add(1, Ordering::AcqRel) + 1;
-        new_version
+        self.version.fetch_add(1, Ordering::AcqRel) + 1
     }
 
     /// 渲染线程：获取前缓冲区读取引用
@@ -120,6 +124,12 @@ pub struct MpscQueue<T> {
     signal: std::sync::Condvar,
 }
 
+impl<T> Default for MpscQueue<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> MpscQueue<T> {
     pub fn new() -> Self {
         Self {
@@ -130,7 +140,10 @@ impl<T> MpscQueue<T> {
 
     /// 发送数据（非阻塞）
     pub fn send(&self, data: T) -> Result<(), T> {
-        let mut slot = self.slot.lock().unwrap();
+        let mut slot = match self.slot.lock() {
+            Ok(guard) => guard,
+            Err(_) => return Err(data),
+        };
         if slot.is_some() {
             // 槽位已满，丢弃旧数据
             return Err(data);
@@ -142,18 +155,21 @@ impl<T> MpscQueue<T> {
 
     /// 接收数据（阻塞）
     pub fn recv(&self) -> Option<T> {
-        let mut slot = self.slot.lock().unwrap();
+        let mut slot = self.slot.lock().ok()?;
         loop {
             if let Some(data) = slot.take() {
                 return Some(data);
             }
-            slot = self.signal.wait(slot).unwrap();
+            slot = match self.signal.wait(slot) {
+                Ok(guard) => guard,
+                Err(_) => return None,
+            };
         }
     }
 
     /// 尝试接收数据（非阻塞）
     pub fn try_recv(&self) -> Option<T> {
-        let mut slot = self.slot.lock().unwrap();
+        let mut slot = self.slot.lock().ok()?;
         slot.take()
     }
 }

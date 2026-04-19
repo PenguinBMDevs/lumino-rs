@@ -55,8 +55,9 @@ impl Host {
         let current_edit_state = self.root.editor.edit_state.clone();
         let is_drawing = matches!(current_edit_state, crate::editor::EditState::Drawing { .. });
 
-        let note_data_changed =
-            note_index_dirty || self.render_cache.note_instances.is_empty() || is_drawing;
+        let note_data_changed = note_index_dirty
+            || unsafe { self.render_cache.note_instances_is_empty() }
+            || is_drawing;
 
         if !note_data_changed {
             // 即使没有数据变化也更新状态
@@ -79,7 +80,7 @@ impl Host {
         true
     }
 
-    /// 准备音符渲染器
+    /// 准备音符渲染器（双缓冲模式）
     pub(super) fn prepare_note_renderer(
         &mut self,
         gfx: &lumino_gfx::Context,
@@ -87,15 +88,18 @@ impl Host {
         notes_changed: bool,
         camera: lumino_gfx::CameraUniform,
     ) {
-        if notes_changed && !self.render_cache.note_instances.is_empty() {
+        // 从双缓冲的前缓冲区读取音符实例
+        let note_instances = unsafe { self.render_cache.note_instances_buffer.read_buffer() };
+
+        if notes_changed && !note_instances.is_empty() {
             self.note_renderer.prepare_old(
                 encoder,
-                &self.render_cache.note_instances,
+                note_instances,
                 &gfx.device,
                 &gfx.queue,
                 camera,
             );
-        } else if !self.render_cache.note_instances.is_empty() {
+        } else if !note_instances.is_empty() {
             self.note_renderer.prepare_pass(encoder, camera, &gfx.queue);
         }
     }
@@ -184,8 +188,9 @@ impl Host {
             self.grid_renderer.draw(&mut render_pass, 1);
         }
 
-        // 绘制音符
-        if !self.render_cache.note_instances.is_empty() && scissor.has_valid_region {
+        // 绘制音符（从双缓冲读取）
+        let note_instances = unsafe { self.render_cache.note_instances_buffer.read_buffer() };
+        if !note_instances.is_empty() && scissor.has_valid_region {
             render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
             self.note_renderer.draw(
                 &mut render_pass,

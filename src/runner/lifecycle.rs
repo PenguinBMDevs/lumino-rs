@@ -1,9 +1,7 @@
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::event_loop::ControlFlow;
 
-use super::dialog_manager::DialogResult;
-use super::inner::{InitError, Runner, RunnerInner, TestModeState};
+use super::inner::{Runner, TestModeState};
 
 impl winit::application::ApplicationHandler for Runner {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -16,8 +14,8 @@ impl winit::application::ApplicationHandler for Runner {
                 self.inner = Some(inner);
 
                 // 如果是测试模式，自动加载 MIDI
-                if let Some(test_config) = self.test_config.take() {
-                    if let Some(this) = self.inner.as_mut() {
+                if let Some(test_config) = self.test_config.take()
+                    && let Some(this) = self.inner.as_mut() {
                         tracing::info!("测试模式：准备加载 MIDI - {}", test_config.midi_path);
                         let midi_path = std::path::PathBuf::from(&test_config.midi_path);
                         let progress_cb = this.progress_cb.clone();
@@ -63,7 +61,6 @@ impl winit::application::ApplicationHandler for Runner {
                             }
                         });
                     }
-                }
             }
             Err(e) => {
                 tracing::error!("Runner 初始化失败：{}", e);
@@ -207,8 +204,8 @@ impl winit::application::ApplicationHandler for Runner {
         }
 
         // 测试模式 FPS 监测
-        if let Some(test_state) = &mut this.test_mode_state {
-            if test_state.active {
+        if let Some(test_state) = &mut this.test_mode_state
+            && test_state.active {
                 if test_state.start_time.is_none() {
                     // MIDI 加载完成，开始测试
                     test_state.start_time = Some(Instant::now());
@@ -255,6 +252,5 @@ impl winit::application::ApplicationHandler for Runner {
                     }
                 }
             }
-        }
     }
 }

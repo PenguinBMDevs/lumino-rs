@@ -123,8 +123,8 @@ impl Root {
                 true
             }
             Message::Sidebar(event) => {
-                self.handle_sidebar_event(event.clone());
-                true
+                // 返回 handle_sidebar_event 的结果，让调用者知道是否需要重新渲染
+                self.handle_sidebar_event(event.clone())
             }
             Message::EditorAction(action) => {
                 self.handle_editor_action(action.clone());
@@ -180,6 +180,31 @@ impl Root {
                         tracing::debug!("Root: 力度过滤阈值同步为 {}", val);
                     }
                 }
+                // 自动滚动配置变更，同步到编辑器
+                if let crate::settings::Event::AutoScrollFixedPositionChanged(value) = &event {
+                    if let Ok(val) = value.parse::<u32>() {
+                        let mut config = self.editor.auto_scroll_config().clone();
+                        config.fixed_indicator_position = val;
+                        self.editor.set_auto_scroll_config(config);
+                        tracing::debug!("Root: 自动滚动固定位置同步为 {}", val);
+                    }
+                }
+                if let crate::settings::Event::AutoScrollPageTriggerOffsetChanged(value) = &event {
+                    if let Ok(val) = value.parse::<u32>() {
+                        let mut config = self.editor.auto_scroll_config().clone();
+                        config.page_trigger_offset = val;
+                        self.editor.set_auto_scroll_config(config);
+                        tracing::debug!("Root: 自动滚动翻页触发偏移同步为 {}", val);
+                    }
+                }
+                if let crate::settings::Event::AutoScrollPageReturnPositionChanged(value) = &event {
+                    if let Ok(val) = value.parse::<u32>() {
+                        let mut config = self.editor.auto_scroll_config().clone();
+                        config.page_return_position = val;
+                        self.editor.set_auto_scroll_config(config);
+                        tracing::debug!("Root: 自动滚动翻页返回位置同步为 {}", val);
+                    }
+                }
                 true
             }
             Message::ToggleSettings | Message::Null => true,
@@ -212,7 +237,7 @@ impl Root {
         }
     }
 
-    fn handle_sidebar_event(&mut self, event: sidebar::Event) {
+    fn handle_sidebar_event(&mut self, event: sidebar::Event) -> bool {
         // 先检查是否是音轨切换
         let track_selected_idx = if let sidebar::Event::TrackSelected(idx) = &event {
             Some(*idx)
@@ -223,7 +248,8 @@ impl Root {
         // 检查是否是洋葱皮开关
         let onion_skin_toggled = matches!(&event, sidebar::Event::TrackOnionSkinToggled(_));
 
-        self.sidebar.update(event);
+        // 更新 sidebar，获取是否需要重新渲染
+        let needs_redraw = self.sidebar.update(event);
 
         // 更新画布偏移
         let sidebar_width = self.sidebar.width() as f32;
@@ -245,6 +271,8 @@ impl Root {
                 ),
             ));
         }
+
+        needs_redraw
     }
 
     /// 处理编辑器动作

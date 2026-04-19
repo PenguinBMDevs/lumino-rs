@@ -6,8 +6,6 @@
 //! - 视口变化时只更新 camera uniform，不重新上传所有数据
 //! - 严格控制 GPU 内存占用，支持动态扩容/缩容
 
-use wgpu::util::DeviceExt;
-
 /// 音符编辑事件
 #[derive(Debug, Clone)]
 pub enum NoteEvent {
@@ -149,11 +147,11 @@ impl GpuNoteBuffer {
     pub fn add_note(&mut self, instance: &crate::NoteInstance) -> usize {
         puffin::profile_function!();
         // 检查是否需要扩容
-        if self.instance_count >= self.capacity {
-            if !self.grow(self.capacity * Self::GROWTH_FACTOR) {
-                tracing::error!("GpuNoteBuffer: failed to grow buffer, cannot add note");
-                return self.instance_count.saturating_sub(1);
-            }
+        if self.instance_count >= self.capacity
+            && !self.grow(self.capacity * Self::GROWTH_FACTOR)
+        {
+            tracing::error!("GpuNoteBuffer: failed to grow buffer, cannot add note");
+            return self.instance_count.saturating_sub(1);
         }
 
         let index = self.instance_count;

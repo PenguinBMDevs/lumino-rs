@@ -69,7 +69,7 @@ impl RenderThreadHandle {
 
     /// 发送渲染命令
     pub fn send(&self, command: RenderCommand) {
-        if let Err(_) = self.command_sender.send(command) {
+        if self.command_sender.send(command).is_err() {
             let mut stats = self.stats.lock().unwrap_or_else(|e| e.into_inner());
             stats.dropped_commands += 1;
         }

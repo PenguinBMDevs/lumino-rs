@@ -93,8 +93,9 @@ impl Host {
             }
         }
 
-        // 如果状态有变更，标记 UI 需要重绘并请求下一帧
-        if has_state_change {
+        // 如果状态有变更或 UI 有更新（如打开下拉菜单），标记 UI 需要重绘并请求下一帧
+        let is_ui_updated = matches!(state, user_interface::State::Updated { .. });
+        if has_state_change || is_ui_updated {
             self.ui_dirty = true;
             self.window.request_redraw();
         }
