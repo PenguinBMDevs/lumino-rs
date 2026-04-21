@@ -34,7 +34,7 @@ pub fn view_safe(icon: Icon) -> Result<crate::Element<'static>, IconError> {
     let data = get_icon_data(icon)?;
     let handle = Handle::from_rgba(data.width, data.height, data.rgba.clone());
     Ok(Image::new(handle)
-        .filter_method(iced_widget::image::FilterMethod::Nearest)
+        .filter_method(iced_widget::image::FilterMethod::Linear)
         .into())
 }
 
@@ -78,6 +78,6 @@ pub fn view_with_size_and_theme_safe(
     Ok(Image::new(handle)
         .width(width)
         .height(height)
-        .filter_method(iced_widget::image::FilterMethod::Nearest)
+        .filter_method(iced_widget::image::FilterMethod::Linear)
         .into())
 }

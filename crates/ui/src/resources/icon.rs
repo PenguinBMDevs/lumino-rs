@@ -3,6 +3,9 @@ use iced_widget::image::Image;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
+/// SVG 图标渲染缩放倍数，用于 HiDPI 显示
+const ICON_RENDER_SCALE: u32 = 4;
+
 pub use Icon::*;
 
 /// 图标加载错误类型
@@ -134,7 +137,9 @@ pub fn view_safe(icon: Icon) -> Result<crate::Element<'static>, IconError> {
     let data = get_icon_data(icon)?;
     let handle = Handle::from_rgba(data.width, data.height, data.rgba.clone());
     Ok(Image::new(handle)
-        .filter_method(iced_widget::image::FilterMethod::Nearest)
+        .width(24)   // 新增：固定逻辑宽度
+        .height(24)  // 新增：固定逻辑高度
+        .filter_method(iced_widget::image::FilterMethod::Linear)
         .into())
 }
 
@@ -183,7 +188,7 @@ pub fn view_with_size_and_theme_safe(
     Ok(Image::new(handle)
         .width(width)
         .height(height)
-        .filter_method(iced_widget::image::FilterMethod::Nearest)
+        .filter_method(iced_widget::image::FilterMethod::Linear)
         .into())
 }
 
@@ -202,8 +207,8 @@ fn invert_rgba(rgba: &[u8]) -> Vec<u8> {
 fn render_svg_to_data(icon: Icon) -> Result<IconData, IconError> {
     let svg_data = bytes(icon);
     let size = match icon {
-        Icon::WindowMin | Icon::WindowMax | Icon::WindowUnMax | Icon::WindowClose => 20,
-        _ => 24,
+        Icon::WindowMin | Icon::WindowMax | Icon::WindowUnMax | Icon::WindowClose => 20 * ICON_RENDER_SCALE,
+        _ => 24 * ICON_RENDER_SCALE,
     };
     render_svg(svg_data, size, size)
 }
