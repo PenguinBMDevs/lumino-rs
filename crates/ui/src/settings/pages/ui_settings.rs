@@ -16,11 +16,15 @@ pub fn view<'a>(
     system_fonts: &[lumino_core::font_scanner::FontInfo],
 ) -> Element<'a> {
     // 创建复选框
-    let native_titlebar_checkbox = iced_widget::Checkbox::new(settings.use_native_titlebar)
-        .label("使用经典系统标题栏")
-        .on_toggle(|enabled| {
+    let native_titlebar_checkbox = if cfg!(target_os = "macos") {
+        row![]  // macOS 不需要这个选项
+    } else {
+        row![iced_widget::Checkbox::new(settings.use_native_titlebar)
+            .label("使用经典系统标题栏")
+            .on_toggle(|enabled| {
             Message::Settings(crate::settings::Event::NativeTitlebarChanged(enabled))
-        });
+        })]
+    };
 
     // 主题选项
     let theme_options: Vec<String> = Theme::ALL.iter().map(|t| t.to_string()).collect();

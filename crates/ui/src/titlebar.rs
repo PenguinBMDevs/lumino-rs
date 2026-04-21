@@ -130,7 +130,12 @@ impl Titlebar {
     /// 经典系统标题栏模式：只显示菜单，在最左侧
     fn view_native_titlebar<'a>(&'a self, window: &'a window::Window) -> Element<'a> {
         // 菜单在最左侧，没有 logo 和窗口控制按钮
-        let row = row![menu::view()];
+        let row = if cfg!(target_os = "macos") {
+            row![]
+        } else {
+            row![menu::view()]
+        };
+
 
         let inner = container(row)
             .width(Length::Fill)

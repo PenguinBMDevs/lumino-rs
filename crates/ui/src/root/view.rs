@@ -100,12 +100,19 @@ impl Root {
             .into()
         };
 
-        let main_content = column![
-            self.titlebar
-                .view(&self.window, self.settings.use_native_titlebar),
-            row![left_bar, main_area].height(Length::Fill),
-            self.statusbar.view(),
-        ];
+        let main_content = if cfg!(target_os = "macos") {
+            column![
+                row![left_bar, main_area].height(Length::Fill),
+                self.statusbar.view(),
+            ]
+        } else {
+            column![
+                self.titlebar.view(&self.window, self.settings.use_native_titlebar),
+                row![left_bar, main_area].height(Length::Fill),
+                self.statusbar.view(),
+            ]
+        };
+
 
         container(main_content)
             .width(Length::Fill)
