@@ -1,5 +1,5 @@
 mod logo;
-mod menu;
+pub mod menu;
 mod traffic;
 
 use iced_core::{Alignment, Length};

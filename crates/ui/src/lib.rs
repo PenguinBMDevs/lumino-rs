@@ -10,7 +10,7 @@ pub mod settings;
 mod sidebar;
 mod state;
 mod statusbar;
-mod titlebar;
+pub mod titlebar;
 mod toolbar;
 mod view;
 pub mod wgpu_render_thread;

@@ -2,8 +2,12 @@
 
 use std::{collections::HashMap, sync::OnceLock};
 
-use lumino_core::{Event, event};
-use muda::{IsMenuItem, Menu, MenuEvent, MenuId, PredefinedMenuItem as PMI, Submenu};
+use lumino_core::{Event as CoreEvent, event};
+use lumino_ui::titlebar::menu::{MenuConfig, MenuItem as UiMenuItem, menus as ui_menus};
+use muda::{
+    IsMenuItem, Menu, MenuEvent, MenuId, MenuItem as MudaMenuItem, PredefinedMenuItem as PMI,
+    Submenu,
+};
 
 thread_local! {
     static MENU: OnceLock<AppMenu> = OnceLock::new();
@@ -11,7 +15,7 @@ thread_local! {
 
 struct AppMenu {
     menu: Menu,
-    map: HashMap<MenuId, Event>,
+    map: HashMap<MenuId, CoreEvent>,
 }
 
 fn app_menu() -> muda::Result<Submenu> {
@@ -32,42 +36,38 @@ fn app_menu() -> muda::Result<Submenu> {
     )
 }
 
-fn file_menu() -> muda::Result<Submenu> {
-    Submenu::with_items("File", true, &[&PMI::close_window(None)])
-}
+fn build_submenu(
+    cfg: &MenuConfig,
+    map: &mut HashMap<MenuId, CoreEvent>,
+) -> muda::Result<Submenu> {
+    let mut muda_items: Vec<MudaMenuItem> = Vec::new();
+    let mut separators: Vec<PMI> = Vec::new();
 
-fn edit_menu() -> muda::Result<Submenu> {
-    Submenu::with_items(
-        "Edit",
-        true,
-        &[
-            &PMI::undo(None),
-            &PMI::redo(None),
-            &PMI::separator(),
-            &PMI::cut(None),
-            &PMI::copy(None),
-            &PMI::paste(None),
-            &PMI::select_all(None),
-        ],
-    )
-}
+    for item in &cfg.items {
+        match item {
+            UiMenuItem::Action(core_event) => {
+                let label = format!("{:?}", core_event);
+                let muda_item = MudaMenuItem::new(label, true, None);
+                let id = muda_item.id().clone();
+                map.insert(id, core_event.clone());
+                muda_items.push(muda_item);
+            }
+            UiMenuItem::Separator => {
+                separators.push(PMI::separator());
+            }
+            UiMenuItem::Submenu(_, _) => {}
+        }
+    }
 
-fn view_menu() -> muda::Result<Submenu> {
-    Submenu::with_items("View", true, &[])
-}
+    let mut refs: Vec<&dyn IsMenuItem> = Vec::new();
+    for item in &muda_items {
+        refs.push(item);
+    }
+    for sep in &separators {
+        refs.push(sep);
+    }
 
-fn help_menu() -> muda::Result<Submenu> {
-    Submenu::with_items("Help", true, &[])
-}
-
-fn menus() -> muda::Result<[Submenu; 5]> {
-    Ok([
-        app_menu()?,
-        file_menu()?,
-        edit_menu()?,
-        view_menu()?,
-        help_menu()?,
-    ])
+    Submenu::with_items(&cfg.kind.to_string(), true, &refs)
 }
 
 pub fn init() -> muda::Result<()> {
@@ -79,26 +79,30 @@ fn init_inner(cell: &OnceLock<AppMenu>) -> muda::Result<()> {
         return Ok(());
     }
 
-    let menu_items = menus()?;
-    let items_refs: Vec<&dyn IsMenuItem> =
-        menu_items.iter().map(|r| r as &dyn IsMenuItem).collect();
-    let menu = Menu::with_items(&items_refs)?;
+    let mut map = HashMap::new();
 
+    let app = app_menu()?;
+
+    let ui_configs = ui_menus();
+    let file = build_submenu(&ui_configs[0], &mut map)?;
+    let edit = build_submenu(&ui_configs[1], &mut map)?;
+    let view = build_submenu(&ui_configs[2], &mut map)?;
+    let help = build_submenu(&ui_configs[3], &mut map)?;
+
+    let menu = Menu::with_items(&[&app, &file, &edit, &view, &help])?;
     let _ = menu.init_for_nsapp();
 
-    let app_menu = AppMenu {
-        menu,
-        map: HashMap::new(),
-    };
-
+    let app_menu = AppMenu { menu, map };
     let _ = cell.set(app_menu);
 
     MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
         MENU.with(|shell| {
-            if let Some(_menu) = shell.get() {
-                let _id = event.id();
+            if let Some(app_menu) = shell.get() {
+                if let Some(core_event) = app_menu.map.get(event.id()) {
+                    event::emit(core_event.clone());
+                }
             } else {
-                tracing::warn!("Warning: MenuEvent handler called but MENU is not initialized.");
+                tracing::warn!("MenuEvent handler called but MENU is not initialized.");
             }
         });
     }));

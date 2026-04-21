@@ -35,7 +35,7 @@ pub struct MenuConfig {
     pub items: Vec<MenuItem>,
 }
 
-fn file_menu() -> MenuConfig {
+pub fn file_menu() -> MenuConfig {
     use MenuItem::*;
     MenuConfig {
         kind: MenuKind::File,
@@ -54,7 +54,7 @@ fn file_menu() -> MenuConfig {
     }
 }
 
-fn edit_menu() -> MenuConfig {
+pub fn edit_menu() -> MenuConfig {
     use MenuItem::*;
     MenuConfig {
         kind: MenuKind::Edit,
@@ -72,7 +72,7 @@ fn edit_menu() -> MenuConfig {
     }
 }
 
-fn view_menu() -> MenuConfig {
+pub fn view_menu() -> MenuConfig {
     use MenuItem::*;
     MenuConfig {
         kind: MenuKind::View,
@@ -84,7 +84,7 @@ fn view_menu() -> MenuConfig {
     }
 }
 
-fn help_menu() -> MenuConfig {
+pub fn help_menu() -> MenuConfig {
     use MenuItem::*;
     MenuConfig {
         kind: MenuKind::Help,
@@ -92,7 +92,7 @@ fn help_menu() -> MenuConfig {
     }
 }
 
-fn menus() -> [MenuConfig; 4] {
+pub fn menus() -> [MenuConfig; 4] {
     [file_menu(), edit_menu(), view_menu(), help_menu()]
 }
 
