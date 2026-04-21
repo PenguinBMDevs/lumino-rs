@@ -23,6 +23,17 @@ impl Host {
         let ctrl = is_ctrl_or_cmd_pressed(modifiers);
         let shift = modifiers.contains(winit::keyboard::ModifiersState::SHIFT);
 
+        // 空格键：播放/暂停切换
+        if key == winit::keyboard::KeyCode::Space {
+            if self.root.toolbar.is_playing {
+                self.root.update(message::Message::Pause);
+            } else {
+                self.root.update(message::Message::Play);
+            }
+            self.window.request_redraw();
+            return;
+        }
+
         let action = match (key, ctrl, shift) {
             (winit::keyboard::KeyCode::Delete | winit::keyboard::KeyCode::Backspace, ..) => {
                 Some(message::EditorAction::DeletePressed)
