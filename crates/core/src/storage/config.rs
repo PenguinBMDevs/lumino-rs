@@ -139,6 +139,13 @@ pub struct UiConfig {
     /// 力度过滤阈值（力度 <= 此值的音符不播放，0=关闭过滤，最大127）
     #[serde(default = "default_velocity_filter_threshold")]
     pub velocity_filter_threshold: u8,
+    /// 是否启用 HiDPI 图标渲染（关闭时使用1x获得零性能开销，开启时使用2x获得视网膜清晰度）
+    #[serde(default = "default_true")]
+    pub icon_hidpi: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_synth_backend() -> SynthBackend {
@@ -178,6 +185,7 @@ impl Default for UiConfig {
             program_font_path: String::new(),
             auto_scroll: AutoScrollConfig::default(),
             velocity_filter_threshold: default_velocity_filter_threshold(),
+            icon_hidpi: true,
         }
     }
 }

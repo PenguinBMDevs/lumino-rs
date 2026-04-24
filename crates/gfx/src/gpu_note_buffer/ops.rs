@@ -57,7 +57,7 @@ impl GpuNoteBuffer {
             bytemuck::cast_slice(&self.instances),
         );
 
-        tracing::info!("Uploading {} notes", upload_count);
+        tracing::debug!("Uploading {} notes", upload_count);
     }
 
     /// 增量更新单个音符

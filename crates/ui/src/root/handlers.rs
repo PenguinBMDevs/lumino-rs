@@ -205,6 +205,11 @@ impl Root {
                         tracing::debug!("Root: 自动滚动翻页返回位置同步为 {}", val);
                     }
                 }
+                // HiDPI 图标渲染变更，同步到图标缓存
+                if let crate::settings::Event::IconHiDPIChanged(enabled) = &event {
+                    crate::resources::icon::set_hidpi_enabled(*enabled);
+                    tracing::debug!("Root: HiDPI 图标渲染切换为 {}", enabled);
+                }
                 true
             }
             Message::ToggleSettings | Message::Null => true,

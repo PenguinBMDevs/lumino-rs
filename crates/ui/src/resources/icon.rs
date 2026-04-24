@@ -2,9 +2,16 @@ use iced_core::image::Handle;
 use iced_widget::image::Image;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-/// SVG 图标渲染缩放倍数，用于 HiDPI 显示
-const ICON_RENDER_SCALE: u32 = 4;
+/// 当前 HiDPI 图标渲染状态（true=2x，false=1x）
+static HIDPI_ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// 缓存的 Handle 对象，key=(Icon, 是否暗色主题)。
+/// 避免每帧创建新 Handle → iced_wgpu 缓存命中 → 零每帧纹理上传。
+static HANDLE_CACHE: Lazy<Mutex<HashMap<(Icon, bool), Handle>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub use Icon::*;
 
@@ -61,13 +68,18 @@ pub enum Icon {
     Ban,
 }
 
+#[derive(Clone)]
 struct IconData {
     rgba: Vec<u8>,
     width: u32,
     height: u32,
 }
 
-static ICON_CACHE: Lazy<HashMap<Icon, IconData>> = Lazy::new(|| {
+static ICON_CACHE: Lazy<Mutex<HashMap<Icon, IconData>>> =
+    Lazy::new(|| Mutex::new(build_icon_cache()));
+
+/// 构建完整的图标缓存（使用当前 HIDPI_ENABLED 状态决定渲染倍率）
+fn build_icon_cache() -> HashMap<Icon, IconData> {
     let mut map = HashMap::new();
     for &icon in &[
         Icon::AngleRight,
@@ -110,11 +122,56 @@ static ICON_CACHE: Lazy<HashMap<Icon, IconData>> = Lazy::new(|| {
         }
     }
     map
-});
+}
+
+/// 返回当前渲染倍率：HiDPI=2x，普通=1x
+fn get_current_scale() -> u32 {
+    if HIDPI_ENABLED.load(Ordering::Relaxed) {
+        2
+    } else {
+        1
+    }
+}
+
+/// 设置 HiDPI 状态并重建图标缓存
+pub fn set_hidpi_enabled(enabled: bool) {
+    HIDPI_ENABLED.store(enabled, Ordering::Relaxed);
+    let new_cache = build_icon_cache();
+    if let Ok(mut cache) = ICON_CACHE.lock() {
+        *cache = new_cache;
+    }
+    // 清空 Handle 缓存，下次 view 调用时以新尺寸重建 Handle → iced_wgpu 重新上传纹理
+    if let Ok(mut handle_cache) = HANDLE_CACHE.lock() {
+        handle_cache.clear();
+    }
+}
 
 /// 获取图标数据，如果不在缓存中则返回错误
-fn get_icon_data(icon: Icon) -> Result<&'static IconData, IconError> {
-    ICON_CACHE.get(&icon).ok_or(IconError::IconNotInCache(icon))
+fn get_icon_data(icon: Icon) -> Result<IconData, IconError> {
+    let cache = ICON_CACHE.lock().unwrap();
+    cache
+        .get(&icon)
+        .cloned()
+        .ok_or(IconError::IconNotInCache(icon))
+}
+
+/// 获取或创建缓存的 Handle。
+/// 稳定 Handle::id() → iced_wgpu 的纹理缓存命中 → 零每帧图集上传。
+fn get_or_create_handle(icon: Icon, is_dark: bool) -> Result<Handle, IconError> {
+    let mut cache = HANDLE_CACHE.lock().unwrap();
+    if let Some(handle) = cache.get(&(icon, is_dark)) {
+        return Ok(handle.clone());
+    }
+
+    let data = get_icon_data(icon)?;
+    let rgba = if is_dark {
+        invert_rgba(&data.rgba)
+    } else {
+        data.rgba
+    };
+    let handle = Handle::from_rgba(data.width, data.height, rgba);
+    cache.insert((icon, is_dark), handle.clone());
+    Ok(handle)
 }
 
 /// 渲染图标（可能 panic，仅用于向后兼容）
@@ -134,12 +191,11 @@ pub fn view(icon: Icon) -> crate::Element<'static> {
 
 /// 安全地渲染图标，返回 Result
 pub fn view_safe(icon: Icon) -> Result<crate::Element<'static>, IconError> {
-    let data = get_icon_data(icon)?;
-    let handle = Handle::from_rgba(data.width, data.height, data.rgba.clone());
+    let handle = get_or_create_handle(icon, false)?;
     Ok(Image::new(handle)
-        .width(24)   // 新增：固定逻辑宽度
-        .height(24)  // 新增：固定逻辑高度
-        .filter_method(iced_widget::image::FilterMethod::Linear)
+        .width(24)
+        .height(24)
+        .filter_method(iced_widget::image::FilterMethod::Nearest)
         .into())
 }
 
@@ -170,25 +226,17 @@ pub fn view_with_size_and_theme_safe(
     height: u32,
     theme: Option<&crate::Theme>,
 ) -> Result<crate::Element<'static>, IconError> {
-    let data = get_icon_data(icon)?;
     let is_dark = theme
         .map(|t| t.extended_palette().background.weakest.color.r < 0.5)
         .unwrap_or(true);
 
-    // SVG图标使用currentColor（默认黑色），暗色主题需要反色为白色
-    let rgba = if is_dark {
-        invert_rgba(&data.rgba)
-    } else {
-        data.rgba.clone()
-    };
-
-    // 使用缓存数据的原始尺寸创建 Handle，通过 Image widget 的 width/height 进行显示缩放
-    let handle = Handle::from_rgba(data.width, data.height, rgba);
+    // 使用缓存 Handle（含主题反色），iced_wgpu 的纹理缓存命中后零每帧上传
+    let handle = get_or_create_handle(icon, is_dark)?;
 
     Ok(Image::new(handle)
         .width(width)
         .height(height)
-        .filter_method(iced_widget::image::FilterMethod::Linear)
+        .filter_method(iced_widget::image::FilterMethod::Nearest)
         .into())
 }
 
@@ -206,9 +254,10 @@ fn invert_rgba(rgba: &[u8]) -> Vec<u8> {
 
 fn render_svg_to_data(icon: Icon) -> Result<IconData, IconError> {
     let svg_data = bytes(icon);
+    let scale = get_current_scale();
     let size = match icon {
-        Icon::WindowMin | Icon::WindowMax | Icon::WindowUnMax | Icon::WindowClose => 20 * ICON_RENDER_SCALE,
-        _ => 24 * ICON_RENDER_SCALE,
+        Icon::WindowMin | Icon::WindowMax | Icon::WindowUnMax | Icon::WindowClose => 20 * scale,
+        _ => 24 * scale,
     };
     render_svg(svg_data, size, size)
 }

@@ -136,7 +136,6 @@ impl Titlebar {
             row![menu::view()]
         };
 
-
         let inner = container(row)
             .width(Length::Fill)
             .height(30)

@@ -107,12 +107,12 @@ impl Root {
             ]
         } else {
             column![
-                self.titlebar.view(&self.window, self.settings.use_native_titlebar),
+                self.titlebar
+                    .view(&self.window, self.settings.use_native_titlebar),
                 row![left_bar, main_area].height(Length::Fill),
                 self.statusbar.view(),
             ]
         };
-
 
         container(main_content)
             .width(Length::Fill)

@@ -42,6 +42,8 @@ pub enum Event {
     AutoScrollPageReturnPositionChanged(String),
     // 力度过滤
     VelocityFilterThresholdChanged(String),
+    /// HiDPI 图标渲染开关
+    IconHiDPIChanged(bool),
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +65,8 @@ pub struct SettingsPanel {
     pub auto_scroll_page_return_position: u32,
     // 力度过滤
     pub velocity_filter_threshold: u8,
+    /// HiDPI 图标渲染（true=2x 清晰，false=1x 零额外开销）
+    pub icon_hidpi: bool,
 }
 
 impl SettingsPanel {
@@ -83,6 +87,7 @@ impl SettingsPanel {
             auto_scroll_page_trigger_offset: ui_config.auto_scroll.page_trigger_offset,
             auto_scroll_page_return_position: ui_config.auto_scroll.page_return_position,
             velocity_filter_threshold: ui_config.velocity_filter_threshold,
+            icon_hidpi: ui_config.icon_hidpi,
         }
     }
 
@@ -167,6 +172,9 @@ impl SettingsPanel {
                 if let Ok(val) = value.parse::<u8>() {
                     self.velocity_filter_threshold = val;
                 }
+            }
+            Event::IconHiDPIChanged(enabled) => {
+                self.icon_hidpi = enabled;
             }
         }
     }

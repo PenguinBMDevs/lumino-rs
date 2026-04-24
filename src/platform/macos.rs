@@ -36,10 +36,7 @@ fn app_menu() -> muda::Result<Submenu> {
     )
 }
 
-fn build_submenu(
-    cfg: &MenuConfig,
-    map: &mut HashMap<MenuId, CoreEvent>,
-) -> muda::Result<Submenu> {
+fn build_submenu(cfg: &MenuConfig, map: &mut HashMap<MenuId, CoreEvent>) -> muda::Result<Submenu> {
     let mut muda_items: Vec<MudaMenuItem> = Vec::new();
     let mut separators: Vec<PMI> = Vec::new();
 

@@ -15,52 +15,53 @@ impl winit::application::ApplicationHandler for Runner {
 
                 // 如果是测试模式，自动加载 MIDI
                 if let Some(test_config) = self.test_config.take()
-                    && let Some(this) = self.inner.as_mut() {
-                        tracing::info!("测试模式：准备加载 MIDI - {}", test_config.midi_path);
-                        let midi_path = std::path::PathBuf::from(&test_config.midi_path);
-                        let progress_cb = this.progress_cb.clone();
-                        let test_duration = test_config.test_time;
+                    && let Some(this) = self.inner.as_mut()
+                {
+                    tracing::info!("测试模式：准备加载 MIDI - {}", test_config.midi_path);
+                    let midi_path = std::path::PathBuf::from(&test_config.midi_path);
+                    let progress_cb = this.progress_cb.clone();
+                    let test_duration = test_config.test_time;
 
-                        this.window.ui_mut().skip_ui_rendering = true;
-                        this.test_mode_state = Some(TestModeState {
-                            active: false,
-                            start_time: None,
-                            duration: test_duration,
-                            fps_samples: Vec::new(),
-                            last_fps_update: None,
-                            frame_count: 0,
-                        });
+                    this.window.ui_mut().skip_ui_rendering = true;
+                    this.test_mode_state = Some(TestModeState {
+                        active: false,
+                        start_time: None,
+                        duration: test_duration,
+                        fps_samples: Vec::new(),
+                        last_fps_update: None,
+                        frame_count: 0,
+                    });
 
-                        tokio::spawn(async move {
-                            match lumino_core::midi::loader::load_parsed_midi(
-                                midi_path,
-                                Some(&progress_cb),
-                            )
-                            .await
-                            {
-                                Ok(parsed) => {
-                                    tracing::info!("测试模式：MIDI 加载完成");
-                                    lumino_core::event::emit(lumino_core::event::Event::Menu(
-                                        lumino_core::event::menu::Event::File(
-                                            lumino_core::event::menu::file::Event::MidiParsed(
-                                                std::sync::Arc::new(parsed),
-                                            ),
+                    tokio::spawn(async move {
+                        match lumino_core::midi::loader::load_parsed_midi(
+                            midi_path,
+                            Some(&progress_cb),
+                        )
+                        .await
+                        {
+                            Ok(parsed) => {
+                                tracing::info!("测试模式：MIDI 加载完成");
+                                lumino_core::event::emit(lumino_core::event::Event::Menu(
+                                    lumino_core::event::menu::Event::File(
+                                        lumino_core::event::menu::file::Event::MidiParsed(
+                                            std::sync::Arc::new(parsed),
                                         ),
-                                    ));
-                                }
-                                Err(e) => {
-                                    tracing::error!("测试模式：MIDI 加载失败 - {e}");
-                                    lumino_core::event::emit(lumino_core::event::Event::Menu(
-                                        lumino_core::event::menu::Event::File(
-                                            lumino_core::event::menu::file::Event::MidiParseError(
-                                                e.to_string(),
-                                            ),
-                                        ),
-                                    ));
-                                }
+                                    ),
+                                ));
                             }
-                        });
-                    }
+                            Err(e) => {
+                                tracing::error!("测试模式：MIDI 加载失败 - {e}");
+                                lumino_core::event::emit(lumino_core::event::Event::Menu(
+                                    lumino_core::event::menu::Event::File(
+                                        lumino_core::event::menu::file::Event::MidiParseError(
+                                            e.to_string(),
+                                        ),
+                                    ),
+                                ));
+                            }
+                        }
+                    });
+                }
             }
             Err(e) => {
                 tracing::error!("Runner 初始化失败：{}", e);
@@ -205,52 +206,51 @@ impl winit::application::ApplicationHandler for Runner {
 
         // 测试模式 FPS 监测
         if let Some(test_state) = &mut this.test_mode_state
-            && test_state.active {
-                if test_state.start_time.is_none() {
-                    // MIDI 加载完成，开始测试
-                    test_state.start_time = Some(Instant::now());
-                    test_state.last_fps_update = Some(Instant::now());
-                    tracing::info!("FPS 测试开始");
-                }
+            && test_state.active
+        {
+            if test_state.start_time.is_none() {
+                // MIDI 加载完成，开始测试
+                test_state.start_time = Some(Instant::now());
+                test_state.last_fps_update = Some(Instant::now());
+                tracing::info!("FPS 测试开始");
+            }
 
-                test_state.frame_count += 1;
-                let now = Instant::now();
+            test_state.frame_count += 1;
+            let now = Instant::now();
 
-                if let Some(last) = test_state.last_fps_update {
-                    let elapsed = now.duration_since(last);
-                    if elapsed.as_millis() >= 100 {
-                        let fps = test_state.frame_count as f32 / elapsed.as_secs_f32();
-                        test_state.fps_samples.push(fps);
-                        test_state.frame_count = 0;
-                        test_state.last_fps_update = Some(now);
+            if let Some(last) = test_state.last_fps_update {
+                let elapsed = now.duration_since(last);
+                if elapsed.as_millis() >= 100 {
+                    let fps = test_state.frame_count as f32 / elapsed.as_secs_f32();
+                    test_state.fps_samples.push(fps);
+                    test_state.frame_count = 0;
+                    test_state.last_fps_update = Some(now);
 
-                        tracing::info!(
-                            "FPS: {:.1} (samples: {})",
-                            fps,
-                            test_state.fps_samples.len()
-                        );
+                    tracing::info!(
+                        "FPS: {:.1} (samples: {})",
+                        fps,
+                        test_state.fps_samples.len()
+                    );
 
-                        // 检查测试时间是否到达
-                        if let Some(duration) = test_state.duration {
-                            let should_exit = test_state
-                                .start_time
-                                .map(|start| {
-                                    now.duration_since(start) >= Duration::from_secs(duration)
-                                })
-                                .unwrap_or(false);
-                            if should_exit {
-                                let avg_fps = test_state.fps_samples.iter().sum::<f32>()
-                                    / test_state.fps_samples.len() as f32;
-                                tracing::info!("================================");
-                                tracing::info!("FPS 测试完成");
-                                tracing::info!("平均 FPS: {:.2}", avg_fps);
-                                tracing::info!("采样次数：{}", test_state.fps_samples.len());
-                                tracing::info!("================================");
-                                event_loop.exit();
-                            }
+                    // 检查测试时间是否到达
+                    if let Some(duration) = test_state.duration {
+                        let should_exit = test_state
+                            .start_time
+                            .map(|start| now.duration_since(start) >= Duration::from_secs(duration))
+                            .unwrap_or(false);
+                        if should_exit {
+                            let avg_fps = test_state.fps_samples.iter().sum::<f32>()
+                                / test_state.fps_samples.len() as f32;
+                            tracing::info!("================================");
+                            tracing::info!("FPS 测试完成");
+                            tracing::info!("平均 FPS: {:.2}", avg_fps);
+                            tracing::info!("采样次数：{}", test_state.fps_samples.len());
+                            tracing::info!("================================");
+                            event_loop.exit();
                         }
                     }
                 }
             }
+        }
     }
 }

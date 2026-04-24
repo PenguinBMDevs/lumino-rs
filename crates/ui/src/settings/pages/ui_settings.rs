@@ -17,13 +17,15 @@ pub fn view<'a>(
 ) -> Element<'a> {
     // 创建复选框
     let native_titlebar_checkbox = if cfg!(target_os = "macos") {
-        row![]  // macOS 不需要这个选项
+        row![] // macOS 不需要这个选项
     } else {
-        row![iced_widget::Checkbox::new(settings.use_native_titlebar)
-            .label("使用经典系统标题栏")
-            .on_toggle(|enabled| {
-            Message::Settings(crate::settings::Event::NativeTitlebarChanged(enabled))
-        })]
+        row![
+            iced_widget::Checkbox::new(settings.use_native_titlebar)
+                .label("使用经典系统标题栏")
+                .on_toggle(|enabled| {
+                    Message::Settings(crate::settings::Event::NativeTitlebarChanged(enabled))
+                })
+        ]
     };
 
     // 主题选项
@@ -107,6 +109,20 @@ pub fn view<'a>(
             .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
         text("启用后，将使用系统原生标题栏，隐藏 Logo 和自定义窗口控制按钮")
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+        // HiDPI 图标渲染选项
+        row![
+            iced_widget::Checkbox::new(settings.icon_hidpi)
+                .label("启用 HiDPI 图标渲染（推荐）")
+                .on_toggle(|enabled| {
+                    Message::Settings(crate::settings::Event::IconHiDPIChanged(enabled))
+                })
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        text("开启后图标以2x分辨率渲染，在视网膜屏幕上更清晰。关闭可节省少量内存和渲染开销。")
             .size(12.0)
             .style(create_placeholder_text_style()),
         iced_widget::space().height(24),
