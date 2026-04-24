@@ -23,12 +23,14 @@ impl Host {
         let ctrl = is_ctrl_or_cmd_pressed(modifiers);
         let shift = modifiers.contains(winit::keyboard::ModifiersState::SHIFT);
 
-        // 空格键：播放/暂停切换
+        // 空格键：播放/暂停切换（统一走 toolbar 消息路径）
         if key == winit::keyboard::KeyCode::Space {
             if self.root.toolbar.is_playing {
-                self.root.update(message::Message::Pause);
+                self.root
+                    .update(message::Message::Toolbar(toolbar::Event::Pause));
             } else {
-                self.root.update(message::Message::Play);
+                self.root
+                    .update(message::Message::Toolbar(toolbar::Event::Play));
             }
             self.window.request_redraw();
             return;

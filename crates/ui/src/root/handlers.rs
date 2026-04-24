@@ -1,10 +1,9 @@
 //! Root 消息处理器
 //!
 //! 采用分治法策略，将消息处理逻辑拆分为专门的处理器：
-//! - PlaybackHandler: 播放控制
-//! - CollaborationHandler: 协作功能  
+//! - CollaborationHandler: 协作功能
 //! - DialogHandler: 对话框管理
-//! - ToolbarHandler: 工具栏事件
+//! - ToolbarHandler: 工具栏事件（播放控制统一通过此路径）
 //!
 //! 通过 MessageRouter 按顺序分发消息。
 
@@ -15,13 +14,11 @@ use crate::{sidebar, window};
 // 重新导出子模块
 pub mod collaboration;
 pub mod dialog;
-pub mod playback;
 pub mod toolbar;
 
 // 重新导出处理器类型
 pub use collaboration::CollaborationHandler;
 pub use dialog::DialogHandler;
-pub use playback::PlaybackHandler;
 pub use toolbar::ToolbarHandler;
 
 /// 消息处理器 trait
@@ -79,7 +76,6 @@ impl Root {
     /// 创建配置好的消息路由器
     pub fn create_message_router() -> MessageRouter {
         let mut router = MessageRouter::new();
-        router.register(Box::new(PlaybackHandler::new()));
         router.register(Box::new(CollaborationHandler::new()));
         router.register(Box::new(DialogHandler::new()));
         router.register(Box::new(ToolbarHandler::new()));

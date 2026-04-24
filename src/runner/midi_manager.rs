@@ -381,20 +381,13 @@ impl MidiManager {
 
         // ── 策略3：兜底——取走主输出连接给播放引擎 ──
         // 播放期间音符预览会暂时无响应，但播放功能正常
+        // System 后端启动时只有 1 个 MIDI OUT 端口，fallback 是预期行为，不记录日志
         if let Some(output) = self.output.take() {
-            // System 后端启动时只有 1 个 MIDI OUT 端口，fallback 是预期行为
             // XSynth 切换后还 fallback 才值得警告
-            match self.active_backend {
-                SynthBackend::System | SynthBackend::Kdmapi => {
-                    tracing::info!(
-                        "MIDI 播放输出: 策略1和2均失败，使用主输出作为播放输出（音符预览将暂时不可用）"
-                    );
-                }
-                SynthBackend::XSynth => {
-                    tracing::warn!(
-                        "MIDI 播放输出: 策略1和2均失败，使用主输出作为播放输出（音符预览将暂时不可用）"
-                    );
-                }
+            if matches!(self.active_backend, SynthBackend::XSynth) {
+                tracing::warn!(
+                    "MIDI 播放输出: 策略1和2均失败，使用主输出作为播放输出（音符预览将暂时不可用）"
+                );
             }
             return Some(output);
         }

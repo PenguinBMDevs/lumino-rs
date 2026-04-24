@@ -60,6 +60,7 @@ mod tests {
     use crate::editor::note::Note;
     use crate::message::Message;
     use crate::playback::PlaybackState;
+    use crate::toolbar;
     use lumino_core::storage::config::UiConfig;
 
     /// 模拟 MIDI 输出连接，用于测试 playback 流程
@@ -107,7 +108,7 @@ mod tests {
 
     /// 测试核心契约：
     /// set_midi_output 在无 playback_manager 时缓存到 pending_midi_output，
-    /// Message::Play 消费它并创建 playback_manager
+    /// Message::Toolbar(toolbar::Event::Play) 消费它并创建 playback_manager
     #[test]
     fn test_play_consumes_pending_midi_output() {
         let mut root = create_root();
@@ -132,7 +133,7 @@ mod tests {
         );
 
         // 发送 Play 消息 → 应消费缓存并创建管理器
-        root.update(Message::Play);
+        root.update(Message::Toolbar(toolbar::Event::Play));
         assert!(root.playback_manager.is_some(), "Play 消息应创建播放管理器");
         assert!(
             root.pending_midi_output.is_none(),
@@ -147,7 +148,7 @@ mod tests {
         // 通过 toolbar.is_playing 同步标志和 manager 存在性验证流程正确性。
 
         // 停止并自动清理
-        root.update(Message::Stop);
+        root.update(Message::Toolbar(toolbar::Event::Stop));
         assert!(!root.toolbar.is_playing, "Stop 后工具栏 playing 应为 false");
     }
 
@@ -160,7 +161,7 @@ mod tests {
 
         // 先通过 Play 创建 playback_manager
         root.set_midi_output(create_mock_output());
-        root.update(Message::Play);
+        root.update(Message::Toolbar(toolbar::Event::Play));
         assert!(root.playback_manager.is_some());
         assert!(root.pending_midi_output.is_none());
 
@@ -171,7 +172,7 @@ mod tests {
             "有播放管理器时不应缓存 MIDI output"
         );
 
-        root.update(Message::Stop);
+        root.update(Message::Toolbar(toolbar::Event::Stop));
     }
 
     /// 测试 clear_midi_output 的完整性：清除缓存 + 转发到管理器
@@ -192,14 +193,14 @@ mod tests {
         // 有管理器时
         root.editor.notes.push_back(Note::new(0.0, 60, 480.0));
         root.set_midi_output(create_mock_output());
-        root.update(Message::Play);
+        root.update(Message::Toolbar(toolbar::Event::Play));
         root.clear_midi_output();
         assert!(
             root.pending_midi_output.is_none(),
             "有管理器时 clear 后 pending 仍应为 None"
         );
 
-        root.update(Message::Stop);
+        root.update(Message::Toolbar(toolbar::Event::Stop));
     }
 
     /// 测试完整的笔记生命周期：
@@ -218,7 +219,7 @@ mod tests {
         assert!(root.pending_midi_output.is_some());
 
         // 播放
-        root.update(Message::Play);
+        root.update(Message::Toolbar(toolbar::Event::Play));
         assert!(root.playback_manager.is_some(), "播放管理器应被创建");
         assert!(
             root.pending_midi_output.is_none(),
@@ -227,7 +228,7 @@ mod tests {
         assert!(root.toolbar.is_playing, "播放后工具栏应标记为 playing");
 
         // 停止
-        root.update(Message::Stop);
+        root.update(Message::Toolbar(toolbar::Event::Stop));
 
         // 验证停止后状态（manager.state() 是异步的，但发送 Command::Stop 后
         // 引擎线程会处理并更新状态。由于 Manager::stop() 是同步发送消息，
@@ -260,7 +261,7 @@ mod tests {
 
         // 先播放（此时无音符）
         root.set_midi_output(create_mock_output());
-        root.update(Message::Play);
+        root.update(Message::Toolbar(toolbar::Event::Play));
         assert!(root.playback_manager.is_some());
 
         // 添加音符并标记变更
@@ -277,7 +278,7 @@ mod tests {
         assert!(root.playback_manager.is_some());
         assert!(root.pending_midi_output.is_none());
 
-        root.update(Message::Stop);
+        root.update(Message::Toolbar(toolbar::Event::Stop));
     }
 
     /// 测试 load_tempo_changes 在无管理器时缓存
@@ -296,7 +297,7 @@ mod tests {
         // 播放时应消费缓存的 tempo changes
         root.editor.notes.push_back(Note::new(0.0, 60, 480.0));
         root.set_midi_output(create_mock_output());
-        root.update(Message::Play);
+        root.update(Message::Toolbar(toolbar::Event::Play));
 
         assert!(
             root.pending_tempo_changes.is_none(),
@@ -304,7 +305,7 @@ mod tests {
         );
         assert!(root.playback_manager.is_some());
 
-        root.update(Message::Stop);
+        root.update(Message::Toolbar(toolbar::Event::Stop));
     }
 
     /// 测试 set_midi_output 和 set_playback_midi_output (Host 层) 的一致性
@@ -317,11 +318,11 @@ mod tests {
         root.set_midi_output(create_mock_output());
         assert!(root.pending_midi_output.is_some());
 
-        root.update(Message::Play);
+        root.update(Message::Toolbar(toolbar::Event::Play));
         assert!(root.pending_midi_output.is_none());
         assert!(root.playback_manager.is_some());
 
-        root.update(Message::Stop);
+        root.update(Message::Toolbar(toolbar::Event::Stop));
     }
 
     /// 端到端测试：验证引擎线程实际发送了 MIDI note_on 消息
@@ -357,7 +358,7 @@ mod tests {
         assert!(root.pending_midi_output.is_some());
 
         // 发送 Play 消息
-        root.update(Message::Play);
+        root.update(Message::Toolbar(toolbar::Event::Play));
         assert!(root.playback_manager.is_some(), "播放管理器应被创建");
         assert!(
             root.pending_midi_output.is_none(),
@@ -388,7 +389,7 @@ mod tests {
         tracing::info!("端到端测试: note_on={}, note_off={}", on_count, off_count);
 
         // 停止播放
-        root.update(Message::Stop);
+        root.update(Message::Toolbar(toolbar::Event::Stop));
 
         // 断言：至少应该有一个 note_on 被发送
         // 如果这里是 0，说明整个播放管道有问题
@@ -449,7 +450,7 @@ mod tests {
         );
 
         // 步骤3：用户点击播放按钮
-        root.update(Message::Play);
+        root.update(Message::Toolbar(toolbar::Event::Play));
 
         // 播放管理器应该被创建
         assert!(
@@ -480,7 +481,7 @@ mod tests {
         );
 
         // 停止
-        root.update(Message::Stop);
+        root.update(Message::Toolbar(toolbar::Event::Stop));
 
         // 断言
         assert!(
@@ -515,11 +516,11 @@ mod tests {
 
         // 步骤1：先添加一个音符并播放（创建播放管理器）
         root.editor.notes.push_back(Note::new(0.0, 60, 480.0));
-        root.update(Message::Play);
+        root.update(Message::Toolbar(toolbar::Event::Play));
         assert!(root.playback_manager.is_some(), "第一次播放应创建管理器");
 
         // 停止
-        root.update(Message::Stop);
+        root.update(Message::Toolbar(toolbar::Event::Stop));
         thread::sleep(Duration::from_millis(50));
 
         // 步骤2：再画一个音符（模拟用户操作）
@@ -533,7 +534,7 @@ mod tests {
         }
 
         // 步骤3：再次播放
-        root.update(Message::Play);
+        root.update(Message::Toolbar(toolbar::Event::Play));
 
         // 驱动播放
         thread::sleep(Duration::from_millis(50));
@@ -552,7 +553,7 @@ mod tests {
         );
 
         // 停止
-        root.update(Message::Stop);
+        root.update(Message::Toolbar(toolbar::Event::Stop));
 
         // 断言：应该有两个 note_on（两个音符）
         assert!(
