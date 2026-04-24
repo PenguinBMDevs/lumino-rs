@@ -1,16 +1,46 @@
 use thiserror::Error;
 
 /// 根据可用的 present modes 选择最优的 present mode
-/// 优先级：Mailbox > Immediate > Fifo > AutoVsync
+///
+/// macOS 上使用 Mailbox 优先策略（2026-04-24）：
+/// Immediate 在 macOS 上会导致画面撕裂和 WindowServer 负载激增，
+/// Mailbox 保留低延迟同时启用垂直同步。
+///
+/// 其他平台保持 Immediate 优先以降低输入延迟。
 fn select_present_mode(modes: &[wgpu::PresentMode]) -> wgpu::PresentMode {
-    if modes.contains(&wgpu::PresentMode::Immediate) {
-        wgpu::PresentMode::Immediate
-    } else if modes.contains(&wgpu::PresentMode::Mailbox) {
-        wgpu::PresentMode::Mailbox
-    } else if modes.contains(&wgpu::PresentMode::Fifo) {
-        wgpu::PresentMode::Fifo
-    } else {
+    // macOS：Mailbox 优先，消除画面撕裂
+    #[cfg(target_os = "macos")]
+    {
+        if modes.contains(&wgpu::PresentMode::Mailbox) {
+            return wgpu::PresentMode::Mailbox;
+        }
+        if modes.contains(&wgpu::PresentMode::Fifo) {
+            return wgpu::PresentMode::Fifo;
+        }
+        if modes.contains(&wgpu::PresentMode::AutoVsync) {
+            return wgpu::PresentMode::AutoVsync;
+        }
+        if modes.contains(&wgpu::PresentMode::Immediate) {
+            tracing::warn!("仅 Immediate 模式可用——将禁用垂直同步，macOS 上可能出现画面撕裂");
+            return wgpu::PresentMode::Immediate;
+        }
         wgpu::PresentMode::AutoVsync
+    }
+
+    // 非 macOS 平台：Immediate 优先，降低输入延迟
+    #[cfg(not(target_os = "macos"))]
+    {
+        if modes.contains(&wgpu::PresentMode::Immediate) {
+            wgpu::PresentMode::Immediate
+        } else if modes.contains(&wgpu::PresentMode::Mailbox) {
+            wgpu::PresentMode::Mailbox
+        } else if modes.contains(&wgpu::PresentMode::Fifo) {
+            wgpu::PresentMode::Fifo
+        } else if modes.contains(&wgpu::PresentMode::AutoVsync) {
+            wgpu::PresentMode::AutoVsync
+        } else {
+            wgpu::PresentMode::Fifo
+        }
     }
 }
 
@@ -94,7 +124,7 @@ impl Context {
             .await
             .map_err(|e| ContextError::DeviceRequest(e.to_string()))?;
 
-        // 添加于2026-02-01，尝试解决音符不跟手的问题（2方案+1回退+1旧方案）
+        // 选择最优 PresentMode（macOS 上 Mailbox 优先，其他平台 Immediate 优先）
         let present_mode = select_present_mode(&capabilities.present_modes);
         tracing::info!("Selected present_mode: {:?}", present_mode);
 
