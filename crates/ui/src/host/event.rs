@@ -49,7 +49,7 @@ impl Host {
         };
 
         if let Some(action) = action {
-            self.root.editor.handle_action(action);
+            self.root.handle_editor_action(action);
             // 仅请求重绘，不重建UI树（编辑器操作由canvas/WGPU层处理）
             self.window.request_redraw();
         }

@@ -34,6 +34,8 @@ enum XSynthInitResult {
 pub struct MidiManager {
     /// 保存 API 实例（用于保持 RealtimeSynth 等存活）
     api: Option<Box<dyn lumino_midi::Api>>,
+    /// 备用 API 实例（用于 create_additional_output 创建独立播放连接时保持存活）
+    fallback_api: Option<Box<dyn lumino_midi::Api>>,
     /// MIDI 输出连接
     output: Option<Box<dyn lumino_midi::OutputConnection>>,
     /// 实际启用的合成器后端
@@ -46,18 +48,34 @@ pub struct MidiManager {
     xsynth_init_rx: Option<Receiver<XSynthInitResult>>,
     /// 是否正在异步初始化 XSynth
     is_xsynth_initializing: bool,
+    /// XSynth 音色库路径（用于 create_additional_output 回退创建时重用）
+    xsynth_soundfont_path: String,
+    /// XSynth 缓冲区大小（毫秒）
+    xsynth_buffer_ms: f64,
+    /// XSynth 合成线程数
+    xsynth_threads: i32,
+    /// XSynth 采样率
+    xsynth_sample_rate: u32,
+    /// XSynth 是否启用 killing fade-out
+    xsynth_fade_out_killing: bool,
 }
 
 impl Default for MidiManager {
     fn default() -> Self {
         Self {
             api: None,
+            fallback_api: None,
             output: None,
             active_backend: SynthBackend::System,
             needs_reinit: false,
             preferred_backend: SynthBackend::System,
             xsynth_init_rx: None,
             is_xsynth_initializing: false,
+            xsynth_soundfont_path: String::new(),
+            xsynth_buffer_ms: 0.0,
+            xsynth_threads: 0,
+            xsynth_sample_rate: 0,
+            xsynth_fade_out_killing: false,
         }
     }
 }
@@ -79,12 +97,18 @@ impl MidiManager {
 
         let mut manager = Self {
             api: result.api,
+            fallback_api: None,
             output: result.output,
             active_backend: result.backend,
             needs_reinit: false,
             preferred_backend: preferred,
             xsynth_init_rx: None,
             is_xsynth_initializing: false,
+            xsynth_soundfont_path: ui_config.soundfont_path.clone(),
+            xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
+            xsynth_threads: ui_config.xsynth_threads,
+            xsynth_sample_rate: ui_config.xsynth_sample_rate,
+            xsynth_fade_out_killing: ui_config.xsynth_fade_out_killing,
         };
 
         // 如果偏好 XSynth，在后台异步初始化
@@ -246,14 +270,16 @@ impl MidiManager {
     }
 
     /// 检查异步初始化是否完成，如果完成则切换到 XSynth
-    pub fn check_async_init_complete(&mut self) {
+    ///
+    /// 返回 `true` 表示后端已成功切换到 XSynth，调用方应据此更新播放 MIDI 输出。
+    pub fn check_async_init_complete(&mut self) -> bool {
         if !self.is_xsynth_initializing {
-            return;
+            return false;
         }
 
         let rx = match &self.xsynth_init_rx {
             Some(rx) => rx,
-            None => return,
+            None => return false,
         };
 
         // 非阻塞检查接收器
@@ -271,20 +297,25 @@ impl MidiManager {
                 self.active_backend = SynthBackend::XSynth;
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
+
+                true
             }
             Ok(XSynthInitResult::Failed(e)) => {
                 tracing::warn!("XSynth: 异步初始化失败: {}", e);
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
                 // 保持在当前后端（System）
+                false
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
                 // 还在初始化中，不做任何事
+                false
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 tracing::warn!("XSynth: 初始化线程异常断开");
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
+                false
             }
         }
     }
@@ -295,11 +326,103 @@ impl MidiManager {
     }
 
     /// 创建额外的 MIDI 输出连接（用于播放引擎）
-    pub fn create_additional_output(&self) -> Option<Box<dyn lumino_midi::OutputConnection>> {
-        let api = self.api.as_ref()?;
-        let outputs = api.outputs().ok()?;
+    ///
+    /// 使用多策略 fallback:
+    /// 1. 在现有 API 上打开第二个连接（某些驱动可能不支持）
+    /// 2. 创建全新 API 实例 + 连接（保存新 API 到 fallback_api 防止释放）
+    /// 3. 兜底：取走主输出连接（播放期间音符预览静音，但至少播放功能正常）
+    pub fn create_additional_output(&mut self) -> Option<Box<dyn lumino_midi::OutputConnection>> {
+        // ── 策略1：在现有 API 上尝试打开第二个连接 ──
+        if let Some(api) = self.api.as_ref()
+            && let Ok(outputs) = api.outputs()
+            && let Some(output) = outputs.first()
+            && let Ok(conn) = api.open_output(output.id)
+        {
+            tracing::info!("MIDI 播放输出: 策略1成功，从现有 API 创建了第二个连接");
+            return Some(conn);
+        }
+
+        // ── 策略2：创建全新的 API 实例 ──
+        // OutputConnection 是自包含的，不需要父 Api 保持存活
+        // （midir::MidiOutputConnection 持有自己的 OS 句柄）
+        let strategy2_result = match self.active_backend {
+            SynthBackend::XSynth => {
+                // XSynth 后端：使用 XSynth options 创建独立实例
+                let path = std::path::PathBuf::from(&self.xsynth_soundfont_path);
+                let api_kind = lumino_midi::ApiKind::XSynth {
+                    soundfont_path: path,
+                };
+                let options = lumino_midi::api::xsynth::XSynthOptions {
+                    buffer_ms: self.xsynth_buffer_ms,
+                    threads: self.xsynth_threads,
+                    sample_rate: self.xsynth_sample_rate,
+                    fade_out_killing: self.xsynth_fade_out_killing,
+                };
+                Self::try_open_new_api(&api_kind, Some(options))
+            }
+            SynthBackend::System | SynthBackend::Kdmapi => {
+                let api_kind = match self.active_backend {
+                    SynthBackend::Kdmapi => {
+                        let path = std::path::PathBuf::from("OmniMIDI.dll");
+                        lumino_midi::ApiKind::Kdmapi { path }
+                    }
+                    _ => lumino_midi::ApiKind::System,
+                };
+                Self::try_open_new_api(&api_kind, None)
+            }
+        };
+
+        if let Some((new_api, conn)) = strategy2_result {
+            // 必须保持 new_api 存活，否则连接可能失效
+            self.fallback_api = Some(new_api);
+            tracing::info!("MIDI 播放输出: 策略2成功，从全新 API 实例创建了连接");
+            return Some(conn);
+        }
+
+        // ── 策略3：兜底——取走主输出连接给播放引擎 ──
+        // 播放期间音符预览会暂时无响应，但播放功能正常
+        if let Some(output) = self.output.take() {
+            // System 后端启动时只有 1 个 MIDI OUT 端口，fallback 是预期行为
+            // XSynth 切换后还 fallback 才值得警告
+            match self.active_backend {
+                SynthBackend::System | SynthBackend::Kdmapi => {
+                    tracing::info!(
+                        "MIDI 播放输出: 策略1和2均失败，使用主输出作为播放输出（音符预览将暂时不可用）"
+                    );
+                }
+                SynthBackend::XSynth => {
+                    tracing::warn!(
+                        "MIDI 播放输出: 策略1和2均失败，使用主输出作为播放输出（音符预览将暂时不可用）"
+                    );
+                }
+            }
+            return Some(output);
+        }
+
+        tracing::error!("MIDI 播放输出: 无法创建任何输出连接，播放将无声");
+        None
+    }
+
+    /// 辅助方法：尝试创建新的 API 实例并打开输出连接
+    ///
+    /// 返回 `(api, connection)` 元组，其中 `api` 需要保持存活。
+    fn try_open_new_api(
+        api_kind: &lumino_midi::ApiKind,
+        options: Option<lumino_midi::api::xsynth::XSynthOptions>,
+    ) -> Option<(
+        Box<dyn lumino_midi::Api>,
+        Box<dyn lumino_midi::OutputConnection>,
+    )> {
+        let new_api: Box<dyn lumino_midi::Api> = match options {
+            Some(opts) => lumino_midi::new_api_with_options(api_kind, Some(opts)).ok()?,
+            None => lumino_midi::new_api(api_kind).ok()?,
+        };
+
+        let outputs = new_api.outputs().ok()?;
         let output = outputs.first()?;
-        api.open_output(output.id).ok()
+        let conn = new_api.open_output(output.id).ok()?;
+
+        Some((new_api, conn))
     }
 
     /// 标记需要重新初始化
@@ -328,10 +451,18 @@ impl MidiManager {
         // 更新偏好后端
         self.preferred_backend = ui_config.preferred_backend;
 
-        // 关闭旧的 MIDI 输出
+        // 更新 XSynth 配置（供 create_additional_output 回退创建时使用）
+        self.xsynth_soundfont_path = ui_config.soundfont_path.clone();
+        self.xsynth_buffer_ms = ui_config.xsynth_buffer_ms;
+        self.xsynth_threads = ui_config.xsynth_threads;
+        self.xsynth_sample_rate = ui_config.xsynth_sample_rate;
+        self.xsynth_fade_out_killing = ui_config.xsynth_fade_out_killing;
+
+        // 关闭旧的 MIDI 输出和备用 API
         if let Some(old_output) = self.output.take() {
             drop(old_output);
         }
+        self.fallback_api = None;
         self.xsynth_init_rx = None;
         self.is_xsynth_initializing = false;
 

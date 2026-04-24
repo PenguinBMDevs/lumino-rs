@@ -179,7 +179,16 @@ impl winit::application::ApplicationHandler for Runner {
         }
 
         // 检查 XSynth 异步初始化是否完成
-        this.midi.check_async_init_complete();
+        // 如果后端从 System 切到 XSynth，同步更新播放引擎的 MIDI 输出
+        if this.midi.check_async_init_complete() {
+            tracing::info!("XSynth: 异步初始化完成，正在创建新的播放连接...");
+            if let Some(output) = this.midi.create_additional_output() {
+                this.window.ui_mut().set_playback_midi_output(output);
+                tracing::info!("XSynth: 播放引擎 MIDI 输出已更新为 XSynth");
+            } else {
+                tracing::error!("XSynth: 无法创建 XSynth 播放输出，播放将无声");
+            }
+        }
 
         // 检查是否需要重启窗口（标题栏设置变更）
         if this.needs_window_restart {

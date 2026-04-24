@@ -262,7 +262,7 @@ impl Host {
 
     /// 处理编辑器动作
     pub fn handle_action(&mut self, action: message::EditorAction) {
-        self.root.editor.handle_action(action);
+        self.root.handle_editor_action(action);
         // 仅请求重绘，不重建UI树（编辑器动作由canvas/WGPU层处理）
         self.window.request_redraw();
     }

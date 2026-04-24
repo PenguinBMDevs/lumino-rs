@@ -114,7 +114,7 @@ impl Runner {
         let ui_state = storage.ui_state.get();
 
         // 创建主窗口管理器
-        let window = WindowManager::new(event_loop, ui_state, &config.ui)
+        let mut window = WindowManager::new(event_loop, ui_state, &config.ui)
             .map_err(|e| InitError::Window(e.to_string()))?;
 
         // 创建进度管理器
@@ -122,7 +122,16 @@ impl Runner {
         let progress_cb = lumino_core::midi::loader::progress_from_sender(progress_tx);
 
         // 创建 MIDI 管理器
-        let midi = MidiManager::from_config(&config.ui);
+        let mut midi = MidiManager::from_config(&config.ui);
+
+        // 为播放引擎创建独立的 MIDI 输出连接（用于新项目的播放功能）
+        // 这样用户自绘音符在点击播放按钮时能正常发声
+        if let Some(output) = midi.create_additional_output() {
+            window.ui_mut().set_playback_midi_output(output);
+            tracing::info!("Runner: 播放引擎 MIDI 输出连接已就绪");
+        } else {
+            tracing::error!("Runner: 无法创建播放引擎 MIDI 输出，播放将无声");
+        }
 
         // 创建对话框管理器
         let dialog_manager = DialogManager::new();

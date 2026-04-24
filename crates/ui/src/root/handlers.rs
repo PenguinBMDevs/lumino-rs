@@ -290,7 +290,7 @@ impl Root {
     }
 
     /// 处理编辑器动作
-    fn handle_editor_action(&mut self, action: EditorAction) {
+    pub(crate) fn handle_editor_action(&mut self, action: EditorAction) {
         let old_tick = self.editor.playback_position;
         self.editor.handle_action(action);
         let new_tick = self.editor.playback_position;
