@@ -35,26 +35,8 @@ impl Titlebar {
 
         // 构建标题栏内容：左侧菜单 + 中间可拖动区域 + 右侧窗口控制
         let inner = if cfg!(target_os = "macos") {
-            // macOS: 菜单在最左侧，中间可拖动，右侧可能有FPS
+            // macOS: FPS 已移到底部状态栏显示，标题栏只保留菜单和弹性空间
             let mut row = menu_row;
-
-            // Debug 模式下显示 FPS
-            if let Some(fps) = window.fps {
-                row =
-                    row.push(
-                        container(text(format!("FPS: {:.1}", fps)).size(12).style(
-                            |theme: &Theme| {
-                                let palette = theme.extended_palette();
-                                text::Style {
-                                    color: Some(palette.primary.strong.color),
-                                }
-                            },
-                        ))
-                        .padding([0, 10])
-                        .align_y(iced_core::Alignment::Center)
-                        .height(Length::Fill),
-                    );
-            }
 
             row = row.push(space().width(Length::Fill));
 

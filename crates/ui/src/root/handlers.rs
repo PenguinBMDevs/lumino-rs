@@ -233,7 +233,16 @@ impl Root {
     }
 
     fn handle_window_event(&mut self, event: window::Event) {
-        let is_theme_change = matches!(event, window::Event::Theme(_));
+        // macOS: 将 FPS 事件转发到状态栏（仅在调试模式下）
+        let is_fps_update = cfg!(target_os = "macos")
+            && cfg!(debug_assertions)
+            && matches!(&event, window::Event::FpsUpdate(_));
+        let is_theme_change = matches!(&event, window::Event::Theme(_));
+
+        if is_fps_update && let window::Event::FpsUpdate(fps) = &event {
+            self.statusbar.set_fps(*fps);
+        }
+
         self.window.update(event);
 
         if is_theme_change {
