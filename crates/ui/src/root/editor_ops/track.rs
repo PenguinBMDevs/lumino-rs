@@ -17,8 +17,8 @@ impl Root {
 
     pub fn set_ppq(&mut self, ppq: u16) {
         self.editor.state.ppq = ppq;
-        self.editor.state.snap_precision = (ppq as f32) / 2.0;
-        self.editor.state.default_note_length = (ppq as f32) / 2.0;
+        self.editor.state.snap_precision = ppq as f32;
+        self.editor.state.default_note_length = ppq as f32;
     }
 
     /// 加载音符到编辑器

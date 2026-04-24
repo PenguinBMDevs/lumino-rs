@@ -18,10 +18,10 @@ pub const DEFAULT_KEY_COUNT: u16 = 128;
 pub const DEFAULT_VISIBLE_KEY_COUNT: u16 = 128;
 /// 默认键盘宽度 (pixel)
 pub const DEFAULT_KEYBOARD_WIDTH: f32 = 120.0;
-/// 默认音符对齐精度 (tick) - 四分之一拍子线
-pub const DEFAULT_SNAP_PRECISION: f32 = (DEFAULT_PPQ as f32) / 2.0;
-/// 默认音符长度 (tick) - 等于拍子线间隔
-pub const DEFAULT_NOTE_LENGTH: f32 = (DEFAULT_PPQ as f32) / 2.0;
+/// 默认音符对齐精度 (tick) - 四分音符（一个拍子线间隔 = PPQ）
+pub const DEFAULT_SNAP_PRECISION: f32 = DEFAULT_PPQ as f32;
+/// 默认音符长度 (tick) - 等于拍子线间隔（四分音符）
+pub const DEFAULT_NOTE_LENGTH: f32 = DEFAULT_PPQ as f32;
 /// 默认时间轴标尺高度 (pixel)
 pub const DEFAULT_RULER_HEIGHT: f32 = 24.0;
 
@@ -38,7 +38,7 @@ pub struct ViewState {
     pub visible_key_count: u16,   // 显示的琴键数量，默认128，最大256
     pub ppq: u16,                 // 分辨率，整数，默认设定为1920，最大值65535
     pub keyboard_width: f32,      // 键盘宽度，单位为像素，默认120
-    pub snap_precision: f32,      // 音符对齐精度，单位为tick，默认ppq/2（四分之一拍子线）
+    pub snap_precision: f32,      // 音符对齐精度，单位为tick，默认ppq（四分音符拍子线）
     pub default_note_length: f32, // 默认音符长度（ticks），等于拍子线间隔
     pub ruler_height: f32,        // 时间轴标尺高度（小节号显示区域），单位为像素
     // pub scale: Scale // 之后我们需要支持不同的调式/微分音
