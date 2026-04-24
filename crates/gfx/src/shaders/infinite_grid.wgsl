@@ -97,15 +97,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     let base_width = 1.0;
 
-    // Y轴网格线 (琴键分隔线) - 检测 key_index 是否为整数
-    let key_frac = fract(key_f32);
-    let dist_key = min(key_frac, 1.0 - key_frac);
-    if dist_key * camera.zoom.y < base_width {
-        return mix(bg_color, camera.color_key_line, 0.8);
-    }
+    // X轴网格线（先检查）：纵向线（小节线/拍线/1/8分割线/1/16网格线）
+    // 在横向线上方渲染，使得交叉点处纵向线优先显示
 
-    // X轴网格线 - 检测 tick 是否在网格边界上
-    
     // 小节线（最粗）
     let measure_frac = fract(world_tick / ticks_per_measure);
     let dist_measure = min(measure_frac, 1.0 - measure_frac) * ticks_per_measure * camera.zoom.x;
@@ -139,6 +133,14 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         if camera.zoom.x > 0.06 && dist_half >= base_width {
             return mix(bg_color, camera.color_grid, 0.5);
         }
+    }
+
+    // Y轴网格线（后检查）：横向琴键分隔线
+    // 在纵向线下方渲染，使得交叉点处纵向线优先显示
+    let key_frac = fract(key_f32);
+    let dist_key = min(key_frac, 1.0 - key_frac);
+    if dist_key * camera.zoom.y < base_width {
+        return mix(bg_color, camera.color_key_line, 0.8);
     }
 
     return bg_color;

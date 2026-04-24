@@ -300,6 +300,41 @@ impl Editor {
         let canvas_width = self.canvas_size.x;
         let canvas_height = self.canvas_size.y;
 
+        // === 先添加横向琴键分隔线（在纵向网格线下方渲染）===
+        let start_key = view.scroll_y / view.zoom_y;
+        let end_key = (view.scroll_y + canvas_height - ruler_height) / view.zoom_y;
+
+        let mut current_key = start_key.floor() as i32;
+
+        while (current_key as f32) < end_key {
+            let screen_y = (current_key as f32 * view.zoom_y) - view.scroll_y
+                + ruler_height
+                + self.canvas_offset.y;
+
+            if screen_y >= self.canvas_offset.y + ruler_height
+                && screen_y <= self.canvas_offset.y + canvas_height
+            {
+                let is_white_key = [0, 2, 4, 5, 7, 9, 11].contains(&(current_key % 12));
+                if !is_white_key {
+                    let x_start = keyboard_width + self.canvas_offset.x;
+                    let x_end = canvas_width + self.canvas_offset.x;
+                    instances.push(lumino_gfx::GridLineInstance::new(
+                        [x_start, screen_y],
+                        [x_end, screen_y],
+                        [
+                            key_line_color.r,
+                            key_line_color.g,
+                            key_line_color.b,
+                            key_line_color.a,
+                        ],
+                        1.0,
+                    ));
+                }
+            }
+            current_key += 1;
+        }
+
+        // === 后添加纵向网格线（在横向线上方渲染）===
         let measure_ticks = ppq * 4.0;
         let start_tick = view.scroll_x / view.zoom_x;
         let end_tick = (view.scroll_x + canvas_width - keyboard_width) / view.zoom_x;
@@ -353,40 +388,6 @@ impl Editor {
                 ));
             }
             current_tick += grid_gap;
-        }
-
-        let key_height = view.zoom_y;
-        let start_key = view.scroll_y / view.zoom_y;
-        let end_key = (view.scroll_y + canvas_height - ruler_height) / view.zoom_y;
-
-        let mut current_key = start_key.floor() as i32;
-
-        while (current_key as f32) < end_key {
-            let screen_y = (current_key as f32 * view.zoom_y) - view.scroll_y
-                + ruler_height
-                + self.canvas_offset.y;
-
-            if screen_y >= self.canvas_offset.y + ruler_height
-                && screen_y <= self.canvas_offset.y + canvas_height
-            {
-                let is_white_key = [0, 2, 4, 5, 7, 9, 11].contains(&(current_key % 12));
-                if !is_white_key {
-                    let x_start = keyboard_width + self.canvas_offset.x;
-                    let x_end = canvas_width + self.canvas_offset.x;
-                    instances.push(lumino_gfx::GridLineInstance::new(
-                        [x_start, screen_y],
-                        [x_end, screen_y],
-                        [
-                            key_line_color.r,
-                            key_line_color.g,
-                            key_line_color.b,
-                            key_line_color.a,
-                        ],
-                        1.0,
-                    ));
-                }
-            }
-            current_key += 1;
         }
     }
 }

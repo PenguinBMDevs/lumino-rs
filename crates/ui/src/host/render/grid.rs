@@ -23,7 +23,34 @@ impl Host {
         let visible_key_start = scroll_y / zoom_y;
         let visible_key_end = (scroll_y + viewport_height - ruler_height) / zoom_y;
 
-        // 小节线（垂直线）
+        // 琴键线（水平线，先添加使在纵向线下方渲染）
+        let key_start = visible_key_start.floor() as i32;
+        let key_end = visible_key_end.ceil() as i32;
+
+        for key in key_start..=key_end {
+            let y = ruler_height + key as f32 * zoom_y - scroll_y;
+
+            if y >= ruler_height && y <= viewport_height {
+                // 判断是否为黑键
+                let is_black = Host::is_black_key(key as isize);
+
+                let color = if is_black {
+                    [0.15, 0.15, 0.15, 1.0]
+                } else {
+                    [0.1, 0.1, 0.1, 1.0]
+                };
+                let width = if is_black { 0.5 } else { 0.3 };
+
+                instances.push(lumino_gfx::GridLineInstance::new(
+                    [keyboard_width, y],
+                    [viewport_width, y],
+                    color,
+                    width,
+                ));
+            }
+        }
+
+        // 小节线（垂直线，后添加使在横向线上方渲染）
         let ticks_per_measure = super::TICKS_PER_MEASURE as f32;
         let measure_start = (visible_tick_start / ticks_per_measure).floor() as i32;
         let measure_end = (visible_tick_end / ticks_per_measure).ceil() as i32;
@@ -60,33 +87,6 @@ impl Host {
                     [x, viewport_height],
                     [0.2, 0.2, 0.2, 1.0],
                     0.5,
-                ));
-            }
-        }
-
-        // 琴键线（水平线）
-        let key_start = visible_key_start.floor() as i32;
-        let key_end = visible_key_end.ceil() as i32;
-
-        for key in key_start..=key_end {
-            let y = ruler_height + key as f32 * zoom_y - scroll_y;
-
-            if y >= ruler_height && y <= viewport_height {
-                // 判断是否为黑键
-                let is_black = Host::is_black_key(key as isize);
-
-                let color = if is_black {
-                    [0.15, 0.15, 0.15, 1.0]
-                } else {
-                    [0.1, 0.1, 0.1, 1.0]
-                };
-                let width = if is_black { 0.5 } else { 0.3 };
-
-                instances.push(lumino_gfx::GridLineInstance::new(
-                    [keyboard_width, y],
-                    [viewport_width, y],
-                    color,
-                    width,
                 ));
             }
         }
