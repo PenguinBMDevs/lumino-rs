@@ -12,13 +12,15 @@ pub mod params;
 pub mod prefetch;
 pub mod track;
 
-use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub use backend::{FileBackend, PageBackend, create_backend, create_file_backend};
 pub use cache::LayeredCache;
-pub use chunk::{ChunkIndexRawEntry, EventChunk, chunk_midi_data, chunk_midi_data_streaming};
+pub use chunk::{
+    ChunkIndexRawEntry, EventChunk, chunk_midi_data, chunk_midi_data_streaming,
+    chunk_midi_data_streaming_to_path, phase1_bucketize, phase2_assemble, phase2_assemble_to_path,
+};
 pub use index::{ChunkIndex, ChunkIndexEntry};
 pub use metrics::CacheMetrics;
 pub use params::CHUNK_TICK_SPAN;
@@ -69,31 +71,28 @@ impl MidiCache {
     ) -> Result<Self> {
         let path = midi_path.as_ref();
 
-        // 读取文件到内存（临时，midly 需要 &[u8]，解析后释放）
-        let file_data = std::fs::read(path).map_err(CacheError::Io)?;
+        // ── Phase 1：mmap 读 MIDI 文件，解析并分发到桶文件 ──
+        // mmap 只在真正访问的页面上产生 RSS，加载过程中 RSS 更低。
+        let file = std::fs::File::open(path).map_err(CacheError::Io)?;
+        let file_data = unsafe { memmap2::Mmap::map(&file).map_err(CacheError::Io)? };
+        drop(file); // 关闭 fd，mmap 保持引用
 
-        // 输出文件
+        let (tmp_dir, bucket_counters, track_count, total_ticks) =
+            chunk::phase1_bucketize(&file_data, progress).map_err(CacheError::MidiParse)?;
+
+        // ⭐ Phase 1 结束，立即释放 mmap（1.25GB 归还系统）
+        drop(file_data);
+
+        // ── Phase 2：从桶文件并行读取、构建 Chunk、直接写入输出文件 ──
+        // 使用 phase2_assemble_to_path 直接写文件，无中间 copy
         let tmp_chunk_path = {
             let mut p = std::env::temp_dir();
             p.push(format!("lumino_cache_data_{:016x}", rand_temp()));
             p
         };
-
-        // 流式分块并写入输出文件
-        let tmp_file = std::fs::File::create(&tmp_chunk_path).map_err(CacheError::Io)?;
-        let mut writer = BufWriter::new(tmp_file);
-
-        let (raw_entries, total_ticks, track_count) =
-            chunk_midi_data_streaming(&file_data, &mut writer, progress)
+        let raw_entries =
+            chunk::phase2_assemble_to_path(&tmp_dir, &bucket_counters, &tmp_chunk_path)
                 .map_err(CacheError::MidiParse)?;
-
-        // 释放 MIDI 原始数据（~1.25GB 归还给系统）
-        drop(file_data);
-
-        // 完成写入
-        writer
-            .into_inner()
-            .map_err(|e| CacheError::Io(std::io::Error::other(e)))?;
 
         // 构建 ChunkIndex（常驻内存）
         let index = Arc::new(ChunkIndex::from_raw_entries(

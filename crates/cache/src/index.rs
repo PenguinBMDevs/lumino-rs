@@ -23,13 +23,11 @@
 use std::io::{self, Write};
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
-
 use crate::chunk::EventChunk;
 use crate::params;
 
 /// 块索引条目（32 字节）
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct ChunkIndexEntry {
     /// 块起始 tick
@@ -75,7 +73,7 @@ impl ChunkIndexEntry {
 }
 
 /// 常驻内存的块索引
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ChunkIndex {
     /// 索引条目
     pub entries: Vec<ChunkIndexEntry>,
@@ -104,7 +102,7 @@ impl ChunkIndex {
         let mut file_offset: u64 = 0;
 
         for chunk in chunks {
-            let serialized = chunk.to_bytes().unwrap_or_default();
+            let serialized = chunk.to_raw_bytes();
             let byte_length = serialized.len() as u32;
 
             entries.push(ChunkIndexEntry::new(

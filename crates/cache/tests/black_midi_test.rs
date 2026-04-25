@@ -54,29 +54,49 @@ fn file_size_gb() -> f64 {
         .unwrap_or(0.0)
 }
 
-/// 带超时的加载：200 秒内未完成则 panic
+/// 带超时 + RSS 监控的加载：RSS > 1.5GB 自动终止
+const RSS_KILL_LIMIT: u64 = 1_500_000_000; // 1.5 GB
+
 fn load_with_timeout(progress: Option<&'static dyn Fn(f64)>) -> lumino_cache::MidiCache {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     let timed_out = Arc::new(AtomicBool::new(false));
-    let timed_out_clone = timed_out.clone();
+    let rss_killed = Arc::new(AtomicBool::new(false));
+    let rss_killed_clone = rss_killed.clone();
+
+    // RSS 监控线程（每 100ms 检查一次）
+    let timed_out_rss = timed_out.clone();
+    let _rss_watchdog = std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_millis(100));
+            let rss = platform::current_rss();
+            if rss > RSS_KILL_LIMIT {
+                eprintln!(
+                    "\n⛔ RSS {:.1}MB > 1.5GB 上限，强制终止！",
+                    rss as f64 / 1_000_000.0
+                );
+                rss_killed_clone.store(true, Ordering::Relaxed);
+                // 进程立即退出（无法优雅关闭，但这是测试）
+                std::process::exit(1);
+            }
+            if timed_out_rss.load(Ordering::Relaxed) {
+                return;
+            }
+        }
+    });
 
     // 超时监控线程
-    let _watchdog = std::thread::spawn(move || {
+    let timed_out2 = timed_out.clone();
+    let _timeout_watchdog = std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(MAX_LOAD_SECS));
-        timed_out_clone.store(true, Ordering::Relaxed);
+        timed_out2.store(true, Ordering::Relaxed);
         eprintln!("\n⛔ 加载超时 {} 秒，终止", MAX_LOAD_SECS);
         std::process::exit(1);
     });
 
-    // 改造 progress 回调：检查超时标志
-    let wrapped_progress: Option<&'static dyn Fn(f64)> = if progress.is_some() {
-        // 无法修改原有回调，直接传原始回调
-        progress
-    } else {
-        None
-    };
+    let wrapped_progress: Option<&'static dyn Fn(f64)> =
+        if progress.is_some() { progress } else { None };
 
     lumino_cache::MidiCache::load(BLACK_MIDI_PATH, wrapped_progress).expect("加载 MIDI 失败")
 }

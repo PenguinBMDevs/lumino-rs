@@ -10,21 +10,24 @@
 //! - EventChunk 元数据: ~32 字节
 //! - 每个 CompactEvent: 12 字节
 
-use std::io::Write;
+use std::io::{SeekFrom, Write};
 use std::mem;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use lumino_midi::compact::{CompactEvent, EventKind};
 use midly::{MetaMessage, MidiMessage, Timing, TrackEventKind};
-use serde::{Deserialize, Serialize};
 
 use crate::params;
 
 /// 外部排序的桶数量
 const NUM_BUCKETS: u32 = 64;
 
-/// 事件块 — 固定 tick 跨度的事件集合
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// 原始块头大小（字节）
+pub const CHUNK_HEADER_SIZE: usize = 44;
+
+/// 事件块 — 固定 tick 跨度的事件集合（反序列化表示）
+#[derive(Debug, Clone)]
 pub struct EventChunk {
     pub start_tick: u32,
     pub end_tick: u32,
@@ -71,45 +74,184 @@ impl EventChunk {
         mem::size_of::<Self>() + self.events.len() * mem::size_of::<CompactEvent>()
     }
 
-    pub fn to_bytes(&self) -> Result<Vec<u8>, bincode::Error> {
-        bincode::serialize(self)
+    /// 序列化为原始二进制格式（44 字节头 + 12*N 字节事件）
+    ///
+    /// 格式：
+    /// ```text
+    /// [0..4)  start_tick: u32 LE
+    /// [4..8)  end_tick: u32 LE
+    /// [8..12) event_count: u32 LE
+    /// [12..44) track_mask: [u64; 4] LE
+    /// [44..)  events: CompactEvent × event_count (12 bytes each)
+    /// ```
+    pub fn to_raw_bytes(&self) -> Vec<u8> {
+        let event_count = self.events.len() as u32;
+        let mut buf = Vec::with_capacity(CHUNK_HEADER_SIZE + event_count as usize * 12);
+        buf.extend_from_slice(&self.start_tick.to_le_bytes());
+        buf.extend_from_slice(&self.end_tick.to_le_bytes());
+        buf.extend_from_slice(&event_count.to_le_bytes());
+        for &mask in &self.track_mask {
+            buf.extend_from_slice(&mask.to_le_bytes());
+        }
+        for ev in &self.events {
+            buf.extend_from_slice(ev.as_bytes());
+        }
+        buf
     }
 
-    pub fn from_bytes(data: &[u8]) -> Result<Self, bincode::Error> {
-        bincode::deserialize(data)
+    /// 从原始二进制反序列化
+    pub fn from_raw_bytes(data: &[u8]) -> Option<Self> {
+        if data.len() < CHUNK_HEADER_SIZE {
+            return None;
+        }
+        let start_tick = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+        let end_tick = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+        let event_count = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
+        let data_len = CHUNK_HEADER_SIZE + event_count * 12;
+        if data.len() < data_len {
+            return None;
+        }
+
+        let mut track_mask = [0u64; 4];
+        for (i, mask) in track_mask.iter_mut().enumerate() {
+            let off = 12 + i * 8;
+            *mask = u64::from_le_bytes([
+                data[off],
+                data[off + 1],
+                data[off + 2],
+                data[off + 3],
+                data[off + 4],
+                data[off + 5],
+                data[off + 6],
+                data[off + 7],
+            ]);
+        }
+
+        let event_bytes = &data[CHUNK_HEADER_SIZE..data_len];
+        let events: Vec<CompactEvent> = event_bytes
+            .chunks_exact(12)
+            .map(|chunk| {
+                let arr: &[u8; 12] = unsafe { &*(chunk.as_ptr() as *const [u8; 12]) };
+                CompactEvent::from_bytes(arr)
+            })
+            .collect();
+
+        Some(Self {
+            start_tick,
+            end_tick,
+            events,
+            track_mask,
+        })
+    }
+
+    /// 从原始字节读取指定 tick 范围的事件（二进制搜索，不反序列化整块）
+    ///
+    /// 返回 (events_in_range, total_events_in_chunk)
+    pub fn read_events_in_range(
+        data: &[u8],
+        from_tick: u32,
+        to_tick: u32,
+        max_events: usize,
+    ) -> (Vec<CompactEvent>, u32) {
+        if data.len() < CHUNK_HEADER_SIZE {
+            return (Vec::new(), 0);
+        }
+        let event_count = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
+        if event_count == 0 || data.len() < CHUNK_HEADER_SIZE + event_count * 12 {
+            return (Vec::new(), event_count as u32);
+        }
+
+        let event_data = &data[CHUNK_HEADER_SIZE..];
+        let event_limit = if max_events == 0 {
+            usize::MAX
+        } else {
+            max_events
+        };
+
+        // 二分查找起始 tick
+        let start_idx = binary_search_first_tick(event_data, from_tick);
+        if start_idx >= event_count {
+            return (Vec::new(), event_count as u32);
+        }
+
+        // 从 start_idx 开始读取，直到 to_tick 或 max_events
+        let max_end = event_count.min(start_idx + event_limit);
+        let mut result = Vec::with_capacity(max_end - start_idx);
+
+        for i in start_idx..max_end {
+            let off = i * 12;
+            let ev = CompactEvent::from_bytes(unsafe {
+                &*(event_data[off..off + 12].as_ptr() as *const [u8; 12])
+            });
+            if ev.delta_tick() >= to_tick {
+                break;
+            }
+            result.push(ev);
+        }
+
+        (result, event_count as u32)
     }
 }
 
-/// 将 MIDI 文件原始数据流式分块并串行化写入输出流。
+/// 在原始事件字节数组中二分查找第一个 tick >= target 的事件索引
+fn binary_search_first_tick(event_data: &[u8], target_tick: u32) -> usize {
+    let count = event_data.len() / 12;
+    let mut low = 0usize;
+    let mut high = count;
+    while low < high {
+        let mid = low + (high - low) / 2;
+        let off = mid * 12;
+        let tick = u32::from_le_bytes([
+            event_data[off],
+            event_data[off + 1],
+            event_data[off + 2],
+            event_data[off + 3],
+        ]);
+        if tick < target_tick {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    low
+}
+
+/// 将 MIDI 文件原始数据流式分块写入输出文件（通过路径）。
 ///
-/// 使用 64 桶外部排序，一次只保留一个桶的数据在内存中。
-/// 第 1 遍：解析 MIDI 并将事件分发到桶文件
-/// 第 2 遍：按桶读取、排序、构建 Chunk、序列化到输出
-///
-/// # 内存保证
-/// - 第 1 遍：midi 文件数据 (~1.25GB, 临时) + 64 个桶文件句柄 + 少量计数
-/// - 第 2 遍：midi 数据已释放，仅一个桶的数据在内存 (约总事件/64)
-///
-/// # 参数
-/// - `file_data`: 完整的 .mid 文件字节
-/// - `output`: 输出流（序列化的 EventChunk 依次写入）
-/// - `progress`: 可选进度回调（0.0 ~ 1.0）
-///
-/// # 返回值
-/// (ChunkIndex 原始条目, total_ticks, track_count)
-pub fn chunk_midi_data_streaming<W: Write>(
+/// 区别于 `chunk_midi_data_streaming`，此函数直接操作文件，
+/// 适合搭配 `FileBackend` 使用，避免中间 copy。
+pub fn chunk_midi_data_streaming_to_path(
     file_data: &[u8],
-    output: &mut W,
+    output_path: &Path,
     progress: Option<&dyn Fn(f64)>,
 ) -> Result<(Vec<ChunkIndexRawEntry>, u32, u16), String> {
-    use std::fs::{self, File};
+    let (tmp_dir, bucket_counters, track_count, total_ticks) =
+        phase1_bucketize(file_data, progress)?;
+    let file = std::fs::File::create(output_path)
+        .map_err(|e| format!("创建输出文件 {output_path:?} 失败: {e}"))?;
+    let mut writer = std::io::BufWriter::new(file);
+    let entries = phase2_assemble(&tmp_dir, &bucket_counters, &mut writer)?;
+    writer
+        .into_inner()
+        .map_err(|e| format!("flush 输出文件失败: {e}"))?;
+    Ok((entries, total_ticks, track_count))
+}
+
+/// 第 1 遍：解析 MIDI 并将事件分发到桶文件。
+///
+/// 返回 (bucket_dir, bucket_counters, track_count, total_ticks)。
+/// 注意：此函数返回后，`file_data` 可安全释放。
+/// Phase 2 完全不依赖 `file_data`。
+pub fn phase1_bucketize(
+    file_data: &[u8],
+    progress: Option<&dyn Fn(f64)>,
+) -> Result<(PathBuf, Vec<u64>, u16, u32), String> {
+    use std::fs::File;
     use std::io::BufWriter;
 
-    // ── 第 1 遍：解析 MIDI，分发事件到桶文件 ──
     let (header, track_iters) =
         midly::parse(file_data).map_err(|e| format!("MIDI 解析失败: {e}"))?;
 
-    // 收集 EventIters 以支持进度回调（需要知道 total_tracks）
     let event_iters: Vec<midly::EventIter> = track_iters
         .collect::<midly::Result<Vec<midly::EventIter>>>()
         .map_err(|e| format!("解析音轨失败: {e}"))?;
@@ -120,11 +262,9 @@ pub fn chunk_midi_data_streaming<W: Write>(
         _ => 480,
     };
 
-    // 创建临时目录
     let tmp_dir = create_tmp_dir()?;
     let mut bucket_counters: Vec<u64> = vec![0u64; NUM_BUCKETS as usize];
 
-    // 打开桶文件
     let mut buckets: Vec<BufWriter<File>> = (0..NUM_BUCKETS)
         .map(|b| {
             let path = bucket_path(&tmp_dir, b);
@@ -133,11 +273,9 @@ pub fn chunk_midi_data_streaming<W: Write>(
         })
         .collect::<Result<Vec<_>, String>>()?;
 
-    // 逐音轨解析并分发
     let mut total_ticks = 0u32;
     for (track_idx, event_iter) in event_iters.into_iter().enumerate() {
         let mut current_tick = 0u32;
-
         for event_result in event_iter {
             let track_event =
                 event_result.map_err(|e| format!("音轨 {track_idx} 事件解析失败: {e}"))?;
@@ -153,11 +291,8 @@ pub fn chunk_midi_data_streaming<W: Write>(
                 let chunk_idx = current_tick / params::CHUNK_TICK_SPAN;
                 let bucket = chunk_idx % NUM_BUCKETS;
                 let writer = &mut buckets[bucket as usize];
-
-                // 写入 chunk_idx (4 bytes) + CompactEvent (12 bytes)
-                let chunk_bytes = chunk_idx.to_le_bytes();
                 writer
-                    .write_all(&chunk_bytes)
+                    .write_all(&chunk_idx.to_le_bytes())
                     .map_err(|e| format!("写入桶文件失败: {e}"))?;
                 writer
                     .write_all(compact.as_bytes())
@@ -165,84 +300,235 @@ pub fn chunk_midi_data_streaming<W: Write>(
                 bucket_counters[bucket as usize] += 1;
             }
         }
-
         if let Some(cb) = progress {
             cb((track_idx + 1) as f64 / track_count as f64);
         }
     }
 
-    // 关闭所有桶文件
     drop(buckets);
+    Ok((tmp_dir, bucket_counters, track_count, total_ticks))
+}
 
-    // ── 第 2 遍：按桶读取、O(N) 分组、构建 Chunk ──
-    let mut entries: Vec<ChunkIndexRawEntry> = Vec::new();
-    let mut current_file_offset: u64 = 0;
+/// 第 2 遍：从桶文件读取、并行构建 Chunk、直接写入文件路径。
+///
+/// 零内存累积 + 零中间 copy：每个 chunk 处理完立即写入输出文件。
+pub fn phase2_assemble_to_path(
+    tmp_dir: &Path,
+    bucket_counters: &[u64],
+    output_path: &Path,
+) -> Result<Vec<ChunkIndexRawEntry>, String> {
+    use std::fs;
+    use std::io::Seek;
+    use std::sync::Mutex;
 
-    for bucket in 0..NUM_BUCKETS {
-        let count = bucket_counters[bucket as usize];
-        if count == 0 {
-            continue;
-        }
+    let output_file = std::fs::File::create(output_path)
+        .map_err(|e| format!("创建输出文件 {output_path:?} 失败: {e}"))?;
+    let shared_file = Arc::new(Mutex::new(output_file));
+    let next_bucket = Mutex::new(0u32);
+    let entries = Mutex::new(Vec::<ChunkIndexRawEntry>::new());
 
-        // 读取整个桶文件
-        let path = bucket_path(&tmp_dir, bucket);
-        let bucket_data = fs::read(&path).map_err(|e| format!("读取桶文件 {path:?} 失败: {e}"))?;
+    std::thread::scope(|s| {
+        for _ in 0..2u32 {
+            s.spawn(|| {
+                loop {
+                    let bucket = {
+                        let mut n = next_bucket.lock().unwrap();
+                        if *n >= NUM_BUCKETS {
+                            return;
+                        }
+                        let b = *n;
+                        *n += 1;
+                        b
+                    };
+                    if bucket_counters[bucket as usize] == 0 {
+                        continue;
+                    }
 
-        // O(N) 分组：直接按 chunk_idx 分发到 HashMap（每桶仅 1-3 个 chunk）
-        // 避免 O(N log N) 排序
-        let mut chunk_map: std::collections::HashMap<u32, Vec<CompactEvent>> =
-            std::collections::HashMap::with_capacity(4);
-        let mut offset = 0usize;
-        while offset + 16 <= bucket_data.len() {
-            let idx = u32::from_le_bytes([
-                bucket_data[offset],
-                bucket_data[offset + 1],
-                bucket_data[offset + 2],
-                bucket_data[offset + 3],
-            ]);
-            let mut evt_bytes = [0u8; 12];
-            evt_bytes.copy_from_slice(&bucket_data[offset + 4..offset + 16]);
-            let event = CompactEvent::from_bytes(&evt_bytes);
+                    let path = bucket_path(tmp_dir, bucket);
+                    let Ok(bucket_data) = fs::read(&path) else {
+                        continue;
+                    };
 
-            chunk_map.entry(idx).or_default().push(event);
-            offset += 16;
-        }
+                    let mut chunk_map: std::collections::HashMap<u32, Vec<CompactEvent>> =
+                        std::collections::HashMap::with_capacity(4);
+                    let mut off = 0usize;
+                    while off + 16 <= bucket_data.len() {
+                        let idx = u32::from_le_bytes([
+                            bucket_data[off],
+                            bucket_data[off + 1],
+                            bucket_data[off + 2],
+                            bucket_data[off + 3],
+                        ]);
+                        let mut eb = [0u8; 12];
+                        eb.copy_from_slice(&bucket_data[off + 4..off + 16]);
+                        chunk_map
+                            .entry(idx)
+                            .or_default()
+                            .push(CompactEvent::from_bytes(&eb));
+                        off += 16;
+                    }
+                    drop(bucket_data);
 
-        // 按 chunk_idx 排序 keys，确保索引顺序一致
-        let mut chunk_indices: Vec<u32> = chunk_map.keys().copied().collect();
-        chunk_indices.sort_unstable();
+                    let mut keys: Vec<u32> = chunk_map.keys().copied().collect();
+                    keys.sort_unstable();
 
-        for chunk_idx in chunk_indices {
-            let events = chunk_map.remove(&chunk_idx).unwrap_or_default();
-            let start_tick = chunk_idx * params::CHUNK_TICK_SPAN;
+                    for &ck in &keys {
+                        let events = chunk_map.remove(&ck).unwrap_or_default();
+                        let chunk = EventChunk::new(ck * params::CHUNK_TICK_SPAN, events);
+                        let bytes = chunk.to_raw_bytes();
 
-            // 构建 EventChunk（同时计算 track_mask）
-            let chunk = EventChunk::new(start_tick, events);
-            let serialized = chunk
-                .to_bytes()
-                .map_err(|e| format!("序列化 chunk {chunk_idx} 失败: {e}"))?;
+                        let sf = shared_file.clone();
+                        let mut f = sf.lock().unwrap();
+                        let offset = f.seek(SeekFrom::End(0)).expect("seek") as u64;
+                        f.write_all(&bytes).expect("write");
+                        drop(f);
 
-            entries.push(ChunkIndexRawEntry {
-                start_tick,
-                file_offset: current_file_offset,
-                byte_length: serialized.len() as u32,
-                track_mask_low: chunk.track_mask[0],
-                track_mask_high: chunk.track_mask[1],
+                        entries.lock().unwrap().push(ChunkIndexRawEntry {
+                            start_tick: chunk.start_tick,
+                            file_offset: offset,
+                            byte_length: bytes.len() as u32,
+                            track_mask_low: chunk.track_mask[0],
+                            track_mask_high: chunk.track_mask[1],
+                        });
+                    }
+                    let _ = fs::remove_file(&path);
+                }
             });
-
-            output
-                .write_all(&serialized)
-                .map_err(|e| format!("写入输出流失败: {e}"))?;
-            current_file_offset += serialized.len() as u64;
         }
+    });
 
-        // 删除桶文件
-        let _ = fs::remove_file(&path);
-    }
+    drop(shared_file);
+    let mut entries = entries.into_inner().unwrap();
+    entries.sort_by_key(|e| e.start_tick);
+    let _ = fs::remove_dir_all(tmp_dir);
+    Ok(entries)
+}
 
-    // 清理临时目录
-    let _ = fs::remove_dir_all(&tmp_dir);
+/// 第 2 遍：从桶文件读取、并行构建 Chunk、串行写入输出。
+///
+/// 零内存累积：每个 chunk 处理完立即写入共享文件，
+/// 不保留任何中间数据在内存。
+///
+/// # 参数
+/// - `tmp_dir`: phase1_bucketize 返回的临时目录
+/// - `bucket_counters`: 每个桶的事件计数
+/// - `output`: 输出流
+pub fn phase2_assemble<W: Write>(
+    tmp_dir: &Path,
+    bucket_counters: &[u64],
+    output: &mut W,
+) -> Result<Vec<ChunkIndexRawEntry>, String> {
+    use std::fs;
+    use std::io::Seek;
+    use std::sync::Mutex;
 
+    let tmp_chunk_data = {
+        let mut p = std::env::temp_dir();
+        p.push(format!("lumino_chunk_data_{:016x}", rand_fallback()));
+        p
+    };
+    let shared_file = Arc::new(Mutex::new(
+        std::fs::File::create(&tmp_chunk_data).map_err(|e| format!("创建共享输出文件失败: {e}"))?,
+    ));
+
+    let next_bucket = Mutex::new(0u32);
+    let entries = Mutex::new(Vec::<ChunkIndexRawEntry>::new());
+
+    std::thread::scope(|s| {
+        for _ in 0..2u32 {
+            s.spawn(|| {
+                loop {
+                    let bucket = {
+                        let mut n = next_bucket.lock().unwrap();
+                        if *n >= NUM_BUCKETS {
+                            return;
+                        }
+                        let b = *n;
+                        *n += 1;
+                        b
+                    };
+                    if bucket_counters[bucket as usize] == 0 {
+                        continue;
+                    }
+
+                    let path = bucket_path(tmp_dir, bucket);
+                    let Ok(bucket_data) = fs::read(&path) else {
+                        continue;
+                    };
+
+                    let mut chunk_map: std::collections::HashMap<u32, Vec<CompactEvent>> =
+                        std::collections::HashMap::with_capacity(4);
+                    let mut off = 0usize;
+                    while off + 16 <= bucket_data.len() {
+                        let idx = u32::from_le_bytes([
+                            bucket_data[off],
+                            bucket_data[off + 1],
+                            bucket_data[off + 2],
+                            bucket_data[off + 3],
+                        ]);
+                        let mut eb = [0u8; 12];
+                        eb.copy_from_slice(&bucket_data[off + 4..off + 16]);
+                        chunk_map
+                            .entry(idx)
+                            .or_default()
+                            .push(CompactEvent::from_bytes(&eb));
+                        off += 16;
+                    }
+                    drop(bucket_data);
+
+                    let mut keys: Vec<u32> = chunk_map.keys().copied().collect();
+                    keys.sort_unstable();
+
+                    for &ck in &keys {
+                        let events = chunk_map.remove(&ck).unwrap_or_default();
+                        let chunk = EventChunk::new(ck * params::CHUNK_TICK_SPAN, events);
+                        let bytes = chunk.to_raw_bytes();
+
+                        let sf = shared_file.clone();
+                        let mut f = sf.lock().unwrap();
+                        let offset = f.seek(SeekFrom::End(0)).expect("seek") as u64;
+                        f.write_all(&bytes).expect("write");
+                        drop(f);
+
+                        entries.lock().unwrap().push(ChunkIndexRawEntry {
+                            start_tick: chunk.start_tick,
+                            file_offset: offset,
+                            byte_length: bytes.len() as u32,
+                            track_mask_low: chunk.track_mask[0],
+                            track_mask_high: chunk.track_mask[1],
+                        });
+                    }
+
+                    let _ = fs::remove_file(&path);
+                }
+            });
+        }
+    });
+
+    drop(shared_file);
+    let mut chunk_file =
+        std::fs::File::open(&tmp_chunk_data).map_err(|e| format!("读取共享输出文件失败: {e}"))?;
+    std::io::copy(&mut chunk_file, output).map_err(|e| format!("拷贝输出失败: {e}"))?;
+    let _ = std::fs::remove_file(&tmp_chunk_data);
+
+    let mut entries = entries.into_inner().unwrap();
+    entries.sort_by_key(|e| e.start_tick);
+
+    // 清理桶目录
+    let _ = fs::remove_dir_all(tmp_dir);
+
+    Ok(entries)
+}
+
+/// 合并 Phase 1 + Phase 2（兼容旧 API，不分割释放时机）
+pub fn chunk_midi_data_streaming<W: Write>(
+    file_data: &[u8],
+    output: &mut W,
+    progress: Option<&dyn Fn(f64)>,
+) -> Result<(Vec<ChunkIndexRawEntry>, u32, u16), String> {
+    let (tmp_dir, bucket_counters, track_count, total_ticks) =
+        phase1_bucketize(file_data, progress)?;
+    let entries = phase2_assemble(&tmp_dir, &bucket_counters, output)?;
     Ok((entries, total_ticks, track_count))
 }
 
@@ -263,8 +549,8 @@ pub fn chunk_midi_data(
     let mut offset = 0usize;
     for entry in &raw_entries {
         let end = offset + entry.byte_length as usize;
-        let chunk = EventChunk::from_bytes(&buffer[offset..end])
-            .map_err(|e| format!("反序列化 chunk 失败: {e}"))?;
+        let chunk = EventChunk::from_raw_bytes(&buffer[offset..end])
+            .ok_or_else(|| format!("反序列化 chunk 失败: 偏移 {offset}"))?;
         chunks.push(chunk);
         offset = end;
     }
@@ -462,8 +748,8 @@ mod tests {
     fn test_event_chunk_serialize_roundtrip() {
         let events = sample_events(100, 0);
         let chunk = EventChunk::new(0, events);
-        let bytes = chunk.to_bytes().unwrap();
-        let restored = EventChunk::from_bytes(&bytes).unwrap();
+        let bytes = chunk.to_raw_bytes();
+        let restored = EventChunk::from_raw_bytes(&bytes).unwrap();
         assert_eq!(restored.start_tick, chunk.start_tick);
         assert_eq!(restored.len(), chunk.len());
     }
@@ -491,7 +777,7 @@ mod tests {
         for entry in &raw_entries {
             let start = entry.file_offset as usize;
             let end = start + entry.byte_length as usize;
-            let chunk = EventChunk::from_bytes(&output[start..end]).unwrap();
+            let chunk = EventChunk::from_raw_bytes(&output[start..end]).unwrap();
             assert_eq!(chunk.start_tick, entry.start_tick);
         }
     }
