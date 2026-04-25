@@ -28,14 +28,17 @@ impl Editor {
             self.state.scroll_x,
             self.max_scroll_x,
             self.state.zoom_x,
+            None,
             on_scroll_x,
             on_zoom_x,
         );
 
+        let viewport_height = (self.canvas_size.y - self.state.ruler_height).max(0.0);
         let vertical_scrollbar = scrollbar_widget::ScrollbarWidget::vertical(
             self.state.scroll_y,
             self.max_scroll_y,
             self.state.zoom_y,
+            Some(viewport_height),
             on_scroll_y,
             on_zoom_y,
         );

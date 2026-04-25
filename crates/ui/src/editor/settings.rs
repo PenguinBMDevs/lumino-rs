@@ -8,8 +8,12 @@ impl super::Editor {
         let clamped_count = count.clamp(MIN_VISIBLE_KEY_COUNT, MAX_VISIBLE_KEY_COUNT);
         self.state.visible_key_count = clamped_count;
         self.max_scroll_y = clamped_count as f32 * self.state.zoom_y;
-        if self.state.scroll_y > self.max_scroll_y {
-            self.state.scroll_y = self.max_scroll_y;
+
+        // 使用有效最大滚动值（减去视口高度）而不是总内容高度
+        let viewport_height = (self.canvas_size.y - self.state.ruler_height).max(0.0);
+        let effective_max_scroll = (self.max_scroll_y - viewport_height).max(0.0);
+        if self.state.scroll_y > effective_max_scroll {
+            self.state.scroll_y = effective_max_scroll;
         }
         self.grid_cache.clear();
     }

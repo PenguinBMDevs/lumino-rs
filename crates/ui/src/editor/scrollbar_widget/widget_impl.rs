@@ -117,7 +117,7 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                                     edge,
                                 };
                             } else {
-                                let scrollable_size = (self.max_scroll - track_size).max(0.0);
+                                let scrollable_size = self.actual_max_scroll(track_size);
                                 *state = ScrollbarState::Dragging {
                                     start_pos,
                                     start_scroll: self.scroll.clamp(0.0, scrollable_size),
@@ -136,7 +136,7 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                                 }
                             };
 
-                            let actual_max_scroll = (self.max_scroll - track_size).max(0.0);
+                            let actual_max_scroll = self.actual_max_scroll(track_size);
 
                             let new_scroll = relative_pos.clamp(0.0, 1.0) * actual_max_scroll;
                             shell.publish((self.on_scroll)(new_scroll));
@@ -169,7 +169,7 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                             };
                             let delta = current_pos - start_pos;
 
-                            let actual_max_scroll = (self.max_scroll - track_size).max(0.0);
+                            let actual_max_scroll = self.actual_max_scroll(track_size);
 
                             let scroll_ratio = delta / (track_size - thumb_size).max(1.0);
                             let new_scroll = (start_scroll + scroll_ratio * actual_max_scroll)

@@ -69,7 +69,12 @@ impl super::Editor {
         self.state.scroll_x = fixed_pixel * ratio - view_width * fixed_ratio;
 
         self.max_scroll_x = self.state.total_ticks as f32 * self.state.zoom_x;
-        self.state.scroll_x = self.state.scroll_x.max(0.0).min(self.max_scroll_x);
+
+        // 使用有效最大滚动值（减去视口宽度）而不是总内容宽度
+        let viewport_width = (self.canvas_size.x - self.state.keyboard_width).max(0.0);
+        let effective_max_scroll = (self.max_scroll_x - viewport_width).max(0.0);
+        self.state.scroll_x = self.state.scroll_x.max(0.0).min(effective_max_scroll);
+
         // 缩放影响标尺和网格线
         self.ruler_cache.clear();
     }
@@ -86,7 +91,13 @@ impl super::Editor {
         self.state.scroll_y = fixed_pixel * ratio - view_height * fixed_ratio;
 
         self.max_scroll_y = self.state.visible_key_count as f32 * self.state.zoom_y;
-        self.state.scroll_y = self.state.scroll_y.max(0.0).min(self.max_scroll_y);
+
+        // 使用有效最大滚动值（减去视口高度 rular）而不是总内容高度
+        // 避免缩放后 scroll_y 进入死区，导致鼠标滚轮产生多余空白滚动
+        let viewport_height = (self.canvas_size.y - self.state.ruler_height).max(0.0);
+        let effective_max_scroll = (self.max_scroll_y - viewport_height).max(0.0);
+        self.state.scroll_y = self.state.scroll_y.max(0.0).min(effective_max_scroll);
+
         // 缩放影响键盘和网格线
         self.keyboard_cache.clear();
     }
