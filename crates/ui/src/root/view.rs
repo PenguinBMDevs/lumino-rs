@@ -9,6 +9,7 @@ use crate::state::root_state::DialogType;
 use crate::view::{
     collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
+    load_confirm_dialog::view_load_confirm_dialog,
 };
 use crate::{message, settings};
 
@@ -65,6 +66,9 @@ impl Root {
         match self.state.dialog_type {
             DialogType::Collaboration => {
                 view_collaboration_dialog(&self.state.collaboration_dialog, &self.window.theme)
+            }
+            DialogType::LoadConfirm => {
+                view_load_confirm_dialog(&self.state.load_confirm_dialog, &self.window.theme)
             }
             _ => view_custom_precision_dialog(
                 &self.state.custom_precision_dialog,

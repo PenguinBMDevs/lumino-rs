@@ -84,8 +84,29 @@ impl MidiHandler {
             // 没有 memory_manager 但有 midi_data，从 midi_data 解析音符
             tracing::info!("从 midi_data 解析音符数据");
             self.import_midi_data_to_editor(midi_data, parsed.info.track_count as usize, ui);
+        } else if let Some(cache) = parsed.cache.as_ref() {
+            // ── 内存优化模式：没有 memory_manager，从 cache 获取基本信息 ──
+            tracing::info!("内存优化模式：从 cache 导入音轨信息（不加载音符到编辑器）");
+
+            let track_count = cache.index.track_count as usize;
+            let mut track_infos = Vec::with_capacity(track_count);
+            for track_idx in 0..track_count {
+                // cache 不保存音轨名，使用默认名称
+                track_infos.push((track_idx, None, 0u64));
+            }
+
+            ui.set_ppq(parsed.info.division);
+            ui.update_tracks(&track_infos);
+
+            // 大文件模式下不预加载任何音符到编辑器（避免 OOM）
+            // 播放时直接从 cache 流式读取
+            tracing::info!(
+                "内存优化模式: {} 音轨, {} ticks, 编辑器音符未加载",
+                track_count,
+                cache.index.total_ticks
+            );
         } else {
-            tracing::warn!("MIDI 没有 memory_manager 也没有 midi_data，无法导入音符");
+            tracing::warn!("MIDI 没有 memory_manager 也没有 midi_data 也没有 cache，无法导入");
             return;
         }
 

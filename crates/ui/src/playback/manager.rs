@@ -4,6 +4,7 @@
 
 use super::engine::{MidiMessage, NoteEvent, PlaybackEngine};
 use super::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
+use lumino_cache::MidiCache;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -13,6 +14,7 @@ enum Command {
     ClearMidiOutput,
     SetNotes(Vec<NoteEvent>),
     SetTempoChanges(Vec<TempoChange>),
+    SetCache(Option<Arc<MidiCache>>),
     Play,
     Pause,
     Stop,
@@ -52,6 +54,7 @@ impl PlaybackManager {
                         Command::SetMidiOutput(output) => midi_output = Some(output),
                         Command::ClearMidiOutput => midi_output = None,
                         Command::SetNotes(notes) => engine.set_notes(notes),
+                        Command::SetCache(cache) => engine.set_cache(cache),
                         Command::SetTempoChanges(changes) => {
                             if let Ok(mut p) = engine.playback().lock() {
                                 p.set_tempo_changes(changes);
@@ -146,6 +149,11 @@ impl PlaybackManager {
     /// 设置音符列表
     pub fn set_notes(&mut self, notes: Vec<NoteEvent>) {
         let _ = self.sender.send(Command::SetNotes(notes));
+    }
+
+    /// 设置 MIDI 缓存
+    pub fn set_cache(&mut self, cache: Option<Arc<MidiCache>>) {
+        let _ = self.sender.send(Command::SetCache(cache));
     }
 
     /// 设置速度变化

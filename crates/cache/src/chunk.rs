@@ -379,7 +379,7 @@ pub fn phase2_assemble_to_path(
 
                         let sf = shared_file.clone();
                         let mut f = sf.lock().unwrap();
-                        let offset = f.seek(SeekFrom::End(0)).expect("seek") as u64;
+                        let offset = f.seek(SeekFrom::End(0)).expect("seek");
                         f.write_all(&bytes).expect("write");
                         drop(f);
 
@@ -486,7 +486,7 @@ pub fn phase2_assemble<W: Write>(
 
                         let sf = shared_file.clone();
                         let mut f = sf.lock().unwrap();
-                        let offset = f.seek(SeekFrom::End(0)).expect("seek") as u64;
+                        let offset = f.seek(SeekFrom::End(0)).expect("seek");
                         f.write_all(&bytes).expect("write");
                         drop(f);
 

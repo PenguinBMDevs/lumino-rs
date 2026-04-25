@@ -35,6 +35,8 @@ pub struct Root {
     pub(crate) state: RootState,
     /// 播放管理器
     pub(crate) playback_manager: Option<crate::playback::PlaybackManager>,
+    /// MIDI 文件缓存（大文件流式播放用）
+    pub(crate) midi_cache: Option<std::sync::Arc<lumino_cache::MidiCache>>,
     /// 延迟应用的 Tempo 变化（播放管理器未初始化时缓存）
     pub(crate) pending_tempo_changes: Option<Vec<crate::playback::TempoChange>>,
     /// 延迟应用的 MIDI 输出（播放管理器未初始化时缓存）
@@ -79,6 +81,7 @@ impl Root {
             is_progress_window: params.is_progress_window,
             state,
             playback_manager: None,
+            midi_cache: None,
             pending_tempo_changes: None,
             pending_midi_output: None,
             cached_onion_skin_notes: None,
@@ -162,6 +165,14 @@ impl Root {
             .as_ref()
             .map(|m| m.state() == crate::playback::PlaybackState::Playing)
             .unwrap_or_default()
+    }
+
+    /// 设置 MIDI 缓存到播放管理器
+    pub fn set_cache(&mut self, cache: Option<std::sync::Arc<lumino_cache::MidiCache>>) {
+        self.midi_cache = cache.clone();
+        if let Some(manager) = &mut self.playback_manager {
+            manager.set_cache(cache);
+        }
     }
 
     /// 标记洋葱皮缓存失效（任何影响洋葱皮渲染的变化都调用）

@@ -80,6 +80,8 @@ pub(crate) struct RunnerInner {
     pub(crate) last_collab_sync: Option<std::time::Instant>,
     /// 测试模式状态
     pub(crate) test_mode_state: Option<TestModeState>,
+    /// 等待对话框确认的加载路径
+    pub(crate) pending_load_path: Option<std::path::PathBuf>,
 }
 
 pub(crate) struct TestModeState {
@@ -169,6 +171,7 @@ impl Runner {
             needs_window_restart: false,
             last_collab_sync: None,
             test_mode_state: None,
+            pending_load_path: None,
         };
 
         // Debug 模式下自动连接本地服务器
@@ -244,6 +247,10 @@ impl Runner {
                     ui.set_custom_precision(ticks);
                     tracing::info!("自定义精度已应用: {} ticks (PPQ={})", ticks, ppq);
                 }
+            }
+            DialogResult::LoadConfirm { .. } => {
+                // LoadConfirm 由 lifecycle.rs 处理，这里不应到达
+                tracing::warn!("LoadConfirm 结果不应通过 apply_dialog_result_to_ui 处理");
             }
         }
     }

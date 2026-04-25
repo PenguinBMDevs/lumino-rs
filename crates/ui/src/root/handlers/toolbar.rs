@@ -110,26 +110,33 @@ impl ToolbarHandler {
             })
             .collect();
 
-        // 添加其他音轨的音符
-        for (track_idx, track_notes) in &root.editor.track_notes {
-            if *track_idx == root.editor.current_track {
-                continue;
-            }
-            for note in track_notes {
-                if note.velocity > velocity_threshold {
-                    notes.push(NoteEvent {
-                        tick: note.tick,
-                        channel: 0,
-                        key: note.key as u8,
-                        velocity: note.velocity,
-                        length: note.length,
-                    });
+        // 只有当没有缓存时，才加载其他音轨的音符（避免大文件OOM）
+        if root.midi_cache.is_none() {
+            for (track_idx, track_notes) in &root.editor.track_notes {
+                if *track_idx == root.editor.current_track {
+                    continue;
+                }
+                for note in track_notes {
+                    if note.velocity > velocity_threshold {
+                        notes.push(NoteEvent {
+                            tick: note.tick,
+                            channel: 0,
+                            key: note.key as u8,
+                            velocity: note.velocity,
+                            length: note.length,
+                        });
+                    }
                 }
             }
         }
 
         let total_notes = notes.len();
         manager.set_notes(notes);
+
+        // 设置缓存（大文件流式播放）
+        if let Some(cache) = root.midi_cache.clone() {
+            manager.set_cache(Some(cache));
+        }
 
         // 应用缓存的 tempo 变化
         if let Some(changes) = root.pending_tempo_changes.take() {
@@ -143,10 +150,11 @@ impl ToolbarHandler {
 
         root.playback_manager = Some(manager);
         tracing::info!(
-            "Root: 播放管理器已初始化 (division={}, 总音符={}, 过滤阈值={})",
+            "Root: 播放管理器已初始化 (division={}, 总音符={}, 过滤阈值={}, 缓存={})",
             division,
             total_notes,
-            velocity_threshold
+            velocity_threshold,
+            root.midi_cache.is_some()
         );
     }
 

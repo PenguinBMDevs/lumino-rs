@@ -33,6 +33,22 @@ impl Root {
         }
     }
 
+    /// 设置加载确认对话框（使用文件路径和大小）
+    pub fn set_load_confirm_dialog(&mut self, file_path: &str, size_mb: f64) {
+        let file_name = std::path::Path::new(file_path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| file_path.to_string());
+        self.state.load_confirm_dialog = crate::state::root_state::LoadConfirmDialogState {
+            is_open: true,
+            file_name,
+            file_path: file_path.to_string(),
+            size_mb,
+            skip_memory_manager: true, // 默认开启
+        };
+        self.state.dialog_type = crate::state::root_state::DialogType::LoadConfirm;
+    }
+
     /// 获取并清空对话框结果
     pub fn take_dialog_result(&mut self) -> Option<crate::host::DialogResult> {
         self.state.dialog_result.take()

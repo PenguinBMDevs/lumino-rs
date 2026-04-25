@@ -29,19 +29,52 @@ impl LmpjData {
             info: self.info,
             midi_data: self.midi_data,
             memory_manager: None,
+            cache: None,
         }
     }
 }
 
 /// 解析后的MIDI数据
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ParsedMidi {
     pub info: MidiInfo,
-    #[serde(skip)]
     pub midi_data: Option<Vec<u8>>,
-    /// 内存管理器（新架构）
-    #[serde(skip)]
+    /// 内存管理器（编辑用，按音轨访问）
     pub memory_manager: Option<std::sync::Arc<std::sync::Mutex<managed_midi::MidiMemoryManager>>>,
+    /// 分层缓存（播放用，按 tick 跳转）
+    pub cache: Option<std::sync::Arc<lumino_cache::MidiCache>>,
+}
+
+impl serde::Serialize for ParsedMidi {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(serde::Serialize)]
+        struct Helper<'a> {
+            info: &'a crate::MidiInfo,
+            midi_data: &'a Option<Vec<u8>>,
+        }
+        Helper {
+            info: &self.info,
+            midi_data: &self.midi_data,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ParsedMidi {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct Helper {
+            info: crate::MidiInfo,
+            midi_data: Option<Vec<u8>>,
+        }
+        let h = Helper::deserialize(deserializer)?;
+        Ok(ParsedMidi {
+            info: h.info,
+            midi_data: h.midi_data,
+            memory_manager: None,
+            cache: None,
+        })
+    }
 }
 
 impl ParsedMidi {

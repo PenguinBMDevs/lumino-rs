@@ -137,9 +137,14 @@ pub enum Message {
     },
     /// 协作远端音符更新
     CollaborationRemoteNoteUpdate {
-        user_id: String,
         operation: String,
     },
+    /// 加载确认对话框 - 确认
+    ConfirmLoadConfirm,
+    /// 加载确认对话框 - 取消
+    CloseLoadConfirmDialog,
+    /// 加载确认对话框 - 内存优化开关
+    LoadConfirmSkipChanged(bool),
     /// 空消息标记
     Null,
 }

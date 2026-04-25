@@ -201,10 +201,7 @@ impl MessageHandler for CollaborationHandler {
                 root.editor.remove_remote_cursor(&user_id);
                 None
             }
-            Message::CollaborationRemoteNoteUpdate {
-                user_id: _,
-                operation,
-            } => {
+            Message::CollaborationRemoteNoteUpdate { operation } => {
                 self.handle_remote_note_update(root, operation);
                 None
             }

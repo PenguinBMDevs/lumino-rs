@@ -3402,6 +3402,7 @@ dependencies = [
  "bincode",
  "encoding_rs",
  "font-kit",
+ "lumino-cache",
  "lumino-dms",
  "memmap2",
  "midly",
@@ -3467,7 +3468,6 @@ version = "0.1.0"
 dependencies = [
  "libloading 0.9.0",
  "midir",
- "serde",
  "thiserror 2.0.18",
  "tracing",
  "windows 0.62.2",
@@ -3534,6 +3534,7 @@ dependencies = [
  "iced_winit",
  "im",
  "image",
+ "lumino-cache",
  "lumino-collaboration",
  "lumino-core",
  "lumino-gfx",

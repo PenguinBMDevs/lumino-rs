@@ -55,6 +55,16 @@ pub struct MidiCache {
     _tmp_chunk_path: Option<PathBuf>,
 }
 
+impl std::fmt::Debug for MidiCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MidiCache")
+            .field("track_count", &self.index.track_count)
+            .field("total_ticks", &self.index.total_ticks)
+            .field("chunk_count", &self.index.len())
+            .finish()
+    }
+}
+
 impl MidiCache {
     /// 初始化缓存系统
     ///

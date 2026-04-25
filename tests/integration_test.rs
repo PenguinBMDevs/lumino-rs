@@ -339,6 +339,7 @@ fn test_midi_lmpj_roundtrip() {
         info: info.clone(),
         midi_data: Some(original_midi_bytes.clone()),
         memory_manager: None,
+        cache: None,
     };
 
     let temp_dir = std::env::temp_dir();

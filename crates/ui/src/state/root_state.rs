@@ -57,6 +57,7 @@ pub enum DialogType {
     None,
     CustomPrecision,
     Collaboration,
+    LoadConfirm,
 }
 
 /// 协作视图状态
@@ -67,6 +68,29 @@ pub enum CollaborationViewState {
     Connecting,  // 正在连接中
     RoomActions, // 创建/加入房间界面
     InRoom,      // 在房间内界面
+}
+
+/// 加载确认对话框状态
+#[derive(Debug, Clone)]
+pub struct LoadConfirmDialogState {
+    pub is_open: bool,
+    pub file_name: String,
+    pub file_path: String,
+    pub size_mb: f64,
+    /// 是否启用内存优化
+    pub skip_memory_manager: bool,
+}
+
+impl Default for LoadConfirmDialogState {
+    fn default() -> Self {
+        Self {
+            is_open: false,
+            file_name: String::new(),
+            file_path: String::new(),
+            size_mb: 0.0,
+            skip_memory_manager: true, // 默认开启
+        }
+    }
 }
 
 /// 协作对话框状态
@@ -122,6 +146,8 @@ pub struct RootState {
     pub dialog_type: DialogType,
     /// 自定义精度对话框状态
     pub custom_precision_dialog: CustomPrecisionDialogState,
+    /// 加载确认对话框状态
+    pub load_confirm_dialog: LoadConfirmDialogState,
     /// 协作对话框状态
     pub collaboration_dialog: CollaborationDialogState,
     /// 精度设置
@@ -138,6 +164,7 @@ impl RootState {
             is_dialog_window: false,
             dialog_type: DialogType::None,
             custom_precision_dialog: CustomPrecisionDialogState::new(),
+            load_confirm_dialog: LoadConfirmDialogState::default(),
             collaboration_dialog: CollaborationDialogState::new(),
             note_precision: NotePrecision::default(),
             system_fonts: lumino_core::font_scanner::scan_system_fonts(),

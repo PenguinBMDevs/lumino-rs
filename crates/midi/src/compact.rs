@@ -9,8 +9,6 @@
 //! - 8 字节对齐时，条目本身无浪费（12 是 4 的倍数）
 
 use core::fmt;
-use serde::de::{self, Deserialize, Deserializer, SeqAccess, Visitor};
-use serde::ser::{Serialize, SerializeTuple, Serializer};
 
 /// 紧凑型 MIDI 事件种类（4 位编码，最多 16 种）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -109,42 +107,6 @@ impl PartialEq for CompactEvent {
 }
 
 impl Eq for CompactEvent {}
-
-// 手动实现 Serialize（packed struct 不能 derive）
-impl Serialize for CompactEvent {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut seq = serializer.serialize_tuple(12)?;
-        for &b in self.as_bytes() {
-            seq.serialize_element(&b)?;
-        }
-        seq.end()
-    }
-}
-
-// 手动实现 Deserialize（packed struct 不能 derive）
-impl<'de> Deserialize<'de> for CompactEvent {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct CompactEventVisitor;
-        impl<'de> Visitor<'de> for CompactEventVisitor {
-            type Value = CompactEvent;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("12 bytes for CompactEvent")
-            }
-
-            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-                let mut bytes = [0u8; 12];
-                for (i, byte) in bytes.iter_mut().enumerate() {
-                    *byte = seq
-                        .next_element()?
-                        .ok_or_else(|| de::Error::invalid_length(i, &self))?;
-                }
-                Ok(CompactEvent::from_bytes(&bytes))
-            }
-        }
-        deserializer.deserialize_tuple(12, CompactEventVisitor)
-    }
-}
 
 /// 从 packed struct 的字段读取值。
 /// 避免取引用（packed struct 字段引用是 UB），而是用 raw pointer + read_unaligned。

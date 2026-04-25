@@ -3,9 +3,13 @@
 //! 负责音符调度和MIDI输出
 
 use super::{Playback, PlaybackAccessor, PlaybackState};
+use lumino_cache::MidiCache;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::sync::{Arc, Mutex};
+
+/// 缓存流式读取的前瞻距离（ticks），约 4 秒 @ 120BPM/480PPQ
+const CACHE_LOOKAHEAD_TICKS: f32 = 4096.0;
 
 /// 音符事件（用于播放调度）
 #[derive(Debug, Clone)]
@@ -62,12 +66,16 @@ pub struct PlaybackEngine {
     playback: Arc<Mutex<Playback>>,
     /// 待播放的事件队列（优先队列，按tick排序）
     event_queue: BinaryHeap<ScheduledEvent>,
-    /// 所有音符
+    /// 编辑器音符（当使用缓存时，只包含用户自绘音符）
     notes: Vec<NoteEvent>,
     /// 循环播放
     looping: bool,
     /// 循环范围（开始tick，结束tick）
     loop_range: Option<(f32, f32)>,
+    /// MIDI 缓存（大文件时使用流式读取）
+    cache: Option<Arc<MidiCache>>,
+    /// 上次从缓存读取的结束位置
+    last_fetched_tick: f32,
 }
 
 impl PlaybackEngine {
@@ -79,7 +87,15 @@ impl PlaybackEngine {
             notes: Vec::new(),
             looping: false,
             loop_range: None,
+            cache: None,
+            last_fetched_tick: 0.0,
         }
+    }
+
+    /// 设置 MIDI 缓存（大文件流式播放）
+    pub fn set_cache(&mut self, cache: Option<Arc<MidiCache>>) {
+        self.cache = cache;
+        self.last_fetched_tick = 0.0;
     }
 
     /// 设置音符列表
@@ -106,6 +122,7 @@ impl PlaybackEngine {
     /// 重建事件队列
     fn rebuild_queue(&mut self) {
         self.event_queue.clear();
+        self.last_fetched_tick = 0.0;
 
         for note in &self.notes {
             // NoteOn事件
@@ -148,6 +165,11 @@ impl PlaybackEngine {
 
         if !is_playing {
             return messages;
+        }
+
+        // 如果使用缓存，流式读取前方事件
+        if self.cache.is_some() {
+            self.stream_cache(current_tick);
         }
 
         // 处理所有到期的事件
@@ -195,6 +217,60 @@ impl PlaybackEngine {
         messages
     }
 
+    /// 从缓存流式读取前方事件并加入队列
+    fn stream_cache(&mut self, current_tick: f32) {
+        let Some(ref cache) = self.cache else { return };
+        let total_ticks = cache.index.total_ticks as f32;
+        if self.last_fetched_tick >= total_ticks {
+            return;
+        }
+        let fetch_end = (current_tick + CACHE_LOOKAHEAD_TICKS).min(total_ticks);
+        if self.last_fetched_tick >= fetch_end {
+            return;
+        }
+        let events =
+            cache
+                .cache
+                .get_events(self.last_fetched_tick as u32, fetch_end as u32, 500_000);
+        for ev in events {
+            let tick = ev.delta_tick() as f32;
+            match ev.kind() {
+                lumino_midi::compact::EventKind::NoteOn => {
+                    let velocity = ev.param2() as u8;
+                    if velocity == 0 {
+                        self.event_queue.push(ScheduledEvent {
+                            tick,
+                            event_type: EventType::NoteOff {
+                                channel: ev.channel(),
+                                key: ev.param1() as u8,
+                            },
+                        });
+                    } else {
+                        self.event_queue.push(ScheduledEvent {
+                            tick,
+                            event_type: EventType::NoteOn {
+                                channel: ev.channel(),
+                                key: ev.param1() as u8,
+                                velocity,
+                            },
+                        });
+                    }
+                }
+                lumino_midi::compact::EventKind::NoteOff => {
+                    self.event_queue.push(ScheduledEvent {
+                        tick,
+                        event_type: EventType::NoteOff {
+                            channel: ev.channel(),
+                            key: ev.param1() as u8,
+                        },
+                    });
+                }
+                _ => {}
+            }
+        }
+        self.last_fetched_tick = fetch_end;
+    }
+
     /// 安全地跳转播放位置（内部辅助方法）
     fn seek_playback(&self, tick: f32) {
         if let Some(mut playback) = self.lock_playback() {
@@ -240,10 +316,15 @@ impl PlaybackEngine {
 
     /// 跳转
     pub fn seek(&mut self, tick: f32) {
-        // 先跳转
         self.seek_playback(tick);
-        // 然后重建队列
+        self.last_fetched_tick = tick;
         self.rebuild_queue();
+        // 通知缓存预取线程
+        if let Some(ref cache) = self.cache
+            && let Some(ref prefetch) = cache.prefetch
+        {
+            prefetch.seek(tick as u32);
+        }
     }
 
     /// 获取播放状态

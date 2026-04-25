@@ -18,6 +18,7 @@ lumino-gfx = { path = "crates/gfx" }
 lumino-midi = { path = "crates/midi" }
 midly = { git = "https://github.com/Enderman-bm/midly-fork", rev = "92c99252a173bbd8f3685b9d26039bc2ad1854ac" }
 lumino-ui = { path = "crates/ui" }
+lumino-cache = { path = "crates/cache" }
 lumino-collaboration = { path = "crates/collaboration" }
 # crates.io
 iced_renderer = { version = "0.14.0", features = ["wgpu", "tiny-skia", "x11", "wayland"] }

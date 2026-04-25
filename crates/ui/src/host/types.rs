@@ -14,6 +14,9 @@ pub enum DialogResult {
         numerator: String,
         denominator: String,
     },
+    LoadConfirm {
+        skip_memory_manager: bool,
+    },
 }
 
 /// 将触摸事件转换为鼠标事件（兼容性处理）

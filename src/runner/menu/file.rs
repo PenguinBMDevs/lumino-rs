@@ -50,6 +50,12 @@ impl RunnerInner {
                 // 先导入音符到编辑器
                 self.import_midi_to_editor(&parsed);
 
+                // 将缓存传递给播放引擎（大文件流式播放）
+                if let Some(cache) = parsed.cache.clone() {
+                    self.window.ui_mut().set_playback_cache(Some(cache));
+                    tracing::info!("MIDI 缓存已绑定到播放引擎");
+                }
+
                 tracing::debug!("MIDI 数据已保留在 Arc 中");
 
                 self.current_midi = Some(parsed.clone());
@@ -100,6 +106,13 @@ impl RunnerInner {
                     } else {
                         tracing::warn!("TrackSelected: failed to lock memory_manager");
                     }
+                } else if let Some(ref parsed) = self.current_midi
+                    && parsed.cache.is_some()
+                {
+                    // 内存优化模式：没有 memory_manager，只切换音轨索引
+                    // 播放时从 cache 流式读取，不单独加载音轨到编辑器
+                    tracing::debug!("TrackSelected: 内存优化模式，只切换音轨索引");
+                    self.window.ui_mut().set_current_track(track_idx);
                 } else {
                     // 没有加载 MIDI 文件，让编辑器处理音轨切换
                     tracing::debug!(
@@ -137,8 +150,23 @@ impl RunnerInner {
 
         if extension == "dms" {
             self.load_dms_file(path);
+            return;
+        }
+
+        // 检查文件大小，大文件弹出确认对话框
+        const MEMORY_OPTIMIZE_THRESHOLD_MB: u64 = 100;
+        let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let size_mb = file_size as f64 / (1024.0 * 1024.0);
+
+        if size_mb > MEMORY_OPTIMIZE_THRESHOLD_MB as f64 {
+            let path_str = path.to_string_lossy().to_string();
+            // 存储 pending 路径，等待对话框结果
+            self.pending_load_path = Some(path);
+            // 使用已有 dialog 窗口基础设施
+            self.dialog_manager.open_load_confirm(path_str, size_mb);
         } else {
-            self.load_midi_file(path);
+            tracing::info!("文件大小 {:.1}MB ≤ 阈值，标准模式加载", size_mb);
+            self.load_midi_file(path, false);
         }
     }
 
@@ -157,12 +185,20 @@ impl RunnerInner {
     }
 
     /// 加载 MIDI 文件
-    pub(super) fn load_midi_file(&self, path: std::path::PathBuf) {
-        tracing::info!("开始后台加载 MIDI 文件：{:?}", path);
+    pub(crate) fn load_midi_file(&self, path: std::path::PathBuf, skip_memory_manager: bool) {
+        tracing::info!(
+            "开始后台加载 MIDI 文件：{:?} (内存优化={})",
+            path,
+            skip_memory_manager
+        );
         let progress_cb = self.progress_cb.clone();
         tokio::spawn(async move {
             run_async_task(
-                lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb)),
+                lumino_core::midi::loader::load_parsed_midi(
+                    path,
+                    Some(&progress_cb),
+                    skip_memory_manager,
+                ),
                 |parsed| event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed))),
                 |e| event!(Menu.File.MidiParseError(e)),
             )
@@ -171,7 +207,7 @@ impl RunnerInner {
     }
 
     /// 导入文件
-    pub(super) fn handle_import_files(&self) {
+    pub(super) fn handle_import_files(&mut self) {
         let Some(path) = rfd::FileDialog::new()
             .add_filter("音乐文件", &["mid", "midi", "lmpj", "dms"])
             .add_filter("MIDI 文件", &["mid", "midi"])
@@ -185,29 +221,41 @@ impl RunnerInner {
 
         let extension = get_file_extension(&path);
 
-        tracing::info!("开始后台导入文件：{:?}", path);
-        let progress_cb = self.progress_cb.clone();
-        tokio::spawn(async move {
-            match extension.as_str() {
-                "dms" => {
-                    run_async_task(
-                        lumino_core::midi::loader::load_dms(path, Some(&progress_cb)),
-                        |parsed| event!(Menu.File.DmsParsed(Arc::new(parsed))),
-                        |e| event!(Menu.File.DmsParseError(e)),
-                    )
-                    .await;
-                }
-                _ => {
-                    // LMPJ 和 MIDI 都使用 MIDI 加载器
-                    run_async_task(
-                        lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb)),
-                        |parsed| event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed))),
-                        |e| event!(Menu.File.MidiParseError(e)),
-                    )
-                    .await;
-                }
-            }
-        });
+        if extension == "dms" {
+            tracing::info!("开始后台导入 DMS 文件：{:?}", path);
+            let progress_cb = self.progress_cb.clone();
+            tokio::spawn(async move {
+                run_async_task(
+                    lumino_core::midi::loader::load_dms(path, Some(&progress_cb)),
+                    |parsed| event!(Menu.File.DmsParsed(Arc::new(parsed))),
+                    |e| event!(Menu.File.DmsParseError(e)),
+                )
+                .await;
+            });
+            return;
+        }
+
+        // 检查文件大小，大文件弹出确认对话框
+        const MEMORY_OPTIMIZE_THRESHOLD_MB: u64 = 100;
+        let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let size_mb = file_size as f64 / (1024.0 * 1024.0);
+
+        if size_mb > MEMORY_OPTIMIZE_THRESHOLD_MB as f64 {
+            let path_str = path.to_string_lossy().to_string();
+            self.pending_load_path = Some(path);
+            self.dialog_manager.open_load_confirm(path_str, size_mb);
+        } else {
+            tracing::info!("导入文件 {:.1}MB ≤ 阈值，标准模式加载", size_mb);
+            let progress_cb = self.progress_cb.clone();
+            tokio::spawn(async move {
+                run_async_task(
+                    lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb), false),
+                    |parsed| event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed))),
+                    |e| event!(Menu.File.MidiParseError(e)),
+                )
+                .await;
+            });
+        }
     }
 
     /// 保存文件
@@ -354,7 +402,7 @@ impl RunnerInner {
                     });
 
                     tracing::info!("[DMS导入] 步骤5: 开始加载 MIDI 数据");
-                    match load_parsed_midi(temp_path.clone(), Some(&progress_cb)).await {
+                    match load_parsed_midi(temp_path.clone(), Some(&progress_cb), false).await {
                         Ok(parsed_midi) => {
                             tracing::info!(
                                 "[DMS导入] 步骤6: DMS 转换的 MIDI 加载成功, 轨道数={}",
