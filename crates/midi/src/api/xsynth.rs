@@ -51,7 +51,8 @@ impl XSynth {
             rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
         }
 
-        let mut synth = RealtimeSynth::open_with_default_output(rt_config);
+        let mut synth = RealtimeSynth::open_with_default_output(rt_config)
+            .map_err(|e| Error::InitFailed(format!("XSynth 启动失败: {:?}", e)))?;
         tracing::info!("XSynth: 音频流已创建并启动");
 
         let params = synth.stream_params();
