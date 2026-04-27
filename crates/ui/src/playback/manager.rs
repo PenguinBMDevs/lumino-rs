@@ -64,20 +64,14 @@ impl PlaybackManager {
                         Command::Stop => {
                             engine.stop();
                             if let Some(out) = &mut midi_output {
-                                for channel in 0..16 {
-                                    for key in 0..128 {
-                                        let _ = out.note_off(channel, key, 0);
-                                    }
-                                }
+                                let _ = out.all_notes_off();
+                                let _ = out.reset_control();
                             }
                         }
                         Command::Seek(tick) => {
                             if let Some(out) = &mut midi_output {
-                                for channel in 0..16 {
-                                    for key in 0..128 {
-                                        let _ = out.note_off(channel, key, 0);
-                                    }
-                                }
+                                let _ = out.all_notes_off();
+                                let _ = out.reset_control();
                             }
                             engine.seek(tick);
                         }

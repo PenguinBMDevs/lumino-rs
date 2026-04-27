@@ -58,6 +58,8 @@ pub struct MidiManager {
     xsynth_sample_rate: u32,
     /// XSynth 是否启用 killing fade-out
     xsynth_fade_out_killing: bool,
+    /// XSynth 每个键最大同音数
+    xsynth_max_voices_per_key: Option<usize>,
 }
 
 impl Default for MidiManager {
@@ -76,6 +78,7 @@ impl Default for MidiManager {
             xsynth_threads: 0,
             xsynth_sample_rate: 0,
             xsynth_fade_out_killing: false,
+            xsynth_max_voices_per_key: None,
         }
     }
 }
@@ -109,6 +112,7 @@ impl MidiManager {
             xsynth_threads: ui_config.xsynth_threads,
             xsynth_sample_rate: ui_config.xsynth_sample_rate,
             xsynth_fade_out_killing: ui_config.xsynth_fade_out_killing,
+            xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
         };
 
         // 如果偏好 XSynth，在后台异步初始化
@@ -177,6 +181,7 @@ impl MidiManager {
             threads: ui_config.xsynth_threads,
             sample_rate: ui_config.xsynth_sample_rate,
             fade_out_killing: ui_config.xsynth_fade_out_killing,
+            max_voices_per_key: ui_config.xsynth_max_voices_per_key,
         };
 
         let api = lumino_midi::new_api_with_options(&api_kind, Some(options))
@@ -357,6 +362,7 @@ impl MidiManager {
                     threads: self.xsynth_threads,
                     sample_rate: self.xsynth_sample_rate,
                     fade_out_killing: self.xsynth_fade_out_killing,
+                    max_voices_per_key: self.xsynth_max_voices_per_key,
                 };
                 Self::try_open_new_api(&api_kind, Some(options))
             }
@@ -450,6 +456,7 @@ impl MidiManager {
         self.xsynth_threads = ui_config.xsynth_threads;
         self.xsynth_sample_rate = ui_config.xsynth_sample_rate;
         self.xsynth_fade_out_killing = ui_config.xsynth_fade_out_killing;
+        self.xsynth_max_voices_per_key = ui_config.xsynth_max_voices_per_key;
 
         // 关闭旧的 MIDI 输出和备用 API
         if let Some(old_output) = self.output.take() {

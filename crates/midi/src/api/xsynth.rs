@@ -16,6 +16,9 @@ pub struct XSynthOptions {
     pub threads: i32,
     pub sample_rate: u32,
     pub fade_out_killing: bool,
+    /// 每个键允许的最大同音数（None = 使用 xsynth 默认值 4）
+    /// 调高可减少密集钢琴/快速重复音符/拖音过程中的 voice stealing
+    pub max_voices_per_key: Option<usize>,
 }
 
 pub struct XSynth {
@@ -49,6 +52,9 @@ impl XSynth {
             };
             rt_config.multithreading = thread_count;
             rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
+            if let Some(mvpk) = opt.max_voices_per_key {
+                rt_config.channel_init_options.max_voices_per_key = Some(mvpk);
+            }
         }
 
         let mut synth = RealtimeSynth::open_with_default_output(rt_config);
@@ -249,6 +255,24 @@ impl OutputConnection for XSynthOutputConn {
 
     fn send_raw(&mut self, _data: [u8; 3]) -> Result<(), Error> {
         // xsynth 不支持原始 MIDI 发送
+        Ok(())
+    }
+
+    fn all_notes_off(&mut self) -> Result<(), Error> {
+        // 直接使用 xsynth 的 AllNotesOff，比逐通道发 CC 123 高效
+        self.sender
+            .send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+                ChannelAudioEvent::AllNotesOff,
+            )));
+        Ok(())
+    }
+
+    fn reset_control(&mut self) -> Result<(), Error> {
+        // 直接使用 xsynth 的 ResetControl，比逐通道发 CC 121 高效
+        self.sender
+            .send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+                ChannelAudioEvent::ResetControl,
+            )));
         Ok(())
     }
 

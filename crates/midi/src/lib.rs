@@ -70,6 +70,24 @@ pub trait OutputConnection: Send {
     /// 发送原始 MIDI 消息（3 字节）
     fn send_raw(&mut self, data: [u8; 3]) -> Result<(), Error>;
 
+    /// 停止所有通道的正在发声的音符（保留 Release 阶段）
+    /// 默认实现：向所有通道发送 CC 123 (All Notes Off)
+    fn all_notes_off(&mut self) -> Result<(), Error> {
+        for ch in 0..16 {
+            let _ = self.control_change(ch, 123, 0);
+        }
+        Ok(())
+    }
+
+    /// 重置所有通道的控制器状态到默认值（弯音居中、CC 归零、踏板释放等）
+    /// 默认实现：向所有通道发送 CC 121 (Reset All Controllers)
+    fn reset_control(&mut self) -> Result<(), Error> {
+        for ch in 0..16 {
+            let _ = self.control_change(ch, 121, 0);
+        }
+        Ok(())
+    }
+
     fn close(self: Box<Self>);
 }
 
