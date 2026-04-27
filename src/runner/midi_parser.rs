@@ -108,7 +108,7 @@ pub fn parse_midi_events_to_control_events(events: &[MidiEvent]) -> TrackMidiEve
                 ..
             } => {
                 // midly bend.as_int() 返回 u14 原始值 0~16383，偏移 8192 归一化到 -1.0~1.0
-                let normalized = (*value as f32 - 8192.0) / 8192.0;
+                let normalized = *value as f32 / 8192.0;
                 result.pitch_bends.push((*tick as f32, *channel, normalized));
             }
             _ => {}
@@ -200,7 +200,7 @@ pub fn parse_smf(
                     channel,
                     message: midly::MidiMessage::PitchBend { bend },
                 } => {
-                    let normalized = (bend.as_int() as f32 - 8192.0) / 8192.0;
+                    let normalized = bend.as_int() as f32 / 8192.0;
                     midi_events
                         .pitch_bends
                         .push((abs_tick as f32, channel.as_int(), normalized));
