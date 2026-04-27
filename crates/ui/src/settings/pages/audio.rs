@@ -168,6 +168,52 @@ fn render_xsynth_options<'a>(
             .label("释放音符时平滑淡出 (防止爆音)")
             .on_toggle(|f| Message::Settings(crate::settings::Event::XSynthFadeOutChanged(f))),
     );
+    col = col.push(iced_widget::space().height(SPACING_CONTENT));
+
+    // 每键最大同音数
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct VoiceOption(Option<usize>, &'static str);
+    impl std::fmt::Display for VoiceOption {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.1)
+        }
+    }
+    let voice_options = [
+        VoiceOption(Some(1), "1 (极保守)"),
+        VoiceOption(Some(2), "2"),
+        VoiceOption(Some(4), "4 (默认)"),
+        VoiceOption(Some(8), "8"),
+        VoiceOption(Some(16), "16 (推荐)"),
+        VoiceOption(Some(32), "32"),
+        VoiceOption(Some(64), "64 (密集)"),
+        VoiceOption(None, "不限制"),
+    ];
+    let current_voice = voice_options
+        .iter()
+        .find(|o| o.0 == settings.xsynth_max_voices_per_key)
+        .copied()
+        .or(Some(voice_options[3]));
+
+    col = col.push(
+        row![
+            text("每键最大同音数:")
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            pick_list(voice_options, current_voice, |opt| {
+                Message::Settings(crate::settings::Event::XSynthMaxVoicesChanged(opt.0))
+            })
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(SPACING_CONTENT));
+    col = col.push(
+        text("同键快速重复/密集和弦时，提高此值减少 voice stealing 导致的断音")
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+    );
     col = col.push(iced_widget::space().height(20));
 
     // 力度过滤

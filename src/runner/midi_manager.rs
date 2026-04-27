@@ -352,19 +352,11 @@ impl MidiManager {
         // （midir::MidiOutputConnection 持有自己的 OS 句柄）
         let strategy2_result = match self.active_backend {
             SynthBackend::XSynth => {
-                // XSynth 后端：使用 XSynth options 创建独立实例
-                let path = std::path::PathBuf::from(&self.xsynth_soundfont_path);
-                let api_kind = lumino_midi::ApiKind::XSynth {
-                    soundfont_path: path,
-                };
-                let options = lumino_midi::api::xsynth::XSynthOptions {
-                    buffer_ms: self.xsynth_buffer_ms,
-                    threads: self.xsynth_threads,
-                    sample_rate: self.xsynth_sample_rate,
-                    fade_out_killing: self.xsynth_fade_out_killing,
-                    max_voices_per_key: self.xsynth_max_voices_per_key,
-                };
-                Self::try_open_new_api(&api_kind, Some(options))
+                // XSynth：不创建第二个实例！策略1（共享 sender）总是成功；
+                // 如果策略1失败说明 API 已损坏，策略2也没有意义，
+                // 而且创建第二个 RealtimeSynth 会导致双份 cpal 音频流 + 声音叠加
+                tracing::warn!("MIDI 播放输出: XSynth 策略1意外失败，无法创建播放输出");
+                None
             }
             SynthBackend::System | SynthBackend::Kdmapi => {
                 let api_kind = match self.active_backend {

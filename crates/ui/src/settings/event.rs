@@ -13,6 +13,8 @@ pub enum Event {
     XSynthSampleRateChanged(u32),
     XSynthThreadsChanged(i32),
     XSynthFadeOutChanged(bool),
+    XSynthMaxVoicesChanged(Option<usize>),
+    XSynthMaxVoicesChanged(Option<usize>),
     ThemeChanged(String),
     EraserBehaviorChanged(lumino_core::storage::config::EraserBehavior),
     ProgramFontNameChanged(String),

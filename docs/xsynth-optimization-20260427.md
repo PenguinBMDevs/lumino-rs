@@ -71,3 +71,53 @@
 
 一句话版建议：**短期别弃用 `xsynth-realtime`，中期要弃用的是你现在这层过薄的 MIDI/播放抽象。**
 等这层抽象理顺了，`xsynth-core` 统一实时与离线渲染就会变成一条很顺的路，而不是一次高风险翻修。
+
+
+基于对 yueliang 和 xsynth-realtime 源码的分析，下面是我发现的剩余隐患和可行的修复方向。
+
+当前链路剩余爆音/卡顿根源
+1. 双线程不协调（根本原因）
+[事件线程 1ms poll]
+    │  BinaryHeap.pop() → MidiMessage
+    │  out.control_change() → sender.send_event()
+    │  thread::sleep(1ms)  ← 不精确！实际可能是 1-15ms
+    ▼
+[xsynth-realtime 内部 16 通道线程 + 音频线程]
+    │  接收事件 → 渲染 10ms 音频 → 发送 buffer → cpal 回调播放
+事件线程 1ms 的 sleep 不能保证精确唤醒，OS 调度抖动可达 10-15ms。当大量事件在同一 tick 堆积（seek 后），会瞬间涌入 xsynth 的 unbounded channel，16 个通道线程同时争抢 CPU，导致音频 buffer 来不及就绪。
+
+yueliang 的做法：不用 xsynth-realtime。直接用 xsynth-core::ChannelGroup。在 DAW 的 process() 回调里，先算 tick 发事件，再调 read_samples() 渲染。一切在一个调用栈里完成，无跨线程调度抖动。
+
+2. xsynth-realtime 内部 16 线程开销
+xsynth-realtime 为每个 MIDI 通道创建独立线程（realtime_synth.rs:164），加上音频输出线程、cpal 回调，共 18+ 个线程。每个线程 10ms 渲染窗口。在 macOS 上线程调度开销叠加我们的 1ms poll 线程，容易产生 buffer 缺口。
+
+3. 缺少 Seek 后的 Chase 机制
+当前 seek 后清空队列 rebuild、发 ResetControl，但不重放 seek 点之前的 CC/PC/PB 状态。例如 seek 到 tick 500，但 tick 300 设置了 ProgramChange=5（电吉他），seek 后音色会回退到默认钢琴。
+
+yueliang 的 chase_events() 在 seek 时逆向扫描 256 个通道，找到 seek 点之前最后的 CC/PC/PB 值，重放一遍。这也是"声音听起来不对"的重要原因。
+
+4. create_additional_output 的双实例风险
+当前代码 strategy 2 会创建第二个 RealtimeSynth 实例（midi_manager.rs:354-367），等于同时运行两份 xsynth——两份音色加载、两份音频流。虽然 strategy 1 通常成功，但如果 fallback 触发就会双倍 CPU。
+
+5. std::sync::Mutex 性能
+PlaybackEngine.lock_playback() 每 1ms 调用一次，每次都要 lock std::sync::Mutex。在 macOS 上 parking_lot::Mutex 通常快 2-5 倍，减少锁争用带来的调度抖动。
+
+建议的修复路线
+🔴 短期（不改变架构，降低爆音概率）
+措施	改动量	效果
+防护双 xsynth 实例：strategy 2 对 xsynth 返回错误	midi_manager.rs 一行	避免 2× 音频流
+parking_lot::Mutex 替代 std::sync::Mutex	playback/manager.rs + Cargo.toml	降低锁争用延迟
+事件批量发送加 micro-sleep stagger	manager.rs 循环内加 spin_sleep::sleep(Duration::from_micros(100))	减缓事件涌入速度
+暴露 voice_count 监控	xsynth.rs + 日志	能检测 overload
+🟡 中期（Chase 机制，不用大改架构）
+借鉴 yueliang 的 chase_events()，在 PlaybackEngine::seek() 时逆向扫描 midi_events，找到 seek 点前的最后 CC/PC/PB 值重放。
+
+🟢 长期（架构重构，彻底解决）
+参照 yueliang：放弃 xsynth-realtime，直接使用 xsynth-core::ChannelGroup，用自己的 cpal 回调做事件调度+音频渲染。这是 yueliang 在 macOS 上零爆音的根本原因。
+
+xsynth-core 的 ChannelGroup API：
+
+let mut group = ChannelGroup::new(config);
+group.send_event(SynthEvent::Channel(0, ChannelEvent::Audio(...)));
+group.read_samples(&mut buffer);  // 同步渲染，无需跨线程
+要我按上面的路线开始修吗？先做短期措施（防护双实例 + parking_lot + voice_count 监控），还是直接做中期 Chase 机制？

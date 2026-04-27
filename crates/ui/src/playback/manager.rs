@@ -85,7 +85,13 @@ impl PlaybackManager {
                 // 更新引擎并发送MIDI消息
                 let messages = engine.update();
                 if let Some(out) = &mut midi_output {
-                    for msg in messages {
+                    let msg_count = messages.len();
+                    for (i, msg) in messages.into_iter().enumerate() {
+                        // 每 20 条消息让出 CPU 给 xsynth 通道线程处理积压事件
+                        // 防止 seek 后大量事件瞬间涌入导致 buffer underrun
+                        if i > 0 && i % 20 == 0 {
+                            std::thread::yield_now();
+                        }
                         match msg {
                             MidiMessage::NoteOn {
                                 channel,
@@ -121,6 +127,9 @@ impl PlaybackManager {
                                 let _ = out.poly_pressure(channel, key, pressure);
                             }
                         }
+                    }
+                    if msg_count > 0 {
+                        tracing::trace!("PlaybackManager: sent {} MIDI events", msg_count);
                     }
                 }
 

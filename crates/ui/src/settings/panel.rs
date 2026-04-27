@@ -13,6 +13,7 @@ pub struct SettingsPanel {
     pub xsynth_sample_rate: u32,
     pub xsynth_threads: i32,
     pub xsynth_fade_out: bool,
+    pub xsynth_max_voices_per_key: Option<usize>,
     pub eraser_behavior: lumino_core::storage::config::EraserBehavior,
     pub program_font_name: String,
     pub program_font_path: String,
@@ -33,6 +34,7 @@ impl SettingsPanel {
             xsynth_sample_rate: ui_config.xsynth_sample_rate,
             xsynth_threads: ui_config.xsynth_threads,
             xsynth_fade_out: ui_config.xsynth_fade_out_killing,
+            xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
             eraser_behavior: ui_config.eraser_behavior,
             program_font_name: ui_config.program_font_name.clone(),
             program_font_path: ui_config.program_font_path.clone(),
@@ -79,6 +81,9 @@ impl SettingsPanel {
             }
             Event::XSynthFadeOutChanged(f) => {
                 self.xsynth_fade_out = f;
+            }
+            Event::XSynthMaxVoicesChanged(v) => {
+                self.xsynth_max_voices_per_key = v;
             }
             Event::ThemeChanged(_) => {
                 // 主题变更由外部处理
