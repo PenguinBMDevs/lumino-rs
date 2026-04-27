@@ -60,7 +60,17 @@ impl PlaybackManager {
                             }
                         }
                         Command::Play => engine.play(),
-                        Command::Pause => engine.pause(),
+                        Command::Pause => {
+                            engine.pause();
+                            if let Some(out) = &mut midi_output {
+                                // 释放所有通道的延音踏板，防止音符永久保持
+                                for ch in 0..16 {
+                                    let _ = out.control_change(ch, 64, 0);
+                                }
+                                // 停止当前发声的音符（保留 Release 阶段）
+                                let _ = out.all_notes_off();
+                            }
+                        }
                         Command::Stop => {
                             engine.stop();
                             if let Some(out) = &mut midi_output {

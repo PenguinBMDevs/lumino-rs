@@ -88,6 +88,24 @@ pub struct PlaybackEngine {
     loop_range: Option<(f32, f32)>,
 }
 
+/// Chase 时 CC 的发送顺序（确保 RPN 依赖、Bank Select 等在正确时机）
+const CHASE_CC_ORDER: &[u8] = &[
+    101, // RPN MSB
+    100, // RPN LSB
+    6,   // Data Entry MSB
+    38,  // Data Entry LSB
+    0,   // Bank Select MSB
+    32,  // Bank Select LSB
+    7,   // Volume
+    10,  // Pan
+    11,  // Expression
+    64,  // Sustain
+    73,  // Attack
+    72,  // Release
+    74,  // Cutoff
+    71,  // Resonance
+];
+
 impl PlaybackEngine {
     /// 创建新的播放引擎
     pub fn new(playback: Arc<Mutex<Playback>>) -> Self {
@@ -130,11 +148,35 @@ impl PlaybackEngine {
 
     /// 重建事件队列
     fn rebuild_queue(&mut self) {
+        self.rebuild_queue_from(None);
+    }
+
+    /// 重建事件队列，可选只包含 seek_tick 之后的事件并注入 Chase 状态
+    fn rebuild_queue_from(&mut self, seek_tick: Option<f32>) {
         self.event_queue.clear();
         let mut seq: u64 = 0;
 
-        // 调度音符事件
+        // ── Chase: 重放 seek_tick 前最后的 CC/PC/PB 状态 ──
+        if let Some(st) = seek_tick {
+            let chase_tick = st;
+            for event_type in self.collect_chase(st) {
+                self.event_queue.push(ScheduledEvent {
+                    tick: chase_tick,
+                    event_type,
+                    seq,
+                });
+                seq += 1;
+            }
+        }
+
+        // ── 调度音符事件 ──
         for note in &self.notes {
+            // seek 时跳过完全在 seek_tick 之前结束的音符
+            if let Some(st) = seek_tick {
+                if note.tick + note.length <= st {
+                    continue;
+                }
+            }
             self.event_queue.push(ScheduledEvent {
                 tick: note.tick,
                 event_type: EventType::NoteOn {
@@ -157,8 +199,14 @@ impl PlaybackEngine {
             seq += 1;
         }
 
-        // 调度非音符MIDI事件
+        // ── 调度非音符 MIDI 事件 ──
         for event in &self.midi_events {
+            // seek 时跳过 seek_tick 之前的 MIDI 事件（Chase 已处理）
+            if let Some(st) = seek_tick {
+                if event.tick < st {
+                    continue;
+                }
+            }
             let event_type = match event.message {
                 MidiMessage::NoteOn {
                     channel,
@@ -205,6 +253,82 @@ impl PlaybackEngine {
             });
             seq += 1;
         }
+    }
+
+    /// 收集 seek_tick 之前每个通道最后的 CC/PC/PB 状态（Chase）
+    fn collect_chase(&self, seek_tick: f32) -> Vec<EventType> {
+        let mut cc_state: [[Option<u8>; 128]; 16] = [[None; 128]; 16];
+        let mut pc_state: [Option<u8>; 16] = [None; 16];
+        let mut pb_state: [Option<f32>; 16] = [None; 16];
+
+        for event in &self.midi_events {
+            if event.tick >= seek_tick {
+                break;
+            }
+            let ch = match &event.message {
+                MidiMessage::ControlChange { channel, .. }
+                | MidiMessage::ProgramChange { channel, .. }
+                | MidiMessage::PitchBend { channel, .. } => *channel as usize,
+                _ => continue,
+            };
+            if ch >= 16 {
+                continue;
+            }
+            match &event.message {
+                MidiMessage::ControlChange {
+                    controller, value, ..
+                } => {
+                    cc_state[ch][*controller as usize] = Some(*value);
+                }
+                MidiMessage::ProgramChange { program, .. } => {
+                    pc_state[ch] = Some(*program);
+                }
+                MidiMessage::PitchBend { value, .. } => {
+                    pb_state[ch] = Some(*value);
+                }
+                _ => {}
+            }
+        }
+
+        let mut result = Vec::new();
+        for ch in 0..16u8 {
+            // CC 按依赖顺序发送
+            for &cc_num in CHASE_CC_ORDER {
+                if let Some(value) = cc_state[ch as usize][cc_num as usize] {
+                    result.push(EventType::ControlChange {
+                        channel: ch,
+                        controller: cc_num,
+                        value,
+                    });
+                }
+            }
+            // 其余 CC（如 Modulation 等）追加
+            for cc_num in 0..128u8 {
+                if CHASE_CC_ORDER.contains(&cc_num) {
+                    continue;
+                }
+                if let Some(value) = cc_state[ch as usize][cc_num as usize] {
+                    result.push(EventType::ControlChange {
+                        channel: ch,
+                        controller: cc_num,
+                        value,
+                    });
+                }
+            }
+            if let Some(pc) = pc_state[ch as usize] {
+                result.push(EventType::ProgramChange {
+                    channel: ch,
+                    program: pc,
+                });
+            }
+            if let Some(pb) = pb_state[ch as usize] {
+                result.push(EventType::PitchBend {
+                    channel: ch,
+                    value: pb,
+                });
+            }
+        }
+        result
     }
 
     /// 处理播放更新
@@ -339,7 +463,7 @@ impl PlaybackEngine {
     /// 跳转
     pub fn seek(&mut self, tick: f32) {
         self.seek_playback(tick);
-        self.rebuild_queue();
+        self.rebuild_queue_from(Some(tick));
     }
 
     /// 获取播放状态
