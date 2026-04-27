@@ -1,4 +1,6 @@
-use super::midi_parser::parse_midi_events_to_notes;
+use super::midi_parser::{
+    parse_midi_events_to_control_events, parse_midi_events_to_notes, TrackMidiEvents,
+};
 use lumino_core::ParsedMidi;
 
 /// MIDI 处理器
@@ -12,12 +14,14 @@ impl MidiHandler {
     }
 
     /// 将 MIDI 数据导入到编辑器
-    pub fn import_midi_to_editor(&self, ui: &mut lumino_ui::Host, parsed: &ParsedMidi) {
+    pub fn import_midi_to_editor(
+        &self,
+        ui: &mut lumino_ui::Host,
+        parsed: &ParsedMidi,
+    ) {
         use lumino_core::MidiEvent;
 
-        // 获取 memory_manager
         if let Some(memory_manager_arc) = parsed.memory_manager.as_ref() {
-            // 有 memory_manager，使用原有逻辑
             let mut memory_manager: std::sync::MutexGuard<lumino_core::MidiMemoryManager> =
                 match memory_manager_arc.lock() {
                     Ok(mgr) => mgr,
@@ -27,18 +31,15 @@ impl MidiHandler {
                     }
                 };
 
-            // 收集所有音轨信息
             let mut track_infos = Vec::new();
             let summaries = memory_manager.all_summaries().to_vec();
 
             for summary in &summaries {
                 let track_idx = summary.track_index;
 
-                // 获取音轨事件以读取音轨名称
                 let track_name: Option<String> =
                     match memory_manager.get_track_events_full(track_idx) {
                         Ok(events) => {
-                            // 查找 TrackName 事件
                             events.iter().find_map(|e: &MidiEvent| {
                                 if let MidiEvent::TrackName { name, .. } = e {
                                     Some(name.clone())
@@ -57,23 +58,17 @@ impl MidiHandler {
             }
 
             ui.set_ppq(parsed.info.division);
-
-            // 更新 UI 音轨列表
             ui.update_tracks(&track_infos);
 
-            // 提取并加载 Tempo 变化事件
             self.load_tempo_changes_from_memory_manager(&mut memory_manager, ui);
 
-            // 预加载所有音轨的音符到 track_notes（供洋葱皮使用）
             tracing::info!("Pre-loading all tracks for onion skin...");
             for (track_idx, _, note_count) in &track_infos {
                 if *note_count > 0 {
-                    // 加载音符但不切换到该音轨（只保存到 track_notes）
                     self.preload_track_for_onion_skin(&mut memory_manager, *track_idx, ui);
                 }
             }
 
-            // 加载第一个有音符的音轨到编辑器（实际显示）
             if let Some((first_track_idx, _, _)) = track_infos
                 .iter()
                 .find(|(_, _, note_count)| *note_count > 0)
@@ -81,7 +76,6 @@ impl MidiHandler {
                 self.load_track_to_editor(&mut memory_manager, *first_track_idx, ui);
             }
         } else if let Some(midi_data) = parsed.midi_data.as_ref() {
-            // 没有 memory_manager 但有 midi_data，从 midi_data 解析音符
             tracing::info!("从 midi_data 解析音符数据");
             self.import_midi_data_to_editor(midi_data, parsed.info.track_count as usize, ui);
         } else {
@@ -89,7 +83,6 @@ impl MidiHandler {
             return;
         }
 
-        // 更新编辑器总 ticks
         let total_ticks = parsed.info.duration_ticks as f32;
         ui.set_total_ticks(total_ticks);
     }
@@ -101,10 +94,9 @@ impl MidiHandler {
         _track_count: usize,
         ui: &mut lumino_ui::Host,
     ) {
-        use super::midi_parser::parse_smf_to_notes;
+        use super::midi_parser::parse_smf;
         use midly::Smf;
 
-        // 解析 MIDI 数据
         let smf = match Smf::parse(midi_data) {
             Ok(smf) => smf,
             Err(e) => {
@@ -113,29 +105,28 @@ impl MidiHandler {
             }
         };
 
-        // 使用通用解析函数收集音轨信息和音符
         let ppq = match smf.header.timing {
             midly::Timing::Metrical(ppq) => ppq.as_int(),
             _ => 1920,
         };
         ui.set_ppq(ppq);
 
-        let (track_infos, track_notes_map) = parse_smf_to_notes(&smf);
+        let (track_infos, track_notes_map, track_events_map) = parse_smf(&smf);
 
-        // 更新 UI 音轨列表
         ui.update_tracks(&track_infos);
 
-        // 将所有音轨的音符导入编辑器
         for (track_idx, notes) in track_notes_map {
             ui.load_track_notes(track_idx, &notes);
-            tracing::info!(
-                "从 midi_data 导入音轨 {}，共 {} 个音符",
-                track_idx,
-                notes.len()
-            );
+            tracing::info!("从 midi_data 导入音轨 {}，共 {} 个音符", track_idx, notes.len());
         }
 
-        // 加载第一个有音符的音轨到编辑器（实际显示）
+        for (track_idx, events) in track_events_map {
+            let ui_events = track_midi_events_to_ui_events(events);
+            if !ui_events.is_empty() {
+                ui.load_track_midi_events(track_idx, ui_events);
+            }
+        }
+
         if let Some((first_track_idx, _, _)) = track_infos
             .iter()
             .find(|(_, _, note_count)| *note_count > 0)
@@ -158,7 +149,6 @@ impl MidiHandler {
         let events = match memory_manager.get_track_events_full(track_idx) {
             Ok(events) => {
                 tracing::info!("  got {} events from track {}", events.len(), track_idx);
-                // 统计音符事件
                 let note_on_count = events
                     .iter()
                     .filter(|e| matches!(e, MidiEvent::NoteOn { .. }))
@@ -167,7 +157,26 @@ impl MidiHandler {
                     .iter()
                     .filter(|e| matches!(e, MidiEvent::NoteOff { .. }))
                     .count();
-                tracing::info!("  NoteOn: {}, NoteOff: {}", note_on_count, note_off_count);
+                let cc_count = events
+                    .iter()
+                    .filter(|e| matches!(e, MidiEvent::ControlChange { .. }))
+                    .count();
+                let pc_count = events
+                    .iter()
+                    .filter(|e| matches!(e, MidiEvent::ProgramChange { .. }))
+                    .count();
+                let pb_count = events
+                    .iter()
+                    .filter(|e| matches!(e, MidiEvent::PitchBend { .. }))
+                    .count();
+                tracing::info!(
+                    "  NoteOn: {}, NoteOff: {}, CC: {}, PC: {}, PB: {}",
+                    note_on_count,
+                    note_off_count,
+                    cc_count,
+                    pc_count,
+                    pb_count
+                );
                 events
             }
             Err(e) => {
@@ -176,11 +185,14 @@ impl MidiHandler {
             }
         };
 
-        // 使用通用解析函数构建音符列表
         let notes = parse_midi_events_to_notes(&events);
+        let midi_events = parse_midi_events_to_control_events(&events);
 
-        // 更新编辑器音符（使用新的函数，同时保存到 track_notes 供洋葱皮使用）
         ui.load_track_notes(track_idx, &notes);
+        let ui_events = track_midi_events_to_ui_events(midi_events);
+        if !ui_events.is_empty() {
+            ui.load_track_midi_events(track_idx, ui_events);
+        }
 
         tracing::info!("音轨 {} 已加载，共 {} 个音符", track_idx, notes.len());
     }
@@ -202,10 +214,9 @@ impl MidiHandler {
             }
         };
 
-        // 使用通用解析函数构建音符列表
         let notes = parse_midi_events_to_notes(&events);
+        let midi_events = parse_midi_events_to_control_events(&events);
 
-        // 只保存到 track_notes，不切换到该音轨
         if !notes.is_empty() {
             ui.load_track_notes_for_onion_skin(track_idx, &notes);
             tracing::debug!(
@@ -213,6 +224,10 @@ impl MidiHandler {
                 track_idx,
                 notes.len()
             );
+        }
+        let ui_events = track_midi_events_to_ui_events(midi_events);
+        if !ui_events.is_empty() {
+            ui.load_track_midi_events_for_onion_skin(track_idx, ui_events);
         }
     }
 
@@ -226,7 +241,6 @@ impl MidiHandler {
 
         let mut tempo_changes = Vec::new();
 
-        // 遍历所有音轨，提取 Tempo 事件
         let summaries = memory_manager.all_summaries().to_vec();
         for summary in &summaries {
             let track_idx = summary.track_index;
@@ -240,12 +254,9 @@ impl MidiHandler {
             }
         }
 
-        // 按 tick 排序
         tempo_changes.sort_by_key(|(tick, _)| *tick);
 
-        // 如果没有 tempo 事件，添加默认的 120 BPM
         if tempo_changes.is_empty() {
-            // 120 BPM = 500000 microseconds per quarter note
             tempo_changes.push((0, 500000));
             tracing::info!("No tempo events found, using default 120 BPM");
         } else {
@@ -255,7 +266,42 @@ impl MidiHandler {
             );
         }
 
-        // 加载到 UI
         ui.load_tempo_changes(tempo_changes);
     }
+}
+
+/// 将 TrackMidiEvents 转换为 Vec<MidiTrackEvent>（供 UI 播放引擎使用）
+fn track_midi_events_to_ui_events(
+    events: TrackMidiEvents,
+) -> Vec<lumino_ui::playback::MidiTrackEvent> {
+    use lumino_ui::playback::{MidiMessage, MidiTrackEvent};
+    let mut result = Vec::new();
+
+    for (tick, channel, controller, value) in events.control_changes {
+        result.push(MidiTrackEvent {
+            tick,
+            message: MidiMessage::ControlChange {
+                channel,
+                controller,
+                value,
+            },
+        });
+    }
+
+    for (tick, channel, program) in events.program_changes {
+        result.push(MidiTrackEvent {
+            tick,
+            message: MidiMessage::ProgramChange { channel, program },
+        });
+    }
+
+    for (tick, channel, value) in events.pitch_bends {
+        result.push(MidiTrackEvent {
+            tick,
+            message: MidiMessage::PitchBend { channel, value },
+        });
+    }
+
+    result.sort_by(|a, b| a.tick.total_cmp(&b.tick));
+    result
 }

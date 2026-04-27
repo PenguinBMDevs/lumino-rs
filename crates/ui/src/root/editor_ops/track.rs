@@ -70,4 +70,31 @@ impl Root {
         self.editor.mark_notes_changed();
         self.update_playback_notes();
     }
+
+    /// 加载指定音轨的 MIDI 控制事件
+    pub fn load_track_midi_events(
+        &mut self,
+        track_idx: usize,
+        events: Vec<crate::playback::MidiTrackEvent>,
+    ) {
+        if !events.is_empty() {
+            self.track_midi_events.insert(track_idx, events);
+            tracing::debug!("Root: 音轨 {} 已加载 {} 个 MIDI 控制事件", track_idx, self.track_midi_events.get(&track_idx).map_or(0, |v| v.len()));
+        }
+    }
+
+    /// 预加载音轨 MIDI 控制事件到洋葱皮缓存
+    pub fn load_track_midi_events_for_onion_skin(
+        &mut self,
+        track_idx: usize,
+        events: Vec<crate::playback::MidiTrackEvent>,
+    ) {
+        if !events.is_empty() {
+            // 合并到已有事件（如果有）
+            self.track_midi_events
+                .entry(track_idx)
+                .or_default()
+                .extend(events);
+        }
+    }
 }

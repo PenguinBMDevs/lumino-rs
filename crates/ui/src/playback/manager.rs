@@ -2,7 +2,7 @@
 //!
 //! 负责协调播放引擎和MIDI输出
 
-use super::engine::{MidiMessage, NoteEvent, PlaybackEngine};
+use super::engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine};
 use super::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
@@ -12,6 +12,7 @@ enum Command {
     SetMidiOutput(Box<dyn lumino_midi::OutputConnection>),
     ClearMidiOutput,
     SetNotes(Vec<NoteEvent>),
+    SetMidiEvents(Vec<MidiTrackEvent>),
     SetTempoChanges(Vec<TempoChange>),
     Play,
     Pause,
@@ -52,6 +53,7 @@ impl PlaybackManager {
                         Command::SetMidiOutput(output) => midi_output = Some(output),
                         Command::ClearMidiOutput => midi_output = None,
                         Command::SetNotes(notes) => engine.set_notes(notes),
+                        Command::SetMidiEvents(events) => engine.set_midi_events(events),
                         Command::SetTempoChanges(changes) => {
                             if let Ok(mut p) = engine.playback().lock() {
                                 p.set_tempo_changes(changes);
@@ -169,6 +171,11 @@ impl PlaybackManager {
     /// 设置音符列表
     pub fn set_notes(&mut self, notes: Vec<NoteEvent>) {
         let _ = self.sender.send(Command::SetNotes(notes));
+    }
+
+    /// 设置非音符MIDI事件列表
+    pub fn set_midi_events(&mut self, events: Vec<MidiTrackEvent>) {
+        let _ = self.sender.send(Command::SetMidiEvents(events));
     }
 
     /// 设置速度变化

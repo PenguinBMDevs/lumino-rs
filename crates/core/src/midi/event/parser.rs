@@ -41,6 +41,12 @@ pub fn parse_track_event_kind(
                     channel: ch,
                     program: program.as_int(),
                 }),
+                MidiMessage::PitchBend { bend } => Some(MidiEvent::PitchBend {
+                    track: track_index,
+                    tick,
+                    channel: ch,
+                    value: bend.as_int(),
+                }),
                 _ => None,
             }
         }

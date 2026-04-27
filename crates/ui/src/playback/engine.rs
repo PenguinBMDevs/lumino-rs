@@ -22,7 +22,16 @@ pub struct NoteEvent {
     pub length: f32,
 }
 
-/// 调度的音符事件（内部使用）
+/// 轨道MIDI事件（非音符，一次性事件）
+#[derive(Debug, Clone)]
+pub struct MidiTrackEvent {
+    /// 事件时刻（tick）
+    pub tick: f32,
+    /// MIDI消息
+    pub message: MidiMessage,
+}
+
+/// 调度的播放事件（内部使用）
 #[derive(Debug, Clone)]
 struct ScheduledEvent {
     tick: f32,
@@ -33,6 +42,11 @@ struct ScheduledEvent {
 enum EventType {
     NoteOn { channel: u8, key: u8, velocity: u8 },
     NoteOff { channel: u8, key: u8 },
+    ControlChange { channel: u8, controller: u8, value: u8 },
+    ProgramChange { channel: u8, program: u8 },
+    PitchBend { channel: u8, value: f32 },
+    ChannelPressure { channel: u8, pressure: u8 },
+    PolyPressure { channel: u8, key: u8, pressure: u8 },
 }
 
 impl PartialEq for ScheduledEvent {
@@ -51,7 +65,6 @@ impl PartialOrd for ScheduledEvent {
 
 impl Ord for ScheduledEvent {
     fn cmp(&self, other: &Self) -> Ordering {
-        // 直接使用 total_cmp 避免 unwrap
         other.tick.total_cmp(&self.tick)
     }
 }
@@ -64,6 +77,8 @@ pub struct PlaybackEngine {
     event_queue: BinaryHeap<ScheduledEvent>,
     /// 所有音符
     notes: Vec<NoteEvent>,
+    /// 非音符MIDI事件（CC/PC/PB等）
+    midi_events: Vec<MidiTrackEvent>,
     /// 循环播放
     looping: bool,
     /// 循环范围（开始tick，结束tick）
@@ -77,6 +92,7 @@ impl PlaybackEngine {
             playback,
             event_queue: BinaryHeap::new(),
             notes: Vec::new(),
+            midi_events: Vec::new(),
             looping: false,
             loop_range: None,
         }
@@ -85,6 +101,12 @@ impl PlaybackEngine {
     /// 设置音符列表
     pub fn set_notes(&mut self, notes: Vec<NoteEvent>) {
         self.notes = notes;
+        self.rebuild_queue();
+    }
+
+    /// 设置非音符MIDI事件列表
+    pub fn set_midi_events(&mut self, events: Vec<MidiTrackEvent>) {
+        self.midi_events = events;
         self.rebuild_queue();
     }
 
@@ -107,8 +129,8 @@ impl PlaybackEngine {
     fn rebuild_queue(&mut self) {
         self.event_queue.clear();
 
+        // 调度音符事件
         for note in &self.notes {
-            // NoteOn事件
             self.event_queue.push(ScheduledEvent {
                 tick: note.tick,
                 event_type: EventType::NoteOn {
@@ -118,13 +140,59 @@ impl PlaybackEngine {
                 },
             });
 
-            // NoteOff事件
             self.event_queue.push(ScheduledEvent {
                 tick: note.tick + note.length,
                 event_type: EventType::NoteOff {
                     channel: note.channel,
                     key: note.key,
                 },
+            });
+        }
+
+        // 调度非音符MIDI事件
+        for event in &self.midi_events {
+            let event_type = match event.message {
+                MidiMessage::NoteOn {
+                    channel,
+                    key,
+                    velocity,
+                } => EventType::NoteOn {
+                    channel,
+                    key,
+                    velocity,
+                },
+                MidiMessage::NoteOff { channel, key } => EventType::NoteOff { channel, key },
+                MidiMessage::ControlChange {
+                    channel,
+                    controller,
+                    value,
+                } => EventType::ControlChange {
+                    channel,
+                    controller,
+                    value,
+                },
+                MidiMessage::ProgramChange { channel, program } => {
+                    EventType::ProgramChange { channel, program }
+                }
+                MidiMessage::PitchBend { channel, value } => {
+                    EventType::PitchBend { channel, value }
+                }
+                MidiMessage::ChannelPressure { channel, pressure } => {
+                    EventType::ChannelPressure { channel, pressure }
+                }
+                MidiMessage::PolyPressure {
+                    channel,
+                    key,
+                    pressure,
+                } => EventType::PolyPressure {
+                    channel,
+                    key,
+                    pressure,
+                },
+            };
+            self.event_queue.push(ScheduledEvent {
+                tick: event.tick,
+                event_type,
             });
         }
     }
@@ -135,7 +203,6 @@ impl PlaybackEngine {
     pub fn update(&mut self) -> Vec<MidiMessage> {
         let mut messages = Vec::new();
 
-        // 获取当前播放状态和tick，然后立即释放锁
         let (current_tick, is_playing) = {
             let Some(playback) = self.lock_playback() else {
                 return messages;
@@ -150,13 +217,11 @@ impl PlaybackEngine {
             return messages;
         }
 
-        // 处理所有到期的事件
         while let Some(event) = self.event_queue.peek() {
             if event.tick > current_tick {
                 break;
             }
 
-            // SAFETY: peek() 返回 Some 时 pop() 一定返回 Some，因为这是单线程操作
             let event = if let Some(e) = self.event_queue.pop() {
                 e
             } else {
@@ -179,15 +244,44 @@ impl PlaybackEngine {
                 EventType::NoteOff { channel, key } => {
                     messages.push(MidiMessage::NoteOff { channel, key });
                 }
+                EventType::ControlChange {
+                    channel,
+                    controller,
+                    value,
+                } => {
+                    messages.push(MidiMessage::ControlChange {
+                        channel,
+                        controller,
+                        value,
+                    });
+                }
+                EventType::ProgramChange { channel, program } => {
+                    messages.push(MidiMessage::ProgramChange { channel, program });
+                }
+                EventType::PitchBend { channel, value } => {
+                    messages.push(MidiMessage::PitchBend { channel, value });
+                }
+                EventType::ChannelPressure { channel, pressure } => {
+                    messages.push(MidiMessage::ChannelPressure { channel, pressure });
+                }
+                EventType::PolyPressure {
+                    channel,
+                    key,
+                    pressure,
+                } => {
+                    messages.push(MidiMessage::PolyPressure {
+                        channel,
+                        key,
+                        pressure,
+                    });
+                }
             }
         }
 
-        // 检查循环（需要在独立的作用域中处理锁）
         if self.looping
             && let Some((loop_start, loop_end)) = self.loop_range
             && current_tick >= loop_end
         {
-            // 先 seek 再 rebuild_queue，避免借用冲突
             self.seek_playback(loop_start);
             self.rebuild_queue();
         }
@@ -199,13 +293,11 @@ impl PlaybackEngine {
     fn seek_playback(&self, tick: f32) {
         if let Some(mut playback) = self.lock_playback() {
             playback.seek(tick);
-            // playback 在此处 drop
         }
     }
 
     /// 播放
     pub fn play(&mut self) {
-        // 获取状态后立即释放锁
         let state = self
             .lock_playback()
             .map_or(PlaybackState::Stopped, |p| p.state());
@@ -214,7 +306,6 @@ impl PlaybackEngine {
             self.rebuild_queue();
         }
 
-        // 重新获取锁来执行 play
         if let Some(mut playback) = self.lock_playback() {
             playback.play();
         }
@@ -229,20 +320,15 @@ impl PlaybackEngine {
 
     /// 停止
     pub fn stop(&mut self) {
-        // 先停止播放
         if let Some(mut playback) = self.lock_playback() {
             playback.stop();
-            // playback 在此处 drop
         }
-        // 然后重建队列
         self.rebuild_queue();
     }
 
     /// 跳转
     pub fn seek(&mut self, tick: f32) {
-        // 先跳转
         self.seek_playback(tick);
-        // 然后重建队列
         self.rebuild_queue();
     }
 
@@ -255,6 +341,10 @@ impl PlaybackEngine {
     /// 获取当前tick
     pub fn current_tick(&self) -> f32 {
         self.lock_playback().map_or(0.0, |p| p.current_tick())
+    }
+
+    fn lock_playback(&self) -> Option<std::sync::MutexGuard<Playback>> {
+        self.playback.lock().ok()
     }
 }
 
@@ -286,7 +376,6 @@ mod tests {
         let playback = Arc::new(Mutex::new(Playback::new(480)));
         let mut engine = PlaybackEngine::new(playback);
 
-        // 添加一些测试音符
         engine.set_notes(vec![
             NoteEvent {
                 tick: 0.0,
@@ -304,7 +393,32 @@ mod tests {
             },
         ]);
 
-        // 应该有4个事件（2个NoteOn + 2个NoteOff）
         assert_eq!(engine.event_queue.len(), 4);
+    }
+
+    #[test]
+    fn test_midi_event_scheduling() {
+        let playback = Arc::new(Mutex::new(Playback::new(480)));
+        let mut engine = PlaybackEngine::new(playback);
+
+        engine.set_midi_events(vec![
+            MidiTrackEvent {
+                tick: 0.0,
+                message: MidiMessage::ProgramChange {
+                    channel: 0,
+                    program: 5,
+                },
+            },
+            MidiTrackEvent {
+                tick: 120.0,
+                message: MidiMessage::ControlChange {
+                    channel: 0,
+                    controller: 64,
+                    value: 127,
+                },
+            },
+        ]);
+
+        assert_eq!(engine.event_queue.len(), 2);
     }
 }

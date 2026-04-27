@@ -31,6 +31,12 @@ pub enum MidiEvent {
         channel: u8,
         program: u8,
     },
+    PitchBend {
+        track: usize,
+        tick: u32,
+        channel: u8,
+        value: i16,
+    },
     Tempo {
         track: usize,
         tick: u32,
@@ -116,6 +122,17 @@ impl From<&lumino_core::MidiEvent> for MidiEvent {
                 tick: *tick,
                 channel: *channel,
                 program: *program,
+            },
+            CoreEvent::PitchBend {
+                track,
+                tick,
+                channel,
+                value,
+            } => Self::PitchBend {
+                track: *track,
+                tick: *tick,
+                channel: *channel,
+                value: *value,
             },
             CoreEvent::Tempo { track, tick, tempo } => Self::Tempo {
                 track: *track,

@@ -88,6 +88,24 @@ impl Host {
         self.root.load_tempo_changes(tempo_changes);
     }
 
+    /// 加载音轨 MIDI 控制事件（CC/PC/PB）
+    pub fn load_track_midi_events(
+        &mut self,
+        track_idx: usize,
+        events: Vec<crate::playback::MidiTrackEvent>,
+    ) {
+        self.root.load_track_midi_events(track_idx, events);
+    }
+
+    /// 预加载音轨 MIDI 控制事件到洋葱皮缓存
+    pub fn load_track_midi_events_for_onion_skin(
+        &mut self,
+        track_idx: usize,
+        events: Vec<crate::playback::MidiTrackEvent>,
+    ) {
+        self.root.load_track_midi_events_for_onion_skin(track_idx, events);
+    }
+
     /// 设置播放用 MIDI 输出连接
     pub fn set_playback_midi_output(&mut self, output: Box<dyn lumino_midi::OutputConnection>) {
         self.root.set_midi_output(output);

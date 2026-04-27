@@ -9,6 +9,7 @@ pub fn estimate_event_size(event: &MidiEvent) -> usize {
         MidiEvent::NoteOn { .. } | MidiEvent::NoteOff { .. } => 24,
         MidiEvent::ControlChange { .. } => 24,
         MidiEvent::ProgramChange { .. } => 16,
+        MidiEvent::PitchBend { .. } => 16,
         MidiEvent::Tempo { .. } => 16,
         MidiEvent::TimeSignature { .. } => 16,
         MidiEvent::KeySignature { .. } => 16,
