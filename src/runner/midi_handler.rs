@@ -19,6 +19,7 @@ impl MidiHandler {
         ui: &mut lumino_ui::Host,
         parsed: &ParsedMidi,
     ) {
+        ui.reset_playback_manager();
         use lumino_core::MidiEvent;
 
         if let Some(memory_manager_arc) = parsed.memory_manager.as_ref() {
@@ -94,6 +95,7 @@ impl MidiHandler {
         _track_count: usize,
         ui: &mut lumino_ui::Host,
     ) {
+        ui.reset_playback_manager();
         use super::midi_parser::parse_smf;
         use midly::Smf;
 

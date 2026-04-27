@@ -4,6 +4,12 @@ use crate::host::{Host, types::NoteData};
 use crate::{editor::note::Note, message};
 
 impl Host {
+
+    /// 重置播放管理器（加载新文件时调用）
+    pub fn reset_playback_manager(&mut self) {
+        self.root.reset_playback_manager();
+
+    }
     /// 更新音轨列表（从 MIDI 导入）
     /// track_infos: (track_index, track_name, note_count)
     pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64)]) {
