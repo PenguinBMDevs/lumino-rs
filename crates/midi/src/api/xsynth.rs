@@ -229,7 +229,7 @@ impl OutputConnection for XSynthOutputConn {
 
         self.sender.send_event(SynthEvent::Channel(
             channel,
-            ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBend(
+            ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
                 value,
             ))),
         ));
