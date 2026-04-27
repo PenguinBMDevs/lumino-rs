@@ -101,6 +101,29 @@ impl PlaybackManager {
                             MidiMessage::NoteOff { channel, key } => {
                                 let _ = out.note_off(channel, key, 0);
                             }
+                            MidiMessage::ControlChange {
+                                channel,
+                                controller,
+                                value,
+                            } => {
+                                let _ = out.control_change(channel, controller, value);
+                            }
+                            MidiMessage::ProgramChange { channel, program } => {
+                                let _ = out.program_change(channel, program);
+                            }
+                            MidiMessage::PitchBend { channel, value } => {
+                                let _ = out.pitch_bend(channel, value);
+                            }
+                            MidiMessage::ChannelPressure { channel, pressure } => {
+                                let _ = out.channel_pressure(channel, pressure);
+                            }
+                            MidiMessage::PolyPressure {
+                                channel,
+                                key,
+                                pressure,
+                            } => {
+                                let _ = out.poly_pressure(channel, key, pressure);
+                            }
                         }
                     }
                 }

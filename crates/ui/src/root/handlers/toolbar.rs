@@ -103,7 +103,7 @@ impl ToolbarHandler {
             .filter(|note| note.velocity > velocity_threshold)
             .map(|note| NoteEvent {
                 tick: note.tick,
-                channel: 0,
+                channel: note.channel,
                 key: note.key as u8,
                 velocity: note.velocity,
                 length: note.length,
@@ -119,7 +119,7 @@ impl ToolbarHandler {
                 if note.velocity > velocity_threshold {
                     notes.push(NoteEvent {
                         tick: note.tick,
-                        channel: 0,
+                        channel: note.channel,
                         key: note.key as u8,
                         velocity: note.velocity,
                         length: note.length,

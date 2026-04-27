@@ -15,7 +15,7 @@ impl Root {
                 .filter(|note| note.velocity > velocity_threshold)
                 .map(|note| crate::playback::NoteEvent {
                     tick: note.tick,
-                    channel: 0,
+                    channel: note.channel,
                     key: note.key as u8,
                     velocity: note.velocity,
                     length: note.length,

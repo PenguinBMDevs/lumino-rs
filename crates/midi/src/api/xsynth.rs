@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use xsynth_core::{
-    channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent},
+    channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
     soundfont::SoundfontBase,
 };
 use xsynth_realtime::{RealtimeEventSender, RealtimeSynth, SynthEvent, XSynthRealtimeConfig};
@@ -177,6 +177,78 @@ impl OutputConnection for XSynthOutputConn {
         ));
 
         tracing::debug!("XSynthOutputConn::note_off: 事件已发送到通道 {}", channel);
+        Ok(())
+    }
+
+    fn control_change(&mut self, ch: u8, controller: u8, value: u8) -> Result<(), Error> {
+        let channel = (ch & 0x0F) as u32;
+
+        tracing::debug!(
+            "XSynthOutputConn::control_change: channel={}, controller={}, value={}",
+            channel,
+            controller,
+            value
+        );
+
+        self.sender.send_event(SynthEvent::Channel(
+            channel,
+            ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
+                controller,
+                value,
+            ))),
+        ));
+
+        Ok(())
+    }
+
+    fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error> {
+        let channel = (ch & 0x0F) as u32;
+
+        tracing::debug!(
+            "XSynthOutputConn::program_change: channel={}, program={}",
+            channel,
+            program
+        );
+
+        self.sender.send_event(SynthEvent::Channel(
+            channel,
+            ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program)),
+        ));
+
+        Ok(())
+    }
+
+    fn pitch_bend(&mut self, ch: u8, value: f32) -> Result<(), Error> {
+        let channel = (ch & 0x0F) as u32;
+
+        tracing::debug!(
+            "XSynthOutputConn::pitch_bend: channel={}, value={}",
+            channel,
+            value
+        );
+
+        self.sender.send_event(SynthEvent::Channel(
+            channel,
+            ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBend(
+                value,
+            ))),
+        ));
+
+        Ok(())
+    }
+
+    fn channel_pressure(&mut self, _ch: u8, _pressure: u8) -> Result<(), Error> {
+        // xsynth 目前不直接支持 channel pressure，忽略
+        Ok(())
+    }
+
+    fn poly_pressure(&mut self, _ch: u8, _key: u8, _pressure: u8) -> Result<(), Error> {
+        // xsynth 目前不直接支持 poly pressure，忽略
+        Ok(())
+    }
+
+    fn send_raw(&mut self, _data: [u8; 3]) -> Result<(), Error> {
+        // xsynth 不支持原始 MIDI 发送
         Ok(())
     }
 

@@ -44,9 +44,32 @@ pub trait Api: Send + Sync {
     fn open_output(&self, id: u32) -> Result<Box<dyn OutputConnection>, Error>;
 }
 
+/// MIDI 输出连接接口
+///
+/// 支持完整的 MIDI 事件集，包括音符、控制器、音色变换、弯音等。
 pub trait OutputConnection: Send {
     fn note_on(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error>;
     fn note_off(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error>;
+
+    /// 控制器变化（CC）
+    fn control_change(&mut self, ch: u8, controller: u8, value: u8) -> Result<(), Error>;
+
+    /// 音色变换（Program Change）
+    fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error>;
+
+    /// 弯音（Pitch Bend）
+    /// value 范围: -1.0 到 1.0
+    fn pitch_bend(&mut self, ch: u8, value: f32) -> Result<(), Error>;
+
+    /// 通道后触（Channel Aftertouch）
+    fn channel_pressure(&mut self, ch: u8, pressure: u8) -> Result<(), Error>;
+
+    /// 复音后触（Polyphonic Aftertouch）
+    fn poly_pressure(&mut self, ch: u8, key: u8, pressure: u8) -> Result<(), Error>;
+
+    /// 发送原始 MIDI 消息（3 字节）
+    fn send_raw(&mut self, data: [u8; 3]) -> Result<(), Error>;
+
     fn close(self: Box<Self>);
 }
 

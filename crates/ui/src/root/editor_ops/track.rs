@@ -22,13 +22,14 @@ impl Root {
     }
 
     /// 加载音符到编辑器
-    pub fn load_notes(&mut self, notes: &[(f32, u8, f32, u8)]) {
+    /// notes: (tick, key, length, velocity, channel)
+    pub fn load_notes(&mut self, notes: &[(f32, u8, f32, u8, u8)]) {
         self.editor.notes.clear();
-        for (tick, key, length, velocity) in notes {
+        for (tick, key, length, velocity, channel) in notes {
             let editor_key = *key as u16;
             self.editor
                 .notes
-                .push_back(Note::new(*tick, editor_key, *length).with_velocity(*velocity));
+                .push_back(Note::new(*tick, editor_key, *length).with_velocity(*velocity).with_channel(*channel));
         }
         self.editor
             .track_note_indices
@@ -47,13 +48,13 @@ impl Root {
     }
 
     /// 加载指定音轨的音符到编辑器（用于 MIDI 文件）
-    pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32, u8)]) {
+    pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32, u8, u8)]) {
         self.editor.notes.clear();
         let mut track_notes: im::Vector<Note> = im::Vector::new();
 
-        for (tick, key, length, velocity) in notes {
+        for (tick, key, length, velocity, channel) in notes {
             let editor_key = *key as u16;
-            let note = Note::new(*tick, editor_key, *length).with_velocity(*velocity);
+            let note = Note::new(*tick, editor_key, *length).with_velocity(*velocity).with_channel(*channel);
             self.editor.notes.push_back(note.clone());
             track_notes.push_back(note);
         }

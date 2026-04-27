@@ -90,6 +90,49 @@ mod tests {
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Ok(())
         }
+        fn control_change(
+            &mut self,
+            _ch: u8,
+            _controller: u8,
+            _value: u8,
+        ) -> std::result::Result<(), lumino_midi::Error> {
+            Ok(())
+        }
+        fn program_change(
+            &mut self,
+            _ch: u8,
+            _program: u8,
+        ) -> std::result::Result<(), lumino_midi::Error> {
+            Ok(())
+        }
+        fn pitch_bend(
+            &mut self,
+            _ch: u8,
+            _value: f32,
+        ) -> std::result::Result<(), lumino_midi::Error> {
+            Ok(())
+        }
+        fn channel_pressure(
+            &mut self,
+            _ch: u8,
+            _pressure: u8,
+        ) -> std::result::Result<(), lumino_midi::Error> {
+            Ok(())
+        }
+        fn poly_pressure(
+            &mut self,
+            _ch: u8,
+            _key: u8,
+            _pressure: u8,
+        ) -> std::result::Result<(), lumino_midi::Error> {
+            Ok(())
+        }
+        fn send_raw(
+            &mut self,
+            _data: [u8; 3],
+        ) -> std::result::Result<(), lumino_midi::Error> {
+            Ok(())
+        }
         fn close(self: Box<Self>) {}
     }
 
@@ -590,6 +633,49 @@ impl lumino_midi::OutputConnection for CountingMockOutput {
     ) -> std::result::Result<(), lumino_midi::Error> {
         self.note_off_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+    fn control_change(
+        &mut self,
+        _ch: u8,
+        _controller: u8,
+        _value: u8,
+    ) -> std::result::Result<(), lumino_midi::Error> {
+        Ok(())
+    }
+    fn program_change(
+        &mut self,
+        _ch: u8,
+        _program: u8,
+    ) -> std::result::Result<(), lumino_midi::Error> {
+        Ok(())
+    }
+    fn pitch_bend(
+        &mut self,
+        _ch: u8,
+        _value: f32,
+    ) -> std::result::Result<(), lumino_midi::Error> {
+        Ok(())
+    }
+    fn channel_pressure(
+        &mut self,
+        _ch: u8,
+        _pressure: u8,
+    ) -> std::result::Result<(), lumino_midi::Error> {
+        Ok(())
+    }
+    fn poly_pressure(
+        &mut self,
+        _ch: u8,
+        _key: u8,
+        _pressure: u8,
+    ) -> std::result::Result<(), lumino_midi::Error> {
+        Ok(())
+    }
+    fn send_raw(
+        &mut self,
+        _data: [u8; 3],
+    ) -> std::result::Result<(), lumino_midi::Error> {
         Ok(())
     }
     fn close(self: Box<Self>) {}

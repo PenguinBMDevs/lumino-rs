@@ -2,8 +2,8 @@
 
 use iced_core::{Event, mouse, touch};
 
-/// 音符数据: (tick, key, length, velocity)
-pub type NoteData = (f32, u8, f32, u8);
+/// 音符数据: (tick, key, length, velocity, channel)
+pub type NoteData = (f32, u8, f32, u8, u8);
 /// 音轨音符数据: (track_idx, notes)
 pub type TrackNotes = (usize, Vec<NoteData>);
 
