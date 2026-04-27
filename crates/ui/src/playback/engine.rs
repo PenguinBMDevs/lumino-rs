@@ -36,6 +36,8 @@ pub struct MidiTrackEvent {
 struct ScheduledEvent {
     tick: f32,
     event_type: EventType,
+    /// 序列号，保证同 tick 事件的插入顺序（对 RPN/CC 排序至关重要）
+    seq: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -51,7 +53,7 @@ enum EventType {
 
 impl PartialEq for ScheduledEvent {
     fn eq(&self, other: &Self) -> bool {
-        self.tick == other.tick
+        self.tick == other.tick && self.seq == other.seq
     }
 }
 
@@ -66,6 +68,7 @@ impl PartialOrd for ScheduledEvent {
 impl Ord for ScheduledEvent {
     fn cmp(&self, other: &Self) -> Ordering {
         other.tick.total_cmp(&self.tick)
+            .then_with(|| other.seq.cmp(&self.seq))
     }
 }
 
@@ -128,6 +131,7 @@ impl PlaybackEngine {
     /// 重建事件队列
     fn rebuild_queue(&mut self) {
         self.event_queue.clear();
+        let mut seq: u64 = 0;
 
         // 调度音符事件
         for note in &self.notes {
@@ -138,7 +142,9 @@ impl PlaybackEngine {
                     key: note.key,
                     velocity: note.velocity,
                 },
+                seq,
             });
+            seq += 1;
 
             self.event_queue.push(ScheduledEvent {
                 tick: note.tick + note.length,
@@ -146,7 +152,9 @@ impl PlaybackEngine {
                     channel: note.channel,
                     key: note.key,
                 },
+                seq,
             });
+            seq += 1;
         }
 
         // 调度非音符MIDI事件
@@ -193,7 +201,9 @@ impl PlaybackEngine {
             self.event_queue.push(ScheduledEvent {
                 tick: event.tick,
                 event_type,
+                seq,
             });
+            seq += 1;
         }
     }
 
