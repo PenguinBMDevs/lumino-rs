@@ -104,11 +104,11 @@ impl MidiHandler {
 
             ui.update_tracks(&track_infos);
 
-            // 从 cache 加载 tempo 变化
-            let tempo_changes = cache.get_tempo_changes();
-            let tempo_ui: Vec<(u32, u32)> = tempo_changes
-                .into_iter()
-                .map(|(tick, bpm)| {
+            // 从预存储的 tempo_changes 加载（无 I/O）
+            let tempo_ui: Vec<(u32, u32)> = cache
+                .tempo_changes
+                .iter()
+                .map(|&(tick, bpm)| {
                     let microseconds = if bpm > 0.0 {
                         (60_000_000.0 / bpm) as u32
                     } else {

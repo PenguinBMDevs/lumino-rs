@@ -10,7 +10,7 @@
 //! - EventChunk 元数据: ~32 字节
 //! - 每个 CompactEvent: 12 字节
 
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{SeekFrom, Write};
 use std::mem;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -559,15 +559,14 @@ pub fn chunk_midi_data(
     Ok((chunks, total_ticks, track_count))
 }
 
-/// 从 PackedNote 列表直接构建事件块并写入文件。
+/// 从 PackedNote 列表流式构建事件块。
 ///
-/// 相比 phase1/phase2 桶排序方案，此函数：
-/// - 直接从 `extract_notes_from_bytes` 的输出构建，跳过 Smf 中间态
-/// - 按 tick 排序后直接按块分组，不需要外部排序的桶文件
-/// - 峰值内存：PackedNote 列表（~500MB/1亿音符） + 当前块的 CompactEvent
+/// 采用流式桶排序架构，避免构建巨大的 events Vec：
+/// 1. 遍历 PackedNote，直接写入 64 个桶文件（每事件 16 字节）
+/// 2. 复用 phase2_assemble_to_path 从桶文件构建最终输出
 ///
-/// 注意：CompactEvent.delta_tick 存储的是绝对 tick（非块内相对值），
-/// 与 phase1/phase2 的约定一致。
+/// 峰值内存：PackedNote 列表（1.2GB/1亿音符）+ 64 个桶写缓冲（~0.5MB）
+/// 总计可控制在 ~1.3GB，远低于全量 events Vec 方案的 6-7GB。
 ///
 /// 返回 (chunk_index_entries, total_ticks, track_count)
 pub fn build_chunks_from_notes(
@@ -575,10 +574,21 @@ pub fn build_chunks_from_notes(
     tempo_changes: &[(u32, f32)],
     output_path: &Path,
 ) -> Result<(Vec<ChunkIndexRawEntry>, u32, u16), String> {
-    let mut events: Vec<(u32, CompactEvent)> =
-        Vec::with_capacity(notes.len() * 2 + tempo_changes.len());
+    use std::fs::File;
+    use std::io::BufWriter;
 
+    let tmp_dir = create_tmp_dir()?;
+    let mut bucket_counters: Vec<u64> = vec![0u64; NUM_BUCKETS as usize];
+    let mut total_ticks: u32 = 0;
     let mut track_count: u16 = 0;
+
+    let mut buckets: Vec<BufWriter<File>> = (0..NUM_BUCKETS)
+        .map(|b| {
+            let path = bucket_path(&tmp_dir, b);
+            let file = File::create(&path).map_err(|e| format!("创建桶文件 {path:?} 失败: {e}"))?;
+            Ok(BufWriter::new(file))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
 
     for note in notes {
         let st = note.start_tick;
@@ -586,16 +596,32 @@ pub fn build_chunks_from_notes(
         let key = note.key;
         let vel = note.velocity;
         let track = note.track;
+
+        total_ticks = total_ticks.max(et);
         track_count = track_count.max(track.saturating_add(1));
 
-        events.push((
-            st,
-            CompactEvent::new(st, track, EventKind::NoteOn, 0, key as u16, vel as u16),
-        ));
-        events.push((
-            et,
-            CompactEvent::new(et, track, EventKind::NoteOff, 0, key as u16, vel as u16),
-        ));
+        let note_on = CompactEvent::new(st, track, EventKind::NoteOn, 0, key as u16, vel as u16);
+        let note_off = CompactEvent::new(et, track, EventKind::NoteOff, 0, key as u16, vel as u16);
+
+        let chunk_on = st / params::CHUNK_TICK_SPAN;
+        let bucket_on = (chunk_on % NUM_BUCKETS) as usize;
+        buckets[bucket_on]
+            .write_all(&chunk_on.to_le_bytes())
+            .map_err(|e| format!("写入桶文件失败: {e}"))?;
+        buckets[bucket_on]
+            .write_all(note_on.as_bytes())
+            .map_err(|e| format!("写入桶文件失败: {e}"))?;
+        bucket_counters[bucket_on] += 1;
+
+        let chunk_off = et / params::CHUNK_TICK_SPAN;
+        let bucket_off = (chunk_off % NUM_BUCKETS) as usize;
+        buckets[bucket_off]
+            .write_all(&chunk_off.to_le_bytes())
+            .map_err(|e| format!("写入桶文件失败: {e}"))?;
+        buckets[bucket_off]
+            .write_all(note_off.as_bytes())
+            .map_err(|e| format!("写入桶文件失败: {e}"))?;
+        bucket_counters[bucket_off] += 1;
     }
 
     for &(tick, bpm) in tempo_changes {
@@ -604,63 +630,30 @@ pub fn build_chunks_from_notes(
         } else {
             500_000
         };
-        events.push((
+        let tempo_ev = CompactEvent::new(
             tick,
-            CompactEvent::new(
-                tick,
-                0,
-                EventKind::Tempo,
-                0,
-                (tempo_microseconds & 0xFFFF) as u16,
-                ((tempo_microseconds >> 16) & 0xFFFF) as u16,
-            ),
-        ));
+            0,
+            EventKind::Tempo,
+            0,
+            (tempo_microseconds & 0xFFFF) as u16,
+            ((tempo_microseconds >> 16) & 0xFFFF) as u16,
+        );
+
+        total_ticks = total_ticks.max(tick);
+        let chunk_idx = tick / params::CHUNK_TICK_SPAN;
+        let bucket = (chunk_idx % NUM_BUCKETS) as usize;
+        buckets[bucket]
+            .write_all(&chunk_idx.to_le_bytes())
+            .map_err(|e| format!("写入桶文件失败: {e}"))?;
+        buckets[bucket]
+            .write_all(tempo_ev.as_bytes())
+            .map_err(|e| format!("写入桶文件失败: {e}"))?;
+        bucket_counters[bucket] += 1;
     }
 
-    events.sort_unstable_by_key(|(tick, _)| *tick);
+    drop(buckets);
 
-    let mut total_ticks: u32 = 0;
-    let mut chunk_map: std::collections::BTreeMap<u32, Vec<CompactEvent>> =
-        std::collections::BTreeMap::new();
-    for (tick, ev) in &events {
-        total_ticks = total_ticks.max(*tick);
-        let chunk_idx = *tick / params::CHUNK_TICK_SPAN;
-        chunk_map.entry(chunk_idx).or_default().push(*ev);
-    }
-
-    let file = std::fs::File::create(output_path)
-        .map_err(|e| format!("创建输出文件 {output_path:?} 失败: {e}"))?;
-    let mut writer = std::io::BufWriter::new(file);
-    let mut entries = Vec::with_capacity(chunk_map.len());
-
-    for (chunk_idx, mut chunk_events) in chunk_map {
-        let chunk_start = chunk_idx * params::CHUNK_TICK_SPAN;
-
-        chunk_events.sort_unstable_by_key(|ev| ev.delta_tick());
-
-        let chunk = EventChunk::new(chunk_start, chunk_events);
-        let bytes = chunk.to_raw_bytes();
-        let file_offset = writer
-            .seek(SeekFrom::End(0))
-            .map_err(|e| format!("seek 失败: {e}"))?;
-        writer
-            .write_all(&bytes)
-            .map_err(|e| format!("写入 chunk 失败: {e}"))?;
-
-        entries.push(ChunkIndexRawEntry {
-            start_tick: chunk.start_tick,
-            file_offset,
-            byte_length: bytes.len() as u32,
-            track_mask_low: chunk.track_mask[0],
-            track_mask_high: chunk.track_mask[1],
-        });
-    }
-
-    writer
-        .into_inner()
-        .map_err(|e| format!("flush 输出文件失败: {e}"))?;
-
-    entries.sort_by_key(|e| e.start_tick);
+    let entries = phase2_assemble_to_path(&tmp_dir, &bucket_counters, output_path)?;
     Ok((entries, total_ticks, track_count))
 }
 

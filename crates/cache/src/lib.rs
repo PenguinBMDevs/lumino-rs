@@ -56,6 +56,8 @@ pub struct MidiCache {
     pub metrics: &'static CacheMetrics,
     /// 后端临时文件路径（Drop 时清理）
     _tmp_chunk_path: Option<PathBuf>,
+    /// 预提取的 tempo 变化事件（避免全量扫描 cache）
+    pub tempo_changes: Vec<(u32, f32)>,
 }
 
 impl std::fmt::Debug for MidiCache {
@@ -129,6 +131,7 @@ impl MidiCache {
             tracks,
             metrics,
             _tmp_chunk_path: Some(tmp_chunk_path),
+            tempo_changes: Vec::new(),
         })
     }
 
@@ -199,6 +202,7 @@ impl MidiCache {
             tracks,
             metrics,
             _tmp_chunk_path: Some(tmp_chunk_path),
+            tempo_changes,
         })
     }
 
@@ -208,21 +212,37 @@ impl MidiCache {
         self.index.total_ticks
     }
 
-    /// 获取指定音轨的所有事件（在 0..total_ticks 范围内）
-    ///
-    /// 注意：可能较慢，因为需要遍历所有块。
-    /// 仅用于编辑器初始加载音轨的场景。
+    /// 获取指定音轨的所有事件（利用 track_mask 跳过无关 chunk）
     pub fn get_track_events(&self, track_id: u16) -> Vec<CompactEvent> {
-        let total = self.index.total_ticks;
-        let mut events = self.cache.get_events(0, total, 0);
-        events.retain(|ev| ev.track_id() == track_id);
+        let tid = track_id as usize;
+        let mask_idx = tid / 64;
+        let mask_bit = 1u64 << (tid % 64);
+        let mut events = Vec::new();
+
+        for entry in self.index.entries.iter() {
+            let mask = match mask_idx {
+                0 => entry.track_mask_low,
+                1 => entry.track_mask_high,
+                _ => continue,
+            };
+            if mask & mask_bit == 0 {
+                continue;
+            }
+
+            let chunk_start = entry.start_tick;
+            let chunk_end = chunk_start.saturating_add(CHUNK_TICK_SPAN);
+            let chunk_events = self.cache.get_events(chunk_start, chunk_end, 0);
+            for ev in chunk_events {
+                if ev.track_id() == track_id {
+                    events.push(ev);
+                }
+            }
+        }
+
         events
     }
 
     /// 获取指定音轨的所有音符（转换为 (tick, key, length, velocity) 格式）
-    ///
-    /// 从 CompactEvent NoteOn/NoteOff 对重构音符。
-    /// 内存边界：最多返回 500_000 个音符（可配置）。
     pub fn get_track_notes(&self, track_id: u16) -> Vec<(f32, u8, f32, u8)> {
         use lumino_midi::compact::EventKind;
         use std::collections::HashMap;
@@ -266,34 +286,6 @@ impl MidiCache {
         }
 
         notes
-    }
-
-    /// 获取所有 tempo 变化事件
-    pub fn get_tempo_changes(&self) -> Vec<(u32, f32)> {
-        use lumino_midi::compact::EventKind;
-
-        let total = self.index.total_ticks;
-        let events = self.cache.get_events(0, total, 0);
-        let mut tempos = Vec::new();
-
-        for ev in &events {
-            if ev.kind() == EventKind::Tempo {
-                let tick = ev.delta_tick();
-                let tempo_low = ev.param1() as u32;
-                let tempo_high = ev.param2() as u32;
-                let microseconds = (tempo_high << 16) | tempo_low;
-                if microseconds > 0 {
-                    let bpm = 60_000_000.0 / microseconds as f32;
-                    tempos.push((tick, bpm));
-                }
-            }
-        }
-
-        if tempos.is_empty() {
-            tempos.push((0, 120.0));
-        }
-
-        tempos
     }
 
     /// 获取音轨数量

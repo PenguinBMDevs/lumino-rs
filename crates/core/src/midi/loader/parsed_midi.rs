@@ -4,7 +4,6 @@ use std::sync::Arc;
 use midly::loader::{MidiScanResult, scan_midi_file};
 
 use crate::ParsedMidi;
-use crate::TrackBasedCache;
 
 use super::types::ProgressCallback;
 
@@ -21,7 +20,7 @@ fn scan_midi_info(path: &std::path::Path) -> crate::Result<MidiScanResult> {
 pub async fn load_parsed_midi(
     path: PathBuf,
     progress: Option<&ProgressCallback>,
-    skip_memory_manager: bool,
+    _skip_memory_manager: bool,
 ) -> crate::Result<ParsedMidi> {
     let cb = |msg: &str, val: f64| {
         if let Some(p) = progress {
@@ -72,146 +71,49 @@ pub async fn load_parsed_midi(
         return Ok(parsed);
     }
 
-    // ── 内存优化模式：用 midly-fork 零分配 API 提取音符，构建缓存 ──
-    if skip_memory_manager {
-        cb("正在扫描文件信息...", 0.05);
-        let scan_result = tokio::task::spawn_blocking({
-            let path = path.clone();
-            move || scan_midi_info(&path)
-        })
-        .await
-        .map_err(|e| crate::CoreError::Other(format!("扫描 MIDI 失败: {e}")))??;
-
-        cb("正在提取音符并构建缓存 (内存优化模式)...", 0.1);
-
-        let path_for_cache = path.clone();
-        let cache = tokio::task::spawn_blocking(move || {
-            lumino_cache::MidiCache::from_notes_file(&path_for_cache, None)
-        })
-        .await
-        .map_err(|e| crate::CoreError::Other(format!("缓存线程 panic: {e}")))?
-        .map_err(|e| crate::CoreError::Cache(format!("创建缓存失败: {e}")))?;
-
-        let info = crate::MidiInfo {
-            path: path.clone(),
-            track_count: scan_result.track_count,
-            total_notes: scan_result.note_count,
-            duration_ticks: scan_result.max_tick,
-            division: scan_result.division,
-            parse_progress: Some(100.0),
-        };
-
-        tracing::info!(
-            "内存优化模式加载完成: {} ticks, {} 音轨, {} 音符, division={}",
-            info.duration_ticks,
-            info.track_count,
-            info.total_notes,
-            info.division
-        );
-
-        cb("MIDI 加载完成", 1.0);
-
-        return Ok(ParsedMidi {
-            info,
-            midi_data: None,
-            memory_manager: None,
-            cache: Some(Arc::new(cache)),
-        });
-    }
-
-    // ── 标准模式：加载 MidiMemoryManager + 可选缓存 ──
-    cb("正在加载并缓存 MIDI 事件...", 0.1);
-
-    let cache = TrackBasedCache::new_in_program_dir().map_err(|e| {
-        let err = crate::CoreError::Cache(format!("创建缓存失败: {e}"));
-        cb(&err.to_string(), 1.0);
-        err
-    })?;
-
-    let cache_dir = cache.cache_dir().to_path_buf();
-    let path_clone = path.clone();
-    let path_for_cache = path.clone();
-
-    // 为 spawn_blocking 闭包捕获进度回调的克隆
-    let progress_clone = progress.cloned();
-    let (info, memory_manager) = tokio::task::spawn_blocking(move || {
-        puffin::profile_scope!("load_midi_blocking");
-
-        let pcb = progress_clone.as_ref();
-        let cb = |msg: &str, val: f64| {
-            if let Some(p) = pcb {
-                p(msg, val);
-            }
-        };
-
-        let manager = crate::midi::managed_midi::MidiMemoryManager::load(
-            &path_clone,
-            &cache_dir,
-            Some(&|progress| {
-                cb(
-                    &format!("加载中 ({}%)...", (progress * 100.0) as u32),
-                    progress,
-                );
-            }),
-            None,
-        )?;
-
-        let stats = manager.stats();
-        let info = crate::MidiInfo {
-            path: path_clone,
-            track_count: stats.track_count as u16,
-            total_notes: stats.total_notes,
-            duration_ticks: manager
-                .all_summaries()
-                .iter()
-                .map(|s| s.max_tick)
-                .max()
-                .ok_or_else(|| crate::CoreError::MidiParse("无法计算最大 tick".to_string()))?,
-            division: {
-                let stream = crate::midi::MidiEventStream::from_path(manager.source_path())?;
-                stream.division()
-            },
-            parse_progress: Some(100.0),
-        };
-
-        Ok::<_, crate::CoreError>((info, manager))
+    // ── 统一加载路径：scan_midi_file + from_notes_file ──
+    // 单次解析，峰值内存 ~1.3GB（vs 原标准模式 5-8GB）
+    cb("正在扫描文件信息...", 0.05);
+    let scan_result = tokio::task::spawn_blocking({
+        let path = path.clone();
+        move || scan_midi_info(&path)
     })
     .await
-    .map_err(|e| {
-        let err = crate::CoreError::Other(format!("解析 MIDI 失败: {e}"));
-        cb(&err.to_string(), 1.0);
-        err
-    })?
-    .inspect_err(|e| {
-        cb(&e.to_string(), 1.0);
-    })?;
+    .map_err(|e| crate::CoreError::Other(format!("扫描 MIDI 失败: {e}")))??;
 
-    cb("正在初始化播放缓存...", 0.95);
+    cb("正在提取音符并构建缓存...", 0.1);
 
-    // 初始化 lumino-cache 分层缓存（播放用，支持 tick 级随机跳转）
-    let cache = match lumino_cache::MidiCache::load(&path_for_cache, None) {
-        Ok(c) => {
-            tracing::info!(
-                "缓存初始化成功: {} ticks, {} 音轨",
-                c.index.total_ticks,
-                c.index.track_count
-            );
-            Some(std::sync::Arc::new(c))
-        }
-        Err(e) => {
-            tracing::warn!("缓存初始化失败（不影响编辑）: {e}");
-            None
-        }
+    let path_for_cache = path.clone();
+    let cache = tokio::task::spawn_blocking(move || {
+        lumino_cache::MidiCache::from_notes_file(&path_for_cache, None)
+    })
+    .await
+    .map_err(|e| crate::CoreError::Other(format!("缓存线程 panic: {e}")))?
+    .map_err(|e| crate::CoreError::Cache(format!("创建缓存失败: {e}")))?;
+
+    let info = crate::MidiInfo {
+        path: path.clone(),
+        track_count: scan_result.track_count,
+        total_notes: scan_result.note_count,
+        duration_ticks: scan_result.max_tick,
+        division: scan_result.division,
+        parse_progress: Some(100.0),
     };
 
-    cb("MIDI 加载完成", 1.0);
+    tracing::info!(
+        "MIDI 加载完成: {} ticks, {} 音轨, {} 音符, division={}",
+        info.duration_ticks,
+        info.track_count,
+        info.total_notes,
+        info.division
+    );
 
-    let mgr_arc = std::sync::Arc::new(std::sync::Mutex::new(memory_manager));
+    cb("MIDI 加载完成", 1.0);
 
     Ok(ParsedMidi {
         info,
         midi_data: None,
-        memory_manager: Some(mgr_arc),
-        cache,
+        memory_manager: None,
+        cache: Some(Arc::new(cache)),
     })
 }
