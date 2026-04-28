@@ -3707,6 +3707,7 @@ name = "midly"
 version = "0.6.0"
 source = "git+https://github.com/Enderman-bm/midly-fork?rev=92c99252a173bbd8f3685b9d26039bc2ad1854ac#92c99252a173bbd8f3685b9d26039bc2ad1854ac"
 dependencies = [
+ "memmap2",
  "rayon",
 ]
 

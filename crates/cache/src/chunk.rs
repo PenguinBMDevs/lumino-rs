@@ -10,12 +10,13 @@
 //! - EventChunk 元数据: ~32 字节
 //! - 每个 CompactEvent: 12 字节
 
-use std::io::{SeekFrom, Write};
+use std::io::{Seek, SeekFrom, Write};
 use std::mem;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use lumino_midi::compact::{CompactEvent, EventKind};
+use midly::loader::PackedNote;
 use midly::{MetaMessage, MidiMessage, Timing, TrackEventKind};
 
 use crate::params;
@@ -556,6 +557,111 @@ pub fn chunk_midi_data(
     }
 
     Ok((chunks, total_ticks, track_count))
+}
+
+/// 从 PackedNote 列表直接构建事件块并写入文件。
+///
+/// 相比 phase1/phase2 桶排序方案，此函数：
+/// - 直接从 `extract_notes_from_bytes` 的输出构建，跳过 Smf 中间态
+/// - 按 tick 排序后直接按块分组，不需要外部排序的桶文件
+/// - 峰值内存：PackedNote 列表（~500MB/1亿音符） + 当前块的 CompactEvent
+///
+/// 注意：CompactEvent.delta_tick 存储的是绝对 tick（非块内相对值），
+/// 与 phase1/phase2 的约定一致。
+///
+/// 返回 (chunk_index_entries, total_ticks, track_count)
+pub fn build_chunks_from_notes(
+    notes: &[PackedNote],
+    tempo_changes: &[(u32, f32)],
+    output_path: &Path,
+) -> Result<(Vec<ChunkIndexRawEntry>, u32, u16), String> {
+    let mut events: Vec<(u32, CompactEvent)> =
+        Vec::with_capacity(notes.len() * 2 + tempo_changes.len());
+
+    let mut track_count: u16 = 0;
+
+    for note in notes {
+        let st = note.start_tick;
+        let et = note.end_tick;
+        let key = note.key;
+        let vel = note.velocity;
+        let track = note.track;
+        track_count = track_count.max(track.saturating_add(1));
+
+        events.push((
+            st,
+            CompactEvent::new(st, track, EventKind::NoteOn, 0, key as u16, vel as u16),
+        ));
+        events.push((
+            et,
+            CompactEvent::new(et, track, EventKind::NoteOff, 0, key as u16, vel as u16),
+        ));
+    }
+
+    for &(tick, bpm) in tempo_changes {
+        let tempo_microseconds = if bpm > 0.0 {
+            (60_000_000.0 / bpm) as u32
+        } else {
+            500_000
+        };
+        events.push((
+            tick,
+            CompactEvent::new(
+                tick,
+                0,
+                EventKind::Tempo,
+                0,
+                (tempo_microseconds & 0xFFFF) as u16,
+                ((tempo_microseconds >> 16) & 0xFFFF) as u16,
+            ),
+        ));
+    }
+
+    events.sort_unstable_by_key(|(tick, _)| *tick);
+
+    let mut total_ticks: u32 = 0;
+    let mut chunk_map: std::collections::BTreeMap<u32, Vec<CompactEvent>> =
+        std::collections::BTreeMap::new();
+    for (tick, ev) in &events {
+        total_ticks = total_ticks.max(*tick);
+        let chunk_idx = *tick / params::CHUNK_TICK_SPAN;
+        chunk_map.entry(chunk_idx).or_default().push(*ev);
+    }
+
+    let file = std::fs::File::create(output_path)
+        .map_err(|e| format!("创建输出文件 {output_path:?} 失败: {e}"))?;
+    let mut writer = std::io::BufWriter::new(file);
+    let mut entries = Vec::with_capacity(chunk_map.len());
+
+    for (chunk_idx, mut chunk_events) in chunk_map {
+        let chunk_start = chunk_idx * params::CHUNK_TICK_SPAN;
+
+        chunk_events.sort_unstable_by_key(|ev| ev.delta_tick());
+
+        let chunk = EventChunk::new(chunk_start, chunk_events);
+        let bytes = chunk.to_raw_bytes();
+        let file_offset = writer
+            .seek(SeekFrom::End(0))
+            .map_err(|e| format!("seek 失败: {e}"))?;
+        writer
+            .write_all(&bytes)
+            .map_err(|e| format!("写入 chunk 失败: {e}"))?;
+
+        entries.push(ChunkIndexRawEntry {
+            start_tick: chunk.start_tick,
+            file_offset,
+            byte_length: bytes.len() as u32,
+            track_mask_low: chunk.track_mask[0],
+            track_mask_high: chunk.track_mask[1],
+        });
+    }
+
+    writer
+        .into_inner()
+        .map_err(|e| format!("flush 输出文件失败: {e}"))?;
+
+    entries.sort_by_key(|e| e.start_tick);
+    Ok((entries, total_ticks, track_count))
 }
 
 /// 原始块索引条目（序列化前的轻量表示）

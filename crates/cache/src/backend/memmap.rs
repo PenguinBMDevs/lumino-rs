@@ -5,9 +5,9 @@
 //! Rust 端不需要手动分页管理。
 //! 对于 POSIX 系统，这是最有效的随机访问方式。
 
-use std::fs::File;
-use std::io::{self, Write};
-use std::path::Path;
+use std::fs::{File, OpenOptions};
+use std::io::{self, Seek, Write};
+use std::path::{Path, PathBuf};
 
 use memmap2::Mmap;
 
@@ -33,19 +33,16 @@ impl MemmapBackend {
     pub fn new(source_data: Vec<u8>) -> Self {
         let size = source_data.len() as u64;
 
-        // 创建临时文件并写入数据
         let (file, temp_path) =
             create_temp_file(&source_data).expect("MemmapBackend: 创建临时文件失败");
 
         let mmap = unsafe { Mmap::map(&file).expect("MemmapBackend: mmap 失败") };
-
-        // 关闭文件描述符（mmap 保持引用）
         drop(file);
 
         Self {
             mmap,
             size,
-            _temp_path: temp_path,
+            _temp_path: Some(temp_path),
         }
     }
 
@@ -68,16 +65,21 @@ impl MemmapBackend {
 }
 
 /// 创建临时文件并写入数据
-fn create_temp_file(data: &[u8]) -> io::Result<(File, Option<std::path::PathBuf>)> {
+fn create_temp_file(data: &[u8]) -> io::Result<(File, PathBuf)> {
     let mut temp_path = std::env::temp_dir();
     temp_path.push(format!("lumino_cache_{:016x}", rand_fallback()));
 
-    let mut file = File::create(&temp_path)?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .read(true)
+        .truncate(true)
+        .open(&temp_path)?;
     file.write_all(data)?;
-    file.sync_all()?;
+    file.flush()?;
     file.seek(std::io::SeekFrom::Start(0))?;
 
-    Ok((file, Some(temp_path)))
+    Ok((file, temp_path))
 }
 
 /// 回退随机数（不依赖外部 crate）

@@ -1,4 +1,7 @@
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use midly::loader::{MidiScanResult, scan_midi_file};
 
 use crate::ParsedMidi;
 use crate::TrackBasedCache;
@@ -11,18 +14,8 @@ fn decode_lmpj<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> crate::Result<T>
     bincode::deserialize(&decoded).map_err(crate::CoreError::from)
 }
 
-/// 快速读取 MIDI 文件头，获取 division 和 track_count
-fn quick_scan_midi_header(path: &std::path::Path) -> crate::Result<(u16, u16)> {
-    let file = std::fs::File::open(path).map_err(crate::CoreError::Io)?;
-    let data = unsafe { memmap2::Mmap::map(&file).map_err(crate::CoreError::Io)? };
-    let (header, track_iters) =
-        midly::parse(&data).map_err(|e| crate::CoreError::MidiParse(format!("解析失败: {e}")))?;
-    let track_count = track_iters.count() as u16;
-    let division = match header.timing {
-        midly::Timing::Metrical(t) => t.as_int(),
-        _ => 480,
-    };
-    Ok((division, track_count))
+fn scan_midi_info(path: &std::path::Path) -> crate::Result<MidiScanResult> {
+    scan_midi_file(path).map_err(|e| crate::CoreError::MidiParse(format!("扫描失败: {e}")))
 }
 
 pub async fn load_parsed_midi(
@@ -79,21 +72,21 @@ pub async fn load_parsed_midi(
         return Ok(parsed);
     }
 
-    // ── 内存优化模式：跳过 MidiMemoryManager，只创建流式缓存 ──
+    // ── 内存优化模式：用 midly-fork 零分配 API 提取音符，构建缓存 ──
     if skip_memory_manager {
         cb("正在扫描文件信息...", 0.05);
-        let (division, track_count) = tokio::task::spawn_blocking({
+        let scan_result = tokio::task::spawn_blocking({
             let path = path.clone();
-            move || quick_scan_midi_header(&path)
+            move || scan_midi_info(&path)
         })
         .await
-        .map_err(|e| crate::CoreError::Other(format!("扫描 MIDI 头失败: {e}")))??;
+        .map_err(|e| crate::CoreError::Other(format!("扫描 MIDI 失败: {e}")))??;
 
-        cb("正在初始化流式缓存 (内存优化模式)...", 0.1);
+        cb("正在提取音符并构建缓存 (内存优化模式)...", 0.1);
 
         let path_for_cache = path.clone();
         let cache = tokio::task::spawn_blocking(move || {
-            lumino_cache::MidiCache::load(&path_for_cache, None)
+            lumino_cache::MidiCache::from_notes_file(&path_for_cache, None)
         })
         .await
         .map_err(|e| crate::CoreError::Other(format!("缓存线程 panic: {e}")))?
@@ -101,17 +94,18 @@ pub async fn load_parsed_midi(
 
         let info = crate::MidiInfo {
             path: path.clone(),
-            track_count,
-            total_notes: 0, // 大文件不统计精确音符数，避免二次扫描
-            duration_ticks: cache.index.total_ticks,
-            division,
+            track_count: scan_result.track_count,
+            total_notes: scan_result.note_count,
+            duration_ticks: scan_result.max_tick,
+            division: scan_result.division,
             parse_progress: Some(100.0),
         };
 
         tracing::info!(
-            "内存优化模式加载完成: {} ticks, {} 音轨, division={}",
+            "内存优化模式加载完成: {} ticks, {} 音轨, {} 音符, division={}",
             info.duration_ticks,
             info.track_count,
+            info.total_notes,
             info.division
         );
 
@@ -121,7 +115,7 @@ pub async fn load_parsed_midi(
             info,
             midi_data: None,
             memory_manager: None,
-            cache: Some(std::sync::Arc::new(cache)),
+            cache: Some(Arc::new(cache)),
         });
     }
 

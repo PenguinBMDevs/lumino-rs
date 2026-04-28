@@ -85,25 +85,54 @@ impl MidiHandler {
             tracing::info!("从 midi_data 解析音符数据");
             self.import_midi_data_to_editor(midi_data, parsed.info.track_count as usize, ui);
         } else if let Some(cache) = parsed.cache.as_ref() {
-            // ── 内存优化模式：没有 memory_manager，从 cache 获取基本信息 ──
-            tracing::info!("内存优化模式：从 cache 导入音轨信息（不加载音符到编辑器）");
+            // ── 内存优化模式：从 cache 加载音轨音符 ──
+            tracing::info!("内存优化模式：从 cache 导入音轨信息");
 
-            let track_count = cache.index.track_count as usize;
+            let track_count = cache.track_count();
             let mut track_infos = Vec::with_capacity(track_count);
+
             for track_idx in 0..track_count {
-                // cache 不保存音轨名，使用默认名称
-                track_infos.push((track_idx, None, 0u64));
+                let notes = cache.get_track_notes(track_idx as u16);
+                let note_count = notes.len() as u64;
+                if !notes.is_empty() {
+                    ui.load_track_notes(track_idx, &notes);
+                }
+                track_infos.push((track_idx, None, note_count));
             }
 
             ui.set_ppq(parsed.info.division);
+
             ui.update_tracks(&track_infos);
 
-            // 大文件模式下不预加载任何音符到编辑器（避免 OOM）
-            // 播放时直接从 cache 流式读取
+            // 从 cache 加载 tempo 变化
+            let tempo_changes = cache.get_tempo_changes();
+            let tempo_ui: Vec<(u32, u32)> = tempo_changes
+                .into_iter()
+                .map(|(tick, bpm)| {
+                    let microseconds = if bpm > 0.0 {
+                        (60_000_000.0 / bpm) as u32
+                    } else {
+                        500_000
+                    };
+                    (tick, microseconds)
+                })
+                .collect();
+            if !tempo_ui.is_empty() {
+                ui.load_tempo_changes(tempo_ui);
+            }
+
+            // 加载第一个有音符的音轨到编辑器
+            if let Some((first_track_idx, _, _)) = track_infos
+                .iter()
+                .find(|(_, _, note_count)| *note_count > 0)
+            {
+                ui.set_current_track(*first_track_idx);
+            }
+
             tracing::info!(
-                "内存优化模式: {} 音轨, {} ticks, 编辑器音符未加载",
+                "内存优化模式: {} 音轨, {} ticks, 音符已加载",
                 track_count,
-                cache.index.total_ticks
+                cache.total_ticks()
             );
         } else {
             tracing::warn!("MIDI 没有 memory_manager 也没有 midi_data 也没有 cache，无法导入");

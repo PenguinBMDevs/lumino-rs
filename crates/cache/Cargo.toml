@@ -11,10 +11,6 @@ lumino-midi = { path = "../midi" }
 midly = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-
-[target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["sysinfoapi", "memoryapi", "winbase", "errhandlingapi"] }
-
 memmap2 = "0.9"
 
 [dev-dependencies]
