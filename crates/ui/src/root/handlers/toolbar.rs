@@ -110,22 +110,22 @@ impl ToolbarHandler {
             })
             .collect();
 
-        // 只有当没有缓存时，才加载其他音轨的音符（避免大文件OOM）
-        if root.midi_cache.is_none() {
-            for (track_idx, track_notes) in &root.editor.track_notes {
-                if *track_idx == root.editor.current_track {
-                    continue;
-                }
-                for note in track_notes {
-                    if note.velocity > velocity_threshold {
-                        notes.push(NoteEvent {
-                            tick: note.tick,
-                            channel: note.channel,
-                            key: note.key as u8,
-                            velocity: note.velocity,
-                            length: note.length,
-                        });
-                    }
+        // 始终加载所有音轨的音符到播放管理器。
+        // stream_cache 的设计目标是增量缓存预读，不负责事件全量补全，
+        // 因此即使有缓存也必须提供所有音轨的完整音符列表。
+        for (track_idx, track_notes) in &root.editor.track_notes {
+            if *track_idx == root.editor.current_track {
+                continue;
+            }
+            for note in track_notes {
+                if note.velocity > velocity_threshold {
+                    notes.push(NoteEvent {
+                        tick: note.tick,
+                        channel: note.channel,
+                        key: note.key as u8,
+                        velocity: note.velocity,
+                        length: note.length,
+                    });
                 }
             }
         }
@@ -145,13 +145,9 @@ impl ToolbarHandler {
             manager.set_midi_events(midi_events);
         }
 
-        // 设置缓存（大文件流式播放）
-        if let Some(cache) = root.midi_cache.clone() {
-            manager.set_cache(Some(cache));
-            // 告知引擎跳过当前音轨的缓存事件，防止事件重复
-            // 当前音轨的音符已通过 manager.set_notes 提供完整事件
-            manager.set_skip_tracks_in_cache(vec![root.editor.current_track as u16]);
-        }
+        // 不设置缓存到引擎：self.notes 已包含所有音轨的完整音符，
+        // stream_cache 无需参与，避免初始播放时产生事件重复。
+        // 缓存仅保留在 Root.midi_cache 中供 UI（钢琴卷帘、音轨列表）使用。
 
         // 应用缓存的 tempo 变化
         if let Some(changes) = root.pending_tempo_changes.take() {
@@ -165,12 +161,11 @@ impl ToolbarHandler {
 
         root.playback_manager = Some(manager);
         tracing::info!(
-            "Root: 播放管理器已初始化 (division={}, 总音符={}, MIDI事件={}, 过滤阈值={}, 缓存={})",
+            "Root: 播放管理器已初始化 (division={}, 总音符={}, MIDI事件={}, 过滤阈值={})",
             division,
             total_notes,
             total_midi_events,
             velocity_threshold,
-            root.midi_cache.is_some()
         );
     }
 

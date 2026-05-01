@@ -488,9 +488,9 @@ impl PlaybackEngine {
 
     /// 从缓存流式读取前方事件并加入队列
     ///
+    /// 策略：每次将 last_fetched_tick 推进到 fetch_end（前瞻窗口终点），
+    /// 保证下一批次从新边界开始，避免在非当前音轨事件稀疏区间空转。
     /// 使用安全的单批上限 MAX_BATCH_EVENTS 防止单次内存分配溢出。
-    /// 若单批次超出上限，last_fetched_tick 推进到实际最后事件 tick，
-    /// 剩余事件在下个 update 周期继续读取，保证不丢失事件。
     fn stream_cache(&mut self, current_tick: f32) {
         let Some(ref cache) = self.cache else { return };
         let total_ticks = cache.index.total_ticks as f32;
@@ -507,16 +507,15 @@ impl PlaybackEngine {
             MAX_BATCH_EVENTS,
         );
         let mut seq: u64 = 0;
-        let mut max_tick_seen: Option<u32> = None;
+        // 记录最后添加到队列的事件 tick，当 MAX_BATCH_EVENTS 截断时使用
+        let mut last_queued_tick: Option<u32> = None;
         for ev in &events {
             // 跳过已通过 self.notes 覆盖的音轨事件，防止事件重复
             if self.skip_tracks_in_cache.contains(&ev.track_id()) {
                 continue;
             }
             let tick = ev.delta_tick() as f32;
-            max_tick_seen = max_tick_seen
-                .map(|t| t.max(ev.delta_tick()))
-                .or(Some(ev.delta_tick()));
+            last_queued_tick = Some(ev.delta_tick());
             match ev.kind() {
                 lumino_midi::compact::EventKind::NoteOn => {
                     let velocity = ev.param2() as u8;
@@ -555,12 +554,13 @@ impl PlaybackEngine {
             }
             seq += 1;
         }
-        // 推进已读取进度：如果本批有事件则推进到最后事件之后，
-        // 无事件则直接跳到 fetch_end，避免空循环
-        self.last_fetched_tick = match max_tick_seen {
-            Some(t) => (t + 1) as f32,
-            None => fetch_end,
-        };
+        // 常规路径：推进到前瞻窗口终点，保证下一批次从新边界开始
+        self.last_fetched_tick = fetch_end;
+        // 当 MAX_BATCH_EVENTS 截断（events.len() >= MAX_BATCH_EVENTS）时，
+        // 已读范围可能存在缺失，回退到最后事件 tick+1 而非 fetch_end
+        if events.len() >= MAX_BATCH_EVENTS && let Some(t) = last_queued_tick {
+            self.last_fetched_tick = (t + 1) as f32;
+        }
     }
 
     /// 安全地跳转播放位置（内部辅助方法）
