@@ -77,8 +77,6 @@ pub struct LoadConfirmDialogState {
     pub file_name: String,
     pub file_path: String,
     pub size_mb: f64,
-    /// 是否启用内存优化
-    pub skip_memory_manager: bool,
 }
 
 impl Default for LoadConfirmDialogState {
@@ -88,7 +86,6 @@ impl Default for LoadConfirmDialogState {
             file_name: String::new(),
             file_path: String::new(),
             size_mb: 0.0,
-            skip_memory_manager: true, // 默认开启
         }
     }
 }

@@ -169,12 +169,8 @@ impl Root {
 
     /// 处理加载确认对话框 - 确认
     pub(super) fn handle_confirm_load(&mut self) {
-        let skip = self.state.load_confirm_dialog.skip_memory_manager;
-
         // 设置对话框结果（供独立窗口模式使用）
-        self.state.dialog_result = Some(crate::host::DialogResult::LoadConfirm {
-            skip_memory_manager: skip,
-        });
+        self.state.dialog_result = Some(crate::host::DialogResult::LoadConfirm);
 
         self.state.load_confirm_dialog.is_open = false;
         self.state.dialog_type = crate::state::root_state::DialogType::None;
@@ -184,10 +180,5 @@ impl Root {
     pub(super) fn handle_cancel_load(&mut self) {
         self.state.load_confirm_dialog.is_open = false;
         self.state.dialog_type = crate::state::root_state::DialogType::None;
-    }
-
-    /// 处理加载确认对话框 - 切换内存优化
-    pub(super) fn handle_toggle_load_skip(&mut self, skip: bool) {
-        self.state.load_confirm_dialog.skip_memory_manager = skip;
     }
 }

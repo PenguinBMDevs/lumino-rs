@@ -46,13 +46,37 @@ struct ScheduledEvent {
 
 #[derive(Debug, Clone)]
 enum EventType {
-    NoteOn { channel: u8, key: u8, velocity: u8 },
-    NoteOff { channel: u8, key: u8 },
-    ControlChange { channel: u8, controller: u8, value: u8 },
-    ProgramChange { channel: u8, program: u8 },
-    PitchBend { channel: u8, value: f32 },
-    ChannelPressure { channel: u8, pressure: u8 },
-    PolyPressure { channel: u8, key: u8, pressure: u8 },
+    NoteOn {
+        channel: u8,
+        key: u8,
+        velocity: u8,
+    },
+    NoteOff {
+        channel: u8,
+        key: u8,
+    },
+    ControlChange {
+        channel: u8,
+        controller: u8,
+        value: u8,
+    },
+    ProgramChange {
+        channel: u8,
+        program: u8,
+    },
+    PitchBend {
+        channel: u8,
+        value: f32,
+    },
+    ChannelPressure {
+        channel: u8,
+        pressure: u8,
+    },
+    PolyPressure {
+        channel: u8,
+        key: u8,
+        pressure: u8,
+    },
 }
 
 impl PartialEq for ScheduledEvent {
@@ -71,7 +95,9 @@ impl PartialOrd for ScheduledEvent {
 
 impl Ord for ScheduledEvent {
     fn cmp(&self, other: &Self) -> Ordering {
-        other.tick.total_cmp(&self.tick)
+        other
+            .tick
+            .total_cmp(&self.tick)
             .then_with(|| other.seq.cmp(&self.seq))
     }
 }
@@ -578,13 +604,37 @@ impl PlaybackAccessor for PlaybackEngine {
 /// MIDI消息
 #[derive(Debug, Clone)]
 pub enum MidiMessage {
-    NoteOn { channel: u8, key: u8, velocity: u8 },
-    NoteOff { channel: u8, key: u8 },
-    ControlChange { channel: u8, controller: u8, value: u8 },
-    ProgramChange { channel: u8, program: u8 },
-    PitchBend { channel: u8, value: f32 },
-    ChannelPressure { channel: u8, pressure: u8 },
-    PolyPressure { channel: u8, key: u8, pressure: u8 },
+    NoteOn {
+        channel: u8,
+        key: u8,
+        velocity: u8,
+    },
+    NoteOff {
+        channel: u8,
+        key: u8,
+    },
+    ControlChange {
+        channel: u8,
+        controller: u8,
+        value: u8,
+    },
+    ProgramChange {
+        channel: u8,
+        program: u8,
+    },
+    PitchBend {
+        channel: u8,
+        value: f32,
+    },
+    ChannelPressure {
+        channel: u8,
+        pressure: u8,
+    },
+    PolyPressure {
+        channel: u8,
+        key: u8,
+        pressure: u8,
+    },
 }
 
 #[cfg(test)]

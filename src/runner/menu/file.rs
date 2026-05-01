@@ -89,37 +89,10 @@ impl RunnerInner {
                 tracing::info!("工程已关闭");
             }
             TrackSelected(track_idx) => {
+                // 统一使用 cache-only 模式，只切换音轨索引
+                // 播放时从 cache 流式读取，不单独加载音轨到编辑器
                 tracing::info!("切换到音轨：{}", track_idx);
-                if let Some(memory_manager_arc) = self
-                    .current_midi
-                    .as_ref()
-                    .and_then(|p| p.memory_manager.clone())
-                {
-                    tracing::debug!("TrackSelected: memory_manager_arc found");
-                    if let Ok(mut memory_manager) = memory_manager_arc.lock() {
-                        tracing::debug!("TrackSelected: lock acquired");
-                        self.midi_handler.load_track_to_editor(
-                            &mut memory_manager,
-                            track_idx,
-                            self.window.ui_mut(),
-                        );
-                    } else {
-                        tracing::warn!("TrackSelected: failed to lock memory_manager");
-                    }
-                } else if let Some(ref parsed) = self.current_midi
-                    && parsed.cache.is_some()
-                {
-                    // 内存优化模式：没有 memory_manager，只切换音轨索引
-                    // 播放时从 cache 流式读取，不单独加载音轨到编辑器
-                    tracing::debug!("TrackSelected: 内存优化模式，只切换音轨索引");
-                    self.window.ui_mut().set_current_track(track_idx);
-                } else {
-                    // 没有加载 MIDI 文件，让编辑器处理音轨切换
-                    tracing::debug!(
-                        "TrackSelected: no MIDI loaded, letting editor handle track switch"
-                    );
-                    self.window.ui_mut().set_current_track(track_idx);
-                }
+                self.window.ui_mut().set_current_track(track_idx);
             }
             _ => {
                 tracing::debug!("未处理的文件事件：{:?}", file_event);

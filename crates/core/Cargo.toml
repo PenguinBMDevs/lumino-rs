@@ -22,8 +22,6 @@ zstd = "0.13.2"
 encoding_rs = "0.8"
 lumino-cache = { path = "../cache" }
 lumino-dms = { path = "../dms" }
-memmap2 = "0.9"
-ouroboros = "0.18"
 thiserror = { workspace = true }
 font-kit = "0.14"
 puffin = "0.19.1"

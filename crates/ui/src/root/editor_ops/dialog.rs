@@ -44,7 +44,6 @@ impl Root {
             file_name,
             file_path: file_path.to_string(),
             size_mb,
-            skip_memory_manager: true, // 默认开启
         };
         self.state.dialog_type = crate::state::root_state::DialogType::LoadConfirm;
     }

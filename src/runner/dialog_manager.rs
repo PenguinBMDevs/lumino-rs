@@ -22,9 +22,7 @@ pub enum DialogResult {
         numerator: String,
         denominator: String,
     },
-    LoadConfirm {
-        skip_memory_manager: bool,
-    },
+    LoadConfirm,
 }
 
 /// 对话框窗口
@@ -209,12 +207,8 @@ impl DialogWindow {
                         denominator,
                     });
                 }
-                lumino_ui::host::DialogResult::LoadConfirm {
-                    skip_memory_manager,
-                } => {
-                    self.result_data = Some(DialogResult::LoadConfirm {
-                        skip_memory_manager,
-                    });
+                lumino_ui::host::DialogResult::LoadConfirm => {
+                    self.result_data = Some(DialogResult::LoadConfirm);
                 }
             }
             self.should_close = true;

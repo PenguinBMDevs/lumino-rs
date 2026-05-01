@@ -75,7 +75,11 @@ pub fn load_soundfont_cached(
     }
 
     // 缓存未命中，加载音色库
-    tracing::info!("SoundfontCache: 缓存未命中，加载音色库 {:?} (sr={})", path, sample_rate);
+    tracing::info!(
+        "SoundfontCache: 缓存未命中，加载音色库 {:?} (sr={})",
+        path,
+        sample_rate
+    );
     let soundfont = SampleSoundfont::new(path, params, Default::default())
         .map_err(|e| format!("Failed to load soundfont: {:?}", e))?;
 

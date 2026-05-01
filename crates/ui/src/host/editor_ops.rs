@@ -4,11 +4,9 @@ use crate::host::{Host, types::NoteData};
 use crate::{editor::note::Note, message};
 
 impl Host {
-
     /// 重置播放管理器（加载新文件时调用）
     pub fn reset_playback_manager(&mut self) {
         self.root.reset_playback_manager();
-
     }
     /// 更新音轨列表（从 MIDI 导入）
     /// track_infos: (track_index, track_name, note_count)
@@ -77,7 +75,11 @@ impl Host {
         let mut track_notes: im::Vector<Note> = im::Vector::new();
         for (tick, key, length, velocity, channel) in notes {
             let editor_key = *key as u16;
-            track_notes.push_back(Note::new(*tick, editor_key, *length).with_velocity(*velocity).with_channel(*channel));
+            track_notes.push_back(
+                Note::new(*tick, editor_key, *length)
+                    .with_velocity(*velocity)
+                    .with_channel(*channel),
+            );
         }
 
         if !track_notes.is_empty() {
@@ -109,7 +111,8 @@ impl Host {
         track_idx: usize,
         events: Vec<crate::playback::MidiTrackEvent>,
     ) {
-        self.root.load_track_midi_events_for_onion_skin(track_idx, events);
+        self.root
+            .load_track_midi_events_for_onion_skin(track_idx, events);
     }
 
     /// 设置播放用 MIDI 输出连接

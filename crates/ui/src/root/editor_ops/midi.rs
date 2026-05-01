@@ -127,10 +127,7 @@ mod tests {
         ) -> std::result::Result<(), lumino_midi::Error> {
             Ok(())
         }
-        fn send_raw(
-            &mut self,
-            _data: [u8; 3],
-        ) -> std::result::Result<(), lumino_midi::Error> {
+        fn send_raw(&mut self, _data: [u8; 3]) -> std::result::Result<(), lumino_midi::Error> {
             Ok(())
         }
         fn close(self: Box<Self>) {}
@@ -650,11 +647,7 @@ impl lumino_midi::OutputConnection for CountingMockOutput {
     ) -> std::result::Result<(), lumino_midi::Error> {
         Ok(())
     }
-    fn pitch_bend(
-        &mut self,
-        _ch: u8,
-        _value: f32,
-    ) -> std::result::Result<(), lumino_midi::Error> {
+    fn pitch_bend(&mut self, _ch: u8, _value: f32) -> std::result::Result<(), lumino_midi::Error> {
         Ok(())
     }
     fn channel_pressure(
@@ -672,10 +665,7 @@ impl lumino_midi::OutputConnection for CountingMockOutput {
     ) -> std::result::Result<(), lumino_midi::Error> {
         Ok(())
     }
-    fn send_raw(
-        &mut self,
-        _data: [u8; 3],
-    ) -> std::result::Result<(), lumino_midi::Error> {
+    fn send_raw(&mut self, _data: [u8; 3]) -> std::result::Result<(), lumino_midi::Error> {
         Ok(())
     }
     fn close(self: Box<Self>) {}

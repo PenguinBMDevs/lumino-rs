@@ -248,7 +248,7 @@ impl Runner {
                     tracing::info!("自定义精度已应用: {} ticks (PPQ={})", ticks, ppq);
                 }
             }
-            DialogResult::LoadConfirm { .. } => {
+            DialogResult::LoadConfirm => {
                 // LoadConfirm 由 lifecycle.rs 处理，这里不应到达
                 tracing::warn!("LoadConfirm 结果不应通过 apply_dialog_result_to_ui 处理");
             }

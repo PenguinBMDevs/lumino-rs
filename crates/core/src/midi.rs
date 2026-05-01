@@ -3,10 +3,9 @@ pub mod dms;
 pub mod event;
 pub mod info;
 pub mod loader;
-pub mod managed_midi;
 
 pub use dms::DmsInfo;
-pub use event::{MidiEvent, MidiEventStream, parse_all_midi_events};
+pub use event::MidiEvent;
 pub use info::MidiInfo;
 
 /// LMPJ 文件数据结构（用于序列化/反序列化）
@@ -28,7 +27,6 @@ impl LmpjData {
         ParsedMidi {
             info: self.info,
             midi_data: self.midi_data,
-            memory_manager: None,
             cache: None,
         }
     }
@@ -39,8 +37,6 @@ impl LmpjData {
 pub struct ParsedMidi {
     pub info: MidiInfo,
     pub midi_data: Option<Vec<u8>>,
-    /// 内存管理器（编辑用，按音轨访问）
-    pub memory_manager: Option<std::sync::Arc<std::sync::Mutex<managed_midi::MidiMemoryManager>>>,
     /// 分层缓存（播放用，按 tick 跳转）
     pub cache: Option<std::sync::Arc<lumino_cache::MidiCache>>,
 }
@@ -71,7 +67,6 @@ impl<'de> serde::Deserialize<'de> for ParsedMidi {
         Ok(ParsedMidi {
             info: h.info,
             midi_data: h.midi_data,
-            memory_manager: None,
             cache: None,
         })
     }
@@ -80,79 +75,6 @@ impl<'de> serde::Deserialize<'de> for ParsedMidi {
 impl ParsedMidi {
     pub fn take_midi_data(&mut self) -> Option<Vec<u8>> {
         self.midi_data.take()
-    }
-
-    /// ⚠️ [废弃] 获取事件流（仅被已废弃的 build_track_cache / open_track_window 使用）
-    pub fn events_stream(&self) -> Result<MidiEventStream, String> {
-        MidiEventStream::from_path(&self.info.path)
-    }
-
-    /// ⚠️ [废弃] 解析所有事件
-    pub fn parse_all_events(&self) -> Result<Vec<MidiEvent>, String> {
-        self.events_stream()?.collect()
-    }
-
-    /// ⚠️ [废弃] 构建基于 TrackBasedCache 的缓存（旧架构）
-    ///
-    /// 此方法在 c3c44e6 重构后不再被调用，因为 `load_parsed_midi` 统一使用 `MidiCache`。
-    /// Plan: 后续清理提交中删除。
-    #[deprecated(since = "0.0.0", note = "使用 MidiCache 替代，此方法不再被调用")]
-    pub fn build_track_cache(
-        &self,
-        cache: &crate::TrackBasedCache,
-    ) -> Result<crate::TrackCacheHeader, String> {
-        let mut stream = self.events_stream()?;
-        cache
-            .build_cache_streaming(&self.info.path, &mut stream)
-            .map_err(|e| format!("构建缓存失败: {e}"))
-    }
-
-    /// ⚠️ [废弃] 打开基于 TrackBasedCache 的事件窗口（旧架构）
-    ///
-    /// 此方法在 c3c44e6 重构后不再被调用。
-    /// Plan: 后续清理提交中删除。
-    #[deprecated(since = "0.0.0", note = "使用 MidiCache::get_track_events 替代")]
-    #[allow(deprecated)]
-    pub fn open_track_window(
-        &self,
-        cache: &crate::TrackBasedCache,
-        max_loaded_tracks: usize,
-    ) -> Result<crate::TrackEventWindow, String> {
-        if !cache
-            .has_cache(&self.info.path)
-            .map_err(|e| format!("检查缓存失败: {e}"))?
-        {
-            self.build_track_cache(cache)?;
-        }
-
-        cache
-            .open_window(&self.info.path, max_loaded_tracks)
-            .map_err(|e| format!("打开事件窗口失败: {e}"))
-    }
-
-    /// 使用内存管理的方式获取音轨事件（编辑/浏览用）
-    pub fn get_managed_track_events(&self, track_index: usize) -> Result<Vec<MidiEvent>, String> {
-        if let Some(mgr) = &self.memory_manager {
-            let mut mgr = mgr.lock().map_err(|e| format!("锁定内存管理器失败: {e}"))?;
-            let events = mgr.get_track_events(track_index)?;
-            Ok(events.to_vec())
-        } else {
-            // 回退到流式读取
-            let mut stream = self.events_stream()?;
-            stream.read_track_events(track_index)
-        }
-    }
-
-    /// 获取内存管理器统计
-    pub fn manager_stats(&self) -> Option<managed_midi::ManagerStats> {
-        self.memory_manager.as_ref().map(|mgr| {
-            mgr.lock()
-                .map(|guard| guard.stats())
-                .unwrap_or_else(|poisoned| {
-                    let guard = poisoned.into_inner();
-                    guard.stats()
-                })
-        })
     }
 }
 

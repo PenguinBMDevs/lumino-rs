@@ -338,7 +338,6 @@ fn test_midi_lmpj_roundtrip() {
     let parsed_midi = lumino_core::midi::ParsedMidi {
         info: info.clone(),
         midi_data: Some(original_midi_bytes.clone()),
-        memory_manager: None,
         cache: None,
     };
 

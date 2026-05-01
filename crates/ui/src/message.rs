@@ -143,8 +143,6 @@ pub enum Message {
     ConfirmLoadConfirm,
     /// 加载确认对话框 - 取消
     CloseLoadConfirmDialog,
-    /// 加载确认对话框 - 内存优化开关
-    LoadConfirmSkipChanged(bool),
     /// 空消息标记
     Null,
 }

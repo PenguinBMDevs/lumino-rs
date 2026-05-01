@@ -149,7 +149,7 @@ impl MidiCache {
     /// 适用于大文件（>100MB）的内存优化加载场景。
     pub fn from_notes_file<P: AsRef<Path>>(
         midi_path: P,
-        progress: Option<&'static dyn Fn(f64)>,
+        progress: Option<&dyn Fn(f64)>,
     ) -> Result<Self> {
         let path = midi_path.as_ref();
 
@@ -273,7 +273,8 @@ impl MidiCache {
                             notes.push((start_tick as f32, key, length, prev_vel, prev_ch));
                         }
                         active_notes.insert(key, (tick, vel, channel));
-                    } else if let Some((start_tick, prev_vel, prev_ch)) = active_notes.remove(&key) {
+                    } else if let Some((start_tick, prev_vel, prev_ch)) = active_notes.remove(&key)
+                    {
                         let length = tick.saturating_sub(start_tick) as f32;
                         notes.push((start_tick as f32, key, length, prev_vel, prev_ch));
                     }

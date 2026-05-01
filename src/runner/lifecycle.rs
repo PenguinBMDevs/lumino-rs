@@ -121,13 +121,7 @@ impl winit::application::ApplicationHandler for Runner {
             // 处理对话框返回的结果
             if let Some(result) = dialog_result {
                 match result {
-                    crate::runner::dialog_manager::DialogResult::LoadConfirm {
-                        skip_memory_manager,
-                    } => {
-                        // LoadConfirm: 开始加载 MIDI 文件
-                        // `skip_memory_manager` 参数已被移除（审查报告 #9），
-                        // 现在统一使用内存优化方案，不再需要区分标准/优化模式
-                        let _ = skip_memory_manager;
+                    crate::runner::dialog_manager::DialogResult::LoadConfirm => {
                         if let Some(path) = this.pending_load_path.take() {
                             this.load_midi_file(path);
                         } else {

@@ -102,10 +102,7 @@ impl MessageHandler for DialogHandler {
                 root.handle_cancel_load();
                 None
             }
-            Message::LoadConfirmSkipChanged(skip) => {
-                root.handle_toggle_load_skip(skip);
-                None
-            }
+
             other => Some(other),
         }
     }

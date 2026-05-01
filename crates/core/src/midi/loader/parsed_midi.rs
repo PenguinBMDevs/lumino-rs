@@ -82,9 +82,19 @@ pub async fn load_parsed_midi(
 
     cb("正在提取音符并构建缓存...", 0.1);
 
+    // 桥接进度回调：将 from_notes_file 的 f64 进度映射到 ProgressCallback
+    let cache_progress: Option<Arc<dyn Fn(f64) + Send + Sync>> = progress.map(|p| {
+        let p = Arc::clone(p);
+        let f: Arc<dyn Fn(f64) + Send + Sync> = Arc::new(move |val: f64| {
+            p("正在提取音符并构建缓存...", 0.1 + val * 0.85);
+        });
+        f
+    });
+
     let path_for_cache = path.clone();
     let cache = tokio::task::spawn_blocking(move || {
-        lumino_cache::MidiCache::from_notes_file(&path_for_cache, None)
+        let p_ref = cache_progress.as_ref().map(|a| a.as_ref() as &dyn Fn(f64));
+        lumino_cache::MidiCache::from_notes_file(&path_for_cache, p_ref)
     })
     .await
     .map_err(|e| crate::CoreError::Other(format!("缓存线程 panic: {e}")))?
@@ -112,7 +122,6 @@ pub async fn load_parsed_midi(
     Ok(ParsedMidi {
         info,
         midi_data: None,
-        memory_manager: None,
         cache: Some(Arc::new(cache)),
     })
 }

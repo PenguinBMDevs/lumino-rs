@@ -1,5 +1,5 @@
 use iced_core::Length;
-use iced_widget::{button, checkbox, column, container, row, space, text};
+use iced_widget::{button, column, container, row, space, text};
 
 use crate::message::Message;
 use crate::state::root_state::LoadConfirmDialogState;
@@ -30,23 +30,14 @@ pub fn view_load_confirm_dialog<'a>(
             .style(move |_t: &iced_core::Theme| text::Style {
                 color: Some(palette.background.weak.text),
             }),
+        space().height(16),
+        text("此文件较大，加载可能需要一些时间。")
+            .size(13)
+            .style(move |_t: &iced_core::Theme| text::Style {
+                color: Some(palette.background.weak.text),
+            }),
     ]
     .width(Length::Fill);
-
-    // 内存优化开关
-    let toggle = checkbox(state.skip_memory_manager)
-        .label("启用内存优化")
-        .on_toggle(Message::LoadConfirmSkipChanged)
-        .size(16)
-        .text_size(14)
-        .spacing(8);
-
-    // 提示文本
-    let hint = text("开启后跳过全量内存缓存，使用磁盘流式读取，可大幅降低加载内存占用。")
-        .size(12)
-        .style(move |_t: &iced_core::Theme| text::Style {
-            color: Some(palette.background.weak.text),
-        });
 
     // 按钮区域
     let buttons = row![
@@ -103,17 +94,9 @@ pub fn view_load_confirm_dialog<'a>(
     .align_y(iced_core::Alignment::Center);
 
     // 主内容
-    let main_content = column![
-        file_info,
-        space().height(16),
-        toggle,
-        space().height(4),
-        hint,
-        space().height(20),
-        buttons,
-    ]
-    .width(Length::Fill)
-    .align_x(iced_core::Alignment::Start);
+    let main_content = column![file_info, space().height(24), buttons,]
+        .width(Length::Fill)
+        .align_x(iced_core::Alignment::Start);
 
     let dialog_content = container(main_content)
         .width(Length::Fill)

@@ -3,9 +3,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use xsynth_core::{
+    AudioStreamParams, ChannelCount,
     channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
     soundfont::SoundfontBase,
-    AudioStreamParams, ChannelCount,
 };
 use xsynth_realtime::{RealtimeEventSender, RealtimeSynth, SynthEvent, XSynthRealtimeConfig};
 
@@ -193,8 +193,7 @@ impl OutputConnection for XSynthOutputConn {
         self.sender.send_event(SynthEvent::Channel(
             channel,
             ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
-                controller,
-                value,
+                controller, value,
             ))),
         ));
 

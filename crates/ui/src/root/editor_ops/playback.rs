@@ -35,15 +35,18 @@ impl Root {
                 if *track_idx == self.editor.current_track {
                     continue;
                 }
-                notes.extend(track_notes.iter().filter(|note| note.velocity > velocity_threshold).map(
-                    |note| crate::playback::NoteEvent {
-                        tick: note.tick,
-                        channel: note.channel,
-                        key: note.key as u8,
-                        velocity: note.velocity,
-                        length: note.length,
-                    },
-                ));
+                notes.extend(
+                    track_notes
+                        .iter()
+                        .filter(|note| note.velocity > velocity_threshold)
+                        .map(|note| crate::playback::NoteEvent {
+                            tick: note.tick,
+                            channel: note.channel,
+                            key: note.key as u8,
+                            velocity: note.velocity,
+                            length: note.length,
+                        }),
+                );
             }
 
             manager.set_notes(notes);
