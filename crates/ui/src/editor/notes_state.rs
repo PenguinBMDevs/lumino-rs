@@ -28,5 +28,7 @@ impl Editor {
         self.track_note_indices
             .borrow_mut()
             .remove(&self.current_track);
+        // 标记当前音轨的洋葱皮缓存需重新生成
+        self.onion_skin_dirty.borrow_mut().insert(self.current_track);
     }
 }

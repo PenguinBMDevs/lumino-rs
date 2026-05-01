@@ -1,3 +1,4 @@
+use iced_wgpu::wgpu;
 use lumino_gfx::{GridLineInstance, KeyInstance, NoteInstance, RulerTickInstance};
 
 /// 渲染参数 - 从 UI 线程传递到 WGPU 线程
@@ -49,6 +50,11 @@ pub struct RenderParams {
     pub ppq: f32,
     /// 最大键索引 (visible_key_count - 1)
     pub max_key_index: f32,
+
+    /// 洋葱皮位图纹理视图列表（每个活跃音轨一个，有序排列）
+    pub onion_skin_bitmap_views: Vec<wgpu::TextureView>,
+    /// 洋葱皮位图采样器（所有位图共享同一个采样器）
+    pub onion_skin_bitmap_sampler: Option<wgpu::Sampler>,
 }
 
 impl Default for RenderParams {
@@ -80,6 +86,8 @@ impl Default for RenderParams {
             canvas_size: (800.0, 600.0),
             ppq: 1920.0,
             max_key_index: 127.0,
+            onion_skin_bitmap_views: Vec::new(),
+            onion_skin_bitmap_sampler: None,
         }
     }
 }

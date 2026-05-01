@@ -29,6 +29,7 @@ mod cache;
 mod dialog;
 mod editor_ops;
 mod event;
+mod onion_skin_bitmap;
 mod render;
 pub mod types;
 
@@ -96,6 +97,9 @@ pub struct Host {
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
     pub(crate) format: wgpu::TextureFormat,
+
+    /// 洋葱皮位图管理器（每个音轨渲染为独立位图纹理）
+    pub(crate) onion_skin_bitmaps: onion_skin_bitmap::OnionSkinBitmapManager,
 }
 
 impl Host {
@@ -172,6 +176,11 @@ impl Host {
             device: gfx.device.clone(),
             queue: gfx.queue.clone(),
             format: gfx.format,
+            onion_skin_bitmaps: onion_skin_bitmap::OnionSkinBitmapManager::new(
+                &gfx.device,
+                gfx.format,
+                onion_skin_bitmap::BitmapViewport::default(),
+            ),
         }
     }
 
@@ -243,11 +252,15 @@ impl Host {
             device: gfx.device.clone(),
             queue: gfx.queue.clone(),
             format: gfx.format,
+            onion_skin_bitmaps: onion_skin_bitmap::OnionSkinBitmapManager::new(
+                &gfx.device,
+                gfx.format,
+                onion_skin_bitmap::BitmapViewport::default(),
+            ),
         }
     }
 
     /// 启用独立渲染线程模式
-    ///
     /// 这会将WGPU渲染从UI线程分离到独立线程，提高UI响应性
     pub fn enable_render_thread(&mut self) {
         if self.render_thread.is_some() {
@@ -356,6 +369,39 @@ impl Host {
         self.cursor_position
     }
 
+    /// 尝试懒加载一个洋葱皮音轨（从 MidiDocument → track_notes）
+    /// 每帧调用一次，返回 true 表示加载了一个新音轨
+    pub fn lazy_load_one_onion_skin_track(&mut self) -> bool {
+        let onion_states = self.root.sidebar.get_onion_skin_states();
+        let current_track = self.root.editor.current_track;
+
+        // 找到第一个未加载的洋葱皮音轨
+        let track_idx = {
+            let mut found: Option<usize> = None;
+            for (&t, &en) in &onion_states {
+                if en && t != current_track && !self.root.editor.track_notes.contains_key(&t) {
+                    found = Some(t);
+                    break;
+                }
+            }
+            found
+        };
+
+        if let Some(idx) = track_idx {
+            self.root.editor.ensure_track_notes_loaded(idx);
+            let remaining = onion_states
+                .iter()
+                .filter(|&(t, en)| {
+                    *en && *t != current_track && !self.root.editor.track_notes.contains_key(t)
+                })
+                .count();
+            tracing::info!("洋葱皮: 懒加载音轨 {} (剩余 {} 个待加载)", idx, remaining);
+            true
+        } else {
+            false
+        }
+    }
+
     /// 收集所有组件的内存占用快照（Root + RenderCache）
     pub fn memory_breakdown(&self) -> root::MemoryBreakdown {
         let mut breakdown = self.root.memory_breakdown();
@@ -367,7 +413,11 @@ impl Host {
 
         tracing::debug!(
             "MemoryBreakdown: note_instances_buffer front(cap={}, len={}) back(cap={}, len={}) instance_size={}",
-            front_cap, front_len, back_cap, back_len, instance_size
+            front_cap,
+            front_len,
+            back_cap,
+            back_len,
+            instance_size
         );
 
         // 将双缓冲容量写入 breakdown 的附加字段

@@ -86,6 +86,12 @@ impl Host {
 
         if !track_notes.is_empty() {
             self.root.editor.track_notes.insert(track_idx, track_notes);
+            // 标记该音轨的洋葱皮缓存为脏，在下次渲染时自动生成
+            self.root
+                .editor
+                .onion_skin_dirty
+                .borrow_mut()
+                .insert(track_idx);
             self.root.invalidate_onion_skin_cache();
         }
 
@@ -250,6 +256,7 @@ impl Host {
         self.root.editor.document = None;
         self.root.midi_document = None;
         self.root.cached_onion_skin_notes = None;
+        self.onion_skin_bitmaps.clear();
         self.clear_cache();
         // 仅请求重绘，不重建UI树（编辑器清空由WGPU层处理）
         self.window.request_redraw();
@@ -286,6 +293,15 @@ impl Host {
         }
 
         result
+    }
+
+    /// 预生成所有已加载音轨的洋葱皮实例缓存
+    ///
+    /// 在 MIDI 加载完成后调用，确保所有已加载音轨的位图数据准备就绪。
+    /// 后续懒加载的音轨也会在加载后自动生成缓存。
+    pub fn pregenerate_onion_skin_caches(&mut self) {
+        self.root.editor.pregenerate_all_onion_skin_caches();
+        tracing::info!("UI: 已预生成所有已加载音轨的洋葱皮缓存");
     }
 
     /// 获取编辑器中的音符数量（用于判断是否有内容）

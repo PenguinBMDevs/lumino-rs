@@ -40,6 +40,9 @@ impl Host {
         self.prepare_grid_if_needed(gfx, current_viewport_hash, &viewport);
         let notes_changed = self.prepare_notes_if_needed(current_viewport_hash);
 
+        // 准备洋葱皮位图（检查视口变化，生成脏位图）
+        self.prepare_onion_skin_bitmaps(&viewport);
+
         // 准备相机和深度纹理
         let camera = self.build_camera_uniform(&viewport);
         self.prepare_note_renderer(gfx, &mut encoder, notes_changed, camera);

@@ -259,10 +259,7 @@ impl MidiDocument {
     #[inline]
     pub fn track_events_range(&self, track_id: u16) -> (usize, usize) {
         let tid = track_id as usize;
-        self.track_events_range
-            .get(tid)
-            .copied()
-            .unwrap_or((0, 0))
+        self.track_events_range.get(tid).copied().unwrap_or((0, 0))
     }
 
     /// 轻量获取指定音轨的音符数（O(notes_in_track)，零分配）
@@ -371,6 +368,80 @@ impl MidiDocument {
         let last_tick = events.last().map(|e| e.delta_tick()).unwrap_or(0);
         for ((_ch, key), (st, vel, ch)) in active_notes {
             notes.push((st as f32, key, last_tick.saturating_sub(st) as f32, vel, ch));
+        }
+
+        notes
+    }
+
+    /// 获取指定音轨在指定 tick 范围内的音符（O(events_in_track)，仅输出可视区域音符）
+    ///
+    /// 与 `get_track_notes` 不同，此方法只返回与 [tick_start, tick_end) 重叠的音符，
+    /// 输出 Vec 远小于全量提取，适用于洋葱皮视口裁剪。
+    /// 仍需扫描整轨事件以保证 NoteOn/NoteOff 配对正确。
+    pub fn get_track_notes_in_range(
+        &self,
+        track_id: u16,
+        tick_start: u32,
+        tick_end: u32,
+    ) -> Vec<(f32, u8, f32, u8, u8)> {
+        use std::collections::HashMap;
+
+        let tid = track_id as usize;
+        let (start, end) = self.track_events_range.get(tid).copied().unwrap_or((0, 0));
+        if start >= end || tick_end <= tick_start {
+            return Vec::new();
+        }
+
+        let events = &self.events[start..end];
+        let mut active_notes: HashMap<(u8, u8), (u32, u8, u8)> = HashMap::new();
+        let mut notes = Vec::new();
+        // 记录是否已经进入可视区域（之后结束的音符才需要输出）
+        let mut in_range = false;
+
+        for ev in events {
+            let tick = ev.delta_tick();
+            let key = ev.param1() as u8;
+            let vel = ev.param2() as u8;
+            let channel = ev.channel();
+
+            // 更新 in_range 标志
+            if !in_range && tick >= tick_start {
+                in_range = true;
+            }
+
+            match ev.kind() {
+                EventKind::NoteOn if vel > 0 => {
+                    if let Some((st, pv, pc)) = active_notes.remove(&(channel, key)) {
+                        // 上一个相同 (ch,key) 的音符结束了，检查是否与可视区域重叠
+                        if st < tick_end && tick > tick_start {
+                            notes.push((st as f32, key, tick.saturating_sub(st) as f32, pv, pc));
+                        }
+                    }
+                    active_notes.insert((channel, key), (tick, vel, channel));
+                }
+                EventKind::NoteOn | EventKind::NoteOff => {
+                    if let Some((st, pv, pc)) = active_notes.remove(&(channel, key)) {
+                        if st < tick_end && tick > tick_start {
+                            notes.push((st as f32, key, tick.saturating_sub(st) as f32, pv, pc));
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            // 提前退出：已过可视范围且没有活跃音符
+            if tick > tick_end && active_notes.is_empty() {
+                break;
+            }
+        }
+
+        // 处理未关闭的音符（在 track_end 或 tick_end 处截断）
+        let boundary_tick = events.last().map(|e| e.delta_tick()).unwrap_or(tick_end);
+        for ((_ch, key), (st, vel, ch)) in active_notes {
+            if st < tick_end {
+                let end_tick = boundary_tick.max(tick_end);
+                notes.push((st as f32, key, end_tick.saturating_sub(st) as f32, vel, ch));
+            }
         }
 
         notes

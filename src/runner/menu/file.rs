@@ -55,10 +55,12 @@ impl RunnerInner {
                 // 导入后立即输出内存日志（此时尚未触发首帧渲染，能看到干净的后导入态）
                 if self.log_memory_usage {
                     let mem = self.window.ui().memory_breakdown();
-                    let rss_mb = lumino_core::memory_monitor::MemoryMonitor::global()
-                        .current_rss() / (1024 * 1024);
-                    let front_total = mem.note_instances_front_cap as u64 * mem.note_instance_size as u64;
-                    let back_total = mem.note_instances_back_cap as u64 * mem.note_instance_size as u64;
+                    let rss_mb = lumino_core::memory_monitor::MemoryMonitor::global().current_rss()
+                        / (1024 * 1024);
+                    let front_total =
+                        mem.note_instances_front_cap as u64 * mem.note_instance_size as u64;
+                    let back_total =
+                        mem.note_instances_back_cap as u64 * mem.note_instance_size as u64;
                     tracing::info!(
                         "\n\
                         ┌─ Memory Usage (post-import, pre-render) ──────────────┐\n\

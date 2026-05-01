@@ -143,6 +143,12 @@ pub struct Editor {
     /// 其他音轨的音符空间索引（用于洋葱皮等，懒加载）
     pub track_note_indices:
         RefCell<std::collections::HashMap<usize, spatial_index::NoteSpatialIndex>>,
+
+    /// 洋葱皮实例缓存：预生成的 NoteInstance 列表，按音轨索引
+    /// 使用 RefCell 允许在 &self 方法中惰性再生
+    pub onion_skin_cache: RefCell<std::collections::HashMap<usize, Vec<lumino_gfx::NoteInstance>>>,
+    /// 需要重新生成缓存的脏音轨集
+    pub onion_skin_dirty: RefCell<std::collections::HashSet<usize>>,
 }
 
 /// 编辑器各组件的内存占用快照（字节）
@@ -182,13 +188,17 @@ impl Editor {
 
         // document events (CompactEvent=12B, (u32,f32)=8B)
         let doc_is_some = self.document.is_some();
-        let doc_event_cap = self.document.as_ref().map(|d| d.events.capacity()).unwrap_or(0);
+        let doc_event_cap = self
+            .document
+            .as_ref()
+            .map(|d| d.events.capacity())
+            .unwrap_or(0);
         let doc_events_bytes = self
             .document
             .as_ref()
             .map(|doc| {
                 doc.events.capacity() * 12       // CompactEvent
-                    + doc.tempo_changes.capacity() * 8        // (u32, f32)
+                    + doc.tempo_changes.capacity() * 8 // (u32, f32)
             })
             .unwrap_or(0);
 
@@ -197,7 +207,11 @@ impl Editor {
 
         tracing::info!(
             "[MEMORY_DEBUG] document={}, events_cap={}, notes_len={}, track_notes_entries={}, track_notes_count={}",
-            doc_is_some, doc_event_cap, notes_len, track_notes_entries, track_notes_count,
+            doc_is_some,
+            doc_event_cap,
+            notes_len,
+            track_notes_entries,
+            track_notes_count,
         );
 
         EditorMemory {
@@ -240,6 +254,8 @@ impl Editor {
             note_index_dirty: Cell::new(true),
             query_cache: RefCell::new(Vec::new()),
             track_note_indices: RefCell::new(std::collections::HashMap::new()),
+            onion_skin_cache: RefCell::new(std::collections::HashMap::new()),
+            onion_skin_dirty: RefCell::new(std::collections::HashSet::new()),
         };
         editor.max_scroll_x = editor.state.total_ticks as f32 * editor.state.zoom_x;
         editor.max_scroll_y = editor.state.visible_key_count as f32 * editor.state.zoom_y;

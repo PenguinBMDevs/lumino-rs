@@ -19,6 +19,9 @@ pub fn execute_render_pass(
     keyboard_renderer: &mut lumino_gfx::KeyboardRenderer,
     ruler_renderer: &mut lumino_gfx::RulerRenderer,
     queue: &wgpu::Queue,
+    device: &wgpu::Device,
+    onion_display_pipeline: &wgpu::RenderPipeline,
+    onion_display_layout: &wgpu::BindGroupLayout,
 ) {
     let (Some(texture), Some(depth_view)) = (current_texture, depth_texture_view) else {
         return;
@@ -87,6 +90,30 @@ pub fn execute_render_pass(
         {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             grid_renderer.draw(&mut render_pass, 1);
+        }
+
+        // ── 绘制洋葱皮位图（在网格之上、音符之下） ──
+        if let Some(ref sampler) = params.onion_skin_bitmap_sampler {
+            for view in &params.onion_skin_bitmap_views {
+                // 为每个位图创建临时绑定组
+                let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("onion_bitmap_bg"),
+                    layout: onion_display_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(sampler),
+                        },
+                    ],
+                });
+                render_pass.set_pipeline(onion_display_pipeline);
+                render_pass.set_bind_group(0, &bind_group, &[]);
+                render_pass.draw(0..4, 0..1);
+            }
         }
 
         // 绘制音符

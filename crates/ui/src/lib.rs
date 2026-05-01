@@ -17,9 +17,9 @@ pub mod wgpu_render_thread;
 pub mod window;
 
 pub use host::{Host, NoteData, TrackNotes};
-pub use root::MemoryBreakdown;
 pub(crate) use lumino_core::storage::config;
 pub use render_thread::{RenderCommand, RenderStats, RenderThreadHandle, spawn_render_thread};
+pub use root::MemoryBreakdown;
 pub(crate) use root::{Element, Message, Renderer, Theme};
 pub use state::root_state::CollaborationViewState;
 pub use wgpu_render_thread::{

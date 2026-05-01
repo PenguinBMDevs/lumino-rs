@@ -20,29 +20,22 @@ impl Host {
 
         // 获取编辑器数据引用（避免后续借用冲突）
         let notes = &self.root.editor.notes;
-        let track_notes = &self.root.editor.track_notes;
-        let edit_state = &self.root.editor.edit_state;
+        let edit_state = self.root.editor.edit_state.clone();
         let default_note_length = self.root.editor.state.default_note_length;
         let snap_precision = self.root.editor.state.snap_precision;
 
-        // 预分配容量
-        let onion_skin_count: usize = track_notes.values().map(|n| n.len()).sum();
-        let total_capacity = notes.len() + onion_skin_count + 1; // +1 for drawing note
+        // 预分配容量（仅当前轨道的音符 + 绘制中的音符，洋葱皮由独立位图处理）
+        let total_capacity = notes.len() + 1; // +1 for drawing note
         instances.reserve(total_capacity);
 
-        // 添加主要音符
+        // 添加主要音符（仅当前音轨，洋葱皮由位图管理器渲染）
         const DEFAULT_NOTE_COLOR: [f32; 4] = [0.2, 0.5, 1.0, 0.9];
         Self::add_notes_to_instances(instances, notes, DEFAULT_NOTE_COLOR);
-
-        // 添加洋葱皮音符
-        let onion_states = self.root.sidebar.get_onion_skin_states();
-        let onion_instances = self.root.editor.get_all_onion_skin_instances(&onion_states);
-        instances.extend(onion_instances);
 
         // 添加正在绘制的音符
         Self::add_drawing_note_to_instances(
             instances,
-            edit_state,
+            &edit_state,
             default_note_length,
             snap_precision,
         );

@@ -81,6 +81,9 @@ impl MidiHandler {
 
         let total_ticks = parsed.info.duration_ticks as f32;
         ui.set_total_ticks(total_ticks);
+
+        // ── 预生成所有已加载音轨的洋葱皮位图缓存 ──
+        ui.pregenerate_onion_skin_caches();
     }
 
     /// 从 MIDI 字节流导入音符到编辑器（用于 LMPJ 文件）

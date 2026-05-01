@@ -5,23 +5,25 @@ impl super::Editor {
             return;
         }
 
+        let old_track = self.current_track;
+
         tracing::debug!(
             "Editor: switching from track {} to {}",
-            self.current_track,
+            old_track,
             track_idx
         );
 
         // 保存当前音轨的音符
-        self.track_notes
-            .insert(self.current_track, self.notes.clone());
-        self.track_note_indices
-            .borrow_mut()
-            .remove(&self.current_track);
+        self.track_notes.insert(old_track, self.notes.clone());
+        self.track_note_indices.borrow_mut().remove(&old_track);
+
+        // 标记旧音轨的洋葱皮缓存为脏（可能在当前会话中被编辑过）
+        self.onion_skin_dirty.borrow_mut().insert(old_track);
 
         tracing::debug!(
             "Editor: saved {} notes for track {}",
             self.notes.len(),
-            self.current_track
+            old_track
         );
 
         // 切换到新音轨
@@ -38,6 +40,11 @@ impl super::Editor {
             self.notes.len(),
             track_idx
         );
+
+        // 如果新音轨有缓存数据，且是新音轨，预先生成缓存（用于在旧音轨作为洋葱皮显示）
+        if track_idx != old_track {
+            self.onion_skin_dirty.borrow_mut().insert(track_idx);
+        }
 
         // 标记音符数据已变化，触发空间索引重建和渲染更新
         self.mark_notes_changed();
