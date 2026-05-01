@@ -73,8 +73,7 @@ impl XSynth {
             rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
         }
 
-        let mut synth = RealtimeSynth::open_with_default_output(rt_config)
-            .map_err(|e| Error::InitFailed(format!("XSynth 启动失败: {:?}", e)))?;
+        let mut synth = RealtimeSynth::open_with_default_output(rt_config);
         tracing::info!("XSynth: 音频流已创建并启动");
 
         // 获取 sender — 在 open 后立即配置通道，确保音色库在 callback 首次触发前就位

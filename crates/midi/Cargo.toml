@@ -11,9 +11,9 @@ libloading = "0.9.0"
 midir = "0.10.3"
 thiserror = { workspace = true }
 tracing = { workspace = true }
-xsynth-core = "0.4.0"
-xsynth-realtime = "0.4.0"
-xsynth-soundfonts = "0.4.0"
+xsynth-core = "0.3"
+xsynth-realtime = "0.3"
+xsynth-soundfonts = "0.3"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = ["Win32_Media_Audio"] }

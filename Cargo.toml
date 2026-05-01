@@ -105,13 +105,11 @@ tokio-test = "0.4"
 [target.'cfg(windows)'.dev-dependencies]
 winapi = { version = "0.3", features = ["processthreadsapi", "psapi"] }
 
-# ── xsynth ──
-# 使用 crates.io 稳定版。
-# 如需使用 git 版本测试最新修复，取消下面注释并确保版本号匹配。
-# [patch.crates-io]
-# xsynth-core = { git = "https://github.com/buickmeow/xsynth" }
-# xsynth-realtime = { git = "https://github.com/buickmeow/xsynth" }
-# xsynth-soundfonts = { git = "https://github.com/buickmeow/xsynth" }
+# ── xsynth（Git 版本，subdir 仅在 patch 中受支持）──
+[patch.crates-io]
+xsynth-core = { git = "https://github.com/buickmeow/xsynth" }
+xsynth-realtime = { git = "https://github.com/buickmeow/xsynth" }
+xsynth-soundfonts = { git = "https://github.com/buickmeow/xsynth" }
 
 [[test]]
 name = "collaboration_full_test"
