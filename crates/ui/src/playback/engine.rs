@@ -460,6 +460,7 @@ impl PlaybackEngine {
             cache
                 .cache
                 .get_events(self.last_fetched_tick as u32, fetch_end as u32, 500_000);
+        let mut seq: u64 = 0;
         for ev in events {
             let tick = ev.delta_tick() as f32;
             match ev.kind() {
@@ -472,6 +473,7 @@ impl PlaybackEngine {
                                 channel: ev.channel(),
                                 key: ev.param1() as u8,
                             },
+                            seq,
                         });
                     } else {
                         self.event_queue.push(ScheduledEvent {
@@ -481,6 +483,7 @@ impl PlaybackEngine {
                                 key: ev.param1() as u8,
                                 velocity,
                             },
+                            seq,
                         });
                     }
                 }
@@ -491,10 +494,12 @@ impl PlaybackEngine {
                             channel: ev.channel(),
                             key: ev.param1() as u8,
                         },
+                        seq,
                     });
                 }
                 _ => {}
             }
+            seq += 1;
         }
         self.last_fetched_tick = fetch_end;
     }

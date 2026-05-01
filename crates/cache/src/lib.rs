@@ -251,36 +251,37 @@ impl MidiCache {
     }
 
     /// 获取指定音轨的所有音符（转换为 (tick, key, length, velocity) 格式）
-    pub fn get_track_notes(&self, track_id: u16) -> Vec<(f32, u8, f32, u8)> {
+    pub fn get_track_notes(&self, track_id: u16) -> Vec<(f32, u8, f32, u8, u8)> {
         use lumino_midi::compact::EventKind;
         use std::collections::HashMap;
 
         let events = self.get_track_events(track_id);
-        let mut active_notes: HashMap<u8, (u32, u8)> = HashMap::new();
+        let mut active_notes: HashMap<u8, (u32, u8, u8)> = HashMap::new();
         let mut notes = Vec::new();
 
         for ev in &events {
             let tick = ev.delta_tick();
             let key = ev.param1() as u8;
             let vel = ev.param2() as u8;
+            let channel = ev.channel();
 
             match ev.kind() {
                 EventKind::NoteOn => {
                     if vel > 0 {
-                        if let Some((start_tick, prev_vel)) = active_notes.remove(&key) {
+                        if let Some((start_tick, prev_vel, prev_ch)) = active_notes.remove(&key) {
                             let length = tick.saturating_sub(start_tick) as f32;
-                            notes.push((start_tick as f32, key, length, prev_vel));
+                            notes.push((start_tick as f32, key, length, prev_vel, prev_ch));
                         }
-                        active_notes.insert(key, (tick, vel));
-                    } else if let Some((start_tick, prev_vel)) = active_notes.remove(&key) {
+                        active_notes.insert(key, (tick, vel, channel));
+                    } else if let Some((start_tick, prev_vel, prev_ch)) = active_notes.remove(&key) {
                         let length = tick.saturating_sub(start_tick) as f32;
-                        notes.push((start_tick as f32, key, length, prev_vel));
+                        notes.push((start_tick as f32, key, length, prev_vel, prev_ch));
                     }
                 }
                 EventKind::NoteOff => {
-                    if let Some((start_tick, prev_vel)) = active_notes.remove(&key) {
+                    if let Some((start_tick, prev_vel, prev_ch)) = active_notes.remove(&key) {
                         let length = tick.saturating_sub(start_tick) as f32;
-                        notes.push((start_tick as f32, key, length, prev_vel));
+                        notes.push((start_tick as f32, key, length, prev_vel, prev_ch));
                     }
                 }
                 _ => {}
@@ -288,9 +289,9 @@ impl MidiCache {
         }
 
         let last_tick = events.last().map(|e| e.delta_tick()).unwrap_or(0);
-        for (key, (start_tick, vel)) in active_notes {
+        for (key, (start_tick, vel, ch)) in active_notes {
             let length = last_tick.saturating_sub(start_tick) as f32;
-            notes.push((start_tick as f32, key, length, vel));
+            notes.push((start_tick as f32, key, length, vel, ch));
         }
 
         notes

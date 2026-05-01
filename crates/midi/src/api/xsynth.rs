@@ -19,6 +19,7 @@ pub struct XSynthOptions {
     pub fade_out_killing: bool,
     /// 每个键允许的最大同音数（None = 使用 xsynth 默认值 4）
     /// 调高可减少密集钢琴/快速重复音符/拖音过程中的 voice stealing
+    /// 最大并发发音数（git 版 xsynth 暂不支持此字段）
     pub max_voices_per_key: Option<usize>,
 }
 
@@ -70,9 +71,6 @@ impl XSynth {
             };
             rt_config.multithreading = thread_count;
             rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
-            if let Some(mvpk) = opt.max_voices_per_key {
-                rt_config.channel_init_options.max_voices_per_key = Some(mvpk);
-            }
         }
 
         let mut synth = RealtimeSynth::open_with_default_output(rt_config)
