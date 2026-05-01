@@ -47,12 +47,57 @@ impl RunnerInner {
             MidiParsed(parsed) => {
                 tracing::info!("MIDI 文件解析完成：{}", parsed.info);
 
-                // 先导入音符到编辑器
+                // 先导入音符到编辑器（新的懒加载模式：只加载当前音轨，其他音轨按需加载）
                 self.import_midi_to_editor(&parsed);
 
-                tracing::debug!("MIDI 文档解析完成，已存入 ParsedMidi.document");
+                tracing::debug!("MIDI 文档已导入编辑器，MidiDocument 保留供懒加载使用");
 
-                self.current_midi = Some(parsed.clone());
+                // 导入后立即输出内存日志（此时尚未触发首帧渲染，能看到干净的后导入态）
+                if self.log_memory_usage {
+                    let mem = self.window.ui().memory_breakdown();
+                    let rss_mb = lumino_core::memory_monitor::MemoryMonitor::global()
+                        .current_rss() / (1024 * 1024);
+                    let front_total = mem.note_instances_front_cap as u64 * mem.note_instance_size as u64;
+                    let back_total = mem.note_instances_back_cap as u64 * mem.note_instance_size as u64;
+                    tracing::info!(
+                        "\n\
+                        ┌─ Memory Usage (post-import, pre-render) ──────────────┐\n\
+                        │ 进程 RSS:              {:>8} MB                         │\n\
+                        ├─────────────────────────────────────────────────────────┤\n\
+                        │ MidiDocument.events:   {:>8} MB  (Vec<CompactEvent>)    │\n\
+                        │ editor.notes:          {:>8} MB  (im::Vector<Note>)     │\n\
+                        │ track_notes({}条):  {:>8} MB  ({} 音符)             │\n\
+                        │ track_midi_events:     {:>8} MB  ({} 条)               │\n\
+                        │ onion_skin_cache:      {:>8} MB                         │\n\
+                        ├─────────────────────────────────────────────────────────┤\n\
+                        │ note_instances(双缓冲):                                │\n\
+                        │   前缓冲区:            {:>8} MB  (cap={}, len={})      │\n\
+                        │   后缓冲区:            {:>8} MB  (cap={}, len={})      │\n\
+                        │   双缓冲合计:          {:>8} MB                         │\n\
+                        └─────────────────────────────────────────────────────────┘",
+                        rss_mb,
+                        mem.editor.document_events_bytes / (1024 * 1024),
+                        mem.editor.notes_bytes / (1024 * 1024),
+                        mem.editor.track_notes_entries,
+                        mem.editor.track_notes_bytes / (1024 * 1024),
+                        mem.editor.track_notes_count,
+                        mem.track_midi_events_bytes / (1024 * 1024),
+                        mem.track_midi_events_entries,
+                        mem.cached_onion_skin_bytes / (1024 * 1024),
+                        front_total / (1024 * 1024),
+                        mem.note_instances_front_cap,
+                        mem.note_instances_front_len,
+                        back_total / (1024 * 1024),
+                        mem.note_instances_back_cap,
+                        mem.note_instances_back_len,
+                        (front_total + back_total) / (1024 * 1024),
+                    );
+                }
+
+                // 保留 current_midi 使 MidiDocument 存活（编辑器通过 Arc 引用它做懒加载）
+                // 不再需要保存一份全量 track_notes，所以总内存从 (events+notes) 降到 (events)
+                self.current_midi_source = Some(std::path::PathBuf::from(&parsed.info.path));
+                self.current_midi = Some(parsed);
 
                 if let Some(state) = &mut self.test_mode_state {
                     state.active = true;
@@ -78,6 +123,7 @@ impl RunnerInner {
             }
             Close => {
                 self.current_midi = None;
+                self.current_midi_source = None;
                 self.current_dms = None;
                 self.window.ui_mut().clear_editor();
                 tracing::info!("工程已关闭");
@@ -98,6 +144,7 @@ impl RunnerInner {
     pub(super) fn handle_new_file(&mut self) {
         // 清空当前工程
         self.current_midi = None;
+        self.current_midi_source = None;
         self.current_dms = None;
 
         // 清空编辑器
@@ -219,9 +266,38 @@ impl RunnerInner {
 
     /// 保存文件
     pub(super) fn handle_save_file(&mut self) {
-        // 检查是否加载了 MIDI 文件
+        // 检查是否加载了 MIDI 文件（可能有完整文档或仅有源路径）
         if let Some(parsed_midi) = &self.current_midi {
             self.save_midi_file(parsed_midi.clone());
+            return;
+        }
+
+        // 没有完整文档但有源路径（MIDI 加载后为省内存已释放文档）
+        if let Some(source_path) = &self.current_midi_source {
+            let file_stem = get_file_stem(Path::new(source_path));
+
+            let Some(save_path) = rfd::FileDialog::new()
+                .add_filter("MIDI 文件 (.mid)", &["mid"])
+                .add_filter("MIDI 文件 (.midi)", &["midi"])
+                .set_file_name(format!("{file_stem}.mid"))
+                .save_file()
+            else {
+                return;
+            };
+
+            let extension = get_file_extension(&save_path);
+            match extension.as_str() {
+                "mid" | "midi" => {
+                    let source = source_path.clone();
+                    let svc = self.file_service.clone();
+                    tokio::spawn(async move {
+                        let _ = svc.save_as_midi(source, save_path).await;
+                    });
+                }
+                _ => {
+                    tracing::warn!("不支持的保存格式（无完整文档）：{}", extension);
+                }
+            }
             return;
         }
 
@@ -252,6 +328,11 @@ impl RunnerInner {
 
         match extension.as_str() {
             "lmpj" => {
+                // LMPJ 保存需要完整文档，如果已释放则从编辑器状态重建
+                if parsed_midi.document.is_none() {
+                    tracing::warn!("MidiDocument 已释放，无法保存 LMPJ 格式");
+                    return;
+                }
                 tokio::spawn(async move {
                     let _ = file_service.save_as_lmpj(&parsed_midi, save_path).await;
                 });

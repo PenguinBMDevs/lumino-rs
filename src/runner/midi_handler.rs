@@ -19,19 +19,22 @@ impl MidiHandler {
             let track_count = document.track_count();
             let mut track_infos = Vec::with_capacity(track_count);
 
-            // 第一遍：预加载所有音轨的音符到 track_notes（供洋葱皮使用）
+            // 只收集音轨信息（名称、音符数），不预加载音符到 track_notes
+            // 音符将在首次渲染或切换音轨时从 MidiDocument 懒加载
+            // 这样可以避免 track_notes + MidiDocument 两份数据共存导致内存翻倍
+            // 注意：使用 track_note_count 而非 get_track_notes 以避免全量提取
             for track_idx in 0..track_count {
-                let notes = document.get_track_notes(track_idx as u16);
-                let note_count = notes.len() as u64;
-                if !notes.is_empty() {
-                    ui.load_track_notes_for_onion_skin(track_idx, &notes);
-                }
+                let note_count = document.track_note_count(track_idx as u16);
                 let track_name = document.track_name(track_idx).map(|s| s.to_string());
                 track_infos.push((track_idx, track_name, note_count));
             }
 
             ui.set_ppq(parsed.info.division);
             ui.update_tracks(&track_infos);
+
+            // 将 MidiDocument 传递给编辑器供懒加载使用
+            // Arc::clone 是 O(1) 引用计数递增，避免深拷贝 120MB+ 事件数据
+            ui.set_midi_document(document.clone());
 
             // 从预存储的 tempo_changes 加载
             let tempo_ui: Vec<(u32, u32)> = document
@@ -50,13 +53,15 @@ impl MidiHandler {
                 ui.load_tempo_changes(tempo_ui);
             }
 
-            // 第二遍：加载第一个有音符的音轨到编辑器（实际显示）
+            // 加载第一个有音符的音轨到编辑器（实际显示 + 懒加载缓存）
             if let Some((first_track_idx, _, _)) = track_infos
                 .iter()
                 .find(|(_, _, note_count)| *note_count > 0)
             {
                 let first_notes = document.get_track_notes(*first_track_idx as u16);
                 ui.load_track_notes(*first_track_idx, &first_notes);
+                // 同时加入 track_notes 缓存（让洋葱皮也能看到当前轨）
+                ui.load_track_notes_for_onion_skin(*first_track_idx, &first_notes);
                 ui.set_current_track(*first_track_idx);
             }
 

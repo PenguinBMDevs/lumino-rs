@@ -355,6 +355,31 @@ impl Host {
     pub fn cursor_position(&self) -> Option<iced_core::Point> {
         self.cursor_position
     }
+
+    /// 收集所有组件的内存占用快照（Root + RenderCache）
+    pub fn memory_breakdown(&self) -> root::MemoryBreakdown {
+        let mut breakdown = self.root.memory_breakdown();
+
+        // 从 RenderCache 获取 note_instances_buffer 双缓冲容量
+        let (front_cap, front_len) = self.render_cache.note_instances_buffer.front_info();
+        let (back_cap, back_len) = self.render_cache.note_instances_buffer.back_info();
+        let instance_size = std::mem::size_of::<lumino_gfx::NoteInstance>() as u64;
+
+        tracing::debug!(
+            "MemoryBreakdown: note_instances_buffer front(cap={}, len={}) back(cap={}, len={}) instance_size={}",
+            front_cap, front_len, back_cap, back_len, instance_size
+        );
+
+        // 将双缓冲容量写入 breakdown 的附加字段
+        // 使用扩展字段添加到 breakdown
+        breakdown.note_instances_front_cap = front_cap;
+        breakdown.note_instances_front_len = front_len;
+        breakdown.note_instances_back_cap = back_cap;
+        breakdown.note_instances_back_len = back_len;
+        breakdown.note_instance_size = instance_size as usize;
+
+        breakdown
+    }
 }
 
 impl Drop for Host {

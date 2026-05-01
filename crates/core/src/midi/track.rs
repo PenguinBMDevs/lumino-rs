@@ -47,7 +47,9 @@ impl TrackView {
 
     /// 音轨是否应该播放
     pub fn should_play(&self, has_solo: bool) -> bool {
-        if has_solo { return self.solo; }
+        if has_solo {
+            return self.solo;
+        }
         self.visibility == TrackVisibility::Visible
     }
 

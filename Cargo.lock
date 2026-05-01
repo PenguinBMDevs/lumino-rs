@@ -3444,6 +3444,7 @@ dependencies = [
  "bincode",
  "encoding_rs",
  "font-kit",
+ "libc",
  "lumino-dms",
  "lumino-midi",
  "midly",

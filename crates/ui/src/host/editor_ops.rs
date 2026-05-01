@@ -2,6 +2,8 @@
 
 use crate::host::{Host, types::NoteData};
 use crate::{editor::note::Note, message};
+use lumino_core::midi::MidiDocument;
+use std::sync::Arc;
 
 impl Host {
     /// 重置播放管理器（加载新文件时调用）
@@ -94,6 +96,13 @@ impl Host {
     /// tempo_changes: Vec<(tick, tempo_in_microseconds_per_quarter_note)>
     pub fn load_tempo_changes(&mut self, tempo_changes: Vec<(u32, u32)>) {
         self.root.load_tempo_changes(tempo_changes);
+    }
+
+    /// 设置 MIDI 文档引用（供懒加载非当前音轨的音符使用）
+    pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
+        self.root.set_midi_document(doc.clone());
+        // 同步到 Editor，供 ensure_track_notes_loaded 使用
+        self.root.editor.document = Some(doc);
     }
 
     /// 加载音轨 MIDI 控制事件（CC/PC/PB）
@@ -237,6 +246,10 @@ impl Host {
         self.root.editor.track_notes.clear();
         self.root.editor.current_track = 0;
         self.root.editor.grid_cache.clear();
+        // 释放 MIDI 文档引用（Arc），让大块事件内存可以被回收
+        self.root.editor.document = None;
+        self.root.midi_document = None;
+        self.root.cached_onion_skin_notes = None;
         self.clear_cache();
         // 仅请求重绘，不重建UI树（编辑器清空由WGPU层处理）
         self.window.request_redraw();
@@ -293,5 +306,4 @@ impl Host {
         // 仅请求重绘，不重建UI树（编辑器动作由canvas/WGPU层处理）
         self.window.request_redraw();
     }
-
 }

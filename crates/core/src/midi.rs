@@ -15,6 +15,8 @@ pub use event::MidiEvent;
 pub use info::MidiInfo;
 pub use track::{TrackManager, TrackView, TrackVisibility};
 
+use std::sync::Arc;
+
 /// LMPJ 文件数据结构（用于序列化/反序列化）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LmpjData {
@@ -46,7 +48,11 @@ pub struct ParsedMidi {
     /// 原始 MIDI 字节（LMPJ 文件使用）
     pub midi_data: Option<Vec<u8>>,
     /// 紧凑内存解析结果（常规 MIDI 文件使用）
-    pub document: Option<MidiDocument>,
+    ///
+    /// 使用 `Arc<MidiDocument>` 而非裸 `MidiDocument`，使得 UI 可以通过 Arc::clone
+    /// 共享同一份事件数据而无需深拷贝 `document.clone()`（后者会复制 `Vec<CompactEvent>`，
+    /// 对 10M 事件的黑乐谱来说就是额外 120MB）。
+    pub document: Option<Arc<MidiDocument>>,
 }
 
 impl serde::Serialize for ParsedMidi {

@@ -43,6 +43,7 @@ pub struct Runner {
     pub(crate) inner: Option<RunnerInner>,
     pub(crate) init_error: Option<InitError>,
     pub(crate) test_config: Option<crate::cli::TestConfig>,
+    pub(crate) log_memory_usage: bool,
 }
 
 pub(crate) struct RunnerInner {
@@ -56,8 +57,11 @@ pub(crate) struct RunnerInner {
     pub(crate) progress: ProgressManager,
     /// 进度回调（依赖注入，替代全局 PROGRESS_SENDER）
     pub(crate) progress_cb: lumino_core::midi::loader::ProgressCallback,
-    /// 当前加载的 MIDI
+    /// 当前加载的 MIDI（包含完整文档，用于 LMPJ 保存时重新导出）
+    /// 注意：加载完成后及时释放避免内存翻倍，普通 MIDI 保存只需 `current_midi_source`
     pub(crate) current_midi: Option<Arc<ParsedMidi>>,
+    /// 当前加载的 MIDI 源文件路径（用于 MIDI/DMS 保存，不持有文档对象）
+    pub(crate) current_midi_source: Option<std::path::PathBuf>,
     /// 当前加载的 DMS
     pub(crate) current_dms: Option<Arc<ParsedDms>>,
     /// 对话框管理器
@@ -82,6 +86,10 @@ pub(crate) struct RunnerInner {
     pub(crate) test_mode_state: Option<TestModeState>,
     /// 等待对话框确认的加载路径
     pub(crate) pending_load_path: Option<std::path::PathBuf>,
+    /// 是否启用 memory-usage 日志（每2000ms输出）
+    pub(crate) log_memory_usage: bool,
+    /// 上次内存日志输出时间
+    pub(crate) last_memory_log: Option<std::time::Instant>,
 }
 
 pub(crate) struct TestModeState {
@@ -104,6 +112,11 @@ impl Runner {
     /// 设置测试配置
     pub fn set_test_config(&mut self, config: crate::cli::TestConfig) {
         self.test_config = Some(config);
+    }
+
+    /// 设置是否启用 memory-usage 日志
+    pub fn set_log_memory_usage(&mut self, enabled: bool) {
+        self.log_memory_usage = enabled;
     }
 
     pub(crate) fn init_inner(
@@ -160,6 +173,7 @@ impl Runner {
             progress,
             progress_cb,
             current_midi: None,
+            current_midi_source: None,
             current_dms: None,
             dialog_manager,
             collaboration_status,
@@ -172,6 +186,8 @@ impl Runner {
             last_collab_sync: None,
             test_mode_state: None,
             pending_load_path: None,
+            log_memory_usage: self.log_memory_usage,
+            last_memory_log: None,
         };
 
         // Debug 模式下自动连接本地服务器

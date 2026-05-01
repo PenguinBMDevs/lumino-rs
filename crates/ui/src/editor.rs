@@ -25,9 +25,11 @@ mod tests;
 use crate::{message::AudioAction, toolbar::Tool};
 use iced_core::Point;
 use iced_widget::canvas;
+use lumino_core::midi::MidiDocument;
 use lumino_core::storage::config::{AutoScrollConfig, AutoScrollMode};
 use lumino_gfx::NoteInstance;
 use std::cell::{Cell, RefCell};
+use std::sync::Arc;
 
 use note::Note;
 pub use onion_skin::OnionSkinConfig;
@@ -105,8 +107,10 @@ pub struct Editor {
 
     /// 当前编辑的音轨索引
     pub current_track: usize,
-    /// 按音轨存储的音符（用于无 MIDI 文件时的多音轨编辑）
+    /// 按音轨存储的音符（懒加载缓存，仅保留访问过的音轨）
     pub track_notes: std::collections::HashMap<usize, im::Vector<Note>>,
+    /// MIDI 文档引用（用于懒加载非当前音轨的音符，避免全量预加载导致内存翻倍）
+    pub(crate) document: Option<Arc<MidiDocument>>,
 
     /// 洋葱皮配置
     onion_skin_config: OnionSkinConfig,
@@ -141,7 +145,71 @@ pub struct Editor {
         RefCell<std::collections::HashMap<usize, spatial_index::NoteSpatialIndex>>,
 }
 
+/// 编辑器各组件的内存占用快照（字节）
+#[derive(Debug, Clone, Default)]
+pub struct EditorMemory {
+    /// editor.notes 的估算内存（len × sizeof(Note) + 树形结构开销）
+    pub notes_bytes: usize,
+    /// track_notes HashMap 中所有 im::Vector 的音符总量
+    pub track_notes_count: usize,
+    pub track_notes_bytes: usize,
+    /// track_notes 的条目数
+    pub track_notes_entries: usize,
+    /// document Arc 指向事件的 Vec 内存
+    pub document_events_bytes: usize,
+    /// 空间索引追踪条目数
+    pub track_note_indices_entries: usize,
+}
+
 impl Editor {
+    /// 收集编辑器各组件的内存占用快照
+    pub fn memory_breakdown(&self) -> EditorMemory {
+        // 所有字段都以 pub 暴露，可以直接计算
+        let note_size = std::mem::size_of::<Note>();
+
+        // editor.notes
+        let notes_len = self.notes.len();
+        let notes_bytes = notes_len * note_size;
+
+        // track_notes
+        let track_notes_entries = self.track_notes.len();
+        let mut track_notes_count = 0usize;
+        let mut track_notes_bytes = 0usize;
+        for notes in self.track_notes.values() {
+            track_notes_count += notes.len();
+            track_notes_bytes += notes.len() * note_size;
+        }
+
+        // document events (CompactEvent=12B, (u32,f32)=8B)
+        let doc_is_some = self.document.is_some();
+        let doc_event_cap = self.document.as_ref().map(|d| d.events.capacity()).unwrap_or(0);
+        let doc_events_bytes = self
+            .document
+            .as_ref()
+            .map(|doc| {
+                doc.events.capacity() * 12       // CompactEvent
+                    + doc.tempo_changes.capacity() * 8        // (u32, f32)
+            })
+            .unwrap_or(0);
+
+        // track_note_indices
+        let track_note_indices_entries = self.track_note_indices.borrow().len();
+
+        tracing::info!(
+            "[MEMORY_DEBUG] document={}, events_cap={}, notes_len={}, track_notes_entries={}, track_notes_count={}",
+            doc_is_some, doc_event_cap, notes_len, track_notes_entries, track_notes_count,
+        );
+
+        EditorMemory {
+            notes_bytes,
+            track_notes_count,
+            track_notes_bytes,
+            track_notes_entries,
+            document_events_bytes: doc_events_bytes,
+            track_note_indices_entries,
+        }
+    }
+
     pub fn new() -> Self {
         let mut editor = Self {
             state: ViewState::default(),
@@ -159,6 +227,7 @@ impl Editor {
             pending_audio_actions: Vec::new(),
             current_track: 0,
             track_notes: std::collections::HashMap::new(),
+            document: None,
             onion_skin_config: OnionSkinConfig::new(),
             current_tool: Tool::Pointer, // 默认使用框选工具
             selected_notes: std::collections::HashSet::new(),

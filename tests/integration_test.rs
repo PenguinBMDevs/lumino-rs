@@ -338,7 +338,7 @@ fn test_midi_lmpj_roundtrip() {
     let parsed_midi = lumino_core::midi::ParsedMidi {
         info: info.clone(),
         midi_data: Some(original_midi_bytes.clone()),
-        cache: None,
+        document: None,
     };
 
     let temp_dir = std::env::temp_dir();

@@ -21,6 +21,9 @@ pub async fn load_parsed_midi(
     path: PathBuf,
     progress: Option<&ProgressCallback>,
 ) -> crate::Result<ParsedMidi> {
+    // 大分配前检查内存，防止 OOM 导致系统无响应
+    crate::memory_monitor::MemoryMonitor::global().check();
+
     let cb = |msg: &str, val: f64| {
         if let Some(p) = progress {
             p(msg, val);
@@ -122,6 +125,6 @@ pub async fn load_parsed_midi(
     Ok(ParsedMidi {
         info,
         midi_data: None,
-        document: Some(document),
+        document: Some(std::sync::Arc::new(document)),
     })
 }

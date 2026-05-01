@@ -450,6 +450,9 @@ impl MidiManager {
         self.xsynth_fade_out_killing = ui_config.xsynth_fade_out_killing;
         self.xsynth_max_voices_per_key = ui_config.xsynth_max_voices_per_key;
 
+        // 清空 SoundFont 缓存，防止旧条目无限累积（每个 SF2 30-300MB）
+        lumino_midi::soundfont_cache::clear_cache();
+
         // 关闭旧的 MIDI 输出和备用 API
         if let Some(old_output) = self.output.take() {
             drop(old_output);

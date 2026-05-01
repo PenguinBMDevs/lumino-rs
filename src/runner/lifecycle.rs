@@ -143,6 +143,7 @@ impl winit::application::ApplicationHandler for Runner {
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         puffin::profile_scope!("runner_about_to_wait");
+
         let Some(this) = self.inner.as_mut() else {
             return;
         };
@@ -183,6 +184,65 @@ impl winit::application::ApplicationHandler for Runner {
         // 保存存储
         this.save_storage();
 
+        // ── 内存占用日志（每2000ms输出） ──
+        // 放在 process_core_events 之后，确保能看到 MIDI 导入后的状态
+        if this.log_memory_usage {
+            let now = Instant::now();
+            let should_log = this
+                .last_memory_log
+                .map(|last| now.duration_since(last) >= Duration::from_millis(2000))
+                .unwrap_or(true);
+            if should_log {
+                this.last_memory_log = Some(now);
+                let mem = this.window.ui().memory_breakdown();
+
+                // 进程 RSS
+                let rss_mb = lumino_core::memory_monitor::MemoryMonitor::global()
+                    .current_rss()
+                    / (1024 * 1024);
+
+                // note_instances 双缓冲总量
+                let front_total =
+                    mem.note_instances_front_cap as u64 * mem.note_instance_size as u64;
+                let back_total =
+                    mem.note_instances_back_cap as u64 * mem.note_instance_size as u64;
+
+                tracing::info!(
+                    "\n\
+                    ┌─ Memory Usage ──────────────────────────────────────────┐\n\
+                    │ 进程 RSS:              {:>8} MB                         │\n\
+                    ├─────────────────────────────────────────────────────────┤\n\
+                    │ MidiDocument.events:   {:>8} MB  (Vec<CompactEvent>)    │\n\
+                    │ editor.notes:          {:>8} MB  (im::Vector<Note>)     │\n\
+                    │ track_notes({}条):  {:>8} MB  ({} 音符)              │\n\
+                    │ track_midi_events:     {:>8} MB  ({} 条)               │\n\
+                    │ onion_skin_cache:      {:>8} MB                         │\n\
+                    ├─────────────────────────────────────────────────────────┤\n\
+                    │ note_instances(双缓冲):                                │\n\
+                    │   前缓冲区:            {:>8} MB  (cap={}, len={})      │\n\
+                    │   后缓冲区:            {:>8} MB  (cap={}, len={})      │\n\
+                    │   双缓冲合计:          {:>8} MB                         │\n\
+                    └─────────────────────────────────────────────────────────┘",
+                    rss_mb,
+                    mem.editor.document_events_bytes / (1024 * 1024),
+                    mem.editor.notes_bytes / (1024 * 1024),
+                    mem.editor.track_notes_entries,
+                    mem.editor.track_notes_bytes / (1024 * 1024),
+                    mem.editor.track_notes_count,
+                    mem.track_midi_events_bytes / (1024 * 1024),
+                    mem.track_midi_events_entries,
+                    mem.cached_onion_skin_bytes / (1024 * 1024),
+                    front_total / (1024 * 1024),
+                    mem.note_instances_front_cap,
+                    mem.note_instances_front_len,
+                    back_total / (1024 * 1024),
+                    mem.note_instances_back_cap,
+                    mem.note_instances_back_len,
+                    (front_total + back_total) / (1024 * 1024),
+                );
+            }
+        }
+
         // 重新初始化 MIDI 如果需要
         if this.midi.needs_reinit() {
             let ui_config = this.storage.config.get().ui.clone();
@@ -220,6 +280,13 @@ impl winit::application::ApplicationHandler for Runner {
         if should_poll {
             event_loop.set_control_flow(ControlFlow::Poll);
             this.window.request_redraw();
+        } else if this.log_memory_usage {
+            // 内存日志模式：使用 WaitUntil 定时唤醒，确保 about_to_wait 每2秒触发一次
+            let next_log = this
+                .last_memory_log
+                .map(|last| last + Duration::from_millis(2000))
+                .unwrap_or_else(|| Instant::now());
+            event_loop.set_control_flow(ControlFlow::WaitUntil(next_log));
         } else {
             event_loop.set_control_flow(ControlFlow::Wait);
         }

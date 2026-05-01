@@ -1,8 +1,13 @@
 use iced_core::Color;
 
+/// 黄金角比例（用于 HSV 颜色生成，最大化色相间距）
+const GOLDEN_ANGLE: f32 = 0.381966;
+
 /// 洋葱皮颜色配置
 ///
-/// 提供16种默认颜色用于区分不同音轨的洋葱皮显示
+/// 提供16种默认颜色用于区分不同音轨的洋葱皮显示。
+/// 音轨数量超过16时，自动使用黄金角 HSV 算法生成唯一颜色，
+/// 确保任意数量音轨都有可区分的颜色。
 #[derive(Debug, Clone)]
 pub struct OnionSkinColors {
     colors: Vec<Color>,
@@ -19,7 +24,7 @@ impl Default for OnionSkinColors {
 impl OnionSkinColors {
     /// 创建默认的洋葱皮颜色配置
     ///
-    /// 包含16种精心挑选的颜色，用于区分不同音轨
+    /// 包含16种精心挑选的颜色，超出部分自动用 HSV 生成
     pub fn new() -> Self {
         let colors = vec![
             // 1. 珊瑚红
@@ -63,12 +68,18 @@ impl OnionSkinColors {
     }
 
     /// 获取指定索引的颜色
+    ///
+    /// 前16个音轨使用预置调色板，之后的音轨自动用 HSV 生成唯一颜色。
+    /// 生成的色相使用黄金角分布，保证任意数量都能均匀分散在色环上。
     pub fn get(&self, index: usize) -> Color {
-        let color = self
-            .colors
-            .get(index % self.colors.len())
-            .copied()
-            .unwrap_or(self.colors[0]);
+        let color = if index < self.colors.len() {
+            self.colors[index]
+        } else {
+            // 黄金角 HSV 生成：hue 按黄金角步进，确保色相均匀分布
+            let hue = (index as f32 * GOLDEN_ANGLE).fract();
+            let (r, g, b) = Self::hsv_to_rgb(hue, 0.85, 0.92);
+            Color::from_rgb(r, g, b)
+        };
         Color {
             r: color.r,
             g: color.g,
@@ -79,17 +90,46 @@ impl OnionSkinColors {
 
     /// 获取指定索引的颜色（原始颜色，不应用透明度）
     pub fn get_raw(&self, index: usize) -> Color {
-        self.colors
-            .get(index % self.colors.len())
-            .copied()
-            .unwrap_or(self.colors[0])
+        if index < self.colors.len() {
+            self.colors[index]
+        } else {
+            let hue = (index as f32 * GOLDEN_ANGLE).fract();
+            let (r, g, b) = Self::hsv_to_rgb(hue, 0.85, 0.92);
+            Color::from_rgb(r, g, b)
+        }
+    }
+
+    /// HSV → RGB 转换
+    ///
+    /// 适用于程序化生成颜色，保证任意 hue 值都能输出有效 RGB。
+    fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> (f32, f32, f32) {
+        let h = hue * 6.0;
+        let c = value * saturation;
+        let x = c * (1.0 - ((h % 2.0) - 1.0).abs());
+        let m = value - c;
+
+        let sextant = h as u32 % 6;
+        let (r, g, b) = match sextant {
+            0 => (c, x, 0.0),
+            1 => (x, c, 0.0),
+            2 => (0.0, c, x),
+            3 => (0.0, x, c),
+            4 => (x, 0.0, c),
+            _ => (c, 0.0, x),
+        };
+
+        (r + m, g + m, b + m)
     }
 
     /// 设置指定索引的颜色
+    ///
+    /// 支持任意音轨索引，超出调色板范围时自动扩展。
+    /// 扩展后的音轨将使用自定义颜色而非 HSV 生成色。
     pub fn set(&mut self, index: usize, color: Color) {
-        if index < self.colors.len() {
-            self.colors[index] = color;
+        if index >= self.colors.len() {
+            self.colors.resize(index + 1, color);
         }
+        self.colors[index] = color;
     }
 
     /// 获取所有颜色
@@ -250,12 +290,42 @@ mod tests {
         assert!(color.a <= 1.0);
         assert!(color.a >= 0.0);
 
-        // 测试循环使用颜色
+        // 测试调色板内颜色不重复
+        for i in 0..16 {
+            for j in (i + 1)..16 {
+                let ci = colors.get(i);
+                let cj = colors.get(j);
+                let same = (ci.r - cj.r).abs() < 0.001
+                    && (ci.g - cj.g).abs() < 0.001
+                    && (ci.b - cj.b).abs() < 0.001;
+                assert!(!same, "colors[{}] and colors[{}] should differ", i, j);
+            }
+        }
+
+        // 测试超出调色板范围使用 HSV 生成（不再循环）
         let color_16 = colors.get(16);
         let color_0 = colors.get(0);
-        assert_eq!(color_16.r, color_0.r);
-        assert_eq!(color_16.g, color_0.g);
-        assert_eq!(color_16.b, color_0.b);
+        let same_as_0 = (color_16.r - color_0.r).abs() < 0.001
+            && (color_16.g - color_0.g).abs() < 0.001
+            && (color_16.b - color_0.b).abs() < 0.001;
+        assert!(!same_as_0, "track 16 should NOT reuse track 0 color");
+
+        // 测试超大量音轨颜色仍然互异
+        // 每个音轨独立计算颜色，黄金角保证颜色均匀分散
+        for i in 0..800 {
+            for j in (i + 1)..800 {
+                let ci = colors.get(i);
+                let cj = colors.get(j);
+                let same = (ci.r - cj.r).abs() < f32::EPSILON
+                    && (ci.g - cj.g).abs() < f32::EPSILON
+                    && (ci.b - cj.b).abs() < f32::EPSILON;
+                assert!(
+                    !same,
+                    "tracks {} and {} (out of 800) have identical color",
+                    i, j
+                );
+            }
+        }
     }
 
     #[test]

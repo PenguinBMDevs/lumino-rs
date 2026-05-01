@@ -58,6 +58,17 @@ fn add_to_cache(path: &Path, sample_rate: u32, soundfont: Arc<dyn SoundfontBase>
     }
 }
 
+/// 清空缓存（配置变更时调用，防止旧条目无限累积）
+///
+/// SoundFont 通常 30-300MB 每个，不清空会导致永不下沉的"气球"。
+pub fn clear_cache() {
+    if let Ok(mut cache) = get_cache().lock() {
+        let count = cache.len();
+        cache.clear();
+        tracing::info!("SoundfontCache: 已清空 {} 个缓存条目", count);
+    }
+}
+
 /// 从文件加载音色库（带缓存）
 ///
 /// 缓存 key 包含文件路径和采样率两个维度，

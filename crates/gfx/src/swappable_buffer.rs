@@ -79,6 +79,26 @@ impl<T: Clone> SwappableBuffer<T> {
         unsafe { &*ptr }
     }
 
+    /// 获取前缓冲区的容量和长度
+    pub fn front_info(&self) -> (usize, usize) {
+        let ptr = self.front.load(Ordering::Acquire);
+        if ptr.is_null() {
+            return (0, 0);
+        }
+        let v = unsafe { &*ptr };
+        (v.capacity(), v.len())
+    }
+
+    /// 获取后缓冲区的容量和长度
+    pub fn back_info(&self) -> (usize, usize) {
+        let ptr = self.back.load(Ordering::Acquire);
+        if ptr.is_null() {
+            return (0, 0);
+        }
+        let v = unsafe { &*ptr };
+        (v.capacity(), v.len())
+    }
+
     /// 获取当前版本号
     pub fn version(&self) -> u64 {
         self.version.load(Ordering::Acquire)
