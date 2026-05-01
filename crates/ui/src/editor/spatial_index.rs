@@ -217,6 +217,7 @@ mod tests {
                 key: (i % 128) as u16,
                 length: 20.0,
                 velocity: 100,
+                channel: 0,
             });
         }
 

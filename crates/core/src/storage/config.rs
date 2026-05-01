@@ -124,6 +124,10 @@ pub struct UiConfig {
     /// XSynth 释放音符时是否淡出(避免爆音)
     #[serde(default = "default_synth_fade_out")]
     pub xsynth_fade_out_killing: bool,
+    /// XSynth 每个键允许的最大同音数（None=不限，默认16）
+    /// 调高可减少密集钢琴/快速重复音符/拖音过程中的 voice stealing
+    #[serde(default = "default_max_voices_per_key")]
+    pub xsynth_max_voices_per_key: Option<usize>,
     /// 橡皮擦工具行为模式
     #[serde(default)]
     pub eraser_behavior: EraserBehavior,
@@ -164,6 +168,9 @@ fn default_synth_threads() -> i32 {
 fn default_synth_fade_out() -> bool {
     true
 }
+fn default_max_voices_per_key() -> Option<usize> {
+    Some(16)
+}
 fn default_velocity_filter_threshold() -> u8 {
     1
 }
@@ -180,6 +187,7 @@ impl Default for UiConfig {
             xsynth_sample_rate: default_synth_sample_rate(),
             xsynth_threads: default_synth_threads(),
             xsynth_fade_out_killing: default_synth_fade_out(),
+            xsynth_max_voices_per_key: default_max_voices_per_key(),
             eraser_behavior: EraserBehavior::default(),
             program_font_name: String::new(),
             program_font_path: String::new(),

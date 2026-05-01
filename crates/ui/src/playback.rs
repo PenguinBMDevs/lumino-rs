@@ -9,7 +9,7 @@
 pub mod engine;
 pub mod manager;
 
-pub use engine::{MidiMessage, NoteEvent, PlaybackEngine};
+pub use engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine};
 pub use manager::PlaybackManager;
 
 use std::sync::{Arc, Mutex, MutexGuard};

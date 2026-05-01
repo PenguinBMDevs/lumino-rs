@@ -30,6 +30,12 @@ pub enum MidiEvent {
         channel: u8,
         program: u8,
     },
+    PitchBend {
+        track: usize,
+        tick: u32,
+        channel: u8,
+        value: i16,
+    },
     Tempo {
         track: usize,
         tick: u32,
@@ -66,6 +72,7 @@ impl MidiEvent {
             MidiEvent::NoteOff { tick, .. } => *tick,
             MidiEvent::ControlChange { tick, .. } => *tick,
             MidiEvent::ProgramChange { tick, .. } => *tick,
+            MidiEvent::PitchBend { tick, .. } => *tick,
             MidiEvent::Tempo { tick, .. } => *tick,
             MidiEvent::TimeSignature { tick, .. } => *tick,
             MidiEvent::KeySignature { tick, .. } => *tick,

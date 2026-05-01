@@ -41,6 +41,8 @@ pub struct Root {
     pub(crate) pending_tempo_changes: Option<Vec<crate::playback::TempoChange>>,
     /// 延迟应用的 MIDI 输出（播放管理器未初始化时缓存）
     pub(crate) pending_midi_output: Option<Box<dyn lumino_midi::OutputConnection>>,
+    /// 各音轨的 MIDI 控制事件（CC/PC/PB），供播放时使用
+    pub(crate) track_midi_events: std::collections::HashMap<usize, Vec<crate::playback::MidiTrackEvent>>,
     /// 洋葱皮音符原始数据缓存（tick, key, length, color）
     /// 存原始数据而非 NoteInstance，因为 NoteInstance 含屏幕坐标（随 scroll/zoom 变化）
     pub(crate) cached_onion_skin_notes: Option<Vec<(f32, u16, f32, iced_core::Color)>>,
@@ -84,6 +86,7 @@ impl Root {
             midi_cache: None,
             pending_tempo_changes: None,
             pending_midi_output: None,
+            track_midi_events: std::collections::HashMap::new(),
             cached_onion_skin_notes: None,
             onion_skin_generation: 0,
             last_rendered_onion_generation: 0,

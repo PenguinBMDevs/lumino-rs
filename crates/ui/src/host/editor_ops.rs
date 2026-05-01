@@ -4,6 +4,12 @@ use crate::host::{Host, types::NoteData};
 use crate::{editor::note::Note, message};
 
 impl Host {
+
+    /// 重置播放管理器（加载新文件时调用）
+    pub fn reset_playback_manager(&mut self) {
+        self.root.reset_playback_manager();
+
+    }
     /// 更新音轨列表（从 MIDI 导入）
     /// track_infos: (track_index, track_name, note_count)
     pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64)]) {
@@ -29,8 +35,8 @@ impl Host {
     }
 
     /// 加载音符到编辑器
-    /// notes: (tick, key, length, velocity)
-    pub fn load_notes(&mut self, notes: &[(f32, u8, f32, u8)]) {
+    /// notes: (tick, key, length, velocity, channel)
+    pub fn load_notes(&mut self, notes: &[(f32, u8, f32, u8, u8)]) {
         self.root.load_notes(notes);
         // 仅请求重绘，不重建UI树（音符数据由WGPU层处理）
         self.window.request_redraw();
@@ -45,7 +51,7 @@ impl Host {
 
     /// 加载指定音轨的音符到编辑器（用于 MIDI 文件）
     /// 这会同时更新当前显示的音符和音轨存储，以便洋葱皮能显示
-    pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32, u8)]) {
+    pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32, u8, u8)]) {
         self.root.load_track_notes(track_idx, notes);
         // 仅请求重绘，不重建UI树（音符数据由WGPU层处理）
         self.window.request_redraw();
@@ -55,11 +61,11 @@ impl Host {
     ///
     /// # 参数
     /// * `track_idx` - 音轨索引
-    /// * `notes` - 音符列表，格式为 (tick, key, length, velocity)
+    /// * `notes` - 音符列表，格式为 (tick, key, length, velocity, channel)
     pub fn load_track_notes_for_onion_skin(
         &mut self,
         track_idx: usize,
-        notes: &[(f32, u8, f32, u8)],
+        notes: &[(f32, u8, f32, u8, u8)],
     ) {
         tracing::debug!(
             "UI::load_track_notes_for_onion_skin: track_idx={}, notes_count={}",
@@ -69,9 +75,9 @@ impl Host {
 
         // 直接保存到 editor.track_notes，不更新当前显示
         let mut track_notes: im::Vector<Note> = im::Vector::new();
-        for (tick, key, length, velocity) in notes {
+        for (tick, key, length, velocity, channel) in notes {
             let editor_key = *key as u16;
-            track_notes.push_back(Note::new(*tick, editor_key, *length).with_velocity(*velocity));
+            track_notes.push_back(Note::new(*tick, editor_key, *length).with_velocity(*velocity).with_channel(*channel));
         }
 
         if !track_notes.is_empty() {
@@ -86,6 +92,24 @@ impl Host {
     /// tempo_changes: Vec<(tick, tempo_in_microseconds_per_quarter_note)>
     pub fn load_tempo_changes(&mut self, tempo_changes: Vec<(u32, u32)>) {
         self.root.load_tempo_changes(tempo_changes);
+    }
+
+    /// 加载音轨 MIDI 控制事件（CC/PC/PB）
+    pub fn load_track_midi_events(
+        &mut self,
+        track_idx: usize,
+        events: Vec<crate::playback::MidiTrackEvent>,
+    ) {
+        self.root.load_track_midi_events(track_idx, events);
+    }
+
+    /// 预加载音轨 MIDI 控制事件到洋葱皮缓存
+    pub fn load_track_midi_events_for_onion_skin(
+        &mut self,
+        track_idx: usize,
+        events: Vec<crate::playback::MidiTrackEvent>,
+    ) {
+        self.root.load_track_midi_events_for_onion_skin(track_idx, events);
     }
 
     /// 设置播放用 MIDI 输出连接
@@ -218,7 +242,7 @@ impl Host {
 
     /// 获取编辑器中的所有音符数据（用于保存）
     ///
-    /// 返回 (track_idx, notes) 列表，其中 notes 格式为 (tick, key, length, velocity)
+    /// 返回 (track_idx, notes) 列表，其中 notes 格式为 (tick, key, length, velocity, channel)
     pub fn get_editor_notes(&self) -> Vec<(usize, Vec<NoteData>)> {
         let mut result = Vec::new();
 
@@ -229,7 +253,7 @@ impl Host {
                 .editor
                 .notes
                 .iter()
-                .map(|n| (n.tick, n.key as u8, n.length, n.velocity))
+                .map(|n| (n.tick, n.key as u8, n.length, n.velocity, n.channel))
                 .collect();
             result.push((self.root.editor.current_track, current_notes));
         }
@@ -239,7 +263,7 @@ impl Host {
             if track_idx != self.root.editor.current_track {
                 let track_notes: Vec<NoteData> = notes
                     .iter()
-                    .map(|n| (n.tick, n.key as u8, n.length, n.velocity))
+                    .map(|n| (n.tick, n.key as u8, n.length, n.velocity, n.channel))
                     .collect();
                 result.push((track_idx, track_notes));
             }

@@ -224,6 +224,43 @@ impl OutputConnection for KdmapiOutputConn {
         self.send(&[status, key & 0x7F, vel & 0x7F])
     }
 
+    fn control_change(&mut self, ch: u8, controller: u8, value: u8) -> Result<(), Error> {
+        let channel = ch & 0x0F;
+        let status = 0xB0 | channel;
+        self.send(&[status, controller, value])
+    }
+
+    fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error> {
+        let channel = ch & 0x0F;
+        let status = 0xC0 | channel;
+        self.send(&[status, program, 0])
+    }
+
+    fn pitch_bend(&mut self, ch: u8, value: f32) -> Result<(), Error> {
+        let channel = ch & 0x0F;
+        let status = 0xE0 | channel;
+        let bend = ((value + 1.0) * 0.5 * 16383.0).round() as u16;
+        let lsb = (bend & 0x7F) as u8;
+        let msb = ((bend >> 7) & 0x7F) as u8;
+        self.send(&[status, lsb, msb])
+    }
+
+    fn channel_pressure(&mut self, ch: u8, pressure: u8) -> Result<(), Error> {
+        let channel = ch & 0x0F;
+        let status = 0xD0 | channel;
+        self.send(&[status, pressure, 0])
+    }
+
+    fn poly_pressure(&mut self, ch: u8, key: u8, pressure: u8) -> Result<(), Error> {
+        let channel = ch & 0x0F;
+        let status = 0xA0 | channel;
+        self.send(&[status, key, pressure])
+    }
+
+    fn send_raw(&mut self, data: [u8; 3]) -> Result<(), Error> {
+        self.send(&data)
+    }
+
     fn close(self: Box<Self>) {
         tracing::debug!("KDMAPI::close: 关闭连接");
         // Kdmapi 不需要显式关闭对等端

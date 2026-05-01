@@ -11,6 +11,8 @@ pub struct Note {
     pub length: f32,
     /// 音符力度 (0-127)，默认 100
     pub velocity: u8,
+    /// MIDI 通道 (0-15)，默认 0
+    pub channel: u8,
 }
 
 impl Note {
@@ -20,11 +22,17 @@ impl Note {
             key,
             length,
             velocity: crate::constants::editor::DEFAULT_NOTE_VELOCITY,
+            channel: 0,
         }
     }
 
     pub fn with_velocity(mut self, velocity: u8) -> Self {
         self.velocity = velocity;
+        self
+    }
+
+    pub fn with_channel(mut self, channel: u8) -> Self {
+        self.channel = channel;
         self
     }
 

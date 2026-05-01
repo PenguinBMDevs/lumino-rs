@@ -2,7 +2,7 @@
 //!
 //! 负责协调播放引擎和MIDI输出
 
-use super::engine::{MidiMessage, NoteEvent, PlaybackEngine};
+use super::engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine};
 use super::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
 use lumino_cache::MidiCache;
 use std::sync::{Arc, Mutex, mpsc};
@@ -13,6 +13,7 @@ enum Command {
     SetMidiOutput(Box<dyn lumino_midi::OutputConnection>),
     ClearMidiOutput,
     SetNotes(Vec<NoteEvent>),
+    SetMidiEvents(Vec<MidiTrackEvent>),
     SetTempoChanges(Vec<TempoChange>),
     SetCache(Option<Arc<MidiCache>>),
     Play,
@@ -55,30 +56,35 @@ impl PlaybackManager {
                         Command::ClearMidiOutput => midi_output = None,
                         Command::SetNotes(notes) => engine.set_notes(notes),
                         Command::SetCache(cache) => engine.set_cache(cache),
+                        Command::SetMidiEvents(events) => engine.set_midi_events(events),
                         Command::SetTempoChanges(changes) => {
                             if let Ok(mut p) = engine.playback().lock() {
                                 p.set_tempo_changes(changes);
                             }
                         }
                         Command::Play => engine.play(),
-                        Command::Pause => engine.pause(),
+                        Command::Pause => {
+                            engine.pause();
+                            if let Some(out) = &mut midi_output {
+                                // 释放所有通道的延音踏板，防止音符永久保持
+                                for ch in 0..16 {
+                                    let _ = out.control_change(ch, 64, 0);
+                                }
+                                // 停止当前发声的音符（保留 Release 阶段）
+                                let _ = out.all_notes_off();
+                            }
+                        }
                         Command::Stop => {
                             engine.stop();
                             if let Some(out) = &mut midi_output {
-                                for channel in 0..16 {
-                                    for key in 0..128 {
-                                        let _ = out.note_off(channel, key, 0);
-                                    }
-                                }
+                                let _ = out.all_notes_off();
+                                let _ = out.reset_control();
                             }
                         }
                         Command::Seek(tick) => {
                             if let Some(out) = &mut midi_output {
-                                for channel in 0..16 {
-                                    for key in 0..128 {
-                                        let _ = out.note_off(channel, key, 0);
-                                    }
-                                }
+                                let _ = out.all_notes_off();
+                                let _ = out.reset_control();
                             }
                             engine.seek(tick);
                         }
@@ -92,7 +98,13 @@ impl PlaybackManager {
                 // 更新引擎并发送MIDI消息
                 let messages = engine.update();
                 if let Some(out) = &mut midi_output {
-                    for msg in messages {
+                    let msg_count = messages.len();
+                    for (i, msg) in messages.into_iter().enumerate() {
+                        // 每 20 条消息让出 CPU 给 xsynth 通道线程处理积压事件
+                        // 防止 seek 后大量事件瞬间涌入导致 buffer underrun
+                        if i > 0 && i % 20 == 0 {
+                            std::thread::yield_now();
+                        }
                         match msg {
                             MidiMessage::NoteOn {
                                 channel,
@@ -104,7 +116,33 @@ impl PlaybackManager {
                             MidiMessage::NoteOff { channel, key } => {
                                 let _ = out.note_off(channel, key, 0);
                             }
+                            MidiMessage::ControlChange {
+                                channel,
+                                controller,
+                                value,
+                            } => {
+                                let _ = out.control_change(channel, controller, value);
+                            }
+                            MidiMessage::ProgramChange { channel, program } => {
+                                let _ = out.program_change(channel, program);
+                            }
+                            MidiMessage::PitchBend { channel, value } => {
+                                let _ = out.pitch_bend(channel, value);
+                            }
+                            MidiMessage::ChannelPressure { channel, pressure } => {
+                                let _ = out.channel_pressure(channel, pressure);
+                            }
+                            MidiMessage::PolyPressure {
+                                channel,
+                                key,
+                                pressure,
+                            } => {
+                                let _ = out.poly_pressure(channel, key, pressure);
+                            }
                         }
+                    }
+                    if msg_count > 0 {
+                        tracing::trace!("PlaybackManager: sent {} MIDI events", msg_count);
                     }
                 }
 
@@ -154,6 +192,11 @@ impl PlaybackManager {
     /// 设置 MIDI 缓存
     pub fn set_cache(&mut self, cache: Option<Arc<MidiCache>>) {
         let _ = self.sender.send(Command::SetCache(cache));
+    }
+
+    /// 设置非音符MIDI事件列表
+    pub fn set_midi_events(&mut self, events: Vec<MidiTrackEvent>) {
+        let _ = self.sender.send(Command::SetMidiEvents(events));
     }
 
     /// 设置速度变化

@@ -58,6 +58,8 @@ pub struct MidiManager {
     xsynth_sample_rate: u32,
     /// XSynth 是否启用 killing fade-out
     xsynth_fade_out_killing: bool,
+    /// XSynth 每个键最大同音数
+    xsynth_max_voices_per_key: Option<usize>,
 }
 
 impl Default for MidiManager {
@@ -76,6 +78,7 @@ impl Default for MidiManager {
             xsynth_threads: 0,
             xsynth_sample_rate: 0,
             xsynth_fade_out_killing: false,
+            xsynth_max_voices_per_key: None,
         }
     }
 }
@@ -109,6 +112,7 @@ impl MidiManager {
             xsynth_threads: ui_config.xsynth_threads,
             xsynth_sample_rate: ui_config.xsynth_sample_rate,
             xsynth_fade_out_killing: ui_config.xsynth_fade_out_killing,
+            xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
         };
 
         // 如果偏好 XSynth，在后台异步初始化
@@ -177,6 +181,7 @@ impl MidiManager {
             threads: ui_config.xsynth_threads,
             sample_rate: ui_config.xsynth_sample_rate,
             fade_out_killing: ui_config.xsynth_fade_out_killing,
+            max_voices_per_key: ui_config.xsynth_max_voices_per_key,
         };
 
         let api = lumino_midi::new_api_with_options(&api_kind, Some(options))
@@ -347,18 +352,11 @@ impl MidiManager {
         // （midir::MidiOutputConnection 持有自己的 OS 句柄）
         let strategy2_result = match self.active_backend {
             SynthBackend::XSynth => {
-                // XSynth 后端：使用 XSynth options 创建独立实例
-                let path = std::path::PathBuf::from(&self.xsynth_soundfont_path);
-                let api_kind = lumino_midi::ApiKind::XSynth {
-                    soundfont_path: path,
-                };
-                let options = lumino_midi::api::xsynth::XSynthOptions {
-                    buffer_ms: self.xsynth_buffer_ms,
-                    threads: self.xsynth_threads,
-                    sample_rate: self.xsynth_sample_rate,
-                    fade_out_killing: self.xsynth_fade_out_killing,
-                };
-                Self::try_open_new_api(&api_kind, Some(options))
+                // XSynth：不创建第二个实例！策略1（共享 sender）总是成功；
+                // 如果策略1失败说明 API 已损坏，策略2也没有意义，
+                // 而且创建第二个 RealtimeSynth 会导致双份 cpal 音频流 + 声音叠加
+                tracing::warn!("MIDI 播放输出: XSynth 策略1意外失败，无法创建播放输出");
+                None
             }
             SynthBackend::System | SynthBackend::Kdmapi => {
                 let api_kind = match self.active_backend {
@@ -450,6 +448,7 @@ impl MidiManager {
         self.xsynth_threads = ui_config.xsynth_threads;
         self.xsynth_sample_rate = ui_config.xsynth_sample_rate;
         self.xsynth_fade_out_killing = ui_config.xsynth_fade_out_killing;
+        self.xsynth_max_voices_per_key = ui_config.xsynth_max_voices_per_key;
 
         // 关闭旧的 MIDI 输出和备用 API
         if let Some(old_output) = self.output.take() {

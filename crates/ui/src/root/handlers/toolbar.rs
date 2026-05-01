@@ -103,7 +103,7 @@ impl ToolbarHandler {
             .filter(|note| note.velocity > velocity_threshold)
             .map(|note| NoteEvent {
                 tick: note.tick,
-                channel: 0,
+                channel: note.channel,
                 key: note.key as u8,
                 velocity: note.velocity,
                 length: note.length,
@@ -120,7 +120,7 @@ impl ToolbarHandler {
                     if note.velocity > velocity_threshold {
                         notes.push(NoteEvent {
                             tick: note.tick,
-                            channel: 0,
+                            channel: note.channel,
                             key: note.key as u8,
                             velocity: note.velocity,
                             length: note.length,
@@ -131,7 +131,19 @@ impl ToolbarHandler {
         }
 
         let total_notes = notes.len();
+
+        // 收集所有音轨的 MIDI 控制事件（CC/PC/PB）
+        let mut midi_events: Vec<crate::playback::MidiTrackEvent> = Vec::new();
+        for (_track_idx, events) in &root.track_midi_events {
+            midi_events.extend(events.clone());
+        }
+        // 按 tick 排序
+        midi_events.sort_by(|a, b| a.tick.total_cmp(&b.tick));
+        let total_midi_events = midi_events.len();
         manager.set_notes(notes);
+        if !midi_events.is_empty() {
+            manager.set_midi_events(midi_events);
+        }
 
         // 设置缓存（大文件流式播放）
         if let Some(cache) = root.midi_cache.clone() {
@@ -150,9 +162,10 @@ impl ToolbarHandler {
 
         root.playback_manager = Some(manager);
         tracing::info!(
-            "Root: 播放管理器已初始化 (division={}, 总音符={}, 过滤阈值={}, 缓存={})",
+            "Root: 播放管理器已初始化 (division={}, 总音符={}, MIDI事件={}, 过滤阈值={}, 缓存={})",
             division,
             total_notes,
+            total_midi_events,
             velocity_threshold,
             root.midi_cache.is_some()
         );
