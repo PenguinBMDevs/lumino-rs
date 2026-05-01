@@ -41,7 +41,7 @@ impl XSynth {
             )));
         }
 
-        // ⭐ 在打开音频流之前，先用配置的采样率构造 AudioStreamParams
+        // 在打开音频流之前，先用配置的采样率构造 AudioStreamParams
         // 提前加载音色库。这样在音频流启动时，音色库已经就绪，
         // BufferedRenderer 的 render pipeline 能立即产生有效数据，
         // 避免 callback 在 recv() 上阻塞导致 ALSA underrun。

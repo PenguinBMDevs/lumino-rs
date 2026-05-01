@@ -16,6 +16,8 @@ enum Command {
     SetMidiEvents(Vec<MidiTrackEvent>),
     SetTempoChanges(Vec<TempoChange>),
     SetCache(Option<Arc<MidiCache>>),
+    /// 设置缓存流式读取时需要跳过的音轨（这些音轨已通过 self.notes 覆盖）
+    SetSkipTracksInCache(Vec<u16>),
     Play,
     Pause,
     Stop,
@@ -56,6 +58,9 @@ impl PlaybackManager {
                         Command::ClearMidiOutput => midi_output = None,
                         Command::SetNotes(notes) => engine.set_notes(notes),
                         Command::SetCache(cache) => engine.set_cache(cache),
+                        Command::SetSkipTracksInCache(tracks) => {
+                            engine.set_skip_tracks_in_cache(tracks)
+                        }
                         Command::SetMidiEvents(events) => engine.set_midi_events(events),
                         Command::SetTempoChanges(changes) => {
                             if let Ok(mut p) = engine.playback().lock() {
@@ -192,6 +197,12 @@ impl PlaybackManager {
     /// 设置 MIDI 缓存
     pub fn set_cache(&mut self, cache: Option<Arc<MidiCache>>) {
         let _ = self.sender.send(Command::SetCache(cache));
+    }
+
+    /// 设置缓存流式读取时需要跳过的音轨
+    /// 这些音轨已通过 set_notes 提供了完整事件，若不跳过会导致事件重复
+    pub fn set_skip_tracks_in_cache(&mut self, tracks: Vec<u16>) {
+        let _ = self.sender.send(Command::SetSkipTracksInCache(tracks));
     }
 
     /// 设置非音符MIDI事件列表

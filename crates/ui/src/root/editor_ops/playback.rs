@@ -51,6 +51,12 @@ impl Root {
 
             manager.set_notes(notes);
 
+            // 当有 MIDI 缓存时，告知引擎跳过当前音轨的缓存事件
+            // 当前音轨的音符已通过上述 set_notes 提供完整事件
+            if self.midi_cache.is_some() {
+                manager.set_skip_tracks_in_cache(vec![self.editor.current_track as u16]);
+            }
+
             // 同步所有音轨的 MIDI 控制事件
             let mut midi_events: Vec<crate::playback::MidiTrackEvent> = Vec::new();
             for events in self.track_midi_events.values() {

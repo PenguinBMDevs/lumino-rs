@@ -8,8 +8,13 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::sync::{Arc, Mutex};
 
-/// 缓存流式读取的前瞻距离（ticks），约 4 秒 @ 120BPM/480PPQ
-const CACHE_LOOKAHEAD_TICKS: f32 = 4096.0;
+/// 缓存流式读取的前瞻距离（ticks），约 17 秒 @ 120BPM/480PPQ
+/// 增大此值可防止密集段落因队列干涸导致的播放中断
+const CACHE_LOOKAHEAD_TICKS: f32 = 16384.0;
+/// 单次从缓存读取的最大事件数。
+/// 过大可能导致 Vec 分配溢出（capacity overflow），
+/// 过小则频繁触发 I/O。500K * 12 字节 ≈ 6MB/批次。
+const MAX_BATCH_EVENTS: usize = 500_000;
 
 /// 音符事件（用于播放调度）
 #[derive(Debug, Clone)]
@@ -120,6 +125,10 @@ pub struct PlaybackEngine {
     cache: Option<Arc<MidiCache>>,
     /// 上次从缓存读取的结束位置
     last_fetched_tick: f32,
+    /// 已通过 self.notes 覆盖的音轨列表（stream_cache 应跳过这些音轨的事件）
+    /// 修复审查报告 #17: 当前音轨的 NoteEvent 来自 self.notes，
+    /// 若 stream_cache 也读取该音轨会导致事件重复，引发合成器音色盗用
+    skip_tracks_in_cache: Vec<u16>,
 }
 
 /// Chase 时 CC 的发送顺序（确保 RPN 依赖、Bank Select 等在正确时机）
@@ -152,7 +161,13 @@ impl PlaybackEngine {
             loop_range: None,
             cache: None,
             last_fetched_tick: 0.0,
+            skip_tracks_in_cache: Vec::new(),
         }
+    }
+
+    /// 设置要跳过缓存的音轨列表（这些音轨已通过 self.notes 提供）
+    pub fn set_skip_tracks_in_cache(&mut self, tracks: Vec<u16>) {
+        self.skip_tracks_in_cache = tracks;
     }
 
     /// 设置 MIDI 缓存（大文件流式播放）
@@ -472,6 +487,10 @@ impl PlaybackEngine {
     }
 
     /// 从缓存流式读取前方事件并加入队列
+    ///
+    /// 使用安全的单批上限 MAX_BATCH_EVENTS 防止单次内存分配溢出。
+    /// 若单批次超出上限，last_fetched_tick 推进到实际最后事件 tick，
+    /// 剩余事件在下个 update 周期继续读取，保证不丢失事件。
     fn stream_cache(&mut self, current_tick: f32) {
         let Some(ref cache) = self.cache else { return };
         let total_ticks = cache.index.total_ticks as f32;
@@ -482,13 +501,22 @@ impl PlaybackEngine {
         if self.last_fetched_tick >= fetch_end {
             return;
         }
-        let events =
-            cache
-                .cache
-                .get_events(self.last_fetched_tick as u32, fetch_end as u32, 500_000);
+        let events = cache.cache.get_events(
+            self.last_fetched_tick as u32,
+            fetch_end as u32,
+            MAX_BATCH_EVENTS,
+        );
         let mut seq: u64 = 0;
-        for ev in events {
+        let mut max_tick_seen: Option<u32> = None;
+        for ev in &events {
+            // 跳过已通过 self.notes 覆盖的音轨事件，防止事件重复
+            if self.skip_tracks_in_cache.contains(&ev.track_id()) {
+                continue;
+            }
             let tick = ev.delta_tick() as f32;
+            max_tick_seen = max_tick_seen
+                .map(|t| t.max(ev.delta_tick()))
+                .or(Some(ev.delta_tick()));
             match ev.kind() {
                 lumino_midi::compact::EventKind::NoteOn => {
                     let velocity = ev.param2() as u8;
@@ -527,7 +555,12 @@ impl PlaybackEngine {
             }
             seq += 1;
         }
-        self.last_fetched_tick = fetch_end;
+        // 推进已读取进度：如果本批有事件则推进到最后事件之后，
+        // 无事件则直接跳到 fetch_end，避免空循环
+        self.last_fetched_tick = match max_tick_seen {
+            Some(t) => (t + 1) as f32,
+            None => fetch_end,
+        };
     }
 
     /// 安全地跳转播放位置（内部辅助方法）
@@ -538,15 +571,10 @@ impl PlaybackEngine {
     }
 
     /// 播放
+    ///
+    /// 注意：事件队列由 set_notes/set_midi_events/seek 等操作触发重建，
+    /// play() 自身不再重复 rebuild_queue，消除冗余操作。
     pub fn play(&mut self) {
-        let state = self
-            .lock_playback()
-            .map_or(PlaybackState::Stopped, |p| p.state());
-
-        if state == PlaybackState::Stopped {
-            self.rebuild_queue();
-        }
-
         if let Some(mut playback) = self.lock_playback() {
             playback.play();
         }

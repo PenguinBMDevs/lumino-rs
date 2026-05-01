@@ -98,7 +98,7 @@ impl MidiCache {
         let (tmp_dir, bucket_counters, track_count, total_ticks) =
             chunk::phase1_bucketize(&file_data, progress).map_err(CacheError::MidiParse)?;
 
-        // ⭐ Phase 1 结束，立即释放 mmap（1.25GB 归还系统）
+        // Phase 1 结束，立即释放 mmap（1.25GB 归还系统）
         drop(file_data);
 
         // ── Phase 2：从桶文件并行读取、构建 Chunk、直接写入输出文件 ──
@@ -163,7 +163,7 @@ impl MidiCache {
             (cb)(0.15);
         }
 
-        // ⭐ 轻量扫描音轨名称（在 drop file_bytes 之前）
+        // 轻量扫描音轨名称（在 drop file_bytes 之前）
         let track_names = chunk::scan_track_names(&file_bytes);
 
         let (notes, tempo_changes) = midly::loader::extract_notes_from_bytes(&file_bytes)

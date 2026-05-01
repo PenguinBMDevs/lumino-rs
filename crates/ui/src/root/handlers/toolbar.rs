@@ -148,6 +148,9 @@ impl ToolbarHandler {
         // 设置缓存（大文件流式播放）
         if let Some(cache) = root.midi_cache.clone() {
             manager.set_cache(Some(cache));
+            // 告知引擎跳过当前音轨的缓存事件，防止事件重复
+            // 当前音轨的音符已通过 manager.set_notes 提供完整事件
+            manager.set_skip_tracks_in_cache(vec![root.editor.current_track as u16]);
         }
 
         // 应用缓存的 tempo 变化

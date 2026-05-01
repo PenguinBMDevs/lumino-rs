@@ -375,9 +375,20 @@ pub fn phase2_assemble_to_path(
 
                     for &ck in &keys {
                         let mut events = chunk_map.remove(&ck).unwrap_or_default();
-                        // ⚠️ 审查报告 #12: 事件必须在 chunk 内按 tick 排序，
+                        // 审查报告 #12: 事件必须在 chunk 内按 tick 排序，
                         // 否则 NoteOff 可能在 NoteOn 之前被处理，导致音符时长错误
-                        events.sort_unstable_by_key(|ev| ev.delta_tick());
+                        // 审查报告 #18: 同一 tick 上 NoteOff 必须在 NoteOn 之前，
+                        // 否则同键重复音符的 NoteOn 会错误结束前一个音符的 NoteOff，导致音符错乱
+                        events.sort_by(|a, b| {
+                            let tick_cmp = a.delta_tick().cmp(&b.delta_tick());
+                            if tick_cmp != std::cmp::Ordering::Equal {
+                                return tick_cmp;
+                            }
+                            // 同一 tick 上，NoteOff 优先于 NoteOn
+                            let a_prio = event_kind_priority(a.kind());
+                            let b_prio = event_kind_priority(b.kind());
+                            a_prio.cmp(&b_prio)
+                        });
                         let chunk = EventChunk::new(ck * params::CHUNK_TICK_SPAN, events);
                         let bytes = chunk.to_raw_bytes();
 
@@ -486,7 +497,16 @@ pub fn phase2_assemble<W: Write>(
                     for &ck in &keys {
                         let mut events = chunk_map.remove(&ck).unwrap_or_default();
                         // 同 phase2_assemble_to_path: chunk 内事件必须按 tick 排序
-                        events.sort_unstable_by_key(|ev| ev.delta_tick());
+                        // 且同一 tick 上 NoteOff 必须在 NoteOn 之前
+                        events.sort_by(|a, b| {
+                            let tick_cmp = a.delta_tick().cmp(&b.delta_tick());
+                            if tick_cmp != std::cmp::Ordering::Equal {
+                                return tick_cmp;
+                            }
+                            let a_prio = event_kind_priority(a.kind());
+                            let b_prio = event_kind_priority(b.kind());
+                            a_prio.cmp(&b_prio)
+                        });
                         let chunk = EventChunk::new(ck * params::CHUNK_TICK_SPAN, events);
                         let bytes = chunk.to_raw_bytes();
 
@@ -961,6 +981,16 @@ fn midi_event_to_compact(track_id: u16, tick: u32, kind: &TrackEventKind) -> Opt
             data.len() as u16,
             0,
         )),
+    }
+}
+
+/// 事件种类优先级（用于排序：值越小越先处理）
+/// NoteOff 必须在 NoteOn 之前，防止同一 tick 上同键重复音符顺序错乱
+fn event_kind_priority(kind: lumino_midi::compact::EventKind) -> u8 {
+    match kind {
+        lumino_midi::compact::EventKind::NoteOff => 0,
+        lumino_midi::compact::EventKind::NoteOn => 1,
+        _ => 2,
     }
 }
 
