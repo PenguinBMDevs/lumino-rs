@@ -50,13 +50,7 @@ impl RunnerInner {
                 // 先导入音符到编辑器
                 self.import_midi_to_editor(&parsed);
 
-                // 将缓存传递给播放引擎（大文件流式播放）
-                if let Some(cache) = parsed.cache.clone() {
-                    self.window.ui_mut().set_playback_cache(Some(cache));
-                    tracing::info!("MIDI 缓存已绑定到播放引擎");
-                }
-
-                tracing::debug!("MIDI 数据已保留在 Arc 中");
+                tracing::debug!("MIDI 文档解析完成，已存入 ParsedMidi.document");
 
                 self.current_midi = Some(parsed.clone());
 

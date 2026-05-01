@@ -3418,20 +3418,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
-name = "lumino-cache"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "lumino-midi",
- "memmap2",
- "midly",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "winapi",
-]
-
-[[package]]
 name = "lumino-collaboration"
 version = "0.1.0"
 dependencies = [
@@ -3458,8 +3444,8 @@ dependencies = [
  "bincode",
  "encoding_rs",
  "font-kit",
- "lumino-cache",
  "lumino-dms",
+ "lumino-midi",
  "midly",
  "puffin",
  "rayon",
@@ -3588,7 +3574,6 @@ dependencies = [
  "iced_winit",
  "im",
  "image",
- "lumino-cache",
  "lumino-collaboration",
  "lumino-core",
  "lumino-gfx",

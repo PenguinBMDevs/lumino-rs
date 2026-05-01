@@ -4,7 +4,6 @@
 
 use super::engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine};
 use super::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
-use lumino_cache::MidiCache;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -15,9 +14,7 @@ enum Command {
     SetNotes(Vec<NoteEvent>),
     SetMidiEvents(Vec<MidiTrackEvent>),
     SetTempoChanges(Vec<TempoChange>),
-    SetCache(Option<Arc<MidiCache>>),
-    /// 设置缓存流式读取时需要跳过的音轨（这些音轨已通过 self.notes 覆盖）
-    SetSkipTracksInCache(Vec<u16>),
+    // 旧 SetCache/SetSkipTracksInCache 已移除（disk_cache future support）
     Play,
     Pause,
     Stop,
@@ -57,10 +54,6 @@ impl PlaybackManager {
                         Command::SetMidiOutput(output) => midi_output = Some(output),
                         Command::ClearMidiOutput => midi_output = None,
                         Command::SetNotes(notes) => engine.set_notes(notes),
-                        Command::SetCache(cache) => engine.set_cache(cache),
-                        Command::SetSkipTracksInCache(tracks) => {
-                            engine.set_skip_tracks_in_cache(tracks)
-                        }
                         Command::SetMidiEvents(events) => engine.set_midi_events(events),
                         Command::SetTempoChanges(changes) => {
                             if let Ok(mut p) = engine.playback().lock() {
@@ -194,16 +187,7 @@ impl PlaybackManager {
         let _ = self.sender.send(Command::SetNotes(notes));
     }
 
-    /// 设置 MIDI 缓存
-    pub fn set_cache(&mut self, cache: Option<Arc<MidiCache>>) {
-        let _ = self.sender.send(Command::SetCache(cache));
-    }
-
-    /// 设置缓存流式读取时需要跳过的音轨
-    /// 这些音轨已通过 set_notes 提供了完整事件，若不跳过会导致事件重复
-    pub fn set_skip_tracks_in_cache(&mut self, tracks: Vec<u16>) {
-        let _ = self.sender.send(Command::SetSkipTracksInCache(tracks));
-    }
+    // 旧 set_cache/set_skip_tracks_in_cache 已移除（disk_cache future support）
 
     /// 设置非音符MIDI事件列表
     pub fn set_midi_events(&mut self, events: Vec<MidiTrackEvent>) {

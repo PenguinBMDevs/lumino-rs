@@ -1,76 +1,4 @@
-//! 音轨视图模式
-//!
-//! `TrackDataRef` 不持有事件数据，仅持有一个轻量级引用。
-//! 音轨的事件数据通过 ChunkCache 间接访问。
-//!
-//! 内存占用预估：
-//! - TrackDataRef: 32 字节
-//! - TrackView: 40 字节 + 2 个 Arc
-//! - 支持 1000+ 音轨同时存在，内存开销可忽略
-
-use std::sync::Arc;
-
-use lumino_midi::compact::CompactEvent;
-
-use crate::cache::LayeredCache;
-use crate::index::ChunkIndex;
-
-/// 音轨数据引用 — 不持有实际事件数据
-///
-/// 只持有一个 Arc 指针指向缓存系统，实际的 chunk 查找通过 LayeredCache 完成。
-pub struct TrackDataRef {
-    /// 音轨编号
-    pub track_id: u16,
-    /// 引用缓存系统
-    cache: Arc<LayeredCache>,
-    /// ChunkIndex 的 Arc（与 cache 共享）
-    index: Arc<ChunkIndex>,
-}
-
-impl TrackDataRef {
-    /// 创建新的音轨数据引用
-    pub fn new(track_id: u16, cache: Arc<LayeredCache>, index: Arc<ChunkIndex>) -> Self {
-        Self {
-            track_id,
-            cache,
-            index,
-        }
-    }
-
-    /// 获取指定 tick 范围内该音轨的所有事件
-    ///
-    /// # 参数
-    /// - `from_tick`: 起始 tick（包含）
-    /// - `to_tick`: 结束 tick（不包含）
-    ///
-    /// # 返回值
-    /// 符合条件的 CompactEvent 列表
-    pub fn get_events(&self, from_tick: u32, to_tick: u32) -> Vec<CompactEvent> {
-        let (start_chunk, end_chunk) = self.index.chunk_range(from_tick, to_tick);
-        if start_chunk >= end_chunk {
-            return Vec::new();
-        }
-
-        let mut all_events = self.cache.get_events(from_tick, to_tick, 0);
-
-        // 按音轨过滤
-        all_events.retain(|ev| ev.track_id() == self.track_id);
-        all_events
-    }
-
-    /// 检查音轨是否有事件在指定 tick 范围内
-    pub fn has_events_in_range(&self, from_tick: u32, to_tick: u32) -> bool {
-        let (start, end) = self.index.chunk_range(from_tick, to_tick);
-        for i in start..end {
-            if let Some(entry) = self.index.entries.get(i)
-                && entry.has_track(self.track_id)
-            {
-                return true;
-            }
-        }
-        false
-    }
-}
+//! 音轨视图管理器
 
 /// 音轨视图状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,8 +12,7 @@ pub enum TrackVisibility {
 }
 
 /// 音轨视图 — 管理单个音轨的可见性状态
-///
-/// 不影响缓存行为，仅用于过滤播放/渲染输出。
+#[derive(Clone)]
 pub struct TrackView {
     /// 音轨编号
     pub track_id: u16,
@@ -120,9 +47,7 @@ impl TrackView {
 
     /// 音轨是否应该播放
     pub fn should_play(&self, has_solo: bool) -> bool {
-        if has_solo {
-            return self.solo;
-        }
+        if has_solo { return self.solo; }
         self.visibility == TrackVisibility::Visible
     }
 
@@ -133,8 +58,8 @@ impl TrackView {
 }
 
 /// 音轨视图管理器
+#[derive(Clone)]
 pub struct TrackManager {
-    /// 所有音轨视图
     tracks: Vec<TrackView>,
 }
 
@@ -215,7 +140,6 @@ mod tests {
         let view1 = TrackView::new(1);
         view0.solo = true;
 
-        // With solo active, only soloed tracks play
         let has_solo = true;
         assert!(view0.should_play(has_solo));
         assert!(!view1.should_play(has_solo));
@@ -232,11 +156,5 @@ mod tests {
 
         let playable = mgr.playable_tracks();
         assert_eq!(playable, vec![1]);
-    }
-
-    #[test]
-    fn test_track_ref_caching() {
-        // TrackDataRef requires active cache — test construction only
-        // Full integration test in tests/
     }
 }

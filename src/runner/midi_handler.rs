@@ -10,35 +10,31 @@ impl MidiHandler {
     }
 
     /// 将 MIDI 数据导入到编辑器
-    ///
-    /// 统一使用分层缓存（MidiCache）路径，无需 memory_manager。
-    /// 对于 LMPJ 文件，使用 midi_data 直接解析。
     pub fn import_midi_to_editor(&self, ui: &mut lumino_ui::Host, parsed: &ParsedMidi) {
         ui.reset_playback_manager();
 
-        if let Some(cache) = parsed.cache.as_ref() {
-            // ── 缓存加载模式（标准路径）──
-            tracing::info!("从 cache 导入 MIDI：{} 音轨", cache.track_count());
+        if let Some(document) = parsed.document.as_ref() {
+            tracing::info!("导入 MIDI 文档：{} 音轨", document.track_count());
 
-            let track_count = cache.track_count();
+            let track_count = document.track_count();
             let mut track_infos = Vec::with_capacity(track_count);
 
             // 第一遍：预加载所有音轨的音符到 track_notes（供洋葱皮使用）
             for track_idx in 0..track_count {
-                let notes = cache.get_track_notes(track_idx as u16);
+                let notes = document.get_track_notes(track_idx as u16);
                 let note_count = notes.len() as u64;
                 if !notes.is_empty() {
                     ui.load_track_notes_for_onion_skin(track_idx, &notes);
                 }
-                let track_name = cache.track_name(track_idx).map(|s| s.to_string());
+                let track_name = document.track_name(track_idx).map(|s| s.to_string());
                 track_infos.push((track_idx, track_name, note_count));
             }
 
             ui.set_ppq(parsed.info.division);
             ui.update_tracks(&track_infos);
 
-            // 从预存储的 tempo_changes 加载（无 I/O）
-            let tempo_ui: Vec<(u32, u32)> = cache
+            // 从预存储的 tempo_changes 加载
+            let tempo_ui: Vec<(u32, u32)> = document
                 .tempo_changes
                 .iter()
                 .map(|&(tick, bpm)| {
@@ -59,22 +55,22 @@ impl MidiHandler {
                 .iter()
                 .find(|(_, _, note_count)| *note_count > 0)
             {
-                let first_notes = cache.get_track_notes(*first_track_idx as u16);
+                let first_notes = document.get_track_notes(*first_track_idx as u16);
                 ui.load_track_notes(*first_track_idx, &first_notes);
                 ui.set_current_track(*first_track_idx);
             }
 
             tracing::info!(
-                "cache 模式: {} 音轨, {} ticks, 音符已加载",
+                "加载完成: {} 音轨, {} ticks, 音符已加载",
                 track_count,
-                cache.total_ticks()
+                document.total_ticks()
             );
         } else if let Some(midi_data) = parsed.midi_data.as_ref() {
             // ── LMPJ 文件路径：从 midi_data 直接解析 ──
-            tracing::info!("从 midi_data 解析音符数据");
+            tracing::info!("从 midi_data 字节直接解析音符");
             self.import_midi_data_to_editor(midi_data, parsed.info.track_count as usize, ui);
         } else {
-            tracing::warn!("MIDI 没有 cache 也没有 midi_data，无法导入");
+            tracing::warn!("MIDI 没有 document 也没有 midi_data，无法导入");
             return;
         }
 

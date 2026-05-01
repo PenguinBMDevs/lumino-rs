@@ -145,9 +145,7 @@ impl ToolbarHandler {
             manager.set_midi_events(midi_events);
         }
 
-        // 不设置缓存到引擎：self.notes 已包含所有音轨的完整音符，
-        // stream_cache 无需参与，避免初始播放时产生事件重复。
-        // 缓存仅保留在 Root.midi_cache 中供 UI（钢琴卷帘、音轨列表）使用。
+        // 不设置缓存到引擎：self.notes 已包含所有音轨的完整音符。
 
         // 应用缓存的 tempo 变化
         if let Some(changes) = root.pending_tempo_changes.take() {

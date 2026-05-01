@@ -1,12 +1,19 @@
 pub mod constants;
 pub mod dms;
+pub mod document;
+pub mod error;
 pub mod event;
 pub mod info;
 pub mod loader;
+pub mod params;
+pub mod track;
 
 pub use dms::DmsInfo;
+pub use document::MidiDocument;
+pub use error::MidiError;
 pub use event::MidiEvent;
 pub use info::MidiInfo;
+pub use track::{TrackManager, TrackView, TrackVisibility};
 
 /// LMPJ 文件数据结构（用于序列化/反序列化）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -27,7 +34,7 @@ impl LmpjData {
         ParsedMidi {
             info: self.info,
             midi_data: self.midi_data,
-            cache: None,
+            document: None,
         }
     }
 }
@@ -36,9 +43,10 @@ impl LmpjData {
 #[derive(Debug, Clone)]
 pub struct ParsedMidi {
     pub info: MidiInfo,
+    /// 原始 MIDI 字节（LMPJ 文件使用）
     pub midi_data: Option<Vec<u8>>,
-    /// 分层缓存（播放用，按 tick 跳转）
-    pub cache: Option<std::sync::Arc<lumino_cache::MidiCache>>,
+    /// 紧凑内存解析结果（常规 MIDI 文件使用）
+    pub document: Option<MidiDocument>,
 }
 
 impl serde::Serialize for ParsedMidi {
@@ -67,7 +75,7 @@ impl<'de> serde::Deserialize<'de> for ParsedMidi {
         Ok(ParsedMidi {
             info: h.info,
             midi_data: h.midi_data,
-            cache: None,
+            document: None,
         })
     }
 }

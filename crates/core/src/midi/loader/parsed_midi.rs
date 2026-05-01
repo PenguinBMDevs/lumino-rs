@@ -92,13 +92,13 @@ pub async fn load_parsed_midi(
     });
 
     let path_for_cache = path.clone();
-    let cache = tokio::task::spawn_blocking(move || {
+    let document = tokio::task::spawn_blocking(move || {
         let p_ref = cache_progress.as_ref().map(|a| a.as_ref() as &dyn Fn(f64));
-        lumino_cache::MidiCache::from_notes_file(&path_for_cache, p_ref)
+        crate::midi::MidiDocument::from_notes_file(&path_for_cache, p_ref)
     })
     .await
-    .map_err(|e| crate::CoreError::Other(format!("缓存线程 panic: {e}")))?
-    .map_err(|e| crate::CoreError::Cache(format!("创建缓存失败: {e}")))?;
+    .map_err(|e| crate::CoreError::Other(format!("加载线程 panic: {e}")))?
+    .map_err(|e| crate::CoreError::MidiParse(format!("解析 MIDI 数据失败: {e}")))?;
 
     let info = crate::MidiInfo {
         path: path.clone(),
@@ -122,6 +122,6 @@ pub async fn load_parsed_midi(
     Ok(ParsedMidi {
         info,
         midi_data: None,
-        cache: Some(Arc::new(cache)),
+        document: Some(document),
     })
 }

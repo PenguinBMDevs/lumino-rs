@@ -294,8 +294,4 @@ impl Host {
         self.window.request_redraw();
     }
 
-    /// 设置 MIDI 缓存到播放引擎（大文件流式播放）
-    pub fn set_playback_cache(&mut self, cache: Option<std::sync::Arc<lumino_cache::MidiCache>>) {
-        self.root.set_cache(cache);
-    }
 }

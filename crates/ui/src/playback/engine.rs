@@ -3,18 +3,9 @@
 //! 负责音符调度和MIDI输出
 
 use super::{Playback, PlaybackAccessor, PlaybackState};
-use lumino_cache::MidiCache;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::sync::{Arc, Mutex};
-
-/// 缓存流式读取的前瞻距离（ticks），约 17 秒 @ 120BPM/480PPQ
-/// 增大此值可防止密集段落因队列干涸导致的播放中断
-const CACHE_LOOKAHEAD_TICKS: f32 = 16384.0;
-/// 单次从缓存读取的最大事件数。
-/// 过大可能导致 Vec 分配溢出（capacity overflow），
-/// 过小则频繁触发 I/O。500K * 12 字节 ≈ 6MB/批次。
-const MAX_BATCH_EVENTS: usize = 500_000;
 
 /// 音符事件（用于播放调度）
 #[derive(Debug, Clone)]
@@ -121,14 +112,9 @@ pub struct PlaybackEngine {
     looping: bool,
     /// 循环范围（开始tick，结束tick）
     loop_range: Option<(f32, f32)>,
-    /// MIDI 缓存（大文件时使用流式读取）
-    cache: Option<Arc<MidiCache>>,
-    /// 上次从缓存读取的结束位置
-    last_fetched_tick: f32,
-    /// 已通过 self.notes 覆盖的音轨列表（stream_cache 应跳过这些音轨的事件）
-    /// 修复审查报告 #17: 当前音轨的 NoteEvent 来自 self.notes，
-    /// 若 stream_cache 也读取该音轨会导致事件重复，引发合成器音色盗用
-    skip_tracks_in_cache: Vec<u16>,
+    // （旧 cache/stream_cache 相关字段已移除）
+    // 所有音符通过 self.notes 全量调度，无需流式缓存。
+    // 旧磁盘缓存模块（feature = "disk_cache"）未来将用于超大文件流式播放。
 }
 
 /// Chase 时 CC 的发送顺序（确保 RPN 依赖、Bank Select 等在正确时机）
@@ -159,21 +145,7 @@ impl PlaybackEngine {
             midi_events: Vec::new(),
             looping: false,
             loop_range: None,
-            cache: None,
-            last_fetched_tick: 0.0,
-            skip_tracks_in_cache: Vec::new(),
         }
-    }
-
-    /// 设置要跳过缓存的音轨列表（这些音轨已通过 self.notes 提供）
-    pub fn set_skip_tracks_in_cache(&mut self, tracks: Vec<u16>) {
-        self.skip_tracks_in_cache = tracks;
-    }
-
-    /// 设置 MIDI 缓存（大文件流式播放）
-    pub fn set_cache(&mut self, cache: Option<Arc<MidiCache>>) {
-        self.cache = cache;
-        self.last_fetched_tick = 0.0;
     }
 
     /// 设置音符列表
@@ -408,11 +380,6 @@ impl PlaybackEngine {
             return messages;
         }
 
-        // 如果使用缓存，流式读取前方事件
-        if self.cache.is_some() {
-            self.stream_cache(current_tick);
-        }
-
         // 处理所有到期的事件
         while let Some(event) = self.event_queue.peek() {
             if event.tick > current_tick {
@@ -486,83 +453,6 @@ impl PlaybackEngine {
         messages
     }
 
-    /// 从缓存流式读取前方事件并加入队列
-    ///
-    /// 策略：每次将 last_fetched_tick 推进到 fetch_end（前瞻窗口终点），
-    /// 保证下一批次从新边界开始，避免在非当前音轨事件稀疏区间空转。
-    /// 使用安全的单批上限 MAX_BATCH_EVENTS 防止单次内存分配溢出。
-    fn stream_cache(&mut self, current_tick: f32) {
-        let Some(ref cache) = self.cache else { return };
-        let total_ticks = cache.index.total_ticks as f32;
-        if self.last_fetched_tick >= total_ticks {
-            return;
-        }
-        let fetch_end = (current_tick + CACHE_LOOKAHEAD_TICKS).min(total_ticks);
-        if self.last_fetched_tick >= fetch_end {
-            return;
-        }
-        let events = cache.cache.get_events(
-            self.last_fetched_tick as u32,
-            fetch_end as u32,
-            MAX_BATCH_EVENTS,
-        );
-        let mut seq: u64 = 0;
-        // 记录最后添加到队列的事件 tick，当 MAX_BATCH_EVENTS 截断时使用
-        let mut last_queued_tick: Option<u32> = None;
-        for ev in &events {
-            // 跳过已通过 self.notes 覆盖的音轨事件，防止事件重复
-            if self.skip_tracks_in_cache.contains(&ev.track_id()) {
-                continue;
-            }
-            let tick = ev.delta_tick() as f32;
-            last_queued_tick = Some(ev.delta_tick());
-            match ev.kind() {
-                lumino_midi::compact::EventKind::NoteOn => {
-                    let velocity = ev.param2() as u8;
-                    if velocity == 0 {
-                        self.event_queue.push(ScheduledEvent {
-                            tick,
-                            event_type: EventType::NoteOff {
-                                channel: ev.channel(),
-                                key: ev.param1() as u8,
-                            },
-                            seq,
-                        });
-                    } else {
-                        self.event_queue.push(ScheduledEvent {
-                            tick,
-                            event_type: EventType::NoteOn {
-                                channel: ev.channel(),
-                                key: ev.param1() as u8,
-                                velocity,
-                            },
-                            seq,
-                        });
-                    }
-                }
-                lumino_midi::compact::EventKind::NoteOff => {
-                    self.event_queue.push(ScheduledEvent {
-                        tick,
-                        event_type: EventType::NoteOff {
-                            channel: ev.channel(),
-                            key: ev.param1() as u8,
-                        },
-                        seq,
-                    });
-                }
-                _ => {}
-            }
-            seq += 1;
-        }
-        // 常规路径：推进到前瞻窗口终点，保证下一批次从新边界开始
-        self.last_fetched_tick = fetch_end;
-        // 当 MAX_BATCH_EVENTS 截断（events.len() >= MAX_BATCH_EVENTS）时，
-        // 已读范围可能存在缺失，回退到最后事件 tick+1 而非 fetch_end
-        if events.len() >= MAX_BATCH_EVENTS && let Some(t) = last_queued_tick {
-            self.last_fetched_tick = (t + 1) as f32;
-        }
-    }
-
     /// 安全地跳转播放位置（内部辅助方法）
     fn seek_playback(&self, tick: f32) {
         if let Some(mut playback) = self.lock_playback() {
@@ -599,12 +489,6 @@ impl PlaybackEngine {
     pub fn seek(&mut self, tick: f32) {
         self.seek_playback(tick);
         self.rebuild_queue_from(Some(tick));
-        // 通知缓存预取线程
-        if let Some(ref cache) = self.cache
-            && let Some(ref prefetch) = cache.prefetch
-        {
-            prefetch.seek(tick as u32);
-        }
     }
 
     /// 获取播放状态
