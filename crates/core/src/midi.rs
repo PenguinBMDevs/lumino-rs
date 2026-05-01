@@ -82,14 +82,21 @@ impl ParsedMidi {
         self.midi_data.take()
     }
 
+    /// ⚠️ [废弃] 获取事件流（仅被已废弃的 build_track_cache / open_track_window 使用）
     pub fn events_stream(&self) -> Result<MidiEventStream, String> {
         MidiEventStream::from_path(&self.info.path)
     }
 
+    /// ⚠️ [废弃] 解析所有事件
     pub fn parse_all_events(&self) -> Result<Vec<MidiEvent>, String> {
         self.events_stream()?.collect()
     }
 
+    /// ⚠️ [废弃] 构建基于 TrackBasedCache 的缓存（旧架构）
+    ///
+    /// 此方法在 c3c44e6 重构后不再被调用，因为 `load_parsed_midi` 统一使用 `MidiCache`。
+    /// Plan: 后续清理提交中删除。
+    #[deprecated(since = "0.0.0", note = "使用 MidiCache 替代，此方法不再被调用")]
     pub fn build_track_cache(
         &self,
         cache: &crate::TrackBasedCache,
@@ -100,6 +107,12 @@ impl ParsedMidi {
             .map_err(|e| format!("构建缓存失败: {e}"))
     }
 
+    /// ⚠️ [废弃] 打开基于 TrackBasedCache 的事件窗口（旧架构）
+    ///
+    /// 此方法在 c3c44e6 重构后不再被调用。
+    /// Plan: 后续清理提交中删除。
+    #[deprecated(since = "0.0.0", note = "使用 MidiCache::get_track_events 替代")]
+    #[allow(deprecated)]
     pub fn open_track_window(
         &self,
         cache: &crate::TrackBasedCache,

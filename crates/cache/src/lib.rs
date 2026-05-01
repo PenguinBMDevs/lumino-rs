@@ -22,7 +22,7 @@ pub use cache::LayeredCache;
 pub use chunk::{
     ChunkIndexRawEntry, EventChunk, build_chunks_from_notes, chunk_midi_data,
     chunk_midi_data_streaming, chunk_midi_data_streaming_to_path, phase1_bucketize,
-    phase2_assemble, phase2_assemble_to_path,
+    phase2_assemble, phase2_assemble_to_path, scan_track_names,
 };
 pub use index::{ChunkIndex, ChunkIndexEntry};
 pub use metrics::CacheMetrics;
@@ -58,6 +58,9 @@ pub struct MidiCache {
     _tmp_chunk_path: Option<PathBuf>,
     /// 预提取的 tempo 变化事件（避免全量扫描 cache）
     pub tempo_changes: Vec<(u32, f32)>,
+    /// 音轨名称列表（索引 = track_index, 值 = Option<音轨名>）
+    /// 在 `from_notes_file` 构建时从原始 MIDI 字节轻量扫描提取
+    pub track_names: Vec<Option<String>>,
 }
 
 impl std::fmt::Debug for MidiCache {
@@ -132,6 +135,7 @@ impl MidiCache {
             metrics,
             _tmp_chunk_path: Some(tmp_chunk_path),
             tempo_changes: Vec::new(),
+            track_names: Vec::new(),
         })
     }
 
@@ -158,6 +162,9 @@ impl MidiCache {
         if let Some(cb) = progress {
             (cb)(0.15);
         }
+
+        // ⭐ 轻量扫描音轨名称（在 drop file_bytes 之前）
+        let track_names = chunk::scan_track_names(&file_bytes);
 
         let (notes, tempo_changes) = midly::loader::extract_notes_from_bytes(&file_bytes)
             .map_err(|e| CacheError::MidiParse(format!("提取音符失败: {e}")))?;
@@ -203,6 +210,7 @@ impl MidiCache {
             metrics,
             _tmp_chunk_path: Some(tmp_chunk_path),
             tempo_changes,
+            track_names,
         })
     }
 
@@ -292,6 +300,12 @@ impl MidiCache {
     #[inline]
     pub fn track_count(&self) -> usize {
         self.index.track_count as usize
+    }
+
+    /// 获取指定音轨的名称
+    #[inline]
+    pub fn track_name(&self, track_id: usize) -> Option<&str> {
+        self.track_names.get(track_id).and_then(|n| n.as_deref())
     }
 }
 

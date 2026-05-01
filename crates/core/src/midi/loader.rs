@@ -28,5 +28,5 @@ pub use types::{ProgressCallback, progress_from_sender, silent_progress};
 ///
 /// 这是便捷函数，内部调用 `load_parsed_midi`
 pub async fn load_midi(path: PathBuf) -> crate::Result<crate::ParsedMidi> {
-    load_parsed_midi(path, None, false).await
+    load_parsed_midi(path, None).await
 }

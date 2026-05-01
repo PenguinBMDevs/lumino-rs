@@ -157,7 +157,7 @@ fn default_synth_backend() -> SynthBackend {
 }
 
 fn default_synth_buffer() -> f64 {
-    20.0
+    100.0
 }
 fn default_synth_sample_rate() -> u32 {
     44100

@@ -166,7 +166,7 @@ impl RunnerInner {
             self.dialog_manager.open_load_confirm(path_str, size_mb);
         } else {
             tracing::info!("文件大小 {:.1}MB ≤ 阈值，标准模式加载", size_mb);
-            self.load_midi_file(path, false);
+            self.load_midi_file(path);
         }
     }
 
@@ -185,20 +185,12 @@ impl RunnerInner {
     }
 
     /// 加载 MIDI 文件
-    pub(crate) fn load_midi_file(&self, path: std::path::PathBuf, skip_memory_manager: bool) {
-        tracing::info!(
-            "开始后台加载 MIDI 文件：{:?} (内存优化={})",
-            path,
-            skip_memory_manager
-        );
+    pub(crate) fn load_midi_file(&self, path: std::path::PathBuf) {
+        tracing::info!("开始后台加载 MIDI 文件：{:?}", path);
         let progress_cb = self.progress_cb.clone();
         tokio::spawn(async move {
             run_async_task(
-                lumino_core::midi::loader::load_parsed_midi(
-                    path,
-                    Some(&progress_cb),
-                    skip_memory_manager,
-                ),
+                lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb)),
                 |parsed| event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed))),
                 |e| event!(Menu.File.MidiParseError(e)),
             )
@@ -249,7 +241,7 @@ impl RunnerInner {
             let progress_cb = self.progress_cb.clone();
             tokio::spawn(async move {
                 run_async_task(
-                    lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb), false),
+                    lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb)),
                     |parsed| event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed))),
                     |e| event!(Menu.File.MidiParseError(e)),
                 )
@@ -402,7 +394,7 @@ impl RunnerInner {
                     });
 
                     tracing::info!("[DMS导入] 步骤5: 开始加载 MIDI 数据");
-                    match load_parsed_midi(temp_path.clone(), Some(&progress_cb), false).await {
+                    match load_parsed_midi(temp_path.clone(), Some(&progress_cb)).await {
                         Ok(parsed_midi) => {
                             tracing::info!(
                                 "[DMS导入] 步骤6: DMS 转换的 MIDI 加载成功, 轨道数={}",

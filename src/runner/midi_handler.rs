@@ -86,13 +86,18 @@ impl MidiHandler {
             let track_count = cache.track_count();
             let mut track_infos = Vec::with_capacity(track_count);
 
+            // ⭐ 第一遍：预加载所有音轨的音符到 track_notes（供洋葱皮使用）
+            // 使用 load_track_notes_for_onion_skin，不切换当前显示
+            // 修复审查报告 #6: 之前错误地使用了 load_track_notes 导致循环中反复切换显示
             for track_idx in 0..track_count {
                 let notes = cache.get_track_notes(track_idx as u16);
                 let note_count = notes.len() as u64;
                 if !notes.is_empty() {
-                    ui.load_track_notes(track_idx, &notes);
+                    ui.load_track_notes_for_onion_skin(track_idx, &notes);
                 }
-                track_infos.push((track_idx, None, note_count));
+                // ⭐ 修复审查报告 #7: 使用缓存中预提取的音轨名，而非硬编码 None
+                let track_name = cache.track_name(track_idx).map(|s| s.to_string());
+                track_infos.push((track_idx, track_name, note_count));
             }
 
             ui.set_ppq(parsed.info.division);
@@ -116,11 +121,15 @@ impl MidiHandler {
                 ui.load_tempo_changes(tempo_ui);
             }
 
-            // 加载第一个有音符的音轨到编辑器
+            // ⭐ 第二遍：加载第一个有音符的音轨到编辑器（实际显示）
             if let Some((first_track_idx, _, _)) = track_infos
                 .iter()
                 .find(|(_, _, note_count)| *note_count > 0)
             {
+                // 先加载音符到显示，再更新音轨选择（更新侧边栏选中状态）
+                // 分两步而非直接用 set_current_track，避免 switch_to_track 覆盖洋葱皮数据
+                let first_notes = cache.get_track_notes(*first_track_idx as u16);
+                ui.load_track_notes(*first_track_idx, &first_notes);
                 ui.set_current_track(*first_track_idx);
             }
 

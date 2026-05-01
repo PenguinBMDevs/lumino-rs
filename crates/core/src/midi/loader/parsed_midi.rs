@@ -20,7 +20,6 @@ fn scan_midi_info(path: &std::path::Path) -> crate::Result<MidiScanResult> {
 pub async fn load_parsed_midi(
     path: PathBuf,
     progress: Option<&ProgressCallback>,
-    _skip_memory_manager: bool,
 ) -> crate::Result<ParsedMidi> {
     let cb = |msg: &str, val: f64| {
         if let Some(p) = progress {

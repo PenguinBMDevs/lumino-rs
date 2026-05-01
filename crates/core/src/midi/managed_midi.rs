@@ -1,6 +1,19 @@
-//! 内存管理的 MIDI 加载器
+//! 内存管理的 MIDI 加载器（**已废弃**，后续提交中删除）
 //!
-//! 设计原则：
+//! ## 废弃原因
+//!
+//! 此模块是旧版 `load_parsed_midi` 的 memory_manager 路径的组成部分。
+//! 自从 c3c44e6 重构后，`load_parsed_midi` 统一使用 `MidiCache`（from_notes_file），
+//! 总是返回 `memory_manager: None`。此模块的代码路径已不再可达。
+//!
+//! ## 清理计划
+//!
+//! - 后续提交中删除整个 `managed_midi` 模块目录
+//! - 删除 `ParsedMidi.memory_manager` 字段
+//! - 删除 `midi_handler.rs` 中 `memory_manager` 路径的代码（第19-82行）
+//!
+//! ## 原设计原则（保留供参考）
+//!
 //! - 内存上限 1GB，超出后数据溢出到磁盘缓存
 //! - 力度(velocity) > 1 的音符事件优先保留在内存中
 //! - velocity ≤ 1 的音符不保留在内存区域

@@ -8611,3 +8611,18 @@ dependencies = [
  "syn 2.0.117",
  "winnow 0.7.14",
 ]
+
+[[patch.unused]]
+name = "xsynth-core"
+version = "0.3.4"
+source = "git+https://github.com/buickmeow/xsynth#7c41c8c31e73df3b7ab6995933e54ac834353d95"
+
+[[patch.unused]]
+name = "xsynth-realtime"
+version = "0.3.4"
+source = "git+https://github.com/buickmeow/xsynth#7c41c8c31e73df3b7ab6995933e54ac834353d95"
+
+[[patch.unused]]
+name = "xsynth-soundfonts"
+version = "0.3.4"
+source = "git+https://github.com/buickmeow/xsynth#7c41c8c31e73df3b7ab6995933e54ac834353d95"

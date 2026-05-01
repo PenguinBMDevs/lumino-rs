@@ -36,7 +36,6 @@ impl winit::application::ApplicationHandler for Runner {
                         match lumino_core::midi::loader::load_parsed_midi(
                             midi_path,
                             Some(&progress_cb),
-                            false,
                         )
                         .await
                         {
@@ -126,8 +125,11 @@ impl winit::application::ApplicationHandler for Runner {
                         skip_memory_manager,
                     } => {
                         // LoadConfirm: 开始加载 MIDI 文件
+                        // `skip_memory_manager` 参数已被移除（审查报告 #9），
+                        // 现在统一使用内存优化方案，不再需要区分标准/优化模式
+                        let _ = skip_memory_manager;
                         if let Some(path) = this.pending_load_path.take() {
-                            this.load_midi_file(path, skip_memory_manager);
+                            this.load_midi_file(path);
                         } else {
                             tracing::warn!("LoadConfirm: 没有 pending 的加载路径");
                         }

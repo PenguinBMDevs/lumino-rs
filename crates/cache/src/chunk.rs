@@ -374,7 +374,10 @@ pub fn phase2_assemble_to_path(
                     keys.sort_unstable();
 
                     for &ck in &keys {
-                        let events = chunk_map.remove(&ck).unwrap_or_default();
+                        let mut events = chunk_map.remove(&ck).unwrap_or_default();
+                        // ⚠️ 审查报告 #12: 事件必须在 chunk 内按 tick 排序，
+                        // 否则 NoteOff 可能在 NoteOn 之前被处理，导致音符时长错误
+                        events.sort_unstable_by_key(|ev| ev.delta_tick());
                         let chunk = EventChunk::new(ck * params::CHUNK_TICK_SPAN, events);
                         let bytes = chunk.to_raw_bytes();
 
@@ -481,7 +484,9 @@ pub fn phase2_assemble<W: Write>(
                     keys.sort_unstable();
 
                     for &ck in &keys {
-                        let events = chunk_map.remove(&ck).unwrap_or_default();
+                        let mut events = chunk_map.remove(&ck).unwrap_or_default();
+                        // 同 phase2_assemble_to_path: chunk 内事件必须按 tick 排序
+                        events.sort_unstable_by_key(|ev| ev.delta_tick());
                         let chunk = EventChunk::new(ck * params::CHUNK_TICK_SPAN, events);
                         let bytes = chunk.to_raw_bytes();
 
@@ -686,6 +691,171 @@ fn rand_fallback() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     (now.as_nanos() as u64) ^ (now.as_nanos() >> 32) as u64
+}
+
+/// 读取 MIDI VLQ（可变长度值），返回 (值, 消耗字节数)
+fn read_vlq(data: &[u8], pos: &mut usize) -> u32 {
+    let mut value: u32 = 0;
+    loop {
+        if *pos >= data.len() {
+            break;
+        }
+        let b = data[*pos];
+        *pos += 1;
+        value = (value << 7) | (b & 0x7F) as u32;
+        if (b & 0x80) == 0 {
+            break;
+        }
+    }
+    value
+}
+
+/// 轻量扫描原始 MIDI 字节，提取所有音轨的 TrackName 事件。
+///
+/// 比 `Smf::parse` + 遍历全量事件高效得多：
+/// - 零分配（除结果 Vec<String> 外）
+/// - 只扫描 Meta 0x03 事件，跳过所有其他事件
+/// - 适用于 1GB+ 文件的快速音轨名提取
+///
+/// # 返回值
+/// `Vec<Option<String>>` — 索引 = 音轨序号，值 = 音轨名（如果有）
+pub fn scan_track_names(data: &[u8]) -> Vec<Option<String>> {
+    if data.len() < 14 {
+        return Vec::new();
+    }
+
+    // 支持 RIFF 封装的 MIDI
+    let data = if &data[..4] == b"RIFF" {
+        // 在 RIFF 中查找 MThd
+        let mthd_pos = data.windows(4).position(|w| w == b"MThd");
+        match mthd_pos {
+            Some(pos) => &data[pos..],
+            None => return Vec::new(),
+        }
+    } else if &data[..4] == b"MThd" {
+        data
+    } else {
+        return Vec::new();
+    };
+
+    if data.len() < 14 {
+        return Vec::new();
+    }
+
+    let header_len = u32::from_be_bytes([data[4], data[5], data[6], data[7]]) as usize;
+    let track_count = u16::from_be_bytes([data[10], data[11]]) as usize;
+
+    let header_total = 8 + header_len; // MThd(id+len) + header_data
+    if header_total > data.len() {
+        return Vec::new();
+    }
+
+    let mut track_names = vec![None; track_count];
+    let mut track_idx = 0;
+    let mut offset = header_total;
+
+    while track_idx < track_count && offset + 8 <= data.len() {
+        // 查找 MTrk chunk（跳过非音轨 chunk）
+        if &data[offset..offset + 4] != b"MTrk" {
+            let chunk_len = u32::from_be_bytes([
+                data[offset + 4],
+                data[offset + 5],
+                data[offset + 6],
+                data[offset + 7],
+            ]) as usize;
+            offset += 8 + chunk_len;
+            continue;
+        }
+
+        let chunk_len = u32::from_be_bytes([
+            data[offset + 4],
+            data[offset + 5],
+            data[offset + 6],
+            data[offset + 7],
+        ]) as usize;
+        offset += 8; // 跳过 "MTrk" + length
+        let track_end = (offset + chunk_len).min(data.len());
+
+        let mut pos = offset;
+        let mut last_status: u8 = 0;
+
+        while pos < track_end {
+            // VLQ delta time
+            read_vlq(data, &mut pos);
+            if pos >= track_end {
+                break;
+            }
+
+            let mut status = data[pos];
+            if status >= 0x80 {
+                pos += 1;
+                if status < 0xF0 {
+                    last_status = status;
+                }
+            } else {
+                // Running status: 当前字节是第一个数据字节
+                status = last_status;
+                // pos 不前进，下面的 match 会处理这个"数据字节"
+            }
+
+            match status {
+                0xFF => {
+                    // Meta 事件
+                    if pos >= track_end {
+                        break;
+                    }
+                    let meta_type = data[pos];
+                    pos += 1;
+                    let meta_len = read_vlq(data, &mut pos) as usize;
+                    let end = (pos + meta_len).min(track_end);
+
+                    if meta_type == 0x03 {
+                        // TrackName
+                        let name_bytes = &data[pos..end];
+                        // 尝试 UTF-8 解码，回退到 Latin-1
+                        let name = String::from_utf8(name_bytes.to_vec())
+                            .unwrap_or_else(|_| name_bytes.iter().map(|&b| b as char).collect());
+                        if !name.is_empty() {
+                            track_names[track_idx] = Some(name);
+                        }
+                    }
+
+                    pos = end;
+                }
+                0xF0 | 0xF7 => {
+                    // SysEx: VLQ + data
+                    let sysex_len = read_vlq(data, &mut pos) as usize;
+                    pos = (pos + sysex_len).min(track_end);
+                }
+                0xF8..=0xFE => {
+                    // System realtime (0 data bytes)
+                }
+                _ if status < 0xF0 => {
+                    // Channel voice message
+                    let msg_type = status & 0xF0;
+                    let skip: usize = match msg_type {
+                        0xC0 | 0xD0 => 1,                      // Program Change, Channel Aftertouch
+                        0x80 | 0x90 | 0xA0 | 0xB0 | 0xE0 => 2, // Note On/Off, Poly Pressure, CC, Pitch Bend
+                        _ => 0,
+                    };
+                    if skip > 0 && pos < track_end {
+                        // 无论是否是 running status，pos 都指向第一个数据字节
+                        // 因为 running status 分支不会额外前进 pos
+                        pos = (pos + skip).min(track_end);
+                    }
+                }
+                _ => {
+                    // 不应该到达这里
+                    break;
+                }
+            }
+        }
+
+        track_idx += 1;
+        offset = track_end;
+    }
+
+    track_names
 }
 
 /// 将 midly 的 TrackEventKind 转换为 CompactEvent

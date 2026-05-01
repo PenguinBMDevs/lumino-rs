@@ -5,6 +5,7 @@ use std::time::Instant;
 use xsynth_core::{
     channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
     soundfont::SoundfontBase,
+    AudioStreamParams, ChannelCount,
 };
 use xsynth_realtime::{RealtimeEventSender, RealtimeSynth, SynthEvent, XSynthRealtimeConfig};
 
@@ -39,6 +40,23 @@ impl XSynth {
             )));
         }
 
+        // ⭐ 在打开音频流之前，先用配置的采样率构造 AudioStreamParams
+        // 提前加载音色库。这样在音频流启动时，音色库已经就绪，
+        // BufferedRenderer 的 render pipeline 能立即产生有效数据，
+        // 避免 callback 在 recv() 上阻塞导致 ALSA underrun。
+        let sample_rate = options.as_ref().map(|o| o.sample_rate).unwrap_or(44100);
+        let load_params = AudioStreamParams::new(sample_rate, ChannelCount::Stereo);
+
+        tracing::info!("XSynth: 预加载音色库 (sample_rate={})...", sample_rate);
+        let load_start = Instant::now();
+        let soundfont = soundfont_cache::load_soundfont_cached(soundfont_path, load_params)
+            .map_err(Error::InitFailed)?;
+        tracing::info!(
+            "XSynth: 音色库加载完成，耗时: {:.2} 秒",
+            load_start.elapsed().as_secs_f64()
+        );
+
+        // 音色库已就绪，现在打开音频流
         let mut rt_config = XSynthRealtimeConfig::default();
         if let Some(opt) = options {
             rt_config.render_window_ms = opt.buffer_ms;
@@ -61,30 +79,8 @@ impl XSynth {
             .map_err(|e| Error::InitFailed(format!("XSynth 启动失败: {:?}", e)))?;
         tracing::info!("XSynth: 音频流已创建并启动");
 
-        let params = synth.stream_params();
-        tracing::info!(
-            "XSynth: 音频参数 - sample_rate: {}, channels: {:?}",
-            params.sample_rate,
-            params.channels
-        );
-
-        // 获取 sender 的可变引用
+        // 获取 sender — 在 open 后立即配置通道，确保音色库在 callback 首次触发前就位
         let sender = synth.get_sender_mut();
-
-        // 加载音色库（使用缓存）
-        tracing::info!("XSynth: 正在加载音色库...");
-        let start_time = Instant::now();
-
-        let soundfont = soundfont_cache::load_soundfont_cached(soundfont_path, params)
-            .map_err(Error::InitFailed)?;
-
-        let elapsed = start_time.elapsed();
-        tracing::info!(
-            "XSynth: 音色库加载完成，耗时: {:.2} 秒",
-            elapsed.as_secs_f64()
-        );
-
-        // 设置音色库到所有通道
         let soundfonts: Vec<Arc<dyn SoundfontBase>> = vec![soundfont];
         sender.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
             ChannelConfigEvent::SetSoundfonts(soundfonts),
