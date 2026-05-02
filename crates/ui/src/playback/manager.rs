@@ -11,7 +11,8 @@ use std::time::Duration;
 enum Command {
     SetMidiOutput(Box<dyn lumino_midi::OutputConnection>),
     ClearMidiOutput,
-    SetNotes(Vec<NoteEvent>),
+    SetCurrentTrackNotes(Vec<NoteEvent>),
+    SetDocument(Arc<lumino_core::midi::MidiDocument>, u16),
     SetMidiEvents(Vec<MidiTrackEvent>),
     SetTempoChanges(Vec<TempoChange>),
     // 旧 SetCache/SetSkipTracksInCache 已移除（disk_cache future support）
@@ -53,7 +54,10 @@ impl PlaybackManager {
                     match cmd {
                         Command::SetMidiOutput(output) => midi_output = Some(output),
                         Command::ClearMidiOutput => midi_output = None,
-                        Command::SetNotes(notes) => engine.set_notes(notes),
+                        Command::SetCurrentTrackNotes(notes) => {
+                            engine.set_current_track_notes(notes)
+                        }
+                        Command::SetDocument(doc, track) => engine.set_document(doc, track),
                         Command::SetMidiEvents(events) => engine.set_midi_events(events),
                         Command::SetTempoChanges(changes) => {
                             if let Ok(mut p) = engine.playback().lock() {
@@ -182,9 +186,14 @@ impl PlaybackManager {
         let _ = self.sender.send(Command::ClearMidiOutput);
     }
 
-    /// 设置音符列表
-    pub fn set_notes(&mut self, notes: Vec<NoteEvent>) {
-        let _ = self.sender.send(Command::SetNotes(notes));
+    /// 设置当前音轨音符列表（用于编辑后的当前轨更新）
+    pub fn set_current_track_notes(&mut self, notes: Vec<NoteEvent>) {
+        let _ = self.sender.send(Command::SetCurrentTrackNotes(notes));
+    }
+
+    /// 设置 MIDI 文档引用（其他音轨从此流式读取）
+    pub fn set_document(&mut self, doc: Arc<lumino_core::midi::MidiDocument>, current_track: u16) {
+        let _ = self.sender.send(Command::SetDocument(doc, current_track));
     }
 
     // 旧 set_cache/set_skip_tracks_in_cache 已移除（disk_cache future support）

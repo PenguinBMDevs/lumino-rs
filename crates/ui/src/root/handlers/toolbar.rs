@@ -87,84 +87,39 @@ impl ToolbarHandler {
 
     /// 初始化播放管理器
     fn init_playback_manager(root: &mut Root) {
-        use crate::playback::{NoteEvent, PlaybackManager};
+        use crate::playback::PlaybackManager;
 
         let division = root.editor.state.ppq;
         let mut manager = PlaybackManager::new(division);
 
-        // 力度过滤阈值
-        let velocity_threshold = root.velocity_filter_threshold;
+        // 先创建空的 manager，让 update_playback_notes 能工作
+        manager.set_current_track_notes(Vec::new());
+        root.playback_manager = Some(manager);
 
-        // 设置音符：合并当前音轨和所有其他音轨的音符，应用力度过滤
-        let mut notes: Vec<NoteEvent> = root
-            .editor
-            .notes
-            .iter()
-            .filter(|note| note.velocity > velocity_threshold)
-            .map(|note| NoteEvent {
-                tick: note.tick,
-                channel: note.channel,
-                key: note.key as u8,
-                velocity: note.velocity,
-                length: note.length,
-            })
-            .collect();
+        // 通过 update_playback_notes 填充所有音轨的音符（含 document 懒加载）
+        root.update_playback_notes();
 
-        // 始终加载所有音轨的音符到播放管理器。
-        // stream_cache 的设计目标是增量缓存预读，不负责事件全量补全，
-        // 因此即使有缓存也必须提供所有音轨的完整音符列表。
-        for (track_idx, track_notes) in &root.editor.track_notes {
-            if *track_idx == root.editor.current_track {
-                continue;
-            }
-            for note in track_notes {
-                if note.velocity > velocity_threshold {
-                    notes.push(NoteEvent {
-                        tick: note.tick,
-                        channel: note.channel,
-                        key: note.key as u8,
-                        velocity: note.velocity,
-                        length: note.length,
-                    });
-                }
+        // 用缓存的 MIDI 输出连接
+        if let Some(output) = root.pending_midi_output.take() {
+            if let Some(manager) = &mut root.playback_manager {
+                manager.set_midi_output(output);
             }
         }
-
-        let total_notes = notes.len();
-
-        // 收集所有音轨的 MIDI 控制事件（CC/PC/PB）
-        let mut midi_events: Vec<crate::playback::MidiTrackEvent> = Vec::new();
-        for (_track_idx, events) in &root.track_midi_events {
-            midi_events.extend(events.clone());
-        }
-        // 按 tick 排序
-        midi_events.sort_by(|a, b| a.tick.total_cmp(&b.tick));
-        let total_midi_events = midi_events.len();
-        manager.set_notes(notes);
-        if !midi_events.is_empty() {
-            manager.set_midi_events(midi_events);
-        }
-
-        // 不设置缓存到引擎：self.notes 已包含所有音轨的完整音符。
 
         // 应用缓存的 tempo 变化
         if let Some(changes) = root.pending_tempo_changes.take() {
-            manager.set_tempo_changes(changes);
+            if let Some(manager) = &mut root.playback_manager {
+                manager.set_tempo_changes(changes);
+            }
         }
 
-        // 应用缓存的 MIDI 输出连接
-        if let Some(output) = root.pending_midi_output.take() {
-            manager.set_midi_output(output);
+        if let Some(manager) = &root.playback_manager {
+            tracing::info!(
+                "Root: 播放管理器已初始化 (division={}, 过滤阈值={})",
+                division,
+                root.velocity_filter_threshold,
+            );
         }
-
-        root.playback_manager = Some(manager);
-        tracing::info!(
-            "Root: 播放管理器已初始化 (division={}, 总音符={}, MIDI事件={}, 过滤阈值={})",
-            division,
-            total_notes,
-            total_midi_events,
-            velocity_threshold,
-        );
     }
 
     fn sync_toolbar_tool_state(&self, root: &mut Root, event: &crate::toolbar::Event) {
