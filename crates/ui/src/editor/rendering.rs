@@ -1,6 +1,7 @@
 use iced_core::{Length, Point};
 use iced_widget::canvas::Canvas;
 use lumino_gfx::NoteInstance;
+use rayon::prelude::*;
 
 use crate::constants::editor::PREVIEW_NOTE_OPACITY;
 use crate::editor::grid::PianoRollGrid;
@@ -50,8 +51,10 @@ impl Editor {
 
     /// 获取当前需要绘制的音符实例（用于 wgpu 渲染）
     ///
-    /// 目前只返回鼠标位置的预览音符，后续可扩展为返回所有 MIDI 音符
-    /// 音符只在 Canvas 区域内显示
+    /// 优化：
+    /// 1. 使用 rayon 并行处理音符到 instance 的转换
+    /// 2. 预分配容量减少内存分配
+    /// 3. 空间索引已经做过裁剪，避免重复检查
     pub fn update_note_instances(
         &self,
         theme: &crate::Theme,
@@ -105,7 +108,7 @@ impl Editor {
         }
 
         // 查询可见范围内的音符（每次渲染都执行，确保滚动/缩放时刷新）
-        {
+        let candidate_indices: Vec<usize> = {
             let mut cache = self.query_cache.borrow_mut();
             if let Some(index) = &*self.note_index.borrow() {
                 index.update_query(
@@ -118,39 +121,50 @@ impl Editor {
             } else {
                 cache.clear();
             }
-        }
-        let candidates = self.query_cache.borrow();
+            cache.clone()
+        };
 
-        // 渲染已放置的音符（带视锥裁剪）
-        for &i in candidates.iter() {
-            let note = &self.notes[i];
-            // CPU 端视锥裁剪：只处理可见范围内的音符
-            // 检查 tick 范围（音符结束位置 > 可见起始，且音符起始 < 可见结束）
-            if note.tick + note.length < visible_tick_start || note.tick > visible_tick_end {
-                continue;
-            }
-            // 检查 key 范围
-            let note_key = note.key;
-            if note_key < visible_key_min || note_key > visible_key_max {
-                continue;
-            }
+        // 预分配容量
+        instances.reserve(candidate_indices.len());
 
-            let color = match self.edit_state {
-                EditState::Dragging { note_index, .. }
-                | EditState::ResizingStart { note_index, .. }
-                | EditState::ResizingEnd { note_index, .. }
-                    if note_index == i =>
-                {
-                    active_color
+        // 预收集所有需要的数据，避免在并行闭包中访问 self
+        let edit_state_copy = self.edit_state.clone();
+        let hover_state_copy = self.hover_state;
+        let selected_notes_copy: std::collections::HashSet<usize> = self.selected_notes.clone();
+        
+        // 收集音符数据
+        let note_data: Vec<(usize, super::Note)> = candidate_indices
+            .iter()
+            .filter_map(|&i| self.notes.get(i).map(|note| (i, note.clone())))
+            .collect();
+
+        // 并行处理音符到 instance 的转换
+        let note_instances: Vec<NoteInstance> = note_data
+            .par_iter()
+            .filter_map(|&(i, ref note)| {
+                // 空间索引已经做过 tick 范围裁剪，这里只做二次确认
+                if note.tick > visible_tick_end {
+                    return None;
                 }
-                _ if self.selected_notes.contains(&i) => selected_color,
-                EditState::Idle if self.hover_state.is_some_and(|(idx, _)| idx == i) => hover_color,
-                _ => default_color,
-            };
 
-            let instance = note.to_instance(color);
-            instances.push(instance);
-        }
+                let color = match edit_state_copy {
+                    EditState::Dragging { note_index, .. }
+                    | EditState::ResizingStart { note_index, .. }
+                    | EditState::ResizingEnd { note_index, .. }
+                        if note_index == i =>
+                    {
+                        active_color
+                    }
+                    _ if selected_notes_copy.contains(&i) => selected_color,
+                    EditState::Idle if hover_state_copy.is_some_and(|(idx, _)| idx == i) => hover_color,
+                    _ => default_color,
+                };
+
+                Some(note.to_instance(color))
+            })
+            .collect();
+
+        instances.extend(note_instances);
 
         // 渲染正在绘制的音符
         if let EditState::Drawing {

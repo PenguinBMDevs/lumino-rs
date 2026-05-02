@@ -1,7 +1,7 @@
 //! 播放器模块单元测试
 
 use super::core::Playback;
-use super::engine::PlaybackState;
+use crate::playback::PlaybackState;
 use super::tempo::{bpm_from_tempo, tempo_from_bpm, TempoChange};
 use super::timeline::Timeline;
 

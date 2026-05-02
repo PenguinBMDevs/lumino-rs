@@ -323,14 +323,14 @@ impl MidiDocument {
 
     /// 获取指定音轨在指定 tick 范围内的音符。
     /// 利用预排序的 events 做二分查找 + 线性扫描，O(log N + K) 而非 O(N)。
+    /// 
+    /// 优化：使用固定大小数组替代 HashMap，避免内存分配。
     pub fn get_track_notes_in_range(
         &self,
         track_id: u16,
         tick_start: f32,
         tick_end: f32,
     ) -> Vec<(f32, u8, f32, u8, u8)> {
-        use std::collections::HashMap;
-
         let tid = track_id as usize;
         let (range_start, range_end) = self.track_events_range.get(tid).copied().unwrap_or((0, 0));
         if range_start >= range_end {
@@ -352,31 +352,45 @@ impl MidiDocument {
             return Vec::new();
         }
 
-        let mut active_notes: HashMap<(u8, u8), (u32, u8, u8)> = HashMap::new();
+        // 使用固定大小数组替代 HashMap：256 keys × 16 channels = 4096
+        // 支持扩展 MIDI 标准 (0-255 key range)
+        // 每个条目存储 (start_tick, velocity, channel, is_active)
+        const MAX_NOTES: usize = 256 * 16;
+        let mut active_notes: [(u32, u8, u8, bool); MAX_NOTES] = [(0, 0, 0, false); MAX_NOTES];
         let mut notes = Vec::new();
+
+        #[inline]
+        fn note_index(channel: u8, key: u8) -> usize {
+            (channel as usize) * 256 + (key as usize)
+        }
 
         for ev in &events[search_start..search_end] {
             let tick = ev.delta_tick();
             let key = ev.param1() as u8;
             let vel = ev.param2() as u8;
             let channel = ev.channel();
+            let idx = note_index(channel, key);
 
             match ev.kind() {
                 EventKind::NoteOn if vel > 0 => {
-                    if let Some((st, pv, pc)) = active_notes.remove(&(channel, key)) {
+                    if active_notes[idx].3 {
+                        // 有未关闭的音符，先关闭它
+                        let (st, pv, pc, _) = active_notes[idx];
                         let len = tick.saturating_sub(st) as f32;
                         if st as f32 + len >= tick_start && st as f32 <= tick_end {
                             notes.push((st as f32, key, len, pv, pc));
                         }
                     }
-                    active_notes.insert((channel, key), (tick, vel, channel));
+                    active_notes[idx] = (tick, vel, channel, true);
                 }
                 EventKind::NoteOn | EventKind::NoteOff => {
-                    if let Some((st, pv, pc)) = active_notes.remove(&(channel, key)) {
+                    if active_notes[idx].3 {
+                        let (st, pv, pc, _) = active_notes[idx];
                         let len = tick.saturating_sub(st) as f32;
                         if st as f32 + len >= tick_start && st as f32 <= tick_end {
                             notes.push((st as f32, key, len, pv, pc));
                         }
+                        active_notes[idx].3 = false;
                     }
                 }
                 _ => {}
@@ -389,10 +403,17 @@ impl MidiDocument {
         } else {
             events.last().map(|e| e.delta_tick()).unwrap_or(0)
         };
-        for ((_ch, key), (st, vel, ch)) in active_notes {
-            let len = last_tick.saturating_sub(st) as f32;
-            if st as f32 + len >= tick_start && st as f32 <= tick_end {
-                notes.push((st as f32, key, len, vel, ch));
+        
+        for channel in 0..16u8 {
+            for key in 0..=255u8 {
+                let idx = note_index(channel, key);
+                if active_notes[idx].3 {
+                    let (st, vel, ch, _) = active_notes[idx];
+                    let len = last_tick.saturating_sub(st) as f32;
+                    if st as f32 + len >= tick_start && st as f32 <= tick_end {
+                        notes.push((st as f32, key, len, vel, ch));
+                    }
+                }
             }
         }
 
@@ -404,9 +425,9 @@ impl MidiDocument {
     ///
     /// 注意：events 数组在加载时已按 tick 排序（见 from_notes_file），
     /// 本函数不用再次排序，直接线性扫描。
+    /// 
+    /// 优化：使用固定大小数组替代 HashMap，避免内存分配。
     pub fn get_track_notes(&self, track_id: u16) -> Vec<(f32, u8, f32, u8, u8)> {
-        use std::collections::HashMap;
-
         let tid = track_id as usize;
         let (start, end) = self.track_events_range.get(tid).copied().unwrap_or((0, 0));
         if start >= end {
@@ -414,33 +435,53 @@ impl MidiDocument {
         }
 
         let events = &self.events[start..end];
-        let mut active_notes: HashMap<(u8, u8), (u32, u8, u8)> = HashMap::new();
+        
+        // 使用固定大小数组替代 HashMap：256 keys × 16 channels = 4096
+        // 支持扩展 MIDI 标准 (0-255 key range)
+        const MAX_NOTES: usize = 256 * 16;
+        let mut active_notes: [(u32, u8, u8, bool); MAX_NOTES] = [(0, 0, 0, false); MAX_NOTES];
         let mut notes = Vec::new();
         let last_tick = events.last().map(|e| e.delta_tick()).unwrap_or(0);
+
+        #[inline]
+        fn note_index(channel: u8, key: u8) -> usize {
+            (channel as usize) * 256 + (key as usize)
+        }
 
         for ev in events {
             let tick = ev.delta_tick();
             let key = ev.param1() as u8;
             let vel = ev.param2() as u8;
             let channel = ev.channel();
+            let idx = note_index(channel, key);
 
             match ev.kind() {
                 EventKind::NoteOn if vel > 0 => {
-                    if let Some((st, pv, pc)) = active_notes.remove(&(channel, key)) {
+                    if active_notes[idx].3 {
+                        let (st, pv, pc, _) = active_notes[idx];
                         notes.push((st as f32, key, tick.saturating_sub(st) as f32, pv, pc));
                     }
-                    active_notes.insert((channel, key), (tick, vel, channel));
+                    active_notes[idx] = (tick, vel, channel, true);
                 }
                 EventKind::NoteOn | EventKind::NoteOff => {
-                    if let Some((st, pv, pc)) = active_notes.remove(&(channel, key)) {
+                    if active_notes[idx].3 {
+                        let (st, pv, pc, _) = active_notes[idx];
                         notes.push((st as f32, key, tick.saturating_sub(st) as f32, pv, pc));
+                        active_notes[idx].3 = false;
                     }
                 }
                 _ => {}
             }
         }
-        for ((_ch, key), (st, vel, ch)) in active_notes {
-            notes.push((st as f32, key, last_tick.saturating_sub(st) as f32, vel, ch));
+        
+        for channel in 0..16u8 {
+            for key in 0..=255u8 {
+                let idx = note_index(channel, key);
+                if active_notes[idx].3 {
+                    let (st, vel, ch, _) = active_notes[idx];
+                    notes.push((st as f32, key, last_tick.saturating_sub(st) as f32, vel, ch));
+                }
+            }
         }
 
         // 按 tick 排序输出，保证 instance 数组有序
