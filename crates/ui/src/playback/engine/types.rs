@@ -22,6 +22,8 @@ pub struct NoteEvent {
 pub struct ScheduledEvent {
     pub tick: f32,
     pub event_type: EventType,
+    /// 序列号，用于相同 tick 时保持顺序
+    pub seq: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -32,7 +34,7 @@ pub enum EventType {
 
 impl PartialEq for ScheduledEvent {
     fn eq(&self, other: &Self) -> bool {
-        self.tick == other.tick
+        self.tick == other.tick && self.seq == other.seq
     }
 }
 
@@ -46,8 +48,9 @@ impl PartialOrd for ScheduledEvent {
 
 impl Ord for ScheduledEvent {
     fn cmp(&self, other: &Self) -> Ordering {
-        // 直接使用 total_cmp 避免 unwrap
+        // 先按 tick 排序，相同 tick 按 seq 排序
         other.tick.total_cmp(&self.tick)
+            .then_with(|| other.seq.cmp(&self.seq))
     }
 }
 
