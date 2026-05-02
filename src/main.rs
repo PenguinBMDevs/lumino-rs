@@ -12,6 +12,7 @@ mod services;
 mod storage;
 
 /// Puffin 服务器包装器，确保在程序结束时才释放
+#[allow(dead_code)]
 struct PuffinServerHolder(Option<puffin_http::Server>);
 
 impl PuffinServerHolder {

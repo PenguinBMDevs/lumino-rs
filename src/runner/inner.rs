@@ -284,10 +284,6 @@ impl Runner {
         }
     }
 
-    /// 检查是否有初始化错误
-    pub fn init_error(&self) -> Option<&InitError> {
-        self.init_error.as_ref()
-    }
 }
 
 impl RunnerInner {

@@ -336,35 +336,6 @@ impl Editor {
         all_instances
     }
 
-    /// 从 document 加载音轨音符到 track_notes 缓存
-    fn load_track_notes_from_document(&mut self, track_idx: usize) {
-        let Some(doc) = self.document.as_ref() else {
-            return;
-        };
-        if track_idx as u16 >= doc.track_count() as u16 {
-            return;
-        }
-        if doc.track_note_count(track_idx as u16) == 0 {
-            self.track_notes.insert(track_idx, im::Vector::new());
-            return;
-        }
-        let raw = doc.get_track_notes(track_idx as u16);
-        if raw.is_empty() {
-            self.track_notes.insert(track_idx, im::Vector::new());
-            return;
-        }
-
-        let mut notes: im::Vector<Note> = im::Vector::new();
-        for (tick, key, length, velocity, channel) in &raw {
-            notes.push_back(
-                Note::new(*tick, *key as u16, *length)
-                    .with_velocity(*velocity)
-                    .with_channel(*channel),
-            );
-        }
-        self.track_notes.insert(track_idx, notes);
-    }
-
     /// 获取所有洋葱皮音符实例（所有其他音轨）
     /// 音符全部送入 wgpu 管线，GPU compute shader 负责视锥裁剪
     pub fn get_all_onion_skin_instances(

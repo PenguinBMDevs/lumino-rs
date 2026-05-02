@@ -84,7 +84,6 @@ pub struct Host {
     /// 是否已经渲染过 UI（用于首次渲染缓存判断）
     pub(crate) has_rendered_ui: bool,
     /// 上次渲染时的光标状态（用于检测光标移动，确保鼠标指针样式更新）
-    #[expect(dead_code, reason = "保留用于光标位置检测，后续 cursor icon 动态切换会用到")]
     pub(crate) last_render_cursor: iced_core::mouse::Cursor,
 
     // WGPU 资源（为离屏渲染保留）

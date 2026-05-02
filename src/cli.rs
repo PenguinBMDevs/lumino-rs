@@ -49,11 +49,6 @@ impl Cli {
         Cli::parse()
     }
 
-    /// 检查是否启用了测试模式
-    pub fn is_test_mode(&self) -> bool {
-        self.test_mode || matches!(self.command, Some(Commands::NoteRenderFpsTest { .. }))
-    }
-
     /// 检查是否启用了 memory-usage 日志
     pub fn log_memory_usage(&self) -> bool {
         self.log.as_deref() == Some("memory-usage")
@@ -68,23 +63,14 @@ impl Cli {
             }) => Some(TestConfig {
                 midi_path: midi_path.clone(),
                 test_time: *test_time,
-                test_type: TestType::NoteRenderFps,
             }),
             None if self.test_mode => Some(TestConfig {
                 midi_path: self.midi_path.clone()?,
                 test_time: self.test_time,
-                test_type: TestType::NoteRenderFps,
             }),
             _ => None,
         }
     }
-}
-
-/// 测试类型
-#[derive(Debug, Clone, Copy)]
-pub enum TestType {
-    /// 音符渲染 FPS 测试
-    NoteRenderFps,
 }
 
 /// 测试配置
@@ -94,6 +80,4 @@ pub struct TestConfig {
     pub midi_path: String,
     /// 测试时间（秒），None 表示持续测试
     pub test_time: Option<u64>,
-    /// 测试类型
-    pub test_type: TestType,
 }

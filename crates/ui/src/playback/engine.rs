@@ -124,24 +124,6 @@ pub struct PlaybackEngine {
     loop_range: Option<(f32, f32)>,
 }
 
-/// Chase 时 CC 的发送顺序（确保 RPN 依赖、Bank Select 等在正确时机）
-const CHASE_CC_ORDER: &[u8] = &[
-    101, // RPN MSB
-    100, // RPN LSB
-    6,   // Data Entry MSB
-    38,  // Data Entry LSB
-    0,   // Bank Select MSB
-    32,  // Bank Select LSB
-    7,   // Volume
-    10,  // Pan
-    11,  // Expression
-    64,  // Sustain
-    73,  // Attack
-    72,  // Release
-    74,  // Cutoff
-    71,  // Resonance
-];
-
 impl PlaybackEngine {
     /// 创建新的播放引擎
     pub fn new(playback: Arc<Mutex<Playback>>) -> Self {

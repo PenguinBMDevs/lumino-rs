@@ -1,9 +1,5 @@
 //! Toolbar 类型定义子模块
 
-use iced_widget::container;
-
-use crate::{Element, Message, Theme, window};
-
 /// 音符精度/网格对齐设置
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NotePrecision {
@@ -298,22 +294,3 @@ pub const MIN_HEIGHT: f32 = 56.0;
 pub const MAX_HEIGHT: f32 = 200.0;
 /// 拖拽手柄高度
 pub const RESIZE_HANDLE_HEIGHT: f32 = 6.0;
-
-/// 创建带背景的容器
-pub fn styled_container<'a>(
-    content: impl Into<Element<'a>>,
-    window: &'a window::Window,
-) -> iced_widget::Container<'a, Message, Theme, Renderer> {
-    let palette = window.theme.extended_palette();
-    container(content).style(move |_theme: &Theme| {
-        container::Style::default()
-            .background(palette.background.weak.color)
-            .border(iced_core::Border {
-                radius: 4.0.into(),
-                width: 0.0,
-                color: iced_core::Color::TRANSPARENT,
-            })
-    })
-}
-
-use crate::Renderer;

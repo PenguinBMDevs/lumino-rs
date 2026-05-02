@@ -27,21 +27,6 @@ impl StatusBar {
         }
     }
 
-    /// 更新状态栏信息
-    pub fn update_info(&mut self, info: StatusInfo) {
-        self.info = info;
-    }
-
-    /// 设置左侧状态文本
-    pub fn set_left_text(&mut self, text: impl Into<String>) {
-        self.info.left_text = text.into();
-    }
-
-    /// 设置右侧状态文本
-    pub fn set_right_text(&mut self, text: impl Into<String>) {
-        self.info.right_text = text.into();
-    }
-
     /// 设置 FPS 值（仅 macOS 使用）
     pub fn set_fps(&mut self, fps: f32) {
         self.fps = Some(fps);

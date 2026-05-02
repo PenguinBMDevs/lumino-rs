@@ -125,24 +125,6 @@ impl CollaborationHandler {
         }
     }
 
-    fn parse_color(color: &str) -> [f32; 4] {
-        if color.len() >= 6 {
-            let r =
-                u8::from_str_radix(&color[0..2.min(color.len())], 16).unwrap_or(255) as f32 / 255.0;
-            let g =
-                u8::from_str_radix(&color[2..4.min(color.len())], 16).unwrap_or(255) as f32 / 255.0;
-            let b =
-                u8::from_str_radix(&color[4..6.min(color.len())], 16).unwrap_or(255) as f32 / 255.0;
-            let a = if color.len() >= 8 {
-                u8::from_str_radix(&color[6..8], 16).unwrap_or(255) as f32 / 255.0
-            } else {
-                1.0
-            };
-            [r, g, b, a]
-        } else {
-            [1.0, 1.0, 1.0, 1.0]
-        }
-    }
 }
 
 impl Default for CollaborationHandler {

@@ -606,6 +606,7 @@ mod tests {
 }
 
 /// 可计数的 Mock MIDI 输出
+#[allow(dead_code)]
 struct CountingMockOutput {
     note_on_count: std::sync::Arc<std::sync::atomic::AtomicU32>,
     note_off_count: std::sync::Arc<std::sync::atomic::AtomicU32>,
