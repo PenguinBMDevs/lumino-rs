@@ -1,7 +1,7 @@
 use crate::editor::Note;
 
 /// 音符的空间索引引用
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct NoteRef {
     pub tick: f32,
     pub key: u16,

@@ -128,8 +128,8 @@ impl Editor {
             })
             .collect();
 
-        // 并行处理音轨查询
-        let track_results: Vec<Vec<(f32, u16, f32, iced_core::Color)>> = track_configs
+        // 并行处理音轨查询 - 使用 fold + reduce 模式减少内存分配
+        let all_notes: Vec<(f32, u16, f32, iced_core::Color)> = track_configs
             .par_iter()
             .filter_map(|&(track_idx, _is_enabled, color)| {
                 // 快速检查：音轨在视口范围内是否有事件
@@ -143,33 +143,42 @@ impl Editor {
 
                 // 直接使用 Document 查询（二分查找，无索引构建开销）
                 let raw = doc.get_track_notes_in_range(track_idx as u16, search_start, search_end);
+                if raw.is_empty() {
+                    return None;
+                }
 
-                let track_notes: Vec<_> = raw
-                    .iter()
-                    .filter_map(|&(tick, key, length, _vel, _ch)| {
-                        let key_u16 = key as u16;
-                        if key_u16 >= visible_key_min
-                            && key_u16 <= visible_key_max
-                            && tick + length >= visible_tick_start
-                            && tick <= visible_tick_end
-                        {
-                            Some((tick, key_u16, length, color))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                // 预分配容量（估算）
+                let mut track_notes = Vec::with_capacity(raw.len() / 2);
+                
+                // 直接遍历而非使用 filter_map，减少闭包开销
+                for &(tick, key, length, _vel, _ch) in raw.iter() {
+                    let key_u16 = key as u16;
+                    if key_u16 >= visible_key_min
+                        && key_u16 <= visible_key_max
+                        && tick + length >= visible_tick_start
+                        && tick <= visible_tick_end
+                    {
+                        track_notes.push((tick, key_u16, length, color));
+                    }
+                }
 
-                Some(track_notes)
+                if track_notes.is_empty() {
+                    None
+                } else {
+                    Some(track_notes)
+                }
             })
-            .collect();
-
-        // 合并所有音轨的结果
-        let total_len: usize = track_results.iter().map(|v| v.len()).sum();
-        let mut all_notes = Vec::with_capacity(total_len);
-        for mut track_notes in track_results {
-            all_notes.append(&mut track_notes);
-        }
+            .reduce(
+                || Vec::new(),
+                |mut a, mut b| {
+                    // 如果 a 为空，直接返回 b，避免不必要的扩展
+                    if a.is_empty() {
+                        return b;
+                    }
+                    a.append(&mut b);
+                    a
+                }
+            );
 
         all_notes
     }
@@ -261,6 +270,7 @@ impl Editor {
     /// 直接从 MidiDocument 查询，利用预排序事件的二分查找，
     /// 零额外内存缓存，零数据拷贝。
     /// 使用 rayon 并行处理多音轨，充分利用多核 CPU。
+    /// 优化：使用 fold + reduce 模式减少内存分配
     pub fn get_all_onion_skin_instances_in_range(
         &mut self,
         track_onion_states: &std::collections::HashMap<usize, bool>,
@@ -296,8 +306,8 @@ impl Editor {
             })
             .collect();
 
-        // 并行处理音轨查询
-        let track_results: Vec<Vec<NoteInstance>> = track_colors
+        // 并行处理音轨查询 - 使用 fold + reduce 模式减少内存分配
+        let all_instances: Vec<NoteInstance> = track_colors
             .par_iter()
             .filter_map(|&(track_idx, color_arr)| {
                 // 直接从 document 查询视口范围内的音符
@@ -306,33 +316,38 @@ impl Editor {
                     return None;
                 }
 
-                // 转换为 NoteInstance（只保留 key 在可见范围内的）
-                let instances: Vec<_> = raw
-                    .iter()
-                    .filter_map(|&(tick, key, length, _vel, _ch)| {
-                        let key_u16 = key as u16;
-                        if key_u16 >= visible_key_min
-                            && key_u16 <= visible_key_max
-                            && tick + length >= visible_tick_start
-                            && tick <= visible_tick_end
-                        {
-                            Some(NoteInstance::new(tick, key as f32, length, color_arr))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                // 预分配容量（估算）
+                let mut instances = Vec::with_capacity(raw.len() / 2);
+                
+                // 直接遍历而非使用 filter_map，减少闭包开销
+                for &(tick, key, length, _vel, _ch) in raw.iter() {
+                    let key_u16 = key as u16;
+                    if key_u16 >= visible_key_min
+                        && key_u16 <= visible_key_max
+                        && tick + length >= visible_tick_start
+                        && tick <= visible_tick_end
+                    {
+                        instances.push(NoteInstance::new(tick, key as f32, length, color_arr));
+                    }
+                }
 
-                Some(instances)
+                if instances.is_empty() {
+                    None
+                } else {
+                    Some(instances)
+                }
             })
-            .collect();
-
-        // 合并所有音轨的结果
-        let total_len: usize = track_results.iter().map(|v| v.len()).sum();
-        let mut all_instances = Vec::with_capacity(total_len);
-        for mut track_instances in track_results {
-            all_instances.append(&mut track_instances);
-        }
+            .reduce(
+                || Vec::new(),
+                |mut a, mut b| {
+                    // 如果 a 为空，直接返回 b，避免不必要的扩展
+                    if a.is_empty() {
+                        return b;
+                    }
+                    a.append(&mut b);
+                    a
+                }
+            );
 
         all_instances
     }
