@@ -85,24 +85,6 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(iced_widget::space().height(20));
 
-    // 采样率
-    let sample_rates = [44100u32, 48000, 88200, 96000];
-    col = col.push(
-        row![
-            text("采样率:")
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
-            iced_widget::space().width(SPACING_MAIN),
-            pick_list(sample_rates, Some(settings.xsynth_sample_rate), |sr| {
-                Message::Settings(crate::settings::Event::XSynthSampleRateChanged(sr))
-            })
-            .width(200.0),
-        ]
-        .spacing(SPACING_ICON_LABEL)
-        .align_y(Alignment::Center),
-    );
-    col = col.push(iced_widget::space().height(SPACING_CONTENT));
-
     // 缓冲区大小
     col = col.push(
         row![

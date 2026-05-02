@@ -12,6 +12,17 @@ use xsynth_realtime::{RealtimeEventSender, RealtimeSynth, SynthEvent, XSynthReal
 use crate::soundfont_cache;
 use crate::{Api, Error, InputInfo, OutputConnection, OutputInfo};
 
+/// XSynth 运行时统计信息
+#[derive(Debug, Clone, Copy, Default)]
+pub struct XSynthStats {
+    /// 当前活跃 voice 数量
+    pub voice_count: u64,
+    /// 渲染器平均负载 (0.0 - 1.0)
+    pub average_renderer_load: f64,
+    /// 缓冲区样本数
+    pub buffer_samples: i64,
+}
+
 pub struct XSynthOptions {
     pub buffer_ms: f64,
     pub threads: i32,
@@ -24,7 +35,7 @@ pub struct XSynthOptions {
 }
 
 pub struct XSynth {
-    _synth: RealtimeSynth, // 保持 synth 存活
+    synth: RealtimeSynth,
     sender: RealtimeEventSender,
     version: String,
 }
@@ -59,6 +70,8 @@ impl XSynth {
 
         // 音色库已就绪，现在打开音频流
         let mut rt_config = XSynthRealtimeConfig::default();
+        let requested_sample_rate = options.as_ref().map(|o| o.sample_rate).unwrap_or(44100);
+
         if let Some(opt) = options {
             rt_config.render_window_ms = opt.buffer_ms;
 
@@ -74,7 +87,19 @@ impl XSynth {
         }
 
         let mut synth = RealtimeSynth::open_with_default_output(rt_config);
-        tracing::info!("XSynth: 音频流已创建并启动");
+
+        // 注意：xsynth-realtime 使用音频设备的原生采样率，配置中的 sample_rate 仅用于音色库预加载
+        // 实际采样率由 cpal 决定，可能与请求的不同
+        let actual_sample_rate = synth.stream_params().sample_rate;
+        if actual_sample_rate != requested_sample_rate {
+            tracing::warn!(
+                "XSynth: 请求的采样率 {}Hz 与设备实际采样率 {}Hz 不匹配，使用设备原生采样率",
+                requested_sample_rate,
+                actual_sample_rate
+            );
+        } else {
+            tracing::info!("XSynth: 音频流已创建并启动 (sample_rate={}Hz)", actual_sample_rate);
+        }
 
         // 获取 sender — 在 open 后立即配置通道，确保音色库在 callback 首次触发前就位
         let sender = synth.get_sender_mut();
@@ -98,10 +123,20 @@ impl XSynth {
         tracing::info!("XSynth: 初始化完成");
 
         Ok(Self {
-            _synth: synth,
+            synth,
             sender: sender_clone,
             version,
         })
+    }
+
+    /// 获取运行时统计信息
+    pub fn stats(&self) -> XSynthStats {
+        let stats = self.synth.get_stats();
+        XSynthStats {
+            voice_count: stats.voice_count(),
+            average_renderer_load: stats.buffer().average_renderer_load(),
+            buffer_samples: stats.buffer().last_samples_after_read(),
+        }
     }
 }
 

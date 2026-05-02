@@ -352,10 +352,16 @@ impl MidiManager {
         // （midir::MidiOutputConnection 持有自己的 OS 句柄）
         let strategy2_result = match self.active_backend {
             SynthBackend::XSynth => {
-                // XSynth：不创建第二个实例！策略1（共享 sender）总是成功；
-                // 如果策略1失败说明 API 已损坏，策略2也没有意义，
-                // 而且创建第二个 RealtimeSynth 会导致双份 cpal 音频流 + 声音叠加
-                tracing::warn!("MIDI 播放输出: XSynth 策略1意外失败，无法创建播放输出");
+                // XSynth：禁止创建第二个实例！
+                // 策略1（共享 sender）总是成功；如果策略1失败说明 API 已损坏。
+                // 创建第二个 RealtimeSynth 会导致：
+                // 1. 双份 cpal 音频流（双倍的 CPU/内存开销）
+                // 2. 声音叠加（同一音符被两个合成器同时播放）
+                // 3. 音色库重复加载（30-300MB 内存浪费）
+                tracing::error!(
+                    "MIDI 播放输出: XSynth 策略1意外失败，拒绝创建第二个实例。\
+                     当前后端状态异常，建议检查 XSynth 初始化或重新启动应用"
+                );
                 None
             }
             SynthBackend::System | SynthBackend::Kdmapi => {

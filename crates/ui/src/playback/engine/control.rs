@@ -1,7 +1,8 @@
 //! 播放引擎控制
 
+use parking_lot::Mutex;
 use std::collections::BinaryHeap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::playback::{Playback, PlaybackAccessor, PlaybackState};
 
@@ -302,8 +303,8 @@ impl PlaybackEngine {
         self.lock_playback().map_or(0.0, |p| p.current_tick())
     }
 
-    fn lock_playback(&self) -> Option<std::sync::MutexGuard<'_, Playback>> {
-        self.playback.lock().ok()
+    fn lock_playback(&self) -> Option<parking_lot::MutexGuard<'_, Playback>> {
+        Some(self.playback.lock())
     }
 
     /// 将 document 游标定位到指定 tick 之后第一个事件

@@ -1,6 +1,7 @@
 //! 播放器核心模块
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use parking_lot::{Mutex, MutexGuard};
+use std::sync::Arc;
 use std::time::Instant;
 
 use super::state::PlaybackState;
@@ -9,17 +10,12 @@ use super::timeline::Timeline;
 /// 提供 `Arc<Mutex<Playback>>` 访问的 trait
 ///
 /// 用于消除 `lock_playback()` 方法的跨文件重复
+/// 使用 parking_lot::Mutex 获得更好的性能（比 std::sync::Mutex 快 2-5 倍）
 pub trait PlaybackAccessor {
     fn playback(&self) -> &Arc<Mutex<Playback>>;
 
     fn lock_playback(&self) -> Option<MutexGuard<'_, Playback>> {
-        match self.playback().lock() {
-            Ok(guard) => Some(guard),
-            Err(e) => {
-                tracing::error!("Mutex 已被污染: {}", e);
-                None
-            }
-        }
+        Some(self.playback().lock())
     }
 }
 

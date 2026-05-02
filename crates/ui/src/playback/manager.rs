@@ -4,7 +4,8 @@
 
 use super::engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine};
 use super::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
-use std::sync::{Arc, Mutex, mpsc};
+use parking_lot::Mutex;
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
@@ -60,9 +61,8 @@ impl PlaybackManager {
                         Command::SetDocument(doc, track) => engine.set_document(doc, track),
                         Command::SetMidiEvents(events) => engine.set_midi_events(events),
                         Command::SetTempoChanges(changes) => {
-                            if let Ok(mut p) = engine.playback().lock() {
-                                p.set_tempo_changes(changes);
-                            }
+                            let mut p = engine.playback().lock();
+                            p.set_tempo_changes(changes);
                         }
                         Command::Play => engine.play(),
                         Command::Pause => {
@@ -101,12 +101,12 @@ impl PlaybackManager {
                 let messages = engine.update();
                 if let Some(out) = &mut midi_output {
                     let msg_count = messages.len();
-                    for (i, msg) in messages.into_iter().enumerate() {
-                        // 每 20 条消息让出 CPU 给 xsynth 通道线程处理积压事件
-                        // 防止 seek 后大量事件瞬间涌入导致 buffer underrun
-                        if i > 0 && i % 20 == 0 {
-                            std::thread::yield_now();
-                        }
+
+                    // 直接发送所有消息，不添加任何 sleep
+                    // xsynth-realtime 的 channel 使用 unbounded channel，可以处理突发流量
+                    // 如果发生 underrun，应该通过增大缓冲区或优化 xsynth 配置来解决
+                    // 而不是在播放线程中 sleep（这会导致更严重的音频问题）
+                    for msg in messages {
                         match msg {
                             MidiMessage::NoteOn {
                                 channel,

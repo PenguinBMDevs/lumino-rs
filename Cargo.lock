@@ -3581,6 +3581,7 @@ dependencies = [
  "lumino-gfx",
  "lumino-midi",
  "once_cell",
+ "parking_lot",
  "puffin",
  "rayon",
  "resvg",

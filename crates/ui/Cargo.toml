@@ -36,3 +36,4 @@ puffin = "0.19.1"
 winit = { workspace = true }
 anyhow = { workspace = true }
 rayon = "1.10"
+parking_lot = "0.12"
