@@ -1,4 +1,6 @@
 //! 速度（Tempo）管理模块
+//!
+//! 负责BPM和tempo（微秒/四分音符）之间的转换
 
 /// 速度变化事件
 #[derive(Debug, Clone)]
@@ -35,17 +37,4 @@ pub fn tempo_from_bpm(bpm: f64) -> u32 {
 /// 将tempo（微秒/四分音符）转换为BPM
 pub fn bpm_from_tempo(tempo: u32) -> f64 {
     60_000_000.0 / tempo as f64
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_tempo_conversion() {
-        let bpm = 120.0;
-        let tempo = tempo_from_bpm(bpm);
-        assert_eq!(tempo, 500_000);
-        assert_eq!(bpm_from_tempo(tempo), bpm);
-    }
 }

@@ -133,9 +133,6 @@ pub mod rendering {
     /// 主题亮度阈值（用于判断暗色/亮色主题）
     pub const THEME_BRIGHTNESS_THRESHOLD: f32 = 0.5;
 
-    /// 网格线宽度
-    pub const GRID_LINE_WIDTH: f32 = 0.5;
-
     /// 网格点击时间阈值（毫秒）
     pub const GRID_CLICK_TIME_THRESHOLD_MS: u128 = 300;
     /// 网格点击位置阈值（像素）

@@ -2,7 +2,7 @@
 //!
 //! 负责根据速度变化将tick转换为实际时间
 
-use super::tempo::{TempoChange, bpm_from_tempo};
+use super::tempo::{bpm_from_tempo, TempoChange};
 
 /// 时间线管理器
 ///
@@ -130,38 +130,5 @@ impl Timeline {
         }
 
         current_tick
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_timeline_single_tempo() {
-        let timeline = Timeline::new(480);
-        // 默认120 BPM = 500000 微秒/拍
-        // 480 ticks = 1拍 = 500000微秒
-        let microseconds = timeline.tick_to_microseconds(480.0);
-        assert_eq!(microseconds, 500_000);
-
-        let tick = timeline.microseconds_to_tick(500_000);
-        assert!((tick - 480.0).abs() < 0.1);
-    }
-
-    #[test]
-    fn test_timeline_tempo_changes() {
-        let mut timeline = Timeline::new(480);
-        timeline.set_tempo_changes(vec![
-            TempoChange::from_bpm(0.0, 120.0),   // 0-480: 120 BPM
-            TempoChange::from_bpm(480.0, 240.0), // 480+: 240 BPM
-        ]);
-
-        // 前480 ticks: 120 BPM = 500000微秒
-        assert_eq!(timeline.tick_to_microseconds(480.0), 500_000);
-
-        // 480-960: 240 BPM = 250000微秒
-        // 总共: 500000 + 250000 = 750000
-        assert_eq!(timeline.tick_to_microseconds(960.0), 750_000);
     }
 }

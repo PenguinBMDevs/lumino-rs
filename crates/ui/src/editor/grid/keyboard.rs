@@ -1,6 +1,7 @@
 //! 钢琴键盘绘制
 
 use super::theme::ThemeExt;
+use super::utils::is_key_dark;
 use crate::Renderer;
 use crate::editor::Editor;
 use iced_core::{Point, Rectangle, Size};
@@ -41,7 +42,7 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
         let screen_y = world_y - view.scroll_y + ruler_height;
 
         if screen_y + view.zoom_y >= ruler_height && screen_y <= bounds.height {
-            let is_black_key = super::is_key_dark(keynum);
+            let is_black_key = is_key_dark(keynum);
             let key_color = if is_black_key {
                 theme.black_key_color()
             } else {

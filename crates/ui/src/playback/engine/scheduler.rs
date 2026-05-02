@@ -4,7 +4,8 @@ use std::collections::BinaryHeap;
 
 use crate::playback::PlaybackState;
 
-use super::{EventType, MidiMessage, NoteEvent, ScheduledEvent};
+use super::{MidiMessage, NoteEvent};
+use super::types::{EventType, ScheduledEvent};
 
 /// 调度器（负责音符事件优先级队列管理）
 pub struct Scheduler {

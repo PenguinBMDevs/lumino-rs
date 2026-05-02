@@ -245,6 +245,9 @@ impl Runner {
         Ok(runner)
     }
 
+}
+
+impl RunnerInner {
     pub(crate) fn process_audio_actions(window: &mut WindowManager, midi: &mut MidiManager) {
         let actions = window.ui_mut().take_audio_actions();
 
@@ -283,10 +286,6 @@ impl Runner {
             }
         }
     }
-
-}
-
-impl RunnerInner {
     /// 保存存储
     pub(crate) fn save_storage(&mut self) {
         // 获取当前 UI 中的设置

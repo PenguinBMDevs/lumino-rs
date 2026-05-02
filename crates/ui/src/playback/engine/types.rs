@@ -19,13 +19,13 @@ pub struct NoteEvent {
 
 /// 调度的音符事件（内部使用）
 #[derive(Debug, Clone)]
-struct ScheduledEvent {
-    tick: f32,
-    event_type: EventType,
+pub struct ScheduledEvent {
+    pub tick: f32,
+    pub event_type: EventType,
 }
 
 #[derive(Debug, Clone)]
-enum EventType {
+pub enum EventType {
     NoteOn { channel: u8, key: u8, velocity: u8 },
     NoteOff { channel: u8, key: u8 },
 }
@@ -61,4 +61,13 @@ pub enum MidiMessage {
     PitchBend { channel: u8, value: f32 },
     ChannelPressure { channel: u8, pressure: u8 },
     PolyPressure { channel: u8, key: u8, pressure: u8 },
+}
+
+/// MIDI轨道事件（用于播放调度）
+#[derive(Debug, Clone)]
+pub struct MidiTrackEvent {
+    /// 事件时刻（tick）
+    pub tick: f32,
+    /// MIDI消息
+    pub message: MidiMessage,
 }
