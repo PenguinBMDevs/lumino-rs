@@ -166,15 +166,6 @@ impl winit::application::ApplicationHandler for Runner {
         // 处理核心事件（包括打开对话框）
         this.process_core_events(event_loop);
 
-        // ── 洋葱皮音轨懒加载（每帧最多 1 个新音轨） ──
-        {
-            let ui = this.window.ui_mut();
-            let loaded = ui.lazy_load_one_onion_skin_track();
-            if loaded {
-                tracing::info!("洋葱皮: 已懒加载一个音轨");
-            }
-        }
-
         // 初始化新创建的对话框（同步主窗口的协作状态）
         {
             let main_ui = this.window.ui();

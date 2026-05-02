@@ -17,9 +17,6 @@ impl Editor {
     pub fn enable_onion_skin(&mut self) {
         self.onion_skin_config.enable();
         self.grid_cache.clear();
-        // 标记所有已加载的音轨需重新生成缓存
-        let tracks: Vec<usize> = self.track_notes.keys().copied().collect();
-        self.onion_skin_dirty.borrow_mut().extend(tracks);
         tracing::debug!("Editor: 洋葱皮已启用");
     }
 
@@ -27,9 +24,6 @@ impl Editor {
     pub fn disable_onion_skin(&mut self) {
         self.onion_skin_config.disable();
         self.grid_cache.clear();
-        // 清空缓存和脏标记
-        self.onion_skin_cache.borrow_mut().clear();
-        self.onion_skin_dirty.borrow_mut().clear();
         tracing::debug!("Editor: 洋葱皮已禁用");
     }
 
@@ -37,13 +31,6 @@ impl Editor {
     pub fn toggle_onion_skin(&mut self) {
         self.onion_skin_config.toggle();
         self.grid_cache.clear();
-        if self.onion_skin_config.is_enabled() {
-            let tracks: Vec<usize> = self.track_notes.keys().copied().collect();
-            self.onion_skin_dirty.borrow_mut().extend(tracks);
-        } else {
-            self.onion_skin_cache.borrow_mut().clear();
-            self.onion_skin_dirty.borrow_mut().clear();
-        }
         tracing::info!(
             "Editor: saved {} notes to track {}",
             self.notes.len(),
@@ -56,10 +43,9 @@ impl Editor {
         self.onion_skin_config.is_enabled()
     }
 
-    /// 设置音轨的洋葱皮颜色，同时标记该音轨的缓存为脏
+    /// 设置音轨的洋葱皮颜色
     pub fn set_onion_skin_color(&mut self, track_idx: usize, color: iced_core::Color) {
         self.onion_skin_config.set_track_color(track_idx, color);
-        self.onion_skin_dirty.borrow_mut().insert(track_idx);
         self.grid_cache.clear();
     }
 
@@ -71,9 +57,6 @@ impl Editor {
     /// 设置洋葱皮透明度
     pub fn set_onion_skin_opacity(&mut self, opacity: f32) {
         self.onion_skin_config.set_opacity(opacity);
-        // 透明度变化需要重新生成所有缓存的实例（颜色中的 alpha 已烘焙）
-        let active: Vec<usize> = self.track_notes.keys().copied().collect();
-        self.onion_skin_dirty.borrow_mut().extend(active);
         self.grid_cache.clear();
     }
 
@@ -91,74 +74,13 @@ impl Editor {
     /// 添加可见音轨到洋葱皮
     pub fn add_onion_skin_track(&mut self, track_idx: usize) {
         self.onion_skin_config.add_visible_track(track_idx);
-        self.onion_skin_dirty.borrow_mut().insert(track_idx);
         self.grid_cache.clear();
     }
 
     /// 从洋葱皮移除音轨
     pub fn remove_onion_skin_track(&mut self, track_idx: usize) {
         self.onion_skin_config.remove_visible_track(track_idx);
-        self.onion_skin_cache.borrow_mut().remove(&track_idx);
-        self.onion_skin_dirty.borrow_mut().remove(&track_idx);
         self.grid_cache.clear();
-    }
-
-    // ── 洋葱皮实例缓存管理 ──
-
-    /// 标记指定音轨的洋葱皮实例缓存为脏（需要重新生成）
-    ///
-    /// 在音符数据或颜色发生变化时调用，确保渲染使用最新数据。
-    pub fn mark_onion_skin_dirty(&self, track_idx: usize) {
-        self.onion_skin_dirty.borrow_mut().insert(track_idx);
-    }
-
-    /// 为指定音轨重新生成洋葱皮实例缓存
-    ///
-    /// 从 `track_notes` 中读取音符数据，使用当前配置的颜色生成 `NoteInstance` 列表。
-    /// 生成后自动清除该音轨的脏标记。
-    pub fn regenerate_onion_skin_cache(&self, track_idx: usize) {
-        let color = self.onion_skin_config.get_track_color(track_idx);
-        if let Some(notes) = self.track_notes.get(&track_idx) {
-            if notes.is_empty() {
-                self.onion_skin_cache.borrow_mut().remove(&track_idx);
-            } else {
-                let instances: Vec<NoteInstance> =
-                    notes.iter().map(|n| n.to_instance(color)).collect();
-                self.onion_skin_cache
-                    .borrow_mut()
-                    .insert(track_idx, instances);
-            }
-        } else {
-            // 音轨没有加载音符数据，清除缓存
-            self.onion_skin_cache.borrow_mut().remove(&track_idx);
-        }
-        self.onion_skin_dirty.borrow_mut().remove(&track_idx);
-    }
-
-    /// 重新生成所有脏音轨的洋葱皮缓存
-    ///
-    /// 在渲染前调用，确保所有音轨的缓存都处于最新状态。
-    pub fn regenerate_all_dirty_onion_skin_caches(&self) {
-        let dirty: Vec<usize> = self.onion_skin_dirty.borrow().iter().copied().collect();
-        for &track_idx in &dirty {
-            self.regenerate_onion_skin_cache(track_idx);
-        }
-    }
-
-    /// 为所有已加载音轨预生成洋葱皮缓存
-    ///
-    /// 在 MIDI 加载完成后调用，在后台预生成所有音轨的实例缓存。
-    pub fn pregenerate_all_onion_skin_caches(&self) {
-        let tracks: Vec<usize> = self.track_notes.keys().copied().collect();
-        for &track_idx in &tracks {
-            if track_idx != self.current_track {
-                self.regenerate_onion_skin_cache(track_idx);
-            }
-        }
-        // 标记当前音轨也需生成（切换后自然会生成）
-        self.onion_skin_dirty
-            .borrow_mut()
-            .insert(self.current_track);
     }
 
     /// 获取所有洋葱皮音符原始数据（用于缓存）
@@ -297,9 +219,10 @@ impl Editor {
         in_tick_range && in_key_range
     }
 
-    /// 获取洋葱皮音符实例（从缓存获取，若脏则先重新生成）
+    /// 获取洋葱皮音符实例（用于其他音轨的音符显示）
+    /// 音符直接送入 wgpu 渲染管线，GPU compute shader 负责视锥裁剪
     pub fn get_onion_skin_instances(
-        &self,
+        &mut self,
         track_idx: usize,
         track_onion_enabled: bool,
     ) -> Vec<NoteInstance> {
@@ -314,84 +237,145 @@ impl Editor {
             return Vec::new();
         }
 
-        // 如果该音轨缓存为脏，先重新生成
-        if self.onion_skin_dirty.borrow().contains(&track_idx) {
-            self.regenerate_onion_skin_cache(track_idx);
+        // 先将所有音符做成 NoteInstance（GPU shader 负责裁剪）
+        // 使用 closure 构建实例列表，同时处理 cache hit/miss
+        let make_instances =
+            |notes: &im::Vector<Note>, color: iced_core::Color| -> Vec<NoteInstance> {
+                let mut instances = Vec::with_capacity(notes.len());
+                for note in notes.iter() {
+                    instances.push(note.to_instance(color));
+                }
+                instances
+            };
+
+        let color = self.onion_skin_config.get_track_color(track_idx);
+
+        // 先查 track_notes 缓存
+        if let Some(cached) = self.track_notes.get(&track_idx) {
+            if cached.is_empty() {
+                return Vec::new();
+            }
+            return make_instances(cached, color);
         }
 
-        // 从缓存中获取
-        self.onion_skin_cache
-            .borrow()
-            .get(&track_idx)
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    /// 确保指定音轨的音符已加载到 track_notes 缓存中
-    ///
-    /// 如果该音轨尚未加载，尝试从 MidiDocument 中懒加载。
-    /// 由 `update_all_note_instances_fast` 每帧调用，每帧最多加载 2 个新音轨。
-    /// 加载后自动标记该音轨的洋葱皮缓存为脏，以便下次渲染时生成。
-    pub fn ensure_track_notes_loaded(&mut self, track_idx: usize) {
-        if self.track_notes.contains_key(&track_idx) {
-            return;
-        }
-        let Some(ref doc) = self.document else {
-            tracing::warn!(
-                "ensure_track_notes_loaded: document is None, track={}",
-                track_idx
-            );
-            return;
+        // 缓存未命中 → 从 document 加载并缓存
+        let Some(doc) = self.document.as_ref() else {
+            return Vec::new();
         };
-        if track_idx >= doc.track_count() {
-            tracing::warn!(
-                "ensure_track_notes_loaded: track_idx {} >= track_count {}",
-                track_idx,
-                doc.track_count()
-            );
-            return;
+        if track_idx as u16 >= doc.track_count() as u16 {
+            return Vec::new();
+        }
+        if doc.track_note_count(track_idx as u16) == 0 {
+            return Vec::new();
+        }
+        let raw = doc.get_track_notes(track_idx as u16);
+        if raw.is_empty() {
+            return Vec::new();
         }
 
-        tracing::info!(
-            "ensure_track_notes_loaded: loading track {} (events={})",
-            track_idx,
-            doc.track_note_count(track_idx as u16)
-        );
-        let notes = doc.get_track_notes(track_idx as u16);
-        if notes.is_empty() {
-            self.track_notes.insert(track_idx, im::Vector::new());
-            return;
-        }
-
-        let mut track_notes: im::Vector<Note> = im::Vector::new();
-        for (tick, key, length, velocity, channel) in &notes {
-            track_notes.push_back(
+        let mut notes: im::Vector<Note> = im::Vector::new();
+        for (tick, key, length, velocity, channel) in &raw {
+            notes.push_back(
                 Note::new(*tick, *key as u16, *length)
                     .with_velocity(*velocity)
                     .with_channel(*channel),
             );
         }
-        self.track_notes.insert(track_idx, track_notes);
+        self.track_notes.insert(track_idx, notes.clone());
 
-        // 标记该音轨的洋葱皮缓存需要重新生成
-        self.onion_skin_dirty.borrow_mut().insert(track_idx);
+        make_instances(&notes, color)
     }
 
-    /// 获取所有洋葱皮音符实例（从缓存获取，若脏则先重新生成）
+    /// 获取所有洋葱皮音符实例（视口范围内）
+    ///
+    /// 直接从 MidiDocument 查询，利用预排序事件的二分查找，
+    /// 零额外内存缓存，零数据拷贝。
+    pub fn get_all_onion_skin_instances_in_range(
+        &mut self,
+        track_onion_states: &std::collections::HashMap<usize, bool>,
+        visible_tick_start: f32,
+        visible_tick_end: f32,
+        visible_key_min: u16,
+        visible_key_max: u16,
+    ) -> Vec<NoteInstance> {
+        if !self.is_onion_skin_enabled() {
+            return Vec::new();
+        }
+
+        let Some(doc) = self.document.as_ref() else {
+            return Vec::new();
+        };
+
+        const ONION_SKIN_SEARCH_EXTENSION: f32 = 19200.0;
+        let search_start = (visible_tick_start - ONION_SKIN_SEARCH_EXTENSION).max(0.0);
+        let search_end = visible_tick_end + ONION_SKIN_SEARCH_EXTENSION;
+
+        let track_indices = self.collect_visible_track_indices(track_onion_states);
+        let mut all_instances = Vec::new();
+
+        for track_idx in track_indices {
+            let color = self.onion_skin_config.get_track_color(track_idx);
+            let color_arr = super::note::color_to_array(color);
+
+            // 直接从 document 查询视口范围内的音符
+            let raw = doc.get_track_notes_in_range(track_idx as u16, search_start, search_end);
+            if raw.is_empty() {
+                continue;
+            }
+
+            // 转换为 NoteInstance（只保留 key 在可见范围内的）
+            for &(tick, key, length, _vel, _ch) in &raw {
+                let key_u16 = key as u16;
+                if key_u16 >= visible_key_min && key_u16 <= visible_key_max {
+                    if tick + length >= visible_tick_start && tick <= visible_tick_end {
+                        all_instances.push(NoteInstance::new(tick, key as f32, length, color_arr));
+                    }
+                }
+            }
+        }
+
+        all_instances
+    }
+
+    /// 从 document 加载音轨音符到 track_notes 缓存
+    fn load_track_notes_from_document(&mut self, track_idx: usize) {
+        let Some(doc) = self.document.as_ref() else {
+            return;
+        };
+        if track_idx as u16 >= doc.track_count() as u16 {
+            return;
+        }
+        if doc.track_note_count(track_idx as u16) == 0 {
+            self.track_notes.insert(track_idx, im::Vector::new());
+            return;
+        }
+        let raw = doc.get_track_notes(track_idx as u16);
+        if raw.is_empty() {
+            self.track_notes.insert(track_idx, im::Vector::new());
+            return;
+        }
+
+        let mut notes: im::Vector<Note> = im::Vector::new();
+        for (tick, key, length, velocity, channel) in &raw {
+            notes.push_back(
+                Note::new(*tick, *key as u16, *length)
+                    .with_velocity(*velocity)
+                    .with_channel(*channel),
+            );
+        }
+        self.track_notes.insert(track_idx, notes);
+    }
+
+    /// 获取所有洋葱皮音符实例（所有其他音轨）
+    /// 音符全部送入 wgpu 管线，GPU compute shader 负责视锥裁剪
     pub fn get_all_onion_skin_instances(
-        &self,
+        &mut self,
         track_onion_states: &std::collections::HashMap<usize, bool>,
     ) -> Vec<NoteInstance> {
         if !self.is_onion_skin_enabled() {
             return Vec::new();
         }
 
-        // 先重新生成所有脏音轨的缓存
-        self.regenerate_all_dirty_onion_skin_caches();
-
-        let cache = self.onion_skin_cache.borrow();
-
-        // 收集需要显示的音轨索引（与原始逻辑相同）
         let mut track_indices: Vec<usize> = track_onion_states
             .iter()
             .filter(|(_, is_enabled)| **is_enabled)
@@ -403,17 +387,8 @@ impl Editor {
 
         let mut all_instances = Vec::new();
         for track_idx in track_indices {
-            let Some(&is_enabled) = track_onion_states.get(&track_idx) else {
-                continue;
-            };
-            if !self
-                .onion_skin_config
-                .should_show_track(track_idx, is_enabled)
-            {
-                continue;
-            }
-            if let Some(instances) = cache.get(&track_idx) {
-                all_instances.extend(instances.iter().copied());
+            if let Some(&is_enabled) = track_onion_states.get(&track_idx) {
+                all_instances.extend(self.get_onion_skin_instances(track_idx, is_enabled));
             }
         }
 

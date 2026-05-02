@@ -216,6 +216,14 @@ impl MidiDocument {
 
         events.shrink_to_fit();
 
+        // 就地排序每个音轨的事件，使后续二分查找可行
+        // 零额外内存，修改 events 中的现有数据
+        for &(start, end) in &track_events_range {
+            if start < end {
+                events[start..end].sort_by_key(|e| e.delta_tick());
+            }
+        }
+
         if let Some(cb) = progress {
             (cb)(0.90);
         }
@@ -329,7 +337,89 @@ impl MidiDocument {
         false
     }
 
+    /// 获取指定音轨在指定 tick 范围内的音符。
+    /// 利用预排序的 events 做二分查找 + 线性扫描，O(log N + K) 而非 O(N)。
+    pub fn get_track_notes_in_range(
+        &self,
+        track_id: u16,
+        tick_start: f32,
+        tick_end: f32,
+    ) -> Vec<(f32, u8, f32, u8, u8)> {
+        use std::collections::HashMap;
+
+        let tid = track_id as usize;
+        let (range_start, range_end) = self.track_events_range.get(tid).copied().unwrap_or((0, 0));
+        if range_start >= range_end {
+            return Vec::new();
+        }
+
+        let events = &self.events[range_start..range_end];
+        let tick_start_u = tick_start as u32;
+        let tick_end_u = tick_end as u32;
+
+        // events 已按 tick 排序，二分查找起始位置
+        let search_start =
+            events.partition_point(|e| e.delta_tick() < tick_start_u.saturating_sub(19200));
+        let search_end = events.len().min(
+            search_start + events[search_start..].partition_point(|e| e.delta_tick() <= tick_end_u),
+        );
+
+        if search_start >= search_end {
+            return Vec::new();
+        }
+
+        let mut active_notes: HashMap<(u8, u8), (u32, u8, u8)> = HashMap::new();
+        let mut notes = Vec::new();
+
+        for ev in &events[search_start..search_end] {
+            let tick = ev.delta_tick();
+            let key = ev.param1() as u8;
+            let vel = ev.param2() as u8;
+            let channel = ev.channel();
+
+            match ev.kind() {
+                EventKind::NoteOn if vel > 0 => {
+                    if let Some((st, pv, pc)) = active_notes.remove(&(channel, key)) {
+                        let len = tick.saturating_sub(st) as f32;
+                        if st as f32 + len >= tick_start && st as f32 <= tick_end {
+                            notes.push((st as f32, key, len, pv, pc));
+                        }
+                    }
+                    active_notes.insert((channel, key), (tick, vel, channel));
+                }
+                EventKind::NoteOn | EventKind::NoteOff => {
+                    if let Some((st, pv, pc)) = active_notes.remove(&(channel, key)) {
+                        let len = tick.saturating_sub(st) as f32;
+                        if st as f32 + len >= tick_start && st as f32 <= tick_end {
+                            notes.push((st as f32, key, len, pv, pc));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // 未关闭的 NoteOn，用 search_end 的 tick 作为结束
+        let last_tick = if search_end < events.len() {
+            events[search_end].delta_tick()
+        } else {
+            events.last().map(|e| e.delta_tick()).unwrap_or(0)
+        };
+        for ((_ch, key), (st, vel, ch)) in active_notes {
+            let len = last_tick.saturating_sub(st) as f32;
+            if st as f32 + len >= tick_start && st as f32 <= tick_end {
+                notes.push((st as f32, key, len, vel, ch));
+            }
+        }
+
+        notes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        notes
+    }
+
     /// 获取指定音轨的所有音符（仅扫描本轨事件，O(notes_in_track)）
+    ///
+    /// 注意：events 数组在加载时已按 tick 排序（见 from_notes_file），
+    /// 本函数不用再次排序，直接线性扫描。
     pub fn get_track_notes(&self, track_id: u16) -> Vec<(f32, u8, f32, u8, u8)> {
         use std::collections::HashMap;
 
@@ -342,6 +432,7 @@ impl MidiDocument {
         let events = &self.events[start..end];
         let mut active_notes: HashMap<(u8, u8), (u32, u8, u8)> = HashMap::new();
         let mut notes = Vec::new();
+        let last_tick = events.last().map(|e| e.delta_tick()).unwrap_or(0);
 
         for ev in events {
             let tick = ev.delta_tick();
@@ -364,86 +455,12 @@ impl MidiDocument {
                 _ => {}
             }
         }
-
-        let last_tick = events.last().map(|e| e.delta_tick()).unwrap_or(0);
         for ((_ch, key), (st, vel, ch)) in active_notes {
             notes.push((st as f32, key, last_tick.saturating_sub(st) as f32, vel, ch));
         }
 
-        notes
-    }
-
-    /// 获取指定音轨在指定 tick 范围内的音符（O(events_in_track)，仅输出可视区域音符）
-    ///
-    /// 与 `get_track_notes` 不同，此方法只返回与 [tick_start, tick_end) 重叠的音符，
-    /// 输出 Vec 远小于全量提取，适用于洋葱皮视口裁剪。
-    /// 仍需扫描整轨事件以保证 NoteOn/NoteOff 配对正确。
-    pub fn get_track_notes_in_range(
-        &self,
-        track_id: u16,
-        tick_start: u32,
-        tick_end: u32,
-    ) -> Vec<(f32, u8, f32, u8, u8)> {
-        use std::collections::HashMap;
-
-        let tid = track_id as usize;
-        let (start, end) = self.track_events_range.get(tid).copied().unwrap_or((0, 0));
-        if start >= end || tick_end <= tick_start {
-            return Vec::new();
-        }
-
-        let events = &self.events[start..end];
-        let mut active_notes: HashMap<(u8, u8), (u32, u8, u8)> = HashMap::new();
-        let mut notes = Vec::new();
-        // 记录是否已经进入可视区域（之后结束的音符才需要输出）
-        let mut in_range = false;
-
-        for ev in events {
-            let tick = ev.delta_tick();
-            let key = ev.param1() as u8;
-            let vel = ev.param2() as u8;
-            let channel = ev.channel();
-
-            // 更新 in_range 标志
-            if !in_range && tick >= tick_start {
-                in_range = true;
-            }
-
-            match ev.kind() {
-                EventKind::NoteOn if vel > 0 => {
-                    if let Some((st, pv, pc)) = active_notes.remove(&(channel, key)) {
-                        // 上一个相同 (ch,key) 的音符结束了，检查是否与可视区域重叠
-                        if st < tick_end && tick > tick_start {
-                            notes.push((st as f32, key, tick.saturating_sub(st) as f32, pv, pc));
-                        }
-                    }
-                    active_notes.insert((channel, key), (tick, vel, channel));
-                }
-                EventKind::NoteOn | EventKind::NoteOff => {
-                    if let Some((st, pv, pc)) = active_notes.remove(&(channel, key)) {
-                        if st < tick_end && tick > tick_start {
-                            notes.push((st as f32, key, tick.saturating_sub(st) as f32, pv, pc));
-                        }
-                    }
-                }
-                _ => {}
-            }
-
-            // 提前退出：已过可视范围且没有活跃音符
-            if tick > tick_end && active_notes.is_empty() {
-                break;
-            }
-        }
-
-        // 处理未关闭的音符（在 track_end 或 tick_end 处截断）
-        let boundary_tick = events.last().map(|e| e.delta_tick()).unwrap_or(tick_end);
-        for ((_ch, key), (st, vel, ch)) in active_notes {
-            if st < tick_end {
-                let end_tick = boundary_tick.max(tick_end);
-                notes.push((st as f32, key, end_tick.saturating_sub(st) as f32, vel, ch));
-            }
-        }
-
+        // 按 tick 排序输出，保证 instance 数组有序
+        notes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         notes
     }
 

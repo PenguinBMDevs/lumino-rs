@@ -81,11 +81,6 @@ impl Host {
             return;
         }
 
-        // 准备洋葱皮位图（在单独线程中也需生成位图纹理）
-        // 构建视口信息（与encoder.rs中prepare_onion_skin_bitmaps类似）
-        let viewport_info = self.collect_viewport_info();
-        self.prepare_onion_skin_bitmaps(&viewport_info);
-
         let render_data = self.collect_render_data();
         let params = self.build_render_params(render_data);
 
@@ -219,27 +214,6 @@ impl Host {
         let ruler_height = self.root.editor.state.ruler_height;
         let max_key_index = (self.root.editor.state.visible_key_count.saturating_sub(1)) as f32;
 
-        // 收集洋葱皮位图视图（活跃音轨中非脏的位图）
-        let (onion_skin_bitmap_views, onion_skin_bitmap_sampler) = {
-            if self.root.editor.is_onion_skin_enabled() {
-                let onion_states = self.root.sidebar.get_onion_skin_states();
-                let current_track = self.root.editor.current_track;
-                let config = self.root.editor.onion_skin_config();
-                let active_tracks: Vec<usize> = onion_states
-                    .iter()
-                    .filter(|entry| {
-                        *entry.1
-                            && *entry.0 != current_track
-                            && config.should_show_track(*entry.0, true)
-                    })
-                    .map(|entry| *entry.0)
-                    .collect();
-                self.onion_skin_bitmaps.collect_views(&active_tracks)
-            } else {
-                (Vec::new(), None)
-            }
-        };
-
         RenderParams {
             viewport_size: (physical_size.width, physical_size.height),
             logical_size: (data.viewport_size.width, data.viewport_size.height),
@@ -267,8 +241,6 @@ impl Host {
             canvas_size: (canvas_size.x, canvas_size.y),
             ppq: ppq as f32,
             max_key_index,
-            onion_skin_bitmap_views,
-            onion_skin_bitmap_sampler,
         }
     }
 }

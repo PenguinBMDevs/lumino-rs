@@ -4,40 +4,76 @@ use rayon::prelude::*;
 impl Host {
     /// 快速更新所有音符实例（双缓冲模式）
     ///
-    /// 使用双缓冲机制实现零拷贝数据传递：
-    /// 1. UI 线程写入 Back Buffer
-    /// 2. 交换前后缓冲区（原子指针交换，无数据拷贝）
-    /// 3. 渲染线程读取 Front Buffer 并上传到 GPU
-    ///
-    /// 这个模式避免了 CPU 端的视锥裁剪，直接上传所有音符到 GPU
-    /// 让 GPU 的 compute shader 处理裁剪，适合超密集音符场景
+    /// 主音轨音符全量送入 GPU（GPU compute shader 负责裁剪），
+    /// 洋葱皮音符只构建视口 ±2 屏范围内，使用空间索引快速过滤。
     pub(super) fn update_all_note_instances_fast(&mut self) {
         puffin::profile_function!();
+
+        // 计算视口 tick/key 范围（用于洋葱皮过滤）
+        let editor = &self.root.editor;
+        let canvas_width = editor.canvas_size.x;
+        let keyboard_width = editor.state.keyboard_width;
+        let visible_tick_start = (editor.state.scroll_x / editor.state.zoom_x).max(0.0);
+        let visible_tick_end = ((editor.state.scroll_x + canvas_width - keyboard_width)
+            / editor.state.zoom_x)
+            .max(visible_tick_start);
+        let max_key = editor.state.visible_key_count.saturating_sub(1);
+        // key 范围用最大值，空间索引的主过滤靠 tick 范围
+        let visible_key_min = 0u16;
+        let visible_key_max = max_key;
+        // 获取洋葱皮实例（仅在视口范围内，使用空间索引）
+        let onion_states = self.root.sidebar.get_onion_skin_states();
+        let onion_instances = self.root.editor.get_all_onion_skin_instances_in_range(
+            &onion_states,
+            visible_tick_start,
+            visible_tick_end,
+            visible_key_min,
+            visible_key_max,
+        );
+
+        // 再获取编辑器数据引用（不可变借用）
+        let notes = &self.root.editor.notes;
+        let edit_state = &self.root.editor.edit_state;
+        let default_note_length = self.root.editor.state.default_note_length;
+        let snap_precision = self.root.editor.state.snap_precision;
 
         // 获取双缓冲的后缓冲区写入引用
         let instances = unsafe { self.render_cache.note_instances_buffer.write_buffer() };
         instances.clear();
 
-        // 获取编辑器数据引用（避免后续借用冲突）
-        let notes = &self.root.editor.notes;
-        let edit_state = self.root.editor.edit_state.clone();
-        let default_note_length = self.root.editor.state.default_note_length;
-        let snap_precision = self.root.editor.state.snap_precision;
+        // 预分配容量
+        let onion_skin_count: usize = notes.len() + onion_instances.len() + 1;
+        instances.reserve(onion_skin_count);
 
-        // 预分配容量（仅当前轨道的音符 + 绘制中的音符，洋葱皮由独立位图处理）
-        let total_capacity = notes.len() + 1; // +1 for drawing note
-        instances.reserve(total_capacity);
+        let onion_count = onion_instances.len();
+        let main_count = notes.len();
+        let drawing_count = if matches!(edit_state, crate::editor::EditState::Drawing { .. }) {
+            1
+        } else {
+            0
+        };
 
-        // 添加主要音符（仅当前音轨，洋葱皮由位图管理器渲染）
+        // 添加主要音符（全部送入 GPU，由 shader 裁剪）
         const DEFAULT_NOTE_COLOR: [f32; 4] = [0.2, 0.5, 1.0, 0.9];
         Self::add_notes_to_instances(instances, notes, DEFAULT_NOTE_COLOR);
+
+        // 添加洋葱皮音符（全部送入 GPU，由 shader 裁剪）
+        instances.extend(onion_instances);
 
         // 添加正在绘制的音符
         Self::add_drawing_note_to_instances(
             instances,
-            &edit_state,
+            edit_state,
             default_note_length,
             snap_precision,
+        );
+
+        tracing::debug!(
+            "update_all_note_instances_fast: total={}, main={}, onion={}, drawing={}",
+            instances.len(),
+            main_count,
+            onion_count,
+            drawing_count
         );
 
         // 交换双缓冲区，使新数据对渲染线程可见

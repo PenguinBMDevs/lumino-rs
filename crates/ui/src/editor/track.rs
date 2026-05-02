@@ -5,46 +5,51 @@ impl super::Editor {
             return;
         }
 
-        let old_track = self.current_track;
-
         tracing::debug!(
             "Editor: switching from track {} to {}",
-            old_track,
+            self.current_track,
             track_idx
         );
 
         // 保存当前音轨的音符
-        self.track_notes.insert(old_track, self.notes.clone());
-        self.track_note_indices.borrow_mut().remove(&old_track);
-
-        // 标记旧音轨的洋葱皮缓存为脏（可能在当前会话中被编辑过）
-        self.onion_skin_dirty.borrow_mut().insert(old_track);
+        self.track_notes
+            .insert(self.current_track, self.notes.clone());
+        self.track_note_indices
+            .borrow_mut()
+            .remove(&self.current_track);
 
         tracing::debug!(
             "Editor: saved {} notes for track {}",
             self.notes.len(),
-            old_track
+            self.current_track
         );
 
         // 切换到新音轨
         self.current_track = track_idx;
 
-        // 加载新音轨的音符
-        self.notes = self
-            .track_notes
-            .get(&track_idx)
-            .cloned()
-            .unwrap_or_default();
+        // 加载新音轨的音符：优先从 track_notes 缓存读，缓存未命中则从 document 懒加载
+        self.notes = if let Some(cached) = self.track_notes.get(&track_idx).cloned() {
+            cached
+        } else if let Some(doc) = self.document.as_ref() {
+            let raw = doc.get_track_notes(track_idx as u16);
+            let mut notes = im::Vector::new();
+            for (tick, key, length, velocity, channel) in raw {
+                notes.push_back(
+                    crate::editor::note::Note::new(tick, key as u16, length)
+                        .with_velocity(velocity)
+                        .with_channel(channel),
+                );
+            }
+            self.track_notes.insert(track_idx, notes.clone());
+            notes
+        } else {
+            im::Vector::new()
+        };
         tracing::debug!(
             "Editor: loaded {} notes for track {}",
             self.notes.len(),
             track_idx
         );
-
-        // 如果新音轨有缓存数据，且是新音轨，预先生成缓存（用于在旧音轨作为洋葱皮显示）
-        if track_idx != old_track {
-            self.onion_skin_dirty.borrow_mut().insert(track_idx);
-        }
 
         // 标记音符数据已变化，触发空间索引重建和渲染更新
         self.mark_notes_changed();

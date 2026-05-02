@@ -55,20 +55,28 @@ impl Host {
         let current_edit_state = self.root.editor.edit_state.clone();
         let is_drawing = matches!(current_edit_state, crate::editor::EditState::Drawing { .. });
 
+        // 视口变化（滚动/缩放）：重新过滤洋葱皮实例（无需全量重建）
+        let viewport_changed = current_hash != self.render_cache.note_viewport_hash;
+
+        // 数据变化（编辑/加载）
         let note_data_changed = note_index_dirty
             || unsafe { self.render_cache.note_instances_is_empty() }
             || is_drawing;
 
-        if !note_data_changed {
+        if !note_data_changed && !viewport_changed {
             // 即使没有数据变化也更新状态
             self.last_cursor_position = self.cursor_position;
             self.last_edit_state = current_edit_state;
             return false;
         }
 
-        puffin::profile_scope!("generate_note_instances");
-        self.update_all_note_instances_fast();
-        self.render_cache.note_viewport_hash = current_hash;
+        // 有变化时才重建实例数组
+        if note_data_changed || viewport_changed {
+            puffin::profile_scope!("generate_note_instances");
+            self.update_all_note_instances_fast();
+            self.render_cache.note_viewport_hash = current_hash;
+        }
+
         self.last_edit_state = current_edit_state;
         self.last_cursor_position = self.cursor_position;
 
@@ -77,7 +85,8 @@ impl Host {
             tracing::debug!("Cleared note_index_dirty flag");
         }
 
-        true
+        // 数据变化或视口变化都需要 GPU 上传
+        note_data_changed || viewport_changed
     }
 
     /// 准备音符渲染器（双缓冲模式）
@@ -143,79 +152,6 @@ impl Host {
         ));
     }
 
-    /// 准备洋葱皮位图（检查视口变化，生成脏位图）
-    pub(super) fn prepare_onion_skin_bitmaps(&mut self, viewport: &ViewportInfo) {
-        let editor = &self.root.editor;
-        let state = &editor.state;
-
-        // 计算物理尺寸（考虑缩放因子）
-        let physical_width = (viewport.logical_size.width * viewport.scale) as u32;
-        let physical_height = (viewport.logical_size.height * viewport.scale) as u32;
-        let max_key_index = (state.visible_key_count.saturating_sub(1)) as f32;
-
-        // 构建当前视口信息
-        let bv = crate::host::onion_skin_bitmap::BitmapViewport {
-            scroll_x: state.scroll_x,
-            scroll_y: state.scroll_y,
-            zoom_x: state.zoom_x,
-            zoom_y: state.zoom_y,
-            keyboard_width: state.keyboard_width,
-            ruler_height: state.ruler_height,
-            max_key_index,
-            canvas_offset_x: viewport.canvas_offset.x,
-            canvas_offset_y: viewport.canvas_offset.y,
-            physical_width,
-            physical_height,
-            scale: viewport.scale,
-        };
-
-        // 检查视口是否变化
-        self.onion_skin_bitmaps.check_viewport_changed(&bv);
-
-        // 生成脏位图
-        let dirty_count = self.onion_skin_bitmaps.dirty_count();
-        let editor_dirty_tracks = self.root.editor.onion_skin_dirty.borrow().len();
-        if dirty_count > 0 || editor_dirty_tracks > 0 {
-            // 收集需要生成的脏音轨（来自位图管理器和编辑器）
-            let mut dirty_tracks: std::collections::HashSet<usize> =
-                self.onion_skin_bitmaps.dirty_tracks().into_iter().collect();
-
-            // 从编辑器获取脏音轨
-            for &track_idx in self.root.editor.onion_skin_dirty.borrow().iter() {
-                if track_idx != editor.current_track {
-                    if self.root.editor.track_notes.contains_key(&track_idx) {
-                        dirty_tracks.insert(track_idx);
-                    }
-                }
-            }
-
-            for &track_idx in &dirty_tracks {
-                if let Some(notes) = editor.track_notes.get(&track_idx) {
-                    if notes.is_empty() {
-                        continue;
-                    }
-                    let color = editor.get_onion_skin_color(track_idx);
-                    let color_arr = crate::editor::note::color_to_array(color);
-
-                    // 将 Note 转换为 (tick, key, length) 元组
-                    let note_data: Vec<(f32, u16, f32)> =
-                        notes.iter().map(|n| (n.tick, n.key, n.length)).collect();
-
-                    self.onion_skin_bitmaps.generate_track_bitmap(
-                        &self.device,
-                        &self.queue,
-                        track_idx,
-                        color_arr,
-                        &note_data,
-                    );
-                }
-            }
-
-            // 清除编辑器的脏标记（所有处理过的）
-            self.root.editor.onion_skin_dirty.borrow_mut().clear();
-        }
-    }
-
     /// 执行渲染通道
     pub(super) fn execute_render_pass(
         &mut self,
@@ -259,31 +195,6 @@ impl Host {
         if scissor.has_valid_region {
             render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
             self.grid_renderer.draw(&mut render_pass, 1);
-        }
-
-        // ── 绘制洋葱皮位图（在所有音符之前，作为底层层叠） ──
-        if self.root.editor.is_onion_skin_enabled() && scissor.has_valid_region {
-            let onion_states = self.root.sidebar.get_onion_skin_states();
-            let current_track = self.root.editor.current_track;
-            let config = self.root.editor.onion_skin_config();
-
-            // 收集需要显示的活跃音轨
-            let active_tracks: Vec<usize> = onion_states
-                .iter()
-                .filter(|(t, en)| {
-                    **en && **t != current_track && config.should_show_track(**t, true)
-                })
-                .map(|(t, _)| *t)
-                .collect();
-
-            if !active_tracks.is_empty() {
-                render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
-                self.onion_skin_bitmaps.display_bitmaps(
-                    &mut render_pass,
-                    &active_tracks,
-                    &self.device,
-                );
-            }
         }
 
         // 绘制音符（从双缓冲读取）

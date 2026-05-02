@@ -47,6 +47,14 @@ impl GpuNoteBuffer {
         }
 
         let upload_count = instances.len().min(self.max_capacity);
+        if instances.len() > self.max_capacity {
+            tracing::warn!(
+                "GpuNoteBuffer: instance count {} exceeds max_capacity {}, truncated to {}",
+                instances.len(),
+                self.max_capacity,
+                upload_count
+            );
+        }
         self.instance_count = upload_count;
         self.instances = instances[..upload_count].to_vec();
 

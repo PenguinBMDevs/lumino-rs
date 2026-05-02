@@ -35,10 +35,6 @@ pub fn run_render_thread(
     let mut keyboard_renderer = lumino_gfx::KeyboardRenderer::new(&device, texture_format);
     let mut ruler_renderer = lumino_gfx::RulerRenderer::new(&device, texture_format);
 
-    // 创建洋葱皮位图展示管线 + 绑定组布局（在渲染线程中初始化一次，每帧复用）
-    let (onion_display_pipeline, onion_display_layout) =
-        create_onion_display_pipeline(&device, texture_format);
-
     // 渲染循环状态
     let mut frame_count = 0u64;
     let mut fps_update_time = Instant::now();
@@ -109,9 +105,6 @@ pub fn run_render_thread(
                     &mut keyboard_renderer,
                     &mut ruler_renderer,
                     &queue,
-                    &device,
-                    &onion_display_pipeline,
-                    &onion_display_layout,
                 );
 
                 // 提交渲染指令
@@ -134,117 +127,4 @@ pub fn run_render_thread(
     }
 
     tracing::info!("Render thread stopped");
-}
-
-/// 创建洋葱皮位图的展示渲染管线
-/// 使用全屏四边形 + 纹理采样，在主渲染通道中绘制位图
-/// 返回 (pipeline, bind_group_layout)
-fn create_onion_display_pipeline(
-    device: &wgpu::Device,
-    format: wgpu::TextureFormat,
-) -> (wgpu::RenderPipeline, wgpu::BindGroupLayout) {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("onion_display_shader"),
-        source: wgpu::ShaderSource::Wgsl(
-            r#"
-            struct VertexOutput {
-                @builtin(position) position: vec4<f32>,
-                @location(0) uv: vec2<f32>,
-            };
-
-            @vertex
-            fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
-                var pos = vec2<f32>(0.0, 0.0);
-                var uv = vec2<f32>(0.0, 0.0);
-                switch idx {
-                    case 0u: { pos = vec2<f32>(-1.0, -1.0); uv = vec2<f32>(0.0, 1.0); }
-                    case 1u: { pos = vec2<f32>( 1.0, -1.0); uv = vec2<f32>(1.0, 1.0); }
-                    case 2u: { pos = vec2<f32>(-1.0,  1.0); uv = vec2<f32>(0.0, 0.0); }
-                    case 3u: { pos = vec2<f32>( 1.0,  1.0); uv = vec2<f32>(1.0, 0.0); }
-                    default: { pos = vec2<f32>(0.0, 0.0); uv = vec2<f32>(0.0, 0.0); }
-                }
-                var output: VertexOutput;
-                output.position = vec4<f32>(pos, 0.0, 1.0);
-                output.uv = uv;
-                return output;
-            }
-
-            @group(0) @binding(0)
-            var display_texture: texture_2d<f32>;
-            @group(0) @binding(1)
-            var display_sampler: sampler;
-
-            @fragment
-            fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-                return textureSample(display_texture, display_sampler, input.uv);
-            }
-            "#
-            .into(),
-        ),
-    });
-
-    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("onion_display_bind_group_layout"),
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-        ],
-    });
-
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("onion_display_pipeline_layout"),
-        bind_group_layouts: &[&bind_group_layout],
-        push_constant_ranges: &[],
-    });
-
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("onion_display_pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            buffers: &[],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleStrip,
-            ..Default::default()
-        },
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: false,
-            depth_compare: wgpu::CompareFunction::Always,
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        }),
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-        cache: None,
-    });
-
-    (pipeline, bind_group_layout)
 }
