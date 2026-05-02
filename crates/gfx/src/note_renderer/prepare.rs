@@ -94,9 +94,11 @@ impl NoteRenderer {
         compute_pass.set_pipeline(&self.cull_pipeline);
         compute_pass.set_bind_group(0, &self.cull_bind_group, &[]);
 
-        // 计算工作组数量 (每组 64 个线程)
+        // 计算工作组数量 (每组 256 个线程，与 shader 中的 workgroup_size 匹配)
+        // 使用 256 可以更好地利用 modern GPU 的 warp/wavefront 大小
+        const WORKGROUP_SIZE: u32 = 256;
         const MAX_DISPATCH_X: u32 = 65535;
-        let workgroup_count = self.last_upload_count.div_ceil(64);
+        let workgroup_count = self.last_upload_count.div_ceil(WORKGROUP_SIZE);
         let dispatch_x = workgroup_count.min(MAX_DISPATCH_X);
         let dispatch_y = workgroup_count.div_ceil(MAX_DISPATCH_X);
         compute_pass.dispatch_workgroups(dispatch_x, dispatch_y, 1);

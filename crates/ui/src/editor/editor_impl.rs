@@ -1,5 +1,5 @@
 use crate::editor::note::Note;
-use crate::editor::{EditState, HitType, OnionSkinConfig, ViewState};
+use crate::editor::{EditState, HitType, OnionSkinConfig, OnionSkinViewportCache, ViewState};
 use crate::message::AudioAction;
 use crate::toolbar::Tool;
 use iced_core::Point;

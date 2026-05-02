@@ -81,20 +81,41 @@ impl Host {
     }
 
     /// 将音符添加到实例列表
+    ///
+    /// 优化：
+    /// 1. 使用 fold + reduce 模式，避免中间 Vec 分配
+    /// 2. 直接使用索引访问，避免创建引用 Vec
     pub(super) fn add_notes_to_instances(
         instances: &mut Vec<lumino_gfx::NoteInstance>,
         notes: &im::Vector<crate::editor::note::Note>,
         color: [f32; 4],
     ) {
         if notes.len() > super::PARALLEL_THRESHOLD {
-            // 大数据量使用并行处理
-            let notes_vec: Vec<_> = notes.iter().collect();
-            let parallel_instances: Vec<lumino_gfx::NoteInstance> = notes_vec
-                .par_iter()
-                .map(|note| {
-                    lumino_gfx::NoteInstance::new(note.tick, note.key as f32, note.length, color)
-                })
-                .collect();
+            // 大数据量使用并行处理 - 使用 fold + reduce 减少内存分配
+            let note_count = notes.len();
+            let parallel_instances: Vec<lumino_gfx::NoteInstance> = (0..note_count)
+                .into_par_iter()
+                .fold(
+                    || Vec::with_capacity(note_count / rayon::current_num_threads() + 1),
+                    |mut local, i| {
+                        // SAFETY: i 在 0..note_count 范围内
+                        let note = unsafe { notes.get(i).unwrap_unchecked() };
+                        local.push(lumino_gfx::NoteInstance::new(
+                            note.tick,
+                            note.key as f32,
+                            note.length,
+                            color,
+                        ));
+                        local
+                    },
+                )
+                .reduce(
+                    || Vec::new(),
+                    |mut a, b| {
+                        a.extend(b);
+                        a
+                    },
+                );
             instances.extend(parallel_instances);
         } else {
             // 小数据量使用串行处理

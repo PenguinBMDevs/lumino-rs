@@ -34,6 +34,10 @@ impl GpuNoteBuffer {
     }
 
     /// 批量上传所有音符（初始化时使用）
+    ///
+    /// 优化：
+    /// 1. 使用 extend_from_slice 替代 to_vec，避免重复分配
+    /// 2. 预分配 capacity，减少重新分配
     pub fn upload_all(&mut self, instances: &[crate::NoteInstance]) {
         puffin::profile_function!();
         if instances.is_empty() {
@@ -56,13 +60,17 @@ impl GpuNoteBuffer {
             );
         }
         self.instance_count = upload_count;
-        self.instances = instances[..upload_count].to_vec();
 
-        // 上传数据到 GPU
+        // 优化：预分配并直接拷贝，避免 to_vec 的额外分配
+        self.instances.clear();
+        self.instances.reserve(upload_count);
+        self.instances.extend_from_slice(&instances[..upload_count]);
+
+        // 上传数据到 GPU - 直接从原始 slice 上传，避免通过 self.instances 中转
         self.queue.write_buffer(
             &self.instance_buffer,
             0,
-            bytemuck::cast_slice(&self.instances),
+            bytemuck::cast_slice(&instances[..upload_count]),
         );
 
         tracing::debug!("Uploading {} notes", upload_count);

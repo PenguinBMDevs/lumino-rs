@@ -87,9 +87,7 @@ impl Editor {
     /// 获取所有洋葱皮音符原始数据（用于缓存）
     /// 返回 (tick, key, length, color) 元组，不含屏幕坐标
     ///
-    /// 优化：
-    /// 1. 直接使用 MidiDocument 查询，避免构建空间索引的开销
-    /// 2. 使用 rayon 并行处理多音轨，充分利用多核 CPU
+    /// 纯流式处理，无数量限制，确保黑乐谱完整显示。
     pub fn get_onion_skin_notes(
         &self,
         track_onion_states: &std::collections::HashMap<usize, bool>,
@@ -111,9 +109,9 @@ impl Editor {
             return Vec::new();
         }
 
-        const ONION_SKIN_SEARCH_EXTENSION: f32 = 19200.0;
-        let search_start = (visible_tick_start - ONION_SKIN_SEARCH_EXTENSION).max(0.0);
-        let search_end = visible_tick_end + ONION_SKIN_SEARCH_EXTENSION;
+        // 搜索范围 = 视口范围
+        let search_start = visible_tick_start;
+        let search_end = visible_tick_end;
 
         // 预收集音轨颜色和启用状态，避免在闭包中访问 self
         let track_configs: Vec<(usize, bool, iced_core::Color)> = track_indices
@@ -128,7 +126,7 @@ impl Editor {
             })
             .collect();
 
-        // 并行处理音轨查询 - 使用 fold + reduce 模式减少内存分配
+        // 并行处理音轨查询 - 纯流式处理，无数量限制
         let all_notes: Vec<(f32, u16, f32, iced_core::Color)> = track_configs
             .par_iter()
             .filter_map(|&(track_idx, _is_enabled, color)| {
@@ -147,10 +145,9 @@ impl Editor {
                     return None;
                 }
 
-                // 预分配容量（估算）
-                let mut track_notes = Vec::with_capacity(raw.len() / 2);
+                // 纯流式处理：直接构建结果，无限制
+                let mut track_notes = Vec::with_capacity(raw.len());
                 
-                // 直接遍历而非使用 filter_map，减少闭包开销
                 for &(tick, key, length, _vel, _ch) in raw.iter() {
                     let key_u16 = key as u16;
                     if key_u16 >= visible_key_min
@@ -171,7 +168,7 @@ impl Editor {
             .reduce(
                 || Vec::new(),
                 |mut a, mut b| {
-                    // 如果 a 为空，直接返回 b，避免不必要的扩展
+                    // 如果 a 为空，直接返回 b
                     if a.is_empty() {
                         return b;
                     }
@@ -267,10 +264,9 @@ impl Editor {
 
     /// 获取所有洋葱皮音符实例（视口范围内）
     ///
-    /// 直接从 MidiDocument 查询，利用预排序事件的二分查找，
-    /// 零额外内存缓存，零数据拷贝。
+    /// 直接从 MidiDocument 查询，利用预排序事件的二分查找。
+    /// 纯流式处理，无数量限制，确保黑乐谱完整显示。
     /// 使用 rayon 并行处理多音轨，充分利用多核 CPU。
-    /// 优化：使用 fold + reduce 模式减少内存分配
     pub fn get_all_onion_skin_instances_in_range(
         &mut self,
         track_onion_states: &std::collections::HashMap<usize, bool>,
@@ -287,9 +283,11 @@ impl Editor {
             return Vec::new();
         };
 
-        const ONION_SKIN_SEARCH_EXTENSION: f32 = 19200.0;
-        let search_start = (visible_tick_start - ONION_SKIN_SEARCH_EXTENSION).max(0.0);
-        let search_end = visible_tick_end + ONION_SKIN_SEARCH_EXTENSION;
+        // 搜索范围 = 视口范围
+        let search_start = visible_tick_start;
+        let search_end = visible_tick_end;
+        let search_key_min = visible_key_min;
+        let search_key_max = visible_key_max;
 
         let track_indices = self.collect_visible_track_indices(track_onion_states);
         if track_indices.is_empty() {
@@ -306,7 +304,7 @@ impl Editor {
             })
             .collect();
 
-        // 并行处理音轨查询 - 使用 fold + reduce 模式减少内存分配
+        // 并行处理音轨查询 - 纯流式处理，无数量限制
         let all_instances: Vec<NoteInstance> = track_colors
             .par_iter()
             .filter_map(|&(track_idx, color_arr)| {
@@ -316,16 +314,15 @@ impl Editor {
                     return None;
                 }
 
-                // 预分配容量（估算）
-                let mut instances = Vec::with_capacity(raw.len() / 2);
+                // 纯流式处理：直接构建实例，无限制
+                let mut instances = Vec::with_capacity(raw.len());
                 
-                // 直接遍历而非使用 filter_map，减少闭包开销
                 for &(tick, key, length, _vel, _ch) in raw.iter() {
                     let key_u16 = key as u16;
-                    if key_u16 >= visible_key_min
-                        && key_u16 <= visible_key_max
-                        && tick + length >= visible_tick_start
-                        && tick <= visible_tick_end
+                    if key_u16 >= search_key_min
+                        && key_u16 <= search_key_max
+                        && tick + length >= search_start
+                        && tick <= search_end
                     {
                         instances.push(NoteInstance::new(tick, key as f32, length, color_arr));
                     }
@@ -340,7 +337,7 @@ impl Editor {
             .reduce(
                 || Vec::new(),
                 |mut a, mut b| {
-                    // 如果 a 为空，直接返回 b，避免不必要的扩展
+                    // 如果 a 为空，直接返回 b
                     if a.is_empty() {
                         return b;
                     }
