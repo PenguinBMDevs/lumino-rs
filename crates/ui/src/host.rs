@@ -21,9 +21,8 @@ use iced_winit::{Clipboard, winit};
 
 use crate::WgpuRenderThread;
 use crate::{
-    RenderCommand, RenderThreadHandle, config, root, settings, spawn_render_thread, window,
+    config, root, settings, window,
 };
-use lumino_gfx::NoteInstance;
 
 mod cache;
 mod dialog;
@@ -76,11 +75,7 @@ pub struct Host {
     pub(crate) last_edit_state: crate::editor::EditState,
     /// 上次渲染时的光标位置（用于检测 preview 音符变化）
     pub(crate) last_cursor_position: Option<iced_core::Point>,
-    /// 渲染线程句柄（可选，用于多线程渲染模式）
-    pub(crate) render_thread: Option<RenderThreadHandle>,
-    /// 是否使用独立渲染线程
-    pub(crate) use_render_thread: bool,
-    /// 新的 WGPU 渲染线程（真正分离）
+    /// WGPU 渲染线程
     pub(crate) wgpu_render_thread: Option<WgpuRenderThread>,
     /// WGPU 渲染线程通信
     pub(crate) note_events_tx: Option<std::sync::mpsc::Sender<lumino_gfx::NoteEvent>>,
@@ -89,7 +84,7 @@ pub struct Host {
     /// 是否已经渲染过 UI（用于首次渲染缓存判断）
     pub(crate) has_rendered_ui: bool,
     /// 上次渲染时的光标状态（用于检测光标移动，确保鼠标指针样式更新）
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "保留用于光标位置检测，后续 cursor icon 动态切换会用到")]
     pub(crate) last_render_cursor: iced_core::mouse::Cursor,
 
     // WGPU 资源（为离屏渲染保留）
@@ -162,8 +157,6 @@ impl Host {
             render_cache: RenderCache::new(),
             last_edit_state: crate::editor::EditState::default(),
             last_cursor_position: None,
-            render_thread: None,
-            use_render_thread: false,
             wgpu_render_thread: None,
             note_events_tx: None,
             use_separate_render_thread: false,
@@ -233,8 +226,6 @@ impl Host {
             render_cache: RenderCache::new(),
             last_edit_state: crate::editor::EditState::default(),
             last_cursor_position: None,
-            render_thread: None,
-            use_render_thread: false,
             wgpu_render_thread: None,
             note_events_tx: None,
             use_separate_render_thread: false,
@@ -244,43 +235,6 @@ impl Host {
             queue: gfx.queue.clone(),
             format: gfx.format,
         }
-    }
-
-    /// 启用独立渲染线程模式
-    ///
-    /// 这会将WGPU渲染从UI线程分离到独立线程，提高UI响应性
-    pub fn enable_render_thread(&mut self) {
-        if self.render_thread.is_some() {
-            return;
-        }
-
-        let (mut handle, receiver) = RenderThreadHandle::new();
-        let stats = Arc::clone(&handle.stats);
-
-        // 启动渲染线程
-        let thread_handle = spawn_render_thread(receiver, stats);
-
-        // 存储线程句柄
-        handle.thread_handle = Some(thread_handle);
-
-        self.render_thread = Some(handle);
-        self.use_render_thread = true;
-
-        tracing::info!("Host: Render thread enabled");
-    }
-
-    /// 禁用独立渲染线程模式
-    pub fn disable_render_thread(&mut self) {
-        if let Some(handle) = self.render_thread.take() {
-            handle.shutdown();
-            self.use_render_thread = false;
-            tracing::info!("Host: Render thread disabled");
-        }
-    }
-
-    /// 获取渲染线程统计信息
-    pub fn render_stats(&self) -> Option<crate::RenderStats> {
-        self.render_thread.as_ref().map(|h| h.stats())
     }
 
     /// 启用真正的分离渲染线程（新架构）
@@ -344,11 +298,6 @@ impl Host {
             Size::new(width, height),
             self.window.scale_factor() as f32,
         );
-
-        // 通知渲染线程调整大小
-        if let Some(ref handle) = self.render_thread {
-            handle.send(RenderCommand::Resize { width, height });
-        }
     }
 
     /// 获取当前光标位置（逻辑坐标）
@@ -383,15 +332,6 @@ impl Host {
         breakdown.note_instance_size = instance_size as usize;
 
         breakdown
-    }
-}
-
-impl Drop for Host {
-    fn drop(&mut self) {
-        // 确保渲染线程正确关闭
-        if self.render_thread.is_some() {
-            self.disable_render_thread();
-        }
     }
 }
 

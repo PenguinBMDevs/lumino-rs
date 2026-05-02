@@ -10,6 +10,12 @@ use crate::{Theme, window};
 
 pub struct Titlebar;
 
+impl Default for Titlebar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Titlebar {
     pub fn new() -> Self {
         Self
@@ -34,7 +40,9 @@ impl Titlebar {
         };
 
         // 构建标题栏内容：左侧菜单 + 中间可拖动区域 + 右侧窗口控制
-        let inner = if cfg!(target_os = "macos") {
+        
+
+        if cfg!(target_os = "macos") {
             // macOS: FPS 已移到底部状态栏显示，标题栏只保留菜单和弹性空间
             let mut row = menu_row;
 
@@ -104,9 +112,7 @@ impl Titlebar {
                 })
                 .align_y(Alignment::Start)
                 .into()
-        };
-
-        inner
+        }
     }
 
     /// 经典系统标题栏模式：只显示菜单，在最左侧

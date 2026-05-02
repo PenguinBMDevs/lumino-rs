@@ -57,8 +57,6 @@ impl MidiDocument {
         midi_path: P,
         progress: Option<&dyn Fn(f64)>,
     ) -> MidiResult<Self> {
-        // 大分配前检查内存（MIDI 文件解析会产生 12bytes/event 的事件数据，
-        // 对 10M 事件的黑乐谱就是 120MB 额外分配）
         crate::memory_monitor::MemoryMonitor::global().check();
 
         let path = midi_path.as_ref();
@@ -73,10 +71,8 @@ impl MidiDocument {
             (cb)(0.15);
         }
 
-        // 轻量扫描音轨名称
         let track_names = scan_track_names(&file_bytes);
 
-        // 使用 midly 提取 PackedNote（返回结果按音轨分组，track 0, track 1, ...）
         let (notes, tempo_changes) = midly::loader::extract_notes_from_bytes(&file_bytes)
             .map_err(|e| super::error::MidiError::Parse(format!("提取音符失败: {e}")))?;
 
@@ -86,8 +82,15 @@ impl MidiDocument {
             (cb)(0.50);
         }
 
-        // 第一遍：统计每个音轨的音符数和总 tick
-        // 由于 notes 按音轨分组（文档保证），只需线性扫描一次
+        Self::build_from_extracted_notes(notes, tempo_changes, track_names, progress)
+    }
+
+    pub(crate) fn build_from_extracted_notes(
+        notes: Vec<midly::loader::PackedNote>,
+        tempo_changes: Vec<(u32, f32)>,
+        track_names: Vec<Option<String>>,
+        progress: Option<&dyn Fn(f64)>,
+    ) -> MidiResult<Self> {
         let mut total_ticks: u32 = 0;
         let mut track_note_counts: Vec<u64> = Vec::new();
         let mut total_note_count: usize = 0;
@@ -106,7 +109,6 @@ impl MidiDocument {
             (cb)(0.55);
         }
 
-        // 计算 per-track events 偏移量（每个 PackedNote 产生 2 个 CompactEvent）
         let mut track_events_offset: Vec<usize> = Vec::with_capacity(track_note_counts.len());
         let mut offset: usize = 0;
         for count in &track_note_counts {
@@ -119,17 +121,12 @@ impl MidiDocument {
             .saturating_add(tempo_changes.len());
         let mut events: Vec<CompactEvent> = Vec::with_capacity(estimated_capacity);
 
-        // 第二遍：检测音轨边界，逐音轨将 PackedNote → CompactEvent
-        // 避免使用 resize + 索引写入（需要预置零），改用 push 顺序写入
-        // 收集合并后的 tempo 变化
         let mut all_tempo_changes: Vec<(u32, f32)> = vec![(0u32, 120.0f32)];
-        // 使用迭代器消费 notes，逐步前移
         let mut iter = notes.iter().peekable();
 
         while let Some(first_note) = iter.next() {
             let tid = first_note.track as usize;
 
-            // 写入当前 note 的 2 个 CompactEvent
             events.push(CompactEvent::new(
                 first_note.start_tick,
                 first_note.track,
@@ -147,12 +144,7 @@ impl MidiDocument {
                 first_note.velocity as u16,
             ));
 
-            // 继续处理同一音轨的后续音符
-            while let Some(next) = iter.peek() {
-                if next.track as usize != tid {
-                    break;
-                }
-                let note = iter.next().unwrap();
+            while let Some(note) = iter.next_if(|n| n.track as usize == tid) {
                 events.push(CompactEvent::new(
                     note.start_tick,
                     note.track,
@@ -171,10 +163,8 @@ impl MidiDocument {
                 ));
             }
         }
-        // 此时 notes 已消费完毕，其内存仍存活但在下面的 drop 中释放
         drop(notes);
 
-        // 收集 tempo 变化
         for &(tick, bpm) in &tempo_changes {
             if !all_tempo_changes.iter().any(|(t, _)| *t == tick) {
                 all_tempo_changes.push((tick, bpm));
@@ -182,7 +172,6 @@ impl MidiDocument {
         }
         all_tempo_changes.sort_unstable_by_key(|&(t, _)| t);
 
-        // 追加 tempo 事件到 events 末尾
         for &(tick, bpm) in &all_tempo_changes {
             let tempo_microseconds = if bpm > 0.0 {
                 (60_000_000.0 / bpm) as u32
@@ -203,9 +192,6 @@ impl MidiDocument {
             (cb)(0.75);
         }
 
-        // 构建 per-track range（基于 push 顺序重新计算）
-        // 因为前面用 push 顺序写入，需要用 track_note_counts 重建 range
-        // 注意：tempo 事件追加在末尾，不计入音轨 range
         let mut track_events_range: Vec<(usize, usize)> =
             Vec::with_capacity(track_note_counts.len());
         for (i, count) in track_note_counts.iter().enumerate() {
@@ -216,8 +202,6 @@ impl MidiDocument {
 
         events.shrink_to_fit();
 
-        // 就地排序每个音轨的事件，使后续二分查找可行
-        // 零额外内存，修改 events 中的现有数据
         for &(start, end) in &track_events_range {
             if start < end {
                 events[start..end].sort_by_key(|e| e.delta_tick());

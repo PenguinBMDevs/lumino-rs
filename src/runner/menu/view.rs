@@ -19,13 +19,13 @@ impl RunnerInner {
 
         match view_event {
             Theme(theme) => {
-                self.window.ui_mut().update_theme(theme.clone());
-                self.storage.config.patch(|state| {
+                self.window_state.window.ui_mut().update_theme(theme.clone());
+                self.window_state.storage.config.patch(|state| {
                     state.ui.theme = theme;
                 });
             }
             ZoomIn => {
-                let ui = self.window.ui_mut();
+                let ui = self.window_state.window.ui_mut();
                 let root = ui.root_mut();
                 let new_zoom_x = root.editor.state.zoom_x * ZOOM_FACTOR;
                 let new_zoom_y = root.editor.state.zoom_y * ZOOM_FACTOR;
@@ -33,7 +33,7 @@ impl RunnerInner {
                 root.editor.set_zoom_y(new_zoom_y, 0.5);
             }
             ZoomOut => {
-                let ui = self.window.ui_mut();
+                let ui = self.window_state.window.ui_mut();
                 let root = ui.root_mut();
                 let new_zoom_x = root.editor.state.zoom_x / ZOOM_FACTOR;
                 let new_zoom_y = root.editor.state.zoom_y / ZOOM_FACTOR;
@@ -41,7 +41,7 @@ impl RunnerInner {
                 root.editor.set_zoom_y(new_zoom_y, 0.5);
             }
             ZoomReset => {
-                let ui = self.window.ui_mut();
+                let ui = self.window_state.window.ui_mut();
                 let root = ui.root_mut();
                 root.editor.set_zoom_x(DEFAULT_ZOOM_X, 0.5);
                 root.editor.set_zoom_y(DEFAULT_ZOOM_Y, 0.5);

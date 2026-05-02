@@ -1,3 +1,5 @@
+use crate::constants::filters;
+
 /// 文件处理器
 pub struct FileHandler {}
 
@@ -9,11 +11,11 @@ impl FileHandler {
     /// 打开文件对话框并返回选择的路径
     pub fn handle_open_file(&self) -> Option<std::path::PathBuf> {
         rfd::FileDialog::new()
-            .add_filter("音乐文件", &["mid", "midi", "lmpj", "dms"])
-            .add_filter("MIDI 文件", &["mid", "midi"])
-            .add_filter("Lumino 项目", &["lmpj"])
-            .add_filter("Domino 项目", &["dms"])
-            .add_filter("所有文件", &["*"])
+            .add_filter(filters::MUSIC_FILES.0, filters::MUSIC_FILES.1)
+            .add_filter(filters::MIDI_FILES.0, filters::MIDI_FILES.1)
+            .add_filter(filters::LUMINO_PROJECT.0, filters::LUMINO_PROJECT.1)
+            .add_filter(filters::DOMINO_PROJECT.0, filters::DOMINO_PROJECT.1)
+            .add_filter(filters::ALL_FILES.0, filters::ALL_FILES.1)
             .pick_file()
     }
 }

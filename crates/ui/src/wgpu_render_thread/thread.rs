@@ -77,7 +77,7 @@ impl WgpuRenderThread {
         if let Some(ref sender) = self.command_sender {
             // 使用非阻塞发送，如果通道满则丢弃旧帧
             // 注意：std::sync::mpsc 没有 try_send，我们使用 send 并设置较小的通道容量
-            match sender.send(RenderCommand::Render(params)) {
+            match sender.send(RenderCommand::Render(Box::new(params))) {
                 Ok(_) => {}
                 Err(_) => {
                     // 通道关闭或满，丢弃这一帧
@@ -155,7 +155,7 @@ mod tests {
     #[test]
     fn test_render_command_debug() {
         let params = RenderParams::default();
-        let cmd = RenderCommand::Render(params);
+        let cmd = RenderCommand::Render(Box::new(params));
         let debug_str = format!("{:?}", cmd);
         assert!(debug_str.contains("Render"));
     }

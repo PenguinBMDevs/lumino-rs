@@ -19,11 +19,11 @@ impl winit::application::ApplicationHandler for Runner {
                 {
                     tracing::info!("测试模式：准备加载 MIDI - {}", test_config.midi_path);
                     let midi_path = std::path::PathBuf::from(&test_config.midi_path);
-                    let progress_cb = this.progress_cb.clone();
+                    let progress_cb = this.window_state.progress_cb.clone();
                     let test_duration = test_config.test_time;
 
-                    this.window.ui_mut().skip_ui_rendering = true;
-                    this.test_mode_state = Some(TestModeState {
+                    this.window_state.window.ui_mut().skip_ui_rendering = true;
+                    this.test_state.test_mode_state = Some(TestModeState {
                         active: false,
                         start_time: None,
                         duration: test_duration,
@@ -85,17 +85,17 @@ impl winit::application::ApplicationHandler for Runner {
         };
 
         // 首先检查是否是进度窗口
-        if this.progress.is_progress_window(window_id) {
-            this.progress.handle_event(event);
+        if this.window_state.progress.is_progress_window(window_id) {
+            this.window_state.progress.handle_event(event);
             return;
         }
 
         // 检查是否是对话框窗口
-        if this.dialog_manager.is_dialog_window(window_id) {
+        if this.window_state.dialog_manager.is_dialog_window(window_id) {
             let mut dialog_result = None;
             let mut should_close = false;
 
-            if let Some(dialog) = this.dialog_manager.get_dialog_mut(window_id) {
+            if let Some(dialog) = this.window_state.dialog_manager.get_dialog_mut(window_id) {
                 dialog.handle_event(event);
 
                 // 检查对话框是否应该关闭
@@ -110,10 +110,10 @@ impl winit::application::ApplicationHandler for Runner {
 
             // 如果应该关闭，关闭对话框
             if should_close {
-                this.dialog_manager.close_dialog(window_id);
+                this.window_state.dialog_manager.close_dialog(window_id);
             } else {
                 // 请求重绘对话框
-                if let Some(dialog) = this.dialog_manager.get_dialog_mut(window_id) {
+                if let Some(dialog) = this.window_state.dialog_manager.get_dialog_mut(window_id) {
                     dialog.redraw();
                 }
             }
@@ -122,14 +122,14 @@ impl winit::application::ApplicationHandler for Runner {
             if let Some(result) = dialog_result {
                 match result {
                     crate::runner::dialog_manager::DialogResult::LoadConfirm => {
-                        if let Some(path) = this.pending_load_path.take() {
+                        if let Some(path) = this.file_state.pending_load_path.take() {
                             this.load_midi_file(path);
                         } else {
                             tracing::warn!("LoadConfirm: 没有 pending 的加载路径");
                         }
                     }
                     other => {
-                        let main_ui = this.window.ui_mut();
+                        let main_ui = this.window_state.window.ui_mut();
                         crate::runner::Runner::apply_dialog_result_to_ui(main_ui, other);
                     }
                 }
@@ -138,7 +138,7 @@ impl winit::application::ApplicationHandler for Runner {
         }
 
         // 主窗口事件
-        this.window.handle_event(event, &mut this.storage);
+        this.window_state.window.handle_event(event, &mut this.window_state.storage);
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -149,127 +149,138 @@ impl winit::application::ApplicationHandler for Runner {
         };
 
         // 处理进度消息
-        let main_window = this.window.window().clone();
-        let main_ui = this.window.ui_mut();
-        this.progress.process_messages(main_ui, &main_window);
+        let main_window = this.window_state.window.window().clone();
+        let main_ui = this.window_state.window.ui_mut();
+        this.window_state.progress.process_messages(main_ui, &main_window);
 
         // 更新进度窗口
-        let ui_config = this.storage.config.get().ui.clone();
-        this.progress.update(event_loop, &ui_config);
+        let ui_config = this.window_state.storage.config.get().ui.clone();
+        this.window_state.progress.update(event_loop, &ui_config);
 
         // 处理窗口动作
-        this.window.handle_window_actions(event_loop);
+        this.window_state.window.handle_window_actions(event_loop);
 
         // 处理音频动作
-        Runner::process_audio_actions(&mut this.window, &mut this.midi);
+        Runner::process_audio_actions(&mut this.window_state.window, &mut this.midi_state.midi);
 
         // 处理核心事件（包括打开对话框）
         this.process_core_events(event_loop);
 
         // 初始化新创建的对话框（同步主窗口的协作状态）
         {
-            let main_ui = this.window.ui();
-            this.dialog_manager
+            let main_ui = this.window_state.window.ui();
+            this.window_state.dialog_manager
                 .initialize_pending_with_collaboration_state(
                     event_loop,
-                    this.window.window(),
-                    &this.storage.config.get().ui,
+                    this.window_state.window.window(),
+                    &this.window_state.storage.config.get().ui,
                     main_ui,
                 );
         }
 
         // 更新对话框
-        this.dialog_manager.update();
+        this.window_state.dialog_manager.update();
 
         // 保存存储
         this.save_storage();
 
-        // ── 内存占用日志（每2000ms输出） ──
-        // 放在 process_core_events 之后，确保能看到 MIDI 导入后的状态
-        if this.log_memory_usage {
-            let now = Instant::now();
-            let should_log = this
-                .last_memory_log
-                .map(|last| now.duration_since(last) >= Duration::from_millis(2000))
-                .unwrap_or(true);
-            if should_log {
-                this.last_memory_log = Some(now);
-                let mem = this.window.ui().memory_breakdown();
+        // 内存日志
+        this.handle_memory_logging();
 
-                // 进程 RSS
-                let rss_mb = lumino_core::memory_monitor::MemoryMonitor::global().current_rss()
-                    / (1024 * 1024);
+        // 重新初始化 MIDI 或检查 XSynth 异步初始化
+        this.handle_midi_reinit();
 
-                // note_instances 双缓冲总量
-                let front_total =
-                    mem.note_instances_front_cap as u64 * mem.note_instance_size as u64;
-                let back_total = mem.note_instances_back_cap as u64 * mem.note_instance_size as u64;
-
-                tracing::info!(
-                    "\n\
-                    ┌─ Memory Usage ──────────────────────────────────────────┐\n\
-                    │ 进程 RSS:              {:>8} MB                         │\n\
-                    ├─────────────────────────────────────────────────────────┤\n\
-                    │ MidiDocument.events:   {:>8} MB  (Vec<CompactEvent>)    │\n\
-                    │ editor.notes:          {:>8} MB  (im::Vector<Note>)     │\n\
-                    │ track_notes({}条):  {:>8} MB  ({} 音符)              │\n\
-                    │ track_midi_events:     {:>8} MB  ({} 条)               │\n\
-                    │ onion_skin_cache:      {:>8} MB                         │\n\
-                    ├─────────────────────────────────────────────────────────┤\n\
-                    │ note_instances(双缓冲):                                │\n\
-                    │   前缓冲区:            {:>8} MB  (cap={}, len={})      │\n\
-                    │   后缓冲区:            {:>8} MB  (cap={}, len={})      │\n\
-                    │   双缓冲合计:          {:>8} MB                         │\n\
-                    └─────────────────────────────────────────────────────────┘",
-                    rss_mb,
-                    mem.editor.document_events_bytes / (1024 * 1024),
-                    mem.editor.notes_bytes / (1024 * 1024),
-                    mem.editor.track_notes_entries,
-                    mem.editor.track_notes_bytes / (1024 * 1024),
-                    mem.editor.track_notes_count,
-                    mem.track_midi_events_bytes / (1024 * 1024),
-                    mem.track_midi_events_entries,
-                    mem.cached_onion_skin_bytes / (1024 * 1024),
-                    front_total / (1024 * 1024),
-                    mem.note_instances_front_cap,
-                    mem.note_instances_front_len,
-                    back_total / (1024 * 1024),
-                    mem.note_instances_back_cap,
-                    mem.note_instances_back_len,
-                    (front_total + back_total) / (1024 * 1024),
-                );
-            }
+        // 检查是否需要重启窗口（标题栏设置变更）
+        if this.window_state.needs_window_restart {
+            this.window_state.needs_window_restart = false;
+            this.restart_window(event_loop);
         }
 
-        // 重新初始化 MIDI 如果需要
-        if this.midi.needs_reinit() {
-            let ui_config = this.storage.config.get().ui.clone();
-            this.midi.reinit_if_needed(&ui_config);
+        // 控制循环休眠策略
+        this.handle_control_flow(event_loop);
+
+        // 测试模式 FPS 监测
+        this.handle_test_mode_fps(event_loop);
+    }
+}
+
+impl super::inner::RunnerInner {
+    fn handle_memory_logging(&mut self) {
+        if !self.test_state.log_memory_usage {
+            return;
+        }
+        let now = Instant::now();
+        let should_log = self
+            .test_state.last_memory_log
+            .map(|last| now.duration_since(last) >= Duration::from_millis(2000))
+            .unwrap_or(true);
+        if should_log {
+            self.test_state.last_memory_log = Some(now);
+            let mem = self.window_state.window.ui().memory_breakdown();
+
+            let rss_mb = lumino_core::memory_monitor::MemoryMonitor::global().current_rss()
+                / (1024 * 1024);
+
+            let front_total = mem.note_instances_front_cap as u64 * mem.note_instance_size as u64;
+            let back_total = mem.note_instances_back_cap as u64 * mem.note_instance_size as u64;
+
+            tracing::info!(
+                "\n\
+                ┌─ Memory Usage ──────────────────────────────────────────┐\n\
+                │ 进程 RSS:              {:>8} MB                         │\n\
+                ├─────────────────────────────────────────────────────────┤\n\
+                │ MidiDocument.events:   {:>8} MB  (Vec<CompactEvent>)    │\n\
+                │ editor.notes:          {:>8} MB  (im::Vector<Note>)     │\n\
+                │ track_notes({}条):  {:>8} MB  ({} 音符)              │\n\
+                │ track_midi_events:     {:>8} MB  ({} 条)               │\n\
+                │ onion_skin_cache:      {:>8} MB                         │\n\
+                ├─────────────────────────────────────────────────────────┤\n\
+                │ note_instances(双缓冲):                                │\n\
+                │   前缓冲区:            {:>8} MB  (cap={}, len={})      │\n\
+                │   后缓冲区:            {:>8} MB  (cap={}, len={})      │\n\
+                │   双缓冲合计:          {:>8} MB                         │\n\
+                └─────────────────────────────────────────────────────────┘",
+                rss_mb,
+                mem.editor.document_events_bytes / (1024 * 1024),
+                mem.editor.notes_bytes / (1024 * 1024),
+                mem.editor.track_notes_entries,
+                mem.editor.track_notes_bytes / (1024 * 1024),
+                mem.editor.track_notes_count,
+                mem.track_midi_events_bytes / (1024 * 1024),
+                mem.track_midi_events_entries,
+                mem.cached_onion_skin_bytes / (1024 * 1024),
+                front_total / (1024 * 1024),
+                mem.note_instances_front_cap,
+                mem.note_instances_front_len,
+                back_total / (1024 * 1024),
+                mem.note_instances_back_cap,
+                mem.note_instances_back_len,
+                (front_total + back_total) / (1024 * 1024),
+            );
+        }
+    }
+
+    fn handle_midi_reinit(&mut self) {
+        if self.midi_state.midi.needs_reinit() {
+            let ui_config = self.window_state.storage.config.get().ui.clone();
+            self.midi_state.midi.reinit_if_needed(&ui_config);
         }
 
-        // 检查 XSynth 异步初始化是否完成
-        // 如果后端从 System 切到 XSynth，同步更新播放引擎的 MIDI 输出
-        if this.midi.check_async_init_complete() {
+        if self.midi_state.midi.check_async_init_complete() {
             tracing::info!("XSynth: 异步初始化完成，正在创建新的播放连接...");
-            if let Some(output) = this.midi.create_additional_output() {
-                this.window.ui_mut().set_playback_midi_output(output);
+            if let Some(output) = self.midi_state.midi.create_additional_output() {
+                self.window_state.window.ui_mut().set_playback_midi_output(output);
                 tracing::info!("XSynth: 播放引擎 MIDI 输出已更新为 XSynth");
             } else {
                 tracing::error!("XSynth: 无法创建 XSynth 播放输出，播放将无声");
             }
         }
+    }
 
-        // 检查是否需要重启窗口（标题栏设置变更）
-        if this.needs_window_restart {
-            this.needs_window_restart = false;
-            this.restart_window(event_loop);
-        }
-
-        // 检查播放状态：播放时使用 Poll 模式确保持续重绘，暂停时使用 Wait 模式节省资源
-        let is_playing = this.window.ui().is_playing();
-
-        let is_test_active = this
-            .test_mode_state
+    fn handle_control_flow(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        let is_playing = self.window_state.window.ui().is_playing();
+        let is_test_active = self
+            .test_state.test_mode_state
             .as_ref()
             .map(|s| s.active)
             .unwrap_or(false);
@@ -277,62 +288,63 @@ impl winit::application::ApplicationHandler for Runner {
 
         if should_poll {
             event_loop.set_control_flow(ControlFlow::Poll);
-            this.window.request_redraw();
-        } else if this.log_memory_usage {
-            // 内存日志模式：使用 WaitUntil 定时唤醒，确保 about_to_wait 每2秒触发一次
-            let next_log = this
-                .last_memory_log
+            self.window_state.window.request_redraw();
+        } else if self.test_state.log_memory_usage {
+            let next_log = self
+                .test_state.last_memory_log
                 .map(|last| last + Duration::from_millis(2000))
-                .unwrap_or_else(|| Instant::now());
+                .unwrap_or_else(Instant::now);
             event_loop.set_control_flow(ControlFlow::WaitUntil(next_log));
         } else {
             event_loop.set_control_flow(ControlFlow::Wait);
         }
+    }
 
-        // 测试模式 FPS 监测
-        if let Some(test_state) = &mut this.test_mode_state
-            && test_state.active
-        {
-            if test_state.start_time.is_none() {
-                // MIDI 加载完成，开始测试
-                test_state.start_time = Some(Instant::now());
-                test_state.last_fps_update = Some(Instant::now());
-                tracing::info!("FPS 测试开始");
-            }
+    fn handle_test_mode_fps(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        let Some(test_state) = &mut self.test_state.test_mode_state else {
+            return;
+        };
+        if !test_state.active {
+            return;
+        }
 
-            test_state.frame_count += 1;
-            let now = Instant::now();
+        if test_state.start_time.is_none() {
+            test_state.start_time = Some(Instant::now());
+            test_state.last_fps_update = Some(Instant::now());
+            tracing::info!("FPS 测试开始");
+        }
 
-            if let Some(last) = test_state.last_fps_update {
-                let elapsed = now.duration_since(last);
-                if elapsed.as_millis() >= 100 {
-                    let fps = test_state.frame_count as f32 / elapsed.as_secs_f32();
-                    test_state.fps_samples.push(fps);
-                    test_state.frame_count = 0;
-                    test_state.last_fps_update = Some(now);
+        test_state.frame_count += 1;
+        let now = Instant::now();
 
-                    tracing::info!(
-                        "FPS: {:.1} (samples: {})",
-                        fps,
-                        test_state.fps_samples.len()
-                    );
+        if let Some(last) = test_state.last_fps_update {
+            let elapsed = now.duration_since(last);
+            if elapsed.as_millis() >= 100 {
+                let fps = test_state.frame_count as f32 / elapsed.as_secs_f32();
+                test_state.fps_samples.push(fps);
+                test_state.frame_count = 0;
+                test_state.last_fps_update = Some(now);
 
-                    // 检查测试时间是否到达
-                    if let Some(duration) = test_state.duration {
-                        let should_exit = test_state
-                            .start_time
-                            .map(|start| now.duration_since(start) >= Duration::from_secs(duration))
-                            .unwrap_or(false);
-                        if should_exit {
-                            let avg_fps = test_state.fps_samples.iter().sum::<f32>()
-                                / test_state.fps_samples.len() as f32;
-                            tracing::info!("================================");
-                            tracing::info!("FPS 测试完成");
-                            tracing::info!("平均 FPS: {:.2}", avg_fps);
-                            tracing::info!("采样次数：{}", test_state.fps_samples.len());
-                            tracing::info!("================================");
-                            event_loop.exit();
-                        }
+                tracing::info!(
+                    "FPS: {:.1} (samples: {})",
+                    fps,
+                    test_state.fps_samples.len()
+                );
+
+                if let Some(duration) = test_state.duration {
+                    let should_exit = test_state
+                        .start_time
+                        .map(|start| now.duration_since(start) >= Duration::from_secs(duration))
+                        .unwrap_or(false);
+                    if should_exit {
+                        let avg_fps = test_state.fps_samples.iter().sum::<f32>()
+                            / test_state.fps_samples.len() as f32;
+                        tracing::info!("================================");
+                        tracing::info!("FPS 测试完成");
+                        tracing::info!("平均 FPS: {:.2}", avg_fps);
+                        tracing::info!("采样次数：{}", test_state.fps_samples.len());
+                        tracing::info!("================================");
+                        event_loop.exit();
                     }
                 }
             }

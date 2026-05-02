@@ -4,6 +4,7 @@
 use winit::event_loop::EventLoop;
 
 mod cli;
+mod constants;
 mod logging;
 mod platform;
 mod runner;

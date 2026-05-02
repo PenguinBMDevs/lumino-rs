@@ -178,7 +178,7 @@ impl Root {
         let grid_color = self.window.theme.grid_line_color();
 
         // 琴键分隔线颜色
-        let palette = self.window.theme.extended_palette().background;
+        let _palette = self.window.theme.extended_palette().background;
         let key_line_color = if self.window.theme.is_light() {
             iced_core::Color {
                 a: 0.2,

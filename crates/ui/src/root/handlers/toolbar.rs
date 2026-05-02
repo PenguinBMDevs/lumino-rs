@@ -100,20 +100,18 @@ impl ToolbarHandler {
         root.update_playback_notes();
 
         // 用缓存的 MIDI 输出连接
-        if let Some(output) = root.pending_midi_output.take() {
-            if let Some(manager) = &mut root.playback_manager {
+        if let Some(output) = root.pending_midi_output.take()
+            && let Some(manager) = &mut root.playback_manager {
                 manager.set_midi_output(output);
             }
-        }
 
         // 应用缓存的 tempo 变化
-        if let Some(changes) = root.pending_tempo_changes.take() {
-            if let Some(manager) = &mut root.playback_manager {
+        if let Some(changes) = root.pending_tempo_changes.take()
+            && let Some(manager) = &mut root.playback_manager {
                 manager.set_tempo_changes(changes);
             }
-        }
 
-        if let Some(manager) = &root.playback_manager {
+        if let Some(_manager) = &root.playback_manager {
             tracing::info!(
                 "Root: 播放管理器已初始化 (division={}, 过滤阈值={})",
                 division,
@@ -171,7 +169,7 @@ impl ToolbarHandler {
             root.editor
                 .set_auto_scroll_config(lumino_core::storage::config::AutoScrollConfig {
                     mode: root.toolbar.auto_scroll_mode,
-                    ..root.editor.auto_scroll_config().clone()
+                    ..*root.editor.auto_scroll_config()
                 });
             tracing::debug!(
                 "Root: 自动滚动模式同步为 {:?}",

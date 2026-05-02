@@ -13,7 +13,7 @@ pub enum ControlCommand {
 #[derive(Debug)]
 pub enum RenderCommand {
     /// 渲染一帧
-    Render(RenderParams),
+    Render(Box<RenderParams>),
     /// 控制命令
     Control(ControlCommand),
 }

@@ -11,33 +11,33 @@ impl RunnerInner {
             Undo => {
                 tracing::info!("Runner: 处理撤销操作");
                 // 发送撤销消息到UI
-                let ui = self.window.ui_mut();
+                let ui = self.window_state.window.ui_mut();
                 ui.handle_action(lumino_ui::message::EditorAction::Undo);
             }
             Redo => {
                 tracing::info!("Runner: 处理重做操作");
                 // 发送重做消息到UI
-                let ui = self.window.ui_mut();
+                let ui = self.window_state.window.ui_mut();
                 ui.handle_action(lumino_ui::message::EditorAction::Redo);
             }
             Cut => {
                 tracing::info!("Runner: 处理剪切操作");
-                let ui = self.window.ui_mut();
+                let ui = self.window_state.window.ui_mut();
                 ui.handle_action(lumino_ui::message::EditorAction::Cut);
             }
             Copy => {
                 tracing::info!("Runner: 处理复制操作");
-                let ui = self.window.ui_mut();
+                let ui = self.window_state.window.ui_mut();
                 ui.handle_action(lumino_ui::message::EditorAction::Copy);
             }
             Paste => {
                 tracing::info!("Runner: 处理粘贴操作");
-                let ui = self.window.ui_mut();
+                let ui = self.window_state.window.ui_mut();
                 ui.handle_action(lumino_ui::message::EditorAction::Paste);
             }
             SelectAll => {
                 tracing::info!("Runner: 处理全选操作");
-                let ui = self.window.ui_mut();
+                let ui = self.window_state.window.ui_mut();
                 ui.handle_action(lumino_ui::message::EditorAction::SelectAll);
             }
             _ => {

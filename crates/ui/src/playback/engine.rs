@@ -201,10 +201,10 @@ impl PlaybackEngine {
         let mut seq: u64 = 0;
 
         for note in &self.notes {
-            if let Some(st) = seek_tick {
-                if note.tick + note.length <= st {
-                    continue;
-                }
+            if let Some(st) = seek_tick
+                && note.tick + note.length <= st
+            {
+                continue;
             }
             self.event_queue.push(ScheduledEvent {
                 tick: note.tick,
@@ -294,11 +294,10 @@ impl PlaybackEngine {
 
             // ── 非音符 MIDI 事件（CC/PC/PB） ──
             for ev in &self.midi_events {
-                if ev.tick > self.last_processed_tick && ev.tick <= current_tick {
-                    if let Some(event_type) = Self::midi_event_to_event_type(&ev.message) {
+                if ev.tick > self.last_processed_tick && ev.tick <= current_tick
+                    && let Some(event_type) = Self::midi_event_to_event_type(&ev.message) {
                         Self::push_midi_message(event_type, &mut messages);
                     }
-                }
             }
         }
 
@@ -466,7 +465,7 @@ impl PlaybackEngine {
         self.lock_playback().map_or(0.0, |p| p.current_tick())
     }
 
-    fn lock_playback(&self) -> Option<std::sync::MutexGuard<Playback>> {
+    fn lock_playback(&self) -> Option<std::sync::MutexGuard<'_, Playback>> {
         self.playback.lock().ok()
     }
 

@@ -152,15 +152,14 @@ impl Host {
             for event in converted_events {
                 if let iced_core::Event::Mouse(mouse::Event::CursorMoved { .. }) = &event {
                     // 检查队列最后一个事件是否也是 CursorMoved
-                    if let Some(last) = self.events.last() {
-                        if matches!(
+                    if let Some(last) = self.events.last()
+                        && matches!(
                             last,
                             iced_core::Event::Mouse(mouse::Event::CursorMoved { .. })
                         ) {
                             // 替换最后一个事件
                             self.events.pop();
                         }
-                    }
                 }
                 self.events.push(event);
             }

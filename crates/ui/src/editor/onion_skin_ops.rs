@@ -326,11 +326,10 @@ impl Editor {
             // 转换为 NoteInstance（只保留 key 在可见范围内的）
             for &(tick, key, length, _vel, _ch) in &raw {
                 let key_u16 = key as u16;
-                if key_u16 >= visible_key_min && key_u16 <= visible_key_max {
-                    if tick + length >= visible_tick_start && tick <= visible_tick_end {
+                if key_u16 >= visible_key_min && key_u16 <= visible_key_max
+                    && tick + length >= visible_tick_start && tick <= visible_tick_end {
                         all_instances.push(NoteInstance::new(tick, key as f32, length, color_arr));
                     }
-                }
             }
         }
 

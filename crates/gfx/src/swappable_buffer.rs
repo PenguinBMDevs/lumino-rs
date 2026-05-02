@@ -3,69 +3,70 @@
 //! 设计原理：
 //! - Front Buffer: 渲染线程读取（只读）
 //! - Back Buffer: UI 线程写入（独占写）
-//! - 交换操作: 原子指针交换，无数据拷贝
+//! - 交换操作: 原子索引交换，无数据拷贝
+//!
+//! 为什么用数组索引而非裸指针：
+//! - 如果用 `AtomicPtr<Vec<T>>` 指向一个 `Vec<T>` 字段，当 `Self` 被移动时
+//!   该字段地址变化导致指针悬空，所以不得不套 `Box<Vec<T>>` 固定地址
+//! - 改用 `[Vec<T>; 2]` + `AtomicU8` 索引后，访问通过 front 索引运算，
+//!   即使 `Self` 移动也不影响正确性，且消除了 `Box` 引入的双重间接
 //!
 //! 使用场景：
 //! - 百万级音符数据从 UI 线程传递到渲染线程
 //! - 避免每帧的数据拷贝开销
 
+use std::cell::UnsafeCell;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 
 /// 双缓冲结构
 pub struct SwappableBuffer<T> {
-    /// 前缓冲区指针（渲染线程读取）
-    front: AtomicPtr<Vec<T>>,
-    /// 后缓冲区指针（UI 线程写入）
-    back: AtomicPtr<Vec<T>>,
+    /// 双缓冲区（通过 front 原子索引区分角色）
+    buffers: UnsafeCell<[Vec<T>; 2]>,
+    /// 前缓冲区索引（0 或 1），另一个即为后缓冲区
+    front: AtomicU8,
     /// 数据版本号（用于同步检测）
     version: AtomicU64,
-    /// 缓冲区 A（实际存储）
-    buffer_a: Box<Vec<T>>,
-    /// 缓冲区 B（实际存储）
-    buffer_b: Box<Vec<T>>,
 }
 
-impl<T: Clone> SwappableBuffer<T> {
+// Safety: 通过 Acquire/Release 协议保证跨线程安全访问，
+// 同一时间最多只有一个写入者和一个读取者，且不会同时访问同一缓冲区。
+unsafe impl<T: Send> Sync for SwappableBuffer<T> {}
+
+impl<T> SwappableBuffer<T> {
     /// 创建新的双缓冲
     pub fn new(initial_capacity: usize) -> Self {
-        let mut buffer_a = Box::new(Vec::with_capacity(initial_capacity));
-        let mut buffer_b = Box::new(Vec::with_capacity(initial_capacity));
-
         Self {
-            front: AtomicPtr::new(buffer_a.as_mut() as *mut Vec<T>),
-            back: AtomicPtr::new(buffer_b.as_mut() as *mut Vec<T>),
+            buffers: UnsafeCell::new([
+                Vec::with_capacity(initial_capacity),
+                Vec::with_capacity(initial_capacity),
+            ]),
+            front: AtomicU8::new(0),
             version: AtomicU64::new(0),
-            buffer_a,
-            buffer_b,
         }
+    }
+
+    /// 获取后缓冲区索引
+    fn back_index(&self) -> usize {
+        (1 - self.front.load(Ordering::Relaxed)) as usize
     }
 
     /// UI 线程：获取后缓冲区写入引用
     ///
     /// # Safety
     /// 必须在 UI 线程调用，且同一时间只能有一个写入者。
-    /// 使用内部可变性模式：通过原子指针从不可变引用获取可变访问。
-    #[expect(
-        clippy::mut_from_ref,
-        reason = "双缓冲设计需要内部可变性：通过原子指针安全地从 &self 获取 &mut Vec"
-    )]
     pub unsafe fn write_buffer(&self) -> &mut Vec<T> {
-        let ptr = self.back.load(Ordering::Relaxed);
-        unsafe { &mut *ptr }
+        let idx = self.back_index();
+        unsafe { &mut (*self.buffers.get())[idx] }
     }
 
     /// UI 线程：提交写入并交换缓冲区
     ///
     /// 交换后，前缓冲区包含最新数据，渲染线程可以读取
     pub fn swap(&self) -> u64 {
-        // 交换前后缓冲区指针
-        let front_ptr = self.front.load(Ordering::Acquire);
-        let back_ptr = self.back.load(Ordering::Acquire);
-
-        self.front.store(back_ptr, Ordering::Release);
-        self.back.store(front_ptr, Ordering::Release);
-
+        // 原子翻转 front 索引（0→1 或 1→0）
+        // Release 保证之前的缓冲区写入在 swap 之前可见
+        self.front.fetch_xor(1, Ordering::Release);
         // 递增版本号
         self.version.fetch_add(1, Ordering::AcqRel) + 1
     }
@@ -75,27 +76,21 @@ impl<T: Clone> SwappableBuffer<T> {
     /// # Safety
     /// 必须在渲染线程调用，且同一时间只能有一个读取者
     pub unsafe fn read_buffer(&self) -> &Vec<T> {
-        let ptr = self.front.load(Ordering::Acquire);
-        unsafe { &*ptr }
+        let idx = self.front.load(Ordering::Acquire) as usize;
+        unsafe { &(*self.buffers.get())[idx] }
     }
 
     /// 获取前缓冲区的容量和长度
     pub fn front_info(&self) -> (usize, usize) {
-        let ptr = self.front.load(Ordering::Acquire);
-        if ptr.is_null() {
-            return (0, 0);
-        }
-        let v = unsafe { &*ptr };
+        let idx = self.front.load(Ordering::Acquire) as usize;
+        let v = unsafe { &(*self.buffers.get())[idx] };
         (v.capacity(), v.len())
     }
 
     /// 获取后缓冲区的容量和长度
     pub fn back_info(&self) -> (usize, usize) {
-        let ptr = self.back.load(Ordering::Acquire);
-        if ptr.is_null() {
-            return (0, 0);
-        }
-        let v = unsafe { &*ptr };
+        let idx = self.back_index();
+        let v = unsafe { &(*self.buffers.get())[idx] };
         (v.capacity(), v.len())
     }
 
@@ -107,14 +102,6 @@ impl<T: Clone> SwappableBuffer<T> {
     /// 检查是否有新数据（版本号变化）
     pub fn has_new_data(&self, last_version: u64) -> bool {
         self.version() != last_version
-    }
-}
-
-impl<T> Drop for SwappableBuffer<T> {
-    fn drop(&mut self) {
-        // 将指针重置为空，避免 double free
-        self.front.store(std::ptr::null_mut(), Ordering::Relaxed);
-        self.back.store(std::ptr::null_mut(), Ordering::Relaxed);
     }
 }
 

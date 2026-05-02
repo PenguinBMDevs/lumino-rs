@@ -181,7 +181,7 @@ impl<'a> Program<Message, Theme, Renderer> for PianoRollGrid<'a> {
 
     fn mouse_interaction(
         &self,
-        state: &Self::State,
+        _state: &Self::State,
         _bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> mouse::Interaction {

@@ -27,6 +27,12 @@ struct Node {
     right: Option<usize>,
 }
 
+impl Default for NoteSpatialIndex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NoteSpatialIndex {
     /// 每个叶子节点的最大音符数阈值
     const MAX_LEAF_CAPACITY: usize = 128;

@@ -3,7 +3,6 @@ pub mod editor;
 pub mod host;
 pub mod message;
 pub mod playback;
-mod render_thread;
 mod resources;
 mod root;
 pub mod settings;
@@ -18,7 +17,6 @@ pub mod window;
 
 pub use host::{Host, NoteData, TrackNotes};
 pub(crate) use lumino_core::storage::config;
-pub use render_thread::{RenderCommand, RenderStats, RenderThreadHandle, spawn_render_thread};
 pub use root::MemoryBreakdown;
 pub(crate) use root::{Element, Message, Renderer, Theme};
 pub use state::root_state::CollaborationViewState;

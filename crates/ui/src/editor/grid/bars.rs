@@ -5,7 +5,7 @@ use crate::Renderer;
 use crate::editor::Editor;
 use iced_core::{Point, Rectangle};
 use iced_widget::canvas::path::Builder;
-use iced_widget::canvas::{Frame, Path, Stroke};
+use iced_widget::canvas::{Frame, Stroke};
 
 /// 绘制小节线和拍线（纵向线）
 pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &crate::Theme) {

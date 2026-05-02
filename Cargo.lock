@@ -3542,6 +3542,7 @@ dependencies = [
  "lumino-ui",
  "midly",
  "muda",
+ "parking_lot",
  "puffin",
  "puffin_http",
  "raw-window-handle",

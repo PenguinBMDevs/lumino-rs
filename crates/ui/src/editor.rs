@@ -26,8 +26,7 @@ use crate::{message::AudioAction, toolbar::Tool};
 use iced_core::Point;
 use iced_widget::canvas;
 use lumino_core::midi::MidiDocument;
-use lumino_core::storage::config::{AutoScrollConfig, AutoScrollMode};
-use lumino_gfx::NoteInstance;
+use lumino_core::storage::config::AutoScrollConfig;
 use std::cell::{Cell, RefCell};
 use std::sync::Arc;
 

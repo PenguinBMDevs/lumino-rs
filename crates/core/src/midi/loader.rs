@@ -15,7 +15,7 @@ mod types;
 
 // 公开导出
 pub use dms::load_dms;
-pub use parsed_midi::load_parsed_midi;
+pub use parsed_midi::{load_parsed_midi, load_parsed_midi_from_bytes};
 pub use types::{ProgressCallback, progress_from_sender, silent_progress};
 
 /// 加载 MIDI 文件并返回完整解析结果

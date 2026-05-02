@@ -11,7 +11,7 @@ pub fn process_commands(
     while let Ok(cmd) = command_receiver.try_recv() {
         match cmd {
             RenderCommand::Render(params) => {
-                *latest_params = Some(params);
+                *latest_params = Some(*params);
             }
             RenderCommand::Control(ControlCommand::Resize { width, height }) => {
                 tracing::debug!("Render thread: resize to {}x{}", width, height);

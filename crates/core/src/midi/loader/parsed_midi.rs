@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use midly::loader::{MidiScanResult, scan_midi_file};
 
+use crate::midi::document::MidiDocument;
 use crate::ParsedMidi;
 
 use super::types::ProgressCallback;
@@ -121,6 +122,55 @@ pub async fn load_parsed_midi(
     );
 
     cb("MIDI 加载完成", 1.0);
+
+    Ok(ParsedMidi {
+        info,
+        midi_data: None,
+        document: Some(std::sync::Arc::new(document)),
+    })
+}
+
+/// 从 MIDI 字节数据直接加载 ParsedMidi（无需文件路径）
+///
+/// 适用于已从其他格式（如 DMS）转换得到 MIDI 字节的场景，
+/// 避免写入临时文件再读取的 IO 开销。
+pub async fn load_parsed_midi_from_bytes(
+    midi_bytes: Vec<u8>,
+    track_count: u16,
+    total_ticks: u32,
+    progress: Option<&ProgressCallback>,
+) -> crate::Result<ParsedMidi> {
+    let cb = |msg: &str, val: f64| {
+        if let Some(p) = progress {
+            p(msg, val);
+        }
+    };
+
+    cb("正在解析 MIDI 数据...", 0.1);
+
+    let document = tokio::task::spawn_blocking(move || {
+        let (notes, tempo_changes) =
+            midly::loader::extract_notes_from_bytes(&midi_bytes)
+                .map_err(|e| crate::CoreError::MidiParse(format!("提取音符失败: {e}")))?;
+        let track_names = crate::midi::document::scan_track_names(&midi_bytes);
+        Ok::<MidiDocument, crate::CoreError>(
+            MidiDocument::build_from_extracted_notes(notes, tempo_changes, track_names, None)
+                .map_err(|e| crate::CoreError::MidiParse(format!("构建文档失败: {e}")))?,
+        )
+    })
+    .await
+    .map_err(|e| crate::CoreError::Other(format!("加载线程 panic: {e}")))??;
+
+    cb("MIDI 加载完成", 1.0);
+
+    let info = crate::MidiInfo {
+        path: PathBuf::new(),
+        track_count,
+        total_notes: 0,
+        duration_ticks: total_ticks,
+        division: 960,
+        parse_progress: Some(100.0),
+    };
 
     Ok(ParsedMidi {
         info,
