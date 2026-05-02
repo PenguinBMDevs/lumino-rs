@@ -181,6 +181,9 @@ impl Editor {
     }
 
     /// 收集可见音轨索引
+    ///
+    /// 返回降序排列的音轨索引，确保最后一个音轨渲染在最底层（第一层洋葱皮），
+    /// 第一个音轨渲染在最顶层（最后一层洋葱皮），避免闪烁问题。
     fn collect_visible_track_indices(
         &self,
         track_onion_states: &std::collections::HashMap<usize, bool>,
@@ -191,7 +194,7 @@ impl Editor {
             .map(|(&idx, _)| idx)
             .filter(|&idx| idx != self.current_track)
             .collect();
-        indices.sort();
+        indices.sort_by(|a, b| b.cmp(a)); // 降序排列：大索引先渲染（在底层），小索引后渲染（在顶层）
         indices
     }
 
@@ -379,7 +382,10 @@ impl Editor {
     }
 
     /// 获取所有洋葱皮音符实例（所有其他音轨）
-    /// 音符全部送入 wgpu 管线，GPU compute shader 负责视锥裁剪
+    ///
+    /// 音符全部送入 wgpu 管线，GPU compute shader 负责视锥裁剪。
+    /// 音轨按降序处理，确保最后一个音轨渲染在最底层（第一层洋葱皮），
+    /// 第一个音轨渲染在最顶层（最后一层洋葱皮），避免闪烁问题。
     pub fn get_all_onion_skin_instances(
         &mut self,
         track_onion_states: &std::collections::HashMap<usize, bool>,
@@ -395,7 +401,7 @@ impl Editor {
             .filter(|&idx| idx != self.current_track)
             .collect();
 
-        track_indices.sort();
+        track_indices.sort_by(|a, b| b.cmp(a)); // 降序排列：大索引先渲染（在底层），小索引后渲染（在顶层）
 
         let mut all_instances = Vec::new();
         for track_idx in track_indices {
