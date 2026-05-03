@@ -15,12 +15,6 @@
 //! - `program_impl`: Program trait 实现（事件处理、绘制）
 //! - `editor_impl`: Editor 网格线实例更新方法
 
-use crate::constants::editor as editor_constants;
-use crate::editor::{Editor, HitType};
-use crate::{Message, Renderer, Theme, message::EditorAction};
-use iced_core::{Rectangle, mouse};
-use iced_widget::canvas::{self, Event, Geometry, Program};
-
 pub mod bars;
 pub mod editor_impl;
 pub mod keyboard;

@@ -11,18 +11,15 @@
 //! - UI线程（主线程）：处理事件、更新状态、生成渲染命令
 //! - 渲染线程（独立线程）：接收命令、管理GPU资源、执行实际渲染
 
-use iced_wgpu::wgpu;
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
-use iced_core::{Font, Pixels, Size, mouse};
-use iced_wgpu::{Engine, Renderer, graphics::Viewport};
-use iced_winit::runtime::user_interface::Cache;
-use iced_winit::{Clipboard, winit};
+use iced_core::{Font, Size};
+use iced_wgpu::graphics::Viewport;
+use iced_winit::winit;
 
-use crate::WgpuRenderThread;
 use crate::{
-    config, root, settings, window,
+    config, root,
 };
 
 mod cache;

@@ -292,20 +292,6 @@ impl RunnerInner {
         if s.is_empty() { "(空)" } else { s }
     }
 
-    /// 检查单个设置变更并记录日志
-    fn check_setting_changed<T: PartialEq + std::fmt::Display>(
-        old: &T, new: &T, label: &str,
-        needs_window_restart: &mut bool,
-    ) -> bool {
-        if *old != *new {
-            tracing::info!("{label}: {old} -> {new}");
-            *needs_window_restart = true;
-            true
-        } else {
-            false
-        }
-    }
-
     pub(crate) fn save_storage(&mut self) {
         // 获取新旧配置
         let new = self.window_state.window.ui().settings();

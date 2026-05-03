@@ -2,7 +2,6 @@
 
 use super::state::CanvasState;
 use super::{keyboard, playback_indicator, remote_cursors, ruler, selection_box};
-use crate::constants::editor as editor_constants;
 use crate::editor::{EditState, HitType};
 use crate::toolbar::Tool;
 use crate::{Message, Renderer, Theme, message::EditorAction};

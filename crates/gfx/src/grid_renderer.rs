@@ -122,6 +122,8 @@ impl Default for GridCameraUniformBuilder {
     }
 }
 
+/// Builder 方法目前仅由 `prepare()` 调用方使用，独立 setter 为公共 API 预留。
+#[allow(dead_code)]
 impl GridCameraUniformBuilder {
     /// 设置视口尺寸
     pub fn viewport_size(mut self, width: f32, height: f32) -> Self {
@@ -331,27 +333,7 @@ impl GridRenderer {
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("infinite_grid_camera_uniform"),
-            contents: bytemuck::cast_slice(&[GridCameraUniform::new(
-                1.0,
-                1.0,
-                0.0,
-                0.0,
-                1.0,
-                1.0,
-                0.0,
-                0.0,
-                [0.1, 0.1, 0.1, 1.0],
-                [0.07, 0.07, 0.07, 1.0],
-                [0.3, 0.3, 0.3, 1.0],
-                [0.2, 0.2, 0.2, 1.0],
-                [0.15, 0.15, 0.15, 1.0],
-                [0.15, 0.15, 0.15, 1.0],
-                [0.15, 0.15, 0.15, 1.0],
-                1920.0,
-                127.0,
-                0.0,
-                0.0,
-            )]),
+            contents: bytemuck::cast_slice(&[GridCameraUniform::builder().build()]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 

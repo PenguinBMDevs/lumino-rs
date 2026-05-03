@@ -26,9 +26,7 @@ mod tests;
 use crate::{message::AudioAction, toolbar::Tool};
 use iced_core::Point;
 use iced_widget::canvas;
-use lumino_core::midi::MidiDocument;
 use std::cell::{Cell, RefCell};
-use std::sync::Arc;
 
 use note::Note;
 pub use onion_skin::OnionSkinConfig;
