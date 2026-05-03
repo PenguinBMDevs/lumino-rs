@@ -85,7 +85,11 @@ pub trait OutputConnection: Send {
     /// 音色变换（Program Change）
     fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error> {
         let channel = ch & MIDI_CHANNEL_MASK;
-        self.send_raw([STATUS_PROGRAM_CHANGE | channel, program & MIDI_VALUE_MASK, 0])
+        self.send_raw([
+            STATUS_PROGRAM_CHANGE | channel,
+            program & MIDI_VALUE_MASK,
+            0,
+        ])
     }
 
     /// 弯音（Pitch Bend）
@@ -101,7 +105,11 @@ pub trait OutputConnection: Send {
     /// 通道后触（Channel Aftertouch）
     fn channel_pressure(&mut self, ch: u8, pressure: u8) -> Result<(), Error> {
         let channel = ch & MIDI_CHANNEL_MASK;
-        self.send_raw([STATUS_CHANNEL_PRESSURE | channel, pressure & MIDI_VALUE_MASK, 0])
+        self.send_raw([
+            STATUS_CHANNEL_PRESSURE | channel,
+            pressure & MIDI_VALUE_MASK,
+            0,
+        ])
     }
 
     /// 复音后触（Polyphonic Aftertouch）

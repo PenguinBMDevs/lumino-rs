@@ -62,7 +62,11 @@ impl Root {
             track_notes.push_back(note);
         }
 
-        self.editor.editor_state.data.track_notes.insert(track_idx, track_notes);
+        self.editor
+            .editor_state
+            .data
+            .track_notes
+            .insert(track_idx, track_notes);
         self.editor
             .track_note_indices
             .borrow_mut()

@@ -42,7 +42,8 @@ impl Host {
         if !self.root.should_render_preview_note() {
             self.root.update_editor_cursor(None);
         } else {
-            self.root.update_editor_cursor(self.window_ctx.cursor_position);
+            self.root
+                .update_editor_cursor(self.window_ctx.cursor_position);
         }
     }
 }

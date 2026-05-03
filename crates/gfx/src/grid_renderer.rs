@@ -229,7 +229,10 @@ impl GridCameraUniformBuilder {
 }
 
 // 兼容旧代码的占位符（已废弃 CPU 实例生成逻辑，保留类型以减少大面积联级修改）
-#[deprecated(since = "0.2.0", note = "不再使用 CPU 实例生成网格线，GridRenderer 改用 GPU infinite grid 方案")]
+#[deprecated(
+    since = "0.2.0",
+    note = "不再使用 CPU 实例生成网格线，GridRenderer 改用 GPU infinite grid 方案"
+)]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GridLineInstance {

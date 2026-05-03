@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::playback::{Playback, PlaybackAccessor, PlaybackState};
 
-use super::{MidiMessage, MidiTrackEvent, NoteEvent, ScheduledEvent, EventType};
+use super::{EventType, MidiMessage, MidiTrackEvent, NoteEvent, ScheduledEvent};
 use lumino_core::midi::MidiDocument;
 use lumino_midi::compact::{CompactEvent, EventKind};
 

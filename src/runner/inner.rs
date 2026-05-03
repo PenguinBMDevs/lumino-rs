@@ -205,7 +205,6 @@ impl Runner {
 
         Ok(runner)
     }
-
 }
 
 impl RunnerInner {
@@ -259,12 +258,11 @@ impl RunnerInner {
         let old = &self.window_state.storage.config.get().ui;
 
         // 逐一检查各项设置变更
-        if new.synth_backend != old.preferred_backend
-            || new.soundfont_path != old.soundfont_path
-        {
+        if new.synth_backend != old.preferred_backend || new.soundfont_path != old.soundfont_path {
             tracing::info!(
                 "合成器设置已改变: backend {} -> {}, soundfont {} -> {}",
-                old.preferred_backend, new.synth_backend,
+                old.preferred_backend,
+                new.synth_backend,
                 Self::display_or_empty(&old.soundfont_path),
                 Self::display_or_empty(&new.soundfont_path),
             );
@@ -274,7 +272,8 @@ impl RunnerInner {
         if new.use_native_titlebar != old.use_native_titlebar {
             tracing::info!(
                 "标题栏设置已改变: native_titlebar {} -> {}",
-                old.use_native_titlebar, new.use_native_titlebar
+                old.use_native_titlebar,
+                new.use_native_titlebar
             );
             self.window_state.needs_window_restart = true;
         }

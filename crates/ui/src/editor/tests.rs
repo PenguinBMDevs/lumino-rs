@@ -50,8 +50,7 @@ mod tests {
         let v = &editor.editor_state.view;
         let key = 60u16; // 中央 C
         let max_key_index = (v.visible_key_count - 1) as f32;
-        let expected_y = (max_key_index - key as f32) * v.zoom_y - v.scroll_y
-            + v.ruler_height;
+        let expected_y = (max_key_index - key as f32) * v.zoom_y - v.scroll_y + v.ruler_height;
         assert_eq!(editor.key_to_y(key), expected_y);
     }
 
@@ -109,8 +108,16 @@ mod tests {
         let mut editor = Editor::new();
 
         // 添加一些音符
-        editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
-        editor.editor_state.data.notes.push_back(Note::new(480.0, 64, 480.0));
+        editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
+        editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(480.0, 64, 480.0));
 
         // 选中第一个音符（通过 editor_state）
         editor.editor_state.interaction.selected_notes.insert(0);
@@ -130,8 +137,16 @@ mod tests {
         let mut editor = Editor::new();
 
         // 添加音符
-        editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
-        editor.editor_state.data.notes.push_back(Note::new(480.0, 64, 480.0));
+        editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
+        editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(480.0, 64, 480.0));
 
         assert_eq!(editor.editor_state.data.notes.len(), 2);
 
@@ -148,7 +163,11 @@ mod tests {
         let mut editor = Editor::new();
 
         // 在当前音轨添加音符
-        editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
+        editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
 
         // 切换到音轨 1
         editor.switch_to_track(1);
@@ -157,7 +176,11 @@ mod tests {
         assert!(editor.editor_state.data.notes.is_empty()); // 新音轨应该为空
 
         // 在音轨 1 添加音符
-        editor.editor_state.data.notes.push_back(Note::new(0.0, 64, 480.0));
+        editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 64, 480.0));
 
         // 切换回音轨 0
         editor.switch_to_track(0);
@@ -229,8 +252,16 @@ mod tests {
     #[test]
     fn test_select_all_notes() {
         let mut editor = Editor::new();
-        editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
-        editor.editor_state.data.notes.push_back(Note::new(480.0, 64, 480.0));
+        editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
+        editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(480.0, 64, 480.0));
 
         editor.select_all_notes();
 
@@ -238,5 +269,4 @@ mod tests {
         assert!(editor.is_note_selected(0));
         assert!(editor.is_note_selected(1));
     }
-
 }

@@ -61,7 +61,8 @@ impl Host {
     pub fn cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
         puffin::profile_function!();
 
-        let logical_pos = conversion::cursor_position(position, self.render_ctx.viewport.scale_factor());
+        let logical_pos =
+            conversion::cursor_position(position, self.render_ctx.viewport.scale_factor());
         self.window_ctx.cursor = mouse::Cursor::Available(logical_pos);
         // 存储逻辑坐标（与 iced 保持一致）
         self.window_ctx.cursor_position = Some(logical_pos);
@@ -98,8 +99,9 @@ impl Host {
 
         match &event {
             Resized(_) => {
-                self.root
-                    .update(message::Window::maximized(self.window_ctx.window.is_maximized()));
+                self.root.update(message::Window::maximized(
+                    self.window_ctx.window.is_maximized(),
+                ));
             }
             Focused(r) => {
                 self.root.update(message::Window::focused(*r));
@@ -143,9 +145,11 @@ impl Host {
         }
 
         // 将窗口事件映射到 iced 事件
-        if let Some(event) =
-            conversion::window_event(event, self.window_ctx.window.scale_factor() as f32, modifiers)
-        {
+        if let Some(event) = conversion::window_event(
+            event,
+            self.window_ctx.window.scale_factor() as f32,
+            modifiers,
+        ) {
             let converted_events = convert_touch_to_mouse(event);
 
             // 事件合并：如果新事件是 CursorMoved，且队列最后一个也是 CursorMoved，则替换
@@ -156,10 +160,11 @@ impl Host {
                         && matches!(
                             last,
                             iced_core::Event::Mouse(mouse::Event::CursorMoved { .. })
-                        ) {
-                            // 替换最后一个事件
-                            self.events.pop();
-                        }
+                        )
+                    {
+                        // 替换最后一个事件
+                        self.events.pop();
+                    }
                 }
                 self.events.push(event);
             }
@@ -293,6 +298,17 @@ impl Host {
                 return true;
             }
             _ => {}
+        }
+
+        // 主题变更：需要同时失效 wgpu 网格/音符缓存以刷新颜色
+        if matches!(&message, message::Message::Window(window::Event::Theme(_))) {
+            self.root.update(message);
+            self.root.editor.keyboard_cache.clear();
+            self.root.editor.ruler_cache.clear();
+            self.render_ctx.render_cache.grid_viewport_hash = 0;
+            self.render_ctx.render_cache.note_viewport_hash = 0;
+            self.root.editor.grid_cache.clear();
+            return true;
         }
 
         // 其他消息交给 root 处理，假设可能有状态变更

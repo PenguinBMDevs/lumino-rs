@@ -16,7 +16,10 @@ impl Root {
 
         // 更新 MIDI 文档引用（让引擎直接读 document 事件流）
         if let Some(doc) = &self.midi_document {
-            manager.set_document(Arc::clone(doc), self.editor.editor_state.data.current_track as u16);
+            manager.set_document(
+                Arc::clone(doc),
+                self.editor.editor_state.data.current_track as u16,
+            );
         }
 
         // 当前音轨音符（编辑过的，从 editor.notes 实时送）

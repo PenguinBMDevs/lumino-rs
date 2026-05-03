@@ -1,13 +1,18 @@
+use super::CacheInvalidation;
 use crate::constants::editor::{MAX_VISIBLE_KEY_COUNT, MIN_VISIBLE_KEY_COUNT};
 use lumino_core::storage::config::EraserBehavior;
-use super::CacheInvalidation;
 
 impl super::Editor {
     // 键盘设置 — 全部委托到 editor_state
 
     pub fn set_visible_key_count(&mut self, count: u16) {
         let canvas_height = self.editor_state.canvas.size.y;
-        self.editor_state.set_visible_key_count(count, MIN_VISIBLE_KEY_COUNT, MAX_VISIBLE_KEY_COUNT, canvas_height);
+        self.editor_state.set_visible_key_count(
+            count,
+            MIN_VISIBLE_KEY_COUNT,
+            MAX_VISIBLE_KEY_COUNT,
+            canvas_height,
+        );
         self.invalidate_caches(CacheInvalidation::GRID);
     }
 

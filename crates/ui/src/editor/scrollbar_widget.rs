@@ -7,7 +7,6 @@
 //! - `widget`: ScrollbarWidget 结构体和辅助方法
 //! - `widget_impl`: iced Widget trait 实现
 
-
 // 子模块
 mod types;
 mod widget;

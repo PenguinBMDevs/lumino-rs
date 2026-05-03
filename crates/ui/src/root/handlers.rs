@@ -242,6 +242,8 @@ impl Root {
 
         if is_theme_change {
             self.editor.grid_cache.clear();
+            self.editor.keyboard_cache.clear();
+            self.editor.ruler_cache.clear();
             self.invalidate_onion_skin_cache();
         }
     }

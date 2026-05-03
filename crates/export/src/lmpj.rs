@@ -22,11 +22,10 @@ pub async fn save_parsed_midi_to_lmpj(
 ) -> ExportResult<()> {
     let data_for_save = lumino_core::LmpjData::from_parsed_midi(parsed);
 
-    let compressed = tokio::task::spawn_blocking(move || {
-        crate::format::encode_lmpj(&data_for_save)
-    })
-    .await
-    .map_err(|e| crate::ExportError::Encoding(e.to_string()))??;
+    let compressed =
+        tokio::task::spawn_blocking(move || crate::format::encode_lmpj(&data_for_save))
+            .await
+            .map_err(|e| crate::ExportError::Encoding(e.to_string()))??;
 
     tokio::fs::write(&path, compressed).await?;
     Ok(())

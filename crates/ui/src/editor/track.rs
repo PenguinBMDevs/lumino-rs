@@ -12,8 +12,10 @@ impl super::Editor {
         );
 
         // 保存当前音轨的音符
-        self.editor_state.data.track_notes
-            .insert(self.editor_state.data.current_track, self.editor_state.data.notes.clone());
+        self.editor_state.data.track_notes.insert(
+            self.editor_state.data.current_track,
+            self.editor_state.data.notes.clone(),
+        );
         self.track_note_indices
             .borrow_mut()
             .remove(&self.editor_state.data.current_track);
@@ -28,23 +30,27 @@ impl super::Editor {
         self.editor_state.data.current_track = track_idx;
 
         // 加载新音轨的音符：优先从 track_notes 缓存读，缓存未命中则从 document 懒加载
-        self.editor_state.data.notes = if let Some(cached) = self.editor_state.data.track_notes.get(&track_idx).cloned() {
-            cached
-        } else if let Some(doc) = self.editor_state.data.document.as_ref() {
-            let raw = doc.get_track_notes(track_idx as u16);
-            let mut notes = im::Vector::new();
-            for (tick, key, length, velocity, channel) in raw {
-                notes.push_back(
-                    crate::editor::note::Note::new(tick, key as u16, length)
-                        .with_velocity(velocity)
-                        .with_channel(channel),
-                );
-            }
-            self.editor_state.data.track_notes.insert(track_idx, notes.clone());
-            notes
-        } else {
-            im::Vector::new()
-        };
+        self.editor_state.data.notes =
+            if let Some(cached) = self.editor_state.data.track_notes.get(&track_idx).cloned() {
+                cached
+            } else if let Some(doc) = self.editor_state.data.document.as_ref() {
+                let raw = doc.get_track_notes(track_idx as u16);
+                let mut notes = im::Vector::new();
+                for (tick, key, length, velocity, channel) in raw {
+                    notes.push_back(
+                        crate::editor::note::Note::new(tick, key as u16, length)
+                            .with_velocity(velocity)
+                            .with_channel(channel),
+                    );
+                }
+                self.editor_state
+                    .data
+                    .track_notes
+                    .insert(track_idx, notes.clone());
+                notes
+            } else {
+                im::Vector::new()
+            };
         tracing::debug!(
             "Editor: loaded {} notes for track {}",
             self.editor_state.data.notes.len(),

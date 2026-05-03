@@ -131,11 +131,21 @@ impl Root {
             let track_idx = note.track_index;
             if track_idx == self.editor.editor_state.data.current_track {
                 // 如果是当前音轨，直接添加到编辑器
-                self.editor.editor_state.data.notes.push_back(editor_note.clone());
+                self.editor
+                    .editor_state
+                    .data
+                    .notes
+                    .push_back(editor_note.clone());
             }
 
             // 更新 track_notes
-            let track_notes = self.editor.editor_state.data.track_notes.entry(track_idx).or_default();
+            let track_notes = self
+                .editor
+                .editor_state
+                .data
+                .track_notes
+                .entry(track_idx)
+                .or_default();
             track_notes.push_back(editor_note);
         }
         // 音符由 wgpu 渲染，不需要清 grid cache
@@ -149,7 +159,13 @@ impl Root {
     ) {
         // 更新操作：根据位置匹配现有音符
         for note in &operation.notes {
-            if let Some(track_notes) = self.editor.editor_state.data.track_notes.get_mut(&note.track_index) {
+            if let Some(track_notes) = self
+                .editor
+                .editor_state
+                .data
+                .track_notes
+                .get_mut(&note.track_index)
+            {
                 for editor_note in track_notes.iter_mut() {
                     // 基于 tick 和 key 匹配（简化匹配）
                     if (editor_note.tick - note.tick).abs() < 1.0 && editor_note.key == note.key {
@@ -170,7 +186,13 @@ impl Root {
     ) {
         // 删除操作：根据位置匹配删除音符
         for note in &operation.notes {
-            if let Some(track_notes) = self.editor.editor_state.data.track_notes.get_mut(&note.track_index) {
+            if let Some(track_notes) = self
+                .editor
+                .editor_state
+                .data
+                .track_notes
+                .get_mut(&note.track_index)
+            {
                 track_notes.retain(|n| !((n.tick - note.tick).abs() < 1.0 && n.key == note.key));
             }
         }
@@ -213,7 +235,13 @@ impl Root {
                 note.key,
                 note.track_index
             );
-            if let Some(track_notes) = self.editor.editor_state.data.track_notes.get_mut(&note.track_index) {
+            if let Some(track_notes) = self
+                .editor
+                .editor_state
+                .data
+                .track_notes
+                .get_mut(&note.track_index)
+            {
                 tracing::trace!("协作: track_notes 中有 {} 个音符", track_notes.len());
                 for (i, editor_note) in track_notes.iter_mut().enumerate() {
                     tracing::trace!(

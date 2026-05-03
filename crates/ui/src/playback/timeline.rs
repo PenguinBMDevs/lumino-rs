@@ -2,7 +2,7 @@
 //!
 //! 负责根据速度变化将tick转换为实际时间
 
-use super::tempo::{bpm_from_tempo, TempoChange};
+use super::tempo::{TempoChange, bpm_from_tempo};
 
 /// 时间线管理器
 ///

@@ -27,10 +27,8 @@ impl RunnerInner {
 
         if let Some(pos) = cursor_pos {
             // 先转换为 Canvas 视口坐标（不含滚动偏移），用于边界检查
-            let viewport_pos = iced_core::Point::new(
-                pos.x - es.canvas.offset.x,
-                pos.y - es.canvas.offset.y,
-            );
+            let viewport_pos =
+                iced_core::Point::new(pos.x - es.canvas.offset.x, pos.y - es.canvas.offset.y);
 
             if editor.is_inside_canvas(viewport_pos) {
                 // 通过边界检查后，加上滚动偏移得到内容空间坐标
@@ -62,7 +60,11 @@ impl RunnerInner {
                     content_pos.y
                 );
 
-                if let Err(e) = self.collab_state.collaboration_service.send_mouse_position(mouse_pos) {
+                if let Err(e) = self
+                    .collab_state
+                    .collaboration_service
+                    .send_mouse_position(mouse_pos)
+                {
                     tracing::debug!("协作：发送鼠标位置失败：{}", e);
                 }
             }
@@ -161,7 +163,11 @@ impl RunnerInner {
                 .as_millis() as u64,
         };
 
-        if let Err(e) = self.collab_state.collaboration_service.send_note_batch(operation) {
+        if let Err(e) = self
+            .collab_state
+            .collaboration_service
+            .send_note_batch(operation)
+        {
             tracing::debug!("协作: 发送笔记添加失败: {}", e);
         } else {
             tracing::info!("协作: 已发送笔记添加 - tick={}, key={}", tick, key);
@@ -217,7 +223,11 @@ impl RunnerInner {
                 .as_millis() as u64,
         };
 
-        if let Err(e) = self.collab_state.collaboration_service.send_note_batch(operation) {
+        if let Err(e) = self
+            .collab_state
+            .collaboration_service
+            .send_note_batch(operation)
+        {
             tracing::debug!("协作: 发送音符移动失败: {}", e);
         } else {
             tracing::info!(
@@ -245,6 +255,9 @@ impl RunnerInner {
             };
 
         // 应用到编辑器
-        self.window_state.window.ui_mut().apply_remote_note_operation(&operation);
+        self.window_state
+            .window
+            .ui_mut()
+            .apply_remote_note_operation(&operation);
     }
 }

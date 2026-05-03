@@ -18,9 +18,7 @@ use iced_core::{Font, Size};
 use iced_wgpu::graphics::Viewport;
 use iced_winit::winit;
 
-use crate::{
-    config, root,
-};
+use crate::{WgpuRenderThread, config, root, settings};
 
 mod cache;
 mod dialog;
@@ -28,8 +26,8 @@ mod editor_ops;
 mod event;
 mod render;
 mod render_ctx;
-mod window_ctx;
 pub mod types;
+mod window_ctx;
 
 use render_ctx::RenderContext;
 use window_ctx::WindowContext;
@@ -168,7 +166,12 @@ impl Host {
         let (tx, rx) = std::sync::mpsc::channel();
 
         // 启动 WGPU 渲染线程
-        match WgpuRenderThread::spawn(self.render_ctx.device.clone(), self.render_ctx.queue.clone(), self.render_ctx.format, rx) {
+        match WgpuRenderThread::spawn(
+            self.render_ctx.device.clone(),
+            self.render_ctx.queue.clone(),
+            self.render_ctx.format,
+            rx,
+        ) {
             Ok(thread) => {
                 self.render_ctx.wgpu_render_thread = Some(thread);
                 self.render_ctx.note_events_tx = Some(tx);
@@ -193,7 +196,10 @@ impl Host {
 
     /// 获取分离渲染线程统计
     pub fn separate_render_stats(&self) -> Option<crate::WgpuRenderStats> {
-        self.render_ctx.wgpu_render_thread.as_ref().map(|t| t.stats())
+        self.render_ctx
+            .wgpu_render_thread
+            .as_ref()
+            .map(|t| t.stats())
     }
 
     /// 获取 root 引用
@@ -229,8 +235,16 @@ impl Host {
         let mut breakdown = self.root.memory_breakdown();
 
         // 从 RenderCache 获取 note_instances_buffer 双缓冲容量
-        let (front_cap, front_len) = self.render_ctx.render_cache.note_instances_buffer.front_info();
-        let (back_cap, back_len) = self.render_ctx.render_cache.note_instances_buffer.back_info();
+        let (front_cap, front_len) = self
+            .render_ctx
+            .render_cache
+            .note_instances_buffer
+            .front_info();
+        let (back_cap, back_len) = self
+            .render_ctx
+            .render_cache
+            .note_instances_buffer
+            .back_info();
         let instance_size = std::mem::size_of::<lumino_gfx::NoteInstance>() as u64;
 
         tracing::debug!(
@@ -273,8 +287,7 @@ fn create_font_from_config(ui_config: &config::UiConfig) -> Font {
 
     // 其次使用系统字体名称
     if !ui_config.program_font_name.is_empty() {
-        let cached = FONT_NAME_CACHE
-            .get_or_init(|| ui_config.program_font_name.clone());
+        let cached = FONT_NAME_CACHE.get_or_init(|| ui_config.program_font_name.clone());
 
         tracing::info!("应用字体: {}", cached);
         return Font::with_name(cached.as_str());

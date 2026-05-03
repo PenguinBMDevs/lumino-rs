@@ -3,8 +3,8 @@
 //! 将 Editor 的数据字段（notes, track_notes, current_track, document, history）
 //! 集中管理。
 
-use crate::editor::note::Note;
 use crate::editor::history;
+use crate::editor::note::Note;
 use lumino_core::midi::MidiDocument;
 use std::collections::HashMap;
 use std::sync::Arc;

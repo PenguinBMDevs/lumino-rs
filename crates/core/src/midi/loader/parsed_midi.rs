@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use midly::loader::{MidiScanResult, scan_midi_file};
 
-use crate::midi::document::MidiDocument;
 use crate::ParsedMidi;
+use crate::midi::document::MidiDocument;
 
 use super::types::ProgressCallback;
 
@@ -149,9 +149,8 @@ pub async fn load_parsed_midi_from_bytes(
     cb("正在解析 MIDI 数据...", 0.1);
 
     let document = tokio::task::spawn_blocking(move || {
-        let (notes, tempo_changes) =
-            midly::loader::extract_notes_from_bytes(&midi_bytes)
-                .map_err(|e| crate::CoreError::MidiParse(format!("提取音符失败: {e}")))?;
+        let (notes, tempo_changes) = midly::loader::extract_notes_from_bytes(&midi_bytes)
+            .map_err(|e| crate::CoreError::MidiParse(format!("提取音符失败: {e}")))?;
         let track_names = crate::midi::document::scan_track_names(&midi_bytes);
         Ok::<MidiDocument, crate::CoreError>(
             MidiDocument::build_from_extracted_notes(notes, tempo_changes, track_names, None)

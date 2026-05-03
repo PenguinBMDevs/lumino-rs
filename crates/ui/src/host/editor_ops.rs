@@ -22,6 +22,8 @@ impl Host {
     pub fn set_total_ticks(&mut self, total_ticks: f32) {
         self.root.set_total_ticks(total_ticks);
         self.root.editor.grid_cache.clear();
+        self.root.editor.ruler_cache.clear();
+        self.render_ctx.render_cache.grid_viewport_hash = 0;
         // 仅请求重绘，不重建UI树（网格线数据由WGPU层处理）
         self.window_ctx.window.request_redraw();
     }
@@ -30,6 +32,9 @@ impl Host {
     pub fn set_ppq(&mut self, ppq: u16) {
         self.root.set_ppq(ppq);
         self.root.editor.grid_cache.clear();
+        self.root.editor.ruler_cache.clear();
+        self.render_ctx.render_cache.grid_viewport_hash = 0;
+        self.render_ctx.render_cache.note_viewport_hash = 0;
         // 仅请求重绘，不重建UI树（网格线数据由WGPU层处理）
         self.window_ctx.window.request_redraw();
     }
@@ -85,7 +90,12 @@ impl Host {
         }
 
         if !track_notes.is_empty() {
-            self.root.editor.editor_state.data.track_notes.insert(track_idx, track_notes);
+            self.root
+                .editor
+                .editor_state
+                .data
+                .track_notes
+                .insert(track_idx, track_notes);
             self.root.invalidate_onion_skin_cache();
         }
 
@@ -273,7 +283,10 @@ impl Host {
                 .iter()
                 .map(|n| (n.tick, n.key as u8, n.length, n.velocity, n.channel))
                 .collect();
-            result.push((self.root.editor.editor_state.data.current_track, current_notes));
+            result.push((
+                self.root.editor.editor_state.data.current_track,
+                current_notes,
+            ));
         }
 
         // 添加其他音轨的音符
@@ -293,7 +306,15 @@ impl Host {
     /// 获取编辑器中的音符数量（用于判断是否有内容）
     pub fn get_editor_note_count(&self) -> usize {
         let current_count = self.root.editor.editor_state.data.notes.len();
-        let track_notes_count: usize = self.root.editor.editor_state.data.track_notes.values().map(|v| v.len()).sum();
+        let track_notes_count: usize = self
+            .root
+            .editor
+            .editor_state
+            .data
+            .track_notes
+            .values()
+            .map(|v| v.len())
+            .sum();
         current_count + track_notes_count
     }
 

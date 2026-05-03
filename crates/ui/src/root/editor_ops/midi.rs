@@ -158,8 +158,16 @@ mod tests {
         assert!(root.pending_midi_output.is_none(), "初始无挂起 MIDI 输出");
 
         // 添加测试音符
-        root.editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
-        root.editor.editor_state.data.notes.push_back(Note::new(480.0, 64, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(480.0, 64, 480.0));
 
         // 设置 MIDI 输出 → 因无管理器应缓存
         root.set_midi_output(create_mock_output());
@@ -196,8 +204,16 @@ mod tests {
     #[test]
     fn test_set_midi_output_direct_when_manager_exists() {
         let mut root = create_root();
-        root.editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
-        root.editor.editor_state.data.notes.push_back(Note::new(480.0, 64, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(480.0, 64, 480.0));
 
         // 先通过 Play 创建 playback_manager
         root.set_midi_output(create_mock_output());
@@ -231,7 +247,11 @@ mod tests {
         );
 
         // 有管理器时
-        root.editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
         root.set_midi_output(create_mock_output());
         root.update(Message::Toolbar(toolbar::Event::Play));
         root.clear_midi_output();
@@ -250,9 +270,21 @@ mod tests {
         let mut root = create_root();
 
         // 添加多个音符
-        root.editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
-        root.editor.editor_state.data.notes.push_back(Note::new(480.0, 64, 240.0));
-        root.editor.editor_state.data.notes.push_back(Note::new(720.0, 67, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(480.0, 64, 240.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(720.0, 67, 480.0));
 
         // 设置 MIDI 输出
         root.set_midi_output(create_mock_output());
@@ -305,7 +337,11 @@ mod tests {
         assert!(root.playback_manager.is_some());
 
         // 添加音符并标记变更
-        root.editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
         root.editor.mark_notes_changed();
 
         // 触发音符更新（模拟 handle_editor_action 中的流程）
@@ -335,7 +371,11 @@ mod tests {
         );
 
         // 播放时应消费缓存的 tempo changes
-        root.editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
         root.set_midi_output(create_mock_output());
         root.update(Message::Toolbar(toolbar::Event::Play));
 
@@ -352,7 +392,11 @@ mod tests {
     #[test]
     fn test_host_set_playback_midi_output_flow() {
         let mut root = create_root();
-        root.editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
 
         // Host::set_playback_midi_output → Root::set_midi_output
         root.set_midi_output(create_mock_output());
@@ -380,7 +424,11 @@ mod tests {
         let mut root = create_root();
 
         // 添加一个在 tick 0 的音符
-        root.editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
 
         // 设置 MIDI 输出（使用可计数的 mock）
         let note_on_count = Arc::new(AtomicU32::new(0));
@@ -474,7 +522,11 @@ mod tests {
         // 这会在 finish_drawing 中调用 mark_notes_changed
         // 然后在 handle_editor_action 中调用 update_playback_notes
         // 但此时 playback_manager 还不存在，所以 update_playback_notes 什么都不做
-        root.editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
         root.editor.mark_notes_changed();
 
         // 模拟 handle_editor_action 的处理
@@ -555,7 +607,11 @@ mod tests {
         root.set_midi_output(mock_output);
 
         // 步骤1：先添加一个音符并播放（创建播放管理器）
-        root.editor.editor_state.data.notes.push_back(Note::new(0.0, 60, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
         root.update(Message::Toolbar(toolbar::Event::Play));
         assert!(root.playback_manager.is_some(), "第一次播放应创建管理器");
 
@@ -564,7 +620,11 @@ mod tests {
         thread::sleep(Duration::from_millis(50));
 
         // 步骤2：再画一个音符（模拟用户操作）
-        root.editor.editor_state.data.notes.push_back(Note::new(480.0, 64, 480.0));
+        root.editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(480.0, 64, 480.0));
         root.editor.mark_notes_changed();
 
         // 模拟 handle_editor_action 的处理

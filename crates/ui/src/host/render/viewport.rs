@@ -54,10 +54,7 @@ impl Host {
     ) -> lumino_gfx::CameraUniform {
         let v = &self.root.editor.editor_state.view;
         lumino_gfx::CameraUniform::new(lumino_gfx::CameraParams {
-            scroll: [
-                v.scroll_x,
-                v.scroll_y,
-            ],
+            scroll: [v.scroll_x, v.scroll_y],
             zoom: [v.zoom_x, v.zoom_y],
             viewport: [viewport.logical_size.width, viewport.logical_size.height],
             offset: [viewport.canvas_offset.x, viewport.canvas_offset.y],

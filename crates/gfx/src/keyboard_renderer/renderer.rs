@@ -1,5 +1,7 @@
 //! 键盘渲染器实现
 
+use super::types::{KeyInstance, KeyboardViewportUniform};
+
 /// 键盘渲染器
 pub struct KeyboardRenderer {
     /// 渲染管线

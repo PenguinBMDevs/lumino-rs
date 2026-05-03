@@ -70,10 +70,13 @@ impl RunnerInner {
         match window_event {
             WindowEvent::OpenCustomPrecisionDialog => {
                 tracing::info!("请求打开自定义精度对话框");
-                self.window_state.dialog_manager.open_dialog(DialogType::CustomPrecision);
+                self.window_state
+                    .dialog_manager
+                    .open_dialog(DialogType::CustomPrecision);
             }
             WindowEvent::CloseCustomPrecisionDialog => {
-                self.window_state.dialog_manager
+                self.window_state
+                    .dialog_manager
                     .mark_dialog_for_close(DialogType::CustomPrecision);
                 tracing::info!("请求关闭自定义精度对话框");
             }
@@ -82,10 +85,13 @@ impl RunnerInner {
             }
             WindowEvent::OpenCollaborationDialog => {
                 tracing::info!("请求打开协作对话框");
-                self.window_state.dialog_manager.open_dialog(DialogType::Collaboration);
+                self.window_state
+                    .dialog_manager
+                    .open_dialog(DialogType::Collaboration);
             }
             WindowEvent::CloseCollaborationDialog => {
-                self.window_state.dialog_manager
+                self.window_state
+                    .dialog_manager
                     .mark_dialog_for_close(DialogType::Collaboration);
                 tracing::info!("请求关闭协作对话框");
             }
@@ -130,7 +136,8 @@ impl RunnerInner {
                     invite_code
                 );
 
-                self.window_state.window
+                self.window_state
+                    .window
                     .ui_mut()
                     .root_mut()
                     .state_mut()
@@ -142,11 +149,14 @@ impl RunnerInner {
                     tracing::info!("使用首屏填写的邀请码直接加入房间: {}", target_invite_code);
                     self.handle_collaboration_join_room(target_invite_code);
                 } else {
-                    self.window_state.window.ui_mut().set_collaboration_view_state(
-                        lumino_ui::CollaborationViewState::RoomActions,
-                        Some(invite_code),
-                        None,
-                    );
+                    self.window_state
+                        .window
+                        .ui_mut()
+                        .set_collaboration_view_state(
+                            lumino_ui::CollaborationViewState::RoomActions,
+                            Some(invite_code),
+                            None,
+                        );
                 }
             }
             WindowEvent::CollaborationRoomCreated {
@@ -158,12 +168,16 @@ impl RunnerInner {
                     room_name,
                     invite_code
                 );
-                self.window_state.window.ui_mut().set_collaboration_view_state(
-                    lumino_ui::CollaborationViewState::InRoom,
-                    Some(invite_code),
-                    Some(room_name),
-                );
-                self.window_state.dialog_manager
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .set_collaboration_view_state(
+                        lumino_ui::CollaborationViewState::InRoom,
+                        Some(invite_code),
+                        Some(room_name),
+                    );
+                self.window_state
+                    .dialog_manager
                     .mark_dialog_for_close(DialogType::Collaboration);
                 tracing::info!("协作: 自动关闭协作对话框");
             }
@@ -178,22 +192,29 @@ impl RunnerInner {
                     invite_code,
                     user_count
                 );
-                self.window_state.window.ui_mut().set_collaboration_view_state(
-                    lumino_ui::CollaborationViewState::InRoom,
-                    Some(invite_code),
-                    Some(room_name),
-                );
-                self.window_state.dialog_manager
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .set_collaboration_view_state(
+                        lumino_ui::CollaborationViewState::InRoom,
+                        Some(invite_code),
+                        Some(room_name),
+                    );
+                self.window_state
+                    .dialog_manager
                     .mark_dialog_for_close(DialogType::Collaboration);
                 tracing::info!("协作: 自动关闭协作对话框");
             }
             WindowEvent::CollaborationDisconnected => {
                 tracing::info!("协作: 连接断开事件");
-                self.window_state.window.ui_mut().set_collaboration_view_state(
-                    lumino_ui::CollaborationViewState::Connect,
-                    None,
-                    None,
-                );
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .set_collaboration_view_state(
+                        lumino_ui::CollaborationViewState::Connect,
+                        None,
+                        None,
+                    );
             }
             WindowEvent::CollaborationMouseUpdate {
                 user_id,
@@ -210,7 +231,8 @@ impl RunnerInner {
                     color,
                     username
                 );
-                self.window_state.window
+                self.window_state
+                    .window
                     .ui_mut()
                     .update_remote_cursor(user_id, x, y, color, username);
                 self.window_state.window.window().request_redraw();
@@ -220,7 +242,10 @@ impl RunnerInner {
                 self.window_state.window.window().request_redraw();
             }
             WindowEvent::CollaborationUserLeft { user_id } => {
-                self.window_state.window.ui_mut().remove_remote_cursor(user_id);
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .remove_remote_cursor(user_id);
                 self.window_state.window.window().request_redraw();
             }
             _ => {}

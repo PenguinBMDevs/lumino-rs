@@ -56,8 +56,7 @@ impl Editor {
             AutoScrollMode::ScrollingIndicator => {
                 let trigger_offset = asc.page_trigger_offset as f32;
                 let return_pos = asc.page_return_position as f32;
-                let indicator_screen_x = playback_tick * v.zoom_x - v.scroll_x
-                    + v.keyboard_width;
+                let indicator_screen_x = playback_tick * v.zoom_x - v.scroll_x + v.keyboard_width;
                 let trigger_screen_x = viewport_width + v.keyboard_width - trigger_offset;
 
                 if indicator_screen_x >= trigger_screen_x {
@@ -83,8 +82,7 @@ impl Editor {
             AutoScrollMode::ScrollingIndicator | AutoScrollMode::Off => {
                 // 滚动指示线模式和关闭自动滚动时，都使用相同的计算方式
                 // 指示线位置 = 播放位置对应的像素 - 滚动偏移 + 键盘宽度
-                let indicator_x = self.playback_position * v.zoom_x - v.scroll_x
-                    + v.keyboard_width;
+                let indicator_x = self.playback_position * v.zoom_x - v.scroll_x + v.keyboard_width;
                 Some(indicator_x)
             }
         }

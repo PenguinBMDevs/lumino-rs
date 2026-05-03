@@ -136,7 +136,9 @@ pub fn export_midi_to_bytes(data: &MidiExportData) -> ExportResult<Vec<u8>> {
     let owned = build_midi_smf(data);
 
     let mut buffer = Vec::new();
-    owned.smf.write(&mut buffer)
+    owned
+        .smf
+        .write(&mut buffer)
         .map_err(|e| ExportError::MidiWrite(e.to_string()))?;
 
     Ok(buffer)
@@ -204,7 +206,10 @@ fn build_midi_smf(data: &MidiExportData) -> OwnedSmf {
 }
 
 /// 构建合并轨道（格式 0）
-fn build_combined_track(data: &MidiExportData, track_name: Option<&'static [u8]>) -> Track<'static> {
+fn build_combined_track(
+    data: &MidiExportData,
+    track_name: Option<&'static [u8]>,
+) -> Track<'static> {
     let mut events: Vec<TrackEvent<'static>> = Vec::new();
 
     // 轨道名称（使用第一个轨道的名称）
@@ -224,7 +229,11 @@ fn build_combined_track(data: &MidiExportData, track_name: Option<&'static [u8]>
 }
 
 /// 构建单个轨道
-fn build_track(track_data: &MidiTrackData, include_globals: bool, track_name: Option<&'static [u8]>) -> Track<'static> {
+fn build_track(
+    track_data: &MidiTrackData,
+    include_globals: bool,
+    track_name: Option<&'static [u8]>,
+) -> Track<'static> {
     let mut events: Vec<TrackEvent<'static>> = Vec::new();
 
     // 轨道名称（使用已在 build_midi_smf 中预泄漏的名称引用）
@@ -426,7 +435,10 @@ mod tests {
             tracks: vec![track],
         };
         let result = export_midi_to_bytes(&data);
-        assert!(result.is_ok(), "single note MIDI should export successfully");
+        assert!(
+            result.is_ok(),
+            "single note MIDI should export successfully"
+        );
         let bytes = result.unwrap();
         assert_eq!(&bytes[0..4], b"MThd", "should start with MThd");
         // 格式 1 应包含轨道数据
@@ -444,7 +456,10 @@ mod tests {
         };
         let track = MidiTrackData {
             notes: vec![note],
-            tempos: vec![MidiTempoEvent { tick: 0, tempo: 500000 }],
+            tempos: vec![MidiTempoEvent {
+                tick: 0,
+                tempo: 500000,
+            }],
             program_changes: vec![],
             control_changes: vec![],
             time_signatures: vec![],
@@ -472,20 +487,37 @@ mod tests {
         let bpm = 120.0;
         let tempo = bpm_to_tempo(bpm);
         let recovered = tempo_to_bpm(tempo);
-        assert!((recovered - bpm).abs() < 0.01, "BPM roundtrip should be precise");
+        assert!(
+            (recovered - bpm).abs() < 0.01,
+            "BPM roundtrip should be precise"
+        );
     }
 
     #[test]
     fn test_convert_to_delta_times() {
         use midly::num::u28;
         let mut events = vec![
-            TrackEvent { delta: u28::from(100u32), kind: TrackEventKind::Meta(MetaMessage::TrackName(b"foo")) },
-            TrackEvent { delta: u28::from(50u32), kind: TrackEventKind::Meta(MetaMessage::EndOfTrack) },
+            TrackEvent {
+                delta: u28::from(100u32),
+                kind: TrackEventKind::Meta(MetaMessage::TrackName(b"foo")),
+            },
+            TrackEvent {
+                delta: u28::from(50u32),
+                kind: TrackEventKind::Meta(MetaMessage::EndOfTrack),
+            },
         ];
         convert_to_delta_times(&mut events);
         // After sorting: 50 should be first with delta 50, then 100 with delta 50
-        assert_eq!(u32::from(events[0].delta), 50, "first event delta should be 50");
-        assert_eq!(u32::from(events[1].delta), 50, "second event delta should be 50");
+        assert_eq!(
+            u32::from(events[0].delta),
+            50,
+            "first event delta should be 50"
+        );
+        assert_eq!(
+            u32::from(events[1].delta),
+            50,
+            "second event delta should be 50"
+        );
     }
 
     #[test]
@@ -507,7 +539,10 @@ mod tests {
             name: Some(String::from("Piano")),
         };
         let data = MidiExportData {
-            options: MidiExportOptions { format: 1, ppqn: 480 },
+            options: MidiExportOptions {
+                format: 1,
+                ppqn: 480,
+            },
             tracks: vec![track],
         };
         let owned = build_midi_smf(&data);

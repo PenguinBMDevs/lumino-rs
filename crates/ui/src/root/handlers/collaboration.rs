@@ -124,7 +124,6 @@ impl CollaborationHandler {
             tracing::error!("协作: 无法解析远程笔记操作");
         }
     }
-
 }
 
 impl Default for CollaborationHandler {

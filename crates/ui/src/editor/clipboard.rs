@@ -135,8 +135,10 @@ impl Editor {
         let pasted_count = pasted.len();
         let start = self.editor_state.data.notes.len();
         self.editor_state.data.notes.extend(pasted);
-        self.editor_state.data.track_notes
-            .insert(self.editor_state.data.current_track, self.editor_state.data.notes.clone());
+        self.editor_state.data.track_notes.insert(
+            self.editor_state.data.current_track,
+            self.editor_state.data.notes.clone(),
+        );
         for index in start..start + pasted_count {
             self.editor_state.interaction.selected_notes.insert(index);
         }

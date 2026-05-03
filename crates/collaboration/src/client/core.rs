@@ -1,7 +1,7 @@
 //! 协作客户端核心定义和基础方法
 
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::{RwLock, mpsc};
@@ -129,9 +129,16 @@ mod tests {
         // 格式: user_{timestamp}_{pid}_{counter}
         assert!(id.starts_with("user_"), "ID should start with 'user_'");
         let parts: Vec<&str> = id.split('_').collect();
-        assert_eq!(parts.len(), 4, "ID should have 4 underscore-separated parts");
+        assert_eq!(
+            parts.len(),
+            4,
+            "ID should have 4 underscore-separated parts"
+        );
         // 验证第二部分是数字（时间戳）
-        assert!(parts[1].parse::<u128>().is_ok(), "timestamp should be numeric");
+        assert!(
+            parts[1].parse::<u128>().is_ok(),
+            "timestamp should be numeric"
+        );
         // 验证第三部分是数字（PID）
         assert!(parts[2].parse::<u32>().is_ok(), "PID should be numeric");
         // 验证第四部分是数字（计数器）
@@ -157,8 +164,14 @@ mod tests {
     #[test]
     fn test_client_new_creates_channel() {
         let client = CollaborationClient::new(crate::types::ClientConfig::default());
-        assert!(client.message_rx.is_some(), "message_rx should be Some after creation");
+        assert!(
+            client.message_rx.is_some(),
+            "message_rx should be Some after creation"
+        );
         // shutdown_tx 初始为 None（需由 connect 方法设置）
-        assert!(client.shutdown_tx.is_none(), "shutdown_tx should be None initially");
+        assert!(
+            client.shutdown_tx.is_none(),
+            "shutdown_tx should be None initially"
+        );
     }
 }

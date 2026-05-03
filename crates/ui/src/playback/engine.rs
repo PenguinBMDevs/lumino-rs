@@ -6,4 +6,4 @@ pub mod control;
 pub mod types;
 
 pub use control::PlaybackEngine;
-pub use types::{MidiMessage, MidiTrackEvent, NoteEvent, ScheduledEvent, EventType};
+pub use types::{EventType, MidiMessage, MidiTrackEvent, NoteEvent, ScheduledEvent};

@@ -111,6 +111,10 @@ impl Host {
     pub fn update_theme(&mut self, theme: String) {
         self.root.update(window::Event::theme(theme));
         self.root.editor.grid_cache.clear();
+        self.root.editor.keyboard_cache.clear();
+        self.root.editor.ruler_cache.clear();
+        self.render_ctx.render_cache.grid_viewport_hash = 0;
+        self.render_ctx.render_cache.note_viewport_hash = 0;
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }

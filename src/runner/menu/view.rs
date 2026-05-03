@@ -19,7 +19,10 @@ impl RunnerInner {
 
         match view_event {
             Theme(theme) => {
-                self.window_state.window.ui_mut().update_theme(theme.clone());
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .update_theme(theme.clone());
                 self.window_state.storage.config.patch(|state| {
                     state.ui.theme = theme;
                 });

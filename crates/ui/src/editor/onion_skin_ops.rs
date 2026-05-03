@@ -1,5 +1,5 @@
-use crate::editor::{Editor, CacheInvalidation};
 use crate::editor::note::Note;
+use crate::editor::{CacheInvalidation, Editor};
 use lumino_gfx::NoteInstance;
 use rayon::prelude::*;
 
@@ -117,7 +117,10 @@ impl Editor {
             .iter()
             .filter_map(|&track_idx| {
                 let is_enabled = *track_onion_states.get(&track_idx)?;
-                if !self.onion_skin_config.should_show_track(track_idx, is_enabled) {
+                if !self
+                    .onion_skin_config
+                    .should_show_track(track_idx, is_enabled)
+                {
                     return None;
                 }
                 let color = self.onion_skin_config.get_track_color(track_idx);
@@ -146,7 +149,7 @@ impl Editor {
 
                 // 纯流式处理：直接构建结果，无限制
                 let mut track_notes = Vec::with_capacity(raw.len());
-                
+
                 for &(tick, key, length, _vel, _ch) in raw.iter() {
                     let key_u16 = key as u16;
                     if key_u16 >= visible_key_min
@@ -173,7 +176,7 @@ impl Editor {
                     }
                     a.append(&mut b);
                     a
-                }
+                },
             );
 
         all_notes
@@ -259,7 +262,10 @@ impl Editor {
                     .with_channel(*channel),
             );
         }
-        self.editor_state.data.track_notes.insert(track_idx, notes.clone());
+        self.editor_state
+            .data
+            .track_notes
+            .insert(track_idx, notes.clone());
 
         make_instances(&notes, color)
     }
@@ -318,7 +324,7 @@ impl Editor {
 
                 // 纯流式处理：直接构建实例，无限制
                 let mut instances = Vec::with_capacity(raw.len());
-                
+
                 for &(tick, key, length, _vel, _ch) in raw.iter() {
                     let key_u16 = key as u16;
                     if key_u16 >= search_key_min
@@ -345,7 +351,7 @@ impl Editor {
                     }
                     a.append(&mut b);
                     a
-                }
+                },
             );
 
         all_instances
@@ -360,12 +366,18 @@ impl Editor {
             return;
         }
         if doc.track_note_count(track_idx as u16) == 0 {
-            self.editor_state.data.track_notes.insert(track_idx, im::Vector::new());
+            self.editor_state
+                .data
+                .track_notes
+                .insert(track_idx, im::Vector::new());
             return;
         }
         let raw = doc.get_track_notes(track_idx as u16);
         if raw.is_empty() {
-            self.editor_state.data.track_notes.insert(track_idx, im::Vector::new());
+            self.editor_state
+                .data
+                .track_notes
+                .insert(track_idx, im::Vector::new());
             return;
         }
 

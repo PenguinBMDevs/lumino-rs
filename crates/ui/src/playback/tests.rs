@@ -1,9 +1,9 @@
 //! 播放器模块单元测试
 
 use super::core::Playback;
-use crate::playback::PlaybackState;
-use super::tempo::{bpm_from_tempo, tempo_from_bpm, TempoChange};
+use super::tempo::{TempoChange, bpm_from_tempo, tempo_from_bpm};
 use super::timeline::Timeline;
+use crate::playback::PlaybackState;
 
 #[test]
 fn test_tempo_conversion() {

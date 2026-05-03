@@ -47,11 +47,16 @@ impl Editor {
 
             // 更新当前音轨的存储
             if !self.editor_state.data.notes.is_empty() {
-                self.editor_state.data.track_notes
-                    .insert(self.editor_state.data.current_track, self.editor_state.data.notes.clone());
+                self.editor_state.data.track_notes.insert(
+                    self.editor_state.data.current_track,
+                    self.editor_state.data.notes.clone(),
+                );
             } else {
                 // 如果音符列表为空，从 track_notes 中移除该音轨
-                self.editor_state.data.track_notes.remove(&self.editor_state.data.current_track);
+                self.editor_state
+                    .data
+                    .track_notes
+                    .remove(&self.editor_state.data.current_track);
             }
 
             // 清除悬停状态（如果被删除的音符正好是悬停的）
@@ -89,7 +94,10 @@ impl Editor {
 
     /// 检查音符是否被选中
     pub fn is_note_selected(&self, index: usize) -> bool {
-        self.editor_state.interaction.selected_notes.contains(&index)
+        self.editor_state
+            .interaction
+            .selected_notes
+            .contains(&index)
     }
 
     /// 获取选中音符的数量
@@ -105,7 +113,13 @@ impl Editor {
     /// 删除所有选中的音符
     pub fn delete_selected_notes(&mut self) {
         // 先复制选中的索引，避免之后修改 self 时的借用冲突
-        let mut indices: Vec<usize> = self.editor_state.interaction.selected_notes.iter().copied().collect();
+        let mut indices: Vec<usize> = self
+            .editor_state
+            .interaction
+            .selected_notes
+            .iter()
+            .copied()
+            .collect();
         if indices.is_empty() {
             return;
         }
@@ -126,10 +140,15 @@ impl Editor {
 
         // 更新当前音轨的存储
         if !self.editor_state.data.notes.is_empty() {
-            self.editor_state.data.track_notes
-                .insert(self.editor_state.data.current_track, self.editor_state.data.notes.clone());
+            self.editor_state.data.track_notes.insert(
+                self.editor_state.data.current_track,
+                self.editor_state.data.notes.clone(),
+            );
         } else {
-            self.editor_state.data.track_notes.remove(&self.editor_state.data.current_track);
+            self.editor_state
+                .data
+                .track_notes
+                .remove(&self.editor_state.data.current_track);
         }
 
         // 清除选中和悬停状态
@@ -143,7 +162,8 @@ impl Editor {
     /// 选择全部音符
     pub fn select_all_notes(&mut self) {
         self.editor_state.interaction.selected_notes.clear();
-        self.editor_state.interaction
+        self.editor_state
+            .interaction
             .selected_notes
             .extend(0..self.editor_state.data.notes.len());
         // 选择框是 Canvas 上实时渲染的叠加层，不需要清 grid cache

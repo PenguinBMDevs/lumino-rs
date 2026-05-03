@@ -97,7 +97,12 @@ impl Host {
         camera: lumino_gfx::CameraUniform,
     ) {
         // 从双缓冲的前缓冲区读取音符实例
-        let note_instances = unsafe { self.render_ctx.render_cache.note_instances_buffer.read_buffer() };
+        let note_instances = unsafe {
+            self.render_ctx
+                .render_cache
+                .note_instances_buffer
+                .read_buffer()
+        };
 
         if notes_changed && !note_instances.is_empty() {
             self.render_ctx.note_renderer.prepare_notes(
@@ -108,7 +113,9 @@ impl Host {
                 camera,
             );
         } else if !note_instances.is_empty() {
-            self.render_ctx.note_renderer.prepare_pass(encoder, camera, &gfx.queue);
+            self.render_ctx
+                .note_renderer
+                .prepare_pass(encoder, camera, &gfx.queue);
         }
     }
 
@@ -198,7 +205,12 @@ impl Host {
         }
 
         // 绘制音符（从双缓冲读取）
-        let note_instances = unsafe { self.render_ctx.render_cache.note_instances_buffer.read_buffer() };
+        let note_instances = unsafe {
+            self.render_ctx
+                .render_cache
+                .note_instances_buffer
+                .read_buffer()
+        };
         if !note_instances.is_empty() && scissor.has_valid_region {
             render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
             self.render_ctx.note_renderer.draw(

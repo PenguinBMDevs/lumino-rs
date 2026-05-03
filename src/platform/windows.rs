@@ -29,7 +29,10 @@ unsafe extern "system" fn window_proc(
     let old_proc = if old_proc_val != 0 {
         // SAFETY: original_wndproc 存储的是 SetWindowLongPtrW 返回的合法窗口过程指针
         // ORIGINAL_WNDPROC 在 setup_resize_border 中只设置一次
-        debug_assert_ne!(old_proc_val, 0, "ORIGINAL_WNDPROC 已被二次设置，可能导致 UB");
+        debug_assert_ne!(
+            old_proc_val, 0,
+            "ORIGINAL_WNDPROC 已被二次设置，可能导致 UB"
+        );
         Some(unsafe { std::mem::transmute::<isize, WndProcType>(old_proc_val) })
     } else {
         None

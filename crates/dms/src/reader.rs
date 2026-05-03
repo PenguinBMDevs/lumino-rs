@@ -8,8 +8,8 @@ use bytes::Bytes;
 use flate2::read::ZlibDecoder;
 use std::io::{Cursor, Read};
 
-use crate::error::{DmsError, Result};
 use crate::constants::{DATALENGTH_SIZE, HEADER_SIZE, TYPEID_SIZE};
+use crate::error::{DmsError, Result};
 use crate::node::{DmsCompositeNode, DmsNode, create_node};
 use crate::node_type::DmsNodeType;
 
@@ -17,9 +17,7 @@ pub mod scanner;
 pub mod types;
 
 pub use scanner::{ScanState, scan_dms_streaming, scan_dms_streaming_with_progress};
-pub use types::{
-    DmsLightweightData, DmsParseContext, DmsScanResult, FileHeader, read_file_header,
-};
+pub use types::{DmsLightweightData, DmsParseContext, DmsScanResult, FileHeader, read_file_header};
 
 /// DMS 文件读取器
 pub struct DmsReader;
@@ -242,9 +240,8 @@ impl DmsReader {
         let data_length = Self::read_data_length(stream)?;
 
         if type_id.is_composite() {
-            let composite = self.parse_composite_from_stream(
-                type_id, layer, stream, data_length, None,
-            )?;
+            let composite =
+                self.parse_composite_from_stream(type_id, layer, stream, data_length, None)?;
             return Ok(Box::new(composite));
         }
 

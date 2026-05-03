@@ -218,7 +218,6 @@ impl Sidebar {
     pub fn end_resize(&mut self) {
         self.is_resizing = false;
     }
-
 }
 
 impl Default for Sidebar {

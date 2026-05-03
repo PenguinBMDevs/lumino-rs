@@ -171,7 +171,9 @@ mod tests {
         let writer = DmsWriter::new();
         let mut buf = Vec::new();
         use std::io::Cursor;
-        writer.write_tree(&mut Cursor::new(&mut buf), &root).unwrap();
+        writer
+            .write_tree(&mut Cursor::new(&mut buf), &root)
+            .unwrap();
         assert!(!buf.is_empty(), "written data should not be empty");
     }
 }

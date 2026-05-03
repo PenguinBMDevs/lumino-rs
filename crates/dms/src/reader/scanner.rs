@@ -3,8 +3,8 @@
 use flate2::read::ZlibDecoder;
 use std::io::Read;
 
-use crate::error::{DmsError, Result};
 use crate::constants::HEADER_SIZE;
+use crate::error::{DmsError, Result};
 use crate::node_type::DmsNodeType;
 use crate::reader::{DmsScanResult, read_file_header};
 use crate::utils;

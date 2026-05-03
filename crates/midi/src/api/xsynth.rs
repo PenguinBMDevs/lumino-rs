@@ -9,8 +9,8 @@ use xsynth_core::{
 };
 use xsynth_realtime::{RealtimeEventSender, RealtimeSynth, SynthEvent, XSynthRealtimeConfig};
 
-use crate::soundfont_cache;
 use crate::constants::*;
+use crate::soundfont_cache;
 use crate::{Api, Error, InputInfo, OutputConnection, OutputInfo};
 
 /// XSynth 运行时统计信息
@@ -92,15 +92,34 @@ impl XSynth {
         // 注意：xsynth-realtime 使用音频设备的原生采样率，配置中的 sample_rate 仅用于音色库预加载
         // 实际采样率由 cpal 决定，可能与请求的不同
         let actual_sample_rate = synth.stream_params().sample_rate;
-        if actual_sample_rate != requested_sample_rate {
+
+        // 如果实际采样率与预加载时不一致，必须重新加载音色库。
+        // SampleSoundfont::new() 的内部预处理（采样率转换、包络时间等）
+        // 与目标 AudioStreamParams.sample_rate 强相关，混用会导致音高/速度错误（跑调）。
+        let soundfont = if actual_sample_rate != requested_sample_rate {
             tracing::warn!(
-                "XSynth: 请求的采样率 {}Hz 与设备实际采样率 {}Hz 不匹配，使用设备原生采样率",
+                "XSynth: 请求的采样率 {}Hz 与设备实际采样率 {}Hz 不匹配，重新加载音色库...",
                 requested_sample_rate,
                 actual_sample_rate
             );
+
+            let actual_params = AudioStreamParams::new(actual_sample_rate, ChannelCount::Stereo);
+            let reload_start = Instant::now();
+            let reloaded = soundfont_cache::load_soundfont_cached(soundfont_path, actual_params)
+                .map_err(Error::InitFailed)?;
+            tracing::info!(
+                "XSynth: 音色库已按实际采样率 {}Hz 重新加载，耗时: {:.2} 秒",
+                actual_sample_rate,
+                reload_start.elapsed().as_secs_f64()
+            );
+            reloaded
         } else {
-            tracing::info!("XSynth: 音频流已创建并启动 (sample_rate={}Hz)", actual_sample_rate);
-        }
+            tracing::info!(
+                "XSynth: 音频流已创建并启动 (sample_rate={}Hz)",
+                actual_sample_rate
+            );
+            soundfont
+        };
 
         // 获取 sender — 在 open 后立即配置通道，确保音色库在 callback 首次触发前就位
         let sender = synth.get_sender_mut();
@@ -209,7 +228,9 @@ impl OutputConnection for XSynthOutputConn {
 
         self.sender.send_event(SynthEvent::Channel(
             channel,
-            ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: key & MIDI_VALUE_MASK }),
+            ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
+                key: key & MIDI_VALUE_MASK,
+            }),
         ));
 
         tracing::debug!("XSynthOutputConn::note_off: 事件已发送到通道 {}", channel);
@@ -294,36 +315,30 @@ impl OutputConnection for XSynthOutputConn {
             )),
             0xB0 => self.sender.send_event(SynthEvent::Channel(
                 channel,
-                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
-                    b1, b2,
-                ))),
+                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(b1, b2))),
             )),
             0xC0 => self.sender.send_event(SynthEvent::Channel(
                 channel,
                 ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(b1)),
             )),
-            0xD0 => {
-                self.sender.send_event(SynthEvent::Channel(
-                    channel,
-                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
-                        0, b1,
-                    ))),
-                ))
-            }
+            0xD0 => self.sender.send_event(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(0, b1))),
+            )),
             0xE0 => {
                 let bend = ((b1 as u16) | ((b2 as u16) << 7)) as f32;
                 self.sender.send_event(SynthEvent::Channel(
                     channel,
-                    ChannelEvent::Audio(ChannelAudioEvent::Control(
-                        ControlEvent::PitchBendValue(bend),
-                    )),
+                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
+                        bend,
+                    ))),
                 ))
             }
             _ => {
                 return Err(Error::SendFailed(format!(
                     "xsynth 不支持的消息类型: 0x{:02X}",
                     status
-                )))
+                )));
             }
         };
         Ok(())

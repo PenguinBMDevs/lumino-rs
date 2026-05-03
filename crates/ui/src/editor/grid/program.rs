@@ -1,9 +1,9 @@
 //! 钢琴卷帘网格绘制程序
 
 use super::state::CanvasState;
+use crate::Message;
 use crate::constants::editor as editor_constants;
 use crate::editor::Editor;
-use crate::Message;
 use iced_core::Point;
 use iced_widget::canvas::{self};
 
@@ -43,9 +43,7 @@ impl<'a> PianoRollGrid<'a> {
         use crate::message::EditorAction;
 
         let v = &self.editor.editor_state.view;
-        if local_pos.y < v.ruler_height
-            && local_pos.x >= v.keyboard_width
-        {
+        if local_pos.y < v.ruler_height && local_pos.x >= v.keyboard_width {
             let tick = self.editor.x_to_tick(local_pos.x);
             let snapped_tick = self.editor.snap_tick(tick).max(0.0);
             return Some(canvas::Action::publish(Message::EditorAction(

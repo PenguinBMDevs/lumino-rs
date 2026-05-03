@@ -31,7 +31,9 @@ fn watchdog_get_process_rss(pid: u32) -> u64 {
     for line in content.lines() {
         if let Some(rest) = line.strip_prefix("VmRSS:") {
             let parts: Vec<&str> = rest.split_whitespace().collect();
-            if parts.len() >= 2 && let Ok(kb) = parts[0].parse::<u64>() {
+            if parts.len() >= 2
+                && let Ok(kb) = parts[0].parse::<u64>()
+            {
                 return kb * 1024;
             }
         }
@@ -79,7 +81,9 @@ fn watchdog_get_available_memory() -> u64 {
     for line in content.lines() {
         if let Some(rest) = line.strip_prefix("MemAvailable:") {
             let parts: Vec<&str> = rest.split_whitespace().collect();
-            if parts.len() >= 2 && let Ok(kb) = parts[0].parse::<u64>() {
+            if parts.len() >= 2
+                && let Ok(kb) = parts[0].parse::<u64>()
+            {
                 return kb * 1024;
             }
         }

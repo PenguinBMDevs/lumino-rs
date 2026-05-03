@@ -34,11 +34,14 @@ impl DmsWriter {
         stream.write_all(&type_id.to_le_bytes())?;
 
         if node.is_composite() {
-            let composite = node.as_any().downcast_ref::<DmsCompositeNode>().ok_or_else(|| {
-                crate::error::DmsError::UnsupportedType(
-                    "is_composite() 返回 true 但 downcast 失败，类型系统不一致".into(),
-                )
-            })?;
+            let composite = node
+                .as_any()
+                .downcast_ref::<DmsCompositeNode>()
+                .ok_or_else(|| {
+                    crate::error::DmsError::UnsupportedType(
+                        "is_composite() 返回 true 但 downcast 失败，类型系统不一致".into(),
+                    )
+                })?;
             let length = u32::try_from(composite.calculate_length()).map_err(|_| {
                 crate::error::DmsError::UnsupportedType(
                     "Composite node size exceeds u32 max".into(),
@@ -130,9 +133,7 @@ pub fn write_dms_file(root: &DmsCompositeNode) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node::{
-        DmsAnsiStringNode, DmsCompositeNode, DmsIntegerNode, DmsNode,
-    };
+    use crate::node::{DmsAnsiStringNode, DmsCompositeNode, DmsIntegerNode, DmsNode};
     use crate::node_type::DmsNodeType;
     use crate::reader::read_dms_file;
     use bytes::Bytes;
@@ -181,7 +182,10 @@ mod tests {
         // 读回并验证结构
         let read_root = read_dms_file(&file_bytes).unwrap();
         assert_eq!(read_root.type_id(), DmsNodeType::ROOT);
-        assert!(read_root.children().len() >= 2, "should have at least 2 children");
+        assert!(
+            read_root.children().len() >= 2,
+            "should have at least 2 children"
+        );
     }
 
     #[test]

@@ -101,15 +101,17 @@ impl ToolbarHandler {
 
         // 用缓存的 MIDI 输出连接
         if let Some(output) = root.pending_midi_output.take()
-            && let Some(manager) = &mut root.playback_manager {
-                manager.set_midi_output(output);
-            }
+            && let Some(manager) = &mut root.playback_manager
+        {
+            manager.set_midi_output(output);
+        }
 
         // 应用缓存的 tempo 变化
         if let Some(changes) = root.pending_tempo_changes.take()
-            && let Some(manager) = &mut root.playback_manager {
-                manager.set_tempo_changes(changes);
-            }
+            && let Some(manager) = &mut root.playback_manager
+        {
+            manager.set_tempo_changes(changes);
+        }
 
         if let Some(_manager) = &root.playback_manager {
             tracing::info!(

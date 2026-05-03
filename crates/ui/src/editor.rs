@@ -267,7 +267,6 @@ impl Editor {
             .borrow_mut()
             .remove(&self.editor_state.data.current_track);
     }
-
 }
 
 impl Default for Editor {
@@ -304,7 +303,10 @@ impl Editor {
             self.editor_state.data.current_track = snapshot.current_track;
             self.grid_cache.clear();
             self.mark_notes_changed();
-            tracing::info!("撤销操作成功: {} 个音符", self.editor_state.data.notes.len());
+            tracing::info!(
+                "撤销操作成功: {} 个音符",
+                self.editor_state.data.notes.len()
+            );
             true
         } else {
             tracing::info!("没有可撤销的操作");

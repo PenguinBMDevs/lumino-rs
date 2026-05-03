@@ -5,9 +5,7 @@ use std::path::PathBuf;
 #[test]
 #[ignore = "需要外部 LMPJ 文件，设置 LUMINO_TEST_LMPJ 环境变量"]
 fn decode_and_resave_lmpj_if_present() {
-    let candidates = vec![
-        std::env::var("LUMINO_TEST_LMPJ").ok().map(PathBuf::from),
-    ];
+    let candidates = vec![std::env::var("LUMINO_TEST_LMPJ").ok().map(PathBuf::from)];
 
     let path = candidates.into_iter().flatten().find(|p| p.exists());
     if path.is_none() {

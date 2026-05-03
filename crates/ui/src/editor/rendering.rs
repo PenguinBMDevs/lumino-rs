@@ -28,7 +28,7 @@ impl Editor {
     ) -> Element<'_> {
         // 使用 editor_state 读取视图状态
         let es = &self.editor_state;
-        
+
         // 创建带鼠标追踪的 Canvas
         let grid = Canvas::new(PianoRollGrid::new(self))
             .width(Length::Fill)
@@ -155,9 +155,11 @@ impl Editor {
             let note_data: Vec<(usize, f32, u16, f32)> = cache
                 .iter()
                 .filter_map(|&i| {
-                    self.editor_state.data.notes.get(i).map(|note| {
-                        (i, note.tick, note.key, note.length)
-                    })
+                    self.editor_state
+                        .data
+                        .notes
+                        .get(i)
+                        .map(|note| (i, note.tick, note.key, note.length))
                 })
                 .collect();
 
@@ -191,7 +193,9 @@ impl Editor {
                             active_color
                         }
                         _ if is_selected => selected_color,
-                        EditState::Idle if hover_state_copy.is_some_and(|(idx, _)| idx == i) => hover_color,
+                        EditState::Idle if hover_state_copy.is_some_and(|(idx, _)| idx == i) => {
+                            hover_color
+                        }
                         _ => default_color,
                     };
 
@@ -202,14 +206,14 @@ impl Editor {
                     |mut local_instances, instance| {
                         local_instances.push(instance);
                         local_instances
-                    }
+                    },
                 )
                 .reduce(
                     || Vec::new(),
                     |mut a, b| {
                         a.extend(b);
                         a
-                    }
+                    },
                 );
 
             instances.extend(note_instances);
@@ -231,11 +235,20 @@ impl Editor {
                             active_color
                         }
                         _ if interaction.selected_notes.contains(&i) => selected_color,
-                        EditState::Idle if interaction.hover_state.is_some_and(|(idx, _)| idx == i) => hover_color,
+                        EditState::Idle
+                            if interaction.hover_state.is_some_and(|(idx, _)| idx == i) =>
+                        {
+                            hover_color
+                        }
                         _ => default_color,
                     };
 
-                    instances.push(NoteInstance::new(note.tick, note.key as f32, note.length, color_arr));
+                    instances.push(NoteInstance::new(
+                        note.tick,
+                        note.key as f32,
+                        note.length,
+                        color_arr,
+                    ));
                 }
             }
         }
@@ -263,8 +276,7 @@ impl Editor {
                 && interaction.hover_state.is_none()
                 && es.tool == Tool::Pencil
             {
-                let local_pos =
-                    Point::new(pos.x - canvas.offset.x, pos.y - canvas.offset.y);
+                let local_pos = Point::new(pos.x - canvas.offset.x, pos.y - canvas.offset.y);
                 if self.is_inside_canvas(local_pos) {
                     let tick = self.snap_tick(self.x_to_tick(local_pos.x));
                     let key = self.y_to_key(local_pos.y);
@@ -272,7 +284,12 @@ impl Editor {
                     let mut preview_color = default_color;
                     preview_color[3] = PREVIEW_NOTE_OPACITY;
 
-                    instances.push(NoteInstance::new(tick, key as f32, view.default_note_length, preview_color));
+                    instances.push(NoteInstance::new(
+                        tick,
+                        key as f32,
+                        view.default_note_length,
+                        preview_color,
+                    ));
                 }
             }
         }

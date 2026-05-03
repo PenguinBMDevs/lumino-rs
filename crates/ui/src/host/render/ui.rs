@@ -24,8 +24,12 @@ impl Host {
 
         if !is_menu_open && !self.ui_dirty && !is_first_render && !cursor_changed {
             // UI 没有变化且不是第一次渲染且光标未移动，直接 present 之前渲染的内容
-            self.render_ctx.renderer
-                .present(None, frame.texture.format(), texture_view, &self.render_ctx.viewport);
+            self.render_ctx.renderer.present(
+                None,
+                frame.texture.format(),
+                texture_view,
+                &self.render_ctx.viewport,
+            );
             return;
         }
 
@@ -82,8 +86,12 @@ impl Host {
         // 更新上次渲染时的光标状态
         self.render_ctx.last_render_cursor = self.window_ctx.cursor;
 
-        self.render_ctx.renderer
-            .present(None, frame.texture.format(), texture_view, &self.render_ctx.viewport);
+        self.render_ctx.renderer.present(
+            None,
+            frame.texture.format(),
+            texture_view,
+            &self.render_ctx.viewport,
+        );
 
         // 处理消息（在 interface 被释放之后，避免借用冲突）
         let mut has_state_change = false;

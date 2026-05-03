@@ -7,10 +7,10 @@
 //! - control_flow: 事件循环控制流
 //! - test_mode: 测试模式 FPS 监测
 
+mod control_flow;
 mod dialog;
 mod memory;
 mod midi;
-mod control_flow;
 mod test_mode;
 
 use super::inner::{Runner, TestModeState};
@@ -108,7 +108,9 @@ impl winit::application::ApplicationHandler for Runner {
         }
 
         // 主窗口事件
-        this.window_state.window.handle_event(event, &mut this.window_state.storage);
+        this.window_state
+            .window
+            .handle_event(event, &mut this.window_state.storage);
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -121,7 +123,9 @@ impl winit::application::ApplicationHandler for Runner {
         // 处理进度消息
         let main_window = this.window_state.window.window().clone();
         let main_ui = this.window_state.window.ui_mut();
-        this.window_state.progress.process_messages(main_ui, &main_window);
+        this.window_state
+            .progress
+            .process_messages(main_ui, &main_window);
 
         // 更新进度窗口
         let ui_config = this.window_state.storage.config.get().ui.clone();

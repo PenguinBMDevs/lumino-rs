@@ -23,7 +23,9 @@ pub fn get_total_physical_memory() -> u64 {
     for line in content.lines() {
         if let Some(rest) = line.strip_prefix("MemTotal:") {
             let parts: Vec<&str> = rest.split_whitespace().collect();
-            if parts.len() >= 2 && let Ok(kb) = parts[0].parse::<u64>() {
+            if parts.len() >= 2
+                && let Ok(kb) = parts[0].parse::<u64>()
+            {
                 return kb * 1024;
             }
         }
@@ -89,7 +91,9 @@ pub fn get_current_rss() -> u64 {
     for line in content.lines() {
         if let Some(rest) = line.strip_prefix("VmRSS:") {
             let parts: Vec<&str> = rest.split_whitespace().collect();
-            if parts.len() >= 2 && let Ok(kb) = parts[0].parse::<u64>() {
+            if parts.len() >= 2
+                && let Ok(kb) = parts[0].parse::<u64>()
+            {
                 return kb * 1024;
             }
         }
@@ -112,8 +116,7 @@ pub fn get_current_rss() -> u64 {
     }
 
     let mut info = std::mem::MaybeUninit::<MachTaskBasicInfo>::uninit();
-    let mut count =
-        (std::mem::size_of::<MachTaskBasicInfo>() / std::mem::size_of::<u32>()) as u32;
+    let mut count = (std::mem::size_of::<MachTaskBasicInfo>() / std::mem::size_of::<u32>()) as u32;
 
     let result = unsafe {
         libc::task_info(

@@ -74,7 +74,12 @@ impl Editor {
         snapped_tick: f32,
     ) {
         if let Some((index, hit_type)) = hit_result {
-            if !self.editor_state.interaction.selected_notes.contains(&index) {
+            if !self
+                .editor_state
+                .interaction
+                .selected_notes
+                .contains(&index)
+            {
                 self.editor_state.interaction.selected_notes.clear();
                 self.editor_state.interaction.selected_notes.insert(index);
             }
@@ -166,7 +171,8 @@ impl Editor {
             }
             HitType::End => {
                 self.push_history();
-                self.editor_state.interaction.edit_state = EditState::ResizingEnd { note_index: index };
+                self.editor_state.interaction.edit_state =
+                    EditState::ResizingEnd { note_index: index };
             }
             HitType::Middle => {
                 let note = &self.editor_state.data.notes[index];
@@ -193,10 +199,13 @@ impl Editor {
 
     /// 播放音符音频
     pub(crate) fn play_note_audio(&mut self, key: u16, _context: &str) {
-        self.editor_state.interaction.pending_audio_actions.push(AudioAction::PlayNote {
-            key: key as u8,
-            velocity: DEFAULT_NOTE_VELOCITY,
-        });
+        self.editor_state
+            .interaction
+            .pending_audio_actions
+            .push(AudioAction::PlayNote {
+                key: key as u8,
+                velocity: DEFAULT_NOTE_VELOCITY,
+            });
     }
 
     /// 处理鼠标移动事件
@@ -214,7 +223,9 @@ impl Editor {
             return;
         }
 
-        if let EditState::Selecting { current_pos, .. } = &mut self.editor_state.interaction.edit_state {
+        if let EditState::Selecting { current_pos, .. } =
+            &mut self.editor_state.interaction.edit_state
+        {
             *current_pos = pos;
         }
 
@@ -277,7 +288,10 @@ impl Editor {
                 if self.editor_state.tool == Tool::Eraser {
                     self.delete_selected_notes();
                 } else {
-                    tracing::debug!("框选结束，选中 {} 个音符", self.editor_state.interaction.selected_notes.len());
+                    tracing::debug!(
+                        "框选结束，选中 {} 个音符",
+                        self.editor_state.interaction.selected_notes.len()
+                    );
                 }
             }
             EditState::Drawing {
@@ -319,8 +333,10 @@ impl Editor {
         self.push_history();
         let note = Note::new(tick, key, length);
         self.editor_state.data.notes.push_back(note.clone());
-        self.editor_state.data.track_notes
-            .insert(self.editor_state.data.current_track, self.editor_state.data.notes.clone());
+        self.editor_state.data.track_notes.insert(
+            self.editor_state.data.current_track,
+            self.editor_state.data.notes.clone(),
+        );
 
         self.emit_note_added_event(&note);
         tracing::debug!(

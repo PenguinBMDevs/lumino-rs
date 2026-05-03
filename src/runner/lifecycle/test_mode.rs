@@ -49,8 +49,8 @@ impl RunnerInner {
                         .unwrap_or(false);
 
                     if should_exit {
-                        let avg_fps =
-                            test_state.fps_samples.iter().sum::<f32>() / test_state.fps_samples.len() as f32;
+                        let avg_fps = test_state.fps_samples.iter().sum::<f32>()
+                            / test_state.fps_samples.len() as f32;
                         tracing::info!("================================");
                         tracing::info!("FPS 测试完成");
                         tracing::info!("平均 FPS: {:.2}", avg_fps);

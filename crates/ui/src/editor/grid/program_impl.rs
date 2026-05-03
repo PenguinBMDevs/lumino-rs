@@ -18,8 +18,6 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<Action<Message>> {
-        
-
         let bounds_pos = iced_core::Point::new(bounds.x, bounds.y);
         let bounds_size = iced_core::Size::new(bounds.width, bounds.height);
 

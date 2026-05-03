@@ -60,11 +60,7 @@ impl HttpClient {
     }
 
     /// 创建房间
-    pub async fn create_room(
-        &self,
-        name: &str,
-        host_id: &str,
-    ) -> Result<CreateRoomResponse> {
+    pub async fn create_room(&self, name: &str, host_id: &str) -> Result<CreateRoomResponse> {
         let request = CreateRoomRequest {
             name: name.to_string(),
             host_id: host_id.to_string(),
@@ -84,18 +80,16 @@ impl HttpClient {
         debug!(response = %text, "[HTTP] Response");
 
         // Debug: print the JSON structure
-        let room_response: CreateRoomResponse = serde_json::from_str(&text)
-            .map_err(|e| crate::CollaborationError::Other(format!("JSON parse error: {} - text: {}", e, text)))?;
+        let room_response: CreateRoomResponse = serde_json::from_str(&text).map_err(|e| {
+            crate::CollaborationError::Other(format!("JSON parse error: {} - text: {}", e, text))
+        })?;
 
         debug!(?room_response.room, "[HTTP] Parsed room");
         Ok(room_response)
     }
 
     /// 获取房间信息
-    pub async fn get_room_info(
-        &self,
-        room_id: &str,
-    ) -> Result<RoomInfo> {
+    pub async fn get_room_info(&self, room_id: &str) -> Result<RoomInfo> {
         let url = format!("{}/api/room/{}/info", self.base_url, room_id);
         let response: reqwest::Response = self.client.get(&url).send().await?;
 

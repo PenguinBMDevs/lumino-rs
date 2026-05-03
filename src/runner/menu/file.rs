@@ -56,7 +56,8 @@ impl RunnerInner {
 
                 // 保留 current_midi 使 MidiDocument 存活（编辑器通过 Arc 引用它做懒加载）
                 // 不再需要保存一份全量 track_notes，所以总内存从 (events+notes) 降到 (events)
-                self.midi_state.current_midi_source = Some(std::path::PathBuf::from(&parsed.info.path));
+                self.midi_state.current_midi_source =
+                    Some(std::path::PathBuf::from(&parsed.info.path));
                 self.midi_state.current_midi = Some(parsed);
 
                 if let Some(state) = &mut self.test_state.test_mode_state {
@@ -92,7 +93,10 @@ impl RunnerInner {
                 // 统一使用 cache-only 模式，只切换音轨索引
                 // 播放时从 cache 流式读取，不单独加载音轨到编辑器
                 tracing::info!("切换到音轨：{}", track_idx);
-                self.window_state.window.ui_mut().set_current_track(track_idx);
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .set_current_track(track_idx);
             }
             _ => {
                 tracing::debug!("未处理的文件事件：{:?}", file_event);
@@ -137,7 +141,9 @@ impl RunnerInner {
             // 存储 pending 路径，等待对话框结果
             self.file_state.pending_load_path = Some(path);
             // 使用已有 dialog 窗口基础设施
-            self.window_state.dialog_manager.open_load_confirm(path_str, size_mb);
+            self.window_state
+                .dialog_manager
+                .open_load_confirm(path_str, size_mb);
         } else {
             tracing::info!("文件大小 {:.1}MB ≤ 阈值，标准模式加载", size_mb);
             self.load_midi_file(path);
@@ -175,11 +181,26 @@ impl RunnerInner {
     /// 导入文件
     pub(super) fn handle_import_files(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter(crate::constants::filters::MUSIC_FILES.0, crate::constants::filters::MUSIC_FILES.1)
-            .add_filter(crate::constants::filters::MIDI_FILES.0, crate::constants::filters::MIDI_FILES.1)
-            .add_filter(crate::constants::filters::LUMINO_PROJECT.0, crate::constants::filters::LUMINO_PROJECT.1)
-            .add_filter(crate::constants::filters::DOMINO_PROJECT.0, crate::constants::filters::DOMINO_PROJECT.1)
-            .add_filter(crate::constants::filters::ALL_FILES.0, crate::constants::filters::ALL_FILES.1)
+            .add_filter(
+                crate::constants::filters::MUSIC_FILES.0,
+                crate::constants::filters::MUSIC_FILES.1,
+            )
+            .add_filter(
+                crate::constants::filters::MIDI_FILES.0,
+                crate::constants::filters::MIDI_FILES.1,
+            )
+            .add_filter(
+                crate::constants::filters::LUMINO_PROJECT.0,
+                crate::constants::filters::LUMINO_PROJECT.1,
+            )
+            .add_filter(
+                crate::constants::filters::DOMINO_PROJECT.0,
+                crate::constants::filters::DOMINO_PROJECT.1,
+            )
+            .add_filter(
+                crate::constants::filters::ALL_FILES.0,
+                crate::constants::filters::ALL_FILES.1,
+            )
             .pick_file()
         else {
             return;
@@ -209,7 +230,9 @@ impl RunnerInner {
         if size_mb > MEMORY_OPTIMIZE_THRESHOLD_MB as f64 {
             let path_str = path.to_string_lossy().to_string();
             self.file_state.pending_load_path = Some(path);
-            self.window_state.dialog_manager.open_load_confirm(path_str, size_mb);
+            self.window_state
+                .dialog_manager
+                .open_load_confirm(path_str, size_mb);
         } else {
             tracing::info!("导入文件 {:.1}MB ≤ 阈值，标准模式加载", size_mb);
             let progress_cb = self.window_state.progress_cb.clone();
@@ -356,12 +379,17 @@ impl RunnerInner {
     pub(super) fn import_midi_to_editor(&mut self, parsed: &ParsedMidi) {
         {
             let ui = self.window_state.window.ui_mut();
-            self.midi_state.midi_handler.import_midi_to_editor(ui, parsed);
+            self.midi_state
+                .midi_handler
+                .import_midi_to_editor(ui, parsed);
         }
 
         // MIDI 导入后，为播放管理器绑定一个独立的 MIDI 输出连接
         if let Some(output) = self.midi_state.midi.create_additional_output() {
-            self.window_state.window.ui_mut().set_playback_midi_output(output);
+            self.window_state
+                .window
+                .ui_mut()
+                .set_playback_midi_output(output);
             tracing::info!("Playback MIDI output connected");
         } else {
             tracing::warn!("Failed to create playback MIDI output connection");
@@ -411,7 +439,10 @@ impl RunnerInner {
                 }
                 Err(e) => {
                     tracing::error!("[DMS导入] DMS 转换为 MIDI 失败: {}", e);
-                    event!(Menu.File.DmsParseError(format!("DMS 转换为 MIDI 失败: {e}")));
+                    event!(
+                        Menu.File
+                            .DmsParseError(format!("DMS 转换为 MIDI 失败: {e}"))
+                    );
                 }
             }
         });
@@ -425,10 +456,8 @@ impl RunnerInner {
         let mem = self.window_state.window.ui().memory_breakdown();
         let rss_mb =
             lumino_core::memory_monitor::MemoryMonitor::global().current_rss() / (1024 * 1024);
-        let front_total =
-            mem.note_instances_front_cap as u64 * mem.note_instance_size as u64;
-        let back_total =
-            mem.note_instances_back_cap as u64 * mem.note_instance_size as u64;
+        let front_total = mem.note_instances_front_cap as u64 * mem.note_instance_size as u64;
+        let back_total = mem.note_instances_back_cap as u64 * mem.note_instance_size as u64;
         tracing::info!(
             "\n\
             ┌─ Memory Usage (post-import, pre-render) ──────────────┐\n\
@@ -464,5 +493,3 @@ impl RunnerInner {
         );
     }
 }
-
-

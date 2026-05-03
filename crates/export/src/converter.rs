@@ -15,14 +15,12 @@ pub fn export_midi_from_parsed_midi_sync(source_path: &Path) -> ExportResult<Vec
         .to_ascii_lowercase();
 
     match extension.as_str() {
-        "mid" | "midi" => {
-            std::fs::read(source_path).map_err(|e| ExportError::Io(e))
-        }
+        "mid" | "midi" => std::fs::read(source_path).map_err(|e| ExportError::Io(e)),
         "lmpj" => {
             // 尝试读取 LMPJ 文件内是否包含原始 MIDI 数据（有些 LMPJ 可能未保存）
             let data = std::fs::read(source_path).map_err(|e| ExportError::Io(e))?;
-            let parsed: lumino_core::midi::ParsedMidi =
-                crate::format::decode_lmpj(&data).map_err(|e| ExportError::InvalidData(format!("解析 LMPJ 失败: {e}")))?;
+            let parsed: lumino_core::midi::ParsedMidi = crate::format::decode_lmpj(&data)
+                .map_err(|e| ExportError::InvalidData(format!("解析 LMPJ 失败: {e}")))?;
 
             // 如果序列化数据中包含原始 midi bytes，则直接返回
             if let Some(midi_bytes) = parsed.midi_data {
@@ -35,11 +33,15 @@ pub fn export_midi_from_parsed_midi_sync(source_path: &Path) -> ExportResult<Vec
                 std::fs::read(&original).map_err(|e| ExportError::Io(e))
             } else {
                 Err(ExportError::InvalidData(
-                    "当前 LMPJ 未包含原始 MIDI 数据，且原始文件不存在，无法导出标准 MIDI".to_string(),
+                    "当前 LMPJ 未包含原始 MIDI 数据，且原始文件不存在，无法导出标准 MIDI"
+                        .to_string(),
                 ))
             }
         }
-        _ => Err(ExportError::InvalidData(format!("不支持的 MIDI 源格式: {}", extension))),
+        _ => Err(ExportError::InvalidData(format!(
+            "不支持的 MIDI 源格式: {}",
+            extension
+        ))),
     }
 }
 
@@ -47,9 +49,11 @@ pub fn export_midi_from_parsed_midi_sync(source_path: &Path) -> ExportResult<Vec
 
 pub fn export_midi_from_dms_sync(source_path: &Path) -> ExportResult<Vec<u8>> {
     let bytes = std::fs::read(source_path).map_err(|e| ExportError::Io(e))?;
-    let root = lumino_dms::read_dms_file(&bytes).map_err(|e| ExportError::InvalidData(format!("解析 DMS 文件失败: {e}")))?;
+    let root = lumino_dms::read_dms_file(&bytes)
+        .map_err(|e| ExportError::InvalidData(format!("解析 DMS 文件失败: {e}")))?;
     let export_data = build_midi_export_from_dms(&root);
-    crate::export_midi_to_bytes(&export_data).map_err(|e| ExportError::MidiWrite(format!("导出失败: {e}")))
+    crate::export_midi_to_bytes(&export_data)
+        .map_err(|e| ExportError::MidiWrite(format!("导出失败: {e}")))
 }
 
 pub fn export_dms_from_midi_sync(source_path: &Path) -> ExportResult<Vec<u8>> {
@@ -59,11 +63,14 @@ pub fn export_dms_from_midi_sync(source_path: &Path) -> ExportResult<Vec<u8>> {
         .unwrap_or("")
         .to_ascii_lowercase();
     if extension != "mid" && extension != "midi" {
-        return Err(ExportError::InvalidData("当前仅支持从标准 MIDI 文件导出 DMS，请先打开 .mid/.midi 文件".to_string()));
+        return Err(ExportError::InvalidData(
+            "当前仅支持从标准 MIDI 文件导出 DMS，请先打开 .mid/.midi 文件".to_string(),
+        ));
     }
 
     let export_data = build_dms_export_from_midi(source_path)?;
-    crate::export_dms_to_bytes(&export_data).map_err(|e| ExportError::DmsWrite(format!("导出失败: {e}")))
+    crate::export_dms_to_bytes(&export_data)
+        .map_err(|e| ExportError::DmsWrite(format!("导出失败: {e}")))
 }
 
 fn build_midi_export_from_dms(root: &lumino_dms::DmsCompositeNode) -> crate::midi::MidiExportData {
@@ -293,7 +300,8 @@ fn build_dms_export_from_midi(source_path: &Path) -> ExportResult<crate::dms::Dm
     use midly::{Smf, Timing};
 
     let bytes = std::fs::read(source_path).map_err(|e| ExportError::Io(e))?;
-    let smf = Smf::parse(&bytes).map_err(|e| ExportError::InvalidData(format!("解析 MIDI 文件失败: {e}")))?;
+    let smf = Smf::parse(&bytes)
+        .map_err(|e| ExportError::InvalidData(format!("解析 MIDI 文件失败: {e}")))?;
 
     let ppqn = match smf.header.timing {
         Timing::Metrical(ticks) => Some(u16::from(ticks) as u32),
@@ -431,8 +439,8 @@ fn process_dms_track(index: usize, track: &[midly::TrackEvent]) -> crate::dms::D
 #[cfg(test)]
 mod tests {
     use super::*;
-    use midly::{MetaMessage, MidiMessage, TrackEvent, TrackEventKind};
     use midly::num::u28;
+    use midly::{MetaMessage, MidiMessage, TrackEvent, TrackEventKind};
 
     fn make_note_on(delta: u32, key: u8, vel: u8) -> TrackEvent<'static> {
         TrackEvent {
@@ -471,10 +479,7 @@ mod tests {
 
     #[test]
     fn test_process_dms_track_single_note() {
-        let track = vec![
-            make_note_on(0, 60, 100),
-            make_note_off(480, 60),
-        ];
+        let track = vec![make_note_on(0, 60, 100), make_note_off(480, 60)];
         let result = process_dms_track(0, &track);
         assert_eq!(result.notes.len(), 1);
         assert_eq!(result.notes[0].key, 60);
@@ -489,8 +494,8 @@ mod tests {
         let track = vec![
             make_note_on(0, 60, 100),
             make_note_on(0, 64, 80),
-            make_note_off(240, 60),       // abs_tick: 240, key60 gate=240
-            make_note_off(0, 64),          // abs_tick: 240, key64 gate=240
+            make_note_off(240, 60), // abs_tick: 240, key60 gate=240
+            make_note_off(0, 64),   // abs_tick: 240, key64 gate=240
         ];
         let result = process_dms_track(0, &track);
         assert_eq!(result.notes.len(), 2);
@@ -556,9 +561,7 @@ mod tests {
     #[test]
     fn test_process_dms_track_unclosed_notes() {
         // Note with no NoteOff — should be force-closed at max_tick
-        let track = vec![
-            make_note_on(0, 60, 100),
-        ];
+        let track = vec![make_note_on(0, 60, 100)];
         let result = process_dms_track(0, &track);
         assert_eq!(result.notes.len(), 1);
         assert_eq!(result.notes[0].key, 60);
@@ -567,18 +570,16 @@ mod tests {
 
     #[test]
     fn test_process_dms_track_controller() {
-        let track = vec![
-            TrackEvent {
-                delta: u28::from(0u32),
-                kind: TrackEventKind::Midi {
-                    channel: 0.into(),
-                    message: MidiMessage::Controller {
-                        controller: 7.into(),  // volume
-                        value: 100.into(),
-                    },
+        let track = vec![TrackEvent {
+            delta: u28::from(0u32),
+            kind: TrackEventKind::Midi {
+                channel: 0.into(),
+                message: MidiMessage::Controller {
+                    controller: 7.into(), // volume
+                    value: 100.into(),
                 },
             },
-        ];
+        }];
         let result = process_dms_track(0, &track);
         assert_eq!(result.controls.len(), 1);
         assert_eq!(result.controls[0].control_type, 7);

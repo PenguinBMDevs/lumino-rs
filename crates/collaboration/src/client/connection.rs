@@ -26,7 +26,10 @@ pub(super) type WsStreamRead = futures::stream::SplitStream<WsStream>;
 
 impl CollaborationClient {
     /// 连接到服务器（遗留兼容接口，已废弃）
-    #[deprecated(since = "0.2.0", note = "请使用 create_room_and_connect 或 join_room_and_connect")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "请使用 create_room_and_connect 或 join_room_and_connect"
+    )]
     pub async fn connect(&mut self, _host: Option<String>, _port: Option<u16>) -> Result<()> {
         Err("请使用 create_room_and_connect 或 join_room_and_connect".into())
     }
@@ -52,7 +55,8 @@ impl CollaborationClient {
         let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
         self.shutdown_tx = Some(shutdown_tx);
 
-        self.start_message_loop_if_available(read, write, shutdown_rx).await;
+        self.start_message_loop_if_available(read, write, shutdown_rx)
+            .await;
 
         Ok(())
     }

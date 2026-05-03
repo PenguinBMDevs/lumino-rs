@@ -144,9 +144,7 @@ impl MidiDocument {
     }
 
     /// 阶段1：统计每个音轨的音符数量和总 ticks
-    fn build_track_statistics(
-        notes: &[midly::loader::PackedNote],
-    ) -> (u32, Vec<u64>, usize) {
+    fn build_track_statistics(notes: &[midly::loader::PackedNote]) -> (u32, Vec<u64>, usize) {
         let mut total_ticks: u32 = 0;
         let mut track_note_counts: Vec<u64> = Vec::new();
         let mut total_note_count: usize = 0;
@@ -365,7 +363,7 @@ impl MidiDocument {
 
     /// 获取指定音轨在指定 tick 范围内的音符。
     /// 利用预排序的 events 做二分查找 + 线性扫描，O(log N + K) 而非 O(N)。
-    /// 
+    ///
     /// 优化：使用固定大小数组替代 HashMap，避免内存分配。
     pub fn get_track_notes_in_range(
         &self,
@@ -384,9 +382,9 @@ impl MidiDocument {
         let tick_end_u = tick_end as u32;
 
         use crate::midi::constants::TICK_SEARCH_BUFFER;
-        
-        let search_start =
-            events.partition_point(|e| e.delta_tick() < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER));
+
+        let search_start = events
+            .partition_point(|e| e.delta_tick() < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER));
         let search_end = events.len().min(
             search_start + events[search_start..].partition_point(|e| e.delta_tick() <= tick_end_u),
         );
@@ -408,7 +406,7 @@ impl MidiDocument {
     ///
     /// 注意：events 数组在加载时已按 tick 排序（见 from_notes_file），
     /// 本函数不用再次排序，直接线性扫描。
-    /// 
+    ///
     /// 优化：使用固定大小数组替代 HashMap，避免内存分配。
     pub fn get_track_notes(&self, track_id: u16) -> Vec<(f32, u8, f32, u8, u8)> {
         let tid = track_id as usize;
@@ -425,7 +423,8 @@ impl MidiDocument {
     fn collect_notes(events: &[CompactEvent]) -> Vec<(f32, u8, f32, u8, u8)> {
         use crate::midi::constants::{MAX_CONCURRENT_NOTES, MIDI_CHANNEL_COUNT, MIDI_KEY_RANGE};
 
-        let mut active_notes: [(u32, u8, u8, bool); MAX_CONCURRENT_NOTES] = [(0, 0, 0, false); MAX_CONCURRENT_NOTES];
+        let mut active_notes: [(u32, u8, u8, bool); MAX_CONCURRENT_NOTES] =
+            [(0, 0, 0, false); MAX_CONCURRENT_NOTES];
         let mut notes = Vec::new();
         let last_tick = events.last().map(|e| e.delta_tick()).unwrap_or(0);
 
@@ -757,22 +756,22 @@ mod tests {
     fn test_scan_track_names_single_track() {
         // MThd header (format=0, tracks=1, division=480)
         let header = [
-            0x4D, 0x54, 0x68, 0x64,  // "MThd"
-            0x00, 0x00, 0x00, 0x06,  // header length = 6
-            0x00, 0x00,              // format 0
-            0x00, 0x01,              // 1 track
-            0x01, 0xE0,              // division = 480
+            0x4D, 0x54, 0x68, 0x64, // "MThd"
+            0x00, 0x00, 0x00, 0x06, // header length = 6
+            0x00, 0x00, // format 0
+            0x00, 0x01, // 1 track
+            0x01, 0xE0, // division = 480
         ];
         // MTrk chunk with TrackName "Piano"
         // delta=0, meta FF 03 05 "Piano", delta=0, end-of-track FF 2F 00
         let track = [
-            0x4D, 0x54, 0x72, 0x6B,  // "MTrk"
-            0x00, 0x00, 0x00, 0x0F,  // chunk length = 15
-            0x00,                     // delta=0
-            0xFF, 0x03, 0x05,        // Meta TrackName, len=5
-            0x50, 0x69, 0x61, 0x6E, 0x6F,  // "Piano"
-            0x00,                     // delta=0
-            0xFF, 0x2F, 0x00,        // End of Track
+            0x4D, 0x54, 0x72, 0x6B, // "MTrk"
+            0x00, 0x00, 0x00, 0x0F, // chunk length = 15
+            0x00, // delta=0
+            0xFF, 0x03, 0x05, // Meta TrackName, len=5
+            0x50, 0x69, 0x61, 0x6E, 0x6F, // "Piano"
+            0x00, // delta=0
+            0xFF, 0x2F, 0x00, // End of Track
         ];
         let mut midi = Vec::new();
         midi.extend_from_slice(&header);
@@ -786,12 +785,11 @@ mod tests {
     #[test]
     fn test_scan_track_names_no_track_name() {
         let header = [
-            0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06,
-            0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
+            0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
         ];
         let track = [
-            0x4D, 0x54, 0x72, 0x6B, 0x00, 0x00, 0x00, 0x04,
-            0x00, 0xFF, 0x2F, 0x00,  // Just end-of-track
+            0x4D, 0x54, 0x72, 0x6B, 0x00, 0x00, 0x00, 0x04, 0x00, 0xFF, 0x2F,
+            0x00, // Just end-of-track
         ];
         let mut midi = Vec::new();
         midi.extend_from_slice(&header);
@@ -806,18 +804,16 @@ mod tests {
     fn test_scan_track_names_riff_wrapper() {
         // RIFF wrapper around a standard MIDI file
         let riff_header = [
-            0x52, 0x49, 0x46, 0x46,  // "RIFF"
-            0x00, 0x00, 0x00, 0x00,  // size (placeholder)
-            0x52, 0x4D, 0x49, 0x44,  // "RMID"
+            0x52, 0x49, 0x46, 0x46, // "RIFF"
+            0x00, 0x00, 0x00, 0x00, // size (placeholder)
+            0x52, 0x4D, 0x49, 0x44, // "RMID"
         ];
         let mthd = [
-            0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06,
-            0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
+            0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
         ];
         let track = [
-            0x4D, 0x54, 0x72, 0x6B, 0x00, 0x00, 0x00, 0x0F,
-            0x00, 0xFF, 0x03, 0x05, 0x50, 0x69, 0x61, 0x6E, 0x6F,
-            0x00, 0xFF, 0x2F, 0x00,
+            0x4D, 0x54, 0x72, 0x6B, 0x00, 0x00, 0x00, 0x0F, 0x00, 0xFF, 0x03, 0x05, 0x50, 0x69,
+            0x61, 0x6E, 0x6F, 0x00, 0xFF, 0x2F, 0x00,
         ];
         let mut midi = Vec::new();
         midi.extend_from_slice(&riff_header);
