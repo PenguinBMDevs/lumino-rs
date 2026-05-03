@@ -46,10 +46,11 @@ fn get_viewport_bounds() -> vec4<f32> {
     );
 }
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // Rust 侧 dispatch 拆成 2D 以适配 65535 上限，每组 X 方向最多 65535 个 workgroup
-    let MAX_X_THREADS: u32 = 65535u * 64u;
+    // 使用 256 线程/组，更好地利用 modern GPU 的 warp/wavefront 大小
+    let MAX_X_THREADS: u32 = 65535u * 256u;
     let index = global_id.x + global_id.y * MAX_X_THREADS;
     if (index >= cull_info.instance_count || index >= arrayLength(&all_instances)) {
         return;

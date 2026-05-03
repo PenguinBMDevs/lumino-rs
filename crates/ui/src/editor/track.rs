@@ -27,12 +27,24 @@ impl super::Editor {
         // 切换到新音轨
         self.current_track = track_idx;
 
-        // 加载新音轨的音符
-        self.notes = self
-            .track_notes
-            .get(&track_idx)
-            .cloned()
-            .unwrap_or_default();
+        // 加载新音轨的音符：优先从 track_notes 缓存读，缓存未命中则从 document 懒加载
+        self.notes = if let Some(cached) = self.track_notes.get(&track_idx).cloned() {
+            cached
+        } else if let Some(doc) = self.document.as_ref() {
+            let raw = doc.get_track_notes(track_idx as u16);
+            let mut notes = im::Vector::new();
+            for (tick, key, length, velocity, channel) in raw {
+                notes.push_back(
+                    crate::editor::note::Note::new(tick, key as u16, length)
+                        .with_velocity(velocity)
+                        .with_channel(channel),
+                );
+            }
+            self.track_notes.insert(track_idx, notes.clone());
+            notes
+        } else {
+            im::Vector::new()
+        };
         tracing::debug!(
             "Editor: loaded {} notes for track {}",
             self.notes.len(),

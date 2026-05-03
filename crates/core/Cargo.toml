@@ -20,15 +20,23 @@ rayon = "1"
 bincode = "1.3.3"
 zstd = "0.13.2"
 encoding_rs = "0.8"
+lumino-midi = { path = "../midi" }
 lumino-dms = { path = "../dms" }
-memmap2 = "0.9"
-ouroboros = "0.18"
 thiserror = { workspace = true }
 font-kit = "0.14"
 puffin = "0.19.1"
 
 [dev-dependencies]
 tokio = { version = "1.42", features = ["fs", "rt", "sync", "rt-multi-thread", "macros"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = { version = "0.3", features = ["sysinfoapi", "psapi", "processthreadsapi", "handleapi", "winnt"] }
 
 [target.'cfg(windows)'.dev-dependencies]
 winapi = { version = "0.3", features = ["sysinfoapi"] }

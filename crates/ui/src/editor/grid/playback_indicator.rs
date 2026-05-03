@@ -13,7 +13,7 @@ pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Geometry
     // 获取演奏指示线的屏幕 X 坐标（考虑自动滚动模式）
     let view_x = editor
         .get_playback_indicator_screen_x()
-        .unwrap_or_else(|| editor.state.keyboard_width);
+        .unwrap_or(editor.state.keyboard_width);
 
     // 如果指示线位置在钢琴键盘区域内（左侧）或超出画布范围，则不绘制
     let canvas_width = bounds.width;

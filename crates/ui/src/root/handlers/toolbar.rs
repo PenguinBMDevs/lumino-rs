@@ -87,14 +87,16 @@ impl ToolbarHandler {
 
     /// 初始化播放管理器
     fn init_playback_manager(root: &mut Root) {
-        use crate::playback::{NoteEvent, PlaybackManager};
+        use crate::playback::PlaybackManager;
 
         let division = root.editor.state.ppq;
         let mut manager = PlaybackManager::new(division);
 
-        // 力度过滤阈值
-        let velocity_threshold = root.velocity_filter_threshold;
+        // 先创建空的 manager，让 update_playback_notes 能工作
+        manager.set_current_track_notes(Vec::new());
+        root.playback_manager = Some(manager);
 
+<<<<<<< HEAD
         // 设置音符：合并当前音轨和所有其他音轨的音符，应用力度过滤
         let mut notes: Vec<NoteEvent> = root
             .editor
@@ -109,12 +111,17 @@ impl ToolbarHandler {
                 length: note.length,
             })
             .collect();
+=======
+        // 通过 update_playback_notes 填充所有音轨的音符（含 document 懒加载）
+        root.update_playback_notes();
+>>>>>>> feat/memory-for-loader
 
-        // 添加其他音轨的音符
-        for (track_idx, track_notes) in &root.editor.track_notes {
-            if *track_idx == root.editor.current_track {
-                continue;
+        // 用缓存的 MIDI 输出连接
+        if let Some(output) = root.pending_midi_output.take()
+            && let Some(manager) = &mut root.playback_manager {
+                manager.set_midi_output(output);
             }
+<<<<<<< HEAD
             for note in track_notes {
                 if note.velocity > velocity_threshold {
                     notes.push(NoteEvent {
@@ -142,16 +149,23 @@ impl ToolbarHandler {
         if !midi_events.is_empty() {
             manager.set_midi_events(midi_events);
         }
+=======
+>>>>>>> feat/memory-for-loader
 
         // 应用缓存的 tempo 变化
-        if let Some(changes) = root.pending_tempo_changes.take() {
-            manager.set_tempo_changes(changes);
-        }
+        if let Some(changes) = root.pending_tempo_changes.take()
+            && let Some(manager) = &mut root.playback_manager {
+                manager.set_tempo_changes(changes);
+            }
 
-        // 应用缓存的 MIDI 输出连接
-        if let Some(output) = root.pending_midi_output.take() {
-            manager.set_midi_output(output);
+        if let Some(_manager) = &root.playback_manager {
+            tracing::info!(
+                "Root: 播放管理器已初始化 (division={}, 过滤阈值={})",
+                division,
+                root.velocity_filter_threshold,
+            );
         }
+<<<<<<< HEAD
 
         root.playback_manager = Some(manager);
         tracing::info!(
@@ -161,6 +175,8 @@ impl ToolbarHandler {
             total_midi_events,
             velocity_threshold
         );
+=======
+>>>>>>> feat/memory-for-loader
     }
 
     fn sync_toolbar_tool_state(&self, root: &mut Root, event: &crate::toolbar::Event) {
@@ -212,7 +228,7 @@ impl ToolbarHandler {
             root.editor
                 .set_auto_scroll_config(lumino_core::storage::config::AutoScrollConfig {
                     mode: root.toolbar.auto_scroll_mode,
-                    ..root.editor.auto_scroll_config().clone()
+                    ..*root.editor.auto_scroll_config()
                 });
             tracing::debug!(
                 "Root: 自动滚动模式同步为 {:?}",

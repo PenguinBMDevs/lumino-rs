@@ -3,6 +3,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use xsynth_core::{
+<<<<<<< HEAD
+=======
+    AudioStreamParams, ChannelCount,
+>>>>>>> feat/memory-for-loader
     channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
     soundfont::SoundfontBase,
 };
@@ -11,6 +15,17 @@ use xsynth_realtime::{RealtimeEventSender, RealtimeSynth, SynthEvent, XSynthReal
 use crate::soundfont_cache;
 use crate::{Api, Error, InputInfo, OutputConnection, OutputInfo};
 
+/// XSynth 运行时统计信息
+#[derive(Debug, Clone, Copy, Default)]
+pub struct XSynthStats {
+    /// 当前活跃 voice 数量
+    pub voice_count: u64,
+    /// 渲染器平均负载 (0.0 - 1.0)
+    pub average_renderer_load: f64,
+    /// 缓冲区样本数
+    pub buffer_samples: i64,
+}
+
 pub struct XSynthOptions {
     pub buffer_ms: f64,
     pub threads: i32,
@@ -18,11 +33,15 @@ pub struct XSynthOptions {
     pub fade_out_killing: bool,
     /// 每个键允许的最大同音数（None = 使用 xsynth 默认值 4）
     /// 调高可减少密集钢琴/快速重复音符/拖音过程中的 voice stealing
+<<<<<<< HEAD
+=======
+    /// 最大并发发音数（git 版 xsynth 暂不支持此字段）
+>>>>>>> feat/memory-for-loader
     pub max_voices_per_key: Option<usize>,
 }
 
 pub struct XSynth {
-    _synth: RealtimeSynth, // 保持 synth 存活
+    synth: RealtimeSynth,
     sender: RealtimeEventSender,
     version: String,
 }
@@ -39,7 +58,26 @@ impl XSynth {
             )));
         }
 
+        // 在打开音频流之前，先用配置的采样率构造 AudioStreamParams
+        // 提前加载音色库。这样在音频流启动时，音色库已经就绪，
+        // BufferedRenderer 的 render pipeline 能立即产生有效数据，
+        // 避免 callback 在 recv() 上阻塞导致 ALSA underrun。
+        let sample_rate = options.as_ref().map(|o| o.sample_rate).unwrap_or(44100);
+        let load_params = AudioStreamParams::new(sample_rate, ChannelCount::Stereo);
+
+        tracing::info!("XSynth: 预加载音色库 (sample_rate={})...", sample_rate);
+        let load_start = Instant::now();
+        let soundfont = soundfont_cache::load_soundfont_cached(soundfont_path, load_params)
+            .map_err(Error::InitFailed)?;
+        tracing::info!(
+            "XSynth: 音色库加载完成，耗时: {:.2} 秒",
+            load_start.elapsed().as_secs_f64()
+        );
+
+        // 音色库已就绪，现在打开音频流
         let mut rt_config = XSynthRealtimeConfig::default();
+        let requested_sample_rate = options.as_ref().map(|o| o.sample_rate).unwrap_or(44100);
+
         if let Some(opt) = options {
             rt_config.render_window_ms = opt.buffer_ms;
 
@@ -58,32 +96,22 @@ impl XSynth {
         }
 
         let mut synth = RealtimeSynth::open_with_default_output(rt_config);
-        tracing::info!("XSynth: 音频流已创建并启动");
 
-        let params = synth.stream_params();
-        tracing::info!(
-            "XSynth: 音频参数 - sample_rate: {}, channels: {:?}",
-            params.sample_rate,
-            params.channels
-        );
+        // 注意：xsynth-realtime 使用音频设备的原生采样率，配置中的 sample_rate 仅用于音色库预加载
+        // 实际采样率由 cpal 决定，可能与请求的不同
+        let actual_sample_rate = synth.stream_params().sample_rate;
+        if actual_sample_rate != requested_sample_rate {
+            tracing::warn!(
+                "XSynth: 请求的采样率 {}Hz 与设备实际采样率 {}Hz 不匹配，使用设备原生采样率",
+                requested_sample_rate,
+                actual_sample_rate
+            );
+        } else {
+            tracing::info!("XSynth: 音频流已创建并启动 (sample_rate={}Hz)", actual_sample_rate);
+        }
 
-        // 获取 sender 的可变引用
+        // 获取 sender — 在 open 后立即配置通道，确保音色库在 callback 首次触发前就位
         let sender = synth.get_sender_mut();
-
-        // 加载音色库（使用缓存）
-        tracing::info!("XSynth: 正在加载音色库...");
-        let start_time = Instant::now();
-
-        let soundfont = soundfont_cache::load_soundfont_cached(soundfont_path, params)
-            .map_err(Error::InitFailed)?;
-
-        let elapsed = start_time.elapsed();
-        tracing::info!(
-            "XSynth: 音色库加载完成，耗时: {:.2} 秒",
-            elapsed.as_secs_f64()
-        );
-
-        // 设置音色库到所有通道
         let soundfonts: Vec<Arc<dyn SoundfontBase>> = vec![soundfont];
         sender.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
             ChannelConfigEvent::SetSoundfonts(soundfonts),
@@ -104,10 +132,20 @@ impl XSynth {
         tracing::info!("XSynth: 初始化完成");
 
         Ok(Self {
-            _synth: synth,
+            synth,
             sender: sender_clone,
             version,
         })
+    }
+
+    /// 获取运行时统计信息
+    pub fn stats(&self) -> XSynthStats {
+        let stats = self.synth.get_stats();
+        XSynthStats {
+            voice_count: stats.voice_count(),
+            average_renderer_load: stats.buffer().average_renderer_load(),
+            buffer_samples: stats.buffer().last_samples_after_read(),
+        }
     }
 }
 
@@ -199,8 +237,12 @@ impl OutputConnection for XSynthOutputConn {
         self.sender.send_event(SynthEvent::Channel(
             channel,
             ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
+<<<<<<< HEAD
                 controller,
                 value,
+=======
+                controller, value,
+>>>>>>> feat/memory-for-loader
             ))),
         ));
 

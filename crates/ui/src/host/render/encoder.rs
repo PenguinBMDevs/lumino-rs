@@ -55,20 +55,28 @@ impl Host {
         let current_edit_state = self.root.editor.edit_state.clone();
         let is_drawing = matches!(current_edit_state, crate::editor::EditState::Drawing { .. });
 
+        // 视口变化（滚动/缩放）：重新过滤洋葱皮实例（无需全量重建）
+        let viewport_changed = current_hash != self.render_cache.note_viewport_hash;
+
+        // 数据变化（编辑/加载）
         let note_data_changed = note_index_dirty
             || unsafe { self.render_cache.note_instances_is_empty() }
             || is_drawing;
 
-        if !note_data_changed {
+        if !note_data_changed && !viewport_changed {
             // 即使没有数据变化也更新状态
             self.last_cursor_position = self.cursor_position;
             self.last_edit_state = current_edit_state;
             return false;
         }
 
-        puffin::profile_scope!("generate_note_instances");
-        self.update_all_note_instances_fast();
-        self.render_cache.note_viewport_hash = current_hash;
+        // 有变化时才重建实例数组
+        if note_data_changed || viewport_changed {
+            puffin::profile_scope!("generate_note_instances");
+            self.update_all_note_instances_fast();
+            self.render_cache.note_viewport_hash = current_hash;
+        }
+
         self.last_edit_state = current_edit_state;
         self.last_cursor_position = self.cursor_position;
 
@@ -77,7 +85,8 @@ impl Host {
             tracing::debug!("Cleared note_index_dirty flag");
         }
 
-        true
+        // 数据变化或视口变化都需要 GPU 上传
+        note_data_changed || viewport_changed
     }
 
     /// 准备音符渲染器（双缓冲模式）

@@ -47,20 +47,67 @@ impl RunnerInner {
             MidiParsed(parsed) => {
                 tracing::info!("MIDI 文件解析完成：{}", parsed.info);
 
-                // 先导入音符到编辑器
+                // 先导入音符到编辑器（新的懒加载模式：只加载当前音轨，其他音轨按需加载）
                 self.import_midi_to_editor(&parsed);
 
-                tracing::debug!("MIDI 数据已保留在 Arc 中");
+                tracing::debug!("MIDI 文档已导入编辑器，MidiDocument 保留供懒加载使用");
 
-                self.current_midi = Some(parsed.clone());
+                // 导入后立即输出内存日志（此时尚未触发首帧渲染，能看到干净的后导入态）
+                if self.test_state.log_memory_usage {
+                    let mem = self.window_state.window.ui().memory_breakdown();
+                    let rss_mb = lumino_core::memory_monitor::MemoryMonitor::global().current_rss()
+                        / (1024 * 1024);
+                    let front_total =
+                        mem.note_instances_front_cap as u64 * mem.note_instance_size as u64;
+                    let back_total =
+                        mem.note_instances_back_cap as u64 * mem.note_instance_size as u64;
+                    tracing::info!(
+                        "\n\
+                        ┌─ Memory Usage (post-import, pre-render) ──────────────┐\n\
+                        │ 进程 RSS:              {:>8} MB                         │\n\
+                        ├─────────────────────────────────────────────────────────┤\n\
+                        │ MidiDocument.events:   {:>8} MB  (Vec<CompactEvent>)    │\n\
+                        │ editor.notes:          {:>8} MB  (im::Vector<Note>)     │\n\
+                        │ track_notes({}条):  {:>8} MB  ({} 音符)             │\n\
+                        │ track_midi_events:     {:>8} MB  ({} 条)               │\n\
+                        │ onion_skin_cache:      {:>8} MB                         │\n\
+                        ├─────────────────────────────────────────────────────────┤\n\
+                        │ note_instances(双缓冲):                                │\n\
+                        │   前缓冲区:            {:>8} MB  (cap={}, len={})      │\n\
+                        │   后缓冲区:            {:>8} MB  (cap={}, len={})      │\n\
+                        │   双缓冲合计:          {:>8} MB                         │\n\
+                        └─────────────────────────────────────────────────────────┘",
+                        rss_mb,
+                        mem.editor.document_events_bytes / (1024 * 1024),
+                        mem.editor.notes_bytes / (1024 * 1024),
+                        mem.editor.track_notes_entries,
+                        mem.editor.track_notes_bytes / (1024 * 1024),
+                        mem.editor.track_notes_count,
+                        mem.track_midi_events_bytes / (1024 * 1024),
+                        mem.track_midi_events_entries,
+                        mem.cached_onion_skin_bytes / (1024 * 1024),
+                        front_total / (1024 * 1024),
+                        mem.note_instances_front_cap,
+                        mem.note_instances_front_len,
+                        back_total / (1024 * 1024),
+                        mem.note_instances_back_cap,
+                        mem.note_instances_back_len,
+                        (front_total + back_total) / (1024 * 1024),
+                    );
+                }
 
-                if let Some(state) = &mut self.test_mode_state {
+                // 保留 current_midi 使 MidiDocument 存活（编辑器通过 Arc 引用它做懒加载）
+                // 不再需要保存一份全量 track_notes，所以总内存从 (events+notes) 降到 (events)
+                self.midi_state.current_midi_source = Some(std::path::PathBuf::from(&parsed.info.path));
+                self.midi_state.current_midi = Some(parsed);
+
+                if let Some(state) = &mut self.test_state.test_mode_state {
                     state.active = true;
                 }
             }
             MidiParseError(err) => {
                 tracing::error!("MIDI 文件解析失败：{}", err);
-                if self.test_mode_state.is_some() {
+                if self.test_state.test_mode_state.is_some() {
                     tracing::error!("测试模式因 MIDI 加载失败而退出");
                     event_loop.exit();
                 }
@@ -71,42 +118,23 @@ impl RunnerInner {
                 // 导入 DMS 到编辑器
                 self.import_dms_to_editor(&parsed);
 
-                self.current_dms = Some(parsed);
+                self.midi_state.current_dms = Some(parsed);
             }
             DmsParseError(err) => {
                 tracing::error!("DMS 文件解析失败：{}", err);
             }
             Close => {
-                self.current_midi = None;
-                self.current_dms = None;
-                self.window.ui_mut().clear_editor();
+                self.midi_state.current_midi = None;
+                self.midi_state.current_midi_source = None;
+                self.midi_state.current_dms = None;
+                self.window_state.window.ui_mut().clear_editor();
                 tracing::info!("工程已关闭");
             }
             TrackSelected(track_idx) => {
+                // 统一使用 cache-only 模式，只切换音轨索引
+                // 播放时从 cache 流式读取，不单独加载音轨到编辑器
                 tracing::info!("切换到音轨：{}", track_idx);
-                if let Some(memory_manager_arc) = self
-                    .current_midi
-                    .as_ref()
-                    .and_then(|p| p.memory_manager.clone())
-                {
-                    tracing::debug!("TrackSelected: memory_manager_arc found");
-                    if let Ok(mut memory_manager) = memory_manager_arc.lock() {
-                        tracing::debug!("TrackSelected: lock acquired");
-                        self.midi_handler.load_track_to_editor(
-                            &mut memory_manager,
-                            track_idx,
-                            self.window.ui_mut(),
-                        );
-                    } else {
-                        tracing::warn!("TrackSelected: failed to lock memory_manager");
-                    }
-                } else {
-                    // 没有加载 MIDI 文件，让编辑器处理音轨切换
-                    tracing::debug!(
-                        "TrackSelected: no MIDI loaded, letting editor handle track switch"
-                    );
-                    self.window.ui_mut().set_current_track(track_idx);
-                }
+                self.window_state.window.ui_mut().set_current_track(track_idx);
             }
             _ => {
                 tracing::debug!("未处理的文件事件：{:?}", file_event);
@@ -117,11 +145,12 @@ impl RunnerInner {
     /// 创建新文件
     pub(super) fn handle_new_file(&mut self) {
         // 清空当前工程
-        self.current_midi = None;
-        self.current_dms = None;
+        self.midi_state.current_midi = None;
+        self.midi_state.current_midi_source = None;
+        self.midi_state.current_dms = None;
 
         // 清空编辑器
-        self.window.ui_mut().clear_editor();
+        self.window_state.window.ui_mut().clear_editor();
 
         tracing::info!("已创建新工程");
     }
@@ -129,7 +158,7 @@ impl RunnerInner {
     /// 打开文件
     pub(super) fn handle_open_file(&mut self) {
         // 使用 FileHandler 打开文件对话框
-        let Some(path) = self.file_handler.handle_open_file() else {
+        let Some(path) = self.file_state.file_handler.handle_open_file() else {
             return;
         };
 
@@ -137,7 +166,22 @@ impl RunnerInner {
 
         if extension == "dms" {
             self.load_dms_file(path);
+            return;
+        }
+
+        // 检查文件大小，大文件弹出确认对话框
+        const MEMORY_OPTIMIZE_THRESHOLD_MB: u64 = 100;
+        let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let size_mb = file_size as f64 / (1024.0 * 1024.0);
+
+        if size_mb > MEMORY_OPTIMIZE_THRESHOLD_MB as f64 {
+            let path_str = path.to_string_lossy().to_string();
+            // 存储 pending 路径，等待对话框结果
+            self.file_state.pending_load_path = Some(path);
+            // 使用已有 dialog 窗口基础设施
+            self.window_state.dialog_manager.open_load_confirm(path_str, size_mb);
         } else {
+            tracing::info!("文件大小 {:.1}MB ≤ 阈值，标准模式加载", size_mb);
             self.load_midi_file(path);
         }
     }
@@ -145,7 +189,7 @@ impl RunnerInner {
     /// 加载 DMS 文件
     pub(super) fn load_dms_file(&self, path: std::path::PathBuf) {
         tracing::info!("开始后台加载 DMS 文件：{:?}", path);
-        let progress_cb = self.progress_cb.clone();
+        let progress_cb = self.window_state.progress_cb.clone();
         tokio::spawn(async move {
             run_async_task(
                 lumino_core::midi::loader::load_dms(path, Some(&progress_cb)),
@@ -157,9 +201,9 @@ impl RunnerInner {
     }
 
     /// 加载 MIDI 文件
-    pub(super) fn load_midi_file(&self, path: std::path::PathBuf) {
+    pub(crate) fn load_midi_file(&self, path: std::path::PathBuf) {
         tracing::info!("开始后台加载 MIDI 文件：{:?}", path);
-        let progress_cb = self.progress_cb.clone();
+        let progress_cb = self.window_state.progress_cb.clone();
         tokio::spawn(async move {
             run_async_task(
                 lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb)),
@@ -171,13 +215,13 @@ impl RunnerInner {
     }
 
     /// 导入文件
-    pub(super) fn handle_import_files(&self) {
+    pub(super) fn handle_import_files(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("音乐文件", &["mid", "midi", "lmpj", "dms"])
-            .add_filter("MIDI 文件", &["mid", "midi"])
-            .add_filter("Lumino 项目", &["lmpj"])
-            .add_filter("Domino 项目", &["dms"])
-            .add_filter("所有文件", &["*"])
+            .add_filter(crate::constants::filters::MUSIC_FILES.0, crate::constants::filters::MUSIC_FILES.1)
+            .add_filter(crate::constants::filters::MIDI_FILES.0, crate::constants::filters::MIDI_FILES.1)
+            .add_filter(crate::constants::filters::LUMINO_PROJECT.0, crate::constants::filters::LUMINO_PROJECT.1)
+            .add_filter(crate::constants::filters::DOMINO_PROJECT.0, crate::constants::filters::DOMINO_PROJECT.1)
+            .add_filter(crate::constants::filters::ALL_FILES.0, crate::constants::filters::ALL_FILES.1)
             .pick_file()
         else {
             return;
@@ -185,41 +229,82 @@ impl RunnerInner {
 
         let extension = get_file_extension(&path);
 
-        tracing::info!("开始后台导入文件：{:?}", path);
-        let progress_cb = self.progress_cb.clone();
-        tokio::spawn(async move {
-            match extension.as_str() {
-                "dms" => {
-                    run_async_task(
-                        lumino_core::midi::loader::load_dms(path, Some(&progress_cb)),
-                        |parsed| event!(Menu.File.DmsParsed(Arc::new(parsed))),
-                        |e| event!(Menu.File.DmsParseError(e)),
-                    )
-                    .await;
-                }
-                _ => {
-                    // LMPJ 和 MIDI 都使用 MIDI 加载器
-                    run_async_task(
-                        lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb)),
-                        |parsed| event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed))),
-                        |e| event!(Menu.File.MidiParseError(e)),
-                    )
-                    .await;
-                }
-            }
-        });
+        if extension == "dms" {
+            tracing::info!("开始后台导入 DMS 文件：{:?}", path);
+            let progress_cb = self.window_state.progress_cb.clone();
+            tokio::spawn(async move {
+                run_async_task(
+                    lumino_core::midi::loader::load_dms(path, Some(&progress_cb)),
+                    |parsed| event!(Menu.File.DmsParsed(Arc::new(parsed))),
+                    |e| event!(Menu.File.DmsParseError(e)),
+                )
+                .await;
+            });
+            return;
+        }
+
+        // 检查文件大小，大文件弹出确认对话框
+        const MEMORY_OPTIMIZE_THRESHOLD_MB: u64 = 100;
+        let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let size_mb = file_size as f64 / (1024.0 * 1024.0);
+
+        if size_mb > MEMORY_OPTIMIZE_THRESHOLD_MB as f64 {
+            let path_str = path.to_string_lossy().to_string();
+            self.file_state.pending_load_path = Some(path);
+            self.window_state.dialog_manager.open_load_confirm(path_str, size_mb);
+        } else {
+            tracing::info!("导入文件 {:.1}MB ≤ 阈值，标准模式加载", size_mb);
+            let progress_cb = self.window_state.progress_cb.clone();
+            tokio::spawn(async move {
+                run_async_task(
+                    lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb)),
+                    |parsed| event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed))),
+                    |e| event!(Menu.File.MidiParseError(e)),
+                )
+                .await;
+            });
+        }
     }
 
     /// 保存文件
     pub(super) fn handle_save_file(&mut self) {
-        // 检查是否加载了 MIDI 文件
-        if let Some(parsed_midi) = &self.current_midi {
+        // 检查是否加载了 MIDI 文件（可能有完整文档或仅有源路径）
+        if let Some(parsed_midi) = &self.midi_state.current_midi {
             self.save_midi_file(parsed_midi.clone());
             return;
         }
 
+        // 没有完整文档但有源路径（MIDI 加载后为省内存已释放文档）
+        if let Some(source_path) = &self.midi_state.current_midi_source {
+            let file_stem = get_file_stem(Path::new(source_path));
+
+            let Some(save_path) = rfd::FileDialog::new()
+                .add_filter("MIDI 文件 (.mid)", &["mid"])
+                .add_filter("MIDI 文件 (.midi)", &["midi"])
+                .set_file_name(format!("{file_stem}.mid"))
+                .save_file()
+            else {
+                return;
+            };
+
+            let extension = get_file_extension(&save_path);
+            match extension.as_str() {
+                "mid" | "midi" => {
+                    let source = source_path.clone();
+                    let svc = self.file_state.file_service.clone();
+                    tokio::spawn(async move {
+                        let _ = svc.save_as_midi(source, save_path).await;
+                    });
+                }
+                _ => {
+                    tracing::warn!("不支持的保存格式（无完整文档）：{}", extension);
+                }
+            }
+            return;
+        }
+
         // 检查是否加载了 DMS 文件
-        if let Some(parsed_dms) = &self.current_dms {
+        if let Some(parsed_dms) = &self.midi_state.current_dms {
             self.save_dms_file(parsed_dms.clone());
         }
     }
@@ -241,10 +326,15 @@ impl RunnerInner {
 
         let extension = get_file_extension(&save_path);
 
-        let file_service = self.file_service.clone();
+        let file_service = self.file_state.file_service.clone();
 
         match extension.as_str() {
             "lmpj" => {
+                // LMPJ 保存需要完整文档，如果已释放则从编辑器状态重建
+                if parsed_midi.document.is_none() {
+                    tracing::warn!("MidiDocument 已释放，无法保存 LMPJ 格式");
+                    return;
+                }
                 tokio::spawn(async move {
                     let _ = file_service.save_as_lmpj(&parsed_midi, save_path).await;
                 });
@@ -282,7 +372,7 @@ impl RunnerInner {
 
         let extension = get_file_extension(&save_path);
 
-        let file_service = self.file_service.clone();
+        let file_service = self.file_state.file_service.clone();
         let source_path = parsed_dms.info.path.clone();
 
         match extension.as_str() {
@@ -307,13 +397,13 @@ impl RunnerInner {
     /// 将 MIDI 数据导入到编辑器
     pub(super) fn import_midi_to_editor(&mut self, parsed: &ParsedMidi) {
         {
-            let ui = self.window.ui_mut();
-            self.midi_handler.import_midi_to_editor(ui, parsed);
+            let ui = self.window_state.window.ui_mut();
+            self.midi_state.midi_handler.import_midi_to_editor(ui, parsed);
         }
 
         // MIDI 导入后，为播放管理器绑定一个独立的 MIDI 输出连接
-        if let Some(output) = self.midi.create_additional_output() {
-            self.window.ui_mut().set_playback_midi_output(output);
+        if let Some(output) = self.midi_state.midi.create_additional_output() {
+            self.window_state.window.ui_mut().set_playback_midi_output(output);
             tracing::info!("Playback MIDI output connected");
         } else {
             tracing::warn!("Failed to create playback MIDI output connection");
@@ -322,13 +412,12 @@ impl RunnerInner {
 
     /// 将 DMS 数据导入到编辑器
     pub(super) fn import_dms_to_editor(&mut self, parsed: &Arc<lumino_core::ParsedDms>) {
-        use lumino_core::midi::loader::{ProgressCallback, load_parsed_midi};
-
         tracing::info!("[DMS导入] 开始将 DMS 导入编辑器: {:?}", parsed.info.path);
 
         // DMS 需要先转换为 MIDI 格式才能导入编辑器
-        // 这里我们使用 export 功能将 DMS 转为 MIDI 字节，然后解析为 ParsedMidi
+        // 使用 load_parsed_midi_from_bytes 直接从字节加载，避免临时文件
         let path = parsed.info.path.clone();
+        let track_count = parsed.info.track_count;
 
         tokio::spawn(async move {
             tracing::info!("[DMS导入] 步骤1: 导出 DMS 为 MIDI");
@@ -339,46 +428,36 @@ impl RunnerInner {
                         midi_bytes.len()
                     );
 
-                    // 将转换后的 MIDI 数据保存到临时文件
-                    let temp_path = std::env::temp_dir().join("lumino_dms_temp.mid");
-                    tracing::info!("[DMS导入] 步骤3: 写入临时文件: {:?}", temp_path);
-                    if let Err(e) = std::fs::write(&temp_path, &midi_bytes) {
-                        tracing::error!("[DMS导入] 写入临时 MIDI 文件失败: {}", e);
-                        return;
-                    }
-                    tracing::info!("[DMS导入] 步骤4: 临时文件写入成功");
-
-                    // 使用现有的 MIDI 加载器加载转换后的数据
-                    let progress_cb: ProgressCallback = Arc::new(|msg: &str, progress: f64| {
-                        tracing::info!("[DMS->MIDI] {}: {:.0}%", msg, progress * 100.0);
-                    });
-
-                    tracing::info!("[DMS导入] 步骤5: 开始加载 MIDI 数据");
-                    match load_parsed_midi(temp_path.clone(), Some(&progress_cb)).await {
+                    tracing::info!("[DMS导入] 步骤3: 直接加载 MIDI 字节");
+                    match lumino_core::midi::loader::load_parsed_midi_from_bytes(
+                        midi_bytes,
+                        track_count as u16,
+                        0,
+                        None,
+                    )
+                    .await
+                    {
                         Ok(parsed_midi) => {
                             tracing::info!(
-                                "[DMS导入] 步骤6: DMS 转换的 MIDI 加载成功, 轨道数={}",
+                                "[DMS导入] 步骤4: DMS 转换的 MIDI 加载成功, 轨道数={}",
                                 parsed_midi.info.track_count
                             );
-                            // 发送 MIDI 解析完成事件，复用 MIDI 导入逻辑
-                            tracing::info!("[DMS导入] 步骤7: 发送 MidiParsed 事件");
+                            tracing::info!("[DMS导入] 步骤5: 发送 MidiParsed 事件");
                             event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed_midi)));
-                            tracing::info!("[DMS导入] 步骤8: MidiParsed 事件发送完成");
+                            tracing::info!("[DMS导入] 事件发送完成");
                         }
                         Err(e) => {
                             tracing::error!("[DMS导入] 加载转换后的 MIDI 失败: {}", e);
                         }
                     }
-
-                    // 清理临时文件
-                    tracing::info!("[DMS导入] 步骤9: 清理临时文件");
-                    let _ = std::fs::remove_file(&temp_path);
-                    tracing::info!("[DMS导入] 导入流程完成");
                 }
                 Err(e) => {
                     tracing::error!("[DMS导入] DMS 转换为 MIDI 失败: {}", e);
+                    event!(Menu.File.DmsParseError(format!("DMS 转换为 MIDI 失败: {e}")));
                 }
             }
         });
     }
 }
+
+

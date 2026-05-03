@@ -28,7 +28,7 @@ impl RunnerInner {
 
     /// 根据需要同步协作状态（50ms 节流）
     fn sync_collaboration_if_needed(&mut self) {
-        let is_connected = self.collaboration_service.is_connected();
+        let is_connected = self.collab_state.collaboration_service.is_connected();
         tracing::debug!(
             "sync_collaboration_if_needed: is_connected={}",
             is_connected
@@ -39,14 +39,14 @@ impl RunnerInner {
         }
 
         let now = std::time::Instant::now();
-        let should_sync = match self.last_collab_sync {
+        let should_sync = match self.collab_state.last_collab_sync {
             None => true,
             Some(last) => now.duration_since(last).as_millis() >= 50,
         };
 
         if should_sync {
             self.sync_collaboration_state();
-            self.last_collab_sync = Some(now);
+            self.collab_state.last_collab_sync = Some(now);
         }
     }
 

@@ -8,6 +8,11 @@ pub enum Event {
     Minimize,
     /// 打开自定义精度对话框窗口
     OpenCustomPrecisionDialog,
+    /// 打开加载确认对话框
+    OpenLoadConfirmDialog {
+        path: String,
+        size_mb: f64,
+    },
     /// 关闭自定义精度对话框窗口
     CloseCustomPrecisionDialog,
     /// 应用自定义精度设置 (numerator, denominator)

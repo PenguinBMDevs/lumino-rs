@@ -352,10 +352,23 @@ impl MidiManager {
         // （midir::MidiOutputConnection 持有自己的 OS 句柄）
         let strategy2_result = match self.active_backend {
             SynthBackend::XSynth => {
+<<<<<<< HEAD
                 // XSynth：不创建第二个实例！策略1（共享 sender）总是成功；
                 // 如果策略1失败说明 API 已损坏，策略2也没有意义，
                 // 而且创建第二个 RealtimeSynth 会导致双份 cpal 音频流 + 声音叠加
                 tracing::warn!("MIDI 播放输出: XSynth 策略1意外失败，无法创建播放输出");
+=======
+                // XSynth：禁止创建第二个实例！
+                // 策略1（共享 sender）总是成功；如果策略1失败说明 API 已损坏。
+                // 创建第二个 RealtimeSynth 会导致：
+                // 1. 双份 cpal 音频流（双倍的 CPU/内存开销）
+                // 2. 声音叠加（同一音符被两个合成器同时播放）
+                // 3. 音色库重复加载（30-300MB 内存浪费）
+                tracing::error!(
+                    "MIDI 播放输出: XSynth 策略1意外失败，拒绝创建第二个实例。\
+                     当前后端状态异常，建议检查 XSynth 初始化或重新启动应用"
+                );
+>>>>>>> feat/memory-for-loader
                 None
             }
             SynthBackend::System | SynthBackend::Kdmapi => {
@@ -449,6 +462,12 @@ impl MidiManager {
         self.xsynth_sample_rate = ui_config.xsynth_sample_rate;
         self.xsynth_fade_out_killing = ui_config.xsynth_fade_out_killing;
         self.xsynth_max_voices_per_key = ui_config.xsynth_max_voices_per_key;
+<<<<<<< HEAD
+=======
+
+        // 清空 SoundFont 缓存，防止旧条目无限累积（每个 SF2 30-300MB）
+        lumino_midi::soundfont_cache::clear_cache();
+>>>>>>> feat/memory-for-loader
 
         // 关闭旧的 MIDI 输出和备用 API
         if let Some(old_output) = self.output.take() {

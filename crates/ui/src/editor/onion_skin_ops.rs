@@ -1,6 +1,7 @@
 use crate::editor::Editor;
 use crate::editor::note::Note;
 use lumino_gfx::NoteInstance;
+use rayon::prelude::*;
 
 impl Editor {
     /// 获取洋葱皮配置的可变引用
@@ -83,22 +84,10 @@ impl Editor {
         self.grid_cache.clear();
     }
 
-    /// 将音符列表转换为逻辑实例（GPU 负责坐标变换）
-    fn notes_to_instances<'a>(
-        &self,
-        notes: impl Iterator<Item = &'a Note>,
-        color: iced_core::Color,
-    ) -> Vec<NoteInstance> {
-        let mut instances = Vec::new();
-        for note in notes {
-            let instance = note.to_instance(color);
-            instances.push(instance);
-        }
-        instances
-    }
-
     /// 获取所有洋葱皮音符原始数据（用于缓存）
     /// 返回 (tick, key, length, color) 元组，不含屏幕坐标
+    ///
+    /// 纯流式处理，无数量限制，确保黑乐谱完整显示。
     pub fn get_onion_skin_notes(
         &self,
         track_onion_states: &std::collections::HashMap<usize, bool>,
@@ -111,27 +100,90 @@ impl Editor {
             return Vec::new();
         }
 
-        let track_indices = self.collect_visible_track_indices(track_onion_states);
-        let mut all_notes = Vec::new();
+        let Some(doc) = self.document.as_ref() else {
+            return Vec::new();
+        };
 
-        for track_idx in track_indices {
-            let Some(track_notes) = self.collect_track_notes(
-                track_idx,
-                track_onion_states,
-                visible_tick_start,
-                visible_tick_end,
-                visible_key_min,
-                visible_key_max,
-            ) else {
-                continue;
-            };
-            all_notes.extend(track_notes);
+        let track_indices = self.collect_visible_track_indices(track_onion_states);
+        if track_indices.is_empty() {
+            return Vec::new();
         }
+
+        // 搜索范围 = 视口范围
+        let search_start = visible_tick_start;
+        let search_end = visible_tick_end;
+
+        // 预收集音轨颜色和启用状态，避免在闭包中访问 self
+        let track_configs: Vec<(usize, bool, iced_core::Color)> = track_indices
+            .iter()
+            .filter_map(|&track_idx| {
+                let is_enabled = *track_onion_states.get(&track_idx)?;
+                if !self.onion_skin_config.should_show_track(track_idx, is_enabled) {
+                    return None;
+                }
+                let color = self.onion_skin_config.get_track_color(track_idx);
+                Some((track_idx, is_enabled, color))
+            })
+            .collect();
+
+        // 并行处理音轨查询 - 纯流式处理，无数量限制
+        let all_notes: Vec<(f32, u16, f32, iced_core::Color)> = track_configs
+            .par_iter()
+            .filter_map(|&(track_idx, _is_enabled, color)| {
+                // 快速检查：音轨在视口范围内是否有事件
+                if !doc.has_track_events_in_range(
+                    track_idx as u16,
+                    search_start as u32,
+                    search_end as u32,
+                ) {
+                    return None;
+                }
+
+                // 直接使用 Document 查询（二分查找，无索引构建开销）
+                let raw = doc.get_track_notes_in_range(track_idx as u16, search_start, search_end);
+                if raw.is_empty() {
+                    return None;
+                }
+
+                // 纯流式处理：直接构建结果，无限制
+                let mut track_notes = Vec::with_capacity(raw.len());
+                
+                for &(tick, key, length, _vel, _ch) in raw.iter() {
+                    let key_u16 = key as u16;
+                    if key_u16 >= visible_key_min
+                        && key_u16 <= visible_key_max
+                        && tick + length >= visible_tick_start
+                        && tick <= visible_tick_end
+                    {
+                        track_notes.push((tick, key_u16, length, color));
+                    }
+                }
+
+                if track_notes.is_empty() {
+                    None
+                } else {
+                    Some(track_notes)
+                }
+            })
+            .reduce(
+                || Vec::new(),
+                |mut a, mut b| {
+                    // 如果 a 为空，直接返回 b
+                    if a.is_empty() {
+                        return b;
+                    }
+                    a.append(&mut b);
+                    a
+                }
+            );
 
         all_notes
     }
 
     /// 收集可见音轨索引
+    ///
+    /// 返回降序排列的音轨索引，确保最后一个音轨渲染在最底层（第一层洋葱皮），
+    /// 第一个音轨渲染在最顶层（最后一层洋葱皮），避免闪烁问题。
     fn collect_visible_track_indices(
         &self,
         track_onion_states: &std::collections::HashMap<usize, bool>,
@@ -142,100 +194,14 @@ impl Editor {
             .map(|(&idx, _)| idx)
             .filter(|&idx| idx != self.current_track)
             .collect();
-        indices.sort();
+        indices.sort_by(|a, b| b.cmp(a)); // 降序排列：大索引先渲染（在底层），小索引后渲染（在顶层）
         indices
     }
 
-    /// 收集单个音轨的音符
-    fn collect_track_notes(
-        &self,
-        track_idx: usize,
-        track_onion_states: &std::collections::HashMap<usize, bool>,
-        visible_tick_start: f32,
-        visible_tick_end: f32,
-        visible_key_min: u16,
-        visible_key_max: u16,
-    ) -> Option<Vec<(f32, u16, f32, iced_core::Color)>> {
-        let is_enabled = *track_onion_states.get(&track_idx)?;
-
-        if !self
-            .onion_skin_config
-            .should_show_track(track_idx, is_enabled)
-        {
-            return None;
-        }
-
-        let notes = self.track_notes.get(&track_idx)?;
-        let color = self.onion_skin_config.get_track_color(track_idx);
-        const ONION_SKIN_SEARCH_EXTENSION: f32 = 19200.0;
-        let search_start = (visible_tick_start - ONION_SKIN_SEARCH_EXTENSION).max(0.0);
-
-        // 确保空间索引存在
-        self.ensure_track_spatial_index(track_idx, notes);
-
-        // 查询候选音符
-        let indices_map = self.track_note_indices.borrow();
-        let index = indices_map.get(&track_idx)?;
-
-        let mut candidates = self.query_cache.borrow_mut();
-        index.update_query(
-            search_start,
-            visible_tick_end,
-            visible_key_min,
-            visible_key_max,
-            &mut candidates,
-        );
-
-        // 过滤并收集音符
-        let track_notes: Vec<_> = candidates
-            .iter()
-            .filter_map(|&i| notes.get(i))
-            .filter(|note| {
-                Self::note_in_visible_range(
-                    note,
-                    visible_tick_start,
-                    visible_tick_end,
-                    visible_key_min,
-                    visible_key_max,
-                )
-            })
-            .map(|note| (note.tick, note.key, note.length, color))
-            .collect();
-
-        Some(track_notes)
-    }
-
-    /// 确保音轨的空间索引存在
-    fn ensure_track_spatial_index(&self, track_idx: usize, notes: &im::Vector<Note>) {
-        let mut indices_map = self.track_note_indices.borrow_mut();
-
-        if indices_map.contains_key(&track_idx) {
-            return;
-        }
-
-        let notes_vec: Vec<_> = notes.iter().cloned().collect();
-        indices_map.insert(
-            track_idx,
-            super::spatial_index::NoteSpatialIndex::from_notes(&notes_vec),
-        );
-    }
-
-    /// 检查音符是否在可见范围内
-    fn note_in_visible_range(
-        note: &Note,
-        tick_start: f32,
-        tick_end: f32,
-        key_min: u16,
-        key_max: u16,
-    ) -> bool {
-        let in_tick_range = note.tick + note.length >= tick_start && note.tick <= tick_end;
-        let in_key_range = note.key >= key_min && note.key <= key_max;
-        in_tick_range && in_key_range
-    }
-
     /// 获取洋葱皮音符实例（用于其他音轨的音符显示）
+    /// 音符直接送入 wgpu 渲染管线，GPU compute shader 负责视锥裁剪
     pub fn get_onion_skin_instances(
-        &self,
+        &mut self,
         track_idx: usize,
         track_onion_enabled: bool,
     ) -> Vec<NoteInstance> {
@@ -250,20 +216,178 @@ impl Editor {
             return Vec::new();
         }
 
-        let Some(notes) = self.track_notes.get(&track_idx) else {
+        // 先将所有音符做成 NoteInstance（GPU shader 负责裁剪）
+        // 使用 closure 构建实例列表，同时处理 cache hit/miss
+        let make_instances =
+            |notes: &im::Vector<Note>, color: iced_core::Color| -> Vec<NoteInstance> {
+                let mut instances = Vec::with_capacity(notes.len());
+                for note in notes.iter() {
+                    instances.push(note.to_instance(color));
+                }
+                instances
+            };
+
+        let color = self.onion_skin_config.get_track_color(track_idx);
+
+        // 先查 track_notes 缓存
+        if let Some(cached) = self.track_notes.get(&track_idx) {
+            if cached.is_empty() {
+                return Vec::new();
+            }
+            return make_instances(cached, color);
+        }
+
+        // 缓存未命中 → 从 document 加载并缓存
+        let Some(doc) = self.document.as_ref() else {
             return Vec::new();
         };
-        if notes.is_empty() {
+        if track_idx as u16 >= doc.track_count() as u16 {
+            return Vec::new();
+        }
+        if doc.track_note_count(track_idx as u16) == 0 {
+            return Vec::new();
+        }
+        let raw = doc.get_track_notes(track_idx as u16);
+        if raw.is_empty() {
             return Vec::new();
         }
 
-        let color = self.onion_skin_config.get_track_color(track_idx);
-        self.notes_to_instances(notes.iter(), color)
+        let mut notes: im::Vector<Note> = im::Vector::new();
+        for (tick, key, length, velocity, channel) in &raw {
+            notes.push_back(
+                Note::new(*tick, *key as u16, *length)
+                    .with_velocity(*velocity)
+                    .with_channel(*channel),
+            );
+        }
+        self.track_notes.insert(track_idx, notes.clone());
+
+        make_instances(&notes, color)
+    }
+
+    /// 获取所有洋葱皮音符实例（视口范围内）
+    ///
+    /// 直接从 MidiDocument 查询，利用预排序事件的二分查找。
+    /// 纯流式处理，无数量限制，确保黑乐谱完整显示。
+    /// 使用 rayon 并行处理多音轨，充分利用多核 CPU。
+    pub fn get_all_onion_skin_instances_in_range(
+        &mut self,
+        track_onion_states: &std::collections::HashMap<usize, bool>,
+        visible_tick_start: f32,
+        visible_tick_end: f32,
+        visible_key_min: u16,
+        visible_key_max: u16,
+    ) -> Vec<NoteInstance> {
+        if !self.is_onion_skin_enabled() {
+            return Vec::new();
+        }
+
+        let Some(doc) = self.document.as_ref() else {
+            return Vec::new();
+        };
+
+        // 搜索范围 = 视口范围
+        let search_start = visible_tick_start;
+        let search_end = visible_tick_end;
+        let search_key_min = visible_key_min;
+        let search_key_max = visible_key_max;
+
+        let track_indices = self.collect_visible_track_indices(track_onion_states);
+        if track_indices.is_empty() {
+            return Vec::new();
+        }
+
+        // 预收集音轨颜色，避免在闭包中访问 self
+        let track_colors: Vec<(usize, [f32; 4])> = track_indices
+            .iter()
+            .map(|&track_idx| {
+                let color = self.onion_skin_config.get_track_color(track_idx);
+                let color_arr = super::note::color_to_array(color);
+                (track_idx, color_arr)
+            })
+            .collect();
+
+        // 并行处理音轨查询 - 纯流式处理，无数量限制
+        let all_instances: Vec<NoteInstance> = track_colors
+            .par_iter()
+            .filter_map(|&(track_idx, color_arr)| {
+                // 直接从 document 查询视口范围内的音符
+                let raw = doc.get_track_notes_in_range(track_idx as u16, search_start, search_end);
+                if raw.is_empty() {
+                    return None;
+                }
+
+                // 纯流式处理：直接构建实例，无限制
+                let mut instances = Vec::with_capacity(raw.len());
+                
+                for &(tick, key, length, _vel, _ch) in raw.iter() {
+                    let key_u16 = key as u16;
+                    if key_u16 >= search_key_min
+                        && key_u16 <= search_key_max
+                        && tick + length >= search_start
+                        && tick <= search_end
+                    {
+                        instances.push(NoteInstance::new(tick, key as f32, length, color_arr));
+                    }
+                }
+
+                if instances.is_empty() {
+                    None
+                } else {
+                    Some(instances)
+                }
+            })
+            .reduce(
+                || Vec::new(),
+                |mut a, mut b| {
+                    // 如果 a 为空，直接返回 b
+                    if a.is_empty() {
+                        return b;
+                    }
+                    a.append(&mut b);
+                    a
+                }
+            );
+
+        all_instances
+    }
+
+    /// 从 document 加载音轨音符到 track_notes 缓存
+    fn load_track_notes_from_document(&mut self, track_idx: usize) {
+        let Some(doc) = self.document.as_ref() else {
+            return;
+        };
+        if track_idx as u16 >= doc.track_count() as u16 {
+            return;
+        }
+        if doc.track_note_count(track_idx as u16) == 0 {
+            self.track_notes.insert(track_idx, im::Vector::new());
+            return;
+        }
+        let raw = doc.get_track_notes(track_idx as u16);
+        if raw.is_empty() {
+            self.track_notes.insert(track_idx, im::Vector::new());
+            return;
+        }
+
+        let mut notes: im::Vector<Note> = im::Vector::new();
+        for (tick, key, length, velocity, channel) in &raw {
+            notes.push_back(
+                Note::new(*tick, *key as u16, *length)
+                    .with_velocity(*velocity)
+                    .with_channel(*channel),
+            );
+        }
+        self.track_notes.insert(track_idx, notes);
     }
 
     /// 获取所有洋葱皮音符实例（所有其他音轨）
+    ///
+    /// 音符全部送入 wgpu 管线，GPU compute shader 负责视锥裁剪。
+    /// 音轨按降序处理，确保最后一个音轨渲染在最底层（第一层洋葱皮），
+    /// 第一个音轨渲染在最顶层（最后一层洋葱皮），避免闪烁问题。
     pub fn get_all_onion_skin_instances(
-        &self,
+        &mut self,
         track_onion_states: &std::collections::HashMap<usize, bool>,
     ) -> Vec<NoteInstance> {
         if !self.is_onion_skin_enabled() {
@@ -277,7 +401,7 @@ impl Editor {
             .filter(|&idx| idx != self.current_track)
             .collect();
 
-        track_indices.sort();
+        track_indices.sort_by(|a, b| b.cmp(a)); // 降序排列：大索引先渲染（在底层），小索引后渲染（在顶层）
 
         let mut all_instances = Vec::new();
         for track_idx in track_indices {

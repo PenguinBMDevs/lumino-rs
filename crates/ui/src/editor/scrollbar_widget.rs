@@ -7,7 +7,6 @@
 //! - `widget`: ScrollbarWidget 结构体和辅助方法
 //! - `widget_impl`: iced Widget trait 实现
 
-use crate::{Element, Message, Renderer, Theme};
 
 // 子模块
 mod types;

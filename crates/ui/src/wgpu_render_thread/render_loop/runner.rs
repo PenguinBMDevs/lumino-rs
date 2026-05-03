@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use iced_wgpu::wgpu;
 
-use super::super::commands::{ControlCommand, RenderCommand};
+use super::super::commands::RenderCommand;
 use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
 use super::commands::process_commands;

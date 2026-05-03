@@ -1,13 +1,21 @@
 pub mod constants;
 pub mod dms;
+pub mod document;
+pub mod error;
 pub mod event;
 pub mod info;
 pub mod loader;
-pub mod managed_midi;
+pub mod params;
+pub mod track;
 
 pub use dms::DmsInfo;
-pub use event::{MidiEvent, MidiEventStream, parse_all_midi_events};
+pub use document::MidiDocument;
+pub use error::MidiError;
+pub use event::MidiEvent;
 pub use info::MidiInfo;
+pub use track::{TrackManager, TrackView, TrackVisibility};
+
+use std::sync::Arc;
 
 /// LMPJ 文件数据结构（用于序列化/反序列化）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -28,85 +36,59 @@ impl LmpjData {
         ParsedMidi {
             info: self.info,
             midi_data: self.midi_data,
-            memory_manager: None,
+            document: None,
         }
     }
 }
 
 /// 解析后的MIDI数据
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ParsedMidi {
     pub info: MidiInfo,
-    #[serde(skip)]
+    /// 原始 MIDI 字节（LMPJ 文件使用）
     pub midi_data: Option<Vec<u8>>,
-    /// 内存管理器（新架构）
-    #[serde(skip)]
-    pub memory_manager: Option<std::sync::Arc<std::sync::Mutex<managed_midi::MidiMemoryManager>>>,
+    /// 紧凑内存解析结果（常规 MIDI 文件使用）
+    ///
+    /// 使用 `Arc<MidiDocument>` 而非裸 `MidiDocument`，使得 UI 可以通过 Arc::clone
+    /// 共享同一份事件数据而无需深拷贝 `document.clone()`（后者会复制 `Vec<CompactEvent>`，
+    /// 对 10M 事件的黑乐谱来说就是额外 120MB）。
+    pub document: Option<Arc<MidiDocument>>,
+}
+
+impl serde::Serialize for ParsedMidi {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(serde::Serialize)]
+        struct Helper<'a> {
+            info: &'a crate::MidiInfo,
+            midi_data: &'a Option<Vec<u8>>,
+        }
+        Helper {
+            info: &self.info,
+            midi_data: &self.midi_data,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ParsedMidi {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct Helper {
+            info: crate::MidiInfo,
+            midi_data: Option<Vec<u8>>,
+        }
+        let h = Helper::deserialize(deserializer)?;
+        Ok(ParsedMidi {
+            info: h.info,
+            midi_data: h.midi_data,
+            document: None,
+        })
+    }
 }
 
 impl ParsedMidi {
     pub fn take_midi_data(&mut self) -> Option<Vec<u8>> {
         self.midi_data.take()
-    }
-
-    pub fn events_stream(&self) -> Result<MidiEventStream, String> {
-        MidiEventStream::from_path(&self.info.path)
-    }
-
-    pub fn parse_all_events(&self) -> Result<Vec<MidiEvent>, String> {
-        self.events_stream()?.collect()
-    }
-
-    pub fn build_track_cache(
-        &self,
-        cache: &crate::TrackBasedCache,
-    ) -> Result<crate::TrackCacheHeader, String> {
-        let mut stream = self.events_stream()?;
-        cache
-            .build_cache_streaming(&self.info.path, &mut stream)
-            .map_err(|e| format!("构建缓存失败: {e}"))
-    }
-
-    pub fn open_track_window(
-        &self,
-        cache: &crate::TrackBasedCache,
-        max_loaded_tracks: usize,
-    ) -> Result<crate::TrackEventWindow, String> {
-        if !cache
-            .has_cache(&self.info.path)
-            .map_err(|e| format!("检查缓存失败: {e}"))?
-        {
-            self.build_track_cache(cache)?;
-        }
-
-        cache
-            .open_window(&self.info.path, max_loaded_tracks)
-            .map_err(|e| format!("打开事件窗口失败: {e}"))
-    }
-
-    /// 使用内存管理的方式获取音轨事件（编辑/浏览用）
-    pub fn get_managed_track_events(&self, track_index: usize) -> Result<Vec<MidiEvent>, String> {
-        if let Some(mgr) = &self.memory_manager {
-            let mut mgr = mgr.lock().map_err(|e| format!("锁定内存管理器失败: {e}"))?;
-            let events = mgr.get_track_events(track_index)?;
-            Ok(events.to_vec())
-        } else {
-            // 回退到流式读取
-            let mut stream = self.events_stream()?;
-            stream.read_track_events(track_index)
-        }
-    }
-
-    /// 获取内存管理器统计
-    pub fn manager_stats(&self) -> Option<managed_midi::ManagerStats> {
-        self.memory_manager.as_ref().map(|mgr| {
-            mgr.lock()
-                .map(|guard| guard.stats())
-                .unwrap_or_else(|poisoned| {
-                    let guard = poisoned.into_inner();
-                    guard.stats()
-                })
-        })
     }
 }
 

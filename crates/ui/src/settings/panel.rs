@@ -10,7 +10,6 @@ pub struct SettingsPanel {
     pub soundfont_path: String,
     pub use_native_titlebar: bool,
     pub xsynth_buffer_ms: f64,
-    pub xsynth_sample_rate: u32,
     pub xsynth_threads: i32,
     pub xsynth_fade_out: bool,
     pub xsynth_max_voices_per_key: Option<usize>,
@@ -31,7 +30,6 @@ impl SettingsPanel {
             soundfont_path: ui_config.soundfont_path.clone(),
             use_native_titlebar: ui_config.use_native_titlebar,
             xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
-            xsynth_sample_rate: ui_config.xsynth_sample_rate,
             xsynth_threads: ui_config.xsynth_threads,
             xsynth_fade_out: ui_config.xsynth_fade_out_killing,
             xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
@@ -72,9 +70,6 @@ impl SettingsPanel {
             }
             Event::XSynthBufferChanged(ms) => {
                 self.xsynth_buffer_ms = ms;
-            }
-            Event::XSynthSampleRateChanged(sr) => {
-                self.xsynth_sample_rate = sr;
             }
             Event::XSynthThreadsChanged(t) => {
                 self.xsynth_threads = t;

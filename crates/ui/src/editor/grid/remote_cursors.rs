@@ -3,6 +3,7 @@
 use crate::Renderer;
 use crate::constants::editor as editor_constants;
 use crate::editor::Editor;
+use super::utils::parse_color;
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Frame, Geometry, Path, Stroke};
 
@@ -25,7 +26,7 @@ pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Vec<Geom
             username
         );
 
-        let color = super::parse_color(color_str).unwrap_or(iced_core::Color::WHITE);
+        let color = parse_color(color_str).unwrap_or(iced_core::Color::WHITE);
         let mut frame = Frame::new(renderer, bounds.size());
 
         // 减去滚动偏移，将内容空间坐标转换到当前视图

@@ -31,7 +31,7 @@ impl RenderCache {
     /// # Safety
     /// 必须在渲染线程调用
     pub unsafe fn note_instances_len(&self) -> usize {
-        self.note_instances_buffer.read_buffer().len()
+        unsafe { self.note_instances_buffer.read_buffer().len() }
     }
 
     /// 检查音符实例是否为空
@@ -39,7 +39,7 @@ impl RenderCache {
     /// # Safety
     /// 必须在渲染线程调用
     pub unsafe fn note_instances_is_empty(&self) -> bool {
-        self.note_instances_buffer.read_buffer().is_empty()
+        unsafe { self.note_instances_buffer.read_buffer().is_empty() }
     }
 }
 

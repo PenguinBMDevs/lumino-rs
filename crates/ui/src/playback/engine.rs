@@ -1,12 +1,11 @@
 //! 播放引擎模块
 //!
-//! 负责音符调度和MIDI输出
+//! 负责MIDI音符的播放控制，包括播放状态管理
 
-use super::{Playback, PlaybackAccessor, PlaybackState};
-use std::cmp::Ordering;
-use std::collections::BinaryHeap;
-use std::sync::{Arc, Mutex};
+pub mod control;
+pub mod types;
 
+<<<<<<< HEAD
 /// 音符事件（用于播放调度）
 #[derive(Debug, Clone)]
 pub struct NoteEvent {
@@ -556,3 +555,7 @@ mod tests {
         assert_eq!(engine.event_queue.len(), 2);
     }
 }
+=======
+pub use control::PlaybackEngine;
+pub use types::{MidiMessage, MidiTrackEvent, NoteEvent, ScheduledEvent, EventType};
+>>>>>>> feat/memory-for-loader

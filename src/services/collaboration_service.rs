@@ -1,15 +1,12 @@
 use lumino_collaboration::{ClientConfig, CollaborationClient};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
 /// 协作服务错误消息常量
 mod messages {
     /// 默认房间名称
     pub const DEFAULT_ROOM_NAME: &str = "默认房间";
-    /// Mutex 污染错误消息
-    pub const MUTEX_POISONED: &str = "协作服务: client Mutex 已被污染，可能有线程 panic";
-    /// 无法获取客户端锁
-    pub const LOCK_FAILED: &str = "协作服务: 无法获取客户端锁";
     /// 客户端未初始化
     pub const CLIENT_NOT_INITIALIZED: &str = "协作客户端未初始化";
 }
@@ -20,28 +17,21 @@ mod messages {
 /// 包括连接认证、房间创建/加入、鼠标同步和音符同步等功能。
 #[derive(Clone)]
 pub struct CollaborationService {
+    /// 协作客户端（双层包装：外层 Mutex 用于同步代码访问，
+    /// 内层 Arc<TokioMutex> 用于在异步任务间共享可变所有权）
+    ///
+    /// 未来可简化为单层 `Arc<tokio::sync::RwLock<Option<CollaborationClient>>>`
+    /// 当 CollaborationClient 的所有方法都改为 &self 后
     client: Arc<Mutex<Option<Arc<TokioMutex<CollaborationClient>>>>>,
+    /// 连接断开信号（用于终止 connect 中的后台心跳循环）
+    disconnect_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
 }
 
 impl CollaborationService {
     pub fn new() -> Self {
         Self {
             client: Arc::new(Mutex::new(None)),
-        }
-    }
-
-    /// 安全地获取客户端锁
-    ///
-    /// 当 Mutex 被 poison 时，记录错误并返回 None
-    fn lock_client(
-        &self,
-    ) -> Option<std::sync::MutexGuard<'_, Option<Arc<TokioMutex<CollaborationClient>>>>> {
-        match self.client.lock() {
-            Ok(guard) => Some(guard),
-            Err(e) => {
-                tracing::error!("{}: {}", messages::MUTEX_POISONED, e);
-                None
-            }
+            disconnect_tx: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -58,7 +48,9 @@ impl CollaborationService {
     ) -> Result<(), String> {
         tracing::info!("协作: 正在连接到 {}:{} ...", host, port);
 
-        // 创建协作客户端配置
+        // 如果已有连接，先断开
+        self.disconnect().ok();
+
         let config = ClientConfig {
             server_host: host.clone(),
             server_port: port,
@@ -67,25 +59,20 @@ impl CollaborationService {
             max_reconnect_attempts: 5,
         };
 
-        // 创建协作客户端
         let mut client = CollaborationClient::new(config);
-
-        // 设置事件回调
         client.set_event_callback(move |event| {
             Self::handle_collaboration_event(event);
         });
 
-        // 使用 Arc<Mutex<>> 包装客户端以便在异步任务中共享
         let client = Arc::new(TokioMutex::new(client));
         let client_clone = client.clone();
 
         // 保存客户端
-        {
-            let Some(mut guard) = self.lock_client() else {
-                return Err(messages::LOCK_FAILED.to_string());
-            };
-            *guard = Some(client);
-        }
+        *self.client.lock() = Some(client);
+
+        // 创建断开信号通道
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        *self.disconnect_tx.lock() = Some(tx);
 
         // 异步连接并创建/加入房间
         tokio::spawn(async move {
@@ -114,10 +101,15 @@ impl CollaborationService {
                     }
                 }
             }
-            // 连接完成后释放锁，让其他操作（如 send_mouse_position）可以获取
-            // client_clone 通过 Arc 保持引用，后台循环在 CollaborationClient 内部运行
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            // 连接完成后释放锁，等待断开信号或运行时取消
+            // 使用 oneshot 替代无限循环，避免永久占用 tokio 线程
+            tokio::select! {
+                _ = &mut rx => {
+                    tracing::info!("协作: 收到断开信号，后台任务退出");
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    tracing::info!("协作: 收到 Ctrl+C，后台任务退出");
+                }
             }
         });
 
@@ -141,7 +133,6 @@ impl CollaborationService {
                     user_id,
                     invite_code
                 );
-                // 通知 UI 切换到创建/加入房间界面
                 lumino_core::event::emit(lumino_core::event::Event::Window(
                     lumino_core::event::window::Event::CollaborationAuthenticated {
                         user_id,
@@ -151,7 +142,6 @@ impl CollaborationService {
             }
             CollaborationEvent::RoomCreated { room } => {
                 tracing::info!("协作: 房间创建成功! 邀请码: {}", room.invite_code);
-                // 通知 UI 切换到房间内界面
                 lumino_core::event::emit(lumino_core::event::Event::Window(
                     lumino_core::event::window::Event::CollaborationRoomCreated {
                         room_name: room.name,
@@ -165,7 +155,6 @@ impl CollaborationService {
                     room.name,
                     users.len()
                 );
-                // 通知 UI 切换到房间内界面
                 lumino_core::event::emit(lumino_core::event::Event::Window(
                     lumino_core::event::window::Event::CollaborationRoomJoined {
                         room_name: room.name,
@@ -176,7 +165,6 @@ impl CollaborationService {
             }
             CollaborationEvent::Disconnected => {
                 tracing::info!("协作: 连接断开");
-                // 通知 UI 重置状态
                 lumino_core::event::emit(lumino_core::event::Event::Window(
                     lumino_core::event::window::Event::CollaborationDisconnected,
                 ));
@@ -200,7 +188,6 @@ impl CollaborationService {
                     color,
                     username
                 );
-                // 通知 UI 更新远端游标
                 lumino_core::event::emit(lumino_core::event::Event::Window(
                     lumino_core::event::window::Event::CollaborationMouseUpdate {
                         user_id,
@@ -212,7 +199,6 @@ impl CollaborationService {
                 ));
             }
             CollaborationEvent::NoteBatch { user_id, operation } => {
-                // 通知 UI 更新远端音符
                 if let Ok(json) = serde_json::to_string(&operation) {
                     lumino_core::event::emit(lumino_core::event::Event::Window(
                         lumino_core::event::window::Event::CollaborationNoteUpdate {
@@ -234,11 +220,9 @@ impl CollaborationService {
         &self,
         position: lumino_collaboration::types::MousePosition,
     ) -> Result<(), String> {
-        let Some(client_guard) = self.lock_client() else {
-            return Err(messages::LOCK_FAILED.to_string());
-        };
+        let client = self.client.lock().clone();
 
-        if let Some(client) = client_guard.clone() {
+        if let Some(client) = client {
             tokio::spawn(async move {
                 let c = client.lock().await;
                 if let Err(e) = c.send_mouse_position(position).await {
@@ -253,21 +237,24 @@ impl CollaborationService {
 
     /// 断开连接
     pub fn disconnect(&self) -> Result<(), String> {
-        let Some(client_guard) = self.lock_client() else {
-            return Err(messages::LOCK_FAILED.to_string());
-        };
+        // 发送断开信号，终止后台循环
+        if let Some(tx) = self.disconnect_tx.lock().take() {
+            let _ = tx.send(());
+        }
 
-        if let Some(client) = client_guard.clone() {
+        let client = self.client.lock().clone();
+
+        if let Some(client) = client {
             tokio::spawn(async move {
                 let mut c = client.lock().await;
                 if let Err(e) = c.disconnect().await {
                     tracing::error!("协作: 断开连接失败: {}", e);
                 }
             });
-            Ok(())
-        } else {
-            Err(messages::CLIENT_NOT_INITIALIZED.to_string())
         }
+
+        *self.client.lock() = None;
+        Ok(())
     }
 
     /// 发送音符批量操作
@@ -275,11 +262,9 @@ impl CollaborationService {
         &self,
         operation: lumino_collaboration::types::NoteBatchOperation,
     ) -> Result<(), String> {
-        let Some(client_guard) = self.lock_client() else {
-            return Err(messages::LOCK_FAILED.to_string());
-        };
+        let client = self.client.lock().clone();
 
-        if let Some(client) = client_guard.clone() {
+        if let Some(client) = client {
             tokio::spawn(async move {
                 let c = client.lock().await;
                 if let Err(e) = c.send_note_batch(operation).await {
@@ -292,15 +277,17 @@ impl CollaborationService {
         }
     }
 
-    /// 检查是否已连接
+    /// 检查客户端实例是否存在
+    ///
+    /// 注意：这仅表示客户端对象已创建，不保证 WebSocket 已连接。
+    /// 连接成功后 CollaborationEvent::Connected 事件会被发送。
     pub fn is_connected(&self) -> bool {
-        let Some(client_guard) = self.lock_client() else {
-            tracing::warn!("协作服务: is_connected 无法获取锁，返回 false");
-            return false;
-        };
+        self.client.lock().is_some()
+    }
+}
 
-        let is_connected = client_guard.is_some();
-        tracing::debug!("协作服务 is_connected: {}", is_connected);
-        is_connected
+impl Default for CollaborationService {
+    fn default() -> Self {
+        Self::new()
     }
 }

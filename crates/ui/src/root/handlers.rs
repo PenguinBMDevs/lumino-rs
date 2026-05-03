@@ -165,46 +165,45 @@ impl Root {
             }
             Message::Settings(event) => {
                 self.settings.update(event.clone());
-                // 如果是橡皮擦行为变更，同步到编辑器
-                if let crate::settings::Event::EraserBehaviorChanged(behavior) = event {
-                    self.editor.set_eraser_behavior(*behavior);
-                }
-                // 如果是力度过滤阈值变更，同步到 Root
-                if let crate::settings::Event::VelocityFilterThresholdChanged(value) = event {
-                    if let Ok(val) = value.parse::<u8>() {
-                        self.velocity_filter_threshold = val;
-                        tracing::debug!("Root: 力度过滤阈值同步为 {}", val);
+                match &event {
+                    crate::settings::Event::EraserBehaviorChanged(behavior) => {
+                        self.editor.set_eraser_behavior(*behavior);
                     }
-                }
-                // 自动滚动配置变更，同步到编辑器
-                if let crate::settings::Event::AutoScrollFixedPositionChanged(value) = &event {
-                    if let Ok(val) = value.parse::<u32>() {
-                        let mut config = self.editor.auto_scroll_config().clone();
-                        config.fixed_indicator_position = val;
-                        self.editor.set_auto_scroll_config(config);
-                        tracing::debug!("Root: 自动滚动固定位置同步为 {}", val);
+                    crate::settings::Event::VelocityFilterThresholdChanged(value) => {
+                        if let Ok(val) = value.parse::<u8>() {
+                            self.velocity_filter_threshold = val;
+                            tracing::debug!("Root: 力度过滤阈值同步为 {}", val);
+                        }
                     }
-                }
-                if let crate::settings::Event::AutoScrollPageTriggerOffsetChanged(value) = &event {
-                    if let Ok(val) = value.parse::<u32>() {
-                        let mut config = self.editor.auto_scroll_config().clone();
-                        config.page_trigger_offset = val;
-                        self.editor.set_auto_scroll_config(config);
-                        tracing::debug!("Root: 自动滚动翻页触发偏移同步为 {}", val);
+                    crate::settings::Event::AutoScrollFixedPositionChanged(value) => {
+                        if let Ok(val) = value.parse::<u32>() {
+                            let mut config = *self.editor.auto_scroll_config();
+                            config.fixed_indicator_position = val;
+                            self.editor.set_auto_scroll_config(config);
+                            tracing::debug!("Root: 自动滚动固定位置同步为 {}", val);
+                        }
                     }
-                }
-                if let crate::settings::Event::AutoScrollPageReturnPositionChanged(value) = &event {
-                    if let Ok(val) = value.parse::<u32>() {
-                        let mut config = self.editor.auto_scroll_config().clone();
-                        config.page_return_position = val;
-                        self.editor.set_auto_scroll_config(config);
-                        tracing::debug!("Root: 自动滚动翻页返回位置同步为 {}", val);
+                    crate::settings::Event::AutoScrollPageTriggerOffsetChanged(value) => {
+                        if let Ok(val) = value.parse::<u32>() {
+                            let mut config = *self.editor.auto_scroll_config();
+                            config.page_trigger_offset = val;
+                            self.editor.set_auto_scroll_config(config);
+                            tracing::debug!("Root: 自动滚动翻页触发偏移同步为 {}", val);
+                        }
                     }
-                }
-                // HiDPI 图标渲染变更，同步到图标缓存
-                if let crate::settings::Event::IconHiDPIChanged(enabled) = &event {
-                    crate::resources::icon::set_hidpi_enabled(*enabled);
-                    tracing::debug!("Root: HiDPI 图标渲染切换为 {}", enabled);
+                    crate::settings::Event::AutoScrollPageReturnPositionChanged(value) => {
+                        if let Ok(val) = value.parse::<u32>() {
+                            let mut config = *self.editor.auto_scroll_config();
+                            config.page_return_position = val;
+                            self.editor.set_auto_scroll_config(config);
+                            tracing::debug!("Root: 自动滚动翻页返回位置同步为 {}", val);
+                        }
+                    }
+                    crate::settings::Event::IconHiDPIChanged(enabled) => {
+                        crate::resources::icon::set_hidpi_enabled(*enabled);
+                        tracing::debug!("Root: HiDPI 图标渲染切换为 {}", enabled);
+                    }
+                    _ => {}
                 }
                 true
             }

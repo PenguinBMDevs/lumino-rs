@@ -1,7 +1,7 @@
 pub mod types;
 
 pub use types::{
-    CameraParams, CameraUniform, CullUniform, DrawIndirectArgs, NoteInstance, RenderUniform,
+    CameraParams, CameraUniform, CullUniform, NoteInstance, RenderUniform,
 };
 
 // 子模块
@@ -52,7 +52,8 @@ impl NoteRenderer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+        use super::*;
+        use crate::note_renderer::types::DrawIndirectArgs;
 
     /// 测试 NoteInstance 创建和属性访问
     #[test]

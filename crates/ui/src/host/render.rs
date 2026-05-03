@@ -32,7 +32,6 @@ mod ui;
 mod viewport;
 
 // 公开子模块的公共类型
-pub use data::{GridColors, RenderData, ScissorRect, ViewportInfo};
 
 // =============================================================================
 // 常量定义 - 避免魔法数字

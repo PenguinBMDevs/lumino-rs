@@ -5,6 +5,13 @@ use crate::state::root_state::CollaborationViewState;
 use crate::{message, window};
 
 impl Host {
+    /// 设置加载确认对话框（用于独立对话框窗口）
+    pub fn set_load_confirm_dialog(&mut self, file_path: &str, size_mb: f64) {
+        self.root.set_load_confirm_dialog(file_path, size_mb);
+        self.ui_dirty = true;
+        self.window.request_redraw();
+    }
+
     /// 设置自定义精度对话框是否打开（用于独立对话框窗口）
     pub fn set_custom_precision_dialog_open(&mut self, open: bool) {
         self.root.set_custom_precision_dialog_open(open);
@@ -74,9 +81,9 @@ impl Host {
     }
 
     /// 更新远端音符
-    pub fn update_remote_note(&mut self, user_id: String, operation: String) {
+    pub fn update_remote_note(&mut self, operation: String) {
         self.root
-            .update(message::Message::CollaborationRemoteNoteUpdate { user_id, operation });
+            .update(message::Message::CollaborationRemoteNoteUpdate { operation });
         self.window.request_redraw();
     }
     /// 应用远程笔记操作到本地编辑器（委托给 Root 实现）

@@ -15,7 +15,7 @@ pub fn ensure_textures(
     depth_texture: &mut Option<wgpu::Texture>,
     depth_texture_view: &mut Option<wgpu::TextureView>,
     latest_texture_clone: &Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
-    params: &RenderParams,
+    _params: &RenderParams,
 ) -> bool {
     let width = width.max(1);
     let height = height.max(1);

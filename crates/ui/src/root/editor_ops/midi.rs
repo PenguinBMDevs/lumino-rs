@@ -127,10 +127,14 @@ mod tests {
         ) -> std::result::Result<(), lumino_midi::Error> {
             Ok(())
         }
+<<<<<<< HEAD
         fn send_raw(
             &mut self,
             _data: [u8; 3],
         ) -> std::result::Result<(), lumino_midi::Error> {
+=======
+        fn send_raw(&mut self, _data: [u8; 3]) -> std::result::Result<(), lumino_midi::Error> {
+>>>>>>> feat/memory-for-loader
             Ok(())
         }
         fn close(self: Box<Self>) {}
@@ -609,6 +613,7 @@ mod tests {
 }
 
 /// 可计数的 Mock MIDI 输出
+#[allow(dead_code)]
 struct CountingMockOutput {
     note_on_count: std::sync::Arc<std::sync::atomic::AtomicU32>,
     note_off_count: std::sync::Arc<std::sync::atomic::AtomicU32>,
@@ -650,11 +655,15 @@ impl lumino_midi::OutputConnection for CountingMockOutput {
     ) -> std::result::Result<(), lumino_midi::Error> {
         Ok(())
     }
+<<<<<<< HEAD
     fn pitch_bend(
         &mut self,
         _ch: u8,
         _value: f32,
     ) -> std::result::Result<(), lumino_midi::Error> {
+=======
+    fn pitch_bend(&mut self, _ch: u8, _value: f32) -> std::result::Result<(), lumino_midi::Error> {
+>>>>>>> feat/memory-for-loader
         Ok(())
     }
     fn channel_pressure(
@@ -672,10 +681,14 @@ impl lumino_midi::OutputConnection for CountingMockOutput {
     ) -> std::result::Result<(), lumino_midi::Error> {
         Ok(())
     }
+<<<<<<< HEAD
     fn send_raw(
         &mut self,
         _data: [u8; 3],
     ) -> std::result::Result<(), lumino_midi::Error> {
+=======
+    fn send_raw(&mut self, _data: [u8; 3]) -> std::result::Result<(), lumino_midi::Error> {
+>>>>>>> feat/memory-for-loader
         Ok(())
     }
     fn close(self: Box<Self>) {}

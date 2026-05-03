@@ -1,5 +1,4 @@
-use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
-use ouroboros::self_referencing;
+use midly::{MetaMessage, MidiMessage, TrackEventKind};
 
 /// MIDI 事件类型（轻量级表示）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -66,6 +65,23 @@ pub enum MidiEvent {
     },
 }
 
+impl MidiEvent {
+    pub fn tick(&self) -> u32 {
+        match self {
+            MidiEvent::NoteOn { tick, .. } => *tick,
+            MidiEvent::NoteOff { tick, .. } => *tick,
+            MidiEvent::ControlChange { tick, .. } => *tick,
+            MidiEvent::ProgramChange { tick, .. } => *tick,
+            MidiEvent::PitchBend { tick, .. } => *tick,
+            MidiEvent::Tempo { tick, .. } => *tick,
+            MidiEvent::TimeSignature { tick, .. } => *tick,
+            MidiEvent::KeySignature { tick, .. } => *tick,
+            MidiEvent::TrackName { tick, .. } => *tick,
+            MidiEvent::Other { tick, .. } => *tick,
+        }
+    }
+}
+
 /// 将 midly 的 TrackEventKind 解析为 MidiEvent
 ///
 /// 这是一个纯函数，不依赖任何结构体状态，可以在任何地方使用
@@ -74,8 +90,6 @@ pub fn parse_track_event_kind(
     tick: u32,
     kind: &TrackEventKind,
 ) -> Option<MidiEvent> {
-    use midly::{MetaMessage, MidiMessage};
-
     match kind {
         TrackEventKind::Midi { channel, message } => {
             let ch = channel.as_int();
@@ -153,6 +167,7 @@ pub fn parse_track_event_kind(
         }),
     }
 }
+<<<<<<< HEAD
 
 impl MidiEvent {
     pub fn tick(&self) -> u32 {
@@ -423,3 +438,5 @@ impl Iterator for MidiEventStream {
 pub fn parse_all_midi_events(path: &std::path::Path) -> Result<MidiEventStream, String> {
     MidiEventStream::from_path(path)
 }
+=======
+>>>>>>> feat/memory-for-loader

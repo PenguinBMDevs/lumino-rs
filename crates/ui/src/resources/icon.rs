@@ -21,6 +21,7 @@ pub enum IconError {
     IconNotInCache(Icon),
     SvgParseError(String),
     PixmapCreationError,
+    LockError,
 }
 
 impl std::fmt::Display for IconError {
@@ -29,6 +30,7 @@ impl std::fmt::Display for IconError {
             IconError::IconNotInCache(icon) => write!(f, "图标 {:?} 不在缓存中", icon),
             IconError::SvgParseError(msg) => write!(f, "SVG 解析错误: {}", msg),
             IconError::PixmapCreationError => write!(f, "无法创建 pixmap"),
+            IconError::LockError => write!(f, "获取缓存锁失败"),
         }
     }
 }
@@ -148,7 +150,7 @@ pub fn set_hidpi_enabled(enabled: bool) {
 
 /// 获取图标数据，如果不在缓存中则返回错误
 fn get_icon_data(icon: Icon) -> Result<IconData, IconError> {
-    let cache = ICON_CACHE.lock().unwrap();
+    let cache = ICON_CACHE.lock().map_err(|_| IconError::LockError)?;
     cache
         .get(&icon)
         .cloned()
@@ -158,7 +160,7 @@ fn get_icon_data(icon: Icon) -> Result<IconData, IconError> {
 /// 获取或创建缓存的 Handle。
 /// 稳定 Handle::id() → iced_wgpu 的纹理缓存命中 → 零每帧图集上传。
 fn get_or_create_handle(icon: Icon, is_dark: bool) -> Result<Handle, IconError> {
-    let mut cache = HANDLE_CACHE.lock().unwrap();
+    let mut cache = HANDLE_CACHE.lock().map_err(|_| IconError::LockError)?;
     if let Some(handle) = cache.get(&(icon, is_dark)) {
         return Ok(handle.clone());
     }

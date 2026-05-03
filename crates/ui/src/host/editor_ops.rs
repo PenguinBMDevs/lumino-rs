@@ -2,13 +2,21 @@
 
 use crate::host::{Host, types::NoteData};
 use crate::{editor::note::Note, message};
+use lumino_core::midi::MidiDocument;
+use std::sync::Arc;
 
 impl Host {
+<<<<<<< HEAD
 
     /// 重置播放管理器（加载新文件时调用）
     pub fn reset_playback_manager(&mut self) {
         self.root.reset_playback_manager();
 
+=======
+    /// 重置播放管理器（加载新文件时调用）
+    pub fn reset_playback_manager(&mut self) {
+        self.root.reset_playback_manager();
+>>>>>>> feat/memory-for-loader
     }
     /// 更新音轨列表（从 MIDI 导入）
     /// track_infos: (track_index, track_name, note_count)
@@ -77,7 +85,15 @@ impl Host {
         let mut track_notes: im::Vector<Note> = im::Vector::new();
         for (tick, key, length, velocity, channel) in notes {
             let editor_key = *key as u16;
+<<<<<<< HEAD
             track_notes.push_back(Note::new(*tick, editor_key, *length).with_velocity(*velocity).with_channel(*channel));
+=======
+            track_notes.push_back(
+                Note::new(*tick, editor_key, *length)
+                    .with_velocity(*velocity)
+                    .with_channel(*channel),
+            );
+>>>>>>> feat/memory-for-loader
         }
 
         if !track_notes.is_empty() {
@@ -94,6 +110,16 @@ impl Host {
         self.root.load_tempo_changes(tempo_changes);
     }
 
+<<<<<<< HEAD
+=======
+    /// 设置 MIDI 文档引用（供懒加载非当前音轨的音符使用）
+    pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
+        self.root.set_midi_document(doc.clone());
+        // 同步到 Editor，供 ensure_track_notes_loaded 使用
+        self.root.editor.document = Some(doc);
+    }
+
+>>>>>>> feat/memory-for-loader
     /// 加载音轨 MIDI 控制事件（CC/PC/PB）
     pub fn load_track_midi_events(
         &mut self,
@@ -109,7 +135,12 @@ impl Host {
         track_idx: usize,
         events: Vec<crate::playback::MidiTrackEvent>,
     ) {
+<<<<<<< HEAD
         self.root.load_track_midi_events_for_onion_skin(track_idx, events);
+=======
+        self.root
+            .load_track_midi_events_for_onion_skin(track_idx, events);
+>>>>>>> feat/memory-for-loader
     }
 
     /// 设置播放用 MIDI 输出连接
@@ -234,6 +265,10 @@ impl Host {
         self.root.editor.track_notes.clear();
         self.root.editor.current_track = 0;
         self.root.editor.grid_cache.clear();
+        // 释放 MIDI 文档引用（Arc），让大块事件内存可以被回收
+        self.root.editor.document = None;
+        self.root.midi_document = None;
+        self.root.cached_onion_skin_notes = None;
         self.clear_cache();
         // 仅请求重绘，不重建UI树（编辑器清空由WGPU层处理）
         self.window.request_redraw();

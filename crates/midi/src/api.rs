@@ -4,4 +4,4 @@ pub mod xsynth;
 
 pub use kdmapi::Kdmapi;
 pub use system::System;
-pub use xsynth::XSynth;
+pub use xsynth::{XSynth, XSynthOptions, XSynthStats};

@@ -8,7 +8,27 @@
 
 use crate::state::root_state::RootState;
 use crate::{editor, message, settings, sidebar, statusbar, titlebar, toolbar, window};
+use lumino_core::midi::MidiDocument;
 use lumino_core::storage::config::UiConfig;
+use std::sync::Arc;
+
+/// 根组件各组件的内存占用快照（字节和计数）
+#[derive(Debug, Clone, Default)]
+pub struct MemoryBreakdown {
+    /// 编辑器内各组件的细分
+    pub editor: editor::EditorMemory,
+    /// track_midi_events HashMap 中的总条目数和估算字节
+    pub track_midi_events_entries: usize,
+    pub track_midi_events_bytes: usize,
+    /// cached_onion_skin_notes 的字节数
+    pub cached_onion_skin_bytes: usize,
+    /// note_instances_buffer 双缓冲信息（由 Host::memory_breakdown 填充）
+    pub note_instances_front_cap: usize,
+    pub note_instances_front_len: usize,
+    pub note_instances_back_cap: usize,
+    pub note_instances_back_len: usize,
+    pub note_instance_size: usize,
+}
 
 mod collaboration;
 mod editor_ops;
@@ -40,16 +60,21 @@ pub struct Root {
     /// 延迟应用的 MIDI 输出（播放管理器未初始化时缓存）
     pub(crate) pending_midi_output: Option<Box<dyn lumino_midi::OutputConnection>>,
     /// 各音轨的 MIDI 控制事件（CC/PC/PB），供播放时使用
+<<<<<<< HEAD
     pub(crate) track_midi_events: std::collections::HashMap<usize, Vec<crate::playback::MidiTrackEvent>>,
+=======
+    pub(crate) track_midi_events:
+        std::collections::HashMap<usize, Vec<crate::playback::MidiTrackEvent>>,
+>>>>>>> feat/memory-for-loader
     /// 洋葱皮音符原始数据缓存（tick, key, length, color）
     /// 存原始数据而非 NoteInstance，因为 NoteInstance 含屏幕坐标（随 scroll/zoom 变化）
     pub(crate) cached_onion_skin_notes: Option<Vec<(f32, u16, f32, iced_core::Color)>>,
     /// 缓存失效计数器（只有音轨数据/开关变化才递增）
     pub(crate) onion_skin_generation: u64,
-    /// 上次渲染时的 generation
-    pub(crate) last_rendered_onion_generation: u64,
     /// 力度过滤阈值
     pub(crate) velocity_filter_threshold: u8,
+    /// MIDI 文档引用（用于懒加载非当前音轨的音符，避免全量 preload）
+    pub(crate) midi_document: Option<Arc<MidiDocument>>,
 }
 
 /// Root 构造参数
@@ -86,8 +111,8 @@ impl Root {
             track_midi_events: std::collections::HashMap::new(),
             cached_onion_skin_notes: None,
             onion_skin_generation: 0,
-            last_rendered_onion_generation: 0,
             velocity_filter_threshold: params.ui_config.velocity_filter_threshold,
+            midi_document: None,
         }
     }
 
@@ -170,5 +195,39 @@ impl Root {
     /// 标记洋葱皮缓存失效（任何影响洋葱皮渲染的变化都调用）
     pub fn invalidate_onion_skin_cache(&mut self) {
         self.onion_skin_generation += 1;
+    }
+
+    /// 设置 MIDI 文档引用（供懒加载使用）
+    pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
+        self.midi_document = Some(doc);
+    }
+
+    /// 收集各组件的内存占用快照
+    pub fn memory_breakdown(&self) -> MemoryBreakdown {
+        let editor_mem = self.editor.memory_breakdown();
+
+        // track_midi_events: HashMap<usize, Vec<MidiTrackEvent>>
+        let track_midi_events_entries = self.track_midi_events.len();
+        let track_midi_events_bytes = self
+            .track_midi_events
+            .values()
+            .map(|v| v.capacity() * std::mem::size_of::<crate::playback::MidiTrackEvent>())
+            .sum();
+
+        // cached_onion_skin_notes: Option<Vec<(f32, u16, f32, Color)>>
+        // tuple = 4 + 2 + 4 + 16 = 26 bytes, with alignment ~28 bytes
+        let cached_onion_skin_bytes = self
+            .cached_onion_skin_notes
+            .as_ref()
+            .map(|v| v.capacity() * 28)
+            .unwrap_or(0);
+
+        MemoryBreakdown {
+            editor: editor_mem,
+            track_midi_events_entries,
+            track_midi_events_bytes,
+            cached_onion_skin_bytes,
+            ..Default::default()
+        }
     }
 }

@@ -94,6 +94,15 @@ impl MessageHandler for DialogHandler {
                 );
                 None
             }
+            Message::ConfirmLoadConfirm => {
+                root.handle_confirm_load();
+                None
+            }
+            Message::CloseLoadConfirmDialog => {
+                root.handle_cancel_load();
+                None
+            }
+
             other => Some(other),
         }
     }

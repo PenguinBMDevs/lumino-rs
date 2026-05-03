@@ -1,4 +1,3 @@
-use lumino_core::MidiEvent;
 use midly::{Smf, TrackEventKind};
 use std::collections::HashMap;
 
@@ -7,6 +6,7 @@ pub type TrackInfo = (usize, Option<String>, u64);
 
 /// 音轨音符映射: track_index -> notes (tick, key, length, velocity, channel)
 pub type TrackNotesMap = HashMap<usize, Vec<(f32, u8, f32, u8, u8)>>;
+<<<<<<< HEAD
 
 /// 音轨MIDI控制事件
 #[derive(Debug, Clone, Default)]
@@ -122,6 +122,25 @@ pub fn parse_midi_events_to_control_events(events: &[MidiEvent]) -> TrackMidiEve
 pub fn parse_smf(
     smf: &Smf,
 ) -> (Vec<TrackInfo>, TrackNotesMap, HashMap<usize, TrackMidiEvents>) {
+=======
+
+/// 音轨MIDI控制事件
+#[derive(Debug, Clone, Default)]
+pub struct TrackMidiEvents {
+    pub control_changes: Vec<(f32, u8, u8, u8)>, // tick, channel, controller, value
+    pub program_changes: Vec<(f32, u8, u8)>,     // tick, channel, program
+    pub pitch_bends: Vec<(f32, u8, f32)>,        // tick, channel, value (-1.0~1.0)
+}
+
+/// 从 midly Smf 数据解析音符和控制事件
+pub fn parse_smf(
+    smf: &Smf,
+) -> (
+    Vec<TrackInfo>,
+    TrackNotesMap,
+    HashMap<usize, TrackMidiEvents>,
+) {
+>>>>>>> feat/memory-for-loader
     let mut track_infos = Vec::new();
     let mut track_notes_map: TrackNotesMap = HashMap::new();
     let mut track_events_map: HashMap<usize, TrackMidiEvents> = HashMap::new();
@@ -149,7 +168,13 @@ pub fn parse_smf(
                         let ch = channel.as_int();
                         let k = key.as_int();
                         let v = vel.as_int();
+<<<<<<< HEAD
                         if let Some((start_tick, start_vel, start_ch)) = active_notes.remove(&(ch, k)) {
+=======
+                        if let Some((start_tick, start_vel, start_ch)) =
+                            active_notes.remove(&(ch, k))
+                        {
+>>>>>>> feat/memory-for-loader
                             let length = abs_tick.saturating_sub(start_tick) as f32;
                             notes.push((start_tick as f32, k, length, start_vel, start_ch));
                         }
@@ -157,7 +182,13 @@ pub fn parse_smf(
                     } else {
                         let ch = channel.as_int();
                         let k = key.as_int();
+<<<<<<< HEAD
                         if let Some((start_tick, start_vel, start_ch)) = active_notes.remove(&(ch, k)) {
+=======
+                        if let Some((start_tick, start_vel, start_ch)) =
+                            active_notes.remove(&(ch, k))
+                        {
+>>>>>>> feat/memory-for-loader
                             let length = abs_tick.saturating_sub(start_tick) as f32;
                             notes.push((start_tick as f32, k, length, start_vel, start_ch));
                         }

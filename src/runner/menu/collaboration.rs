@@ -6,14 +6,14 @@ impl RunnerInner {
     /// 同步协作状态（发送鼠标位置等）
     pub(super) fn sync_collaboration_state(&mut self) {
         // 检查是否已连接
-        let is_connected = self.collaboration_service.is_connected();
+        let is_connected = self.collab_state.collaboration_service.is_connected();
         if !is_connected {
             return;
         }
 
         // 获取最新的鼠标位置（从 Host 而不是 Editor）
-        let cursor_pos = self.window.ui().cursor_position();
-        let editor = self.window.ui().root().editor_ref();
+        let cursor_pos = self.window_state.window.ui().cursor_position();
+        let editor = self.window_state.window.ui().root().editor_ref();
 
         tracing::debug!(
             "协作同步：cursor_position={:?}, canvas_offset=({}, {}), scroll=({}, {})",
@@ -61,7 +61,7 @@ impl RunnerInner {
                     content_pos.y
                 );
 
-                if let Err(e) = self.collaboration_service.send_mouse_position(mouse_pos) {
+                if let Err(e) = self.collab_state.collaboration_service.send_mouse_position(mouse_pos) {
                     tracing::debug!("协作：发送鼠标位置失败：{}", e);
                 }
             }
@@ -78,10 +78,10 @@ impl RunnerInner {
         invite_code: Option<String>,
     ) {
         // 更新状态为连接中
-        self.collaboration_status = CollaborationStatus::Connecting;
+        self.collab_state.collaboration_status = CollaborationStatus::Connecting;
 
         // 使用协作服务连接
-        let service = self.collaboration_service.clone();
+        let service = self.collab_state.collaboration_service.clone();
         tokio::spawn(async move {
             if let Err(e) = service
                 .connect(host, port, username, room_name, invite_code)
@@ -105,7 +105,7 @@ impl RunnerInner {
     /// 处理断开连接
     pub(super) fn handle_collaboration_disconnect(&mut self) {
         tracing::info!("协作: 请求断开连接");
-        if let Err(e) = self.collaboration_service.disconnect() {
+        if let Err(e) = self.collab_state.collaboration_service.disconnect() {
             tracing::error!("协作: 断开连接失败: {}", e);
         }
     }
@@ -121,7 +121,7 @@ impl RunnerInner {
         track_index: usize,
     ) {
         // 检查是否已连接
-        if !self.collaboration_service.is_connected() {
+        if !self.collab_state.collaboration_service.is_connected() {
             return;
         }
 
@@ -160,7 +160,7 @@ impl RunnerInner {
                 .as_millis() as u64,
         };
 
-        if let Err(e) = self.collaboration_service.send_note_batch(operation) {
+        if let Err(e) = self.collab_state.collaboration_service.send_note_batch(operation) {
             tracing::debug!("协作: 发送笔记添加失败: {}", e);
         } else {
             tracing::info!("协作: 已发送笔记添加 - tick={}, key={}", tick, key);
@@ -177,7 +177,7 @@ impl RunnerInner {
         key_offset: i16,
         track_index: usize,
     ) {
-        if !self.collaboration_service.is_connected() {
+        if !self.collab_state.collaboration_service.is_connected() {
             return;
         }
 
@@ -216,7 +216,7 @@ impl RunnerInner {
                 .as_millis() as u64,
         };
 
-        if let Err(e) = self.collaboration_service.send_note_batch(operation) {
+        if let Err(e) = self.collab_state.collaboration_service.send_note_batch(operation) {
             tracing::debug!("协作: 发送音符移动失败: {}", e);
         } else {
             tracing::info!(
@@ -244,6 +244,6 @@ impl RunnerInner {
             };
 
         // 应用到编辑器
-        self.window.ui_mut().apply_remote_note_operation(&operation);
+        self.window_state.window.ui_mut().apply_remote_note_operation(&operation);
     }
 }

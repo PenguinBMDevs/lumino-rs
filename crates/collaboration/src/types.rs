@@ -1,6 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// 声明 midi 子模块
+mod midi;
+
+// 从子模块重新导出 MidiEvent
+pub use midi::MidiEvent;
+
 /// 用户颜色（16进制字符串）
 pub type UserColor = String;
 
@@ -114,6 +120,7 @@ pub enum NoteAction {
     Paste,
 }
 
+<<<<<<< HEAD
 /// MIDI事件类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -289,6 +296,8 @@ impl From<&lumino_core::MidiEvent> for MidiEvent {
     }
 }
 
+=======
+>>>>>>> feat/memory-for-loader
 /// 项目更新类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

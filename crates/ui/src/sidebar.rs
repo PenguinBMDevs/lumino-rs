@@ -219,10 +219,6 @@ impl Sidebar {
         self.is_resizing = false;
     }
 
-    /// 获取当前面板宽度
-    pub fn panel_width(&self) -> f32 {
-        self.panel_width
-    }
 }
 
 impl Default for Sidebar {

@@ -12,6 +12,7 @@ use winit::{
 pub enum DialogType {
     CustomPrecision,
     Collaboration,
+    LoadConfirm,
 }
 
 /// 对话框结果
@@ -21,6 +22,7 @@ pub enum DialogResult {
         numerator: String,
         denominator: String,
     },
+    LoadConfirm,
 }
 
 /// 对话框窗口
@@ -43,6 +45,7 @@ impl DialogWindow {
         let (width, height, title) = match dialog_type {
             DialogType::CustomPrecision => (480.0, 180.0, "自定义贴合"),
             DialogType::Collaboration => (420.0, 320.0, "多人协作"),
+            DialogType::LoadConfirm => (420.0, 260.0, "加载大文件"),
         };
 
         let attributes = WindowAttributes::default()
@@ -99,17 +102,55 @@ impl DialogWindow {
         // 根据对话框类型初始化不同的UI内容
         match self.dialog_type {
             DialogType::CustomPrecision => {
-                // 初始化自定义精度对话框的UI状态
                 ui.set_custom_precision_dialog_open(true);
             }
             DialogType::Collaboration => {
-                // 同步主窗口的协作状态到对话框
                 ui.sync_collaboration_state_from(main_ui);
+            }
+            DialogType::LoadConfirm => {
+                // LoadConfirm 用默认状态，不需要额外初始化
             }
         }
 
         self.window.set_visible(true);
 
+        self.gfx = Some(gfx);
+        self.ui = Some(ui);
+
+        Ok(())
+    }
+
+    /// 初始化加载确认对话框（带文件信息）
+    pub fn initialize_load_confirm(
+        &mut self,
+        ui_config: &lumino_core::storage::config::UiConfig,
+        file_path: &str,
+        size_mb: f64,
+    ) -> Result<(), String> {
+        let physical_size = self.window.inner_size();
+        if physical_size.width == 0 || physical_size.height == 0 {
+            return Err("窗口大小为零".to_string());
+        }
+
+        let gfx = futures::executor::block_on(lumino_gfx::Context::new(
+            self.window.clone(),
+            physical_size.width,
+            physical_size.height,
+        ))
+        .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
+
+        let mut ui = lumino_ui::Host::new_dialog(
+            self.window.clone(),
+            physical_size.width,
+            physical_size.height,
+            ui_config,
+            &gfx,
+        );
+
+        // 设置加载确认对话框状态
+        ui.set_load_confirm_dialog(file_path, size_mb);
+
+        self.window.set_visible(true);
         self.gfx = Some(gfx);
         self.ui = Some(ui);
 
@@ -166,6 +207,9 @@ impl DialogWindow {
                         denominator,
                     });
                 }
+                lumino_ui::host::DialogResult::LoadConfirm => {
+                    self.result_data = Some(DialogResult::LoadConfirm);
+                }
             }
             self.should_close = true;
             return self.result_data.take();
@@ -212,6 +256,9 @@ pub struct DialogManager {
 #[derive(Debug, Clone)]
 pub struct PendingDialog {
     pub dialog_type: DialogType,
+    /// LoadConfirm 的 pending path
+    pub pending_path: Option<String>,
+    pub pending_size_mb: Option<f64>,
 }
 
 impl DialogManager {
@@ -224,7 +271,19 @@ impl DialogManager {
 
     /// 请求打开一个对话框
     pub fn open_dialog(&mut self, dialog_type: DialogType) {
-        self.pending_dialogs.push(PendingDialog { dialog_type });
+        self.pending_dialogs.push(PendingDialog {
+            dialog_type,
+            pending_path: None,
+            pending_size_mb: None,
+        });
+    }
+
+    pub fn open_load_confirm(&mut self, path: String, size_mb: f64) {
+        self.pending_dialogs.push(PendingDialog {
+            dialog_type: DialogType::LoadConfirm,
+            pending_path: Some(path),
+            pending_size_mb: Some(size_mb),
+        });
     }
 
     /// 初始化等待中的对话框，并同步主窗口的协作状态
@@ -248,9 +307,21 @@ impl DialogManager {
             let window_id = dialog.window_id();
 
             // 初始化对话框
-            if let Err(e) = dialog.initialize_with_collaboration_state(ui_config, main_ui) {
-                tracing::error!("初始化对话框失败: {}", e);
-                continue;
+            match pending.dialog_type {
+                DialogType::LoadConfirm => {
+                    let path = pending.pending_path.unwrap_or_default();
+                    let size_mb = pending.pending_size_mb.unwrap_or(0.0);
+                    if let Err(e) = dialog.initialize_load_confirm(ui_config, &path, size_mb) {
+                        tracing::error!("初始化加载确认对话框失败: {}", e);
+                        continue;
+                    }
+                }
+                _ => {
+                    if let Err(e) = dialog.initialize_with_collaboration_state(ui_config, main_ui) {
+                        tracing::error!("初始化对话框失败: {}", e);
+                        continue;
+                    }
+                }
             }
 
             tracing::info!("对话框已创建: {:?}", pending.dialog_type);

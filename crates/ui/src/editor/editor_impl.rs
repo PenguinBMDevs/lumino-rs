@@ -1,5 +1,5 @@
 use crate::editor::note::Note;
-use crate::editor::{EditState, HitType, OnionSkinConfig, ViewState};
+use crate::editor::{EditState, HitType, OnionSkinConfig, OnionSkinViewportCache, ViewState};
 use crate::message::AudioAction;
 use crate::toolbar::Tool;
 use iced_core::Point;
@@ -32,7 +32,7 @@ pub struct Editor {
 
     /// 当前编辑的音轨索引
     pub current_track: usize,
-    /// 按音轨存储的音符（用于无 MIDI 文件时的多音轨编辑）
+    /// 按音轨存储的音符（懒加载缓存，仅保留访问过的音轨）
     pub track_notes: HashMap<usize, im::Vector<Note>>,
 
     /// 洋葱皮配置

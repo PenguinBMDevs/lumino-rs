@@ -4,16 +4,23 @@
 
 use super::engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine};
 use super::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
-use std::sync::{Arc, Mutex, mpsc};
+use parking_lot::Mutex;
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
 enum Command {
     SetMidiOutput(Box<dyn lumino_midi::OutputConnection>),
     ClearMidiOutput,
+<<<<<<< HEAD
     SetNotes(Vec<NoteEvent>),
+=======
+    SetCurrentTrackNotes(Vec<NoteEvent>),
+    SetDocument(Arc<lumino_core::midi::MidiDocument>, u16),
+>>>>>>> feat/memory-for-loader
     SetMidiEvents(Vec<MidiTrackEvent>),
     SetTempoChanges(Vec<TempoChange>),
+    // 旧 SetCache/SetSkipTracksInCache 已移除（disk_cache future support）
     Play,
     Pause,
     Stop,
@@ -52,12 +59,18 @@ impl PlaybackManager {
                     match cmd {
                         Command::SetMidiOutput(output) => midi_output = Some(output),
                         Command::ClearMidiOutput => midi_output = None,
+<<<<<<< HEAD
                         Command::SetNotes(notes) => engine.set_notes(notes),
+=======
+                        Command::SetCurrentTrackNotes(notes) => {
+                            engine.set_current_track_notes(notes)
+                        }
+                        Command::SetDocument(doc, track) => engine.set_document(doc, track),
+>>>>>>> feat/memory-for-loader
                         Command::SetMidiEvents(events) => engine.set_midi_events(events),
                         Command::SetTempoChanges(changes) => {
-                            if let Ok(mut p) = engine.playback().lock() {
-                                p.set_tempo_changes(changes);
-                            }
+                            let mut p = engine.playback().lock();
+                            p.set_tempo_changes(changes);
                         }
                         Command::Play => engine.play(),
                         Command::Pause => {
@@ -96,12 +109,21 @@ impl PlaybackManager {
                 let messages = engine.update();
                 if let Some(out) = &mut midi_output {
                     let msg_count = messages.len();
+<<<<<<< HEAD
                     for (i, msg) in messages.into_iter().enumerate() {
                         // 每 20 条消息让出 CPU 给 xsynth 通道线程处理积压事件
                         // 防止 seek 后大量事件瞬间涌入导致 buffer underrun
                         if i > 0 && i % 20 == 0 {
                             std::thread::yield_now();
                         }
+=======
+
+                    // 直接发送所有消息，不添加任何 sleep
+                    // xsynth-realtime 的 channel 使用 unbounded channel，可以处理突发流量
+                    // 如果发生 underrun，应该通过增大缓冲区或优化 xsynth 配置来解决
+                    // 而不是在播放线程中 sleep（这会导致更严重的音频问题）
+                    for msg in messages {
+>>>>>>> feat/memory-for-loader
                         match msg {
                             MidiMessage::NoteOn {
                                 channel,
@@ -181,9 +203,21 @@ impl PlaybackManager {
         let _ = self.sender.send(Command::ClearMidiOutput);
     }
 
-    /// 设置音符列表
-    pub fn set_notes(&mut self, notes: Vec<NoteEvent>) {
-        let _ = self.sender.send(Command::SetNotes(notes));
+    /// 设置当前音轨音符列表（用于编辑后的当前轨更新）
+    pub fn set_current_track_notes(&mut self, notes: Vec<NoteEvent>) {
+        let _ = self.sender.send(Command::SetCurrentTrackNotes(notes));
+    }
+
+    /// 设置 MIDI 文档引用（其他音轨从此流式读取）
+    pub fn set_document(&mut self, doc: Arc<lumino_core::midi::MidiDocument>, current_track: u16) {
+        let _ = self.sender.send(Command::SetDocument(doc, current_track));
+    }
+
+    // 旧 set_cache/set_skip_tracks_in_cache 已移除（disk_cache future support）
+
+    /// 设置非音符MIDI事件列表
+    pub fn set_midi_events(&mut self, events: Vec<MidiTrackEvent>) {
+        let _ = self.sender.send(Command::SetMidiEvents(events));
     }
 
     /// 设置非音符MIDI事件列表

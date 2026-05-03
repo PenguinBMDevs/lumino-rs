@@ -1,7 +1,7 @@
 use crate::editor::Note;
 
 /// 音符的空间索引引用
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct NoteRef {
     pub tick: f32,
     pub key: u16,
@@ -25,6 +25,12 @@ struct Node {
     key_sorted: Vec<NoteRef>,
     left: Option<usize>,
     right: Option<usize>,
+}
+
+impl Default for NoteSpatialIndex {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NoteSpatialIndex {
@@ -57,6 +63,38 @@ impl NoteSpatialIndex {
             .collect();
 
         // 初始时按照 tick 排序，以便进行中位数分割
+        note_refs.sort_by(|a, b| {
+            a.tick
+                .partial_cmp(&b.tick)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut nodes = Vec::new();
+        let root = Self::build_node(note_refs, &mut nodes);
+        Self {
+            nodes,
+            root: Some(root),
+        }
+    }
+
+    /// 从原始 (tick, key, length) 数据构建空间索引（不需要 Note 数组）
+    /// index 字段填 0，配合 collect_instances_in_range 使用
+    pub fn from_raw_notes(raw: &[(f32, u16, f32)]) -> Self {
+        puffin::profile_function!();
+        if raw.is_empty() {
+            return Self::new();
+        }
+
+        let mut note_refs: Vec<NoteRef> = raw
+            .iter()
+            .map(|&(tick, key, length)| NoteRef {
+                tick,
+                key,
+                length,
+                index: 0, // 不需要外部数组查找
+            })
+            .collect();
+
         note_refs.sort_by(|a, b| {
             a.tick
                 .partial_cmp(&b.tick)
@@ -153,6 +191,30 @@ impl NoteSpatialIndex {
         }
     }
 
+    /// 直接从空间索引节点数据中收集视口内音符的 (tick, key, length)，
+    /// 不需要外部 notes 数组。适合洋葱皮等只读查询场景。
+    pub fn collect_instances_in_range(
+        &self,
+        visible_tick_start: f32,
+        visible_tick_end: f32,
+        visible_key_min: u16,
+        visible_key_max: u16,
+        result: &mut Vec<(f32, u16, f32)>,
+    ) {
+        puffin::profile_function!();
+        result.clear();
+        if let Some(root_idx) = self.root {
+            self.query_node_iter_direct(
+                root_idx,
+                visible_tick_start,
+                visible_tick_end,
+                visible_key_min,
+                visible_key_max,
+                result,
+            );
+        }
+    }
+
     fn query_node_iter(
         &self,
         root_idx: usize,
@@ -188,6 +250,45 @@ impl NoteSpatialIndex {
             }
 
             // 继续迭代左右子树
+            if let Some(left) = node.left {
+                stack.push(left);
+            }
+            if let Some(right) = node.right {
+                stack.push(right);
+            }
+        }
+    }
+
+    fn query_node_iter_direct(
+        &self,
+        root_idx: usize,
+        tick_start: f32,
+        tick_end: f32,
+        key_min: u16,
+        key_max: u16,
+        result: &mut Vec<(f32, u16, f32)>,
+    ) {
+        puffin::profile_function!();
+        let mut stack = Vec::with_capacity(32);
+        stack.push(root_idx);
+
+        while let Some(node_idx) = stack.pop() {
+            let node = &self.nodes[node_idx];
+            if node.tick_max < tick_start || node.tick_min > tick_end {
+                continue;
+            }
+
+            if !node.key_sorted.is_empty() {
+                let start_idx = node.key_sorted.partition_point(|n| n.key < key_min);
+                let end_idx = node.key_sorted.partition_point(|n| n.key <= key_max);
+
+                for n in &node.key_sorted[start_idx..end_idx] {
+                    if n.tick + n.length >= tick_start && n.tick <= tick_end {
+                        result.push((n.tick, n.key, n.length));
+                    }
+                }
+            }
+
             if let Some(left) = node.left {
                 stack.push(left);
             }

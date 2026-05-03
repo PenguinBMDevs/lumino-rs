@@ -1,5 +1,17 @@
-use std::time::{Duration, Instant};
-use winit::event_loop::ControlFlow;
+//! Runner 生命周期管理模块
+//!
+//! 此模块已拆分为多个子模块：
+//! - dialog: 对话框事件处理
+//! - memory: 内存日志功能
+//! - midi: MIDI 重初始化
+//! - control_flow: 事件循环控制流
+//! - test_mode: 测试模式 FPS 监测
+
+mod dialog;
+mod memory;
+mod midi;
+mod control_flow;
+mod test_mode;
 
 use super::inner::{Runner, TestModeState};
 
@@ -19,11 +31,11 @@ impl winit::application::ApplicationHandler for Runner {
                 {
                     tracing::info!("测试模式：准备加载 MIDI - {}", test_config.midi_path);
                     let midi_path = std::path::PathBuf::from(&test_config.midi_path);
-                    let progress_cb = this.progress_cb.clone();
+                    let progress_cb = this.window_state.progress_cb.clone();
                     let test_duration = test_config.test_time;
 
-                    this.window.ui_mut().skip_ui_rendering = true;
-                    this.test_mode_state = Some(TestModeState {
+                    this.window_state.window.ui_mut().skip_ui_rendering = true;
+                    this.test_state.test_mode_state = Some(TestModeState {
                         active: false,
                         start_time: None,
                         duration: test_duration,
@@ -73,7 +85,7 @@ impl winit::application::ApplicationHandler for Runner {
 
     fn window_event(
         &mut self,
-        _event_loop: &winit::event_loop::ActiveEventLoop,
+        event_loop: &winit::event_loop::ActiveEventLoop,
         window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
@@ -85,181 +97,83 @@ impl winit::application::ApplicationHandler for Runner {
         };
 
         // 首先检查是否是进度窗口
-        if this.progress.is_progress_window(window_id) {
-            this.progress.handle_event(event);
+        if this.window_state.progress.is_progress_window(window_id) {
+            this.window_state.progress.handle_event(event);
             return;
         }
 
         // 检查是否是对话框窗口
-        if this.dialog_manager.is_dialog_window(window_id) {
-            let mut dialog_result = None;
-            let mut should_close = false;
-
-            if let Some(dialog) = this.dialog_manager.get_dialog_mut(window_id) {
-                dialog.handle_event(event);
-
-                // 检查对话框是否应该关闭
-                should_close = dialog.should_close();
-
-                // 检查对话框结果
-                if let Some(result) = dialog.check_result() {
-                    dialog_result = Some(result);
-                    should_close = true;
-                }
-            }
-
-            // 如果应该关闭，关闭对话框
-            if should_close {
-                this.dialog_manager.close_dialog(window_id);
-            } else {
-                // 请求重绘对话框
-                if let Some(dialog) = this.dialog_manager.get_dialog_mut(window_id) {
-                    dialog.redraw();
-                }
-            }
-
-            // 处理对话框返回的结果
-            if let Some(result) = dialog_result {
-                let main_ui = this.window.ui_mut();
-                Runner::apply_dialog_result_to_ui(main_ui, result);
-            }
+        if this.handle_dialog_event(event_loop, window_id, event.clone()) {
             return;
         }
 
         // 主窗口事件
-        this.window.handle_event(event, &mut this.storage);
+        this.window_state.window.handle_event(event, &mut this.window_state.storage);
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         puffin::profile_scope!("runner_about_to_wait");
+
         let Some(this) = self.inner.as_mut() else {
             return;
         };
 
         // 处理进度消息
-        let main_window = this.window.window().clone();
-        let main_ui = this.window.ui_mut();
-        this.progress.process_messages(main_ui, &main_window);
+        let main_window = this.window_state.window.window().clone();
+        let main_ui = this.window_state.window.ui_mut();
+        this.window_state.progress.process_messages(main_ui, &main_window);
 
         // 更新进度窗口
-        let ui_config = this.storage.config.get().ui.clone();
-        this.progress.update(event_loop, &ui_config);
+        let ui_config = this.window_state.storage.config.get().ui.clone();
+        this.window_state.progress.update(event_loop, &ui_config);
 
         // 处理窗口动作
-        this.window.handle_window_actions(event_loop);
+        this.window_state.window.handle_window_actions(event_loop);
 
         // 处理音频动作
-        Runner::process_audio_actions(&mut this.window, &mut this.midi);
+        crate::runner::inner::RunnerInner::process_audio_actions(
+            &mut this.window_state.window,
+            &mut this.midi_state.midi,
+        );
 
         // 处理核心事件（包括打开对话框）
         this.process_core_events(event_loop);
 
         // 初始化新创建的对话框（同步主窗口的协作状态）
         {
-            let main_ui = this.window.ui();
-            this.dialog_manager
+            let main_ui = this.window_state.window.ui();
+            this.window_state
+                .dialog_manager
                 .initialize_pending_with_collaboration_state(
                     event_loop,
-                    this.window.window(),
-                    &this.storage.config.get().ui,
+                    this.window_state.window.window(),
+                    &this.window_state.storage.config.get().ui,
                     main_ui,
                 );
         }
 
         // 更新对话框
-        this.dialog_manager.update();
+        this.window_state.dialog_manager.update();
 
         // 保存存储
         this.save_storage();
 
-        // 重新初始化 MIDI 如果需要
-        if this.midi.needs_reinit() {
-            let ui_config = this.storage.config.get().ui.clone();
-            this.midi.reinit_if_needed(&ui_config);
-        }
+        // 内存日志
+        this.handle_memory_logging();
 
-        // 检查 XSynth 异步初始化是否完成
-        // 如果后端从 System 切到 XSynth，同步更新播放引擎的 MIDI 输出
-        if this.midi.check_async_init_complete() {
-            tracing::info!("XSynth: 异步初始化完成，正在创建新的播放连接...");
-            if let Some(output) = this.midi.create_additional_output() {
-                this.window.ui_mut().set_playback_midi_output(output);
-                tracing::info!("XSynth: 播放引擎 MIDI 输出已更新为 XSynth");
-            } else {
-                tracing::error!("XSynth: 无法创建 XSynth 播放输出，播放将无声");
-            }
-        }
+        // 重新初始化 MIDI 或检查 XSynth 异步初始化
+        this.handle_midi_reinit();
 
         // 检查是否需要重启窗口（标题栏设置变更）
-        if this.needs_window_restart {
-            this.needs_window_restart = false;
+        if this.window_state.needs_window_restart {
+            this.window_state.needs_window_restart = false;
             this.restart_window(event_loop);
         }
 
-        // 检查播放状态：播放时使用 Poll 模式确保持续重绘，暂停时使用 Wait 模式节省资源
-        let is_playing = this.window.ui().is_playing();
-
-        let is_test_active = this
-            .test_mode_state
-            .as_ref()
-            .map(|s| s.active)
-            .unwrap_or(false);
-        let should_poll = is_playing || is_test_active;
-
-        if should_poll {
-            event_loop.set_control_flow(ControlFlow::Poll);
-            this.window.request_redraw();
-        } else {
-            event_loop.set_control_flow(ControlFlow::Wait);
-        }
+        // 控制循环休眠策略
+        this.handle_control_flow(event_loop);
 
         // 测试模式 FPS 监测
-        if let Some(test_state) = &mut this.test_mode_state
-            && test_state.active
-        {
-            if test_state.start_time.is_none() {
-                // MIDI 加载完成，开始测试
-                test_state.start_time = Some(Instant::now());
-                test_state.last_fps_update = Some(Instant::now());
-                tracing::info!("FPS 测试开始");
-            }
-
-            test_state.frame_count += 1;
-            let now = Instant::now();
-
-            if let Some(last) = test_state.last_fps_update {
-                let elapsed = now.duration_since(last);
-                if elapsed.as_millis() >= 100 {
-                    let fps = test_state.frame_count as f32 / elapsed.as_secs_f32();
-                    test_state.fps_samples.push(fps);
-                    test_state.frame_count = 0;
-                    test_state.last_fps_update = Some(now);
-
-                    tracing::info!(
-                        "FPS: {:.1} (samples: {})",
-                        fps,
-                        test_state.fps_samples.len()
-                    );
-
-                    // 检查测试时间是否到达
-                    if let Some(duration) = test_state.duration {
-                        let should_exit = test_state
-                            .start_time
-                            .map(|start| now.duration_since(start) >= Duration::from_secs(duration))
-                            .unwrap_or(false);
-                        if should_exit {
-                            let avg_fps = test_state.fps_samples.iter().sum::<f32>()
-                                / test_state.fps_samples.len() as f32;
-                            tracing::info!("================================");
-                            tracing::info!("FPS 测试完成");
-                            tracing::info!("平均 FPS: {:.2}", avg_fps);
-                            tracing::info!("采样次数：{}", test_state.fps_samples.len());
-                            tracing::info!("================================");
-                            event_loop.exit();
-                        }
-                    }
-                }
-            }
-        }
+        this.handle_test_mode_fps(event_loop);
     }
 }

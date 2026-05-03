@@ -8,6 +8,9 @@ pub async fn load_dms(
     path: PathBuf,
     progress: Option<&ProgressCallback>,
 ) -> crate::Result<ParsedDms> {
+    // 大分配前检查内存（DMS 文件解压后可能数百 MB）
+    crate::memory_monitor::MemoryMonitor::global().check();
+
     let cb = |msg: &str, val: f64| {
         if let Some(p) = progress {
             p(msg, val);
