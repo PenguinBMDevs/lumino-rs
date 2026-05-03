@@ -14,31 +14,31 @@ impl Host {
 
         // 如果 UI 没有变更，跳过 UI 重建和绘制
         // 使用实例字段来确保至少渲染一次 UI，避免线程不安全的 static mut
-        let is_first_render = !self.has_rendered_ui;
+        let is_first_render = !self.render_ctx.has_rendered_ui;
 
         // 菜单打开时，不使用缓存机制，每次都重建 UI 以避免菜单闪烁
         let is_menu_open = !self.root.should_render_preview_note();
 
         // 检测光标位置是否变化，如果变化需要更新鼠标指针样式
-        let cursor_changed = self.last_render_cursor != self.cursor;
+        let cursor_changed = self.render_ctx.last_render_cursor != self.window_ctx.cursor;
 
         if !is_menu_open && !self.ui_dirty && !is_first_render && !cursor_changed {
             // UI 没有变化且不是第一次渲染且光标未移动，直接 present 之前渲染的内容
-            self.renderer
-                .present(None, frame.texture.format(), texture_view, &self.viewport);
+            self.render_ctx.renderer
+                .present(None, frame.texture.format(), texture_view, &self.render_ctx.viewport);
             return;
         }
 
         // 临时取出缓存以避免借用冲突
-        let cache = std::mem::take(&mut self.cache);
+        let cache = std::mem::take(&mut self.render_ctx.cache);
 
         let mut interface = {
             puffin::profile_scope!("build_interface");
             UserInterface::build(
                 self.root.view(),
-                self.viewport.logical_size(),
+                self.render_ctx.viewport.logical_size(),
                 cache,
-                &mut self.renderer,
+                &mut self.render_ctx.renderer,
             )
         };
 
@@ -50,9 +50,9 @@ impl Host {
                 &[Event::Window(iced_window::Event::RedrawRequested(
                     std::time::Instant::now(),
                 ))],
-                self.cursor,
-                &mut self.renderer,
-                &mut self.clipboard,
+                self.window_ctx.cursor,
+                &mut self.render_ctx.renderer,
+                &mut self.window_ctx.clipboard,
                 &mut messages,
             )
         };
@@ -62,28 +62,28 @@ impl Host {
             puffin::profile_scope!("draw_interface");
             let theme = self.root.theme();
             interface.draw(
-                &mut self.renderer,
+                &mut self.render_ctx.renderer,
                 &theme,
                 &renderer::Style::default(),
-                self.cursor,
+                self.window_ctx.cursor,
             );
         }
 
         // 归还缓存
-        self.cache = interface.into_cache();
+        self.render_ctx.cache = interface.into_cache();
         // 重绘完成后 UI 不再 dirty
         self.ui_dirty = false;
 
         // 标记已完成首次渲染
-        if !self.has_rendered_ui {
-            self.has_rendered_ui = true;
+        if !self.render_ctx.has_rendered_ui {
+            self.render_ctx.has_rendered_ui = true;
         }
 
         // 更新上次渲染时的光标状态
-        self.last_render_cursor = self.cursor;
+        self.render_ctx.last_render_cursor = self.window_ctx.cursor;
 
-        self.renderer
-            .present(None, frame.texture.format(), texture_view, &self.viewport);
+        self.render_ctx.renderer
+            .present(None, frame.texture.format(), texture_view, &self.render_ctx.viewport);
 
         // 处理消息（在 interface 被释放之后，避免借用冲突）
         let mut has_state_change = false;
@@ -97,7 +97,7 @@ impl Host {
         let is_ui_updated = matches!(state, user_interface::State::Updated { .. });
         if has_state_change || is_ui_updated {
             self.ui_dirty = true;
-            self.window.request_redraw();
+            self.window_ctx.window.request_redraw();
         }
 
         // 更新鼠标光标
@@ -106,10 +106,10 @@ impl Host {
         } = state
         {
             if let Some(icon) = iced_winit::conversion::mouse_interaction(mouse_interaction) {
-                self.window.set_cursor(icon);
-                self.window.set_cursor_visible(true);
+                self.window_ctx.window.set_cursor(icon);
+                self.window_ctx.window.set_cursor_visible(true);
             } else {
-                self.window.set_cursor_visible(false);
+                self.window_ctx.window.set_cursor_visible(false);
             }
         }
     }

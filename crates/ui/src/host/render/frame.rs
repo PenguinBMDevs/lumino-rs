@@ -32,7 +32,7 @@ impl Host {
             self.root.editor.playback_position = tick;
             // 播放时自动滚动会改变 scroll_x，仅请求重绘（canvas/WGPU层处理）
             if self.root.editor.update_auto_scroll(tick) {
-                self.window.request_redraw();
+                self.window_ctx.window.request_redraw();
             }
         }
     }
@@ -42,7 +42,7 @@ impl Host {
         if !self.root.should_render_preview_note() {
             self.root.update_editor_cursor(None);
         } else {
-            self.root.update_editor_cursor(self.cursor_position);
+            self.root.update_editor_cursor(self.window_ctx.cursor_position);
         }
     }
 }

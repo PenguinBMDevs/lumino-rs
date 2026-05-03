@@ -39,7 +39,7 @@ impl Host {
         let snap_precision = self.root.editor.editor_state.view.snap_precision;
 
         // 获取双缓冲的后缓冲区写入引用
-        let instances = unsafe { self.render_cache.note_instances_buffer.write_buffer() };
+        let instances = unsafe { self.render_ctx.render_cache.note_instances_buffer.write_buffer() };
         instances.clear();
 
         // 预分配容量
@@ -78,7 +78,7 @@ impl Host {
         );
 
         // 交换双缓冲区，使新数据对渲染线程可见
-        self.render_cache.note_instances_version = self.render_cache.note_instances_buffer.swap();
+        self.render_ctx.render_cache.note_instances_version = self.render_ctx.render_cache.note_instances_buffer.swap();
     }
 
     /// 将音符添加到实例列表

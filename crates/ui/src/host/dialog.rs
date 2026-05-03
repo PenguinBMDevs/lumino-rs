@@ -9,14 +9,14 @@ impl Host {
     pub fn set_load_confirm_dialog(&mut self, file_path: &str, size_mb: f64) {
         self.root.set_load_confirm_dialog(file_path, size_mb);
         self.ui_dirty = true;
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
 
     /// 设置自定义精度对话框是否打开（用于独立对话框窗口）
     pub fn set_custom_precision_dialog_open(&mut self, open: bool) {
         self.root.set_custom_precision_dialog_open(open);
         self.ui_dirty = true;
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
 
     /// 获取并清空对话框结果
@@ -28,14 +28,14 @@ impl Host {
     pub fn set_custom_precision(&mut self, ticks: f32) {
         self.root.set_custom_precision(ticks);
         self.ui_dirty = true;
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
 
     /// 设置协作对话框是否打开（用于独立对话框窗口）
     pub fn set_collaboration_dialog_open(&mut self, open: bool) {
         self.root.set_collaboration_dialog_open(open);
         self.ui_dirty = true;
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
 
     /// 设置协作视图状态（用于独立对话框窗口）
@@ -48,7 +48,7 @@ impl Host {
         self.root
             .set_collaboration_view_state(state, invite_code, room_name);
         self.ui_dirty = true;
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
 
     /// 更新远端鼠标位置
@@ -68,7 +68,7 @@ impl Host {
                 color: color.into(),
                 username: username.into(),
             });
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
 
     /// 移除远端鼠标
@@ -77,14 +77,14 @@ impl Host {
             .update(message::Message::CollaborationRemoteUserLeft {
                 user_id: user_id.into(),
             });
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
 
     /// 更新远端音符
     pub fn update_remote_note(&mut self, operation: String) {
         self.root
             .update(message::Message::CollaborationRemoteNoteUpdate { operation });
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
     /// 应用远程笔记操作到本地编辑器（委托给 Root 实现）
     pub fn apply_remote_note_operation(
@@ -92,7 +92,7 @@ impl Host {
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
         self.root.apply_remote_note_operation(operation);
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
 
     /// 获取当前 PPQ (Pulses Per Quarter note)
@@ -104,7 +104,7 @@ impl Host {
     pub fn update_progress(&mut self, progress: Option<(String, f64)>) {
         self.root.update(message::Message::Progress(progress));
         self.ui_dirty = true;
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
 
     /// 更新主题
@@ -112,7 +112,7 @@ impl Host {
         self.root.update(window::Event::theme(theme));
         self.root.editor.grid_cache.clear();
         self.ui_dirty = true;
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
 
     /// 打开协作对话框并设置为连接中状态（用于调试模式自动连接）
@@ -125,13 +125,13 @@ impl Host {
         self.root
             .open_collaboration_dialog_with_state(host, port, username);
         self.ui_dirty = true;
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
 
     /// 从另一个 Host 同步协作状态（用于对话框窗口同步主窗口状态）
     pub fn sync_collaboration_state_from(&mut self, other: &Host) {
         self.root.sync_collaboration_state_from(&other.root);
         self.ui_dirty = true;
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
 }

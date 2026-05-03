@@ -4,12 +4,12 @@ use crate::host::Host;
 impl Host {
     /// 收集视口信息
     pub(super) fn collect_viewport_info(&self) -> ViewportInfo {
-        let phys = self.viewport.physical_size();
+        let phys = self.render_ctx.viewport.physical_size();
         let es = &self.root.editor.editor_state;
         ViewportInfo {
-            logical_size: self.viewport.logical_size(),
+            logical_size: self.render_ctx.viewport.logical_size(),
             physical_size: (phys.width, phys.height),
-            scale: self.viewport.scale_factor(),
+            scale: self.render_ctx.viewport.scale_factor(),
             canvas_offset: es.canvas.offset,
             canvas_size: es.canvas.size,
         }

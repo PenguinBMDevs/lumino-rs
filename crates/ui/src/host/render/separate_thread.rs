@@ -27,7 +27,7 @@ impl Host {
         frame: &wgpu::SurfaceTexture,
         gfx: &lumino_gfx::Context,
     ) {
-        let Some(ref wgpu_thread) = self.wgpu_render_thread else {
+        let Some(ref wgpu_thread) = self.render_ctx.wgpu_render_thread else {
             return;
         };
 
@@ -85,19 +85,19 @@ impl Host {
         let params = self.build_render_params(render_data);
 
         // 发送渲染参数到 WGPU 线程（非阻塞）
-        if let Some(ref wgpu_thread) = self.wgpu_render_thread {
+        if let Some(ref wgpu_thread) = self.render_ctx.wgpu_render_thread {
             wgpu_thread.send_params(params);
         }
     }
 
     /// 验证渲染线程是否就绪
     pub(super) fn validate_render_thread_ready(&self) -> bool {
-        if self.wgpu_render_thread.is_none() {
+        if self.render_ctx.wgpu_render_thread.is_none() {
             tracing::error!("redraw_separate_thread called but wgpu_render_thread is None");
             return false;
         }
 
-        if self.note_events_tx.is_none() {
+        if self.render_ctx.note_events_tx.is_none() {
             tracing::error!("redraw_separate_thread called but note_events_tx is None");
             return false;
         }
@@ -110,7 +110,7 @@ impl Host {
         let editor = &self.root.editor;
         let scroll = editor.scroll();
         let zoom = editor.zoom();
-        let viewport_size = self.viewport.logical_size();
+        let viewport_size = self.render_ctx.viewport.logical_size();
 
         let grid_instances = {
             puffin::profile_scope!("generate_grid_instances");
@@ -172,7 +172,7 @@ impl Host {
         );
 
         let note_data_changed = note_index_dirty
-            || unsafe { self.render_cache.note_instances_is_empty() }
+            || unsafe { self.render_ctx.render_cache.note_instances_is_empty() }
             || is_drawing;
 
         if !note_data_changed {
@@ -184,7 +184,7 @@ impl Host {
 
         // 双缓冲模式下，数据已经通过 swap() 传递，不需要 clone
         // 渲染线程可以直接从双缓冲读取
-        if let Some(ref _tx) = self.note_events_tx {
+        if let Some(ref _tx) = self.render_ctx.note_events_tx {
             // 注意：如果使用独立渲染线程，需要通过其他方式同步
             // 这里暂时保留通道发送，但实际数据已经通过双缓冲传递
             // TODO: 重构为直接使用双缓冲读取
@@ -200,7 +200,7 @@ impl Host {
         let es = &self.root.editor.editor_state;
         let canvas_offset = es.canvas.offset;
         let canvas_size = es.canvas.size;
-        let physical_size = self.viewport.physical_size();
+        let physical_size = self.render_ctx.viewport.physical_size();
         let theme = self.root.theme();
         let colors = super::data::GridColors::from_theme(&theme);
 
@@ -218,7 +218,7 @@ impl Host {
         RenderParams {
             viewport_size: (physical_size.width, physical_size.height),
             logical_size: (data.viewport_size.width, data.viewport_size.height),
-            scale_factor: self.viewport.scale_factor(),
+            scale_factor: self.render_ctx.viewport.scale_factor(),
             scroll: data.scroll,
             zoom: data.zoom,
             keyboard_width,

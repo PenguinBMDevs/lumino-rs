@@ -30,7 +30,12 @@ mod dialog;
 mod editor_ops;
 mod event;
 mod render;
+mod render_ctx;
+mod window_ctx;
 pub mod types;
+
+use render_ctx::RenderContext;
+use window_ctx::WindowContext;
 
 pub use cache::RenderCache;
 pub use types::{DialogResult, NoteData, TrackNotes};
@@ -40,57 +45,30 @@ pub use types::{DialogResult, NoteData, TrackNotes};
 /// 线程模型：
 /// - UI线程（主线程）：处理事件、更新状态、生成渲染命令
 /// - 渲染线程（独立线程）：接收命令、管理GPU资源、执行实际渲染
+///
+/// 架构拆分：
+/// - `render_ctx`: 渲染上下文（渲染器、GPU资源、渲染线程）
+/// - `window_ctx`: 窗口上下文（窗口句柄、光标、剪贴板）
+/// - 直连字段：框架/全局状态（root、events、帧统计等）
 pub struct Host {
-    pub(crate) window: Arc<winit::window::Window>,
+    /// 渲染上下文
+    pub(crate) render_ctx: RenderContext,
+    /// 窗口上下文
+    pub(crate) window_ctx: WindowContext,
+    /// 应用状态根节点
     pub(crate) root: root::Root,
-    pub(crate) renderer: Renderer,
+    /// 事件列表
     pub(crate) events: Vec<iced_core::Event>,
-    pub(crate) cursor: mouse::Cursor,
-    pub(crate) cache: Cache,
-    pub(crate) clipboard: Clipboard,
-    pub(crate) viewport: Viewport,
-    pub(crate) pending_window_action: Option<window::TrafficAction>,
-    pub(crate) pending_drag: bool,
-    /// 逻辑光标位置（用于音符预览和触控拖动）
-    pub cursor_position: Option<iced_core::Point>,
-    pub(crate) last_fps_update: Instant,
-    /// 帧计数器（用于 FPS 计算）
-    pub(crate) frame_count: u32,
-    /// 是否正在拖拽调整工具栏高度
-    pub(crate) is_toolbar_resizing: bool,
-    /// 是否有鼠标按钮按下（用于优化纯光标移动事件处理）
-    pub(crate) is_mouse_pressed: bool,
-    /// 是否跳过 Iced UI 渲染（用于性能测试）
-    pub skip_ui_rendering: bool,
-    /// 音符渲染器
-    pub(crate) note_renderer: lumino_gfx::NoteRenderer,
-    /// 网格渲染器
-    pub(crate) grid_renderer: lumino_gfx::GridRenderer,
     /// 上一帧时间
     pub(crate) last_frame_time: Instant,
-    /// iced UI 树是否需要重建（事件产生了状态变更时才为 true）
+    /// 上次 FPS 更新时间
+    pub(crate) last_fps_update: Instant,
+    /// 帧计数器
+    pub(crate) frame_count: u32,
+    /// 跳过 Iced UI 渲染（性能测试用）
+    pub skip_ui_rendering: bool,
+    /// UI 脏标记
     pub(crate) ui_dirty: bool,
-    /// 渲染缓存 - 避免重复上传数据
-    pub(crate) render_cache: RenderCache,
-    /// 上次渲染时的编辑状态（用于检测 preview / drawing 音符变化）
-    pub(crate) last_edit_state: crate::editor::EditState,
-    /// 上次渲染时的光标位置（用于检测 preview 音符变化）
-    pub(crate) last_cursor_position: Option<iced_core::Point>,
-    /// WGPU 渲染线程
-    pub(crate) wgpu_render_thread: Option<WgpuRenderThread>,
-    /// WGPU 渲染线程通信
-    pub(crate) note_events_tx: Option<std::sync::mpsc::Sender<lumino_gfx::NoteEvent>>,
-    /// 是否使用新的分离渲染架构
-    pub(crate) use_separate_render_thread: bool,
-    /// 是否已经渲染过 UI（用于首次渲染缓存判断）
-    pub(crate) has_rendered_ui: bool,
-    /// 上次渲染时的光标状态（用于检测光标移动，确保鼠标指针样式更新）
-    pub(crate) last_render_cursor: iced_core::mouse::Cursor,
-
-    // WGPU 资源（为离屏渲染保留）
-    pub(crate) device: wgpu::Device,
-    pub(crate) queue: wgpu::Queue,
-    pub(crate) format: wgpu::TextureFormat,
 }
 
 impl Host {
@@ -106,65 +84,38 @@ impl Host {
         let viewport =
             Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
 
-        let clipboard = Clipboard::connect(window.clone());
-
         // 根据配置创建字体
         let font = create_font_from_config(ui_config);
 
-        // 初始化 iced 渲染器
-        let renderer = {
-            let engine = Engine::new(
-                &gfx.adapter,
-                gfx.device.clone(),
-                gfx.queue.clone(),
-                gfx.format,
-                None,
-                iced_wgpu::graphics::Shell::headless(),
-            );
-            Renderer::new(engine, font, Pixels::from(16))
-        };
-
-        // 创建 wgpu 音符渲染器
+        // 创建 wgpu 音符 + 网格渲染器
         let note_renderer = lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format);
-        // 创建 wgpu 网格渲染器
         let grid_renderer = lumino_gfx::GridRenderer::new(&gfx.device, gfx.format);
 
+        let render_ctx = RenderContext::new(
+            gfx.device.clone(),
+            gfx.queue.clone(),
+            gfx.format,
+            &gfx.adapter,
+            viewport,
+            note_renderer,
+            grid_renderer,
+            font,
+        );
+
         Self {
-            window,
+            render_ctx,
+            window_ctx: WindowContext::new(window),
             root: if is_progress {
                 root::Root::new_progress(&ui_config.theme)
             } else {
                 root::Root::new(ui_config)
             },
-            renderer,
             events: Vec::new(),
-            cursor: mouse::Cursor::Unavailable,
-            cache: Cache::new(),
-            clipboard,
-            viewport,
-            pending_window_action: None,
-            pending_drag: false,
-            cursor_position: None,
             last_frame_time: Instant::now(),
             last_fps_update: Instant::now(),
             frame_count: 0,
-            is_toolbar_resizing: false,
-            is_mouse_pressed: false,
             skip_ui_rendering: false,
-            note_renderer,
-            grid_renderer,
             ui_dirty: false,
-            render_cache: RenderCache::new(),
-            last_edit_state: crate::editor::EditState::default(),
-            last_cursor_position: None,
-            wgpu_render_thread: None,
-            note_events_tx: None,
-            use_separate_render_thread: false,
-            has_rendered_ui: false,
-            last_render_cursor: iced_core::mouse::Cursor::Unavailable,
-            device: gfx.device.clone(),
-            queue: gfx.queue.clone(),
-            format: gfx.format,
         }
     }
 
@@ -179,61 +130,32 @@ impl Host {
         let viewport =
             Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
 
-        let clipboard = Clipboard::connect(window.clone());
-
-        // 根据配置创建字体
         let font = create_font_from_config(ui_config);
 
-        // 初始化 iced 渲染器
-        let renderer = {
-            let engine = Engine::new(
-                &gfx.adapter,
-                gfx.device.clone(),
-                gfx.queue.clone(),
-                gfx.format,
-                None,
-                iced_wgpu::graphics::Shell::headless(),
-            );
-            Renderer::new(engine, font, Pixels::from(16))
-        };
-
-        // 创建 wgpu 音符渲染器
         let note_renderer = lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format);
-        // 创建 wgpu 网格渲染器
         let grid_renderer = lumino_gfx::GridRenderer::new(&gfx.device, gfx.format);
 
-        Self {
-            window,
-            root: root::Root::new_dialog(&ui_config.theme),
-            renderer,
-            events: Vec::new(),
-            cursor: mouse::Cursor::Unavailable,
-            cache: Cache::new(),
-            clipboard,
+        let render_ctx = RenderContext::new(
+            gfx.device.clone(),
+            gfx.queue.clone(),
+            gfx.format,
+            &gfx.adapter,
             viewport,
-            pending_window_action: None,
-            pending_drag: false,
-            cursor_position: None,
+            note_renderer,
+            grid_renderer,
+            font,
+        );
+
+        Self {
+            render_ctx,
+            window_ctx: WindowContext::new(window),
+            root: root::Root::new_dialog(&ui_config.theme),
+            events: Vec::new(),
             last_frame_time: Instant::now(),
             last_fps_update: Instant::now(),
             frame_count: 0,
-            is_toolbar_resizing: false,
-            is_mouse_pressed: false,
             skip_ui_rendering: false,
-            note_renderer,
-            grid_renderer,
             ui_dirty: false,
-            render_cache: RenderCache::new(),
-            last_edit_state: crate::editor::EditState::default(),
-            last_cursor_position: None,
-            wgpu_render_thread: None,
-            note_events_tx: None,
-            use_separate_render_thread: false,
-            has_rendered_ui: false,
-            last_render_cursor: iced_core::mouse::Cursor::Unavailable,
-            device: gfx.device.clone(),
-            queue: gfx.queue.clone(),
-            format: gfx.format,
         }
     }
 
@@ -241,7 +163,7 @@ impl Host {
     ///
     /// 这会将所有 WGPU 渲染（音符、网格、键盘、标尺）从 UI 线程完全分离
     pub fn enable_separate_render_thread(&mut self) {
-        if self.wgpu_render_thread.is_some() {
+        if self.render_ctx.wgpu_render_thread.is_some() {
             return;
         }
 
@@ -249,11 +171,11 @@ impl Host {
         let (tx, rx) = std::sync::mpsc::channel();
 
         // 启动 WGPU 渲染线程
-        match WgpuRenderThread::spawn(self.device.clone(), self.queue.clone(), self.format, rx) {
+        match WgpuRenderThread::spawn(self.render_ctx.device.clone(), self.render_ctx.queue.clone(), self.render_ctx.format, rx) {
             Ok(thread) => {
-                self.wgpu_render_thread = Some(thread);
-                self.note_events_tx = Some(tx);
-                self.use_separate_render_thread = true;
+                self.render_ctx.wgpu_render_thread = Some(thread);
+                self.render_ctx.note_events_tx = Some(tx);
+                self.render_ctx.use_separate_render_thread = true;
                 tracing::info!("Host: Separate WGPU render thread enabled");
             }
             Err(e) => {
@@ -264,17 +186,17 @@ impl Host {
 
     /// 禁用分离渲染线程
     pub fn disable_separate_render_thread(&mut self) {
-        if let Some(thread) = self.wgpu_render_thread.take() {
+        if let Some(thread) = self.render_ctx.wgpu_render_thread.take() {
             thread.shutdown();
-            self.use_separate_render_thread = false;
-            self.note_events_tx = None;
+            self.render_ctx.use_separate_render_thread = false;
+            self.render_ctx.note_events_tx = None;
             tracing::info!("Host: Separate WGPU render thread disabled");
         }
     }
 
     /// 获取分离渲染线程统计
     pub fn separate_render_stats(&self) -> Option<crate::WgpuRenderStats> {
-        self.wgpu_render_thread.as_ref().map(|t| t.stats())
+        self.render_ctx.wgpu_render_thread.as_ref().map(|t| t.stats())
     }
 
     /// 获取 root 引用
@@ -294,15 +216,15 @@ impl Host {
 
     /// 调整窗口大小
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.viewport = Viewport::with_physical_size(
+        self.render_ctx.viewport = Viewport::with_physical_size(
             Size::new(width, height),
-            self.window.scale_factor() as f32,
+            self.window_ctx.window.scale_factor() as f32,
         );
     }
 
     /// 获取当前光标位置（逻辑坐标）
     pub fn cursor_position(&self) -> Option<iced_core::Point> {
-        self.cursor_position
+        self.window_ctx.cursor_position
     }
 
     /// 收集所有组件的内存占用快照（Root + RenderCache）
@@ -310,8 +232,8 @@ impl Host {
         let mut breakdown = self.root.memory_breakdown();
 
         // 从 RenderCache 获取 note_instances_buffer 双缓冲容量
-        let (front_cap, front_len) = self.render_cache.note_instances_buffer.front_info();
-        let (back_cap, back_len) = self.render_cache.note_instances_buffer.back_info();
+        let (front_cap, front_len) = self.render_ctx.render_cache.note_instances_buffer.front_info();
+        let (back_cap, back_len) = self.render_ctx.render_cache.note_instances_buffer.back_info();
         let instance_size = std::mem::size_of::<lumino_gfx::NoteInstance>() as u64;
 
         tracing::debug!(

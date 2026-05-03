@@ -10,14 +10,14 @@ impl Host {
         current_hash: u64,
         viewport: &ViewportInfo,
     ) {
-        if current_hash == self.render_cache.grid_viewport_hash {
+        if current_hash == self.render_ctx.render_cache.grid_viewport_hash {
             return;
         }
 
         // 视口变化，重新生成网格线
         self.root
-            .update_grid_line_instances(&mut self.render_cache.grid_instances);
-        self.render_cache.grid_viewport_hash = current_hash;
+            .update_grid_line_instances(&mut self.render_ctx.render_cache.grid_instances);
+        self.render_ctx.render_cache.grid_viewport_hash = current_hash;
 
         let theme = self.root.theme();
         let colors = GridColors::from_theme(&theme);
@@ -25,7 +25,7 @@ impl Host {
         let v = &editor.editor_state.view;
         let max_key_index = (v.visible_key_count.saturating_sub(1)) as f32;
 
-        self.grid_renderer.prepare(
+        self.render_ctx.grid_renderer.prepare(
             &gfx.queue,
             (viewport.logical_size.width, viewport.logical_size.height),
             v.scroll_x,
@@ -55,17 +55,17 @@ impl Host {
         let is_drawing = matches!(current_edit_state, crate::editor::EditState::Drawing { .. });
 
         // 视口变化（滚动/缩放）：重新过滤洋葱皮实例（无需全量重建）
-        let viewport_changed = current_hash != self.render_cache.note_viewport_hash;
+        let viewport_changed = current_hash != self.render_ctx.render_cache.note_viewport_hash;
 
         // 数据变化（编辑/加载）
         let note_data_changed = note_index_dirty
-            || unsafe { self.render_cache.note_instances_is_empty() }
+            || unsafe { self.render_ctx.render_cache.note_instances_is_empty() }
             || is_drawing;
 
         if !note_data_changed && !viewport_changed {
             // 即使没有数据变化也更新状态
-            self.last_cursor_position = self.cursor_position;
-            self.last_edit_state = current_edit_state;
+            self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;
+            self.render_ctx.last_edit_state = current_edit_state;
             return false;
         }
 
@@ -73,11 +73,11 @@ impl Host {
         if note_data_changed || viewport_changed {
             puffin::profile_scope!("generate_note_instances");
             self.update_all_note_instances_fast();
-            self.render_cache.note_viewport_hash = current_hash;
+            self.render_ctx.render_cache.note_viewport_hash = current_hash;
         }
 
-        self.last_edit_state = current_edit_state;
-        self.last_cursor_position = self.cursor_position;
+        self.render_ctx.last_edit_state = current_edit_state;
+        self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;
 
         if note_index_dirty {
             self.root.editor.note_index_dirty.set(false);
@@ -97,10 +97,10 @@ impl Host {
         camera: lumino_gfx::CameraUniform,
     ) {
         // 从双缓冲的前缓冲区读取音符实例
-        let note_instances = unsafe { self.render_cache.note_instances_buffer.read_buffer() };
+        let note_instances = unsafe { self.render_ctx.render_cache.note_instances_buffer.read_buffer() };
 
         if notes_changed && !note_instances.is_empty() {
-            self.note_renderer.prepare_notes(
+            self.render_ctx.note_renderer.prepare_notes(
                 encoder,
                 note_instances,
                 &gfx.device,
@@ -108,7 +108,7 @@ impl Host {
                 camera,
             );
         } else if !note_instances.is_empty() {
-            self.note_renderer.prepare_pass(encoder, camera, &gfx.queue);
+            self.render_ctx.note_renderer.prepare_pass(encoder, camera, &gfx.queue);
         }
     }
 
@@ -120,6 +120,7 @@ impl Host {
     ) {
         let (width, height) = *physical_size;
         let needs_resize = self
+            .render_ctx
             .render_cache
             .depth_texture
             .as_ref()
@@ -144,7 +145,7 @@ impl Host {
             view_formats: &[],
         });
 
-        self.render_cache.depth_texture = Some((
+        self.render_ctx.render_cache.depth_texture = Some((
             width,
             height,
             depth_tex.create_view(&wgpu::TextureViewDescriptor::default()),
@@ -160,7 +161,7 @@ impl Host {
         clear_color: wgpu::Color,
         viewport: &ViewportInfo,
     ) {
-        let Some((_, _, depth_view)) = self.render_cache.depth_texture.as_ref() else {
+        let Some((_, _, depth_view)) = self.render_ctx.render_cache.depth_texture.as_ref() else {
             tracing::error!("depth_texture not available");
             return;
         };
@@ -193,14 +194,14 @@ impl Host {
         // 绘制网格线
         if scissor.has_valid_region {
             render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
-            self.grid_renderer.draw(&mut render_pass, 1);
+            self.render_ctx.grid_renderer.draw(&mut render_pass, 1);
         }
 
         // 绘制音符（从双缓冲读取）
-        let note_instances = unsafe { self.render_cache.note_instances_buffer.read_buffer() };
+        let note_instances = unsafe { self.render_ctx.render_cache.note_instances_buffer.read_buffer() };
         if !note_instances.is_empty() && scissor.has_valid_region {
             render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
-            self.note_renderer.draw(
+            self.render_ctx.note_renderer.draw(
                 &mut render_pass,
                 true,
                 Some((scissor.x, scissor.y, scissor.width, scissor.height)),

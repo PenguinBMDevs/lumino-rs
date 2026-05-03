@@ -93,7 +93,7 @@ impl Host {
         self.update_cursor_for_preview();
 
         // 根据渲染模式选择不同的渲染路径
-        if self.use_separate_render_thread {
+        if self.render_ctx.use_separate_render_thread {
             self.render_with_separate_thread(frame, gfx);
         } else {
             self.render_single_thread(frame, view, gfx);
@@ -103,6 +103,6 @@ impl Host {
     /// 清除 UI 缓存以强制重绘
     #[inline]
     pub(crate) fn clear_cache(&mut self) {
-        self.cache = std::mem::take(&mut self.cache);
+        self.render_ctx.cache = std::mem::take(&mut self.render_ctx.cache);
     }
 }

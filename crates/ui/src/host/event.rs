@@ -32,7 +32,7 @@ impl Host {
                 self.root
                     .update(message::Message::Toolbar(toolbar::Event::Play));
             }
-            self.window.request_redraw();
+            self.window_ctx.window.request_redraw();
             return;
         }
 
@@ -53,7 +53,7 @@ impl Host {
         if let Some(action) = action {
             self.root.handle_editor_action(action);
             // 仅请求重绘，不重建UI树（编辑器操作由canvas/WGPU层处理）
-            self.window.request_redraw();
+            self.window_ctx.window.request_redraw();
         }
     }
 
@@ -61,16 +61,16 @@ impl Host {
     pub fn cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
         puffin::profile_function!();
 
-        let logical_pos = conversion::cursor_position(position, self.viewport.scale_factor());
-        self.cursor = mouse::Cursor::Available(logical_pos);
+        let logical_pos = conversion::cursor_position(position, self.render_ctx.viewport.scale_factor());
+        self.window_ctx.cursor = mouse::Cursor::Available(logical_pos);
         // 存储逻辑坐标（与 iced 保持一致）
-        self.cursor_position = Some(logical_pos);
+        self.window_ctx.cursor_position = Some(logical_pos);
 
         // 如果正在调整工具栏高度，更新工具栏高度
-        if self.is_toolbar_resizing {
+        if self.window_ctx.is_toolbar_resizing {
             self.root.toolbar.update_resize_position(logical_pos.y);
             self.ui_dirty = true;
-            self.window.request_redraw();
+            self.window_ctx.window.request_redraw();
         }
 
         // 如果正在调整侧边栏宽度，更新侧边栏宽度
@@ -83,7 +83,7 @@ impl Host {
                 .editor
                 .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset.y));
             self.ui_dirty = true;
-            self.window.request_redraw();
+            self.window_ctx.window.request_redraw();
         }
     }
 
@@ -99,7 +99,7 @@ impl Host {
         match &event {
             Resized(_) => {
                 self.root
-                    .update(message::Window::maximized(self.window.is_maximized()));
+                    .update(message::Window::maximized(self.window_ctx.window.is_maximized()));
             }
             Focused(r) => {
                 self.root.update(message::Window::focused(*r));
@@ -115,18 +115,18 @@ impl Host {
             MouseInput { state, button, .. } => {
                 // 更新鼠标按钮状态
                 if *button == winit::event::MouseButton::Left {
-                    self.is_mouse_pressed = *state == ElementState::Pressed;
+                    self.window_ctx.is_mouse_pressed = *state == ElementState::Pressed;
                 }
 
                 // 全局监听鼠标释放事件，结束工具栏拖拽状态
                 if *button == winit::event::MouseButton::Left
                     && *state == ElementState::Released
-                    && self.is_toolbar_resizing
+                    && self.window_ctx.is_toolbar_resizing
                 {
-                    self.is_toolbar_resizing = false;
+                    self.window_ctx.is_toolbar_resizing = false;
                     self.root.toolbar.end_resize();
                     self.ui_dirty = true;
-                    self.window.request_redraw();
+                    self.window_ctx.window.request_redraw();
                 }
 
                 // 全局监听鼠标释放事件，结束侧边栏拖拽状态
@@ -136,7 +136,7 @@ impl Host {
                 {
                     self.root.sidebar.end_resize();
                     self.ui_dirty = true;
-                    self.window.request_redraw();
+                    self.window_ctx.window.request_redraw();
                 }
             }
             _ => (),
@@ -144,7 +144,7 @@ impl Host {
 
         // 将窗口事件映射到 iced 事件
         if let Some(event) =
-            conversion::window_event(event, self.window.scale_factor() as f32, modifiers)
+            conversion::window_event(event, self.window_ctx.window.scale_factor() as f32, modifiers)
         {
             let converted_events = convert_touch_to_mouse(event);
 
@@ -169,7 +169,7 @@ impl Host {
         // 这样可以合并同一帧内的多个事件，减少 UI 重建次数
         // 但如果有事件需要处理，必须请求重绘以确保事件被及时处理
         if !self.events.is_empty() {
-            self.window.request_redraw();
+            self.window_ctx.window.request_redraw();
         }
     }
 
@@ -196,15 +196,15 @@ impl Host {
     /// 构建 UI 界面并处理事件，返回产生的消息
     fn build_ui_and_process_events(&mut self) -> Vec<crate::message::Message> {
         // 临时取出缓存以避免借用冲突
-        let cache = std::mem::take(&mut self.cache);
+        let cache = std::mem::take(&mut self.render_ctx.cache);
 
         let mut interface = {
             puffin::profile_scope!("build_ui");
             iced_winit::runtime::user_interface::UserInterface::build(
                 self.root.view(),
-                self.viewport.logical_size(),
+                self.render_ctx.viewport.logical_size(),
                 cache,
-                &mut self.renderer,
+                &mut self.render_ctx.renderer,
             )
         };
 
@@ -214,15 +214,15 @@ impl Host {
             puffin::profile_scope!("update_ui");
             let _ = interface.update(
                 &self.events,
-                self.cursor,
-                &mut self.renderer,
-                &mut self.clipboard,
+                self.window_ctx.cursor,
+                &mut self.render_ctx.renderer,
+                &mut self.window_ctx.clipboard,
                 &mut messages,
             );
         }
 
         self.events.clear();
-        self.cache = interface.into_cache();
+        self.render_ctx.cache = interface.into_cache();
 
         messages
     }
@@ -245,7 +245,7 @@ impl Host {
         if has_state_change {
             self.ui_dirty = true;
         }
-        self.window.request_redraw();
+        self.window_ctx.window.request_redraw();
     }
 
     /// 处理单个消息，返回是否有状态变更
@@ -253,37 +253,37 @@ impl Host {
         // 处理窗口动作消息
         match &message {
             message::Message::Window(window::Event::TrafficAction(action)) => {
-                self.pending_window_action = Some(action.clone());
+                self.window_ctx.pending_window_action = Some(action.clone());
                 return false; // 窗口动作不需要 UI 重建
             }
             message::Message::Window(window::Event::ToggleMaximize) => {
-                self.pending_window_action = Some(window::TrafficAction::ToggleMaximize);
+                self.window_ctx.pending_window_action = Some(window::TrafficAction::ToggleMaximize);
                 return false;
             }
             message::Message::Window(window::Event::Close) => {
-                self.pending_window_action = Some(window::TrafficAction::Close);
+                self.window_ctx.pending_window_action = Some(window::TrafficAction::Close);
                 return false;
             }
             message::Message::Window(window::Event::Drag) => {
-                self.pending_drag = true;
+                self.window_ctx.pending_drag = true;
                 return false;
             }
             // 处理工具栏调整大小事件
             message::Message::Toolbar(toolbar::Event::ResizeDragStarted(_)) => {
-                if let Some(pos) = self.cursor_position {
-                    self.is_toolbar_resizing = true;
+                if let Some(pos) = self.window_ctx.cursor_position {
+                    self.window_ctx.is_toolbar_resizing = true;
                     self.root.toolbar.start_resize(pos.y);
                 }
                 return true; // 工具栏大小改变需要 UI 重建
             }
             message::Message::Toolbar(toolbar::Event::ResizeDragEnded) => {
-                self.is_toolbar_resizing = false;
+                self.window_ctx.is_toolbar_resizing = false;
                 self.root.toolbar.end_resize();
                 return true;
             }
             // 处理侧边栏调整大小事件
             message::Message::Sidebar(sidebar::Event::ResizeDragStarted(_)) => {
-                if let Some(pos) = self.cursor_position {
+                if let Some(pos) = self.window_ctx.cursor_position {
                     self.root.sidebar.start_resize(pos.x);
                 }
                 return true; // 侧边栏大小改变需要 UI 重建
@@ -302,13 +302,13 @@ impl Host {
 
     /// 获取并清除待处理的窗口动作
     pub fn take_window_action(&mut self) -> Option<window::TrafficAction> {
-        self.pending_window_action.take()
+        self.window_ctx.pending_window_action.take()
     }
 
     /// 获取并清除待处理的拖动标记
     pub fn take_drag(&mut self) -> bool {
-        let drag = self.pending_drag;
-        self.pending_drag = false;
+        let drag = self.window_ctx.pending_drag;
+        self.window_ctx.pending_drag = false;
         drag
     }
 
@@ -319,7 +319,7 @@ impl Host {
             iced_core::mouse::Event::ButtonReleased(iced_core::mouse::Button::Left),
         ));
         // 同时释放触控状态（如果有的话）
-        if let Some(pos) = self.cursor_position {
+        if let Some(pos) = self.window_ctx.cursor_position {
             self.events.push(iced_core::Event::Touch(
                 iced_core::touch::Event::FingerLifted {
                     id: iced_core::touch::Finger(0),
