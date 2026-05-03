@@ -81,6 +81,26 @@ raw-window-handle = "0.6"
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = "0.17.1"
 
+[package.metadata.deb]
+# maintainer = "Lumino Team"
+copyright = "2025, Lumino Team"
+license-file = ["LICENSE", "0"]
+extended-description = "A fast Black MIDI editor built in Rust."
+section = "sound"
+priority = "optional"
+assets = [
+    ["target/release/lumino-rs", "usr/bin/lumino-rs", "755"],
+    ["resources/icons/**/*", "usr/share/lumino-rs/resources/icons/", "644"],
+]
+
+[package.metadata.generate-rpm]
+summary = "Lumino - A Fast Black MIDI Editor"
+group = "Applications/Sound"
+assets = [
+    { source = "target/release/lumino-rs", dest = "/usr/bin/lumino-rs", mode = "0755" },
+    { source = "resources/icons/**/*", dest = "/usr/share/lumino-rs/resources/icons/", mode = "0644" },
+]
+
 [profile.dev]
 incremental = true
 

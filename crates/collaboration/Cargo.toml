@@ -14,16 +14,22 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 
-# WebSocket客户端
-tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
+# WebSocket客户端（非Windows用rustls，Windows用native-tls）
 futures = "0.3"
 url = "2.5"
 
 # 异步运行时工具
 tokio-util = "0.7"
 
-# HTTP 客户端
+# HTTP 客户端（非Windows用rustls，Windows用native-tls）
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
+reqwest = { version = "0.12", features = ["json", "native-tls"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

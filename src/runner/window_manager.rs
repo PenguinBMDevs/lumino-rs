@@ -197,7 +197,7 @@ impl WindowManager {
     }
 
     /// 构建窗口属性
-    fn build_window_attributes(ui_state: &UiState, _use_native_titlebar: bool) -> WindowAttributes {
+    fn build_window_attributes(ui_state: &UiState, use_native_titlebar: bool) -> WindowAttributes {
         let mut attributes = WindowAttributes::default()
             .with_min_inner_size(dpi::LogicalSize {
                 width: MIN_WINDOW_WIDTH,
