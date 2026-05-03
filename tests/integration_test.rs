@@ -14,9 +14,10 @@ fn get_test_file_path(relative_path: &str) -> PathBuf {
 
 /// 测试 1: MIDI 转 DMS 数据相似度测试
 ///
-/// 加载 dms-loader-test.mid，转换为 DMS 格式，
-/// 与 dms-loader-test.dms 对比语义信息相似度
+/// 需要 test-file/DMS-Loader/ 测试文件（不属于 git 仓库），因此默认忽略。
+/// 运行: `cargo test test_midi_to_dms_similarity -- --ignored`
 #[test]
+#[ignore = "需要 test-file/DMS-Loader/ 测试文件"]
 fn test_midi_to_dms_similarity() {
     let midi_path = get_test_file_path("DMS-Loader/dms-loader-test.mid");
     let dms_reference_path = get_test_file_path("DMS-Loader/dms-loader-test.dms");
@@ -180,8 +181,9 @@ fn test_midi_to_dms_similarity() {
 
 /// 测试 2: DMS 文件元数据验证测试
 ///
-/// 使用 dms-loader-test.dms 验证音符数量和音轨数量
+/// 需要 test-file/DMS-Loader/dms-loader-test.dms（不属于 git 仓库），默认忽略。
 #[test]
+#[ignore = "需要 test-file/DMS-Loader/dms-loader-test.dms 测试文件"]
 fn test_dms_metadata_validation() {
     // 使用较小的测试文件
     let dms_path = get_test_file_path("DMS-Loader/dms-loader-test.dms");
@@ -269,10 +271,10 @@ fn test_dms_metadata_validation() {
 
 /// 测试 3: 大文件内存占用测试
 ///
-/// 加载 Rekt Apple!!.mid，验证内存占用不超过 30MB
-/// 使用与主程序相同的流式扫描逻辑
+/// 需要 test-file/MIDI-Loader/Rekt Apple!!.mid（不属于 git 仓库），默认忽略。
 #[test]
 #[cfg(target_os = "windows")]
+#[ignore = "需要 test-file/MIDI-Loader/ 测试文件"]
 fn test_midi_memory_usage() {
     let midi_path = get_test_file_path("MIDI-Loader/Rekt Apple!!.mid");
     assert!(midi_path.exists(), "MIDI 测试文件不存在: {:?}", midi_path);
@@ -323,9 +325,9 @@ fn get_process_memory_kb() -> u64 {
 
 /// 测试 4: MIDI-LMPJ 往返转换测试
 ///
-/// 加载 Internet Yamero.mid，转换为 LMPJ，再转回 MIDI，
-/// 验证语义信息完全匹配
+/// 需要 test-file/LMPJ-Exporter/Internet Yamero.mid（不属于 git 仓库），默认忽略。
 #[test]
+#[ignore = "需要 test-file/LMPJ-Exporter/Internet Yamero.mid 测试文件"]
 fn test_midi_lmpj_roundtrip() {
     let midi_path = get_test_file_path("LMPJ-Exporter/Internet Yamero.mid");
 

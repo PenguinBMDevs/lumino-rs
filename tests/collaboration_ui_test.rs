@@ -76,8 +76,10 @@ impl EventCollector {
 }
 
 /// 所有协作UI测试的主入口
-/// 使用单个测试函数顺序执行所有子测试，避免并行冲突
+/// 需要外部协作服务器，默认忽略。
+/// 运行: `cargo test test_collaboration_ui_all -- --ignored`
 #[tokio::test]
+#[ignore = "需要外部协作服务器"]
 async fn test_collaboration_ui_all() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n======================================================");
     println!("  协作UI集成测试套件");

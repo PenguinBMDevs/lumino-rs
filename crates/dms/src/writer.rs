@@ -123,3 +123,95 @@ pub fn write_dms_file(root: &DmsCompositeNode) -> Result<Vec<u8>> {
     let writer = DmsWriter::new();
     writer.to_file_bytes(root)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::node::{
+        DmsAnsiStringNode, DmsCompositeNode, DmsIntegerNode, DmsNode,
+    };
+    use crate::node_type::DmsNodeType;
+    use crate::reader::read_dms_file;
+    use bytes::Bytes;
+
+    /// 辅助：构建一个简单但完整的 DMS 节点树
+    fn build_test_tree() -> DmsCompositeNode {
+        // 使用 DmsCompositeNode::new() 创建空的复合节点（不从字节流解析）
+        let mut root = DmsCompositeNode::new(DmsNodeType::ROOT, -1);
+
+        // SONG_NAME（DMS 使用 GB18030 编码，ASCII 字符兼容）
+        let name = DmsAnsiStringNode::new(DmsNodeType::SONG_NAME, 0, Bytes::from("Test Song"));
+        root.children.push(Box::new(name));
+
+        // SONG_PPQN
+        let ppqn_data = Bytes::from(vec![0xE0u8, 0x01, 0x00, 0x00]);
+        let ppqn = DmsIntegerNode::new(DmsNodeType::SONG_PPQN, 0, ppqn_data);
+        root.children.push(Box::new(ppqn));
+
+        // TRACK with NOTE（NOTE_EVENT 也是复合节点）
+        let mut track = DmsCompositeNode::new(DmsNodeType::TRACK, 0);
+        let note = DmsCompositeNode::new(DmsNodeType::NOTE_EVENT, 1);
+        track.children.push(Box::new(note));
+        root.children.push(Box::new(track));
+
+        root
+    }
+
+    #[test]
+    fn test_write_to_bytes() {
+        let root = build_test_tree();
+        let writer = DmsWriter::new();
+        let bytes = writer.to_bytes(&root).unwrap();
+        assert!(!bytes.is_empty(), "writer output should not be empty");
+        assert!(bytes.len() > 10, "should produce reasonable output size");
+    }
+
+    #[test]
+    fn test_write_file_roundtrip() {
+        let root = build_test_tree();
+        let writer = DmsWriter::new();
+        let file_bytes = writer.to_file_bytes(&root).unwrap();
+
+        // 验证文件头包含 magic
+        assert_eq!(&file_bytes[..DMS_MAGIC.len()], &DMS_MAGIC[..]);
+
+        // 读回并验证结构
+        let read_root = read_dms_file(&file_bytes).unwrap();
+        assert_eq!(read_root.type_id(), DmsNodeType::ROOT);
+        assert!(read_root.children().len() >= 2, "should have at least 2 children");
+    }
+
+    #[test]
+    fn test_roundtrip_preserves_song_name() {
+        let root = build_test_tree();
+        let file_bytes = DmsWriter::new().to_file_bytes(&root).unwrap();
+        let read_root = read_dms_file(&file_bytes).unwrap();
+
+        // 找到 SONG_NAME 节点
+        fn find_song_name(node: &dyn DmsNode) -> Option<String> {
+            if node.type_id() == DmsNodeType::SONG_NAME {
+                if let Some(s) = node.as_any().downcast_ref::<DmsAnsiStringNode>() {
+                    return s.string_data().ok();
+                }
+            }
+            for child in node.children() {
+                if let found @ Some(_) = find_song_name(child.as_ref()) {
+                    return found;
+                }
+            }
+            None
+        }
+
+        let name = find_song_name(&read_root);
+        assert_eq!(name, Some("Test Song".to_string()));
+    }
+
+    #[test]
+    fn test_empty_tree() {
+        let root = DmsCompositeNode::new(DmsNodeType::ROOT, -1);
+        let result = DmsWriter::new().to_bytes(&root);
+        assert!(result.is_ok(), "empty tree should write successfully");
+        let bytes = result.unwrap();
+        assert!(bytes.is_empty(), "empty tree should produce empty output");
+    }
+}
