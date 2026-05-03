@@ -4,7 +4,6 @@ use libloading::Library;
 use std::sync::Mutex;
 use std::{path::Path, sync::Arc};
 
-use crate::constants::*;
 use crate::{Api, Error, InputInfo, OutputConnection, OutputInfo};
 
 /// KDMAPI 全局实例（单例）
@@ -188,82 +187,11 @@ impl KdmapiOutputConn {
 
 // KDMAPI 输出端口连接实现 OutputConnection 接口
 impl OutputConnection for KdmapiOutputConn {
-    fn note_on(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
-        // 确保通道在有效范围内 (0-15)
-        let channel = ch & MIDI_CHANNEL_MASK;
-        // Note On 状态字节: 0x90 | channel
-        let status = STATUS_NOTE_ON | channel;
-
-        tracing::debug!(
-            "KDMAPI::note_on: raw_ch={}, channel={}, key={}, vel={}",
-            ch,
-            channel,
-            key,
-            vel
-        );
-
-        // 确保 velocity 不为 0（否则会被视为 note_off）
-        let velocity = if vel == 0 { 1 } else { vel };
-
-        self.send(&[status, key & MIDI_VALUE_MASK, velocity & MIDI_VALUE_MASK])
-    }
-
-    fn note_off(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
-        // 确保通道在有效范围内 (0-15)
-        let channel = ch & MIDI_CHANNEL_MASK;
-        // Note Off 状态字节: 0x80 | channel
-        let status = STATUS_NOTE_OFF | channel;
-
-        tracing::debug!(
-            "KDMAPI::note_off: raw_ch={}, channel={}, key={}, vel={}",
-            ch,
-            channel,
-            key,
-            vel
-        );
-
-        self.send(&[status, key & MIDI_VALUE_MASK, vel & MIDI_VALUE_MASK])
-    }
-
-    fn control_change(&mut self, ch: u8, controller: u8, value: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
-        let status = STATUS_CONTROL_CHANGE | channel;
-        self.send(&[status, controller, value])
-    }
-
-    fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
-        let status = STATUS_PROGRAM_CHANGE | channel;
-        self.send(&[status, program, 0])
-    }
-
-    fn pitch_bend(&mut self, ch: u8, value: f32) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
-        let status = STATUS_PITCH_BEND | channel;
-        let bend = ((value + 1.0) * 0.5 * f32::from(PITCH_BEND_MAX)).round() as u16;
-        let lsb = (bend & u16::from(MIDI_VALUE_MASK)) as u8;
-        let msb = ((bend >> 7) & u16::from(MIDI_VALUE_MASK)) as u8;
-        self.send(&[status, lsb, msb])
-    }
-
-    fn channel_pressure(&mut self, ch: u8, pressure: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
-        let status = STATUS_CHANNEL_PRESSURE | channel;
-        self.send(&[status, pressure, 0])
-    }
-
-    fn poly_pressure(&mut self, ch: u8, key: u8, pressure: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
-        let status = STATUS_POLY_PRESSURE | channel;
-        self.send(&[status, key, pressure])
-    }
-
     fn send_raw(&mut self, data: [u8; 3]) -> Result<(), Error> {
         self.send(&data)
     }
 
     fn close(self: Box<Self>) {
         tracing::debug!("KDMAPI::close: 关闭连接");
-        // Kdmapi 不需要显式关闭对等端
     }
 }

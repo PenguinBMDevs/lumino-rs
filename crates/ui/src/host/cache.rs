@@ -22,23 +22,15 @@ pub struct RenderCache {
     pub depth_texture: Option<(u32, u32, wgpu::TextureView)>,
 }
 
-/// 兼容旧代码的访问方式
-///
-/// 注意：这个访问方式会触发双缓冲交换，应该只在渲染线程调用
+/// 注意：这些方法会触发双缓冲交换，应该只在渲染线程调用
 impl RenderCache {
     /// 获取音符实例数量（从双缓冲的前缓冲区）
-    ///
-    /// # Safety
-    /// 必须在渲染线程调用
-    pub unsafe fn note_instances_len(&self) -> usize {
+    pub fn note_instances_len(&self) -> usize {
         unsafe { self.note_instances_buffer.read_buffer().len() }
     }
 
     /// 检查音符实例是否为空
-    ///
-    /// # Safety
-    /// 必须在渲染线程调用
-    pub unsafe fn note_instances_is_empty(&self) -> bool {
+    pub fn note_instances_is_empty(&self) -> bool {
         unsafe { self.note_instances_buffer.read_buffer().is_empty() }
     }
 }

@@ -385,7 +385,6 @@ impl MidiDocument {
 
         use crate::midi::constants::TICK_SEARCH_BUFFER;
         
-        // events 已按 tick 排序，二分查找起始位置
         let search_start =
             events.partition_point(|e| e.delta_tick() < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER));
         let search_end = events.len().min(
@@ -396,73 +395,12 @@ impl MidiDocument {
             return Vec::new();
         }
 
-        use crate::midi::constants::{MAX_CONCURRENT_NOTES, MIDI_CHANNEL_COUNT, MIDI_KEY_RANGE};
-        
-        // 使用固定大小数组替代 HashMap：256 keys × 16 channels = 4096
-        // 支持扩展 MIDI 标准 (0-255 key range)
-        // 每个条目存储 (start_tick, velocity, channel, is_active)
-        let mut active_notes: [(u32, u8, u8, bool); MAX_CONCURRENT_NOTES] = [(0, 0, 0, false); MAX_CONCURRENT_NOTES];
-        let mut notes = Vec::new();
-
-        #[inline]
-        fn note_index(channel: u8, key: u8) -> usize {
-            (channel as usize) * MIDI_KEY_RANGE as usize + (key as usize)
-        }
-
-        for ev in &events[search_start..search_end] {
-            let tick = ev.delta_tick();
-            let key = ev.param1() as u8;
-            let vel = ev.param2() as u8;
-            let channel = ev.channel();
-            let idx = note_index(channel, key);
-
-            match ev.kind() {
-                EventKind::NoteOn if vel > 0 => {
-                    if active_notes[idx].3 {
-                        // 有未关闭的音符，先关闭它
-                        let (st, pv, pc, _) = active_notes[idx];
-                        let len = tick.saturating_sub(st) as f32;
-                        if st as f32 + len >= tick_start && st as f32 <= tick_end {
-                            notes.push((st as f32, key, len, pv, pc));
-                        }
-                    }
-                    active_notes[idx] = (tick, vel, channel, true);
-                }
-                EventKind::NoteOn | EventKind::NoteOff => {
-                    if active_notes[idx].3 {
-                        let (st, pv, pc, _) = active_notes[idx];
-                        let len = tick.saturating_sub(st) as f32;
-                        if st as f32 + len >= tick_start && st as f32 <= tick_end {
-                            notes.push((st as f32, key, len, pv, pc));
-                        }
-                        active_notes[idx].3 = false;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        // 未关闭的 NoteOn，用 search_end 的 tick 作为结束
-        let last_tick = if search_end < events.len() {
-            events[search_end].delta_tick()
-        } else {
-            events.last().map(|e| e.delta_tick()).unwrap_or(0)
-        };
-        
-        for channel in 0..MIDI_CHANNEL_COUNT {
-            for key in 0..=u8::MAX {
-                let idx = note_index(channel, key);
-                if active_notes[idx].3 {
-                    let (st, vel, ch, _) = active_notes[idx];
-                    let len = last_tick.saturating_sub(st) as f32;
-                    if st as f32 + len >= tick_start && st as f32 <= tick_end {
-                        notes.push((st as f32, key, len, vel, ch));
-                    }
-                }
-            }
-        }
-
-        notes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        let mut notes = Self::collect_notes(&events[search_start..search_end]);
+        notes.retain(|n| {
+            let start = n.0;
+            let end = start + n.2;
+            end >= tick_start && start <= tick_end
+        });
         notes
     }
 
@@ -479,26 +417,24 @@ impl MidiDocument {
             return Vec::new();
         }
 
-        let events = &self.events[start..end];
-        
-        // 使用固定大小数组替代 HashMap：256 keys × 16 channels = 4096
-        // 支持扩展 MIDI 标准 (0-255 key range)
-        const MAX_NOTES: usize = 256 * 16;
-        let mut active_notes: [(u32, u8, u8, bool); MAX_NOTES] = [(0, 0, 0, false); MAX_NOTES];
+        Self::collect_notes(&self.events[start..end])
+    }
+
+    /// 共享音符收集逻辑：从一段已排序的事件切片中提取音符。
+    /// 使用固定大小数组替代 HashMap：256 keys × 16 channels = 4096。
+    fn collect_notes(events: &[CompactEvent]) -> Vec<(f32, u8, f32, u8, u8)> {
+        use crate::midi::constants::{MAX_CONCURRENT_NOTES, MIDI_CHANNEL_COUNT, MIDI_KEY_RANGE};
+
+        let mut active_notes: [(u32, u8, u8, bool); MAX_CONCURRENT_NOTES] = [(0, 0, 0, false); MAX_CONCURRENT_NOTES];
         let mut notes = Vec::new();
         let last_tick = events.last().map(|e| e.delta_tick()).unwrap_or(0);
-
-        #[inline]
-        fn note_index(channel: u8, key: u8) -> usize {
-            (channel as usize) * 256 + (key as usize)
-        }
 
         for ev in events {
             let tick = ev.delta_tick();
             let key = ev.param1() as u8;
             let vel = ev.param2() as u8;
             let channel = ev.channel();
-            let idx = note_index(channel, key);
+            let idx = (channel as usize) * (MIDI_KEY_RANGE as usize) + (key as usize);
 
             match ev.kind() {
                 EventKind::NoteOn if vel > 0 => {
@@ -518,10 +454,10 @@ impl MidiDocument {
                 _ => {}
             }
         }
-        
-        for channel in 0..16u8 {
-            for key in 0..=255u8 {
-                let idx = note_index(channel, key);
+
+        for channel in 0..MIDI_CHANNEL_COUNT {
+            for key in 0..=u8::MAX {
+                let idx = (channel as usize) * (MIDI_KEY_RANGE as usize) + (key as usize);
                 if active_notes[idx].3 {
                     let (st, vel, ch, _) = active_notes[idx];
                     notes.push((st as f32, key, last_tick.saturating_sub(st) as f32, vel, ch));
@@ -529,7 +465,6 @@ impl MidiDocument {
             }
         }
 
-        // 按 tick 排序输出，保证 instance 数组有序
         notes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         notes
     }
