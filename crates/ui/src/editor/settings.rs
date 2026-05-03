@@ -1,14 +1,14 @@
 use crate::constants::editor::{MAX_VISIBLE_KEY_COUNT, MIN_VISIBLE_KEY_COUNT};
 use lumino_core::storage::config::EraserBehavior;
+use super::CacheInvalidation;
 
 impl super::Editor {
     // 键盘设置 — 全部委托到 editor_state
 
     pub fn set_visible_key_count(&mut self, count: u16) {
         let canvas_height = self.editor_state.canvas.size.y;
-        // editor_state.set_visible_key_count 已包含 clamp 和 scroll_y 修正逻辑
         self.editor_state.set_visible_key_count(count, MIN_VISIBLE_KEY_COUNT, MAX_VISIBLE_KEY_COUNT, canvas_height);
-        self.grid_cache.clear();
+        self.invalidate_caches(CacheInvalidation::GRID);
     }
 
     pub fn visible_key_count(&self) -> u16 {
@@ -17,7 +17,7 @@ impl super::Editor {
 
     pub fn set_keyboard_width(&mut self, width: f32) {
         self.editor_state.set_keyboard_width(width);
-        self.grid_cache.clear();
+        self.invalidate_caches(CacheInvalidation::GRID);
     }
 
     pub fn keyboard_width(&self) -> f32 {
@@ -28,7 +28,7 @@ impl super::Editor {
 
     pub fn set_snap_precision(&mut self, precision: f32) {
         self.editor_state.set_snap_precision(precision);
-        self.grid_cache.clear();
+        self.invalidate_caches(CacheInvalidation::GRID);
     }
 
     pub fn snap_precision(&self) -> f32 {
@@ -37,7 +37,7 @@ impl super::Editor {
 
     pub fn set_default_note_length(&mut self, length: f32) {
         self.editor_state.set_default_note_length(length);
-        self.grid_cache.clear();
+        self.invalidate_caches(CacheInvalidation::GRID);
     }
 
     pub fn default_note_length(&self) -> f32 {

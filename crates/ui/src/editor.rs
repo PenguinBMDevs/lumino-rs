@@ -35,6 +35,18 @@ pub use onion_skin::OnionSkinConfig;
 // 统一从 editor_state 导入（重构迁移）
 pub use editor_state::{EditState, HitType, ViewState};
 
+/// 缓存失效标志位
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CacheInvalidation(u8);
+
+impl CacheInvalidation {
+    pub const NONE: Self = Self(0);
+    pub const GRID: Self = Self(1 << 0);
+    pub const KEYBOARD: Self = Self(1 << 1);
+    pub const RULER: Self = Self(1 << 2);
+    pub const ALL: Self = Self(0b111);
+}
+
 /// 钢琴卷帘编辑器
 pub struct Editor {
     pub grid_cache: canvas::Cache<crate::Renderer>,
@@ -233,6 +245,20 @@ impl Editor {
     /// 清除音符变化标志
     pub fn clear_notes_changed(&mut self) {
         self.notes_changed = false;
+    }
+
+    /// 统一缓存失效（替代散落的 grid_cache.clear() 等调用）
+    #[inline]
+    pub fn invalidate_caches(&mut self, which: CacheInvalidation) {
+        if which.0 & CacheInvalidation::GRID.0 != 0 {
+            self.grid_cache.clear();
+        }
+        if which.0 & CacheInvalidation::KEYBOARD.0 != 0 {
+            self.keyboard_cache.clear();
+        }
+        if which.0 & CacheInvalidation::RULER.0 != 0 {
+            self.ruler_cache.clear();
+        }
     }
 
     /// 标记音符数据已变化

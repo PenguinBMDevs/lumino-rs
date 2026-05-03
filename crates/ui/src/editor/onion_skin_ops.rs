@@ -1,4 +1,4 @@
-use crate::editor::Editor;
+use crate::editor::{Editor, CacheInvalidation};
 use crate::editor::note::Note;
 use lumino_gfx::NoteInstance;
 use rayon::prelude::*;
@@ -17,21 +17,21 @@ impl Editor {
     /// 启用洋葱皮
     pub fn enable_onion_skin(&mut self) {
         self.onion_skin_config.enable();
-        self.grid_cache.clear();
+        self.invalidate_caches(CacheInvalidation::GRID);
         tracing::debug!("Editor: 洋葱皮已启用");
     }
 
     /// 禁用洋葱皮
     pub fn disable_onion_skin(&mut self) {
         self.onion_skin_config.disable();
-        self.grid_cache.clear();
+        self.invalidate_caches(CacheInvalidation::GRID);
         tracing::debug!("Editor: 洋葱皮已禁用");
     }
 
     /// 切换洋葱皮开关
     pub fn toggle_onion_skin(&mut self) {
         self.onion_skin_config.toggle();
-        self.grid_cache.clear();
+        self.invalidate_caches(CacheInvalidation::GRID);
         tracing::info!(
             "Editor: 洋葱皮已切换, is_enabled={}",
             self.onion_skin_config.is_enabled()
@@ -46,7 +46,7 @@ impl Editor {
     /// 设置音轨的洋葱皮颜色
     pub fn set_onion_skin_color(&mut self, track_idx: usize, color: iced_core::Color) {
         self.onion_skin_config.set_track_color(track_idx, color);
-        self.grid_cache.clear();
+        self.invalidate_caches(CacheInvalidation::GRID);
     }
 
     /// 获取音轨的洋葱皮颜色
@@ -57,7 +57,7 @@ impl Editor {
     /// 设置洋葱皮透明度
     pub fn set_onion_skin_opacity(&mut self, opacity: f32) {
         self.onion_skin_config.set_opacity(opacity);
-        self.grid_cache.clear();
+        self.invalidate_caches(CacheInvalidation::GRID);
     }
 
     /// 获取洋葱皮透明度
@@ -68,19 +68,19 @@ impl Editor {
     /// 设置是否显示所有音轨的洋葱皮
     pub fn set_onion_skin_show_all(&mut self, show_all: bool) {
         self.onion_skin_config.set_show_all_tracks(show_all);
-        self.grid_cache.clear();
+        self.invalidate_caches(CacheInvalidation::GRID);
     }
 
     /// 添加可见音轨到洋葱皮
     pub fn add_onion_skin_track(&mut self, track_idx: usize) {
         self.onion_skin_config.add_visible_track(track_idx);
-        self.grid_cache.clear();
+        self.invalidate_caches(CacheInvalidation::GRID);
     }
 
     /// 从洋葱皮移除音轨
     pub fn remove_onion_skin_track(&mut self, track_idx: usize) {
         self.onion_skin_config.remove_visible_track(track_idx);
-        self.grid_cache.clear();
+        self.invalidate_caches(CacheInvalidation::GRID);
     }
 
     /// 获取所有洋葱皮音符原始数据（用于缓存）

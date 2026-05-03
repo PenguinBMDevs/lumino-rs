@@ -1,4 +1,5 @@
 use crate::constants::editor::zoom::{MAX_ZOOM_X, MAX_ZOOM_Y, MIN_ZOOM_X, MIN_ZOOM_Y};
+use super::CacheInvalidation;
 
 impl super::Editor {
     // 滚动控制 — 全部委托到 editor_state
@@ -41,29 +42,25 @@ impl super::Editor {
         let keyboard_width = self.editor_state.view.keyboard_width;
         let canvas_width = self.editor_state.canvas.size.x;
         self.editor_state.set_scroll_x(scroll_x, keyboard_width, canvas_width);
-        // 水平滚动只影响标尺（和网格线，但网格线已由 wgpu 渲染）
-        self.ruler_cache.clear();
+        self.invalidate_caches(CacheInvalidation::RULER);
     }
 
     pub fn set_scroll_y(&mut self, scroll_y: f32) {
         let canvas_height = self.editor_state.canvas.size.y;
         self.editor_state.set_scroll_y(scroll_y, canvas_height);
-        // 垂直滚动只影响键盘（和网格线，但网格线已由 wgpu 渲染）
-        self.keyboard_cache.clear();
+        self.invalidate_caches(CacheInvalidation::KEYBOARD);
     }
 
     pub fn set_zoom_x(&mut self, zoom_x: f32, fixed_ratio: f32) {
         let keyboard_width = self.editor_state.view.keyboard_width;
         let canvas_width = self.editor_state.canvas.size.x;
         self.editor_state.set_zoom_x(zoom_x, fixed_ratio, keyboard_width, canvas_width, MIN_ZOOM_X, MAX_ZOOM_X);
-        // 缩放影响标尺和网格线
-        self.ruler_cache.clear();
+        self.invalidate_caches(CacheInvalidation::RULER);
     }
 
     pub fn set_zoom_y(&mut self, zoom_y: f32, fixed_ratio: f32) {
         let canvas_height = self.editor_state.canvas.size.y;
         self.editor_state.set_zoom_y(zoom_y, fixed_ratio, canvas_height, MIN_ZOOM_Y, MAX_ZOOM_Y);
-        // 缩放影响键盘和网格线
-        self.keyboard_cache.clear();
+        self.invalidate_caches(CacheInvalidation::KEYBOARD);
     }
 }
