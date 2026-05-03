@@ -15,33 +15,34 @@ impl RunnerInner {
         let cursor_pos = self.window_state.window.ui().cursor_position();
         let editor = self.window_state.window.ui().root().editor_ref();
 
+        let es = &editor.editor_state;
         tracing::debug!(
             "协作同步：cursor_position={:?}, canvas_offset=({}, {}), scroll=({}, {})",
             cursor_pos,
-            editor.canvas_offset.x,
-            editor.canvas_offset.y,
-            editor.state.scroll_x,
-            editor.state.scroll_y
+            es.canvas.offset.x,
+            es.canvas.offset.y,
+            es.view.scroll_x,
+            es.view.scroll_y
         );
 
         if let Some(pos) = cursor_pos {
             // 先转换为 Canvas 视口坐标（不含滚动偏移），用于边界检查
             let viewport_pos = iced_core::Point::new(
-                pos.x - editor.canvas_offset.x,
-                pos.y - editor.canvas_offset.y,
+                pos.x - es.canvas.offset.x,
+                pos.y - es.canvas.offset.y,
             );
 
             if editor.is_inside_canvas(viewport_pos) {
                 // 通过边界检查后，加上滚动偏移得到内容空间坐标
                 let content_pos = iced_core::Point::new(
-                    viewport_pos.x + editor.state.scroll_x,
-                    viewport_pos.y + editor.state.scroll_y,
+                    viewport_pos.x + es.view.scroll_x,
+                    viewport_pos.y + es.view.scroll_y,
                 );
 
-                let scroll_x = editor.state.scroll_x;
-                let scroll_y = editor.state.scroll_y;
-                let zoom_x = editor.state.zoom_x;
-                let zoom_y = editor.state.zoom_y;
+                let scroll_x = es.view.scroll_x;
+                let scroll_y = es.view.scroll_y;
+                let zoom_x = es.view.zoom_x;
+                let zoom_y = es.view.zoom_y;
 
                 let mouse_pos = lumino_collaboration::types::MousePosition {
                     x: content_pos.x,

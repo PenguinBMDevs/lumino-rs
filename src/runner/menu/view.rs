@@ -27,16 +27,16 @@ impl RunnerInner {
             ZoomIn => {
                 let ui = self.window_state.window.ui_mut();
                 let root = ui.root_mut();
-                let new_zoom_x = root.editor.state.zoom_x * ZOOM_FACTOR;
-                let new_zoom_y = root.editor.state.zoom_y * ZOOM_FACTOR;
+                let new_zoom_x = root.editor.editor_state.view.zoom_x * ZOOM_FACTOR;
+                let new_zoom_y = root.editor.editor_state.view.zoom_y * ZOOM_FACTOR;
                 root.editor.set_zoom_x(new_zoom_x, 0.5);
                 root.editor.set_zoom_y(new_zoom_y, 0.5);
             }
             ZoomOut => {
                 let ui = self.window_state.window.ui_mut();
                 let root = ui.root_mut();
-                let new_zoom_x = root.editor.state.zoom_x / ZOOM_FACTOR;
-                let new_zoom_y = root.editor.state.zoom_y / ZOOM_FACTOR;
+                let new_zoom_x = root.editor.editor_state.view.zoom_x / ZOOM_FACTOR;
+                let new_zoom_y = root.editor.editor_state.view.zoom_y / ZOOM_FACTOR;
                 root.editor.set_zoom_x(new_zoom_x, 0.5);
                 root.editor.set_zoom_y(new_zoom_y, 0.5);
             }
