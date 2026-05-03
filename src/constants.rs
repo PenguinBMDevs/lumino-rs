@@ -17,3 +17,32 @@ pub mod filters {
     /// 所有文件过滤器
     pub const ALL_FILES: (&str, &[&str]) = ("所有文件", &["*"]);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::filters::*;
+
+    #[test]
+    fn test_music_filters_contain_midi() {
+        assert!(MUSIC_FILES.1.contains(&"mid"));
+        assert!(MUSIC_FILES.1.contains(&"midi"));
+    }
+
+    #[test]
+    fn test_music_filters_contain_dms() {
+        assert!(MUSIC_FILES.1.contains(&"dms"));
+        assert!(MUSIC_FILES.1.contains(&"lmpj"));
+    }
+
+    #[test]
+    fn test_midi_filter_only_midi() {
+        assert!(MIDI_FILES.1.contains(&"mid"));
+        assert!(MIDI_FILES.1.contains(&"midi"));
+        assert!(!MIDI_FILES.1.contains(&"dms"));
+    }
+
+    #[test]
+    fn test_all_files_wildcard() {
+        assert_eq!(ALL_FILES.1, &["*"]);
+    }
+}

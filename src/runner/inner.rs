@@ -287,94 +287,71 @@ impl RunnerInner {
         }
     }
     /// 保存存储
+    /// 简化空字符串显示（避免重复的三元表达式）
+    fn display_or_empty(s: &str) -> &str {
+        if s.is_empty() { "(空)" } else { s }
+    }
+
+    /// 检查单个设置变更并记录日志
+    fn check_setting_changed<T: PartialEq + std::fmt::Display>(
+        old: &T, new: &T, label: &str,
+        needs_window_restart: &mut bool,
+    ) -> bool {
+        if *old != *new {
+            tracing::info!("{label}: {old} -> {new}");
+            *needs_window_restart = true;
+            true
+        } else {
+            false
+        }
+    }
+
     pub(crate) fn save_storage(&mut self) {
-        // 获取当前 UI 中的设置
-        let new_preferred_backend = self.window_state.window.ui().settings().synth_backend;
-        let new_soundfont_path = self.window_state.window.ui().settings().soundfont_path.clone();
-        let new_use_native_titlebar = self.window_state.window.ui().settings().use_native_titlebar;
-        let new_program_font_name = self.window_state.window.ui().settings().program_font_name.clone();
-        let new_program_font_path = self.window_state.window.ui().settings().program_font_path.clone();
+        // 获取新旧配置
+        let new = self.window_state.window.ui().settings();
+        let old = &self.window_state.storage.config.get().ui;
 
-        // 获取当前存储的配置
-        let old_config = self.window_state.storage.config.get();
-        let old_preferred_backend = old_config.ui.preferred_backend;
-        let old_soundfont_path = &old_config.ui.soundfont_path;
-        let old_use_native_titlebar = old_config.ui.use_native_titlebar;
-        let old_program_font_name = &old_config.ui.program_font_name;
-        let old_program_font_path = &old_config.ui.program_font_path;
-
-        // 检查合成器相关设置是否改变
-        let backend_changed = new_preferred_backend != old_preferred_backend;
-        let soundfont_changed = new_soundfont_path != *old_soundfont_path;
-        let titlebar_changed = new_use_native_titlebar != old_use_native_titlebar;
-        let font_changed = new_program_font_name != *old_program_font_name
-            || new_program_font_path != *old_program_font_path;
-
-        if backend_changed || soundfont_changed {
+        // 逐一检查各项设置变更
+        if new.synth_backend != old.preferred_backend
+            || new.soundfont_path != old.soundfont_path
+        {
             tracing::info!(
                 "合成器设置已改变: backend {} -> {}, soundfont {} -> {}",
-                old_preferred_backend,
-                new_preferred_backend,
-                if old_soundfont_path.is_empty() {
-                    "(空)"
-                } else {
-                    old_soundfont_path
-                },
-                if new_soundfont_path.is_empty() {
-                    "(空)"
-                } else {
-                    &new_soundfont_path
-                }
+                old.preferred_backend, new.synth_backend,
+                Self::display_or_empty(&old.soundfont_path),
+                Self::display_or_empty(&new.soundfont_path),
             );
-            // 标记需要重新初始化 MIDI
             self.midi_state.midi.mark_for_reinit();
         }
 
-        if titlebar_changed {
+        if new.use_native_titlebar != old.use_native_titlebar {
             tracing::info!(
                 "标题栏设置已改变: native_titlebar {} -> {}",
-                old_use_native_titlebar,
-                new_use_native_titlebar
+                old.use_native_titlebar, new.use_native_titlebar
             );
-            // 标记需要重启窗口
             self.window_state.needs_window_restart = true;
         }
 
-        if font_changed {
+        if new.program_font_name != old.program_font_name
+            || new.program_font_path != old.program_font_path
+        {
             tracing::info!(
                 "字体设置已改变: font_name {} -> {}, font_path {} -> {}",
-                if old_program_font_name.is_empty() {
-                    "(空)"
-                } else {
-                    old_program_font_name
-                },
-                if new_program_font_name.is_empty() {
-                    "(空)"
-                } else {
-                    &new_program_font_name
-                },
-                if old_program_font_path.is_empty() {
-                    "(空)"
-                } else {
-                    old_program_font_path
-                },
-                if new_program_font_path.is_empty() {
-                    "(空)"
-                } else {
-                    &new_program_font_path
-                }
+                Self::display_or_empty(&old.program_font_name),
+                Self::display_or_empty(&new.program_font_name),
+                Self::display_or_empty(&old.program_font_path),
+                Self::display_or_empty(&new.program_font_path),
             );
-            // 标记需要重启窗口以应用字体设置
             self.window_state.needs_window_restart = true;
         }
 
         // 保存配置
         self.window_state.storage.config.patch(|config| {
-            config.ui.preferred_backend = new_preferred_backend;
-            config.ui.soundfont_path = new_soundfont_path;
-            config.ui.use_native_titlebar = new_use_native_titlebar;
-            config.ui.program_font_name = new_program_font_name;
-            config.ui.program_font_path = new_program_font_path;
+            config.ui.preferred_backend = new.synth_backend;
+            config.ui.soundfont_path = new.soundfont_path.clone();
+            config.ui.use_native_titlebar = new.use_native_titlebar;
+            config.ui.program_font_name = new.program_font_name.clone();
+            config.ui.program_font_path = new.program_font_path.clone();
         });
 
         if let Err(e) = self.window_state.storage.config.save() {
