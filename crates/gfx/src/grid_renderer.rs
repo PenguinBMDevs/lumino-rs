@@ -25,6 +25,7 @@ pub struct GridCameraUniform {
 }
 
 impl GridCameraUniform {
+    /// 直接构造（20 参数，不推荐新代码使用，改用 [`GridCameraUniform::builder`]）
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         viewport_width: f32,
@@ -62,6 +63,167 @@ impl GridCameraUniform {
             ppq,
             max_key_index,
             canvas_offset: [canvas_offset_x, canvas_offset_y],
+        }
+    }
+
+    /// 使用 Builder 模式构造，推荐方式。
+    ///
+    /// ```ignore
+    /// GridCameraUniform::builder()
+    ///     .viewport_size(1920.0, 1080.0)
+    ///     .camera_pos(100.0, 50.0)
+    ///     .zoom(1.0, 0.5)
+    ///     .build()
+    /// ```
+    pub fn builder() -> GridCameraUniformBuilder {
+        GridCameraUniformBuilder::default()
+    }
+}
+
+/// [`GridCameraUniform`] 的 Builder。
+///
+/// 20 个字段均有默认值，只需设置需要变更的字段即可。
+#[derive(Debug, Clone)]
+pub struct GridCameraUniformBuilder {
+    viewport_size: [f32; 2],
+    camera_pos: [f32; 2],
+    zoom: [f32; 2],
+    margins: [f32; 2],
+    color_bg: [f32; 4],
+    color_bg_black_key: [f32; 4],
+    color_bar: [f32; 4],
+    color_beat: [f32; 4],
+    color_half_beat: [f32; 4],
+    color_grid: [f32; 4],
+    color_key_line: [f32; 4],
+    ppq: f32,
+    max_key_index: f32,
+    canvas_offset: [f32; 2],
+}
+
+impl Default for GridCameraUniformBuilder {
+    fn default() -> Self {
+        Self {
+            viewport_size: [1.0, 1.0],
+            camera_pos: [0.0, 0.0],
+            zoom: [1.0, 1.0],
+            margins: [0.0, 0.0],
+            color_bg: [0.1, 0.1, 0.1, 1.0],
+            color_bg_black_key: [0.07, 0.07, 0.07, 1.0],
+            color_bar: [0.3, 0.3, 0.3, 1.0],
+            color_beat: [0.2, 0.2, 0.2, 1.0],
+            color_half_beat: [0.15, 0.15, 0.15, 1.0],
+            color_grid: [0.15, 0.15, 0.15, 1.0],
+            color_key_line: [0.15, 0.15, 0.15, 1.0],
+            ppq: 1920.0,
+            max_key_index: 127.0,
+            canvas_offset: [0.0, 0.0],
+        }
+    }
+}
+
+impl GridCameraUniformBuilder {
+    /// 设置视口尺寸
+    pub fn viewport_size(mut self, width: f32, height: f32) -> Self {
+        self.viewport_size = [width, height];
+        self
+    }
+
+    /// 设置相机位置
+    pub fn camera_pos(mut self, x: f32, y: f32) -> Self {
+        self.camera_pos = [x, y];
+        self
+    }
+
+    /// 设置缩放
+    pub fn zoom(mut self, x: f32, y: f32) -> Self {
+        self.zoom = [x, y];
+        self
+    }
+
+    /// 设置边距（键盘宽度、标尺高度）
+    pub fn margins(mut self, keyboard_width: f32, ruler_height: f32) -> Self {
+        self.margins = [keyboard_width, ruler_height];
+        self
+    }
+
+    /// 设置背景色
+    pub fn color_bg(mut self, color: [f32; 4]) -> Self {
+        self.color_bg = color;
+        self
+    }
+
+    /// 设置黑键背景色
+    pub fn color_bg_black_key(mut self, color: [f32; 4]) -> Self {
+        self.color_bg_black_key = color;
+        self
+    }
+
+    /// 设置小节线颜色
+    pub fn color_bar(mut self, color: [f32; 4]) -> Self {
+        self.color_bar = color;
+        self
+    }
+
+    /// 设置拍线颜色
+    pub fn color_beat(mut self, color: [f32; 4]) -> Self {
+        self.color_beat = color;
+        self
+    }
+
+    /// 设置半拍线颜色
+    pub fn color_half_beat(mut self, color: [f32; 4]) -> Self {
+        self.color_half_beat = color;
+        self
+    }
+
+    /// 设置网格线颜色
+    pub fn color_grid(mut self, color: [f32; 4]) -> Self {
+        self.color_grid = color;
+        self
+    }
+
+    /// 设置键位线颜色
+    pub fn color_key_line(mut self, color: [f32; 4]) -> Self {
+        self.color_key_line = color;
+        self
+    }
+
+    /// 设置 PPQ
+    pub fn ppq(mut self, ppq: f32) -> Self {
+        self.ppq = ppq;
+        self
+    }
+
+    /// 设置最大键索引
+    pub fn max_key_index(mut self, max_key_index: f32) -> Self {
+        self.max_key_index = max_key_index;
+        self
+    }
+
+    /// 设置画布偏移
+    pub fn canvas_offset(mut self, x: f32, y: f32) -> Self {
+        self.canvas_offset = [x, y];
+        self
+    }
+
+    /// 构建 [`GridCameraUniform`]
+    pub fn build(self) -> GridCameraUniform {
+        GridCameraUniform {
+            viewport_size: self.viewport_size,
+            camera_pos: self.camera_pos,
+            zoom: self.zoom,
+            margins: self.margins,
+            color_bg: self.color_bg,
+            color_bg_black_key: self.color_bg_black_key,
+            color_bar: self.color_bar,
+            color_beat: self.color_beat,
+            color_half_beat: self.color_half_beat,
+            color_grid: self.color_grid,
+            color_key_line: self.color_key_line,
+            ppq: self.ppq,
+            max_key_index: self.max_key_index,
+            canvas_offset: self.canvas_offset,
         }
     }
 }
