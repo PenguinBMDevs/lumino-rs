@@ -26,7 +26,7 @@ pub struct GridCameraUniform {
 
 impl GridCameraUniform {
     /// 直接构造（20 参数，不推荐新代码使用，改用 [`GridCameraUniform::builder`]）
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, dead_code)]
     pub fn new(
         viewport_width: f32,
         viewport_height: f32,
@@ -122,8 +122,6 @@ impl Default for GridCameraUniformBuilder {
     }
 }
 
-/// Builder 方法目前仅由 `prepare()` 调用方使用，独立 setter 为公共 API 预留。
-#[allow(dead_code)]
 impl GridCameraUniformBuilder {
     /// 设置视口尺寸
     pub fn viewport_size(mut self, width: f32, height: f32) -> Self {
@@ -356,7 +354,6 @@ impl GridRenderer {
     }
 
     /// 准备渲染数据
-    #[allow(clippy::too_many_arguments)]
     pub fn prepare(
         &mut self,
         queue: &wgpu::Queue,
@@ -380,28 +377,22 @@ impl GridRenderer {
         canvas_offset_y: f32,
     ) {
         puffin::profile_function!();
-        // 更新视口 uniform
-        let viewport = GridCameraUniform::new(
-            viewport_size.0,
-            viewport_size.1,
-            scroll_x,
-            scroll_y,
-            zoom_x,
-            zoom_y,
-            keyboard_width,
-            ruler_height,
-            color_bg,
-            color_bg_black_key,
-            color_bar,
-            color_beat,
-            color_half_beat,
-            color_grid,
-            color_key_line,
-            ppq,
-            max_key_index,
-            canvas_offset_x,
-            canvas_offset_y,
-        );
+        let viewport = GridCameraUniform::builder()
+            .viewport_size(viewport_size.0, viewport_size.1)
+            .camera_pos(scroll_x, scroll_y)
+            .zoom(zoom_x, zoom_y)
+            .margins(keyboard_width, ruler_height)
+            .color_bg(color_bg)
+            .color_bg_black_key(color_bg_black_key)
+            .color_bar(color_bar)
+            .color_beat(color_beat)
+            .color_half_beat(color_half_beat)
+            .color_grid(color_grid)
+            .color_key_line(color_key_line)
+            .ppq(ppq)
+            .max_key_index(max_key_index)
+            .canvas_offset(canvas_offset_x, canvas_offset_y)
+            .build();
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[viewport]));
     }
 

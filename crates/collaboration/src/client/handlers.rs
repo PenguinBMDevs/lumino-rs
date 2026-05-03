@@ -100,6 +100,20 @@ pub async fn handle_server_message(
         }
 
         ServerMessage::FullSync { users, .. } => {
+            let mut sess = session.write().await;
+            sess.remote_users.clear();
+            for user in &users {
+                sess.remote_users.insert(
+                    user.id.clone(),
+                    RemoteUser {
+                        info: user.clone(),
+                        mouse_position: None,
+                        last_active: Instant::now(),
+                    },
+                );
+            }
+            drop(sess);
+
             if let Some(ref cb) = callback {
                 cb(CollaborationEvent::FullSync { users });
             }

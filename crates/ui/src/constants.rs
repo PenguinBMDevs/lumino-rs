@@ -139,6 +139,18 @@ pub mod rendering {
     pub const GRID_CLICK_POS_THRESHOLD_PX: f32 = 10.0;
     /// 网格滚动最大增量
     pub const GRID_SCROLL_MAX_DELTA: f32 = 100.0;
+
+    /// 独立线程渲染路径中的默认网格颜色（TODO: 从主题系统获取）
+    pub mod grid_colors {
+        /// 黑键线颜色
+        pub const BLACK_KEY_LINE: [f32; 4] = [0.15, 0.15, 0.15, 1.0];
+        /// 白键线颜色
+        pub const WHITE_KEY_LINE: [f32; 4] = [0.1, 0.1, 0.1, 1.0];
+        /// 小节线颜色
+        pub const BAR_LINE: [f32; 4] = [0.3, 0.3, 0.3, 1.0];
+        /// 拍线颜色
+        pub const BEAT_LINE: [f32; 4] = [0.2, 0.2, 0.2, 1.0];
+    }
 }
 
 /// 内存管理常量

@@ -272,19 +272,61 @@ impl OutputConnection for XSynthOutputConn {
         Ok(())
     }
 
-    fn channel_pressure(&mut self, ch: u8, _pressure: u8) -> Result<(), Error> {
-        tracing::warn!("XSynth: 通道 {} 的 channel_pressure 暂不支持", ch);
-        Err(Error::SendFailed("XSynth does not support channel pressure".into()))
-    }
+    fn send_raw(&mut self, data: [u8; 3]) -> Result<(), Error> {
+        let status = data[0] & 0xF0;
+        let channel = (data[0] & 0x0F) as u32;
+        let b1 = data[1];
+        let b2 = data[2];
 
-    fn poly_pressure(&mut self, ch: u8, _key: u8, _pressure: u8) -> Result<(), Error> {
-        tracing::warn!("XSynth: 通道 {} 的 poly_pressure 暂不支持", ch);
-        Err(Error::SendFailed("XSynth does not support poly pressure".into()))
-    }
-
-    fn send_raw(&mut self, _data: [u8; 3]) -> Result<(), Error> {
-        tracing::warn!("XSynth: send_raw 暂不支持");
-        Err(Error::SendFailed("XSynth does not support raw MIDI send".into()))
+        match status {
+            0x80 => self.sender.send_event(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
+                    key: b1 & MIDI_VALUE_MASK,
+                }),
+            )),
+            0x90 => self.sender.send_event(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
+                    key: b1 & MIDI_VALUE_MASK,
+                    vel: b2 & MIDI_VALUE_MASK,
+                }),
+            )),
+            0xB0 => self.sender.send_event(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
+                    b1, b2,
+                ))),
+            )),
+            0xC0 => self.sender.send_event(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(b1)),
+            )),
+            0xD0 => {
+                self.sender.send_event(SynthEvent::Channel(
+                    channel,
+                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
+                        0, b1,
+                    ))),
+                ))
+            }
+            0xE0 => {
+                let bend = ((b1 as u16) | ((b2 as u16) << 7)) as f32;
+                self.sender.send_event(SynthEvent::Channel(
+                    channel,
+                    ChannelEvent::Audio(ChannelAudioEvent::Control(
+                        ControlEvent::PitchBendValue(bend),
+                    )),
+                ))
+            }
+            _ => {
+                return Err(Error::SendFailed(format!(
+                    "xsynth 不支持的消息类型: 0x{:02X}",
+                    status
+                )))
+            }
+        };
+        Ok(())
     }
 
     fn all_notes_off(&mut self) -> Result<(), Error> {

@@ -97,9 +97,14 @@ fn build_midi_export_from_dms(root: &lumino_dms::DmsCompositeNode) -> crate::mid
 /// 从 DMS 节点读取 u64 值
 fn read_u64(node: &dyn lumino_dms::DmsNode) -> Option<u64> {
     use lumino_dms::DmsIntegerNode;
-    node.as_any()
-        .downcast_ref::<DmsIntegerNode>()
-        .and_then(|n| n.integer_data().to_string().parse::<u64>().ok())
+    let int_node = node.as_any().downcast_ref::<DmsIntegerNode>()?;
+    let biguint = int_node.integer_data().to_biguint()?;
+    let digits = biguint.to_u64_digits();
+    match digits.len() {
+        0 => Some(0),
+        1 => Some(digits[0]),
+        _ => None, // 超出 u64 范围的 BigInt 值
+    }
 }
 
 /// 从 DMS 节点读取 f64 值

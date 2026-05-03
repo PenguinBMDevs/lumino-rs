@@ -63,9 +63,8 @@ pub fn create_node(
     };
 
     if node_type.is_composite() {
-        Ok(Box::new(DmsCompositeNode::from_data(
-            node_type, layer, data,
-        )?))
+        // 复合节点的子节点解析由 DmsReader::parse_composite_from_data 完成
+        Ok(Box::new(DmsCompositeNode::new(node_type, layer)))
     } else if node_type.is_string() {
         Ok(Box::new(DmsAnsiStringNode::new(node_type, layer, data)))
     } else if node_type.is_integer() {

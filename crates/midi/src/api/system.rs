@@ -14,21 +14,39 @@ impl From<midir::ConnectError<midir::MidiOutput>> for Error {
     }
 }
 
-pub struct System;
+pub struct System {
+    midi_input: std::sync::Mutex<Option<midir::MidiInput>>,
+    midi_output: std::sync::Mutex<Option<midir::MidiOutput>>,
+}
 
 impl System {
     pub fn new() -> Result<Self, Error> {
-        let _ = Self::input()?;
-        let _ = Self::output()?;
-        Ok(Self)
+        Ok(Self {
+            midi_input: std::sync::Mutex::new(Some(midir::MidiInput::new(IDENTIFIER)?)),
+            midi_output: std::sync::Mutex::new(Some(midir::MidiOutput::new(IDENTIFIER)?)),
+        })
     }
 
-    fn input() -> Result<midir::MidiInput, Error> {
-        Ok(midir::MidiInput::new(IDENTIFIER)?)
+    fn with_input<T>(
+        &self,
+        f: impl FnOnce(&midir::MidiInput) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let guard = self.midi_input.lock().unwrap();
+        let input = guard.as_ref().ok_or_else(|| {
+            Error::InitFailed("MIDI 输入未初始化".into())
+        })?;
+        f(input)
     }
 
-    fn output() -> Result<midir::MidiOutput, Error> {
-        Ok(midir::MidiOutput::new(IDENTIFIER)?)
+    fn with_output<T>(
+        &self,
+        f: impl FnOnce(&midir::MidiOutput) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let guard = self.midi_output.lock().unwrap();
+        let output = guard.as_ref().ok_or_else(|| {
+            Error::InitFailed("MIDI 输出未初始化".into())
+        })?;
+        f(output)
     }
 
     fn connect(
@@ -45,35 +63,37 @@ impl Api for System {
     }
 
     fn inputs(&self) -> Result<Vec<InputInfo>, Error> {
-        let input = Self::input()?;
-        Ok(input
-            .ports()
-            .iter()
-            .enumerate()
-            .map(|(k, v)| InputInfo {
-                id: k as u32,
-                name: input.port_name(v).unwrap_or_else(|_| "<unknown>".into()),
-            })
-            .collect())
+        self.with_input(|input| {
+            Ok(input
+                .ports()
+                .iter()
+                .enumerate()
+                .map(|(k, v)| InputInfo {
+                    id: k as u32,
+                    name: input.port_name(v).unwrap_or_else(|_| "<unknown>".into()),
+                })
+                .collect())
+        })
     }
 
     fn outputs(&self) -> Result<Vec<OutputInfo>, Error> {
-        let output = Self::output()?;
-        Ok(output
-            .ports()
-            .iter()
-            .enumerate()
-            .map(|(k, v)| OutputInfo {
-                id: k as u32,
-                name: output.port_name(v).unwrap_or_else(|_| "<unknown>".into()),
-            })
-            .collect())
+        self.with_output(|output| {
+            Ok(output
+                .ports()
+                .iter()
+                .enumerate()
+                .map(|(k, v)| OutputInfo {
+                    id: k as u32,
+                    name: output.port_name(v).unwrap_or_else(|_| "<unknown>".into()),
+                })
+                .collect())
+        })
     }
 
     fn open_output(&self, id: u32) -> Result<Box<dyn OutputConnection>, Error> {
-        let output = Self::output()?;
-        let ports = output.ports();
+        let ports = self.with_output(|output| Ok(output.ports()))?;
         let port = ports.get(id as usize).ok_or(Error::DeviceNotFound(id))?;
+        let output = midir::MidiOutput::new(IDENTIFIER)?;
         let conn = Self::connect(output, port)?;
         Ok(Box::new(SystemOutputConn { conn }))
     }

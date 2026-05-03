@@ -124,28 +124,42 @@ pub fn export_midi<P: AsRef<Path>>(path: P, data: &MidiExportData) -> ExportResu
     Ok(())
 }
 
+/// 持有 Smf 及其依赖数据的包装类型，防止内存泄漏
+struct OwnedSmf {
+    smf: Smf<'static>,
+    /// 保证轨道名称数据在 Smf 之后释放（Rust 按声明顺序 drop）
+    _name_buffers: Vec<Vec<u8>>,
+}
+
 /// 导出 MIDI 到字节数组
 pub fn export_midi_to_bytes(data: &MidiExportData) -> ExportResult<Vec<u8>> {
-    let smf = build_midi_smf(data);
+    let owned = build_midi_smf(data);
 
     let mut buffer = Vec::new();
-    smf.write(&mut buffer)
+    owned.smf.write(&mut buffer)
         .map_err(|e| ExportError::MidiWrite(e.to_string()))?;
 
     Ok(buffer)
 }
 
 /// 构建 MIDI SMF 结构
-fn build_midi_smf(data: &MidiExportData) -> Smf<'static> {
-    // Pre-leak track names once at the top level.
-    // midly::TrackEvent<'static> 要求 'static 生命周期，
-    // 泄漏发生在导出时，泄漏量 = 轨道数 × 名称字符串长度，通常 < 1KB。
+fn build_midi_smf(data: &MidiExportData) -> OwnedSmf {
+    // 持有所有轨道名称数据的所有权，确保在 Smf 生命周期内数据有效
+    let mut name_buffers: Vec<Vec<u8>> = Vec::new();
     let leaked_names: Vec<Option<&'static [u8]>> = data
         .tracks
         .iter()
         .map(|t| {
             t.name.as_ref().map(|n| {
-                Box::leak(n.clone().into_boxed_str().into_boxed_bytes()) as &'static [u8]
+                let bytes = n.clone().into_bytes();
+                let static_ref: &'static [u8] = unsafe {
+                    // SAFETY: name_buffers 与 Smf 一起封装在 OwnedSmf 中返回，
+                    // Rust 按字段声明顺序 drop，smf 先于 _name_buffers 释放，
+                    // 因此 Smf 中的 'static 引用在数据有效期间始终合法。
+                    std::mem::transmute::<&[u8], &'static [u8]>(bytes.as_slice())
+                };
+                name_buffers.push(bytes);
+                static_ref
             })
         })
         .collect();
@@ -183,7 +197,10 @@ fn build_midi_smf(data: &MidiExportData) -> Smf<'static> {
         }
     }
 
-    Smf { header, tracks }
+    OwnedSmf {
+        smf: Smf { header, tracks },
+        _name_buffers: name_buffers,
+    }
 }
 
 /// 构建合并轨道（格式 0）
@@ -267,10 +284,7 @@ fn collect_track_events(
     if include_globals {
         for tempo in &track_data.tempos {
             let tempo_value = midly::num::u24::try_from(tempo.tempo)
-                .unwrap_or_else(|| {
-                    tracing::warn!(tempo = tempo.tempo, "速度值超出 u24 范围，使用默认 120 BPM");
-                    midly::num::u24::new(500000)
-                });
+                .expect("速度值超出 u24 范围（0~16777215 µs/beat），请检查数据来源");
             events.push(TrackEvent {
                 delta: tempo.tick.into(),
                 kind: TrackEventKind::Meta(MetaMessage::Tempo(tempo_value)),
@@ -496,10 +510,10 @@ mod tests {
             options: MidiExportOptions { format: 1, ppqn: 480 },
             tracks: vec![track],
         };
-        let smf = build_midi_smf(&data);
-        assert_eq!(smf.tracks.len(), 1, "should have 1 track");
+        let owned = build_midi_smf(&data);
+        assert_eq!(owned.smf.tracks.len(), 1, "should have 1 track");
         // 第一个轨道事件应该是 TrackName meta 事件
-        if let Some(first_event) = smf.tracks[0].first() {
+        if let Some(first_event) = owned.smf.tracks[0].first() {
             match &first_event.kind {
                 TrackEventKind::Meta(MetaMessage::TrackName(name)) => {
                     assert_eq!(name, b"Piano");

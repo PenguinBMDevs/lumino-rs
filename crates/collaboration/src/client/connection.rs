@@ -25,7 +25,8 @@ pub(super) type WsSink = futures::stream::SplitSink<WsStream, Message>;
 pub(super) type WsStreamRead = futures::stream::SplitStream<WsStream>;
 
 impl CollaborationClient {
-    /// 连接到服务器（遗留兼容接口）
+    /// 连接到服务器（遗留兼容接口，已废弃）
+    #[deprecated(since = "0.2.0", note = "请使用 create_room_and_connect 或 join_room_and_connect")]
     pub async fn connect(&mut self, _host: Option<String>, _port: Option<u16>) -> Result<()> {
         Err("请使用 create_room_and_connect 或 join_room_and_connect".into())
     }
@@ -47,7 +48,11 @@ impl CollaborationClient {
         self.send_auth_message(&write).await?;
         let read = self.handle_auth_response(read, &write).await?;
 
-        self.start_message_loop_if_available(read, write).await;
+        // 创建关闭信号通道
+        let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
+        self.shutdown_tx = Some(shutdown_tx);
+
+        self.start_message_loop_if_available(read, write, shutdown_rx).await;
 
         Ok(())
     }
@@ -114,13 +119,15 @@ impl CollaborationClient {
         &mut self,
         read: WsStreamRead,
         write: Arc<Mutex<WsSink>>,
+        shutdown_rx: mpsc::Receiver<()>,
     ) {
         let Some(message_rx) = self.message_rx.take() else {
             tracing::error!("message_rx 已经被消费，后台循环无法启动");
             return;
         };
 
-        self.start_background_loop(read, write, message_rx).await;
+        self.start_background_loop(read, write, message_rx, shutdown_rx)
+            .await;
     }
 
     /// 启动后台循环（不阻塞）
@@ -129,6 +136,7 @@ impl CollaborationClient {
         mut read: WsStreamRead,
         write: Arc<Mutex<WsSink>>,
         mut message_rx: mpsc::UnboundedReceiver<ClientMessage>,
+        mut shutdown_rx: mpsc::Receiver<()>,
     ) {
         let state = self.state.clone();
         let session = self.session.clone();
@@ -201,6 +209,12 @@ impl CollaborationClient {
                         } else {
                             error!("消息序列化失败");
                         }
+                    }
+
+                    _ = shutdown_rx.recv() => {
+                        info!("收到关闭信号，后台循环退出");
+                        *state.write().await = ClientState::Disconnected;
+                        break;
                     }
                 }
             }

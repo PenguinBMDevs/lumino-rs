@@ -465,7 +465,7 @@ impl MidiDocument {
             }
         }
 
-        notes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        notes.sort_by(|a, b| a.0.total_cmp(&b.0));
         notes
     }
 
@@ -619,9 +619,9 @@ pub fn scan_track_names(data: &[u8]) -> Vec<Option<String>> {
 fn decode_midi_text(bytes: &[u8]) -> String {
     use encoding_rs::*;
 
-    // 1. 先检查纯 ASCII
+    // 1. 先检查纯 ASCII（ASCII 是有效的 UTF-8，可直接转换）
     if bytes.is_ascii() {
-        return unsafe { String::from_utf8_unchecked(bytes.to_vec()) };
+        return String::from_utf8(bytes.to_vec()).expect("ASCII 一定是有效 UTF-8");
     }
 
     // 2. 尝试 UTF-8

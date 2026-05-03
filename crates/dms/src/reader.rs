@@ -8,7 +8,7 @@ use bytes::Bytes;
 use flate2::read::ZlibDecoder;
 use std::io::{Cursor, Read};
 
-use crate::error::Result;
+use crate::error::{DmsError, Result};
 use crate::constants::{DATALENGTH_SIZE, HEADER_SIZE, TYPEID_SIZE};
 use crate::node::{DmsCompositeNode, DmsNode, create_node};
 use crate::node_type::DmsNodeType;
@@ -169,6 +169,67 @@ impl DmsReader {
         ]) as usize)
     }
 
+    /// 从流中解析复合节点（带进度回调）
+    pub fn parse_composite_from_stream<R: Read>(
+        &self,
+        type_id: DmsNodeType,
+        layer: i32,
+        stream: &mut R,
+        length: usize,
+        progress_callback: Option<&dyn Fn(f64)>,
+    ) -> Result<DmsCompositeNode> {
+        let mut node = DmsCompositeNode::new(type_id, layer);
+
+        if length == 0 {
+            return Ok(node);
+        }
+
+        let mut bytes_read = 0usize;
+
+        while bytes_read < length {
+            let child = self.read_node(stream, layer + 1, Some(&type_id))?;
+            bytes_read += HEADER_SIZE + child.length();
+
+            if bytes_read > length {
+                return Err(DmsError::Corrupted(
+                    "子节点总长度超过父节点声明长度".to_string(),
+                ));
+            }
+
+            node.children.push(child);
+
+            if let Some(cb) = progress_callback {
+                cb(bytes_read as f64 / length as f64);
+            }
+        }
+
+        Ok(node)
+    }
+
+    /// 从数据解析复合节点（带进度回调）
+    pub fn parse_composite_from_data(
+        &self,
+        type_id: DmsNodeType,
+        layer: i32,
+        data: Bytes,
+        progress_callback: Option<&dyn Fn(f64)>,
+    ) -> Result<DmsCompositeNode> {
+        let length = data.len();
+        let mut cursor = std::io::Cursor::new(data);
+        self.parse_composite_from_stream(type_id, layer, &mut cursor, length, progress_callback)
+    }
+
+    /// 从数据解析复合节点
+    #[inline]
+    pub fn parse_composite_from_bytes(
+        &self,
+        type_id: DmsNodeType,
+        layer: i32,
+        data: Bytes,
+    ) -> Result<DmsCompositeNode> {
+        self.parse_composite_from_data(type_id, layer, data, None)
+    }
+
     /// 从流中读取单个节点（流式读取，会分配新内存）
     pub fn read_node<R: Read>(
         &self,
@@ -179,6 +240,13 @@ impl DmsReader {
         let raw_type_id = Self::read_type_id_raw(stream)?;
         let type_id = DmsNodeType::from_parts(raw_type_id, layer, parent_type);
         let data_length = Self::read_data_length(stream)?;
+
+        if type_id.is_composite() {
+            let composite = self.parse_composite_from_stream(
+                type_id, layer, stream, data_length, None,
+            )?;
+            return Ok(Box::new(composite));
+        }
 
         let mut data = vec![0u8; data_length];
         stream.read_exact(&mut data)?;

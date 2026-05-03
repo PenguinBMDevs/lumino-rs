@@ -1,3 +1,4 @@
+use crate::constants::rendering::grid_colors;
 use crate::host::Host;
 
 impl Host {
@@ -35,9 +36,9 @@ impl Host {
                 let is_black = Host::is_black_key(key as isize);
 
                 let color = if is_black {
-                    [0.15, 0.15, 0.15, 1.0]
+                    grid_colors::BLACK_KEY_LINE
                 } else {
-                    [0.1, 0.1, 0.1, 1.0]
+                    grid_colors::WHITE_KEY_LINE
                 };
                 let width = if is_black { 0.5 } else { 0.3 };
 
@@ -63,7 +64,7 @@ impl Host {
                 instances.push(lumino_gfx::GridLineInstance::new(
                     [x, ruler_height],
                     [x, viewport_height],
-                    [0.3, 0.3, 0.3, 1.0],
+                    grid_colors::BAR_LINE,
                     1.0,
                 ));
             }
@@ -85,7 +86,7 @@ impl Host {
                 instances.push(lumino_gfx::GridLineInstance::new(
                     [x, ruler_height],
                     [x, viewport_height],
-                    [0.2, 0.2, 0.2, 1.0],
+                    grid_colors::BEAT_LINE,
                     0.5,
                 ));
             }
