@@ -1,14 +1,12 @@
 use std::path::PathBuf;
 
-/// 集成测试：如果提供了可访问的 LMPJ 文件，则测试解码并使用 `save`/`save_sync` 写回临时文件再解码。
+/// 集成测试：如果通过 `LUMINO_TEST_LMPJ` 环境变量提供了可访问的 LMPJ 文件，
+/// 则测试解码并使用 `save`/`save_sync` 写回临时文件再解码。
 #[test]
+#[ignore = "需要外部 LMPJ 文件，设置 LUMINO_TEST_LMPJ 环境变量"]
 fn decode_and_resave_lmpj_if_present() {
-    // 优先使用环境变量，若未设置，则尝试常见的测试路径（由用户提供）。
     let candidates = vec![
         std::env::var("LUMINO_TEST_LMPJ").ok().map(PathBuf::from),
-        Some(PathBuf::from(
-            r"D:\BM-DATA\MIDI File\Avast Fluttershy_s Ascot - Insane Edition 30.26 million_2.lmpj",
-        )),
     ];
 
     let path = candidates.into_iter().flatten().find(|p| p.exists());

@@ -79,11 +79,17 @@ impl DmsNode for DmsAnsiStringNode {
     }
 
     fn show_content(&self) -> String {
-        self.string_data().unwrap_or_default()
+        self.string_data().unwrap_or_else(|e| {
+            tracing::warn!("GB18030 解码失败: {}", e);
+            String::new()
+        })
     }
 
     fn content_raw(&self) -> Box<dyn std::any::Any> {
-        Box::new(self.string_data().unwrap_or_default())
+        Box::new(self.string_data().unwrap_or_else(|e| {
+            tracing::warn!("GB18030 解码失败: {}", e);
+            String::new()
+        }))
     }
 
     #[inline]

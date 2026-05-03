@@ -1,3 +1,4 @@
+use crate::constants::*;
 use crate::{Api, Error, InputInfo, OutputConnection, OutputInfo};
 
 const IDENTIFIER: &str = "com.buickmeow.lumino";
@@ -93,35 +94,35 @@ impl SystemOutputConn {
 
 impl OutputConnection for SystemOutputConn {
     fn note_on(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
-        self.send(&[0x90 + ch, key, vel])
+        self.send(&[STATUS_NOTE_ON | ch, key, vel])
     }
 
     fn note_off(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
-        self.send(&[0x80 + ch, key, vel])
+        self.send(&[STATUS_NOTE_OFF | ch, key, vel])
     }
 
     fn control_change(&mut self, ch: u8, controller: u8, value: u8) -> Result<(), Error> {
-        self.send(&[0xB0 + ch, controller, value])
+        self.send(&[STATUS_CONTROL_CHANGE | ch, controller, value])
     }
 
     fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error> {
-        self.send(&[0xC0 + ch, program, 0])
+        self.send(&[STATUS_PROGRAM_CHANGE | ch, program, 0])
     }
 
     fn pitch_bend(&mut self, ch: u8, value: f32) -> Result<(), Error> {
         // 将 -1.0 ~ 1.0 转换为 14-bit MIDI 弯音值 (0 ~ 16383)
-        let bend = ((value + 1.0) * 0.5 * 16383.0).round() as u16;
-        let lsb = (bend & 0x7F) as u8;
-        let msb = ((bend >> 7) & 0x7F) as u8;
-        self.send(&[0xE0 + ch, lsb, msb])
+        let bend = ((value + 1.0) * 0.5 * f32::from(PITCH_BEND_MAX)).round() as u16;
+        let lsb = (bend & u16::from(MIDI_VALUE_MASK)) as u8;
+        let msb = ((bend >> 7) & u16::from(MIDI_VALUE_MASK)) as u8;
+        self.send(&[STATUS_PITCH_BEND | ch, lsb, msb])
     }
 
     fn channel_pressure(&mut self, ch: u8, pressure: u8) -> Result<(), Error> {
-        self.send(&[0xD0 + ch, pressure, 0])
+        self.send(&[STATUS_CHANNEL_PRESSURE | ch, pressure, 0])
     }
 
     fn poly_pressure(&mut self, ch: u8, key: u8, pressure: u8) -> Result<(), Error> {
-        self.send(&[0xA0 + ch, key, pressure])
+        self.send(&[STATUS_POLY_PRESSURE | ch, key, pressure])
     }
 
     fn send_raw(&mut self, data: [u8; 3]) -> Result<(), Error> {

@@ -136,3 +136,132 @@ pub fn parse_smf(
 
     (track_infos, track_notes_map, track_events_map)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use midly::{
+        num::{u4, u7, u28},
+        Format, Header, MetaMessage, Smf, Timing, Track, TrackEvent, TrackEventKind,
+    };
+
+    /// 辅助：构建一个简单的 SMF，包含一条音轨的给定事件
+    fn build_smf(events: Vec<(u32, TrackEventKind)>) -> Smf {
+        let track: Track = events
+            .into_iter()
+            .map(|(delta, kind)| TrackEvent {
+                delta: u28::from(delta),
+                kind,
+            })
+            .collect();
+        Smf {
+            header: Header::new(Format::Parallel, Timing::Metrical(480.into())),
+            tracks: vec![track],
+        }
+    }
+
+    #[test]
+    fn test_simple_note_on_off() {
+        let smf = build_smf(vec![
+            (0, TrackEventKind::Midi {
+                channel: u4::from(0),
+                message: midly::MidiMessage::NoteOn { key: u7::from(60), vel: u7::from(100) },
+            }),
+            (480, TrackEventKind::Midi {
+                channel: u4::from(0),
+                message: midly::MidiMessage::NoteOff { key: u7::from(60), vel: u7::from(64) },
+            }),
+        ]);
+        let (_infos, notes, _events) = parse_smf(&smf);
+        let track_notes = notes.get(&0).unwrap();
+        assert_eq!(track_notes.len(), 1);
+        assert_eq!(track_notes[0].1, 60); // key
+        assert_eq!(track_notes[0].2, 480.0); // length
+    }
+
+    #[test]
+    fn test_velocity_zero_as_note_off() {
+        let smf = build_smf(vec![
+            (0, TrackEventKind::Midi {
+                channel: u4::from(0),
+                message: midly::MidiMessage::NoteOn { key: u7::from(60), vel: u7::from(100) },
+            }),
+            (480, TrackEventKind::Midi {
+                channel: u4::from(0),
+                message: midly::MidiMessage::NoteOn { key: u7::from(60), vel: u7::from(0) },
+            }),
+        ]);
+        let (_infos, notes, _events) = parse_smf(&smf);
+        let track_notes = notes.get(&0).unwrap();
+        assert_eq!(track_notes.len(), 1);
+        assert_eq!(track_notes[0].2, 480.0);
+    }
+
+    #[test]
+    fn test_unclosed_note() {
+        // NoteOn 没有对应 NoteOff，应在轨道末尾自动关闭
+        let smf = build_smf(vec![
+            (0, TrackEventKind::Midi {
+                channel: u4::from(0),
+                message: midly::MidiMessage::NoteOn { key: u7::from(60), vel: u7::from(100) },
+            }),
+        ]);
+        let (_infos, notes, _events) = parse_smf(&smf);
+        let track_notes = notes.get(&0).unwrap();
+        assert_eq!(track_notes.len(), 1);
+        assert_eq!(track_notes[0].2, 0.0); // length is 0 since end_tick == start_tick
+    }
+
+    #[test]
+    fn test_multiple_tracks() {
+        let track0: Track = vec![
+            TrackEvent { delta: u28::from(0), kind: TrackEventKind::Midi {
+                channel: u4::from(0),
+                message: midly::MidiMessage::NoteOn { key: u7::from(60), vel: u7::from(100) },
+            }},
+            TrackEvent { delta: u28::from(480), kind: TrackEventKind::Midi {
+                channel: u4::from(0),
+                message: midly::MidiMessage::NoteOff { key: u7::from(60), vel: u7::from(64) },
+            }},
+        ];
+        let track1: Track = vec![
+            TrackEvent { delta: u28::from(0), kind: TrackEventKind::Midi {
+                channel: u4::from(1),
+                message: midly::MidiMessage::NoteOn { key: u7::from(72), vel: u7::from(80) },
+            }},
+            TrackEvent { delta: u28::from(240), kind: TrackEventKind::Midi {
+                channel: u4::from(1),
+                message: midly::MidiMessage::NoteOff { key: u7::from(72), vel: u7::from(64) },
+            }},
+        ];
+        let smf = Smf {
+            header: Header::new(Format::Parallel, Timing::Metrical(480.into())),
+            tracks: vec![track0, track1],
+        };
+        let (_infos, notes, _events) = parse_smf(&smf);
+        assert_eq!(notes.get(&0).unwrap().len(), 1);
+        assert_eq!(notes.get(&1).unwrap().len(), 1);
+        assert_eq!(notes[&0][0].1, 60);
+        assert_eq!(notes[&1][0].1, 72);
+    }
+
+    #[test]
+    fn test_control_events() {
+        let smf = build_smf(vec![
+            (0, TrackEventKind::Midi {
+                channel: u4::from(0),
+                message: midly::MidiMessage::Controller { controller: u7::from(7), value: u7::from(100) },
+            }),
+            (0, TrackEventKind::Midi {
+                channel: u4::from(1),
+                message: midly::MidiMessage::ProgramChange { program: u7::from(5) },
+            }),
+        ]);
+        let (_infos, _notes, events) = parse_smf(&smf);
+        let track_events = events.get(&0).unwrap();
+        assert_eq!(track_events.control_changes.len(), 1);
+        assert_eq!(track_events.control_changes[0].2, 7);
+        assert_eq!(track_events.program_changes.len(), 1);
+        assert_eq!(track_events.program_changes[0].2, 5);
+    }
+}

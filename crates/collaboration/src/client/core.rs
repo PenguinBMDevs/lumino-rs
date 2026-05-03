@@ -55,7 +55,9 @@ impl CollaborationClient {
     /// 断开连接
     pub async fn disconnect(&mut self) -> Result<()> {
         if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(()).await;
+            if tx.send(()).await.is_err() {
+                tracing::warn!("发送关闭信号失败");
+            }
         }
 
         *self.state.write().await = ClientState::Disconnected;

@@ -25,10 +25,12 @@ unsafe extern "system" fn window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let old_proc_val = ORIGINAL_WNDPROC.load(Ordering::Relaxed);
+    let old_proc_val = ORIGINAL_WNDPROC.load(Ordering::SeqCst);
     let old_proc = if old_proc_val != 0 {
-        #[allow(unsafe_op_in_unsafe_fn)]
-        Some(std::mem::transmute::<isize, WndProcType>(old_proc_val))
+        // SAFETY: original_wndproc 存储的是 SetWindowLongPtrW 返回的合法窗口过程指针
+        // ORIGINAL_WNDPROC 在 setup_resize_border 中只设置一次
+        debug_assert_ne!(old_proc_val, 0, "ORIGINAL_WNDPROC 已被二次设置，可能导致 UB");
+        Some(unsafe { std::mem::transmute::<isize, WndProcType>(old_proc_val) })
     } else {
         None
     };
@@ -120,7 +122,8 @@ pub fn setup_resize_border(window: &Window) -> Result<(), String> {
 
         if original_wndproc != 0 {
             // 使用 AtomicIsize 保存，允许被新窗口的 wndproc 覆盖（虽然 winit 一般共享一个 wndproc）
-            ORIGINAL_WNDPROC.store(original_wndproc, Ordering::Relaxed);
+            // 使用 SeqCst 保证所有线程看到一致的值
+            ORIGINAL_WNDPROC.store(original_wndproc, Ordering::SeqCst);
         }
 
         Ok(())

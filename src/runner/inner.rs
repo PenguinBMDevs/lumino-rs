@@ -203,45 +203,6 @@ impl Runner {
             },
         };
 
-        // Debug 模式下自动连接本地服务器
-        // #[cfg(debug_assertions)]
-        // {
-        //     // 生成时间戳格式的用户名
-        //     let username = format!(
-        //         "debug_{}",
-        //         std::time::SystemTime::now()
-        //             .duration_since(std::time::UNIX_EPOCH)
-        //             .unwrap_or_default()
-        //             .as_millis()
-        //     );
-
-        //     tracing::info!(
-        //         "Debug 模式：自动连接协作服务器 127.0.0.1:3000，用户名: {}",
-        //         username
-        //     );
-
-        //     // 打开协作对话框并设置 UI 状态为正在连接
-        //     runner
-        //         .window
-        //         .ui_mut()
-        //         .open_collaboration_dialog_with_state(
-        //             "127.0.0.1".to_string(),
-        //             3000,
-        //             username.clone(),
-        //         );
-
-        //     // 通过正常流程处理连接（这会更新 Runner 的 collaboration_status）
-        //     let host = "127.0.0.1".to_string();
-        //     let port = 3000u16;
-        //     runner.handle_collaboration_connect(
-        //         host,
-        //         port,
-        //         username,
-        //         Some("Lumino 房间".to_string()),
-        //         None,
-        //     );
-        // }
-
         Ok(runner)
     }
 

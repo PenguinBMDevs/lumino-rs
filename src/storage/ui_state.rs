@@ -11,7 +11,13 @@ pub struct UiStateWrapper {
 impl UiStateWrapper {
     pub fn new(path: PathBuf) -> Self {
         let inner = match fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+            Ok(bytes) => match serde_json::from_slice(&bytes) {
+                Ok(state) => state,
+                Err(e) => {
+                    tracing::warn!("UI 状态文件解析失败 ({}), 使用默认状态", e);
+                    UiState::default()
+                }
+            },
             Err(_) => UiState::default(),
         };
         Self {

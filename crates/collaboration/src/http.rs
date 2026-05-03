@@ -2,6 +2,7 @@
 //!
 //! 用于与服务器 HTTP API 交互（创建房间、获取房间信息等）
 
+use crate::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
@@ -63,7 +64,7 @@ impl HttpClient {
         &self,
         name: &str,
         host_id: &str,
-    ) -> Result<CreateRoomResponse, Box<dyn std::error::Error>> {
+    ) -> Result<CreateRoomResponse> {
         let request = CreateRoomRequest {
             name: name.to_string(),
             host_id: host_id.to_string(),
@@ -73,17 +74,18 @@ impl HttpClient {
         let url = format!("{}/api/room/create", self.base_url);
         let response = self.client.post(&url).json(&request).send().await?;
 
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(format!("HTTP error: {}", error_text).into());
+        let status = response.status();
+        let text = response.text().await?;
+
+        if !status.is_success() {
+            return Err(format!("HTTP error: {}", text).into());
         }
 
-        let text = response.text().await?;
         debug!(response = %text, "[HTTP] Response");
 
         // Debug: print the JSON structure
         let room_response: CreateRoomResponse = serde_json::from_str(&text)
-            .map_err(|e| format!("JSON parse error: {} - text: {}", e, text))?;
+            .map_err(|e| crate::CollaborationError::Other(format!("JSON parse error: {} - text: {}", e, text)))?;
 
         debug!(?room_response.room, "[HTTP] Parsed room");
         Ok(room_response)
@@ -93,21 +95,23 @@ impl HttpClient {
     pub async fn get_room_info(
         &self,
         room_id: &str,
-    ) -> Result<RoomInfo, Box<dyn std::error::Error>> {
+    ) -> Result<RoomInfo> {
         let url = format!("{}/api/room/{}/info", self.base_url, room_id);
         let response: reqwest::Response = self.client.get(&url).send().await?;
 
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
+        let status = response.status();
+        let error_text = response.text().await?;
+
+        if !status.is_success() {
             return Err(format!("HTTP error: {}", error_text).into());
         }
 
-        let room_info: RoomInfo = response.json().await?;
+        let room_info: RoomInfo = serde_json::from_str(&error_text)?;
         Ok(room_info)
     }
 
     /// 健康检查
-    pub async fn health_check(&self) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    pub async fn health_check(&self) -> Result<serde_json::Value> {
         let url = format!("{}/health", self.base_url);
         let response: reqwest::Response = self.client.get(&url).send().await?;
 

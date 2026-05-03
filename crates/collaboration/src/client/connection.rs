@@ -180,7 +180,11 @@ impl CollaborationClient {
                         let ping = ClientMessage::Ping { timestamp };
                         if let Ok(text) = serde_json::to_string(&ping) {
                             let mut w = write.lock().await;
-                            let _ = w.send(Message::Text(text.into())).await;
+                            if let Err(e) = w.send(Message::Text(text.into())).await {
+                                tracing::warn!("心跳发送失败: {}", e);
+                                *state.write().await = ClientState::Disconnected;
+                                break;
+                            }
                         }
                     }
 

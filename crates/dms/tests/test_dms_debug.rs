@@ -9,8 +9,11 @@ const TEST_TIMEOUT_SECS: u64 = 10; // 10秒超时用于调试
 
 /// 调试 DMS 扫描 - 检查文件头
 #[test]
+#[ignore = "需要外部 DMS 文件"]
 fn test_dms_debug_header() {
-    let test_path = PathBuf::from(r"E:\工程文件\MIDI创作\待编辑\warma审判曲\拼合成果.dms");
+    let test_path = std::env::var("LUMINO_TEST_DMS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(r"E:\工程文件\MIDI创作\待编辑\warma审判曲\拼合成果.dms"));
 
     if !test_path.exists() {
         println!("测试文件不存在，跳过测试: {:?}", test_path);
@@ -49,8 +52,11 @@ fn test_dms_debug_header() {
 
 /// 调试 DMS 扫描 - 使用更短的超时
 #[test]
+#[ignore = "需要外部 DMS 文件"]
 fn test_dms_debug_scan() {
-    let test_path = PathBuf::from(r"E:\工程文件\MIDI创作\待编辑\warma审判曲\拼合成果.dms");
+    let test_path = std::env::var("LUMINO_TEST_DMS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(r"E:\工程文件\MIDI创作\待编辑\warma审判曲\拼合成果.dms"));
 
     if !test_path.exists() {
         println!("测试文件不存在，跳过测试: {:?}", test_path);

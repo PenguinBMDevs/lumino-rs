@@ -10,10 +10,14 @@ use std::time::Duration;
 const TEST_TIMEOUT_SECS: u64 = 80; // 80秒超时
 
 /// 测试 DMS 文件加载的完整流程（带超时）
+/// 需要设置环境变量 `LUMINO_TEST_DMS` 指向一个有效的 DMS 文件
 #[test]
+#[ignore = "需要外部 DMS 文件，设置 LUMINO_TEST_DMS 环境变量"]
 fn test_dms_full_loading_pipeline() {
-    // 使用用户提供的测试文件路径
-    let test_path = PathBuf::from(r"E:\工程文件\MIDI创作\待编辑\warma审判曲\拼合成果.dms");
+    // 使用环境变量或默认路径
+    let test_path = std::env::var("LUMINO_TEST_DMS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(r"E:\工程文件\MIDI创作\待编辑\warma审判曲\拼合成果.dms"));
 
     // 检查文件是否存在
     if !test_path.exists() {
@@ -103,8 +107,11 @@ fn run_dms_test(test_path: &PathBuf) -> Result<(), String> {
 
 /// 测试 DMS 文件格式验证（带超时）
 #[test]
+#[ignore = "需要外部 DMS 文件，设置 LUMINO_TEST_DMS 环境变量"]
 fn test_dms_file_format_validation() {
-    let test_path = PathBuf::from(r"E:\工程文件\MIDI创作\待编辑\warma审判曲\拼合成果.dms");
+    let test_path = std::env::var("LUMINO_TEST_DMS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(r"E:\工程文件\MIDI创作\待编辑\warma审判曲\拼合成果.dms"));
 
     if !test_path.exists() {
         println!("测试文件不存在，跳过测试: {:?}", test_path);
@@ -139,8 +146,11 @@ fn test_dms_file_format_validation() {
 
 /// 测试 DMS 扫描功能（带超时）
 #[test]
+#[ignore = "需要外部 DMS 文件，设置 LUMINO_TEST_DMS 环境变量"]
 fn test_dms_scan_only() {
-    let test_path = PathBuf::from(r"E:\工程文件\MIDI创作\待编辑\warma审判曲\拼合成果.dms");
+    let test_path = std::env::var("LUMINO_TEST_DMS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(r"E:\工程文件\MIDI创作\待编辑\warma审判曲\拼合成果.dms"));
 
     if !test_path.exists() {
         println!("测试文件不存在，跳过测试: {:?}", test_path);

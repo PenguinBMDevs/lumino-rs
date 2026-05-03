@@ -10,6 +10,7 @@ use xsynth_core::{
 use xsynth_realtime::{RealtimeEventSender, RealtimeSynth, SynthEvent, XSynthRealtimeConfig};
 
 use crate::soundfont_cache;
+use crate::constants::*;
 use crate::{Api, Error, InputInfo, OutputConnection, OutputInfo};
 
 /// XSynth 运行时统计信息
@@ -70,7 +71,7 @@ impl XSynth {
 
         // 音色库已就绪，现在打开音频流
         let mut rt_config = XSynthRealtimeConfig::default();
-        let requested_sample_rate = options.as_ref().map(|o| o.sample_rate).unwrap_or(44100);
+        let requested_sample_rate = sample_rate; // 复用上面已计算的采样率
 
         if let Some(opt) = options {
             rt_config.render_window_ms = opt.buffer_ms;
@@ -172,7 +173,7 @@ struct XSynthOutputConn {
 
 impl OutputConnection for XSynthOutputConn {
     fn note_on(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
-        let channel = (ch & 0x0F) as u32;
+        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
 
         tracing::debug!(
             "XSynthOutputConn::note_on: raw_ch={}, channel={}, key={}, vel={}",
@@ -187,8 +188,8 @@ impl OutputConnection for XSynthOutputConn {
         self.sender.send_event(SynthEvent::Channel(
             channel,
             ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
-                key: key & 0x7F,
-                vel: velocity & 0x7F,
+                key: key & MIDI_VALUE_MASK,
+                vel: velocity & MIDI_VALUE_MASK,
             }),
         ));
 
@@ -197,7 +198,7 @@ impl OutputConnection for XSynthOutputConn {
     }
 
     fn note_off(&mut self, ch: u8, key: u8, _vel: u8) -> Result<(), Error> {
-        let channel = (ch & 0x0F) as u32;
+        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
 
         tracing::debug!(
             "XSynthOutputConn::note_off: raw_ch={}, channel={}, key={}",
@@ -208,7 +209,7 @@ impl OutputConnection for XSynthOutputConn {
 
         self.sender.send_event(SynthEvent::Channel(
             channel,
-            ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: key & 0x7F }),
+            ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: key & MIDI_VALUE_MASK }),
         ));
 
         tracing::debug!("XSynthOutputConn::note_off: 事件已发送到通道 {}", channel);
@@ -216,7 +217,7 @@ impl OutputConnection for XSynthOutputConn {
     }
 
     fn control_change(&mut self, ch: u8, controller: u8, value: u8) -> Result<(), Error> {
-        let channel = (ch & 0x0F) as u32;
+        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
 
         tracing::debug!(
             "XSynthOutputConn::control_change: channel={}, controller={}, value={}",
@@ -236,7 +237,7 @@ impl OutputConnection for XSynthOutputConn {
     }
 
     fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error> {
-        let channel = (ch & 0x0F) as u32;
+        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
 
         tracing::debug!(
             "XSynthOutputConn::program_change: channel={}, program={}",
@@ -253,7 +254,7 @@ impl OutputConnection for XSynthOutputConn {
     }
 
     fn pitch_bend(&mut self, ch: u8, value: f32) -> Result<(), Error> {
-        let channel = (ch & 0x0F) as u32;
+        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
 
         tracing::debug!(
             "XSynthOutputConn::pitch_bend: channel={}, value={}",
@@ -271,19 +272,19 @@ impl OutputConnection for XSynthOutputConn {
         Ok(())
     }
 
-    fn channel_pressure(&mut self, _ch: u8, _pressure: u8) -> Result<(), Error> {
-        // xsynth 目前不直接支持 channel pressure，忽略
-        Ok(())
+    fn channel_pressure(&mut self, ch: u8, _pressure: u8) -> Result<(), Error> {
+        tracing::warn!("XSynth: 通道 {} 的 channel_pressure 暂不支持", ch);
+        Err(Error::SendFailed("XSynth does not support channel pressure".into()))
     }
 
-    fn poly_pressure(&mut self, _ch: u8, _key: u8, _pressure: u8) -> Result<(), Error> {
-        // xsynth 目前不直接支持 poly pressure，忽略
-        Ok(())
+    fn poly_pressure(&mut self, ch: u8, _key: u8, _pressure: u8) -> Result<(), Error> {
+        tracing::warn!("XSynth: 通道 {} 的 poly_pressure 暂不支持", ch);
+        Err(Error::SendFailed("XSynth does not support poly pressure".into()))
     }
 
     fn send_raw(&mut self, _data: [u8; 3]) -> Result<(), Error> {
-        // xsynth 不支持原始 MIDI 发送
-        Ok(())
+        tracing::warn!("XSynth: send_raw 暂不支持");
+        Err(Error::SendFailed("XSynth does not support raw MIDI send".into()))
     }
 
     fn all_notes_off(&mut self) -> Result<(), Error> {

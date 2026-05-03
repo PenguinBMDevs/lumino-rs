@@ -34,15 +34,18 @@ impl DmsWriter {
         stream.write_all(&type_id.to_le_bytes())?;
 
         if node.is_composite() {
-            if let Some(composite) = node.as_any().downcast_ref::<DmsCompositeNode>() {
-                let length = u32::try_from(composite.calculate_length()).map_err(|_| {
-                    crate::error::DmsError::UnsupportedType(
-                        "Composite node size exceeds u32 max".into(),
-                    )
-                })?;
-                stream.write_all(&length.to_le_bytes())?;
-                self.write_tree(stream, composite)?;
-            }
+            let composite = node.as_any().downcast_ref::<DmsCompositeNode>().ok_or_else(|| {
+                crate::error::DmsError::UnsupportedType(
+                    "is_composite() 返回 true 但 downcast 失败，类型系统不一致".into(),
+                )
+            })?;
+            let length = u32::try_from(composite.calculate_length()).map_err(|_| {
+                crate::error::DmsError::UnsupportedType(
+                    "Composite node size exceeds u32 max".into(),
+                )
+            })?;
+            stream.write_all(&length.to_le_bytes())?;
+            self.write_tree(stream, composite)?;
         } else {
             // 对于所有数据节点（包括浮点数），写入完整的 raw_data
             // 浮点数节点的 raw_data 包含内部头（6字节）+ 浮点值

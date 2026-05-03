@@ -5,13 +5,11 @@
  */
 pub mod client;
 pub mod error;
-pub mod handlers;
 pub mod http;
 pub mod types;
 
+pub use client::{ClientMessage, CollaborationClient, CollaborationEvent, ServerMessage};
 pub use error::{CollaborationError, Result};
-
-pub use client::{CollaborationClient, CollaborationEvent};
 pub use types::*;
 
 /// 默认服务器端口

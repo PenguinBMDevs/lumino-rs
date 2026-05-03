@@ -267,7 +267,10 @@ fn collect_track_events(
     if include_globals {
         for tempo in &track_data.tempos {
             let tempo_value = midly::num::u24::try_from(tempo.tempo)
-                .unwrap_or_else(|| midly::num::u24::new(500000)); // 默认 120 BPM = 500000 微秒/拍
+                .unwrap_or_else(|| {
+                    tracing::warn!(tempo = tempo.tempo, "速度值超出 u24 范围，使用默认 120 BPM");
+                    midly::num::u24::new(500000)
+                });
             events.push(TrackEvent {
                 delta: tempo.tick.into(),
                 kind: TrackEventKind::Meta(MetaMessage::Tempo(tempo_value)),
