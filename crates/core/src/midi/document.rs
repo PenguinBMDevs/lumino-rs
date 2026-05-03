@@ -7,7 +7,6 @@
 //! 多线程优化：使用 rayon 并行处理音轨级别的音符转换
 
 use lumino_midi::compact::{CompactEvent, EventKind};
-use rayon::prelude::*;
 
 use super::error::MidiResult;
 use super::track::TrackManager;
@@ -94,12 +93,65 @@ impl MidiDocument {
         track_names: Vec<Option<String>>,
         progress: Option<&dyn Fn(f64)>,
     ) -> MidiResult<Self> {
-        // 阶段1：统计每个音轨的音符数量和总 ticks（单线程，数据量小）
+        let (total_ticks, track_note_counts, total_note_count) =
+            Self::build_track_statistics(&notes);
+
+        if let Some(cb) = progress {
+            (cb)(0.55);
+        }
+
+        let track_events_offset = Self::compute_track_offsets(&track_note_counts);
+        let track_events = Self::convert_notes_parallel(&notes, &track_note_counts);
+
+        drop(notes);
+
+        let track_events_range =
+            Self::build_track_event_ranges(&track_note_counts, &track_events_offset);
+        let (events, all_tempo_changes) =
+            Self::merge_events_with_tempos(track_events, total_note_count, tempo_changes);
+
+        if let Some(cb) = progress {
+            (cb)(0.75);
+        }
+
+        let mut events = events;
+        events.shrink_to_fit();
+
+        if let Some(cb) = progress {
+            (cb)(0.90);
+        }
+
+        let track_count = track_note_counts.len() as u16;
+        let tracks = TrackManager::new(track_count);
+
+        tracing::info!(
+            "MidiDocument: 已加载 {} 个事件, {} 音轨, {} ticks, {} tempo 变化 (多线程并行处理)",
+            events.len(),
+            track_count,
+            total_ticks,
+            all_tempo_changes.len(),
+        );
+
+        Ok(Self {
+            events,
+            track_events_range,
+            tempo_changes: all_tempo_changes,
+            track_names,
+            total_ticks,
+            track_count,
+            tracks,
+        })
+    }
+
+    /// 阶段1：统计每个音轨的音符数量和总 ticks
+    fn build_track_statistics(
+        notes: &[midly::loader::PackedNote],
+    ) -> (u32, Vec<u64>, usize) {
         let mut total_ticks: u32 = 0;
         let mut track_note_counts: Vec<u64> = Vec::new();
         let mut total_note_count: usize = 0;
 
-        for note in &notes {
+        for note in notes {
             total_ticks = total_ticks.max(note.end_tick);
             let tid = note.track as usize;
             while track_note_counts.len() <= tid {
@@ -109,27 +161,34 @@ impl MidiDocument {
             total_note_count += 1;
         }
 
-        if let Some(cb) = progress {
-            (cb)(0.55);
-        }
+        (total_ticks, track_note_counts, total_note_count)
+    }
 
-        // 阶段2：并行处理 - 按音轨分组并转换为 CompactEvent
-        let track_count = track_note_counts.len();
-        let mut track_events_offset: Vec<usize> = Vec::with_capacity(track_count);
+    /// 计算每个音轨在最终 events 数组中的起始偏移
+    fn compute_track_offsets(track_note_counts: &[u64]) -> Vec<usize> {
+        let mut offsets = Vec::with_capacity(track_note_counts.len());
         let mut offset: usize = 0;
-        for count in &track_note_counts {
-            track_events_offset.push(offset);
+        for count in track_note_counts {
+            offsets.push(offset);
             offset += *count as usize * 2;
         }
+        offsets
+    }
 
-        // 按音轨分组音符的索引，避免借用问题
+    /// 阶段2：并行处理 - 按音轨分组并转换为 CompactEvent
+    fn convert_notes_parallel(
+        notes: &[midly::loader::PackedNote],
+        track_note_counts: &[u64],
+    ) -> Vec<Vec<CompactEvent>> {
+        use rayon::prelude::*;
+
+        let track_count = track_note_counts.len();
         let mut track_note_indices: Vec<Vec<usize>> = vec![Vec::new(); track_count];
         for (idx, note) in notes.iter().enumerate() {
             track_note_indices[note.track as usize].push(idx);
         }
 
-        // 并行处理每个音轨：转换为 CompactEvent 并排序
-        let track_events: Vec<Vec<CompactEvent>> = track_note_indices
+        track_note_indices
             .par_iter()
             .map(|indices| {
                 let mut events = Vec::with_capacity(indices.len() * 2);
@@ -152,15 +211,18 @@ impl MidiDocument {
                         note.velocity as u16,
                     ));
                 }
-                // 按 tick 排序
                 events.sort_by_key(|e| e.delta_tick());
                 events
             })
-            .collect();
+            .collect()
+    }
 
-        drop(notes);
-
-        // 阶段3：合并所有音轨的事件（单线程，保持音轨顺序）
+    /// 阶段3：合并所有音轨的事件 + tempo 事件
+    fn merge_events_with_tempos(
+        track_events: Vec<Vec<CompactEvent>>,
+        total_note_count: usize,
+        tempo_changes: Vec<(u32, f32)>,
+    ) -> (Vec<CompactEvent>, Vec<(u32, f32)>) {
         let estimated_capacity = total_note_count
             .saturating_mul(2)
             .saturating_add(tempo_changes.len());
@@ -195,45 +257,23 @@ impl MidiDocument {
             ));
         }
 
-        if let Some(cb) = progress {
-            (cb)(0.75);
-        }
+        (events, all_tempo_changes)
+    }
 
-        // 构建音轨事件范围索引
-        let mut track_events_range: Vec<(usize, usize)> =
-            Vec::with_capacity(track_note_counts.len());
-        for (i, count) in track_note_counts.iter().enumerate() {
-            let start = track_events_offset[i];
-            let end = start + *count as usize * 2;
-            track_events_range.push((start, end));
-        }
-
-        events.shrink_to_fit();
-
-        if let Some(cb) = progress {
-            (cb)(0.90);
-        }
-
-        let track_count = track_note_counts.len() as u16;
-        let tracks = TrackManager::new(track_count);
-
-        tracing::info!(
-            "MidiDocument: 已加载 {} 个事件, {} 音轨, {} ticks, {} tempo 变化 (多线程并行处理)",
-            events.len(),
-            track_count,
-            total_ticks,
-            all_tempo_changes.len(),
-        );
-
-        Ok(Self {
-            events,
-            track_events_range,
-            tempo_changes: all_tempo_changes,
-            track_names,
-            total_ticks,
-            track_count,
-            tracks,
-        })
+    /// 构建音轨事件范围索引
+    fn build_track_event_ranges(
+        track_note_counts: &[u64],
+        track_events_offset: &[usize],
+    ) -> Vec<(usize, usize)> {
+        track_note_counts
+            .iter()
+            .enumerate()
+            .map(|(i, count)| {
+                let start = track_events_offset[i];
+                let end = start + *count as usize * 2;
+                (start, end)
+            })
+            .collect()
     }
 
     /// 获取总 tick 数

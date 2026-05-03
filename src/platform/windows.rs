@@ -47,9 +47,13 @@ unsafe extern "system" fn window_proc(
             let screen_x = (lparam & 0xFFFF) as i32;
             let screen_y = ((lparam >> 16) & 0xFFFF) as i32;
 
-            // 获取窗口矩形
+            // 获取窗口矩形（检查返回值，GetWindowRect 返回 0 表示失败）
             let mut rect = std::mem::MaybeUninit::<RECT>::uninit();
-            unsafe { GetWindowRect(hwnd, rect.as_mut_ptr()) };
+            let success = unsafe { GetWindowRect(hwnd, rect.as_mut_ptr()) };
+            if success == 0 {
+                // 获取窗口矩形失败，回退到原始结果
+                return original_result;
+            }
             let rect = unsafe { rect.assume_init() };
 
             // 将屏幕坐标转换为窗口坐标

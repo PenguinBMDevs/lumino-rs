@@ -12,7 +12,8 @@
 //! - 渲染线程（独立线程）：接收命令、管理GPU资源、执行实际渲染
 
 use iced_wgpu::wgpu;
-use std::{sync::Arc, time::Instant};
+use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 
 use iced_core::{Font, Pixels, Size, mouse};
 use iced_wgpu::{Engine, Renderer, graphics::Viewport};
@@ -334,12 +335,12 @@ impl Host {
     }
 }
 
+/// 字体名称缓存 —— OnceLock 确保只泄漏一次，而不是每次重绘都泄漏
+static FONT_NAME_CACHE: OnceLock<String> = OnceLock::new();
+
 /// 根据配置创建字体
 ///
 /// 使用系统字体名称或默认字体
-///
-/// 注意：Font::with_name 需要 'static 字符串，
-/// 我们使用 Box::leak 来创建一个静态字符串引用
 fn create_font_from_config(ui_config: &config::UiConfig) -> Font {
     // 优先使用自定义字体路径
     if !ui_config.program_font_path.is_empty() {
@@ -353,13 +354,11 @@ fn create_font_from_config(ui_config: &config::UiConfig) -> Font {
 
     // 其次使用系统字体名称
     if !ui_config.program_font_name.is_empty() {
-        // 将 String 转换为 'static str
-        // Box::leak 会泄漏内存，但配置变更频率很低，这是可接受的权衡
-        let static_name: &'static str =
-            Box::leak(ui_config.program_font_name.clone().into_boxed_str());
+        let cached = FONT_NAME_CACHE
+            .get_or_init(|| ui_config.program_font_name.clone());
 
-        tracing::info!("应用字体: {}", ui_config.program_font_name);
-        return Font::with_name(static_name);
+        tracing::info!("应用字体: {}", cached);
+        return Font::with_name(cached.as_str());
     }
 
     // 使用默认字体

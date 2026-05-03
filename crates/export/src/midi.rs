@@ -137,6 +137,19 @@ pub fn export_midi_to_bytes(data: &MidiExportData) -> ExportResult<Vec<u8>> {
 
 /// 构建 MIDI SMF 结构
 fn build_midi_smf(data: &MidiExportData) -> Smf<'static> {
+    // Pre-leak track names once at the top level.
+    // midly::TrackEvent<'static> 要求 'static 生命周期，
+    // 泄漏发生在导出时，泄漏量 = 轨道数 × 名称字符串长度，通常 < 1KB。
+    let leaked_names: Vec<Option<&'static [u8]>> = data
+        .tracks
+        .iter()
+        .map(|t| {
+            t.name.as_ref().map(|n| {
+                Box::leak(n.clone().into_boxed_str().into_boxed_bytes()) as &'static [u8]
+            })
+        })
+        .collect();
+
     let format = match data.options.format {
         0 => Format::SingleTrack,
         1 => Format::Parallel,
@@ -151,7 +164,8 @@ fn build_midi_smf(data: &MidiExportData) -> Smf<'static> {
 
     // 对于格式 0，所有事件合并到一个轨道
     if data.options.format == 0 {
-        let mut combined_track = build_combined_track(data);
+        let combined_name = leaked_names.first().and_then(|n| *n);
+        let mut combined_track = build_combined_track(data, combined_name);
         combined_track.sort_by_key(|e| e.delta);
         convert_to_delta_times(&mut combined_track);
         tracks.push(combined_track);
@@ -160,8 +174,8 @@ fn build_midi_smf(data: &MidiExportData) -> Smf<'static> {
         // 第一个轨道包含全局元事件（速度、拍号等）
         let mut first_track = true;
 
-        for track_data in &data.tracks {
-            let mut track = build_track(track_data, first_track);
+        for (track_data, &name_bytes) in data.tracks.iter().zip(leaked_names.iter()) {
+            let mut track = build_track(track_data, first_track, name_bytes);
             track.sort_by_key(|e| e.delta);
             convert_to_delta_times(&mut track);
             tracks.push(track);
@@ -173,8 +187,16 @@ fn build_midi_smf(data: &MidiExportData) -> Smf<'static> {
 }
 
 /// 构建合并轨道（格式 0）
-fn build_combined_track(data: &MidiExportData) -> Track<'static> {
+fn build_combined_track(data: &MidiExportData, track_name: Option<&'static [u8]>) -> Track<'static> {
     let mut events: Vec<TrackEvent<'static>> = Vec::new();
+
+    // 轨道名称（使用第一个轨道的名称）
+    if let Some(name_bytes) = track_name {
+        events.push(TrackEvent {
+            delta: 0.into(),
+            kind: TrackEventKind::Meta(MetaMessage::TrackName(name_bytes)),
+        });
+    }
 
     // 收集所有轨道的所有事件
     for track_data in &data.tracks {
@@ -185,12 +207,11 @@ fn build_combined_track(data: &MidiExportData) -> Track<'static> {
 }
 
 /// 构建单个轨道
-fn build_track(track_data: &MidiTrackData, include_globals: bool) -> Track<'static> {
+fn build_track(track_data: &MidiTrackData, include_globals: bool, track_name: Option<&'static [u8]>) -> Track<'static> {
     let mut events: Vec<TrackEvent<'static>> = Vec::new();
 
-    // 轨道名称
-    if let Some(ref name) = track_data.name {
-        let name_bytes: &'static [u8] = Box::leak(name.clone().into_boxed_str().into_boxed_bytes());
+    // 轨道名称（使用已在 build_midi_smf 中预泄漏的名称引用）
+    if let Some(name_bytes) = track_name {
         events.push(TrackEvent {
             delta: 0.into(),
             kind: TrackEventKind::Meta(MetaMessage::TrackName(name_bytes)),
@@ -338,4 +359,152 @@ pub fn bpm_to_tempo(bpm: f64) -> u32 {
 #[inline]
 pub fn tempo_to_bpm(tempo: u32) -> f64 {
     60_000_000.0 / tempo as f64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_export_empty_midi() {
+        // 空轨道应导出为有效的 MIDI 文件
+        let data = MidiExportData {
+            options: MidiExportOptions {
+                format: 1,
+                ppqn: 480,
+            },
+            tracks: vec![],
+        };
+        let result = export_midi_to_bytes(&data);
+        assert!(result.is_ok(), "empty MIDI should export successfully");
+        let bytes = result.unwrap();
+        // MIDI 文件头: "MThd" + 6 bytes header
+        assert!(bytes.len() >= 14, "MIDI header should be at least 14 bytes");
+        assert_eq!(&bytes[0..4], b"MThd", "should start with MThd");
+    }
+
+    #[test]
+    fn test_export_single_note_midi() {
+        let note = MidiNoteEvent {
+            tick: 0,
+            channel: 0,
+            key: 60,
+            velocity: 100,
+            duration: 480,
+        };
+        let track = MidiTrackData {
+            notes: vec![note],
+            tempos: vec![],
+            program_changes: vec![],
+            control_changes: vec![],
+            time_signatures: vec![],
+            key_signatures: vec![],
+            name: Some(String::from("Test Track")),
+        };
+        let data = MidiExportData {
+            options: MidiExportOptions {
+                format: 1,
+                ppqn: 480,
+            },
+            tracks: vec![track],
+        };
+        let result = export_midi_to_bytes(&data);
+        assert!(result.is_ok(), "single note MIDI should export successfully");
+        let bytes = result.unwrap();
+        assert_eq!(&bytes[0..4], b"MThd", "should start with MThd");
+        // 格式 1 应包含轨道数据
+        assert!(bytes.len() > 14, "should contain track data beyond header");
+    }
+
+    #[test]
+    fn test_export_format0_single_track() {
+        let note = MidiNoteEvent {
+            tick: 0,
+            channel: 0,
+            key: 60,
+            velocity: 100,
+            duration: 480,
+        };
+        let track = MidiTrackData {
+            notes: vec![note],
+            tempos: vec![MidiTempoEvent { tick: 0, tempo: 500000 }],
+            program_changes: vec![],
+            control_changes: vec![],
+            time_signatures: vec![],
+            key_signatures: vec![],
+            name: None,
+        };
+        let data = MidiExportData {
+            options: MidiExportOptions {
+                format: 0,
+                ppqn: 480,
+            },
+            tracks: vec![track],
+        };
+        let result = export_midi_to_bytes(&data);
+        assert!(result.is_ok(), "format 0 MIDI should export successfully");
+        let bytes = result.unwrap();
+        assert_eq!(&bytes[0..4], b"MThd", "should start with MThd");
+        // Format 0: 单个轨道
+        assert_eq!(bytes[10], 0, "format 0 should have 1 track (high byte)");
+        assert_eq!(bytes[11], 1, "format 0 should have 1 track (low byte)");
+    }
+
+    #[test]
+    fn test_bpm_conversion_roundtrip() {
+        let bpm = 120.0;
+        let tempo = bpm_to_tempo(bpm);
+        let recovered = tempo_to_bpm(tempo);
+        assert!((recovered - bpm).abs() < 0.01, "BPM roundtrip should be precise");
+    }
+
+    #[test]
+    fn test_convert_to_delta_times() {
+        use midly::num::u28;
+        let mut events = vec![
+            TrackEvent { delta: u28::from(100u32), kind: TrackEventKind::Meta(MetaMessage::TrackName(b"foo")) },
+            TrackEvent { delta: u28::from(50u32), kind: TrackEventKind::Meta(MetaMessage::EndOfTrack) },
+        ];
+        convert_to_delta_times(&mut events);
+        // After sorting: 50 should be first with delta 50, then 100 with delta 50
+        assert_eq!(u32::from(events[0].delta), 50, "first event delta should be 50");
+        assert_eq!(u32::from(events[1].delta), 50, "second event delta should be 50");
+    }
+
+    #[test]
+    fn test_convert_to_delta_times_empty() {
+        let mut events: Vec<TrackEvent<'_>> = vec![];
+        convert_to_delta_times(&mut events);
+        assert!(events.is_empty(), "empty events should remain empty");
+    }
+
+    #[test]
+    fn test_build_smf_with_track_name() {
+        let track = MidiTrackData {
+            notes: vec![],
+            tempos: vec![],
+            program_changes: vec![],
+            control_changes: vec![],
+            time_signatures: vec![],
+            key_signatures: vec![],
+            name: Some(String::from("Piano")),
+        };
+        let data = MidiExportData {
+            options: MidiExportOptions { format: 1, ppqn: 480 },
+            tracks: vec![track],
+        };
+        let smf = build_midi_smf(&data);
+        assert_eq!(smf.tracks.len(), 1, "should have 1 track");
+        // 第一个轨道事件应该是 TrackName meta 事件
+        if let Some(first_event) = smf.tracks[0].first() {
+            match &first_event.kind {
+                TrackEventKind::Meta(MetaMessage::TrackName(name)) => {
+                    assert_eq!(name, b"Piano");
+                }
+                _ => panic!("first event should be TrackName"),
+            }
+        } else {
+            panic!("track should have events");
+        }
+    }
 }

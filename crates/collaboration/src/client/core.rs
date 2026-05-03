@@ -1,6 +1,8 @@
 //! 协作客户端核心定义和基础方法
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::{RwLock, mpsc};
 use tracing::info;
@@ -102,31 +104,59 @@ impl CollaborationClient {
     }
 
     /// 生成用户 ID
+    /// 使用时间戳 + PID + 单调计数器保证唯一性，不依赖加密安全随机数
     pub(super) fn generate_user_id(&self) -> String {
-        use std::time::{SystemTime, UNIX_EPOCH};
+        static ID_COUNTER: AtomicU32 = AtomicU32::new(0);
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_millis();
-        format!("user_{}_{}", timestamp, rand::random_u32())
+            .as_nanos();
+        let counter = ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+        format!("user_{}_{}_{}", timestamp, std::process::id(), counter)
     }
 }
 
-// 随机数生成模块
-pub(super) mod rand {
-    use std::collections::hash_map::RandomState;
-    use std::hash::{BuildHasher, Hasher};
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    /// 生成随机 u32 值
-    pub fn random_u32() -> u32 {
-        let mut hasher = RandomState::new().build_hasher();
-        hasher.write_u32(std::process::id());
-        hasher.write_u128(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos(),
-        );
-        hasher.finish() as u32
+    #[test]
+    fn test_generate_user_id_format() {
+        let client = CollaborationClient::new(crate::types::ClientConfig::default());
+        let id = client.generate_user_id();
+        // 格式: user_{timestamp}_{pid}_{counter}
+        assert!(id.starts_with("user_"), "ID should start with 'user_'");
+        let parts: Vec<&str> = id.split('_').collect();
+        assert_eq!(parts.len(), 4, "ID should have 4 underscore-separated parts");
+        // 验证第二部分是数字（时间戳）
+        assert!(parts[1].parse::<u128>().is_ok(), "timestamp should be numeric");
+        // 验证第三部分是数字（PID）
+        assert!(parts[2].parse::<u32>().is_ok(), "PID should be numeric");
+        // 验证第四部分是数字（计数器）
+        assert!(parts[3].parse::<u32>().is_ok(), "counter should be numeric");
+    }
+
+    #[test]
+    fn test_generate_user_id_uniqueness() {
+        let client = CollaborationClient::new(crate::types::ClientConfig::default());
+        let id1 = client.generate_user_id();
+        let id2 = client.generate_user_id();
+        // 单调计数器保证同一进程中连续调用生成的 ID 不同
+        assert_ne!(id1, id2, "consecutive IDs should be different");
+    }
+
+    #[test]
+    fn test_client_initial_state() {
+        let client = CollaborationClient::new(crate::types::ClientConfig::default());
+        let state = client.state.blocking_read();
+        assert_eq!(*state, ClientState::Disconnected);
+    }
+
+    #[test]
+    fn test_client_new_creates_channel() {
+        let client = CollaborationClient::new(crate::types::ClientConfig::default());
+        assert!(client.message_rx.is_some(), "message_rx should be Some after creation");
+        // shutdown_tx 初始为 None（需由 connect 方法设置）
+        assert!(client.shutdown_tx.is_none(), "shutdown_tx should be None initially");
     }
 }

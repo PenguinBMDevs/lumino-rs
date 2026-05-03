@@ -1,28 +1,6 @@
-use std::collections::HashMap;
-
-use super::alias::{InviteCode, UserId};
-use super::user::{RemoteUser, RoomInfo};
-
-/// 客户端状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClientState {
-    Disconnected,
-    Connecting,
-    Connected,
-    Authenticating,
-    Authenticated,
-    InRoom,
-    Error,
-}
-
-/// 协作会话状态
-#[derive(Debug, Clone, Default)]
-pub struct CollaborationSession {
-    pub current_room: Option<RoomInfo>,
-    pub remote_users: HashMap<UserId, RemoteUser>,
-    pub current_user_id: Option<UserId>,
-    pub invite_code: Option<InviteCode>,
-}
+// ClientState 和 CollaborationSession 在 client/state.rs 定义，
+// 这里统一 re-export 避免重复定义。
+pub use crate::client::state::{ClientState, CollaborationSession};
 
 /// 客户端配置
 #[derive(Debug, Clone)]

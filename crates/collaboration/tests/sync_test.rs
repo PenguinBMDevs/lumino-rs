@@ -144,21 +144,24 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
     println!("Test A -> B passed for {} notes/sec", rate);
 
     // Ensure connection is clean logic... (simplified here)
-    client_a.disconnect().await;
-    client_b.disconnect().await;
+    let _ = client_a.disconnect().await;
+    let _ = client_b.disconnect().await;
 }
 
 #[tokio::test]
+#[ignore = "需要本地协作服务器 (localhost:3000)"]
 async fn test_sync_1hz() {
     run_sync_test(1, 3).await; // 3 notes takes 3 seconds
 }
 
 #[tokio::test]
+#[ignore = "需要本地协作服务器 (localhost:3000)"]
 async fn test_sync_10hz() {
     run_sync_test(10, 20).await; // 20 notes
 }
 
 #[tokio::test]
+#[ignore = "需要本地协作服务器 (localhost:3000)"]
 async fn test_sync_100hz() {
     run_sync_test(100, 50).await; // 50 notes
 }

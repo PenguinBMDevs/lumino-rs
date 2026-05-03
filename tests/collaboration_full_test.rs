@@ -98,7 +98,12 @@ fn test_serialize_mouse_move() {
     assert!(json.contains("\"y\":200"));
 }
 
+/// 协作功能完整集成测试
+///
+/// 需要运行协作服务器，默认标记为 ignore。
+/// 运行方式: `cargo test test_collaboration_full -- --ignored`
 #[tokio::test]
+#[ignore = "需要外部协作服务器 (lumino-collaborative-server.enderman-bm.workers.dev:443)"]
 async fn test_collaboration_full() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n======================================================");
     println!("  协作功能完整测试");

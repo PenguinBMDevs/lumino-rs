@@ -124,10 +124,38 @@ impl HttpClient {
 mod tests {
     use super::*;
 
+    /// 健康检查测试 —— 需要外网连接，默认忽略。
+    /// 运行: `cargo test test_health_check -- --ignored`
     #[tokio::test]
+    #[ignore = "需要外部协作服务器"]
     async fn test_health_check() {
         let client = HttpClient::new("lumino-collaborative-server.enderman-bm.workers.dev", 443);
         let health = client.health_check().await;
         assert!(health.is_ok());
+    }
+
+    #[test]
+    fn test_http_client_base_url() {
+        let client = HttpClient::new("example.com", 443);
+        assert_eq!(client.base_url, "https://example.com");
+
+        let client = HttpClient::new("example.com", 80);
+        assert_eq!(client.base_url, "http://example.com");
+
+        let client = HttpClient::new("example.com", 3000);
+        assert_eq!(client.base_url, "http://example.com:3000");
+    }
+
+    #[test]
+    fn test_create_room_request_serialization() {
+        let req = CreateRoomRequest {
+            name: "测试房间".to_string(),
+            host_id: "user_123".to_string(),
+            host_name: Some("测试用户".to_string()),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"name\":\"测试房间\""));
+        assert!(json.contains("\"hostId\":\"user_123\""));
+        assert!(json.contains("\"hostName\":\"测试用户\""));
     }
 }
