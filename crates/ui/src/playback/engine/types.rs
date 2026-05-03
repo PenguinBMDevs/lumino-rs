@@ -48,11 +48,7 @@ impl PartialOrd for ScheduledEvent {
 
 impl Ord for ScheduledEvent {
     fn cmp(&self, other: &Self) -> Ordering {
-<<<<<<< HEAD
-        // 直接使用 total_cmp 避免 unwrap
-=======
         // 先按 tick 排序，相同 tick 按 seq 排序
->>>>>>> feat/memory-for-loader
         other.tick.total_cmp(&self.tick)
             .then_with(|| other.seq.cmp(&self.seq))
     }
@@ -68,8 +64,6 @@ pub enum MidiMessage {
     PitchBend { channel: u8, value: f32 },
     ChannelPressure { channel: u8, pressure: u8 },
     PolyPressure { channel: u8, key: u8, pressure: u8 },
-<<<<<<< HEAD
-=======
 }
 
 /// MIDI轨道事件（用于播放调度）
@@ -79,5 +73,4 @@ pub struct MidiTrackEvent {
     pub tick: f32,
     /// MIDI消息
     pub message: MidiMessage,
->>>>>>> feat/memory-for-loader
 }

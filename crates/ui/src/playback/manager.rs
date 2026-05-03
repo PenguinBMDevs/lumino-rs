@@ -12,12 +12,8 @@ use std::time::Duration;
 enum Command {
     SetMidiOutput(Box<dyn lumino_midi::OutputConnection>),
     ClearMidiOutput,
-<<<<<<< HEAD
-    SetNotes(Vec<NoteEvent>),
-=======
     SetCurrentTrackNotes(Vec<NoteEvent>),
     SetDocument(Arc<lumino_core::midi::MidiDocument>, u16),
->>>>>>> feat/memory-for-loader
     SetMidiEvents(Vec<MidiTrackEvent>),
     SetTempoChanges(Vec<TempoChange>),
     // 旧 SetCache/SetSkipTracksInCache 已移除（disk_cache future support）
@@ -59,14 +55,10 @@ impl PlaybackManager {
                     match cmd {
                         Command::SetMidiOutput(output) => midi_output = Some(output),
                         Command::ClearMidiOutput => midi_output = None,
-<<<<<<< HEAD
-                        Command::SetNotes(notes) => engine.set_notes(notes),
-=======
                         Command::SetCurrentTrackNotes(notes) => {
                             engine.set_current_track_notes(notes)
                         }
                         Command::SetDocument(doc, track) => engine.set_document(doc, track),
->>>>>>> feat/memory-for-loader
                         Command::SetMidiEvents(events) => engine.set_midi_events(events),
                         Command::SetTempoChanges(changes) => {
                             let mut p = engine.playback().lock();
@@ -109,21 +101,12 @@ impl PlaybackManager {
                 let messages = engine.update();
                 if let Some(out) = &mut midi_output {
                     let msg_count = messages.len();
-<<<<<<< HEAD
-                    for (i, msg) in messages.into_iter().enumerate() {
-                        // 每 20 条消息让出 CPU 给 xsynth 通道线程处理积压事件
-                        // 防止 seek 后大量事件瞬间涌入导致 buffer underrun
-                        if i > 0 && i % 20 == 0 {
-                            std::thread::yield_now();
-                        }
-=======
 
                     // 直接发送所有消息，不添加任何 sleep
                     // xsynth-realtime 的 channel 使用 unbounded channel，可以处理突发流量
                     // 如果发生 underrun，应该通过增大缓冲区或优化 xsynth 配置来解决
                     // 而不是在播放线程中 sleep（这会导致更严重的音频问题）
                     for msg in messages {
->>>>>>> feat/memory-for-loader
                         match msg {
                             MidiMessage::NoteOn {
                                 channel,
@@ -214,11 +197,6 @@ impl PlaybackManager {
     }
 
     // 旧 set_cache/set_skip_tracks_in_cache 已移除（disk_cache future support）
-
-    /// 设置非音符MIDI事件列表
-    pub fn set_midi_events(&mut self, events: Vec<MidiTrackEvent>) {
-        let _ = self.sender.send(Command::SetMidiEvents(events));
-    }
 
     /// 设置非音符MIDI事件列表
     pub fn set_midi_events(&mut self, events: Vec<MidiTrackEvent>) {

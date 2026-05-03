@@ -13,10 +13,6 @@ pub enum Event {
     XSynthThreadsChanged(i32),
     XSynthFadeOutChanged(bool),
     XSynthMaxVoicesChanged(Option<usize>),
-<<<<<<< HEAD
-    XSynthMaxVoicesChanged(Option<usize>),
-=======
->>>>>>> feat/memory-for-loader
     ThemeChanged(String),
     EraserBehaviorChanged(lumino_core::storage::config::EraserBehavior),
     ProgramFontNameChanged(String),

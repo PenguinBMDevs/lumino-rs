@@ -27,17 +27,11 @@ impl Root {
         self.editor.notes.clear();
         for (tick, key, length, velocity, channel) in notes {
             let editor_key = *key as u16;
-<<<<<<< HEAD
-            self.editor
-                .notes
-                .push_back(Note::new(*tick, editor_key, *length).with_velocity(*velocity).with_channel(*channel));
-=======
             self.editor.notes.push_back(
                 Note::new(*tick, editor_key, *length)
                     .with_velocity(*velocity)
                     .with_channel(*channel),
             );
->>>>>>> feat/memory-for-loader
         }
         self.editor
             .track_note_indices
@@ -62,13 +56,9 @@ impl Root {
 
         for (tick, key, length, velocity, channel) in notes {
             let editor_key = *key as u16;
-<<<<<<< HEAD
-            let note = Note::new(*tick, editor_key, *length).with_velocity(*velocity).with_channel(*channel);
-=======
             let note = Note::new(*tick, editor_key, *length)
                 .with_velocity(*velocity)
                 .with_channel(*channel);
->>>>>>> feat/memory-for-loader
             self.editor.notes.push_back(note.clone());
             track_notes.push_back(note);
         }
@@ -93,9 +83,6 @@ impl Root {
     ) {
         if !events.is_empty() {
             self.track_midi_events.insert(track_idx, events);
-<<<<<<< HEAD
-            tracing::debug!("Root: 音轨 {} 已加载 {} 个 MIDI 控制事件", track_idx, self.track_midi_events.get(&track_idx).map_or(0, |v| v.len()));
-=======
             tracing::debug!(
                 "Root: 音轨 {} 已加载 {} 个 MIDI 控制事件",
                 track_idx,
@@ -103,7 +90,6 @@ impl Root {
                     .get(&track_idx)
                     .map_or(0, |v| v.len())
             );
->>>>>>> feat/memory-for-loader
         }
     }
 

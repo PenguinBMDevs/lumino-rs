@@ -9,11 +9,7 @@
 pub mod engine;
 pub mod manager;
 
-<<<<<<< HEAD
-pub use engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine};
-=======
 pub use engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine, ScheduledEvent, EventType};
->>>>>>> feat/memory-for-loader
 pub use manager::PlaybackManager;
 
 // 子模块
