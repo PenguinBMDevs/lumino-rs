@@ -19,8 +19,6 @@ pub fn prepare_renderers(
     puffin::profile_scope!("prepare_renderers");
     // 准备网格渲染器
     grid_renderer.prepare(
-        &[],
-        device,
         queue,
         params.logical_size,
         params.scroll.0,

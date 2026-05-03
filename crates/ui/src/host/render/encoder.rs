@@ -26,8 +26,6 @@ impl Host {
         let max_key_index = (v.visible_key_count.saturating_sub(1)) as f32;
 
         self.grid_renderer.prepare(
-            &[],
-            &gfx.device,
             &gfx.queue,
             (viewport.logical_size.width, viewport.logical_size.height),
             v.scroll_x,
@@ -102,7 +100,7 @@ impl Host {
         let note_instances = unsafe { self.render_cache.note_instances_buffer.read_buffer() };
 
         if notes_changed && !note_instances.is_empty() {
-            self.note_renderer.prepare_old(
+            self.note_renderer.prepare_notes(
                 encoder,
                 note_instances,
                 &gfx.device,

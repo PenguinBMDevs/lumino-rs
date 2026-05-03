@@ -2,8 +2,8 @@ use super::types::{CameraUniform, CullUniform, DrawIndirectArgs};
 use crate::note_renderer::NoteRenderer;
 
 impl NoteRenderer {
-    /// 兼容方法：数据+camera一步准备好（内部仍拆分成两步）
-    pub fn prepare_old(
+    /// 上传音符实例并准备渲染（推荐的替代方案，替代 `prepare_old`）
+    pub fn prepare_notes(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         instances: &[crate::NoteInstance],
@@ -15,6 +15,20 @@ impl NoteRenderer {
         self.gpu_note_buffer.upload_all(instances);
         self.update_cull_info(device, queue);
         self.prepare_pass(encoder, camera, queue);
+    }
+
+    /// 兼容方法：数据+camera一步准备好（内部仍拆分成两步）
+    /// 请改用 [`prepare_notes`]。
+    #[deprecated(since = "0.1.0", note = "请改用 prepare_notes()")]
+    pub fn prepare_old(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        instances: &[crate::NoteInstance],
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        camera: CameraUniform,
+    ) {
+        self.prepare_notes(encoder, instances, device, queue, camera);
     }
 
     /// 仅在音符数据真正变化时调用：负责更新 uniform

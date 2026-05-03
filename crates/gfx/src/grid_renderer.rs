@@ -376,8 +376,6 @@ impl GridRenderer {
     #[allow(clippy::too_many_arguments)]
     pub fn prepare(
         &mut self,
-        _instances: &[GridLineInstance],
-        _device: &wgpu::Device, // added underscore since it's unused
         queue: &wgpu::Queue,
         viewport_size: (f32, f32),
         scroll_x: f32,
