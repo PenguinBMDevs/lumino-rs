@@ -422,3 +422,191 @@ fn process_dms_track(index: usize, track: &[midly::TrackEvent]) -> crate::dms::D
         controls,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use midly::{MetaMessage, MidiMessage, TrackEvent, TrackEventKind};
+    use midly::num::u28;
+
+    fn make_note_on(delta: u32, key: u8, vel: u8) -> TrackEvent<'static> {
+        TrackEvent {
+            delta: u28::from(delta),
+            kind: TrackEventKind::Midi {
+                channel: 0.into(),
+                message: MidiMessage::NoteOn {
+                    key: key.into(),
+                    vel: vel.into(),
+                },
+            },
+        }
+    }
+
+    fn make_note_off(delta: u32, key: u8) -> TrackEvent<'static> {
+        TrackEvent {
+            delta: u28::from(delta),
+            kind: TrackEventKind::Midi {
+                channel: 0.into(),
+                message: MidiMessage::NoteOff {
+                    key: key.into(),
+                    vel: 0.into(),
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn test_process_dms_track_empty() {
+        let track = vec![];
+        let result = process_dms_track(0, &track);
+        assert_eq!(result.notes.len(), 0);
+        assert_eq!(result.tempos.len(), 0);
+        assert_eq!(result.name, Some("Track 1".to_string()));
+    }
+
+    #[test]
+    fn test_process_dms_track_single_note() {
+        let track = vec![
+            make_note_on(0, 60, 100),
+            make_note_off(480, 60),
+        ];
+        let result = process_dms_track(0, &track);
+        assert_eq!(result.notes.len(), 1);
+        assert_eq!(result.notes[0].key, 60);
+        assert_eq!(result.notes[0].velocity, 100);
+        assert_eq!(result.notes[0].gate, 480);
+        assert_eq!(result.notes[0].tick, 0);
+    }
+
+    #[test]
+    fn test_process_dms_track_multiple_notes() {
+        // Deltas are relative: event1→event2→event3 deltas accumulate
+        let track = vec![
+            make_note_on(0, 60, 100),
+            make_note_on(0, 64, 80),
+            make_note_off(240, 60),       // abs_tick: 240, key60 gate=240
+            make_note_off(0, 64),          // abs_tick: 240, key64 gate=240
+        ];
+        let result = process_dms_track(0, &track);
+        assert_eq!(result.notes.len(), 2);
+        assert_eq!(result.notes[0].key, 60);
+        assert_eq!(result.notes[0].gate, 240);
+        assert_eq!(result.notes[1].key, 64);
+        assert_eq!(result.notes[1].gate, 240);
+    }
+
+    #[test]
+    fn test_process_dms_track_noteon_with_vel_zero_is_noteoff() {
+        // NoteOn with velocity 0 should be treated as NoteOff
+        let track = vec![
+            make_note_on(0, 60, 100),
+            TrackEvent {
+                delta: u28::from(480u32),
+                kind: TrackEventKind::Midi {
+                    channel: 0.into(),
+                    message: MidiMessage::NoteOn {
+                        key: 60.into(),
+                        vel: 0.into(),
+                    },
+                },
+            },
+        ];
+        let result = process_dms_track(0, &track);
+        assert_eq!(result.notes.len(), 1);
+        assert_eq!(result.notes[0].gate, 480);
+    }
+
+    #[test]
+    fn test_process_dms_track_tempo() {
+        use midly::num::u24;
+        let track = vec![
+            TrackEvent {
+                delta: u28::from(0u32),
+                kind: TrackEventKind::Meta(MetaMessage::Tempo(u24::from(500_000u32))),
+            },
+            make_note_on(0, 60, 100),
+            make_note_off(480, 60),
+        ];
+        let result = process_dms_track(0, &track);
+        // 500000 µs/beat → 120 BPM
+        assert_eq!(result.tempos.len(), 1);
+        assert!((result.tempos[0].tempo - 120.0).abs() < 0.01);
+        assert_eq!(result.notes.len(), 1);
+    }
+
+    #[test]
+    fn test_process_dms_track_track_name() {
+        let track = vec![
+            TrackEvent {
+                delta: u28::from(0u32),
+                kind: TrackEventKind::Meta(MetaMessage::TrackName(b"Piano")),
+            },
+            make_note_on(0, 60, 100),
+            make_note_off(480, 60),
+        ];
+        let result = process_dms_track(0, &track);
+        assert_eq!(result.name, Some("Piano".to_string()));
+    }
+
+    #[test]
+    fn test_process_dms_track_unclosed_notes() {
+        // Note with no NoteOff — should be force-closed at max_tick
+        let track = vec![
+            make_note_on(0, 60, 100),
+        ];
+        let result = process_dms_track(0, &track);
+        assert_eq!(result.notes.len(), 1);
+        assert_eq!(result.notes[0].key, 60);
+        assert!(result.notes[0].gate >= 1); // force-closed with non-zero gate
+    }
+
+    #[test]
+    fn test_process_dms_track_controller() {
+        let track = vec![
+            TrackEvent {
+                delta: u28::from(0u32),
+                kind: TrackEventKind::Midi {
+                    channel: 0.into(),
+                    message: MidiMessage::Controller {
+                        controller: 7.into(),  // volume
+                        value: 100.into(),
+                    },
+                },
+            },
+        ];
+        let result = process_dms_track(0, &track);
+        assert_eq!(result.controls.len(), 1);
+        assert_eq!(result.controls[0].control_type, 7);
+        assert!((result.controls[0].value - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_process_dms_track_drum_channel() {
+        // Channel 10 (index 9) should be marked as drum
+        let track = vec![
+            TrackEvent {
+                delta: u28::from(0u32),
+                kind: TrackEventKind::Midi {
+                    channel: 9.into(),
+                    message: MidiMessage::NoteOn {
+                        key: 36.into(),
+                        vel: 100.into(),
+                    },
+                },
+            },
+            TrackEvent {
+                delta: u28::from(240u32),
+                kind: TrackEventKind::Midi {
+                    channel: 9.into(),
+                    message: MidiMessage::NoteOff {
+                        key: 36.into(),
+                        vel: 0.into(),
+                    },
+                },
+            },
+        ];
+        let result = process_dms_track(0, &track);
+        assert!(result.is_drum, "channel 10 should be drum");
+        assert_eq!(result.channel, 9);
+    }
+}
