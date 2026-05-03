@@ -9,7 +9,8 @@ use flate2::read::ZlibDecoder;
 use std::io::{Cursor, Read};
 
 use crate::error::Result;
-use crate::node::{DATALENGTH_SIZE, DmsCompositeNode, DmsNode, TYPEID_SIZE, create_node};
+use crate::constants::{DATALENGTH_SIZE, HEADER_SIZE, TYPEID_SIZE};
+use crate::node::{DmsCompositeNode, DmsNode, create_node};
 use crate::node_type::DmsNodeType;
 
 pub mod scanner;
@@ -17,8 +18,7 @@ pub mod types;
 
 pub use scanner::{ScanState, scan_dms_streaming, scan_dms_streaming_with_progress};
 pub use types::{
-    DMS_MAGIC, DmsLightweightData, DmsParseContext, DmsScanResult, FileHeader, HEADER_SIZE,
-    MAGIC_LENGTH, read_file_header,
+    DmsLightweightData, DmsParseContext, DmsScanResult, FileHeader, read_file_header,
 };
 
 /// DMS 文件读取器

@@ -343,9 +343,11 @@ impl MidiDocument {
         let tick_start_u = tick_start as u32;
         let tick_end_u = tick_end as u32;
 
+        use crate::midi::constants::TICK_SEARCH_BUFFER;
+        
         // events 已按 tick 排序，二分查找起始位置
         let search_start =
-            events.partition_point(|e| e.delta_tick() < tick_start_u.saturating_sub(19200));
+            events.partition_point(|e| e.delta_tick() < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER));
         let search_end = events.len().min(
             search_start + events[search_start..].partition_point(|e| e.delta_tick() <= tick_end_u),
         );
@@ -354,16 +356,17 @@ impl MidiDocument {
             return Vec::new();
         }
 
+        use crate::midi::constants::{MAX_CONCURRENT_NOTES, MIDI_CHANNEL_COUNT, MIDI_KEY_RANGE};
+        
         // 使用固定大小数组替代 HashMap：256 keys × 16 channels = 4096
         // 支持扩展 MIDI 标准 (0-255 key range)
         // 每个条目存储 (start_tick, velocity, channel, is_active)
-        const MAX_NOTES: usize = 256 * 16;
-        let mut active_notes: [(u32, u8, u8, bool); MAX_NOTES] = [(0, 0, 0, false); MAX_NOTES];
+        let mut active_notes: [(u32, u8, u8, bool); MAX_CONCURRENT_NOTES] = [(0, 0, 0, false); MAX_CONCURRENT_NOTES];
         let mut notes = Vec::new();
 
         #[inline]
         fn note_index(channel: u8, key: u8) -> usize {
-            (channel as usize) * 256 + (key as usize)
+            (channel as usize) * MIDI_KEY_RANGE as usize + (key as usize)
         }
 
         for ev in &events[search_start..search_end] {
@@ -406,8 +409,8 @@ impl MidiDocument {
             events.last().map(|e| e.delta_tick()).unwrap_or(0)
         };
         
-        for channel in 0..16u8 {
-            for key in 0..=255u8 {
+        for channel in 0..MIDI_CHANNEL_COUNT {
+            for key in 0..=u8::MAX {
                 let idx = note_index(channel, key);
                 if active_notes[idx].3 {
                     let (st, vel, ch, _) = active_notes[idx];
@@ -708,9 +711,9 @@ mod tests {
     fn test_from_notes_file() {
         let bytes = create_simple_midi_bytes();
         let tmp = std::env::temp_dir().join("doc_test.mid");
-        std::fs::write(&tmp, &bytes).unwrap();
+        std::fs::write(&tmp, &bytes).expect("测试：写入临时文件失败");
 
-        let doc = MidiDocument::from_notes_file(&tmp, None).unwrap();
+        let doc = MidiDocument::from_notes_file(&tmp, None).expect("测试：加载MIDI文档失败");
         assert_eq!(doc.track_count(), 1);
         assert!(doc.total_ticks > 0);
         assert!(!doc.events.is_empty());
@@ -728,9 +731,9 @@ mod tests {
     fn test_get_events_in_range() {
         let bytes = create_simple_midi_bytes();
         let tmp = std::env::temp_dir().join("doc_range.mid");
-        std::fs::write(&tmp, &bytes).unwrap();
+        std::fs::write(&tmp, &bytes).expect("测试：写入临时文件失败");
 
-        let doc = MidiDocument::from_notes_file(&tmp, None).unwrap();
+        let doc = MidiDocument::from_notes_file(&tmp, None).expect("测试：加载MIDI文档失败");
         let events = doc.get_events_in_range(0, 1000, 0);
         assert!(!events.is_empty());
 
@@ -745,9 +748,9 @@ mod tests {
         // Verify per-track ranges are contiguous (no interleaving)
         let bytes = create_simple_midi_bytes();
         let tmp = std::env::temp_dir().join("doc_contig.mid");
-        std::fs::write(&tmp, &bytes).unwrap();
+        std::fs::write(&tmp, &bytes).expect("测试：写入临时文件失败");
 
-        let doc = MidiDocument::from_notes_file(&tmp, None).unwrap();
+        let doc = MidiDocument::from_notes_file(&tmp, None).expect("测试：加载MIDI文档失败");
         // get_track_events should return events with matching track_id only
         let evs = doc.get_track_events(0);
         for ev in &evs {

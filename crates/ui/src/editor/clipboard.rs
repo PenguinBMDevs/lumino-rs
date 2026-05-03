@@ -18,16 +18,17 @@ impl Editor {
 
     /// 将选中音符复制到系统剪贴板（JSON 格式）
     pub(crate) fn copy_selected_notes_to_clipboard(&mut self) -> bool {
-        if self.selected_notes.is_empty() {
+        let selected = &self.editor_state.interaction.selected_notes;
+        if selected.is_empty() {
             return false;
         }
 
-        let mut indices: Vec<usize> = self.selected_notes.iter().copied().collect();
+        let mut indices: Vec<usize> = selected.iter().copied().collect();
         indices.sort_unstable();
 
         let notes: Vec<&super::Note> = indices
             .into_iter()
-            .filter_map(|index| self.notes.get(index))
+            .filter_map(|index| self.editor_state.data.notes.get(index))
             .collect();
 
         if notes.is_empty() {
@@ -43,7 +44,7 @@ impl Editor {
         let payload = serde_json::json!({
             "lumino": CLIPBOARD_FORMAT,
             "version": CLIPBOARD_VERSION,
-            "track": self.current_track,
+            "track": self.editor_state.data.current_track,
             "origin_tick": origin_tick,
             "origin_key": origin_key,
             "notes": notes.into_iter().map(|note| serde_json::json!({
@@ -62,7 +63,7 @@ impl Editor {
         };
         match clipboard.set_text(payload.to_string()) {
             Ok(()) => {
-                tracing::info!("Editor: 已复制 {} 个音符", self.selected_notes.len());
+                tracing::info!("Editor: 已复制 {} 个音符", selected.len());
                 true
             }
             Err(e) => {
@@ -104,12 +105,14 @@ impl Editor {
         notes_value: &[serde_json::Value],
     ) -> Option<((f32, u16), Vec<super::Note>)> {
         let anchor = self
+            .editor_state
+            .canvas
             .cursor_position
             .filter(|pos| self.is_inside_canvas(*pos))
             .map(|pos| (self.snap_tick(self.x_to_tick(pos.x)), self.y_to_key(pos.y)))
             .unwrap_or((self.playback_position, DEFAULT_PASTE_ANCHOR_KEY));
 
-        let max_key = self.state.visible_key_count.saturating_sub(1);
+        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let pasted: Vec<super::Note> = notes_value
             .iter()
             .filter_map(|item| {
@@ -128,15 +131,16 @@ impl Editor {
     /// 将解析的音符提交到编辑器并选中
     fn commit_pasted_notes(&mut self, _anchor: (f32, u16), pasted: Vec<super::Note>) {
         self.push_history();
-        self.selected_notes.clear();
+        self.editor_state.interaction.selected_notes.clear();
         let pasted_count = pasted.len();
-        let start = self.notes.len();
-        self.notes.extend(pasted);
-        self.track_notes
-            .insert(self.current_track, self.notes.clone());
+        let start = self.editor_state.data.notes.len();
+        self.editor_state.data.notes.extend(pasted);
+        self.editor_state.data.track_notes
+            .insert(self.editor_state.data.current_track, self.editor_state.data.notes.clone());
         for index in start..start + pasted_count {
-            self.selected_notes.insert(index);
+            self.editor_state.interaction.selected_notes.insert(index);
         }
+        self.mark_notes_changed();
         tracing::info!("Editor: 已粘贴 {} 个音符", pasted_count);
     }
 }

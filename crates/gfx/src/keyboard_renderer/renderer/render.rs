@@ -1,4 +1,4 @@
-use super::super::KeyboardViewportUniform;
+use super::super::types::KeyboardViewportUniform;
 use super::KeyboardRenderer;
 
 impl KeyboardRenderer {

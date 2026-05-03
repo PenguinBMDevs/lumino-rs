@@ -5,22 +5,24 @@ impl Host {
     /// 收集视口信息
     pub(super) fn collect_viewport_info(&self) -> ViewportInfo {
         let phys = self.viewport.physical_size();
+        let es = &self.root.editor.editor_state;
         ViewportInfo {
             logical_size: self.viewport.logical_size(),
             physical_size: (phys.width, phys.height),
             scale: self.viewport.scale_factor(),
-            canvas_offset: self.root.editor.canvas_offset,
-            canvas_size: self.root.editor.canvas_size,
+            canvas_offset: es.canvas.offset,
+            canvas_size: es.canvas.size,
         }
     }
 
     /// 计算当前视口哈希
     pub(super) fn compute_current_viewport_hash(&self, viewport: &ViewportInfo) -> u64 {
+        let v = &self.root.editor.editor_state.view;
         crate::host::RenderCache::compute_viewport_hash(
-            self.root.editor.state.scroll_x,
-            self.root.editor.state.scroll_y,
-            self.root.editor.state.zoom_x,
-            self.root.editor.state.zoom_y,
+            v.scroll_x,
+            v.scroll_y,
+            v.zoom_x,
+            v.zoom_y,
             viewport.canvas_size.x,
             viewport.canvas_size.y,
         )
@@ -50,17 +52,18 @@ impl Host {
         &self,
         viewport: &ViewportInfo,
     ) -> lumino_gfx::CameraUniform {
+        let v = &self.root.editor.editor_state.view;
         lumino_gfx::CameraUniform::new(lumino_gfx::CameraParams {
             scroll: [
-                self.root.editor.state.scroll_x,
-                self.root.editor.state.scroll_y,
+                v.scroll_x,
+                v.scroll_y,
             ],
-            zoom: [self.root.editor.state.zoom_x, self.root.editor.state.zoom_y],
+            zoom: [v.zoom_x, v.zoom_y],
             viewport: [viewport.logical_size.width, viewport.logical_size.height],
             offset: [viewport.canvas_offset.x, viewport.canvas_offset.y],
-            keyboard_width: self.root.editor.state.keyboard_width,
-            ruler_height: self.root.editor.state.ruler_height,
-            max_key_index: (self.root.editor.state.visible_key_count.saturating_sub(1)) as f32,
+            keyboard_width: v.keyboard_width,
+            ruler_height: v.ruler_height,
+            max_key_index: (v.visible_key_count.saturating_sub(1)) as f32,
         })
     }
 }

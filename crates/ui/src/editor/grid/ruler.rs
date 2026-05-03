@@ -21,7 +21,7 @@ pub fn draw_to_geometry(
 
 /// 绘制时间轴标尺（小节号显示区域）
 pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &crate::Theme) {
-    let view = &editor.state;
+    let view = &editor.editor_state.view;
     let ppq = view.ppq as f32;
     let keyboard_width = view.keyboard_width;
     let ruler_height = view.ruler_height;

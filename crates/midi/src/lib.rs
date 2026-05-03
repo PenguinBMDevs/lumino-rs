@@ -1,6 +1,9 @@
 pub mod api;
 pub mod compact;
+pub mod constants;
 pub mod soundfont_cache;
+
+pub use constants::*;
 
 use thiserror::Error;
 
@@ -74,8 +77,8 @@ pub trait OutputConnection: Send {
     /// 停止所有通道的正在发声的音符（保留 Release 阶段）
     /// 默认实现：向所有通道发送 CC 123 (All Notes Off)
     fn all_notes_off(&mut self) -> Result<(), Error> {
-        for ch in 0..16 {
-            let _ = self.control_change(ch, 123, 0);
+        for ch in 0..MIDI_CHANNEL_COUNT {
+            let _ = self.control_change(ch, CC_ALL_NOTES_OFF, 0);
         }
         Ok(())
     }
@@ -83,8 +86,8 @@ pub trait OutputConnection: Send {
     /// 重置所有通道的控制器状态到默认值（弯音居中、CC 归零、踏板释放等）
     /// 默认实现：向所有通道发送 CC 121 (Reset All Controllers)
     fn reset_control(&mut self) -> Result<(), Error> {
-        for ch in 0..16 {
-            let _ = self.control_change(ch, 121, 0);
+        for ch in 0..MIDI_CHANNEL_COUNT {
+            let _ = self.control_change(ch, CC_RESET_ALL_CONTROLLERS, 0);
         }
         Ok(())
     }

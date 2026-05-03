@@ -108,7 +108,7 @@ impl CollaborationClient {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis();
-        format!("user_{}_{}", timestamp, rand::random::<u32>())
+        format!("user_{}_{}", timestamp, rand::random_u32())
     }
 }
 
@@ -117,7 +117,8 @@ pub(super) mod rand {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
 
-    pub fn random<T: Default>() -> T {
+    /// 生成随机 u32 值
+    pub fn random_u32() -> u32 {
         let mut hasher = RandomState::new().build_hasher();
         hasher.write_u32(std::process::id());
         hasher.write_u128(
@@ -126,7 +127,6 @@ pub(super) mod rand {
                 .unwrap_or_default()
                 .as_nanos(),
         );
-        let _hash = hasher.finish();
-        T::default()
+        hasher.finish() as u32
     }
 }

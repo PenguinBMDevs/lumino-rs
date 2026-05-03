@@ -2,7 +2,8 @@
 
 use bytes::Bytes;
 
-use crate::node::{DATALENGTH_SIZE, DmsCompositeNode, TYPEID_SIZE};
+use crate::constants::{DMS_MAGIC, HEADER_SIZE, MAGIC_LENGTH};
+use crate::node::DmsCompositeNode;
 
 /// DMS 扫描结果（流式，不保留解压数据）
 #[derive(Debug, Default)]
@@ -23,13 +24,7 @@ pub struct DmsScanResult {
     pub working_time_sec: Option<u64>,
 }
 
-/// DMS 文件魔数
-pub const DMS_MAGIC: &[u8] = b"PortalSequenceData";
-/// 魔数长度
-pub const MAGIC_LENGTH: usize = 18;
 
-/// 节点头大小
-pub const HEADER_SIZE: usize = TYPEID_SIZE + DATALENGTH_SIZE;
 
 /// 解析上下文（零拷贝解析）
 #[derive(Clone)]

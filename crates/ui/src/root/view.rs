@@ -135,8 +135,9 @@ impl Root {
             .update_note_instances(&self.window.theme, sidebar_width, instances);
 
         // 计算可见区域用于洋葱皮音符的视锥裁剪
-        let view = &self.editor.state;
-        let canvas_size = self.editor.canvas_size;
+        let es = &self.editor.editor_state;
+        let view = &es.view;
+        let canvas_size = es.canvas.size;
         let viewport_width = canvas_size.x - view.keyboard_width;
         let viewport_height = canvas_size.y - view.ruler_height;
 

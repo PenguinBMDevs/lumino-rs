@@ -1,3 +1,5 @@
+//! 视图状态管理
+
 use lumino_core::storage::config::EraserBehavior;
 
 /// 默认的歌曲位置 (tick)
@@ -25,30 +27,39 @@ pub const DEFAULT_NOTE_LENGTH: f32 = DEFAULT_PPQ as f32;
 /// 默认时间轴标尺高度 (pixel)
 pub const DEFAULT_RULER_HEIGHT: f32 = 24.0;
 
+/// 视图状态（滚动、缩放、显示参数）
 #[derive(Debug, Clone)]
 pub struct ViewState {
-    pub scroll_x: f32, // x轴滚动位置，对应歌曲位置，单位为tick
-    pub scroll_y: f32, // y轴滚动位置，对应键盘位置，单位可能为pixel
-
-    pub zoom_x: f32, // 横向缩放: Pixels per Tick
-    pub zoom_y: f32, // 纵向缩放: Pixels per Key
-
-    pub total_ticks: u32,         // 歌曲总长度，单位为tick
-    pub key_count: u16,           // 键盘总键数，默认128，目前计划支持88/128/256键
-    pub visible_key_count: u16,   // 显示的琴键数量，默认128，最大256
-    pub ppq: u16,                 // 分辨率，整数，默认设定为1920，最大值65535
-    pub keyboard_width: f32,      // 键盘宽度，单位为像素，默认120
-    pub snap_precision: f32,      // 音符对齐精度，单位为tick，默认ppq（四分音符拍子线）
-    pub default_note_length: f32, // 默认音符长度（ticks），等于拍子线间隔
-    pub ruler_height: f32,        // 时间轴标尺高度（小节号显示区域），单位为像素
-    // pub scale: Scale // 之后我们需要支持不同的调式/微分音
+    /// x轴滚动位置，对应歌曲位置，单位为tick
+    pub scroll_x: f32,
+    /// y轴滚动位置，对应键盘位置，单位可能为pixel
+    pub scroll_y: f32,
+    /// 横向缩放: Pixels per Tick
+    pub zoom_x: f32,
+    /// 纵向缩放: Pixels per Key
+    pub zoom_y: f32,
+    /// 歌曲总长度，单位为tick
+    pub total_ticks: u32,
+    /// 键盘总键数，默认128，目前计划支持88/128/256键
+    pub key_count: u16,
+    /// 显示的琴键数量，默认128，最大256
+    pub visible_key_count: u16,
+    /// 分辨率，整数，默认设定为1920，最大值65535
+    pub ppq: u16,
+    /// 键盘宽度，单位为像素，默认120
+    pub keyboard_width: f32,
+    /// 音符对齐精度，单位为tick，默认ppq（四分音符拍子线）
+    pub snap_precision: f32,
+    /// 默认音符长度（ticks），等于拍子线间隔
+    pub default_note_length: f32,
+    /// 时间轴标尺高度（小节号显示区域），单位为像素
+    pub ruler_height: f32,
     /// 橡皮擦工具行为模式
     pub eraser_behavior: EraserBehavior,
 }
 
 impl Default for ViewState {
     fn default() -> Self {
-        // 这里给个默认值，默认打开钢琴卷帘就是这样的坐标位置和大小
         Self {
             scroll_x: DEFAULT_SCROLL_X,
             scroll_y: DEFAULT_SCROLL_Y,

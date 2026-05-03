@@ -5,7 +5,8 @@ use encoding_rs::GB18030;
 use num_bigint::BigInt;
 
 use crate::error::{DmsError, Result};
-use crate::node::{DmsDataNode, DmsNode, HEADER_SIZE};
+use crate::constants::HEADER_SIZE;
+use crate::node::{DmsDataNode, DmsNode};
 use crate::node_type::DmsNodeType;
 
 /// GB18030 编码字符串节点

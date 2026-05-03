@@ -30,13 +30,14 @@ pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Vec<Geom
         let mut frame = Frame::new(renderer, bounds.size());
 
         // 减去滚动偏移，将内容空间坐标转换到当前视图
-        let cursor_x = pos.x - editor.state.scroll_x;
-        let cursor_y = pos.y - editor.state.scroll_y;
+        let view = &editor.editor_state.view;
+        let cursor_x = pos.x - view.scroll_x;
+        let cursor_y = pos.y - view.scroll_y;
 
         tracing::debug!(
             "转换后坐标：scroll=({}, {}), 绘制位置=({}, {})",
-            editor.state.scroll_x,
-            editor.state.scroll_y,
+            view.scroll_x,
+            view.scroll_y,
             cursor_x,
             cursor_y
         );

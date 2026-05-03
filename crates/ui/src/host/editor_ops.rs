@@ -85,7 +85,7 @@ impl Host {
         }
 
         if !track_notes.is_empty() {
-            self.root.editor.track_notes.insert(track_idx, track_notes);
+            self.root.editor.editor_state.data.track_notes.insert(track_idx, track_notes);
             self.root.invalidate_onion_skin_cache();
         }
 
@@ -102,7 +102,7 @@ impl Host {
     pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
         self.root.set_midi_document(doc.clone());
         // 同步到 Editor，供 ensure_track_notes_loaded 使用
-        self.root.editor.document = Some(doc);
+        self.root.editor.editor_state.data.document = Some(doc);
     }
 
     /// 加载音轨 MIDI 控制事件（CC/PC/PB）
@@ -242,12 +242,12 @@ impl Host {
 
     /// 清空编辑器（用于新建工程）
     pub fn clear_editor(&mut self) {
-        self.root.editor.notes.clear();
-        self.root.editor.track_notes.clear();
-        self.root.editor.current_track = 0;
+        self.root.editor.editor_state.data.notes.clear();
+        self.root.editor.editor_state.data.track_notes.clear();
+        self.root.editor.editor_state.data.current_track = 0;
         self.root.editor.grid_cache.clear();
         // 释放 MIDI 文档引用（Arc），让大块事件内存可以被回收
-        self.root.editor.document = None;
+        self.root.editor.editor_state.data.document = None;
         self.root.midi_document = None;
         self.root.cached_onion_skin_notes = None;
         self.clear_cache();
@@ -263,20 +263,22 @@ impl Host {
         let mut result = Vec::new();
 
         // 先保存当前音轨的音符
-        if !self.root.editor.notes.is_empty() {
+        if !self.root.editor.editor_state.data.notes.is_empty() {
             let current_notes: Vec<NoteData> = self
                 .root
                 .editor
+                .editor_state
+                .data
                 .notes
                 .iter()
                 .map(|n| (n.tick, n.key as u8, n.length, n.velocity, n.channel))
                 .collect();
-            result.push((self.root.editor.current_track, current_notes));
+            result.push((self.root.editor.editor_state.data.current_track, current_notes));
         }
 
         // 添加其他音轨的音符
-        for (&track_idx, notes) in &self.root.editor.track_notes {
-            if track_idx != self.root.editor.current_track {
+        for (&track_idx, notes) in &self.root.editor.editor_state.data.track_notes {
+            if track_idx != self.root.editor.editor_state.data.current_track {
                 let track_notes: Vec<NoteData> = notes
                     .iter()
                     .map(|n| (n.tick, n.key as u8, n.length, n.velocity, n.channel))
@@ -290,8 +292,8 @@ impl Host {
 
     /// 获取编辑器中的音符数量（用于判断是否有内容）
     pub fn get_editor_note_count(&self) -> usize {
-        let current_count = self.root.editor.notes.len();
-        let track_notes_count: usize = self.root.editor.track_notes.values().map(|v| v.len()).sum();
+        let current_count = self.root.editor.editor_state.data.notes.len();
+        let track_notes_count: usize = self.root.editor.editor_state.data.track_notes.values().map(|v| v.len()).sum();
         current_count + track_notes_count
     }
 

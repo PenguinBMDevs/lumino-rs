@@ -10,11 +10,11 @@ impl Editor {
         let tick = self.x_to_tick(pos.x);
         let key = self.y_to_key(pos.y);
 
-        for (i, note) in self.notes.iter().enumerate().rev() {
+        for (i, note) in self.editor_state.data.notes.iter().enumerate().rev() {
             if note.key == key && tick >= note.tick && tick <= note.tick + note.length {
                 let start_dist = (tick - note.tick).abs();
                 let end_dist = (tick - (note.tick + note.length)).abs();
-                let edge_threshold = NOTE_EDGE_THRESHOLD_PX / self.state.zoom_x;
+                let edge_threshold = NOTE_EDGE_THRESHOLD_PX / self.editor_state.view.zoom_x;
 
                 if end_dist < edge_threshold {
                     return Some((i, HitType::End));
@@ -33,11 +33,11 @@ impl Editor {
     /// # Arguments
     /// * `index` - 音符在 notes 列表中的索引
     pub fn delete_note_by_index(&mut self, index: usize) {
-        if index < self.notes.len() {
+        if index < self.editor_state.data.notes.len() {
             // Push to history before modifying
             self.push_history();
 
-            let note = self.notes.remove(index);
+            let note = self.editor_state.data.notes.remove(index);
             tracing::debug!(
                 "Editor: deleted note at index {} (tick={}, key={})",
                 index,
@@ -46,22 +46,23 @@ impl Editor {
             );
 
             // 更新当前音轨的存储
-            if !self.notes.is_empty() {
-                self.track_notes
-                    .insert(self.current_track, self.notes.clone());
+            if !self.editor_state.data.notes.is_empty() {
+                self.editor_state.data.track_notes
+                    .insert(self.editor_state.data.current_track, self.editor_state.data.notes.clone());
             } else {
                 // 如果音符列表为空，从 track_notes 中移除该音轨
-                self.track_notes.remove(&self.current_track);
+                self.editor_state.data.track_notes.remove(&self.editor_state.data.current_track);
             }
 
             // 清除悬停状态（如果被删除的音符正好是悬停的）
-            if let Some((hover_index, _)) = self.hover_state {
+            let interaction = &mut self.editor_state.interaction;
+            if let Some((hover_index, _)) = interaction.hover_state {
                 if hover_index == index {
-                    self.hover_state = None;
+                    interaction.hover_state = None;
                 } else if hover_index > index {
                     // 如果被删除的音符在悬停音符之前，调整索引
-                    if let Some((_, second)) = self.hover_state {
-                        self.hover_state = Some((hover_index - 1, second));
+                    if let Some((_, second)) = interaction.hover_state {
+                        interaction.hover_state = Some((hover_index - 1, second));
                     }
                 }
             }
@@ -88,51 +89,52 @@ impl Editor {
 
     /// 检查音符是否被选中
     pub fn is_note_selected(&self, index: usize) -> bool {
-        self.selected_notes.contains(&index)
+        self.editor_state.interaction.selected_notes.contains(&index)
     }
 
     /// 获取选中音符的数量
     pub fn selected_notes_count(&self) -> usize {
-        self.selected_notes.len()
+        self.editor_state.interaction.selected_notes.len()
     }
 
     /// 清除所有选中
     pub fn clear_selection(&mut self) {
-        self.selected_notes.clear();
+        self.editor_state.interaction.selected_notes.clear();
     }
 
     /// 删除所有选中的音符
     pub fn delete_selected_notes(&mut self) {
-        if self.selected_notes.is_empty() {
+        // 先复制选中的索引，避免之后修改 self 时的借用冲突
+        let mut indices: Vec<usize> = self.editor_state.interaction.selected_notes.iter().copied().collect();
+        if indices.is_empty() {
             return;
         }
 
         // Push to history before modifying
         self.push_history();
 
-        // 将选中的索引排序，从大到小删除以避免索引变化问题
-        let mut indices: Vec<usize> = self.selected_notes.iter().copied().collect();
+        // 从大到小排序，避免索引变化问题
         indices.sort_by(|a, b| b.cmp(a));
 
-        for index in indices {
-            if index < self.notes.len() {
-                self.notes.remove(index);
+        for &index in &indices {
+            if index < self.editor_state.data.notes.len() {
+                self.editor_state.data.notes.remove(index);
             }
         }
 
-        tracing::debug!("Editor: 删除了 {} 个音符", self.selected_notes.len());
+        tracing::debug!("Editor: 删除了 {} 个音符", indices.len());
 
         // 更新当前音轨的存储
-        if !self.notes.is_empty() {
-            self.track_notes
-                .insert(self.current_track, self.notes.clone());
+        if !self.editor_state.data.notes.is_empty() {
+            self.editor_state.data.track_notes
+                .insert(self.editor_state.data.current_track, self.editor_state.data.notes.clone());
         } else {
-            self.track_notes.remove(&self.current_track);
+            self.editor_state.data.track_notes.remove(&self.editor_state.data.current_track);
         }
 
         // 清除选中和悬停状态
-        self.selected_notes.clear();
-        self.hover_state = None;
+        self.editor_state.interaction.selected_notes.clear();
+        self.editor_state.interaction.hover_state = None;
 
         // 标记音符数据已变化（音符由 wgpu 渲染，不需要清 grid cache）
         self.mark_notes_changed();
@@ -140,8 +142,10 @@ impl Editor {
 
     /// 选择全部音符
     pub fn select_all_notes(&mut self) {
-        self.selected_notes.clear();
-        self.selected_notes.extend(0..self.notes.len());
+        self.editor_state.interaction.selected_notes.clear();
+        self.editor_state.interaction
+            .selected_notes
+            .extend(0..self.editor_state.data.notes.len());
         // 选择框是 Canvas 上实时渲染的叠加层，不需要清 grid cache
     }
 }

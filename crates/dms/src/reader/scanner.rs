@@ -4,7 +4,7 @@ use flate2::read::ZlibDecoder;
 use std::io::Read;
 
 use crate::error::{DmsError, Result};
-use crate::node::HEADER_SIZE;
+use crate::constants::HEADER_SIZE;
 use crate::node_type::DmsNodeType;
 use crate::reader::{DmsScanResult, read_file_header};
 use crate::utils;
@@ -25,7 +25,8 @@ impl ScanState {
     pub fn new(decompressed_length: usize) -> Self {
         // 缓冲区需要足够容纳解压后的数据
         // 使用解压长度 + 一些额外空间
-        let buffer_size = decompressed_length + 65536;
+        use crate::constants::SCAN_BUFFER_SIZE;
+        let buffer_size = decompressed_length + SCAN_BUFFER_SIZE;
 
         Self {
             buffer: vec![0; buffer_size],

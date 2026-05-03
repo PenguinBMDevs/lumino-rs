@@ -78,7 +78,7 @@ impl Host {
             self.root.sidebar.update_resize_position(logical_pos.x);
             // 同步更新编辑器的画布偏移
             let sidebar_width = self.root.sidebar.width() as f32;
-            let current_offset = self.root.editor.canvas_offset;
+            let current_offset = self.root.editor.editor_state.canvas.offset;
             self.root
                 .editor
                 .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset.y));

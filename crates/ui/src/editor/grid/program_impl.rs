@@ -24,8 +24,9 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
         let bounds_pos = iced_core::Point::new(bounds.x, bounds.y);
         let bounds_size = iced_core::Size::new(bounds.width, bounds.height);
 
+        let canvas = &self.editor.editor_state.canvas;
         let new_size = iced_core::Point::new(bounds.width, bounds.height);
-        if self.editor.canvas_size != new_size || self.editor.canvas_offset != bounds_pos {
+        if canvas.size != new_size || canvas.offset != bounds_pos {
             return Some(Action::publish(crate::Message::CanvasBoundsChanged {
                 offset: bounds_pos,
                 size: bounds_size,
@@ -84,7 +85,8 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             return mouse::Interaction::Crosshair;
         }
 
-        match self.editor.edit_state {
+        let interaction = &self.editor.editor_state.interaction;
+        match interaction.edit_state {
             EditState::Dragging { .. } => mouse::Interaction::Grabbing,
             EditState::PendingDrag { .. } => mouse::Interaction::Pointer,
             EditState::ResizingStart { .. } | EditState::ResizingEnd { .. } => {
@@ -93,7 +95,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             EditState::Drawing { .. } => mouse::Interaction::Crosshair,
             EditState::Selecting { .. } => mouse::Interaction::Crosshair,
             EditState::Scrubbing => mouse::Interaction::Grabbing,
-            EditState::Idle => match self.editor.hover_state {
+            EditState::Idle => match interaction.hover_state {
                 Some((_, HitType::Start)) | Some((_, HitType::End)) => {
                     mouse::Interaction::ResizingHorizontally
                 }

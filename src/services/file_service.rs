@@ -83,7 +83,8 @@ impl FileService {
             "MIDI 导出成功",
             "MIDI 导出成功",
             move |cb| {
-                let bytes = lumino_export::export_midi_from_parsed_midi_sync(&source_path)?;
+                let bytes = lumino_export::export_midi_from_parsed_midi_sync(&source_path)
+                    .map_err(|e| e.to_string())?;
                 cb("正在写入文件", 0.8);
                 std::fs::write(&path, bytes).map_err(|e| format!("写入文件失败: {e}"))
             },
@@ -100,7 +101,8 @@ impl FileService {
             "MIDI 转 DMS 导出成功",
             move |cb| {
                 cb("正在转换格式", 0.5);
-                let bytes = lumino_export::export_dms_from_midi_sync(&source_path)?;
+                let bytes = lumino_export::export_dms_from_midi_sync(&source_path)
+                    .map_err(|e| e.to_string())?;
                 cb("正在写入 DMS 文件", 0.8);
                 std::fs::write(&path, bytes).map_err(|e| format!("写入文件失败: {e}"))
             },
@@ -116,7 +118,9 @@ impl FileService {
             "DMS 保存成功",
             "DMS 保存成功",
             move |_cb| {
-                lumino_export::copy_file_sync(&source_path, &path).map(|_| ())
+                lumino_export::copy_file_sync(&source_path, &path)
+                    .map_err(|e| e.to_string())
+                    .map(|_| ())
             },
         )
         .await
@@ -134,7 +138,8 @@ impl FileService {
             "DMS 转 MIDI 导出成功",
             "DMS 转 MIDI 导出成功",
             move |cb| {
-                let bytes = lumino_export::export_midi_from_dms_sync(&source_path)?;
+                let bytes = lumino_export::export_midi_from_dms_sync(&source_path)
+                    .map_err(|e| e.to_string())?;
                 cb("正在写入 MIDI 文件", 0.8);
                 std::fs::write(&path, bytes).map_err(|e| format!("写入文件失败: {e}"))
             },

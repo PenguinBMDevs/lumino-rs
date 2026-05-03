@@ -33,9 +33,8 @@ impl Editor {
         self.onion_skin_config.toggle();
         self.grid_cache.clear();
         tracing::info!(
-            "Editor: saved {} notes to track {}",
-            self.notes.len(),
-            self.current_track
+            "Editor: 洋葱皮已切换, is_enabled={}",
+            self.onion_skin_config.is_enabled()
         );
     }
 
@@ -100,7 +99,7 @@ impl Editor {
             return Vec::new();
         }
 
-        let Some(doc) = self.document.as_ref() else {
+        let Some(doc) = self.editor_state.data.document.as_ref() else {
             return Vec::new();
         };
 
@@ -192,7 +191,7 @@ impl Editor {
             .iter()
             .filter(|(_, is_enabled)| **is_enabled)
             .map(|(&idx, _)| idx)
-            .filter(|&idx| idx != self.current_track)
+            .filter(|&idx| idx != self.editor_state.data.current_track)
             .collect();
         indices.sort_by(|a, b| b.cmp(a)); // 降序排列：大索引先渲染（在底层），小索引后渲染（在顶层）
         indices
@@ -212,7 +211,7 @@ impl Editor {
             return Vec::new();
         }
 
-        if track_idx == self.current_track {
+        if track_idx == self.editor_state.data.current_track {
             return Vec::new();
         }
 
@@ -230,7 +229,7 @@ impl Editor {
         let color = self.onion_skin_config.get_track_color(track_idx);
 
         // 先查 track_notes 缓存
-        if let Some(cached) = self.track_notes.get(&track_idx) {
+        if let Some(cached) = self.editor_state.data.track_notes.get(&track_idx) {
             if cached.is_empty() {
                 return Vec::new();
             }
@@ -238,7 +237,7 @@ impl Editor {
         }
 
         // 缓存未命中 → 从 document 加载并缓存
-        let Some(doc) = self.document.as_ref() else {
+        let Some(doc) = self.editor_state.data.document.as_ref() else {
             return Vec::new();
         };
         if track_idx as u16 >= doc.track_count() as u16 {
@@ -260,7 +259,7 @@ impl Editor {
                     .with_channel(*channel),
             );
         }
-        self.track_notes.insert(track_idx, notes.clone());
+        self.editor_state.data.track_notes.insert(track_idx, notes.clone());
 
         make_instances(&notes, color)
     }
@@ -282,7 +281,7 @@ impl Editor {
             return Vec::new();
         }
 
-        let Some(doc) = self.document.as_ref() else {
+        let Some(doc) = self.editor_state.data.document.as_ref() else {
             return Vec::new();
         };
 
@@ -354,19 +353,19 @@ impl Editor {
 
     /// 从 document 加载音轨音符到 track_notes 缓存
     fn load_track_notes_from_document(&mut self, track_idx: usize) {
-        let Some(doc) = self.document.as_ref() else {
+        let Some(doc) = self.editor_state.data.document.as_ref() else {
             return;
         };
         if track_idx as u16 >= doc.track_count() as u16 {
             return;
         }
         if doc.track_note_count(track_idx as u16) == 0 {
-            self.track_notes.insert(track_idx, im::Vector::new());
+            self.editor_state.data.track_notes.insert(track_idx, im::Vector::new());
             return;
         }
         let raw = doc.get_track_notes(track_idx as u16);
         if raw.is_empty() {
-            self.track_notes.insert(track_idx, im::Vector::new());
+            self.editor_state.data.track_notes.insert(track_idx, im::Vector::new());
             return;
         }
 
@@ -378,7 +377,7 @@ impl Editor {
                     .with_channel(*channel),
             );
         }
-        self.track_notes.insert(track_idx, notes);
+        self.editor_state.data.track_notes.insert(track_idx, notes);
     }
 
     /// 获取所有洋葱皮音符实例（所有其他音轨）
@@ -398,7 +397,7 @@ impl Editor {
             .iter()
             .filter(|(_, is_enabled)| **is_enabled)
             .map(|(&idx, _)| idx)
-            .filter(|&idx| idx != self.current_track)
+            .filter(|&idx| idx != self.editor_state.data.current_track)
             .collect();
 
         track_indices.sort_by(|a, b| b.cmp(a)); // 降序排列：大索引先渲染（在底层），小索引后渲染（在顶层）

@@ -21,6 +21,7 @@ impl EditorSnapshot {
 }
 
 /// History manager for undo/redo
+#[derive(Debug)]
 pub struct History {
     undo_stack: Vec<EditorSnapshot>,
     redo_stack: Vec<EditorSnapshot>,

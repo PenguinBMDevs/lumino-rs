@@ -97,7 +97,7 @@ impl Host {
 
     /// 获取当前 PPQ (Pulses Per Quarter note)
     pub fn ppq(&self) -> u16 {
-        self.root.editor.state.ppq
+        self.root.editor.editor_state.view.ppq
     }
 
     /// 更新进度

@@ -89,7 +89,7 @@ impl ToolbarHandler {
     fn init_playback_manager(root: &mut Root) {
         use crate::playback::PlaybackManager;
 
-        let division = root.editor.state.ppq;
+        let division = root.editor.editor_state.view.ppq;
         let mut manager = PlaybackManager::new(division);
 
         // 先创建空的 manager，让 update_playback_notes 能工作
@@ -128,13 +128,13 @@ impl ToolbarHandler {
 
     fn sync_toolbar_precision(&self, root: &mut Root, event: &crate::toolbar::Event) {
         if let crate::toolbar::Event::PrecisionChanged(precision) = event {
-            let ticks = (*precision).as_ticks(root.editor.state.ppq);
-            root.editor.state.snap_precision = ticks;
-            root.editor.state.default_note_length = ticks;
+            let ticks = (*precision).as_ticks(root.editor.editor_state.view.ppq);
+            root.editor.set_snap_precision(ticks);
+            root.editor.set_default_note_length(ticks);
             tracing::debug!(
                 "Root: 音符精度同步为 {} ticks (PPQ={})",
                 ticks,
-                root.editor.state.ppq
+                root.editor.editor_state.view.ppq
             );
         }
     }
@@ -169,7 +169,7 @@ impl ToolbarHandler {
             root.editor
                 .set_auto_scroll_config(lumino_core::storage::config::AutoScrollConfig {
                     mode: root.toolbar.auto_scroll_mode,
-                    ..*root.editor.auto_scroll_config()
+                    ..root.editor.editor_state.auto_scroll
                 });
             tracing::debug!(
                 "Root: 自动滚动模式同步为 {:?}",

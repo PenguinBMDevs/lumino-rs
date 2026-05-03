@@ -1,7 +1,7 @@
 use iced_core::{Color, Point, Rectangle, Size};
 use lumino_gfx::NoteInstance;
 
-use crate::editor::state::ViewState;
+use crate::editor::editor_state::ViewState;
 
 /// 音符逻辑表示
 #[derive(Debug, Clone)]

@@ -8,7 +8,7 @@ use lumino_core::storage::config::EraserBehavior;
 impl Editor {
     /// 主入口：处理编辑器动作
     pub fn handle_action(&mut self, action: EditorAction) {
-        self.pending_audio_actions.clear();
+        self.editor_state.interaction.pending_audio_actions.clear();
 
         match action {
             EditorAction::Pressed { pos, shift } => self.handle_pressed(pos, shift),
@@ -58,7 +58,7 @@ impl Editor {
     ) {
         let hit_result = self.hit_test_note(pos);
 
-        match self.current_tool {
+        match self.editor_state.tool {
             Tool::Pointer => self.handle_pointer_pressed(pos, hit_result, snapped_tick),
             Tool::Pencil => self.handle_pencil_pressed(pos, hit_result, snapped_tick, key),
             Tool::Eraser => self.handle_eraser_pressed(pos, shift, hit_result),
@@ -74,15 +74,15 @@ impl Editor {
         snapped_tick: f32,
     ) {
         if let Some((index, hit_type)) = hit_result {
-            if !self.selected_notes.contains(&index) {
-                self.selected_notes.clear();
-                self.selected_notes.insert(index);
+            if !self.editor_state.interaction.selected_notes.contains(&index) {
+                self.editor_state.interaction.selected_notes.clear();
+                self.editor_state.interaction.selected_notes.insert(index);
             }
             self.start_note_edit(index, hit_type, pos);
         } else {
             self.playback_position = snapped_tick;
-            self.selected_notes.clear();
-            self.edit_state = EditState::Selecting {
+            self.editor_state.interaction.selected_notes.clear();
+            self.editor_state.interaction.edit_state = EditState::Selecting {
                 start_pos: pos,
                 current_pos: pos,
             };
@@ -111,11 +111,11 @@ impl Editor {
         shift: bool,
         hit_result: Option<(usize, HitType)>,
     ) {
-        match self.state.eraser_behavior {
+        match self.editor_state.view.eraser_behavior {
             EraserBehavior::Default => {
                 if shift {
-                    self.selected_notes.clear();
-                    self.edit_state = EditState::Selecting {
+                    self.editor_state.interaction.selected_notes.clear();
+                    self.editor_state.interaction.edit_state = EditState::Selecting {
                         start_pos: pos,
                         current_pos: pos,
                     };
@@ -127,8 +127,8 @@ impl Editor {
                 if shift && hit_result.is_some() {
                     self.delete_note_at(pos);
                 } else {
-                    self.selected_notes.clear();
-                    self.edit_state = EditState::Selecting {
+                    self.editor_state.interaction.selected_notes.clear();
+                    self.editor_state.interaction.edit_state = EditState::Selecting {
                         start_pos: pos,
                         current_pos: pos,
                     };
@@ -157,8 +157,8 @@ impl Editor {
         match hit_type {
             HitType::Start => {
                 self.push_history();
-                let note = &self.notes[index];
-                self.edit_state = EditState::ResizingStart {
+                let note = &self.editor_state.data.notes[index];
+                self.editor_state.interaction.edit_state = EditState::ResizingStart {
                     note_index: index,
                     original_tick: note.tick,
                     original_length: note.length,
@@ -166,11 +166,11 @@ impl Editor {
             }
             HitType::End => {
                 self.push_history();
-                self.edit_state = EditState::ResizingEnd { note_index: index };
+                self.editor_state.interaction.edit_state = EditState::ResizingEnd { note_index: index };
             }
             HitType::Middle => {
-                let note = &self.notes[index];
-                self.edit_state = EditState::PendingDrag {
+                let note = &self.editor_state.data.notes[index];
+                self.editor_state.interaction.edit_state = EditState::PendingDrag {
                     note_index: index,
                     start_pos: pos,
                     original_tick: note.tick,
@@ -183,7 +183,7 @@ impl Editor {
 
     /// 开始绘制新音符
     fn start_drawing(&mut self, snapped_tick: f32, key: u16) {
-        self.edit_state = EditState::Drawing {
+        self.editor_state.interaction.edit_state = EditState::Drawing {
             start_tick: snapped_tick,
             key,
             current_tick: snapped_tick,
@@ -193,7 +193,7 @@ impl Editor {
 
     /// 播放音符音频
     pub(crate) fn play_note_audio(&mut self, key: u16, _context: &str) {
-        self.pending_audio_actions.push(AudioAction::PlayNote {
+        self.editor_state.interaction.pending_audio_actions.push(AudioAction::PlayNote {
             key: key as u8,
             velocity: DEFAULT_NOTE_VELOCITY,
         });
@@ -205,14 +205,16 @@ impl Editor {
         let key = self.y_to_key(pos.y);
         let snapped_tick = self.snap_tick(tick);
 
-        self.hover_state = self.hit_test_note(pos);
+        // 先计算 hit_test（不借用 editor_state），再赋值
+        let hover = self.hit_test_note(pos);
+        self.editor_state.interaction.hover_state = hover;
 
-        if let EditState::Scrubbing = self.edit_state {
+        if let EditState::Scrubbing = self.editor_state.interaction.edit_state {
             self.playback_position = snapped_tick;
             return;
         }
 
-        if let EditState::Selecting { current_pos, .. } = &mut self.edit_state {
+        if let EditState::Selecting { current_pos, .. } = &mut self.editor_state.interaction.edit_state {
             *current_pos = pos;
         }
 
@@ -248,14 +250,14 @@ impl Editor {
         new_key: Option<u16>,
         new_length: Option<f32>,
     ) {
-        let note_index = match self.edit_state {
+        let note_index = match self.editor_state.interaction.edit_state {
             EditState::Dragging { note_index, .. }
             | EditState::ResizingStart { note_index, .. }
             | EditState::ResizingEnd { note_index, .. } => note_index,
             _ => return,
         };
 
-        if let Some(note) = self.notes.get_mut(note_index) {
+        if let Some(note) = self.editor_state.data.notes.get_mut(note_index) {
             if let Some(t) = new_tick {
                 note.tick = t;
             }
@@ -270,12 +272,12 @@ impl Editor {
 
     /// 处理鼠标释放事件
     pub(crate) fn handle_released(&mut self) {
-        match self.edit_state {
+        match &self.editor_state.interaction.edit_state {
             EditState::Selecting { .. } => {
-                if self.current_tool == Tool::Eraser {
+                if self.editor_state.tool == Tool::Eraser {
                     self.delete_selected_notes();
                 } else {
-                    tracing::debug!("框选结束，选中 {} 个音符", self.selected_notes.len());
+                    tracing::debug!("框选结束，选中 {} 个音符", self.editor_state.interaction.selected_notes.len());
                 }
             }
             EditState::Drawing {
@@ -283,7 +285,7 @@ impl Editor {
                 key,
                 current_tick,
             } => {
-                self.finish_drawing(start_tick, key, current_tick);
+                self.finish_drawing(*start_tick, *key, *current_tick);
             }
             EditState::PendingDrag { .. } => {}
             EditState::Dragging {
@@ -292,38 +294,39 @@ impl Editor {
                 original_key,
                 ..
             } => {
-                self.finalize_dragging(note_index, original_tick, original_key);
+                self.finalize_dragging(*note_index, *original_tick, *original_key);
             }
             EditState::ResizingStart { .. } | EditState::ResizingEnd { .. } => {
                 tracing::debug!("Editor: 音符调整大小完成");
             }
             _ => {}
         }
-        self.edit_state = EditState::Idle;
+        self.editor_state.interaction.edit_state = EditState::Idle;
     }
 
     /// 完成绘制新音符
     pub(crate) fn finish_drawing(&mut self, start_tick: f32, key: u16, current_tick: f32) {
+        let v = &self.editor_state.view;
         let (tick, length) = if current_tick > start_tick {
             (start_tick, current_tick - start_tick)
         } else if current_tick < start_tick {
             (current_tick, start_tick - current_tick)
         } else {
-            (start_tick, self.state.default_note_length)
+            (start_tick, v.default_note_length)
         };
-        let length = length.max(self.state.snap_precision);
+        let length = length.max(v.snap_precision);
 
         self.push_history();
         let note = Note::new(tick, key, length);
-        self.notes.push_back(note.clone());
-        self.track_notes
-            .insert(self.current_track, self.notes.clone());
+        self.editor_state.data.notes.push_back(note.clone());
+        self.editor_state.data.track_notes
+            .insert(self.editor_state.data.current_track, self.editor_state.data.notes.clone());
 
         self.emit_note_added_event(&note);
         tracing::debug!(
             "编辑器: 已保存 {} 个音符到音轨 {}",
-            self.notes.len(),
-            self.current_track
+            self.editor_state.data.notes.len(),
+            self.editor_state.data.current_track
         );
         self.mark_notes_changed();
     }
@@ -336,17 +339,17 @@ impl Editor {
             length: note.length,
             velocity: DEFAULT_NOTE_VELOCITY,
             channel: DEFAULT_MIDI_CHANNEL,
-            track_index: self.current_track,
+            track_index: self.editor_state.data.current_track,
         }));
     }
 
     /// 处理滚动事件
     pub(crate) fn handle_scrolled(&mut self, delta_x: f32, delta_y: f32) {
-        let new_scroll_y = self.state.scroll_y - delta_y;
+        let new_scroll_y = self.editor_state.view.scroll_y - delta_y;
         self.set_scroll_y(new_scroll_y);
 
         if delta_x != 0.0 {
-            let new_scroll_x = self.state.scroll_x - delta_x;
+            let new_scroll_x = self.editor_state.view.scroll_x - delta_x;
             self.set_scroll_x(new_scroll_x);
         }
     }
@@ -362,7 +365,7 @@ impl Editor {
 
     /// 处理删除键按下事件
     pub(crate) fn handle_delete_pressed(&mut self) {
-        if let Some((index, _)) = self.hover_state {
+        if let Some((index, _)) = self.editor_state.interaction.hover_state {
             self.delete_note_by_index(index);
         }
     }

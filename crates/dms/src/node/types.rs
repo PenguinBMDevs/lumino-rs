@@ -3,15 +3,6 @@
 use crate::error::Result;
 use crate::node_type::DmsNodeType;
 
-/// 类型 ID 字段大小
-pub const TYPEID_SIZE: usize = 2;
-
-/// 数据长度字段大小
-pub const DATALENGTH_SIZE: usize = 4;
-
-/// 节点头大小
-pub const HEADER_SIZE: usize = TYPEID_SIZE + DATALENGTH_SIZE;
-
 /// DMS 节点统一接口
 pub trait DmsNode: Send + Sync {
     /// 获取节点类型 ID

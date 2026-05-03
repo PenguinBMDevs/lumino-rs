@@ -1,8 +1,8 @@
 //! DMS 文件写入器
 
+use crate::constants::DMS_MAGIC;
 use crate::error::Result;
 use crate::node::{DmsCompositeNode, DmsNode};
-use crate::reader::DMS_MAGIC;
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
 use std::io::Write;

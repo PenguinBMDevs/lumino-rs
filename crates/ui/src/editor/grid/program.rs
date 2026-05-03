@@ -42,8 +42,9 @@ impl<'a> PianoRollGrid<'a> {
     ) -> Option<canvas::Action<Message>> {
         use crate::message::EditorAction;
 
-        if local_pos.y < self.editor.state.ruler_height
-            && local_pos.x >= self.editor.state.keyboard_width
+        let v = &self.editor.editor_state.view;
+        if local_pos.y < v.ruler_height
+            && local_pos.x >= v.keyboard_width
         {
             let tick = self.editor.x_to_tick(local_pos.x);
             let snapped_tick = self.editor.snap_tick(tick).max(0.0);

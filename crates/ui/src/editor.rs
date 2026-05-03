@@ -4,7 +4,8 @@ pub mod note;
 pub mod onion_skin;
 pub mod scrollbar_widget;
 pub mod spatial_index;
-pub mod state;
+
+pub mod editor_state;
 
 // 子模块
 mod auto_scroll;
@@ -26,113 +27,33 @@ use crate::{message::AudioAction, toolbar::Tool};
 use iced_core::Point;
 use iced_widget::canvas;
 use lumino_core::midi::MidiDocument;
-use lumino_core::storage::config::AutoScrollConfig;
 use std::cell::{Cell, RefCell};
 use std::sync::Arc;
 
 use note::Note;
 pub use onion_skin::OnionSkinConfig;
-pub use state::ViewState;
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub enum EditState {
-    #[default]
-    Idle,
-    /// 框选状态
-    Selecting {
-        start_pos: Point,
-        current_pos: Point,
-    },
-    Drawing {
-        start_tick: f32,
-        key: u16,
-        current_tick: f32,
-    },
-    /// 预备拖动状态：点击音符后等待判断是点击还是拖动
-    PendingDrag {
-        note_index: usize,
-        start_pos: Point,
-        original_tick: f32,
-        original_key: u16,
-    },
-    Dragging {
-        note_index: usize,
-        offset_tick: f32,
-        offset_key: i32,
-        last_played_key: u16, // 上一次播放的音高，用于避免重复播放
-        original_tick: f32,
-        original_key: u16,
-    },
-    ResizingStart {
-        note_index: usize,
-        original_tick: f32,
-        original_length: f32,
-    },
-    ResizingEnd {
-        note_index: usize,
-    },
-    /// 擦洗状态：在时间轴上拖动来快速定位播放位置
-    Scrubbing,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum HitType {
-    Start,
-    Middle,
-    End,
-}
+// 统一从 editor_state 导入（重构迁移）
+pub use editor_state::{EditState, HitType, ViewState};
 
 /// 钢琴卷帘编辑器
 pub struct Editor {
-    pub state: ViewState,
     pub grid_cache: canvas::Cache<crate::Renderer>,
     /// 键盘缓存（只随垂直滚动变化）
     pub keyboard_cache: canvas::Cache<crate::Renderer>,
     /// 标尺缓存（只随水平滚动变化）
     pub ruler_cache: canvas::Cache<crate::Renderer>,
-    pub max_scroll_x: f32,
-    pub max_scroll_y: f32,
-    /// 当前鼠标在窗口中的位置
-    pub cursor_position: Option<Point>,
-    /// Canvas 在窗口中的偏移量（用于坐标转换）
-    pub canvas_offset: Point,
-    /// Canvas 尺寸（宽, 高）
-    pub canvas_size: Point,
-
-    pub notes: im::Vector<Note>,
-    pub edit_state: EditState,
-    pub hover_state: Option<(usize, HitType)>,
-    pub pending_audio_actions: Vec<AudioAction>,
-
-    /// 当前编辑的音轨索引
-    pub current_track: usize,
-    /// 按音轨存储的音符（懒加载缓存，仅保留访问过的音轨）
-    pub track_notes: std::collections::HashMap<usize, im::Vector<Note>>,
-    /// MIDI 文档引用（用于懒加载非当前音轨的音符，避免全量预加载导致内存翻倍）
-    pub(crate) document: Option<Arc<MidiDocument>>,
 
     /// 洋葱皮配置
     onion_skin_config: OnionSkinConfig,
 
-    /// 当前激活的工具
-    current_tool: Tool,
-    /// 选中的音符索引集合
-    selected_notes: std::collections::HashSet<usize>,
-
     /// 协作远端用户光标信息（用户ID -> (位置, 颜色, 用户名)）
     pub remote_cursors: std::collections::HashMap<String, (Point, String, String)>,
-
-    /// 历史记录（用于撤销/重做）
-    history: history::History,
 
     /// 演奏指示线位置（以 tick 为单位）
     pub playback_position: f32,
 
     /// 音符数据是否已变化（需要更新播放管理器）
     notes_changed: bool,
-
-    /// 自动滚动配置
-    auto_scroll_config: AutoScrollConfig,
 
     /// 音符空间索引（惰性更新）
     pub note_index: RefCell<Option<spatial_index::NoteSpatialIndex>>,
@@ -142,6 +63,9 @@ pub struct Editor {
     /// 其他音轨的音符空间索引（用于洋葱皮等，懒加载）
     pub track_note_indices:
         RefCell<std::collections::HashMap<usize, spatial_index::NoteSpatialIndex>>,
+
+    /// 统一状态管理
+    pub editor_state: editor_state::EditorState,
 }
 
 /// 编辑器各组件的内存占用快照（字节）
@@ -163,30 +87,30 @@ pub struct EditorMemory {
 impl Editor {
     /// 收集编辑器各组件的内存占用快照
     pub fn memory_breakdown(&self) -> EditorMemory {
-        // 所有字段都以 pub 暴露，可以直接计算
+        let d = &self.editor_state.data;
         let note_size = std::mem::size_of::<Note>();
 
         // editor.notes
-        let notes_len = self.notes.len();
+        let notes_len = d.notes.len();
         let notes_bytes = notes_len * note_size;
 
         // track_notes
-        let track_notes_entries = self.track_notes.len();
+        let track_notes_entries = d.track_notes.len();
         let mut track_notes_count = 0usize;
         let mut track_notes_bytes = 0usize;
-        for notes in self.track_notes.values() {
+        for notes in d.track_notes.values() {
             track_notes_count += notes.len();
             track_notes_bytes += notes.len() * note_size;
         }
 
         // document events (CompactEvent=12B, (u32,f32)=8B)
-        let doc_is_some = self.document.is_some();
-        let doc_event_cap = self
+        let doc_is_some = d.document.is_some();
+        let doc_event_cap = d
             .document
             .as_ref()
             .map(|d| d.events.capacity())
             .unwrap_or(0);
-        let doc_events_bytes = self
+        let doc_events_bytes = d
             .document
             .as_ref()
             .map(|doc| {
@@ -218,53 +142,30 @@ impl Editor {
     }
 
     pub fn new() -> Self {
-        let mut editor = Self {
-            state: ViewState::default(),
+        Self {
+            editor_state: editor_state::EditorState::new(),
             grid_cache: canvas::Cache::new(),
             keyboard_cache: canvas::Cache::new(),
             ruler_cache: canvas::Cache::new(),
-            max_scroll_x: 0.0,
-            max_scroll_y: 0.0,
-            cursor_position: None,
-            canvas_offset: Point::new(0.0, 0.0),
-            canvas_size: Point::new(0.0, 0.0),
-            notes: im::Vector::new(),
-            edit_state: EditState::Idle,
-            hover_state: None,
-            pending_audio_actions: Vec::new(),
-            current_track: 0,
-            track_notes: std::collections::HashMap::new(),
-            document: None,
             onion_skin_config: OnionSkinConfig::new(),
-            current_tool: Tool::Pointer, // 默认使用框选工具
-            selected_notes: std::collections::HashSet::new(),
             remote_cursors: std::collections::HashMap::new(),
-            history: history::History::new(),
             playback_position: 0.0,
             notes_changed: false,
-            auto_scroll_config: AutoScrollConfig::default(),
             note_index: RefCell::new(None),
             note_index_dirty: Cell::new(true),
             query_cache: RefCell::new(Vec::new()),
             track_note_indices: RefCell::new(std::collections::HashMap::new()),
-        };
-        editor.max_scroll_x = editor.state.total_ticks as f32 * editor.state.zoom_x;
-        editor.max_scroll_y = editor.state.visible_key_count as f32 * editor.state.zoom_y;
-        editor
+        }
     }
 
-    /// 设置当前工具
+    /// 设置当前工具（委托到 editor_state）
     pub fn set_tool(&mut self, tool: Tool) {
-        self.current_tool = tool;
-        // 切换工具时清除选中状态
-        if tool != Tool::Pointer {
-            self.selected_notes.clear();
-        }
+        self.editor_state.set_tool(tool);
     }
 
     /// 获取当前工具
     pub fn current_tool(&self) -> Tool {
-        self.current_tool
+        self.editor_state.tool
     }
 
     /// 更新远端鼠标位置
@@ -290,26 +191,38 @@ impl Editor {
 
     /// 更新鼠标位置（由外部调用）
     pub fn update_cursor_position(&mut self, position: Option<Point>) {
-        self.cursor_position = position;
+        self.editor_state.update_cursor_position(position);
     }
 
     /// 更新 Canvas 偏移量（用于坐标转换）
     pub fn set_canvas_offset(&mut self, offset: Point) {
-        self.canvas_offset = offset;
+        self.editor_state.set_canvas_offset(offset);
     }
 
     /// 更新 Canvas 尺寸
     pub fn set_canvas_size(&mut self, size: Point) {
-        self.canvas_size = size;
+        self.editor_state.set_canvas_size(size);
     }
 
     /// 获取并清空待处理的音频动作
     pub fn take_audio_actions(&mut self) -> Vec<AudioAction> {
-        let actions = std::mem::take(&mut self.pending_audio_actions);
+        let actions = self.editor_state.interaction.take_audio_actions();
         if !actions.is_empty() {
             tracing::debug!("Editor: 取出了 {} 个音频动作", actions.len());
         }
         actions
+    }
+
+    /// 设置总 ticks
+    pub fn set_total_ticks(&mut self, total_ticks: u32) {
+        self.editor_state.view.total_ticks = total_ticks;
+        let max_scroll_x = total_ticks as f32 * self.editor_state.view.zoom_x;
+        self.editor_state.max_scroll.x = max_scroll_x;
+    }
+
+    /// 设置 PPQ
+    pub fn set_ppq(&mut self, ppq: u16) {
+        self.editor_state.view.ppq = ppq;
     }
 
     /// 检查音符数据是否已变化
@@ -328,8 +241,9 @@ impl Editor {
         self.note_index_dirty.set(true);
         self.track_note_indices
             .borrow_mut()
-            .remove(&self.current_track);
+            .remove(&self.editor_state.data.current_track);
     }
+
 }
 
 impl Default for Editor {
@@ -341,30 +255,32 @@ impl Default for Editor {
 impl Editor {
     /// Push current state to history
     pub fn push_history(&mut self) {
-        let snapshot = history::EditorSnapshot::new(self.notes.clone(), self.current_track);
+        let d = &self.editor_state.data;
+        let snapshot = history::EditorSnapshot::new(d.notes.clone(), d.current_track);
         tracing::debug!(
             "推送历史记录: {} 个音符，音轨 {}",
             snapshot.notes.len(),
             snapshot.current_track
         );
-        self.history.push(snapshot);
+        self.editor_state.data.history.push(snapshot);
     }
 
     /// Undo the last action
     pub fn undo(&mut self) -> bool {
-        let current_state = history::EditorSnapshot::new(self.notes.clone(), self.current_track);
+        let d = &self.editor_state.data;
+        let current_state = history::EditorSnapshot::new(d.notes.clone(), d.current_track);
         tracing::info!(
             "尝试撤销: 当前音符数 = {}, 可撤销 = {}",
-            self.notes.len(),
+            d.notes.len(),
             self.can_undo()
         );
 
-        if let Some(snapshot) = self.history.undo(current_state) {
-            self.notes = snapshot.notes;
-            self.current_track = snapshot.current_track;
+        if let Some(snapshot) = self.editor_state.data.history.undo(current_state) {
+            self.editor_state.data.notes = snapshot.notes;
+            self.editor_state.data.current_track = snapshot.current_track;
             self.grid_cache.clear();
             self.mark_notes_changed();
-            tracing::info!("撤销操作成功: {} 个音符", self.notes.len());
+            tracing::info!("撤销操作成功: {} 个音符", self.editor_state.data.notes.len());
             true
         } else {
             tracing::info!("没有可撤销的操作");
@@ -374,11 +290,12 @@ impl Editor {
 
     /// Redo the last undone action
     pub fn redo(&mut self) -> bool {
-        let current_state = history::EditorSnapshot::new(self.notes.clone(), self.current_track);
+        let d = &self.editor_state.data;
+        let current_state = history::EditorSnapshot::new(d.notes.clone(), d.current_track);
 
-        if let Some(snapshot) = self.history.redo(current_state) {
-            self.notes = snapshot.notes;
-            self.current_track = snapshot.current_track;
+        if let Some(snapshot) = self.editor_state.data.history.redo(current_state) {
+            self.editor_state.data.notes = snapshot.notes;
+            self.editor_state.data.current_track = snapshot.current_track;
             self.grid_cache.clear();
             self.mark_notes_changed();
             tracing::info!("重做操作成功");
@@ -391,11 +308,11 @@ impl Editor {
 
     /// Check if undo is available
     pub fn can_undo(&self) -> bool {
-        self.history.can_undo()
+        self.editor_state.data.history.can_undo()
     }
 
     /// Check if redo is available
     pub fn can_redo(&self) -> bool {
-        self.history.can_redo()
+        self.editor_state.data.history.can_redo()
     }
 }

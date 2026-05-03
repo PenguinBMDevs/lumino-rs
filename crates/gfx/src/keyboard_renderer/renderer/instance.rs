@@ -1,4 +1,4 @@
-use super::super::KeyInstance;
+use super::super::types::KeyInstance;
 use super::KeyboardRenderer;
 
 impl KeyboardRenderer {

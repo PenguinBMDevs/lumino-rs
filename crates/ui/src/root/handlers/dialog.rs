@@ -23,13 +23,13 @@ impl DialogHandler {
     fn handle_confirm_custom_precision(&self, root: &mut Root) {
         let dialog = &root.state.custom_precision_dialog;
 
-        if let Some(ticks) = dialog.calculate_ticks(root.editor.state.ppq as u32) {
-            root.editor.state.snap_precision = ticks;
-            root.editor.state.default_note_length = ticks;
+        if let Some(ticks) = dialog.calculate_ticks(root.editor.editor_state.view.ppq as u32) {
+            root.editor.set_snap_precision(ticks);
+            root.editor.set_default_note_length(ticks);
             tracing::info!(
                 "自定义精度已应用: {} ticks (PPQ={})",
                 ticks,
-                root.editor.state.ppq
+                root.editor.editor_state.view.ppq
             );
         }
 

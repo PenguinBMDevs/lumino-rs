@@ -7,6 +7,7 @@
 // DMS 文件格式解析器 (Domino Music Sequencer)
 
 // 导入依赖
+pub mod constants;
 pub mod error;
 pub mod node;
 pub mod node_type;
@@ -16,14 +17,15 @@ pub mod writer;
 
 // 重导出常用类型
 pub use bytes::Bytes;
+pub use constants::{DATALENGTH_SIZE, DMS_MAGIC, HEADER_SIZE, MAGIC_LENGTH, TYPEID_SIZE};
 pub use error::{DmsError, Result};
 pub use node::{
-    DATALENGTH_SIZE, DmsAnsiStringNode, DmsCompositeNode, DmsDataNode, DmsFloatNode,
-    DmsIntegerNode, DmsNode, TYPEID_SIZE,
+    DmsAnsiStringNode, DmsCompositeNode, DmsDataNode, DmsFloatNode,
+    DmsIntegerNode, DmsNode,
 };
 pub use node_type::DmsNodeType;
 pub use reader::{
-    DMS_MAGIC, DmsLightweightData, DmsReader, DmsScanResult, MAGIC_LENGTH,
+    DmsLightweightData, DmsReader, DmsScanResult,
     parse_dms_data_with_progress, read_dms_data, read_dms_file, read_dms_file_with_progress,
     read_dms_lightweight, scan_dms_streaming, scan_dms_streaming_with_progress,
 };

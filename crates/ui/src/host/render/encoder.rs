@@ -22,19 +22,20 @@ impl Host {
         let theme = self.root.theme();
         let colors = GridColors::from_theme(&theme);
         let editor = &self.root.editor;
-        let max_key_index = (editor.state.visible_key_count.saturating_sub(1)) as f32;
+        let v = &editor.editor_state.view;
+        let max_key_index = (v.visible_key_count.saturating_sub(1)) as f32;
 
         self.grid_renderer.prepare(
             &[],
             &gfx.device,
             &gfx.queue,
             (viewport.logical_size.width, viewport.logical_size.height),
-            editor.state.scroll_x,
-            editor.state.scroll_y,
-            editor.state.zoom_x,
-            editor.state.zoom_y,
-            editor.state.keyboard_width,
-            editor.state.ruler_height,
+            v.scroll_x,
+            v.scroll_y,
+            v.zoom_x,
+            v.zoom_y,
+            v.keyboard_width,
+            v.ruler_height,
             colors.bg,
             colors.black_key,
             colors.bar_line,
@@ -42,7 +43,7 @@ impl Host {
             colors.half_beat_line,
             colors.grid_line,
             colors.key_line,
-            editor.state.ppq as f32,
+            v.ppq as f32,
             max_key_index,
             viewport.canvas_offset.x,
             viewport.canvas_offset.y,
@@ -52,7 +53,7 @@ impl Host {
     /// 如果需要则准备音符
     pub(super) fn prepare_notes_if_needed(&mut self, current_hash: u64) -> bool {
         let note_index_dirty = self.root.editor.note_index_dirty.get();
-        let current_edit_state = self.root.editor.edit_state.clone();
+        let current_edit_state = self.root.editor.editor_state.interaction.edit_state.clone();
         let is_drawing = matches!(current_edit_state, crate::editor::EditState::Drawing { .. });
 
         // 视口变化（滚动/缩放）：重新过滤洋葱皮实例（无需全量重建）

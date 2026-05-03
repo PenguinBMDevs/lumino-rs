@@ -262,7 +262,7 @@ impl Root {
 
         // 更新画布偏移
         let sidebar_width = self.sidebar.width() as f32;
-        let current_offset = self.editor.canvas_offset;
+        let current_offset = self.editor.editor_state.canvas.offset;
         self.editor
             .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset.y));
 

@@ -5,7 +5,8 @@ use std::io::Read;
 use bytes::Bytes;
 
 use crate::error::{DmsError, Result};
-use crate::node::{DmsNode, HEADER_SIZE};
+use crate::constants::HEADER_SIZE;
+use crate::node::DmsNode;
 use crate::node_type::DmsNodeType;
 
 /// 复合节点（包含子节点）

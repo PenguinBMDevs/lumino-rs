@@ -167,7 +167,7 @@ impl Host {
         puffin::profile_scope!("update_note_data");
         let note_index_dirty = self.root.editor.note_index_dirty.get();
         let is_drawing = matches!(
-            self.root.editor.edit_state,
+            self.root.editor.editor_state.interaction.edit_state,
             crate::editor::EditState::Drawing { .. }
         );
 
@@ -197,8 +197,9 @@ impl Host {
 
     /// 构建渲染参数
     pub(super) fn build_render_params(&self, data: super::data::RenderData) -> RenderParams {
-        let canvas_offset = self.root.editor.canvas_offset;
-        let canvas_size = self.root.editor.canvas_size;
+        let es = &self.root.editor.editor_state;
+        let canvas_offset = es.canvas.offset;
+        let canvas_size = es.canvas.size;
         let physical_size = self.viewport.physical_size();
         let theme = self.root.theme();
         let colors = super::data::GridColors::from_theme(&theme);
@@ -209,10 +210,10 @@ impl Host {
             colors.bg[2] as f64,
             colors.bg[3] as f64,
         ];
-        let ppq = self.root.editor.state.ppq;
-        let keyboard_width = self.root.editor.state.keyboard_width;
-        let ruler_height = self.root.editor.state.ruler_height;
-        let max_key_index = (self.root.editor.state.visible_key_count.saturating_sub(1)) as f32;
+        let ppq = es.view.ppq;
+        let keyboard_width = es.view.keyboard_width;
+        let ruler_height = es.view.ruler_height;
+        let max_key_index = (es.view.visible_key_count.saturating_sub(1)) as f32;
 
         RenderParams {
             viewport_size: (physical_size.width, physical_size.height),

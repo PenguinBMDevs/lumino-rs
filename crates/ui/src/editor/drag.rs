@@ -10,7 +10,7 @@ impl Editor {
             start_pos,
             original_tick,
             original_key,
-        } = self.edit_state
+        } = self.editor_state.interaction.edit_state
         else {
             return;
         };
@@ -22,7 +22,8 @@ impl Editor {
         let tick = self.x_to_tick(start_pos.x);
         let key = self.y_to_key(start_pos.y);
         self.push_history();
-        self.edit_state = EditState::Dragging {
+        // 更新 editor_state
+        self.editor_state.interaction.edit_state = EditState::Dragging {
             note_index,
             offset_tick: tick - original_tick,
             offset_key: key.saturating_sub(original_key) as i32,
@@ -41,14 +42,15 @@ impl Editor {
         key: u16,
         snapped_tick: f32,
     ) -> (Option<f32>, Option<u16>, Option<f32>, Option<u16>) {
-        let snap_precision = self.state.snap_precision;
-        let visible_key_count = self.state.visible_key_count;
+        let v = &self.editor_state.view;
+        let snap_precision = v.snap_precision;
+        let visible_key_count = v.visible_key_count;
         let mut new_tick = None;
         let mut new_key = None;
         let mut new_length = None;
         let mut note_to_play = None;
 
-        match &mut self.edit_state {
+        match &mut self.editor_state.interaction.edit_state {
             EditState::Selecting { current_pos: _, .. } => {
                 self.update_selection();
                 return (None, None, None, None);
@@ -86,7 +88,7 @@ impl Editor {
                 new_length = Some(end_tick - calculated_tick);
             }
             EditState::ResizingEnd { note_index, .. } => {
-                if let Some(note) = self.notes.get(*note_index) {
+                if let Some(note) = self.editor_state.data.notes.get(*note_index) {
                     new_length = Some((snapped_tick - note.tick).max(snap_precision));
                 }
             }
@@ -101,24 +103,24 @@ impl Editor {
         if let EditState::Selecting {
             start_pos,
             current_pos,
-        } = self.edit_state
+        } = self.editor_state.interaction.edit_state
         {
             let min_x = start_pos.x.min(current_pos.x);
             let max_x = start_pos.x.max(current_pos.x);
             let min_y = start_pos.y.min(current_pos.y);
             let max_y = start_pos.y.max(current_pos.y);
 
-            self.selected_notes.clear();
-            for (i, note) in self.notes.iter().enumerate() {
+            self.editor_state.interaction.selected_notes.clear();
+            for (i, note) in self.editor_state.data.notes.iter().enumerate() {
                 let note_x = self.tick_to_x(note.tick);
                 let note_y = self.key_to_y(note.key);
                 let note_right = self.tick_to_x(note.tick + note.length);
-                let note_bottom = note_y + self.state.zoom_y;
+                let note_bottom = note_y + self.editor_state.view.zoom_y;
 
                 // 检查音符是否与选择框相交
                 if note_right >= min_x && note_x <= max_x && note_bottom >= min_y && note_y <= max_y
                 {
-                    self.selected_notes.insert(i);
+                    self.editor_state.interaction.selected_notes.insert(i);
                 }
             }
         }
@@ -128,7 +130,7 @@ impl Editor {
     fn should_start_dragging(&self, pos: iced_core::Point, start_pos: iced_core::Point) -> bool {
         let delta_x = pos.x - start_pos.x;
         let delta_y = pos.y - start_pos.y;
-        let key_threshold = self.state.zoom_y * DRAG_START_THRESHOLD_RATIO;
+        let key_threshold = self.editor_state.view.zoom_y * DRAG_START_THRESHOLD_RATIO;
         let distance = (delta_x * delta_x + delta_y * delta_y).sqrt();
         let started = distance > key_threshold;
         if started {
@@ -150,7 +152,7 @@ impl Editor {
         original_tick: f32,
         original_key: u16,
     ) {
-        let Some(note) = self.notes.get(note_index) else {
+        let Some(note) = self.editor_state.data.notes.get(note_index) else {
             return;
         };
 
@@ -176,7 +178,7 @@ impl Editor {
                     length: note.length,
                     tick_offset,
                     key_offset,
-                    track_index: self.current_track,
+                    track_index: self.editor_state.data.current_track,
                 },
             ));
         } else {

@@ -11,13 +11,14 @@ impl Host {
 
         // 计算视口 tick/key 范围（用于洋葱皮过滤）
         let editor = &self.root.editor;
-        let canvas_width = editor.canvas_size.x;
-        let keyboard_width = editor.state.keyboard_width;
-        let visible_tick_start = (editor.state.scroll_x / editor.state.zoom_x).max(0.0);
-        let visible_tick_end = ((editor.state.scroll_x + canvas_width - keyboard_width)
-            / editor.state.zoom_x)
+        let es = &editor.editor_state;
+        let canvas_width = es.canvas.size.x;
+        let keyboard_width = es.view.keyboard_width;
+        let visible_tick_start = (es.view.scroll_x / es.view.zoom_x).max(0.0);
+        let visible_tick_end = ((es.view.scroll_x + canvas_width - keyboard_width)
+            / es.view.zoom_x)
             .max(visible_tick_start);
-        let max_key = editor.state.visible_key_count.saturating_sub(1);
+        let max_key = es.view.visible_key_count.saturating_sub(1);
         // key 范围用最大值，空间索引的主过滤靠 tick 范围
         let visible_key_min = 0u16;
         let visible_key_max = max_key;
@@ -32,10 +33,10 @@ impl Host {
         );
 
         // 再获取编辑器数据引用（不可变借用）
-        let notes = &self.root.editor.notes;
-        let edit_state = &self.root.editor.edit_state;
-        let default_note_length = self.root.editor.state.default_note_length;
-        let snap_precision = self.root.editor.state.snap_precision;
+        let notes = &self.root.editor.editor_state.data.notes;
+        let edit_state = &self.root.editor.editor_state.interaction.edit_state;
+        let default_note_length = self.root.editor.editor_state.view.default_note_length;
+        let snap_precision = self.root.editor.editor_state.view.snap_precision;
 
         // 获取双缓冲的后缓冲区写入引用
         let instances = unsafe { self.render_cache.note_instances_buffer.write_buffer() };

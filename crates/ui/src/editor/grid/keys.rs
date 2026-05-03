@@ -11,7 +11,7 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
     use iced_widget::canvas::path::Builder;
 
     let palette = theme.extended_palette().background;
-    let view = &editor.state;
+    let view = &editor.editor_state.view;
 
     let line_color = if theme.is_light() {
         // 亮色主题：使用较深的颜色

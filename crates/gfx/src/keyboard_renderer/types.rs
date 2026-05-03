@@ -1,3 +1,5 @@
+//! 键盘渲染器类型定义
+
 /// 琴键实例数据
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
