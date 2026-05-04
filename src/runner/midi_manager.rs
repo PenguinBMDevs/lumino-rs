@@ -187,6 +187,20 @@ impl MidiManager {
         let api = lumino_midi::new_api_with_options(&api_kind, Some(options))
             .map_err(|e| format!("初始化 MIDI API 失败: {:?}", e))?;
 
+        // 诊断：打印音频后端信息
+        if let Some(version) = api.version() {
+            tracing::info!("XSynth: 音频后端已初始化 (version: {})", version);
+        }
+        tracing::info!(
+            "XSynth: 采样率={}Hz, buffer={}ms, 线程={}",
+            ui_config.xsynth_sample_rate,
+            ui_config.xsynth_buffer_ms,
+            ui_config.xsynth_threads,
+        );
+        tracing::info!(
+            "XSynth: 如需强制使用 ALSA 而非 JACK，设置环境变量 XSYNTH_AUDIO_BACKEND=alsa"
+        );
+
         let outputs = api
             .outputs()
             .map_err(|e| format!("获取输出设备失败: {:?}", e))?;
