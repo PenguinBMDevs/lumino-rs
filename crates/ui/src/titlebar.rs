@@ -3,7 +3,7 @@ pub mod menu;
 mod traffic;
 
 use iced_core::{Alignment, Length};
-use iced_widget::{container, mouse_area, row, space, text};
+use iced_widget::{container, mouse_area, row, space};
 
 use super::Element;
 use crate::{Theme, window};
@@ -42,7 +42,7 @@ impl Titlebar {
         // 构建标题栏内容：左侧菜单 + 中间可拖动区域 + 右侧窗口控制
 
         if cfg!(target_os = "macos") {
-            // macOS: FPS 已移到底部状态栏显示，标题栏只保留菜单和弹性空间
+            // macOS: 标题栏只保留菜单和弹性空间（FPS 在底部状态栏显示）
             let mut row = menu_row;
 
             row = row.push(space().width(Length::Fill));
@@ -71,28 +71,8 @@ impl Titlebar {
                 .on_press(window::Event::drag())
                 .on_double_click(window::Event::toggle_maximize());
 
-            // 右侧：FPS（如果有）+ 窗口控制按钮
-            let mut right_row = row![];
-
-            // Debug 模式下显示 FPS
-            if let Some(fps) = window.fps {
-                right_row =
-                    right_row.push(
-                        container(text(format!("FPS: {:.1}", fps)).size(12).style(
-                            |theme: &Theme| {
-                                let palette = theme.extended_palette();
-                                text::Style {
-                                    color: Some(palette.primary.strong.color),
-                                }
-                            },
-                        ))
-                        .padding([0, 10])
-                        .align_y(iced_core::Alignment::Center)
-                        .height(Length::Fill),
-                    );
-            }
-
-            right_row = right_row.push(traffic::view(window));
+            // 右侧：窗口控制按钮（FPS 已移到底部状态栏显示）
+            let right_row = row![traffic::view(window)];
 
             let right_section = container(right_row)
                 .height(Length::Fill)

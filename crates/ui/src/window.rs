@@ -80,9 +80,7 @@ impl Window {
             Event::Maximized(r) => self.is_maximized = r,
             Event::Focused(r) => self.is_focused = r,
             Event::FpsUpdate(v) => {
-                if cfg!(debug_assertions) {
-                    self.fps = Some(v);
-                }
+                self.fps = Some(v);
             }
             Event::TrafficAction(_) | Event::Drag | Event::ToggleMaximize | Event::Close => {
                 // 这些事件由 Host 处理，不需要更新 Window 状态

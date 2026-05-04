@@ -15,7 +15,7 @@ pub struct StatusInfo {
 
 pub struct StatusBar {
     info: StatusInfo,
-    /// FPS 值（仅 macOS 调试模式使用，显示在底部状态栏代替"就绪"）
+    /// FPS 值（显示在底部状态栏代替"就绪"）
     fps: Option<f32>,
 }
 
@@ -27,20 +27,16 @@ impl StatusBar {
         }
     }
 
-    /// 设置 FPS 值（仅 macOS 使用）
+    /// 设置 FPS 值
     pub fn set_fps(&mut self, fps: f32) {
         self.fps = Some(fps);
     }
 
     pub fn view<'a>(&'a self) -> Element<'a> {
         let (left_text, use_fps_style) = if self.info.left_text.is_empty() {
-            if cfg!(target_os = "macos") {
-                // macOS: 在状态栏显示 FPS 代替默认的"就绪"
-                if let Some(fps) = self.fps {
-                    (format!("FPS: {:.1}", fps), true)
-                } else {
-                    ("就绪".to_string(), false)
-                }
+            // 在状态栏显示 FPS 代替默认的"就绪"
+            if let Some(fps) = self.fps {
+                (format!("FPS: {:.1}", fps), true)
             } else {
                 ("就绪".to_string(), false)
             }

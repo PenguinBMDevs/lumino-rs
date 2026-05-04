@@ -28,6 +28,68 @@ impl PuffinServerHolder {
     }
 }
 
+/// 检查 Wayland 合成器是否可用（通过检测 socket 文件是否存在）。
+///
+/// 仅靠 `WAYLAND_DISPLAY` 环境变量不够可靠——变量可能被设置但合成器未运行。
+#[cfg(target_os = "linux")]
+fn wayland_compositor_available() -> bool {
+    let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_owned());
+    let runtime_dir = match std::env::var("XDG_RUNTIME_DIR") {
+        Ok(dir) => std::path::Path::new(&dir).to_owned(),
+        Err(_) => return false,
+    };
+    let socket = runtime_dir.join(&display);
+    let available = socket.exists();
+    if !available {
+        tracing::debug!(
+            "Wayland socket 不存在 ({}), 跳过 Wayland 后端",
+            socket.display()
+        );
+    }
+    available
+}
+
+/// 根据当前显示服务器环境自动创建事件循环。
+///
+/// # 设计原理
+///
+/// winit 0.30 内部有一个进程级原子标志 `EVENT_LOOP_CREATED`，整个进程
+/// 生命周期内只能调用一次 `EventLoopBuilder::build()`。因此无法通过
+/// "try Wayland → 失败 → retry X11" 的方式实现回退——第一次 `build()`
+/// 即使失败也会永久锁定该标志。
+///
+/// 解决方案：在调用 `build()` **之前** 通过检查 Wayland socket 实际存在性
+/// 来决策选用哪个后端。
+#[cfg(target_os = "linux")]
+fn create_event_loop() -> Result<EventLoop<()>, winit::error::EventLoopError> {
+    use winit::platform::x11::EventLoopBuilderExtX11;
+
+    let has_x11 = std::env::var("DISPLAY").is_ok();
+    let wayland_ok = wayland_compositor_available();
+
+    if wayland_ok {
+        // Wayland 合成器真正在运行，让 winit 默认走 Wayland
+        tracing::info!("Wayland 合成器检测可用，使用 Wayland 后端");
+        EventLoop::builder().build()
+    } else if has_x11 {
+        // Wayland 不可用，强制 X11 后端
+        tracing::info!("使用 X11 后端");
+        let mut builder = EventLoop::builder();
+        builder.with_x11();
+        builder.build()
+    } else {
+        // 两个显示服务器都不可用，尝试默认（会失败但给出明确错误）
+        tracing::error!("未检测到显示服务器（Wayland socket 和 DISPLAY 均不可用）");
+        EventLoop::builder().build()
+    }
+}
+
+/// 非 Linux 平台直接使用默认事件循环创建。
+#[cfg(not(target_os = "linux"))]
+fn create_event_loop() -> Result<EventLoop<()>, winit::error::EventLoopError> {
+    EventLoop::new()
+}
+
 #[tokio::main]
 async fn main() -> Result<(), winit::error::EventLoopError> {
     logging::init();
@@ -42,7 +104,7 @@ async fn main() -> Result<(), winit::error::EventLoopError> {
     let cli = cli::Cli::parse_args();
     let test_config = cli.get_test_config();
 
-    let event_loop = EventLoop::new()?;
+    let event_loop = create_event_loop()?;
     let proxy = event_loop.create_proxy();
     lumino_core::event::set_waker(move || {
         let _ = proxy.send_event(());

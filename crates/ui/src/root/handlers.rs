@@ -228,10 +228,8 @@ impl Root {
     }
 
     fn handle_window_event(&mut self, event: window::Event) {
-        // macOS: 将 FPS 事件转发到状态栏（仅在调试模式下）
-        let is_fps_update = cfg!(target_os = "macos")
-            && cfg!(debug_assertions)
-            && matches!(&event, window::Event::FpsUpdate(_));
+        // 将 FPS 事件转发到状态栏（在状态栏显示代替"就绪"）
+        let is_fps_update = matches!(&event, window::Event::FpsUpdate(_));
         let is_theme_change = matches!(&event, window::Event::Theme(_));
 
         if is_fps_update && let window::Event::FpsUpdate(fps) = &event {
