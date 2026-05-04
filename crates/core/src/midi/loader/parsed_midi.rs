@@ -4,6 +4,7 @@ use std::sync::Arc;
 use midly::loader::{MidiScanResult, scan_midi_file};
 
 use crate::ParsedMidi;
+use crate::memory_monitor::MemoryMonitor;
 use crate::midi::document::MidiDocument;
 
 use super::types::ProgressCallback;
@@ -31,7 +32,10 @@ pub async fn load_parsed_midi(
         }
     };
 
-    cb("正在准备加载文件", 0.0);
+    {
+        let initial_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+        cb(&format!("正在准备加载文件 (内存: {initial_rss} MB)"), 0.0);
+    }
 
     let extension = path
         .extension()
@@ -76,7 +80,10 @@ pub async fn load_parsed_midi(
 
     // ── 统一加载路径：scan_midi_file + from_notes_file ──
     // 单次解析，峰值内存 ~1.3GB（vs 原标准模式 5-8GB）
-    cb("正在扫描文件信息...", 0.05);
+    {
+        let scan_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+        cb(&format!("正在扫描文件信息... (内存: {scan_rss} MB)"), 0.05);
+    }
     let scan_result = tokio::task::spawn_blocking({
         let path = path.clone();
         move || scan_midi_info(&path)
@@ -84,13 +91,22 @@ pub async fn load_parsed_midi(
     .await
     .map_err(|e| crate::CoreError::Other(format!("扫描 MIDI 失败: {e}")))??;
 
-    cb("正在提取音符并构建缓存...", 0.1);
+    let note_count = scan_result.note_count;
+    let rss_mb = MemoryMonitor::global().current_rss() / (1024 * 1024);
+    cb(
+        &format!("正在提取音符并构建缓存... ({note_count} 音符, 内存: {rss_mb} MB)"),
+        0.1,
+    );
 
     // 桥接进度回调：将 from_notes_file 的 f64 进度映射到 ProgressCallback
     let cache_progress: Option<Arc<dyn Fn(f64) + Send + Sync>> = progress.map(|p| {
         let p = Arc::clone(p);
         let f: Arc<dyn Fn(f64) + Send + Sync> = Arc::new(move |val: f64| {
-            p("正在提取音符并构建缓存...", 0.1 + val * 0.85);
+            let inner_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+            p(
+                &format!("正在提取音符并构建缓存... ({note_count} 音符, 内存: {inner_rss} MB)"),
+                0.1 + val * 0.85,
+            );
         });
         f
     });
@@ -121,7 +137,11 @@ pub async fn load_parsed_midi(
         info.division
     );
 
-    cb("MIDI 加载完成", 1.0);
+    let rss_mb = MemoryMonitor::global().current_rss() / (1024 * 1024);
+    cb(
+        &format!("MIDI 加载完成 ({note_count} 音符, 内存: {rss_mb} MB)"),
+        1.0,
+    );
 
     Ok(ParsedMidi {
         info,
@@ -146,7 +166,13 @@ pub async fn load_parsed_midi_from_bytes(
         }
     };
 
-    cb("正在解析 MIDI 数据...", 0.1);
+    {
+        let parse_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+        cb(
+            &format!("正在解析 MIDI 数据... (内存: {parse_rss} MB)"),
+            0.1,
+        );
+    }
 
     let document = tokio::task::spawn_blocking(move || {
         let (notes, tempo_changes) = midly::loader::extract_notes_from_bytes(&midi_bytes)
@@ -160,7 +186,10 @@ pub async fn load_parsed_midi_from_bytes(
     .await
     .map_err(|e| crate::CoreError::Other(format!("加载线程 panic: {e}")))??;
 
-    cb("MIDI 加载完成", 1.0);
+    {
+        let final_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+        cb(&format!("MIDI 加载完成 (内存: {final_rss} MB)"), 1.0);
+    }
 
     let info = crate::MidiInfo {
         path: PathBuf::new(),

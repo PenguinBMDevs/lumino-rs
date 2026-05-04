@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::memory_monitor::MemoryMonitor;
 use crate::{DmsInfo, ParsedDms};
 
 use super::types::ProgressCallback;
@@ -17,8 +18,17 @@ pub async fn load_dms(
         }
     };
 
-    cb("正在准备加载 Domino 工程文件", 0.0);
-    cb("正在打开 Domino 工程文件", 0.05);
+    {
+        let rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+        cb(
+            &format!("正在准备加载 Domino 工程文件 (内存: {rss} MB)"),
+            0.0,
+        );
+    }
+    {
+        let rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+        cb(&format!("正在打开 Domino 工程文件 (内存: {rss} MB)"), 0.05);
+    }
 
     tracing::info!("[DMS加载] 开始加载文件: {:?}", path);
 
@@ -40,7 +50,11 @@ pub async fn load_dms(
         let mut reader = std::io::BufReader::new(file);
         tracing::info!("[DMS加载] 步骤2: 开始流式扫描");
         let scan_result = lumino_dms::scan_dms_streaming_with_progress(&mut reader, |progress| {
-            scan_cb("正在解析 Domino 工程文件", 0.1 + progress * 0.4);
+            let scan_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+            scan_cb(
+                &format!("正在解析 Domino 工程文件 (内存: {scan_rss} MB)"),
+                0.1 + progress * 0.4,
+            );
         })
         .map_err(|e| crate::CoreError::FileFormat(format!("扫描 DMS 失败: {e}")))?;
         tracing::info!(
@@ -50,7 +64,16 @@ pub async fn load_dms(
         );
 
         // 然后加载完整数据
-        scan_cb("正在加载完整数据", 0.5);
+        {
+            let load_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+            scan_cb(
+                &format!(
+                    "正在加载完整数据 ({} 音符, 内存: {load_rss} MB)",
+                    scan_result.total_notes
+                ),
+                0.5,
+            );
+        }
         tracing::info!("[DMS加载] 步骤4: 读取完整文件数据");
         let bytes = std::fs::read(&path_clone).map_err(crate::CoreError::Io)?;
         tracing::info!("[DMS加载] 步骤5: 文件大小 {} 字节", bytes.len());
@@ -63,7 +86,16 @@ pub async fn load_dms(
             lightweight_data.len()
         );
 
-        scan_cb("数据加载完成", 0.9);
+        {
+            let done_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+            scan_cb(
+                &format!(
+                    "数据加载完成 ({} 音符, 内存: {done_rss} MB)",
+                    scan_result.total_notes
+                ),
+                0.9,
+            );
+        }
 
         Ok::<_, crate::CoreError>((scan_result, lightweight_data))
     })
@@ -81,7 +113,16 @@ pub async fn load_dms(
         err
     })?;
 
-    cb("Domino 工程文件加载完成", 1.0);
+    {
+        let final_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+        cb(
+            &format!(
+                "Domino 工程文件加载完成 ({} 音符, 内存: {final_rss} MB)",
+                scan_result.total_notes
+            ),
+            1.0,
+        );
+    }
     tracing::info!("[DMS加载] 加载完成成功");
 
     let info = DmsInfo {
