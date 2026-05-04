@@ -1,4 +1,4 @@
-//! 实时内存监控模块
+//! 实时内存监控模块（跨平台）
 //!
 //! 监控进程 RSS（Resident Set Size），确保给操作系统保留足够的空闲内存。
 //! 在 RSS 接近软限制时**主动终止进程**（而非等到 OOM killer 介入），
@@ -6,6 +6,8 @@
 //! - 留够 OS 空闲内存（默认 512MB）
 //! - `abort()` 始终能成功执行（不会因内存耗尽而失败）
 //! - 留下完整的日志信息便于诊断
+//!
+//! 支持 Linux、macOS、Windows 三平台。
 //!
 //! # 架构
 //!
@@ -24,7 +26,7 @@
 //! 2. **同步检查**（第二道防线）— [`MemoryMonitor::check()`] 在加载/渲染
 //!    大分配前调用，`panic!()` 抛出详细内存报告，捕获突发分配高峰。
 //!
-//! 3. **RSS 读取容错** — 连续 3 次读取失败才跳过检查，避免偶尔的 /proc 抖动漏报。
+//! 3. **RSS 读取容错** — 连续 3 次读取失败才跳过检查，避免偶尔的平台 API 抖动漏报。
 //!
 //! # 为什么 95% 就终止，不等 100%？
 //!
@@ -33,8 +35,8 @@
 //! 导致 `abort()` 本身因内存不足失败。在 95% 终止给终止过程自身留余量。
 //!
 //! # 子模块
-//! - [`platform`]: 平台专属内存信息获取（`/proc/meminfo`、`sysctl`、`GlobalMemoryStatusEx`）
-//! - [`watchdog`]: 完全独立的看门狗线程（SIGKILL 不可阻塞防线）
+//! - [`platform`]: 平台专属内存信息获取（Linux: /proc, macOS: sysctl/task_info, Windows: WinAPI）
+//! - [`watchdog`]: 完全独立的看门狗线程（Linux: SIGKILL, macOS: SIGKILL, Windows: TerminateProcess）
 
 pub mod platform;
 pub mod watchdog;
@@ -325,18 +327,21 @@ mod tests {
     #[test]
     fn test_current_rss_returns_nonzero() {
         let rss = platform::get_current_rss();
-        if cfg!(target_os = "linux") {
-            assert!(rss > 0, "Linux 下 RSS 应该 > 0");
-        }
+        assert!(
+            rss > 0,
+            "RSS 应该 > 0（Linux: /proc/self/status, macOS: task_info, Windows: GetProcessMemoryInfo）"
+        );
     }
 
     #[test]
     fn test_usage_ratio() {
         let monitor = MemoryMonitor::new();
         let ratio = monitor.usage_ratio();
-        if cfg!(target_os = "linux") {
-            assert!(ratio > 0.0 && ratio < 1.0);
-        }
+        assert!(
+            ratio > 0.0 && ratio < 1.0,
+            "内存使用率应该在 0~1 之间，实际值为 {}",
+            ratio
+        );
     }
 
     #[test]
@@ -350,8 +355,10 @@ mod tests {
     fn test_check_inner_normal() {
         let monitor = MemoryMonitor::new();
         let result = monitor.check_inner("test: ");
-        if cfg!(target_os = "linux") {
-            assert_eq!(result, Some(false), "正常状态不应超限");
-        }
+        assert_eq!(
+            result,
+            Some(false),
+            "正常状态不应超限（若 RSS 读取失败也可能是 None，但不会是 Some(true)）"
+        );
     }
 }

@@ -1,7 +1,7 @@
 //! 看门狗（Watchdog）— 完全独立的终极防线
 //!
 //! 架构独立性：
-//! - 启动时捕获主进程 PID，用 PID 构造 /proc/{pid}/status（不碰 /proc/self）
+//! - 启动时捕获主进程 PID，用 PID 构造路径（Linux: /proc/{pid}/status, macOS/Win: task_info / GetProcessMemoryInfo）
 //! - 自己的内存读取函数（watchdog_get_*），不调用 MemoryMonitor 的任何方法
 //! - 自己的阈值逻辑（RSS > 100% soft_limit OR 系统可用 < 350MB）
 //! - 自己的终止手段（SIGKILL / TerminateProcess — 不可阻塞/忽略）
@@ -19,7 +19,7 @@ const WATCHDOG_INTERVAL_MS: u64 = 50;
 /// 看门狗系统可用内存阈值：低于此值时直接 SIGKILL
 const WATCHDOG_MIN_AVAILABLE_BYTES: u64 = 350 * 1024 * 1024;
 
-// ── 平台相关：通过 PID 获取进程 RSS（完全独立于 /proc/self）──
+// ── 平台相关：通过 PID 获取进程 RSS（完全独立，不依赖 /proc/self）──
 
 #[cfg(target_os = "linux")]
 fn watchdog_get_process_rss(pid: u32) -> u64 {
@@ -93,7 +93,33 @@ fn watchdog_get_available_memory() -> u64 {
 
 #[cfg(target_os = "macos")]
 fn watchdog_get_available_memory() -> u64 {
-    u64::MAX
+    unsafe {
+        let host = libc::mach_host_self();
+        let mut stats = std::mem::MaybeUninit::<libc::vm_statistics64>::uninit();
+        let mut count = (std::mem::size_of::<libc::vm_statistics64>()
+            / std::mem::size_of::<libc::integer_t>()) as u32;
+
+        const KERN_SUCCESS: i32 = 0;
+        let ret = libc::host_statistics64(
+            host,
+            libc::HOST_VM_INFO64,
+            stats.as_mut_ptr() as *mut libc::integer_t,
+            &mut count,
+        );
+
+        if ret != KERN_SUCCESS {
+            return u64::MAX;
+        }
+
+        let stats = stats.assume_init();
+        let page_size = libc::sysconf(libc::_SC_PAGESIZE) as u64;
+
+        // 可用内存 ≈ 空闲页 + 非活跃页 + 投机页
+        let available_pages =
+            stats.free_count as u64 + stats.inactive_count as u64 + stats.speculative_count as u64;
+
+        available_pages * page_size
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -138,11 +164,11 @@ fn watchdog_force_kill(pid: u32) {
 /// 启动看门狗线程（完全独立的终极防线）
 ///
 /// 与 `spawn_monitor_thread()` 完全独立运行：
-/// - 自己的 PID 引用（启动时捕获，用 /proc/{pid} 而非 /proc/self）
+/// - 自己的 PID 引用（启动时捕获，跨平台读取进程 RSS）
 /// - 自己的内存读取函数（watchdog_get_*），零依赖 MemoryMonitor
 /// - 自己的阈值（soft_limit 100%，主监控在 95% 已动作，看门狗兜底）
-/// - 系统可用内存阈值（< 350MB 时即使 RSS 未超限也触发）
-/// - 自己的终止手段（SIGKILL，不可被捕获/阻塞/忽略）
+/// - 系统可用内存阈值（< 350MB 时即使 RSS 未超限也触发，macOS 使用 host_statistics64）
+/// - 自己的终止手段（SIGKILL / TerminateProcess，不可被捕获/阻塞/忽略）
 pub fn spawn_watchdog() {
     static SPAWNED: OnceLock<std::thread::JoinHandle<()>> = OnceLock::new();
 

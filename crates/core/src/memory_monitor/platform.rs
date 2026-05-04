@@ -1,7 +1,11 @@
-//! 平台专属内存信息获取函数
+//! 平台专属内存信息获取函数（跨平台）
 //!
-//! 从 `/proc/meminfo` (Linux)、`sysctl` (macOS)、`GlobalMemoryStatusEx` (Windows)
-//! 获取总物理内存和当前进程 RSS。提取为独立子模块，供 MemoryMonitor 和看门狗共用。
+//! 支持 Linux、macOS、Windows 三平台，分别使用对应平台 API：
+//! - **Linux**:   `/proc/meminfo`（总内存）、`/proc/self/status`（RSS）
+//! - **macOS**:  `sysctl HW_MEMSIZE`（总内存）、`task_info`（RSS）
+//! - **Windows**: `GlobalMemoryStatusEx`（总内存）、`GetProcessMemoryInfo`（RSS）
+//!
+//! 提取为独立子模块，供 MemoryMonitor 和看门狗共用。
 
 /// 检测失败时的兜底总内存（8 GB）
 const FALLBACK_TOTAL_MEMORY: u64 = 8 * 1024 * 1024 * 1024;
