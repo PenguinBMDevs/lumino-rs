@@ -1,5 +1,4 @@
 use crate::host::Host;
-use rayon::prelude::*;
 
 impl Host {
     /// 快速更新所有音符实例（双缓冲模式）
@@ -47,9 +46,9 @@ impl Host {
         };
         instances.clear();
 
-        // 预分配容量
-        let onion_skin_count: usize = notes.len() + onion_instances.len() + 1;
-        instances.reserve(onion_skin_count);
+        // 预分配容量：主音符 + 洋葱皮 + 绘制中音符（最多1个）
+        let total_reserve = notes.len() + onion_instances.len() + 1;
+        instances.reserve(total_reserve);
 
         let onion_count = onion_instances.len();
         let main_count = notes.len();
@@ -89,51 +88,27 @@ impl Host {
 
     /// 将音符添加到实例列表
     ///
-    /// 优化：
-    /// 1. 使用 fold + reduce 模式，避免中间 Vec 分配
-    /// 2. 直接使用索引访问，避免创建引用 Vec
+    /// 优化说明（针对火焰图 78ms 瓶颈）：
+    /// 1. 始终使用 `.iter()` 顺序遍历 im::Vector（均摊 O(1) 每元素），
+    ///    避免 rayon 并行时 `notes.get(i)` 带来的 O(log n) 随机访问开销。
+    ///    im::Vector 的 RRB 树结构使随机访问需要指针追踪 3-4 层，
+    ///    在大数据量下比顺序迭代慢 5-10 倍。
+    /// 2. 预分配容量避免重复扩容。
+    /// 3. 消除 per-thread Vec 分配 + reduce 合并的额外开销。
     pub(super) fn add_notes_to_instances(
         instances: &mut Vec<lumino_gfx::NoteInstance>,
         notes: &im::Vector<crate::editor::note::Note>,
         color: [f32; 4],
     ) {
-        if notes.len() > super::PARALLEL_THRESHOLD {
-            // 大数据量使用并行处理 - 使用 fold + reduce 减少内存分配
-            let note_count = notes.len();
-            let parallel_instances: Vec<lumino_gfx::NoteInstance> = (0..note_count)
-                .into_par_iter()
-                .fold(
-                    || Vec::with_capacity(note_count / rayon::current_num_threads() + 1),
-                    |mut local, i| {
-                        // SAFETY: i 在 0..note_count 范围内
-                        let note = unsafe { notes.get(i).unwrap_unchecked() };
-                        local.push(lumino_gfx::NoteInstance::new(
-                            note.tick,
-                            note.key as f32,
-                            note.length,
-                            color,
-                        ));
-                        local
-                    },
-                )
-                .reduce(
-                    || Vec::new(),
-                    |mut a, b| {
-                        a.extend(b);
-                        a
-                    },
-                );
-            instances.extend(parallel_instances);
-        } else {
-            // 小数据量使用串行处理
-            for note in notes.iter() {
-                instances.push(lumino_gfx::NoteInstance::new(
-                    note.tick,
-                    note.key as f32,
-                    note.length,
-                    color,
-                ));
-            }
+        // im::Vector::iter() 使用 RRB 树的顺序遍历，均摊 O(1) 每元素，
+        // 远快于 rayon 并行 + 随机 `get(i)` 的 O(log n) 方案。
+        for note in notes.iter() {
+            instances.push(lumino_gfx::NoteInstance::new(
+                note.tick,
+                note.key as f32,
+                note.length,
+                color,
+            ));
         }
     }
 

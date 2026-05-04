@@ -4,6 +4,7 @@ pub mod note;
 pub mod onion_skin;
 pub mod scrollbar_widget;
 pub mod spatial_index;
+pub mod velocity;
 
 pub mod editor_state;
 
@@ -76,6 +77,9 @@ pub struct Editor {
 
     /// 统一状态管理
     pub editor_state: editor_state::EditorState,
+
+    /// 力度编辑面板
+    pub velocity_panel: velocity::VelocityPanel,
 }
 
 /// 编辑器各组件的内存占用快照（字节）
@@ -165,6 +169,7 @@ impl Editor {
             note_index_dirty: Cell::new(true),
             query_cache: RefCell::new(Vec::new()),
             track_note_indices: RefCell::new(std::collections::HashMap::new()),
+            velocity_panel: velocity::VelocityPanel::new(),
         }
     }
 
@@ -279,6 +284,7 @@ impl Editor {
         self.onion_skin_config = OnionSkinConfig::new();
         self.notes_changed = false;
         self.playback_position = 0.0;
+        self.velocity_panel = velocity::VelocityPanel::new();
     }
 }
 

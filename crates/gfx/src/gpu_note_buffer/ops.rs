@@ -61,16 +61,19 @@ impl GpuNoteBuffer {
         }
         self.instance_count = upload_count;
 
-        // 优化：预分配并直接拷贝，避免 to_vec 的额外分配
+        // 优化：复制到 CPU 缓存后直接从缓存上传 GPU
+        // 避免对输入 slice 的二次遍历（write_buffer 也会 memcpy）
+        //
+        // 数据流：instances → self.instances（一次遍历）→ write_buffer（缓存热点）
+        // 原方案：instances → self.instances（一次遍历）+ instances → write_buffer（二次遍历）
         self.instances.clear();
-        self.instances.reserve(upload_count);
         self.instances.extend_from_slice(&instances[..upload_count]);
 
-        // 上传数据到 GPU - 直接从原始 slice 上传，避免通过 self.instances 中转
+        // 从 CPU 缓存上传 GPU — 此时 self.instances 的数据仍在 L1/L2 cache 中
         self.queue.write_buffer(
             &self.instance_buffer,
             0,
-            bytemuck::cast_slice(&instances[..upload_count]),
+            bytemuck::cast_slice(&self.instances),
         );
 
         tracing::debug!("Uploading {} notes", upload_count);

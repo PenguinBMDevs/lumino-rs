@@ -126,6 +126,10 @@ impl Root {
                 self.handle_editor_action(action.clone());
                 true
             }
+            Message::Velocity(action) => {
+                self.handle_velocity_action(action.clone());
+                true
+            }
             _ => self.try_handle_simple_state(msg),
         }
     }
@@ -304,5 +308,39 @@ impl Root {
             // 音符变化影响洋葱皮缓存
             self.invalidate_onion_skin_cache();
         }
+    }
+
+    /// 处理力度编辑面板动作
+    pub(crate) fn handle_velocity_action(&mut self, action: crate::message::VelocityAction) {
+        use crate::message::VelocityAction;
+
+        match action {
+            VelocityAction::DragStart(note_index, velocity) => {
+                // 拖拽开始：push history 以支持撤销
+                self.editor.push_history();
+
+                Self::apply_velocity(&mut self.editor, note_index, velocity);
+            }
+            VelocityAction::DragMove(note_index, new_velocity) => {
+                // 拖拽移动中：只更新，不 push history（避免撤销队列爆炸）
+                Self::apply_velocity(&mut self.editor, note_index, new_velocity);
+            }
+            VelocityAction::DragEnd => {
+                // 拖拽结束：无需额外操作
+                tracing::debug!("力度面板: 拖拽结束");
+            }
+        }
+    }
+
+    /// 应用力度值到指定音符，并标记音符变更
+    fn apply_velocity(editor: &mut crate::editor::Editor, note_index: usize, velocity: u8) {
+        let data = &mut editor.editor_state.data;
+        if note_index < data.notes.len()
+            && let Some(note) = data.notes.get_mut(note_index)
+        {
+            note.velocity = velocity.clamp(0, 127);
+            tracing::debug!("力度面板: 音符[{}] 力度更新为 {}", note_index, velocity);
+        }
+        editor.mark_notes_changed();
     }
 }

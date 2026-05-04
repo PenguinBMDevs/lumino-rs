@@ -104,9 +104,12 @@ impl Root {
             .into()
         };
 
+        let velocity_panel = self.editor.velocity_panel.view(&self.editor);
+
         let main_content = if cfg!(target_os = "macos") {
             column![
                 row![left_bar, main_area].height(Length::Fill),
+                velocity_panel,
                 self.statusbar.view(),
             ]
         } else {
@@ -114,6 +117,7 @@ impl Root {
                 self.titlebar
                     .view(&self.window, self.settings.use_native_titlebar),
                 row![left_bar, main_area].height(Length::Fill),
+                velocity_panel,
                 self.statusbar.view(),
             ]
         };

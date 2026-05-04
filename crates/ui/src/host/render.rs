@@ -49,8 +49,6 @@ pub const TICKS_PER_MEASURE: u32 = 1920;
 pub const TICKS_PER_BEAT: u32 = 480;
 /// 一个八度内的音符数
 pub const NOTES_PER_OCTAVE: isize = 12;
-/// 并行处理阈值：超过此数量的音符使用并行迭代
-pub const PARALLEL_THRESHOLD: usize = 5000;
 /// FPS 更新间隔（毫秒）
 pub const FPS_UPDATE_INTERVAL_MS: u128 = 50;
 

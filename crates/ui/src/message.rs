@@ -143,8 +143,23 @@ pub enum Message {
     ConfirmLoadConfirm,
     /// 加载确认对话框 - 取消
     CloseLoadConfirmDialog,
+    /// 力度编辑面板动作
+    Velocity(VelocityAction),
     /// 空消息标记
     Null,
+}
+
+/// 力度编辑面板动作
+#[derive(Debug, Clone)]
+pub enum VelocityAction {
+    /// 拖拽开始：需要 push history 进行撤销支持
+    /// 参数: (note_index, velocity)
+    DragStart(usize, u8),
+    /// 拖拽移动中：仅更新力度，不 push history
+    /// 参数: (note_index, new_velocity)
+    DragMove(usize, u8),
+    /// 拖拽结束
+    DragEnd,
 }
 
 pub const fn null() -> Message {
