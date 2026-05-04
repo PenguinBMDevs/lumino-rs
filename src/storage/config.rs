@@ -12,7 +12,13 @@ impl ConfigWrapper {
     pub fn new(path: PathBuf) -> io::Result<Self> {
         let inner = if path.exists() {
             let bytes = fs::read(&path)?;
-            toml::from_slice(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+            match toml::from_slice(&bytes) {
+                Ok(config) => config,
+                Err(e) => {
+                    tracing::warn!("配置文件解析失败 ({}), 使用默认配置", e);
+                    Config::default()
+                }
+            }
         } else {
             Config::default()
         };

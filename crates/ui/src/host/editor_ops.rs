@@ -1,7 +1,13 @@
 //! Host 编辑器操作子模块 - 处理音符和洋葱皮相关操作
 
+use crate::editor::EditState;
+use crate::editor::editor_state::view::{
+    DEFAULT_NOTE_LENGTH, DEFAULT_PPQ, DEFAULT_SCROLL_X, DEFAULT_SCROLL_Y, DEFAULT_SNAP_PRECISION,
+    DEFAULT_TOTAL_TICKS, DEFAULT_VISIBLE_KEY_COUNT, DEFAULT_ZOOM_X, DEFAULT_ZOOM_Y,
+};
 use crate::host::{Host, types::NoteData};
-use crate::{editor::note::Note, message};
+use crate::{editor::note::Note, message, toolbar::Tool};
+use iced_core::Point;
 use lumino_core::midi::MidiDocument;
 use std::sync::Arc;
 
@@ -250,20 +256,77 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
-    /// 清空编辑器（用于新建工程）
+    /// 清空编辑器（用于新建工程 / 关闭文件）
+    ///
+    /// 释放所有编辑器内存（音符数据、历史记录、空间索引、MIDI 事件、文档引用）
+    /// 并还原编辑器状态到默认（视图滚动/缩放、工具、侧边栏、播放管理器）。
     pub fn clear_editor(&mut self) {
-        self.root.editor.editor_state.data.notes.clear();
-        self.root.editor.editor_state.data.track_notes.clear();
-        self.root.editor.editor_state.data.current_track = 0;
-        self.root.editor.grid_cache.clear();
-        // 释放 MIDI 文档引用（Arc），让大块事件内存可以被回收
-        self.root.editor.editor_state.data.document = None;
-        self.root.midi_document = None;
-        self.root.cached_onion_skin_notes = None;
+        let root = &mut self.root;
+
+        // 音符数据
+        root.editor.editor_state.data.notes.clear();
+        root.editor.editor_state.data.track_notes.clear();
+        root.editor.editor_state.data.current_track = 0;
+        // 历史记录（undo/redo 持有全量音符快照 → 必须清理避免内存泄漏）
+        root.editor.editor_state.data.history.clear();
+        // MIDI 文档引用（释放 Arc）
+        root.editor.editor_state.data.document = None;
+        root.midi_document = None;
+        // 空间索引（惰性重建）
+        root.editor.note_index = std::cell::RefCell::new(None);
+        root.editor.note_index_dirty = std::cell::Cell::new(true);
+        root.editor.track_note_indices = std::cell::RefCell::new(std::collections::HashMap::new());
+        root.editor.query_cache = std::cell::RefCell::new(Vec::new());
+        // 洋葱皮 + MIDI 控制事件
+        root.cached_onion_skin_notes = None;
+        root.onion_skin_generation = 0;
+        root.track_midi_events.clear();
+        // 交互状态（选中、悬停、编辑）
+        root.editor.editor_state.interaction.selected_notes.clear();
+        root.editor.editor_state.interaction.edit_state = EditState::Idle;
+        root.editor.editor_state.interaction.hover_state = None;
+        root.editor
+            .editor_state
+            .interaction
+            .pending_audio_actions
+            .clear();
+        // 视图状态 → 默认
+        root.editor.editor_state.view.scroll_x = DEFAULT_SCROLL_X;
+        root.editor.editor_state.view.scroll_y = DEFAULT_SCROLL_Y;
+        root.editor.editor_state.view.total_ticks = DEFAULT_TOTAL_TICKS;
+        root.editor.editor_state.view.ppq = DEFAULT_PPQ;
+        root.editor.editor_state.view.snap_precision = DEFAULT_SNAP_PRECISION;
+        root.editor.editor_state.view.default_note_length = DEFAULT_NOTE_LENGTH;
+        // 最大滚动范围
+        root.editor.editor_state.max_scroll = Point::new(
+            DEFAULT_TOTAL_TICKS as f32 * DEFAULT_ZOOM_X,
+            DEFAULT_VISIBLE_KEY_COUNT as f32 * DEFAULT_ZOOM_Y,
+        );
+        // 工具 → Pointer
+        root.editor.editor_state.tool = Tool::Pointer;
+        // 协作远端光标
+        root.editor.remote_cursors.clear();
+        // 编辑器私有内部状态（洋葱皮配置、播放位置等）
+        root.editor.reset_internal_state();
+        // 失效所有 Canvas 缓存
+        root.editor.grid_cache.clear();
+        root.editor.keyboard_cache.clear();
+        root.editor.ruler_cache.clear();
+        // 播放管理器
+        root.reset_playback_manager();
+        root.pending_tempo_changes = None;
+        root.pending_midi_output = None;
+        root.toolbar.is_playing = false;
+        // 侧边栏音轨列表
+        root.sidebar.tracks.clear();
+        root.sidebar.selected_track = 0;
+        // RenderCache 视口哈希失效（强制重建 GPU 实例）
+        self.render_ctx.render_cache.grid_viewport_hash = 0;
+        self.render_ctx.render_cache.note_viewport_hash = 0;
+        // UI 缓存
         self.clear_cache();
-        // 仅请求重绘，不重建UI树（编辑器清空由WGPU层处理）
         self.window_ctx.window.request_redraw();
-        tracing::info!("UI: 编辑器已清空");
+        tracing::info!("UI: 编辑器已完全清空（含历史记录、空间索引、播放状态）");
     }
 
     /// 获取编辑器中的所有音符数据（用于保存）

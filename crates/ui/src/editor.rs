@@ -267,6 +267,19 @@ impl Editor {
             .borrow_mut()
             .remove(&self.editor_state.data.current_track);
     }
+
+    /// 重置编辑器内部状态到默认值（释放私有字段内存）
+    ///
+    /// 供 `clear_editor()` 调用，重置本模块私有的字段：
+    /// - `onion_skin_config`：洋葱皮配置
+    /// - `notes_changed`：音符变更标志
+    /// - `playback_position`：播放指示线位置
+    pub fn reset_internal_state(&mut self) {
+        use crate::editor::onion_skin::OnionSkinConfig;
+        self.onion_skin_config = OnionSkinConfig::new();
+        self.notes_changed = false;
+        self.playback_position = 0.0;
+    }
 }
 
 impl Default for Editor {
