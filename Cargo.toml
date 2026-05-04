@@ -16,7 +16,7 @@ lumino-dms = { path = "crates/dms" }
 lumino-export = { path = "crates/export" }
 lumino-gfx = { path = "crates/gfx" }
 lumino-midi = { path = "crates/midi" }
-midly = { git = "https://github.com/Enderman-bm/midly-fork", rev = "92c99252a173bbd8f3685b9d26039bc2ad1854ac", features = ["std", "alloc", "parallel", "memmap"] }
+midly = { version = "0.6", features = ["std", "alloc", "parallel", "memmap"] }
 lumino-ui = { path = "crates/ui" }
 lumino-collaboration = { path = "crates/collaboration" }
 # crates.io
@@ -126,7 +126,9 @@ tokio-test = "0.4"
 winapi = { version = "0.3", features = ["processthreadsapi", "psapi"] }
 
 # ── xsynth（Git 版本，subdir 仅在 patch 中受支持）──
+# ── midly（本地修复版，修复了 tempo tick 0 被默认 120 BPM 覆盖的 bug）──
 [patch.crates-io]
+midly = { git = "https://github.com/Enderman-bm/midly-fork" }
 xsynth-core = { git = "https://github.com/buickmeow/xsynth" }
 xsynth-realtime = { git = "https://github.com/buickmeow/xsynth" }
 xsynth-soundfonts = { git = "https://github.com/buickmeow/xsynth" }

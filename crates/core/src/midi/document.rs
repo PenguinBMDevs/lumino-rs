@@ -231,7 +231,14 @@ impl MidiDocument {
         }
 
         // 处理 tempo 变化
-        let mut all_tempo_changes: Vec<(u32, f32)> = vec![(0u32, 120.0f32)];
+        let mut all_tempo_changes: Vec<(u32, f32)> = Vec::with_capacity(tempo_changes.len() + 1);
+
+        // MIDI 标准默认速度为 120 BPM。如果 MIDI 文件提供了 tick 0 处的 tempo 事件，
+        // 则使用文件速度；否则插入默认值确保至少有一个有效的起始速度
+        if !tempo_changes.iter().any(|(t, _)| *t == 0) {
+            all_tempo_changes.push((0u32, 120.0f32));
+        }
+
         for &(tick, bpm) in &tempo_changes {
             if !all_tempo_changes.iter().any(|(t, _)| *t == tick) {
                 all_tempo_changes.push((tick, bpm));
@@ -798,6 +805,143 @@ mod tests {
         let names = scan_track_names(&midi);
         assert_eq!(names.len(), 1);
         assert_eq!(names[0], None);
+    }
+
+    #[test]
+    fn test_tempo_changes_uses_file_tempo_at_tick_zero() {
+        // 创建 MIDI 文件：140 BPM 的 Set Tempo 事件在 tick 0
+        // 验证修复：真实 tempo 不会被默认的 120 BPM 覆盖
+        //
+        // Set Tempo 计算公式: 60_000_000 / 140 ≈ 428571 微秒/拍 = 0x068A1B
+        let header = [
+            0x4D, 0x54, 0x68, 0x64, // "MThd"
+            0x00, 0x00, 0x00, 0x06, // header length = 6
+            0x00, 0x00, // format 0
+            0x00, 0x01, // 1 track
+            0x01, 0xE0, // division = 480
+        ];
+        // Track: Set Tempo 140 BPM at tick 0 + one note
+        let track_data = [
+            0x00, // delta=0
+            0xFF, 0x51, 0x03, 0x06, 0x8A, 0x1B, // Set Tempo: 428571 μs/拍 = 140 BPM
+            0x00, // delta=0
+            0x90, 0x3C, 0x64, // NoteOn ch=0, key=60, vel=100
+            0x83, 0x60, // delta=480 (VLQ)
+            0x80, 0x3C, 0x00, // NoteOff ch=0, key=60, vel=0
+            0x00, // delta=0
+            0xFF, 0x2F, 0x00, // End of Track
+        ];
+        let mut track_chunk = vec![0x4D, 0x54, 0x72, 0x6B]; // "MTrk"
+        let track_len = (track_data.len() as u32).to_be_bytes();
+        track_chunk.extend_from_slice(&track_len);
+        track_chunk.extend_from_slice(&track_data);
+
+        let mut midi = Vec::new();
+        midi.extend_from_slice(&header);
+        midi.extend_from_slice(&track_chunk);
+
+        let tmp = std::env::temp_dir().join("tempo_140_test.mid");
+        std::fs::write(&tmp, &midi).expect("测试：写入临时文件失败");
+
+        let doc = MidiDocument::from_notes_file(&tmp, None).expect("测试：加载MIDI文档失败");
+
+        // 验证 tempo_changes 包含正确速度
+        assert!(!doc.tempo_changes.is_empty(), "应有 tempo 变化");
+        let (first_tick, first_bpm) = doc.tempo_changes[0];
+        assert_eq!(first_tick, 0, "第一个 tempo 事件应在 tick 0");
+        assert!(
+            (first_bpm - 140.0).abs() < 0.5,
+            "tempo 应为 ~140 BPM，实际为 {first_bpm}"
+        );
+        assert!(
+            doc.tempo_changes.iter().all(|(_, b)| *b > 0.0),
+            "所有 tempo 值必须大于 0"
+        );
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_tempo_changes_default_120_when_no_tick_zero_tempo() {
+        // 创建 MIDI 文件：没有 Set Tempo 事件
+        // 验证：默认使用 120 BPM
+        let header = [
+            0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
+        ];
+        let track_data = [
+            0x00, 0x90, 0x3C, 0x64, // NoteOn
+            0x83, 0x60, 0x80, 0x3C, 0x00, // NoteOff
+            0x00, 0xFF, 0x2F, 0x00, // End of Track
+        ];
+        let mut track_chunk = vec![0x4D, 0x54, 0x72, 0x6B];
+        let track_len = (track_data.len() as u32).to_be_bytes();
+        track_chunk.extend_from_slice(&track_len);
+        track_chunk.extend_from_slice(&track_data);
+
+        let mut midi = Vec::new();
+        midi.extend_from_slice(&header);
+        midi.extend_from_slice(&track_chunk);
+
+        let tmp = std::env::temp_dir().join("tempo_default_test.mid");
+        std::fs::write(&tmp, &midi).expect("测试：写入临时文件失败");
+
+        let doc = MidiDocument::from_notes_file(&tmp, None).expect("测试：加载MIDI文档失败");
+
+        assert!(!doc.tempo_changes.is_empty(), "应有默认 tempo");
+        let (first_tick, first_bpm) = doc.tempo_changes[0];
+        assert_eq!(first_tick, 0, "默认 tempo 应在 tick 0");
+        assert!(
+            (first_bpm - 120.0).abs() < 0.5,
+            "应为默认 120 BPM，实际为 {first_bpm}"
+        );
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_tempo_changes_multiple_changes() {
+        // 创建 MIDI 文件：tempo 变化在 tick 0 和 tick 960
+        // 140 BPM at tick 0, then 80 BPM at tick 960
+        //
+        // 80 BPM = 60_000_000 / 80 = 750000 μs = 0x0B71C0
+        let header = [
+            0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
+        ];
+        let track_data = [
+            0x00, // delta=0
+            0xFF, 0x51, 0x03, 0x06, 0x8A, 0x1B, // Set Tempo: 140 BPM at tick 0
+            0x00, // delta=0
+            0x90, 0x3C, 0x64, // NoteOn ch=0 key=60 vel=100 at tick 0
+            0x83, 0x60, // delta=480 (VLQ)
+            0x80, 0x3C, 0x00, // NoteOff ch=0 key=60 vel=0 at tick 480
+            0x83, 0x60, // delta=480 (VLQ)
+            0xFF, 0x51, 0x03, 0x0B, 0x71, 0xC0, // Set Tempo: 80 BPM at tick 960
+            0x00, // delta=0
+            0xFF, 0x2F, 0x00, // End of Track
+        ];
+        let mut track_chunk = vec![0x4D, 0x54, 0x72, 0x6B];
+        let track_len = (track_data.len() as u32).to_be_bytes();
+        track_chunk.extend_from_slice(&track_len);
+        track_chunk.extend_from_slice(&track_data);
+
+        let mut midi = Vec::new();
+        midi.extend_from_slice(&header);
+        midi.extend_from_slice(&track_chunk);
+
+        let tmp = std::env::temp_dir().join("tempo_multi_test.mid");
+        std::fs::write(&tmp, &midi).expect("测试：写入临时文件失败");
+
+        let doc = MidiDocument::from_notes_file(&tmp, None).expect("测试：加载MIDI文档失败");
+
+        assert_eq!(doc.tempo_changes.len(), 2, "应有 2 个 tempo 变化");
+        let (t0, b0) = doc.tempo_changes[0];
+        assert_eq!(t0, 0);
+        assert!((b0 - 140.0).abs() < 0.5, "第一段应为 140 BPM，实际为 {b0}");
+        let (t1, b1) = doc.tempo_changes[1];
+        assert_eq!(t1, 960);
+        assert!((b1 - 80.0).abs() < 0.5, "第二段应为 80 BPM，实际为 {b1}");
+
+        let _ = std::fs::remove_file(&tmp);
     }
 
     #[test]
