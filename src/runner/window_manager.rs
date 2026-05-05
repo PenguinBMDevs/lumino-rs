@@ -46,7 +46,7 @@ impl WindowManager {
         ))
         .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
 
-        let ui = lumino_ui::Host::new(
+        let mut ui = lumino_ui::Host::new(
             window.clone(),
             physical_size.width,
             physical_size.height,
@@ -54,6 +54,9 @@ impl WindowManager {
             &gfx,
             false,
         );
+
+        // 启用分离渲染线程：将 wgpu 渲染从 UI 线程分离到独立线程
+        ui.enable_separate_render_thread();
 
         window.set_visible(true);
 
