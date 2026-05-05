@@ -32,18 +32,22 @@ impl NoteRenderer {
     }
 
     /// 仅在音符数据真正变化时调用：负责更新 uniform
+    ///
+    /// 优化：bind group 在 count 不变且未扩容时 SKIP 创建。
+    /// 因为 data 写入 GPU 后通过同一 buffer 句柄可见，无需新 bind group。
+    /// 火焰图显示 create_cull_bind_group 是每帧瓶颈之一，此优化消除它。
     pub fn update_cull_info(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         puffin::profile_function!();
         let current_count = self.gpu_note_buffer.len();
-        self.last_upload_count = current_count as u32;
 
         if current_count == 0 {
+            self.last_upload_count = 0;
             return;
         }
 
-        // 上传 cull uniform
+        // 上传 cull uniform（write_buffer 开销极小，每次更新）
         let cull_info = CullUniform {
-            instance_count: self.last_upload_count,
+            instance_count: current_count as u32,
             _padding: [0; 3],
         };
         queue.write_buffer(
@@ -52,23 +56,30 @@ impl NoteRenderer {
             bytemuck::cast_slice(&[cull_info]),
         );
 
-        // 如果 GpuNoteBuffer 扩容了，或者 visible_instance_buffer 也需要扩容
+        // 扩容 + 按需重建 bind group
         let required_capacity = current_count;
-        if required_capacity > self.capacity {
+        let did_grow = required_capacity > self.capacity;
+        if did_grow {
             self.grow_visible_buffer(device, required_capacity);
         }
 
-        // 重新绑定（如果 gpu_note_buffer 的内存变了，必须重新绑定）
-        self.cull_bind_group = Self::create_cull_bind_group(
-            device,
-            &self.cull_bind_group_layout,
-            &self.viewport_buffer,
-            &self.cull_uniform_buffer,
-            self.gpu_note_buffer.buffer(),
-            &self.visible_instance_buffer,
-            &self.indirect_buffer,
-            current_count,
-        );
+        let count_changed = current_count != self.last_upload_count as usize;
+        if did_grow || count_changed {
+            // 实例数变化或扩容 → 绑定的 buffer size 变了 → 必须重建 bind group
+            self.cull_bind_group = Self::create_cull_bind_group(
+                device,
+                &self.cull_bind_group_layout,
+                &self.viewport_buffer,
+                &self.cull_uniform_buffer,
+                self.gpu_note_buffer.buffer(),
+                &self.visible_instance_buffer,
+                &self.indirect_buffer,
+                current_count,
+            );
+        }
+        // else: 实例数相同且未扩容 → 旧 bind group 仍有效，跳过重建
+
+        self.last_upload_count = current_count as u32;
     }
 
     /// 滚动/缩放等视口变化时调用：只更新 camera 并重跑 compute cull

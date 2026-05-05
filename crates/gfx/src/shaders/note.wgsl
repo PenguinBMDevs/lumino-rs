@@ -1,5 +1,6 @@
-// 音符渲染着色器
+// 音符渲染着色器 — 紧凑 NoteInstance 布局 (16 bytes)
 // CPU 传逻辑坐标 (tick, key, length)，GPU 负责变换到屏幕/NDC 空间
+// size_y 固定为 1.0，通过 zoom_y 展开；color 从 u32 解包
 
 struct CameraUniform {
     scroll: vec2<f32>,
@@ -20,11 +21,19 @@ struct VertexOutput {
     @location(0) color: vec4<f32>,
 };
 
-// 实例数据（逻辑坐标）
+// 实例数据（逻辑坐标，16 bytes 紧凑布局）
 struct NoteInstance {
     @location(0) position: vec2<f32>,  // [tick, key]
-    @location(1) size: vec2<f32>,      // [length, 1.0]
-    @location(2) color: vec4<f32>,     // 颜色
+    @location(1) size_x: f32,          // length
+    @location(2) color_packed: u32,    // 0xRRGGBBAA
+};
+
+fn unpack_color(packed: u32) -> vec4<f32> {
+    let r = f32((packed >> 24) & 0xFFu) / 255.0;
+    let g = f32((packed >> 16) & 0xFFu) / 255.0;
+    let b = f32((packed >> 8) & 0xFFu) / 255.0;
+    let a = f32(packed & 0xFFu) / 255.0;
+    return vec4<f32>(r, g, b, a);
 }
 
 @vertex
@@ -47,7 +56,8 @@ fn vs_main(
                    + camera.keyboard_width + camera.canvas_offset.x;
     let screen_y = (camera.max_key_index - instance.position.y) * camera.zoom.y
                    - camera.scroll.y + camera.ruler_height + camera.canvas_offset.y;
-    let screen_size = vec2<f32>(instance.size.x * camera.zoom.x, camera.zoom.y);
+    // size_y 固定为 1.0，通过 zoom_y 展开
+    let screen_size = vec2<f32>(instance.size_x * camera.zoom.x, camera.zoom.y);
 
     let screen_pos = vec2<f32>(screen_x, screen_y) + local_offset * screen_size;
 
@@ -57,7 +67,7 @@ fn vs_main(
 
     var output: VertexOutput;
     output.position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
-    output.color = instance.color;
+    output.color = unpack_color(instance.color_packed);
 
     return output;
 }

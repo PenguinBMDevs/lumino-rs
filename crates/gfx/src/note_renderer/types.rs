@@ -1,25 +1,50 @@
 //! 音符渲染器类型定义
 
-/// 音符逻辑实例数据 - GPU 侧通过 CameraUniform 计算最终屏幕位置
+/// 音符逻辑实例数据 — 16 bytes 紧凑布局
+///
+/// 优化（参考 wasabi）：
+/// 1. `size_y` 固定为 1.0（GPU 通过 zoom_y 展开），移除 4 bytes
+/// 2. `color` 从 [f32;4] 压缩为 u32 RGBA，移除 12 bytes
+/// 总计 32 → 16 bytes，GPU 数据量减半，上传带宽减半
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct NoteInstance {
     /// 逻辑位置: [tick, key]
     pub position: [f32; 2],
-    /// 逻辑尺寸: [length, 1.0]（height 固定为1个key，在GPU中通过 zoom_y 展开）
-    pub size: [f32; 2],
-    /// 颜色 (r, g, b, a)
-    pub color: [f32; 4],
+    /// 逻辑长度（height 固定为 1.0，在 GPU 中通过 zoom_y 展开）
+    pub size_x: f32,
+    /// 颜色 RGBA 打包 (0xRRGGBBAA)
+    pub color_packed: u32,
+}
+
+/// 将 [f32; 4] 颜色打包为 u32 (0xRRGGBBAA)
+#[must_use]
+pub fn pack_color(color: [f32; 4]) -> u32 {
+    let r = (color[0].clamp(0.0, 1.0) * 255.0) as u32;
+    let g = (color[1].clamp(0.0, 1.0) * 255.0) as u32;
+    let b = (color[2].clamp(0.0, 1.0) * 255.0) as u32;
+    let a = (color[3].clamp(0.0, 1.0) * 255.0) as u32;
+    (r << 24) | (g << 16) | (b << 8) | a
+}
+
+/// 将 u32 打包颜色解包为 [f32; 4]
+#[must_use]
+pub fn unpack_color(packed: u32) -> [f32; 4] {
+    let r = ((packed >> 24) & 0xFF) as f32 / 255.0;
+    let g = ((packed >> 16) & 0xFF) as f32 / 255.0;
+    let b = ((packed >> 8) & 0xFF) as f32 / 255.0;
+    let a = (packed & 0xFF) as f32 / 255.0;
+    [r, g, b, a]
 }
 
 impl NoteInstance {
     /// 创建新的音符逻辑实例
     #[must_use]
-    pub const fn new(tick: f32, key: f32, length: f32, color: [f32; 4]) -> Self {
+    pub fn new(tick: f32, key: f32, length: f32, color: [f32; 4]) -> Self {
         Self {
             position: [tick, key],
-            size: [length, 1.0],
-            color,
+            size_x: length,
+            color_packed: pack_color(color),
         }
     }
 }
@@ -119,21 +144,23 @@ impl Default for DrawIndirectArgs {
     }
 }
 
-/// 顶点属性布局（静态常量）
+/// 顶点属性布局（静态常量）— 16 bytes 紧凑 NoteInstance
 pub const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] = [
     wgpu::VertexAttribute {
         offset: 0,
         shader_location: 0,
-        format: wgpu::VertexFormat::Float32x2,
+        format: wgpu::VertexFormat::Float32x2, // position
     },
     wgpu::VertexAttribute {
         offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
         shader_location: 1,
-        format: wgpu::VertexFormat::Float32x2,
+        format: wgpu::VertexFormat::Float32, // size_x
     },
     wgpu::VertexAttribute {
-        offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+        // position(8) + size_x(4) = 12
+        offset: (std::mem::size_of::<[f32; 2]>() + std::mem::size_of::<f32>())
+            as wgpu::BufferAddress,
         shader_location: 2,
-        format: wgpu::VertexFormat::Float32x4,
+        format: wgpu::VertexFormat::Uint32, // color_packed
     },
 ];

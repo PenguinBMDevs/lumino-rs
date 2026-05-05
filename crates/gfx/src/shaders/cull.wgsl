@@ -1,7 +1,10 @@
+// 音符 GPU 裁剪着色器 — 紧凑 NoteInstance 布局 (16 bytes)
+// workgroup 批量原子版本：每 workgroup 只做 1 次全局 atomicAdd
+
 struct NoteInstance {
     position: vec2<f32>,
-    size: vec2<f32>,
-    color: vec4<f32>,
+    size_x: f32,
+    color_packed: u32,
 };
 
 struct CameraUniform {
@@ -36,71 +39,73 @@ struct DrawIndirectArgs {
 @group(0) @binding(3) var<storage, read_write> visible_instances: array<NoteInstance>;
 @group(0) @binding(4) var<storage, read_write> indirect_args: DrawIndirectArgs;
 
-// 预计算视口边界，避免每个线程重复计算
-fn get_viewport_bounds() -> vec4<f32> {
-    return vec4<f32>(
-        0.0,                                    // min_x
-        0.0,                                    // min_y
-        camera.viewport_size.x,               // max_x
-        camera.viewport_size.y                // max_y
-    );
-}
+// workgroup 共享内存：批量原子操作的临时存储
+var<workgroup> wg_count: atomic<u32>;
+var<workgroup> wg_indices: array<u32, 256>;
+var<workgroup> wg_global_base: u32;
+var<workgroup> wg_total: u32;
 
 @compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    // Rust 侧 dispatch 拆成 2D 以适配 65535 上限，每组 X 方向最多 65535 个 workgroup
-    // 使用 256 线程/组，更好地利用 modern GPU 的 warp/wavefront 大小
+fn main(
+    @builtin(global_invocation_id) global_id: vec3<u32>,
+    @builtin(local_invocation_id) local_id: vec3<u32>,
+) {
     let MAX_X_THREADS: u32 = 65535u * 256u;
     let index = global_id.x + global_id.y * MAX_X_THREADS;
-    if (index >= cull_info.instance_count || index >= arrayLength(&all_instances)) {
-        return;
+    let in_range = index < cull_info.instance_count && index < arrayLength(&all_instances);
+
+    // 可见性判定（不提前 return，所有线程必须到达 barrier）
+    var is_visible = false;
+    if (in_range) {
+        let instance = all_instances[index];
+
+        let tick = instance.position.x;
+        let key = instance.position.y;
+        let length = instance.size_x;
+
+        if (length > 0.0) {
+            let screen_min_x = tick * camera.zoom.x - camera.scroll.x
+                               + camera.keyboard_width + camera.canvas_offset.x;
+
+            if (screen_min_x <= camera.viewport_size.x) {
+                let screen_max_x = screen_min_x + length * camera.zoom.x;
+
+                if (screen_max_x >= 0.0) {
+                    let screen_min_y = (camera.max_key_index - key) * camera.zoom.y
+                                       - camera.scroll.y
+                                       + camera.ruler_height + camera.canvas_offset.y;
+                    let screen_max_y = screen_min_y + camera.zoom.y;
+
+                    if (screen_max_y >= 0.0 && screen_min_y <= camera.viewport_size.y) {
+                        is_visible = true;
+                    }
+                }
+            }
+        }
     }
 
-    let instance = all_instances[index];
-
-    // 将逻辑坐标 (tick, key) 变换为屏幕像素 AABB
-    let tick = instance.position.x;
-    let key = instance.position.y;
-    let length = instance.size.x;
-
-    // Early exit: 如果音符长度为0，直接跳过
-    if (length <= 0.0) {
-        return;
+    // Phase 1：workgroup 内本地计数（local atomic，无全局竞争）
+    if (is_visible) {
+        let slot = atomicAdd(&wg_count, 1u);
+        wg_indices[slot] = index;
     }
+    workgroupBarrier();
 
-    let screen_min_x = tick * camera.zoom.x - camera.scroll.x
-                       + camera.keyboard_width + camera.canvas_offset.x;
-    
-    // Early exit: 如果音符在视口左侧很远，跳过
-    if (screen_min_x > camera.viewport_size.x) {
-        return;
+    // Phase 2：线程 0 做 1 次全局 atomicAdd，代表整个 workgroup
+    if (local_id.x == 0u) {
+        let n = atomicLoad(&wg_count);
+        wg_total = n;
+        wg_global_base = atomicAdd(&indirect_args.instance_count, n);
     }
-    
-    let screen_max_x = screen_min_x + length * camera.zoom.x;
-    
-    // Early exit: 如果音符在视口右侧很远，跳过
-    if (screen_max_x < 0.0) {
-        return;
-    }
+    workgroupBarrier();
 
-    let screen_min_y = (camera.max_key_index - key) * camera.zoom.y - camera.scroll.y
-                       + camera.ruler_height + camera.canvas_offset.y;
-    
-    // Early exit: 如果音符在视口上方或下方很远，跳过
-    let screen_max_y = screen_min_y + camera.zoom.y;
-    if (screen_max_y < 0.0 || screen_min_y > camera.viewport_size.y) {
-        return;
-    }
-
-    // 最终可见性测试
-    if (screen_max_x >= 0.0 && screen_min_x <= camera.viewport_size.x
-        && screen_max_y >= 0.0 && screen_min_y <= camera.viewport_size.y) {
-        
-        let visible_index = atomicAdd(&indirect_args.instance_count, 1u);
-        if (visible_index < arrayLength(&visible_instances)) {
-            visible_instances[visible_index] = instance;
-        } else {
-            atomicSub(&indirect_args.instance_count, 1u);
+    // Phase 3：写入可见实例
+    if (local_id.x < wg_total) {
+        let src_idx = wg_indices[local_id.x];
+        let instance = all_instances[src_idx];
+        let dst = wg_global_base + local_id.x;
+        if (dst < arrayLength(&visible_instances)) {
+            visible_instances[dst] = instance;
         }
     }
 }

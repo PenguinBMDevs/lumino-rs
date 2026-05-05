@@ -66,3 +66,6 @@ bin/
 
 # publish
 publish/
+
+# others
+wasabi/

@@ -1,6 +1,8 @@
 pub mod types;
 
-pub use types::{CameraParams, CameraUniform, CullUniform, NoteInstance, RenderUniform};
+pub use types::{
+    CameraParams, CameraUniform, CullUniform, NoteInstance, RenderUniform, pack_color, unpack_color,
+};
 
 // 子模块
 mod buffer;
@@ -56,15 +58,16 @@ mod tests {
     /// 测试 NoteInstance 创建和属性访问
     #[test]
     fn test_note_instance_creation() {
-        let instance = NoteInstance {
-            position: [100.0, 60.0],
-            size: [200.0, 20.0],
-            color: [1.0, 0.5, 0.0, 0.8],
-        };
+        let instance = NoteInstance::new(100.0, 60.0, 200.0, [1.0, 0.5, 0.0, 0.8]);
 
         assert_eq!(instance.position, [100.0, 60.0]);
-        assert_eq!(instance.size, [200.0, 20.0]);
-        assert_eq!(instance.color, [1.0, 0.5, 0.0, 0.8]);
+        assert_eq!(instance.size_x, 200.0);
+        // 颜色打包后解包验证
+        let unpacked = crate::note_renderer::types::unpack_color(instance.color_packed);
+        assert!((unpacked[0] - 1.0).abs() < 0.01);
+        assert!((unpacked[1] - 0.5).abs() < 0.01);
+        assert!(unpacked[2].abs() < 0.01);
+        assert!((unpacked[3] - 0.8).abs() < 0.01);
     }
 
     /// 测试 CameraUniform 默认值
