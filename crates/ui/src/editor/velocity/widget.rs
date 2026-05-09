@@ -4,6 +4,7 @@
 //! - 描点 + 连线（力度包络线）
 //! - 描点只能垂直拖动（上下调整力度值）
 //! - 悬停高亮 + 拖拽实时反馈
+//! - 顶部拖拽手柄可调整面板高度
 
 use iced_core::{Color, Point, Rectangle, Size, alignment, mouse};
 use iced_widget::canvas::{self, Frame, Program, path};
@@ -28,6 +29,14 @@ pub struct VelocityCanvasState {
     pub hover_point_idx: Option<usize>,
     /// Canvas 是否已初始化尺寸
     pub _initialized: bool,
+    /// 是否在拖拽 resize 手柄
+    pub resize_dragging: bool,
+    /// resize 拖拽起始 Y 坐标（绝对屏幕坐标）
+    pub resize_drag_start_y: f32,
+    /// resize 拖拽开始时的面板高度
+    pub resize_start_height: f32,
+    /// 鼠标是否悬停在 resize 手柄区域
+    pub hover_resize_handle: bool,
 }
 
 /// 力度 Canvas 程序
@@ -44,16 +53,18 @@ impl<'a> VelocityCanvas<'a> {
 
     /// 将力度值映射到 Y 坐标（panel 底部 = 0 velocity, 顶部 = 127 velocity）
     fn velocity_to_y(velocity: u8, bounds_height: f32) -> f32 {
-        let max_y = bounds_height - PANEL_PADDING_Y;
-        let min_y = PANEL_PADDING_Y;
+        let draw_height = bounds_height - RESIZE_HANDLE_HEIGHT;
+        let max_y = draw_height - PANEL_PADDING_Y;
+        let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
         let normalized = velocity as f32 / 127.0;
         max_y - normalized * (max_y - min_y)
     }
 
     /// 将 Y 坐标映射回力度值 (0-127)
     fn y_to_velocity(y: f32, bounds_height: f32) -> u8 {
-        let max_y = bounds_height - PANEL_PADDING_Y;
-        let min_y = PANEL_PADDING_Y;
+        let draw_height = bounds_height - RESIZE_HANDLE_HEIGHT;
+        let max_y = draw_height - PANEL_PADDING_Y;
+        let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
         let clamped_y = y.clamp(min_y, max_y);
         let normalized = (max_y - clamped_y) / (max_y - min_y);
         (normalized * 127.0).round().clamp(0.0, 127.0) as u8
@@ -94,6 +105,11 @@ impl<'a> VelocityCanvas<'a> {
         }
         closest.map(|(idx, _)| idx)
     }
+
+    /// 判断光标是否在 resize 手柄区域
+    fn is_in_resize_zone(cursor_pos: Point) -> bool {
+        cursor_pos.y >= 0.0 && cursor_pos.y <= RESIZE_HANDLE_HEIGHT
+    }
 }
 
 impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
@@ -108,12 +124,10 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
     ) -> Option<canvas::Action<Message>> {
         let bounds_size = bounds.size();
 
-        // 初始化尺寸
         if !state._initialized {
             state._initialized = true;
         }
 
-        // 没有足够宽度时不做交互
         if bounds_size.width <= PANEL_PADDING_X * 2.0 {
             return None;
         }
@@ -125,6 +139,14 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
 
         match event {
             canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                // 检查是否在 resize 手柄区域
+                if Self::is_in_resize_zone(cursor_pos) {
+                    state.resize_dragging = true;
+                    state.resize_drag_start_y = cursor.position().unwrap_or_default().y;
+                    state.resize_start_height = bounds_size.height;
+                    return None;
+                }
+
                 let points = self.points();
                 if points.is_empty() {
                     return None;
@@ -145,13 +167,30 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                 None
             }
             canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                // 检查 resize 拖拽
+                if state.resize_dragging {
+                    let abs_cursor_y = cursor.position().unwrap_or_default().y;
+                    let delta_y = state.resize_drag_start_y - abs_cursor_y;
+                    let new_height = (state.resize_start_height + delta_y)
+                        .clamp(VELOCITY_PANEL_MIN_HEIGHT, VELOCITY_PANEL_MAX_HEIGHT);
+                    if (new_height - bounds_size.height).abs() > 1.0 {
+                        return Some(canvas::Action::publish(Message::VelocityPanelResize(
+                            new_height,
+                        )));
+                    }
+                    return None;
+                }
+
+                // 更新 resize 手柄悬停状态
+                state.hover_resize_handle = Self::is_in_resize_zone(cursor_pos);
+
+                // 拖拽力度点
                 let points = self.points();
                 if points.is_empty() {
                     state.hover_point_idx = None;
                     return None;
                 }
 
-                // 如果正在拖拽，更新力度值
                 if let Some(drag_idx) = state.drag_point_idx {
                     if drag_idx < points.len() {
                         let new_velocity = Self::y_to_velocity(cursor_pos.y, bounds_size.height);
@@ -166,7 +205,6 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                     return None;
                 }
 
-                // 更新悬停状态
                 let hover_idx =
                     Self::hit_test(&points, cursor_pos, bounds_size.width, bounds_size.height);
                 if hover_idx != state.hover_point_idx {
@@ -175,6 +213,11 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                 None
             }
             canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                if state.resize_dragging {
+                    state.resize_dragging = false;
+                    return None;
+                }
+
                 let was_dragging = state.drag_point_idx.is_some();
                 state.drag_point_idx = None;
                 state._drag_start_velocity = 0;
@@ -199,8 +242,9 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
     ) -> Vec<Geom> {
         let mut frame = Frame::new(renderer, bounds.size());
 
-        // 绘制背景 + 网格线
         draw_background(&mut frame, theme, bounds.size());
+
+        draw_resize_handle(&mut frame, theme, bounds.size(), state.hover_resize_handle);
 
         let points = self.points();
         if !points.is_empty() {
@@ -214,8 +258,19 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
         &self,
         state: &Self::State,
         _bounds: Rectangle,
-        _cursor: mouse::Cursor,
+        cursor: mouse::Cursor,
     ) -> mouse::Interaction {
+        if state.resize_dragging {
+            return mouse::Interaction::ResizingVertically;
+        }
+
+        if let Some(cursor_pos) = cursor.position() {
+            let local_y = cursor_pos.y - _bounds.y;
+            if local_y >= 0.0 && local_y <= RESIZE_HANDLE_HEIGHT {
+                return mouse::Interaction::ResizingVertically;
+            }
+        }
+
         if state.drag_point_idx.is_some() {
             mouse::Interaction::ResizingVertically
         } else if state.hover_point_idx.is_some() {
@@ -231,7 +286,6 @@ fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
     let width = size.width;
     let height = size.height;
 
-    // 背景填充
     let bg_color = if theme.is_light() {
         Color::from_rgb(0.95, 0.95, 0.95)
     } else {
@@ -239,7 +293,8 @@ fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
     };
     frame.fill_rectangle(Point::ORIGIN, size, bg_color);
 
-    // 绘制力度参考线
+    let draw_top = RESIZE_HANDLE_HEIGHT;
+
     let line_color = if theme.is_light() {
         Color::from_rgba(0.0, 0.0, 0.0, 0.1)
     } else {
@@ -251,13 +306,11 @@ fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
         Color::from_rgba(1.0, 1.0, 1.0, 0.3)
     };
 
-    // 力度刻度值
     let velocity_levels = [0u8, 32, 64, 96, 127];
 
     for &v in &velocity_levels {
         let y = VelocityCanvas::velocity_to_y(v, height);
 
-        // 网格线
         let mut line_builder = path::Builder::new();
         line_builder.move_to(Point::new(PANEL_PADDING_X, y));
         line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
@@ -269,7 +322,6 @@ fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
                 .with_width(1.0),
         );
 
-        // 刻度标签
         let text = canvas::Text {
             content: format!("{}", v),
             position: Point::new(4.0, y - 6.0),
@@ -285,13 +337,62 @@ fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
         frame.fill_text(text);
     }
 
-    // 面板顶部分隔线
     let border_color = if theme.is_light() {
         Color::from_rgba(0.0, 0.0, 0.0, 0.15)
     } else {
         Color::from_rgba(1.0, 1.0, 1.0, 0.12)
     };
-    frame.fill_rectangle(Point::new(0.0, 0.0), Size::new(width, 1.0), border_color);
+    frame.fill_rectangle(
+        Point::new(0.0, draw_top),
+        Size::new(width, 1.0),
+        border_color,
+    );
+}
+
+/// 绘制顶部 resize 拖拽手柄
+fn draw_resize_handle(
+    frame: &mut Frame<Renderer>,
+    theme: &Theme,
+    size: Size,
+    hovered: bool,
+) {
+    let handle_color = if theme.is_light() {
+        if hovered {
+            Color::from_rgba(0.3, 0.3, 0.3, 0.5)
+        } else {
+            Color::from_rgba(0.2, 0.2, 0.2, 0.25)
+        }
+    } else {
+        if hovered {
+            Color::from_rgba(0.8, 0.8, 0.8, 0.5)
+        } else {
+            Color::from_rgba(0.6, 0.6, 0.6, 0.2)
+        }
+    };
+
+    let grab_bar_color = if theme.is_light() {
+        Color::from_rgba(0.3, 0.3, 0.3, 0.4)
+    } else {
+        Color::from_rgba(0.7, 0.7, 0.7, 0.35)
+    };
+
+    // 手柄背景
+    frame.fill_rectangle(
+        Point::new(0.0, 0.0),
+        Size::new(size.width, RESIZE_HANDLE_HEIGHT),
+        handle_color,
+    );
+
+    // 中间的小 grab 指示条
+    let bar_width = 40.0;
+    let bar_height = 3.0;
+    let bar_x = (size.width - bar_width) / 2.0;
+    let bar_y = (RESIZE_HANDLE_HEIGHT - bar_height) / 2.0;
+    frame.fill_rectangle(
+        Point::new(bar_x, bar_y),
+        Size::new(bar_width, bar_height),
+        grab_bar_color,
+    );
 }
 
 /// 绘制力度图形（描点 + 连线）
@@ -309,13 +410,11 @@ fn draw_velocity_graph(
     let width = size.width;
     let height = size.height;
 
-    // 颜色定义
     let line_color = theme.extended_palette().primary.strong.color;
     let point_color = theme.extended_palette().primary.base.color;
     let drag_color = theme.extended_palette().secondary.strong.color;
     let hover_color = theme.extended_palette().primary.strong.color;
 
-    // 限制可见点数，避免过多导致渲染卡顿
     let max_visible = (width / SLOT_WIDTH) as usize + 2;
     let points_to_draw = &points[..points.len().min(max_visible)];
 
@@ -323,7 +422,6 @@ fn draw_velocity_graph(
         return;
     }
 
-    // 1. 绘制包络线（连接各点）
     let mut line_builder = path::Builder::new();
     let first_pos = VelocityCanvas::point_screen_pos(&points_to_draw[0], 0, width, height);
     line_builder.move_to(first_pos);
@@ -341,12 +439,10 @@ fn draw_velocity_graph(
             .with_width(2.0),
     );
 
-    // 2. 绘制力度柱状条（从点到基准线）
     let zero_y = VelocityCanvas::velocity_to_y(0, height);
     for (i, point) in points_to_draw.iter().enumerate() {
         let pos = VelocityCanvas::point_screen_pos(point, i, width, height);
 
-        // 半透明柱状条
         let bar_color = Color::from_rgba(point_color.r, point_color.g, point_color.b, 0.2);
         frame.fill_rectangle(
             Point::new(pos.x - 1.5, pos.y),
@@ -355,7 +451,6 @@ fn draw_velocity_graph(
         );
     }
 
-    // 3. 绘制描点
     for (i, point) in points_to_draw.iter().enumerate() {
         let pos = VelocityCanvas::point_screen_pos(point, i, width, height);
         let is_dragging = state.drag_point_idx == Some(i);
@@ -369,13 +464,11 @@ fn draw_velocity_graph(
             (point_color, POINT_RADIUS)
         };
 
-        // 点外发光（拖拽/悬停时）
         if is_dragging || is_hover {
             let glow_color = Color::from_rgba(fill_color.r, fill_color.g, fill_color.b, 0.3);
             frame.fill(&canvas::Path::circle(pos, radius + 3.0), glow_color);
         }
 
-        // 点本身
         frame.fill(&canvas::Path::circle(pos, radius), fill_color);
     }
 }

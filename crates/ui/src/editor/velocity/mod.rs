@@ -11,6 +11,12 @@ use crate::Element;
 /// 力度面板高度（像素）
 pub const VELOCITY_PANEL_HEIGHT: f32 = 150.0;
 
+/// 力度面板最小高度（像素）
+pub const VELOCITY_PANEL_MIN_HEIGHT: f32 = 60.0;
+
+/// 力度面板最大高度（像素）
+pub const VELOCITY_PANEL_MAX_HEIGHT: f32 = 400.0;
+
 /// 每个力度点的水平宽度（像素）
 pub const SLOT_WIDTH: f32 = 8.0;
 
@@ -29,6 +35,9 @@ pub const PANEL_PADDING_Y: f32 = 12.0;
 /// 面板左右内边距（像素）
 pub const PANEL_PADDING_X: f32 = 8.0;
 
+/// 顶部resize拖拽手柄区域高度（像素）
+pub const RESIZE_HANDLE_HEIGHT: f32 = 5.0;
+
 /// 力度编辑面板组件
 pub struct VelocityPanel;
 
@@ -38,40 +47,16 @@ impl VelocityPanel {
     }
 
     /// 渲染力度编辑面板视图
-    pub fn view<'a>(&'a self, editor: &'a crate::editor::Editor) -> Element<'a> {
+    pub fn view<'a>(&'a self, editor: &'a crate::editor::Editor, panel_height: f32) -> Element<'a> {
         use iced_widget::canvas::Canvas;
-
-        let es = &editor.editor_state;
-        let notes = &es.data.notes;
-
-        // 没有音符时显示提示信息
-        if notes.is_empty() {
-            return iced_widget::container(
-                iced_widget::text("选择音符以编辑力度（Velocity）")
-                    .size(12)
-                    .style(|theme: &crate::Theme| iced_widget::text::Style {
-                        color: Some(theme.extended_palette().background.weak.text),
-                    }),
-            )
-            .width(iced_core::Length::Fill)
-            .height(VELOCITY_PANEL_HEIGHT)
-            .center_x(iced_core::Length::Fill)
-            .center_y(iced_core::Length::Fill)
-            .style(|theme: &crate::Theme| {
-                iced_widget::container::Style::default()
-                    .background(theme.extended_palette().background.weak.color)
-            })
-            .into();
-        }
 
         let canvas = Canvas::new(widget::VelocityCanvas { editor })
             .width(iced_core::Length::Fill)
-            .height(VELOCITY_PANEL_HEIGHT);
+            .height(panel_height);
 
-        // 包裹 canvas 以提供背景色
         iced_widget::container(canvas)
             .width(iced_core::Length::Fill)
-            .height(VELOCITY_PANEL_HEIGHT)
+            .height(panel_height)
             .style(|theme: &crate::Theme| {
                 iced_widget::container::Style::default()
                     .background(theme.extended_palette().background.weak.color)

@@ -84,40 +84,46 @@ impl Root {
         // 左侧栏（包含图标栏和音轨面板）
         let left_bar = self.sidebar.view(&self.window);
 
-        // 主内容区域（工具栏 + 编辑器/设置）
-        let main_area: Element<'_> = if is_settings_route {
+        // 右侧内容区域（工具栏 + 编辑器 + 力度面板）
+        let right_content: Element<'_> = if is_settings_route {
             // 设置路由激活时显示设置界面
             settings::view(&self.settings, &self.window, &self.state.system_fonts)
         } else {
-            // 默认显示工具栏 + 编辑器
+            // 力度面板：位于卷帘下方单独占位
+            let velocity_panel = self.editor.velocity_panel.view(
+                &self.editor,
+                self.velocity_panel_height,
+            );
+            // 编辑器视图（卷帘 + 滚动条）
+            let editor_view = self.editor.view(
+                message::Message::ScrollbarScrolled,
+                message::Message::ScrollbarScrolledY,
+                |zoom, fixed_ratio| message::Message::ZoomXChanged { zoom, fixed_ratio },
+                |zoom, fixed_ratio| message::Message::ZoomYChanged { zoom, fixed_ratio },
+            );
             column![
                 self.toolbar.view(&self.window),
-                self.editor.view(
-                    message::Message::ScrollbarScrolled,
-                    message::Message::ScrollbarScrolledY,
-                    |zoom, fixed_ratio| message::Message::ZoomXChanged { zoom, fixed_ratio },
-                    |zoom, fixed_ratio| message::Message::ZoomYChanged { zoom, fixed_ratio },
-                )
+                column![
+                    container(editor_view).height(Length::Fill),
+                    velocity_panel,
+                ]
+                .height(Length::Fill),
             ]
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
         };
 
-        let velocity_panel = self.editor.velocity_panel.view(&self.editor);
-
         let main_content = if cfg!(target_os = "macos") {
             column![
-                row![left_bar, main_area].height(Length::Fill),
-                velocity_panel,
+                row![left_bar, right_content].height(Length::Fill),
                 self.statusbar.view(),
             ]
         } else {
             column![
                 self.titlebar
                     .view(&self.window, self.settings.use_native_titlebar),
-                row![left_bar, main_area].height(Length::Fill),
-                velocity_panel,
+                row![left_bar, right_content].height(Length::Fill),
                 self.statusbar.view(),
             ]
         };

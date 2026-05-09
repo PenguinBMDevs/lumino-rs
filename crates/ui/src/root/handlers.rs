@@ -212,6 +212,10 @@ impl Root {
                 true
             }
             Message::ToggleSettings | Message::Null => true,
+            Message::VelocityPanelResize(height) => {
+                self.velocity_panel_height = *height;
+                true
+            }
             _ => false,
         }
     }

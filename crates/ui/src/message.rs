@@ -145,6 +145,8 @@ pub enum Message {
     CloseLoadConfirmDialog,
     /// 力度编辑面板动作
     Velocity(VelocityAction),
+    /// 力度面板高度调整
+    VelocityPanelResize(f32),
     /// 空消息标记
     Null,
 }

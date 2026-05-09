@@ -69,6 +69,8 @@ pub struct Root {
     pub(crate) onion_skin_generation: u64,
     /// 力度过滤阈值
     pub(crate) velocity_filter_threshold: u8,
+    /// 力度面板高度（可拖拽调整）
+    pub(crate) velocity_panel_height: f32,
     /// MIDI 文档引用（用于懒加载非当前音轨的音符，避免全量 preload）
     pub(crate) midi_document: Option<Arc<MidiDocument>>,
 }
@@ -108,6 +110,7 @@ impl Root {
             cached_onion_skin_notes: None,
             onion_skin_generation: 0,
             velocity_filter_threshold: params.ui_config.velocity_filter_threshold,
+            velocity_panel_height: crate::editor::velocity::VELOCITY_PANEL_HEIGHT,
             midi_document: None,
         }
     }
