@@ -141,7 +141,7 @@ pub fn parse_smf(
 mod tests {
     use super::*;
     use midly::{
-        Format, Header, MetaMessage, Smf, Timing, Track, TrackEvent, TrackEventKind,
+        Format, Header, Smf, Timing, Track, TrackEvent, TrackEventKind,
         num::{u4, u7, u28},
     };
 

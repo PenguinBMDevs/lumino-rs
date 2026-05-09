@@ -108,7 +108,7 @@ impl<'a> VelocityCanvas<'a> {
 
     /// 判断光标是否在 resize 手柄区域
     fn is_in_resize_zone(cursor_pos: Point) -> bool {
-        cursor_pos.y >= 0.0 && cursor_pos.y <= RESIZE_HANDLE_HEIGHT
+        (0.0..=RESIZE_HANDLE_HEIGHT).contains(&cursor_pos.y)
     }
 }
 
@@ -266,7 +266,7 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
 
         if let Some(cursor_pos) = cursor.position() {
             let local_y = cursor_pos.y - _bounds.y;
-            if local_y >= 0.0 && local_y <= RESIZE_HANDLE_HEIGHT {
+            if (0.0..=RESIZE_HANDLE_HEIGHT).contains(&local_y) {
                 return mouse::Interaction::ResizingVertically;
             }
         }
@@ -426,8 +426,8 @@ fn draw_velocity_graph(
     let first_pos = VelocityCanvas::point_screen_pos(&points_to_draw[0], 0, width, height);
     line_builder.move_to(first_pos);
 
-    for i in 1..points_to_draw.len() {
-        let pos = VelocityCanvas::point_screen_pos(&points_to_draw[i], i, width, height);
+    for (i, point) in points_to_draw.iter().enumerate().skip(1) {
+        let pos = VelocityCanvas::point_screen_pos(point, i, width, height);
         line_builder.line_to(pos);
     }
     let line_path = line_builder.build();

@@ -59,7 +59,7 @@ impl Host {
 
         // 数据变化（编辑/加载）
         let note_data_changed = note_index_dirty
-            || unsafe { self.render_ctx.render_cache.note_instances_is_empty() }
+            || self.render_ctx.render_cache.note_instances_is_empty()
             || is_drawing;
 
         if !note_data_changed && !viewport_changed {

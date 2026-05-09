@@ -46,8 +46,10 @@ struct MergedCell {
 }
 
 impl MergedCell {
+    #[allow(dead_code)]
     const EMPTY: f32 = f32::MAX;
 
+    #[allow(dead_code)]
     const fn empty() -> Self {
         Self {
             tick_start: Self::EMPTY,
@@ -57,6 +59,7 @@ impl MergedCell {
         }
     }
 
+    #[allow(dead_code)]
     fn is_empty(&self) -> bool {
         self.tick_start == Self::EMPTY
     }
@@ -351,7 +354,7 @@ impl Editor {
                 }
             })
             .reduce(
-                || Vec::new(),
+                Vec::new,
                 |mut a, mut b| {
                     // 如果 a 为空，直接返回 b
                     if a.is_empty() {
@@ -503,7 +506,7 @@ impl Editor {
         }
 
         let tick_span = (search_end - search_start) as u32;
-        let tick_quant = (tick_span / 100).max(1) as u32;
+        let tick_quant = (tick_span / 100).max(1);
 
         // 预收集音轨颜色
         let track_colors: Vec<(usize, [f32; 4])> = track_indices
@@ -520,8 +523,8 @@ impl Editor {
         // === 尝试增量缓存 ===
         let mut cache_guard = ONION_SKIN_CACHE.lock().unwrap();
 
-        if let Some(ref mut cache) = *cache_guard {
-            if cache.can_incremental(
+        if let Some(ref mut cache) = *cache_guard
+            && cache.can_incremental(
                 tick_quant,
                 search_start,
                 search_end,
@@ -568,7 +571,7 @@ impl Editor {
                                 )
                             })
                             .reduce(
-                                || std::collections::HashMap::new(),
+                                std::collections::HashMap::new,
                                 |mut acc, cells| {
                                     for (k, v) in cells {
                                         merge_cell(&mut acc, k, v);
@@ -602,7 +605,6 @@ impl Editor {
 
                 return cache.output.clone();
             }
-        }
 
         // === 全量重建 ===
         let merged_map: std::collections::HashMap<u64, MergedCell> =
@@ -629,7 +631,7 @@ impl Editor {
                         )
                     })
                     .reduce(
-                        || std::collections::HashMap::new(),
+                        std::collections::HashMap::new,
                         |mut acc, cells| {
                             for (k, v) in cells {
                                 merge_cell(&mut acc, k, v);
@@ -667,6 +669,7 @@ impl Editor {
     }
 
     /// 从 document 加载音轨音符到 track_notes 缓存
+    #[allow(dead_code)]
     fn load_track_notes_from_document(&mut self, track_idx: usize) {
         let Some(doc) = self.editor_state.data.document.as_ref() else {
             return;

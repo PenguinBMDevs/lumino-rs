@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 pub mod constants;
 pub mod editor;
 pub mod host;

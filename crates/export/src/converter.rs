@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::{ExportError, ExportResult};
 
 pub fn copy_file_sync(source_path: &Path, save_path: &Path) -> ExportResult<u64> {
-    std::fs::copy(source_path, save_path).map_err(|e| ExportError::Io(e))
+    std::fs::copy(source_path, save_path).map_err(ExportError::Io)
 }
 
 pub fn export_midi_from_parsed_midi_sync(source_path: &Path) -> ExportResult<Vec<u8>> {
@@ -15,10 +15,10 @@ pub fn export_midi_from_parsed_midi_sync(source_path: &Path) -> ExportResult<Vec
         .to_ascii_lowercase();
 
     match extension.as_str() {
-        "mid" | "midi" => std::fs::read(source_path).map_err(|e| ExportError::Io(e)),
+        "mid" | "midi" => std::fs::read(source_path).map_err(ExportError::Io),
         "lmpj" => {
             // 尝试读取 LMPJ 文件内是否包含原始 MIDI 数据（有些 LMPJ 可能未保存）
-            let data = std::fs::read(source_path).map_err(|e| ExportError::Io(e))?;
+            let data = std::fs::read(source_path).map_err(ExportError::Io)?;
             let parsed: lumino_core::midi::ParsedMidi = crate::format::decode_lmpj(&data)
                 .map_err(|e| ExportError::InvalidData(format!("解析 LMPJ 失败: {e}")))?;
 
@@ -30,7 +30,7 @@ pub fn export_midi_from_parsed_midi_sync(source_path: &Path) -> ExportResult<Vec
             // 否则尝试从保存的原始路径读取（如果存在）
             let original = parsed.info.path;
             if original.exists() {
-                std::fs::read(&original).map_err(|e| ExportError::Io(e))
+                std::fs::read(&original).map_err(ExportError::Io)
             } else {
                 Err(ExportError::InvalidData(
                     "当前 LMPJ 未包含原始 MIDI 数据，且原始文件不存在，无法导出标准 MIDI"
@@ -48,7 +48,7 @@ pub fn export_midi_from_parsed_midi_sync(source_path: &Path) -> ExportResult<Vec
 // LMPJ 保存逻辑已抽离到 `crate::lmpj` 模块。
 
 pub fn export_midi_from_dms_sync(source_path: &Path) -> ExportResult<Vec<u8>> {
-    let bytes = std::fs::read(source_path).map_err(|e| ExportError::Io(e))?;
+    let bytes = std::fs::read(source_path).map_err(ExportError::Io)?;
     let root = lumino_dms::read_dms_file(&bytes)
         .map_err(|e| ExportError::InvalidData(format!("解析 DMS 文件失败: {e}")))?;
     let export_data = build_midi_export_from_dms(&root);
@@ -299,7 +299,7 @@ fn build_dms_export_from_midi(source_path: &Path) -> ExportResult<crate::dms::Dm
     use crate::dms::{DmsExportData, DmsExportOptions};
     use midly::{Smf, Timing};
 
-    let bytes = std::fs::read(source_path).map_err(|e| ExportError::Io(e))?;
+    let bytes = std::fs::read(source_path).map_err(ExportError::Io)?;
     let smf = Smf::parse(&bytes)
         .map_err(|e| ExportError::InvalidData(format!("解析 MIDI 文件失败: {e}")))?;
 

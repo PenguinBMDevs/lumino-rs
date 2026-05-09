@@ -3,8 +3,9 @@
 /// 音符逻辑实例数据 — 16 bytes 紧凑布局
 ///
 /// 优化（参考 wasabi）：
-/// 1. `size_y` 固定为 1.0（GPU 通过 zoom_y 展开），移除 4 bytes
-/// 2. `color` 从 [f32;4] 压缩为 u32 RGBA，移除 12 bytes
+///   1. `size_y` 固定为 1.0（GPU 通过 zoom_y 展开），移除 4 bytes
+///   2. `color` 从 [f32;4] 压缩为 u32 RGBA，移除 12 bytes
+///
 /// 总计 32 → 16 bytes，GPU 数据量减半，上传带宽减半
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]

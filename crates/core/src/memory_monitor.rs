@@ -210,7 +210,7 @@ impl MemoryMonitor {
             let throttle = self
                 .warn_throttle
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if throttle % 5 == 0 {
+            if throttle.is_multiple_of(5) {
                 tracing::warn!("{}", self.format_report(rss, "MEMORY_WARNING 🟡"));
             }
             Some(false)

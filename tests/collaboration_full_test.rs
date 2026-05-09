@@ -329,6 +329,7 @@ async fn test_collaboration_full() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // 辅助函数：获取事件列表
+#[allow(dead_code)]
 async fn get_events(collector: &EventCollector) -> Vec<CollaborationEvent> {
     collector.events.lock().await.clone()
 }

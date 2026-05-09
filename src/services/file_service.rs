@@ -41,7 +41,7 @@ impl FileService {
                 Ok(())
             }
             Ok(Err(e)) => {
-                let msg = format!("{}", e);
+                let msg = e.to_string();
                 cb(&msg, 1.0);
                 tracing::error!("{}", msg);
                 Err(e)

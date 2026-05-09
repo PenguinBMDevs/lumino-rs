@@ -209,7 +209,7 @@ impl Editor {
                     },
                 )
                 .reduce(
-                    || Vec::new(),
+                    Vec::new,
                     |mut a, b| {
                         a.extend(b);
                         a

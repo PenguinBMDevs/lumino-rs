@@ -96,11 +96,10 @@ impl PlaybackEngine {
         let mut seq: u64 = 0;
 
         for note in &self.notes {
-            if let Some(st) = seek_tick {
-                if note.tick + note.length <= st {
+            if let Some(st) = seek_tick
+                && note.tick + note.length <= st {
                     continue;
                 }
-            }
             self.event_queue.push(ScheduledEvent {
                 tick: note.tick,
                 event_type: EventType::NoteOn {
@@ -189,10 +188,11 @@ impl PlaybackEngine {
 
             // ── 非音符 MIDI 事件（CC/PC/PB） ──
             for ev in &self.midi_events {
-                if ev.tick > self.last_processed_tick && ev.tick <= current_tick {
-                    if let Some(event_type) = Self::midi_event_to_event_type(&ev.message) {
-                        Self::push_midi_message(event_type, &mut messages);
-                    }
+                if ev.tick > self.last_processed_tick
+                    && ev.tick <= current_tick
+                    && let Some(event_type) = Self::midi_event_to_event_type(&ev.message)
+                {
+                    Self::push_midi_message(event_type, &mut messages);
                 }
             }
         }
@@ -242,10 +242,8 @@ impl PlaybackEngine {
     }
 
     #[inline]
-    fn midi_event_to_event_type(msg: &MidiMessage) -> Option<EventType> {
-        match *msg {
-            _ => None, // MIDI事件不转换为EventType，直接处理
-        }
+    fn midi_event_to_event_type(_msg: &MidiMessage) -> Option<EventType> {
+        None // MIDI事件不转换为EventType，直接处理
     }
 
     /// 安全地跳转播放位置（内部辅助方法）

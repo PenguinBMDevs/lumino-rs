@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 pub mod constants;
 mod context;
 mod gpu_note_buffer;

@@ -69,7 +69,7 @@ pub fn scan_system_fonts() -> Vec<FontInfo> {
         .collect();
 
     // 按字体名称排序（不区分大小写）
-    fonts.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    fonts.sort_by_key(|a| a.name.to_lowercase());
 
     fonts
 }

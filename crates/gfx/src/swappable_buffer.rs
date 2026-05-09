@@ -55,6 +55,7 @@ impl<T> SwappableBuffer<T> {
     ///
     /// # Safety
     /// 必须在 UI 线程调用，且同一时间只能有一个写入者。
+    #[allow(clippy::mut_from_ref)]
     pub unsafe fn write_buffer(&self) -> &mut Vec<T> {
         let idx = self.back_index();
         unsafe { &mut (*self.buffers.get())[idx] }
