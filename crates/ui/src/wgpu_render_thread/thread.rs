@@ -10,6 +10,7 @@ use super::commands::{ControlCommand, RenderCommand};
 use super::params::RenderParams;
 use super::render_loop::run_render_thread;
 use super::stats::RenderStats;
+use lumino_gfx::SwappableBuffer;
 
 /// WGPU 渲染线程
 ///
@@ -25,6 +26,8 @@ pub struct WgpuRenderThread {
     thread_handle: Option<JoinHandle<()>>,
     /// 渲染完成的离屏纹理，供主线程读取
     pub latest_texture: Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
+    /// 双缓冲音符实例数据（UI线程写入，渲染线程读取）
+    pub note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
 }
 
 impl WgpuRenderThread {
@@ -37,6 +40,7 @@ impl WgpuRenderThread {
         queue: wgpu::Queue,
         texture_format: wgpu::TextureFormat,
         note_events_rx: std::sync::mpsc::Receiver<lumino_gfx::NoteEvent>,
+        note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
     ) -> anyhow::Result<Self> {
         tracing::info!("WgpuRenderThread::spawn - Starting render thread with offscreen texture");
 
@@ -48,6 +52,7 @@ impl WgpuRenderThread {
         let stats_clone = Arc::clone(&stats);
         let running_clone = Arc::clone(&running);
         let latest_texture_clone = Arc::clone(&latest_texture);
+        let note_instances_buffer_clone = Arc::clone(&note_instances_buffer);
 
         // 启动渲染线程
         let thread_handle = thread::spawn(move || {
@@ -60,6 +65,7 @@ impl WgpuRenderThread {
                 latest_texture_clone,
                 stats_clone,
                 note_events_rx,
+                note_instances_buffer_clone,
             );
         });
 
@@ -69,6 +75,7 @@ impl WgpuRenderThread {
             command_sender: Some(command_sender),
             thread_handle: Some(thread_handle),
             latest_texture,
+            note_instances_buffer,
         })
     }
 

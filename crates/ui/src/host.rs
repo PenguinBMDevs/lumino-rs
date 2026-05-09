@@ -171,6 +171,7 @@ impl Host {
             self.render_ctx.queue.clone(),
             self.render_ctx.format,
             rx,
+            Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
         ) {
             Ok(thread) => {
                 self.render_ctx.wgpu_render_thread = Some(thread);

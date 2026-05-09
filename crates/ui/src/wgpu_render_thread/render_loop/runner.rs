@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use iced_wgpu::wgpu;
+use lumino_gfx::SwappableBuffer;
 
 use super::super::commands::RenderCommand;
 use super::super::params::RenderParams;
@@ -26,6 +27,7 @@ pub fn run_render_thread(
     latest_texture_clone: Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
     stats_clone: Arc<Mutex<RenderStats>>,
     note_events_rx: std::sync::mpsc::Receiver<lumino_gfx::NoteEvent>,
+    note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
 ) {
     tracing::info!("Render thread started");
 
@@ -42,6 +44,7 @@ pub fn run_render_thread(
     let mut depth_texture: Option<wgpu::Texture> = None;
     let mut depth_texture_view: Option<wgpu::TextureView> = None;
     let mut current_size = (0, 0);
+    let mut last_note_version: u64 = 0;
 
     while running.load(Ordering::Relaxed) {
         // 处理所有待处理的命令
@@ -75,6 +78,17 @@ pub fn run_render_thread(
                 &latest_texture_clone,
                 params,
             );
+
+            // 从双缓冲读取音符数据并上传到 GPU（仅在数据变化时）
+            let current_version = note_instances_buffer.version();
+            if current_version != last_note_version {
+                last_note_version = current_version;
+                let instances = unsafe { note_instances_buffer.read_buffer() };
+                if !instances.is_empty() {
+                    puffin::profile_scope!("upload_note_instances_from_buffer");
+                    note_renderer.upload_instances(instances, &device, &queue);
+                }
+            }
 
             if let (Some(texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
                 let _view = texture.create_view(&wgpu::TextureViewDescriptor::default());

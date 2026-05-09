@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use iced_wgpu::wgpu;
 use lumino_gfx::SwappableBuffer;
 
@@ -11,7 +13,9 @@ pub struct RenderCache {
     /// 缓存的网格线实例
     pub grid_instances: Vec<lumino_gfx::GridLineInstance>,
     /// 双缓冲音符实例数据（UI线程写入，渲染线程读取）
-    pub note_instances_buffer: SwappableBuffer<lumino_gfx::NoteInstance>,
+    ///
+    /// 使用 Arc 以便在分离渲染线程中共享给渲染线程
+    pub note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
     /// 当前版本号（用于检测数据变化）
     pub note_instances_version: u64,
     /// 网格线视口哈希（用于检测变化）
@@ -48,7 +52,7 @@ impl RenderCache {
     pub fn new() -> Self {
         Self {
             grid_instances: Vec::new(),
-            note_instances_buffer: SwappableBuffer::new(Self::INITIAL_NOTE_CAPACITY),
+            note_instances_buffer: Arc::new(SwappableBuffer::new(Self::INITIAL_NOTE_CAPACITY)),
             note_instances_version: 0,
             grid_viewport_hash: 0,
             note_viewport_hash: 0,

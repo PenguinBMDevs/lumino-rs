@@ -2,6 +2,20 @@ use super::types::{CameraUniform, CullUniform, DrawIndirectArgs};
 use crate::note_renderer::NoteRenderer;
 
 impl NoteRenderer {
+    /// 从外部 slice 上传音符实例到 GPU（不含 compute pass）
+    ///
+    /// 用于分离渲染线程从双缓冲读取数据后直接上传，
+    /// 相比 `prepare_notes` 不包含 compute cull（由后续的 `prepare_pass` 完成）
+    pub fn upload_instances(
+        &mut self,
+        instances: &[crate::NoteInstance],
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) {
+        self.gpu_note_buffer.upload_all(instances);
+        self.update_cull_info(device, queue);
+    }
+
     /// 上传音符实例并准备渲染（推荐的替代方案，替代 `prepare_old`）
     pub fn prepare_notes(
         &mut self,
