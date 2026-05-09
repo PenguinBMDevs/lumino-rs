@@ -9,6 +9,7 @@
 use iced_core::{Color, Point, Rectangle, Size, alignment, mouse};
 use iced_widget::canvas::{self, Frame, Program, path};
 
+use crate::editor::editor_state::ViewState;
 use crate::editor::grid::theme::ThemeExt;
 use crate::message::VelocityAction;
 use crate::{Message, Renderer, Theme};
@@ -70,14 +71,15 @@ impl<'a> VelocityCanvas<'a> {
         (normalized * 127.0).round().clamp(0.0, 127.0) as u8
     }
 
-    /// 获取点的屏幕位置
+    /// 获取点的屏幕位置（X 坐标与对应音符头部对齐）
     fn point_screen_pos(
         point: &VelocityPoint,
-        index: usize,
+        _index: usize,
         _bounds_width: f32,
         bounds_height: f32,
+        view: &ViewState,
     ) -> Point {
-        let x = PANEL_PADDING_X + index as f32 * SLOT_WIDTH + SLOT_WIDTH / 2.0;
+        let x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
         let y = Self::velocity_to_y(point.velocity, bounds_height);
         Point::new(x, y)
     }
@@ -88,10 +90,11 @@ impl<'a> VelocityCanvas<'a> {
         click_pos: Point,
         bounds_width: f32,
         bounds_height: f32,
+        view: &ViewState,
     ) -> Option<usize> {
         let mut closest: Option<(usize, f32)> = None;
         for (i, point) in points.iter().enumerate() {
-            let pos = Self::point_screen_pos(point, i, bounds_width, bounds_height);
+            let pos = Self::point_screen_pos(point, i, bounds_width, bounds_height, view);
             let dx = click_pos.x - pos.x;
             let dy = click_pos.y - pos.y;
             let dist = (dx * dx + dy * dy).sqrt();
@@ -148,12 +151,13 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                 }
 
                 let points = self.points();
+                let view = &self.editor.editor_state.view;
                 if points.is_empty() {
                     return None;
                 }
 
                 if let Some(point_idx) =
-                    Self::hit_test(&points, cursor_pos, bounds_size.width, bounds_size.height)
+                    Self::hit_test(&points, cursor_pos, bounds_size.width, bounds_size.height, view)
                 {
                     state.drag_point_idx = Some(point_idx);
                     state._drag_start_velocity = points[point_idx].velocity;
@@ -186,6 +190,7 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
 
                 // 拖拽力度点
                 let points = self.points();
+                let view = &self.editor.editor_state.view;
                 if points.is_empty() {
                     state.hover_point_idx = None;
                     return None;
@@ -206,7 +211,7 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                 }
 
                 let hover_idx =
-                    Self::hit_test(&points, cursor_pos, bounds_size.width, bounds_size.height);
+                    Self::hit_test(&points, cursor_pos, bounds_size.width, bounds_size.height, view);
                 if hover_idx != state.hover_point_idx {
                     state.hover_point_idx = hover_idx;
                 }
@@ -247,8 +252,9 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
         draw_resize_handle(&mut frame, theme, bounds.size(), state.hover_resize_handle);
 
         let points = self.points();
+        let view = &self.editor.editor_state.view;
         if !points.is_empty() {
-            draw_velocity_graph(&mut frame, theme, &points, state, bounds.size());
+            draw_velocity_graph(&mut frame, theme, &points, state, bounds.size(), view);
         }
 
         vec![frame.into_geometry()]
@@ -402,6 +408,7 @@ fn draw_velocity_graph(
     points: &[VelocityPoint],
     state: &VelocityCanvasState,
     size: Size,
+    view: &ViewState,
 ) {
     if points.is_empty() {
         return;
@@ -415,19 +422,24 @@ fn draw_velocity_graph(
     let drag_color = theme.extended_palette().secondary.strong.color;
     let hover_color = theme.extended_palette().primary.strong.color;
 
-    let max_visible = (width / SLOT_WIDTH) as usize + 2;
-    let points_to_draw = &points[..points.len().min(max_visible)];
+    let points_to_draw: Vec<&VelocityPoint> = points
+        .iter()
+        .filter(|p| {
+            let x = p.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+            x >= -50.0 && x <= width + 50.0
+        })
+        .collect();
 
     if points_to_draw.is_empty() {
         return;
     }
 
     let mut line_builder = path::Builder::new();
-    let first_pos = VelocityCanvas::point_screen_pos(&points_to_draw[0], 0, width, height);
+    let first_pos = VelocityCanvas::point_screen_pos(points_to_draw[0], 0, width, height, view);
     line_builder.move_to(first_pos);
 
     for (i, point) in points_to_draw.iter().enumerate().skip(1) {
-        let pos = VelocityCanvas::point_screen_pos(point, i, width, height);
+        let pos = VelocityCanvas::point_screen_pos(point, i, width, height, view);
         line_builder.line_to(pos);
     }
     let line_path = line_builder.build();
@@ -441,7 +453,7 @@ fn draw_velocity_graph(
 
     let zero_y = VelocityCanvas::velocity_to_y(0, height);
     for (i, point) in points_to_draw.iter().enumerate() {
-        let pos = VelocityCanvas::point_screen_pos(point, i, width, height);
+        let pos = VelocityCanvas::point_screen_pos(point, i, width, height, view);
 
         let bar_color = Color::from_rgba(point_color.r, point_color.g, point_color.b, 0.2);
         frame.fill_rectangle(
@@ -452,7 +464,7 @@ fn draw_velocity_graph(
     }
 
     for (i, point) in points_to_draw.iter().enumerate() {
-        let pos = VelocityCanvas::point_screen_pos(point, i, width, height);
+        let pos = VelocityCanvas::point_screen_pos(point, i, width, height, view);
         let is_dragging = state.drag_point_idx == Some(i);
         let is_hover = state.hover_point_idx == Some(i);
 

@@ -17,9 +17,6 @@ pub const VELOCITY_PANEL_MIN_HEIGHT: f32 = 60.0;
 /// 力度面板最大高度（像素）
 pub const VELOCITY_PANEL_MAX_HEIGHT: f32 = 400.0;
 
-/// 每个力度点的水平宽度（像素）
-pub const SLOT_WIDTH: f32 = 8.0;
-
 /// 点绘制半径
 pub const POINT_RADIUS: f32 = 4.0;
 
