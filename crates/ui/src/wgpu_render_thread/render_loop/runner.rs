@@ -84,10 +84,8 @@ pub fn run_render_thread(
             if current_version != last_note_version {
                 last_note_version = current_version;
                 let instances = unsafe { note_instances_buffer.read_buffer() };
-                if !instances.is_empty() {
-                    puffin::profile_scope!("upload_note_instances_from_buffer");
-                    note_renderer.upload_instances(instances, &device, &queue);
-                }
+                puffin::profile_scope!("upload_note_instances_from_buffer");
+                note_renderer.upload_instances(instances, &device, &queue);
             }
 
             if let (Some(texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
