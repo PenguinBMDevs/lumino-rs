@@ -105,6 +105,21 @@ impl NoteRenderer {
     ) {
         puffin::profile_function!();
         if self.last_upload_count == 0 {
+            // 仍有 0 个实例要绘制，但必须重置间接缓冲，
+            // 否则 draw_indirect 会使用上一帧的旧绘制参数（旧 instance_count）
+            // 导致 GPU 从实例缓冲中读取陈旧的音符数据并渲染出幽灵音符。
+            let indirect_args = DrawIndirectArgs {
+                vertex_count: 4,
+                instance_count: 0,
+                first_vertex: 0,
+                first_instance: 0,
+                _padding: [0; 4],
+            };
+            queue.write_buffer(
+                &self.indirect_buffer,
+                0,
+                bytemuck::cast_slice(&[indirect_args]),
+            );
             return;
         }
 

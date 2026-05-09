@@ -283,10 +283,14 @@ impl Editor {
 
     /// 处理鼠标释放事件
     pub(crate) fn handle_released(&mut self) {
-        match &self.editor_state.interaction.edit_state {
-            EditState::Selecting { .. } => {
+        let edit_state = std::mem::take(&mut self.editor_state.interaction.edit_state);
+        match edit_state {
+            EditState::Selecting {
+                start_pos,
+                current_pos,
+            } => {
                 if self.editor_state.tool == Tool::Eraser {
-                    self.delete_selected_notes();
+                    self.delete_notes_in_selection_box(start_pos, current_pos);
                 } else {
                     tracing::debug!(
                         "框选结束，选中 {} 个音符",
@@ -299,7 +303,7 @@ impl Editor {
                 key,
                 current_tick,
             } => {
-                self.finish_drawing(*start_tick, *key, *current_tick);
+                self.finish_drawing(start_tick, key, current_tick);
             }
             EditState::PendingDrag { .. } => {}
             EditState::Dragging {
@@ -308,14 +312,13 @@ impl Editor {
                 original_key,
                 ..
             } => {
-                self.finalize_dragging(*note_index, *original_tick, *original_key);
+                self.finalize_dragging(note_index, original_tick, original_key);
             }
             EditState::ResizingStart { .. } | EditState::ResizingEnd { .. } => {
                 tracing::debug!("Editor: 音符调整大小完成");
             }
             _ => {}
         }
-        self.editor_state.interaction.edit_state = EditState::Idle;
     }
 
     /// 完成绘制新音符

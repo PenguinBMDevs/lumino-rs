@@ -159,6 +159,77 @@ impl Editor {
         self.mark_notes_changed();
     }
 
+    /// 获取框选范围内的所有音符索引
+    ///
+    /// 将屏幕坐标的选择框转换为 tick/key 范围，然后收集范围内的音符
+    pub(super) fn get_notes_in_selection_box(&self, start_pos: Point, current_pos: Point) -> Vec<usize> {
+        let min_x = start_pos.x.min(current_pos.x);
+        let max_x = start_pos.x.max(current_pos.x);
+        let min_y = start_pos.y.min(current_pos.y);
+        let max_y = start_pos.y.max(current_pos.y);
+
+        let tick_start = self.x_to_tick(min_x);
+        let tick_end = self.x_to_tick(max_x);
+        let key_min = self.y_to_key(max_y);
+        let key_max = self.y_to_key(min_y);
+
+        let mut indices = Vec::new();
+        for (i, note) in self.editor_state.data.notes.iter().enumerate() {
+            let note_end = note.tick + note.length;
+            if note.key >= key_min
+                && note.key <= key_max
+                && note.tick < tick_end
+                && note_end > tick_start
+            {
+                indices.push(i);
+            }
+        }
+        indices
+    }
+
+    /// 删除框选范围内的所有音符（橡皮工具用）
+    ///
+    /// 不依赖 selected_notes，直接从 EditorState 的音符数据中删除。
+    pub(super) fn delete_notes_in_selection_box(&mut self, start_pos: Point, current_pos: Point) {
+        let indices = self.get_notes_in_selection_box(start_pos, current_pos);
+        if indices.is_empty() {
+            return;
+        }
+
+        self.push_history();
+
+        // 从大到小排序，避免索引变化问题
+        let mut sorted = indices;
+        sorted.sort_by(|a, b| b.cmp(a));
+        sorted.dedup();
+
+        for &index in &sorted {
+            self.editor_state.data.notes.remove(index);
+        }
+
+        tracing::debug!(
+            "Editor: 框选删除了 {} 个音符",
+            sorted.len()
+        );
+
+        // 更新 track_notes 缓存
+        if !self.editor_state.data.notes.is_empty() {
+            self.editor_state.data.track_notes.insert(
+                self.editor_state.data.current_track,
+                self.editor_state.data.notes.clone(),
+            );
+        } else {
+            self.editor_state
+                .data
+                .track_notes
+                .remove(&self.editor_state.data.current_track);
+        }
+
+        self.editor_state.interaction.selected_notes.clear();
+        self.editor_state.interaction.hover_state = None;
+        self.mark_notes_changed();
+    }
+
     /// 选择全部音符
     pub fn select_all_notes(&mut self) {
         self.editor_state.interaction.selected_notes.clear();
