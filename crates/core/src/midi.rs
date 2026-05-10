@@ -12,6 +12,7 @@ pub use document::MidiDocument;
 pub use error::MidiError;
 pub use event::MidiEvent;
 pub use info::MidiInfo;
+pub use midly::loader::PackedControlEvent;
 pub use track::{TrackManager, TrackView, TrackVisibility};
 
 use std::sync::Arc;

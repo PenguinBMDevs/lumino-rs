@@ -27,6 +27,8 @@ pub struct MidiDocument {
     track_events_range: Vec<(usize, usize)>,
     /// 预提取的 tempo 变化（tick, bpm）
     pub tempo_changes: Vec<(u32, f32)>,
+    /// MIDI 控制事件（CC / PC / PB），以 midly PackedControlEvent 紧凑存储
+    pub control_events: Vec<midly::loader::PackedControlEvent>,
     /// 音轨名称（索引 = track_index）
     pub track_names: Vec<Option<String>>,
     /// MIDI 文件总 tick 数
@@ -75,8 +77,9 @@ impl MidiDocument {
 
         let track_names = scan_track_names(&file_bytes);
 
-        let (notes, tempo_changes) = midly::loader::extract_notes_from_bytes(&file_bytes)
-            .map_err(|e| super::error::MidiError::Parse(format!("提取音符失败: {e}")))?;
+        let (notes, tempo_changes, control_events) =
+            midly::loader::extract_notes_and_control_events_from_bytes(&file_bytes)
+                .map_err(|e| super::error::MidiError::Parse(format!("提取音符失败: {e}")))?;
 
         drop(file_bytes);
 
@@ -84,12 +87,19 @@ impl MidiDocument {
             (cb)(0.50);
         }
 
-        Self::build_from_extracted_notes(notes, tempo_changes, track_names, progress)
+        Self::build_from_extracted_notes(
+            notes,
+            tempo_changes,
+            control_events,
+            track_names,
+            progress,
+        )
     }
 
     pub(crate) fn build_from_extracted_notes(
         notes: Vec<midly::loader::PackedNote>,
         tempo_changes: Vec<(u32, f32)>,
+        control_events: Vec<midly::loader::PackedControlEvent>,
         track_names: Vec<Option<String>>,
         progress: Option<&dyn Fn(f64)>,
     ) -> MidiResult<Self> {
@@ -125,8 +135,9 @@ impl MidiDocument {
         let tracks = TrackManager::new(track_count);
 
         tracing::info!(
-            "MidiDocument: 已加载 {} 个事件, {} 音轨, {} ticks, {} tempo 变化 (多线程并行处理)",
+            "MidiDocument: 已加载 {} 个音符事件, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化 (多线程并行处理)",
             events.len(),
+            control_events.len(),
             track_count,
             total_ticks,
             all_tempo_changes.len(),
@@ -136,6 +147,7 @@ impl MidiDocument {
             events,
             track_events_range,
             tempo_changes: all_tempo_changes,
+            control_events,
             track_names,
             total_ticks,
             track_count,

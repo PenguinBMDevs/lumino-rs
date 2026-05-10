@@ -35,6 +35,8 @@ pub struct PlaybackEngine {
     looping: bool,
     /// 循环范围（开始tick，结束tick）
     loop_range: Option<(f32, f32)>,
+    /// 控制事件（CC/PC/PB）游标
+    control_event_cursor: usize,
 }
 
 impl PlaybackEngine {
@@ -51,6 +53,7 @@ impl PlaybackEngine {
             last_processed_tick: 0.0,
             looping: false,
             loop_range: None,
+            control_event_cursor: 0,
         }
     }
 
@@ -58,6 +61,7 @@ impl PlaybackEngine {
     pub fn set_document(&mut self, doc: Arc<MidiDocument>, current_track: u16) {
         let track_count = doc.track_count();
         self.track_cursors = vec![0usize; track_count];
+        self.control_event_cursor = 0;
         self.current_track = current_track;
         self.document = Some(doc);
     }
@@ -187,13 +191,25 @@ impl PlaybackEngine {
                 }
             }
 
-            // ── 非音符 MIDI 事件（CC/PC/PB） ──
+            // ── 控制事件（CC/PC/PB）从 document 流式读取 ──
+            let ctrl_events = &doc.control_events;
+            let ctrl_cursor = &mut self.control_event_cursor;
+            while *ctrl_cursor < ctrl_events.len() {
+                let ev = &ctrl_events[*ctrl_cursor];
+                let ev_tick = ev.tick as f32;
+                if ev_tick > current_tick {
+                    break;
+                }
+                if ev_tick > self.last_processed_tick {
+                    Self::push_control_event(ev, &mut messages);
+                }
+                *ctrl_cursor += 1;
+            }
+
+            // ── 额外 MIDI 控制事件（LMPJ / 编辑场景） ──
             for ev in &self.midi_events {
-                if ev.tick > self.last_processed_tick
-                    && ev.tick <= current_tick
-                    && let Some(event_type) = Self::midi_event_to_event_type(&ev.message)
-                {
-                    Self::push_midi_message(event_type, &mut messages);
+                if ev.tick > self.last_processed_tick && ev.tick <= current_tick {
+                    Self::push_midi_message_from_event(&ev.message, &mut messages);
                 }
             }
         }
@@ -223,6 +239,38 @@ impl PlaybackEngine {
     }
 
     #[inline]
+    fn push_control_event(
+        ev: &lumino_core::midi::PackedControlEvent,
+        messages: &mut Vec<MidiMessage>,
+    ) {
+        match ev.kind {
+            0 => {
+                let (controller, value) = ev.as_control_change();
+                messages.push(MidiMessage::ControlChange {
+                    channel: ev.channel,
+                    controller,
+                    value,
+                });
+            }
+            1 => {
+                let program = ev.as_program_change();
+                messages.push(MidiMessage::ProgramChange {
+                    channel: ev.channel,
+                    program,
+                });
+            }
+            2 => {
+                let value = ev.as_pitch_bend();
+                messages.push(MidiMessage::PitchBend {
+                    channel: ev.channel,
+                    value,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    #[inline]
     fn push_midi_message(event_type: EventType, messages: &mut Vec<MidiMessage>) {
         match event_type {
             EventType::NoteOn {
@@ -243,8 +291,8 @@ impl PlaybackEngine {
     }
 
     #[inline]
-    fn midi_event_to_event_type(_msg: &MidiMessage) -> Option<EventType> {
-        None // MIDI事件不转换为EventType，直接处理
+    fn push_midi_message_from_event(msg: &MidiMessage, messages: &mut Vec<MidiMessage>) {
+        messages.push(msg.clone());
     }
 
     /// 安全地跳转播放位置（内部辅助方法）
@@ -278,6 +326,7 @@ impl PlaybackEngine {
         }
         // 重置游标
         self.track_cursors.fill(0);
+        self.control_event_cursor = 0;
         self.event_queue.clear();
         self.last_processed_tick = 0.0;
     }
@@ -322,6 +371,8 @@ impl PlaybackEngine {
             let pos = events.partition_point(|e| e.delta_tick() < tick as u32);
             self.track_cursors[t] = pos;
         }
+        // 重置控制事件游标
+        self.control_event_cursor = doc.control_events.partition_point(|e| e.tick < tick as u32);
         self.last_processed_tick = tick;
     }
 }
