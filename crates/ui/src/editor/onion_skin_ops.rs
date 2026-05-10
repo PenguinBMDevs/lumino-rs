@@ -190,6 +190,16 @@ impl OnionSkinCache {
 }
 
 impl Editor {
+    /// 使洋葱皮缓存失效（数据变化/配置变化时调用）
+    pub fn invalidate_onion_skin_cache(&mut self) {
+        if let Ok(mut cache) = ONION_SKIN_CACHE.lock()
+            && cache.is_some()
+        {
+            tracing::debug!("Editor: 洋葱皮缓存已清除");
+            *cache = None;
+        }
+    }
+
     /// 获取洋葱皮配置的可变引用
     pub fn onion_skin_config_mut(&mut self) -> &mut super::OnionSkinConfig {
         &mut self.onion_skin_config

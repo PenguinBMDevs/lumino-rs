@@ -161,6 +161,8 @@ impl Root {
                 self.editor.set_canvas_offset(*offset);
                 self.editor
                     .set_canvas_size(iced_core::Point::new(size.width, size.height));
+                // 画布大小变化影响视口范围，洋葱皮缓存需失效
+                self.invalidate_onion_skin_cache();
                 true
             }
             Message::MenuStateChanged(is_open) => {

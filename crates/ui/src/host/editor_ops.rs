@@ -280,6 +280,7 @@ impl Host {
         // 洋葱皮 + MIDI 控制事件
         root.cached_onion_skin_notes = None;
         root.onion_skin_generation = 0;
+        root.editor.invalidate_onion_skin_cache();
         root.track_midi_events.clear();
         // 交互状态（选中、悬停、编辑）
         root.editor.editor_state.interaction.selected_notes.clear();

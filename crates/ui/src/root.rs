@@ -194,6 +194,7 @@ impl Root {
     /// 标记洋葱皮缓存失效（任何影响洋葱皮渲染的变化都调用）
     pub fn invalidate_onion_skin_cache(&mut self) {
         self.onion_skin_generation += 1;
+        self.editor.invalidate_onion_skin_cache();
     }
 
     /// 设置 MIDI 文档引用（供懒加载使用）

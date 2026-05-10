@@ -175,12 +175,27 @@ impl Host {
             || self.render_ctx.render_cache.note_instances_is_empty()
             || is_drawing;
 
-        if !note_data_changed {
+        // 检测视口变化（滚动/缩放）：洋葱皮音符需要重新过滤
+        let v = &self.root.editor.editor_state.view;
+        let canvas_size = &self.root.editor.editor_state.canvas.size;
+        let current_viewport_hash = crate::host::RenderCache::compute_viewport_hash(
+            v.scroll_x,
+            v.scroll_y,
+            v.zoom_x,
+            v.zoom_y,
+            canvas_size.x,
+            canvas_size.y,
+        );
+        let viewport_changed =
+            current_viewport_hash != self.render_ctx.render_cache.note_viewport_hash;
+
+        if !note_data_changed && !viewport_changed {
             return;
         }
 
         puffin::profile_scope!("update_all_note_instances_fast");
         self.update_all_note_instances_fast();
+        self.render_ctx.render_cache.note_viewport_hash = current_viewport_hash;
 
         // 双缓冲模式下，数据已经通过 swap() 传递，不需要 clone
         // 渲染线程可以直接从双缓冲读取
