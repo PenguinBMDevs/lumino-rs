@@ -156,9 +156,13 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                     return None;
                 }
 
-                if let Some(point_idx) =
-                    Self::hit_test(&points, cursor_pos, bounds_size.width, bounds_size.height, view)
-                {
+                if let Some(point_idx) = Self::hit_test(
+                    &points,
+                    cursor_pos,
+                    bounds_size.width,
+                    bounds_size.height,
+                    view,
+                ) {
                     state.drag_point_idx = Some(point_idx);
                     state._drag_start_velocity = points[point_idx].velocity;
                     return Some(canvas::Action::publish(Message::Velocity(
@@ -210,8 +214,13 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                     return None;
                 }
 
-                let hover_idx =
-                    Self::hit_test(&points, cursor_pos, bounds_size.width, bounds_size.height, view);
+                let hover_idx = Self::hit_test(
+                    &points,
+                    cursor_pos,
+                    bounds_size.width,
+                    bounds_size.height,
+                    view,
+                );
                 if hover_idx != state.hover_point_idx {
                     state.hover_point_idx = hover_idx;
                 }
@@ -356,12 +365,7 @@ fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
 }
 
 /// 绘制顶部 resize 拖拽手柄
-fn draw_resize_handle(
-    frame: &mut Frame<Renderer>,
-    theme: &Theme,
-    size: Size,
-    hovered: bool,
-) {
+fn draw_resize_handle(frame: &mut Frame<Renderer>, theme: &Theme, size: Size, hovered: bool) {
     let handle_color = if theme.is_light() {
         if hovered {
             Color::from_rgba(0.3, 0.3, 0.3, 0.5)

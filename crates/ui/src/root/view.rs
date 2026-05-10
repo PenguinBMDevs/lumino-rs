@@ -90,10 +90,10 @@ impl Root {
             settings::view(&self.settings, &self.window, &self.state.system_fonts)
         } else {
             // 力度面板：位于卷帘下方单独占位
-            let velocity_panel = self.editor.velocity_panel.view(
-                &self.editor,
-                self.velocity_panel_height,
-            );
+            let velocity_panel = self
+                .editor
+                .velocity_panel
+                .view(&self.editor, self.velocity_panel_height);
             // 编辑器视图（卷帘 + 滚动条）
             let editor_view = self.editor.view(
                 message::Message::ScrollbarScrolled,
@@ -103,11 +103,8 @@ impl Root {
             );
             column![
                 self.toolbar.view(&self.window),
-                column![
-                    container(editor_view).height(Length::Fill),
-                    velocity_panel,
-                ]
-                .height(Length::Fill),
+                column![container(editor_view).height(Length::Fill), velocity_panel,]
+                    .height(Length::Fill),
             ]
             .width(Length::Fill)
             .height(Length::Fill)

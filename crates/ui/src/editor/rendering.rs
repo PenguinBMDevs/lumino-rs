@@ -208,13 +208,10 @@ impl Editor {
                         local_instances
                     },
                 )
-                .reduce(
-                    Vec::new,
-                    |mut a, b| {
-                        a.extend(b);
-                        a
-                    },
-                );
+                .reduce(Vec::new, |mut a, b| {
+                    a.extend(b);
+                    a
+                });
 
             instances.extend(note_instances);
         } else {

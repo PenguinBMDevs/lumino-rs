@@ -97,9 +97,10 @@ impl PlaybackEngine {
 
         for note in &self.notes {
             if let Some(st) = seek_tick
-                && note.tick + note.length <= st {
-                    continue;
-                }
+                && note.tick + note.length <= st
+            {
+                continue;
+            }
             self.event_queue.push(ScheduledEvent {
                 tick: note.tick,
                 event_type: EventType::NoteOn {

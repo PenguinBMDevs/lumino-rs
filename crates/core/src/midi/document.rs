@@ -450,12 +450,11 @@ impl MidiDocument {
                     }
                     active_notes[idx] = (tick, vel, channel, true);
                 }
-                EventKind::NoteOn | EventKind::NoteOff
-                    if active_notes[idx].3 => {
-                        let (st, pv, pc, _) = active_notes[idx];
-                        notes.push((st as f32, key, tick.saturating_sub(st) as f32, pv, pc));
-                        active_notes[idx].3 = false;
-                    }
+                EventKind::NoteOn | EventKind::NoteOff if active_notes[idx].3 => {
+                    let (st, pv, pc, _) = active_notes[idx];
+                    notes.push((st as f32, key, tick.saturating_sub(st) as f32, pv, pc));
+                    active_notes[idx].3 = false;
+                }
                 _ => {}
             }
         }

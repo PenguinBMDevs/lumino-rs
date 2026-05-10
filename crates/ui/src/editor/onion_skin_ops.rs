@@ -353,17 +353,14 @@ impl Editor {
                     Some(track_notes)
                 }
             })
-            .reduce(
-                Vec::new,
-                |mut a, mut b| {
-                    // 如果 a 为空，直接返回 b
-                    if a.is_empty() {
-                        return b;
-                    }
-                    a.append(&mut b);
-                    a
-                },
-            );
+            .reduce(Vec::new, |mut a, mut b| {
+                // 如果 a 为空，直接返回 b
+                if a.is_empty() {
+                    return b;
+                }
+                a.append(&mut b);
+                a
+            });
 
         all_notes
     }
@@ -531,80 +528,75 @@ impl Editor {
                 search_key_min,
                 search_key_max,
                 config_hash,
-            ) {
-                // 1. 移除离开视口的 cell
-                cache.cells.retain(|_, cell| {
-                    cell.max_right >= search_start && cell.tick_start <= search_end
+            )
+        {
+            // 1. 移除离开视口的 cell
+            cache
+                .cells
+                .retain(|_, cell| cell.max_right >= search_start && cell.tick_start <= search_end);
+
+            // 2. 确定新进入视口的 tick 范围
+            let (new_start, new_end) = if search_start > cache.search_start {
+                // 向右滚：新区在右
+                (cache.search_end, search_end)
+            } else {
+                // 向左滚：新区在左
+                (search_start, cache.search_start)
+            };
+
+            // 3. 只查询新区间
+            if new_end > new_start {
+                let new_cells = ONION_SKIN_POOL.install(|| {
+                    track_colors
+                        .par_iter()
+                        .filter_map(|&(track_idx, color_arr)| {
+                            let raw =
+                                doc.get_track_notes_in_range(track_idx as u16, new_start, new_end);
+                            if raw.is_empty() {
+                                return None;
+                            }
+                            merge_one_track(
+                                &raw,
+                                new_start,
+                                new_end,
+                                search_key_min,
+                                search_key_max,
+                                tick_quant,
+                                color_arr,
+                            )
+                        })
+                        .reduce(std::collections::HashMap::new, |mut acc, cells| {
+                            for (k, v) in cells {
+                                merge_cell(&mut acc, k, v);
+                            }
+                            acc
+                        })
                 });
 
-                // 2. 确定新进入视口的 tick 范围
-                let (new_start, new_end) = if search_start > cache.search_start {
-                    // 向右滚：新区在右
-                    (cache.search_end, search_end)
-                } else {
-                    // 向左滚：新区在左
-                    (search_start, cache.search_start)
-                };
-
-                // 3. 只查询新区间
-                if new_end > new_start {
-                    let new_cells = ONION_SKIN_POOL.install(|| {
-                        track_colors
-                            .par_iter()
-                            .filter_map(|&(track_idx, color_arr)| {
-                                let raw = doc.get_track_notes_in_range(
-                                    track_idx as u16,
-                                    new_start,
-                                    new_end,
-                                );
-                                if raw.is_empty() {
-                                    return None;
-                                }
-                                merge_one_track(
-                                    &raw,
-                                    new_start,
-                                    new_end,
-                                    search_key_min,
-                                    search_key_max,
-                                    tick_quant,
-                                    color_arr,
-                                )
-                            })
-                            .reduce(
-                                std::collections::HashMap::new,
-                                |mut acc, cells| {
-                                    for (k, v) in cells {
-                                        merge_cell(&mut acc, k, v);
-                                    }
-                                    acc
-                                },
-                            )
-                    });
-
-                    // 合并新区 cell 到缓存
-                    for (k, v) in new_cells {
-                        merge_cell(&mut cache.cells, k, v);
-                    }
+                // 合并新区 cell 到缓存
+                for (k, v) in new_cells {
+                    merge_cell(&mut cache.cells, k, v);
                 }
-
-                cache.search_start = search_start;
-                cache.search_end = search_end;
-
-                // 构建输出 Vec
-                cache.output.clear();
-                cache.output.extend(cache.cells.values().map(|c| {
-                    NoteInstance::new(c.tick_start, c.key, c.max_right - c.tick_start, c.color)
-                }));
-
-                tracing::info!(
-                    "Onion skin (incremental): {} cells, new_range=[{},{}]",
-                    cache.output.len(),
-                    new_start,
-                    new_end,
-                );
-
-                return cache.output.clone();
             }
+
+            cache.search_start = search_start;
+            cache.search_end = search_end;
+
+            // 构建输出 Vec
+            cache.output.clear();
+            cache.output.extend(cache.cells.values().map(|c| {
+                NoteInstance::new(c.tick_start, c.key, c.max_right - c.tick_start, c.color)
+            }));
+
+            tracing::info!(
+                "Onion skin (incremental): {} cells, new_range=[{},{}]",
+                cache.output.len(),
+                new_start,
+                new_end,
+            );
+
+            return cache.output.clone();
+        }
 
         // === 全量重建 ===
         let merged_map: std::collections::HashMap<u64, MergedCell> =
@@ -630,15 +622,12 @@ impl Editor {
                             color_arr,
                         )
                     })
-                    .reduce(
-                        std::collections::HashMap::new,
-                        |mut acc, cells| {
-                            for (k, v) in cells {
-                                merge_cell(&mut acc, k, v);
-                            }
-                            acc
-                        },
-                    )
+                    .reduce(std::collections::HashMap::new, |mut acc, cells| {
+                        for (k, v) in cells {
+                            merge_cell(&mut acc, k, v);
+                        }
+                        acc
+                    })
             });
 
         let result: Vec<NoteInstance> = merged_map

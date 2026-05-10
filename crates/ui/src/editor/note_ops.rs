@@ -162,7 +162,11 @@ impl Editor {
     /// 获取框选范围内的所有音符索引
     ///
     /// 将屏幕坐标的选择框转换为 tick/key 范围，然后收集范围内的音符
-    pub(super) fn get_notes_in_selection_box(&self, start_pos: Point, current_pos: Point) -> Vec<usize> {
+    pub(super) fn get_notes_in_selection_box(
+        &self,
+        start_pos: Point,
+        current_pos: Point,
+    ) -> Vec<usize> {
         let min_x = start_pos.x.min(current_pos.x);
         let max_x = start_pos.x.max(current_pos.x);
         let min_y = start_pos.y.min(current_pos.y);
@@ -207,10 +211,7 @@ impl Editor {
             self.editor_state.data.notes.remove(index);
         }
 
-        tracing::debug!(
-            "Editor: 框选删除了 {} 个音符",
-            sorted.len()
-        );
+        tracing::debug!("Editor: 框选删除了 {} 个音符", sorted.len());
 
         // 更新 track_notes 缓存
         if !self.editor_state.data.notes.is_empty() {

@@ -179,7 +179,7 @@ pub async fn load_parsed_midi_from_bytes(
             .map_err(|e| crate::CoreError::MidiParse(format!("提取音符失败: {e}")))?;
         let track_names = crate::midi::document::scan_track_names(&midi_bytes);
         MidiDocument::build_from_extracted_notes(notes, tempo_changes, track_names, None)
-                .map_err(|e| crate::CoreError::MidiParse(format!("构建文档失败: {e}")))
+            .map_err(|e| crate::CoreError::MidiParse(format!("构建文档失败: {e}")))
     })
     .await
     .map_err(|e| crate::CoreError::Other(format!("加载线程 panic: {e}")))??;

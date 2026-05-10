@@ -334,17 +334,27 @@ impl Root {
                 tracing::debug!("力度面板: 拖拽结束");
             }
         }
+
+        // 同步播放引擎：力度修改必须实时反映到播放中
+        if self.editor.notes_changed() {
+            self.update_playback_notes();
+            self.editor.clear_notes_changed();
+            self.invalidate_onion_skin_cache();
+        }
     }
 
-    /// 应用力度值到指定音符，并标记音符变更
+    /// 应用力度值到指定音符，仅在力度实际变化时标记音符变更
     fn apply_velocity(editor: &mut crate::editor::Editor, note_index: usize, velocity: u8) {
         let data = &mut editor.editor_state.data;
         if note_index < data.notes.len()
             && let Some(note) = data.notes.get_mut(note_index)
         {
-            note.velocity = velocity.clamp(0, 127);
-            tracing::debug!("力度面板: 音符[{}] 力度更新为 {}", note_index, velocity);
+            let clamped = velocity.clamp(0, 127);
+            if note.velocity != clamped {
+                note.velocity = clamped;
+                editor.mark_notes_changed();
+                tracing::debug!("力度面板: 音符[{}] 力度更新为 {}", note_index, clamped);
+            }
         }
-        editor.mark_notes_changed();
     }
 }
