@@ -200,17 +200,18 @@ impl PlaybackEngine {
                 if ev_tick > current_tick {
                     break;
                 }
-                if ev_tick > self.last_processed_tick {
+                if ev_tick >= self.last_processed_tick {
                     Self::push_control_event(ev, &mut messages);
                 }
                 *ctrl_cursor += 1;
             }
+        }
 
-            // ── 额外 MIDI 控制事件（LMPJ / 编辑场景） ──
-            for ev in &self.midi_events {
-                if ev.tick > self.last_processed_tick && ev.tick <= current_tick {
-                    Self::push_midi_message_from_event(&ev.message, &mut messages);
-                }
+        // ── 额外 MIDI 控制事件（LMPJ / 编辑场景） ──
+        // 独立于 document 处理，因为 LMPJ 文件可能没有 midi_document
+        for ev in &self.midi_events {
+            if ev.tick >= self.last_processed_tick && ev.tick <= current_tick {
+                Self::push_midi_message_from_event(&ev.message, &mut messages);
             }
         }
 
