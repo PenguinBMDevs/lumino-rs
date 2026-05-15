@@ -1,6 +1,6 @@
 use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    Arc, Mutex, RwLock,
+    atomic::{AtomicBool, AtomicU32, Ordering},
 };
 use std::thread::{self, JoinHandle};
 
@@ -25,9 +25,11 @@ pub struct WgpuRenderThread {
     /// 线程句柄
     thread_handle: Option<JoinHandle<()>>,
     /// 渲染完成的离屏纹理，供主线程读取
-    pub latest_texture: Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
+    pub latest_texture: Arc<RwLock<Option<Arc<wgpu::Texture>>>>,
     /// 双缓冲音符实例数据（UI线程写入，渲染线程读取）
     pub note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
+    /// 待处理帧计数（用于背压控制）
+    pending_frames: Arc<AtomicU32>,
 }
 
 impl WgpuRenderThread {
@@ -39,7 +41,6 @@ impl WgpuRenderThread {
         device: wgpu::Device,
         queue: wgpu::Queue,
         texture_format: wgpu::TextureFormat,
-        note_events_rx: std::sync::mpsc::Receiver<lumino_gfx::NoteEvent>,
         note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
     ) -> anyhow::Result<Self> {
         tracing::info!("WgpuRenderThread::spawn - Starting render thread with offscreen texture");
@@ -47,12 +48,14 @@ impl WgpuRenderThread {
         let stats = Arc::new(Mutex::new(RenderStats::default()));
         let running = Arc::new(AtomicBool::new(true));
         let (command_sender, command_receiver) = std::sync::mpsc::channel::<RenderCommand>();
-        let latest_texture: Arc<Mutex<Option<Arc<wgpu::Texture>>>> = Arc::new(Mutex::new(None));
+        let latest_texture: Arc<RwLock<Option<Arc<wgpu::Texture>>>> = Arc::new(RwLock::new(None));
+        let pending_frames = Arc::new(AtomicU32::new(0));
 
         let stats_clone = Arc::clone(&stats);
         let running_clone = Arc::clone(&running);
         let latest_texture_clone = Arc::clone(&latest_texture);
         let note_instances_buffer_clone = Arc::clone(&note_instances_buffer);
+        let pending_frames_clone = Arc::clone(&pending_frames);
 
         // 启动渲染线程
         let thread_handle = thread::spawn(move || {
@@ -64,8 +67,8 @@ impl WgpuRenderThread {
                 command_receiver,
                 latest_texture_clone,
                 stats_clone,
-                note_events_rx,
                 note_instances_buffer_clone,
+                pending_frames_clone,
             );
         });
 
@@ -76,22 +79,36 @@ impl WgpuRenderThread {
             thread_handle: Some(thread_handle),
             latest_texture,
             note_instances_buffer,
+            pending_frames,
         })
     }
 
+    /// 最大允许的待处理帧数（超过则丢弃，实现背压）
+    const MAX_PENDING_FRAMES: u32 = 3;
+
     /// 发送渲染参数
-    pub fn send_params(&self, params: RenderParams) {
-        if let Some(ref sender) = self.command_sender {
-            // 使用非阻塞发送，如果通道满则丢弃旧帧
-            // 注意：std::sync::mpsc 没有 try_send，我们使用 send 并设置较小的通道容量
-            match sender.send(RenderCommand::Render(Box::new(params))) {
-                Ok(_) => {}
-                Err(_) => {
-                    // 通道关闭或满，丢弃这一帧
-                    if let Ok(mut stats) = self.stats.lock() {
-                        stats.dropped_frames += 1;
-                    }
-                }
+    ///
+    /// 返回 true 表示帧被成功发送，false 表示被丢弃（渲染线程忙）
+    pub fn send_params(&self, params: RenderParams) -> bool {
+        let Some(ref sender) = self.command_sender else {
+            return false;
+        };
+
+        // 背压控制：如果渲染线程积压超过阈值，丢弃这一帧
+        if self.pending_frames.load(Ordering::Relaxed) >= Self::MAX_PENDING_FRAMES {
+            if let Ok(mut stats) = self.stats.lock() {
+                stats.dropped_frames += 1;
+            }
+            return false;
+        }
+
+        self.pending_frames.fetch_add(1, Ordering::Release);
+        match sender.send(RenderCommand::Render(Box::new(params))) {
+            Ok(_) => true,
+            Err(_) => {
+                // 通道关闭，回滚计数
+                self.pending_frames.fetch_sub(1, Ordering::Release);
+                false
             }
         }
     }

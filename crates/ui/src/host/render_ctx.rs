@@ -32,8 +32,6 @@ pub(crate) struct RenderContext {
     pub last_render_cursor: mouse::Cursor,
     /// 渲染线程
     pub wgpu_render_thread: Option<crate::WgpuRenderThread>,
-    /// 渲染线程通信
-    pub note_events_tx: Option<std::sync::mpsc::Sender<lumino_gfx::NoteEvent>>,
     /// 分离渲染架构标识
     pub use_separate_render_thread: bool,
     /// 首次渲染标识
@@ -77,7 +75,6 @@ impl RenderContext {
             last_cursor_position: None,
             last_render_cursor: mouse::Cursor::Unavailable,
             wgpu_render_thread: None,
-            note_events_tx: None,
             use_separate_render_thread: false,
             has_rendered_ui: false,
             device,

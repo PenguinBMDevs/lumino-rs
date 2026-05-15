@@ -8,6 +8,9 @@ pub struct RenderData {
     pub grid_instances: Vec<lumino_gfx::GridLineInstance>,
     pub keyboard_instances: Vec<lumino_gfx::KeyInstance>,
     pub ruler_instances: Vec<lumino_gfx::RulerTickInstance>,
+    pub grid_data_changed: bool,
+    pub keyboard_data_changed: bool,
+    pub ruler_data_changed: bool,
 }
 
 /// 视口信息

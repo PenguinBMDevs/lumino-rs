@@ -1,20 +1,22 @@
 use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    Arc, Mutex, RwLock,
+    atomic::{AtomicBool, AtomicU32, Ordering},
 };
-use std::thread;
 use std::time::{Duration, Instant};
 
 use iced_wgpu::wgpu;
 use lumino_gfx::SwappableBuffer;
 
-use super::super::commands::RenderCommand;
+use super::super::commands::{ControlCommand, RenderCommand};
 use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
 use super::commands::process_commands;
 use super::prepare::prepare_renderers;
 use super::render_pass::{execute_render_pass, update_stats};
 use super::textures::ensure_textures;
+
+/// 渲染线程空闲时的等待超时
+const IDLE_RECV_TIMEOUT: Duration = Duration::from_millis(16);
 
 /// 运行渲染线程主循环
 #[allow(clippy::too_many_arguments)]
@@ -24,10 +26,10 @@ pub fn run_render_thread(
     texture_format: wgpu::TextureFormat,
     running: Arc<AtomicBool>,
     command_receiver: std::sync::mpsc::Receiver<RenderCommand>,
-    latest_texture_clone: Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
+    latest_texture_clone: Arc<RwLock<Option<Arc<wgpu::Texture>>>>,
     stats_clone: Arc<Mutex<RenderStats>>,
-    note_events_rx: std::sync::mpsc::Receiver<lumino_gfx::NoteEvent>,
     note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
+    pending_frames: Arc<AtomicU32>,
 ) {
     tracing::info!("Render thread started");
 
@@ -47,7 +49,7 @@ pub fn run_render_thread(
     let mut last_note_version: u64 = 0;
 
     while running.load(Ordering::Relaxed) {
-        // 处理所有待处理的命令
+        // 使用 recv_timeout 等待命令，避免 CPU 空转轮询
         let mut latest_params: Option<RenderParams> = None;
         let mut should_shutdown = false;
 
@@ -57,8 +59,46 @@ pub fn run_render_thread(
             break;
         }
 
+        // 如果没有待处理命令，阻塞等待（带超时）
+        if latest_params.is_none() {
+            match command_receiver.recv_timeout(IDLE_RECV_TIMEOUT) {
+                Ok(RenderCommand::Render(params)) => {
+                    latest_params = Some(*params);
+                }
+                Ok(RenderCommand::Control(ControlCommand::Shutdown)) => {
+                    break;
+                }
+                Ok(RenderCommand::Control(_)) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // 超时，继续循环检查 running 标志
+                    continue;
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    break;
+                }
+            }
+            // 收到命令后，drain 剩余待处理命令，只保留最新
+            while let Ok(cmd) = command_receiver.try_recv() {
+                match cmd {
+                    RenderCommand::Render(params) => {
+                        latest_params = Some(*params);
+                    }
+                    RenderCommand::Control(ControlCommand::Shutdown) => {
+                        should_shutdown = true;
+                    }
+                    RenderCommand::Control(_) => {}
+                }
+            }
+            if should_shutdown {
+                break;
+            }
+        }
+
         // 执行渲染（离屏纹理）
         if let Some(ref params) = latest_params {
+            // 递减待处理帧计数（必须在渲染前，因为主线程依赖此计数做背压）
+            pending_frames.fetch_sub(1, Ordering::Acquire);
+
             puffin::profile_scope!("wgpu_render_thread_frame");
             let frame_start = Instant::now();
 
@@ -101,7 +141,6 @@ pub fn run_render_thread(
                     &mut keyboard_renderer,
                     &mut ruler_renderer,
                     params,
-                    &note_events_rx,
                     &device,
                     &queue,
                 );
@@ -132,9 +171,6 @@ pub fn run_render_thread(
                 params,
                 &stats_clone,
             );
-        } else {
-            // 没有新的渲染参数，短暂休眠避免 CPU 空转
-            thread::sleep(Duration::from_micros(100));
         }
     }
 

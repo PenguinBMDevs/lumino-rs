@@ -1,18 +1,14 @@
-use std::sync::mpsc::Receiver;
-
 use iced_wgpu::wgpu;
-use lumino_gfx::NoteEvent;
 
 use super::super::params::RenderParams;
 
 /// 准备渲染器实例
 pub fn prepare_renderers(
     grid_renderer: &mut lumino_gfx::GridRenderer,
-    note_renderer: &mut lumino_gfx::NoteRenderer,
+    _note_renderer: &mut lumino_gfx::NoteRenderer,
     keyboard_renderer: &mut lumino_gfx::KeyboardRenderer,
     ruler_renderer: &mut lumino_gfx::RulerRenderer,
     params: &RenderParams,
-    note_events_rx: &Receiver<NoteEvent>,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) {
@@ -39,9 +35,6 @@ pub fn prepare_renderers(
         params.canvas_offset.0,
         params.canvas_offset.1,
     );
-
-    // 处理音符事件
-    note_renderer.process_events(note_events_rx, device, queue);
 
     // 准备键盘渲染器
     if !params.keyboard_instances.is_empty() {

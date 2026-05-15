@@ -162,20 +162,15 @@ impl Host {
             return;
         }
 
-        // 创建音符事件通道
-        let (tx, rx) = std::sync::mpsc::channel();
-
         // 启动 WGPU 渲染线程
         match WgpuRenderThread::spawn(
             self.render_ctx.device.clone(),
             self.render_ctx.queue.clone(),
             self.render_ctx.format,
-            rx,
             Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
         ) {
             Ok(thread) => {
                 self.render_ctx.wgpu_render_thread = Some(thread);
-                self.render_ctx.note_events_tx = Some(tx);
                 self.render_ctx.use_separate_render_thread = true;
                 tracing::info!("Host: Separate WGPU render thread enabled");
             }
@@ -190,7 +185,6 @@ impl Host {
         if let Some(thread) = self.render_ctx.wgpu_render_thread.take() {
             thread.shutdown();
             self.render_ctx.use_separate_render_thread = false;
-            self.render_ctx.note_events_tx = None;
             tracing::info!("Host: Separate WGPU render thread disabled");
         }
     }

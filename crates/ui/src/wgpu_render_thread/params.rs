@@ -41,6 +41,12 @@ pub struct RenderParams {
     pub ticks_per_beat: u32,
     /// 是否需要重新生成网格
     pub regenerate_grid: bool,
+    /// 网格数据是否变化（渲染线程可跳过重复上传）
+    pub grid_data_changed: bool,
+    /// 键盘数据是否变化
+    pub keyboard_data_changed: bool,
+    /// 标尺数据是否变化
+    pub ruler_data_changed: bool,
     /// Canvas 偏移
     pub canvas_offset: (f32, f32),
     /// Canvas 大小
@@ -76,6 +82,9 @@ impl Default for RenderParams {
             ticks_per_measure: 7680,
             ticks_per_beat: 1920,
             regenerate_grid: true,
+            grid_data_changed: true,
+            keyboard_data_changed: true,
+            ruler_data_changed: true,
             canvas_offset: (0.0, 0.0),
             canvas_size: (800.0, 600.0),
             ppq: 1920.0,

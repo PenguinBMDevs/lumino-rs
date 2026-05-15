@@ -1,3 +1,5 @@
+use rayon::prelude::*;
+
 use crate::host::Host;
 
 impl Host {
@@ -37,19 +39,6 @@ impl Host {
         let default_note_length = self.root.editor.editor_state.view.default_note_length;
         let snap_precision = self.root.editor.editor_state.view.snap_precision;
 
-        // 获取双缓冲的后缓冲区写入引用
-        let instances = unsafe {
-            self.render_ctx
-                .render_cache
-                .note_instances_buffer
-                .write_buffer()
-        };
-        instances.clear();
-
-        // 预分配容量：主音符 + 洋葱皮 + 绘制中音符（最多1个）
-        let total_reserve = notes.len() + onion_instances.len() + 1;
-        instances.reserve(total_reserve);
-
         let onion_count = onion_instances.len();
         let main_count = notes.len();
         let drawing_count = if matches!(edit_state, crate::editor::EditState::Drawing { .. }) {
@@ -60,7 +49,29 @@ impl Host {
 
         // 添加主要音符（全部送入 GPU，由 shader 裁剪）
         const DEFAULT_NOTE_COLOR: [f32; 4] = [0.2, 0.5, 1.0, 0.9];
-        Self::add_notes_to_instances(instances, notes, DEFAULT_NOTE_COLOR);
+
+        // 第一步：写入 cached_main_note_instances（视口变化时免重复迭代 im::Vector）
+        // 先释放 cache 的 mutable borrow，再获取 buffer 的 mutable borrow
+        let main_instances_clone;
+        {
+            let cache = &mut self.render_ctx.render_cache.cached_main_note_instances;
+            cache.clear();
+            cache.reserve(notes.len());
+            Self::add_notes_to_instances(cache, notes, DEFAULT_NOTE_COLOR);
+            main_instances_clone = cache.clone();
+        }
+
+        // 第二步：写入 SwappableBuffer
+        let instance_count = notes.len() + onion_instances.len() + 1;
+        let instances = unsafe {
+            self.render_ctx
+                .render_cache
+                .note_instances_buffer
+                .write_buffer()
+        };
+        instances.clear();
+        instances.reserve(instance_count);
+        instances.extend(main_instances_clone);
 
         // 添加洋葱皮音符（全部送入 GPU，由 shader 裁剪）
         instances.extend(onion_instances);
@@ -88,27 +99,53 @@ impl Host {
 
     /// 将音符添加到实例列表
     ///
-    /// 优化说明（针对火焰图 78ms 瓶颈）：
-    /// 1. 始终使用 `.iter()` 顺序遍历 im::Vector（均摊 O(1) 每元素），
-    ///    避免 rayon 并行时 `notes.get(i)` 带来的 O(log n) 随机访问开销。
-    ///    im::Vector 的 RRB 树结构使随机访问需要指针追踪 3-4 层，
-    ///    在大数据量下比顺序迭代慢 5-10 倍。
-    /// 2. 预分配容量避免重复扩容。
-    /// 3. 消除 per-thread Vec 分配 + reduce 合并的额外开销。
+    /// 优化说明（基于火焰图 96-360ms 瓶颈）：
+    /// 1. im::Vector 使用 RRB 树结构，.iter() 顺序遍历均摊 O(1) 每元素，
+    ///    远快于随机 get(i) 的 O(log n) 方案。
+    /// 2. 大数据量（≥2000 音符）使用 rayon 并行转换：
+    ///    - 阶段一：顺序迭代 im::Vector 收集原始 (tick, key, length) 元组（纯拷贝，无分配）
+    ///    - 阶段二：par_chunks 并行分块转换为 NoteInstance（CPU 密集）
     pub(super) fn add_notes_to_instances(
         instances: &mut Vec<lumino_gfx::NoteInstance>,
         notes: &im::Vector<crate::editor::note::Note>,
         color: [f32; 4],
     ) {
-        // im::Vector::iter() 使用 RRB 树的顺序遍历，均摊 O(1) 每元素，
-        // 远快于 rayon 并行 + 随机 `get(i)` 的 O(log n) 方案。
-        for note in notes.iter() {
-            instances.push(lumino_gfx::NoteInstance::new(
-                note.tick,
-                note.key as f32,
-                note.length,
-                color,
-            ));
+        const PARALLEL_THRESHOLD: usize = 2000;
+
+        let count = notes.len();
+        if count >= PARALLEL_THRESHOLD {
+            // 阶段一：顺序迭代 im::Vector，收集原始元组（快路径：3 字段拷贝）
+            let mut raw: Vec<(f32, u16, f32)> = Vec::with_capacity(count);
+            for note in notes.iter() {
+                raw.push((note.tick, note.key, note.length));
+            }
+
+            // 阶段二：par_chunks 并行分块转换为 NoteInstance
+            let num_threads = rayon::current_num_threads();
+            let chunk_size = (count / num_threads).max(1);
+            let new_instances: Vec<lumino_gfx::NoteInstance> = raw
+                .par_chunks(chunk_size)
+                .flat_map(|chunk| {
+                    chunk
+                        .iter()
+                        .map(|&(tick, key, length)| {
+                            lumino_gfx::NoteInstance::new(tick, key as f32, length, color)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+
+            instances.extend(new_instances);
+        } else {
+            // 小数据量：顺序处理，避免并行开销
+            for note in notes.iter() {
+                instances.push(lumino_gfx::NoteInstance::new(
+                    note.tick,
+                    note.key as f32,
+                    note.length,
+                    color,
+                ));
+            }
         }
     }
 
