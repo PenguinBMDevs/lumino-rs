@@ -8,7 +8,7 @@ pub mod components;
 pub mod pages;
 
 use iced_core::{Alignment, Border, Length, Padding};
-use iced_widget::{button, column, container, row, text};
+use iced_widget::{button, column, container, row, scrollable, text};
 
 use crate::{
     Element, Message, Theme,
@@ -359,7 +359,13 @@ fn render_content_area<'a>(
         _ => render_placeholder("设置内容区域").into(),
     };
 
-    container(content)
+    let scrollable_content = scrollable(content)
+        .direction(scrollable::Direction::Vertical(
+            scrollable::Scrollbar::new().width(8).scroller_width(6),
+        ))
+        .height(Length::Fill);
+
+    container(scrollable_content)
         .width(Length::Fill)
         .height(Length::Fill)
         .style(create_content_container_style())
