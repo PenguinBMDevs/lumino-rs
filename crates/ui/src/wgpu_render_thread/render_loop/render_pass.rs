@@ -44,7 +44,7 @@ pub fn execute_render_pass(
         offset: [params.canvas_offset.0, params.canvas_offset.1],
         keyboard_width: params.keyboard_width,
         ruler_height: params.ruler_height,
-        max_key_index: 127.0,
+        max_key_index: params.max_key_index,
     });
 
     note_renderer.prepare_pass(encoder, camera, queue);

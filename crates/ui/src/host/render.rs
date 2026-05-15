@@ -41,8 +41,6 @@ mod viewport;
 pub const DEFAULT_KEYBOARD_WIDTH: f32 = 60.0;
 /// 默认标尺高度（像素）
 pub const DEFAULT_RULER_HEIGHT: f32 = 30.0;
-/// 默认可见琴键数量
-pub const DEFAULT_VISIBLE_KEY_COUNT: u16 = 128;
 /// 每小节 tick 数（4/4拍，480 PPQ）
 pub const TICKS_PER_MEASURE: u32 = 1920;
 /// 每拍 tick 数（480 PPQ）

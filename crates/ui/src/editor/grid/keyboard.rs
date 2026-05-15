@@ -43,10 +43,33 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
 
         if screen_y + view.zoom_y >= ruler_height && screen_y <= bounds.height {
             let is_black_key = is_key_dark(keynum);
-            let key_color = if is_black_key {
+            let base_color = if is_black_key {
                 theme.black_key_color()
             } else {
                 theme.white_key_color()
+            };
+
+            // 256键扩展区域（128-255）的颜色微调
+            // 亮色模式加深，暗色模式变浅
+            let key_color = if i >= 128 {
+                let is_light = theme.is_light();
+                if is_light {
+                    iced_core::Color::from_rgba(
+                        (base_color.r * 0.85f32).max(0.0),
+                        (base_color.g * 0.85f32).max(0.0),
+                        (base_color.b * 0.85f32).max(0.0),
+                        base_color.a,
+                    )
+                } else {
+                    iced_core::Color::from_rgba(
+                        (base_color.r * 1.15f32).min(1.0),
+                        (base_color.g * 1.15f32).min(1.0),
+                        (base_color.b * 1.15f32).min(1.0),
+                        base_color.a,
+                    )
+                }
+            } else {
+                base_color
             };
 
             let key_rect = Rectangle::new(

@@ -43,6 +43,8 @@ pub enum Event {
     VelocityFilterThresholdChanged(String),
     /// HiDPI 图标渲染开关
     IconHiDPIChanged(bool),
+    /// 256键扩展钢琴卷帘开关
+    Enable256keyChanged(bool),
 }
 
 #[derive(Debug, Clone)]
@@ -67,6 +69,8 @@ pub struct SettingsPanel {
     pub velocity_filter_threshold: u8,
     /// HiDPI 图标渲染（true=2x 清晰，false=1x 零额外开销）
     pub icon_hidpi: bool,
+    /// 256键扩展钢琴卷帘
+    pub enable_256key: bool,
 }
 
 impl SettingsPanel {
@@ -89,6 +93,7 @@ impl SettingsPanel {
             auto_scroll_page_return_position: ui_config.auto_scroll.page_return_position,
             velocity_filter_threshold: ui_config.velocity_filter_threshold,
             icon_hidpi: ui_config.icon_hidpi,
+            enable_256key: ui_config.enable_256key,
         }
     }
 
@@ -179,6 +184,9 @@ impl SettingsPanel {
             }
             Event::IconHiDPIChanged(enabled) => {
                 self.icon_hidpi = enabled;
+            }
+            Event::Enable256keyChanged(enabled) => {
+                self.enable_256key = enabled;
             }
         }
     }

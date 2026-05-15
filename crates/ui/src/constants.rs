@@ -36,8 +36,8 @@ pub mod editor {
         pub const MIN_ZOOM_X: f32 = 0.001;
         /// X轴最大缩放
         pub const MAX_ZOOM_X: f32 = 10.0;
-        /// Y轴最小缩放
-        pub const MIN_ZOOM_Y: f32 = 5.0;
+        /// Y轴最小缩放（取消下限，避免高DPI下窗口物理像素大但缩放受限）
+        pub const MIN_ZOOM_Y: f32 = 0.5;
         /// Y轴最大缩放
         pub const MAX_ZOOM_Y: f32 = 100.0;
     }

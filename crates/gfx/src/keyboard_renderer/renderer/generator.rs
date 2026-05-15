@@ -32,10 +32,21 @@ impl KeyboardRenderer {
             }
 
             let is_black = Self::is_key_dark(key_index);
-            let color = if is_black {
+            let base_color = if is_black {
                 self.black_key_color
             } else {
                 self.white_key_color
+            };
+            // 256键扩展区域（128-255）颜色加深
+            let color = if i >= 128 {
+                [
+                    (base_color[0] * 0.85f32).max(0.0),
+                    (base_color[1] * 0.85f32).max(0.0),
+                    (base_color[2] * 0.85f32).max(0.0),
+                    base_color[3],
+                ]
+            } else {
+                base_color
             };
 
             // 黑键宽度为白键的 60%

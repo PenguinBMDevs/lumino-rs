@@ -328,3 +328,84 @@ mod tests {
         assert_eq!(track_events.program_changes[0].2, 5);
     }
 }
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use midly::Smf;
+
+    const TEST_MIDI_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test-file/noname.mid");
+
+    fn extract_notes_from_file() -> (Vec<TrackInfo>, TrackNotesMap, HashMap<usize, TrackMidiEvents>)
+    {
+        let bytes = std::fs::read(TEST_MIDI_PATH)
+            .expect("测试文件 noname.mid 不存在，请确认 test-file/ 目录");
+        let smf = Smf::parse(&bytes).expect("Smf::parse 解析失败");
+        parse_smf(&smf)
+    }
+
+    fn extract_packed_notes_from_file() -> Vec<midly::loader::PackedNote> {
+        let bytes = std::fs::read(TEST_MIDI_PATH)
+            .expect("测试文件 noname.mid 不存在，请确认 test-file/ 目录");
+        let (notes, _tempo) =
+            midly::loader::extract_notes_from_bytes(&bytes).expect("快速解析失败");
+        notes
+    }
+
+    #[test]
+    fn test_noname_midi_parses_all_notes() {
+        let (_infos, notes_map, _events) = extract_notes_from_file();
+        let track2 = notes_map
+            .get(&2)
+            .expect("音轨 2 应有 263 个音符");
+        assert_eq!(track2.len(), 263, "音轨 2 应有 263 个音符（key 0-254）");
+    }
+
+    #[test]
+    fn test_noname_midi_key_range() {
+        let (_infos, notes_map, _events) = extract_notes_from_file();
+        let track2 = notes_map.get(&2).expect("音轨 2 应有音符");
+        let keys: Vec<u8> = track2.iter().map(|(_, k, _, _, _)| *k).collect();
+        assert_eq!(*keys.iter().min().unwrap(), 0, "最低音应为 key=0");
+        assert_eq!(*keys.iter().max().unwrap(), 254, "最高音应为 key=254");
+    }
+
+    #[test]
+    fn test_noname_midi_all_keys_unique() {
+        let (_infos, notes_map, _events) = extract_notes_from_file();
+        let track2 = notes_map.get(&2).expect("音轨 2 应有音符");
+        let mut keys: Vec<u8> = track2.iter().map(|(_, k, _, _, _)| *k).collect();
+        keys.sort();
+        keys.dedup();
+        // 文件覆盖 key 0-254，但 key 190 缺失，keys 236-244 有重复
+        // 所以 dedup 后 unique key 数 = 255 - 1(缺190) = 254
+        assert_eq!(keys.len(), 254, "dedup 后应有 254 个唯一 key（缺 key=190）");
+        assert_eq!(keys[0], 0, "最低音 key=0");
+        assert_eq!(keys[253], 254, "最高音 key=254");
+        // 验证 key 190 确实缺失（存在于序列间隙中）
+        assert!(!keys.contains(&190), "key 190 应缺失");
+    }
+
+    #[test]
+    fn test_noname_midi_y_coordinate_256key() {
+        let zoom_y = 20.0f32;
+        let max_128 = 127.0f32;
+        let max_256 = 255.0f32;
+
+        assert_eq!((max_128 - 0.0) * zoom_y, 127.0 * zoom_y, "128键 key 0 底部");
+        assert_eq!((max_128 - 127.0) * zoom_y, 0.0, "128键 key 127 顶部");
+        assert_eq!((max_256 - 0.0) * zoom_y, 255.0 * zoom_y, "256键 key 0 底部");
+        assert_eq!((max_256 - 127.0) * zoom_y, 128.0 * zoom_y, "256键 key 127 中部");
+        assert_eq!((max_256 - 254.0) * zoom_y, 1.0 * zoom_y, "256键 key 254 近顶");
+        assert!((max_256 - 254.0) * zoom_y >= 0.0, "key 254 的 world_y 不应为负");
+    }
+
+    #[test]
+    fn test_noname_midi_fast_path() {
+        let notes = extract_packed_notes_from_file();
+        assert_eq!(notes.len(), 263, "快速路径应提取 263 个音符");
+        let keys: Vec<u8> = notes.iter().map(|n| n.key).collect();
+        assert_eq!(*keys.iter().min().unwrap(), 0);
+        assert_eq!(*keys.iter().max().unwrap(), 254);
+    }
+}

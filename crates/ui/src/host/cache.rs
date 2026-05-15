@@ -68,6 +68,7 @@ impl RenderCache {
         zoom_y: f32,
         canvas_width: f32,
         canvas_height: f32,
+        visible_key_count: u16,
     ) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -77,6 +78,7 @@ impl RenderCache {
         zoom_y.to_bits().hash(&mut hasher);
         canvas_width.to_bits().hash(&mut hasher);
         canvas_height.to_bits().hash(&mut hasher);
+        visible_key_count.hash(&mut hasher);
         hasher.finish()
     }
 }

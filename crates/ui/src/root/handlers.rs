@@ -209,6 +209,17 @@ impl Root {
                         crate::resources::icon::set_hidpi_enabled(*enabled);
                         tracing::debug!("Root: HiDPI 图标渲染切换为 {}", enabled);
                     }
+                    crate::settings::Event::Enable256keyChanged(enabled) => {
+                        let new_count: u16 = if *enabled { 256 } else { 128 };
+                        self.editor.set_visible_key_count(new_count);
+                        // 同步更新 key_count 字段保持一致性
+                        self.editor.editor_state.view.key_count = new_count;
+                        tracing::debug!(
+                            "Root: 256键模式切换为 {}，琴键数调整为 {}",
+                            enabled,
+                            new_count
+                        );
+                    }
                     _ => {}
                 }
                 true

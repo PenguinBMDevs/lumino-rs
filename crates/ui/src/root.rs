@@ -127,6 +127,11 @@ impl Root {
         root.editor.set_eraser_behavior(ui_config.eraser_behavior);
         // 同步力度过滤阈值
         root.velocity_filter_threshold = ui_config.velocity_filter_threshold;
+        // 应用 256 键初始配置
+        if ui_config.enable_256key {
+            root.editor.set_visible_key_count(256);
+            root.editor.editor_state.view.key_count = 256;
+        }
         root
     }
 

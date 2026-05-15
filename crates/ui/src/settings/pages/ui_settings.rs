@@ -197,6 +197,25 @@ pub fn view<'a>(
         text("设置卷帘自动滚动时演奏指示线的位置行为")
             .size(12.0)
             .style(create_placeholder_text_style()),
+        iced_widget::space().height(24),
+        // 256键钢琴卷帘设置
+        text("钢琴卷帘")
+            .size(TEXT_SIZE_TITLE)
+            .style(create_content_text_style()),
+        iced_widget::space().height(12),
+        row![
+            iced_widget::Checkbox::new(settings.enable_256key)
+                .label("启用 256 键扩展钢琴卷帘")
+                .on_toggle(|enabled| {
+                    Message::Settings(crate::settings::Event::Enable256keyChanged(enabled))
+                }),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        text("开启后钢琴卷帘拓展至 256 键 (0-255)，扩展区域（128-255）颜色略深以便区分。需要较强的 GPU 性能。")
+            .size(12.0)
+            .style(create_placeholder_text_style()),
     ]
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT)

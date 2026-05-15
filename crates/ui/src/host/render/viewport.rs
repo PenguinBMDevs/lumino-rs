@@ -25,6 +25,7 @@ impl Host {
             v.zoom_y,
             viewport.canvas_size.x,
             viewport.canvas_size.y,
+            v.visible_key_count,
         )
     }
 

@@ -128,12 +128,13 @@ impl Host {
 
         let keyboard_instances = {
             puffin::profile_scope!("generate_keyboard_instances");
+            let actual_key_count = self.root.editor.editor_state.view.visible_key_count;
             self.generate_keyboard_instances(
                 super::DEFAULT_KEYBOARD_WIDTH,
                 super::DEFAULT_RULER_HEIGHT,
                 scroll.1,
                 zoom.1,
-                super::DEFAULT_VISIBLE_KEY_COUNT,
+                actual_key_count,
             )
         };
 
@@ -185,6 +186,7 @@ impl Host {
             v.zoom_y,
             canvas_size.x,
             canvas_size.y,
+            v.visible_key_count,
         );
         let viewport_changed =
             current_viewport_hash != self.render_ctx.render_cache.note_viewport_hash;

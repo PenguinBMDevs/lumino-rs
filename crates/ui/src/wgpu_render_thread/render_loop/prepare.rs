@@ -53,7 +53,7 @@ pub fn prepare_renderers(
             params.ruler_height,
             params.scroll.1,
             params.zoom.1,
-            128,
+            params.max_key_index as u16 + 1,
         );
     }
     // 准备标尺渲染器

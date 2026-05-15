@@ -146,6 +146,9 @@ pub struct UiConfig {
     /// 是否启用 HiDPI 图标渲染（关闭时使用1x获得零性能开销，开启时使用2x获得视网膜清晰度）
     #[serde(default = "default_true")]
     pub icon_hidpi: bool,
+    /// 是否启用 256 键扩展钢琴卷帘（默认关闭）
+    #[serde(default)]
+    pub enable_256key: bool,
 }
 
 fn default_true() -> bool {
@@ -194,6 +197,7 @@ impl Default for UiConfig {
             auto_scroll: AutoScrollConfig::default(),
             velocity_filter_threshold: default_velocity_filter_threshold(),
             icon_hidpi: true,
+            enable_256key: false,
         }
     }
 }
