@@ -48,7 +48,7 @@ pub fn parse_smf(
                 } => {
                     if vel > 0 {
                         let ch = channel.as_int();
-                        let k = key.as_int();
+                        let k = key;
                         let v = vel.as_int();
                         if let Some((start_tick, start_vel, start_ch)) =
                             active_notes.remove(&(ch, k))
@@ -59,7 +59,7 @@ pub fn parse_smf(
                         active_notes.insert((ch, k), (abs_tick, v, ch));
                     } else {
                         let ch = channel.as_int();
-                        let k = key.as_int();
+                        let k = key;
                         if let Some((start_tick, start_vel, start_ch)) =
                             active_notes.remove(&(ch, k))
                         {
@@ -73,7 +73,7 @@ pub fn parse_smf(
                     message: midly::MidiMessage::NoteOff { key, vel },
                 } => {
                     let ch = channel.as_int();
-                    let k = key.as_int();
+                    let k = key;
                     if let Some((start_tick, start_vel, start_ch)) = active_notes.remove(&(ch, k)) {
                         let length = abs_tick.saturating_sub(start_tick) as f32;
                         notes.push((start_tick as f32, k, length, start_vel, start_ch));
@@ -168,7 +168,7 @@ mod tests {
                 TrackEventKind::Midi {
                     channel: u4::from(0),
                     message: midly::MidiMessage::NoteOn {
-                        key: u7::from(60),
+                        key: 60,
                         vel: u7::from(100),
                     },
                 },
@@ -178,7 +178,7 @@ mod tests {
                 TrackEventKind::Midi {
                     channel: u4::from(0),
                     message: midly::MidiMessage::NoteOff {
-                        key: u7::from(60),
+                        key: 60,
                         vel: u7::from(64),
                     },
                 },
@@ -199,7 +199,7 @@ mod tests {
                 TrackEventKind::Midi {
                     channel: u4::from(0),
                     message: midly::MidiMessage::NoteOn {
-                        key: u7::from(60),
+                        key: 60,
                         vel: u7::from(100),
                     },
                 },
@@ -209,7 +209,7 @@ mod tests {
                 TrackEventKind::Midi {
                     channel: u4::from(0),
                     message: midly::MidiMessage::NoteOn {
-                        key: u7::from(60),
+                        key: 60,
                         vel: u7::from(0),
                     },
                 },
@@ -229,7 +229,7 @@ mod tests {
             TrackEventKind::Midi {
                 channel: u4::from(0),
                 message: midly::MidiMessage::NoteOn {
-                    key: u7::from(60),
+                    key: 60,
                     vel: u7::from(100),
                 },
             },
@@ -248,7 +248,7 @@ mod tests {
                 kind: TrackEventKind::Midi {
                     channel: u4::from(0),
                     message: midly::MidiMessage::NoteOn {
-                        key: u7::from(60),
+                        key: 60,
                         vel: u7::from(100),
                     },
                 },
@@ -258,7 +258,7 @@ mod tests {
                 kind: TrackEventKind::Midi {
                     channel: u4::from(0),
                     message: midly::MidiMessage::NoteOff {
-                        key: u7::from(60),
+                        key: 60,
                         vel: u7::from(64),
                     },
                 },
@@ -270,7 +270,7 @@ mod tests {
                 kind: TrackEventKind::Midi {
                     channel: u4::from(1),
                     message: midly::MidiMessage::NoteOn {
-                        key: u7::from(72),
+                        key: 72,
                         vel: u7::from(80),
                     },
                 },
@@ -280,7 +280,7 @@ mod tests {
                 kind: TrackEventKind::Midi {
                     channel: u4::from(1),
                     message: midly::MidiMessage::NoteOff {
-                        key: u7::from(72),
+                        key: 72,
                         vel: u7::from(64),
                     },
                 },

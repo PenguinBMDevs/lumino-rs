@@ -98,14 +98,14 @@ pub fn parse_track_event_kind(
                     track: track_index,
                     tick,
                     channel: ch,
-                    key: key.as_int(),
+                    key: *key,
                     velocity: vel.as_int(),
                 }),
                 MidiMessage::NoteOff { key, vel } => Some(MidiEvent::NoteOff {
                     track: track_index,
                     tick,
                     channel: ch,
-                    key: key.as_int(),
+                    key: *key,
                     velocity: vel.as_int(),
                 }),
                 MidiMessage::Controller { controller, value } => Some(MidiEvent::ControlChange {

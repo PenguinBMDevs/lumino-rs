@@ -125,8 +125,6 @@ tokio-test = "0.4"
 [target.'cfg(windows)'.dev-dependencies]
 winapi = { version = "0.3", features = ["processthreadsapi", "psapi"] }
 
-# ── xsynth（Git 版本，subdir 仅在 patch 中受支持）──
-# ── midly（本地修复版，修复了 tempo tick 0 被默认 120 BPM 覆盖的 bug）──
 [patch.crates-io]
 midly = { git = "https://github.com/Enderman-bm/midly-fork" }
 xsynth-core = { git = "https://github.com/buickmeow/xsynth" }
