@@ -365,19 +365,23 @@ impl MidiDocument {
     }
 
     /// 检查指定音轨在指定范围内是否有事件
+    ///
+    /// 优化：使用 partition_point 二分查找替代线性扫描，O(log N) 而非 O(N)。
+    /// events 在每轨内按 tick 排序（见 from_notes_file），可直接二分。
     pub fn has_track_events_in_range(&self, track_id: u16, from_tick: u32, to_tick: u32) -> bool {
         let tid = track_id as usize;
         let (start, end) = self.track_events_range.get(tid).copied().unwrap_or((0, 0));
         if start >= end {
             return false;
         }
-        for ev in &self.events[start..end] {
-            let t = ev.delta_tick();
-            if t >= from_tick && t < to_tick {
-                return true;
-            }
+        let events = &self.events[start..end];
+        let search_start = events.partition_point(|e| e.delta_tick() < from_tick);
+        if search_start >= events.len() {
+            return false;
         }
-        false
+        events[search_start..]
+            .iter()
+            .any(|e| e.delta_tick() < to_tick)
     }
 
     /// 获取指定音轨在指定 tick 范围内的音符。

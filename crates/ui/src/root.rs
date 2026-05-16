@@ -196,10 +196,15 @@ impl Root {
             .unwrap_or_default()
     }
 
-    /// 标记洋葱皮缓存失效（任何影响洋葱皮渲染的变化都调用）
+    /// 标记洋葱皮缓存全量失效（数据变化/音轨集合变化时调用）
     pub fn invalidate_onion_skin_cache(&mut self) {
         self.onion_skin_generation += 1;
         self.editor.invalidate_onion_skin_cache();
+    }
+
+    /// 仅标记颜色/透明度变化（无需重查 document，O(C) 快速路径）
+    pub fn invalidate_onion_skin_colors(&mut self) {
+        self.editor.invalidate_onion_skin_colors();
     }
 
     /// 设置 MIDI 文档引用（供懒加载使用）

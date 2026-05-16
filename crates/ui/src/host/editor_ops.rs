@@ -195,12 +195,14 @@ impl Host {
     /// # 参数
     /// * `track_idx` - 音轨索引
     /// * `r`, `g`, `b` - RGB 颜色分量 (0.0 - 1.0)
+    ///
+    /// 优化：颜色变化走快速路径 O(C)，不触发 document 重查。
     pub fn set_onion_skin_color_rgb(&mut self, track_idx: usize, r: f32, g: f32, b: f32) {
         let alpha = self.root.editor.onion_skin_opacity();
         self.root
             .editor
             .set_onion_skin_color(track_idx, iced_core::Color::from_rgba(r, g, b, alpha));
-        self.root.invalidate_onion_skin_cache();
+        self.root.invalidate_onion_skin_colors();
         self.window_ctx.window.request_redraw();
     }
 
@@ -208,7 +210,7 @@ impl Host {
         self.root
             .editor
             .set_onion_skin_color(track_idx, iced_core::Color::from_rgba(r, g, b, a));
-        self.root.invalidate_onion_skin_cache();
+        self.root.invalidate_onion_skin_colors();
         self.window_ctx.window.request_redraw();
     }
 
@@ -224,9 +226,11 @@ impl Host {
     ///
     /// # 参数
     /// * `opacity` - 透明度值，范围 0.0（完全透明）到 1.0（完全不透明）
+    ///
+    /// 优化：透明度变化走快速路径 O(C)，不触发 document 重查。
     pub fn set_onion_skin_opacity(&mut self, opacity: f32) {
         self.root.editor.set_onion_skin_opacity(opacity);
-        self.root.invalidate_onion_skin_cache();
+        self.root.invalidate_onion_skin_colors();
         self.window_ctx.window.request_redraw();
     }
 

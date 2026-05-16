@@ -54,18 +54,17 @@ test-file/
 # build
 bin/
 
-# opencode
+# agents
 .opencode/
-
-# WorkBuddy
 .workbuddy/
-
 .qoder/
 .figma/
 .ai-context/
+.atomcode/
 
 # publish
 publish/
 
 # others
 wasabi/
+
