@@ -186,6 +186,7 @@ impl Host {
             self.render_ctx.format,
             rx,
             Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
+            Arc::clone(&self.render_ctx.render_cache.onion_skin_instances_buffer),
         ) {
             Ok(thread) => {
                 self.render_ctx.wgpu_render_thread = Some(thread);
@@ -249,7 +250,7 @@ impl Host {
     pub fn memory_breakdown(&self) -> root::MemoryBreakdown {
         let mut breakdown = self.root.memory_breakdown();
 
-        // 从 RenderCache 获取 note_instances_buffer 双缓冲容量
+        // 从 RenderCache 获取主音符双缓冲容量
         let (front_cap, front_len) = self
             .render_ctx
             .render_cache
@@ -260,24 +261,42 @@ impl Host {
             .render_cache
             .note_instances_buffer
             .back_info();
+        // 洋葱皮双缓冲容量
+        let (onion_front_cap, onion_front_len) = self
+            .render_ctx
+            .render_cache
+            .onion_skin_instances_buffer
+            .front_info();
+        let (onion_back_cap, onion_back_len) = self
+            .render_ctx
+            .render_cache
+            .onion_skin_instances_buffer
+            .back_info();
         let instance_size = std::mem::size_of::<lumino_gfx::NoteInstance>() as u64;
 
         tracing::debug!(
-            "MemoryBreakdown: note_instances_buffer front(cap={}, len={}) back(cap={}, len={}) instance_size={}",
+            "MemoryBreakdown: note front(cap={}, len={}) back(cap={}, len={}) onion front(cap={}, len={}) back(cap={}, len={}) instance_size={}",
             front_cap,
             front_len,
             back_cap,
             back_len,
+            onion_front_cap,
+            onion_front_len,
+            onion_back_cap,
+            onion_back_len,
             instance_size
         );
 
         // 将双缓冲容量写入 breakdown 的附加字段
-        // 使用扩展字段添加到 breakdown
         breakdown.note_instances_front_cap = front_cap;
         breakdown.note_instances_front_len = front_len;
         breakdown.note_instances_back_cap = back_cap;
         breakdown.note_instances_back_len = back_len;
         breakdown.note_instance_size = instance_size as usize;
+        breakdown.onion_skin_instances_front_cap = onion_front_cap;
+        breakdown.onion_skin_instances_front_len = onion_front_len;
+        breakdown.onion_skin_instances_back_cap = onion_back_cap;
+        breakdown.onion_skin_instances_back_len = onion_back_len;
 
         breakdown
     }

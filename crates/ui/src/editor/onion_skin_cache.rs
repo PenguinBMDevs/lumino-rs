@@ -5,8 +5,24 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use lumino_gfx::{NoteInstance, pack_color};
+
+/// 洋葱皮缓存版本号。每次缓存的 output 实际发生变化时递增。
+/// NoteWorker 用此判断是否需要 swap onion_skin_instances_buffer，
+/// 避免无变更时触发 WGPU 重传。
+static ONION_SKIN_CACHE_VERSION: AtomicU64 = AtomicU64::new(0);
+
+/// 获取当前缓存版本号（用于 worker 跳过不必要 swap）
+pub(crate) fn onion_skin_cache_version() -> u64 {
+    ONION_SKIN_CACHE_VERSION.load(Ordering::Relaxed)
+}
+
+/// 缓存 output 变化时调用（递增版本号）
+pub(super) fn bump_cache_version() {
+    ONION_SKIN_CACHE_VERSION.fetch_add(1, Ordering::Relaxed);
+}
 
 /// 专用 rayon 线程池，避免与 UI/iced 的全局线程池竞争。
 /// 只用于洋葱皮音轨的并行查询+合并。

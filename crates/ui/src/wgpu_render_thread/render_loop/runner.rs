@@ -28,6 +28,7 @@ pub fn run_render_thread(
     stats_clone: Arc<Mutex<RenderStats>>,
     note_events_rx: std::sync::mpsc::Receiver<lumino_gfx::NoteEvent>,
     note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
+    onion_skin_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
 ) {
     tracing::info!("Render thread started");
 
@@ -45,6 +46,9 @@ pub fn run_render_thread(
     let mut depth_texture_view: Option<wgpu::TextureView> = None;
     let mut current_size = (0, 0);
     let mut last_note_version: u64 = 0;
+    let mut last_onion_version: u64 = 0;
+    // 可重用合并缓冲区，避免每帧分配
+    let mut merged_instances: Vec<lumino_gfx::NoteInstance> = Vec::new();
 
     while running.load(Ordering::Relaxed) {
         // 处理所有待处理的命令
@@ -79,13 +83,24 @@ pub fn run_render_thread(
                 params,
             );
 
-            // 从双缓冲读取音符数据并上传到 GPU（仅在数据变化时）
-            let current_version = note_instances_buffer.version();
-            if current_version != last_note_version {
-                last_note_version = current_version;
-                let instances = unsafe { note_instances_buffer.read_buffer() };
+            // 分别检测主音符和洋葱皮版本号，合并后上传（任一变化都触发上传）
+            let note_version = note_instances_buffer.version();
+            let onion_version = onion_skin_instances_buffer.version();
+            if note_version != last_note_version || onion_version != last_onion_version {
+                last_note_version = note_version;
+                last_onion_version = onion_version;
+
                 puffin::profile_scope!("upload_note_instances_from_buffer");
-                note_renderer.upload_instances(instances, &device, &queue);
+                let notes = unsafe { note_instances_buffer.read_buffer() };
+                let onion = unsafe { onion_skin_instances_buffer.read_buffer() };
+
+                // 重用到合并缓冲区，避免每帧分配
+                merged_instances.clear();
+                merged_instances.reserve(notes.len() + onion.len());
+                merged_instances.extend_from_slice(notes);
+                merged_instances.extend_from_slice(onion);
+
+                note_renderer.upload_instances(&merged_instances, &device, &queue);
             }
 
             if let (Some(texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {

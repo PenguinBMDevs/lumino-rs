@@ -163,11 +163,12 @@ impl Host {
         }
     }
 
-    /// 收集数据快照并派发到 NoteWorker（非阻塞）
+    /// 更新音符数据：主音符同步写入 + 洋葱皮异步派发
     ///
-    /// 主线程不再阻塞等待音符实例构建完成。
-    /// NoteWorker 在后台线程中：洋葱皮计算 → 实例构建 → 双缓冲写入 → swap。
-    /// WGPU 渲染线程通过版本号检测新数据。
+    /// Phase 1: 主音轨主音符 → 主线程同步写入双缓冲 + swap（~1ms）
+    ///   → WGPU 线程立即可见，零延迟，白屏问题根治
+    /// Phase 2: 洋葱皮 → 派发到 NoteWorker 异步计算，完成后二次 swap
+    ///   → 50-200ms 延迟，但不阻塞主音符渲染
     pub(super) fn update_note_data_for_wgpu_thread(&mut self) {
         puffin::profile_scope!("update_note_data");
         let note_index_dirty = self.root.editor.note_index_dirty.get();
@@ -180,7 +181,7 @@ impl Host {
             || self.render_ctx.render_cache.note_instances_is_empty()
             || is_drawing;
 
-        // 检测视口变化（滚动/缩放）：洋葱皮音符需要重新过滤
+        // 检测视口变化（滚动/缩放）：洋葱皮需要重新过滤
         let v = &self.root.editor.editor_state.view;
         let canvas_size = &self.root.editor.editor_state.canvas.size;
         let current_viewport_hash = crate::host::RenderCache::compute_viewport_hash(
@@ -199,21 +200,37 @@ impl Host {
             return;
         }
 
-        // 更新视口哈希（即使 worker 尚未完成，后续帧会检测到变化）
         self.render_ctx.render_cache.note_viewport_hash = current_viewport_hash;
 
-        // 确保 NoteWorker 已创建（懒加载）
+        // 提取所需数据，避免 &self 借用冲突
+        let notes_clone = self.root.editor.editor_state.data.notes.clone(); // O(1)
+        let edit_state_clone = self.root.editor.editor_state.interaction.edit_state.clone();
+        let default_note_length = self.root.editor.editor_state.view.default_note_length;
+        let snap_precision = self.root.editor.editor_state.view.snap_precision;
+
+        // ═══ Phase 1: 主音符同步写入（保证 WGPU 立即可见） ═══
+        {
+            puffin::profile_scope!("phase1_main_notes_sync");
+            super::note_worker::build_main_note_instances(
+                &self.render_ctx.render_cache.note_instances_buffer,
+                &notes_clone,
+                &edit_state_clone,
+                default_note_length,
+                snap_precision,
+            );
+        }
+
+        // ═══ Phase 2: 洋葱皮异步派发（独立 buffer，fire-and-forget） ═══
         self.ensure_note_worker();
-
-        // 收集快照（极快，O(1) im::Vector clone）
-        let snapshot = self.collect_note_snapshot();
-
-        // 派发到 NoteWorker（非阻塞，fire-and-forget）
         if let Some(ref worker) = self.render_ctx.note_worker {
-            worker.send(super::note_worker::NoteComputationJob {
-                snapshot,
-                buffer: std::sync::Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
-                done_tx: None, // 分离渲染模式：fire-and-forget
+            let os_snapshot = self.collect_onion_skin_snapshot();
+
+            worker.send(super::note_worker::OnionSkinJob {
+                snapshot: os_snapshot,
+                onion_skin_buffer: std::sync::Arc::clone(
+                    &self.render_ctx.render_cache.onion_skin_instances_buffer,
+                ),
+                done_tx: None,
             });
         }
 

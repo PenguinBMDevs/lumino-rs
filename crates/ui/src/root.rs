@@ -28,6 +28,11 @@ pub struct MemoryBreakdown {
     pub note_instances_back_cap: usize,
     pub note_instances_back_len: usize,
     pub note_instance_size: usize,
+    /// onion_skin_instances_buffer 双缓冲信息（由 Host::memory_breakdown 填充）
+    pub onion_skin_instances_front_cap: usize,
+    pub onion_skin_instances_front_len: usize,
+    pub onion_skin_instances_back_cap: usize,
+    pub onion_skin_instances_back_len: usize,
 }
 
 mod collaboration;

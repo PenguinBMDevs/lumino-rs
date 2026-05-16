@@ -15,8 +15,9 @@ use lumino_gfx::NoteInstance;
 use rayon::prelude::*;
 
 use super::onion_skin_cache::{
-    MergedCell, ONION_SKIN_CACHE, ONION_SKIN_POOL, OnionSkinCache, merge_cell, merge_one_track,
-    rebuild_output_from_cells, recolor_output, track_config_hash, track_hash_no_color,
+    MergedCell, ONION_SKIN_CACHE, ONION_SKIN_POOL, OnionSkinCache, bump_cache_version, merge_cell,
+    merge_one_track, rebuild_output_from_cells, recolor_output, track_config_hash,
+    track_hash_no_color,
 };
 
 /// 缓存检查结果
@@ -142,6 +143,7 @@ impl Editor {
                     && cache.track_hash == track_hash
                 {
                     recolor_output(&mut cache.output, &track_colors);
+                    bump_cache_version();
                     cache.config_hash = config_hash;
                     cache.colors_dirty = false;
 
@@ -233,6 +235,7 @@ impl Editor {
             colors_dirty: false,
             dirty_tracks: std::collections::HashSet::new(),
         });
+        bump_cache_version();
 
         // 返回 Vec（Arc 是唯一引用时 try_unwrap 零拷贝，否则 fallback clone）
         std::sync::Arc::try_unwrap(result).unwrap_or_else(|arc| (*arc).clone())
@@ -280,6 +283,7 @@ pub(super) fn dirty_track_path(
         }
     }
     cache.output = rebuild_output_from_cells(&cache.cells, track_colors);
+    bump_cache_version();
     cache.search_start = search_start;
     cache.search_end = search_end;
     cache.search_key_min = search_key_min;
@@ -366,6 +370,7 @@ pub(super) fn incremental_path(
     cache.track_hash = track_hash;
     cache.colors_dirty = false;
     cache.output = rebuild_output_from_cells(&cache.cells, track_colors);
+    bump_cache_version();
     tracing::info!(
         "Onion skin (incremental): {} cells, new_range=[{},{}]",
         cache.output.len(),
@@ -505,6 +510,7 @@ pub(crate) fn compute_onion_skin_instances_standalone(
                 && cache.track_hash == track_hash
             {
                 recolor_output(&mut cache.output, &track_colors);
+                bump_cache_version();
                 cache.config_hash = config_hash;
                 cache.colors_dirty = false;
 

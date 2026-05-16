@@ -1,5 +1,3 @@
-use std::sync::mpsc;
-
 use super::data::{GridColors, ViewportInfo};
 use crate::host::Host;
 use iced_wgpu::wgpu;
@@ -52,8 +50,8 @@ impl Host {
 
     /// 如果需要则准备音符
     ///
-    /// 单线程模式下，dispatch 到 NoteWorker 并等待完成。
-    /// 在等待期间主线程可以做 grid 准备工作（见 render_notes_cached 中的调用顺序）。
+    /// Phase 1: 主音符同步写入双缓冲 + swap（~1ms，保证 WGPU 立即可见）
+    /// Phase 2: 洋葱皮派发到 NoteWorker + 等待完成（done_tx 同步屏障）
     pub(super) fn prepare_notes_if_needed(&mut self, current_hash: u64) -> bool {
         let note_index_dirty = self.root.editor.note_index_dirty.get();
         let current_edit_state = self.root.editor.editor_state.interaction.edit_state.clone();
@@ -77,47 +75,43 @@ impl Host {
         // 更新视口哈希
         self.render_ctx.render_cache.note_viewport_hash = current_hash;
 
-        // 确保 NoteWorker 已创建（懒加载）
+        // 提取所需数据，避免 &self 借用冲突
+        let notes_clone = self.root.editor.editor_state.data.notes.clone(); // O(1)
+        let edit_state_clone = self.root.editor.editor_state.interaction.edit_state.clone();
+        let default_note_length = self.root.editor.editor_state.view.default_note_length;
+        let snap_precision = self.root.editor.editor_state.view.snap_precision;
+
+        // ═══ Phase 1: 主音符同步写入（保证 WGPU 立即可见） ═══
+        {
+            puffin::profile_scope!("phase1_main_notes_sync");
+            super::note_worker::build_main_note_instances(
+                &self.render_ctx.render_cache.note_instances_buffer,
+                &notes_clone,
+                &edit_state_clone,
+                default_note_length,
+                snap_precision,
+            );
+        }
+
+        // ═══ Phase 2: 洋葱皮异步派发（独立 buffer，不碰主音符） ═══
         self.ensure_note_worker();
+        if let Some(ref worker) = self.render_ctx.note_worker {
+            let os_snapshot = self.collect_onion_skin_snapshot();
+            let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
 
-        // 收集快照（极快，O(1) im::Vector clone）
-        let snapshot = self.collect_note_snapshot();
-
-        // 创建同步通道
-        let (done_tx, done_rx) = mpsc::channel::<()>();
-
-        // 派发到 NoteWorker（如果有 worker 的话）
-        let dispatched_to_worker = if let Some(ref worker) = self.render_ctx.note_worker {
-            worker.send(super::note_worker::NoteComputationJob {
-                snapshot,
-                buffer: std::sync::Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
+            worker.send(super::note_worker::OnionSkinJob {
+                snapshot: os_snapshot,
+                onion_skin_buffer: std::sync::Arc::clone(
+                    &self.render_ctx.render_cache.onion_skin_instances_buffer,
+                ),
                 done_tx: Some(done_tx),
             });
-            true
-        } else {
-            false
-        };
 
-        if dispatched_to_worker {
-            // 等待 worker 完成（同步屏障）
-            // 对于单线程模式，worker 处理极快，等待时间可忽略
+            // 单线程模式：等待洋葱皮完成后才能开始渲染
+            //（分离渲染模式不需要等待，fire-and-forget）
             let _ = done_rx.recv();
         } else {
-            // 没有 worker 回退：同步构建（不应该发生，
-            // 因为单线程模式下也会创建 NoteWorker，这里作为 safety net）
-            tracing::warn!(
-                "prepare_notes_if_needed: No NoteWorker available, falling back to sync"
-            );
-            let instances = unsafe {
-                self.render_ctx
-                    .render_cache
-                    .note_instances_buffer
-                    .write_buffer()
-            };
-            instances.clear();
-            // 最小化回退：只清空 buffer，保持渲染继续
-            // 正常路径不会走到这里
-            self.render_ctx.render_cache.note_instances_buffer.swap();
+            tracing::warn!("prepare_notes_if_needed: No NoteWorker available");
         }
 
         self.render_ctx.last_edit_state = current_edit_state;
