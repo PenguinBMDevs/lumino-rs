@@ -161,7 +161,8 @@ impl Root {
                 self.editor.set_canvas_offset(*offset);
                 self.editor
                     .set_canvas_size(iced_core::Point::new(size.width, size.height));
-                // 画布大小变化影响视口范围
+                // 画布大小变化影响视口范围，洋葱皮缓存需失效
+                self.invalidate_onion_skin_cache();
                 true
             }
             Message::MenuStateChanged(is_open) => {
@@ -262,6 +263,7 @@ impl Root {
             self.editor.grid_cache.clear();
             self.editor.keyboard_cache.clear();
             self.editor.ruler_cache.clear();
+            self.invalidate_onion_skin_cache();
         }
     }
 
@@ -273,6 +275,9 @@ impl Root {
             None
         };
 
+        // 检查是否是洋葱皮开关
+        let onion_skin_toggled = matches!(&event, sidebar::Event::TrackOnionSkinToggled(_));
+
         // 更新 sidebar，获取是否需要重新渲染
         let needs_redraw = self.sidebar.update(event);
 
@@ -282,6 +287,12 @@ impl Root {
         self.editor
             .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset.y));
 
+        // 洋葱皮开关变化，使缓存失效
+        if onion_skin_toggled {
+            self.invalidate_onion_skin_cache();
+        }
+
+        // 如果是音轨切换，发送 Core 事件
         if let Some(track_idx) = track_selected_idx {
             tracing::debug!("Root: 发射音轨选择事件，音轨 {}", track_idx);
             lumino_core::event::emit(lumino_core::event::Event::Menu(
@@ -311,6 +322,8 @@ impl Root {
         if self.editor.notes_changed() {
             self.update_playback_notes();
             self.editor.clear_notes_changed();
+            // 音符变化影响洋葱皮缓存
+            self.invalidate_onion_skin_cache();
         }
     }
 
@@ -339,6 +352,7 @@ impl Root {
         if self.editor.notes_changed() {
             self.update_playback_notes();
             self.editor.clear_notes_changed();
+            self.invalidate_onion_skin_cache();
         }
     }
 

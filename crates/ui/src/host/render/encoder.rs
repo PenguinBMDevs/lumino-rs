@@ -57,42 +57,23 @@ impl Host {
         // 视口变化（滚动/缩放）：重新过滤洋葱皮实例（无需全量重建）
         let viewport_changed = current_hash != self.render_ctx.render_cache.note_viewport_hash;
 
-        // 分离 is_drawing：音符数据是否真的变了（排除仅绘制中音符位置变化）
-        let note_data_changed =
-            note_index_dirty || self.render_ctx.render_cache.note_instances_is_empty();
+        // 数据变化（编辑/加载）
+        let note_data_changed = note_index_dirty
+            || self.render_ctx.render_cache.note_instances_is_empty()
+            || is_drawing;
 
-        if !note_data_changed && !viewport_changed && !is_drawing {
+        if !note_data_changed && !viewport_changed {
             // 即使没有数据变化也更新状态
             self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;
             self.render_ctx.last_edit_state = current_edit_state;
             return false;
         }
 
-        // 计算可见 tick 范围（CPU 预过滤用）
-        let es = &self.root.editor.editor_state;
-        let visible_tick_start = (es.view.scroll_x / es.view.zoom_x).max(0.0);
-        let visible_tick_end = ((es.view.scroll_x + es.canvas.size.x - es.view.keyboard_width)
-            / es.view.zoom_x)
-            .max(visible_tick_start);
-
         // 有变化时才重建实例数组
         if note_data_changed || viewport_changed {
-            // 全量重建（包括洋葱皮），CPU 预过滤仅可见区间
             puffin::profile_scope!("generate_note_instances");
-            self.update_all_note_instances_fast(visible_tick_start, visible_tick_end);
+            self.update_all_note_instances_fast();
             self.render_ctx.render_cache.note_viewport_hash = current_hash;
-        } else if is_drawing {
-            // 仅绘制中音符变化 → 从缓存写双缓冲
-            puffin::profile_scope!("generate_note_instances");
-            let drawing_note =
-                Self::extract_drawing_note(&self.root.editor.editor_state.interaction.edit_state);
-            let default_note_length = es.view.default_note_length;
-            let snap_precision = es.view.snap_precision;
-            self.write_cached_instances_to_buffer(
-                drawing_note,
-                default_note_length,
-                snap_precision,
-            );
         }
 
         self.render_ctx.last_edit_state = current_edit_state;
@@ -104,7 +85,7 @@ impl Host {
         }
 
         // 数据变化或视口变化都需要 GPU 上传
-        note_data_changed || viewport_changed || is_drawing
+        note_data_changed || viewport_changed
     }
 
     /// 准备音符渲染器（双缓冲模式）

@@ -25,7 +25,8 @@ impl super::Editor {
             // 重新钳位到有效范围
             let vh = (canvas_height - self.editor_state.view.ruler_height).max(0.0);
             let max_sy = (self.editor_state.max_scroll.y - vh).max(0.0);
-            self.editor_state.view.scroll_y = self.editor_state.view.scroll_y.clamp(0.0, max_sy);
+            self.editor_state.view.scroll_y =
+                self.editor_state.view.scroll_y.clamp(0.0, max_sy);
         }
 
         // 键盘和网格缓存都需要刷新：key_count 变了，键盘绘制和网格线都要重建

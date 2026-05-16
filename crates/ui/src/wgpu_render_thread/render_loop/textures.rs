@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
 
 use iced_wgpu::wgpu;
 
@@ -14,7 +14,7 @@ pub fn ensure_textures(
     current_texture: &mut Option<Arc<wgpu::Texture>>,
     depth_texture: &mut Option<wgpu::Texture>,
     depth_texture_view: &mut Option<wgpu::TextureView>,
-    latest_texture_clone: &Arc<RwLock<Option<Arc<wgpu::Texture>>>>,
+    latest_texture_clone: &Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
     _params: &RenderParams,
 ) -> bool {
     let width = width.max(1);
@@ -60,7 +60,7 @@ pub fn ensure_textures(
         *current_size = (width, height);
 
         // 将新纹理共享给主线程
-        if let Ok(mut lock) = latest_texture_clone.write() {
+        if let Ok(mut lock) = latest_texture_clone.lock() {
             *lock = current_texture.clone();
         }
         return true;

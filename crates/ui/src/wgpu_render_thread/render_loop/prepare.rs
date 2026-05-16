@@ -1,14 +1,18 @@
+use std::sync::mpsc::Receiver;
+
 use iced_wgpu::wgpu;
+use lumino_gfx::NoteEvent;
 
 use super::super::params::RenderParams;
 
 /// 准备渲染器实例
 pub fn prepare_renderers(
     grid_renderer: &mut lumino_gfx::GridRenderer,
-    _note_renderer: &mut lumino_gfx::NoteRenderer,
+    note_renderer: &mut lumino_gfx::NoteRenderer,
     keyboard_renderer: &mut lumino_gfx::KeyboardRenderer,
     ruler_renderer: &mut lumino_gfx::RulerRenderer,
     params: &RenderParams,
+    note_events_rx: &Receiver<NoteEvent>,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) {
@@ -36,6 +40,9 @@ pub fn prepare_renderers(
         params.canvas_offset.1,
     );
 
+    // 处理音符事件
+    note_renderer.process_events(note_events_rx, device, queue);
+
     // 准备键盘渲染器
     if !params.keyboard_instances.is_empty() {
         keyboard_renderer.prepare(
@@ -49,15 +56,14 @@ pub fn prepare_renderers(
             params.max_key_index as u16 + 1,
         );
     }
-    // 准备标尺渲染器（使用预计算实例，避免重复生成）
+    // 准备标尺渲染器
     if !params.ruler_instances.is_empty() {
-        ruler_renderer.prepare_from_instances(
+        ruler_renderer.prepare(
             device,
             queue,
-            &params.ruler_instances,
             params.logical_size,
-            params.ruler_height,
             params.keyboard_width,
+            params.ruler_height,
             params.scroll.0,
             params.zoom.0,
             params.ticks_per_measure,

@@ -36,6 +36,7 @@ impl Root {
             .track_note_indices
             .borrow_mut()
             .remove(&self.editor.editor_state.data.current_track);
+        self.invalidate_onion_skin_cache();
         self.editor.mark_notes_changed();
     }
 
@@ -43,6 +44,7 @@ impl Root {
     pub fn set_current_track(&mut self, track_idx: usize) {
         self.sidebar.set_selected_track(track_idx);
         self.editor.switch_to_track(track_idx);
+        self.invalidate_onion_skin_cache();
         self.update_playback_notes();
     }
 
@@ -71,6 +73,7 @@ impl Root {
             .remove(&track_idx);
 
         self.editor.editor_state.data.current_track = track_idx;
+        self.invalidate_onion_skin_cache();
         self.editor.mark_notes_changed();
         self.update_playback_notes();
     }
