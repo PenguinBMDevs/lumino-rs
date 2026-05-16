@@ -15,6 +15,7 @@ impl Editor {
             tracing::debug!("Editor: 洋葱皮缓存全量清除");
             *cache = None;
         }
+        self.onion_cache_valid = false;
     }
 
     /// 仅标记颜色/透明度变化（无需重查 document，只重建 output）
@@ -42,6 +43,11 @@ impl Editor {
             cache.dirty_tracks.insert(track_idx as u16);
             tracing::debug!("Editor: 音轨 {} 标记为脏（洋葱皮）", track_idx);
         }
+    }
+
+    /// 使缓存的可见音轨索引失效（音轨集合/当前音轨变化时调用）
+    pub fn invalidate_onion_track_cache(&mut self) {
+        self.onion_cache_valid = false;
     }
 
     /// 获取洋葱皮配置的可变引用

@@ -37,3 +37,7 @@ winit = { workspace = true }
 anyhow = { workspace = true }
 rayon = "1.10"
 parking_lot = "0.12"
+
+[dev-dependencies]
+wgpu = "27.0"
+tokio = { workspace = true }

@@ -90,7 +90,7 @@ pub(super) fn merge_one_track(
     tick_quant: u32,
     track_idx: u16,
 ) -> Option<HashMap<u64, MergedCell>> {
-    let mut cells = HashMap::new();
+    let mut cells = HashMap::with_capacity(raw.len());
 
     for &(tick, key, length, _vel, _ch) in raw.iter() {
         let key_u16 = key as u16;
@@ -180,8 +180,8 @@ impl OnionSkinCache {
             return false;
         }
         // 视口完全没变 → 直接命中缓存
-        if self.search_start == search_start
-            && self.search_end == search_end
+        if (self.search_start - search_start).abs() <= f32::EPSILON
+            && (self.search_end - search_end).abs() <= f32::EPSILON
             && self.search_key_min == search_key_min
             && self.search_key_max == search_key_max
         {
@@ -230,33 +230,50 @@ pub(super) fn track_hash_no_color(track_colors: &[(usize, [f32; 4])]) -> u64 {
     h.finish()
 }
 
-/// 从 cells + 当前颜色配置重建 output（颜色快速路径）
-///
-/// O(C) 遍历，C = cell 数量。远快于 O(N×T) 全量重查。
-///
-/// 优化：预打包颜色 LUT，pack_color 每音轨只做一次，避免逐 cell 重复打包。
+/// 从 cells 重建输出（创建新 Arc）
 pub(super) fn rebuild_output_from_cells(
     cells: &HashMap<u64, MergedCell>,
     track_colors: &[(usize, [f32; 4])],
 ) -> std::sync::Arc<Vec<NoteInstance>> {
-    // 构建预打包颜色查找表：track_idx → u32（pack_color 每轨只做一次）
     let max_idx = track_colors.iter().map(|&(idx, _)| idx).max().unwrap_or(0);
     let mut color_lut: Vec<u32> = vec![pack_color([0.5, 0.5, 0.5, 0.4]); max_idx + 1];
     for &(idx, color) in track_colors {
-        color_lut[idx] = pack_color(color);
+        if idx <= max_idx {
+            color_lut[idx] = pack_color(color);
+        }
     }
-
     std::sync::Arc::new(
         cells
             .values()
-            .map(|c| {
-                let color_packed = color_lut[c.track_idx as usize];
-                NoteInstance {
-                    position: [c.tick_start, c.key],
-                    size_x: c.max_right - c.tick_start,
-                    color_packed,
-                }
+            .map(|c| NoteInstance {
+                position: [c.tick_start, c.key],
+                size_x: c.max_right - c.tick_start,
+                color_packed: color_lut[c.track_idx as usize],
             })
             .collect(),
     )
+}
+
+/// 就地更新 output 的颜色（颜色快速路径用）
+///
+/// 当 cells 不变、仅颜色变化时，直接修改现有 output 中的颜色字段，
+/// 避免重新分配 Vec 和 Arc。
+pub(super) fn recolor_output(
+    output: &mut std::sync::Arc<Vec<NoteInstance>>,
+    track_colors: &[(usize, [f32; 4])],
+) {
+    let max_idx = track_colors.iter().map(|&(idx, _)| idx).max().unwrap_or(0);
+    let mut color_lut: Vec<u32> = vec![pack_color([0.5, 0.5, 0.5, 0.4]); max_idx + 1];
+    for &(idx, color) in track_colors {
+        if idx <= max_idx {
+            color_lut[idx] = pack_color(color);
+        }
+    }
+    let instances = std::sync::Arc::make_mut(output);
+    for inst in instances.iter_mut() {
+        let track_idx = (inst.color_packed >> 8) as usize;
+        if track_idx <= max_idx {
+            inst.color_packed = color_lut[track_idx];
+        }
+    }
 }

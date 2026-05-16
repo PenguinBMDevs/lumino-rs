@@ -123,6 +123,24 @@ impl Editor {
         indices
     }
 
+    /// 收集可见音轨索引（使用缓存）
+    ///
+    /// 与 `collect_visible_track_indices` 功能相同，但结果会被缓存，
+    /// 避免每帧重复计算。当音轨集合或当前音轨变化时，缓存自动失效。
+    pub(super) fn collect_visible_track_indices_cached(
+        &mut self,
+        track_onion_states: &std::collections::HashMap<usize, bool>,
+    ) -> Vec<usize> {
+        if self.onion_cache_valid {
+            return self.cached_onion_track_indices.clone();
+        }
+
+        let indices = self.collect_visible_track_indices(track_onion_states);
+        self.cached_onion_track_indices = indices.clone();
+        self.onion_cache_valid = true;
+        indices
+    }
+
     /// 获取洋葱皮音符实例（用于其他音轨的音符显示）
     /// 音符直接送入 wgpu 渲染管线，GPU compute shader 负责视锥裁剪
     pub fn get_onion_skin_instances(

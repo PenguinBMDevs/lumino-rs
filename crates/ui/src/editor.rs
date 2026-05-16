@@ -83,6 +83,15 @@ pub struct Editor {
 
     /// 力度编辑面板
     pub velocity_panel: velocity::VelocityPanel,
+
+    /// 缓存的可见音轨索引（洋葱皮用），避免每帧重复计算
+    pub cached_onion_track_indices: Vec<usize>,
+    /// 缓存的可见音轨哈希值（不含颜色）
+    pub cached_onion_track_hash: u64,
+    /// 缓存的音轨颜色哈希值
+    pub cached_onion_config_hash: u64,
+    /// 缓存是否有效
+    pub onion_cache_valid: bool,
 }
 
 /// 编辑器各组件的内存占用快照（字节）
@@ -173,6 +182,10 @@ impl Editor {
             query_cache: RefCell::new(Vec::new()),
             track_note_indices: RefCell::new(std::collections::HashMap::new()),
             velocity_panel: velocity::VelocityPanel::new(),
+            cached_onion_track_indices: Vec::new(),
+            cached_onion_track_hash: 0,
+            cached_onion_config_hash: 0,
+            onion_cache_valid: false,
         }
     }
 

@@ -3596,8 +3596,10 @@ dependencies = [
  "rfd",
  "serde_json",
  "tiny-skia",
+ "tokio",
  "tracing",
  "usvg",
+ "wgpu",
  "winit",
 ]
 

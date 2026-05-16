@@ -13,8 +13,16 @@ use rayon::prelude::*;
 
 use super::onion_skin_cache::{
     MergedCell, ONION_SKIN_CACHE, ONION_SKIN_POOL, OnionSkinCache, merge_cell, merge_one_track,
-    rebuild_output_from_cells, track_config_hash, track_hash_no_color,
+    recolor_output, rebuild_output_from_cells, track_config_hash, track_hash_no_color,
 };
+
+/// 缓存检查结果
+enum CacheCheck {
+    DirtyTracks,
+    ColorFastPath,
+    Incremental,
+    Miss,
+}
 
 impl Editor {
     /// 获取所有洋葱皮音符实例（视口范围内）—— 增量缓存版
@@ -38,16 +46,17 @@ impl Editor {
             return Vec::new();
         }
 
-        let Some(doc) = self.editor_state.data.document.as_ref() else {
+        let Some(doc_ref) = self.editor_state.data.document.as_ref() else {
             return Vec::new();
         };
+        let doc = std::sync::Arc::clone(doc_ref);
 
         let search_start = visible_tick_start;
         let search_end = visible_tick_end;
         let search_key_min = visible_key_min;
         let search_key_max = visible_key_max;
 
-        let track_indices = self.collect_visible_track_indices(track_onion_states);
+        let track_indices = self.collect_visible_track_indices_cached(track_onion_states);
         if track_indices.is_empty() {
             return Vec::new();
         }
@@ -68,64 +77,108 @@ impl Editor {
         let config_hash = track_config_hash(&track_colors);
         let track_hash = track_hash_no_color(&track_colors);
 
-        // === 尝试缓存 ===
-        let mut cache_guard = ONION_SKIN_CACHE.write().unwrap();
-
-        if let Some(ref mut cache) = *cache_guard {
-            // ----- 路径 1：脏音轨处理 -----
-            if !cache.dirty_tracks.is_empty() {
-                return Self::dirty_track_path(
-                    cache,
-                    doc,
-                    &track_colors,
-                    config_hash,
-                    track_hash,
-                    search_start,
-                    search_end,
-                    search_key_min,
-                    search_key_max,
-                    tick_quant,
-                );
+        // === 尝试缓存（先读锁，避免阻塞） ===
+        // 先提取缓存状态，再决定路径，避免在持有读锁时获取写锁
+        let cache_state = {
+            let cache_guard = ONION_SKIN_CACHE.read().unwrap();
+            match &*cache_guard {
+                None => CacheCheck::Miss,
+                Some(cache) => {
+                    if !cache.dirty_tracks.is_empty() {
+                        CacheCheck::DirtyTracks
+                    } else if cache.colors_dirty && cache.track_hash == track_hash {
+                        CacheCheck::ColorFastPath
+                    } else if cache.tick_quant == tick_quant
+                        && cache.track_hash == track_hash
+                        && (cache.search_start - search_start).abs() <= f32::EPSILON
+                        && (cache.search_end - search_end).abs() <= f32::EPSILON
+                        && cache.search_key_min == search_key_min
+                        && cache.search_key_max == search_key_max
+                    {
+                        return (*cache.output).clone();
+                    } else if cache.can_incremental(
+                        tick_quant,
+                        search_start,
+                        search_end,
+                        search_key_min,
+                        search_key_max,
+                        track_hash,
+                    ) {
+                        CacheCheck::Incremental
+                    } else {
+                        CacheCheck::Miss
+                    }
+                }
             }
+        };
 
-            // ----- 路径 2：颜色快速路径 -----
-            if cache.colors_dirty && cache.track_hash == track_hash {
-                cache.output = rebuild_output_from_cells(&cache.cells, &track_colors);
-                cache.config_hash = config_hash;
-                cache.colors_dirty = false;
-
-                tracing::info!(
-                    "Onion skin (color fast path): {} cells rebuilt",
-                    cache.output.len(),
-                );
-                return (*cache.output).clone();
+        match cache_state {
+            CacheCheck::DirtyTracks => {
+                let mut cache_guard = ONION_SKIN_CACHE.write().unwrap();
+                if let Some(ref mut cache) = *cache_guard
+                    && !cache.dirty_tracks.is_empty()
+                {
+                    return Self::dirty_track_path(
+                        cache,
+                        &doc,
+                        &track_colors,
+                        config_hash,
+                        track_hash,
+                        search_start,
+                        search_end,
+                        search_key_min,
+                        search_key_max,
+                        tick_quant,
+                    );
+                }
             }
+            CacheCheck::ColorFastPath => {
+                let mut cache_guard = ONION_SKIN_CACHE.write().unwrap();
+                if let Some(ref mut cache) = *cache_guard
+                    && cache.colors_dirty
+                    && cache.track_hash == track_hash
+                {
+                    recolor_output(&mut cache.output, &track_colors);
+                    cache.config_hash = config_hash;
+                    cache.colors_dirty = false;
 
-            // ----- 路径 3：增量路径 -----
-            if cache.can_incremental(
-                tick_quant,
-                search_start,
-                search_end,
-                search_key_min,
-                search_key_max,
-                track_hash,
-            ) {
-                return Self::incremental_path(
-                    cache,
-                    doc,
-                    &track_colors,
-                    config_hash,
-                    track_hash,
-                    search_start,
-                    search_end,
-                    search_key_min,
-                    search_key_max,
-                    tick_quant,
-                );
+                    tracing::info!(
+                        "Onion skin (color fast path): {} cells recolored",
+                        cache.output.len(),
+                    );
+                    return (*cache.output).clone();
+                }
             }
+            CacheCheck::Incremental => {
+                let mut cache_guard = ONION_SKIN_CACHE.write().unwrap();
+                if let Some(ref mut cache) = *cache_guard
+                    && cache.can_incremental(
+                        tick_quant,
+                        search_start,
+                        search_end,
+                        search_key_min,
+                        search_key_max,
+                        track_hash,
+                    )
+                {
+                    return Self::incremental_path(
+                        cache,
+                        &doc,
+                        &track_colors,
+                        config_hash,
+                        track_hash,
+                        search_start,
+                        search_end,
+                        search_key_min,
+                        search_key_max,
+                        tick_quant,
+                    );
+                }
+            }
+            CacheCheck::Miss => {}
         }
 
-        // ----- 路径 4：全量重建 -----
+        // ----- 路径 4：全量重建（需要写锁） -----
         let merged_map: HashMap<u64, MergedCell> = ONION_SKIN_POOL.install(|| {
             track_colors
                 .par_iter()
@@ -162,7 +215,8 @@ impl Editor {
             tick_quant,
         );
 
-        // 存入缓存（Arc clone，仅原子操作）
+        // 存入缓存（需要写锁）
+        let mut cache_guard = ONION_SKIN_CACHE.write().unwrap();
         *cache_guard = Some(OnionSkinCache {
             tick_quant,
             search_start,
