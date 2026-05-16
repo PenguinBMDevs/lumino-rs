@@ -187,15 +187,16 @@ impl OnionSkinCache {
         {
             return true;
         }
-        // 水平视口偏移太大（> 30% 缓存宽度） → 全量重查更快
+        // 水平视口偏移太大（> 50% 缓存宽度） → 全量重查更快
+        // 50% 比之前的 30% 更宽松，减少快速滚动下全量重建的触发频率
         let cache_span = self.search_end - self.search_start;
         if cache_span <= 0.0 {
             return false;
         }
         let shift = (search_start - self.search_start).abs();
-        let is_nearby = shift < cache_span * 0.3;
+        let is_nearby = shift < cache_span * 0.5;
         if !is_nearby {
-            tracing::info!("CACHE MISS: shift={} > 30% of span={}", shift, cache_span,);
+            tracing::info!("CACHE MISS: shift={} > 50% of span={}", shift, cache_span,);
         }
         is_nearby
     }
