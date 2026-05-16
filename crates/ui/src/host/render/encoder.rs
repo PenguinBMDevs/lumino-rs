@@ -1,3 +1,5 @@
+use std::sync::mpsc;
+
 use super::data::{GridColors, ViewportInfo};
 use crate::host::Host;
 use iced_wgpu::wgpu;
@@ -49,6 +51,9 @@ impl Host {
     }
 
     /// 如果需要则准备音符
+    ///
+    /// 单线程模式下，dispatch 到 NoteWorker 并等待完成。
+    /// 在等待期间主线程可以做 grid 准备工作（见 render_notes_cached 中的调用顺序）。
     pub(super) fn prepare_notes_if_needed(&mut self, current_hash: u64) -> bool {
         let note_index_dirty = self.root.editor.note_index_dirty.get();
         let current_edit_state = self.root.editor.editor_state.interaction.edit_state.clone();
@@ -69,11 +74,50 @@ impl Host {
             return false;
         }
 
-        // 有变化时才重建实例数组
-        if note_data_changed || viewport_changed {
-            puffin::profile_scope!("generate_note_instances");
-            self.update_all_note_instances_fast();
-            self.render_ctx.render_cache.note_viewport_hash = current_hash;
+        // 更新视口哈希
+        self.render_ctx.render_cache.note_viewport_hash = current_hash;
+
+        // 确保 NoteWorker 已创建（懒加载）
+        self.ensure_note_worker();
+
+        // 收集快照（极快，O(1) im::Vector clone）
+        let snapshot = self.collect_note_snapshot();
+
+        // 创建同步通道
+        let (done_tx, done_rx) = mpsc::channel::<()>();
+
+        // 派发到 NoteWorker（如果有 worker 的话）
+        let dispatched_to_worker = if let Some(ref worker) = self.render_ctx.note_worker {
+            worker.send(super::note_worker::NoteComputationJob {
+                snapshot,
+                buffer: std::sync::Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
+                done_tx: Some(done_tx),
+            });
+            true
+        } else {
+            false
+        };
+
+        if dispatched_to_worker {
+            // 等待 worker 完成（同步屏障）
+            // 对于单线程模式，worker 处理极快，等待时间可忽略
+            let _ = done_rx.recv();
+        } else {
+            // 没有 worker 回退：同步构建（不应该发生，
+            // 因为单线程模式下也会创建 NoteWorker，这里作为 safety net）
+            tracing::warn!(
+                "prepare_notes_if_needed: No NoteWorker available, falling back to sync"
+            );
+            let instances = unsafe {
+                self.render_ctx
+                    .render_cache
+                    .note_instances_buffer
+                    .write_buffer()
+            };
+            instances.clear();
+            // 最小化回退：只清空 buffer，保持渲染继续
+            // 正常路径不会走到这里
+            self.render_ctx.render_cache.note_instances_buffer.swap();
         }
 
         self.render_ctx.last_edit_state = current_edit_state;

@@ -163,7 +163,11 @@ impl Host {
         }
     }
 
-    /// 更新音符数据并发送到 WGPU 线程
+    /// 收集数据快照并派发到 NoteWorker（非阻塞）
+    ///
+    /// 主线程不再阻塞等待音符实例构建完成。
+    /// NoteWorker 在后台线程中：洋葱皮计算 → 实例构建 → 双缓冲写入 → swap。
+    /// WGPU 渲染线程通过版本号检测新数据。
     pub(super) fn update_note_data_for_wgpu_thread(&mut self) {
         puffin::profile_scope!("update_note_data");
         let note_index_dirty = self.root.editor.note_index_dirty.get();
@@ -195,16 +199,22 @@ impl Host {
             return;
         }
 
-        puffin::profile_scope!("update_all_note_instances_fast");
-        self.update_all_note_instances_fast();
+        // 更新视口哈希（即使 worker 尚未完成，后续帧会检测到变化）
         self.render_ctx.render_cache.note_viewport_hash = current_viewport_hash;
 
-        // 双缓冲模式下，数据已经通过 swap() 传递，不需要 clone
-        // 渲染线程可以直接从双缓冲读取
-        if let Some(ref _tx) = self.render_ctx.note_events_tx {
-            // 注意：如果使用独立渲染线程，需要通过其他方式同步
-            // 这里暂时保留通道发送，但实际数据已经通过双缓冲传递
-            // TODO: 重构为直接使用双缓冲读取
+        // 确保 NoteWorker 已创建（懒加载）
+        self.ensure_note_worker();
+
+        // 收集快照（极快，O(1) im::Vector clone）
+        let snapshot = self.collect_note_snapshot();
+
+        // 派发到 NoteWorker（非阻塞，fire-and-forget）
+        if let Some(ref worker) = self.render_ctx.note_worker {
+            worker.send(super::note_worker::NoteComputationJob {
+                snapshot,
+                buffer: std::sync::Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
+                done_tx: None, // 分离渲染模式：fire-and-forget
+            });
         }
 
         if note_index_dirty {

@@ -19,6 +19,7 @@ use iced_wgpu::graphics::Viewport;
 use iced_winit::winit;
 
 use crate::{WgpuRenderThread, config, root, settings};
+use render::note_worker::NoteWorker;
 
 mod cache;
 mod dialog;
@@ -151,6 +152,19 @@ impl Host {
             frame_count: 0,
             skip_ui_rendering: false,
             ui_dirty: false,
+        }
+    }
+
+    /// 确保 NoteWorker 已创建（懒加载）
+    ///
+    /// NoteWorker 用于将音符实例构建从主线程卸载到独立线程。
+    /// 在两种渲染模式下都会使用：
+    /// - 分离线程模式：非阻塞 fire-and-forget
+    /// - 单线程模式：dispatch + 同步等待（仍能在本帧内并行化）
+    fn ensure_note_worker(&mut self) {
+        if self.render_ctx.note_worker.is_none() {
+            self.render_ctx.note_worker = Some(NoteWorker::spawn());
+            tracing::info!("NoteWorker: spawned");
         }
     }
 

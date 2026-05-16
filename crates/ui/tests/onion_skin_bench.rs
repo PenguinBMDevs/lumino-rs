@@ -12,9 +12,11 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use lumino_core::midi::MidiDocument;
-use lumino_gfx::{CameraUniform, CameraParams, GridRenderer, NoteInstance, NoteRenderer, SwappableBuffer};
-use lumino_ui::editor::note::Note;
+use lumino_gfx::{
+    CameraParams, CameraUniform, GridRenderer, NoteInstance, NoteRenderer, SwappableBuffer,
+};
 use lumino_ui::editor::Editor;
+use lumino_ui::editor::note::Note;
 use lumino_ui::host::RenderCache;
 
 const CANVAS_WIDTH: f32 = 1920.0;
@@ -47,7 +49,9 @@ fn create_test_midi(path: &std::path::Path) {
 
     eprintln!(
         "生成 MIDI 数据: 1 主音轨 x {} + {} 洋葱轨 x {} = {} 总音符",
-        MAIN_NOTES, ONION_TRACKS, ONION_NOTES_PER_TRACK,
+        MAIN_NOTES,
+        ONION_TRACKS,
+        ONION_NOTES_PER_TRACK,
         MAIN_NOTES + ONION_TRACKS * ONION_NOTES_PER_TRACK
     );
 
@@ -100,7 +104,11 @@ fn create_test_midi(path: &std::path::Path) {
         midi_data.extend_from_slice(&(track_data.len() as u32).to_be_bytes());
         midi_data.extend_from_slice(&track_data);
     }
-    eprintln!("MIDI 数据生成完成: {:?}, 大小={}MB", gen_start.elapsed(), midi_data.len() / 1024 / 1024);
+    eprintln!(
+        "MIDI 数据生成完成: {:?}, 大小={}MB",
+        gen_start.elapsed(),
+        midi_data.len() / 1024 / 1024
+    );
     std::fs::write(path, &midi_data).expect("写入测试 MIDI 文件失败");
 }
 
@@ -119,7 +127,11 @@ fn onion_skin_benchmark() {
     eprintln!("加载 MIDI 文档...");
     let load_start = Instant::now();
     let doc = MidiDocument::from_notes_file(&midi_path, None).expect("加载 MIDI 文档失败");
-    eprintln!("加载完成: {:?}, 音轨数={}", load_start.elapsed(), doc.track_count);
+    eprintln!(
+        "加载完成: {:?}, 音轨数={}",
+        load_start.elapsed(),
+        doc.track_count
+    );
 
     // ========== 2. 创建 Editor + 加载主音轨 ==========
     let mut editor = Editor::new();
@@ -131,7 +143,9 @@ fn onion_skin_benchmark() {
         let key = (60 + (i % 48)) as u16;
         let length = (main_tick_step / 2) as f32;
         editor.editor_state.data.notes.push_back(
-            Note::new(tick, key, length).with_velocity(100).with_channel(0),
+            Note::new(tick, key, length)
+                .with_velocity(100)
+                .with_channel(0),
         );
     }
     eprintln!("主音轨加载完成: {:?}", load_notes_start.elapsed());
@@ -151,7 +165,9 @@ fn onion_skin_benchmark() {
     editor.set_onion_skin_show_all(true);
 
     let mut onion_states = HashMap::new();
-    for i in 1..=ONION_TRACKS { onion_states.insert(i, true); }
+    for i in 1..=ONION_TRACKS {
+        onion_states.insert(i, true);
+    }
     editor.editor_state.data.current_track = 0;
 
     // ========== 3. 创建 SwappableBuffer ==========
@@ -177,15 +193,13 @@ fn onion_skin_benchmark() {
             .await
             .expect("创建 wgpu adapter 失败（无 GPU？）");
         adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("headless_bench_device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::MemoryUsage,
-                    ..Default::default()
-                },
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("headless_bench_device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::MemoryUsage,
+                ..Default::default()
+            })
             .await
             .expect("创建 wgpu device 失败")
     });
@@ -198,7 +212,11 @@ fn onion_skin_benchmark() {
     // 创建渲染目标纹理
     let render_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("bench_render_target"),
-        size: wgpu::Extent3d { width: 1920, height: 1080, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: 1920,
+            height: 1080,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -211,7 +229,11 @@ fn onion_skin_benchmark() {
     // 创建深度纹理
     let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("bench_depth"),
-        size: wgpu::Extent3d { width: 1920, height: 1080, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: 1920,
+            height: 1080,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -225,16 +247,23 @@ fn onion_skin_benchmark() {
     grid_renderer.prepare(
         &queue,
         (CANVAS_WIDTH, CANVAS_HEIGHT),
-        0.0, 0.0, ZOOM_X, ZOOM_Y,
-        KEYBOARD_WIDTH, RULER_HEIGHT,
-        [0.1, 0.1, 0.12, 1.0], // bg
-        [0.08, 0.08, 0.1, 1.0], // black_key
-        [0.3, 0.3, 0.4, 1.0], // bar
-        [0.2, 0.2, 0.3, 1.0], // beat
-        [0.15, 0.15, 0.2, 1.0], // half_beat
+        0.0,
+        0.0,
+        ZOOM_X,
+        ZOOM_Y,
+        KEYBOARD_WIDTH,
+        RULER_HEIGHT,
+        [0.1, 0.1, 0.12, 1.0],   // bg
+        [0.08, 0.08, 0.1, 1.0],  // black_key
+        [0.3, 0.3, 0.4, 1.0],    // bar
+        [0.2, 0.2, 0.3, 1.0],    // beat
+        [0.15, 0.15, 0.2, 1.0],  // half_beat
         [0.12, 0.12, 0.15, 1.0], // grid
         [0.25, 0.25, 0.35, 1.0], // key_line
-        480.0, 127.0, 0.0, 0.0,
+        480.0,
+        127.0,
+        0.0,
+        0.0,
     );
 
     // ========== 5. 调试信息 ==========
@@ -259,20 +288,31 @@ fn onion_skin_benchmark() {
         let visible_end = (scroll_tick * ZOOM_X + CANVAS_WIDTH - KEYBOARD_WIDTH) / ZOOM_X;
 
         let hash = RenderCache::compute_viewport_hash(
-            editor.editor_state.view.scroll_x, editor.editor_state.view.scroll_y,
-            ZOOM_X, ZOOM_Y, CANVAS_WIDTH, CANVAS_HEIGHT,
+            editor.editor_state.view.scroll_x,
+            editor.editor_state.view.scroll_y,
+            ZOOM_X,
+            ZOOM_Y,
+            CANVAS_WIDTH,
+            CANVAS_HEIGHT,
             editor.editor_state.view.visible_key_count,
         );
 
         let onion = editor.get_all_onion_skin_instances_in_range(
-            &onion_states, scroll_tick, visible_end, 0, 127,
+            &onion_states,
+            scroll_tick,
+            visible_end,
+            0,
+            127,
         );
         let instances = unsafe { note_buffer.write_buffer() };
         instances.clear();
         instances.reserve(MAIN_NOTES + onion.len() + 1);
         for note in editor.editor_state.data.notes.iter() {
             instances.push(NoteInstance::new(
-                note.tick, note.key as f32, note.length, DEFAULT_NOTE_COLOR,
+                note.tick,
+                note.key as f32,
+                note.length,
+                DEFAULT_NOTE_COLOR,
             ));
         }
         instances.extend(onion);
@@ -301,12 +341,18 @@ fn onion_skin_benchmark() {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &render_view,
                 resolve_target: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
                 depth_slice: None,
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &depth_view,
-                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
                 stencil_ops: None,
             }),
             timestamp_writes: None,
@@ -342,12 +388,15 @@ fn onion_skin_benchmark() {
 
         // === CPU: update_note_data_for_wgpu_thread ===
         let note_index_dirty = editor.note_index_dirty.get();
-        let note_data_changed = note_index_dirty
-            || unsafe { note_buffer.read_buffer().is_empty() };
+        let note_data_changed = note_index_dirty || unsafe { note_buffer.read_buffer().is_empty() };
 
         let current_hash = RenderCache::compute_viewport_hash(
-            editor.editor_state.view.scroll_x, editor.editor_state.view.scroll_y,
-            ZOOM_X, ZOOM_Y, CANVAS_WIDTH, CANVAS_HEIGHT,
+            editor.editor_state.view.scroll_x,
+            editor.editor_state.view.scroll_y,
+            ZOOM_X,
+            ZOOM_Y,
+            CANVAS_WIDTH,
+            CANVAS_HEIGHT,
             editor.editor_state.view.visible_key_count,
         );
         let viewport_changed = current_hash != note_viewport_hash;
@@ -356,20 +405,29 @@ fn onion_skin_benchmark() {
             rebuild_count += 1;
 
             let onion = editor.get_all_onion_skin_instances_in_range(
-                &onion_states, scroll_tick, visible_end, 0, 127,
+                &onion_states,
+                scroll_tick,
+                visible_end,
+                0,
+                127,
             );
             let instances = unsafe { note_buffer.write_buffer() };
             instances.clear();
             instances.reserve(MAIN_NOTES + onion.len() + 1);
             for note in editor.editor_state.data.notes.iter() {
                 instances.push(NoteInstance::new(
-                    note.tick, note.key as f32, note.length, DEFAULT_NOTE_COLOR,
+                    note.tick,
+                    note.key as f32,
+                    note.length,
+                    DEFAULT_NOTE_COLOR,
                 ));
             }
             instances.extend(onion);
             note_buffer.swap();
             note_viewport_hash = current_hash;
-            if note_index_dirty { editor.note_index_dirty.set(false); }
+            if note_index_dirty {
+                editor.note_index_dirty.set(false);
+            }
         }
 
         // === GPU: prepare_note_renderer + execute_render_pass ===
@@ -397,12 +455,18 @@ fn onion_skin_benchmark() {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &render_view,
                 resolve_target: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
                 depth_slice: None,
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &depth_view,
-                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
                 stencil_ops: None,
             }),
             timestamp_writes: None,
@@ -432,9 +496,18 @@ fn onion_skin_benchmark() {
     eprintln!("FPS:               {:.1}", fps);
     eprintln!("平均实例数/帧:     {}", avg_per_frame);
     eprintln!("  ├─ 主音轨:       {}", MAIN_NOTES);
-    eprintln!("  └─ 洋葱皮:       {} (avg)", avg_per_frame.saturating_sub(MAIN_NOTES));
-    eprintln!("可见范围宽度:      {:.0} ticks", (CANVAS_WIDTH - KEYBOARD_WIDTH) / ZOOM_X);
-    eprintln!("总滚动距离:        {:.0} ticks", (NUM_FRAMES as f32) * TICK_SPEED);
+    eprintln!(
+        "  └─ 洋葱皮:       {} (avg)",
+        avg_per_frame.saturating_sub(MAIN_NOTES)
+    );
+    eprintln!(
+        "可见范围宽度:      {:.0} ticks",
+        (CANVAS_WIDTH - KEYBOARD_WIDTH) / ZOOM_X
+    );
+    eprintln!(
+        "总滚动距离:        {:.0} ticks",
+        (NUM_FRAMES as f32) * TICK_SPEED
+    );
     eprintln!("管线组件:");
     eprintln!("  ├─ CPU: 视口哈希计算 + 变化检测");
     eprintln!("  ├─ CPU: 主音轨 {} 全量 iter → NoteInstance", MAIN_NOTES);
@@ -446,7 +519,11 @@ fn onion_skin_benchmark() {
     eprintln!("  └─ GPU: queue.submit + device.poll (Wait)");
     eprintln!("============================================================\n");
 
-    assert!(avg_per_frame > MAIN_NOTES, "应该有至少 {} 个主音轨实例", MAIN_NOTES);
+    assert!(
+        avg_per_frame > MAIN_NOTES,
+        "应该有至少 {} 个主音轨实例",
+        MAIN_NOTES
+    );
     eprintln!("基准测试完成: FPS = {:.1}", fps);
     eprintln!("(主音轨 100W 全量 + 洋葱皮 1000W 快速滚动 | wgpu 无头模式)");
 }
