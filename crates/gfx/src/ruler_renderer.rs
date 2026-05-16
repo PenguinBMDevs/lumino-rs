@@ -399,6 +399,57 @@ impl RulerRenderer {
         );
     }
 
+    /// 使用预先生成的实例准备渲染数据（避免重复实例生成）
+    ///
+    /// 与 `prepare` 不同的是，此方法接受已生成好的实例数据直接上传到 GPU，
+    /// 跳过 `generate_tick_instances` 的循环计算。适用于分离线程模式中
+    /// UI 线程已预计算好实例的场景，可节省 ~6ms 的 CPU 计算开销。
+    pub fn prepare_from_instances(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        instances: &[RulerTickInstance],
+        viewport_size: (f32, f32),
+        ruler_height: f32,
+        keyboard_width: f32,
+        scroll_x: f32,
+        zoom_x: f32,
+        ticks_per_measure: u32,
+        ticks_per_beat: u32,
+    ) {
+        puffin::profile_function!();
+        let instance_count = instances.len();
+
+        // 扩容检查
+        if instance_count > self.capacity {
+            let new_capacity = (self.capacity * Self::GROWTH_FACTOR).max(instance_count);
+            self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
+            self.capacity = new_capacity;
+        }
+
+        // 上传实例数据
+        if instance_count > 0 {
+            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
+        }
+
+        // 更新视口 uniform
+        let viewport_uniform = RulerViewportUniform::new(
+            viewport_size.0,
+            viewport_size.1,
+            ruler_height,
+            keyboard_width,
+            scroll_x,
+            zoom_x,
+            ticks_per_measure,
+            ticks_per_beat,
+        );
+        queue.write_buffer(
+            &self.viewport_buffer,
+            0,
+            bytemuck::cast_slice(&[viewport_uniform]),
+        );
+    }
+
     /// 执行渲染
     pub fn draw(&self, render_pass: &mut wgpu::RenderPass, instance_count: u32) {
         puffin::profile_function!();

@@ -216,6 +216,7 @@ impl Host {
     /// 核心优化（基于火焰图 96-360ms 瓶颈）：
     /// - 音符数据未变 + 仅视口变化 → 跳过全量重建（GPU 已有全量音符数据）
     /// - 音符数据变化 → 全量重建 + SwappableBuffer swap
+    /// - 仅绘制中音符变化 → 从缓存重建，避免 165ms+ 的洋葱皮并行查询
     pub(super) fn update_note_data_for_wgpu_thread(&mut self) {
         puffin::profile_scope!("update_note_data");
         let note_index_dirty = self.root.editor.note_index_dirty.get();
@@ -224,9 +225,9 @@ impl Host {
             crate::editor::EditState::Drawing { .. }
         );
 
-        let note_data_changed = note_index_dirty
-            || self.render_ctx.render_cache.note_instances_is_empty()
-            || is_drawing;
+        // 分离 is_drawing：音符数据是否真的变了（排除仅绘制中音符位置变化）
+        let note_data_changed =
+            note_index_dirty || self.render_ctx.render_cache.note_instances_is_empty();
 
         // 检测视口变化（滚动/缩放）
         let v = &self.root.editor.editor_state.view;
@@ -244,7 +245,7 @@ impl Host {
             current_viewport_hash != self.render_ctx.render_cache.note_viewport_hash;
 
         // 什么都没变 → 跳过
-        if !note_data_changed && !viewport_changed {
+        if !note_data_changed && !viewport_changed && !is_drawing {
             return;
         }
 
@@ -255,18 +256,23 @@ impl Host {
         // 洋葱皮实例依赖视口范围，每次视口变化必须重建。
         if viewport_changed && !note_data_changed {
             // 提取所有需要的主音轨引用（避免多个 borrow 冲突）
-            let main_instances = self.render_ctx.render_cache.cached_main_note_instances.clone();
             let onion_states = self.root.sidebar.get_onion_skin_states();
             let es_scroll_x = self.root.editor.editor_state.view.scroll_x;
             let es_zoom_x = self.root.editor.editor_state.view.zoom_x;
             let es_canvas_x = self.root.editor.editor_state.canvas.size.x;
             let es_kb_width = self.root.editor.editor_state.view.keyboard_width;
-            let es_max_key = self.root.editor.editor_state.view.visible_key_count.saturating_sub(1);
+            let es_max_key = self
+                .root
+                .editor
+                .editor_state
+                .view
+                .visible_key_count
+                .saturating_sub(1);
 
             // 计算洋葱皮视口范围
             let visible_tick_start = (es_scroll_x / es_zoom_x).max(0.0);
-            let visible_tick_end = ((es_scroll_x + es_canvas_x - es_kb_width) / es_zoom_x)
-                .max(visible_tick_start);
+            let visible_tick_end =
+                ((es_scroll_x + es_canvas_x - es_kb_width) / es_zoom_x).max(visible_tick_start);
 
             // 获取洋葱皮实例（需要可变借用 self.root.editor）
             let onion_instances = self.root.editor.get_all_onion_skin_instances_in_range(
@@ -277,12 +283,15 @@ impl Host {
                 es_max_key,
             );
 
+            // 更新洋葱皮缓存（供 note_data_only / is_drawing 路径复用）
+            self.render_ctx.render_cache.cached_onion_instances = onion_instances;
+
             // 获取编辑状态（绘制中音符）
             let edit_state = &self.root.editor.editor_state.interaction.edit_state;
             let default_note_length = self.root.editor.editor_state.view.default_note_length;
             let snap_precision = self.root.editor.editor_state.view.snap_precision;
 
-            // 写入双缓冲：缓存主音轨 + 新洋葱皮 + 绘制中音符
+            // 写入双缓冲：从缓存 extend + 新洋葱皮 + 绘制中音符
             let instances = unsafe {
                 self.render_ctx
                     .render_cache
@@ -290,9 +299,16 @@ impl Host {
                     .write_buffer()
             };
             instances.clear();
-            instances.reserve(main_instances.len() + onion_instances.len() + 1);
-            instances.extend(main_instances);
-            instances.extend(onion_instances);
+            instances.reserve(
+                self.render_ctx
+                    .render_cache
+                    .cached_main_note_instances
+                    .len()
+                    + self.render_ctx.render_cache.cached_onion_instances.len()
+                    + 1,
+            );
+            instances.extend_from_slice(&self.render_ctx.render_cache.cached_main_note_instances);
+            instances.extend_from_slice(&self.render_ctx.render_cache.cached_onion_instances);
             Self::add_drawing_note_to_instances(
                 instances,
                 edit_state,
@@ -306,13 +322,62 @@ impl Host {
             return;
         }
 
-        // 音符数据变化 → 全量重建
-        puffin::profile_scope!("update_all_note_instances_fast");
-        self.update_all_note_instances_fast();
-        self.render_ctx.render_cache.note_viewport_hash = current_viewport_hash;
+        // 音符数据变化
+        //
+        // 关键优化：洋葱皮实例来自其他音轨（collect_visible_track_indices 排除了当前音轨），
+        // 当仅当前音轨音符变化而视口未变时，洋葱皮缓存仍然有效，无需重新查询所有音轨的范围。
+        if note_data_changed {
+            if viewport_changed {
+                // 视口变化 → 全量重建（包括洋葱皮 + 更新 onion cache）
+                puffin::profile_scope!("update_all_note_instances_fast");
+                self.update_all_note_instances_fast();
+            } else {
+                // 仅音符数据变化（视口未变）→ 只重建主音轨，复用 cached_onion_instances
+                puffin::profile_scope!("rebuild_main_note_instances_only");
+                self.rebuild_main_note_instances_only();
+            }
 
-        if note_index_dirty {
-            self.root.editor.note_index_dirty.set(false);
+            self.render_ctx.render_cache.note_viewport_hash = current_viewport_hash;
+
+            if note_index_dirty {
+                self.root.editor.note_index_dirty.set(false);
+            }
+            return;
+        }
+
+        // 仅绘制中音符变化 → 从主音轨缓存 + 洋葱皮缓存重建（不查范围，视口未变）
+        if is_drawing {
+            puffin::profile_scope!("update_drawing_note_only");
+            let edit_state = &self.root.editor.editor_state.interaction.edit_state;
+            let default_note_length = self.root.editor.editor_state.view.default_note_length;
+            let snap_precision = self.root.editor.editor_state.view.snap_precision;
+
+            let instances = unsafe {
+                self.render_ctx
+                    .render_cache
+                    .note_instances_buffer
+                    .write_buffer()
+            };
+            instances.clear();
+            instances.reserve(
+                self.render_ctx
+                    .render_cache
+                    .cached_main_note_instances
+                    .len()
+                    + self.render_ctx.render_cache.cached_onion_instances.len()
+                    + 1,
+            );
+            instances.extend_from_slice(&self.render_ctx.render_cache.cached_main_note_instances);
+            instances.extend_from_slice(&self.render_ctx.render_cache.cached_onion_instances);
+            Self::add_drawing_note_to_instances(
+                instances,
+                edit_state,
+                default_note_length,
+                snap_precision,
+            );
+
+            self.render_ctx.render_cache.note_instances_version =
+                self.render_ctx.render_cache.note_instances_buffer.swap();
         }
     }
 

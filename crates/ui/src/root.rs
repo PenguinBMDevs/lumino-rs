@@ -20,8 +20,6 @@ pub struct MemoryBreakdown {
     /// track_midi_events HashMap 中的总条目数和估算字节
     pub track_midi_events_entries: usize,
     pub track_midi_events_bytes: usize,
-    /// cached_onion_skin_notes 的字节数
-    pub cached_onion_skin_bytes: usize,
     /// note_instances_buffer 双缓冲信息（由 Host::memory_breakdown 填充）
     pub note_instances_front_cap: usize,
     pub note_instances_front_len: usize,
@@ -62,11 +60,6 @@ pub struct Root {
     /// 各音轨的 MIDI 控制事件（CC/PC/PB），供播放时使用
     pub(crate) track_midi_events:
         std::collections::HashMap<usize, Vec<crate::playback::MidiTrackEvent>>,
-    /// 洋葱皮音符原始数据缓存（tick, key, length, color）
-    /// 存原始数据而非 NoteInstance，因为 NoteInstance 含屏幕坐标（随 scroll/zoom 变化）
-    pub(crate) cached_onion_skin_notes: Option<Vec<(f32, u16, f32, iced_core::Color)>>,
-    /// 缓存失效计数器（只有音轨数据/开关变化才递增）
-    pub(crate) onion_skin_generation: u64,
     /// 力度过滤阈值
     pub(crate) velocity_filter_threshold: u8,
     /// 力度面板高度（可拖拽调整）
@@ -107,8 +100,6 @@ impl Root {
             pending_tempo_changes: None,
             pending_midi_output: None,
             track_midi_events: std::collections::HashMap::new(),
-            cached_onion_skin_notes: None,
-            onion_skin_generation: 0,
             velocity_filter_threshold: params.ui_config.velocity_filter_threshold,
             velocity_panel_height: crate::editor::velocity::VELOCITY_PANEL_HEIGHT,
             midi_document: None,
@@ -196,12 +187,6 @@ impl Root {
             .unwrap_or_default()
     }
 
-    /// 标记洋葱皮缓存失效（任何影响洋葱皮渲染的变化都调用）
-    pub fn invalidate_onion_skin_cache(&mut self) {
-        self.onion_skin_generation += 1;
-        self.editor.invalidate_onion_skin_cache();
-    }
-
     /// 设置 MIDI 文档引用（供懒加载使用）
     pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
         self.midi_document = Some(doc);
@@ -219,19 +204,10 @@ impl Root {
             .map(|v| v.capacity() * std::mem::size_of::<crate::playback::MidiTrackEvent>())
             .sum();
 
-        // cached_onion_skin_notes: Option<Vec<(f32, u16, f32, Color)>>
-        // tuple = 4 + 2 + 4 + 16 = 26 bytes, with alignment ~28 bytes
-        let cached_onion_skin_bytes = self
-            .cached_onion_skin_notes
-            .as_ref()
-            .map(|v| v.capacity() * 28)
-            .unwrap_or(0);
-
         MemoryBreakdown {
             editor: editor_mem,
             track_midi_events_entries,
             track_midi_events_bytes,
-            cached_onion_skin_bytes,
             ..Default::default()
         }
     }

@@ -25,6 +25,11 @@ pub struct RenderCache {
     /// 仅在 note_index_dirty 时重建，视口滚动时直接 clone 此缓存。
     /// 50k 音符 ≈ 1MB，clone 耗时约 0.2ms。
     pub cached_main_note_instances: Vec<lumino_gfx::NoteInstance>,
+    /// 缓存的洋葱皮 NoteInstance（视口不变时免重复范围查询）
+    ///
+    /// 在 update_all_note_instances_fast 和视口变化路径中更新，
+    /// 在 note_data_changed && !viewport_changed 和 is_drawing 路径中复用。
+    pub cached_onion_instances: Vec<lumino_gfx::NoteInstance>,
     /// 当前版本号（用于检测数据变化）
     pub note_instances_version: u64,
     /// 网格线视口哈希（用于检测变化，单线程模式）
@@ -67,6 +72,7 @@ impl RenderCache {
             ruler_instances: Vec::new(),
             note_instances_buffer: Arc::new(SwappableBuffer::new(Self::INITIAL_NOTE_CAPACITY)),
             cached_main_note_instances: Vec::new(),
+            cached_onion_instances: Vec::new(),
             note_instances_version: 0,
             grid_viewport_hash: 0,
             note_viewport_hash: 0,

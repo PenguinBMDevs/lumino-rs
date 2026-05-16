@@ -2900,6 +2900,7 @@ dependencies = [
  "bitmaps",
  "rand_core 0.6.4",
  "rand_xoshiro",
+ "rayon",
  "sized-chunks",
  "typenum",
  "version_check",

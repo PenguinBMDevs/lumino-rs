@@ -49,14 +49,15 @@ pub fn prepare_renderers(
             params.max_key_index as u16 + 1,
         );
     }
-    // 准备标尺渲染器
+    // 准备标尺渲染器（使用预计算实例，避免重复生成）
     if !params.ruler_instances.is_empty() {
-        ruler_renderer.prepare(
+        ruler_renderer.prepare_from_instances(
             device,
             queue,
+            &params.ruler_instances,
             params.logical_size,
-            params.keyboard_width,
             params.ruler_height,
+            params.keyboard_width,
             params.scroll.0,
             params.zoom.0,
             params.ticks_per_measure,

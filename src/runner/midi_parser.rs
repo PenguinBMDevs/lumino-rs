@@ -336,8 +336,11 @@ mod integration_tests {
 
     const TEST_MIDI_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test-file/noname.mid");
 
-    fn extract_notes_from_file() -> (Vec<TrackInfo>, TrackNotesMap, HashMap<usize, TrackMidiEvents>)
-    {
+    fn extract_notes_from_file() -> (
+        Vec<TrackInfo>,
+        TrackNotesMap,
+        HashMap<usize, TrackMidiEvents>,
+    ) {
         let bytes = std::fs::read(TEST_MIDI_PATH)
             .expect("测试文件 noname.mid 不存在，请确认 test-file/ 目录");
         let smf = Smf::parse(&bytes).expect("Smf::parse 解析失败");
@@ -355,9 +358,7 @@ mod integration_tests {
     #[test]
     fn test_noname_midi_parses_all_notes() {
         let (_infos, notes_map, _events) = extract_notes_from_file();
-        let track2 = notes_map
-            .get(&2)
-            .expect("音轨 2 应有 263 个音符");
+        let track2 = notes_map.get(&2).expect("音轨 2 应有 263 个音符");
         assert_eq!(track2.len(), 263, "音轨 2 应有 263 个音符（key 0-254）");
     }
 
@@ -395,9 +396,20 @@ mod integration_tests {
         assert_eq!((max_128 - 0.0) * zoom_y, 127.0 * zoom_y, "128键 key 0 底部");
         assert_eq!((max_128 - 127.0) * zoom_y, 0.0, "128键 key 127 顶部");
         assert_eq!((max_256 - 0.0) * zoom_y, 255.0 * zoom_y, "256键 key 0 底部");
-        assert_eq!((max_256 - 127.0) * zoom_y, 128.0 * zoom_y, "256键 key 127 中部");
-        assert_eq!((max_256 - 254.0) * zoom_y, 1.0 * zoom_y, "256键 key 254 近顶");
-        assert!((max_256 - 254.0) * zoom_y >= 0.0, "key 254 的 world_y 不应为负");
+        assert_eq!(
+            (max_256 - 127.0) * zoom_y,
+            128.0 * zoom_y,
+            "256键 key 127 中部"
+        );
+        assert_eq!(
+            (max_256 - 254.0) * zoom_y,
+            1.0 * zoom_y,
+            "256键 key 254 近顶"
+        );
+        assert!(
+            (max_256 - 254.0) * zoom_y >= 0.0,
+            "key 254 的 world_y 不应为负"
+        );
     }
 
     #[test]
