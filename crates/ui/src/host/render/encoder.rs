@@ -68,16 +68,31 @@ impl Host {
             return false;
         }
 
+        // 计算可见 tick 范围（CPU 预过滤用）
+        let es = &self.root.editor.editor_state;
+        let visible_tick_start = (es.view.scroll_x / es.view.zoom_x).max(0.0);
+        let visible_tick_end = ((es.view.scroll_x + es.canvas.size.x - es.view.keyboard_width)
+            / es.view.zoom_x)
+            .max(visible_tick_start);
+
         // 有变化时才重建实例数组
         if note_data_changed || viewport_changed {
-            // 全量重建（包括洋葱皮）
+            // 全量重建（包括洋葱皮），CPU 预过滤仅可见区间
             puffin::profile_scope!("generate_note_instances");
-            self.update_all_note_instances_fast();
+            self.update_all_note_instances_fast(visible_tick_start, visible_tick_end);
             self.render_ctx.render_cache.note_viewport_hash = current_hash;
         } else if is_drawing {
-            // 仅绘制中音符变化 → 全量重建
+            // 仅绘制中音符变化 → 从缓存写双缓冲
             puffin::profile_scope!("generate_note_instances");
-            self.update_all_note_instances_fast();
+            let drawing_note =
+                Self::extract_drawing_note(&self.root.editor.editor_state.interaction.edit_state);
+            let default_note_length = es.view.default_note_length;
+            let snap_precision = es.view.snap_precision;
+            self.write_cached_instances_to_buffer(
+                drawing_note,
+                default_note_length,
+                snap_precision,
+            );
         }
 
         self.render_ctx.last_edit_state = current_edit_state;

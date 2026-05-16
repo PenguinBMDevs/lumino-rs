@@ -271,13 +271,11 @@ impl Editor {
 
     /// 获取所有洋葱皮音轨在指定范围内的 NoteInstance
     ///
-    /// 优化（基于火焰图 `update_note_data` 276ms 瓶颈）：
-    /// - 使用 `doc.get_track_notes_in_range` 仅查询视口范围内的音符，而非加载音轨全量音符
-    /// - 使用 `has_track_events_in_range` 做快速预检，避免空音轨的查询开销
-    /// - 使用 rayon 并行处理多个音轨
-    ///
-    /// 不等同于缓存方案——每帧仍做范围查询，但数据量从「全音轨音符」降为「视口内音符」，
-    /// 对于黑乐谱场景（数万到数十万音符/轨），通常减少 2-3 个数量级。
+    /// 优化（基于火焰图 `onion_query` 79.6ms 瓶颈）：
+    /// - 每个音轨首次查询时构建全量 Vec&lt;NoteInstance&gt; 并缓存
+    /// - 后续视口变化时从缓存二分查找 + 过滤，O(log N + K_visible)
+    /// - 避免每帧 document 范围查询 + 格式转换的 O(N_range) 开销
+    /// - 缓存与 `track_notes` 同步在 `mark_notes_changed` 时清除
     pub fn get_all_onion_skin_instances_in_range(
         &mut self,
         track_onion_states: &std::collections::HashMap<usize, bool>,
@@ -299,67 +297,66 @@ impl Editor {
             return Vec::new();
         };
 
-        // 搜索范围 = 视口范围
-        let search_start = visible_tick_start;
-        let search_end = visible_tick_end;
+        // Phase 1: 预收集音轨配置 + 填充缓存（顺序执行，需要 &mut self 写 cache）
+        let cache = &mut self.editor_state.data.cached_onion_track_instances;
+        let mut results: Vec<NoteInstance> = Vec::new();
 
-        // 预收集音轨颜色和启用状态，避免在闭包中访问 self
-        let track_configs: Vec<(usize, iced_core::Color)> = track_indices
-            .iter()
-            .filter_map(|&track_idx| {
-                let is_enabled = track_onion_states.get(&track_idx).copied().unwrap_or(false);
-                if !self
-                    .onion_skin_config
-                    .should_show_track(track_idx, is_enabled)
-                {
-                    return None;
-                }
-                let color = self.onion_skin_config.get_track_color(track_idx);
-                Some((track_idx, color))
-            })
-            .collect();
+        for &track_idx in &track_indices {
+            let is_enabled = track_onion_states.get(&track_idx).copied().unwrap_or(false);
+            if !self
+                .onion_skin_config
+                .should_show_track(track_idx, is_enabled)
+            {
+                continue;
+            }
+            let color = self.onion_skin_config.get_track_color(track_idx);
+            let color_arr = [color.r, color.g, color.b, color.a];
 
-        // 并行处理音轨查询——使用范围查询仅获取视口内的音符并直接转为 NoteInstance
-        track_configs
-            .par_iter()
-            .filter_map(|&(track_idx, color)| {
-                // 快速检查：音轨在视口范围内是否有事件
-                if !doc.has_track_events_in_range(
-                    track_idx as u16,
-                    search_start as u32,
-                    search_end as u32,
-                ) {
-                    return None;
-                }
-
-                // 使用二分查找的范围查询（O(log N + K)）
-                let raw = doc.get_track_notes_in_range(track_idx as u16, search_start, search_end);
+            // 检查缓存是否存在
+            let instances = if !cache.contains_key(&track_idx) {
+                // 缓存未命中：从 document 加载全量音符并转换为 NoteInstance
+                let raw = doc.get_track_notes(track_idx as u16);
                 if raw.is_empty() {
-                    return None;
+                    cache.insert(track_idx, Vec::new());
+                    continue;
                 }
+                let mut cached: Vec<NoteInstance> = Vec::with_capacity(raw.len());
+                for &(tick, key, _length, _vel, _ch) in raw.iter() {
+                    cached.push(NoteInstance::new(tick, key as f32, _length, color_arr));
+                }
+                cache.insert(track_idx, cached);
+                cache.get(&track_idx).unwrap()
+            } else {
+                // 缓存命中
+                cache.get(&track_idx).unwrap()
+            };
 
-                // 过滤 key 范围并直接转换为 NoteInstance（避免中间 Vec 分配）
-                let color_arr = [color.r, color.g, color.b, color.a];
-                let mut instances = Vec::with_capacity(raw.len());
-                for &(tick, key, length, _vel, _ch) in raw.iter() {
-                    let key_u16 = key as u16;
-                    if key_u16 >= visible_key_min && key_u16 <= visible_key_max {
-                        instances.push(NoteInstance::new(tick, key as f32, length, color_arr));
-                    }
-                }
+            // Phase 2: 从缓存中二分查找 + 过滤可见范围
+            if instances.is_empty() {
+                continue;
+            }
 
-                if instances.is_empty() {
-                    None
-                } else {
-                    Some(instances)
+            // 二分查找：满足 position[0] + size_x >= visible_tick_start 的第一个索引
+            let start =
+                instances.partition_point(|n| n.position[0] + n.size_x < visible_tick_start);
+            let end = instances.partition_point(|n| n.position[0] <= visible_tick_end);
+
+            if start >= end {
+                continue;
+            }
+
+            results.reserve(end - start);
+            for n in &instances[start..end] {
+                let key_u16 = n.position[1] as u16;
+                if key_u16 >= visible_key_min
+                    && key_u16 <= visible_key_max
+                    && n.position[0] + n.size_x >= visible_tick_start
+                {
+                    results.push(*n);
                 }
-            })
-            .reduce(Vec::new, |mut a, mut b| {
-                if a.is_empty() {
-                    return b;
-                }
-                a.append(&mut b);
-                a
-            })
+            }
+        }
+
+        results
     }
 }

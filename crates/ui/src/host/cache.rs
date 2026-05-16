@@ -20,10 +20,16 @@ pub struct RenderCache {
     ///
     /// 使用 Arc 以便在分离渲染线程中共享给渲染线程
     pub note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
-    /// 缓存的已转换主音轨 NoteInstance（避免视口变化时重复迭代 im::Vector）
+    /// 缓存的已转换主音轨全量 NoteInstance（视口无关，跨帧复用）
     ///
-    /// 仅在 note_index_dirty 时重建，视口滚动时直接 clone 此缓存。
-    /// 50k 音符 ≈ 1MB，clone 耗时约 0.2ms。
+    /// 音符数据变化时（note_index_dirty）全量重建。
+    /// 视口变化时从此缓存过滤可见范围，避免 im::Vector 的全量树遍历。
+    /// 3M 音符约 48MB，过滤操作约 0.5-2ms。
+    pub cached_all_main_note_instances: Vec<lumino_gfx::NoteInstance>,
+    /// 缓存的可见区间主音轨 NoteInstance（视口相关）
+    ///
+    /// 从 cached_all_main_note_instances 经过二分查找+范围过滤得到。
+    /// 仅在 note_data_changed 或 viewport_changed 时更新。
     pub cached_main_note_instances: Vec<lumino_gfx::NoteInstance>,
     /// 缓存的洋葱皮 NoteInstance（视口不变时免重复范围查询）
     ///
@@ -71,6 +77,7 @@ impl RenderCache {
             keyboard_instances: Vec::new(),
             ruler_instances: Vec::new(),
             note_instances_buffer: Arc::new(SwappableBuffer::new(Self::INITIAL_NOTE_CAPACITY)),
+            cached_all_main_note_instances: Vec::new(),
             cached_main_note_instances: Vec::new(),
             cached_onion_instances: Vec::new(),
             note_instances_version: 0,

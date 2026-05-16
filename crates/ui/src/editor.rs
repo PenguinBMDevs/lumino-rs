@@ -271,6 +271,8 @@ impl Editor {
         self.track_note_indices
             .borrow_mut()
             .remove(&self.editor_state.data.current_track);
+        // 洋葱皮音轨缓存与 track_notes 同步清除
+        self.editor_state.data.cached_onion_track_instances.clear();
     }
 
     /// 重置编辑器内部状态到默认值（释放私有字段内存）
