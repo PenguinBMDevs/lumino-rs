@@ -223,7 +223,10 @@ impl Host {
         // ═══ Phase 2: 洋葱皮异步派发（独立 buffer，fire-and-forget） ═══
         self.ensure_note_worker();
         if let Some(ref worker) = self.render_ctx.note_worker {
-            let os_snapshot = self.collect_onion_skin_snapshot();
+            let vp_logical = self.render_ctx.viewport.logical_size();
+            let os_snapshot = self.collect_onion_skin_snapshot(
+                (vp_logical.width, vp_logical.height),
+            );
 
             worker.send(super::note_worker::OnionSkinJob {
                 snapshot: os_snapshot,

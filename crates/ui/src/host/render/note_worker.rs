@@ -64,11 +64,23 @@ const TILE_KEY_HEIGHT: u16 = (TILE_PIXEL_HEIGHT as f32 / PIXELS_PER_KEY) as u16;
 /// 主线程在每帧收集快照后发送给 worker。
 #[allow(dead_code)]
 pub(crate) struct OnionSkinComputationSnapshot {
-    // 视口参数（用于洋葱皮过滤）
+    // 视口参数（用于洋葱皮过滤与 NDC 坐标计算）
     pub visible_tick_start: f32,
     pub visible_tick_end: f32,
     pub visible_key_min: u16,
     pub visible_key_max: u16,
+    // ─── 以下字段用于 NDC 坐标计算（与 note.wgsl 保持一致） ───
+    pub scroll_x: f32,
+    pub scroll_y: f32,
+    pub zoom_x: f32,
+    pub zoom_y: f32,
+    pub keyboard_width: f32,
+    pub ruler_height: f32,
+    pub canvas_offset_x: f32,
+    pub canvas_offset_y: f32,
+    pub viewport_logical_width: f32,
+    pub viewport_logical_height: f32,
+    pub max_key_index: f32,
     // 洋葱皮数据
     pub onion_skin_enabled: bool,
     pub track_onion_states: std::collections::HashMap<usize, bool>,
@@ -238,14 +250,30 @@ impl NoteWorker {
                 continue;
             }
 
-            // NDC 转换参数：视口范围 → [-1, 1]
-            let vp_tick_span = (snapshot.visible_tick_end - snapshot.visible_tick_start).max(1.0);
-            let vp_key_span = (snapshot.visible_key_max as f32 - snapshot.visible_key_min as f32).max(1.0);
-
             // 构建当前帧的瓦片引用列表
             let mut tile_refs: Vec<OnionBgTileRef> = Vec::with_capacity(visible_tiles.len());
             let mut cache_hits = 0u32;
             let mut cache_misses = 0u32;
+
+            // ─── NDC 计算辅助闭包（匹配 note.wgsl 的坐标变换公式） ───
+            // note.wgsl:
+            //   screen_x = tick * zoom.x - scroll.x + keyboard_width + canvas_offset.x
+            //   screen_y = (max_key_index - key) * zoom.y - scroll.y + ruler_height + canvas_offset.y
+            //   ndc_x = screen_x / viewport_size.x * 2 - 1
+            //   ndc_y = 1 - screen_y / viewport_size.y * 2
+            let tile_to_ndc = |tick_start: f32, tick_end: f32, key_min: u16, key_max: u16| {
+                let screen_x = (tick_start * snapshot.zoom_x - snapshot.scroll_x)
+                    + snapshot.keyboard_width + snapshot.canvas_offset_x;
+                let ndc_x = (screen_x / snapshot.viewport_logical_width) * 2.0 - 1.0;
+                let ndc_w = ((tick_end - tick_start) * snapshot.zoom_x / snapshot.viewport_logical_width) * 2.0;
+
+                let screen_y_bottom = (snapshot.max_key_index - key_min as f32) * snapshot.zoom_y
+                    - snapshot.scroll_y + snapshot.ruler_height + snapshot.canvas_offset_y;
+                let ndc_y = 1.0 - (screen_y_bottom / snapshot.viewport_logical_height) * 2.0;
+                let ndc_h = ((key_max - key_min + 1) as f32 * snapshot.zoom_y / snapshot.viewport_logical_height) * 2.0;
+
+                ([ndc_x, ndc_y], [ndc_w, ndc_h])
+            };
 
             for (id, tile_tick_start, tile_tick_end, tile_key_min, tile_key_max, _td, _kd) in
                 &visible_tiles
@@ -259,13 +287,15 @@ impl NoteWorker {
                 // 查缓存
                 if let Some(entry) = tile_cache.get(&id) {
                     cache_hits += 1;
-                    let ndc_x = -1.0 + 2.0 * (entry.meta.tick_range.0 - snapshot.visible_tick_start) / vp_tick_span;
-                    let ndc_y = -1.0 + 2.0 * (entry.meta.key_range.0 as f32 - snapshot.visible_key_min as f32) / vp_key_span;
-                    let ndc_w = 2.0 * (entry.meta.tick_range.1 - entry.meta.tick_range.0) / vp_tick_span;
-                    let ndc_h = 2.0 * (entry.meta.key_range.1 - entry.meta.key_range.0) as f32 / vp_key_span;
+                    let (pos, size) = tile_to_ndc(
+                        entry.meta.tick_range.0,
+                        entry.meta.tick_range.1,
+                        entry.meta.key_range.0,
+                        entry.meta.key_range.1,
+                    );
                     tile_refs.push(OnionBgTileRef {
-                        position: [ndc_x, ndc_y],
-                        size: [ndc_w, ndc_h],
+                        position: pos,
+                        size,
                         track_index: entry.pool_index as u32,
                         _padding: 0,
                     });
@@ -311,13 +341,10 @@ impl NoteWorker {
                 tile_cache.insert(id, TileCacheEntry { pool_index: pool_idx, meta });
 
                 // 生成瓦片引用（NDC 坐标，track_index 记录 pool 索引）
-                let ndc_x = -1.0 + 2.0 * (tile_tick_start - snapshot.visible_tick_start) / vp_tick_span;
-                let ndc_y = -1.0 + 2.0 * (tile_key_min as f32 - snapshot.visible_key_min as f32) / vp_key_span;
-                let ndc_w = 2.0 * (tile_tick_end - tile_tick_start) / vp_tick_span;
-                let ndc_h = 2.0 * (tile_key_max - tile_key_min) as f32 / vp_key_span;
+                let (pos, size) = tile_to_ndc(tile_tick_start, tile_tick_end, tile_key_min, tile_key_max);
                 tile_refs.push(OnionBgTileRef {
-                    position: [ndc_x, ndc_y],
-                    size: [ndc_w, ndc_h],
+                    position: pos,
+                    size,
                     track_index: pool_idx as u32,
                     _padding: 0,
                 });
