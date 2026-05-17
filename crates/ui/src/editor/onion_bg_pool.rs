@@ -82,13 +82,14 @@ impl OnionBgTilePool {
     /// 分配空闲块
     ///
     /// 有空闲时直接返回；无空闲时淘汰 lod=0 中 tile_id 最小的块。
-    /// 返回块索引，全部占用且无可淘汰时返回 `None`。
-    pub fn alloc(&mut self) -> Option<u16> {
+    /// 返回 (块索引, 被淘汰的 tile_id)，无淘汰时第二个值为 None。
+    /// 全部占用且无可淘汰时返回 `None`。
+    pub fn alloc(&mut self) -> Option<(u16, Option<u64>)> {
         // 先找空闲块
         for (i, used) in self.in_use.iter().enumerate() {
             if !*used {
                 self.in_use[i] = true;
-                return Some(i as u16);
+                return Some((i as u16, None));
             }
         }
 
@@ -96,18 +97,19 @@ impl OnionBgTilePool {
         let mut evict_idx = None;
         let mut oldest_id = u64::MAX;
         for (i, meta) in self.tile_metadata.iter().enumerate() {
-            if let Some(m) = meta {
-                if m.lod == 0 && m.tile_id < oldest_id {
-                    oldest_id = m.tile_id;
-                    evict_idx = Some(i);
-                }
+            if let Some(m) = meta
+                && m.lod == 0 && m.tile_id < oldest_id
+            {
+                oldest_id = m.tile_id;
+                evict_idx = Some(i);
             }
         }
 
         if let Some(idx) = evict_idx {
+            let evicted_id = self.tile_metadata[idx].map(|m| m.tile_id);
             self.in_use[idx] = true;
             self.tile_metadata[idx] = None;
-            return Some(idx as u16);
+            return Some((idx as u16, evicted_id));
         }
 
         None

@@ -119,7 +119,7 @@ fn collect_visible_tiles(
     let tick_div_start = (tick_start / TILE_TICK_WIDTH).floor() as u32;
     let tick_div_end = ((tick_end + TILE_TICK_WIDTH - 1.0) / TILE_TICK_WIDTH).floor() as u32;
     let key_div_start = key_min / TILE_KEY_HEIGHT;
-    let key_div_end = (key_max + TILE_KEY_HEIGHT - 1) / TILE_KEY_HEIGHT;
+    let key_div_end = key_max.div_ceil(TILE_KEY_HEIGHT);
 
     let mut tiles = Vec::new();
 
@@ -214,16 +214,6 @@ impl NoteWorker {
                 continue;
             };
 
-            let mut pool_guard = match pool.lock() {
-                Ok(g) => g,
-                Err(_) => {
-                    if let Some(tx) = job.done_tx {
-                        let _ = tx.send(());
-                    }
-                    continue;
-                }
-            };
-
             tracing::debug!("[CK1] collecting visible tiles for viewport ({:.0},{:.0}) keys=[{},{}]",
                 snapshot.visible_tick_start, snapshot.visible_tick_end,
                 snapshot.visible_key_min, snapshot.visible_key_max);
@@ -238,7 +228,6 @@ impl NoteWorker {
 
             tracing::debug!("[CK1] visible_tiles count={}", visible_tiles.len());
             if visible_tiles.is_empty() {
-                // 清空 buffer 并通知
                 {
                     let buffer = unsafe { job.onion_bg_tiles_buffer.write_buffer() };
                     buffer.clear();
@@ -250,17 +239,11 @@ impl NoteWorker {
                 continue;
             }
 
-            // 构建当前帧的瓦片引用列表
             let mut tile_refs: Vec<OnionBgTileRef> = Vec::with_capacity(visible_tiles.len());
             let mut cache_hits = 0u32;
             let mut cache_misses = 0u32;
 
             // ─── NDC 计算辅助闭包（匹配 note.wgsl 的坐标变换公式） ───
-            // note.wgsl:
-            //   screen_x = tick * zoom.x - scroll.x + keyboard_width + canvas_offset.x
-            //   screen_y = (max_key_index - key) * zoom.y - scroll.y + ruler_height + canvas_offset.y
-            //   ndc_x = screen_x / viewport_size.x * 2 - 1
-            //   ndc_y = 1 - screen_y / viewport_size.y * 2
             let tile_to_ndc = |tick_start: f32, tick_end: f32, key_min: u16, key_max: u16| {
                 let screen_x = (tick_start * snapshot.zoom_x - snapshot.scroll_x)
                     + snapshot.keyboard_width + snapshot.canvas_offset_x;
@@ -275,79 +258,135 @@ impl NoteWorker {
                 ([ndc_x, ndc_y], [ndc_w, ndc_h])
             };
 
-            for (id, tile_tick_start, tile_tick_end, tile_key_min, tile_key_max, _td, _kd) in
-                &visible_tiles
+            // ═══ 三阶段瓦片生成：分配(锁内)→生成(锁外)→上传(锁内) ═══
+            // Phase 1 — 锁内：缓存命中直接入 refs，未命中分配池槽
+            let mut pending_allocs: Vec<(u64, f32, f32, u16, u16, u16)> = Vec::new();
             {
-                let id = *id;
-                let tile_tick_start = *tile_tick_start;
-                let tile_tick_end = *tile_tick_end;
-                let tile_key_min = *tile_key_min;
-                let tile_key_max = *tile_key_max;
+                let mut pool_guard = match pool.lock() {
+                    Ok(g) => g,
+                    Err(_) => {
+                        if let Some(tx) = job.done_tx {
+                            let _ = tx.send(());
+                        }
+                        continue;
+                    }
+                };
 
-                // 查缓存
-                if let Some(entry) = tile_cache.get(&id) {
-                    cache_hits += 1;
-                    let (pos, size) = tile_to_ndc(
-                        entry.meta.tick_range.0,
-                        entry.meta.tick_range.1,
-                        entry.meta.key_range.0,
-                        entry.meta.key_range.1,
+                for &(id, tile_tick_start, _tile_tick_end, tile_key_min, tile_key_max, td, _kd) in
+                    &visible_tiles
+                {
+                    if let Some(entry) = tile_cache.get(&id) {
+                        cache_hits += 1;
+                        let (pos, size) = tile_to_ndc(
+                            entry.meta.tick_range.0,
+                            entry.meta.tick_range.1,
+                            entry.meta.key_range.0,
+                            entry.meta.key_range.1,
+                        );
+                        tile_refs.push(OnionBgTileRef {
+                            position: pos,
+                            size,
+                            track_index: entry.pool_index as u32,
+                            _padding: 0,
+                        });
+                        continue;
+                    }
+
+                    cache_misses += 1;
+                    let Some((pool_idx, evicted_id)) = pool_guard.alloc() else {
+                        tracing::warn!("NoteWorker: tile pool exhausted, skipping tile");
+                        continue;
+                    };
+                    if let Some(evicted) = evicted_id
+                        && tile_cache.remove(&evicted).is_some()
+                    {
+                        tracing::debug!("[CK1] evicted stale cache tile_id={}", evicted);
+                    }
+
+                    let full_tick_end = (td as f32 + 1.0) * TILE_TICK_WIDTH;
+                    pending_allocs.push((id, tile_tick_start, full_tick_end, tile_key_min, tile_key_max, pool_idx));
+                }
+            }
+
+            // Phase 2 — 锁外：生成所有缓存未命中的像素数据（慢操作）
+            struct PendingTile {
+                id: u64,
+                tick_start: f32,
+                tick_end: f32,
+                key_min: u16,
+                key_max: u16,
+                pool_idx: u16,
+                pixel_data: Option<crate::editor::onion_bg_lod0::Lod0PixelData>,
+            }
+            let pending_tiles: Vec<PendingTile> = pending_allocs
+                .into_iter()
+                .map(|(id, ts, te, kmin, kmax, pidx)| {
+                    let pixel_data = generate_lod0_pixels(
+                        snapshot.document.as_ref(),
+                        snapshot.current_track,
+                        ts,
+                        te,
+                        kmin,
+                        kmax,
                     );
+                    tracing::info!(
+                        "[UPLOAD] generated pixels for tile_id={}: {}x{} count={}",
+                        id, pixel_data.width, pixel_data.height, pixel_data.note_count,
+                    );
+                    PendingTile {
+                        id,
+                        tick_start: ts,
+                        tick_end: te,
+                        key_min: kmin,
+                        key_max: kmax,
+                        pool_idx: pidx,
+                        pixel_data: Some(pixel_data),
+                    }
+                })
+                .collect();
+
+            // Phase 3 — 重新入锁：上传 GPU、写缓存、构建 tile_refs
+            {
+                let mut pool_guard = match pool.lock() {
+                    Ok(g) => g,
+                    Err(_) => {
+                        if let Some(tx) = job.done_tx {
+                            let _ = tx.send(());
+                        }
+                        continue;
+                    }
+                };
+
+                for pt in &pending_tiles {
+                    let Some(ref pixel_data) = pt.pixel_data else {
+                        continue;
+                    };
+
+                    if pixel_data.width == 0 || pixel_data.height == 0 {
+                        pool_guard.free(pt.pool_idx);
+                        continue;
+                    }
+
+                    upload_lod0_to_gpu(pixel_data, pt.pool_idx, &mut pool_guard);
+
+                    let meta = OnionBgTileMeta {
+                        tile_id: pt.id,
+                        tick_range: (pt.tick_start, pt.tick_end),
+                        key_range: (pt.key_min, pt.key_max),
+                        lod: 0,
+                        note_count: pixel_data.note_count,
+                    };
+                    pool_guard.set_metadata(pt.pool_idx, meta);
+                    tile_cache.insert(pt.id, TileCacheEntry { pool_index: pt.pool_idx, meta });
+
+                    let (pos, size) = tile_to_ndc(pt.tick_start, pt.tick_end, pt.key_min, pt.key_max);
                     tile_refs.push(OnionBgTileRef {
                         position: pos,
                         size,
-                        track_index: entry.pool_index as u32,
+                        track_index: pt.pool_idx as u32,
                         _padding: 0,
                     });
-                    continue;
                 }
-
-                // 缓存未命中：分配纹理池，生成像素，上传
-                cache_misses += 1;
-                let Some(pool_idx) = pool_guard.alloc() else {
-                    tracing::warn!("NoteWorker: tile pool exhausted, skipping tile");
-                    continue;
-                };
-
-                // 生成像素
-                let pixel_data = generate_lod0_pixels(
-                    snapshot.document.as_ref(),
-                    snapshot.current_track,
-                    tile_tick_start,
-                    tile_tick_end,
-                    tile_key_min,
-                    tile_key_max,
-                );
-                tracing::info!("[UPLOAD] generated pixels: {}x{} count={}", pixel_data.width, pixel_data.height, pixel_data.note_count);
-
-                // 空像素 → 不缓存、不上传、释放 pool 槽位
-                if pixel_data.width == 0 || pixel_data.height == 0 {
-                    pool_guard.free(pool_idx);
-                    continue;
-                }
-
-                // 上传到 GPU（pool 内部持有 queue）
-                upload_lod0_to_gpu(&pixel_data, pool_idx, &mut *pool_guard);
-
-                // 写入缓存
-                let meta = OnionBgTileMeta {
-                    tile_id: id,
-                    tick_range: (tile_tick_start, tile_tick_end),
-                    key_range: (tile_key_min, tile_key_max),
-                    lod: 0,
-                    note_count: pixel_data.note_count,
-                };
-                pool_guard.set_metadata(pool_idx, meta);
-                tile_cache.insert(id, TileCacheEntry { pool_index: pool_idx, meta });
-
-                // 生成瓦片引用（NDC 坐标，track_index 记录 pool 索引）
-                let (pos, size) = tile_to_ndc(tile_tick_start, tile_tick_end, tile_key_min, tile_key_max);
-                tile_refs.push(OnionBgTileRef {
-                    position: pos,
-                    size,
-                    track_index: pool_idx as u32,
-                    _padding: 0,
-                });
             }
 
             // 调试日志：瓦片生成统计（仅 tile_count > 0 时输出 info）
