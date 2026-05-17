@@ -27,7 +27,6 @@ impl Host {
             onion_skin_enabled: editor.is_onion_skin_enabled(),
             track_onion_states: self.root.sidebar.get_onion_skin_states(),
             current_track: es.data.current_track,
-            onion_skin_config: editor.onion_skin_config().clone(),
             document: es.data.document.clone(),
         }
     }

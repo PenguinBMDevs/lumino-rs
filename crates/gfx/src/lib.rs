@@ -15,8 +15,8 @@ pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent};
 pub use grid_renderer::{GridLineInstance, GridRenderer};
 pub use keyboard_renderer::{KeyInstance, KeyboardRenderer, KeyboardViewportUniform};
 pub use note_renderer::{
-    CameraParams, CameraUniform, CullUniform, NoteInstance, NoteRenderer, RenderUniform,
-    pack_color, unpack_color,
+    CameraParams, CameraUniform, CullUniform, NoteInstance, NoteRenderer, OnionBgTileRef,
+    RenderUniform, pack_color, unpack_color,
 };
 pub use ruler_renderer::{RulerRenderer, RulerTickInstance, RulerViewportUniform};
 

@@ -11,7 +11,7 @@
 //! - UI线程（主线程）：处理事件、更新状态、生成渲染命令
 //! - 渲染线程（独立线程）：接收命令、管理GPU资源、执行实际渲染
 
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use iced_core::{Font, Size};
@@ -179,6 +179,15 @@ impl Host {
         // 创建音符事件通道
         let (tx, rx) = std::sync::mpsc::channel();
 
+        // 创建共享瓦片池（NoteWorker + WGPU 线程共用）
+        let tile_pool = Arc::new(Mutex::new(
+            crate::editor::onion_bg_pool::OnionBgTilePool::new(
+                self.render_ctx.device.clone(),
+                self.render_ctx.queue.clone(),
+            ),
+        ));
+        self.render_ctx.render_cache.tile_pool = Some(tile_pool.clone());
+
         // 启动 WGPU 渲染线程
         match WgpuRenderThread::spawn(
             self.render_ctx.device.clone(),
@@ -187,6 +196,8 @@ impl Host {
             rx,
             Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
             Arc::clone(&self.render_ctx.render_cache.onion_skin_instances_buffer),
+            Arc::clone(&self.render_ctx.render_cache.onion_bg_tiles_buffer),
+            Some(tile_pool),
         ) {
             Ok(thread) => {
                 self.render_ctx.wgpu_render_thread = Some(thread);

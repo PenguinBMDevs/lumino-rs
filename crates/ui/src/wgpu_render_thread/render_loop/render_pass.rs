@@ -5,12 +5,14 @@ use iced_wgpu::wgpu;
 
 use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
-use lumino_gfx::{CameraParams, CameraUniform};
+use lumino_gfx::{CameraParams, CameraUniform, OnionBgTileRef};
+use crate::editor::onion_bg_pool::OnionBgTilePool;
 
-/// 执行渲染通道
+/// 执行渲染通道（含洋葱皮瓦片背景）
 #[allow(clippy::too_many_arguments)]
 pub fn execute_render_pass(
     encoder: &mut wgpu::CommandEncoder,
+    device: &wgpu::Device,
     current_texture: &Option<Arc<wgpu::Texture>>,
     depth_texture_view: &Option<wgpu::TextureView>,
     params: &RenderParams,
@@ -19,6 +21,13 @@ pub fn execute_render_pass(
     keyboard_renderer: &mut lumino_gfx::KeyboardRenderer,
     ruler_renderer: &mut lumino_gfx::RulerRenderer,
     queue: &wgpu::Queue,
+    // 洋葱皮瓦片渲染参数
+    tile_pipeline: Option<&wgpu::RenderPipeline>,
+    tile_bind_group_layout: Option<&wgpu::BindGroupLayout>,
+    tile_pool: Option<&Arc<Mutex<OnionBgTilePool>>>,
+    tile_sampler: Option<&wgpu::Sampler>,
+    tile_uniform_bufs: Option<&[wgpu::Buffer]>,
+    bg_tile_refs: &[OnionBgTileRef],
 ) {
     let (Some(texture), Some(depth_view)) = (current_texture, depth_texture_view) else {
         return;
@@ -87,6 +96,36 @@ pub fn execute_render_pass(
         {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             grid_renderer.draw(&mut render_pass, 1);
+        }
+
+        // 绘制洋葱皮瓦片（网格之上、主音符之下）
+        if let (Some(pipeline), Some(bg_layout), Some(pool), Some(sampler), Some(uniform_bufs)) =
+            (tile_pipeline, tile_bind_group_layout, tile_pool, tile_sampler, tile_uniform_bufs)
+        {
+            if !bg_tile_refs.is_empty() {
+                render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+                if let Ok(pool_guard) = pool.lock() {
+                    for (i, tile_ref) in bg_tile_refs.iter().enumerate() {
+                        let pool_idx = tile_ref.track_index as u16;
+                        if pool_idx >= 256 || i >= uniform_bufs.len() { continue; }
+                        let pool_tex = pool_guard.texture(pool_idx);
+                        let tex_view_obj = pool_tex.create_view(&wgpu::TextureViewDescriptor::default());
+                        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                            label: Some("onion_bg_tile_bg"),
+                            layout: bg_layout,
+                            entries: &[
+                                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&tex_view_obj) },
+                                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
+                                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Buffer(
+                                    wgpu::BufferBinding { buffer: &uniform_bufs[i], offset: 0, size: wgpu::BufferSize::new(48) }) },
+                            ],
+                        });
+                        render_pass.set_pipeline(pipeline);
+                        render_pass.set_bind_group(0, &bind_group, &[]);
+                        render_pass.draw(0..6, 0..1);
+                    }
+                }
+            }
         }
 
         // 绘制音符

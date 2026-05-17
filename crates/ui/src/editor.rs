@@ -1,6 +1,8 @@
 pub mod grid;
 pub mod history;
 pub mod note;
+pub mod onion_bg_lod0;
+pub mod onion_bg_pool;
 pub mod onion_skin;
 pub mod scrollbar_widget;
 pub mod spatial_index;
@@ -15,10 +17,8 @@ mod coords;
 mod drag;
 mod interaction;
 mod note_ops;
-mod onion_skin_cache;
 mod onion_skin_editor;
 mod onion_skin_ops;
-mod onion_skin_range;
 mod rendering;
 mod scroll;
 mod settings;
@@ -33,11 +33,11 @@ use iced_widget::canvas;
 use std::cell::{Cell, RefCell};
 
 use note::Note;
+pub use onion_bg_lod0::*;
+pub use onion_bg_pool::*;
 pub use onion_skin::OnionSkinConfig;
 // 统一从 editor_state 导入（重构迁移）
 pub use editor_state::{EditState, HitType, ViewState};
-pub(crate) use onion_skin_cache::onion_skin_cache_version;
-pub(crate) use onion_skin_range::compute_onion_skin_instances_standalone;
 
 /// 缓存失效标志位
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

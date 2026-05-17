@@ -1,7 +1,8 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use iced_wgpu::wgpu;
-use lumino_gfx::SwappableBuffer;
+use lumino_gfx::{OnionBgTileRef, SwappableBuffer};
+use crate::editor::onion_bg_pool::OnionBgTilePool;
 
 /// 渲染缓存 - 避免每帧重复上传相同数据
 ///
@@ -20,6 +21,8 @@ pub struct RenderCache {
     ///
     /// 与主音符分离，避免一帧内多次 swap 导致闪烁
     pub onion_skin_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
+    /// 双缓冲洋葱皮背景瓦片引用（Worker线程写入，渲染线程读取）
+    pub onion_bg_tiles_buffer: Arc<SwappableBuffer<OnionBgTileRef>>,
     /// 主音符版本号（用于检测数据变化）
     pub note_instances_version: u64,
     /// 洋葱皮版本号（用于检测数据变化）
@@ -30,6 +33,8 @@ pub struct RenderCache {
     pub note_viewport_hash: u64,
     /// 缓存的深度纹理 (宽, 高, view)
     pub depth_texture: Option<(u32, u32, wgpu::TextureView)>,
+    /// 洋葱皮背景瓦片池（主线程创建，NoteWorker 与 WGPU 线程共享）
+    pub tile_pool: Option<Arc<Mutex<OnionBgTilePool>>>,
 }
 
 /// 注意：这些方法会触发双缓冲交换，应该只在渲染线程调用
@@ -67,8 +72,10 @@ impl RenderCache {
             onion_skin_instances_buffer: Arc::new(SwappableBuffer::new(
                 Self::INITIAL_NOTE_CAPACITY,
             )),
+            onion_bg_tiles_buffer: Arc::new(SwappableBuffer::new(1024)),
             note_instances_version: 0,
             onion_skin_instances_version: 0,
+            tile_pool: None,
             grid_viewport_hash: 0,
             note_viewport_hash: 0,
             depth_texture: None,

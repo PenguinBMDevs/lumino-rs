@@ -230,6 +230,10 @@ impl Host {
                 onion_skin_buffer: std::sync::Arc::clone(
                     &self.render_ctx.render_cache.onion_skin_instances_buffer,
                 ),
+                onion_bg_tiles_buffer: std::sync::Arc::clone(
+                    &self.render_ctx.render_cache.onion_bg_tiles_buffer,
+                ),
+                tile_pool: self.render_ctx.render_cache.tile_pool.clone(),
                 done_tx: None,
             });
         }
