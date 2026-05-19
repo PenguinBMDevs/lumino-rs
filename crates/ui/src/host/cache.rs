@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use iced_wgpu::wgpu;
-use lumino_gfx::{OnionBgTileRef, SwappableBuffer};
+use lumino_gfx::{OnionBgTileRef, OnionNote, SwappableBuffer};
 use crate::editor::onion_bg_pool::OnionBgTilePool;
 
 /// 渲染缓存 - 避免每帧重复上传相同数据
@@ -14,15 +14,13 @@ pub struct RenderCache {
     /// 缓存的网格线实例
     pub grid_instances: Vec<lumino_gfx::GridLineInstance>,
     /// 双缓冲主音符实例数据（UI线程写入，渲染线程读取）
-    ///
-    /// 使用 Arc 以便在分离渲染线程中共享给渲染线程
     pub note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
     /// 双缓冲洋葱皮实例数据（Worker线程写入，渲染线程读取）
-    ///
-    /// 与主音符分离，避免一帧内多次 swap 导致闪烁
     pub onion_skin_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
     /// 双缓冲洋葱皮背景瓦片引用（Worker线程写入，渲染线程读取）
     pub onion_bg_tiles_buffer: Arc<SwappableBuffer<OnionBgTileRef>>,
+    /// 双缓冲洋葱皮音符池（SoA 布局，用于 GPU 计算剔除渲染）
+    pub onion_note_buffer: Arc<SwappableBuffer<OnionNote>>,
     /// 主音符版本号（用于检测数据变化）
     pub note_instances_version: u64,
     /// 洋葱皮版本号（用于检测数据变化）
@@ -37,8 +35,23 @@ pub struct RenderCache {
     pub tile_pool: Option<Arc<Mutex<OnionBgTilePool>>>,
 }
 
-/// 注意：这些方法会触发双缓冲交换，应该只在渲染线程调用
 impl RenderCache {
+    pub fn new() -> Self {
+        Self {
+            grid_instances: Vec::new(),
+            note_instances_buffer: Arc::new(SwappableBuffer::new(1024 * 1024)),
+            onion_skin_instances_buffer: Arc::new(SwappableBuffer::new(256 * 1024)),
+            onion_bg_tiles_buffer: Arc::new(SwappableBuffer::new(1024)),
+            onion_note_buffer: Arc::new(SwappableBuffer::new(256 * 1024)),
+            note_instances_version: 0,
+            onion_skin_instances_version: 0,
+            grid_viewport_hash: 0,
+            note_viewport_hash: 0,
+            depth_texture: None,
+            tile_pool: None,
+        }
+    }
+
     /// 获取音符实例数量（从双缓冲的前缓冲区）
     pub fn note_instances_len(&self) -> usize {
         unsafe { self.note_instances_buffer.read_buffer().len() }
@@ -53,54 +66,35 @@ impl RenderCache {
     pub fn onion_skin_instances_len(&self) -> usize {
         unsafe { self.onion_skin_instances_buffer.read_buffer().len() }
     }
-}
 
-impl Default for RenderCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RenderCache {
-    /// 初始容量：10000 个音符实例（约 640KB）
-    const INITIAL_NOTE_CAPACITY: usize = 10000;
-
-    pub fn new() -> Self {
-        Self {
-            grid_instances: Vec::new(),
-            note_instances_buffer: Arc::new(SwappableBuffer::new(Self::INITIAL_NOTE_CAPACITY)),
-            onion_skin_instances_buffer: Arc::new(SwappableBuffer::new(
-                Self::INITIAL_NOTE_CAPACITY,
-            )),
-            onion_bg_tiles_buffer: Arc::new(SwappableBuffer::new(1024)),
-            note_instances_version: 0,
-            onion_skin_instances_version: 0,
-            tile_pool: None,
-            grid_viewport_hash: 0,
-            note_viewport_hash: 0,
-            depth_texture: None,
-        }
-    }
-
-    /// 计算视口状态的哈希值
+    /// 计算视口哈希（滚动+缩放+画布大小+可见键数）
     pub fn compute_viewport_hash(
         scroll_x: f32,
         scroll_y: f32,
         zoom_x: f32,
         zoom_y: f32,
-        canvas_width: f32,
-        canvas_height: f32,
+        canvas_x: f32,
+        canvas_y: f32,
         visible_key_count: u16,
     ) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        scroll_x.to_bits().hash(&mut hasher);
-        scroll_y.to_bits().hash(&mut hasher);
-        zoom_x.to_bits().hash(&mut hasher);
-        zoom_y.to_bits().hash(&mut hasher);
-        canvas_width.to_bits().hash(&mut hasher);
-        canvas_height.to_bits().hash(&mut hasher);
-        visible_key_count.hash(&mut hasher);
-        hasher.finish()
+        fn hash_compose(state: u64, val: u64) -> u64 {
+            state.wrapping_mul(0x9e3779b97f4a7c15).wrapping_add(val)
+        }
+
+        let mut hash: u64 = 3_154_789_634_698_251_631;
+        hash = hash_compose(hash, scroll_x.to_bits() as u64);
+        hash = hash_compose(hash, scroll_y.to_bits() as u64);
+        hash = hash_compose(hash, zoom_x.to_bits() as u64);
+        hash = hash_compose(hash, zoom_y.to_bits() as u64);
+        hash = hash_compose(hash, canvas_x.to_bits() as u64);
+        hash = hash_compose(hash, canvas_y.to_bits() as u64);
+        hash = hash_compose(hash, visible_key_count as u64);
+        hash
+    }
+}
+
+impl Default for RenderCache {
+    fn default() -> Self {
+        Self::new()
     }
 }

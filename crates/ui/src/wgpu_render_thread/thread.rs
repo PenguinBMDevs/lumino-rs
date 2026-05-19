@@ -11,7 +11,6 @@ use super::params::RenderParams;
 use super::render_loop::run_render_thread;
 use super::stats::RenderStats;
 use lumino_gfx::SwappableBuffer;
-use crate::editor::onion_bg_pool::OnionBgTilePool;
 
 /// WGPU 渲染线程
 ///
@@ -43,8 +42,7 @@ impl WgpuRenderThread {
         note_events_rx: std::sync::mpsc::Receiver<lumino_gfx::NoteEvent>,
         note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
         onion_skin_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
-        onion_bg_tiles_buffer: Arc<SwappableBuffer<lumino_gfx::OnionBgTileRef>>,
-        tile_pool: Option<Arc<Mutex<OnionBgTilePool>>>,
+        onion_note_buffer: Option<Arc<SwappableBuffer<lumino_gfx::OnionNote>>>,
     ) -> anyhow::Result<Self> {
         tracing::info!("WgpuRenderThread::spawn - Starting render thread with offscreen texture");
 
@@ -58,8 +56,7 @@ impl WgpuRenderThread {
         let latest_texture_clone = Arc::clone(&latest_texture);
         let note_instances_buffer_clone = Arc::clone(&note_instances_buffer);
         let onion_skin_buffer_clone = Arc::clone(&onion_skin_instances_buffer);
-        let onion_bg_tiles_clone = Arc::clone(&onion_bg_tiles_buffer);
-        let tile_pool_clone = tile_pool.clone();
+        let onion_note_buffer_clone = onion_note_buffer.clone();
 
         // 启动渲染线程
         let thread_handle = thread::spawn(move || {
@@ -74,8 +71,7 @@ impl WgpuRenderThread {
                 note_events_rx,
                 note_instances_buffer_clone,
                 onion_skin_buffer_clone,
-                onion_bg_tiles_clone,
-                tile_pool_clone,
+                onion_note_buffer_clone,
             );
         });
 
@@ -93,7 +89,6 @@ impl WgpuRenderThread {
     pub fn send_params(&self, params: RenderParams) {
         if let Some(ref sender) = self.command_sender {
             // 使用非阻塞发送，如果通道满则丢弃旧帧
-            // 注意：std::sync::mpsc 没有 try_send，我们使用 send 并设置较小的通道容量
             match sender.send(RenderCommand::Render(Box::new(params))) {
                 Ok(_) => {}
                 Err(_) => {

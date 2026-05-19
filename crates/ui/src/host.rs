@@ -179,15 +179,6 @@ impl Host {
         // 创建音符事件通道
         let (tx, rx) = std::sync::mpsc::channel();
 
-        // 创建共享瓦片池（NoteWorker + WGPU 线程共用）
-        let tile_pool = Arc::new(Mutex::new(
-            crate::editor::onion_bg_pool::OnionBgTilePool::new(
-                self.render_ctx.device.clone(),
-                self.render_ctx.queue.clone(),
-            ),
-        ));
-        self.render_ctx.render_cache.tile_pool = Some(tile_pool.clone());
-
         // 启动 WGPU 渲染线程
         match WgpuRenderThread::spawn(
             self.render_ctx.device.clone(),
@@ -196,8 +187,7 @@ impl Host {
             rx,
             Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
             Arc::clone(&self.render_ctx.render_cache.onion_skin_instances_buffer),
-            Arc::clone(&self.render_ctx.render_cache.onion_bg_tiles_buffer),
-            Some(tile_pool),
+            Some(Arc::clone(&self.render_ctx.render_cache.onion_note_buffer)),
         ) {
             Ok(thread) => {
                 self.render_ctx.wgpu_render_thread = Some(thread);

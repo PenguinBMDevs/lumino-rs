@@ -5,14 +5,13 @@ use iced_wgpu::wgpu;
 
 use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
-use lumino_gfx::{CameraParams, CameraUniform, OnionBgTileRef};
-use crate::editor::onion_bg_pool::OnionBgTilePool;
+use lumino_gfx::{CameraParams, CameraUniform, OnionRenderer};
 
-/// 执行渲染通道（含洋葱皮瓦片背景）
+/// 执行渲染通道（含洋葱皮背景）
 #[allow(clippy::too_many_arguments)]
 pub fn execute_render_pass(
     encoder: &mut wgpu::CommandEncoder,
-    device: &wgpu::Device,
+    _device: &wgpu::Device,
     current_texture: &Option<Arc<wgpu::Texture>>,
     depth_texture_view: &Option<wgpu::TextureView>,
     params: &RenderParams,
@@ -21,15 +20,7 @@ pub fn execute_render_pass(
     keyboard_renderer: &mut lumino_gfx::KeyboardRenderer,
     ruler_renderer: &mut lumino_gfx::RulerRenderer,
     queue: &wgpu::Queue,
-    // 洋葱皮瓦片渲染参数
-    tile_pipeline: Option<&wgpu::RenderPipeline>,
-    tile_bind_group_layout: Option<&wgpu::BindGroupLayout>,
-    tile_pool: Option<&Arc<Mutex<OnionBgTilePool>>>,
-    tile_sampler: Option<&wgpu::Sampler>,
-    tile_uniform_bufs: Option<&[wgpu::Buffer]>,
-    bg_tile_refs: &[OnionBgTileRef],
-    // 缓存的 BindGroup，避免每帧重建
-    cached_bind_groups: &mut Vec<Option<wgpu::BindGroup>>,
+    onion_renderer: &mut lumino_gfx::OnionRenderer,
 ) {
     let (Some(texture), Some(depth_view)) = (current_texture, depth_texture_view) else {
         return;
@@ -100,43 +91,10 @@ pub fn execute_render_pass(
             grid_renderer.draw(&mut render_pass, 1);
         }
 
-        // 绘制洋葱皮瓦片（网格之上、主音符之下）
-        if let (Some(pipeline), Some(bg_layout), Some(pool), Some(sampler), Some(uniform_bufs)) =
-            (tile_pipeline, tile_bind_group_layout, tile_pool, tile_sampler, tile_uniform_bufs)
+        // 绘制洋葱皮背景（网格之上、主音符之下）
         {
-            if !bg_tile_refs.is_empty() {
-                puffin::profile_scope!("draw_onion_bg_tiles");
-                render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-                if let Ok(pool_guard) = pool.lock() {
-                    for (i, tile_ref) in bg_tile_refs.iter().enumerate() {
-                        let pool_idx = tile_ref.track_index as u16;
-                        if pool_idx >= 256 || i >= uniform_bufs.len() { continue; }
-
-                        // 检查缓存，如无则创建
-                        if cached_bind_groups[pool_idx as usize].is_none() {
-                            puffin::profile_scope!("tile_create_bindgroup");
-                            let pool_tex = pool_guard.texture(pool_idx);
-                            let tex_view_obj = pool_tex.create_view(&wgpu::TextureViewDescriptor::default());
-                            cached_bind_groups[pool_idx as usize] = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
-                                label: Some("onion_bg_tile_bg"),
-                                layout: bg_layout,
-                                entries: &[
-                                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&tex_view_obj) },
-                                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
-                                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Buffer(
-                                        wgpu::BufferBinding { buffer: &uniform_bufs[i], offset: 0, size: wgpu::BufferSize::new(48) }) },
-                                ],
-                            }));
-                        }
-
-                        if let Some(ref bind_group) = cached_bind_groups[pool_idx as usize] {
-                            render_pass.set_pipeline(pipeline);
-                            render_pass.set_bind_group(0, bind_group, &[]);
-                            render_pass.draw(0..6, 0..1);
-                        }
-                    }
-                }
-            }
+            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+            onion_renderer.draw(&mut render_pass);
         }
 
         // 绘制音符
