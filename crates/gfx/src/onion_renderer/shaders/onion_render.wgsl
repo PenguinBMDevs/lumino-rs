@@ -1,6 +1,6 @@
 // 洋葱皮实例化渲染着色器
-// 使用 draw_indexed_indirect 绘制单位矩形
-// 顶点着色器通过实例 ID 读取实例索引缓冲区 → 原始音符索引 → 计算屏幕坐标和颜色
+// 与 note.wgsl 完全一致的拓扑：TriangleStrip + 4 顶点
+// 通过 draw indirect 绘制，顶点着色器从 instance_indices → note_pool 查数据
 
 struct CameraUniform {
     scroll: vec2<f32>,
@@ -13,15 +13,8 @@ struct CameraUniform {
     _padding: f32,
 };
 
-struct TrackColor {
-    r: f32,
-    g: f32,
-    b: f32,
-    a: f32,
-};
-
 struct OnionTrackColors {
-    colors: array<TrackColor, 64>,
+    colors: array<vec4<f32>, 64>,
 };
 
 struct OnionNote {
@@ -64,17 +57,17 @@ fn vs_main(
     let pitch = unpack_pitch(note.packed);
     let track = unpack_track_idx(note.packed);
 
-    // 单位矩形顶点偏移（三角形带：6个顶点）
+    // 三角形带 4 顶点 — 与 note.wgsl 完全一致
     var local_offset: vec2<f32>;
     switch vertex_index {
         case 0u: { local_offset = vec2<f32>(0.0, 0.0); }
-        case 1u: { local_offset = vec2<f32>(1.0, 0.0); }
-        case 2u: { local_offset = vec2<f32>(0.0, 1.0); }
-        case 3u: { local_offset = vec2<f32>(1.0, 0.0); }
-        case 4u: { local_offset = vec2<f32>(1.0, 1.0); }
-        default: { local_offset = vec2<f32>(0.0, 1.0); }
+        case 1u: { local_offset = vec2<f32>(0.0, 1.0); }
+        case 2u: { local_offset = vec2<f32>(1.0, 0.0); }
+        case 3u: { local_offset = vec2<f32>(1.0, 1.0); }
+        default: { local_offset = vec2<f32>(0.0, 0.0); }
     }
 
+    // 坐标变换 — 与 note.wgsl 完全一致
     let key_f = f32(pitch);
     let screen_x = start_tick_f * camera.zoom.x - camera.scroll.x
                    + camera.keyboard_width + camera.canvas_offset.x;
@@ -93,7 +86,7 @@ fn vs_main(
 
     var output: VertexOutput;
     output.position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
-    output.color = vec4<f32>(tc.r, tc.g, tc.b, tc.a);
+    output.color = vec4<f32>(tc.r, tc.g, tc.b, tc.a * 0.35);
     return output;
 }
 

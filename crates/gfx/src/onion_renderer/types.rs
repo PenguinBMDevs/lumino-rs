@@ -174,7 +174,7 @@ pub struct DrawIndirectArgs {
 impl Default for DrawIndirectArgs {
     fn default() -> Self {
         Self {
-            vertex_count: 6,
+            vertex_count: 4,
             instance_count: 0,
             first_vertex: 0,
             first_instance: 0,

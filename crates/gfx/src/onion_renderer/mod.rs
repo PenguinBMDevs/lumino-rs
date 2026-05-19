@@ -586,12 +586,11 @@ impl OnionRenderer {
         compute_pass.dispatch_workgroups(dispatch_x, dispatch_y, 1);
     }
 
-    /// 执行间接绘制
+    /// 执行间接绘制（TriangleStrip + 4 顶点/实例，与 note.wgsl 一致）
     pub fn draw<'r>(&'r self, render_pass: &mut wgpu::RenderPass<'r>) {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.render_bind_group, &[]);
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.draw_indexed_indirect(&self.indirect_buffer, 0);
+        render_pass.draw_indirect(&self.indirect_buffer, 0);
     }
 
     /// 获取当前音符数量
