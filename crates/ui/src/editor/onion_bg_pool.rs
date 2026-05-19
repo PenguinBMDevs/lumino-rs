@@ -85,6 +85,7 @@ impl OnionBgTilePool {
     /// 返回 (块索引, 被淘汰的 tile_id)，无淘汰时第二个值为 None。
     /// 全部占用且无可淘汰时返回 `None`。
     pub fn alloc(&mut self) -> Option<(u16, Option<u64>)> {
+        puffin::profile_function!();
         // 先找空闲块
         for (i, used) in self.in_use.iter().enumerate() {
             if !*used {
@@ -154,6 +155,7 @@ impl OnionBgTilePool {
 
     /// 替换指定索引的纹理（使用 create_texture_with_data，确保正确布局转换）
     pub fn upload_texture(&mut self, index: u16, pixels: &[u8], width: u32, height: u32) {
+        puffin::profile_scope!("upload_texture");
         let idx = index as usize;
         if idx >= POOL_SIZE {
             return;

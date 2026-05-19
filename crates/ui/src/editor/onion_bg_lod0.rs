@@ -39,6 +39,7 @@ pub fn generate_lod0_pixels(
     key_min: u16,
     key_max: u16,
 ) -> Lod0PixelData {
+    puffin::profile_function!();
     let Some(doc) = document else {
         return Lod0PixelData {
             pixels: Vec::new(),
@@ -65,30 +66,17 @@ pub fn generate_lod0_pixels(
     let width = (span_ticks * PIXELS_PER_TICK).max(1.0) as u32;
     let height = TILE_HEIGHT;
 
-    // 初始化全透明像素
+    // 初始化像素缓冲区
     let pixel_count = (width as usize) * (height as usize);
     let mut pixels = vec![0u8; pixel_count * 4];
-    let mut note_count = 0usize;
+    // 一次性查询所有非当前音轨的音符，避免多次二分查找和 Vec 分配
+    let all_notes = {
+        puffin::profile_scope!("get_all_notes_in_range_except");
+        doc.get_all_notes_in_range_except(current_track, tick_start, tick_end)
+    };
+    let note_count = all_notes.len();
 
-    let track_total = doc.track_count();
-    for track_idx in 0..track_total {
-        if track_idx == current_track {
-            continue;
-        }
-
-        let notes = doc.get_track_notes_in_range(
-            track_idx as u16,
-            tick_start,
-            tick_end,
-        );
-
-        if notes.is_empty() {
-            continue;
-        }
-
-        note_count += notes.len();
-
-        for &(ntick, nkey, nlength, _vel, _ch) in &notes {
+    for &(ntick, nkey, nlength, _vel, _ch) in &all_notes {
             let nkey = nkey as u16;
             if nkey < key_min || nkey > key_max {
                 continue;
@@ -112,19 +100,28 @@ pub fn generate_lod0_pixels(
 
             // 填充音符跨越的像素行（高度为 PIXELS_PER_KEY 像素）
             let y_end = (y + PIXELS_PER_KEY as u32).min(height);
-            for py in y..y_end {
-                for px in px_start..=px_end.min(width.saturating_sub(1)) {
-                let idx = (py * width + px) as usize * 4;
-                if idx + 3 < pixels.len() {
-                    pixels[idx] = 255;     // R — 亮橙红色
-                    pixels[idx + 1] = 100; // G
-                    pixels[idx + 2] = 50;  // B
-                    pixels[idx + 3] = 255; // A — 完全不透明
+            {
+                let px_end_clamped = px_end.min(width.saturating_sub(1));
+                if px_start <= px_end_clamped {
+                    // 预计算颜色为 u32（小端序：RGBA → 0xFF3264FF）
+                    const COLOR_U32: u32 = 0xFF_32_64_FF; // A=FF, B=64, G=32, R=FF (little endian)
+                    let row_fill_px = (px_end_clamped - px_start + 1) as usize;
+                    for py in y..y_end {
+                        let row_start = (py * width + px_start) as usize;
+                        let row_end_px = row_start + row_fill_px;
+                        if row_end_px <= pixel_count {
+                            // 按 u32 批量写入，一次写入 4 字节（1 个像素）
+                            unsafe {
+                                let ptr = pixels.as_mut_ptr() as *mut u32;
+                                for px in 0..row_fill_px {
+                                    ptr.add(row_start + px).write_volatile(COLOR_U32);
+                                }
+                            }
+                        }
+                    }
                 }
             }
-        }
     } // note loop
-    } // track loop
 
     Lod0PixelData {
         pixels,
@@ -142,6 +139,7 @@ pub fn upload_lod0_to_gpu(
     pool_index: u16,
     pool: &mut OnionBgTilePool,
 ) {
+    puffin::profile_function!();
     if data.pixels.is_empty() || data.width == 0 || data.height == 0 {
         return;
     }

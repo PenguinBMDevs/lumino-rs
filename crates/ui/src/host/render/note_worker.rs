@@ -115,6 +115,7 @@ fn collect_visible_tiles(
     key_min: u16,
     key_max: u16,
 ) -> Vec<(u64, f32, f32, u16, u16, u32, u16)> {
+    puffin::profile_function!();
     // 按 TILE_TICK_WIDTH 和 TILE_KEY_HEIGHT 分块
     let tick_div_start = (tick_start / TILE_TICK_WIDTH).floor() as u32;
     let tick_div_end = ((tick_end + TILE_TICK_WIDTH - 1.0) / TILE_TICK_WIDTH).floor() as u32;
@@ -164,6 +165,7 @@ impl NoteWorker {
 
     /// Worker 主循环：接收作业 → 计算瓦片 → 写入双缓冲 → swap
     fn run_loop(rx: mpsc::Receiver<OnionSkinJob>) {
+        puffin::profile_function!();
         // 瓦片缓存：tile_id → (pool_index, metadata)
         let mut tile_cache: HashMap<u64, TileCacheEntry> = HashMap::new();
 
@@ -262,6 +264,7 @@ impl NoteWorker {
             // Phase 1 — 锁内：缓存命中直接入 refs，未命中分配池槽
             let mut pending_allocs: Vec<(u64, f32, f32, u16, u16, u16)> = Vec::new();
             {
+                puffin::profile_scope!("phase1_alloc_and_cache_lookup");
                 let mut pool_guard = match pool.lock() {
                     Ok(g) => g,
                     Err(_) => {
@@ -308,7 +311,7 @@ impl NoteWorker {
                 }
             }
 
-            // Phase 2 — 锁外：生成所有缓存未命中的像素数据（慢操作）
+            // Phase 2 — 锁外：并行生成所有缓存未命中的像素数据（慢操作）
             struct PendingTile {
                 id: u64,
                 tick_start: f32,
@@ -318,35 +321,40 @@ impl NoteWorker {
                 pool_idx: u16,
                 pixel_data: Option<crate::editor::onion_bg_lod0::Lod0PixelData>,
             }
-            let pending_tiles: Vec<PendingTile> = pending_allocs
-                .into_iter()
-                .map(|(id, ts, te, kmin, kmax, pidx)| {
-                    let pixel_data = generate_lod0_pixels(
-                        snapshot.document.as_ref(),
-                        snapshot.current_track,
-                        ts,
-                        te,
-                        kmin,
-                        kmax,
-                    );
-                    tracing::info!(
-                        "[UPLOAD] generated pixels for tile_id={}: {}x{} count={}",
-                        id, pixel_data.width, pixel_data.height, pixel_data.note_count,
-                    );
-                    PendingTile {
-                        id,
-                        tick_start: ts,
-                        tick_end: te,
-                        key_min: kmin,
-                        key_max: kmax,
-                        pool_idx: pidx,
-                        pixel_data: Some(pixel_data),
-                    }
-                })
-                .collect();
+            let pending_tiles: Vec<PendingTile> = {
+                puffin::profile_scope!("phase2_generate_lod0_pixels");
+                use rayon::prelude::*;
+                pending_allocs
+                    .into_par_iter()
+                    .map(|(id, ts, te, kmin, kmax, pidx)| {
+                        let pixel_data = generate_lod0_pixels(
+                            snapshot.document.as_ref(),
+                            snapshot.current_track,
+                            ts,
+                            te,
+                            kmin,
+                            kmax,
+                        );
+                        tracing::info!(
+                            "[UPLOAD] generated pixels for tile_id={}: {}x{} count={}",
+                            id, pixel_data.width, pixel_data.height, pixel_data.note_count,
+                        );
+                        PendingTile {
+                            id,
+                            tick_start: ts,
+                            tick_end: te,
+                            key_min: kmin,
+                            key_max: kmax,
+                            pool_idx: pidx,
+                            pixel_data: Some(pixel_data),
+                        }
+                    })
+                    .collect()
+            };
 
             // Phase 3 — 重新入锁：上传 GPU、写缓存、构建 tile_refs
             {
+                puffin::profile_scope!("phase3_upload_gpu_and_cache");
                 let mut pool_guard = match pool.lock() {
                     Ok(g) => g,
                     Err(_) => {

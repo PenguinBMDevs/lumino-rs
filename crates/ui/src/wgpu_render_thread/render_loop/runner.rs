@@ -89,6 +89,11 @@ pub fn run_render_thread(
         sampler: wgpu::Sampler,
         /// 每瓦片一个 uniform 缓冲，预写入后复用
         uniform_bufs: Vec<wgpu::Buffer>,
+        /// 缓存的 BindGroup，按 pool_idx 索引，避免每帧重建
+        /// None 表示该槽位未缓存或需要重建
+        cached_bind_groups: Vec<Option<wgpu::BindGroup>>,
+        /// 缓存版本号，与 pool 中的纹理版本对应
+        cache_version: u64,
     }
     let mut tile_render: Option<TileRenderState> = None;
     let mut last_bg_version: u64 = 0;
@@ -149,13 +154,22 @@ pub fn run_render_thread(
             }
 
             // 检测洋葱皮瓦片 buffer 版本号，读取瓦片引用
-            let bg_version = onion_bg_tiles_buffer.version();
-            if bg_version != last_bg_version {
-                last_bg_version = bg_version;
-                let refs = unsafe { onion_bg_tiles_buffer.read_buffer() };
-                tracing::info!("[CK2] bg_version={}, refs_count={}", bg_version, refs.len());
-                cached_bg_refs.clear();
-                cached_bg_refs.extend_from_slice(refs);
+            {
+                puffin::profile_scope!("onion_bg_version_check");
+                let bg_version = onion_bg_tiles_buffer.version();
+                if bg_version != last_bg_version {
+                    last_bg_version = bg_version;
+                    let refs = unsafe { onion_bg_tiles_buffer.read_buffer() };
+                    tracing::info!("[CK2] bg_version={}, refs_count={}", bg_version, refs.len());
+                    cached_bg_refs.clear();
+                    cached_bg_refs.extend_from_slice(refs);
+                    // 版本变化时清空 BindGroup 缓存，强制重建
+                    if let Some(ref mut tr) = tile_render {
+                        tr.cached_bind_groups.clear();
+                        tr.cached_bind_groups.resize(256, None);
+                        tr.cache_version = bg_version;
+                    }
+                }
             }
 
             if let (Some(texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
@@ -178,6 +192,7 @@ pub fn run_render_thread(
 
                 // 延迟初始化瓦片渲染管线
                 if tile_render.is_none() && tile_pool.is_some() {
+                    puffin::profile_scope!("onion_bg_pipeline_init");
                     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                         label: Some("onion_bg_shader"),
                         source: wgpu::ShaderSource::Wgsl(onion_bg::SHADER_SRC.into()),
@@ -292,11 +307,14 @@ pub fn run_render_thread(
                         bind_group_layout: bg_layout,
                         sampler,
                         uniform_bufs: Vec::new(),
+                        cached_bind_groups: vec![None; 256],
+                        cache_version: 0,
                     });
                 }
 
                 // 写入洋葱皮瓦片 uniform 数据
                 if let Some(ref mut tr) = tile_render {
+                    puffin::profile_scope!("onion_bg_uniform_write");
                     // 按需创建 uniform buffer
                     while tr.uniform_bufs.len() < cached_bg_refs.len() {
                         let buf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -333,14 +351,15 @@ pub fn run_render_thread(
                 );
 
                 // 执行渲染通道（含瓦片）
-                let (tile_pipeline, tile_bg_layout, tile_sampler, tile_uniform_bufs) = match &tile_render {
+                let (tile_pipeline, tile_bg_layout, tile_sampler, tile_uniform_bufs, cached_bgs) = match &mut tile_render {
                     Some(tr) => (
                         Some(&tr.pipeline),
                         Some(&tr.bind_group_layout),
                         Some(&tr.sampler),
                         Some(&tr.uniform_bufs[..]),
+                        &mut tr.cached_bind_groups,
                     ),
-                    None => (None, None, None, None),
+                    None => (None, None, None, None, &mut Vec::new()),
                 };
                 let (tile_pool_ref, bg_refs) = match &tile_pool {
                     Some(pool) => (Some(pool), cached_bg_refs.as_slice()),
@@ -363,6 +382,7 @@ pub fn run_render_thread(
                     tile_sampler,
                     tile_uniform_bufs,
                     bg_refs,
+                    cached_bgs,
                 );
 
                 // 提交渲染指令

@@ -28,6 +28,8 @@ pub fn execute_render_pass(
     tile_sampler: Option<&wgpu::Sampler>,
     tile_uniform_bufs: Option<&[wgpu::Buffer]>,
     bg_tile_refs: &[OnionBgTileRef],
+    // 缓存的 BindGroup，避免每帧重建
+    cached_bind_groups: &mut Vec<Option<wgpu::BindGroup>>,
 ) {
     let (Some(texture), Some(depth_view)) = (current_texture, depth_texture_view) else {
         return;
@@ -103,26 +105,35 @@ pub fn execute_render_pass(
             (tile_pipeline, tile_bind_group_layout, tile_pool, tile_sampler, tile_uniform_bufs)
         {
             if !bg_tile_refs.is_empty() {
+                puffin::profile_scope!("draw_onion_bg_tiles");
                 render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
                 if let Ok(pool_guard) = pool.lock() {
                     for (i, tile_ref) in bg_tile_refs.iter().enumerate() {
                         let pool_idx = tile_ref.track_index as u16;
                         if pool_idx >= 256 || i >= uniform_bufs.len() { continue; }
-                        let pool_tex = pool_guard.texture(pool_idx);
-                        let tex_view_obj = pool_tex.create_view(&wgpu::TextureViewDescriptor::default());
-                        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                            label: Some("onion_bg_tile_bg"),
-                            layout: bg_layout,
-                            entries: &[
-                                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&tex_view_obj) },
-                                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
-                                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Buffer(
-                                    wgpu::BufferBinding { buffer: &uniform_bufs[i], offset: 0, size: wgpu::BufferSize::new(48) }) },
-                            ],
-                        });
-                        render_pass.set_pipeline(pipeline);
-                        render_pass.set_bind_group(0, &bind_group, &[]);
-                        render_pass.draw(0..6, 0..1);
+
+                        // 检查缓存，如无则创建
+                        if cached_bind_groups[pool_idx as usize].is_none() {
+                            puffin::profile_scope!("tile_create_bindgroup");
+                            let pool_tex = pool_guard.texture(pool_idx);
+                            let tex_view_obj = pool_tex.create_view(&wgpu::TextureViewDescriptor::default());
+                            cached_bind_groups[pool_idx as usize] = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                                label: Some("onion_bg_tile_bg"),
+                                layout: bg_layout,
+                                entries: &[
+                                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&tex_view_obj) },
+                                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
+                                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Buffer(
+                                        wgpu::BufferBinding { buffer: &uniform_bufs[i], offset: 0, size: wgpu::BufferSize::new(48) }) },
+                                ],
+                            }));
+                        }
+
+                        if let Some(ref bind_group) = cached_bind_groups[pool_idx as usize] {
+                            render_pass.set_pipeline(pipeline);
+                            render_pass.set_bind_group(0, bind_group, &[]);
+                            render_pass.draw(0..6, 0..1);
+                        }
                     }
                 }
             }
