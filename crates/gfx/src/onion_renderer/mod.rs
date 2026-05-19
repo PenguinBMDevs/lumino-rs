@@ -301,7 +301,7 @@ impl OnionRenderer {
         });
         let track_mask_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("onion_track_mask_uniform"),
-            contents: bytemuck::cast_slice(&[OnionTrackMask::empty()]),
+            contents: bytemuck::cast_slice(&[OnionTrackMask::all()]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let track_color_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
