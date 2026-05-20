@@ -1,11 +1,13 @@
 // 洋葱皮可见性剔除 Compute Shader
 // 每个线程处理一个音符，通过原子计数器输出可见实例索引
 // 工作组大小: 256
+//
+// note_count / indices_capacity 从 viewport uniform 读取（替代 arrayLength）
 
 struct OnionNote {
     start_tick: u32,
     end_tick: u32,
-    packed: u32,       // low 8 bits = pitch, bits 8-23 = track_idx
+    packed: u32,
     _padding: u32,
 };
 
@@ -14,7 +16,9 @@ struct OnionViewportUniform {
     tick_end: f32,
     pitch_min: f32,
     pitch_max: f32,
-    _padding: vec4<u32>,
+    note_count: u32,
+    indices_capacity: u32,
+    _padding: vec2<u32>,
 };
 
 struct OnionTrackMask {
@@ -27,7 +31,6 @@ struct DrawIndirectArgs {
     instance_count: atomic<u32>,
     first_vertex: u32,
     first_instance: u32,
-    _padding: vec4<u32>,
 };
 
 @group(0) @binding(0) var<uniform> viewport: OnionViewportUniform;
@@ -36,7 +39,6 @@ struct DrawIndirectArgs {
 @group(0) @binding(3) var<storage, read_write> instance_indices: array<u32>;
 @group(0) @binding(4) var<storage, read_write> indirect_args: DrawIndirectArgs;
 
-// workgroup 共享内存：批量原子操作
 var<workgroup> wg_count: atomic<u32>;
 var<workgroup> wg_indices: array<u32, 256>;
 var<workgroup> wg_global_base: u32;
@@ -68,9 +70,14 @@ fn main(
     @builtin(global_invocation_id) global_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
-    let MAX_X_THREADS: u32 = 65535u * 256u;
-    let index = global_id.x + global_id.y * MAX_X_THREADS;
-    let in_range = index < arrayLength(&note_pool);
+    let index = global_id.x;
+
+    if (index == 0u) {
+        atomicStore(&indirect_args.instance_count, 0u);
+        indirect_args.vertex_count = 4u;
+    }
+
+    let in_range = index < viewport.note_count;
 
     var is_visible = false;
     if (in_range) {
@@ -78,16 +85,13 @@ fn main(
         let pitch = unpack_pitch(note.packed);
         let track = unpack_track_idx(note.packed);
 
-        // 视口矩形裁剪：tick 范围
         let tick_start_f = f32(note.start_tick);
         let tick_end_f = f32(note.end_tick);
         let in_tick_range = tick_end_f > viewport.tick_start && tick_start_f < viewport.tick_end;
 
-        // pitch 范围裁剪
         let pitch_f = f32(pitch);
         let in_pitch_range = pitch_f >= viewport.pitch_min && pitch_f <= viewport.pitch_max;
 
-        // 轨道掩码裁剪
         let track_visible = is_track_visible(track, track_mask);
 
         if (in_tick_range && in_pitch_range && track_visible) {
@@ -95,14 +99,12 @@ fn main(
         }
     }
 
-    // Phase 1: workgroup 内本地计数
     if (is_visible) {
         let slot = atomicAdd(&wg_count, 1u);
         wg_indices[slot] = index;
     }
     workgroupBarrier();
 
-    // Phase 2: 线程 0 做 1 次全局 atomicAdd
     if (local_id.x == 0u) {
         let n = atomicLoad(&wg_count);
         wg_total = n;
@@ -110,11 +112,10 @@ fn main(
     }
     workgroupBarrier();
 
-    // Phase 3: 写入可见实例索引
     if (local_id.x < wg_total) {
         let src_idx = wg_indices[local_id.x];
         let dst = wg_global_base + local_id.x;
-        if (dst < arrayLength(&instance_indices)) {
+        if (dst < viewport.indices_capacity) {
             instance_indices[dst] = src_idx;
         }
     }

@@ -40,9 +40,9 @@ impl OnionNote {
     }
 }
 
-/// 视口裁剪 uniform — 定义可见 tick 范围和 pitch 范围
+/// 视口裁剪 uniform — 定义可见 tick/pitch 范围 + cull 参数
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct OnionViewportUniform {
     /// 可见 tick 范围 [start, end)
     pub tick_start: f32,
@@ -50,8 +50,12 @@ pub struct OnionViewportUniform {
     /// 可见 pitch 范围 [min, max]
     pub pitch_min: f32,
     pub pitch_max: f32,
+    /// 音符总数（替代 compute shader 中的 arrayLength()）
+    pub note_count: u32,
+    /// 实例索引缓冲区容量
+    pub indices_capacity: u32,
     /// 填充至 16 字节对齐
-    pub _padding: [u32; 4],
+    pub _padding: [u32; 2],
 }
 
 impl Default for OnionViewportUniform {
@@ -61,14 +65,16 @@ impl Default for OnionViewportUniform {
             tick_end: 0.0,
             pitch_min: 0.0,
             pitch_max: 0.0,
-            _padding: [0; 4],
+            note_count: 0,
+            indices_capacity: 65536,
+            _padding: [0; 2],
         }
     }
 }
 
 /// 轨道掩码 uniform — 支持最多 64 个轨道
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct OnionTrackMask {
     /// 低 32 位
     pub mask_lo: u32,
@@ -160,7 +166,7 @@ impl TrackColor {
     }
 }
 
-/// 间接绘制参数 — 匹配 WGSL DrawIndirectArgs
+/// 间接绘制参数 — 匹配 VkDrawIndexedIndirectCommand（16 字节）
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct DrawIndirectArgs {
@@ -168,7 +174,6 @@ pub struct DrawIndirectArgs {
     pub instance_count: u32,
     pub first_vertex: u32,
     pub first_instance: u32,
-    pub _padding: [u32; 4],
 }
 
 impl Default for DrawIndirectArgs {
@@ -178,7 +183,6 @@ impl Default for DrawIndirectArgs {
             instance_count: 0,
             first_vertex: 0,
             first_instance: 0,
-            _padding: [0; 4],
         }
     }
 }

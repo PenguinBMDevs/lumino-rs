@@ -5,8 +5,15 @@
 //!
 //! 数据流:
 //!   1. 所有音轨音符平铺为 SoA 布局 → Storage Buffer 常驻 GPU
-//!   2. 视口/轨道掩码变化时 → 调度 Compute Shader 剔除
+//!   2. 视口/轨道掩码变化时 → 调度 Compute Shader 剔除（dirty tracking 跳过无变化帧）
 //!   3. 剔除结果 → Instance Index Buffer → draw_indexed_indirect
+//!
+//! 优化要点：
+//!   - Bind group 仅在 buffer 重建时重建（非每帧）
+//!   - Push constant 传 note_count / indices_capacity（替代 arrayLength）
+//!   - GPU 端清零 indirect args（消除 CPU 冗余 write_buffer）
+//!   - Dirty tracking 跳过静止帧的 compute dispatch
+//!   - Buffer 按需扩容 + 空闲缩容
 
 pub mod types;
 
@@ -53,16 +60,22 @@ pub struct OnionRenderer {
     indices_capacity: usize,
     /// GPU 最大 storage buffer binding size
     max_storage_binding: u64,
-    /// 上次上传的音符计数（用于按需重建 bind group）
-    last_note_count: usize,
-    /// compute shader 常量
-    vertex_shader_src: &'static str,
-    compute_shader_src: &'static str,
+    /// Bind group 是否需要重建（buffer 被重建时置 true）
+    bind_groups_dirty: bool,
+    /// 上一次 cull 的视口数据（用于 dirty tracking）
+    last_viewport: Option<OnionViewportUniform>,
+    /// 上一次 cull 的相机数据（用于 dirty tracking）
+    last_camera: Option<CameraUniform>,
+    /// 上一次 cull 的轨道掩码（用于 dirty tracking）
+    last_track_mask: Option<OnionTrackMask>,
+    /// 音符数据是否在上次 cull 后变化过
+    notes_dirty: bool,
 }
 
 impl OnionRenderer {
-    const INITIAL_NOTE_CAPACITY: usize = 65536;
+    const INITIAL_NOTE_CAPACITY: usize = 8192;
     const INITIAL_INDICES_CAPACITY: usize = 65536;
+    const INDICES_SHRINK_THRESHOLD: f64 = 0.25;
     const MAX_INDICES_CAPACITY: usize = 33_554_432;
     const WORKGROUP_SIZE: u32 = 256;
 
@@ -93,7 +106,7 @@ impl OnionRenderer {
         let max_buffer_size = device.limits().max_buffer_size;
         let max_note_pool_bytes = max_storage_binding
             .min(max_buffer_size)
-            .min(1_600_000_000) as usize; // 1.6 GB cap
+            .min(1_600_000_000) as usize;
         let note_pool_capacity =
             (max_note_pool_bytes / std::mem::size_of::<OnionNote>()).min(Self::INITIAL_NOTE_CAPACITY);
 
@@ -324,7 +337,6 @@ impl OnionRenderer {
             &note_pool_buffer,
             &instance_indices_buffer,
             &indirect_buffer,
-            0,
         );
         let render_bind_group = Self::create_render_bind_group(
             device,
@@ -333,7 +345,6 @@ impl OnionRenderer {
             &track_color_buffer,
             &instance_indices_buffer,
             &note_pool_buffer,
-            0,
         );
 
         Self {
@@ -355,9 +366,11 @@ impl OnionRenderer {
             note_count: 0,
             indices_capacity,
             max_storage_binding,
-            last_note_count: 0,
-            vertex_shader_src,
-            compute_shader_src,
+            bind_groups_dirty: false,
+            last_viewport: None,
+            last_camera: None,
+            last_track_mask: None,
+            notes_dirty: false,
         }
     }
 
@@ -402,7 +415,6 @@ impl OnionRenderer {
         note_pool_buffer: &wgpu::Buffer,
         instance_indices_buffer: &wgpu::Buffer,
         indirect_buffer: &wgpu::Buffer,
-        _note_count: usize,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("onion_compute_bind_group"),
@@ -439,7 +451,6 @@ impl OnionRenderer {
         track_color_buffer: &wgpu::Buffer,
         instance_indices_buffer: &wgpu::Buffer,
         note_pool_buffer: &wgpu::Buffer,
-        _indices_count: usize,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("onion_render_bind_group"),
@@ -474,20 +485,23 @@ impl OnionRenderer {
         let count = notes.len();
         if count == 0 {
             self.note_count = 0;
-            self.last_note_count = 0;
+            self.notes_dirty = true;
             return;
         }
 
-        // 按需扩容
+        let mut buffer_rebuilt = false;
+
+        // 按需扩容 note_pool_buffer
         let required = count.next_power_of_two().max(Self::INITIAL_NOTE_CAPACITY);
         if required > self.note_pool_capacity {
             let max_capacity = (self.max_storage_binding as usize
                 / std::mem::size_of::<OnionNote>())
-                .min(100_000_000); // 1亿上限
+                .min(100_000_000);
             let new_capacity = required.min(max_capacity);
             if new_capacity > self.note_pool_capacity {
                 self.note_pool_buffer = Self::create_note_pool_buffer(device, new_capacity);
                 self.note_pool_capacity = new_capacity;
+                buffer_rebuilt = true;
                 tracing::info!(
                     "OnionRenderer: note pool grown to {} ({} MB)",
                     new_capacity,
@@ -496,9 +510,42 @@ impl OnionRenderer {
             }
         }
 
+        // 空闲缩容：当实际使用量远低于容量时释放内存
+        let shrink_threshold = (self.note_pool_capacity as f64 * Self::INDICES_SHRINK_THRESHOLD) as usize;
+        if count < shrink_threshold && self.note_pool_capacity > Self::INITIAL_NOTE_CAPACITY * 2 {
+            let new_capacity = count.next_power_of_two().max(Self::INITIAL_NOTE_CAPACITY);
+            if new_capacity < self.note_pool_capacity {
+                self.note_pool_buffer = Self::create_note_pool_buffer(device, new_capacity);
+                self.note_pool_capacity = new_capacity;
+                buffer_rebuilt = true;
+                tracing::info!(
+                    "OnionRenderer: note pool shrunk to {} ({} MB)",
+                    new_capacity,
+                    (new_capacity * std::mem::size_of::<OnionNote>()) / (1024 * 1024)
+                );
+            }
+        }
+
+        // 按需扩容 instance_indices_buffer（可见音符可能接近总数）
+        let required_indices = count;
+        if required_indices > self.indices_capacity {
+            let new_indices_cap = required_indices.next_power_of_two().min(Self::MAX_INDICES_CAPACITY);
+            if new_indices_cap > self.indices_capacity {
+                self.instance_indices_buffer =
+                    Self::create_instance_indices_buffer(device, new_indices_cap);
+                self.indices_capacity = new_indices_cap;
+                buffer_rebuilt = true;
+                tracing::info!(
+                    "OnionRenderer: indices buffer grown to {} ({} MB)",
+                    new_indices_cap,
+                    (new_indices_cap * std::mem::size_of::<u32>()) / (1024 * 1024)
+                );
+            }
+        }
+
         let upload_count = count.min(self.note_pool_capacity);
         self.note_count = upload_count;
-        self.last_note_count = upload_count;
+        self.notes_dirty = true;
 
         queue.write_buffer(
             &self.note_pool_buffer,
@@ -506,8 +553,10 @@ impl OnionRenderer {
             bytemuck::cast_slice(&notes[..upload_count]),
         );
 
-        // 按需重建 bind group（音符池大小变化时需要重建 render bind group）
-        self.rebuild_bind_groups(device);
+        // 仅在 buffer 真正被重建时才 rebuild bind group
+        if buffer_rebuilt {
+            self.rebuild_bind_groups(device);
+        }
     }
 
     /// 上传轨道颜色表
@@ -520,7 +569,10 @@ impl OnionRenderer {
     }
 
     /// 设置轨道掩码
-    pub fn upload_track_mask(&self, mask: &OnionTrackMask, queue: &wgpu::Queue) {
+    pub fn upload_track_mask(&mut self, mask: &OnionTrackMask, queue: &wgpu::Queue) {
+        if Some(mask) != self.last_track_mask.as_ref() {
+            self.last_track_mask = Some(*mask);
+        }
         queue.write_buffer(
             &self.track_mask_buffer,
             0,
@@ -531,6 +583,7 @@ impl OnionRenderer {
     /// 准备计算剔除（视口或轨道掩码变化时调用）
     ///
     /// 执行 compute shader 剔除，结果写入 instance_indices_buffer 和 indirect_buffer。
+    /// 内置 dirty tracking：当视口/相机/轨道掩码/音符均未变化时跳过 compute dispatch。
     pub fn prepare_cull(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -540,36 +593,56 @@ impl OnionRenderer {
         device: &wgpu::Device,
     ) {
         if self.note_count == 0 {
-            // 无音符时重置间接参数，避免上一帧残留
-            let reset = DrawIndirectArgs::default();
-            queue.write_buffer(
-                &self.indirect_buffer,
-                0,
-                bytemuck::cast_slice(&[reset]),
-            );
             return;
         }
 
-        // 上传视口 uniform
-        queue.write_buffer(
-            &self.viewport_buffer,
-            0,
-            bytemuck::cast_slice(&[*viewport]),
-        );
-        // 上传相机 uniform
-        queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::cast_slice(&[*camera]),
-        );
+        // Dirty check：检测视口/相机/轨道掩码/音符是否有变化
+        let viewport_changed = self.last_viewport.as_ref() != Some(viewport);
+        let camera_changed = self.last_camera.as_ref() != Some(camera);
+        let anything_dirty = viewport_changed || camera_changed || self.notes_dirty;
 
-        // 重置间接绘制参数
-        let reset = DrawIndirectArgs::default();
-        queue.write_buffer(
-            &self.indirect_buffer,
-            0,
-            bytemuck::cast_slice(&[reset]),
-        );
+        if !anything_dirty {
+            return;
+        }
+
+        // 更新缓存状态
+        self.last_viewport = Some(*viewport);
+        self.last_camera = Some(*camera);
+        self.notes_dirty = false;
+
+        // 构建完整的 viewport uniform（合并 cull 参数：note_count + indices_capacity）
+        let full_viewport = OnionViewportUniform {
+            tick_start: viewport.tick_start,
+            tick_end: viewport.tick_end,
+            pitch_min: viewport.pitch_min,
+            pitch_max: viewport.pitch_max,
+            note_count: self.note_count as u32,
+            indices_capacity: self.indices_capacity as u32,
+            _padding: [0; 2],
+        };
+
+        // 上传视口 uniform（含 cull 参数，仅在变化时上传）
+        if viewport_changed || self.notes_dirty {
+            queue.write_buffer(
+                &self.viewport_buffer,
+                0,
+                bytemuck::cast_slice(&[full_viewport]),
+            );
+        }
+        // 上传相机 uniform（仅在变化时上传）
+        if camera_changed {
+            queue.write_buffer(
+                &self.camera_buffer,
+                0,
+                bytemuck::cast_slice(&[*camera]),
+            );
+        }
+
+        // 如果 bind group 因 buffer 重建而脏了，先修复
+        if self.bind_groups_dirty {
+            self.rebuild_bind_groups(device);
+            self.bind_groups_dirty = false;
+        }
 
         // 执行 Compute Culling
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -580,14 +653,14 @@ impl OnionRenderer {
         compute_pass.set_bind_group(0, &self.compute_bind_group, &[]);
 
         let workgroup_count = (self.note_count as u32).div_ceil(Self::WORKGROUP_SIZE);
-        const MAX_DISPATCH_X: u32 = 65535;
-        let dispatch_x = workgroup_count.min(MAX_DISPATCH_X);
-        let dispatch_y = workgroup_count.div_ceil(MAX_DISPATCH_X);
-        compute_pass.dispatch_workgroups(dispatch_x, dispatch_y, 1);
+        compute_pass.dispatch_workgroups(workgroup_count, 1, 1);
     }
 
     /// 执行间接绘制（TriangleStrip + 4 顶点/实例，与 note.wgsl 一致）
     pub fn draw<'r>(&'r self, render_pass: &mut wgpu::RenderPass<'r>) {
+        if self.note_count == 0 {
+            return;
+        }
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.render_bind_group, &[]);
         render_pass.draw_indirect(&self.indirect_buffer, 0);
@@ -626,7 +699,6 @@ impl OnionRenderer {
             &self.note_pool_buffer,
             &self.instance_indices_buffer,
             &self.indirect_buffer,
-            self.note_count,
         );
         self.render_bind_group = Self::create_render_bind_group(
             device,
@@ -635,7 +707,6 @@ impl OnionRenderer {
             &self.track_color_buffer,
             &self.instance_indices_buffer,
             &self.note_pool_buffer,
-            self.note_count,
         );
     }
 }

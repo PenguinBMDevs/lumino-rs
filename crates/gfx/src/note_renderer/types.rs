@@ -73,7 +73,7 @@ pub struct OnionBgTileRef {
 
 /// 摄像机/视口 uniform 数据
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
     pub scroll: [f32; 2],
     pub zoom: [f32; 2],

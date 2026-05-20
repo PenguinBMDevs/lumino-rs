@@ -165,7 +165,9 @@ pub fn run_render_thread(
                     tick_end: visible_tick_end,
                     pitch_min: visible_pitch_min,
                     pitch_max: visible_pitch_max,
-                    _padding: [0; 4],
+                    note_count: 0,
+                    indices_capacity: 65536,
+                    _padding: [0; 2],
                 };
 
                 onion_renderer.prepare_cull(
