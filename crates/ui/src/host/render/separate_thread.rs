@@ -33,7 +33,7 @@ impl Host {
 
         let texture_ref = wgpu_thread
             .latest_texture
-            .lock()
+            .try_lock()
             .ok()
             .and_then(|g| g.clone());
 
@@ -41,7 +41,6 @@ impl Host {
             return;
         };
 
-        // 确保尺寸匹配，如果因为调整大小等原因不匹配则跳过这帧的复制
         if texture.width() != frame.texture.width() || texture.height() != frame.texture.height() {
             return;
         }

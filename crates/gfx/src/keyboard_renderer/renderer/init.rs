@@ -98,6 +98,13 @@ impl KeyboardRenderer {
             white_key_color: [1.0, 1.0, 1.0, 1.0],
             black_key_color: [0.2, 0.2, 0.2, 1.0],
             selected_key_color: [0.4, 0.7, 1.0, 1.0],
+            cached_instances: Vec::new(),
+            cache_valid: false,
+            cache_scroll_y: 0.0,
+            cache_zoom_y: 0.0,
+            cache_visible_key_count: 0,
+            cache_keyboard_width: 0.0,
+            cache_ruler_height: 0.0,
         }
     }
 }
