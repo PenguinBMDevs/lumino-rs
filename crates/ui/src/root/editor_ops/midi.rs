@@ -701,7 +701,7 @@ mod tests {
     fn test_poll_midi_input_note_on() {
         let mut root = create_root();
         root.recording.is_recording = true;
-        root.editor.playback_position = 100.0;
+        root.recording.started_at = Some(std::time::Instant::now());
 
         // 模拟 MIDI NoteOn：通道0，按键60（Middle C），力度100
         let midi_data = vec![0x90, 60, 100];
@@ -712,14 +712,14 @@ mod tests {
 
         root.poll_midi_input();
 
-        // 验证创建了一个音符
+        // 验证创建了一个音符（tick 基于墙钟时间，接近 0）
         assert_eq!(root.editor.editor_state.data.notes.len(), 1);
         let note = &root.editor.editor_state.data.notes[0];
         assert_eq!(note.key, 60);
         assert_eq!(note.velocity, 100);
         assert!(
-            (note.tick - 100.0).abs() < f32::EPSILON,
-            "音符 tick 应等于 playback_position，实际 {}",
+            note.tick >= 0.0,
+            "音符 tick 应 >= 0，实际 {}",
             note.tick
         );
 
@@ -735,7 +735,7 @@ mod tests {
     fn test_poll_midi_input_note_on_off() {
         let mut root = create_root();
         root.recording.is_recording = true;
-        root.editor.playback_position = 0.0;
+        root.recording.started_at = Some(std::time::Instant::now());
 
         // 模拟 NoteOn 事件
         {
@@ -744,20 +744,19 @@ mod tests {
         }
         root.poll_midi_input();
 
-        // 播放位置前进，模拟 NoteOff
-        root.editor.playback_position = 480.0;
+        // 模拟 NoteOff
         {
             let mut buf = root.midi_input_buffer.lock().unwrap();
             buf.push_back(vec![0x80, 60, 0]);
         }
         root.poll_midi_input();
 
-        // 验证音符长度已更新
+        // 验证音符长度已更新（基于墙钟时间，length > 0）
         assert_eq!(root.editor.editor_state.data.notes.len(), 1);
         let note = &root.editor.editor_state.data.notes[0];
         assert!(
-            (note.length - 480.0).abs() < f32::EPSILON,
-            "音符长度应等于 NoteOff tick - NoteOn tick，预期 480.0，实际 {}",
+            note.length > 0.0,
+            "音符长度应大于 0，实际 {}",
             note.length
         );
 
@@ -773,7 +772,7 @@ mod tests {
     fn test_note_on_with_velocity_zero_treated_as_note_off() {
         let mut root = create_root();
         root.recording.is_recording = true;
-        root.editor.playback_position = 0.0;
+        root.recording.started_at = Some(std::time::Instant::now());
 
         // 先发送 NoteOn
         {
@@ -785,7 +784,6 @@ mod tests {
         assert!(root.recording.pending_notes.contains_key(&60));
 
         // 发送 velocity=0 的 NoteOn（MIDI 规范中视为 NoteOff）
-        root.editor.playback_position = 480.0;
         {
             let mut buf = root.midi_input_buffer.lock().unwrap();
             buf.push_back(vec![0x90, 60, 0]);
@@ -794,7 +792,7 @@ mod tests {
 
         let note = &root.editor.editor_state.data.notes[0];
         assert!(
-            (note.length - 480.0).abs() < f32::EPSILON,
+            note.length > 0.0,
             "velocity=0 的 NoteOn 应被当作 NoteOff 处理"
         );
         assert!(!root.recording.pending_notes.contains_key(&60));

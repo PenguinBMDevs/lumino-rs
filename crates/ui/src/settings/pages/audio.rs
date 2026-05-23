@@ -10,7 +10,7 @@ use crate::settings::SettingsPanel;
 use lumino_core::storage::config::SynthBackend;
 
 /// 渲染音频设置页面
-pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
+pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
     let synth_options = [
         SynthBackend::XSynth,
         SynthBackend::Kdmapi,
@@ -35,6 +35,9 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        // MIDI 输入设备选择
+        render_midi_device_selector(settings),
         iced_widget::space().height(SPACING_CONTENT),
     ];
 
@@ -245,4 +248,57 @@ fn render_xsynth_options<'a>(
     );
 
     col
+}
+
+/// 渲染 MIDI 输入设备选择器
+fn render_midi_device_selector<'a>(settings: &'a SettingsPanel) -> Element<'a> {
+    let device_count = settings.midi_devices.len();
+    if device_count == 0 {
+        return row![
+            text("MIDI 输入设备:")
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            text("无可用设备")
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_placeholder_text_style()),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center)
+        .into();
+    }
+
+    let device_options: Vec<&str> = settings
+        .midi_devices
+        .iter()
+        .map(|(_, name)| name.as_str())
+        .collect();
+    let selected_idx = settings
+        .selected_midi_device
+        .and_then(|id| settings.midi_devices.iter().position(|(did, _)| *did == id));
+    let selected = selected_idx.map(|i| device_options[i]);
+
+    row![
+        text("MIDI 输入设备:")
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_content_text_style()),
+        iced_widget::space().width(SPACING_MAIN),
+        pick_list(device_options, selected, move |name| {
+            if let Some((id, _)) = settings
+                .midi_devices
+                .iter()
+                .find(|(_, n)| n.as_str() == name)
+            {
+                Message::Settings(crate::settings::Event::DeviceSelected(*id))
+            } else {
+                Message::Null
+            }
+        })
+        .placeholder("选择MIDI设备")
+        .padding([4, 8])
+        .width(200.0),
+    ]
+    .spacing(SPACING_ICON_LABEL)
+    .align_y(Alignment::Center)
+    .into()
 }

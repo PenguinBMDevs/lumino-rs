@@ -41,15 +41,15 @@ impl Root {
             return;
         }
 
-        // 使用工具栏选中的设备，或回退到第一个设备
+        // 使用设置面板选中的设备，或回退到第一个设备
         let device = self
-            .toolbar
+            .settings
             .selected_midi_device
             .and_then(|id| inputs.iter().find(|d| d.id == id))
             .unwrap_or(&inputs[0]);
 
-        // 同步选中设备到工具栏
-        self.toolbar.selected_midi_device = Some(device.id);
+        // 同步选中设备到设置面板
+        self.settings.selected_midi_device = Some(device.id);
 
         let device_id = device.id;
         let device_name = device.name.clone();
@@ -230,15 +230,15 @@ impl Root {
 
     /// 设置 MIDI API（供外部调用，如 MidiManager 初始化完成后）
     pub fn set_midi_api(&mut self, api: Box<dyn lumino_midi::Api>) {
-        // 缓存设备列表到工具栏（供设备选择器使用）
+        // 缓存设备列表到设置面板（供设备选择器使用）
         let devices = api.inputs().unwrap_or_default();
-        self.toolbar.midi_devices = devices.iter().map(|d| (d.id, d.name.clone())).collect();
+        self.settings.midi_devices = devices.iter().map(|d| (d.id, d.name.clone())).collect();
 
         // 自动选中第一个设备（如果还没有选中）
-        if self.toolbar.selected_midi_device.is_none()
+        if self.settings.selected_midi_device.is_none()
             && let Some(first) = devices.first()
         {
-            self.toolbar.selected_midi_device = Some(first.id);
+            self.settings.selected_midi_device = Some(first.id);
         }
 
         self.midi_api = Some(api);

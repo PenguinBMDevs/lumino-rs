@@ -45,6 +45,8 @@ pub enum Event {
     IconHiDPIChanged(bool),
     /// 256键扩展钢琴卷帘开关
     Enable256keyChanged(bool),
+    /// MIDI 输入设备选择
+    DeviceSelected(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +73,10 @@ pub struct SettingsPanel {
     pub icon_hidpi: bool,
     /// 256键扩展钢琴卷帘
     pub enable_256key: bool,
+    /// 可用的 MIDI 输入设备列表
+    pub midi_devices: Vec<(u32, String)>,
+    /// 当前选中的 MIDI 输入设备 ID
+    pub selected_midi_device: Option<u32>,
 }
 
 impl SettingsPanel {
@@ -94,6 +100,8 @@ impl SettingsPanel {
             velocity_filter_threshold: ui_config.velocity_filter_threshold,
             icon_hidpi: ui_config.icon_hidpi,
             enable_256key: ui_config.enable_256key,
+            midi_devices: Vec::new(),
+            selected_midi_device: None,
         }
     }
 
@@ -188,15 +196,19 @@ impl SettingsPanel {
             Event::Enable256keyChanged(enabled) => {
                 self.enable_256key = enabled;
             }
+            Event::DeviceSelected(id) => {
+                self.selected_midi_device = Some(id);
+                tracing::debug!("设置: MIDI 输入设备选择为 #{}", id);
+            }
         }
     }
 }
 
 /// 渲染设置面板主视图
 pub fn view<'a>(
-    settings: &SettingsPanel,
-    window: &window::Window,
-    system_fonts: &[lumino_core::font_scanner::FontInfo],
+    settings: &'a SettingsPanel,
+    window: &'a window::Window,
+    system_fonts: &'a [lumino_core::font_scanner::FontInfo],
 ) -> Element<'a> {
     let menu_items = menu::create_menu_items();
 
@@ -219,9 +231,9 @@ pub fn view<'a>(
 }
 
 fn render_content_area<'a>(
-    settings: &SettingsPanel,
-    window: &window::Window,
-    system_fonts: &[lumino_core::font_scanner::FontInfo],
+    settings: &'a SettingsPanel,
+    window: &'a window::Window,
+    system_fonts: &'a [lumino_core::font_scanner::FontInfo],
 ) -> iced_widget::Container<'a, Message, Theme, crate::Renderer> {
     let content = match settings.selected_menu_index {
         0 => general_view(settings),
