@@ -53,6 +53,7 @@ impl Host {
             track_onion_states: self.root.sidebar.get_onion_skin_states(),
             current_track: es.data.current_track,
             document: es.data.document.clone(),
+            track_notes: es.data.track_notes.clone(),
         }
     }
 }

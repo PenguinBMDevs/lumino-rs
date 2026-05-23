@@ -60,6 +60,8 @@ pub(crate) struct OnionSkinComputationSnapshot {
     pub track_onion_states: std::collections::HashMap<usize, bool>,
     pub current_track: usize,
     pub document: Option<Arc<MidiDocument>>,
+    /// 用户手动编辑的音轨音符缓存（用于无 MIDI 或用户编辑过的音轨）
+    pub track_notes: std::collections::HashMap<usize, im::Vector<crate::editor::note::Note>>,
 }
 
 /// 发送给 NoteWorker 的作业
@@ -123,13 +125,14 @@ impl NoteWorker {
                 continue;
             }
 
-            // 收集视口范围内的洋葱皮音符，直接由 CompactEvent 构建 OnionNote
+            // 收集视口范围内的洋葱皮音符，从 MIDI 文档和用户编辑的音轨笔记
             let notes = collect_onion_notes(
                 snapshot.document.as_deref(),
                 snapshot.current_track,
                 &snapshot.track_onion_states,
                 snapshot.visible_tick_start,
                 snapshot.visible_tick_end,
+                &snapshot.track_notes,
             );
 
             {
@@ -232,62 +235,93 @@ fn collect_onion_notes_direct(
     notes
 }
 
-/// 从 MIDI 文档收集所有洋葱皮音轨的 OnionNote
+/// 从 MIDI 文档和用户手动放置的音符收集所有洋葱皮音轨的 OnionNote
 ///
-/// 使用 Rayon 并行遍历音轨，直接由 CompactEvent 构建 OnionNote，
-/// 按视口 tick 范围裁剪数据量。结果按 start_tick 排序供 GPU 二分查找。
+/// 当音轨同时存在于 MIDI 文档和 track_notes 中时，以 track_notes 为准（用户编辑优先）。
+/// 无 MIDI 文档时完全依赖用户手动放置的音符。
+/// 结果按 start_tick 排序供 GPU 二分查找。
 pub(super) fn collect_onion_notes(
     document: Option<&MidiDocument>,
     current_track: usize,
     track_onion_enabled: &std::collections::HashMap<usize, bool>,
     visible_tick_start: f32,
     visible_tick_end: f32,
+    track_notes: &std::collections::HashMap<usize, im::Vector<crate::editor::note::Note>>,
 ) -> Vec<OnionNote> {
-    let Some(doc) = document else {
-        return Vec::new();
-    };
+    let mut all_notes = Vec::new();
 
-    use rayon::prelude::*;
-    let num_tracks = doc.track_count();
-    let events = &doc.events;
+    // Phase 1: 从 MIDI 文档收集未被用户编辑过的音轨
+    if let Some(doc) = document {
+        use rayon::prelude::*;
+        let num_tracks = doc.track_count();
+        let events = &doc.events;
 
-    // 并行遍历音轨，每个轨道直接从 CompactEvent 构建 OnionNote
-    let track_results: Vec<Vec<OnionNote>> = (0..num_tracks)
-        .into_par_iter()
-        .filter_map(|track_idx| {
-            if track_idx == current_track {
-                return None;
+        let track_results: Vec<Vec<OnionNote>> = (0..num_tracks)
+            .into_par_iter()
+            .filter_map(|track_idx| {
+                if track_idx == current_track {
+                    return None;
+                }
+                // 音轨已在 track_notes 中（用户编辑过），跳过 MIDI 数据
+                if track_notes.contains_key(&track_idx) {
+                    return None;
+                }
+                let is_onion = track_onion_enabled.get(&track_idx).copied().unwrap_or(true);
+                if !is_onion {
+                    return None;
+                }
+
+                let (range_start, range_end) = doc.track_events_range(track_idx as u16);
+                if range_start >= range_end {
+                    return None;
+                }
+
+                let track_events = &events[range_start..range_end];
+                Some(collect_onion_notes_direct(
+                    track_events,
+                    track_idx as u16,
+                    visible_tick_start,
+                    visible_tick_end,
+                ))
+            })
+            .collect();
+
+        for v in track_results {
+            all_notes.extend(v);
+        }
+    }
+
+    // Phase 2: 从用户手动编辑的音轨收集
+    let tick_start_u = visible_tick_start as u32;
+    let tick_end_u = visible_tick_end as u32;
+
+    for (&track_idx, track_note_vec) in track_notes.iter() {
+        if track_idx == current_track {
+            continue;
+        }
+        let is_onion = track_onion_enabled.get(&track_idx).copied().unwrap_or(true);
+        if !is_onion {
+            continue;
+        }
+
+        for note in track_note_vec.iter() {
+            let start_tick = note.tick as u32;
+            let end_tick = (note.tick + note.length) as u32;
+            if end_tick > tick_start_u && start_tick < tick_end_u {
+                all_notes.push(OnionNote::new(
+                    start_tick,
+                    end_tick,
+                    note.key as u8,
+                    track_idx as u16,
+                ));
             }
-            let is_onion = track_onion_enabled.get(&track_idx).copied().unwrap_or(true);
-            if !is_onion {
-                return None;
-            }
-
-            let (range_start, range_end) = doc.track_events_range(track_idx as u16);
-            if range_start >= range_end {
-                return None;
-            }
-
-            let track_events = &events[range_start..range_end];
-            Some(collect_onion_notes_direct(
-                track_events,
-                track_idx as u16,
-                visible_tick_start,
-                visible_tick_end,
-            ))
-        })
-        .collect();
-
-    let total: usize = track_results.iter().map(|v| v.len()).sum();
-    let mut notes = Vec::with_capacity(total);
-    for v in track_results {
-        notes.extend(v);
+        }
     }
 
     // 按 start_tick 排序，GPU cull shader 可用二分查找定位可见范围
-    notes.sort_unstable_by_key(|n| n.start_tick);
+    all_notes.sort_unstable_by_key(|n| n.start_tick);
 
-    notes
+    all_notes
 }
 
 // ─── 主音轨主音符实例构建（主线程同步执行） ─────────────────────────────────
