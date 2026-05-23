@@ -150,6 +150,11 @@ impl Host {
         self.root.clear_midi_output();
     }
 
+    /// 设置 MIDI API（用于录制等需要输入的功能）
+    pub fn set_midi_api(&mut self, api: Box<dyn lumino_midi::Api>) {
+        self.root.set_midi_api(api);
+    }
+
     /// 播放管理器是否已初始化
     pub fn has_playback_manager(&self) -> bool {
         self.root.playback_manager.is_some()

@@ -27,6 +27,8 @@ pub enum Error {
     OpenOutputFailed(String),
     #[error("failed to send MIDI signal: {0}")]
     SendFailed(String),
+    #[error("failed to open input: {0}")]
+    OpenInputFailed(String),
 }
 
 #[derive(Debug, Clone)]
@@ -41,11 +43,30 @@ pub struct OutputInfo {
     pub name: String,
 }
 
+/// MIDI 输入连接回调类型
+///
+/// 参数：时间戳（微秒）、原始 MIDI 数据字节切片
+pub type MidiInputCallback = Box<dyn FnMut(u64, &[u8]) + Send>;
+
+/// MIDI 输入连接接口
+pub trait InputConnection: Send {
+    /// 关闭输入连接
+    fn close(self: Box<Self>);
+}
+
 pub trait Api: Send + Sync {
     fn version(&self) -> Option<String>;
     fn inputs(&self) -> Result<Vec<InputInfo>, Error>;
     fn outputs(&self) -> Result<Vec<OutputInfo>, Error>;
     fn open_output(&self, id: u32) -> Result<Box<dyn OutputConnection>, Error>;
+    /// 打开 MIDI 输入端口
+    ///
+    /// `callback` 在收到 MIDI 数据时被调用，参数为时间戳（微秒）和原始数据。
+    fn open_input(
+        &self,
+        id: u32,
+        callback: MidiInputCallback,
+    ) -> Result<Box<dyn InputConnection>, Error>;
 }
 
 /// MIDI 输出连接接口

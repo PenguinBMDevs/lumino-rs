@@ -21,6 +21,8 @@ pub struct Toolbar {
     pub is_playing: bool,
     /// 是否启用循环播放
     pub is_looping: bool,
+    /// 是否正在录制
+    pub is_recording: bool,
     /// 工具栏高度（默认 72）
     pub height: f32,
     /// 是否正在拖拽调整高度
@@ -44,6 +46,7 @@ impl Toolbar {
             current_tool: Tool::default(),
             is_playing: false,
             is_looping: false,
+            is_recording: false,
             height: DEFAULT_HEIGHT,
             is_resizing: false,
             resize_start_y: 0.0,
@@ -130,6 +133,14 @@ impl Toolbar {
             Event::ToggleLoop => {
                 self.is_looping = !self.is_looping;
                 tracing::debug!("工具栏: 循环播放切换为 {}", self.is_looping);
+            }
+            Event::Record => {
+                self.is_recording = true;
+                tracing::debug!("工具栏: 开始录制");
+            }
+            Event::RecordStop => {
+                self.is_recording = false;
+                tracing::debug!("工具栏: 停止录制");
             }
             Event::ResizeDragStarted(_) => {
                 self.is_resizing = true;

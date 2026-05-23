@@ -13,4 +13,5 @@ pub mod collaboration;
 pub mod dialog;
 pub mod midi;
 pub mod playback;
+pub mod recording;
 pub mod track;

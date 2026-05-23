@@ -1,4 +1,6 @@
-use crate::{Api, Error, InputInfo, OutputConnection, OutputInfo};
+use crate::{
+    Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
+};
 
 const IDENTIFIER: &str = "com.buickmeow.lumino";
 
@@ -11,6 +13,12 @@ impl From<midir::InitError> for Error {
 impl From<midir::ConnectError<midir::MidiOutput>> for Error {
     fn from(e: midir::ConnectError<midir::MidiOutput>) -> Self {
         Error::OpenOutputFailed(e.to_string())
+    }
+}
+
+impl From<midir::ConnectError<midir::MidiInput>> for Error {
+    fn from(e: midir::ConnectError<midir::MidiInput>) -> Self {
+        Error::OpenInputFailed(e.to_string())
     }
 }
 
@@ -97,10 +105,33 @@ impl Api for System {
         let conn = Self::connect(output, port)?;
         Ok(Box::new(SystemOutputConn { conn }))
     }
+
+    fn open_input(
+        &self,
+        id: u32,
+        callback: MidiInputCallback,
+    ) -> Result<Box<dyn InputConnection>, Error> {
+        let input = midir::MidiInput::new(IDENTIFIER)?;
+        let ports = input.ports();
+        let port = ports.get(id as usize).ok_or(Error::DeviceNotFound(id))?;
+        let conn = input.connect(
+            port,
+            IDENTIFIER,
+            move |timestamp, data, cb: &mut MidiInputCallback| {
+                cb(timestamp, data);
+            },
+            callback,
+        )?;
+        Ok(Box::new(SystemInputConn { conn }))
+    }
 }
 
 struct SystemOutputConn {
     conn: midir::MidiOutputConnection,
+}
+
+struct SystemInputConn {
+    conn: midir::MidiInputConnection<MidiInputCallback>,
 }
 
 impl SystemOutputConn {
@@ -117,6 +148,12 @@ impl OutputConnection for SystemOutputConn {
     }
 
     fn close(self: Box<Self>) {
-        self.conn.close();
+        let _ = self.conn.close();
+    }
+}
+
+impl InputConnection for SystemInputConn {
+    fn close(self: Box<Self>) {
+        let _ = self.conn.close();
     }
 }

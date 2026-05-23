@@ -4,7 +4,9 @@ use libloading::Library;
 use std::sync::Mutex;
 use std::{path::Path, sync::Arc};
 
-use crate::{Api, Error, InputInfo, OutputConnection, OutputInfo};
+use crate::{
+    Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
+};
 
 /// KDMAPI 全局实例（单例）
 static KDMAPI_INSTANCE: Mutex<Option<Arc<KdmapiInner>>> = Mutex::new(None);
@@ -146,6 +148,17 @@ impl Api for Kdmapi {
         Ok(Box::new(KdmapiOutputConn {
             sym: self.inner.sym.clone(),
         }))
+    }
+
+    // KDMAPI 不支持输入
+    fn open_input(
+        &self,
+        _id: u32,
+        _callback: MidiInputCallback,
+    ) -> Result<Box<dyn InputConnection>, Error> {
+        Err(Error::InitFailed(
+            "KDMAPI does not support MIDI input".into(),
+        ))
     }
 }
 

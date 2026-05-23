@@ -11,7 +11,9 @@ use xsynth_realtime::{RealtimeEventSender, RealtimeSynth, SynthEvent, XSynthReal
 
 use crate::constants::*;
 use crate::soundfont_cache;
-use crate::{Api, Error, InputInfo, OutputConnection, OutputInfo};
+use crate::{
+    Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
+};
 
 /// XSynth 运行时统计信息
 #[derive(Debug, Clone, Copy, Default)]
@@ -183,6 +185,16 @@ impl Api for XSynth {
         Ok(Box::new(XSynthOutputConn {
             sender: self.sender.clone(),
         }))
+    }
+
+    fn open_input(
+        &self,
+        _id: u32,
+        _callback: MidiInputCallback,
+    ) -> Result<Box<dyn InputConnection>, Error> {
+        Err(Error::InitFailed(
+            "XSynth does not support MIDI input".into(),
+        ))
     }
 }
 

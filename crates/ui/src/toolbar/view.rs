@@ -17,6 +17,9 @@ impl Toolbar {
         // 计算内容区域高度（总高度减去手柄高度）
         let content_height = self.height - RESIZE_HANDLE_HEIGHT;
 
+        // 录制按钮区域
+        let record_button = self.render_record_button(content_height, palette, window);
+
         // 播放控制区域 (132px 宽)
         let playback_controls = container(
             row![
@@ -289,6 +292,8 @@ impl Toolbar {
         // 主工具栏内容 - 横向排列所有区域，协作按钮在最右边
         let toolbar_content = container(
             row![
+                record_button,
+                space().width(8),
                 playback_controls,
                 space().width(8),
                 loop_button,
@@ -317,6 +322,82 @@ impl Toolbar {
             .width(iced_widget::core::Length::Fill)
             .height(iced_widget::core::Length::Fixed(self.height))
             .into()
+    }
+}
+
+/// 渲染录制按钮
+impl Toolbar {
+    fn render_record_button<'a>(
+        &'a self,
+        content_height: f32,
+        _palette: &iced_core::theme::palette::Extended,
+        _window: &'a window::Window,
+    ) -> Element<'a> {
+        let is_recording = self.is_recording;
+        let weak_color = _palette.background.weak.color;
+        let strong_color = _palette.background.strong.color;
+        let (bg_color, text_color) = if is_recording {
+            (
+                iced_core::Color::from_rgb(0.8, 0.1, 0.1),
+                iced_core::Color::WHITE,
+            )
+        } else {
+            (weak_color, iced_core::Color::from_rgb(0.8, 0.1, 0.1))
+        };
+
+        let label = if is_recording { "● REC" } else { "●" };
+
+        let on_press = if is_recording {
+            Event::record_stop()
+        } else {
+            Event::record()
+        };
+
+        container(
+            button(
+                container(text(label).size(16).color(text_color).center())
+                    .width(iced_widget::core::Length::Fixed(48.0))
+                    .height(iced_widget::core::Length::Fixed(32.0))
+                    .align_x(iced_core::alignment::Horizontal::Center)
+                    .align_y(iced_core::alignment::Vertical::Center),
+            )
+            .on_press(on_press)
+            .style(move |_theme: &Theme, status| {
+                let bg = if status == iced_widget::button::Status::Hovered {
+                    if is_recording {
+                        iced_core::Color::from_rgb(0.9, 0.2, 0.2)
+                    } else {
+                        strong_color
+                    }
+                } else {
+                    bg_color
+                };
+                button::Style {
+                    border: iced_core::Border {
+                        radius: 4.0.into(),
+                        width: 0.0,
+                        color: iced_core::Color::TRANSPARENT,
+                    },
+                    ..Default::default()
+                }
+                .with_background(bg)
+            })
+            .padding(4),
+        )
+        .width(56)
+        .height(content_height)
+        .align_y(iced_core::alignment::Vertical::Center)
+        .align_x(iced_core::alignment::Horizontal::Center)
+        .style(move |_theme: &Theme| {
+            container::Style::default()
+                .background(weak_color)
+                .border(iced_core::Border {
+                    radius: 4.0.into(),
+                    width: 0.0,
+                    color: iced_core::Color::TRANSPARENT,
+                })
+        })
+        .into()
     }
 }
 

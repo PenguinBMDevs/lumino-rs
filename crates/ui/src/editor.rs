@@ -1,13 +1,13 @@
+pub mod editor_state;
 pub mod grid;
 pub mod history;
 pub mod note;
 pub mod onion_bg_pool;
 pub mod onion_skin;
+pub mod recording;
 pub mod scrollbar_widget;
 pub mod spatial_index;
 pub mod velocity;
-
-pub mod editor_state;
 
 // 子模块
 mod auto_scroll;

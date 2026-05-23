@@ -48,6 +48,10 @@ pub enum Event {
     ResizeDragged(Point),
     /// 结束拖拽调整高度
     ResizeDragEnded,
+    /// 录制
+    Record,
+    /// 停止录制
+    RecordStop,
 }
 
 impl Event {
@@ -145,5 +149,13 @@ impl Event {
 
     pub const fn resize_drag_ended() -> Message {
         Message::Toolbar(Self::ResizeDragEnded)
+    }
+
+    pub const fn record() -> Message {
+        Message::Toolbar(Self::Record)
+    }
+
+    pub const fn record_stop() -> Message {
+        Message::Toolbar(Self::RecordStop)
     }
 }

@@ -39,6 +39,9 @@ impl ToolbarHandler {
 
         // 处理协作对话框
         self.handle_toolbar_collaboration(root, &event);
+
+        // 处理录制
+        self.handle_toolbar_recording(root, &event);
     }
 
     fn handle_toolbar_playback(&self, root: &mut Root, event: &crate::toolbar::Event) {
@@ -176,6 +179,18 @@ impl ToolbarHandler {
             lumino_core::event::emit(lumino_core::Event::Window(
                 lumino_core::event::window::Event::OpenCollaborationDialog,
             ));
+        }
+    }
+
+    fn handle_toolbar_recording(&self, root: &mut Root, event: &crate::toolbar::Event) {
+        match event {
+            crate::toolbar::Event::Record => {
+                root.start_recording();
+            }
+            crate::toolbar::Event::RecordStop => {
+                root.stop_recording();
+            }
+            _ => {}
         }
     }
 

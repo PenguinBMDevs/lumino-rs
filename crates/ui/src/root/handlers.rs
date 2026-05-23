@@ -84,6 +84,9 @@ impl Root {
 
     /// 主更新入口 - 简化为路由分发
     pub fn update(&mut self, msg: Message) {
+        // 每帧轮询 MIDI 输入缓冲区
+        self.poll_midi_input();
+
         // 使用消息路由器处理
         let mut router = Self::create_message_router();
         let remaining = self.route_message(msg, &mut router);
@@ -271,6 +274,14 @@ impl Root {
             }
             Message::LoopRange(action) => {
                 self.handle_loop_range_action(action.clone());
+                true
+            }
+            Message::MidiInputEvent { data } => {
+                let data = data.clone();
+                // 将 MIDI 数据放入缓冲区等待 poll_midi_input 处理
+                if let Ok(mut buf) = self.midi_input_buffer.lock() {
+                    buf.push_back(data);
+                }
                 true
             }
             _ => false,

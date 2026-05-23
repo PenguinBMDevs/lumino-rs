@@ -10,7 +10,8 @@ use crate::state::root_state::RootState;
 use crate::{editor, message, settings, sidebar, statusbar, titlebar, toolbar, window};
 use lumino_core::midi::MidiDocument;
 use lumino_core::storage::config::UiConfig;
-use std::sync::Arc;
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 
 /// 根组件各组件的内存占用快照（字节和计数）
 #[derive(Debug, Clone, Default)]
@@ -78,6 +79,14 @@ pub struct Root {
     pub(crate) velocity_panel_height: f32,
     /// MIDI 文档引用（用于懒加载非当前音轨的音符，避免全量 preload）
     pub(crate) midi_document: Option<Arc<MidiDocument>>,
+    /// 录制状态
+    pub recording: editor::recording::RecordingState,
+    /// MIDI 输入连接（保持打开状态，drop 时自动关闭端口）
+    pub midi_input_connection: Option<Box<dyn lumino_midi::InputConnection>>,
+    /// MIDI 输入数据缓冲区（midir 回调线程写入，UI 线程读取）
+    pub midi_input_buffer: Arc<Mutex<VecDeque<Vec<u8>>>>,
+    /// MIDI API 引用（用于录制时打开输入端口）
+    pub midi_api: Option<Box<dyn lumino_midi::Api>>,
 }
 
 /// Root 构造参数
@@ -117,6 +126,10 @@ impl Root {
             velocity_filter_threshold: params.ui_config.velocity_filter_threshold,
             velocity_panel_height: crate::editor::velocity::VELOCITY_PANEL_HEIGHT,
             midi_document: None,
+            recording: editor::recording::RecordingState::new(),
+            midi_input_connection: None,
+            midi_input_buffer: Arc::new(Mutex::new(VecDeque::new())),
+            midi_api: None,
         }
     }
 

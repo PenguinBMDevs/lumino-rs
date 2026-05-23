@@ -161,6 +161,10 @@ pub enum Message {
     AnimationTick,
     /// 循环区域事件
     LoopRange(LoopRangeAction),
+    /// MIDI 输入事件（从 MIDI 设备收到的原始数据）
+    MidiInputEvent {
+        data: Vec<u8>,
+    },
 }
 
 /// 循环区域动作
