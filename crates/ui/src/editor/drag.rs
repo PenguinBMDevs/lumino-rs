@@ -92,6 +92,87 @@ impl Editor {
                     new_length = Some((snapped_tick - note.tick).max(snap_precision));
                 }
             }
+            EditState::DraggingSelection {
+                last_tick,
+                last_key,
+            } => {
+                let delta_tick = snapped_tick - *last_tick;
+                let delta_key = key as i32 - *last_key as i32;
+
+                if delta_tick != 0.0 || delta_key != 0 {
+                    let selected: Vec<usize> = self
+                        .editor_state
+                        .interaction
+                        .selected_notes
+                        .iter()
+                        .copied()
+                        .collect();
+                    let max_key = visible_key_count.saturating_sub(1) as i32;
+
+                    for i in selected {
+                        if let Some(note) = self.editor_state.data.notes.get_mut(i) {
+                            note.tick = (note.tick + delta_tick).max(0.0);
+                            note.key =
+                                (note.key as i32 + delta_key).clamp(0, max_key) as u16;
+                        }
+                    }
+
+                    *last_tick = snapped_tick;
+                    *last_key = key;
+                    self.mark_notes_changed();
+                }
+            }
+            EditState::ResizingSelectionStart { last_tick } => {
+                let delta_tick = snapped_tick - *last_tick;
+
+                if delta_tick != 0.0 {
+                    let selected: Vec<usize> = self
+                        .editor_state
+                        .interaction
+                        .selected_notes
+                        .iter()
+                        .copied()
+                        .collect();
+
+                    for i in selected {
+                        if let Some(note) = self.editor_state.data.notes.get_mut(i) {
+                            let new_length = note.length - delta_tick;
+                            if new_length >= snap_precision {
+                                note.tick += delta_tick;
+                                note.length = new_length;
+                            }
+                        }
+                    }
+
+                    *last_tick = snapped_tick;
+                    self.mark_notes_changed();
+                }
+            }
+            EditState::ResizingSelectionEnd { last_tick } => {
+                let delta_tick = snapped_tick - *last_tick;
+
+                if delta_tick != 0.0 {
+                    let selected: Vec<usize> = self
+                        .editor_state
+                        .interaction
+                        .selected_notes
+                        .iter()
+                        .copied()
+                        .collect();
+
+                    for i in selected {
+                        if let Some(note) = self.editor_state.data.notes.get_mut(i) {
+                            let new_length = note.length + delta_tick;
+                            if new_length >= snap_precision {
+                                note.length = new_length;
+                            }
+                        }
+                    }
+
+                    *last_tick = snapped_tick;
+                    self.mark_notes_changed();
+                }
+            }
             _ => {}
         }
 

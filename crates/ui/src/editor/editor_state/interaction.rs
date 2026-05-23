@@ -42,16 +42,40 @@ pub enum EditState {
     ResizingEnd {
         note_index: usize,
     },
+    /// 拖动选中音符组（通过选择框内部拖动）
+    DraggingSelection {
+        last_tick: f32,
+        last_key: u16,
+    },
+    /// 调整选中音符组起始位置（通过选择框左边缘拖动）
+    ResizingSelectionStart {
+        last_tick: f32,
+    },
+    /// 调整选中音符组长度（通过选择框右边缘拖动）
+    ResizingSelectionEnd {
+        last_tick: f32,
+    },
     /// 擦洗状态：在时间轴上拖动来快速定位播放位置
     Scrubbing,
 }
 
-/// 点击命中类型
+/// 点击命中类型（单个音符）
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HitType {
     Start,
     Middle,
     End,
+}
+
+/// 选择框命中类型
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SelectionHitType {
+    /// 选择框内部
+    Inside,
+    /// 选择框左边缘
+    LeftEdge,
+    /// 选择框右边缘
+    RightEdge,
 }
 
 /// 交互状态（编辑状态、悬停、选中）

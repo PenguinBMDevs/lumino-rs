@@ -35,7 +35,7 @@ use note::Note;
 pub use onion_bg_pool::*;
 pub use onion_skin::OnionSkinConfig;
 // 统一从 editor_state 导入（重构迁移）
-pub use editor_state::{EditState, HitType, ViewState};
+pub use editor_state::{EditState, HitType, SelectionHitType, ViewState};
 
 /// 缓存失效标志位
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

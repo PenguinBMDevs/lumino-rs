@@ -101,21 +101,47 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
 
         let interaction = &self.editor.editor_state.interaction;
         match interaction.edit_state {
-            EditState::Dragging { .. } => mouse::Interaction::Grabbing,
+            EditState::Dragging { .. } | EditState::DraggingSelection { .. } => {
+                mouse::Interaction::Grabbing
+            }
             EditState::PendingDrag { .. } => mouse::Interaction::Pointer,
-            EditState::ResizingStart { .. } | EditState::ResizingEnd { .. } => {
+            EditState::ResizingStart { .. }
+            | EditState::ResizingEnd { .. }
+            | EditState::ResizingSelectionStart { .. }
+            | EditState::ResizingSelectionEnd { .. } => {
                 mouse::Interaction::ResizingHorizontally
             }
             EditState::Drawing { .. } => mouse::Interaction::Crosshair,
             EditState::Selecting { .. } => mouse::Interaction::Crosshair,
             EditState::Scrubbing => mouse::Interaction::Grabbing,
-            EditState::Idle => match interaction.hover_state {
-                Some((_, HitType::Start)) | Some((_, HitType::End)) => {
-                    mouse::Interaction::ResizingHorizontally
+            EditState::Idle => {
+                // 先检查是否悬停在选择框上
+                if let Some(cursor_pos) = _cursor.position() {
+                    let local_pos = iced_core::Point::new(
+                        cursor_pos.x - _bounds.x,
+                        cursor_pos.y - _bounds.y,
+                    );
+                    if let Some(sel_hit) = self.editor.hit_test_selection_box(local_pos) {
+                        return match sel_hit {
+                            crate::editor::SelectionHitType::LeftEdge
+                            | crate::editor::SelectionHitType::RightEdge => {
+                                mouse::Interaction::ResizingHorizontally
+                            }
+                            crate::editor::SelectionHitType::Inside => {
+                                mouse::Interaction::Pointer
+                            }
+                        };
+                    }
                 }
-                Some((_, HitType::Middle)) => mouse::Interaction::Pointer,
-                None => mouse::Interaction::default(),
-            },
+
+                match interaction.hover_state {
+                    Some((_, HitType::Start)) | Some((_, HitType::End)) => {
+                        mouse::Interaction::ResizingHorizontally
+                    }
+                    Some((_, HitType::Middle)) => mouse::Interaction::Pointer,
+                    None => mouse::Interaction::default(),
+                }
+            }
         }
     }
 
