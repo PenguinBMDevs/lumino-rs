@@ -151,6 +151,14 @@ impl Runner {
             tracing::error!("Runner: 无法创建播放引擎 MIDI 输出，播放将无声");
         }
 
+        // 为录制功能创建独立的 MIDI 输入 API
+        if let Some(input_api) = midi.create_input_api() {
+            window.ui_mut().set_midi_api(input_api);
+            tracing::info!("Runner: MIDI 输入 API 已就绪，录制功能可用");
+        } else {
+            tracing::warn!("Runner: 无法创建 MIDI 输入 API，录制功能不可用");
+        }
+
         // 创建对话框管理器
         let dialog_manager = DialogManager::new();
 

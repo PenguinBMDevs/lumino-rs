@@ -436,6 +436,35 @@ impl MidiManager {
         Some((new_api, conn))
     }
 
+    /// 创建独立的 MIDI 输入 API（用于录制功能）
+    ///
+    /// 返回一个新的 API 实例，供 UI 层独立管理输入设备的生命周期。
+    /// 对于不支持输入的 XSynth 后端，返回 System 后端的输入 API。
+    pub fn create_input_api(&self) -> Option<Box<dyn lumino_midi::Api>> {
+        let api_kind = match self.active_backend {
+            SynthBackend::XSynth => {
+                tracing::info!("MIDI 输入 API: XSynth 不支持输入，使用 System 后端");
+                lumino_midi::ApiKind::System
+            }
+            SynthBackend::Kdmapi => {
+                let path = std::path::PathBuf::from("OmniMIDI.dll");
+                lumino_midi::ApiKind::Kdmapi { path }
+            }
+            SynthBackend::System => lumino_midi::ApiKind::System,
+        };
+
+        match lumino_midi::new_api(&api_kind) {
+            Ok(api) => {
+                tracing::info!("MIDI 输入 API: 已创建 (backend={:?})", self.active_backend);
+                Some(api)
+            }
+            Err(e) => {
+                tracing::error!("MIDI 输入 API: 创建失败: {:?}", e);
+                None
+            }
+        }
+    }
+
     /// 标记需要重新初始化
     pub fn mark_for_reinit(&mut self) {
         self.needs_reinit = true;

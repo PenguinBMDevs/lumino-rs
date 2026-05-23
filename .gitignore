@@ -67,4 +67,6 @@ publish/
 
 # others
 wasabi/
-
+.kimi/
+agents.yaml
+rust-code-engineer.md

@@ -210,10 +210,23 @@ impl ToolbarHandler {
 
         let config = lumino_core::midi::quantize::QuantizeConfig::new(grid_size, 1.0);
 
+        // 获取选中音符索引（无选中则量化全部）
+        let selected_indices: Vec<usize> = {
+            let selected = &root.editor.editor_state.interaction.selected_notes;
+            if selected.is_empty() {
+                (0..root.editor.editor_state.data.notes.len()).collect()
+            } else {
+                let mut v: Vec<usize> = selected.iter().copied().collect();
+                v.sort();
+                v
+            }
+        };
+
         tracing::info!(
-            "Root: 量化配置 - 网格大小: {} ticks, 音符数量: {}",
+            "Root: 量化配置 - 网格大小: {} ticks, 目标音符: {} (选中 {} 个)",
             grid_size,
-            root.editor.editor_state.data.notes.len()
+            selected_indices.len(),
+            root.editor.editor_state.interaction.selected_notes.len(),
         );
 
         let snapshot = crate::editor::history::EditorSnapshot::new(
@@ -222,23 +235,22 @@ impl ToolbarHandler {
         );
         root.editor.editor_state.data.history.push(snapshot);
 
-        let mut quantizable_notes: Vec<lumino_core::midi::quantize::QuantizableNote> = root
-            .editor
-            .editor_state
-            .data
-            .notes
+        let mut quantizable_notes: Vec<lumino_core::midi::quantize::QuantizableNote> = selected_indices
             .iter()
-            .map(|note| lumino_core::midi::quantize::QuantizableNote::new(note.tick, note.length))
+            .map(|&i| {
+                let note = &root.editor.editor_state.data.notes[i];
+                lumino_core::midi::quantize::QuantizableNote::new(note.tick, note.length)
+            })
             .collect();
 
         let modified_count =
             lumino_core::midi::quantize::quantize_notes(&mut quantizable_notes, &config);
 
         if modified_count > 0 {
-            for (i, quantized) in quantizable_notes.iter().enumerate() {
+            for (pos, &i) in selected_indices.iter().enumerate() {
                 if let Some(note) = root.editor.editor_state.data.notes.get_mut(i) {
-                    note.tick = quantized.tick;
-                    note.length = quantized.length;
+                    note.tick = quantizable_notes[pos].tick;
+                    note.length = quantizable_notes[pos].length;
                 }
             }
 
