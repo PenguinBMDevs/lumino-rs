@@ -394,18 +394,26 @@ impl Root {
 
         match action {
             VelocityAction::DragStart(note_index, velocity) => {
-                // 拖拽开始：push history 以支持撤销
                 self.editor.push_history();
-
                 Self::apply_velocity(&mut self.editor, note_index, velocity);
             }
             VelocityAction::DragMove(note_index, new_velocity) => {
-                // 拖拽移动中：只更新，不 push history（避免撤销队列爆炸）
                 Self::apply_velocity(&mut self.editor, note_index, new_velocity);
             }
             VelocityAction::DragEnd => {
-                // 拖拽结束：无需额外操作
                 tracing::debug!("力度面板: 拖拽结束");
+            }
+            VelocityAction::CurveStart => {
+                self.editor.push_history();
+                tracing::debug!("力度面板: 曲线绘制开始");
+            }
+            VelocityAction::CurvePaint(updates) => {
+                for (note_index, velocity) in updates {
+                    Self::apply_velocity(&mut self.editor, note_index, velocity);
+                }
+            }
+            VelocityAction::CurveEnd => {
+                tracing::debug!("力度面板: 曲线绘制结束");
             }
         }
 

@@ -6,6 +6,8 @@
 //! - 悬停高亮 + 拖拽实时反馈
 //! - 顶部拖拽手柄可调整面板高度
 
+use std::collections::HashMap;
+
 use iced_core::{Color, Point, Rectangle, Size, alignment, mouse};
 use iced_widget::canvas::{self, Frame, Program, path};
 
@@ -38,6 +40,14 @@ pub struct VelocityCanvasState {
     pub resize_start_height: f32,
     /// 鼠标是否悬停在 resize 手柄区域
     pub hover_resize_handle: bool,
+    /// 是否正在曲线绘制模式
+    pub curve_active: bool,
+    /// 曲线绘制起始 X 坐标（local）
+    pub curve_start_x: f32,
+    /// 曲线绘制起始 Y 对应的力度值
+    pub curve_start_velocity: u8,
+    /// 当前笔触影响的音符索引 → 新力度值
+    pub curve_affected: HashMap<usize, u8>,
 }
 
 /// 力度 Canvas 程序
@@ -113,6 +123,64 @@ impl<'a> VelocityCanvas<'a> {
     fn is_in_resize_zone(cursor_pos: Point) -> bool {
         (0.0..=RESIZE_HANDLE_HEIGHT).contains(&cursor_pos.y)
     }
+
+    /// 更新曲线绘制：计算当前鼠标位置影响的力度点
+    fn update_curve_paint(
+        state: &mut VelocityCanvasState,
+        points: &[VelocityPoint],
+        cursor_pos: Point,
+        bounds_size: Size,
+        view: &ViewState,
+        selected_notes: &std::collections::HashSet<usize>,
+    ) -> Option<canvas::Action<Message>> {
+        let start_x = state.curve_start_x;
+        let current_x = cursor_pos.x;
+        let min_x = start_x.min(current_x);
+        let max_x = start_x.max(current_x);
+        let current_velocity = Self::y_to_velocity(cursor_pos.y, bounds_size.height);
+        let start_velocity = state.curve_start_velocity;
+
+        // 有选中音符时，只影响选中的
+        let has_selection = !selected_notes.is_empty();
+
+        let mut updates: Vec<(usize, u8)> = Vec::new();
+
+        for point in points {
+            let point_x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+
+            // 跳过水平范围外的点
+            if point_x < min_x || point_x > max_x {
+                continue;
+            }
+
+            // 如有选中音符，只影响选中的
+            if has_selection && !selected_notes.contains(&point.note_index) {
+                continue;
+            }
+
+            // 计算插值力度：基于点 X 在起始和当前 X 之间的位置
+            let t = if (max_x - min_x).abs() < f32::EPSILON {
+                1.0
+            } else {
+                (point_x - min_x) / (max_x - min_x)
+            };
+            let interp_velocity_f = start_velocity as f32 * (1.0 - t) + current_velocity as f32 * t;
+            let new_velocity = interp_velocity_f.round().clamp(0.0, 127.0) as u8;
+
+            if point.velocity != new_velocity {
+                state.curve_affected.insert(point.note_index, new_velocity);
+                updates.push((point.note_index, new_velocity));
+            }
+        }
+
+        if updates.is_empty() {
+            return None;
+        }
+
+        Some(canvas::Action::publish(Message::Velocity(
+            VelocityAction::CurvePaint(updates),
+        )))
+    }
 }
 
 impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
@@ -172,7 +240,17 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                         ),
                     )));
                 }
-                None
+
+                // 点击空白区域 → 进入曲线绘制模式
+                state.curve_active = true;
+                state.curve_start_x = cursor_pos.x;
+                state.curve_start_velocity = Self::y_to_velocity(cursor_pos.y, bounds_size.height);
+                state.curve_affected.clear();
+                state.drag_point_idx = None;
+                state.hover_point_idx = None;
+                Some(canvas::Action::publish(Message::Velocity(
+                    VelocityAction::CurveStart,
+                )))
             }
             canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 // 检查 resize 拖拽
@@ -191,6 +269,24 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
 
                 // 更新 resize 手柄悬停状态
                 state.hover_resize_handle = Self::is_in_resize_zone(cursor_pos);
+
+                // 曲线绘制模式
+                if state.curve_active {
+                    let points = self.points();
+                    if points.is_empty() {
+                        return None;
+                    }
+                    let view = &self.editor.editor_state.view;
+                    let selected_notes = &self.editor.editor_state.interaction.selected_notes;
+                    return Self::update_curve_paint(
+                        state,
+                        &points,
+                        cursor_pos,
+                        bounds_size,
+                        view,
+                        selected_notes,
+                    );
+                }
 
                 // 拖拽力度点
                 let points = self.points();
@@ -232,6 +328,14 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                     return None;
                 }
 
+                if state.curve_active {
+                    state.curve_active = false;
+                    state.curve_affected.clear();
+                    return Some(canvas::Action::publish(Message::Velocity(
+                        VelocityAction::CurveEnd,
+                    )));
+                }
+
                 let was_dragging = state.drag_point_idx.is_some();
                 state.drag_point_idx = None;
                 state._drag_start_velocity = 0;
@@ -252,7 +356,7 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
         renderer: &Renderer,
         theme: &Theme,
         bounds: Rectangle,
-        _cursor: mouse::Cursor,
+        cursor: mouse::Cursor,
     ) -> Vec<Geom> {
         let mut frame = Frame::new(renderer, bounds.size());
 
@@ -264,6 +368,18 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
         let view = &self.editor.editor_state.view;
         if !points.is_empty() {
             draw_velocity_graph(&mut frame, theme, &points, state, bounds.size(), view);
+            if state.curve_active {
+                draw_curve_paint_feedback(
+                    &mut frame,
+                    theme,
+                    &points,
+                    state,
+                    bounds.size(),
+                    view,
+                    cursor,
+                    bounds,
+                );
+            }
         }
 
         vec![frame.into_geometry()]
@@ -284,6 +400,10 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
             if (0.0..=RESIZE_HANDLE_HEIGHT).contains(&local_y) {
                 return mouse::Interaction::ResizingVertically;
             }
+        }
+
+        if state.curve_active {
+            return mouse::Interaction::Crosshair;
         }
 
         if state.drag_point_idx.is_some() {
@@ -486,5 +606,80 @@ fn draw_velocity_graph(
         }
 
         frame.fill(&canvas::Path::circle(pos, radius), fill_color);
+    }
+}
+
+/// 绘制曲线绘制模式的视觉反馈
+fn draw_curve_paint_feedback(
+    frame: &mut Frame<Renderer>,
+    theme: &Theme,
+    points: &[VelocityPoint],
+    state: &VelocityCanvasState,
+    size: Size,
+    view: &ViewState,
+    cursor: mouse::Cursor,
+    bounds: Rectangle,
+) {
+    let width = size.width;
+    let height = size.height;
+
+    // 计算绘制区域
+    let start_x = state.curve_start_x;
+    let cursor_local = cursor
+        .position()
+        .map(|p| Point::new(p.x - bounds.x, p.y - bounds.y));
+    let Some(current_pos) = cursor_local else {
+        return;
+    };
+    let current_x = current_pos.x;
+    let min_x = start_x.min(current_x);
+    let max_x = start_x.max(current_x);
+
+    // 画笔轨迹区域：半透明矩形覆盖受影响范围
+    let range_color = if theme.is_light() {
+        Color::from_rgba(0.3, 0.6, 1.0, 0.08)
+    } else {
+        Color::from_rgba(0.3, 0.6, 1.0, 0.12)
+    };
+    frame.fill_rectangle(
+        Point::new(min_x, 0.0),
+        Size::new(max_x - min_x, height),
+        range_color,
+    );
+
+    // 从起始到当前绘制一条连线（画笔轨迹）
+    let start_vel = state.curve_start_velocity;
+    let current_vel = VelocityCanvas::y_to_velocity(current_pos.y, height);
+    let start_y = VelocityCanvas::velocity_to_y(start_vel, height);
+    let current_y = VelocityCanvas::velocity_to_y(current_vel, height);
+
+    let trail_color = if theme.is_light() {
+        Color::from_rgba(0.3, 0.6, 1.0, 0.5)
+    } else {
+        Color::from_rgba(0.4, 0.7, 1.0, 0.5)
+    };
+    let mut trail_builder = path::Builder::new();
+    trail_builder.move_to(Point::new(start_x, start_y));
+    trail_builder.line_to(Point::new(current_x, current_y));
+    frame.stroke(
+        &trail_builder.build(),
+        canvas::Stroke::default()
+            .with_color(trail_color)
+            .with_width(2.0),
+    );
+
+    // 高亮被影响的力度点
+    let affected_color = theme.extended_palette().secondary.strong.color;
+    for point in points {
+        if !state.curve_affected.contains_key(&point.note_index) {
+            continue;
+        }
+        let pos = VelocityCanvas::point_screen_pos(point, 0, width, height, view);
+        let glow = Color::from_rgba(affected_color.r, affected_color.g, affected_color.b, 0.4);
+        frame.fill(&canvas::Path::circle(pos, POINT_RADIUS + 4.0), glow);
+        frame.fill(
+            &canvas::Path::circle(pos, POINT_RADIUS + 1.0),
+            affected_color,
+        );
     }
 }

@@ -197,6 +197,13 @@ pub enum VelocityAction {
     DragMove(usize, u8),
     /// 拖拽结束
     DragEnd,
+    /// 曲线绘制开始：push history 保存绘制前状态
+    CurveStart,
+    /// 曲线绘制更新：批量应用力度变化，不 push history
+    /// 参数: Vec<(note_index, new_velocity)>
+    CurvePaint(Vec<(usize, u8)>),
+    /// 曲线绘制结束
+    CurveEnd,
 }
 
 pub const fn null() -> Message {
