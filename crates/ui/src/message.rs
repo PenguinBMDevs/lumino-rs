@@ -155,6 +155,10 @@ pub enum Message {
     PerfUpdate(PerfData),
     /// 空消息标记
     Null,
+    /// 模式切换（编辑器/瀑布流）
+    ModeToggled,
+    /// 动画帧更新（用于弹簧物理模拟）
+    AnimationTick,
 }
 
 /// 力度编辑面板动作

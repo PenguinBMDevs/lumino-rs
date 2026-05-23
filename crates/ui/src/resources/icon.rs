@@ -68,6 +68,9 @@ pub enum Icon {
     ArrowsLeftRight,
     Scroll,
     Ban,
+    // 标题栏图标
+    PencilOutline,
+    Keys,
 }
 
 #[derive(Clone)]
@@ -110,9 +113,12 @@ fn build_icon_cache() -> HashMap<Icon, IconData> {
         Icon::Pencil,
         Icon::Eraser,
         // 自动滚动图标
-        Icon::ArrowsLeftRight,
-        Icon::Scroll,
-        Icon::Ban,
+    Icon::ArrowsLeftRight,
+    Icon::Scroll,
+    Icon::Ban,
+    // 标题栏图标
+    Icon::PencilOutline,
+    Icon::Keys,
     ] {
         match render_svg_to_data(icon) {
             Ok(data) => {
@@ -336,5 +342,10 @@ fn bytes(icon: Icon) -> &'static [u8] {
         }
         Icon::Scroll => include_bytes!("../../../../resources/icons/toolbar/scroll.svg"),
         Icon::Ban => include_bytes!("../../../../resources/icons/toolbar/ban.svg"),
+        // 标题栏图标
+        Icon::PencilOutline => {
+            include_bytes!("../../../../resources/icons/titlebar/pencil-outline.svg")
+        }
+        Icon::Keys => include_bytes!("../../../../resources/icons/titlebar/keys.svg"),
     }
 }

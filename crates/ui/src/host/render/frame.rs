@@ -1,4 +1,5 @@
 use crate::host::Host;
+use crate::message::Message;
 use crate::statusbar::performance::PerfData;
 use crate::window;
 
@@ -47,6 +48,12 @@ impl Host {
         }
 
         self.last_frame_time = now;
+
+        // 更新模式切换按钮的弹簧物理动画
+        if self.root.state.toggle_animation.active {
+            self.root.update(Message::AnimationTick);
+            self.window_ctx.window.request_redraw();
+        }
     }
 
     /// 更新播放状态

@@ -225,6 +225,37 @@ impl Root {
                 true
             }
             Message::ToggleSettings | Message::Null => true,
+            Message::ModeToggled => {
+                let target_mode = match self.state.current_mode {
+                    crate::titlebar::mode_toggle::AppMode::Editor => {
+                        crate::titlebar::mode_toggle::AppMode::Waterfall
+                    }
+                    crate::titlebar::mode_toggle::AppMode::Waterfall => {
+                        crate::titlebar::mode_toggle::AppMode::Editor
+                    }
+                };
+                let target_progress = match target_mode {
+                    crate::titlebar::mode_toggle::AppMode::Editor => 0.0,
+                    crate::titlebar::mode_toggle::AppMode::Waterfall => 1.0,
+                };
+                self.state.current_mode = target_mode;
+                self.state.toggle_animation.animate_to(target_progress);
+                true
+            }
+            Message::AnimationTick => {
+                let still_animating = self.state.toggle_animation.update();
+                if !still_animating && self.state.toggle_animation.position >= 0.5
+                    && self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Waterfall
+                {
+                    self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Waterfall;
+                } else if !still_animating
+                    && self.state.toggle_animation.position < 0.5
+                    && self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Editor
+                {
+                    self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Editor;
+                }
+                true
+            }
             Message::VelocityPanelResize(height) => {
                 self.velocity_panel_height = *height;
                 true

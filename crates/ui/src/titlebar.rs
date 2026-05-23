@@ -1,5 +1,6 @@
 mod logo;
 pub mod menu;
+pub mod mode_toggle;
 mod traffic;
 
 use iced_core::{Alignment, Length};
@@ -7,6 +8,7 @@ use iced_widget::{container, mouse_area, row, space};
 
 use super::Element;
 use crate::{Theme, window};
+use crate::titlebar::mode_toggle::AppMode;
 
 pub struct Titlebar;
 
@@ -25,6 +27,8 @@ impl Titlebar {
         &'a self,
         window: &'a window::Window,
         use_native_titlebar: bool,
+        current_mode: AppMode,
+        toggle_progress: f32,
     ) -> Element<'a> {
         // 如果使用经典系统标题栏，只显示菜单（在最左侧）
         if use_native_titlebar {
@@ -36,7 +40,8 @@ impl Titlebar {
         let menu_row = if cfg!(target_os = "macos") {
             row![]
         } else {
-            row![logo::view(window), menu::view()]
+            row![logo::view(window), mode_toggle::view(current_mode, toggle_progress), menu::view()]
+                .align_y(Alignment::Center)
         };
 
         // 构建标题栏内容：左侧菜单 + 中间可拖动区域 + 右侧窗口控制

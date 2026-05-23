@@ -85,8 +85,11 @@ impl Root {
         // 左侧栏（包含图标栏和音轨面板）
         let left_bar = self.sidebar.view(&self.window);
 
-        // 右侧内容区域（工具栏 + 编辑器 + 力度面板）
-        let right_content: Element<'_> = if is_settings_route {
+        // 右侧内容区域（工具栏 + 编辑器 + 力度面板 / 瀑布流占位）
+        let right_content: Element<'_> = if self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Waterfall {
+            // 瀑布流模式：显示"实现中"占位页面
+            self.view_waterfall_placeholder()
+        } else if is_settings_route {
             // 设置路由激活时显示设置界面
             settings::view(&self.settings, &self.window, &self.state.system_fonts)
         } else {
@@ -120,7 +123,12 @@ impl Root {
         } else {
             column![
                 self.titlebar
-                    .view(&self.window, self.settings.use_native_titlebar),
+                    .view(
+                        &self.window,
+                        self.settings.use_native_titlebar,
+                        self.state.current_mode,
+                        self.state.toggle_animation.position,
+                    ),
                 row![left_bar, right_content].height(Length::Fill),
                 self.view_status_section(),
             ]
@@ -241,5 +249,34 @@ impl Root {
     /// 渲染状态栏（性能面板已交由 Stack 浮动层处理）
     fn view_status_section(&self) -> Element<'_> {
         self.statusbar.view()
+    }
+
+    /// 渲染瀑布流模式占位页面（功能实现中）
+    fn view_waterfall_placeholder(&self) -> Element<'_> {
+        container(
+            column![
+                text("瀑布流模式")
+                    .size(32)
+                    .style(|theme: &Theme| text::Style {
+                        color: Some(theme.extended_palette().background.neutral.text),
+                    }),
+                text("🚧 功能实现中...")
+                    .size(18)
+                    .style(|theme: &Theme| text::Style {
+                        color: Some(theme.extended_palette().background.strong.text),
+                    }),
+            ]
+            .spacing(16)
+            .align_x(iced_core::Alignment::Center),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .style(|theme: &Theme| container::Style {
+            background: Some(iced_core::Background::Color(theme.palette().background)),
+            ..Default::default()
+        })
+        .into()
     }
 }
