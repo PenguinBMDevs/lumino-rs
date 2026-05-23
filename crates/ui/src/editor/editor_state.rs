@@ -13,7 +13,7 @@ pub mod view;
 
 pub use canvas::CanvasState;
 pub use data::EditorData;
-pub use interaction::{EditState, HitType, InteractionState};
+pub use interaction::{EditState, HitType, InteractionState, SelectionHitType};
 pub use view::ViewState;
 
 /// 编辑器完整状态

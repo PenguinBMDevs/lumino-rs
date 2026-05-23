@@ -84,6 +84,34 @@ impl Editor {
                 self.editor_state.interaction.selected_notes.insert(index);
             }
             self.start_note_edit(index, hit_type, pos);
+        } else if let Some(sel_hit) = self.hit_test_selection_box(pos) {
+            // 命中选择框：根据边缘/内部分别进入调整大小或拖动状态
+            let tick = self.x_to_tick(pos.x);
+            let key = self.y_to_key(pos.y);
+            match sel_hit {
+                super::SelectionHitType::Inside => {
+                    self.push_history();
+                    self.editor_state.interaction.edit_state =
+                        EditState::DraggingSelection {
+                            last_tick: tick,
+                            last_key: key,
+                        };
+                }
+                super::SelectionHitType::LeftEdge => {
+                    self.push_history();
+                    self.editor_state.interaction.edit_state =
+                        EditState::ResizingSelectionStart {
+                            last_tick: snapped_tick,
+                        };
+                }
+                super::SelectionHitType::RightEdge => {
+                    self.push_history();
+                    self.editor_state.interaction.edit_state =
+                        EditState::ResizingSelectionEnd {
+                            last_tick: snapped_tick,
+                        };
+                }
+            }
         } else {
             self.playback_position = snapped_tick;
             self.editor_state.interaction.selected_notes.clear();
@@ -265,18 +293,31 @@ impl Editor {
             EditState::Dragging { note_index, .. }
             | EditState::ResizingStart { note_index, .. }
             | EditState::ResizingEnd { note_index, .. } => note_index,
+            EditState::DraggingSelection { .. }
+            | EditState::ResizingSelectionStart { .. }
+            | EditState::ResizingSelectionEnd { .. } => {
+                // 多音符操作已在 compute_state_changes 中直接处理
+                return;
+            }
             _ => return,
         };
 
         if let Some(note) = self.editor_state.data.notes.get_mut(note_index) {
+            let mut changed = false;
             if let Some(t) = new_tick {
                 note.tick = t;
+                changed = true;
             }
             if let Some(k) = new_key {
                 note.key = k;
+                changed = true;
             }
             if let Some(l) = new_length {
                 note.length = l;
+                changed = true;
+            }
+            if changed {
+                self.note_index_dirty.set(true);
             }
         }
     }
@@ -316,6 +357,11 @@ impl Editor {
             }
             EditState::ResizingStart { .. } | EditState::ResizingEnd { .. } => {
                 tracing::debug!("Editor: 音符调整大小完成");
+            }
+            EditState::DraggingSelection { .. }
+            | EditState::ResizingSelectionStart { .. }
+            | EditState::ResizingSelectionEnd { .. } => {
+                tracing::debug!("Editor: 选择框批量编辑完成");
             }
             _ => {}
         }
