@@ -1,4 +1,4 @@
-use iced_core::{Alignment, Length};
+use iced_core::{Alignment, Background, Border, Color, Length};
 use iced_widget::{button, container, row, text};
 
 use crate::{Element, Message, Theme, resources::icon};
@@ -19,12 +19,9 @@ impl std::fmt::Display for AppMode {
     }
 }
 
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t.clamp(0.0, 1.0)
-}
-
-pub fn view(_current_mode: AppMode, progress: f32) -> Element<'static> {
+pub fn view(theme: &Theme, _current_mode: AppMode, progress: f32) -> Element<'_> {
     let p = progress.clamp(0.0, 1.0);
+    let palette = theme.extended_palette();
 
     let is_waterfall = p >= 0.5;
 
@@ -35,32 +32,28 @@ pub fn view(_current_mode: AppMode, progress: f32) -> Element<'static> {
     };
     let label = if is_waterfall { "瀑布流" } else { "编辑器" };
 
-    let icon_el = container(icon::view(icon_type))
+    let icon_bg = palette.background.strong.color;
+    let text_color = palette.background.neutral.text;
+
+    let icon_el = container(icon::view_with_size_and_theme(icon_type, 13, 13, Some(theme)))
         .width(Length::Fixed(17.0))
         .height(Length::Fixed(17.0))
         .center_x(Length::Fill)
         .center_y(Length::Fill)
-        .style(|_theme: &Theme| container::Style {
-            background: Some(iced_core::Background::Color(iced_core::Color::from_rgb(
-                0.455, 0.455, 0.455,
-            ))),
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(Background::Color(icon_bg)),
             ..Default::default()
         });
 
     let text_alpha = if is_waterfall { p } else { 1.0 - p };
-    let text_color_val = if is_waterfall {
-        lerp(0.6, 1.0, (p - 0.5) * 2.0)
-    } else {
-        lerp(1.0, 0.6, p * 2.0)
-    };
 
     let label_text = text(label)
         .size(12)
         .style(move |_theme: &Theme| text::Style {
-            color: Some(iced_core::Color::from_rgba8(
-                (text_color_val * 255.0) as u8,
-                (text_color_val * 255.0) as u8,
-                (text_color_val * 255.0) as u8,
+            color: Some(Color::from_rgba8(
+                (text_color.r * 255.0) as u8,
+                (text_color.g * 255.0) as u8,
+                (text_color.b * 255.0) as u8,
                 text_alpha,
             )),
         });
@@ -73,27 +66,35 @@ pub fn view(_current_mode: AppMode, progress: f32) -> Element<'static> {
     .spacing(4)
     .align_y(Alignment::Center);
 
+    let inner_bg = palette.background.weaker.color;
+    let outer_bg = palette.background.weak.color;
+    let border_radius = 4.0;
+
     let inner = container(content)
         .padding([2, 5])
-        .style(|_theme: &Theme| container::Style {
-            background: Some(iced_core::Background::Color(iced_core::Color::from_rgb(
-                0.749, 0.749, 0.749,
-            ))),
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(Background::Color(inner_bg)),
             ..Default::default()
         });
 
     button(inner)
         .padding(2)
-        .style(|_theme: &Theme, _status| button::Style {
-            background: Some(iced_core::Background::Color(iced_core::Color::from_rgb(
-                0.851, 0.851, 0.851,
-            ))),
-            border: iced_core::Border {
-                radius: 4.0.into(),
-                width: 0.0,
-                color: iced_core::Color::TRANSPARENT,
-            },
-            ..Default::default()
+        .style(move |_theme: &Theme, status| {
+            let bg = match status {
+                button::Status::Hovered => outer_bg,
+                button::Status::Pressed => palette.background.base.color,
+                _ => outer_bg,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border {
+                    radius: border_radius.into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+                text_color,
+                ..Default::default()
+            }
         })
         .on_press(Message::ModeToggled)
         .width(70)

@@ -40,7 +40,7 @@ impl Titlebar {
         let menu_row = if cfg!(target_os = "macos") {
             row![]
         } else {
-            row![logo::view(window), mode_toggle::view(current_mode, toggle_progress), menu::view()]
+            row![logo::view(window), mode_toggle::view(&window.theme, current_mode, toggle_progress), menu::view()]
                 .align_y(Alignment::Center)
         };
 
