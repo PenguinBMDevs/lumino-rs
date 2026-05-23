@@ -63,7 +63,7 @@ impl OnionSkinColors {
 
         Self {
             colors,
-            opacity: 0.4, // 默认40%透明度
+            opacity: 0.7, // 默认70%透明度
         }
     }
 

@@ -86,7 +86,7 @@ fn vs_main(
 
     var output: VertexOutput;
     output.position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
-    output.color = vec4<f32>(tc.r, tc.g, tc.b, tc.a * 0.35);
+    output.color = vec4<f32>(tc.r, tc.g, tc.b, tc.a);
     return output;
 }
 
