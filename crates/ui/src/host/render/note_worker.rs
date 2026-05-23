@@ -23,13 +23,19 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 
 use lumino_core::midi::MidiDocument;
+use lumino_core::midi::constants::{MIDI_CHANNEL_COUNT, MIDI_KEY_RANGE, TICK_SEARCH_BUFFER};
 use lumino_gfx::{OnionNote, SwappableBuffer};
+use lumino_midi::compact::{CompactEvent, EventKind};
 
 // ─── 数据快照 ───────────────────────────────────────────────────────────────
 
 /// 洋葱皮计算所需的全部数据快照（Send 安全）
 ///
 /// 主线程在每帧收集快照后发送给 worker。
+///
+/// visible_tick_start/end 已被 collect_onion_notes 用于视口裁剪。
+/// 其余 NDC 坐标字段（scroll_x..max_key_index）和 key 范围字段预留
+/// 供后续 GPU cull shader 的坐标计算使用，当前 cpu 侧裁剪尚未接入。
 #[allow(dead_code)]
 pub(crate) struct OnionSkinComputationSnapshot {
     // 视口参数（用于洋葱皮过滤与 NDC 坐标计算）
@@ -117,11 +123,13 @@ impl NoteWorker {
                 continue;
             }
 
-            // 收集所有可见洋葱皮音轨的音符，转为 OnionNote
+            // 收集视口范围内的洋葱皮音符，直接由 CompactEvent 构建 OnionNote
             let notes = collect_onion_notes(
                 snapshot.document.as_deref(),
                 snapshot.current_track,
                 &snapshot.track_onion_states,
+                snapshot.visible_tick_start,
+                snapshot.visible_tick_end,
             );
 
             {
@@ -153,14 +161,87 @@ impl NoteWorker {
 
 // ─── OnionNote 收集 ─────────────────────────────────────────────────────────
 
-/// 从 MIDI 文档收集所有非当前轨道的洋葱皮音符
+/// 直接从 CompactEvent 切片收集洋葱皮音符（零中间 tuple 分配）
 ///
-/// 使用 Rayon 并行遍历音轨，收集后按 start_tick 排序
-/// 排序后的音符池使 GPU cull shader 可使用二分查找加速
+/// 使用二分查找定位 tick 范围，直接构建 OnionNote，避免先转 Vec<(f32,u8,f32,u8,u8)>。
+/// 通过 TICK_SEARCH_BUFFER 回退搜索范围，捕获在视口之前开始但在视口内结束的音符。
+fn collect_onion_notes_direct(
+    events: &[CompactEvent],
+    track_idx: u16,
+    tick_start: f32,
+    tick_end: f32,
+) -> Vec<OnionNote> {
+    let tick_start_u = tick_start as u32;
+    let tick_end_u = tick_end as u32;
+
+    // 二分查找定位 tick 范围（回退 TICK_SEARCH_BUFFER 捕获跨边界音符）
+    let search_start = events
+        .partition_point(|e| e.delta_tick() < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER));
+    let search_end = events.len().min(
+        search_start + events[search_start..].partition_point(|e| e.delta_tick() <= tick_end_u),
+    );
+
+    if search_start >= search_end {
+        return Vec::new();
+    }
+
+    // NoteOn/NoteOff 匹配，直接输出 OnionNote
+    let mut active_notes: [(u32, bool); 4096] = [(0, false); 4096]; // 256 keys × 16 channels
+    let mut notes = Vec::new();
+
+    for ev in &events[search_start..search_end] {
+        let tick = ev.delta_tick();
+        let key = ev.param1() as u8;
+        let vel = ev.param2() as u8;
+        let channel = ev.channel();
+        let idx = (channel as usize) * (MIDI_KEY_RANGE as usize) + (key as usize);
+
+        match ev.kind() {
+            EventKind::NoteOn if vel > 0 => {
+                if active_notes[idx].1 {
+                    // 音符重叠：先发出前一个未结束的音符
+                    let st = active_notes[idx].0;
+                    notes.push(OnionNote::new(st, tick, key, track_idx));
+                }
+                active_notes[idx] = (tick, true);
+            }
+            EventKind::NoteOn | EventKind::NoteOff if active_notes[idx].1 => {
+                let st = active_notes[idx].0;
+                notes.push(OnionNote::new(st, tick, key, track_idx));
+                active_notes[idx].1 = false;
+            }
+            _ => {}
+        }
+    }
+
+    // 处理未结束的音符（文件末尾关闭）
+    let last_tick = events.last().map(|e| e.delta_tick()).unwrap_or(0);
+    for channel in 0..MIDI_CHANNEL_COUNT as usize {
+        for key in 0..MIDI_KEY_RANGE as usize {
+            let idx = channel * (MIDI_KEY_RANGE as usize) + key;
+            if active_notes[idx].1 {
+                let st = active_notes[idx].0;
+                notes.push(OnionNote::new(st, last_tick, key as u8, track_idx));
+            }
+        }
+    }
+
+    // 过滤掉不完全在视口范围内的音符
+    notes.retain(|n| n.end_tick > tick_start_u && n.start_tick < tick_end_u);
+
+    notes
+}
+
+/// 从 MIDI 文档收集所有洋葱皮音轨的 OnionNote
+///
+/// 使用 Rayon 并行遍历音轨，直接由 CompactEvent 构建 OnionNote，
+/// 按视口 tick 范围裁剪数据量。结果按 start_tick 排序供 GPU 二分查找。
 pub(super) fn collect_onion_notes(
     document: Option<&MidiDocument>,
     current_track: usize,
     track_onion_enabled: &std::collections::HashMap<usize, bool>,
+    visible_tick_start: f32,
+    visible_tick_end: f32,
 ) -> Vec<OnionNote> {
     let Some(doc) = document else {
         return Vec::new();
@@ -168,8 +249,9 @@ pub(super) fn collect_onion_notes(
 
     use rayon::prelude::*;
     let num_tracks = doc.track_count();
+    let events = &doc.events;
 
-    // 并行遍历音轨，每个轨道生成独立 Vec，最后合并排序
+    // 并行遍历音轨，每个轨道直接从 CompactEvent 构建 OnionNote
     let track_results: Vec<Vec<OnionNote>> = (0..num_tracks)
         .into_par_iter()
         .filter_map(|track_idx| {
@@ -181,15 +263,18 @@ pub(super) fn collect_onion_notes(
                 return None;
             }
 
-            let track_idx_u16 = track_idx as u16;
-            let track_notes = doc.get_track_notes(track_idx as u16);
-            let mut track_notes_vec = Vec::with_capacity(track_notes.len());
-            for (start, pitch, duration, _, _) in track_notes {
-                let start_u32 = start as u32;
-                let end = start_u32 + duration as u32;
-                track_notes_vec.push(OnionNote::new(start_u32, end, pitch, track_idx_u16));
+            let (range_start, range_end) = doc.track_events_range(track_idx as u16);
+            if range_start >= range_end {
+                return None;
             }
-            Some(track_notes_vec)
+
+            let track_events = &events[range_start..range_end];
+            Some(collect_onion_notes_direct(
+                track_events,
+                track_idx as u16,
+                visible_tick_start,
+                visible_tick_end,
+            ))
         })
         .collect();
 

@@ -1,7 +1,6 @@
 pub mod grid;
 pub mod history;
 pub mod note;
-pub mod onion_bg_lod0;
 pub mod onion_bg_pool;
 pub mod onion_skin;
 pub mod scrollbar_widget;
@@ -33,7 +32,6 @@ use iced_widget::canvas;
 use std::cell::{Cell, RefCell};
 
 use note::Note;
-pub use onion_bg_lod0::*;
 pub use onion_bg_pool::*;
 pub use onion_skin::OnionSkinConfig;
 // 统一从 editor_state 导入（重构迁移）
