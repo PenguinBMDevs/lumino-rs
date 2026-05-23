@@ -79,8 +79,8 @@ impl OnionRenderer {
     const MAX_INDICES_CAPACITY: usize = 33_554_432;
     const WORKGROUP_SIZE: u32 = 256;
 
-    const VERTEX_SHADER_SRC: &'static str = include_str!("shaders/onion_render.wgsl");
-    const COMPUTE_SHADER_SRC: &'static str = include_str!("shaders/onion_cull.wgsl");
+    const VERTEX_SHADER_SRC: &'static str = include_str!("onion_renderer/shaders/onion_render.wgsl");
+    const COMPUTE_SHADER_SRC: &'static str = include_str!("onion_renderer/shaders/onion_cull.wgsl");
 
     /// 创建新的洋葱皮渲染器
     pub fn new(device: &wgpu::Device, _queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
