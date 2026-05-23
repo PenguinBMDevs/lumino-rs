@@ -18,6 +18,16 @@ pub struct KeyboardRenderer {
     pub(super) black_key_color: [f32; 4],
     /// 选中键颜色
     pub(super) selected_key_color: [f32; 4],
+    /// 缓存的实例数据（避免每帧重新生成）
+    cached_instances: Vec<super::types::KeyInstance>,
+    /// 缓存是否有效
+    cache_valid: bool,
+    /// 缓存参数：用于判断是否需要重新生成
+    cache_scroll_y: f32,
+    cache_zoom_y: f32,
+    cache_visible_key_count: u16,
+    cache_keyboard_width: f32,
+    cache_ruler_height: f32,
 }
 
 impl KeyboardRenderer {

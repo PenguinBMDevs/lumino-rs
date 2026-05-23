@@ -33,7 +33,7 @@ impl Host {
 
         let texture_ref = wgpu_thread
             .latest_texture
-            .lock()
+            .try_lock()
             .ok()
             .and_then(|g| g.clone());
 
@@ -41,7 +41,6 @@ impl Host {
             return;
         };
 
-        // 确保尺寸匹配，如果因为调整大小等原因不匹配则跳过这帧的复制
         if texture.width() != frame.texture.width() || texture.height() != frame.texture.height() {
             return;
         }
@@ -223,12 +222,15 @@ impl Host {
         // ═══ Phase 2: 洋葱皮异步派发（独立 buffer，fire-and-forget） ═══
         self.ensure_note_worker();
         if let Some(ref worker) = self.render_ctx.note_worker {
-            let os_snapshot = self.collect_onion_skin_snapshot();
+            puffin::profile_scope!("dispatch_onion_skin_job");
+            let vp_logical = self.render_ctx.viewport.logical_size();
+            let os_snapshot =
+                self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));
 
             worker.send(super::note_worker::OnionSkinJob {
                 snapshot: os_snapshot,
-                onion_skin_buffer: std::sync::Arc::clone(
-                    &self.render_ctx.render_cache.onion_skin_instances_buffer,
+                onion_note_buffer: std::sync::Arc::clone(
+                    &self.render_ctx.render_cache.onion_note_buffer,
                 ),
                 done_tx: None,
             });

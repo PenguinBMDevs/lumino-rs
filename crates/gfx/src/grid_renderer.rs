@@ -6,7 +6,7 @@ use wgpu::util::DeviceExt;
 
 /// Camera Uniform
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GridCameraUniform {
     pub viewport_size: [f32; 2],
     pub camera_pos: [f32; 2], // (scroll_x, scroll_y)
@@ -263,6 +263,8 @@ pub struct GridRenderer {
     camera_buffer: wgpu::Buffer,
     /// Bind group
     bind_group: wgpu::BindGroup,
+    /// 缓存的 uniform 数据（避免每帧重复构建）
+    cached_uniform: Option<GridCameraUniform>,
 }
 
 impl GridRenderer {
@@ -353,10 +355,11 @@ impl GridRenderer {
             pipeline,
             camera_buffer,
             bind_group,
+            cached_uniform: None,
         }
     }
 
-    /// 准备渲染数据
+    /// 准备渲染数据（带缓存优化）
     pub fn prepare(
         &mut self,
         queue: &wgpu::Queue,
@@ -396,7 +399,11 @@ impl GridRenderer {
             .max_key_index(max_key_index)
             .canvas_offset(canvas_offset_x, canvas_offset_y)
             .build();
-        queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[viewport]));
+
+        if self.cached_uniform.as_ref() != Some(&viewport) {
+            queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[viewport]));
+            self.cached_uniform = Some(viewport);
+        }
     }
 
     /// 绘制网格线

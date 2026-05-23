@@ -2,7 +2,7 @@ use super::super::types::KeyboardViewportUniform;
 use super::KeyboardRenderer;
 
 impl KeyboardRenderer {
-    /// 准备渲染数据
+    /// 准备渲染数据（带缓存优化）
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -15,30 +15,43 @@ impl KeyboardRenderer {
         visible_key_count: u16,
     ) {
         puffin::profile_function!();
-        // 生成琴键实例
-        let instances = self.generate_key_instances(
-            visible_key_count,
-            keyboard_width,
-            zoom_y,
-            scroll_y,
-            ruler_height,
-        );
 
+        let params_changed = !self.cache_valid
+            || self.cache_scroll_y != scroll_y
+            || self.cache_zoom_y != zoom_y
+            || self.cache_visible_key_count != visible_key_count
+            || self.cache_keyboard_width != keyboard_width
+            || self.cache_ruler_height != ruler_height;
+
+        if params_changed {
+            self.cached_instances = self.generate_key_instances(
+                visible_key_count,
+                keyboard_width,
+                zoom_y,
+                scroll_y,
+                ruler_height,
+            );
+            self.cache_scroll_y = scroll_y;
+            self.cache_zoom_y = zoom_y;
+            self.cache_visible_key_count = visible_key_count;
+            self.cache_keyboard_width = keyboard_width;
+            self.cache_ruler_height = ruler_height;
+            self.cache_valid = true;
+        }
+
+        let instances = &self.cached_instances;
         let instance_count = instances.len();
 
-        // 扩容检查
         if instance_count > self.capacity {
             let new_capacity = (self.capacity * Self::GROWTH_FACTOR).max(instance_count);
             self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
             self.capacity = new_capacity;
         }
 
-        // 上传实例数据
         if instance_count > 0 {
-            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instances));
+            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
         }
 
-        // 更新视口 uniform
         let viewport_uniform = KeyboardViewportUniform::new(
             viewport_size.0,
             viewport_size.1,

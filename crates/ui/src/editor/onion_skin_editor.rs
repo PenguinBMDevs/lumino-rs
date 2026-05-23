@@ -3,46 +3,22 @@
 //! Editor 对洋葱皮的公开接口：缓存失效、配置读写、开关控制。
 //! 查询逻辑在 `onion_skin_ops` 中。
 
-use super::onion_skin_cache::ONION_SKIN_CACHE;
 use crate::editor::{CacheInvalidation, Editor};
 
 impl Editor {
     /// 使洋葱皮缓存全量失效（数据变化/音轨集合变化时调用）
     pub fn invalidate_onion_skin_cache(&mut self) {
-        if let Ok(mut cache) = ONION_SKIN_CACHE.write()
-            && cache.is_some()
-        {
-            tracing::debug!("Editor: 洋葱皮缓存全量清除");
-            *cache = None;
-        }
         self.onion_cache_valid = false;
     }
 
-    /// 仅标记颜色/透明度变化（无需重查 document，只重建 output）
-    ///
-    /// ROI：颜色变化从 O(N×T) 全量重建降为 O(C) 遍历 cells 重打包。
-    /// 典型场景：用户拖拽颜色选择器、调整透明度滑块。
+    /// 仅标记颜色/透明度变化（已由瓦片系统替代，保留接口兼容）
     pub fn invalidate_onion_skin_colors(&mut self) {
-        if let Ok(mut cache) = ONION_SKIN_CACHE.write()
-            && let Some(ref mut cache) = *cache
-        {
-            tracing::debug!("Editor: 洋葱皮颜色标记为脏");
-            cache.colors_dirty = true;
-        }
+        // 旧缓存已移除，瓦片系统通过 pool 颜色 LUT 自动更新
     }
 
-    /// 使指定音轨的缓存失效（仅清除该轨贡献的 cells）
-    ///
-    /// ROI：单轨修改从 O(N×T) 全量重建降为 O(dirty_tracks)×(O(query)+O(merge))，
-    /// 下次查询时只重查该轨 + 重合并，其他轨的 cells 保持不变。
-    /// 典型场景：单轨音符增删、协作事件影响单轨。
+    /// 使指定音轨的缓存失效（已由瓦片系统替代，保留接口兼容）
     pub fn invalidate_onion_skin_cache_track(&mut self, track_idx: usize) {
-        if let Ok(mut cache) = ONION_SKIN_CACHE.write()
-            && let Some(ref mut cache) = *cache
-        {
-            cache.dirty_tracks.insert(track_idx as u16);
-            tracing::debug!("Editor: 音轨 {} 标记为脏（洋葱皮）", track_idx);
-        }
+        let _ = track_idx;
     }
 
     /// 使缓存的可见音轨索引失效（音轨集合/当前音轨变化时调用）

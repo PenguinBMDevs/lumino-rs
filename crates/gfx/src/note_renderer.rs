@@ -1,7 +1,8 @@
 pub mod types;
 
 pub use types::{
-    CameraParams, CameraUniform, CullUniform, NoteInstance, RenderUniform, pack_color, unpack_color,
+    CameraParams, CameraUniform, CullUniform, NoteInstance, OnionBgTileRef, RenderUniform,
+    pack_color, unpack_color,
 };
 
 // 子模块

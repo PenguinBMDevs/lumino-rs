@@ -13,8 +13,10 @@ use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
 use super::commands::process_commands;
 use super::prepare::prepare_renderers;
-use super::render_pass::{execute_render_pass, update_stats};
+use super::render_pass::execute_render_pass;
+use super::render_pass::update_stats;
 use super::textures::ensure_textures;
+use lumino_gfx::{CameraParams, CameraUniform, OnionViewportUniform};
 
 /// 运行渲染线程主循环
 #[allow(clippy::too_many_arguments)]
@@ -28,7 +30,7 @@ pub fn run_render_thread(
     stats_clone: Arc<Mutex<RenderStats>>,
     note_events_rx: std::sync::mpsc::Receiver<lumino_gfx::NoteEvent>,
     note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
-    onion_skin_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
+    onion_note_buffer: Option<Arc<SwappableBuffer<lumino_gfx::OnionNote>>>,
 ) {
     tracing::info!("Render thread started");
 
@@ -37,6 +39,7 @@ pub fn run_render_thread(
     let mut note_renderer = lumino_gfx::NoteRenderer::new(&device, &queue, texture_format);
     let mut keyboard_renderer = lumino_gfx::KeyboardRenderer::new(&device, texture_format);
     let mut ruler_renderer = lumino_gfx::RulerRenderer::new(&device, texture_format);
+    let mut onion_renderer = lumino_gfx::OnionRenderer::new(&device, &queue, texture_format);
 
     // 渲染循环状态
     let mut frame_count = 0u64;
@@ -46,9 +49,7 @@ pub fn run_render_thread(
     let mut depth_texture_view: Option<wgpu::TextureView> = None;
     let mut current_size = (0, 0);
     let mut last_note_version: u64 = 0;
-    let mut last_onion_version: u64 = 0;
-    // 可重用合并缓冲区，避免每帧分配
-    let mut merged_instances: Vec<lumino_gfx::NoteInstance> = Vec::new();
+    let mut last_onion_note_version: u64 = 0;
 
     while running.load(Ordering::Relaxed) {
         // 处理所有待处理的命令
@@ -83,28 +84,35 @@ pub fn run_render_thread(
                 params,
             );
 
-            // 分别检测主音符和洋葱皮版本号，合并后上传（任一变化都触发上传）
+            // 仅检测主音符版本号变化后上传
             let note_version = note_instances_buffer.version();
-            let onion_version = onion_skin_instances_buffer.version();
-            if note_version != last_note_version || onion_version != last_onion_version {
+            if note_version != last_note_version {
                 last_note_version = note_version;
-                last_onion_version = onion_version;
 
                 puffin::profile_scope!("upload_note_instances_from_buffer");
                 let notes = unsafe { note_instances_buffer.read_buffer() };
-                let onion = unsafe { onion_skin_instances_buffer.read_buffer() };
 
-                // 重用到合并缓冲区，避免每帧分配
-                merged_instances.clear();
-                merged_instances.reserve(notes.len() + onion.len());
-                merged_instances.extend_from_slice(notes);
-                merged_instances.extend_from_slice(onion);
-
-                note_renderer.upload_instances(&merged_instances, &device, &queue);
+                note_renderer.upload_instances(notes, &device, &queue);
             }
 
-            if let (Some(texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
-                let _view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            // 检测洋葱皮音符数据变化，上传到 OnionRenderer
+            // 预读取 notes 切片（零拷贝，仅交换指针）供 prepare_cull 做二分查找
+            let onion_notes_for_cull: Option<&[lumino_gfx::OnionNote]> = onion_note_buffer
+                .as_ref()
+                .map(|buf| unsafe { buf.read_buffer() })
+                .map(|v| &**v);
+
+            if let Some(buf) = &onion_note_buffer {
+                let ver = buf.version();
+                if ver != last_onion_note_version {
+                    last_onion_note_version = ver;
+                    if let Some(n) = onion_notes_for_cull {
+                        onion_renderer.upload_notes(n, &device, &queue);
+                    }
+                }
+            }
+
+            if let (Some(_texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("offscreen_render_encoder"),
                 });
@@ -121,9 +129,53 @@ pub fn run_render_thread(
                     &queue,
                 );
 
-                // 执行渲染通道
+                // 准备洋葱皮计算剔除（每帧执行，因为视口可能变化）
+                let camera = CameraUniform::new(CameraParams {
+                    scroll: [params.scroll.0, params.scroll.1],
+                    zoom: [params.zoom.0, params.zoom.1],
+                    viewport: [params.logical_size.0, params.logical_size.1],
+                    offset: [params.canvas_offset.0, params.canvas_offset.1],
+                    keyboard_width: params.keyboard_width,
+                    ruler_height: params.ruler_height,
+                    max_key_index: params.max_key_index,
+                });
+
+                // 计算可见 tick/pitch 范围用于视口裁剪
+                let visible_tick_start = (params.scroll.0 / params.zoom.0).max(0.0);
+                let visible_tick_end = ((params.scroll.0 + params.logical_size.0) / params.zoom.0)
+                    .max(visible_tick_start);
+                let max_key = params.max_key_index;
+                let key_top = max_key - (params.scroll.1 / params.zoom.1);
+                let key_bottom =
+                    max_key - ((params.scroll.1 + params.logical_size.1) / params.zoom.1);
+                let visible_pitch_max = (key_top.ceil() as u16 + 1) as f32;
+                let visible_pitch_min =
+                    (key_bottom.floor().max(0.0) as u16).saturating_sub(1) as f32;
+
+                let viewport = OnionViewportUniform {
+                    tick_start: visible_tick_start,
+                    tick_end: visible_tick_end,
+                    pitch_min: visible_pitch_min,
+                    pitch_max: visible_pitch_max,
+                    note_count: 0,
+                    indices_capacity: 65536,
+                    visible_start: 0,
+                    visible_end: 0,
+                };
+
+                onion_renderer.prepare_cull(
+                    &mut encoder,
+                    &viewport,
+                    &camera,
+                    &queue,
+                    &device,
+                    onion_notes_for_cull,
+                );
+
+                // 执行渲染通道（含洋葱皮背景和主音符）
                 execute_render_pass(
                     &mut encoder,
+                    &device,
                     &current_texture,
                     &depth_texture_view,
                     params,
@@ -132,6 +184,7 @@ pub fn run_render_thread(
                     &mut keyboard_renderer,
                     &mut ruler_renderer,
                     &queue,
+                    &mut onion_renderer,
                 );
 
                 // 提交渲染指令

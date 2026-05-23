@@ -7,10 +7,11 @@ use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
 use lumino_gfx::{CameraParams, CameraUniform};
 
-/// 执行渲染通道
+/// 执行渲染通道（含洋葱皮背景）
 #[allow(clippy::too_many_arguments)]
 pub fn execute_render_pass(
     encoder: &mut wgpu::CommandEncoder,
+    _device: &wgpu::Device,
     current_texture: &Option<Arc<wgpu::Texture>>,
     depth_texture_view: &Option<wgpu::TextureView>,
     params: &RenderParams,
@@ -19,6 +20,7 @@ pub fn execute_render_pass(
     keyboard_renderer: &mut lumino_gfx::KeyboardRenderer,
     ruler_renderer: &mut lumino_gfx::RulerRenderer,
     queue: &wgpu::Queue,
+    onion_renderer: &mut lumino_gfx::OnionRenderer,
 ) {
     let (Some(texture), Some(depth_view)) = (current_texture, depth_texture_view) else {
         return;
@@ -87,6 +89,12 @@ pub fn execute_render_pass(
         {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             grid_renderer.draw(&mut render_pass, 1);
+        }
+
+        // 绘制洋葱皮背景（网格之上、主音符之下）
+        {
+            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+            onion_renderer.draw(&mut render_pass);
         }
 
         // 绘制音符

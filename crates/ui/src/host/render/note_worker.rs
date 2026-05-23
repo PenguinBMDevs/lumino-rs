@@ -1,10 +1,10 @@
-//! 洋葱皮计算专用线程
+//! 洋葱皮计算专用线程 — GPU OnionNote 生成模式
 //!
 //! 架构说明：
-//! - `NoteWorker` 是一个常驻线程，只负责洋葱皮实例计算
+//! - `NoteWorker` 是一个常驻线程，负责收集所有可见洋葱皮音轨的音符数据
 //! - 主音轨主音符 → 由主线程同步写入 `note_instances_buffer` 并 swap（~1ms，保证立即可见）
-//! - 洋葱皮数据 → 由 Worker 异步写入独立的 `onion_skin_instances_buffer`（50-200ms）
-//! - WGPU 渲染线程分别检测两个 buffer 的版本号，合并后上传
+//! - 洋葱皮数据 → 由 Worker 异步收集 OnionNote 并写入 `onion_note_buffer`（50-200ms）
+//! - WGPU 渲染线程检测 onion_note_buffer 版本号，上传到 OnionRenderer 的 storage buffer
 //!
 //! 数据流：
 //!   Main Thread                  NoteWorker              WGPU Thread
@@ -13,47 +13,60 @@
 //!     ├─ swap() ────────────────────│──── 立即可见 ────────►│
 //!     │                             │                       ├─ version check
 //!     ├─ dispatch snapshot ────────►│                       │
-//!     │                             ├─ compute_onion        │
-//!     │                             ├─ write onion buffer   │
-//!     │                             └─ swap() ─────────────►│
-//!     │                                                     ├─ merge + upload
-//!     │                                                     └─ render
+//!     │                             ├─ collect OnionNotes   │
+//!     │                             ├─ write + swap         │
+//!     │                             │── swap() ────────────►│
+//!     │                             │                       ├─ upload to OnionRenderer
+//!     │                             │                       ├─ compute cull + draw
 
-use std::sync::Arc;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread;
 
-use lumino_gfx::{NoteInstance, SwappableBuffer};
-
-use crate::editor::compute_onion_skin_instances_standalone;
-use crate::editor::onion_skin::OnionSkinConfig;
-use crate::editor::onion_skin_cache_version;
 use lumino_core::midi::MidiDocument;
+use lumino_core::midi::constants::{MIDI_CHANNEL_COUNT, MIDI_KEY_RANGE, TICK_SEARCH_BUFFER};
+use lumino_gfx::{OnionNote, SwappableBuffer};
+use lumino_midi::compact::{CompactEvent, EventKind};
 
 // ─── 数据快照 ───────────────────────────────────────────────────────────────
 
 /// 洋葱皮计算所需的全部数据快照（Send 安全）
 ///
 /// 主线程在每帧收集快照后发送给 worker。
+///
+/// visible_tick_start/end 已被 collect_onion_notes 用于视口裁剪。
+/// 其余 NDC 坐标字段（scroll_x..max_key_index）和 key 范围字段预留
+/// 供后续 GPU cull shader 的坐标计算使用，当前 cpu 侧裁剪尚未接入。
+#[allow(dead_code)]
 pub(crate) struct OnionSkinComputationSnapshot {
-    // 视口参数（用于洋葱皮过滤）
+    // 视口参数（用于洋葱皮过滤与 NDC 坐标计算）
     pub visible_tick_start: f32,
     pub visible_tick_end: f32,
     pub visible_key_min: u16,
     pub visible_key_max: u16,
+    // ─── 以下字段用于 NDC 坐标计算 ───
+    pub scroll_x: f32,
+    pub scroll_y: f32,
+    pub zoom_x: f32,
+    pub zoom_y: f32,
+    pub keyboard_width: f32,
+    pub ruler_height: f32,
+    pub canvas_offset_x: f32,
+    pub canvas_offset_y: f32,
+    pub viewport_logical_width: f32,
+    pub viewport_logical_height: f32,
+    pub max_key_index: f32,
     // 洋葱皮数据
     pub onion_skin_enabled: bool,
     pub track_onion_states: std::collections::HashMap<usize, bool>,
     pub current_track: usize,
-    pub onion_skin_config: OnionSkinConfig,
     pub document: Option<Arc<MidiDocument>>,
 }
 
 /// 发送给 NoteWorker 的作业
 pub(crate) struct OnionSkinJob {
     pub snapshot: OnionSkinComputationSnapshot,
-    /// 目标洋葱皮双缓冲（独立 buffer，不碰主音符）
-    pub onion_skin_buffer: Arc<SwappableBuffer<NoteInstance>>,
+    /// 洋葱皮音符池双缓冲（SoA 布局，OnionNote 类型）
+    pub onion_note_buffer: Arc<SwappableBuffer<OnionNote>>,
     /// 同步信号：单线程模式用，等待完成后通知
     pub done_tx: Option<mpsc::Sender<()>>,
 }
@@ -81,13 +94,9 @@ impl NoteWorker {
         }
     }
 
-    /// Worker 主循环：接收作业 → 计算洋葱皮 → 写入独立 buffer → swap
+    /// Worker 主循环：接收作业 → 收集 OnionNote → 写入双缓冲 → swap
     fn run_loop(rx: mpsc::Receiver<OnionSkinJob>) {
-        // 缓存版本号追踪：跳过无变更的 swap，避免 WGPU 不必要重传
-        let mut last_cache_version: u64 = 0;
-
         loop {
-            // 阻塞等待第一个作业
             let mut job = match rx.recv() {
                 Ok(j) => j,
                 Err(_) => {
@@ -97,46 +106,39 @@ impl NoteWorker {
             };
 
             // Drain 队列中积压的旧作业，只保留最新的
-            // 快速滚动时积压的旧帧洋葱皮数据全部丢弃
             while let Ok(newer) = rx.try_recv() {
                 job = newer;
             }
 
-            // 计算洋葱皮
             let snapshot = &job.snapshot;
-            let onion_instances = compute_onion_skin_instances_standalone(
-                snapshot.onion_skin_enabled,
-                snapshot.document.as_ref(),
-                &snapshot.onion_skin_config,
-                &snapshot.track_onion_states,
-                snapshot.current_track,
-                snapshot.visible_tick_start,
-                snapshot.visible_tick_end,
-                snapshot.visible_key_min,
-                snapshot.visible_key_max,
-            );
 
-            // 检查缓存版本号：无变化时跳过 swap
-            let current_cache_version = onion_skin_cache_version();
-            if current_cache_version == last_cache_version {
-                // 缓存未变化 → 跳过 write + swap，节省 GPU 带宽
+            if !snapshot.onion_skin_enabled {
+                let buffer = unsafe { job.onion_note_buffer.write_buffer() };
+                buffer.clear();
+                let _ = buffer;
+                job.onion_note_buffer.swap();
                 if let Some(tx) = job.done_tx {
                     let _ = tx.send(());
                 }
                 continue;
             }
-            last_cache_version = current_cache_version;
 
-            // 写入独立的洋葱皮 buffer
+            // 收集视口范围内的洋葱皮音符，直接由 CompactEvent 构建 OnionNote
+            let notes = collect_onion_notes(
+                snapshot.document.as_deref(),
+                snapshot.current_track,
+                &snapshot.track_onion_states,
+                snapshot.visible_tick_start,
+                snapshot.visible_tick_end,
+            );
+
             {
-                let buffer = unsafe { job.onion_skin_buffer.write_buffer() };
+                let buffer = unsafe { job.onion_note_buffer.write_buffer() };
                 buffer.clear();
-                buffer.reserve(onion_instances.len());
-                buffer.extend(onion_instances);
+                buffer.extend(notes);
             }
-            job.onion_skin_buffer.swap();
+            job.onion_note_buffer.swap();
 
-            // 通知调用者
             if let Some(tx) = job.done_tx {
                 let _ = tx.send(());
             }
@@ -157,14 +159,142 @@ impl NoteWorker {
     }
 }
 
+// ─── OnionNote 收集 ─────────────────────────────────────────────────────────
+
+/// 直接从 CompactEvent 切片收集洋葱皮音符（零中间 tuple 分配）
+///
+/// 使用二分查找定位 tick 范围，直接构建 OnionNote，避免先转 Vec<(f32,u8,f32,u8,u8)>。
+/// 通过 TICK_SEARCH_BUFFER 回退搜索范围，捕获在视口之前开始但在视口内结束的音符。
+fn collect_onion_notes_direct(
+    events: &[CompactEvent],
+    track_idx: u16,
+    tick_start: f32,
+    tick_end: f32,
+) -> Vec<OnionNote> {
+    let tick_start_u = tick_start as u32;
+    let tick_end_u = tick_end as u32;
+
+    // 二分查找定位 tick 范围（回退 TICK_SEARCH_BUFFER 捕获跨边界音符）
+    let search_start = events
+        .partition_point(|e| e.delta_tick() < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER));
+    let search_end = events.len().min(
+        search_start + events[search_start..].partition_point(|e| e.delta_tick() <= tick_end_u),
+    );
+
+    if search_start >= search_end {
+        return Vec::new();
+    }
+
+    // NoteOn/NoteOff 匹配，直接输出 OnionNote
+    let mut active_notes: [(u32, bool); 4096] = [(0, false); 4096]; // 256 keys × 16 channels
+    let mut notes = Vec::new();
+
+    for ev in &events[search_start..search_end] {
+        let tick = ev.delta_tick();
+        let key = ev.param1() as u8;
+        let vel = ev.param2() as u8;
+        let channel = ev.channel();
+        let idx = (channel as usize) * (MIDI_KEY_RANGE as usize) + (key as usize);
+
+        match ev.kind() {
+            EventKind::NoteOn if vel > 0 => {
+                if active_notes[idx].1 {
+                    // 音符重叠：先发出前一个未结束的音符
+                    let st = active_notes[idx].0;
+                    notes.push(OnionNote::new(st, tick, key, track_idx));
+                }
+                active_notes[idx] = (tick, true);
+            }
+            EventKind::NoteOn | EventKind::NoteOff if active_notes[idx].1 => {
+                let st = active_notes[idx].0;
+                notes.push(OnionNote::new(st, tick, key, track_idx));
+                active_notes[idx].1 = false;
+            }
+            _ => {}
+        }
+    }
+
+    // 处理未结束的音符（文件末尾关闭）
+    let last_tick = events.last().map(|e| e.delta_tick()).unwrap_or(0);
+    for channel in 0..MIDI_CHANNEL_COUNT as usize {
+        for key in 0..MIDI_KEY_RANGE as usize {
+            let idx = channel * (MIDI_KEY_RANGE as usize) + key;
+            if active_notes[idx].1 {
+                let st = active_notes[idx].0;
+                notes.push(OnionNote::new(st, last_tick, key as u8, track_idx));
+            }
+        }
+    }
+
+    // 过滤掉不完全在视口范围内的音符
+    notes.retain(|n| n.end_tick > tick_start_u && n.start_tick < tick_end_u);
+
+    notes
+}
+
+/// 从 MIDI 文档收集所有洋葱皮音轨的 OnionNote
+///
+/// 使用 Rayon 并行遍历音轨，直接由 CompactEvent 构建 OnionNote，
+/// 按视口 tick 范围裁剪数据量。结果按 start_tick 排序供 GPU 二分查找。
+pub(super) fn collect_onion_notes(
+    document: Option<&MidiDocument>,
+    current_track: usize,
+    track_onion_enabled: &std::collections::HashMap<usize, bool>,
+    visible_tick_start: f32,
+    visible_tick_end: f32,
+) -> Vec<OnionNote> {
+    let Some(doc) = document else {
+        return Vec::new();
+    };
+
+    use rayon::prelude::*;
+    let num_tracks = doc.track_count();
+    let events = &doc.events;
+
+    // 并行遍历音轨，每个轨道直接从 CompactEvent 构建 OnionNote
+    let track_results: Vec<Vec<OnionNote>> = (0..num_tracks)
+        .into_par_iter()
+        .filter_map(|track_idx| {
+            if track_idx == current_track {
+                return None;
+            }
+            let is_onion = track_onion_enabled.get(&track_idx).copied().unwrap_or(true);
+            if !is_onion {
+                return None;
+            }
+
+            let (range_start, range_end) = doc.track_events_range(track_idx as u16);
+            if range_start >= range_end {
+                return None;
+            }
+
+            let track_events = &events[range_start..range_end];
+            Some(collect_onion_notes_direct(
+                track_events,
+                track_idx as u16,
+                visible_tick_start,
+                visible_tick_end,
+            ))
+        })
+        .collect();
+
+    let total: usize = track_results.iter().map(|v| v.len()).sum();
+    let mut notes = Vec::with_capacity(total);
+    for v in track_results {
+        notes.extend(v);
+    }
+
+    // 按 start_tick 排序，GPU cull shader 可用二分查找定位可见范围
+    notes.sort_unstable_by_key(|n| n.start_tick);
+
+    notes
+}
+
 // ─── 主音轨主音符实例构建（主线程同步执行） ─────────────────────────────────
 
 /// 主线程同步构建主音轨音符实例（~1ms，不阻塞渲染）
-///
-/// 直接在双缓冲后缓冲区写入并 swap，保证 WGPU 线程立即可见。
-/// 不依赖洋葱皮，不给 worker 增加负载。
 pub(super) fn build_main_note_instances(
-    buffer: &SwappableBuffer<NoteInstance>,
+    buffer: &SwappableBuffer<lumino_gfx::NoteInstance>,
     notes: &im::Vector<crate::editor::note::Note>,
     edit_state: &crate::editor::editor_state::interaction::EditState,
     default_note_length: f32,
@@ -176,11 +306,10 @@ pub(super) fn build_main_note_instances(
     instances.clear();
     instances.reserve(notes.len() + 1);
 
-    // 并行构建主音轨音符
-    let main: Vec<NoteInstance> = notes
+    let main: Vec<lumino_gfx::NoteInstance> = notes
         .par_iter()
         .map(|note| {
-            NoteInstance::new(
+            lumino_gfx::NoteInstance::new(
                 note.tick,
                 note.key as f32,
                 note.length,
@@ -190,7 +319,6 @@ pub(super) fn build_main_note_instances(
         .collect();
     instances.extend(main);
 
-    // 绘制中音符（单线程，最多1个）
     const DRAWING_NOTE_COLOR: [f32; 4] = [0.4, 0.8, 1.0, 1.0];
     if let crate::editor::editor_state::interaction::EditState::Drawing {
         start_tick,
@@ -206,7 +334,7 @@ pub(super) fn build_main_note_instances(
             (*start_tick, default_note_length)
         };
         let length = length.max(snap_precision);
-        instances.push(NoteInstance::new(
+        instances.push(lumino_gfx::NoteInstance::new(
             tick,
             *key as f32,
             length,

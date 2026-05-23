@@ -441,6 +441,70 @@ impl MidiDocument {
         Self::collect_notes(&self.events[start..end])
     }
 
+    /// 获取所有音轨（排除指定音轨）在指定 tick 范围内的音符。
+    /// 一次性查询所有音轨，避免多次二分查找和多次 Vec 分配。
+    ///
+    /// # 参数
+    /// - `exclude_track`: 要排除的音轨索引（通常是当前编辑音轨）
+    /// - `tick_start / tick_end`: tick 视口范围
+    pub fn get_all_notes_in_range_except(
+        &self,
+        exclude_track: usize,
+        tick_start: f32,
+        tick_end: f32,
+    ) -> Vec<(f32, u8, f32, u8, u8)> {
+        let tick_start_u = tick_start as u32;
+        let tick_end_u = tick_end as u32;
+        use crate::midi::constants::TICK_SEARCH_BUFFER;
+
+        // 预分配容量，避免多次扩容
+        let mut all_notes = Vec::with_capacity(1024);
+
+        for track_idx in 0..self.track_count() {
+            if track_idx == exclude_track {
+                continue;
+            }
+
+            let (range_start, range_end) = self
+                .track_events_range
+                .get(track_idx)
+                .copied()
+                .unwrap_or((0, 0));
+            if range_start >= range_end {
+                continue;
+            }
+
+            let events = &self.events[range_start..range_end];
+
+            let search_start = events.partition_point(|e| {
+                e.delta_tick() < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER)
+            });
+            let search_end = events.len().min(
+                search_start
+                    + events[search_start..].partition_point(|e| e.delta_tick() <= tick_end_u),
+            );
+
+            if search_start >= search_end {
+                continue;
+            }
+
+            // 直接收集音符到 all_notes，避免中间 Vec 分配
+            Self::collect_notes_to(&events[search_start..search_end], &mut all_notes);
+        }
+
+        // 按 tick 排序，保证输出顺序稳定
+        all_notes.sort_by(|a, b| a.0.total_cmp(&b.0));
+
+        // 过滤掉不完全在范围内的音符
+        all_notes.retain(|n| {
+            let start = n.0;
+            let end = start + n.2;
+            end >= tick_start && start <= tick_end
+        });
+
+        all_notes
+    }
+
     /// 共享音符收集逻辑：从一段已排序的事件切片中提取音符。
     /// 使用固定大小数组替代 HashMap：256 keys × 16 channels = 4096。
     fn collect_notes(events: &[CompactEvent]) -> Vec<(f32, u8, f32, u8, u8)> {
@@ -487,6 +551,50 @@ impl MidiDocument {
 
         notes.sort_by(|a, b| a.0.total_cmp(&b.0));
         notes
+    }
+
+    /// 将音符收集到指定的 Vec 中，避免中间分配。
+    /// 与 `collect_notes` 逻辑相同，但直接追加到传入的 Vec。
+    fn collect_notes_to(events: &[CompactEvent], out: &mut Vec<(f32, u8, f32, u8, u8)>) {
+        use crate::midi::constants::{MAX_CONCURRENT_NOTES, MIDI_CHANNEL_COUNT, MIDI_KEY_RANGE};
+
+        let mut active_notes: [(u32, u8, u8, bool); MAX_CONCURRENT_NOTES] =
+            [(0, 0, 0, false); MAX_CONCURRENT_NOTES];
+        let last_tick = events.last().map(|e| e.delta_tick()).unwrap_or(0);
+
+        for ev in events {
+            let tick = ev.delta_tick();
+            let key = ev.param1() as u8;
+            let vel = ev.param2() as u8;
+            let channel = ev.channel();
+            let idx = (channel as usize) * (MIDI_KEY_RANGE as usize) + (key as usize);
+
+            match ev.kind() {
+                EventKind::NoteOn if vel > 0 => {
+                    if active_notes[idx].3 {
+                        let (st, pv, pc, _) = active_notes[idx];
+                        out.push((st as f32, key, tick.saturating_sub(st) as f32, pv, pc));
+                    }
+                    active_notes[idx] = (tick, vel, channel, true);
+                }
+                EventKind::NoteOn | EventKind::NoteOff if active_notes[idx].3 => {
+                    let (st, pv, pc, _) = active_notes[idx];
+                    out.push((st as f32, key, tick.saturating_sub(st) as f32, pv, pc));
+                    active_notes[idx].3 = false;
+                }
+                _ => {}
+            }
+        }
+
+        for channel in 0..MIDI_CHANNEL_COUNT {
+            for key in 0..=u8::MAX {
+                let idx = (channel as usize) * (MIDI_KEY_RANGE as usize) + (key as usize);
+                if active_notes[idx].3 {
+                    let (st, vel, ch, _) = active_notes[idx];
+                    out.push((st as f32, key, last_tick.saturating_sub(st) as f32, vel, ch));
+                }
+            }
+        }
     }
 
     /// 获取音轨数量

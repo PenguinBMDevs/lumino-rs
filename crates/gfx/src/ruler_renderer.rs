@@ -107,6 +107,18 @@ pub struct RulerRenderer {
     subdivision_color: [f32; 4],
     /// 背景颜色
     background_color: [f32; 4],
+    /// 缓存的刻度实例数据（避免每帧重新生成）
+    cached_instances: Vec<RulerTickInstance>,
+    /// 缓存是否有效
+    cache_valid: bool,
+    /// 缓存参数：用于判断是否需要重新生成
+    cache_scroll_x: f32,
+    cache_zoom_x: f32,
+    cache_viewport_width: f32,
+    cache_keyboard_width: f32,
+    cache_ruler_height: f32,
+    cache_ticks_per_measure: u32,
+    cache_ticks_per_beat: u32,
 }
 
 impl RulerRenderer {
@@ -212,6 +224,15 @@ impl RulerRenderer {
             beat_color: [0.5, 0.5, 0.5, 1.0],
             subdivision_color: [0.7, 0.7, 0.7, 1.0],
             background_color: [0.9, 0.9, 0.9, 1.0],
+            cached_instances: Vec::new(),
+            cache_valid: false,
+            cache_scroll_x: 0.0,
+            cache_zoom_x: 0.0,
+            cache_viewport_width: 0.0,
+            cache_keyboard_width: 0.0,
+            cache_ruler_height: 0.0,
+            cache_ticks_per_measure: 0,
+            cache_ticks_per_beat: 0,
         }
     }
 
@@ -342,7 +363,7 @@ impl RulerRenderer {
         instances
     }
 
-    /// 准备渲染数据
+    /// 准备渲染数据（带缓存优化）
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -356,32 +377,49 @@ impl RulerRenderer {
         ticks_per_beat: u32,
     ) {
         puffin::profile_function!();
-        // 生成刻度实例
-        let instances = self.generate_tick_instances(
-            viewport_size.0,
-            keyboard_width,
-            ruler_height,
-            scroll_x,
-            zoom_x,
-            ticks_per_measure,
-            ticks_per_beat,
-        );
 
+        let params_changed = !self.cache_valid
+            || self.cache_scroll_x != scroll_x
+            || self.cache_zoom_x != zoom_x
+            || self.cache_viewport_width != viewport_size.0
+            || self.cache_keyboard_width != keyboard_width
+            || self.cache_ruler_height != ruler_height
+            || self.cache_ticks_per_measure != ticks_per_measure
+            || self.cache_ticks_per_beat != ticks_per_beat;
+
+        if params_changed {
+            self.cached_instances = self.generate_tick_instances(
+                viewport_size.0,
+                keyboard_width,
+                ruler_height,
+                scroll_x,
+                zoom_x,
+                ticks_per_measure,
+                ticks_per_beat,
+            );
+            self.cache_scroll_x = scroll_x;
+            self.cache_zoom_x = zoom_x;
+            self.cache_viewport_width = viewport_size.0;
+            self.cache_keyboard_width = keyboard_width;
+            self.cache_ruler_height = ruler_height;
+            self.cache_ticks_per_measure = ticks_per_measure;
+            self.cache_ticks_per_beat = ticks_per_beat;
+            self.cache_valid = true;
+        }
+
+        let instances = &self.cached_instances;
         let instance_count = instances.len();
 
-        // 扩容检查
         if instance_count > self.capacity {
             let new_capacity = (self.capacity * Self::GROWTH_FACTOR).max(instance_count);
             self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
             self.capacity = new_capacity;
         }
 
-        // 上传实例数据
         if instance_count > 0 {
-            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instances));
+            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
         }
 
-        // 更新视口 uniform
         let viewport_uniform = RulerViewportUniform::new(
             viewport_size.0,
             viewport_size.1,
