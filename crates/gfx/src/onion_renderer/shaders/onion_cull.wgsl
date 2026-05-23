@@ -2,7 +2,8 @@
 // 每个线程处理一个音符，通过原子计数器输出可见实例索引
 // 工作组大小: 256
 //
-// note_count / indices_capacity 从 viewport uniform 读取（替代 arrayLength）
+// 音符池需按 start_tick 升序排列
+// CPU 端二分查找定位 visible_start/visible_end，GPU 仅扫描该区间
 
 struct OnionNote {
     start_tick: u32,
@@ -18,7 +19,8 @@ struct OnionViewportUniform {
     pitch_max: f32,
     note_count: u32,
     indices_capacity: u32,
-    _padding: vec2<u32>,
+    visible_start: u32,
+    visible_end: u32,
 };
 
 struct OnionTrackMask {
@@ -70,14 +72,16 @@ fn main(
     @builtin(global_invocation_id) global_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
-    let index = global_id.x;
+    // visible_start 偏移：CPU 二分查找定位的起始索引
+    // 仅扫描 [visible_start, visible_end) 区间，跳过区间外的音符
+    let index = viewport.visible_start + global_id.x;
 
-    if (index == 0u) {
+    if (global_id.x == 0u) {
         atomicStore(&indirect_args.instance_count, 0u);
         indirect_args.vertex_count = 4u;
     }
 
-    let in_range = index < viewport.note_count;
+    let in_range = index < viewport.visible_end;
 
     var is_visible = false;
     if (in_range) {

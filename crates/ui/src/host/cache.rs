@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
+use crate::editor::onion_bg_pool::OnionBgTilePool;
 use iced_wgpu::wgpu;
 use lumino_gfx::{OnionBgTileRef, OnionNote, SwappableBuffer};
-use crate::editor::onion_bg_pool::OnionBgTilePool;
 
 /// 渲染缓存 - 避免每帧重复上传相同数据
 ///
@@ -15,16 +15,12 @@ pub struct RenderCache {
     pub grid_instances: Vec<lumino_gfx::GridLineInstance>,
     /// 双缓冲主音符实例数据（UI线程写入，渲染线程读取）
     pub note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
-    /// 双缓冲洋葱皮实例数据（Worker线程写入，渲染线程读取）
-    pub onion_skin_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
     /// 双缓冲洋葱皮背景瓦片引用（Worker线程写入，渲染线程读取）
     pub onion_bg_tiles_buffer: Arc<SwappableBuffer<OnionBgTileRef>>,
     /// 双缓冲洋葱皮音符池（SoA 布局，用于 GPU 计算剔除渲染）
     pub onion_note_buffer: Arc<SwappableBuffer<OnionNote>>,
     /// 主音符版本号（用于检测数据变化）
     pub note_instances_version: u64,
-    /// 洋葱皮版本号（用于检测数据变化）
-    pub onion_skin_instances_version: u64,
     /// 网格线视口哈希（用于检测变化）
     pub grid_viewport_hash: u64,
     /// 音符视口哈希（用于检测变化）
@@ -40,11 +36,9 @@ impl RenderCache {
         Self {
             grid_instances: Vec::new(),
             note_instances_buffer: Arc::new(SwappableBuffer::new(1024 * 1024)),
-            onion_skin_instances_buffer: Arc::new(SwappableBuffer::new(256 * 1024)),
             onion_bg_tiles_buffer: Arc::new(SwappableBuffer::new(1024)),
             onion_note_buffer: Arc::new(SwappableBuffer::new(256 * 1024)),
             note_instances_version: 0,
-            onion_skin_instances_version: 0,
             grid_viewport_hash: 0,
             note_viewport_hash: 0,
             depth_texture: None,
@@ -60,11 +54,6 @@ impl RenderCache {
     /// 检查音符实例是否为空
     pub fn note_instances_is_empty(&self) -> bool {
         unsafe { self.note_instances_buffer.read_buffer().is_empty() }
-    }
-
-    /// 获取洋葱皮实例数量
-    pub fn onion_skin_instances_len(&self) -> usize {
-        unsafe { self.onion_skin_instances_buffer.read_buffer().len() }
     }
 
     /// 计算视口哈希（滚动+缩放+画布大小+可见键数）

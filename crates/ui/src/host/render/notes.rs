@@ -19,9 +19,8 @@ impl Host {
         let canvas_offset_y = canvas.offset.y;
 
         let visible_tick_start = (view.scroll_x / view.zoom_x).max(0.0);
-        let visible_tick_end = ((view.scroll_x + canvas_width - keyboard_width)
-            / view.zoom_x)
-            .max(visible_tick_start);
+        let visible_tick_end =
+            ((view.scroll_x + canvas_width - keyboard_width) / view.zoom_x).max(visible_tick_start);
 
         // 用 scroll_y 计算真实的可见 key 范围（与 rendering.rs 保持一致）
         let max_key_index = (view.visible_key_count - 1) as f32;

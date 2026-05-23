@@ -22,8 +22,8 @@
 use std::sync::{Arc, mpsc};
 use std::thread;
 
-use lumino_gfx::{OnionNote, SwappableBuffer};
 use lumino_core::midi::MidiDocument;
+use lumino_gfx::{OnionNote, SwappableBuffer};
 
 // ─── 数据快照 ───────────────────────────────────────────────────────────────
 
@@ -154,6 +154,9 @@ impl NoteWorker {
 // ─── OnionNote 收集 ─────────────────────────────────────────────────────────
 
 /// 从 MIDI 文档收集所有非当前轨道的洋葱皮音符
+///
+/// 使用 Rayon 并行遍历音轨，收集后按 start_tick 排序
+/// 排序后的音符池使 GPU cull shader 可使用二分查找加速
 pub(super) fn collect_onion_notes(
     document: Option<&MidiDocument>,
     current_track: usize,
@@ -163,29 +166,41 @@ pub(super) fn collect_onion_notes(
         return Vec::new();
     };
 
-    let mut notes: Vec<OnionNote> = Vec::new();
+    use rayon::prelude::*;
     let num_tracks = doc.track_count();
 
-    for track_idx in 0..num_tracks {
-        if track_idx == current_track {
-            continue;
-        }
-        let is_onion = track_onion_enabled
-            .get(&track_idx)
-            .copied()
-            .unwrap_or(true);
-        if !is_onion {
-            continue;
-        }
+    // 并行遍历音轨，每个轨道生成独立 Vec，最后合并排序
+    let track_results: Vec<Vec<OnionNote>> = (0..num_tracks)
+        .into_par_iter()
+        .filter_map(|track_idx| {
+            if track_idx == current_track {
+                return None;
+            }
+            let is_onion = track_onion_enabled.get(&track_idx).copied().unwrap_or(true);
+            if !is_onion {
+                return None;
+            }
 
-        let track_idx_u16 = track_idx as u16;
-        let track_notes = doc.get_track_notes(track_idx as u16);
-        for (start, pitch, duration, _, _) in track_notes {
-            let start_u32 = start as u32;
-            let end = start_u32 + duration as u32;
-            notes.push(OnionNote::new(start_u32, end, pitch, track_idx_u16));
-        }
+            let track_idx_u16 = track_idx as u16;
+            let track_notes = doc.get_track_notes(track_idx as u16);
+            let mut track_notes_vec = Vec::with_capacity(track_notes.len());
+            for (start, pitch, duration, _, _) in track_notes {
+                let start_u32 = start as u32;
+                let end = start_u32 + duration as u32;
+                track_notes_vec.push(OnionNote::new(start_u32, end, pitch, track_idx_u16));
+            }
+            Some(track_notes_vec)
+        })
+        .collect();
+
+    let total: usize = track_results.iter().map(|v| v.len()).sum();
+    let mut notes = Vec::with_capacity(total);
+    for v in track_results {
+        notes.extend(v);
     }
+
+    // 按 start_tick 排序，GPU cull shader 可用二分查找定位可见范围
+    notes.sort_unstable_by_key(|n| n.start_tick);
 
     notes
 }

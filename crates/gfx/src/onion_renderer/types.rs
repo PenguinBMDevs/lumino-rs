@@ -41,6 +41,9 @@ impl OnionNote {
 }
 
 /// 视口裁剪 uniform — 定义可见 tick/pitch 范围 + cull 参数
+///
+/// 音符池需按 start_tick 升序排列，fill_cull_range 在 CPU 端执行二分查找
+/// 定位可见范围 [visible_start, visible_end)，GPU 仅扫描该区间
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct OnionViewportUniform {
@@ -50,12 +53,14 @@ pub struct OnionViewportUniform {
     /// 可见 pitch 范围 [min, max]
     pub pitch_min: f32,
     pub pitch_max: f32,
-    /// 音符总数（替代 compute shader 中的 arrayLength()）
+    /// 音符总数
     pub note_count: u32,
     /// 实例索引缓冲区容量
     pub indices_capacity: u32,
-    /// 填充至 16 字节对齐
-    pub _padding: [u32; 2],
+    /// CPU 二分查找定位的可见区间 [visible_start, visible_end)
+    /// 仅该区间内的音符会进入 cull shader 处理
+    pub visible_start: u32,
+    pub visible_end: u32,
 }
 
 impl Default for OnionViewportUniform {
@@ -67,8 +72,29 @@ impl Default for OnionViewportUniform {
             pitch_max: 0.0,
             note_count: 0,
             indices_capacity: 65536,
-            _padding: [0; 2],
+            visible_start: 0,
+            visible_end: 0,
         }
+    }
+}
+
+impl OnionViewportUniform {
+    /// CPU 二分查找填充 visible_start/visible_end
+    ///
+    /// 前提：notes 已按 start_tick 升序排列
+    pub fn fill_cull_range(&mut self, notes: &[OnionNote]) {
+        let tick_start_u = self.tick_start as u32;
+        let tick_end_u = self.tick_end as u32;
+
+        // 二分查找到第一个 start_tick > tick_end 的位置
+        let end = notes.partition_point(|n| n.start_tick <= tick_end_u);
+
+        // 二分查找第一个 start_tick >= tick_start 的位置，回退 256 作为安全余量
+        let start_bin = notes[..end].partition_point(|n| n.start_tick < tick_start_u);
+        let start = start_bin.saturating_sub(256);
+
+        self.visible_start = start as u32;
+        self.visible_end = end as u32;
     }
 }
 

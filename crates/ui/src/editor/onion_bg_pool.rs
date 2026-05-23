@@ -3,8 +3,8 @@
 //! 管理固定数量（`POOL_SIZE`）的离屏纹理，用于后台渲染洋葱皮背景瓦片。
 //! 纹理预先分配，通过空闲链表 + 淘汰策略复用。
 
-use std::sync::Arc;
 use iced_wgpu::wgpu;
+use std::sync::Arc;
 
 /// 洋葱皮背景瓦片元数据
 #[derive(Debug, Clone, Copy)]
@@ -60,8 +60,7 @@ impl OnionBgTilePool {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING
-                    | wgpu::TextureUsages::COPY_DST,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
             let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
@@ -99,7 +98,8 @@ impl OnionBgTilePool {
         let mut oldest_id = u64::MAX;
         for (i, meta) in self.tile_metadata.iter().enumerate() {
             if let Some(m) = meta
-                && m.lod == 0 && m.tile_id < oldest_id
+                && m.lod == 0
+                && m.tile_id < oldest_id
             {
                 oldest_id = m.tile_id;
                 evict_idx = Some(i);
@@ -160,7 +160,13 @@ impl OnionBgTilePool {
         if idx >= POOL_SIZE {
             return;
         }
-        tracing::info!("[UPLOAD] pool_idx={} {}x{} pixels.len={}", index, width, height, pixels.len());
+        tracing::info!(
+            "[UPLOAD] pool_idx={} {}x{} pixels.len={}",
+            index,
+            width,
+            height,
+            pixels.len()
+        );
         let new_tex = self.device.create_texture_with_data(
             &self.queue,
             &wgpu::TextureDescriptor {

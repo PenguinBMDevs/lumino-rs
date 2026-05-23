@@ -97,9 +97,8 @@ impl Host {
         self.ensure_note_worker();
         if let Some(ref worker) = self.render_ctx.note_worker {
             let vp_logical = self.render_ctx.viewport.logical_size();
-            let os_snapshot = self.collect_onion_skin_snapshot(
-                (vp_logical.width, vp_logical.height),
-            );
+            let os_snapshot =
+                self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));
             let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
 
             worker.send(super::note_worker::OnionSkinJob {

@@ -224,9 +224,8 @@ impl Host {
         if let Some(ref worker) = self.render_ctx.note_worker {
             puffin::profile_scope!("dispatch_onion_skin_job");
             let vp_logical = self.render_ctx.viewport.logical_size();
-            let os_snapshot = self.collect_onion_skin_snapshot(
-                (vp_logical.width, vp_logical.height),
-            );
+            let os_snapshot =
+                self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));
 
             worker.send(super::note_worker::OnionSkinJob {
                 snapshot: os_snapshot,

@@ -5,7 +5,7 @@ use iced_wgpu::wgpu;
 
 use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
-use lumino_gfx::{CameraParams, CameraUniform, OnionRenderer};
+use lumino_gfx::{CameraParams, CameraUniform};
 
 /// 执行渲染通道（含洋葱皮背景）
 #[allow(clippy::too_many_arguments)]

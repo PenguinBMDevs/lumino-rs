@@ -11,7 +11,7 @@
 //! - UI线程（主线程）：处理事件、更新状态、生成渲染命令
 //! - 渲染线程（独立线程）：接收命令、管理GPU资源、执行实际渲染
 
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use iced_core::{Font, Size};
@@ -186,7 +186,6 @@ impl Host {
             self.render_ctx.format,
             rx,
             Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
-            Arc::clone(&self.render_ctx.render_cache.onion_skin_instances_buffer),
             Some(Arc::clone(&self.render_ctx.render_cache.onion_note_buffer)),
         ) {
             Ok(thread) => {
@@ -263,20 +262,14 @@ impl Host {
             .note_instances_buffer
             .back_info();
         // 洋葱皮双缓冲容量
-        let (onion_front_cap, onion_front_len) = self
-            .render_ctx
-            .render_cache
-            .onion_skin_instances_buffer
-            .front_info();
-        let (onion_back_cap, onion_back_len) = self
-            .render_ctx
-            .render_cache
-            .onion_skin_instances_buffer
-            .back_info();
-        let instance_size = std::mem::size_of::<lumino_gfx::NoteInstance>() as u64;
+        let (onion_front_cap, onion_front_len) =
+            self.render_ctx.render_cache.onion_note_buffer.front_info();
+        let (onion_back_cap, onion_back_len) =
+            self.render_ctx.render_cache.onion_note_buffer.back_info();
+        let note_size = std::mem::size_of::<lumino_gfx::OnionNote>() as u64;
 
         tracing::debug!(
-            "MemoryBreakdown: note front(cap={}, len={}) back(cap={}, len={}) onion front(cap={}, len={}) back(cap={}, len={}) instance_size={}",
+            "MemoryBreakdown: note front(cap={}, len={}) back(cap={}, len={}) onion front(cap={}, len={}) back(cap={}, len={}) note_size={}",
             front_cap,
             front_len,
             back_cap,
@@ -285,7 +278,7 @@ impl Host {
             onion_front_len,
             onion_back_cap,
             onion_back_len,
-            instance_size
+            note_size
         );
 
         // 将双缓冲容量写入 breakdown 的附加字段
@@ -293,11 +286,11 @@ impl Host {
         breakdown.note_instances_front_len = front_len;
         breakdown.note_instances_back_cap = back_cap;
         breakdown.note_instances_back_len = back_len;
-        breakdown.note_instance_size = instance_size as usize;
-        breakdown.onion_skin_instances_front_cap = onion_front_cap;
-        breakdown.onion_skin_instances_front_len = onion_front_len;
-        breakdown.onion_skin_instances_back_cap = onion_back_cap;
-        breakdown.onion_skin_instances_back_len = onion_back_len;
+        breakdown.note_instance_size = std::mem::size_of::<lumino_gfx::NoteInstance>() as usize;
+        breakdown.onion_note_front_cap = onion_front_cap;
+        breakdown.onion_note_front_len = onion_front_len;
+        breakdown.onion_note_back_cap = onion_back_cap;
+        breakdown.onion_note_back_len = onion_back_len;
 
         breakdown
     }

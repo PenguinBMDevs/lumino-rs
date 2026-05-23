@@ -79,17 +79,11 @@ impl OnionRenderer {
     const MAX_INDICES_CAPACITY: usize = 33_554_432;
     const WORKGROUP_SIZE: u32 = 256;
 
-    const VERTEX_SHADER_SRC: &'static str =
-        include_str!("shaders/onion_render.wgsl");
-    const COMPUTE_SHADER_SRC: &'static str =
-        include_str!("shaders/onion_cull.wgsl");
+    const VERTEX_SHADER_SRC: &'static str = include_str!("shaders/onion_render.wgsl");
+    const COMPUTE_SHADER_SRC: &'static str = include_str!("shaders/onion_cull.wgsl");
 
     /// 创建新的洋葱皮渲染器
-    pub fn new(
-        device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-    ) -> Self {
+    pub fn new(device: &wgpu::Device, _queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         let vertex_shader_src = Self::VERTEX_SHADER_SRC;
         let compute_shader_src = Self::COMPUTE_SHADER_SRC;
 
@@ -104,11 +98,10 @@ impl OnionRenderer {
 
         let max_storage_binding = device.limits().max_storage_buffer_binding_size as u64;
         let max_buffer_size = device.limits().max_buffer_size;
-        let max_note_pool_bytes = max_storage_binding
-            .min(max_buffer_size)
-            .min(1_600_000_000) as usize;
-        let note_pool_capacity =
-            (max_note_pool_bytes / std::mem::size_of::<OnionNote>()).min(Self::INITIAL_NOTE_CAPACITY);
+        let max_note_pool_bytes =
+            max_storage_binding.min(max_buffer_size).min(1_600_000_000) as usize;
+        let note_pool_capacity = (max_note_pool_bytes / std::mem::size_of::<OnionNote>())
+            .min(Self::INITIAL_NOTE_CAPACITY);
 
         // ─── Compute bind group layout ──────────────────
         let compute_bind_group_layout =
@@ -241,57 +234,55 @@ impl OnionRenderer {
             });
 
         // ─── Compute pipeline ───────────────────────────
-        let compute_pipeline =
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("onion_compute_pipeline"),
-                layout: Some(&compute_pipeline_layout),
-                module: &compute_module,
-                entry_point: Some("main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None,
-            });
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("onion_compute_pipeline"),
+            layout: Some(&compute_pipeline_layout),
+            module: &compute_module,
+            entry_point: Some("main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
 
         // ─── Render pipeline ────────────────────────────
-        let render_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("onion_render_pipeline"),
-                layout: Some(&render_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &vertex_module,
-                    entry_point: Some("vs_main"),
-                    buffers: &[],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &vertex_module,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format,
-                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleStrip,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: None,
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    unclipped_depth: false,
-                    conservative: false,
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-                cache: None,
-            });
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("onion_render_pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &vertex_module,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &vertex_module,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
 
         // ─── Buffers ────────────────────────────────────
         let note_pool_buffer = Self::create_note_pool_buffer(device, note_pool_capacity);
@@ -481,7 +472,12 @@ impl OnionRenderer {
     /// 上传所有洋葱皮音符到 GPU
     ///
     /// 替换整个音符池内容。传入所有需要显示的其它音轨的音符。
-    pub fn upload_notes(&mut self, notes: &[OnionNote], device: &wgpu::Device, queue: &wgpu::Queue) {
+    pub fn upload_notes(
+        &mut self,
+        notes: &[OnionNote],
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) {
         let count = notes.len();
         if count == 0 {
             self.note_count = 0;
@@ -496,7 +492,7 @@ impl OnionRenderer {
         if required > self.note_pool_capacity {
             let max_capacity = (self.max_storage_binding as usize
                 / std::mem::size_of::<OnionNote>())
-                .min(100_000_000);
+            .min(100_000_000);
             let new_capacity = required.min(max_capacity);
             if new_capacity > self.note_pool_capacity {
                 self.note_pool_buffer = Self::create_note_pool_buffer(device, new_capacity);
@@ -511,7 +507,8 @@ impl OnionRenderer {
         }
 
         // 空闲缩容：当实际使用量远低于容量时释放内存
-        let shrink_threshold = (self.note_pool_capacity as f64 * Self::INDICES_SHRINK_THRESHOLD) as usize;
+        let shrink_threshold =
+            (self.note_pool_capacity as f64 * Self::INDICES_SHRINK_THRESHOLD) as usize;
         if count < shrink_threshold && self.note_pool_capacity > Self::INITIAL_NOTE_CAPACITY * 2 {
             let new_capacity = count.next_power_of_two().max(Self::INITIAL_NOTE_CAPACITY);
             if new_capacity < self.note_pool_capacity {
@@ -529,7 +526,9 @@ impl OnionRenderer {
         // 按需扩容 instance_indices_buffer（可见音符可能接近总数）
         let required_indices = count;
         if required_indices > self.indices_capacity {
-            let new_indices_cap = required_indices.next_power_of_two().min(Self::MAX_INDICES_CAPACITY);
+            let new_indices_cap = required_indices
+                .next_power_of_two()
+                .min(Self::MAX_INDICES_CAPACITY);
             if new_indices_cap > self.indices_capacity {
                 self.instance_indices_buffer =
                     Self::create_instance_indices_buffer(device, new_indices_cap);
@@ -573,17 +572,14 @@ impl OnionRenderer {
         if Some(mask) != self.last_track_mask.as_ref() {
             self.last_track_mask = Some(*mask);
         }
-        queue.write_buffer(
-            &self.track_mask_buffer,
-            0,
-            bytemuck::cast_slice(&[*mask]),
-        );
+        queue.write_buffer(&self.track_mask_buffer, 0, bytemuck::cast_slice(&[*mask]));
     }
 
     /// 准备计算剔除（视口或轨道掩码变化时调用）
     ///
     /// 执行 compute shader 剔除，结果写入 instance_indices_buffer 和 indirect_buffer。
     /// 内置 dirty tracking：当视口/相机/轨道掩码/音符均未变化时跳过 compute dispatch。
+    /// `notes` 参数提供 CPU 端音符切片，用于二分查找定位可见范围，减少 GPU 扫描量。
     pub fn prepare_cull(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -591,13 +587,31 @@ impl OnionRenderer {
         camera: &CameraUniform,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
+        notes: Option<&[OnionNote]>,
     ) {
         if self.note_count == 0 {
             return;
         }
 
+        // 构建完整的 viewport uniform（合并 cull 参数）
+        let mut full_viewport = OnionViewportUniform {
+            tick_start: viewport.tick_start,
+            tick_end: viewport.tick_end,
+            pitch_min: viewport.pitch_min,
+            pitch_max: viewport.pitch_max,
+            note_count: self.note_count as u32,
+            indices_capacity: self.indices_capacity as u32,
+            visible_start: 0,
+            visible_end: self.note_count as u32,
+        };
+
+        // CPU 二分查找定位可见音符范围，GPU 跳过区间外的音符扫描
+        if let Some(note_slice) = notes {
+            full_viewport.fill_cull_range(note_slice);
+        }
+
         // Dirty check：检测视口/相机/轨道掩码/音符是否有变化
-        let viewport_changed = self.last_viewport.as_ref() != Some(viewport);
+        let viewport_changed = self.last_viewport.as_ref() != Some(&full_viewport);
         let camera_changed = self.last_camera.as_ref() != Some(camera);
         let anything_dirty = viewport_changed || camera_changed || self.notes_dirty;
 
@@ -606,22 +620,11 @@ impl OnionRenderer {
         }
 
         // 更新缓存状态
-        self.last_viewport = Some(*viewport);
+        self.last_viewport = Some(full_viewport);
         self.last_camera = Some(*camera);
         self.notes_dirty = false;
 
-        // 构建完整的 viewport uniform（合并 cull 参数：note_count + indices_capacity）
-        let full_viewport = OnionViewportUniform {
-            tick_start: viewport.tick_start,
-            tick_end: viewport.tick_end,
-            pitch_min: viewport.pitch_min,
-            pitch_max: viewport.pitch_max,
-            note_count: self.note_count as u32,
-            indices_capacity: self.indices_capacity as u32,
-            _padding: [0; 2],
-        };
-
-        // 上传视口 uniform（含 cull 参数，仅在变化时上传）
+        // 上传视口 uniform，仅在变化时上传
         if viewport_changed || self.notes_dirty {
             queue.write_buffer(
                 &self.viewport_buffer,
@@ -629,13 +632,9 @@ impl OnionRenderer {
                 bytemuck::cast_slice(&[full_viewport]),
             );
         }
-        // 上传相机 uniform（仅在变化时上传）
+        // 上传相机 uniform，仅在变化时上传
         if camera_changed {
-            queue.write_buffer(
-                &self.camera_buffer,
-                0,
-                bytemuck::cast_slice(&[*camera]),
-            );
+            queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[*camera]));
         }
 
         // 如果 bind group 因 buffer 重建而脏了，先修复
@@ -644,15 +643,15 @@ impl OnionRenderer {
             self.bind_groups_dirty = false;
         }
 
-        // 执行 Compute Culling
+        // 执行 Compute Culling — 仅派发可见范围内的 workgroup
+        let cull_count = full_viewport.visible_end - full_viewport.visible_start;
+        let workgroup_count = cull_count.div_ceil(Self::WORKGROUP_SIZE).max(1);
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("onion_cull_pass"),
             timestamp_writes: None,
         });
         compute_pass.set_pipeline(&self.compute_pipeline);
         compute_pass.set_bind_group(0, &self.compute_bind_group, &[]);
-
-        let workgroup_count = (self.note_count as u32).div_ceil(Self::WORKGROUP_SIZE);
         compute_pass.dispatch_workgroups(workgroup_count, 1, 1);
     }
 
@@ -713,9 +712,7 @@ impl OnionRenderer {
 
 /// 将 OnionSkinColors（来自 ui crate）转换为 OnionTrackColors
 /// 由 UI 层调用，传入数组 [r, g, b, a] 颜色值
-pub fn convert_onion_colors(
-    colors: &[(f32, f32, f32, f32)],
-) -> OnionTrackColors {
+pub fn convert_onion_colors(colors: &[(f32, f32, f32, f32)]) -> OnionTrackColors {
     let mut track_colors = OnionTrackColors::default();
     for (i, &(r, g, b, a)) in colors.iter().enumerate() {
         if i >= 64 {
