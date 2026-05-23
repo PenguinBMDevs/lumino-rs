@@ -67,12 +67,18 @@ fn print_midi_message(data: &[u8]) {
             if vel == 0 {
                 println!(
                     "  \x1b[35mNoteOff\x1b[0m  ch={:2} key={:3} ({:8}) vel={:3}  [零力度 NoteOn 转换]",
-                    channel, key, note_name(key), vel
+                    channel,
+                    key,
+                    note_name(key),
+                    vel
                 );
             } else {
                 println!(
                     "  \x1b[32mNoteOn\x1b[0m   ch={:2} key={:3} ({:8}) vel={:3}",
-                    channel, key, note_name(key), vel
+                    channel,
+                    key,
+                    note_name(key),
+                    vel
                 );
             }
         }
@@ -81,7 +87,10 @@ fn print_midi_message(data: &[u8]) {
             let vel = data[2];
             println!(
                 "  \x1b[35mNoteOff\x1b[0m  ch={:2} key={:3} ({:8}) vel={:3}",
-                channel, key, note_name(key), vel
+                channel,
+                key,
+                note_name(key),
+                vel
             );
         }
         STATUS_CONTROL_CHANGE if data.len() >= 3 => {
@@ -106,7 +115,9 @@ fn print_midi_message(data: &[u8]) {
         _ => {
             print!("  Raw: [");
             for (i, b) in data.iter().enumerate() {
-                if i > 0 { print!(", "); }
+                if i > 0 {
+                    print!(", ");
+                }
                 print!("{:02X}", b);
             }
             println!("]");
@@ -116,7 +127,9 @@ fn print_midi_message(data: &[u8]) {
 
 /// 将 MIDI 键号转换为音符名称
 fn note_name(key: u8) -> String {
-    let names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let names = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
     let octave = (key / 12) as i8 - 1;
     let note = names[(key % 12) as usize];
     format!("{}{}", note, octave)

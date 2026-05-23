@@ -80,8 +80,13 @@ impl lumino_midi::Api for MockMidiApi {
         Ok(vec![])
     }
 
-    fn open_output(&self, _id: u32) -> Result<Box<dyn lumino_midi::OutputConnection>, lumino_midi::Error> {
-        Err(lumino_midi::Error::OpenOutputFailed("mock 无输出".to_string()))
+    fn open_output(
+        &self,
+        _id: u32,
+    ) -> Result<Box<dyn lumino_midi::OutputConnection>, lumino_midi::Error> {
+        Err(lumino_midi::Error::OpenOutputFailed(
+            "mock 无输出".to_string(),
+        ))
     }
 
     fn open_input(
@@ -156,7 +161,11 @@ fn test_single_note_recording_lifecycle() {
     assert!(!root.toolbar.is_recording, "工具栏录制标志应为 false");
 
     // 验证音符保留在编辑器中
-    assert_eq!(root.editor.editor_state.data.notes.len(), 1, "停止后音符应保留");
+    assert_eq!(
+        root.editor.editor_state.data.notes.len(),
+        1,
+        "停止后音符应保留"
+    );
 
     // 验证 undo 历史
     assert!(root.editor.can_undo(), "录制后应有 undo 历史");
@@ -229,11 +238,15 @@ fn test_duplicate_note_on_ignored() {
     {
         let mut buf = root.midi_input_buffer.lock().unwrap();
         buf.push_back(vec![0x90, 60, 100]); // NoteOn C4
-        buf.push_back(vec![0x90, 60, 80]);  // 重复 NoteOn C4（应被忽略）
+        buf.push_back(vec![0x90, 60, 80]); // 重复 NoteOn C4（应被忽略）
     }
     root.poll_midi_input();
 
-    assert_eq!(root.editor.editor_state.data.notes.len(), 1, "重复 NoteOn 应只创建一个音符");
+    assert_eq!(
+        root.editor.editor_state.data.notes.len(),
+        1,
+        "重复 NoteOn 应只创建一个音符"
+    );
 
     // NoteOff
     {
@@ -351,10 +364,7 @@ fn test_recording_state_machine() {
 
     // 尝试开始录制（应失败但无 panic）
     root.update(Message::Toolbar(toolbar::Event::Record));
-    assert!(
-        !root.recording.is_recording,
-        "无 MIDI API 时录制不应启动"
-    );
+    assert!(!root.recording.is_recording, "无 MIDI API 时录制不应启动");
 
     // 现在设置 API
     root.midi_api = Some(Box::new(MockMidiApi::new()));
@@ -395,12 +405,7 @@ fn test_recording_position_advancement() {
     root.poll_midi_input();
     let pos2 = root.editor.playback_position;
 
-    assert!(
-        pos2 > pos1,
-        "录制位置应随时间推进 ({} -> {})",
-        pos1,
-        pos2
-    );
+    assert!(pos2 > pos1, "录制位置应随时间推进 ({} -> {})", pos1, pos2);
 
     root.update(Message::Toolbar(toolbar::Event::RecordStop));
 }
@@ -413,17 +418,16 @@ fn test_midi_api_device_enumeration() {
     let mut root = Root::new(&UiConfig::default());
 
     // 设置前设备列表为空
-    assert!(root.settings().midi_devices.is_empty(), "初始设备列表应为空");
+    assert!(
+        root.settings().midi_devices.is_empty(),
+        "初始设备列表应为空"
+    );
 
     // 设置 Mock API
     root.set_midi_api(Box::new(MockMidiApi::new()));
 
     // 验证设备列表已缓存
-    assert_eq!(
-        root.settings().midi_devices.len(),
-        2,
-        "应缓存 2 个输入设备"
-    );
+    assert_eq!(root.settings().midi_devices.len(), 2, "应缓存 2 个输入设备");
     assert_eq!(
         root.settings().midi_devices[0].1,
         "Mock MIDI Keyboard",

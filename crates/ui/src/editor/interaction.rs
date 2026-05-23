@@ -91,25 +91,22 @@ impl Editor {
             match sel_hit {
                 super::SelectionHitType::Inside => {
                     self.push_history();
-                    self.editor_state.interaction.edit_state =
-                        EditState::DraggingSelection {
-                            last_tick: tick,
-                            last_key: key,
-                        };
+                    self.editor_state.interaction.edit_state = EditState::DraggingSelection {
+                        last_tick: tick,
+                        last_key: key,
+                    };
                 }
                 super::SelectionHitType::LeftEdge => {
                     self.push_history();
-                    self.editor_state.interaction.edit_state =
-                        EditState::ResizingSelectionStart {
-                            last_tick: snapped_tick,
-                        };
+                    self.editor_state.interaction.edit_state = EditState::ResizingSelectionStart {
+                        last_tick: snapped_tick,
+                    };
                 }
                 super::SelectionHitType::RightEdge => {
                     self.push_history();
-                    self.editor_state.interaction.edit_state =
-                        EditState::ResizingSelectionEnd {
-                            last_tick: snapped_tick,
-                        };
+                    self.editor_state.interaction.edit_state = EditState::ResizingSelectionEnd {
+                        last_tick: snapped_tick,
+                    };
                 }
             }
         } else {

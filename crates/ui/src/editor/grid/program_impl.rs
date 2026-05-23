@@ -108,28 +108,22 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             EditState::ResizingStart { .. }
             | EditState::ResizingEnd { .. }
             | EditState::ResizingSelectionStart { .. }
-            | EditState::ResizingSelectionEnd { .. } => {
-                mouse::Interaction::ResizingHorizontally
-            }
+            | EditState::ResizingSelectionEnd { .. } => mouse::Interaction::ResizingHorizontally,
             EditState::Drawing { .. } => mouse::Interaction::Crosshair,
             EditState::Selecting { .. } => mouse::Interaction::Crosshair,
             EditState::Scrubbing => mouse::Interaction::Grabbing,
             EditState::Idle => {
                 // 先检查是否悬停在选择框上
                 if let Some(cursor_pos) = _cursor.position() {
-                    let local_pos = iced_core::Point::new(
-                        cursor_pos.x - _bounds.x,
-                        cursor_pos.y - _bounds.y,
-                    );
+                    let local_pos =
+                        iced_core::Point::new(cursor_pos.x - _bounds.x, cursor_pos.y - _bounds.y);
                     if let Some(sel_hit) = self.editor.hit_test_selection_box(local_pos) {
                         return match sel_hit {
                             crate::editor::SelectionHitType::LeftEdge
                             | crate::editor::SelectionHitType::RightEdge => {
                                 mouse::Interaction::ResizingHorizontally
                             }
-                            crate::editor::SelectionHitType::Inside => {
-                                mouse::Interaction::Pointer
-                            }
+                            crate::editor::SelectionHitType::Inside => mouse::Interaction::Pointer,
                         };
                     }
                 }

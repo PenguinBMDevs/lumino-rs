@@ -112,8 +112,7 @@ impl Editor {
                     for i in selected {
                         if let Some(note) = self.editor_state.data.notes.get_mut(i) {
                             note.tick = (note.tick + delta_tick).max(0.0);
-                            note.key =
-                                (note.key as i32 + delta_key).clamp(0, max_key) as u16;
+                            note.key = (note.key as i32 + delta_key).clamp(0, max_key) as u16;
                         }
                     }
 

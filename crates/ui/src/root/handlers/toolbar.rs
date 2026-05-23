@@ -201,7 +201,10 @@ impl ToolbarHandler {
 
         tracing::info!("Root: 执行量化操作");
 
-        let grid_size = root.editor.editor_state.view.snap_precision;
+        // 使用当前视觉网格线间隔作为量化网格，与显示保持一致
+        let zoom_x = root.editor.editor_state.view.zoom_x;
+        let ppq = root.editor.editor_state.view.ppq as f32;
+        let grid_size = crate::editor::grid::utils::adaptive_grid_gap(zoom_x, ppq);
 
         if root.editor.editor_state.data.notes.is_empty() {
             tracing::debug!("Root: 没有音符需要量化");
@@ -235,13 +238,14 @@ impl ToolbarHandler {
         );
         root.editor.editor_state.data.history.push(snapshot);
 
-        let mut quantizable_notes: Vec<lumino_core::midi::quantize::QuantizableNote> = selected_indices
-            .iter()
-            .map(|&i| {
-                let note = &root.editor.editor_state.data.notes[i];
-                lumino_core::midi::quantize::QuantizableNote::new(note.tick, note.length)
-            })
-            .collect();
+        let mut quantizable_notes: Vec<lumino_core::midi::quantize::QuantizableNote> =
+            selected_indices
+                .iter()
+                .map(|&i| {
+                    let note = &root.editor.editor_state.data.notes[i];
+                    lumino_core::midi::quantize::QuantizableNote::new(note.tick, note.length)
+                })
+                .collect();
 
         let modified_count =
             lumino_core::midi::quantize::quantize_notes(&mut quantizable_notes, &config);

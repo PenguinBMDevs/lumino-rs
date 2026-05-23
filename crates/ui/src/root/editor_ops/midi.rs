@@ -717,11 +717,7 @@ mod tests {
         let note = &root.editor.editor_state.data.notes[0];
         assert_eq!(note.key, 60);
         assert_eq!(note.velocity, 100);
-        assert!(
-            note.tick >= 0.0,
-            "音符 tick 应 >= 0，实际 {}",
-            note.tick
-        );
+        assert!(note.tick >= 0.0, "音符 tick 应 >= 0，实际 {}", note.tick);
 
         // 验证 pending_notes 追踪
         assert!(
@@ -754,11 +750,7 @@ mod tests {
         // 验证音符长度已更新（基于墙钟时间，length > 0）
         assert_eq!(root.editor.editor_state.data.notes.len(), 1);
         let note = &root.editor.editor_state.data.notes[0];
-        assert!(
-            note.length > 0.0,
-            "音符长度应大于 0，实际 {}",
-            note.length
-        );
+        assert!(note.length > 0.0, "音符长度应大于 0，实际 {}", note.length);
 
         // 验证 pending_notes 已清除
         assert!(
