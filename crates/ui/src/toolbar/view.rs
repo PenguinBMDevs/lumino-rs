@@ -54,10 +54,12 @@ impl Toolbar {
                 tool_selector(icon::Pencil, Tool::Pencil, self.current_tool, window),
                 space().width(4),
                 tool_selector(icon::Eraser, Tool::Eraser, self.current_tool, window),
+                space().width(4),
+                tool_button(icon::Quantize, Event::quantize(), window),
             ]
             .align_y(Alignment::Center),
         )
-        .width(285)
+        .width(340)
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
         .align_x(iced_core::alignment::Horizontal::Center)

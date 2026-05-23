@@ -34,6 +34,9 @@ impl ToolbarHandler {
         // 处理撤销/重做
         self.handle_toolbar_undo_redo(root, &event);
 
+        // 处理量化
+        self.handle_toolbar_quantize(root, &event);
+
         // 处理协作对话框
         self.handle_toolbar_collaboration(root, &event);
     }
@@ -159,9 +162,71 @@ impl ToolbarHandler {
     fn handle_toolbar_collaboration(&self, _root: &mut Root, event: &crate::toolbar::Event) {
         if matches!(event, crate::toolbar::Event::OpenCollaborationDialog) {
             tracing::info!("Root: 触发打开协作对话框");
-            lumino_core::event::emit(lumino_core::event::Event::Window(
+            lumino_core::event::emit(lumino_core::Event::Window(
                 lumino_core::event::window::Event::OpenCollaborationDialog,
             ));
+        }
+    }
+
+    fn handle_toolbar_quantize(&self, root: &mut Root, event: &crate::toolbar::Event) {
+        if !matches!(event, crate::toolbar::Event::Quantize) {
+            return;
+        }
+
+        tracing::info!("Root: 执行量化操作");
+
+        let editor = &mut root.editor;
+        let data = &mut editor.editor_state.data;
+
+        if data.notes.is_empty() {
+            tracing::debug!("Root: 没有音符需要量化");
+            return;
+        }
+
+        let grid_size = editor.editor_state.view.snap_precision;
+        let config = lumino_core::midi::quantize::QuantizeConfig::new(grid_size, 1.0);
+
+        tracing::info!(
+            "Root: 量化配置 - 网格大小: {} ticks, 音符数量: {}",
+            grid_size,
+            data.notes.len()
+        );
+
+        let snapshot =
+            crate::editor::history::EditorSnapshot::new(data.notes.clone(), data.current_track);
+        data.history.push(snapshot);
+
+        let mut quantizable_notes: Vec<lumino_core::midi::quantize::QuantizableNote> = data
+            .notes
+            .iter()
+            .map(|note| lumino_core::midi::quantize::QuantizableNote::new(note.tick, note.length))
+            .collect();
+
+        let modified_count =
+            lumino_core::midi::quantize::quantize_notes(&mut quantizable_notes, &config);
+
+        if modified_count > 0 {
+            for (i, quantized) in quantizable_notes.iter().enumerate() {
+                if let Some(note) = data.notes.get_mut(i) {
+                    note.tick = quantized.tick;
+                    note.length = quantized.length;
+                }
+            }
+
+            editor.mark_notes_changed();
+            tracing::info!("Root: 量化完成，修改了 {} 个音符", modified_count);
+        } else {
+            data.history
+                .undo(crate::editor::history::EditorSnapshot::new(
+                    data.notes.clone(),
+                    data.current_track,
+                ));
+            tracing::debug!("Root: 没有音符被量化");
+        }
+
+        if editor.notes_changed() {
+            root.update_playback_notes();
+            editor.clear_notes_changed();
         }
     }
 

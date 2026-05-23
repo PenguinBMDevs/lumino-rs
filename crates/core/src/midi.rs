@@ -5,6 +5,7 @@ pub mod error;
 pub mod event;
 pub mod info;
 pub mod loader;
+pub mod quantize;
 pub mod track;
 
 pub use dms::DmsInfo;

@@ -47,6 +47,11 @@ impl Host {
             (winit::keyboard::KeyCode::KeyC, true, _) => Some(message::EditorAction::Copy),
             (winit::keyboard::KeyCode::KeyV, true, _) => Some(message::EditorAction::Paste),
             (winit::keyboard::KeyCode::KeyA, true, _) => Some(message::EditorAction::SelectAll),
+            (winit::keyboard::KeyCode::KeyQ, true, _) => {
+                self.root
+                    .update(message::Message::Toolbar(toolbar::Event::Quantize));
+                None
+            }
             _ => None,
         };
 

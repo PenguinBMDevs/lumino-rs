@@ -16,6 +16,8 @@ pub enum Event {
     Undo,
     Redo,
     ToolSelected(Tool),
+    /// 量化音符
+    Quantize,
     /// 精度设置变更
     PrecisionChanged(NotePrecision),
     /// 打开自定义精度对话框
@@ -75,8 +77,12 @@ impl Event {
         Message::Toolbar(Self::Redo)
     }
 
-    pub const fn tool_selected(tool: Tool) -> Message {
+    pub fn tool_selected(tool: Tool) -> Message {
         Message::Toolbar(Self::ToolSelected(tool))
+    }
+
+    pub const fn quantize() -> Message {
+        Message::Toolbar(Self::Quantize)
     }
 
     pub const fn precision_changed(precision: NotePrecision) -> Message {

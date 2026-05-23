@@ -66,6 +66,9 @@ impl Toolbar {
                 tracing::debug!("工具栏: 重做操作");
             }
             Event::ToolSelected(tool) => self.current_tool = tool,
+            Event::Quantize => {
+                tracing::debug!("工具栏: 量化操作");
+            }
             Event::PrecisionChanged(precision) => {
                 self.note_precision = precision;
                 tracing::debug!("工具栏: 精度设置变更为 {:?}", precision);

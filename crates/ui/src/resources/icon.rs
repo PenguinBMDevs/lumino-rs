@@ -64,6 +64,7 @@ pub enum Icon {
     MousePointer,
     Pencil,
     Eraser,
+    Quantize,
     // 自动滚动图标
     ArrowsLeftRight,
     Scroll,
@@ -112,13 +113,14 @@ fn build_icon_cache() -> HashMap<Icon, IconData> {
         Icon::MousePointer,
         Icon::Pencil,
         Icon::Eraser,
+        Icon::Quantize,
         // 自动滚动图标
-    Icon::ArrowsLeftRight,
-    Icon::Scroll,
-    Icon::Ban,
-    // 标题栏图标
-    Icon::PencilOutline,
-    Icon::Keys,
+        Icon::ArrowsLeftRight,
+        Icon::Scroll,
+        Icon::Ban,
+        // 标题栏图标
+        Icon::PencilOutline,
+        Icon::Keys,
     ] {
         match render_svg_to_data(icon) {
             Ok(data) => {
@@ -336,6 +338,7 @@ fn bytes(icon: Icon) -> &'static [u8] {
         }
         Icon::Pencil => include_bytes!("../../../../resources/icons/toolbar/pencil.svg"),
         Icon::Eraser => include_bytes!("../../../../resources/icons/toolbar/eraser.svg"),
+        Icon::Quantize => include_bytes!("../../../../resources/icons/toolbar/quantize.svg"),
         // 自动滚动图标
         Icon::ArrowsLeftRight => {
             include_bytes!("../../../../resources/icons/toolbar/arrows-left-right.svg")
