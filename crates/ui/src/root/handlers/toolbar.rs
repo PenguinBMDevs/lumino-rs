@@ -52,6 +52,9 @@ impl ToolbarHandler {
             crate::toolbar::Event::Stop => {
                 Self::do_stop(root);
             }
+            crate::toolbar::Event::ToggleLoop => {
+                Self::do_toggle_loop(root);
+            }
             _ => {}
         }
     }
@@ -86,6 +89,14 @@ impl ToolbarHandler {
             root.editor.playback_position = 0.0;
             tracing::info!("Root: 停止播放");
         }
+    }
+
+    /// 执行循环切换逻辑
+    fn do_toggle_loop(root: &mut Root) {
+        use crate::message::LoopRangeAction;
+
+        let action = LoopRangeAction::Toggle;
+        root.handle_loop_range_action(action);
     }
 
     /// 初始化播放管理器
@@ -175,28 +186,31 @@ impl ToolbarHandler {
 
         tracing::info!("Root: 执行量化操作");
 
-        let editor = &mut root.editor;
-        let data = &mut editor.editor_state.data;
+        let grid_size = root.editor.editor_state.view.snap_precision;
 
-        if data.notes.is_empty() {
+        if root.editor.editor_state.data.notes.is_empty() {
             tracing::debug!("Root: 没有音符需要量化");
             return;
         }
 
-        let grid_size = editor.editor_state.view.snap_precision;
         let config = lumino_core::midi::quantize::QuantizeConfig::new(grid_size, 1.0);
 
         tracing::info!(
             "Root: 量化配置 - 网格大小: {} ticks, 音符数量: {}",
             grid_size,
-            data.notes.len()
+            root.editor.editor_state.data.notes.len()
         );
 
-        let snapshot =
-            crate::editor::history::EditorSnapshot::new(data.notes.clone(), data.current_track);
-        data.history.push(snapshot);
+        let snapshot = crate::editor::history::EditorSnapshot::new(
+            root.editor.editor_state.data.notes.clone(),
+            root.editor.editor_state.data.current_track,
+        );
+        root.editor.editor_state.data.history.push(snapshot);
 
-        let mut quantizable_notes: Vec<lumino_core::midi::quantize::QuantizableNote> = data
+        let mut quantizable_notes: Vec<lumino_core::midi::quantize::QuantizableNote> = root
+            .editor
+            .editor_state
+            .data
             .notes
             .iter()
             .map(|note| lumino_core::midi::quantize::QuantizableNote::new(note.tick, note.length))
@@ -207,26 +221,27 @@ impl ToolbarHandler {
 
         if modified_count > 0 {
             for (i, quantized) in quantizable_notes.iter().enumerate() {
-                if let Some(note) = data.notes.get_mut(i) {
+                if let Some(note) = root.editor.editor_state.data.notes.get_mut(i) {
                     note.tick = quantized.tick;
                     note.length = quantized.length;
                 }
             }
 
-            editor.mark_notes_changed();
+            root.editor.mark_notes_changed();
             tracing::info!("Root: 量化完成，修改了 {} 个音符", modified_count);
         } else {
-            data.history
-                .undo(crate::editor::history::EditorSnapshot::new(
-                    data.notes.clone(),
-                    data.current_track,
-                ));
+            root.editor.editor_state.data.history.undo(
+                crate::editor::history::EditorSnapshot::new(
+                    root.editor.editor_state.data.notes.clone(),
+                    root.editor.editor_state.data.current_track,
+                ),
+            );
             tracing::debug!("Root: 没有音符被量化");
         }
 
-        if editor.notes_changed() {
+        if root.editor.notes_changed() {
             root.update_playback_notes();
-            editor.clear_notes_changed();
+            root.editor.clear_notes_changed();
         }
     }
 

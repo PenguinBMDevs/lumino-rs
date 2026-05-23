@@ -46,6 +46,60 @@ impl Toolbar {
                 })
         });
 
+        // 循环按钮区域
+        let loop_button = container(
+            button(
+                row![icon::view_with_size_and_theme(
+                    if self.is_looping {
+                        icon::ArrowsLeftRight
+                    } else {
+                        icon::Ban
+                    },
+                    20,
+                    20,
+                    Some(&window.theme),
+                ),]
+                .align_y(Alignment::Center),
+            )
+            .on_press(Event::toggle_loop())
+            .style(move |_theme: &Theme, status| {
+                let bg = if self.is_looping {
+                    palette.primary.base.color
+                } else if status == iced_widget::button::Status::Hovered {
+                    palette.background.weak.color
+                } else {
+                    iced_core::Color::TRANSPARENT
+                };
+                button::Style {
+                    border: iced_core::Border {
+                        radius: 4.0.into(),
+                        width: 0.0,
+                        color: iced_core::Color::TRANSPARENT,
+                    },
+                    ..Default::default()
+                }
+                .with_background(bg)
+            })
+            .padding(4),
+        )
+        .width(40)
+        .height(content_height)
+        .align_y(iced_core::alignment::Vertical::Center)
+        .align_x(iced_core::alignment::Horizontal::Center)
+        .style(move |_theme: &Theme| {
+            container::Style::default()
+                .background(if self.is_looping {
+                    palette.primary.weak.color
+                } else {
+                    palette.background.weak.color
+                })
+                .border(iced_core::Border {
+                    radius: 4.0.into(),
+                    width: 0.0,
+                    color: iced_core::Color::TRANSPARENT,
+                })
+        });
+
         // 工具选择区域 (285px 宽)
         let tools = container(
             row![
@@ -236,7 +290,9 @@ impl Toolbar {
         let toolbar_content = container(
             row![
                 playback_controls,
-                space().width(16),
+                space().width(8),
+                loop_button,
+                space().width(8),
                 undo_redo_controls,
                 space().width(16),
                 tools,

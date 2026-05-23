@@ -19,6 +19,8 @@ pub use types::{
 pub struct Toolbar {
     pub current_tool: Tool,
     pub is_playing: bool,
+    /// 是否启用循环播放
+    pub is_looping: bool,
     /// 工具栏高度（默认 72）
     pub height: f32,
     /// 是否正在拖拽调整高度
@@ -41,6 +43,7 @@ impl Toolbar {
         Self {
             current_tool: Tool::default(),
             is_playing: false,
+            is_looping: false,
             height: DEFAULT_HEIGHT,
             is_resizing: false,
             resize_start_y: 0.0,
@@ -82,8 +85,6 @@ impl Toolbar {
                 tracing::debug!("工具栏: 关闭自定义精度对话框");
             }
             Event::ConfirmCustomPrecision => {
-                // 确认自定义精度，此时Toolbar会保持Custom状态
-                // 实际的tick计算在Root中处理
                 self.custom_precision_dialog.is_open = false;
                 tracing::debug!("工具栏: 确认自定义精度");
             }
@@ -94,7 +95,6 @@ impl Toolbar {
             }
             Event::CustomPrecisionTupletTypeChanged(value) => {
                 self.custom_precision_dialog.tuplet_type = value;
-                // 同步更新数量输入框
                 self.custom_precision_dialog.tuplet_count = value.value().to_string();
             }
             Event::CustomPrecisionDotTypeChanged(value) => {
@@ -111,11 +111,9 @@ impl Toolbar {
                 }
             }
             Event::OpenCollaborationDialog => {
-                // 协作对话框处理由 Root 转发到外部
                 tracing::debug!("工具栏: 请求打开协作对话框");
             }
             Event::AutoScrollModeChanged => {
-                // 循环切换自动滚动模式
                 self.auto_scroll_mode = match self.auto_scroll_mode {
                     lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft => {
                         lumino_core::storage::config::AutoScrollMode::ScrollingIndicator
@@ -129,13 +127,14 @@ impl Toolbar {
                 };
                 tracing::debug!("工具栏: 自动滚动模式切换为 {:?}", self.auto_scroll_mode);
             }
+            Event::ToggleLoop => {
+                self.is_looping = !self.is_looping;
+                tracing::debug!("工具栏: 循环播放切换为 {}", self.is_looping);
+            }
             Event::ResizeDragStarted(_) => {
-                // 拖拽开始由 Host 处理，这里只需要标记状态
                 self.is_resizing = true;
             }
-            Event::ResizeDragged(_) => {
-                // 拖拽中的位置更新由 Host 通过 update_resize_position 处理
-            }
+            Event::ResizeDragged(_) => {}
             Event::ResizeDragEnded => {
                 self.is_resizing = false;
             }

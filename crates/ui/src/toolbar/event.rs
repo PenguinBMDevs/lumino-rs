@@ -40,6 +40,8 @@ pub enum Event {
     OpenCollaborationDialog,
     /// 自动滚动模式切换
     AutoScrollModeChanged,
+    /// 循环播放切换
+    ToggleLoop,
     /// 开始拖拽调整高度
     ResizeDragStarted(Point),
     /// 拖拽中调整高度
@@ -127,6 +129,10 @@ impl Event {
 
     pub const fn auto_scroll_mode_changed() -> Message {
         Message::Toolbar(Self::AutoScrollModeChanged)
+    }
+
+    pub const fn toggle_loop() -> Message {
+        Message::Toolbar(Self::ToggleLoop)
     }
 
     pub fn resize_drag_started() -> Message {

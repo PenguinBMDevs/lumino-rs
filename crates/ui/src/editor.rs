@@ -66,6 +66,9 @@ pub struct Editor {
     /// 演奏指示线位置（以 tick 为单位）
     pub playback_position: f32,
 
+    /// 循环区域状态
+    pub loop_range: Option<grid::LoopRange>,
+
     /// 音符数据是否已变化（需要更新播放管理器）
     notes_changed: bool,
 
@@ -176,6 +179,7 @@ impl Editor {
             onion_skin_config: OnionSkinConfig::new(),
             remote_cursors: std::collections::HashMap::new(),
             playback_position: 0.0,
+            loop_range: Some(grid::LoopRange::new()),
             notes_changed: false,
             note_index: RefCell::new(None),
             note_index_dirty: Cell::new(true),

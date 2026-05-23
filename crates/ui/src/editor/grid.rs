@@ -19,6 +19,7 @@ pub mod bars;
 pub mod editor_impl;
 pub mod keyboard;
 pub mod keys;
+pub mod loop_range;
 pub mod playback_indicator;
 pub mod program;
 pub mod program_impl;
@@ -29,5 +30,6 @@ pub mod state;
 pub mod theme;
 pub mod utils;
 
+pub use loop_range::{LoopHitTest, LoopRange};
 pub use program::PianoRollGrid;
 pub use state::CanvasState;

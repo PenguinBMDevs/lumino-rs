@@ -86,34 +86,35 @@ impl Root {
         let left_bar = self.sidebar.view(&self.window);
 
         // 右侧内容区域（工具栏 + 编辑器 + 力度面板 / 瀑布流占位）
-        let right_content: Element<'_> = if self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Waterfall {
-            // 瀑布流模式：显示"实现中"占位页面
-            self.view_waterfall_placeholder()
-        } else if is_settings_route {
-            // 设置路由激活时显示设置界面
-            settings::view(&self.settings, &self.window, &self.state.system_fonts)
-        } else {
-            // 力度面板：位于卷帘下方单独占位
-            let velocity_panel = self
-                .editor
-                .velocity_panel
-                .view(&self.editor, self.velocity_panel_height);
-            // 编辑器视图（卷帘 + 滚动条）
-            let editor_view = self.editor.view(
-                message::Message::ScrollbarScrolled,
-                message::Message::ScrollbarScrolledY,
-                |zoom, fixed_ratio| message::Message::ZoomXChanged { zoom, fixed_ratio },
-                |zoom, fixed_ratio| message::Message::ZoomYChanged { zoom, fixed_ratio },
-            );
-            column![
-                self.toolbar.view(&self.window),
-                column![container(editor_view).height(Length::Fill), velocity_panel,]
-                    .height(Length::Fill),
-            ]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
-        };
+        let right_content: Element<'_> =
+            if self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Waterfall {
+                // 瀑布流模式：显示"实现中"占位页面
+                self.view_waterfall_placeholder()
+            } else if is_settings_route {
+                // 设置路由激活时显示设置界面
+                settings::view(&self.settings, &self.window, &self.state.system_fonts)
+            } else {
+                // 力度面板：位于卷帘下方单独占位
+                let velocity_panel = self
+                    .editor
+                    .velocity_panel
+                    .view(&self.editor, self.velocity_panel_height);
+                // 编辑器视图（卷帘 + 滚动条）
+                let editor_view = self.editor.view(
+                    message::Message::ScrollbarScrolled,
+                    message::Message::ScrollbarScrolledY,
+                    |zoom, fixed_ratio| message::Message::ZoomXChanged { zoom, fixed_ratio },
+                    |zoom, fixed_ratio| message::Message::ZoomYChanged { zoom, fixed_ratio },
+                );
+                column![
+                    self.toolbar.view(&self.window),
+                    column![container(editor_view).height(Length::Fill), velocity_panel,]
+                        .height(Length::Fill),
+                ]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+            };
 
         let main_content = if cfg!(target_os = "macos") {
             column![
@@ -122,13 +123,12 @@ impl Root {
             ]
         } else {
             column![
-                self.titlebar
-                    .view(
-                        &self.window,
-                        self.settings.use_native_titlebar,
-                        self.state.current_mode,
-                        self.state.toggle_animation.position,
-                    ),
+                self.titlebar.view(
+                    &self.window,
+                    self.settings.use_native_titlebar,
+                    self.state.current_mode,
+                    self.state.toggle_animation.position,
+                ),
                 row![left_bar, right_content].height(Length::Fill),
                 self.view_status_section(),
             ]

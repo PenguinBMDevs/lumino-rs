@@ -159,6 +159,27 @@ pub enum Message {
     ModeToggled,
     /// 动画帧更新（用于弹簧物理模拟）
     AnimationTick,
+    /// 循环区域事件
+    LoopRange(LoopRangeAction),
+}
+
+/// 循环区域动作
+#[derive(Debug, Clone)]
+pub enum LoopRangeAction {
+    /// 切换循环启用/禁用
+    Toggle,
+    /// 设置循环范围（起始tick，结束tick）
+    SetRange(f32, f32),
+    /// 清除循环范围
+    Clear,
+    /// 标尺上鼠标按下（用于拖拽循环边界）
+    RulerPressed { x: f32, y: f32 },
+    /// 标尺上鼠标移动
+    RulerMoved { x: f32, y: f32 },
+    /// 标尺上鼠标释放
+    RulerReleased,
+    /// 标尺双击（切换循环）
+    RulerDoubleClicked { x: f32, y: f32 },
 }
 
 /// 力度编辑面板动作

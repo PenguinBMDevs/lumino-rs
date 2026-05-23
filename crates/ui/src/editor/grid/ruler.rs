@@ -1,5 +1,6 @@
 //! 时间轴标尺绘制
 
+use super::loop_range::LoopRange;
 use super::theme::ThemeExt;
 use crate::Renderer;
 use crate::constants::editor::MEASURE_NUMBER_FONT_SIZE;
@@ -84,4 +85,133 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
         current_measure_tick += measure_ticks;
         measure_number += 1;
     }
+
+    // 绘制循环区域（在刻度线之上）
+    if let Some(loop_range) = &editor.loop_range
+        && loop_range.enabled()
+    {
+        draw_loop_range(
+            frame,
+            loop_range,
+            keyboard_width,
+            view.scroll_x,
+            view.zoom_x,
+            ruler_height,
+            bounds.width,
+            theme,
+        );
+    }
+}
+
+/// 循环区域颜色常量
+const LOOP_FILL_ALPHA: f32 = 0.25;
+const LOOP_BORDER_ALPHA: f32 = 0.7;
+const LOOP_HANDLE_WIDTH: f32 = 6.0;
+const LOOP_HANDLE_HEIGHT: f32 = 16.0;
+
+/// 绘制循环区域高亮和标记点
+fn draw_loop_range(
+    frame: &mut Frame<Renderer>,
+    loop_range: &LoopRange,
+    keyboard_width: f32,
+    scroll_x: f32,
+    zoom_x: f32,
+    ruler_height: f32,
+    bounds_width: f32,
+    theme: &crate::Theme,
+) {
+    let Some((start_x, end_x)) = loop_range.to_screen_coords(keyboard_width, scroll_x, zoom_x)
+    else {
+        return;
+    };
+
+    // 如果循环区域完全不在可视范围内，不绘制
+    if end_x < keyboard_width || start_x > bounds_width {
+        return;
+    }
+
+    let visible_start = start_x.max(keyboard_width);
+    let visible_end = end_x.min(bounds_width);
+
+    if visible_end <= visible_start {
+        return;
+    }
+
+    // 获取主题主色调作为循环区域颜色
+    let palette = theme.extended_palette();
+    let primary_color = palette.primary.weak.color;
+
+    // 绘制半透明背景填充
+    let fill_color = iced_core::Color {
+        r: primary_color.r,
+        g: primary_color.g,
+        b: primary_color.b,
+        a: LOOP_FILL_ALPHA,
+    };
+
+    let loop_rect = Rectangle::new(
+        Point::new(visible_start, 2.0),
+        Size::new(visible_end - visible_start, ruler_height - 4.0),
+    );
+
+    let fill_path = Path::rectangle(loop_rect.position(), loop_rect.size());
+    frame.fill(&fill_path, fill_color);
+
+    // 绘制边框
+    let border_color = iced_core::Color {
+        r: primary_color.r,
+        g: primary_color.g,
+        b: primary_color.b,
+        a: LOOP_BORDER_ALPHA,
+    };
+    let border_stroke = Stroke::default().with_width(2.0).with_color(border_color);
+    frame.stroke(&fill_path, border_stroke);
+
+    // 绘制起始手柄（左侧三角形/竖条）
+    if start_x >= keyboard_width && start_x <= bounds_width {
+        draw_handle(frame, start_x, ruler_height, true, border_color);
+    }
+
+    // 绘制结束手柄（右侧三角形/竖条）
+    if end_x >= keyboard_width && end_x <= bounds_width {
+        draw_handle(frame, end_x, ruler_height, false, border_color);
+    }
+}
+
+/// 绘制拖拽手柄
+fn draw_handle(
+    frame: &mut Frame<Renderer>,
+    x: f32,
+    ruler_height: f32,
+    _is_start: bool,
+    color: iced_core::Color,
+) {
+    let handle_y = (ruler_height - LOOP_HANDLE_HEIGHT) / 2.0;
+
+    // 竖直矩形手柄
+    let handle_rect = Rectangle::new(
+        Point::new(x - LOOP_HANDLE_WIDTH / 2.0, handle_y),
+        Size::new(LOOP_HANDLE_WIDTH, LOOP_HANDLE_HEIGHT),
+    );
+    let handle_path = Path::rectangle(handle_rect.position(), handle_rect.size());
+
+    // 手柄使用更深的颜色
+    let handle_fill = iced_core::Color {
+        r: color.r,
+        g: color.g,
+        b: color.b,
+        a: 0.9,
+    };
+    frame.fill(&handle_path, handle_fill);
+
+    // 手柄边框
+    let handle_stroke = Stroke::default()
+        .with_width(1.0)
+        .with_color(iced_core::Color {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 0.5,
+        });
+    frame.stroke(&handle_path, handle_stroke);
 }

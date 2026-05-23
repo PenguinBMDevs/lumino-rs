@@ -7,7 +7,7 @@
 //!
 //! 通过 MessageRouter 按顺序分发消息。
 
-use crate::message::{EditorAction, Message};
+use crate::message::{EditorAction, LoopRangeAction, Message};
 use crate::root::Root;
 use crate::{sidebar, window};
 
@@ -244,7 +244,8 @@ impl Root {
             }
             Message::AnimationTick => {
                 let still_animating = self.state.toggle_animation.update();
-                if !still_animating && self.state.toggle_animation.position >= 0.5
+                if !still_animating
+                    && self.state.toggle_animation.position >= 0.5
                     && self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Waterfall
                 {
                     self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Waterfall;
@@ -266,6 +267,10 @@ impl Root {
             }
             Message::PerfUpdate(data) => {
                 self.statusbar.set_perf_data(*data);
+                true
+            }
+            Message::LoopRange(action) => {
+                self.handle_loop_range_action(action.clone());
                 true
             }
             _ => false,
@@ -414,5 +419,144 @@ impl Root {
                 tracing::debug!("力度面板: 音符[{}] 力度更新为 {}", note_index, clamped);
             }
         }
+    }
+
+    fn handle_loop_range_action(&mut self, action: LoopRangeAction) {
+        match action {
+            LoopRangeAction::Toggle => {
+                let enabled = if let Some(loop_range) = &mut self.editor.loop_range {
+                    loop_range.toggle();
+                    self.editor.ruler_cache.clear();
+                    loop_range.enabled()
+                } else {
+                    false
+                };
+                self.sync_loop_to_playback_state(enabled);
+                tracing::info!("Root: 循环区域切换为 {}", enabled);
+            }
+            LoopRangeAction::SetRange(start, end) => {
+                let (enabled, start_tick, end_tick) =
+                    if let Some(loop_range) = &mut self.editor.loop_range {
+                        loop_range.set_range(start, end);
+                        if !loop_range.enabled() {
+                            loop_range.enable();
+                        }
+                        self.editor.ruler_cache.clear();
+                        (
+                            loop_range.enabled(),
+                            loop_range.start_tick(),
+                            loop_range.end_tick(),
+                        )
+                    } else {
+                        return;
+                    };
+                self.sync_loop_to_playback_with_range(enabled, start_tick, end_tick);
+                tracing::info!("Root: 循环范围设置为 [{:.2}, {:.2}]", start, end);
+            }
+            LoopRangeAction::Clear => {
+                if let Some(loop_range) = &mut self.editor.loop_range {
+                    loop_range.disable();
+                    self.sync_loop_to_playback_state(false);
+                    self.editor.ruler_cache.clear();
+                    tracing::info!("Root: 循环区域已清除");
+                }
+            }
+            LoopRangeAction::RulerPressed { x, y: _ } => {
+                if let Some(loop_range) = &mut self.editor.loop_range {
+                    let view = &self.editor.editor_state.view;
+                    let hit = loop_range.handle_mouse_press(
+                        x,
+                        view.keyboard_width,
+                        view.scroll_x,
+                        view.zoom_x,
+                        view.ruler_height,
+                    );
+                    if hit != crate::editor::grid::LoopHitTest::None {
+                        self.editor.ruler_cache.clear();
+                        tracing::debug!("Root: 标尺循环区域点击检测: {:?}", hit);
+                    }
+                }
+            }
+            LoopRangeAction::RulerMoved { x, y: _ } => {
+                let should_sync = if let Some(loop_range) = &mut self.editor.loop_range {
+                    if loop_range.is_dragging() {
+                        let view = &self.editor.editor_state.view;
+                        loop_range.handle_mouse_move(
+                            x,
+                            view.keyboard_width,
+                            view.scroll_x,
+                            view.zoom_x,
+                        );
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if should_sync {
+                    let (enabled, start, end) = self.get_loop_range_state();
+                    self.sync_loop_to_playback_with_range(enabled, start, end);
+                    self.editor.ruler_cache.clear();
+                }
+            }
+            LoopRangeAction::RulerReleased => {
+                if let Some(loop_range) = &mut self.editor.loop_range
+                    && loop_range.is_dragging()
+                {
+                    let start = loop_range.start_tick();
+                    let end = loop_range.end_tick();
+                    loop_range.handle_mouse_release();
+                    self.editor.ruler_cache.clear();
+                    tracing::debug!("Root: 循环拖拽释放，范围 [{:.2}, {:.2}]", start, end);
+                }
+            }
+            LoopRangeAction::RulerDoubleClicked { x: _, y: _ } => {
+                let enabled = if let Some(loop_range) = &mut self.editor.loop_range {
+                    loop_range.toggle();
+                    self.editor.ruler_cache.clear();
+                    loop_range.enabled()
+                } else {
+                    false
+                };
+                self.sync_loop_to_playback_state(enabled);
+                tracing::info!("Root: 标尺双击切换循环为 {}", enabled);
+            }
+        }
+    }
+
+    fn get_loop_range_state(&self) -> (bool, f32, f32) {
+        self.editor
+            .loop_range
+            .as_ref()
+            .map_or((false, 0.0, 0.0), |lr| {
+                (lr.enabled(), lr.start_tick(), lr.end_tick())
+            })
+    }
+
+    fn sync_loop_to_playback_state(&mut self, enabled: bool) {
+        if let Some(manager) = &mut self.playback_manager {
+            manager.set_looping(enabled);
+            if enabled {
+                if let Some(lr) = &self.editor.loop_range {
+                    manager.set_loop_range(lr.start_tick(), lr.end_tick());
+                }
+            } else {
+                manager.clear_loop_range();
+            }
+        }
+        self.toolbar.is_looping = enabled;
+    }
+
+    fn sync_loop_to_playback_with_range(&mut self, enabled: bool, start: f32, end: f32) {
+        if let Some(manager) = &mut self.playback_manager {
+            manager.set_looping(enabled);
+            if enabled {
+                manager.set_loop_range(start, end);
+            } else {
+                manager.clear_loop_range();
+            }
+        }
+        self.toolbar.is_looping = enabled;
     }
 }
