@@ -44,6 +44,23 @@ impl<'a> PianoRollGrid<'a> {
 
         let v = &self.editor.editor_state.view;
         if local_pos.y < v.ruler_height && local_pos.x >= v.keyboard_width {
+            // 先检测是否点击到循环区域
+            if let Some(loop_range) = self.editor.loop_range.as_ref()
+                && loop_range.enabled()
+            {
+                let loop_start_x =
+                    loop_range.start_tick() * v.zoom_x - v.scroll_x + v.keyboard_width;
+                let loop_end_x = loop_range.end_tick() * v.zoom_x - v.scroll_x + v.keyboard_width;
+                if local_pos.x >= loop_start_x && local_pos.x <= loop_end_x {
+                    return Some(canvas::Action::publish(Message::LoopRange(
+                        crate::message::LoopRangeAction::RulerPressed {
+                            x: local_pos.x,
+                            y: local_pos.y,
+                        },
+                    )));
+                }
+            }
+
             let tick = self.editor.x_to_tick(local_pos.x);
             let snapped_tick = self.editor.snap_tick(tick).max(0.0);
             return Some(canvas::Action::publish(Message::EditorAction(

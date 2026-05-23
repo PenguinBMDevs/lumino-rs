@@ -37,6 +37,10 @@ pub struct Toolbar {
     pub custom_precision_dialog: CustomPrecisionDialog,
     /// 自动滚动模式
     pub auto_scroll_mode: lumino_core::storage::config::AutoScrollMode,
+    /// 可用的 MIDI 输入设备列表
+    pub midi_devices: Vec<(u32, String)>,
+    /// 当前选中的 MIDI 输入设备 ID
+    pub selected_midi_device: Option<u32>,
 }
 
 impl Toolbar {
@@ -54,6 +58,8 @@ impl Toolbar {
             note_precision: NotePrecision::default(),
             custom_precision_dialog: CustomPrecisionDialog::default(),
             auto_scroll_mode: lumino_core::storage::config::AutoScrollMode::default(),
+            midi_devices: Vec::new(),
+            selected_midi_device: None,
         }
     }
 
@@ -141,6 +147,10 @@ impl Toolbar {
             Event::RecordStop => {
                 self.is_recording = false;
                 tracing::debug!("工具栏: 停止录制");
+            }
+            Event::DeviceSelected(id) => {
+                self.selected_midi_device = Some(id);
+                tracing::debug!("工具栏: MIDI 输入设备选择为 #{}", id);
             }
             Event::ResizeDragStarted(_) => {
                 self.is_resizing = true;

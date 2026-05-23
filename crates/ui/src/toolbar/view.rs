@@ -293,6 +293,8 @@ impl Toolbar {
         let toolbar_content = container(
             row![
                 record_button,
+                space().width(4),
+                self.render_device_selector(content_height, window),
                 space().width(8),
                 playback_controls,
                 space().width(8),
@@ -322,6 +324,61 @@ impl Toolbar {
             .width(iced_widget::core::Length::Fill)
             .height(iced_widget::core::Length::Fixed(self.height))
             .into()
+    }
+
+    /// 渲染 MIDI 设备选择器
+    fn render_device_selector<'a>(
+        &'a self,
+        content_height: f32,
+        window: &'a window::Window,
+    ) -> Element<'a> {
+        let palette = window.theme.extended_palette();
+        let weak_bg = palette.background.weak.color;
+        let weak_text = palette.background.weak.text;
+        let device_count = self.midi_devices.len();
+        if device_count == 0 {
+            return container(text("无MIDI设备").size(12).color(weak_text))
+                .width(100)
+                .height(content_height)
+                .align_y(iced_core::alignment::Vertical::Center)
+                .padding([0, 8])
+                .into();
+        }
+
+        let device_options: Vec<&str> = self
+            .midi_devices
+            .iter()
+            .map(|(_, name)| name.as_str())
+            .collect();
+        let selected_idx = self
+            .selected_midi_device
+            .and_then(|id| self.midi_devices.iter().position(|(did, _)| *did == id));
+        let selected = selected_idx.map(|i| device_options[i]);
+
+        container(
+            pick_list(device_options, selected, move |name| {
+                if let Some((id, _)) = self.midi_devices.iter().find(|(_, n)| n.as_str() == name) {
+                    Event::device_selected(*id)
+                } else {
+                    Message::Null
+                }
+            })
+            .placeholder("选择MIDI设备")
+            .padding([4, 8])
+            .width(iced_widget::core::Length::Fixed(140.0)),
+        )
+        .height(content_height)
+        .align_y(iced_core::alignment::Vertical::Center)
+        .style(move |_theme: &Theme| {
+            container::Style::default()
+                .background(weak_bg)
+                .border(iced_core::Border {
+                    radius: 4.0.into(),
+                    width: 0.0,
+                    color: iced_core::Color::TRANSPARENT,
+                })
+        })
+        .into()
     }
 }
 
@@ -407,6 +464,7 @@ fn tool_button<'a>(
     on_press: Message,
     window: &'a window::Window,
 ) -> Element<'a> {
+    let palette = window.theme.extended_palette();
     button(icon::view_with_size_and_theme(
         icon_enum,
         20,
@@ -414,8 +472,21 @@ fn tool_button<'a>(
         Some(&window.theme),
     ))
     .on_press(on_press)
-    .style(|_theme: &Theme, _status| {
-        button::Style::default().with_background(iced_core::Color::TRANSPARENT)
+    .style(move |_theme: &Theme, status| {
+        let bg = if status == iced_widget::button::Status::Hovered {
+            palette.background.weak.color
+        } else {
+            iced_core::Color::TRANSPARENT
+        };
+        button::Style {
+            border: iced_core::Border {
+                radius: 3.0.into(),
+                width: 0.0,
+                color: iced_core::Color::TRANSPARENT,
+            },
+            ..Default::default()
+        }
+        .with_background(bg)
     })
     .padding(4)
     .into()

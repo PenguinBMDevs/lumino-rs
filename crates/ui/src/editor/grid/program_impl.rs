@@ -48,11 +48,28 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             }
             Event::Mouse(mouse::Event::CursorMoved { position }) => {
                 let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
+                if let Some(loop_range) = self.editor.loop_range.as_ref()
+                    && loop_range.is_dragging()
+                {
+                    return Some(Action::publish(Message::LoopRange(
+                        crate::message::LoopRangeAction::RulerMoved {
+                            x: local_pos.x,
+                            y: local_pos.y,
+                        },
+                    )));
+                }
                 return Some(Action::publish(Message::EditorAction(EditorAction::Moved(
                     local_pos,
                 ))));
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                if let Some(loop_range) = self.editor.loop_range.as_ref()
+                    && loop_range.is_dragging()
+                {
+                    return Some(Action::publish(Message::LoopRange(
+                        crate::message::LoopRangeAction::RulerReleased,
+                    )));
+                }
                 return Some(Action::publish(Message::EditorAction(
                     EditorAction::Released,
                 )));

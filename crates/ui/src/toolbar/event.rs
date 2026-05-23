@@ -52,6 +52,8 @@ pub enum Event {
     Record,
     /// 停止录制
     RecordStop,
+    /// 选择 MIDI 输入设备
+    DeviceSelected(u32),
 }
 
 impl Event {
@@ -157,5 +159,9 @@ impl Event {
 
     pub const fn record_stop() -> Message {
         Message::Toolbar(Self::RecordStop)
+    }
+
+    pub fn device_selected(id: u32) -> Message {
+        Message::Toolbar(Self::DeviceSelected(id))
     }
 }

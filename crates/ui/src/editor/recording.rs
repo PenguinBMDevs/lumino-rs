@@ -15,6 +15,8 @@ pub struct RecordingState {
     pub metronome_enabled: bool,
     /// 录制中暂存的音符（key -> note_index），用于 NoteOff 时更新长度
     pub pending_notes: im::HashMap<u8, usize>,
+    /// 录制开始时间（用于计算演奏指示线位置）
+    pub started_at: Option<std::time::Instant>,
 }
 
 impl Default for RecordingState {
@@ -31,6 +33,7 @@ impl RecordingState {
             arm_track: 0,
             metronome_enabled: false,
             pending_notes: im::HashMap::new(),
+            started_at: None,
         }
     }
 
@@ -40,12 +43,14 @@ impl RecordingState {
         self.input_device_name = device_name;
         self.arm_track = track;
         self.pending_notes.clear();
+        self.started_at = Some(std::time::Instant::now());
     }
 
     /// 停止录制
     pub fn stop(&mut self) {
         self.is_recording = false;
         self.pending_notes.clear();
+        self.started_at = None;
     }
 
     /// 切换节拍器

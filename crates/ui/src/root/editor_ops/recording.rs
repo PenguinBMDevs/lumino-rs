@@ -18,7 +18,7 @@ const MIDI_VALUE_MASK: u8 = 0x7F;
 impl Root {
     /// 开始录制
     ///
-    /// 打开第一个可用的 MIDI 输入设备，回调将原始数据写入共享缓冲区。
+    /// 打开选中的 MIDI 输入设备（或第一个可用设备），回调将原始数据写入共享缓冲区。
     pub fn start_recording(&mut self) {
         let api = match &self.midi_api {
             Some(api) => api,
@@ -41,7 +41,17 @@ impl Root {
             return;
         }
 
-        let device = &inputs[0];
+        // 使用工具栏选中的设备，或回退到第一个设备
+        let device = self
+            .toolbar
+            .selected_midi_device
+            .and_then(|id| inputs.iter().find(|d| d.id == id))
+            .unwrap_or(&inputs[0]);
+
+        // 同步选中设备到工具栏
+        self.toolbar.selected_midi_device = Some(device.id);
+
+        let device_id = device.id;
         let device_name = device.name.clone();
         let buffer = self.midi_input_buffer.clone();
 
@@ -52,16 +62,20 @@ impl Root {
                 }
             });
 
-        match api.open_input(device.id, callback) {
+        match api.open_input(device_id, callback) {
             Ok(conn) => {
                 let track = self.editor.editor_state.data.current_track;
-                self.recording.start(Some(device_name), track);
+                self.recording.start(Some(device_name.clone()), track);
                 self.midi_input_connection = Some(conn);
                 self.toolbar.is_recording = true;
-                tracing::info!("录制: 已开始在设备上录制");
+                tracing::info!(
+                    "录制: 已开始在设备 \"{}\" (#{}) 上录制",
+                    device_name,
+                    device_id
+                );
             }
             Err(e) => {
-                tracing::error!("录制: 打开输入设备失败: {}", e);
+                tracing::error!("录制: 打开输入设备 #{} 失败: {}", device_id, e);
             }
         }
     }
@@ -106,13 +120,24 @@ impl Root {
     /// 轮询 MIDI 输入缓冲区并处理接收到的 MIDI 事件
     ///
     /// 在每帧更新时调用，将缓冲区中的原始 MIDI 数据转换为音符操作。
+    /// 使用墙钟时间计算当前 tick，使演奏指示线在录制时匀速滚动。
     pub fn poll_midi_input(&mut self) {
         if !self.recording.is_recording {
             return;
         }
 
+        // 从录制开始时间计算当前 tick（默认 120 BPM = 500000 µs/拍）
+        let ppq = self.editor.editor_state.view.ppq as f64;
+        let default_tempo_micros_per_beat: f64 = 500_000.0;
+        let elapsed_micros = self
+            .recording
+            .started_at
+            .map(|t| t.elapsed().as_micros() as f64)
+            .unwrap_or(0.0);
+        let current_tick = (elapsed_micros * ppq / default_tempo_micros_per_beat) as f32;
+        self.editor.playback_position = current_tick;
+
         let mut notes_changed = false;
-        let current_tick = self.editor.playback_position;
 
         let events: Vec<Vec<u8>> = {
             let mut buf = match self.midi_input_buffer.lock() {
@@ -205,8 +230,19 @@ impl Root {
 
     /// 设置 MIDI API（供外部调用，如 MidiManager 初始化完成后）
     pub fn set_midi_api(&mut self, api: Box<dyn lumino_midi::Api>) {
+        // 缓存设备列表到工具栏（供设备选择器使用）
+        let devices = api.inputs().unwrap_or_default();
+        self.toolbar.midi_devices = devices.iter().map(|d| (d.id, d.name.clone())).collect();
+
+        // 自动选中第一个设备（如果还没有选中）
+        if self.toolbar.selected_midi_device.is_none()
+            && let Some(first) = devices.first()
+        {
+            self.toolbar.selected_midi_device = Some(first.id);
+        }
+
         self.midi_api = Some(api);
-        tracing::debug!("Root: MIDI API 已设置");
+        tracing::debug!("Root: MIDI API 已设置，检测到 {} 个输入设备", devices.len());
     }
 
     /// 获取录制状态引用
