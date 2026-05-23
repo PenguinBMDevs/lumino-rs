@@ -3,6 +3,8 @@ pub use crate::{
     window::Event as Window,
 };
 
+use crate::statusbar::performance::PerfData;
+
 #[derive(Debug, Clone)]
 pub enum EditorAction {
     Pressed {
@@ -147,6 +149,10 @@ pub enum Message {
     Velocity(VelocityAction),
     /// 力度面板高度调整
     VelocityPanelResize(f32),
+    /// 性能面板切换
+    PerformancePanelToggled,
+    /// 性能监控数据更新
+    PerfUpdate(PerfData),
     /// 空消息标记
     Null,
 }

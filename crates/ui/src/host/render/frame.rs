@@ -1,8 +1,9 @@
 use crate::host::Host;
+use crate::statusbar::performance::PerfData;
 use crate::window;
 
 impl Host {
-    /// 帧准备：处理事件和计算 FPS
+    /// 帧准备：处理事件和计算 FPS，收集性能数据
     pub(super) fn process_frame_preparation(&mut self) {
         // 处理待处理的事件队列（合并后的）
         // 这样可以确保同一帧内的多个事件被合并处理，减少 UI 重建次数
@@ -11,14 +12,36 @@ impl Host {
         // 更新播放状态和自动滚动
         self.update_playback_state();
 
-        // 计算 FPS
+        // 更新 GPU 帧耗时（从渲染线程统计）
+        self.last_gpu_frame_time_ms = self
+            .render_ctx
+            .wgpu_render_thread
+            .as_ref()
+            .map(|t| t.stats().last_frame_time_ms as f32)
+            .unwrap_or(0.0);
+
+        // 计算 FPS 并收集性能数据
         self.frame_count += 1;
         let now = std::time::Instant::now();
         let elapsed = now.duration_since(self.last_fps_update);
 
         if elapsed.as_millis() >= super::FPS_UPDATE_INTERVAL_MS {
             let fps = self.frame_count as f32 / elapsed.as_secs_f32();
+
+            // 收集 CPU、内存、GPU 数据
+            let cpu_usage = self.cpu_monitor.usage();
+            let memory_mb =
+                lumino_core::memory_monitor::platform::get_current_rss() as f32
+                    / (1024.0 * 1024.0);
+            let gpu_frame_time = self.last_gpu_frame_time_ms;
+
+            let perf_data =
+                PerfData::new(fps, cpu_usage, memory_mb, gpu_frame_time);
+            self.root.update(window::Event::perf_update(perf_data));
+
+            // 保持向后兼容：仍然发送 FPS 更新给 Window 状态
             self.root.update(window::Event::fps_update(fps));
+
             self.frame_count = 0;
             self.last_fps_update = now;
         }

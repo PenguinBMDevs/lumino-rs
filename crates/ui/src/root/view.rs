@@ -6,6 +6,7 @@ use lumino_gfx::NoteInstance;
 
 use crate::root::{Element, Root, Theme};
 use crate::state::root_state::DialogType;
+use crate::statusbar::performance;
 use crate::view::{
     collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
@@ -114,14 +115,14 @@ impl Root {
         let main_content = if cfg!(target_os = "macos") {
             column![
                 row![left_bar, right_content].height(Length::Fill),
-                self.statusbar.view(),
+                self.view_status_section(),
             ]
         } else {
             column![
                 self.titlebar
                     .view(&self.window, self.settings.use_native_titlebar),
                 row![left_bar, right_content].height(Length::Fill),
-                self.statusbar.view(),
+                self.view_status_section(),
             ]
         };
 
@@ -207,5 +208,16 @@ impl Root {
             key_line_color,
             instances,
         );
+    }
+
+    /// 渲染状态栏及可选的性能面板
+    fn view_status_section(&self) -> Element<'_> {
+        if self.statusbar.perf_panel_expanded {
+            let perf_data = self.statusbar.perf_data();
+            let panel = performance::performance_panel_view(perf_data);
+            column![panel, self.statusbar.view()].into()
+        } else {
+            self.statusbar.view()
+        }
     }
 }

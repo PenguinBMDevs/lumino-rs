@@ -18,6 +18,7 @@ use iced_core::{Font, Size};
 use iced_wgpu::graphics::Viewport;
 use iced_winit::winit;
 
+use crate::statusbar::performance::CpuMonitor;
 use crate::{WgpuRenderThread, config, root, settings};
 use render::note_worker::NoteWorker;
 
@@ -65,6 +66,10 @@ pub struct Host {
     pub skip_ui_rendering: bool,
     /// UI 脏标记
     pub(crate) ui_dirty: bool,
+    /// CPU 使用率监控器
+    pub(crate) cpu_monitor: CpuMonitor,
+    /// 上一次 GPU 帧耗时（ms）
+    pub(crate) last_gpu_frame_time_ms: f32,
 }
 
 impl Host {
@@ -112,6 +117,8 @@ impl Host {
             frame_count: 0,
             skip_ui_rendering: false,
             ui_dirty: false,
+            cpu_monitor: CpuMonitor::new(),
+            last_gpu_frame_time_ms: 0.0,
         }
     }
 
@@ -152,6 +159,8 @@ impl Host {
             frame_count: 0,
             skip_ui_rendering: false,
             ui_dirty: false,
+            cpu_monitor: CpuMonitor::new(),
+            last_gpu_frame_time_ms: 0.0,
         }
     }
 

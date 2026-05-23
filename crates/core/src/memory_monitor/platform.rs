@@ -157,3 +157,84 @@ pub fn get_current_rss() -> u64 {
         }
     }
 }
+
+// =============================================================================
+// 获取进程 CPU 时间（微秒）
+// =============================================================================
+
+/// 获取当前进程已消耗的 CPU 时间总和（用户态 + 内核态，单位微秒）。
+///
+/// 用于计算 CPU 使用率：(delta_cpu / delta_wall) * 100%
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub fn get_process_cpu_time_us() -> u64 {
+    let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
+    let ret = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
+    if ret == 0 {
+        let usage = unsafe { usage.assume_init() };
+        let user_us =
+            usage.ru_utime.tv_sec as u64 * 1_000_000 + usage.ru_utime.tv_usec as u64;
+        let sys_us =
+            usage.ru_stime.tv_sec as u64 * 1_000_000 + usage.ru_stime.tv_usec as u64;
+        user_us + sys_us
+    } else {
+        0
+    }
+}
+
+/// 获取当前进程已消耗的 CPU 时间总和（用户态 + 内核态，单位微秒）。
+#[cfg(target_os = "windows")]
+pub fn get_process_cpu_time_us() -> u64 {
+    #[repr(C)]
+    struct FileTime {
+        dw_low_date_time: u32,
+        dw_high_date_time: u32,
+    }
+
+    unsafe extern "system" {
+        fn GetCurrentProcess() -> *mut std::ffi::c_void;
+        fn GetProcessTimes(
+            h_process: *mut std::ffi::c_void,
+            lp_creation_time: *mut FileTime,
+            lp_exit_time: *mut FileTime,
+            lp_kernel_time: *mut FileTime,
+            lp_user_time: *mut FileTime,
+        ) -> i32;
+    }
+
+    unsafe {
+        let mut creation = FileTime {
+            dw_low_date_time: 0,
+            dw_high_date_time: 0,
+        };
+        let mut exit = FileTime {
+            dw_low_date_time: 0,
+            dw_high_date_time: 0,
+        };
+        let mut kernel = FileTime {
+            dw_low_date_time: 0,
+            dw_high_date_time: 0,
+        };
+        let mut user = FileTime {
+            dw_low_date_time: 0,
+            dw_high_date_time: 0,
+        };
+
+        if GetProcessTimes(
+            GetCurrentProcess(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        ) != 0
+        {
+            let kernel_100ns =
+                ((kernel.dw_high_date_time as u64) << 32) | kernel.dw_low_date_time as u64;
+            let user_100ns =
+                ((user.dw_high_date_time as u64) << 32) | user.dw_low_date_time as u64;
+            // FILETIME units are 100-nanosecond intervals
+            (kernel_100ns + user_100ns) / 10
+        } else {
+            0
+        }
+    }
+}

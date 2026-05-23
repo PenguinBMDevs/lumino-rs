@@ -1,3 +1,4 @@
+use crate::statusbar::performance::PerfData;
 use crate::{Message, Theme};
 
 #[derive(Debug, Clone)]
@@ -10,6 +11,7 @@ pub enum Event {
     ToggleMaximize,
     Close,
     FpsUpdate(f32),
+    PerfUpdate(PerfData),
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +45,9 @@ impl Event {
     }
     pub const fn fps_update(fps: f32) -> Message {
         Message::Window(Self::FpsUpdate(fps))
+    }
+    pub fn perf_update(data: PerfData) -> Message {
+        Message::Window(Self::PerfUpdate(data))
     }
 }
 
@@ -81,6 +86,9 @@ impl Window {
             Event::Focused(r) => self.is_focused = r,
             Event::FpsUpdate(v) => {
                 self.fps = Some(v);
+            }
+            Event::PerfUpdate(_) => {
+                // PerfUpdate 由 Root 直接处理，不需要更新 Window 状态
             }
             Event::TrafficAction(_) | Event::Drag | Event::ToggleMaximize | Event::Close => {
                 // 这些事件由 Host 处理，不需要更新 Window 状态
