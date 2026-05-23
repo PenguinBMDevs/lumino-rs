@@ -1,5 +1,6 @@
 //! 性能监控数据收集与面板渲染
 
+use std::sync::OnceLock;
 use std::time::Instant;
 
 use iced_core::Alignment;
@@ -7,12 +8,22 @@ use iced_widget::{column, container, row, text};
 
 use crate::root::{Element, Theme};
 
+/// 总 CPU 核心数（0.0 ~ 100.0，100% = 所有核心满载）
+fn num_cores() -> f64 {
+    static CORES: OnceLock<f64> = OnceLock::new();
+    *CORES.get_or_init(|| {
+        std::thread::available_parallelism()
+            .map(|n| n.get() as f64)
+            .unwrap_or(1.0)
+    })
+}
+
 /// 性能监控数据
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PerfData {
     /// 当前 FPS
     pub fps: f32,
-    /// CPU 使用率百分比（0.0 ~ 100.0 * core_count）
+    /// CPU 使用率百分比（0.0 ~ 100.0，100% = 所有核心满载）
     pub cpu_usage: f32,
     /// 进程内存占用（MB）
     pub memory_mb: f32,
@@ -45,7 +56,7 @@ impl CpuMonitor {
         }
     }
 
-    /// 返回自上次调用以来的 CPU 使用率百分比（0.0 ~ 100.0 * core_count）
+    /// 返回自上次调用以来的 CPU 使用率百分比（0.0 ~ 100.0，100% = 所有核心满载）
     pub fn usage(&mut self) -> f32 {
         let now = Instant::now();
         let cpu = get_cpu_time_us();
@@ -54,7 +65,7 @@ impl CpuMonitor {
         self.last_cpu_time = cpu;
         self.last_wall = now;
         if wall > 0.0 {
-            ((cpu_delta / wall) * 100.0) as f32
+            (((cpu_delta / wall) * 100.0 / num_cores()).min(100.0)) as f32
         } else {
             0.0
         }

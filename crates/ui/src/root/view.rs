@@ -1,7 +1,7 @@
 //! Root 视图渲染子模块
 
 use iced_core::Length;
-use iced_widget::{column, container, progress_bar, row, text};
+use iced_widget::{Stack, column, container, progress_bar, row, text};
 use lumino_gfx::NoteInstance;
 
 use crate::root::{Element, Root, Theme};
@@ -126,14 +126,42 @@ impl Root {
             ]
         };
 
-        container(main_content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(|_theme: &Theme| container::Style {
-                background: Some(iced_core::Background::Color(iced_core::Color::TRANSPARENT)),
-                ..Default::default()
-            })
-            .into()
+        // 性能面板展开时，使用 Stack 将面板作为浮动层渲染在状态栏上方
+        if self.statusbar.perf_panel_expanded {
+            let perf_data = self.statusbar.perf_data();
+            let panel = performance::performance_panel_view(perf_data);
+
+            Stack::new()
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .push(
+                    container(main_content)
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                )
+                .push(
+                    column![
+                        iced_widget::Space::new().height(Length::Fill),
+                        container(panel).padding(iced_core::Padding {
+                            top: 0.0,
+                            right: 0.0,
+                            bottom: 20.0,
+                            left: 0.0,
+                        }),
+                    ]
+                    .width(Length::Fill),
+                )
+                .into()
+        } else {
+            container(main_content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|_theme: &Theme| container::Style {
+                    background: Some(iced_core::Background::Color(iced_core::Color::TRANSPARENT)),
+                    ..Default::default()
+                })
+                .into()
+        }
     }
 
     /// 获取当前需要绘制的音符实例
@@ -210,14 +238,8 @@ impl Root {
         );
     }
 
-    /// 渲染状态栏及可选的性能面板
+    /// 渲染状态栏（性能面板已交由 Stack 浮动层处理）
     fn view_status_section(&self) -> Element<'_> {
-        if self.statusbar.perf_panel_expanded {
-            let perf_data = self.statusbar.perf_data();
-            let panel = performance::performance_panel_view(perf_data);
-            column![panel, self.statusbar.view()].into()
-        } else {
-            self.statusbar.view()
-        }
+        self.statusbar.view()
     }
 }
