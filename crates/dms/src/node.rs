@@ -14,4 +14,4 @@ pub mod types;
 pub use composite::DmsCompositeNode;
 pub use data::DmsDataNode;
 pub use string_and_number::{DmsAnsiStringNode, DmsFloatNode, DmsIntegerNode};
-pub use types::{DmsNode, create_node};
+pub use types::{DmsLeafDataProvider, DmsNode, create_node};

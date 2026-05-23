@@ -1,6 +1,7 @@
 //! DMS 节点类型定义
 
 use crate::error::Result;
+use crate::node::DmsDataNode;
 use crate::node_type::DmsNodeType;
 
 /// DMS 节点统一接口
@@ -50,6 +51,100 @@ pub trait DmsNode: Send + Sync {
 
     /// 获取类型擦除引用
     fn as_any(&self) -> &dyn std::any::Any;
+}
+
+/// 数据叶子节点提供者 — 为基于 DmsDataNode 包装的叶子节点类型
+/// 提供统一的 DmsNode 默认实现，消除跨类型的实现重复。
+///
+/// 实现该 trait 的类型会自动获得完整的 DmsNode 实现，
+/// 只需额外提供 base_data / content_type_str / show_content_impl / content_raw_impl。
+pub trait DmsLeafDataProvider: Send + Sync {
+    /// 获取底层 DmsDataNode 引用
+    fn base_data(&self) -> &DmsDataNode;
+
+    /// 获取底层 DmsDataNode 可变引用
+    fn base_data_mut(&mut self) -> &mut DmsDataNode;
+
+    /// 获取内容类型标识
+    fn content_type_str(&self) -> &'static str;
+
+    /// 获取显示内容
+    fn show_content_impl(&self) -> String;
+
+    /// 获取原始内容对象
+    fn content_raw_impl(&self) -> Box<dyn std::any::Any>;
+}
+
+impl<T: DmsLeafDataProvider + 'static> DmsNode for T {
+    #[inline]
+    fn type_id(&self) -> DmsNodeType {
+        self.base_data().type_id
+    }
+
+    #[inline]
+    fn layer(&self) -> i32 {
+        self.base_data().layer
+    }
+
+    fn parent(&self) -> Option<&dyn DmsNode> {
+        None
+    }
+
+    #[inline]
+    fn has_data(&self) -> bool {
+        true
+    }
+
+    #[inline]
+    fn raw_data(&self) -> &[u8] {
+        &self.base_data().raw_data
+    }
+
+    #[inline]
+    fn length(&self) -> usize {
+        self.base_data().raw_data.len()
+    }
+
+    fn content_type(&self) -> &'static str {
+        self.content_type_str()
+    }
+
+    fn show_content(&self) -> String {
+        self.show_content_impl()
+    }
+
+    fn content_raw(&self) -> Box<dyn std::any::Any> {
+        self.content_raw_impl()
+    }
+
+    #[inline]
+    fn is_composite(&self) -> bool {
+        false
+    }
+
+    #[inline]
+    fn children(&self) -> &[Box<dyn DmsNode>] {
+        &[]
+    }
+
+    #[inline]
+    fn children_mut(&mut self) -> &mut Vec<Box<dyn DmsNode>> {
+        &mut self.base_data_mut().empty_children
+    }
+
+    #[inline]
+    fn relative_index(&self) -> usize {
+        self.base_data().relative_index
+    }
+
+    #[inline]
+    fn set_relative_index(&mut self, index: usize) {
+        self.base_data_mut().relative_index = index;
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 /// 根据类型创建节点

@@ -6,7 +6,7 @@ use num_bigint::BigInt;
 
 use crate::constants::HEADER_SIZE;
 use crate::error::{DmsError, Result};
-use crate::node::{DmsDataNode, DmsNode};
+use crate::node::{DmsDataNode, DmsLeafDataProvider};
 use crate::node_type::DmsNodeType;
 
 /// GB18030 编码字符串节点
@@ -44,81 +44,31 @@ impl DmsAnsiStringNode {
     }
 }
 
-impl DmsNode for DmsAnsiStringNode {
-    #[inline]
-    fn type_id(&self) -> DmsNodeType {
-        self.base.type_id
+impl DmsLeafDataProvider for DmsAnsiStringNode {
+    fn base_data(&self) -> &DmsDataNode {
+        &self.base
     }
 
-    #[inline]
-    fn layer(&self) -> i32 {
-        self.base.layer
+    fn base_data_mut(&mut self) -> &mut DmsDataNode {
+        &mut self.base
     }
 
-    fn parent(&self) -> Option<&dyn DmsNode> {
-        None
-    }
-
-    #[inline]
-    fn has_data(&self) -> bool {
-        true
-    }
-
-    #[inline]
-    fn raw_data(&self) -> &[u8] {
-        &self.base.raw_data
-    }
-
-    #[inline]
-    fn length(&self) -> usize {
-        self.base.raw_data.len()
-    }
-
-    fn content_type(&self) -> &'static str {
+    fn content_type_str(&self) -> &'static str {
         "string"
     }
 
-    fn show_content(&self) -> String {
+    fn show_content_impl(&self) -> String {
         self.string_data().unwrap_or_else(|e| {
             tracing::warn!("GB18030 解码失败: {}", e);
             String::new()
         })
     }
 
-    fn content_raw(&self) -> Box<dyn std::any::Any> {
+    fn content_raw_impl(&self) -> Box<dyn std::any::Any> {
         Box::new(self.string_data().unwrap_or_else(|e| {
             tracing::warn!("GB18030 解码失败: {}", e);
             String::new()
         }))
-    }
-
-    #[inline]
-    fn is_composite(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn children(&self) -> &[Box<dyn DmsNode>] {
-        &[]
-    }
-
-    #[inline]
-    fn children_mut(&mut self) -> &mut Vec<Box<dyn DmsNode>> {
-        &mut self.base.empty_children
-    }
-
-    #[inline]
-    fn relative_index(&self) -> usize {
-        self.base.relative_index
-    }
-
-    #[inline]
-    fn set_relative_index(&mut self, index: usize) {
-        self.base.relative_index = index;
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 
@@ -151,75 +101,25 @@ impl DmsIntegerNode {
     }
 }
 
-impl DmsNode for DmsIntegerNode {
-    #[inline]
-    fn type_id(&self) -> DmsNodeType {
-        self.base.type_id
+impl DmsLeafDataProvider for DmsIntegerNode {
+    fn base_data(&self) -> &DmsDataNode {
+        &self.base
     }
 
-    #[inline]
-    fn layer(&self) -> i32 {
-        self.base.layer
+    fn base_data_mut(&mut self) -> &mut DmsDataNode {
+        &mut self.base
     }
 
-    fn parent(&self) -> Option<&dyn DmsNode> {
-        None
-    }
-
-    #[inline]
-    fn has_data(&self) -> bool {
-        true
-    }
-
-    #[inline]
-    fn raw_data(&self) -> &[u8] {
-        &self.base.raw_data
-    }
-
-    #[inline]
-    fn length(&self) -> usize {
-        self.base.raw_data.len()
-    }
-
-    fn content_type(&self) -> &'static str {
+    fn content_type_str(&self) -> &'static str {
         "integer"
     }
 
-    fn show_content(&self) -> String {
+    fn show_content_impl(&self) -> String {
         self.integer_data().to_string()
     }
 
-    fn content_raw(&self) -> Box<dyn std::any::Any> {
+    fn content_raw_impl(&self) -> Box<dyn std::any::Any> {
         Box::new(self.integer_data())
-    }
-
-    #[inline]
-    fn is_composite(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn children(&self) -> &[Box<dyn DmsNode>] {
-        &[]
-    }
-
-    #[inline]
-    fn children_mut(&mut self) -> &mut Vec<Box<dyn DmsNode>> {
-        &mut self.base.empty_children
-    }
-
-    #[inline]
-    fn relative_index(&self) -> usize {
-        self.base.relative_index
-    }
-
-    #[inline]
-    fn set_relative_index(&mut self, index: usize) {
-        self.base.relative_index = index;
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 
@@ -254,12 +154,10 @@ impl DmsFloatNode {
             let length_field = u32::from_le_bytes([data[2], data[3], data[4], data[5]]);
 
             if type_field == 0 {
-                // 单精度：总长度 10 字节
                 if data.len() == HEADER_SIZE + 4 && length_field == 4 {
                     self.is_double = false;
                     return Ok(());
                 }
-                // 双精度：总长度 14 字节
                 if data.len() == HEADER_SIZE + 8 && length_field == 8 {
                     self.is_double = true;
                     return Ok(());
@@ -301,74 +199,24 @@ impl DmsFloatNode {
     }
 }
 
-impl DmsNode for DmsFloatNode {
-    #[inline]
-    fn type_id(&self) -> DmsNodeType {
-        self.base.type_id
+impl DmsLeafDataProvider for DmsFloatNode {
+    fn base_data(&self) -> &DmsDataNode {
+        &self.base
     }
 
-    #[inline]
-    fn layer(&self) -> i32 {
-        self.base.layer
+    fn base_data_mut(&mut self) -> &mut DmsDataNode {
+        &mut self.base
     }
 
-    fn parent(&self) -> Option<&dyn DmsNode> {
-        None
-    }
-
-    #[inline]
-    fn has_data(&self) -> bool {
-        true
-    }
-
-    #[inline]
-    fn raw_data(&self) -> &[u8] {
-        &self.base.raw_data
-    }
-
-    #[inline]
-    fn length(&self) -> usize {
-        self.base.raw_data.len()
-    }
-
-    fn content_type(&self) -> &'static str {
+    fn content_type_str(&self) -> &'static str {
         if self.is_double { "double" } else { "float" }
     }
 
-    fn show_content(&self) -> String {
+    fn show_content_impl(&self) -> String {
         self.number_data().to_string()
     }
 
-    fn content_raw(&self) -> Box<dyn std::any::Any> {
+    fn content_raw_impl(&self) -> Box<dyn std::any::Any> {
         Box::new(self.number_data())
-    }
-
-    #[inline]
-    fn is_composite(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn children(&self) -> &[Box<dyn DmsNode>] {
-        &[]
-    }
-
-    #[inline]
-    fn children_mut(&mut self) -> &mut Vec<Box<dyn DmsNode>> {
-        &mut self.base.empty_children
-    }
-
-    #[inline]
-    fn relative_index(&self) -> usize {
-        self.base.relative_index
-    }
-
-    #[inline]
-    fn set_relative_index(&mut self, index: usize) {
-        self.base.relative_index = index;
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }

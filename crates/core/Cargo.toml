@@ -18,13 +18,13 @@ tracing = { workspace = true }
 midly = { workspace = true }
 rayon = "1"
 bincode = "1.3.3"
-zstd = "0.13.2"
-encoding_rs = "0.8"
+zstd = { workspace = true }
+encoding_rs = { workspace = true }
 lumino-midi = { path = "../midi" }
 lumino-dms = { path = "../dms" }
 thiserror = { workspace = true }
 font-kit = "0.14"
-puffin = "0.19.1"
+puffin = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1.42", features = ["fs", "rt", "sync", "rt-multi-thread", "macros"] }
