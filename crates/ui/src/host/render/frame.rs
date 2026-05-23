@@ -32,12 +32,10 @@ impl Host {
             // 收集 CPU、内存、GPU 数据
             let cpu_usage = self.cpu_monitor.usage();
             let memory_mb =
-                lumino_core::memory_monitor::platform::get_current_rss() as f32
-                    / (1024.0 * 1024.0);
+                lumino_core::memory_monitor::platform::get_current_rss() as f32 / (1024.0 * 1024.0);
             let gpu_frame_time = self.last_gpu_frame_time_ms;
 
-            let perf_data =
-                PerfData::new(fps, cpu_usage, memory_mb, gpu_frame_time);
+            let perf_data = PerfData::new(fps, cpu_usage, memory_mb, gpu_frame_time);
             self.root.update(window::Event::perf_update(perf_data));
 
             // 保持向后兼容：仍然发送 FPS 更新给 Window 状态

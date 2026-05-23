@@ -7,8 +7,8 @@ use iced_core::{Alignment, Length};
 use iced_widget::{container, mouse_area, row, space};
 
 use super::Element;
-use crate::{Theme, window};
 use crate::titlebar::mode_toggle::AppMode;
+use crate::{Theme, window};
 
 pub struct Titlebar;
 
@@ -40,8 +40,12 @@ impl Titlebar {
         let menu_row = if cfg!(target_os = "macos") {
             row![]
         } else {
-            row![logo::view(window), mode_toggle::view(&window.theme, current_mode, toggle_progress), menu::view()]
-                .align_y(Alignment::Center)
+            row![
+                logo::view(window),
+                mode_toggle::view(&window.theme, current_mode, toggle_progress),
+                menu::view()
+            ]
+            .align_y(Alignment::Center)
         };
 
         // 构建标题栏内容：左侧菜单 + 中间可拖动区域 + 右侧窗口控制

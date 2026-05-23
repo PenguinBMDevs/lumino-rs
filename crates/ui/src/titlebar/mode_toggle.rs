@@ -30,20 +30,29 @@ pub fn view(theme: &Theme, _current_mode: AppMode, progress: f32) -> Element<'_>
     } else {
         icon::Icon::PencilOutline
     };
-    let label = if is_waterfall { "瀑布流" } else { "编辑器" };
+    let label = if is_waterfall {
+        "瀑布流"
+    } else {
+        "编辑器"
+    };
 
     let icon_bg = palette.background.strong.color;
     let text_color = palette.background.neutral.text;
 
-    let icon_el = container(icon::view_with_size_and_theme(icon_type, 13, 13, Some(theme)))
-        .width(Length::Fixed(17.0))
-        .height(Length::Fixed(17.0))
-        .center_x(Length::Fill)
-        .center_y(Length::Fill)
-        .style(move |_theme: &Theme| container::Style {
-            background: Some(Background::Color(icon_bg)),
-            ..Default::default()
-        });
+    let icon_el = container(icon::view_with_size_and_theme(
+        icon_type,
+        13,
+        13,
+        Some(theme),
+    ))
+    .width(Length::Fixed(17.0))
+    .height(Length::Fixed(17.0))
+    .center_x(Length::Fill)
+    .center_y(Length::Fill)
+    .style(move |_theme: &Theme| container::Style {
+        background: Some(Background::Color(icon_bg)),
+        ..Default::default()
+    });
 
     let text_alpha = if is_waterfall { p } else { 1.0 - p };
 

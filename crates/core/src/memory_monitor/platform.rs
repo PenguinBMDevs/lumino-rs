@@ -171,10 +171,8 @@ pub fn get_process_cpu_time_us() -> u64 {
     let ret = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
     if ret == 0 {
         let usage = unsafe { usage.assume_init() };
-        let user_us =
-            usage.ru_utime.tv_sec as u64 * 1_000_000 + usage.ru_utime.tv_usec as u64;
-        let sys_us =
-            usage.ru_stime.tv_sec as u64 * 1_000_000 + usage.ru_stime.tv_usec as u64;
+        let user_us = usage.ru_utime.tv_sec as u64 * 1_000_000 + usage.ru_utime.tv_usec as u64;
+        let sys_us = usage.ru_stime.tv_sec as u64 * 1_000_000 + usage.ru_stime.tv_usec as u64;
         user_us + sys_us
     } else {
         0
@@ -229,8 +227,7 @@ pub fn get_process_cpu_time_us() -> u64 {
         {
             let kernel_100ns =
                 ((kernel.dw_high_date_time as u64) << 32) | kernel.dw_low_date_time as u64;
-            let user_100ns =
-                ((user.dw_high_date_time as u64) << 32) | user.dw_low_date_time as u64;
+            let user_100ns = ((user.dw_high_date_time as u64) << 32) | user.dw_low_date_time as u64;
             // FILETIME units are 100-nanosecond intervals
             (kernel_100ns + user_100ns) / 10
         } else {
