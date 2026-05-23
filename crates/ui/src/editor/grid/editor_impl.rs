@@ -61,7 +61,7 @@ impl Editor {
         let measure_ticks = ppq * 4.0;
         let start_tick = view.scroll_x / view.zoom_x;
         let end_tick = (view.scroll_x + canvas_width - keyboard_width) / view.zoom_x;
-        let grid_gap = ppq / 4.0;
+        let grid_gap = super::utils::adaptive_grid_gap(view.zoom_x, ppq);
 
         let mut current_tick = (start_tick / grid_gap).ceil() * grid_gap;
 

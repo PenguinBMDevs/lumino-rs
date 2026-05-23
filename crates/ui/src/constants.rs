@@ -150,6 +150,10 @@ pub mod rendering {
         pub const BAR_LINE: [f32; 4] = [0.3, 0.3, 0.3, 1.0];
         /// 拍线颜色
         pub const BEAT_LINE: [f32; 4] = [0.2, 0.2, 0.2, 1.0];
+        /// 半拍线颜色
+        pub const HALF_BEAT_LINE: [f32; 4] = [0.2, 0.2, 0.2, 0.5];
+        /// 网格线颜色
+        pub const GRID_LINE: [f32; 4] = [0.2, 0.2, 0.2, 0.2];
     }
 }
 

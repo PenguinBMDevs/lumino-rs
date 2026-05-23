@@ -18,8 +18,8 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
     let start_tick = view.scroll_x / view.zoom_x;
     let end_tick = (view.scroll_x + bounds.width - keyboard_width) / view.zoom_x;
 
-    // 网格线间隔：ppq/4 = 480 ticks（十六分音符精度，专业编曲软件标准）
-    let grid_gap = ppq / 4.0;
+    // 自适应网格线间隔：根据缩放级别自动调整密度
+    let grid_gap = super::utils::adaptive_grid_gap(view.zoom_x, ppq);
 
     let mut current_tick = (start_tick / grid_gap).ceil() * grid_gap;
 
