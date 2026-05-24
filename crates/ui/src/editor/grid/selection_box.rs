@@ -89,7 +89,7 @@ pub fn draw(
 
                 // 只绘制边框，不填充
                 let stroke = Stroke::default()
-                    .with_width(2.0)
+                    .with_width(3.0)
                     .with_color(selection_color);
                 frame.stroke(&path, stroke);
 
