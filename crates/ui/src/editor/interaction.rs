@@ -86,13 +86,12 @@ impl Editor {
             self.start_note_edit(index, hit_type, pos);
         } else if let Some(sel_hit) = self.hit_test_selection_box(pos) {
             // 命中选择框：根据边缘/内部分别进入调整大小或拖动状态
-            let tick = self.x_to_tick(pos.x);
             let key = self.y_to_key(pos.y);
             match sel_hit {
                 super::SelectionHitType::Inside => {
                     self.push_history();
                     self.editor_state.interaction.edit_state = EditState::DraggingSelection {
-                        last_tick: tick,
+                        last_tick: snapped_tick,
                         last_key: key,
                     };
                 }
