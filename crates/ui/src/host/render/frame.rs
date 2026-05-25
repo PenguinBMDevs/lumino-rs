@@ -57,9 +57,20 @@ impl Host {
     /// 更新播放状态
     pub(super) fn update_playback_state(&mut self) {
         if let Some(tick) = self.root.update_playback() {
+            let old_pos = self.root.editor.playback_position;
             self.root.editor.playback_position = tick;
-            // 播放时自动滚动会改变 scroll_x，仅请求重绘（canvas/WGPU层处理）
-            if self.root.editor.update_auto_scroll(tick) {
+            if self.root.is_playing() {
+                // 始终更新自动滚动（侧效果：设置 scroll_x）
+                self.root.editor.update_auto_scroll(tick);
+                // 播放时总是请求重绘并标记 UI 脏，确保播放指示线位置更新。
+                // 关键：即使自动滚动不触发（如循环回绕后指示线回到起点），
+                // 也必须重建 iced canvas UI 使指示线在新位置绘制。
+                if (tick - old_pos).abs() > f32::EPSILON {
+                    self.ui_dirty = true;
+                }
+                self.window_ctx.window.request_redraw();
+            } else if self.root.editor.update_auto_scroll(tick) {
+                // 非播放状态：仅当自动滚动触发时才重绘（旧行为）
                 self.window_ctx.window.request_redraw();
             }
         }

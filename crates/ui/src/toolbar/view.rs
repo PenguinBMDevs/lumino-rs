@@ -356,8 +356,8 @@ impl Toolbar {
         container(
             button(
                 container(text(label).size(16).color(text_color).center())
-                    .width(iced_widget::core::Length::Fixed(48.0))
-                    .height(iced_widget::core::Length::Fixed(32.0))
+                    .width(iced_widget::core::Length::Fill)
+                    .height(iced_widget::core::Length::Fill)
                     .align_x(iced_core::alignment::Horizontal::Center)
                     .align_y(iced_core::alignment::Vertical::Center),
             )
@@ -382,6 +382,8 @@ impl Toolbar {
                 }
                 .with_background(bg)
             })
+            .width(iced_widget::core::Length::Fill)
+            .height(iced_widget::core::Length::Fill)
             .padding(4),
         )
         .width(56)
@@ -390,7 +392,7 @@ impl Toolbar {
         .align_x(iced_core::alignment::Horizontal::Center)
         .style(move |_theme: &Theme| {
             container::Style::default()
-                .background(weak_color)
+                .background(iced_core::Color::TRANSPARENT)
                 .border(iced_core::Border {
                     radius: 4.0.into(),
                     width: 0.0,

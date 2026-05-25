@@ -61,7 +61,7 @@ mod tests {
     use crate::message::Message;
     use crate::playback::PlaybackState;
     use crate::toolbar;
-    use lumino_core::storage::config::UiConfig;
+    use lumino_core::storage::config::{AutoScrollConfig, AutoScrollMode, UiConfig};
 
     /// 模拟 MIDI 输出连接，用于测试 playback 流程
     struct MockOutput {
@@ -865,6 +865,173 @@ mod tests {
             "残留音符长度应被设置为默认长度，实际 {}",
             note.length
         );
+    }
+
+    /// 测试循环回绕全链路：引擎回绕 → playback_position → auto_scroll → 指示线位置
+    ///
+    /// 验证循环回绕后：
+    /// 1. manager.current_tick() 回到 loop_start 附近
+    /// 2. update_auto_scroll() 根据实际 tick 计算出正确的 scroll_x
+    /// 3. get_playback_indicator_screen_x() 返回正确的屏幕坐标
+    #[test]
+    fn test_loop_wrapping_full_pipeline_position_verification() {
+        use crate::playback::PlaybackManager;
+        use std::time::{Duration, Instant};
+
+        // ── 直接创建 PlaybackManager 和 Editor ──
+        let mut manager = PlaybackManager::new(480);
+        let mut editor = crate::editor::Editor::new();
+
+        // 设置已知视口参数（固定值，用于精确位置计算）
+        editor.editor_state.view.zoom_x = 2.0;
+        editor.editor_state.view.keyboard_width = 60.0;
+        editor.editor_state.view.scroll_x = 0.0;
+        editor.editor_state.canvas.size = iced_core::Point::new(1280.0, 800.0);
+
+        // ── 设置循环 ──
+        manager.set_looping(true);
+        manager.set_loop_range(100.0, 500.0);
+
+        // ── 播放并等待引擎就绪 ──
+        manager.play();
+        // 轮询直到 tick 开始前进（引擎线程处理了 Play 命令）
+        let deadline = Instant::now() + Duration::from_millis(200);
+        let mut tick_before = manager.current_tick();
+        while Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+            let tick_now = manager.current_tick();
+            if tick_now > tick_before {
+                break; // 引擎开始播放了
+            }
+            tick_before = tick_now;
+        }
+        let tick_running = manager.current_tick();
+        eprintln!("[DEBUG] tick after engine started: {:.1}", tick_running);
+        assert!(
+            tick_running > 0.0,
+            "引擎应已开始播放，current_tick 应为正数，实际 = {}",
+            tick_running,
+        );
+
+        // ── seek 到循环终点之后（600 > 500），触发回绕 ──
+        manager.seek(600.0);
+
+        // 轮询等待回绕发生（current_tick 应跳到 < loop_end）
+        let deadline = Instant::now() + Duration::from_millis(200);
+        let mut wrapped_tick = manager.current_tick();
+        while Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+            wrapped_tick = manager.current_tick();
+            if wrapped_tick >= 80.0 && wrapped_tick <= 520.0 && wrapped_tick < 500.0 {
+                // 回绕已发生：tick 在 100 附近
+                break;
+            }
+        }
+        eprintln!("[DEBUG] tick after seek+wrap: {:.1}", wrapped_tick);
+
+        // ════════════════════════════════════════════════
+        // 验证 1: 引擎层回绕
+        // ════════════════════════════════════════════════
+        assert!(
+            wrapped_tick >= 80.0 && wrapped_tick <= 300.0,
+            "引擎层回绕失败：current_tick 应接近 loop_start(100)，实际 = {}",
+            wrapped_tick,
+        );
+        // 如果 tick 大于 500 则回绕完全没发生
+        assert!(
+            wrapped_tick < 500.0,
+            "引擎层回绕失败：tick >= loop_end(500)，实际 = {}",
+            wrapped_tick,
+        );
+
+        let current_tick = wrapped_tick;
+
+        // ════════════════════════════════════════════════
+        // 验证 2: FixedIndicatorLeft 模式
+        // ════════════════════════════════════════════════
+        {
+            editor.set_auto_scroll_config(AutoScrollConfig {
+                mode: AutoScrollMode::FixedIndicatorLeft,
+                fixed_indicator_position: 300,
+                ..Default::default()
+            });
+
+            // 模拟 update_playback_state: 同步引擎 tick 到编辑器
+            editor.playback_position = current_tick;
+
+            // update_auto_scroll(): target = 100 * 2.0 - 300 = -100 → clamp 到 0.0
+            let scrolled = editor.update_auto_scroll(current_tick);
+            assert!(scrolled, "FixedIndicatorLeft 模式 auto_scroll 应始终触发");
+            assert!(
+                (editor.editor_state.view.scroll_x - 0.0).abs() < f32::EPSILON,
+                "scroll_x 应为 0.0 (100*2-300=-100 clamp to 0)，实际 = {}",
+                editor.editor_state.view.scroll_x,
+            );
+
+            // get_playback_indicator_screen_x(): keyboard_width(60) + fixed_position(300) = 360
+            let screen_x = editor.get_playback_indicator_screen_x();
+            assert!(screen_x.is_some(), "指示线位置应存在");
+            assert!(
+                (screen_x.unwrap() - 360.0).abs() < f32::EPSILON,
+                "FixedIndicatorLeft 模式指示线应在 360px，实际 = {}",
+                screen_x.unwrap(),
+            );
+        }
+
+        // ════════════════════════════════════════════════
+        // 验证 3: ScrollingIndicator 模式（auto_scroll 不触发，指示线由 tick 计算）
+        // ════════════════════════════════════════════════
+        {
+            editor.set_auto_scroll_config(AutoScrollConfig {
+                mode: AutoScrollMode::ScrollingIndicator,
+                page_trigger_offset: 100,
+                page_return_position: 100,
+                ..Default::default()
+            });
+
+            // 回绕后 tick=100，指示线在 viewport 左侧，不触发翻页
+            let scrolled = editor.update_auto_scroll(current_tick);
+            assert!(!scrolled, "ScrollingIndicator: 回绕后不应触发翻页滚动");
+
+            // 指示线位置 = tick * zoom_x - scroll_x + keyboard_width
+            let expected_indicator_x = current_tick * 2.0 - 0.0 + 60.0;
+            let screen_x = editor.get_playback_indicator_screen_x();
+            assert!(screen_x.is_some(), "指示线位置应存在");
+            assert!(
+                (screen_x.unwrap() - expected_indicator_x).abs() < 1.0,
+                "ScrollingIndicator 模式指示线应在 {:.0}px ({}*2+60)，实际 = {}",
+                expected_indicator_x,
+                current_tick,
+                screen_x.unwrap(),
+            );
+        }
+
+        // ════════════════════════════════════════════════
+        // 验证 4: Off 模式（无 auto_scroll，指示线由 tick 计算）
+        // ════════════════════════════════════════════════
+        {
+            editor.set_auto_scroll_config(AutoScrollConfig {
+                mode: AutoScrollMode::Off,
+                ..Default::default()
+            });
+
+            let scrolled = editor.update_auto_scroll(current_tick);
+            assert!(!scrolled, "Off 模式 auto_scroll 不应触发");
+
+            let expected_indicator_x = current_tick * 2.0 - 0.0 + 60.0;
+            let screen_x = editor.get_playback_indicator_screen_x();
+            assert!(screen_x.is_some(), "指示线位置应存在");
+            assert!(
+                (screen_x.unwrap() - expected_indicator_x).abs() < 1.0,
+                "Off 模式指示线应在 {:.0}px ({}*2+60)，实际 = {}",
+                expected_indicator_x,
+                current_tick,
+                screen_x.unwrap(),
+            );
+        }
+
+        // 清理
+        manager.stop();
     }
 }
 

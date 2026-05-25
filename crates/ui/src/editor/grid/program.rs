@@ -52,6 +52,7 @@ impl<'a> PianoRollGrid<'a> {
                     loop_range.start_tick() * v.zoom_x - v.scroll_x + v.keyboard_width;
                 let loop_end_x = loop_range.end_tick() * v.zoom_x - v.scroll_x + v.keyboard_width;
                 if local_pos.x >= loop_start_x && local_pos.x <= loop_end_x {
+                    state.is_loop_dragging = true;
                     return Some(canvas::Action::publish(Message::LoopRange(
                         crate::message::LoopRangeAction::RulerPressed {
                             x: local_pos.x,

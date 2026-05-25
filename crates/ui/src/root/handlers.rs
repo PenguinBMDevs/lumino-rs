@@ -505,6 +505,7 @@ impl Root {
                             view.keyboard_width,
                             view.scroll_x,
                             view.zoom_x,
+                            view.snap_precision,
                         );
                         true
                     } else {

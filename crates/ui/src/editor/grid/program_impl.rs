@@ -48,9 +48,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             }
             Event::Mouse(mouse::Event::CursorMoved { position }) => {
                 let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
-                if let Some(loop_range) = self.editor.loop_range.as_ref()
-                    && loop_range.is_dragging()
-                {
+                if state.is_loop_dragging {
                     return Some(Action::publish(Message::LoopRange(
                         crate::message::LoopRangeAction::RulerMoved {
                             x: local_pos.x,
@@ -63,9 +61,8 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                 ))));
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                if let Some(loop_range) = self.editor.loop_range.as_ref()
-                    && loop_range.is_dragging()
-                {
+                if state.is_loop_dragging {
+                    state.is_loop_dragging = false;
                     return Some(Action::publish(Message::LoopRange(
                         crate::message::LoopRangeAction::RulerReleased,
                     )));
@@ -91,7 +88,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
 
     fn mouse_interaction(
         &self,
-        _state: &Self::State,
+        state: &Self::State,
         _bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> mouse::Interaction {
@@ -113,6 +110,32 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             EditState::Selecting { .. } => mouse::Interaction::Crosshair,
             EditState::Scrubbing => mouse::Interaction::Grabbing,
             EditState::Idle => {
+                // 先检查是否悬停在循环区域手柄上
+                if let Some(local_pos) = state.position {
+                    let v = &self.editor.editor_state.view;
+                    if local_pos.y < v.ruler_height
+                        && local_pos.x >= v.keyboard_width
+                        && let Some(loop_range) = self.editor.loop_range.as_ref()
+                    {
+                        let hit = loop_range.hit_test_at(
+                            local_pos.x,
+                            v.keyboard_width,
+                            v.scroll_x,
+                            v.zoom_x,
+                        );
+                        match hit {
+                            crate::editor::grid::LoopHitTest::StartHandle
+                            | crate::editor::grid::LoopHitTest::EndHandle => {
+                                return mouse::Interaction::ResizingHorizontally;
+                            }
+                            crate::editor::grid::LoopHitTest::Body => {
+                                return mouse::Interaction::Pointer;
+                            }
+                            crate::editor::grid::LoopHitTest::None => {}
+                        }
+                    }
+                }
+
                 // 先检查是否悬停在选择框上
                 if let Some(cursor_pos) = _cursor.position() {
                     let local_pos =

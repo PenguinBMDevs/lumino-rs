@@ -159,17 +159,21 @@ impl LoopRange {
         keyboard_width: f32,
         scroll_x: f32,
         zoom_x: f32,
+        snap_precision: f32,
     ) {
         if self.is_dragging_start {
             let tick = (screen_x - keyboard_width + scroll_x) / zoom_x;
-            self.update_start(tick);
+            let snapped = (tick / snap_precision).round() * snap_precision;
+            self.update_start(snapped);
         } else if self.is_dragging_end {
             let tick = (screen_x - keyboard_width + scroll_x) / zoom_x;
-            self.update_end(tick);
+            let snapped = (tick / snap_precision).round() * snap_precision;
+            self.update_end(snapped);
         } else if self.is_dragging_body {
             let tick = (screen_x - keyboard_width + scroll_x) / zoom_x;
+            let snapped = (tick / snap_precision).round() * snap_precision;
             let center = (self.start_tick + self.end_tick) / 2.0;
-            let delta = tick - center;
+            let delta = snapped - center;
             self.move_range(delta);
         }
     }
@@ -205,6 +209,37 @@ impl LoopRange {
         let start = self.start_tick * zoom_x - scroll_x + keyboard_width;
         let end = self.end_tick * zoom_x - scroll_x + keyboard_width;
         Some((start, end))
+    }
+
+    /// 无副作用的命中检测（用于鼠标指针样式判断）
+    pub fn hit_test_at(
+        &self,
+        screen_x: f32,
+        keyboard_width: f32,
+        scroll_x: f32,
+        zoom_x: f32,
+    ) -> LoopHitTest {
+        if !self.enabled {
+            return LoopHitTest::None;
+        }
+        let (loop_screen_start, loop_screen_end) =
+            match self.to_screen_coords(keyboard_width, scroll_x, zoom_x) {
+                Some(coords) => coords,
+                None => return LoopHitTest::None,
+            };
+
+        if screen_x < loop_screen_start || screen_x > loop_screen_end {
+            return LoopHitTest::None;
+        }
+
+        let handle_w = Self::HANDLE_WIDTH;
+        if (screen_x - loop_screen_start).abs() <= handle_w / 2.0 {
+            LoopHitTest::StartHandle
+        } else if (screen_x - loop_screen_end).abs() <= handle_w / 2.0 {
+            LoopHitTest::EndHandle
+        } else {
+            LoopHitTest::Body
+        }
     }
 }
 
