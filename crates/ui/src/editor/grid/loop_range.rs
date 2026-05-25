@@ -173,7 +173,8 @@ impl LoopRange {
             let tick = (screen_x - keyboard_width + scroll_x) / zoom_x;
             let snapped = (tick / snap_precision).round() * snap_precision;
             let center = (self.start_tick + self.end_tick) / 2.0;
-            let delta = snapped - center;
+            let rough_delta = snapped - center;
+            let delta = (rough_delta / snap_precision).round() * snap_precision;
             self.move_range(delta);
         }
     }
@@ -392,5 +393,100 @@ mod tests {
         assert!(!loop_range.enabled());
         assert!((loop_range.start_tick() - 0.0).abs() < f32::EPSILON);
         assert!((loop_range.end_tick() - 1920.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_body_drag_delta_aligned_to_snap_precision() {
+        let mut loop_range = LoopRange::new();
+        loop_range.enable();
+        loop_range.set_range(0.0, 1920.0);
+        // 初始 center = 960.0
+
+        let snap_precision = 1920.0; // quarter note at PPQ=1920
+
+        // 模拟 body drag 从鼠标位置转换所得 tick = 1500 (first drag, near start)
+        loop_range.is_dragging_body = true;
+        loop_range.handle_mouse_move(1500.0, 0.0, 0.0, 1.0, snap_precision);
+        // delta = round((1920-960)/1920)*1920 = round(960/1920)*1920 = 1920
+        // [0,1920] -> [1920,3840]
+        assert!(
+            (loop_range.start_tick() - 1920.0).abs() < f32::EPSILON,
+            "第一次拖动 delta 应为 1920(四分音符)，实际 start_tick={}",
+            loop_range.start_tick()
+        );
+        assert!((loop_range.end_tick() - 3840.0).abs() < f32::EPSILON);
+
+        // 第二次拖动: center = 2880, mouse tick = 5000
+        loop_range.handle_mouse_move(5000.0, 0.0, 0.0, 1.0, snap_precision);
+        // snapped = round(5000/1920)*1920 = 5760
+        // center = 2880, rough_delta = 2880, round(2880/1920)*1920 = 3840
+        // [1920,3840] -> [5760,7680]
+        assert!(
+            (loop_range.start_tick() - 5760.0).abs() < f32::EPSILON,
+            "第二次拖动 delta 应为 3840(2倍四分音符)，实际 start_tick={}",
+            loop_range.start_tick()
+        );
+        assert!((loop_range.end_tick() - 7680.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_body_drag_precision_with_ppq_480() {
+        let mut loop_range = LoopRange::new();
+        loop_range.enable();
+        loop_range.set_range(0.0, 1920.0);
+        // 初始 center = 960.0
+
+        let snap_precision = 480.0; // quarter note at PPQ=480
+
+        // 模拟 body drag，第一次有效移动
+        loop_range.is_dragging_body = true;
+        loop_range.handle_mouse_move(1500.0, 0.0, 0.0, 1.0, snap_precision);
+        // tick=1500, snapped=1440, center=960, rough_delta=480, delta=480
+        // [0,1920] -> [480,2400]
+        let start1 = loop_range.start_tick();
+        assert!(
+            (start1 - 480.0).abs() < f32::EPSILON,
+            "PPQ=480 第一次 delta 应为 480(四分音符), 实际 start_tick={}",
+            start1
+        );
+
+        // 继续拖动: center = 1440, mouse tick = 2500
+        loop_range.handle_mouse_move(2500.0, 0.0, 0.0, 1.0, snap_precision);
+        // tick=2500, snapped=2400, center=1440, rough_delta=960, delta=960
+        // [480,2400] -> [1440,3360]
+        let start2 = loop_range.start_tick();
+        assert!(
+            (start2 - 1440.0).abs() < f32::EPSILON,
+            "PPQ=480 第二次 delta 应为 960, 实际 start_tick={}",
+            start2
+        );
+    }
+
+    #[test]
+    fn test_body_drag_delta_always_multiple_of_snap_precision() {
+        let mut loop_range = LoopRange::new();
+        loop_range.enable();
+
+        // 用非标准中心位置测试
+        loop_range.set_range(100.0, 500.0);
+        // center = 300.0
+
+        let snap_precision = 120.0;
+
+        loop_range.is_dragging_body = true;
+        // 随机拖拽位置
+        for mouse_tick in [350.0, 600.0, 777.0, 1200.0, 2500.0] {
+            loop_range.handle_mouse_move(mouse_tick, 0.0, 0.0, 1.0, snap_precision);
+            let center = loop_range.start_tick() + loop_range.length() / 2.0;
+            let delta = center - 300.0;
+            let snapped_delta = (delta / snap_precision).round() * snap_precision;
+            assert!(
+                (delta - snapped_delta).abs() < 1e-4,
+                "delta {} 应为 {} 的整数倍, 偏差={}",
+                delta,
+                snap_precision,
+                (delta - snapped_delta).abs()
+            );
+        }
     }
 }

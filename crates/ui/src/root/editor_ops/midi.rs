@@ -1033,6 +1033,112 @@ mod tests {
         // 清理
         manager.stop();
     }
+
+    /// 测试 Bug 2 场景：先开启循环再创建播放管理器，循环状态应同步到引擎
+    ///
+    /// 模拟用户先点击反复开启按钮，再点击播放的流程：
+    /// 1. Editor 中循环已启用（但 PlaybackManager 还不存在）
+    /// 2. 创建 PlaybackManager 后将循环状态同步过去（即 init_playback_manager 中的修复）
+    /// 3. 播放后 seek 到循环终点外，验证回绕正确触发
+    #[test]
+    fn test_loop_synced_to_new_playback_manager() {
+        use crate::playback::PlaybackManager;
+        use std::time::{Duration, Instant};
+
+        let mut manager = PlaybackManager::new(480);
+        manager.set_current_track_notes(Vec::new());
+
+        // ═══ 模拟：Editor 中循环已开启但 manager 不存在 ═══
+        let mut editor = crate::editor::Editor::new();
+        if let Some(lr) = &mut editor.loop_range {
+            lr.set_range(100.0, 500.0);
+            lr.enable();
+        }
+        // 此时 editor.loop_range 为 enabled, [100, 500]
+        // 但 manager 还不知道循环
+        // 模拟 fix: 创建 manager 后同步循环状态
+        if let Some(lr) = &editor.loop_range
+            && lr.enabled()
+        {
+            manager.set_looping(true);
+            manager.set_loop_range(lr.start_tick(), lr.end_tick());
+        }
+
+        // ═══ 播放并验证回绕 ═══
+        manager.play();
+        let deadline = Instant::now() + Duration::from_millis(200);
+        let mut tick_before = manager.current_tick();
+        while Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+            let tick_now = manager.current_tick();
+            if tick_now > tick_before {
+                break;
+            }
+            tick_before = tick_now;
+        }
+        assert!(manager.current_tick() > 0.0, "引擎应已开始播放");
+
+        // seek 到循环终点后 → 应触发回绕
+        manager.seek(600.0);
+        let deadline = Instant::now() + Duration::from_millis(200);
+        let mut wrapped_tick = manager.current_tick();
+        while Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+            wrapped_tick = manager.current_tick();
+            if wrapped_tick >= 80.0 && wrapped_tick < 500.0 {
+                break;
+            }
+        }
+        assert!(
+            wrapped_tick >= 80.0 && wrapped_tick < 500.0,
+            "期待回绕到 loop_start(100) 附近，实际 = {}",
+            wrapped_tick,
+        );
+
+        manager.stop();
+    }
+
+    /// 测试 Bug 2 的完整路径：不同步循环状态时回绕不应触发
+    ///
+    /// 验证 fix 的必要性：如果没有 sync_loop_to_playback_state，
+    /// 新创建的 PlaybackManager 不知道循环范围，seek 到循环终点后不会回绕
+    #[test]
+    fn test_loop_not_synced_no_wrap() {
+        use crate::playback::PlaybackManager;
+        use std::time::{Duration, Instant};
+
+        let mut manager = PlaybackManager::new(480);
+        manager.set_current_track_notes(Vec::new());
+        // 故意不同步循环状态 - manager 不知道任何循环
+        // set_looping(false) by default
+
+        // 验证默认不循环时，seek 到 600 后继续前进（不应回绕）
+
+        manager.play();
+        let deadline = Instant::now() + Duration::from_millis(200);
+        let mut tick_before = manager.current_tick();
+        while Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+            let tick_now = manager.current_tick();
+            if tick_now > tick_before {
+                break;
+            }
+            tick_before = tick_now;
+        }
+
+        // seek 到 600 → 不应回绕（因为没有设置循环）
+        manager.seek(600.0);
+        std::thread::sleep(Duration::from_millis(30));
+        let tick_after = manager.current_tick();
+        // 没有回绕，tick 应 > 500 (在 600 附近)
+        assert!(
+            tick_after > 500.0,
+            "未同步循环状态时不应回绕，current_tick 应 > 500，实际 = {}",
+            tick_after,
+        );
+
+        manager.stop();
+    }
 }
 
 /// 可计数的 Mock MIDI 输出

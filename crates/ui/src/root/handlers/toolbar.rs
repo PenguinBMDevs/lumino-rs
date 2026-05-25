@@ -137,6 +137,20 @@ impl ToolbarHandler {
                 root.velocity_filter_threshold,
             );
         }
+
+        // 同步循环状态到播放引擎（用户可能在创建管理器前已开启循环）
+        if let Some(loop_range) = &root.editor.loop_range
+            && loop_range.enabled()
+            && let Some(manager) = &mut root.playback_manager
+        {
+            manager.set_looping(true);
+            manager.set_loop_range(loop_range.start_tick(), loop_range.end_tick());
+            tracing::debug!(
+                "Root: 循环状态已同步到播放引擎 [{:.2}, {:.2}]",
+                loop_range.start_tick(),
+                loop_range.end_tick(),
+            );
+        }
     }
 
     fn sync_toolbar_tool_state(&self, root: &mut Root, event: &crate::toolbar::Event) {
