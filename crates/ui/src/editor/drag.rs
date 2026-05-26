@@ -62,15 +62,18 @@ impl Editor {
                 offset_tick,
                 offset_key,
                 last_played_key,
+                original_tick,
                 ..
             } => {
-                let calculated_tick =
-                    ((tick - *offset_tick) / snap_precision).round() * snap_precision;
+                let mouse_delta = tick - *offset_tick - *original_tick;
+                let snapped_delta =
+                    (mouse_delta / snap_precision).round() * snap_precision;
+                let calculated_tick = (*original_tick + snapped_delta).max(0.0);
                 let calculated_key = (key as i32 - *offset_key)
                     .clamp(0, visible_key_count.saturating_sub(1) as i32)
                     as u16;
                 new_key = Some(calculated_key);
-                new_tick = Some(calculated_tick.max(0.0));
+                new_tick = Some(calculated_tick);
 
                 if calculated_key != *last_played_key {
                     note_to_play = Some(calculated_key);

@@ -489,6 +489,7 @@ impl Root {
                         view.scroll_x,
                         view.zoom_x,
                         view.ruler_height,
+                        view.snap_precision,
                     );
                     if hit != crate::editor::grid::LoopHitTest::None {
                         self.editor.ruler_cache.clear();

@@ -9,6 +9,8 @@ pub struct LoopRange {
     is_dragging_start: bool,
     is_dragging_end: bool,
     is_dragging_body: bool,
+    drag_anchor_start_tick: f32,
+    drag_anchor_mouse_tick: f32,
 }
 
 impl Default for LoopRange {
@@ -29,6 +31,8 @@ impl LoopRange {
             is_dragging_start: false,
             is_dragging_end: false,
             is_dragging_body: false,
+            drag_anchor_start_tick: 0.0,
+            drag_anchor_mouse_tick: 0.0,
         }
     }
 
@@ -122,6 +126,7 @@ impl LoopRange {
         scroll_x: f32,
         zoom_x: f32,
         _ruler_height: f32,
+        snap_precision: f32,
     ) -> LoopHitTest {
         if !self.enabled {
             return LoopHitTest::None;
@@ -149,6 +154,10 @@ impl LoopRange {
         }
 
         self.is_dragging_body = true;
+        let tick = (screen_x - keyboard_width + scroll_x) / zoom_x;
+        let snapped = (tick / snap_precision).round() * snap_precision;
+        self.drag_anchor_start_tick = self.start_tick;
+        self.drag_anchor_mouse_tick = snapped;
         tracing::debug!("循环区域整体拖拽开始");
         LoopHitTest::Body
     }
@@ -172,10 +181,11 @@ impl LoopRange {
         } else if self.is_dragging_body {
             let tick = (screen_x - keyboard_width + scroll_x) / zoom_x;
             let snapped = (tick / snap_precision).round() * snap_precision;
-            let center = (self.start_tick + self.end_tick) / 2.0;
-            let rough_delta = snapped - center;
-            let delta = (rough_delta / snap_precision).round() * snap_precision;
-            self.move_range(delta);
+            let raw_delta = snapped - self.drag_anchor_mouse_tick;
+            let delta = (raw_delta / snap_precision).round() * snap_precision;
+            let new_start = (self.drag_anchor_start_tick + delta).max(0.0);
+            let range_length = self.end_tick - self.start_tick;
+            self.set_range(new_start, new_start + range_length);
         }
     }
 
@@ -400,30 +410,34 @@ mod tests {
         let mut loop_range = LoopRange::new();
         loop_range.enable();
         loop_range.set_range(0.0, 1920.0);
-        // 初始 center = 960.0
 
-        let snap_precision = 1920.0; // quarter note at PPQ=1920
+        let snap_precision = 1920.0;
+        let keyboard_width = 0.0;
+        let scroll_x = 0.0;
+        let zoom_x = 1.0;
 
-        // 模拟 body drag 从鼠标位置转换所得 tick = 1500 (first drag, near start)
-        loop_range.is_dragging_body = true;
-        loop_range.handle_mouse_move(1500.0, 0.0, 0.0, 1.0, snap_precision);
-        // delta = round((1920-960)/1920)*1920 = round(960/1920)*1920 = 1920
-        // [0,1920] -> [1920,3840]
+        // press 在 screen_x=10（避开 start handle，snapped=round(10/1920)=0 → 锚点=0）
+        loop_range.handle_mouse_press(10.0, keyboard_width, scroll_x, zoom_x, 40.0, snap_precision);
+        assert!(loop_range.is_dragging_body);
+        assert!((loop_range.drag_anchor_start_tick - 0.0).abs() < f32::EPSILON);
+        assert!((loop_range.drag_anchor_mouse_tick - 0.0).abs() < f32::EPSILON);
+
+        // 拖到 screen_x=1500 → tick=1500 → snapped=1920 → delta=1920
+        // [0,1920] → [1920,3840]
+        loop_range.handle_mouse_move(1500.0, keyboard_width, scroll_x, zoom_x, snap_precision);
         assert!(
             (loop_range.start_tick() - 1920.0).abs() < f32::EPSILON,
-            "第一次拖动 delta 应为 1920(四分音符)，实际 start_tick={}",
+            "第一次拖动 start_tick 应为 1920，实际={}",
             loop_range.start_tick()
         );
         assert!((loop_range.end_tick() - 3840.0).abs() < f32::EPSILON);
 
-        // 第二次拖动: center = 2880, mouse tick = 5000
-        loop_range.handle_mouse_move(5000.0, 0.0, 0.0, 1.0, snap_precision);
-        // snapped = round(5000/1920)*1920 = 5760
-        // center = 2880, rough_delta = 2880, round(2880/1920)*1920 = 3840
-        // [1920,3840] -> [5760,7680]
+        // 继续拖到 screen_x=5000 → tick=5000 → snapped=5760 → delta=5760
+        // [1920,3840] → [5760,7680]
+        loop_range.handle_mouse_move(5000.0, keyboard_width, scroll_x, zoom_x, snap_precision);
         assert!(
             (loop_range.start_tick() - 5760.0).abs() < f32::EPSILON,
-            "第二次拖动 delta 应为 3840(2倍四分音符)，实际 start_tick={}",
+            "第二次拖动 start_tick 应为 5760，实际={}",
             loop_range.start_tick()
         );
         assert!((loop_range.end_tick() - 7680.0).abs() < f32::EPSILON);
@@ -434,30 +448,30 @@ mod tests {
         let mut loop_range = LoopRange::new();
         loop_range.enable();
         loop_range.set_range(0.0, 1920.0);
-        // 初始 center = 960.0
 
-        let snap_precision = 480.0; // quarter note at PPQ=480
+        let snap_precision = 480.0;
+        let keyboard_width = 0.0;
+        let scroll_x = 0.0;
+        let zoom_x = 1.0;
 
-        // 模拟 body drag，第一次有效移动
-        loop_range.is_dragging_body = true;
-        loop_range.handle_mouse_move(1500.0, 0.0, 0.0, 1.0, snap_precision);
-        // tick=1500, snapped=1440, center=960, rough_delta=480, delta=480
-        // [0,1920] -> [480,2400]
+        // press 在 body 区域（screen_x=10，snapped=0）
+        loop_range.handle_mouse_press(10.0, keyboard_width, scroll_x, zoom_x, 40.0, snap_precision);
+
+        // 拖到 screen_x=1500 → tick=1500 → snapped=1440 → delta=1440
+        loop_range.handle_mouse_move(1500.0, keyboard_width, scroll_x, zoom_x, snap_precision);
         let start1 = loop_range.start_tick();
         assert!(
-            (start1 - 480.0).abs() < f32::EPSILON,
-            "PPQ=480 第一次 delta 应为 480(四分音符), 实际 start_tick={}",
+            (start1 - 1440.0).abs() < f32::EPSILON,
+            "PPQ=480 第一次 start_tick 应为 1440, 实际={}",
             start1
         );
 
-        // 继续拖动: center = 1440, mouse tick = 2500
-        loop_range.handle_mouse_move(2500.0, 0.0, 0.0, 1.0, snap_precision);
-        // tick=2500, snapped=2400, center=1440, rough_delta=960, delta=960
-        // [480,2400] -> [1440,3360]
+        // 继续拖到 screen_x=2500 → tick=2500 → snapped=2400 → delta=2400
+        loop_range.handle_mouse_move(2500.0, keyboard_width, scroll_x, zoom_x, snap_precision);
         let start2 = loop_range.start_tick();
         assert!(
-            (start2 - 1440.0).abs() < f32::EPSILON,
-            "PPQ=480 第二次 delta 应为 960, 实际 start_tick={}",
+            (start2 - 2400.0).abs() < f32::EPSILON,
+            "PPQ=480 第二次 start_tick 应为 2400, 实际={}",
             start2
         );
     }
@@ -466,26 +480,79 @@ mod tests {
     fn test_body_drag_delta_always_multiple_of_snap_precision() {
         let mut loop_range = LoopRange::new();
         loop_range.enable();
-
-        // 用非标准中心位置测试
         loop_range.set_range(100.0, 500.0);
-        // center = 300.0
 
         let snap_precision = 120.0;
+        let keyboard_width = 0.0;
+        let scroll_x = 0.0;
+        let zoom_x = 1.0;
 
-        loop_range.is_dragging_body = true;
-        // 随机拖拽位置
+        // press 在 screen_x=300 → tick=300 → snapped=240
+        loop_range.handle_mouse_press(300.0, keyboard_width, scroll_x, zoom_x, 40.0, snap_precision);
+        let anchor_start = loop_range.drag_anchor_start_tick;
+
+        // 随机拖拽位置，每次 start_tick - anchor_start 都应是 snap 的整数倍
         for mouse_tick in [350.0, 600.0, 777.0, 1200.0, 2500.0] {
-            loop_range.handle_mouse_move(mouse_tick, 0.0, 0.0, 1.0, snap_precision);
-            let center = loop_range.start_tick() + loop_range.length() / 2.0;
-            let delta = center - 300.0;
-            let snapped_delta = (delta / snap_precision).round() * snap_precision;
+            loop_range.handle_mouse_move(mouse_tick, keyboard_width, scroll_x, zoom_x, snap_precision);
+            let offset = loop_range.start_tick() - anchor_start;
+            let snapped_offset = (offset / snap_precision).round() * snap_precision;
             assert!(
-                (delta - snapped_delta).abs() < 1e-4,
-                "delta {} 应为 {} 的整数倍, 偏差={}",
-                delta,
+                (offset - snapped_offset).abs() < 1e-4,
+                "offset {} 应为 {} 的整数倍, 偏差={}",
+                offset,
                 snap_precision,
-                (delta - snapped_delta).abs()
+                (offset - snapped_offset).abs()
+            );
+        }
+    }
+
+    #[test]
+    fn test_body_drag_no_jitter_on_boundary_oscillation() {
+        let mut loop_range = LoopRange::new();
+        loop_range.enable();
+        loop_range.set_range(1000.0, 3000.0);
+
+        let snap_precision = 480.0;
+        let keyboard_width = 0.0;
+        let scroll_x = 0.0;
+        let zoom_x = 1.0;
+
+        // press 在 body 区域 screen_x=1500（snapped=1440）
+        loop_range.handle_mouse_press(1500.0, keyboard_width, scroll_x, zoom_x, 40.0, snap_precision);
+        let _first_frame_start = loop_range.start_tick();
+
+        // 第一次移动：mouse 到 screen_x=270（snapped=480），
+        // raw_delta=480-1440=-960，delta=-960，new_start=1000-960=40
+        loop_range.handle_mouse_move(270.0, keyboard_width, scroll_x, zoom_x, snap_precision);
+        let after_first = loop_range.start_tick();
+
+        // 之后连续多帧相同鼠标位置，start_tick 不应改变
+        for _ in 0..10 {
+            loop_range.handle_mouse_move(270.0, keyboard_width, scroll_x, zoom_x, snap_precision);
+            assert!(
+                (loop_range.start_tick() - after_first).abs() < f32::EPSILON,
+                "相同鼠标位置下 start_tick 不应改变：start_tick={}，期望={}",
+                loop_range.start_tick(),
+                after_first
+            );
+        }
+
+        // 释放后重新 press，验证锚点重建
+        loop_range.handle_mouse_release();
+        assert!(!loop_range.is_dragging());
+
+        loop_range.handle_mouse_press(1800.0, keyboard_width, scroll_x, zoom_x, 40.0, snap_precision);
+        loop_range.handle_mouse_move(1500.0, keyboard_width, scroll_x, zoom_x, snap_precision);
+        let after_second_first = loop_range.start_tick();
+
+        // 再连续多帧相同鼠标位置
+        for _ in 0..10 {
+            loop_range.handle_mouse_move(1500.0, keyboard_width, scroll_x, zoom_x, snap_precision);
+            assert!(
+                (loop_range.start_tick() - after_second_first).abs() < f32::EPSILON,
+                "第二次 press 后不稳定：start_tick={}，期望={}",
+                loop_range.start_tick(),
+                after_second_first
             );
         }
     }
