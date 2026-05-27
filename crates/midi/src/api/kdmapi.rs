@@ -11,19 +11,10 @@ use crate::{
 /// KDMAPI 全局实例（单例）
 static KDMAPI_INSTANCE: Mutex<Option<Arc<KdmapiInner>>> = Mutex::new(None);
 
-#[derive(thiserror::Error, Debug)]
-/// KDMAPI 错误处理
-pub enum KdmapiError {
-    #[error("not available")] // KDMAPI 未可用
-    NotAvailable,
-    #[error("failed to initialize stream")] // KDMAPI 初始化流失败
-    InitStreamFailed,
-    #[error("failed to request version")] // KDMAPI 请求版本失败
-    GetVersionFailed,
-
-    #[error("failed to load: {0}")] // KDMAPI 加载失败
-    Load(#[from] libloading::Error),
-}
+/// KDMAPI 错误消息常量
+const KDMAPI_NOT_AVAILABLE: &str = "not available";
+const KDMAPI_INIT_STREAM_FAILED: &str = "failed to initialize stream";
+const KDMAPI_GET_VERSION_FAILED: &str = "failed to request version";
 
 /// KDMAPI 错误转换
 impl From<libloading::Error> for Error {
@@ -91,11 +82,11 @@ impl Kdmapi {
 
             // KDMAPI 是否可用
             if !(sym.is_kdmapi_available)() {
-                return Err(Error::InitFailed(KdmapiError::NotAvailable.to_string()));
+                return Err(Error::InitFailed(KDMAPI_NOT_AVAILABLE.to_string()));
             };
             // KDMAPI 初始化流
             if (sym.initialize_kdmapi_stream)() == 0 {
-                return Err(Error::InitFailed(KdmapiError::InitStreamFailed.to_string()));
+                return Err(Error::InitFailed(KDMAPI_INIT_STREAM_FAILED.to_string()));
             };
 
             // KDMAPI 返回版本
@@ -104,7 +95,7 @@ impl Kdmapi {
             let mut patch = 0;
             let mut rev = 0;
             if !(sym.return_kdmapi_ver)(&mut major, &mut minor, &mut patch, &mut rev) {
-                return Err(Error::InitFailed(KdmapiError::GetVersionFailed.to_string()));
+                return Err(Error::InitFailed(KDMAPI_GET_VERSION_FAILED.to_string()));
             };
 
             let inner = Arc::new(KdmapiInner {

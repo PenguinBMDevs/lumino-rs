@@ -16,6 +16,18 @@ pub use info::MidiInfo;
 pub use midly::loader::PackedControlEvent;
 pub use track::{TrackManager, TrackView, TrackVisibility};
 
+/// 将 BPM 转换为微秒每拍（tempo）
+#[inline]
+pub fn bpm_to_tempo(bpm: f64) -> u32 {
+    (60_000_000.0 / bpm).round() as u32
+}
+
+/// 将微秒每拍（tempo）转换为 BPM
+#[inline]
+pub fn tempo_to_bpm(tempo: u32) -> f64 {
+    60_000_000.0 / tempo as f64
+}
+
 use std::sync::Arc;
 
 /// LMPJ 文件数据结构（用于序列化/反序列化）

@@ -186,9 +186,7 @@ impl Root {
             return false;
         }
 
-        let note = Note::new(tick, key as u16, 0.0)
-            .with_velocity(velocity)
-            .with_channel(0);
+        let note = Note::from_raw(tick, key as u16, 0.0, velocity, 0);
 
         self.editor.editor_state.data.notes.push_back(note);
         let note_idx = self.editor.editor_state.data.notes.len() - 1;

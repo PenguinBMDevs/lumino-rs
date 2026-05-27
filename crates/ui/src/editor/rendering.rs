@@ -11,11 +11,7 @@ use crate::{Element, Message};
 
 use super::{EditState, Editor};
 
-/// 将 iced Color 转换为 [f32; 4] RGBA
-#[inline]
-fn color_to_array(color: iced_core::Color) -> [f32; 4] {
-    [color.r, color.g, color.b, color.a]
-}
+use crate::editor::note::color_to_array;
 
 impl Editor {
     /// 构建编辑器视图

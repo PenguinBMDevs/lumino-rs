@@ -7,23 +7,8 @@ use winit::{
     window::{Window, WindowAttributes, WindowId},
 };
 
-/// 对话框类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DialogType {
-    CustomPrecision,
-    Collaboration,
-    LoadConfirm,
-}
-
-/// 对话框结果
-#[derive(Debug, Clone)]
-pub enum DialogResult {
-    CustomPrecision {
-        numerator: String,
-        denominator: String,
-    },
-    LoadConfirm,
-}
+pub use lumino_ui::host::DialogResult;
+pub use lumino_ui::state::root_state::DialogType;
 
 /// 对话框窗口
 /// 每个对话框都是独立的窗口，有自己的渲染上下文
@@ -43,6 +28,7 @@ impl DialogWindow {
         _parent_window: Option<&Arc<Window>>,
     ) -> Result<Self, String> {
         let (width, height, title) = match dialog_type {
+            DialogType::None => unreachable!("不会创建 None 类型的对话框"),
             DialogType::CustomPrecision => (480.0, 180.0, "自定义贴合"),
             DialogType::Collaboration => (420.0, 320.0, "多人协作"),
             DialogType::LoadConfirm => (420.0, 260.0, "加载大文件"),
@@ -101,6 +87,7 @@ impl DialogWindow {
 
         // 根据对话框类型初始化不同的UI内容
         match self.dialog_type {
+            DialogType::None => {}
             DialogType::CustomPrecision => {
                 ui.set_custom_precision_dialog_open(true);
             }
@@ -197,20 +184,7 @@ impl DialogWindow {
         if let Some(ui) = self.ui.as_mut()
             && let Some(result) = ui.take_dialog_result()
         {
-            match result {
-                lumino_ui::host::DialogResult::CustomPrecision {
-                    numerator,
-                    denominator,
-                } => {
-                    self.result_data = Some(DialogResult::CustomPrecision {
-                        numerator,
-                        denominator,
-                    });
-                }
-                lumino_ui::host::DialogResult::LoadConfirm => {
-                    self.result_data = Some(DialogResult::LoadConfirm);
-                }
-            }
+            self.result_data = Some(result);
             self.should_close = true;
             return self.result_data.take();
         }

@@ -260,7 +260,7 @@ impl MidiDocument {
 
         for &(tick, bpm) in &all_tempo_changes {
             let tempo_microseconds = if bpm > 0.0 {
-                (60_000_000.0 / bpm) as u32
+                super::bpm_to_tempo(bpm as f64)
             } else {
                 500_000
             };
@@ -508,7 +508,8 @@ impl MidiDocument {
     /// 共享音符收集逻辑：从一段已排序的事件切片中提取音符。
     /// 使用固定大小数组替代 HashMap：256 keys × 16 channels = 4096。
     fn collect_notes(events: &[CompactEvent]) -> Vec<(f32, u8, f32, u8, u8)> {
-        use crate::midi::constants::{MAX_CONCURRENT_NOTES, MIDI_CHANNEL_COUNT, MIDI_KEY_RANGE};
+        use crate::midi::constants::{MAX_CONCURRENT_NOTES, MIDI_KEY_RANGE};
+        use lumino_midi::MIDI_CHANNEL_COUNT;
 
         let mut active_notes: [(u32, u8, u8, bool); MAX_CONCURRENT_NOTES] =
             [(0, 0, 0, false); MAX_CONCURRENT_NOTES];
@@ -556,7 +557,8 @@ impl MidiDocument {
     /// 将音符收集到指定的 Vec 中，避免中间分配。
     /// 与 `collect_notes` 逻辑相同，但直接追加到传入的 Vec。
     fn collect_notes_to(events: &[CompactEvent], out: &mut Vec<(f32, u8, f32, u8, u8)>) {
-        use crate::midi::constants::{MAX_CONCURRENT_NOTES, MIDI_CHANNEL_COUNT, MIDI_KEY_RANGE};
+        use crate::midi::constants::{MAX_CONCURRENT_NOTES, MIDI_KEY_RANGE};
+        use lumino_midi::MIDI_CHANNEL_COUNT;
 
         let mut active_notes: [(u32, u8, u8, bool); MAX_CONCURRENT_NOTES] =
             [(0, 0, 0, false); MAX_CONCURRENT_NOTES];

@@ -2,6 +2,7 @@ use midly::{MetaMessage, MidiMessage, TrackEventKind};
 
 /// MIDI 事件类型（轻量级表示）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum MidiEvent {
     NoteOn {
         track: usize,
@@ -51,6 +52,7 @@ pub enum MidiEvent {
         track: usize,
         tick: u32,
         key: i8,
+        #[serde(rename = "isMajor")]
         is_major: bool,
     },
     TrackName {
@@ -61,6 +63,7 @@ pub enum MidiEvent {
     Other {
         track: usize,
         tick: u32,
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
         raw: Vec<u8>,
     },
 }

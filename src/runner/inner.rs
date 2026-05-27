@@ -15,27 +15,12 @@ pub use lumino_core::ParsedDms;
 pub use lumino_core::ParsedMidi;
 
 /// Runner 初始化错误
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum InitError {
-    Storage(std::io::Error),
+    #[error("存储初始化失败: {0}")]
+    Storage(#[from] std::io::Error),
+    #[error("窗口初始化失败: {0}")]
     Window(String),
-}
-
-impl std::fmt::Display for InitError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            InitError::Storage(e) => write!(f, "存储初始化失败: {}", e),
-            InitError::Window(e) => write!(f, "窗口初始化失败: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for InitError {}
-
-impl From<std::io::Error> for InitError {
-    fn from(e: std::io::Error) -> Self {
-        InitError::Storage(e)
-    }
 }
 
 #[derive(Default)]

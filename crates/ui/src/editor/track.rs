@@ -37,11 +37,9 @@ impl super::Editor {
                 let raw = doc.get_track_notes(track_idx as u16);
                 let mut notes = im::Vector::new();
                 for (tick, key, length, velocity, channel) in raw {
-                    notes.push_back(
-                        crate::editor::note::Note::new(tick, key as u16, length)
-                            .with_velocity(velocity)
-                            .with_channel(channel),
-                    );
+                    notes.push_back(crate::editor::note::Note::from_raw(
+                        tick, key as u16, length, velocity, channel,
+                    ));
                 }
                 self.editor_state
                     .data

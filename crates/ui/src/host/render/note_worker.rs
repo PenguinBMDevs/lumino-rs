@@ -23,7 +23,8 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 
 use lumino_core::midi::MidiDocument;
-use lumino_core::midi::constants::{MIDI_CHANNEL_COUNT, MIDI_KEY_RANGE, TICK_SEARCH_BUFFER};
+use lumino_core::midi::constants::{MIDI_KEY_RANGE, TICK_SEARCH_BUFFER};
+use lumino_midi::MIDI_CHANNEL_COUNT;
 use lumino_gfx::{OnionNote, SwappableBuffer};
 use lumino_midi::compact::{CompactEvent, EventKind};
 

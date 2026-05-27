@@ -1,6 +1,6 @@
 //! Program trait 实现
 
-use super::state::CanvasState;
+use super::state::GridInteractionState;
 use super::{keyboard, playback_indicator, remote_cursors, ruler, selection_box};
 use crate::editor::{EditState, HitType};
 use crate::toolbar::Tool;
@@ -9,7 +9,7 @@ use iced_core::{Rectangle, mouse};
 use iced_widget::canvas::{Action, Event, Geometry, Program};
 
 impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
-    type State = CanvasState;
+    type State = GridInteractionState;
 
     fn update(
         &self,

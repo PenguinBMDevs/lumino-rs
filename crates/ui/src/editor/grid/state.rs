@@ -2,9 +2,9 @@
 
 use iced_core::Point;
 
-/// 存储 Canvas 状态的类型
+/// 钢琴卷帘网格交互状态
 #[derive(Debug)]
-pub struct CanvasState {
+pub struct GridInteractionState {
     /// 鼠标位置
     pub position: Option<Point>,
     /// 上次点击时间（用于双击检测）
@@ -17,7 +17,7 @@ pub struct CanvasState {
     pub is_loop_dragging: bool,
 }
 
-impl Default for CanvasState {
+impl Default for GridInteractionState {
     fn default() -> Self {
         Self {
             position: None,

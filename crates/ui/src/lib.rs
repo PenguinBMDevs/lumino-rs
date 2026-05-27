@@ -9,7 +9,7 @@ mod resources;
 pub mod root;
 pub mod settings;
 mod sidebar;
-mod state;
+pub mod state;
 mod statusbar;
 pub mod titlebar;
 pub mod toolbar;

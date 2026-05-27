@@ -10,9 +10,9 @@
  *
  * 服务器: lumino-02.afeu20u3jfocas.dpdns.org:80
  */
-use std::sync::Arc;
+mod common;
+
 use std::time::Duration;
-use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 use lumino_collaboration::client::{CollaborationClient, CollaborationEvent};
@@ -20,60 +20,7 @@ use lumino_collaboration::types::{
     ClientConfig, MousePosition, Note, NoteAction, NoteBatchOperation,
 };
 
-/// 等待事件的辅助结构
-#[derive(Clone)]
-struct EventCollector {
-    events: Arc<Mutex<Vec<CollaborationEvent>>>,
-}
-
-impl EventCollector {
-    fn new() -> Self {
-        Self {
-            events: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    fn callback(&self) -> impl Fn(CollaborationEvent) + Clone + Send + 'static {
-        let events = self.events.clone();
-        move |event| {
-            let events = events.clone();
-            let event_clone = event.clone();
-            tokio::spawn(async move {
-                let mut lock = events.lock().await;
-                println!("  [Event] 收到事件: {:?}", event_clone);
-                lock.push(event_clone);
-            });
-        }
-    }
-
-    async fn wait_for<T, F>(&self, predicate: F, timeout_ms: u64) -> Option<T>
-    where
-        F: Fn(&CollaborationEvent) -> Option<T>,
-    {
-        let start = std::time::Instant::now();
-        while start.elapsed().as_millis() < timeout_ms as u128 {
-            {
-                let lock = self.events.lock().await;
-                for event in lock.iter().rev() {
-                    if let Some(result) = predicate(event) {
-                        return Some(result);
-                    }
-                }
-            }
-            sleep(Duration::from_millis(100)).await;
-        }
-        None
-    }
-
-    async fn contains_event<F>(&self, predicate: F, timeout_ms: u64) -> bool
-    where
-        F: Fn(&CollaborationEvent) -> bool,
-    {
-        self.wait_for(|e| if predicate(e) { Some(()) } else { None }, timeout_ms)
-            .await
-            .is_some()
-    }
-}
+use common::EventCollector;
 
 /// 所有协作UI测试的主入口
 /// 需要外部协作服务器，默认忽略。

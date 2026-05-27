@@ -32,4 +32,4 @@ pub mod utils;
 
 pub use loop_range::{LoopHitTest, LoopRange};
 pub use program::PianoRollGrid;
-pub use state::CanvasState;
+pub use state::GridInteractionState;

@@ -1,9 +1,6 @@
 /// 默认的 PPQN (Pulses Per Quarter Note) 值
 pub const DEFAULT_PPQN: u16 = 1920;
 
-/// MIDI 标准通道数
-pub const MIDI_CHANNEL_COUNT: u8 = 16;
-
 /// 扩展 MIDI Key 范围 (0-255)
 pub const MIDI_KEY_RANGE: u16 = 256;
 

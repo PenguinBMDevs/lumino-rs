@@ -42,7 +42,7 @@ impl MidiHandler {
                 .iter()
                 .map(|&(tick, bpm)| {
                     let microseconds = if bpm > 0.0 {
-                        (60_000_000.0 / bpm) as u32
+                        lumino_core::bpm_to_tempo(bpm as f64)
                     } else {
                         500_000
                     };

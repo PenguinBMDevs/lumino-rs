@@ -24,13 +24,12 @@ impl Root {
     /// notes: (tick, key, length, velocity, channel)
     pub fn load_notes(&mut self, notes: &[(f32, u8, f32, u8, u8)]) {
         self.editor.editor_state.data.notes.clear();
-        for (tick, key, length, velocity, channel) in notes {
-            let editor_key = *key as u16;
-            self.editor.editor_state.data.notes.push_back(
-                Note::new(*tick, editor_key, *length)
-                    .with_velocity(*velocity)
-                    .with_channel(*channel),
-            );
+        for &(tick, key, length, velocity, channel) in notes {
+            self.editor
+                .editor_state
+                .data
+                .notes
+                .push_back(Note::from_raw(tick, key as u16, length, velocity, channel));
         }
         self.editor
             .track_note_indices
@@ -53,11 +52,8 @@ impl Root {
         self.editor.editor_state.data.notes.clear();
         let mut track_notes: im::Vector<Note> = im::Vector::new();
 
-        for (tick, key, length, velocity, channel) in notes {
-            let editor_key = *key as u16;
-            let note = Note::new(*tick, editor_key, *length)
-                .with_velocity(*velocity)
-                .with_channel(*channel);
+        for &(tick, key, length, velocity, channel) in notes {
+            let note = Note::from_raw(tick, key as u16, length, velocity, channel);
             self.editor.editor_state.data.notes.push_back(note.clone());
             track_notes.push_back(note);
         }

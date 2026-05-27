@@ -30,11 +30,7 @@ impl TempoChange {
 }
 
 /// 将BPM转换为tempo（微秒/四分音符）
-pub fn tempo_from_bpm(bpm: f64) -> u32 {
-    (60_000_000.0 / bpm).round() as u32
-}
+pub use lumino_core::bpm_to_tempo as tempo_from_bpm;
 
 /// 将tempo（微秒/四分音符）转换为BPM
-pub fn bpm_from_tempo(tempo: u32) -> f64 {
-    60_000_000.0 / tempo as f64
-}
+pub use lumino_core::tempo_to_bpm as bpm_from_tempo;

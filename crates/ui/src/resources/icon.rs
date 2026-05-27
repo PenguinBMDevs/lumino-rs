@@ -16,26 +16,17 @@ static HANDLE_CACHE: Lazy<Mutex<HashMap<(Icon, bool), Handle>>> =
 pub use Icon::*;
 
 /// 图标加载错误类型
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum IconError {
+    #[error("图标 {0:?} 不在缓存中")]
     IconNotInCache(Icon),
+    #[error("SVG 解析错误: {0}")]
     SvgParseError(String),
+    #[error("无法创建 pixmap")]
     PixmapCreationError,
+    #[error("获取缓存锁失败")]
     LockError,
 }
-
-impl std::fmt::Display for IconError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            IconError::IconNotInCache(icon) => write!(f, "图标 {:?} 不在缓存中", icon),
-            IconError::SvgParseError(msg) => write!(f, "SVG 解析错误: {}", msg),
-            IconError::PixmapCreationError => write!(f, "无法创建 pixmap"),
-            IconError::LockError => write!(f, "获取缓存锁失败"),
-        }
-    }
-}
-
-impl std::error::Error for IconError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {

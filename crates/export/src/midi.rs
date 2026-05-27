@@ -374,18 +374,10 @@ fn convert_to_delta_times(events: &mut [TrackEvent<'_>]) {
 }
 
 /// 将 BPM 转换为微秒每拍
-#[inline]
-pub fn bpm_to_tempo(bpm: f64) -> u32 {
-    // 60_000_000 / BPM = 微秒/拍
-    let tempo = 60_000_000.0 / bpm;
-    tempo.round() as u32
-}
+pub use lumino_core::bpm_to_tempo;
 
 /// 将微秒每拍转换为 BPM
-#[inline]
-pub fn tempo_to_bpm(tempo: u32) -> f64 {
-    60_000_000.0 / tempo as f64
-}
+pub use lumino_core::tempo_to_bpm;
 
 #[cfg(test)]
 mod tests {

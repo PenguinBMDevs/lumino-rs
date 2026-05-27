@@ -1,6 +1,6 @@
 //! 钢琴卷帘网格绘制程序
 
-use super::state::CanvasState;
+use super::state::GridInteractionState;
 use crate::Message;
 use crate::constants::editor as editor_constants;
 use crate::editor::Editor;
@@ -16,7 +16,7 @@ impl<'a> PianoRollGrid<'a> {
         Self { editor }
     }
 
-    pub(super) fn detect_double_click(&self, state: &mut CanvasState, local_pos: Point) -> bool {
+    pub(super) fn detect_double_click(&self, state: &mut GridInteractionState, local_pos: Point) -> bool {
         use editor_constants::*;
 
         let now = std::time::Instant::now();
@@ -37,7 +37,7 @@ impl<'a> PianoRollGrid<'a> {
 
     pub(super) fn handle_left_press(
         &self,
-        state: &mut CanvasState,
+        state: &mut GridInteractionState,
         local_pos: Point,
     ) -> Option<canvas::Action<Message>> {
         use crate::message::EditorAction;

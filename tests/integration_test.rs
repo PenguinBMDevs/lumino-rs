@@ -12,6 +12,61 @@ fn get_test_file_path(relative_path: &str) -> PathBuf {
         .join(relative_path)
 }
 
+/// 从 DMS 节点树中提取语义信息
+fn extract_dms_info(
+    node: &dyn lumino_dms::DmsNode,
+) -> (u64, usize, Option<u32>, Option<String>) {
+    use lumino_dms::DmsNodeType;
+
+    let mut note_count = 0u64;
+    let mut track_count = 0usize;
+    let mut ppqn: Option<u32> = None;
+    let mut song_name: Option<String> = None;
+
+    fn scan_node(
+        node: &dyn lumino_dms::DmsNode,
+        note_count: &mut u64,
+        track_count: &mut usize,
+        ppqn: &mut Option<u32>,
+        song_name: &mut Option<String>,
+    ) {
+        let type_id = node.type_id();
+
+        if type_id == DmsNodeType::TRACK {
+            *track_count += 1;
+        }
+        if type_id == DmsNodeType::NOTE_EVENT {
+            *note_count += 1;
+        }
+        if type_id == DmsNodeType::SONG_PPQN
+            && let Some(int_node) = node.as_any().downcast_ref::<lumino_dms::DmsIntegerNode>()
+        {
+            let val = int_node.integer_data();
+            *ppqn = val.to_string().parse().ok();
+        }
+        if type_id == DmsNodeType::SONG_NAME
+            && let Some(str_node) = node
+                .as_any()
+                .downcast_ref::<lumino_dms::DmsAnsiStringNode>()
+        {
+            *song_name = str_node.string_data().ok();
+        }
+
+        for child in node.children() {
+            scan_node(child.as_ref(), note_count, track_count, ppqn, song_name);
+        }
+    }
+
+    scan_node(
+        node,
+        &mut note_count,
+        &mut track_count,
+        &mut ppqn,
+        &mut song_name,
+    );
+    (note_count, track_count, ppqn, song_name)
+}
+
 /// 测试 1: MIDI 转 DMS 数据相似度测试
 ///
 /// 需要 test-file/DMS-Loader/ 测试文件（不属于 git 仓库），因此默认忽略。
@@ -49,60 +104,6 @@ fn test_midi_to_dms_similarity() {
     let ref_root = lumino_dms::read_dms_file(&reference_dms_bytes).expect("解析参考 DMS 文件失败");
 
     // 提取语义信息进行对比
-    fn extract_dms_info(
-        node: &dyn lumino_dms::DmsNode,
-    ) -> (u64, usize, Option<u32>, Option<String>) {
-        use lumino_dms::DmsNodeType;
-
-        let mut note_count = 0u64;
-        let mut track_count = 0usize;
-        let mut ppqn: Option<u32> = None;
-        let mut song_name: Option<String> = None;
-
-        fn scan_node(
-            node: &dyn lumino_dms::DmsNode,
-            note_count: &mut u64,
-            track_count: &mut usize,
-            ppqn: &mut Option<u32>,
-            song_name: &mut Option<String>,
-        ) {
-            let type_id = node.type_id();
-
-            if type_id == DmsNodeType::TRACK {
-                *track_count += 1;
-            }
-            if type_id == DmsNodeType::NOTE_EVENT {
-                *note_count += 1;
-            }
-            if type_id == DmsNodeType::SONG_PPQN
-                && let Some(int_node) = node.as_any().downcast_ref::<lumino_dms::DmsIntegerNode>()
-            {
-                let val = int_node.integer_data();
-                *ppqn = val.to_string().parse().ok();
-            }
-            if type_id == DmsNodeType::SONG_NAME
-                && let Some(str_node) = node
-                    .as_any()
-                    .downcast_ref::<lumino_dms::DmsAnsiStringNode>()
-            {
-                *song_name = str_node.string_data().ok();
-            }
-
-            for child in node.children() {
-                scan_node(child.as_ref(), note_count, track_count, ppqn, song_name);
-            }
-        }
-
-        scan_node(
-            node,
-            &mut note_count,
-            &mut track_count,
-            &mut ppqn,
-            &mut song_name,
-        );
-        (note_count, track_count, ppqn, song_name)
-    }
-
     let (exported_notes, exported_tracks, exported_ppqn, exported_name) =
         extract_dms_info(&exported_root);
     let (ref_notes, ref_tracks, ref_ppqn, ref_name) = extract_dms_info(&ref_root);
@@ -201,60 +202,6 @@ fn test_dms_metadata_validation() {
     let root = lumino_dms::read_dms_file(&dms_bytes).expect("解析 DMS 文件失败");
 
     // 提取语义信息
-    fn extract_dms_info(
-        node: &dyn lumino_dms::DmsNode,
-    ) -> (u64, usize, Option<u32>, Option<String>) {
-        use lumino_dms::DmsNodeType;
-
-        let mut note_count = 0u64;
-        let mut track_count = 0usize;
-        let mut ppqn: Option<u32> = None;
-        let mut song_name: Option<String> = None;
-
-        fn scan_node(
-            node: &dyn lumino_dms::DmsNode,
-            note_count: &mut u64,
-            track_count: &mut usize,
-            ppqn: &mut Option<u32>,
-            song_name: &mut Option<String>,
-        ) {
-            let type_id = node.type_id();
-
-            if type_id == DmsNodeType::TRACK {
-                *track_count += 1;
-            }
-            if type_id == DmsNodeType::NOTE_EVENT {
-                *note_count += 1;
-            }
-            if type_id == DmsNodeType::SONG_PPQN
-                && let Some(int_node) = node.as_any().downcast_ref::<lumino_dms::DmsIntegerNode>()
-            {
-                let val = int_node.integer_data();
-                *ppqn = val.to_string().parse().ok();
-            }
-            if type_id == DmsNodeType::SONG_NAME
-                && let Some(str_node) = node
-                    .as_any()
-                    .downcast_ref::<lumino_dms::DmsAnsiStringNode>()
-            {
-                *song_name = str_node.string_data().ok();
-            }
-
-            for child in node.children() {
-                scan_node(child.as_ref(), note_count, track_count, ppqn, song_name);
-            }
-        }
-
-        scan_node(
-            node,
-            &mut note_count,
-            &mut track_count,
-            &mut ppqn,
-            &mut song_name,
-        );
-        (note_count, track_count, ppqn, song_name)
-    }
-
     let (note_count, track_count, ppqn, song_name) = extract_dms_info(&root);
 
     println!("DMS 文件: {:?}", dms_path);

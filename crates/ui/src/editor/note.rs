@@ -26,6 +26,17 @@ impl Note {
         }
     }
 
+    /// 从原始数据元组构造 Note
+    pub fn from_raw(tick: f32, key: u16, length: f32, velocity: u8, channel: u8) -> Self {
+        Self {
+            tick,
+            key,
+            length,
+            velocity,
+            channel,
+        }
+    }
+
     pub fn with_velocity(mut self, velocity: u8) -> Self {
         self.velocity = velocity;
         self
