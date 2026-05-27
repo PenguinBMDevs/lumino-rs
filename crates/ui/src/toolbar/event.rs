@@ -38,6 +38,8 @@ pub enum Event {
     CustomPrecisionDivisorChanged(String),
     /// 打开协作对话框
     OpenCollaborationDialog,
+    /// 打开工程设置对话框
+    OpenProjectSettingsDialog,
     /// 自动滚动模式切换
     AutoScrollModeChanged,
     /// 循环播放切换
@@ -129,6 +131,10 @@ impl Event {
 
     pub const fn open_collaboration_dialog() -> Message {
         Message::Toolbar(Self::OpenCollaborationDialog)
+    }
+
+    pub const fn open_project_settings_dialog() -> Message {
+        Message::Toolbar(Self::OpenProjectSettingsDialog)
     }
 
     pub const fn auto_scroll_mode_changed() -> Message {

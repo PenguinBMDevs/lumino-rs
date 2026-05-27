@@ -237,6 +237,19 @@ impl RunnerInner {
                 // LoadConfirm 由 lifecycle.rs 处理，这里不应到达
                 tracing::warn!("LoadConfirm 结果不应通过 apply_dialog_result_to_ui 处理");
             }
+            DialogResult::ProjectSettings {
+                title,
+                tempo,
+                copyright,
+            } => {
+                tracing::info!(
+                    "应用工程设置: 标题={}, BPM={}, 版权={}",
+                    title,
+                    tempo,
+                    copyright
+                );
+                ui.apply_project_settings(title, tempo, copyright);
+            }
         }
     }
     /// 保存存储

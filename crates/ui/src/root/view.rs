@@ -11,6 +11,7 @@ use crate::view::{
     collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
     load_confirm_dialog::view_load_confirm_dialog,
+    project_settings_dialog::view_project_settings_dialog,
 };
 use crate::{message, settings};
 
@@ -71,6 +72,10 @@ impl Root {
             DialogType::LoadConfirm => {
                 view_load_confirm_dialog(&self.state.load_confirm_dialog, &self.window.theme)
             }
+            DialogType::ProjectSettings => view_project_settings_dialog(
+                &self.state.project_settings_dialog,
+                &self.window.theme,
+            ),
             _ => view_custom_precision_dialog(
                 &self.state.custom_precision_dialog,
                 &self.window.theme,

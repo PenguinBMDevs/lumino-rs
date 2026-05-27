@@ -19,6 +19,20 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 设置工程设置对话框是否打开（用于独立对话框窗口）
+    pub fn set_project_settings_dialog_open(&mut self, open: bool) {
+        self.root.set_project_settings_dialog_open(open);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 应用工程设置到主窗口
+    pub fn apply_project_settings(&mut self, title: String, tempo: f64, copyright: String) {
+        self.root.apply_project_settings(title, tempo, copyright);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 获取并清空对话框结果
     pub fn take_dialog_result(&mut self) -> Option<DialogResult> {
         self.root.take_dialog_result()

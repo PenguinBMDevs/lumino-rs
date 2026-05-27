@@ -145,6 +145,18 @@ pub enum Message {
     ConfirmLoadConfirm,
     /// 加载确认对话框 - 取消
     CloseLoadConfirmDialog,
+    /// 打开工程设置对话框
+    OpenProjectSettingsDialog,
+    /// 关闭工程设置对话框
+    CloseProjectSettingsDialog,
+    /// 确认工程设置
+    ConfirmProjectSettings,
+    /// 工程设置 - 项目名称变更
+    ProjectSettingsTitleChanged(String),
+    /// 工程设置 - BPM 速度变更
+    ProjectSettingsTempoChanged(String),
+    /// 工程设置 - 版权信息变更
+    ProjectSettingsCopyrightChanged(String),
     /// 力度编辑面板动作
     Velocity(VelocityAction),
     /// 力度面板高度调整

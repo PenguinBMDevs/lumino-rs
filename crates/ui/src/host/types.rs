@@ -15,6 +15,11 @@ pub enum DialogResult {
         denominator: String,
     },
     LoadConfirm,
+    ProjectSettings {
+        title: String,
+        tempo: f64,
+        copyright: String,
+    },
 }
 
 /// 将触摸事件转换为鼠标事件（兼容性处理）

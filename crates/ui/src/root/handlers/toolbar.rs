@@ -40,6 +40,9 @@ impl ToolbarHandler {
         // 处理协作对话框
         self.handle_toolbar_collaboration(root, &event);
 
+        // 处理工程设置对话框
+        self.handle_toolbar_project_settings(root, &event);
+
         // 处理录制
         self.handle_toolbar_recording(root, &event);
     }
@@ -192,6 +195,15 @@ impl ToolbarHandler {
             tracing::info!("Root: 触发打开协作对话框");
             lumino_core::event::emit(lumino_core::Event::Window(
                 lumino_core::event::window::Event::OpenCollaborationDialog,
+            ));
+        }
+    }
+
+    fn handle_toolbar_project_settings(&self, _root: &mut Root, event: &crate::toolbar::Event) {
+        if matches!(event, crate::toolbar::Event::OpenProjectSettingsDialog) {
+            tracing::info!("Root: 触发打开工程设置对话框");
+            lumino_core::event::emit(lumino_core::Event::Window(
+                lumino_core::event::window::Event::OpenProjectSettingsDialog,
             ));
         }
     }

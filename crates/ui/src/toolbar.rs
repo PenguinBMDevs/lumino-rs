@@ -116,6 +116,9 @@ impl Toolbar {
             Event::OpenCollaborationDialog => {
                 tracing::debug!("工具栏: 请求打开协作对话框");
             }
+            Event::OpenProjectSettingsDialog => {
+                tracing::debug!("工具栏: 请求打开工程设置对话框");
+            }
             Event::AutoScrollModeChanged => {
                 self.auto_scroll_mode = match self.auto_scroll_mode {
                     lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft => {

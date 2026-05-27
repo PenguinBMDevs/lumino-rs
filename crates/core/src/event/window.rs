@@ -91,4 +91,14 @@ pub enum Event {
         key_offset: i16,
         track_index: usize,
     },
+    /// 打开工程设置对话框
+    OpenProjectSettingsDialog,
+    /// 关闭工程设置对话框
+    CloseProjectSettingsDialog,
+    /// 应用工程设置
+    ApplyProjectSettings {
+        title: String,
+        tempo: f64,
+        copyright: String,
+    },
 }

@@ -41,6 +41,29 @@ impl DialogHandler {
             *target = value.to_string();
         }
     }
+
+    fn handle_confirm_project_settings(&self, root: &mut Root) {
+        let dialog = &root.state.project_settings_dialog;
+
+        // 验证 BPM 值
+        if let Some(tempo) = dialog.parse_tempo() {
+            let title = dialog.title.clone();
+            let copyright = dialog.copyright.clone();
+
+            // 关闭对话框
+            root.state.project_settings_dialog.is_open = false;
+
+            // 发送 Core Event 应用设置
+            let event = lumino_core::event::window::Event::ApplyProjectSettings {
+                title,
+                tempo,
+                copyright,
+            };
+            root.update(Message::Core(lumino_core::Event::Window(event)));
+        } else {
+            tracing::warn!("工程设置: BPM 值无效: {}", dialog.tempo);
+        }
+    }
 }
 
 impl Default for DialogHandler {
@@ -100,6 +123,34 @@ impl MessageHandler for DialogHandler {
             }
             Message::CloseLoadConfirmDialog => {
                 root.handle_cancel_load();
+                None
+            }
+            // 工程设置对话框消息
+            Message::OpenProjectSettingsDialog => {
+                root.state.project_settings_dialog.is_open = true;
+                None
+            }
+            Message::CloseProjectSettingsDialog => {
+                root.state.project_settings_dialog.is_open = false;
+                None
+            }
+            Message::ConfirmProjectSettings => {
+                self.handle_confirm_project_settings(root);
+                None
+            }
+            Message::ProjectSettingsTitleChanged(value) => {
+                root.state.project_settings_dialog.title = value;
+                None
+            }
+            Message::ProjectSettingsTempoChanged(value) => {
+                // 只允许数字和小数点
+                if value.chars().all(|c| c.is_ascii_digit() || c == '.') {
+                    root.state.project_settings_dialog.tempo = value;
+                }
+                None
+            }
+            Message::ProjectSettingsCopyrightChanged(value) => {
+                root.state.project_settings_dialog.copyright = value;
                 None
             }
 

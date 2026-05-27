@@ -33,6 +33,28 @@ impl Root {
         }
     }
 
+    /// 设置工程设置对话框是否打开
+    pub fn set_project_settings_dialog_open(&mut self, open: bool) {
+        self.state.project_settings_dialog.is_open = open;
+        if open {
+            self.state.dialog_type = DialogType::ProjectSettings;
+        }
+    }
+
+    /// 应用工程设置到主窗口
+    pub fn apply_project_settings(&mut self, title: String, tempo: f64, copyright: String) {
+        tracing::info!(
+            "应用工程设置: 标题={}, BPM={}, 版权={}",
+            title,
+            tempo,
+            copyright
+        );
+
+        // 同步到播放管理器
+        let tempo_micros = lumino_core::bpm_to_tempo(tempo) as u32;
+        self.load_tempo_changes(vec![(0, tempo_micros)]);
+    }
+
     /// 设置加载确认对话框（使用文件路径和大小）
     pub fn set_load_confirm_dialog(&mut self, file_path: &str, size_mb: f64) {
         let file_name = std::path::Path::new(file_path)

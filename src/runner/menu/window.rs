@@ -12,7 +12,10 @@ impl RunnerInner {
             | WindowEvent::CloseCustomPrecisionDialog
             | WindowEvent::ApplyCustomPrecision(_, _)
             | WindowEvent::OpenCollaborationDialog
-            | WindowEvent::CloseCollaborationDialog => {
+            | WindowEvent::CloseCollaborationDialog
+            | WindowEvent::OpenProjectSettingsDialog
+            | WindowEvent::CloseProjectSettingsDialog
+            | WindowEvent::ApplyProjectSettings { .. } => {
                 self.handle_dialog_events(window_event);
             }
 
@@ -94,6 +97,33 @@ impl RunnerInner {
                     .dialog_manager
                     .mark_dialog_for_close(DialogType::Collaboration);
                 tracing::info!("请求关闭协作对话框");
+            }
+            WindowEvent::OpenProjectSettingsDialog => {
+                tracing::info!("请求打开工程设置对话框");
+                self.window_state
+                    .dialog_manager
+                    .open_dialog(DialogType::ProjectSettings);
+            }
+            WindowEvent::CloseProjectSettingsDialog => {
+                self.window_state
+                    .dialog_manager
+                    .mark_dialog_for_close(DialogType::ProjectSettings);
+                tracing::info!("请求关闭工程设置对话框");
+            }
+            WindowEvent::ApplyProjectSettings {
+                title,
+                tempo,
+                copyright,
+            } => {
+                tracing::info!(
+                    "应用工程设置: 标题={}, BPM={}, 版权={}",
+                    title,
+                    tempo,
+                    copyright
+                );
+                // 应用设置到主窗口
+                let main_ui = self.window_state.window.ui_mut();
+                main_ui.apply_project_settings(title, tempo, copyright);
             }
             _ => {}
         }
