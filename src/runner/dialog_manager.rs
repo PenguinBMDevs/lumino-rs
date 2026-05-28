@@ -178,7 +178,8 @@ impl DialogWindow {
         let (title, tempo, copyright, created_display, editing_time) =
             main_ui.get_project_settings_data();
 
-        // 设置工程设置对话框状态
+        // 设置工程设置对话框状态（必须先设置类型，再设置数据）
+        ui.set_project_settings_dialog_open(true);
         ui.set_project_settings_data(
             title,
             tempo,
