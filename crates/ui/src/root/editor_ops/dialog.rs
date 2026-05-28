@@ -41,6 +41,22 @@ impl Root {
         }
     }
 
+    /// 设置工程设置对话框数据
+    pub fn set_project_settings_data(
+        &mut self,
+        title: String,
+        tempo: String,
+        copyright: String,
+        created_display: String,
+        total_editing_time_seconds: f64,
+    ) {
+        self.state.project_settings_dialog.title = title;
+        self.state.project_settings_dialog.tempo = tempo;
+        self.state.project_settings_dialog.copyright = copyright;
+        self.state.project_settings_dialog.created_display = created_display;
+        self.state.project_settings_dialog.total_editing_time_seconds = total_editing_time_seconds;
+    }
+
     /// 应用工程设置到主窗口
     pub fn apply_project_settings(&mut self, title: String, tempo: f64, copyright: String) {
         tracing::info!(
@@ -53,6 +69,31 @@ impl Root {
         // 同步到播放管理器
         let tempo_micros = lumino_core::bpm_to_tempo(tempo) as u32;
         self.load_tempo_changes(vec![(0, tempo_micros)]);
+    }
+
+    /// 获取当前项目设置数据（用于填充工程设置对话框）
+    /// 返回 (title, tempo, copyright, created_display, total_editing_time_seconds)
+    pub fn get_project_settings_data(&self) -> (String, String, String, String, f64) {
+        let dialog = &self.state.project_settings_dialog;
+        let tempo = dialog.tempo.clone();
+        let created_display = dialog.created_display.clone();
+        let editing_time = dialog.total_editing_time_seconds;
+
+        // 从 MIDI 文档获取标题和版权（如果有）
+        let (title, copyright) = if let Some(_doc) = &self.midi_document {
+            // 尝试从文件名获取标题
+            let title = if dialog.title.is_empty() {
+                // 使用默认标题
+                "无标题".to_string()
+            } else {
+                dialog.title.clone()
+            };
+            (title, dialog.copyright.clone())
+        } else {
+            (dialog.title.clone(), dialog.copyright.clone())
+        };
+
+        (title, tempo, copyright, created_display, editing_time)
     }
 
     /// 设置加载确认对话框（使用文件路径和大小）

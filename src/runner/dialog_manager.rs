@@ -148,8 +148,59 @@ impl DialogWindow {
         Ok(())
     }
 
+    /// 初始化工程设置对话框（带当前项目数据）
+    pub fn initialize_project_settings(
+        &mut self,
+        ui_config: &lumino_core::storage::config::UiConfig,
+        main_ui: &lumino_ui::Host,
+    ) -> Result<(), String> {
+        let physical_size = self.window.inner_size();
+        if physical_size.width == 0 || physical_size.height == 0 {
+            return Err("窗口大小为零".to_string());
+        }
+
+        let gfx = futures::executor::block_on(lumino_gfx::Context::new(
+            self.window.clone(),
+            physical_size.width,
+            physical_size.height,
+        ))
+        .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
+
+        let mut ui = lumino_ui::Host::new_dialog(
+            self.window.clone(),
+            physical_size.width,
+            physical_size.height,
+            ui_config,
+            &gfx,
+        );
+
+        // 从主窗口获取当前项目数据
+        let (title, tempo, copyright, created_display, editing_time) =
+            main_ui.get_project_settings_data();
+
+        // 设置工程设置对话框状态
+        ui.set_project_settings_data(
+            title,
+            tempo,
+            copyright,
+            created_display,
+            editing_time,
+        );
+
+        self.window.set_visible(true);
+        self.gfx = Some(gfx);
+        self.ui = Some(ui);
+
+        Ok(())
+    }
+
     pub fn window_id(&self) -> WindowId {
         self.window.id()
+    }
+
+    /// 设置窗口标题
+    pub fn set_window_title(&self, title: &str) {
+        self.window.set_title(title);
     }
 
     pub fn handle_event(&mut self, event: WindowEvent) {
@@ -237,6 +288,8 @@ pub struct PendingDialog {
     /// LoadConfirm 的 pending path
     pub pending_path: Option<String>,
     pub pending_size_mb: Option<f64>,
+    /// ProjectSettings 的窗口标题
+    pub pending_title: Option<String>,
 }
 
 impl DialogManager {
@@ -253,6 +306,17 @@ impl DialogManager {
             dialog_type,
             pending_path: None,
             pending_size_mb: None,
+            pending_title: None,
+        });
+    }
+
+    /// 请求打开工程设置对话框（带自定义标题）
+    pub fn open_project_settings(&mut self, title: String) {
+        self.pending_dialogs.push(PendingDialog {
+            dialog_type: DialogType::ProjectSettings,
+            pending_path: None,
+            pending_size_mb: None,
+            pending_title: Some(title),
         });
     }
 
@@ -261,6 +325,7 @@ impl DialogManager {
             dialog_type: DialogType::LoadConfirm,
             pending_path: Some(path),
             pending_size_mb: Some(size_mb),
+            pending_title: None,
         });
     }
 
@@ -291,6 +356,16 @@ impl DialogManager {
                     let size_mb = pending.pending_size_mb.unwrap_or(0.0);
                     if let Err(e) = dialog.initialize_load_confirm(ui_config, &path, size_mb) {
                         tracing::error!("初始化加载确认对话框失败: {}", e);
+                        continue;
+                    }
+                }
+                DialogType::ProjectSettings => {
+                    // 设置窗口标题
+                    if let Some(title) = pending.pending_title {
+                        dialog.set_window_title(&title);
+                    }
+                    if let Err(e) = dialog.initialize_project_settings(ui_config, main_ui) {
+                        tracing::error!("初始化工程设置对话框失败: {}", e);
                         continue;
                     }
                 }

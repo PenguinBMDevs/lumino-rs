@@ -100,9 +100,18 @@ impl RunnerInner {
             }
             WindowEvent::OpenProjectSettingsDialog => {
                 tracing::info!("请求打开工程设置对话框");
+                // 获取当前文件名构建窗口标题
+                let file_name = self
+                    .midi_state
+                    .current_midi_source
+                    .as_ref()
+                    .and_then(|p| p.file_stem())
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "无标题".to_string());
+                let title = format!("{} - Lumino Midi", file_name);
                 self.window_state
                     .dialog_manager
-                    .open_dialog(DialogType::ProjectSettings);
+                    .open_project_settings(title);
             }
             WindowEvent::CloseProjectSettingsDialog => {
                 self.window_state

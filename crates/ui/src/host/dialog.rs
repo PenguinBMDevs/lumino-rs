@@ -26,11 +26,36 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 设置工程设置对话框数据（用于独立对话框窗口）
+    pub fn set_project_settings_data(
+        &mut self,
+        title: String,
+        tempo: String,
+        copyright: String,
+        created_display: String,
+        total_editing_time_seconds: f64,
+    ) {
+        self.root.set_project_settings_data(
+            title,
+            tempo,
+            copyright,
+            created_display,
+            total_editing_time_seconds,
+        );
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 应用工程设置到主窗口
     pub fn apply_project_settings(&mut self, title: String, tempo: f64, copyright: String) {
         self.root.apply_project_settings(title, tempo, copyright);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
+    }
+
+    /// 获取当前项目设置数据（用于填充工程设置对话框）
+    pub fn get_project_settings_data(&self) -> (String, String, String, String, f64) {
+        self.root.get_project_settings_data()
     }
 
     /// 获取并清空对话框结果
