@@ -27,12 +27,12 @@ impl DialogWindow {
         dialog_type: DialogType,
         _parent_window: Option<&Arc<Window>>,
     ) -> Result<Self, String> {
-        let (width, height, title) = match dialog_type {
+        let (width, height, title, resizable) = match dialog_type {
             DialogType::None => unreachable!("不会创建 None 类型的对话框"),
-            DialogType::CustomPrecision => (480.0, 180.0, "自定义贴合"),
-            DialogType::Collaboration => (420.0, 320.0, "多人协作"),
-            DialogType::LoadConfirm => (420.0, 260.0, "加载大文件"),
-            DialogType::ProjectSettings => (450.0, 480.0, "工程设置"),
+            DialogType::CustomPrecision => (480.0, 180.0, "自定义贴合", false),
+            DialogType::Collaboration => (420.0, 320.0, "多人协作", false),
+            DialogType::LoadConfirm => (420.0, 260.0, "加载大文件", false),
+            DialogType::ProjectSettings => (450.0, 480.0, "工程设置", true),
         };
 
         let attributes = WindowAttributes::default()
@@ -40,7 +40,7 @@ impl DialogWindow {
             .with_title(title)
             .with_visible(false)
             .with_decorations(true)
-            .with_resizable(false);
+            .with_resizable(resizable);
 
         let window = Arc::new(
             event_loop
