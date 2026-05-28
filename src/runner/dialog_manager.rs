@@ -32,7 +32,7 @@ impl DialogWindow {
             DialogType::CustomPrecision => (480.0, 180.0, "自定义贴合"),
             DialogType::Collaboration => (420.0, 320.0, "多人协作"),
             DialogType::LoadConfirm => (420.0, 260.0, "加载大文件"),
-            DialogType::ProjectSettings => (450.0, 420.0, "工程设置"),
+            DialogType::ProjectSettings => (450.0, 480.0, "工程设置"),
         };
 
         let attributes = WindowAttributes::default()

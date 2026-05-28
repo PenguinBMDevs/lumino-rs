@@ -1,5 +1,5 @@
 use iced_core::Length;
-use iced_widget::{button, column, container, row, space, text, text_input};
+use iced_widget::{button, column, container, row, scrollable, space, text, text_input};
 
 use crate::message::Message;
 use crate::state::root_state::ProjectSettingsDialogState;
@@ -148,26 +148,31 @@ pub fn view_project_settings_dialog<'a>(
         space().height(20),
         title_label,
         title_input,
-        space().height(8),
+        space().height(12),
         tempo_label,
         tempo_row,
-        space().height(8),
+        space().height(12),
         copyright_label,
         copyright_input,
-        space().height(8),
+        space().height(12),
         created_label,
         created_value,
-        space().height(8),
+        space().height(12),
         editing_time_label,
         editing_time_value,
-        space().height(20),
+        space().height(24),
         buttons,
     ]
     .spacing(4)
     .align_x(iced_core::Alignment::Start)
     .width(Length::Fill);
 
-    let dialog_content = container(form)
+    // 使用 scrollable 包裹以处理潜在的溢出
+    let scrollable_content = scrollable(form)
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    let dialog_content = container(scrollable_content)
         .width(Length::Fill)
         .height(Length::Fill)
         .padding(24)
