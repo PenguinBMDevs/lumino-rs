@@ -18,7 +18,11 @@ pub fn draw(
     bounds: Rectangle,
 ) -> Option<Geometry<Renderer>> {
     let palette = theme.extended_palette();
-    let selection_color = palette.secondary.strong.color;
+    let selection_stroke_color = palette.secondary.strong.color;
+    let selection_fill_color = iced_core::Color {
+        a: SELECTION_BOX_FILL_ALPHA,
+        ..palette.secondary.weak.color
+    };
     let mut frame = canvas::Frame::new(renderer, bounds.size());
     let mut has_content = false;
 
@@ -29,28 +33,20 @@ pub fn draw(
         let min_y = start_pos.y.min(current_pos.y);
         let max_y = start_pos.y.max(current_pos.y);
 
-        let width = max_x - min_x;
-        let height = max_y - min_y;
+        let width = (max_x - min_x).max(1.0);
+        let height = (max_y - min_y).max(1.0);
 
-        if width >= 1.0 && height >= 1.0 {
-            let rect = Rectangle::new(Point::new(min_x, min_y), Size::new(width, height));
-            let path = Path::rectangle(rect.position(), rect.size());
+        let rect = Rectangle::new(Point::new(min_x, min_y), Size::new(width, height));
+        let path = Path::rectangle(rect.position(), rect.size());
 
-            let fill_color = iced_core::Color {
-                r: selection_color.r,
-                g: selection_color.g,
-                b: selection_color.b,
-                a: SELECTION_BOX_FILL_ALPHA,
-            };
-            frame.fill(&path, fill_color);
+        frame.fill(&path, selection_fill_color);
 
-            let stroke = Stroke::default()
-                .with_width(1.0)
-                .with_color(selection_color);
-            frame.stroke(&path, stroke);
+        let stroke = Stroke::default()
+            .with_width(1.0)
+            .with_color(selection_stroke_color);
+        frame.stroke(&path, stroke);
 
-            has_content = true;
-        }
+        has_content = true;
     }
 
     // 情况 2：有已选中的音符——绘制围绕所有选中音符的方形边界框
@@ -90,7 +86,7 @@ pub fn draw(
                 // 只绘制边框，不填充
                 let stroke = Stroke::default()
                     .with_width(3.0)
-                    .with_color(selection_color);
+                    .with_color(selection_stroke_color);
                 frame.stroke(&path, stroke);
 
                 has_content = true;
