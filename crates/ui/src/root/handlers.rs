@@ -258,6 +258,15 @@ impl Root {
                 {
                     self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Editor;
                 }
+
+                // 更新钢琴卷帘平滑滚动动画
+                let scroll_animating = self.editor.editor_state.update_smooth_scroll();
+                if scroll_animating {
+                    // 滚动变化需要重绘所有缓存
+                    self.editor
+                        .invalidate_caches(crate::editor::CacheInvalidation::ALL);
+                }
+
                 true
             }
             Message::VelocityPanelResize(height) => {

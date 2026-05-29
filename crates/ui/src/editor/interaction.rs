@@ -404,15 +404,10 @@ impl Editor {
         }));
     }
 
-    /// 处理滚动事件
+    /// 处理滚动事件（鼠标滚轮）
+    /// 使用平滑滚动动画，不直接设置位置
     pub(crate) fn handle_scrolled(&mut self, delta_x: f32, delta_y: f32) {
-        let new_scroll_y = self.editor_state.view.scroll_y - delta_y;
-        self.set_scroll_y(new_scroll_y);
-
-        if delta_x != 0.0 {
-            let new_scroll_x = self.editor_state.view.scroll_x - delta_x;
-            self.set_scroll_x(new_scroll_x);
-        }
+        self.editor_state.smooth_scroll_by(delta_x, delta_y);
     }
 
     /// 处理双击事件

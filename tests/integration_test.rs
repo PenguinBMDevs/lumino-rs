@@ -13,9 +13,7 @@ fn get_test_file_path(relative_path: &str) -> PathBuf {
 }
 
 /// 从 DMS 节点树中提取语义信息
-fn extract_dms_info(
-    node: &dyn lumino_dms::DmsNode,
-) -> (u64, usize, Option<u32>, Option<String>) {
+fn extract_dms_info(node: &dyn lumino_dms::DmsNode) -> (u64, usize, Option<u32>, Option<String>) {
     use lumino_dms::DmsNodeType;
 
     let mut note_count = 0u64;

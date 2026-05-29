@@ -488,12 +488,25 @@ mod tests {
         let zoom_x = 1.0;
 
         // press 在 screen_x=300 → tick=300 → snapped=240
-        loop_range.handle_mouse_press(300.0, keyboard_width, scroll_x, zoom_x, 40.0, snap_precision);
+        loop_range.handle_mouse_press(
+            300.0,
+            keyboard_width,
+            scroll_x,
+            zoom_x,
+            40.0,
+            snap_precision,
+        );
         let anchor_start = loop_range.drag_anchor_start_tick;
 
         // 随机拖拽位置，每次 start_tick - anchor_start 都应是 snap 的整数倍
         for mouse_tick in [350.0, 600.0, 777.0, 1200.0, 2500.0] {
-            loop_range.handle_mouse_move(mouse_tick, keyboard_width, scroll_x, zoom_x, snap_precision);
+            loop_range.handle_mouse_move(
+                mouse_tick,
+                keyboard_width,
+                scroll_x,
+                zoom_x,
+                snap_precision,
+            );
             let offset = loop_range.start_tick() - anchor_start;
             let snapped_offset = (offset / snap_precision).round() * snap_precision;
             assert!(
@@ -518,7 +531,14 @@ mod tests {
         let zoom_x = 1.0;
 
         // press 在 body 区域 screen_x=1500（snapped=1440）
-        loop_range.handle_mouse_press(1500.0, keyboard_width, scroll_x, zoom_x, 40.0, snap_precision);
+        loop_range.handle_mouse_press(
+            1500.0,
+            keyboard_width,
+            scroll_x,
+            zoom_x,
+            40.0,
+            snap_precision,
+        );
         let _first_frame_start = loop_range.start_tick();
 
         // 第一次移动：mouse 到 screen_x=270（snapped=480），
@@ -541,7 +561,14 @@ mod tests {
         loop_range.handle_mouse_release();
         assert!(!loop_range.is_dragging());
 
-        loop_range.handle_mouse_press(1800.0, keyboard_width, scroll_x, zoom_x, 40.0, snap_precision);
+        loop_range.handle_mouse_press(
+            1800.0,
+            keyboard_width,
+            scroll_x,
+            zoom_x,
+            40.0,
+            snap_precision,
+        );
         loop_range.handle_mouse_move(1500.0, keyboard_width, scroll_x, zoom_x, snap_precision);
         let after_second_first = loop_range.start_tick();
 

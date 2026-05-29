@@ -6,6 +6,7 @@ pub mod onion_bg_pool;
 pub mod onion_skin;
 pub mod recording;
 pub mod scrollbar_widget;
+pub mod smooth_scroll;
 pub mod spatial_index;
 pub mod velocity;
 

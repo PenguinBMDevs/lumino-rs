@@ -16,7 +16,11 @@ impl<'a> PianoRollGrid<'a> {
         Self { editor }
     }
 
-    pub(super) fn detect_double_click(&self, state: &mut GridInteractionState, local_pos: Point) -> bool {
+    pub(super) fn detect_double_click(
+        &self,
+        state: &mut GridInteractionState,
+        local_pos: Point,
+    ) -> bool {
         use editor_constants::*;
 
         let now = std::time::Instant::now();

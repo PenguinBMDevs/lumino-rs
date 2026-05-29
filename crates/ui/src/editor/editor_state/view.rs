@@ -1,5 +1,6 @@
 //! 视图状态管理
 
+use crate::editor::smooth_scroll::SmoothScrollAnimation;
 use lumino_core::storage::config::EraserBehavior;
 
 /// 默认的歌曲位置 (tick)
@@ -56,6 +57,8 @@ pub struct ViewState {
     pub ruler_height: f32,
     /// 橡皮擦工具行为模式
     pub eraser_behavior: EraserBehavior,
+    /// 平滑滚动动画状态
+    pub smooth_scroll: SmoothScrollAnimation,
 }
 
 impl Default for ViewState {
@@ -74,6 +77,7 @@ impl Default for ViewState {
             default_note_length: DEFAULT_NOTE_LENGTH,
             ruler_height: DEFAULT_RULER_HEIGHT,
             eraser_behavior: EraserBehavior::default(),
+            smooth_scroll: SmoothScrollAnimation::new(),
         }
     }
 }

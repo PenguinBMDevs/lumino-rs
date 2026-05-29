@@ -1071,7 +1071,9 @@ mod tests {
         while Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(5));
             let tick_now = manager.current_tick();
-            if tick_now > tick_before { break; }
+            if tick_now > tick_before {
+                break;
+            }
             tick_before = tick_now;
         }
         assert!(manager.current_tick() > 0.0, "引擎应已开始播放");
@@ -1083,7 +1085,9 @@ mod tests {
         while Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(5));
             wrapped_tick = manager.current_tick();
-            if wrapped_tick >= 80.0 && wrapped_tick < 500.0 { break; }
+            if wrapped_tick >= 80.0 && wrapped_tick < 500.0 {
+                break;
+            }
         }
         assert!(
             wrapped_tick >= 80.0 && wrapped_tick < 500.0,
@@ -1116,7 +1120,9 @@ mod tests {
         while Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(5));
             let tick_now = manager.current_tick();
-            if tick_now > tick_before { break; }
+            if tick_now > tick_before {
+                break;
+            }
             tick_before = tick_now;
         }
 

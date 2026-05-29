@@ -66,8 +66,7 @@ impl Editor {
                 ..
             } => {
                 let mouse_delta = tick - *offset_tick - *original_tick;
-                let snapped_delta =
-                    (mouse_delta / snap_precision).round() * snap_precision;
+                let snapped_delta = (mouse_delta / snap_precision).round() * snap_precision;
                 let calculated_tick = (*original_tick + snapped_delta).max(0.0);
                 let calculated_key = (key as i32 - *offset_key)
                     .clamp(0, visible_key_count.saturating_sub(1) as i32)

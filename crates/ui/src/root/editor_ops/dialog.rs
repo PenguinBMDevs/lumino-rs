@@ -54,7 +54,9 @@ impl Root {
         self.state.project_settings_dialog.tempo = tempo;
         self.state.project_settings_dialog.copyright = copyright;
         self.state.project_settings_dialog.created_display = created_display;
-        self.state.project_settings_dialog.total_editing_time_seconds = total_editing_time_seconds;
+        self.state
+            .project_settings_dialog
+            .total_editing_time_seconds = total_editing_time_seconds;
     }
 
     /// 应用工程设置到主窗口

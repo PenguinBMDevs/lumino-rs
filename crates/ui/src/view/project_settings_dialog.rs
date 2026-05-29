@@ -139,8 +139,8 @@ pub fn view_project_settings_dialog<'a>(
             }
         });
 
-    let buttons = row![cancel_button, space().width(12), ok_button]
-        .align_y(iced_core::Alignment::Center);
+    let buttons =
+        row![cancel_button, space().width(12), ok_button].align_y(iced_core::Alignment::Center);
 
     // 表单内容
     let form = column![
@@ -168,9 +168,7 @@ pub fn view_project_settings_dialog<'a>(
     .width(Length::Fill);
 
     // 使用 scrollable 包裹以处理潜在的溢出
-    let scrollable_content = scrollable(form)
-        .width(Length::Fill)
-        .height(Length::Fill);
+    let scrollable_content = scrollable(form).width(Length::Fill).height(Length::Fill);
 
     let dialog_content = container(scrollable_content)
         .width(Length::Fill)

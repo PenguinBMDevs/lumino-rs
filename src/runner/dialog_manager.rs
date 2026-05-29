@@ -180,13 +180,7 @@ impl DialogWindow {
 
         // 设置工程设置对话框状态（必须先设置类型，再设置数据）
         ui.set_project_settings_dialog_open(true);
-        ui.set_project_settings_data(
-            title,
-            tempo,
-            copyright,
-            created_display,
-            editing_time,
-        );
+        ui.set_project_settings_data(title, tempo, copyright, created_display, editing_time);
 
         self.window.set_visible(true);
         self.gfx = Some(gfx);

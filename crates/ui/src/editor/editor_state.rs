@@ -108,19 +108,72 @@ impl EditorState {
     }
 
     /// 设置横向滚动（带有有效范围限制）
+    /// 直接设置位置，同步平滑滚动目标并停止动画
     pub fn set_scroll_x(&mut self, scroll_x: f32, keyboard_width: f32, canvas_width: f32) {
         let total_width = self.view.total_ticks as f32 * self.view.zoom_x;
         let viewport_width = (canvas_width - keyboard_width).max(0.0);
         let effective_max_scroll = (total_width - viewport_width).max(0.0);
-        self.view.scroll_x = scroll_x.max(0.0).min(effective_max_scroll);
+        let clamped = scroll_x.max(0.0).min(effective_max_scroll);
+        self.view.scroll_x = clamped;
+        // 直接设置时同步目标位置，避免动画冲突
+        self.view.smooth_scroll.target_x = clamped;
+        self.view.smooth_scroll.active = false;
     }
 
     /// 设置纵向滚动（带有有效范围限制）
+    /// 直接设置位置，同步平滑滚动目标并停止动画
     pub fn set_scroll_y(&mut self, scroll_y: f32, canvas_height: f32) {
         let total_height = self.view.visible_key_count as f32 * self.view.zoom_y;
         let viewport_height = (canvas_height - self.view.ruler_height).max(0.0);
         let effective_max_scroll = (total_height - viewport_height).max(0.0);
-        self.view.scroll_y = scroll_y.max(0.0).min(effective_max_scroll);
+        let clamped = scroll_y.max(0.0).min(effective_max_scroll);
+        self.view.scroll_y = clamped;
+        // 直接设置时同步目标位置，避免动画冲突
+        self.view.smooth_scroll.target_y = clamped;
+        self.view.smooth_scroll.active = false;
+    }
+
+    /// 平滑滚动偏移（用于鼠标滚轮）
+    /// 设置目标位置并启动动画，不直接修改当前位置
+    pub fn smooth_scroll_by(&mut self, delta_x: f32, delta_y: f32) {
+        let canvas = &self.canvas;
+        let v = &mut self.view;
+
+        // 计算新的目标位置
+        let new_target_x = v.smooth_scroll.target_x - delta_x;
+        let new_target_y = v.smooth_scroll.target_y - delta_y;
+
+        // X 轴范围限制
+        let total_width = v.total_ticks as f32 * v.zoom_x;
+        let viewport_width = (canvas.size.x - v.keyboard_width).max(0.0);
+        let effective_max_scroll_x = (total_width - viewport_width).max(0.0);
+        let clamped_target_x = new_target_x.max(0.0).min(effective_max_scroll_x);
+
+        // Y 轴范围限制
+        let total_height = v.visible_key_count as f32 * v.zoom_y;
+        let viewport_height = (canvas.size.y - v.ruler_height).max(0.0);
+        let effective_max_scroll_y = (total_height - viewport_height).max(0.0);
+        let clamped_target_y = new_target_y.max(0.0).min(effective_max_scroll_y);
+
+        v.smooth_scroll
+            .set_target(clamped_target_x, clamped_target_y);
+    }
+
+    /// 更新平滑滚动动画
+    /// 返回是否仍在动画中
+    pub fn update_smooth_scroll(&mut self) -> bool {
+        let v = &mut self.view;
+        if !v.smooth_scroll.active {
+            return false;
+        }
+
+        let (new_x, new_y, still_active) = v.smooth_scroll.update(v.scroll_x, v.scroll_y);
+
+        v.scroll_x = new_x;
+        v.scroll_y = new_y;
+        v.smooth_scroll.active = still_active;
+
+        still_active
     }
 
     /// 设置横向缩放

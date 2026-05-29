@@ -51,6 +51,11 @@ impl Editor {
                 let indicator_pos = asc.fixed_indicator_position as f32;
                 let target_scroll_x = playback_tick * v.zoom_x - indicator_pos;
                 self.set_scroll_x(target_scroll_x);
+                // 自动滚动直接设置，同步平滑滚动目标
+                self.editor_state.view.smooth_scroll.sync(
+                    self.editor_state.view.scroll_x,
+                    self.editor_state.view.scroll_y,
+                );
                 true
             }
             AutoScrollMode::ScrollingIndicator => {
@@ -62,6 +67,11 @@ impl Editor {
                 if indicator_screen_x >= trigger_screen_x {
                     let target_scroll_x = playback_tick * v.zoom_x - return_pos;
                     self.set_scroll_x(target_scroll_x);
+                    // 自动滚动直接设置，同步平滑滚动目标
+                    self.editor_state.view.smooth_scroll.sync(
+                        self.editor_state.view.scroll_x,
+                        self.editor_state.view.scroll_y,
+                    );
                     return true;
                 }
                 false

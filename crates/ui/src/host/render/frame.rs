@@ -47,8 +47,10 @@ impl Host {
 
         self.last_frame_time = now;
 
-        // 更新模式切换按钮的弹簧物理动画
-        if self.root.state.toggle_animation.active {
+        // 更新模式切换按钮的弹簧物理动画和平滑滚动动画
+        let needs_animation = self.root.state.toggle_animation.active
+            || self.root.editor.editor_state.view.smooth_scroll.active;
+        if needs_animation {
             self.root.update(Message::AnimationTick);
             self.window_ctx.window.request_redraw();
         }
