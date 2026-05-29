@@ -64,6 +64,28 @@ impl RunnerInner {
                     tracing::warn!("LoadConfirm: 没有 pending 的加载路径");
                 }
             }
+            DialogResult::Cancel => {
+                tracing::info!("工程设置对话框: 取消");
+            }
+            DialogResult::ProjectSettings {
+                title,
+                tempo,
+                copyright,
+            } => {
+                tracing::info!(
+                    "应用工程设置(对话框结果): 标题={}, BPM={}, 版权={}",
+                    title,
+                    tempo,
+                    copyright
+                );
+                let main_ui = self.window_state.window.ui_mut();
+                main_ui.apply_project_settings(title.clone(), tempo, copyright);
+                // 更新主窗口标题
+                self.window_state
+                    .window
+                    .window()
+                    .set_title(&format!("{} - Lumino", title));
+            }
             other => {
                 let main_ui = self.window_state.window.ui_mut();
                 crate::runner::inner::RunnerInner::apply_dialog_result_to_ui(main_ui, other);

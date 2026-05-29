@@ -250,6 +250,9 @@ impl RunnerInner {
                 );
                 ui.apply_project_settings(title, tempo, copyright);
             }
+            DialogResult::Cancel => {
+                tracing::debug!("取消操作，无需处理");
+            }
         }
     }
     /// 保存存储

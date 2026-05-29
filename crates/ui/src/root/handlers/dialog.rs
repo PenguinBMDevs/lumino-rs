@@ -1,5 +1,6 @@
 //! 对话框管理处理器
 
+use crate::host::DialogResult;
 use crate::message::Message;
 use crate::root::Root;
 use crate::root::handlers::MessageHandler;
@@ -50,16 +51,13 @@ impl DialogHandler {
             let title = dialog.title.clone();
             let copyright = dialog.copyright.clone();
 
-            // 关闭对话框
-            root.state.project_settings_dialog.is_open = false;
-
-            // 发送 Core Event 应用设置
-            let event = lumino_core::event::window::Event::ApplyProjectSettings {
+            // 设置对话框结果（触发窗口关闭 + 主窗口处理）
+            root.state.dialog_result = Some(DialogResult::ProjectSettings {
                 title,
                 tempo,
                 copyright,
-            };
-            root.update(Message::Core(lumino_core::Event::Window(event)));
+            });
+            root.state.project_settings_dialog.is_open = false;
         } else {
             tracing::warn!("工程设置: BPM 值无效: {}", dialog.tempo);
         }
@@ -132,6 +130,7 @@ impl MessageHandler for DialogHandler {
             }
             Message::CloseProjectSettingsDialog => {
                 root.state.project_settings_dialog.is_open = false;
+                root.state.dialog_result = Some(DialogResult::Cancel);
                 None
             }
             Message::ConfirmProjectSettings => {

@@ -66,6 +66,10 @@ impl Root {
             copyright
         );
 
+        // 持久化标题和版权
+        self.state.project_settings_dialog.title = title;
+        self.state.project_settings_dialog.copyright = copyright;
+
         // 同步到播放管理器
         let tempo_micros = lumino_core::bpm_to_tempo(tempo) as u32;
         self.load_tempo_changes(vec![(0, tempo_micros)]);

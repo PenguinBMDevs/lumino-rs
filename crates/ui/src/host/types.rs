@@ -15,6 +15,7 @@ pub enum DialogResult {
         denominator: String,
     },
     LoadConfirm,
+    Cancel,
     ProjectSettings {
         title: String,
         tempo: f64,
