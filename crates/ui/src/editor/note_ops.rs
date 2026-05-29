@@ -161,21 +161,18 @@ impl Editor {
 
     /// 获取框选范围内的所有音符索引
     ///
-    /// 将屏幕坐标的选择框转换为 tick/key 范围，然后收集范围内的音符
+    /// 直接使用世界坐标（tick/key）范围收集音符
     pub(super) fn get_notes_in_selection_box(
         &self,
-        start_pos: Point,
-        current_pos: Point,
+        start_tick: f32,
+        start_key: u16,
+        current_tick: f32,
+        current_key: u16,
     ) -> Vec<usize> {
-        let min_x = start_pos.x.min(current_pos.x);
-        let max_x = start_pos.x.max(current_pos.x);
-        let min_y = start_pos.y.min(current_pos.y);
-        let max_y = start_pos.y.max(current_pos.y);
-
-        let tick_start = self.x_to_tick(min_x);
-        let tick_end = self.x_to_tick(max_x);
-        let key_min = self.y_to_key(max_y);
-        let key_max = self.y_to_key(min_y);
+        let tick_start = start_tick.min(current_tick);
+        let tick_end = start_tick.max(current_tick);
+        let key_min = start_key.min(current_key);
+        let key_max = start_key.max(current_key);
 
         let mut indices = Vec::new();
         for (i, note) in self.editor_state.data.notes.iter().enumerate() {
@@ -194,8 +191,15 @@ impl Editor {
     /// 删除框选范围内的所有音符（橡皮工具用）
     ///
     /// 不依赖 selected_notes，直接从 EditorState 的音符数据中删除。
-    pub(super) fn delete_notes_in_selection_box(&mut self, start_pos: Point, current_pos: Point) {
-        let indices = self.get_notes_in_selection_box(start_pos, current_pos);
+    pub(super) fn delete_notes_in_selection_box(
+        &mut self,
+        start_tick: f32,
+        start_key: u16,
+        current_tick: f32,
+        current_key: u16,
+    ) {
+        let indices =
+            self.get_notes_in_selection_box(start_tick, start_key, current_tick, current_key);
         if indices.is_empty() {
             return;
         }

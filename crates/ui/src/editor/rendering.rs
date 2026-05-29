@@ -288,14 +288,25 @@ impl Editor {
         }
     }
 
-    /// 获取框选框的实例（用于渲染选择框）
+    /// 获取框选框的屏幕坐标（用于渲染选择框）
+    ///
+    /// 将世界坐标（tick/key）转换为屏幕坐标，确保框选框随内容一起滚动
     pub fn get_selection_box(&self) -> Option<(Point, Point)> {
         if let EditState::Selecting {
-            start_pos,
-            current_pos,
+            start_tick,
+            start_key,
+            current_tick,
+            current_key,
         } = self.editor_state.interaction.edit_state
         {
-            Some((start_pos, current_pos))
+            let start_x = self.tick_to_x(start_tick);
+            let start_y = self.key_to_y(start_key);
+            let current_x = self.tick_to_x(current_tick);
+            let current_y = self.key_to_y(current_key);
+            Some((
+                Point::new(start_x, start_y),
+                Point::new(current_x, current_y),
+            ))
         } else {
             None
         }

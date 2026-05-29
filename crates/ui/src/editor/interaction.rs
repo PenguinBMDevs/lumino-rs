@@ -73,6 +73,7 @@ impl Editor {
         hit_result: Option<(usize, HitType)>,
         snapped_tick: f32,
     ) {
+        let key = self.y_to_key(pos.y);
         if let Some((index, hit_type)) = hit_result {
             if !self
                 .editor_state
@@ -86,7 +87,6 @@ impl Editor {
             self.start_note_edit(index, hit_type, pos);
         } else if let Some(sel_hit) = self.hit_test_selection_box(pos) {
             // 命中选择框：根据边缘/内部分别进入调整大小或拖动状态
-            let key = self.y_to_key(pos.y);
             match sel_hit {
                 super::SelectionHitType::Inside => {
                     self.push_history();
@@ -112,8 +112,10 @@ impl Editor {
             self.playback_position = snapped_tick;
             self.editor_state.interaction.selected_notes.clear();
             self.editor_state.interaction.edit_state = EditState::Selecting {
-                start_pos: pos,
-                current_pos: pos,
+                start_tick: snapped_tick,
+                start_key: key,
+                current_tick: snapped_tick,
+                current_key: key,
             };
         }
     }
@@ -140,13 +142,19 @@ impl Editor {
         shift: bool,
         hit_result: Option<(usize, HitType)>,
     ) {
+        let tick = self.x_to_tick(pos.x);
+        let key = self.y_to_key(pos.y);
+        let snapped_tick = self.snap_tick(tick);
+
         match self.editor_state.view.eraser_behavior {
             EraserBehavior::Default => {
                 if shift {
                     self.editor_state.interaction.selected_notes.clear();
                     self.editor_state.interaction.edit_state = EditState::Selecting {
-                        start_pos: pos,
-                        current_pos: pos,
+                        start_tick: snapped_tick,
+                        start_key: key,
+                        current_tick: snapped_tick,
+                        current_key: key,
                     };
                 } else if hit_result.is_some() {
                     self.delete_note_at(pos);
@@ -158,8 +166,10 @@ impl Editor {
                 } else {
                     self.editor_state.interaction.selected_notes.clear();
                     self.editor_state.interaction.edit_state = EditState::Selecting {
-                        start_pos: pos,
-                        current_pos: pos,
+                        start_tick: snapped_tick,
+                        start_key: key,
+                        current_tick: snapped_tick,
+                        current_key: key,
                     };
                 }
             }
@@ -247,10 +257,14 @@ impl Editor {
             return;
         }
 
-        if let EditState::Selecting { current_pos, .. } =
-            &mut self.editor_state.interaction.edit_state
+        if let EditState::Selecting {
+            current_tick,
+            current_key,
+            ..
+        } = &mut self.editor_state.interaction.edit_state
         {
-            *current_pos = pos;
+            *current_tick = snapped_tick;
+            *current_key = key;
         }
 
         let (new_tick, new_key, new_length) =
@@ -323,11 +337,18 @@ impl Editor {
         let edit_state = std::mem::take(&mut self.editor_state.interaction.edit_state);
         match edit_state {
             EditState::Selecting {
-                start_pos,
-                current_pos,
+                start_tick,
+                start_key,
+                current_tick,
+                current_key,
             } => {
                 if self.editor_state.tool == Tool::Eraser {
-                    self.delete_notes_in_selection_box(start_pos, current_pos);
+                    self.delete_notes_in_selection_box(
+                        start_tick,
+                        start_key,
+                        current_tick,
+                        current_key,
+                    );
                 } else {
                     tracing::debug!(
                         "框选结束，选中 {} 个音符",

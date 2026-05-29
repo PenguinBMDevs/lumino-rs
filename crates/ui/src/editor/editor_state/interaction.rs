@@ -9,10 +9,12 @@ use std::collections::HashSet;
 pub enum EditState {
     #[default]
     Idle,
-    /// 框选状态
+    /// 框选状态（使用世界坐标 tick/key，不受滚动影响）
     Selecting {
-        start_pos: Point,
-        current_pos: Point,
+        start_tick: f32,
+        start_key: u16,
+        current_tick: f32,
+        current_key: u16,
     },
     Drawing {
         start_tick: f32,

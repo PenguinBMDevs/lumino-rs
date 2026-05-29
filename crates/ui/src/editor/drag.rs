@@ -51,7 +51,7 @@ impl Editor {
         let mut note_to_play = None;
 
         match &mut self.editor_state.interaction.edit_state {
-            EditState::Selecting { current_pos: _, .. } => {
+            EditState::Selecting { .. } => {
                 self.update_selection();
                 return (None, None, None, None);
             }
@@ -183,24 +183,26 @@ impl Editor {
     /// 更新框选区域中的音符选中状态
     pub(crate) fn update_selection(&mut self) {
         if let EditState::Selecting {
-            start_pos,
-            current_pos,
+            start_tick,
+            start_key,
+            current_tick,
+            current_key,
         } = self.editor_state.interaction.edit_state
         {
-            let min_x = start_pos.x.min(current_pos.x);
-            let max_x = start_pos.x.max(current_pos.x);
-            let min_y = start_pos.y.min(current_pos.y);
-            let max_y = start_pos.y.max(current_pos.y);
+            let min_tick = start_tick.min(current_tick);
+            let max_tick = start_tick.max(current_tick);
+            let min_key = start_key.min(current_key);
+            let max_key = start_key.max(current_key);
 
             self.editor_state.interaction.selected_notes.clear();
             for (i, note) in self.editor_state.data.notes.iter().enumerate() {
-                let note_x = self.tick_to_x(note.tick);
-                let note_y = self.key_to_y(note.key);
-                let note_right = self.tick_to_x(note.tick + note.length);
-                let note_bottom = note_y + self.editor_state.view.zoom_y;
+                let note_end = note.tick + note.length;
 
-                // 检查音符是否与选择框相交
-                if note_right >= min_x && note_x <= max_x && note_bottom >= min_y && note_y <= max_y
+                // 检查音符是否与选择框相交（使用世界坐标直接比较）
+                if note_end >= min_tick
+                    && note.tick <= max_tick
+                    && note.key >= min_key
+                    && note.key <= max_key
                 {
                     self.editor_state.interaction.selected_notes.insert(i);
                 }
