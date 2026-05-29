@@ -76,7 +76,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                     let local_pos =
                         iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
                     if self.editor.is_inside_canvas(local_pos) {
-                        return self.handle_wheel_scroll(delta);
+                        return self.handle_wheel_scroll(delta, state.shift_pressed);
                     }
                 }
             }

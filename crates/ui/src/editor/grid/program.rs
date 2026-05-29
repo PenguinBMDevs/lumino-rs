@@ -90,16 +90,24 @@ impl<'a> PianoRollGrid<'a> {
     pub(super) fn handle_wheel_scroll(
         &self,
         delta: &iced_core::mouse::ScrollDelta,
+        shift_pressed: bool,
     ) -> Option<canvas::Action<Message>> {
         use crate::message::EditorAction;
         use editor_constants::*;
 
-        let (delta_x, delta_y) = match delta {
+        let (mut delta_x, mut delta_y) = match delta {
             iced_core::mouse::ScrollDelta::Lines { x, y } => {
                 (*x * SCROLL_LINES_SCALE, *y * SCROLL_LINES_SCALE)
             }
             iced_core::mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
         };
+
+        // Shift+滚轮：将垂直滚动转换为水平滚动
+        // 部分平台已自动转换（delta_x 非零），未转换的平台需要手动处理
+        if shift_pressed && delta_x.abs() < f32::EPSILON {
+            delta_x = delta_y;
+            delta_y = 0.0;
+        }
 
         let delta_x = delta_x.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
         let delta_y = delta_y.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
