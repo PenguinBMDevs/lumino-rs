@@ -29,21 +29,31 @@ impl RunnerInner {
             // 检查对话框是否应该关闭
             should_close = dialog.should_close();
 
-            // 检查对话框结果
+            // 检查对话框结果（handle_event 只入队事件，不会处理消息）
             if let Some(result) = dialog.check_result() {
                 dialog_result = Some(result);
                 should_close = true;
+            }
+
+            // 请求重绘并处理待处理事件（process_pending_events）
+            // 注意：事件处理在 redraw 中同步执行，可能产生 dialog_result
+            if !should_close {
+                dialog.redraw();
+            }
+
+            // 再次检查结果：redraw 可能处理了事件并设置了 dialog_result
+            if dialog_result.is_none() {
+                should_close = dialog.should_close();
+                if let Some(result) = dialog.check_result() {
+                    dialog_result = Some(result);
+                    should_close = true;
+                }
             }
         }
 
         // 如果应该关闭，关闭对话框
         if should_close {
             self.window_state.dialog_manager.close_dialog(window_id);
-        } else {
-            // 请求重绘对话框
-            if let Some(dialog) = self.window_state.dialog_manager.get_dialog_mut(window_id) {
-                dialog.redraw();
-            }
         }
 
         // 处理对话框返回的结果
