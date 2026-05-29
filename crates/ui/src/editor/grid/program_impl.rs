@@ -48,6 +48,10 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             }
             Event::Mouse(mouse::Event::CursorMoved { position }) => {
                 let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
+
+                // 更新框选框平滑动画
+                self.update_selection_box_animation(Some(local_pos));
+
                 if state.is_loop_dragging {
                     return Some(Action::publish(Message::LoopRange(
                         crate::message::LoopRangeAction::RulerMoved {
@@ -61,6 +65,9 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                 ))));
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                // 清除框选框动画状态
+                *self.editor.selection_box_anim.borrow_mut() = None;
+
                 if state.is_loop_dragging {
                     state.is_loop_dragging = false;
                     return Some(Action::publish(Message::LoopRange(

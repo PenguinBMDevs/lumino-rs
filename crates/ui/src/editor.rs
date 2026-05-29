@@ -96,6 +96,24 @@ pub struct Editor {
     pub cached_onion_config_hash: u64,
     /// 缓存是否有效
     pub onion_cache_valid: bool,
+
+    /// 框选框的动画显示状态（用于弹簧物理动画）
+    pub selection_box_anim: RefCell<Option<SelectionBoxAnimState>>,
+}
+
+/// 框选框弹簧动画状态
+#[derive(Debug, Clone, Copy)]
+pub struct SelectionBoxAnimState {
+    /// 起点的屏幕坐标（固定）
+    pub start_pos: Point,
+    /// 当前动画显示的终点坐标（弹簧末端）
+    pub current_pos: Point,
+    /// 当前速度（用于弹簧物理）
+    pub velocity: Point,
+    /// 上一次吸附的目标 tick（用于判断是否需要更新弹簧目标）
+    pub snapped_tick: f32,
+    /// 上一次吸附的目标 key
+    pub snapped_key: u16,
 }
 
 /// 编辑器各组件的内存占用快照（字节）
@@ -191,6 +209,7 @@ impl Editor {
             cached_onion_track_hash: 0,
             cached_onion_config_hash: 0,
             onion_cache_valid: false,
+            selection_box_anim: RefCell::new(None),
         }
     }
 
