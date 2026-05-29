@@ -58,6 +58,11 @@ impl Host {
         self.root.get_project_settings_data()
     }
 
+    /// 获取已保存的项目标题（不含"无标题"回退，用于对话框窗口标题）
+    pub fn get_project_settings_title(&self) -> String {
+        self.root.state.project_settings_dialog.title.clone()
+    }
+
     /// 获取并清空对话框结果
     pub fn take_dialog_result(&mut self) -> Option<DialogResult> {
         self.root.take_dialog_result()
