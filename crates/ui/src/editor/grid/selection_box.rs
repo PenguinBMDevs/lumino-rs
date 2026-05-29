@@ -27,12 +27,19 @@ pub fn draw(
     let mut has_content = false;
 
     // 情况 1：正在拖拽框选——绘制半透明填充的选择框
-    // 优先使用动画显示位置（如果有），否则使用当前实际位置
-    let selection_box = editor
-        .selection_box_anim
-        .borrow()
-        .map(|anim| (anim.start_pos, anim.current_pos))
-        .or_else(|| editor.get_selection_box());
+    // 根据框选框模式决定显示方式：
+    // - Direct 模式：直接使用当前实际位置（无动画延迟）
+    // - Spring 模式：优先使用动画显示位置（弹簧弹性效果）
+    let selection_box =
+        if editor.selection_box_mode() == lumino_core::storage::config::SelectionBoxMode::Direct {
+            editor.get_selection_box()
+        } else {
+            editor
+                .selection_box_anim
+                .borrow()
+                .map(|anim| (anim.start_pos, anim.current_pos))
+                .or_else(|| editor.get_selection_box())
+        };
 
     if let Some((start_pos, current_pos)) = selection_box {
         let min_x = start_pos.x.min(current_pos.x);

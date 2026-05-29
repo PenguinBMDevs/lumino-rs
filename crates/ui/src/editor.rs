@@ -418,6 +418,14 @@ impl Editor {
     pub(crate) fn update_selection_box_animation(&self, mouse_pos: Option<Point>) {
         use crate::editor::EditState;
         use crate::editor::SelectionBoxAnimState;
+        use lumino_core::storage::config::SelectionBoxMode;
+
+        // 直接跟随模式：不需要弹簧动画，直接返回
+        if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct {
+            // 清除任何残留的动画状态
+            *self.selection_box_anim.borrow_mut() = None;
+            return;
+        }
 
         let interaction = &self.editor_state.interaction;
 

@@ -1,6 +1,6 @@
 use super::CacheInvalidation;
 use crate::constants::editor::{MAX_VISIBLE_KEY_COUNT, MIN_VISIBLE_KEY_COUNT};
-use lumino_core::storage::config::EraserBehavior;
+use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
 
 impl super::Editor {
     // 键盘设置 — 全部委托到 editor_state
@@ -73,5 +73,15 @@ impl super::Editor {
 
     pub fn eraser_behavior(&self) -> EraserBehavior {
         self.editor_state.view.eraser_behavior
+    }
+
+    // 框选框设置
+
+    pub fn set_selection_box_mode(&mut self, mode: SelectionBoxMode) {
+        self.editor_state.set_selection_box_mode(mode);
+    }
+
+    pub fn selection_box_mode(&self) -> SelectionBoxMode {
+        self.editor_state.view.selection_box_mode
     }
 }

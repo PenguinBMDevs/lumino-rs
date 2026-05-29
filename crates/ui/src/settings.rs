@@ -32,6 +32,7 @@ pub enum Event {
     XSynthMaxVoicesChanged(Option<usize>),
     ThemeChanged(String),
     EraserBehaviorChanged(lumino_core::storage::config::EraserBehavior),
+    SelectionBoxModeChanged(lumino_core::storage::config::SelectionBoxMode),
     ProgramFontNameChanged(String),
     ProgramFontPathChanged(String),
     BrowseProgramFont,
@@ -61,6 +62,7 @@ pub struct SettingsPanel {
     pub xsynth_fade_out: bool,
     pub xsynth_max_voices_per_key: Option<usize>,
     pub eraser_behavior: lumino_core::storage::config::EraserBehavior,
+    pub selection_box_mode: lumino_core::storage::config::SelectionBoxMode,
     pub program_font_name: String,
     pub program_font_path: String,
     // 自动滚动配置
@@ -92,6 +94,7 @@ impl SettingsPanel {
             xsynth_fade_out: ui_config.xsynth_fade_out_killing,
             xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
             eraser_behavior: ui_config.eraser_behavior,
+            selection_box_mode: ui_config.selection_box_mode,
             program_font_name: ui_config.program_font_name.clone(),
             program_font_path: ui_config.program_font_path.clone(),
             auto_scroll_fixed_position: ui_config.auto_scroll.fixed_indicator_position,
@@ -150,6 +153,9 @@ impl SettingsPanel {
             }
             Event::EraserBehaviorChanged(behavior) => {
                 self.eraser_behavior = behavior;
+            }
+            Event::SelectionBoxModeChanged(mode) => {
+                self.selection_box_mode = mode;
             }
             Event::ProgramFontNameChanged(name) => {
                 self.program_font_name = name;

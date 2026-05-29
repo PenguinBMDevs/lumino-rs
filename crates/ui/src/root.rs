@@ -143,6 +143,9 @@ impl Root {
         });
         // 同步橡皮擦行为配置到编辑器
         root.editor.set_eraser_behavior(ui_config.eraser_behavior);
+        // 同步框选框显示模式
+        root.editor
+            .set_selection_box_mode(ui_config.selection_box_mode);
         // 同步力度过滤阈值
         root.velocity_filter_threshold = ui_config.velocity_filter_threshold;
         // 应用 256 键初始配置

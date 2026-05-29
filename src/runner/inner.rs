@@ -307,6 +307,7 @@ impl RunnerInner {
             config.ui.use_native_titlebar = new.use_native_titlebar;
             config.ui.program_font_name = new.program_font_name.clone();
             config.ui.program_font_path = new.program_font_path.clone();
+            config.ui.selection_box_mode = new.selection_box_mode;
         });
 
         if let Err(e) = self.window_state.storage.config.save() {

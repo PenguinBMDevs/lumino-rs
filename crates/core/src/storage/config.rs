@@ -23,6 +23,25 @@ pub enum SynthBackend {
     System,
 }
 
+/// 框选框显示模式
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum SelectionBoxMode {
+    /// 弹簧动画模式：框选框边界有弹性动画效果
+    Spring,
+    /// 直接跟随模式：框选框直接跟随鼠标，无动画延迟
+    #[default]
+    Direct,
+}
+
+impl std::fmt::Display for SelectionBoxMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SelectionBoxMode::Spring => write!(f, "弹簧动画"),
+            SelectionBoxMode::Direct => write!(f, "直接跟随"),
+        }
+    }
+}
+
 /// 橡皮擦工具行为模式
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum EraserBehavior {
@@ -128,6 +147,9 @@ pub struct UiConfig {
     /// 调高可减少密集钢琴/快速重复音符/拖音过程中的 voice stealing
     #[serde(default = "default_max_voices_per_key")]
     pub xsynth_max_voices_per_key: Option<usize>,
+    /// 框选框显示模式
+    #[serde(default)]
+    pub selection_box_mode: SelectionBoxMode,
     /// 橡皮擦工具行为模式
     #[serde(default)]
     pub eraser_behavior: EraserBehavior,
@@ -191,6 +213,7 @@ impl Default for UiConfig {
             xsynth_threads: default_synth_threads(),
             xsynth_fade_out_killing: default_synth_fade_out(),
             xsynth_max_voices_per_key: default_max_voices_per_key(),
+            selection_box_mode: SelectionBoxMode::default(),
             eraser_behavior: EraserBehavior::default(),
             program_font_name: String::new(),
             program_font_path: String::new(),

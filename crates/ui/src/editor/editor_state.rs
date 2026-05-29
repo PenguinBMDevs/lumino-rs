@@ -4,7 +4,7 @@
 
 use crate::toolbar::Tool;
 use iced_core::Point;
-use lumino_core::storage::config::{AutoScrollConfig, EraserBehavior};
+use lumino_core::storage::config::{AutoScrollConfig, EraserBehavior, SelectionBoxMode};
 
 pub mod canvas;
 pub mod data;
@@ -269,5 +269,10 @@ impl EditorState {
     /// 设置橡皮擦行为
     pub fn set_eraser_behavior(&mut self, behavior: EraserBehavior) {
         self.view.eraser_behavior = behavior;
+    }
+
+    /// 设置框选框显示模式
+    pub fn set_selection_box_mode(&mut self, mode: SelectionBoxMode) {
+        self.view.selection_box_mode = mode;
     }
 }

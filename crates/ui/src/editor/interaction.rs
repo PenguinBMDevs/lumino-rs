@@ -3,7 +3,7 @@ use crate::constants::editor::{DEFAULT_MIDI_CHANNEL, DEFAULT_NOTE_VELOCITY};
 use crate::message::{AudioAction, EditorAction};
 use crate::toolbar::Tool;
 use lumino_core::event;
-use lumino_core::storage::config::EraserBehavior;
+use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
 
 impl Editor {
     /// 主入口：处理编辑器动作
@@ -43,9 +43,16 @@ impl Editor {
 
         let tick = self.x_to_tick(pos.x);
         let key = self.y_to_key(pos.y);
-        let snapped_tick = self.snap_tick(tick);
 
-        self.handle_tool_pressed(pos, shift, snapped_tick, key);
+        // 直接跟随模式：框选框使用原始坐标，不吸附到网格
+        let effective_tick =
+            if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct {
+                tick
+            } else {
+                self.snap_tick(tick)
+            };
+
+        self.handle_tool_pressed(pos, shift, effective_tick, key);
     }
 
     /// 根据当前工具处理鼠标按下事件
@@ -263,7 +270,13 @@ impl Editor {
             ..
         } = &mut self.editor_state.interaction.edit_state
         {
-            *current_tick = snapped_tick;
+            // 直接跟随模式：框选框使用原始坐标，不吸附到网格
+            *current_tick = if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct
+            {
+                tick
+            } else {
+                snapped_tick
+            };
             *current_key = key;
         }
 

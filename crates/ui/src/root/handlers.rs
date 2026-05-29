@@ -178,6 +178,10 @@ impl Root {
                     crate::settings::Event::EraserBehaviorChanged(behavior) => {
                         self.editor.set_eraser_behavior(*behavior);
                     }
+                    crate::settings::Event::SelectionBoxModeChanged(mode) => {
+                        self.editor.set_selection_box_mode(*mode);
+                        tracing::debug!("Root: 框选框模式切换为 {:?}", mode);
+                    }
                     crate::settings::Event::VelocityFilterThresholdChanged(value) => {
                         if let Ok(val) = value.parse::<u8>() {
                             self.velocity_filter_threshold = val;
