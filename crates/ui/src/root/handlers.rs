@@ -267,6 +267,9 @@ impl Root {
                         .invalidate_caches(crate::editor::CacheInvalidation::ALL);
                 }
 
+                // 更新框选框弹簧物理动画（无鼠标移动时持续推进收敛）
+                self.editor.update_selection_box_animation(None);
+
                 true
             }
             Message::VelocityPanelResize(height) => {
