@@ -9,7 +9,6 @@ use super::super::params::RenderParams;
 pub fn prepare_renderers(
     grid_renderer: &mut lumino_gfx::GridRenderer,
     note_renderer: &mut lumino_gfx::NoteRenderer,
-    keyboard_renderer: &mut lumino_gfx::KeyboardRenderer,
     ruler_renderer: &mut lumino_gfx::RulerRenderer,
     params: &RenderParams,
     note_events_rx: &Receiver<NoteEvent>,
@@ -43,19 +42,6 @@ pub fn prepare_renderers(
     // 处理音符事件
     note_renderer.process_events(note_events_rx, device, queue);
 
-    // 准备键盘渲染器
-    if !params.keyboard_instances.is_empty() {
-        keyboard_renderer.prepare(
-            device,
-            queue,
-            params.logical_size,
-            params.keyboard_width,
-            params.ruler_height,
-            params.scroll.1,
-            params.zoom.1,
-            params.max_key_index as u16 + 1,
-        );
-    }
     // 准备标尺渲染器
     if !params.ruler_instances.is_empty() {
         ruler_renderer.prepare(

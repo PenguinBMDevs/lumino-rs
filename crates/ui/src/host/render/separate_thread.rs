@@ -125,17 +125,8 @@ impl Host {
             )
         };
 
-        let keyboard_instances = {
-            puffin::profile_scope!("generate_keyboard_instances");
-            let actual_key_count = self.root.editor.editor_state.view.visible_key_count;
-            self.generate_keyboard_instances(
-                super::DEFAULT_KEYBOARD_WIDTH,
-                super::DEFAULT_RULER_HEIGHT,
-                scroll.1,
-                zoom.1,
-                actual_key_count,
-            )
-        };
+        // WGPU 键盘渲染已移除，使用 Iced Canvas 键盘替代
+        let keyboard_instances = vec![];
 
         let ruler_instances = {
             puffin::profile_scope!("generate_ruler_instances");

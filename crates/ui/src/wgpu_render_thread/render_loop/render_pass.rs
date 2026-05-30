@@ -17,7 +17,6 @@ pub fn execute_render_pass(
     params: &RenderParams,
     grid_renderer: &mut lumino_gfx::GridRenderer,
     note_renderer: &mut lumino_gfx::NoteRenderer,
-    keyboard_renderer: &mut lumino_gfx::KeyboardRenderer,
     ruler_renderer: &mut lumino_gfx::RulerRenderer,
     queue: &wgpu::Queue,
     onion_renderer: &mut lumino_gfx::OnionRenderer,
@@ -105,12 +104,6 @@ pub fn execute_render_pass(
             Some((scissor_x, scissor_y, scissor_width, scissor_height)),
         );
 
-        // 绘制键盘
-        if !params.keyboard_instances.is_empty() {
-            render_pass.set_scissor_rect(0, 0, width, height);
-            keyboard_renderer.draw(&mut render_pass, params.keyboard_instances.len() as u32);
-        }
-
         // 绘制标尺
         if !params.ruler_instances.is_empty() {
             render_pass.set_scissor_rect(0, 0, width, height);
@@ -133,7 +126,6 @@ pub fn update_stats(
         stats.frame_count = *frame_count;
         stats.last_frame_time_ms = frame_time.as_secs_f64() * 1000.0;
         stats.grid_line_count = params.grid_instances.len();
-        stats.key_count = params.keyboard_instances.len();
         stats.ruler_tick_count = params.ruler_instances.len();
     }
 

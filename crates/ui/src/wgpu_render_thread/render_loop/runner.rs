@@ -37,7 +37,6 @@ pub fn run_render_thread(
     // 初始化渲染器
     let mut grid_renderer = lumino_gfx::GridRenderer::new(&device, texture_format);
     let mut note_renderer = lumino_gfx::NoteRenderer::new(&device, &queue, texture_format);
-    let mut keyboard_renderer = lumino_gfx::KeyboardRenderer::new(&device, texture_format);
     let mut ruler_renderer = lumino_gfx::RulerRenderer::new(&device, texture_format);
     let mut onion_renderer = lumino_gfx::OnionRenderer::new(&device, &queue, texture_format);
 
@@ -121,7 +120,6 @@ pub fn run_render_thread(
                 prepare_renderers(
                     &mut grid_renderer,
                     &mut note_renderer,
-                    &mut keyboard_renderer,
                     &mut ruler_renderer,
                     params,
                     &note_events_rx,
@@ -181,7 +179,6 @@ pub fn run_render_thread(
                     params,
                     &mut grid_renderer,
                     &mut note_renderer,
-                    &mut keyboard_renderer,
                     &mut ruler_renderer,
                     &queue,
                     &mut onion_renderer,
