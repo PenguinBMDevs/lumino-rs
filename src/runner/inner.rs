@@ -270,6 +270,29 @@ impl RunnerInner {
         let new = self.window_state.window.ui().settings();
         let old = &self.window_state.storage.config.get().ui;
 
+        let config_dirty = new.synth_backend != old.preferred_backend
+            || new.soundfont_path != old.soundfont_path
+            || new.use_native_titlebar != old.use_native_titlebar
+            || new.program_font_name != old.program_font_name
+            || new.program_font_path != old.program_font_path
+            || new.selection_box_mode != old.selection_box_mode
+            || new.xsynth_buffer_ms != old.xsynth_buffer_ms
+            || new.xsynth_sample_rate != old.xsynth_sample_rate
+            || new.xsynth_threads != old.xsynth_threads
+            || new.xsynth_fade_out != old.xsynth_fade_out_killing
+            || new.xsynth_max_voices_per_key != old.xsynth_max_voices_per_key
+            || new.velocity_filter_threshold != old.velocity_filter_threshold
+            || new.eraser_behavior != old.eraser_behavior
+            || new.auto_scroll_fixed_position != old.auto_scroll.fixed_indicator_position
+            || new.auto_scroll_page_trigger_offset != old.auto_scroll.page_trigger_offset
+            || new.auto_scroll_page_return_position != old.auto_scroll.page_return_position
+            || new.icon_hidpi != old.icon_hidpi
+            || new.enable_256key != old.enable_256key;
+
+        if !config_dirty {
+            return;
+        }
+
         // 逐一检查各项设置变更
         if new.synth_backend != old.preferred_backend || new.soundfont_path != old.soundfont_path {
             tracing::info!(

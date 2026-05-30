@@ -18,6 +18,8 @@ use crate::view::{
 impl Root {
     /// 渲染视图
     pub fn view(&self) -> Element<'_> {
+        puffin::profile_scope!("root_view");
+
         if self.is_progress_window {
             self.view_progress()
         } else if self.state.is_dialog_window {
@@ -29,6 +31,8 @@ impl Root {
 
     /// 渲染进度窗口
     fn view_progress(&self) -> Element<'_> {
+        puffin::profile_scope!("root_view_progress");
+
         // 进度窗口只显示进度
         // 默认显示初始化状态，避免窗口空白
         let (msg, progress) = self
@@ -64,6 +68,8 @@ impl Root {
 
     /// 渲染对话框
     fn view_dialog(&self) -> Element<'_> {
+        puffin::profile_scope!("root_view_dialog");
+
         // 对话框窗口 - 根据类型显示不同内容
         match self.state.dialog_type {
             DialogType::Collaboration => {
@@ -88,12 +94,16 @@ impl Root {
 
     /// 渲染主窗口
     fn view_main(&self) -> Element<'_> {
+        puffin::profile_scope!("root_view_main");
+
         let is_arrangement_route = self.sidebar.is_arrangement_route();
 
         // 左侧栏（包含图标栏和音轨面板）
+        puffin::profile_scope!("root_view_sidebar");
         let left_bar = self.sidebar.view(&self.window);
 
         // 右侧内容区域（工具栏 + 编辑器 + 力度面板 / 瀑布流占位）
+        puffin::profile_scope!("root_view_right_content");
         let right_content: Element<'_> =
             if self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Waterfall {
                 // 瀑布流模式：显示"实现中"占位页面
@@ -124,6 +134,7 @@ impl Root {
                 .into()
             };
 
+        puffin::profile_scope!("root_view_main_content");
         let main_content = if cfg!(target_os = "macos") {
             column![
                 row![left_bar, right_content].height(Length::Fill),
@@ -144,6 +155,7 @@ impl Root {
 
         // 性能面板展开时，使用 Stack 将面板作为浮动层渲染在状态栏上方
         if self.statusbar.perf_panel_expanded {
+            puffin::profile_scope!("root_view_perf_panel");
             let perf_data = self.statusbar.perf_data();
             let panel = performance::performance_panel_view(perf_data);
 
@@ -261,6 +273,8 @@ impl Root {
 
     /// 渲染音轨总览视图
     fn view_arrangement(&self) -> Element<'_> {
+        puffin::profile_scope!("root_view_arrangement");
+
         use crate::editor::arrangement::ArrangementCanvas;
         use iced_widget::canvas::Canvas;
 
@@ -279,6 +293,8 @@ impl Root {
 
     /// 渲染瀑布流模式占位页面（功能实现中）
     fn view_waterfall_placeholder(&self) -> Element<'_> {
+        puffin::profile_scope!("root_view_waterfall_placeholder");
+
         container(
             column![
                 text("瀑布流模式")

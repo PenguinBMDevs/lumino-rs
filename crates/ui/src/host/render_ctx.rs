@@ -2,7 +2,7 @@
 //!
 //! 管理 iced 渲染器、wgpu 音符/网格渲染器、GPU 资源以及独立渲染线程。
 
-use iced_core::{Font, Pixels, mouse};
+use iced_core::{Font, Pixels};
 use iced_wgpu::wgpu;
 use iced_wgpu::{Engine, Renderer, graphics::Viewport};
 use iced_winit::runtime::user_interface::Cache;
@@ -29,8 +29,6 @@ pub(crate) struct RenderContext {
     pub last_edit_state: crate::editor::EditState,
     /// 上次光标位置
     pub last_cursor_position: Option<iced_core::Point>,
-    /// 上次渲染光标状态
-    pub last_render_cursor: mouse::Cursor,
     /// 渲染线程
     pub wgpu_render_thread: Option<crate::WgpuRenderThread>,
     /// 渲染线程通信
@@ -78,7 +76,6 @@ impl RenderContext {
             render_cache: RenderCache::new(),
             last_edit_state: crate::editor::EditState::default(),
             last_cursor_position: None,
-            last_render_cursor: mouse::Cursor::Unavailable,
             wgpu_render_thread: None,
             note_events_tx: None,
             note_worker: None,

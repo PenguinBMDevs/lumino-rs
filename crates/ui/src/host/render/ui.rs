@@ -19,11 +19,8 @@ impl Host {
         // 菜单打开时，不使用缓存机制，每次都重建 UI 以避免菜单闪烁
         let is_menu_open = !self.root.should_render_preview_note();
 
-        // 检测光标位置是否变化，如果变化需要更新鼠标指针样式
-        let cursor_changed = self.render_ctx.last_render_cursor != self.window_ctx.cursor;
-
-        if !is_menu_open && !self.ui_dirty && !is_first_render && !cursor_changed {
-            // UI 没有变化且不是第一次渲染且光标未移动，直接 present 之前渲染的内容
+        if !is_menu_open && !self.ui_dirty && !is_first_render {
+            // UI 没有变化且不是第一次渲染，直接 present 之前渲染的内容
             self.render_ctx.renderer.present(
                 None,
                 frame.texture.format(),
@@ -82,9 +79,6 @@ impl Host {
         if !self.render_ctx.has_rendered_ui {
             self.render_ctx.has_rendered_ui = true;
         }
-
-        // 更新上次渲染时的光标状态
-        self.render_ctx.last_render_cursor = self.window_ctx.cursor;
 
         self.render_ctx.renderer.present(
             None,

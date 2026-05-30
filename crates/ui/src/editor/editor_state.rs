@@ -82,16 +82,25 @@ impl EditorState {
 
     /// 更新鼠标位置
     pub fn update_cursor_position(&mut self, position: Option<Point>) {
+        if self.canvas.cursor_position == position {
+            return;
+        }
         self.canvas.cursor_position = position;
     }
 
     /// 更新 Canvas 偏移量
     pub fn set_canvas_offset(&mut self, offset: Point) {
+        if self.canvas.offset == offset {
+            return;
+        }
         self.canvas.offset = offset;
     }
 
     /// 更新 Canvas 尺寸
     pub fn set_canvas_size(&mut self, size: Point) {
+        if self.canvas.size == size {
+            return;
+        }
         self.canvas.size = size;
     }
 

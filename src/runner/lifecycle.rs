@@ -121,6 +121,7 @@ impl winit::application::ApplicationHandler for Runner {
         };
 
         // 处理进度消息
+        puffin::profile_scope!("runner_about_to_wait_process_messages");
         let main_window = this.window_state.window.window().clone();
         let main_ui = this.window_state.window.ui_mut();
         this.window_state
@@ -128,23 +129,28 @@ impl winit::application::ApplicationHandler for Runner {
             .process_messages(main_ui, &main_window);
 
         // 更新进度窗口
+        puffin::profile_scope!("runner_about_to_wait_progress_update");
         let ui_config = this.window_state.storage.config.get().ui.clone();
         this.window_state.progress.update(event_loop, &ui_config);
 
         // 处理窗口动作
+        puffin::profile_scope!("runner_about_to_wait_window_actions");
         this.window_state.window.handle_window_actions(event_loop);
 
         // 处理音频动作
+        puffin::profile_scope!("runner_about_to_wait_audio_actions");
         crate::runner::inner::RunnerInner::process_audio_actions(
             &mut this.window_state.window,
             &mut this.midi_state.midi,
         );
 
         // 处理核心事件（包括打开对话框）
+        puffin::profile_scope!("runner_about_to_wait_core_events");
         this.process_core_events(event_loop);
 
         // 初始化新创建的对话框（同步主窗口的协作状态）
         {
+            puffin::profile_scope!("runner_about_to_wait_dialog_init");
             let main_ui = this.window_state.window.ui();
             this.window_state
                 .dialog_manager
@@ -157,15 +163,19 @@ impl winit::application::ApplicationHandler for Runner {
         }
 
         // 更新对话框
+        puffin::profile_scope!("runner_about_to_wait_dialog_update");
         this.window_state.dialog_manager.update();
 
         // 保存存储
+        puffin::profile_scope!("runner_about_to_wait_save_storage");
         this.save_storage();
 
         // 内存日志
+        puffin::profile_scope!("runner_about_to_wait_memory_logging");
         this.handle_memory_logging();
 
         // 重新初始化 MIDI 或检查 XSynth 异步初始化
+        puffin::profile_scope!("runner_about_to_wait_midi_reinit");
         this.handle_midi_reinit();
 
         // 检查是否需要重启窗口（标题栏设置变更）
@@ -175,9 +185,11 @@ impl winit::application::ApplicationHandler for Runner {
         }
 
         // 控制循环休眠策略
+        puffin::profile_scope!("runner_about_to_wait_control_flow");
         this.handle_control_flow(event_loop);
 
         // 测试模式 FPS 监测
+        puffin::profile_scope!("runner_about_to_wait_test_mode_fps");
         this.handle_test_mode_fps(event_loop);
     }
 }

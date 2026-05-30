@@ -79,10 +79,6 @@ impl Host {
 
         puffin::profile_function!();
 
-        // 处理待处理的事件队列（合并后的）
-        // 这样可以确保同一帧内的多个事件被合并处理，减少 UI 重建次数
-        self.process_pending_events();
-
         // 帧准备：更新 FPS 和播放状态
         self.process_frame_preparation();
 

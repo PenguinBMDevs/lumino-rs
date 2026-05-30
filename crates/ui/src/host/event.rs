@@ -3,6 +3,7 @@
 use iced_winit::{conversion, winit};
 
 use iced_core::mouse;
+use iced_winit::runtime::user_interface;
 
 use crate::host::{Host, types::convert_touch_to_mouse};
 use crate::{message, sidebar, toolbar, window};
@@ -68,6 +69,12 @@ impl Host {
 
         let logical_pos =
             conversion::cursor_position(position, self.render_ctx.viewport.scale_factor());
+        if self.window_ctx.cursor_position == Some(logical_pos)
+            && !self.window_ctx.is_toolbar_resizing
+            && !self.root.sidebar.is_resizing()
+        {
+            return;
+        }
         self.window_ctx.cursor = mouse::Cursor::Available(logical_pos);
         // 存储逻辑坐标（与 iced 保持一致）
         self.window_ctx.cursor_position = Some(logical_pos);
@@ -219,16 +226,29 @@ impl Host {
         };
 
         let mut messages = Vec::new();
-
-        {
+        let state = {
             puffin::profile_scope!("update_ui");
-            let _ = interface.update(
+            interface.update(
                 &self.events,
                 self.window_ctx.cursor,
                 &mut self.render_ctx.renderer,
                 &mut self.window_ctx.clipboard,
                 &mut messages,
-            );
+            )
+            .0
+        };
+
+        if let user_interface::State::Updated {
+            mouse_interaction,
+            ..
+        } = state
+        {
+            if let Some(icon) = iced_winit::conversion::mouse_interaction(mouse_interaction) {
+                self.window_ctx.window.set_cursor(icon);
+                self.window_ctx.window.set_cursor_visible(true);
+            } else {
+                self.window_ctx.window.set_cursor_visible(false);
+            }
         }
 
         self.events.clear();
