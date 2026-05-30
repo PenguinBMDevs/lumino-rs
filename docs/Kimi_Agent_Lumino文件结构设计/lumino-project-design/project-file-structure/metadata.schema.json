@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LuminoProjectMetadata",
+  "description": "Lumino 工程文件元数据 schema",
+  "type": "object",
+  "required": ["format_version", "project", "audio"],
+  "properties": {
+    "format_version": {
+      "type": "integer",
+      "description": "工程文件格式版本号",
+      "minimum": 1,
+      "maximum": 1
+    },
+    "project": {
+      "type": "object",
+      "required": ["name", "created_at", "modified_at"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 256 },
+        "author": { "type": "string", "maxLength": 128 },
+        "created_at": { "type": "string", "format": "date-time" },
+        "modified_at": { "type": "string", "format": "date-time" },
+        "description": { "type": "string", "maxLength": 4096 },
+        "lumino_version": { "type": "string" }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "required": ["division", "total_ticks", "track_count", "total_notes", "default_bpm"],
+      "properties": {
+        "division": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "total_ticks": { "type": "integer", "minimum": 0 },
+        "track_count": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "total_notes": { "type": "integer", "minimum": 0 },
+        "default_bpm": { "type": "number", "minimum": 1, "maximum": 1000 }
+      }
+    },
+    "tracks": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["track_id", "name", "channel", "visibility", "solo"],
+            "properties": {
+              "track_id": { "type": "integer", "minimum": 0, "maximum": 65535 },
+              "name": { "type": "string", "maxLength": 256 },
+              "channel": { "type": "integer", "minimum": 0, "maximum": 15 },
+              "visibility": { "type": "string", "enum": ["visible", "muted", "hidden"] },
+              "solo": { "type": "boolean" },
+              "note_count": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "loaded": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "original_name", "format", "imported_at", "storage_path"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[0-9a-f]{8}$" },
+              "original_name": { "type": "string" },
+              "format": { "type": "string", "enum": ["mid", "dms", "lmpj"] },
+              "imported_at": { "type": "string", "format": "date-time" },
+              "storage_path": { "type": "string" },
+              "original_info": { "type": "object" }
+            }
+          }
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "theme": { "type": "string", "enum": ["Light", "Dark"] },
+        "synth_backend": { "type": "string", "enum": ["xsynth", "kdmapi", "system"] },
+        "soundfont_path": { "type": "string" },
+        "auto_scroll_mode": { "type": "string", "enum": ["fixed_indicator", "scrolling", "off"] },
+        "enable_256key": { "type": "boolean" },
+        "velocity_filter_threshold": { "type": "integer", "minimum": 0, "maximum": 127 }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "properties": {
+        "edit_count": { "type": "integer", "minimum": 0 },
+        "playback_count": { "type": "integer", "minimum": 0 },
+        "export_count": { "type": "integer", "minimum": 0 },
+        "working_time_seconds": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

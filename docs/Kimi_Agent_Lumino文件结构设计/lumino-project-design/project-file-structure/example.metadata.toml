@@ -1,0 +1,122 @@
+# Lumino Project Metadata
+# 工程文件格式版本
+format_version = 1
+
+[project]
+name = "Black MIDI Nightmare"
+author = "BuickMeow"
+created_at = "2026-05-28T10:30:00+08:00"
+modified_at = "2026-05-28T22:45:00+08:00"
+description = "A 10-million note Black MIDI composition for piano."
+lumino_version = "0.1.0"
+
+[audio]
+division = 480
+total_ticks = 2880000
+track_count = 24
+total_notes = 10240000
+default_bpm = 180.0
+
+[tracks]
+
+[[tracks.entries]]
+track_id = 0
+name = "Piano Main"
+channel = 0
+visibility = "visible"
+solo = false
+note_count = 450000
+
+[[tracks.entries]]
+track_id = 1
+name = "Piano Left Hand"
+channel = 1
+visibility = "visible"
+solo = false
+note_count = 380000
+
+[[tracks.entries]]
+track_id = 2
+name = "Piano Right Hand High"
+channel = 2
+visibility = "visible"
+solo = false
+note_count = 520000
+
+[[tracks.entries]]
+track_id = 3
+name = "Bass"
+channel = 3
+visibility = "muted"
+solo = false
+note_count = 120000
+
+[[tracks.entries]]
+track_id = 4
+name = "Drums"
+channel = 9
+visibility = "visible"
+solo = false
+note_count = 850000
+
+[[tracks.entries]]
+track_id = 5
+name = "Strings"
+channel = 4
+visibility = "hidden"
+solo = false
+note_count = 200000
+
+[[tracks.entries]]
+track_id = 6
+name = "Lead Synth"
+channel = 5
+visibility = "visible"
+solo = true
+note_count = 310000
+
+[loaded]
+
+[[loaded.files]]
+id = "a1b2c3d4"
+original_name = "base_melody.mid"
+format = "mid"
+imported_at = "2026-05-28T11:00:00+08:00"
+storage_path = "mid/a1b2c3d4.lmloaded"
+
+[loaded.files.original_info]
+track_count = 4
+total_notes = 50000
+division = 480
+
+[[loaded.files]]
+id = "e5f6789a"
+original_name = "drum_pattern.dms"
+format = "dms"
+imported_at = "2026-05-28T12:30:00+08:00"
+storage_path = "dms/e5f6789a.lmloaded"
+
+[loaded.files.original_info]
+track_count = 1
+total_notes = 20000
+
+[[loaded.files]]
+id = "b2c3d4e5"
+original_name = "reference_project.lmpj"
+format = "lmpj"
+imported_at = "2026-05-28T14:00:00+08:00"
+storage_path = "lmpj/b2c3d4e5.lmloaded"
+
+[settings]
+theme = "Dark"
+synth_backend = "xsynth"
+soundfont_path = ""
+auto_scroll_mode = "scrolling"
+enable_256key = false
+velocity_filter_threshold = 1
+
+[stats]
+edit_count = 5238
+playback_count = 142
+export_count = 7
+working_time_seconds = 86400
