@@ -6,6 +6,8 @@ use crate::{Element, Message, Renderer, Theme, message, resources::icon};
 
 use lumino_core::{Event, event};
 
+const MENU_WIDTH: f32 = 200.0;
+
 #[derive(Debug, Clone)]
 pub enum MenuKind {
     File,
@@ -110,12 +112,12 @@ pub fn view<'a>() -> Element<'a> {
     let menus = menus()
         .iter()
         .map(|cfg| {
-            Item::with_menu(
+                Item::with_menu(
                 menu_button(cfg.kind.to_string()),
                 // 不要删除 'width(200)'！
                 // 删除它会导致 panic。原因未知
                 // 使用 offset 来与标题栏对齐
-                Menu::new(menu_items(&cfg.items)).width(200).offset(9.0),
+                Menu::new(menu_items(&cfg.items)).width(MENU_WIDTH).offset(9.0),
             )
         })
         .collect::<Vec<_>>();
@@ -149,7 +151,7 @@ fn menu_items<'a>(items: &[MenuItem]) -> Vec<Item<'a, Message, Theme, Renderer>>
                 MenuItem::Submenu(r, n) => {
                     return Item::with_menu(
                         submenu_button(n),
-                        Menu::new(menu_items(r)).width(400).offset(12.0),
+                        Menu::new(menu_items(r)).width(MENU_WIDTH).offset(12.0),
                     );
                 }
             };
@@ -166,14 +168,20 @@ fn submenu_button<'a>(label: impl Into<String>) -> Element<'a> {
         .center_y(Length::Fill)
         .into();
     let inner = row![
-        text(label.into()).size(14.0).width(Length::Fill),
+        text(label.into())
+            .size(14.0)
+            .width(Length::Fill)
+            .align_x(iced_core::alignment::Horizontal::Left),
         container(icon)
+            .width(Length::Fixed(16.0))
             .height(20)
             .padding(3)
             .align_y(Alignment::Center)
     ]
+    .width(Length::Fill)
     .into();
     button_template(inner, message::null())
+        .width(Length::Fill)
         .padding([2, 8])
         .into()
 }
