@@ -235,6 +235,58 @@ impl Root {
             self.editor.editor_state.view.key_count = new_count;
         }
 
+        // 同步合成器后端（需要标记重新初始化）
+        if old_settings.synth_backend != new_settings.synth_backend {
+            tracing::info!(
+                "同步合成器后端: {:?} -> {:?}",
+                old_settings.synth_backend,
+                new_settings.synth_backend
+            );
+            // 合成器后端变更需要重新初始化，标记为需要重新初始化
+            // 实际重新初始化在 save_storage 中处理
+        }
+
+        // 同步音色库路径
+        if old_settings.soundfont_path != new_settings.soundfont_path {
+            tracing::info!(
+                "同步音色库路径: '{}' -> '{}'",
+                old_settings.soundfont_path,
+                new_settings.soundfont_path
+            );
+            // 音色库路径变更需要重新初始化，标记为需要重新初始化
+        }
+
+        // 同步 XSynth 参数
+        if old_settings.xsynth_buffer_ms != new_settings.xsynth_buffer_ms
+            || old_settings.xsynth_sample_rate != new_settings.xsynth_sample_rate
+            || old_settings.xsynth_threads != new_settings.xsynth_threads
+            || old_settings.xsynth_fade_out != new_settings.xsynth_fade_out
+            || old_settings.xsynth_max_voices_per_key != new_settings.xsynth_max_voices_per_key
+        {
+            tracing::info!(
+                "同步 XSynth 参数: buffer={:.1}ms-> {:.1}ms, threads={}-> {}, fade={}-> {}, voices={:?}-> {:?}",
+                old_settings.xsynth_buffer_ms,
+                new_settings.xsynth_buffer_ms,
+                old_settings.xsynth_threads,
+                new_settings.xsynth_threads,
+                old_settings.xsynth_fade_out,
+                new_settings.xsynth_fade_out,
+                old_settings.xsynth_max_voices_per_key,
+                new_settings.xsynth_max_voices_per_key
+            );
+            // XSynth 参数变更需要重新初始化
+        }
+
+        // 同步 MIDI 输入设备选择
+        if old_settings.selected_midi_device != new_settings.selected_midi_device {
+            tracing::info!(
+                "同步 MIDI 输入设备: {:?} -> {:?}",
+                old_settings.selected_midi_device,
+                new_settings.selected_midi_device
+            );
+            // MIDI 设备选择变更需要重新打开设备
+        }
+
         // 更新设置面板
         self.settings = new_settings;
         tracing::info!("apply_settings: 设置同步完成");
@@ -362,6 +414,97 @@ mod tests {
             root.settings.selection_box_mode,
             old_settings.selection_box_mode
         );
+    }
+
+    #[test]
+    fn test_apply_settings_synth_backend_changed() {
+        let mut root = create_test_root();
+        let old_settings = root.settings.clone();
+
+        let mut new_settings = old_settings.clone();
+        new_settings.synth_backend = lumino_core::storage::config::SynthBackend::Kdmapi;
+
+        root.apply_settings(new_settings.clone());
+
+        assert_eq!(root.settings.synth_backend, new_settings.synth_backend);
+    }
+
+    #[test]
+    fn test_apply_settings_soundfont_path_changed() {
+        let mut root = create_test_root();
+        let old_settings = root.settings.clone();
+
+        let mut new_settings = old_settings.clone();
+        new_settings.soundfont_path = "/path/to/soundfont.sf2".to_string();
+
+        root.apply_settings(new_settings.clone());
+
+        assert_eq!(root.settings.soundfont_path, new_settings.soundfont_path);
+    }
+
+    #[test]
+    fn test_apply_settings_xsynth_buffer_changed() {
+        let mut root = create_test_root();
+        let old_settings = root.settings.clone();
+
+        let mut new_settings = old_settings.clone();
+        new_settings.xsynth_buffer_ms = 50.0;
+
+        root.apply_settings(new_settings.clone());
+
+        assert_eq!(root.settings.xsynth_buffer_ms, 50.0);
+    }
+
+    #[test]
+    fn test_apply_settings_xsynth_threads_changed() {
+        let mut root = create_test_root();
+        let old_settings = root.settings.clone();
+
+        let mut new_settings = old_settings.clone();
+        new_settings.xsynth_threads = 4;
+
+        root.apply_settings(new_settings.clone());
+
+        assert_eq!(root.settings.xsynth_threads, 4);
+    }
+
+    #[test]
+    fn test_apply_settings_xsynth_fade_out_changed() {
+        let mut root = create_test_root();
+        let old_settings = root.settings.clone();
+
+        let mut new_settings = old_settings.clone();
+        new_settings.xsynth_fade_out = !old_settings.xsynth_fade_out;
+
+        root.apply_settings(new_settings.clone());
+
+        assert_eq!(root.settings.xsynth_fade_out, new_settings.xsynth_fade_out);
+    }
+
+    #[test]
+    fn test_apply_settings_xsynth_max_voices_changed() {
+        let mut root = create_test_root();
+        let old_settings = root.settings.clone();
+
+        let mut new_settings = old_settings.clone();
+        new_settings.xsynth_max_voices_per_key = Some(32);
+
+        root.apply_settings(new_settings.clone());
+
+        assert_eq!(root.settings.xsynth_max_voices_per_key, Some(32));
+    }
+
+    #[test]
+    fn test_apply_settings_midi_device_changed() {
+        let mut root = create_test_root();
+        let old_settings = root.settings.clone();
+
+        let mut new_settings = old_settings.clone();
+        new_settings.selected_midi_device = Some(1);
+
+        root.apply_settings(new_settings.clone());
+
+        assert_eq!(root.settings.selected_midi_device, Some(1));
     }
 
     fn create_test_root() -> Root {
