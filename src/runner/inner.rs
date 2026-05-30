@@ -250,6 +250,10 @@ impl RunnerInner {
                 );
                 ui.apply_project_settings(title, tempo, copyright);
             }
+            DialogResult::Settings { settings, theme } => {
+                tracing::info!("应用设置面板配置，主题: {}", theme);
+                ui.apply_settings(settings, theme);
+            }
             DialogResult::Cancel => {
                 tracing::debug!("取消操作，无需处理");
             }

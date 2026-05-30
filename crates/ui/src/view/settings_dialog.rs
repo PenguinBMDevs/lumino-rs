@@ -12,16 +12,8 @@ pub fn view_settings_dialog<'a>(
 ) -> crate::Element<'a> {
     let palette = window.theme.extended_palette();
 
-    // 标题栏样式
-    let label_style = move |_theme: &iced_core::Theme| text::Style {
-        color: Some(palette.background.neutral.text),
-    };
-
-    // 标题
-    let title = text("设置")
-        .size(18)
-        .font(iced_core::Font::with_name("Microsoft YaHei"))
-        .style(label_style);
+    // 设置内容（复用现有的 settings::view）
+    let settings_content = settings::view(settings, window, system_fonts);
 
     // 关闭按钮
     let close_button = button(text("关闭").size(14))
@@ -46,19 +38,15 @@ pub fn view_settings_dialog<'a>(
             }
         });
 
-    // 标题栏
-    let title_bar = row![title, space().width(Length::Fill), close_button,]
-        .align_y(iced_core::Alignment::Center)
-        .width(Length::Fill);
-
-    // 设置内容（复用现有的 settings::view）
-    let settings_content = settings::view(settings, window, system_fonts);
-
     // 主内容
-    let content = column![title_bar, space().height(8), settings_content,]
-        .spacing(4)
-        .width(Length::Fill)
-        .height(Length::Fill);
+    let content = column![
+        settings_content,
+        space().height(8),
+        row![space().width(Length::Fill), close_button].align_y(iced_core::Alignment::Center),
+    ]
+    .spacing(4)
+    .width(Length::Fill)
+    .height(Length::Fill);
 
     let dialog_content = container(content)
         .width(Length::Fill)

@@ -60,6 +60,24 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 应用设置面板配置到主窗口
+    pub fn apply_settings(&mut self, settings: crate::settings::SettingsPanel, theme: String) {
+        // 同步主题
+        if self.root.window.theme.to_string() != theme {
+            tracing::info!("同步主题: {} -> {}", self.root.window.theme, theme);
+            self.root.update(crate::window::Event::theme(theme));
+            self.root.editor.grid_cache.clear();
+            self.root.editor.keyboard_cache.clear();
+            self.root.editor.ruler_cache.clear();
+            self.render_ctx.render_cache.grid_viewport_hash = 0;
+            self.render_ctx.render_cache.note_viewport_hash = 0;
+        }
+
+        self.root.apply_settings(settings);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 获取当前项目设置数据（用于填充工程设置对话框）
     pub fn get_project_settings_data(&self) -> (String, String, String, String, f64) {
         self.root.get_project_settings_data()

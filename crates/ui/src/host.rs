@@ -164,6 +164,48 @@ impl Host {
         }
     }
 
+    /// 创建设置对话框 Host（使用主窗口的配置）
+    pub fn new_settings_dialog(
+        window: Arc<winit::window::Window>,
+        width: u32,
+        height: u32,
+        ui_config: &config::UiConfig,
+        gfx: &lumino_gfx::Context,
+    ) -> Self {
+        let viewport =
+            Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
+
+        let font = create_font_from_config(ui_config);
+
+        let note_renderer = lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format);
+        let grid_renderer = lumino_gfx::GridRenderer::new(&gfx.device, gfx.format);
+
+        let render_ctx = RenderContext::new(
+            gfx.device.clone(),
+            gfx.queue.clone(),
+            gfx.format,
+            &gfx.adapter,
+            viewport,
+            note_renderer,
+            grid_renderer,
+            font,
+        );
+
+        Self {
+            render_ctx,
+            window_ctx: WindowContext::new(window),
+            root: root::Root::new_settings_dialog(&ui_config.theme, ui_config),
+            events: Vec::new(),
+            last_frame_time: Instant::now(),
+            last_fps_update: Instant::now(),
+            frame_count: 0,
+            skip_ui_rendering: false,
+            ui_dirty: false,
+            cpu_monitor: CpuMonitor::new(),
+            last_gpu_frame_time_ms: 0.0,
+        }
+    }
+
     /// 确保 NoteWorker 已创建（懒加载）
     ///
     /// NoteWorker 用于将音符实例构建从主线程卸载到独立线程。

@@ -179,6 +179,16 @@ impl Root {
         })
     }
 
+    /// 创建设置对话框 Root（使用主窗口的配置）
+    pub fn new_settings_dialog(theme: &str, ui_config: &UiConfig) -> Self {
+        Self::from_params(RootInitParams {
+            theme: theme.to_string(),
+            ui_config: ui_config.clone(),
+            is_progress_window: false,
+            dialog_type: Some(crate::state::root_state::DialogType::Settings),
+        })
+    }
+
     /// 获取当前主题
     pub fn theme(&self) -> Theme {
         self.window.theme.clone()

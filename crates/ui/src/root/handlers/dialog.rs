@@ -158,6 +158,11 @@ impl MessageHandler for DialogHandler {
                 None
             }
             Message::CloseSettingsDialog => {
+                // 返回设置结果，将设置同步到主窗口
+                root.state.dialog_result = Some(DialogResult::Settings {
+                    settings: root.settings.clone(),
+                    theme: root.window.theme.to_string(),
+                });
                 root.state.dialog_type = crate::state::root_state::DialogType::None;
                 None
             }

@@ -21,6 +21,10 @@ pub enum DialogResult {
         tempo: f64,
         copyright: String,
     },
+    Settings {
+        settings: crate::settings::SettingsPanel,
+        theme: String,
+    },
 }
 
 /// 将触摸事件转换为鼠标事件（兼容性处理）

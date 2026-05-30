@@ -28,9 +28,14 @@ impl RunnerInner {
 
             // 检查对话框是否应该关闭
             should_close = dialog.should_close();
+            tracing::debug!("对话框 should_close: {}", should_close);
 
             // 检查对话框结果（handle_event 只入队事件，不会处理消息）
             if let Some(result) = dialog.check_result() {
+                tracing::debug!(
+                    "对话框结果（第一次检查）: {:?}",
+                    std::mem::discriminant(&result)
+                );
                 dialog_result = Some(result);
                 should_close = true;
             }
@@ -38,13 +43,20 @@ impl RunnerInner {
             // 请求重绘并处理待处理事件（process_pending_events）
             // 注意：事件处理在 redraw 中同步执行，可能产生 dialog_result
             if !should_close {
+                tracing::debug!("调用 dialog.redraw()");
                 dialog.redraw();
+            } else {
+                tracing::debug!("跳过 dialog.redraw()，因为 should_close = true");
             }
 
             // 再次检查结果：redraw 可能处理了事件并设置了 dialog_result
             if dialog_result.is_none() {
                 should_close = dialog.should_close();
                 if let Some(result) = dialog.check_result() {
+                    tracing::debug!(
+                        "对话框结果（第二次检查）: {:?}",
+                        std::mem::discriminant(&result)
+                    );
                     dialog_result = Some(result);
                     should_close = true;
                 }
@@ -58,6 +70,7 @@ impl RunnerInner {
 
         // 处理对话框返回的结果
         if let Some(result) = dialog_result {
+            tracing::debug!("处理对话框结果: {:?}", std::mem::discriminant(&result));
             self.process_dialog_result(result);
         }
 
@@ -66,7 +79,7 @@ impl RunnerInner {
 
     /// 处理对话框结果
     fn process_dialog_result(&mut self, result: DialogResult) {
-        match result {
+        match &result {
             DialogResult::LoadConfirm => {
                 if let Some(path) = self.file_state.pending_load_path.take() {
                     self.load_midi_file(path);
@@ -89,16 +102,21 @@ impl RunnerInner {
                     copyright
                 );
                 let main_ui = self.window_state.window.ui_mut();
-                main_ui.apply_project_settings(title.clone(), tempo, copyright);
+                main_ui.apply_project_settings(title.clone(), *tempo, copyright.clone());
                 // 更新主窗口标题
                 self.window_state
                     .window
                     .window()
                     .set_title(&format!("{} - Lumino", title));
             }
-            other => {
+            DialogResult::Settings { settings, theme } => {
+                tracing::info!("应用设置面板配置到主窗口，主题: {}", theme);
                 let main_ui = self.window_state.window.ui_mut();
-                crate::runner::inner::RunnerInner::apply_dialog_result_to_ui(main_ui, other);
+                main_ui.apply_settings(settings.clone(), theme.clone());
+            }
+            _ => {
+                let main_ui = self.window_state.window.ui_mut();
+                crate::runner::inner::RunnerInner::apply_dialog_result_to_ui(main_ui, result);
             }
         }
     }

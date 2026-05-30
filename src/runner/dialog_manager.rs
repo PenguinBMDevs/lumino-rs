@@ -79,13 +79,29 @@ impl DialogWindow {
         ))
         .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
 
-        let mut ui = lumino_ui::Host::new_dialog(
-            self.window.clone(),
-            physical_size.width,
-            physical_size.height,
-            ui_config,
-            &gfx,
-        );
+        // 根据对话框类型选择不同的创建方式
+        let mut ui = match self.dialog_type {
+            DialogType::Settings => {
+                // 设置对话框使用主窗口的配置
+                lumino_ui::Host::new_settings_dialog(
+                    self.window.clone(),
+                    physical_size.width,
+                    physical_size.height,
+                    ui_config,
+                    &gfx,
+                )
+            }
+            _ => {
+                // 其他对话框使用默认配置
+                lumino_ui::Host::new_dialog(
+                    self.window.clone(),
+                    physical_size.width,
+                    physical_size.height,
+                    ui_config,
+                    &gfx,
+                )
+            }
+        };
 
         // 根据对话框类型初始化不同的UI内容
         match self.dialog_type {
