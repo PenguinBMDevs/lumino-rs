@@ -15,26 +15,26 @@ pub fn view_settings_dialog<'a>(
     // 设置内容（复用现有的 settings::view）
     let settings_content = settings::view(settings, window, system_fonts);
 
-    // 关闭按钮
-    let close_button = button(text("关闭").size(14))
+    // 确认按钮
+    let confirm_button = button(text("确认").size(14))
         .on_press(Message::CloseSettingsDialog)
-        .padding([8, 24])
-        .width(Length::Fixed(80.0))
+        .padding([8, 32])
+        .width(Length::Fixed(100.0))
         .style(move |_theme: &iced_core::Theme, status| {
             let bg = match status {
-                button::Status::Hovered => palette.background.strong.color,
-                _ => palette.background.weak.color,
+                button::Status::Hovered => palette.primary.strong.color,
+                _ => palette.primary.base.color,
             };
             button::Style {
                 background: Some(bg.into()),
-                text_color: palette.background.neutral.text,
+                text_color: iced_core::Color::WHITE,
                 border: iced_core::Border {
                     radius: 4.0.into(),
                     width: 0.0,
                     color: iced_core::Color::TRANSPARENT,
                 },
-                shadow: Default::default(),
                 snap: false,
+                shadow: Default::default(),
             }
         });
 
@@ -42,7 +42,7 @@ pub fn view_settings_dialog<'a>(
     let content = column![
         settings_content,
         space().height(8),
-        row![space().width(Length::Fill), close_button].align_y(iced_core::Alignment::Center),
+        row![space().width(Length::Fill), confirm_button].align_y(iced_core::Alignment::Center),
     ]
     .spacing(4)
     .width(Length::Fill)
