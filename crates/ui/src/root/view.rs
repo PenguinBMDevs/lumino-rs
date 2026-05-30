@@ -86,6 +86,7 @@ impl Root {
     /// 渲染主窗口
     fn view_main(&self) -> Element<'_> {
         let is_settings_route = self.sidebar.is_settings_route();
+        let is_arrangement_route = self.sidebar.is_arrangement_route();
 
         // 左侧栏（包含图标栏和音轨面板）
         let left_bar = self.sidebar.view(&self.window);
@@ -98,6 +99,9 @@ impl Root {
             } else if is_settings_route {
                 // 设置路由激活时显示设置界面
                 settings::view(&self.settings, &self.window, &self.state.system_fonts)
+            } else if is_arrangement_route {
+                // 音轨总览模式：使用 wgpu 原生渲染
+                self.view_arrangement()
             } else {
                 // 力度面板：位于卷帘下方单独占位
                 let velocity_panel = self
@@ -254,6 +258,24 @@ impl Root {
     /// 渲染状态栏（性能面板已交由 Stack 浮动层处理）
     fn view_status_section(&self) -> Element<'_> {
         self.statusbar.view()
+    }
+
+    /// 渲染音轨总览视图
+    fn view_arrangement(&self) -> Element<'_> {
+        use crate::editor::arrangement::ArrangementCanvas;
+        use iced_widget::canvas::Canvas;
+
+        let arrangement_canvas = Canvas::new(ArrangementCanvas)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        column![
+            self.toolbar.view(&self.window),
+            container(arrangement_canvas).height(Length::Fill),
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
     }
 
     /// 渲染瀑布流模式占位页面（功能实现中）

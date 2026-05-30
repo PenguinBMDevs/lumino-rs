@@ -21,6 +21,7 @@ pub const RESIZE_HANDLE_WIDTH: f32 = 6.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Route {
     File,
+    Arrangement,
     Audio,
     Settings,
 }
@@ -31,10 +32,14 @@ pub enum RouteConfig {
     Space,
 }
 
-const ROUTES: [RouteConfig; 4] = [
+const ROUTES: [RouteConfig; 5] = [
     RouteConfig::Item {
         route: Route::File,
         icon: icon::FolderTree,
+    },
+    RouteConfig::Item {
+        route: Route::Arrangement,
+        icon: icon::Arrangement,
     },
     RouteConfig::Item {
         route: Route::Audio,
@@ -237,6 +242,11 @@ impl Sidebar {
     /// 检查当前是否为设置路由且面板可见
     pub fn is_settings_route(&self) -> bool {
         self.route == Route::Settings && self.panel_visible
+    }
+
+    /// 检查当前是否为音轨总览路由
+    pub fn is_arrangement_route(&self) -> bool {
+        self.route == Route::Arrangement
     }
 
     /// 从 MIDI 数据更新音轨列表

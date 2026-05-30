@@ -32,6 +32,7 @@ pub enum IconError {
 pub enum Icon {
     AngleRight,
     FolderTree,
+    Arrangement,
     Gear,
     WaveForm,
     GitHub,
@@ -81,6 +82,7 @@ fn build_icon_cache() -> HashMap<Icon, IconData> {
     for &icon in &[
         Icon::AngleRight,
         Icon::FolderTree,
+        Icon::Arrangement,
         Icon::Gear,
         Icon::WaveForm,
         Icon::GitHub,
@@ -300,6 +302,7 @@ fn bytes(icon: Icon) -> &'static [u8] {
     match icon {
         Icon::AngleRight => include_bytes!("../../../../resources/icons/regular/angle-right.svg"),
         Icon::FolderTree => include_bytes!("../../../../resources/icons/regular/folder-tree.svg"),
+        Icon::Arrangement => include_bytes!("../../../../resources/icons/regular/arrangement.svg"),
         Icon::Gear => include_bytes!("../../../../resources/icons/regular/gear.svg"),
         Icon::WaveForm => include_bytes!("../../../../resources/icons/regular/waveform.svg"),
         Icon::GitHub => include_bytes!("../../../../resources/icons/brands/github.svg"),

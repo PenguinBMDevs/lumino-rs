@@ -5,28 +5,54 @@ impl Host {
     /// 收集视口信息
     pub(super) fn collect_viewport_info(&self) -> ViewportInfo {
         let phys = self.render_ctx.viewport.physical_size();
-        let es = &self.root.editor.editor_state;
-        ViewportInfo {
-            logical_size: self.render_ctx.viewport.logical_size(),
-            physical_size: (phys.width, phys.height),
-            scale: self.render_ctx.viewport.scale_factor(),
-            canvas_offset: es.canvas.offset,
-            canvas_size: es.canvas.size,
+
+        if self.root.is_arrangement_mode() {
+            let av = &self.root.arrangement_view.viewport;
+            ViewportInfo {
+                logical_size: self.render_ctx.viewport.logical_size(),
+                physical_size: (phys.width, phys.height),
+                scale: self.render_ctx.viewport.scale_factor(),
+                canvas_offset: av.canvas_offset,
+                canvas_size: av.canvas_size,
+            }
+        } else {
+            let es = &self.root.editor.editor_state;
+            ViewportInfo {
+                logical_size: self.render_ctx.viewport.logical_size(),
+                physical_size: (phys.width, phys.height),
+                scale: self.render_ctx.viewport.scale_factor(),
+                canvas_offset: es.canvas.offset,
+                canvas_size: es.canvas.size,
+            }
         }
     }
 
     /// 计算当前视口哈希
     pub(super) fn compute_current_viewport_hash(&self, viewport: &ViewportInfo) -> u64 {
-        let v = &self.root.editor.editor_state.view;
-        crate::host::RenderCache::compute_viewport_hash(
-            v.scroll_x,
-            v.scroll_y,
-            v.zoom_x,
-            v.zoom_y,
-            viewport.canvas_size.x,
-            viewport.canvas_size.y,
-            v.visible_key_count,
-        )
+        if self.root.is_arrangement_mode() {
+            let av = &self.root.arrangement_view.viewport;
+            let track_count = self.root.sidebar.tracks.len().max(1) as u16;
+            crate::host::RenderCache::compute_viewport_hash(
+                av.scroll_x,
+                av.scroll_y,
+                av.zoom_x,
+                av.track_height,
+                viewport.canvas_size.x,
+                viewport.canvas_size.y,
+                track_count,
+            )
+        } else {
+            let v = &self.root.editor.editor_state.view;
+            crate::host::RenderCache::compute_viewport_hash(
+                v.scroll_x,
+                v.scroll_y,
+                v.zoom_x,
+                v.zoom_y,
+                viewport.canvas_size.x,
+                viewport.canvas_size.y,
+                v.visible_key_count,
+            )
+        }
     }
 
     /// 计算裁剪矩形
@@ -53,15 +79,29 @@ impl Host {
         &self,
         viewport: &ViewportInfo,
     ) -> lumino_gfx::CameraUniform {
-        let v = &self.root.editor.editor_state.view;
-        lumino_gfx::CameraUniform::new(lumino_gfx::CameraParams {
-            scroll: [v.scroll_x, v.scroll_y],
-            zoom: [v.zoom_x, v.zoom_y],
-            viewport: [viewport.logical_size.width, viewport.logical_size.height],
-            offset: [viewport.canvas_offset.x, viewport.canvas_offset.y],
-            keyboard_width: v.keyboard_width,
-            ruler_height: v.ruler_height,
-            max_key_index: (v.visible_key_count.saturating_sub(1)) as f32,
-        })
+        if self.root.is_arrangement_mode() {
+            let av = &self.root.arrangement_view.viewport;
+            let track_count = self.root.sidebar.tracks.len().max(1) as f32;
+            lumino_gfx::CameraUniform::new(lumino_gfx::CameraParams {
+                scroll: [av.scroll_x, av.scroll_y],
+                zoom: [av.zoom_x, av.track_height],
+                viewport: [viewport.logical_size.width, viewport.logical_size.height],
+                offset: [viewport.canvas_offset.x, viewport.canvas_offset.y],
+                keyboard_width: 0.0,
+                ruler_height: 0.0,
+                max_key_index: track_count - 1.0,
+            })
+        } else {
+            let v = &self.root.editor.editor_state.view;
+            lumino_gfx::CameraUniform::new(lumino_gfx::CameraParams {
+                scroll: [v.scroll_x, v.scroll_y],
+                zoom: [v.zoom_x, v.zoom_y],
+                viewport: [viewport.logical_size.width, viewport.logical_size.height],
+                offset: [viewport.canvas_offset.x, viewport.canvas_offset.y],
+                keyboard_width: v.keyboard_width,
+                ruler_height: v.ruler_height,
+                max_key_index: (v.visible_key_count.saturating_sub(1)) as f32,
+            })
+        }
     }
 }

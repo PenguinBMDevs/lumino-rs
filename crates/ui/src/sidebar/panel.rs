@@ -21,7 +21,7 @@ pub fn view<'a>(
     let palette = window.theme.extended_palette();
 
     let content: Element<'a> = match route {
-        Route::File => {
+        Route::File | Route::Arrangement => {
             // === 虚拟滚动 ===
             // 825 轨全部生成 iced widget 会导致每帧 8000+ widget 树重建。
             // 只渲染视口附近 ~30 条，其余用 spacer 占高度。

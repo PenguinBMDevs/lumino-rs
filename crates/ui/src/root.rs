@@ -53,6 +53,8 @@ pub struct Root {
     pub(crate) statusbar: statusbar::StatusBar,
     pub toolbar: toolbar::Toolbar,
     pub editor: editor::Editor,
+    /// 音轨总览视图
+    pub arrangement_view: editor::arrangement::ArrangementView,
     pub(crate) window: window::Window,
     pub(crate) settings: settings::SettingsPanel,
     pub(crate) progress: Option<(String, f64)>,
@@ -112,6 +114,7 @@ impl Root {
             statusbar: statusbar::StatusBar::new(),
             toolbar: toolbar::Toolbar::new(),
             editor: editor::Editor::new(),
+            arrangement_view: editor::arrangement::ArrangementView::new(),
             window: window::Window::new(&params.theme),
             settings: settings::SettingsPanel::new(&params.ui_config),
             progress: None,
@@ -179,6 +182,11 @@ impl Root {
     /// 获取当前主题
     pub fn theme(&self) -> Theme {
         self.window.theme.clone()
+    }
+
+    /// 检查当前是否为音轨总览模式
+    pub fn is_arrangement_mode(&self) -> bool {
+        self.sidebar.is_arrangement_route()
     }
 
     /// 获取状态可变引用

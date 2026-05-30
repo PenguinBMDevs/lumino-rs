@@ -66,6 +66,11 @@ pub enum Message {
         offset: iced_core::Point,
         size: iced_core::Size,
     },
+    /// 音轨总览 Canvas 位置和尺寸更新
+    ArrangementCanvasBoundsChanged {
+        offset: iced_core::Point,
+        size: iced_core::Size,
+    },
     /// 菜单状态更新
     MenuStateChanged(bool), // true = 菜单打开，false = 菜单关闭
     EditorAction(EditorAction),

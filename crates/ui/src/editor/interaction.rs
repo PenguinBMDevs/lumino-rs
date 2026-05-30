@@ -43,16 +43,9 @@ impl Editor {
 
         let tick = self.x_to_tick(pos.x);
         let key = self.y_to_key(pos.y);
+        let snapped_tick = self.snap_tick(tick);
 
-        // 直接跟随模式：框选框使用原始坐标，不吸附到网格
-        let effective_tick =
-            if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct {
-                tick
-            } else {
-                self.snap_tick(tick)
-            };
-
-        self.handle_tool_pressed(pos, shift, effective_tick, key);
+        self.handle_tool_pressed(pos, shift, snapped_tick, key);
     }
 
     /// 根据当前工具处理鼠标按下事件
@@ -80,7 +73,14 @@ impl Editor {
         hit_result: Option<(usize, HitType)>,
         snapped_tick: f32,
     ) {
+        let tick = self.x_to_tick(pos.x);
         let key = self.y_to_key(pos.y);
+        let selection_start_tick =
+            if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct {
+                tick
+            } else {
+                snapped_tick
+            };
         if let Some((index, hit_type)) = hit_result {
             if !self
                 .editor_state
@@ -119,9 +119,9 @@ impl Editor {
             self.playback_position = snapped_tick;
             self.editor_state.interaction.selected_notes.clear();
             self.editor_state.interaction.edit_state = EditState::Selecting {
-                start_tick: snapped_tick,
+                start_tick: selection_start_tick,
                 start_key: key,
-                current_tick: snapped_tick,
+                current_tick: selection_start_tick,
                 current_key: key,
             };
         }
@@ -152,15 +152,21 @@ impl Editor {
         let tick = self.x_to_tick(pos.x);
         let key = self.y_to_key(pos.y);
         let snapped_tick = self.snap_tick(tick);
+        let selection_start_tick =
+            if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct {
+                tick
+            } else {
+                snapped_tick
+            };
 
         match self.editor_state.view.eraser_behavior {
             EraserBehavior::Default => {
                 if shift {
                     self.editor_state.interaction.selected_notes.clear();
                     self.editor_state.interaction.edit_state = EditState::Selecting {
-                        start_tick: snapped_tick,
+                        start_tick: selection_start_tick,
                         start_key: key,
-                        current_tick: snapped_tick,
+                        current_tick: selection_start_tick,
                         current_key: key,
                     };
                 } else if hit_result.is_some() {
@@ -173,9 +179,9 @@ impl Editor {
                 } else {
                     self.editor_state.interaction.selected_notes.clear();
                     self.editor_state.interaction.edit_state = EditState::Selecting {
-                        start_tick: snapped_tick,
+                        start_tick: selection_start_tick,
                         start_key: key,
-                        current_tick: snapped_tick,
+                        current_tick: selection_start_tick,
                         current_key: key,
                     };
                 }

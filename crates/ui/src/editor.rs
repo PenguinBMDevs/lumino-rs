@@ -1,3 +1,4 @@
+pub mod arrangement;
 pub mod editor_state;
 pub mod grid;
 pub mod history;
