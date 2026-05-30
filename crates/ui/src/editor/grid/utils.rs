@@ -2,7 +2,7 @@
 
 /// 判断琴键是否为黑键（12平均律）
 pub fn is_key_dark(key: isize) -> bool {
-    let note_in_octave = key % 12;
+    let note_in_octave = key.rem_euclid(12);
     matches!(note_in_octave, 1 | 3 | 6 | 8 | 10)
 }
 

@@ -77,7 +77,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let local_y = screen_y - camera.margins.y - camera.canvas_offset.y + camera.camera_pos.y;
     let world_y = local_y / camera.zoom.y;
     let key_f32 = camera.max_key_index - world_y;
-    let key_int = i32(floor(key_f32));
+    let key_int = i32(ceil(key_f32));
 
     // 计算背景色 (黑白键)
     var bg_color = camera.color_bg;
