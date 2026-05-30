@@ -162,6 +162,10 @@ pub enum Message {
     ProjectSettingsTempoChanged(String),
     /// 工程设置 - 版权信息变更
     ProjectSettingsCopyrightChanged(String),
+    /// 打开设置对话框
+    OpenSettingsDialog,
+    /// 关闭设置对话框
+    CloseSettingsDialog,
     /// 力度编辑面板动作
     Velocity(VelocityAction),
     /// 力度面板高度调整

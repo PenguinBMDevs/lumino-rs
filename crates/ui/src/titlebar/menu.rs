@@ -133,7 +133,7 @@ fn menu_items<'a>(items: &[MenuItem]) -> Vec<Item<'a, Message, Theme, Renderer>>
                 MenuItem::Action(r) => {
                     // 点击菜单项时发送菜单关闭消息
                     let msg = Message::Core(r.clone());
-                    base_button(format!("{r:?}"), Some(msg))
+                    base_button(event_display_name(r), Some(msg))
                 }
                 MenuItem::Separator => base_split(),
                 MenuItem::Submenu(r, n) => {
@@ -224,4 +224,46 @@ fn base_split<'a>() -> Element<'a> {
     column![space().height(4), inner, space().height(4)]
         .width(Length::Fill)
         .into()
+}
+
+/// 获取事件的友好显示名称
+fn event_display_name(event: &Event) -> String {
+    use event::menu::{
+        edit::Event as EditEvent, file::Event as FileEvent, help::Event as HelpEvent,
+        view::Event as ViewEvent,
+    };
+
+    match event {
+        Event::Menu(menu_event) => match menu_event {
+            event::menu::Event::File(file_event) => match file_event {
+                FileEvent::New => "新建".to_string(),
+                FileEvent::Open => "打开".to_string(),
+                FileEvent::Save => "保存".to_string(),
+                FileEvent::Close => "关闭".to_string(),
+                FileEvent::ImportFiles => "导入文件".to_string(),
+                FileEvent::Settings => "设置".to_string(),
+                FileEvent::Exit => "退出".to_string(),
+                _ => format!("{file_event:?}"),
+            },
+            event::menu::Event::Edit(edit_event) => match edit_event {
+                EditEvent::Undo => "撤销".to_string(),
+                EditEvent::Redo => "重做".to_string(),
+                EditEvent::Cut => "剪切".to_string(),
+                EditEvent::Copy => "复制".to_string(),
+                EditEvent::Paste => "粘贴".to_string(),
+                EditEvent::SelectAll => "全选".to_string(),
+                EditEvent::Find => "查找".to_string(),
+            },
+            event::menu::Event::View(view_event) => match view_event {
+                ViewEvent::ZoomIn => "放大".to_string(),
+                ViewEvent::ZoomOut => "缩小".to_string(),
+                ViewEvent::ZoomReset => "重置缩放".to_string(),
+                _ => format!("{view_event:?}"),
+            },
+            event::menu::Event::Help(help_event) => match help_event {
+                HelpEvent::About => "关于".to_string(),
+            },
+        },
+        Event::Window(window_event) => format!("{window_event:?}"),
+    }
 }

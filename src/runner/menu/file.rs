@@ -89,6 +89,11 @@ impl RunnerInner {
                 self.window_state.window.ui_mut().clear_editor();
                 tracing::info!("工程已关闭");
             }
+            Settings => {
+                self.window_state
+                    .dialog_manager
+                    .open_dialog(crate::runner::dialog_manager::DialogType::Settings);
+            }
             TrackSelected(track_idx) => {
                 // 统一使用 cache-only 模式，只切换音轨索引
                 // 播放时从 cache 流式读取，不单独加载音轨到编辑器

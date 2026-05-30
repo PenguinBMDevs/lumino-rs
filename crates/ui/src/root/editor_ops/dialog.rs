@@ -41,6 +41,15 @@ impl Root {
         }
     }
 
+    /// 设置设置对话框是否打开
+    pub fn set_settings_dialog_open(&mut self, open: bool) {
+        if open {
+            self.state.dialog_type = DialogType::Settings;
+        } else if self.state.dialog_type == DialogType::Settings {
+            self.state.dialog_type = DialogType::None;
+        }
+    }
+
     /// 设置工程设置对话框数据
     pub fn set_project_settings_data(
         &mut self,

@@ -211,6 +211,7 @@ pub enum DialogType {
     Collaboration,
     LoadConfirm,
     ProjectSettings,
+    Settings,
 }
 
 /// 协作视图状态

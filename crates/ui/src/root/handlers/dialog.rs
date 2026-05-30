@@ -152,6 +152,15 @@ impl MessageHandler for DialogHandler {
                 root.state.project_settings_dialog.copyright = value;
                 None
             }
+            // 设置对话框消息
+            Message::OpenSettingsDialog => {
+                root.state.dialog_type = crate::state::root_state::DialogType::Settings;
+                None
+            }
+            Message::CloseSettingsDialog => {
+                root.state.dialog_type = crate::state::root_state::DialogType::None;
+                None
+            }
 
             other => Some(other),
         }

@@ -4,6 +4,7 @@ use iced_core::Length;
 use iced_widget::{Stack, column, container, progress_bar, row, text};
 use lumino_gfx::NoteInstance;
 
+use crate::message;
 use crate::root::{Element, Root, Theme};
 use crate::state::root_state::DialogType;
 use crate::statusbar::performance;
@@ -11,9 +12,8 @@ use crate::view::{
     collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
     load_confirm_dialog::view_load_confirm_dialog,
-    project_settings_dialog::view_project_settings_dialog,
+    project_settings_dialog::view_project_settings_dialog, settings_dialog::view_settings_dialog,
 };
-use crate::{message, settings};
 
 impl Root {
     /// 渲染视图
@@ -76,6 +76,9 @@ impl Root {
                 &self.state.project_settings_dialog,
                 &self.window.theme,
             ),
+            DialogType::Settings => {
+                view_settings_dialog(&self.settings, &self.window, &self.state.system_fonts)
+            }
             _ => view_custom_precision_dialog(
                 &self.state.custom_precision_dialog,
                 &self.window.theme,
@@ -85,7 +88,6 @@ impl Root {
 
     /// 渲染主窗口
     fn view_main(&self) -> Element<'_> {
-        let is_settings_route = self.sidebar.is_settings_route();
         let is_arrangement_route = self.sidebar.is_arrangement_route();
 
         // 左侧栏（包含图标栏和音轨面板）
@@ -96,9 +98,6 @@ impl Root {
             if self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Waterfall {
                 // 瀑布流模式：显示"实现中"占位页面
                 self.view_waterfall_placeholder()
-            } else if is_settings_route {
-                // 设置路由激活时显示设置界面
-                settings::view(&self.settings, &self.window, &self.state.system_fonts)
             } else if is_arrangement_route {
                 // 音轨总览模式：使用 wgpu 原生渲染
                 self.view_arrangement()

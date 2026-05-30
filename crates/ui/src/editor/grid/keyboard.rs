@@ -85,13 +85,9 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
                 .with_color(theme.border_color());
             frame.stroke(&key_path, border_stroke);
 
-            // 绘制音符名称标签（与 C# 项目 PianoKeysCanvas 逻辑一致）
+            // 绘制音符名称标签（亮色模式=黑色文字，暗色模式=白色文字）
             let label_text = note_name(i as u8);
-            let label_color = if is_black_key {
-                theme.key_label_black_key_color()
-            } else {
-                theme.key_label_white_key_color()
-            };
+            let label_color = theme.text_color();
 
             let label = Text {
                 content: label_text,

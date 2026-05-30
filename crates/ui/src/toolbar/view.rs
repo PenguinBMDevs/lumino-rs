@@ -266,43 +266,6 @@ impl Toolbar {
             container::Style::default().background(palette.background.weakest.color)
         });
 
-        // 工程设置按钮区域
-        let project_settings_button = container(
-            button(
-                row![
-                    icon::view_with_size_and_theme(icon::Gear, 18, 18, Some(&window.theme)),
-                    space().width(6),
-                    text("工程设置")
-                        .size(14)
-                        .color(palette.background.weakest.text),
-                ]
-                .align_y(Alignment::Center),
-            )
-            .on_press(Event::open_project_settings_dialog())
-            .style(move |_theme: &Theme, status| {
-                let bg = match status {
-                    iced_widget::button::Status::Hovered => palette.background.weak.color,
-                    _ => palette.background.weakest.color,
-                };
-                button::Style {
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                }
-                .with_background(bg)
-            })
-            .padding([8, 12]),
-        )
-        .height(content_height)
-        .align_y(iced_core::alignment::Vertical::Center)
-        .padding([0, 16])
-        .style(move |_theme: &Theme| {
-            container::Style::default().background(palette.background.weakest.color)
-        });
-
         // 撤销/重做按钮区域
         let undo_redo_controls = container(
             row![
@@ -342,8 +305,6 @@ impl Toolbar {
                 precision_selector,
                 space().width(iced_widget::core::Length::Fill),
                 auto_scroll_button,
-                space().width(16),
-                project_settings_button,
                 space().width(16),
                 collaboration_button,
             ]

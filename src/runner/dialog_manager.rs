@@ -33,6 +33,7 @@ impl DialogWindow {
             DialogType::Collaboration => (420.0, 320.0, "多人协作", false),
             DialogType::LoadConfirm => (420.0, 260.0, "加载大文件", false),
             DialogType::ProjectSettings => (450.0, 480.0, "工程设置", true),
+            DialogType::Settings => (700.0, 500.0, "设置", true),
         };
 
         let attributes = WindowAttributes::default()
@@ -100,6 +101,9 @@ impl DialogWindow {
             }
             DialogType::ProjectSettings => {
                 ui.set_project_settings_dialog_open(true);
+            }
+            DialogType::Settings => {
+                ui.set_settings_dialog_open(true);
             }
         }
 
@@ -361,6 +365,12 @@ impl DialogManager {
                     }
                     if let Err(e) = dialog.initialize_project_settings(ui_config, main_ui) {
                         tracing::error!("初始化工程设置对话框失败: {}", e);
+                        continue;
+                    }
+                }
+                DialogType::Settings => {
+                    if let Err(e) = dialog.initialize_with_collaboration_state(ui_config, main_ui) {
+                        tracing::error!("初始化设置对话框失败: {}", e);
                         continue;
                     }
                 }

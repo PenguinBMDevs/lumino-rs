@@ -23,7 +23,6 @@ pub enum Route {
     File,
     Arrangement,
     Audio,
-    Settings,
 }
 
 #[derive(Debug, Clone)]
@@ -32,7 +31,7 @@ pub enum RouteConfig {
     Space,
 }
 
-const ROUTES: [RouteConfig; 5] = [
+const ROUTES: [RouteConfig; 4] = [
     RouteConfig::Item {
         route: Route::File,
         icon: icon::FolderTree,
@@ -46,10 +45,6 @@ const ROUTES: [RouteConfig; 5] = [
         icon: icon::WaveForm,
     },
     RouteConfig::Space,
-    RouteConfig::Item {
-        route: Route::Settings,
-        icon: icon::Gear,
-    },
 ];
 
 pub struct Sidebar {
@@ -239,11 +234,6 @@ impl Default for Sidebar {
 }
 
 impl Sidebar {
-    /// 检查当前是否为设置路由且面板可见
-    pub fn is_settings_route(&self) -> bool {
-        self.route == Route::Settings && self.panel_visible
-    }
-
     /// 检查当前是否为音轨总览路由
     pub fn is_arrangement_route(&self) -> bool {
         self.route == Route::Arrangement
