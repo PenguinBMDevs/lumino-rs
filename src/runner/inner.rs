@@ -278,6 +278,29 @@ impl RunnerInner {
             self.midi_state.midi.mark_for_reinit();
         }
 
+        // XSynth 参数变更也需要重新初始化
+        if new.xsynth_buffer_ms != old.xsynth_buffer_ms
+            || new.xsynth_sample_rate != old.xsynth_sample_rate
+            || new.xsynth_threads != old.xsynth_threads
+            || new.xsynth_fade_out != old.xsynth_fade_out_killing
+            || new.xsynth_max_voices_per_key != old.xsynth_max_voices_per_key
+        {
+            tracing::info!(
+                "XSynth 参数已改变: buffer={:.1}ms-> {:.1}ms, sr={}-> {}, threads={}-> {}, fade={}-> {}, voices={:?}-> {:?}",
+                old.xsynth_buffer_ms,
+                new.xsynth_buffer_ms,
+                old.xsynth_sample_rate,
+                new.xsynth_sample_rate,
+                old.xsynth_threads,
+                new.xsynth_threads,
+                old.xsynth_fade_out_killing,
+                new.xsynth_fade_out,
+                old.xsynth_max_voices_per_key,
+                new.xsynth_max_voices_per_key,
+            );
+            self.midi_state.midi.mark_for_reinit();
+        }
+
         if new.use_native_titlebar != old.use_native_titlebar {
             tracing::info!(
                 "标题栏设置已改变: native_titlebar {} -> {}",
@@ -308,6 +331,20 @@ impl RunnerInner {
             config.ui.program_font_name = new.program_font_name.clone();
             config.ui.program_font_path = new.program_font_path.clone();
             config.ui.selection_box_mode = new.selection_box_mode;
+            // XSynth 音频参数
+            config.ui.xsynth_buffer_ms = new.xsynth_buffer_ms;
+            config.ui.xsynth_sample_rate = new.xsynth_sample_rate;
+            config.ui.xsynth_threads = new.xsynth_threads;
+            config.ui.xsynth_fade_out_killing = new.xsynth_fade_out;
+            config.ui.xsynth_max_voices_per_key = new.xsynth_max_voices_per_key;
+            // 其他参数
+            config.ui.velocity_filter_threshold = new.velocity_filter_threshold;
+            config.ui.eraser_behavior = new.eraser_behavior;
+            config.ui.auto_scroll.fixed_indicator_position = new.auto_scroll_fixed_position;
+            config.ui.auto_scroll.page_trigger_offset = new.auto_scroll_page_trigger_offset;
+            config.ui.auto_scroll.page_return_position = new.auto_scroll_page_return_position;
+            config.ui.icon_hidpi = new.icon_hidpi;
+            config.ui.enable_256key = new.enable_256key;
         });
 
         if let Err(e) = self.window_state.storage.config.save() {

@@ -87,6 +87,7 @@ impl XSynth {
             };
             rt_config.multithreading = thread_count;
             rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
+            rt_config.channel_init_options.max_voices_per_key = opt.max_voices_per_key;
         }
 
         let mut synth = RealtimeSynth::open_with_default_output(rt_config);
