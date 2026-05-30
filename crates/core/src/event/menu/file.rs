@@ -25,6 +25,12 @@ pub enum Event {
     ExportMidi,
     /// 导出 DMS 文件
     ExportDms,
+    /// 导出工程为单文件归档 (.lmpj)
+    ExportProjectArchive,
+    /// 导出工程为文件夹 (.lmpj)
+    ExportProjectFolder,
+    /// 工程设置
+    ProjectSettings,
     /* */
     Settings,
     /* */

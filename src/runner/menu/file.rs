@@ -89,6 +89,23 @@ impl RunnerInner {
                 self.window_state.window.ui_mut().clear_editor();
                 tracing::info!("工程已关闭");
             }
+            ProjectSettings => {
+                let saved_title = self.window_state.window.ui().get_project_settings_title();
+                let display_title = if saved_title.is_empty() {
+                    self.midi_state
+                        .current_midi_source
+                        .as_ref()
+                        .and_then(|p| p.file_stem())
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "无标题".to_string())
+                } else {
+                    saved_title
+                };
+                let title = format!("{} - Lumino Midi", display_title);
+                self.window_state
+                    .dialog_manager
+                    .open_project_settings(title);
+            }
             Settings => {
                 self.window_state
                     .dialog_manager
@@ -102,6 +119,12 @@ impl RunnerInner {
                     .window
                     .ui_mut()
                     .set_current_track(track_idx);
+            }
+            ExportProjectArchive => {
+                self.handle_export_project_archive();
+            }
+            ExportProjectFolder => {
+                self.handle_export_project_folder();
             }
             _ => {
                 tracing::debug!("未处理的文件事件：{:?}", file_event);
@@ -378,6 +401,111 @@ impl RunnerInner {
                 tracing::warn!("不支持的保存格式：{}", extension);
             }
         }
+    }
+
+    /// 导出工程为单文件归档
+    pub(super) fn handle_export_project_archive(&mut self) {
+        let Some(parsed_midi) = self.midi_state.current_midi.as_ref() else {
+            tracing::warn!("没有加载的 MIDI 文件，无法导出工程");
+            return;
+        };
+
+        let Some(document) = parsed_midi.document.as_ref() else {
+            tracing::warn!("MidiDocument 已释放，无法导出工程");
+            return;
+        };
+
+        let file_stem = get_file_stem(Path::new(&parsed_midi.info.path));
+
+        let Some(save_path) = rfd::FileDialog::new()
+            .add_filter("Lumino 工程文件", &["lmpj"])
+            .set_file_name(format!("{file_stem}.lmpj"))
+            .save_file()
+        else {
+            return;
+        };
+
+        let project = lumino_core::project::LuminoProject::from_midi_document(document);
+        let cb = self.window_state.progress_cb.clone();
+
+        tokio::spawn(async move {
+            cb("准备导出工程", 0.0);
+            cb("正在导出工程", 0.3);
+
+            let path_clone = save_path.clone();
+            match tokio::task::spawn_blocking(move || {
+                lumino_export::project::save::save_to_archive(&project, path_clone)
+            })
+            .await
+            {
+                Ok(Ok(())) => {
+                    cb("工程导出成功", 1.0);
+                    tracing::info!("工程导出成功: {:?}", save_path);
+                }
+                Ok(Err(e)) => {
+                    let msg = format!("导出失败: {e}");
+                    cb(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                }
+                Err(e) => {
+                    let msg = format!("导出任务失败: {e}");
+                    cb(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                }
+            }
+        });
+    }
+
+    /// 导出工程为文件夹
+    pub(super) fn handle_export_project_folder(&mut self) {
+        let Some(parsed_midi) = self.midi_state.current_midi.as_ref() else {
+            tracing::warn!("没有加载的 MIDI 文件，无法导出工程");
+            return;
+        };
+
+        let Some(document) = parsed_midi.document.as_ref() else {
+            tracing::warn!("MidiDocument 已释放，无法导出工程");
+            return;
+        };
+
+        let file_stem = get_file_stem(Path::new(&parsed_midi.info.path));
+
+        let Some(save_path) = rfd::FileDialog::new()
+            .set_file_name(format!("{file_stem}.lmpj"))
+            .pick_folder()
+        else {
+            return;
+        };
+
+        let project = lumino_core::project::LuminoProject::from_midi_document(document);
+        let cb = self.window_state.progress_cb.clone();
+
+        tokio::spawn(async move {
+            cb("准备导出工程", 0.0);
+            cb("正在导出工程", 0.3);
+
+            let path_clone = save_path.clone();
+            match tokio::task::spawn_blocking(move || {
+                lumino_export::project::save::save_to_folder(&project, path_clone)
+            })
+            .await
+            {
+                Ok(Ok(())) => {
+                    cb("工程导出成功", 1.0);
+                    tracing::info!("工程导出成功: {:?}", save_path);
+                }
+                Ok(Err(e)) => {
+                    let msg = format!("导出失败: {e}");
+                    cb(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                }
+                Err(e) => {
+                    let msg = format!("导出任务失败: {e}");
+                    cb(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                }
+            }
+        });
     }
 
     /// 将 MIDI 数据导入到编辑器

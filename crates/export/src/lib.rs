@@ -4,6 +4,7 @@ pub mod error;
 pub mod format;
 pub mod lmpj;
 pub mod midi;
+pub mod project;
 
 pub use converter::{
     copy_file_sync, export_dms_from_midi_sync, export_midi_from_dms_sync,

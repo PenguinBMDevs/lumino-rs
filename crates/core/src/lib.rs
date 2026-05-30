@@ -3,6 +3,7 @@ pub mod event;
 pub mod font_scanner;
 pub mod memory_monitor;
 pub mod midi;
+pub mod project;
 pub mod storage;
 
 pub use error::{CoreError, Result};
