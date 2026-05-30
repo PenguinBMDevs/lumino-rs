@@ -72,20 +72,25 @@ mod tests {
         // 使用 setter 确保新旧状态同步
         editor.set_snap_precision(120.0); // 1/4 音符
 
-        // 测试向下吸附
+        // 测试在精度区域内向下吸附到区域起始位置
         let tick1 = 130.0;
         let snapped1 = editor.snap_tick(tick1);
         assert_eq!(snapped1, 120.0);
 
-        // 测试仍然向下吸附到最近刻度
+        // 测试在精度区域中间仍然吸附到区域起始位置
         let tick2 = 170.0;
         let snapped2 = editor.snap_tick(tick2);
         assert_eq!(snapped2, 120.0);
 
-        // 测试正好在中间
+        // 测试正好在区域边界（下一个区域的起始）
         let tick3 = 180.0;
         let snapped3 = editor.snap_tick(tick3);
-        assert_eq!(snapped3, 240.0);
+        assert_eq!(snapped3, 120.0);
+
+        // 测试下一个精度区域
+        let tick4 = 240.0;
+        let snapped4 = editor.snap_tick(tick4);
+        assert_eq!(snapped4, 240.0);
     }
 
     /// 测试音符创建

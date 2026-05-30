@@ -28,8 +28,11 @@ impl super::Editor {
     }
 
     /// 吸附 tick 到网格
+    ///
+    /// 使用 floor 而非 round，确保在放置精度范围内都直接放置到精度区域的起始位置，
+    /// 避免根据放置到一半的位置跳到下一个精度吸附区域。
     pub(super) fn snap_tick(&self, tick: f32) -> f32 {
         let v = &self.editor_state.view;
-        (tick / v.snap_precision).round() * v.snap_precision
+        (tick / v.snap_precision).floor() * v.snap_precision
     }
 }
