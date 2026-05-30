@@ -241,7 +241,14 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                     )));
                 }
 
-                // 点击空白区域 → 进入曲线绘制模式
+                // 点击空白区域 → 进入曲线绘制模式（仅限有效绘制区域内）
+                let in_draw_area = cursor_pos.x >= 0.0
+                    && cursor_pos.x <= bounds_size.width
+                    && cursor_pos.y >= RESIZE_HANDLE_HEIGHT
+                    && cursor_pos.y <= bounds_size.height;
+                if !in_draw_area {
+                    return None;
+                }
                 state.curve_active = true;
                 state.curve_start_x = cursor_pos.x;
                 state.curve_start_velocity = Self::y_to_velocity(cursor_pos.y, bounds_size.height);
@@ -272,6 +279,18 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
 
                 // 曲线绘制模式
                 if state.curve_active {
+                    // 鼠标移出面板边界时自动结束曲线绘制
+                    let out_of_bounds = cursor_pos.x < 0.0
+                        || cursor_pos.x > bounds_size.width
+                        || cursor_pos.y < RESIZE_HANDLE_HEIGHT
+                        || cursor_pos.y > bounds_size.height;
+                    if out_of_bounds {
+                        state.curve_active = false;
+                        state.curve_affected.clear();
+                        return Some(canvas::Action::publish(Message::Velocity(
+                            VelocityAction::CurveEnd,
+                        )));
+                    }
                     let points = self.points();
                     if points.is_empty() {
                         return None;
