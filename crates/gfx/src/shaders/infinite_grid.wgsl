@@ -66,8 +66,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let screen_x = input.uv.x * camera.viewport_size.x;
     let screen_y = input.uv.y * camera.viewport_size.y;
 
-    // 排除键盘和标尺区域
-    if screen_x < camera.margins.x || screen_y < camera.margins.y {
+    // 排除键盘和标尺区域（使用 canvas 局部坐标，考虑 offset）
+    let margin_test_x = screen_x - camera.canvas_offset.x;
+    let margin_test_y = screen_y - camera.canvas_offset.y;
+    if margin_test_x < camera.margins.x || margin_test_y < camera.margins.y {
         discard;
     }
 
