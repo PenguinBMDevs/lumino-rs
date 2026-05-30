@@ -106,6 +106,9 @@ pub mod editor {
     /// 小节号字体大小
     pub const MEASURE_NUMBER_FONT_SIZE: f32 = 12.5;
 
+    /// 钢琴键音高标签字体大小
+    pub const KEY_LABEL_FONT_SIZE: f32 = 11.0;
+
     /// 演奏指示线宽度
     pub const PLAYBACK_INDICATOR_WIDTH: f32 = 2.0;
 

@@ -1,11 +1,12 @@
 //! 钢琴键盘绘制
 
 use super::theme::ThemeExt;
-use super::utils::is_key_dark;
+use super::utils::{is_key_dark, note_name};
 use crate::Renderer;
+use crate::constants::editor::KEY_LABEL_FONT_SIZE;
 use crate::editor::Editor;
-use iced_core::{Point, Rectangle, Size};
-use iced_widget::canvas::{Frame, Geometry, Path, Stroke};
+use iced_core::{Point, Rectangle, Size, alignment};
+use iced_widget::canvas::{Frame, Geometry, Path, Stroke, Text};
 
 /// 绘制钢琴键盘到 Geometry（用于 Canvas 绘制）
 pub fn draw_to_geometry(
@@ -83,6 +84,28 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
                 .with_width(1.0)
                 .with_color(theme.border_color());
             frame.stroke(&key_path, border_stroke);
+
+            // 绘制音符名称标签（与 C# 项目 PianoKeysCanvas 逻辑一致）
+            let label_text = note_name(i as u8);
+            let label_color = if is_black_key {
+                theme.key_label_black_key_color()
+            } else {
+                theme.key_label_white_key_color()
+            };
+
+            let label = Text {
+                content: label_text,
+                position: Point::new(keyboard_width / 2.0, screen_y + view.zoom_y / 2.0),
+                max_width: keyboard_width,
+                line_height: iced_core::text::LineHeight::Relative(1.0),
+                size: iced_core::Pixels(KEY_LABEL_FONT_SIZE),
+                color: label_color,
+                font: iced_core::Font::DEFAULT,
+                align_x: alignment::Horizontal::Center.into(),
+                align_y: alignment::Vertical::Center,
+                shaping: iced_core::text::Shaping::Basic,
+            };
+            frame.fill_text(label);
         }
     }
 }

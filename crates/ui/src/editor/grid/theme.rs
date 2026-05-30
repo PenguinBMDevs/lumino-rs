@@ -26,6 +26,12 @@ pub trait ThemeExt {
     /// 获取文本颜色
     fn text_color(&self) -> iced_core::Color;
 
+    /// 获取白键上的标签文字颜色
+    fn key_label_white_key_color(&self) -> iced_core::Color;
+
+    /// 获取黑键上的标签文字颜色
+    fn key_label_black_key_color(&self) -> iced_core::Color;
+
     /// 获取小节线颜色
     fn bar_line_color(&self) -> iced_core::Color;
 
@@ -95,6 +101,16 @@ impl ThemeExt for Theme {
         } else {
             iced_core::Color::WHITE
         }
+    }
+
+    fn key_label_white_key_color(&self) -> iced_core::Color {
+        // 白键背景浅，使用主题 palette 的 text 颜色（亮色主题=深，暗色=浅）
+        self.palette().text
+    }
+
+    fn key_label_black_key_color(&self) -> iced_core::Color {
+        // 黑键背景深，使用 palette 中最浅的背景色作为对比色
+        self.extended_palette().background.weakest.color
     }
 
     fn bar_line_color(&self) -> iced_core::Color {
