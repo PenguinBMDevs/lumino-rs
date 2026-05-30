@@ -29,6 +29,8 @@ pub enum Event {
     ExportProjectArchive,
     /// 导出工程为文件夹 (.lmpj)
     ExportProjectFolder,
+    /// 导出音频文件
+    AudioExport,
     /// 工程设置
     ProjectSettings,
     /* */

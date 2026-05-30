@@ -38,6 +38,8 @@ encoding_rs = "0.8"
 num-bigint = "0.4"
 puffin = "0.19.1"
 parking_lot = "0.12"
+hound = "3.5"
+flac-encoder = "0.1"
 
 [package]
 name = "lumino-rs"
@@ -136,6 +138,7 @@ midly = { git = "https://github.com/Enderman-bm/midly-fork" }
 xsynth-core = { git = "https://github.com/buickmeow/xsynth" }
 xsynth-realtime = { git = "https://github.com/buickmeow/xsynth" }
 xsynth-soundfonts = { git = "https://github.com/buickmeow/xsynth" }
+xsynth-render = { git = "https://github.com/buickmeow/xsynth" }
 
 [[test]]
 name = "collaboration_full_test"

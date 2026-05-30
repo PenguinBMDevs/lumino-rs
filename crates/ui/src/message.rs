@@ -186,6 +186,46 @@ pub enum Message {
     MidiInputEvent {
         data: Vec<u8>,
     },
+    /// 打开音频导出对话框
+    OpenAudioExportDialog,
+    /// 关闭音频导出对话框
+    CloseAudioExportDialog,
+    /// 确认音频导出
+    AudioExportConfirm,
+    /// 取消音频导出
+    AudioExportCancel,
+    /// 音频导出 - 工程名称变更
+    AudioExportProjectNameChanged(String),
+    /// 音频导出 - 输出格式变更
+    AudioExportFormatChanged(crate::state::root_state::AudioFormat),
+    /// 音频导出 - 采样率变更
+    AudioExportSampleRateChanged(u32),
+    /// 音频导出 - 通道数变更
+    AudioExportChannelsChanged(crate::state::root_state::AudioChannels),
+    /// 音频导出 - 层数限制变更
+    AudioExportLayersChanged(String),
+    /// 音频导出 - 通道多线程变更
+    AudioExportChannelThreadingChanged(crate::state::root_state::ThreadingOption),
+    /// 音频导出 - 按键多线程变更
+    AudioExportKeyThreadingChanged(crate::state::root_state::ThreadingOption),
+    /// 音频导出 - 插值算法变更
+    AudioExportInterpolationChanged(crate::state::root_state::Interpolation),
+    /// 音频导出 - 应用限制器变更
+    AudioExportApplyLimiterChanged(bool),
+    /// 音频导出 - 禁用淡出变更
+    AudioExportDisableFadeOutChanged(bool),
+    /// 音频导出 - 线性包络变更
+    AudioExportLinearEnvelopeChanged(bool),
+    /// 音频导出 - 输出路径变更
+    AudioExportOutputPathChanged(String),
+    /// 音频导出 - 浏览输出路径
+    AudioExportBrowseOutput,
+    /// 音频导出 - 进度更新
+    AudioExportProgress(f32, String),
+    /// 音频导出 - 完成
+    AudioExportCompleted,
+    /// 音频导出 - 失败
+    AudioExportFailed(String),
 }
 
 /// 循环区域动作

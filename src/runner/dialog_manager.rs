@@ -34,6 +34,7 @@ impl DialogWindow {
             DialogType::LoadConfirm => (420.0, 260.0, "加载大文件", false),
             DialogType::ProjectSettings => (450.0, 480.0, "工程设置", true),
             DialogType::Settings => (700.0, 500.0, "设置", true),
+            DialogType::AudioExport => (600.0, 700.0, "音频导出", true),
         };
 
         let attributes = WindowAttributes::default()
@@ -120,6 +121,9 @@ impl DialogWindow {
             }
             DialogType::Settings => {
                 ui.set_settings_dialog_open(true);
+            }
+            DialogType::AudioExport => {
+                ui.set_audio_export_dialog_open(true);
             }
         }
 
@@ -344,6 +348,22 @@ impl DialogManager {
         });
     }
 
+    /// 请求打开音频导出对话框
+    pub fn open_audio_export(
+        &mut self,
+        project_name: String,
+        midi_path: String,
+        _soundfont_path: String,
+        _output_path: String,
+    ) {
+        self.pending_dialogs.push(PendingDialog {
+            dialog_type: DialogType::AudioExport,
+            pending_path: Some(midi_path),
+            pending_size_mb: None,
+            pending_title: Some(project_name),
+        });
+    }
+
     /// 初始化等待中的对话框，并同步主窗口的协作状态
     pub fn initialize_pending_with_collaboration_state(
         &mut self,
@@ -387,6 +407,12 @@ impl DialogManager {
                 DialogType::Settings => {
                     if let Err(e) = dialog.initialize_with_collaboration_state(ui_config, main_ui) {
                         tracing::error!("初始化设置对话框失败: {}", e);
+                        continue;
+                    }
+                }
+                DialogType::AudioExport => {
+                    if let Err(e) = dialog.initialize_with_collaboration_state(ui_config, main_ui) {
+                        tracing::error!("初始化音频导出对话框失败: {}", e);
                         continue;
                     }
                 }

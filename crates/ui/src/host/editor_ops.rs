@@ -386,6 +386,11 @@ impl Host {
         current_count + track_notes_count
     }
 
+    /// 检查音符数据是否已变化
+    pub fn has_notes_changed(&self) -> bool {
+        self.root.editor.notes_changed()
+    }
+
     /// 获取并清空待处理的音频动作
     pub fn take_audio_actions(&mut self) -> Vec<message::AudioAction> {
         self.root.take_audio_actions()

@@ -95,38 +95,19 @@ impl Host {
             }
         }
 
-        // 只有布局变化或状态变更才需要重建 UI 树；纯 redraw 保留缓存即可。
-        let needs_rebuild = has_state_change || state.has_layout_changed();
-        let needs_redraw = needs_rebuild
-            || matches!(
-                &state,
-                user_interface::State::Updated {
-                    redraw_request: iced_window::RedrawRequest::NextFrame,
-                    ..
-                }
-            )
-            || matches!(
-                &state,
-                user_interface::State::Updated {
-                    redraw_request: iced_window::RedrawRequest::At(_),
-                    ..
-                }
-            );
-
-        if needs_rebuild {
+        // 如果状态有变更或 UI 有更新（如打开下拉菜单），标记 UI 需要重绘并请求下一帧
+        let is_ui_updated = matches!(state, user_interface::State::Updated { .. });
+        if has_state_change || is_ui_updated {
             self.ui_dirty = true;
-        }
-
-        if needs_redraw {
             self.window_ctx.window.request_redraw();
         }
 
         // 更新鼠标光标
         if let user_interface::State::Updated {
             mouse_interaction, ..
-        } = &state
+        } = state
         {
-            if let Some(icon) = iced_winit::conversion::mouse_interaction(*mouse_interaction) {
+            if let Some(icon) = iced_winit::conversion::mouse_interaction(mouse_interaction) {
                 self.window_ctx.window.set_cursor(icon);
                 self.window_ctx.window.set_cursor_visible(true);
             } else {

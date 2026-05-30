@@ -9,6 +9,7 @@ use crate::root::{Element, Root, Theme};
 use crate::state::root_state::DialogType;
 use crate::statusbar::performance;
 use crate::view::{
+    audio_export_dialog::view_audio_export_dialog,
     collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
     load_confirm_dialog::view_load_confirm_dialog,
@@ -84,6 +85,9 @@ impl Root {
             ),
             DialogType::Settings => {
                 view_settings_dialog(&self.settings, &self.window, &self.state.system_fonts)
+            }
+            DialogType::AudioExport => {
+                view_audio_export_dialog(&self.state.audio_export_dialog, &self.window.theme)
             }
             _ => view_custom_precision_dialog(
                 &self.state.custom_precision_dialog,

@@ -1,3 +1,4 @@
+pub mod audio;
 pub mod converter;
 pub mod dms;
 pub mod error;
@@ -6,6 +7,9 @@ pub mod lmpj;
 pub mod midi;
 pub mod project;
 
+pub use audio::{
+    AudioChannels, AudioExportOptions, AudioFormat, Interpolation, ThreadingOption, export_audio,
+};
 pub use converter::{
     copy_file_sync, export_dms_from_midi_sync, export_midi_from_dms_sync,
     export_midi_from_parsed_midi_sync,

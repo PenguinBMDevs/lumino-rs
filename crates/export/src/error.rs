@@ -16,6 +16,14 @@ pub enum ExportError {
     #[error("MIDI 写入错误: {0}")]
     MidiWrite(String),
 
+    /// MIDI 解析错误
+    #[error("MIDI 解析错误: {0}")]
+    MidiParse(String),
+
+    /// 音频写入错误
+    #[error("音频写入错误: {0}")]
+    AudioWrite(String),
+
     /// 无效的导出数据
     #[error("无效的导出数据: {0}")]
     InvalidData(String),

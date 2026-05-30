@@ -212,6 +212,7 @@ pub enum DialogType {
     LoadConfirm,
     ProjectSettings,
     Settings,
+    AudioExport,
 }
 
 /// 协作视图状态
@@ -285,6 +286,168 @@ impl CollaborationDialogState {
     }
 }
 
+/// 音频导出对话框状态
+#[derive(Debug, Clone)]
+pub struct AudioExportDialogState {
+    pub is_open: bool,
+    /// 工程名称
+    pub project_name: String,
+    /// MIDI 文件路径
+    pub midi_path: String,
+    /// SF2 音色库路径
+    pub soundfont_path: String,
+    /// 采样率
+    pub sample_rate: u32,
+    /// 通道数
+    pub channels: AudioChannels,
+    /// 每通道层数限制
+    pub layers: u32,
+    /// 通道多线程
+    pub channel_threading: ThreadingOption,
+    /// 按键多线程
+    pub key_threading: ThreadingOption,
+    /// 应用限制器
+    pub apply_limiter: bool,
+    /// 禁用淡出
+    pub disable_fade_out: bool,
+    /// 线性包络
+    pub linear_envelope: bool,
+    /// 插值算法
+    pub interpolation: Interpolation,
+    /// 输出格式
+    pub format: AudioFormat,
+    /// 输出路径
+    pub output_path: String,
+    /// 是否正在导出
+    pub is_exporting: bool,
+    /// 导出进度 (0.0 - 100.0)
+    pub progress: f32,
+    /// 导出状态消息
+    pub status_message: String,
+}
+
+/// 音频通道数（UI用）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudioChannels {
+    Mono,
+    Stereo,
+}
+
+impl Default for AudioChannels {
+    fn default() -> Self {
+        Self::Stereo
+    }
+}
+
+impl std::fmt::Display for AudioChannels {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AudioChannels::Mono => write!(f, "单声道"),
+            AudioChannels::Stereo => write!(f, "立体声"),
+        }
+    }
+}
+
+/// 多线程选项（UI用）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThreadingOption {
+    None,
+    Auto,
+    Manual(u32),
+}
+
+impl Default for ThreadingOption {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
+impl std::fmt::Display for ThreadingOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ThreadingOption::None => write!(f, "关闭"),
+            ThreadingOption::Auto => write!(f, "自动"),
+            ThreadingOption::Manual(n) => write!(f, "{} 线程", n),
+        }
+    }
+}
+
+/// 插值算法（UI用）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Interpolation {
+    None,
+    Linear,
+}
+
+impl Default for Interpolation {
+    fn default() -> Self {
+        Self::Linear
+    }
+}
+
+impl std::fmt::Display for Interpolation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Interpolation::None => write!(f, "无插值"),
+            Interpolation::Linear => write!(f, "线性插值"),
+        }
+    }
+}
+
+/// 音频格式（UI用）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudioFormat {
+    WAV,
+    FLAC,
+}
+
+impl Default for AudioFormat {
+    fn default() -> Self {
+        Self::WAV
+    }
+}
+
+impl std::fmt::Display for AudioFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AudioFormat::WAV => write!(f, "WAV"),
+            AudioFormat::FLAC => write!(f, "FLAC"),
+        }
+    }
+}
+
+impl AudioExportDialogState {
+    pub fn new() -> Self {
+        Self {
+            is_open: false,
+            project_name: String::new(),
+            midi_path: String::new(),
+            soundfont_path: String::new(),
+            sample_rate: 48000,
+            channels: AudioChannels::default(),
+            layers: 32,
+            channel_threading: ThreadingOption::default(),
+            key_threading: ThreadingOption::default(),
+            apply_limiter: true,
+            disable_fade_out: false,
+            linear_envelope: false,
+            interpolation: Interpolation::default(),
+            format: AudioFormat::default(),
+            output_path: String::new(),
+            is_exporting: false,
+            progress: 0.0,
+            status_message: String::new(),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.is_open = false;
+        self.is_exporting = false;
+        self.progress = 0.0;
+        self.status_message.clear();
+    }
+}
+
 /// Root 组件的状态
 pub struct RootState {
     /// 是否有菜单/下拉框打开（打开时不渲染预览音符）
@@ -303,6 +466,8 @@ pub struct RootState {
     pub collaboration_dialog: CollaborationDialogState,
     /// 工程设置对话框状态
     pub project_settings_dialog: ProjectSettingsDialogState,
+    /// 音频导出对话框状态
+    pub audio_export_dialog: AudioExportDialogState,
     /// 精度设置
     pub note_precision: NotePrecision,
     /// 系统字体列表
@@ -324,6 +489,7 @@ impl RootState {
             load_confirm_dialog: LoadConfirmDialogState::default(),
             collaboration_dialog: CollaborationDialogState::new(),
             project_settings_dialog: ProjectSettingsDialogState::new(),
+            audio_export_dialog: AudioExportDialogState::new(),
             note_precision: NotePrecision::default(),
             system_fonts: lumino_core::font_scanner::scan_system_fonts(),
             current_mode: AppMode::default(),

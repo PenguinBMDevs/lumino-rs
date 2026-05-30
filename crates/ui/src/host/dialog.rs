@@ -33,6 +33,13 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 设置音频导出对话框是否打开（用于独立对话框窗口）
+    pub fn set_audio_export_dialog_open(&mut self, open: bool) {
+        self.root.set_audio_export_dialog_open(open);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 设置工程设置对话框数据（用于独立对话框窗口）
     pub fn set_project_settings_data(
         &mut self,
