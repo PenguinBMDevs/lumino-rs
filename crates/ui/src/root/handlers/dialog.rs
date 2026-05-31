@@ -167,6 +167,120 @@ impl MessageHandler for DialogHandler {
                 None
             }
 
+            // 音频导出对话框消息
+            Message::OpenAudioExportDialog => {
+                root.state.dialog_type = crate::state::root_state::DialogType::AudioExport;
+                None
+            }
+            Message::CloseAudioExportDialog => {
+                root.state.audio_export_dialog.is_open = false;
+                root.state.dialog_type = crate::state::root_state::DialogType::None;
+                None
+            }
+            Message::AudioExportProjectNameChanged(value) => {
+                root.state.audio_export_dialog.project_name = value;
+                None
+            }
+            Message::AudioExportOutputPathChanged(value) => {
+                root.state.audio_export_dialog.output_path = value;
+                None
+            }
+            Message::AudioExportFormatChanged(value) => {
+                root.state.audio_export_dialog.format = value;
+                None
+            }
+            Message::AudioExportSampleRateChanged(value) => {
+                root.state.audio_export_dialog.sample_rate = value;
+                None
+            }
+            Message::AudioExportChannelsChanged(value) => {
+                root.state.audio_export_dialog.channels = value;
+                None
+            }
+            Message::AudioExportLayersChanged(value) => {
+                // 只允许数字
+                if value.chars().all(|c| c.is_ascii_digit()) {
+                    if let Ok(v) = value.parse::<u32>() {
+                        root.state.audio_export_dialog.layers = v;
+                    }
+                }
+                None
+            }
+            Message::AudioExportChannelThreadingChanged(value) => {
+                root.state.audio_export_dialog.channel_threading = value;
+                None
+            }
+            Message::AudioExportKeyThreadingChanged(value) => {
+                root.state.audio_export_dialog.key_threading = value;
+                None
+            }
+            Message::AudioExportInterpolationChanged(value) => {
+                root.state.audio_export_dialog.interpolation = value;
+                None
+            }
+            Message::AudioExportApplyLimiterChanged(value) => {
+                root.state.audio_export_dialog.apply_limiter = value;
+                None
+            }
+            Message::AudioExportDisableFadeOutChanged(value) => {
+                root.state.audio_export_dialog.disable_fade_out = value;
+                None
+            }
+            Message::AudioExportLinearEnvelopeChanged(value) => {
+                root.state.audio_export_dialog.linear_envelope = value;
+                None
+            }
+            Message::AudioExportBrowseOutput => {
+                // 使用原生文件对话框选择输出路径
+                let current = root.state.audio_export_dialog.output_path.clone();
+                let default_name = std::path::Path::new(&current)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("export.wav");
+                let default_dir = std::path::Path::new(&current)
+                    .parent()
+                    .and_then(|p| p.to_str())
+                    .unwrap_or(".");
+                if let Some(path) = rfd::FileDialog::new()
+                    .set_file_name(default_name)
+                    .set_directory(default_dir)
+                    .add_filter("WAV 文件", &["wav"])
+                    .add_filter("FLAC 文件", &["flac"])
+                    .save_file()
+                {
+                    root.state.audio_export_dialog.output_path = path.to_string_lossy().to_string();
+                }
+                None
+            }
+            Message::AudioExportConfirm => {
+                let state = &root.state.audio_export_dialog;
+                root.state.dialog_result = Some(DialogResult::AudioExport {
+                    project_name: state.project_name.clone(),
+                    midi_path: state.midi_path.clone(),
+                    soundfont_path: state.soundfont_path.clone(),
+                    output_path: state.output_path.clone(),
+                    sample_rate: state.sample_rate,
+                    channels: state.channels,
+                    layers: state.layers,
+                    channel_threading: state.channel_threading,
+                    key_threading: state.key_threading,
+                    apply_limiter: state.apply_limiter,
+                    disable_fade_out: state.disable_fade_out,
+                    linear_envelope: state.linear_envelope,
+                    interpolation: state.interpolation,
+                    format: state.format,
+                });
+                root.state.audio_export_dialog.is_open = false;
+                root.state.dialog_type = crate::state::root_state::DialogType::None;
+                None
+            }
+            Message::AudioExportCancel => {
+                root.state.audio_export_dialog.is_open = false;
+                root.state.dialog_type = crate::state::root_state::DialogType::None;
+                root.state.dialog_result = Some(DialogResult::Cancel);
+                None
+            }
+
             other => Some(other),
         }
     }

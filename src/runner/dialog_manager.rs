@@ -216,6 +216,52 @@ impl DialogWindow {
         Ok(())
     }
 
+    /// 初始化音频导出对话框（带导出配置数据）
+    pub fn initialize_audio_export(
+        &mut self,
+        ui_config: &lumino_core::storage::config::UiConfig,
+        project_name: &str,
+        midi_path: &str,
+        soundfont_path: &str,
+        output_path: &str,
+    ) -> Result<(), String> {
+        let physical_size = self.window.inner_size();
+        if physical_size.width == 0 || physical_size.height == 0 {
+            return Err("窗口大小为零".to_string());
+        }
+
+        let gfx = futures::executor::block_on(lumino_gfx::Context::new(
+            self.window.clone(),
+            physical_size.width,
+            physical_size.height,
+        ))
+        .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
+
+        let mut ui = lumino_ui::Host::new_dialog(
+            self.window.clone(),
+            physical_size.width,
+            physical_size.height,
+            ui_config,
+            &gfx,
+            DialogType::AudioExport,
+        );
+
+        // 设置音频导出对话框状态
+        let sf2_path = if soundfont_path.is_empty() {
+            &ui_config.soundfont_path
+        } else {
+            soundfont_path
+        };
+        ui.set_audio_export_dialog_state(project_name, midi_path, sf2_path, output_path);
+        ui.set_audio_export_dialog_open(true);
+
+        self.window.set_visible(true);
+        self.gfx = Some(gfx);
+        self.ui = Some(ui);
+
+        Ok(())
+    }
+
     pub fn window_id(&self) -> WindowId {
         self.window.id()
     }
@@ -312,6 +358,10 @@ pub struct PendingDialog {
     pub pending_size_mb: Option<f64>,
     /// ProjectSettings 的窗口标题
     pub pending_title: Option<String>,
+    /// AudioExport 的音色库路径
+    pub pending_soundfont: Option<String>,
+    /// AudioExport 的输出路径
+    pub pending_output_path: Option<String>,
 }
 
 impl DialogManager {
@@ -329,6 +379,8 @@ impl DialogManager {
             pending_path: None,
             pending_size_mb: None,
             pending_title: None,
+            pending_soundfont: None,
+            pending_output_path: None,
         });
     }
 
@@ -339,6 +391,8 @@ impl DialogManager {
             pending_path: None,
             pending_size_mb: None,
             pending_title: Some(title),
+            pending_soundfont: None,
+            pending_output_path: None,
         });
     }
 
@@ -348,6 +402,8 @@ impl DialogManager {
             pending_path: Some(path),
             pending_size_mb: Some(size_mb),
             pending_title: None,
+            pending_soundfont: None,
+            pending_output_path: None,
         });
     }
 
@@ -356,14 +412,16 @@ impl DialogManager {
         &mut self,
         project_name: String,
         midi_path: String,
-        _soundfont_path: String,
-        _output_path: String,
+        soundfont_path: String,
+        output_path: String,
     ) {
         self.pending_dialogs.push(PendingDialog {
             dialog_type: DialogType::AudioExport,
             pending_path: Some(midi_path),
             pending_size_mb: None,
             pending_title: Some(project_name),
+            pending_soundfont: Some(soundfont_path),
+            pending_output_path: Some(output_path),
         });
     }
 
@@ -414,7 +472,17 @@ impl DialogManager {
                     }
                 }
                 DialogType::AudioExport => {
-                    if let Err(e) = dialog.initialize_with_collaboration_state(ui_config, main_ui) {
+                    let project_name = pending.pending_title.unwrap_or_default();
+                    let midi_path = pending.pending_path.unwrap_or_default();
+                    let soundfont_path = pending.pending_soundfont.unwrap_or_default();
+                    let output_path = pending.pending_output_path.unwrap_or_default();
+                    if let Err(e) = dialog.initialize_audio_export(
+                        ui_config,
+                        &project_name,
+                        &midi_path,
+                        &soundfont_path,
+                        &output_path,
+                    ) {
                         tracing::error!("初始化音频导出对话框失败: {}", e);
                         continue;
                     }

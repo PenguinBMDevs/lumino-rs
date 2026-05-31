@@ -1,8 +1,15 @@
 //! 对话框事件处理模块
 
+use std::sync::Arc;
+
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
+
+use lumino_ui::state::root_state::{
+    AudioChannels as UiAudioChannels, AudioFormat as UiAudioFormat,
+    Interpolation as UiInterpolation, ThreadingOption as UiThreadingOption,
+};
 
 use crate::runner::dialog_manager::DialogResult;
 use crate::runner::inner::RunnerInner;
@@ -88,7 +95,124 @@ impl RunnerInner {
                 }
             }
             DialogResult::Cancel => {
-                tracing::info!("工程设置对话框: 取消");
+                tracing::info!("对话框: 取消");
+            }
+            DialogResult::AudioExport {
+                project_name,
+                midi_path,
+                soundfont_path,
+                output_path,
+                sample_rate,
+                channels,
+                layers,
+                channel_threading,
+                key_threading,
+                apply_limiter,
+                disable_fade_out,
+                linear_envelope,
+                interpolation,
+                format,
+            } => {
+                tracing::info!(
+                    "开始音频导出: project={}, midi={}, sf2={}, output={}",
+                    project_name,
+                    midi_path,
+                    soundfont_path,
+                    output_path,
+                );
+
+                // 验证 MIDI 文件和音色库是否存在
+                let midi = std::path::PathBuf::from(midi_path);
+                let sf2 = std::path::PathBuf::from(soundfont_path);
+                let output = std::path::PathBuf::from(output_path.clone());
+
+                if !midi.exists() {
+                    tracing::error!("MIDI 文件不存在: {:?}", midi);
+                    return;
+                }
+                if !sf2.exists() {
+                    tracing::error!("音色库文件不存在: {:?}", sf2);
+                    return;
+                }
+
+                // 构造导出选项
+                let options = lumino_export::audio::AudioExportOptions {
+                    sample_rate: *sample_rate,
+                    channels: match channels {
+                        UiAudioChannels::Mono => lumino_export::audio::AudioChannels::Mono,
+                        UiAudioChannels::Stereo => lumino_export::audio::AudioChannels::Stereo,
+                    },
+                    layers: *layers,
+                    channel_threading: match channel_threading {
+                        UiThreadingOption::None => lumino_export::audio::ThreadingOption::None,
+                        UiThreadingOption::Auto => lumino_export::audio::ThreadingOption::Auto,
+                        UiThreadingOption::Manual(n) => {
+                            lumino_export::audio::ThreadingOption::Manual(*n)
+                        }
+                    },
+                    key_threading: match key_threading {
+                        UiThreadingOption::None => lumino_export::audio::ThreadingOption::None,
+                        UiThreadingOption::Auto => lumino_export::audio::ThreadingOption::Auto,
+                        UiThreadingOption::Manual(n) => {
+                            lumino_export::audio::ThreadingOption::Manual(*n)
+                        }
+                    },
+                    apply_limiter: *apply_limiter,
+                    disable_fade_out: *disable_fade_out,
+                    linear_envelope: *linear_envelope,
+                    interpolation: match interpolation {
+                        UiInterpolation::None => lumino_export::audio::Interpolation::None,
+                        UiInterpolation::Linear => lumino_export::audio::Interpolation::Linear,
+                    },
+                    format: match format {
+                        UiAudioFormat::WAV => lumino_export::audio::AudioFormat::WAV,
+                        UiAudioFormat::FLAC => lumino_export::audio::AudioFormat::FLAC,
+                    },
+                };
+
+                let cb = self.window_state.progress_cb.clone();
+                let output_display = output_path.clone();
+
+                // 在后台线程中执行导出
+                tokio::spawn(async move {
+                    cb("正在导出音频...", 0.0);
+                    let midi = midi.clone();
+                    let sf2 = sf2.clone();
+                    let output = output.clone();
+                    let options_clone = options.clone();
+                    let cb_inner = cb.clone();
+
+                    let result = tokio::task::spawn_blocking(move || {
+                        lumino_export::audio::export_audio(
+                            &midi,
+                            &sf2,
+                            &output,
+                            &options_clone,
+                            Some(Arc::new(move |p| {
+                                cb_inner(&format!("导出中... {:.0}%", p as f64), p as f64 / 100.0);
+                            })),
+                            None,
+                        )
+                    })
+                    .await;
+
+                    match result {
+                        Ok(Ok(())) => {
+                            cb("音频导出成功", 1.0);
+                            tracing::info!("音频导出成功: {:?}", output_display);
+                        }
+                        Ok(Err(e)) => {
+                            let msg = format!("音频导出失败: {e}");
+                            cb(&msg, 1.0);
+                            tracing::error!("{}", msg);
+                        }
+                        Err(e) => {
+                            let msg = format!("音频导出任务失败: {e}");
+                            cb(&msg, 1.0);
+                            tracing::error!("{}", msg);
+                        }
+                    }
+                });
             }
             DialogResult::ProjectSettings {
                 title,
