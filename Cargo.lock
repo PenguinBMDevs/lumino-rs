@@ -8285,7 +8285,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 [[package]]
 name = "xsynth-core"
 version = "0.3.4"
-source = "git+https://github.com/buickmeow/xsynth#6711486d87296c35ee79fe4b98c569261e1ea22d"
+source = "git+https://github.com/buickmeow/xsynth#58abe3ebe10afa5d4ed799c90e2384630d957c75"
 dependencies = [
  "atomic_refcell",
  "biquad",
@@ -8306,7 +8306,7 @@ dependencies = [
 [[package]]
 name = "xsynth-realtime"
 version = "0.3.4"
-source = "git+https://github.com/buickmeow/xsynth#6711486d87296c35ee79fe4b98c569261e1ea22d"
+source = "git+https://github.com/buickmeow/xsynth#58abe3ebe10afa5d4ed799c90e2384630d957c75"
 dependencies = [
  "atomic_refcell",
  "bytemuck",
@@ -8324,7 +8324,7 @@ dependencies = [
 [[package]]
 name = "xsynth-soundfonts"
 version = "0.3.4"
-source = "git+https://github.com/buickmeow/xsynth#6711486d87296c35ee79fe4b98c569261e1ea22d"
+source = "git+https://github.com/buickmeow/xsynth#58abe3ebe10afa5d4ed799c90e2384630d957c75"
 dependencies = [
  "encoding_rs",
  "encoding_rs_io",
@@ -8646,4 +8646,4 @@ dependencies = [
 [[patch.unused]]
 name = "xsynth-render"
 version = "0.3.4"
-source = "git+https://github.com/buickmeow/xsynth#6711486d87296c35ee79fe4b98c569261e1ea22d"
+source = "git+https://github.com/buickmeow/xsynth#58abe3ebe10afa5d4ed799c90e2384630d957c75"

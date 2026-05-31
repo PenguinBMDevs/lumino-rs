@@ -104,7 +104,8 @@ impl Default for AudioExportOptions {
         Self {
             sample_rate: 48000,
             channels: AudioChannels::default(),
-            layers: 32,
+            // 从 32 降至 8：降低默认 voice 层数，防止黑乐谱场景 OOM
+            layers: 8,
             channel_threading: ThreadingOption::default(),
             key_threading: ThreadingOption::default(),
             apply_limiter: true,
@@ -118,6 +119,9 @@ impl Default for AudioExportOptions {
 
 /// 音频导出进度回调类型
 pub type ProgressCallback = Box<dyn Fn(f32) + Send + Sync>;
+
+/// 最大渲染块大小（秒）。限制单次分配避免 OOM。
+const MAX_RENDER_CHUNK_SECONDS: f64 = 1.0;
 
 /// 音频导出器
 pub struct AudioExporter {
@@ -134,8 +138,19 @@ impl AudioExporter {
     pub fn new(options: &AudioExportOptions, soundfont: Arc<dyn SoundfontBase>) -> Self {
         let audio_params = AudioStreamParams::new(options.sample_rate, ChannelCount::Stereo);
 
+        // 配置 xsynth 初始化选项：将 lumino 选项映射到 xsynth 参数
+        let channel_init_options = xsynth_core::channel::ChannelInitOptions {
+            // disable_fade_out=false → fade_out_killing=true（启用淡出杀音）
+            fade_out_killing: !options.disable_fade_out,
+            // layers 默认为 8，限制每键最大 voice 数
+            max_voices_per_key: Some(options.layers as usize),
+            // 全局 voice 数量硬限制：128键 × layers + 安全余量
+            // 防止黑乐谱场景下 voice 无限增长导致 OOM
+            global_voice_limit: Some((128 * options.layers as usize).max(4096)),
+        };
+
         let group_options = ChannelGroupConfig {
-            channel_init_options: xsynth_core::channel::ChannelInitOptions::default(),
+            channel_init_options,
             format: xsynth_core::channel_group::SynthFormat::Midi,
             audio_params,
             parallelism: xsynth_core::channel_group::ParallelismOptions::default(),
@@ -165,13 +180,6 @@ impl AudioExporter {
                 ChannelConfigEvent::SetSoundfonts(vec![soundfont]),
             )));
 
-        // 设置层数限制
-        exporter
-            .channel_group
-            .send_event(SynthEvent::AllChannels(ChannelEvent::Config(
-                ChannelConfigEvent::SetLayerCount(Some(options.layers as usize)),
-            )));
-
         exporter
     }
 
@@ -181,20 +189,14 @@ impl AudioExporter {
     }
 
     /// 渲染指定时间的音频样本
+    /// 限制单次最大块大小为 MAX_RENDER_CHUNK_SECONDS，防止大块内存分配导致 OOM。
     pub fn render_batch(&mut self, event_time: f64) {
-        if event_time > 10.0 {
-            let mut remaining_time = event_time;
-            loop {
-                if remaining_time > 10.0 {
-                    self.render_batch(10.0);
-                    remaining_time -= 10.0;
-                } else {
-                    self.render_batch(remaining_time);
-                    break;
-                }
-            }
-        } else {
-            let samples = self.sample_rate as f64 * event_time + self.missed_samples;
+        let mut remaining = event_time;
+        while remaining > 0.0 {
+            let chunk = remaining.min(MAX_RENDER_CHUNK_SECONDS);
+            remaining -= chunk;
+
+            let samples = self.sample_rate as f64 * chunk + self.missed_samples;
             self.missed_samples = samples % 1.0;
             let samples = samples as usize * self.channels.count() as usize;
 
@@ -207,22 +209,24 @@ impl AudioExporter {
         }
     }
 
-    /// 获取当前渲染的样本
+    /// 获取当前渲染的样本引用
     pub fn get_samples(&self) -> &[f32] {
         &self.output_vec
     }
 
-    /// 清空样本缓冲区
-    pub fn clear_samples(&mut self) {
-        self.output_vec.clear();
+    /// 取出当前渲染的样本（避免克隆），用空 Vec 替换内部缓冲区
+    pub fn take_samples(&mut self) -> Vec<f32> {
+        std::mem::take(&mut self.output_vec)
     }
 
-    /// 完成渲染，返回剩余样本
-    pub fn finalize(&mut self) -> Vec<f32> {
-        let mut all_samples = Vec::new();
+    /// 完成渲染，将剩余衰减样本直接写入 writer
+    /// 使用固定小块大小（FINALIZE_CHUNK）避免大块内存分配。
+    pub fn finalize(&mut self, writer: &mut AudioFileWriter) -> ExportResult<()> {
+        const FINALIZE_CHUNK: usize = 4096;
 
         loop {
-            self.output_vec.resize(self.sample_rate as usize, 0.0);
+            let chunk_frames = FINALIZE_CHUNK * self.channels.count() as usize;
+            self.output_vec.resize(chunk_frames, 0.0);
             self.channel_group.read_samples(&mut self.output_vec);
 
             if let Some(limiter) = &mut self.limiter {
@@ -230,8 +234,8 @@ impl AudioExporter {
             }
 
             let mut is_empty = true;
-            for s in &self.output_vec {
-                if *s > 0.0001 || *s < -0.0001 {
+            for &s in &self.output_vec {
+                if s.abs() > 0.0001 {
                     is_empty = false;
                     break;
                 }
@@ -241,10 +245,10 @@ impl AudioExporter {
                 break;
             }
 
-            all_samples.extend_from_slice(&self.output_vec);
+            writer.write_samples(&self.output_vec)?;
         }
 
-        all_samples
+        Ok(())
     }
 
     /// 获取活跃 voice 数量
@@ -359,11 +363,81 @@ impl AudioFileWriter {
     }
 }
 
+/// MIDI 速度映射表：记录所有 Tempo 事件发生时的 BPM 值
+struct TempoMap {
+    /// (tick, bpm)，按 tick 升序排列
+    changes: Vec<(u64, f64)>,
+    ppqn: u32,
+}
+
+impl TempoMap {
+    /// 从 SMF 中扫描所有轨道的 Tempo 事件构建速度图
+    fn from_smf(smf: &midly::Smf, ppqn: u32) -> Self {
+        let mut changes = vec![(0u64, 120.0f64)]; // 默认 120 BPM
+        for track in &smf.tracks {
+            let mut tick: u64 = 0;
+            for event in track {
+                tick += u32::from(event.delta) as u64;
+                if let midly::TrackEventKind::Meta(midly::MetaMessage::Tempo(tempo)) = event.kind {
+                    let bpm = 60_000_000.0 / tempo.as_int() as f64;
+                    changes.push((tick, bpm));
+                }
+            }
+        }
+        // 按 tick 排序，相同 tick 的取最后一个（后面的轨道覆盖前面的）
+        changes.sort_by_key(|a| a.0);
+        changes.dedup_by(|a, b| {
+            if a.0 == b.0 {
+                // 保留后面的值（b 是后面的元素）
+                std::mem::swap(a, b);
+                true
+            } else {
+                false
+            }
+        });
+        TempoMap { changes, ppqn }
+    }
+
+    /// 将 tick 转换为秒，考虑所有速度变化
+    fn tick_to_seconds(&self, tick: u64) -> f64 {
+        let ppqn = self.ppqn as f64;
+        let mut total = 0.0f64;
+        let mut prev_tick = 0u64;
+        let mut prev_bpm = 120.0;
+
+        for &(change_tick, bpm) in &self.changes {
+            if change_tick >= tick {
+                // 当前速度段到目标 tick
+                if tick > prev_tick {
+                    let delta_ticks = (tick - prev_tick) as f64;
+                    total += delta_ticks / (ppqn * prev_bpm / 60.0);
+                }
+                return total;
+            }
+            // 完整经过当前速度段
+            if change_tick > prev_tick {
+                let delta_ticks = (change_tick - prev_tick) as f64;
+                total += delta_ticks / (ppqn * prev_bpm / 60.0);
+            }
+            prev_bpm = bpm;
+            prev_tick = change_tick;
+        }
+
+        // 最后一段到目标 tick
+        if tick > prev_tick {
+            let delta_ticks = (tick - prev_tick) as f64;
+            total += delta_ticks / (ppqn * prev_bpm / 60.0);
+        }
+        total
+    }
+}
+
 /// MIDI 事件解析器
 pub struct MidiEventParser;
 
 impl MidiEventParser {
     /// 解析 MIDI 文件并渲染为音频
+    #[allow(clippy::useless_conversion)]
     pub fn parse_and_render(
         midi_path: &Path,
         soundfont_path: &Path,
@@ -396,19 +470,20 @@ impl MidiEventParser {
 
         // 解析 MIDI 文件
         let midi_bytes = std::fs::read(midi_path)
-            .map_err(|e| ExportError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            .map_err(|e| ExportError::Io(std::io::Error::other(e)))?;
 
         let smf = midly::Smf::parse(&midi_bytes)
             .map_err(|e| ExportError::MidiParse(format!("MIDI 解析失败: {}", e)))?;
 
-        // 计算总时长（用于进度回调）
+        // 计算总 tick（用于进度回调）
         let total_ticks = Self::calculate_total_ticks(&smf);
         let ppqn = match smf.header.timing {
             midly::Timing::Metrical(t) => u16::from(t) as u32,
             midly::Timing::Timecode(_, _) => 480, // 默认值
         };
-        let ticks_per_second = ppqn as f64 * 120.0 / 60.0; // 假设 120 BPM
-        let _total_seconds = total_ticks as f64 / ticks_per_second;
+
+        // 构建速度映射表（不再忽略 Tempo 事件）
+        let tempo_map = TempoMap::from_smf(&smf, ppqn);
 
         let mut current_tick: u64 = 0;
         let mut last_progress = 0.0;
@@ -418,26 +493,27 @@ impl MidiEventParser {
             let mut track_tick: u64 = 0;
             for event in track {
                 // 检查取消标志
-                if let Some(ref cancel) = cancel_flag {
-                    if cancel.load(Ordering::Relaxed) {
-                        return Err(ExportError::AudioWrite("导出已取消".to_string()));
-                    }
+                if let Some(ref cancel) = cancel_flag
+                    && cancel.load(Ordering::Relaxed)
+                {
+                    return Err(ExportError::AudioWrite("导出已取消".to_string()));
                 }
 
                 let delta = u32::from(event.delta) as u64;
                 track_tick += delta;
 
-                // 渲染到当前时间
-                let target_time = track_tick as f64 / ticks_per_second;
-                let current_time = current_tick as f64 / ticks_per_second;
+                // 使用速度映射表计算精确时间（支持 Tempo 变化）
+                let target_time = tempo_map.tick_to_seconds(track_tick);
+                let current_time = tempo_map.tick_to_seconds(current_tick);
                 if target_time > current_time {
                     let render_time = target_time - current_time;
                     exporter.render_batch(render_time);
 
-                    // 写入样本
-                    let samples = exporter.get_samples().to_vec();
-                    writer.write_samples(&samples)?;
-                    exporter.clear_samples();
+                    // 使用 take_samples 避免 to_vec() 克隆
+                    let samples = exporter.take_samples();
+                    if !samples.is_empty() {
+                        writer.write_samples(&samples)?;
+                    }
 
                     current_tick = track_tick;
                 }
@@ -460,7 +536,7 @@ impl MidiEventParser {
                                 exporter.send_event(SynthEvent::Channel(
                                     ch,
                                     ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
-                                        key: u8::from(key),
+                                        key: key.into(),
                                     }),
                                 ));
                             }
@@ -492,16 +568,13 @@ impl MidiEventParser {
                             _ => {}
                         }
                     }
-                    midly::TrackEventKind::Meta(meta) => {
-                        // 处理速度变化等元事件
-                        if let midly::MetaMessage::Tempo(_tempo) = meta {
-                            // 速度变化事件，暂时忽略
-                        }
+                    midly::TrackEventKind::Meta(_meta) => {
+                        // Tempo 事件已在预扫描中处理，此处无需再处理
                     }
                     _ => {}
                 }
 
-                // 更新进度
+                // 更新进度（使用 tick 比例估算，速度变化影响不大）
                 if let Some(ref callback) = progress_callback {
                     let progress = (current_tick as f64 / total_ticks as f64 * 100.0).min(99.0);
                     if (progress - last_progress).abs() >= 1.0 {
@@ -512,11 +585,8 @@ impl MidiEventParser {
             }
         }
 
-        // 完成渲染
-        let final_samples = exporter.finalize();
-        if !final_samples.is_empty() {
-            writer.write_samples(&final_samples)?;
-        }
+        // 完成渲染：将剩余衰减样本直接流式写入 writer
+        exporter.finalize(&mut writer)?;
 
         // 完成文件写入
         writer.finalize()?;
@@ -583,7 +653,7 @@ pub fn export_audio(
     // 创建输出目录
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| ExportError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            .map_err(|e| ExportError::Io(std::io::Error::other(e)))?;
     }
 
     tracing::info!(
@@ -633,7 +703,7 @@ mod tests {
         let options = AudioExportOptions::default();
         assert_eq!(options.sample_rate, 48000);
         assert_eq!(options.channels, AudioChannels::Stereo);
-        assert_eq!(options.layers, 32);
+        assert_eq!(options.layers, 8);
         assert!(options.apply_limiter);
         assert_eq!(options.format, AudioFormat::WAV);
     }
