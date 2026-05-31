@@ -9,6 +9,7 @@ pub mod project;
 
 pub use audio::{
     AudioChannels, AudioExportOptions, AudioFormat, Interpolation, ThreadingOption, export_audio,
+    export_audio_from_bytes, export_audio_from_parsed,
 };
 pub use converter::{
     copy_file_sync, export_dms_from_midi_sync, export_midi_from_dms_sync,

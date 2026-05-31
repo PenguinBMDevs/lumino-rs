@@ -121,19 +121,23 @@ impl RunnerInner {
                     output_path,
                 );
 
-                // 验证 MIDI 文件和音色库是否存在
-                let midi = std::path::PathBuf::from(midi_path);
+                // 验证音色库文件是否存在
                 let sf2 = std::path::PathBuf::from(soundfont_path);
                 let output = std::path::PathBuf::from(output_path.clone());
 
-                if !midi.exists() {
-                    tracing::error!("MIDI 文件不存在: {:?}", midi);
-                    return;
-                }
                 if !sf2.exists() {
                     tracing::error!("音色库文件不存在: {:?}", sf2);
                     return;
                 }
+
+                // 获取内存中已解析的 MIDI 数据
+                let parsed_midi = match &self.midi_state.current_midi {
+                    Some(pm) => pm.clone(),
+                    None => {
+                        tracing::error!("当前没有已加载的 MIDI 数据，无法导出音频");
+                        return;
+                    }
+                };
 
                 // 构造导出选项
                 let options = lumino_export::audio::AudioExportOptions {
@@ -176,15 +180,23 @@ impl RunnerInner {
                 // 在后台线程中执行导出
                 tokio::spawn(async move {
                     cb("正在导出音频...", 0.0);
-                    let midi = midi.clone();
                     let sf2 = sf2.clone();
                     let output = output.clone();
                     let options_clone = options.clone();
                     let cb_inner = cb.clone();
 
                     let result = tokio::task::spawn_blocking(move || {
-                        lumino_export::audio::export_audio(
-                            &midi,
+                        // 两步策略降低峰值内存：
+                        // 1. 从 ParsedMidi 提取原始 MIDI 字节（midi_data 已由 loader 保留）
+                        // 2. 立即释放 Arc<ParsedMidi> → MidiDocument (~1GB) 归还内存
+                        //    然后在只有 Smf + synth 的情况下渲染
+                        let midi_bytes = parsed_midi
+                            .get_midi_bytes()
+                            .map_err(|e| lumino_export::ExportError::InvalidData(e.to_string()))?;
+                        drop(parsed_midi);
+
+                        lumino_export::audio::export_audio_from_bytes(
+                            &midi_bytes,
                             &sf2,
                             &output,
                             &options_clone,

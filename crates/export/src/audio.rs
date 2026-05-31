@@ -12,6 +12,8 @@ use xsynth_core::effects::VolumeLimiter;
 use xsynth_core::soundfont::{SampleSoundfont, SoundfontBase};
 use xsynth_core::{AudioPipe, AudioStreamParams, ChannelCount};
 
+use lumino_core::ParsedMidi;
+
 use crate::error::{ExportError, ExportResult};
 
 /// 音频导出格式
@@ -146,7 +148,12 @@ impl AudioExporter {
             max_voices_per_key: Some(options.layers as usize),
             // 全局 voice 数量硬限制：128键 × layers + 安全余量
             // 防止黑乐谱场景下 voice 无限增长导致 OOM
-            global_voice_limit: Some((128 * options.layers as usize).max(4096)),
+            //
+            // 注意：xsynth 的 global_voice_limit 是 per-channel，每个 VoiceChannel
+            // 有自己的 global_voice_counter。MIDI 模式下共 16 个通道，所以这里除以
+            // 通道数得到真正的总 voice 上限。
+            // 例如 layers=8: (128*8).max(4096) / 16 = 256 → 总上限 16*256 = 4096
+            global_voice_limit: Some(((128 * options.layers as usize).max(4096) / 16).max(128)),
         };
 
         let group_options = ChannelGroupConfig {
@@ -436,54 +443,24 @@ impl TempoMap {
 pub struct MidiEventParser;
 
 impl MidiEventParser {
-    /// 解析 MIDI 文件并渲染为音频
+    /// 从已解析的 SMF 对象渲染音频（核心渲染逻辑，复用内存中的 MIDI 数据）
     #[allow(clippy::useless_conversion)]
-    pub fn parse_and_render(
-        midi_path: &Path,
-        soundfont_path: &Path,
-        output_path: &Path,
-        options: &AudioExportOptions,
-        progress_callback: Option<Arc<dyn Fn(f32) + Send + Sync>>,
-        cancel_flag: Option<Arc<AtomicBool>>,
+    fn render_smf(
+        smf: &midly::Smf,
+        exporter: &mut AudioExporter,
+        writer: &mut AudioFileWriter,
+        progress_callback: Option<&Arc<dyn Fn(f32) + Send + Sync>>,
+        cancel_flag: Option<&Arc<AtomicBool>>,
     ) -> ExportResult<()> {
-        // 加载音色库
-        let audio_params = AudioStreamParams::new(options.sample_rate, ChannelCount::Stereo);
-        let soundfont: Arc<dyn SoundfontBase> = Arc::new(
-            SampleSoundfont::new(
-                soundfont_path,
-                audio_params,
-                xsynth_core::soundfont::SoundfontInitOptions::default(),
-            )
-            .map_err(|e| ExportError::AudioWrite(format!("音色库加载失败: {}", e)))?,
-        );
-
-        // 创建导出器
-        let mut exporter = AudioExporter::new(options, soundfont);
-
-        // 创建音频文件写入器
-        let mut writer = AudioFileWriter::create(
-            output_path,
-            options.format,
-            options.sample_rate,
-            options.channels,
-        )?;
-
-        // 解析 MIDI 文件
-        let midi_bytes = std::fs::read(midi_path)
-            .map_err(|e| ExportError::Io(std::io::Error::other(e)))?;
-
-        let smf = midly::Smf::parse(&midi_bytes)
-            .map_err(|e| ExportError::MidiParse(format!("MIDI 解析失败: {}", e)))?;
-
         // 计算总 tick（用于进度回调）
-        let total_ticks = Self::calculate_total_ticks(&smf);
+        let total_ticks = Self::calculate_total_ticks(smf);
         let ppqn = match smf.header.timing {
             midly::Timing::Metrical(t) => u16::from(t) as u32,
             midly::Timing::Timecode(_, _) => 480, // 默认值
         };
 
-        // 构建速度映射表（不再忽略 Tempo 事件）
-        let tempo_map = TempoMap::from_smf(&smf, ppqn);
+        // 构建速度映射表（支持 Tempo 变化）
+        let tempo_map = TempoMap::from_smf(smf, ppqn);
 
         let mut current_tick: u64 = 0;
         let mut last_progress = 0.0;
@@ -493,7 +470,7 @@ impl MidiEventParser {
             let mut track_tick: u64 = 0;
             for event in track {
                 // 检查取消标志
-                if let Some(ref cancel) = cancel_flag
+                if let Some(cancel) = cancel_flag
                     && cancel.load(Ordering::Relaxed)
                 {
                     return Err(ExportError::AudioWrite("导出已取消".to_string()));
@@ -575,7 +552,7 @@ impl MidiEventParser {
                 }
 
                 // 更新进度（使用 tick 比例估算，速度变化影响不大）
-                if let Some(ref callback) = progress_callback {
+                if let Some(callback) = progress_callback {
                     let progress = (current_tick as f64 / total_ticks as f64 * 100.0).min(99.0);
                     if (progress - last_progress).abs() >= 1.0 {
                         callback(progress as f32);
@@ -584,6 +561,49 @@ impl MidiEventParser {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    /// 设置导出器 + 文件写入器，并调用核心渲染逻辑
+    fn setup_and_render(
+        smf: &midly::Smf,
+        soundfont_path: &Path,
+        output_path: &Path,
+        options: &AudioExportOptions,
+        progress_callback: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+        cancel_flag: Option<Arc<AtomicBool>>,
+    ) -> ExportResult<()> {
+        // 加载音色库
+        let audio_params = AudioStreamParams::new(options.sample_rate, ChannelCount::Stereo);
+        let soundfont: Arc<dyn SoundfontBase> = Arc::new(
+            SampleSoundfont::new(
+                soundfont_path,
+                audio_params,
+                xsynth_core::soundfont::SoundfontInitOptions::default(),
+            )
+            .map_err(|e| ExportError::AudioWrite(format!("音色库加载失败: {}", e)))?,
+        );
+
+        // 创建导出器
+        let mut exporter = AudioExporter::new(options, soundfont);
+
+        // 创建音频文件写入器
+        let mut writer = AudioFileWriter::create(
+            output_path,
+            options.format,
+            options.sample_rate,
+            options.channels,
+        )?;
+
+        // 核心渲染
+        Self::render_smf(
+            smf,
+            &mut exporter,
+            &mut writer,
+            progress_callback.as_ref(),
+            cancel_flag.as_ref(),
+        )?;
 
         // 完成渲染：将剩余衰减样本直接流式写入 writer
         exporter.finalize(&mut writer)?;
@@ -597,6 +617,33 @@ impl MidiEventParser {
         }
 
         Ok(())
+    }
+
+    /// 解析 MIDI 文件并渲染为音频
+    #[allow(clippy::useless_conversion)]
+    pub fn parse_and_render(
+        midi_path: &Path,
+        soundfont_path: &Path,
+        output_path: &Path,
+        options: &AudioExportOptions,
+        progress_callback: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+        cancel_flag: Option<Arc<AtomicBool>>,
+    ) -> ExportResult<()> {
+        // 解析 MIDI 文件
+        let midi_bytes =
+            std::fs::read(midi_path).map_err(|e| ExportError::Io(std::io::Error::other(e)))?;
+
+        let smf = midly::Smf::parse(&midi_bytes)
+            .map_err(|e| ExportError::MidiParse(format!("MIDI 解析失败: {}", e)))?;
+
+        Self::setup_and_render(
+            &smf,
+            soundfont_path,
+            output_path,
+            options,
+            progress_callback,
+            cancel_flag,
+        )
     }
 
     /// 计算 MIDI 总 tick 数
@@ -615,7 +662,7 @@ impl MidiEventParser {
     }
 }
 
-/// 导出音频文件
+/// 导出音频文件（从文件路径）
 ///
 /// # 参数
 /// - `midi_path`: MIDI 文件路径
@@ -652,8 +699,7 @@ pub fn export_audio(
 
     // 创建输出目录
     if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| ExportError::Io(std::io::Error::other(e)))?;
+        std::fs::create_dir_all(parent).map_err(|e| ExportError::Io(std::io::Error::other(e)))?;
     }
 
     tracing::info!(
@@ -680,6 +726,103 @@ pub fn export_audio(
     tracing::info!("音频导出完成，耗时: {:.2} 秒", elapsed.as_secs_f64());
 
     Ok(())
+}
+
+/// 从 MIDI 原始字节直接导出音频（不与 ParsedMidi 关联，避免 MidiDocument 持续占用内存）
+///
+/// 调用前可先释放 `ParsedMidi` / `Arc<ParsedMidi>`，消除 `MidiDocument` 与 `midly::Smf`
+/// 两份 MIDI 表示共存导致的峰值内存膨胀。
+///
+/// # 参数
+/// - `midi_bytes`: MIDI 文件的原始字节
+/// - `soundfont_path`: SF2 音色库路径
+/// - `output_path`: 输出音频文件路径
+/// - `options`: 导出选项
+/// - `progress_callback`: 进度回调 (0.0 - 100.0)
+/// - `cancel_flag`: 取消标志
+pub fn export_audio_from_bytes(
+    midi_bytes: &[u8],
+    soundfont_path: &Path,
+    output_path: &Path,
+    options: &AudioExportOptions,
+    progress_callback: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+    cancel_flag: Option<Arc<AtomicBool>>,
+) -> ExportResult<()> {
+    // 验证音色库文件
+    if !soundfont_path.exists() {
+        return Err(ExportError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("音色库文件不存在: {:?}", soundfont_path),
+        )));
+    }
+
+    // 创建输出目录
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| ExportError::Io(std::io::Error::other(e)))?;
+    }
+
+    tracing::info!(
+        "开始音频导出(从字节): 输出={:?}, 格式={}, 采样率={}Hz",
+        output_path,
+        options.format,
+        options.sample_rate
+    );
+
+    let start = std::time::Instant::now();
+
+    // 解析 MIDI 字节为 Smf
+    let smf = midly::Smf::parse(midi_bytes)
+        .map_err(|e| ExportError::MidiParse(format!("MIDI 解析失败: {}", e)))?;
+
+    MidiEventParser::setup_and_render(
+        &smf,
+        soundfont_path,
+        output_path,
+        options,
+        progress_callback,
+        cancel_flag,
+    )?;
+
+    let elapsed = start.elapsed();
+    tracing::info!("音频导出完成，耗时: {:.2} 秒", elapsed.as_secs_f64());
+
+    Ok(())
+}
+
+/// 从已解析的 ParsedMidi 导出音频（复用内存中的 MIDI 字节数据）
+///
+/// 注意：此函数会持有 `&ParsedMidi` 的借用直到字节提取完成，但 `MidiDocument`
+/// 仍由调用方持有的 `Arc<ParsedMidi>` 存活。如需在渲染前释放 `MidiDocument`，
+/// 请改用 `parsed_midi.get_midi_bytes()` 提取字节后释放 Arc，再调用
+/// `export_audio_from_bytes()`。
+///
+/// # 参数
+/// - `parsed_midi`: 已解析的 MIDI 数据
+/// - `soundfont_path`: SF2 音色库路径
+/// - `output_path`: 输出音频文件路径
+/// - `options`: 导出选项
+/// - `progress_callback`: 进度回调 (0.0 - 100.0)
+/// - `cancel_flag`: 取消标志
+pub fn export_audio_from_parsed(
+    parsed_midi: &ParsedMidi,
+    soundfont_path: &Path,
+    output_path: &Path,
+    options: &AudioExportOptions,
+    progress_callback: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+    cancel_flag: Option<Arc<AtomicBool>>,
+) -> ExportResult<()> {
+    let midi_bytes = parsed_midi
+        .get_midi_bytes()
+        .map_err(|e| ExportError::InvalidData(e.to_string()))?;
+
+    export_audio_from_bytes(
+        &midi_bytes,
+        soundfont_path,
+        output_path,
+        options,
+        progress_callback,
+        cancel_flag,
+    )
 }
 
 #[cfg(test)]

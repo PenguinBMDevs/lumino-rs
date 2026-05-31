@@ -103,6 +103,22 @@ impl ParsedMidi {
     pub fn take_midi_data(&mut self) -> Option<Vec<u8>> {
         self.midi_data.take()
     }
+
+    /// 获取 MIDI 原始字节数据（用于音频导出等场景，避免重复读盘）
+    ///
+    /// 优先返回 `midi_data`，如果为 None 则回退到从 `info.path` 读取文件。
+    pub fn get_midi_bytes(&self) -> crate::Result<Vec<u8>> {
+        if let Some(ref bytes) = self.midi_data {
+            return Ok(bytes.clone());
+        }
+        if !self.info.path.as_os_str().is_empty() {
+            return std::fs::read(&self.info.path)
+                .map_err(|e| crate::CoreError::Io(std::io::Error::other(e)));
+        }
+        Err(crate::CoreError::InvalidArgument(
+            "ParsedMidi 中既无 midi_data 也无 info.path".to_string(),
+        ))
+    }
 }
 
 /// 解析后的 DMS 数据（轻量级）

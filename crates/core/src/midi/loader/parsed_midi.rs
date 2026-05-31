@@ -143,9 +143,12 @@ pub async fn load_parsed_midi(
         1.0,
     );
 
+    // 读取原始 MIDI 字节并保留在 midi_data 中，供音频导出复用（避免重复读盘）
+    let midi_data = std::fs::read(&path).ok();
+
     Ok(ParsedMidi {
         info,
-        midi_data: None,
+        midi_data,
         document: Some(std::sync::Arc::new(document)),
     })
 }
@@ -173,6 +176,9 @@ pub async fn load_parsed_midi_from_bytes(
             0.1,
         );
     }
+
+    // 克隆原始字节用于后续复用（音频导出等），避免 midi_bytes 被 move 消耗
+    let saved_bytes = midi_bytes.clone();
 
     let document = tokio::task::spawn_blocking(move || {
         let (notes, tempo_changes, control_events) =
@@ -207,7 +213,7 @@ pub async fn load_parsed_midi_from_bytes(
 
     Ok(ParsedMidi {
         info,
-        midi_data: None,
+        midi_data: Some(saved_bytes),
         document: Some(std::sync::Arc::new(document)),
     })
 }
