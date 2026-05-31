@@ -3,8 +3,8 @@
 //! 使用 xsynth-core 将 MIDI 文件渲染为 WAV/FLAC 音频文件。
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use xsynth_core::channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent};
 use xsynth_core::channel_group::{ChannelGroup, ChannelGroupConfig, SynthEvent};
@@ -159,16 +159,18 @@ impl AudioExporter {
         };
 
         // 设置音色库
-        exporter.channel_group.send_event(SynthEvent::AllChannels(
-            ChannelEvent::Config(ChannelConfigEvent::SetSoundfonts(vec![soundfont])),
-        ));
+        exporter
+            .channel_group
+            .send_event(SynthEvent::AllChannels(ChannelEvent::Config(
+                ChannelConfigEvent::SetSoundfonts(vec![soundfont]),
+            )));
 
         // 设置层数限制
-        exporter.channel_group.send_event(SynthEvent::AllChannels(
-            ChannelEvent::Config(ChannelConfigEvent::SetLayerCount(Some(
-                options.layers as usize,
-            ))),
-        ));
+        exporter
+            .channel_group
+            .send_event(SynthEvent::AllChannels(ChannelEvent::Config(
+                ChannelConfigEvent::SetLayerCount(Some(options.layers as usize)),
+            )));
 
         exporter
     }
@@ -220,8 +222,7 @@ impl AudioExporter {
         let mut all_samples = Vec::new();
 
         loop {
-            self.output_vec
-                .resize(self.sample_rate as usize, 0.0);
+            self.output_vec.resize(self.sample_rate as usize, 0.0);
             self.channel_group.read_samples(&mut self.output_vec);
 
             if let Some(limiter) = &mut self.limiter {
@@ -338,10 +339,7 @@ impl AudioFileWriter {
                 samples,
             } => {
                 // 将 i16 转换为 f32 (范围 -1.0 到 1.0)
-                let f32_samples: Vec<f32> = samples
-                    .iter()
-                    .map(|&s| s as f32 / 32767.0)
-                    .collect();
+                let f32_samples: Vec<f32> = samples.iter().map(|&s| s as f32 / 32767.0).collect();
 
                 // 使用 flac-encoder 编码
                 let flac_data = flac_encoder::FlacBuilder::from_interleaved(
@@ -389,7 +387,12 @@ impl MidiEventParser {
         let mut exporter = AudioExporter::new(options, soundfont);
 
         // 创建音频文件写入器
-        let mut writer = AudioFileWriter::create(output_path, options.format, options.sample_rate, options.channels)?;
+        let mut writer = AudioFileWriter::create(
+            output_path,
+            options.format,
+            options.sample_rate,
+            options.channels,
+        )?;
 
         // 解析 MIDI 文件
         let midi_bytes = std::fs::read(midi_path)
@@ -465,10 +468,7 @@ impl MidiEventParser {
                                 exporter.send_event(SynthEvent::Channel(
                                     ch,
                                     ChannelEvent::Audio(ChannelAudioEvent::Control(
-                                        ControlEvent::Raw(
-                                            u8::from(controller),
-                                            u8::from(value),
-                                        ),
+                                        ControlEvent::Raw(u8::from(controller), u8::from(value)),
                                     )),
                                 ));
                             }

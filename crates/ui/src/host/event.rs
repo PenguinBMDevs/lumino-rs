@@ -228,19 +228,19 @@ impl Host {
         let mut messages = Vec::new();
         let state = {
             puffin::profile_scope!("update_ui");
-            interface.update(
-                &self.events,
-                self.window_ctx.cursor,
-                &mut self.render_ctx.renderer,
-                &mut self.window_ctx.clipboard,
-                &mut messages,
-            )
-            .0
+            interface
+                .update(
+                    &self.events,
+                    self.window_ctx.cursor,
+                    &mut self.render_ctx.renderer,
+                    &mut self.window_ctx.clipboard,
+                    &mut messages,
+                )
+                .0
         };
 
         if let user_interface::State::Updated {
-            mouse_interaction,
-            ..
+            mouse_interaction, ..
         } = state
         {
             if let Some(icon) = iced_winit::conversion::mouse_interaction(mouse_interaction) {

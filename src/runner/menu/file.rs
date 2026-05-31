@@ -1,10 +1,11 @@
 //! Runner 文件菜单处理
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use lumino_core::ParsedMidi;
 use lumino_core::event;
+use lumino_export::midi::{MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTrackData};
 
 use crate::runner::{RunnerInner, async_helper::run_async_task};
 
@@ -278,6 +279,71 @@ impl RunnerInner {
         }
     }
 
+    /// 将编辑器内容保存为新的 MIDI 文件
+    ///
+    /// 用于从空白状态（未加载任何 MIDI/DMS 文件）保存用户编辑的音符。
+    /// 设置 `current_midi_source` 并触发异步后台加载以填充 `current_midi`。
+    fn save_editor_as_midi_file(&mut self) -> Option<PathBuf> {
+        let has_notes;
+        let editor_notes;
+        {
+            let ui = self.window_state.window.ui();
+            has_notes = ui.get_editor_note_count() > 0;
+            if !has_notes {
+                return None;
+            }
+            editor_notes = ui.get_editor_notes();
+        }
+
+        let save_path = rfd::FileDialog::new()
+            .add_filter("MIDI 文件 (.mid)", &["mid"])
+            .add_filter("MIDI 文件 (.midi)", &["midi"])
+            .set_file_name("untitled.mid")
+            .save_file()?;
+
+        // 转换编辑器音符为 MIDI 导出数据（使用 1920 PPQN 保持黑乐谱精度）
+        let tracks: Vec<MidiTrackData> = editor_notes
+            .into_iter()
+            .map(|(_, notes)| {
+                let midi_notes: Vec<MidiNoteEvent> = notes
+                    .into_iter()
+                    .map(|(tick, key, length, velocity, channel)| MidiNoteEvent {
+                        tick: (tick as u32).max(1),
+                        channel,
+                        key,
+                        velocity,
+                        duration: (length as u32).max(1),
+                    })
+                    .collect();
+                MidiTrackData {
+                    notes: midi_notes,
+                    ..Default::default()
+                }
+            })
+            .collect();
+
+        let export_data = MidiExportData {
+            options: MidiExportOptions {
+                format: 1,
+                ppqn: 1920,
+            },
+            tracks,
+        };
+
+        // 写入 MIDI 文件
+        if let Err(e) = lumino_export::export_midi(&save_path, &export_data) {
+            tracing::error!("保存新项目失败: {}", e);
+            return None;
+        }
+
+        // 设置源路径并触发后台加载（异步填充 current_midi）
+        self.midi_state.current_midi_source = Some(save_path.clone());
+        self.load_midi_file(save_path.clone());
+
+        tracing::info!("新项目已保存为 MIDI 文件: {:?}", save_path);
+        Some(save_path)
+    }
+
     /// 保存文件
     pub(super) fn handle_save_file(&mut self) {
         // 检查是否加载了 MIDI 文件（可能有完整文档或仅有源路径）
@@ -318,7 +384,11 @@ impl RunnerInner {
         // 检查是否加载了 DMS 文件
         if let Some(parsed_dms) = &self.midi_state.current_dms {
             self.save_dms_file(parsed_dms.clone());
+            return;
         }
+
+        // 没有加载任何文件但有编辑器内容（从空白创建的项目）
+        self.save_editor_as_midi_file();
     }
 
     /// 保存 MIDI 文件
@@ -408,6 +478,36 @@ impl RunnerInner {
 
     /// 导出工程为单文件归档
     pub(super) fn handle_export_project_archive(&mut self) {
+        // 如果没有加载 MIDI 但有编辑器内容，先自动保存
+        if self.midi_state.current_midi.is_none() && self.midi_state.current_midi_source.is_none() {
+            let has_notes = {
+                let ui = self.window_state.window.ui();
+                ui.get_editor_note_count() > 0
+            };
+            if has_notes {
+                tracing::info!("导出工程：自动保存新项目");
+                if self.save_editor_as_midi_file().is_none() {
+                    return; // 用户取消保存
+                }
+                // 阻塞加载刚保存的 MIDI 文件以获取完整文档
+                if let Some(ref source) = self.midi_state.current_midi_source.clone() {
+                    match futures::executor::block_on(lumino_core::midi::loader::load_midi(
+                        source.clone(),
+                    )) {
+                        Ok(parsed) => {
+                            self.midi_state.current_midi = Some(Arc::new(parsed));
+                        }
+                        Err(e) => {
+                            tracing::error!("自动保存后加载 MIDI 失败: {}", e);
+                            return;
+                        }
+                    }
+                } else {
+                    return;
+                }
+            }
+        }
+
         let Some(parsed_midi) = self.midi_state.current_midi.as_ref() else {
             tracing::warn!("没有加载的 MIDI 文件，无法导出工程");
             return;
@@ -461,6 +561,36 @@ impl RunnerInner {
 
     /// 导出工程为文件夹
     pub(super) fn handle_export_project_folder(&mut self) {
+        // 如果没有加载 MIDI 但有编辑器内容，先自动保存
+        if self.midi_state.current_midi.is_none() && self.midi_state.current_midi_source.is_none() {
+            let has_notes = {
+                let ui = self.window_state.window.ui();
+                ui.get_editor_note_count() > 0
+            };
+            if has_notes {
+                tracing::info!("导出工程：自动保存新项目");
+                if self.save_editor_as_midi_file().is_none() {
+                    return; // 用户取消保存
+                }
+                // 阻塞加载刚保存的 MIDI 文件以获取完整文档
+                if let Some(ref source) = self.midi_state.current_midi_source.clone() {
+                    match futures::executor::block_on(lumino_core::midi::loader::load_midi(
+                        source.clone(),
+                    )) {
+                        Ok(parsed) => {
+                            self.midi_state.current_midi = Some(Arc::new(parsed));
+                        }
+                        Err(e) => {
+                            tracing::error!("自动保存后加载 MIDI 失败: {}", e);
+                            return;
+                        }
+                    }
+                } else {
+                    return;
+                }
+            }
+        }
+
         let Some(parsed_midi) = self.midi_state.current_midi.as_ref() else {
             tracing::warn!("没有加载的 MIDI 文件，无法导出工程");
             return;
@@ -530,17 +660,22 @@ impl RunnerInner {
             && self.midi_state.current_dms.is_none()
         {
             // 检查工作区是否为脏（有编辑内容）
-            let ui = self.window_state.window.ui();
-            let has_notes = ui.get_editor_note_count() > 0;
+            let has_notes = {
+                let ui = self.window_state.window.ui();
+                ui.get_editor_note_count() > 0
+            };
 
             if has_notes {
-                // 工作区有内容但没有打开 MIDI，提示用户保存为 MIDI
-                // TODO: 显示保存确认对话框
-                tracing::info!("工作区有内容但没有打开 MIDI，需要先保存为 MIDI");
+                // 工作区有内容但没有打开 MIDI，先自动保存为 MIDI 文件
+                tracing::info!("工作区有内容但没有打开 MIDI，先保存再导出音频");
+                if self.save_editor_as_midi_file().is_none() {
+                    return; // 用户取消保存
+                }
+                // 保存成功后 current_midi_source 已被设置，继续后续逻辑
             } else {
                 tracing::warn!("没有可导出的内容");
+                return;
             }
-            return;
         }
 
         // 场景2: 打开了 MIDI 文件

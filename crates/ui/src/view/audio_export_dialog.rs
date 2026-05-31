@@ -1,5 +1,7 @@
 use iced_core::Length;
-use iced_widget::{button, checkbox, column, container, pick_list, row, scrollable, space, text, text_input};
+use iced_widget::{
+    button, checkbox, column, container, pick_list, row, scrollable, space, text, text_input,
+};
 
 use crate::message::Message;
 use crate::state::root_state::{
@@ -230,18 +232,14 @@ pub fn view_audio_export_dialog<'a>(
         Some(
             column![
                 space().height(16),
-                text(&state.status_message)
-                    .size(14)
-                    .style(label_style),
+                text(&state.status_message).size(14).style(label_style),
                 space().height(8),
                 // 进度条
-                container(
-                    text(format!("{:.1}%", state.progress))
-                        .size(12)
-                        .style(move |_t: &iced_core::Theme| text::Style {
-                            color: Some(palette.background.neutral.text),
-                        }),
-                )
+                container(text(format!("{:.1}%", state.progress)).size(12).style(
+                    move |_t: &iced_core::Theme| text::Style {
+                        color: Some(palette.background.neutral.text),
+                    }
+                ),)
                 .width(Length::Fill)
                 .height(20)
                 .style(move |_t: &iced_core::Theme| container::Style {

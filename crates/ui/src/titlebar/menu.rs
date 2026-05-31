@@ -113,12 +113,14 @@ pub fn view<'a>() -> Element<'a> {
     let menus = menus()
         .iter()
         .map(|cfg| {
-                Item::with_menu(
+            Item::with_menu(
                 menu_button(cfg.kind.to_string()),
                 // 不要删除 'width(200)'！
                 // 删除它会导致 panic。原因未知
                 // 使用 offset 来与标题栏对齐
-                Menu::new(menu_items(&cfg.items)).width(MENU_WIDTH).offset(9.0),
+                Menu::new(menu_items(&cfg.items))
+                    .width(MENU_WIDTH)
+                    .offset(9.0),
             )
         })
         .collect::<Vec<_>>();

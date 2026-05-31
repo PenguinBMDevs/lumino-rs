@@ -6,7 +6,7 @@
 //! - `view`: 视图渲染
 //! - `editor_ops`: 编辑器操作
 
-use crate::state::root_state::RootState;
+use crate::state::root_state::{DialogType, RootState};
 use crate::{editor, message, settings, sidebar, statusbar, titlebar, toolbar, window};
 use lumino_core::midi::MidiDocument;
 use lumino_core::storage::config::UiConfig;
@@ -170,12 +170,12 @@ impl Root {
     }
 
     /// 创建对话框 Root
-    pub fn new_dialog(theme: &str) -> Self {
+    pub fn new_dialog(theme: &str, dialog_type: DialogType) -> Self {
         Self::from_params(RootInitParams {
             theme: theme.to_string(),
             ui_config: UiConfig::default(),
             is_progress_window: false,
-            dialog_type: Some(crate::state::root_state::DialogType::CustomPrecision),
+            dialog_type: Some(dialog_type),
         })
     }
 
@@ -278,5 +278,18 @@ impl Root {
             cached_onion_skin_bytes,
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_dialog_uses_requested_dialog_type() {
+        let root = Root::new_dialog("dark", DialogType::AudioExport);
+
+        assert!(root.state.is_dialog_window);
+        assert_eq!(root.state.dialog_type, DialogType::AudioExport);
     }
 }

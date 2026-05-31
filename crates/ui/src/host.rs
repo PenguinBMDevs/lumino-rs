@@ -129,6 +129,7 @@ impl Host {
         height: u32,
         ui_config: &config::UiConfig,
         gfx: &lumino_gfx::Context,
+        dialog_type: crate::state::root_state::DialogType,
     ) -> Self {
         let viewport =
             Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
@@ -152,7 +153,7 @@ impl Host {
         Self {
             render_ctx,
             window_ctx: WindowContext::new(window),
-            root: root::Root::new_dialog(&ui_config.theme),
+            root: root::Root::new_dialog(&ui_config.theme, dialog_type),
             events: Vec::new(),
             last_frame_time: Instant::now(),
             last_fps_update: Instant::now(),

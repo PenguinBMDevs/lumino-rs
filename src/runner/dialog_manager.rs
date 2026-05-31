@@ -100,6 +100,7 @@ impl DialogWindow {
                     physical_size.height,
                     ui_config,
                     &gfx,
+                    self.dialog_type,
                 )
             }
         };
@@ -160,6 +161,7 @@ impl DialogWindow {
             physical_size.height,
             ui_config,
             &gfx,
+            DialogType::LoadConfirm,
         );
 
         // 设置加载确认对话框状态
@@ -196,6 +198,7 @@ impl DialogWindow {
             physical_size.height,
             ui_config,
             &gfx,
+            DialogType::ProjectSettings,
         );
 
         // 从主窗口获取当前项目数据

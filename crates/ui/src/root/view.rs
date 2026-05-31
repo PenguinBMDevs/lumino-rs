@@ -9,8 +9,7 @@ use crate::root::{Element, Root, Theme};
 use crate::state::root_state::DialogType;
 use crate::statusbar::performance;
 use crate::view::{
-    audio_export_dialog::view_audio_export_dialog,
-    collaboration_dialog::view_collaboration_dialog,
+    audio_export_dialog::view_audio_export_dialog, collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
     load_confirm_dialog::view_load_confirm_dialog,
     project_settings_dialog::view_project_settings_dialog, settings_dialog::view_settings_dialog,
