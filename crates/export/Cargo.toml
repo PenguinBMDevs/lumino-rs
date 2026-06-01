@@ -9,6 +9,7 @@ edition.workspace = true
 [dependencies]
 lumino-dms = { path = "../dms" }
 lumino-core = { path = "../core" }
+lumino-midi = { path = "../midi" }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 midly = { workspace = true }
@@ -29,4 +30,3 @@ atomic_float = "1.0"
 
 [dev-dependencies]
 tempfile = "3.0"
-lumino-midi = { path = "../midi" }

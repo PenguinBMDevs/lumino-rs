@@ -186,17 +186,11 @@ impl RunnerInner {
                     let cb_inner = cb.clone();
 
                     let result = tokio::task::spawn_blocking(move || {
-                        // 两步策略降低峰值内存：
-                        // 1. 从 ParsedMidi 提取原始 MIDI 字节（midi_data 已由 loader 保留）
-                        // 2. 立即释放 Arc<ParsedMidi> → MidiDocument (~1GB) 归还内存
-                        //    然后在只有 Smf + synth 的情况下渲染
-                        let midi_bytes = parsed_midi
-                            .get_midi_bytes()
-                            .map_err(|e| lumino_export::ExportError::InvalidData(e.to_string()))?;
-                        drop(parsed_midi);
-
-                        lumino_export::audio::export_audio_from_bytes(
-                            &midi_bytes,
+                        // CompactEvent 直连渲染：直接从 MidiDocument 流式消费 CompactEvent 数据，
+                        // 彻底消除 midly::Smf::parse() 的 500MB 额外分配。
+                        // MidiDocument (~1GB) 在渲染期间存活，渲染完成后随 parsed_midi 释放。
+                        let result = lumino_export::audio::export_audio_from_parsed(
+                            &parsed_midi,
                             &sf2,
                             &output,
                             &options_clone,
@@ -204,7 +198,9 @@ impl RunnerInner {
                                 cb_inner(&format!("导出中... {:.0}%", p as f64), p as f64 / 100.0);
                             })),
                             None,
-                        )
+                        );
+                        drop(parsed_midi);
+                        result
                     })
                     .await;
 
