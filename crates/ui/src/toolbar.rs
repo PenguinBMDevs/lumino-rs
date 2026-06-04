@@ -12,7 +12,7 @@ mod view;
 pub use event::Event;
 pub use types::{
     CustomPrecisionDialog, DEFAULT_HEIGHT, DotType, MAX_HEIGHT, MIN_HEIGHT, NotePrecision,
-    RESIZE_HANDLE_HEIGHT, Tool, TupletType,
+    RESIZE_HANDLE_HEIGHT, SpeedFactor, Tool, TupletType,
 };
 
 /// 工具栏组件
@@ -33,6 +33,8 @@ pub struct Toolbar {
     resize_start_height: f32,
     /// 当前音符精度设置
     pub note_precision: NotePrecision,
+    /// 音符变速速度因子
+    pub speed_factor: SpeedFactor,
     /// 自定义精度对话框状态
     pub custom_precision_dialog: CustomPrecisionDialog,
     /// 自动滚动模式
@@ -52,6 +54,7 @@ impl Toolbar {
             resize_start_y: 0.0,
             resize_start_height: DEFAULT_HEIGHT,
             note_precision: NotePrecision::default(),
+            speed_factor: SpeedFactor::default(),
             custom_precision_dialog: CustomPrecisionDialog::default(),
             auto_scroll_mode: lumino_core::storage::config::AutoScrollMode::default(),
         }
@@ -144,6 +147,13 @@ impl Toolbar {
             Event::RecordStop => {
                 self.is_recording = false;
                 tracing::debug!("工具栏: 停止录制");
+            }
+            Event::SpeedChange => {
+                tracing::debug!("工具栏: 触发音符变速");
+            }
+            Event::SpeedFactorChanged(factor) => {
+                self.speed_factor = factor;
+                tracing::debug!("工具栏: 速度因子变更为 {}", factor);
             }
             Event::ResizeDragStarted(_) => {
                 self.is_resizing = true;

@@ -37,6 +37,9 @@ impl ToolbarHandler {
         // 处理量化
         self.handle_toolbar_quantize(root, &event);
 
+        // 处理音符变速
+        self.handle_toolbar_speed_change(root, &event);
+
         // 处理协作对话框
         self.handle_toolbar_collaboration(root, &event);
 
@@ -287,6 +290,39 @@ impl ToolbarHandler {
         if root.editor.notes_changed() {
             root.update_playback_notes();
             root.editor.clear_notes_changed();
+        }
+    }
+
+    /// 处理音符变速
+    fn handle_toolbar_speed_change(&self, root: &mut Root, event: &crate::toolbar::Event) {
+        if !matches!(event, crate::toolbar::Event::SpeedChange) {
+            return;
+        }
+
+        tracing::info!("Root: 执行音符变速操作");
+
+        let speed_factor = root.toolbar.speed_factor.value();
+        let notes = &root.editor.editor_state.data.notes;
+
+        if notes.is_empty() {
+            tracing::debug!("Root: 没有音符需要变速");
+            return;
+        }
+
+        tracing::info!(
+            "Root: 变速配置 - 速度因子: {}, 选中 {} 个音符",
+            speed_factor,
+            root.editor.editor_state.interaction.selected_notes.len(),
+        );
+
+        let modified = root.editor.apply_speed_change(speed_factor);
+
+        if modified > 0 {
+            tracing::info!("Root: 变速完成，修改了 {} 个音符", modified);
+            root.update_playback_notes();
+            root.editor.clear_notes_changed();
+        } else {
+            tracing::debug!("Root: 没有音符被变速（长度未变化）");
         }
     }
 

@@ -57,6 +57,7 @@ pub enum Icon {
     Pencil,
     Eraser,
     Quantize,
+    Speed,
     // 自动滚动图标
     ArrowsLeftRight,
     Scroll,
@@ -107,6 +108,7 @@ fn build_icon_cache() -> HashMap<Icon, IconData> {
         Icon::Pencil,
         Icon::Eraser,
         Icon::Quantize,
+        Icon::Speed,
         // 自动滚动图标
         Icon::ArrowsLeftRight,
         Icon::Scroll,
@@ -333,6 +335,7 @@ fn bytes(icon: Icon) -> &'static [u8] {
         Icon::Pencil => include_bytes!("../../../../resources/icons/toolbar/pencil.svg"),
         Icon::Eraser => include_bytes!("../../../../resources/icons/toolbar/eraser.svg"),
         Icon::Quantize => include_bytes!("../../../../resources/icons/toolbar/quantize.svg"),
+        Icon::Speed => include_bytes!("../../../../resources/icons/toolbar/speed.svg"),
         // 自动滚动图标
         Icon::ArrowsLeftRight => {
             include_bytes!("../../../../resources/icons/toolbar/arrows-left-right.svg")

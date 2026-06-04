@@ -3,7 +3,7 @@
 use iced_core::Point;
 
 use crate::Message;
-use crate::toolbar::{DotType, NotePrecision, Tool, TupletType};
+use crate::toolbar::{DotType, NotePrecision, SpeedFactor, Tool, TupletType};
 
 /// 工具栏事件
 #[derive(Debug, Clone)]
@@ -54,6 +54,10 @@ pub enum Event {
     Record,
     /// 停止录制
     RecordStop,
+    /// 音符变速
+    SpeedChange,
+    /// 速度因子变更
+    SpeedFactorChanged(SpeedFactor),
 }
 
 impl Event {
@@ -163,5 +167,13 @@ impl Event {
 
     pub const fn record_stop() -> Message {
         Message::Toolbar(Self::RecordStop)
+    }
+
+    pub const fn speed_change() -> Message {
+        Message::Toolbar(Self::SpeedChange)
+    }
+
+    pub fn speed_factor_changed(factor: SpeedFactor) -> Message {
+        Message::Toolbar(Self::SpeedFactorChanged(factor))
     }
 }

@@ -189,6 +189,63 @@ impl DotType {
     }
 }
 
+/// 音符变速速度因子预设
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
+pub enum SpeedFactor {
+    /// 4 倍速
+    X4,
+    /// 2 倍速
+    X2,
+    /// 1 倍速（原始长度）
+    X1,
+    /// 0.5 倍速
+    #[default]
+    X05,
+    /// 0.25 倍速
+    X025,
+}
+
+impl SpeedFactor {
+    /// 获取所有预设值
+    pub fn all() -> &'static [SpeedFactor] {
+        &[
+            SpeedFactor::X025,
+            SpeedFactor::X05,
+            SpeedFactor::X1,
+            SpeedFactor::X2,
+            SpeedFactor::X4,
+        ]
+    }
+
+    /// 获取倍数值
+    pub fn value(self) -> f32 {
+        match self {
+            SpeedFactor::X025 => 0.25,
+            SpeedFactor::X05 => 0.5,
+            SpeedFactor::X1 => 1.0,
+            SpeedFactor::X2 => 2.0,
+            SpeedFactor::X4 => 4.0,
+        }
+    }
+
+    /// 获取显示名称
+    pub fn display_name(self) -> &'static str {
+        match self {
+            SpeedFactor::X025 => "×0.25",
+            SpeedFactor::X05 => "×0.5",
+            SpeedFactor::X1 => "×1.0",
+            SpeedFactor::X2 => "×2.0",
+            SpeedFactor::X4 => "×4.0",
+        }
+    }
+}
+
+impl std::fmt::Display for SpeedFactor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display_name())
+    }
+}
+
 /// 自定义精度对话框状态
 #[derive(Debug, Clone)]
 pub struct CustomPrecisionDialog {
