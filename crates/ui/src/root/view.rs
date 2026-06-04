@@ -13,6 +13,7 @@ use crate::view::{
     custom_precision_dialog::view_custom_precision_dialog,
     load_confirm_dialog::view_load_confirm_dialog,
     project_settings_dialog::view_project_settings_dialog, settings_dialog::view_settings_dialog,
+    speed_change_dialog::view_speed_change_dialog,
 };
 
 impl Root {
@@ -87,6 +88,9 @@ impl Root {
             }
             DialogType::AudioExport => {
                 view_audio_export_dialog(&self.state.audio_export_dialog, &self.window.theme)
+            }
+            DialogType::SpeedChange => {
+                view_speed_change_dialog(&self.state.speed_change_dialog, &self.window.theme)
             }
             _ => view_custom_precision_dialog(
                 &self.state.custom_precision_dialog,

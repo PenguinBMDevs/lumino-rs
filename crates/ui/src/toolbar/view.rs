@@ -4,7 +4,7 @@ use iced_core::Alignment;
 use iced_widget::{button, column, container, mouse_area, pick_list, row, space, text};
 
 use crate::resources::icon;
-use crate::toolbar::{Event, NotePrecision, RESIZE_HANDLE_HEIGHT, SpeedFactor, Tool};
+use crate::toolbar::{Event, NotePrecision, RESIZE_HANDLE_HEIGHT, Tool};
 use crate::{Element, Message, Theme, window};
 
 use super::Toolbar;
@@ -115,16 +115,10 @@ impl Toolbar {
                 tool_button(icon::Quantize, Event::quantize(), window),
                 space().width(4),
                 tool_button(icon::Speed, Event::speed_change(), window),
-                space().width(4),
-                pick_list(SpeedFactor::all(), Some(self.speed_factor), |sf| {
-                    Event::speed_factor_changed(sf)
-                })
-                .placeholder("倍速")
-                .padding([4, 6])
-                .width(iced_widget::core::Length::Fixed(70.0)),
             ]
             .align_y(Alignment::Center),
         )
+        .width(340)
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
         .align_x(iced_core::alignment::Horizontal::Center)

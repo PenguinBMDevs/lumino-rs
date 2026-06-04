@@ -280,6 +280,42 @@ impl MessageHandler for DialogHandler {
                 root.state.dialog_result = Some(DialogResult::Cancel);
                 None
             }
+            // 音符变速对话框消息
+            Message::OpenSpeedChangeDialog => {
+                root.state.speed_change_dialog.is_open = true;
+                None
+            }
+            Message::CloseSpeedChangeDialog => {
+                root.state.speed_change_dialog.is_open = false;
+                root.state.dialog_result = Some(DialogResult::Cancel);
+                None
+            }
+            Message::ConfirmSpeedChange => {
+                if let Some(factor) = root.state.speed_change_dialog.parse_factor() {
+                    root.toolbar.speed_factor = factor;
+                    tracing::info!("Root: 速度因子已更新为 {}", factor);
+                    // 设置对话框结果（用于独立窗口模式）
+                    root.state.dialog_result = Some(DialogResult::SpeedChange { factor });
+                    // 执行变速
+                    let modified = root.editor.apply_speed_change(factor);
+                    if modified > 0 {
+                        tracing::info!("Root: 变速完成，修改了 {} 个音符", modified);
+                        root.update_playback_notes();
+                        root.editor.clear_notes_changed();
+                    }
+                } else {
+                    tracing::warn!(
+                        "Root: 无效的速度因子输入: {}",
+                        root.state.speed_change_dialog.factor_input
+                    );
+                }
+                root.state.speed_change_dialog.is_open = false;
+                None
+            }
+            Message::SpeedChangeFactorChanged(value) => {
+                root.state.speed_change_dialog.factor_input = value;
+                None
+            }
 
             other => Some(other),
         }

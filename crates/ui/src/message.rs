@@ -176,6 +176,8 @@ pub enum Message {
     PerfUpdate(PerfData),
     /// 空消息标记
     Null,
+    /// Ctrl 键状态变更
+    CtrlKeyChanged(bool),
     /// 模式切换（编辑器/瀑布流）
     ModeToggled,
     /// 动画帧更新（用于弹簧物理模拟）
@@ -194,6 +196,14 @@ pub enum Message {
     AudioExportConfirm,
     /// 取消音频导出
     AudioExportCancel,
+    /// 打开音符变速对话框
+    OpenSpeedChangeDialog,
+    /// 关闭音符变速对话框
+    CloseSpeedChangeDialog,
+    /// 确认音符变速
+    ConfirmSpeedChange,
+    /// 音符变速倍率输入变更
+    SpeedChangeFactorChanged(String),
     /// 音频导出 - 工程名称变更
     AudioExportProjectNameChanged(String),
     /// 音频导出 - 输出格式变更

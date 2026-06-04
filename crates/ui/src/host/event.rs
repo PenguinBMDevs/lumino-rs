@@ -153,6 +153,10 @@ impl Host {
                     self.window_ctx.window.request_redraw();
                 }
             }
+            ModifiersChanged(new_modifiers) => {
+                let ctrl = is_ctrl_or_cmd_pressed(new_modifiers.state());
+                self.root.update(message::Message::CtrlKeyChanged(ctrl));
+            }
             _ => (),
         }
 

@@ -15,7 +15,10 @@ impl RunnerInner {
             | WindowEvent::CloseCollaborationDialog
             | WindowEvent::OpenProjectSettingsDialog
             | WindowEvent::CloseProjectSettingsDialog
-            | WindowEvent::ApplyProjectSettings { .. } => {
+            | WindowEvent::ApplyProjectSettings { .. }
+            | WindowEvent::OpenSpeedChangeDialog
+            | WindowEvent::CloseSpeedChangeDialog
+            | WindowEvent::ConfirmSpeedChange(_) => {
                 self.handle_dialog_events(window_event);
             }
 
@@ -137,6 +140,24 @@ impl RunnerInner {
                 // 应用设置到主窗口
                 let main_ui = self.window_state.window.ui_mut();
                 main_ui.apply_project_settings(title, tempo, copyright);
+            }
+            WindowEvent::OpenSpeedChangeDialog => {
+                tracing::info!("请求打开音符变速对话框");
+                self.window_state
+                    .dialog_manager
+                    .open_dialog(DialogType::SpeedChange);
+            }
+            WindowEvent::CloseSpeedChangeDialog => {
+                self.window_state
+                    .dialog_manager
+                    .mark_dialog_for_close(DialogType::SpeedChange);
+                tracing::info!("请求关闭音符变速对话框");
+            }
+            WindowEvent::ConfirmSpeedChange(factor) => {
+                tracing::info!("应用音符变速: 倍率={}", factor);
+                // 应用变速到主窗口
+                let main_ui = self.window_state.window.ui_mut();
+                main_ui.apply_speed_change(factor);
             }
             _ => {}
         }

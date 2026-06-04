@@ -59,6 +59,27 @@ impl Root {
         }
     }
 
+    /// 设置音符变速对话框是否打开
+    pub fn set_speed_change_dialog_open(&mut self, open: bool) {
+        if open {
+            self.state.dialog_type = DialogType::SpeedChange;
+        } else if self.state.dialog_type == DialogType::SpeedChange {
+            self.state.dialog_type = DialogType::None;
+        }
+    }
+
+    /// 应用音符变速
+    pub fn apply_speed_change(&mut self, factor: f32) {
+        tracing::info!("应用音符变速: 倍率={}", factor);
+        self.toolbar.speed_factor = factor;
+        let modified = self.editor.apply_speed_change(factor);
+        if modified > 0 {
+            tracing::info!("变速完成，修改了 {} 个音符", modified);
+            self.update_playback_notes();
+            self.editor.clear_notes_changed();
+        }
+    }
+
     /// 设置音频导出对话框数据（从主窗口传递配置）
     pub fn set_audio_export_dialog_state(
         &mut self,

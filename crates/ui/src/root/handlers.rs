@@ -172,6 +172,10 @@ impl Root {
                 self.state.is_menu_open = *is_open;
                 true
             }
+            Message::CtrlKeyChanged(pressed) => {
+                self.toolbar.ctrl_pressed = *pressed;
+                true
+            }
             Message::Settings(event) => {
                 self.settings.update(event.clone());
                 match &event {

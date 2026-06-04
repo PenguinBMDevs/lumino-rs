@@ -294,14 +294,27 @@ impl ToolbarHandler {
     }
 
     /// 处理音符变速
+    ///
+    /// - 普通点击：直接使用当前 speed_factor 执行变速
+    /// - Ctrl+点击：打开变速对话框，让用户输入自定义倍率
     fn handle_toolbar_speed_change(&self, root: &mut Root, event: &crate::toolbar::Event) {
         if !matches!(event, crate::toolbar::Event::SpeedChange) {
             return;
         }
 
+        // Ctrl+点击：打开独立对话框窗口
+        if root.toolbar.ctrl_pressed {
+            tracing::info!("Root: Ctrl+点击变速按钮，打开变速对话框窗口");
+            lumino_core::event::emit(lumino_core::event::Event::Window(
+                lumino_core::event::window::Event::OpenSpeedChangeDialog,
+            ));
+            return;
+        }
+
+        // 普通点击：直接执行变速
         tracing::info!("Root: 执行音符变速操作");
 
-        let speed_factor = root.toolbar.speed_factor.value();
+        let speed_factor = root.toolbar.speed_factor;
         let notes = &root.editor.editor_state.data.notes;
 
         if notes.is_empty() {

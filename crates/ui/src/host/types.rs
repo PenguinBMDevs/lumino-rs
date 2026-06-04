@@ -41,6 +41,9 @@ pub enum DialogResult {
         interpolation: crate::state::root_state::Interpolation,
         format: crate::state::root_state::AudioFormat,
     },
+    SpeedChange {
+        factor: f32,
+    },
 }
 
 /// 将触摸事件转换为鼠标事件（兼容性处理）

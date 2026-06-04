@@ -91,6 +91,12 @@ pub enum Event {
         key_offset: i16,
         track_index: usize,
     },
+    /// 打开音符变速对话框
+    OpenSpeedChangeDialog,
+    /// 关闭音符变速对话框
+    CloseSpeedChangeDialog,
+    /// 确认音符变速
+    ConfirmSpeedChange(f32),
     /// 打开工程设置对话框
     OpenProjectSettingsDialog,
     /// 关闭工程设置对话框

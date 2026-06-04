@@ -213,6 +213,7 @@ pub enum DialogType {
     ProjectSettings,
     Settings,
     AudioExport,
+    SpeedChange,
 }
 
 /// 协作视图状态
@@ -448,6 +449,56 @@ impl AudioExportDialogState {
     }
 }
 
+/// 音符变速对话框状态
+#[derive(Debug, Clone)]
+pub struct SpeedChangeDialogState {
+    pub is_open: bool,
+    /// 倍率输入字符串（支持分数格式如 "1/3"）
+    pub factor_input: String,
+}
+
+impl SpeedChangeDialogState {
+    pub fn new() -> Self {
+        Self {
+            is_open: false,
+            factor_input: "0.5".to_string(),
+        }
+    }
+
+    /// 解析倍率输入，支持小数和分数格式
+    /// 返回解析成功的 f32 值
+    pub fn parse_factor(&self) -> Option<f32> {
+        let input = self.factor_input.trim();
+        if input.is_empty() {
+            return None;
+        }
+
+        // 尝试解析分数格式（如 "1/3"）
+        if let Some(idx) = input.find('/') {
+            let numerator = input[..idx].trim().parse::<f32>().ok()?;
+            let denominator = input[idx + 1..].trim().parse::<f32>().ok()?;
+            if denominator == 0.0 {
+                return None;
+            }
+            let result = numerator / denominator;
+            if result > 0.0 {
+                return Some(result);
+            }
+            return None;
+        }
+
+        // 尝试解析小数格式
+        let value = input.parse::<f32>().ok()?;
+        if value > 0.0 { Some(value) } else { None }
+    }
+}
+
+impl Default for SpeedChangeDialogState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Root 组件的状态
 pub struct RootState {
     /// 是否有菜单/下拉框打开（打开时不渲染预览音符）
@@ -468,6 +519,8 @@ pub struct RootState {
     pub project_settings_dialog: ProjectSettingsDialogState,
     /// 音频导出对话框状态
     pub audio_export_dialog: AudioExportDialogState,
+    /// 音符变速对话框状态
+    pub speed_change_dialog: SpeedChangeDialogState,
     /// 精度设置
     pub note_precision: NotePrecision,
     /// 系统字体列表
@@ -490,6 +543,7 @@ impl RootState {
             collaboration_dialog: CollaborationDialogState::new(),
             project_settings_dialog: ProjectSettingsDialogState::new(),
             audio_export_dialog: AudioExportDialogState::new(),
+            speed_change_dialog: SpeedChangeDialogState::new(),
             note_precision: NotePrecision::default(),
             system_fonts: lumino_core::font_scanner::scan_system_fonts(),
             current_mode: AppMode::default(),

@@ -35,6 +35,7 @@ impl DialogWindow {
             DialogType::ProjectSettings => (450.0, 480.0, "工程设置", true),
             DialogType::Settings => (700.0, 500.0, "设置", true),
             DialogType::AudioExport => (600.0, 700.0, "音频导出", true),
+            DialogType::SpeedChange => (400.0, 250.0, "变速", false),
         };
 
         let attributes = WindowAttributes::default()
@@ -125,6 +126,9 @@ impl DialogWindow {
             }
             DialogType::AudioExport => {
                 ui.set_audio_export_dialog_open(true);
+            }
+            DialogType::SpeedChange => {
+                ui.set_speed_change_dialog_open(true);
             }
         }
 
