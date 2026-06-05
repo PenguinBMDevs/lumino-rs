@@ -156,6 +156,10 @@ impl Host {
             ModifiersChanged(new_modifiers) => {
                 let ctrl = is_ctrl_or_cmd_pressed(new_modifiers.state());
                 self.root.update(message::Message::CtrlKeyChanged(ctrl));
+                let shift = new_modifiers
+                    .state()
+                    .contains(winit::keyboard::ModifiersState::SHIFT);
+                self.root.update(message::Message::ShiftKeyChanged(shift));
             }
             _ => (),
         }

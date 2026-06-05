@@ -48,6 +48,9 @@ impl ToolbarHandler {
 
         // 处理垂直翻转
         self.handle_toolbar_flip_vertical(root, &event);
+
+        // 处理水平翻转
+        self.handle_toolbar_flip_horizontal(root, &event);
     }
 
     fn handle_toolbar_playback(&self, root: &mut Root, event: &crate::toolbar::Event) {
@@ -353,6 +356,25 @@ impl ToolbarHandler {
 
         if modified > 0 {
             tracing::info!("Root: 垂直翻转完成，修改了 {} 个音符", modified);
+            root.update_playback_notes();
+            root.editor.clear_notes_changed();
+        } else {
+            tracing::debug!("Root: 没有音符被翻转（无选中音符）");
+        }
+    }
+
+    fn handle_toolbar_flip_horizontal(&self, root: &mut Root, event: &crate::toolbar::Event) {
+        let mode = match event {
+            crate::toolbar::Event::FlipHorizontal(mode) => *mode,
+            _ => return,
+        };
+
+        tracing::info!("Root: 执行水平翻转操作，模式: {:?}", mode);
+
+        let modified = root.editor.flip_selected_notes_horizontal(mode);
+
+        if modified > 0 {
+            tracing::info!("Root: 水平翻转完成，修改了 {} 个音符", modified);
             root.update_playback_notes();
             root.editor.clear_notes_changed();
         } else {

@@ -11,7 +11,7 @@ mod record;
 pub mod types;
 mod view;
 
-pub use event::Event;
+pub use event::{Event, FlipHorizontalMode};
 pub use types::{
     CustomPrecisionDialog, DEFAULT_HEIGHT, DotType, MAX_HEIGHT, MIN_HEIGHT, NotePrecision,
     RESIZE_HANDLE_HEIGHT, Tool, TupletType,
@@ -39,6 +39,8 @@ pub struct Toolbar {
     pub speed_factor: f32,
     /// Ctrl 键是否按下（用于变速按钮的快捷操作）
     pub ctrl_pressed: bool,
+    /// Shift 键是否按下（用于翻转按钮的快捷操作）
+    pub shift_pressed: bool,
     /// 自定义精度对话框状态
     pub custom_precision_dialog: CustomPrecisionDialog,
     /// 自动滚动模式
@@ -60,6 +62,7 @@ impl Toolbar {
             note_precision: NotePrecision::default(),
             speed_factor: 0.5,
             ctrl_pressed: false,
+            shift_pressed: false,
             custom_precision_dialog: CustomPrecisionDialog::default(),
             auto_scroll_mode: lumino_core::storage::config::AutoScrollMode::default(),
         }
@@ -158,6 +161,9 @@ impl Toolbar {
             }
             Event::FlipVertical => {
                 tracing::debug!("工具栏: 触发垂直翻转");
+            }
+            Event::FlipHorizontal(_) => {
+                tracing::debug!("工具栏: 触发水平翻转");
             }
             Event::ResizeDragStarted(_) => {
                 self.is_resizing = true;

@@ -5,7 +5,7 @@ use iced_widget::{button, column, container, mouse_area, pick_list, row, space, 
 
 use crate::resources::icon;
 use crate::toolbar::buttons::{flip_button, tool_button, tool_selector};
-use crate::toolbar::{Event, NotePrecision, RESIZE_HANDLE_HEIGHT, Tool};
+use crate::toolbar::{Event, FlipHorizontalMode, NotePrecision, RESIZE_HANDLE_HEIGHT, Tool};
 use crate::{Element, Message, Theme, window};
 
 use super::Toolbar;
@@ -120,6 +120,19 @@ impl Toolbar {
                 flip_button(
                     icon::FlipVertical,
                     Event::flip_vertical(),
+                    has_selection,
+                    window
+                ),
+                space().width(4),
+                flip_button(
+                    icon::FlipHorizontal,
+                    if self.shift_pressed {
+                        Event::flip_horizontal(FlipHorizontalMode::Right)
+                    } else if self.ctrl_pressed {
+                        Event::flip_horizontal(FlipHorizontalMode::Left)
+                    } else {
+                        Event::flip_horizontal(FlipHorizontalMode::Center)
+                    },
                     has_selection,
                     window
                 ),

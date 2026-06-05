@@ -176,6 +176,10 @@ impl Root {
                 self.toolbar.ctrl_pressed = *pressed;
                 true
             }
+            Message::ShiftKeyChanged(pressed) => {
+                self.toolbar.shift_pressed = *pressed;
+                true
+            }
             Message::Settings(event) => {
                 self.settings.update(event.clone());
                 match &event {

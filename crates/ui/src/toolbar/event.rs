@@ -58,6 +58,19 @@ pub enum Event {
     SpeedChange,
     /// 垂直翻转选中音符
     FlipVertical,
+    /// 水平翻转选中音符
+    FlipHorizontal(FlipHorizontalMode),
+}
+
+/// 水平翻转模式
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlipHorizontalMode {
+    /// 沿左右中轴翻转
+    Center,
+    /// 沿最左侧边缘翻转
+    Left,
+    /// 沿右侧边缘翻转
+    Right,
 }
 
 impl Event {
@@ -175,5 +188,9 @@ impl Event {
 
     pub const fn flip_vertical() -> Message {
         Message::Toolbar(Self::FlipVertical)
+    }
+
+    pub fn flip_horizontal(mode: FlipHorizontalMode) -> Message {
+        Message::Toolbar(Self::FlipHorizontal(mode))
     }
 }

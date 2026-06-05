@@ -17,6 +17,7 @@ mod clipboard;
 mod coords;
 mod drag;
 mod interaction;
+mod note_flip;
 mod note_ops;
 mod note_transform;
 mod onion_skin_editor;

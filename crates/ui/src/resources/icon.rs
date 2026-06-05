@@ -60,6 +60,7 @@ pub enum Icon {
     Speed,
     // 音符翻转图标
     FlipVertical,
+    FlipHorizontal,
     // 自动滚动图标
     ArrowsLeftRight,
     Scroll,
@@ -113,6 +114,7 @@ fn build_icon_cache() -> HashMap<Icon, IconData> {
         Icon::Speed,
         // 音符翻转图标
         Icon::FlipVertical,
+        Icon::FlipHorizontal,
         // 自动滚动图标
         Icon::ArrowsLeftRight,
         Icon::Scroll,
@@ -343,6 +345,9 @@ fn bytes(icon: Icon) -> &'static [u8] {
         // 音符翻转图标
         Icon::FlipVertical => {
             include_bytes!("../../../../resources/icons/toolbar/flip-vertical.svg")
+        }
+        Icon::FlipHorizontal => {
+            include_bytes!("../../../../resources/icons/toolbar/flip-horizontal.svg")
         }
         // 自动滚动图标
         Icon::ArrowsLeftRight => {

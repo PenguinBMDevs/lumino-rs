@@ -178,6 +178,7 @@ pub enum Message {
     Null,
     /// Ctrl 键状态变更
     CtrlKeyChanged(bool),
+    ShiftKeyChanged(bool),
     /// 模式切换（编辑器/瀑布流）
     ModeToggled,
     /// 动画帧更新（用于弹簧物理模拟）
