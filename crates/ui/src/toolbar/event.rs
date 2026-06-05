@@ -56,6 +56,8 @@ pub enum Event {
     RecordStop,
     /// 音符变速
     SpeedChange,
+    /// 垂直翻转选中音符
+    FlipVertical,
 }
 
 impl Event {
@@ -169,5 +171,9 @@ impl Event {
 
     pub const fn speed_change() -> Message {
         Message::Toolbar(Self::SpeedChange)
+    }
+
+    pub const fn flip_vertical() -> Message {
+        Message::Toolbar(Self::FlipVertical)
     }
 }

@@ -132,7 +132,8 @@ impl Root {
                     |zoom, fixed_ratio| message::Message::ZoomYChanged { zoom, fixed_ratio },
                 );
                 column![
-                    self.toolbar.view(&self.window),
+                    self.toolbar
+                        .view(&self.window, self.editor.selected_notes_count() > 0),
                     column![container(editor_view).height(Length::Fill), velocity_panel,]
                         .height(Length::Fill),
                 ]
@@ -290,7 +291,7 @@ impl Root {
             .height(Length::Fill);
 
         column![
-            self.toolbar.view(&self.window),
+            self.toolbar.view(&self.window, false),
             container(arrangement_canvas).height(Length::Fill),
         ]
         .width(Length::Fill)

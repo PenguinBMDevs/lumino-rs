@@ -4,6 +4,7 @@ use iced_core::Alignment;
 use iced_widget::{button, column, container, mouse_area, pick_list, row, space, text};
 
 use crate::resources::icon;
+use crate::toolbar::buttons::{flip_button, tool_button, tool_selector};
 use crate::toolbar::{Event, NotePrecision, RESIZE_HANDLE_HEIGHT, Tool};
 use crate::{Element, Message, Theme, window};
 
@@ -11,7 +12,7 @@ use super::Toolbar;
 
 impl Toolbar {
     /// 渲染工具栏视图
-    pub fn view<'a>(&'a self, window: &'a window::Window) -> Element<'a> {
+    pub fn view<'a>(&'a self, window: &'a window::Window, has_selection: bool) -> Element<'a> {
         let palette = window.theme.extended_palette();
 
         // 计算内容区域高度（总高度减去手柄高度）
@@ -115,6 +116,13 @@ impl Toolbar {
                 tool_button(icon::Quantize, Event::quantize(), window),
                 space().width(4),
                 tool_button(icon::Speed, Event::speed_change(), window),
+                space().width(4),
+                flip_button(
+                    icon::FlipVertical,
+                    Event::flip_vertical(),
+                    has_selection,
+                    window
+                ),
             ]
             .align_y(Alignment::Center),
         )
@@ -325,156 +333,4 @@ impl Toolbar {
             .height(iced_widget::core::Length::Fixed(self.height))
             .into()
     }
-}
-
-/// 渲染录制按钮
-impl Toolbar {
-    fn render_record_button<'a>(
-        &'a self,
-        content_height: f32,
-        _palette: &iced_core::theme::palette::Extended,
-        _window: &'a window::Window,
-    ) -> Element<'a> {
-        let is_recording = self.is_recording;
-        let weak_color = _palette.background.weak.color;
-        let strong_color = _palette.background.strong.color;
-        let (bg_color, text_color) = if is_recording {
-            (
-                iced_core::Color::from_rgb(0.8, 0.1, 0.1),
-                iced_core::Color::WHITE,
-            )
-        } else {
-            (weak_color, iced_core::Color::from_rgb(0.8, 0.1, 0.1))
-        };
-
-        let label = if is_recording { "● REC" } else { "●" };
-
-        let on_press = if is_recording {
-            Event::record_stop()
-        } else {
-            Event::record()
-        };
-
-        container(
-            button(
-                container(text(label).size(16).color(text_color).center())
-                    .width(iced_widget::core::Length::Fill)
-                    .height(iced_widget::core::Length::Fill)
-                    .align_x(iced_core::alignment::Horizontal::Center)
-                    .align_y(iced_core::alignment::Vertical::Center),
-            )
-            .on_press(on_press)
-            .style(move |_theme: &Theme, status| {
-                let bg = if status == iced_widget::button::Status::Hovered {
-                    if is_recording {
-                        iced_core::Color::from_rgb(0.9, 0.2, 0.2)
-                    } else {
-                        strong_color
-                    }
-                } else {
-                    bg_color
-                };
-                button::Style {
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                }
-                .with_background(bg)
-            })
-            .width(iced_widget::core::Length::Fill)
-            .height(iced_widget::core::Length::Fill)
-            .padding(4),
-        )
-        .width(56)
-        .height(content_height)
-        .align_y(iced_core::alignment::Vertical::Center)
-        .align_x(iced_core::alignment::Horizontal::Center)
-        .style(move |_theme: &Theme| {
-            container::Style::default()
-                .background(iced_core::Color::TRANSPARENT)
-                .border(iced_core::Border {
-                    radius: 4.0.into(),
-                    width: 0.0,
-                    color: iced_core::Color::TRANSPARENT,
-                })
-        })
-        .into()
-    }
-}
-
-/// 工具按钮
-fn tool_button<'a>(
-    icon_enum: icon::Icon,
-    on_press: Message,
-    window: &'a window::Window,
-) -> Element<'a> {
-    let palette = window.theme.extended_palette();
-    button(icon::view_with_size_and_theme(
-        icon_enum,
-        20,
-        20,
-        Some(&window.theme),
-    ))
-    .on_press(on_press)
-    .style(move |_theme: &Theme, status| {
-        let bg = if status == iced_widget::button::Status::Hovered {
-            palette.background.weak.color
-        } else {
-            iced_core::Color::TRANSPARENT
-        };
-        button::Style {
-            border: iced_core::Border {
-                radius: 3.0.into(),
-                width: 0.0,
-                color: iced_core::Color::TRANSPARENT,
-            },
-            ..Default::default()
-        }
-        .with_background(bg)
-    })
-    .padding(4)
-    .into()
-}
-
-/// 工具选择器
-fn tool_selector<'a>(
-    icon_enum: icon::Icon,
-    tool: Tool,
-    current_tool: Tool,
-    window: &'a window::Window,
-) -> Element<'a> {
-    let is_selected = tool == current_tool;
-    let palette = window.theme.extended_palette();
-
-    button(icon::view_with_size_and_theme(
-        icon_enum,
-        17,
-        17,
-        Some(&window.theme),
-    ))
-    .on_press(Event::tool_selected(tool))
-    .style(move |_theme: &Theme, status| {
-        let bg = if is_selected {
-            palette.background.strong.color
-        } else if status == iced_widget::button::Status::Hovered {
-            palette.background.weak.color
-        } else {
-            iced_core::Color::TRANSPARENT
-        };
-
-        button::Style {
-            border: iced_core::Border {
-                radius: 3.0.into(),
-                width: 0.0,
-                color: iced_core::Color::TRANSPARENT,
-            },
-            ..Default::default()
-        }
-        .with_background(bg)
-    })
-    .padding(iced_core::Padding::new(4.0))
-    .into()
 }

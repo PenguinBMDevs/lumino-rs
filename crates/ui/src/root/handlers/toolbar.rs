@@ -45,6 +45,9 @@ impl ToolbarHandler {
 
         // 处理录制
         self.handle_toolbar_recording(root, &event);
+
+        // 处理垂直翻转
+        self.handle_toolbar_flip_vertical(root, &event);
     }
 
     fn handle_toolbar_playback(&self, root: &mut Root, event: &crate::toolbar::Event) {
@@ -336,6 +339,24 @@ impl ToolbarHandler {
             root.editor.clear_notes_changed();
         } else {
             tracing::debug!("Root: 没有音符被变速（长度未变化）");
+        }
+    }
+
+    fn handle_toolbar_flip_vertical(&self, root: &mut Root, event: &crate::toolbar::Event) {
+        if !matches!(event, crate::toolbar::Event::FlipVertical) {
+            return;
+        }
+
+        tracing::info!("Root: 执行垂直翻转操作");
+
+        let modified = root.editor.flip_selected_notes_vertical();
+
+        if modified > 0 {
+            tracing::info!("Root: 垂直翻转完成，修改了 {} 个音符", modified);
+            root.update_playback_notes();
+            root.editor.clear_notes_changed();
+        } else {
+            tracing::debug!("Root: 没有音符被翻转（无选中音符）");
         }
     }
 

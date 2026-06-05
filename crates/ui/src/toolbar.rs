@@ -5,7 +5,9 @@
 //! - `event`: 工具栏事件枚举和工厂方法
 //! - `view`: 视图渲染逻辑
 
+mod buttons;
 pub mod event;
+mod record;
 pub mod types;
 mod view;
 
@@ -153,6 +155,9 @@ impl Toolbar {
             }
             Event::SpeedChange => {
                 tracing::debug!("工具栏: 触发音符变速");
+            }
+            Event::FlipVertical => {
+                tracing::debug!("工具栏: 触发垂直翻转");
             }
             Event::ResizeDragStarted(_) => {
                 self.is_resizing = true;

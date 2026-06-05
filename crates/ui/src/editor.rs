@@ -18,6 +18,7 @@ mod coords;
 mod drag;
 mod interaction;
 mod note_ops;
+mod note_transform;
 mod onion_skin_editor;
 mod onion_skin_ops;
 mod rendering;
