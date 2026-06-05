@@ -43,6 +43,7 @@ install_deps() {
     sudo apt-get install -y \
         build-essential \
         gcc-mingw-w64-x86-64 \
+        g++-mingw-w64-x86-64 \
         gcc-aarch64-linux-gnu \
         g++-aarch64-linux-gnu \
         clang \
@@ -117,37 +118,7 @@ install_rust_tools() {
     log_ok "Rust toolchain ready"
 }
 
-# ============================================================
-# 3. Check and install llvm-mingw for aarch64 Windows
-# ============================================================
-install_llvm_mingw() {
-    LLVM_MINGW_DIR="/opt/llvm-mingw"
-    if [ -d "$LLVM_MINGW_DIR/bin" ]; then
-        log_ok "llvm-mingw already installed at $LLVM_MINGW_DIR"
-        return
-    fi
-
-    log_info "Downloading llvm-mingw for aarch64 Windows cross-compilation..."
-    TMP_DIR="$(mktemp -d)"
-    cd "$TMP_DIR"
-
-    wget -q --show-progress \
-        "https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64.tar.xz" \
-        -O llvm-mingw.tar.xz
-
-    log_info "Extracting llvm-mingw..."
-    sudo tar xf llvm-mingw.tar.xz -C /opt
-    sudo mv /opt/llvm-mingw-20240619-ucrt-ubuntu-20.04-x86_64 "$LLVM_MINGW_DIR"
-
-    # Create stub libraries that Rust linker expects
-    cd "$LLVM_MINGW_DIR/aarch64-w64-mingw32/lib"
-    sudo ar rcs libgcc.a 2>/dev/null || true
-    sudo ar rcs libgcc_s.a 2>/dev/null || true
-    sudo ar rcs libgcc_eh.a 2>/dev/null || true
-
-    rm -rf "$TMP_DIR"
-    log_ok "llvm-mingw installed"
-}
+# 3. 无法编译winaarch64，本人直接跳过
 
 # ============================================================
 # 4. Ensure .cargo/config.toml has cross-compile settings
@@ -289,22 +260,7 @@ build_windows_amd64() {
     log_ok "windows-amd64 built"
 }
 
-# ============================================================
-# 9. Build: aarch64 Windows (cross-compile)
-# ============================================================
-build_windows_arm64() {
-    log_info "Building aarch64 Windows (cross-compile)..."
-    cd "$PROJECT_DIR"
-
-    export PATH="/opt/llvm-mingw/bin:$PATH"
-    cargo build --release --target aarch64-pc-windows-gnullvm
-
-    mkdir -p "$PUBLISH_DIR/windows-arm64"
-    cp target/aarch64-pc-windows-gnullvm/release/lumino-rs.exe \
-       "$PUBLISH_DIR/windows-arm64/"
-
-    log_ok "windows-arm64 built"
-}
+# 9. 无法编译winaarch64，本人直接跳过
 
 # ============================================================
 # 10. Summary

@@ -88,6 +88,7 @@ class LinuxBuilder:
         deps = [
             "build-essential",
             "gcc-mingw-w64-x86-64",
+            "g++-mingw-w64-x86-64",
             "gcc-aarch64-linux-gnu",
             "g++-aarch64-linux-gnu",
             "clang",
@@ -123,11 +124,6 @@ Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 Architectures: arm64
 """
-            self.ctx.run(
-                ["sudo", "tee", str(ports_source)],
-                env={**os.environ, "_INPUT": ports_content}
-            )
-            # Actually write it properly
             subprocess.run(
                 ["sudo", "tee", str(ports_source)],
                 input=ports_content.encode(),
