@@ -251,6 +251,7 @@ impl Host {
         let keyboard_width = es.view.keyboard_width;
         let ruler_height = es.view.ruler_height;
         let max_key_index = (es.view.visible_key_count.saturating_sub(1)) as f32;
+        let is_arrangement_mode = self.root.is_arrangement_mode();
 
         RenderParams {
             viewport_size: (physical_size.width, physical_size.height),
@@ -279,6 +280,7 @@ impl Host {
             canvas_size: (canvas_size.x, canvas_size.y),
             ppq: ppq as f32,
             max_key_index,
+            is_arrangement_mode,
         }
     }
 }

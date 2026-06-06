@@ -3,11 +3,15 @@
 //! 使用 wgpu 实例化渲染（复用 NoteRenderer），不经过 iced Canvas。
 
 pub mod canvas;
+pub mod pattern_widget;
 
 use iced_core::Point;
+use lumino_core::Pattern;
+
 use lumino_gfx::NoteInstance;
 
 pub use canvas::ArrangementCanvas;
+pub use pattern_widget::{PatternWidget, PatternWidgetState};
 
 /// 音轨总览视口状态
 #[derive(Debug, Clone)]
@@ -66,6 +70,8 @@ impl ArrangementViewport {
 pub struct ArrangementView {
     /// 视口状态
     pub viewport: ArrangementViewport,
+    /// Pattern 列表（音轨总览中的音符片段）
+    pub patterns: Vec<Pattern>,
 }
 
 impl ArrangementView {

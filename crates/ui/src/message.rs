@@ -237,6 +237,8 @@ pub enum Message {
     AudioExportCompleted,
     /// 音频导出 - 失败
     AudioExportFailed(String),
+    /// Pattern 编辑动作
+    Pattern(PatternAction),
 }
 
 /// 循环区域动作
@@ -276,6 +278,23 @@ pub enum VelocityAction {
     CurvePaint(Vec<(usize, u8)>),
     /// 曲线绘制结束
     CurveEnd,
+}
+
+/// Pattern 编辑动作（音轨总览中的音符片段）
+#[derive(Debug, Clone)]
+pub enum PatternAction {
+    /// 选中 Pattern
+    Selected(u32),
+    /// 左边缘拖拽开始（参数: pattern_id）
+    DragStartLeft(u32),
+    /// 右边缘拖拽开始（参数: pattern_id）
+    DragStartRight(u32),
+    /// 左边缘拖拽移动中（参数: pattern_id, new_start_tick）
+    DragMoveLeft(u32, f32),
+    /// 右边缘拖拽移动中（参数: pattern_id, new_length）
+    DragMoveRight(u32, f32),
+    /// 拖拽结束
+    DragEnd,
 }
 
 pub const fn null() -> Message {

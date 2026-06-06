@@ -84,28 +84,30 @@ pub fn execute_render_pass(
         let scissor_height =
             ((params.canvas_size.1 * scale) as u32).min(height.saturating_sub(scissor_y));
 
-        // 绘制背景网格
-        {
+        // 绘制背景网格（音轨总览模式下跳过钢琴卷帘网格）
+        if !params.is_arrangement_mode {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             grid_renderer.draw(&mut render_pass, 1);
         }
 
-        // 绘制洋葱皮背景（网格之上、主音符之下）
-        {
+        // 绘制洋葱皮背景（网格之上、主音符之下；音轨总览模式下跳过）
+        if !params.is_arrangement_mode {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             onion_renderer.draw(&mut render_pass);
         }
 
-        // 绘制音符
-        render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-        note_renderer.draw(
-            &mut render_pass,
-            true,
-            Some((scissor_x, scissor_y, scissor_width, scissor_height)),
-        );
+        // 绘制音符（音轨总览模式下跳过）
+        if !params.is_arrangement_mode {
+            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+            note_renderer.draw(
+                &mut render_pass,
+                true,
+                Some((scissor_x, scissor_y, scissor_width, scissor_height)),
+            );
+        }
 
-        // 绘制标尺
-        if !params.ruler_instances.is_empty() {
+        // 绘制标尺（音轨总览模式下跳过）
+        if !params.is_arrangement_mode && !params.ruler_instances.is_empty() {
             render_pass.set_scissor_rect(0, 0, width, height);
             ruler_renderer.draw(&mut render_pass, params.ruler_instances.len() as u32);
         }

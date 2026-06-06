@@ -49,6 +49,8 @@ pub struct RenderParams {
     pub ppq: f32,
     /// 最大键索引 (visible_key_count - 1)
     pub max_key_index: f32,
+    /// 是否为音轨总览模式（音轨总览模式下不渲染钢琴卷帘网格）
+    pub is_arrangement_mode: bool,
 }
 
 impl Default for RenderParams {
@@ -80,6 +82,7 @@ impl Default for RenderParams {
             canvas_size: (800.0, 600.0),
             ppq: 1920.0,
             max_key_index: 127.0,
+            is_arrangement_mode: false,
         }
     }
 }
