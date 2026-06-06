@@ -314,77 +314,24 @@ impl Root {
         let lh_per_key = TRACK_HEIGHT / 128.0;
         let note_h = lh_per_key.max(1.0);
 
-        // 构建左侧音轨名称列表
-        let mut track_col = column![].spacing(0);
-        for track in &self.sidebar.tracks {
-            let is_selected = track.id == self.sidebar.selected_track;
-
-            let track_name =
-                text(&track.name)
-                    .size(13)
-                    .width(Length::Fill)
-                    .style(move |theme: &Theme| {
-                        let palette = theme.extended_palette();
-                        text::Style {
-                            color: Some(if is_selected {
-                                palette.primary.strong.color
-                            } else {
-                                palette.background.base.text
-                            }),
-                        }
-                    });
-
-            let track_row = iced_widget::row![
-                iced_widget::container(track_name)
-                    .width(Length::Fill)
-                    .height(Length::Fixed(TRACK_HEIGHT))
-                    .align_x(iced_core::alignment::Horizontal::Left)
-                    .align_y(iced_core::alignment::Vertical::Center)
-                    .padding(iced_core::Padding::new(8.0)),
-            ];
-
-            let track_btn = iced_widget::button(track_row)
-                .width(Length::Fill)
-                .height(Length::Fixed(TRACK_HEIGHT))
-                .on_press(crate::sidebar::Event::track_selected(track.id))
-                .style(move |theme: &Theme, status| {
-                    let palette = theme.extended_palette();
-                    let bg = if is_selected {
-                        palette.primary.weak.color
-                    } else if status == iced_widget::button::Status::Hovered {
-                        palette.background.weak.color
-                    } else {
-                        palette.background.base.color
-                    };
-                    iced_widget::button::Style {
-                        text_color: palette.background.base.text,
-                        border: iced_core::Border {
-                            radius: 0.0.into(),
-                            width: 0.0,
-                            color: iced_core::Color::TRANSPARENT,
-                        },
-                        ..Default::default()
-                    }
-                    .with_background(bg)
-                });
-
-            track_col = track_col.push(track_btn);
-        }
-
-        // 左侧音轨列表面板（与 Canvas 同步滚动）
-        let track_list = iced_widget::container(track_col)
+        // 左侧音轨列表 Canvas（与走带 Canvas 共享 scroll_y，实现同步滚动）
+        let track_data: Vec<(usize, String)> = self
+            .sidebar
+            .tracks
+            .iter()
+            .map(|t| (t.id, t.name.clone()))
+            .collect();
+        let track_list_canvas =
+            crate::editor::arrangement::TrackListCanvas::new(
+                track_data,
+                self.sidebar.selected_track,
+                vp.scroll_y,
+                TRACK_HEIGHT,
+                total_height,
+            );
+        let track_list = iced_widget::canvas::Canvas::new(track_list_canvas)
             .width(Length::Fixed(TRACK_LIST_WIDTH))
-            .height(Length::Fixed(total_height))
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                iced_widget::container::Style::default()
-                    .background(palette.background.base.color)
-                    .border(iced_core::Border {
-                        radius: 0.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    })
-            });
+            .height(Length::Fixed(total_height));
 
         // ── 按 yinhe 风格预计算音符屏幕空间矩形 ──
         let track_notes = &self.editor.editor_state.data.track_notes;

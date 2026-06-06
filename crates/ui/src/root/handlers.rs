@@ -155,7 +155,17 @@ impl Root {
             Message::ArrangementScrollX(x) => {
                 let vp = &mut self.arrangement_view.viewport;
                 let canvas_w = vp.canvas_size.x.max(1.0);
-                let total_w = vp.total_ticks as f32 * vp.zoom_x;
+                // 从实际音符数据计算总宽度
+                let max_tick = self
+                    .editor
+                    .editor_state
+                    .data
+                    .track_notes
+                    .values()
+                    .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
+                    .fold(0.0_f32, f32::max)
+                    .max(960.0 * 4.0);
+                let total_w = max_tick * vp.zoom_x;
                 let max_scroll = (total_w - canvas_w).max(0.0);
                 let clamped = x.max(0.0).min(max_scroll);
                 vp.scroll_x = clamped;
