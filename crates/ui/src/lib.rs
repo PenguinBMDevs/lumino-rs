@@ -4,7 +4,6 @@ pub mod editor;
 pub mod host;
 pub mod message;
 pub mod playback;
-pub mod render;
 mod resources;
 pub mod root;
 pub mod settings;

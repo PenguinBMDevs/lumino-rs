@@ -209,12 +209,6 @@ impl Root {
                 self.invalidate_onion_skin_cache();
                 true
             }
-            Message::ArrangementCanvasBoundsChanged { offset, size } => {
-                self.arrangement_view.viewport.canvas_offset = *offset;
-                self.arrangement_view.viewport.canvas_size =
-                    iced_core::Point::new(size.width, size.height);
-                true
-            }
             Message::MenuStateChanged(is_open) => {
                 self.state.is_menu_open = *is_open;
                 true

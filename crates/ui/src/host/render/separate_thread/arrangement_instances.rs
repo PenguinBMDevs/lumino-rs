@@ -59,21 +59,37 @@ pub fn build_arrangement_all(
 
     // ── 2. Lane + 音符 ──
     for (ti, tid) in track_order.iter().enumerate() {
-        if ti < tf || ti >= tl { continue; }
-        if !track_visible.get(ti).copied().unwrap_or(true) { continue; }
+        if ti < tf || ti >= tl {
+            continue;
+        }
+        if !track_visible.get(ti).copied().unwrap_or(true) {
+            continue;
+        }
 
         let color = track_colors.get(ti).copied().unwrap_or([0.5, 0.5, 0.5]);
 
         // Lane 背景
         let lane_y = trk_screen_y(viewport, ti) + coy;
-        let c = if ti % 2 == 0 { AR_LANE_EVEN_COLOR } else { AR_LANE_ODD_COLOR };
-        out.push(ArrangementNoteInstance::lane(cox, lane_y, w, lh, [c.0, c.1, c.2]));
+        let c = if ti % 2 == 0 {
+            AR_LANE_EVEN_COLOR
+        } else {
+            AR_LANE_ODD_COLOR
+        };
+        out.push(ArrangementNoteInstance::lane(
+            cox,
+            lane_y,
+            w,
+            lh,
+            [c.0, c.1, c.2],
+        ));
 
         // 音符
         if let Some(notes) = track_notes.get(tid) {
             collect_notes_cache(out, notes, ti, color, ppu, cox, lane_y, key_h, sx, ts, te);
         } else if let Some(doc) = midi_doc {
-            collect_notes_doc(out, doc, *tid, ti, color, ppu, cox, lane_y, key_h, sx, ts, te);
+            collect_notes_doc(
+                out, doc, *tid, ti, color, ppu, cox, lane_y, key_h, sx, ts, te,
+            );
         }
     }
 
@@ -137,11 +153,20 @@ fn collect_notes_cache(
     for n in notes {
         let s = n.tick as f64;
         let e = (n.tick + n.length) as f64;
-        if s > te || e < ts { continue; }
+        if s > te || e < ts {
+            continue;
+        }
         let sx = cox + s as f32 * ppu - scroll_x;
         let sw = (e - s) as f32 * ppu;
         let sy = lane_y + (127.0 - n.key as f32) * key_h;
-        out.push(ArrangementNoteInstance::note(sx, sy, sw.max(2.0), 4.0, color, n.velocity));
+        out.push(ArrangementNoteInstance::note(
+            sx,
+            sy,
+            sw.max(2.0),
+            4.0,
+            color,
+            n.velocity,
+        ));
     }
 }
 
@@ -187,12 +212,40 @@ fn collect_notes_doc(
         match ev.kind() {
             EventKind::NoteOn if vel > 0 => {
                 if active[idx].3 {
-                    emit_note_screen(out, &active[idx], tick, key, ti, color, ppu, cox, lane_y, key_h, scroll_x, ts, te);
+                    emit_note_screen(
+                        out,
+                        &active[idx],
+                        tick,
+                        key,
+                        ti,
+                        color,
+                        ppu,
+                        cox,
+                        lane_y,
+                        key_h,
+                        scroll_x,
+                        ts,
+                        te,
+                    );
                 }
                 active[idx] = (tick as u32, vel, ch, true);
             }
             EventKind::NoteOn | EventKind::NoteOff if active[idx].3 => {
-                emit_note_screen(out, &active[idx], tick, key, ti, color, ppu, cox, lane_y, key_h, scroll_x, ts, te);
+                emit_note_screen(
+                    out,
+                    &active[idx],
+                    tick,
+                    key,
+                    ti,
+                    color,
+                    ppu,
+                    cox,
+                    lane_y,
+                    key_h,
+                    scroll_x,
+                    ts,
+                    te,
+                );
                 active[idx].3 = false;
             }
             _ => {}
@@ -208,7 +261,21 @@ fn collect_notes_doc(
             for k in 0..=127u8 {
                 let idx = (ch as usize) * 128 + (k as usize);
                 if active[idx].3 {
-                    emit_note_screen(out, &active[idx], last_tick as f32, k, ti, color, ppu, cox, lane_y, key_h, scroll_x, ts, te);
+                    emit_note_screen(
+                        out,
+                        &active[idx],
+                        last_tick as f32,
+                        k,
+                        ti,
+                        color,
+                        ppu,
+                        cox,
+                        lane_y,
+                        key_h,
+                        scroll_x,
+                        ts,
+                        te,
+                    );
                 }
             }
         }
@@ -237,7 +304,14 @@ fn emit_note_screen(
         let sx = cox + s as f32 * ppu - scroll_x;
         let sw = (e - s) as f32 * ppu;
         let sy = lane_y + (127.0 - key as f32) * key_h;
-        out.push(ArrangementNoteInstance::note(sx, sy, sw.max(2.0), 4.0, color, st.1));
+        out.push(ArrangementNoteInstance::note(
+            sx,
+            sy,
+            sw.max(2.0),
+            4.0,
+            color,
+            st.1,
+        ));
     }
 }
 
