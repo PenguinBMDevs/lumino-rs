@@ -62,8 +62,10 @@ impl Host {
         // 视口变化（滚动/缩放）：重新过滤洋葱皮实例（无需全量重建）
         let viewport_changed = current_hash != self.render_ctx.render_cache.note_viewport_hash;
 
+        // 工程走带模式：音符由 iced Canvas 绘制，跳过 WGPU 音符准备
         if self.root.is_arrangement_mode() {
-            return self.prepare_arrangement_notes_if_needed(viewport_changed, current_hash);
+            self.render_ctx.render_cache.note_viewport_hash = current_hash;
+            return false;
         }
 
         let note_index_dirty = self.root.editor.note_index_dirty.get();
@@ -136,53 +138,6 @@ impl Host {
 
         // 数据变化或视口变化都需要 GPU 上传
         note_data_changed || viewport_changed
-    }
-
-    /// 音轨总览模式：准备音符实例
-    fn prepare_arrangement_notes_if_needed(
-        &mut self,
-        viewport_changed: bool,
-        current_hash: u64,
-    ) -> bool {
-        // 音轨总览下，只要有视口变化就重新生成实例
-        if !viewport_changed && !self.render_ctx.render_cache.note_instances_is_empty() {
-            return false;
-        }
-
-        self.render_ctx.render_cache.note_viewport_hash = current_hash;
-
-        let av = &self.root.arrangement_view;
-        let (visible_tick_start, visible_tick_end) = av.viewport.visible_tick_range();
-        let track_count = self.root.sidebar.tracks.len();
-        let (visible_track_start, visible_track_end) = av.viewport.visible_track_range(track_count);
-
-        // 构建音轨 ID 有序列表
-        let track_order: Vec<usize> = self.root.sidebar.tracks.iter().map(|t| t.id).collect();
-
-        let track_notes = &self.root.editor.editor_state.data.track_notes;
-
-        let instances = av.generate_instances(
-            track_notes,
-            &track_order,
-            visible_tick_start,
-            visible_tick_end,
-            visible_track_start,
-            visible_track_end,
-            track_count,
-        );
-
-        // 写入双缓冲
-        let buffer = unsafe {
-            self.render_ctx
-                .render_cache
-                .note_instances_buffer
-                .write_buffer()
-        };
-        buffer.clear();
-        buffer.extend(instances);
-        self.render_ctx.render_cache.note_instances_buffer.swap();
-
-        true
     }
 
     /// 准备音符渲染器（双缓冲模式）
@@ -295,26 +250,29 @@ impl Host {
             occlusion_query_set: None,
         });
 
-        // 绘制网格线（音轨总览模式下跳过）
-        if scissor.has_valid_region && !self.root.is_arrangement_mode() {
-            render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
-            self.render_ctx.grid_renderer.draw(&mut render_pass, 1);
-        }
+        // 工程走带模式下跳过 WGPU 绘制（由 iced Canvas 直接渲染）
+        if !self.root.is_arrangement_mode() {
+            // 绘制网格线
+            if scissor.has_valid_region {
+                render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
+                self.render_ctx.grid_renderer.draw(&mut render_pass, 1);
+            }
 
-        // 绘制音符（从双缓冲读取）
-        let note_instances = unsafe {
-            self.render_ctx
-                .render_cache
-                .note_instances_buffer
-                .read_buffer()
-        };
-        if !note_instances.is_empty() && scissor.has_valid_region {
-            render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
-            self.render_ctx.note_renderer.draw(
-                &mut render_pass,
-                true,
-                Some((scissor.x, scissor.y, scissor.width, scissor.height)),
-            );
+            // 绘制音符（从双缓冲读取）
+            let note_instances = unsafe {
+                self.render_ctx
+                    .render_cache
+                    .note_instances_buffer
+                    .read_buffer()
+            };
+            if !note_instances.is_empty() && scissor.has_valid_region {
+                render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
+                self.render_ctx.note_renderer.draw(
+                    &mut render_pass,
+                    true,
+                    Some((scissor.x, scissor.y, scissor.width, scissor.height)),
+                );
+            }
         }
 
         drop(render_pass);

@@ -37,18 +37,20 @@ pub fn execute_render_pass(
         a: params.background_color[3],
     };
 
-    // 准备相机参数
-    let camera = CameraUniform::new(CameraParams {
-        scroll: [params.scroll.0, params.scroll.1],
-        zoom: [params.zoom.0, params.zoom.1],
-        viewport: [params.logical_size.0, params.logical_size.1],
-        offset: [params.canvas_offset.0, params.canvas_offset.1],
-        keyboard_width: params.keyboard_width,
-        ruler_height: params.ruler_height,
-        max_key_index: params.max_key_index,
-    });
+    // 工程走带模式下跳过音符渲染（音符由 iced Canvas 直接绘制）
+    if !params.is_arrangement_mode {
+        let camera = CameraUniform::new(CameraParams {
+            scroll: [params.scroll.0, params.scroll.1],
+            zoom: [params.zoom.0, params.zoom.1],
+            viewport: [params.logical_size.0, params.logical_size.1],
+            offset: [params.canvas_offset.0, params.canvas_offset.1],
+            keyboard_width: params.keyboard_width,
+            ruler_height: params.ruler_height,
+            max_key_index: params.max_key_index,
+        });
 
-    note_renderer.prepare_pass(encoder, camera, queue);
+        note_renderer.prepare_pass(encoder, camera, queue);
+    }
 
     {
         puffin::profile_scope!("render_pass");
@@ -75,39 +77,38 @@ pub fn execute_render_pass(
             occlusion_query_set: None,
         });
 
-        // 计算裁剪区域
-        let scale = params.scale_factor;
-        let scissor_x = ((params.canvas_offset.0 * scale) as u32).min(width);
-        let scissor_y = ((params.canvas_offset.1 * scale) as u32).min(height);
-        let scissor_width =
-            ((params.canvas_size.0 * scale) as u32).min(width.saturating_sub(scissor_x));
-        let scissor_height =
-            ((params.canvas_size.1 * scale) as u32).min(height.saturating_sub(scissor_y));
-
-        // 绘制背景网格（音轨总览模式下跳过钢琴卷帘网格）
+        // 工程走带模式下跳过所有 WGPU 音符/网格/标尺绘制
         if !params.is_arrangement_mode {
+            // 计算裁剪区域
+            let scale = params.scale_factor;
+            let scissor_x = ((params.canvas_offset.0 * scale) as u32).min(width);
+            let scissor_y = ((params.canvas_offset.1 * scale) as u32).min(height);
+            let scissor_width =
+                ((params.canvas_size.0 * scale) as u32).min(width.saturating_sub(scissor_x));
+            let scissor_height =
+                ((params.canvas_size.1 * scale) as u32).min(height.saturating_sub(scissor_y));
+
+            // 绘制背景网格
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             grid_renderer.draw(&mut render_pass, 1);
-        }
 
-        // 绘制洋葱皮背景（网格之上、主音符之下；音轨总览模式下跳过）
-        if !params.is_arrangement_mode {
+            // 绘制洋葱皮背景
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             onion_renderer.draw(&mut render_pass);
-        }
 
-        // 绘制音符（音轨总览模式下也绘制——每个 track 的 lane 内显示缩略钢琴卷帘）
-        render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-        note_renderer.draw(
-            &mut render_pass,
-            true,
-            Some((scissor_x, scissor_y, scissor_width, scissor_height)),
-        );
+            // 绘制音符
+            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+            note_renderer.draw(
+                &mut render_pass,
+                true,
+                Some((scissor_x, scissor_y, scissor_width, scissor_height)),
+            );
 
-        // 绘制标尺（音轨总览模式下跳过）
-        if !params.is_arrangement_mode && !params.ruler_instances.is_empty() {
-            render_pass.set_scissor_rect(0, 0, width, height);
-            ruler_renderer.draw(&mut render_pass, params.ruler_instances.len() as u32);
+            // 绘制标尺
+            if !params.ruler_instances.is_empty() {
+                render_pass.set_scissor_rect(0, 0, width, height);
+                ruler_renderer.draw(&mut render_pass, params.ruler_instances.len() as u32);
+            }
         }
     }
 }

@@ -221,10 +221,9 @@ impl Host {
         // ═══ Phase 1: 主音符同步写入（保证 WGPU 立即可见） ═══
         {
             puffin::profile_scope!("phase1_main_notes_sync");
-            if self.root.is_arrangement_mode() {
-                // 音轨总览模式：生成所有音轨的音符实例（yinhe 风格）
-                self.build_arrangement_note_instances_for_wgpu();
-            } else {
+            // 工程走带模式：音符由 iced Canvas 直接绘制，不经过 WGPU NoteRenderer
+            // 所以跳过 note_instances_buffer 的写入
+            if !self.root.is_arrangement_mode() {
                 // 钢琴卷帘模式：只生成当前音轨的音符
                 let notes_clone = self.root.editor.editor_state.data.notes.clone(); // O(1)
                 let edit_state_clone = self.root.editor.editor_state.interaction.edit_state.clone();
@@ -262,43 +261,9 @@ impl Host {
         }
     }
 
-    /// 为音轨总览模式构建所有音轨的音符实例（分离渲染线程用）
-    fn build_arrangement_note_instances_for_wgpu(&mut self) {
-        puffin::profile_scope!("build_arrangement_instances");
-        let av = &self.root.arrangement_view;
-        let track_count = self.root.sidebar.tracks.len();
-        let (visible_tick_start, visible_tick_end) = av.viewport.visible_tick_range();
-        let (visible_track_start, visible_track_end) = av.viewport.visible_track_range(track_count);
-
-        let track_order: Vec<usize> = self.root.sidebar.tracks.iter().map(|t| t.id).collect();
-        let track_notes = &self.root.editor.editor_state.data.track_notes;
-
-        let instances = av.generate_instances(
-            track_notes,
-            &track_order,
-            visible_tick_start,
-            visible_tick_end,
-            visible_track_start,
-            visible_track_end,
-            track_count,
-        );
-
-        let buffer = unsafe {
-            self.render_ctx
-                .render_cache
-                .note_instances_buffer
-                .write_buffer()
-        };
-        buffer.clear();
-        buffer.extend(instances);
-        self.render_ctx.render_cache.note_instances_buffer.swap();
-    }
-
     /// 构建渲染参数
     pub(super) fn build_render_params(&self, data: super::data::RenderData) -> RenderParams {
         let es = &self.root.editor.editor_state;
-        let canvas_offset = es.canvas.offset;
-        let canvas_size = es.canvas.size;
         let physical_size = self.render_ctx.viewport.physical_size();
         let theme = self.root.theme();
         let colors = super::data::GridColors::from_theme(&theme);
@@ -310,8 +275,6 @@ impl Host {
             colors.bg[3] as f64,
         ];
         let ppq = es.view.ppq;
-        let keyboard_width = es.view.keyboard_width;
-        let ruler_height = es.view.ruler_height;
         let is_arrangement_mode = self.root.is_arrangement_mode();
         let max_key_index = if is_arrangement_mode {
             let av = &self.root.arrangement_view.viewport;
@@ -319,6 +282,23 @@ impl Host {
             track_count * av.track_height - av.track_height / 128.0
         } else {
             (es.view.visible_key_count.saturating_sub(1)) as f32
+        };
+
+        let (canvas_offset, canvas_size, keyboard_width, ruler_height) = if is_arrangement_mode {
+            let av = &self.root.arrangement_view.viewport;
+            (
+                (av.canvas_offset.x, av.canvas_offset.y),
+                (av.canvas_size.x, av.canvas_size.y),
+                0.0,
+                0.0,
+            )
+        } else {
+            (
+                (es.canvas.offset.x, es.canvas.offset.y),
+                (es.canvas.size.x, es.canvas.size.y),
+                es.view.keyboard_width,
+                es.view.ruler_height,
+            )
         };
 
         RenderParams {
@@ -344,8 +324,8 @@ impl Host {
             ticks_per_measure: (ppq as u32) * 4,
             ticks_per_beat: ppq as u32,
             regenerate_grid: false,
-            canvas_offset: (canvas_offset.x, canvas_offset.y),
-            canvas_size: (canvas_size.x, canvas_size.y),
+            canvas_offset: (canvas_offset.0, canvas_offset.1),
+            canvas_size: (canvas_size.0, canvas_size.1),
             ppq: ppq as f32,
             max_key_index,
             is_arrangement_mode,

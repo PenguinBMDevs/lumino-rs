@@ -1,6 +1,6 @@
 //! Root 视图渲染子模块
 
-use iced_core::Length;
+use iced_core::{Color, Length};
 use iced_widget::{Stack, column, container, progress_bar, row, text};
 use lumino_gfx::NoteInstance;
 
@@ -279,19 +279,40 @@ impl Root {
         self.statusbar.view()
     }
 
-    /// 渲染音轨总览视图
+    /// 渲染工程走带视图
     ///
-    /// 布局：左侧音轨列表（固定宽）+ 右侧走带区域（Canvas 绘制分隔线）
+    /// 按 yinhe 风格：左侧音轨列表 + 右侧 Canvas 绘制 lane/网格/音符矩形。
+    /// 音符坐标在 CPU 端预计算为屏幕像素空间，直接由 iced canvas 渲染。
     fn view_arrangement(&self) -> Element<'_> {
         puffin::profile_scope!("root_view_arrangement");
 
+        use crate::editor::arrangement::canvas::NoteRect;
         use crate::editor::arrangement::ArrangementCanvas;
         use iced_widget::{canvas::Canvas, scrollable};
 
         const TRACK_LIST_WIDTH: f32 = 160.0;
         const TRACK_HEIGHT: f32 = 48.0;
+        const PALETTE: [[f32; 3]; 12] = [
+            [0.90, 0.30, 0.30], // 红
+            [0.30, 0.70, 0.30], // 绿
+            [0.30, 0.50, 0.90], // 蓝
+            [0.90, 0.70, 0.20], // 橙
+            [0.70, 0.30, 0.80], // 紫
+            [0.20, 0.80, 0.80], // 青
+            [0.90, 0.50, 0.50], // 粉红
+            [0.50, 0.90, 0.30], // lime
+            [0.30, 0.30, 0.70], // 深蓝
+            [0.90, 0.80, 0.30], // 黄
+            [0.60, 0.40, 0.20], // 棕
+            [0.50, 0.50, 0.50], // 灰
+        ];
+
         let track_count = self.sidebar.tracks.len();
         let total_height = track_count as f32 * TRACK_HEIGHT;
+        let vp = &self.arrangement_view.viewport;
+        let ppu = vp.zoom_x; // pixels_per_tick
+        let lh_per_key = TRACK_HEIGHT / 128.0;
+        let note_h = lh_per_key.max(1.0);
 
         // 构建左侧音轨名称列表
         let mut track_col = column![].spacing(0);
@@ -365,10 +386,51 @@ impl Root {
                     })
             });
 
-        // 右侧走带区域 Canvas（绘制横向分隔线）
-        let arrangement_canvas = Canvas::new(ArrangementCanvas::new(track_count, TRACK_HEIGHT))
-            .width(Length::Fill)
-            .height(Length::Fixed(total_height));
+        // ── 按 yinhe 风格预计算音符屏幕空间矩形 ──
+        let track_notes = &self.editor.editor_state.data.track_notes;
+        let track_order: Vec<usize> = self.sidebar.tracks.iter().map(|t| t.id).collect();
+
+        let mut note_rects: Vec<NoteRect> = Vec::new();
+        for (track_idx, track_id) in track_order.iter().enumerate() {
+            let Some(notes) = track_notes.get(track_id) else {
+                continue;
+            };
+
+            let lane_y_base = track_idx as f32 * TRACK_HEIGHT;
+            let color = PALETTE[track_idx % PALETTE.len()];
+
+            for note in notes {
+                // 视锥裁剪：只处理可见 tick 范围（用宽裕边界）
+                let nw = (note.length * ppu).max(2.0);
+                let nx = note.tick * ppu - vp.scroll_x;
+                if nx + nw < -vp.canvas_size.x || nx > vp.canvas_size.x * 2.0 {
+                    continue;
+                }
+
+                // yinhe 风格的 y 坐标计算
+                let ny = lane_y_base - vp.scroll_y + (127.0 - note.key as f32) * lh_per_key;
+
+                note_rects.push(NoteRect {
+                    x: nx,
+                    y: ny,
+                    w: nw,
+                    h: note_h,
+                    color: Color::from_rgba(color[0], color[1], color[2], 0.85),
+                });
+            }
+        }
+
+        // 右侧走带区域 Canvas（绘制 lane + 音符）
+        let arrangement_canvas = Canvas::new(ArrangementCanvas::new(
+            track_count,
+            TRACK_HEIGHT,
+            vp.scroll_x,
+            vp.scroll_y,
+            ppu,
+            note_rects,
+        ))
+        .width(Length::Fill)
+        .height(Length::Fixed(total_height));
 
         let arrangement_row = iced_widget::row![
             track_list,

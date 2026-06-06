@@ -1,6 +1,6 @@
-//! 音轨总览视图 —— 显示所有音轨的音符在时间轴上的排列
+//! 工程走带视图 —— 按 yinhe 风格显示所有音轨音符的时间轴排列。
 //!
-//! 使用 wgpu 实例化渲染（复用 NoteRenderer），不经过 iced Canvas。
+//! 音符由 iced Canvas 直接绘制屏幕空间矩形，不经过 WGPU NoteRenderer。
 
 pub mod canvas;
 pub mod pattern_widget;
@@ -8,12 +8,10 @@ pub mod pattern_widget;
 use iced_core::Point;
 use lumino_core::Pattern;
 
-use lumino_gfx::NoteInstance;
-
 pub use canvas::ArrangementCanvas;
 pub use pattern_widget::{PatternWidget, PatternWidgetState};
 
-/// 音轨总览视口状态
+/// 工程走带视口状态
 #[derive(Debug, Clone)]
 pub struct ArrangementViewport {
     /// 水平滚动（像素）
@@ -38,7 +36,7 @@ impl Default for ArrangementViewport {
             scroll_x: 0.0,
             scroll_y: 0.0,
             zoom_x: 0.5,
-            track_height: 32.0,
+            track_height: 48.0,
             canvas_offset: Point::new(0.0, 0.0),
             canvas_size: Point::new(800.0, 600.0),
             total_ticks: 0,
@@ -65,7 +63,7 @@ impl ArrangementViewport {
     }
 }
 
-/// 音轨总览视图
+/// 工程走带视图（纯状态容器）
 #[derive(Debug, Clone, Default)]
 pub struct ArrangementView {
     /// 视口状态
@@ -78,78 +76,4 @@ impl ArrangementView {
     pub fn new() -> Self {
         Self::default()
     }
-
-    /// 生成音轨总览的音符实例（yinhe 风格）
-    ///
-    /// 每个音轨的 lane 内显示 128 个 key 的钢琴卷帘缩略图：
-    /// - x = tick（时间）
-    /// - y = (num_tracks - 1 - track_idx) * track_height + key * (track_height / 128)
-    ///   这样 track 0 在最上方，track N-1 在最下方，
-    ///   每个 track 的 128 个 key 均匀分布在 lane_height 内
-    ///   y 坐标使用像素值，shader 中 zoom_y = 1.0
-    /// - 颜色根据音轨索引分配
-    pub fn generate_instances(
-        &self,
-        track_notes: &std::collections::HashMap<usize, im::Vector<crate::editor::note::Note>>,
-        track_order: &[usize],
-        visible_tick_start: f32,
-        visible_tick_end: f32,
-        visible_track_start: usize,
-        visible_track_end: usize,
-        num_tracks: usize,
-    ) -> Vec<NoteInstance> {
-        let mut instances = Vec::new();
-        let num_tracks = num_tracks.max(1);
-        let track_height = self.viewport.track_height;
-        let key_height = track_height / 128.0;
-
-        for (track_idx, track_id) in track_order.iter().enumerate() {
-            // 只生成可见音轨的实例
-            if track_idx < visible_track_start || track_idx >= visible_track_end {
-                continue;
-            }
-
-            let Some(notes) = track_notes.get(track_id) else {
-                continue;
-            };
-
-            let track_color = track_color(track_idx);
-            // track 0 在最上方
-            let y_base = (num_tracks - 1 - track_idx) as f32 * track_height;
-
-            for note in notes {
-                // 视锥裁剪：只生成可见时间范围内的音符
-                if note.tick + note.length < visible_tick_start || note.tick > visible_tick_end {
-                    continue;
-                }
-
-                // y = y_base + key * key_height，像素坐标
-                let y = y_base + note.key as f32 * key_height;
-
-                instances.push(NoteInstance::new(note.tick, y, note.length, track_color));
-            }
-        }
-
-        instances
-    }
-}
-
-/// 为音轨索引分配颜色（使用预设调色板）
-fn track_color(index: usize) -> [f32; 4] {
-    const PALETTE: [[f32; 4]; 12] = [
-        [0.90, 0.30, 0.30, 0.85], // 红
-        [0.30, 0.70, 0.30, 0.85], // 绿
-        [0.30, 0.50, 0.90, 0.85], // 蓝
-        [0.90, 0.70, 0.20, 0.85], // 橙
-        [0.70, 0.30, 0.80, 0.85], // 紫
-        [0.20, 0.80, 0.80, 0.85], // 青
-        [0.90, 0.50, 0.50, 0.85], // 粉红
-        [0.50, 0.90, 0.30, 0.85], //  lime
-        [0.30, 0.30, 0.70, 0.85], // 深蓝
-        [0.90, 0.80, 0.30, 0.85], // 黄
-        [0.60, 0.40, 0.20, 0.85], // 棕
-        [0.50, 0.50, 0.50, 0.85], // 灰
-    ];
-
-    PALETTE[index % PALETTE.len()]
 }
