@@ -143,9 +143,20 @@ impl Sidebar {
         let prev_visible = self.panel_visible;
         let prev_route = self.route;
         match event {
-            RouteUpdated(r) => self.route = r,
+            RouteUpdated(r) => {
+                self.route = r;
+                // 切换到音轨总览路由时，自动隐藏左侧面板
+                if r == Route::Arrangement {
+                    self.panel_visible = false;
+                }
+            }
             PanelToggled(r) => {
-                if self.panel_visible && self.panel_route == r {
+                // 音轨总览模式下禁止开启左侧面板，保持关闭
+                if r == Route::Arrangement {
+                    self.panel_visible = false;
+                    self.panel_route = r;
+                    self.route = r;
+                } else if self.panel_visible && self.panel_route == r {
                     self.panel_visible = false;
                 } else {
                     self.panel_visible = true;

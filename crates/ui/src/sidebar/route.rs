@@ -53,7 +53,12 @@ fn item<'a>(
         .height(Length::Fill)
         .align_y(Alignment::Center);
 
-    let event = Event::panel_toggled(route);
+    // 音轨总览路由使用 RouteUpdated 事件，避免触发面板切换
+    let event = if route == Route::Arrangement {
+        Event::route_updated(route)
+    } else {
+        Event::panel_toggled(route)
+    };
 
     button(inner)
         .width(48)
