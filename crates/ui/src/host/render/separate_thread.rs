@@ -106,12 +106,22 @@ impl Host {
 
     /// 收集渲染所需的数据
     pub(super) fn collect_render_data(&mut self) -> super::data::RenderData {
-        let editor = &self.root.editor;
-        let scroll = editor.scroll();
-        let zoom = editor.zoom();
         let viewport_size = self.render_ctx.viewport.logical_size();
 
-        let grid_instances = {
+        let (scroll, zoom) = if self.root.is_arrangement_mode() {
+            let av = &self.root.arrangement_view.viewport;
+            // yinhe 风格：zoom_y = track_height / 128，scroll_y 转换为逻辑 key 单位
+            let zoom_y = av.track_height / 128.0;
+            let scroll_y_logical = av.scroll_y / av.track_height * 128.0;
+            ((av.scroll_x, scroll_y_logical), (av.zoom_x, zoom_y))
+        } else {
+            let editor = &self.root.editor;
+            (editor.scroll(), editor.zoom())
+        };
+
+        let grid_instances = if self.root.is_arrangement_mode() {
+            vec![] // 音轨总览模式下跳过网格
+        } else {
             puffin::profile_scope!("generate_grid_instances");
             self.generate_grid_instances(
                 viewport_size.width,
@@ -128,7 +138,9 @@ impl Host {
         // WGPU 键盘渲染已移除，使用 Iced Canvas 键盘替代
         let keyboard_instances = vec![];
 
-        let ruler_instances = {
+        let ruler_instances = if self.root.is_arrangement_mode() {
+            vec![] // 音轨总览模式下跳过标尺
+        } else {
             puffin::profile_scope!("generate_ruler_instances");
             self.generate_ruler_instances(
                 viewport_size.width,
@@ -171,20 +183,36 @@ impl Host {
             || self.render_ctx.render_cache.note_instances_is_empty()
             || is_drawing;
 
-        // 检测视口变化（滚动/缩放）：洋葱皮需要重新过滤
-        let v = &self.root.editor.editor_state.view;
-        let canvas_size = &self.root.editor.editor_state.canvas.size;
-        let current_viewport_hash = crate::host::RenderCache::compute_viewport_hash(
-            v.scroll_x,
-            v.scroll_y,
-            v.zoom_x,
-            v.zoom_y,
-            canvas_size.x,
-            canvas_size.y,
-            v.visible_key_count,
-        );
-        let viewport_changed =
-            current_viewport_hash != self.render_ctx.render_cache.note_viewport_hash;
+        // 检测视口变化（滚动/缩放）：音轨总览模式使用 arrangement viewport
+        let (current_viewport_hash, viewport_changed) = if self.root.is_arrangement_mode() {
+            let av = &self.root.arrangement_view.viewport;
+            let track_count = self.root.sidebar.tracks.len().max(1) as u16;
+            let hash = crate::host::RenderCache::compute_viewport_hash(
+                av.scroll_x,
+                av.scroll_y,
+                av.zoom_x,
+                av.track_height,
+                av.canvas_size.x,
+                av.canvas_size.y,
+                track_count,
+            );
+            let changed = hash != self.render_ctx.render_cache.note_viewport_hash;
+            (hash, changed)
+        } else {
+            let v = &self.root.editor.editor_state.view;
+            let canvas_size = &self.root.editor.editor_state.canvas.size;
+            let hash = crate::host::RenderCache::compute_viewport_hash(
+                v.scroll_x,
+                v.scroll_y,
+                v.zoom_x,
+                v.zoom_y,
+                canvas_size.x,
+                canvas_size.y,
+                v.visible_key_count,
+            );
+            let changed = hash != self.render_ctx.render_cache.note_viewport_hash;
+            (hash, changed)
+        };
 
         if !note_data_changed && !viewport_changed {
             return;
@@ -192,22 +220,26 @@ impl Host {
 
         self.render_ctx.render_cache.note_viewport_hash = current_viewport_hash;
 
-        // 提取所需数据，避免 &self 借用冲突
-        let notes_clone = self.root.editor.editor_state.data.notes.clone(); // O(1)
-        let edit_state_clone = self.root.editor.editor_state.interaction.edit_state.clone();
-        let default_note_length = self.root.editor.editor_state.view.default_note_length;
-        let snap_precision = self.root.editor.editor_state.view.snap_precision;
-
         // ═══ Phase 1: 主音符同步写入（保证 WGPU 立即可见） ═══
         {
             puffin::profile_scope!("phase1_main_notes_sync");
-            super::note_worker::build_main_note_instances(
-                &self.render_ctx.render_cache.note_instances_buffer,
-                &notes_clone,
-                &edit_state_clone,
-                default_note_length,
-                snap_precision,
-            );
+            if self.root.is_arrangement_mode() {
+                // 音轨总览模式：生成所有音轨的音符实例（yinhe 风格）
+                self.build_arrangement_note_instances_for_wgpu();
+            } else {
+                // 钢琴卷帘模式：只生成当前音轨的音符
+                let notes_clone = self.root.editor.editor_state.data.notes.clone(); // O(1)
+                let edit_state_clone = self.root.editor.editor_state.interaction.edit_state.clone();
+                let default_note_length = self.root.editor.editor_state.view.default_note_length;
+                let snap_precision = self.root.editor.editor_state.view.snap_precision;
+                super::note_worker::build_main_note_instances(
+                    &self.render_ctx.render_cache.note_instances_buffer,
+                    &notes_clone,
+                    &edit_state_clone,
+                    default_note_length,
+                    snap_precision,
+                );
+            }
         }
 
         // ═══ Phase 2: 洋葱皮异步派发（独立 buffer，fire-and-forget） ═══
@@ -232,6 +264,38 @@ impl Host {
         }
     }
 
+    /// 为音轨总览模式构建所有音轨的音符实例（分离渲染线程用）
+    fn build_arrangement_note_instances_for_wgpu(&mut self) {
+        puffin::profile_scope!("build_arrangement_instances");
+        let av = &self.root.arrangement_view;
+        let track_count = self.root.sidebar.tracks.len();
+        let (visible_tick_start, visible_tick_end) = av.viewport.visible_tick_range();
+        let (visible_track_start, visible_track_end) = av.viewport.visible_track_range(track_count);
+
+        let track_order: Vec<usize> = self.root.sidebar.tracks.iter().map(|t| t.id).collect();
+        let track_notes = &self.root.editor.editor_state.data.track_notes;
+
+        let instances = av.generate_instances(
+            track_notes,
+            &track_order,
+            visible_tick_start,
+            visible_tick_end,
+            visible_track_start,
+            visible_track_end,
+            track_count,
+        );
+
+        let buffer = unsafe {
+            self.render_ctx
+                .render_cache
+                .note_instances_buffer
+                .write_buffer()
+        };
+        buffer.clear();
+        buffer.extend(instances);
+        self.render_ctx.render_cache.note_instances_buffer.swap();
+    }
+
     /// 构建渲染参数
     pub(super) fn build_render_params(&self, data: super::data::RenderData) -> RenderParams {
         let es = &self.root.editor.editor_state;
@@ -250,8 +314,13 @@ impl Host {
         let ppq = es.view.ppq;
         let keyboard_width = es.view.keyboard_width;
         let ruler_height = es.view.ruler_height;
-        let max_key_index = (es.view.visible_key_count.saturating_sub(1)) as f32;
         let is_arrangement_mode = self.root.is_arrangement_mode();
+        let max_key_index = if is_arrangement_mode {
+            let track_count = self.root.sidebar.tracks.len().max(1) as f32;
+            track_count * 128.0 - 1.0
+        } else {
+            (es.view.visible_key_count.saturating_sub(1)) as f32
+        };
 
         RenderParams {
             viewport_size: (physical_size.width, physical_size.height),

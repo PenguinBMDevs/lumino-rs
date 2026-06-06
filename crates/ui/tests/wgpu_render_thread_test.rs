@@ -54,6 +54,7 @@ fn test_render_params_clone() {
         canvas_size: (1000.0, 800.0),
         ppq: 960.0,
         max_key_index: 127.0,
+        is_arrangement_mode: false,
     };
 
     let cloned = params.clone();

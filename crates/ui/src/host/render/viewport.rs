@@ -82,14 +82,20 @@ impl Host {
         if self.root.is_arrangement_mode() {
             let av = &self.root.arrangement_view.viewport;
             let track_count = self.root.sidebar.tracks.len().max(1) as f32;
+            // yinhe 风格：每个 track 的 lane 内显示 128 个 key 的缩略钢琴卷帘
+            let keys_per_track = 128.0;
+            let zoom_y = av.track_height / keys_per_track;
+            let max_key_index = track_count * keys_per_track - 1.0;
+            // scroll_y 从像素转换为逻辑 key 单位
+            let scroll_y_logical = av.scroll_y / av.track_height * keys_per_track;
             lumino_gfx::CameraUniform::new(lumino_gfx::CameraParams {
-                scroll: [av.scroll_x, av.scroll_y],
-                zoom: [av.zoom_x, av.track_height],
+                scroll: [av.scroll_x, scroll_y_logical],
+                zoom: [av.zoom_x, zoom_y],
                 viewport: [viewport.logical_size.width, viewport.logical_size.height],
                 offset: [viewport.canvas_offset.x, viewport.canvas_offset.y],
                 keyboard_width: 0.0,
                 ruler_height: 0.0,
-                max_key_index: track_count - 1.0,
+                max_key_index,
             })
         } else {
             let v = &self.root.editor.editor_state.view;

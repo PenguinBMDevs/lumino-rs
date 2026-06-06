@@ -96,15 +96,13 @@ pub fn execute_render_pass(
             onion_renderer.draw(&mut render_pass);
         }
 
-        // 绘制音符（音轨总览模式下跳过）
-        if !params.is_arrangement_mode {
-            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            note_renderer.draw(
-                &mut render_pass,
-                true,
-                Some((scissor_x, scissor_y, scissor_width, scissor_height)),
-            );
-        }
+        // 绘制音符（音轨总览模式下也绘制——每个 track 的 lane 内显示缩略钢琴卷帘）
+        render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+        note_renderer.draw(
+            &mut render_pass,
+            true,
+            Some((scissor_x, scissor_y, scissor_width, scissor_height)),
+        );
 
         // 绘制标尺（音轨总览模式下跳过）
         if !params.is_arrangement_mode && !params.ruler_instances.is_empty() {

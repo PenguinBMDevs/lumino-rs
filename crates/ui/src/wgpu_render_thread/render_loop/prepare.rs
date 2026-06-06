@@ -17,7 +17,7 @@ pub fn prepare_renderers(
 ) {
     puffin::profile_scope!("prepare_renderers");
 
-    // 音轨总览模式下跳过钢琴卷帘相关渲染器的准备
+    // 音轨总览模式下跳过钢琴卷帘相关渲染器的准备，但音符事件仍需处理
     if !params.is_arrangement_mode {
         // 准备网格渲染器
         grid_renderer.prepare(
@@ -42,9 +42,6 @@ pub fn prepare_renderers(
             params.canvas_offset.1,
         );
 
-        // 处理音符事件
-        note_renderer.process_events(note_events_rx, device, queue);
-
         // 准备标尺渲染器
         if !params.ruler_instances.is_empty() {
             ruler_renderer.prepare(
@@ -60,4 +57,7 @@ pub fn prepare_renderers(
             );
         }
     }
+
+    // 音符事件始终处理（音轨总览模式下也需要更新音符实例）
+    note_renderer.process_events(note_events_rx, device, queue);
 }

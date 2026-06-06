@@ -168,6 +168,7 @@ impl Host {
             visible_tick_end,
             visible_track_start,
             visible_track_end,
+            track_count,
         );
 
         // 写入双缓冲

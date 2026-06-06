@@ -297,13 +297,7 @@ fn onion_skin_benchmark() {
             editor.editor_state.view.visible_key_count,
         );
 
-        let onion = editor.get_all_onion_skin_instances_in_range(
-            &onion_states,
-            scroll_tick,
-            visible_end,
-            0,
-            127,
-        );
+        let onion = editor.get_all_onion_skin_instances(&onion_states);
         let instances = unsafe { note_buffer.write_buffer() };
         instances.clear();
         instances.reserve(MAIN_NOTES + onion.len() + 1);
@@ -404,13 +398,7 @@ fn onion_skin_benchmark() {
         if note_data_changed || viewport_changed {
             rebuild_count += 1;
 
-            let onion = editor.get_all_onion_skin_instances_in_range(
-                &onion_states,
-                scroll_tick,
-                visible_end,
-                0,
-                127,
-            );
+            let onion = editor.get_all_onion_skin_instances(&onion_states);
             let instances = unsafe { note_buffer.write_buffer() };
             instances.clear();
             instances.reserve(MAIN_NOTES + onion.len() + 1);
@@ -520,7 +508,7 @@ fn onion_skin_benchmark() {
     eprintln!("============================================================\n");
 
     assert!(
-        avg_per_frame > MAIN_NOTES,
+        avg_per_frame >= MAIN_NOTES,
         "应该有至少 {} 个主音轨实例",
         MAIN_NOTES
     );
