@@ -1,8 +1,71 @@
 use crate::RenderParams;
 use crate::host::Host;
 use iced_wgpu::wgpu;
+use lumino_gfx::{ArrangementNoteInstance, ArrangementUniform};
+
+mod arrangement_instances;
+
+/// 走带视图音轨调色板（12 色，与 view.rs 保持同步）
+const ARRANGEMENT_PALETTE: [[f32; 3]; 12] = [
+    [0.90, 0.30, 0.30], // 红
+    [0.30, 0.70, 0.30], // 绿
+    [0.30, 0.50, 0.90], // 蓝
+    [0.90, 0.70, 0.20], // 橙
+    [0.70, 0.30, 0.80], // 紫
+    [0.20, 0.80, 0.80], // 青
+    [0.90, 0.50, 0.50], // 粉红
+    [0.50, 0.90, 0.30], // lime
+    [0.30, 0.30, 0.70], // 深蓝
+    [0.90, 0.80, 0.30], // 黄
+    [0.60, 0.40, 0.20], // 棕
+    [0.50, 0.50, 0.50], // 灰
+];
 
 impl Host {
+    /// 收集走带视图的音符实例（所有音轨）
+    /// 使用新的实例化渲染方式，在 CPU 端计算屏幕坐标
+    pub(super) fn collect_arrangement_note_instances(&self) -> Vec<ArrangementNoteInstance> {
+        puffin::profile_scope!("collect_arrangement_note_instances");
+
+        let track_order: Vec<usize> = self.root.sidebar.tracks.iter().map(|t| t.id).collect();
+        let track_notes = &self.root.editor.editor_state.data.track_notes;
+        
+        // 使用 collect_viewport_info 获取正确的 viewport 值
+        let viewport_info = self.collect_viewport_info();
+        let av = &self.root.arrangement_view.viewport;
+        
+        // 构建一个临时的 ArrangementViewport，使用正确的 canvas_offset 和 canvas_size
+        let viewport = crate::editor::arrangement::ArrangementViewport {
+            scroll_x: av.scroll_x,
+            scroll_y: av.scroll_y,
+            zoom_x: av.zoom_x,
+            track_height: av.track_height,
+            canvas_offset: viewport_info.canvas_offset,
+            canvas_size: viewport_info.canvas_size,
+            total_ticks: av.total_ticks,
+        };
+        
+        // 构建音轨可见性列表（静音的音轨不渲染）
+        let track_visible: Vec<bool> = self.root.sidebar.tracks.iter()
+            .map(|t| !t.is_muted)
+            .collect();
+        
+        let mut instances = Vec::new();
+        
+        arrangement_instances::build_arrangement_instances(
+            &mut instances,
+            &viewport,
+            track_notes,
+            &track_order,
+            &ARRANGEMENT_PALETTE,
+            &track_visible,
+            self.root.editor.playback_position as f32,
+            self.root.midi_document.as_ref().map(|v| &**v),
+        );
+
+        instances
+    }
+
     /// 分离渲染线程模式
     pub(super) fn render_with_separate_thread(
         &mut self,
@@ -153,6 +216,13 @@ impl Host {
 
         self.update_note_data_for_wgpu_thread();
 
+        // 走带模式：收集所有音轨音符实例用于 GPU 渲染
+        let arrangement_note_instances = if self.root.is_arrangement_mode() {
+            self.collect_arrangement_note_instances()
+        } else {
+            vec![]
+        };
+
         super::data::RenderData {
             scroll,
             zoom,
@@ -160,6 +230,7 @@ impl Host {
             grid_instances,
             keyboard_instances,
             ruler_instances,
+            arrangement_note_instances,
         }
     }
 
@@ -284,11 +355,12 @@ impl Host {
             (es.view.visible_key_count.saturating_sub(1)) as f32
         };
 
+        // 使用 collect_viewport_info 获取正确的 canvas_offset 和 canvas_size
+        let viewport_info = self.collect_viewport_info();
         let (canvas_offset, canvas_size, keyboard_width, ruler_height) = if is_arrangement_mode {
-            let av = &self.root.arrangement_view.viewport;
             (
-                (av.canvas_offset.x, av.canvas_offset.y),
-                (av.canvas_size.x, av.canvas_size.y),
+                (viewport_info.canvas_offset.x, viewport_info.canvas_offset.y),
+                (viewport_info.canvas_size.x, viewport_info.canvas_size.y),
                 0.0,
                 0.0,
             )
@@ -299,6 +371,44 @@ impl Host {
                 es.view.keyboard_width,
                 es.view.ruler_height,
             )
+        };
+
+        // 走带模式：构建 arrangement uniform
+        let bg_color_arr = colors.bg;
+        let bar_color = colors.bar_line;
+        let arrangement_uniform = if is_arrangement_mode {
+            let av = &self.root.arrangement_view.viewport;
+            let track_count = self.root.sidebar.tracks.len().max(1) as f32;
+            let mut track_colors = [[0.0_f32; 4]; 16];
+            for (i, &c) in ARRANGEMENT_PALETTE.iter().enumerate().take(16) {
+                track_colors[i] = [c[0], c[1], c[2], 1.0];
+            }
+            ArrangementUniform {
+                scroll: [data.scroll.0, data.scroll.1],
+                zoom: data.zoom.0,
+                track_height: av.track_height,
+                notes_per_track: 128.0,
+                viewport_size: [data.viewport_size.width, data.viewport_size.height],
+                canvas_offset: [canvas_offset.0, canvas_offset.1],
+                playhead_x: if self.root.editor.playback_position > 0.0 {
+                    self.root.editor.playback_position * av.zoom_x - data.scroll.0
+                } else {
+                    -1.0
+                },
+                bg_color: [
+                    bg_color_arr[0],
+                    bg_color_arr[1],
+                    bg_color_arr[2],
+                    bg_color_arr[3],
+                ],
+                bar_color: [bar_color[0], bar_color[1], bar_color[2], bar_color[3]],
+                playhead_color: [1.0, 0.2, 0.2, 1.0],
+                track_colors,
+                track_count,
+                ..ArrangementUniform::default()
+            }
+        } else {
+            ArrangementUniform::default()
         };
 
         RenderParams {
@@ -329,6 +439,8 @@ impl Host {
             ppq: ppq as f32,
             max_key_index,
             is_arrangement_mode,
+            arrangement_note_instances: data.arrangement_note_instances,
+            arrangement_uniform,
         }
     }
 }

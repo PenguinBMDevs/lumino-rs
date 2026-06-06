@@ -1,4 +1,7 @@
-use lumino_gfx::{GridLineInstance, KeyInstance, NoteInstance, RulerTickInstance};
+use lumino_gfx::{
+    ArrangementNoteInstance, ArrangementUniform, GridLineInstance, KeyInstance, NoteInstance,
+    RulerTickInstance,
+};
 
 /// 渲染参数 - 从 UI 线程传递到 WGPU 线程
 #[derive(Debug, Clone)]
@@ -51,6 +54,10 @@ pub struct RenderParams {
     pub max_key_index: f32,
     /// 是否为音轨总览模式（音轨总览模式下不渲染钢琴卷帘网格）
     pub is_arrangement_mode: bool,
+    /// 音轨总览模式：音符实例
+    pub arrangement_note_instances: Vec<ArrangementNoteInstance>,
+    /// 音轨总览模式：uniform
+    pub arrangement_uniform: ArrangementUniform,
 }
 
 impl Default for RenderParams {
@@ -83,6 +90,8 @@ impl Default for RenderParams {
             ppq: 1920.0,
             max_key_index: 127.0,
             is_arrangement_mode: false,
+            arrangement_note_instances: Vec::new(),
+            arrangement_uniform: ArrangementUniform::default(),
         }
     }
 }

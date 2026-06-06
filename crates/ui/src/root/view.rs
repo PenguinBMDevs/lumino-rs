@@ -1,6 +1,6 @@
 //! Root 视图渲染子模块
 
-use iced_core::{Color, Length};
+use iced_core::Length;
 use iced_widget::{Stack, column, container, progress_bar, row, text};
 use lumino_gfx::NoteInstance;
 
@@ -281,141 +281,49 @@ impl Root {
 
     /// 渲染工程走带视图
     ///
-    /// 按 yinhe 风格：左侧音轨列表 + 右侧 Canvas 绘制 lane/网格/音符矩形。
-    /// 音符坐标在 CPU 端预计算为屏幕像素空间，直接由 iced canvas 渲染。
+    /// 左侧音轨列表（Canvas）+ 右侧 wgpu 渲染区域。
+    /// 音符由 WGPU ArrangementRenderer 绘制，不再使用 CPU 端 Canvas 预计算。
     fn view_arrangement(&self) -> Element<'_> {
         puffin::profile_scope!("root_view_arrangement");
 
-        use crate::editor::arrangement::canvas::NoteRect;
-        use crate::editor::arrangement::ArrangementCanvas;
-        use iced_widget::canvas::Canvas;
-
         const TRACK_LIST_WIDTH: f32 = 160.0;
         const TRACK_HEIGHT: f32 = 48.0;
-        const PALETTE: [[f32; 3]; 12] = [
-            [0.90, 0.30, 0.30], // 红
-            [0.30, 0.70, 0.30], // 绿
-            [0.30, 0.50, 0.90], // 蓝
-            [0.90, 0.70, 0.20], // 橙
-            [0.70, 0.30, 0.80], // 紫
-            [0.20, 0.80, 0.80], // 青
-            [0.90, 0.50, 0.50], // 粉红
-            [0.50, 0.90, 0.30], // lime
-            [0.30, 0.30, 0.70], // 深蓝
-            [0.90, 0.80, 0.30], // 黄
-            [0.60, 0.40, 0.20], // 棕
-            [0.50, 0.50, 0.50], // 灰
-        ];
 
         let track_count = self.sidebar.tracks.len();
         let total_height = track_count as f32 * TRACK_HEIGHT;
         let vp = &self.arrangement_view.viewport;
         let ppu = vp.zoom_x; // pixels_per_tick
-        let lh_per_key = TRACK_HEIGHT / 128.0;
-        let note_h = lh_per_key.max(1.0);
 
-        // 左侧音轨列表 Canvas（与走带 Canvas 共享 scroll_y，实现同步滚动）
+        // 左侧音轨列表 Canvas（与走带区域共享 scroll_y，实现同步滚动）
         let track_data: Vec<(usize, String)> = self
             .sidebar
             .tracks
             .iter()
             .map(|t| (t.id, t.name.clone()))
             .collect();
-        let track_list_canvas =
-            crate::editor::arrangement::TrackListCanvas::new(
-                track_data,
-                self.sidebar.selected_track,
-                vp.scroll_y,
-                TRACK_HEIGHT,
-                total_height,
-            );
+        let track_list_canvas = crate::editor::arrangement::TrackListCanvas::new(
+            track_data,
+            self.sidebar.selected_track,
+            vp.scroll_y,
+            TRACK_HEIGHT,
+            total_height,
+        );
         let track_list = iced_widget::canvas::Canvas::new(track_list_canvas)
             .width(Length::Fixed(TRACK_LIST_WIDTH))
             .height(Length::Fixed(total_height));
 
-        // ── 按 yinhe 风格预计算音符屏幕空间矩形 ──
-        // 优先从 track_notes 读取已缓存的音轨，未加载的从 midi_document 直接读取
-        let track_notes = &self.editor.editor_state.data.track_notes;
-        let track_order: Vec<usize> = self.sidebar.tracks.iter().map(|t| t.id).collect();
-
-        let mut note_rects: Vec<NoteRect> = Vec::new();
-        let mut max_tick = 0.0_f32;
-        for (track_idx, track_id) in track_order.iter().enumerate() {
-            let lane_y_base = track_idx as f32 * TRACK_HEIGHT;
-            let color = PALETTE[track_idx % PALETTE.len()];
-
-            // 从缓存或 MIDI 文档获取音符数据
-            if let Some(notes) = track_notes.get(track_id) {
-                // 已缓存的 Note（带 u16 key 和完整字段）
-                for note in notes {
-                    let nw = (note.length * ppu).max(2.0);
-                    let nx = note.tick * ppu - vp.scroll_x;
-                    if nx + nw < -vp.canvas_size.x || nx > vp.canvas_size.x * 2.0 {
-                        continue;
-                    }
-                    let ny = lane_y_base - vp.scroll_y + (127.0 - note.key as f32) * lh_per_key;
-                    note_rects.push(NoteRect {
-                        x: nx,
-                        y: ny,
-                        w: nw,
-                        h: note_h,
-                        color: Color::from_rgba(color[0], color[1], color[2], 0.85),
-                    });
-                    let note_end = note.tick + note.length;
-                    if note_end > max_tick {
-                        max_tick = note_end;
-                    }
-                }
-            } else if let Some(doc) = &self.midi_document {
-                // 未缓存：从 MIDI 文档直接读取
-                let raw_notes = doc.get_track_notes(*track_id as u16);
-                for (tick, key, length, _vel, _ch) in &raw_notes {
-                    let nw = (length * ppu).max(2.0);
-                    let nx = tick * ppu - vp.scroll_x;
-                    if nx + nw < -vp.canvas_size.x || nx > vp.canvas_size.x * 2.0 {
-                        continue;
-                    }
-                    let key_f32 = *key as f32;
-                    let ny = lane_y_base - vp.scroll_y + (127.0 - key_f32) * lh_per_key;
-                    note_rects.push(NoteRect {
-                        x: nx,
-                        y: ny,
-                        w: nw,
-                        h: note_h,
-                        color: Color::from_rgba(color[0], color[1], color[2], 0.85),
-                    });
-                    let note_end = tick + length;
-                    if note_end > max_tick {
-                        max_tick = note_end;
-                    }
-                }
-            }
-        }
-
-        // ── 计算演奏指示线位置（复用钢琴卷帘样式） ──
-        let playhead_x = if self.editor.playback_position > 0.0 {
-            Some(self.editor.playback_position * ppu - vp.scroll_x)
-        } else {
-            None
-        };
-
-        // 右侧走带区域 Canvas（绘制 lane + 音符 + 指示线）
-        let arrangement_canvas = Canvas::new(ArrangementCanvas::new(
-            track_count,
-            TRACK_HEIGHT,
-            vp.scroll_x,
-            vp.scroll_y,
-            ppu,
-            note_rects,
-            playhead_x,
-        ))
+        // 右侧走带区域 — 由 WGPU ArrangementRenderer 渲染
+        // 使用空容器作为占位，不设置背景色，让 wgpu 渲染可见
+        let arrangement_area = iced_widget::container(
+            iced_widget::column![]
+                .width(Length::Fill)
+                .height(Length::Fixed(total_height.max(1.0))),
+        )
         .width(Length::Fill)
-        .height(Length::Fixed(total_height));
+        .height(Length::Fixed(total_height.max(1.0)));
 
-        // 水平滚动条（复用钢琴卷帘的 ScrollbarWidget）
-        // max_tick 已在音符循环中从 track_notes + midi_document 计算得出
-        let total_ticks_val = max_tick.max(960.0 * 4.0) as u32; // 至少 4 小节
-
+        // 水平滚动条
+        let total_ticks_val = vp.total_ticks.max(960 * 4); // 至少 4 小节
         let total_width = total_ticks_val as f32 * ppu;
         let max_scroll_x = total_width.max(vp.canvas_size.x);
         let h_scrollbar = crate::editor::scrollbar_widget::ScrollbarWidget::horizontal(
@@ -424,30 +332,23 @@ impl Root {
             vp.zoom_x,
             Some(vp.canvas_size.x),
             |x| crate::Message::ArrangementScrollX(x),
-            |zoom, ratio| crate::Message::ArrangementZoomX { zoom, fixed_ratio: ratio },
+            |zoom, ratio| crate::Message::ArrangementZoomX {
+                zoom,
+                fixed_ratio: ratio,
+            },
         );
 
-        // 垂直滚动条（复用钢琴卷帘的 ScrollbarWidget，替代 iced scrollable）
+        // 垂直滚动条
         let v_scrollbar = crate::editor::scrollbar_widget::ScrollbarWidget::vertical(
             vp.scroll_y,
             total_height,
             vp.track_height,
             Some(vp.canvas_size.y.max(1.0)),
             |y| crate::Message::ArrangementScrollY(y),
-            |_zoom, _ratio| crate::Message::ArrangementScrollY(0.0), // 垂直无缩放
+            |_zoom, _ratio| crate::Message::ArrangementScrollY(0.0),
         );
 
-        let arrangement_row = iced_widget::row![
-            track_list,
-            iced_widget::container(arrangement_canvas)
-                .width(Length::Fill)
-                .height(Length::Fixed(total_height))
-                .style(|theme: &Theme| {
-                    iced_widget::container::Style::default()
-                        .background(theme.extended_palette().background.base.color)
-                }),
-            v_scrollbar,
-        ];
+        let arrangement_row = iced_widget::row![track_list, arrangement_area, v_scrollbar,];
 
         column![
             self.toolbar.view(&self.window, false),

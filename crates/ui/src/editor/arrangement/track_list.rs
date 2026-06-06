@@ -51,9 +51,8 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
         cursor: iced_core::mouse::Cursor,
     ) -> Option<iced_widget::canvas::Action<Message>> {
         // 鼠标滚轮滚动
-        if let iced_widget::canvas::Event::Mouse(iced_core::mouse::Event::WheelScrolled {
-            delta,
-        }) = event
+        if let iced_widget::canvas::Event::Mouse(iced_core::mouse::Event::WheelScrolled { delta }) =
+            event
         {
             use crate::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
             let (_, dy) = match delta {
@@ -69,9 +68,9 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
         }
 
         // 点击选轨
-        if let iced_widget::canvas::Event::Mouse(
-            iced_core::mouse::Event::ButtonPressed(iced_core::mouse::Button::Left),
-        ) = event
+        if let iced_widget::canvas::Event::Mouse(iced_core::mouse::Event::ButtonPressed(
+            iced_core::mouse::Button::Left,
+        )) = event
         {
             if let Some(pos) = cursor.position() {
                 let rel_y = pos.y - bounds.y + self.scroll_y;

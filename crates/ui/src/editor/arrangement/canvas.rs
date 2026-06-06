@@ -72,9 +72,8 @@ impl Program<Message, Theme, Renderer> for ArrangementCanvas {
         _cursor: iced_core::mouse::Cursor,
     ) -> Option<iced_widget::canvas::Action<Message>> {
         // 处理鼠标滚轮
-        if let iced_widget::canvas::Event::Mouse(iced_core::mouse::Event::WheelScrolled {
-            delta,
-        }) = event
+        if let iced_widget::canvas::Event::Mouse(iced_core::mouse::Event::WheelScrolled { delta }) =
+            event
         {
             use crate::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
             let (_, dy) = match delta {
@@ -207,10 +206,7 @@ impl Program<Message, Theme, Renderer> for ArrangementCanvas {
         if let Some(px) = self.playhead_x {
             let indicator_color = iced_core::Color::from_rgb(1.0, 0.2, 0.2);
             // 垂直线
-            let line_path = path::Path::line(
-                Point::new(px, 0.0),
-                Point::new(px, canvas_h),
-            );
+            let line_path = path::Path::line(Point::new(px, 0.0), Point::new(px, canvas_h));
             frame.stroke(
                 &line_path,
                 iced_widget::canvas::Stroke::default()

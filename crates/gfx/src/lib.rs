@@ -1,4 +1,5 @@
 #![allow(deprecated)]
+mod arrangement_renderer;
 pub mod constants;
 mod context;
 mod gpu_note_buffer;
@@ -11,6 +12,7 @@ mod ruler_renderer;
 #[cfg(feature = "unstable-swappable-buffer")]
 mod swappable_buffer;
 
+pub use arrangement_renderer::{ArrangementNoteInstance, ArrangementRenderer, ArrangementUniform, colors};
 pub use context::{Context, ContextError, Result};
 pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent};
 pub use grid_renderer::{GridLineInstance, GridRenderer};

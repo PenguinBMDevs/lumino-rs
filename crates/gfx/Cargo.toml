@@ -16,3 +16,4 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 bytemuck = { version = "1.21", features = ["derive"] }
 puffin = { workspace = true }
+half = "2.4"

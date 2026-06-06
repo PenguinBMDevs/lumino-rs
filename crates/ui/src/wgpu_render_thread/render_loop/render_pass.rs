@@ -7,7 +7,7 @@ use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
 use lumino_gfx::{CameraParams, CameraUniform};
 
-/// 执行渲染通道（含洋葱皮背景）
+/// 执行渲染通道（含走带/钢琴卷帘/洋葱皮）
 #[allow(clippy::too_many_arguments)]
 pub fn execute_render_pass(
     encoder: &mut wgpu::CommandEncoder,
@@ -18,6 +18,7 @@ pub fn execute_render_pass(
     grid_renderer: &mut lumino_gfx::GridRenderer,
     note_renderer: &mut lumino_gfx::NoteRenderer,
     ruler_renderer: &mut lumino_gfx::RulerRenderer,
+    arrangement_renderer: &mut lumino_gfx::ArrangementRenderer,
     queue: &wgpu::Queue,
     onion_renderer: &mut lumino_gfx::OnionRenderer,
 ) {
@@ -37,20 +38,48 @@ pub fn execute_render_pass(
         a: params.background_color[3],
     };
 
-    // 工程走带模式下跳过音符渲染（音符由 iced Canvas 直接绘制）
-    if !params.is_arrangement_mode {
-        let camera = CameraUniform::new(CameraParams {
-            scroll: [params.scroll.0, params.scroll.1],
-            zoom: [params.zoom.0, params.zoom.1],
-            viewport: [params.logical_size.0, params.logical_size.1],
-            offset: [params.canvas_offset.0, params.canvas_offset.1],
-            keyboard_width: params.keyboard_width,
-            ruler_height: params.ruler_height,
-            max_key_index: params.max_key_index,
+    // 工程走带模式：渲染走带背景和音符
+    if params.is_arrangement_mode {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("arrangement_render_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(clear_color),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
         });
 
-        note_renderer.prepare_pass(encoder, camera, queue);
+        // 走带渲染器绘制（背景 + 网格 + 音符 + 演奏指示线）
+        arrangement_renderer.draw(&mut render_pass);
+        return;
     }
+
+    // 钢琴卷帘模式：正常渲染
+    let camera = CameraUniform::new(CameraParams {
+        scroll: [params.scroll.0, params.scroll.1],
+        zoom: [params.zoom.0, params.zoom.1],
+        viewport: [params.logical_size.0, params.logical_size.1],
+        offset: [params.canvas_offset.0, params.canvas_offset.1],
+        keyboard_width: params.keyboard_width,
+        ruler_height: params.ruler_height,
+        max_key_index: params.max_key_index,
+    });
+
+    note_renderer.prepare_pass(encoder, camera, queue);
 
     {
         puffin::profile_scope!("render_pass");
@@ -77,38 +106,35 @@ pub fn execute_render_pass(
             occlusion_query_set: None,
         });
 
-        // 工程走带模式下跳过所有 WGPU 音符/网格/标尺绘制
-        if !params.is_arrangement_mode {
-            // 计算裁剪区域
-            let scale = params.scale_factor;
-            let scissor_x = ((params.canvas_offset.0 * scale) as u32).min(width);
-            let scissor_y = ((params.canvas_offset.1 * scale) as u32).min(height);
-            let scissor_width =
-                ((params.canvas_size.0 * scale) as u32).min(width.saturating_sub(scissor_x));
-            let scissor_height =
-                ((params.canvas_size.1 * scale) as u32).min(height.saturating_sub(scissor_y));
+        // 计算裁剪区域
+        let scale = params.scale_factor;
+        let scissor_x = ((params.canvas_offset.0 * scale) as u32).min(width);
+        let scissor_y = ((params.canvas_offset.1 * scale) as u32).min(height);
+        let scissor_width =
+            ((params.canvas_size.0 * scale) as u32).min(width.saturating_sub(scissor_x));
+        let scissor_height =
+            ((params.canvas_size.1 * scale) as u32).min(height.saturating_sub(scissor_y));
 
-            // 绘制背景网格
-            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            grid_renderer.draw(&mut render_pass, 1);
+        // 绘制背景网格
+        render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+        grid_renderer.draw(&mut render_pass, 1);
 
-            // 绘制洋葱皮背景
-            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            onion_renderer.draw(&mut render_pass);
+        // 绘制洋葱皮背景
+        render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+        onion_renderer.draw(&mut render_pass);
 
-            // 绘制音符
-            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            note_renderer.draw(
-                &mut render_pass,
-                true,
-                Some((scissor_x, scissor_y, scissor_width, scissor_height)),
-            );
+        // 绘制音符
+        render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+        note_renderer.draw(
+            &mut render_pass,
+            true,
+            Some((scissor_x, scissor_y, scissor_width, scissor_height)),
+        );
 
-            // 绘制标尺
-            if !params.ruler_instances.is_empty() {
-                render_pass.set_scissor_rect(0, 0, width, height);
-                ruler_renderer.draw(&mut render_pass, params.ruler_instances.len() as u32);
-            }
+        // 绘制标尺
+        if !params.ruler_instances.is_empty() {
+            render_pass.set_scissor_rect(0, 0, width, height);
+            ruler_renderer.draw(&mut render_pass, params.ruler_instances.len() as u32);
         }
     }
 }

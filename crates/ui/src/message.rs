@@ -58,7 +58,10 @@ pub enum Message {
     /// 工程走带垂直滚动
     ArrangementScrollY(f32),
     /// 工程走带水平缩放（fixed_ratio = 固定点比例, 0.0=左, 1.0=右）
-    ArrangementZoomX { zoom: f32, fixed_ratio: f32 },
+    ArrangementZoomX {
+        zoom: f32,
+        fixed_ratio: f32,
+    },
     ZoomXChanged {
         zoom: f32,
         fixed_ratio: f32,
