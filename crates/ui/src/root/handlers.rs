@@ -152,6 +152,37 @@ impl Root {
                 self.editor.set_scroll_y(*y);
                 true
             }
+            Message::ArrangementScrollX(x) => {
+                let vp = &mut self.arrangement_view.viewport;
+                let canvas_w = vp.canvas_size.x.max(1.0);
+                let total_w = vp.total_ticks as f32 * vp.zoom_x;
+                let max_scroll = (total_w - canvas_w).max(0.0);
+                let clamped = x.max(0.0).min(max_scroll);
+                vp.scroll_x = clamped;
+                true
+            }
+            Message::ArrangementScrollY(y) => {
+                let vp = &mut self.arrangement_view.viewport;
+                let track_count = self.sidebar.tracks.len().max(1) as f32;
+                let total_h = track_count * vp.track_height;
+                let canvas_h = vp.canvas_size.y.max(1.0);
+                let max_scroll = (total_h - canvas_h).max(0.0);
+                let clamped = y.max(0.0).min(max_scroll);
+                vp.scroll_y = clamped;
+                true
+            }
+            Message::ArrangementZoomX { zoom, fixed_ratio } => {
+                let vp = &mut self.arrangement_view.viewport;
+                let old_zoom = vp.zoom_x;
+                let new_zoom = zoom.max(0.1).min(10.0);
+                let canvas_w = vp.canvas_size.x.max(1.0);
+                // 保持固定点 tick 不变
+                let focus_px = vp.scroll_x + canvas_w * fixed_ratio;
+                let focus_tick = focus_px / old_zoom;
+                vp.zoom_x = new_zoom;
+                vp.scroll_x = (focus_tick * new_zoom - canvas_w * fixed_ratio).max(0.0);
+                true
+            }
             Message::ZoomXChanged { zoom, fixed_ratio } => {
                 self.editor.set_zoom_x(*zoom, *fixed_ratio);
                 true

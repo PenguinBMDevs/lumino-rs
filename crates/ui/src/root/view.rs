@@ -288,7 +288,7 @@ impl Root {
 
         use crate::editor::arrangement::canvas::NoteRect;
         use crate::editor::arrangement::ArrangementCanvas;
-        use iced_widget::{canvas::Canvas, scrollable};
+        use iced_widget::canvas::Canvas;
 
         const TRACK_LIST_WIDTH: f32 = 160.0;
         const TRACK_HEIGHT: f32 = 48.0;
@@ -420,7 +420,14 @@ impl Root {
             }
         }
 
-        // 右侧走带区域 Canvas（绘制 lane + 音符）
+        // ── 计算演奏指示线位置（复用钢琴卷帘样式） ──
+        let playhead_x = if self.editor.playback_position > 0.0 {
+            Some(self.editor.playback_position * ppu - vp.scroll_x)
+        } else {
+            None
+        };
+
+        // 右侧走带区域 Canvas（绘制 lane + 音符 + 指示线）
         let arrangement_canvas = Canvas::new(ArrangementCanvas::new(
             track_count,
             TRACK_HEIGHT,
@@ -428,9 +435,45 @@ impl Root {
             vp.scroll_y,
             ppu,
             note_rects,
+            playhead_x,
         ))
         .width(Length::Fill)
         .height(Length::Fixed(total_height));
+
+        // 水平滚动条（复用钢琴卷帘的 ScrollbarWidget）
+        let max_tick = self
+            .editor
+            .editor_state
+            .data
+            .track_notes
+            .values()
+            .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
+            .fold(0.0_f32, f32::max);
+        // 更新 arrangement viewport 的 total_ticks
+        // 使用 Cell 或直接修改——这里是 &self，但 total_ticks 是 u32，我们只能在这里写
+        // 因为 view 是 &self，不能修改状态，所以放在布局中计算但用局部变量传给 scrollbar
+        let total_ticks_val = max_tick.max(960.0 * 4.0) as u32; // 至少 4 小节
+
+        let total_width = total_ticks_val as f32 * ppu;
+        let max_scroll_x = total_width.max(vp.canvas_size.x);
+        let h_scrollbar = crate::editor::scrollbar_widget::ScrollbarWidget::horizontal(
+            vp.scroll_x,
+            max_scroll_x,
+            vp.zoom_x,
+            Some(vp.canvas_size.x),
+            |x| crate::Message::ArrangementScrollX(x),
+            |zoom, ratio| crate::Message::ArrangementZoomX { zoom, fixed_ratio: ratio },
+        );
+
+        // 垂直滚动条（复用钢琴卷帘的 ScrollbarWidget，替代 iced scrollable）
+        let v_scrollbar = crate::editor::scrollbar_widget::ScrollbarWidget::vertical(
+            vp.scroll_y,
+            total_height,
+            vp.track_height,
+            Some(vp.canvas_size.y.max(1.0)),
+            |y| crate::Message::ArrangementScrollY(y),
+            |_zoom, _ratio| crate::Message::ArrangementScrollY(0.0), // 垂直无缩放
+        );
 
         let arrangement_row = iced_widget::row![
             track_list,
@@ -441,15 +484,13 @@ impl Root {
                     iced_widget::container::Style::default()
                         .background(theme.extended_palette().background.base.color)
                 }),
+            v_scrollbar,
         ];
 
         column![
             self.toolbar.view(&self.window, false),
-            scrollable(arrangement_row)
-                .direction(scrollable::Direction::Vertical(
-                    scrollable::Scrollbar::new().width(8).scroller_width(6),
-                ))
-                .height(Length::Fill),
+            arrangement_row.height(Length::Fill),
+            h_scrollbar,
         ]
         .width(Length::Fill)
         .height(Length::Fill)

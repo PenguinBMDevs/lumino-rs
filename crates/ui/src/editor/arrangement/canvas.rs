@@ -19,7 +19,7 @@ pub struct NoteRect {
     pub color: Color,
 }
 
-/// 工程走带 Canvas —— 绘制音轨 lane + 网格 + 音符矩形
+/// 工程走带 Canvas —— 绘制音轨 lane + 网格 + 音符矩形 + 演奏指示线
 pub struct ArrangementCanvas {
     /// 音轨数量
     track_count: usize,
@@ -33,6 +33,8 @@ pub struct ArrangementCanvas {
     pub pixels_per_tick: f32,
     /// 可见时间范围内预生成的音符矩形
     pub notes: Vec<NoteRect>,
+    /// 演奏指示线 X 坐标（None = 不绘制）
+    pub playhead_x: Option<f32>,
 }
 
 impl ArrangementCanvas {
@@ -45,6 +47,7 @@ impl ArrangementCanvas {
         scroll_y: f32,
         pixels_per_tick: f32,
         notes: Vec<NoteRect>,
+        playhead_x: Option<f32>,
     ) -> Self {
         Self {
             track_count,
@@ -53,6 +56,7 @@ impl ArrangementCanvas {
             scroll_y,
             pixels_per_tick,
             notes,
+            playhead_x,
         }
     }
 }
@@ -177,6 +181,31 @@ impl Program<Message, Theme, Renderer> for ArrangementCanvas {
                 Size::new(note.w, note.h),
                 note.color,
             );
+        }
+
+        // ── 4. 绘制演奏指示线（复用钢琴卷帘样式） ──
+        if let Some(px) = self.playhead_x {
+            let indicator_color = iced_core::Color::from_rgb(1.0, 0.2, 0.2);
+            // 垂直线
+            let line_path = path::Path::line(
+                Point::new(px, 0.0),
+                Point::new(px, canvas_h),
+            );
+            frame.stroke(
+                &line_path,
+                iced_widget::canvas::Stroke::default()
+                    .with_width(2.0)
+                    .with_color(indicator_color),
+            );
+            // 顶部倒三角形
+            let tri_size = 8.0;
+            let tri_path = path::Path::new(|builder| {
+                builder.move_to(Point::new(px - tri_size / 2.0, 0.0));
+                builder.line_to(Point::new(px + tri_size / 2.0, 0.0));
+                builder.line_to(Point::new(px, tri_size));
+                builder.close();
+            });
+            frame.fill(&tri_path, indicator_color);
         }
 
         vec![frame.into_geometry()]

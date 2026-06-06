@@ -53,6 +53,12 @@ pub enum Message {
     Progress(Option<(String, f64)>),
     ScrollbarScrolled(f32),  // 滚动条滚动事件，参数为新的scroll_x值
     ScrollbarScrolledY(f32), // 垂直滚动条滚动事件，参数为新的scroll_y值
+    /// 工程走带水平滚动
+    ArrangementScrollX(f32),
+    /// 工程走带垂直滚动
+    ArrangementScrollY(f32),
+    /// 工程走带水平缩放（fixed_ratio = 固定点比例, 0.0=左, 1.0=右）
+    ArrangementZoomX { zoom: f32, fixed_ratio: f32 },
     ZoomXChanged {
         zoom: f32,
         fixed_ratio: f32,
