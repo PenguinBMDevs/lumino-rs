@@ -310,17 +310,17 @@ impl Root {
         );
         let track_list = iced_widget::canvas::Canvas::new(track_list_canvas)
             .width(Length::Fixed(TRACK_LIST_WIDTH))
-            .height(Length::Fixed(total_height));
+            .height(Length::Fill);
 
         // 右侧走带区域 — 由 WGPU ArrangementRenderer 渲染
         // 使用空容器作为占位，不设置背景色，让 wgpu 渲染可见
         let arrangement_area = iced_widget::container(
             iced_widget::column![]
                 .width(Length::Fill)
-                .height(Length::Fixed(total_height.max(1.0))),
+                .height(Length::Fill),
         )
         .width(Length::Fill)
-        .height(Length::Fixed(total_height.max(1.0)));
+        .height(Length::Fill);
 
         // 水平滚动条
         let total_ticks_val = vp.total_ticks.max(960 * 4); // 至少 4 小节

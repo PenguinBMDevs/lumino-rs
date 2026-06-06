@@ -100,6 +100,13 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
         let palette = theme.extended_palette();
         let is_light = theme.is_light();
 
+        // 先填充完整背景（解决轨道数少于视口高度时下方空白区未绘制的问题）
+        frame.fill_rectangle(
+            Point::new(0.0, 0.0),
+            Size::new(canvas_w, canvas_h),
+            palette.background.base.color,
+        );
+
         // 计算可见范围
         let first = (self.scroll_y / self.track_height).floor() as usize;
         let visible_count = (canvas_h / self.track_height).ceil() as usize + 2;
@@ -172,7 +179,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
         };
         let mut lb = iced_widget::canvas::path::Builder::new();
         lb.move_to(Point::new(canvas_w - 1.0, 0.0));
-        lb.line_to(Point::new(canvas_w - 1.0, canvas_h.min(self.total_height)));
+        lb.line_to(Point::new(canvas_w - 1.0, canvas_h));
         frame.stroke(
             &lb.build(),
             iced_widget::canvas::Stroke::default()

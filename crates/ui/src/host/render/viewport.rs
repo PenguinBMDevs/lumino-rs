@@ -22,9 +22,14 @@ impl Host {
             };
             let canvas_offset =
                 iced_core::Point::new(TRACK_LIST_WIDTH, toolbar_height + titlebar_offset);
+            const H_SCROLLBAR_HEIGHT: f32 = 20.0;
             let canvas_size = iced_core::Point::new(
                 (logical_size.width - TRACK_LIST_WIDTH).max(1.0),
-                (logical_size.height - toolbar_height - STATUSBAR_HEIGHT - titlebar_offset)
+                (logical_size.height
+                    - toolbar_height
+                    - STATUSBAR_HEIGHT
+                    - H_SCROLLBAR_HEIGHT
+                    - titlebar_offset)
                     .max(1.0),
             );
             ViewportInfo {

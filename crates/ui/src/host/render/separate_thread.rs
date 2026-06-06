@@ -169,6 +169,28 @@ impl Host {
     pub(super) fn collect_render_data(&mut self) -> super::data::RenderData {
         let viewport_size = self.render_ctx.viewport.logical_size();
 
+        // 走带模式下，同步视口的 canvas_size/canvas_offset 到 arrangement_view.viewport
+        // 这些值用于 handlers.rs 的滚动范围钳制和 view.rs 的滚动条滑块计算，
+        // 而 collect_viewport_info() 每帧计算正确值但不会自动写回。
+        if self.root.is_arrangement_mode() {
+            const TRACK_LIST_WIDTH: f32 = 160.0;
+            const STATUSBAR_HEIGHT: f32 = 20.0;
+            const TITLEBAR_HEIGHT: f32 = 30.0;
+            let th = self.root.toolbar.height();
+            let tbo = if cfg!(target_os = "macos") {
+                0.0
+            } else {
+                TITLEBAR_HEIGHT
+            };
+            const H_SCROLLBAR_HEIGHT: f32 = 20.0;
+            self.root.arrangement_view.viewport.canvas_size = iced_core::Point::new(
+                (viewport_size.width - TRACK_LIST_WIDTH).max(1.0),
+                (viewport_size.height - th - STATUSBAR_HEIGHT - H_SCROLLBAR_HEIGHT - tbo).max(1.0),
+            );
+            self.root.arrangement_view.viewport.canvas_offset =
+                iced_core::Point::new(TRACK_LIST_WIDTH, th + tbo);
+        }
+
         let (scroll, zoom) = if self.root.is_arrangement_mode() {
             let av = &self.root.arrangement_view.viewport;
             // yinhe 风格：y 坐标使用像素值，zoom_y = 1.0
