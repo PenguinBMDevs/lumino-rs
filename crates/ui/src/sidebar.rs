@@ -151,8 +151,11 @@ impl Sidebar {
                 }
             }
             PanelToggled(r) => {
-                // 音轨总览模式下禁止开启左侧面板，保持关闭
-                if r == Route::Arrangement {
+                // 音轨总览模式下：点击其他路由按钮只切换路由，不打开面板
+                if self.route == Route::Arrangement && r != Route::Arrangement {
+                    self.route = r;
+                } else if r == Route::Arrangement {
+                    // 切换到音轨总览路由时，关闭面板
                     self.panel_visible = false;
                     self.panel_route = r;
                     self.route = r;
@@ -207,6 +210,11 @@ impl Sidebar {
                 self.track_scroll_offset = offset;
             }
         }
+        // 最终保护：音轨总览模式下强制关闭面板
+        if self.route == Route::Arrangement {
+            self.panel_visible = false;
+        }
+
         // 当面板可见性变化或路由变化时，都需要重新渲染
         self.panel_visible != prev_visible || self.route != prev_route
     }
@@ -275,8 +283,10 @@ impl Sidebar {
     /// 设置当前选中的音轨
     pub fn set_selected_track(&mut self, track_idx: usize) {
         self.selected_track = track_idx;
-        // 确保选中的音轨在面板中可见
-        self.panel_visible = true;
+        // 仅在非音轨总览模式下打开面板，确保音轨在面板中可见
+        if self.route != Route::Arrangement {
+            self.panel_visible = true;
+        }
     }
 
     /// 获取所有音轨的洋葱皮开关状态
@@ -288,5 +298,88 @@ impl Sidebar {
             states.insert(track.id, track.is_onion_skin_on);
         }
         states
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 音轨总览模式下：选中音轨不应强制打开侧边栏面板
+    #[test]
+    fn test_arrangement_mode_set_selected_track_does_not_open_panel() {
+        let mut sidebar = Sidebar::new();
+        sidebar.route = Route::Arrangement;
+        sidebar.panel_visible = false;
+
+        sidebar.set_selected_track(1);
+
+        assert_eq!(sidebar.selected_track, 1);
+        assert!(
+            !sidebar.panel_visible,
+            "Arrangement 模式下 set_selected_track 不应打开面板"
+        );
+    }
+
+    /// 非音轨总览模式下：选中音轨应打开侧边栏面板
+    #[test]
+    fn test_non_arrangement_mode_set_selected_track_opens_panel() {
+        let mut sidebar = Sidebar::new();
+        sidebar.route = Route::File;
+        sidebar.panel_visible = false;
+
+        sidebar.set_selected_track(1);
+
+        assert_eq!(sidebar.selected_track, 1);
+        assert!(
+            sidebar.panel_visible,
+            "非 Arrangement 模式下 set_selected_track 应打开面板"
+        );
+    }
+
+    /// 音轨总览模式下：PanelToggled 事件不应打开面板
+    #[test]
+    fn test_arrangement_mode_panel_toggled_keeps_panel_closed() {
+        let mut sidebar = Sidebar::new();
+        sidebar.route = Route::Arrangement;
+        sidebar.panel_visible = false;
+
+        sidebar.update(Event::PanelToggled(Route::Arrangement));
+
+        assert!(
+            !sidebar.panel_visible,
+            "Arrangement 模式下 PanelToggled 不应打开面板"
+        );
+    }
+
+    /// 音轨总览模式下：RouteUpdated 事件不应打开面板
+    #[test]
+    fn test_arrangement_mode_route_updated_keeps_panel_closed() {
+        let mut sidebar = Sidebar::new();
+        sidebar.route = Route::File;
+        sidebar.panel_visible = true;
+
+        sidebar.update(Event::RouteUpdated(Route::Arrangement));
+
+        assert!(
+            !sidebar.panel_visible,
+            "切换到 Arrangement 路由时应关闭面板"
+        );
+    }
+
+    /// 音轨总览模式下：TrackSelected 事件不应打开面板
+    #[test]
+    fn test_arrangement_mode_track_selected_keeps_panel_closed() {
+        let mut sidebar = Sidebar::new();
+        sidebar.route = Route::Arrangement;
+        sidebar.panel_visible = false;
+
+        sidebar.update(Event::TrackSelected(1));
+
+        assert_eq!(sidebar.selected_track, 1);
+        assert!(
+            !sidebar.panel_visible,
+            "Arrangement 模式下 TrackSelected 不应打开面板"
+        );
     }
 }

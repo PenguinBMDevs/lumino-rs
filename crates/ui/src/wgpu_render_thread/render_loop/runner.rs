@@ -2,8 +2,7 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
 };
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use iced_wgpu::wgpu;
 use lumino_gfx::SwappableBuffer;
@@ -51,18 +50,19 @@ pub fn run_render_thread(
     let mut last_onion_note_version: u64 = 0;
 
     while running.load(Ordering::Relaxed) {
-        // 处理所有待处理的命令
+        // 处理命令：先 drain 积压，然后如果没有 RenderCommand 则阻塞等待
         let mut latest_params: Option<RenderParams> = None;
         let mut should_shutdown = false;
 
-        process_commands(&command_receiver, &mut latest_params, &mut should_shutdown);
+        let has_params =
+            process_commands(&command_receiver, &mut latest_params, &mut should_shutdown);
 
         if should_shutdown {
             break;
         }
 
         // 执行渲染（离屏纹理）
-        if let Some(ref params) = latest_params {
+        if has_params && let Some(ref params) = latest_params {
             puffin::profile_scope!("wgpu_render_thread_frame");
             let frame_start = Instant::now();
 
@@ -197,10 +197,10 @@ pub fn run_render_thread(
                 params,
                 &stats_clone,
             );
-        } else {
-            // 没有新的渲染参数，短暂休眠避免 CPU 空转
-            thread::sleep(Duration::from_micros(100));
         }
+        // 注：process_commands 在没有 RenderCommand 时会阻塞在 recv()，
+        // 因此此处不再需要 sleep。wgpu 线程在无工作时完全休眠，
+        // 有工作时立即响应。
     }
 
     tracing::info!("Render thread stopped");
