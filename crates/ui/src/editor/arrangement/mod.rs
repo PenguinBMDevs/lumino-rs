@@ -83,9 +83,10 @@ impl ArrangementView {
     ///
     /// 每个音轨的 lane 内显示 128 个 key 的钢琴卷帘缩略图：
     /// - x = tick（时间）
-    /// - y = (num_tracks - 1 - track_idx) * 128 + key
+    /// - y = (num_tracks - 1 - track_idx) * track_height + key * (track_height / 128)
     ///   这样 track 0 在最上方，track N-1 在最下方，
     ///   每个 track 的 128 个 key 均匀分布在 lane_height 内
+    ///   y 坐标使用像素值，shader 中 zoom_y = 1.0
     /// - 颜色根据音轨索引分配
     pub fn generate_instances(
         &self,
@@ -99,6 +100,8 @@ impl ArrangementView {
     ) -> Vec<NoteInstance> {
         let mut instances = Vec::new();
         let num_tracks = num_tracks.max(1);
+        let track_height = self.viewport.track_height;
+        let key_height = track_height / 128.0;
 
         for (track_idx, track_id) in track_order.iter().enumerate() {
             // 只生成可见音轨的实例
@@ -111,8 +114,8 @@ impl ArrangementView {
             };
 
             let track_color = track_color(track_idx);
-            // track 0 在最上方：y_base = (num_tracks - 1 - 0) * 128
-            let y_base = ((num_tracks - 1 - track_idx) * 128) as f32;
+            // track 0 在最上方
+            let y_base = (num_tracks - 1 - track_idx) as f32 * track_height;
 
             for note in notes {
                 // 视锥裁剪：只生成可见时间范围内的音符
@@ -120,8 +123,8 @@ impl ArrangementView {
                     continue;
                 }
 
-                // y = y_base + key，这样 128 个 key 均匀分布在 lane 内
-                let y = y_base + note.key as f32;
+                // y = y_base + key * key_height，像素坐标
+                let y = y_base + note.key as f32 * key_height;
 
                 instances.push(NoteInstance::new(note.tick, y, note.length, track_color));
             }

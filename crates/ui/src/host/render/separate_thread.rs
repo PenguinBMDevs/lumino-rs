@@ -110,10 +110,8 @@ impl Host {
 
         let (scroll, zoom) = if self.root.is_arrangement_mode() {
             let av = &self.root.arrangement_view.viewport;
-            // yinhe 风格：zoom_y = track_height / 128，scroll_y 转换为逻辑 key 单位
-            let zoom_y = av.track_height / 128.0;
-            let scroll_y_logical = av.scroll_y / av.track_height * 128.0;
-            ((av.scroll_x, scroll_y_logical), (av.zoom_x, zoom_y))
+            // yinhe 风格：y 坐标使用像素值，zoom_y = 1.0
+            ((av.scroll_x, av.scroll_y), (av.zoom_x, 1.0))
         } else {
             let editor = &self.root.editor;
             (editor.scroll(), editor.zoom())
@@ -316,8 +314,9 @@ impl Host {
         let ruler_height = es.view.ruler_height;
         let is_arrangement_mode = self.root.is_arrangement_mode();
         let max_key_index = if is_arrangement_mode {
+            let av = &self.root.arrangement_view.viewport;
             let track_count = self.root.sidebar.tracks.len().max(1) as f32;
-            track_count * 128.0 - 1.0
+            track_count * av.track_height - av.track_height / 128.0
         } else {
             (es.view.visible_key_count.saturating_sub(1)) as f32
         };

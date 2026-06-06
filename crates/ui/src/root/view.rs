@@ -290,6 +290,8 @@ impl Root {
 
         const TRACK_LIST_WIDTH: f32 = 160.0;
         const TRACK_HEIGHT: f32 = 48.0;
+        let track_count = self.sidebar.tracks.len();
+        let total_height = track_count as f32 * TRACK_HEIGHT;
 
         // 构建左侧音轨名称列表
         let mut track_col = column![].spacing(0);
@@ -348,48 +350,44 @@ impl Root {
             track_col = track_col.push(track_btn);
         }
 
-        // 左侧音轨列表面板
-        let track_list = iced_widget::container(
-            scrollable(track_col)
-                .direction(scrollable::Direction::Vertical(
-                    scrollable::Scrollbar::new().width(6).scroller_width(4),
-                ))
-                .height(Length::Fill),
-        )
-        .width(Length::Fixed(TRACK_LIST_WIDTH))
-        .height(Length::Fill)
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            iced_widget::container::Style::default()
-                .background(palette.background.base.color)
-                .border(iced_core::Border {
-                    radius: 0.0.into(),
-                    width: 0.0,
-                    color: iced_core::Color::TRANSPARENT,
-                })
-        });
+        // 左侧音轨列表面板（与 Canvas 同步滚动）
+        let track_list = iced_widget::container(track_col)
+            .width(Length::Fixed(TRACK_LIST_WIDTH))
+            .height(Length::Fixed(total_height))
+            .style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                iced_widget::container::Style::default()
+                    .background(palette.background.base.color)
+                    .border(iced_core::Border {
+                        radius: 0.0.into(),
+                        width: 0.0,
+                        color: iced_core::Color::TRANSPARENT,
+                    })
+            });
 
         // 右侧走带区域 Canvas（绘制横向分隔线）
-        let arrangement_canvas = Canvas::new(ArrangementCanvas::new(
-            self.sidebar.tracks.len(),
-            TRACK_HEIGHT,
-        ))
-        .width(Length::Fill)
-        .height(Length::Fill);
+        let arrangement_canvas = Canvas::new(ArrangementCanvas::new(track_count, TRACK_HEIGHT))
+            .width(Length::Fill)
+            .height(Length::Fixed(total_height));
+
+        let arrangement_row = iced_widget::row![
+            track_list,
+            iced_widget::container(arrangement_canvas)
+                .width(Length::Fill)
+                .height(Length::Fixed(total_height))
+                .style(|theme: &Theme| {
+                    iced_widget::container::Style::default()
+                        .background(theme.extended_palette().background.base.color)
+                }),
+        ];
 
         column![
             self.toolbar.view(&self.window, false),
-            iced_widget::row![
-                track_list,
-                iced_widget::container(arrangement_canvas)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .style(|theme: &Theme| {
-                        iced_widget::container::Style::default()
-                            .background(theme.extended_palette().background.base.color)
-                    }),
-            ]
-            .height(Length::Fill),
+            scrollable(arrangement_row)
+                .direction(scrollable::Direction::Vertical(
+                    scrollable::Scrollbar::new().width(8).scroller_width(6),
+                ))
+                .height(Length::Fill),
         ]
         .width(Length::Fill)
         .height(Length::Fill)

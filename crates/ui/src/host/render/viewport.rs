@@ -5,15 +5,25 @@ impl Host {
     /// 收集视口信息
     pub(super) fn collect_viewport_info(&self) -> ViewportInfo {
         let phys = self.render_ctx.viewport.physical_size();
+        let logical_size = self.render_ctx.viewport.logical_size();
 
         if self.root.is_arrangement_mode() {
-            let av = &self.root.arrangement_view.viewport;
+            // 音轨总览模式下，Canvas 位置是固定的（左侧 track_list + 上方 toolbar）
+            // 使用估算值，因为 Canvas 的 bounds 更新可能滞后
+            const TRACK_LIST_WIDTH: f32 = 160.0;
+            const STATUSBAR_HEIGHT: f32 = 20.0;
+            let toolbar_height = self.root.toolbar.height();
+            let canvas_offset = iced_core::Point::new(TRACK_LIST_WIDTH, toolbar_height);
+            let canvas_size = iced_core::Point::new(
+                (logical_size.width - TRACK_LIST_WIDTH).max(1.0),
+                (logical_size.height - toolbar_height - STATUSBAR_HEIGHT).max(1.0),
+            );
             ViewportInfo {
-                logical_size: self.render_ctx.viewport.logical_size(),
+                logical_size,
                 physical_size: (phys.width, phys.height),
                 scale: self.render_ctx.viewport.scale_factor(),
-                canvas_offset: av.canvas_offset,
-                canvas_size: av.canvas_size,
+                canvas_offset,
+                canvas_size,
             }
         } else {
             let es = &self.root.editor.editor_state;
@@ -58,8 +68,8 @@ impl Host {
     /// 计算裁剪矩形
     pub(super) fn calculate_scissor_rect(&self, viewport: &ViewportInfo) -> ScissorRect {
         let (phys_w, phys_h) = viewport.physical_size;
-        let scissor_x = ((viewport.canvas_offset.x * viewport.scale) as u32).min(phys_w);
-        let scissor_y = ((viewport.canvas_offset.y * viewport.scale) as u32).min(phys_h);
+        let scissor_x = ((viewport.canvas_offset.x * viewport.scale).max(0.0) as u32).min(phys_w);
+        let scissor_y = ((viewport.canvas_offset.y * viewport.scale).max(0.0) as u32).min(phys_h);
         let scissor_width = ((viewport.canvas_size.x * viewport.scale) as u32)
             .min(phys_w.saturating_sub(scissor_x));
         let scissor_height = ((viewport.canvas_size.y * viewport.scale) as u32)
@@ -82,15 +92,13 @@ impl Host {
         if self.root.is_arrangement_mode() {
             let av = &self.root.arrangement_view.viewport;
             let track_count = self.root.sidebar.tracks.len().max(1) as f32;
-            // yinhe 风格：每个 track 的 lane 内显示 128 个 key 的缩略钢琴卷帘
-            let keys_per_track = 128.0;
-            let zoom_y = av.track_height / keys_per_track;
-            let max_key_index = track_count * keys_per_track - 1.0;
-            // scroll_y 从像素转换为逻辑 key 单位
-            let scroll_y_logical = av.scroll_y / av.track_height * keys_per_track;
+            // yinhe 风格：y 坐标已经是像素值，zoom_y = 1.0
+            let track_height = av.track_height;
+            let key_height = track_height / 128.0;
+            let max_key_index = track_count * track_height - key_height;
             lumino_gfx::CameraUniform::new(lumino_gfx::CameraParams {
-                scroll: [av.scroll_x, scroll_y_logical],
-                zoom: [av.zoom_x, zoom_y],
+                scroll: [av.scroll_x, av.scroll_y],
+                zoom: [av.zoom_x, 1.0],
                 viewport: [viewport.logical_size.width, viewport.logical_size.height],
                 offset: [viewport.canvas_offset.x, viewport.canvas_offset.y],
                 keyboard_width: 0.0,
