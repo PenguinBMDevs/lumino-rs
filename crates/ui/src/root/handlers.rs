@@ -184,7 +184,7 @@ impl Root {
             Message::ArrangementZoomX { zoom, fixed_ratio } => {
                 let vp = &mut self.arrangement_view.viewport;
                 let old_zoom = vp.zoom_x;
-                let new_zoom = zoom.clamp(0.1, 10.0);
+                let new_zoom = zoom.clamp(0.01, 10.0);
                 let canvas_w = vp.canvas_size.x.max(1.0);
                 // 保持固定点 tick 不变
                 let focus_px = vp.scroll_x + canvas_w * fixed_ratio;

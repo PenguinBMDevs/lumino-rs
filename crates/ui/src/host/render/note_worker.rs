@@ -23,10 +23,8 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 
 use lumino_core::midi::MidiDocument;
-use lumino_core::midi::constants::{MIDI_KEY_RANGE, TICK_SEARCH_BUFFER};
+use lumino_core::midi::constants::TICK_SEARCH_BUFFER;
 use lumino_gfx::{OnionNote, SwappableBuffer};
-use lumino_midi::MIDI_CHANNEL_COUNT;
-use lumino_midi::compact::{CompactEvent, EventKind};
 
 // ─── 数据快照 ───────────────────────────────────────────────────────────────
 
@@ -165,12 +163,12 @@ impl NoteWorker {
 
 // ─── OnionNote 收集 ─────────────────────────────────────────────────────────
 
-/// 直接从 CompactEvent 切片收集洋葱皮音符（零中间 tuple 分配）
+/// 直接从 MidiDocument 的 track_notes_cache 收集洋葱皮音符（零 active-table 扫描）
 ///
-/// 使用二分查找定位 tick 范围，直接构建 OnionNote，避免先转 Vec<(f32,u8,f32,u8,u8)>。
-/// 通过 TICK_SEARCH_BUFFER 回退搜索范围，捕获在视口之前开始但在视口内结束的音符。
+/// 使用二分查找定位 tick 范围，直接构建 OnionNote。
+/// 相比 events 版本：无 NoteOn/NoteOff 配对，无 EventKind match。
 fn collect_onion_notes_direct(
-    events: &[CompactEvent],
+    notes: &[lumino_core::midi::NoteInfo],
     track_idx: u16,
     tick_start: f32,
     tick_end: f32,
@@ -178,62 +176,33 @@ fn collect_onion_notes_direct(
     let tick_start_u = tick_start as u32;
     let tick_end_u = tick_end as u32;
 
+    if notes.is_empty() {
+        return Vec::new();
+    }
+
     // 二分查找定位 tick 范围（回退 TICK_SEARCH_BUFFER 捕获跨边界音符）
-    let search_start = events
-        .partition_point(|e| e.delta_tick() < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER));
-    let search_end = events.len().min(
-        search_start + events[search_start..].partition_point(|e| e.delta_tick() <= tick_end_u),
-    );
+    let search_start =
+        notes.partition_point(|n| n.start_tick < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER));
+    let search_end = notes
+        .len()
+        .min(search_start + notes[search_start..].partition_point(|n| n.start_tick <= tick_end_u));
 
     if search_start >= search_end {
         return Vec::new();
     }
 
-    // NoteOn/NoteOff 匹配，直接输出 OnionNote
-    let mut active_notes: [(u32, bool); 4096] = [(0, false); 4096]; // 256 keys × 16 channels
-    let mut notes = Vec::new();
+    // 直接从 NoteInfo 过滤 → OnionNote，零状态机开销
+    let slice = &notes[search_start..search_end];
+    let mut result = Vec::with_capacity(slice.len());
 
-    for ev in &events[search_start..search_end] {
-        let tick = ev.delta_tick();
-        let key = ev.param1() as u8;
-        let vel = ev.param2() as u8;
-        let channel = ev.channel();
-        let idx = (channel as usize) * (MIDI_KEY_RANGE as usize) + (key as usize);
-
-        match ev.kind() {
-            EventKind::NoteOn if vel > 0 => {
-                if active_notes[idx].1 {
-                    // 音符重叠：先发出前一个未结束的音符
-                    let st = active_notes[idx].0;
-                    notes.push(OnionNote::new(st, tick, key, track_idx));
-                }
-                active_notes[idx] = (tick, true);
-            }
-            EventKind::NoteOn | EventKind::NoteOff if active_notes[idx].1 => {
-                let st = active_notes[idx].0;
-                notes.push(OnionNote::new(st, tick, key, track_idx));
-                active_notes[idx].1 = false;
-            }
-            _ => {}
+    for n in slice {
+        let end_tick = n.end_tick();
+        if end_tick > tick_start_u && n.start_tick < tick_end_u {
+            result.push(OnionNote::new(n.start_tick, end_tick, n.key, track_idx));
         }
     }
 
-    // 处理未结束的音符（文件末尾关闭）
-    let last_tick = events.last().map(|e| e.delta_tick()).unwrap_or(0);
-    for channel in 0..MIDI_CHANNEL_COUNT as usize {
-        for key in 0..MIDI_KEY_RANGE as usize {
-            let idx = channel * (MIDI_KEY_RANGE as usize) + key;
-            if active_notes[idx].1 {
-                let st = active_notes[idx].0;
-                notes.push(OnionNote::new(st, last_tick, key as u8, track_idx));
-            }
-        }
-    }
-
-    // 过滤掉不完全在视口范围内的音符
-    notes.retain(|n| n.end_tick > tick_start_u && n.start_tick < tick_end_u);
-
-    notes
+    result
 }
 
 /// 从 MIDI 文档和用户手动放置的音符收集所有洋葱皮音轨的 OnionNote
@@ -251,11 +220,10 @@ pub(super) fn collect_onion_notes(
 ) -> Vec<OnionNote> {
     let mut all_notes = Vec::new();
 
-    // Phase 1: 从 MIDI 文档收集未被用户编辑过的音轨
+    // Phase 1: 从 MIDI 文档的 track_notes_cache 收集未被用户编辑过的音轨
     if let Some(doc) = document {
         use rayon::prelude::*;
         let num_tracks = doc.track_count();
-        let events = &doc.events;
 
         let track_results: Vec<Vec<OnionNote>> = (0..num_tracks)
             .into_par_iter()
@@ -272,14 +240,13 @@ pub(super) fn collect_onion_notes(
                     return None;
                 }
 
-                let (range_start, range_end) = doc.track_events_range(track_idx as u16);
-                if range_start >= range_end {
+                let cache = doc.track_notes(track_idx);
+                if cache.is_empty() {
                     return None;
                 }
 
-                let track_events = &events[range_start..range_end];
                 Some(collect_onion_notes_direct(
-                    track_events,
+                    cache,
                     track_idx as u16,
                     visible_tick_start,
                     visible_tick_end,

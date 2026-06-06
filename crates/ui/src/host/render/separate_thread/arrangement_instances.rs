@@ -174,120 +174,6 @@ fn collect_notes_doc(
     out: &mut Vec<ArrangementNoteInstance>,
     doc: &lumino_core::midi::MidiDocument,
     tid: usize,
-    ti: usize,
-    color: [f32; 3],
-    ppu: f32,
-    cox: f32,
-    lane_y: f32,
-    key_h: f32,
-    scroll_x: f32,
-    ts: f64,
-    te: f64,
-) {
-    use lumino_midi::compact::EventKind;
-
-    let (start, end) = doc.track_events_range(tid as u16);
-    if start >= end {
-        return;
-    }
-
-    let events = &doc.events[start..end];
-    let last_tick = events.last().map(|e| e.delta_tick()).unwrap_or(0);
-
-    // 二分查找起点（退1以捕获跨范围 NoteOn）
-    let search_start = events
-        .partition_point(|e| (e.delta_tick() as f64) < ts)
-        .saturating_sub(1);
-    let slice = &events[search_start..];
-
-    let mut active: [(u32, u8, u8, bool); 2048] = [(0, 0, 0, false); 2048];
-
-    for ev in slice {
-        let tick = ev.delta_tick() as f32;
-        let key = ev.param1() as u8;
-        let vel = ev.param2() as u8;
-        let ch = ev.channel();
-        let idx = (ch as usize) * 128 + (key as usize);
-
-        match ev.kind() {
-            EventKind::NoteOn if vel > 0 => {
-                if active[idx].3 {
-                    emit_note_screen(
-                        out,
-                        &active[idx],
-                        tick,
-                        key,
-                        ti,
-                        color,
-                        ppu,
-                        cox,
-                        lane_y,
-                        key_h,
-                        scroll_x,
-                        ts,
-                        te,
-                    );
-                }
-                active[idx] = (tick as u32, vel, ch, true);
-            }
-            EventKind::NoteOn | EventKind::NoteOff if active[idx].3 => {
-                emit_note_screen(
-                    out,
-                    &active[idx],
-                    tick,
-                    key,
-                    ti,
-                    color,
-                    ppu,
-                    cox,
-                    lane_y,
-                    key_h,
-                    scroll_x,
-                    ts,
-                    te,
-                );
-                active[idx].3 = false;
-            }
-            _ => {}
-        }
-        if (tick as f64) > te {
-            break;
-        }
-    }
-
-    // 未关闭音符
-    if (last_tick as f64) > ts {
-        for ch in 0..16u8 {
-            for k in 0..=127u8 {
-                let idx = (ch as usize) * 128 + (k as usize);
-                if active[idx].3 {
-                    emit_note_screen(
-                        out,
-                        &active[idx],
-                        last_tick as f32,
-                        k,
-                        ti,
-                        color,
-                        ppu,
-                        cox,
-                        lane_y,
-                        key_h,
-                        scroll_x,
-                        ts,
-                        te,
-                    );
-                }
-            }
-        }
-    }
-}
-
-#[inline(always)]
-fn emit_note_screen(
-    out: &mut Vec<ArrangementNoteInstance>,
-    st: &(u32, u8, u8, bool),
-    end_tick: f32,
-    key: u8,
     _ti: usize,
     color: [f32; 3],
     ppu: f32,
@@ -298,20 +184,43 @@ fn emit_note_screen(
     ts: f64,
     te: f64,
 ) {
-    let s = (st.0 as f64).max(ts);
-    let e = (end_tick as f64).min(te);
-    if s < e {
-        let sx = cox + s as f32 * ppu - scroll_x;
-        let sw = (e - s) as f32 * ppu;
-        let sy = lane_y + (127.0 - key as f32) * key_h;
-        out.push(ArrangementNoteInstance::note(
-            sx,
-            sy,
-            sw.max(2.0),
-            4.0,
-            color,
-            st.1,
-        ));
+    let notes = doc.track_notes(tid);
+    if notes.is_empty() {
+        return;
+    }
+
+    // 二分查找起点（退 TICK_SEARCH_BUFFER 以捕获跨范围音符）
+    let ts_u = ts as u32;
+    let te_u = te as u32;
+    const TICK_BUF: u32 = 19200;
+
+    let search_start = notes.partition_point(|n| n.start_tick < ts_u.saturating_sub(TICK_BUF));
+    let slice = &notes[search_start..];
+
+    for n in slice {
+        if n.start_tick > te_u {
+            break;
+        }
+        let end_tick = n.end_tick();
+        if end_tick < ts_u {
+            continue;
+        }
+        // NoteInfo → 屏幕坐标，一行输出，无 active-table 开销
+        let s = (n.start_tick as f64).max(ts);
+        let e = (end_tick as f64).min(te);
+        if s < e {
+            let sx = cox + s as f32 * ppu - scroll_x;
+            let sw = (e - s) as f32 * ppu;
+            let sy = lane_y + (127.0 - n.key as f32) * key_h;
+            out.push(ArrangementNoteInstance::note(
+                sx,
+                sy,
+                sw.max(2.0),
+                4.0,
+                color,
+                n.velocity,
+            ));
+        }
     }
 }
 

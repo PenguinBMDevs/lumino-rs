@@ -290,8 +290,8 @@ impl Root {
         const TRACK_HEIGHT: f32 = 48.0;
 
         let track_count = self.sidebar.tracks.len();
-        let total_height = track_count as f32 * TRACK_HEIGHT;
         let vp = &self.arrangement_view.viewport;
+        let total_height = (track_count as f32 * TRACK_HEIGHT).max(vp.canvas_size.y + TRACK_HEIGHT);
         let ppu = vp.zoom_x; // pixels_per_tick
 
         // 左侧音轨列表 Canvas（与走带区域共享 scroll_y，实现同步滚动）

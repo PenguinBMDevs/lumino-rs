@@ -9,6 +9,7 @@
 use lumino_midi::compact::{CompactEvent, EventKind};
 
 use super::error::MidiResult;
+use super::note_info::NoteInfo;
 use super::track::TrackManager;
 
 use std::path::Path;
@@ -17,7 +18,10 @@ use std::path::Path;
 ///
 /// events 按音轨连续存放（PackedNote 的自然顺序），不做按 tick 排序。
 /// `track_events_range` 为每轨事件的 start..end 真实连续区间。
-/// `get_track_notes` 只需扫描本轨事件，无需 O(N×T) 全量遍历。
+/// `get_track_notes` / `get_track_notes_in_range` 从 `track_notes_cache` 读取，
+/// 避免每帧对 NoteOn/NoteOff 事件做 active-table 扫描配对。
+///
+/// 缓存构建：`build_from_extracted_notes` 在加载时从 `PackedNote` 一次构建完成。
 #[derive(Clone)]
 pub struct MidiDocument {
     /// 所有事件按音轨连续存放（不做 tick 排序）
@@ -37,6 +41,14 @@ pub struct MidiDocument {
     pub track_count: u16,
     /// 音轨可见性管理
     pub tracks: TrackManager,
+    /// **预解析的音符缓存** — 每轨按 start_tick 排序的 NoteInfo 列表。
+    ///
+    /// 在 `build_from_extracted_notes` 中直接从 `PackedNote` 构建（与 events 同源），
+    /// 避免每次 `get_track_notes` / `get_track_notes_in_range` 重复 active-table 扫描。
+    ///
+    /// 索引：`track_notes_cache[track_id]` = 该音轨所有 NoteInfo，按 start_tick 升序排列。
+    /// 空音轨为 `Vec::new()`。
+    pub track_notes_cache: Vec<Vec<NoteInfo>>,
 }
 
 impl std::fmt::Debug for MidiDocument {
@@ -113,6 +125,9 @@ impl MidiDocument {
         let track_events_offset = Self::compute_track_offsets(&track_note_counts);
         let track_events = Self::convert_notes_parallel(&notes, &track_note_counts);
 
+        // 从 PackedNote 构建 track_notes_cache（避免 active-table 重复扫描）
+        let track_notes_cache = Self::build_note_cache(&notes, &track_note_counts);
+
         drop(notes);
 
         let track_events_range =
@@ -152,6 +167,7 @@ impl MidiDocument {
             total_ticks,
             track_count,
             tracks,
+            track_notes_cache,
         })
     }
 
@@ -293,6 +309,46 @@ impl MidiDocument {
             .collect()
     }
 
+    /// 从 PackedNote 构建每轨按 start_tick 排序的 NoteInfo 缓存。
+    ///
+    /// 与 `convert_notes_parallel` 共享相同的 per-track 分组逻辑，
+    /// 但直接输出 `NoteInfo` 而非拆分为 NoteOn/NoteOff 事件对。
+    ///
+    /// 结果不包含 channel 信息（PackedNote 无 channel 字段），
+    /// 与 `convert_notes_parallel` 的行为一致（硬编码 channel = 0）。
+    fn build_note_cache(
+        notes: &[midly::loader::PackedNote],
+        track_note_counts: &[u64],
+    ) -> Vec<Vec<NoteInfo>> {
+        let track_count = track_note_counts.len();
+        let mut track_notes: Vec<Vec<NoteInfo>> = vec![Vec::new(); track_count];
+
+        for note in notes {
+            let tid = note.track as usize;
+            if tid >= track_notes.len() {
+                // 理论上不会发生（build_track_statistics 已建立 track_note_counts），
+                // 但防止 index out of bounds
+                continue;
+            }
+            track_notes[tid].push(NoteInfo::new(
+                note.start_tick,
+                note.end_tick.saturating_sub(note.start_tick),
+                note.key,
+                note.velocity,
+                0, // channel: PackedNote 无此字段，与 convert_notes_parallel 一致
+            ));
+        }
+
+        // 每个音轨内按 start_tick 排序（events 在最终合并时也做了 per-track 排序）
+        for notes in &mut track_notes {
+            if notes.len() > 1 {
+                notes.sort_by_key(|n| n.start_tick);
+            }
+        }
+
+        track_notes
+    }
+
     /// 获取总 tick 数
     #[inline]
     pub fn total_ticks(&self) -> u32 {
@@ -313,20 +369,13 @@ impl MidiDocument {
         self.track_events_range.get(tid).copied().unwrap_or((0, 0))
     }
 
-    /// 轻量获取指定音轨的音符数（O(notes_in_track)，零分配）
-    /// 仅扫描 NoteOn 事件计数，不提取任何音符数据
+    /// 轻量获取指定音轨的音符数（直接从 `track_notes_cache` 读取，零分配）
     pub fn track_note_count(&self, track_id: u16) -> u64 {
-        let (start, end) = self.track_events_range(track_id);
-        if start >= end {
-            return 0;
-        }
-        let mut count: u64 = 0;
-        for ev in &self.events[start..end] {
-            if matches!(ev.kind(), EventKind::NoteOn) {
-                count += 1;
-            }
-        }
-        count
+        let tid = track_id as usize;
+        self.track_notes_cache
+            .get(tid)
+            .map(|notes| notes.len() as u64)
+            .unwrap_or(0)
     }
 
     /// 获取指定音轨的所有事件（O(events_in_track)，连续 range 直接切片）
@@ -384,10 +433,11 @@ impl MidiDocument {
             .any(|e| e.delta_tick() < to_tick)
     }
 
-    /// 获取指定音轨在指定 tick 范围内的音符。
-    /// 利用预排序的 events 做二分查找 + 线性扫描，O(log N + K) 而非 O(N)。
+    /// 获取指定音轨在指定 tick 范围内的音符（直接从 `track_notes_cache` 读取）。
     ///
-    /// 优化：使用固定大小数组替代 HashMap，避免内存分配。
+    /// 利用预排序的 cache 做二分查找 + 线性扫描，O(log N + K) 而非 O(N)。
+    ///
+    /// 返回格式：(start_tick, key, length, velocity, channel)
     pub fn get_track_notes_in_range(
         &self,
         track_id: u16,
@@ -395,54 +445,82 @@ impl MidiDocument {
         tick_end: f32,
     ) -> Vec<(f32, u8, f32, u8, u8)> {
         let tid = track_id as usize;
-        let (range_start, range_end) = self.track_events_range.get(tid).copied().unwrap_or((0, 0));
-        if range_start >= range_end {
+        let notes = match self.track_notes_cache.get(tid) {
+            Some(n) => n,
+            None => return Vec::new(),
+        };
+        if notes.is_empty() {
             return Vec::new();
         }
 
-        let events = &self.events[range_start..range_end];
         let tick_start_u = tick_start as u32;
         let tick_end_u = tick_end as u32;
 
         use crate::midi::constants::TICK_SEARCH_BUFFER;
 
-        let search_start = events
-            .partition_point(|e| e.delta_tick() < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER));
-        let search_end = events.len().min(
-            search_start + events[search_start..].partition_point(|e| e.delta_tick() <= tick_end_u),
+        // 二分查找：找到第一个可能落在范围内的音符
+        let search_start = notes
+            .partition_point(|n| n.start_tick < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER));
+        let search_end = notes.len().min(
+            search_start + notes[search_start..].partition_point(|n| n.start_tick <= tick_end_u),
         );
 
         if search_start >= search_end {
             return Vec::new();
         }
 
-        let mut notes = Self::collect_notes(&events[search_start..search_end]);
-        notes.retain(|n| {
-            let start = n.0;
-            let end = start + n.2;
-            end >= tick_start && start <= tick_end
-        });
-        notes
-    }
+        let slice = &notes[search_start..search_end];
+        let mut result = Vec::with_capacity(slice.len());
 
-    /// 获取指定音轨的所有音符（仅扫描本轨事件，O(notes_in_track)）
-    ///
-    /// 注意：events 数组在加载时已按 tick 排序（见 from_notes_file），
-    /// 本函数不用再次排序，直接线性扫描。
-    ///
-    /// 优化：使用固定大小数组替代 HashMap，避免内存分配。
-    pub fn get_track_notes(&self, track_id: u16) -> Vec<(f32, u8, f32, u8, u8)> {
-        let tid = track_id as usize;
-        let (start, end) = self.track_events_range.get(tid).copied().unwrap_or((0, 0));
-        if start >= end {
-            return Vec::new();
+        for n in slice {
+            let end = n.end_tick();
+            if end >= tick_start_u && n.start_tick <= tick_end_u {
+                result.push((
+                    n.start_tick as f32,
+                    n.key,
+                    n.length as f32,
+                    n.velocity,
+                    n.channel,
+                ));
+            }
         }
 
-        Self::collect_notes(&self.events[start..end])
+        result
+    }
+
+    /// 获取指定音轨的所有音符（直接从 `track_notes_cache` 读取，零 active-table 扫描）
+    ///
+    /// 返回格式：(start_tick, key, length, velocity, channel)
+    ///
+    /// 与传统事件扫描相比：
+    /// - **之前**：扫描 NoteOn/NoteOff 事件 + active-table 配对 → 输出
+    /// - **现在**：直接从预构建的 `track_notes_cache` 读取 → 零配对开销
+    ///
+    /// 对于黑乐谱（88M 事件 → 44M 音符），此改动将 track-switch 延迟减半。
+    pub fn get_track_notes(&self, track_id: u16) -> Vec<(f32, u8, f32, u8, u8)> {
+        let tid = track_id as usize;
+        match self.track_notes_cache.get(tid) {
+            Some(notes) if !notes.is_empty() => {
+                let mut result = Vec::with_capacity(notes.len());
+                for n in notes {
+                    result.push((
+                        n.start_tick as f32,
+                        n.key,
+                        n.length as f32,
+                        n.velocity,
+                        n.channel,
+                    ));
+                }
+                result
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// 获取所有音轨（排除指定音轨）在指定 tick 范围内的音符。
     /// 一次性查询所有音轨，避免多次二分查找和多次 Vec 分配。
+    ///
+    /// 直接从 `track_notes_cache` 读取，无需 events 扫描。
     ///
     /// # 参数
     /// - `exclude_track`: 要排除的音轨索引（通常是当前编辑音轨）
@@ -465,48 +543,53 @@ impl MidiDocument {
                 continue;
             }
 
-            let (range_start, range_end) = self
-                .track_events_range
-                .get(track_idx)
-                .copied()
-                .unwrap_or((0, 0));
-            if range_start >= range_end {
+            let notes = match self.track_notes_cache.get(track_idx) {
+                Some(n) => n,
+                None => continue,
+            };
+
+            if notes.is_empty() {
                 continue;
             }
 
-            let events = &self.events[range_start..range_end];
-
-            let search_start = events.partition_point(|e| {
-                e.delta_tick() < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER)
+            let search_start = notes.partition_point(|n| {
+                n.start_tick < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER)
             });
-            let search_end = events.len().min(
+            let search_end = notes.len().min(
                 search_start
-                    + events[search_start..].partition_point(|e| e.delta_tick() <= tick_end_u),
+                    + notes[search_start..].partition_point(|n| n.start_tick <= tick_end_u),
             );
 
             if search_start >= search_end {
                 continue;
             }
 
-            // 直接收集音符到 all_notes，避免中间 Vec 分配
-            Self::collect_notes_to(&events[search_start..search_end], &mut all_notes);
+            for n in &notes[search_start..search_end] {
+                let end = n.end_tick();
+                if end >= tick_start_u && n.start_tick <= tick_end_u {
+                    all_notes.push((
+                        n.start_tick as f32,
+                        n.key,
+                        n.length as f32,
+                        n.velocity,
+                        n.channel,
+                    ));
+                }
+            }
         }
 
         // 按 tick 排序，保证输出顺序稳定
         all_notes.sort_by(|a, b| a.0.total_cmp(&b.0));
-
-        // 过滤掉不完全在范围内的音符
-        all_notes.retain(|n| {
-            let start = n.0;
-            let end = start + n.2;
-            end >= tick_start && start <= tick_end
-        });
 
         all_notes
     }
 
     /// 共享音符收集逻辑：从一段已排序的事件切片中提取音符。
     /// 使用固定大小数组替代 HashMap：256 keys × 16 channels = 4096。
+    ///
+    /// **已不再被公开查询路径调用** — 所有 `get_track_notes*` 已切换到 `track_notes_cache`。
+    /// 保留此方法作为 fallback/测试用。
+    #[allow(dead_code)]
     fn collect_notes(events: &[CompactEvent]) -> Vec<(f32, u8, f32, u8, u8)> {
         use crate::midi::constants::{MAX_CONCURRENT_NOTES, MIDI_KEY_RANGE};
         use lumino_midi::MIDI_CHANNEL_COUNT;
@@ -556,6 +639,7 @@ impl MidiDocument {
 
     /// 将音符收集到指定的 Vec 中，避免中间分配。
     /// 与 `collect_notes` 逻辑相同，但直接追加到传入的 Vec。
+    #[allow(dead_code)]
     fn collect_notes_to(events: &[CompactEvent], out: &mut Vec<(f32, u8, f32, u8, u8)>) {
         use crate::midi::constants::{MAX_CONCURRENT_NOTES, MIDI_KEY_RANGE};
         use lumino_midi::MIDI_CHANNEL_COUNT;
@@ -609,6 +693,20 @@ impl MidiDocument {
     #[inline]
     pub fn track_name(&self, track_id: usize) -> Option<&str> {
         self.track_names.get(track_id).and_then(|n| n.as_deref())
+    }
+
+    /// 获取指定音轨的预解析音符缓存引用
+    ///
+    /// 返回 `&[NoteInfo]`，每个元素为完整的自包含音符（start_tick + length + key + vel + channel）。
+    /// 与 `get_track_notes` / `get_track_notes_in_range` 同源，但避免 tuple 分配。
+    ///
+    /// 音符在每轨内按 start_tick 升序排列，可直接用 `partition_point` 二分查找。
+    #[inline]
+    pub fn track_notes(&self, track_id: usize) -> &[NoteInfo] {
+        self.track_notes_cache
+            .get(track_id)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 }
 

@@ -5,6 +5,7 @@ pub mod error;
 pub mod event;
 pub mod info;
 pub mod loader;
+pub mod note_info;
 pub mod quantize;
 pub mod track;
 
@@ -14,6 +15,7 @@ pub use error::MidiError;
 pub use event::MidiEvent;
 pub use info::MidiInfo;
 pub use midly::loader::PackedControlEvent;
+pub use note_info::NoteInfo;
 pub use track::{TrackManager, TrackView, TrackVisibility};
 
 /// 将 BPM 转换为微秒每拍（tempo）
