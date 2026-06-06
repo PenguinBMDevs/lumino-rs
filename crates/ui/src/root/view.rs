@@ -331,7 +331,7 @@ impl Root {
             max_scroll_x,
             vp.zoom_x,
             Some(vp.canvas_size.x),
-            |x| crate::Message::ArrangementScrollX(x),
+            crate::Message::ArrangementScrollX,
             |zoom, ratio| crate::Message::ArrangementZoomX {
                 zoom,
                 fixed_ratio: ratio,
@@ -342,10 +342,13 @@ impl Root {
         let v_scrollbar = crate::editor::scrollbar_widget::ScrollbarWidget::vertical(
             vp.scroll_y,
             total_height,
-            vp.track_height,
+            vp.zoom_y,
             Some(vp.canvas_size.y.max(1.0)),
-            |y| crate::Message::ArrangementScrollY(y),
-            |_zoom, _ratio| crate::Message::ArrangementScrollY(0.0),
+            crate::Message::ArrangementScrollY,
+            |zoom, ratio| crate::Message::ArrangementZoomY {
+                zoom,
+                fixed_ratio: ratio,
+            },
         );
 
         let arrangement_row = iced_widget::row![track_list, arrangement_area, v_scrollbar,];

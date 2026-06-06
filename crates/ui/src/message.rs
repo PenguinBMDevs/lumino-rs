@@ -62,6 +62,11 @@ pub enum Message {
         zoom: f32,
         fixed_ratio: f32,
     },
+    /// 工程走带垂直缩放（fixed_ratio = 固定点比例, 0.0=上, 1.0=下）
+    ArrangementZoomY {
+        zoom: f32,
+        fixed_ratio: f32,
+    },
     ZoomXChanged {
         zoom: f32,
         fixed_ratio: f32,

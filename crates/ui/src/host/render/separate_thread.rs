@@ -36,6 +36,7 @@ impl Host {
             scroll_x: av.scroll_x,
             scroll_y: av.scroll_y,
             zoom_x: av.zoom_x,
+            zoom_y: av.zoom_y,
             track_height: av.track_height,
             canvas_offset: viewport_info.canvas_offset,
             canvas_size: viewport_info.canvas_size,

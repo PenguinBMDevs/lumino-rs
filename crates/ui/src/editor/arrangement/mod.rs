@@ -20,6 +20,8 @@ pub struct ArrangementViewport {
     pub scroll_y: f32,
     /// 水平缩放（像素/tick）
     pub zoom_x: f32,
+    /// 垂直缩放（倍率，1.0 = 默认高度）
+    pub zoom_y: f32,
     /// 每轨高度（像素）
     pub track_height: f32,
     /// Canvas 偏移（屏幕坐标，GPU 实例使用，每帧从 viewport_info 刷新）
@@ -36,6 +38,7 @@ impl Default for ArrangementViewport {
             scroll_x: 0.0,
             scroll_y: 0.0,
             zoom_x: 0.5,
+            zoom_y: 1.0,
             track_height: 48.0,
             canvas_offset: Point::new(0.0, 0.0),
             canvas_size: Point::new(800.0, 600.0),

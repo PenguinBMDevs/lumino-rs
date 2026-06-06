@@ -184,13 +184,26 @@ impl Root {
             Message::ArrangementZoomX { zoom, fixed_ratio } => {
                 let vp = &mut self.arrangement_view.viewport;
                 let old_zoom = vp.zoom_x;
-                let new_zoom = zoom.max(0.1).min(10.0);
+                let new_zoom = zoom.clamp(0.1, 10.0);
                 let canvas_w = vp.canvas_size.x.max(1.0);
                 // 保持固定点 tick 不变
                 let focus_px = vp.scroll_x + canvas_w * fixed_ratio;
                 let focus_tick = focus_px / old_zoom;
                 vp.zoom_x = new_zoom;
                 vp.scroll_x = (focus_tick * new_zoom - canvas_w * fixed_ratio).max(0.0);
+                true
+            }
+            Message::ArrangementZoomY { zoom, fixed_ratio } => {
+                let vp = &mut self.arrangement_view.viewport;
+                let old_zoom = vp.zoom_y;
+                let new_zoom = zoom.clamp(0.2, 5.0);
+                let canvas_h = vp.canvas_size.y.max(1.0);
+                // 保持固定点位置不变
+                let focus_px = vp.scroll_y + canvas_h * fixed_ratio;
+                let focus_ratio = focus_px / (old_zoom * vp.track_height);
+                vp.zoom_y = new_zoom;
+                vp.scroll_y =
+                    (focus_ratio * new_zoom * vp.track_height - canvas_h * fixed_ratio).max(0.0);
                 true
             }
             Message::ZoomXChanged { zoom, fixed_ratio } => {
