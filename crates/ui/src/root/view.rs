@@ -334,36 +334,61 @@ impl Root {
             .height(Length::Fixed(total_height));
 
         // ── 按 yinhe 风格预计算音符屏幕空间矩形 ──
+        // 优先从 track_notes 读取已缓存的音轨，未加载的从 midi_document 直接读取
         let track_notes = &self.editor.editor_state.data.track_notes;
         let track_order: Vec<usize> = self.sidebar.tracks.iter().map(|t| t.id).collect();
 
         let mut note_rects: Vec<NoteRect> = Vec::new();
+        let mut max_tick = 0.0_f32;
         for (track_idx, track_id) in track_order.iter().enumerate() {
-            let Some(notes) = track_notes.get(track_id) else {
-                continue;
-            };
-
             let lane_y_base = track_idx as f32 * TRACK_HEIGHT;
             let color = PALETTE[track_idx % PALETTE.len()];
 
-            for note in notes {
-                // 视锥裁剪：只处理可见 tick 范围（用宽裕边界）
-                let nw = (note.length * ppu).max(2.0);
-                let nx = note.tick * ppu - vp.scroll_x;
-                if nx + nw < -vp.canvas_size.x || nx > vp.canvas_size.x * 2.0 {
-                    continue;
+            // 从缓存或 MIDI 文档获取音符数据
+            if let Some(notes) = track_notes.get(track_id) {
+                // 已缓存的 Note（带 u16 key 和完整字段）
+                for note in notes {
+                    let nw = (note.length * ppu).max(2.0);
+                    let nx = note.tick * ppu - vp.scroll_x;
+                    if nx + nw < -vp.canvas_size.x || nx > vp.canvas_size.x * 2.0 {
+                        continue;
+                    }
+                    let ny = lane_y_base - vp.scroll_y + (127.0 - note.key as f32) * lh_per_key;
+                    note_rects.push(NoteRect {
+                        x: nx,
+                        y: ny,
+                        w: nw,
+                        h: note_h,
+                        color: Color::from_rgba(color[0], color[1], color[2], 0.85),
+                    });
+                    let note_end = note.tick + note.length;
+                    if note_end > max_tick {
+                        max_tick = note_end;
+                    }
                 }
-
-                // yinhe 风格的 y 坐标计算
-                let ny = lane_y_base - vp.scroll_y + (127.0 - note.key as f32) * lh_per_key;
-
-                note_rects.push(NoteRect {
-                    x: nx,
-                    y: ny,
-                    w: nw,
-                    h: note_h,
-                    color: Color::from_rgba(color[0], color[1], color[2], 0.85),
-                });
+            } else if let Some(doc) = &self.midi_document {
+                // 未缓存：从 MIDI 文档直接读取
+                let raw_notes = doc.get_track_notes(*track_id as u16);
+                for (tick, key, length, _vel, _ch) in &raw_notes {
+                    let nw = (length * ppu).max(2.0);
+                    let nx = tick * ppu - vp.scroll_x;
+                    if nx + nw < -vp.canvas_size.x || nx > vp.canvas_size.x * 2.0 {
+                        continue;
+                    }
+                    let key_f32 = *key as f32;
+                    let ny = lane_y_base - vp.scroll_y + (127.0 - key_f32) * lh_per_key;
+                    note_rects.push(NoteRect {
+                        x: nx,
+                        y: ny,
+                        w: nw,
+                        h: note_h,
+                        color: Color::from_rgba(color[0], color[1], color[2], 0.85),
+                    });
+                    let note_end = tick + length;
+                    if note_end > max_tick {
+                        max_tick = note_end;
+                    }
+                }
             }
         }
 
@@ -388,17 +413,7 @@ impl Root {
         .height(Length::Fixed(total_height));
 
         // 水平滚动条（复用钢琴卷帘的 ScrollbarWidget）
-        let max_tick = self
-            .editor
-            .editor_state
-            .data
-            .track_notes
-            .values()
-            .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
-            .fold(0.0_f32, f32::max);
-        // 更新 arrangement viewport 的 total_ticks
-        // 使用 Cell 或直接修改——这里是 &self，但 total_ticks 是 u32，我们只能在这里写
-        // 因为 view 是 &self，不能修改状态，所以放在布局中计算但用局部变量传给 scrollbar
+        // max_tick 已在音符循环中从 track_notes + midi_document 计算得出
         let total_ticks_val = max_tick.max(960.0 * 4.0) as u32; // 至少 4 小节
 
         let total_width = total_ticks_val as f32 * ppu;

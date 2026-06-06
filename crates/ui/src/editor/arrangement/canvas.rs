@@ -67,10 +67,30 @@ impl Program<Message, Theme, Renderer> for ArrangementCanvas {
     fn update(
         &self,
         _state: &mut (),
-        _event: &iced_widget::canvas::Event,
+        event: &iced_widget::canvas::Event,
         bounds: Rectangle,
         _cursor: iced_core::mouse::Cursor,
     ) -> Option<iced_widget::canvas::Action<Message>> {
+        // 处理鼠标滚轮
+        if let iced_widget::canvas::Event::Mouse(iced_core::mouse::Event::WheelScrolled {
+            delta,
+        }) = event
+        {
+            use crate::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
+            let (_, dy) = match delta {
+                iced_core::mouse::ScrollDelta::Lines { x: _x, y } => {
+                    (_x * SCROLL_LINES_SCALE, y * SCROLL_LINES_SCALE)
+                }
+                iced_core::mouse::ScrollDelta::Pixels { x: _x, y } => (*_x, *y),
+            };
+            let dy = dy.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
+            // 垂直滚动为主（水平滚动通过滚动条操作）
+            return Some(iced_widget::canvas::Action::publish(
+                Message::ArrangementScrollY(self.scroll_y + dy),
+            ));
+        }
+
+        // 默认行为：发布 Canvas 边界更新
         let offset = Point::new(bounds.x, bounds.y);
         let size = Size::new(bounds.width, bounds.height);
 

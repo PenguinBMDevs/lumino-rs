@@ -50,6 +50,25 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
         bounds: Rectangle,
         cursor: iced_core::mouse::Cursor,
     ) -> Option<iced_widget::canvas::Action<Message>> {
+        // 鼠标滚轮滚动
+        if let iced_widget::canvas::Event::Mouse(iced_core::mouse::Event::WheelScrolled {
+            delta,
+        }) = event
+        {
+            use crate::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
+            let (_, dy) = match delta {
+                iced_core::mouse::ScrollDelta::Lines { x, y } => {
+                    (x * SCROLL_LINES_SCALE, y * SCROLL_LINES_SCALE)
+                }
+                iced_core::mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
+            };
+            let dy = dy.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
+            return Some(iced_widget::canvas::Action::publish(
+                Message::ArrangementScrollY(self.scroll_y + dy),
+            ));
+        }
+
+        // 点击选轨
         if let iced_widget::canvas::Event::Mouse(
             iced_core::mouse::Event::ButtonPressed(iced_core::mouse::Button::Left),
         ) = event
