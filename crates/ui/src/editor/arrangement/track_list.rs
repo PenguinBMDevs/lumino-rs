@@ -62,8 +62,9 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                 iced_core::mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
             };
             let dy = dy.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
+            // 注意：dy > 0 表示滚轮向下，scroll_y 应减小（内容向上滚动）
             return Some(iced_widget::canvas::Action::publish(
-                Message::ArrangementScrollY(self.scroll_y + dy),
+                Message::ArrangementScrollY(self.scroll_y - dy),
             ));
         }
 

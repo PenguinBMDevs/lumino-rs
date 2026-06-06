@@ -84,8 +84,9 @@ impl Program<Message, Theme, Renderer> for ArrangementCanvas {
             };
             let dy = dy.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
             // 垂直滚动为主（水平滚动通过滚动条操作）
+            // 注意：dy > 0 表示滚轮向下，scroll_y 应减小（内容向上滚动）
             return Some(iced_widget::canvas::Action::publish(
-                Message::ArrangementScrollY(self.scroll_y + dy),
+                Message::ArrangementScrollY(self.scroll_y - dy),
             ));
         }
 

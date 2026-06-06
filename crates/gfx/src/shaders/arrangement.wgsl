@@ -1,5 +1,5 @@
 // 工程走带着色器 - 实例化渲染版本 (参考 yinhe 实现)
-// 使用 Vertex Buffer + Instance Rendering，避免 Fragment Shader 中循环遍历 storage buffer
+// 所有实例使用屏幕空间像素坐标，CPU 端负责坐标变换
 
 const BORDER_DARKEN_FACTOR: f32 = 0.4;
 
@@ -9,24 +9,23 @@ struct Uniforms {
     zoom: f32,                     // offset 16
     track_height: f32,             // offset 20
     notes_per_track: f32,          // offset 24
-    _pad0: f32,                    // offset 28 (align canvas_offset to 8)
+    _pad0: f32,                    // offset 28
     canvas_offset: vec2<f32>,      // offset 32
     playhead_x: f32,               // offset 40
-    _pad1: f32,                    // offset 44 (align bg_color to 16)
+    _pad1: f32,                    // offset 44
     bg_color: vec4<f32>,           // offset 48
     bar_color: vec4<f32>,          // offset 64
     playhead_color: vec4<f32>,     // offset 80
-    track_colors: array<vec4<f32>, 16>, // offset 96 (vec4 stride = 16)
+    track_colors: array<vec4<f32>, 16>, // offset 96
     track_count: f32,              // offset 352
     _pad2: f32,                    // offset 356
     _pad3: f32,                    // offset 360
     _pad4: f32,                    // offset 364
 }
 
-// 实例数据：32字节，与 yinhe 的 NoteInstance 兼容
 struct ArrangementNoteInstance {
     @location(0) xywh: vec4<f32>,      // x, y, w, h (屏幕空间像素坐标)
-    @location(1) packed: vec4<u32>,    // x=rgba(UNORM8), y=props(2xf16), z=velocity, w=tag
+    @location(1) packed: vec4<u32>,    // x=rgba, y=props, z=velocity, w=tag
 }
 
 struct VertexOutput {

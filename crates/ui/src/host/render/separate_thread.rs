@@ -22,19 +22,17 @@ const ARRANGEMENT_PALETTE: [[f32; 3]; 12] = [
 ];
 
 impl Host {
-    /// 收集走带视图的音符实例（所有音轨）
-    /// 使用新的实例化渲染方式，在 CPU 端计算屏幕坐标
-    pub(super) fn collect_arrangement_note_instances(&self) -> Vec<ArrangementNoteInstance> {
-        puffin::profile_scope!("collect_arrangement_note_instances");
+    /// 收集走带视图全部实例（背景 + lane + 网格线 + 音符 + 演奏指示线）
+    /// 屏幕坐标，每帧重建，二分查找加速 MidiDocument 读取
+    pub(super) fn collect_arrangement_instances(&self) -> Vec<ArrangementNoteInstance> {
+        puffin::profile_scope!("collect_arrangement_instances");
 
         let track_order: Vec<usize> = self.root.sidebar.tracks.iter().map(|t| t.id).collect();
         let track_notes = &self.root.editor.editor_state.data.track_notes;
-        
-        // 使用 collect_viewport_info 获取正确的 viewport 值
+
         let viewport_info = self.collect_viewport_info();
         let av = &self.root.arrangement_view.viewport;
-        
-        // 构建一个临时的 ArrangementViewport，使用正确的 canvas_offset 和 canvas_size
+
         let viewport = crate::editor::arrangement::ArrangementViewport {
             scroll_x: av.scroll_x,
             scroll_y: av.scroll_y,
@@ -44,23 +42,26 @@ impl Host {
             canvas_size: viewport_info.canvas_size,
             total_ticks: av.total_ticks,
         };
-        
-        // 构建音轨可见性列表（静音的音轨不渲染）
-        let track_visible: Vec<bool> = self.root.sidebar.tracks.iter()
+
+        let track_visible: Vec<bool> = self
+            .root
+            .sidebar
+            .tracks
+            .iter()
             .map(|t| !t.is_muted)
             .collect();
-        
+
         let mut instances = Vec::new();
-        
+
         arrangement_instances::build_arrangement_instances(
             &mut instances,
             &viewport,
-            track_notes,
             &track_order,
             &ARRANGEMENT_PALETTE,
             &track_visible,
-            self.root.editor.playback_position as f32,
             self.root.midi_document.as_ref().map(|v| &**v),
+            track_notes,
+            self.root.editor.playback_position as f32,
         );
 
         instances
@@ -216,9 +217,10 @@ impl Host {
 
         self.update_note_data_for_wgpu_thread();
 
-        // 走带模式：收集所有音轨音符实例用于 GPU 渲染
+        // 走带模式：收集全部实例（背景+lane+网格+音符+演奏指示线）
         let arrangement_note_instances = if self.root.is_arrangement_mode() {
-            self.collect_arrangement_note_instances()
+            puffin::profile_scope!("collect_arrangement_instances");
+            self.collect_arrangement_instances()
         } else {
             vec![]
         };
@@ -242,46 +244,36 @@ impl Host {
     ///   → 50-200ms 延迟，但不阻塞主音符渲染
     pub(super) fn update_note_data_for_wgpu_thread(&mut self) {
         puffin::profile_scope!("update_note_data");
+
+        // 走带模式：音符由 arrangement_renderer 直接绘制，跳过钢琴卷帘笔记更新
+        if self.root.is_arrangement_mode() {
+            return;
+        }
+
         let note_index_dirty = self.root.editor.note_index_dirty.get();
         let is_drawing = matches!(
             self.root.editor.editor_state.interaction.edit_state,
             crate::editor::EditState::Drawing { .. }
         );
 
+        // 检测视口变化
+        let v = &self.root.editor.editor_state.view;
+        let canvas_size = &self.root.editor.editor_state.canvas.size;
+        let current_viewport_hash = crate::host::RenderCache::compute_viewport_hash(
+            v.scroll_x,
+            v.scroll_y,
+            v.zoom_x,
+            v.zoom_y,
+            canvas_size.x,
+            canvas_size.y,
+            v.visible_key_count,
+        );
+        let viewport_changed =
+            current_viewport_hash != self.render_ctx.render_cache.note_viewport_hash;
+
         let note_data_changed = note_index_dirty
             || self.render_ctx.render_cache.note_instances_is_empty()
             || is_drawing;
-
-        // 检测视口变化（滚动/缩放）：音轨总览模式使用 arrangement viewport
-        let (current_viewport_hash, viewport_changed) = if self.root.is_arrangement_mode() {
-            let av = &self.root.arrangement_view.viewport;
-            let track_count = self.root.sidebar.tracks.len().max(1) as u16;
-            let hash = crate::host::RenderCache::compute_viewport_hash(
-                av.scroll_x,
-                av.scroll_y,
-                av.zoom_x,
-                av.track_height,
-                av.canvas_size.x,
-                av.canvas_size.y,
-                track_count,
-            );
-            let changed = hash != self.render_ctx.render_cache.note_viewport_hash;
-            (hash, changed)
-        } else {
-            let v = &self.root.editor.editor_state.view;
-            let canvas_size = &self.root.editor.editor_state.canvas.size;
-            let hash = crate::host::RenderCache::compute_viewport_hash(
-                v.scroll_x,
-                v.scroll_y,
-                v.zoom_x,
-                v.zoom_y,
-                canvas_size.x,
-                canvas_size.y,
-                v.visible_key_count,
-            );
-            let changed = hash != self.render_ctx.render_cache.note_viewport_hash;
-            (hash, changed)
-        };
 
         if !note_data_changed && !viewport_changed {
             return;
@@ -289,28 +281,23 @@ impl Host {
 
         self.render_ctx.render_cache.note_viewport_hash = current_viewport_hash;
 
-        // ═══ Phase 1: 主音符同步写入（保证 WGPU 立即可见） ═══
+        // ═══ Phase 1: 主音符同步写入 ═══
         {
             puffin::profile_scope!("phase1_main_notes_sync");
-            // 工程走带模式：音符由 iced Canvas 直接绘制，不经过 WGPU NoteRenderer
-            // 所以跳过 note_instances_buffer 的写入
-            if !self.root.is_arrangement_mode() {
-                // 钢琴卷帘模式：只生成当前音轨的音符
-                let notes_clone = self.root.editor.editor_state.data.notes.clone(); // O(1)
-                let edit_state_clone = self.root.editor.editor_state.interaction.edit_state.clone();
-                let default_note_length = self.root.editor.editor_state.view.default_note_length;
-                let snap_precision = self.root.editor.editor_state.view.snap_precision;
-                super::note_worker::build_main_note_instances(
-                    &self.render_ctx.render_cache.note_instances_buffer,
-                    &notes_clone,
-                    &edit_state_clone,
-                    default_note_length,
-                    snap_precision,
-                );
-            }
+            let notes_clone = self.root.editor.editor_state.data.notes.clone(); // O(1)
+            let edit_state_clone = self.root.editor.editor_state.interaction.edit_state.clone();
+            let default_note_length = self.root.editor.editor_state.view.default_note_length;
+            let snap_precision = self.root.editor.editor_state.view.snap_precision;
+            super::note_worker::build_main_note_instances(
+                &self.render_ctx.render_cache.note_instances_buffer,
+                &notes_clone,
+                &edit_state_clone,
+                default_note_length,
+                snap_precision,
+            );
         }
 
-        // ═══ Phase 2: 洋葱皮异步派发（独立 buffer，fire-and-forget） ═══
+        // ═══ Phase 2: 洋葱皮异步派发 ═══
         self.ensure_note_worker();
         if let Some(ref worker) = self.render_ctx.note_worker {
             puffin::profile_scope!("dispatch_onion_skin_job");

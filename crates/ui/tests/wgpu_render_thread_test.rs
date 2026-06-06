@@ -55,6 +55,8 @@ fn test_render_params_clone() {
         ppq: 960.0,
         max_key_index: 127.0,
         is_arrangement_mode: false,
+        arrangement_note_instances: Vec::new(),
+        arrangement_uniform: lumino_gfx::ArrangementUniform::default(),
     };
 
     let cloned = params.clone();

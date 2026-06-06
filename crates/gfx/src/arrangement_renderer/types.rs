@@ -124,12 +124,12 @@ impl ArrangementNoteInstance {
             h,
             rgba_packed: pack_rgba(color[0], color[1], color[2], color[3]),
             props_packed: pack_props(0.0, 0.0),
-            velocity: 0,
-            tag: tick,
+            velocity: tick,
+            tag: 2,
         }
     }
 
-    /// 创建音符实例
+    /// 创建音符实例（屏幕坐标）
     pub fn note(x: f32, y: f32, w: f32, h: f32, color: [f32; 3], velocity: u8) -> Self {
         Self {
             x,

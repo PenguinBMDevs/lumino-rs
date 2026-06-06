@@ -29,6 +29,8 @@ pub struct RenderCache {
     pub depth_texture: Option<(u32, u32, wgpu::TextureView)>,
     /// 洋葱皮背景瓦片池（主线程创建，NoteWorker 与 WGPU 线程共享）
     pub tile_pool: Option<Arc<Mutex<OnionBgTilePool>>>,
+    /// 走带视图实例缓存（避免每帧重建）
+    pub arrangement_instances: Vec<lumino_gfx::ArrangementNoteInstance>,
 }
 
 impl RenderCache {
@@ -43,6 +45,7 @@ impl RenderCache {
             note_viewport_hash: 0,
             depth_texture: None,
             tile_pool: None,
+            arrangement_instances: Vec::new(),
         }
     }
 
