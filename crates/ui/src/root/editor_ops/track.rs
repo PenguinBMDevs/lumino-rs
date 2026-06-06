@@ -12,6 +12,8 @@ impl Root {
     /// 设置编辑器总 ticks
     pub fn set_total_ticks(&mut self, total_ticks: f32) {
         self.editor.set_total_ticks(total_ticks as u32);
+        // 同步到走带视图（影响横向滚动最大长度）
+        self.arrangement_view.viewport.total_ticks = total_ticks as u32;
     }
 
     pub fn set_ppq(&mut self, ppq: u16) {

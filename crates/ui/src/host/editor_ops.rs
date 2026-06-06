@@ -112,8 +112,9 @@ impl Host {
     /// 设置 MIDI 文档引用（供懒加载非当前音轨的音符使用）
     pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
         self.root.set_midi_document(doc.clone());
-        // 同步到 Editor，供 ensure_track_notes_loaded 使用
         self.root.editor.editor_state.data.document = Some(doc);
+        // 标记音符数据变化，触发走带缓存重建
+        self.root.editor.note_index_dirty.set(true);
     }
 
     /// 加载音轨 MIDI 控制事件（CC/PC/PB）

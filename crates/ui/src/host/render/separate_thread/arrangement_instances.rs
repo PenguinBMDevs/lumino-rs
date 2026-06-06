@@ -1,7 +1,7 @@
-//! 工程走带视图实例构建 — 屏幕坐标版，二分查找加速
+//! 工程走带视图实例构建 — 屏幕坐标版，二分查找保性能
 //!
-//! 每帧重建全部实例，但通过对 MidiDocument 事件做二分查找
-//! 将扫描范围限制在可见 tick 区间内，O(log N + K) 极速
+//! 所有实例用屏幕坐标，每帧重建。音符从 MidiDocument 通过二分查找
+//! 定位可见范围起点，只扫描 O(log N + K) 个事件。
 
 use crate::editor::arrangement::ArrangementViewport;
 use crate::editor::note::Note;
@@ -16,9 +16,9 @@ const AR_LANE_ODD_COLOR: (f32, f32, f32) = (0.13, 0.13, 0.15);
 const AR_MEASURE_LINE_COLOR: (f32, f32, f32, f32) = (0.30, 0.30, 0.35, 1.0);
 const AR_PLAYHEAD_COLOR: (f32, f32, f32, f32) = (1.0, 1.0, 1.0, 0.8);
 
-/// 构建走带视图全部实例（背景 + lane + 网格线 + 音符 + 演奏指示线）
-/// 屏幕坐标，二分查找加速 MidiDocument 事件扫描
-pub fn build_arrangement_instances(
+/// 构建全部实例（背景 + lane + 网格线 + 音符 + 演奏指示线）
+/// 屏幕坐标，每帧重建，二分查找加速 MidiDocument 音符读取
+pub fn build_arrangement_all(
     out: &mut Vec<ArrangementNoteInstance>,
     viewport: &ArrangementViewport,
     track_order: &[usize],
@@ -32,13 +32,13 @@ pub fn build_arrangement_instances(
     let h = viewport.canvas_size.y;
     let lh = viewport.track_height;
     let ppu = viewport.zoom_x.max(0.001);
-    let num_tracks = track_order.len();
+    let nt = track_order.len();
     let cox = viewport.canvas_offset.x;
     let coy = viewport.canvas_offset.y;
 
-    // 可见 tick 范围
-    let tick_start = (viewport.scroll_x / ppu) as f64;
-    let tick_end = ((viewport.scroll_x + w) / ppu) as f64;
+    // 可见 tick 范围（屏幕坐标模式下，这是所有元素的计算基准）
+    let ts = (viewport.scroll_x / ppu) as f64;
+    let te = ((viewport.scroll_x + w) / ppu) as f64;
 
     // ── 1. 背景 ──
     out.push(ArrangementNoteInstance::background(
@@ -49,64 +49,38 @@ pub fn build_arrangement_instances(
         [AR_BG_COLOR.0, AR_BG_COLOR.1, AR_BG_COLOR.2],
     ));
 
-    // ── 2. Lane 背景 + 音符 ──
-    if num_tracks > 0 {
-        // 可见音轨范围
-        let (trk_first, trk_last) = visible_track_range(viewport, h, num_tracks);
+    if nt == 0 {
+        return;
+    }
 
-        for (track_idx, track_id) in track_order.iter().enumerate() {
-            if track_idx < trk_first || track_idx >= trk_last {
-                continue;
-            }
-            if !track_visible.get(track_idx).copied().unwrap_or(true) {
-                continue;
-            }
+    let (tf, tl) = visible_trk_range(viewport, h, nt);
+    let key_h = lh / 128.0;
+    let sx = viewport.scroll_x;
 
-            let color = track_colors
-                .get(track_idx)
-                .copied()
-                .unwrap_or([0.5, 0.5, 0.5]);
+    // ── 2. Lane + 音符 ──
+    for (ti, tid) in track_order.iter().enumerate() {
+        if ti < tf || ti >= tl { continue; }
+        if !track_visible.get(ti).copied().unwrap_or(true) { continue; }
 
-            // Lane 背景
-            let lane_y = track_y(viewport, track_idx) + coy;
-            let col = lane_col(track_idx);
-            out.push(ArrangementNoteInstance::lane(
-                cox,
-                lane_y,
-                w,
-                lh,
-                [col.0, col.1, col.2],
-            ));
+        let color = track_colors.get(ti).copied().unwrap_or([0.5, 0.5, 0.5]);
 
-            // 音符
-            if let Some(notes) = track_notes.get(track_id) {
-                collect_notes_from_cache(
-                    out,
-                    notes,
-                    track_idx,
-                    color,
-                    ppu,
-                    cox,
-                    lane_y,
-                    viewport.scroll_x,
-                    tick_start,
-                    tick_end,
-                );
-            } else if let Some(doc) = midi_doc {
-                collect_notes_from_doc(
-                    out, doc, *track_id, track_idx, color, ppu, cox, lane_y, tick_start, tick_end,
-                );
-            }
+        // Lane 背景
+        let lane_y = trk_screen_y(viewport, ti) + coy;
+        let c = if ti % 2 == 0 { AR_LANE_EVEN_COLOR } else { AR_LANE_ODD_COLOR };
+        out.push(ArrangementNoteInstance::lane(cox, lane_y, w, lh, [c.0, c.1, c.2]));
+
+        // 音符
+        if let Some(notes) = track_notes.get(tid) {
+            collect_notes_cache(out, notes, ti, color, ppu, cox, lane_y, key_h, sx, ts, te);
+        } else if let Some(doc) = midi_doc {
+            collect_notes_doc(out, doc, *tid, ti, color, ppu, cox, lane_y, key_h, sx, ts, te);
         }
     }
 
     // ── 3. 小节线 ──
-    let ppq = 480.0_f64;
-    let ticks_per_bar = ppq * 4.0;
-    let first_bar = ((tick_start / ticks_per_bar).floor() as i32).max(0);
-    let last_bar = (tick_end / ticks_per_bar).ceil() as i32;
-    for bar in first_bar..=last_bar {
-        let tick = bar as f64 * ticks_per_bar;
+    let tpb = 480.0_f64 * 4.0;
+    for bar in ((ts / tpb).floor() as i32).max(0)..=(te / tpb).ceil() as i32 {
+        let tick = bar as f64 * tpb;
         let x = tick_to_x(viewport, tick);
         if x >= cox && x <= cox + w {
             out.push(ArrangementNoteInstance::grid_line(
@@ -145,56 +119,49 @@ pub fn build_arrangement_instances(
     }
 }
 
-/// 从 track_notes 缓存读取音符
-fn collect_notes_from_cache(
+// ─── 音符读取 ──────────────────────────────────────────────
+
+fn collect_notes_cache(
     out: &mut Vec<ArrangementNoteInstance>,
     notes: &im::Vector<Note>,
-    _track_idx: usize,
+    _ti: usize,
     color: [f32; 3],
     ppu: f32,
     cox: f32,
     lane_y: f32,
+    key_h: f32,
     scroll_x: f32,
-    tick_start: f64,
-    tick_end: f64,
+    ts: f64,
+    te: f64,
 ) {
-    let key_height = 48.0 / 128.0;
-    for note in notes {
-        let s = note.tick as f64;
-        let e = (note.tick + note.length) as f64;
-        if s > tick_end || e < tick_start {
-            continue;
-        }
-        let sx = cox + note.tick * ppu - scroll_x;
-        let sw = note.length * ppu;
-        let sy = lane_y + (127.0 - note.key as f32) * key_height;
-        out.push(ArrangementNoteInstance::note(
-            sx,
-            sy,
-            sw,
-            4.0,
-            color,
-            note.velocity,
-        ));
+    for n in notes {
+        let s = n.tick as f64;
+        let e = (n.tick + n.length) as f64;
+        if s > te || e < ts { continue; }
+        let sx = cox + s as f32 * ppu - scroll_x;
+        let sw = (e - s) as f32 * ppu;
+        let sy = lane_y + (127.0 - n.key as f32) * key_h;
+        out.push(ArrangementNoteInstance::note(sx, sy, sw.max(2.0), 4.0, color, n.velocity));
     }
 }
 
-/// 从 MidiDocument 读取音符 — 二分查找 + 零中间分配
-fn collect_notes_from_doc(
+fn collect_notes_doc(
     out: &mut Vec<ArrangementNoteInstance>,
     doc: &lumino_core::midi::MidiDocument,
-    track_id: usize,
-    track_idx: usize,
+    tid: usize,
+    ti: usize,
     color: [f32; 3],
     ppu: f32,
     cox: f32,
     lane_y: f32,
-    tick_start: f64,
-    tick_end: f64,
+    key_h: f32,
+    scroll_x: f32,
+    ts: f64,
+    te: f64,
 ) {
     use lumino_midi::compact::EventKind;
 
-    let (start, end) = doc.track_events_range(track_id as u16);
+    let (start, end) = doc.track_events_range(tid as u16);
     if start >= end {
         return;
     }
@@ -202,13 +169,11 @@ fn collect_notes_from_doc(
     let events = &doc.events[start..end];
     let last_tick = events.last().map(|e| e.delta_tick()).unwrap_or(0);
 
-    // 二分查找可见范围起点（回退1个事件以捕获跨范围 NoteOn）
-    let search_begin = events
-        .partition_point(|e| (e.delta_tick() as f64) < tick_start)
+    // 二分查找起点（退1以捕获跨范围 NoteOn）
+    let search_start = events
+        .partition_point(|e| (e.delta_tick() as f64) < ts)
         .saturating_sub(1);
-    let slice = &events[search_begin..];
-
-    let key_h = 48.0 / 128.0; // 每键像素高度
+    let slice = &events[search_start..];
 
     let mut active: [(u32, u8, u8, bool); 2048] = [(0, 0, 0, false); 2048];
 
@@ -222,68 +187,28 @@ fn collect_notes_from_doc(
         match ev.kind() {
             EventKind::NoteOn if vel > 0 => {
                 if active[idx].3 {
-                    emit_note_screen(
-                        out,
-                        active[idx],
-                        tick,
-                        key,
-                        track_idx,
-                        color,
-                        ppu,
-                        cox,
-                        lane_y,
-                        key_h,
-                        tick_start,
-                        tick_end,
-                    );
+                    emit_note_screen(out, &active[idx], tick, key, ti, color, ppu, cox, lane_y, key_h, scroll_x, ts, te);
                 }
                 active[idx] = (tick as u32, vel, ch, true);
             }
             EventKind::NoteOn | EventKind::NoteOff if active[idx].3 => {
-                emit_note_screen(
-                    out,
-                    active[idx],
-                    tick,
-                    key,
-                    track_idx,
-                    color,
-                    ppu,
-                    cox,
-                    lane_y,
-                    key_h,
-                    tick_start,
-                    tick_end,
-                );
+                emit_note_screen(out, &active[idx], tick, key, ti, color, ppu, cox, lane_y, key_h, scroll_x, ts, te);
                 active[idx].3 = false;
             }
             _ => {}
         }
-
-        if (tick as f64) > tick_end {
+        if (tick as f64) > te {
             break;
         }
     }
 
-    // 未关闭的音符
-    if (last_tick as f64) > tick_start {
+    // 未关闭音符
+    if (last_tick as f64) > ts {
         for ch in 0..16u8 {
             for k in 0..=127u8 {
                 let idx = (ch as usize) * 128 + (k as usize);
                 if active[idx].3 {
-                    emit_note_screen(
-                        out,
-                        active[idx],
-                        last_tick as f32,
-                        k,
-                        track_idx,
-                        color,
-                        ppu,
-                        cox,
-                        lane_y,
-                        key_h,
-                        tick_start,
-                        tick_end,
-                    );
+                    emit_note_screen(out, &active[idx], last_tick as f32, k, ti, color, ppu, cox, lane_y, key_h, scroll_x, ts, te);
                 }
             }
         }
@@ -293,60 +218,40 @@ fn collect_notes_from_doc(
 #[inline(always)]
 fn emit_note_screen(
     out: &mut Vec<ArrangementNoteInstance>,
-    note_state: (u32, u8, u8, bool),
+    st: &(u32, u8, u8, bool),
     end_tick: f32,
-    _key: u8,
-    _track_idx: usize,
+    key: u8,
+    _ti: usize,
     color: [f32; 3],
     ppu: f32,
     cox: f32,
     lane_y: f32,
-    _key_h: f32,
-    tick_start: f64,
-    tick_end: f64,
+    key_h: f32,
+    scroll_x: f32,
+    ts: f64,
+    te: f64,
 ) {
-    let s = (note_state.0 as f64).max(tick_start);
-    let e = (end_tick as f64).min(tick_end);
-    if s >= e {
-        return;
-    }
-
-    let sx = cox + s as f32 * ppu;
-    let sw = (e - s) as f32 * ppu;
-    let sy = lane_y; // 所有音符在同一水平位置（音轨内）
-    out.push(ArrangementNoteInstance::note(
-        sx,
-        sy,
-        sw.max(2.0),
-        4.0,
-        color,
-        note_state.1,
-    ));
-}
-
-// ─── 辅助函数 ───
-
-fn lane_col(track_idx: usize) -> (f32, f32, f32) {
-    if track_idx % 2 == 0 {
-        AR_LANE_EVEN_COLOR
-    } else {
-        AR_LANE_ODD_COLOR
+    let s = (st.0 as f64).max(ts);
+    let e = (end_tick as f64).min(te);
+    if s < e {
+        let sx = cox + s as f32 * ppu - scroll_x;
+        let sw = (e - s) as f32 * ppu;
+        let sy = lane_y + (127.0 - key as f32) * key_h;
+        out.push(ArrangementNoteInstance::note(sx, sy, sw.max(2.0), 4.0, color, st.1));
     }
 }
 
-fn track_y(viewport: &ArrangementViewport, track_idx: usize) -> f32 {
-    track_idx as f32 * viewport.track_height - viewport.scroll_y
+// ─── 辅助 ──────────────────────────────────────────────
+
+fn trk_screen_y(viewport: &ArrangementViewport, i: usize) -> f32 {
+    i as f32 * viewport.track_height - viewport.scroll_y
 }
 
-fn visible_track_range(
-    viewport: &ArrangementViewport,
-    height: f32,
-    num_tracks: usize,
-) -> (usize, usize) {
-    let first = ((viewport.scroll_y / viewport.track_height).floor() as usize)
-        .min(num_tracks.saturating_sub(1));
-    let count = (height / viewport.track_height).ceil() as usize + 1;
-    (first, (first + count).min(num_tracks))
+fn visible_trk_range(viewport: &ArrangementViewport, h: f32, nt: usize) -> (usize, usize) {
+    let f =
+        ((viewport.scroll_y / viewport.track_height).floor() as usize).min(nt.saturating_sub(1));
+    let c = (h / viewport.track_height).ceil() as usize + 1;
+    (f, (f + c).min(nt))
 }
 
 fn tick_to_x(viewport: &ArrangementViewport, tick: f64) -> f32 {

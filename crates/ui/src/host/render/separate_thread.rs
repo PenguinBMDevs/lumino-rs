@@ -23,13 +23,12 @@ const ARRANGEMENT_PALETTE: [[f32; 3]; 12] = [
 
 impl Host {
     /// 收集走带视图全部实例（背景 + lane + 网格线 + 音符 + 演奏指示线）
-    /// 屏幕坐标，每帧重建，二分查找加速 MidiDocument 读取
+    /// 屏幕坐标，每帧重建，二分查找加速 MidiDocument 音符读取
     pub(super) fn collect_arrangement_instances(&self) -> Vec<ArrangementNoteInstance> {
         puffin::profile_scope!("collect_arrangement_instances");
 
         let track_order: Vec<usize> = self.root.sidebar.tracks.iter().map(|t| t.id).collect();
         let track_notes = &self.root.editor.editor_state.data.track_notes;
-
         let viewport_info = self.collect_viewport_info();
         let av = &self.root.arrangement_view.viewport;
 
@@ -52,8 +51,7 @@ impl Host {
             .collect();
 
         let mut instances = Vec::new();
-
-        arrangement_instances::build_arrangement_instances(
+        arrangement_instances::build_arrangement_all(
             &mut instances,
             &viewport,
             &track_order,
@@ -63,7 +61,6 @@ impl Host {
             track_notes,
             self.root.editor.playback_position as f32,
         );
-
         instances
     }
 
@@ -217,7 +214,7 @@ impl Host {
 
         self.update_note_data_for_wgpu_thread();
 
-        // 走带模式：收集全部实例（背景+lane+网格+音符+演奏指示线）
+        // 走带模式：直接构建全部实例
         let arrangement_note_instances = if self.root.is_arrangement_mode() {
             puffin::profile_scope!("collect_arrangement_instances");
             self.collect_arrangement_instances()
@@ -245,7 +242,7 @@ impl Host {
     pub(super) fn update_note_data_for_wgpu_thread(&mut self) {
         puffin::profile_scope!("update_note_data");
 
-        // 走带模式：音符由 arrangement_renderer 直接绘制，跳过钢琴卷帘笔记更新
+        // 走带模式：音符由 arrangement_renderer 直接绘制，跳过钢琴卷帘
         if self.root.is_arrangement_mode() {
             return;
         }
