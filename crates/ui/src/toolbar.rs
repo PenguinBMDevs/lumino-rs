@@ -171,6 +171,12 @@ impl Toolbar {
             Event::TransposeDown => {
                 tracing::debug!("工具栏: 触发移调 -1");
             }
+            Event::Split => {
+                tracing::debug!("工具栏: 触发音符分割");
+            }
+            Event::Glue => {
+                tracing::debug!("工具栏: 触发音符合并");
+            }
             Event::ResizeDragStarted(_) => {
                 self.is_resizing = true;
             }

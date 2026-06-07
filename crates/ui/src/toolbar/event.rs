@@ -64,6 +64,10 @@ pub enum Event {
     TransposeUp,
     /// 移调 -1 半音
     TransposeDown,
+    /// 音符分割（Razor 工具 onclick，选中时分割选中音符）
+    Split,
+    /// 音符合并
+    Glue,
 }
 
 /// 水平翻转模式
@@ -204,5 +208,13 @@ impl Event {
 
     pub const fn transpose_down() -> Message {
         Message::Toolbar(Self::TransposeDown)
+    }
+
+    pub const fn split() -> Message {
+        Message::Toolbar(Self::Split)
+    }
+
+    pub const fn glue() -> Message {
+        Message::Toolbar(Self::Glue)
     }
 }

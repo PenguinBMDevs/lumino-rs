@@ -143,6 +143,11 @@ impl Toolbar {
                     window
                 ),
                 space().width(8),
+                // 分割/合并按钮
+                tool_button(icon::Split, "分割(Split)", Event::split(), window),
+                space().width(4),
+                tool_button(icon::Glue, "合并(Glue)", Event::glue(), window),
+                space().width(8),
                 // 移调按钮
                 tool_button(icon::TransposeDown, "移调 -1", Event::transpose_down(), window),
                 space().width(4),
@@ -150,7 +155,7 @@ impl Toolbar {
             ]
             .align_y(Alignment::Center),
         )
-        .width(460)
+        .width(560)
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
         .align_x(iced_core::alignment::Horizontal::Center)

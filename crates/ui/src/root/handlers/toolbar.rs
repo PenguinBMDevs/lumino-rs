@@ -54,6 +54,9 @@ impl ToolbarHandler {
 
         // 处理移调
         self.handle_toolbar_transpose(root, &event);
+
+        // 处理分割/合并
+        self.handle_toolbar_split_glue(root, &event);
     }
 
     fn handle_toolbar_playback(&self, root: &mut Root, event: &crate::toolbar::Event) {
@@ -418,6 +421,66 @@ impl ToolbarHandler {
             root.editor.clear_notes_changed();
         } else {
             tracing::debug!("Root: 没有音符被移调");
+        }
+    }
+
+    /// 处理分割/合并操作
+    fn handle_toolbar_split_glue(&self, root: &mut Root, event: &crate::toolbar::Event) {
+        match event {
+            crate::toolbar::Event::Split => {
+                // 分割选中音符：在音符中间位置分割
+                let selected: Vec<usize> = root
+                    .editor
+                    .editor_state
+                    .interaction
+                    .selected_notes
+                    .iter()
+                    .copied()
+                    .collect();
+
+                if selected.is_empty() {
+                    tracing::debug!("Root: 分割操作 - 没有选中音符");
+                    return;
+                }
+
+                let mut split_count = 0usize;
+                // 从大到小处理，避免索引偏移
+                let mut indices: Vec<usize> = selected;
+                indices.sort_by(|a, b| b.cmp(a));
+                indices.dedup();
+
+                root.editor.push_history();
+
+                for &idx in &indices {
+                    if let Some(note) = root.editor.editor_state.data.notes.get(idx) {
+                        let split_tick = note.tick + note.length / 2.0;
+                        root.editor.split_note(idx, split_tick);
+                        split_count += 1;
+                    }
+                }
+
+                if split_count > 0 {
+                    tracing::info!("Root: 分割完成 - 分割了 {} 个音符", split_count);
+                    root.update_playback_notes();
+                    root.editor.clear_notes_changed();
+                    root.editor
+                        .editor_state
+                        .interaction
+                        .selected_notes
+                        .clear();
+                }
+            }
+            crate::toolbar::Event::Glue => {
+                let merged = root.editor.glue_selected_notes();
+                if merged > 0 {
+                    tracing::info!("Root: 合并完成 - 合并了 {} 组音符", merged);
+                    root.update_playback_notes();
+                    root.editor.clear_notes_changed();
+                } else {
+                    tracing::debug!("Root: 合并操作 - 没有可合并的音符");
+                }
+            }
+            _ => {}
         }
     }
 }
