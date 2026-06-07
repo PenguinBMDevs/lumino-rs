@@ -282,6 +282,8 @@ impl Host {
         root.editor.editor_state.data.notes.clear();
         root.editor.editor_state.data.track_notes.clear();
         root.editor.editor_state.data.current_track = 0;
+        root.editor.velocity_panel.edit_mode =
+            crate::editor::velocity::EditMode::Tempo;
         // 历史记录（undo/redo 持有全量音符快照 → 必须清理避免内存泄漏）
         root.editor.editor_state.data.history.clear();
         // MIDI 文档引用（释放 Arc）
