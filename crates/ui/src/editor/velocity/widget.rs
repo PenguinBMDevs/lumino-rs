@@ -394,6 +394,13 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
     ) -> Vec<Geom> {
         let mut frame = Frame::new(renderer, bounds.size());
 
+        // CC 模式下由 wgpu 渲染，跳过 Canvas 绘制
+        if self.edit_mode.is_cc() {
+            // 保留 resize handle（交互提示）
+            draw_resize_handle(&mut frame, theme, bounds.size(), state.hover_resize_handle);
+            return vec![frame.into_geometry()];
+        }
+
         match self.edit_mode {
             super::EditMode::Tempo => {
                 draw_tempo_background(&mut frame, theme, bounds.size());
@@ -425,12 +432,7 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                     draw_tempo_graph(&mut frame, theme, &tempo_points, bounds.size(), view);
                 }
             }
-            super::EditMode::Cc(cc_number) => {
-                let cc_points = VelocityPanel::build_cc_points(self.editor, cc_number);
-                if !cc_points.is_empty() {
-                    draw_cc_graph(&mut frame, theme, &cc_points, bounds.size(), view);
-                }
-            }
+            _ => {}
         }
 
         vec![frame.into_geometry()]

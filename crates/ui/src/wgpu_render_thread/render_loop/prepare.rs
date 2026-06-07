@@ -12,6 +12,7 @@ pub fn prepare_renderers(
     note_renderer: &mut lumino_gfx::NoteRenderer,
     ruler_renderer: &mut lumino_gfx::RulerRenderer,
     arrangement_renderer: &mut lumino_gfx::ArrangementRenderer,
+    cc_bar_renderer: &mut lumino_gfx::CcBarRenderer,
     params: &RenderParams,
     note_events_rx: &Receiver<NoteEvent>,
     device: &wgpu::Device,
@@ -65,6 +66,16 @@ pub fn prepare_renderers(
             params.zoom.0,
             params.ticks_per_measure,
             params.ticks_per_beat,
+        );
+    }
+
+    // 准备 CC 柱状条渲染器
+    if params.velocity_panel_rect.is_some() {
+        cc_bar_renderer.prepare(
+            device,
+            queue,
+            &params.cc_bar_instances,
+            params.logical_size,
         );
     }
 

@@ -7,7 +7,7 @@ use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
 use lumino_gfx::{CameraParams, CameraUniform};
 
-/// 执行渲染通道（含走带/钢琴卷帘/洋葱皮）
+/// 执行渲染通道（含走带/钢琴卷帘/洋葱皮/CC 柱状条）
 #[allow(clippy::too_many_arguments)]
 pub fn execute_render_pass(
     encoder: &mut wgpu::CommandEncoder,
@@ -21,6 +21,7 @@ pub fn execute_render_pass(
     arrangement_renderer: &mut lumino_gfx::ArrangementRenderer,
     queue: &wgpu::Queue,
     onion_renderer: &mut lumino_gfx::OnionRenderer,
+    cc_bar_renderer: &mut lumino_gfx::CcBarRenderer,
 ) {
     let (Some(texture), Some(depth_view)) = (current_texture, depth_texture_view) else {
         return;
@@ -135,6 +136,18 @@ pub fn execute_render_pass(
         if !params.ruler_instances.is_empty() {
             render_pass.set_scissor_rect(0, 0, width, height);
             ruler_renderer.draw(&mut render_pass, params.ruler_instances.len() as u32);
+        }
+
+        // 绘制 CC 柱状条（力度面板）
+        if let Some((vx, vy, vw, vh)) = params.velocity_panel_rect {
+            let scale = params.scale_factor;
+            let vscissor_x = ((vx * scale) as u32).min(width);
+            let vscissor_y = ((vy * scale) as u32).min(height);
+            let vscissor_w = ((vw * scale) as u32).min(width.saturating_sub(vscissor_x));
+            let vscissor_h = ((vh * scale) as u32).min(height.saturating_sub(vscissor_y));
+
+            render_pass.set_scissor_rect(vscissor_x, vscissor_y, vscissor_w, vscissor_h);
+            cc_bar_renderer.draw(&mut render_pass, params.cc_bar_instances.len() as u32);
         }
     }
 }

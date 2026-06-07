@@ -39,6 +39,7 @@ pub fn run_render_thread(
     let mut ruler_renderer = lumino_gfx::RulerRenderer::new(&device, texture_format);
     let mut onion_renderer = lumino_gfx::OnionRenderer::new(&device, &queue, texture_format);
     let mut arrangement_renderer = lumino_gfx::ArrangementRenderer::new(&device, texture_format);
+    let mut cc_bar_renderer = lumino_gfx::CcBarRenderer::new(&device, texture_format);
 
     // 渲染循环状态
     let mut frame_count = 0u64;
@@ -123,6 +124,7 @@ pub fn run_render_thread(
                     &mut note_renderer,
                     &mut ruler_renderer,
                     &mut arrangement_renderer,
+                    &mut cc_bar_renderer,
                     params,
                     &note_events_rx,
                     &device,
@@ -185,6 +187,7 @@ pub fn run_render_thread(
                     &mut arrangement_renderer,
                     &queue,
                     &mut onion_renderer,
+                    &mut cc_bar_renderer,
                 );
 
                 // 提交渲染指令

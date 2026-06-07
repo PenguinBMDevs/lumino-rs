@@ -1,6 +1,7 @@
 #![allow(deprecated)]
 mod arrangement_renderer;
 pub mod constants;
+mod cc_bar_renderer;
 mod context;
 mod gpu_note_buffer;
 mod grid_renderer;
@@ -15,6 +16,7 @@ mod swappable_buffer;
 pub use arrangement_renderer::{
     ArrangementNoteInstance, ArrangementRenderer, ArrangementUniform, colors,
 };
+pub use cc_bar_renderer::{CcBarInstance, CcBarRenderer, CcBarViewportUniform};
 pub use context::{Context, ContextError, Result};
 pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent};
 pub use grid_renderer::{GridLineInstance, GridRenderer};

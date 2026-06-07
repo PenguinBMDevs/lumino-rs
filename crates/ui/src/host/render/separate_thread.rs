@@ -293,6 +293,14 @@ impl Host {
             vec![]
         };
 
+        // 构建 CC 柱状条实例（仅在 CC 模式下）
+        let cc_bar_instances = if self.root.is_arrangement_mode() {
+            vec![]
+        } else {
+            puffin::profile_scope!("build_cc_bar_instances");
+            self.build_cc_bar_instances()
+        };
+
         super::data::RenderData {
             scroll,
             zoom,
@@ -301,7 +309,175 @@ impl Host {
             keyboard_instances,
             ruler_instances,
             arrangement_note_instances,
+            cc_bar_instances,
         }
+    }
+
+    /// 构建 CC 柱状条实例（参考 yinhe 计算方式）
+    fn build_cc_bar_instances(&self) -> Vec<lumino_gfx::CcBarInstance> {
+        use crate::editor::velocity::{EditMode, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT};
+        use crate::editor::grid::theme::ThemeExt;
+
+        let editor = &self.root.editor;
+        let panel = &editor.velocity_panel;
+
+        // 仅在 CC 模式下构建实例
+        let cc_number = match panel.edit_mode {
+            EditMode::Cc(n) => n,
+            _ => return Vec::new(),
+        };
+
+        let points = crate::editor::velocity::VelocityPanel::build_cc_points(editor, cc_number);
+
+        let view = &editor.editor_state.view;
+        let theme = self.root.theme();
+        let bar_color = theme.extended_palette().secondary.base.color;
+        let bar_color_arr = [bar_color.r, bar_color.g, bar_color.b, 0.85];
+
+        // 力度面板在屏幕上的位置
+        let canvas = &editor.editor_state.canvas;
+        let panel_height = self.root.velocity_panel_height;
+        let panel_x = canvas.offset.x;
+        let panel_y = canvas.offset.y + canvas.size.y;
+
+        let mut instances = Vec::new();
+
+        // 1. 背景（填满整个面板，与 yinhe 一致）
+        let bg_color = theme.extended_palette().background.weak.color;
+        instances.push(lumino_gfx::CcBarInstance::new(
+            panel_x,
+            panel_y,
+            canvas.size.x,
+            panel_height,
+            [bg_color.r, bg_color.g, bg_color.b, 1.0],
+        ));
+
+        // 计算图形区域（排除 padding 和 resize handle）
+        let draw_height = panel_height - RESIZE_HANDLE_HEIGHT;
+        let max_y = draw_height - PANEL_PADDING_Y; // value = 0 的 Y（相对面板顶部）
+        let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT; // value = 127 的 Y（相对面板顶部）
+        let graph_height = max_y - min_y;
+
+        // 2. 垂直网格线（小节线 + 拍线），与钢琴卷帘对齐
+        let ppq = view.ppq as f32;
+        let ticks_per_beat = ppq;
+        let ticks_per_measure = ppq * 4.0;
+        let visible_tick_start = view.scroll_x / view.zoom_x;
+        let visible_tick_end = (view.scroll_x + canvas.size.x - view.keyboard_width) / view.zoom_x;
+
+        // 小节线
+        let bar_line_color = theme.bar_line_color();
+        let measure_start = (visible_tick_start / ticks_per_measure).floor() as u32;
+        let measure_end = (visible_tick_end / ticks_per_measure).ceil() as u32;
+        for measure in measure_start..=measure_end {
+            let tick = measure as f32 * ticks_per_measure;
+            let x = panel_x + view.keyboard_width + tick * view.zoom_x - view.scroll_x;
+            if x >= panel_x + view.keyboard_width && x <= panel_x + canvas.size.x {
+                instances.push(lumino_gfx::CcBarInstance::new(
+                    x,
+                    panel_y + RESIZE_HANDLE_HEIGHT,
+                    1.0,
+                    draw_height - RESIZE_HANDLE_HEIGHT,
+                    [bar_line_color.r, bar_line_color.g, bar_line_color.b, 0.5],
+                ));
+            }
+        }
+
+        // 拍线
+        let beat_line_color = theme.beat_line_color();
+        let beat_start = (visible_tick_start / ticks_per_beat).floor() as u32;
+        let beat_end = (visible_tick_end / ticks_per_beat).ceil() as u32;
+        for beat in beat_start..=beat_end {
+            let tick = beat as f32 * ticks_per_beat;
+            // 跳过小节线位置
+            if (tick % ticks_per_measure as f32).abs() < f32::EPSILON {
+                continue;
+            }
+            let x = panel_x + view.keyboard_width + tick * view.zoom_x - view.scroll_x;
+            if x >= panel_x + view.keyboard_width && x <= panel_x + canvas.size.x {
+                instances.push(lumino_gfx::CcBarInstance::new(
+                    x,
+                    panel_y + RESIZE_HANDLE_HEIGHT,
+                    1.0,
+                    draw_height - RESIZE_HANDLE_HEIGHT,
+                    [beat_line_color.r, beat_line_color.g, beat_line_color.b, 0.3],
+                ));
+            }
+        }
+
+        // 半拍线（zoom 足够大时才显示，避免过密）
+        if view.zoom_x > 0.05 {
+            let half_beat_line_color = theme.half_beat_line_color();
+            let ticks_per_half_beat = ppq / 2.0;
+            let half_beat_start = (visible_tick_start / ticks_per_half_beat).floor() as u32;
+            let half_beat_end = (visible_tick_end / ticks_per_half_beat).ceil() as u32;
+            for hb in half_beat_start..=half_beat_end {
+                let tick = hb as f32 * ticks_per_half_beat;
+                // 跳过小节线和拍线位置
+                if (tick % ticks_per_measure as f32).abs() < f32::EPSILON
+                    || (tick % ticks_per_beat).abs() < f32::EPSILON
+                {
+                    continue;
+                }
+                let x = panel_x + view.keyboard_width + tick * view.zoom_x - view.scroll_x;
+                if x >= panel_x + view.keyboard_width && x <= panel_x + canvas.size.x {
+                    instances.push(lumino_gfx::CcBarInstance::new(
+                        x,
+                        panel_y + RESIZE_HANDLE_HEIGHT,
+                        1.0,
+                        draw_height - RESIZE_HANDLE_HEIGHT,
+                        [
+                            half_beat_line_color.r,
+                            half_beat_line_color.g,
+                            half_beat_line_color.b,
+                            0.15,
+                        ],
+                    ));
+                }
+            }
+        }
+
+        // 3. 中心参考线（CC 默认值 64，与 yinhe 一致）
+        let center_val = 64.0;
+        let y_center_rel = max_y - (center_val / 127.0) * graph_height;
+        let center_line_color = iced_core::Color::from_rgba(0.30, 0.30, 0.35, 0.6);
+        instances.push(lumino_gfx::CcBarInstance::new(
+            panel_x + view.keyboard_width,
+            panel_y + y_center_rel - 0.5,
+            canvas.size.x - view.keyboard_width,
+            1.0,
+            [center_line_color.r, center_line_color.g, center_line_color.b, center_line_color.a],
+        ));
+
+        if points.is_empty() {
+            return instances;
+        }
+
+        const BAR_WIDTH: f32 = 2.0;
+        const MAX_VALUE: f32 = 127.0;
+
+        // 4. CC 数据柱状条
+        for point in points {
+            let normalized = point.value as f32 / MAX_VALUE;
+            let bar_h = normalized * graph_height;
+            let bar_x = panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
+            let bar_y = panel_y + max_y - bar_h;
+
+            // 简单裁剪：只添加在可见范围内的柱子
+            if bar_x + BAR_WIDTH < panel_x + view.keyboard_width || bar_x > panel_x + canvas.size.x {
+                continue;
+            }
+
+            instances.push(lumino_gfx::CcBarInstance::new(
+                bar_x,
+                bar_y,
+                BAR_WIDTH,
+                bar_h,
+                bar_color_arr,
+            ));
+        }
+
+        instances
     }
 
     /// 更新音符数据：主音符同步写入 + 洋葱皮异步派发
@@ -466,6 +642,19 @@ impl Host {
             ArrangementUniform::default()
         };
 
+        // 计算力度面板矩形（用于 wgpu scissor）
+        let velocity_panel_rect = if is_arrangement_mode {
+            None
+        } else {
+            let es = &self.root.editor.editor_state;
+            Some((
+                es.canvas.offset.x,
+                es.canvas.offset.y + es.canvas.size.y,
+                es.canvas.size.x,
+                self.root.velocity_panel_height,
+            ))
+        };
+
         RenderParams {
             viewport_size: (physical_size.width, physical_size.height),
             logical_size: (data.viewport_size.width, data.viewport_size.height),
@@ -496,6 +685,8 @@ impl Host {
             is_arrangement_mode,
             arrangement_note_instances: data.arrangement_note_instances,
             arrangement_uniform,
+            cc_bar_instances: data.cc_bar_instances,
+            velocity_panel_rect,
         }
     }
 }

@@ -86,18 +86,72 @@ pub struct CcData {
     pub controllers: std::collections::HashMap<u8, Vec<CcPoint>>,
 }
 
-/// 已知 CC 控制器名称
+/// 已知 CC 控制器名称（GM/GS/XG 标准）
 pub const CC_CONTROLLER_NAMES: &[(u8, &str)] = &[
-    (1, "调制轮 Mod Wheel"),         // 1（调制轮，用于颤音效果）
-    (7, "音量 Volume"),              // 7（音量，主音量控制）
-    (10, "声像 Pan"),                // 10（声像，左右声道平衡，64=居中）
-    (11, "表情 Expression"),          // 11（表情，动态音量变化）
-    (64, "延音踏板 Sustain"),         // 64（延音踏板，保持音符持续）
-    (65, "连音踏板 Portamento"),      // 65（连音踏板，滑音效果开关）
-    (71, "谐振 Resonance"),           // 71（谐振，滤波器共鸣强度）
-    (74, "截止频率 Cutoff"),          // 74（截止频率，滤波器截频）
-    (91, "混响 Reverb"),              // 91（混响效果发送量）
-    (93, "合唱 Chorus"),              // 93（合唱效果发送量）
+    // 通道模式/库选择
+    (0, "库选择 Bank Select"),
+    // 演奏控制
+    (1, "调制轮 Mod Wheel"),
+    (2, "呼吸控制器 Breath"),
+    (4, "脚踏控制器 Foot"),
+    (5, "滑音时间 Portamento"),
+    (6, "数据输入 Data Entry"),
+    (7, "音量 Volume"),
+    (8, "平衡 Balance"),
+    (10, "声像 Pan"),
+    (11, "表情 Expression"),
+    (12, "效果控制1 FX1"),
+    (13, "效果控制2 FX2"),
+    // 通用控制器
+    (16, "通用1 GP1"),
+    (17, "通用2 GP2"),
+    (18, "通用3 GP3"),
+    (19, "通用4 GP4"),
+    // 踏板/开关
+    (64, "延音踏板 Sustain"),
+    (65, "滑音开关 Portamento"),
+    (66, "保持踏板 Sostenuto"),
+    (67, "柔音踏板 Soft"),
+    (68, "连奏开关 Legato"),
+    (69, "保持2 Hold2"),
+    // 音色控制
+    (70, "音色变化 Variation"),
+    (71, "谐振 Resonance"),
+    (72, "释音时间 Release"),
+    (73, "起音时间 Attack"),
+    (74, "亮度 Brightness"),
+    (75, "音色控制6"),
+    (76, "音色控制7"),
+    (77, "音色控制8"),
+    (78, "音色控制9"),
+    (79, "音色控制10"),
+    (80, "通用5 GP5"),
+    (81, "通用6 GP6"),
+    (82, "通用7 GP7"),
+    (83, "通用8 GP8"),
+    (84, "滑音控制 Portamento"),
+    // 效果深度
+    (91, "混响 Reverb"),
+    (92, "颤音 Tremolo"),
+    (93, "合唱 Chorus"),
+    (94, " celeste Detune"),
+    (95, "相位 Phaser"),
+    // 数据/RPN/NRPN
+    (96, "数据增量 Inc"),
+    (97, "数据减量 Dec"),
+    (98, "NRPN低位"),
+    (99, "NRPN高位"),
+    (100, "RPN低位"),
+    (101, "RPN高位"),
+    // 通道模式
+    (120, "静音 All Sound Off"),
+    (121, "复位 Reset"),
+    (122, "本地控制 Local"),
+    (123, "全部关 All Notes Off"),
+    (124, "全通道关 Omni Off"),
+    (125, "全通道开 Omni On"),
+    (126, "单音模式 Mono"),
+    (127, "复音模式 Poly"),
 ];
 
 /// CC 编号显示包装（下拉框显示 "编号（中文名）"）
@@ -109,9 +163,11 @@ impl std::fmt::Display for CcDisplay {
         let chinese_name = CC_CONTROLLER_NAMES
             .iter()
             .find(|(n, _)| *n == self.0)
-            .and_then(|(_, name)| name.split(' ').next())
-            .unwrap_or("");
-        write!(f, "{}（{}）", self.0, chinese_name)
+            .and_then(|(_, name)| name.split(' ').next());
+        match chinese_name {
+            Some(name) if !name.is_empty() => write!(f, "{}（{}）", self.0, name),
+            _ => write!(f, "{}", self.0),
+        }
     }
 }
 
@@ -192,7 +248,8 @@ impl VelocityPanel {
 
         // CC 控制器选择器（仅在 CC 模式显示，Tempo 模式也隐藏）
         let cc_selector: Element<'a> = if self.edit_mode.is_cc() {
-            let cc_options: Vec<CcDisplay> = CC_CONTROLLER_NAMES.iter().map(|(n, _)| CcDisplay(*n)).collect();
+            // 生成 0-127 所有 CC 选项，支持任意 MIDI CC 控制器
+            let cc_options: Vec<CcDisplay> = (0..=127).map(CcDisplay).collect();
             let selected = CcDisplay(self.selected_cc);
             pick_list(
                 cc_options,
@@ -253,9 +310,14 @@ impl VelocityPanel {
         iced_widget::container(panel_content)
             .width(iced_core::Length::Fill)
             .height(panel_height)
-            .style(|theme: &crate::Theme| {
-                iced_widget::container::Style::default()
-                    .background(theme.extended_palette().background.weak.color)
+            .style(move |theme: &crate::Theme| {
+                // CC 模式下容器透明，让 wgpu 渲染的柱状条可见
+                if self.edit_mode.is_cc() {
+                    iced_widget::container::Style::default()
+                } else {
+                    iced_widget::container::Style::default()
+                        .background(theme.extended_palette().background.weak.color)
+                }
             })
             .into()
     }
