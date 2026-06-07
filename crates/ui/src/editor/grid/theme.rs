@@ -41,10 +41,16 @@ pub trait ThemeExt {
 
 impl ThemeExt for Theme {
     fn is_light(&self) -> bool {
+        if crate::theme::is_high_contrast() {
+            return false;
+        }
         self.extended_palette().background.weakest.color.r > 0.5
     }
 
     fn keyboard_background_color(&self) -> iced_core::Color {
+        if crate::theme::is_high_contrast() {
+            return crate::theme::hc::KEYBOARD_BG;
+        }
         let palette = self.extended_palette().background;
         if self.is_light() {
             palette.weak.color
@@ -54,6 +60,9 @@ impl ThemeExt for Theme {
     }
 
     fn white_key_color(&self) -> iced_core::Color {
+        if crate::theme::is_high_contrast() {
+            return crate::theme::hc::WHITE_KEY;
+        }
         let palette = self.extended_palette().background;
         if self.is_light() {
             palette.weak.color
@@ -63,6 +72,9 @@ impl ThemeExt for Theme {
     }
 
     fn black_key_color(&self) -> iced_core::Color {
+        if crate::theme::is_high_contrast() {
+            return crate::theme::hc::BLACK_KEY;
+        }
         let palette = self.extended_palette().background;
         if self.is_light() {
             palette.strong.color
@@ -72,6 +84,9 @@ impl ThemeExt for Theme {
     }
 
     fn border_color(&self) -> iced_core::Color {
+        if crate::theme::is_high_contrast() {
+            return crate::theme::hc::BORDER;
+        }
         let palette = self.extended_palette().background;
         if self.is_light() {
             palette.strongest.color
@@ -81,6 +96,9 @@ impl ThemeExt for Theme {
     }
 
     fn ruler_background_color(&self) -> iced_core::Color {
+        if crate::theme::is_high_contrast() {
+            return crate::theme::hc::RULER_BG;
+        }
         let palette = self.extended_palette().background;
         if self.is_light() {
             palette.weakest.color
@@ -90,6 +108,9 @@ impl ThemeExt for Theme {
     }
 
     fn text_color(&self) -> iced_core::Color {
+        if crate::theme::is_high_contrast() {
+            return crate::theme::hc::TEXT;
+        }
         if self.is_light() {
             iced_core::Color::BLACK
         } else {
@@ -98,6 +119,9 @@ impl ThemeExt for Theme {
     }
 
     fn bar_line_color(&self) -> iced_core::Color {
+        if crate::theme::is_high_contrast() {
+            return crate::theme::hc::BAR_LINE;
+        }
         if self.is_light() {
             iced_core::Color {
                 a: 0.8,
@@ -112,6 +136,9 @@ impl ThemeExt for Theme {
     }
 
     fn beat_line_color(&self) -> iced_core::Color {
+        if crate::theme::is_high_contrast() {
+            return crate::theme::hc::BEAT_LINE;
+        }
         if self.is_light() {
             iced_core::Color {
                 a: 0.4,
@@ -126,6 +153,9 @@ impl ThemeExt for Theme {
     }
 
     fn half_beat_line_color(&self) -> iced_core::Color {
+        if crate::theme::is_high_contrast() {
+            return crate::theme::hc::HALF_BEAT_LINE;
+        }
         if self.is_light() {
             iced_core::Color {
                 a: 0.2,
@@ -140,6 +170,9 @@ impl ThemeExt for Theme {
     }
 
     fn grid_line_color(&self) -> iced_core::Color {
+        if crate::theme::is_high_contrast() {
+            return crate::theme::hc::GRID_LINE;
+        }
         if self.is_light() {
             iced_core::Color {
                 a: 0.1,

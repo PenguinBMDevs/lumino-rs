@@ -207,9 +207,8 @@ impl Root {
                 vp.zoom_y = new_zoom;
                 let total_h = track_count * vp.track_height * new_zoom;
                 let max_scroll = (total_h - canvas_h).max(0.0);
-                vp.scroll_y =
-                    (focus_ratio * new_zoom * vp.track_height - canvas_h * fixed_ratio)
-                        .clamp(0.0, max_scroll);
+                vp.scroll_y = (focus_ratio * new_zoom * vp.track_height - canvas_h * fixed_ratio)
+                    .clamp(0.0, max_scroll);
                 true
             }
             Message::ZoomXChanged { zoom, fixed_ratio } => {

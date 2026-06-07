@@ -36,6 +36,8 @@ pub struct MemoryBreakdown {
     pub onion_note_back_len: usize,
 }
 
+pub mod theme;
+
 mod collaboration;
 mod editor_ops;
 pub mod handlers;

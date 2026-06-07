@@ -98,8 +98,18 @@ impl Host {
             [arr_bg.r, arr_bg.g, arr_bg.b],
             [arr_lane_even.r, arr_lane_even.g, arr_lane_even.b],
             [arr_lane_odd.r, arr_lane_odd.g, arr_lane_odd.b],
-            [arr_measure_line.r, arr_measure_line.g, arr_measure_line.b, arr_measure_line.a],
-            [arr_playhead.r, arr_playhead.g, arr_playhead.b, arr_playhead.a],
+            [
+                arr_measure_line.r,
+                arr_measure_line.g,
+                arr_measure_line.b,
+                arr_measure_line.a,
+            ],
+            [
+                arr_playhead.r,
+                arr_playhead.g,
+                arr_playhead.b,
+                arr_playhead.a,
+            ],
         );
         instances
     }

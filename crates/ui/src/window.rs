@@ -1,4 +1,5 @@
 use crate::statusbar::performance::PerfData;
+use crate::theme::HIGH_CONTRAST_DISPLAY;
 use crate::{Message, Theme};
 
 #[derive(Debug, Clone)]
@@ -60,11 +61,19 @@ pub struct Window {
 }
 
 fn get_theme(theme: &str) -> Theme {
-    Theme::ALL
-        .iter()
-        .find(|t| t.to_string() == theme)
-        .cloned()
-        .unwrap_or(Window::default_theme())
+    if theme == HIGH_CONTRAST_DISPLAY {
+        crate::theme::set_high_contrast(true);
+        // 使用 Iced 的 Custom Theme 机制创建全黑 palette，
+        // 所有 theme.palette() / extended_palette() 调用自动返回黑色系
+        crate::theme::hc_theme()
+    } else {
+        crate::theme::set_high_contrast(false);
+        Theme::ALL
+            .iter()
+            .find(|t| t.to_string() == theme)
+            .cloned()
+            .unwrap_or(Window::default_theme())
+    }
 }
 
 impl Window {

@@ -237,9 +237,13 @@ pub fn view_with_size_and_theme_safe(
     height: u32,
     theme: Option<&crate::Theme>,
 ) -> Result<crate::Element<'static>, IconError> {
-    let is_dark = theme
-        .map(|t| t.extended_palette().background.weakest.color.r < 0.5)
-        .unwrap_or(true);
+    let is_dark = if crate::theme::is_high_contrast() {
+        true
+    } else {
+        theme
+            .map(|t| t.extended_palette().background.weakest.color.r < 0.5)
+            .unwrap_or(true)
+    };
 
     // 使用缓存 Handle（含主题反色），iced_wgpu 的纹理缓存命中后零每帧上传
     let handle = get_or_create_handle(icon, is_dark)?;

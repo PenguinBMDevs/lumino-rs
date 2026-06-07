@@ -20,6 +20,7 @@ pub use host::{Host, NoteData, TrackNotes};
 pub(crate) use lumino_core::storage::config;
 pub use root::MemoryBreakdown;
 pub use root::Root;
+pub use root::theme;
 pub(crate) use root::{Element, Message, Renderer, Theme};
 pub use state::root_state::CollaborationViewState;
 pub use wgpu_render_thread::{

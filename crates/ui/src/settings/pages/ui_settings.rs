@@ -1,5 +1,6 @@
 //! 设置页面 - 界面设置
 
+use crate::theme::HIGH_CONTRAST_DISPLAY;
 use crate::{Element, Message, Theme};
 use iced_core::Alignment;
 use iced_widget::{button, column, pick_list, row, text, text_input};
@@ -28,8 +29,9 @@ pub fn view<'a>(
         ]
     };
 
-    // 主题选项
-    let theme_options: Vec<String> = Theme::ALL.iter().map(|t| t.to_string()).collect();
+    // 主题选项（在 Iced 内置主题前插入高对比度选项）
+    let mut theme_options: Vec<String> = vec![HIGH_CONTRAST_DISPLAY.to_string()];
+    theme_options.extend(Theme::ALL.iter().map(|t| t.to_string()));
     let current_theme = window.theme.to_string();
 
     // 字体选项 - 从系统扫描的字体列表构建

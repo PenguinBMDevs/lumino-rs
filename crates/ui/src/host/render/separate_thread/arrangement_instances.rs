@@ -47,7 +47,9 @@ pub fn build_arrangement_all(
     let te = ((viewport.scroll_x + w) / ppu) as f64;
 
     // ── 1. 背景 ──
-    out.push(ArrangementNoteInstance::background(cox, coy, w, h, bg_color));
+    out.push(ArrangementNoteInstance::background(
+        cox, coy, w, h, bg_color,
+    ));
 
     if nt == 0 {
         return;
@@ -70,7 +72,11 @@ pub fn build_arrangement_all(
 
         // Lane 背景
         let lane_y = trk_screen_y(viewport, ti) + coy;
-        let c = if ti % 2 == 0 { lane_even_color } else { lane_odd_color };
+        let c = if ti % 2 == 0 {
+            lane_even_color
+        } else {
+            lane_odd_color
+        };
         out.push(ArrangementNoteInstance::lane(cox, lane_y, w, lh, c));
 
         // 音符
