@@ -549,7 +549,7 @@ impl Root {
                 return;
             }
             VelocityAction::TempoDragMove(idx, new_bpm) => {
-                let bpm = new_bpm.clamp(20.0, 999.0);
+                let bpm = new_bpm.clamp(20.0, 10000.0);
                 if let Some(point) = self.editor.editor_state.data.tempo_points.get_mut(idx) {
                     point.bpm = bpm;
                     self.update_playback_bpm();
@@ -562,7 +562,7 @@ impl Root {
             }
             VelocityAction::TempoAdd(tick, bpm) => {
                 self.editor.push_history();
-                let bpm = bpm.clamp(20.0, 999.0);
+                let bpm = bpm.clamp(20.0, 10000.0);
                 self.editor.editor_state.data.tempo_points.push(
                     TempoPoint { tick, bpm }
                 );

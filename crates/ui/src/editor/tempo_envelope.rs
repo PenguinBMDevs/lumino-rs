@@ -13,7 +13,7 @@ use crate::{Message, Renderer, Theme};
 pub struct TempoPoint {
     /// tick 位置
     pub tick: f32,
-    /// BPM 值 (20-999)
+    /// BPM 值 (20-10000)
     pub bpm: f64,
 }
 
@@ -124,7 +124,7 @@ impl<'a> Program<Message, Theme, Renderer> for TempoCanvas<'a> {
             .iter()
             .map(|p| p.bpm)
             .fold(f64::NEG_INFINITY, |a, b| a.max(b))
-            .min(999.0);
+            .min(10000.0);
         let bpm_range = (max_bpm - min_bpm).max(1.0);
 
         // 绘制折线

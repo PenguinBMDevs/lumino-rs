@@ -28,7 +28,7 @@ use super::*;
 pub struct TempoPoint {
     /// tick 位置
     pub tick: f32,
-    /// BPM 值 (20-999)
+    /// BPM 值 (20-10000)
     pub bpm: f64,
 }
 
@@ -394,7 +394,14 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
     ) -> Vec<Geom> {
         let mut frame = Frame::new(renderer, bounds.size());
 
-        draw_background(&mut frame, theme, bounds.size());
+        match self.edit_mode {
+            super::EditMode::Tempo => {
+                draw_tempo_background(&mut frame, theme, bounds.size());
+            }
+            _ => {
+                draw_background(&mut frame, theme, bounds.size());
+            }
+        }
 
         draw_resize_handle(&mut frame, theme, bounds.size(), state.hover_resize_handle);
 
@@ -704,6 +711,85 @@ fn draw_velocity_graph(
     }
 }
 
+/// 速度面板 BPM 标尺常量
+const TEMPO_BPM_MIN: f64 = 20.0;
+const TEMPO_BPM_MAX: f64 = 10000.0;
+
+/// 将 BPM 值映射到面板 Y 坐标（绝对标尺 [20, 10000]）
+fn tempo_bpm_to_y(bpm: f64, bounds_height: f32) -> f32 {
+    let draw_height = bounds_height - RESIZE_HANDLE_HEIGHT;
+    let max_y = draw_height - PANEL_PADDING_Y;
+    let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
+    let normalized = ((bpm - TEMPO_BPM_MIN) / (TEMPO_BPM_MAX - TEMPO_BPM_MIN)) as f32;
+    max_y - normalized * (max_y - min_y)
+}
+
+/// 生成 BPM 标尺刻度值（最大 10000，中间自适应对数分布）
+fn generate_tempo_levels() -> Vec<f64> {
+    vec![
+        TEMPO_BPM_MIN,
+        60.0,
+        120.0,
+        240.0,
+        480.0,
+        1000.0,
+        2000.0,
+        5000.0,
+        TEMPO_BPM_MAX,
+    ]
+}
+
+/// 绘制速度面板背景（BPM 标尺 + 网格线）
+fn draw_tempo_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
+    let width = size.width;
+    let height = size.height;
+
+    let bg_color = velocity_bg_color(theme);
+    frame.fill_rectangle(Point::ORIGIN, size, bg_color);
+
+    let line_color = velocity_grid_line_color(theme);
+    let text_color = velocity_text_color(theme);
+
+    let bpm_levels = generate_tempo_levels();
+
+    for &bpm in &bpm_levels {
+        let y = tempo_bpm_to_y(bpm, height);
+
+        let mut line_builder = path::Builder::new();
+        line_builder.move_to(Point::new(PANEL_PADDING_X, y));
+        line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
+        let line_path = line_builder.build();
+        frame.stroke(
+            &line_path,
+            canvas::Stroke::default()
+                .with_color(line_color)
+                .with_width(1.0),
+        );
+
+        let label = format!("{:.0}", bpm);
+        let text = canvas::Text {
+            content: label,
+            position: Point::new(4.0, y - 6.0),
+            max_width: width,
+            line_height: iced_core::text::LineHeight::Relative(1.0),
+            size: iced_core::Pixels(9.0),
+            color: text_color,
+            font: iced_core::Font::DEFAULT,
+            align_x: alignment::Horizontal::Left.into(),
+            align_y: alignment::Vertical::Top,
+            shaping: iced_core::text::Shaping::Basic,
+        };
+        frame.fill_text(text);
+    }
+
+    let border_color = velocity_border_color(theme);
+    frame.fill_rectangle(
+        Point::new(0.0, RESIZE_HANDLE_HEIGHT),
+        Size::new(width, 1.0),
+        border_color,
+    );
+}
+
 /// 绘制速度（Tempo）折线图
 fn draw_tempo_graph(
     frame: &mut Frame<Renderer>,
@@ -735,18 +821,9 @@ fn draw_tempo_graph(
         return;
     }
 
-    // 计算 BPM 范围
-    let min_bpm = visible_points
-        .iter()
-        .map(|p| p.bpm)
-        .fold(f64::INFINITY, |a, b| a.min(b))
-        .max(20.0);
-    let max_bpm = visible_points
-        .iter()
-        .map(|p| p.bpm)
-        .fold(f64::NEG_INFINITY, |a, b| a.max(b))
-        .min(999.0);
-    let bpm_range = (max_bpm - min_bpm).max(1.0);
+    // 使用固定绝对标尺 [20, 999]，保证单点也能正确映射位置
+    let min_bpm = TEMPO_BPM_MIN;
+    let bpm_range = TEMPO_BPM_MAX - TEMPO_BPM_MIN;
 
     // 绘制折线
     let mut line_builder = path::Builder::new();
@@ -789,7 +866,7 @@ fn draw_tempo_graph(
     }
 }
 
-/// 计算 Tempo 控制点屏幕位置
+/// 计算 Tempo 控制点屏幕位置（绝对 BPM 标尺 [20, 10000]）
 fn tempo_point_screen_pos(
     point: &TempoPoint,
     _bounds_width: f32,
