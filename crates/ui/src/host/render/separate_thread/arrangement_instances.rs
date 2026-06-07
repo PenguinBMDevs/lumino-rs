@@ -10,14 +10,15 @@ use std::collections::HashMap;
 
 type TrackNotesMap = HashMap<usize, im::Vector<Note>>;
 
-const AR_BG_COLOR: (f32, f32, f32) = (0.14, 0.14, 0.16);
-const AR_LANE_EVEN_COLOR: (f32, f32, f32) = (0.16, 0.16, 0.18);
-const AR_LANE_ODD_COLOR: (f32, f32, f32) = (0.13, 0.13, 0.15);
-const AR_MEASURE_LINE_COLOR: (f32, f32, f32, f32) = (0.30, 0.30, 0.35, 1.0);
-const AR_PLAYHEAD_COLOR: (f32, f32, f32, f32) = (1.0, 1.0, 1.0, 0.8);
-
 /// 构建全部实例（背景 + lane + 网格线 + 音符 + 演奏指示线）
 /// 屏幕坐标，每帧重建，二分查找加速 MidiDocument 音符读取
+///
+/// 颜色参数说明：
+/// - `bg_color`: 背景色 (RGB)
+/// - `lane_even_color`: 偶数轨 lane 背景色 (RGB)
+/// - `lane_odd_color`: 奇数轨 lane 背景色 (RGB)
+/// - `measure_line_color`: 小节线颜色 (RGBA)
+/// - `playhead_color`: 演奏指示线颜色 (RGBA)
 pub fn build_arrangement_all(
     out: &mut Vec<ArrangementNoteInstance>,
     viewport: &ArrangementViewport,
@@ -27,6 +28,11 @@ pub fn build_arrangement_all(
     midi_doc: Option<&lumino_core::midi::MidiDocument>,
     track_notes: &TrackNotesMap,
     playback_position: f32,
+    bg_color: [f32; 3],
+    lane_even_color: [f32; 3],
+    lane_odd_color: [f32; 3],
+    measure_line_color: [f32; 4],
+    playhead_color: [f32; 4],
 ) {
     let w = viewport.canvas_size.x;
     let h = viewport.canvas_size.y;
@@ -41,13 +47,7 @@ pub fn build_arrangement_all(
     let te = ((viewport.scroll_x + w) / ppu) as f64;
 
     // ── 1. 背景 ──
-    out.push(ArrangementNoteInstance::background(
-        cox,
-        coy,
-        w,
-        h,
-        [AR_BG_COLOR.0, AR_BG_COLOR.1, AR_BG_COLOR.2],
-    ));
+    out.push(ArrangementNoteInstance::background(cox, coy, w, h, bg_color));
 
     if nt == 0 {
         return;
@@ -70,18 +70,8 @@ pub fn build_arrangement_all(
 
         // Lane 背景
         let lane_y = trk_screen_y(viewport, ti) + coy;
-        let c = if ti % 2 == 0 {
-            AR_LANE_EVEN_COLOR
-        } else {
-            AR_LANE_ODD_COLOR
-        };
-        out.push(ArrangementNoteInstance::lane(
-            cox,
-            lane_y,
-            w,
-            lh,
-            [c.0, c.1, c.2],
-        ));
+        let c = if ti % 2 == 0 { lane_even_color } else { lane_odd_color };
+        out.push(ArrangementNoteInstance::lane(cox, lane_y, w, lh, c));
 
         // 音符
         if let Some(notes) = track_notes.get(tid) {
@@ -104,12 +94,7 @@ pub fn build_arrangement_all(
                 coy,
                 1.0,
                 h,
-                [
-                    AR_MEASURE_LINE_COLOR.0,
-                    AR_MEASURE_LINE_COLOR.1,
-                    AR_MEASURE_LINE_COLOR.2,
-                    AR_MEASURE_LINE_COLOR.3,
-                ],
+                measure_line_color,
                 tick as u32,
             ));
         }
@@ -124,12 +109,7 @@ pub fn build_arrangement_all(
                 coy,
                 2.0,
                 h,
-                [
-                    AR_PLAYHEAD_COLOR.0,
-                    AR_PLAYHEAD_COLOR.1,
-                    AR_PLAYHEAD_COLOR.2,
-                    AR_PLAYHEAD_COLOR.3,
-                ],
+                playhead_color,
             ));
         }
     }

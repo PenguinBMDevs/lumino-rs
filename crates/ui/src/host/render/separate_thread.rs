@@ -51,6 +51,40 @@ impl Host {
             .map(|t| !t.is_muted)
             .collect();
 
+        // 从主题提取走带视图颜色
+        let theme = self.root.theme();
+        use crate::editor::grid::theme::ThemeExt;
+        let is_light = theme.is_light();
+        let palette = theme.extended_palette().background;
+        let arr_bg = if is_light {
+            palette.weak.color
+        } else {
+            palette.base.color
+        };
+        let arr_lane_even = if is_light {
+            palette.weakest.color
+        } else {
+            palette.weak.color
+        };
+        let arr_lane_odd = if is_light {
+            palette.strong.color
+        } else {
+            palette.base.color
+        };
+        let arr_measure_line = if is_light {
+            iced_core::Color {
+                a: 0.8,
+                ..iced_core::Color::BLACK
+            }
+        } else {
+            iced_core::Color {
+                a: 0.8,
+                ..iced_core::Color::WHITE
+            }
+        };
+        // 演奏指示线：DAW 标准红色，不随主题变化
+        let arr_playhead = iced_core::Color::from_rgba(1.0, 0.2, 0.2, 1.0);
+
         let mut instances = Vec::new();
         arrangement_instances::build_arrangement_all(
             &mut instances,
@@ -61,6 +95,11 @@ impl Host {
             self.root.midi_document.as_ref().map(|v| &**v),
             track_notes,
             self.root.editor.playback_position as f32,
+            [arr_bg.r, arr_bg.g, arr_bg.b],
+            [arr_lane_even.r, arr_lane_even.g, arr_lane_even.b],
+            [arr_lane_odd.r, arr_lane_odd.g, arr_lane_odd.b],
+            [arr_measure_line.r, arr_measure_line.g, arr_measure_line.b, arr_measure_line.a],
+            [arr_playhead.r, arr_playhead.g, arr_playhead.b, arr_playhead.a],
         );
         instances
     }
