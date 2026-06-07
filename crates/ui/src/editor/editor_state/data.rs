@@ -5,11 +5,12 @@
 
 use crate::editor::history;
 use crate::editor::note::Note;
+use crate::editor::velocity::CcData;
 use lumino_core::midi::MidiDocument;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// 编辑器数据（音符数据、音轨管理、文档引用、历史记录）
+/// 编辑器数据（音符数据、音轨管理、文档引用、历史记录、CC数据）
 #[derive(Debug)]
 pub struct EditorData {
     /// 当前编辑的音符列表
@@ -22,6 +23,8 @@ pub struct EditorData {
     pub document: Option<Arc<MidiDocument>>,
     /// 历史记录（用于撤销/重做）
     pub history: history::History,
+    /// CC 控制器数据
+    pub cc_data: CcData,
 }
 
 impl Default for EditorData {
@@ -38,6 +41,7 @@ impl EditorData {
             track_notes: HashMap::new(),
             document: None,
             history: history::History::new(),
+            cc_data: CcData::default(),
         }
     }
 }

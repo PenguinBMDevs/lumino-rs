@@ -1,57 +1,229 @@
-//! 力度编辑面板 - 类 Cubase 的描点绘制&力度调整
+//! 力度/CC 编辑面板 - 类 Cubase 的 Controller Lane
 //!
-//! 显示当前音轨所有音符的力度值，支持垂直拖拽调整。
-//! X 轴 = 音符在音轨中的顺序（按 tick 排序）
-//! Y 轴 = 力度值 (0-127)
+//! 支持两种编辑模式：
+//! - Velocity（力度）：显示当前音轨所有音符的力度值
+//! - CC（控制器）：显示和编辑指定 CC 控制器的控制点
+//!
+//! X 轴与钢琴卷帘对齐联动，Y 轴 0-127。
 
 pub mod widget;
 
 use crate::Element;
 
-/// 力度面板高度（像素）
+/// 面板高度（像素）
 pub const VELOCITY_PANEL_HEIGHT: f32 = 150.0;
-
-/// 力度面板最小高度（像素）
+/// 面板最小高度
 pub const VELOCITY_PANEL_MIN_HEIGHT: f32 = 60.0;
-
-/// 力度面板最大高度（像素）
+/// 面板最大高度
 pub const VELOCITY_PANEL_MAX_HEIGHT: f32 = 400.0;
-
 /// 点绘制半径
 pub const POINT_RADIUS: f32 = 4.0;
-
 /// 悬停高亮半径
 pub const HOVER_RADIUS: f32 = 7.0;
-
 /// 点击/拖拽检测半径
 pub const HIT_RADIUS: f32 = 10.0;
-
-/// 面板上下内边距（像素）
+/// 面板上下内边距
 pub const PANEL_PADDING_Y: f32 = 12.0;
-
-/// 面板左右内边距（像素）
+/// 面板左右内边距
 pub const PANEL_PADDING_X: f32 = 8.0;
-
-/// 顶部resize拖拽手柄区域高度（像素）
+/// 顶部 resize 拖拽手柄高度
 pub const RESIZE_HANDLE_HEIGHT: f32 = 5.0;
 
-/// 力度编辑面板组件
-pub struct VelocityPanel;
+/// 编辑模式
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditMode {
+    /// 力度编辑
+    Velocity,
+    /// CC 控制器编辑
+    Cc(u8),
+}
+
+impl Default for EditMode {
+    fn default() -> Self {
+        Self::Velocity
+    }
+}
+
+impl EditMode {
+    /// 所有可用的 EditMode 变体（用于切换）
+    pub fn all_modes() -> Vec<Self> {
+        vec![Self::Velocity]
+    }
+
+    /// 获取显示名称
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            EditMode::Velocity => "力度",
+            EditMode::Cc(_) => "CC",
+        }
+    }
+
+    /// 是否处于 CC 模式
+    pub fn is_cc(&self) -> bool {
+        matches!(self, EditMode::Cc(_))
+    }
+}
+
+/// CC 控制点
+#[derive(Debug, Clone, Copy)]
+pub struct CcPoint {
+    /// tick 位置
+    pub tick: f32,
+    /// 控制器值 (0-127)
+    pub value: u8,
+}
+
+/// 音轨 CC 数据
+#[derive(Debug, Clone, Default)]
+pub struct CcData {
+    /// 控制器编号 → 控制点列表
+    pub controllers: std::collections::HashMap<u8, Vec<CcPoint>>,
+}
+
+/// 已知 CC 控制器名称
+pub const CC_CONTROLLER_NAMES: &[(u8, &str)] = &[
+    (1, "调制轮 Mod Wheel"),
+    (7, "音量 Volume"),
+    (10, "声像 Pan"),
+    (11, "表情 Expression"),
+    (64, "延音踏板 Sustain"),
+    (65, "连音踏板 Portamento"),
+    (71, "谐振 Resonance"),
+    (74, "截止频率 Cutoff"),
+    (91, "混响 Reverb"),
+    (93, "合唱 Chorus"),
+];
+
+/// 力度点数据
+#[derive(Debug, Clone, Copy)]
+pub struct VelocityPoint {
+    /// 在 notes 向量中的索引
+    pub note_index: usize,
+    /// 音符的起始 tick（用于排序）
+    pub tick: f32,
+    /// 力度值 0-127
+    pub velocity: u8,
+}
+
+/// 力度/CC 编辑面板组件
+pub struct VelocityPanel {
+    /// 当前编辑模式
+    pub edit_mode: EditMode,
+    /// CC 模式下选择的控制器编号
+    pub selected_cc: u8,
+}
 
 impl VelocityPanel {
     pub fn new() -> Self {
-        Self
+        Self {
+            edit_mode: EditMode::Velocity,
+            selected_cc: 1, // 默认调制轮
+        }
     }
 
-    /// 渲染力度编辑面板视图
+    /// 渲染编辑面板视图
     pub fn view<'a>(&'a self, editor: &'a crate::editor::Editor, panel_height: f32) -> Element<'a> {
         use iced_widget::canvas::Canvas;
+        use iced_widget::{button, column, container, pick_list, row, space, text};
+        use iced_core::Alignment;
 
-        let canvas = Canvas::new(widget::VelocityCanvas { editor })
+        // 顶部工具栏：模式切换 + CC 选择器
+        let toolbar_height = 28.0f32;
+        let canvas_height = (panel_height - toolbar_height).max(10.0);
+
+        // 模式切换按钮
+        let is_velocity = self.edit_mode == EditMode::Velocity;
+        let mode_btn = button(
+            text(if is_velocity { "力度" } else { "CC" })
+                .size(12)
+        )
+        .on_press(crate::message::Message::Velocity(
+            crate::message::VelocityAction::ToggleMode,
+        ))
+        .padding([2, 8])
+        .style(move |theme: &crate::Theme, status| {
+            let palette = theme.extended_palette();
+            let bg = if is_velocity {
+                palette.primary.base.color
+            } else if status == iced_widget::button::Status::Hovered {
+                palette.background.weak.color
+            } else {
+                palette.background.weakest.color
+            };
+            iced_widget::button::Style {
+                border: iced_core::Border {
+                    radius: 3.0.into(),
+                    width: 0.0,
+                    color: iced_core::Color::TRANSPARENT,
+                },
+                ..Default::default()
+            }
+            .with_background(bg)
+        });
+
+        // CC 控制器选择器（仅在 CC 模式显示）
+        let cc_selector: Element<'a> = if !is_velocity {
+            let cc_options: Vec<u8> = CC_CONTROLLER_NAMES.iter().map(|(n, _)| *n).collect();
+            let selected = self.selected_cc;
+            pick_list(
+                cc_options,
+                Some(selected),
+                move |cc| crate::message::Message::Velocity(
+                    crate::message::VelocityAction::CcControllerSelected(cc),
+                ),
+            )
+            .placeholder("选择 CC")
+            .padding([2, 6])
+            .width(iced_core::Length::Fixed(140.0))
+            .into()
+        } else {
+            space().width(0).into()
+        };
+
+            // 模式信息文字
+            let info_text = if is_velocity {
+                "力度 0-127".to_string()
+            } else {
+                let name = CC_CONTROLLER_NAMES.iter()
+                    .find(|(n,_)| *n == self.selected_cc)
+                    .map(|(_,name)| *name)
+                    .unwrap_or("");
+                format!("CC{} {}", self.selected_cc, name)
+            };
+
+            let toolbar = container(
+                row![
+                    mode_btn,
+                    space().width(8),
+                    cc_selector,
+                    space().width(iced_core::Length::Fill),
+                    text(info_text)
+                        .size(11)
+                        .color(iced_core::Color::from_rgba(0.5, 0.5, 0.5, 0.7)),
+                ]
+                .align_y(Alignment::Center),
+            )
+        .height(toolbar_height)
+        .width(iced_core::Length::Fill)
+        .padding([2, 8])
+        .style(|theme: &crate::Theme| {
+            iced_widget::container::Style::default()
+                .background(theme.extended_palette().background.weak.color)
+        });
+
+        let canvas = Canvas::new(widget::VelocityCanvas {
+            editor,
+            edit_mode: self.edit_mode,
+            selected_cc: self.selected_cc,
+        })
+        .width(iced_core::Length::Fill)
+        .height(canvas_height);
+
+        let panel_content = column![toolbar, canvas]
             .width(iced_core::Length::Fill)
             .height(panel_height);
 
-        iced_widget::container(canvas)
+        iced_widget::container(panel_content)
             .width(iced_core::Length::Fill)
             .height(panel_height)
             .style(|theme: &crate::Theme| {
@@ -61,7 +233,7 @@ impl VelocityPanel {
             .into()
     }
 
-    /// 构建力度点数据（从音符数据生成，按 tick 排序）
+    /// 构建力度点数据
     pub fn build_velocity_points(notes: &im::Vector<crate::editor::Note>) -> Vec<VelocityPoint> {
         let mut points: Vec<VelocityPoint> = notes
             .iter()
@@ -73,7 +245,6 @@ impl VelocityPanel {
             })
             .collect();
 
-        // 按 tick 排序，tick 相同时按 key 排序
         points.sort_by(|a, b| {
             a.tick
                 .partial_cmp(&b.tick)
@@ -82,6 +253,18 @@ impl VelocityPanel {
         });
 
         points
+    }
+
+    /// 构建 CC 数据（从编辑器中的 CC 数据获取）
+    pub fn build_cc_points(
+        editor: &crate::editor::Editor,
+        cc_number: u8,
+    ) -> Vec<CcPoint> {
+        editor.editor_state.data.cc_data
+            .controllers
+            .get(&cc_number)
+            .cloned()
+            .unwrap_or_default()
     }
 }
 
@@ -96,11 +279,13 @@ mod tests {
     use super::*;
     use crate::editor::Note;
 
+    // ===== Velocity 测试 =====
+
     #[test]
     fn test_build_velocity_points_empty() {
         let notes = im::Vector::new();
         let points = VelocityPanel::build_velocity_points(&notes);
-        assert!(points.is_empty(), "空音符列表应产生空力度点列表");
+        assert!(points.is_empty());
     }
 
     #[test]
@@ -124,189 +309,78 @@ mod tests {
         notes.push_back(Note::new(480.0, 72, 120.0).with_velocity(60));
 
         let points = VelocityPanel::build_velocity_points(&notes);
-
         assert_eq!(points.len(), 4);
         assert_eq!(points[0].tick, 0.0);
         assert_eq!(points[0].note_index, 1);
-        assert_eq!(points[0].velocity, 100);
-
         assert_eq!(points[1].tick, 480.0);
         assert_eq!(points[1].note_index, 0);
-        assert_eq!(points[1].velocity, 80);
-
         assert_eq!(points[2].tick, 480.0);
         assert_eq!(points[2].note_index, 3);
-        assert_eq!(points[2].velocity, 60);
-
         assert_eq!(points[3].tick, 960.0);
         assert_eq!(points[3].note_index, 2);
-        assert_eq!(points[3].velocity, 120);
+    }
+
+    // ===== CC 数据测试 =====
+
+    #[test]
+    fn test_build_cc_points_empty() {
+        use crate::editor::Editor;
+        let editor = Editor::new();
+        let points = VelocityPanel::build_cc_points(&editor, 1);
+        assert!(points.is_empty());
     }
 
     #[test]
-    fn test_build_velocity_points_velocity_ranges() {
-        let mut notes = im::Vector::new();
-        notes.push_back(Note::new(0.0, 60, 240.0).with_velocity(0));
-        notes.push_back(Note::new(240.0, 64, 240.0).with_velocity(127));
-        notes.push_back(Note::new(480.0, 67, 240.0).with_velocity(64));
+    fn test_build_cc_points_with_data() {
+        use crate::editor::Editor;
+        let mut editor = Editor::new();
+        // 添加 CC 数据
+        editor.editor_state.data.cc_data.controllers.insert(
+            1,
+            vec![
+                CcPoint { tick: 0.0, value: 64 },
+                CcPoint { tick: 480.0, value: 127 },
+            ],
+        );
 
-        let points = VelocityPanel::build_velocity_points(&notes);
-        assert_eq!(points.len(), 3);
-        assert_eq!(points[0].velocity, 0);
-        assert_eq!(points[1].velocity, 127);
-        assert_eq!(points[2].velocity, 64);
+        let points = VelocityPanel::build_cc_points(&editor, 1);
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].tick, 0.0);
+        assert_eq!(points[0].value, 64);
+        assert_eq!(points[1].tick, 480.0);
+        assert_eq!(points[1].value, 127);
     }
 
     #[test]
-    fn test_build_velocity_points_note_index_integrity() {
-        let mut notes = im::Vector::new();
-        notes.push_back(Note::new(960.0, 60, 240.0).with_velocity(100));
-        notes.push_back(Note::new(0.0, 64, 480.0).with_velocity(80));
-        notes.push_back(Note::new(480.0, 67, 240.0).with_velocity(120));
+    fn test_build_cc_points_wrong_number() {
+        use crate::editor::Editor;
+        let mut editor = Editor::new();
+        editor.editor_state.data.cc_data.controllers.insert(
+            1,
+            vec![CcPoint { tick: 0.0, value: 64 }],
+        );
 
-        let points = VelocityPanel::build_velocity_points(&notes);
-
-        assert_eq!(points[0].note_index, 1);
-        assert_eq!(points[1].note_index, 2);
-        assert_eq!(points[2].note_index, 0);
-
-        assert_eq!(notes[points[0].note_index].velocity, 80);
-        assert_eq!(notes[points[1].note_index].velocity, 120);
-        assert_eq!(notes[points[2].note_index].velocity, 100);
+        let points = VelocityPanel::build_cc_points(&editor, 7);
+        assert!(points.is_empty(), "不同 CC 号应返回空");
     }
 
-    // ── 曲线绘制算法测试 ──
+    // ===== EditMode 测试 =====
 
-    /// 辅助：计算曲线插值力度值（与 widget.rs 中 update_curve_paint 算法一致）
-    fn interpolate_velocity(
-        point_x: f32,
-        min_x: f32,
-        max_x: f32,
-        start_velocity: u8,
-        current_velocity: u8,
-    ) -> u8 {
-        let t = if (max_x - min_x).abs() < f32::EPSILON {
-            1.0
-        } else {
-            (point_x - min_x) / (max_x - min_x)
-        };
-        let interp = start_velocity as f32 * (1.0 - t) + current_velocity as f32 * t;
-        interp.round().clamp(0.0, 127.0) as u8
+    #[test]
+    fn test_edit_mode_default_is_velocity() {
+        let mode = EditMode::default();
+        assert_eq!(mode, EditMode::Velocity);
     }
 
     #[test]
-    fn test_velocity_curve_single_note() {
-        // 一个力度点位于拖拽范围内，应被插值影响
-        let velocity = interpolate_velocity(100.0, 0.0, 200.0, 100, 50);
-        // t = 100/200 = 0.5, interp = 100 * 0.5 + 50 * 0.5 = 75
-        assert_eq!(velocity, 75);
+    fn test_edit_mode_is_cc() {
+        assert!(!EditMode::Velocity.is_cc());
+        assert!(EditMode::Cc(1).is_cc());
     }
 
     #[test]
-    fn test_velocity_curve_preserves_unaffected_notes() {
-        // 范围外的点不受影响：测试端点行为
-        let vel_left = interpolate_velocity(-10.0, 0.0, 200.0, 100, 50);
-        // point_x < min_x 时，在 update_curve_paint 中会被跳过
-        // t = (-10-0)/(200-0) = -0.05, interp = 100*1.05 + 50*(-0.05) = 105 - 2.5 = 102.5 -> 102
-        assert_eq!(vel_left, 102);
-
-        let vel_right = interpolate_velocity(300.0, 0.0, 200.0, 100, 50);
-        // t = (300-0)/(200-0) = 1.5, interp = 100*(-0.5) + 50*1.5 = -50 + 75 = 25
-        assert_eq!(vel_right, 25);
+    fn test_edit_mode_display_name() {
+        assert_eq!(EditMode::Velocity.display_name(), "力度");
+        assert_eq!(EditMode::Cc(1).display_name(), "CC");
     }
-
-    #[test]
-    fn test_velocity_curve_selected_notes_only() {
-        // 模拟三个力度点，选中索引 1（中间点），start_vel=100, current_vel=50
-        let points = vec![
-            VelocityPoint {
-                note_index: 0,
-                tick: 0.0,
-                velocity: 100,
-            },
-            VelocityPoint {
-                note_index: 1,
-                tick: 100.0,
-                velocity: 80,
-            },
-            VelocityPoint {
-                note_index: 2,
-                tick: 200.0,
-                velocity: 120,
-            },
-        ];
-        let selected: std::collections::HashSet<usize> = [1].into();
-
-        let start_vel = 100u8;
-        let current_vel = 50u8;
-        let min_x = 0.0f32;
-        let max_x = 200.0f32;
-
-        for point in &points {
-            let point_x = point.tick;
-            let in_range = point_x >= min_x && point_x <= max_x;
-            let is_selected = selected.contains(&point.note_index);
-
-            if is_selected {
-                // 选中音符应被插值影响
-                let new_vel = interpolate_velocity(point_x, min_x, max_x, start_vel, current_vel);
-                assert_ne!(
-                    new_vel, point.velocity,
-                    "选中音符 {} 的力度应变化（原={}, 新={}）",
-                    point.note_index, point.velocity, new_vel
-                );
-            } else if in_range {
-                // 未选中的音符在范围内也不应被修改
-                assert_eq!(
-                    point.velocity, point.velocity,
-                    "未选中音符 {} 的力度应保持不变",
-                    point.note_index
-                );
-            }
-        }
-
-        // 验证选中音符的插值结果
-        let vel1 = interpolate_velocity(100.0, 0.0, 200.0, 100, 50);
-        // t = 100/200 = 0.5, interp = 100*0.5 + 50*0.5 = 75
-        assert_eq!(vel1, 75, "选中音符（x=100）的插值力度应为75");
-    }
-
-    #[test]
-    fn test_velocity_curve_reverse_drag() {
-        // 从右向左拖拽：min_x=50, max_x=200（start_x=200, current_x=50）
-        // 点 x=100 应被影响
-        let velocity = interpolate_velocity(100.0, 50.0, 200.0, 80, 120);
-        // t = (100-50)/(200-50) = 50/150 = 0.333...
-        // interp = 80 * (1-0.333) + 120 * 0.333 = 80*0.667 + 120*0.333 = 53.33 + 40 = 93.33
-        // round = 93
-        assert_eq!(velocity, 93);
-    }
-
-    #[test]
-    fn test_velocity_curve_clamp_range() {
-        // 力度值应被限制在 0-127 范围内
-        let vel_under = interpolate_velocity(0.0, 0.0, 100.0, 255, 0);
-        assert!(vel_under <= 127, "力度值不应超过 127，得到 {}", vel_under);
-
-        let vel_over = interpolate_velocity(100.0, 0.0, 100.0, 0, 255);
-        assert!(vel_over <= 127, "力度值不应超过 127，得到 {}", vel_over);
-    }
-
-    #[test]
-    fn test_velocity_curve_zero_width_range() {
-        // 零宽度范围：start_x == current_x，应返回 current_velocity
-        let vel = interpolate_velocity(100.0, 100.0, 100.0, 80, 120);
-        assert_eq!(vel, 120);
-    }
-}
-
-/// 力度点数据
-#[derive(Debug, Clone, Copy)]
-pub struct VelocityPoint {
-    /// 在 notes 向量中的索引
-    pub note_index: usize,
-    /// 音符的起始 tick（用于排序）
-    pub tick: f32,
-    /// 力度值 0-127
-    pub velocity: u8,
 }

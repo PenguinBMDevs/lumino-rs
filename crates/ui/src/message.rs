@@ -287,6 +287,10 @@ pub enum VelocityAction {
     CurvePaint(Vec<(usize, u8)>),
     /// 曲线绘制结束
     CurveEnd,
+    /// 切换编辑模式（力度/CC）
+    ToggleMode,
+    /// 选择 CC 控制器编号
+    CcControllerSelected(u8),
 }
 
 /// Pattern 编辑动作（音轨总览中的音符片段）

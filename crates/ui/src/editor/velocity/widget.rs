@@ -50,9 +50,13 @@ pub struct VelocityCanvasState {
     pub curve_affected: HashMap<usize, u8>,
 }
 
-/// 力度 Canvas 程序
+/// 力度/CC Canvas 程序
 pub struct VelocityCanvas<'a> {
     pub editor: &'a crate::editor::Editor,
+    /// 当前编辑模式
+    pub edit_mode: super::EditMode,
+    /// CC 模式下选择的控制器编号
+    pub selected_cc: u8,
 }
 
 impl<'a> VelocityCanvas<'a> {
@@ -383,21 +387,25 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
 
         draw_resize_handle(&mut frame, theme, bounds.size(), state.hover_resize_handle);
 
-        let points = self.points();
         let view = &self.editor.editor_state.view;
-        if !points.is_empty() {
-            draw_velocity_graph(&mut frame, theme, &points, state, bounds.size(), view);
-            if state.curve_active {
-                draw_curve_paint_feedback(
-                    &mut frame,
-                    theme,
-                    &points,
-                    state,
-                    bounds.size(),
-                    view,
-                    cursor,
-                    bounds,
-                );
+
+        match self.edit_mode {
+            super::EditMode::Velocity => {
+                let points = self.points();
+                if !points.is_empty() {
+                    draw_velocity_graph(&mut frame, theme, &points, state, bounds.size(), view);
+                    if state.curve_active {
+                        draw_curve_paint_feedback(
+                            &mut frame, theme, &points, state, bounds.size(), view, cursor, bounds,
+                        );
+                    }
+                }
+            }
+            super::EditMode::Cc(cc_number) => {
+                let cc_points = VelocityPanel::build_cc_points(self.editor, cc_number);
+                if !cc_points.is_empty() {
+                    draw_cc_graph(&mut frame, theme, &cc_points, bounds.size(), view);
+                }
             }
         }
 
@@ -677,6 +685,86 @@ fn draw_velocity_graph(
 
         frame.fill(&canvas::Path::circle(pos, radius), fill_color);
     }
+}
+
+/// 绘制 CC 控制点折线图
+fn draw_cc_graph(
+    frame: &mut Frame<Renderer>,
+    theme: &Theme,
+    points: &[super::CcPoint],
+    size: Size,
+    view: &ViewState,
+) {
+    if points.is_empty() {
+        return;
+    }
+
+    let width = size.width;
+    let height = size.height;
+    let draw_height = height - super::RESIZE_HANDLE_HEIGHT;
+    let max_y = draw_height - super::PANEL_PADDING_Y;
+    let min_y = super::PANEL_PADDING_Y + super::RESIZE_HANDLE_HEIGHT;
+
+    let line_color = theme.extended_palette().secondary.strong.color;
+    let point_color = theme.extended_palette().secondary.base.color;
+
+    // 过滤可见范围内的点
+    let mut points_to_draw: Vec<&super::CcPoint> = points
+        .iter()
+        .filter(|p| {
+            let x = p.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+            x >= -50.0 && x <= width + 50.0
+        })
+        .collect();
+    // 按 tick 排序
+    points_to_draw.sort_by(|a, b| a.tick.partial_cmp(&b.tick).unwrap_or(std::cmp::Ordering::Equal));
+
+    if points_to_draw.is_empty() {
+        return;
+    }
+
+    // 绘制折线
+    let mut line_builder = path::Builder::new();
+    let first_pos = cc_point_screen_pos(points_to_draw[0], width, height, view);
+    line_builder.move_to(first_pos);
+
+    for point in points_to_draw.iter().skip(1) {
+        let pos = cc_point_screen_pos(point, width, height, view);
+        line_builder.line_to(pos);
+    }
+    let line_path = line_builder.build();
+
+    frame.stroke(
+        &line_path,
+        canvas::Stroke::default()
+            .with_color(line_color)
+            .with_width(2.0),
+    );
+
+    // 绘制控制点
+    for point in &points_to_draw {
+        let pos = cc_point_screen_pos(point, width, height, view);
+        frame.fill(
+            &canvas::Path::circle(pos, super::POINT_RADIUS),
+            point_color,
+        );
+    }
+}
+
+/// 计算 CC 点屏幕位置
+fn cc_point_screen_pos(
+    point: &super::CcPoint,
+    bounds_width: f32,
+    bounds_height: f32,
+    view: &ViewState,
+) -> Point {
+    let x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+    let draw_height = bounds_height - super::RESIZE_HANDLE_HEIGHT;
+    let max_y = draw_height - super::PANEL_PADDING_Y;
+    let min_y = super::PANEL_PADDING_Y + super::RESIZE_HANDLE_HEIGHT;
+    let normalized = point.value as f32 / 127.0;
+    let y = max_y - normalized * (max_y - min_y);
+    Point::new(x, y)
 }
 
 /// 绘制曲线绘制模式的视觉反馈

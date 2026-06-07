@@ -498,6 +498,25 @@ impl Root {
             VelocityAction::CurveEnd => {
                 tracing::debug!("力度面板: 曲线绘制结束");
             }
+            VelocityAction::ToggleMode => {
+                let panel = &mut self.editor.velocity_panel;
+                panel.edit_mode = match panel.edit_mode {
+                    crate::editor::velocity::EditMode::Velocity => {
+                        crate::editor::velocity::EditMode::Cc(panel.selected_cc)
+                    }
+                    crate::editor::velocity::EditMode::Cc(_) => {
+                        crate::editor::velocity::EditMode::Velocity
+                    }
+                };
+                tracing::debug!("力度面板: 切换模式为 {:?}", panel.edit_mode);
+                return; // 不需要重绘
+            }
+            VelocityAction::CcControllerSelected(cc) => {
+                self.editor.velocity_panel.selected_cc = cc;
+                self.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Cc(cc);
+                tracing::debug!("力度面板: 选择 CC 控制器 {}", cc);
+                return; // 不需要重绘
+            }
         }
 
         // 同步播放引擎：力度修改必须实时反映到播放中
