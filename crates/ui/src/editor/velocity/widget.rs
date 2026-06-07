@@ -435,30 +435,102 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
     }
 }
 
+/// ── 面板主题色映射（theme-aware colors） ──
+///
+/// 这些辅助函数将 velocity 面板的颜色映射到 iced 主题的 extended palette，
+/// 确保在 Dracula/Nord/Catppuccin/TokyoNight 等所有主题下颜色都正确。
+
+/// 面板背景色：与标尺背景一致，使用 background 色系
+fn velocity_bg_color(theme: &Theme) -> Color {
+    if crate::theme::is_high_contrast() {
+        return crate::theme::hc::RULER_BG;
+    }
+    let palette = theme.extended_palette().background;
+    if theme.is_light() {
+        palette.weakest.color
+    } else {
+        palette.base.color
+    }
+}
+
+/// 面板网格线颜色：使用 background 对比色 + 低透明度
+fn velocity_grid_line_color(theme: &Theme) -> Color {
+    if crate::theme::is_high_contrast() {
+        return crate::theme::hc::GRID_LINE;
+    }
+    let c = theme.extended_palette().background.strongest.color;
+    let alpha = if theme.is_light() { 0.10 } else { 0.08 };
+    Color::from_rgba(c.r, c.g, c.b, alpha)
+}
+
+/// 面板文字（力度刻度标签）颜色
+fn velocity_text_color(theme: &Theme) -> Color {
+    let c = theme.text_color();
+    Color::from_rgba(c.r, c.g, c.b, 0.3)
+}
+
+/// 面板顶部边框线颜色
+fn velocity_border_color(theme: &Theme) -> Color {
+    let c = theme.border_color();
+    let alpha = if theme.is_light() { 0.15 } else { 0.12 };
+    Color::from_rgba(c.r, c.g, c.b, alpha)
+}
+
+/// resize 手柄背景色
+fn velocity_handle_bg_color(theme: &Theme, hovered: bool) -> Color {
+    if crate::theme::is_high_contrast() {
+        return if hovered {
+            Color::from_rgba(1.0, 0.8, 0.0, 0.5)
+        } else {
+            Color::from_rgba(0.2, 0.2, 0.2, 0.3)
+        };
+    }
+    let c = theme.extended_palette().background.strong.color;
+    let alpha = if hovered { 0.5 } else { 0.25 };
+    Color::from_rgba(c.r, c.g, c.b, alpha)
+}
+
+/// resize grab 条颜色
+fn velocity_grab_bar_color(theme: &Theme) -> Color {
+    if crate::theme::is_high_contrast() {
+        return Color::from_rgba(1.0, 0.8, 0.0, 0.5);
+    }
+    let c = theme.text_color();
+    let alpha = if theme.is_light() { 0.40 } else { 0.35 };
+    Color::from_rgba(c.r, c.g, c.b, alpha)
+}
+
+/// 曲线绘制影响范围底色：使用 primary 主题色
+fn velocity_curve_range_color(theme: &Theme) -> Color {
+    if crate::theme::is_high_contrast() {
+        return Color::from_rgba(1.0, 0.8, 0.0, 0.12);
+    }
+    let c = theme.extended_palette().primary.base.color;
+    let alpha = if theme.is_light() { 0.08 } else { 0.12 };
+    Color::from_rgba(c.r, c.g, c.b, alpha)
+}
+
+/// 曲线绘制轨迹线颜色
+fn velocity_curve_trail_color(theme: &Theme) -> Color {
+    if crate::theme::is_high_contrast() {
+        return Color::from_rgba(1.0, 0.8, 0.0, 0.6);
+    }
+    let c = theme.extended_palette().primary.base.color;
+    Color::from_rgba(c.r, c.g, c.b, 0.5)
+}
+
 /// 绘制面板背景（网格线 + 力度刻度）
 fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
     let width = size.width;
     let height = size.height;
 
-    let bg_color = if theme.is_light() {
-        Color::from_rgb(0.95, 0.95, 0.95)
-    } else {
-        Color::from_rgb(0.15, 0.15, 0.15)
-    };
+    let bg_color = velocity_bg_color(theme);
     frame.fill_rectangle(Point::ORIGIN, size, bg_color);
 
     let draw_top = RESIZE_HANDLE_HEIGHT;
 
-    let line_color = if theme.is_light() {
-        Color::from_rgba(0.0, 0.0, 0.0, 0.1)
-    } else {
-        Color::from_rgba(1.0, 1.0, 1.0, 0.08)
-    };
-    let text_color = if theme.is_light() {
-        Color::from_rgba(0.0, 0.0, 0.0, 0.3)
-    } else {
-        Color::from_rgba(1.0, 1.0, 1.0, 0.3)
-    };
+    let line_color = velocity_grid_line_color(theme);
+    let text_color = velocity_text_color(theme);
 
     let velocity_levels = [0u8, 32, 64, 96, 127];
 
@@ -491,11 +563,7 @@ fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
         frame.fill_text(text);
     }
 
-    let border_color = if theme.is_light() {
-        Color::from_rgba(0.0, 0.0, 0.0, 0.15)
-    } else {
-        Color::from_rgba(1.0, 1.0, 1.0, 0.12)
-    };
+    let border_color = velocity_border_color(theme);
     frame.fill_rectangle(
         Point::new(0.0, draw_top),
         Size::new(width, 1.0),
@@ -505,25 +573,8 @@ fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
 
 /// 绘制顶部 resize 拖拽手柄
 fn draw_resize_handle(frame: &mut Frame<Renderer>, theme: &Theme, size: Size, hovered: bool) {
-    let handle_color = if theme.is_light() {
-        if hovered {
-            Color::from_rgba(0.3, 0.3, 0.3, 0.5)
-        } else {
-            Color::from_rgba(0.2, 0.2, 0.2, 0.25)
-        }
-    } else {
-        if hovered {
-            Color::from_rgba(0.8, 0.8, 0.8, 0.5)
-        } else {
-            Color::from_rgba(0.6, 0.6, 0.6, 0.2)
-        }
-    };
-
-    let grab_bar_color = if theme.is_light() {
-        Color::from_rgba(0.3, 0.3, 0.3, 0.4)
-    } else {
-        Color::from_rgba(0.7, 0.7, 0.7, 0.35)
-    };
+    let handle_color = velocity_handle_bg_color(theme, hovered);
+    let grab_bar_color = velocity_grab_bar_color(theme);
 
     // 手柄背景
     frame.fill_rectangle(
@@ -655,11 +706,7 @@ fn draw_curve_paint_feedback(
     let max_x = start_x.max(current_x);
 
     // 画笔轨迹区域：半透明矩形覆盖受影响范围
-    let range_color = if theme.is_light() {
-        Color::from_rgba(0.3, 0.6, 1.0, 0.08)
-    } else {
-        Color::from_rgba(0.3, 0.6, 1.0, 0.12)
-    };
+    let range_color = velocity_curve_range_color(theme);
     frame.fill_rectangle(
         Point::new(min_x, 0.0),
         Size::new(max_x - min_x, height),
@@ -672,11 +719,7 @@ fn draw_curve_paint_feedback(
     let start_y = VelocityCanvas::velocity_to_y(start_vel, height);
     let current_y = VelocityCanvas::velocity_to_y(current_vel, height);
 
-    let trail_color = if theme.is_light() {
-        Color::from_rgba(0.3, 0.6, 1.0, 0.5)
-    } else {
-        Color::from_rgba(0.4, 0.7, 1.0, 0.5)
-    };
+    let trail_color = velocity_curve_trail_color(theme);
     let mut trail_builder = path::Builder::new();
     trail_builder.move_to(Point::new(start_x, start_y));
     trail_builder.line_to(Point::new(current_x, current_y));
