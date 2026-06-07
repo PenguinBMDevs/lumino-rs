@@ -3,9 +3,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use lumino_core::ParsedMidi;
-use lumino_core::event;
-use lumino_export::midi::{MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTrackData};
+use lumino_core::{bpm_to_tempo, event, ParsedMidi};
+use lumino_export::midi::{
+    MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTrackData,
+};
 
 use crate::runner::{RunnerInner, async_helper::run_async_task};
 
@@ -394,12 +395,15 @@ impl RunnerInner {
     /// 保存为 LMPJ 文件（兼容旧版格式：zstd(bincode(LmpjData))，确保可重新加载）
     fn save_as_lmpj_project(&mut self, save_path: PathBuf) {
         let (info, midi_bytes) = if let Some(parsed_midi) = self.midi_state.current_midi.as_ref() {
-            let bytes = match parsed_midi.get_midi_bytes() {
-                Ok(b) => b,
-                Err(e) => {
-                    tracing::error!("获取 MIDI 数据失败: {}", e);
-                    return;
-                }
+            let bytes = match self.maybe_rebuild_midi_with_tempo(parsed_midi) {
+                Some(b) => b,
+                None => match parsed_midi.get_midi_bytes() {
+                    Ok(b) => b,
+                    Err(e) => {
+                        tracing::error!("获取 MIDI 数据失败: {}", e);
+                        return;
+                    }
+                },
             };
             (parsed_midi.info.clone(), bytes)
         } else if let Some((ms, mb)) = self.export_editor_notes_as_legacy_lmpj() {
@@ -455,14 +459,28 @@ impl RunnerInner {
             return None;
         }
 
-        let notes = {
+        let (notes, tempo_events) = {
             let ui = self.window_state.window.ui();
-            ui.get_editor_notes()
+            let notes = ui.get_editor_notes();
+            let tempos: Vec<MidiTempoEvent> = ui
+                .root()
+                .editor
+                .editor_state
+                .data
+                .tempo_points
+                .iter()
+                .map(|tp| MidiTempoEvent {
+                    tick: tp.tick as u32,
+                    tempo: bpm_to_tempo(tp.bpm) as u32,
+                })
+                .collect();
+            (notes, tempos)
         };
 
         let tracks: Vec<MidiTrackData> = notes
             .iter()
-            .map(|(_, notes)| {
+            .enumerate()
+            .map(|(i, (_, notes))| {
                 let midi_notes: Vec<MidiNoteEvent> = notes
                     .iter()
                     .map(|&(tick, key, length, velocity, channel)| MidiNoteEvent {
@@ -475,6 +493,7 @@ impl RunnerInner {
                     .collect();
                 MidiTrackData {
                     notes: midi_notes,
+                    tempos: if i == 0 { tempo_events.clone() } else { Vec::new() },
                     ..Default::default()
                 }
             })
@@ -517,6 +536,60 @@ impl RunnerInner {
         Some((info, midi_bytes))
     }
 
+    /// 当编辑器 tempo 与文档不一致时，重建 MIDI 字节（保留文档音符，替换 tempo 事件）
+    fn maybe_rebuild_midi_with_tempo(&self, parsed_midi: &ParsedMidi) -> Option<Vec<u8>> {
+        // 无条件重建：保证工程设置/指挥轨道 tempo 编辑总被保存
+        let document = parsed_midi.document.as_ref()?;
+
+        let (division, track_count) = (parsed_midi.info.division, parsed_midi.info.track_count);
+
+        let tempo_events: Vec<MidiTempoEvent> = {
+            let ui = self.window_state.window.ui();
+            let root = ui.root();
+            root.editor.editor_state.data.tempo_points
+                .iter()
+                .map(|tp| MidiTempoEvent {
+                    tick: tp.tick as u32,
+                    tempo: bpm_to_tempo(tp.bpm) as u32,
+                })
+                .collect()
+        };
+
+        let mut tracks: Vec<MidiTrackData> = (0..track_count)
+            .map(|track_id| {
+                let doc_notes = document.get_track_notes(track_id);
+                let midi_notes: Vec<MidiNoteEvent> = doc_notes
+                    .iter()
+                    .map(|&(tick, key, len, vel, ch)| MidiNoteEvent {
+                        tick: (tick as u32).max(1),
+                        channel: ch,
+                        key,
+                        velocity: vel,
+                        duration: (len as u32).max(1),
+                    })
+                    .collect();
+                MidiTrackData {
+                    notes: midi_notes,
+                    ..Default::default()
+                }
+            })
+            .collect();
+
+        if let Some(first) = tracks.first_mut() {
+            first.tempos = tempo_events;
+        }
+
+        let export_data = MidiExportData {
+            options: MidiExportOptions {
+                format: 1,
+                ppqn: division.max(1),
+            },
+            tracks,
+        };
+
+        lumino_export::midi::export_midi_to_bytes(&export_data).ok()
+    }
+
     /// 保存为 MIDI（包含编辑器编辑）
     fn save_as_midi_with_edits(&mut self, save_path: PathBuf) {
         let editor_has_notes = {
@@ -525,14 +598,28 @@ impl RunnerInner {
         };
 
         if editor_has_notes {
-            let notes = {
+            let (notes, tempo_events) = {
                 let ui = self.window_state.window.ui();
-                ui.get_editor_notes()
+                let notes = ui.get_editor_notes();
+                let tempos: Vec<MidiTempoEvent> = ui
+                    .root()
+                    .editor
+                    .editor_state
+                    .data
+                    .tempo_points
+                    .iter()
+                    .map(|tp| MidiTempoEvent {
+                        tick: tp.tick as u32,
+                        tempo: bpm_to_tempo(tp.bpm) as u32,
+                    })
+                    .collect();
+                (notes, tempos)
             };
 
             let tracks: Vec<MidiTrackData> = notes
                 .into_iter()
-                .map(|(_, notes)| {
+                .enumerate()
+                .map(|(i, (_, notes))| {
                     let midi_notes: Vec<MidiNoteEvent> = notes
                         .into_iter()
                         .map(|(tick, key, length, velocity, channel)| MidiNoteEvent {
@@ -545,6 +632,7 @@ impl RunnerInner {
                         .collect();
                     MidiTrackData {
                         notes: midi_notes,
+                        tempos: if i == 0 { tempo_events.clone() } else { Vec::new() },
                         ..Default::default()
                     }
                 })

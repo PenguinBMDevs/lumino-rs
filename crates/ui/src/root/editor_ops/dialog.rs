@@ -125,6 +125,12 @@ impl Root {
         // 持久化标题和版权
         self.state.project_settings_dialog.title = title;
         self.state.project_settings_dialog.copyright = copyright;
+        self.state.project_settings_dialog.tempo = format!("{:.0}", tempo);
+
+        // 同步到编辑器 tempo 数据（用户编辑的源）
+        self.editor.editor_state.data.tempo_points = vec![
+            crate::editor::velocity::widget::TempoPoint { tick: 0.0, bpm: tempo }
+        ];
 
         // 同步到播放管理器
         let tempo_micros = lumino_core::bpm_to_tempo(tempo) as u32;
@@ -135,7 +141,15 @@ impl Root {
     /// 返回 (title, tempo, copyright, created_display, total_editing_time_seconds)
     pub fn get_project_settings_data(&self) -> (String, String, String, String, f64) {
         let dialog = &self.state.project_settings_dialog;
-        let tempo = dialog.tempo.clone();
+        // 从编辑器 tempo_points 读取当前 BPM（反映工程设置和指挥轨道编辑的变更）
+        let tempo = self
+            .editor
+            .editor_state
+            .data
+            .tempo_points
+            .first()
+            .map(|tp| format!("{:.1}", tp.bpm))
+            .unwrap_or_else(|| dialog.tempo.clone());
         let created_display = dialog.created_display.clone();
         let editing_time = dialog.total_editing_time_seconds;
 

@@ -260,19 +260,9 @@ impl VelocityPanel {
             .into()
     }
 
-    /// 构建速度点数据（从 MidiDocument 的 tempo_changes 读取）
+    /// 构建速度点数据（从 EditorData 的 tempo_points 读取，支持用户编辑后的实时反馈）
     pub fn build_tempo_points(editor: &crate::editor::Editor) -> Vec<TempoPoint> {
-        let Some(doc) = editor.editor_state.data.document.as_ref() else {
-            // 无文档时返回默认 120BPM 点
-            return vec![TempoPoint { tick: 0.0, bpm: 120.0 }];
-        };
-        doc.tempo_changes
-            .iter()
-            .map(|&(tick, bpm)| TempoPoint {
-                tick: tick as f32,
-                bpm: bpm as f64,
-            })
-            .collect()
+        editor.editor_state.data.tempo_points.clone()
     }
 
     /// 构建力度点数据
@@ -458,12 +448,11 @@ mod tests {
         ];
 
         let points = VelocityPanel::build_tempo_points(&editor);
-        // build_tempo_points 读取的是 document.tempo_changes, 不是 data.tempo_points
-        // 所以我们验证 editor_data.tempo_points 的内容
-        assert_eq!(editor.editor_state.data.tempo_points.len(), 2);
-        assert_eq!(editor.editor_state.data.tempo_points[0].tick, 0.0);
-        assert!((editor.editor_state.data.tempo_points[0].bpm - 120.0).abs() < 0.01);
-        assert_eq!(editor.editor_state.data.tempo_points[1].tick, 480.0);
-        assert!((editor.editor_state.data.tempo_points[1].bpm - 140.0).abs() < 0.01);
+        // 现在 build_tempo_points 从 data.tempo_points 读取，返回编辑后的数据
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].tick, 0.0);
+        assert!((points[0].bpm - 120.0).abs() < 0.01);
+        assert_eq!(points[1].tick, 480.0);
+        assert!((points[1].bpm - 140.0).abs() < 0.01);
     }
 }
