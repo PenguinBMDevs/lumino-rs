@@ -22,22 +22,35 @@ impl DialogHandler {
 
     fn handle_custom_precision_dialog_close(&self, root: &mut Root) {
         root.state.custom_precision_dialog.is_open = false;
+        root.state.dialog_result = Some(DialogResult::Cancel);
     }
 
     fn handle_confirm_custom_precision(&self, root: &mut Root) {
         let dialog = &root.state.custom_precision_dialog;
 
-        if let Some(ticks) = dialog.calculate_ticks(root.editor.editor_state.view.ppq as u32) {
-            root.editor.set_snap_precision(ticks);
-            root.editor.set_default_note_length(ticks);
-            tracing::info!(
-                "自定义精度已应用: {} ticks (PPQ={})",
-                ticks,
-                root.editor.editor_state.view.ppq
-            );
+        if dialog.calculate_ticks(1).is_none() {
+            tracing::warn!("自定义精度: 无效的输入值");
+            return;
         }
 
+        // 设置对话框结果，由 runner 在主窗口应用精度
+        let denominator = match (
+            dialog.note_value.parse::<f32>(),
+            dialog.divisor.parse::<f32>(),
+        ) {
+            (Ok(nv), Ok(div)) if nv > 0.0 && div > 0.0 => (nv * div).to_string(),
+            _ => {
+                tracing::warn!("自定义精度: 无法解析 note_value/divisor");
+                return;
+            }
+        };
+
+        root.state.dialog_result = Some(DialogResult::CustomPrecision {
+            numerator: dialog.tuplet_count.clone(),
+            denominator,
+        });
         root.state.custom_precision_dialog.is_open = false;
+        tracing::info!("自定义精度已提交，等待应用");
     }
 
     fn update_precision_if_digit(target: &mut String, value: &str) {
