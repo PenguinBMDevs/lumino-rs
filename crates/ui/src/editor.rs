@@ -19,6 +19,7 @@ mod drag;
 mod interaction;
 mod note_flip;
 mod note_ops;
+mod note_split_glue;
 mod note_transform;
 mod note_transpose;
 mod onion_skin_editor;

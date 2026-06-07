@@ -63,9 +63,8 @@ impl Editor {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Editor;
     use crate::editor::note::Note;
-    use crate::editor::Editor;
 
     fn create_test_editor_with_notes(notes: Vec<Note>) -> Editor {
         let mut editor = Editor::new();
