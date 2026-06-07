@@ -3,6 +3,7 @@ pub mod constants;
 pub mod editor;
 pub mod host;
 pub mod message;
+pub mod mixer;
 pub mod playback;
 mod resources;
 pub(crate) mod widget;
