@@ -68,6 +68,11 @@ pub enum Icon {
     // 标题栏图标
     PencilOutline,
     Keys,
+    // 移调/分割/合并 图标
+    TransposeUp,
+    TransposeDown,
+    Split,
+    Glue,
 }
 
 #[derive(Clone)]
@@ -119,6 +124,11 @@ fn build_icon_cache() -> HashMap<Icon, IconData> {
         Icon::ArrowsLeftRight,
         Icon::Scroll,
         Icon::Ban,
+        // 移调/分割/合并 图标
+        Icon::TransposeUp,
+        Icon::TransposeDown,
+        Icon::Split,
+        Icon::Glue,
         // 标题栏图标
         Icon::PencilOutline,
         Icon::Keys,
@@ -359,6 +369,15 @@ fn bytes(icon: Icon) -> &'static [u8] {
         }
         Icon::Scroll => include_bytes!("../../../../resources/icons/toolbar/scroll.svg"),
         Icon::Ban => include_bytes!("../../../../resources/icons/toolbar/ban.svg"),
+        // 移调/分割/合并 图标
+        Icon::TransposeUp => {
+            include_bytes!("../../../../resources/icons/toolbar/transpose-up.svg")
+        }
+        Icon::TransposeDown => {
+            include_bytes!("../../../../resources/icons/toolbar/transpose-down.svg")
+        }
+        Icon::Split => include_bytes!("../../../../resources/icons/toolbar/split.svg"),
+        Icon::Glue => include_bytes!("../../../../resources/icons/toolbar/glue.svg"),
         // 标题栏图标
         Icon::PencilOutline => {
             include_bytes!("../../../../resources/icons/titlebar/pencil-outline.svg")

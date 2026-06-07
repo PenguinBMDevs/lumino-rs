@@ -51,6 +51,9 @@ impl ToolbarHandler {
 
         // 处理水平翻转
         self.handle_toolbar_flip_horizontal(root, &event);
+
+        // 处理移调
+        self.handle_toolbar_transpose(root, &event);
     }
 
     fn handle_toolbar_playback(&self, root: &mut Root, event: &crate::toolbar::Event) {
@@ -394,6 +397,27 @@ impl ToolbarHandler {
                 "Root: 自动滚动模式同步为 {:?}",
                 root.toolbar.auto_scroll_mode
             );
+        }
+    }
+
+    /// 处理移调操作
+    fn handle_toolbar_transpose(&self, root: &mut Root, event: &crate::toolbar::Event) {
+        let semitones = match event {
+            crate::toolbar::Event::TransposeUp => 1,
+            crate::toolbar::Event::TransposeDown => -1,
+            _ => return,
+        };
+
+        tracing::info!("Root: 执行移调操作，半音数: {}", semitones);
+
+        let modified = root.editor.transpose_selected(semitones);
+
+        if modified > 0 {
+            tracing::info!("Root: 移调完成，修改了 {} 个音符", modified);
+            root.update_playback_notes();
+            root.editor.clear_notes_changed();
+        } else {
+            tracing::debug!("Root: 没有音符被移调");
         }
     }
 }

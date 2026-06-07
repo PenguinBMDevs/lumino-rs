@@ -142,10 +142,15 @@ impl Toolbar {
                     has_selection,
                     window
                 ),
+                space().width(8),
+                // 移调按钮
+                tool_button(icon::TransposeDown, "移调 -1", Event::transpose_down(), window),
+                space().width(4),
+                tool_button(icon::TransposeUp, "移调 +1", Event::transpose_up(), window),
             ]
             .align_y(Alignment::Center),
         )
-        .width(340)
+        .width(460)
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
         .align_x(iced_core::alignment::Horizontal::Center)

@@ -60,6 +60,10 @@ pub enum Event {
     FlipVertical,
     /// 水平翻转选中音符
     FlipHorizontal(FlipHorizontalMode),
+    /// 移调 +1 半音
+    TransposeUp,
+    /// 移调 -1 半音
+    TransposeDown,
 }
 
 /// 水平翻转模式
@@ -192,5 +196,13 @@ impl Event {
 
     pub fn flip_horizontal(mode: FlipHorizontalMode) -> Message {
         Message::Toolbar(Self::FlipHorizontal(mode))
+    }
+
+    pub const fn transpose_up() -> Message {
+        Message::Toolbar(Self::TransposeUp)
+    }
+
+    pub const fn transpose_down() -> Message {
+        Message::Toolbar(Self::TransposeDown)
     }
 }

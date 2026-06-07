@@ -20,6 +20,7 @@ mod interaction;
 mod note_flip;
 mod note_ops;
 mod note_transform;
+mod note_transpose;
 mod onion_skin_editor;
 mod onion_skin_ops;
 mod rendering;

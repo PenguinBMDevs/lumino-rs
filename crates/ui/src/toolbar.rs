@@ -165,6 +165,12 @@ impl Toolbar {
             Event::FlipHorizontal(_) => {
                 tracing::debug!("工具栏: 触发水平翻转");
             }
+            Event::TransposeUp => {
+                tracing::debug!("工具栏: 触发移调 +1");
+            }
+            Event::TransposeDown => {
+                tracing::debug!("工具栏: 触发移调 -1");
+            }
             Event::ResizeDragStarted(_) => {
                 self.is_resizing = true;
             }
