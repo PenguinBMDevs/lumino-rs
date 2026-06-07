@@ -13,8 +13,11 @@ impl DialogHandler {
         Self
     }
 
-    fn handle_custom_precision_dialog_open(&self, root: &mut Root) {
-        root.state.custom_precision_dialog.is_open = true;
+    fn handle_custom_precision_dialog_open(&self, _root: &mut Root) {
+        tracing::info!("Root: 请求打开自定义精度对话框");
+        lumino_core::event::emit(lumino_core::event::Event::Window(
+            lumino_core::event::window::Event::OpenCustomPrecisionDialog,
+        ));
     }
 
     fn handle_custom_precision_dialog_close(&self, root: &mut Root) {
