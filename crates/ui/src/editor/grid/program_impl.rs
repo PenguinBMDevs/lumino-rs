@@ -35,9 +35,11 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             state.position = Some(local_pos);
         }
 
+        let cursor_over_bounds = cursor.position_over(bounds);
+
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                if let Some(position) = cursor.position() {
+                if let Some(position) = cursor_over_bounds {
                     let local_pos =
                         iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
                     return self.handle_left_press(state, local_pos);
@@ -60,9 +62,11 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                         },
                     )));
                 }
-                return Some(Action::publish(Message::EditorAction(EditorAction::Moved(
-                    local_pos,
-                ))));
+                if cursor_over_bounds.is_some() {
+                    return Some(Action::publish(Message::EditorAction(EditorAction::Moved(
+                        local_pos,
+                    ))));
+                }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 // 清除框选框动画状态
@@ -79,7 +83,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                 )));
             }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                if let Some(position) = cursor.position() {
+                if let Some(position) = cursor_over_bounds {
                     let local_pos =
                         iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
                     if self.editor.is_inside_canvas(local_pos) {
