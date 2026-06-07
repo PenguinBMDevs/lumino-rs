@@ -152,12 +152,16 @@ impl winit::application::ApplicationHandler for Runner {
         {
             puffin::profile_scope!("runner_about_to_wait_dialog_init");
             let main_ui = this.window_state.window.ui();
+            // 从主窗口获取当前主题，覆盖 storage 中的主题缓存
+            // 防止 save_storage 尚未持久化时对话框读取到过期主题
+            let mut dialog_config = this.window_state.storage.config.get().ui.clone();
+            dialog_config.theme = main_ui.root().theme().to_string();
             this.window_state
                 .dialog_manager
                 .initialize_pending_with_collaboration_state(
                     event_loop,
                     this.window_state.window.window(),
-                    &this.window_state.storage.config.get().ui,
+                    &dialog_config,
                     main_ui,
                 );
         }

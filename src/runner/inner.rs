@@ -277,8 +277,10 @@ impl RunnerInner {
         // 获取新旧配置
         let new = self.window_state.window.ui().settings();
         let old = &self.window_state.storage.config.get().ui;
+        let current_theme = self.window_state.window.ui().root().theme().to_string();
 
-        let config_dirty = new.synth_backend != old.preferred_backend
+        let config_dirty = current_theme != old.theme
+            || new.synth_backend != old.preferred_backend
             || new.soundfont_path != old.soundfont_path
             || new.use_native_titlebar != old.use_native_titlebar
             || new.program_font_name != old.program_font_name
@@ -358,8 +360,18 @@ impl RunnerInner {
             self.window_state.needs_window_restart = true;
         }
 
+        // 主题变更日志
+        if current_theme != old.theme {
+            tracing::info!(
+                "主题已改变: {} -> {}",
+                old.theme,
+                current_theme
+            );
+        }
+
         // 保存配置
         self.window_state.storage.config.patch(|config| {
+            config.ui.theme.clone_from(&current_theme);
             config.ui.preferred_backend = new.synth_backend;
             config.ui.soundfont_path = new.soundfont_path.clone();
             config.ui.use_native_titlebar = new.use_native_titlebar;
