@@ -81,6 +81,7 @@ pub struct Track {
     pub id: usize,
     pub name: String,
     pub is_conductor: bool,
+    pub can_delete: bool,
     pub is_muted: bool,
     pub is_onion_skin_on: bool,
 }
@@ -96,6 +97,7 @@ impl Sidebar {
                     id: 0,
                     name: "Conductor".to_string(),
                     is_conductor: true,
+                    can_delete: false,
                     is_muted: false,
                     is_onion_skin_on: true,
                 },
@@ -103,6 +105,7 @@ impl Sidebar {
                     id: 1,
                     name: "Setup".to_string(),
                     is_conductor: false,
+                    can_delete: true,
                     is_muted: false,
                     is_onion_skin_on: true,
                 },
@@ -198,6 +201,7 @@ impl Sidebar {
                     id: new_id,
                     name: format!("Track {}", new_id),
                     is_conductor: false,
+                    can_delete: true,
                     is_muted: false,
                     is_onion_skin_on: true,
                 });
@@ -278,7 +282,8 @@ impl Sidebar {
             self.tracks.push(Track {
                 id: *track_idx,
                 name: format!("{:02} {}", idx + 1, track_name),
-                is_conductor: *track_idx == 0, // 第一个音轨作为 conductor
+                is_conductor: *track_idx == 0,
+                can_delete: *track_idx != 0,
                 is_muted: false,
                 is_onion_skin_on: true,
             });

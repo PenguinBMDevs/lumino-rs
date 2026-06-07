@@ -6,11 +6,12 @@
 use crate::editor::history;
 use crate::editor::note::Note;
 use crate::editor::velocity::CcData;
+use crate::editor::velocity::widget::TempoPoint;
 use lumino_core::midi::MidiDocument;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// 编辑器数据（音符数据、音轨管理、文档引用、历史记录、CC数据）
+/// 编辑器数据（音符数据、音轨管理、文档引用、历史记录、CC数据、Tempo数据）
 #[derive(Debug)]
 pub struct EditorData {
     /// 当前编辑的音符列表
@@ -25,6 +26,8 @@ pub struct EditorData {
     pub history: history::History,
     /// CC 控制器数据
     pub cc_data: CcData,
+    /// 从当前 MIDI 文档同步的 Tempo 变化点（用于编辑，初始化为 120BPM 于 tick 0）
+    pub tempo_points: Vec<TempoPoint>,
 }
 
 impl Default for EditorData {
@@ -42,6 +45,7 @@ impl EditorData {
             document: None,
             history: history::History::new(),
             cc_data: CcData::default(),
+            tempo_points: vec![TempoPoint { tick: 0.0, bpm: 120.0 }],
         }
     }
 }

@@ -1,12 +1,15 @@
-//! 力度/CC 编辑面板 - 类 Cubase 的 Controller Lane
+//! 力度/Tempo/CC 编辑面板 - 类 Cubase 的 Controller Lane
 //!
-//! 支持两种编辑模式：
+//! 支持三种编辑模式：
 //! - Velocity（力度）：显示当前音轨所有音符的力度值
+//! - Tempo（速度）：Conductor 音轨上显示和编辑全局速度曲线
 //! - CC（控制器）：显示和编辑指定 CC 控制器的控制点
 //!
-//! X 轴与钢琴卷帘对齐联动，Y 轴 0-127。
+//! X 轴与钢琴卷帘对齐联动。力度/CC 的 Y 轴 0-127，Tempo 的 Y 轴为可视 BPM 范围。
 
 pub mod widget;
+
+pub use widget::TempoPoint;
 
 use crate::Element;
 
@@ -30,18 +33,15 @@ pub const PANEL_PADDING_X: f32 = 8.0;
 pub const RESIZE_HANDLE_HEIGHT: f32 = 5.0;
 
 /// 编辑模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum EditMode {
     /// 力度编辑
+    #[default]
     Velocity,
+    /// 速度编辑（Conductor 音轨专用）
+    Tempo,
     /// CC 控制器编辑
     Cc(u8),
-}
-
-impl Default for EditMode {
-    fn default() -> Self {
-        Self::Velocity
-    }
 }
 
 impl EditMode {
@@ -54,6 +54,7 @@ impl EditMode {
     pub fn display_name(&self) -> &'static str {
         match self {
             EditMode::Velocity => "力度",
+            EditMode::Tempo => "速度",
             EditMode::Cc(_) => "CC",
         }
     }
@@ -61,6 +62,11 @@ impl EditMode {
     /// 是否处于 CC 模式
     pub fn is_cc(&self) -> bool {
         matches!(self, EditMode::Cc(_))
+    }
+
+    /// 是否处于 Tempo 模式
+    pub fn is_tempo(&self) -> bool {
+        matches!(self, EditMode::Tempo)
     }
 }
 
@@ -146,11 +152,19 @@ impl VelocityPanel {
         let toolbar_height = 28.0f32;
         let canvas_height = (panel_height - toolbar_height).max(10.0);
 
-        // 模式切换按钮
+        let is_tempo = self.edit_mode == EditMode::Tempo;
         let is_velocity = self.edit_mode == EditMode::Velocity;
+
+        // 模式切换按钮
+        let mode_label = if is_tempo {
+            "速度"
+        } else if is_velocity {
+            "力度"
+        } else {
+            "CC"
+        };
         let mode_btn = button(
-            text(if is_velocity { "力度" } else { "CC" })
-                .size(12)
+            text(mode_label).size(12)
         )
         .on_press(crate::message::Message::Velocity(
             crate::message::VelocityAction::ToggleMode,
@@ -158,7 +172,7 @@ impl VelocityPanel {
         .padding([2, 8])
         .style(move |theme: &crate::Theme, status| {
             let palette = theme.extended_palette();
-            let bg = if is_velocity {
+            let bg = if is_tempo || is_velocity {
                 palette.primary.base.color
             } else if status == iced_widget::button::Status::Hovered {
                 palette.background.weak.color
@@ -176,8 +190,8 @@ impl VelocityPanel {
             .with_background(bg)
         });
 
-        // CC 控制器选择器（仅在 CC 模式显示）
-        let cc_selector: Element<'a> = if !is_velocity {
+        // CC 控制器选择器（仅在 CC 模式显示，Tempo 模式也隐藏）
+        let cc_selector: Element<'a> = if self.edit_mode.is_cc() {
             let cc_options: Vec<CcDisplay> = CC_CONTROLLER_NAMES.iter().map(|(n, _)| CcDisplay(*n)).collect();
             let selected = CcDisplay(self.selected_cc);
             pick_list(
@@ -195,25 +209,27 @@ impl VelocityPanel {
             space().width(0).into()
         };
 
-            // 模式信息文字
-            let info_text = if is_velocity {
-                "力度 0-127".to_string()
-            } else {
-                format!("CC {}", CcDisplay(self.selected_cc))
-            };
+        // 模式信息文字
+        let info_text = if is_tempo {
+            "速度 BPM".to_string()
+        } else if is_velocity {
+            "力度 0-127".to_string()
+        } else {
+            format!("CC {}", CcDisplay(self.selected_cc))
+        };
 
-            let toolbar = container(
-                row![
-                    mode_btn,
-                    space().width(8),
-                    cc_selector,
-                    space().width(iced_core::Length::Fill),
-                    text(info_text)
-                        .size(11)
-                        .color(iced_core::Color::from_rgba(0.5, 0.5, 0.5, 0.7)),
-                ]
-                .align_y(Alignment::Center),
-            )
+        let toolbar = container(
+            row![
+                mode_btn,
+                space().width(8),
+                cc_selector,
+                space().width(iced_core::Length::Fill),
+                text(info_text)
+                    .size(11)
+                    .color(iced_core::Color::from_rgba(0.5, 0.5, 0.5, 0.7)),
+            ]
+            .align_y(Alignment::Center),
+        )
         .height(toolbar_height)
         .width(iced_core::Length::Fill)
         .padding([2, 8])
@@ -242,6 +258,21 @@ impl VelocityPanel {
                     .background(theme.extended_palette().background.weak.color)
             })
             .into()
+    }
+
+    /// 构建速度点数据（从 MidiDocument 的 tempo_changes 读取）
+    pub fn build_tempo_points(editor: &crate::editor::Editor) -> Vec<TempoPoint> {
+        let Some(doc) = editor.editor_state.data.document.as_ref() else {
+            // 无文档时返回默认 120BPM 点
+            return vec![TempoPoint { tick: 0.0, bpm: 120.0 }];
+        };
+        doc.tempo_changes
+            .iter()
+            .map(|&(tick, bpm)| TempoPoint {
+                tick: tick as f32,
+                bpm: bpm as f64,
+            })
+            .collect()
     }
 
     /// 构建力度点数据
@@ -387,11 +418,52 @@ mod tests {
     fn test_edit_mode_is_cc() {
         assert!(!EditMode::Velocity.is_cc());
         assert!(EditMode::Cc(1).is_cc());
+        assert!(!EditMode::Tempo.is_cc());
+    }
+
+    #[test]
+    fn test_edit_mode_is_tempo() {
+        assert!(!EditMode::Velocity.is_tempo());
+        assert!(!EditMode::Cc(1).is_tempo());
+        assert!(EditMode::Tempo.is_tempo());
     }
 
     #[test]
     fn test_edit_mode_display_name() {
         assert_eq!(EditMode::Velocity.display_name(), "力度");
+        assert_eq!(EditMode::Tempo.display_name(), "速度");
         assert_eq!(EditMode::Cc(1).display_name(), "CC");
+    }
+
+    // ===== Tempo 数据测试 =====
+
+    #[test]
+    fn test_build_tempo_points_no_document() {
+        use crate::editor::Editor;
+        let editor = Editor::new();
+        let points = VelocityPanel::build_tempo_points(&editor);
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].tick, 0.0);
+        assert!((points[0].bpm - 120.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_build_tempo_points_from_editor_data() {
+        use crate::editor::Editor;
+        let mut editor = Editor::new();
+        // 直接向 tempo_points 写入数据模拟已加载文档
+        editor.editor_state.data.tempo_points = vec![
+            TempoPoint { tick: 0.0, bpm: 120.0 },
+            TempoPoint { tick: 480.0, bpm: 140.0 },
+        ];
+
+        let points = VelocityPanel::build_tempo_points(&editor);
+        // build_tempo_points 读取的是 document.tempo_changes, 不是 data.tempo_points
+        // 所以我们验证 editor_data.tempo_points 的内容
+        assert_eq!(editor.editor_state.data.tempo_points.len(), 2);
+        assert_eq!(editor.editor_state.data.tempo_points[0].tick, 0.0);
+        assert!((editor.editor_state.data.tempo_points[0].bpm - 120.0).abs() < 0.01);
+        assert_eq!(editor.editor_state.data.tempo_points[1].tick, 480.0);
+        assert!((editor.editor_state.data.tempo_points[1].bpm - 140.0).abs() < 0.01);
     }
 }

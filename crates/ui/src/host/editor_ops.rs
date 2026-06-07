@@ -1,5 +1,6 @@
 //! Host 编辑器操作子模块 - 处理音符和洋葱皮相关操作
 
+use crate::editor::velocity::widget::TempoPoint;
 use crate::editor::EditState;
 use crate::editor::editor_state::view::{
     DEFAULT_NOTE_LENGTH, DEFAULT_PPQ, DEFAULT_SCROLL_X, DEFAULT_SCROLL_Y, DEFAULT_SNAP_PRECISION,
@@ -112,6 +113,15 @@ impl Host {
     /// 设置 MIDI 文档引用（供懒加载非当前音轨的音符使用）
     pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
         self.root.set_midi_document(doc.clone());
+        // 同步 tempo 点到编辑器（用于速度编辑）
+        self.root.editor.editor_state.data.tempo_points = doc
+            .tempo_changes
+            .iter()
+            .map(|&(tick, bpm)| TempoPoint {
+                tick: tick as f32,
+                bpm: bpm as f64,
+            })
+            .collect();
         self.root.editor.editor_state.data.document = Some(doc);
         // 标记音符数据变化，触发走带缓存重建
         self.root.editor.note_index_dirty.set(true);

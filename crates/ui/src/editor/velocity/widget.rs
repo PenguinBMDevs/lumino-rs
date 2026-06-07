@@ -5,6 +5,8 @@
 //! - 描点只能垂直拖动（上下调整力度值）
 //! - 悬停高亮 + 拖拽实时反馈
 //! - 顶部拖拽手柄可调整面板高度
+//!
+//! 也支持速度（Tempo）包络绘制：Conductor 音轨上显示全局速度曲线。
 
 use std::collections::HashMap;
 
@@ -20,6 +22,15 @@ use crate::{Message, Renderer, Theme};
 use iced_wgpu::Geometry as Geom;
 
 use super::*;
+
+/// 速度控制点
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TempoPoint {
+    /// tick 位置
+    pub tick: f32,
+    /// BPM 值 (20-999)
+    pub bpm: f64,
+}
 
 /// 力度 Canvas 状态
 #[derive(Debug, Default)]
@@ -401,6 +412,12 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                     }
                 }
             }
+            super::EditMode::Tempo => {
+                let tempo_points = VelocityPanel::build_tempo_points(self.editor);
+                if !tempo_points.is_empty() {
+                    draw_tempo_graph(&mut frame, theme, &tempo_points, bounds.size(), view);
+                }
+            }
             super::EditMode::Cc(cc_number) => {
                 let cc_points = VelocityPanel::build_cc_points(self.editor, cc_number);
                 if !cc_points.is_empty() {
@@ -685,6 +702,109 @@ fn draw_velocity_graph(
 
         frame.fill(&canvas::Path::circle(pos, radius), fill_color);
     }
+}
+
+/// 绘制速度（Tempo）折线图
+fn draw_tempo_graph(
+    frame: &mut Frame<Renderer>,
+    theme: &Theme,
+    points: &[TempoPoint],
+    size: Size,
+    view: &ViewState,
+) {
+    if points.is_empty() {
+        return;
+    }
+
+    let width = size.width;
+    let height = size.height;
+
+    let line_color = theme.extended_palette().secondary.strong.color;
+    let point_color = theme.extended_palette().secondary.base.color;
+
+    // 过滤可见范围内的点
+    let visible_points: Vec<&TempoPoint> = points
+        .iter()
+        .filter(|p| {
+            let x = p.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+            x >= -50.0 && x <= width + 50.0
+        })
+        .collect();
+
+    if visible_points.is_empty() {
+        return;
+    }
+
+    // 计算 BPM 范围
+    let min_bpm = visible_points
+        .iter()
+        .map(|p| p.bpm)
+        .fold(f64::INFINITY, |a, b| a.min(b))
+        .max(20.0);
+    let max_bpm = visible_points
+        .iter()
+        .map(|p| p.bpm)
+        .fold(f64::NEG_INFINITY, |a, b| a.max(b))
+        .min(999.0);
+    let bpm_range = (max_bpm - min_bpm).max(1.0);
+
+    // 绘制折线
+    let mut line_builder = path::Builder::new();
+    let first_pos = tempo_point_screen_pos(visible_points[0], width, height, view, min_bpm, bpm_range);
+    line_builder.move_to(first_pos);
+
+    for point in visible_points.iter().skip(1) {
+        let pos = tempo_point_screen_pos(point, width, height, view, min_bpm, bpm_range);
+        line_builder.line_to(pos);
+    }
+
+    frame.stroke(
+        &line_builder.build(),
+        canvas::Stroke::default()
+            .with_color(line_color)
+            .with_width(2.0),
+    );
+
+    // 绘制控制点 + BPM 标签
+    for point in &visible_points {
+        let pos = tempo_point_screen_pos(point, width, height, view, min_bpm, bpm_range);
+        frame.fill(
+            &canvas::Path::circle(pos, POINT_RADIUS),
+            point_color,
+        );
+
+        let text = canvas::Text {
+            content: format!("{:.0}", point.bpm),
+            position: Point::new(pos.x - 10.0, pos.y - 14.0),
+            max_width: width,
+            line_height: iced_core::text::LineHeight::Relative(1.0),
+            size: iced_core::Pixels(9.0),
+            color: Color::from_rgba(0.6, 0.6, 0.6, 0.7),
+            font: iced_core::Font::DEFAULT,
+            align_x: alignment::Horizontal::Center.into(),
+            align_y: alignment::Vertical::Top,
+            shaping: iced_core::text::Shaping::Basic,
+        };
+        frame.fill_text(text);
+    }
+}
+
+/// 计算 Tempo 控制点屏幕位置
+fn tempo_point_screen_pos(
+    point: &TempoPoint,
+    _bounds_width: f32,
+    bounds_height: f32,
+    view: &ViewState,
+    min_bpm: f64,
+    bpm_range: f64,
+) -> Point {
+    let x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+    let draw_height = bounds_height - RESIZE_HANDLE_HEIGHT;
+    let max_y = draw_height - PANEL_PADDING_Y;
+    let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
+    let normalized = ((point.bpm - min_bpm) / bpm_range) as f32;
+    let y = max_y - normalized * (max_y - min_y);
+    Point::new(x, y)
 }
 
 /// 绘制 CC 控制点折线图

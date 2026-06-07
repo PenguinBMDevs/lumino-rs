@@ -52,6 +52,22 @@ impl Root {
         }
     }
 
+    /// 将编辑器的 tempo_points 同步到播放管理器
+    pub fn update_playback_bpm(&mut self) {
+        let Some(manager) = &mut self.playback_manager else {
+            return;
+        };
+        let changes: Vec<crate::playback::TempoChange> = self
+            .editor
+            .editor_state
+            .data
+            .tempo_points
+            .iter()
+            .map(|tp| crate::playback::TempoChange::from_bpm(tp.tick, tp.bpm))
+            .collect();
+        manager.update_tempo_changes(changes);
+    }
+
     /// 重置播放管理器（加载新文件时调用）
     pub fn reset_playback_manager(&mut self) {
         if self.playback_manager.is_some() {

@@ -7,6 +7,7 @@
 //!
 //! 通过 MessageRouter 按顺序分发消息。
 
+use crate::editor::velocity::widget::TempoPoint;
 use crate::message::{EditorAction, LoopRangeAction, Message};
 use crate::root::Root;
 use crate::{sidebar, window};
@@ -500,12 +501,36 @@ impl Root {
             }
             VelocityAction::ToggleMode => {
                 let panel = &mut self.editor.velocity_panel;
-                panel.edit_mode = match panel.edit_mode {
-                    crate::editor::velocity::EditMode::Velocity => {
+                let is_conductor = self.sidebar.selected_track == 0
+                    && self.sidebar.tracks.first().is_some_and(|t| t.is_conductor);
+                panel.edit_mode = match (panel.edit_mode, is_conductor) {
+                    // 普通音轨：Velocity ↔ Cc(selected_cc)
+                    (crate::editor::velocity::EditMode::Velocity, false) => {
                         crate::editor::velocity::EditMode::Cc(panel.selected_cc)
                     }
-                    crate::editor::velocity::EditMode::Cc(_) => {
+                    (crate::editor::velocity::EditMode::Cc(_), false) => {
                         crate::editor::velocity::EditMode::Velocity
+                    }
+                    // Conductor 音轨：Tempo → Cc(7) → Cc(selected_cc) → Tempo
+                    (crate::editor::velocity::EditMode::Tempo, true) => {
+                        crate::editor::velocity::EditMode::Cc(7)
+                    }
+                    (crate::editor::velocity::EditMode::Cc(7), true) => {
+                        if panel.selected_cc == 7 {
+                            crate::editor::velocity::EditMode::Tempo
+                        } else {
+                            crate::editor::velocity::EditMode::Cc(panel.selected_cc)
+                        }
+                    }
+                    (crate::editor::velocity::EditMode::Cc(_), true) => {
+                        crate::editor::velocity::EditMode::Tempo
+                    }
+                    // Velocity → 不该在 Conductor 上出现，安全降级到 Tempo
+                    (crate::editor::velocity::EditMode::Velocity, true) => {
+                        crate::editor::velocity::EditMode::Tempo
+                    }
+                    (crate::editor::velocity::EditMode::Tempo, false) => {
+                        crate::editor::velocity::EditMode::Cc(panel.selected_cc)
                     }
                 };
                 tracing::debug!("力度面板: 切换模式为 {:?}", panel.edit_mode);
@@ -516,6 +541,50 @@ impl Root {
                 self.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Cc(cc);
                 tracing::debug!("力度面板: 选择 CC 控制器 {}", cc);
                 return; // 不需要重绘
+            }
+            // ── Tempo 编辑动作 ──
+            VelocityAction::TempoDragStart(idx) => {
+                self.editor.push_history();
+                tracing::debug!("Tempo: 开始拖拽点 {}", idx);
+                return;
+            }
+            VelocityAction::TempoDragMove(idx, new_bpm) => {
+                let bpm = new_bpm.clamp(20.0, 999.0);
+                if let Some(point) = self.editor.editor_state.data.tempo_points.get_mut(idx) {
+                    point.bpm = bpm;
+                    self.update_playback_bpm();
+                }
+                return;
+            }
+            VelocityAction::TempoDragEnd => {
+                tracing::debug!("Tempo: 拖拽结束");
+                return;
+            }
+            VelocityAction::TempoAdd(tick, bpm) => {
+                self.editor.push_history();
+                let bpm = bpm.clamp(20.0, 999.0);
+                self.editor.editor_state.data.tempo_points.push(
+                    TempoPoint { tick, bpm }
+                );
+                self.editor.editor_state.data.tempo_points.sort_by(|a, b| {
+                    a.tick.partial_cmp(&b.tick).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                // 去重相同 tick
+                self.editor.editor_state.data.tempo_points.dedup_by(|a, b| {
+                    (a.tick - b.tick).abs() < f32::EPSILON
+                });
+                self.update_playback_bpm();
+                tracing::debug!("Tempo: 添加点 tick={} bpm={}", tick, bpm);
+                return;
+            }
+            VelocityAction::TempoDelete(idx) => {
+                self.editor.push_history();
+                if idx < self.editor.editor_state.data.tempo_points.len() {
+                    self.editor.editor_state.data.tempo_points.remove(idx);
+                    self.update_playback_bpm();
+                    tracing::debug!("Tempo: 删除点 {}", idx);
+                }
+                return;
             }
         }
 

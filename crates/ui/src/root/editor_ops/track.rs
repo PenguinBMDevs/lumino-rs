@@ -47,6 +47,21 @@ impl Root {
         self.editor.switch_to_track(track_idx);
         self.invalidate_onion_skin_cache();
         self.update_playback_notes();
+
+        // Conductor 轨道自动进入 Tempo 模式，普通轨道切回 Velocity
+        let is_conductor = self.sidebar.tracks.first().is_some_and(|t| {
+            t.id == track_idx && t.is_conductor
+        });
+        let panel = &mut self.editor.velocity_panel;
+        if is_conductor {
+            if !matches!(panel.edit_mode, crate::editor::velocity::EditMode::Tempo) {
+                panel.edit_mode = crate::editor::velocity::EditMode::Tempo;
+                tracing::debug!("Root: Conductor 轨道 → Tempo 编辑模式");
+            }
+        } else if matches!(panel.edit_mode, crate::editor::velocity::EditMode::Tempo) {
+            panel.edit_mode = crate::editor::velocity::EditMode::Velocity;
+            tracing::debug!("Root: 普通轨道 → Velocity 编辑模式");
+        }
     }
 
     /// 加载指定音轨的音符到编辑器（用于 MIDI 文件）

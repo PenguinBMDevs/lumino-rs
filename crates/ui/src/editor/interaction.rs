@@ -405,6 +405,12 @@ impl Editor {
 
     /// 完成绘制新音符
     pub(crate) fn finish_drawing(&mut self, start_tick: f32, key: u16, current_tick: f32) {
+        // Conductor 轨道（track 0）禁止放置音符
+        if self.editor_state.data.current_track == 0 {
+            tracing::debug!("编辑器: Conductor 轨道禁止放置音符");
+            return;
+        }
+
         let v = &self.editor_state.view;
         let (tick, length) = if current_tick > start_tick {
             (start_tick, current_tick - start_tick)
