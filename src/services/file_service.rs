@@ -1,4 +1,3 @@
-use lumino_core::ParsedMidi;
 use lumino_core::midi::loader::ProgressCallback;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -55,26 +54,6 @@ impl FileService {
         }
     }
 
-    /// 保存为 LMPJ 文件 (Lumino MIDI Project)
-    pub async fn save_as_lmpj(&self, parsed: &ParsedMidi, path: PathBuf) -> Result<(), String> {
-        let cb = &*self.progress_cb;
-        cb("准备保存 LMPJ 文件", 0.0);
-        cb("正在保存 LMPJ 文件", 0.3);
-
-        match lumino_export::save(parsed, path.clone()).await {
-            Ok(()) => {
-                cb("LMPJ 保存成功", 1.0);
-                tracing::info!("MIDI保存成功: {:?}", path);
-                Ok(())
-            }
-            Err(e) => {
-                cb(&format!("保存失败: {e}"), 1.0);
-                tracing::error!("MIDI保存失败: {}", e);
-                Err(e.to_string())
-            }
-        }
-    }
-
     /// 保存为 MIDI 文件
     pub async fn save_as_midi(&self, source_path: PathBuf, path: PathBuf) -> Result<(), String> {
         self.run_blocking_task(
@@ -87,40 +66,6 @@ impl FileService {
                     .map_err(|e| e.to_string())?;
                 cb("正在写入文件", 0.8);
                 std::fs::write(&path, bytes).map_err(|e| format!("写入文件失败: {e}"))
-            },
-        )
-        .await
-    }
-
-    /// 保存为 DMS 文件
-    pub async fn save_as_dms(&self, source_path: PathBuf, path: PathBuf) -> Result<(), String> {
-        self.run_blocking_task(
-            "准备导出 DMS 文件",
-            "正在读取 MIDI 文件",
-            "MIDI 转 DMS 导出成功",
-            "MIDI 转 DMS 导出成功",
-            move |cb| {
-                cb("正在转换格式", 0.5);
-                let bytes = lumino_export::export_dms_from_midi_sync(&source_path)
-                    .map_err(|e| e.to_string())?;
-                cb("正在写入 DMS 文件", 0.8);
-                std::fs::write(&path, bytes).map_err(|e| format!("写入文件失败: {e}"))
-            },
-        )
-        .await
-    }
-
-    /// 复制 DMS 文件
-    pub async fn copy_dms_file(&self, source_path: PathBuf, path: PathBuf) -> Result<(), String> {
-        self.run_blocking_task(
-            "准备保存 DMS 文件",
-            "正在复制 DMS 文件",
-            "DMS 保存成功",
-            "DMS 保存成功",
-            move |_cb| {
-                lumino_export::copy_file_sync(&source_path, &path)
-                    .map_err(|e| e.to_string())
-                    .map(|_| ())
             },
         )
         .await
