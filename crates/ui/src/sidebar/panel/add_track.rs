@@ -2,45 +2,50 @@ use iced_core::{Alignment, Length, Padding};
 use iced_widget::{button, container, row, space, text};
 
 use crate::{
-    Element, Theme,
+    widget, Element, Theme,
     resources::icon::{self, Icon},
     sidebar::Event,
     window,
 };
 
 pub fn view<'a>(is_expanded: bool, window: &window::Window) -> Element<'a> {
+    let plus_icon = container(icon::view_with_size_and_theme(
+        Icon::Plus,
+        18,
+        18,
+        Some(&window.theme),
+    ))
+    .width(24)
+    .align_x(iced_core::alignment::Horizontal::Left)
+    .align_y(iced_core::alignment::Vertical::Center)
+    .padding(Padding {
+        top: 0.0,
+        right: 0.0,
+        bottom: 0.0,
+        left: 2.0,
+    });
+
     let add_track_row = if is_expanded {
         row![
-            container(icon::view_with_size_and_theme(
-                Icon::Plus,
-                18,
-                18,
-                Some(&window.theme),
-            ))
-            .width(24)
-            .align_x(iced_core::alignment::Horizontal::Left)
-            .align_y(iced_core::alignment::Vertical::Center)
-            .padding(Padding {
-                top: 0.0,
-                right: 0.0,
-                bottom: 0.0,
-                left: 2.0,
-            }),
+            plus_icon,
             space().width(4),
             text("添加音轨").size(14).width(Length::Fill),
             container(
-                button(icon::view_with_size_and_theme(
-                    Icon::EllipsisVertical,
-                    15,
-                    15,
-                    Some(&window.theme),
-                ))
-                .on_press(Event::add_track())
-                .style(|_theme: &Theme, _status| {
-                    button::Style::default()
-                        .with_background(iced_core::Color::from_rgb(0.84, 0.84, 0.84))
-                })
-                .padding(2)
+                widget::with_tooltip_bottom(
+                    button(icon::view_with_size_and_theme(
+                        Icon::EllipsisVertical,
+                        15,
+                        15,
+                        Some(&window.theme),
+                    ))
+                    .on_press(Event::add_track())
+                    .style(|_theme: &Theme, _status| {
+                        button::Style::default()
+                            .with_background(iced_core::Color::from_rgb(0.84, 0.84, 0.84))
+                    })
+                    .padding(2),
+                    "音轨选项",
+                ),
             )
             .style(|theme: &Theme| {
                 let palette = theme.extended_palette();
@@ -58,35 +63,24 @@ pub fn view<'a>(is_expanded: bool, window: &window::Window) -> Element<'a> {
         .padding(6)
     } else {
         row![
-            container(icon::view_with_size_and_theme(
-                Icon::Plus,
-                18,
-                18,
-                Some(&window.theme),
-            ))
-            .width(24)
-            .align_x(iced_core::alignment::Horizontal::Left)
-            .align_y(iced_core::alignment::Vertical::Center)
-            .padding(Padding {
-                top: 0.0,
-                right: 0.0,
-                bottom: 0.0,
-                left: 2.0,
-            }),
+            plus_icon,
             space().width(4),
             text("添加音轨").size(14).width(Length::Fill),
             container(
-                button(icon::view_with_size_and_theme(
-                    Icon::EllipsisVertical,
-                    18,
-                    18,
-                    Some(&window.theme),
-                ))
-                .on_press(Event::add_track_menu_toggled())
-                .style(|_theme: &Theme, _status| {
-                    button::Style::default().with_background(iced_core::Color::TRANSPARENT)
-                })
-                .padding(0)
+                widget::with_tooltip_bottom(
+                    button(icon::view_with_size_and_theme(
+                        Icon::EllipsisVertical,
+                        18,
+                        18,
+                        Some(&window.theme),
+                    ))
+                    .on_press(Event::add_track_menu_toggled())
+                    .style(|_theme: &Theme, _status| {
+                        button::Style::default().with_background(iced_core::Color::TRANSPARENT)
+                    })
+                    .padding(0),
+                    "音轨选项",
+                ),
             ),
         ]
         .align_y(Alignment::Center)

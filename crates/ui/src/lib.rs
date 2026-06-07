@@ -5,6 +5,7 @@ pub mod host;
 pub mod message;
 pub mod playback;
 mod resources;
+pub(crate) mod widget;
 pub mod root;
 pub mod settings;
 mod sidebar;

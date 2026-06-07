@@ -1,6 +1,7 @@
 //! 录制按钮渲染
 
 use crate::toolbar::{Event, Toolbar};
+use crate::widget;
 use crate::{Element, Theme, window};
 use iced_widget::{button, container, text};
 
@@ -32,38 +33,43 @@ impl Toolbar {
             Event::record()
         };
 
+        let tooltip_text: &'a str = if is_recording { "停止录制" } else { "开始录制" };
+
         container(
-            button(
-                container(text(label).size(16).color(text_color).center())
-                    .width(iced_widget::core::Length::Fill)
-                    .height(iced_widget::core::Length::Fill)
-                    .align_x(iced_core::alignment::Horizontal::Center)
-                    .align_y(iced_core::alignment::Vertical::Center),
-            )
-            .on_press(on_press)
-            .style(move |_theme: &Theme, status| {
-                let bg = if status == iced_widget::button::Status::Hovered {
-                    if is_recording {
-                        iced_core::Color::from_rgb(0.9, 0.2, 0.2)
+            widget::with_tooltip_bottom(
+                button(
+                    container(text(label).size(16).color(text_color).center())
+                        .width(iced_widget::core::Length::Fill)
+                        .height(iced_widget::core::Length::Fill)
+                        .align_x(iced_core::alignment::Horizontal::Center)
+                        .align_y(iced_core::alignment::Vertical::Center),
+                )
+                .on_press(on_press)
+                .style(move |_theme: &Theme, status| {
+                    let bg = if status == iced_widget::button::Status::Hovered {
+                        if is_recording {
+                            iced_core::Color::from_rgb(0.9, 0.2, 0.2)
+                        } else {
+                            strong_color
+                        }
                     } else {
-                        strong_color
+                        bg_color
+                    };
+                    button::Style {
+                        border: iced_core::Border {
+                            radius: 4.0.into(),
+                            width: 0.0,
+                            color: iced_core::Color::TRANSPARENT,
+                        },
+                        ..Default::default()
                     }
-                } else {
-                    bg_color
-                };
-                button::Style {
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                }
-                .with_background(bg)
-            })
-            .width(iced_widget::core::Length::Fill)
-            .height(iced_widget::core::Length::Fill)
-            .padding(4),
+                    .with_background(bg)
+                })
+                .width(iced_widget::core::Length::Fill)
+                .height(iced_widget::core::Length::Fill)
+                .padding(4),
+                tooltip_text,
+            ),
         )
         .width(56)
         .height(content_height)

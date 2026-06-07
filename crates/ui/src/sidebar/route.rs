@@ -3,6 +3,7 @@ use iced_widget::{button, column, container, row, space};
 
 use super::{Event, ROUTES, Route, RouteConfig};
 
+use crate::widget;
 use crate::{Element, Theme, resources::icon, window};
 
 pub fn view<'a>(active: Route, panel_visible: bool, window: &window::Window) -> Element<'a> {
@@ -60,7 +61,7 @@ fn item<'a>(
         Event::panel_toggled(route)
     };
 
-    button(inner)
+    let btn = button(inner)
         .width(48)
         .height(48)
         .padding(0)
@@ -77,6 +78,7 @@ fn item<'a>(
             }
             .with_background(Color::TRANSPARENT)
         })
-        .on_press(event)
-        .into()
+        .on_press(event);
+
+    widget::with_tooltip(btn, route.tooltip(), iced_widget::tooltip::Position::Right).into()
 }

@@ -1,18 +1,22 @@
 //! 工具栏按钮辅助函数
+//!
+//! 提供带悬浮提示（tooltip）的工具栏按钮工厂函数。
 
 use crate::resources::icon;
 use crate::toolbar::{Event, Tool};
+use crate::widget;
 use crate::{Element, Message, Theme, window};
 use iced_widget::button;
 
 /// 工具按钮
 pub fn tool_button<'a>(
     icon_enum: icon::Icon,
+    tooltip: &'a str,
     on_press: Message,
     window: &'a window::Window,
 ) -> Element<'a> {
     let palette = window.theme.extended_palette();
-    button(icon::view_with_size_and_theme(
+    let btn = button(icon::view_with_size_and_theme(
         icon_enum,
         20,
         20,
@@ -35,13 +39,15 @@ pub fn tool_button<'a>(
         }
         .with_background(bg)
     })
-    .padding(4)
-    .into()
+    .padding(4);
+
+    widget::with_tooltip_bottom(btn, tooltip).into()
 }
 
 /// 翻转按钮（有选中时可用，无选中时禁用）
 pub fn flip_button<'a>(
     icon_enum: icon::Icon,
+    tooltip: &'a str,
     on_press: Message,
     enabled: bool,
     window: &'a window::Window,
@@ -73,16 +79,19 @@ pub fn flip_button<'a>(
     })
     .padding(4);
 
-    if enabled {
-        btn.on_press(on_press).into()
+    let btn = if enabled {
+        btn.on_press(on_press)
     } else {
-        btn.into()
-    }
+        btn
+    };
+
+    widget::with_tooltip_bottom(btn, tooltip).into()
 }
 
 /// 工具选择器
 pub fn tool_selector<'a>(
     icon_enum: icon::Icon,
+    tooltip: &'a str,
     tool: Tool,
     current_tool: Tool,
     window: &'a window::Window,
@@ -90,7 +99,7 @@ pub fn tool_selector<'a>(
     let is_selected = tool == current_tool;
     let palette = window.theme.extended_palette();
 
-    button(icon::view_with_size_and_theme(
+    let btn = button(icon::view_with_size_and_theme(
         icon_enum,
         17,
         17,
@@ -116,6 +125,7 @@ pub fn tool_selector<'a>(
         }
         .with_background(bg)
     })
-    .padding(iced_core::Padding::new(4.0))
-    .into()
+    .padding(iced_core::Padding::new(4.0));
+
+    widget::with_tooltip_bottom(btn, tooltip).into()
 }

@@ -15,7 +15,7 @@ pub enum Event {
     PerfUpdate(PerfData),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TrafficAction {
     Minimize,
     ToggleMaximize,

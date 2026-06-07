@@ -25,6 +25,16 @@ pub enum Route {
     Audio,
 }
 
+impl Route {
+    pub fn tooltip(&self) -> &'static str {
+        match self {
+            Route::File => "文件管理",
+            Route::Arrangement => "音轨总览",
+            Route::Audio => "音频设置",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum RouteConfig {
     Item { route: Route, icon: icon::Icon },

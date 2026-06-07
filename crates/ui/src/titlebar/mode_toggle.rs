@@ -1,6 +1,7 @@
 use iced_core::{Alignment, Background, Border, Color, Length};
 use iced_widget::{button, container, row, text};
 
+use crate::widget;
 use crate::{Element, Message, Theme, resources::icon};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -34,6 +35,11 @@ pub fn view(theme: &Theme, _current_mode: AppMode, progress: f32) -> Element<'_>
         "瀑布流"
     } else {
         "编辑器"
+    };
+    let tooltip_text = if is_waterfall {
+        "切换到编辑器模式"
+    } else {
+        "切换到瀑布流模式"
     };
 
     let icon_bg = palette.background.strong.color;
@@ -86,7 +92,7 @@ pub fn view(theme: &Theme, _current_mode: AppMode, progress: f32) -> Element<'_>
             ..Default::default()
         });
 
-    button(inner)
+    let btn = button(inner)
         .padding(2)
         .style(move |_theme: &Theme, status| {
             let bg = match status {
@@ -107,6 +113,7 @@ pub fn view(theme: &Theme, _current_mode: AppMode, progress: f32) -> Element<'_>
         })
         .on_press(Message::ModeToggled)
         .width(70)
-        .height(25)
-        .into()
+        .height(25);
+
+    widget::with_tooltip_bottom(btn, tooltip_text).into()
 }

@@ -24,15 +24,15 @@ impl Toolbar {
         // 播放控制区域 (132px 宽)
         let playback_controls = container(
             row![
-                tool_button(icon::SkipBackward, Event::skip_backward(), window),
+                tool_button(icon::SkipBackward, "快退", Event::skip_backward(), window),
                 space().width(4),
                 if self.is_playing {
-                    tool_button(icon::Pause, Event::pause(), window)
+                    tool_button(icon::Pause, "暂停", Event::pause(), window)
                 } else {
-                    tool_button(icon::Play, Event::play(), window)
+                    tool_button(icon::Play, "播放", Event::play(), window)
                 },
                 space().width(4),
-                tool_button(icon::SkipForward, Event::skip_forward(), window),
+                tool_button(icon::SkipForward, "快进", Event::skip_forward(), window),
             ]
             .align_y(Alignment::Center),
         )
@@ -51,40 +51,44 @@ impl Toolbar {
         });
 
         // 循环按钮区域
+        use crate::widget;
         let loop_button = container(
-            button(
-                row![icon::view_with_size_and_theme(
-                    if self.is_looping {
-                        icon::ArrowsLeftRight
+            widget::with_tooltip_bottom(
+                button(
+                    row![icon::view_with_size_and_theme(
+                        if self.is_looping {
+                            icon::ArrowsLeftRight
+                        } else {
+                            icon::Ban
+                        },
+                        20,
+                        20,
+                        Some(&window.theme),
+                    )]
+                    .align_y(Alignment::Center),
+                )
+                .on_press(Event::toggle_loop())
+                .style(move |_theme: &Theme, status| {
+                    let bg = if self.is_looping {
+                        palette.primary.base.color
+                    } else if status == iced_widget::button::Status::Hovered {
+                        palette.background.weak.color
                     } else {
-                        icon::Ban
-                    },
-                    20,
-                    20,
-                    Some(&window.theme),
-                ),]
-                .align_y(Alignment::Center),
-            )
-            .on_press(Event::toggle_loop())
-            .style(move |_theme: &Theme, status| {
-                let bg = if self.is_looping {
-                    palette.primary.base.color
-                } else if status == iced_widget::button::Status::Hovered {
-                    palette.background.weak.color
-                } else {
-                    iced_core::Color::TRANSPARENT
-                };
-                button::Style {
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                }
-                .with_background(bg)
-            })
-            .padding(4),
+                        iced_core::Color::TRANSPARENT
+                    };
+                    button::Style {
+                        border: iced_core::Border {
+                            radius: 4.0.into(),
+                            width: 0.0,
+                            color: iced_core::Color::TRANSPARENT,
+                        },
+                        ..Default::default()
+                    }
+                    .with_background(bg)
+                })
+                .padding(4),
+                if self.is_looping { "循环播放: 开" } else { "循环播放: 关" },
+            ),
         )
         .width(40)
         .height(content_height)
@@ -107,18 +111,19 @@ impl Toolbar {
         // 工具选择区域
         let tools = container(
             row![
-                tool_selector(icon::MousePointer, Tool::Pointer, self.current_tool, window),
+                tool_selector(icon::MousePointer, "选择工具", Tool::Pointer, self.current_tool, window),
                 space().width(4),
-                tool_selector(icon::Pencil, Tool::Pencil, self.current_tool, window),
+                tool_selector(icon::Pencil, "铅笔工具", Tool::Pencil, self.current_tool, window),
                 space().width(4),
-                tool_selector(icon::Eraser, Tool::Eraser, self.current_tool, window),
+                tool_selector(icon::Eraser, "橡皮擦", Tool::Eraser, self.current_tool, window),
                 space().width(4),
-                tool_button(icon::Quantize, Event::quantize(), window),
+                tool_button(icon::Quantize, "量化", Event::quantize(), window),
                 space().width(4),
-                tool_button(icon::Speed, Event::speed_change(), window),
+                tool_button(icon::Speed, "变速", Event::speed_change(), window),
                 space().width(4),
                 flip_button(
                     icon::FlipVertical,
+                    "垂直翻转",
                     Event::flip_vertical(),
                     has_selection,
                     window
@@ -126,6 +131,7 @@ impl Toolbar {
                 space().width(4),
                 flip_button(
                     icon::FlipHorizontal,
+                    "水平翻转",
                     if self.shift_pressed {
                         Event::flip_horizontal(FlipHorizontalMode::Right)
                     } else if self.ctrl_pressed {
@@ -217,33 +223,36 @@ impl Toolbar {
             AutoScrollMode::Off => icon::Ban,
         };
         let auto_scroll_button = container(
-            button(
-                row![
-                    icon::view_with_size_and_theme(auto_scroll_icon, 18, 18, Some(&window.theme)),
-                    space().width(6),
-                    text(auto_scroll_label)
-                        .size(14)
-                        .color(palette.background.weakest.text),
-                ]
-                .align_y(Alignment::Center),
-            )
-            .on_press(Event::auto_scroll_mode_changed())
-            .style(move |_theme: &Theme, status| {
-                let bg = match status {
-                    iced_widget::button::Status::Hovered => palette.background.weak.color,
-                    _ => palette.background.weakest.color,
-                };
-                button::Style {
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                }
-                .with_background(bg)
-            })
-            .padding([8, 12]),
+            widget::with_tooltip_bottom(
+                button(
+                    row![
+                        icon::view_with_size_and_theme(auto_scroll_icon, 18, 18, Some(&window.theme)),
+                        space().width(6),
+                        text(auto_scroll_label)
+                            .size(14)
+                            .color(palette.background.weakest.text),
+                    ]
+                    .align_y(Alignment::Center),
+                )
+                .on_press(Event::auto_scroll_mode_changed())
+                .style(move |_theme: &Theme, status| {
+                    let bg = match status {
+                        iced_widget::button::Status::Hovered => palette.background.weak.color,
+                        _ => palette.background.weakest.color,
+                    };
+                    button::Style {
+                        border: iced_core::Border {
+                            radius: 4.0.into(),
+                            width: 0.0,
+                            color: iced_core::Color::TRANSPARENT,
+                        },
+                        ..Default::default()
+                    }
+                    .with_background(bg)
+                })
+                .padding([8, 12]),
+                "切换自动滚动模式",
+            ),
         )
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
@@ -254,33 +263,36 @@ impl Toolbar {
 
         // 协作按钮区域
         let collaboration_button = container(
-            button(
-                row![
-                    icon::view_with_size_and_theme(icon::Users, 18, 18, Some(&window.theme)),
-                    space().width(6),
-                    text("多人协作")
-                        .size(14)
-                        .color(palette.background.weakest.text),
-                ]
-                .align_y(Alignment::Center),
-            )
-            .on_press(Event::open_collaboration_dialog())
-            .style(move |_theme: &Theme, status| {
-                let bg = match status {
-                    iced_widget::button::Status::Hovered => palette.background.weak.color,
-                    _ => palette.background.weakest.color,
-                };
-                button::Style {
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                }
-                .with_background(bg)
-            })
-            .padding([8, 12]),
+            widget::with_tooltip_bottom(
+                button(
+                    row![
+                        icon::view_with_size_and_theme(icon::Users, 18, 18, Some(&window.theme)),
+                        space().width(6),
+                        text("多人协作")
+                            .size(14)
+                            .color(palette.background.weakest.text),
+                    ]
+                    .align_y(Alignment::Center),
+                )
+                .on_press(Event::open_collaboration_dialog())
+                .style(move |_theme: &Theme, status| {
+                    let bg = match status {
+                        iced_widget::button::Status::Hovered => palette.background.weak.color,
+                        _ => palette.background.weakest.color,
+                    };
+                    button::Style {
+                        border: iced_core::Border {
+                            radius: 4.0.into(),
+                            width: 0.0,
+                            color: iced_core::Color::TRANSPARENT,
+                        },
+                        ..Default::default()
+                    }
+                    .with_background(bg)
+                })
+                .padding([8, 12]),
+                "打开协作面板",
+            ),
         )
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
@@ -292,9 +304,9 @@ impl Toolbar {
         // 撤销/重做按钮区域
         let undo_redo_controls = container(
             row![
-                tool_button(icon::Undo, Event::undo(), window),
+                tool_button(icon::Undo, "撤销", Event::undo(), window),
                 space().width(4),
-                tool_button(icon::Redo, Event::redo(), window),
+                tool_button(icon::Redo, "重做", Event::redo(), window),
             ]
             .align_y(Alignment::Center),
         )

@@ -2,7 +2,7 @@ use iced_core::{Alignment, Length, Padding};
 use iced_widget::{button, container, row, space, text};
 
 use crate::{
-    Element, Theme,
+    widget, Element, Theme,
     resources::icon::{self, Icon},
     sidebar::{Event, Track},
     window,
@@ -58,29 +58,32 @@ pub fn view<'a>(track: &'a Track, is_selected: bool, window: &window::Window) ->
 
     let name = text(&track.name).size(14).width(Length::Fill);
 
-    let mute_btn = button(
-        text("M")
-            .size(14)
-            .font(iced_core::Font {
-                weight: iced_core::font::Weight::Bold,
-                ..Default::default()
-            })
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                text::Style {
-                    color: Some(if track.is_muted {
-                        palette.danger.base.color
-                    } else {
-                        palette.background.strong.color
-                    }),
-                }
-            }),
-    )
-    .on_press(Event::track_mute_toggled(track.id))
-    .style(|_theme: &Theme, _status| {
-        button::Style::default().with_background(iced_core::Color::TRANSPARENT)
-    })
-    .padding(0);
+    let mute_btn = widget::with_tooltip_bottom(
+        button(
+            text("M")
+                .size(14)
+                .font(iced_core::Font {
+                    weight: iced_core::font::Weight::Bold,
+                    ..Default::default()
+                })
+                .style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    text::Style {
+                        color: Some(if track.is_muted {
+                            palette.danger.base.color
+                        } else {
+                            palette.background.strong.color
+                        }),
+                    }
+                }),
+        )
+        .on_press(Event::track_mute_toggled(track.id))
+        .style(|_theme: &Theme, _status| {
+            button::Style::default().with_background(iced_core::Color::TRANSPARENT)
+        })
+        .padding(0),
+        if track.is_muted { "取消静音" } else { "静音" },
+    );
 
     let eye_icon = if track.is_onion_skin_on {
         Icon::Eye
@@ -88,17 +91,20 @@ pub fn view<'a>(track: &'a Track, is_selected: bool, window: &window::Window) ->
         Icon::EyeSlash
     };
 
-    let eye_btn = button(icon::view_with_size_and_theme(
-        eye_icon,
-        16,
-        16,
-        Some(&window.theme),
-    ))
-    .on_press(Event::track_onion_skin_toggled(track.id))
-    .style(|_theme: &Theme, _status| {
-        button::Style::default().with_background(iced_core::Color::TRANSPARENT)
-    })
-    .padding(0);
+    let eye_btn = widget::with_tooltip_bottom(
+        button(icon::view_with_size_and_theme(
+            eye_icon,
+            16,
+            16,
+            Some(&window.theme),
+        ))
+        .on_press(Event::track_onion_skin_toggled(track.id))
+        .style(|_theme: &Theme, _status| {
+            button::Style::default().with_background(iced_core::Color::TRANSPARENT)
+        })
+        .padding(0),
+        "洋葱皮开关",
+    );
 
     let track_row = row![
         left_icon,

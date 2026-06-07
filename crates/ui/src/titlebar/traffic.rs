@@ -1,6 +1,7 @@
 use iced_core::{Border, Color, Length};
 use iced_widget::{button, container, row};
 
+use crate::widget;
 use crate::{Element, Theme, resources::icon, window};
 
 #[derive(Debug, Clone)]
@@ -8,6 +9,7 @@ struct TrafficConfig {
     icon: TrafficIcon,
     color: Option<Color>,
     action: window::TrafficAction,
+    tooltip: &'static str,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -24,6 +26,7 @@ const TRAFFICS: &[TrafficConfig] = &[
         icon: TrafficIcon::Static(icon::WindowMin),
         color: None,
         action: window::TrafficAction::Minimize,
+        tooltip: "最小化",
     },
     TrafficConfig {
         icon: TrafficIcon::Toggle {
@@ -32,11 +35,13 @@ const TRAFFICS: &[TrafficConfig] = &[
         },
         color: None,
         action: window::TrafficAction::ToggleMaximize,
+        tooltip: "最大化",
     },
     TrafficConfig {
         icon: TrafficIcon::Static(icon::WindowClose),
         color: Some(Color::from_rgb8(196, 43, 28)),
         action: window::TrafficAction::Close,
+        tooltip: "关闭",
     },
 ];
 
@@ -76,7 +81,7 @@ fn item<'a>(cfg: &'a TrafficConfig, window: &'a window::Window) -> Element<'a> {
         .height(29)
         .center(Length::Fill);
 
-    button(inner)
+    let btn = button(inner)
         .on_press(window::Event::traffic_action(&cfg.action))
         .style(move |theme: &Theme, status| {
             use button::Status::*;
@@ -100,6 +105,15 @@ fn item<'a>(cfg: &'a TrafficConfig, window: &'a window::Window) -> Element<'a> {
                 ..Default::default()
             }
             .with_background(background)
-        })
-        .into()
+        });
+
+    // 最大化时修改 tooltip 文本
+    let tooltip_text = if cfg.action == window::TrafficAction::ToggleMaximize && window.is_maximized
+    {
+        "还原"
+    } else {
+        cfg.tooltip
+    };
+
+    widget::with_tooltip_bottom(btn, tooltip_text).into()
 }
