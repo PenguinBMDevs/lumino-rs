@@ -194,8 +194,7 @@ impl Host {
 
         let (scroll, zoom) = if self.root.is_arrangement_mode() {
             let av = &self.root.arrangement_view.viewport;
-            // yinhe 风格：y 坐标使用像素值，zoom_y = 1.0
-            ((av.scroll_x, av.scroll_y), (av.zoom_x, 1.0))
+            ((av.scroll_x, av.scroll_y), (av.zoom_x, av.zoom_y))
         } else {
             let editor = &self.root.editor;
             (editor.scroll(), editor.zoom())

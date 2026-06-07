@@ -30,7 +30,7 @@ pub fn build_arrangement_all(
 ) {
     let w = viewport.canvas_size.x;
     let h = viewport.canvas_size.y;
-    let lh = viewport.track_height;
+    let lh = viewport.track_height * viewport.zoom_y;
     let ppu = viewport.zoom_x.max(0.001);
     let nt = track_order.len();
     let cox = viewport.canvas_offset.x;
@@ -227,13 +227,14 @@ fn collect_notes_doc(
 // ─── 辅助 ──────────────────────────────────────────────
 
 fn trk_screen_y(viewport: &ArrangementViewport, i: usize) -> f32 {
-    i as f32 * viewport.track_height - viewport.scroll_y
+    i as f32 * viewport.track_height * viewport.zoom_y - viewport.scroll_y
 }
 
 fn visible_trk_range(viewport: &ArrangementViewport, h: f32, nt: usize) -> (usize, usize) {
+    let effective_track_height = viewport.track_height * viewport.zoom_y;
     let f =
-        ((viewport.scroll_y / viewport.track_height).floor() as usize).min(nt.saturating_sub(1));
-    let c = (h / viewport.track_height).ceil() as usize + 1;
+        ((viewport.scroll_y / effective_track_height).floor() as usize).min(nt.saturating_sub(1));
+    let c = (h / effective_track_height).ceil() as usize + 1;
     (f, (f + c).min(nt))
 }
 

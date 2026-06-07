@@ -192,10 +192,10 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                             let delta = current_pos - start_pos;
                             let effective_delta = if edge == Edge::End { delta } else { -delta };
 
-                            let max_delta = track_size - start_thumb_size;
-                            let clamped_delta = effective_delta.min(max_delta);
+                            let max_delta = (track_size - start_thumb_size).max(track_size * 0.5);
+                            let clamped_delta = effective_delta.clamp(-track_size * 0.9, max_delta);
 
-                            let ratio = (1.0 + clamped_delta / start_thumb_size.max(1.0)).max(0.1);
+                            let ratio = (1.0 + clamped_delta / start_thumb_size.max(1.0)).max(0.05);
                             let new_zoom = start_zoom / ratio;
                             let fixed_ratio = if edge == Edge::End { 0.0 } else { 1.0 };
                             shell.publish((self.on_zoom)(new_zoom, fixed_ratio));

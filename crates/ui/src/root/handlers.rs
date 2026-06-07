@@ -174,7 +174,7 @@ impl Root {
             Message::ArrangementScrollY(y) => {
                 let vp = &mut self.arrangement_view.viewport;
                 let track_count = self.sidebar.tracks.len().max(1) as f32;
-                let total_h = track_count * vp.track_height;
+                let total_h = track_count * vp.track_height * vp.zoom_y;
                 let canvas_h = vp.canvas_size.y.max(1.0);
                 let max_scroll = (total_h - canvas_h).max(0.0);
                 let clamped = y.max(0.0).min(max_scroll);
@@ -196,14 +196,20 @@ impl Root {
             Message::ArrangementZoomY { zoom, fixed_ratio } => {
                 let vp = &mut self.arrangement_view.viewport;
                 let old_zoom = vp.zoom_y;
-                let new_zoom = zoom.clamp(0.2, 5.0);
                 let canvas_h = vp.canvas_size.y.max(1.0);
+                // 最大缩放：最后一个音轨完全显示
+                let track_count = self.sidebar.tracks.len().max(1) as f32;
+                let max_zoom = (canvas_h / (track_count * vp.track_height)).max(0.2);
+                let new_zoom = zoom.clamp(0.2, max_zoom);
                 // 保持固定点位置不变
                 let focus_px = vp.scroll_y + canvas_h * fixed_ratio;
                 let focus_ratio = focus_px / (old_zoom * vp.track_height);
                 vp.zoom_y = new_zoom;
+                let total_h = track_count * vp.track_height * new_zoom;
+                let max_scroll = (total_h - canvas_h).max(0.0);
                 vp.scroll_y =
-                    (focus_ratio * new_zoom * vp.track_height - canvas_h * fixed_ratio).max(0.0);
+                    (focus_ratio * new_zoom * vp.track_height - canvas_h * fixed_ratio)
+                        .clamp(0.0, max_scroll);
                 true
             }
             Message::ZoomXChanged { zoom, fixed_ratio } => {

@@ -291,7 +291,7 @@ impl Root {
 
         let track_count = self.sidebar.tracks.len();
         let vp = &self.arrangement_view.viewport;
-        let total_height = (track_count as f32 * TRACK_HEIGHT).max(vp.canvas_size.y + TRACK_HEIGHT);
+        let total_height = track_count as f32 * TRACK_HEIGHT * vp.zoom_y;
         let ppu = vp.zoom_x; // pixels_per_tick
 
         // 左侧音轨列表 Canvas（与走带区域共享 scroll_y，实现同步滚动）
@@ -305,7 +305,7 @@ impl Root {
             track_data,
             self.sidebar.selected_track,
             vp.scroll_y,
-            TRACK_HEIGHT,
+            TRACK_HEIGHT * vp.zoom_y,
             total_height,
         );
         let track_list = iced_widget::canvas::Canvas::new(track_list_canvas)
