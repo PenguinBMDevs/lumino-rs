@@ -82,17 +82,32 @@ pub struct CcData {
 
 /// 已知 CC 控制器名称
 pub const CC_CONTROLLER_NAMES: &[(u8, &str)] = &[
-    (1, "调制轮 Mod Wheel"),
-    (7, "音量 Volume"),
-    (10, "声像 Pan"),
-    (11, "表情 Expression"),
-    (64, "延音踏板 Sustain"),
-    (65, "连音踏板 Portamento"),
-    (71, "谐振 Resonance"),
-    (74, "截止频率 Cutoff"),
-    (91, "混响 Reverb"),
-    (93, "合唱 Chorus"),
+    (1, "调制轮 Mod Wheel"),         // 1（调制轮，用于颤音效果）
+    (7, "音量 Volume"),              // 7（音量，主音量控制）
+    (10, "声像 Pan"),                // 10（声像，左右声道平衡，64=居中）
+    (11, "表情 Expression"),          // 11（表情，动态音量变化）
+    (64, "延音踏板 Sustain"),         // 64（延音踏板，保持音符持续）
+    (65, "连音踏板 Portamento"),      // 65（连音踏板，滑音效果开关）
+    (71, "谐振 Resonance"),           // 71（谐振，滤波器共鸣强度）
+    (74, "截止频率 Cutoff"),          // 74（截止频率，滤波器截频）
+    (91, "混响 Reverb"),              // 91（混响效果发送量）
+    (93, "合唱 Chorus"),              // 93（合唱效果发送量）
 ];
+
+/// CC 编号显示包装（下拉框显示 "编号（中文名）"）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CcDisplay(pub u8);
+
+impl std::fmt::Display for CcDisplay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let chinese_name = CC_CONTROLLER_NAMES
+            .iter()
+            .find(|(n, _)| *n == self.0)
+            .and_then(|(_, name)| name.split(' ').next())
+            .unwrap_or("");
+        write!(f, "{}（{}）", self.0, chinese_name)
+    }
+}
 
 /// 力度点数据
 #[derive(Debug, Clone, Copy)]
@@ -163,18 +178,18 @@ impl VelocityPanel {
 
         // CC 控制器选择器（仅在 CC 模式显示）
         let cc_selector: Element<'a> = if !is_velocity {
-            let cc_options: Vec<u8> = CC_CONTROLLER_NAMES.iter().map(|(n, _)| *n).collect();
-            let selected = self.selected_cc;
+            let cc_options: Vec<CcDisplay> = CC_CONTROLLER_NAMES.iter().map(|(n, _)| CcDisplay(*n)).collect();
+            let selected = CcDisplay(self.selected_cc);
             pick_list(
                 cc_options,
                 Some(selected),
                 move |cc| crate::message::Message::Velocity(
-                    crate::message::VelocityAction::CcControllerSelected(cc),
+                    crate::message::VelocityAction::CcControllerSelected(cc.0),
                 ),
             )
             .placeholder("选择 CC")
             .padding([2, 6])
-            .width(iced_core::Length::Fixed(140.0))
+            .width(iced_core::Length::Fixed(170.0))
             .into()
         } else {
             space().width(0).into()
@@ -184,11 +199,7 @@ impl VelocityPanel {
             let info_text = if is_velocity {
                 "力度 0-127".to_string()
             } else {
-                let name = CC_CONTROLLER_NAMES.iter()
-                    .find(|(n,_)| *n == self.selected_cc)
-                    .map(|(_,name)| *name)
-                    .unwrap_or("");
-                format!("CC{} {}", self.selected_cc, name)
+                format!("CC {}", CcDisplay(self.selected_cc))
             };
 
             let toolbar = container(
