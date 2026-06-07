@@ -61,3 +61,105 @@ impl ArrangementView {
         Self::default()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_arrangement_viewport_default() {
+        let vp = ArrangementViewport::default();
+        assert_eq!(vp.scroll_x, 0.0);
+        assert_eq!(vp.scroll_y, 0.0);
+        assert_eq!(vp.zoom_x, 0.5);
+        assert_eq!(vp.zoom_y, 1.0);
+        assert_eq!(vp.track_height, 48.0);
+        assert_eq!(vp.canvas_size, Point::new(800.0, 600.0));
+        assert_eq!(vp.total_ticks, 0);
+    }
+
+    #[test]
+    fn test_total_height_calculation() {
+        let track_count = 5.0_f32;
+        let track_height = 48.0_f32;
+        let zoom_y = 1.5_f32;
+        let total_height = track_count * track_height * zoom_y;
+        assert_eq!(total_height, 360.0);
+    }
+
+    #[test]
+    fn test_max_scroll_vertical() {
+        let track_count = 10.0_f32;
+        let track_height = 48.0_f32;
+        let zoom_y = 1.0_f32;
+        let canvas_height = 600.0_f32;
+        let total_height = track_count * track_height * zoom_y;
+        let max_scroll = (total_height - canvas_height).max(0.0);
+        assert_eq!(max_scroll, 0.0); // 10 * 48 = 480 < 600
+    }
+
+    #[test]
+    fn test_max_scroll_vertical_with_zoom() {
+        let track_count = 10.0_f32;
+        let track_height = 48.0_f32;
+        let zoom_y = 2.0_f32;
+        let canvas_height = 600.0_f32;
+        let total_height = track_count * track_height * zoom_y;
+        let max_scroll = (total_height - canvas_height).max(0.0);
+        assert_eq!(max_scroll, 360.0); // 10 * 48 * 2 = 960, 960 - 600 = 360
+    }
+
+    #[test]
+    fn test_max_zoom_for_tracks() {
+        let canvas_height = 600.0_f32;
+        let track_count = 10.0_f32;
+        let track_height = 48.0_f32;
+        let max_zoom = (canvas_height / (track_count * track_height)).max(0.2);
+        assert!((max_zoom - 1.25).abs() < 0.01); // 600 / (10 * 48) = 1.25
+    }
+
+    #[test]
+    fn test_max_zoom_minimum() {
+        let canvas_height = 100.0_f32;
+        let track_count = 100.0_f32;
+        let track_height = 48.0_f32;
+        let max_zoom = (canvas_height / (track_count * track_height)).max(0.2);
+        assert_eq!(max_zoom, 0.2); // 100 / 4800 = 0.02, min is 0.2
+    }
+
+    #[test]
+    fn test_scroll_y_clamping() {
+        let track_count = 5.0_f32;
+        let track_height = 48.0_f32;
+        let zoom_y = 2.0_f32;
+        let canvas_height = 600.0_f32;
+        let total_height = track_count * track_height * zoom_y;
+        let max_scroll = (total_height - canvas_height).max(0.0);
+
+        // total_height = 5 * 48 * 2 = 480 < 600, so max_scroll = 0
+        assert_eq!(max_scroll, 0.0);
+
+        // scroll_y should be clamped to 0
+        let scroll_y = 100.0_f32;
+        let clamped = scroll_y.max(0.0).min(max_scroll);
+        assert_eq!(clamped, 0.0);
+    }
+
+    #[test]
+    fn test_scroll_y_with_larger_content() {
+        let track_count = 20.0_f32;
+        let track_height = 48.0_f32;
+        let zoom_y = 1.0_f32;
+        let canvas_height = 600.0_f32;
+        let total_height = track_count * track_height * zoom_y;
+        let max_scroll = (total_height - canvas_height).max(0.0);
+
+        // total_height = 20 * 48 = 960, max_scroll = 360
+        assert_eq!(max_scroll, 360.0);
+
+        // scroll_y should be clamped to 360
+        let scroll_y = 500.0_f32;
+        let clamped = scroll_y.max(0.0).min(max_scroll);
+        assert_eq!(clamped, 360.0);
+    }
+}
