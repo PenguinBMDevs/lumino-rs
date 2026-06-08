@@ -370,11 +370,13 @@ impl Host {
         // 1. 背景（使用主题背景色，与主窗口保持一致，避免硬编码颜色导致色差）
         let bg = theme.extended_palette().background.base.color;
         let bg_arr = [bg.r, bg.g, bg.b, 1.0];
+        // 背景高度向下延展，覆盖 Iced Canvas 底部与 wgpu scissor 之间的间隙
+        let bg_height = panel_height + PANEL_PADDING_Y + 10.0;
         instances.push(lumino_gfx::CcBarInstance::new(
             panel_x,
             panel_y,
             canvas.size.x,
-            panel_height,
+            bg_height,
             bg_arr,
         ));
 
@@ -567,6 +569,7 @@ impl Host {
 
     /// 构建渲染参数
     pub(super) fn build_render_params(&self, data: super::data::RenderData) -> RenderParams {
+        use crate::editor::velocity::PANEL_PADDING_Y;
         let es = &self.root.editor.editor_state;
         let physical_size = self.render_ctx.viewport.physical_size();
         let theme = self.root.theme();
@@ -653,7 +656,7 @@ impl Host {
                 es.canvas.offset.x,
                 es.canvas.offset.y + es.canvas.size.y,
                 es.canvas.size.x,
-                self.root.velocity_panel_height,
+                self.root.velocity_panel_height + PANEL_PADDING_Y + 10.0,
             ))
         };
 
