@@ -409,9 +409,12 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                 return vec![frame.into_geometry()];
             }
             _ => {
-                // 非 Tempo 模式：只绘制刻度标签文字 + resize 手柄
-                // 背景/网格/柱状条由 wgpu 离屏渲染处理
+                // 非 Tempo 模式：绘制竖向网格线 + 横向参考线 + 刻度标签文字 + resize 手柄
+                // 背景/柱状条由 wgpu 离屏渲染处理
                 let mut frame = Frame::new(renderer, bounds.size());
+                let view = &self.editor.editor_state.view;
+                draw_vertical_lines(&mut frame, theme, bounds.size(), view);
+                draw_horizontal_lines(&mut frame, theme, bounds.size(), self.edit_mode);
                 draw_resize_handle(&mut frame, theme, bounds.size(), state.hover_resize_handle);
                 draw_scale_labels(&mut frame, theme, bounds.size(), self.edit_mode);
                 return vec![frame.into_geometry()];
@@ -852,6 +855,142 @@ fn draw_curve_paint_feedback(
             &canvas::Path::circle(pos, POINT_RADIUS + 1.0),
             affected_color,
         );
+    }
+}
+
+/// 绘制竖向网格线（小节线/拍线/半拍线）
+///
+/// 替代原来的 wgpu 离屏绘制，由 Canvas 直接渲染。
+/// 逻辑与钢琴卷帘的竖向网格线一致，与 self.editor.editor_state.view 联动滚动。
+fn draw_vertical_lines(
+    frame: &mut Frame<Renderer>,
+    theme: &Theme,
+    size: Size,
+    view: &ViewState,
+) {
+    let height = size.height;
+    let width = size.width;
+
+    let ppq = view.ppq as f32;
+    let ticks_per_beat = ppq;
+    let ticks_per_measure = ppq * 4.0;
+    let visible_tick_start = view.scroll_x / view.zoom_x;
+    let visible_tick_end = (view.scroll_x + width - view.keyboard_width) / view.zoom_x;
+
+    let line_y = RESIZE_HANDLE_HEIGHT;
+    let line_h = height - 2.0 * RESIZE_HANDLE_HEIGHT;
+
+    // 小节线
+    let bar_color = theme.bar_line_color();
+    let measure_start = (visible_tick_start / ticks_per_measure).floor() as u32;
+    let measure_end = (visible_tick_end / ticks_per_measure).ceil() as u32;
+    for measure in measure_start..=measure_end {
+        let tick = measure as f32 * ticks_per_measure;
+        let x = tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+        if x >= view.keyboard_width && x <= width {
+            frame.fill_rectangle(
+                Point::new(x, line_y),
+                Size::new(1.0, line_h),
+                Color { a: 0.5, ..bar_color },
+            );
+        }
+    }
+
+    // 拍线
+    let beat_color = theme.beat_line_color();
+    let beat_start = (visible_tick_start / ticks_per_beat).floor() as u32;
+    let beat_end = (visible_tick_end / ticks_per_beat).ceil() as u32;
+    for beat in beat_start..=beat_end {
+        let tick = beat as f32 * ticks_per_beat;
+        // 跳过小节线位置
+        if (tick % ticks_per_measure as f32).abs() < f32::EPSILON {
+            continue;
+        }
+        let x = tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+        if x >= view.keyboard_width && x <= width {
+            frame.fill_rectangle(
+                Point::new(x, line_y),
+                Size::new(1.0, line_h),
+                Color { a: 0.3, ..beat_color },
+            );
+        }
+    }
+
+    // 半拍线（zoom 足够大时才显示，避免过密）
+    if view.zoom_x > 0.05 {
+        let half_beat_color = theme.half_beat_line_color();
+        let ticks_per_half_beat = ppq / 2.0;
+        let half_beat_start = (visible_tick_start / ticks_per_half_beat).floor() as u32;
+        let half_beat_end = (visible_tick_end / ticks_per_half_beat).ceil() as u32;
+        for hb in half_beat_start..=half_beat_end {
+            let tick = hb as f32 * ticks_per_half_beat;
+            // 跳过小节线和拍线位置
+            if (tick % ticks_per_measure as f32).abs() < f32::EPSILON
+                || (tick % ticks_per_beat).abs() < f32::EPSILON
+            {
+                continue;
+            }
+            let x = tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+            if x >= view.keyboard_width && x <= width {
+                frame.fill_rectangle(
+                    Point::new(x, line_y),
+                    Size::new(1.0, line_h),
+                    Color { a: 0.15, ..half_beat_color },
+                );
+            }
+        }
+    }
+}
+
+/// 绘制横向参考线（Velocity/CC/Bend 模式）
+///
+/// 替代原来的 wgpu 离屏绘制，由 Canvas 直接渲染。
+/// 刻度值位置与 draw_scale_labels 保持一致。
+fn draw_horizontal_lines(
+    frame: &mut Frame<Renderer>,
+    theme: &Theme,
+    size: Size,
+    edit_mode: super::EditMode,
+) {
+    let width = size.width;
+    let line_color = velocity_grid_line_color(theme);
+
+    match edit_mode {
+        super::EditMode::Velocity | super::EditMode::Cc(_) => {
+            let scale_values = [0u8, 32, 64, 96, 127];
+            for &v in &scale_values {
+                let y = VelocityCanvas::velocity_to_y(v, size.height);
+                let mut line_builder = path::Builder::new();
+                line_builder.move_to(Point::new(PANEL_PADDING_X, y));
+                line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
+                let line_path = line_builder.build();
+                frame.stroke(
+                    &line_path,
+                    canvas::Stroke::default()
+                        .with_color(line_color)
+                        .with_width(1.0),
+                );
+            }
+        }
+        super::EditMode::Bend => {
+            let bend_values: [i16; 5] = [-8192, -4096, 0, 4096, 8191];
+            for &v in &bend_values {
+                let y = bend_value_to_y(v, size.height);
+                let mut line_builder = path::Builder::new();
+                line_builder.move_to(Point::new(PANEL_PADDING_X, y));
+                line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
+                let line_path = line_builder.build();
+                frame.stroke(
+                    &line_path,
+                    canvas::Stroke::default()
+                        .with_color(line_color)
+                        .with_width(1.0),
+                );
+            }
+        }
+        super::EditMode::Tempo => {
+            // Tempo 模式由 draw_tempo_background 单独处理
+        }
     }
 }
 
