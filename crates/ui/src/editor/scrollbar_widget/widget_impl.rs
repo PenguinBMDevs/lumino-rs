@@ -110,17 +110,11 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                                 ScrollbarOrientation::Vertical => position.y,
                             };
                             if let Some(edge) = self.get_edge(position, thumb_bounds) {
-                                let actual_max_scroll = self.actual_max_scroll(track_size);
-                                let lock_zoom_out = match edge {
-                                    Edge::Start => self.scroll <= 0.0,
-                                    Edge::End => self.scroll >= actual_max_scroll.max(0.0),
-                                };
                                 *state = ScrollbarState::DraggingEdge {
                                     start_pos,
                                     start_zoom: self.zoom,
                                     start_thumb_size: thumb_size,
                                     edge,
-                                    lock_zoom_out,
                                 };
                             } else {
                                 let scrollable_size = self.actual_max_scroll(track_size);
@@ -189,7 +183,6 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                         start_zoom,
                         start_thumb_size,
                         edge,
-                        lock_zoom_out,
                     } => {
                         if let Some(position) = cursor.position() {
                             let current_pos = match self.orientation {
@@ -199,21 +192,38 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                             let delta = current_pos - start_pos;
                             let effective_delta = if edge == Edge::End { delta } else { -delta };
 
-                            // 拖拽开始时滚动已在极限 → 固化阻止缩小方向，避免缩放过程中
-                            // scroll 变化导致保护状态震荡（稳定优先于精确）
-                            let effective_delta = if lock_zoom_out {
-                                effective_delta.min(0.0)
-                            } else {
-                                effective_delta
+                            // 动态判断滚动是否已达极限，阻止缩小方向的拖拽（放大方向仍可正常工作）
+                            // 使用 1px 迟滞防止浮点精度导致的误判
+                            const LIMIT_HYSTERESIS: f32 = 1.0;
+                            let actual_max_scroll = self.actual_max_scroll(track_size);
+                            let can_zoom_out = match edge {
+                                Edge::Start => self.scroll > LIMIT_HYSTERESIS,
+                                Edge::End => self.scroll < actual_max_scroll - LIMIT_HYSTERESIS,
                             };
 
-                            let max_delta = (track_size - start_thumb_size).max(track_size * 0.5);
-                            let clamped_delta = effective_delta.clamp(-track_size * 0.9, max_delta);
+                            if !can_zoom_out && effective_delta > 0.0 {
+                                // 滚动已达极限，阻止继续缩小。
+                                // 更新 start_pos 和 start_zoom，使后续 delta ≈ 0、ratio ≈ 1，
+                                // 避免 effective_delta 突变导致 new_zoom 跳回 start_zoom 产生抽动。
+                                // 用户反向拖拽（放大）时也能从当前位置平滑过渡。
+                                *state = ScrollbarState::DraggingEdge {
+                                    start_pos: current_pos,
+                                    start_zoom: self.zoom,
+                                    start_thumb_size,
+                                    edge,
+                                };
+                            } else {
+                                let max_delta =
+                                    (track_size - start_thumb_size).max(track_size * 0.5);
+                                let clamped_delta =
+                                    effective_delta.clamp(-track_size * 0.9, max_delta);
 
-                            let ratio = (1.0 + clamped_delta / start_thumb_size.max(1.0)).max(0.05);
-                            let new_zoom = start_zoom / ratio;
-                            let fixed_ratio = if edge == Edge::End { 0.0 } else { 1.0 };
-                            shell.publish((self.on_zoom)(new_zoom, fixed_ratio));
+                                let ratio =
+                                    (1.0 + clamped_delta / start_thumb_size.max(1.0)).max(0.05);
+                                let new_zoom = start_zoom / ratio;
+                                let fixed_ratio = if edge == Edge::End { 0.0 } else { 1.0 };
+                                shell.publish((self.on_zoom)(new_zoom, fixed_ratio));
+                            }
                             shell.request_redraw();
                         }
                     }

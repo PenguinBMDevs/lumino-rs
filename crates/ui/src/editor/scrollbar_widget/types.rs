@@ -25,7 +25,5 @@ pub enum ScrollbarState {
         start_zoom: f32,
         start_thumb_size: f32,
         edge: Edge,
-        /// 拖拽开始时滚动已在极限方向，阻止缩小方向
-        lock_zoom_out: bool,
     },
 }
