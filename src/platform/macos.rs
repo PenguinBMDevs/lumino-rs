@@ -3,7 +3,7 @@
 use std::{collections::HashMap, sync::OnceLock};
 
 use lumino_core::{Event as CoreEvent, event};
-use lumino_ui::titlebar::menu::{MenuConfig, MenuItem as UiMenuItem, menus as ui_menus};
+use lumino_ui::titlebar::menu::{MenuItem as UiMenuItem, menus as ui_menus};
 use muda::{
     IsMenuItem, Menu, MenuEvent, MenuId, MenuItem as MudaMenuItem, PredefinedMenuItem as PMI,
     Submenu,
@@ -36,35 +36,51 @@ fn app_menu() -> muda::Result<Submenu> {
     )
 }
 
-fn build_submenu(cfg: &MenuConfig, map: &mut HashMap<MenuId, CoreEvent>) -> muda::Result<Submenu> {
-    let mut muda_items: Vec<MudaMenuItem> = Vec::new();
-    let mut separators: Vec<PMI> = Vec::new();
+/// macOS 原生菜单元素包装，用于保持菜单项的原始顺序
+enum MenuElement {
+    Action(MudaMenuItem),
+    Separator(PMI),
+    Sub(Submenu),
+}
 
-    for item in &cfg.items {
+impl MenuElement {
+    fn as_is_menu_item(&self) -> &dyn IsMenuItem {
+        match self {
+            Self::Action(item) => item,
+            Self::Separator(item) => item,
+            Self::Sub(item) => item,
+        }
+    }
+}
+
+fn build_submenu(
+    label: &str,
+    items: &[UiMenuItem],
+    map: &mut HashMap<MenuId, CoreEvent>,
+) -> muda::Result<Submenu> {
+    let mut elements: Vec<MenuElement> = Vec::new();
+
+    for item in items {
         match item {
             UiMenuItem::Action(core_event) => {
-                let label = core_event.display_name();
-                let muda_item = MudaMenuItem::new(label, true, None);
+                let display_name = core_event.display_name();
+                let muda_item = MudaMenuItem::new(display_name, true, None);
                 let id = muda_item.id().clone();
                 map.insert(id, core_event.clone());
-                muda_items.push(muda_item);
+                elements.push(MenuElement::Action(muda_item));
             }
             UiMenuItem::Separator => {
-                separators.push(PMI::separator());
+                elements.push(MenuElement::Separator(PMI::separator()));
             }
-            UiMenuItem::Submenu(_, _) => {}
+            UiMenuItem::Submenu(sub_items, sub_label) => {
+                let sub = build_submenu(sub_label, sub_items, map)?;
+                elements.push(MenuElement::Sub(sub));
+            }
         }
     }
 
-    let mut refs: Vec<&dyn IsMenuItem> = Vec::new();
-    for item in &muda_items {
-        refs.push(item);
-    }
-    for sep in &separators {
-        refs.push(sep);
-    }
-
-    Submenu::with_items(&cfg.kind.to_string(), true, &refs)
+    let refs: Vec<&dyn IsMenuItem> = elements.iter().map(|e| e.as_is_menu_item()).collect();
+    Submenu::with_items(label, true, &refs)
 }
 
 pub fn init() -> muda::Result<()> {
@@ -81,10 +97,26 @@ fn init_inner(cell: &OnceLock<AppMenu>) -> muda::Result<()> {
     let app = app_menu()?;
 
     let ui_configs = ui_menus();
-    let file = build_submenu(&ui_configs[0], &mut map)?;
-    let edit = build_submenu(&ui_configs[1], &mut map)?;
-    let view = build_submenu(&ui_configs[2], &mut map)?;
-    let help = build_submenu(&ui_configs[3], &mut map)?;
+    let file = build_submenu(
+        &ui_configs[0].kind.to_string(),
+        &ui_configs[0].items,
+        &mut map,
+    )?;
+    let edit = build_submenu(
+        &ui_configs[1].kind.to_string(),
+        &ui_configs[1].items,
+        &mut map,
+    )?;
+    let view = build_submenu(
+        &ui_configs[2].kind.to_string(),
+        &ui_configs[2].items,
+        &mut map,
+    )?;
+    let help = build_submenu(
+        &ui_configs[3].kind.to_string(),
+        &ui_configs[3].items,
+        &mut map,
+    )?;
 
     let menu = Menu::with_items(&[&app, &file, &edit, &view, &help])?;
     let _ = menu.init_for_nsapp();
