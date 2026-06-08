@@ -315,22 +315,19 @@ impl Host {
 
     /// 构建 CC 柱状条实例（参考 yinhe 计算方式）
     fn build_cc_bar_instances(&self) -> Vec<lumino_gfx::CcBarInstance> {
+        use crate::editor::grid::theme::ThemeExt;
         use crate::editor::velocity::{EditMode, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT};
 
         let editor = &self.root.editor;
         let panel = &editor.velocity_panel;
-
-        // Tempo 模式由 Canvas 负责，跳过 wgpu
-        if matches!(panel.edit_mode, EditMode::Tempo) {
-            return Vec::new();
-        }
+        let is_tempo = matches!(panel.edit_mode, EditMode::Tempo);
 
         // 根据模式获取数据点和模式参数
         let (is_bend, is_velocity, cc_number) = match panel.edit_mode {
             EditMode::Bend => (true, false, 0u8),
             EditMode::Cc(n) => (false, false, n),
             EditMode::Velocity => (false, true, 0u8),
-            EditMode::Tempo => unreachable!(), // 已在上面返回
+            EditMode::Tempo => (false, false, 0u8),
         };
 
         // Velocity 模式：从 notes 获取力度点
@@ -355,11 +352,9 @@ impl Host {
 
         let view = &editor.editor_state.view;
         let theme = self.root.theme();
-        // 使用与音符相同的颜色（primary.weak）+ 30% 透明度
         let note_color = theme.extended_palette().primary.weak.color;
         let bar_color_arr = [note_color.r, note_color.g, note_color.b, 0.30];
 
-        // 力度面板在屏幕上的位置
         let canvas = &editor.editor_state.canvas;
         let panel_height = self.root.velocity_panel_height;
         let panel_x = canvas.offset.x;
@@ -367,10 +362,11 @@ impl Host {
 
         let mut instances = Vec::new();
 
-        // 1. 背景（使用主题背景色，与主窗口保持一致，避免硬编码颜色导致色差）
+        // ── 所有模式共用的层 ──
+
+        // 1. 背景
         let bg = theme.extended_palette().background.base.color;
         let bg_arr = [bg.r, bg.g, bg.b, 1.0];
-        // 背景高度向下延展，覆盖 Iced Canvas 底部与 wgpu scissor 之间的间隙
         let bg_height = panel_height + PANEL_PADDING_Y + 10.0;
         instances.push(lumino_gfx::CcBarInstance::new(
             panel_x,
@@ -379,6 +375,39 @@ impl Host {
             bg_height,
             bg_arr,
         ));
+
+        // 2. Resize 手柄（位于 toolbar 下方 = Canvas 顶部）
+        const TOOLBAR_HEIGHT: f32 = 28.0;
+        let handle_y = panel_y + TOOLBAR_HEIGHT;
+        let handle_color = theme.extended_palette().background.strong.color;
+        instances.push(lumino_gfx::CcBarInstance::new(
+            panel_x,
+            handle_y,
+            canvas.size.x,
+            RESIZE_HANDLE_HEIGHT,
+            [handle_color.r, handle_color.g, handle_color.b, 0.25],
+        ));
+        // Grab 指示条
+        let text_c = theme.text_color();
+        let grab_alpha = if theme.is_light() { 0.40 } else { 0.35 };
+        let bar_w = 40.0;
+        let bar_h = 3.0;
+        let bar_x = panel_x + (canvas.size.x - bar_w) / 2.0;
+        let bar_y = handle_y + (RESIZE_HANDLE_HEIGHT - bar_h) / 2.0;
+        instances.push(lumino_gfx::CcBarInstance::new(
+            bar_x,
+            bar_y,
+            bar_w,
+            bar_h,
+            [text_c.r, text_c.g, text_c.b, grab_alpha],
+        ));
+
+        // Tempo 模式：只有背景 + 手柄，没有数据柱状条
+        if is_tempo {
+            return instances;
+        }
+
+        // ── 非 Tempo 模式：数据柱状条 ──
 
         // 计算图形区域（排除 resize handle）
         let draw_height = panel_height - RESIZE_HANDLE_HEIGHT;

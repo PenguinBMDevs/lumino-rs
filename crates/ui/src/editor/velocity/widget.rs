@@ -386,22 +386,19 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
 
     fn draw(
         &self,
-        state: &Self::State,
+        _state: &Self::State,
         renderer: &Renderer,
         theme: &Theme,
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geom> {
-        // #debug: 非 Tempo 模式完全不在 Canvas 绘制任何内容，
-        // 只靠 wgpu 离屏渲染提供视觉输出。
-        // 如果 wgpu 内容出现，说明 Canvas 几何体遮挡了 wgpu 层。
-        // 鼠标交互仍然正常（由 mouse_interaction / update 处理）。
         match self.edit_mode {
             super::EditMode::Tempo => {
                 let mut frame = Frame::new(renderer, bounds.size());
-                draw_tempo_background(&mut frame, theme, bounds.size());
-                draw_resize_handle(&mut frame, theme, bounds.size(), state.hover_resize_handle);
                 let view = &self.editor.editor_state.view;
+                draw_horizontal_lines(&mut frame, theme, bounds.size(), self.edit_mode);
+                draw_vertical_lines(&mut frame, theme, bounds.size(), view);
+                draw_scale_labels(&mut frame, theme, bounds.size(), self.edit_mode);
                 let tempo_points = VelocityPanel::build_tempo_points(self.editor);
                 if !tempo_points.is_empty() {
                     draw_tempo_graph(&mut frame, theme, &tempo_points, bounds.size(), view);
@@ -409,13 +406,12 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                 return vec![frame.into_geometry()];
             }
             _ => {
-                // 非 Tempo 模式：绘制竖向网格线 + 横向参考线 + 刻度标签文字 + resize 手柄
-                // 背景/柱状条由 wgpu 离屏渲染处理
+                // 非 Tempo 模式：只画网格线和刻度标签
+                // 背景、柱状条、resize 手柄由 wgpu 离屏渲染处理
                 let mut frame = Frame::new(renderer, bounds.size());
                 let view = &self.editor.editor_state.view;
                 draw_vertical_lines(&mut frame, theme, bounds.size(), view);
                 draw_horizontal_lines(&mut frame, theme, bounds.size(), self.edit_mode);
-                draw_resize_handle(&mut frame, theme, bounds.size(), state.hover_resize_handle);
                 draw_scale_labels(&mut frame, theme, bounds.size(), self.edit_mode);
                 return vec![frame.into_geometry()];
             }
@@ -639,57 +635,6 @@ fn generate_tempo_levels() -> Vec<f64> {
     ]
 }
 
-/// 绘制速度面板背景（BPM 标尺 + 网格线）
-fn draw_tempo_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
-    let width = size.width;
-    let height = size.height;
-
-    let bg_color = velocity_bg_color(theme);
-    frame.fill_rectangle(Point::ORIGIN, size, bg_color);
-
-    let line_color = velocity_grid_line_color(theme);
-    let text_color = velocity_text_color(theme);
-
-    let bpm_levels = generate_tempo_levels();
-
-    for &bpm in &bpm_levels {
-        let y = tempo_bpm_to_y(bpm, height);
-
-        let mut line_builder = path::Builder::new();
-        line_builder.move_to(Point::new(PANEL_PADDING_X, y));
-        line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
-        let line_path = line_builder.build();
-        frame.stroke(
-            &line_path,
-            canvas::Stroke::default()
-                .with_color(line_color)
-                .with_width(1.0),
-        );
-
-        let label = format!("{:.0}", bpm);
-        let text = canvas::Text {
-            content: label,
-            position: Point::new(4.0, y - 6.0),
-            max_width: width,
-            line_height: iced_core::text::LineHeight::Relative(1.0),
-            size: iced_core::Pixels(9.0),
-            color: text_color,
-            font: iced_core::Font::DEFAULT,
-            align_x: alignment::Horizontal::Left.into(),
-            align_y: alignment::Vertical::Top,
-            shaping: iced_core::text::Shaping::Basic,
-        };
-        frame.fill_text(text);
-    }
-
-    let border_color = velocity_border_color(theme);
-    frame.fill_rectangle(
-        Point::new(0.0, RESIZE_HANDLE_HEIGHT),
-        Size::new(width, 1.0),
-        border_color,
-    );
-}
-
 /// 绘制速度（Tempo）折线图
 fn draw_tempo_graph(
     frame: &mut Frame<Renderer>,
@@ -862,12 +807,7 @@ fn draw_curve_paint_feedback(
 ///
 /// 替代原来的 wgpu 离屏绘制，由 Canvas 直接渲染。
 /// 逻辑与钢琴卷帘的竖向网格线一致，与 self.editor.editor_state.view 联动滚动。
-fn draw_vertical_lines(
-    frame: &mut Frame<Renderer>,
-    theme: &Theme,
-    size: Size,
-    view: &ViewState,
-) {
+fn draw_vertical_lines(frame: &mut Frame<Renderer>, theme: &Theme, size: Size, view: &ViewState) {
     let height = size.height;
     let width = size.width;
 
@@ -891,7 +831,10 @@ fn draw_vertical_lines(
             frame.fill_rectangle(
                 Point::new(x, line_y),
                 Size::new(1.0, line_h),
-                Color { a: 0.5, ..bar_color },
+                Color {
+                    a: 0.5,
+                    ..bar_color
+                },
             );
         }
     }
@@ -911,7 +854,10 @@ fn draw_vertical_lines(
             frame.fill_rectangle(
                 Point::new(x, line_y),
                 Size::new(1.0, line_h),
-                Color { a: 0.3, ..beat_color },
+                Color {
+                    a: 0.3,
+                    ..beat_color
+                },
             );
         }
     }
@@ -935,7 +881,10 @@ fn draw_vertical_lines(
                 frame.fill_rectangle(
                     Point::new(x, line_y),
                     Size::new(1.0, line_h),
-                    Color { a: 0.15, ..half_beat_color },
+                    Color {
+                        a: 0.15,
+                        ..half_beat_color
+                    },
                 );
             }
         }
@@ -994,9 +943,9 @@ fn draw_horizontal_lines(
     }
 }
 
-/// 绘制刻度标签文字（Velocity/CC/Bend 模式）
+/// 绘制刻度标签文字（Velocity/CC/Bend/Tempo 模式）
 ///
-/// 在图形区域左侧绘制数值标签，与 wgpu 的水平刻度线配合使用。
+/// 在图形区域左侧绘制数值/刻度标签，与 wgpu 的水平刻度线配合使用。
 /// 文字颜色与现有 Canvas 网格标签一致。
 fn draw_scale_labels(
     frame: &mut Frame<Renderer>,
@@ -1053,7 +1002,26 @@ fn draw_scale_labels(
             }
         }
         super::EditMode::Tempo => {
-            // Tempo 模式由 draw_tempo_background 单独处理
+            let bpm_levels = generate_tempo_levels();
+            let text_color = velocity_text_color(theme);
+            let width = size.width;
+            for &bpm in &bpm_levels {
+                let y = tempo_bpm_to_y(bpm, size.height);
+                let label = format!("{:.0}", bpm);
+                let text = canvas::Text {
+                    content: label,
+                    position: Point::new(4.0, y - 6.0),
+                    max_width: width,
+                    line_height: iced_core::text::LineHeight::Relative(1.0),
+                    size: iced_core::Pixels(9.0),
+                    color: text_color,
+                    font: iced_core::Font::DEFAULT,
+                    align_x: alignment::Horizontal::Left.into(),
+                    align_y: alignment::Vertical::Top,
+                    shaping: iced_core::text::Shaping::Basic,
+                };
+                frame.fill_text(text);
+            }
         }
     }
 }
