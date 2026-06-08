@@ -362,13 +362,22 @@ impl Host {
         let mut instances = Vec::new();
 
         // 1. 背景（填满整个面板，与 yinhe 一致）
-        let bg_color = theme.extended_palette().background.weak.color;
+        // FIXME: alpha=0.0 用于排查折线图/控制点不可见问题
         instances.push(lumino_gfx::CcBarInstance::new(
             panel_x,
             panel_y,
             canvas.size.x,
             panel_height,
-            [bg_color.r, bg_color.g, bg_color.b, 1.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ));
+
+        // DEBUG: 亮红色矩形验证 CcBar 渲染器在 velocity 面板区域是否工作
+        instances.push(lumino_gfx::CcBarInstance::new(
+            panel_x + 20.0,
+            panel_y + 20.0,
+            80.0,
+            40.0,
+            [1.0, 0.0, 0.0, 1.0],
         ));
 
         // 计算图形区域（排除 padding 和 resize handle）
@@ -858,13 +867,29 @@ impl Host {
         }
 
         if raw_positions.is_empty() {
-            return (vec![], vec![]);
+            // DEBUG: 即使没有数据也渲染一个亮绿色圆点，验证渲染管线是否工作
+            let debug_center = [panel_x + 50.0, panel_y + draw_height / 2.0];
+            tracing::info!(
+                "[VG-DEBUG] raw_positions is empty — inserting debug circle at ({:.0}, {:.0})",
+                debug_center[0],
+                debug_center[1],
+            );
+            return (
+                vec![],
+                vec![lumino_gfx::VelocityCircleInstance {
+                    center: debug_center,
+                    radius: 10.0,
+                    _pad: 0.0,
+                    color: [0.0, 1.0, 0.0, 1.0],
+                }],
+            );
         }
         // 排序
         raw_positions.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap_or(std::cmp::Ordering::Equal));
 
         // 降采样：同像素列只保留最后出现的点
-        let mut deduped: Vec<[f32; 2]> = Vec::with_capacity(raw_positions.len());
+        let total_raw = raw_positions.len();
+        let mut deduped: Vec<[f32; 2]> = Vec::with_capacity(total_raw);
         let mut last_px: Option<i32> = None;
         for pos in raw_positions {
             let px = pos[0] as i32;
@@ -875,6 +900,16 @@ impl Host {
                 *last = pos;
             }
         }
+
+        tracing::info!(
+            "[VG] edit_mode={:?} total_raw={} deduped={} panel=({:.0},{:.0}) graph_height={:.0}",
+            edit_mode,
+            total_raw,
+            deduped.len(),
+            panel_x,
+            panel_y,
+            graph_height,
+        );
 
         // 转为绝对屏幕坐标
         let abs_points: Vec<[f32; 2]> = deduped
@@ -893,7 +928,7 @@ impl Host {
         }
 
         // 构建控制点实例
-        let circle_instances: Vec<lumino_gfx::VelocityCircleInstance> = abs_points
+        let mut circle_instances: Vec<lumino_gfx::VelocityCircleInstance> = abs_points
             .iter()
             .map(|&center| lumino_gfx::VelocityCircleInstance {
                 center,
@@ -902,6 +937,28 @@ impl Host {
                 color: point_color_arr,
             })
             .collect();
+
+        // DEBUG: 记录全部实例信息
+        let line_count = line_instances.len();
+        let circle_count = circle_instances.len();
+        tracing::warn!("[DEBUG-INSTANCES] lines={} circles={}", line_count, circle_count);
+        for (i, inst) in line_instances.iter().enumerate() {
+            // 只打前3个和后3个，safe handling for small vecs
+            let is_last_few = line_count > 3 && i >= line_count.saturating_sub(3);
+            if i < 3 || is_last_few {
+                tracing::warn!("[DEBUG-LINE-{}] start=[{:.1},{:.1}] end=[{:.1},{:.1}] color=[{:.2},{:.2},{:.2},{:.2}]",
+                    i, inst.start[0], inst.start[1], inst.end[0], inst.end[1],
+                    inst.color[0], inst.color[1], inst.color[2], inst.color[3]);
+            }
+        }
+        for (i, inst) in circle_instances.iter().enumerate() {
+            let is_last_few = circle_count > 3 && i >= circle_count.saturating_sub(3);
+            if i < 3 || is_last_few {
+                tracing::warn!("[DEBUG-CIRCLE-{}] center=[{:.1},{:.1}] radius={:.0} color=[{:.2},{:.2},{:.2},{:.2}]",
+                    i, inst.center[0], inst.center[1], inst.radius,
+                    inst.color[0], inst.color[1], inst.color[2], inst.color[3]);
+            }
+        }
 
         (line_instances, circle_instances)
     }

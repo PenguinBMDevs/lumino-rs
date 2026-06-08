@@ -118,6 +118,15 @@ pub fn execute_render_pass(
         let scissor_height =
             ((params.canvas_size.1 * scale) as u32).min(height.saturating_sub(scissor_y));
 
+        tracing::warn!(
+            "[SCISSOR-MAIN] canvas_offset=({:.1},{:.1}) canvas_size=({:.1},{:.1}) scale={} viewport_phys=({},{}) scissor=({},{},{},{})",
+            params.canvas_offset.0, params.canvas_offset.1,
+            params.canvas_size.0, params.canvas_size.1,
+            scale,
+            width, height,
+            scissor_x, scissor_y, scissor_width, scissor_height,
+        );
+
         // 绘制背景网格
         render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
         grid_renderer.draw(&mut render_pass, 1);
@@ -147,6 +156,14 @@ pub fn execute_render_pass(
             let vscissor_y = ((vy * scale) as u32).min(height);
             let vscissor_w = ((vw * scale) as u32).min(width.saturating_sub(vscissor_x));
             let vscissor_h = ((vh * scale) as u32).min(height.saturating_sub(vscissor_y));
+
+            tracing::warn!(
+                "[SCISSOR] vel_panel_rect=({:.1},{:.1},{:.1},{:.1}) logical scale={} viewport_phys=({},{}) scissor=({},{},{},{})",
+                vx, vy, vw, vh,
+                scale,
+                width, height,
+                vscissor_x, vscissor_y, vscissor_w, vscissor_h,
+            );
 
             render_pass.set_scissor_rect(vscissor_x, vscissor_y, vscissor_w, vscissor_h);
             cc_bar_renderer.draw(&mut render_pass, params.cc_bar_instances.len() as u32);

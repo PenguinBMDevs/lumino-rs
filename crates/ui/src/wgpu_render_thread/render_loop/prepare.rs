@@ -77,6 +77,12 @@ pub fn prepare_renderers(
     }
 
     // 准备折线段渲染器
+    tracing::info!(
+        "[PREPARE-RS] panel_rect={:?} line_inst={} circle_inst={}",
+        params.velocity_panel_rect,
+        params.velocity_line_instances.len(),
+        params.velocity_circle_instances.len(),
+    );
     if params.velocity_panel_rect.is_some() && !params.velocity_line_instances.is_empty() {
         velocity_line_renderer.prepare(
             device,

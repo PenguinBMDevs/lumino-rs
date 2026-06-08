@@ -176,6 +176,16 @@ impl VelocityLineRenderer {
         puffin::profile_function!();
 
         let instance_count = instances.len();
+        tracing::info!(
+            "[LINE-PREPARE] instance_count={} capacity={} viewport=({:.0},{:.0}) first={:?} last={:?}",
+            instance_count,
+            self.capacity,
+            viewport_size.0,
+            viewport_size.1,
+            instances.first().map(|i| i.start),
+            instances.last().map(|i| i.end),
+        );
+
         let params_changed = !self.cache_valid
             || self.cache_viewport_size != viewport_size
             || self.cache_instance_count != instance_count;
@@ -190,6 +200,11 @@ impl VelocityLineRenderer {
 
         if instance_count > self.capacity {
             let new_capacity = (self.capacity * Self::GROWTH_FACTOR).max(instance_count);
+            tracing::info!(
+                "[LINE-PREPARE] growing buffer {} -> {}",
+                self.capacity,
+                new_capacity,
+            );
             self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
             self.capacity = new_capacity;
         }
@@ -210,8 +225,14 @@ impl VelocityLineRenderer {
     pub fn draw(&self, render_pass: &mut wgpu::RenderPass, instance_count: u32) {
         puffin::profile_function!();
         if instance_count == 0 {
+            tracing::info!("[LINE-DRAW] skipped (0 instances)");
             return;
         }
+        tracing::info!(
+            "[LINE-DRAW] drawing {} instances, buffer_size={}",
+            instance_count,
+            self.instance_buffer.size(),
+        );
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
@@ -388,6 +409,16 @@ impl VelocityCircleRenderer {
         puffin::profile_function!();
 
         let instance_count = instances.len();
+        tracing::info!(
+            "[CIRCLE-PREPARE] instance_count={} capacity={} viewport=({:.0},{:.0}) first={:?} last={:?}",
+            instance_count,
+            self.capacity,
+            viewport_size.0,
+            viewport_size.1,
+            instances.first().map(|i| i.center),
+            instances.last().map(|i| i.center),
+        );
+
         let params_changed = !self.cache_valid
             || self.cache_viewport_size != viewport_size
             || self.cache_instance_count != instance_count;
@@ -402,6 +433,11 @@ impl VelocityCircleRenderer {
 
         if instance_count > self.capacity {
             let new_capacity = (self.capacity * Self::GROWTH_FACTOR).max(instance_count);
+            tracing::info!(
+                "[CIRCLE-PREPARE] growing buffer {} -> {}",
+                self.capacity,
+                new_capacity,
+            );
             self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
             self.capacity = new_capacity;
         }
@@ -422,8 +458,14 @@ impl VelocityCircleRenderer {
     pub fn draw(&self, render_pass: &mut wgpu::RenderPass, instance_count: u32) {
         puffin::profile_function!();
         if instance_count == 0 {
+            tracing::info!("[CIRCLE-DRAW] skipped (0 instances)");
             return;
         }
+        tracing::info!(
+            "[CIRCLE-DRAW] drawing {} instances, buffer_size={}",
+            instance_count,
+            self.instance_buffer.size(),
+        );
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));

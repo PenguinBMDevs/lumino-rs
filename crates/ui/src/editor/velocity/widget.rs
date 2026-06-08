@@ -390,54 +390,30 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
         renderer: &Renderer,
         theme: &Theme,
         bounds: Rectangle,
-        cursor: mouse::Cursor,
+        _cursor: mouse::Cursor,
     ) -> Vec<Geom> {
-        let mut frame = Frame::new(renderer, bounds.size());
-
+        // #debug: 非 Tempo 模式完全不在 Canvas 绘制任何内容，
+        // 只靠 wgpu 离屏渲染提供视觉输出。
+        // 如果 wgpu 内容出现，说明 Canvas 几何体遮挡了 wgpu 层。
+        // 鼠标交互仍然正常（由 mouse_interaction / update 处理）。
         match self.edit_mode {
             super::EditMode::Tempo => {
+                let mut frame = Frame::new(renderer, bounds.size());
                 draw_tempo_background(&mut frame, theme, bounds.size());
-            }
-            super::EditMode::Bend => {
-                draw_background(&mut frame, theme, bounds.size());
-            }
-            _ => {
-                draw_background(&mut frame, theme, bounds.size());
-            }
-        }
-
-        draw_resize_handle(&mut frame, theme, bounds.size(), state.hover_resize_handle);
-
-        let view = &self.editor.editor_state.view;
-
-        // 数据图形（折线+控制点）由 wgpu 离屏渲染处理，Canvas 只保留 Tempo
-        match self.edit_mode {
-            super::EditMode::Tempo => {
+                draw_resize_handle(&mut frame, theme, bounds.size(), state.hover_resize_handle);
+                let view = &self.editor.editor_state.view;
                 let tempo_points = VelocityPanel::build_tempo_points(self.editor);
                 if !tempo_points.is_empty() {
                     draw_tempo_graph(&mut frame, theme, &tempo_points, bounds.size(), view);
                 }
+                return vec![frame.into_geometry()];
             }
-            _ => {}
-        }
-        // 曲线绘制反馈仅在 Velocity 模式下仍需 Canvas 绘制交互元素
-        if state.curve_active && self.edit_mode == super::EditMode::Velocity {
-            let points = self.points();
-            if !points.is_empty() {
-                draw_curve_paint_feedback(
-                    &mut frame,
-                    theme,
-                    &points,
-                    state,
-                    bounds.size(),
-                    view,
-                    cursor,
-                    bounds,
-                );
+            _ => {
+                // 非 Tempo 模式：Canvas 不绘制任何几何体
+                // 背景/网格/折线/控制点全部由 wgpu 离屏渲染处理
+                return vec![];
             }
         }
-
-        vec![frame.into_geometry()]
     }
 
     fn mouse_interaction(
