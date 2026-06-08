@@ -497,6 +497,45 @@ impl Host {
             ));
         }
 
+        // 3.5. 水平刻度线（自动化绘制面板刻度标）
+        // 在图形区域绘制水平参考线，辅助目测数值
+        let bg_strongest = theme.extended_palette().background.strongest.color;
+        let h_line_color = [bg_strongest.r, bg_strongest.g, bg_strongest.b, 0.06];
+        let h_line_x = panel_x + view.keyboard_width;
+        let h_line_width = canvas.size.x - view.keyboard_width;
+
+        if is_bend {
+            // Bend 刻度：弯音标准参考值
+            const BEND_MIN: f32 = -8192.0;
+            const BEND_MAX: f32 = 8191.0;
+            let bend_scale: [f32; 5] = [-8192.0, -4096.0, 0.0, 4096.0, 8191.0];
+            for v in bend_scale {
+                let normalized = (v - BEND_MIN) / (BEND_MAX - BEND_MIN);
+                let y = panel_y + max_y - normalized * graph_height;
+                instances.push(lumino_gfx::CcBarInstance::new(
+                    h_line_x,
+                    y,
+                    h_line_width,
+                    1.0,
+                    h_line_color,
+                ));
+            }
+        } else {
+            // Velocity/CC 刻度：标准 0-127 五等分
+            let scale_values: [f32; 5] = [0.0, 32.0, 64.0, 96.0, 127.0];
+            for v in scale_values {
+                let normalized = v / 127.0;
+                let y = panel_y + max_y - normalized * graph_height;
+                instances.push(lumino_gfx::CcBarInstance::new(
+                    h_line_x,
+                    y,
+                    h_line_width,
+                    1.0,
+                    h_line_color,
+                ));
+            }
+        }
+
         // 4. 数据柱状条（模仿 yinhe 的矩形实例化渲染）
         const BAR_WIDTH: f32 = 2.0;
 

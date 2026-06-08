@@ -409,9 +409,12 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                 return vec![frame.into_geometry()];
             }
             _ => {
-                // 非 Tempo 模式：Canvas 不绘制任何几何体
-                // 背景/网格/折线/控制点全部由 wgpu 离屏渲染处理
-                return vec![];
+                // 非 Tempo 模式：只绘制刻度标签文字 + resize 手柄
+                // 背景/网格/柱状条由 wgpu 离屏渲染处理
+                let mut frame = Frame::new(renderer, bounds.size());
+                draw_resize_handle(&mut frame, theme, bounds.size(), state.hover_resize_handle);
+                draw_scale_labels(&mut frame, theme, bounds.size(), self.edit_mode);
+                return vec![frame.into_geometry()];
             }
         }
     }
@@ -850,4 +853,77 @@ fn draw_curve_paint_feedback(
             affected_color,
         );
     }
+}
+
+/// 绘制刻度标签文字（Velocity/CC/Bend 模式）
+///
+/// 在图形区域左侧绘制数值标签，与 wgpu 的水平刻度线配合使用。
+/// 文字颜色与现有 Canvas 网格标签一致。
+fn draw_scale_labels(
+    frame: &mut Frame<Renderer>,
+    theme: &Theme,
+    size: Size,
+    edit_mode: super::EditMode,
+) {
+    let text_color = velocity_text_color(theme);
+    let width = size.width;
+
+    match edit_mode {
+        super::EditMode::Velocity | super::EditMode::Cc(_) => {
+            let scale_values = [0u8, 32, 64, 96, 127];
+            for &v in &scale_values {
+                let y = VelocityCanvas::velocity_to_y(v, size.height);
+                let text = canvas::Text {
+                    content: format!("{}", v),
+                    position: Point::new(4.0, y - 6.0),
+                    max_width: width,
+                    line_height: iced_core::text::LineHeight::Relative(1.0),
+                    size: iced_core::Pixels(9.0),
+                    color: text_color,
+                    font: iced_core::Font::DEFAULT,
+                    align_x: alignment::Horizontal::Left.into(),
+                    align_y: alignment::Vertical::Top,
+                    shaping: iced_core::text::Shaping::Basic,
+                };
+                frame.fill_text(text);
+            }
+        }
+        super::EditMode::Bend => {
+            let bend_labels: [(i16, &str); 5] = [
+                (-8192, "-8k"),
+                (-4096, "-4k"),
+                (0, "0"),
+                (4096, "+4k"),
+                (8191, "+8k"),
+            ];
+            for &(v, label) in &bend_labels {
+                let y = bend_value_to_y(v, size.height);
+                let text = canvas::Text {
+                    content: label.to_string(),
+                    position: Point::new(4.0, y - 6.0),
+                    max_width: width,
+                    line_height: iced_core::text::LineHeight::Relative(1.0),
+                    size: iced_core::Pixels(9.0),
+                    color: text_color,
+                    font: iced_core::Font::DEFAULT,
+                    align_x: alignment::Horizontal::Left.into(),
+                    align_y: alignment::Vertical::Top,
+                    shaping: iced_core::text::Shaping::Basic,
+                };
+                frame.fill_text(text);
+            }
+        }
+        super::EditMode::Tempo => {
+            // Tempo 模式由 draw_tempo_background 单独处理
+        }
+    }
+}
+
+/// 将弯音值 (-8192 ~ +8191) 映射到面板 Y 坐标
+fn bend_value_to_y(value: i16, bounds_height: f32) -> f32 {
+    let draw_height = bounds_height - RESIZE_HANDLE_HEIGHT;
+    let max_y = draw_height - PANEL_PADDING_Y;
+    let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
+    let normalized = (value as f32 + 8192.0) / 16383.0;
+    max_y - normalized * (max_y - min_y)
 }
