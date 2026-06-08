@@ -239,12 +239,27 @@ pub fn view<'a>(
                 Message::Settings(crate::settings::Event::Enable256keyChanged(enabled))
             }),
     ]
-    .spacing(SPACING_ICON_LABEL)
-    .align_y(Alignment::Center),
-    iced_widget::space().height(SPACING_CONTENT),
-    text("开启后钢琴卷帘拓展至 256 键 (0-255)，扩展区域（128-255）颜色略深以便区分。需要较强的 GPU 性能。")
-        .size(12.0)
-        .style(create_placeholder_text_style()),
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        text("开启后钢琴卷帘拓展至 256 键 (0-255)，扩展区域（128-255）颜色略深以便区分。需要较强的 GPU 性能。")
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+        iced_widget::space().height(SPACING_CONTENT),
+        // 钢琴仿真键盘开关
+        row![
+        iced_widget::Checkbox::new(settings.use_textured_keyboard)
+            .label("使用钢琴仿真键盘（推荐）")
+            .on_toggle(|enabled| {
+                Message::Settings(crate::settings::Event::TexturedKeyboardChanged(enabled))
+            }),
+    ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        text("开启后使用真实钢琴贴图渲染键盘，视觉效果更佳。关闭则使用传统纯色键盘。")
+            .size(12.0)
+            .style(create_placeholder_text_style()),
 ]
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT)

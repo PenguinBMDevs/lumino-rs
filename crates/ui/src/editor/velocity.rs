@@ -40,6 +40,8 @@ pub enum EditMode {
     Velocity,
     /// 速度编辑（Conductor 音轨专用）
     Tempo,
+    /// 弯音编辑（-8192 到 +8191）
+    Bend,
     /// CC 控制器编辑
     Cc(u8),
 }
@@ -55,13 +57,14 @@ impl EditMode {
         match self {
             EditMode::Velocity => "力度",
             EditMode::Tempo => "速度",
+            EditMode::Bend => "Bend",
             EditMode::Cc(_) => "CC",
         }
     }
 
-    /// 是否处于 CC 模式
+    /// 是否处于 CC 模式（包括 Bend）
     pub fn is_cc(&self) -> bool {
-        matches!(self, EditMode::Cc(_))
+        matches!(self, EditMode::Cc(_) | EditMode::Bend)
     }
 
     /// 是否处于 Tempo 模式
@@ -79,94 +82,136 @@ pub struct CcPoint {
     pub value: u8,
 }
 
+/// 弯音控制点
+#[derive(Debug, Clone, Copy)]
+pub struct BendPoint {
+    /// tick 位置
+    pub tick: f32,
+    /// 弯音值 (-8192 到 +8191)
+    pub value: i16,
+}
+
 /// 音轨 CC 数据
 #[derive(Debug, Clone, Default)]
 pub struct CcData {
     /// 控制器编号 → 控制点列表
     pub controllers: std::collections::HashMap<u8, Vec<CcPoint>>,
+    /// 弯音点列表
+    pub bend_points: Vec<BendPoint>,
 }
 
 /// 已知 CC 控制器名称（GM/GS/XG 标准）
 pub const CC_CONTROLLER_NAMES: &[(u8, &str)] = &[
-    // 通道模式/库选择
-    (0, "库选择 Bank Select"),
-    // 演奏控制
-    (1, "调制轮 Mod Wheel"),
-    (2, "呼吸控制器 Breath"),
-    (4, "脚踏控制器 Foot"),
-    (5, "滑音时间 Portamento"),
-    (6, "数据输入 Data Entry"),
-    (7, "音量 Volume"),
-    (8, "平衡 Balance"),
-    (10, "声像 Pan"),
-    (11, "表情 Expression"),
-    (12, "效果控制1 FX1"),
-    (13, "效果控制2 FX2"),
-    // 通用控制器
-    (16, "通用1 GP1"),
-    (17, "通用2 GP2"),
-    (18, "通用3 GP3"),
-    (19, "通用4 GP4"),
-    // 踏板/开关
-    (64, "延音踏板 Sustain"),
-    (65, "滑音开关 Portamento"),
-    (66, "保持踏板 Sostenuto"),
-    (67, "柔音踏板 Soft"),
-    (68, "连奏开关 Legato"),
-    (69, "保持2 Hold2"),
-    // 音色控制
-    (70, "音色变化 Variation"),
-    (71, "谐振 Resonance"),
-    (72, "释音时间 Release"),
-    (73, "起音时间 Attack"),
-    (74, "亮度 Brightness"),
-    (75, "音色控制6"),
-    (76, "音色控制7"),
-    (77, "音色控制8"),
-    (78, "音色控制9"),
-    (79, "音色控制10"),
-    (80, "通用5 GP5"),
-    (81, "通用6 GP6"),
-    (82, "通用7 GP7"),
-    (83, "通用8 GP8"),
-    (84, "滑音控制 Portamento"),
-    // 效果深度
-    (91, "混响 Reverb"),
-    (92, "颤音 Tremolo"),
-    (93, "合唱 Chorus"),
-    (94, " celeste Detune"),
-    (95, "相位 Phaser"),
-    // 数据/RPN/NRPN
-    (96, "数据增量 Inc"),
-    (97, "数据减量 Dec"),
-    (98, "NRPN低位"),
-    (99, "NRPN高位"),
-    (100, "RPN低位"),
-    (101, "RPN高位"),
-    // 通道模式
-    (120, "静音 All Sound Off"),
-    (121, "复位 Reset"),
-    (122, "本地控制 Local"),
-    (123, "全部关 All Notes Off"),
-    (124, "全通道关 Omni Off"),
-    (125, "全通道开 Omni On"),
-    (126, "单音模式 Mono"),
-    (127, "复音模式 Poly"),
+    (0, "Bank Select MSB"),
+    (1, "Modulation Wheel"),
+    (2, "Breath Controller"),
+    (4, "Foot Controller"),
+    (5, "Portamento Time"),
+    (6, "Data Entry MSB"),
+    (7, "Channel Volume"),
+    (8, "Balance"),
+    (10, "Pan"),
+    (11, "Expression"),
+    (12, "Effect Control 1"),
+    (13, "Effect Control 2"),
+    (16, "General Purpose 1"),
+    (17, "General Purpose 2"),
+    (18, "General Purpose 3"),
+    (19, "General Purpose 4"),
+    (32, "Bank Select LSB"),
+    (33, "Modulation Wheel LSB"),
+    (34, "Breath Controller LSB"),
+    (36, "Foot Controller LSB"),
+    (37, "Portamento Time LSB"),
+    (38, "Data Entry LSB"),
+    (39, "Channel Volume LSB"),
+    (40, "Balance LSB"),
+    (42, "Pan LSB"),
+    (43, "Expression LSB"),
+    (64, "Sustain Pedal"),
+    (65, "Portamento On/Off"),
+    (66, "Sostenuto Pedal"),
+    (67, "Soft Pedal"),
+    (68, "Legato Footswitch"),
+    (69, "Hold 2"),
+    (70, "Sound Variation"),
+    (71, "Resonance"),
+    (72, "Release Time"),
+    (73, "Attack Time"),
+    (74, "Brightness / Cutoff"),
+    (75, "Sound Controller 6"),
+    (76, "Sound Controller 7"),
+    (77, "Sound Controller 8"),
+    (78, "Sound Controller 9"),
+    (79, "Sound Controller 10"),
+    (80, "General Purpose 5"),
+    (81, "General Purpose 6"),
+    (82, "General Purpose 7"),
+    (83, "General Purpose 8"),
+    (84, "Portamento Control"),
+    (91, "Reverb Depth"),
+    (92, "Tremolo Depth"),
+    (93, "Chorus Depth"),
+    (94, "Celeste Depth"),
+    (95, "Phaser Depth"),
+    (96, "Data Increment"),
+    (97, "Data Decrement"),
+    (98, "NRPN LSB"),
+    (99, "NRPN MSB"),
+    (100, "RPN LSB"),
+    (101, "RPN MSB"),
+    (120, "All Sound Off"),
+    (121, "Reset All Controllers"),
+    (122, "Local Control On/Off"),
+    (123, "All Notes Off"),
+    (124, "Omni Off"),
+    (125, "Omni On"),
+    (126, "Mono On"),
+    (127, "Poly On"),
 ];
 
-/// CC 编号显示包装（下拉框显示 "编号（中文名）"）
+/// CC 编号显示包装（下拉框显示 "编号: 名称"）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CcDisplay(pub u8);
 
+/// 弯音显示包装（下拉框显示 "Bend: Pitch Bend (-8192..8191)"）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BendDisplay;
+
+impl std::fmt::Display for BendDisplay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Bend: Pitch Bend (-8192..8191)")
+    }
+}
+
 impl std::fmt::Display for CcDisplay {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let chinese_name = CC_CONTROLLER_NAMES
-            .iter()
-            .find(|(n, _)| *n == self.0)
-            .and_then(|(_, name)| name.split(' ').next());
-        match chinese_name {
-            Some(name) if !name.is_empty() => write!(f, "{}（{}）", self.0, name),
-            _ => write!(f, "{}", self.0),
+        match CC_CONTROLLER_NAMES.iter().find(|(n, _)| *n == self.0) {
+            Some((_, name)) => write!(f, "{}: {}", self.0, name),
+            None => write!(f, "{}", self.0),
+        }
+    }
+}
+
+/// CC 或 Bend 下拉选项
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CcOption {
+    /// 弯音
+    Bend,
+    /// CC 控制器
+    Cc(u8),
+}
+
+impl std::fmt::Display for CcOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CcOption::Bend => write!(f, "Bend: Pitch Bend (-8192..8191)"),
+            CcOption::Cc(n) => {
+                match CC_CONTROLLER_NAMES.iter().find(|(num, _)| *num == *n) {
+                    Some((_, name)) => write!(f, "{}: {}", n, name),
+                    None => write!(f, "{}", n),
+                }
+            }
         }
     }
 }
@@ -216,6 +261,8 @@ impl VelocityPanel {
             "速度"
         } else if is_velocity {
             "力度"
+        } else if self.edit_mode == EditMode::Bend {
+            "Bend"
         } else {
             "CC"
         };
@@ -248,17 +295,25 @@ impl VelocityPanel {
 
         // CC 控制器选择器（仅在 CC 模式显示，Tempo 模式也隐藏）
         let cc_selector: Element<'a> = if self.edit_mode.is_cc() {
-            // 生成 0-127 所有 CC 选项，支持任意 MIDI CC 控制器
-            let cc_options: Vec<CcDisplay> = (0..=127).map(CcDisplay).collect();
-            let selected = CcDisplay(self.selected_cc);
+            // 生成选项：Bend 在顶部，然后是 0-127 CC
+            let mut cc_options: Vec<CcOption> = Vec::new();
+            cc_options.push(CcOption::Bend);
+            for n in 0..=127 {
+                cc_options.push(CcOption::Cc(n));
+            }
+            let selected = if self.edit_mode == EditMode::Bend {
+                CcOption::Bend
+            } else {
+                CcOption::Cc(self.selected_cc)
+            };
             pick_list(
                 cc_options,
                 Some(selected),
                 move |cc| crate::message::Message::Velocity(
-                    crate::message::VelocityAction::CcControllerSelected(cc.0),
+                    crate::message::VelocityAction::CcOptionSelected(cc),
                 ),
             )
-            .placeholder("选择 CC")
+            .placeholder("Select CC/Bend")
             .padding([2, 6])
             .width(iced_core::Length::Fixed(170.0))
             .into()
@@ -271,8 +326,10 @@ impl VelocityPanel {
             "速度 BPM".to_string()
         } else if is_velocity {
             "力度 0-127".to_string()
+        } else if self.edit_mode == EditMode::Bend {
+            "Bend: -8192..8191".to_string()
         } else {
-            format!("CC {}", CcDisplay(self.selected_cc))
+            format!("{}", CcDisplay(self.selected_cc))
         };
 
         let toolbar = container(
@@ -359,6 +416,13 @@ impl VelocityPanel {
             .get(&cc_number)
             .cloned()
             .unwrap_or_default()
+    }
+
+    /// 构建弯音数据（从编辑器中的 bend_points 获取）
+    pub fn build_bend_points(
+        editor: &crate::editor::Editor,
+    ) -> Vec<BendPoint> {
+        editor.editor_state.data.cc_data.bend_points.clone()
     }
 }
 

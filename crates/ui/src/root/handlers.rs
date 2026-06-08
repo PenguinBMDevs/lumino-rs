@@ -504,8 +504,11 @@ impl Root {
                 let is_conductor = self.sidebar.selected_track == 0
                     && self.sidebar.tracks.first().is_some_and(|t| t.is_conductor);
                 panel.edit_mode = match (panel.edit_mode, is_conductor) {
-                    // 普通音轨：Velocity ↔ Cc(selected_cc)
+                    // 普通音轨：Velocity → Bend → Cc(selected_cc) → Velocity
                     (crate::editor::velocity::EditMode::Velocity, false) => {
+                        crate::editor::velocity::EditMode::Bend
+                    }
+                    (crate::editor::velocity::EditMode::Bend, false) => {
                         crate::editor::velocity::EditMode::Cc(panel.selected_cc)
                     }
                     (crate::editor::velocity::EditMode::Cc(_), false) => {
@@ -529,8 +532,11 @@ impl Root {
                     (crate::editor::velocity::EditMode::Velocity, true) => {
                         crate::editor::velocity::EditMode::Tempo
                     }
+                    (crate::editor::velocity::EditMode::Bend, true) => {
+                        crate::editor::velocity::EditMode::Tempo
+                    }
                     (crate::editor::velocity::EditMode::Tempo, false) => {
-                        crate::editor::velocity::EditMode::Cc(panel.selected_cc)
+                        crate::editor::velocity::EditMode::Bend
                     }
                 };
                 tracing::debug!("力度面板: 切换模式为 {:?}", panel.edit_mode);
@@ -540,6 +546,21 @@ impl Root {
                 self.editor.velocity_panel.selected_cc = cc;
                 self.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Cc(cc);
                 tracing::debug!("力度面板: 选择 CC 控制器 {}", cc);
+                return; // 不需要重绘
+            }
+            VelocityAction::CcOptionSelected(option) => {
+                use crate::editor::velocity::CcOption;
+                match option {
+                    CcOption::Bend => {
+                        self.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Bend;
+                        tracing::debug!("力度面板: 选择 Bend");
+                    }
+                    CcOption::Cc(cc) => {
+                        self.editor.velocity_panel.selected_cc = cc;
+                        self.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Cc(cc);
+                        tracing::debug!("力度面板: 选择 CC 控制器 {}", cc);
+                    }
+                }
                 return; // 不需要重绘
             }
             // ── Tempo 编辑动作 ──

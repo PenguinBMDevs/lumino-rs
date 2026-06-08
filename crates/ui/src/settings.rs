@@ -46,6 +46,8 @@ pub enum Event {
     IconHiDPIChanged(bool),
     /// 256键扩展钢琴卷帘开关
     Enable256keyChanged(bool),
+    /// 钢琴仿真贴图键盘开关
+    TexturedKeyboardChanged(bool),
     /// MIDI 输入设备选择
     DeviceSelected(u32),
 }
@@ -75,6 +77,8 @@ pub struct SettingsPanel {
     pub icon_hidpi: bool,
     /// 256键扩展钢琴卷帘
     pub enable_256key: bool,
+    /// 钢琴仿真贴图键盘
+    pub use_textured_keyboard: bool,
     /// 可用的 MIDI 输入设备列表
     pub midi_devices: Vec<(u32, String)>,
     /// 当前选中的 MIDI 输入设备 ID
@@ -103,6 +107,7 @@ impl SettingsPanel {
             velocity_filter_threshold: ui_config.velocity_filter_threshold,
             icon_hidpi: ui_config.icon_hidpi,
             enable_256key: ui_config.enable_256key,
+            use_textured_keyboard: ui_config.use_textured_keyboard,
             midi_devices: Vec::new(),
             selected_midi_device: None,
         }
@@ -201,6 +206,9 @@ impl SettingsPanel {
             }
             Event::Enable256keyChanged(enabled) => {
                 self.enable_256key = enabled;
+            }
+            Event::TexturedKeyboardChanged(enabled) => {
+                self.use_textured_keyboard = enabled;
             }
             Event::DeviceSelected(id) => {
                 self.selected_midi_device = Some(id);

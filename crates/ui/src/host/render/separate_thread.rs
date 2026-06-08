@@ -321,13 +321,21 @@ impl Host {
         let editor = &self.root.editor;
         let panel = &editor.velocity_panel;
 
-        // 仅在 CC 模式下构建实例
-        let cc_number = match panel.edit_mode {
-            EditMode::Cc(n) => n,
+        // 仅在 CC/Bend 模式下构建实例
+        let (is_bend, cc_number) = match panel.edit_mode {
+            EditMode::Bend => (true, 0u8),
+            EditMode::Cc(n) => (false, n),
             _ => return Vec::new(),
         };
 
-        let points = crate::editor::velocity::VelocityPanel::build_cc_points(editor, cc_number);
+        // 根据模式获取数据点
+        let (cc_points, bend_points) = if is_bend {
+            let bend_pts = crate::editor::velocity::VelocityPanel::build_bend_points(editor);
+            (Vec::new(), bend_pts)
+        } else {
+            let cc_pts = crate::editor::velocity::VelocityPanel::build_cc_points(editor, cc_number);
+            (cc_pts, Vec::new())
+        };
 
         let view = &editor.editor_state.view;
         let theme = self.root.theme();
@@ -437,44 +445,81 @@ impl Host {
             }
         }
 
-        // 3. 中心参考线（CC 默认值 64，与 yinhe 一致）
-        let center_val = 64.0;
-        let y_center_rel = max_y - (center_val / 127.0) * graph_height;
+        // 3. 中心参考线
         let center_line_color = iced_core::Color::from_rgba(0.30, 0.30, 0.35, 0.6);
-        instances.push(lumino_gfx::CcBarInstance::new(
-            panel_x + view.keyboard_width,
-            panel_y + y_center_rel - 0.5,
-            canvas.size.x - view.keyboard_width,
-            1.0,
-            [center_line_color.r, center_line_color.g, center_line_color.b, center_line_color.a],
-        ));
-
-        if points.is_empty() {
-            return instances;
+        if is_bend {
+            // Bend: 中心线在 0 位置（面板中间）
+            let y_center_rel = max_y - graph_height / 2.0;
+            instances.push(lumino_gfx::CcBarInstance::new(
+                panel_x + view.keyboard_width,
+                panel_y + y_center_rel - 0.5,
+                canvas.size.x - view.keyboard_width,
+                1.0,
+                [center_line_color.r, center_line_color.g, center_line_color.b, center_line_color.a],
+            ));
+        } else {
+            // CC: 中心线在 64 位置（CC 默认值）
+            let center_val = 64.0;
+            let y_center_rel = max_y - (center_val / 127.0) * graph_height;
+            instances.push(lumino_gfx::CcBarInstance::new(
+                panel_x + view.keyboard_width,
+                panel_y + y_center_rel - 0.5,
+                canvas.size.x - view.keyboard_width,
+                1.0,
+                [center_line_color.r, center_line_color.g, center_line_color.b, center_line_color.a],
+            ));
         }
 
+        // 4. 数据柱状条
         const BAR_WIDTH: f32 = 2.0;
-        const MAX_VALUE: f32 = 127.0;
 
-        // 4. CC 数据柱状条
-        for point in points {
-            let normalized = point.value as f32 / MAX_VALUE;
-            let bar_h = normalized * graph_height;
-            let bar_x = panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
-            let bar_y = panel_y + max_y - bar_h;
+        if is_bend {
+            // Bend 模式：值范围 -8192 到 8191，中心在面板中间
+            const BEND_MAX: f32 = 8191.0;
+            const BEND_MIN: f32 = -8192.0;
 
-            // 简单裁剪：只添加在可见范围内的柱子
-            if bar_x + BAR_WIDTH < panel_x + view.keyboard_width || bar_x > panel_x + canvas.size.x {
-                continue;
+            for point in &bend_points {
+                let normalized = (point.value as f32 - BEND_MIN) / (BEND_MAX - BEND_MIN);
+                let bar_h = normalized * graph_height;
+                let bar_x = panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
+                let bar_y = panel_y + max_y - bar_h;
+
+                // 简单裁剪
+                if bar_x + BAR_WIDTH < panel_x + view.keyboard_width || bar_x > panel_x + canvas.size.x {
+                    continue;
+                }
+
+                instances.push(lumino_gfx::CcBarInstance::new(
+                    bar_x,
+                    bar_y,
+                    BAR_WIDTH,
+                    bar_h,
+                    bar_color_arr,
+                ));
             }
+        } else {
+            // CC 模式：值范围 0 到 127
+            const MAX_VALUE: f32 = 127.0;
 
-            instances.push(lumino_gfx::CcBarInstance::new(
-                bar_x,
-                bar_y,
-                BAR_WIDTH,
-                bar_h,
-                bar_color_arr,
-            ));
+            for point in &cc_points {
+                let normalized = point.value as f32 / MAX_VALUE;
+                let bar_h = normalized * graph_height;
+                let bar_x = panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
+                let bar_y = panel_y + max_y - bar_h;
+
+                // 简单裁剪
+                if bar_x + BAR_WIDTH < panel_x + view.keyboard_width || bar_x > panel_x + canvas.size.x {
+                    continue;
+                }
+
+                instances.push(lumino_gfx::CcBarInstance::new(
+                    bar_x,
+                    bar_y,
+                    BAR_WIDTH,
+                    bar_h,
+                    bar_color_arr,
+                ));
+            }
         }
 
         instances

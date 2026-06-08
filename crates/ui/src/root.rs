@@ -253,6 +253,21 @@ impl Root {
 
     /// 设置 MIDI 文档引用（供懒加载使用）
     pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
+        // 从 control_events 提取弯音数据
+        let mut bend_points = Vec::new();
+        for ev in &doc.control_events {
+            if ev.kind == 2 {
+                // kind=2 是 pitch bend
+                let value = ev.as_pitch_bend();
+                // as_pitch_bend 返回的是 f32 (-1.0..1.0)，转换为 i16 (-8192..8191)
+                let i16_value = (value * 8191.0) as i16;
+                bend_points.push(crate::editor::velocity::BendPoint {
+                    tick: ev.tick as f32,
+                    value: i16_value,
+                });
+            }
+        }
+        self.editor.editor_state.data.cc_data.bend_points = bend_points;
         self.midi_document = Some(doc);
     }
 

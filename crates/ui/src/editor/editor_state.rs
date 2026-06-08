@@ -33,6 +33,8 @@ pub struct EditorState {
     pub max_scroll: Point,
     /// 音符数据（音轨管理、文档引用）
     pub data: EditorData,
+    /// 是否使用钢琴仿真贴图键盘（true=WGPU贴图, false=Canvas纯色）
+    pub use_textured_keyboard: bool,
 }
 
 impl Default for EditorState {
@@ -55,6 +57,7 @@ impl EditorState {
             data: EditorData::new(),
             tool: Tool::Pointer,
             auto_scroll: AutoScrollConfig::default(),
+            use_textured_keyboard: true,
         }
     }
 

@@ -171,6 +171,9 @@ pub struct UiConfig {
     /// 是否启用 256 键扩展钢琴卷帘（默认关闭）
     #[serde(default)]
     pub enable_256key: bool,
+    /// 是否使用钢琴仿真贴图键盘（默认开启，关闭则使用旧版纯色键盘）
+    #[serde(default = "default_true")]
+    pub use_textured_keyboard: bool,
 }
 
 fn default_true() -> bool {
@@ -221,6 +224,7 @@ impl Default for UiConfig {
             velocity_filter_threshold: default_velocity_filter_threshold(),
             icon_hidpi: true,
             enable_256key: false,
+            use_textured_keyboard: true,
         }
     }
 }
