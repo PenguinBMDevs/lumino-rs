@@ -356,8 +356,6 @@ impl Host {
 
         let view = &editor.editor_state.view;
         let theme = self.root.theme();
-        let bar_color = theme.extended_palette().secondary.base.color;
-        let bar_color_arr = [bar_color.r, bar_color.g, bar_color.b, 0.85];
 
         // 力度面板在屏幕上的位置
         let canvas = &editor.editor_state.canvas;
@@ -500,7 +498,7 @@ impl Host {
         const BAR_WIDTH: f32 = 2.0;
 
         if is_velocity {
-            // Velocity 模式：值范围 0-127
+            // Velocity 模式：值范围 0-127，颜色按力度值热力映射
             for point in &velocity_points {
                 let normalized = point.velocity as f32 / 127.0;
                 let bar_h = normalized * graph_height;
@@ -520,11 +518,12 @@ impl Host {
                     bar_y,
                     BAR_WIDTH,
                     bar_h,
-                    bar_color_arr,
+                    midi_note_color(point.velocity),
                 ));
             }
         } else if is_bend {
             // Bend 模式：值范围 -8192 到 8191，中心在面板中间
+            // 颜色按弯音值映射：负值冷色（蓝紫），正值暖色（橙红）
             const BEND_MAX: f32 = 8191.0;
             const BEND_MIN: f32 = -8192.0;
 
@@ -547,11 +546,11 @@ impl Host {
                     bar_y,
                     BAR_WIDTH,
                     bar_h,
-                    bar_color_arr,
+                    bend_note_color(point.value),
                 ));
             }
         } else {
-            // CC 模式：值范围 0 到 127
+            // CC 模式：值范围 0 到 127，颜色按 CC 值热力映射
             const MAX_VALUE: f32 = 127.0;
 
             for point in &cc_points {
@@ -573,7 +572,7 @@ impl Host {
                     bar_y,
                     BAR_WIDTH,
                     bar_h,
-                    bar_color_arr,
+                    midi_note_color(point.value),
                 ));
             }
         }
@@ -792,4 +791,60 @@ impl Host {
     }
 
     // build_velocity_graph_instances 已移除 — 改用 build_cc_bar_instances 统一矩形渲染
+}
+
+/// 将 MIDI 值 (0-127) 映射为音符颜色（velocity heatmap 风格）
+///
+/// 基于专业 DAW（FL Studio / Cubase / Ableton）的 velocity 色彩方案：
+/// - 低力度值 (0-30)：蓝青色系
+/// - 中力度值 (31-80)：绿黄色系
+/// - 高力度值 (81-127)：橙红色系
+///
+/// 通过颜色本身传递力度信息，提供比纯高度更丰富的视觉反馈。
+fn midi_note_color(value: u8) -> [f32; 4] {
+    let t = value as f32 / 127.0;
+    // 三段式渐变：蓝 → 青 → 绿 → 黄 → 橙 → 红
+    let r = (t * 1.3).min(1.0);
+    let g = (1.0 - t * 0.65).max(0.15);
+    let b = ((1.0 - t) * 1.6 - 0.3).max(0.0);
+    [
+        r.clamp(0.0, 1.0),
+        g.clamp(0.0, 1.0),
+        b.clamp(0.0, 1.0),
+        0.85,
+    ]
+}
+
+/// 将弯音值 (-8192 ~ +8191) 映射为音符颜色
+///
+/// - 负值（向下弯音）：冷色调（蓝紫）
+/// - 正值（向上弯音）：暖色调（橙红）
+/// - 零值（中心）：中性色（灰绿）
+fn bend_note_color(value: i16) -> [f32; 4] {
+    const BEND_RANGE: f32 = 8192.0;
+    let abs_val = value.unsigned_abs() as f32;
+    let t = (abs_val / BEND_RANGE).min(1.0);
+    if value >= 0 {
+        // 正向弯音：橙红色
+        let r = 0.35 + t * 0.65;
+        let g = 0.55 - t * 0.40;
+        let b = 0.25 - t * 0.25;
+        [
+            r.clamp(0.0, 1.0),
+            g.clamp(0.0, 1.0),
+            b.clamp(0.0, 1.0),
+            0.85,
+        ]
+    } else {
+        // 负向弯音：蓝紫色
+        let r = 0.30 - t * 0.15;
+        let g = 0.45 - t * 0.10;
+        let b = 0.35 + t * 0.60;
+        [
+            r.clamp(0.0, 1.0),
+            g.clamp(0.0, 1.0),
+            b.clamp(0.0, 1.0),
+            0.85,
+        ]
+    }
 }
