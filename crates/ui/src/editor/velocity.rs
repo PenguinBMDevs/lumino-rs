@@ -361,14 +361,9 @@ impl VelocityPanel {
         iced_widget::container(panel_content)
             .width(iced_core::Length::Fill)
             .height(panel_height)
-            .style(|theme: &crate::Theme| {
-                let bg = if self.edit_mode == EditMode::Tempo {
-                    theme.extended_palette().background.weak.color
-                } else {
-                    // 非 Tempo 模式：背景由 wgpu 离屏渲染提供
-                    iced_core::Color::TRANSPARENT
-                };
-                iced_widget::container::Style::default().background(bg)
+            .style(|_theme: &crate::Theme| {
+                // 所有模式背景统一由 wgpu 离屏渲染提供，以 CC 模式为准
+                iced_widget::container::Style::default().background(iced_core::Color::TRANSPARENT)
             })
             .into()
     }
