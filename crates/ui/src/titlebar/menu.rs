@@ -16,9 +16,21 @@ pub enum MenuKind {
     Help,
 }
 
+impl MenuKind {
+    /// 获取菜单类型的中文显示名称
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::File => "文件",
+            Self::Edit => "编辑",
+            Self::View => "视图",
+            Self::Help => "帮助",
+        }
+    }
+}
+
 impl std::fmt::Display for MenuKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
+        write!(f, "{}", self.display_name())
     }
 }
 

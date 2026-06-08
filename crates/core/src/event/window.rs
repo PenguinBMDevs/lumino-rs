@@ -108,3 +108,41 @@ pub enum Event {
         copyright: String,
     },
 }
+
+impl Event {
+    /// 获取事件的人类可读显示名称
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::Drag => "拖动".to_string(),
+            Self::Close => "关闭".to_string(),
+            Self::ToggleMaximize => "切换最大化".to_string(),
+            Self::Maximize => "最大化".to_string(),
+            Self::Minimize => "最小化".to_string(),
+            Self::OpenCustomPrecisionDialog => "自定义精度".to_string(),
+            Self::OpenLoadConfirmDialog { .. } => "加载确认".to_string(),
+            Self::CloseCustomPrecisionDialog => "关闭自定义精度".to_string(),
+            Self::ApplyCustomPrecision(_, _) => "应用精度设置".to_string(),
+            Self::OpenCollaborationDialog => "协作".to_string(),
+            Self::CloseCollaborationDialog => "关闭协作".to_string(),
+            Self::CollaborationConnect { .. } => "连接协作服务器".to_string(),
+            Self::CollaborationCreateRoom { .. } => "创建协作房间".to_string(),
+            Self::CollaborationJoinRoom { .. } => "加入协作房间".to_string(),
+            Self::CollaborationDisconnect => "断开协作连接".to_string(),
+            Self::CollaborationAuthenticated { .. } => "协作认证成功".to_string(),
+            Self::CollaborationRoomCreated { .. } => "房间创建成功".to_string(),
+            Self::CollaborationRoomJoined { .. } => "已加入房间".to_string(),
+            Self::CollaborationDisconnected => "协作已断开".to_string(),
+            Self::CollaborationUserLeft { .. } => "用户离开".to_string(),
+            Self::CollaborationMouseUpdate { .. } => "鼠标位置更新".to_string(),
+            Self::CollaborationNoteUpdate { .. } => "音符更新".to_string(),
+            Self::LocalNoteAdded { .. } => "本地音符已添加".to_string(),
+            Self::LocalNoteMoved { .. } => "本地音符已移动".to_string(),
+            Self::OpenSpeedChangeDialog => "音符变速".to_string(),
+            Self::CloseSpeedChangeDialog => "关闭音符变速".to_string(),
+            Self::ConfirmSpeedChange(_) => "确认变速".to_string(),
+            Self::OpenProjectSettingsDialog => "工程设置".to_string(),
+            Self::CloseProjectSettingsDialog => "关闭工程设置".to_string(),
+            Self::ApplyProjectSettings { .. } => "应用工程设置".to_string(),
+        }
+    }
+}

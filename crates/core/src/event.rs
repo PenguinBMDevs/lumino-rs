@@ -20,6 +20,16 @@ pub enum Event {
     Window(window::Event), // 窗口事件
 }
 
+impl Event {
+    /// 获取事件的人类可读显示名称
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::Menu(e) => e.display_name(),
+            Self::Window(e) => e.display_name(),
+        }
+    }
+}
+
 #[macro_export]
 /// 事件宏
 macro_rules! event {

@@ -11,3 +11,18 @@ pub enum Event {
     /* */
     Find,
 }
+
+impl Event {
+    /// 获取事件的人类可读显示名称
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::Undo => "撤销".to_string(),
+            Self::Redo => "重做".to_string(),
+            Self::Cut => "剪切".to_string(),
+            Self::Copy => "复制".to_string(),
+            Self::Paste => "粘贴".to_string(),
+            Self::SelectAll => "全选".to_string(),
+            Self::Find => "查找".to_string(),
+        }
+    }
+}

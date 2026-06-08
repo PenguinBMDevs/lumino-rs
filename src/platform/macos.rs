@@ -43,7 +43,7 @@ fn build_submenu(cfg: &MenuConfig, map: &mut HashMap<MenuId, CoreEvent>) -> muda
     for item in &cfg.items {
         match item {
             UiMenuItem::Action(core_event) => {
-                let label = format!("{:?}", core_event);
+                let label = core_event.display_name();
                 let muda_item = MudaMenuItem::new(label, true, None);
                 let id = muda_item.id().clone();
                 map.insert(id, core_event.clone());
