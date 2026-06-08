@@ -49,9 +49,11 @@ impl Root {
         self.update_playback_notes();
 
         // Conductor 轨道自动进入 Tempo 模式，普通轨道切回 Velocity
-        let is_conductor = self.sidebar.tracks.first().is_some_and(|t| {
-            t.id == track_idx && t.is_conductor
-        });
+        let is_conductor = self
+            .sidebar
+            .tracks
+            .first()
+            .is_some_and(|t| t.id == track_idx && t.is_conductor);
         let panel = &mut self.editor.velocity_panel;
         if is_conductor {
             if !matches!(panel.edit_mode, crate::editor::velocity::EditMode::Tempo) {

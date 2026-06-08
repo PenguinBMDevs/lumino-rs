@@ -24,15 +24,11 @@ pub fn with_tooltip<'a>(
     tooltip_text: &'a str,
     position: tooltip::Position,
 ) -> Tooltip<'a, Message, Theme, iced_wgpu::Renderer> {
-    Tooltip::new(
-        content,
-        iced_widget::text(tooltip_text).size(12),
-        position,
-    )
-    .gap(4)
-    .padding(6)
-    .style(tooltip_style)
-    .snap_within_viewport(true)
+    Tooltip::new(content, iced_widget::text(tooltip_text).size(12), position)
+        .gap(4)
+        .padding(6)
+        .style(tooltip_style)
+        .snap_within_viewport(true)
 }
 
 /// 带默认位置（Bottom）的便捷版

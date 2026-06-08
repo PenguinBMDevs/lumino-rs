@@ -362,11 +362,7 @@ impl RunnerInner {
 
         // 主题变更日志
         if current_theme != old.theme {
-            tracing::info!(
-                "主题已改变: {} -> {}",
-                old.theme,
-                current_theme
-            );
+            tracing::info!("主题已改变: {} -> {}", old.theme, current_theme);
         }
 
         // 保存配置

@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use lumino_core::{bpm_to_tempo, event, ParsedMidi};
+use lumino_core::{ParsedMidi, bpm_to_tempo, event};
 use lumino_export::midi::{
     MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTrackData,
 };
@@ -356,18 +356,8 @@ impl RunnerInner {
             .midi_state
             .current_midi_source
             .as_ref()
-            .or_else(|| {
-                self.midi_state
-                    .current_midi
-                    .as_ref()
-                    .map(|m| &m.info.path)
-            })
-            .or_else(|| {
-                self.midi_state
-                    .current_dms
-                    .as_ref()
-                    .map(|d| &d.info.path)
-            })
+            .or_else(|| self.midi_state.current_midi.as_ref().map(|m| &m.info.path))
+            .or_else(|| self.midi_state.current_dms.as_ref().map(|d| &d.info.path))
             .map(|p| get_file_stem(Path::new(p)))
             .unwrap_or_else(|| "untitled".to_string());
 
@@ -424,9 +414,8 @@ impl RunnerInner {
             cb("正在保存 LMPJ 文件", 0.3);
             match tokio::task::spawn_blocking(move || {
                 let encoded = lumino_export::format::encode_lmpj(&lmpj_data)?;
-                std::fs::write(&save_path2, encoded).map_err(|e| {
-                    lumino_export::ExportError::Io(std::io::Error::other(e))
-                })?;
+                std::fs::write(&save_path2, encoded)
+                    .map_err(|e| lumino_export::ExportError::Io(std::io::Error::other(e)))?;
                 Ok::<(), lumino_export::ExportError>(())
             })
             .await
@@ -493,7 +482,11 @@ impl RunnerInner {
                     .collect();
                 MidiTrackData {
                     notes: midi_notes,
-                    tempos: if i == 0 { tempo_events.clone() } else { Vec::new() },
+                    tempos: if i == 0 {
+                        tempo_events.clone()
+                    } else {
+                        Vec::new()
+                    },
                     ..Default::default()
                 }
             })
@@ -546,7 +539,10 @@ impl RunnerInner {
         let tempo_events: Vec<MidiTempoEvent> = {
             let ui = self.window_state.window.ui();
             let root = ui.root();
-            root.editor.editor_state.data.tempo_points
+            root.editor
+                .editor_state
+                .data
+                .tempo_points
                 .iter()
                 .map(|tp| MidiTempoEvent {
                     tick: tp.tick as u32,
@@ -632,7 +628,11 @@ impl RunnerInner {
                         .collect();
                     MidiTrackData {
                         notes: midi_notes,
-                        tempos: if i == 0 { tempo_events.clone() } else { Vec::new() },
+                        tempos: if i == 0 {
+                            tempo_events.clone()
+                        } else {
+                            Vec::new()
+                        },
                         ..Default::default()
                     }
                 })

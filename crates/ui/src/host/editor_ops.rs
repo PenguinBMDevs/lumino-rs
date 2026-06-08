@@ -1,11 +1,11 @@
 //! Host 编辑器操作子模块 - 处理音符和洋葱皮相关操作
 
-use crate::editor::velocity::widget::TempoPoint;
 use crate::editor::EditState;
 use crate::editor::editor_state::view::{
     DEFAULT_NOTE_LENGTH, DEFAULT_PPQ, DEFAULT_SCROLL_X, DEFAULT_SCROLL_Y, DEFAULT_SNAP_PRECISION,
     DEFAULT_TOTAL_TICKS, DEFAULT_VISIBLE_KEY_COUNT, DEFAULT_ZOOM_X, DEFAULT_ZOOM_Y,
 };
+use crate::editor::velocity::widget::TempoPoint;
 use crate::host::{Host, types::NoteData};
 use crate::{editor::note::Note, message, toolbar::Tool};
 use iced_core::Point;
@@ -282,8 +282,7 @@ impl Host {
         root.editor.editor_state.data.notes.clear();
         root.editor.editor_state.data.track_notes.clear();
         root.editor.editor_state.data.current_track = 0;
-        root.editor.velocity_panel.edit_mode =
-            crate::editor::velocity::EditMode::Tempo;
+        root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Tempo;
         // 历史记录（undo/redo 持有全量音符快照 → 必须清理避免内存泄漏）
         root.editor.editor_state.data.history.clear();
         // MIDI 文档引用（释放 Arc）

@@ -45,7 +45,10 @@ impl EditorData {
             document: None,
             history: history::History::new(),
             cc_data: CcData::default(),
-            tempo_points: vec![TempoPoint { tick: 0.0, bpm: 120.0 }],
+            tempo_points: vec![TempoPoint {
+                tick: 0.0,
+                bpm: 120.0,
+            }],
         }
     }
 }

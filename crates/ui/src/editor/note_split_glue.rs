@@ -88,9 +88,9 @@ impl Editor {
         let mut selected_notes: Vec<(usize, f32, u16, f32, u8, u8)> = selected
             .iter()
             .filter_map(|&i| {
-                notes.get(i).map(|n| {
-                    (i, n.tick, n.key, n.length, n.velocity, n.channel)
-                })
+                notes
+                    .get(i)
+                    .map(|n| (i, n.tick, n.key, n.length, n.velocity, n.channel))
             })
             .collect();
 
@@ -129,10 +129,8 @@ impl Editor {
         }
 
         // 过滤出真正需要合并的组（至少 2 个音符）
-        let groups_to_merge: Vec<Vec<(usize, f32, u16, f32, u8, u8)>> = groups
-            .into_iter()
-            .filter(|g| g.len() >= 2)
-            .collect();
+        let groups_to_merge: Vec<Vec<(usize, f32, u16, f32, u8, u8)>> =
+            groups.into_iter().filter(|g| g.len() >= 2).collect();
 
         if groups_to_merge.is_empty() {
             return 0;
@@ -160,14 +158,17 @@ impl Editor {
             let insert_idx = group[0].0;
             let remove_indices: Vec<usize> = group.iter().map(|n| n.0).collect();
 
-            all_ops.push((insert_idx, NoteInfo {
-                tick: merged_tick,
-                key: merged_key,
-                length: merged_length,
-                velocity: merged_velocity,
-                channel: merged_channel,
-                remove_indices,
-            }));
+            all_ops.push((
+                insert_idx,
+                NoteInfo {
+                    tick: merged_tick,
+                    key: merged_key,
+                    length: merged_length,
+                    velocity: merged_velocity,
+                    channel: merged_channel,
+                    remove_indices,
+                },
+            ));
         }
 
         // 按 insert_idx 从大到小排序，这样后面的操作不会影响前面的索引
@@ -187,9 +188,16 @@ impl Editor {
 
             // 插入合并后的音符
             let merged_note = super::Note::from_raw(
-                info.tick, info.key, info.length, info.velocity, info.channel,
+                info.tick,
+                info.key,
+                info.length,
+                info.velocity,
+                info.channel,
             );
-            self.editor_state.data.notes.insert(adjusted_idx, merged_note);
+            self.editor_state
+                .data
+                .notes
+                .insert(adjusted_idx, merged_note);
 
             merged_count += 1;
         }
@@ -216,17 +224,14 @@ mod tests {
 
     fn select_all_notes(editor: &mut Editor) {
         let count = editor.editor_state.data.notes.len();
-        editor.editor_state.interaction.selected_notes =
-            (0..count).collect();
+        editor.editor_state.interaction.selected_notes = (0..count).collect();
     }
 
     // ========== 分割测试 ==========
 
     #[test]
     fn test_split_note_basic() {
-        let mut editor = create_test_editor_with_notes(vec![
-            Note::new(0.0, 60, 480.0),
-        ]);
+        let mut editor = create_test_editor_with_notes(vec![Note::new(0.0, 60, 480.0)]);
 
         let result = editor.split_note(0, 240.0);
 
@@ -244,9 +249,7 @@ mod tests {
 
     #[test]
     fn test_split_note_outside_bounds() {
-        let mut editor = create_test_editor_with_notes(vec![
-            Note::new(0.0, 60, 480.0),
-        ]);
+        let mut editor = create_test_editor_with_notes(vec![Note::new(0.0, 60, 480.0)]);
 
         // 分割点在起始位置 → 失败
         assert!(!editor.split_note(0, 0.0));
@@ -263,9 +266,8 @@ mod tests {
 
     #[test]
     fn test_split_note_preserves_properties() {
-        let mut editor = create_test_editor_with_notes(vec![
-            Note::from_raw(100.0, 72, 480.0, 100, 1),
-        ]);
+        let mut editor =
+            create_test_editor_with_notes(vec![Note::from_raw(100.0, 72, 480.0, 100, 1)]);
 
         let result = editor.split_note(0, 340.0);
         assert!(result);
@@ -281,9 +283,7 @@ mod tests {
 
     #[test]
     fn test_split_note_undo() {
-        let mut editor = create_test_editor_with_notes(vec![
-            Note::new(0.0, 60, 480.0),
-        ]);
+        let mut editor = create_test_editor_with_notes(vec![Note::new(0.0, 60, 480.0)]);
 
         let result = editor.split_note(0, 240.0);
         assert!(result);

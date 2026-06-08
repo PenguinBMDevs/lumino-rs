@@ -463,11 +463,7 @@ impl ToolbarHandler {
                     tracing::info!("Root: 分割完成 - 分割了 {} 个音符", split_count);
                     root.update_playback_notes();
                     root.editor.clear_notes_changed();
-                    root.editor
-                        .editor_state
-                        .interaction
-                        .selected_notes
-                        .clear();
+                    root.editor.editor_state.interaction.selected_notes.clear();
                 }
             }
             crate::toolbar::Event::Glue => {

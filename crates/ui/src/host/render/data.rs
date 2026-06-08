@@ -10,6 +10,10 @@ pub struct RenderData {
     pub ruler_instances: Vec<lumino_gfx::RulerTickInstance>,
     pub arrangement_note_instances: Vec<lumino_gfx::ArrangementNoteInstance>,
     pub cc_bar_instances: Vec<lumino_gfx::CcBarInstance>,
+    /// 速度/CC/Bend 折线段实例
+    pub velocity_line_instances: Vec<lumino_gfx::VelocityLineInstance>,
+    /// 速度/CC/Bend 控制点实例
+    pub velocity_circle_instances: Vec<lumino_gfx::VelocityCircleInstance>,
 }
 
 /// 视口信息

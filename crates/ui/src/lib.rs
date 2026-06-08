@@ -6,7 +6,6 @@ pub mod message;
 pub mod mixer;
 pub mod playback;
 mod resources;
-pub(crate) mod widget;
 pub mod root;
 pub mod settings;
 mod sidebar;
@@ -16,6 +15,7 @@ pub mod titlebar;
 pub mod toolbar;
 mod view;
 pub mod wgpu_render_thread;
+pub(crate) mod widget;
 pub mod window;
 
 pub use host::{Host, NoteData, TrackNotes};

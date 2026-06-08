@@ -206,12 +206,10 @@ impl std::fmt::Display for CcOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CcOption::Bend => write!(f, "Bend: Pitch Bend (-8192..8191)"),
-            CcOption::Cc(n) => {
-                match CC_CONTROLLER_NAMES.iter().find(|(num, _)| *num == *n) {
-                    Some((_, name)) => write!(f, "{}: {}", n, name),
-                    None => write!(f, "{}", n),
-                }
-            }
+            CcOption::Cc(n) => match CC_CONTROLLER_NAMES.iter().find(|(num, _)| *num == *n) {
+                Some((_, name)) => write!(f, "{}: {}", n, name),
+                None => write!(f, "{}", n),
+            },
         }
     }
 }
@@ -245,9 +243,9 @@ impl VelocityPanel {
 
     /// 渲染编辑面板视图
     pub fn view<'a>(&'a self, editor: &'a crate::editor::Editor, panel_height: f32) -> Element<'a> {
+        use iced_core::Alignment;
         use iced_widget::canvas::Canvas;
         use iced_widget::{button, column, container, pick_list, row, space, text};
-        use iced_core::Alignment;
 
         // 顶部工具栏：模式切换 + CC 选择器
         let toolbar_height = 28.0f32;
@@ -266,32 +264,30 @@ impl VelocityPanel {
         } else {
             "CC"
         };
-        let mode_btn = button(
-            text(mode_label).size(12)
-        )
-        .on_press(crate::message::Message::Velocity(
-            crate::message::VelocityAction::ToggleMode,
-        ))
-        .padding([2, 8])
-        .style(move |theme: &crate::Theme, status| {
-            let palette = theme.extended_palette();
-            let bg = if is_tempo || is_velocity {
-                palette.primary.base.color
-            } else if status == iced_widget::button::Status::Hovered {
-                palette.background.weak.color
-            } else {
-                palette.background.weakest.color
-            };
-            iced_widget::button::Style {
-                border: iced_core::Border {
-                    radius: 3.0.into(),
-                    width: 0.0,
-                    color: iced_core::Color::TRANSPARENT,
-                },
-                ..Default::default()
-            }
-            .with_background(bg)
-        });
+        let mode_btn = button(text(mode_label).size(12))
+            .on_press(crate::message::Message::Velocity(
+                crate::message::VelocityAction::ToggleMode,
+            ))
+            .padding([2, 8])
+            .style(move |theme: &crate::Theme, status| {
+                let palette = theme.extended_palette();
+                let bg = if is_tempo || is_velocity {
+                    palette.primary.base.color
+                } else if status == iced_widget::button::Status::Hovered {
+                    palette.background.weak.color
+                } else {
+                    palette.background.weakest.color
+                };
+                iced_widget::button::Style {
+                    border: iced_core::Border {
+                        radius: 3.0.into(),
+                        width: 0.0,
+                        color: iced_core::Color::TRANSPARENT,
+                    },
+                    ..Default::default()
+                }
+                .with_background(bg)
+            });
 
         // CC 控制器选择器（仅在 CC 模式显示，Tempo 模式也隐藏）
         let cc_selector: Element<'a> = if self.edit_mode.is_cc() {
@@ -306,13 +302,11 @@ impl VelocityPanel {
             } else {
                 CcOption::Cc(self.selected_cc)
             };
-            pick_list(
-                cc_options,
-                Some(selected),
-                move |cc| crate::message::Message::Velocity(
-                    crate::message::VelocityAction::CcOptionSelected(cc),
-                ),
-            )
+            pick_list(cc_options, Some(selected), move |cc| {
+                crate::message::Message::Velocity(crate::message::VelocityAction::CcOptionSelected(
+                    cc,
+                ))
+            })
             .placeholder("Select CC/Bend")
             .padding([2, 6])
             .width(iced_core::Length::Fixed(170.0))
@@ -367,14 +361,9 @@ impl VelocityPanel {
         iced_widget::container(panel_content)
             .width(iced_core::Length::Fill)
             .height(panel_height)
-            .style(move |theme: &crate::Theme| {
-                // CC 模式下容器透明，让 wgpu 渲染的柱状条可见
-                if self.edit_mode.is_cc() {
-                    iced_widget::container::Style::default()
-                } else {
-                    iced_widget::container::Style::default()
-                        .background(theme.extended_palette().background.weak.color)
-                }
+            .style(|theme: &crate::Theme| {
+                iced_widget::container::Style::default()
+                    .background(theme.extended_palette().background.weak.color)
             })
             .into()
     }
@@ -407,11 +396,11 @@ impl VelocityPanel {
     }
 
     /// 构建 CC 数据（从编辑器中的 CC 数据获取）
-    pub fn build_cc_points(
-        editor: &crate::editor::Editor,
-        cc_number: u8,
-    ) -> Vec<CcPoint> {
-        editor.editor_state.data.cc_data
+    pub fn build_cc_points(editor: &crate::editor::Editor, cc_number: u8) -> Vec<CcPoint> {
+        editor
+            .editor_state
+            .data
+            .cc_data
             .controllers
             .get(&cc_number)
             .cloned()
@@ -419,9 +408,7 @@ impl VelocityPanel {
     }
 
     /// 构建弯音数据（从编辑器中的 bend_points 获取）
-    pub fn build_bend_points(
-        editor: &crate::editor::Editor,
-    ) -> Vec<BendPoint> {
+    pub fn build_bend_points(editor: &crate::editor::Editor) -> Vec<BendPoint> {
         editor.editor_state.data.cc_data.bend_points.clone()
     }
 }
@@ -496,8 +483,14 @@ mod tests {
         editor.editor_state.data.cc_data.controllers.insert(
             1,
             vec![
-                CcPoint { tick: 0.0, value: 64 },
-                CcPoint { tick: 480.0, value: 127 },
+                CcPoint {
+                    tick: 0.0,
+                    value: 64,
+                },
+                CcPoint {
+                    tick: 480.0,
+                    value: 127,
+                },
             ],
         );
 
@@ -515,7 +508,10 @@ mod tests {
         let mut editor = Editor::new();
         editor.editor_state.data.cc_data.controllers.insert(
             1,
-            vec![CcPoint { tick: 0.0, value: 64 }],
+            vec![CcPoint {
+                tick: 0.0,
+                value: 64,
+            }],
         );
 
         let points = VelocityPanel::build_cc_points(&editor, 7);
@@ -569,8 +565,14 @@ mod tests {
         let mut editor = Editor::new();
         // 直接向 tempo_points 写入数据模拟已加载文档
         editor.editor_state.data.tempo_points = vec![
-            TempoPoint { tick: 0.0, bpm: 120.0 },
-            TempoPoint { tick: 480.0, bpm: 140.0 },
+            TempoPoint {
+                tick: 0.0,
+                bpm: 120.0,
+            },
+            TempoPoint {
+                tick: 480.0,
+                bpm: 140.0,
+            },
         ];
 
         let points = VelocityPanel::build_tempo_points(&editor);

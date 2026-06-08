@@ -3,9 +3,9 @@
 //! 提供音量推子、声像控制、静音/Solo 等混音功能。
 //! 每个音轨对应一个混音通道。
 
-use iced_core::{Alignment, Color, Length, Padding};
-use iced_widget::{button, column, container, row, slider, space, text, Column};
 use crate::{Element, Theme, window};
+use iced_core::{Alignment, Color, Length, Padding};
+use iced_widget::{Column, button, column, container, row, slider, space, text};
 
 /// 混音器音轨状态
 #[derive(Debug, Clone)]
@@ -68,20 +68,20 @@ impl MixerState {
             if let Some(existing) = self.tracks.iter_mut().find(|t| t.track_id == track.id) {
                 existing.name = track.name.clone();
             } else {
-                self.tracks.push(MixerTrackState::new(track.id, track.name.clone()));
+                self.tracks
+                    .push(MixerTrackState::new(track.id, track.name.clone()));
             }
         }
         // 移除不存在的音轨
-        self.tracks.retain(|t| tracks.iter().any(|st| st.id == t.track_id));
+        self.tracks
+            .retain(|t| tracks.iter().any(|st| st.id == t.track_id));
     }
 
     /// 渲染混音器视图
     pub fn view<'a>(&'a self, window: &'a window::Window) -> Element<'a> {
         let palette = window.theme.extended_palette();
 
-        let mut col = Column::new()
-            .spacing(4)
-            .padding(Padding::new(8.0));
+        let mut col = Column::new().spacing(4).padding(Padding::new(8.0));
 
         // 标题
         let title = container(
@@ -108,8 +108,7 @@ impl MixerState {
             .width(Length::Fill)
             .height(Length::Fill)
             .style(move |_theme: &Theme| {
-                container::Style::default()
-                    .background(palette.background.weakest.color)
+                container::Style::default().background(palette.background.weakest.color)
             })
             .into()
     }
@@ -148,11 +147,11 @@ impl MixerState {
                 space().height(4),
                 // 静音/Solo 按钮
                 row![
-                    button(
-                        text("M")
-                            .size(10)
-                            .color(if track.is_muted { Color::from_rgb(1.0, 0.3, 0.3) } else { palette.background.neutral.text })
-                    )
+                    button(text("M").size(10).color(if track.is_muted {
+                        Color::from_rgb(1.0, 0.3, 0.3)
+                    } else {
+                        palette.background.neutral.text
+                    }))
                     .padding([2, 8])
                     .style(move |_theme: &Theme, _status| {
                         button::Style {
@@ -163,14 +162,18 @@ impl MixerState {
                             },
                             ..Default::default()
                         }
-                        .with_background(if track.is_muted { Color::from_rgba(1.0, 0.3, 0.3, 0.5) } else { palette.background.weak.color })
+                        .with_background(if track.is_muted {
+                            Color::from_rgba(1.0, 0.3, 0.3, 0.5)
+                        } else {
+                            palette.background.weak.color
+                        })
                     }),
                     space().width(4),
-                    button(
-                        text("S")
-                            .size(10)
-                            .color(if track.is_solo { Color::from_rgb(1.0, 0.8, 0.0) } else { palette.background.neutral.text })
-                    )
+                    button(text("S").size(10).color(if track.is_solo {
+                        Color::from_rgb(1.0, 0.8, 0.0)
+                    } else {
+                        palette.background.neutral.text
+                    }))
                     .padding([2, 8])
                     .style(move |_theme: &Theme, _status| {
                         button::Style {
@@ -181,7 +184,11 @@ impl MixerState {
                             },
                             ..Default::default()
                         }
-                        .with_background(if track.is_solo { palette.primary.base.color } else { palette.background.weak.color })
+                        .with_background(if track.is_solo {
+                            palette.primary.base.color
+                        } else {
+                            palette.background.weak.color
+                        })
                     }),
                 ]
                 .spacing(2)
@@ -294,19 +301,21 @@ mod tests {
     #[test]
     fn test_mixer_state_sync_removes_old_tracks() {
         let mut state = MixerState::default();
-        state.tracks.push(MixerTrackState::new(0, "Old".to_string()));
-        state.tracks.push(MixerTrackState::new(1, "Removed".to_string()));
+        state
+            .tracks
+            .push(MixerTrackState::new(0, "Old".to_string()));
+        state
+            .tracks
+            .push(MixerTrackState::new(1, "Removed".to_string()));
 
-        let tracks = vec![
-            crate::sidebar::Track {
-                id: 0,
-                name: "Track 1".to_string(),
-                is_conductor: true,
-                can_delete: false,
-                is_muted: false,
-                is_onion_skin_on: true,
-            },
-        ];
+        let tracks = vec![crate::sidebar::Track {
+            id: 0,
+            name: "Track 1".to_string(),
+            is_conductor: true,
+            can_delete: false,
+            is_muted: false,
+            is_onion_skin_on: true,
+        }];
 
         state.sync_from_tracks(&tracks);
         assert_eq!(state.tracks.len(), 1);

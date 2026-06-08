@@ -281,10 +281,10 @@ mod tests {
     #[test]
     fn test_cc_bar_instance_creation() {
         let instance = CcBarInstance::new(
-            100.0, // x
-            50.0,  // y
-            2.0,   // width
-            80.0,  // height
+            100.0,                 // x
+            50.0,                  // y
+            2.0,                   // width
+            80.0,                  // height
             [0.3, 0.7, 0.9, 0.85], // color
         );
 

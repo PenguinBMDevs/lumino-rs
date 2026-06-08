@@ -79,11 +79,7 @@ pub fn flip_button<'a>(
     })
     .padding(4);
 
-    let btn = if enabled {
-        btn.on_press(on_press)
-    } else {
-        btn
-    };
+    let btn = if enabled { btn.on_press(on_press) } else { btn };
 
     widget::with_tooltip_bottom(btn, tooltip).into()
 }

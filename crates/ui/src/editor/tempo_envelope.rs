@@ -3,10 +3,10 @@
 //! 管理工程全局的速度变化曲线，以控制点列表形式存储。
 //! 默认在 tick=0 处有一个 120 BPM 控制点。
 
-use iced_core::{Color, Point, Rectangle, Size, alignment, mouse};
-use iced_widget::canvas::{self, Frame, Program, path};
-use iced_wgpu::Geometry as Geom;
 use crate::{Message, Renderer, Theme};
+use iced_core::{Color, Point, Rectangle, Size, alignment, mouse};
+use iced_wgpu::Geometry as Geom;
+use iced_widget::canvas::{self, Frame, Program, path};
 
 /// 速度控制点
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -147,10 +147,7 @@ impl<'a> Program<Message, Theme, Renderer> for TempoCanvas<'a> {
         // 绘制控制点
         for point in &visible_points {
             let pos = self.point_screen_pos(point, height, min_bpm, bpm_range);
-            frame.fill(
-                &canvas::Path::circle(pos, 3.0),
-                point_color,
-            );
+            frame.fill(&canvas::Path::circle(pos, 3.0), point_color);
 
             // 显示 BPM 值
             let text = canvas::Text {
@@ -210,8 +207,14 @@ mod tests {
     fn test_get_bpm_interpolation() {
         let env = TempoEnvelope {
             points: vec![
-                TempoPoint { tick: 0.0, bpm: 120.0 },
-                TempoPoint { tick: 480.0, bpm: 140.0 },
+                TempoPoint {
+                    tick: 0.0,
+                    bpm: 120.0,
+                },
+                TempoPoint {
+                    tick: 480.0,
+                    bpm: 140.0,
+                },
             ],
         };
 
@@ -223,9 +226,10 @@ mod tests {
     #[test]
     fn test_get_bpm_before_first() {
         let env = TempoEnvelope {
-            points: vec![
-                TempoPoint { tick: 100.0, bpm: 120.0 },
-            ],
+            points: vec![TempoPoint {
+                tick: 100.0,
+                bpm: 120.0,
+            }],
         };
         assert_eq!(env.get_bpm_at(50.0), 120.0);
     }
@@ -234,8 +238,14 @@ mod tests {
     fn test_get_bpm_after_last() {
         let env = TempoEnvelope {
             points: vec![
-                TempoPoint { tick: 0.0, bpm: 120.0 },
-                TempoPoint { tick: 480.0, bpm: 140.0 },
+                TempoPoint {
+                    tick: 0.0,
+                    bpm: 120.0,
+                },
+                TempoPoint {
+                    tick: 480.0,
+                    bpm: 140.0,
+                },
             ],
         };
         assert_eq!(env.get_bpm_at(960.0), 140.0);
@@ -251,9 +261,18 @@ mod tests {
     fn test_multiple_points() {
         let env = TempoEnvelope {
             points: vec![
-                TempoPoint { tick: 0.0, bpm: 120.0 },
-                TempoPoint { tick: 240.0, bpm: 100.0 },
-                TempoPoint { tick: 480.0, bpm: 140.0 },
+                TempoPoint {
+                    tick: 0.0,
+                    bpm: 120.0,
+                },
+                TempoPoint {
+                    tick: 240.0,
+                    bpm: 100.0,
+                },
+                TempoPoint {
+                    tick: 480.0,
+                    bpm: 140.0,
+                },
             ],
         };
 

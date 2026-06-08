@@ -128,9 +128,11 @@ impl Root {
         self.state.project_settings_dialog.tempo = format!("{:.0}", tempo);
 
         // 同步到编辑器 tempo 数据（用户编辑的源）
-        self.editor.editor_state.data.tempo_points = vec![
-            crate::editor::velocity::widget::TempoPoint { tick: 0.0, bpm: tempo }
-        ];
+        self.editor.editor_state.data.tempo_points =
+            vec![crate::editor::velocity::widget::TempoPoint {
+                tick: 0.0,
+                bpm: tempo,
+            }];
 
         // 同步到播放管理器
         let tempo_micros = lumino_core::bpm_to_tempo(tempo) as u32;

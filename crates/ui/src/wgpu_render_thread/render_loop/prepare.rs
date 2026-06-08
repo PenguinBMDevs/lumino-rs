@@ -13,6 +13,8 @@ pub fn prepare_renderers(
     ruler_renderer: &mut lumino_gfx::RulerRenderer,
     arrangement_renderer: &mut lumino_gfx::ArrangementRenderer,
     cc_bar_renderer: &mut lumino_gfx::CcBarRenderer,
+    velocity_line_renderer: &mut lumino_gfx::VelocityLineRenderer,
+    velocity_circle_renderer: &mut lumino_gfx::VelocityCircleRenderer,
     params: &RenderParams,
     note_events_rx: &Receiver<NoteEvent>,
     device: &wgpu::Device,
@@ -69,12 +71,27 @@ pub fn prepare_renderers(
         );
     }
 
-    // 准备 CC 柱状条渲染器
+    // 准备 CC 柱状条渲染器（背景/网格/中心线）
     if params.velocity_panel_rect.is_some() {
-        cc_bar_renderer.prepare(
+        cc_bar_renderer.prepare(device, queue, &params.cc_bar_instances, params.logical_size);
+    }
+
+    // 准备折线段渲染器
+    if params.velocity_panel_rect.is_some() && !params.velocity_line_instances.is_empty() {
+        velocity_line_renderer.prepare(
             device,
             queue,
-            &params.cc_bar_instances,
+            &params.velocity_line_instances,
+            params.logical_size,
+        );
+    }
+
+    // 准备控制点渲染器
+    if params.velocity_panel_rect.is_some() && !params.velocity_circle_instances.is_empty() {
+        velocity_circle_renderer.prepare(
+            device,
+            queue,
+            &params.velocity_circle_instances,
             params.logical_size,
         );
     }

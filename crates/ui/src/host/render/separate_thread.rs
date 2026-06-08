@@ -293,13 +293,22 @@ impl Host {
             vec![]
         };
 
-        // 构建 CC 柱状条实例（仅在 CC 模式下）
+        // 构建 CC 柱状条实例（背景/网格/中心线）
         let cc_bar_instances = if self.root.is_arrangement_mode() {
             vec![]
         } else {
             puffin::profile_scope!("build_cc_bar_instances");
             self.build_cc_bar_instances()
         };
+
+        // 构建折线段实例 + 控制点实例（所有模式）
+        let (velocity_line_instances, velocity_circle_instances) =
+            if self.root.is_arrangement_mode() {
+                (vec![], vec![])
+            } else {
+                puffin::profile_scope!("build_velocity_graph_instances");
+                self.build_velocity_graph_instances()
+            };
 
         super::data::RenderData {
             scroll,
@@ -310,13 +319,15 @@ impl Host {
             ruler_instances,
             arrangement_note_instances,
             cc_bar_instances,
+            velocity_line_instances,
+            velocity_circle_instances,
         }
     }
 
     /// 构建 CC 柱状条实例（参考 yinhe 计算方式）
     fn build_cc_bar_instances(&self) -> Vec<lumino_gfx::CcBarInstance> {
-        use crate::editor::velocity::{EditMode, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT};
         use crate::editor::grid::theme::ThemeExt;
+        use crate::editor::velocity::{EditMode, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT};
 
         let editor = &self.root.editor;
         let panel = &editor.velocity_panel;
@@ -455,7 +466,12 @@ impl Host {
                 panel_y + y_center_rel - 0.5,
                 canvas.size.x - view.keyboard_width,
                 1.0,
-                [center_line_color.r, center_line_color.g, center_line_color.b, center_line_color.a],
+                [
+                    center_line_color.r,
+                    center_line_color.g,
+                    center_line_color.b,
+                    center_line_color.a,
+                ],
             ));
         } else {
             // CC: 中心线在 64 位置（CC 默认值）
@@ -466,7 +482,12 @@ impl Host {
                 panel_y + y_center_rel - 0.5,
                 canvas.size.x - view.keyboard_width,
                 1.0,
-                [center_line_color.r, center_line_color.g, center_line_color.b, center_line_color.a],
+                [
+                    center_line_color.r,
+                    center_line_color.g,
+                    center_line_color.b,
+                    center_line_color.a,
+                ],
             ));
         }
 
@@ -481,11 +502,14 @@ impl Host {
             for point in &bend_points {
                 let normalized = (point.value as f32 - BEND_MIN) / (BEND_MAX - BEND_MIN);
                 let bar_h = normalized * graph_height;
-                let bar_x = panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
+                let bar_x =
+                    panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
                 let bar_y = panel_y + max_y - bar_h;
 
                 // 简单裁剪
-                if bar_x + BAR_WIDTH < panel_x + view.keyboard_width || bar_x > panel_x + canvas.size.x {
+                if bar_x + BAR_WIDTH < panel_x + view.keyboard_width
+                    || bar_x > panel_x + canvas.size.x
+                {
                     continue;
                 }
 
@@ -504,11 +528,14 @@ impl Host {
             for point in &cc_points {
                 let normalized = point.value as f32 / MAX_VALUE;
                 let bar_h = normalized * graph_height;
-                let bar_x = panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
+                let bar_x =
+                    panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
                 let bar_y = panel_y + max_y - bar_h;
 
                 // 简单裁剪
-                if bar_x + BAR_WIDTH < panel_x + view.keyboard_width || bar_x > panel_x + canvas.size.x {
+                if bar_x + BAR_WIDTH < panel_x + view.keyboard_width
+                    || bar_x > panel_x + canvas.size.x
+                {
                     continue;
                 }
 
@@ -731,7 +758,151 @@ impl Host {
             arrangement_note_instances: data.arrangement_note_instances,
             arrangement_uniform,
             cc_bar_instances: data.cc_bar_instances,
+            velocity_line_instances: data.velocity_line_instances,
+            velocity_circle_instances: data.velocity_circle_instances,
             velocity_panel_rect,
         }
+    }
+
+    /// 构建折线段 + 控制点实例（所有编辑模式：Velocity/CC/Bend）
+    fn build_velocity_graph_instances(
+        &self,
+    ) -> (
+        Vec<lumino_gfx::VelocityLineInstance>,
+        Vec<lumino_gfx::VelocityCircleInstance>,
+    ) {
+        use crate::editor::velocity::{
+            EditMode, PANEL_PADDING_Y, POINT_RADIUS, RESIZE_HANDLE_HEIGHT,
+        };
+
+        let editor = &self.root.editor;
+        let panel = &editor.velocity_panel;
+        let edit_mode = panel.edit_mode;
+
+        // 仅在非 Tempo 模式下构建折线图
+        if edit_mode == EditMode::Tempo {
+            return (vec![], vec![]);
+        }
+
+        let view = &editor.editor_state.view;
+        let theme = self.root.theme();
+        let canvas = &editor.editor_state.canvas;
+        let panel_height = self.root.velocity_panel_height;
+        let panel_x = canvas.offset.x;
+        let panel_y = canvas.offset.y + canvas.size.y;
+
+        // 图形区域
+        let draw_height = panel_height - RESIZE_HANDLE_HEIGHT;
+        let max_y = draw_height - PANEL_PADDING_Y;
+        let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
+        let graph_height = (max_y - min_y).max(1.0);
+
+        // 颜色
+        let (line_color, point_color) = match edit_mode {
+            EditMode::Velocity => {
+                let c = theme.extended_palette().primary;
+                (c.strong.color, c.base.color)
+            }
+            _ => {
+                let c = theme.extended_palette().secondary;
+                (c.strong.color, c.base.color)
+            }
+        };
+        let line_color_arr = [line_color.r, line_color.g, line_color.b, line_color.a];
+        let point_color_arr = [point_color.r, point_color.g, point_color.b, point_color.a];
+
+        // 先收集所有点的 (x, y) 屏幕坐标（相对 panel 左上角）
+        let mut raw_positions: Vec<[f32; 2]> = Vec::new();
+
+        match edit_mode {
+            EditMode::Velocity => {
+                let notes = &editor.editor_state.data.notes;
+                let points = crate::editor::velocity::VelocityPanel::build_velocity_points(notes);
+                for p in &points {
+                    let x = p.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+                    if x >= -50.0 && x <= canvas.size.x + 50.0 {
+                        let normalized = p.velocity as f32 / 127.0;
+                        let y = max_y - normalized * graph_height;
+                        raw_positions.push([x, y]);
+                    }
+                }
+            }
+            EditMode::Bend => {
+                let points = crate::editor::velocity::VelocityPanel::build_bend_points(editor);
+                const BEND_MIN: f32 = -8192.0;
+                const BEND_RANGE: f32 = 8191.0 + 8192.0;
+                for p in &points {
+                    let x = p.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+                    if x >= -50.0 && x <= canvas.size.x + 50.0 {
+                        let normalized = (p.value as f32 - BEND_MIN) / BEND_RANGE;
+                        let y = max_y - normalized * graph_height;
+                        raw_positions.push([x, y]);
+                    }
+                }
+            }
+            EditMode::Cc(cc_number) => {
+                let points =
+                    crate::editor::velocity::VelocityPanel::build_cc_points(editor, cc_number);
+                for p in &points {
+                    let x = p.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+                    if x >= -50.0 && x <= canvas.size.x + 50.0 {
+                        let normalized = p.value as f32 / 127.0;
+                        let y = max_y - normalized * graph_height;
+                        raw_positions.push([x, y]);
+                    }
+                }
+            }
+            EditMode::Tempo => {
+                return (vec![], vec![]);
+            }
+        }
+
+        if raw_positions.is_empty() {
+            return (vec![], vec![]);
+        }
+        // 排序
+        raw_positions.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap_or(std::cmp::Ordering::Equal));
+
+        // 降采样：同像素列只保留最后出现的点
+        let mut deduped: Vec<[f32; 2]> = Vec::with_capacity(raw_positions.len());
+        let mut last_px: Option<i32> = None;
+        for pos in raw_positions {
+            let px = pos[0] as i32;
+            if last_px != Some(px) {
+                deduped.push(pos);
+                last_px = Some(px);
+            } else if let Some(last) = deduped.last_mut() {
+                *last = pos;
+            }
+        }
+
+        // 转为绝对屏幕坐标
+        let abs_points: Vec<[f32; 2]> = deduped
+            .iter()
+            .map(|&p| [panel_x + p[0], panel_y + p[1]])
+            .collect();
+
+        // 构建线段实例
+        let mut line_instances = Vec::with_capacity(abs_points.len().saturating_sub(1));
+        for pair in abs_points.windows(2) {
+            line_instances.push(lumino_gfx::VelocityLineInstance {
+                start: pair[0],
+                end: pair[1],
+                color: line_color_arr,
+            });
+        }
+
+        // 构建控制点实例
+        let circle_instances: Vec<lumino_gfx::VelocityCircleInstance> = abs_points
+            .iter()
+            .map(|&center| lumino_gfx::VelocityCircleInstance {
+                center,
+                radius: POINT_RADIUS,
+                _pad: 0.0,
+                color: point_color_arr,
+            })
+            .collect();
+
+        (line_instances, circle_instances)
     }
 }

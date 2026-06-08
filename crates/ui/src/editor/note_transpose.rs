@@ -74,8 +74,7 @@ mod tests {
 
     fn select_all_notes(editor: &mut Editor) {
         let count = editor.editor_state.data.notes.len();
-        editor.editor_state.interaction.selected_notes =
-            (0..count).collect();
+        editor.editor_state.interaction.selected_notes = (0..count).collect();
     }
 
     // ========== 基本移调测试 ==========

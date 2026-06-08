@@ -1,7 +1,7 @@
 #![allow(deprecated)]
 mod arrangement_renderer;
-pub mod constants;
 mod cc_bar_renderer;
+pub mod constants;
 mod context;
 mod gpu_note_buffer;
 mod grid_renderer;
@@ -9,6 +9,7 @@ mod keyboard_renderer;
 mod note_renderer;
 mod onion_renderer;
 mod ruler_renderer;
+mod velocity_line_renderer;
 
 #[cfg(feature = "unstable-swappable-buffer")]
 mod swappable_buffer;
@@ -30,6 +31,9 @@ pub use onion_renderer::{
     convert_onion_colors,
 };
 pub use ruler_renderer::{RulerRenderer, RulerTickInstance, RulerViewportUniform};
+pub use velocity_line_renderer::{
+    VelocityCircleInstance, VelocityCircleRenderer, VelocityLineInstance, VelocityLineRenderer,
+};
 
 #[cfg(feature = "unstable-swappable-buffer")]
 pub use swappable_buffer::{AtomicSwappableBuffer, MpscQueue, RenderData, SwappableBuffer};

@@ -552,12 +552,14 @@ impl Root {
                 use crate::editor::velocity::CcOption;
                 match option {
                     CcOption::Bend => {
-                        self.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Bend;
+                        self.editor.velocity_panel.edit_mode =
+                            crate::editor::velocity::EditMode::Bend;
                         tracing::debug!("力度面板: 选择 Bend");
                     }
                     CcOption::Cc(cc) => {
                         self.editor.velocity_panel.selected_cc = cc;
-                        self.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Cc(cc);
+                        self.editor.velocity_panel.edit_mode =
+                            crate::editor::velocity::EditMode::Cc(cc);
                         tracing::debug!("力度面板: 选择 CC 控制器 {}", cc);
                     }
                 }
@@ -584,16 +586,22 @@ impl Root {
             VelocityAction::TempoAdd(tick, bpm) => {
                 self.editor.push_history();
                 let bpm = bpm.clamp(20.0, 10000.0);
-                self.editor.editor_state.data.tempo_points.push(
-                    TempoPoint { tick, bpm }
-                );
+                self.editor
+                    .editor_state
+                    .data
+                    .tempo_points
+                    .push(TempoPoint { tick, bpm });
                 self.editor.editor_state.data.tempo_points.sort_by(|a, b| {
-                    a.tick.partial_cmp(&b.tick).unwrap_or(std::cmp::Ordering::Equal)
+                    a.tick
+                        .partial_cmp(&b.tick)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
                 // 去重相同 tick
-                self.editor.editor_state.data.tempo_points.dedup_by(|a, b| {
-                    (a.tick - b.tick).abs() < f32::EPSILON
-                });
+                self.editor
+                    .editor_state
+                    .data
+                    .tempo_points
+                    .dedup_by(|a, b| (a.tick - b.tick).abs() < f32::EPSILON);
                 self.update_playback_bpm();
                 tracing::debug!("Tempo: 添加点 tick={} bpm={}", tick, bpm);
                 return;

@@ -394,16 +394,12 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
     ) -> Vec<Geom> {
         let mut frame = Frame::new(renderer, bounds.size());
 
-        // CC 模式下由 wgpu 渲染，跳过 Canvas 绘制
-        if self.edit_mode.is_cc() {
-            // 保留 resize handle（交互提示）
-            draw_resize_handle(&mut frame, theme, bounds.size(), state.hover_resize_handle);
-            return vec![frame.into_geometry()];
-        }
-
         match self.edit_mode {
             super::EditMode::Tempo => {
                 draw_tempo_background(&mut frame, theme, bounds.size());
+            }
+            super::EditMode::Bend => {
+                draw_background(&mut frame, theme, bounds.size());
             }
             _ => {
                 draw_background(&mut frame, theme, bounds.size());
@@ -414,18 +410,8 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
 
         let view = &self.editor.editor_state.view;
 
+        // 数据图形（折线+控制点）由 wgpu 离屏渲染处理，Canvas 只保留 Tempo
         match self.edit_mode {
-            super::EditMode::Velocity => {
-                let points = self.points();
-                if !points.is_empty() {
-                    draw_velocity_graph(&mut frame, theme, &points, state, bounds.size(), view);
-                    if state.curve_active {
-                        draw_curve_paint_feedback(
-                            &mut frame, theme, &points, state, bounds.size(), view, cursor, bounds,
-                        );
-                    }
-                }
-            }
             super::EditMode::Tempo => {
                 let tempo_points = VelocityPanel::build_tempo_points(self.editor);
                 if !tempo_points.is_empty() {
@@ -433,6 +419,22 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                 }
             }
             _ => {}
+        }
+        // 曲线绘制反馈仅在 Velocity 模式下仍需 Canvas 绘制交互元素
+        if state.curve_active && self.edit_mode == super::EditMode::Velocity {
+            let points = self.points();
+            if !points.is_empty() {
+                draw_curve_paint_feedback(
+                    &mut frame,
+                    theme,
+                    &points,
+                    state,
+                    bounds.size(),
+                    view,
+                    cursor,
+                    bounds,
+                );
+            }
         }
 
         vec![frame.into_geometry()]
@@ -629,90 +631,6 @@ fn draw_resize_handle(frame: &mut Frame<Renderer>, theme: &Theme, size: Size, ho
     );
 }
 
-/// 绘制力度图形（描点 + 连线）
-fn draw_velocity_graph(
-    frame: &mut Frame<Renderer>,
-    theme: &Theme,
-    points: &[VelocityPoint],
-    state: &VelocityCanvasState,
-    size: Size,
-    view: &ViewState,
-) {
-    if points.is_empty() {
-        return;
-    }
-
-    let width = size.width;
-    let height = size.height;
-
-    let line_color = theme.extended_palette().primary.strong.color;
-    let point_color = theme.extended_palette().primary.base.color;
-    let drag_color = theme.extended_palette().secondary.strong.color;
-    let hover_color = theme.extended_palette().primary.strong.color;
-
-    let points_to_draw: Vec<&VelocityPoint> = points
-        .iter()
-        .filter(|p| {
-            let x = p.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
-            x >= -50.0 && x <= width + 50.0
-        })
-        .collect();
-
-    if points_to_draw.is_empty() {
-        return;
-    }
-
-    let mut line_builder = path::Builder::new();
-    let first_pos = VelocityCanvas::point_screen_pos(points_to_draw[0], 0, width, height, view);
-    line_builder.move_to(first_pos);
-
-    for (i, point) in points_to_draw.iter().enumerate().skip(1) {
-        let pos = VelocityCanvas::point_screen_pos(point, i, width, height, view);
-        line_builder.line_to(pos);
-    }
-    let line_path = line_builder.build();
-
-    frame.stroke(
-        &line_path,
-        canvas::Stroke::default()
-            .with_color(line_color)
-            .with_width(2.0),
-    );
-
-    let zero_y = VelocityCanvas::velocity_to_y(0, height);
-    for (i, point) in points_to_draw.iter().enumerate() {
-        let pos = VelocityCanvas::point_screen_pos(point, i, width, height, view);
-
-        let bar_color = Color::from_rgba(point_color.r, point_color.g, point_color.b, 0.2);
-        frame.fill_rectangle(
-            Point::new(pos.x - 1.5, pos.y),
-            Size::new(3.0, (zero_y - pos.y).max(0.0)),
-            bar_color,
-        );
-    }
-
-    for (i, point) in points_to_draw.iter().enumerate() {
-        let pos = VelocityCanvas::point_screen_pos(point, i, width, height, view);
-        let is_dragging = state.drag_point_idx == Some(i);
-        let is_hover = state.hover_point_idx == Some(i);
-
-        let (fill_color, radius) = if is_dragging {
-            (drag_color, POINT_RADIUS + 2.0)
-        } else if is_hover {
-            (hover_color, HOVER_RADIUS)
-        } else {
-            (point_color, POINT_RADIUS)
-        };
-
-        if is_dragging || is_hover {
-            let glow_color = Color::from_rgba(fill_color.r, fill_color.g, fill_color.b, 0.3);
-            frame.fill(&canvas::Path::circle(pos, radius + 3.0), glow_color);
-        }
-
-        frame.fill(&canvas::Path::circle(pos, radius), fill_color);
-    }
-}
-
 /// 速度面板 BPM 标尺常量
 const TEMPO_BPM_MIN: f64 = 20.0;
 const TEMPO_BPM_MAX: f64 = 10000.0;
@@ -810,33 +728,36 @@ fn draw_tempo_graph(
     let line_color = theme.extended_palette().secondary.strong.color;
     let point_color = theme.extended_palette().secondary.base.color;
 
-    // 过滤可见范围内的点
-    let visible_points: Vec<&TempoPoint> = points
-        .iter()
-        .filter(|p| {
-            let x = p.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
-            x >= -50.0 && x <= width + 50.0
-        })
-        .collect();
-
-    if visible_points.is_empty() {
-        return;
-    }
-
-    // 使用固定绝对标尺 [20, 999]，保证单点也能正确映射位置
+    // 使用固定绝对标尺 [20, 9999]，保证单点也能正确映射位置
     let min_bpm = TEMPO_BPM_MIN;
     let bpm_range = TEMPO_BPM_MAX - TEMPO_BPM_MIN;
 
-    // 绘制折线
-    let mut line_builder = path::Builder::new();
-    let first_pos = tempo_point_screen_pos(visible_points[0], width, height, view, min_bpm, bpm_range);
-    line_builder.move_to(first_pos);
-
-    for point in visible_points.iter().skip(1) {
-        let pos = tempo_point_screen_pos(point, width, height, view, min_bpm, bpm_range);
-        line_builder.line_to(pos);
+    // 预计算可见点屏幕坐标（保留 BPM 值用于标签）
+    // Tempo 点通常很少，不需要降采样
+    let mut screen_points: Vec<(Point, f64)> = Vec::new();
+    for p in points {
+        let x = p.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+        if x >= -50.0 && x <= width + 50.0 {
+            let pos = tempo_point_screen_pos(p, width, height, view, min_bpm, bpm_range);
+            screen_points.push((pos, p.bpm));
+        }
     }
 
+    if screen_points.is_empty() {
+        return;
+    }
+    screen_points.sort_by(|a, b| {
+        a.0.x
+            .partial_cmp(&b.0.x)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // 绘制折线
+    let mut line_builder = path::Builder::new();
+    line_builder.move_to(screen_points[0].0);
+    for &(pos, _) in screen_points.iter().skip(1) {
+        line_builder.line_to(pos);
+    }
     frame.stroke(
         &line_builder.build(),
         canvas::Stroke::default()
@@ -844,16 +765,17 @@ fn draw_tempo_graph(
             .with_width(2.0),
     );
 
-    // 绘制控制点 + BPM 标签
-    for point in &visible_points {
-        let pos = tempo_point_screen_pos(point, width, height, view, min_bpm, bpm_range);
-        frame.fill(
-            &canvas::Path::circle(pos, POINT_RADIUS),
-            point_color,
-        );
+    // 合批绘制控制点
+    let mut circle_builder = path::Builder::new();
+    for &(pos, _) in &screen_points {
+        circle_builder.circle(pos, POINT_RADIUS);
+    }
+    frame.fill(&circle_builder.build(), point_color);
 
+    // BPM 标签（Text 开销不高，不做合批）
+    for &(pos, bpm) in &screen_points {
         let text = canvas::Text {
-            content: format!("{:.0}", point.bpm),
+            content: format!("{:.0}", bpm),
             position: Point::new(pos.x - 10.0, pos.y - 14.0),
             max_width: width,
             line_height: iced_core::text::LineHeight::Relative(1.0),
@@ -886,7 +808,8 @@ fn tempo_point_screen_pos(
     Point::new(x, y)
 }
 
-/// CC 控制点已迁移到 wgpu 渲染（CcBarRenderer），不再使用 Canvas 绘制
+// draw_cc_graph / draw_bend_graph / cc_point_screen_pos / bend_point_screen_pos
+// 均已迁移到 wgpu 离屏渲染（velocity_line_renderer + velocity_circle_renderer）
 
 /// 绘制曲线绘制模式的视觉反馈
 fn draw_curve_paint_feedback(

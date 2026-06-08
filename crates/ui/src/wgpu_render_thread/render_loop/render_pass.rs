@@ -7,7 +7,7 @@ use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
 use lumino_gfx::{CameraParams, CameraUniform};
 
-/// 执行渲染通道（含走带/钢琴卷帘/洋葱皮/CC 柱状条）
+/// 执行渲染通道（含走带/钢琴卷帘/洋葱皮/CC 柱状条/折线图）
 #[allow(clippy::too_many_arguments)]
 pub fn execute_render_pass(
     encoder: &mut wgpu::CommandEncoder,
@@ -22,6 +22,8 @@ pub fn execute_render_pass(
     queue: &wgpu::Queue,
     onion_renderer: &mut lumino_gfx::OnionRenderer,
     cc_bar_renderer: &mut lumino_gfx::CcBarRenderer,
+    velocity_line_renderer: &mut lumino_gfx::VelocityLineRenderer,
+    velocity_circle_renderer: &mut lumino_gfx::VelocityCircleRenderer,
 ) {
     let (Some(texture), Some(depth_view)) = (current_texture, depth_texture_view) else {
         return;
@@ -148,6 +150,18 @@ pub fn execute_render_pass(
 
             render_pass.set_scissor_rect(vscissor_x, vscissor_y, vscissor_w, vscissor_h);
             cc_bar_renderer.draw(&mut render_pass, params.cc_bar_instances.len() as u32);
+
+            // 绘制折线段
+            velocity_line_renderer.draw(
+                &mut render_pass,
+                params.velocity_line_instances.len() as u32,
+            );
+
+            // 绘制控制点
+            velocity_circle_renderer.draw(
+                &mut render_pass,
+                params.velocity_circle_instances.len() as u32,
+            );
         }
     }
 }

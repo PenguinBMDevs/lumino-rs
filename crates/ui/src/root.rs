@@ -159,8 +159,7 @@ impl Root {
             root.editor.editor_state.view.key_count = 256;
         }
         // 初始音轨 0 是指挥轨道 → 速度面板应为 Tempo 模式
-        root.editor.velocity_panel.edit_mode =
-            crate::editor::velocity::EditMode::Tempo;
+        root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Tempo;
         root
     }
 
