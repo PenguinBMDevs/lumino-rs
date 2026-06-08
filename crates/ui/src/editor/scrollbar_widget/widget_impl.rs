@@ -110,11 +110,17 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                                 ScrollbarOrientation::Vertical => position.y,
                             };
                             if let Some(edge) = self.get_edge(position, thumb_bounds) {
+                                let actual_max_scroll = self.actual_max_scroll(track_size);
+                                let lock_zoom_out = match edge {
+                                    Edge::Start => self.scroll <= 0.0,
+                                    Edge::End => self.scroll >= actual_max_scroll.max(0.0),
+                                };
                                 *state = ScrollbarState::DraggingEdge {
                                     start_pos,
                                     start_zoom: self.zoom,
                                     start_thumb_size: thumb_size,
                                     edge,
+                                    lock_zoom_out,
                                 };
                             } else {
                                 let scrollable_size = self.actual_max_scroll(track_size);
@@ -183,6 +189,7 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                         start_zoom,
                         start_thumb_size,
                         edge,
+                        lock_zoom_out,
                     } => {
                         if let Some(position) = cursor.position() {
                             let current_pos = match self.orientation {
@@ -191,6 +198,14 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
                             };
                             let delta = current_pos - start_pos;
                             let effective_delta = if edge == Edge::End { delta } else { -delta };
+
+                            // 拖拽开始时滚动已在极限 → 固化阻止缩小方向，避免缩放过程中
+                            // scroll 变化导致保护状态震荡（稳定优先于精确）
+                            let effective_delta = if lock_zoom_out {
+                                effective_delta.min(0.0)
+                            } else {
+                                effective_delta
+                            };
 
                             let max_delta = (track_size - start_thumb_size).max(track_size * 0.5);
                             let clamped_delta = effective_delta.clamp(-track_size * 0.9, max_delta);
