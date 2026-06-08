@@ -23,8 +23,8 @@ serde = { workspace = true }
 # 音频导出依赖
 hound = { workspace = true }
 flac-encoder = { workspace = true }
-xsynth-core = { git = "https://github.com/buickmeow/xsynth" }
-xsynth-soundfonts = { git = "https://github.com/buickmeow/xsynth" }
+xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth" }
+xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth" }
 rayon = "1.10"
 atomic_float = "1.0"
 

@@ -368,18 +368,20 @@ impl Host {
 
         let mut instances = Vec::new();
 
-        // 1. 背景（使用 CcBar 面板底色，与 yinhe 一致）
+        // 1. 背景（使用主题背景色，与主窗口保持一致，避免硬编码颜色导致色差）
+        let bg = theme.extended_palette().background.base.color;
+        let bg_arr = [bg.r, bg.g, bg.b, 1.0];
         instances.push(lumino_gfx::CcBarInstance::new(
             panel_x,
             panel_y,
             canvas.size.x,
             panel_height,
-            [0.08, 0.08, 0.10, 1.0],
+            bg_arr,
         ));
 
-        // 计算图形区域（排除 padding 和 resize handle）
+        // 计算图形区域（排除 resize handle）
         let draw_height = panel_height - RESIZE_HANDLE_HEIGHT;
-        let max_y = draw_height - PANEL_PADDING_Y; // value = 0 的 Y（相对面板顶部）
+        let max_y = draw_height; // value = 0 的 Y（相对面板顶部，贴紧绘图区域底部）
         let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT; // value = 127 的 Y（相对面板顶部）
         let graph_height = max_y - min_y;
 
