@@ -1,6 +1,6 @@
 use lumino_gfx::{
     ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, KeyInstance,
-    NoteInstance, RulerTickInstance, VelocityCircleInstance, VelocityLineInstance,
+    NoteInstance, RulerTickInstance,
 };
 
 /// 渲染参数 - 从 UI 线程传递到 WGPU 线程
@@ -58,12 +58,8 @@ pub struct RenderParams {
     pub arrangement_note_instances: Vec<ArrangementNoteInstance>,
     /// 音轨总览模式：uniform
     pub arrangement_uniform: ArrangementUniform,
-    /// CC 柱状条实例（力度面板 CC 模式）
+    /// CC 柱状条实例（力度面板所有模式：Velocity/CC/Bend）
     pub cc_bar_instances: Vec<CcBarInstance>,
-    /// 速度/CC/Bend 折线段实例
-    pub velocity_line_instances: Vec<VelocityLineInstance>,
-    /// 速度/CC/Bend 控制点实例
-    pub velocity_circle_instances: Vec<VelocityCircleInstance>,
     /// 力度面板区域 (x, y, width, height) — 屏幕坐标，用于 scissor
     pub velocity_panel_rect: Option<(f32, f32, f32, f32)>,
 }
@@ -101,8 +97,6 @@ impl Default for RenderParams {
             arrangement_note_instances: Vec::new(),
             arrangement_uniform: ArrangementUniform::default(),
             cc_bar_instances: Vec::new(),
-            velocity_line_instances: Vec::new(),
-            velocity_circle_instances: Vec::new(),
             velocity_panel_rect: None,
         }
     }

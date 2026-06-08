@@ -783,7 +783,7 @@ fn tempo_point_screen_pos(
 }
 
 // draw_cc_graph / draw_bend_graph / cc_point_screen_pos / bend_point_screen_pos
-// 均已迁移到 wgpu 离屏渲染（velocity_line_renderer + velocity_circle_renderer）
+// 均已迁移到 wgpu 离屏渲染（CcBarRenderer 统一矩形渲染）
 
 /// 绘制曲线绘制模式的视觉反馈
 fn draw_curve_paint_feedback(

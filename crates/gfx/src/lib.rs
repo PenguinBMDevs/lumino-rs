@@ -9,7 +9,7 @@ mod keyboard_renderer;
 mod note_renderer;
 mod onion_renderer;
 mod ruler_renderer;
-mod velocity_line_renderer;
+// mod velocity_line_renderer; // 已弃用 — 改用 CcBarRenderer
 
 #[cfg(feature = "unstable-swappable-buffer")]
 mod swappable_buffer;
@@ -31,9 +31,7 @@ pub use onion_renderer::{
     convert_onion_colors,
 };
 pub use ruler_renderer::{RulerRenderer, RulerTickInstance, RulerViewportUniform};
-pub use velocity_line_renderer::{
-    VelocityCircleInstance, VelocityCircleRenderer, VelocityLineInstance, VelocityLineRenderer,
-};
+// velocity_line_renderer 已弃用 — 所有模式统一使用 CcBarInstance + CcBarRenderer
 
 #[cfg(feature = "unstable-swappable-buffer")]
 pub use swappable_buffer::{AtomicSwappableBuffer, MpscQueue, RenderData, SwappableBuffer};
