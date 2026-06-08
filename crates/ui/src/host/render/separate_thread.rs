@@ -359,6 +359,9 @@ impl Host {
         let panel_height = self.root.velocity_panel_height;
         let panel_x = canvas.offset.x;
         let panel_y = canvas.offset.y + canvas.size.y;
+        // velocity 面板在 grid Canvas 下方，中间隔了水平滚动条（20px）
+        const H_SCROLLBAR_HEIGHT: f32 = 20.0;
+        let actual_panel_y = panel_y + H_SCROLLBAR_HEIGHT;
 
         let mut instances = Vec::new();
 
@@ -370,7 +373,7 @@ impl Host {
         let bg_height = panel_height + PANEL_PADDING_Y + 10.0;
         instances.push(lumino_gfx::CcBarInstance::new(
             panel_x,
-            panel_y,
+            actual_panel_y,
             canvas.size.x,
             bg_height,
             bg_arr,
@@ -378,7 +381,7 @@ impl Host {
 
         // 2. Resize 手柄（位于 toolbar 下方 = Canvas 顶部）
         const TOOLBAR_HEIGHT: f32 = 28.0;
-        let handle_y = panel_y + TOOLBAR_HEIGHT;
+        let handle_y = actual_panel_y + TOOLBAR_HEIGHT;
         let handle_color = theme.extended_palette().background.strong.color;
         instances.push(lumino_gfx::CcBarInstance::new(
             panel_x,
@@ -409,10 +412,12 @@ impl Host {
 
         // ── 非 Tempo 模式：数据柱状条 ──
 
-        // 计算图形区域（排除 resize handle）
-        let draw_height = panel_height - RESIZE_HANDLE_HEIGHT;
-        let max_y = draw_height; // value = 0 的 Y（相对面板顶部，贴紧绘图区域底部）
-        let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT; // value = 127 的 Y（相对面板顶部）
+        // 计算图形区域（排除 toolbar + resize handle + padding）
+        // 坐标系原点为 Canvas 顶部（actual_panel_y + TOOLBAR_HEIGHT），与 Canvas 的 velocity_to_y() 一致
+        // Canvas 的 bounds_height = canvas_height = panel_height - TOOLBAR_HEIGHT
+        let canvas_height = panel_height - TOOLBAR_HEIGHT;
+        let max_y = canvas_height; // value = 0 在 Canvas 底部，不再减去组件宽度
+        let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT; // value = 127 在 Canvas 顶部（预留 handle + padding）
         let graph_height = max_y - min_y;
 
         // 4. 数据柱状条（模仿 yinhe 的矩形实例化渲染）
@@ -438,7 +443,7 @@ impl Host {
                     .unwrap_or(0.0);
                 let bar_w = (note_w - BAR_MARGIN * 2.0).max(MIN_BAR_WIDTH);
                 let bar_x = note_x + BAR_MARGIN;
-                let bar_y = panel_y + max_y - bar_h;
+                let bar_y = actual_panel_y + TOOLBAR_HEIGHT + max_y - bar_h;
 
                 // 简单裁剪（考虑矩形宽度）
                 if bar_x + bar_w < panel_x + view.keyboard_width || bar_x > panel_x + canvas.size.x
@@ -465,7 +470,7 @@ impl Host {
                 let bar_h = normalized * graph_height;
                 let bar_x =
                     panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
-                let bar_y = panel_y + max_y - bar_h;
+                let bar_y = actual_panel_y + TOOLBAR_HEIGHT + max_y - bar_h;
 
                 // 简单裁剪
                 if bar_x + BAR_WIDTH < panel_x + view.keyboard_width
@@ -491,7 +496,7 @@ impl Host {
                 let bar_h = normalized * graph_height;
                 let bar_x =
                     panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
-                let bar_y = panel_y + max_y - bar_h;
+                let bar_y = actual_panel_y + TOOLBAR_HEIGHT + max_y - bar_h;
 
                 // 简单裁剪
                 if bar_x + BAR_WIDTH < panel_x + view.keyboard_width
@@ -681,9 +686,11 @@ impl Host {
             None
         } else {
             let es = &self.root.editor.editor_state;
+            // velocity 面板在 grid Canvas 下方，中间隔了水平滚动条（20px）
+            const H_SCROLLBAR_HEIGHT: f32 = 20.0;
             Some((
                 es.canvas.offset.x,
-                es.canvas.offset.y + es.canvas.size.y,
+                es.canvas.offset.y + es.canvas.size.y + H_SCROLLBAR_HEIGHT,
                 es.canvas.size.x,
                 self.root.velocity_panel_height + PANEL_PADDING_Y + 10.0,
             ))

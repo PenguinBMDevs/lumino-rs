@@ -57,6 +57,8 @@ fn test_render_params_clone() {
         is_arrangement_mode: false,
         arrangement_note_instances: Vec::new(),
         arrangement_uniform: lumino_gfx::ArrangementUniform::default(),
+        cc_bar_instances: Vec::new(),
+        velocity_panel_rect: None,
     };
 
     let cloned = params.clone();

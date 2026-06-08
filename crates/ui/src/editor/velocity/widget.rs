@@ -79,17 +79,15 @@ impl<'a> VelocityCanvas<'a> {
 
     /// 将力度值映射到 Y 坐标（panel 底部 = 0 velocity, 顶部 = 127 velocity）
     fn velocity_to_y(velocity: u8, bounds_height: f32) -> f32 {
-        let draw_height = bounds_height - RESIZE_HANDLE_HEIGHT;
-        let max_y = draw_height - PANEL_PADDING_Y;
-        let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
+        let max_y = bounds_height; // value = 0 在 Canvas 底部，不再减去组件宽度
+        let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT; // value = 127 在 Canvas 顶部（预留 handle + padding）
         let normalized = velocity as f32 / 127.0;
         max_y - normalized * (max_y - min_y)
     }
 
     /// 将 Y 坐标映射回力度值 (0-127)
     fn y_to_velocity(y: f32, bounds_height: f32) -> u8 {
-        let draw_height = bounds_height - RESIZE_HANDLE_HEIGHT;
-        let max_y = draw_height - PANEL_PADDING_Y;
+        let max_y = bounds_height;
         let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
         let clamped_y = y.clamp(min_y, max_y);
         let normalized = (max_y - clamped_y) / (max_y - min_y);
@@ -617,8 +615,7 @@ const TEMPO_BPM_MAX: f64 = 10000.0;
 
 /// 将 BPM 值映射到面板 Y 坐标（绝对标尺 [20, 10000]）
 fn tempo_bpm_to_y(bpm: f64, bounds_height: f32) -> f32 {
-    let draw_height = bounds_height - RESIZE_HANDLE_HEIGHT;
-    let max_y = draw_height - PANEL_PADDING_Y;
+    let max_y = bounds_height;
     let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
     let normalized = ((bpm - TEMPO_BPM_MIN) / (TEMPO_BPM_MAX - TEMPO_BPM_MIN)) as f32;
     max_y - normalized * (max_y - min_y)
@@ -729,8 +726,7 @@ fn tempo_point_screen_pos(
     bpm_range: f64,
 ) -> Point {
     let x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
-    let draw_height = bounds_height - RESIZE_HANDLE_HEIGHT;
-    let max_y = draw_height - PANEL_PADDING_Y;
+    let max_y = bounds_height;
     let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
     let normalized = ((point.bpm - min_bpm) / bpm_range) as f32;
     let y = max_y - normalized * (max_y - min_y);
@@ -1045,8 +1041,7 @@ fn draw_scale_labels(
 
 /// 将弯音值 (-8192 ~ +8191) 映射到面板 Y 坐标
 fn bend_value_to_y(value: i16, bounds_height: f32) -> f32 {
-    let draw_height = bounds_height - RESIZE_HANDLE_HEIGHT;
-    let max_y = draw_height - PANEL_PADDING_Y;
+    let max_y = bounds_height;
     let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
     let normalized = (value as f32 + 8192.0) / 16383.0;
     max_y - normalized * (max_y - min_y)
