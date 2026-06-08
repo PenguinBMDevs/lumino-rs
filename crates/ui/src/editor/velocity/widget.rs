@@ -556,12 +556,10 @@ fn velocity_curve_trail_color(theme: &Theme) -> Color {
 }
 
 /// 绘制面板背景（网格线 + 力度刻度）
+/// 注意：背景填充由 wgpu 离屏 clear_color 提供，Canvas 只画网格线和文字
 fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
     let width = size.width;
     let height = size.height;
-
-    let bg_color = velocity_bg_color(theme);
-    frame.fill_rectangle(Point::ORIGIN, size, bg_color);
 
     let draw_top = RESIZE_HANDLE_HEIGHT;
 
