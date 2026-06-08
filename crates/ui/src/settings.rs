@@ -27,7 +27,6 @@ pub enum Event {
     NativeTitlebarChanged(bool),
     XSynthBufferChanged(f64),
     XSynthSampleRateChanged(u32),
-    XSynthThreadsChanged(i32),
     XSynthFadeOutChanged(bool),
     XSynthMaxVoicesChanged(Option<usize>),
     ThemeChanged(String),
@@ -143,9 +142,6 @@ impl SettingsPanel {
             }
             Event::XSynthSampleRateChanged(sr) => {
                 self.xsynth_sample_rate = sr;
-            }
-            Event::XSynthThreadsChanged(t) => {
-                self.xsynth_threads = t;
             }
             Event::XSynthFadeOutChanged(f) => {
                 self.xsynth_fade_out = f;

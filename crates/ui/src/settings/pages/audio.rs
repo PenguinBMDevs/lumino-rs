@@ -109,44 +109,6 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
 
-    // 多线程选项
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    struct ThreadOption(i32, &'static str);
-    impl std::fmt::Display for ThreadOption {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", self.1)
-        }
-    }
-    let thread_options = [
-        ThreadOption(-1, "关闭"),
-        ThreadOption(0, "自动"),
-        ThreadOption(1, "1 线程"),
-        ThreadOption(2, "2 线程"),
-        ThreadOption(4, "4 线程"),
-        ThreadOption(8, "8 线程"),
-    ];
-    let current_thread_option = thread_options
-        .iter()
-        .find(|o| o.0 == settings.xsynth_threads)
-        .copied()
-        .or(Some(thread_options[1]));
-
-    col = col.push(
-        row![
-            text("多线程渲染:")
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
-            iced_widget::space().width(SPACING_MAIN),
-            pick_list(thread_options, current_thread_option, |opt| {
-                Message::Settings(crate::settings::Event::XSynthThreadsChanged(opt.0))
-            })
-            .width(200.0),
-        ]
-        .spacing(SPACING_ICON_LABEL)
-        .align_y(Alignment::Center),
-    );
-    col = col.push(iced_widget::space().height(SPACING_CONTENT));
-
     // 音符释放淡出
     col = col.push(
         iced_widget::Checkbox::new(settings.xsynth_fade_out)
