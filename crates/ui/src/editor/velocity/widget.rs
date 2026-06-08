@@ -229,7 +229,9 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                 if Self::is_in_resize_zone(cursor_pos) {
                     state.resize_dragging = true;
                     state.resize_drag_start_y = cursor.position().unwrap_or_default().y;
-                    state.resize_start_height = bounds_size.height;
+                    // bounds_size.height 是 Canvas 高度，resize_start_height 需要存 Panel 高度
+                    // 否则 delta_y 增量会偏差 toolbar 高度，导致面板顶部瞬间跳位
+                    state.resize_start_height = bounds_size.height + TOOLBAR_HEIGHT;
                     return None;
                 }
 
@@ -281,7 +283,9 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                     let delta_y = state.resize_drag_start_y - abs_cursor_y;
                     let new_height = (state.resize_start_height + delta_y)
                         .clamp(VELOCITY_PANEL_MIN_HEIGHT, VELOCITY_PANEL_MAX_HEIGHT);
-                    if (new_height - bounds_size.height).abs() > 1.0 {
+                    // bounds_size.height 是 Canvas 高度，需转为 Panel 高度进行比较
+                    let current_panel_height = bounds_size.height + TOOLBAR_HEIGHT;
+                    if (new_height - current_panel_height).abs() > 1.0 {
                         return Some(canvas::Action::publish(Message::VelocityPanelResize(
                             new_height,
                         )));

@@ -31,6 +31,8 @@ pub const PANEL_PADDING_Y: f32 = 12.0;
 pub const PANEL_PADDING_X: f32 = 8.0;
 /// 顶部 resize 拖拽手柄高度
 pub const RESIZE_HANDLE_HEIGHT: f32 = 5.0;
+/// 工具栏高度
+pub const TOOLBAR_HEIGHT: f32 = 28.0;
 
 /// 编辑模式
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -248,7 +250,7 @@ impl VelocityPanel {
         use iced_widget::{button, column, container, pick_list, row, space, text};
 
         // 顶部工具栏：模式切换 + CC 选择器
-        let toolbar_height = 28.0f32;
+        let toolbar_height = TOOLBAR_HEIGHT;
         let canvas_height = (panel_height - toolbar_height).max(10.0);
 
         let is_tempo = self.edit_mode == EditMode::Tempo;
