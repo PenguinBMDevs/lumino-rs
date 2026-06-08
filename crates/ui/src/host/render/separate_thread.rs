@@ -356,6 +356,9 @@ impl Host {
 
         let view = &editor.editor_state.view;
         let theme = self.root.theme();
+        // 使用与音符相同的颜色（primary.weak）+ 30% 透明度
+        let note_color = theme.extended_palette().primary.weak.color;
+        let bar_color_arr = [note_color.r, note_color.g, note_color.b, 0.30];
 
         // 力度面板在屏幕上的位置
         let canvas = &editor.editor_state.canvas;
@@ -498,17 +501,29 @@ impl Host {
         const BAR_WIDTH: f32 = 2.0;
 
         if is_velocity {
-            // Velocity 模式：值范围 0-127，颜色按力度值热力映射
+            // Velocity 模式：矩形宽度 = 音符长度（与 C# VelocityBarRenderer 一致）
+            // 颜色使用与音符相同的主题色，透明度 30%
+            const MIN_BAR_WIDTH: f32 = 2.0;
+            const BAR_MARGIN: f32 = 1.0;
+            let notes = &editor.editor_state.data.notes;
+
             for point in &velocity_points {
                 let normalized = point.velocity as f32 / 127.0;
                 let bar_h = normalized * graph_height;
-                let bar_x =
+
+                // 计算矩形 X 和宽度：从音符长度推导，带边距
+                let note_x =
                     panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
+                let note_w = notes
+                    .get(point.note_index)
+                    .map(|n| n.length * view.zoom_x)
+                    .unwrap_or(0.0);
+                let bar_w = (note_w - BAR_MARGIN * 2.0).max(MIN_BAR_WIDTH);
+                let bar_x = note_x + BAR_MARGIN;
                 let bar_y = panel_y + max_y - bar_h;
 
-                // 简单裁剪
-                if bar_x + BAR_WIDTH < panel_x + view.keyboard_width
-                    || bar_x > panel_x + canvas.size.x
+                // 简单裁剪（考虑矩形宽度）
+                if bar_x + bar_w < panel_x + view.keyboard_width || bar_x > panel_x + canvas.size.x
                 {
                     continue;
                 }
@@ -516,9 +531,9 @@ impl Host {
                 instances.push(lumino_gfx::CcBarInstance::new(
                     bar_x,
                     bar_y,
-                    BAR_WIDTH,
+                    bar_w,
                     bar_h,
-                    midi_note_color(point.velocity),
+                    bar_color_arr,
                 ));
             }
         } else if is_bend {
@@ -546,7 +561,7 @@ impl Host {
                     bar_y,
                     BAR_WIDTH,
                     bar_h,
-                    bend_note_color(point.value),
+                    bar_color_arr,
                 ));
             }
         } else {
@@ -572,7 +587,7 @@ impl Host {
                     bar_y,
                     BAR_WIDTH,
                     bar_h,
-                    midi_note_color(point.value),
+                    bar_color_arr,
                 ));
             }
         }
@@ -791,60 +806,4 @@ impl Host {
     }
 
     // build_velocity_graph_instances 已移除 — 改用 build_cc_bar_instances 统一矩形渲染
-}
-
-/// 将 MIDI 值 (0-127) 映射为音符颜色（velocity heatmap 风格）
-///
-/// 基于专业 DAW（FL Studio / Cubase / Ableton）的 velocity 色彩方案：
-/// - 低力度值 (0-30)：蓝青色系
-/// - 中力度值 (31-80)：绿黄色系
-/// - 高力度值 (81-127)：橙红色系
-///
-/// 通过颜色本身传递力度信息，提供比纯高度更丰富的视觉反馈。
-fn midi_note_color(value: u8) -> [f32; 4] {
-    let t = value as f32 / 127.0;
-    // 三段式渐变：蓝 → 青 → 绿 → 黄 → 橙 → 红
-    let r = (t * 1.3).min(1.0);
-    let g = (1.0 - t * 0.65).max(0.15);
-    let b = ((1.0 - t) * 1.6 - 0.3).max(0.0);
-    [
-        r.clamp(0.0, 1.0),
-        g.clamp(0.0, 1.0),
-        b.clamp(0.0, 1.0),
-        0.85,
-    ]
-}
-
-/// 将弯音值 (-8192 ~ +8191) 映射为音符颜色
-///
-/// - 负值（向下弯音）：冷色调（蓝紫）
-/// - 正值（向上弯音）：暖色调（橙红）
-/// - 零值（中心）：中性色（灰绿）
-fn bend_note_color(value: i16) -> [f32; 4] {
-    const BEND_RANGE: f32 = 8192.0;
-    let abs_val = value.unsigned_abs() as f32;
-    let t = (abs_val / BEND_RANGE).min(1.0);
-    if value >= 0 {
-        // 正向弯音：橙红色
-        let r = 0.35 + t * 0.65;
-        let g = 0.55 - t * 0.40;
-        let b = 0.25 - t * 0.25;
-        [
-            r.clamp(0.0, 1.0),
-            g.clamp(0.0, 1.0),
-            b.clamp(0.0, 1.0),
-            0.85,
-        ]
-    } else {
-        // 负向弯音：蓝紫色
-        let r = 0.30 - t * 0.15;
-        let g = 0.45 - t * 0.10;
-        let b = 0.35 + t * 0.60;
-        [
-            r.clamp(0.0, 1.0),
-            g.clamp(0.0, 1.0),
-            b.clamp(0.0, 1.0),
-            0.85,
-        ]
-    }
 }
