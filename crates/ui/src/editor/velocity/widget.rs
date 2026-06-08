@@ -938,7 +938,20 @@ fn draw_horizontal_lines(
             }
         }
         super::EditMode::Tempo => {
-            // Tempo 模式由 draw_tempo_background 单独处理
+            let bpm_levels = generate_tempo_levels();
+            for &bpm in &bpm_levels {
+                let y = tempo_bpm_to_y(bpm, size.height);
+                let mut line_builder = path::Builder::new();
+                line_builder.move_to(Point::new(PANEL_PADDING_X, y));
+                line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
+                let line_path = line_builder.build();
+                frame.stroke(
+                    &line_path,
+                    canvas::Stroke::default()
+                        .with_color(line_color)
+                        .with_width(1.0),
+                );
+            }
         }
     }
 }
