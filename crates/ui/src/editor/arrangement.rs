@@ -2,12 +2,14 @@
 //!
 //! 音符由 WGPU ArrangementRenderer 渲染。
 
+pub mod click_canvas;
 pub mod pattern_widget;
 pub mod track_list;
 
 use iced_core::Point;
 use lumino_core::Pattern;
 
+pub use click_canvas::ArrangementClickCanvas;
 pub use pattern_widget::{PatternWidget, PatternWidgetState};
 pub use track_list::TrackListCanvas;
 
