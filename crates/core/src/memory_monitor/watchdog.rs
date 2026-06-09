@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 const WATCHDOG_INTERVAL_MS: u64 = 50;
 
 /// 看门狗系统可用内存阈值：低于此值时直接 SIGKILL
-const WATCHDOG_MIN_AVAILABLE_BYTES: u64 = 350 * 1024 * 1024;
+const WATCHDOG_MIN_AVAILABLE_BYTES: u64 = 350 * 1024 * 1024;    // 350mb 应该够
 
 // ── 平台相关：通过 PID 获取进程 RSS（完全独立，不依赖 /proc/self）──
 
@@ -169,6 +169,11 @@ fn watchdog_force_kill(pid: u32) {
 /// - 自己的阈值（soft_limit 100%，主监控在 95% 已动作，看门狗兜底）
 /// - 系统可用内存阈值（< 350MB 时即使 RSS 未超限也触发，macOS 使用 host_statistics64）
 /// - 自己的终止手段（SIGKILL / TerminateProcess，不可被捕获/阻塞/忽略）
+///
+/// ## 平台说明
+/// - **Linux / Windows**: 正常启动看门狗线程
+/// - **macOS**: 禁用，第一个没法用，第二个不需要，系统自己有（见 [`super::spawn_all_monitors()`] 说明）
+#[cfg(not(target_os = "macos"))]
 pub fn spawn_watchdog() {
     static SPAWNED: OnceLock<std::thread::JoinHandle<()>> = OnceLock::new();
 
@@ -247,4 +252,13 @@ pub fn spawn_watchdog() {
 
         handle
     });
+}
+
+/// macOS 上禁用看门狗
+///
+/// TODO: macOS 内存监控 — 当前 macOS 上禁用了看门狗。
+/// 后续方案：使用 `dispatch_source` 监听 macOS 的 `memorypressure` 事件，
+/// 仅在系统内存压力升高时触发检查，而非固定间隔轮询。
+#[cfg(target_os = "macos")]
+pub fn spawn_watchdog() {
 }

@@ -259,6 +259,11 @@ fn abort_process(report: &str) -> ! {
 ///
 /// 该线程独立于主线程运行，每 100ms 检查一次 RSS。
 /// 即使主线程被大任务阻塞，也能及时检测到 OOM 并终止进程。
+///
+/// ## 平台说明
+/// - **Linux / Windows**: 正常启动后台监控线程
+/// - **macOS**: 禁用（见 [`spawn_all_monitors()`] 说明）
+#[cfg(not(target_os = "macos"))]
 pub fn spawn_monitor_thread() {
     static SPAWNED: OnceLock<std::thread::JoinHandle<()>> = OnceLock::new();
 
@@ -292,13 +297,48 @@ pub fn spawn_monitor_thread() {
     });
 }
 
+/// macOS 上禁用后台内存监控线程
+///
+/// TODO: macOS 内存监控 — 当前 macOS 上禁用了后台内存监控线程和看门狗，
+/// 因为 macOS 的内存压力模型与 Linux/Windows 不同（memory pressure + swap 机制更激进），
+/// 且 macOS 的 `task_info` 在后台线程频繁调用时可能引入不必要的性能抖动。
+/// 后续方案：使用 `dispatch_source` 监听 macOS 的 `memorypressure` 事件，
+/// 仅在系统内存压力升高时触发检查，而非固定间隔轮询。
+#[cfg(target_os = "macos")]
+pub fn spawn_monitor_thread() {
+    tracing::info!("MemoryMonitor: macOS 上禁用后台内存监控线程（参见 spawn_all_monitors 文档）");
+}
+
 /// 同时启动主监控和看门狗
 ///
 /// 等价于依次调用 `spawn_monitor_thread()` + [`watchdog::spawn_watchdog()`]，
 /// 确保两层防线同时就位。
+///
+/// ## 平台说明
+/// - **Linux / Windows**: 正常启动后台监控线程 + 看门狗
+/// - **macOS**: 两者均禁用。原因：
+///   1. macOS 的内存压力模型（memory pressure + 激进 swap）与 Linux/Windows 不同，
+///      固定间隔轮询 RSS 的价值有限，反而可能因 `task_info` 频繁调用引入性能抖动。
+///   2. macOS 的 `SIGKILL` 行为与 Linux 一致，但看门狗的轮询模型在 macOS 上
+///      与系统自身的压力管理机制重叠，收益不大。
+///   3. 同步检查 [`MemoryMonitor::check()`] 仍可用——大分配前手动调用。
+///   4. 详见 TODO: macOS 内存监控 — 后续改用 `dispatch_source` 监听 memorypressure 事件。
+#[cfg(not(target_os = "macos"))]
 pub fn spawn_all_monitors() {
     spawn_monitor_thread();
     watchdog::spawn_watchdog();
+}
+
+/// macOS 上禁用所有内存监控（包括看门狗）
+///
+/// TODO: macOS 内存监控 — 当前 macOS 上禁用了后台内存监控线程和看门狗。
+/// 后续方案：使用 `dispatch_source` 监听 macOS 的 `memorypressure` 事件，
+/// 仅在系统内存压力升高时触发检查，而非固定间隔轮询。
+#[cfg(target_os = "macos")]
+pub fn spawn_all_monitors() {
+    tracing::info!(
+        "MemoryMonitor: macOS 上禁用后台内存监控和看门狗（参见 spawn_all_monitors 文档）"
+    );
 }
 
 #[cfg(test)]
