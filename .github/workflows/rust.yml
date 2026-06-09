@@ -48,6 +48,8 @@ jobs:
             extension: ""
             linker: arm-linux-gnueabihf-gcc
             cross_packages: gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross
+    env:
+      CARGO_TARGET_${{ matrix.target == 'aarch64-unknown-linux-gnu' && 'AARCH64_UNKNOWN_LINUX_GNU' || matrix.target == 'armv7-unknown-linux-gnueabihf' && 'ARMV7_UNKNOWN_LINUX_GNUEABIHF' || 'X86_64_UNKNOWN_LINUX_GNU' }}_LINKER: ${{ matrix.linker }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -105,13 +107,6 @@ jobs:
             libpq-dev \
             libsqlite3-dev \
             ${{ matrix.cross_packages }}
-
-      - name: Configure cargo for cross-compilation
-        run: |
-          mkdir -p .cargo
-          echo '[target.${{ matrix.target }}]' >> .cargo/config.toml
-          echo 'linker = "${{ matrix.linker }}"' >> .cargo/config.toml
-          cat .cargo/config.toml
 
       - name: Build
         run: |
@@ -171,9 +166,6 @@ jobs:
         uses: KyleMayes/install-llvm-action@v2
         with:
           version: "17"
-
-      - name: Set LIBCLANG_PATH
-        run: echo "LIBCLANG_PATH=$((llvm-config --prefix)/bin)" >> $env:GITHUB_ENV
 
       - name: Build
         shell: pwsh
