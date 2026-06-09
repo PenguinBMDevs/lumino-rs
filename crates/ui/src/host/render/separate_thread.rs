@@ -553,6 +553,19 @@ impl Host {
         let viewport_changed =
             current_viewport_hash != self.render_ctx.render_cache.note_viewport_hash;
 
+        // 洋葱皮专用量化哈希（32px 取整，微小移动不触发重算）
+        let current_onion_hash = crate::host::RenderCache::compute_onion_viewport_hash(
+            v.scroll_x,
+            v.scroll_y,
+            v.zoom_x,
+            v.zoom_y,
+            canvas_size.x,
+            canvas_size.y,
+            v.visible_key_count,
+        );
+        let onion_viewport_changed =
+            current_onion_hash != self.render_ctx.render_cache.onion_viewport_hash;
+
         let note_data_changed = note_index_dirty
             || self.render_ctx.render_cache.note_instances_is_empty()
             || is_drawing;
@@ -564,7 +577,8 @@ impl Host {
         self.render_ctx.render_cache.note_viewport_hash = current_viewport_hash;
 
         // ═══ Phase 1: 主音符同步写入 ═══
-        {
+        // 仅当数据变化时才重建主音符，仅视口变化时跳过（音符数据相同，减少重复上传）
+        if note_data_changed {
             puffin::profile_scope!("phase1_main_notes_sync");
             let notes_clone = self.root.editor.editor_state.data.notes.clone(); // O(1)
             let edit_state_clone = self.root.editor.editor_state.interaction.edit_state.clone();
@@ -580,20 +594,24 @@ impl Host {
         }
 
         // ═══ Phase 2: 洋葱皮异步派发 ═══
-        self.ensure_note_worker();
-        if let Some(ref worker) = self.render_ctx.note_worker {
-            puffin::profile_scope!("dispatch_onion_skin_job");
-            let vp_logical = self.render_ctx.viewport.logical_size();
-            let os_snapshot =
-                self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));
+        // 数据变化 或 量化视口变化（微小滚动不触发，避免 worker 过载）
+        if note_data_changed || onion_viewport_changed {
+            self.ensure_note_worker();
+            if let Some(ref worker) = self.render_ctx.note_worker {
+                puffin::profile_scope!("dispatch_onion_skin_job");
+                let vp_logical = self.render_ctx.viewport.logical_size();
+                let os_snapshot =
+                    self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));
 
-            worker.send(super::note_worker::OnionSkinJob {
-                snapshot: os_snapshot,
-                onion_note_buffer: std::sync::Arc::clone(
-                    &self.render_ctx.render_cache.onion_note_buffer,
-                ),
-                done_tx: None,
-            });
+                worker.send(super::note_worker::OnionSkinJob {
+                    snapshot: os_snapshot,
+                    onion_note_buffer: std::sync::Arc::clone(
+                        &self.render_ctx.render_cache.onion_note_buffer,
+                    ),
+                    done_tx: None,
+                });
+                self.render_ctx.render_cache.onion_viewport_hash = current_onion_hash;
+            }
         }
 
         if note_index_dirty {

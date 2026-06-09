@@ -97,21 +97,25 @@ pub fn run_render_thread(
             }
 
             // 检测洋葱皮音符数据变化，上传到 OnionRenderer
-            // 预读取 notes 切片（零拷贝，仅交换指针）供 prepare_cull 做二分查找
-            let onion_notes_for_cull: Option<&[lumino_gfx::OnionNote]> = onion_note_buffer
-                .as_ref()
-                .map(|buf| unsafe { buf.read_buffer() })
-                .map(|v| &**v);
-
-            if let Some(buf) = &onion_note_buffer {
-                let ver = buf.version();
-                if ver != last_onion_note_version {
-                    last_onion_note_version = ver;
-                    if let Some(n) = onion_notes_for_cull {
-                        onion_renderer.upload_notes(n, &device, &queue);
+            // 先读 version，再读 buffer（消除 TOCTOU 竞态：原代码先 read_buffer 后 version，
+            // 中间 worker swap 会导致上传旧数据。修正后至多一次额外上传，不产生错误渲染）
+            let onion_notes_for_cull: Option<&[lumino_gfx::OnionNote]> =
+                if let Some(buf) = &onion_note_buffer {
+                    let ver = buf.version();
+                    if ver != last_onion_note_version {
+                        last_onion_note_version = ver;
+                        let notes = unsafe { buf.read_buffer() };
+                        if notes.is_empty() {
+                            onion_renderer.upload_notes(&[], &device, &queue);
+                        } else {
+                            onion_renderer.upload_notes(notes, &device, &queue);
+                        }
                     }
-                }
-            }
+                    // 上传后重新读取用于 CPU cull range 二分查找
+                    Some(unsafe { &**buf.read_buffer() })
+                } else {
+                    None
+                };
 
             if let (Some(_texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
