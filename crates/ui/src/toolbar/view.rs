@@ -139,7 +139,13 @@ impl Toolbar {
                 space().width(4),
                 tool_button(icon::Quantize, "量化", Event::quantize(), window),
                 space().width(4),
-                tool_button(icon::Speed, "变速", Event::speed_change(), window),
+                flip_button(
+                    icon::Speed,
+                    "变速",
+                    Event::speed_change(),
+                    has_selection,
+                    window
+                ),
                 space().width(4),
                 flip_button(
                     icon::FlipVertical,
@@ -169,14 +175,21 @@ impl Toolbar {
                 tool_button(icon::Glue, "合并(Glue)", Event::glue(), window),
                 space().width(8),
                 // 移调按钮
-                tool_button(
+                flip_button(
                     icon::TransposeDown,
                     "移调 -1",
                     Event::transpose_down(),
+                    has_selection,
                     window
                 ),
                 space().width(4),
-                tool_button(icon::TransposeUp, "移调 +1", Event::transpose_up(), window),
+                flip_button(
+                    icon::TransposeUp,
+                    "移调 +1",
+                    Event::transpose_up(),
+                    has_selection,
+                    window
+                ),
             ]
             .align_y(Alignment::Center),
         )

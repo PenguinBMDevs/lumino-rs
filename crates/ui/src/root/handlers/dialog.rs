@@ -312,12 +312,22 @@ impl MessageHandler for DialogHandler {
                     tracing::info!("Root: 速度因子已更新为 {}", factor);
                     // 设置对话框结果（用于独立窗口模式）
                     root.state.dialog_result = Some(DialogResult::SpeedChange { factor });
-                    // 执行变速
-                    let modified = root.editor.apply_speed_change(factor);
-                    if modified > 0 {
-                        tracing::info!("Root: 变速完成，修改了 {} 个音符", modified);
-                        root.update_playback_notes();
-                        root.editor.clear_notes_changed();
+                    // 必须有选中音符才能执行变速
+                    if !root
+                        .editor
+                        .editor_state
+                        .interaction
+                        .selected_notes
+                        .is_empty()
+                    {
+                        let modified = root.editor.apply_speed_change(factor);
+                        if modified > 0 {
+                            tracing::info!("Root: 变速完成，修改了 {} 个音符", modified);
+                            root.update_playback_notes();
+                            root.editor.clear_notes_changed();
+                        }
+                    } else {
+                        tracing::warn!("Root: 没有选中音符，不执行变速对话框的变速操作");
                     }
                 } else {
                     tracing::warn!(

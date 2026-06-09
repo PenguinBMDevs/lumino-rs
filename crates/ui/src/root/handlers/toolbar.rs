@@ -328,9 +328,16 @@ impl ToolbarHandler {
 
         let speed_factor = root.toolbar.speed_factor;
         let notes = &root.editor.editor_state.data.notes;
+        let selected = &root.editor.editor_state.interaction.selected_notes;
 
         if notes.is_empty() {
             tracing::debug!("Root: 没有音符需要变速");
+            return;
+        }
+
+        // 必须有选中音符才能变速（无选中时对整个音轨变速是灾难性的）
+        if selected.is_empty() {
+            tracing::debug!("Root: 没有选中音符，不执行变速");
             return;
         }
 
@@ -410,6 +417,18 @@ impl ToolbarHandler {
             crate::toolbar::Event::TransposeDown => -1,
             _ => return,
         };
+
+        // 必须有选中音符才能移调
+        if root
+            .editor
+            .editor_state
+            .interaction
+            .selected_notes
+            .is_empty()
+        {
+            tracing::debug!("Root: 没有选中音符，不执行移调");
+            return;
+        }
 
         tracing::info!("Root: 执行移调操作，半音数: {}", semitones);
 
