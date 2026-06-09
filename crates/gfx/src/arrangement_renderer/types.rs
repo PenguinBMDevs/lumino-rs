@@ -186,6 +186,6 @@ pub mod colors {
     pub const AR_MEASURE_LINE_COLOR: (f32, f32, f32, f32) = (0.30, 0.30, 0.35, 1.0);
     /// 拍子线颜色
     pub const AR_BEAT_LINE_COLOR: (f32, f32, f32, f32) = (0.20, 0.20, 0.23, 1.0);
-    /// 演奏指示线颜色
-    pub const AR_PLAYHEAD_COLOR: (f32, f32, f32, f32) = (1.0, 1.0, 1.0, 0.8);
+    /// 演奏指示线颜色（与钢琴卷帘统一为红色）
+    pub const AR_PLAYHEAD_COLOR: (f32, f32, f32, f32) = (1.0, 0.2, 0.2, 1.0);
 }

@@ -82,8 +82,13 @@ impl Host {
                 ..iced_core::Color::WHITE
             }
         };
-        // 演奏指示线：DAW 标准红色，不随主题变化
-        let arr_playhead = iced_core::Color::from_rgba(1.0, 0.2, 0.2, 1.0);
+        // 演奏指示线：DAW 标准红色，与钢琴卷帘统一
+        let arr_playhead = iced_core::Color::from_rgba(
+            lumino_gfx::colors::AR_PLAYHEAD_COLOR.0,
+            lumino_gfx::colors::AR_PLAYHEAD_COLOR.1,
+            lumino_gfx::colors::AR_PLAYHEAD_COLOR.2,
+            lumino_gfx::colors::AR_PLAYHEAD_COLOR.3,
+        );
 
         let mut instances = Vec::new();
         arrangement_instances::build_arrangement_all(
@@ -690,7 +695,12 @@ impl Host {
                     bg_color_arr[3],
                 ],
                 bar_color: [bar_color[0], bar_color[1], bar_color[2], bar_color[3]],
-                playhead_color: [1.0, 0.2, 0.2, 1.0],
+                playhead_color: [
+                    lumino_gfx::colors::AR_PLAYHEAD_COLOR.0,
+                    lumino_gfx::colors::AR_PLAYHEAD_COLOR.1,
+                    lumino_gfx::colors::AR_PLAYHEAD_COLOR.2,
+                    lumino_gfx::colors::AR_PLAYHEAD_COLOR.3,
+                ],
                 track_colors,
                 track_count,
                 ..ArrangementUniform::default()

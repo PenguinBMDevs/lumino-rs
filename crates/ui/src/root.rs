@@ -231,6 +231,51 @@ impl Root {
         }
     }
 
+    /// 更新工程走带视图的自动滚动（基于编辑器自动滚动配置）
+    /// 使演奏指示线的滚动模式在工程走带界面同样适用
+    pub fn update_arrangement_auto_scroll(&mut self, playback_tick: f32) {
+        let asc = *self.editor.auto_scroll_config();
+        if asc.mode == lumino_core::storage::config::AutoScrollMode::Off {
+            return;
+        }
+
+        let vp = &mut self.arrangement_view.viewport;
+        let viewport_width = vp.canvas_size.x.max(1.0);
+        let ppu = vp.zoom_x.max(0.001);
+
+        // 计算最大滚动值（使用视口尺寸和总宽度）
+        let canvas_w = vp.canvas_size.x.max(1.0);
+        let max_tick = self
+            .editor
+            .editor_state
+            .data
+            .track_notes
+            .values()
+            .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
+            .fold(960.0 * 4.0, f32::max);
+        let total_w = max_tick * vp.zoom_x;
+        let max_scroll = (total_w - canvas_w).max(0.0);
+
+        match asc.mode {
+            lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft => {
+                let indicator_pos = asc.fixed_indicator_position as f32;
+                let target_scroll_x = playback_tick * ppu - indicator_pos;
+                vp.scroll_x = target_scroll_x.clamp(0.0, max_scroll);
+            }
+            lumino_core::storage::config::AutoScrollMode::ScrollingIndicator => {
+                let trigger_offset = asc.page_trigger_offset as f32;
+                let return_pos = asc.page_return_position as f32;
+                let indicator_screen_x = playback_tick * ppu - vp.scroll_x;
+
+                if indicator_screen_x >= viewport_width - trigger_offset {
+                    let target_scroll_x = playback_tick * ppu - return_pos;
+                    vp.scroll_x = target_scroll_x.clamp(0.0, max_scroll);
+                }
+            }
+            lumino_core::storage::config::AutoScrollMode::Off => {}
+        }
+    }
+
     /// 获取播放状态
     pub fn is_playing(&self) -> bool {
         self.playback_manager

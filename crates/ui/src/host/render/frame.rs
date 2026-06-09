@@ -71,6 +71,8 @@ impl Host {
             if self.root.is_playing() {
                 // 始终更新自动滚动（侧效果：设置 scroll_x）
                 self.root.editor.update_auto_scroll(tick);
+                // 工程走带视图也应用相同的自动滚动配置
+                self.root.update_arrangement_auto_scroll(tick);
                 // 播放时总是请求重绘并标记 UI 脏，确保播放指示线位置更新。
                 // 关键：即使自动滚动不触发（如循环回绕后指示线回到起点），
                 // 也必须重建 iced canvas UI 使指示线在新位置绘制。
