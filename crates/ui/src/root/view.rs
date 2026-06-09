@@ -1,7 +1,7 @@
 //! Root 视图渲染子模块
 
 use iced_core::Length;
-use iced_widget::{Stack, column, container, progress_bar, row, text};
+use iced_widget::{Stack, column, container, progress_bar, row, space, text};
 use lumino_gfx::NoteInstance;
 
 use crate::message;
@@ -92,10 +92,20 @@ impl Root {
             DialogType::SpeedChange => {
                 view_speed_change_dialog(&self.state.speed_change_dialog, &self.window.theme)
             }
-            _ => view_custom_precision_dialog(
+            DialogType::CustomPrecision => view_custom_precision_dialog(
                 &self.state.custom_precision_dialog,
                 &self.window.theme,
             ),
+            // DialogType::None: 关闭过程中 dialog_type 可能被复位为 None，
+            // 此时渲染空容器避免闪跳到精度面板。实际关闭由 DialogWindow 的 should_close 驱动。
+            DialogType::None => container(space())
+                .width(iced_core::Length::Fill)
+                .height(iced_core::Length::Fill)
+                .style(|theme: &Theme| container::Style {
+                    background: Some(iced_core::Background::Color(theme.palette().background)),
+                    ..Default::default()
+                })
+                .into(),
         }
     }
 

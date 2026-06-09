@@ -30,6 +30,8 @@ impl Root {
         self.state.custom_precision_dialog.is_open = open;
         if open {
             self.state.dialog_type = DialogType::CustomPrecision;
+        } else if self.state.dialog_type == DialogType::CustomPrecision {
+            self.state.dialog_type = DialogType::None;
         }
     }
 
@@ -38,6 +40,8 @@ impl Root {
         self.state.project_settings_dialog.is_open = open;
         if open {
             self.state.dialog_type = DialogType::ProjectSettings;
+        } else if self.state.dialog_type == DialogType::ProjectSettings {
+            self.state.dialog_type = DialogType::None;
         }
     }
 

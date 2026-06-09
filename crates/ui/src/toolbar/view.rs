@@ -139,11 +139,13 @@ impl Toolbar {
                 space().width(4),
                 tool_button(icon::Quantize, "量化", Event::quantize(), window),
                 space().width(4),
+                // 变速按钮始终可点击：Ctrl+Click 打开变速对话框不需要选中音符。
+                // 普通点击的无选中情况由 handler 内部的 selected.is_empty() 兜底。
                 flip_button(
                     icon::Speed,
                     "变速",
                     Event::speed_change(),
-                    has_selection,
+                    true,
                     window
                 ),
                 space().width(4),

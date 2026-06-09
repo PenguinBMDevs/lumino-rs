@@ -45,12 +45,10 @@ impl Root {
         self.state.dialog_result = Some(crate::host::DialogResult::LoadConfirm);
 
         self.state.load_confirm_dialog.is_open = false;
-        self.state.dialog_type = crate::state::root_state::DialogType::None;
     }
 
     /// 处理加载确认对话框 - 取消
     pub(super) fn handle_cancel_load(&mut self) {
         self.state.load_confirm_dialog.is_open = false;
-        self.state.dialog_type = crate::state::root_state::DialogType::None;
     }
 }

@@ -179,7 +179,6 @@ impl MessageHandler for DialogHandler {
                     settings: root.settings.clone(),
                     theme: root.window.theme.to_string(),
                 });
-                root.state.dialog_type = crate::state::root_state::DialogType::None;
                 None
             }
 
@@ -190,7 +189,6 @@ impl MessageHandler for DialogHandler {
             }
             Message::CloseAudioExportDialog => {
                 root.state.audio_export_dialog.is_open = false;
-                root.state.dialog_type = crate::state::root_state::DialogType::None;
                 None
             }
             Message::AudioExportProjectNameChanged(value) => {
@@ -287,12 +285,10 @@ impl MessageHandler for DialogHandler {
                     format: state.format,
                 });
                 root.state.audio_export_dialog.is_open = false;
-                root.state.dialog_type = crate::state::root_state::DialogType::None;
                 None
             }
             Message::AudioExportCancel => {
                 root.state.audio_export_dialog.is_open = false;
-                root.state.dialog_type = crate::state::root_state::DialogType::None;
                 root.state.dialog_result = Some(DialogResult::Cancel);
                 None
             }
