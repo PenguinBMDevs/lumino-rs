@@ -16,11 +16,6 @@ on:
         required: true
         type: string
         default: '0.1.0'
-      preview_number:
-        description: 'Preview number (e.g., 1 for preview1)'
-        required: true
-        type: number
-        default: 1
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -129,7 +124,7 @@ jobs:
       - name: Generate filename
         id: filename
         run: |
-          FILENAME="Lumino-v${{ github.event.inputs.version }}-preview${{ github.event.inputs.preview_number }}-Linux-${{ matrix.arch }}${{ matrix.extension }}"
+          FILENAME="Lumino-v${{ github.event.inputs.version }}-Linux-${{ matrix.arch }}${{ matrix.extension }}"
           echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
 
       - name: Rename binary
@@ -193,7 +188,7 @@ jobs:
         id: filename
         shell: bash
         run: |
-          FILENAME="Lumino-v${{ github.event.inputs.version }}-preview${{ github.event.inputs.preview_number }}-Windows-${{ matrix.arch }}${{ matrix.extension }}"
+          FILENAME="Lumino-v${{ github.event.inputs.version }}-Windows-${{ matrix.arch }}${{ matrix.extension }}"
           echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
 
       - name: Rename binary
@@ -256,7 +251,7 @@ jobs:
       - name: Generate filename
         id: filename
         run: |
-          FILENAME="Lumino-v${{ github.event.inputs.version }}-preview${{ github.event.inputs.preview_number }}-macOS-${{ matrix.arch }}${{ matrix.extension }}"
+          FILENAME="Lumino-v${{ github.event.inputs.version }}-macOS-${{ matrix.arch }}${{ matrix.extension }}"
           echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
 
       - name: Rename binary
