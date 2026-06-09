@@ -1,5 +1,5 @@
 use super::midi_parser::TrackMidiEvents;
-use lumino_core::ParsedMidi;
+use lumino_midi_loader::ParsedMidi;
 
 /// MIDI 处理器
 pub struct MidiHandler;
@@ -42,7 +42,7 @@ impl MidiHandler {
                 .iter()
                 .map(|&(tick, bpm)| {
                     let microseconds = if bpm > 0.0 {
-                        lumino_core::bpm_to_tempo(bpm as f64)
+                        lumino_midi_loader::bpm_to_tempo(bpm as f64)
                     } else {
                         500_000
                     };

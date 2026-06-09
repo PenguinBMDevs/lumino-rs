@@ -1,6 +1,7 @@
 #![allow(deprecated)]
 pub mod constants;
 pub mod editor;
+pub mod event;
 pub mod host;
 pub mod message;
 pub mod mixer;

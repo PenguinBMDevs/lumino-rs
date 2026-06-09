@@ -10,10 +10,10 @@ use std::thread;
 use std::time::Duration;
 
 enum Command {
-    SetMidiOutput(Box<dyn lumino_midi::OutputConnection>),
+    SetMidiOutput(Box<dyn lumino_midi_io::OutputConnection>),
     ClearMidiOutput,
     SetCurrentTrackNotes(Vec<NoteEvent>),
-    SetDocument(Arc<lumino_core::midi::MidiDocument>, u16),
+    SetDocument(Arc<lumino_midi_loader::MidiDocument>, u16),
     SetMidiEvents(Vec<MidiTrackEvent>),
     SetTempoChanges(Vec<TempoChange>),
     // 旧 SetCache/SetSkipTracksInCache 已移除（disk_cache future support）
@@ -47,7 +47,7 @@ impl PlaybackManager {
 
         let thread_handle = thread::spawn(move || {
             let mut engine = engine;
-            let mut midi_output: Option<Box<dyn lumino_midi::OutputConnection>> = None;
+            let mut midi_output: Option<Box<dyn lumino_midi_io::OutputConnection>> = None;
 
             loop {
                 // 处理所有挂起的命令
@@ -177,7 +177,7 @@ impl PlaybackAccessor for PlaybackManager {
 }
 
 impl PlaybackManager {
-    pub fn set_midi_output(&mut self, output: Box<dyn lumino_midi::OutputConnection>) {
+    pub fn set_midi_output(&mut self, output: Box<dyn lumino_midi_io::OutputConnection>) {
         let _ = self.sender.send(Command::SetMidiOutput(output));
     }
 
@@ -192,7 +192,7 @@ impl PlaybackManager {
     }
 
     /// 设置 MIDI 文档引用（其他音轨从此流式读取）
-    pub fn set_document(&mut self, doc: Arc<lumino_core::midi::MidiDocument>, current_track: u16) {
+    pub fn set_document(&mut self, doc: Arc<lumino_midi_loader::MidiDocument>, current_track: u16) {
         let _ = self.sender.send(Command::SetDocument(doc, current_track));
     }
 

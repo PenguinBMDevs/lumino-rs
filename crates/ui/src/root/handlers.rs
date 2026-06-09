@@ -382,9 +382,9 @@ impl Root {
     // 核心事件处理
     // ====================================================================
 
-    fn handle_core_event(&mut self, event: lumino_core::event::Event) {
+    fn handle_core_event(&mut self, event: crate::event::Event) {
         self.set_menu_open(false);
-        lumino_core::event::emit(event);
+        crate::event::emit(event);
     }
 
     fn handle_window_event(&mut self, event: window::Event) {
@@ -440,9 +440,9 @@ impl Root {
         // 如果是音轨切换，发送 Core 事件
         if let Some(track_idx) = track_selected_idx {
             tracing::debug!("Root: 发射音轨选择事件，音轨 {}", track_idx);
-            lumino_core::event::emit(lumino_core::event::Event::Menu(
-                lumino_core::event::menu::Event::File(
-                    lumino_core::event::menu::file::Event::TrackSelected(track_idx),
+            crate::event::emit(crate::event::Event::Menu(
+                crate::event::menu::Event::File(
+                    crate::event::menu::file::Event::TrackSelected(track_idx),
                 ),
             ));
         }

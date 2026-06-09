@@ -1,10 +1,10 @@
-// Core 错误类型定义
+//! MIDI 加载错误类型
 
 use thiserror::Error;
 
-/// Core 操作错误
+/// MIDI 加载错误
 #[derive(Error, Debug)]
-pub enum CoreError {
+pub enum LoaderError {
     /// IO 错误
     #[error("IO 错误: {0}")]
     Io(#[from] std::io::Error),
@@ -38,23 +38,29 @@ pub enum CoreError {
     Other(String),
 }
 
-/// Core 操作结果类型别名
-pub type Result<T> = std::result::Result<T, CoreError>;
+/// MIDI 加载结果类型别名
+pub type LoaderResult<T> = std::result::Result<T, LoaderError>;
 
-impl From<String> for CoreError {
+impl From<String> for LoaderError {
     fn from(err: String) -> Self {
-        CoreError::Other(err)
+        LoaderError::Other(err)
     }
 }
 
-impl From<&str> for CoreError {
+impl From<&str> for LoaderError {
     fn from(err: &str) -> Self {
-        CoreError::Other(err.to_string())
+        LoaderError::Other(err.to_string())
     }
 }
 
-impl From<serde_json::Error> for CoreError {
+impl From<bincode::Error> for LoaderError {
+    fn from(err: bincode::Error) -> Self {
+        LoaderError::Serialization(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for LoaderError {
     fn from(err: serde_json::Error) -> Self {
-        CoreError::Serialization(err.to_string())
+        LoaderError::Serialization(err.to_string())
     }
 }

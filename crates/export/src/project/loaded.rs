@@ -2,8 +2,9 @@
 //!
 //! `data/loaded/` 目录下存储从外部导入文件的解析后数据快照。
 
-use crate::midi::dms::DmsInfo;
-use crate::midi::info::MidiInfo;
+use lumino_midi_loader::{DmsInfo, MidiInfo};
+
+use crate::{ExportError, ExportResult};
 
 /// 导入的 MIDI 数据缓存
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -79,9 +80,9 @@ impl LmloadedHeader {
     }
 
     /// 从字节数组解码
-    pub fn from_bytes(bytes: &[u8]) -> crate::Result<Self> {
+    pub fn from_bytes(bytes: &[u8]) -> ExportResult<Self> {
         if bytes.len() < Self::SIZE {
-            return Err(crate::CoreError::FileFormat(
+            return Err(ExportError::FileFormat(
                 "lmloaded header: too short".into(),
             ));
         }
@@ -123,7 +124,7 @@ impl LoadedDataType {
 pub fn encode_loaded_data<T: serde::Serialize>(
     data: &T,
     data_type: LoadedDataType,
-) -> crate::Result<Vec<u8>> {
+) -> ExportResult<Vec<u8>> {
     let mut result = Vec::new();
 
     let header = LmloadedHeader {
@@ -135,41 +136,41 @@ pub fn encode_loaded_data<T: serde::Serialize>(
     result.extend_from_slice(&header.to_bytes());
 
     let serialized = bincode::serialize(data)
-        .map_err(|e| crate::CoreError::Serialization(format!("lmloaded bincode: {e}")))?;
+        .map_err(|e| ExportError::Encoding(format!("lmloaded bincode: {e}")))?;
 
     let compressed = zstd::stream::encode_all(std::io::Cursor::new(serialized), 3)
-        .map_err(|e| crate::CoreError::Compression(format!("lmloaded zstd: {e}")))?;
+        .map_err(|e| ExportError::Compression(format!("lmloaded zstd: {e}")))?;
 
     result.extend_from_slice(&compressed);
     Ok(result)
 }
 
 /// 通用导入数据解码（返回解压后的 bincode 字节，由调用方反序列化）
-pub fn decode_loaded_data(bytes: &[u8]) -> crate::Result<(LoadedDataType, Vec<u8>)> {
+pub fn decode_loaded_data(bytes: &[u8]) -> ExportResult<(LoadedDataType, Vec<u8>)> {
     if bytes.len() < LmloadedHeader::SIZE {
-        return Err(crate::CoreError::FileFormat("lmloaded: too short".into()));
+        return Err(ExportError::FileFormat("lmloaded: too short".into()));
     }
 
     let header = LmloadedHeader::from_bytes(bytes)?;
     if &header.magic != b"LMLD" {
-        return Err(crate::CoreError::FileFormat(
+        return Err(ExportError::FileFormat(
             "lmloaded: invalid magic".into(),
         ));
     }
     if header.version != 1 {
-        return Err(crate::CoreError::FileFormat(format!(
+        return Err(ExportError::FileFormat(format!(
             "lmloaded: unsupported version {}",
             header.version
         )));
     }
 
     let data_type = LoadedDataType::from_u8(header.data_type).ok_or_else(|| {
-        crate::CoreError::FileFormat(format!("lmloaded: unknown data type {}", header.data_type))
+        ExportError::FileFormat(format!("lmloaded: unknown data type {}", header.data_type))
     })?;
 
     let decompressed =
         zstd::stream::decode_all(std::io::Cursor::new(&bytes[LmloadedHeader::SIZE..]))
-            .map_err(|e| crate::CoreError::Compression(format!("lmloaded decompression: {e}")))?;
+            .map_err(|e| ExportError::Compression(format!("lmloaded decompression: {e}")))?;
 
     Ok((data_type, decompressed))
 }

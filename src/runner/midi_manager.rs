@@ -3,18 +3,18 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 
 /// MIDI API 类型别名
-type MidiApi = Box<dyn lumino_midi::Api>;
+type MidiApi = Box<dyn lumino_midi_io::Api>;
 /// MIDI 输出连接类型别名
-type MidiOutput = Box<dyn lumino_midi::OutputConnection>;
+type MidiOutput = Box<dyn lumino_midi_io::OutputConnection>;
 /// MIDI 初始化结果类型别名
 type MidiInitResult = Result<(MidiApi, MidiOutput), String>;
 
 /// 后端初始化结果
 struct BackendInitResult {
     /// API 实例（用于保持合成器存活）
-    api: Option<Box<dyn lumino_midi::Api>>,
+    api: Option<Box<dyn lumino_midi_io::Api>>,
     /// MIDI 输出连接
-    output: Option<Box<dyn lumino_midi::OutputConnection>>,
+    output: Option<Box<dyn lumino_midi_io::OutputConnection>>,
     /// 实际使用的后端类型
     backend: SynthBackend,
 }
@@ -22,8 +22,8 @@ struct BackendInitResult {
 /// XSynth 异步初始化结果
 enum XSynthInitResult {
     Success {
-        api: Box<dyn lumino_midi::Api>,
-        output: Box<dyn lumino_midi::OutputConnection>,
+        api: Box<dyn lumino_midi_io::Api>,
+        output: Box<dyn lumino_midi_io::OutputConnection>,
     },
     Failed(String),
 }
@@ -33,11 +33,11 @@ enum XSynthInitResult {
 /// 负责管理 MIDI API 和输出连接的生命周期
 pub struct MidiManager {
     /// 保存 API 实例（用于保持 RealtimeSynth 等存活）
-    api: Option<Box<dyn lumino_midi::Api>>,
+    api: Option<Box<dyn lumino_midi_io::Api>>,
     /// 备用 API 实例（用于 create_additional_output 创建独立播放连接时保持存活）
-    fallback_api: Option<Box<dyn lumino_midi::Api>>,
+    fallback_api: Option<Box<dyn lumino_midi_io::Api>>,
     /// MIDI 输出连接
-    output: Option<Box<dyn lumino_midi::OutputConnection>>,
+    output: Option<Box<dyn lumino_midi_io::OutputConnection>>,
     /// 实际启用的合成器后端
     active_backend: SynthBackend,
     /// 是否需要重新初始化
@@ -169,7 +169,7 @@ impl MidiManager {
 
     /// 阻塞式初始化 XSynth（用于后台线程）
     fn init_xsynth_blocking(ui_config: &UiConfig) -> MidiInitResult {
-        use lumino_midi::{ApiKind, api::xsynth::XSynthOptions};
+        use lumino_midi_io::{ApiKind, api::xsynth::XSynthOptions};
 
         let path = PathBuf::from(&ui_config.soundfont_path);
         let api_kind = ApiKind::XSynth {
@@ -184,7 +184,7 @@ impl MidiManager {
             max_voices_per_key: ui_config.xsynth_max_voices_per_key,
         };
 
-        let api = lumino_midi::new_api_with_options(&api_kind, Some(options))
+        let api = lumino_midi_io::new_api_with_options(&api_kind, Some(options))
             .map_err(|e| format!("初始化 MIDI API 失败: {:?}", e))?;
 
         // 诊断：打印音频后端信息
@@ -216,11 +216,11 @@ impl MidiManager {
 
     /// 快速初始化 System 后端（不阻塞）
     fn init_system_output() -> BackendInitResult {
-        use lumino_midi::ApiKind;
+        use lumino_midi_io::ApiKind;
 
         tracing::info!("MIDI: 快速启动 System 后端");
 
-        match lumino_midi::new_api(&ApiKind::System) {
+        match lumino_midi_io::new_api(&ApiKind::System) {
             Ok(api) => {
                 if let Ok(outputs) = api.outputs()
                     && let Some(output) = outputs.first()
@@ -252,13 +252,13 @@ impl MidiManager {
 
     /// 快速初始化 KDMAPI 后端（不阻塞）
     fn init_kdmapi_output() -> BackendInitResult {
-        use lumino_midi::ApiKind;
+        use lumino_midi_io::ApiKind;
 
         tracing::info!("MIDI: 快速启动 KDMAPI 后端");
 
         let path = std::path::PathBuf::from("OmniMIDI.dll");
 
-        match lumino_midi::new_api(&ApiKind::Kdmapi { path }) {
+        match lumino_midi_io::new_api(&ApiKind::Kdmapi { path }) {
             Ok(api) => {
                 if let Ok(outputs) = api.outputs()
                     && let Some(output) = outputs.first()
@@ -340,7 +340,7 @@ impl MidiManager {
     }
 
     /// 获取 MIDI 输出连接的可变引用
-    pub fn output_mut(&mut self) -> Option<&mut Box<dyn lumino_midi::OutputConnection>> {
+    pub fn output_mut(&mut self) -> Option<&mut Box<dyn lumino_midi_io::OutputConnection>> {
         self.output.as_mut()
     }
 
@@ -350,7 +350,7 @@ impl MidiManager {
     /// 1. 在现有 API 上打开第二个连接（某些驱动可能不支持）
     /// 2. 创建全新 API 实例 + 连接（保存新 API 到 fallback_api 防止释放）
     /// 3. 兜底：取走主输出连接（播放期间音符预览静音，但至少播放功能正常）
-    pub fn create_additional_output(&mut self) -> Option<Box<dyn lumino_midi::OutputConnection>> {
+    pub fn create_additional_output(&mut self) -> Option<Box<dyn lumino_midi_io::OutputConnection>> {
         // ── 策略1：在现有 API 上尝试打开第二个连接 ──
         if let Some(api) = self.api.as_ref()
             && let Ok(outputs) = api.outputs()
@@ -382,9 +382,9 @@ impl MidiManager {
                 let api_kind = match self.active_backend {
                     SynthBackend::Kdmapi => {
                         let path = std::path::PathBuf::from("OmniMIDI.dll");
-                        lumino_midi::ApiKind::Kdmapi { path }
+                        lumino_midi_io::ApiKind::Kdmapi { path }
                     }
-                    _ => lumino_midi::ApiKind::System,
+                    _ => lumino_midi_io::ApiKind::System,
                 };
                 Self::try_open_new_api(&api_kind, None)
             }
@@ -418,15 +418,15 @@ impl MidiManager {
     ///
     /// 返回 `(api, connection)` 元组，其中 `api` 需要保持存活。
     fn try_open_new_api(
-        api_kind: &lumino_midi::ApiKind,
-        options: Option<lumino_midi::api::xsynth::XSynthOptions>,
+        api_kind: &lumino_midi_io::ApiKind,
+        options: Option<lumino_midi_io::api::xsynth::XSynthOptions>,
     ) -> Option<(
-        Box<dyn lumino_midi::Api>,
-        Box<dyn lumino_midi::OutputConnection>,
+        Box<dyn lumino_midi_io::Api>,
+        Box<dyn lumino_midi_io::OutputConnection>,
     )> {
-        let new_api: Box<dyn lumino_midi::Api> = match options {
-            Some(opts) => lumino_midi::new_api_with_options(api_kind, Some(opts)).ok()?,
-            None => lumino_midi::new_api(api_kind).ok()?,
+        let new_api: Box<dyn lumino_midi_io::Api> = match options {
+            Some(opts) => lumino_midi_io::new_api_with_options(api_kind, Some(opts)).ok()?,
+            None => lumino_midi_io::new_api(api_kind).ok()?,
         };
 
         let outputs = new_api.outputs().ok()?;
@@ -440,20 +440,20 @@ impl MidiManager {
     ///
     /// 返回一个新的 API 实例，供 UI 层独立管理输入设备的生命周期。
     /// 对于不支持输入的 XSynth 后端，返回 System 后端的输入 API。
-    pub fn create_input_api(&self) -> Option<Box<dyn lumino_midi::Api>> {
+    pub fn create_input_api(&self) -> Option<Box<dyn lumino_midi_io::Api>> {
         let api_kind = match self.active_backend {
             SynthBackend::XSynth => {
                 tracing::info!("MIDI 输入 API: XSynth 不支持输入，使用 System 后端");
-                lumino_midi::ApiKind::System
+                lumino_midi_io::ApiKind::System
             }
             SynthBackend::Kdmapi => {
                 let path = std::path::PathBuf::from("OmniMIDI.dll");
-                lumino_midi::ApiKind::Kdmapi { path }
+                lumino_midi_io::ApiKind::Kdmapi { path }
             }
-            SynthBackend::System => lumino_midi::ApiKind::System,
+            SynthBackend::System => lumino_midi_io::ApiKind::System,
         };
 
-        match lumino_midi::new_api(&api_kind) {
+        match lumino_midi_io::new_api(&api_kind) {
             Ok(api) => {
                 tracing::info!("MIDI 输入 API: 已创建 (backend={:?})", self.active_backend);
                 Some(api)
@@ -500,7 +500,7 @@ impl MidiManager {
         self.xsynth_max_voices_per_key = ui_config.xsynth_max_voices_per_key;
 
         // 清空 SoundFont 缓存，防止旧条目无限累积（每个 SF2 30-300MB）
-        lumino_midi::soundfont_cache::clear_cache();
+        lumino_midi_io::soundfont_cache::clear_cache();
 
         // 关闭旧的 MIDI 输出和备用 API
         if let Some(old_output) = self.output.take() {
@@ -536,7 +536,7 @@ impl MidiManager {
 
 /// 处理音频动作
 pub fn handle_audio_action(
-    output: &mut Box<dyn lumino_midi::OutputConnection>,
+    output: &mut Box<dyn lumino_midi_io::OutputConnection>,
     action: lumino_ui::message::AudioAction,
 ) {
     use lumino_ui::message::AudioAction;

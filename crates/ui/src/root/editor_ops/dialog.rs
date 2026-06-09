@@ -139,7 +139,7 @@ impl Root {
             }];
 
         // 同步到播放管理器
-        let tempo_micros = lumino_core::bpm_to_tempo(tempo) as u32;
+        let tempo_micros = lumino_midi_loader::bpm_to_tempo(tempo) as u32;
         self.load_tempo_changes(vec![(0, tempo_micros)]);
     }
 

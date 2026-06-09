@@ -8,7 +8,7 @@
 
 use crate::state::root_state::{DialogType, RootState};
 use crate::{editor, message, settings, sidebar, statusbar, titlebar, toolbar, window};
-use lumino_core::midi::MidiDocument;
+use lumino_midi_loader::MidiDocument;
 use lumino_core::storage::config::UiConfig;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -68,7 +68,7 @@ pub struct Root {
     /// 延迟应用的 Tempo 变化（播放管理器未初始化时缓存）
     pub(crate) pending_tempo_changes: Option<Vec<crate::playback::TempoChange>>,
     /// 延迟应用的 MIDI 输出（播放管理器未初始化时缓存）
-    pub(crate) pending_midi_output: Option<Box<dyn lumino_midi::OutputConnection>>,
+    pub(crate) pending_midi_output: Option<Box<dyn lumino_midi_io::OutputConnection>>,
     /// 各音轨的 MIDI 控制事件（CC/PC/PB），供播放时使用
     pub(crate) track_midi_events:
         std::collections::HashMap<usize, Vec<crate::playback::MidiTrackEvent>>,
@@ -86,11 +86,11 @@ pub struct Root {
     /// 录制状态
     pub recording: editor::recording::RecordingState,
     /// MIDI 输入连接（保持打开状态，drop 时自动关闭端口）
-    pub midi_input_connection: Option<Box<dyn lumino_midi::InputConnection>>,
+    pub midi_input_connection: Option<Box<dyn lumino_midi_io::InputConnection>>,
     /// MIDI 输入数据缓冲区（midir 回调线程写入，UI 线程读取）
     pub midi_input_buffer: Arc<Mutex<VecDeque<Vec<u8>>>>,
     /// MIDI API 引用（用于录制时打开输入端口）
-    pub midi_api: Option<Box<dyn lumino_midi::Api>>,
+    pub midi_api: Option<Box<dyn lumino_midi_io::Api>>,
 }
 
 /// Root 构造参数
@@ -513,7 +513,7 @@ mod tests {
     #[test]
     fn test_speed_change_ctrl_click_opens_dialog_event() {
         // 清空全局事件缓冲区
-        let _ = lumino_core::event::take_events();
+        let _ = crate::event::take_events();
 
         // Ctrl+Click 应发射 OpenSpeedChangeDialog 事件（不依赖选中状态）
         let mut root = Root::new_dialog("dark", DialogType::None);
@@ -521,12 +521,12 @@ mod tests {
         let mut handler = handlers::ToolbarHandler::new();
         handler.handle(&mut root, Message::Toolbar(toolbar::Event::SpeedChange));
 
-        let events = lumino_core::event::take_events();
+        let events = crate::event::take_events();
         let has_open_event = events.iter().any(|e| {
             matches!(
                 e,
-                lumino_core::event::Event::Window(
-                    lumino_core::event::window::Event::OpenSpeedChangeDialog
+                crate::event::Event::Window(
+                    crate::event::window::Event::OpenSpeedChangeDialog
                 )
             )
         });
@@ -542,10 +542,10 @@ mod tests {
         root.toolbar.ctrl_pressed = false;
 
         // 无音符 + 无选中：直接点击应无副作用地提前返回
-        let _ = lumino_core::event::take_events();
+        let _ = crate::event::take_events();
         let mut handler = handlers::ToolbarHandler::new();
         handler.handle(&mut root, Message::Toolbar(toolbar::Event::SpeedChange));
-        let events = lumino_core::event::take_events();
+        let events = crate::event::take_events();
 
         assert!(
             events.is_empty(),

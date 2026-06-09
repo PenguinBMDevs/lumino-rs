@@ -40,8 +40,8 @@ impl CollaborationHandler {
         root.state.collaboration_dialog.view_state = CollaborationViewState::Connecting;
 
         // 发送核心事件到 Runner 处理实际连接
-        lumino_core::event::emit(lumino_core::event::Event::Window(
-            lumino_core::event::window::Event::CollaborationConnect {
+        crate::event::emit(crate::event::Event::Window(
+            crate::event::window::Event::CollaborationConnect {
                 host,
                 port,
                 username,
@@ -55,8 +55,8 @@ impl CollaborationHandler {
 
         root.state.collaboration_dialog.view_state = CollaborationViewState::RoomActions;
 
-        lumino_core::event::emit(lumino_core::event::Event::Window(
-            lumino_core::event::window::Event::CollaborationCreateRoom { name },
+        crate::event::emit(crate::event::Event::Window(
+            crate::event::window::Event::CollaborationCreateRoom { name },
         ));
     }
 
@@ -65,8 +65,8 @@ impl CollaborationHandler {
 
         root.state.collaboration_dialog.view_state = CollaborationViewState::RoomActions;
 
-        lumino_core::event::emit(lumino_core::event::Event::Window(
-            lumino_core::event::window::Event::CollaborationJoinRoom { invite_code },
+        crate::event::emit(crate::event::Event::Window(
+            crate::event::window::Event::CollaborationJoinRoom { invite_code },
         ));
     }
 
@@ -75,8 +75,8 @@ impl CollaborationHandler {
 
         root.state.collaboration_dialog.reset();
 
-        lumino_core::event::emit(lumino_core::event::Event::Window(
-            lumino_core::event::window::Event::CollaborationDisconnect,
+        crate::event::emit(crate::event::Event::Window(
+            crate::event::window::Event::CollaborationDisconnect,
         ));
     }
 

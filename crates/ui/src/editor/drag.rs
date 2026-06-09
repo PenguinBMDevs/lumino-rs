@@ -255,8 +255,8 @@ impl Editor {
 
         if tick_offset.abs() > 0.001 || key_offset != 0 {
             tracing::info!("Editor: 发送 LocalNoteMoved 同步事件");
-            lumino_core::event::emit(lumino_core::event::Event::Window(
-                lumino_core::event::window::Event::LocalNoteMoved {
+            crate::event::emit(crate::event::Event::Window(
+                crate::event::window::Event::LocalNoteMoved {
                     tick: original_tick,
                     key: original_key,
                     length: note.length,

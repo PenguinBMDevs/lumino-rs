@@ -26,7 +26,7 @@ struct MockInputConnection {
     _device_id: u32,
 }
 
-impl lumino_midi::InputConnection for MockInputConnection {
+impl lumino_midi_io::InputConnection for MockInputConnection {
     fn close(self: Box<Self>) {
         tracing::debug!("MockInputConnection: 关闭设备 #{}", self._device_id);
     }
@@ -34,20 +34,20 @@ impl lumino_midi::InputConnection for MockInputConnection {
 
 /// 模拟 MIDI API，返回固定设备列表，open_input 时捕获回调
 struct MockMidiApi {
-    inputs: Vec<lumino_midi::InputInfo>,
+    inputs: Vec<lumino_midi_io::InputInfo>,
     // 存储 open_input 时收到的回调，测试代码可通过此回调注入 MIDI 数据
-    callback: Arc<Mutex<Option<lumino_midi::MidiInputCallback>>>,
+    callback: Arc<Mutex<Option<lumino_midi_io::MidiInputCallback>>>,
 }
 
 impl MockMidiApi {
     fn new() -> Self {
         Self {
             inputs: vec![
-                lumino_midi::InputInfo {
+                lumino_midi_io::InputInfo {
                     id: 0,
                     name: "Mock MIDI Keyboard".to_string(),
                 },
-                lumino_midi::InputInfo {
+                lumino_midi_io::InputInfo {
                     id: 1,
                     name: "Mock MIDI Pad".to_string(),
                 },
@@ -67,24 +67,24 @@ impl MockMidiApi {
     }
 }
 
-impl lumino_midi::Api for MockMidiApi {
+impl lumino_midi_io::Api for MockMidiApi {
     fn version(&self) -> Option<String> {
         Some("mock-1.0".to_string())
     }
 
-    fn inputs(&self) -> Result<Vec<lumino_midi::InputInfo>, lumino_midi::Error> {
+    fn inputs(&self) -> Result<Vec<lumino_midi_io::InputInfo>, lumino_midi_io::Error> {
         Ok(self.inputs.clone())
     }
 
-    fn outputs(&self) -> Result<Vec<lumino_midi::OutputInfo>, lumino_midi::Error> {
+    fn outputs(&self) -> Result<Vec<lumino_midi_io::OutputInfo>, lumino_midi_io::Error> {
         Ok(vec![])
     }
 
     fn open_output(
         &self,
         _id: u32,
-    ) -> Result<Box<dyn lumino_midi::OutputConnection>, lumino_midi::Error> {
-        Err(lumino_midi::Error::OpenOutputFailed(
+    ) -> Result<Box<dyn lumino_midi_io::OutputConnection>, lumino_midi_io::Error> {
+        Err(lumino_midi_io::Error::OpenOutputFailed(
             "mock 无输出".to_string(),
         ))
     }
@@ -92,8 +92,8 @@ impl lumino_midi::Api for MockMidiApi {
     fn open_input(
         &self,
         id: u32,
-        callback: lumino_midi::MidiInputCallback,
-    ) -> Result<Box<dyn lumino_midi::InputConnection>, lumino_midi::Error> {
+        callback: lumino_midi_io::MidiInputCallback,
+    ) -> Result<Box<dyn lumino_midi_io::InputConnection>, lumino_midi_io::Error> {
         if let Ok(mut cb_opt) = self.callback.lock() {
             *cb_opt = Some(callback);
         }

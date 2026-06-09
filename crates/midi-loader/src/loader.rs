@@ -21,6 +21,6 @@ pub use types::{ProgressCallback, progress_from_sender, silent_progress};
 /// 加载 MIDI 文件并返回完整解析结果
 ///
 /// 这是便捷函数，内部调用 `load_parsed_midi`
-pub async fn load_midi(path: PathBuf) -> crate::Result<crate::ParsedMidi> {
+pub async fn load_midi(path: PathBuf) -> crate::LoaderResult<crate::ParsedMidi> {
     load_parsed_midi(path, None).await
 }

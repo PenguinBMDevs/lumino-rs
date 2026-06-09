@@ -22,8 +22,8 @@
 use std::sync::{Arc, mpsc};
 use std::thread;
 
-use lumino_core::midi::MidiDocument;
-use lumino_core::midi::constants::TICK_SEARCH_BUFFER;
+use lumino_midi_loader::MidiDocument;
+use lumino_midi_loader::constants::TICK_SEARCH_BUFFER;
 use lumino_gfx::{OnionNote, SwappableBuffer};
 
 // ─── 数据快照 ───────────────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ impl NoteWorker {
 /// 使用二分查找定位 tick 范围，直接构建 OnionNote。
 /// 相比 events 版本：无 NoteOn/NoteOff 配对，无 EventKind match。
 fn collect_onion_notes_direct(
-    notes: &[lumino_core::midi::NoteInfo],
+    notes: &[lumino_midi_loader::NoteInfo],
     track_idx: u16,
     tick_start: f32,
     tick_end: f32,

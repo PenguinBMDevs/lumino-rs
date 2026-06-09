@@ -17,7 +17,7 @@ pub mod window;
 impl RunnerInner {
     /// 处理核心事件
     pub(super) fn process_core_events(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let events = lumino_core::event::take_events();
+        let events = lumino_ui::event::take_events();
         for event in events {
             self.handle_core_event(event_loop, event);
         }
@@ -54,9 +54,9 @@ impl RunnerInner {
     fn handle_core_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        event: lumino_core::event::Event,
+        event: lumino_ui::event::Event,
     ) {
-        use lumino_core::event::Event;
+        use lumino_ui::event::Event;
 
         match event {
             Event::Menu(menu_event) => {
@@ -72,9 +72,9 @@ impl RunnerInner {
     fn handle_menu_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        menu_event: lumino_core::event::menu::Event,
+        menu_event: lumino_ui::event::menu::Event,
     ) {
-        use lumino_core::event::menu::Event::*;
+        use lumino_ui::event::menu::Event::*;
 
         match menu_event {
             File(file_event) => {

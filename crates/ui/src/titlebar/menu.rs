@@ -4,7 +4,7 @@ use iced_widget::{button, column, container, row, space, text};
 
 use crate::{Element, Message, Renderer, Theme, message, resources::icon};
 
-use lumino_core::{Event, event};
+use crate::event::Event;
 
 const MENU_WIDTH: f32 = 200.0;
 
@@ -54,27 +54,27 @@ pub fn file_menu() -> MenuConfig {
     MenuConfig {
         kind: MenuKind::File,
         items: vec![
-            Action(event!(Menu.File.New)),
-            Action(event!(Menu.File.Open)),
-            Action(event!(Menu.File.Save)),
-            Action(event!(Menu.File.Close)),
+            Action(crate::event!(Menu.File.New)),
+            Action(crate::event!(Menu.File.Open)),
+            Action(crate::event!(Menu.File.Save)),
+            Action(crate::event!(Menu.File.Close)),
             Separator,
-            Action(event!(Menu.File.ImportFiles)),
+            Action(crate::event!(Menu.File.ImportFiles)),
             Separator,
             Submenu(
                 vec![
-                    Action(event!(Menu.File.ExportProjectArchive)),
-                    Action(event!(Menu.File.ExportProjectFolder)),
+                    Action(crate::event!(Menu.File.ExportProjectArchive)),
+                    Action(crate::event!(Menu.File.ExportProjectFolder)),
                 ],
                 "导出工程".into(),
             ),
-            Action(event!(Menu.File.AudioExport)),
+            Action(crate::event!(Menu.File.AudioExport)),
             Separator,
-            Action(event!(Menu.File.ProjectSettings)),
+            Action(crate::event!(Menu.File.ProjectSettings)),
             Separator,
-            Action(event!(Menu.File.Settings)),
+            Action(crate::event!(Menu.File.Settings)),
             Separator,
-            Action(event!(Menu.File.Exit)),
+            Action(crate::event!(Menu.File.Exit)),
         ],
     }
 }
@@ -84,15 +84,15 @@ pub fn edit_menu() -> MenuConfig {
     MenuConfig {
         kind: MenuKind::Edit,
         items: vec![
-            Action(event!(Menu.Edit.Undo)),
-            Action(event!(Menu.Edit.Redo)),
+            Action(crate::event!(Menu.Edit.Undo)),
+            Action(crate::event!(Menu.Edit.Redo)),
             Separator,
-            Action(event!(Menu.Edit.Cut)),
-            Action(event!(Menu.Edit.Copy)),
-            Action(event!(Menu.Edit.Paste)),
-            Action(event!(Menu.Edit.SelectAll)),
+            Action(crate::event!(Menu.Edit.Cut)),
+            Action(crate::event!(Menu.Edit.Copy)),
+            Action(crate::event!(Menu.Edit.Paste)),
+            Action(crate::event!(Menu.Edit.SelectAll)),
             Separator,
-            Action(event!(Menu.Edit.Find)),
+            Action(crate::event!(Menu.Edit.Find)),
         ],
     }
 }
@@ -102,9 +102,9 @@ pub fn view_menu() -> MenuConfig {
     MenuConfig {
         kind: MenuKind::View,
         items: vec![
-            Action(event!(Menu.View.ZoomIn)),
-            Action(event!(Menu.View.ZoomOut)),
-            Action(event!(Menu.View.ZoomReset)),
+            Action(crate::event!(Menu.View.ZoomIn)),
+            Action(crate::event!(Menu.View.ZoomOut)),
+            Action(crate::event!(Menu.View.ZoomReset)),
         ],
     }
 }
@@ -113,7 +113,7 @@ pub fn help_menu() -> MenuConfig {
     use MenuItem::*;
     MenuConfig {
         kind: MenuKind::Help,
-        items: vec![Action(event!(Menu.Help.About))],
+        items: vec![Action(crate::event!(Menu.Help.About))],
     }
 }
 
@@ -261,14 +261,14 @@ fn base_split<'a>() -> Element<'a> {
 
 /// 获取事件的友好显示名称
 fn event_display_name(event: &Event) -> String {
-    use event::menu::{
+    use crate::event::menu::{
         edit::Event as EditEvent, file::Event as FileEvent, help::Event as HelpEvent,
         view::Event as ViewEvent,
     };
 
     match event {
         Event::Menu(menu_event) => match menu_event {
-            event::menu::Event::File(file_event) => match file_event {
+            crate::event::menu::Event::File(file_event) => match file_event {
                 FileEvent::New => "新建".to_string(),
                 FileEvent::Open => "打开".to_string(),
                 FileEvent::Save => "保存".to_string(),
@@ -282,7 +282,7 @@ fn event_display_name(event: &Event) -> String {
                 FileEvent::Exit => "退出".to_string(),
                 _ => format!("{file_event:?}"),
             },
-            event::menu::Event::Edit(edit_event) => match edit_event {
+            crate::event::menu::Event::Edit(edit_event) => match edit_event {
                 EditEvent::Undo => "撤销".to_string(),
                 EditEvent::Redo => "重做".to_string(),
                 EditEvent::Cut => "剪切".to_string(),
@@ -291,13 +291,13 @@ fn event_display_name(event: &Event) -> String {
                 EditEvent::SelectAll => "全选".to_string(),
                 EditEvent::Find => "查找".to_string(),
             },
-            event::menu::Event::View(view_event) => match view_event {
+            crate::event::menu::Event::View(view_event) => match view_event {
                 ViewEvent::ZoomIn => "放大".to_string(),
                 ViewEvent::ZoomOut => "缩小".to_string(),
                 ViewEvent::ZoomReset => "重置缩放".to_string(),
                 _ => format!("{view_event:?}"),
             },
-            event::menu::Event::Help(help_event) => match help_event {
+            crate::event::menu::Event::Help(help_event) => match help_event {
                 HelpEvent::About => "关于".to_string(),
             },
         },

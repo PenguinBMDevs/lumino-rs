@@ -4,12 +4,12 @@
 
 use std::path::{Path, PathBuf};
 
-use lumino_core::project::{
-    LuminoProject, TrackSlot, archive,
+use crate::project::{
+    archive, folder,
     data_formats::{LmctlData, LmnamesData, LmsigData, LmtempData},
-    folder,
     metadata::ProjectMetadata,
     track::LmtrackData,
+    LuminoProject, TrackSlot,
 };
 
 /// 从路径加载工程（自动识别形态）
@@ -176,7 +176,7 @@ fn load_from_archive(bytes: &[u8]) -> crate::ExportResult<LuminoProject> {
 
 /// 加载旧版 LMPJ 文件
 fn load_legacy_lmpj(bytes: &[u8]) -> crate::ExportResult<LuminoProject> {
-    let lmpj_data: lumino_core::LmpjData = crate::format::decode_lmpj(bytes)?;
+    let lmpj_data: lumino_midi_loader::LmpjData = crate::format::decode_lmpj(bytes)?;
     let parsed = lmpj_data.to_parsed_midi();
 
     let mut project = LuminoProject::new(
@@ -209,8 +209,8 @@ fn load_legacy_lmpj(bytes: &[u8]) -> crate::ExportResult<LuminoProject> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lumino_core::project::track::{LmtrackData, TrackMeta, TrackVisibilitySer};
-    use lumino_midi::compact::{CompactEvent, EventKind};
+    use crate::project::{LmtrackData, TrackMeta, TrackVisibilitySer};
+    use lumino_midi_io::compact::{CompactEvent, EventKind};
 
     fn create_test_project() -> LuminoProject {
         let mut project = LuminoProject::new("Test");

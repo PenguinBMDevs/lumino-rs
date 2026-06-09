@@ -9,7 +9,7 @@ use crate::editor::velocity::widget::TempoPoint;
 use crate::host::{Host, types::NoteData};
 use crate::{editor::note::Note, message, toolbar::Tool};
 use iced_core::Point;
-use lumino_core::midi::MidiDocument;
+use lumino_midi_loader::MidiDocument;
 use std::sync::Arc;
 
 impl Host {
@@ -147,7 +147,7 @@ impl Host {
     }
 
     /// 设置播放用 MIDI 输出连接
-    pub fn set_playback_midi_output(&mut self, output: Box<dyn lumino_midi::OutputConnection>) {
+    pub fn set_playback_midi_output(&mut self, output: Box<dyn lumino_midi_io::OutputConnection>) {
         self.root.set_midi_output(output);
     }
 
@@ -157,7 +157,7 @@ impl Host {
     }
 
     /// 设置 MIDI API（用于录制等需要输入的功能）
-    pub fn set_midi_api(&mut self, api: Box<dyn lumino_midi::Api>) {
+    pub fn set_midi_api(&mut self, api: Box<dyn lumino_midi_io::Api>) {
         self.root.set_midi_api(api);
     }
 

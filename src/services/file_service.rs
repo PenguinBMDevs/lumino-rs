@@ -1,4 +1,4 @@
-use lumino_core::midi::loader::ProgressCallback;
+use lumino_midi_loader::loader::ProgressCallback;
 use std::path::PathBuf;
 use std::sync::Arc;
 

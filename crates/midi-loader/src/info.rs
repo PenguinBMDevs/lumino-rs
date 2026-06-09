@@ -1,5 +1,9 @@
 use std::path::PathBuf;
 
+use midly::loader::scan_midi_file;
+
+use crate::error::LoaderError;
+
 /// MIDI文件元信息（用于列表显示）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MidiInfo {
@@ -15,7 +19,7 @@ impl MidiInfo {
     /// 使用 midly-fork 的轻量扫描快速获取 MIDI 文件信息
     ///
     /// 顺序读取，峰值内存 < 10MB，不解析事件细节
-    pub fn from_path(path: PathBuf) -> crate::Result<Self> {
+    pub fn from_path(path: PathBuf) -> crate::LoaderResult<Self> {
         Self::from_path_with_progress(path, None)
     }
 
@@ -23,13 +27,13 @@ impl MidiInfo {
     pub fn from_path_with_progress(
         path: PathBuf,
         progress_callback: Option<&dyn Fn(f64)>,
-    ) -> crate::Result<Self> {
+    ) -> crate::LoaderResult<Self> {
         if let Some(cb) = progress_callback {
             cb(0.0);
         }
 
-        let scan_result = midly::loader::scan_midi_file(&path)
-            .map_err(|e| crate::CoreError::MidiParse(format!("扫描 MIDI 文件失败: {e}")))?;
+        let scan_result = scan_midi_file(&path)
+            .map_err(|e| LoaderError::MidiParse(format!("扫描 MIDI 文件失败: {e}")))?;
 
         if let Some(cb) = progress_callback {
             cb(1.0);

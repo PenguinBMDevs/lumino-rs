@@ -4,11 +4,11 @@
 
 use std::path::Path;
 
-use lumino_core::project::{
-    LuminoProject, TrackSlot, archive,
+use crate::project::{
+    archive, folder,
     data_formats::{LmctlData, LmnamesData, LmsigData, LmtempData},
-    folder,
     metadata::{LoadedFileMetadataEntry, LoadedMetadata, ProjectMetadata, TrackMetadataEntry},
+    LuminoProject, TrackSlot,
 };
 
 /// 保存为文件夹形态
@@ -207,9 +207,9 @@ fn build_metadata(project: &LuminoProject) -> ProjectMetadata {
                 name: data.meta.name.clone(),
                 channel: data.meta.channel,
                 visibility: match data.meta.visibility {
-                    lumino_core::project::TrackVisibilitySer::Visible => "visible".into(),
-                    lumino_core::project::TrackVisibilitySer::Muted => "muted".into(),
-                    lumino_core::project::TrackVisibilitySer::Hidden => "hidden".into(),
+                    crate::project::TrackVisibilitySer::Visible => "visible".into(),
+                    crate::project::TrackVisibilitySer::Muted => "muted".into(),
+                    crate::project::TrackVisibilitySer::Hidden => "hidden".into(),
                 },
                 solo: data.meta.solo,
                 note_count: data.note_count,
@@ -227,9 +227,9 @@ fn build_metadata(project: &LuminoProject) -> ProjectMetadata {
                     id: f.id.clone(),
                     original_name: f.original_name.clone(),
                     format: match f.format {
-                        lumino_core::project::LoadedFormat::Mid => "mid".into(),
-                        lumino_core::project::LoadedFormat::Dms => "dms".into(),
-                        lumino_core::project::LoadedFormat::Lmpj => "lmpj".into(),
+                        crate::project::LoadedFormat::Mid => "mid".into(),
+                        crate::project::LoadedFormat::Dms => "dms".into(),
+                        crate::project::LoadedFormat::Lmpj => "lmpj".into(),
                     },
                     imported_at: f.imported_at.clone(),
                     storage_path: f.storage_path.to_string_lossy().into_owned(),
@@ -245,8 +245,8 @@ fn build_metadata(project: &LuminoProject) -> ProjectMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lumino_core::project::track::{LmtrackData, TrackMeta, TrackVisibilitySer};
-    use lumino_midi::compact::{CompactEvent, EventKind};
+    use crate::project::track::{LmtrackData, TrackMeta, TrackVisibilitySer};
+    use lumino_midi_io::compact::{CompactEvent, EventKind};
 
     fn create_test_project() -> LuminoProject {
         let mut project = LuminoProject::new("Test Project");

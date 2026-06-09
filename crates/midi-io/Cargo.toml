@@ -1,5 +1,5 @@
 [package]
-name = "lumino-midi"
+name = "lumino-midi-io"
 version.workspace = true
 rust-version.workspace = true
 homepage.workspace = true

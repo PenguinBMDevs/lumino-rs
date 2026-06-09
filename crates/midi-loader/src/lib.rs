@@ -11,12 +11,13 @@ pub mod track;
 
 pub use dms::DmsInfo;
 pub use document::MidiDocument;
-pub use error::MidiError;
+pub use error::{LoaderError, LoaderResult};
 pub use event::MidiEvent;
 pub use info::MidiInfo;
-pub use midly::loader::PackedControlEvent;
 pub use note_info::NoteInfo;
 pub use track::{TrackManager, TrackView, TrackVisibility};
+
+use std::sync::Arc;
 
 /// 将 BPM 转换为微秒每拍（tempo）
 #[inline]
@@ -29,8 +30,6 @@ pub fn bpm_to_tempo(bpm: f64) -> u32 {
 pub fn tempo_to_bpm(tempo: u32) -> f64 {
     60_000_000.0 / tempo as f64
 }
-
-use std::sync::Arc;
 
 /// LMPJ 文件数据结构（用于序列化/反序列化）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -74,7 +73,7 @@ impl serde::Serialize for ParsedMidi {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(serde::Serialize)]
         struct Helper<'a> {
-            info: &'a crate::MidiInfo,
+            info: &'a MidiInfo,
             midi_data: &'a Option<Vec<u8>>,
         }
         Helper {
@@ -89,7 +88,7 @@ impl<'de> serde::Deserialize<'de> for ParsedMidi {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(serde::Deserialize)]
         struct Helper {
-            info: crate::MidiInfo,
+            info: MidiInfo,
             midi_data: Option<Vec<u8>>,
         }
         let h = Helper::deserialize(deserializer)?;
@@ -109,15 +108,15 @@ impl ParsedMidi {
     /// 获取 MIDI 原始字节数据（用于音频导出等场景，避免重复读盘）
     ///
     /// 优先返回 `midi_data`，如果为 None 则回退到从 `info.path` 读取文件。
-    pub fn get_midi_bytes(&self) -> crate::Result<Vec<u8>> {
+    pub fn get_midi_bytes(&self) -> LoaderResult<Vec<u8>> {
         if let Some(ref bytes) = self.midi_data {
             return Ok(bytes.clone());
         }
         if !self.info.path.as_os_str().is_empty() {
             return std::fs::read(&self.info.path)
-                .map_err(|e| crate::CoreError::Io(std::io::Error::other(e)));
+                .map_err(|e| LoaderError::Io(std::io::Error::other(e)));
         }
-        Err(crate::CoreError::InvalidArgument(
+        Err(LoaderError::InvalidArgument(
             "ParsedMidi 中既无 midi_data 也无 info.path".to_string(),
         ))
     }

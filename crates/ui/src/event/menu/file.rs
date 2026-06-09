@@ -9,15 +9,15 @@ pub enum Event {
     Close,
     /* */
     ImportFiles,
-    MidiLoaded(crate::MidiInfo),
+    MidiLoaded(lumino_midi_loader::MidiInfo),
     MidiLoadError(String),
-    MidiParsed(Arc<crate::ParsedMidi>),
+    MidiParsed(Arc<lumino_midi_loader::ParsedMidi>),
     MidiParseError(String),
     ShowProgress(String, f64), // 消息和进度 0.0-1.0
     HideProgress,
     /* */
     /// DMS 文件解析完成
-    DmsParsed(Arc<crate::ParsedDms>),
+    DmsParsed(Arc<lumino_midi_loader::ParsedDms>),
     /// DMS 文件解析失败
     DmsParseError(String),
     /* */
@@ -44,7 +44,7 @@ pub enum Event {
     /// 测试模式：MIDI 加载完成
     #[cfg(debug_assertions)]
     TestMidiLoaded {
-        parsed: Box<crate::ParsedMidi>,
+        parsed: Box<lumino_midi_loader::ParsedMidi>,
         test_duration: Option<u64>,
     },
 }

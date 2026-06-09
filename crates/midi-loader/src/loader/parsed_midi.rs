@@ -2,29 +2,32 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use midly::loader::{MidiScanResult, scan_midi_file};
+use lumino_memory_monitor::MemoryMonitor;
 
+use crate::error::{LoaderError, LoaderResult};
+use crate::document::MidiDocument;
+use crate::info::MidiInfo;
 use crate::ParsedMidi;
-use crate::memory_monitor::MemoryMonitor;
-use crate::midi::document::MidiDocument;
+use crate::LmpjData;
 
 use super::types::ProgressCallback;
 
-fn decode_lmpj<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> crate::Result<T> {
+fn decode_lmpj<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> LoaderResult<T> {
     let decoded = zstd::stream::decode_all(std::io::Cursor::new(bytes))
-        .map_err(|e| crate::CoreError::Compression(format!("解压失败: {e}")))?;
-    bincode::deserialize(&decoded).map_err(crate::CoreError::from)
+        .map_err(|e| LoaderError::Compression(format!("解压失败: {e}")))?;
+    bincode::deserialize(&decoded).map_err(LoaderError::from)
 }
 
-fn scan_midi_info(path: &std::path::Path) -> crate::Result<MidiScanResult> {
-    scan_midi_file(path).map_err(|e| crate::CoreError::MidiParse(format!("扫描失败: {e}")))
+fn scan_midi_info(path: &std::path::Path) -> LoaderResult<MidiScanResult> {
+    scan_midi_file(path).map_err(|e| LoaderError::MidiParse(format!("扫描失败: {e}")))
 }
 
 pub async fn load_parsed_midi(
     path: PathBuf,
     progress: Option<&ProgressCallback>,
-) -> crate::Result<ParsedMidi> {
+) -> LoaderResult<ParsedMidi> {
     // 大分配前检查内存，防止 OOM 导致系统无响应
-    crate::memory_monitor::MemoryMonitor::global().check();
+    MemoryMonitor::global().check();
 
     let cb = |msg: &str, val: f64| {
         if let Some(p) = progress {
@@ -41,20 +44,20 @@ pub async fn load_parsed_midi(
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|s| s.to_ascii_lowercase())
-        .ok_or_else(|| crate::CoreError::FileFormat("无法获取文件扩展名".to_string()))?;
+        .ok_or_else(|| LoaderError::FileFormat("无法获取文件扩展名".to_string()))?;
 
     if extension == "lmpj" {
         cb("正在加载 Lumino 工程文件", 0.1);
         let data = tokio::fs::read(&path).await.map_err(|e| {
-            let err = crate::CoreError::Io(e);
+            let err = LoaderError::Io(e);
             cb(&err.to_string(), 1.0);
             err
         })?;
         cb("解析 Lumino 工程文件", 0.5);
 
         let parsed = tokio::task::spawn_blocking(move || {
-            let lmpj_data: crate::LmpjData = decode_lmpj(&data)
-                .map_err(|e| crate::CoreError::FileFormat(format!("解析 LMPJ 失败: {e}")))?;
+            let lmpj_data: LmpjData = decode_lmpj(&data)
+                .map_err(|e| LoaderError::FileFormat(format!("解析 LMPJ 失败: {e}")))?;
 
             tracing::info!(
                 "LMPJ 解析成功: info.path={:?}, midi_data.len={:?}",
@@ -62,11 +65,11 @@ pub async fn load_parsed_midi(
                 lmpj_data.midi_data.as_ref().map(|d| d.len())
             );
 
-            Ok::<ParsedMidi, crate::CoreError>(lmpj_data.to_parsed_midi())
+            Ok::<ParsedMidi, LoaderError>(lmpj_data.to_parsed_midi())
         })
         .await
         .map_err(|e| {
-            let err = crate::CoreError::Other(format!("解析 LMPJ 失败: {e}"));
+            let err = LoaderError::Other(format!("解析 LMPJ 失败: {e}"));
             cb(&err.to_string(), 1.0);
             err
         })?
@@ -89,7 +92,7 @@ pub async fn load_parsed_midi(
         move || scan_midi_info(&path)
     })
     .await
-    .map_err(|e| crate::CoreError::Other(format!("扫描 MIDI 失败: {e}")))??;
+    .map_err(|e| LoaderError::Other(format!("扫描 MIDI 失败: {e}")))??;
 
     let note_count = scan_result.note_count;
     let rss_mb = MemoryMonitor::global().current_rss() / (1024 * 1024);
@@ -114,13 +117,13 @@ pub async fn load_parsed_midi(
     let path_for_cache = path.clone();
     let document = tokio::task::spawn_blocking(move || {
         let p_ref = cache_progress.as_ref().map(|a| a.as_ref() as &dyn Fn(f64));
-        crate::midi::MidiDocument::from_notes_file(&path_for_cache, p_ref)
+        crate::MidiDocument::from_notes_file(&path_for_cache, p_ref)
     })
     .await
-    .map_err(|e| crate::CoreError::Other(format!("加载线程 panic: {e}")))?
-    .map_err(|e| crate::CoreError::MidiParse(format!("解析 MIDI 数据失败: {e}")))?;
+    .map_err(|e| LoaderError::Other(format!("加载线程 panic: {e}")))?
+    .map_err(|e| LoaderError::MidiParse(format!("解析 MIDI 数据失败: {e}")))?;
 
-    let info = crate::MidiInfo {
+    let info = MidiInfo {
         path: path.clone(),
         track_count: scan_result.track_count,
         total_notes: scan_result.note_count,
@@ -162,7 +165,7 @@ pub async fn load_parsed_midi_from_bytes(
     track_count: u16,
     total_ticks: u32,
     progress: Option<&ProgressCallback>,
-) -> crate::Result<ParsedMidi> {
+) -> LoaderResult<ParsedMidi> {
     let cb = |msg: &str, val: f64| {
         if let Some(p) = progress {
             p(msg, val);
@@ -183,8 +186,8 @@ pub async fn load_parsed_midi_from_bytes(
     let document = tokio::task::spawn_blocking(move || {
         let (notes, tempo_changes, control_events) =
             midly::loader::extract_notes_and_control_events_from_bytes(&midi_bytes)
-                .map_err(|e| crate::CoreError::MidiParse(format!("提取音符失败: {e}")))?;
-        let track_names = crate::midi::document::scan_track_names(&midi_bytes);
+                .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
+        let track_names = crate::document::scan_track_names(&midi_bytes);
         MidiDocument::build_from_extracted_notes(
             notes,
             tempo_changes,
@@ -192,17 +195,17 @@ pub async fn load_parsed_midi_from_bytes(
             track_names,
             None,
         )
-        .map_err(|e| crate::CoreError::MidiParse(format!("构建文档失败: {e}")))
+        .map_err(|e| LoaderError::MidiParse(format!("构建文档失败: {e}")))
     })
     .await
-    .map_err(|e| crate::CoreError::Other(format!("加载线程 panic: {e}")))??;
+    .map_err(|e| LoaderError::Other(format!("加载线程 panic: {e}")))??;
 
     {
         let final_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
         cb(&format!("MIDI 加载完成 (内存: {final_rss} MB)"), 1.0);
     }
 
-    let info = crate::MidiInfo {
+    let info = MidiInfo {
         path: PathBuf::new(),
         track_count,
         total_notes: 0,

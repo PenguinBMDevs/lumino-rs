@@ -11,8 +11,8 @@ use crate::services::collaboration_service::CollaborationService;
 use crate::services::file_service::FileService;
 use crate::storage;
 
-pub use lumino_core::ParsedDms;
-pub use lumino_core::ParsedMidi;
+pub use lumino_midi_loader::ParsedDms;
+pub use lumino_midi_loader::ParsedMidi;
 
 /// Runner 初始化错误
 #[derive(Debug, thiserror::Error)]
@@ -38,7 +38,7 @@ pub(crate) struct WindowState {
     pub(crate) needs_window_restart: bool,
     pub(crate) dialog_manager: DialogManager,
     pub(crate) progress: ProgressManager,
-    pub(crate) progress_cb: lumino_core::midi::loader::ProgressCallback,
+    pub(crate) progress_cb: lumino_midi_loader::loader::ProgressCallback,
 }
 
 /// MIDI 相关状态
@@ -122,7 +122,7 @@ impl Runner {
 
         // 创建进度管理器
         let (progress, progress_tx) = ProgressManager::new();
-        let progress_cb = lumino_core::midi::loader::progress_from_sender(progress_tx);
+        let progress_cb = lumino_midi_loader::loader::progress_from_sender(progress_tx);
 
         // 创建 MIDI 管理器
         let mut midi = MidiManager::from_config(&config.ui);

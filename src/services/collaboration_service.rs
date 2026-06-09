@@ -133,8 +133,8 @@ impl CollaborationService {
                     user_id,
                     invite_code
                 );
-                lumino_core::event::emit(lumino_core::event::Event::Window(
-                    lumino_core::event::window::Event::CollaborationAuthenticated {
+                lumino_ui::event::emit(lumino_ui::event::Event::Window(
+                    lumino_ui::event::window::Event::CollaborationAuthenticated {
                         user_id,
                         invite_code,
                     },
@@ -142,8 +142,8 @@ impl CollaborationService {
             }
             CollaborationEvent::RoomCreated { room } => {
                 tracing::info!("协作: 房间创建成功! 邀请码: {}", room.invite_code);
-                lumino_core::event::emit(lumino_core::event::Event::Window(
-                    lumino_core::event::window::Event::CollaborationRoomCreated {
+                lumino_ui::event::emit(lumino_ui::event::Event::Window(
+                    lumino_ui::event::window::Event::CollaborationRoomCreated {
                         room_name: room.name,
                         invite_code: room.invite_code,
                     },
@@ -155,8 +155,8 @@ impl CollaborationService {
                     room.name,
                     users.len()
                 );
-                lumino_core::event::emit(lumino_core::event::Event::Window(
-                    lumino_core::event::window::Event::CollaborationRoomJoined {
+                lumino_ui::event::emit(lumino_ui::event::Event::Window(
+                    lumino_ui::event::window::Event::CollaborationRoomJoined {
                         room_name: room.name,
                         invite_code: room.invite_code,
                         user_count: users.len(),
@@ -165,13 +165,13 @@ impl CollaborationService {
             }
             CollaborationEvent::Disconnected => {
                 tracing::info!("协作: 连接断开");
-                lumino_core::event::emit(lumino_core::event::Event::Window(
-                    lumino_core::event::window::Event::CollaborationDisconnected,
+                lumino_ui::event::emit(lumino_ui::event::Event::Window(
+                    lumino_ui::event::window::Event::CollaborationDisconnected,
                 ));
             }
             CollaborationEvent::UserLeft { user_id } => {
-                lumino_core::event::emit(lumino_core::event::Event::Window(
-                    lumino_core::event::window::Event::CollaborationUserLeft { user_id },
+                lumino_ui::event::emit(lumino_ui::event::Event::Window(
+                    lumino_ui::event::window::Event::CollaborationUserLeft { user_id },
                 ));
             }
             CollaborationEvent::MouseUpdate {
@@ -188,8 +188,8 @@ impl CollaborationService {
                     color,
                     username
                 );
-                lumino_core::event::emit(lumino_core::event::Event::Window(
-                    lumino_core::event::window::Event::CollaborationMouseUpdate {
+                lumino_ui::event::emit(lumino_ui::event::Event::Window(
+                    lumino_ui::event::window::Event::CollaborationMouseUpdate {
                         user_id,
                         x: position.x,
                         y: position.y,
@@ -200,8 +200,8 @@ impl CollaborationService {
             }
             CollaborationEvent::NoteBatch { user_id, operation } => {
                 if let Ok(json) = serde_json::to_string(&operation) {
-                    lumino_core::event::emit(lumino_core::event::Event::Window(
-                        lumino_core::event::window::Event::CollaborationNoteUpdate {
+                    lumino_ui::event::emit(lumino_ui::event::Event::Window(
+                        lumino_ui::event::window::Event::CollaborationNoteUpdate {
                             user_id,
                             operation: json,
                         },

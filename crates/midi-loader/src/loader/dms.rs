@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use crate::memory_monitor::MemoryMonitor;
+use lumino_memory_monitor::MemoryMonitor;
+
+use crate::error::{LoaderError, LoaderResult};
 use crate::{DmsInfo, ParsedDms};
 
 use super::types::ProgressCallback;
@@ -8,9 +10,9 @@ use super::types::ProgressCallback;
 pub async fn load_dms(
     path: PathBuf,
     progress: Option<&ProgressCallback>,
-) -> crate::Result<ParsedDms> {
+) -> LoaderResult<ParsedDms> {
     // 大分配前检查内存（DMS 文件解压后可能数百 MB）
-    crate::memory_monitor::MemoryMonitor::global().check();
+    MemoryMonitor::global().check();
 
     let cb = |msg: &str, val: f64| {
         if let Some(p) = progress {
@@ -46,7 +48,7 @@ pub async fn load_dms(
 
         // 首先流式扫描获取元数据
         tracing::info!("[DMS加载] 步骤1: 打开文件");
-        let file = std::fs::File::open(&path_clone).map_err(crate::CoreError::Io)?;
+        let file = std::fs::File::open(&path_clone).map_err(LoaderError::Io)?;
         let mut reader = std::io::BufReader::new(file);
         tracing::info!("[DMS加载] 步骤2: 开始流式扫描");
         let scan_result = lumino_dms::scan_dms_streaming_with_progress(&mut reader, |progress| {
@@ -56,7 +58,7 @@ pub async fn load_dms(
                 0.1 + progress * 0.4,
             );
         })
-        .map_err(|e| crate::CoreError::FileFormat(format!("扫描 DMS 失败: {e}")))?;
+        .map_err(|e| LoaderError::FileFormat(format!("扫描 DMS 失败: {e}")))?;
         tracing::info!(
             "[DMS加载] 步骤3: 扫描完成, 轨道数={}, 音符数={}",
             scan_result.track_count,
@@ -75,12 +77,12 @@ pub async fn load_dms(
             );
         }
         tracing::info!("[DMS加载] 步骤4: 读取完整文件数据");
-        let bytes = std::fs::read(&path_clone).map_err(crate::CoreError::Io)?;
+        let bytes = std::fs::read(&path_clone).map_err(LoaderError::Io)?;
         tracing::info!("[DMS加载] 步骤5: 文件大小 {} 字节", bytes.len());
 
         tracing::info!("[DMS加载] 步骤6: 解压 DMS 数据");
         let lightweight_data = lumino_dms::read_dms_lightweight(&bytes)
-            .map_err(|e| crate::CoreError::FileFormat(format!("读取 DMS 数据失败: {e}")))?;
+            .map_err(|e| LoaderError::FileFormat(format!("读取 DMS 数据失败: {e}")))?;
         tracing::info!(
             "[DMS加载] 步骤7: 解压完成, 解压后大小 {} 字节",
             lightweight_data.len()
@@ -97,17 +99,17 @@ pub async fn load_dms(
             );
         }
 
-        Ok::<_, crate::CoreError>((scan_result, lightweight_data))
+        Ok::<_, LoaderError>((scan_result, lightweight_data))
     })
     .await
     .map_err(|e| {
-        let err = crate::CoreError::Other(format!("加载 DMS 失败: {e}"));
+        let err = LoaderError::Other(format!("加载 DMS 失败: {e}"));
         tracing::error!("[DMS加载] 任务执行失败: {}", e);
         cb(&err.to_string(), 1.0);
         err
     })?
     .map_err(|e| {
-        let err = crate::CoreError::Compression(format!("处理 DMS 失败: {e}"));
+        let err = LoaderError::Compression(format!("处理 DMS 失败: {e}"));
         tracing::error!("[DMS加载] 数据处理失败: {}", e);
         cb(&err.to_string(), 1.0);
         err
@@ -150,7 +152,7 @@ pub async fn save_dms_to_ldms(
     parsed: &ParsedDms,
     path: PathBuf,
     progress: Option<&ProgressCallback>,
-) -> crate::Result<()> {
+) -> LoaderResult<()> {
     let cb = |msg: &str, val: f64| {
         if let Some(p) = progress {
             p(msg, val);
@@ -166,7 +168,7 @@ pub async fn save_dms_to_ldms(
     };
 
     let data = bincode::serialize(&data_for_save).map_err(|e| {
-        let err = crate::CoreError::from(e);
+        let err = LoaderError::from(e);
         cb(&err.to_string(), 1.0);
         err
     })?;
@@ -178,18 +180,18 @@ pub async fn save_dms_to_ldms(
     })
     .await
     .map_err(|e| {
-        let err = crate::CoreError::Other(format!("压缩 LDMS 失败: {e}"));
+        let err = LoaderError::Other(format!("压缩 LDMS 失败: {e}"));
         cb(&err.to_string(), 1.0);
         err
     })?
     .map_err(|e| {
-        let err = crate::CoreError::Compression(format!("压缩 LDMS 失败: {e}"));
+        let err = LoaderError::Compression(format!("压缩 LDMS 失败: {e}"));
         cb(&err.to_string(), 1.0);
         err
     })?;
 
     tokio::fs::write(&path, compressed).await.map_err(|e| {
-        let err = crate::CoreError::Io(e);
+        let err = LoaderError::Io(e);
         cb(&err.to_string(), 1.0);
         err
     })?;

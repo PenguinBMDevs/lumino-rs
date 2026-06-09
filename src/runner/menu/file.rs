@@ -3,7 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use lumino_core::{ParsedMidi, bpm_to_tempo, event};
+use lumino_midi_loader::{ParsedMidi, bpm_to_tempo};
+use lumino_ui::event;
 use lumino_export::midi::{
     MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTrackData,
 };
@@ -30,9 +31,9 @@ impl RunnerInner {
     pub(super) fn handle_file_menu_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        file_event: lumino_core::event::menu::file::Event,
+        file_event: lumino_ui::event::menu::file::Event,
     ) {
-        use lumino_core::event::menu::file::Event::*;
+        use lumino_ui::event::menu::file::Event::*;
 
         match file_event {
             Exit => event_loop.exit(),
@@ -189,7 +190,7 @@ impl RunnerInner {
         let progress_cb = self.window_state.progress_cb.clone();
         tokio::spawn(async move {
             run_async_task(
-                lumino_core::midi::loader::load_dms(path, Some(&progress_cb)),
+                lumino_midi_loader::loader::load_dms(path, Some(&progress_cb)),
                 |parsed| event!(Menu.File.DmsParsed(Arc::new(parsed))),
                 |e| event!(Menu.File.DmsParseError(e)),
             )
@@ -203,7 +204,7 @@ impl RunnerInner {
         let progress_cb = self.window_state.progress_cb.clone();
         tokio::spawn(async move {
             run_async_task(
-                lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb)),
+                lumino_midi_loader::loader::load_parsed_midi(path, Some(&progress_cb)),
                 |parsed| event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed))),
                 |e| event!(Menu.File.MidiParseError(e)),
             )
@@ -246,7 +247,7 @@ impl RunnerInner {
             let progress_cb = self.window_state.progress_cb.clone();
             tokio::spawn(async move {
                 run_async_task(
-                    lumino_core::midi::loader::load_dms(path, Some(&progress_cb)),
+                    lumino_midi_loader::loader::load_dms(path, Some(&progress_cb)),
                     |parsed| event!(Menu.File.DmsParsed(Arc::new(parsed))),
                     |e| event!(Menu.File.DmsParseError(e)),
                 )
@@ -271,7 +272,7 @@ impl RunnerInner {
             let progress_cb = self.window_state.progress_cb.clone();
             tokio::spawn(async move {
                 run_async_task(
-                    lumino_core::midi::loader::load_parsed_midi(path, Some(&progress_cb)),
+                    lumino_midi_loader::loader::load_parsed_midi(path, Some(&progress_cb)),
                     |parsed| event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed))),
                     |e| event!(Menu.File.MidiParseError(e)),
                 )
@@ -403,7 +404,7 @@ impl RunnerInner {
             return;
         };
 
-        let lmpj_data = lumino_core::LmpjData {
+        let lmpj_data = lumino_midi_loader::LmpjData {
             info,
             midi_data: Some(midi_bytes),
         };
@@ -439,7 +440,7 @@ impl RunnerInner {
     }
 
     /// 将编辑器音符导出为 MIDI 字节（内存中），返回 (MidiInfo, midi_bytes)
-    fn export_editor_notes_as_legacy_lmpj(&mut self) -> Option<(lumino_core::MidiInfo, Vec<u8>)> {
+    fn export_editor_notes_as_legacy_lmpj(&mut self) -> Option<(lumino_midi_loader::MidiInfo, Vec<u8>)> {
         let has_notes = {
             let ui = self.window_state.window.ui();
             ui.get_editor_note_count() > 0
@@ -517,7 +518,7 @@ impl RunnerInner {
             .max()
             .unwrap_or(0);
 
-        let info = lumino_core::MidiInfo {
+        let info = lumino_midi_loader::MidiInfo {
             path: Default::default(),
             track_count: total_tracks,
             total_notes,
@@ -709,7 +710,7 @@ impl RunnerInner {
                 }
                 // 阻塞加载刚保存的 MIDI 文件以获取完整文档
                 if let Some(ref source) = self.midi_state.current_midi_source.clone() {
-                    match futures::executor::block_on(lumino_core::midi::loader::load_midi(
+                    match futures::executor::block_on(lumino_midi_loader::loader::load_midi(
                         source.clone(),
                     )) {
                         Ok(parsed) => {
@@ -745,7 +746,7 @@ impl RunnerInner {
             return;
         };
 
-        let project = lumino_core::project::LuminoProject::from_midi_document(document);
+        let project = lumino_export::LuminoProject::from_midi_document(document);
         let cb = self.window_state.progress_cb.clone();
 
         tokio::spawn(async move {
@@ -900,7 +901,7 @@ impl RunnerInner {
     }
 
     /// 将 DMS 数据导入到编辑器
-    pub(super) fn import_dms_to_editor(&mut self, parsed: &Arc<lumino_core::ParsedDms>) {
+    pub(super) fn import_dms_to_editor(&mut self, parsed: &Arc<lumino_midi_loader::ParsedDms>) {
         tracing::info!("[DMS导入] 开始将 DMS 导入编辑器: {:?}", parsed.info.path);
 
         // DMS 需要先转换为 MIDI 格式才能导入编辑器
@@ -918,7 +919,7 @@ impl RunnerInner {
                     );
 
                     tracing::info!("[DMS导入] 步骤3: 直接加载 MIDI 字节");
-                    match lumino_core::midi::loader::load_parsed_midi_from_bytes(
+                    match lumino_midi_loader::loader::load_parsed_midi_from_bytes(
                         midi_bytes,
                         track_count as u16,
                         0,
@@ -958,7 +959,7 @@ impl RunnerInner {
         }
         let mem = self.window_state.window.ui().memory_breakdown();
         let rss_mb =
-            lumino_core::memory_monitor::MemoryMonitor::global().current_rss() / (1024 * 1024);
+            lumino_memory_monitor::MemoryMonitor::global().current_rss() / (1024 * 1024);
         let front_total = mem.note_instances_front_cap as u64 * mem.note_instance_size as u64;
         let back_total = mem.note_instances_back_cap as u64 * mem.note_instance_size as u64;
         tracing::info!(

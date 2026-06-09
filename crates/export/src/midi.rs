@@ -374,10 +374,10 @@ fn convert_to_delta_times(events: &mut [TrackEvent<'_>]) {
 }
 
 /// 将 BPM 转换为微秒每拍
-pub use lumino_core::bpm_to_tempo;
+pub use lumino_midi_loader::bpm_to_tempo;
 
 /// 将微秒每拍转换为 BPM
-pub use lumino_core::tempo_to_bpm;
+pub use lumino_midi_loader::tempo_to_bpm;
 
 #[cfg(test)]
 mod tests {

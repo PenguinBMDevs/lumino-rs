@@ -82,7 +82,7 @@ fn test_midi_to_dms_similarity() {
         dms_reference_path
     );
 
-    let info = lumino_core::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
+    let info = lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
 
     println!("MIDI 文件信息:");
     println!("  音轨数量: {}", info.track_count);
@@ -226,7 +226,7 @@ fn test_midi_memory_usage() {
 
     let initial_memory = get_process_memory_kb();
 
-    let info = lumino_core::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
+    let info = lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
 
     let after_memory = get_process_memory_kb();
     let memory_delta_mb = (after_memory.saturating_sub(initial_memory)) as f64 / 1024.0;
@@ -280,9 +280,9 @@ fn test_midi_lmpj_roundtrip() {
 
     let original_midi_bytes = std::fs::read(&midi_path).expect("读取原始 MIDI 文件失败");
 
-    let info = lumino_core::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
+    let info = lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
 
-    let parsed_midi = lumino_core::midi::ParsedMidi {
+    let parsed_midi = lumino_midi_loader::ParsedMidi {
         info: info.clone(),
         midi_data: Some(original_midi_bytes.clone()),
         document: None,
@@ -295,7 +295,7 @@ fn test_midi_lmpj_roundtrip() {
 
     let lmpj_bytes = std::fs::read(&lmpj_path).expect("读取 LMPJ 文件失败");
 
-    let _parsed_from_lmpj: lumino_core::midi::ParsedMidi =
+    let _parsed_from_lmpj: lumino_midi_loader::ParsedMidi =
         lumino_export::format::decode_lmpj(&lmpj_bytes).expect("解码 LMPJ 文件失败");
 
     let roundtrip_midi_path = temp_dir.join("lumino_test_roundtrip_1.mid");
@@ -307,8 +307,8 @@ fn test_midi_lmpj_roundtrip() {
 
     // 对比语义信息
     let original_info =
-        lumino_core::MidiInfo::from_path(midi_path.clone()).expect("解析原始 MIDI 文件失败");
-    let roundtrip_info = lumino_core::MidiInfo::from_path(roundtrip_midi_path.clone())
+        lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析原始 MIDI 文件失败");
+    let roundtrip_info = lumino_midi_loader::MidiInfo::from_path(roundtrip_midi_path.clone())
         .expect("解析往返 MIDI 文件失败");
 
     println!("原始 MIDI 大小: {} bytes", original_midi_bytes.len());

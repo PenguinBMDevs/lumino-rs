@@ -55,7 +55,7 @@ pub enum AudioAction {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    Core(lumino_core::Event),
+    Core(crate::event::Event),
     Window(Window),
     Sidebar(Sidebar),
     Progress(Option<(String, f64)>),

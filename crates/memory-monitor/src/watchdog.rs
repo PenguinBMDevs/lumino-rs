@@ -44,7 +44,7 @@ fn watchdog_get_process_rss(pid: u32) -> u64 {
 #[cfg(target_os = "macos")]
 fn watchdog_get_process_rss(_pid: u32) -> u64 {
     // macOS 跨进程读取需 entitlement，看门狗在同一进程中运行，用自身 RSS 足够
-    super::platform::get_current_rss()
+    crate::platform::get_current_rss()
 }
 
 #[cfg(target_os = "windows")]
@@ -179,8 +179,8 @@ pub fn spawn_watchdog() {
 
     SPAWNED.get_or_init(|| {
         let pid = std::process::id();
-        let total = super::platform::get_total_physical_memory();
-        let soft_limit = total.saturating_sub(super::DEFAULT_RESERVE_BYTES);
+        let total = crate::platform::get_total_physical_memory();
+        let soft_limit = total.saturating_sub(crate::DEFAULT_RESERVE_BYTES);
 
         tracing::info!(
             "MemoryWatchdog: 启动 (PID={}, soft_limit={} MB, sys_available_min={} MB, poll={}ms)",

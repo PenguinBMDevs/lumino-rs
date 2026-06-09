@@ -6,11 +6,12 @@
 //!
 //! 多线程优化：使用 rayon 并行处理音轨级别的音符转换
 
-use lumino_midi::compact::{CompactEvent, EventKind};
+use lumino_midi_io::compact::{CompactEvent, EventKind};
+use lumino_memory_monitor::MemoryMonitor;
 
-use super::error::MidiResult;
-use super::note_info::NoteInfo;
-use super::track::TrackManager;
+use crate::error::{LoaderError, LoaderResult};
+use crate::note_info::NoteInfo;
+use crate::track::TrackManager;
 
 use std::path::Path;
 
@@ -72,8 +73,8 @@ impl MidiDocument {
     pub fn from_notes_file<P: AsRef<Path>>(
         midi_path: P,
         progress: Option<&dyn Fn(f64)>,
-    ) -> MidiResult<Self> {
-        crate::memory_monitor::MemoryMonitor::global().check();
+    ) -> LoaderResult<Self> {
+        MemoryMonitor::global().check();
 
         let path = midi_path.as_ref();
 
@@ -81,7 +82,7 @@ impl MidiDocument {
             (cb)(0.05);
         }
 
-        let file_bytes = std::fs::read(path).map_err(super::error::MidiError::Io)?;
+        let file_bytes = std::fs::read(path).map_err(LoaderError::Io)?;
 
         if let Some(cb) = progress {
             (cb)(0.15);
@@ -91,7 +92,7 @@ impl MidiDocument {
 
         let (notes, tempo_changes, control_events) =
             midly::loader::extract_notes_and_control_events_from_bytes(&file_bytes)
-                .map_err(|e| super::error::MidiError::Parse(format!("提取音符失败: {e}")))?;
+                .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
 
         drop(file_bytes);
 
@@ -114,7 +115,7 @@ impl MidiDocument {
         control_events: Vec<midly::loader::PackedControlEvent>,
         track_names: Vec<Option<String>>,
         progress: Option<&dyn Fn(f64)>,
-    ) -> MidiResult<Self> {
+    ) -> LoaderResult<Self> {
         let (total_ticks, track_note_counts, total_note_count) =
             Self::build_track_statistics(&notes);
 
@@ -276,7 +277,7 @@ impl MidiDocument {
 
         for &(tick, bpm) in &all_tempo_changes {
             let tempo_microseconds = if bpm > 0.0 {
-                super::bpm_to_tempo(bpm as f64)
+                crate::bpm_to_tempo(bpm as f64)
             } else {
                 500_000
             };
@@ -456,7 +457,7 @@ impl MidiDocument {
         let tick_start_u = tick_start as u32;
         let tick_end_u = tick_end as u32;
 
-        use crate::midi::constants::TICK_SEARCH_BUFFER;
+        use crate::constants::TICK_SEARCH_BUFFER;
 
         // 二分查找：找到第一个可能落在范围内的音符
         let search_start = notes
@@ -533,7 +534,7 @@ impl MidiDocument {
     ) -> Vec<(f32, u8, f32, u8, u8)> {
         let tick_start_u = tick_start as u32;
         let tick_end_u = tick_end as u32;
-        use crate::midi::constants::TICK_SEARCH_BUFFER;
+        use crate::constants::TICK_SEARCH_BUFFER;
 
         // 预分配容量，避免多次扩容
         let mut all_notes = Vec::with_capacity(1024);
@@ -591,8 +592,8 @@ impl MidiDocument {
     /// 保留此方法作为 fallback/测试用。
     #[allow(dead_code)]
     fn collect_notes(events: &[CompactEvent]) -> Vec<(f32, u8, f32, u8, u8)> {
-        use crate::midi::constants::{MAX_CONCURRENT_NOTES, MIDI_KEY_RANGE};
-        use lumino_midi::MIDI_CHANNEL_COUNT;
+        use crate::constants::{MAX_CONCURRENT_NOTES, MIDI_KEY_RANGE};
+        use lumino_midi_io::MIDI_CHANNEL_COUNT;
 
         let mut active_notes: [(u32, u8, u8, bool); MAX_CONCURRENT_NOTES] =
             [(0, 0, 0, false); MAX_CONCURRENT_NOTES];
@@ -641,8 +642,8 @@ impl MidiDocument {
     /// 与 `collect_notes` 逻辑相同，但直接追加到传入的 Vec。
     #[allow(dead_code)]
     fn collect_notes_to(events: &[CompactEvent], out: &mut Vec<(f32, u8, f32, u8, u8)>) {
-        use crate::midi::constants::{MAX_CONCURRENT_NOTES, MIDI_KEY_RANGE};
-        use lumino_midi::MIDI_CHANNEL_COUNT;
+        use crate::constants::{MAX_CONCURRENT_NOTES, MIDI_KEY_RANGE};
+        use lumino_midi_io::MIDI_CHANNEL_COUNT;
 
         let mut active_notes: [(u32, u8, u8, bool); MAX_CONCURRENT_NOTES] =
             [(0, 0, 0, false); MAX_CONCURRENT_NOTES];
@@ -935,13 +936,11 @@ mod tests {
 
     #[test]
     fn test_track_notes_contiguous_range() {
-        // Verify per-track ranges are contiguous (no interleaving)
         let bytes = create_simple_midi_bytes();
         let tmp = std::env::temp_dir().join("doc_contig.mid");
         std::fs::write(&tmp, &bytes).expect("测试：写入临时文件失败");
 
         let doc = MidiDocument::from_notes_file(&tmp, None).expect("测试：加载MIDI文档失败");
-        // get_track_events should return events with matching track_id only
         let evs = doc.get_track_events(0);
         for ev in &evs {
             assert_eq!(
@@ -983,24 +982,12 @@ mod tests {
 
     #[test]
     fn test_scan_track_names_single_track() {
-        // MThd header (format=0, tracks=1, division=480)
         let header = [
-            0x4D, 0x54, 0x68, 0x64, // "MThd"
-            0x00, 0x00, 0x00, 0x06, // header length = 6
-            0x00, 0x00, // format 0
-            0x00, 0x01, // 1 track
-            0x01, 0xE0, // division = 480
+            0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
         ];
-        // MTrk chunk with TrackName "Piano"
-        // delta=0, meta FF 03 05 "Piano", delta=0, end-of-track FF 2F 00
         let track = [
-            0x4D, 0x54, 0x72, 0x6B, // "MTrk"
-            0x00, 0x00, 0x00, 0x0F, // chunk length = 15
-            0x00, // delta=0
-            0xFF, 0x03, 0x05, // Meta TrackName, len=5
-            0x50, 0x69, 0x61, 0x6E, 0x6F, // "Piano"
-            0x00, // delta=0
-            0xFF, 0x2F, 0x00, // End of Track
+            0x4D, 0x54, 0x72, 0x6B, 0x00, 0x00, 0x00, 0x0F, 0x00, 0xFF, 0x03, 0x05, 0x50, 0x69,
+            0x61, 0x6E, 0x6F, 0x00, 0xFF, 0x2F, 0x00,
         ];
         let mut midi = Vec::new();
         midi.extend_from_slice(&header);
@@ -1018,7 +1005,7 @@ mod tests {
         ];
         let track = [
             0x4D, 0x54, 0x72, 0x6B, 0x00, 0x00, 0x00, 0x04, 0x00, 0xFF, 0x2F,
-            0x00, // Just end-of-track
+            0x00,
         ];
         let mut midi = Vec::new();
         midi.extend_from_slice(&header);
@@ -1031,29 +1018,14 @@ mod tests {
 
     #[test]
     fn test_tempo_changes_uses_file_tempo_at_tick_zero() {
-        // 创建 MIDI 文件：140 BPM 的 Set Tempo 事件在 tick 0
-        // 验证修复：真实 tempo 不会被默认的 120 BPM 覆盖
-        //
-        // Set Tempo 计算公式: 60_000_000 / 140 ≈ 428571 微秒/拍 = 0x068A1B
         let header = [
-            0x4D, 0x54, 0x68, 0x64, // "MThd"
-            0x00, 0x00, 0x00, 0x06, // header length = 6
-            0x00, 0x00, // format 0
-            0x00, 0x01, // 1 track
-            0x01, 0xE0, // division = 480
+            0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
         ];
-        // Track: Set Tempo 140 BPM at tick 0 + one note
         let track_data = [
-            0x00, // delta=0
-            0xFF, 0x51, 0x03, 0x06, 0x8A, 0x1B, // Set Tempo: 428571 μs/拍 = 140 BPM
-            0x00, // delta=0
-            0x90, 0x3C, 0x64, // NoteOn ch=0, key=60, vel=100
-            0x83, 0x60, // delta=480 (VLQ)
-            0x80, 0x3C, 0x00, // NoteOff ch=0, key=60, vel=0
-            0x00, // delta=0
-            0xFF, 0x2F, 0x00, // End of Track
+            0x00, 0xFF, 0x51, 0x03, 0x06, 0x8A, 0x1B, 0x00, 0x90, 0x3C, 0x64, 0x83, 0x60, 0x80,
+            0x3C, 0x00, 0x00, 0xFF, 0x2F, 0x00,
         ];
-        let mut track_chunk = vec![0x4D, 0x54, 0x72, 0x6B]; // "MTrk"
+        let mut track_chunk = vec![0x4D, 0x54, 0x72, 0x6B];
         let track_len = (track_data.len() as u32).to_be_bytes();
         track_chunk.extend_from_slice(&track_len);
         track_chunk.extend_from_slice(&track_data);
@@ -1067,7 +1039,6 @@ mod tests {
 
         let doc = MidiDocument::from_notes_file(&tmp, None).expect("测试：加载MIDI文档失败");
 
-        // 验证 tempo_changes 包含正确速度
         assert!(!doc.tempo_changes.is_empty(), "应有 tempo 变化");
         let (first_tick, first_bpm) = doc.tempo_changes[0];
         assert_eq!(first_tick, 0, "第一个 tempo 事件应在 tick 0");
@@ -1085,15 +1056,11 @@ mod tests {
 
     #[test]
     fn test_tempo_changes_default_120_when_no_tick_zero_tempo() {
-        // 创建 MIDI 文件：没有 Set Tempo 事件
-        // 验证：默认使用 120 BPM
         let header = [
             0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
         ];
         let track_data = [
-            0x00, 0x90, 0x3C, 0x64, // NoteOn
-            0x83, 0x60, 0x80, 0x3C, 0x00, // NoteOff
-            0x00, 0xFF, 0x2F, 0x00, // End of Track
+            0x00, 0x90, 0x3C, 0x64, 0x83, 0x60, 0x80, 0x3C, 0x00, 0x00, 0xFF, 0x2F, 0x00,
         ];
         let mut track_chunk = vec![0x4D, 0x54, 0x72, 0x6B];
         let track_len = (track_data.len() as u32).to_be_bytes();
@@ -1122,24 +1089,12 @@ mod tests {
 
     #[test]
     fn test_tempo_changes_multiple_changes() {
-        // 创建 MIDI 文件：tempo 变化在 tick 0 和 tick 960
-        // 140 BPM at tick 0, then 80 BPM at tick 960
-        //
-        // 80 BPM = 60_000_000 / 80 = 750000 μs = 0x0B71C0
         let header = [
             0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,
         ];
         let track_data = [
-            0x00, // delta=0
-            0xFF, 0x51, 0x03, 0x06, 0x8A, 0x1B, // Set Tempo: 140 BPM at tick 0
-            0x00, // delta=0
-            0x90, 0x3C, 0x64, // NoteOn ch=0 key=60 vel=100 at tick 0
-            0x83, 0x60, // delta=480 (VLQ)
-            0x80, 0x3C, 0x00, // NoteOff ch=0 key=60 vel=0 at tick 480
-            0x83, 0x60, // delta=480 (VLQ)
-            0xFF, 0x51, 0x03, 0x0B, 0x71, 0xC0, // Set Tempo: 80 BPM at tick 960
-            0x00, // delta=0
-            0xFF, 0x2F, 0x00, // End of Track
+            0x00, 0xFF, 0x51, 0x03, 0x06, 0x8A, 0x1B, 0x00, 0x90, 0x3C, 0x64, 0x83, 0x60, 0x80,
+            0x3C, 0x00, 0x83, 0x60, 0xFF, 0x51, 0x03, 0x0B, 0x71, 0xC0, 0x00, 0xFF, 0x2F, 0x00,
         ];
         let mut track_chunk = vec![0x4D, 0x54, 0x72, 0x6B];
         let track_len = (track_data.len() as u32).to_be_bytes();
@@ -1168,11 +1123,8 @@ mod tests {
 
     #[test]
     fn test_scan_track_names_riff_wrapper() {
-        // RIFF wrapper around a standard MIDI file
         let riff_header = [
-            0x52, 0x49, 0x46, 0x46, // "RIFF"
-            0x00, 0x00, 0x00, 0x00, // size (placeholder)
-            0x52, 0x4D, 0x49, 0x44, // "RMID"
+            0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x52, 0x4D, 0x49, 0x44,
         ];
         let mthd = [
             0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xE0,

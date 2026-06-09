@@ -7,7 +7,7 @@ use crate::editor::history;
 use crate::editor::note::Note;
 use crate::editor::velocity::CcData;
 use crate::editor::velocity::widget::TempoPoint;
-use lumino_core::midi::MidiDocument;
+use lumino_midi_loader::MidiDocument;
 use std::collections::HashMap;
 use std::sync::Arc;
 

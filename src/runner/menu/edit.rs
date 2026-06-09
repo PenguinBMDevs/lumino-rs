@@ -4,8 +4,8 @@ use crate::runner::RunnerInner;
 
 impl RunnerInner {
     /// 处理编辑菜单事件
-    pub(super) fn handle_edit_menu_event(&mut self, event: lumino_core::event::menu::edit::Event) {
-        use lumino_core::event::menu::edit::Event::*;
+    pub(super) fn handle_edit_menu_event(&mut self, event: lumino_ui::event::menu::edit::Event) {
+        use lumino_ui::event::menu::edit::Event::*;
 
         match event {
             Undo => {

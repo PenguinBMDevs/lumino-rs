@@ -18,4 +18,4 @@ pub use project::*;
 pub use user::*;
 pub use view::*;
 
-pub use lumino_core::MidiEvent;
+pub use lumino_midi_loader::MidiEvent;

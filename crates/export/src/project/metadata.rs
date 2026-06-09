@@ -4,6 +4,8 @@
 
 use std::path::Path;
 
+use crate::{ExportError, ExportResult};
+
 /// 音轨元数据条目
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TrackMetadataEntry {
@@ -142,27 +144,28 @@ impl ProjectMetadata {
     }
 
     /// 从 TOML 字符串解析
-    pub fn from_toml_str(s: &str) -> crate::Result<Self> {
+    pub fn from_toml_str(s: &str) -> ExportResult<Self> {
         toml::from_str(s)
-            .map_err(|e| crate::CoreError::Serialization(format!("metadata.toml 解析失败: {e}")))
+            .map_err(|e| ExportError::Encoding(format!("metadata.toml 解析失败: {e}")))
     }
 
     /// 编码为 TOML 字符串
-    pub fn to_toml_str(&self) -> crate::Result<String> {
+    pub fn to_toml_str(&self) -> ExportResult<String> {
         toml::to_string_pretty(self)
-            .map_err(|e| crate::CoreError::Serialization(format!("metadata.toml 编码失败: {e}")))
+            .map_err(|e| ExportError::Encoding(format!("metadata.toml 编码失败: {e}")))
     }
 
     /// 从文件读取
-    pub fn from_file(path: impl AsRef<Path>) -> crate::Result<Self> {
-        let content = std::fs::read_to_string(path).map_err(crate::CoreError::Io)?;
+    pub fn from_file(path: impl AsRef<Path>) -> ExportResult<Self> {
+        let content = std::fs::read_to_string(path)?;
         Self::from_toml_str(&content)
     }
 
     /// 写入文件
-    pub fn to_file(&self, path: impl AsRef<Path>) -> crate::Result<()> {
+    pub fn to_file(&self, path: impl AsRef<Path>) -> ExportResult<()> {
         let content = self.to_toml_str()?;
-        std::fs::write(path, content).map_err(crate::CoreError::Io)
+        std::fs::write(path, content)?;
+        Ok(())
     }
 }
 

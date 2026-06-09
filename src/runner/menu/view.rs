@@ -13,9 +13,9 @@ impl RunnerInner {
     /// 处理视图菜单事件
     pub(super) fn handle_view_menu_event(
         &mut self,
-        view_event: lumino_core::event::menu::view::Event,
+        view_event: lumino_ui::event::menu::view::Event,
     ) {
-        use lumino_core::event::menu::view::Event::*;
+        use lumino_ui::event::menu::view::Event::*;
 
         match view_event {
             Theme(theme) => {

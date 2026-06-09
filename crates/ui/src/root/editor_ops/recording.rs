@@ -55,7 +55,7 @@ impl Root {
         let device_name = device.name.clone();
         let buffer = self.midi_input_buffer.clone();
 
-        let callback: lumino_midi::MidiInputCallback =
+        let callback: lumino_midi_io::MidiInputCallback =
             Box::new(move |_timestamp: u64, data: &[u8]| {
                 if let Ok(mut buf) = buffer.lock() {
                     buf.push_back(data.to_vec());
@@ -227,7 +227,7 @@ impl Root {
     }
 
     /// 设置 MIDI API（供外部调用，如 MidiManager 初始化完成后）
-    pub fn set_midi_api(&mut self, api: Box<dyn lumino_midi::Api>) {
+    pub fn set_midi_api(&mut self, api: Box<dyn lumino_midi_io::Api>) {
         // 缓存设备列表到设置面板（供设备选择器使用）
         let devices = api.inputs().unwrap_or_default();
         self.settings.midi_devices = devices.iter().map(|d| (d.id, d.name.clone())).collect();

@@ -4,7 +4,8 @@
 
 use std::path::{Path, PathBuf};
 
-use super::track::LmtrackData;
+use crate::project::track::LmtrackData;
+use crate::{ExportError, ExportResult};
 
 /// 文件夹形态工程路径常量
 pub struct FolderPaths;
@@ -37,7 +38,7 @@ impl FolderPaths {
 }
 
 /// 创建文件夹工程的基础目录结构
-pub fn create_folder_structure(base: impl AsRef<Path>) -> crate::Result<()> {
+pub fn create_folder_structure(base: impl AsRef<Path>) -> ExportResult<()> {
     let base = base.as_ref();
     std::fs::create_dir_all(base.join(FolderPaths::LUMINO_DIR))?;
     std::fs::create_dir_all(base.join(FolderPaths::TRACKS_DIR))?;
@@ -50,23 +51,24 @@ pub fn create_folder_structure(base: impl AsRef<Path>) -> crate::Result<()> {
 }
 
 /// 写入版本文件
-pub fn write_version_file(base: impl AsRef<Path>, version: u16) -> crate::Result<()> {
+pub fn write_version_file(base: impl AsRef<Path>, version: u16) -> ExportResult<()> {
     let path = base.as_ref().join(FolderPaths::VERSION_FILE);
-    std::fs::write(path, version.to_string()).map_err(crate::CoreError::Io)
+    std::fs::write(path, version.to_string())?;
+    Ok(())
 }
 
 /// 读取版本文件
-pub fn read_version_file(base: impl AsRef<Path>) -> crate::Result<u16> {
+pub fn read_version_file(base: impl AsRef<Path>) -> ExportResult<u16> {
     let path = base.as_ref().join(FolderPaths::VERSION_FILE);
-    let content = std::fs::read_to_string(path).map_err(crate::CoreError::Io)?;
+    let content = std::fs::read_to_string(path)?;
     content
         .trim()
         .parse()
-        .map_err(|e| crate::CoreError::FileFormat(format!("version file: {e}")))
+        .map_err(|e| ExportError::FileFormat(format!("version file: {e}")))
 }
 
 /// 读取所有音轨文件
-pub fn read_all_tracks(base: impl AsRef<Path>) -> crate::Result<Vec<LmtrackData>> {
+pub fn read_all_tracks(base: impl AsRef<Path>) -> ExportResult<Vec<LmtrackData>> {
     let tracks_dir = base.as_ref().join(FolderPaths::TRACKS_DIR);
     let mut tracks = Vec::new();
 
@@ -74,8 +76,7 @@ pub fn read_all_tracks(base: impl AsRef<Path>) -> crate::Result<Vec<LmtrackData>
         return Ok(tracks);
     }
 
-    let mut entries: Vec<_> = std::fs::read_dir(&tracks_dir)
-        .map_err(crate::CoreError::Io)?
+    let mut entries: Vec<_> = std::fs::read_dir(&tracks_dir)?
         .filter_map(|e| e.ok())
         .filter(|e| {
             e.path()
@@ -90,7 +91,7 @@ pub fn read_all_tracks(base: impl AsRef<Path>) -> crate::Result<Vec<LmtrackData>
 
     for entry in entries {
         let path = entry.path();
-        let bytes = std::fs::read(&path).map_err(crate::CoreError::Io)?;
+        let bytes = std::fs::read(&path)?;
         let track = LmtrackData::decode(&bytes)?;
         tracks.push(track);
     }
@@ -99,14 +100,15 @@ pub fn read_all_tracks(base: impl AsRef<Path>) -> crate::Result<Vec<LmtrackData>
 }
 
 /// 写入音轨文件
-pub fn write_track(base: impl AsRef<Path>, track_id: u16, data: &LmtrackData) -> crate::Result<()> {
+pub fn write_track(base: impl AsRef<Path>, track_id: u16, data: &LmtrackData) -> ExportResult<()> {
     let tracks_dir = base.as_ref().join(FolderPaths::TRACKS_DIR);
     std::fs::create_dir_all(&tracks_dir)?;
 
     let filename = format!("{:03}.lmtrack", track_id);
     let path = tracks_dir.join(filename);
     let encoded = data.encode()?;
-    std::fs::write(path, encoded).map_err(crate::CoreError::Io)
+    std::fs::write(path, encoded)?;
+    Ok(())
 }
 
 /// 获取音轨文件路径
@@ -121,15 +123,15 @@ pub fn encode_binary_file(
     magic: &[u8; 4],
     version: u16,
     data: &impl serde::Serialize,
-) -> crate::Result<Vec<u8>> {
+) -> ExportResult<Vec<u8>> {
     let mut result = Vec::new();
     result.extend_from_slice(magic);
     result.extend_from_slice(&version.to_le_bytes());
 
     let serialized = bincode::serialize(data)
-        .map_err(|e| crate::CoreError::Serialization(format!("bincode: {e}")))?;
+        .map_err(|e| ExportError::Encoding(format!("bincode: {e}")))?;
     let compressed = zstd::stream::encode_all(std::io::Cursor::new(serialized), 3)
-        .map_err(|e| crate::CoreError::Compression(format!("zstd: {e}")))?;
+        .map_err(|e| ExportError::Compression(format!("zstd: {e}")))?;
 
     result.extend_from_slice(&compressed);
     Ok(result)
@@ -139,29 +141,29 @@ pub fn encode_binary_file(
 pub fn decode_binary_file<T: serde::de::DeserializeOwned>(
     bytes: &[u8],
     expected_magic: &[u8; 4],
-) -> crate::Result<T> {
+) -> ExportResult<T> {
     if bytes.len() < 6 {
-        return Err(crate::CoreError::FileFormat(
+        return Err(ExportError::FileFormat(
             "binary file: too short".into(),
         ));
     }
     if &bytes[0..4] != expected_magic {
-        return Err(crate::CoreError::FileFormat(
+        return Err(ExportError::FileFormat(
             "binary file: invalid magic".into(),
         ));
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
     if version != 1 {
-        return Err(crate::CoreError::FileFormat(format!(
+        return Err(ExportError::FileFormat(format!(
             "binary file: unsupported version {version}"
         )));
     }
 
     let decompressed = zstd::stream::decode_all(std::io::Cursor::new(&bytes[6..]))
-        .map_err(|e| crate::CoreError::Compression(format!("decompression: {e}")))?;
+        .map_err(|e| ExportError::Compression(format!("decompression: {e}")))?;
 
     bincode::deserialize(&decompressed)
-        .map_err(|e| crate::CoreError::Serialization(format!("decode: {e}")))
+        .map_err(|e| ExportError::Encoding(format!("decode: {e}")))
 }
 
 #[cfg(test)]
@@ -214,10 +216,10 @@ mod tests {
         };
         let data = LmtrackData::from_compact_events(
             meta,
-            &[lumino_midi::compact::CompactEvent::new(
+            &[lumino_midi_io::compact::CompactEvent::new(
                 0,
                 0,
-                lumino_midi::compact::EventKind::NoteOn,
+                lumino_midi_io::compact::EventKind::NoteOn,
                 0,
                 60,
                 100,

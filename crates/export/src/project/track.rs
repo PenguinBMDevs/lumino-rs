@@ -2,7 +2,9 @@
 //!
 //! `.lmtrack` 文件存储单个音轨的解析后事件数据，采用 bincode + zstd 压缩。
 
-use lumino_midi::compact::CompactEvent;
+use lumino_midi_io::compact::CompactEvent;
+
+use crate::{ExportError, ExportResult};
 
 /// 音轨可见性（序列化版本）
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -62,9 +64,9 @@ impl LmtrackHeader {
     }
 
     /// 从字节数组解码
-    pub fn from_bytes(bytes: &[u8]) -> crate::Result<Self> {
+    pub fn from_bytes(bytes: &[u8]) -> ExportResult<Self> {
         if bytes.len() < Self::SIZE {
-            return Err(crate::CoreError::FileFormat(
+            return Err(ExportError::FileFormat(
                 "lmtrack header: too short".into(),
             ));
         }
@@ -99,7 +101,7 @@ impl LmtrackData {
     pub fn from_compact_events(meta: TrackMeta, events: &[CompactEvent]) -> Self {
         let note_count = events
             .iter()
-            .filter(|e| matches!(e.kind(), lumino_midi::compact::EventKind::NoteOn))
+            .filter(|e| matches!(e.kind(), lumino_midi_io::compact::EventKind::NoteOn))
             .count() as u64;
 
         // CompactEvent 扁平化为字节数组
@@ -125,7 +127,7 @@ impl LmtrackData {
     }
 
     /// 编码为字节（文件头 + bincode + zstd）
-    pub fn encode(&self) -> crate::Result<Vec<u8>> {
+    pub fn encode(&self) -> ExportResult<Vec<u8>> {
         let mut result = Vec::new();
 
         // 写入文件头
@@ -138,31 +140,31 @@ impl LmtrackData {
 
         // bincode 序列化主体
         let serialized = bincode::serialize(self)
-            .map_err(|e| crate::CoreError::Serialization(format!("lmtrack bincode: {e}")))?;
+            .map_err(|e| ExportError::Encoding(format!("lmtrack bincode: {e}")))?;
 
         // zstd 压缩
         let compressed = zstd::stream::encode_all(std::io::Cursor::new(serialized), 3)
-            .map_err(|e| crate::CoreError::Compression(format!("lmtrack zstd: {e}")))?;
+            .map_err(|e| ExportError::Compression(format!("lmtrack zstd: {e}")))?;
 
         result.extend_from_slice(&compressed);
         Ok(result)
     }
 
     /// 从字节解码
-    pub fn decode(bytes: &[u8]) -> crate::Result<Self> {
+    pub fn decode(bytes: &[u8]) -> ExportResult<Self> {
         if bytes.len() < LmtrackHeader::SIZE {
-            return Err(crate::CoreError::FileFormat("lmtrack: too short".into()));
+            return Err(ExportError::FileFormat("lmtrack: too short".into()));
         }
 
         // 验证魔数
         let header = LmtrackHeader::from_bytes(bytes)?;
         if &header.magic != b"LMTR" {
-            return Err(crate::CoreError::FileFormat(
+            return Err(ExportError::FileFormat(
                 "lmtrack: invalid magic".into(),
             ));
         }
         if header.version != 1 {
-            return Err(crate::CoreError::FileFormat(format!(
+            return Err(ExportError::FileFormat(format!(
                 "lmtrack: unsupported version {}",
                 header.version
             )));
@@ -172,11 +174,11 @@ impl LmtrackData {
         let decompressed = zstd::stream::decode_all(std::io::Cursor::new(
             &bytes[LmtrackHeader::SIZE..],
         ))
-        .map_err(|e| crate::CoreError::Compression(format!("lmtrack decompression: {e}")))?;
+        .map_err(|e| ExportError::Compression(format!("lmtrack decompression: {e}")))?;
 
         // bincode 反序列化
         bincode::deserialize(&decompressed)
-            .map_err(|e| crate::CoreError::Serialization(format!("lmtrack decode: {e}")))
+            .map_err(|e| ExportError::Encoding(format!("lmtrack decode: {e}")))
     }
 }
 
@@ -215,8 +217,8 @@ mod tests {
     fn test_lmtrack_encode_decode() {
         let meta = create_test_meta(0);
         let events = vec![
-            CompactEvent::new(0, 0, lumino_midi::compact::EventKind::NoteOn, 0, 60, 100),
-            CompactEvent::new(480, 0, lumino_midi::compact::EventKind::NoteOff, 0, 60, 0),
+            CompactEvent::new(0, 0, lumino_midi_io::compact::EventKind::NoteOn, 0, 60, 100),
+            CompactEvent::new(480, 0, lumino_midi_io::compact::EventKind::NoteOff, 0, 60, 0),
         ];
         let data = LmtrackData::from_compact_events(meta, &events);
 
@@ -243,8 +245,8 @@ mod tests {
     fn test_compact_events_iterator() {
         let meta = create_test_meta(1);
         let events = vec![
-            CompactEvent::new(100, 1, lumino_midi::compact::EventKind::NoteOn, 2, 64, 80),
-            CompactEvent::new(200, 1, lumino_midi::compact::EventKind::NoteOff, 2, 64, 0),
+            CompactEvent::new(100, 1, lumino_midi_io::compact::EventKind::NoteOn, 2, 64, 80),
+            CompactEvent::new(200, 1, lumino_midi_io::compact::EventKind::NoteOff, 2, 64, 0),
         ];
         let data = LmtrackData::from_compact_events(meta, &events);
 

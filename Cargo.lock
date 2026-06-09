@@ -3436,6 +3436,7 @@ dependencies = [
  "chrono",
  "futures",
  "lumino-core",
+ "lumino-midi-loader",
  "reqwest",
  "serde",
  "serde_json",
@@ -3453,25 +3454,17 @@ dependencies = [
 name = "lumino-core"
 version = "0.1.0"
 dependencies = [
- "bincode",
  "chrono",
- "crc32fast",
- "encoding_rs",
  "font-kit",
  "libc",
- "lumino-dms",
- "lumino-midi",
- "midly",
- "puffin",
- "rayon",
+ "lumino-memory-monitor",
+ "lumino-midi-loader",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "tokio",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
  "winapi",
- "zstd",
 ]
 
 [[package]]
@@ -3495,19 +3488,25 @@ dependencies = [
  "atomic_float",
  "bincode",
  "bytes",
+ "chrono",
+ "crc32fast",
  "encoding_rs",
  "flac-encoder",
  "hound",
  "lumino-core",
  "lumino-dms",
- "lumino-midi",
+ "lumino-memory-monitor",
+ "lumino-midi-io",
+ "lumino-midi-loader",
  "midly",
  "num-bigint",
  "rayon",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "toml 0.9.12+spec-1.1.0",
  "tracing",
  "xsynth-core",
  "xsynth-soundfonts",
@@ -3527,7 +3526,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "lumino-midi"
+name = "lumino-memory-monitor"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "tracing",
+ "winapi",
+]
+
+[[package]]
+name = "lumino-midi-io"
 version = "0.1.0"
 dependencies = [
  "libloading 0.9.0",
@@ -3538,6 +3546,26 @@ dependencies = [
  "xsynth-core",
  "xsynth-realtime",
  "xsynth-soundfonts",
+]
+
+[[package]]
+name = "lumino-midi-loader"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "encoding_rs",
+ "lumino-dms",
+ "lumino-memory-monitor",
+ "lumino-midi-io",
+ "midly",
+ "puffin",
+ "rayon",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "zstd",
 ]
 
 [[package]]
@@ -3561,7 +3589,9 @@ dependencies = [
  "lumino-dms",
  "lumino-export",
  "lumino-gfx",
- "lumino-midi",
+ "lumino-memory-monitor",
+ "lumino-midi-io",
+ "lumino-midi-loader",
  "lumino-ui",
  "midly",
  "muda",
@@ -3602,7 +3632,10 @@ dependencies = [
  "lumino-collaboration",
  "lumino-core",
  "lumino-gfx",
- "lumino-midi",
+ "lumino-memory-monitor",
+ "lumino-midi-io",
+ "lumino-midi-loader",
+ "midly",
  "once_cell",
  "parking_lot",
  "puffin",

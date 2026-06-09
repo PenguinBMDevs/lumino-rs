@@ -1,7 +1,7 @@
 //! Runner 窗口事件处理
 
 use crate::runner::{RunnerInner, dialog_manager::DialogType};
-use lumino_core::event::window::Event as WindowEvent;
+use lumino_ui::event::window::Event as WindowEvent;
 
 impl RunnerInner {
     /// 处理窗口事件

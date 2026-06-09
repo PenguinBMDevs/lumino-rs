@@ -190,14 +190,14 @@ impl ToolbarHandler {
     fn handle_toolbar_undo_redo(&self, _root: &mut Root, event: &crate::toolbar::Event) {
         if matches!(event, crate::toolbar::Event::Undo) {
             tracing::info!("Root: 触发撤销操作");
-            lumino_core::event::emit(lumino_core::event::Event::Menu(
-                lumino_core::event::menu::Event::Edit(lumino_core::event::menu::edit::Event::Undo),
+            crate::event::emit(crate::event::Event::Menu(
+                crate::event::menu::Event::Edit(crate::event::menu::edit::Event::Undo),
             ));
         }
         if matches!(event, crate::toolbar::Event::Redo) {
             tracing::info!("Root: 触发重做操作");
-            lumino_core::event::emit(lumino_core::event::Event::Menu(
-                lumino_core::event::menu::Event::Edit(lumino_core::event::menu::edit::Event::Redo),
+            crate::event::emit(crate::event::Event::Menu(
+                crate::event::menu::Event::Edit(crate::event::menu::edit::Event::Redo),
             ));
         }
     }
@@ -205,8 +205,8 @@ impl ToolbarHandler {
     fn handle_toolbar_collaboration(&self, _root: &mut Root, event: &crate::toolbar::Event) {
         if matches!(event, crate::toolbar::Event::OpenCollaborationDialog) {
             tracing::info!("Root: 触发打开协作对话框");
-            lumino_core::event::emit(lumino_core::Event::Window(
-                lumino_core::event::window::Event::OpenCollaborationDialog,
+            crate::event::emit(crate::event::Event::Window(
+                crate::event::window::Event::OpenCollaborationDialog,
             ));
         }
     }
@@ -240,7 +240,7 @@ impl ToolbarHandler {
             return;
         }
 
-        let config = lumino_core::midi::quantize::QuantizeConfig::new(grid_size, 1.0);
+        let config = lumino_midi_loader::quantize::QuantizeConfig::new(grid_size, 1.0);
 
         // 获取选中音符索引（无选中则量化全部）
         let selected_indices: Vec<usize> = {
@@ -267,17 +267,17 @@ impl ToolbarHandler {
         );
         root.editor.editor_state.data.history.push(snapshot);
 
-        let mut quantizable_notes: Vec<lumino_core::midi::quantize::QuantizableNote> =
+        let mut quantizable_notes: Vec<lumino_midi_loader::quantize::QuantizableNote> =
             selected_indices
                 .iter()
                 .map(|&i| {
                     let note = &root.editor.editor_state.data.notes[i];
-                    lumino_core::midi::quantize::QuantizableNote::new(note.tick, note.length)
+                    lumino_midi_loader::quantize::QuantizableNote::new(note.tick, note.length)
                 })
                 .collect();
 
         let modified_count =
-            lumino_core::midi::quantize::quantize_notes(&mut quantizable_notes, &config);
+            lumino_midi_loader::quantize::quantize_notes(&mut quantizable_notes, &config);
 
         if modified_count > 0 {
             for (pos, &i) in selected_indices.iter().enumerate() {
@@ -317,8 +317,8 @@ impl ToolbarHandler {
         // Ctrl+点击：打开独立对话框窗口
         if root.toolbar.ctrl_pressed {
             tracing::info!("Root: Ctrl+点击变速按钮，打开变速对话框窗口");
-            lumino_core::event::emit(lumino_core::event::Event::Window(
-                lumino_core::event::window::Event::OpenSpeedChangeDialog,
+            crate::event::emit(crate::event::Event::Window(
+                crate::event::window::Event::OpenSpeedChangeDialog,
             ));
             return;
         }

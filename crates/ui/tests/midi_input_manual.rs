@@ -143,7 +143,7 @@ fn run_manual_test() {
 
     // 步骤 1：创建 MIDI API
     info!("步骤 1/5: 初始化 MIDI API...");
-    let api = match lumino_midi::new_api(&lumino_midi::ApiKind::System) {
+    let api = match lumino_midi_io::new_api(&lumino_midi_io::ApiKind::System) {
         Ok(api) => {
             success!("System MIDI API 初始化成功");
             api

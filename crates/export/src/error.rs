@@ -35,7 +35,27 @@ pub enum ExportError {
     /// 编码错误
     #[error("编码错误: {0}")]
     Encoding(String),
+
+    /// 文件格式错误
+    #[error("文件格式错误: {0}")]
+    FileFormat(String),
+
+    /// 压缩/解压错误
+    #[error("压缩错误: {0}")]
+    Compression(String),
 }
 
 /// 导出结果类型
 pub type ExportResult<T> = Result<T, ExportError>;
+
+impl From<bincode::Error> for ExportError {
+    fn from(err: bincode::Error) -> Self {
+        ExportError::Encoding(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for ExportError {
+    fn from(err: serde_json::Error) -> Self {
+        ExportError::Encoding(err.to_string())
+    }
+}

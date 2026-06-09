@@ -16,7 +16,7 @@ fn decode_and_resave_lmpj_if_present() {
 
     // 尝试解码为 ParsedMidi
     let bytes = std::fs::read(&path).expect("读取 LMPJ 失败");
-    let parsed: lumino_core::midi::ParsedMidi =
+    let parsed: lumino_midi_loader::ParsedMidi =
         lumino_export::format::decode_lmpj(&bytes).expect("解码 LMPJ 失败");
 
     // 现在把它保存到临时文件
@@ -28,7 +28,7 @@ fn decode_and_resave_lmpj_if_present() {
 
     // 再次读取并解码，验证基本字段
     let round_bytes = std::fs::read(&tmp).expect("读取临时 LMPJ 失败");
-    let parsed_round: lumino_core::midi::ParsedMidi =
+    let parsed_round: lumino_midi_loader::ParsedMidi =
         lumino_export::format::decode_lmpj(&round_bytes).expect("解码临时 LMPJ 失败");
 
     // 验证基本信息一致（path 字段可能相同）

@@ -45,7 +45,7 @@ impl winit::application::ApplicationHandler for Runner {
                     });
 
                     tokio::spawn(async move {
-                        match lumino_core::midi::loader::load_parsed_midi(
+                        match lumino_midi_loader::loader::load_parsed_midi(
                             midi_path,
                             Some(&progress_cb),
                         )
@@ -53,9 +53,9 @@ impl winit::application::ApplicationHandler for Runner {
                         {
                             Ok(parsed) => {
                                 tracing::info!("测试模式：MIDI 加载完成");
-                                lumino_core::event::emit(lumino_core::event::Event::Menu(
-                                    lumino_core::event::menu::Event::File(
-                                        lumino_core::event::menu::file::Event::MidiParsed(
+                                lumino_ui::event::emit(lumino_ui::event::Event::Menu(
+                                    lumino_ui::event::menu::Event::File(
+                                        lumino_ui::event::menu::file::Event::MidiParsed(
                                             std::sync::Arc::new(parsed),
                                         ),
                                     ),
@@ -63,9 +63,9 @@ impl winit::application::ApplicationHandler for Runner {
                             }
                             Err(e) => {
                                 tracing::error!("测试模式：MIDI 加载失败 - {e}");
-                                lumino_core::event::emit(lumino_core::event::Event::Menu(
-                                    lumino_core::event::menu::Event::File(
-                                        lumino_core::event::menu::file::Event::MidiParseError(
+                                lumino_ui::event::emit(lumino_ui::event::Event::Menu(
+                                    lumino_ui::event::menu::Event::File(
+                                        lumino_ui::event::menu::file::Event::MidiParseError(
                                             e.to_string(),
                                         ),
                                     ),

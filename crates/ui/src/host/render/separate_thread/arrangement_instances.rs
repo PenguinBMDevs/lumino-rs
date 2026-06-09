@@ -25,7 +25,7 @@ pub fn build_arrangement_all(
     track_order: &[usize],
     track_colors: &[[f32; 3]],
     track_visible: &[bool],
-    midi_doc: Option<&lumino_core::midi::MidiDocument>,
+    midi_doc: Option<&lumino_midi_loader::MidiDocument>,
     track_notes: &TrackNotesMap,
     playback_position: f32,
     bg_color: [f32; 3],
@@ -158,7 +158,7 @@ fn collect_notes_cache(
 
 fn collect_notes_doc(
     out: &mut Vec<ArrangementNoteInstance>,
-    doc: &lumino_core::midi::MidiDocument,
+    doc: &lumino_midi_loader::MidiDocument,
     tid: usize,
     _ti: usize,
     color: [f32; 3],

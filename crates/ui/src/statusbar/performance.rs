@@ -73,7 +73,7 @@ impl CpuMonitor {
 }
 
 fn get_cpu_time_us() -> u64 {
-    lumino_core::memory_monitor::platform::get_process_cpu_time_us()
+    lumino_memory_monitor::platform::get_process_cpu_time_us()
 }
 
 /// 渲染性能面板

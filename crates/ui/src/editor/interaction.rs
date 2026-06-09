@@ -2,7 +2,7 @@ use super::{EditState, Editor, HitType, Note};
 use crate::constants::editor::{DEFAULT_MIDI_CHANNEL, DEFAULT_NOTE_VELOCITY};
 use crate::message::{AudioAction, EditorAction};
 use crate::toolbar::Tool;
-use lumino_core::event;
+use crate::event;
 use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
 
 impl Editor {

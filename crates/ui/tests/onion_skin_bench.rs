@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::hint::black_box;
 use std::time::Instant;
 
-use lumino_core::midi::MidiDocument;
+use lumino_midi_loader::MidiDocument;
 use lumino_gfx::{
     CameraParams, CameraUniform, GridRenderer, NoteInstance, NoteRenderer, SwappableBuffer,
 };
