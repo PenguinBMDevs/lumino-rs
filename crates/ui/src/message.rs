@@ -37,6 +37,14 @@ pub enum EditorAction {
     Scrubbed {
         tick: f32,
     },
+    /// 演奏指示线拖拽开始（固定指示线模式下）
+    IndicatorDragStart {
+        x: f32,
+    },
+    /// 演奏指示线拖拽移动
+    IndicatorDragMove {
+        x: f32,
+    },
 }
 
 #[derive(Debug, Clone)]

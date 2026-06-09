@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 const WATCHDOG_INTERVAL_MS: u64 = 50;
 
 /// 看门狗系统可用内存阈值：低于此值时直接 SIGKILL
-const WATCHDOG_MIN_AVAILABLE_BYTES: u64 = 350 * 1024 * 1024;    // 350mb 应该够
+const WATCHDOG_MIN_AVAILABLE_BYTES: u64 = 350 * 1024 * 1024; // 350mb 应该够
 
 // ── 平台相关：通过 PID 获取进程 RSS（完全独立，不依赖 /proc/self）──
 
@@ -260,5 +260,4 @@ pub fn spawn_watchdog() {
 /// 后续方案：使用 `dispatch_source` 监听 macOS 的 `memorypressure` 事件，
 /// 仅在系统内存压力升高时触发检查，而非固定间隔轮询。
 #[cfg(target_os = "macos")]
-pub fn spawn_watchdog() {
-}
+pub fn spawn_watchdog() {}

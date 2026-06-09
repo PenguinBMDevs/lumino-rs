@@ -15,6 +15,8 @@ pub struct GridInteractionState {
     pub shift_pressed: bool,
     /// 循环区域是否正在拖拽（同步标记，无需等消息处理）
     pub is_loop_dragging: bool,
+    /// 演奏指示线是否正在被拖拽
+    pub is_dragging_indicator: bool,
 }
 
 impl Default for GridInteractionState {
@@ -25,6 +27,7 @@ impl Default for GridInteractionState {
             last_click_pos: None,
             shift_pressed: false,
             is_loop_dragging: false,
+            is_dragging_indicator: false,
         }
     }
 }

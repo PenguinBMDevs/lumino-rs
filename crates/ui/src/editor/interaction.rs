@@ -31,6 +31,32 @@ impl Editor {
             }
             EditorAction::Scrubbed { tick } => {
                 self.playback_position = tick;
+                // 固定指示线模式下：更新 fixed_indicator_position 到当前屏幕位置
+                // 使指示线出现在点击位置，而不是强制回到预设点
+                if self.editor_state.auto_scroll.mode
+                    == lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft
+                {
+                    let v = &self.editor_state.view;
+                    let new_pos = (tick * v.zoom_x - v.scroll_x).max(0.0) as u32;
+                    self.editor_state.auto_scroll.fixed_indicator_position = new_pos;
+                }
+            }
+            EditorAction::IndicatorDragStart { x } => {
+                // 固定指示线模式下拖拽指示线：更新固定位置到鼠标位置
+                let new_pos = (x - self.editor_state.view.keyboard_width).max(0.0) as u32;
+                self.editor_state.auto_scroll.fixed_indicator_position = new_pos;
+                // 同时更新播放位置到鼠标对应的 tick
+                let tick = self.x_to_tick(x);
+                let snapped_tick = self.snap_tick(tick).max(0.0);
+                self.playback_position = snapped_tick;
+            }
+            EditorAction::IndicatorDragMove { x } => {
+                // 拖拽中：持续更新固定位置和播放位置
+                let new_pos = (x - self.editor_state.view.keyboard_width).max(0.0) as u32;
+                self.editor_state.auto_scroll.fixed_indicator_position = new_pos;
+                let tick = self.x_to_tick(x);
+                let snapped_tick = self.snap_tick(tick).max(0.0);
+                self.playback_position = snapped_tick;
             }
         }
     }

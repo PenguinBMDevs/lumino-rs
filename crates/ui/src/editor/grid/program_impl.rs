@@ -62,6 +62,11 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                         },
                     )));
                 }
+                if state.is_dragging_indicator {
+                    return Some(Action::publish(Message::EditorAction(
+                        EditorAction::IndicatorDragMove { x: local_pos.x },
+                    )));
+                }
                 if cursor_over_bounds.is_some() {
                     return Some(Action::publish(Message::EditorAction(EditorAction::Moved(
                         local_pos,
@@ -77,6 +82,9 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                     return Some(Action::publish(Message::LoopRange(
                         crate::message::LoopRangeAction::RulerReleased,
                     )));
+                }
+                if state.is_dragging_indicator {
+                    state.is_dragging_indicator = false;
                 }
                 return Some(Action::publish(Message::EditorAction(
                     EditorAction::Released,
@@ -159,6 +167,24 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                             }
                             crate::editor::SelectionHitType::Inside => mouse::Interaction::Pointer,
                         };
+                    }
+                }
+
+                // 固定指示线模式下：检测是否悬停在指示线上
+                if self.editor.editor_state.auto_scroll.mode
+                    == lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft
+                    && let Some(local_pos) = state.position
+                {
+                    let v = &self.editor.editor_state.view;
+                    if local_pos.y < v.ruler_height && local_pos.x >= v.keyboard_width {
+                        let indicator_screen_x = self
+                            .editor
+                            .get_playback_indicator_screen_x()
+                            .unwrap_or(v.keyboard_width);
+                        let hit_margin = 8.0;
+                        if (local_pos.x - indicator_screen_x).abs() <= hit_margin {
+                            return mouse::Interaction::ResizingHorizontally;
+                        }
                     }
                 }
 

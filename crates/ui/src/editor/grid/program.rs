@@ -66,6 +66,22 @@ impl<'a> PianoRollGrid<'a> {
                 }
             }
 
+            // 固定指示线模式下：检测是否点击到指示线本身（支持拖拽）
+            let asc = self.editor.editor_state.auto_scroll;
+            if asc.mode == lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft {
+                let indicator_screen_x = self
+                    .editor
+                    .get_playback_indicator_screen_x()
+                    .unwrap_or(v.keyboard_width);
+                let hit_margin = 8.0; // 点击容差
+                if (local_pos.x - indicator_screen_x).abs() <= hit_margin {
+                    state.is_dragging_indicator = true;
+                    return Some(canvas::Action::publish(Message::EditorAction(
+                        EditorAction::IndicatorDragStart { x: local_pos.x },
+                    )));
+                }
+            }
+
             let tick = self.editor.x_to_tick(local_pos.x);
             let snapped_tick = self.editor.snap_tick(tick).max(0.0);
             return Some(canvas::Action::publish(Message::EditorAction(

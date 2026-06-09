@@ -260,6 +260,7 @@ impl Root {
             lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft => {
                 let indicator_pos = asc.fixed_indicator_position as f32;
                 let target_scroll_x = playback_tick * ppu - indicator_pos;
+                // 到达末尾时自动松开固定，滚动停在末尾
                 vp.scroll_x = target_scroll_x.clamp(0.0, max_scroll);
             }
             lumino_core::storage::config::AutoScrollMode::ScrollingIndicator => {
