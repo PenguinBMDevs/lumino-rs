@@ -26,6 +26,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "--cap-lints warn"
+
 jobs:
   build-linux:
     name: Build Linux ${{ matrix.arch }}
@@ -34,26 +38,86 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-musl
+          - target: x86_64-unknown-linux-gnu
             arch: x86_64
             extension: ""
-          - target: aarch64-unknown-linux-musl
+            linker: x86_64-linux-gnu-gcc
+            cross_packages: ""
+          - target: aarch64-unknown-linux-gnu
             arch: aarch64
             extension: ""
-          - target: armv7-unknown-linux-musleabihf
+            linker: aarch64-linux-gnu-gcc
+            cross_packages: gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross
+          - target: armv7-unknown-linux-gnueabihf
             arch: armv7
             extension: ""
+            linker: arm-linux-gnueabihf-gcc
+            cross_packages: gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          toolchain: stable
-          target: ${{ matrix.target }}
-          override: true
-      - name: Install musl tools
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            pkg-config \
+            nasm \
+            libclang-dev \
+            clang \
+            libasound2-dev \
+            libfreetype6-dev \
+            libfontconfig1-dev \
+            libgtk-3-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libvulkan-dev \
+            libssl-dev \
+            libzstd-dev \
+            libtiff-dev \
+            libpng-dev \
+            libjpeg-dev \
+            libwebp-dev \
+            libgif-dev \
+            libpulse-dev \
+            libdbus-1-dev \
+            libxi-dev \
+            libxtst-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxcomposite-dev \
+            libxdamage-dev \
+            libpq-dev \
+            libsqlite3-dev \
+            ${{ matrix.cross_packages }}
+
+      - name: Configure cargo for cross-compilation
+        run: |
+          mkdir -p .cargo
+          echo '[target.${{ matrix.target }}]' >> .cargo/config.toml
+          echo 'linker = "${{ matrix.linker }}"' >> .cargo/config.toml
+          cat .cargo/config.toml
+
       - name: Build
         run: |
           if [ "${{ github.event.inputs.release_mode }}" = "release" ]; then
@@ -61,15 +125,18 @@ jobs:
           else
             cargo build --target ${{ matrix.target }}
           fi
+
       - name: Generate filename
         id: filename
         run: |
           FILENAME="Lumino-v${{ github.event.inputs.version }}-preview${{ github.event.inputs.preview_number }}-Linux-${{ matrix.arch }}${{ matrix.extension }}"
           echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
+
       - name: Rename binary
         run: |
           BUILD_TYPE="${{ github.event.inputs.release_mode == 'release' && 'release' || 'debug' }}"
           mv "target/${{ matrix.target }}/${BUILD_TYPE}/lumino-rs${{ matrix.extension }}" "${{ steps.filename.outputs.filename }}"
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.filename.outputs.filename }}
@@ -78,48 +145,63 @@ jobs:
 
   build-windows:
     name: Build Windows ${{ matrix.arch }}
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-pc-windows-gnu
+          - target: x86_64-pc-windows-msvc
             arch: x86_64
-            extension: .exe
-          - target: i686-pc-windows-gnu
-            arch: x86
             extension: .exe
           - target: aarch64-pc-windows-msvc
             arch: arm64
             extension: .exe
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          toolchain: stable
-          target: ${{ matrix.target }}
-          override: true
-      - name: Install MinGW (GNU targets)
-        if: contains(matrix.target, '-gnu')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install LLVM (for bindgen)
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "17"
+
+      - name: Set LIBCLANG_PATH
+        run: echo "LIBCLANG_PATH=$((llvm-config --prefix)/bin)" >> $env:GITHUB_ENV
+
       - name: Build
+        shell: pwsh
         run: |
-          if [ "${{ github.event.inputs.release_mode }}" = "release" ]; then
+          if ("${{ github.event.inputs.release_mode }}" -eq "release") {
             cargo build --target ${{ matrix.target }} --release
-          else
+          } else {
             cargo build --target ${{ matrix.target }}
-          fi
+          }
+
       - name: Generate filename
         id: filename
+        shell: bash
         run: |
           FILENAME="Lumino-v${{ github.event.inputs.version }}-preview${{ github.event.inputs.preview_number }}-Windows-${{ matrix.arch }}${{ matrix.extension }}"
           echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
+
       - name: Rename binary
+        shell: pwsh
         run: |
-          BUILD_TYPE="${{ github.event.inputs.release_mode == 'release' && 'release' || 'debug' }}"
-          mv "target/${{ matrix.target }}/${BUILD_TYPE}/lumino-rs${{ matrix.extension }}" "${{ steps.filename.outputs.filename }}"
+          $BUILD_TYPE = if ("${{ github.event.inputs.release_mode }}" -eq "release") { "release" } else { "debug" }
+          Move-Item "target/${{ matrix.target }}/${BUILD_TYPE}/lumino-rs${{ matrix.extension }}" "${{ steps.filename.outputs.filename }}"
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.filename.outputs.filename }}
@@ -140,12 +222,29 @@ jobs:
             arch: arm64
             extension: ""
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          toolchain: stable
-          target: ${{ matrix.target }}
-          override: true
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install dependencies
+        run: |
+          brew install cmake pkg-config nasm llvm
+
+      - name: Set environment variables
+        run: |
+          echo "$(brew --prefix llvm)/bin" >> $GITHUB_PATH
+
       - name: Build
         run: |
           if [ "${{ github.event.inputs.release_mode }}" = "release" ]; then
@@ -153,15 +252,18 @@ jobs:
           else
             cargo build --target ${{ matrix.target }}
           fi
+
       - name: Generate filename
         id: filename
         run: |
           FILENAME="Lumino-v${{ github.event.inputs.version }}-preview${{ github.event.inputs.preview_number }}-macOS-${{ matrix.arch }}${{ matrix.extension }}"
           echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
+
       - name: Rename binary
         run: |
           BUILD_TYPE="${{ github.event.inputs.release_mode == 'release' && 'release' || 'debug' }}"
           mv "target/${{ matrix.target }}/${BUILD_TYPE}/lumino-rs${{ matrix.extension }}" "${{ steps.filename.outputs.filename }}"
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.filename.outputs.filename }}
