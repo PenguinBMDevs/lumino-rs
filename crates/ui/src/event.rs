@@ -28,58 +28,28 @@ impl Event {
             Self::Window(e) => e.display_name(),
         }
     }
-}
 
-#[macro_export]
-/// 事件宏
-macro_rules! event {
-    /* Window start */
-    (Window.$($rest:tt)+) => { // 窗口事件宏
-        $crate::event::Event::Window( // 窗口事件
-            $crate::event::window::Event::$($rest)+ // 窗口事件子项
-        )
-    };
-    /* Window end */
+    // ── 构造函数（替代 event! 宏，IDE 友好） ──
 
-    /* Menu File start */
-    (Menu.File.$($rest:tt)+) => {
-        $crate::event::Event::Menu(
-            $crate::event::menu::Event::File(
-                $crate::event::menu::file::Event::$($rest)+
-            )
-        )
-    };
-    /* Menu File end */
+    pub fn menu_file(event: menu::file::Event) -> Self {
+        Self::Menu(menu::Event::File(event))
+    }
 
-    /* Menu Edit start */
-    (Menu.Edit.$($rest:tt)+) => {
-        $crate::event::Event::Menu(
-            $crate::event::menu::Event::Edit(
-                $crate::event::menu::edit::Event::$($rest)+
-            )
-        )
-    };
-    /* Menu Edit end */
+    pub fn menu_edit(event: menu::edit::Event) -> Self {
+        Self::Menu(menu::Event::Edit(event))
+    }
 
-    /* Menu View start */
-    (Menu.View.$($rest:tt)+) => {
-        $crate::event::Event::Menu(
-            $crate::event::menu::Event::View(
-                $crate::event::menu::view::Event::$($rest)+
-            )
-        )
-    };
-    /* Menu view end */
+    pub fn menu_view(event: menu::view::Event) -> Self {
+        Self::Menu(menu::Event::View(event))
+    }
 
-    /* Menu Help start */
-    (Menu.Help.$($rest:tt)+) => {
-        $crate::event::Event::Menu(
-            $crate::event::menu::Event::Help(
-                $crate::event::menu::help::Event::$($rest)+
-            )
-        )
-    };
-    /* Menu Help end */
+    pub fn menu_help(event: menu::help::Event) -> Self {
+        Self::Menu(menu::Event::Help(event))
+    }
+
+    pub fn window(event: window::Event) -> Self {
+        Self::Window(event)
+    }
 }
 
 #[derive(Debug, Default)]

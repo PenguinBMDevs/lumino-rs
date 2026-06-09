@@ -79,11 +79,11 @@ impl ToolbarHandler {
 
     /// 执行播放逻辑
     fn do_play(root: &mut Root) {
-        if root.playback_manager.is_none() {
+        if root.playback.manager.is_none() {
             Self::init_playback_manager(root);
         }
 
-        if let Some(manager) = &mut root.playback_manager {
+        if let Some(manager) = &mut root.playback.manager {
             manager.play();
             root.toolbar.is_playing = true;
             tracing::info!("Root: 开始播放");
@@ -92,7 +92,7 @@ impl ToolbarHandler {
 
     /// 执行暂停逻辑
     fn do_pause(root: &mut Root) {
-        if let Some(manager) = &mut root.playback_manager {
+        if let Some(manager) = &mut root.playback.manager {
             manager.pause();
             root.toolbar.is_playing = false;
             tracing::info!("Root: 暂停播放");
@@ -101,7 +101,7 @@ impl ToolbarHandler {
 
     /// 执行停止逻辑
     fn do_stop(root: &mut Root) {
-        if let Some(manager) = &mut root.playback_manager {
+        if let Some(manager) = &mut root.playback.manager {
             manager.stop();
             root.toolbar.is_playing = false;
             root.editor.playback_position = 0.0;
@@ -126,26 +126,26 @@ impl ToolbarHandler {
 
         // 先创建空的 manager，让 update_playback_notes 能工作
         manager.set_current_track_notes(Vec::new());
-        root.playback_manager = Some(manager);
+        root.playback.manager = Some(manager);
 
         // 通过 update_playback_notes 填充所有音轨的音符（含 document 懒加载）
         root.update_playback_notes();
 
         // 用缓存的 MIDI 输出连接
-        if let Some(output) = root.pending_midi_output.take()
-            && let Some(manager) = &mut root.playback_manager
+        if let Some(output) = root.playback.pending_midi_output.take()
+            && let Some(manager) = &mut root.playback.manager
         {
             manager.set_midi_output(output);
         }
 
         // 应用缓存的 tempo 变化
-        if let Some(changes) = root.pending_tempo_changes.take()
-            && let Some(manager) = &mut root.playback_manager
+        if let Some(changes) = root.playback.pending_tempo_changes.take()
+            && let Some(manager) = &mut root.playback.manager
         {
             manager.set_tempo_changes(changes);
         }
 
-        if let Some(_manager) = &root.playback_manager {
+        if let Some(_manager) = &root.playback.manager {
             tracing::info!(
                 "Root: 播放管理器已初始化 (division={}, 过滤阈值={})",
                 division,
@@ -156,7 +156,7 @@ impl ToolbarHandler {
         // 同步循环状态到播放引擎（用户可能在创建管理器前已开启循环）
         if let Some(loop_range) = &root.editor.loop_range
             && loop_range.enabled()
-            && let Some(manager) = &mut root.playback_manager
+            && let Some(manager) = &mut root.playback.manager
         {
             manager.set_looping(true);
             manager.set_loop_range(loop_range.start_tick(), loop_range.end_tick());

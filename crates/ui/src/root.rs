@@ -1,4 +1,4 @@
-//! Root 模块 - 应用程序根组件
+﻿//! Root 模块 - 应用程序根组件
 //!
 //! 该模块已拆分为以下子模块：
 //! - `handlers`: 消息处理器主入口
@@ -10,8 +10,7 @@ use crate::state::root_state::{DialogType, RootState};
 use crate::{editor, message, settings, sidebar, statusbar, titlebar, toolbar, window};
 use lumino_midi_loader::MidiDocument;
 use lumino_core::storage::config::UiConfig;
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// 根组件各组件的内存占用快照（字节和计数）
 #[derive(Debug, Clone, Default)]
@@ -41,6 +40,8 @@ pub mod theme;
 mod collaboration;
 mod editor_ops;
 pub mod handlers;
+mod midi_state;
+mod playback_state;
 mod view;
 
 pub type Message = message::Message;
@@ -63,15 +64,8 @@ pub struct Root {
     pub(crate) is_progress_window: bool,
     /// UI 状态
     pub(crate) state: RootState,
-    /// 播放管理器
-    pub(crate) playback_manager: Option<crate::playback::PlaybackManager>,
-    /// 延迟应用的 Tempo 变化（播放管理器未初始化时缓存）
-    pub(crate) pending_tempo_changes: Option<Vec<crate::playback::TempoChange>>,
-    /// 延迟应用的 MIDI 输出（播放管理器未初始化时缓存）
-    pub(crate) pending_midi_output: Option<Box<dyn lumino_midi_io::OutputConnection>>,
-    /// 各音轨的 MIDI 控制事件（CC/PC/PB），供播放时使用
-    pub(crate) track_midi_events:
-        std::collections::HashMap<usize, Vec<crate::playback::MidiTrackEvent>>,
+    /// 播放状态（播放管理器、Tempo 变化、MIDI 输出等）
+    pub playback: playback_state::PlaybackState,
     /// 洋葱皮音符原始数据缓存（tick, key, length, color）
     /// 存原始数据而非 NoteInstance，因为 NoteInstance 含屏幕坐标（随 scroll/zoom 变化）
     pub(crate) cached_onion_skin_notes: Option<Vec<(f32, u16, f32, iced_core::Color)>>,
@@ -81,16 +75,10 @@ pub struct Root {
     pub(crate) velocity_filter_threshold: u8,
     /// 力度面板高度（可拖拽调整）
     pub(crate) velocity_panel_height: f32,
-    /// MIDI 文档引用（用于懒加载非当前音轨的音符，避免全量 preload）
-    pub(crate) midi_document: Option<Arc<MidiDocument>>,
+    /// MIDI 连接状态（文档引用、输入连接、缓冲区、API）
+    pub midi: midi_state::MidiConnectionState,
     /// 录制状态
     pub recording: editor::recording::RecordingState,
-    /// MIDI 输入连接（保持打开状态，drop 时自动关闭端口）
-    pub midi_input_connection: Option<Box<dyn lumino_midi_io::InputConnection>>,
-    /// MIDI 输入数据缓冲区（midir 回调线程写入，UI 线程读取）
-    pub midi_input_buffer: Arc<Mutex<VecDeque<Vec<u8>>>>,
-    /// MIDI API 引用（用于录制时打开输入端口）
-    pub midi_api: Option<Box<dyn lumino_midi_io::Api>>,
 }
 
 /// Root 构造参数
@@ -122,19 +110,13 @@ impl Root {
             progress: None,
             is_progress_window: params.is_progress_window,
             state,
-            playback_manager: None,
-            pending_tempo_changes: None,
-            pending_midi_output: None,
-            track_midi_events: std::collections::HashMap::new(),
+            playback: playback_state::PlaybackState::new(),
             cached_onion_skin_notes: None,
             onion_skin_generation: 0,
             velocity_filter_threshold: params.ui_config.velocity_filter_threshold,
             velocity_panel_height: crate::editor::velocity::VELOCITY_PANEL_HEIGHT,
-            midi_document: None,
+            midi: midi_state::MidiConnectionState::new(),
             recording: editor::recording::RecordingState::new(),
-            midi_input_connection: None,
-            midi_input_buffer: Arc::new(Mutex::new(VecDeque::new())),
-            midi_api: None,
         }
     }
 
@@ -220,7 +202,7 @@ impl Root {
 
     /// 更新播放状态（应在主循环中定期调用）
     pub fn update_playback(&mut self) -> Option<f32> {
-        if let Some(manager) = &mut self.playback_manager {
+        if let Some(manager) = &mut self.playback.manager {
             if manager.state() != crate::playback::PlaybackState::Playing {
                 return None;
             }
@@ -279,7 +261,7 @@ impl Root {
 
     /// 获取播放状态
     pub fn is_playing(&self) -> bool {
-        self.playback_manager
+        self.playback.manager
             .as_ref()
             .map(|m| m.state() == crate::playback::PlaybackState::Playing)
             .unwrap_or_default()
@@ -313,7 +295,7 @@ impl Root {
             }
         }
         self.editor.editor_state.data.cc_data.bend_points = bend_points;
-        self.midi_document = Some(doc);
+        self.midi.document = Some(doc);
     }
 
     /// 收集各组件的内存占用快照
@@ -321,9 +303,9 @@ impl Root {
         let editor_mem = self.editor.memory_breakdown();
 
         // track_midi_events: HashMap<usize, Vec<MidiTrackEvent>>
-        let track_midi_events_entries = self.track_midi_events.len();
+        let track_midi_events_entries = self.playback.track_midi_events.len();
         let track_midi_events_bytes = self
-            .track_midi_events
+            .playback.track_midi_events
             .values()
             .map(|v| v.capacity() * std::mem::size_of::<crate::playback::MidiTrackEvent>())
             .sum();

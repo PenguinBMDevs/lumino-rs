@@ -1,4 +1,4 @@
-//! Root 录制操作子模块
+﻿//! Root 录制操作子模块
 
 use crate::editor::note::Note;
 use crate::editor::recording::RecordingState;
@@ -20,7 +20,7 @@ impl Root {
     ///
     /// 打开选中的 MIDI 输入设备（或第一个可用设备），回调将原始数据写入共享缓冲区。
     pub fn start_recording(&mut self) {
-        let api = match &self.midi_api {
+        let api = match &self.midi.api {
             Some(api) => api,
             None => {
                 tracing::warn!("录制: MIDI API 未初始化，无法录制");
@@ -53,7 +53,7 @@ impl Root {
 
         let device_id = device.id;
         let device_name = device.name.clone();
-        let buffer = self.midi_input_buffer.clone();
+        let buffer = self.midi.input_buffer.clone();
 
         let callback: lumino_midi_io::MidiInputCallback =
             Box::new(move |_timestamp: u64, data: &[u8]| {
@@ -66,7 +66,7 @@ impl Root {
             Ok(conn) => {
                 let track = self.editor.editor_state.data.current_track;
                 self.recording.start(Some(device_name.clone()), track);
-                self.midi_input_connection = Some(conn);
+                self.midi.input_connection = Some(conn);
                 self.toolbar.is_recording = true;
                 tracing::info!(
                     "录制: 已开始在设备 \"{}\" (#{}) 上录制",
@@ -89,7 +89,7 @@ impl Root {
         }
 
         // 关闭 MIDI 输入连接
-        if let Some(conn) = self.midi_input_connection.take() {
+        if let Some(conn) = self.midi.input_connection.take() {
             conn.close();
         }
 
@@ -140,7 +140,7 @@ impl Root {
         let mut notes_changed = false;
 
         let events: Vec<Vec<u8>> = {
-            let mut buf = match self.midi_input_buffer.lock() {
+            let mut buf = match self.midi.input_buffer.lock() {
                 Ok(b) => b,
                 Err(_) => return,
             };
@@ -239,7 +239,7 @@ impl Root {
             self.settings.selected_midi_device = Some(first.id);
         }
 
-        self.midi_api = Some(api);
+        self.midi.api = Some(api);
         tracing::debug!("Root: MIDI API 已设置，检测到 {} 个输入设备", devices.len());
     }
 

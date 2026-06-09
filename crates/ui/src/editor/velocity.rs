@@ -10,6 +10,7 @@
 pub mod widget;
 
 pub use widget::TempoPoint;
+pub use widget::VelocityCanvasState;
 
 use crate::Element;
 

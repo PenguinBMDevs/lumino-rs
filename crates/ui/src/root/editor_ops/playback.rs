@@ -1,4 +1,4 @@
-//! 编辑器操作 - 播放管理
+﻿//! 编辑器操作 - 播放管理
 
 use crate::playback::NoteEvent;
 use crate::root::Root;
@@ -10,12 +10,12 @@ impl Root {
     /// 当前轨从 `editor.notes` 实时读取发送到引擎；
     /// 其他音轨靠引擎直接从 document 流式读取，零额外内存。
     pub fn update_playback_notes(&mut self) {
-        let Some(manager) = &mut self.playback_manager else {
+        let Some(manager) = &mut self.playback.manager else {
             return;
         };
 
         // 更新 MIDI 文档引用（让引擎直接读 document 事件流）
-        if let Some(doc) = &self.midi_document {
+        if let Some(doc) = &self.midi.document {
             manager.set_document(
                 Arc::clone(doc),
                 self.editor.editor_state.data.current_track as u16,
@@ -43,7 +43,7 @@ impl Root {
 
         // 同步 MIDI 控制事件
         let mut midi_events: Vec<crate::playback::MidiTrackEvent> = Vec::new();
-        for events in self.track_midi_events.values() {
+        for events in self.playback.track_midi_events.values() {
             midi_events.extend(events.clone());
         }
         if !midi_events.is_empty() {
@@ -54,7 +54,7 @@ impl Root {
 
     /// 将编辑器的 tempo_points 同步到播放管理器
     pub fn update_playback_bpm(&mut self) {
-        let Some(manager) = &mut self.playback_manager else {
+        let Some(manager) = &mut self.playback.manager else {
             return;
         };
         let changes: Vec<crate::playback::TempoChange> = self
@@ -70,9 +70,9 @@ impl Root {
 
     /// 重置播放管理器（加载新文件时调用）
     pub fn reset_playback_manager(&mut self) {
-        if self.playback_manager.is_some() {
+        if self.playback.manager.is_some() {
             tracing::info!("Root: 重置播放管理器（新文件加载）");
-            self.playback_manager = None;
+            self.playback.manager = None;
         }
     }
 }

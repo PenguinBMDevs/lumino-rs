@@ -1,4 +1,4 @@
-//! Host 编辑器操作子模块 - 处理音符和洋葱皮相关操作
+﻿//! Host 编辑器操作子模块 - 处理音符和洋葱皮相关操作
 
 use crate::editor::EditState;
 use crate::editor::editor_state::view::{
@@ -163,7 +163,7 @@ impl Host {
 
     /// 播放管理器是否已初始化
     pub fn has_playback_manager(&self) -> bool {
-        self.root.playback_manager.is_some()
+        self.root.playback.manager.is_some()
     }
 
     /// 检查是否正在播放
@@ -287,7 +287,7 @@ impl Host {
         root.editor.editor_state.data.history.clear();
         // MIDI 文档引用（释放 Arc）
         root.editor.editor_state.data.document = None;
-        root.midi_document = None;
+        root.midi.document = None;
         // 空间索引（惰性重建）
         root.editor.note_index = std::cell::RefCell::new(None);
         root.editor.note_index_dirty = std::cell::Cell::new(true);
@@ -297,7 +297,7 @@ impl Host {
         root.cached_onion_skin_notes = None;
         root.onion_skin_generation = 0;
         root.editor.invalidate_onion_skin_cache();
-        root.track_midi_events.clear();
+        root.playback.track_midi_events.clear();
         // 交互状态（选中、悬停、编辑）
         root.editor.editor_state.interaction.selected_notes.clear();
         root.editor.editor_state.interaction.edit_state = EditState::Idle;
@@ -331,8 +331,8 @@ impl Host {
         root.editor.ruler_cache.clear();
         // 播放管理器
         root.reset_playback_manager();
-        root.pending_tempo_changes = None;
-        root.pending_midi_output = None;
+        root.playback.pending_tempo_changes = None;
+        root.playback.pending_midi_output = None;
         root.toolbar.is_playing = false;
         // 侧边栏音轨列表
         root.sidebar.tracks.clear();

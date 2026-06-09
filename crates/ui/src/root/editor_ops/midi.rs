@@ -1,4 +1,4 @@
-//! 编辑器操作 - MIDI 输出管理
+﻿//! 编辑器操作 - MIDI 输出管理
 
 use crate::root::Root;
 
@@ -20,11 +20,11 @@ impl Root {
             .collect();
 
         // 如果有播放管理器，更新其 tempo timeline
-        if let Some(manager) = &mut self.playback_manager {
+        if let Some(manager) = &mut self.playback.manager {
             manager.update_tempo_changes(tempo_change_list);
             tracing::debug!("Root::load_tempo_changes: tempo changes updated in playback manager");
         } else {
-            self.pending_tempo_changes = Some(tempo_change_list);
+            self.playback.pending_tempo_changes = Some(tempo_change_list);
             tracing::debug!(
                 "Root::load_tempo_changes: playback manager not ready, cached tempo changes"
             );
@@ -33,11 +33,11 @@ impl Root {
 
     /// 设置 MIDI 输出连接
     pub fn set_midi_output(&mut self, output: Box<dyn lumino_midi_io::OutputConnection>) {
-        if let Some(manager) = &mut self.playback_manager {
+        if let Some(manager) = &mut self.playback.manager {
             manager.set_midi_output(output);
             tracing::info!("Root::set_midi_output: MIDI output connection set");
         } else {
-            self.pending_midi_output = Some(output);
+            self.playback.pending_midi_output = Some(output);
             tracing::debug!(
                 "Root::set_midi_output: playback manager not ready, cached MIDI output"
             );
@@ -46,11 +46,11 @@ impl Root {
 
     /// 清除 MIDI 输出连接
     pub fn clear_midi_output(&mut self) {
-        if let Some(manager) = &mut self.playback_manager {
+        if let Some(manager) = &mut self.playback.manager {
             manager.clear_midi_output();
             tracing::info!("Root::clear_midi_output: MIDI output connection cleared");
         }
-        self.pending_midi_output = None;
+        self.playback.pending_midi_output = None;
     }
 }
 
@@ -154,8 +154,8 @@ mod tests {
         let mut root = create_root();
 
         // 初始状态：干净
-        assert!(root.playback_manager.is_none(), "初始无播放管理器");
-        assert!(root.pending_midi_output.is_none(), "初始无挂起 MIDI 输出");
+        assert!(root.playback.manager.is_none(), "初始无播放管理器");
+        assert!(root.playback.pending_midi_output.is_none(), "初始无挂起 MIDI 输出");
 
         // 添加测试音符
         root.editor
@@ -172,19 +172,19 @@ mod tests {
         // 设置 MIDI 输出 → 因无管理器应缓存
         root.set_midi_output(create_mock_output());
         assert!(
-            root.pending_midi_output.is_some(),
+            root.playback.pending_midi_output.is_some(),
             "无播放管理器时 set_midi_output 应缓存到 pending_midi_output"
         );
         assert!(
-            root.playback_manager.is_none(),
+            root.playback.manager.is_none(),
             "pending 状态不应创建播放管理器"
         );
 
         // 发送 Play 消息 → 应消费缓存并创建管理器
         root.update(Message::Toolbar(toolbar::Event::Play));
-        assert!(root.playback_manager.is_some(), "Play 消息应创建播放管理器");
+        assert!(root.playback.manager.is_some(), "Play 消息应创建播放管理器");
         assert!(
-            root.pending_midi_output.is_none(),
+            root.playback.pending_midi_output.is_none(),
             "Play 消息应消费 pending_midi_output"
         );
 
@@ -218,13 +218,13 @@ mod tests {
         // 先通过 Play 创建 playback_manager
         root.set_midi_output(create_mock_output());
         root.update(Message::Toolbar(toolbar::Event::Play));
-        assert!(root.playback_manager.is_some());
-        assert!(root.pending_midi_output.is_none());
+        assert!(root.playback.manager.is_some());
+        assert!(root.playback.pending_midi_output.is_none());
 
         // 此时再调用 set_midi_output：应直接传递给 manager，不缓存
         root.set_midi_output(create_mock_output());
         assert!(
-            root.pending_midi_output.is_none(),
+            root.playback.pending_midi_output.is_none(),
             "有播放管理器时不应缓存 MIDI output"
         );
 
@@ -238,11 +238,11 @@ mod tests {
 
         // 仅缓存（无管理器）
         root.set_midi_output(create_mock_output());
-        assert!(root.pending_midi_output.is_some());
+        assert!(root.playback.pending_midi_output.is_some());
 
         root.clear_midi_output();
         assert!(
-            root.pending_midi_output.is_none(),
+            root.playback.pending_midi_output.is_none(),
             "clear_midi_output 应清除 pending"
         );
 
@@ -256,7 +256,7 @@ mod tests {
         root.update(Message::Toolbar(toolbar::Event::Play));
         root.clear_midi_output();
         assert!(
-            root.pending_midi_output.is_none(),
+            root.playback.pending_midi_output.is_none(),
             "有管理器时 clear 后 pending 仍应为 None"
         );
 
@@ -288,13 +288,13 @@ mod tests {
 
         // 设置 MIDI 输出
         root.set_midi_output(create_mock_output());
-        assert!(root.pending_midi_output.is_some());
+        assert!(root.playback.pending_midi_output.is_some());
 
         // 播放
         root.update(Message::Toolbar(toolbar::Event::Play));
-        assert!(root.playback_manager.is_some(), "播放管理器应被创建");
+        assert!(root.playback.manager.is_some(), "播放管理器应被创建");
         assert!(
-            root.pending_midi_output.is_none(),
+            root.playback.pending_midi_output.is_none(),
             "pending MIDI 输出应被消费"
         );
         assert!(root.toolbar.is_playing, "播放后工具栏应标记为 playing");
@@ -305,7 +305,7 @@ mod tests {
         // 验证停止后状态（manager.state() 是异步的，但发送 Command::Stop 后
         // 引擎线程会处理并更新状态。由于 Manager::stop() 是同步发送消息，
         // 引擎线程在下一个 1ms 睡眠周期处理它。此处给线程一点时间处理。）
-        if let Some(ref manager) = root.playback_manager {
+        if let Some(ref manager) = root.playback.manager {
             // 等待引擎线程处理 Stop 命令
             for _ in 0..50 {
                 if manager.state() == PlaybackState::Stopped {
@@ -334,7 +334,7 @@ mod tests {
         // 先播放（此时无音符）
         root.set_midi_output(create_mock_output());
         root.update(Message::Toolbar(toolbar::Event::Play));
-        assert!(root.playback_manager.is_some());
+        assert!(root.playback.manager.is_some());
 
         // 添加音符并标记变更
         root.editor
@@ -351,8 +351,8 @@ mod tests {
         }
 
         // 管理器仍存在，pending 无缓存
-        assert!(root.playback_manager.is_some());
-        assert!(root.pending_midi_output.is_none());
+        assert!(root.playback.manager.is_some());
+        assert!(root.playback.pending_midi_output.is_none());
 
         root.update(Message::Toolbar(toolbar::Event::Stop));
     }
@@ -362,11 +362,11 @@ mod tests {
     fn test_tempo_changes_cached_when_no_manager() {
         let mut root = create_root();
 
-        assert!(root.pending_tempo_changes.is_none());
+        assert!(root.playback.pending_tempo_changes.is_none());
 
         root.load_tempo_changes(vec![(0, 500000)]); // 120 BPM
         assert!(
-            root.pending_tempo_changes.is_some(),
+            root.playback.pending_tempo_changes.is_some(),
             "无管理器时 tempo changes 应缓存"
         );
 
@@ -380,10 +380,10 @@ mod tests {
         root.update(Message::Toolbar(toolbar::Event::Play));
 
         assert!(
-            root.pending_tempo_changes.is_none(),
+            root.playback.pending_tempo_changes.is_none(),
             "播放后 tempo changes 应被消费"
         );
-        assert!(root.playback_manager.is_some());
+        assert!(root.playback.manager.is_some());
 
         root.update(Message::Toolbar(toolbar::Event::Stop));
     }
@@ -400,11 +400,11 @@ mod tests {
 
         // Host::set_playback_midi_output → Root::set_midi_output
         root.set_midi_output(create_mock_output());
-        assert!(root.pending_midi_output.is_some());
+        assert!(root.playback.pending_midi_output.is_some());
 
         root.update(Message::Toolbar(toolbar::Event::Play));
-        assert!(root.pending_midi_output.is_none());
-        assert!(root.playback_manager.is_some());
+        assert!(root.playback.pending_midi_output.is_none());
+        assert!(root.playback.manager.is_some());
 
         root.update(Message::Toolbar(toolbar::Event::Stop));
     }
@@ -443,13 +443,13 @@ mod tests {
         });
 
         root.set_midi_output(mock_output);
-        assert!(root.pending_midi_output.is_some());
+        assert!(root.playback.pending_midi_output.is_some());
 
         // 发送 Play 消息
         root.update(Message::Toolbar(toolbar::Event::Play));
-        assert!(root.playback_manager.is_some(), "播放管理器应被创建");
+        assert!(root.playback.manager.is_some(), "播放管理器应被创建");
         assert!(
-            root.pending_midi_output.is_none(),
+            root.playback.pending_midi_output.is_none(),
             "pending_midi_output 应被消费"
         );
         assert!(root.toolbar.is_playing, "工具栏应标记为 playing");
@@ -514,7 +514,7 @@ mod tests {
 
         root.set_midi_output(mock_output);
         assert!(
-            root.pending_midi_output.is_some(),
+            root.playback.pending_midi_output.is_some(),
             "启动后 pending_midi_output 应有值"
         );
 
@@ -537,7 +537,7 @@ mod tests {
 
         // 此时 playback_manager 应该还不存在
         assert!(
-            root.playback_manager.is_none(),
+            root.playback.manager.is_none(),
             "画音符后不应创建播放管理器"
         );
 
@@ -546,11 +546,11 @@ mod tests {
 
         // 播放管理器应该被创建
         assert!(
-            root.playback_manager.is_some(),
+            root.playback.manager.is_some(),
             "点击播放后应创建播放管理器"
         );
         assert!(
-            root.pending_midi_output.is_none(),
+            root.playback.pending_midi_output.is_none(),
             "pending_midi_output 应被消费"
         );
 
@@ -613,7 +613,7 @@ mod tests {
             .notes
             .push_back(Note::new(0.0, 60, 480.0));
         root.update(Message::Toolbar(toolbar::Event::Play));
-        assert!(root.playback_manager.is_some(), "第一次播放应创建管理器");
+        assert!(root.playback.manager.is_some(), "第一次播放应创建管理器");
 
         // 停止
         root.update(Message::Toolbar(toolbar::Event::Stop));
@@ -706,7 +706,7 @@ mod tests {
         // 模拟 MIDI NoteOn：通道0，按键60（Middle C），力度100
         let midi_data = vec![0x90, 60, 100];
         {
-            let mut buf = root.midi_input_buffer.lock().unwrap();
+            let mut buf = root.midi.input_buffer.lock().unwrap();
             buf.push_back(midi_data);
         }
 
@@ -735,14 +735,14 @@ mod tests {
 
         // 模拟 NoteOn 事件
         {
-            let mut buf = root.midi_input_buffer.lock().unwrap();
+            let mut buf = root.midi.input_buffer.lock().unwrap();
             buf.push_back(vec![0x90, 60, 100]);
         }
         root.poll_midi_input();
 
         // 模拟 NoteOff
         {
-            let mut buf = root.midi_input_buffer.lock().unwrap();
+            let mut buf = root.midi.input_buffer.lock().unwrap();
             buf.push_back(vec![0x80, 60, 0]);
         }
         root.poll_midi_input();
@@ -768,7 +768,7 @@ mod tests {
 
         // 先发送 NoteOn
         {
-            let mut buf = root.midi_input_buffer.lock().unwrap();
+            let mut buf = root.midi.input_buffer.lock().unwrap();
             buf.push_back(vec![0x90, 60, 100]);
         }
         root.poll_midi_input();
@@ -777,7 +777,7 @@ mod tests {
 
         // 发送 velocity=0 的 NoteOn（MIDI 规范中视为 NoteOff）
         {
-            let mut buf = root.midi_input_buffer.lock().unwrap();
+            let mut buf = root.midi.input_buffer.lock().unwrap();
             buf.push_back(vec![0x90, 60, 0]);
         }
         root.poll_midi_input();
@@ -799,7 +799,7 @@ mod tests {
 
         // 发送两次相同的 NoteOn
         {
-            let mut buf = root.midi_input_buffer.lock().unwrap();
+            let mut buf = root.midi.input_buffer.lock().unwrap();
             buf.push_back(vec![0x90, 60, 100]);
             buf.push_back(vec![0x90, 60, 90]); // 重复按键，不同力度
         }
@@ -820,7 +820,7 @@ mod tests {
         root.recording.is_recording = false;
 
         {
-            let mut buf = root.midi_input_buffer.lock().unwrap();
+            let mut buf = root.midi.input_buffer.lock().unwrap();
             buf.push_back(vec![0x90, 60, 100]);
         }
 

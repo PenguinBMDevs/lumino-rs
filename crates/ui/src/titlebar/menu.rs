@@ -51,69 +51,73 @@ pub struct MenuConfig {
 
 pub fn file_menu() -> MenuConfig {
     use MenuItem::*;
+    use crate::event::menu::file;
     MenuConfig {
         kind: MenuKind::File,
         items: vec![
-            Action(crate::event!(Menu.File.New)),
-            Action(crate::event!(Menu.File.Open)),
-            Action(crate::event!(Menu.File.Save)),
-            Action(crate::event!(Menu.File.Close)),
+            Action(crate::event::Event::menu_file(file::Event::new_file())),
+            Action(crate::event::Event::menu_file(file::Event::open())),
+            Action(crate::event::Event::menu_file(file::Event::save())),
+            Action(crate::event::Event::menu_file(file::Event::close())),
             Separator,
-            Action(crate::event!(Menu.File.ImportFiles)),
+            Action(crate::event::Event::menu_file(file::Event::import_files())),
             Separator,
             Submenu(
                 vec![
-                    Action(crate::event!(Menu.File.ExportProjectArchive)),
-                    Action(crate::event!(Menu.File.ExportProjectFolder)),
+                    Action(crate::event::Event::menu_file(file::Event::export_project_archive())),
+                    Action(crate::event::Event::menu_file(file::Event::export_project_folder())),
                 ],
                 "导出工程".into(),
             ),
-            Action(crate::event!(Menu.File.AudioExport)),
+            Action(crate::event::Event::menu_file(file::Event::audio_export())),
             Separator,
-            Action(crate::event!(Menu.File.ProjectSettings)),
+            Action(crate::event::Event::menu_file(file::Event::project_settings())),
             Separator,
-            Action(crate::event!(Menu.File.Settings)),
+            Action(crate::event::Event::menu_file(file::Event::settings())),
             Separator,
-            Action(crate::event!(Menu.File.Exit)),
+            Action(crate::event::Event::menu_file(file::Event::exit())),
         ],
     }
 }
 
 pub fn edit_menu() -> MenuConfig {
     use MenuItem::*;
+    use crate::event::menu::edit;
     MenuConfig {
         kind: MenuKind::Edit,
         items: vec![
-            Action(crate::event!(Menu.Edit.Undo)),
-            Action(crate::event!(Menu.Edit.Redo)),
+            Action(crate::event::Event::menu_edit(edit::Event::undo())),
+            Action(crate::event::Event::menu_edit(edit::Event::redo())),
             Separator,
-            Action(crate::event!(Menu.Edit.Cut)),
-            Action(crate::event!(Menu.Edit.Copy)),
-            Action(crate::event!(Menu.Edit.Paste)),
-            Action(crate::event!(Menu.Edit.SelectAll)),
+            Action(crate::event::Event::menu_edit(edit::Event::cut())),
+            Action(crate::event::Event::menu_edit(edit::Event::copy())),
+            Action(crate::event::Event::menu_edit(edit::Event::paste())),
+            Action(crate::event::Event::menu_edit(edit::Event::select_all())),
             Separator,
-            Action(crate::event!(Menu.Edit.Find)),
+            Action(crate::event::Event::menu_edit(edit::Event::find())),
         ],
     }
 }
 
 pub fn view_menu() -> MenuConfig {
     use MenuItem::*;
+    use crate::event::menu::view;
     MenuConfig {
         kind: MenuKind::View,
         items: vec![
-            Action(crate::event!(Menu.View.ZoomIn)),
-            Action(crate::event!(Menu.View.ZoomOut)),
-            Action(crate::event!(Menu.View.ZoomReset)),
+            Action(crate::event::Event::menu_view(view::Event::zoom_in())),
+            Action(crate::event::Event::menu_view(view::Event::zoom_out())),
+            Action(crate::event::Event::menu_view(view::Event::zoom_reset())),
         ],
     }
 }
 
 pub fn help_menu() -> MenuConfig {
     use MenuItem::*;
+    use crate::event::menu::help;
     MenuConfig {
         kind: MenuKind::Help,
-        items: vec![Action(crate::event!(Menu.Help.About))],
+        items: vec![Action(crate::event::Event::menu_help(help::Event::about()))],
     }
 }
 

@@ -84,7 +84,7 @@ pub enum AutoScrollMode {
 }
 
 /// 自动滚动配置
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct AutoScrollConfig {
     /// 当前自动滚动模式
     pub mode: AutoScrollMode,
@@ -118,7 +118,7 @@ impl std::fmt::Display for AutoScrollMode {
 }
 
 /// 用户界面配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UiConfig {
     #[serde(default)]
     pub theme: String,

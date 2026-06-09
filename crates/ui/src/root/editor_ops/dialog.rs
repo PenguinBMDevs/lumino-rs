@@ -1,4 +1,4 @@
-//! 编辑器操作 - 对话框管理
+﻿//! 编辑器操作 - 对话框管理
 
 use crate::root::Root;
 use crate::state::root_state::DialogType;
@@ -160,7 +160,7 @@ impl Root {
         let editing_time = dialog.total_editing_time_seconds;
 
         // 从 MIDI 文档获取标题和版权（如果有）
-        let (title, copyright) = if let Some(_doc) = &self.midi_document {
+        let (title, copyright) = if let Some(_doc) = &self.midi.document {
             // 尝试从文件名获取标题
             let title = if dialog.title.is_empty() {
                 // 使用默认标题

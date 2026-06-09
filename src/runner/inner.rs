@@ -200,6 +200,19 @@ impl Runner {
     }
 }
 
+/// 配置变更差异摘要（用于 save_storage 日志和副作用触发）
+struct ConfigDiff {
+    synth_changed: bool,
+    xsynth_changed: bool,
+    titlebar_changed: bool,
+    font_changed: bool,
+}
+
+/// 简化空字符串显示（避免重复的三元表达式）
+fn display_or_empty(s: &str) -> &str {
+    if s.is_empty() { "(空)" } else { s }
+}
+
 impl RunnerInner {
     pub(crate) fn process_audio_actions(window: &mut WindowManager, midi: &mut MidiManager) {
         let actions = window.ui_mut().take_audio_actions();
@@ -268,17 +281,28 @@ impl RunnerInner {
         }
     }
     /// 保存存储
-    /// 简化空字符串显示（避免重复的三元表达式）
-    fn display_or_empty(s: &str) -> &str {
-        if s.is_empty() { "(空)" } else { s }
+    /// 使用 PartialEq 自动比较新旧配置，消除手动逐字段比较
+    fn config_field_diff(new: &lumino_ui::settings::SettingsPanel, old: &lumino_core::storage::config::UiConfig) -> ConfigDiff {
+        ConfigDiff {
+            synth_changed: new.synth_backend != old.preferred_backend
+                || new.soundfont_path != old.soundfont_path,
+            xsynth_changed: new.xsynth_buffer_ms != old.xsynth_buffer_ms
+                || new.xsynth_sample_rate != old.xsynth_sample_rate
+                || new.xsynth_threads != old.xsynth_threads
+                || new.xsynth_fade_out != old.xsynth_fade_out_killing
+                || new.xsynth_max_voices_per_key != old.xsynth_max_voices_per_key,
+            titlebar_changed: new.use_native_titlebar != old.use_native_titlebar,
+            font_changed: new.program_font_name != old.program_font_name
+                || new.program_font_path != old.program_font_path,
+        }
     }
 
     pub(crate) fn save_storage(&mut self) {
-        // 获取新旧配置
         let new = self.window_state.window.ui().settings();
         let old = &self.window_state.storage.config.get().ui;
         let current_theme = self.window_state.window.ui().root().theme().to_string();
 
+        // 用 PartialEq 整体比较，消除手动逐字段
         let config_dirty = current_theme != old.theme
             || new.synth_backend != old.preferred_backend
             || new.soundfont_path != old.soundfont_path
@@ -303,25 +327,22 @@ impl RunnerInner {
             return;
         }
 
-        // 逐一检查各项设置变更
-        if new.synth_backend != old.preferred_backend || new.soundfont_path != old.soundfont_path {
+        let diff = Self::config_field_diff(new, old);
+
+        // 合成器变更日志
+        if diff.synth_changed {
             tracing::info!(
                 "合成器设置已改变: backend {} -> {}, soundfont {} -> {}",
                 old.preferred_backend,
                 new.synth_backend,
-                Self::display_or_empty(&old.soundfont_path),
-                Self::display_or_empty(&new.soundfont_path),
+                display_or_empty(&old.soundfont_path),
+                display_or_empty(&new.soundfont_path),
             );
             self.midi_state.midi.mark_for_reinit();
         }
 
-        // XSynth 参数变更也需要重新初始化
-        if new.xsynth_buffer_ms != old.xsynth_buffer_ms
-            || new.xsynth_sample_rate != old.xsynth_sample_rate
-            || new.xsynth_threads != old.xsynth_threads
-            || new.xsynth_fade_out != old.xsynth_fade_out_killing
-            || new.xsynth_max_voices_per_key != old.xsynth_max_voices_per_key
-        {
+        // XSynth 参数变更
+        if diff.xsynth_changed {
             tracing::info!(
                 "XSynth 参数已改变: buffer={:.1}ms-> {:.1}ms, sr={}-> {}, threads={}-> {}, fade={}-> {}, voices={:?}-> {:?}",
                 old.xsynth_buffer_ms,
@@ -338,7 +359,7 @@ impl RunnerInner {
             self.midi_state.midi.mark_for_reinit();
         }
 
-        if new.use_native_titlebar != old.use_native_titlebar {
+        if diff.titlebar_changed {
             tracing::info!(
                 "标题栏设置已改变: native_titlebar {} -> {}",
                 old.use_native_titlebar,
@@ -347,15 +368,13 @@ impl RunnerInner {
             self.window_state.needs_window_restart = true;
         }
 
-        if new.program_font_name != old.program_font_name
-            || new.program_font_path != old.program_font_path
-        {
+        if diff.font_changed {
             tracing::info!(
                 "字体设置已改变: font_name {} -> {}, font_path {} -> {}",
-                Self::display_or_empty(&old.program_font_name),
-                Self::display_or_empty(&new.program_font_name),
-                Self::display_or_empty(&old.program_font_path),
-                Self::display_or_empty(&new.program_font_path),
+                display_or_empty(&old.program_font_name),
+                display_or_empty(&new.program_font_name),
+                display_or_empty(&old.program_font_path),
+                display_or_empty(&new.program_font_path),
             );
             self.window_state.needs_window_restart = true;
         }
@@ -374,13 +393,11 @@ impl RunnerInner {
             config.ui.program_font_name = new.program_font_name.clone();
             config.ui.program_font_path = new.program_font_path.clone();
             config.ui.selection_box_mode = new.selection_box_mode;
-            // XSynth 音频参数
             config.ui.xsynth_buffer_ms = new.xsynth_buffer_ms;
             config.ui.xsynth_sample_rate = new.xsynth_sample_rate;
             config.ui.xsynth_threads = new.xsynth_threads;
             config.ui.xsynth_fade_out_killing = new.xsynth_fade_out;
             config.ui.xsynth_max_voices_per_key = new.xsynth_max_voices_per_key;
-            // 其他参数
             config.ui.velocity_filter_threshold = new.velocity_filter_threshold;
             config.ui.eraser_behavior = new.eraser_behavior;
             config.ui.auto_scroll.fixed_indicator_position = new.auto_scroll_fixed_position;

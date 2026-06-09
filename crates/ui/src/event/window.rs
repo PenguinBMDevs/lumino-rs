@@ -145,4 +145,54 @@ impl Event {
             Self::ApplyProjectSettings { .. } => "应用工程设置".to_string(),
         }
     }
+
+    // ── 构造函数（替代 event! 宏，IDE 友好） ──
+
+    pub const fn drag() -> Self { Self::Drag }
+    pub const fn close() -> Self { Self::Close }
+    pub const fn toggle_maximize() -> Self { Self::ToggleMaximize }
+    pub const fn maximize() -> Self { Self::Maximize }
+    pub const fn minimize() -> Self { Self::Minimize }
+    pub const fn open_custom_precision_dialog() -> Self { Self::OpenCustomPrecisionDialog }
+    pub const fn close_custom_precision_dialog() -> Self { Self::CloseCustomPrecisionDialog }
+    pub const fn apply_custom_precision(numerator: u32, denominator: u32) -> Self { Self::ApplyCustomPrecision(numerator, denominator) }
+    pub const fn open_collaboration_dialog() -> Self { Self::OpenCollaborationDialog }
+    pub const fn close_collaboration_dialog() -> Self { Self::CloseCollaborationDialog }
+    pub fn collaboration_connect(host: String, port: u16, username: String, invite_code: Option<String>) -> Self {
+        Self::CollaborationConnect { host, port, username, invite_code }
+    }
+    pub fn collaboration_create_room(name: String) -> Self { Self::CollaborationCreateRoom { name } }
+    pub fn collaboration_join_room(invite_code: String) -> Self { Self::CollaborationJoinRoom { invite_code } }
+    pub const fn collaboration_disconnect() -> Self { Self::CollaborationDisconnect }
+    pub fn collaboration_authenticated(user_id: String, invite_code: String) -> Self {
+        Self::CollaborationAuthenticated { user_id, invite_code }
+    }
+    pub fn collaboration_room_created(room_name: String, invite_code: String) -> Self {
+        Self::CollaborationRoomCreated { room_name, invite_code }
+    }
+    pub fn collaboration_room_joined(room_name: String, invite_code: String, user_count: usize) -> Self {
+        Self::CollaborationRoomJoined { room_name, invite_code, user_count }
+    }
+    pub const fn collaboration_disconnected() -> Self { Self::CollaborationDisconnected }
+    pub fn collaboration_user_left(user_id: String) -> Self { Self::CollaborationUserLeft { user_id } }
+    pub fn collaboration_mouse_update(user_id: String, x: f32, y: f32, color: String, username: String) -> Self {
+        Self::CollaborationMouseUpdate { user_id, x, y, color, username }
+    }
+    pub fn collaboration_note_update(user_id: String, operation: String) -> Self {
+        Self::CollaborationNoteUpdate { user_id, operation }
+    }
+    pub fn local_note_added(tick: f32, key: u16, length: f32, velocity: u8, channel: u8, track_index: usize) -> Self {
+        Self::LocalNoteAdded { tick, key, length, velocity, channel, track_index }
+    }
+    pub fn local_note_moved(tick: f32, key: u16, length: f32, tick_offset: f32, key_offset: i16, track_index: usize) -> Self {
+        Self::LocalNoteMoved { tick, key, length, tick_offset, key_offset, track_index }
+    }
+    pub const fn open_speed_change_dialog() -> Self { Self::OpenSpeedChangeDialog }
+    pub const fn close_speed_change_dialog() -> Self { Self::CloseSpeedChangeDialog }
+    pub const fn confirm_speed_change(factor: f32) -> Self { Self::ConfirmSpeedChange(factor) }
+    pub const fn open_project_settings_dialog() -> Self { Self::OpenProjectSettingsDialog }
+    pub const fn close_project_settings_dialog() -> Self { Self::CloseProjectSettingsDialog }
+    pub fn apply_project_settings(title: String, tempo: f64, copyright: String) -> Self {
+        Self::ApplyProjectSettings { title, tempo, copyright }
+    }
 }

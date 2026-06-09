@@ -1,4 +1,4 @@
-//! 编辑器操作 - 音轨管理
+﻿//! 编辑器操作 - 音轨管理
 
 use crate::editor::note::Note;
 use crate::root::Root;
@@ -100,11 +100,11 @@ impl Root {
         events: Vec<crate::playback::MidiTrackEvent>,
     ) {
         if !events.is_empty() {
-            self.track_midi_events.insert(track_idx, events);
+            self.playback.track_midi_events.insert(track_idx, events);
             tracing::debug!(
                 "Root: 音轨 {} 已加载 {} 个 MIDI 控制事件",
                 track_idx,
-                self.track_midi_events
+                self.playback.track_midi_events
                     .get(&track_idx)
                     .map_or(0, |v| v.len())
             );
@@ -119,7 +119,7 @@ impl Root {
     ) {
         if !events.is_empty() {
             // 合并到已有事件（如果有）
-            self.track_midi_events
+            self.playback.track_midi_events
                 .entry(track_idx)
                 .or_default()
                 .extend(events);

@@ -11,4 +11,8 @@ impl Event {
             Self::About => "关于".to_string(),
         }
     }
+
+    // ── 构造函数（替代 event! 宏） ──
+
+    pub const fn about() -> Self { Self::About }
 }

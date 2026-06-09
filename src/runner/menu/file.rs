@@ -1,10 +1,9 @@
-//! Runner 文件菜单处理
+﻿//! Runner 文件菜单处理
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use lumino_midi_loader::{ParsedMidi, bpm_to_tempo};
-use lumino_ui::event;
 use lumino_export::midi::{
     MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTrackData,
 };
@@ -191,8 +190,8 @@ impl RunnerInner {
         tokio::spawn(async move {
             run_async_task(
                 lumino_midi_loader::loader::load_dms(path, Some(&progress_cb)),
-                |parsed| event!(Menu.File.DmsParsed(Arc::new(parsed))),
-                |e| event!(Menu.File.DmsParseError(e)),
+                |parsed| lumino_ui::event::Event::menu_file(lumino_ui::event::menu::file::Event::dms_parsed(Arc::new(parsed))),
+                |e| lumino_ui::event::Event::menu_file(lumino_ui::event::menu::file::Event::dms_parse_error(e)),
             )
             .await;
         });
@@ -205,8 +204,8 @@ impl RunnerInner {
         tokio::spawn(async move {
             run_async_task(
                 lumino_midi_loader::loader::load_parsed_midi(path, Some(&progress_cb)),
-                |parsed| event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed))),
-                |e| event!(Menu.File.MidiParseError(e)),
+                |parsed| lumino_ui::event::Event::menu_file(lumino_ui::event::menu::file::Event::midi_parsed(std::sync::Arc::new(parsed))),
+                |e| lumino_ui::event::Event::menu_file(lumino_ui::event::menu::file::Event::midi_parse_error(e)),
             )
             .await;
         });
@@ -248,8 +247,8 @@ impl RunnerInner {
             tokio::spawn(async move {
                 run_async_task(
                     lumino_midi_loader::loader::load_dms(path, Some(&progress_cb)),
-                    |parsed| event!(Menu.File.DmsParsed(Arc::new(parsed))),
-                    |e| event!(Menu.File.DmsParseError(e)),
+                    |parsed| lumino_ui::event::Event::menu_file(lumino_ui::event::menu::file::Event::dms_parsed(Arc::new(parsed))),
+                    |e| lumino_ui::event::Event::menu_file(lumino_ui::event::menu::file::Event::dms_parse_error(e)),
                 )
                 .await;
             });
@@ -273,8 +272,8 @@ impl RunnerInner {
             tokio::spawn(async move {
                 run_async_task(
                     lumino_midi_loader::loader::load_parsed_midi(path, Some(&progress_cb)),
-                    |parsed| event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed))),
-                    |e| event!(Menu.File.MidiParseError(e)),
+                    |parsed| lumino_ui::event::Event::menu_file(lumino_ui::event::menu::file::Event::midi_parsed(std::sync::Arc::new(parsed))),
+                    |e| lumino_ui::event::Event::menu_file(lumino_ui::event::menu::file::Event::midi_parse_error(e)),
                 )
                 .await;
             });
@@ -933,7 +932,7 @@ impl RunnerInner {
                                 parsed_midi.info.track_count
                             );
                             tracing::info!("[DMS导入] 步骤5: 发送 MidiParsed 事件");
-                            event!(Menu.File.MidiParsed(std::sync::Arc::new(parsed_midi)));
+                            lumino_ui::event::Event::menu_file(lumino_ui::event::menu::file::Event::midi_parsed(std::sync::Arc::new(parsed_midi)));
                             tracing::info!("[DMS导入] 事件发送完成");
                         }
                         Err(e) => {
@@ -943,9 +942,12 @@ impl RunnerInner {
                 }
                 Err(e) => {
                     tracing::error!("[DMS导入] DMS 转换为 MIDI 失败: {}", e);
-                    event!(
-                        Menu.File
-                            .DmsParseError(format!("DMS 转换为 MIDI 失败: {e}"))
+                    lumino_ui::event::emit(
+                        lumino_ui::event::Event::menu_file(
+                            lumino_ui::event::menu::file::Event::dms_parse_error(
+                                format!("DMS 转换为 MIDI 失败: {e}")
+                            )
+                        )
                     );
                 }
             }

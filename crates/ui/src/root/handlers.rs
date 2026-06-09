@@ -1,4 +1,4 @@
-//! Root 消息处理器
+﻿//! Root 消息处理器
 //!
 //! 采用分治法策略，将消息处理逻辑拆分为专门的处理器：
 //! - CollaborationHandler: 协作功能
@@ -363,7 +363,7 @@ impl Root {
             Message::MidiInputEvent { data } => {
                 let data = data.clone();
                 // 将 MIDI 数据放入缓冲区等待 poll_midi_input 处理
-                if let Ok(mut buf) = self.midi_input_buffer.lock() {
+                if let Ok(mut buf) = self.midi.input_buffer.lock() {
                     buf.push_back(data);
                 }
                 true
@@ -458,7 +458,7 @@ impl Root {
 
         // 检查播放位置是否变化
         if (old_tick - new_tick).abs() > f32::EPSILON
-            && let Some(manager) = &mut self.playback_manager
+            && let Some(manager) = &mut self.playback.manager
         {
             manager.seek(new_tick);
         }
@@ -756,7 +756,7 @@ impl Root {
     }
 
     fn sync_loop_to_playback_state(&mut self, enabled: bool) {
-        if let Some(manager) = &mut self.playback_manager {
+        if let Some(manager) = &mut self.playback.manager {
             manager.set_looping(enabled);
             if enabled {
                 if let Some(lr) = &self.editor.loop_range {
@@ -770,7 +770,7 @@ impl Root {
     }
 
     fn sync_loop_to_playback_with_range(&mut self, enabled: bool, start: f32, end: f32) {
-        if let Some(manager) = &mut self.playback_manager {
+        if let Some(manager) = &mut self.playback.manager {
             manager.set_looping(enabled);
             if enabled {
                 manager.set_loop_range(start, end);

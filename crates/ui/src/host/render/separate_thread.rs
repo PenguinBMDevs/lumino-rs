@@ -1,4 +1,4 @@
-use crate::RenderParams;
+﻿use crate::RenderParams;
 use crate::host::Host;
 use iced_wgpu::wgpu;
 use lumino_gfx::{ArrangementNoteInstance, ArrangementUniform};
@@ -97,7 +97,7 @@ impl Host {
             &track_order,
             &ARRANGEMENT_PALETTE,
             &track_visible,
-            self.root.midi_document.as_ref().map(|v| &**v),
+            self.root.midi.document.as_ref().map(|v| &**v),
             track_notes,
             self.root.editor.playback_position as f32,
             [arr_bg.r, arr_bg.g, arr_bg.b],
