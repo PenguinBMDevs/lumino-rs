@@ -141,10 +141,10 @@ impl CollaborationService {
 
     /// 异步断开（供 connect 内部使用）
     async fn disconnect_async(&self) {
-        if let Ok(mut guard) = self.lock_disconnect_tx() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.send(());
-            }
+        if let Ok(mut guard) = self.lock_disconnect_tx()
+            && let Some(tx) = guard.take()
+        {
+            let _ = tx.send(());
         }
         // 作用域块确保 MutexGuard（!Send）在 .await 前被销毁
         let mut client = match self.lock_client() {
@@ -289,10 +289,10 @@ impl CollaborationService {
 
     /// 断开连接（同步 API）
     pub fn disconnect(&self) -> Result<(), String> {
-        if let Ok(mut guard) = self.lock_disconnect_tx() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.send(());
-            }
+        if let Ok(mut guard) = self.lock_disconnect_tx()
+            && let Some(tx) = guard.take()
+        {
+            let _ = tx.send(());
         }
         let mut guard = self.lock_client()?;
         let mut client = guard.take();
@@ -318,7 +318,7 @@ impl CollaborationService {
     ///
     /// 使用同步锁，无 block_on，避免嵌套 runtime panic。
     pub fn is_connected(&self) -> bool {
-        self.lock_client().map_or(false, |guard| guard.is_some())
+        self.lock_client().is_ok_and(|guard| guard.is_some())
     }
 }
 

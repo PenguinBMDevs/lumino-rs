@@ -5,11 +5,11 @@
 use std::path::PathBuf;
 
 /// 获取测试文件路径
-fn get_test_file_path(relative_path: &str) -> PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
-    PathBuf::from(manifest_dir)
+fn get_test_file_path(relative_path: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
+    Ok(PathBuf::from(manifest_dir)
         .join("test-file")
-        .join(relative_path)
+        .join(relative_path))
 }
 
 /// 从 DMS 节点树中提取语义信息
@@ -71,9 +71,9 @@ fn extract_dms_info(node: &dyn lumino_dms::DmsNode) -> (u64, usize, Option<u32>,
 /// 运行: `cargo test test_midi_to_dms_similarity -- --ignored`
 #[test]
 #[ignore = "需要 test-file/DMS-Loader/ 测试文件"]
-fn test_midi_to_dms_similarity() {
-    let midi_path = get_test_file_path("DMS-Loader/dms-loader-test.mid");
-    let dms_reference_path = get_test_file_path("DMS-Loader/dms-loader-test.dms");
+fn test_midi_to_dms_similarity() -> Result<(), Box<dyn std::error::Error>> {
+    let midi_path = get_test_file_path("DMS-Loader/dms-loader-test.mid")?;
+    let dms_reference_path = get_test_file_path("DMS-Loader/dms-loader-test.dms")?;
 
     assert!(midi_path.exists(), "MIDI 测试文件不存在: {:?}", midi_path);
     assert!(
@@ -83,7 +83,7 @@ fn test_midi_to_dms_similarity() {
     );
 
     let info =
-        lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
+        lumino_midi_loader::MidiInfo::from_path(midi_path.clone())?;
 
     println!("MIDI 文件信息:");
     println!("  音轨数量: {}", info.track_count);
@@ -91,16 +91,16 @@ fn test_midi_to_dms_similarity() {
     println!("  PPQN: {}", info.division);
 
     let exported_dms_bytes =
-        lumino_export::export_dms_from_midi_sync(&midi_path).expect("MIDI 转 DMS 失败");
+        lumino_export::export_dms_from_midi_sync(&midi_path)?;
 
-    let reference_dms_bytes = std::fs::read(&dms_reference_path).expect("读取参考 DMS 文件失败");
+    let reference_dms_bytes = std::fs::read(&dms_reference_path)?;
 
     // 解析导出的 DMS 文件
     let exported_root =
-        lumino_dms::read_dms_file(&exported_dms_bytes).expect("解析导出的 DMS 文件失败");
+        lumino_dms::read_dms_file(&exported_dms_bytes)?;
 
     // 解析参考 DMS 文件
-    let ref_root = lumino_dms::read_dms_file(&reference_dms_bytes).expect("解析参考 DMS 文件失败");
+    let ref_root = lumino_dms::read_dms_file(&reference_dms_bytes)?;
 
     // 提取语义信息进行对比
     let (exported_notes, exported_tracks, exported_ppqn, exported_name) =
@@ -177,6 +177,7 @@ fn test_midi_to_dms_similarity() {
         "DMS 语义相似度 {:.2}% 不满足要求 (> 95%)",
         total_similarity
     );
+    Ok(())
 }
 
 /// 测试 2: DMS 文件元数据验证测试
@@ -184,21 +185,21 @@ fn test_midi_to_dms_similarity() {
 /// 需要 test-file/DMS-Loader/dms-loader-test.dms（不属于 git 仓库），默认忽略。
 #[test]
 #[ignore = "需要 test-file/DMS-Loader/dms-loader-test.dms 测试文件"]
-fn test_dms_metadata_validation() {
+fn test_dms_metadata_validation() -> Result<(), Box<dyn std::error::Error>> {
     // 使用较小的测试文件
-    let dms_path = get_test_file_path("DMS-Loader/dms-loader-test.dms");
+    let dms_path = get_test_file_path("DMS-Loader/dms-loader-test.dms")?;
 
     assert!(dms_path.exists(), "DMS 测试文件不存在: {:?}", dms_path);
 
     // 打印文件大小
-    let file_metadata = std::fs::metadata(&dms_path).expect("获取文件元数据失败");
+    let file_metadata = std::fs::metadata(&dms_path)?;
     let file_size_kb = file_metadata.len() as f64 / 1024.0;
     println!("DMS 文件大小: {:.2} KB", file_size_kb);
 
     // 使用完整解析来验证
-    let dms_bytes = std::fs::read(&dms_path).expect("读取 DMS 文件失败");
+    let dms_bytes = std::fs::read(&dms_path)?;
 
-    let root = lumino_dms::read_dms_file(&dms_bytes).expect("解析 DMS 文件失败");
+    let root = lumino_dms::read_dms_file(&dms_bytes)?;
 
     // 提取语义信息
     let (note_count, track_count, ppqn, song_name) = extract_dms_info(&root);
@@ -213,6 +214,7 @@ fn test_dms_metadata_validation() {
     assert!(note_count > 0, "音符数量 {} 不满足要求 (> 0)", note_count);
 
     assert!(track_count > 0, "音轨数量 {} 不满足要求 (> 0)", track_count);
+    Ok(())
 }
 
 /// 测试 3: 大文件内存占用测试
@@ -221,14 +223,14 @@ fn test_dms_metadata_validation() {
 #[test]
 #[cfg(target_os = "windows")]
 #[ignore = "需要 test-file/MIDI-Loader/ 测试文件"]
-fn test_midi_memory_usage() {
-    let midi_path = get_test_file_path("MIDI-Loader/Rekt Apple!!.mid");
+fn test_midi_memory_usage() -> Result<(), Box<dyn std::error::Error>> {
+    let midi_path = get_test_file_path("MIDI-Loader/Rekt Apple!!.mid")?;
     assert!(midi_path.exists(), "MIDI 测试文件不存在: {:?}", midi_path);
 
     let initial_memory = get_process_memory_kb();
 
     let info =
-        lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
+        lumino_midi_loader::MidiInfo::from_path(midi_path.clone())?;
 
     let after_memory = get_process_memory_kb();
     let memory_delta_mb = (after_memory.saturating_sub(initial_memory)) as f64 / 1024.0;
@@ -247,6 +249,7 @@ fn test_midi_memory_usage() {
     );
 
     drop(info);
+    Ok(())
 }
 
 /// 获取当前进程内存占用（KB）
@@ -275,15 +278,15 @@ fn get_process_memory_kb() -> u64 {
 /// 需要 test-file/LMPJ-Exporter/Internet Yamero.mid（不属于 git 仓库），默认忽略。
 #[test]
 #[ignore = "需要 test-file/LMPJ-Exporter/Internet Yamero.mid 测试文件"]
-fn test_midi_lmpj_roundtrip() {
-    let midi_path = get_test_file_path("LMPJ-Exporter/Internet Yamero.mid");
+fn test_midi_lmpj_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+    let midi_path = get_test_file_path("LMPJ-Exporter/Internet Yamero.mid")?;
 
     assert!(midi_path.exists(), "MIDI 测试文件不存在: {:?}", midi_path);
 
-    let original_midi_bytes = std::fs::read(&midi_path).expect("读取原始 MIDI 文件失败");
+    let original_midi_bytes = std::fs::read(&midi_path)?;
 
     let info =
-        lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
+        lumino_midi_loader::MidiInfo::from_path(midi_path.clone())?;
 
     let parsed_midi = lumino_midi_loader::ParsedMidi {
         info: info.clone(),
@@ -294,25 +297,23 @@ fn test_midi_lmpj_roundtrip() {
     let temp_dir = std::env::temp_dir();
     let lmpj_path = temp_dir.join("lumino_test_roundtrip.lmpj");
 
-    lumino_export::save_sync(&parsed_midi, &lmpj_path).expect("保存 LMPJ 文件失败");
+    lumino_export::save_sync(&parsed_midi, &lmpj_path)?;
 
-    let lmpj_bytes = std::fs::read(&lmpj_path).expect("读取 LMPJ 文件失败");
+    let lmpj_bytes = std::fs::read(&lmpj_path)?;
 
     let _parsed_from_lmpj: lumino_midi_loader::ParsedMidi =
-        lumino_export::format::decode_lmpj(&lmpj_bytes).expect("解码 LMPJ 文件失败");
+        lumino_export::format::decode_lmpj(&lmpj_bytes)?;
 
     let roundtrip_midi_path = temp_dir.join("lumino_test_roundtrip_1.mid");
 
-    let exported_midi_bytes = lumino_export::export_midi_from_parsed_midi_sync(&lmpj_path)
-        .expect("从 LMPJ 导出 MIDI 失败");
+    let exported_midi_bytes = lumino_export::export_midi_from_parsed_midi_sync(&lmpj_path)?;
 
-    std::fs::write(&roundtrip_midi_path, &exported_midi_bytes).expect("写入往返 MIDI 文件失败");
+    std::fs::write(&roundtrip_midi_path, &exported_midi_bytes)?;
 
     // 对比语义信息
     let original_info =
-        lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析原始 MIDI 文件失败");
-    let roundtrip_info = lumino_midi_loader::MidiInfo::from_path(roundtrip_midi_path.clone())
-        .expect("解析往返 MIDI 文件失败");
+        lumino_midi_loader::MidiInfo::from_path(midi_path.clone())?;
+    let roundtrip_info = lumino_midi_loader::MidiInfo::from_path(roundtrip_midi_path.clone())?;
 
     println!("原始 MIDI 大小: {} bytes", original_midi_bytes.len());
     println!("LMPJ 大小: {} bytes", lmpj_bytes.len());
@@ -350,4 +351,5 @@ fn test_midi_lmpj_roundtrip() {
 
     let _ = std::fs::remove_file(&lmpj_path);
     let _ = std::fs::remove_file(&roundtrip_midi_path);
+    Ok(())
 }

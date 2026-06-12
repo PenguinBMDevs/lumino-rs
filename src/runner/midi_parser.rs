@@ -161,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simple_note_on_off() {
+    fn test_simple_note_on_off() -> Result<(), Box<dyn std::error::Error>> {
         let smf = build_smf(vec![
             (
                 0,
@@ -185,14 +185,15 @@ mod tests {
             ),
         ]);
         let (_infos, notes, _events) = parse_smf(&smf);
-        let track_notes = notes.get(&0).unwrap();
+        let track_notes = notes.get(&0).ok_or("音轨 0 应存在")?;
         assert_eq!(track_notes.len(), 1);
         assert_eq!(track_notes[0].1, 60); // key
         assert_eq!(track_notes[0].2, 480.0); // length
+        Ok(())
     }
 
     #[test]
-    fn test_velocity_zero_as_note_off() {
+    fn test_velocity_zero_as_note_off() -> Result<(), Box<dyn std::error::Error>> {
         let smf = build_smf(vec![
             (
                 0,
@@ -216,13 +217,14 @@ mod tests {
             ),
         ]);
         let (_infos, notes, _events) = parse_smf(&smf);
-        let track_notes = notes.get(&0).unwrap();
+        let track_notes = notes.get(&0).ok_or("音轨 0 应存在")?;
         assert_eq!(track_notes.len(), 1);
         assert_eq!(track_notes[0].2, 480.0);
+        Ok(())
     }
 
     #[test]
-    fn test_unclosed_note() {
+    fn test_unclosed_note() -> Result<(), Box<dyn std::error::Error>> {
         // NoteOn 没有对应 NoteOff，应在轨道末尾自动关闭
         let smf = build_smf(vec![(
             0,
@@ -235,13 +237,14 @@ mod tests {
             },
         )]);
         let (_infos, notes, _events) = parse_smf(&smf);
-        let track_notes = notes.get(&0).unwrap();
+        let track_notes = notes.get(&0).ok_or("音轨 0 应存在")?;
         assert_eq!(track_notes.len(), 1);
         assert_eq!(track_notes[0].2, 0.0); // length is 0 since end_tick == start_tick
+        Ok(())
     }
 
     #[test]
-    fn test_multiple_tracks() {
+    fn test_multiple_tracks() -> Result<(), Box<dyn std::error::Error>> {
         let track0: Track = vec![
             TrackEvent {
                 delta: u28::from(0),
@@ -291,14 +294,15 @@ mod tests {
             tracks: vec![track0, track1],
         };
         let (_infos, notes, _events) = parse_smf(&smf);
-        assert_eq!(notes.get(&0).unwrap().len(), 1);
-        assert_eq!(notes.get(&1).unwrap().len(), 1);
+        assert_eq!(notes.get(&0).ok_or("音轨 0 应存在")?.len(), 1);
+        assert_eq!(notes.get(&1).ok_or("音轨 1 应存在")?.len(), 1);
         assert_eq!(notes[&0][0].1, 60);
         assert_eq!(notes[&1][0].1, 72);
+        Ok(())
     }
 
     #[test]
-    fn test_control_events() {
+    fn test_control_events() -> Result<(), Box<dyn std::error::Error>> {
         let smf = build_smf(vec![
             (
                 0,
@@ -321,11 +325,12 @@ mod tests {
             ),
         ]);
         let (_infos, _notes, events) = parse_smf(&smf);
-        let track_events = events.get(&0).unwrap();
+        let track_events = events.get(&0).ok_or("音轨 0 控制事件应存在")?;
         assert_eq!(track_events.control_changes.len(), 1);
         assert_eq!(track_events.control_changes[0].2, 7);
         assert_eq!(track_events.program_changes.len(), 1);
         assert_eq!(track_events.program_changes[0].2, 5);
+        Ok(())
     }
 }
 
@@ -367,34 +372,36 @@ mod integration_tests {
     }
 
     #[test]
-    fn test_noname_midi_parses_all_notes() {
+    fn test_noname_midi_parses_all_notes() -> Result<(), Box<dyn std::error::Error>> {
         if !test_file_exists() {
-            return;
+            return Ok(());
         }
-        let (_infos, notes_map, _events) = extract_notes_from_file().expect("解析失败");
-        let track2 = notes_map.get(&2).expect("音轨 2 应有 263 个音符");
+        let (_infos, notes_map, _events) = extract_notes_from_file().ok_or("解析失败")?;
+        let track2 = notes_map.get(&2).ok_or("音轨 2 应有 263 个音符")?;
         assert_eq!(track2.len(), 263, "音轨 2 应有 263 个音符（key 0-254）");
+        Ok(())
     }
 
     #[test]
-    fn test_noname_midi_key_range() {
+    fn test_noname_midi_key_range() -> Result<(), Box<dyn std::error::Error>> {
         if !test_file_exists() {
-            return;
+            return Ok(());
         }
-        let (_infos, notes_map, _events) = extract_notes_from_file().expect("解析失败");
-        let track2 = notes_map.get(&2).expect("音轨 2 应有音符");
+        let (_infos, notes_map, _events) = extract_notes_from_file().ok_or("解析失败")?;
+        let track2 = notes_map.get(&2).ok_or("音轨 2 应有音符")?;
         let keys: Vec<u8> = track2.iter().map(|(_, k, _, _, _)| *k).collect();
-        assert_eq!(*keys.iter().min().unwrap(), 0, "最低音应为 key=0");
-        assert_eq!(*keys.iter().max().unwrap(), 254, "最高音应为 key=254");
+        assert_eq!(*keys.iter().min().ok_or("keys 不应为空")?, 0, "最低音应为 key=0");
+        assert_eq!(*keys.iter().max().ok_or("keys 不应为空")?, 254, "最高音应为 key=254");
+        Ok(())
     }
 
     #[test]
-    fn test_noname_midi_all_keys_unique() {
+    fn test_noname_midi_all_keys_unique() -> Result<(), Box<dyn std::error::Error>> {
         if !test_file_exists() {
-            return;
+            return Ok(());
         }
-        let (_infos, notes_map, _events) = extract_notes_from_file().expect("解析失败");
-        let track2 = notes_map.get(&2).expect("音轨 2 应有音符");
+        let (_infos, notes_map, _events) = extract_notes_from_file().ok_or("解析失败")?;
+        let track2 = notes_map.get(&2).ok_or("音轨 2 应有音符")?;
         let mut keys: Vec<u8> = track2.iter().map(|(_, k, _, _, _)| *k).collect();
         keys.sort();
         keys.dedup();
@@ -405,6 +412,7 @@ mod integration_tests {
         assert_eq!(keys[253], 254, "最高音 key=254");
         // 验证 key 190 确实缺失（存在于序列间隙中）
         assert!(!keys.contains(&190), "key 190 应缺失");
+        Ok(())
     }
 
     #[test]
@@ -433,14 +441,15 @@ mod integration_tests {
     }
 
     #[test]
-    fn test_noname_midi_fast_path() {
+    fn test_noname_midi_fast_path() -> Result<(), Box<dyn std::error::Error>> {
         if !test_file_exists() {
-            return;
+            return Ok(());
         }
-        let notes = extract_packed_notes_from_file().expect("快速解析失败");
+        let notes = extract_packed_notes_from_file().ok_or("快速解析失败")?;
         assert_eq!(notes.len(), 263, "快速路径应提取 263 个音符");
         let keys: Vec<u8> = notes.iter().map(|n| n.key).collect();
-        assert_eq!(*keys.iter().min().unwrap(), 0);
-        assert_eq!(*keys.iter().max().unwrap(), 254);
+        assert_eq!(*keys.iter().min().ok_or("keys 不应为空")?, 0);
+        assert_eq!(*keys.iter().max().ok_or("keys 不应为空")?, 254);
+        Ok(())
     }
 }

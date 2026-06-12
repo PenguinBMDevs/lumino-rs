@@ -61,6 +61,7 @@ impl EventCollector {
             .is_some()
     }
 
+    #[allow(dead_code)]
     pub async fn get_events(&self) -> Vec<CollaborationEvent> {
         self.events.lock().await.clone()
     }

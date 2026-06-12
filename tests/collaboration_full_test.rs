@@ -24,7 +24,7 @@ use lumino_collaboration::types::{
 use common::EventCollector;
 
 #[test]
-fn test_serialize_mouse_move() {
+fn test_serialize_mouse_move() -> Result<(), Box<dyn std::error::Error>> {
     use lumino_collaboration::types::MousePosition;
 
     let mouse_pos = MousePosition {
@@ -36,13 +36,14 @@ fn test_serialize_mouse_move() {
     let msg = ClientMessage::MouseMove {
         position: mouse_pos,
     };
-    let json = serde_json::to_string(&msg).unwrap();
+    let json = serde_json::to_string(&msg)?;
     println!("Serialized MouseMove message: {}", json);
 
     // Verify it contains expected fields
     assert!(json.contains("mouseMove"));
     assert!(json.contains("\"x\":100"));
     assert!(json.contains("\"y\":200"));
+    Ok(())
 }
 
 /// 协作功能完整集成测试

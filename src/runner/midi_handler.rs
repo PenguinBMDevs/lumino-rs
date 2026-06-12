@@ -44,7 +44,7 @@ impl MidiHandler {
                     let microseconds = if bpm > 0.0 {
                         lumino_midi_loader::bpm_to_tempo(bpm as f64)
                     } else {
-                        lumino_midi_loader::constants::DEFAULT_TEMPO_MICROS.into()
+                        lumino_midi_loader::constants::DEFAULT_TEMPO_MICROS
                     };
                     (tick, microseconds)
                 })

@@ -715,7 +715,7 @@ async fn test_mouse_movement_sync_internal() -> Result<(), Box<dyn std::error::E
     }
 
     // 客户端B等待接收最后一个鼠标位置
-    let last_pos = positions.last().unwrap();
+    let last_pos = positions.last().ok_or("positions 列表不应为空，测试数据已预填 5 个位置")?;
     let received_last = collector_b
         .contains_event(
             |e| {
