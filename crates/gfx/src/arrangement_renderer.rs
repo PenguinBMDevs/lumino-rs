@@ -30,7 +30,7 @@ pub struct ArrangementRenderer {
 }
 
 /// 顶点着色器代码
-const VERTEX_SHADER: &str = include_str!("../shaders/arrangement.wgsl");
+const VERTEX_SHADER: &str = include_str!("shaders/arrangement.wgsl");
 
 /// 初始实例缓冲区大小
 const INITIAL_CAPACITY: usize = 4096;
