@@ -19,3 +19,11 @@ pub enum ProjectUpdateType {
     Metadata,
     Full,
 }
+
+/// 项目状态快照
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ProjectState {
+    pub notes: Vec<crate::types::NoteBatchOperation>,
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
+}

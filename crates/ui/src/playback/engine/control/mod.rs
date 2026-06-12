@@ -149,7 +149,17 @@ impl PlaybackEngine {
             return messages;
         }
 
-        // ── 当前音轨：从 event_queue 读取 ──
+        self.process_current_track(current_tick, &mut messages);
+        self.process_other_tracks(current_tick, &mut messages);
+        self.process_midi_events(current_tick, &mut messages);
+        self.last_processed_tick = current_tick;
+        self.handle_loop_wrap(current_tick, &mut messages);
+
+        messages
+    }
+
+    /// 处理当前音轨的事件队列
+    fn process_current_track(&mut self, current_tick: f32, messages: &mut Vec<MidiMessage>) {
         while let Some(event) = self.event_queue.peek() {
             if event.tick > current_tick {
                 break;
@@ -159,76 +169,75 @@ impl PlaybackEngine {
             } else {
                 break;
             };
-            Self::push_midi_message(event.event_type, &mut messages);
+            Self::push_midi_message(event.event_type, messages);
         }
+    }
 
-        // ── 其他音轨：从 document 流式读取 ──
-        if let Some(doc) = &self.document {
-            let tick_start_u = self.last_processed_tick as u32;
-            let tick_end_u = current_tick as u32;
+    /// 处理其他音轨的事件（从 document 流式读取）
+    fn process_other_tracks(&mut self, current_tick: f32, messages: &mut Vec<MidiMessage>) {
+        let Some(doc) = &self.document else { return };
+        let tick_start_u = self.last_processed_tick as u32;
+        let tick_end_u = current_tick as u32;
 
-            for t in 0..self.track_cursors.len() {
-                if t == self.current_track as usize {
-                    continue; // 当前轨已用 event_queue 处理
-                }
-                let (range_start, range_end) = doc.track_events_range(t as u16);
-                if range_start >= range_end {
-                    continue;
-                }
-                let events = &doc.events[range_start..range_end];
-                let cursor = &mut self.track_cursors[t];
-
-                while *cursor < events.len() {
-                    let ev = &events[*cursor];
-                    let ev_tick = ev.delta_tick();
-                    if ev_tick > tick_end_u {
-                        break;
-                    }
-                    if ev_tick >= tick_start_u {
-                        Self::push_event(ev, &mut messages);
-                    }
-                    *cursor += 1;
-                }
+        for t in 0..self.track_cursors.len() {
+            if t == self.current_track as usize {
+                continue;
             }
+            let (range_start, range_end) = doc.track_events_range(t as u16);
+            if range_start >= range_end {
+                continue;
+            }
+            let events = &doc.events[range_start..range_end];
+            let cursor = &mut self.track_cursors[t];
 
-            // ── 控制事件（CC/PC/PB）从 document 流式读取 ──
-            let ctrl_events = &doc.control_events;
-            let ctrl_cursor = &mut self.control_event_cursor;
-            while *ctrl_cursor < ctrl_events.len() {
-                let ev = &ctrl_events[*ctrl_cursor];
-                let ev_tick = ev.tick as f32;
-                if ev_tick > current_tick {
+            while *cursor < events.len() {
+                let ev = &events[*cursor];
+                let ev_tick = ev.delta_tick();
+                if ev_tick > tick_end_u {
                     break;
                 }
-                if ev_tick >= self.last_processed_tick {
-                    Self::push_control_event(ev, &mut messages);
+                if ev_tick >= tick_start_u {
+                    Self::push_event(ev, messages);
                 }
-                *ctrl_cursor += 1;
+                *cursor += 1;
             }
         }
 
-        // ── 额外 MIDI 控制事件（LMPJ / 编辑场景） ──
-        // 独立于 document 处理，因为 LMPJ 文件可能没有 midi_document
+        // ── 控制事件（CC/PC/PB）从 document 流式读取 ──
+        let ctrl_events = &doc.control_events;
+        let ctrl_cursor = &mut self.control_event_cursor;
+        while *ctrl_cursor < ctrl_events.len() {
+            let ev = &ctrl_events[*ctrl_cursor];
+            let ev_tick = ev.tick as f32;
+            if ev_tick > current_tick {
+                break;
+            }
+            if ev_tick >= self.last_processed_tick {
+                Self::push_control_event(ev, messages);
+            }
+            *ctrl_cursor += 1;
+        }
+    }
+
+    /// 处理额外 MIDI 控制事件
+    fn process_midi_events(&self, current_tick: f32, messages: &mut Vec<MidiMessage>) {
         for ev in &self.midi_events {
             if ev.tick >= self.last_processed_tick && ev.tick <= current_tick {
-                Self::push_midi_message_from_event(&ev.message, &mut messages);
+                Self::push_midi_message_from_event(&ev.message, messages);
             }
         }
+    }
 
-        self.last_processed_tick = current_tick;
-
-        // ── 循环回绕检测 ──
-        // 当循环启用且当前 tick 超过循环结束点时，跳回循环起点
+    /// 处理循环回绕
+    fn handle_loop_wrap(&mut self, current_tick: f32, _messages: &mut Vec<MidiMessage>) {
         if self.looping
             && let Some((_loop_start, loop_end)) = self.loop_range
             && current_tick >= loop_end
         {
             let loop_start = self.loop_range.map_or(0.0, |(s, _)| s);
-            // 跳转到循环起点
             if let Some(mut playback) = self.lock_playback() {
                 playback.seek(loop_start);
             }
-            // 重置所有非当前轨的 document 游标
             let seek_tick_u = loop_start as u32;
             if let Some(doc) = &self.document {
                 for t in 0..self.track_cursors.len() {
@@ -241,19 +250,14 @@ impl PlaybackEngine {
                     }
                     let events = &doc.events[range_start..range_end];
                     let cursor = &mut self.track_cursors[t];
-                    // 找到第一个大于等于 seek_tick 的事件位置
                     *cursor = events.partition_point(|ev| ev.delta_tick() < seek_tick_u);
                 }
-                // 重置控制事件游标
                 let ctrl_events = &doc.control_events;
                 self.control_event_cursor = ctrl_events.partition_point(|ev| ev.tick < seek_tick_u);
             }
-            // 重建当前轨事件队列
             self.rebuild_queue_from_current_track(Some(loop_start));
             self.last_processed_tick = loop_start;
         }
-
-        messages
     }
 
     #[inline]

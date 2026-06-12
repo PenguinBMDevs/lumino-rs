@@ -126,7 +126,7 @@ pub struct Editor {
     pub velocity_panel: velocity::VelocityPanel,
 
     /// 框选框的动画显示状态（用于弹簧物理动画）
-    pub selection_box_anim: RefCell<Option<SelectionBoxAnimState>>,
+    pub selection_box_anim: Cell<Option<SelectionBoxAnimState>>,
 }
 
 /// 框选框弹簧动画状态
@@ -232,7 +232,7 @@ impl Editor {
             loop_range: Some(grid::LoopRange::new()),
             notes_changed: false,
             velocity_panel: velocity::VelocityPanel::new(),
-            selection_box_anim: RefCell::new(None),
+            selection_box_anim: Cell::new(None),
         }
     }
 
@@ -445,7 +445,7 @@ impl Editor {
         // 直接跟随模式：不需要弹簧动画，直接返回
         if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct {
             // 清除任何残留的动画状态
-            *self.selection_box_anim.borrow_mut() = None;
+            self.selection_box_anim.set(None);
             return;
         }
 
@@ -478,10 +478,10 @@ impl Editor {
                 };
 
                 // 获取或初始化动画状态
-                let mut anim = self.selection_box_anim.borrow_mut();
+                let anim = self.selection_box_anim.get();
 
                 let (display_current, mut velocity, last_snapped_tick, last_snapped_key) =
-                    if let Some(state) = *anim {
+                    if let Some(state) = anim {
                         (
                             state.current_pos,
                             state.velocity,
@@ -561,18 +561,18 @@ impl Editor {
 
                 let converged = dist_sq < POS_THRESHOLD_SQ && speed_sq < VEL_THRESHOLD_SQ;
 
-                *anim = Some(SelectionBoxAnimState {
+                self.selection_box_anim.set(Some(SelectionBoxAnimState {
                     start_pos,
                     current_pos: current,
                     velocity,
                     snapped_tick,
                     snapped_key,
                     converged,
-                });
+                }));
             }
             _ => {
                 // 非选择状态，清除动画状态
-                *self.selection_box_anim.borrow_mut() = None;
+                self.selection_box_anim.set(None);
             }
         }
     }

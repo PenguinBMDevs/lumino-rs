@@ -52,7 +52,7 @@ impl Host {
             .root
             .editor
             .selection_box_anim
-            .borrow()
+            .get()
             .is_some_and(|s| !s.converged);
         let needs_animation = self.root.state.toggle_animation.active
             || self.root.editor.editor_state.view.smooth_scroll.active

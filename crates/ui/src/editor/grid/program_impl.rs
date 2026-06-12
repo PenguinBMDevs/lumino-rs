@@ -75,7 +75,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 // 清除框选框动画状态
-                *self.editor.selection_box_anim.borrow_mut() = None;
+                self.editor.selection_box_anim.set(None);
 
                 if state.is_loop_dragging {
                     state.is_loop_dragging = false;

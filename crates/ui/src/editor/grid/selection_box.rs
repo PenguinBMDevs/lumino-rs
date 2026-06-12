@@ -36,7 +36,7 @@ pub fn draw(
         } else {
             editor
                 .selection_box_anim
-                .borrow()
+                .get()
                 .map(|anim| (anim.start_pos, anim.current_pos))
                 .or_else(|| editor.get_selection_box())
         };

@@ -24,7 +24,14 @@ pub struct RoomInfo {
     pub max_users: usize,
 }
 
-/// 远程用户（包含实时信息）
+/// 用户数据（认证响应中的 user 字段）
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct UserData {
+    pub id: String,
+    pub username: String,
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
+}
 #[derive(Debug, Clone)]
 pub struct RemoteUser {
     pub info: UserInfo,

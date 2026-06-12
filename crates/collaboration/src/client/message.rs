@@ -46,7 +46,7 @@ pub enum ServerMessage {
         #[serde(rename = "userId")]
         user_id: crate::types::UserId,
         room: AuthRoomInfo,
-        user: serde_json::Value,
+        user: crate::types::UserData,
         users: Vec<crate::types::UserInfo>,
     },
     AuthSuccess {
@@ -65,7 +65,7 @@ pub enum ServerMessage {
         room: crate::types::RoomInfo,
         users: Vec<crate::types::UserInfo>,
         #[serde(rename = "projectState")]
-        project_state: serde_json::Value,
+        project_state: crate::types::ProjectState,
     },
     RoomError {
         error: String,
@@ -106,7 +106,7 @@ pub enum ServerMessage {
     },
     FullSync {
         #[serde(rename = "projectState")]
-        project_state: serde_json::Value,
+        project_state: crate::types::ProjectState,
         users: Vec<crate::types::UserInfo>,
     },
     Pong {

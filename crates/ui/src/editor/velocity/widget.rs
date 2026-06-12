@@ -114,6 +114,176 @@ impl<'a> VelocityCanvas<'a> {
         (0.0..=RESIZE_HANDLE_HEIGHT).contains(&cursor_pos.y)
     }
 
+    fn handle_button_pressed(
+        &self,
+        state: &mut VelocityCanvasState,
+        cursor_pos: Point,
+        cursor: &mouse::Cursor,
+        bounds_size: Size,
+    ) -> Option<canvas::Action<Message>> {
+        if Self::is_in_resize_zone(cursor_pos) {
+            state.resize_dragging = true;
+            state.resize_drag_start_y = cursor.position().unwrap_or_default().y;
+            state.resize_start_height = bounds_size.height + TOOLBAR_HEIGHT;
+            return None;
+        }
+
+        let points = self.points();
+        let view = &self.editor.editor_state.view;
+        if points.is_empty() {
+            return None;
+        }
+
+        if let Some(point_idx) = Self::hit_test(
+            &points,
+            cursor_pos,
+            bounds_size.width,
+            bounds_size.height,
+            view,
+        ) {
+            state.drag_point_idx = Some(point_idx);
+            state._drag_start_velocity = points[point_idx].velocity;
+            return Some(canvas::Action::publish(Message::Velocity(
+                VelocityAction::DragStart(
+                    points[point_idx].note_index,
+                    points[point_idx].velocity,
+                ),
+            )));
+        }
+
+        let in_draw_area = cursor_pos.x >= 0.0
+            && cursor_pos.x <= bounds_size.width
+            && cursor_pos.y >= RESIZE_HANDLE_HEIGHT
+            && cursor_pos.y <= bounds_size.height;
+        if !in_draw_area {
+            return None;
+        }
+
+        state.curve_active = true;
+        state.curve_start_x = cursor_pos.x;
+        state.curve_start_velocity = Self::y_to_velocity(cursor_pos.y, bounds_size.height);
+        state.curve_affected.clear();
+        state.drag_point_idx = None;
+        state.hover_point_idx = None;
+        Some(canvas::Action::publish(Message::Velocity(
+            VelocityAction::CurveStart,
+        )))
+    }
+
+    fn handle_cursor_moved(
+        &self,
+        state: &mut VelocityCanvasState,
+        cursor_pos: Point,
+        cursor: &mouse::Cursor,
+        bounds_size: Size,
+    ) -> Option<canvas::Action<Message>> {
+        if state.resize_dragging {
+            let abs_cursor_y = cursor.position().unwrap_or_default().y;
+            let delta_y = state.resize_drag_start_y - abs_cursor_y;
+            let new_height = (state.resize_start_height + delta_y).clamp(
+                super::VELOCITY_PANEL_MIN_HEIGHT,
+                super::VELOCITY_PANEL_MAX_HEIGHT,
+            );
+            let current_panel_height = bounds_size.height + TOOLBAR_HEIGHT;
+            if (new_height - current_panel_height).abs() > 1.0 {
+                return Some(canvas::Action::publish(Message::VelocityPanelResize(
+                    new_height,
+                )));
+            }
+            return None;
+        }
+
+        state.hover_resize_handle = Self::is_in_resize_zone(cursor_pos);
+
+        if state.curve_active {
+            let out_of_bounds = cursor_pos.x < 0.0
+                || cursor_pos.x > bounds_size.width
+                || cursor_pos.y < RESIZE_HANDLE_HEIGHT
+                || cursor_pos.y > bounds_size.height;
+            if out_of_bounds {
+                state.curve_active = false;
+                state.curve_affected.clear();
+                return Some(canvas::Action::publish(Message::Velocity(
+                    VelocityAction::CurveEnd,
+                )));
+            }
+            let points = self.points();
+            if points.is_empty() {
+                return None;
+            }
+            let view = &self.editor.editor_state.view;
+            let selected_notes = &self.editor.editor_state.interaction.selected_notes;
+            return Self::update_curve_paint(
+                state,
+                &points,
+                cursor_pos,
+                bounds_size,
+                view,
+                selected_notes,
+            );
+        }
+
+        let points = self.points();
+        let view = &self.editor.editor_state.view;
+        if points.is_empty() {
+            state.hover_point_idx = None;
+            return None;
+        }
+
+        if let Some(drag_idx) = state.drag_point_idx {
+            if drag_idx < points.len() {
+                let new_velocity = Self::y_to_velocity(cursor_pos.y, bounds_size.height);
+                let old_velocity = points[drag_idx].velocity;
+                if new_velocity != old_velocity {
+                    return Some(canvas::Action::publish(Message::Velocity(
+                        VelocityAction::DragMove(points[drag_idx].note_index, new_velocity),
+                    )));
+                }
+            }
+            return None;
+        }
+
+        let hover_idx = Self::hit_test(
+            &points,
+            cursor_pos,
+            bounds_size.width,
+            bounds_size.height,
+            view,
+        );
+        if hover_idx != state.hover_point_idx {
+            state.hover_point_idx = hover_idx;
+        }
+        None
+    }
+
+    fn handle_button_released(
+        &self,
+        state: &mut VelocityCanvasState,
+    ) -> Option<canvas::Action<Message>> {
+        if state.resize_dragging {
+            state.resize_dragging = false;
+            return None;
+        }
+
+        if state.curve_active {
+            state.curve_active = false;
+            state.curve_affected.clear();
+            return Some(canvas::Action::publish(Message::Velocity(
+                VelocityAction::CurveEnd,
+            )));
+        }
+
+        let was_dragging = state.drag_point_idx.is_some();
+        state.drag_point_idx = None;
+        state._drag_start_velocity = 0;
+        if was_dragging {
+            return Some(canvas::Action::publish(Message::Velocity(
+                VelocityAction::DragEnd,
+            )));
+        }
+        None
+    }
+
     /// 更新曲线绘制
     fn update_curve_paint(
         state: &mut VelocityCanvasState,
@@ -191,156 +361,13 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
 
         match event {
             canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                if Self::is_in_resize_zone(cursor_pos) {
-                    state.resize_dragging = true;
-                    state.resize_drag_start_y = cursor.position().unwrap_or_default().y;
-                    state.resize_start_height = bounds_size.height + TOOLBAR_HEIGHT;
-                    return None;
-                }
-
-                let points = self.points();
-                let view = &self.editor.editor_state.view;
-                if points.is_empty() {
-                    return None;
-                }
-
-                if let Some(point_idx) = Self::hit_test(
-                    &points,
-                    cursor_pos,
-                    bounds_size.width,
-                    bounds_size.height,
-                    view,
-                ) {
-                    state.drag_point_idx = Some(point_idx);
-                    state._drag_start_velocity = points[point_idx].velocity;
-                    return Some(canvas::Action::publish(Message::Velocity(
-                        VelocityAction::DragStart(
-                            points[point_idx].note_index,
-                            points[point_idx].velocity,
-                        ),
-                    )));
-                }
-
-                let in_draw_area = cursor_pos.x >= 0.0
-                    && cursor_pos.x <= bounds_size.width
-                    && cursor_pos.y >= RESIZE_HANDLE_HEIGHT
-                    && cursor_pos.y <= bounds_size.height;
-                if !in_draw_area {
-                    return None;
-                }
-
-                state.curve_active = true;
-                state.curve_start_x = cursor_pos.x;
-                state.curve_start_velocity = Self::y_to_velocity(cursor_pos.y, bounds_size.height);
-                state.curve_affected.clear();
-                state.drag_point_idx = None;
-                state.hover_point_idx = None;
-                Some(canvas::Action::publish(Message::Velocity(
-                    VelocityAction::CurveStart,
-                )))
+                self.handle_button_pressed(state, cursor_pos, &cursor, bounds_size)
             }
             canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                if state.resize_dragging {
-                    let abs_cursor_y = cursor.position().unwrap_or_default().y;
-                    let delta_y = state.resize_drag_start_y - abs_cursor_y;
-                    let new_height = (state.resize_start_height + delta_y).clamp(
-                        super::VELOCITY_PANEL_MIN_HEIGHT,
-                        super::VELOCITY_PANEL_MAX_HEIGHT,
-                    );
-                    let current_panel_height = bounds_size.height + TOOLBAR_HEIGHT;
-                    if (new_height - current_panel_height).abs() > 1.0 {
-                        return Some(canvas::Action::publish(Message::VelocityPanelResize(
-                            new_height,
-                        )));
-                    }
-                    return None;
-                }
-
-                state.hover_resize_handle = Self::is_in_resize_zone(cursor_pos);
-
-                if state.curve_active {
-                    let out_of_bounds = cursor_pos.x < 0.0
-                        || cursor_pos.x > bounds_size.width
-                        || cursor_pos.y < RESIZE_HANDLE_HEIGHT
-                        || cursor_pos.y > bounds_size.height;
-                    if out_of_bounds {
-                        state.curve_active = false;
-                        state.curve_affected.clear();
-                        return Some(canvas::Action::publish(Message::Velocity(
-                            VelocityAction::CurveEnd,
-                        )));
-                    }
-                    let points = self.points();
-                    if points.is_empty() {
-                        return None;
-                    }
-                    let view = &self.editor.editor_state.view;
-                    let selected_notes = &self.editor.editor_state.interaction.selected_notes;
-                    return Self::update_curve_paint(
-                        state,
-                        &points,
-                        cursor_pos,
-                        bounds_size,
-                        view,
-                        selected_notes,
-                    );
-                }
-
-                let points = self.points();
-                let view = &self.editor.editor_state.view;
-                if points.is_empty() {
-                    state.hover_point_idx = None;
-                    return None;
-                }
-
-                if let Some(drag_idx) = state.drag_point_idx {
-                    if drag_idx < points.len() {
-                        let new_velocity = Self::y_to_velocity(cursor_pos.y, bounds_size.height);
-                        let old_velocity = points[drag_idx].velocity;
-                        if new_velocity != old_velocity {
-                            return Some(canvas::Action::publish(Message::Velocity(
-                                VelocityAction::DragMove(points[drag_idx].note_index, new_velocity),
-                            )));
-                        }
-                    }
-                    return None;
-                }
-
-                let hover_idx = Self::hit_test(
-                    &points,
-                    cursor_pos,
-                    bounds_size.width,
-                    bounds_size.height,
-                    view,
-                );
-                if hover_idx != state.hover_point_idx {
-                    state.hover_point_idx = hover_idx;
-                }
-                None
+                self.handle_cursor_moved(state, cursor_pos, &cursor, bounds_size)
             }
             canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                if state.resize_dragging {
-                    state.resize_dragging = false;
-                    return None;
-                }
-
-                if state.curve_active {
-                    state.curve_active = false;
-                    state.curve_affected.clear();
-                    return Some(canvas::Action::publish(Message::Velocity(
-                        VelocityAction::CurveEnd,
-                    )));
-                }
-
-                let was_dragging = state.drag_point_idx.is_some();
-                state.drag_point_idx = None;
-                state._drag_start_velocity = 0;
-                if was_dragging {
-                    return Some(canvas::Action::publish(Message::Velocity(
-                        VelocityAction::DragEnd,
-                    )));
-                }
-                None
+                self.handle_button_released(state)
             }
             _ => None,
         }
