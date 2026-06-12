@@ -205,7 +205,7 @@ mod tests {
         editor.set_scroll_x(10000.0);
 
         // 应该被限制在有效范围内
-        assert!(editor.scroll_x() <= editor.editor_state.max_scroll.x);
+        assert!(editor.scroll_x() <= editor.editor_state.max_scroll.0);
         assert!(editor.scroll_x() >= 0.0);
     }
 
@@ -637,7 +637,7 @@ mod state_tests {
         let mut editor = Editor::new();
         editor.set_total_ticks(2000);
         assert_eq!(editor.editor_state.view.total_ticks, 2000);
-        assert!(editor.editor_state.max_scroll.x > 0.0);
+        assert!(editor.editor_state.max_scroll.0 > 0.0);
     }
 
     #[test]

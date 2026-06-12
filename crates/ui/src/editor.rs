@@ -269,17 +269,23 @@ impl Editor {
 
     /// 更新鼠标位置（由外部调用）
     pub fn update_cursor_position(&mut self, position: Option<Point>) {
-        self.editor_state.update_cursor_position(position);
+        let pos = position.map(|p| (p.x, p.y));
+        if self.editor_state.canvas.cursor_position == pos {
+            return;
+        }
+        self.editor_state.canvas.cursor_position = pos;
     }
 
     /// 更新 Canvas 偏移量（用于坐标转换）
     pub fn set_canvas_offset(&mut self, offset: Point) {
-        self.editor_state.set_canvas_offset(offset);
+        self.editor_state.canvas.offset_x = offset.x;
+        self.editor_state.canvas.offset_y = offset.y;
     }
 
     /// 更新 Canvas 尺寸
     pub fn set_canvas_size(&mut self, size: Point) {
-        self.editor_state.set_canvas_size(size);
+        self.editor_state.canvas.size_x = size.x;
+        self.editor_state.canvas.size_y = size.y;
     }
 
     /// 获取并清空待处理的音频动作
@@ -294,8 +300,7 @@ impl Editor {
     /// 设置总 ticks
     pub fn set_total_ticks(&mut self, total_ticks: u32) {
         self.editor_state.view.total_ticks = total_ticks;
-        let max_scroll_x = total_ticks as f32 * self.editor_state.view.zoom_x;
-        self.editor_state.max_scroll.x = max_scroll_x;
+        self.editor_state.update_max_scroll(total_ticks);
     }
 
     /// 设置 PPQ
@@ -361,52 +366,30 @@ impl Default for Editor {
 impl Editor {
     /// Push current state to history
     pub fn push_history(&mut self) {
-        let d = &self.editor_state.data;
-        let snapshot = history::EditorSnapshot::new(d.notes.clone(), d.current_track);
-        tracing::debug!(
-            "推送历史记录: {} 个音符，音轨 {}",
-            snapshot.notes.len(),
-            snapshot.current_track
-        );
-        self.editor_state.data.history.push(snapshot);
+        self.editor_state.data.push_history();
     }
 
     /// Undo the last action
     pub fn undo(&mut self) -> bool {
-        let d = &self.editor_state.data;
-        let current_state = history::EditorSnapshot::new(d.notes.clone(), d.current_track);
-        tracing::info!(
-            "尝试撤销: 当前音符数 = {}, 可撤销 = {}",
-            d.notes.len(),
-            self.can_undo()
-        );
-
-        if let Some(snapshot) = self.editor_state.data.history.undo(current_state) {
-            self.editor_state.data.notes = snapshot.notes;
-            self.editor_state.data.current_track = snapshot.current_track;
+        if self.editor_state.data.undo() {
             self.grid_cache.clear();
             self.mark_notes_changed();
-            tracing::info!(
-                "撤销操作成功: {} 个音符",
-                self.editor_state.data.notes.len()
-            );
             true
         } else {
-            tracing::info!("没有可撤销的操作");
             false
         }
     }
 
     /// Redo the last undone action
     pub fn redo(&mut self) -> bool {
-        let d = &self.editor_state.data;
-        let current_state = history::EditorSnapshot::new(d.notes.clone(), d.current_track);
-
-        if let Some(snapshot) = self.editor_state.data.history.redo(current_state) {
-            self.editor_state.data.notes = snapshot.notes;
-            self.editor_state.data.current_track = snapshot.current_track;
+        if self.editor_state.data.redo() {
             self.grid_cache.clear();
             self.mark_notes_changed();
+            true
+        } else {
+            false
+        }
+    }
             tracing::info!("重做操作成功");
             true
         } else {

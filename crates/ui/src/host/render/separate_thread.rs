@@ -5,25 +5,15 @@ use lumino_gfx::{ArrangementNoteInstance, ArrangementUniform};
 
 mod arrangement_instances;
 
-/// 走带视图音轨调色板（12 色，与 view.rs 保持同步）
-const ARRANGEMENT_PALETTE: [[f32; 3]; 12] = [
-    [0.90, 0.30, 0.30], // 红
-    [0.30, 0.70, 0.30], // 绿
-    [0.30, 0.50, 0.90], // 蓝
-    [0.90, 0.70, 0.20], // 橙
-    [0.70, 0.30, 0.80], // 紫
-    [0.20, 0.80, 0.80], // 青
-    [0.90, 0.50, 0.50], // 粉红
+/// 走带视图音轨调色板（12 色，�?view.rs 保持同步�?const ARRANGEMENT_PALETTE: [[f32; 3]; 12] = [
+    [0.90, 0.30, 0.30], // �?    [0.30, 0.70, 0.30], // �?    [0.30, 0.50, 0.90], // �?    [0.90, 0.70, 0.20], // �?    [0.70, 0.30, 0.80], // �?    [0.20, 0.80, 0.80], // �?    [0.90, 0.50, 0.50], // 粉红
     [0.50, 0.90, 0.30], // lime
     [0.30, 0.30, 0.70], // 深蓝
-    [0.90, 0.80, 0.30], // 黄
-    [0.60, 0.40, 0.20], // 棕
-    [0.50, 0.50, 0.50], // 灰
-];
+    [0.90, 0.80, 0.30], // �?    [0.60, 0.40, 0.20], // �?    [0.50, 0.50, 0.50], // �?];
 
 impl Host {
-    /// 收集走带视图全部实例（背景 + lane + 网格线 + 音符 + 演奏指示线）
-    /// 屏幕坐标，每帧重建，二分查找加速 MidiDocument 音符读取
+    /// 收集走带视图全部实例（背�?+ lane + 网格�?+ 音符 + 演奏指示线）
+    /// 屏幕坐标，每帧重建，二分查找加�?MidiDocument 音符读取
     pub(super) fn collect_arrangement_instances(&self) -> Vec<ArrangementNoteInstance> {
         puffin::profile_scope!("collect_arrangement_instances");
 
@@ -51,8 +41,7 @@ impl Host {
             .map(|t| !t.is_muted)
             .collect();
 
-        // 从主题提取走带视图颜色
-        let theme = self.root.theme();
+        // 从主题提取走带视图颜�?        let theme = self.root.theme();
         use crate::editor::grid::theme::ThemeExt;
         let is_light = theme.is_light();
         let palette = theme.extended_palette().background;
@@ -184,8 +173,7 @@ impl Host {
     /// 分离渲染线程模式的主渲染逻辑
     ///
     /// UI 线程只负责：
-    /// 1. 更新状态
-    /// 2. 生成渲染参数
+    /// 1. 更新状�?    /// 2. 生成渲染参数
     /// 3. 写入音符数据到双缓冲
     /// 4. 发送渲染参数到 WGPU 线程
     pub(super) fn redraw_separate_thread(&mut self) {
@@ -199,8 +187,7 @@ impl Host {
         let render_data = self.collect_render_data();
         let params = self.build_render_params(render_data);
 
-        // 发送渲染参数到 WGPU 线程（非阻塞）
-        if let Some(ref wgpu_thread) = self.render_ctx.wgpu_render_thread {
+        // 发送渲染参数到 WGPU 线程（非阻塞�?        if let Some(ref wgpu_thread) = self.render_ctx.wgpu_render_thread {
             wgpu_thread.send_params(params);
         }
     }
@@ -220,14 +207,11 @@ impl Host {
         true
     }
 
-    /// 收集渲染所需的数据
-    pub(super) fn collect_render_data(&mut self) -> super::data::RenderData {
+    /// 收集渲染所需的数�?    pub(super) fn collect_render_data(&mut self) -> super::data::RenderData {
         let viewport_size = self.render_ctx.viewport.logical_size();
 
-        // 走带模式下，同步视口的 canvas_size/canvas_offset 到 arrangement_view.viewport
-        // 这些值用于 handlers.rs 的滚动范围钳制和 view.rs 的滚动条滑块计算，
-        // 而 collect_viewport_info() 每帧计算正确值但不会自动写回。
-        if self.root.is_arrangement_mode() {
+        // 走带模式下，同步视口�?canvas_size/canvas_offset �?arrangement_view.viewport
+        // 这些值用�?handlers.rs 的滚动范围钳制和 view.rs 的滚动条滑块计算�?        // �?collect_viewport_info() 每帧计算正确值但不会自动写回�?        if self.root.is_arrangement_mode() {
             const TRACK_LIST_WIDTH: f32 = 160.0;
             const STATUSBAR_HEIGHT: f32 = 20.0;
             const TITLEBAR_HEIGHT: f32 = 30.0;
@@ -255,8 +239,7 @@ impl Host {
         };
 
         let grid_instances = if self.root.is_arrangement_mode() {
-            vec![] // 音轨总览模式下跳过网格
-        } else {
+            vec![] // 音轨总览模式下跳过网�?        } else {
             puffin::profile_scope!("generate_grid_instances");
             self.generate_grid_instances(
                 viewport_size.width,
@@ -274,8 +257,7 @@ impl Host {
         let keyboard_instances = vec![];
 
         let ruler_instances = if self.root.is_arrangement_mode() {
-            vec![] // 音轨总览模式下跳过标尺
-        } else {
+            vec![] // 音轨总览模式下跳过标�?        } else {
             puffin::profile_scope!("generate_ruler_instances");
             self.generate_ruler_instances(
                 viewport_size.width,
@@ -290,8 +272,7 @@ impl Host {
 
         self.update_note_data_for_wgpu_thread();
 
-        // 走带模式：直接构建全部实例
-        let arrangement_note_instances = if self.root.is_arrangement_mode() {
+        // 走带模式：直接构建全部实�?        let arrangement_note_instances = if self.root.is_arrangement_mode() {
             puffin::profile_scope!("collect_arrangement_instances");
             self.collect_arrangement_instances()
         } else {
@@ -318,8 +299,7 @@ impl Host {
         }
     }
 
-    /// 构建 CC 柱状条实例（参考 yinhe 计算方式）
-    fn build_cc_bar_instances(&self) -> Vec<lumino_gfx::CcBarInstance> {
+    /// 构建 CC 柱状条实例（参�?yinhe 计算方式�?    fn build_cc_bar_instances(&self) -> Vec<lumino_gfx::CcBarInstance> {
         use crate::editor::grid::theme::ThemeExt;
         use crate::editor::velocity::{EditMode, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT};
 
@@ -335,8 +315,7 @@ impl Host {
             EditMode::Tempo => (false, false, 0u8),
         };
 
-        // Velocity 模式：从 notes 获取力度点
-        let velocity_points = if is_velocity {
+        // Velocity 模式：从 notes 获取力度�?        let velocity_points = if is_velocity {
             crate::editor::velocity::VelocityPanel::build_velocity_points(
                 &editor.editor_state.data.notes,
             )
@@ -344,8 +323,7 @@ impl Host {
             Vec::new()
         };
 
-        // CC/Bend 模式：从 cc_data 获取数据点
-        let (cc_points, bend_points) = if is_bend {
+        // CC/Bend 模式：从 cc_data 获取数据�?        let (cc_points, bend_points) = if is_bend {
             let bend_pts = crate::editor::velocity::VelocityPanel::build_bend_points(editor);
             (Vec::new(), bend_pts)
         } else if !is_velocity {
@@ -362,15 +340,14 @@ impl Host {
 
         let canvas = &editor.editor_state.canvas;
         let panel_height = self.root.visual.velocity_panel_height;
-        let panel_x = canvas.offset.x;
-        let panel_y = canvas.offset.y + canvas.size.y;
-        // velocity 面板在 grid Canvas 下方，中间隔了水平滚动条（20px）
-        const H_SCROLLBAR_HEIGHT: f32 = 20.0;
+        let panel_x = canvas.offset_x;
+        let panel_y = canvas.offset_y + canvas.size_y;
+        // velocity 面板�?grid Canvas 下方，中间隔了水平滚动条�?0px�?        const H_SCROLLBAR_HEIGHT: f32 = 20.0;
         let actual_panel_y = panel_y + H_SCROLLBAR_HEIGHT;
 
         let mut instances = Vec::new();
 
-        // ── 所有模式共用的层 ──
+        // ── 所有模式共用的�?──
 
         // 1. 背景
         let bg = theme.extended_palette().background.base.color;
@@ -379,28 +356,26 @@ impl Host {
         instances.push(lumino_gfx::CcBarInstance::new(
             panel_x,
             actual_panel_y,
-            canvas.size.x,
+            canvas.size_x,
             bg_height,
             bg_arr,
         ));
 
-        // 2. Resize 手柄（位于 toolbar 下方 = Canvas 顶部）
-        const TOOLBAR_HEIGHT: f32 = 28.0;
+        // 2. Resize 手柄（位�?toolbar 下方 = Canvas 顶部�?        const TOOLBAR_HEIGHT: f32 = 28.0;
         let handle_y = actual_panel_y + TOOLBAR_HEIGHT;
         let handle_color = theme.extended_palette().background.strong.color;
         instances.push(lumino_gfx::CcBarInstance::new(
             panel_x,
             handle_y,
-            canvas.size.x,
+            canvas.size_x,
             RESIZE_HANDLE_HEIGHT,
             [handle_color.r, handle_color.g, handle_color.b, 0.25],
         ));
-        // Grab 指示条
-        let text_c = theme.text_color();
+        // Grab 指示�?        let text_c = theme.text_color();
         let grab_alpha = if theme.is_light() { 0.40 } else { 0.35 };
         let bar_w = 40.0;
         let bar_h = 3.0;
-        let bar_x = panel_x + (canvas.size.x - bar_w) / 2.0;
+        let bar_x = panel_x + (canvas.size_x - bar_w) / 2.0;
         let bar_y = handle_y + (RESIZE_HANDLE_HEIGHT - bar_h) / 2.0;
         instances.push(lumino_gfx::CcBarInstance::new(
             bar_x,
@@ -410,27 +385,22 @@ impl Host {
             [text_c.r, text_c.g, text_c.b, grab_alpha],
         ));
 
-        // Tempo 模式：只有背景 + 手柄，没有数据柱状条
+        // Tempo 模式：只有背�?+ 手柄，没有数据柱状条
         if is_tempo {
             return instances;
         }
 
-        // ── 非 Tempo 模式：数据柱状条 ──
+        // ── �?Tempo 模式：数据柱状条 ──
 
-        // 计算图形区域（排除 toolbar + resize handle + padding）
-        // 坐标系原点为 Canvas 顶部（actual_panel_y + TOOLBAR_HEIGHT），与 Canvas 的 velocity_to_y() 一致
-        // Canvas 的 bounds_height = canvas_height = panel_height - TOOLBAR_HEIGHT
+        // 计算图形区域（排�?toolbar + resize handle + padding�?        // 坐标系原点为 Canvas 顶部（actual_panel_y + TOOLBAR_HEIGHT），�?Canvas �?velocity_to_y() 一�?        // Canvas �?bounds_height = canvas_height = panel_height - TOOLBAR_HEIGHT
         let canvas_height = panel_height - TOOLBAR_HEIGHT;
-        let max_y = canvas_height; // value = 0 在 Canvas 底部，不再减去组件宽度
-        let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT; // value = 127 在 Canvas 顶部（预留 handle + padding）
-        let graph_height = max_y - min_y;
+        let max_y = canvas_height; // value = 0 �?Canvas 底部，不再减去组件宽�?        let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT; // value = 127 �?Canvas 顶部（预�?handle + padding�?        let graph_height = max_y - min_y;
 
-        // 4. 数据柱状条（模仿 yinhe 的矩形实例化渲染）
-        const BAR_WIDTH: f32 = 2.0;
+        // 4. 数据柱状条（模仿 yinhe 的矩形实例化渲染�?        const BAR_WIDTH: f32 = 2.0;
 
         if is_velocity {
-            // Velocity 模式：矩形宽度 = 音符长度（与 C# VelocityBarRenderer 一致）
-            // 颜色使用与音符相同的主题色，透明度 30%
+            // Velocity 模式：矩形宽�?= 音符长度（与 C# VelocityBarRenderer 一致）
+            // 颜色使用与音符相同的主题色，透明�?30%
             const MIN_BAR_WIDTH: f32 = 2.0;
             const BAR_MARGIN: f32 = 1.0;
             let notes = &editor.editor_state.data.notes;
@@ -439,8 +409,7 @@ impl Host {
                 let normalized = point.velocity as f32 / 127.0;
                 let bar_h = normalized * graph_height;
 
-                // 计算矩形 X 和宽度：从音符长度推导，带边距
-                let note_x =
+                // 计算矩形 X 和宽度：从音符长度推导，带边�?                let note_x =
                     panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
                 let note_w = notes
                     .get(point.note_index)
@@ -450,8 +419,7 @@ impl Host {
                 let bar_x = note_x + BAR_MARGIN;
                 let bar_y = actual_panel_y + TOOLBAR_HEIGHT + max_y - bar_h;
 
-                // 简单裁剪（考虑矩形宽度）
-                if bar_x + bar_w < panel_x + view.keyboard_width || bar_x > panel_x + canvas.size.x
+                // 简单裁剪（考虑矩形宽度�?                if bar_x + bar_w < panel_x + view.keyboard_width || bar_x > panel_x + canvas.size_x
                 {
                     continue;
                 }
@@ -465,9 +433,8 @@ impl Host {
                 ));
             }
         } else if is_bend {
-            // Bend 模式：值范围 -8192 到 8191，中心在面板中间
-            // 颜色按弯音值映射：负值冷色（蓝紫），正值暖色（橙红）
-            const BEND_MAX: f32 = 8191.0;
+            // Bend 模式：值范�?-8192 �?8191，中心在面板中间
+            // 颜色按弯音值映射：负值冷色（蓝紫），正值暖色（橙红�?            const BEND_MAX: f32 = 8191.0;
             const BEND_MIN: f32 = -8192.0;
 
             for point in &bend_points {
@@ -477,9 +444,8 @@ impl Host {
                     panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
                 let bar_y = actual_panel_y + TOOLBAR_HEIGHT + max_y - bar_h;
 
-                // 简单裁剪
-                if bar_x + BAR_WIDTH < panel_x + view.keyboard_width
-                    || bar_x > panel_x + canvas.size.x
+                // 简单裁�?                if bar_x + BAR_WIDTH < panel_x + view.keyboard_width
+                    || bar_x > panel_x + canvas.size_x
                 {
                     continue;
                 }
@@ -493,8 +459,7 @@ impl Host {
                 ));
             }
         } else {
-            // CC 模式：值范围 0 到 127，颜色按 CC 值热力映射
-            const MAX_VALUE: f32 = 127.0;
+            // CC 模式：值范�?0 �?127，颜色按 CC 值热力映�?            const MAX_VALUE: f32 = 127.0;
 
             for point in &cc_points {
                 let normalized = point.value as f32 / MAX_VALUE;
@@ -503,9 +468,8 @@ impl Host {
                     panel_x + view.keyboard_width + point.tick * view.zoom_x - view.scroll_x;
                 let bar_y = actual_panel_y + TOOLBAR_HEIGHT + max_y - bar_h;
 
-                // 简单裁剪
-                if bar_x + BAR_WIDTH < panel_x + view.keyboard_width
-                    || bar_x > panel_x + canvas.size.x
+                // 简单裁�?                if bar_x + BAR_WIDTH < panel_x + view.keyboard_width
+                    || bar_x > panel_x + canvas.size_x
                 {
                     continue;
                 }
@@ -523,17 +487,13 @@ impl Host {
         instances
     }
 
-    /// 更新音符数据：主音符同步写入 + 洋葱皮异步派发
-    ///
-    /// Phase 1: 主音轨主音符 → 主线程同步写入双缓冲 + swap（~1ms）
-    ///   → WGPU 线程立即可见，零延迟，白屏问题根治
-    /// Phase 2: 洋葱皮 → 派发到 NoteWorker 异步计算，完成后二次 swap
-    ///   → 50-200ms 延迟，但不阻塞主音符渲染
+    /// 更新音符数据：主音符同步写入 + 洋葱皮异步派�?    ///
+    /// Phase 1: 主音轨主音符 �?主线程同步写入双缓冲 + swap（~1ms�?    ///   �?WGPU 线程立即可见，零延迟，白屏问题根�?    /// Phase 2: 洋葱�?�?派发�?NoteWorker 异步计算，完成后二次 swap
+    ///   �?50-200ms 延迟，但不阻塞主音符渲染
     pub(super) fn update_note_data_for_wgpu_thread(&mut self) {
         puffin::profile_scope!("update_note_data");
 
-        // 走带模式：音符由 arrangement_renderer 直接绘制，跳过钢琴卷帘
-        if self.root.is_arrangement_mode() {
+        // 走带模式：音符由 arrangement_renderer 直接绘制，跳过钢琴卷�?        if self.root.is_arrangement_mode() {
             return;
         }
 
@@ -543,8 +503,7 @@ impl Host {
             crate::editor::EditState::Drawing { .. }
         );
 
-        // 检测视口变化
-        let v = &self.root.editor.editor_state.view;
+        // 检测视口变�?        let v = &self.root.editor.editor_state.view;
         let canvas_size = &self.root.editor.editor_state.canvas.size;
         let current_viewport_hash = crate::host::RenderCache::compute_viewport_hash(
             v.scroll_x,
@@ -558,8 +517,7 @@ impl Host {
         let viewport_changed =
             current_viewport_hash != self.render_ctx.render_cache.note_viewport_hash;
 
-        // 洋葱皮专用量化哈希（32px 取整，微小移动不触发重算）
-        let current_onion_hash = crate::host::RenderCache::compute_onion_viewport_hash(
+        // 洋葱皮专用量化哈希（32px 取整，微小移动不触发重算�?        let current_onion_hash = crate::host::RenderCache::compute_onion_viewport_hash(
             v.scroll_x,
             v.scroll_y,
             v.zoom_x,
@@ -581,9 +539,7 @@ impl Host {
 
         self.render_ctx.render_cache.note_viewport_hash = current_viewport_hash;
 
-        // ═══ Phase 1: 主音符同步写入 ═══
-        // 仅当数据变化时才重建主音符，仅视口变化时跳过（音符数据相同，减少重复上传）
-        if note_data_changed {
+        // ══�?Phase 1: 主音符同步写�?══�?        // 仅当数据变化时才重建主音符，仅视口变化时跳过（音符数据相同，减少重复上传�?        if note_data_changed {
             puffin::profile_scope!("phase1_main_notes_sync");
             let notes_clone = self.root.editor.editor_state.data.notes.clone(); // O(1)
             let edit_state_clone = self.root.editor.editor_state.interaction.edit_state.clone();
@@ -598,9 +554,7 @@ impl Host {
             );
         }
 
-        // ═══ Phase 2: 洋葱皮异步派发 ═══
-        // 数据变化 或 量化视口变化（微小滚动不触发，避免 worker 过载）
-        if note_data_changed || onion_viewport_changed {
+        // ══�?Phase 2: 洋葱皮异步派�?══�?        // 数据变化 �?量化视口变化（微小滚动不触发，避�?worker 过载�?        if note_data_changed || onion_viewport_changed {
             self.ensure_note_worker();
             if let Some(ref worker) = self.render_ctx.note_worker {
                 puffin::profile_scope!("dispatch_onion_skin_job");
@@ -648,7 +602,7 @@ impl Host {
             (es.view.visible_key_count.saturating_sub(1)) as f32
         };
 
-        // 使用 collect_viewport_info 获取正确的 canvas_offset 和 canvas_size
+        // 使用 collect_viewport_info 获取正确�?canvas_offset �?canvas_size
         let viewport_info = self.collect_viewport_info();
         let (canvas_offset, canvas_size, keyboard_width, ruler_height) = if is_arrangement_mode {
             (
@@ -659,14 +613,14 @@ impl Host {
             )
         } else {
             (
-                (es.canvas.offset.x, es.canvas.offset.y),
-                (es.canvas.size.x, es.canvas.size.y),
+                (es.canvas.offset_x, es.canvas.offset_y),
+                (es.canvas.size_x, es.canvas.size_y),
                 es.view.keyboard_width,
                 es.view.ruler_height,
             )
         };
 
-        // 走带模式：构建 arrangement uniform
+        // 走带模式：构�?arrangement uniform
         let bg_color_arr = colors.bg;
         let bar_color = colors.bar_line;
         let arrangement_uniform = if is_arrangement_mode {
@@ -709,17 +663,15 @@ impl Host {
             ArrangementUniform::default()
         };
 
-        // 计算力度面板矩形（用于 wgpu scissor）
-        let velocity_panel_rect = if is_arrangement_mode {
+        // 计算力度面板矩形（用�?wgpu scissor�?        let velocity_panel_rect = if is_arrangement_mode {
             None
         } else {
             let es = &self.root.editor.editor_state;
-            // velocity 面板在 grid Canvas 下方，中间隔了水平滚动条（20px）
-            const H_SCROLLBAR_HEIGHT: f32 = 20.0;
+            // velocity 面板�?grid Canvas 下方，中间隔了水平滚动条�?0px�?            const H_SCROLLBAR_HEIGHT: f32 = 20.0;
             Some((
-                es.canvas.offset.x,
-                es.canvas.offset.y + es.canvas.size.y + H_SCROLLBAR_HEIGHT,
-                es.canvas.size.x,
+                es.canvas.offset_x,
+                es.canvas.offset_y + es.canvas.size_y + H_SCROLLBAR_HEIGHT,
+                es.canvas.size_x,
                 self.root.visual.velocity_panel_height + PANEL_PADDING_Y + 10.0,
             ))
         };
@@ -759,5 +711,5 @@ impl Host {
         }
     }
 
-    // build_velocity_graph_instances 已移除 — 改用 build_cc_bar_instances 统一矩形渲染
+    // build_velocity_graph_instances 已移�?�?改用 build_cc_bar_instances 统一矩形渲染
 }

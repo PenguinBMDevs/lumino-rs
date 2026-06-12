@@ -21,7 +21,7 @@ impl Editor {
             AutoScrollMode::Off => AutoScrollMode::FixedIndicatorLeft,
         };
         tracing::debug!(
-            "Editor: 自动滚动模式切换为 {:?}",
+            "Editor: 自动滚动模式切换�?{:?}",
             self.editor_state.auto_scroll.mode
         );
     }
@@ -31,9 +31,7 @@ impl Editor {
         self.editor_state.auto_scroll.mode
     }
 
-    /// 更新自动滚动（在每帧渲染前调用，根据播放位置调整滚动）
-    /// 返回是否需要刷新网格缓存
-    pub fn update_auto_scroll(&mut self, playback_tick: f32) -> bool {
+    /// 更新自动滚动（在每帧渲染前调用，根据播放位置调整滚动�?    /// 返回是否需要刷新网格缓�?    pub fn update_auto_scroll(&mut self, playback_tick: f32) -> bool {
         let asc = &self.editor_state.auto_scroll;
         if asc.mode == AutoScrollMode::Off {
             return false;
@@ -46,8 +44,7 @@ impl Editor {
             return false;
         }
 
-        // 计算最大滚动值
-        let total_width = v.total_ticks as f32 * v.zoom_x;
+        // 计算最大滚动�?        let total_width = v.total_ticks as f32 * v.zoom_x;
         let max_scroll = (total_width - viewport_width).max(0.0);
 
         match asc.mode {
@@ -62,8 +59,7 @@ impl Editor {
                 } else {
                     self.set_scroll_x(target_scroll_x);
                 }
-                // 自动滚动直接设置，同步平滑滚动目标
-                self.editor_state.view.smooth_scroll.sync(
+                // 自动滚动直接设置，同步平滑滚动目�?                self.editor_state.view.smooth_scroll.sync(
                     self.editor_state.view.scroll_x,
                     self.editor_state.view.scroll_y,
                 );
@@ -78,8 +74,7 @@ impl Editor {
                 if indicator_screen_x >= trigger_screen_x {
                     let target_scroll_x = playback_tick * v.zoom_x - return_pos;
                     self.set_scroll_x(target_scroll_x);
-                    // 自动滚动直接设置，同步平滑滚动目标
-                    self.editor_state.view.smooth_scroll.sync(
+                    // 自动滚动直接设置，同步平滑滚动目�?                    self.editor_state.view.smooth_scroll.sync(
                         self.editor_state.view.scroll_x,
                         self.editor_state.view.scroll_y,
                     );
@@ -91,7 +86,7 @@ impl Editor {
         }
     }
 
-    /// 获取演奏指示线在 Canvas 坐标系中的 X 坐标（用于渲染）
+    /// 获取演奏指示线在 Canvas 坐标系中�?X 坐标（用于渲染）
     pub fn get_playback_indicator_screen_x(&self) -> Option<f32> {
         let v = &self.editor_state.view;
         let asc = &self.editor_state.auto_scroll;
@@ -99,14 +94,12 @@ impl Editor {
             AutoScrollMode::FixedIndicatorLeft => {
                 let indicator_pos = asc.fixed_indicator_position as f32;
 
-                // 检查滚动是否已到达末尾（无法再保持固定位置）
-                let total_width = v.total_ticks as f32 * v.zoom_x;
-                let viewport_width = (self.editor_state.canvas.size.x - v.keyboard_width).max(0.0);
+                // 检查滚动是否已到达末尾（无法再保持固定位置�?                let total_width = v.total_ticks as f32 * v.zoom_x;
+                let viewport_width = (self.editor_state.canvas.size_x - v.keyboard_width).max(0.0);
                 let max_scroll = (total_width - viewport_width).max(0.0);
 
                 if max_scroll > 0.0 && v.scroll_x >= max_scroll - 1.0 {
-                    // 已到达结尾：指示线跟随播放位置自然移动
-                    let indicator_x =
+                    // 已到达结尾：指示线跟随播放位置自然移�?                    let indicator_x =
                         self.playback_position * v.zoom_x - v.scroll_x + v.keyboard_width;
                     Some(indicator_x)
                 } else {
@@ -115,7 +108,7 @@ impl Editor {
             }
             AutoScrollMode::ScrollingIndicator | AutoScrollMode::Off => {
                 // 滚动指示线模式和关闭自动滚动时，都使用相同的计算方式
-                // 指示线位置 = 播放位置对应的像素 - 滚动偏移 + 键盘宽度
+                // 指示线位�?= 播放位置对应的像�?- 滚动偏移 + 键盘宽度
                 let indicator_x = self.playback_position * v.zoom_x - v.scroll_x + v.keyboard_width;
                 Some(indicator_x)
             }
