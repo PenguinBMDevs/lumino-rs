@@ -95,6 +95,82 @@ impl RunnerInner {
         });
     }
 
+    /// 检查工作区是否需要先自动保存（场景1）
+    /// 返回 true 表示可继续，false 表示已中止
+    fn try_save_workspace_if_needed(&mut self) -> bool {
+        if self.midi_state.current_midi.is_some()
+            || self.midi_state.current_midi_source.is_some()
+            || self.midi_state.current_dms.is_some()
+        {
+            return true; // 已有文件，不需要保存
+        }
+
+        let has_notes = {
+            let ui = self.window_state.window.ui();
+            ui.get_editor_note_count() > 0
+        };
+
+        if has_notes {
+            tracing::info!("工作区有内容但没有打开 MIDI，先保存再导出音频");
+            self.save_editor_as_midi_file().is_some() // 保存成功才继续
+        } else {
+            tracing::warn!("没有可导出的内容");
+            false
+        }
+    }
+
+    /// 为已有 MIDI 文档构建音频导出路径（场景2）
+    /// 有额外编辑时生成独立时间戳文件名，无编辑时复用 MIDI 路径的 .wav
+    fn build_export_path_for_midi(&self, midi_path: &Path) -> (String, String) {
+        let project_name = get_file_stem(midi_path);
+
+        let ui = self.window_state.window.ui();
+        let has_extra_edits = ui.has_notes_changed();
+
+        let output_path = if has_extra_edits {
+            let file_stem = get_file_stem(midi_path);
+            let output_dir = midi_path.parent().unwrap_or(Path::new("."));
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            output_dir
+                .join(format!("{}_export_{}.wav", file_stem, timestamp))
+                .to_string_lossy()
+                .to_string()
+        } else {
+            let mut output = midi_path.to_path_buf();
+            output.set_extension("wav");
+            output.to_string_lossy().to_string()
+        };
+
+        (project_name, output_path)
+    }
+
+    /// 为源路径（没有完整文档）构建音频导出路径（场景4）
+    fn build_export_path_for_source(&self, source_path: &Path) -> (String, String) {
+        let project_name = get_file_stem(source_path);
+        let mut output = source_path.to_path_buf();
+        output.set_extension("wav");
+        (project_name, output.to_string_lossy().to_string())
+    }
+
+    /// 打开音频导出对话框（公共方法）
+    fn open_audio_export_dialog(
+        &mut self,
+        project_name: String,
+        midi_path: String,
+        soundfont_path: String,
+        output_path: String,
+    ) {
+        self.window_state.dialog_manager.open_audio_export(
+            project_name,
+            midi_path,
+            soundfont_path,
+            output_path,
+        );
+    }
+
     /// 处理音频导出
     pub(super) fn handle_audio_export(&mut self) {
         // 获取当前配置
@@ -108,60 +184,16 @@ impl RunnerInner {
             return;
         }
 
-        // 场景1: 没有打开 MIDI 文件
-        if self.midi_state.current_midi.is_none()
-            && self.midi_state.current_midi_source.is_none()
-            && self.midi_state.current_dms.is_none()
-        {
-            // 检查工作区是否为脏（有编辑内容）
-            let has_notes = {
-                let ui = self.window_state.window.ui();
-                ui.get_editor_note_count() > 0
-            };
-
-            if has_notes {
-                // 工作区有内容但没有打开 MIDI，先自动保存为 MIDI 文件
-                tracing::info!("工作区有内容但没有打开 MIDI，先保存再导出音频");
-                if self.save_editor_as_midi_file().is_none() {
-                    return; // 用户取消保存
-                }
-                // 保存成功后 current_midi_source 已被设置，继续后续逻辑
-            } else {
-                tracing::warn!("没有可导出的内容");
-                return;
-            }
+        // 场景1: 没有打开文件但工作区有内容 → 自动保存
+        if !self.try_save_workspace_if_needed() {
+            return;
         }
 
-        // 场景2: 打开了 MIDI 文件
+        // 场景2: 打开了 MIDI 文件（含自动保存后的情况）
         if let Some(parsed_midi) = &self.midi_state.current_midi {
             let midi_path = parsed_midi.info.path.clone();
-            let project_name = get_file_stem(&midi_path);
-
-            // 检查是否有额外的编辑内容
-            let ui = self.window_state.window.ui();
-            let has_extra_edits = ui.has_notes_changed();
-
-            let output_path = if has_extra_edits {
-                // 有额外编辑，需要导出为新的 MIDI 文件
-                let file_stem = get_file_stem(&midi_path);
-                let output_dir = midi_path.parent().unwrap_or_else(|| Path::new("."));
-                let timestamp = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-                output_dir
-                    .join(format!("{}_export_{}.wav", file_stem, timestamp))
-                    .to_string_lossy()
-                    .to_string()
-            } else {
-                // 没有额外编辑，复用原路径（改为 .wav 扩展名）
-                let mut output = midi_path.clone();
-                output.set_extension("wav");
-                output.to_string_lossy().to_string()
-            };
-
-            // 打开音频导出对话框
-            self.window_state.dialog_manager.open_audio_export(
+            let (project_name, output_path) = self.build_export_path_for_midi(&midi_path);
+            self.open_audio_export_dialog(
                 project_name,
                 midi_path.to_string_lossy().to_string(),
                 soundfont_path,
@@ -170,25 +202,16 @@ impl RunnerInner {
             return;
         }
 
-        // 场景3: 打开了 DMS 文件
-        if let Some(_parsed_dms) = &self.midi_state.current_dms {
-            // DMS 文件需要先转换为 MIDI
-            // TODO: 实现 DMS 到 MIDI 的转换
+        // 场景3: 打开了 DMS 文件（暂不支持）
+        if self.midi_state.current_dms.is_some() {
             tracing::info!("DMS 文件导出音频功能待实现");
             return;
         }
 
         // 场景4: 有源路径但没有完整文档
         if let Some(source_path) = &self.midi_state.current_midi_source {
-            let project_name = get_file_stem(source_path);
-            let output_path = {
-                let mut output = source_path.clone();
-                output.set_extension("wav");
-                output.to_string_lossy().to_string()
-            };
-
-            // 打开音频导出对话框
-            self.window_state.dialog_manager.open_audio_export(
+            let (project_name, output_path) = self.build_export_path_for_source(source_path);
+            self.open_audio_export_dialog(
                 project_name,
                 source_path.to_string_lossy().to_string(),
                 soundfont_path,

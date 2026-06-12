@@ -77,7 +77,7 @@ fn build_midi_export_from_dms(root: &lumino_dms::DmsCompositeNode) -> crate::mid
     use crate::midi::MidiExportOptions;
     use lumino_dms::DmsNodeType;
 
-    let mut ppqn = 1920u16;
+    let mut ppqn = lumino_midi_loader::constants::DEFAULT_PPQN;
     let mut tracks = Vec::new();
 
     for root_child in root.children.iter() {
@@ -305,7 +305,7 @@ fn build_dms_export_from_midi(source_path: &Path) -> ExportResult<crate::dms::Dm
 
     let ppqn = match smf.header.timing {
         Timing::Metrical(ticks) => Some(u16::from(ticks) as u32),
-        _ => Some(1920),
+        _ => Some(lumino_midi_loader::constants::DEFAULT_PPQN as u32),
     };
 
     let mut tracks = Vec::new();

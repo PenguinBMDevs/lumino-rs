@@ -230,7 +230,7 @@ impl Root {
             .track_notes
             .values()
             .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
-            .fold(960.0 * 4.0, f32::max);
+            .fold(crate::constants::editor::DEFAULT_MIN_TICKS, f32::max);
         let total_w = max_tick * vp.zoom_x;
         let max_scroll = (total_w - canvas_w).max(0.0);
 
@@ -284,7 +284,7 @@ impl Root {
                 // kind=2 是 pitch bend
                 let value = ev.as_pitch_bend();
                 // as_pitch_bend 返回的是 f32 (-1.0..1.0)，转换为 i16 (-8192..8191)
-                let i16_value = (value * 8191.0) as i16;
+                let i16_value = (value * crate::constants::editor::PITCH_BEND_FACTOR) as i16;
                 bend_points.push(crate::editor::velocity::BendPoint {
                     tick: ev.tick as f32,
                     value: i16_value,

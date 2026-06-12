@@ -58,7 +58,7 @@ impl RunnerInner {
         let export_data = MidiExportData {
             options: MidiExportOptions {
                 format: 1,
-                ppqn: 1920,
+                ppqn: lumino_midi_loader::constants::DEFAULT_PPQN,
             },
             tracks,
         };
@@ -229,7 +229,7 @@ impl RunnerInner {
         let export_data = MidiExportData {
             options: MidiExportOptions {
                 format: 1,
-                ppqn: 1920,
+                ppqn: lumino_midi_loader::constants::DEFAULT_PPQN,
             },
             tracks,
         };
@@ -375,9 +375,9 @@ impl RunnerInner {
             let export_data = MidiExportData {
                 options: MidiExportOptions {
                     format: 1,
-                    ppqn: 1920,
-                },
-                tracks,
+                ppqn: lumino_midi_loader::constants::DEFAULT_PPQN,
+            },
+            tracks,
             };
 
             let save_path2 = save_path.clone();

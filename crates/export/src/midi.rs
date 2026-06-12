@@ -124,48 +124,36 @@ pub fn export_midi<P: AsRef<Path>>(path: P, data: &MidiExportData) -> ExportResu
     Ok(())
 }
 
-/// 持有 Smf 及其依赖数据的包装类型，防止内存泄漏
-struct OwnedSmf {
-    smf: Smf<'static>,
-    /// 保证轨道名称数据在 Smf 之后释放（Rust 按声明顺序 drop）
-    _name_buffers: Vec<Vec<u8>>,
-}
-
 /// 导出 MIDI 到字节数组
 pub fn export_midi_to_bytes(data: &MidiExportData) -> ExportResult<Vec<u8>> {
-    let owned = build_midi_smf(data)?;
+    // 先收集轨道名称数据到 owned Vec 中，再建立引用切片
+    // 利用 Rust drop 顺序（声明的逆序）：smf → name_bytes → name_buffers
+    let name_buffers: Vec<Option<Vec<u8>>> = data
+        .tracks
+        .iter()
+        .map(|t| t.name.as_ref().map(|n| n.clone().into_bytes()))
+        .collect();
+
+    let name_bytes: Vec<Option<&[u8]>> = name_buffers
+        .iter()
+        .map(|buf| buf.as_ref().map(|b| b.as_slice()))
+        .collect();
+
+    let smf = build_midi_smf(data, &name_bytes)?;
 
     let mut buffer = Vec::new();
-    owned
-        .smf
-        .write(&mut buffer)
+    smf.write(&mut buffer)
         .map_err(|e| ExportError::MidiWrite(e.to_string()))?;
 
     Ok(buffer)
+    // drop 顺序：buffer → smf → name_bytes → name_buffers（安全）
 }
 
 /// 构建 MIDI SMF 结构
-fn build_midi_smf(data: &MidiExportData) -> ExportResult<OwnedSmf> {
-    // 持有所有轨道名称数据的所有权，确保在 Smf 生命周期内数据有效
-    let mut name_buffers: Vec<Vec<u8>> = Vec::new();
-    let leaked_names: Vec<Option<&'static [u8]>> = data
-        .tracks
-        .iter()
-        .map(|t| {
-            t.name.as_ref().map(|n| {
-                let bytes = n.clone().into_bytes();
-                let static_ref: &'static [u8] = unsafe {
-                    // SAFETY: name_buffers 与 Smf 一起封装在 OwnedSmf 中返回，
-                    // Rust 按字段声明顺序 drop，smf 先于 _name_buffers 释放，
-                    // 因此 Smf 中的 'static 引用在数据有效期间始终合法。
-                    std::mem::transmute::<&[u8], &'static [u8]>(bytes.as_slice())
-                };
-                name_buffers.push(bytes);
-                static_ref
-            })
-        })
-        .collect();
-
+fn build_midi_smf<'a>(
+    data: &'a MidiExportData,
+    name_bytes: &'a [Option<&'a [u8]>],
+) -> ExportResult<Smf<'a>> {
     let format = match data.options.format {
         0 => Format::SingleTrack,
         1 => Format::Parallel,
@@ -176,11 +164,11 @@ fn build_midi_smf(data: &MidiExportData) -> ExportResult<OwnedSmf> {
     let timing = Timing::Metrical(data.options.ppqn.into());
     let header = Header::new(format, timing);
 
-    let mut tracks: Vec<Track<'static>> = Vec::new();
+    let mut tracks: Vec<Track<'_>> = Vec::new();
 
     // 对于格式 0，所有事件合并到一个轨道
     if data.options.format == 0 {
-        let combined_name = leaked_names.first().and_then(|n| *n);
+        let combined_name = name_bytes.first().and_then(|n| *n);
         let mut combined_track = build_combined_track(data, combined_name)?;
         combined_track.sort_by_key(|e| e.delta);
         convert_to_delta_times(&mut combined_track);
@@ -190,8 +178,8 @@ fn build_midi_smf(data: &MidiExportData) -> ExportResult<OwnedSmf> {
         // 第一个轨道包含全局元事件（速度、拍号等）
         let mut first_track = true;
 
-        for (track_data, &name_bytes) in data.tracks.iter().zip(leaked_names.iter()) {
-            let mut track = build_track(track_data, first_track, name_bytes)?;
+        for (track_data, &name) in data.tracks.iter().zip(name_bytes.iter()) {
+            let mut track = build_track(track_data, first_track, name)?;
             track.sort_by_key(|e| e.delta);
             convert_to_delta_times(&mut track);
             tracks.push(track);
@@ -199,18 +187,15 @@ fn build_midi_smf(data: &MidiExportData) -> ExportResult<OwnedSmf> {
         }
     }
 
-    Ok(OwnedSmf {
-        smf: Smf { header, tracks },
-        _name_buffers: name_buffers,
-    })
+    Ok(Smf { header, tracks })
 }
 
 /// 构建合并轨道（格式 0）
-fn build_combined_track(
-    data: &MidiExportData,
-    track_name: Option<&'static [u8]>,
-) -> ExportResult<Track<'static>> {
-    let mut events: Vec<TrackEvent<'static>> = Vec::new();
+fn build_combined_track<'a>(
+    data: &'a MidiExportData,
+    track_name: Option<&'a [u8]>,
+) -> ExportResult<Track<'a>> {
+    let mut events: Vec<TrackEvent<'a>> = Vec::new();
 
     // 轨道名称（使用第一个轨道的名称）
     if let Some(name_bytes) = track_name {
@@ -229,12 +214,12 @@ fn build_combined_track(
 }
 
 /// 构建单个轨道
-fn build_track(
-    track_data: &MidiTrackData,
+fn build_track<'a>(
+    track_data: &'a MidiTrackData,
     include_globals: bool,
-    track_name: Option<&'static [u8]>,
-) -> ExportResult<Track<'static>> {
-    let mut events: Vec<TrackEvent<'static>> = Vec::new();
+    track_name: Option<&'a [u8]>,
+) -> ExportResult<Track<'a>> {
+    let mut events: Vec<TrackEvent<'a>> = Vec::new();
 
     // 轨道名称（使用已在 build_midi_smf 中预泄漏的名称引用）
     if let Some(name_bytes) = track_name {
@@ -256,9 +241,9 @@ fn build_track(
 }
 
 /// 收集轨道事件
-fn collect_track_events(
-    track_data: &MidiTrackData,
-    events: &mut Vec<TrackEvent<'static>>,
+fn collect_track_events<'a>(
+    track_data: &'a MidiTrackData,
+    events: &mut Vec<TrackEvent<'a>>,
     include_globals: bool,
 ) -> ExportResult<()> {
     // 音符事件
@@ -541,10 +526,13 @@ mod tests {
             },
             tracks: vec![track],
         };
-        let owned = build_midi_smf(&data).expect("build_midi_smf should succeed for valid data");
-        assert_eq!(owned.smf.tracks.len(), 1, "should have 1 track");
+        let bytes =
+            export_midi_to_bytes(&data).expect("export should succeed for valid data");
+        // 用 midly 重新解析验证输出有效性
+        let smf = midly::Smf::parse(&bytes).expect("should parse exported MIDI");
+        assert_eq!(smf.tracks.len(), 1, "should have 1 track");
         // 第一个轨道事件应该是 TrackName meta 事件
-        if let Some(first_event) = owned.smf.tracks[0].first() {
+        if let Some(first_event) = smf.tracks[0].first() {
             match &first_event.kind {
                 TrackEventKind::Meta(MetaMessage::TrackName(name)) => {
                     assert_eq!(name, b"Piano");

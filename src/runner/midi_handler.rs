@@ -44,7 +44,7 @@ impl MidiHandler {
                     let microseconds = if bpm > 0.0 {
                         lumino_midi_loader::bpm_to_tempo(bpm as f64)
                     } else {
-                        500_000
+                        lumino_midi_loader::constants::DEFAULT_TEMPO_MICROS.into()
                     };
                     (tick, microseconds)
                 })
@@ -104,7 +104,7 @@ impl MidiHandler {
 
         let ppq = match smf.header.timing {
             midly::Timing::Metrical(ppq) => ppq.as_int(),
-            _ => 1920,
+            _ => lumino_midi_loader::constants::DEFAULT_PPQN,
         };
         ui.set_ppq(ppq);
 

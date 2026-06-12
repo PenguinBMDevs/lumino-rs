@@ -138,6 +138,181 @@ impl Root {
         }
     }
 
+    // ─── 子处理函数 ──────────────────────────────────────────────────────────
+
+    /// 处理走带视图水平滚动
+    fn handle_arrangement_scroll_x(&mut self, x: f32) -> bool {
+        let vp = &mut self.arrangement_view.viewport;
+        let canvas_w = vp.canvas_size.x.max(1.0);
+        let max_tick = self
+            .editor
+            .editor_state
+            .data
+            .track_notes
+            .values()
+            .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
+            .fold(0.0_f32, f32::max)
+            .max(crate::constants::editor::DEFAULT_MIN_TICKS);
+        let total_w = max_tick * vp.zoom_x;
+        let max_scroll = (total_w - canvas_w).max(0.0);
+        vp.scroll_x = x.max(0.0).min(max_scroll);
+        true
+    }
+
+    /// 处理走带视图垂直滚动
+    fn handle_arrangement_scroll_y(&mut self, y: f32) -> bool {
+        let vp = &mut self.arrangement_view.viewport;
+        let track_count = self.sidebar.tracks.len().max(1) as f32;
+        let total_h = track_count * vp.track_height * vp.zoom_y;
+        let canvas_h = vp.canvas_size.y.max(1.0);
+        let max_scroll = (total_h - canvas_h).max(0.0);
+        vp.scroll_y = y.max(0.0).min(max_scroll);
+        true
+    }
+
+    /// 处理走带视图水平缩放（固定点缩放）
+    fn handle_arrangement_zoom_x(&mut self, zoom: f32, fixed_ratio: f32) -> bool {
+        let vp = &mut self.arrangement_view.viewport;
+        let old_zoom = vp.zoom_x;
+        let new_zoom = zoom.clamp(
+            crate::constants::editor::zoom::MIN_ARRANGEMENT_ZOOM_X,
+            crate::constants::editor::zoom::MAX_ARRANGEMENT_ZOOM_X,
+        );
+        let canvas_w = vp.canvas_size.x.max(1.0);
+        let focus_px = vp.scroll_x + canvas_w * fixed_ratio;
+        let focus_tick = focus_px / old_zoom;
+        vp.zoom_x = new_zoom;
+        vp.scroll_x = (focus_tick * new_zoom - canvas_w * fixed_ratio).max(0.0);
+        true
+    }
+
+    /// 处理走带视图垂直缩放（固定点缩放）
+    fn handle_arrangement_zoom_y(&mut self, zoom: f32, fixed_ratio: f32) -> bool {
+        let vp = &mut self.arrangement_view.viewport;
+        let old_zoom = vp.zoom_y;
+        let canvas_h = vp.canvas_size.y.max(1.0);
+        let track_count = self.sidebar.tracks.len().max(1) as f32;
+        let min_zoom = crate::constants::editor::zoom::MIN_ARRANGEMENT_ZOOM_Y;
+        let max_zoom = (canvas_h / (track_count * vp.track_height)).max(min_zoom);
+        let new_zoom = zoom.clamp(min_zoom, max_zoom);
+        let focus_px = vp.scroll_y + canvas_h * fixed_ratio;
+        let focus_ratio = focus_px / (old_zoom * vp.track_height);
+        vp.zoom_y = new_zoom;
+        let total_h = track_count * vp.track_height * new_zoom;
+        let max_scroll = (total_h - canvas_h).max(0.0);
+        vp.scroll_y = (focus_ratio * new_zoom * vp.track_height - canvas_h * fixed_ratio)
+            .clamp(0.0, max_scroll);
+        true
+    }
+
+    /// 处理设置面板事件
+    fn handle_settings_event(&mut self, event: &Message) -> bool {
+        if let Message::Settings(event) = event {
+            self.settings.update(event.clone());
+            match event {
+                crate::settings::Event::EraserBehaviorChanged(behavior) => {
+                    self.editor.set_eraser_behavior(*behavior);
+                }
+                crate::settings::Event::SelectionBoxModeChanged(mode) => {
+                    self.editor.set_selection_box_mode(*mode);
+                    tracing::debug!("Root: 框选框模式切换为 {:?}", mode);
+                }
+                crate::settings::Event::VelocityFilterThresholdChanged(value) => {
+                    if let Ok(val) = value.parse::<u8>() {
+                        self.visual.velocity_filter_threshold = val;
+                        tracing::debug!("Root: 力度过滤阈值同步为 {}", val);
+                    }
+                }
+                crate::settings::Event::AutoScrollFixedPositionChanged(value) => {
+                    if let Ok(val) = value.parse::<u32>() {
+                        let mut config = *self.editor.auto_scroll_config();
+                        config.fixed_indicator_position = val;
+                        self.editor.set_auto_scroll_config(config);
+                        tracing::debug!("Root: 自动滚动固定位置同步为 {}", val);
+                    }
+                }
+                crate::settings::Event::AutoScrollPageTriggerOffsetChanged(value) => {
+                    if let Ok(val) = value.parse::<u32>() {
+                        let mut config = *self.editor.auto_scroll_config();
+                        config.page_trigger_offset = val;
+                        self.editor.set_auto_scroll_config(config);
+                        tracing::debug!("Root: 自动滚动翻页触发偏移同步为 {}", val);
+                    }
+                }
+                crate::settings::Event::AutoScrollPageReturnPositionChanged(value) => {
+                    if let Ok(val) = value.parse::<u32>() {
+                        let mut config = *self.editor.auto_scroll_config();
+                        config.page_return_position = val;
+                        self.editor.set_auto_scroll_config(config);
+                        tracing::debug!("Root: 自动滚动翻页返回位置同步为 {}", val);
+                    }
+                }
+                crate::settings::Event::IconHiDPIChanged(enabled) => {
+                    crate::resources::icon::set_hidpi_enabled(*enabled);
+                    tracing::debug!("Root: HiDPI 图标渲染切换为 {}", enabled);
+                }
+                crate::settings::Event::Enable256keyChanged(enabled) => {
+                    let new_count: u16 = if *enabled { 256 } else { 128 };
+                    self.editor.set_visible_key_count(new_count);
+                    self.editor.editor_state.view.key_count = new_count;
+                    tracing::debug!(
+                        "Root: 256键模式切换为 {}，琴键数调整为 {}",
+                        enabled,
+                        new_count
+                    );
+                }
+                _ => {} // 其他设置变更由 settings.update() 同步
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 处理模式切换（编辑器 ↔ 瀑布流）
+    fn handle_mode_toggle(&mut self) -> bool {
+        let target_mode = match self.state.current_mode {
+            crate::titlebar::mode_toggle::AppMode::Editor => {
+                crate::titlebar::mode_toggle::AppMode::Waterfall
+            }
+            crate::titlebar::mode_toggle::AppMode::Waterfall => {
+                crate::titlebar::mode_toggle::AppMode::Editor
+            }
+        };
+        let target_progress = match target_mode {
+            crate::titlebar::mode_toggle::AppMode::Editor => 0.0,
+            crate::titlebar::mode_toggle::AppMode::Waterfall => 1.0,
+        };
+        self.state.current_mode = target_mode;
+        self.state.toggle_animation.animate_to(target_progress);
+        true
+    }
+
+    /// 处理动画 tick（切换动画 + 平滑滚动 + 弹簧物理）
+    fn handle_animation_tick(&mut self) -> bool {
+        let still_animating = self.state.toggle_animation.update();
+        if !still_animating
+            && self.state.toggle_animation.position >= 0.5
+            && self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Waterfall
+        {
+            self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Waterfall;
+        } else if !still_animating
+            && self.state.toggle_animation.position < 0.5
+            && self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Editor
+        {
+            self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Editor;
+        }
+
+        let scroll_animating = self.editor.editor_state.update_smooth_scroll();
+        if scroll_animating {
+            self.editor
+                .invalidate_caches(crate::editor::CacheInvalidation::ALL);
+        }
+
+        self.editor.update_selection_box_animation(None);
+        true
+    }
+
     /// 处理简单的状态更新消息
     fn try_handle_simple_state(&mut self, msg: &Message) -> bool {
         match msg {
@@ -153,64 +328,13 @@ impl Root {
                 self.editor.set_scroll_y(*y);
                 true
             }
-            Message::ArrangementScrollX(x) => {
-                let vp = &mut self.arrangement_view.viewport;
-                let canvas_w = vp.canvas_size.x.max(1.0);
-                // 从实际音符数据计算总宽度
-                let max_tick = self
-                    .editor
-                    .editor_state
-                    .data
-                    .track_notes
-                    .values()
-                    .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
-                    .fold(0.0_f32, f32::max)
-                    .max(960.0 * 4.0);
-                let total_w = max_tick * vp.zoom_x;
-                let max_scroll = (total_w - canvas_w).max(0.0);
-                let clamped = x.max(0.0).min(max_scroll);
-                vp.scroll_x = clamped;
-                true
-            }
-            Message::ArrangementScrollY(y) => {
-                let vp = &mut self.arrangement_view.viewport;
-                let track_count = self.sidebar.tracks.len().max(1) as f32;
-                let total_h = track_count * vp.track_height * vp.zoom_y;
-                let canvas_h = vp.canvas_size.y.max(1.0);
-                let max_scroll = (total_h - canvas_h).max(0.0);
-                let clamped = y.max(0.0).min(max_scroll);
-                vp.scroll_y = clamped;
-                true
-            }
+            Message::ArrangementScrollX(x) => self.handle_arrangement_scroll_x(*x),
+            Message::ArrangementScrollY(y) => self.handle_arrangement_scroll_y(*y),
             Message::ArrangementZoomX { zoom, fixed_ratio } => {
-                let vp = &mut self.arrangement_view.viewport;
-                let old_zoom = vp.zoom_x;
-                let new_zoom = zoom.clamp(0.01, 10.0);
-                let canvas_w = vp.canvas_size.x.max(1.0);
-                // 保持固定点 tick 不变
-                let focus_px = vp.scroll_x + canvas_w * fixed_ratio;
-                let focus_tick = focus_px / old_zoom;
-                vp.zoom_x = new_zoom;
-                vp.scroll_x = (focus_tick * new_zoom - canvas_w * fixed_ratio).max(0.0);
-                true
+                self.handle_arrangement_zoom_x(*zoom, *fixed_ratio)
             }
             Message::ArrangementZoomY { zoom, fixed_ratio } => {
-                let vp = &mut self.arrangement_view.viewport;
-                let old_zoom = vp.zoom_y;
-                let canvas_h = vp.canvas_size.y.max(1.0);
-                // 最大缩放：最后一个音轨完全显示
-                let track_count = self.sidebar.tracks.len().max(1) as f32;
-                let max_zoom = (canvas_h / (track_count * vp.track_height)).max(0.2);
-                let new_zoom = zoom.clamp(0.2, max_zoom);
-                // 保持固定点位置不变
-                let focus_px = vp.scroll_y + canvas_h * fixed_ratio;
-                let focus_ratio = focus_px / (old_zoom * vp.track_height);
-                vp.zoom_y = new_zoom;
-                let total_h = track_count * vp.track_height * new_zoom;
-                let max_scroll = (total_h - canvas_h).max(0.0);
-                vp.scroll_y = (focus_ratio * new_zoom * vp.track_height - canvas_h * fixed_ratio)
-                    .clamp(0.0, max_scroll);
-                true
+                self.handle_arrangement_zoom_y(*zoom, *fixed_ratio)
             }
             Message::ZoomXChanged { zoom, fixed_ratio } => {
                 self.editor.set_zoom_x(*zoom, *fixed_ratio);
@@ -224,7 +348,6 @@ impl Root {
                 self.editor.set_canvas_offset(*offset);
                 self.editor
                     .set_canvas_size(iced_core::Point::new(size.width, size.height));
-                // 画布大小变化影响视口范围，洋葱皮缓存需失效
                 self.invalidate_onion_skin_cache();
                 true
             }
@@ -240,110 +363,10 @@ impl Root {
                 self.toolbar.shift_pressed = *pressed;
                 true
             }
-            Message::Settings(event) => {
-                self.settings.update(event.clone());
-                match &event {
-                    crate::settings::Event::EraserBehaviorChanged(behavior) => {
-                        self.editor.set_eraser_behavior(*behavior);
-                    }
-                    crate::settings::Event::SelectionBoxModeChanged(mode) => {
-                        self.editor.set_selection_box_mode(*mode);
-                        tracing::debug!("Root: 框选框模式切换为 {:?}", mode);
-                    }
-                    crate::settings::Event::VelocityFilterThresholdChanged(value) => {
-                        if let Ok(val) = value.parse::<u8>() {
-                            self.visual.velocity_filter_threshold = val;
-                            tracing::debug!("Root: 力度过滤阈值同步为 {}", val);
-                        }
-                    }
-                    crate::settings::Event::AutoScrollFixedPositionChanged(value) => {
-                        if let Ok(val) = value.parse::<u32>() {
-                            let mut config = *self.editor.auto_scroll_config();
-                            config.fixed_indicator_position = val;
-                            self.editor.set_auto_scroll_config(config);
-                            tracing::debug!("Root: 自动滚动固定位置同步为 {}", val);
-                        }
-                    }
-                    crate::settings::Event::AutoScrollPageTriggerOffsetChanged(value) => {
-                        if let Ok(val) = value.parse::<u32>() {
-                            let mut config = *self.editor.auto_scroll_config();
-                            config.page_trigger_offset = val;
-                            self.editor.set_auto_scroll_config(config);
-                            tracing::debug!("Root: 自动滚动翻页触发偏移同步为 {}", val);
-                        }
-                    }
-                    crate::settings::Event::AutoScrollPageReturnPositionChanged(value) => {
-                        if let Ok(val) = value.parse::<u32>() {
-                            let mut config = *self.editor.auto_scroll_config();
-                            config.page_return_position = val;
-                            self.editor.set_auto_scroll_config(config);
-                            tracing::debug!("Root: 自动滚动翻页返回位置同步为 {}", val);
-                        }
-                    }
-                    crate::settings::Event::IconHiDPIChanged(enabled) => {
-                        crate::resources::icon::set_hidpi_enabled(*enabled);
-                        tracing::debug!("Root: HiDPI 图标渲染切换为 {}", enabled);
-                    }
-                    crate::settings::Event::Enable256keyChanged(enabled) => {
-                        let new_count: u16 = if *enabled { 256 } else { 128 };
-                        self.editor.set_visible_key_count(new_count);
-                        // 同步更新 key_count 字段保持一致性
-                        self.editor.editor_state.view.key_count = new_count;
-                        tracing::debug!(
-                            "Root: 256键模式切换为 {}，琴键数调整为 {}",
-                            enabled,
-                            new_count
-                        );
-                    }
-                    _ => {}
-                }
-                true
-            }
+            Message::Settings(_) => self.handle_settings_event(msg),
             Message::ToggleSettings | Message::Null => true,
-            Message::ModeToggled => {
-                let target_mode = match self.state.current_mode {
-                    crate::titlebar::mode_toggle::AppMode::Editor => {
-                        crate::titlebar::mode_toggle::AppMode::Waterfall
-                    }
-                    crate::titlebar::mode_toggle::AppMode::Waterfall => {
-                        crate::titlebar::mode_toggle::AppMode::Editor
-                    }
-                };
-                let target_progress = match target_mode {
-                    crate::titlebar::mode_toggle::AppMode::Editor => 0.0,
-                    crate::titlebar::mode_toggle::AppMode::Waterfall => 1.0,
-                };
-                self.state.current_mode = target_mode;
-                self.state.toggle_animation.animate_to(target_progress);
-                true
-            }
-            Message::AnimationTick => {
-                let still_animating = self.state.toggle_animation.update();
-                if !still_animating
-                    && self.state.toggle_animation.position >= 0.5
-                    && self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Waterfall
-                {
-                    self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Waterfall;
-                } else if !still_animating
-                    && self.state.toggle_animation.position < 0.5
-                    && self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Editor
-                {
-                    self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Editor;
-                }
-
-                // 更新钢琴卷帘平滑滚动动画
-                let scroll_animating = self.editor.editor_state.update_smooth_scroll();
-                if scroll_animating {
-                    // 滚动变化需要重绘所有缓存
-                    self.editor
-                        .invalidate_caches(crate::editor::CacheInvalidation::ALL);
-                }
-
-                // 更新框选框弹簧物理动画（无鼠标移动时持续推进收敛）
-                self.editor.update_selection_box_animation(None);
-
-                true
-            }
+            Message::ModeToggled => self.handle_mode_toggle(),
+            Message::AnimationTick => self.handle_animation_tick(),
             Message::VelocityPanelResize(height) => {
                 self.visual.velocity_panel_height = *height;
                 true
@@ -362,7 +385,6 @@ impl Root {
             }
             Message::MidiInputEvent { data } => {
                 let data = data.clone();
-                // 将 MIDI 数据放入缓冲区等待 poll_midi_input 处理
                 if let Ok(mut buf) = self.midi.input_buffer.lock() {
                     buf.push_back(data);
                 }

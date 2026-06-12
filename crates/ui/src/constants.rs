@@ -40,7 +40,22 @@ pub mod editor {
         pub const MIN_ZOOM_Y: f32 = 0.5;
         /// Y轴最大缩放
         pub const MAX_ZOOM_Y: f32 = 100.0;
+
+        /// 走带视图 X 轴最小缩放
+        pub const MIN_ARRANGEMENT_ZOOM_X: f32 = 0.01;
+        /// 走带视图 X 轴最大缩放
+        pub const MAX_ARRANGEMENT_ZOOM_X: f32 = 10.0;
+        /// 走带视图 Y 轴最小缩放
+        pub const MIN_ARRANGEMENT_ZOOM_Y: f32 = 0.2;
     }
+
+    /// 默认最小 tick 值（用于画布宽度下限）
+    pub const DEFAULT_MIN_TICKS: f32 = 960.0 * 4.0;
+
+    /// 弯音调制范围（-8192 ~ 8191）
+    pub const PITCH_BEND_RANGE: i16 = 8191;
+    /// 弯音调制转换因子
+    pub const PITCH_BEND_FACTOR: f32 = PITCH_BEND_RANGE as f32;
 
     /// 可见琴键数量限制
     pub const MIN_VISIBLE_KEY_COUNT: u16 = 1;
