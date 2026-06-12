@@ -4,8 +4,7 @@ use std::sync::{
 };
 use std::time::Instant;
 
-use iced_wgpu::wgpu;
-use lumino_gfx::SwappableBuffer;
+use crate::SwappableBuffer;
 
 use super::super::commands::RenderCommand;
 use super::super::params::RenderParams;
@@ -15,7 +14,7 @@ use super::prepare::prepare_renderers;
 use super::render_pass::execute_render_pass;
 use super::render_pass::update_stats;
 use super::textures::ensure_textures;
-use lumino_gfx::{CameraParams, CameraUniform, OnionViewportUniform};
+use crate::{CameraParams, CameraUniform, OnionViewportUniform};
 
 /// 运行渲染线程主循环
 #[allow(clippy::too_many_arguments)]
@@ -27,19 +26,19 @@ pub fn run_render_thread(
     command_receiver: std::sync::mpsc::Receiver<RenderCommand>,
     latest_texture_clone: Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
     stats_clone: Arc<Mutex<RenderStats>>,
-    note_events_rx: std::sync::mpsc::Receiver<lumino_gfx::NoteEvent>,
-    note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
-    onion_note_buffer: Option<Arc<SwappableBuffer<lumino_gfx::OnionNote>>>,
+    note_events_rx: std::sync::mpsc::Receiver<crate::NoteEvent>,
+    note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
+    onion_note_buffer: Option<Arc<SwappableBuffer<crate::OnionNote>>>,
 ) {
     tracing::info!("Render thread started");
 
     // 初始化渲染器
-    let mut grid_renderer = lumino_gfx::GridRenderer::new(&device, texture_format);
-    let mut note_renderer = lumino_gfx::NoteRenderer::new(&device, &queue, texture_format);
-    let mut ruler_renderer = lumino_gfx::RulerRenderer::new(&device, texture_format);
-    let mut onion_renderer = lumino_gfx::OnionRenderer::new(&device, &queue, texture_format);
-    let mut arrangement_renderer = lumino_gfx::ArrangementRenderer::new(&device, texture_format);
-    let mut cc_bar_renderer = lumino_gfx::CcBarRenderer::new(&device, texture_format);
+    let mut grid_renderer = crate::GridRenderer::new(&device, texture_format);
+    let mut note_renderer = crate::NoteRenderer::new(&device, &queue, texture_format);
+    let mut ruler_renderer = crate::RulerRenderer::new(&device, texture_format);
+    let mut onion_renderer = crate::OnionRenderer::new(&device, &queue, texture_format);
+    let mut arrangement_renderer = crate::ArrangementRenderer::new(&device, texture_format);
+    let mut cc_bar_renderer = crate::CcBarRenderer::new(&device, texture_format);
 
     // 渲染循环状态
     let mut frame_count = 0u64;
@@ -99,7 +98,7 @@ pub fn run_render_thread(
             // 检测洋葱皮音符数据变化，上传到 OnionRenderer
             // 先读 version，再读 buffer（消除 TOCTOU 竞态：原代码先 read_buffer 后 version，
             // 中间 worker swap 会导致上传旧数据。修正后至多一次额外上传，不产生错误渲染）
-            let onion_notes_for_cull: Option<&[lumino_gfx::OnionNote]> =
+            let onion_notes_for_cull: Option<&[crate::OnionNote]> =
                 if let Some(buf) = &onion_note_buffer {
                     let ver = buf.version();
                     if ver != last_onion_note_version {

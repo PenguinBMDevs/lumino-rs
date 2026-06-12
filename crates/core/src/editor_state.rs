@@ -81,6 +81,14 @@ impl InteractionState {
     pub fn push_audio_action(&mut self, action: AudioAction) {
         self.pending_audio_actions.push(action);
     }
+
+    /// 添加播放音符的音频动作
+    pub fn play_note_audio(&mut self, key: u16, velocity: u8) {
+        self.pending_audio_actions.push(AudioAction::PlayNote {
+            key: key as u8,
+            velocity,
+        });
+    }
 }
 
 // ─── EditorData ───
@@ -481,17 +489,77 @@ impl EditorState {
         Some(SelectionHitType::Inside)
     }
 
-    pub fn get_notes_in_selection_box(&self, start_tick: f32, start_key: u16, current_tick: f32, current_key: u16) -> Vec<usize> {
-        let ts = start_tick.min(current_tick); let te = start_tick.max(current_tick);
-        let km = start_key.min(current_key); let kx = start_key.max(current_key);
+    /// 计算选择框内的音符索引
+    pub fn compute_selection(
+        &self,
+        start_tick: f32,
+        start_key: u16,
+        current_tick: f32,
+        current_key: u16,
+    ) -> HashSet<usize> {
+        let min_tick = start_tick.min(current_tick);
+        let max_tick = start_tick.max(current_tick);
+        let min_key = start_key.min(current_key);
+        let max_key = start_key.max(current_key);
+        let mut selected = HashSet::new();
+        for (i, note) in self.notes.iter().enumerate() {
+            let note_end = note.tick + note.length;
+            if note.key >= min_key
+                && note.key <= max_key
+                && note.tick < max_tick
+                && note_end > min_tick
+            {
+                selected.insert(i);
+            }
+        }
+        selected
+    }
+
+    /// 获取选择框内的音符索引列表
+    pub fn get_notes_in_selection_box(
+        &self,
+        start_tick: f32,
+        start_key: u16,
+        current_tick: f32,
+        current_key: u16,
+    ) -> Vec<usize> {
+        let ts = start_tick.min(current_tick);
+        let te = start_tick.max(current_tick);
+        let km = start_key.min(current_key);
+        let kx = start_key.max(current_key);
         let mut r = Vec::new();
-        for (i, n) in self.data.notes.iter().enumerate() {
+        for (i, n) in self.notes.iter().enumerate() {
             let ne = n.tick + n.length;
-            if n.key >= km && n.key <= kx && n.tick < te && ne > ts { r.push(i); }
+            if n.key >= km && n.key <= kx && n.tick < te && ne > ts {
+                r.push(i);
+            }
         }
         r
     }
 }
+
+impl EditorState {
+    /// 获取选择框内的音符索引列表（委托到 EditorData）
+    pub fn get_notes_in_selection_box(
+        &self,
+        start_tick: f32,
+        start_key: u16,
+        current_tick: f32,
+        current_key: u16,
+    ) -> Vec<usize> {
+        self.data.get_notes_in_selection_box(start_tick, start_key, current_tick, current_key)
+    }
+
+    /// 计算选择框内的音符索引（委托到 EditorData）
+    pub fn compute_selection(
+        &self,
+        start_tick: f32,
+        start_key: u16,
+        current_tick: f32,
+        current_key: u16,
+    ) -> HashSet<usize> {
+        self.data.compute_selection(start_tick, start_key, current_tick, current_key)
+    }
 
 // Re-export Tool
 pub use crate::Tool;

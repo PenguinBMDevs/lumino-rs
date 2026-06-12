@@ -1,7 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-use iced_wgpu::wgpu;
-
 use super::super::params::RenderParams;
 
 /// 确保离屏纹理已创建并返回

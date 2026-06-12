@@ -1,18 +1,17 @@
 use std::sync::mpsc::Receiver;
 
-use iced_wgpu::wgpu;
-use lumino_gfx::NoteEvent;
+use crate::NoteEvent;
 
 use super::super::params::RenderParams;
 
 /// 准备渲染器实例
 #[allow(clippy::too_many_arguments)]
 pub fn prepare_renderers(
-    grid_renderer: &mut lumino_gfx::GridRenderer,
-    note_renderer: &mut lumino_gfx::NoteRenderer,
-    ruler_renderer: &mut lumino_gfx::RulerRenderer,
-    arrangement_renderer: &mut lumino_gfx::ArrangementRenderer,
-    cc_bar_renderer: &mut lumino_gfx::CcBarRenderer,
+    grid_renderer: &mut crate::GridRenderer,
+    note_renderer: &mut crate::NoteRenderer,
+    ruler_renderer: &mut crate::RulerRenderer,
+    arrangement_renderer: &mut crate::ArrangementRenderer,
+    cc_bar_renderer: &mut crate::CcBarRenderer,
     params: &RenderParams,
     note_events_rx: &Receiver<NoteEvent>,
     device: &wgpu::Device,

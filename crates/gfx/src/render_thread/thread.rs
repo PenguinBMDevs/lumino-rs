@@ -4,13 +4,11 @@ use std::sync::{
 };
 use std::thread::{self, JoinHandle};
 
-use iced_wgpu::wgpu;
-
 use super::commands::{ControlCommand, RenderCommand};
 use super::params::RenderParams;
 use super::render_loop::run_render_thread;
 use super::stats::RenderStats;
-use lumino_gfx::SwappableBuffer;
+use crate::SwappableBuffer;
 
 /// WGPU 渲染线程
 ///
@@ -27,7 +25,7 @@ pub struct WgpuRenderThread {
     /// 渲染完成的离屏纹理，供主线程读取
     pub latest_texture: Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
     /// 双缓冲音符实例数据（UI线程写入，渲染线程读取）
-    pub note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
+    pub note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
 }
 
 impl WgpuRenderThread {
@@ -39,9 +37,9 @@ impl WgpuRenderThread {
         device: wgpu::Device,
         queue: wgpu::Queue,
         texture_format: wgpu::TextureFormat,
-        note_events_rx: std::sync::mpsc::Receiver<lumino_gfx::NoteEvent>,
-        note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
-        onion_note_buffer: Option<Arc<SwappableBuffer<lumino_gfx::OnionNote>>>,
+        note_events_rx: std::sync::mpsc::Receiver<crate::NoteEvent>,
+        note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
+        onion_note_buffer: Option<Arc<SwappableBuffer<crate::OnionNote>>>,
     ) -> anyhow::Result<Self> {
         tracing::info!("WgpuRenderThread::spawn - Starting render thread with offscreen texture");
 

@@ -1,28 +1,7 @@
-//! WGPU 渲染线程模块
+//! WGPU 渲染线程模块 — 从 lumino-gfx 重导出
 //!
-//! 提供独立的 WGPU 渲染线程，用于在后台执行 GPU 渲染操作。
-//!
-//! 架构设计：
-//! - 使用独立的渲染线程管理所有 GPU 资源
-//! - 使用 mpsc 通道传递渲染命令
-//! - 使用离屏纹理架构：渲染线程渲染到纹理，主线程复制到 Surface
-//!
-//! 子模块：
-//! - `commands`: 渲染命令和控制命令定义
-//! - `params`: 渲染参数结构体
-//! - `stats`: 渲染统计信息
-//! - `thread`: WgpuRenderThread 结构体和实现
-//! - `render_loop`: 渲染循环实现
+//! 渲染线程已迁移到 `lumino-gfx` crate，此处为向后兼容的 shim。
 
-// 子模块
-mod commands;
-mod params;
-mod render_loop;
-mod stats;
-mod thread;
-
-// 公开导出
-pub use commands::{ControlCommand, RenderCommand};
-pub use params::RenderParams;
-pub use stats::RenderStats;
-pub use thread::WgpuRenderThread;
+pub use lumino_gfx::render_thread::{
+    ControlCommand, RenderCommand, RenderParams, RenderStats, WgpuRenderThread,
+};

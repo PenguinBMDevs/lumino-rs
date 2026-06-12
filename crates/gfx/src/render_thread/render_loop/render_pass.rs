@@ -1,11 +1,9 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use iced_wgpu::wgpu;
-
 use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
-use lumino_gfx::{CameraParams, CameraUniform};
+use crate::{CameraParams, CameraUniform};
 
 /// 执行渲染通道（含走带/钢琴卷帘/洋葱皮/CC 柱状条）
 #[allow(clippy::too_many_arguments)]
@@ -15,13 +13,13 @@ pub fn execute_render_pass(
     current_texture: &Option<Arc<wgpu::Texture>>,
     depth_texture_view: &Option<wgpu::TextureView>,
     params: &RenderParams,
-    grid_renderer: &mut lumino_gfx::GridRenderer,
-    note_renderer: &mut lumino_gfx::NoteRenderer,
-    ruler_renderer: &mut lumino_gfx::RulerRenderer,
-    arrangement_renderer: &mut lumino_gfx::ArrangementRenderer,
+    grid_renderer: &mut crate::GridRenderer,
+    note_renderer: &mut crate::NoteRenderer,
+    ruler_renderer: &mut crate::RulerRenderer,
+    arrangement_renderer: &mut crate::ArrangementRenderer,
     queue: &wgpu::Queue,
-    onion_renderer: &mut lumino_gfx::OnionRenderer,
-    cc_bar_renderer: &mut lumino_gfx::CcBarRenderer,
+    onion_renderer: &mut crate::OnionRenderer,
+    cc_bar_renderer: &mut crate::CcBarRenderer,
 ) {
     let (Some(texture), Some(depth_view)) = (current_texture, depth_texture_view) else {
         return;

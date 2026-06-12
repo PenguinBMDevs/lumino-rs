@@ -1,7 +1,7 @@
 use super::{EditState, Editor, HitType, Note};
 use crate::constants::editor::{DEFAULT_MIDI_CHANNEL, DEFAULT_NOTE_VELOCITY};
 use crate::event;
-use crate::message::{AudioAction, EditorAction};
+use crate::message::EditorAction;
 use crate::toolbar::Tool;
 use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
 
@@ -274,11 +274,7 @@ impl Editor {
     pub(crate) fn play_note_audio(&mut self, key: u16, _context: &str) {
         self.editor_state
             .interaction
-            .pending_audio_actions
-            .push(AudioAction::PlayNote {
-                key: key as u8,
-                velocity: DEFAULT_NOTE_VELOCITY,
-            });
+            .play_note_audio(key, DEFAULT_NOTE_VELOCITY);
     }
 
     /// 处理鼠标移动事件

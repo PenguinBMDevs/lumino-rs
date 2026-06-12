@@ -1,4 +1,4 @@
-use lumino_gfx::{
+use crate::{
     ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, KeyInstance,
     NoteInstance, RulerTickInstance,
 };
