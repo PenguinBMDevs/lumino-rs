@@ -23,7 +23,7 @@ pub enum VelocityAction {
     /// 选择 CC 控制器编号
     CcControllerSelected(u8),
     /// 选择 CC 或 Bend 选项
-    CcOptionSelected(crate::editor::velocity::CcOption),
+    CcOptionSelected(crate::CcOption),
     /// 速度编辑：拖拽开始
     /// 参数: (point_index 在 data.tempo_points 中的索引)
     TempoDragStart(usize),

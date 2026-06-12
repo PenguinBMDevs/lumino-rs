@@ -12,10 +12,14 @@ unstable-swappable-buffer = ["lumino-gfx/unstable-swappable-buffer"]
 
 [dependencies]
 lumino-core = { workspace = true }
+lumino-constants = { workspace = true }
+lumino-event = { workspace = true }
 lumino-gfx = { workspace = true }
+lumino-message = { workspace = true }
 lumino-midi-io = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-memory-monitor = { workspace = true }
+lumino-playback = { workspace = true }
 lumino-collaboration = { workspace = true }
 # crates.io
 midly = { workspace = true }

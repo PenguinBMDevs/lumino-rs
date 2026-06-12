@@ -1,5 +1,7 @@
 //! 音频导出动作
 
+use crate::{AudioChannels, AudioFormat, Interpolation, ThreadingOption};
+
 /// 音频导出动作
 #[derive(Debug, Clone)]
 pub enum AudioExportAction {
@@ -14,19 +16,19 @@ pub enum AudioExportAction {
     /// 工程名称变更
     ProjectNameChanged(String),
     /// 输出格式变更
-    FormatChanged(crate::state::root_state::AudioFormat),
+    FormatChanged(AudioFormat),
     /// 采样率变更
     SampleRateChanged(u32),
     /// 通道数变更
-    ChannelsChanged(crate::state::root_state::AudioChannels),
+    ChannelsChanged(AudioChannels),
     /// 层数限制变更
     LayersChanged(String),
     /// 通道多线程变更
-    ChannelThreadingChanged(crate::state::root_state::ThreadingOption),
+    ChannelThreadingChanged(ThreadingOption),
     /// 按键多线程变更
-    KeyThreadingChanged(crate::state::root_state::ThreadingOption),
+    KeyThreadingChanged(ThreadingOption),
     /// 插值算法变更
-    InterpolationChanged(crate::state::root_state::Interpolation),
+    InterpolationChanged(Interpolation),
     /// 应用限制器变更
     ApplyLimiterChanged(bool),
     /// 禁用淡出变更

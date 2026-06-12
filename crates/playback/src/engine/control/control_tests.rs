@@ -1,5 +1,5 @@
 use super::*;
-use crate::playback::Playback;
+use crate::Playback;
 use std::time::Duration;
 
 #[test]

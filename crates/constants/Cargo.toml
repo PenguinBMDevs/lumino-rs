@@ -1,0 +1,10 @@
+[package]
+name = "lumino-constants"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+iced_core = "0.14.0"

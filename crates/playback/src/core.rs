@@ -4,8 +4,8 @@ use parking_lot::{Mutex, MutexGuard};
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::state::PlaybackState;
-use super::timeline::Timeline;
+use crate::state::PlaybackState;
+use crate::timeline::Timeline;
 
 /// 提供 `Arc<Mutex<Playback>>` 访问的 trait
 ///
@@ -71,7 +71,7 @@ impl Playback {
     }
 
     /// 设置速度变化
-    pub fn set_tempo_changes(&mut self, changes: Vec<super::tempo::TempoChange>) {
+    pub fn set_tempo_changes(&mut self, changes: Vec<crate::tempo::TempoChange>) {
         self.timeline.set_tempo_changes(changes);
     }
 

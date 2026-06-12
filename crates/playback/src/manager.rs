@@ -2,8 +2,8 @@
 //!
 //! 负责协调播放引擎和MIDI输出
 
-use super::engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine};
-use super::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
+use crate::engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine};
+use crate::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
 use parking_lot::Mutex;
 use std::sync::{Arc, mpsc};
 use std::thread;

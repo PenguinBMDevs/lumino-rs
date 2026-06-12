@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/dms", "crates/export", "crates/gfx", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/ui", "crates/collaboration"]
+members = ["crates/core", "crates/dms", "crates/constants", "crates/event", "crates/export", "crates/gfx", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/message", "crates/playback", "crates/ui", "crates/collaboration"]
 resolver = "3"
 
 [workspace.package]
@@ -12,12 +12,16 @@ edition = "2024"
 
 [workspace.dependencies]
 lumino-core = { path = "crates/core" }
+lumino-constants = { path = "crates/constants" }
 lumino-dms = { path = "crates/dms" }
+lumino-event = { path = "crates/event" }
 lumino-export = { path = "crates/export" }
 lumino-gfx = { path = "crates/gfx" }
 lumino-midi-io = { path = "crates/midi-io" }
 lumino-midi-loader = { path = "crates/midi-loader" }
 lumino-memory-monitor = { path = "crates/memory-monitor" }
+lumino-message = { path = "crates/message" }
+lumino-playback = { path = "crates/playback" }
 midly = { version = "0.6", features = ["std", "alloc", "parallel", "memmap"] }
 lumino-ui = { path = "crates/ui" }
 lumino-collaboration = { path = "crates/collaboration" }

@@ -18,29 +18,8 @@ fn num_cores() -> f64 {
     })
 }
 
-/// 性能监控数据
-#[derive(Debug, Clone, Copy, Default)]
-pub struct PerfData {
-    /// 当前 FPS
-    pub fps: f32,
-    /// CPU 使用率百分比（0.0 ~ 100.0，100% = 所有核心满载）
-    pub cpu_usage: f32,
-    /// 进程内存占用（MB）
-    pub memory_mb: f32,
-    /// GPU 帧耗时（ms）
-    pub gpu_frame_time_ms: f32,
-}
-
-impl PerfData {
-    pub fn new(fps: f32, cpu_usage: f32, memory_mb: f32, gpu_frame_time_ms: f32) -> Self {
-        Self {
-            fps,
-            cpu_usage,
-            memory_mb,
-            gpu_frame_time_ms,
-        }
-    }
-}
+/// 性能监控数据 — 重新导出自 lumino-message
+pub use lumino_message::PerfData;
 
 /// CPU 使用率监控器：计算进程 CPU 时间增量
 pub struct CpuMonitor {

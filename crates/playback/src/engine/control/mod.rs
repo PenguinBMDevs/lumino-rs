@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
-use crate::playback::{Playback, PlaybackAccessor, PlaybackState};
+use crate::{Playback, PlaybackAccessor, PlaybackState};
 
 use super::{EventType, MidiMessage, MidiTrackEvent, NoteEvent, ScheduledEvent};
 use lumino_midi_io::compact::{CompactEvent, EventKind};
