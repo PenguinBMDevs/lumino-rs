@@ -1,8 +1,8 @@
 use super::{EditState, Editor, HitType, Note};
 use crate::constants::editor::{DEFAULT_MIDI_CHANNEL, DEFAULT_NOTE_VELOCITY};
+use crate::event;
 use crate::message::{AudioAction, EditorAction};
 use crate::toolbar::Tool;
-use crate::event;
 use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
 
 impl Editor {
@@ -466,14 +466,16 @@ impl Editor {
 
     /// 发送新音符添加的协作同步事件
     fn emit_note_added_event(&self, note: &Note) {
-        event::emit(event::Event::Window(event::window::Event::LocalNoteAdded {
-            tick: note.tick,
-            key: note.key,
-            length: note.length,
-            velocity: DEFAULT_NOTE_VELOCITY,
-            channel: DEFAULT_MIDI_CHANNEL,
-            track_index: self.editor_state.data.current_track,
-        }));
+        event::emit(event::Event::Window(
+            event::window::Event::local_note_added(
+                note.tick,
+                note.key,
+                note.length,
+                DEFAULT_NOTE_VELOCITY,
+                DEFAULT_MIDI_CHANNEL,
+                self.editor_state.data.current_track,
+            ),
+        ));
     }
 
     /// 处理滚动事件（鼠标滚轮）

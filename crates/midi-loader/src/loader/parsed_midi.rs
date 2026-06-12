@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use midly::loader::{MidiScanResult, scan_midi_file};
 use lumino_memory_monitor::MemoryMonitor;
+use midly::loader::{MidiScanResult, scan_midi_file};
 
-use crate::error::{LoaderError, LoaderResult};
-use crate::document::MidiDocument;
-use crate::info::MidiInfo;
-use crate::ParsedMidi;
 use crate::LmpjData;
+use crate::ParsedMidi;
+use crate::document::MidiDocument;
+use crate::error::{LoaderError, LoaderResult};
+use crate::info::MidiInfo;
 
 use super::types::ProgressCallback;
 
@@ -187,7 +187,7 @@ pub async fn load_parsed_midi_from_bytes(
         let (notes, tempo_changes, control_events) =
             midly::loader::extract_notes_and_control_events_from_bytes(&midi_bytes)
                 .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
-        let track_names = crate::document::scan_track_names(&midi_bytes);
+        let track_names = crate::document::scan::scan_track_names(&midi_bytes);
         MidiDocument::build_from_extracted_notes(
             notes,
             tempo_changes,

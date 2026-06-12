@@ -269,7 +269,7 @@ fn collect_track_events(
             kind: TrackEventKind::Midi {
                 channel: note.channel.into(),
                 message: midly::MidiMessage::NoteOn {
-                    key: note.key.into(),
+                    key: note.key,
                     vel: note.velocity.into(),
                 },
             },
@@ -282,7 +282,7 @@ fn collect_track_events(
             kind: TrackEventKind::Midi {
                 channel: note.channel.into(),
                 message: midly::MidiMessage::NoteOff {
-                    key: note.key.into(),
+                    key: note.key,
                     vel: 0.into(),
                 },
             },

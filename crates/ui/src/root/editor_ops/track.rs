@@ -106,7 +106,8 @@ impl Root {
             tracing::debug!(
                 "Root: 音轨 {} 已加载 {} 个 MIDI 控制事件",
                 track_idx,
-                self.playback.track_midi_events
+                self.playback
+                    .track_midi_events
                     .get(&track_idx)
                     .map_or(0, |v| v.len())
             );
@@ -121,7 +122,8 @@ impl Root {
     ) {
         if !events.is_empty() {
             // 合并到已有事件（如果有）
-            self.playback.track_midi_events
+            self.playback
+                .track_midi_events
                 .entry(track_idx)
                 .or_default()
                 .extend(events);

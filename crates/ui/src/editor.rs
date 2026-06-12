@@ -80,7 +80,7 @@ impl Default for SpatialIndexState {
 }
 
 /// 洋葱皮缓存状态（从 Editor 提取，减少字段数）
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct OnionSkinState {
     /// 洋葱皮配置
     pub config: OnionSkinConfig,
@@ -92,18 +92,6 @@ pub struct OnionSkinState {
     pub cached_config_hash: u64,
     /// 缓存是否有效
     pub cache_valid: bool,
-}
-
-impl Default for OnionSkinState {
-    fn default() -> Self {
-        Self {
-            config: OnionSkinConfig::default(),
-            cached_track_indices: Vec::new(),
-            cached_track_hash: 0,
-            cached_config_hash: 0,
-            cache_valid: false,
-        }
-    }
 }
 
 /// 钢琴卷帘编辑器
@@ -344,7 +332,8 @@ impl Editor {
     pub fn mark_notes_changed(&mut self) {
         self.notes_changed = true;
         self.spatial.note_index_dirty.set(true);
-        self.spatial.track_note_indices
+        self.spatial
+            .track_note_indices
             .borrow_mut()
             .remove(&self.editor_state.data.current_track);
     }

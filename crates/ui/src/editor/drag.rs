@@ -256,14 +256,14 @@ impl Editor {
         if tick_offset.abs() > 0.001 || key_offset != 0 {
             tracing::info!("Editor: 发送 LocalNoteMoved 同步事件");
             crate::event::emit(crate::event::Event::Window(
-                crate::event::window::Event::LocalNoteMoved {
-                    tick: original_tick,
-                    key: original_key,
-                    length: note.length,
+                crate::event::window::Event::local_note_moved(
+                    original_tick,
+                    original_key,
+                    note.length,
                     tick_offset,
                     key_offset,
-                    track_index: self.editor_state.data.current_track,
-                },
+                    self.editor_state.data.current_track,
+                ),
             ));
         } else {
             tracing::info!("Editor: 音符偏移量为零，跳过同步");

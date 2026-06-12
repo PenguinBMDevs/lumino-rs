@@ -11,10 +11,10 @@ use std::collections::HashMap;
 use std::hint::black_box;
 use std::time::Instant;
 
-use lumino_midi_loader::MidiDocument;
 use lumino_gfx::{
     CameraParams, CameraUniform, GridRenderer, NoteInstance, NoteRenderer, SwappableBuffer,
 };
+use lumino_midi_loader::MidiDocument;
 use lumino_ui::editor::Editor;
 use lumino_ui::editor::note::Note;
 use lumino_ui::host::RenderCache;
@@ -285,7 +285,7 @@ fn onion_skin_benchmark() {
     for frame in 0..5 {
         let scroll_tick = (frame as f32) * 100_000.0;
         editor.editor_state.view.scroll_x = scroll_tick * ZOOM_X;
-        let visible_end = (scroll_tick * ZOOM_X + CANVAS_WIDTH - KEYBOARD_WIDTH) / ZOOM_X;
+        let _visible_end = (scroll_tick * ZOOM_X + CANVAS_WIDTH - KEYBOARD_WIDTH) / ZOOM_X;
 
         let hash = RenderCache::compute_viewport_hash(
             editor.editor_state.view.scroll_x,
@@ -378,7 +378,7 @@ fn onion_skin_benchmark() {
     for frame in 0..NUM_FRAMES {
         let scroll_tick = (frame as f32) * TICK_SPEED;
         editor.editor_state.view.scroll_x = scroll_tick * ZOOM_X;
-        let visible_end = (scroll_tick * ZOOM_X + CANVAS_WIDTH - KEYBOARD_WIDTH) / ZOOM_X;
+        let _visible_end = (scroll_tick * ZOOM_X + CANVAS_WIDTH - KEYBOARD_WIDTH) / ZOOM_X;
 
         // === CPU: update_note_data_for_wgpu_thread ===
         let note_index_dirty = editor.spatial.note_index_dirty.get();

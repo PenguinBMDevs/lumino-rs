@@ -27,7 +27,6 @@ use wgpu::util::DeviceExt;
 ///
 /// 每块纹理 1024×512（匹配 LOD0 瓦片尺寸），Rgba8Unorm，支持 TEXTURE_BINDING。
 /// 总内存：256 × 1024 × 512 × 4B = 512 MB。
-
 const POOL_SIZE: usize = 256;
 #[allow(dead_code)]
 pub struct OnionBgTilePool {

@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, sync::OnceLock};
 
-use lumino_ui::event::{Event as CoreEvent, self as event};
+use lumino_ui::event::{self as event, Event as CoreEvent};
 use lumino_ui::titlebar::menu::{MenuItem as UiMenuItem, menus as ui_menus};
 use muda::{
     IsMenuItem, Menu, MenuEvent, MenuId, MenuItem as MudaMenuItem, PredefinedMenuItem as PMI,

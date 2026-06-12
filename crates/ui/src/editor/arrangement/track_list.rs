@@ -72,15 +72,14 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
         if let iced_widget::canvas::Event::Mouse(iced_core::mouse::Event::ButtonPressed(
             iced_core::mouse::Button::Left,
         )) = event
+            && let Some(pos) = cursor.position()
         {
-            if let Some(pos) = cursor.position() {
-                let rel_y = pos.y - bounds.y + self.scroll_y;
-                let clicked_idx = (rel_y / self.track_height) as usize;
-                if let Some((id, _)) = self.tracks.get(clicked_idx) {
-                    return Some(iced_widget::canvas::Action::publish(
-                        crate::sidebar::Event::track_selected(*id),
-                    ));
-                }
+            let rel_y = pos.y - bounds.y + self.scroll_y;
+            let clicked_idx = (rel_y / self.track_height) as usize;
+            if let Some((id, _)) = self.tracks.get(clicked_idx) {
+                return Some(iced_widget::canvas::Action::publish(
+                    crate::sidebar::Event::track_selected(*id),
+                ));
             }
         }
         None

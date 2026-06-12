@@ -26,10 +26,7 @@ fn test_end_to_end_note_actually_plays() {
     let on_count = Arc::clone(&note_on_count);
     let off_count = Arc::clone(&note_off_count);
 
-    let mock_output = Box::new(CountingMockOutput {
-        note_on_count: on_count,
-        note_off_count: off_count,
-    });
+    let mock_output = Box::new(MockOutput::with_counters(on_count, off_count));
 
     root.set_midi_output(mock_output);
     assert!(root.playback.pending_midi_output.is_some());
@@ -81,10 +78,10 @@ fn test_draw_note_then_play() {
     let note_on_count = Arc::new(AtomicU32::new(0));
     let note_off_count = Arc::new(AtomicU32::new(0));
 
-    let mock_output = Box::new(CountingMockOutput {
-        note_on_count: Arc::clone(&note_on_count),
-        note_off_count: Arc::clone(&note_off_count),
-    });
+    let mock_output = Box::new(MockOutput::with_counters(
+        Arc::clone(&note_on_count),
+        Arc::clone(&note_off_count),
+    ));
 
     root.set_midi_output(mock_output);
     assert!(
@@ -158,10 +155,10 @@ fn test_play_then_draw_then_play() {
     let note_on_count = Arc::new(AtomicU32::new(0));
     let note_off_count = Arc::new(AtomicU32::new(0));
 
-    let mock_output = Box::new(CountingMockOutput {
-        note_on_count: Arc::clone(&note_on_count),
-        note_off_count: Arc::clone(&note_off_count),
-    });
+    let mock_output = Box::new(MockOutput::with_counters(
+        Arc::clone(&note_on_count),
+        Arc::clone(&note_off_count),
+    ));
 
     root.set_midi_output(mock_output);
 

@@ -9,9 +9,9 @@ use xsynth_core::channel_group::SynthEvent;
 use xsynth_core::soundfont::{SampleSoundfont, SoundfontBase};
 use xsynth_core::{AudioStreamParams, ChannelCount};
 
-use lumino_midi_loader::ParsedMidi;
-use lumino_midi_loader::MidiDocument;
 use lumino_midi_io::compact::EventKind;
+use lumino_midi_loader::MidiDocument;
+use lumino_midi_loader::ParsedMidi;
 
 use crate::error::{ExportError, ExportResult};
 

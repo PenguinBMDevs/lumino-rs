@@ -82,9 +82,7 @@ impl LmloadedHeader {
     /// 从字节数组解码
     pub fn from_bytes(bytes: &[u8]) -> ExportResult<Self> {
         if bytes.len() < Self::SIZE {
-            return Err(ExportError::FileFormat(
-                "lmloaded header: too short".into(),
-            ));
+            return Err(ExportError::FileFormat("lmloaded header: too short".into()));
         }
         let mut magic = [0u8; 4];
         magic.copy_from_slice(&bytes[0..4]);
@@ -153,9 +151,7 @@ pub fn decode_loaded_data(bytes: &[u8]) -> ExportResult<(LoadedDataType, Vec<u8>
 
     let header = LmloadedHeader::from_bytes(bytes)?;
     if &header.magic != b"LMLD" {
-        return Err(ExportError::FileFormat(
-            "lmloaded: invalid magic".into(),
-        ));
+        return Err(ExportError::FileFormat("lmloaded: invalid magic".into()));
     }
     if header.version != 1 {
         return Err(ExportError::FileFormat(format!(

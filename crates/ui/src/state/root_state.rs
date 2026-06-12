@@ -266,6 +266,12 @@ pub struct CollaborationDialogState {
     pub connection_status: String,
 }
 
+impl Default for CollaborationDialogState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CollaborationDialogState {
     pub fn new() -> Self {
         Self {
@@ -328,16 +334,11 @@ pub struct AudioExportDialogState {
 }
 
 /// 音频通道数（UI用）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AudioChannels {
     Mono,
+    #[default]
     Stereo,
-}
-
-impl Default for AudioChannels {
-    fn default() -> Self {
-        Self::Stereo
-    }
 }
 
 impl std::fmt::Display for AudioChannels {
@@ -350,17 +351,12 @@ impl std::fmt::Display for AudioChannels {
 }
 
 /// 多线程选项（UI用）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThreadingOption {
     None,
+    #[default]
     Auto,
     Manual(u32),
-}
-
-impl Default for ThreadingOption {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 impl std::fmt::Display for ThreadingOption {
@@ -374,16 +370,11 @@ impl std::fmt::Display for ThreadingOption {
 }
 
 /// 插值算法（UI用）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Interpolation {
     None,
+    #[default]
     Linear,
-}
-
-impl Default for Interpolation {
-    fn default() -> Self {
-        Self::Linear
-    }
 }
 
 impl std::fmt::Display for Interpolation {
@@ -396,16 +387,11 @@ impl std::fmt::Display for Interpolation {
 }
 
 /// 音频格式（UI用）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AudioFormat {
+    #[default]
     WAV,
     FLAC,
-}
-
-impl Default for AudioFormat {
-    fn default() -> Self {
-        Self::WAV
-    }
 }
 
 impl std::fmt::Display for AudioFormat {
@@ -414,6 +400,12 @@ impl std::fmt::Display for AudioFormat {
             AudioFormat::WAV => write!(f, "WAV"),
             AudioFormat::FLAC => write!(f, "FLAC"),
         }
+    }
+}
+
+impl Default for AudioExportDialogState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -529,6 +521,12 @@ pub struct RootState {
     pub current_mode: AppMode,
     /// 模式切换按钮动画状态
     pub toggle_animation: ToggleAnimationState,
+}
+
+impl Default for RootState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RootState {

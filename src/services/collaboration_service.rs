@@ -77,11 +77,18 @@ impl CollaborationService {
 
             let result: Result<(), String> = if let Some(code) = invite_code {
                 tracing::info!("协作: 正在加入房间 (邀请码: {})...", code);
-                client.join_room_and_connect(code).await.map_err(|e| e.to_string())
+                client
+                    .join_room_and_connect(code)
+                    .await
+                    .map_err(|e| e.to_string())
             } else {
                 let name = room_name.unwrap_or_else(|| messages::DEFAULT_ROOM_NAME.to_string());
                 tracing::info!("协作: 正在创建房间: {} ...", name);
-                client.create_room_and_connect(name).await.map_err(|e| e.to_string()).map(|_| ())
+                client
+                    .create_room_and_connect(name)
+                    .await
+                    .map_err(|e| e.to_string())
+                    .map(|_| ())
             };
 
             match result {
@@ -122,22 +129,43 @@ impl CollaborationService {
 
         match event {
             CollaborationEvent::Connected => tracing::info!("协作: 已连接到服务器"),
-            CollaborationEvent::Authenticated { user_id, invite_code } => {
-                tracing::info!("协作: 认证成功! 用户ID: {}, 邀请码: {}", user_id, invite_code);
+            CollaborationEvent::Authenticated {
+                user_id,
+                invite_code,
+            } => {
+                tracing::info!(
+                    "协作: 认证成功! 用户ID: {}, 邀请码: {}",
+                    user_id,
+                    invite_code
+                );
                 lumino_ui::event::emit(lumino_ui::event::Event::window(
-                    lumino_ui::event::window::Event::collaboration_authenticated(user_id, invite_code),
+                    lumino_ui::event::window::Event::collaboration_authenticated(
+                        user_id,
+                        invite_code,
+                    ),
                 ));
             }
             CollaborationEvent::RoomCreated { room } => {
                 tracing::info!("协作: 房间创建成功! 邀请码: {}", room.invite_code);
                 lumino_ui::event::emit(lumino_ui::event::Event::window(
-                    lumino_ui::event::window::Event::collaboration_room_created(room.name, room.invite_code),
+                    lumino_ui::event::window::Event::collaboration_room_created(
+                        room.name,
+                        room.invite_code,
+                    ),
                 ));
             }
             CollaborationEvent::RoomJoined { room, users } => {
-                tracing::info!("协作: 加入房间成功! 房间: {}, 用户数: {}", room.name, users.len());
+                tracing::info!(
+                    "协作: 加入房间成功! 房间: {}, 用户数: {}",
+                    room.name,
+                    users.len()
+                );
                 lumino_ui::event::emit(lumino_ui::event::Event::window(
-                    lumino_ui::event::window::Event::collaboration_room_joined(room.name, room.invite_code, users.len()),
+                    lumino_ui::event::window::Event::collaboration_room_joined(
+                        room.name,
+                        room.invite_code,
+                        users.len(),
+                    ),
                 ));
             }
             CollaborationEvent::Disconnected => {
@@ -151,11 +179,24 @@ impl CollaborationService {
                     lumino_ui::event::window::Event::collaboration_user_left(user_id),
                 ));
             }
-            CollaborationEvent::MouseUpdate { user_id, position, color, username } => {
-                tracing::debug!("协作事件 - 鼠标更新：user_id={}, x={}, y={}, color={}, username={}",
-                    user_id, position.x, position.y, color, username);
+            CollaborationEvent::MouseUpdate {
+                user_id,
+                position,
+                color,
+                username,
+            } => {
+                tracing::debug!(
+                    "协作事件 - 鼠标更新：user_id={}, x={}, y={}, color={}, username={}",
+                    user_id,
+                    position.x,
+                    position.y,
+                    color,
+                    username
+                );
                 lumino_ui::event::emit(lumino_ui::event::Event::window(
-                    lumino_ui::event::window::Event::collaboration_mouse_update(user_id, position.x, position.y, color, username),
+                    lumino_ui::event::window::Event::collaboration_mouse_update(
+                        user_id, position.x, position.y, color, username,
+                    ),
                 ));
             }
             CollaborationEvent::NoteBatch { user_id, operation } => {
@@ -170,12 +211,18 @@ impl CollaborationService {
         }
     }
 
-    /// 发送鼠标位置（同步 API）
-    pub fn send_mouse_position(
-        &self,
-        position: lumino_collaboration::types::MousePosition,
-    ) -> Result<(), String> {
-        // 临时取出客户端以调用异步方法，避免持有锁跨 .await
+    /// 在同步上下文中临时取出客户端，调用异步操作后再放回。
+    ///
+    /// 使用 `tokio::runtime::Handle::current().block_on()` 驱动异步调用，
+    /// **不得在异步运行时内部调用**，否则会导致嵌套 runtime panic。
+    fn with_client_async<F>(&self, f: F) -> Result<(), String>
+    where
+        F: for<'a> FnOnce(
+            &'a CollaborationClient,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = lumino_collaboration::Result<()>> + 'a>,
+        >,
+    {
         let mut guard = self.client.lock().unwrap();
         let client = guard.take();
         drop(guard);
@@ -183,14 +230,21 @@ impl CollaborationService {
         let result = match &client {
             Some(c) => {
                 let handle = tokio::runtime::Handle::current();
-                handle.block_on(c.send_mouse_position(position)).map_err(|e| e.to_string())
+                handle.block_on(f(c)).map_err(|e| e.to_string())
             }
             None => Err(messages::CLIENT_NOT_INITIALIZED.to_string()),
         };
 
-        // 放回客户端
         *self.client.lock().unwrap() = client;
         result
+    }
+
+    /// 发送鼠标位置（同步 API）
+    pub fn send_mouse_position(
+        &self,
+        position: lumino_collaboration::types::MousePosition,
+    ) -> Result<(), String> {
+        self.with_client_async(|client| Box::pin(client.send_mouse_position(position)))
     }
 
     /// 断开连接（同步 API）
@@ -215,20 +269,7 @@ impl CollaborationService {
         &self,
         operation: lumino_collaboration::types::NoteBatchOperation,
     ) -> Result<(), String> {
-        let mut guard = self.client.lock().unwrap();
-        let client = guard.take();
-        drop(guard);
-
-        let result = match &client {
-            Some(c) => {
-                let handle = tokio::runtime::Handle::current();
-                handle.block_on(c.send_note_batch(operation)).map_err(|e| e.to_string())
-            }
-            None => Err(messages::CLIENT_NOT_INITIALIZED.to_string()),
-        };
-
-        *self.client.lock().unwrap() = client;
-        result
+        self.with_client_async(|client| Box::pin(client.send_note_batch(operation)))
     }
 
     /// 检查客户端实例是否存在（同步 API）

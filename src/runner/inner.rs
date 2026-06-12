@@ -282,7 +282,10 @@ impl RunnerInner {
     }
     /// 保存存储
     /// 使用 PartialEq 自动比较新旧配置，消除手动逐字段比较
-    fn config_field_diff(new: &lumino_ui::settings::SettingsPanel, old: &lumino_core::storage::config::UiConfig) -> ConfigDiff {
+    fn config_field_diff(
+        new: &lumino_ui::settings::SettingsPanel,
+        old: &lumino_core::storage::config::UiConfig,
+    ) -> ConfigDiff {
         ConfigDiff {
             synth_changed: new.synth_backend != old.preferred_backend
                 || new.soundfont_path != old.soundfont_path,

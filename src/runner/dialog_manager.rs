@@ -74,11 +74,11 @@ impl DialogWindow {
             return Err("窗口大小为零，无法初始化".to_string());
         }
 
-        let gfx = futures::executor::block_on(lumino_gfx::Context::new(
+        let gfx = lumino_gfx::Context::new_blocking(
             self.window.clone(),
             physical_size.width,
             physical_size.height,
-        ))
+        )
         .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
 
         // 根据对话框类型选择不同的创建方式
@@ -152,11 +152,11 @@ impl DialogWindow {
             return Err("窗口大小为零".to_string());
         }
 
-        let gfx = futures::executor::block_on(lumino_gfx::Context::new(
+        let gfx = lumino_gfx::Context::new_blocking(
             self.window.clone(),
             physical_size.width,
             physical_size.height,
-        ))
+        )
         .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
 
         let mut ui = lumino_ui::Host::new_dialog(
@@ -189,11 +189,11 @@ impl DialogWindow {
             return Err("窗口大小为零".to_string());
         }
 
-        let gfx = futures::executor::block_on(lumino_gfx::Context::new(
+        let gfx = lumino_gfx::Context::new_blocking(
             self.window.clone(),
             physical_size.width,
             physical_size.height,
-        ))
+        )
         .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
 
         let mut ui = lumino_ui::Host::new_dialog(
@@ -234,11 +234,11 @@ impl DialogWindow {
             return Err("窗口大小为零".to_string());
         }
 
-        let gfx = futures::executor::block_on(lumino_gfx::Context::new(
+        let gfx = lumino_gfx::Context::new_blocking(
             self.window.clone(),
             physical_size.width,
             physical_size.height,
-        ))
+        )
         .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
 
         let mut ui = lumino_ui::Host::new_dialog(

@@ -16,7 +16,7 @@ impl DialogHandler {
     fn handle_custom_precision_dialog_open(&self, _root: &mut Root) {
         tracing::info!("Root: 请求打开自定义精度对话框");
         crate::event::emit(crate::event::Event::Window(
-            crate::event::window::Event::OpenCustomPrecisionDialog,
+            crate::event::window::Event::open_custom_precision_dialog(),
         ));
     }
 
@@ -213,10 +213,10 @@ impl MessageHandler for DialogHandler {
             }
             Message::AudioExportLayersChanged(value) => {
                 // 只允许数字
-                if value.chars().all(|c| c.is_ascii_digit()) {
-                    if let Ok(v) = value.parse::<u32>() {
-                        root.state.audio_export_dialog.layers = v;
-                    }
+                if value.chars().all(|c| c.is_ascii_digit())
+                    && let Ok(v) = value.parse::<u32>()
+                {
+                    root.state.audio_export_dialog.layers = v;
                 }
                 None
             }

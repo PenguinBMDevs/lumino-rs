@@ -48,9 +48,7 @@ impl ArchiveHeader {
     /// 从字节数组解码
     pub fn from_bytes(bytes: &[u8]) -> ExportResult<Self> {
         if bytes.len() < Self::SIZE {
-            return Err(ExportError::FileFormat(
-                "archive header: too short".into(),
-            ));
+            return Err(ExportError::FileFormat("archive header: too short".into()));
         }
         let mut magic = [0u8; 4];
         magic.copy_from_slice(&bytes[0..4]);
@@ -119,9 +117,7 @@ impl FileEntry {
         let mut pos = 2;
 
         if bytes.len() < pos + path_len + 8 + 8 + 8 + 4 + 1 {
-            return Err(ExportError::FileFormat(
-                "file entry: incomplete".into(),
-            ));
+            return Err(ExportError::FileFormat("file entry: incomplete".into()));
         }
 
         let path = String::from_utf8(bytes[pos..pos + path_len].to_vec())
@@ -204,9 +200,7 @@ pub fn read_file_from_archive(
 ) -> ExportResult<Option<Vec<u8>>> {
     let header = ArchiveHeader::from_bytes(archive_bytes)?;
     if &header.magic != b"LMPJ" {
-        return Err(ExportError::FileFormat(
-            "archive: invalid magic".into(),
-        ));
+        return Err(ExportError::FileFormat("archive: invalid magic".into()));
     }
 
     let ft_start = header.file_table_offset as usize;
@@ -226,10 +220,8 @@ pub fn read_file_from_archive(
             let data = &archive_bytes[start..end];
 
             if e.is_compressed {
-                let decompressed =
-                    zstd::stream::decode_all(std::io::Cursor::new(data)).map_err(|e| {
-                        ExportError::Compression(format!("file decompression: {e}"))
-                    })?;
+                let decompressed = zstd::stream::decode_all(std::io::Cursor::new(data))
+                    .map_err(|e| ExportError::Compression(format!("file decompression: {e}")))?;
                 Ok(Some(decompressed))
             } else {
                 Ok(Some(data.to_vec()))

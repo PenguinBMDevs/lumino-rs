@@ -7,101 +7,44 @@ impl RunnerInner {
     /// 处理窗口事件
     pub(super) fn handle_window_event(&mut self, window_event: WindowEvent) {
         match window_event {
-            // 对话框相关事件
-            WindowEvent::OpenCustomPrecisionDialog
-            | WindowEvent::CloseCustomPrecisionDialog
-            | WindowEvent::ApplyCustomPrecision(_, _)
-            | WindowEvent::OpenCollaborationDialog
-            | WindowEvent::CloseCollaborationDialog
-            | WindowEvent::OpenProjectSettingsDialog
-            | WindowEvent::CloseProjectSettingsDialog
-            | WindowEvent::ApplyProjectSettings { .. }
-            | WindowEvent::OpenSpeedChangeDialog
-            | WindowEvent::CloseSpeedChangeDialog
-            | WindowEvent::ConfirmSpeedChange(_) => {
-                self.handle_dialog_events(window_event);
-            }
-
-            // 协作功能相关事件
-            WindowEvent::CollaborationConnect { .. }
-            | WindowEvent::CollaborationCreateRoom { .. }
-            | WindowEvent::CollaborationJoinRoom { .. }
-            | WindowEvent::CollaborationDisconnect
-            | WindowEvent::CollaborationAuthenticated { .. }
-            | WindowEvent::CollaborationRoomCreated { .. }
-            | WindowEvent::CollaborationRoomJoined { .. }
-            | WindowEvent::CollaborationDisconnected
-            | WindowEvent::CollaborationMouseUpdate { .. }
-            | WindowEvent::CollaborationNoteUpdate { .. }
-            | WindowEvent::CollaborationUserLeft { .. } => {
-                self.handle_collaboration_events(window_event);
-            }
-
-            // 本地音符事件
-            WindowEvent::LocalNoteAdded {
-                tick,
-                key,
-                length,
-                velocity,
-                channel,
-                track_index,
-            } => {
-                self.handle_local_note_added(tick, key, length, velocity, channel, track_index);
-            }
-            WindowEvent::LocalNoteMoved {
-                tick,
-                key,
-                length,
-                tick_offset,
-                key_offset,
-                track_index,
-            } => {
-                self.handle_local_note_moved(
-                    tick,
-                    key,
-                    length,
-                    tick_offset,
-                    key_offset,
-                    track_index,
-                );
-            }
-
-            _ => {
-                // 其他窗口事件暂不处理
-            }
+            WindowEvent::Dialog(e) => self.handle_dialog_events(e),
+            WindowEvent::Collaboration(e) => self.handle_collaboration_events(e),
+            WindowEvent::Sync(e) => self.handle_sync_events(e),
+            _ => {}
         }
     }
 
-    fn handle_dialog_events(&mut self, window_event: WindowEvent) {
+    fn handle_dialog_events(&mut self, window_event: lumino_ui::event::window::dialog::Event) {
+        use lumino_ui::event::window::dialog::Event::*;
         match window_event {
-            WindowEvent::OpenCustomPrecisionDialog => {
+            OpenCustomPrecisionDialog => {
                 tracing::info!("请求打开自定义精度对话框");
                 self.window_state
                     .dialog_manager
                     .open_dialog(DialogType::CustomPrecision);
             }
-            WindowEvent::CloseCustomPrecisionDialog => {
+            CloseCustomPrecisionDialog => {
                 self.window_state
                     .dialog_manager
                     .mark_dialog_for_close(DialogType::CustomPrecision);
                 tracing::info!("请求关闭自定义精度对话框");
             }
-            WindowEvent::ApplyCustomPrecision(_, _) => {
+            ApplyCustomPrecision(_, _) => {
                 // 应用精度（在对话框结果中处理）
             }
-            WindowEvent::OpenCollaborationDialog => {
+            OpenCollaborationDialog => {
                 tracing::info!("请求打开协作对话框");
                 self.window_state
                     .dialog_manager
                     .open_dialog(DialogType::Collaboration);
             }
-            WindowEvent::CloseCollaborationDialog => {
+            CloseCollaborationDialog => {
                 self.window_state
                     .dialog_manager
                     .mark_dialog_for_close(DialogType::Collaboration);
                 tracing::info!("请求关闭协作对话框");
             }
-            WindowEvent::OpenProjectSettingsDialog => {
+            OpenProjectSettingsDialog => {
                 tracing::info!("请求打开工程设置对话框");
                 // 优先使用已保存的项目标题，回退到文件名
                 let saved_title = self.window_state.window.ui().get_project_settings_title();
@@ -120,13 +63,13 @@ impl RunnerInner {
                     .dialog_manager
                     .open_project_settings(title);
             }
-            WindowEvent::CloseProjectSettingsDialog => {
+            CloseProjectSettingsDialog => {
                 self.window_state
                     .dialog_manager
                     .mark_dialog_for_close(DialogType::ProjectSettings);
                 tracing::info!("请求关闭工程设置对话框");
             }
-            WindowEvent::ApplyProjectSettings {
+            ApplyProjectSettings {
                 title,
                 tempo,
                 copyright,
@@ -141,31 +84,35 @@ impl RunnerInner {
                 let main_ui = self.window_state.window.ui_mut();
                 main_ui.apply_project_settings(title, tempo, copyright);
             }
-            WindowEvent::OpenSpeedChangeDialog => {
+            OpenSpeedChangeDialog => {
                 tracing::info!("请求打开音符变速对话框");
                 self.window_state
                     .dialog_manager
                     .open_dialog(DialogType::SpeedChange);
             }
-            WindowEvent::CloseSpeedChangeDialog => {
+            CloseSpeedChangeDialog => {
                 self.window_state
                     .dialog_manager
                     .mark_dialog_for_close(DialogType::SpeedChange);
                 tracing::info!("请求关闭音符变速对话框");
             }
-            WindowEvent::ConfirmSpeedChange(factor) => {
+            ConfirmSpeedChange(factor) => {
                 tracing::info!("应用音符变速: 倍率={}", factor);
                 // 应用变速到主窗口
                 let main_ui = self.window_state.window.ui_mut();
                 main_ui.apply_speed_change(factor);
             }
-            _ => {}
+            OpenLoadConfirmDialog { .. } => {}
         }
     }
 
-    fn handle_collaboration_events(&mut self, window_event: WindowEvent) {
+    fn handle_collaboration_events(
+        &mut self,
+        window_event: lumino_ui::event::window::collaboration::Event,
+    ) {
+        use lumino_ui::event::window::collaboration::Event::*;
         match window_event {
-            WindowEvent::CollaborationConnect {
+            Connect {
                 host,
                 port,
                 username,
@@ -181,16 +128,16 @@ impl RunnerInner {
                 let room_name = Some("Lumino 房间".to_string());
                 self.handle_collaboration_connect(host, port, username, room_name, invite_code);
             }
-            WindowEvent::CollaborationCreateRoom { name } => {
+            CreateRoom { name } => {
                 self.handle_collaboration_create_room(name);
             }
-            WindowEvent::CollaborationJoinRoom { invite_code } => {
+            JoinRoom { invite_code } => {
                 self.handle_collaboration_join_room(invite_code);
             }
-            WindowEvent::CollaborationDisconnect => {
+            Disconnect => {
                 self.handle_collaboration_disconnect();
             }
-            WindowEvent::CollaborationAuthenticated {
+            Authenticated {
                 user_id,
                 invite_code,
             } => {
@@ -223,7 +170,7 @@ impl RunnerInner {
                         );
                 }
             }
-            WindowEvent::CollaborationRoomCreated {
+            RoomCreated {
                 room_name,
                 invite_code,
             } => {
@@ -245,7 +192,7 @@ impl RunnerInner {
                     .mark_dialog_for_close(DialogType::Collaboration);
                 tracing::info!("协作: 自动关闭协作对话框");
             }
-            WindowEvent::CollaborationRoomJoined {
+            RoomJoined {
                 room_name,
                 invite_code,
                 user_count,
@@ -269,7 +216,7 @@ impl RunnerInner {
                     .mark_dialog_for_close(DialogType::Collaboration);
                 tracing::info!("协作: 自动关闭协作对话框");
             }
-            WindowEvent::CollaborationDisconnected => {
+            Disconnected => {
                 tracing::info!("协作: 连接断开事件");
                 self.window_state
                     .window
@@ -280,7 +227,7 @@ impl RunnerInner {
                         None,
                     );
             }
-            WindowEvent::CollaborationMouseUpdate {
+            MouseUpdate {
                 user_id,
                 x,
                 y,
@@ -301,18 +248,50 @@ impl RunnerInner {
                     .update_remote_cursor(user_id, x, y, color, username);
                 self.window_state.window.window().request_redraw();
             }
-            WindowEvent::CollaborationNoteUpdate { user_id, operation } => {
+            NoteUpdate { user_id, operation } => {
                 self.handle_remote_note_update(user_id, operation);
                 self.window_state.window.window().request_redraw();
             }
-            WindowEvent::CollaborationUserLeft { user_id } => {
+            UserLeft { user_id } => {
                 self.window_state
                     .window
                     .ui_mut()
                     .remove_remote_cursor(user_id);
                 self.window_state.window.window().request_redraw();
             }
-            _ => {}
+        }
+    }
+
+    fn handle_sync_events(&mut self, window_event: lumino_ui::event::window::sync::Event) {
+        use lumino_ui::event::window::sync::Event::*;
+        match window_event {
+            LocalNoteAdded {
+                tick,
+                key,
+                length,
+                velocity,
+                channel,
+                track_index,
+            } => {
+                self.handle_local_note_added(tick, key, length, velocity, channel, track_index);
+            }
+            LocalNoteMoved {
+                tick,
+                key,
+                length,
+                tick_offset,
+                key_offset,
+                track_index,
+            } => {
+                self.handle_local_note_moved(
+                    tick,
+                    key,
+                    length,
+                    tick_offset,
+                    key_offset,
+                    track_index,
+                );
+            }
         }
     }
 }

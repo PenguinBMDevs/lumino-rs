@@ -150,11 +150,11 @@ impl ProgressManager {
 
         let physical_size = window.inner_size();
 
-        let gfx = match futures::executor::block_on(lumino_gfx::Context::new(
+        let gfx = match lumino_gfx::Context::new_blocking(
             window.clone(),
             physical_size.width,
             physical_size.height,
-        )) {
+        ) {
             Ok(g) => g,
             Err(e) => {
                 tracing::error!("初始化进度窗口图形上下文失败: {}", e);

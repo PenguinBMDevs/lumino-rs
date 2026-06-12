@@ -91,7 +91,7 @@ pub fn view_audio_export_dialog<'a>(
             pick_list(
                 [AudioFormat::WAV, AudioFormat::FLAC],
                 Some(state.format),
-                |f| Message::AudioExportFormatChanged(f),
+                Message::AudioExportFormatChanged,
             )
             .width(200),
         ]
@@ -104,7 +104,7 @@ pub fn view_audio_export_dialog<'a>(
             pick_list(
                 [22050u32, 44100, 48000, 96000],
                 Some(state.sample_rate),
-                |r| Message::AudioExportSampleRateChanged(r),
+                Message::AudioExportSampleRateChanged,
             )
             .width(200),
         ]
@@ -117,7 +117,7 @@ pub fn view_audio_export_dialog<'a>(
             pick_list(
                 [AudioChannels::Mono, AudioChannels::Stereo],
                 Some(state.channels),
-                |c| Message::AudioExportChannelsChanged(c),
+                Message::AudioExportChannelsChanged,
             )
             .width(200),
         ]
@@ -128,7 +128,7 @@ pub fn view_audio_export_dialog<'a>(
         row![
             text("层数限制:").size(14).style(label_style).width(120),
             text_input("32", &state.layers.to_string())
-                .on_input(|s| Message::AudioExportLayersChanged(s))
+                .on_input(Message::AudioExportLayersChanged)
                 .padding([6, 10])
                 .width(200),
         ]
@@ -147,7 +147,7 @@ pub fn view_audio_export_dialog<'a>(
                     ThreadingOption::Manual(8),
                 ],
                 Some(state.channel_threading),
-                |t| Message::AudioExportChannelThreadingChanged(t),
+                Message::AudioExportChannelThreadingChanged,
             )
             .width(200),
         ]
@@ -166,7 +166,7 @@ pub fn view_audio_export_dialog<'a>(
                     ThreadingOption::Manual(8),
                 ],
                 Some(state.key_threading),
-                |t| Message::AudioExportKeyThreadingChanged(t),
+                Message::AudioExportKeyThreadingChanged,
             )
             .width(200),
         ]
@@ -179,7 +179,7 @@ pub fn view_audio_export_dialog<'a>(
             pick_list(
                 [Interpolation::None, Interpolation::Linear],
                 Some(state.interpolation),
-                |i| Message::AudioExportInterpolationChanged(i),
+                Message::AudioExportInterpolationChanged,
             )
             .width(200),
         ]
@@ -189,15 +189,15 @@ pub fn view_audio_export_dialog<'a>(
         // 选项复选框
         checkbox(state.apply_limiter)
             .label("应用限制器 (防止削波)")
-            .on_toggle(|v| Message::AudioExportApplyLimiterChanged(v)),
+            .on_toggle(Message::AudioExportApplyLimiterChanged),
         space().height(4),
         checkbox(state.disable_fade_out)
             .label("禁用淡出 (可能爆音)")
-            .on_toggle(|v| Message::AudioExportDisableFadeOutChanged(v)),
+            .on_toggle(Message::AudioExportDisableFadeOutChanged),
         space().height(4),
         checkbox(state.linear_envelope)
             .label("线性包络")
-            .on_toggle(|v| Message::AudioExportLinearEnvelopeChanged(v)),
+            .on_toggle(Message::AudioExportLinearEnvelopeChanged),
     ]
     .width(Length::Fill);
 

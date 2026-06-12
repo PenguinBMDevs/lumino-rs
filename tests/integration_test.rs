@@ -82,7 +82,8 @@ fn test_midi_to_dms_similarity() {
         dms_reference_path
     );
 
-    let info = lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
+    let info =
+        lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
 
     println!("MIDI 文件信息:");
     println!("  音轨数量: {}", info.track_count);
@@ -226,7 +227,8 @@ fn test_midi_memory_usage() {
 
     let initial_memory = get_process_memory_kb();
 
-    let info = lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
+    let info =
+        lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
 
     let after_memory = get_process_memory_kb();
     let memory_delta_mb = (after_memory.saturating_sub(initial_memory)) as f64 / 1024.0;
@@ -280,7 +282,8 @@ fn test_midi_lmpj_roundtrip() {
 
     let original_midi_bytes = std::fs::read(&midi_path).expect("读取原始 MIDI 文件失败");
 
-    let info = lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
+    let info =
+        lumino_midi_loader::MidiInfo::from_path(midi_path.clone()).expect("解析 MIDI 文件失败");
 
     let parsed_midi = lumino_midi_loader::ParsedMidi {
         info: info.clone(),

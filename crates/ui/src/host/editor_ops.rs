@@ -291,11 +291,12 @@ impl Host {
         // 空间索引（惰性重建）
         root.editor.spatial.note_index = std::cell::RefCell::new(None);
         root.editor.spatial.note_index_dirty = std::cell::Cell::new(true);
-        root.editor.spatial.track_note_indices = std::cell::RefCell::new(std::collections::HashMap::new());
+        root.editor.spatial.track_note_indices =
+            std::cell::RefCell::new(std::collections::HashMap::new());
         root.editor.spatial.query_cache = std::cell::RefCell::new(Vec::new());
         // 洋葱皮 + MIDI 控制事件
-        root.cached_onion_skin_notes = None;
-        root.onion_skin_generation = 0;
+        root.visual.cached_onion_skin_notes = None;
+        root.visual.onion_skin_generation = 0;
         root.editor.invalidate_onion_skin_cache();
         root.playback.track_midi_events.clear();
         // 交互状态（选中、悬停、编辑）

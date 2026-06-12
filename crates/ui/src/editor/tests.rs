@@ -505,3 +505,145 @@ mod speed_tests {
         );
     }
 }
+
+/// 编辑器状态与辅助方法测试
+#[cfg(test)]
+mod state_tests {
+    use super::super::*;
+
+    #[test]
+    fn test_memory_breakdown_empty_editor() {
+        let editor = Editor::new();
+        let mem = editor.memory_breakdown();
+
+        assert_eq!(mem.notes_bytes, 0);
+        assert_eq!(mem.track_notes_count, 0);
+        assert_eq!(mem.track_notes_entries, 0);
+        assert_eq!(mem.track_notes_bytes, 0);
+    }
+
+    #[test]
+    fn test_memory_breakdown_with_notes() {
+        let mut editor = Editor::new();
+        editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(0.0, 60, 480.0));
+        editor
+            .editor_state
+            .data
+            .track_notes
+            .insert(0, im::Vector::new());
+        editor
+            .editor_state
+            .data
+            .track_notes
+            .get_mut(&0)
+            .unwrap()
+            .push_back(Note::new(0.0, 62, 240.0));
+
+        let mem = editor.memory_breakdown();
+        let note_size = std::mem::size_of::<Note>();
+
+        assert_eq!(mem.notes_bytes, note_size);
+        assert_eq!(mem.track_notes_count, 1);
+        assert_eq!(mem.track_notes_entries, 1);
+        assert_eq!(mem.track_notes_bytes, note_size);
+    }
+
+    #[test]
+    fn test_remote_cursor_update_and_remove() {
+        let mut editor = Editor::new();
+
+        editor.update_remote_cursor(
+            std::sync::Arc::from("user_1"),
+            100.0,
+            200.0,
+            std::sync::Arc::from("#ff0000"),
+            std::sync::Arc::from("alice"),
+        );
+        assert!(editor.remote_cursors.contains_key("user_1"));
+
+        editor.remove_remote_cursor("user_1");
+        assert!(!editor.remote_cursors.contains_key("user_1"));
+    }
+
+    #[test]
+    fn test_take_audio_actions_returns_pushed_actions() {
+        let mut editor = Editor::new();
+        assert!(editor.take_audio_actions().is_empty());
+
+        editor
+            .editor_state
+            .interaction
+            .push_audio_action(AudioAction::PlayNote {
+                key: 60,
+                velocity: 100,
+            });
+        editor
+            .editor_state
+            .interaction
+            .push_audio_action(AudioAction::StopNote { key: 60 });
+
+        let actions = editor.take_audio_actions();
+        assert_eq!(actions.len(), 2);
+        assert!(editor.take_audio_actions().is_empty());
+    }
+
+    #[test]
+    fn test_notes_changed_flag() {
+        let mut editor = Editor::new();
+        assert!(!editor.notes_changed());
+
+        editor.mark_notes_changed();
+        assert!(editor.notes_changed());
+
+        editor.clear_notes_changed();
+        assert!(!editor.notes_changed());
+    }
+
+    #[test]
+    fn test_invalidate_caches_clears_specified_cache() {
+        let mut editor = Editor::new();
+        // canvas::Cache 没有 is_empty，只能验证方法不 panic
+        editor.invalidate_caches(CacheInvalidation::GRID);
+        editor.invalidate_caches(CacheInvalidation::KEYBOARD);
+        editor.invalidate_caches(CacheInvalidation::RULER);
+        editor.invalidate_caches(CacheInvalidation::ALL);
+    }
+
+    #[test]
+    fn test_reset_internal_state() {
+        let mut editor = Editor::new();
+        editor.playback_position = 123.0;
+        editor.notes_changed = true;
+
+        editor.reset_internal_state();
+
+        assert!(!editor.notes_changed());
+        assert!((editor.playback_position - 0.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_can_undo_redo_initial_state() {
+        let editor = Editor::new();
+        assert!(!editor.can_undo());
+        assert!(!editor.can_redo());
+    }
+
+    #[test]
+    fn test_set_total_ticks_updates_max_scroll() {
+        let mut editor = Editor::new();
+        editor.set_total_ticks(2000);
+        assert_eq!(editor.editor_state.view.total_ticks, 2000);
+        assert!(editor.editor_state.max_scroll.x > 0.0);
+    }
+
+    #[test]
+    fn test_set_ppq() {
+        let mut editor = Editor::new();
+        editor.set_ppq(960);
+        assert_eq!(editor.editor_state.view.ppq, 960);
+    }
+}

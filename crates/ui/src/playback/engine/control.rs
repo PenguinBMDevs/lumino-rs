@@ -7,8 +7,8 @@ use std::sync::Arc;
 use crate::playback::{Playback, PlaybackAccessor, PlaybackState};
 
 use super::{EventType, MidiMessage, MidiTrackEvent, NoteEvent, ScheduledEvent};
-use lumino_midi_loader::MidiDocument;
 use lumino_midi_io::compact::{CompactEvent, EventKind};
+use lumino_midi_loader::MidiDocument;
 
 /// 播放引擎
 ///
@@ -277,10 +277,7 @@ impl PlaybackEngine {
     }
 
     #[inline]
-    fn push_control_event(
-        ev: &midly::loader::PackedControlEvent,
-        messages: &mut Vec<MidiMessage>,
-    ) {
+    fn push_control_event(ev: &midly::loader::PackedControlEvent, messages: &mut Vec<MidiMessage>) {
         match ev.kind {
             0 => {
                 let (controller, value) = ev.as_control_change();

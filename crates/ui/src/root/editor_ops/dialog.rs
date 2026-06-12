@@ -233,7 +233,7 @@ impl Root {
                 old_settings.velocity_filter_threshold,
                 new_settings.velocity_filter_threshold
             );
-            self.velocity_filter_threshold = new_settings.velocity_filter_threshold;
+            self.visual.velocity_filter_threshold = new_settings.velocity_filter_threshold;
         }
 
         // 同步自动滚动配置（只同步修改过的项）
@@ -369,13 +369,7 @@ impl Root {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::SettingsPanel;
     use lumino_core::storage::config::UiConfig;
-
-    fn create_test_settings() -> SettingsPanel {
-        let ui_config = UiConfig::default();
-        SettingsPanel::new(&ui_config)
-    }
 
     #[test]
     fn test_apply_settings_eraser_behavior_changed() {

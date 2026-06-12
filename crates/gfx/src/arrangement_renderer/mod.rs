@@ -23,8 +23,6 @@ pub struct ArrangementRenderer {
     instance_buffer: wgpu::Buffer,
     /// Bind group
     bind_group: wgpu::BindGroup,
-    /// Bind group layout
-    bind_group_layout: wgpu::BindGroupLayout,
     /// 当前容量
     capacity: usize,
     /// 上次上传的实例数

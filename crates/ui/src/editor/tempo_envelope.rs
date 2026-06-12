@@ -4,7 +4,7 @@
 //! 默认在 tick=0 处有一个 120 BPM 控制点。
 
 use crate::{Message, Renderer, Theme};
-use iced_core::{Color, Point, Rectangle, Size, alignment, mouse};
+use iced_core::{Color, Point, Rectangle, alignment, mouse};
 use iced_wgpu::Geometry as Geom;
 use iced_widget::canvas::{self, Frame, Program, path};
 

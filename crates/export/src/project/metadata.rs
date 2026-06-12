@@ -145,8 +145,7 @@ impl ProjectMetadata {
 
     /// 从 TOML 字符串解析
     pub fn from_toml_str(s: &str) -> ExportResult<Self> {
-        toml::from_str(s)
-            .map_err(|e| ExportError::Encoding(format!("metadata.toml 解析失败: {e}")))
+        toml::from_str(s).map_err(|e| ExportError::Encoding(format!("metadata.toml 解析失败: {e}")))
     }
 
     /// 编码为 TOML 字符串

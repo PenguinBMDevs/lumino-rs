@@ -82,26 +82,70 @@ impl Event {
 
     // ── 构造函数（替代 event! 宏） ──
 
-    pub const fn new_file() -> Self { Self::New }
-    pub const fn open() -> Self { Self::Open }
-    pub const fn save() -> Self { Self::Save }
-    pub const fn close() -> Self { Self::Close }
-    pub const fn import_files() -> Self { Self::ImportFiles }
-    pub fn midi_loaded(info: lumino_midi_loader::MidiInfo) -> Self { Self::MidiLoaded(info) }
-    pub fn midi_load_error(err: String) -> Self { Self::MidiLoadError(err) }
-    pub fn midi_parsed(parsed: Arc<lumino_midi_loader::ParsedMidi>) -> Self { Self::MidiParsed(parsed) }
-    pub fn midi_parse_error(err: String) -> Self { Self::MidiParseError(err) }
-    pub fn show_progress(msg: String, progress: f64) -> Self { Self::ShowProgress(msg, progress) }
-    pub const fn hide_progress() -> Self { Self::HideProgress }
-    pub fn dms_parsed(parsed: Arc<lumino_midi_loader::ParsedDms>) -> Self { Self::DmsParsed(parsed) }
-    pub fn dms_parse_error(err: String) -> Self { Self::DmsParseError(err) }
-    pub const fn export_midi() -> Self { Self::ExportMidi }
-    pub const fn export_dms() -> Self { Self::ExportDms }
-    pub const fn export_project_archive() -> Self { Self::ExportProjectArchive }
-    pub const fn export_project_folder() -> Self { Self::ExportProjectFolder }
-    pub const fn audio_export() -> Self { Self::AudioExport }
-    pub const fn project_settings() -> Self { Self::ProjectSettings }
-    pub const fn settings() -> Self { Self::Settings }
-    pub const fn exit() -> Self { Self::Exit }
-    pub const fn track_selected(idx: usize) -> Self { Self::TrackSelected(idx) }
+    pub const fn new_file() -> Self {
+        Self::New
+    }
+    pub const fn open() -> Self {
+        Self::Open
+    }
+    pub const fn save() -> Self {
+        Self::Save
+    }
+    pub const fn close() -> Self {
+        Self::Close
+    }
+    pub const fn import_files() -> Self {
+        Self::ImportFiles
+    }
+    pub fn midi_loaded(info: lumino_midi_loader::MidiInfo) -> Self {
+        Self::MidiLoaded(info)
+    }
+    pub fn midi_load_error(err: String) -> Self {
+        Self::MidiLoadError(err)
+    }
+    pub fn midi_parsed(parsed: Arc<lumino_midi_loader::ParsedMidi>) -> Self {
+        Self::MidiParsed(parsed)
+    }
+    pub fn midi_parse_error(err: String) -> Self {
+        Self::MidiParseError(err)
+    }
+    pub fn show_progress(msg: String, progress: f64) -> Self {
+        Self::ShowProgress(msg, progress)
+    }
+    pub const fn hide_progress() -> Self {
+        Self::HideProgress
+    }
+    pub fn dms_parsed(parsed: Arc<lumino_midi_loader::ParsedDms>) -> Self {
+        Self::DmsParsed(parsed)
+    }
+    pub fn dms_parse_error(err: String) -> Self {
+        Self::DmsParseError(err)
+    }
+    pub const fn export_midi() -> Self {
+        Self::ExportMidi
+    }
+    pub const fn export_dms() -> Self {
+        Self::ExportDms
+    }
+    pub const fn export_project_archive() -> Self {
+        Self::ExportProjectArchive
+    }
+    pub const fn export_project_folder() -> Self {
+        Self::ExportProjectFolder
+    }
+    pub const fn audio_export() -> Self {
+        Self::AudioExport
+    }
+    pub const fn project_settings() -> Self {
+        Self::ProjectSettings
+    }
+    pub const fn settings() -> Self {
+        Self::Settings
+    }
+    pub const fn exit() -> Self {
+        Self::Exit
+    }
+    pub const fn track_selected(idx: usize) -> Self {
+        Self::TrackSelected(idx)
+    }
 }

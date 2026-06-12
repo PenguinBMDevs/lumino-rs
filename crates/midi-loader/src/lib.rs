@@ -1,6 +1,8 @@
 pub mod constants;
 pub mod dms;
 pub mod document;
+#[cfg(test)]
+pub mod document_tests;
 pub mod error;
 pub mod event;
 pub mod info;

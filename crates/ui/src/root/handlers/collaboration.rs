@@ -41,12 +41,7 @@ impl CollaborationHandler {
 
         // 发送核心事件到 Runner 处理实际连接
         crate::event::emit(crate::event::Event::Window(
-            crate::event::window::Event::CollaborationConnect {
-                host,
-                port,
-                username,
-                invite_code,
-            },
+            crate::event::window::Event::collaboration_connect(host, port, username, invite_code),
         ));
     }
 
@@ -56,7 +51,7 @@ impl CollaborationHandler {
         root.state.collaboration_dialog.view_state = CollaborationViewState::RoomActions;
 
         crate::event::emit(crate::event::Event::Window(
-            crate::event::window::Event::CollaborationCreateRoom { name },
+            crate::event::window::Event::collaboration_create_room(name),
         ));
     }
 
@@ -66,7 +61,7 @@ impl CollaborationHandler {
         root.state.collaboration_dialog.view_state = CollaborationViewState::RoomActions;
 
         crate::event::emit(crate::event::Event::Window(
-            crate::event::window::Event::CollaborationJoinRoom { invite_code },
+            crate::event::window::Event::collaboration_join_room(invite_code),
         ));
     }
 
@@ -76,7 +71,7 @@ impl CollaborationHandler {
         root.state.collaboration_dialog.reset();
 
         crate::event::emit(crate::event::Event::Window(
-            crate::event::window::Event::CollaborationDisconnect,
+            crate::event::window::Event::collaboration_disconnect(),
         ));
     }
 

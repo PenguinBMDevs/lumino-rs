@@ -22,9 +22,9 @@
 use std::sync::{Arc, mpsc};
 use std::thread;
 
+use lumino_gfx::{OnionNote, SwappableBuffer};
 use lumino_midi_loader::MidiDocument;
 use lumino_midi_loader::constants::TICK_SEARCH_BUFFER;
-use lumino_gfx::{OnionNote, SwappableBuffer};
 
 // ─── 数据快照 ───────────────────────────────────────────────────────────────
 

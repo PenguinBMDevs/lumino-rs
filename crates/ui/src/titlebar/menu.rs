@@ -50,8 +50,8 @@ pub struct MenuConfig {
 }
 
 pub fn file_menu() -> MenuConfig {
-    use MenuItem::*;
     use crate::event::menu::file;
+    use MenuItem::*;
     MenuConfig {
         kind: MenuKind::File,
         items: vec![
@@ -64,14 +64,20 @@ pub fn file_menu() -> MenuConfig {
             Separator,
             Submenu(
                 vec![
-                    Action(crate::event::Event::menu_file(file::Event::export_project_archive())),
-                    Action(crate::event::Event::menu_file(file::Event::export_project_folder())),
+                    Action(crate::event::Event::menu_file(
+                        file::Event::export_project_archive(),
+                    )),
+                    Action(crate::event::Event::menu_file(
+                        file::Event::export_project_folder(),
+                    )),
                 ],
                 "导出工程".into(),
             ),
             Action(crate::event::Event::menu_file(file::Event::audio_export())),
             Separator,
-            Action(crate::event::Event::menu_file(file::Event::project_settings())),
+            Action(crate::event::Event::menu_file(
+                file::Event::project_settings(),
+            )),
             Separator,
             Action(crate::event::Event::menu_file(file::Event::settings())),
             Separator,
@@ -81,8 +87,8 @@ pub fn file_menu() -> MenuConfig {
 }
 
 pub fn edit_menu() -> MenuConfig {
-    use MenuItem::*;
     use crate::event::menu::edit;
+    use MenuItem::*;
     MenuConfig {
         kind: MenuKind::Edit,
         items: vec![
@@ -100,8 +106,8 @@ pub fn edit_menu() -> MenuConfig {
 }
 
 pub fn view_menu() -> MenuConfig {
-    use MenuItem::*;
     use crate::event::menu::view;
+    use MenuItem::*;
     MenuConfig {
         kind: MenuKind::View,
         items: vec![
@@ -113,8 +119,8 @@ pub fn view_menu() -> MenuConfig {
 }
 
 pub fn help_menu() -> MenuConfig {
-    use MenuItem::*;
     use crate::event::menu::help;
+    use MenuItem::*;
     MenuConfig {
         kind: MenuKind::Help,
         items: vec![Action(crate::event::Event::menu_help(help::Event::about()))],

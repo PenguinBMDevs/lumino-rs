@@ -1,7 +1,4 @@
 use super::common::create_root;
-use crate::editor::note::Note;
-use crate::message::Message;
-use crate::toolbar;
 
 /// 测试 RecordingState 的状态切换
 #[test]

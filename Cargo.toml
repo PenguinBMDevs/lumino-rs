@@ -23,8 +23,14 @@ lumino-ui = { path = "crates/ui" }
 lumino-collaboration = { path = "crates/collaboration" }
 # crates.io
 iced_renderer = { version = "0.14.0", features = ["wgpu", "tiny-skia", "x11", "wayland"] }
+iced_core = "0.14.0"
+iced = { version = "0.14.0", features = ["wgpu", "canvas"] }
+iced_wgpu = "0.14.0"
+iced_winit = "0.14.0"
+iced_widget = "0.14.0"
+wgpu = "27.0"
 tracing = "0.1.43"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"]}
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 thiserror = "2.0.17"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
@@ -34,6 +40,17 @@ rfd = "0.15"
 tokio = { version = "1.42", features = ["full"] }
 anyhow = "1.0"
 winit = "0.30"
+clap = { version = "4.4", features = ["derive"] }
+futures = "0.3.31"
+directories = "6.0.0"
+toml = "0.9.11"
+bytemuck = "1.0"
+puffin_http = "0.16.1"
+chrono = "0.4"
+tokio-test = "0.4"
+raw-window-handle = "0.6"
+winapi = { version = "0.3", features = ["winuser", "windef", "minwindef", "processthreadsapi", "psapi"] }
+muda = "0.17.1"
 # duplicated dependencies — unified to workspace
 zstd = "0.13.2"
 encoding_rs = "0.8"
@@ -67,31 +84,30 @@ tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-clap = { version = "4.4", features = ["derive"] }
-# Private dependencies
-winit = "0.30"
-futures = "0.3.31"
-directories = "6.0.0"
-toml = "0.9.11"
-bytemuck = "1.0"
-rfd = "0.15"
+clap = { workspace = true }
+winit = { workspace = true }
+futures = { workspace = true }
+directories = { workspace = true }
+toml = { workspace = true }
+bytemuck = { workspace = true }
+rfd = { workspace = true }
 midly = { workspace = true }
 tokio = { workspace = true }
 zstd = { workspace = true }
 rgb = { workspace = true }
-iced_core = "0.14.0"
-iced = { version = "0.14.0", features = ["wgpu", "canvas"] }
+iced_core = { workspace = true }
+iced = { workspace = true }
 puffin = { workspace = true }
-puffin_http = "0.16.1"
-anyhow = "1.0"
+puffin_http = { workspace = true }
+anyhow = { workspace = true }
 parking_lot = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winapi = { version = "0.3", features = ["winuser", "windef", "minwindef"] }
-raw-window-handle = "0.6"
+winapi = { workspace = true }
+raw-window-handle = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-muda = "0.17.1"
+muda = { workspace = true }
 
 [package.metadata.deb]
 # maintainer = "PenguinBMDevs"
@@ -124,18 +140,18 @@ panic = "abort"
 strip = true
 
 [dev-dependencies]
-iced_renderer = { version = "0.14.0", features = ["wgpu", "tiny-skia", "x11", "wayland"] }
-iced_wgpu = { version = "0.14.0" }
-iced_winit = "0.14.0"
-iced_widget = { version = "0.14.0" }
-iced_core = "0.14.0"
+iced_renderer = { workspace = true }
+iced_wgpu = { workspace = true }
+iced_winit = { workspace = true }
+iced_widget = { workspace = true }
+iced_core = { workspace = true }
 iced = { version = "0.14.0", features = ["image"] }
-wgpu = "27.0"
-chrono = "0.4"
-tokio-test = "0.4"
+wgpu = { workspace = true }
+chrono = { workspace = true }
+tokio-test = { workspace = true }
 
 [target.'cfg(windows)'.dev-dependencies]
-winapi = { version = "0.3", features = ["processthreadsapi", "psapi"] }
+winapi = { workspace = true }
 
 [patch.crates-io]
 midly = { git = "https://github.com/PenguinBMDevs/midly-fork" }

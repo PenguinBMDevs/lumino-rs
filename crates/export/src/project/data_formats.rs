@@ -2,8 +2,8 @@
 //!
 //! .lmtemp / .lmsig / .lmctl / .lmnames 均使用专用魔数 + bincode + zstd。
 
+use crate::ExportResult;
 use crate::project::folder::{decode_binary_file, encode_binary_file};
-use crate::{ExportError, ExportResult};
 
 /// 全局速度变化数据（.lmtemp）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

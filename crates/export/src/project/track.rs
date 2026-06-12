@@ -66,9 +66,7 @@ impl LmtrackHeader {
     /// 从字节数组解码
     pub fn from_bytes(bytes: &[u8]) -> ExportResult<Self> {
         if bytes.len() < Self::SIZE {
-            return Err(ExportError::FileFormat(
-                "lmtrack header: too short".into(),
-            ));
+            return Err(ExportError::FileFormat("lmtrack header: too short".into()));
         }
         let mut magic = [0u8; 4];
         magic.copy_from_slice(&bytes[0..4]);
@@ -159,9 +157,7 @@ impl LmtrackData {
         // 验证魔数
         let header = LmtrackHeader::from_bytes(bytes)?;
         if &header.magic != b"LMTR" {
-            return Err(ExportError::FileFormat(
-                "lmtrack: invalid magic".into(),
-            ));
+            return Err(ExportError::FileFormat("lmtrack: invalid magic".into()));
         }
         if header.version != 1 {
             return Err(ExportError::FileFormat(format!(
@@ -171,10 +167,9 @@ impl LmtrackData {
         }
 
         // zstd 解压
-        let decompressed = zstd::stream::decode_all(std::io::Cursor::new(
-            &bytes[LmtrackHeader::SIZE..],
-        ))
-        .map_err(|e| ExportError::Compression(format!("lmtrack decompression: {e}")))?;
+        let decompressed =
+            zstd::stream::decode_all(std::io::Cursor::new(&bytes[LmtrackHeader::SIZE..]))
+                .map_err(|e| ExportError::Compression(format!("lmtrack decompression: {e}")))?;
 
         // bincode 反序列化
         bincode::deserialize(&decompressed)
@@ -218,7 +213,14 @@ mod tests {
         let meta = create_test_meta(0);
         let events = vec![
             CompactEvent::new(0, 0, lumino_midi_io::compact::EventKind::NoteOn, 0, 60, 100),
-            CompactEvent::new(480, 0, lumino_midi_io::compact::EventKind::NoteOff, 0, 60, 0),
+            CompactEvent::new(
+                480,
+                0,
+                lumino_midi_io::compact::EventKind::NoteOff,
+                0,
+                60,
+                0,
+            ),
         ];
         let data = LmtrackData::from_compact_events(meta, &events);
 
@@ -245,8 +247,22 @@ mod tests {
     fn test_compact_events_iterator() {
         let meta = create_test_meta(1);
         let events = vec![
-            CompactEvent::new(100, 1, lumino_midi_io::compact::EventKind::NoteOn, 2, 64, 80),
-            CompactEvent::new(200, 1, lumino_midi_io::compact::EventKind::NoteOff, 2, 64, 0),
+            CompactEvent::new(
+                100,
+                1,
+                lumino_midi_io::compact::EventKind::NoteOn,
+                2,
+                64,
+                80,
+            ),
+            CompactEvent::new(
+                200,
+                1,
+                lumino_midi_io::compact::EventKind::NoteOff,
+                2,
+                64,
+                0,
+            ),
         ];
         let data = LmtrackData::from_compact_events(meta, &events);
 

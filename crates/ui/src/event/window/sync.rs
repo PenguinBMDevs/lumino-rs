@@ -1,0 +1,67 @@
+//! 本地状态同步事件（需要同步到其他用户）
+
+#[derive(Debug, Clone)]
+pub enum Event {
+    /// 本地笔记更新（需要同步到其他用户）
+    LocalNoteAdded {
+        tick: f32,
+        key: u16,
+        length: f32,
+        velocity: u8,
+        channel: u8,
+        track_index: usize,
+    },
+    /// 本地音符移动（需要同步到其他用户）
+    LocalNoteMoved {
+        tick: f32,
+        key: u16,
+        length: f32,
+        tick_offset: f32,
+        key_offset: i16,
+        track_index: usize,
+    },
+}
+
+impl Event {
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::LocalNoteAdded { .. } => "本地音符已添加".to_string(),
+            Self::LocalNoteMoved { .. } => "本地音符已移动".to_string(),
+        }
+    }
+
+    pub fn local_note_added(
+        tick: f32,
+        key: u16,
+        length: f32,
+        velocity: u8,
+        channel: u8,
+        track_index: usize,
+    ) -> Self {
+        Self::LocalNoteAdded {
+            tick,
+            key,
+            length,
+            velocity,
+            channel,
+            track_index,
+        }
+    }
+    pub fn local_note_moved(
+        tick: f32,
+        key: u16,
+        length: f32,
+        tick_offset: f32,
+        key_offset: i16,
+        track_index: usize,
+    ) -> Self {
+        Self::LocalNoteMoved {
+            tick,
+            key,
+            length,
+            tick_offset,
+            key_offset,
+            track_index,
+        }
+    }
+}

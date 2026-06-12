@@ -30,21 +30,18 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<canvas::Action<Message>> {
-        match event {
-            canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                if let Some(pos) = cursor.position() {
-                    // 点击位置相对于走带区域左侧的 X 坐标
-                    let local_x = pos.x - bounds.x;
-                    // 转换为 tick 值：tick = (screen_x + scroll_x) / zoom_x
-                    let ppu = self.viewport.zoom_x.max(0.001);
-                    let tick = (local_x + self.viewport.scroll_x) / ppu;
-                    let snapped_tick = tick.max(0.0);
-                    return Some(canvas::Action::publish(Message::EditorAction(
-                        EditorAction::Scrubbed { tick: snapped_tick },
-                    )));
-                }
-            }
-            _ => {}
+        if let canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event
+            && let Some(pos) = cursor.position()
+        {
+            // 点击位置相对于走带区域左侧的 X 坐标
+            let local_x = pos.x - bounds.x;
+            // 转换为 tick 值：tick = (screen_x + scroll_x) / zoom_x
+            let ppu = self.viewport.zoom_x.max(0.001);
+            let tick = (local_x + self.viewport.scroll_x) / ppu;
+            let snapped_tick = tick.max(0.0);
+            return Some(canvas::Action::publish(Message::EditorAction(
+                EditorAction::Scrubbed { tick: snapped_tick },
+            )));
         }
         None
     }

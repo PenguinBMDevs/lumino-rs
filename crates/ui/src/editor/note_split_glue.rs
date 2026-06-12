@@ -4,6 +4,12 @@
 
 use super::Editor;
 
+/// 内部类型别名：合并操作中临时使用的音符元组
+///
+/// 字段顺序：原始索引、tick、key、length、velocity、channel
+#[allow(clippy::type_complexity)]
+type NoteTuple = (usize, f32, u16, f32, u8, u8);
+
 /// 内部辅助结构：一组待合并音符的信息
 struct NoteInfo {
     tick: f32,
@@ -85,7 +91,7 @@ impl Editor {
         let notes = &self.editor_state.data.notes;
 
         // 收集选中音符的信息并排序
-        let mut selected_notes: Vec<(usize, f32, u16, f32, u8, u8)> = selected
+        let mut selected_notes: Vec<NoteTuple> = selected
             .iter()
             .filter_map(|&i| {
                 notes
@@ -102,7 +108,7 @@ impl Editor {
         selected_notes.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // 分组：同 key 且 tick 连续或重叠
-        let mut groups: Vec<Vec<(usize, f32, u16, f32, u8, u8)>> = Vec::new();
+        let mut groups: Vec<Vec<NoteTuple>> = Vec::new();
         for note in &selected_notes {
             let added = if let Some(last_group) = groups.last_mut() {
                 let last_note = last_group.last().unwrap();
@@ -129,7 +135,7 @@ impl Editor {
         }
 
         // 过滤出真正需要合并的组（至少 2 个音符）
-        let groups_to_merge: Vec<Vec<(usize, f32, u16, f32, u8, u8)>> =
+        let groups_to_merge: Vec<Vec<NoteTuple>> =
             groups.into_iter().filter(|g| g.len() >= 2).collect();
 
         if groups_to_merge.is_empty() {
@@ -172,7 +178,7 @@ impl Editor {
         }
 
         // 按 insert_idx 从大到小排序，这样后面的操作不会影响前面的索引
-        all_ops.sort_by(|a, b| b.0.cmp(&a.0));
+        all_ops.sort_by_key(|a| std::cmp::Reverse(a.0));
 
         for (_insert_idx, info) in &all_ops {
             // 删除音符（从大到小）

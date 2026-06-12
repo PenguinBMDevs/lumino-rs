@@ -128,8 +128,8 @@ pub fn encode_binary_file(
     result.extend_from_slice(magic);
     result.extend_from_slice(&version.to_le_bytes());
 
-    let serialized = bincode::serialize(data)
-        .map_err(|e| ExportError::Encoding(format!("bincode: {e}")))?;
+    let serialized =
+        bincode::serialize(data).map_err(|e| ExportError::Encoding(format!("bincode: {e}")))?;
     let compressed = zstd::stream::encode_all(std::io::Cursor::new(serialized), 3)
         .map_err(|e| ExportError::Compression(format!("zstd: {e}")))?;
 
@@ -143,14 +143,10 @@ pub fn decode_binary_file<T: serde::de::DeserializeOwned>(
     expected_magic: &[u8; 4],
 ) -> ExportResult<T> {
     if bytes.len() < 6 {
-        return Err(ExportError::FileFormat(
-            "binary file: too short".into(),
-        ));
+        return Err(ExportError::FileFormat("binary file: too short".into()));
     }
     if &bytes[0..4] != expected_magic {
-        return Err(ExportError::FileFormat(
-            "binary file: invalid magic".into(),
-        ));
+        return Err(ExportError::FileFormat("binary file: invalid magic".into()));
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
     if version != 1 {
@@ -162,8 +158,7 @@ pub fn decode_binary_file<T: serde::de::DeserializeOwned>(
     let decompressed = zstd::stream::decode_all(std::io::Cursor::new(&bytes[6..]))
         .map_err(|e| ExportError::Compression(format!("decompression: {e}")))?;
 
-    bincode::deserialize(&decompressed)
-        .map_err(|e| ExportError::Encoding(format!("decode: {e}")))
+    bincode::deserialize(&decompressed).map_err(|e| ExportError::Encoding(format!("decode: {e}")))
 }
 
 #[cfg(test)]

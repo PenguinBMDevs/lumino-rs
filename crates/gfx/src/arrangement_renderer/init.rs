@@ -121,7 +121,6 @@ impl ArrangementRenderer {
             uniform_buffer,
             instance_buffer,
             bind_group,
-            bind_group_layout,
             capacity: INITIAL_CAPACITY,
             last_instance_count: 0,
         }

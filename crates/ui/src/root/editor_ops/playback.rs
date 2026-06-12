@@ -23,7 +23,7 @@ impl Root {
         }
 
         // 当前音轨音符（编辑过的，从 editor.notes 实时送）
-        let velocity_threshold = self.velocity_filter_threshold;
+        let velocity_threshold = self.visual.velocity_filter_threshold;
         let current_notes: Vec<NoteEvent> = self
             .editor
             .editor_state

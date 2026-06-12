@@ -16,7 +16,8 @@ impl super::Editor {
             self.editor_state.data.current_track,
             self.editor_state.data.notes.clone(),
         );
-        self.spatial.track_note_indices
+        self.spatial
+            .track_note_indices
             .borrow_mut()
             .remove(&self.editor_state.data.current_track);
 

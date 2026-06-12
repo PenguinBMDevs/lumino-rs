@@ -355,7 +355,7 @@ fn process_dms_track(index: usize, track: &[midly::TrackEvent]) -> crate::dms::D
                 channel.get_or_insert(ch_value);
                 match message {
                     MidiMessage::NoteOn { key, vel } => {
-                        let key_value = u8::from(*key);
+                        let key_value = *key;
                         let vel_value = u8::from(*vel);
                         if vel_value == 0 {
                             if let Some((start_tick, start_vel)) =
@@ -374,7 +374,7 @@ fn process_dms_track(index: usize, track: &[midly::TrackEvent]) -> crate::dms::D
                         }
                     }
                     MidiMessage::NoteOff { key, .. } => {
-                        let key_value = u8::from(*key);
+                        let key_value = *key;
                         if let Some((start_tick, start_vel)) =
                             active_notes.remove(&(ch_value, key_value))
                         {

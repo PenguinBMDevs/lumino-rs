@@ -24,3 +24,6 @@ puffin = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1.42", features = ["fs", "rt", "sync", "rt-multi-thread", "macros"] }
+
+[features]
+ldms-export = []

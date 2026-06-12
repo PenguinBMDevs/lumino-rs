@@ -8,9 +8,11 @@
 
 use crate::state::root_state::{DialogType, RootState};
 use crate::{editor, message, settings, sidebar, statusbar, titlebar, toolbar, window};
-use lumino_midi_loader::MidiDocument;
 use lumino_core::storage::config::UiConfig;
+use lumino_midi_loader::MidiDocument;
 use std::sync::Arc;
+
+pub use visual_state::VisualState;
 
 /// 根组件各组件的内存占用快照（字节和计数）
 #[derive(Debug, Clone, Default)]
@@ -43,6 +45,7 @@ pub mod handlers;
 mod midi_state;
 mod playback_state;
 mod view;
+mod visual_state;
 
 pub type Message = message::Message;
 pub type Theme = iced_core::Theme;
@@ -66,15 +69,8 @@ pub struct Root {
     pub(crate) state: RootState,
     /// 播放状态（播放管理器、Tempo 变化、MIDI 输出等）
     pub playback: playback_state::PlaybackState,
-    /// 洋葱皮音符原始数据缓存（tick, key, length, color）
-    /// 存原始数据而非 NoteInstance，因为 NoteInstance 含屏幕坐标（随 scroll/zoom 变化）
-    pub(crate) cached_onion_skin_notes: Option<Vec<(f32, u16, f32, iced_core::Color)>>,
-    /// 缓存失效计数器（只有音轨数据/开关变化才递增）
-    pub(crate) onion_skin_generation: u64,
-    /// 力度过滤阈值
-    pub(crate) velocity_filter_threshold: u8,
-    /// 力度面板高度（可拖拽调整）
-    pub(crate) velocity_panel_height: f32,
+    /// 视觉/渲染状态（洋葱皮缓存、力度面板等）
+    pub visual: visual_state::VisualState,
     /// MIDI 连接状态（文档引用、输入连接、缓冲区、API）
     pub midi: midi_state::MidiConnectionState,
     /// 录制状态
@@ -111,10 +107,10 @@ impl Root {
             is_progress_window: params.is_progress_window,
             state,
             playback: playback_state::PlaybackState::new(),
-            cached_onion_skin_notes: None,
-            onion_skin_generation: 0,
-            velocity_filter_threshold: params.ui_config.velocity_filter_threshold,
-            velocity_panel_height: crate::editor::velocity::VELOCITY_PANEL_HEIGHT,
+            visual: visual_state::VisualState::new(
+                params.ui_config.velocity_filter_threshold,
+                crate::editor::velocity::VELOCITY_PANEL_HEIGHT,
+            ),
             midi: midi_state::MidiConnectionState::new(),
             recording: editor::recording::RecordingState::new(),
         }
@@ -134,7 +130,7 @@ impl Root {
         root.editor
             .set_selection_box_mode(ui_config.selection_box_mode);
         // 同步力度过滤阈值
-        root.velocity_filter_threshold = ui_config.velocity_filter_threshold;
+        root.visual.velocity_filter_threshold = ui_config.velocity_filter_threshold;
         // 应用 256 键初始配置
         if ui_config.enable_256key {
             root.editor.set_visible_key_count(256);
@@ -261,7 +257,8 @@ impl Root {
 
     /// 获取播放状态
     pub fn is_playing(&self) -> bool {
-        self.playback.manager
+        self.playback
+            .manager
             .as_ref()
             .map(|m| m.state() == crate::playback::PlaybackState::Playing)
             .unwrap_or_default()
@@ -269,7 +266,7 @@ impl Root {
 
     /// 标记洋葱皮缓存全量失效（数据变化/音轨集合变化时调用）
     pub fn invalidate_onion_skin_cache(&mut self) {
-        self.onion_skin_generation += 1;
+        self.visual.onion_skin_generation += 1;
         self.editor.invalidate_onion_skin_cache();
     }
 
@@ -305,7 +302,8 @@ impl Root {
         // track_midi_events: HashMap<usize, Vec<MidiTrackEvent>>
         let track_midi_events_entries = self.playback.track_midi_events.len();
         let track_midi_events_bytes = self
-            .playback.track_midi_events
+            .playback
+            .track_midi_events
             .values()
             .map(|v| v.capacity() * std::mem::size_of::<crate::playback::MidiTrackEvent>())
             .sum();
@@ -313,6 +311,7 @@ impl Root {
         // cached_onion_skin_notes: Option<Vec<(f32, u16, f32, Color)>>
         // tuple = 4 + 2 + 4 + 16 = 26 bytes, with alignment ~28 bytes
         let cached_onion_skin_bytes = self
+            .visual
             .cached_onion_skin_notes
             .as_ref()
             .map(|v| v.capacity() * 28)
@@ -507,9 +506,9 @@ mod tests {
         let has_open_event = events.iter().any(|e| {
             matches!(
                 e,
-                crate::event::Event::Window(
-                    crate::event::window::Event::OpenSpeedChangeDialog
-                )
+                crate::event::Event::Window(crate::event::window::Event::Dialog(
+                    crate::event::window::dialog::Event::OpenSpeedChangeDialog
+                ))
             )
         });
         assert!(

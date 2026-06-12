@@ -97,9 +97,9 @@ impl Host {
             &track_order,
             &ARRANGEMENT_PALETTE,
             &track_visible,
-            self.root.midi.document.as_ref().map(|v| &**v),
+            self.root.midi.document.as_deref(),
             track_notes,
-            self.root.editor.playback_position as f32,
+            self.root.editor.playback_position,
             [arr_bg.r, arr_bg.g, arr_bg.b],
             [arr_lane_even.r, arr_lane_even.g, arr_lane_even.b],
             [arr_lane_odd.r, arr_lane_odd.g, arr_lane_odd.b],
@@ -361,7 +361,7 @@ impl Host {
         let bar_color_arr = [note_color.r, note_color.g, note_color.b, 0.30];
 
         let canvas = &editor.editor_state.canvas;
-        let panel_height = self.root.velocity_panel_height;
+        let panel_height = self.root.visual.velocity_panel_height;
         let panel_x = canvas.offset.x;
         let panel_y = canvas.offset.y + canvas.size.y;
         // velocity 面板在 grid Canvas 下方，中间隔了水平滚动条（20px）
@@ -720,7 +720,7 @@ impl Host {
                 es.canvas.offset.x,
                 es.canvas.offset.y + es.canvas.size.y + H_SCROLLBAR_HEIGHT,
                 es.canvas.size.x,
-                self.root.velocity_panel_height + PANEL_PADDING_Y + 10.0,
+                self.root.visual.velocity_panel_height + PANEL_PADDING_Y + 10.0,
             ))
         };
 

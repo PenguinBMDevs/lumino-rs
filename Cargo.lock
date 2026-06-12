@@ -3518,6 +3518,7 @@ name = "lumino-gfx"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "futures",
  "half",
  "puffin",
  "thiserror 2.0.18",

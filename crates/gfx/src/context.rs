@@ -154,6 +154,18 @@ impl Context {
         })
     }
 
+    /// 同步创建图形上下文（在无法使用 async 的初始化路径中使用）
+    ///
+    /// 内部使用 `futures::executor::block_on` 驱动异步初始化流程，
+    /// 避免在多个窗口管理器中重复书写 block_on 样板。
+    pub fn new_blocking(
+        target: impl Into<wgpu::SurfaceTarget<'static>>,
+        width: u32,
+        height: u32,
+    ) -> Result<Self> {
+        futures::executor::block_on(Self::new(target, width, height))
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
             return;

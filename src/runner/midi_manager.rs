@@ -350,7 +350,9 @@ impl MidiManager {
     /// 1. 在现有 API 上打开第二个连接（某些驱动可能不支持）
     /// 2. 创建全新 API 实例 + 连接（保存新 API 到 fallback_api 防止释放）
     /// 3. 兜底：取走主输出连接（播放期间音符预览静音，但至少播放功能正常）
-    pub fn create_additional_output(&mut self) -> Option<Box<dyn lumino_midi_io::OutputConnection>> {
+    pub fn create_additional_output(
+        &mut self,
+    ) -> Option<Box<dyn lumino_midi_io::OutputConnection>> {
         // ── 策略1：在现有 API 上尝试打开第二个连接 ──
         if let Some(api) = self.api.as_ref()
             && let Ok(outputs) = api.outputs()

@@ -149,7 +149,7 @@ impl ToolbarHandler {
             tracing::info!(
                 "Root: 播放管理器已初始化 (division={}, 过滤阈值={})",
                 division,
-                root.velocity_filter_threshold,
+                root.visual.velocity_filter_threshold,
             );
         }
 
@@ -190,15 +190,15 @@ impl ToolbarHandler {
     fn handle_toolbar_undo_redo(&self, _root: &mut Root, event: &crate::toolbar::Event) {
         if matches!(event, crate::toolbar::Event::Undo) {
             tracing::info!("Root: 触发撤销操作");
-            crate::event::emit(crate::event::Event::Menu(
-                crate::event::menu::Event::Edit(crate::event::menu::edit::Event::Undo),
-            ));
+            crate::event::emit(crate::event::Event::Menu(crate::event::menu::Event::Edit(
+                crate::event::menu::edit::Event::Undo,
+            )));
         }
         if matches!(event, crate::toolbar::Event::Redo) {
             tracing::info!("Root: 触发重做操作");
-            crate::event::emit(crate::event::Event::Menu(
-                crate::event::menu::Event::Edit(crate::event::menu::edit::Event::Redo),
-            ));
+            crate::event::emit(crate::event::Event::Menu(crate::event::menu::Event::Edit(
+                crate::event::menu::edit::Event::Redo,
+            )));
         }
     }
 
@@ -206,7 +206,7 @@ impl ToolbarHandler {
         if matches!(event, crate::toolbar::Event::OpenCollaborationDialog) {
             tracing::info!("Root: 触发打开协作对话框");
             crate::event::emit(crate::event::Event::Window(
-                crate::event::window::Event::OpenCollaborationDialog,
+                crate::event::window::Event::open_collaboration_dialog(),
             ));
         }
     }
@@ -318,7 +318,7 @@ impl ToolbarHandler {
         if root.toolbar.ctrl_pressed {
             tracing::info!("Root: Ctrl+点击变速按钮，打开变速对话框窗口");
             crate::event::emit(crate::event::Event::Window(
-                crate::event::window::Event::OpenSpeedChangeDialog,
+                crate::event::window::Event::open_speed_change_dialog(),
             ));
             return;
         }

@@ -10,8 +10,7 @@ use crate::editor::grid::theme::ThemeExt;
 use crate::{Renderer, Theme};
 
 use super::super::{
-    EditMode, VelocityPoint,
-    PANEL_PADDING_X, PANEL_PADDING_Y, POINT_RADIUS, RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT,
+    EditMode, PANEL_PADDING_X, PANEL_PADDING_Y, POINT_RADIUS, RESIZE_HANDLE_HEIGHT, VelocityPoint,
 };
 use super::{TempoPoint, VelocityCanvas, VelocityCanvasState};
 
@@ -23,7 +22,11 @@ pub fn velocity_bg_color(theme: &Theme) -> Color {
         return crate::theme::hc::RULER_BG;
     }
     let palette = theme.extended_palette().background;
-    if theme.is_light() { palette.weakest.color } else { palette.base.color }
+    if theme.is_light() {
+        palette.weakest.color
+    } else {
+        palette.base.color
+    }
 }
 
 /// 面板网格线颜色
@@ -107,7 +110,17 @@ pub fn tempo_bpm_to_y(bpm: f64, bounds_height: f32) -> f32 {
 
 /// 生成 BPM 标尺刻度值
 pub fn generate_tempo_levels() -> Vec<f64> {
-    vec![TEMPO_BPM_MIN, 60.0, 120.0, 240.0, 480.0, 1000.0, 2000.0, 5000.0, TEMPO_BPM_MAX]
+    vec![
+        TEMPO_BPM_MIN,
+        60.0,
+        120.0,
+        240.0,
+        480.0,
+        1000.0,
+        2000.0,
+        5000.0,
+        TEMPO_BPM_MAX,
+    ]
 }
 
 /// 将弯音值 (-8192 ~ +8191) 映射到面板 Y 坐标
@@ -151,7 +164,12 @@ pub fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
         let mut line_builder = path::Builder::new();
         line_builder.move_to(Point::new(PANEL_PADDING_X, y));
         line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
-        frame.stroke(&line_builder.build(), canvas::Stroke::default().with_color(line_color).with_width(1.0));
+        frame.stroke(
+            &line_builder.build(),
+            canvas::Stroke::default()
+                .with_color(line_color)
+                .with_width(1.0),
+        );
 
         frame.fill_text(canvas::Text {
             content: format!("{}", v),
@@ -168,7 +186,11 @@ pub fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
     }
 
     let border_color = velocity_border_color(theme);
-    frame.fill_rectangle(Point::new(0.0, draw_top), Size::new(width, 1.0), border_color);
+    frame.fill_rectangle(
+        Point::new(0.0, draw_top),
+        Size::new(width, 1.0),
+        border_color,
+    );
 }
 
 /// 绘制顶部 resize 拖拽手柄
@@ -176,13 +198,21 @@ pub fn draw_resize_handle(frame: &mut Frame<Renderer>, theme: &Theme, size: Size
     let handle_color = velocity_handle_bg_color(theme, hovered);
     let grab_bar_color = velocity_grab_bar_color(theme);
 
-    frame.fill_rectangle(Point::new(0.0, 0.0), Size::new(size.width, RESIZE_HANDLE_HEIGHT), handle_color);
+    frame.fill_rectangle(
+        Point::new(0.0, 0.0),
+        Size::new(size.width, RESIZE_HANDLE_HEIGHT),
+        handle_color,
+    );
 
     let bar_width = 40.0;
     let bar_height = 3.0;
     let bar_x = (size.width - bar_width) / 2.0;
     let bar_y = (RESIZE_HANDLE_HEIGHT - bar_height) / 2.0;
-    frame.fill_rectangle(Point::new(bar_x, bar_y), Size::new(bar_width, bar_height), grab_bar_color);
+    frame.fill_rectangle(
+        Point::new(bar_x, bar_y),
+        Size::new(bar_width, bar_height),
+        grab_bar_color,
+    );
 }
 
 /// 绘制速度（Tempo）折线图
@@ -193,7 +223,9 @@ pub fn draw_tempo_graph(
     size: Size,
     view: &ViewState,
 ) {
-    if points.is_empty() { return; }
+    if points.is_empty() {
+        return;
+    }
 
     let width = size.width;
     let height = size.height;
@@ -210,19 +242,34 @@ pub fn draw_tempo_graph(
             screen_points.push((pos, p.bpm));
         }
     }
-    if screen_points.is_empty() { return; }
+    if screen_points.is_empty() {
+        return;
+    }
 
-    screen_points.sort_by(|a, b| a.0.x.partial_cmp(&b.0.x).unwrap_or(std::cmp::Ordering::Equal));
+    screen_points.sort_by(|a, b| {
+        a.0.x
+            .partial_cmp(&b.0.x)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // 绘制折线
     let mut line_builder = path::Builder::new();
     line_builder.move_to(screen_points[0].0);
-    for &(pos, _) in screen_points.iter().skip(1) { line_builder.line_to(pos); }
-    frame.stroke(&line_builder.build(), canvas::Stroke::default().with_color(line_color).with_width(2.0));
+    for &(pos, _) in screen_points.iter().skip(1) {
+        line_builder.line_to(pos);
+    }
+    frame.stroke(
+        &line_builder.build(),
+        canvas::Stroke::default()
+            .with_color(line_color)
+            .with_width(2.0),
+    );
 
     // 合批绘制控制点
     let mut circle_builder = path::Builder::new();
-    for &(pos, _) in &screen_points { circle_builder.circle(pos, POINT_RADIUS); }
+    for &(pos, _) in &screen_points {
+        circle_builder.circle(pos, POINT_RADIUS);
+    }
     frame.fill(&circle_builder.build(), point_color);
 
     // BPM 标签
@@ -256,14 +303,22 @@ pub fn draw_curve_paint_feedback(
     let width = size.width;
     let height = size.height;
     let start_x = state.curve_start_x;
-    let cursor_local = cursor.position().map(|p| Point::new(p.x - bounds.x, p.y - bounds.y));
-    let Some(current_pos) = cursor_local else { return; };
+    let cursor_local = cursor
+        .position()
+        .map(|p| Point::new(p.x - bounds.x, p.y - bounds.y));
+    let Some(current_pos) = cursor_local else {
+        return;
+    };
     let current_x = current_pos.x;
     let min_x = start_x.min(current_x);
     let max_x = start_x.max(current_x);
 
     let range_color = velocity_curve_range_color(theme);
-    frame.fill_rectangle(Point::new(min_x, 0.0), Size::new(max_x - min_x, height), range_color);
+    frame.fill_rectangle(
+        Point::new(min_x, 0.0),
+        Size::new(max_x - min_x, height),
+        range_color,
+    );
 
     let start_vel = state.curve_start_velocity;
     let current_vel = VelocityCanvas::y_to_velocity(current_pos.y, height);
@@ -274,20 +329,35 @@ pub fn draw_curve_paint_feedback(
     let mut trail_builder = path::Builder::new();
     trail_builder.move_to(Point::new(start_x, start_y));
     trail_builder.line_to(Point::new(current_x, current_y));
-    frame.stroke(&trail_builder.build(), canvas::Stroke::default().with_color(trail_color).with_width(2.0));
+    frame.stroke(
+        &trail_builder.build(),
+        canvas::Stroke::default()
+            .with_color(trail_color)
+            .with_width(2.0),
+    );
 
     let affected_color = theme.extended_palette().secondary.strong.color;
     for point in points {
-        if !state.curve_affected.contains_key(&point.note_index) { continue; }
+        if !state.curve_affected.contains_key(&point.note_index) {
+            continue;
+        }
         let pos = VelocityCanvas::point_screen_pos(point, 0, width, height, view);
         let glow = Color::from_rgba(affected_color.r, affected_color.g, affected_color.b, 0.4);
         frame.fill(&canvas::Path::circle(pos, POINT_RADIUS + 4.0), glow);
-        frame.fill(&canvas::Path::circle(pos, POINT_RADIUS + 1.0), affected_color);
+        frame.fill(
+            &canvas::Path::circle(pos, POINT_RADIUS + 1.0),
+            affected_color,
+        );
     }
 }
 
 /// 绘制竖向网格线（小节线/拍线/半拍线）
-pub fn draw_vertical_lines(frame: &mut Frame<Renderer>, theme: &Theme, size: Size, view: &ViewState) {
+pub fn draw_vertical_lines(
+    frame: &mut Frame<Renderer>,
+    theme: &Theme,
+    size: Size,
+    view: &ViewState,
+) {
     let height = size.height;
     let width = size.width;
     let ppq = view.ppq as f32;
@@ -305,7 +375,14 @@ pub fn draw_vertical_lines(frame: &mut Frame<Renderer>, theme: &Theme, size: Siz
         let tick = measure as f32 * ticks_per_measure;
         let x = tick * view.zoom_x - view.scroll_x + view.keyboard_width;
         if x >= view.keyboard_width && x <= width {
-            frame.fill_rectangle(Point::new(x, line_y), Size::new(1.0, line_h), Color { a: 0.5, ..bar_color });
+            frame.fill_rectangle(
+                Point::new(x, line_y),
+                Size::new(1.0, line_h),
+                Color {
+                    a: 0.5,
+                    ..bar_color
+                },
+            );
         }
     }
 
@@ -314,10 +391,19 @@ pub fn draw_vertical_lines(frame: &mut Frame<Renderer>, theme: &Theme, size: Siz
     let beat_end = (visible_tick_end / ticks_per_beat).ceil() as u32;
     for beat in beat_start..=beat_end {
         let tick = beat as f32 * ticks_per_beat;
-        if (tick % ticks_per_measure as f32).abs() < f32::EPSILON { continue; }
+        if (tick % ticks_per_measure).abs() < f32::EPSILON {
+            continue;
+        }
         let x = tick * view.zoom_x - view.scroll_x + view.keyboard_width;
         if x >= view.keyboard_width && x <= width {
-            frame.fill_rectangle(Point::new(x, line_y), Size::new(1.0, line_h), Color { a: 0.3, ..beat_color });
+            frame.fill_rectangle(
+                Point::new(x, line_y),
+                Size::new(1.0, line_h),
+                Color {
+                    a: 0.3,
+                    ..beat_color
+                },
+            );
         }
     }
 
@@ -328,11 +414,21 @@ pub fn draw_vertical_lines(frame: &mut Frame<Renderer>, theme: &Theme, size: Siz
         let half_beat_end = (visible_tick_end / ticks_per_half_beat).ceil() as u32;
         for hb in half_beat_start..=half_beat_end {
             let tick = hb as f32 * ticks_per_half_beat;
-            if (tick % ticks_per_measure as f32).abs() < f32::EPSILON
-                || (tick % ticks_per_beat).abs() < f32::EPSILON { continue; }
+            if (tick % ticks_per_measure).abs() < f32::EPSILON
+                || (tick % ticks_per_beat).abs() < f32::EPSILON
+            {
+                continue;
+            }
             let x = tick * view.zoom_x - view.scroll_x + view.keyboard_width;
             if x >= view.keyboard_width && x <= width {
-                frame.fill_rectangle(Point::new(x, line_y), Size::new(1.0, line_h), Color { a: 0.15, ..half_beat_color });
+                frame.fill_rectangle(
+                    Point::new(x, line_y),
+                    Size::new(1.0, line_h),
+                    Color {
+                        a: 0.15,
+                        ..half_beat_color
+                    },
+                );
             }
         }
     }
@@ -356,7 +452,12 @@ pub fn draw_horizontal_lines(
                 let mut line_builder = path::Builder::new();
                 line_builder.move_to(Point::new(PANEL_PADDING_X, y));
                 line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
-                frame.stroke(&line_builder.build(), canvas::Stroke::default().with_color(line_color).with_width(1.0));
+                frame.stroke(
+                    &line_builder.build(),
+                    canvas::Stroke::default()
+                        .with_color(line_color)
+                        .with_width(1.0),
+                );
             }
         }
         EditMode::Bend => {
@@ -366,7 +467,12 @@ pub fn draw_horizontal_lines(
                 let mut line_builder = path::Builder::new();
                 line_builder.move_to(Point::new(PANEL_PADDING_X, y));
                 line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
-                frame.stroke(&line_builder.build(), canvas::Stroke::default().with_color(line_color).with_width(1.0));
+                frame.stroke(
+                    &line_builder.build(),
+                    canvas::Stroke::default()
+                        .with_color(line_color)
+                        .with_width(1.0),
+                );
             }
         }
         EditMode::Tempo => {
@@ -376,7 +482,12 @@ pub fn draw_horizontal_lines(
                 let mut line_builder = path::Builder::new();
                 line_builder.move_to(Point::new(PANEL_PADDING_X, y));
                 line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
-                frame.stroke(&line_builder.build(), canvas::Stroke::default().with_color(line_color).with_width(1.0));
+                frame.stroke(
+                    &line_builder.build(),
+                    canvas::Stroke::default()
+                        .with_color(line_color)
+                        .with_width(1.0),
+                );
             }
         }
     }
@@ -412,7 +523,13 @@ pub fn draw_scale_labels(
             }
         }
         EditMode::Bend => {
-            let bend_labels: [(i16, &str); 5] = [(-8192, "-8k"), (-4096, "-4k"), (0, "0"), (4096, "+4k"), (8191, "+8k")];
+            let bend_labels: [(i16, &str); 5] = [
+                (-8192, "-8k"),
+                (-4096, "-4k"),
+                (0, "0"),
+                (4096, "+4k"),
+                (8191, "+8k"),
+            ];
             for &(v, label) in &bend_labels {
                 let y = bend_value_to_y(v, size.height);
                 frame.fill_text(canvas::Text {

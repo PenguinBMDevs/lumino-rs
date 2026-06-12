@@ -8,9 +8,9 @@ mod state;
 pub use drawing::{
     bend_value_to_y, draw_background, draw_curve_paint_feedback, draw_horizontal_lines,
     draw_resize_handle, draw_scale_labels, draw_tempo_graph, draw_vertical_lines,
-    generate_tempo_levels, tempo_bpm_to_y, tempo_point_screen_pos,
-    velocity_bg_color, velocity_border_color, velocity_grab_bar_color,
-    velocity_grid_line_color, velocity_handle_bg_color, velocity_text_color,
+    generate_tempo_levels, tempo_bpm_to_y, tempo_point_screen_pos, velocity_bg_color,
+    velocity_border_color, velocity_grab_bar_color, velocity_grid_line_color,
+    velocity_handle_bg_color, velocity_text_color,
 };
 pub use state::VelocityCanvasState;
 
@@ -23,17 +23,16 @@ pub struct TempoPoint {
     pub bpm: f64,
 }
 
-use iced_core::{Color, Point, Rectangle, Size, alignment, mouse};
-use iced_widget::canvas::{self, Frame, Program, path};
+use iced_core::{Point, Rectangle, Size, mouse};
+use iced_widget::canvas::{self, Frame, Program};
 
 use crate::editor::editor_state::ViewState;
-use crate::editor::grid::theme::ThemeExt;
 use crate::message::VelocityAction;
 use crate::{Message, Renderer, Theme};
 
 use super::{
-    EditMode, VelocityPanel, VelocityPoint,
-    HIT_RADIUS, PANEL_PADDING_X, PANEL_PADDING_Y, POINT_RADIUS, RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT,
+    EditMode, HIT_RADIUS, PANEL_PADDING_X, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT,
+    VelocityPanel, VelocityPoint,
 };
 
 // iced_wgpu::Geometry is the concrete canvas geometry type for the wgpu backend
@@ -136,10 +135,18 @@ impl<'a> VelocityCanvas<'a> {
 
         for point in points {
             let point_x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
-            if point_x < min_x || point_x > max_x { continue; }
-            if has_selection && !selected_notes.contains(&point.note_index) { continue; }
+            if point_x < min_x || point_x > max_x {
+                continue;
+            }
+            if has_selection && !selected_notes.contains(&point.note_index) {
+                continue;
+            }
 
-            let t = if (max_x - min_x).abs() < f32::EPSILON { 1.0 } else { (point_x - min_x) / (max_x - min_x) };
+            let t = if (max_x - min_x).abs() < f32::EPSILON {
+                1.0
+            } else {
+                (point_x - min_x) / (max_x - min_x)
+            };
             let interp_velocity_f = start_velocity as f32 * (1.0 - t) + current_velocity as f32 * t;
             let new_velocity = interp_velocity_f.round().clamp(0.0, 127.0) as u8;
 
@@ -149,8 +156,12 @@ impl<'a> VelocityCanvas<'a> {
             }
         }
 
-        if updates.is_empty() { return None; }
-        Some(canvas::Action::publish(Message::Velocity(VelocityAction::CurvePaint(updates))))
+        if updates.is_empty() {
+            return None;
+        }
+        Some(canvas::Action::publish(Message::Velocity(
+            VelocityAction::CurvePaint(updates),
+        )))
     }
 }
 
@@ -166,8 +177,12 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
     ) -> Option<canvas::Action<Message>> {
         let bounds_size = bounds.size();
 
-        if !state._initialized { state._initialized = true; }
-        if bounds_size.width <= PANEL_PADDING_X * 2.0 { return None; }
+        if !state._initialized {
+            state._initialized = true;
+        }
+        if bounds_size.width <= PANEL_PADDING_X * 2.0 {
+            return None;
+        }
 
         let cursor_pos = match cursor.position() {
             Some(pos) => Point::new(pos.x - bounds.x, pos.y - bounds.y),
@@ -185,13 +200,24 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
 
                 let points = self.points();
                 let view = &self.editor.editor_state.view;
-                if points.is_empty() { return None; }
+                if points.is_empty() {
+                    return None;
+                }
 
-                if let Some(point_idx) = Self::hit_test(&points, cursor_pos, bounds_size.width, bounds_size.height, view) {
+                if let Some(point_idx) = Self::hit_test(
+                    &points,
+                    cursor_pos,
+                    bounds_size.width,
+                    bounds_size.height,
+                    view,
+                ) {
                     state.drag_point_idx = Some(point_idx);
                     state._drag_start_velocity = points[point_idx].velocity;
                     return Some(canvas::Action::publish(Message::Velocity(
-                        VelocityAction::DragStart(points[point_idx].note_index, points[point_idx].velocity),
+                        VelocityAction::DragStart(
+                            points[point_idx].note_index,
+                            points[point_idx].velocity,
+                        ),
                     )));
                 }
 
@@ -199,7 +225,9 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                     && cursor_pos.x <= bounds_size.width
                     && cursor_pos.y >= RESIZE_HANDLE_HEIGHT
                     && cursor_pos.y <= bounds_size.height;
-                if !in_draw_area { return None; }
+                if !in_draw_area {
+                    return None;
+                }
 
                 state.curve_active = true;
                 state.curve_start_x = cursor_pos.x;
@@ -207,17 +235,23 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                 state.curve_affected.clear();
                 state.drag_point_idx = None;
                 state.hover_point_idx = None;
-                Some(canvas::Action::publish(Message::Velocity(VelocityAction::CurveStart)))
+                Some(canvas::Action::publish(Message::Velocity(
+                    VelocityAction::CurveStart,
+                )))
             }
             canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if state.resize_dragging {
                     let abs_cursor_y = cursor.position().unwrap_or_default().y;
                     let delta_y = state.resize_drag_start_y - abs_cursor_y;
-                    let new_height = (state.resize_start_height + delta_y)
-                        .clamp(super::VELOCITY_PANEL_MIN_HEIGHT, super::VELOCITY_PANEL_MAX_HEIGHT);
+                    let new_height = (state.resize_start_height + delta_y).clamp(
+                        super::VELOCITY_PANEL_MIN_HEIGHT,
+                        super::VELOCITY_PANEL_MAX_HEIGHT,
+                    );
                     let current_panel_height = bounds_size.height + TOOLBAR_HEIGHT;
                     if (new_height - current_panel_height).abs() > 1.0 {
-                        return Some(canvas::Action::publish(Message::VelocityPanelResize(new_height)));
+                        return Some(canvas::Action::publish(Message::VelocityPanelResize(
+                            new_height,
+                        )));
                     }
                     return None;
                 }
@@ -232,13 +266,24 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                     if out_of_bounds {
                         state.curve_active = false;
                         state.curve_affected.clear();
-                        return Some(canvas::Action::publish(Message::Velocity(VelocityAction::CurveEnd)));
+                        return Some(canvas::Action::publish(Message::Velocity(
+                            VelocityAction::CurveEnd,
+                        )));
                     }
                     let points = self.points();
-                    if points.is_empty() { return None; }
+                    if points.is_empty() {
+                        return None;
+                    }
                     let view = &self.editor.editor_state.view;
                     let selected_notes = &self.editor.editor_state.interaction.selected_notes;
-                    return Self::update_curve_paint(state, &points, cursor_pos, bounds_size, view, selected_notes);
+                    return Self::update_curve_paint(
+                        state,
+                        &points,
+                        cursor_pos,
+                        bounds_size,
+                        view,
+                        selected_notes,
+                    );
                 }
 
                 let points = self.points();
@@ -261,23 +306,40 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
                     return None;
                 }
 
-                let hover_idx = Self::hit_test(&points, cursor_pos, bounds_size.width, bounds_size.height, view);
-                if hover_idx != state.hover_point_idx { state.hover_point_idx = hover_idx; }
+                let hover_idx = Self::hit_test(
+                    &points,
+                    cursor_pos,
+                    bounds_size.width,
+                    bounds_size.height,
+                    view,
+                );
+                if hover_idx != state.hover_point_idx {
+                    state.hover_point_idx = hover_idx;
+                }
                 None
             }
             canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                if state.resize_dragging { state.resize_dragging = false; return None; }
+                if state.resize_dragging {
+                    state.resize_dragging = false;
+                    return None;
+                }
 
                 if state.curve_active {
                     state.curve_active = false;
                     state.curve_affected.clear();
-                    return Some(canvas::Action::publish(Message::Velocity(VelocityAction::CurveEnd)));
+                    return Some(canvas::Action::publish(Message::Velocity(
+                        VelocityAction::CurveEnd,
+                    )));
                 }
 
                 let was_dragging = state.drag_point_idx.is_some();
                 state.drag_point_idx = None;
                 state._drag_start_velocity = 0;
-                if was_dragging { return Some(canvas::Action::publish(Message::Velocity(VelocityAction::DragEnd))); }
+                if was_dragging {
+                    return Some(canvas::Action::publish(Message::Velocity(
+                        VelocityAction::DragEnd,
+                    )));
+                }
                 None
             }
             _ => None,
@@ -322,7 +384,9 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
         _bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> mouse::Interaction {
-        if state.resize_dragging { return mouse::Interaction::ResizingVertically; }
+        if state.resize_dragging {
+            return mouse::Interaction::ResizingVertically;
+        }
 
         if let Some(cursor_pos) = cursor.position() {
             let local_y = cursor_pos.y - _bounds.y;
@@ -331,7 +395,9 @@ impl Program<Message, Theme, Renderer> for VelocityCanvas<'_> {
             }
         }
 
-        if state.curve_active { return mouse::Interaction::Crosshair; }
+        if state.curve_active {
+            return mouse::Interaction::Crosshair;
+        }
 
         if state.drag_point_idx.is_some() {
             mouse::Interaction::ResizingVertically

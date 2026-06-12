@@ -13,7 +13,10 @@ fn test_play_consumes_pending_midi_output() {
 
     // 初始状态：干净
     assert!(root.playback.manager.is_none(), "初始无播放管理器");
-    assert!(root.playback.pending_midi_output.is_none(), "初始无挂起 MIDI 输出");
+    assert!(
+        root.playback.pending_midi_output.is_none(),
+        "初始无挂起 MIDI 输出"
+    );
 
     add_two_test_notes(&mut root);
 
