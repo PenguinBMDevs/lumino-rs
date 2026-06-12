@@ -122,7 +122,6 @@ impl OnionRenderer {
         self.note_pool_buffer.size()
             + self.instance_indices_buffer.size()
             + self.indirect_buffer.size()
-            + self.index_buffer.size()
             + self.viewport_buffer.size()
             + self.track_mask_buffer.size()
             + self.track_color_buffer.size()

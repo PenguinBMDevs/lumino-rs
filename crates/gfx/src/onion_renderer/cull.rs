@@ -45,12 +45,9 @@ impl OnionRenderer {
             return;
         }
 
-        // 更新缓存状态
-        self.last_viewport = Some(full_viewport);
-        self.last_camera = Some(*camera);
-        self.notes_dirty = false;
-
         // 上传视口 uniform，仅在变化时上传
+        // 注意：notes_dirty 也会影响视口 uniform 中的 note_count/visible_start/visible_end，
+        // 因此要在更新缓存状态之前检查
         if viewport_changed || self.notes_dirty {
             queue.write_buffer(
                 &self.viewport_buffer,
@@ -62,6 +59,11 @@ impl OnionRenderer {
         if camera_changed {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[*camera]));
         }
+
+        // 更新缓存状态（必须在 upload 之后，否则 viewport_changed 和 self.notes_dirty 永远是 false）
+        self.last_viewport = Some(full_viewport);
+        self.last_camera = Some(*camera);
+        self.notes_dirty = false;
 
         // 如果 bind group 因 buffer 重建而脏了，先修复
         if self.bind_groups_dirty {

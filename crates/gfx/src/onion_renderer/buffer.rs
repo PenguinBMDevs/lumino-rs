@@ -1,5 +1,4 @@
 use super::{OnionNote, OnionRenderer};
-use wgpu::util::DeviceExt;
 
 impl OnionRenderer {
     pub(crate) fn create_note_pool_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
@@ -24,15 +23,6 @@ impl OnionRenderer {
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::VERTEX,
             mapped_at_creation: false,
-        })
-    }
-
-    pub(crate) fn create_quad_index_buffer(device: &wgpu::Device) -> wgpu::Buffer {
-        let indices: [u32; 6] = [0, 1, 2, 0, 2, 3];
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("onion_quad_index_buffer"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
         })
     }
 

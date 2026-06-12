@@ -212,7 +212,6 @@ impl OnionRenderer {
         let indices_capacity = Self::INITIAL_INDICES_CAPACITY;
         let instance_indices_buffer =
             Self::create_instance_indices_buffer(device, indices_capacity);
-        let index_buffer = Self::create_quad_index_buffer(device);
         let indirect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("onion_indirect_buffer"),
             size: std::mem::size_of::<DrawIndirectArgs>() as wgpu::BufferAddress,
@@ -265,7 +264,6 @@ impl OnionRenderer {
             note_pool_buffer,
             instance_indices_buffer,
             indirect_buffer,
-            index_buffer,
             viewport_buffer,
             track_mask_buffer,
             track_color_buffer,

@@ -5,6 +5,20 @@ pub use crate::{
 
 use crate::statusbar::performance::PerfData;
 
+// ─── 子模块：将较大 action 枚举拆至独立文件 ────────────────
+pub mod velocity;
+pub mod loop_range;
+pub mod audio_export;
+pub mod speed_change;
+pub mod pattern;
+
+// 重新导出，保持与现有 crate::message::XXX 路径兼容
+pub use velocity::VelocityAction;
+pub use loop_range::LoopRangeAction;
+pub use audio_export::AudioExportAction;
+pub use speed_change::SpeedChangeAction;
+pub use pattern::PatternAction;
+
 #[derive(Debug, Clone)]
 pub enum EditorAction {
     Pressed {
@@ -212,138 +226,6 @@ pub enum Message {
     SpeedChange(SpeedChangeAction),
     /// Pattern 编辑动作
     Pattern(PatternAction),
-}
-
-/// 循环区域动作
-#[derive(Debug, Clone)]
-pub enum LoopRangeAction {
-    /// 切换循环启用/禁用
-    Toggle,
-    /// 设置循环范围（起始tick，结束tick）
-    SetRange(f32, f32),
-    /// 清除循环范围
-    Clear,
-    /// 标尺上鼠标按下（用于拖拽循环边界）
-    RulerPressed { x: f32, y: f32 },
-    /// 标尺上鼠标移动
-    RulerMoved { x: f32, y: f32 },
-    /// 标尺上鼠标释放
-    RulerReleased,
-    /// 标尺双击（切换循环）
-    RulerDoubleClicked { x: f32, y: f32 },
-}
-
-/// 力度编辑面板动作
-#[derive(Debug, Clone)]
-pub enum VelocityAction {
-    /// 拖拽开始：需要 push history 进行撤销支持
-    /// 参数: (note_index, velocity)
-    DragStart(usize, u8),
-    /// 拖拽移动中：仅更新力度，不 push history
-    /// 参数: (note_index, new_velocity)
-    DragMove(usize, u8),
-    /// 拖拽结束
-    DragEnd,
-    /// 曲线绘制开始：push history 保存绘制前状态
-    CurveStart,
-    /// 曲线绘制更新：批量应用力度变化，不 push history
-    /// 参数: Vec<(note_index, u8)>
-    CurvePaint(Vec<(usize, u8)>),
-    /// 曲线绘制结束
-    CurveEnd,
-    /// 切换编辑模式（力度/Tempo/CC）
-    ToggleMode,
-    /// 选择 CC 控制器编号
-    CcControllerSelected(u8),
-    /// 选择 CC 或 Bend 选项
-    CcOptionSelected(crate::editor::velocity::CcOption),
-    /// 速度编辑：拖拽开始
-    /// 参数: (point_index 在 data.tempo_points 中的索引)
-    TempoDragStart(usize),
-    /// 速度编辑：拖拽移动中，更新 BPM
-    /// 参数: (point_index, new_bpm)
-    TempoDragMove(usize, f64),
-    /// 速度编辑：拖拽结束
-    TempoDragEnd,
-    /// 速度编辑：添加速度点 (tick, bpm)
-    TempoAdd(f32, f64),
-    /// 速度编辑：删除速度点
-    TempoDelete(usize),
-}
-
-/// Pattern 编辑动作（音轨总览中的音符片段）
-#[derive(Debug, Clone)]
-pub enum PatternAction {
-    /// 选中 Pattern
-    Selected(u32),
-    /// 左边缘拖拽开始（参数: pattern_id）
-    DragStartLeft(u32),
-    /// 右边缘拖拽开始（参数: pattern_id）
-    DragStartRight(u32),
-    /// 左边缘拖拽移动中（参数: pattern_id, new_start_tick）
-    DragMoveLeft(u32, f32),
-    /// 右边缘拖拽移动中（参数: pattern_id, new_length）
-    DragMoveRight(u32, f32),
-    /// 拖拽结束
-    DragEnd,
-}
-
-/// 音频导出动作
-#[derive(Debug, Clone)]
-pub enum AudioExportAction {
-    /// 打开音频导出对话框
-    OpenDialog,
-    /// 关闭音频导出对话框
-    CloseDialog,
-    /// 确认音频导出
-    Confirm,
-    /// 取消音频导出
-    Cancel,
-    /// 工程名称变更
-    ProjectNameChanged(String),
-    /// 输出格式变更
-    FormatChanged(crate::state::root_state::AudioFormat),
-    /// 采样率变更
-    SampleRateChanged(u32),
-    /// 通道数变更
-    ChannelsChanged(crate::state::root_state::AudioChannels),
-    /// 层数限制变更
-    LayersChanged(String),
-    /// 通道多线程变更
-    ChannelThreadingChanged(crate::state::root_state::ThreadingOption),
-    /// 按键多线程变更
-    KeyThreadingChanged(crate::state::root_state::ThreadingOption),
-    /// 插值算法变更
-    InterpolationChanged(crate::state::root_state::Interpolation),
-    /// 应用限制器变更
-    ApplyLimiterChanged(bool),
-    /// 禁用淡出变更
-    DisableFadeOutChanged(bool),
-    /// 线性包络变更
-    LinearEnvelopeChanged(bool),
-    /// 输出路径变更
-    OutputPathChanged(String),
-    /// 浏览输出路径
-    BrowseOutput,
-    /// 进度更新
-    Progress(f32, String),
-    /// 完成
-    Completed,
-    /// 失败
-    Failed(String),
-}
-
-/// 音符变速动作
-#[derive(Debug, Clone)]
-pub enum SpeedChangeAction {
-    /// 打开音符变速对话框
-    OpenDialog,
-    /// 关闭音符变速对话框
-    CloseDialog,
-    /// 确认音符变速
-    Confirm,
-    /// 速度倍率输入变更
-    FactorChanged(String),
 }
 
 pub const fn null() -> Message {

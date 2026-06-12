@@ -36,8 +36,6 @@ pub struct OnionRenderer {
     instance_indices_buffer: wgpu::Buffer,
     /// 间接绘制参数缓冲区
     indirect_buffer: wgpu::Buffer,
-    /// 索引缓冲区（单位矩形，6 个顶点）
-    index_buffer: wgpu::Buffer,
     /// 视口 uniform buffer
     viewport_buffer: wgpu::Buffer,
     /// 轨道掩码 uniform buffer

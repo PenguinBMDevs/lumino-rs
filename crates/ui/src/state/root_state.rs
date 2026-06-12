@@ -549,3 +549,95 @@ impl RootState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_speed_change_dialog_default() {
+        let state = SpeedChangeDialogState::new();
+        assert!(!state.is_open);
+        assert_eq!(state.factor_input, "0.5");
+    }
+
+    #[test]
+    fn test_speed_change_parse_factor_decimal() {
+        let mut state = SpeedChangeDialogState::new();
+        state.factor_input = "2.0".to_string();
+        assert!((state.parse_factor().unwrap() - 2.0).abs() < 0.001);
+
+        state.factor_input = "0.25".to_string();
+        assert!((state.parse_factor().unwrap() - 0.25).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_speed_change_parse_factor_fraction() {
+        let mut state = SpeedChangeDialogState::new();
+        state.factor_input = "1/3".to_string();
+        assert!((state.parse_factor().unwrap() - 1.0 / 3.0).abs() < 0.001);
+
+        state.factor_input = "3/2".to_string();
+        assert!((state.parse_factor().unwrap() - 1.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_speed_change_parse_factor_invalid() {
+        let mut state = SpeedChangeDialogState::new();
+        state.factor_input = "".to_string();
+        assert!(state.parse_factor().is_none());
+
+        state.factor_input = "-1.0".to_string();
+        assert!(state.parse_factor().is_none());
+
+        state.factor_input = "abc".to_string();
+        assert!(state.parse_factor().is_none());
+
+        state.factor_input = "1/0".to_string();
+        assert!(state.parse_factor().is_none());
+    }
+
+    #[test]
+    fn test_toggle_animation_default() {
+        let anim = ToggleAnimationState::default();
+        assert!(!anim.active);
+        assert!((anim.position - 0.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_toggle_animation_animate_to() {
+        let mut anim = ToggleAnimationState::new();
+        anim.animate_to(1.0);
+        assert!(anim.active);
+        assert!((anim.target - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_custom_precision_dialog_default() {
+        let state = CustomPrecisionDialogState::new();
+        assert!(!state.is_open);
+        assert_eq!(state.divisor, "2");
+        assert_eq!(state.note_value, "4");
+        assert_eq!(state.tuplet_count, "3");
+    }
+
+    #[test]
+    fn test_project_settings_dialog_default() {
+        let state = ProjectSettingsDialogState::new();
+        assert!(!state.is_open);
+    }
+
+    #[test]
+    fn test_collaboration_dialog_default() {
+        let state = CollaborationDialogState::new();
+        assert!(!state.is_open);
+    }
+
+    #[test]
+    fn test_root_state_default() {
+        let state = RootState::new();
+        assert!(!state.is_menu_open);
+        assert!(!state.is_dialog_window);
+        assert_eq!(state.dialog_type, DialogType::None);
+    }
+}

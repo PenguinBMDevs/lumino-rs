@@ -500,3 +500,65 @@ impl Editor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::editor::*;
+
+    #[test]
+    fn test_editor_action_dispatch() {
+        let mut editor = Editor::new();
+        assert!(!editor.notes_changed());
+
+        // DeletePressed 不应 panic（空 editor 下无 hover note）
+        editor.handle_action(super::EditorAction::DeletePressed);
+        assert!(!editor.notes_changed()); // 没有选中音符，notes_changed 不应变化
+
+        // Moved 不应 panic
+        editor.handle_action(super::EditorAction::Moved(iced_core::Point::new(100.0, 200.0)));
+    }
+
+    #[test]
+    fn test_memory_breakdown_empty() {
+        let editor = Editor::new();
+        let mem = editor.memory_breakdown();
+        assert_eq!(mem.notes_bytes, 0);
+        assert_eq!(mem.track_notes_count, 0);
+    }
+
+    #[test]
+    fn test_update_cursor_position() {
+        let mut editor = Editor::new();
+        editor.update_cursor_position(Some(iced_core::Point::new(100.0, 200.0)));
+        // 不应 panic
+        editor.update_cursor_position(None);
+    }
+
+    #[test]
+    fn test_spatial_index_default() {
+        let state = crate::editor::SpatialIndexState::default();
+        assert!(state.note_index.borrow().is_none());
+        assert!(!state.note_index_dirty.get()); // 默认未脏
+        assert!(state.query_cache.borrow().is_empty());
+    }
+
+    #[test]
+    fn test_onion_skin_state_default() {
+        let state = crate::editor::OnionSkinState::default();
+        assert!(!state.cache_valid);
+        assert!(state.cached_track_indices.is_empty());
+    }
+
+    #[test]
+    fn test_cache_invalidation() {
+        use crate::editor::CacheInvalidation;
+        assert_eq!(
+            CacheInvalidation::GRID.0 & CacheInvalidation::ALL.0,
+            CacheInvalidation::GRID.0
+        );
+        assert_eq!(
+            CacheInvalidation::NONE.0 | CacheInvalidation::KEYBOARD.0,
+            CacheInvalidation::KEYBOARD.0
+        );
+    }
+}

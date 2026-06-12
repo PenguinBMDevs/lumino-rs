@@ -62,13 +62,6 @@ pub struct CcBarRenderer {
     bind_group: wgpu::BindGroup,
     /// 当前缓冲区容量（实例数量）
     capacity: usize,
-    /// 缓存的实例数据
-    cached_instances: Vec<CcBarInstance>,
-    /// 缓存是否有效
-    cache_valid: bool,
-    /// 缓存参数
-    cache_viewport_size: (f32, f32),
-    cache_instance_count: usize,
 }
 
 impl CcBarRenderer {
@@ -168,10 +161,6 @@ impl CcBarRenderer {
             viewport_buffer,
             bind_group,
             capacity: Self::INITIAL_CAPACITY,
-            cached_instances: Vec::new(),
-            cache_valid: false,
-            cache_viewport_size: (0.0, 0.0),
-            cache_instance_count: 0,
         }
     }
 
@@ -227,17 +216,6 @@ impl CcBarRenderer {
         puffin::profile_function!();
 
         let instance_count = instances.len();
-        let params_changed = !self.cache_valid
-            || self.cache_viewport_size != viewport_size
-            || self.cache_instance_count != instance_count;
-
-        if params_changed {
-            self.cached_instances.clear();
-            self.cached_instances.extend_from_slice(instances);
-            self.cache_viewport_size = viewport_size;
-            self.cache_instance_count = instance_count;
-            self.cache_valid = true;
-        }
 
         // 扩容实例缓冲区
         if instance_count > self.capacity {

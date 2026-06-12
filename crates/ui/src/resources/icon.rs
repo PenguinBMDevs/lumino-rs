@@ -28,51 +28,77 @@ pub enum IconError {
     LockError,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Icon {
-    AngleRight,
-    FolderTree,
-    Arrangement,
-    Gear,
-    WaveForm,
-    GitHub,
-    WindowMin,
-    WindowMax,
-    WindowUnMax,
-    WindowClose,
-    Clock,
-    Eye,
-    EyeSlash,
-    Plus,
-    EllipsisVertical,
-    Users,
+// ─── 图标定义宏：一处定义 → 三处生成（枚举 + 缓存构建 + bytes 匹配） ───
+macro_rules! define_icons {
+    ($(($name:ident, $path:expr)),* $(,)?) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum Icon {
+            $($name,)*
+        }
+
+        fn build_icon_cache() -> HashMap<Icon, IconData> {
+            let mut map = HashMap::new();
+            $(
+                match render_svg_to_data(Icon::$name) {
+                    Ok(data) => { map.insert(Icon::$name, data); }
+                    Err(e) => { tracing::error!("加载图标 {:?} 失败: {}", Icon::$name, e); }
+                }
+            )*
+            map
+        }
+
+        fn bytes(icon: Icon) -> &'static [u8] {
+            match icon {
+                $(Icon::$name => include_bytes!($path),)*
+            }
+        }
+    };
+}
+
+define_icons! {
+    (AngleRight, "../../../../resources/icons/regular/angle-right.svg"),
+    (FolderTree, "../../../../resources/icons/regular/folder-tree.svg"),
+    (Arrangement, "../../../../resources/icons/regular/arrangement.svg"),
+    (Gear, "../../../../resources/icons/regular/gear.svg"),
+    (WaveForm, "../../../../resources/icons/regular/waveform.svg"),
+    (GitHub, "../../../../resources/icons/brands/github.svg"),
+    (WindowMin, "../../../../resources/icons/window/min.svg"),
+    (WindowMax, "../../../../resources/icons/window/max.svg"),
+    (WindowUnMax, "../../../../resources/icons/window/unmax.svg"),
+    (WindowClose, "../../../../resources/icons/window/close.svg"),
+    (Clock, "../../../../resources/icons/sidebar/clock.svg"),
+    (Eye, "../../../../resources/icons/sidebar/eye.svg"),
+    (EyeSlash, "../../../../resources/icons/sidebar/eye-slash.svg"),
+    (Plus, "../../../../resources/icons/sidebar/plus.svg"),
+    (EllipsisVertical, "../../../../resources/icons/sidebar/ellipsis-vertical.svg"),
+    (Users, "../../../../resources/icons/toolbar/users.svg"),
     // 工具栏图标
-    Play,
-    Pause,
-    SkipBackward,
-    SkipForward,
-    Undo,
-    Redo,
-    MousePointer,
-    Pencil,
-    Eraser,
-    Quantize,
-    Speed,
+    (Play, "../../../../resources/icons/toolbar/play.svg"),
+    (Pause, "../../../../resources/icons/toolbar/pause.svg"),
+    (SkipBackward, "../../../../resources/icons/toolbar/skip-backward.svg"),
+    (SkipForward, "../../../../resources/icons/toolbar/skip-forward.svg"),
+    (Undo, "../../../../resources/icons/toolbar/undo.svg"),
+    (Redo, "../../../../resources/icons/toolbar/redo.svg"),
+    (MousePointer, "../../../../resources/icons/toolbar/mouse-pointer.svg"),
+    (Pencil, "../../../../resources/icons/toolbar/pencil.svg"),
+    (Eraser, "../../../../resources/icons/toolbar/eraser.svg"),
+    (Quantize, "../../../../resources/icons/toolbar/quantize.svg"),
+    (Speed, "../../../../resources/icons/toolbar/speed.svg"),
     // 音符翻转图标
-    FlipVertical,
-    FlipHorizontal,
+    (FlipVertical, "../../../../resources/icons/toolbar/flip-vertical.svg"),
+    (FlipHorizontal, "../../../../resources/icons/toolbar/flip-horizontal.svg"),
     // 自动滚动图标
-    ArrowsLeftRight,
-    Scroll,
-    Ban,
-    // 标题栏图标
-    PencilOutline,
-    Keys,
+    (ArrowsLeftRight, "../../../../resources/icons/toolbar/arrows-left-right.svg"),
+    (Scroll, "../../../../resources/icons/toolbar/scroll.svg"),
+    (Ban, "../../../../resources/icons/toolbar/ban.svg"),
     // 移调/分割/合并 图标
-    TransposeUp,
-    TransposeDown,
-    Split,
-    Glue,
+    (TransposeUp, "../../../../resources/icons/toolbar/transpose-up.svg"),
+    (TransposeDown, "../../../../resources/icons/toolbar/transpose-down.svg"),
+    (Split, "../../../../resources/icons/toolbar/split.svg"),
+    (Glue, "../../../../resources/icons/toolbar/glue.svg"),
+    // 标题栏图标
+    (PencilOutline, "../../../../resources/icons/titlebar/pencil-outline.svg"),
+    (Keys, "../../../../resources/icons/titlebar/keys.svg"),
 }
 
 #[derive(Clone)]
@@ -84,66 +110,6 @@ struct IconData {
 
 static ICON_CACHE: Lazy<Mutex<HashMap<Icon, IconData>>> =
     Lazy::new(|| Mutex::new(build_icon_cache()));
-
-/// 构建完整的图标缓存（使用当前 HIDPI_ENABLED 状态决定渲染倍率）
-fn build_icon_cache() -> HashMap<Icon, IconData> {
-    let mut map = HashMap::new();
-    for &icon in &[
-        Icon::AngleRight,
-        Icon::FolderTree,
-        Icon::Arrangement,
-        Icon::Gear,
-        Icon::WaveForm,
-        Icon::GitHub,
-        Icon::WindowMin,
-        Icon::WindowMax,
-        Icon::WindowUnMax,
-        Icon::WindowClose,
-        Icon::Clock,
-        Icon::Eye,
-        Icon::EyeSlash,
-        Icon::Plus,
-        Icon::EllipsisVertical,
-        Icon::Users,
-        // 工具栏图标
-        Icon::Play,
-        Icon::Pause,
-        Icon::SkipBackward,
-        Icon::SkipForward,
-        Icon::Undo,
-        Icon::Redo,
-        Icon::MousePointer,
-        Icon::Pencil,
-        Icon::Eraser,
-        Icon::Quantize,
-        Icon::Speed,
-        // 音符翻转图标
-        Icon::FlipVertical,
-        Icon::FlipHorizontal,
-        // 自动滚动图标
-        Icon::ArrowsLeftRight,
-        Icon::Scroll,
-        Icon::Ban,
-        // 移调/分割/合并 图标
-        Icon::TransposeUp,
-        Icon::TransposeDown,
-        Icon::Split,
-        Icon::Glue,
-        // 标题栏图标
-        Icon::PencilOutline,
-        Icon::Keys,
-    ] {
-        match render_svg_to_data(icon) {
-            Ok(data) => {
-                map.insert(icon, data);
-            }
-            Err(e) => {
-                tracing::error!("加载图标 {:?} 失败: {}", icon, e);
-            }
-        }
-    }
-    map
-}
 
 /// 返回当前渲染倍率：HiDPI=2x，普通=1x
 fn get_current_scale() -> u32 {
@@ -320,68 +286,4 @@ fn render_svg(
     })
 }
 
-fn bytes(icon: Icon) -> &'static [u8] {
-    match icon {
-        Icon::AngleRight => include_bytes!("../../../../resources/icons/regular/angle-right.svg"),
-        Icon::FolderTree => include_bytes!("../../../../resources/icons/regular/folder-tree.svg"),
-        Icon::Arrangement => include_bytes!("../../../../resources/icons/regular/arrangement.svg"),
-        Icon::Gear => include_bytes!("../../../../resources/icons/regular/gear.svg"),
-        Icon::WaveForm => include_bytes!("../../../../resources/icons/regular/waveform.svg"),
-        Icon::GitHub => include_bytes!("../../../../resources/icons/brands/github.svg"),
-        Icon::WindowMin => include_bytes!("../../../../resources/icons/window/min.svg"),
-        Icon::WindowMax => include_bytes!("../../../../resources/icons/window/max.svg"),
-        Icon::WindowUnMax => include_bytes!("../../../../resources/icons/window/unmax.svg"),
-        Icon::WindowClose => include_bytes!("../../../../resources/icons/window/close.svg"),
-        Icon::Clock => include_bytes!("../../../../resources/icons/sidebar/clock.svg"),
-        Icon::Eye => include_bytes!("../../../../resources/icons/sidebar/eye.svg"),
-        Icon::EyeSlash => include_bytes!("../../../../resources/icons/sidebar/eye-slash.svg"),
-        Icon::Plus => include_bytes!("../../../../resources/icons/sidebar/plus.svg"),
-        Icon::EllipsisVertical => {
-            include_bytes!("../../../../resources/icons/sidebar/ellipsis-vertical.svg")
-        }
-        Icon::Users => include_bytes!("../../../../resources/icons/toolbar/users.svg"),
-        // 工具栏图标
-        Icon::Play => include_bytes!("../../../../resources/icons/toolbar/play.svg"),
-        Icon::Pause => include_bytes!("../../../../resources/icons/toolbar/pause.svg"),
-        Icon::SkipBackward => {
-            include_bytes!("../../../../resources/icons/toolbar/skip-backward.svg")
-        }
-        Icon::SkipForward => include_bytes!("../../../../resources/icons/toolbar/skip-forward.svg"),
-        Icon::Undo => include_bytes!("../../../../resources/icons/toolbar/undo.svg"),
-        Icon::Redo => include_bytes!("../../../../resources/icons/toolbar/redo.svg"),
-        Icon::MousePointer => {
-            include_bytes!("../../../../resources/icons/toolbar/mouse-pointer.svg")
-        }
-        Icon::Pencil => include_bytes!("../../../../resources/icons/toolbar/pencil.svg"),
-        Icon::Eraser => include_bytes!("../../../../resources/icons/toolbar/eraser.svg"),
-        Icon::Quantize => include_bytes!("../../../../resources/icons/toolbar/quantize.svg"),
-        Icon::Speed => include_bytes!("../../../../resources/icons/toolbar/speed.svg"),
-        // 音符翻转图标
-        Icon::FlipVertical => {
-            include_bytes!("../../../../resources/icons/toolbar/flip-vertical.svg")
-        }
-        Icon::FlipHorizontal => {
-            include_bytes!("../../../../resources/icons/toolbar/flip-horizontal.svg")
-        }
-        // 自动滚动图标
-        Icon::ArrowsLeftRight => {
-            include_bytes!("../../../../resources/icons/toolbar/arrows-left-right.svg")
-        }
-        Icon::Scroll => include_bytes!("../../../../resources/icons/toolbar/scroll.svg"),
-        Icon::Ban => include_bytes!("../../../../resources/icons/toolbar/ban.svg"),
-        // 移调/分割/合并 图标
-        Icon::TransposeUp => {
-            include_bytes!("../../../../resources/icons/toolbar/transpose-up.svg")
-        }
-        Icon::TransposeDown => {
-            include_bytes!("../../../../resources/icons/toolbar/transpose-down.svg")
-        }
-        Icon::Split => include_bytes!("../../../../resources/icons/toolbar/split.svg"),
-        Icon::Glue => include_bytes!("../../../../resources/icons/toolbar/glue.svg"),
-        // 标题栏图标
-        Icon::PencilOutline => {
-            include_bytes!("../../../../resources/icons/titlebar/pencil-outline.svg")
-        }
-        Icon::Keys => include_bytes!("../../../../resources/icons/titlebar/keys.svg"),
-    }
-}
+// bytes() 函数由 define_icons! 宏生成
