@@ -6,6 +6,30 @@ use crc32fast::Hasher;
 
 use crate::{ExportError, ExportResult};
 
+/// 从指定偏移读取固定长度的小端字节数组
+fn read_le_bytes<const N: usize>(bytes: &[u8], offset: usize) -> ExportResult<[u8; N]> {
+    bytes
+        .get(offset..offset + N)
+        .ok_or_else(|| ExportError::FileFormat(format!("read at {offset}: out of bounds")))?
+        .try_into()
+        .map_err(|_| ExportError::FileFormat(format!("read at {offset}: expected {N} bytes")))
+}
+
+/// 从指定偏移读取 u16（小端）
+fn read_u16_le(bytes: &[u8], offset: usize) -> ExportResult<u16> {
+    read_le_bytes::<2>(bytes, offset).map(u16::from_le_bytes)
+}
+
+/// 从指定偏移读取 u32（小端）
+fn read_u32_le(bytes: &[u8], offset: usize) -> ExportResult<u32> {
+    read_le_bytes::<4>(bytes, offset).map(u32::from_le_bytes)
+}
+
+/// 从指定偏移读取 u64（小端）
+fn read_u64_le(bytes: &[u8], offset: usize) -> ExportResult<u64> {
+    read_le_bytes::<8>(bytes, offset).map(u64::from_le_bytes)
+}
+
 /// LMPJ 归档文件头
 #[derive(Debug, Clone, Copy)]
 pub struct ArchiveHeader {
@@ -52,12 +76,12 @@ impl ArchiveHeader {
         }
         let mut magic = [0u8; 4];
         magic.copy_from_slice(&bytes[0..4]);
-        let version = u16::from_le_bytes([bytes[4], bytes[5]]);
+        let version = read_u16_le(bytes, 4)?;
         let compression_flags = bytes[6];
-        let file_table_offset = u64::from_le_bytes(bytes[7..15].try_into().unwrap());
-        let file_table_compressed_size = u64::from_le_bytes(bytes[15..23].try_into().unwrap());
-        let file_table_original_size = u64::from_le_bytes(bytes[23..31].try_into().unwrap());
-        let created_at = u64::from_le_bytes(bytes[31..39].try_into().unwrap());
+        let file_table_offset = read_u64_le(bytes, 7)?;
+        let file_table_compressed_size = read_u64_le(bytes, 15)?;
+        let file_table_original_size = read_u64_le(bytes, 23)?;
+        let created_at = read_u64_le(bytes, 31)?;
         let mut _reserved = [0u8; 16];
         _reserved.copy_from_slice(&bytes[39..55]);
         Ok(Self {
@@ -124,13 +148,13 @@ impl FileEntry {
             .map_err(|e| ExportError::FileFormat(format!("file entry path: {e}")))?;
         pos += path_len;
 
-        let data_offset = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
+        let data_offset = read_u64_le(bytes, pos)?;
         pos += 8;
-        let compressed_size = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
+        let compressed_size = read_u64_le(bytes, pos)?;
         pos += 8;
-        let original_size = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap());
+        let original_size = read_u64_le(bytes, pos)?;
         pos += 8;
-        let crc32 = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap());
+        let crc32 = read_u32_le(bytes, pos)?;
         pos += 4;
         let is_compressed = bytes[pos] != 0;
         pos += 1;
@@ -172,7 +196,7 @@ impl FileTable {
         if bytes.len() < 4 {
             return Err(ExportError::FileFormat("file table: too short".into()));
         }
-        let count = u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as usize;
+        let count = read_u32_le(bytes, 0)? as usize;
         let mut entries = Vec::with_capacity(count);
         let mut pos = 4;
 

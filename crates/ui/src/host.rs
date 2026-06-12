@@ -215,8 +215,15 @@ impl Host {
     /// - 单线程模式：dispatch + 同步等待（仍能在本帧内并行化）
     fn ensure_note_worker(&mut self) {
         if self.render_ctx.note_worker.is_none() {
-            self.render_ctx.note_worker = Some(NoteWorker::spawn());
-            tracing::info!("NoteWorker: spawned");
+            match NoteWorker::spawn() {
+                Some(worker) => {
+                    self.render_ctx.note_worker = Some(worker);
+                    tracing::info!("NoteWorker: spawned");
+                }
+                None => {
+                    tracing::error!("NoteWorker: failed to spawn, onion skin will run on main thread");
+                }
+            }
         }
     }
 

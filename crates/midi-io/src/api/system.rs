@@ -39,7 +39,9 @@ impl System {
         &self,
         f: impl FnOnce(&midir::MidiInput) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        let guard = self.midi_input.lock().unwrap();
+        let guard = self.midi_input.lock().map_err(|e| {
+            Error::InitFailed(format!("MIDI input lock poisoned: {e}"))
+        })?;
         let input = guard
             .as_ref()
             .ok_or_else(|| Error::InitFailed("MIDI 输入未初始化".into()))?;
@@ -50,7 +52,9 @@ impl System {
         &self,
         f: impl FnOnce(&midir::MidiOutput) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        let guard = self.midi_output.lock().unwrap();
+        let guard = self.midi_output.lock().map_err(|e| {
+            Error::InitFailed(format!("MIDI output lock poisoned: {e}"))
+        })?;
         let output = guard
             .as_ref()
             .ok_or_else(|| Error::InitFailed("MIDI 输出未初始化".into()))?;

@@ -99,7 +99,9 @@ async fn main() -> Result<(), winit::error::EventLoopError> {
 
     // 启动内存监控：主监控（95% → abort）+ 看门狗（100% → SIGKILL）
     // 看门狗完全独立，用 /proc/{pid} 而非 /proc/self，系统可用 < 350MB 也触发
-    lumino_memory_monitor::spawn_all_monitors();
+    if !lumino_memory_monitor::spawn_all_monitors() {
+        tracing::warn!("内存监控线程启动失败，程序继续运行但缺少 OOM 防护");
+    }
 
     let cli = cli::Cli::parse_args();
     let test_config = cli.get_test_config();

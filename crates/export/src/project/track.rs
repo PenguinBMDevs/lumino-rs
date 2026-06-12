@@ -119,7 +119,7 @@ impl LmtrackData {
     /// 获取 CompactEvent 迭代器（零拷贝视图）
     pub fn compact_events(&self) -> impl Iterator<Item = CompactEvent> + '_ {
         self.events.chunks_exact(12).map(|chunk| {
-            let bytes: &[u8; 12] = chunk.try_into().expect("12 bytes");
+            let bytes: &[u8; 12] = chunk.try_into().unwrap_or(&[0; 12]);
             CompactEvent::from_bytes(bytes)
         })
     }

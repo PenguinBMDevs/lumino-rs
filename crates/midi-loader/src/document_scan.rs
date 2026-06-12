@@ -141,7 +141,8 @@ pub fn scan_track_names(data: &[u8]) -> Vec<Option<String>> {
 pub fn decode_midi_text(bytes: &[u8]) -> String {
     // 1. 先检查纯 ASCII（ASCII 是有效的 UTF-8，可直接转换）
     if bytes.is_ascii() {
-        return String::from_utf8(bytes.to_vec()).expect("ASCII 一定是有效 UTF-8");
+        return String::from_utf8(bytes.to_vec())
+            .unwrap_or_else(|_| String::from_utf8_lossy(bytes).into_owned());
     }
 
     // 2. 尝试 UTF-8

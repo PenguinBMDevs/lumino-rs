@@ -38,18 +38,21 @@ impl Default for TempoEnvelope {
 impl TempoEnvelope {
     /// 获取指定 tick 位置的 BPM 值（线性插值）
     pub fn get_bpm_at(&self, tick: f32) -> f64 {
-        if self.points.is_empty() {
+        let Some(first) = self.points.first() else {
             return 120.0;
-        }
+        };
+        let Some(last) = self.points.last() else {
+            return 120.0;
+        };
 
         // 如果 tick 在第一个点之前
-        if tick <= self.points[0].tick {
-            return self.points[0].bpm;
+        if tick <= first.tick {
+            return first.bpm;
         }
 
         // 如果 tick 在最后一个点之后
-        if tick >= self.points.last().unwrap().tick {
-            return self.points.last().unwrap().bpm;
+        if tick >= last.tick {
+            return last.bpm;
         }
 
         // 线性插值
@@ -62,7 +65,7 @@ impl TempoEnvelope {
             }
         }
 
-        self.points.last().unwrap().bpm
+        last.bpm
     }
 }
 

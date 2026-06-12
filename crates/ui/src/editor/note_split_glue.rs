@@ -110,23 +110,22 @@ impl Editor {
         // 分组：同 key 且 tick 连续或重叠
         let mut groups: Vec<Vec<NoteTuple>> = Vec::new();
         for note in &selected_notes {
-            let added = if let Some(last_group) = groups.last_mut() {
-                let last_note = last_group.last().unwrap();
-                if last_note.2 == note.2 {
-                    // 同 key，检查是否相邻或重叠
-                    let last_end = last_note.1 + last_note.3;
-                    if note.1 <= last_end + 1.0 {
-                        // 相邻或重叠，加入当前组
-                        last_group.push(*note);
-                        true
-                    } else {
-                        false
+            let added = match groups.last_mut() {
+                Some(last_group) => match last_group.last() {
+                    Some(last_note) if last_note.2 == note.2 => {
+                        // 同 key，检查是否相邻或重叠
+                        let last_end = last_note.1 + last_note.3;
+                        if note.1 <= last_end + 1.0 {
+                            // 相邻或重叠，加入当前组
+                            last_group.push(*note);
+                            true
+                        } else {
+                            false
+                        }
                     }
-                } else {
-                    false
-                }
-            } else {
-                false
+                    _ => false,
+                },
+                None => false,
             };
 
             if !added {

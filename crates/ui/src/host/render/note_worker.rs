@@ -82,17 +82,20 @@ pub(crate) struct NoteWorker {
 
 impl NoteWorker {
     /// 创建并启动 worker 线程
-    pub fn spawn() -> Self {
+    pub fn spawn() -> Option<Self> {
         let (tx, rx) = mpsc::channel::<OnionSkinJob>();
         let _thread = thread::Builder::new()
             .name("onion-worker".into())
             .spawn(move || Self::run_loop(rx))
-            .expect("Failed to spawn NoteWorker thread");
+            .map_err(|e| {
+                tracing::error!("Failed to spawn NoteWorker thread: {}", e);
+            })
+            .ok()?;
 
-        Self {
+        Some(Self {
             sender: tx,
             _thread,
-        }
+        })
     }
 
     /// Worker 主循环：接收作业 → 收集 OnionNote → 写入双缓冲 → swap

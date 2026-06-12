@@ -133,7 +133,7 @@ struct OwnedSmf {
 
 /// 导出 MIDI 到字节数组
 pub fn export_midi_to_bytes(data: &MidiExportData) -> ExportResult<Vec<u8>> {
-    let owned = build_midi_smf(data);
+    let owned = build_midi_smf(data)?;
 
     let mut buffer = Vec::new();
     owned
@@ -145,7 +145,7 @@ pub fn export_midi_to_bytes(data: &MidiExportData) -> ExportResult<Vec<u8>> {
 }
 
 /// 构建 MIDI SMF 结构
-fn build_midi_smf(data: &MidiExportData) -> OwnedSmf {
+fn build_midi_smf(data: &MidiExportData) -> ExportResult<OwnedSmf> {
     // 持有所有轨道名称数据的所有权，确保在 Smf 生命周期内数据有效
     let mut name_buffers: Vec<Vec<u8>> = Vec::new();
     let leaked_names: Vec<Option<&'static [u8]>> = data
@@ -181,7 +181,7 @@ fn build_midi_smf(data: &MidiExportData) -> OwnedSmf {
     // 对于格式 0，所有事件合并到一个轨道
     if data.options.format == 0 {
         let combined_name = leaked_names.first().and_then(|n| *n);
-        let mut combined_track = build_combined_track(data, combined_name);
+        let mut combined_track = build_combined_track(data, combined_name)?;
         combined_track.sort_by_key(|e| e.delta);
         convert_to_delta_times(&mut combined_track);
         tracks.push(combined_track);
@@ -191,7 +191,7 @@ fn build_midi_smf(data: &MidiExportData) -> OwnedSmf {
         let mut first_track = true;
 
         for (track_data, &name_bytes) in data.tracks.iter().zip(leaked_names.iter()) {
-            let mut track = build_track(track_data, first_track, name_bytes);
+            let mut track = build_track(track_data, first_track, name_bytes)?;
             track.sort_by_key(|e| e.delta);
             convert_to_delta_times(&mut track);
             tracks.push(track);
@@ -199,17 +199,17 @@ fn build_midi_smf(data: &MidiExportData) -> OwnedSmf {
         }
     }
 
-    OwnedSmf {
+    Ok(OwnedSmf {
         smf: Smf { header, tracks },
         _name_buffers: name_buffers,
-    }
+    })
 }
 
 /// 构建合并轨道（格式 0）
 fn build_combined_track(
     data: &MidiExportData,
     track_name: Option<&'static [u8]>,
-) -> Track<'static> {
+) -> ExportResult<Track<'static>> {
     let mut events: Vec<TrackEvent<'static>> = Vec::new();
 
     // 轨道名称（使用第一个轨道的名称）
@@ -222,10 +222,10 @@ fn build_combined_track(
 
     // 收集所有轨道的所有事件
     for track_data in &data.tracks {
-        collect_track_events(track_data, &mut events, true);
+        collect_track_events(track_data, &mut events, true)?;
     }
 
-    events
+    Ok(events)
 }
 
 /// 构建单个轨道
@@ -233,7 +233,7 @@ fn build_track(
     track_data: &MidiTrackData,
     include_globals: bool,
     track_name: Option<&'static [u8]>,
-) -> Track<'static> {
+) -> ExportResult<Track<'static>> {
     let mut events: Vec<TrackEvent<'static>> = Vec::new();
 
     // 轨道名称（使用已在 build_midi_smf 中预泄漏的名称引用）
@@ -244,7 +244,7 @@ fn build_track(
         });
     }
 
-    collect_track_events(track_data, &mut events, include_globals);
+    collect_track_events(track_data, &mut events, include_globals)?;
 
     // 轨道结束
     events.push(TrackEvent {
@@ -252,7 +252,7 @@ fn build_track(
         kind: TrackEventKind::Meta(MetaMessage::EndOfTrack),
     });
 
-    events
+    Ok(events)
 }
 
 /// 收集轨道事件
@@ -260,7 +260,7 @@ fn collect_track_events(
     track_data: &MidiTrackData,
     events: &mut Vec<TrackEvent<'static>>,
     include_globals: bool,
-) {
+) -> ExportResult<()> {
     // 音符事件
     for note in &track_data.notes {
         // 音符开启
@@ -293,7 +293,9 @@ fn collect_track_events(
     if include_globals {
         for tempo in &track_data.tempos {
             let tempo_value = midly::num::u24::try_from(tempo.tempo)
-                .expect("速度值超出 u24 范围（0~16777215 µs/beat），请检查数据来源");
+                .ok_or_else(|| ExportError::InvalidData(
+                    format!("tempo {} exceeds u24 range (0~16777215 µs/beat)", tempo.tempo)
+                ))?;
             events.push(TrackEvent {
                 delta: tempo.tick.into(),
                 kind: TrackEventKind::Meta(MetaMessage::Tempo(tempo_value)),
@@ -352,6 +354,8 @@ fn collect_track_events(
             });
         }
     }
+
+    Ok(())
 }
 
 /// 将绝对时间转换为增量时间
@@ -537,7 +541,7 @@ mod tests {
             },
             tracks: vec![track],
         };
-        let owned = build_midi_smf(&data);
+        let owned = build_midi_smf(&data).expect("build_midi_smf should succeed for valid data");
         assert_eq!(owned.smf.tracks.len(), 1, "should have 1 track");
         // 第一个轨道事件应该是 TrackName meta 事件
         if let Some(first_event) = owned.smf.tracks[0].first() {

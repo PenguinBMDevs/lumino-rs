@@ -1,5 +1,5 @@
 use lumino_collaboration::{ClientConfig, CollaborationClient};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// 协作服务错误消息常量
 mod messages {
@@ -7,6 +7,10 @@ mod messages {
     pub const DEFAULT_ROOM_NAME: &str = "默认房间";
     /// 客户端未初始化
     pub const CLIENT_NOT_INITIALIZED: &str = "协作客户端未初始化";
+    /// 客户端锁被污染
+    pub const CLIENT_LOCK_POISONED: &str = "协作客户端锁被污染";
+    /// 断开信号锁被污染
+    pub const DISCONNECT_LOCK_POISONED: &str = "协作断开信号锁被污染";
 }
 
 /// 协作服务 - 处理协作连接和事件
@@ -31,6 +35,20 @@ impl CollaborationService {
             client: Arc::new(Mutex::new(None)),
             disconnect_tx: Arc::new(Mutex::new(None)),
         }
+    }
+
+    fn lock_client(&self) -> Result<MutexGuard<'_, Option<CollaborationClient>>, String> {
+        self.client
+            .lock()
+            .map_err(|_| messages::CLIENT_LOCK_POISONED.to_string())
+    }
+
+    fn lock_disconnect_tx(
+        &self,
+    ) -> Result<MutexGuard<'_, Option<tokio::sync::oneshot::Sender<()>>>, String> {
+        self.disconnect_tx
+            .lock()
+            .map_err(|_| messages::DISCONNECT_LOCK_POISONED.to_string())
     }
 
     /// 连接到协作服务器（异步）
@@ -61,18 +79,27 @@ impl CollaborationService {
         });
 
         let (tx, rx) = tokio::sync::oneshot::channel();
-        *self.disconnect_tx.lock().unwrap() = Some(tx);
+        *self.lock_disconnect_tx()? = Some(tx);
 
         // 将客户端放入 Mutex 后，Spawn 后台任务取出并操作
-        *self.client.lock().unwrap() = Some(client);
+        *self.lock_client()? = Some(client);
         let client_arc = self.client.clone();
 
         tokio::spawn(async move {
             let mut rx = rx; // `&mut rx` 需要可变绑定
             // 从 Mutex 中取出客户端（作用域块确保 guard 在 .await 前被销毁）
-            let mut client = {
-                let mut guard = client_arc.lock().unwrap();
-                guard.take().expect("客户端在连接前已被释放")
+            let mut client = match client_arc.lock() {
+                Ok(mut guard) => match guard.take() {
+                    Some(c) => c,
+                    None => {
+                        tracing::error!("协作: 客户端在连接前已被释放");
+                        return;
+                    }
+                },
+                Err(_) => {
+                    tracing::error!("协作: {}", messages::CLIENT_LOCK_POISONED);
+                    return;
+                }
             };
 
             let result: Result<(), String> = if let Some(code) = invite_code {
@@ -97,7 +124,11 @@ impl CollaborationService {
             }
 
             // 将客户端放回（连接成功或失败后都可被后续操作访问）
-            *client_arc.lock().unwrap() = Some(client);
+            if let Ok(mut guard) = client_arc.lock() {
+                *guard = Some(client);
+            } else {
+                tracing::error!("协作: 连接完成后无法放回客户端: {}", messages::CLIENT_LOCK_POISONED);
+            }
 
             tokio::select! {
                 _ = &mut rx => tracing::info!("协作: 收到断开信号，后台任务退出"),
@@ -110,13 +141,18 @@ impl CollaborationService {
 
     /// 异步断开（供 connect 内部使用）
     async fn disconnect_async(&self) {
-        if let Some(tx) = self.disconnect_tx.lock().unwrap().take() {
-            let _ = tx.send(());
+        if let Ok(mut guard) = self.lock_disconnect_tx() {
+            if let Some(tx) = guard.take() {
+                let _ = tx.send(());
+            }
         }
         // 作用域块确保 MutexGuard（!Send）在 .await 前被销毁
-        let mut client = {
-            let mut guard = self.client.lock().unwrap();
-            guard.take()
+        let mut client = match self.lock_client() {
+            Ok(mut guard) => guard.take(),
+            Err(_) => {
+                tracing::error!("协作: {}", messages::CLIENT_LOCK_POISONED);
+                return;
+            }
         };
         if let Some(ref mut c) = client {
             let _ = c.disconnect().await;
@@ -223,7 +259,7 @@ impl CollaborationService {
             Box<dyn std::future::Future<Output = lumino_collaboration::Result<()>> + 'a>,
         >,
     {
-        let mut guard = self.client.lock().unwrap();
+        let mut guard = self.lock_client()?;
         let client = guard.take();
         drop(guard);
 
@@ -235,7 +271,11 @@ impl CollaborationService {
             None => Err(messages::CLIENT_NOT_INITIALIZED.to_string()),
         };
 
-        *self.client.lock().unwrap() = client;
+        if let Ok(mut guard) = self.lock_client() {
+            *guard = client;
+        } else {
+            tracing::error!("协作: 异步调用后无法放回客户端: {}", messages::CLIENT_LOCK_POISONED);
+        }
         result
     }
 
@@ -249,10 +289,12 @@ impl CollaborationService {
 
     /// 断开连接（同步 API）
     pub fn disconnect(&self) -> Result<(), String> {
-        if let Some(tx) = self.disconnect_tx.lock().unwrap().take() {
-            let _ = tx.send(());
+        if let Ok(mut guard) = self.lock_disconnect_tx() {
+            if let Some(tx) = guard.take() {
+                let _ = tx.send(());
+            }
         }
-        let mut guard = self.client.lock().unwrap();
+        let mut guard = self.lock_client()?;
         let mut client = guard.take();
         drop(guard);
 
@@ -276,7 +318,7 @@ impl CollaborationService {
     ///
     /// 使用同步锁，无 block_on，避免嵌套 runtime panic。
     pub fn is_connected(&self) -> bool {
-        self.client.lock().unwrap().is_some()
+        self.lock_client().map_or(false, |guard| guard.is_some())
     }
 }
 

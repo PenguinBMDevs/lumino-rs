@@ -170,88 +170,97 @@ fn watchdog_force_kill(pid: u32) {
 /// - 系统可用内存阈值（< 350MB 时即使 RSS 未超限也触发，macOS 使用 host_statistics64）
 /// - 自己的终止手段（SIGKILL / TerminateProcess，不可被捕获/阻塞/忽略）
 ///
+/// 返回 `true` 表示线程已启动（或之前已启动），`false` 表示创建线程失败。
+///
 /// ## 平台说明
 /// - **Linux / Windows**: 正常启动看门狗线程
 /// - **macOS**: 禁用，第一个没法用，第二个不需要，系统自己有（见 [`super::spawn_all_monitors()`] 说明）
 #[cfg(not(target_os = "macos"))]
-pub fn spawn_watchdog() {
+pub fn spawn_watchdog() -> bool {
     static SPAWNED: OnceLock<std::thread::JoinHandle<()>> = OnceLock::new();
 
-    SPAWNED.get_or_init(|| {
-        let pid = std::process::id();
-        let total = crate::platform::get_total_physical_memory();
-        let soft_limit = total.saturating_sub(crate::DEFAULT_RESERVE_BYTES);
+    if SPAWNED.get().is_some() {
+        return true;
+    }
 
-        tracing::info!(
-            "MemoryWatchdog: 启动 (PID={}, soft_limit={} MB, sys_available_min={} MB, poll={}ms)",
-            pid,
-            soft_limit / 1024 / 1024,
-            WATCHDOG_MIN_AVAILABLE_BYTES / 1024 / 1024,
-            WATCHDOG_INTERVAL_MS,
-        );
+    let pid = std::process::id();
+    let total = crate::platform::get_total_physical_memory();
+    let soft_limit = total.saturating_sub(crate::DEFAULT_RESERVE_BYTES);
 
-        let handle = std::thread::Builder::new()
-            .name("memory-watchdog".into())
-            .spawn(move || {
-                loop {
-                    std::thread::sleep(std::time::Duration::from_millis(WATCHDOG_INTERVAL_MS));
+    tracing::info!(
+        "MemoryWatchdog: 启动 (PID={}, soft_limit={} MB, sys_available_min={} MB, poll={}ms)",
+        pid,
+        soft_limit / 1024 / 1024,
+        WATCHDOG_MIN_AVAILABLE_BYTES / 1024 / 1024,
+        WATCHDOG_INTERVAL_MS,
+    );
 
-                    let rss = watchdog_get_process_rss(pid);
-                    let available = watchdog_get_available_memory();
+    match std::thread::Builder::new()
+        .name("memory-watchdog".into())
+        .spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(WATCHDOG_INTERVAL_MS));
 
-                    let rss_over_limit = rss > 0 && rss > soft_limit;
-                    let system_critical = available < WATCHDOG_MIN_AVAILABLE_BYTES;
+                let rss = watchdog_get_process_rss(pid);
+                let available = watchdog_get_available_memory();
 
-                    if rss_over_limit || system_critical {
-                        use std::io::Write;
-                        let trigger_reason = if rss_over_limit {
-                            format!(
-                                "RSS {}MB > soft_limit {}MB",
-                                rss / 1024 / 1024,
-                                soft_limit / 1024 / 1024,
-                            )
-                        } else {
-                            format!(
-                                "SysAvailable {}MB < {}MB",
-                                available / 1024 / 1024,
-                                WATCHDOG_MIN_AVAILABLE_BYTES / 1024 / 1024,
-                            )
-                        };
-                        let _ = writeln!(
-                            std::io::stderr(),
-                            "\n\
-                             ┌─ WATCHDOG TRIGGERED ──────────────────────┐\n\
-                             │  PID:          {:>10}                    │\n\
-                             │  RSS:           {:>10} MB                  │\n\
-                             │  Soft Limit:    {:>10} MB                  │\n\
-                             │  Sys Available: {:>10} MB                  │\n\
-                             │  Reason:        {:<26} │\n\
-                             │  Action:        SIGKILL sent              │\n\
-                             └───────────────────────────────────────────┘\n",
-                            pid,
+                let rss_over_limit = rss > 0 && rss > soft_limit;
+                let system_critical = available < WATCHDOG_MIN_AVAILABLE_BYTES;
+
+                if rss_over_limit || system_critical {
+                    use std::io::Write;
+                    let trigger_reason = if rss_over_limit {
+                        format!(
+                            "RSS {}MB > soft_limit {}MB",
                             rss / 1024 / 1024,
                             soft_limit / 1024 / 1024,
+                        )
+                    } else {
+                        format!(
+                            "SysAvailable {}MB < {}MB",
                             available / 1024 / 1024,
-                            trigger_reason,
-                        );
-                        let _ = std::io::stderr().flush();
+                            WATCHDOG_MIN_AVAILABLE_BYTES / 1024 / 1024,
+                        )
+                    };
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "\n\
+                         ┌─ WATCHDOG TRIGGERED ──────────────────────┐\n\
+                         │  PID:          {:>10}                    │\n\
+                         │  RSS:           {:>10} MB                  │\n\
+                         │  Soft Limit:    {:>10} MB                  │\n\
+                         │  Sys Available: {:>10} MB                  │\n\
+                         │  Reason:        {:<26} │\n\
+                         │  Action:        SIGKILL sent              │\n\
+                         └───────────────────────────────────────────┘\n",
+                        pid,
+                        rss / 1024 / 1024,
+                        soft_limit / 1024 / 1024,
+                        available / 1024 / 1024,
+                        trigger_reason,
+                    );
+                    let _ = std::io::stderr().flush();
 
-                        watchdog_force_kill(pid);
-                        std::process::abort();
-                    }
+                    watchdog_force_kill(pid);
+                    std::process::abort();
                 }
-            })
-            .expect("MemoryWatchdog: 无法创建看门狗线程");
-
-        tracing::info!(
-            "MemoryWatchdog: 看门狗线程已启动 (PID={}, interval={}ms, sys_available_min={}MB)",
-            pid,
-            WATCHDOG_INTERVAL_MS,
-            WATCHDOG_MIN_AVAILABLE_BYTES / 1024 / 1024,
-        );
-
-        handle
-    });
+            }
+        }) {
+        Ok(handle) => {
+            let _ = SPAWNED.set(handle);
+            tracing::info!(
+                "MemoryWatchdog: 看门狗线程已启动 (PID={}, interval={}ms, sys_available_min={}MB)",
+                pid,
+                WATCHDOG_INTERVAL_MS,
+                WATCHDOG_MIN_AVAILABLE_BYTES / 1024 / 1024,
+            );
+            true
+        }
+        Err(e) => {
+            tracing::error!("MemoryWatchdog: 无法创建看门狗线程: {e}");
+            false
+        }
+    }
 }
 
 /// macOS 上禁用看门狗
@@ -260,4 +269,6 @@ pub fn spawn_watchdog() {
 /// 后续方案：使用 `dispatch_source` 监听 macOS 的 `memorypressure` 事件，
 /// 仅在系统内存压力升高时触发检查，而非固定间隔轮询。
 #[cfg(target_os = "macos")]
-pub fn spawn_watchdog() {}
+pub fn spawn_watchdog() -> bool {
+    true
+}

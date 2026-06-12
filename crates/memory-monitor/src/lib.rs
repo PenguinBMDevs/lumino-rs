@@ -260,41 +260,50 @@ fn abort_process(report: &str) -> ! {
 /// 该线程独立于主线程运行，每 100ms 检查一次 RSS。
 /// 即使主线程被大任务阻塞，也能及时检测到 OOM 并终止进程。
 ///
+/// 返回 `true` 表示线程已启动（或之前已启动），`false` 表示创建线程失败。
+///
 /// ## 平台说明
 /// - **Linux / Windows**: 正常启动后台监控线程
 /// - **macOS**: 禁用（见 [`spawn_all_monitors()`] 说明）
 #[cfg(not(target_os = "macos"))]
-pub fn spawn_monitor_thread() {
+pub fn spawn_monitor_thread() -> bool {
     static SPAWNED: OnceLock<std::thread::JoinHandle<()>> = OnceLock::new();
 
-    SPAWNED.get_or_init(|| {
-        let handle = std::thread::Builder::new()
-            .name("memory-monitor".into())
-            .spawn(|| {
-                let monitor = MemoryMonitor::global();
-                loop {
-                    std::thread::sleep(std::time::Duration::from_millis(MONITOR_INTERVAL_MS));
+    if SPAWNED.get().is_some() {
+        return true;
+    }
 
-                    match monitor.check_inner("bg: ") {
-                        Some(true) => {
-                            abort_process(
-                                "MemoryMonitor: 内存已达 95% 软限制，主动终止以保护系统稳定",
-                            );
-                        }
-                        None => {}
-                        Some(false) => {}
+    match std::thread::Builder::new()
+        .name("memory-monitor".into())
+        .spawn(|| {
+            let monitor = MemoryMonitor::global();
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(MONITOR_INTERVAL_MS));
+
+                match monitor.check_inner("bg: ") {
+                    Some(true) => {
+                        abort_process(
+                            "MemoryMonitor: 内存已达 95% 软限制，主动终止以保护系统稳定",
+                        );
                     }
+                    None => {}
+                    Some(false) => {}
                 }
-            })
-            .expect("MemoryMonitor: 无法创建后台监控线程");
-
-        tracing::info!(
-            "MemoryMonitor: 后台监控线程已启动 (间隔={}ms)",
-            MONITOR_INTERVAL_MS
-        );
-
-        handle
-    });
+            }
+        }) {
+        Ok(handle) => {
+            let _ = SPAWNED.set(handle);
+            tracing::info!(
+                "MemoryMonitor: 后台监控线程已启动 (间隔={}ms)",
+                MONITOR_INTERVAL_MS
+            );
+            true
+        }
+        Err(e) => {
+            tracing::error!("MemoryMonitor: 无法创建后台监控线程: {e}");
+            false
+        }
+    }
 }
 
 /// macOS 上禁用后台内存监控线程
@@ -305,14 +314,17 @@ pub fn spawn_monitor_thread() {
 /// 后续方案：使用 `dispatch_source` 监听 macOS 的 `memorypressure` 事件，
 /// 仅在系统内存压力升高时触发检查，而非固定间隔轮询。
 #[cfg(target_os = "macos")]
-pub fn spawn_monitor_thread() {
+pub fn spawn_monitor_thread() -> bool {
     tracing::info!("MemoryMonitor: macOS 上禁用后台内存监控线程（参见 spawn_all_monitors 文档）");
+    true
 }
 
 /// 同时启动主监控和看门狗
 ///
 /// 等价于依次调用 `spawn_monitor_thread()` + [`watchdog::spawn_watchdog()`]，
 /// 确保两层防线同时就位。
+///
+/// 返回 `true` 表示所有启用的监控均已成功启动。
 ///
 /// ## 平台说明
 /// - **Linux / Windows**: 正常启动后台监控线程 + 看门狗
@@ -324,9 +336,8 @@ pub fn spawn_monitor_thread() {
 ///   3. 同步检查 [`MemoryMonitor::check()`] 仍可用——大分配前手动调用。
 ///   4. 详见 TODO: macOS 内存监控 — 后续改用 `dispatch_source` 监听 memorypressure 事件。
 #[cfg(not(target_os = "macos"))]
-pub fn spawn_all_monitors() {
-    spawn_monitor_thread();
-    watchdog::spawn_watchdog();
+pub fn spawn_all_monitors() -> bool {
+    spawn_monitor_thread() && watchdog::spawn_watchdog()
 }
 
 /// macOS 上禁用所有内存监控（包括看门狗）
@@ -335,10 +346,11 @@ pub fn spawn_all_monitors() {
 /// 后续方案：使用 `dispatch_source` 监听 macOS 的 `memorypressure` 事件，
 /// 仅在系统内存压力升高时触发检查，而非固定间隔轮询。
 #[cfg(target_os = "macos")]
-pub fn spawn_all_monitors() {
+pub fn spawn_all_monitors() -> bool {
     tracing::info!(
         "MemoryMonitor: macOS 上禁用后台内存监控和看门狗（参见 spawn_all_monitors 文档）"
     );
+    true
 }
 
 #[cfg(test)]
