@@ -12,7 +12,6 @@ unstable-swappable-buffer = ["lumino-gfx/unstable-swappable-buffer"]
 
 [dependencies]
 lumino-core = { workspace = true }
-lumino-constants = { workspace = true }
 lumino-event = { workspace = true }
 lumino-gfx = { workspace = true }
 lumino-message = { workspace = true }

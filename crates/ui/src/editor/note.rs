@@ -1,52 +1,17 @@
+//! 音符逻辑表示 — 重新导出自 lumino-core
+//!
+//! 保持与原有 `crate::editor::note::*` 路径完全兼容。
+//! UI 特有的方法（screen_bounds, to_instance）定义在此处。
+
 use iced_core::{Color, Point, Rectangle, Size};
 use lumino_gfx::NoteInstance;
 
+pub use lumino_core::Note;
+
 use crate::editor::editor_state::ViewState;
 
-/// 音符逻辑表示
-#[derive(Debug, Clone)]
-pub struct Note {
-    pub tick: f32,
-    pub key: u16,
-    pub length: f32,
-    /// 音符力度 (0-127)，默认 100
-    pub velocity: u8,
-    /// MIDI 通道 (0-15)，默认 0
-    pub channel: u8,
-}
-
 impl Note {
-    pub fn new(tick: f32, key: u16, length: f32) -> Self {
-        Self {
-            tick,
-            key,
-            length,
-            velocity: crate::constants::editor::DEFAULT_NOTE_VELOCITY,
-            channel: 0,
-        }
-    }
-
-    /// 从原始数据元组构造 Note
-    pub fn from_raw(tick: f32, key: u16, length: f32, velocity: u8, channel: u8) -> Self {
-        Self {
-            tick,
-            key,
-            length,
-            velocity,
-            channel,
-        }
-    }
-
-    pub fn with_velocity(mut self, velocity: u8) -> Self {
-        self.velocity = velocity;
-        self
-    }
-
-    pub fn with_channel(mut self, channel: u8) -> Self {
-        self.channel = channel;
-        self
-    }
-
+    /// 计算音符在屏幕上的边界矩形
     pub fn screen_bounds(&self, view_state: &ViewState) -> Rectangle {
         let x = self.tick * view_state.zoom_x - view_state.scroll_x + view_state.keyboard_width;
         let max_key_index = (view_state.visible_key_count - 1) as f32;
@@ -57,6 +22,7 @@ impl Note {
         Rectangle::new(Point::new(x, y), Size::new(width, height))
     }
 
+    /// 转换为 GPU 实例
     pub fn to_instance(&self, color: Color) -> NoteInstance {
         NoteInstance::new(
             self.tick,
