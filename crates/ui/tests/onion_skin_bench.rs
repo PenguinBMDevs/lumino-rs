@@ -381,7 +381,7 @@ fn onion_skin_benchmark() {
         let visible_end = (scroll_tick * ZOOM_X + CANVAS_WIDTH - KEYBOARD_WIDTH) / ZOOM_X;
 
         // === CPU: update_note_data_for_wgpu_thread ===
-        let note_index_dirty = editor.note_index_dirty.get();
+        let note_index_dirty = editor.spatial.note_index_dirty.get();
         let note_data_changed = note_index_dirty || unsafe { note_buffer.read_buffer().is_empty() };
 
         let current_hash = RenderCache::compute_viewport_hash(
@@ -414,7 +414,7 @@ fn onion_skin_benchmark() {
             note_buffer.swap();
             note_viewport_hash = current_hash;
             if note_index_dirty {
-                editor.note_index_dirty.set(false);
+                editor.spatial.note_index_dirty.set(false);
             }
         }
 
