@@ -7,8 +7,7 @@
 //!
 //! 通过 MessageRouter 按顺序分发消息。
 
-use crate::editor::velocity::widget::TempoPoint;
-use crate::message::{EditorAction, LoopRangeAction, Message};
+use crate::message::{EditorAction, Message};
 use crate::root::Root;
 use crate::{sidebar, window};
 
@@ -16,11 +15,15 @@ use crate::{sidebar, window};
 pub mod collaboration;
 pub mod dialog;
 pub mod toolbar;
+pub mod loop_range;
+pub mod velocity;
 
 // 重新导出处理器类型
 pub use collaboration::CollaborationHandler;
 pub use dialog::DialogHandler;
+pub use loop_range::LoopRangeHandler;
 pub use toolbar::ToolbarHandler;
+pub use velocity::VelocityHandler;
 
 /// 消息处理器 trait
 ///
@@ -79,6 +82,8 @@ impl Root {
         let mut router = MessageRouter::new();
         router.register(Box::new(CollaborationHandler::new()));
         router.register(Box::new(DialogHandler::new()));
+        router.register(Box::new(VelocityHandler::new()));
+        router.register(Box::new(LoopRangeHandler::new()));
         router.register(Box::new(ToolbarHandler::new()));
         router
     }
@@ -128,10 +133,6 @@ impl Root {
             }
             Message::EditorAction(action) => {
                 self.handle_editor_action(action.clone());
-                true
-            }
-            Message::Velocity(action) => {
-                self.handle_velocity_action(action.clone());
                 true
             }
             _ => self.try_handle_simple_state(msg),
@@ -379,10 +380,6 @@ impl Root {
                 self.statusbar.set_perf_data(*data);
                 true
             }
-            Message::LoopRange(action) => {
-                self.handle_loop_range_action(action.clone());
-                true
-            }
             Message::MidiInputEvent { data } => {
                 let data = data.clone();
                 if let Ok(mut buf) = self.midi.input_buffer.lock() {
@@ -492,314 +489,6 @@ impl Root {
         }
     }
 
-    /// 处理力度编辑面板动作
-    pub(crate) fn handle_velocity_action(&mut self, action: crate::message::VelocityAction) {
-        use crate::message::VelocityAction;
-
-        match action {
-            VelocityAction::DragStart(note_index, velocity) => {
-                self.editor.push_history();
-                Self::apply_velocity(&mut self.editor, note_index, velocity);
-            }
-            VelocityAction::DragMove(note_index, new_velocity) => {
-                Self::apply_velocity(&mut self.editor, note_index, new_velocity);
-            }
-            VelocityAction::DragEnd => {
-                tracing::debug!("力度面板: 拖拽结束");
-            }
-            VelocityAction::CurveStart => {
-                self.editor.push_history();
-                tracing::debug!("力度面板: 曲线绘制开始");
-            }
-            VelocityAction::CurvePaint(updates) => {
-                for (note_index, velocity) in updates {
-                    Self::apply_velocity(&mut self.editor, note_index, velocity);
-                }
-            }
-            VelocityAction::CurveEnd => {
-                tracing::debug!("力度面板: 曲线绘制结束");
-            }
-            VelocityAction::ToggleMode => {
-                let panel = &mut self.editor.velocity_panel;
-                let is_conductor = self.sidebar.selected_track == 0
-                    && self.sidebar.tracks.first().is_some_and(|t| t.is_conductor);
-                panel.edit_mode = match (panel.edit_mode, is_conductor) {
-                    // 普通音轨：Velocity → Bend → Cc(selected_cc) → Velocity
-                    (crate::editor::velocity::EditMode::Velocity, false) => {
-                        crate::editor::velocity::EditMode::Bend
-                    }
-                    (crate::editor::velocity::EditMode::Bend, false) => {
-                        crate::editor::velocity::EditMode::Cc(panel.selected_cc)
-                    }
-                    (crate::editor::velocity::EditMode::Cc(_), false) => {
-                        crate::editor::velocity::EditMode::Velocity
-                    }
-                    // Conductor 音轨：Tempo → Cc(7) → Cc(selected_cc) → Tempo
-                    (crate::editor::velocity::EditMode::Tempo, true) => {
-                        crate::editor::velocity::EditMode::Cc(7)
-                    }
-                    (crate::editor::velocity::EditMode::Cc(7), true) => {
-                        if panel.selected_cc == 7 {
-                            crate::editor::velocity::EditMode::Tempo
-                        } else {
-                            crate::editor::velocity::EditMode::Cc(panel.selected_cc)
-                        }
-                    }
-                    (crate::editor::velocity::EditMode::Cc(_), true) => {
-                        crate::editor::velocity::EditMode::Tempo
-                    }
-                    // Velocity → 不该在 Conductor 上出现，安全降级到 Tempo
-                    (crate::editor::velocity::EditMode::Velocity, true) => {
-                        crate::editor::velocity::EditMode::Tempo
-                    }
-                    (crate::editor::velocity::EditMode::Bend, true) => {
-                        crate::editor::velocity::EditMode::Tempo
-                    }
-                    (crate::editor::velocity::EditMode::Tempo, false) => {
-                        crate::editor::velocity::EditMode::Bend
-                    }
-                };
-                tracing::debug!("力度面板: 切换模式为 {:?}", panel.edit_mode);
-                return; // 不需要重绘
-            }
-            VelocityAction::CcControllerSelected(cc) => {
-                self.editor.velocity_panel.selected_cc = cc;
-                self.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Cc(cc);
-                tracing::debug!("力度面板: 选择 CC 控制器 {}", cc);
-                return; // 不需要重绘
-            }
-            VelocityAction::CcOptionSelected(option) => {
-                use crate::editor::velocity::CcOption;
-                match option {
-                    CcOption::Bend => {
-                        self.editor.velocity_panel.edit_mode =
-                            crate::editor::velocity::EditMode::Bend;
-                        tracing::debug!("力度面板: 选择 Bend");
-                    }
-                    CcOption::Cc(cc) => {
-                        self.editor.velocity_panel.selected_cc = cc;
-                        self.editor.velocity_panel.edit_mode =
-                            crate::editor::velocity::EditMode::Cc(cc);
-                        tracing::debug!("力度面板: 选择 CC 控制器 {}", cc);
-                    }
-                }
-                return; // 不需要重绘
-            }
-            // ── Tempo 编辑动作 ──
-            VelocityAction::TempoDragStart(idx) => {
-                self.editor.push_history();
-                tracing::debug!("Tempo: 开始拖拽点 {}", idx);
-                return;
-            }
-            VelocityAction::TempoDragMove(idx, new_bpm) => {
-                let bpm = new_bpm.clamp(20.0, 10000.0);
-                if let Some(point) = self.editor.editor_state.data.tempo_points.get_mut(idx) {
-                    point.bpm = bpm;
-                    self.update_playback_bpm();
-                }
-                return;
-            }
-            VelocityAction::TempoDragEnd => {
-                tracing::debug!("Tempo: 拖拽结束");
-                return;
-            }
-            VelocityAction::TempoAdd(tick, bpm) => {
-                self.editor.push_history();
-                let bpm = bpm.clamp(20.0, 10000.0);
-                self.editor
-                    .editor_state
-                    .data
-                    .tempo_points
-                    .push(TempoPoint { tick, bpm });
-                self.editor.editor_state.data.tempo_points.sort_by(|a, b| {
-                    a.tick
-                        .partial_cmp(&b.tick)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
-                // 去重相同 tick
-                self.editor
-                    .editor_state
-                    .data
-                    .tempo_points
-                    .dedup_by(|a, b| (a.tick - b.tick).abs() < f32::EPSILON);
-                self.update_playback_bpm();
-                tracing::debug!("Tempo: 添加点 tick={} bpm={}", tick, bpm);
-                return;
-            }
-            VelocityAction::TempoDelete(idx) => {
-                self.editor.push_history();
-                if idx < self.editor.editor_state.data.tempo_points.len() {
-                    self.editor.editor_state.data.tempo_points.remove(idx);
-                    self.update_playback_bpm();
-                    tracing::debug!("Tempo: 删除点 {}", idx);
-                }
-                return;
-            }
-        }
-
-        // 同步播放引擎：力度修改必须实时反映到播放中
-        if self.editor.notes_changed() {
-            self.update_playback_notes();
-            self.editor.clear_notes_changed();
-            self.invalidate_onion_skin_cache();
-        }
-    }
-
-    /// 应用力度值到指定音符，仅在力度实际变化时标记音符变更
-    fn apply_velocity(editor: &mut crate::editor::Editor, note_index: usize, velocity: u8) {
-        let data = &mut editor.editor_state.data;
-        if note_index < data.notes.len()
-            && let Some(note) = data.notes.get_mut(note_index)
-        {
-            let clamped = velocity.clamp(0, 127);
-            if note.velocity != clamped {
-                note.velocity = clamped;
-                editor.mark_notes_changed();
-                tracing::debug!("力度面板: 音符[{}] 力度更新为 {}", note_index, clamped);
-            }
-        }
-    }
-
-    fn handle_loop_range_action(&mut self, action: LoopRangeAction) {
-        match action {
-            LoopRangeAction::Toggle => {
-                let enabled = if let Some(loop_range) = &mut self.editor.loop_range {
-                    loop_range.toggle();
-                    self.editor.ruler_cache.clear();
-                    loop_range.enabled()
-                } else {
-                    false
-                };
-                self.sync_loop_to_playback_state(enabled);
-                tracing::info!("Root: 循环区域切换为 {}", enabled);
-            }
-            LoopRangeAction::SetRange(start, end) => {
-                let (enabled, start_tick, end_tick) =
-                    if let Some(loop_range) = &mut self.editor.loop_range {
-                        loop_range.set_range(start, end);
-                        if !loop_range.enabled() {
-                            loop_range.enable();
-                        }
-                        self.editor.ruler_cache.clear();
-                        (
-                            loop_range.enabled(),
-                            loop_range.start_tick(),
-                            loop_range.end_tick(),
-                        )
-                    } else {
-                        return;
-                    };
-                self.sync_loop_to_playback_with_range(enabled, start_tick, end_tick);
-                tracing::info!("Root: 循环范围设置为 [{:.2}, {:.2}]", start, end);
-            }
-            LoopRangeAction::Clear => {
-                if let Some(loop_range) = &mut self.editor.loop_range {
-                    loop_range.disable();
-                    self.sync_loop_to_playback_state(false);
-                    self.editor.ruler_cache.clear();
-                    tracing::info!("Root: 循环区域已清除");
-                }
-            }
-            LoopRangeAction::RulerPressed { x, y: _ } => {
-                if let Some(loop_range) = &mut self.editor.loop_range {
-                    let view = &self.editor.editor_state.view;
-                    let hit = loop_range.handle_mouse_press(
-                        x,
-                        view.keyboard_width,
-                        view.scroll_x,
-                        view.zoom_x,
-                        view.ruler_height,
-                        view.snap_precision,
-                    );
-                    if hit != crate::editor::grid::LoopHitTest::None {
-                        self.editor.ruler_cache.clear();
-                        tracing::debug!("Root: 标尺循环区域点击检测: {:?}", hit);
-                    }
-                }
-            }
-            LoopRangeAction::RulerMoved { x, y: _ } => {
-                let should_sync = if let Some(loop_range) = &mut self.editor.loop_range {
-                    if loop_range.is_dragging() {
-                        let view = &self.editor.editor_state.view;
-                        loop_range.handle_mouse_move(
-                            x,
-                            view.keyboard_width,
-                            view.scroll_x,
-                            view.zoom_x,
-                            view.snap_precision,
-                        );
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                };
-                if should_sync {
-                    let (enabled, start, end) = self.get_loop_range_state();
-                    self.sync_loop_to_playback_with_range(enabled, start, end);
-                    self.editor.ruler_cache.clear();
-                }
-            }
-            LoopRangeAction::RulerReleased => {
-                if let Some(loop_range) = &mut self.editor.loop_range
-                    && loop_range.is_dragging()
-                {
-                    let start = loop_range.start_tick();
-                    let end = loop_range.end_tick();
-                    loop_range.handle_mouse_release();
-                    self.editor.ruler_cache.clear();
-                    tracing::debug!("Root: 循环拖拽释放，范围 [{:.2}, {:.2}]", start, end);
-                }
-            }
-            LoopRangeAction::RulerDoubleClicked { x: _, y: _ } => {
-                let enabled = if let Some(loop_range) = &mut self.editor.loop_range {
-                    loop_range.toggle();
-                    self.editor.ruler_cache.clear();
-                    loop_range.enabled()
-                } else {
-                    false
-                };
-                self.sync_loop_to_playback_state(enabled);
-                tracing::info!("Root: 标尺双击切换循环为 {}", enabled);
-            }
-        }
-    }
-
-    fn get_loop_range_state(&self) -> (bool, f32, f32) {
-        self.editor
-            .loop_range
-            .as_ref()
-            .map_or((false, 0.0, 0.0), |lr| {
-                (lr.enabled(), lr.start_tick(), lr.end_tick())
-            })
-    }
-
-    fn sync_loop_to_playback_state(&mut self, enabled: bool) {
-        if let Some(manager) = &mut self.playback.manager {
-            manager.set_looping(enabled);
-            if enabled {
-                if let Some(lr) = &self.editor.loop_range {
-                    manager.set_loop_range(lr.start_tick(), lr.end_tick());
-                }
-            } else {
-                manager.clear_loop_range();
-            }
-        }
-        self.toolbar.is_looping = enabled;
-    }
-
-    fn sync_loop_to_playback_with_range(&mut self, enabled: bool, start: f32, end: f32) {
-        if let Some(manager) = &mut self.playback.manager {
-            manager.set_looping(enabled);
-            if enabled {
-                manager.set_loop_range(start, end);
-            } else {
-                manager.clear_loop_range();
-            }
-        }
-        self.toolbar.is_looping = enabled;
-    }
 }
 
 #[cfg(test)]

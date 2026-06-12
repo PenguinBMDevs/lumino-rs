@@ -111,10 +111,10 @@ impl ToolbarHandler {
 
     /// 执行循环切换逻辑
     fn do_toggle_loop(root: &mut Root) {
-        use crate::message::LoopRangeAction;
-
-        let action = LoopRangeAction::Toggle;
-        root.handle_loop_range_action(action);
+        crate::root::handlers::loop_range::LoopRangeHandler::handle_action(
+            root,
+            crate::message::LoopRangeAction::Toggle,
+        );
     }
 
     /// 初始化播放管理器

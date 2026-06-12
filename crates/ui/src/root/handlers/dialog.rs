@@ -1,7 +1,7 @@
 //! 对话框管理处理器
 
 use crate::host::DialogResult;
-use crate::message::Message;
+use crate::message::{AudioExportAction, Message, SpeedChangeAction};
 use crate::root::Root;
 use crate::root::handlers::MessageHandler;
 
@@ -183,159 +183,151 @@ impl MessageHandler for DialogHandler {
             }
 
             // 音频导出对话框消息
-            Message::OpenAudioExportDialog => {
-                root.state.dialog_type = crate::state::root_state::DialogType::AudioExport;
-                None
-            }
-            Message::CloseAudioExportDialog => {
-                root.state.audio_export_dialog.is_open = false;
-                None
-            }
-            Message::AudioExportProjectNameChanged(value) => {
-                root.state.audio_export_dialog.project_name = value;
-                None
-            }
-            Message::AudioExportOutputPathChanged(value) => {
-                root.state.audio_export_dialog.output_path = value;
-                None
-            }
-            Message::AudioExportFormatChanged(value) => {
-                root.state.audio_export_dialog.format = value;
-                None
-            }
-            Message::AudioExportSampleRateChanged(value) => {
-                root.state.audio_export_dialog.sample_rate = value;
-                None
-            }
-            Message::AudioExportChannelsChanged(value) => {
-                root.state.audio_export_dialog.channels = value;
-                None
-            }
-            Message::AudioExportLayersChanged(value) => {
-                // 只允许数字
-                if value.chars().all(|c| c.is_ascii_digit())
-                    && let Ok(v) = value.parse::<u32>()
-                {
-                    root.state.audio_export_dialog.layers = v;
+            Message::AudioExport(action) => {
+                use AudioExportAction as A;
+                match action {
+                    A::OpenDialog => {
+                        root.state.dialog_type = crate::state::root_state::DialogType::AudioExport;
+                    }
+                    A::CloseDialog => {
+                        root.state.audio_export_dialog.is_open = false;
+                    }
+                    A::Confirm => {
+                        let state = &root.state.audio_export_dialog;
+                        root.state.dialog_result = Some(DialogResult::AudioExport {
+                            project_name: state.project_name.clone(),
+                            midi_path: state.midi_path.clone(),
+                            soundfont_path: state.soundfont_path.clone(),
+                            output_path: state.output_path.clone(),
+                            sample_rate: state.sample_rate,
+                            channels: state.channels,
+                            layers: state.layers,
+                            channel_threading: state.channel_threading,
+                            key_threading: state.key_threading,
+                            apply_limiter: state.apply_limiter,
+                            disable_fade_out: state.disable_fade_out,
+                            linear_envelope: state.linear_envelope,
+                            interpolation: state.interpolation,
+                            format: state.format,
+                        });
+                        root.state.audio_export_dialog.is_open = false;
+                    }
+                    A::Cancel => {
+                        root.state.audio_export_dialog.is_open = false;
+                        root.state.dialog_result = Some(DialogResult::Cancel);
+                    }
+                    A::ProjectNameChanged(value) => {
+                        root.state.audio_export_dialog.project_name = value;
+                    }
+                    A::OutputPathChanged(value) => {
+                        root.state.audio_export_dialog.output_path = value;
+                    }
+                    A::FormatChanged(value) => {
+                        root.state.audio_export_dialog.format = value;
+                    }
+                    A::SampleRateChanged(value) => {
+                        root.state.audio_export_dialog.sample_rate = value;
+                    }
+                    A::ChannelsChanged(value) => {
+                        root.state.audio_export_dialog.channels = value;
+                    }
+                    A::LayersChanged(value) => {
+                        // 只允许数字
+                        if value.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(v) = value.parse::<u32>()
+                        {
+                            root.state.audio_export_dialog.layers = v;
+                        }
+                    }
+                    A::ChannelThreadingChanged(value) => {
+                        root.state.audio_export_dialog.channel_threading = value;
+                    }
+                    A::KeyThreadingChanged(value) => {
+                        root.state.audio_export_dialog.key_threading = value;
+                    }
+                    A::InterpolationChanged(value) => {
+                        root.state.audio_export_dialog.interpolation = value;
+                    }
+                    A::ApplyLimiterChanged(value) => {
+                        root.state.audio_export_dialog.apply_limiter = value;
+                    }
+                    A::DisableFadeOutChanged(value) => {
+                        root.state.audio_export_dialog.disable_fade_out = value;
+                    }
+                    A::LinearEnvelopeChanged(value) => {
+                        root.state.audio_export_dialog.linear_envelope = value;
+                    }
+                    A::BrowseOutput => {
+                        let current = root.state.audio_export_dialog.output_path.clone();
+                        let default_name = std::path::Path::new(&current)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("export.wav");
+                        let default_dir = std::path::Path::new(&current)
+                            .parent()
+                            .and_then(|p| p.to_str())
+                            .unwrap_or(".");
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_file_name(default_name)
+                            .set_directory(default_dir)
+                            .add_filter("WAV 文件", &["wav"])
+                            .add_filter("FLAC 文件", &["flac"])
+                            .save_file()
+                        {
+                            root.state.audio_export_dialog.output_path =
+                                path.to_string_lossy().to_string();
+                        }
+                    }
+                    A::Progress(_pct, _msg) => {} // 进度更新在外部渲染层处理
+                    A::Completed => {}
+                    A::Failed(_err) => {}
                 }
-                None
-            }
-            Message::AudioExportChannelThreadingChanged(value) => {
-                root.state.audio_export_dialog.channel_threading = value;
-                None
-            }
-            Message::AudioExportKeyThreadingChanged(value) => {
-                root.state.audio_export_dialog.key_threading = value;
-                None
-            }
-            Message::AudioExportInterpolationChanged(value) => {
-                root.state.audio_export_dialog.interpolation = value;
-                None
-            }
-            Message::AudioExportApplyLimiterChanged(value) => {
-                root.state.audio_export_dialog.apply_limiter = value;
-                None
-            }
-            Message::AudioExportDisableFadeOutChanged(value) => {
-                root.state.audio_export_dialog.disable_fade_out = value;
-                None
-            }
-            Message::AudioExportLinearEnvelopeChanged(value) => {
-                root.state.audio_export_dialog.linear_envelope = value;
-                None
-            }
-            Message::AudioExportBrowseOutput => {
-                // 使用原生文件对话框选择输出路径
-                let current = root.state.audio_export_dialog.output_path.clone();
-                let default_name = std::path::Path::new(&current)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("export.wav");
-                let default_dir = std::path::Path::new(&current)
-                    .parent()
-                    .and_then(|p| p.to_str())
-                    .unwrap_or(".");
-                if let Some(path) = rfd::FileDialog::new()
-                    .set_file_name(default_name)
-                    .set_directory(default_dir)
-                    .add_filter("WAV 文件", &["wav"])
-                    .add_filter("FLAC 文件", &["flac"])
-                    .save_file()
-                {
-                    root.state.audio_export_dialog.output_path = path.to_string_lossy().to_string();
-                }
-                None
-            }
-            Message::AudioExportConfirm => {
-                let state = &root.state.audio_export_dialog;
-                root.state.dialog_result = Some(DialogResult::AudioExport {
-                    project_name: state.project_name.clone(),
-                    midi_path: state.midi_path.clone(),
-                    soundfont_path: state.soundfont_path.clone(),
-                    output_path: state.output_path.clone(),
-                    sample_rate: state.sample_rate,
-                    channels: state.channels,
-                    layers: state.layers,
-                    channel_threading: state.channel_threading,
-                    key_threading: state.key_threading,
-                    apply_limiter: state.apply_limiter,
-                    disable_fade_out: state.disable_fade_out,
-                    linear_envelope: state.linear_envelope,
-                    interpolation: state.interpolation,
-                    format: state.format,
-                });
-                root.state.audio_export_dialog.is_open = false;
-                None
-            }
-            Message::AudioExportCancel => {
-                root.state.audio_export_dialog.is_open = false;
-                root.state.dialog_result = Some(DialogResult::Cancel);
                 None
             }
             // 音符变速对话框消息
-            Message::OpenSpeedChangeDialog => {
-                root.state.speed_change_dialog.is_open = true;
-                None
-            }
-            Message::CloseSpeedChangeDialog => {
-                root.state.speed_change_dialog.is_open = false;
-                root.state.dialog_result = Some(DialogResult::Cancel);
-                None
-            }
-            Message::ConfirmSpeedChange => {
-                if let Some(factor) = root.state.speed_change_dialog.parse_factor() {
-                    root.toolbar.speed_factor = factor;
-                    tracing::info!("Root: 速度因子已更新为 {}", factor);
-                    // 设置对话框结果（用于独立窗口模式）
-                    root.state.dialog_result = Some(DialogResult::SpeedChange { factor });
-                    // 必须有选中音符才能执行变速
-                    if !root
-                        .editor
-                        .editor_state
-                        .interaction
-                        .selected_notes
-                        .is_empty()
-                    {
-                        let modified = root.editor.apply_speed_change(factor);
-                        if modified > 0 {
-                            tracing::info!("Root: 变速完成，修改了 {} 个音符", modified);
-                            root.update_playback_notes();
-                            root.editor.clear_notes_changed();
-                        }
-                    } else {
-                        tracing::warn!("Root: 没有选中音符，不执行变速对话框的变速操作");
+            Message::SpeedChange(action) => {
+                use SpeedChangeAction as S;
+                match action {
+                    S::OpenDialog => {
+                        root.state.speed_change_dialog.is_open = true;
                     }
-                } else {
-                    tracing::warn!(
-                        "Root: 无效的速度因子输入: {}",
-                        root.state.speed_change_dialog.factor_input
-                    );
+                    S::CloseDialog => {
+                        root.state.speed_change_dialog.is_open = false;
+                        root.state.dialog_result = Some(DialogResult::Cancel);
+                    }
+                    S::Confirm => {
+                        if let Some(factor) = root.state.speed_change_dialog.parse_factor() {
+                            root.toolbar.speed_factor = factor;
+                            tracing::info!("Root: 速度因子已更新为 {}", factor);
+                            root.state.dialog_result = Some(DialogResult::SpeedChange { factor });
+                            if !root
+                                .editor
+                                .editor_state
+                                .interaction
+                                .selected_notes
+                                .is_empty()
+                            {
+                                let modified = root.editor.apply_speed_change(factor);
+                                if modified > 0 {
+                                    tracing::info!("Root: 变速完成，修改了 {} 个音符", modified);
+                                    root.update_playback_notes();
+                                    root.editor.clear_notes_changed();
+                                }
+                            } else {
+                                tracing::warn!("Root: 没有选中音符，不执行变速对话框的变速操作");
+                            }
+                        } else {
+                            tracing::warn!(
+                                "Root: 无效的速度因子输入: {}",
+                                root.state.speed_change_dialog.factor_input
+                            );
+                        }
+                        root.state.speed_change_dialog.is_open = false;
+                    }
+                    S::FactorChanged(value) => {
+                        root.state.speed_change_dialog.factor_input = value;
+                    }
                 }
-                root.state.speed_change_dialog.is_open = false;
-                None
-            }
-            Message::SpeedChangeFactorChanged(value) => {
-                root.state.speed_change_dialog.factor_input = value;
                 None
             }
 

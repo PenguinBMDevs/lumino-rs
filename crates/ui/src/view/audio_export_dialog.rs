@@ -3,7 +3,7 @@ use iced_widget::{
     button, checkbox, column, container, pick_list, row, scrollable, space, text, text_input,
 };
 
-use crate::message::Message;
+use crate::message::{AudioExportAction, Message};
 use crate::state::root_state::{
     AudioChannels, AudioExportDialogState, AudioFormat, Interpolation, ThreadingOption,
 };
@@ -43,7 +43,7 @@ pub fn view_audio_export_dialog<'a>(
         space().height(4),
         container(
             text_input("工程名称", &state.project_name)
-                .on_input(Message::AudioExportProjectNameChanged)
+                .on_input(|v| Message::AudioExport(AudioExportAction::ProjectNameChanged(v)))
                 .padding([6, 10])
                 .width(Length::Fill),
         )
@@ -91,7 +91,7 @@ pub fn view_audio_export_dialog<'a>(
             pick_list(
                 [AudioFormat::WAV, AudioFormat::FLAC],
                 Some(state.format),
-                Message::AudioExportFormatChanged,
+                |v| Message::AudioExport(AudioExportAction::FormatChanged(v)),
             )
             .width(200),
         ]
@@ -104,7 +104,7 @@ pub fn view_audio_export_dialog<'a>(
             pick_list(
                 [22050u32, 44100, 48000, 96000],
                 Some(state.sample_rate),
-                Message::AudioExportSampleRateChanged,
+                |v| Message::AudioExport(AudioExportAction::SampleRateChanged(v)),
             )
             .width(200),
         ]
@@ -117,7 +117,7 @@ pub fn view_audio_export_dialog<'a>(
             pick_list(
                 [AudioChannels::Mono, AudioChannels::Stereo],
                 Some(state.channels),
-                Message::AudioExportChannelsChanged,
+                |v| Message::AudioExport(AudioExportAction::ChannelsChanged(v)),
             )
             .width(200),
         ]
@@ -128,7 +128,7 @@ pub fn view_audio_export_dialog<'a>(
         row![
             text("层数限制:").size(14).style(label_style).width(120),
             text_input("32", &state.layers.to_string())
-                .on_input(Message::AudioExportLayersChanged)
+                .on_input(|v| Message::AudioExport(AudioExportAction::LayersChanged(v)))
                 .padding([6, 10])
                 .width(200),
         ]
@@ -147,7 +147,7 @@ pub fn view_audio_export_dialog<'a>(
                     ThreadingOption::Manual(8),
                 ],
                 Some(state.channel_threading),
-                Message::AudioExportChannelThreadingChanged,
+                |v| Message::AudioExport(AudioExportAction::ChannelThreadingChanged(v)),
             )
             .width(200),
         ]
@@ -166,7 +166,7 @@ pub fn view_audio_export_dialog<'a>(
                     ThreadingOption::Manual(8),
                 ],
                 Some(state.key_threading),
-                Message::AudioExportKeyThreadingChanged,
+                |v| Message::AudioExport(AudioExportAction::KeyThreadingChanged(v)),
             )
             .width(200),
         ]
@@ -179,7 +179,7 @@ pub fn view_audio_export_dialog<'a>(
             pick_list(
                 [Interpolation::None, Interpolation::Linear],
                 Some(state.interpolation),
-                Message::AudioExportInterpolationChanged,
+                |v| Message::AudioExport(AudioExportAction::InterpolationChanged(v)),
             )
             .width(200),
         ]
@@ -189,15 +189,15 @@ pub fn view_audio_export_dialog<'a>(
         // 选项复选框
         checkbox(state.apply_limiter)
             .label("应用限制器 (防止削波)")
-            .on_toggle(Message::AudioExportApplyLimiterChanged),
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::ApplyLimiterChanged(v))),
         space().height(4),
         checkbox(state.disable_fade_out)
             .label("禁用淡出 (可能爆音)")
-            .on_toggle(Message::AudioExportDisableFadeOutChanged),
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::DisableFadeOutChanged(v))),
         space().height(4),
         checkbox(state.linear_envelope)
             .label("线性包络")
-            .on_toggle(Message::AudioExportLinearEnvelopeChanged),
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::LinearEnvelopeChanged(v))),
     ]
     .width(Length::Fill);
 
@@ -211,7 +211,7 @@ pub fn view_audio_export_dialog<'a>(
         row![
             container(
                 text_input("选择输出路径...", &state.output_path)
-                    .on_input(Message::AudioExportOutputPathChanged)
+                    .on_input(|v| Message::AudioExport(AudioExportAction::OutputPathChanged(v)))
                     .padding([6, 10])
                     .width(Length::Fill),
             )
@@ -219,7 +219,7 @@ pub fn view_audio_export_dialog<'a>(
             .style(input_style),
             space().width(8),
             button(text("浏览...").size(14))
-                .on_press(Message::AudioExportBrowseOutput)
+                .on_press(Message::AudioExport(AudioExportAction::BrowseOutput))
                 .padding([6, 16]),
         ]
         .spacing(8)
@@ -263,7 +263,7 @@ pub fn view_audio_export_dialog<'a>(
         // 导出中只显示取消按钮
         row![
             button(text("取消").size(14))
-                .on_press(Message::AudioExportCancel)
+                .on_press(Message::AudioExport(AudioExportAction::Cancel))
                 .padding([8, 32])
                 .width(Length::Fixed(100.0))
                 .style(move |_t: &iced_core::Theme, status| {
@@ -289,7 +289,7 @@ pub fn view_audio_export_dialog<'a>(
         // 正常状态显示取消和导出按钮
         row![
             button(text("取消").size(14))
-                .on_press(Message::CloseAudioExportDialog)
+                .on_press(Message::AudioExport(AudioExportAction::CloseDialog))
                 .padding([8, 32])
                 .width(Length::Fixed(100.0))
                 .style(move |_t: &iced_core::Theme, status| {
@@ -311,7 +311,7 @@ pub fn view_audio_export_dialog<'a>(
                 }),
             space().width(12),
             button(text("导出").size(14))
-                .on_press(Message::AudioExportConfirm)
+                .on_press(Message::AudioExport(AudioExportAction::Confirm))
                 .padding([8, 32])
                 .width(Length::Fixed(100.0))
                 .style(move |_t: &iced_core::Theme, status| {

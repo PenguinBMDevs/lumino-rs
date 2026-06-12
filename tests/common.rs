@@ -13,6 +13,12 @@ pub struct EventCollector {
     events: Arc<Mutex<Vec<CollaborationEvent>>>,
 }
 
+impl Default for EventCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventCollector {
     pub fn new() -> Self {
         Self {

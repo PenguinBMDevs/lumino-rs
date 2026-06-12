@@ -1,7 +1,7 @@
 use iced_core::Length;
 use iced_widget::{button, column, container, row, space, text, text_input};
 
-use crate::message::Message;
+use crate::message::{Message, SpeedChangeAction};
 use crate::state::root_state::SpeedChangeDialogState;
 
 /// 渲染音符变速对话框
@@ -39,7 +39,7 @@ pub fn view_speed_change_dialog<'a>(
         space().width(12),
         container(
             text_input("如: 0.5 或 1/3", &state.factor_input)
-                .on_input(Message::SpeedChangeFactorChanged)
+                .on_input(|v| Message::SpeedChange(SpeedChangeAction::FactorChanged(v)))
                 .padding([6, 10])
                 .width(Length::Fixed(120.0))
         )
@@ -59,7 +59,7 @@ pub fn view_speed_change_dialog<'a>(
     // 按钮区域
     let buttons = row![
         button(text("确定").size(14))
-            .on_press(Message::ConfirmSpeedChange)
+            .on_press(Message::SpeedChange(SpeedChangeAction::Confirm))
             .padding([8, 24])
             .style(move |_theme: &iced_core::Theme, status| {
                 let bg = match status {
@@ -80,7 +80,7 @@ pub fn view_speed_change_dialog<'a>(
             }),
         space().width(12),
         button(text("取消").size(14))
-            .on_press(Message::CloseSpeedChangeDialog)
+            .on_press(Message::SpeedChange(SpeedChangeAction::CloseDialog))
             .padding([8, 24])
             .style(move |_theme: &iced_core::Theme, status| {
                 let bg = match status {

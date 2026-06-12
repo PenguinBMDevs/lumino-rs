@@ -8,6 +8,210 @@ use iced_core::renderer::{self, Quad};
 use iced_core::widget::Tree;
 use iced_core::{Event, Length, Rectangle, Renderer as _Renderer, Size, mouse};
 
+// ─── Mouse event handlers (extracted for ≤4 nesting) ─────────────────
+
+impl<'a> ScrollbarWidget<'a> {
+    /// 处理鼠标左键按下
+    fn handle_button_pressed(
+        &mut self,
+        state: &mut ScrollbarState,
+        bounds: Rectangle,
+        thumb_bounds: Rectangle,
+        track_size: f32,
+        thumb_size: f32,
+        cursor: mouse::Cursor,
+        shell: &mut iced_core::Shell<'_, Message>,
+    ) {
+        let Some(position) = cursor.position() else {
+            return;
+        };
+
+        if thumb_bounds.contains(position) {
+            let start_pos = match self.orientation {
+                ScrollbarOrientation::Horizontal => position.x,
+                ScrollbarOrientation::Vertical => position.y,
+            };
+            if let Some(edge) = self.get_edge(position, thumb_bounds) {
+                *state = ScrollbarState::DraggingEdge {
+                    start_pos,
+                    start_zoom: self.zoom,
+                    start_thumb_size: thumb_size,
+                    edge,
+                };
+            } else {
+                let scrollable_size = self.actual_max_scroll(track_size);
+                *state = ScrollbarState::Dragging {
+                    start_pos,
+                    start_scroll: self.scroll.clamp(0.0, scrollable_size),
+                };
+            }
+            shell.request_redraw();
+        } else if bounds.contains(position) {
+            let relative_pos = match self.orientation {
+                ScrollbarOrientation::Horizontal => {
+                    (position.x - bounds.x - 2.0) / (track_size - thumb_size).max(1.0)
+                }
+                ScrollbarOrientation::Vertical => {
+                    (position.y - bounds.y - 2.0) / (track_size - thumb_size).max(1.0)
+                }
+            };
+
+            let actual_max_scroll = self.actual_max_scroll(track_size);
+            let new_scroll = relative_pos.clamp(0.0, 1.0) * actual_max_scroll;
+            shell.publish((self.on_scroll)(new_scroll));
+        }
+    }
+
+    /// 处理鼠标左键释放
+    fn handle_button_released(
+        &mut self,
+        state: &mut ScrollbarState,
+        thumb_bounds: Rectangle,
+        cursor: mouse::Cursor,
+        shell: &mut iced_core::Shell<'_, Message>,
+    ) {
+        if !matches!(
+            state,
+            ScrollbarState::Dragging { .. } | ScrollbarState::DraggingEdge { .. }
+        ) {
+            return;
+        }
+
+        let new_state = cursor
+            .position()
+            .map_or(ScrollbarState::Idle, |pos| {
+                self.determine_state_at_position(pos, thumb_bounds)
+            });
+        *state = new_state;
+        shell.request_redraw();
+    }
+
+    /// 处理鼠标移动
+    fn handle_cursor_moved(
+        &mut self,
+        state: &mut ScrollbarState,
+        track_size: f32,
+        thumb_size: f32,
+        thumb_bounds: Rectangle,
+        cursor: mouse::Cursor,
+        shell: &mut iced_core::Shell<'_, Message>,
+    ) {
+        match *state {
+            ScrollbarState::Dragging {
+                start_pos,
+                start_scroll,
+            } => {
+                self.handle_dragging(track_size, thumb_size, start_pos, start_scroll, cursor, shell);
+            }
+            ScrollbarState::DraggingEdge {
+                start_pos,
+                start_zoom,
+                start_thumb_size,
+                edge,
+            } => {
+                self.handle_dragging_edge(
+                    state, track_size, start_pos, start_zoom, start_thumb_size, edge, cursor, shell,
+                );
+            }
+            _ => {
+                let new_state = cursor
+                    .position()
+                    .map_or(ScrollbarState::Idle, |pos| {
+                        self.determine_state_at_position(pos, thumb_bounds)
+                    });
+
+                if *state != new_state {
+                    *state = new_state;
+                    shell.request_redraw();
+                }
+            }
+        }
+    }
+
+    /// 处理滑块拖拽中
+    fn handle_dragging(
+        &self,
+        track_size: f32,
+        thumb_size: f32,
+        start_pos: f32,
+        start_scroll: f32,
+        cursor: mouse::Cursor,
+        shell: &mut iced_core::Shell<'_, Message>,
+    ) {
+        let Some(position) = cursor.position() else {
+            return;
+        };
+
+        let current_pos = match self.orientation {
+            ScrollbarOrientation::Horizontal => position.x,
+            ScrollbarOrientation::Vertical => position.y,
+        };
+        let delta = current_pos - start_pos;
+
+        let actual_max_scroll = self.actual_max_scroll(track_size);
+        let scroll_ratio = delta / (track_size - thumb_size).max(1.0);
+        let new_scroll =
+            (start_scroll + scroll_ratio * actual_max_scroll).clamp(0.0, actual_max_scroll);
+        shell.publish((self.on_scroll)(new_scroll));
+        shell.request_redraw();
+    }
+
+    /// 处理边缘拖拽缩放中
+    fn handle_dragging_edge(
+        &self,
+        state: &mut ScrollbarState,
+        track_size: f32,
+        start_pos: f32,
+        start_zoom: f32,
+        start_thumb_size: f32,
+        edge: Edge,
+        cursor: mouse::Cursor,
+        shell: &mut iced_core::Shell<'_, Message>,
+    ) {
+        let Some(position) = cursor.position() else {
+            return;
+        };
+
+        let current_pos = match self.orientation {
+            ScrollbarOrientation::Horizontal => position.x,
+            ScrollbarOrientation::Vertical => position.y,
+        };
+        let delta = current_pos - start_pos;
+        let effective_delta = if edge == Edge::End { delta } else { -delta };
+
+        // 动态判断滚动是否已达极限，阻止缩小方向的拖拽（放大方向仍可正常工作）
+        // 使用 1px 迟滞防止浮点精度导致的误判
+        const LIMIT_HYSTERESIS: f32 = 1.0;
+        let actual_max_scroll = self.actual_max_scroll(track_size);
+        let can_zoom_out = match edge {
+            Edge::Start => self.scroll > LIMIT_HYSTERESIS,
+            Edge::End => self.scroll < actual_max_scroll - LIMIT_HYSTERESIS,
+        };
+
+        if !can_zoom_out && effective_delta > 0.0 {
+            // 滚动已达极限，阻止继续缩小。
+            // 更新 start_pos 和 start_zoom，使后续 delta ≈ 0、ratio ≈ 1，
+            // 避免 effective_delta 突变导致 new_zoom 跳回 start_zoom 产生抽动。
+            // 用户反向拖拽（放大）时也能从当前位置平滑过渡。
+            *state = ScrollbarState::DraggingEdge {
+                start_pos: current_pos,
+                start_zoom: self.zoom,
+                start_thumb_size,
+                edge,
+            };
+        } else {
+            let max_delta = (track_size - start_thumb_size).max(track_size * 0.5);
+            let clamped_delta = effective_delta.clamp(-track_size * 0.9, max_delta);
+
+            let ratio = (1.0 + clamped_delta / start_thumb_size.max(1.0)).max(0.05);
+            let new_zoom = start_zoom / ratio;
+            let fixed_ratio = if edge == Edge::End { 0.0 } else { 1.0 };
+            shell.publish((self.on_zoom)(new_zoom, fixed_ratio));
+        }
+        shell.request_redraw();
+    }
+}
+
 impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
     fn tag(&self) -> iced_core::widget::tree::Tag {
         iced_core::widget::tree::Tag::of::<ScrollbarState>()
@@ -100,148 +304,23 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
         let state = tree.state.downcast_mut::<ScrollbarState>();
         let (track_size, thumb_size, thumb_bounds) = self.thumb_geometry(bounds);
 
-        if let Event::Mouse(mouse_event) = event {
-            match mouse_event {
-                mouse::Event::ButtonPressed(mouse::Button::Left) => {
-                    if let Some(position) = cursor.position() {
-                        if thumb_bounds.contains(position) {
-                            let start_pos = match self.orientation {
-                                ScrollbarOrientation::Horizontal => position.x,
-                                ScrollbarOrientation::Vertical => position.y,
-                            };
-                            if let Some(edge) = self.get_edge(position, thumb_bounds) {
-                                *state = ScrollbarState::DraggingEdge {
-                                    start_pos,
-                                    start_zoom: self.zoom,
-                                    start_thumb_size: thumb_size,
-                                    edge,
-                                };
-                            } else {
-                                let scrollable_size = self.actual_max_scroll(track_size);
-                                *state = ScrollbarState::Dragging {
-                                    start_pos,
-                                    start_scroll: self.scroll.clamp(0.0, scrollable_size),
-                                };
-                            }
-                            shell.request_redraw();
-                        } else if bounds.contains(position) {
-                            let relative_pos = match self.orientation {
-                                ScrollbarOrientation::Horizontal => {
-                                    (position.x - bounds.x - 2.0)
-                                        / (track_size - thumb_size).max(1.0)
-                                }
-                                ScrollbarOrientation::Vertical => {
-                                    (position.y - bounds.y - 2.0)
-                                        / (track_size - thumb_size).max(1.0)
-                                }
-                            };
+        let Event::Mouse(mouse_event) = event else {
+            return;
+        };
 
-                            let actual_max_scroll = self.actual_max_scroll(track_size);
-
-                            let new_scroll = relative_pos.clamp(0.0, 1.0) * actual_max_scroll;
-                            shell.publish((self.on_scroll)(new_scroll));
-                        }
-                    }
-                }
-                mouse::Event::ButtonReleased(mouse::Button::Left) => {
-                    if matches!(
-                        state,
-                        ScrollbarState::Dragging { .. } | ScrollbarState::DraggingEdge { .. }
-                    ) {
-                        let new_state = if let Some(position) = cursor.position() {
-                            self.determine_state_at_position(position, thumb_bounds)
-                        } else {
-                            ScrollbarState::Idle
-                        };
-                        *state = new_state;
-                        shell.request_redraw();
-                    }
-                }
-                mouse::Event::CursorMoved { .. } => match *state {
-                    ScrollbarState::Dragging {
-                        start_pos,
-                        start_scroll,
-                    } => {
-                        if let Some(position) = cursor.position() {
-                            let current_pos = match self.orientation {
-                                ScrollbarOrientation::Horizontal => position.x,
-                                ScrollbarOrientation::Vertical => position.y,
-                            };
-                            let delta = current_pos - start_pos;
-
-                            let actual_max_scroll = self.actual_max_scroll(track_size);
-
-                            let scroll_ratio = delta / (track_size - thumb_size).max(1.0);
-                            let new_scroll = (start_scroll + scroll_ratio * actual_max_scroll)
-                                .clamp(0.0, actual_max_scroll);
-                            shell.publish((self.on_scroll)(new_scroll));
-                            shell.request_redraw();
-                        }
-                    }
-                    ScrollbarState::DraggingEdge {
-                        start_pos,
-                        start_zoom,
-                        start_thumb_size,
-                        edge,
-                    } => {
-                        if let Some(position) = cursor.position() {
-                            let current_pos = match self.orientation {
-                                ScrollbarOrientation::Horizontal => position.x,
-                                ScrollbarOrientation::Vertical => position.y,
-                            };
-                            let delta = current_pos - start_pos;
-                            let effective_delta = if edge == Edge::End { delta } else { -delta };
-
-                            // 动态判断滚动是否已达极限，阻止缩小方向的拖拽（放大方向仍可正常工作）
-                            // 使用 1px 迟滞防止浮点精度导致的误判
-                            const LIMIT_HYSTERESIS: f32 = 1.0;
-                            let actual_max_scroll = self.actual_max_scroll(track_size);
-                            let can_zoom_out = match edge {
-                                Edge::Start => self.scroll > LIMIT_HYSTERESIS,
-                                Edge::End => self.scroll < actual_max_scroll - LIMIT_HYSTERESIS,
-                            };
-
-                            if !can_zoom_out && effective_delta > 0.0 {
-                                // 滚动已达极限，阻止继续缩小。
-                                // 更新 start_pos 和 start_zoom，使后续 delta ≈ 0、ratio ≈ 1，
-                                // 避免 effective_delta 突变导致 new_zoom 跳回 start_zoom 产生抽动。
-                                // 用户反向拖拽（放大）时也能从当前位置平滑过渡。
-                                *state = ScrollbarState::DraggingEdge {
-                                    start_pos: current_pos,
-                                    start_zoom: self.zoom,
-                                    start_thumb_size,
-                                    edge,
-                                };
-                            } else {
-                                let max_delta =
-                                    (track_size - start_thumb_size).max(track_size * 0.5);
-                                let clamped_delta =
-                                    effective_delta.clamp(-track_size * 0.9, max_delta);
-
-                                let ratio =
-                                    (1.0 + clamped_delta / start_thumb_size.max(1.0)).max(0.05);
-                                let new_zoom = start_zoom / ratio;
-                                let fixed_ratio = if edge == Edge::End { 0.0 } else { 1.0 };
-                                shell.publish((self.on_zoom)(new_zoom, fixed_ratio));
-                            }
-                            shell.request_redraw();
-                        }
-                    }
-                    _ => {
-                        let new_state = if let Some(position) = cursor.position() {
-                            self.determine_state_at_position(position, thumb_bounds)
-                        } else {
-                            ScrollbarState::Idle
-                        };
-
-                        if *state != new_state {
-                            *state = new_state;
-                            shell.request_redraw();
-                        }
-                    }
-                },
-                _ => {}
+        match mouse_event {
+            mouse::Event::ButtonPressed(mouse::Button::Left) => {
+                self.handle_button_pressed(
+                    state, bounds, thumb_bounds, track_size, thumb_size, cursor, shell,
+                );
             }
+            mouse::Event::ButtonReleased(mouse::Button::Left) => {
+                self.handle_button_released(state, thumb_bounds, cursor, shell);
+            }
+            mouse::Event::CursorMoved { .. } => {
+                self.handle_cursor_moved(state, track_size, thumb_size, thumb_bounds, cursor, shell);
+            }
+            _ => {}
         }
     }
 
