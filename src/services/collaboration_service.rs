@@ -1,6 +1,5 @@
 use lumino_collaboration::{ClientConfig, CollaborationClient};
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// 协作服务错误消息常量
 mod messages {
@@ -12,21 +11,25 @@ mod messages {
 
 /// 协作服务 - 处理协作连接和事件
 ///
-/// 简化后的锁结构：单层 `Arc<tokio::sync::Mutex<Option<CollaborationClient>>>`。
-/// 同步 API 使用 block_on 桥接异步调用。
+/// 锁设计（2 层）：
+/// - `Arc<std::sync::Mutex<Option<CollaborationClient>>>`
+/// - 外层 `std::sync::Mutex` 提供同步访问（无 block_on，避免嵌套 runtime panic）
+/// - `CollaborationClient` 内部已使用 `Arc<RwLock<>>`，无需额外异步锁
+///
+/// 同步 API 桥接异步方法时，临时取出 Client 再放回。
 #[derive(Clone)]
 pub struct CollaborationService {
-    /// 协作客户端（单层异步锁）
+    /// 协作客户端（同步锁 + Option）
     client: Arc<Mutex<Option<CollaborationClient>>>,
     /// 连接断开信号（用于终止 connect 中的后台心跳循环）
-    disconnect_tx: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
+    disconnect_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
 }
 
 impl CollaborationService {
     pub fn new() -> Self {
         Self {
             client: Arc::new(Mutex::new(None)),
-            disconnect_tx: Arc::new(std::sync::Mutex::new(None)),
+            disconnect_tx: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -57,29 +60,37 @@ impl CollaborationService {
             Self::handle_collaboration_event(event);
         });
 
-        *self.client.lock().await = Some(client);
-
-        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        let (tx, rx) = tokio::sync::oneshot::channel();
         *self.disconnect_tx.lock().unwrap() = Some(tx);
 
+        // 将客户端放入 Mutex 后，Spawn 后台任务取出并操作
+        *self.client.lock().unwrap() = Some(client);
         let client_arc = self.client.clone();
+
         tokio::spawn(async move {
-            let mut guard = client_arc.lock().await;
-            let c = guard.as_mut().expect("客户端在连接前已被释放");
+            let mut rx = rx; // `&mut rx` 需要可变绑定
+            // 从 Mutex 中取出客户端（作用域块确保 guard 在 .await 前被销毁）
+            let mut client = {
+                let mut guard = client_arc.lock().unwrap();
+                guard.take().expect("客户端在连接前已被释放")
+            };
+
             let result: Result<(), String> = if let Some(code) = invite_code {
                 tracing::info!("协作: 正在加入房间 (邀请码: {})...", code);
-                c.join_room_and_connect(code).await.map_err(|e| e.to_string())
+                client.join_room_and_connect(code).await.map_err(|e| e.to_string())
             } else {
                 let name = room_name.unwrap_or_else(|| messages::DEFAULT_ROOM_NAME.to_string());
                 tracing::info!("协作: 正在创建房间: {} ...", name);
-                c.create_room_and_connect(name).await.map_err(|e| e.to_string()).map(|_| ())
+                client.create_room_and_connect(name).await.map_err(|e| e.to_string()).map(|_| ())
             };
 
             match result {
                 Ok(_) => tracing::info!("协作: 连接成功!"),
                 Err(e) => tracing::error!("协作: 连接失败: {}", e),
             }
-            drop(guard);
+
+            // 将客户端放回（连接成功或失败后都可被后续操作访问）
+            *client_arc.lock().unwrap() = Some(client);
 
             tokio::select! {
                 _ = &mut rx => tracing::info!("协作: 收到断开信号，后台任务退出"),
@@ -95,11 +106,14 @@ impl CollaborationService {
         if let Some(tx) = self.disconnect_tx.lock().unwrap().take() {
             let _ = tx.send(());
         }
-        let mut guard = self.client.lock().await;
-        if let Some(ref mut c) = *guard {
+        // 作用域块确保 MutexGuard（!Send）在 .await 前被销毁
+        let mut client = {
+            let mut guard = self.client.lock().unwrap();
+            guard.take()
+        };
+        if let Some(ref mut c) = client {
             let _ = c.disconnect().await;
         }
-        *guard = None;
     }
 
     /// 处理协作事件
@@ -161,14 +175,22 @@ impl CollaborationService {
         &self,
         position: lumino_collaboration::types::MousePosition,
     ) -> Result<(), String> {
-        let handle = tokio::runtime::Handle::current();
-        handle.block_on(async {
-            let guard = self.client.lock().await;
-            match &*guard {
-                Some(c) => c.send_mouse_position(position).await.map_err(|e| e.to_string()),
-                None => Err(messages::CLIENT_NOT_INITIALIZED.to_string()),
+        // 临时取出客户端以调用异步方法，避免持有锁跨 .await
+        let mut guard = self.client.lock().unwrap();
+        let client = guard.take();
+        drop(guard);
+
+        let result = match &client {
+            Some(c) => {
+                let handle = tokio::runtime::Handle::current();
+                handle.block_on(c.send_mouse_position(position)).map_err(|e| e.to_string())
             }
-        })
+            None => Err(messages::CLIENT_NOT_INITIALIZED.to_string()),
+        };
+
+        // 放回客户端
+        *self.client.lock().unwrap() = client;
+        result
     }
 
     /// 断开连接（同步 API）
@@ -176,14 +198,15 @@ impl CollaborationService {
         if let Some(tx) = self.disconnect_tx.lock().unwrap().take() {
             let _ = tx.send(());
         }
-        let handle = tokio::runtime::Handle::current();
-        handle.block_on(async {
-            let mut guard = self.client.lock().await;
-            if let Some(ref mut c) = *guard {
-                let _ = c.disconnect().await;
-            }
-            *guard = None;
-        });
+        let mut guard = self.client.lock().unwrap();
+        let mut client = guard.take();
+        drop(guard);
+
+        if let Some(ref mut c) = client {
+            let handle = tokio::runtime::Handle::current();
+            let _ = handle.block_on(c.disconnect());
+        }
+        // 连接已终止，不放回客户端
         Ok(())
     }
 
@@ -192,20 +215,27 @@ impl CollaborationService {
         &self,
         operation: lumino_collaboration::types::NoteBatchOperation,
     ) -> Result<(), String> {
-        let handle = tokio::runtime::Handle::current();
-        handle.block_on(async {
-            let guard = self.client.lock().await;
-            match &*guard {
-                Some(c) => c.send_note_batch(operation).await.map_err(|e| e.to_string()),
-                None => Err(messages::CLIENT_NOT_INITIALIZED.to_string()),
+        let mut guard = self.client.lock().unwrap();
+        let client = guard.take();
+        drop(guard);
+
+        let result = match &client {
+            Some(c) => {
+                let handle = tokio::runtime::Handle::current();
+                handle.block_on(c.send_note_batch(operation)).map_err(|e| e.to_string())
             }
-        })
+            None => Err(messages::CLIENT_NOT_INITIALIZED.to_string()),
+        };
+
+        *self.client.lock().unwrap() = client;
+        result
     }
 
     /// 检查客户端实例是否存在（同步 API）
+    ///
+    /// 使用同步锁，无 block_on，避免嵌套 runtime panic。
     pub fn is_connected(&self) -> bool {
-        let handle = tokio::runtime::Handle::current();
-        handle.block_on(async { self.client.lock().await.is_some() })
+        self.client.lock().unwrap().is_some()
     }
 }
 

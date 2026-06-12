@@ -1,4 +1,4 @@
-﻿//! 编辑器操作 - 音轨管理
+//! 编辑器操作 - 音轨管理
 
 use crate::editor::note::Note;
 use crate::root::Root;
@@ -34,6 +34,7 @@ impl Root {
                 .push_back(Note::from_raw(tick, key as u16, length, velocity, channel));
         }
         self.editor
+            .spatial
             .track_note_indices
             .borrow_mut()
             .remove(&self.editor.editor_state.data.current_track);
@@ -83,6 +84,7 @@ impl Root {
             .track_notes
             .insert(track_idx, track_notes);
         self.editor
+            .spatial
             .track_note_indices
             .borrow_mut()
             .remove(&track_idx);

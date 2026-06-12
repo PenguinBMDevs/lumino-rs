@@ -372,7 +372,7 @@ impl Editor {
                 changed = true;
             }
             if changed {
-                self.note_index_dirty.set(true);
+                self.spatial.note_index_dirty.set(true);
             }
         }
     }

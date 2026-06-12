@@ -43,13 +43,13 @@ impl Editor {
         &mut self,
         track_onion_states: &std::collections::HashMap<usize, bool>,
     ) -> Vec<usize> {
-        if self.onion_cache_valid {
-            return self.cached_onion_track_indices.clone();
+        if self.onion_skin.cache_valid {
+            return self.onion_skin.cached_track_indices.clone();
         }
 
         let indices = self.collect_visible_track_indices(track_onion_states);
-        self.cached_onion_track_indices = indices.clone();
-        self.onion_cache_valid = true;
+        self.onion_skin.cached_track_indices = indices.clone();
+        self.onion_skin.cache_valid = true;
         indices
     }
 

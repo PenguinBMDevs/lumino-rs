@@ -105,12 +105,12 @@ impl Editor {
         let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1); // 减 1 容错
 
         // 重建空间索引（仅在音符数据变化时）
-        if self.note_index_dirty.get() {
+        if self.spatial.note_index_dirty.get() {
             let notes_vec: Vec<_> = self.editor_state.data.notes.iter().cloned().collect();
-            *self.note_index.borrow_mut() = Some(
+            *self.spatial.note_index.borrow_mut() = Some(
                 crate::editor::spatial_index::NoteSpatialIndex::from_notes(&notes_vec),
             );
-            self.note_index_dirty.set(false);
+            self.spatial.note_index_dirty.set(false);
             tracing::debug!(
                 "Editor: rebuild spatial index for {} notes",
                 self.editor_state.data.notes.len()
@@ -120,8 +120,8 @@ impl Editor {
         // 查询可见范围内的音符（每次渲染都执行，确保滚动/缩放时刷新）
         // 使用线程本地存储的缓冲区，避免重复分配
         let candidate_count = {
-            let mut cache = self.query_cache.borrow_mut();
-            if let Some(index) = &*self.note_index.borrow() {
+            let mut cache = self.spatial.query_cache.borrow_mut();
+            if let Some(index) = &*self.spatial.note_index.borrow() {
                 index.update_query(
                     visible_tick_start,
                     visible_tick_end,
@@ -144,7 +144,7 @@ impl Editor {
 
         if candidate_count >= PARALLEL_THRESHOLD {
             // 大数据量：并行处理
-            let cache = self.query_cache.borrow();
+            let cache = self.spatial.query_cache.borrow();
 
             // 预收集所有需要的数据到线程安全的结构中
             // 收集 (index, tick, key, length) 的元组，避免在并行闭包中访问 self.editor_state.data.notes
@@ -212,7 +212,7 @@ impl Editor {
             instances.extend(note_instances);
         } else {
             // 小数据量：顺序处理，避免并行开销
-            let cache = self.query_cache.borrow();
+            let cache = self.spatial.query_cache.borrow();
             for &i in cache.iter() {
                 if let Some(note) = self.editor_state.data.notes.get(i) {
                     if note.tick > visible_tick_end {

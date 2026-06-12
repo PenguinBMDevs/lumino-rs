@@ -68,7 +68,7 @@ impl Host {
             return false;
         }
 
-        let note_index_dirty = self.root.editor.note_index_dirty.get();
+        let note_index_dirty = self.root.editor.spatial.note_index_dirty.get();
         let current_edit_state = self.root.editor.editor_state.interaction.edit_state.clone();
         let is_drawing = matches!(current_edit_state, crate::editor::EditState::Drawing { .. });
 
@@ -132,7 +132,7 @@ impl Host {
         self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;
 
         if note_index_dirty {
-            self.root.editor.note_index_dirty.set(false);
+            self.root.editor.spatial.note_index_dirty.set(false);
             tracing::debug!("Cleared note_index_dirty flag");
         }
 

@@ -1,4 +1,4 @@
-﻿use crate::RenderParams;
+use crate::RenderParams;
 use crate::host::Host;
 use iced_wgpu::wgpu;
 use lumino_gfx::{ArrangementNoteInstance, ArrangementUniform};
@@ -537,7 +537,7 @@ impl Host {
             return;
         }
 
-        let note_index_dirty = self.root.editor.note_index_dirty.get();
+        let note_index_dirty = self.root.editor.spatial.note_index_dirty.get();
         let is_drawing = matches!(
             self.root.editor.editor_state.interaction.edit_state,
             crate::editor::EditState::Drawing { .. }
@@ -620,7 +620,7 @@ impl Host {
         }
 
         if note_index_dirty {
-            self.root.editor.note_index_dirty.set(false);
+            self.root.editor.spatial.note_index_dirty.set(false);
         }
     }
 

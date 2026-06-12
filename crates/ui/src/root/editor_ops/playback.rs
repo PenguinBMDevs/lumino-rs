@@ -1,4 +1,4 @@
-﻿//! 编辑器操作 - 播放管理
+//! 编辑器操作 - 播放管理
 
 use crate::playback::NoteEvent;
 use crate::root::Root;

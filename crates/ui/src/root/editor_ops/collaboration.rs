@@ -113,7 +113,7 @@ impl Root {
             affected_tracks.insert(source_track);
         }
 
-        let mut indices_map = self.editor.track_note_indices.borrow_mut();
+        let mut indices_map = self.editor.spatial.track_note_indices.borrow_mut();
         for track_idx in affected_tracks {
             indices_map.remove(&track_idx);
         }

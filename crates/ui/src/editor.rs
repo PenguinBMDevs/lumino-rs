@@ -56,6 +56,56 @@ impl CacheInvalidation {
     pub const ALL: Self = Self(0b111);
 }
 
+/// 空间索引状态（从 Editor 提取，减少字段数）
+#[derive(Debug)]
+pub struct SpatialIndexState {
+    /// 音符空间索引（惰性更新）
+    pub note_index: RefCell<Option<spatial_index::NoteSpatialIndex>>,
+    pub note_index_dirty: Cell<bool>,
+    pub query_cache: RefCell<Vec<usize>>,
+    /// 其他音轨的音符空间索引（用于洋葱皮等，懒加载）
+    pub track_note_indices:
+        RefCell<std::collections::HashMap<usize, spatial_index::NoteSpatialIndex>>,
+}
+
+impl Default for SpatialIndexState {
+    fn default() -> Self {
+        Self {
+            note_index: RefCell::new(None),
+            note_index_dirty: Cell::new(false),
+            query_cache: RefCell::new(Vec::new()),
+            track_note_indices: RefCell::new(std::collections::HashMap::new()),
+        }
+    }
+}
+
+/// 洋葱皮缓存状态（从 Editor 提取，减少字段数）
+#[derive(Debug)]
+pub struct OnionSkinState {
+    /// 洋葱皮配置
+    pub config: OnionSkinConfig,
+    /// 缓存的可见音轨索引（洋葱皮用），避免每帧重复计算
+    pub cached_track_indices: Vec<usize>,
+    /// 缓存的可见音轨哈希值（不含颜色）
+    pub cached_track_hash: u64,
+    /// 缓存的音轨颜色哈希值
+    pub cached_config_hash: u64,
+    /// 缓存是否有效
+    pub cache_valid: bool,
+}
+
+impl Default for OnionSkinState {
+    fn default() -> Self {
+        Self {
+            config: OnionSkinConfig::default(),
+            cached_track_indices: Vec::new(),
+            cached_track_hash: 0,
+            cached_config_hash: 0,
+            cache_valid: false,
+        }
+    }
+}
+
 /// 钢琴卷帘编辑器
 pub struct Editor {
     pub grid_cache: canvas::Cache<crate::Renderer>,
@@ -64,8 +114,11 @@ pub struct Editor {
     /// 标尺缓存（只随水平滚动变化）
     pub ruler_cache: canvas::Cache<crate::Renderer>,
 
-    /// 洋葱皮配置
-    onion_skin_config: OnionSkinConfig,
+    /// 空间索引状态（音符索引、查询缓存等）
+    pub spatial: SpatialIndexState,
+
+    /// 洋葱皮状态（配置、缓存）
+    pub onion_skin: OnionSkinState,
 
     /// 协作远端用户光标信息（用户ID -> (位置, 颜色, 用户名)）
     pub remote_cursors: std::collections::HashMap<String, (Point, String, String)>,
@@ -79,29 +132,11 @@ pub struct Editor {
     /// 音符数据是否已变化（需要更新播放管理器）
     notes_changed: bool,
 
-    /// 音符空间索引（惰性更新）
-    pub note_index: RefCell<Option<spatial_index::NoteSpatialIndex>>,
-    pub note_index_dirty: Cell<bool>,
-    pub query_cache: RefCell<Vec<usize>>,
-
-    /// 其他音轨的音符空间索引（用于洋葱皮等，懒加载）
-    pub track_note_indices:
-        RefCell<std::collections::HashMap<usize, spatial_index::NoteSpatialIndex>>,
-
     /// 统一状态管理
     pub editor_state: editor_state::EditorState,
 
     /// 力度编辑面板
     pub velocity_panel: velocity::VelocityPanel,
-
-    /// 缓存的可见音轨索引（洋葱皮用），避免每帧重复计算
-    pub cached_onion_track_indices: Vec<usize>,
-    /// 缓存的可见音轨哈希值（不含颜色）
-    pub cached_onion_track_hash: u64,
-    /// 缓存的音轨颜色哈希值
-    pub cached_onion_config_hash: u64,
-    /// 缓存是否有效
-    pub onion_cache_valid: bool,
 
     /// 框选框的动画显示状态（用于弹簧物理动画）
     pub selection_box_anim: RefCell<Option<SelectionBoxAnimState>>,
@@ -176,7 +211,7 @@ impl Editor {
             .unwrap_or(0);
 
         // track_note_indices
-        let track_note_indices_entries = self.track_note_indices.borrow().len();
+        let track_note_indices_entries = self.spatial.track_note_indices.borrow().len();
 
         tracing::info!(
             "[MEMORY_DEBUG] document={}, events_cap={}, notes_len={}, track_notes_entries={}, track_notes_count={}",
@@ -203,20 +238,13 @@ impl Editor {
             grid_cache: canvas::Cache::new(),
             keyboard_cache: canvas::Cache::new(),
             ruler_cache: canvas::Cache::new(),
-            onion_skin_config: OnionSkinConfig::new(),
+            spatial: SpatialIndexState::default(),
+            onion_skin: OnionSkinState::default(),
             remote_cursors: std::collections::HashMap::new(),
             playback_position: 0.0,
             loop_range: Some(grid::LoopRange::new()),
             notes_changed: false,
-            note_index: RefCell::new(None),
-            note_index_dirty: Cell::new(true),
-            query_cache: RefCell::new(Vec::new()),
-            track_note_indices: RefCell::new(std::collections::HashMap::new()),
             velocity_panel: velocity::VelocityPanel::new(),
-            cached_onion_track_indices: Vec::new(),
-            cached_onion_track_hash: 0,
-            cached_onion_config_hash: 0,
-            onion_cache_valid: false,
             selection_box_anim: RefCell::new(None),
         }
     }
@@ -315,8 +343,8 @@ impl Editor {
     /// 标记音符数据已变化
     pub fn mark_notes_changed(&mut self) {
         self.notes_changed = true;
-        self.note_index_dirty.set(true);
-        self.track_note_indices
+        self.spatial.note_index_dirty.set(true);
+        self.spatial.track_note_indices
             .borrow_mut()
             .remove(&self.editor_state.data.current_track);
     }
@@ -329,7 +357,7 @@ impl Editor {
     /// - `playback_position`：播放指示线位置
     pub fn reset_internal_state(&mut self) {
         use crate::editor::onion_skin::OnionSkinConfig;
-        self.onion_skin_config = OnionSkinConfig::new();
+        self.onion_skin.config = OnionSkinConfig::new();
         self.notes_changed = false;
         self.playback_position = 0.0;
         self.velocity_panel = velocity::VelocityPanel::new();
