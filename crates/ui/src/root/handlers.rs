@@ -93,26 +93,16 @@ impl Root {
         // 每帧轮询 MIDI 输入缓冲区
         self.poll_midi_input();
 
-        // 使用消息路由器处理
-        let mut router = Self::create_message_router();
-        let remaining = self.route_message(msg, &mut router);
-
-        // 处理未被专门处理器处理的消息
-        if let Some(msg) = remaining {
-            self.handle_remaining_messages(msg);
-        }
-    }
-
-    /// 路由消息到专门的处理器
-    fn route_message(&mut self, msg: Message, router: &mut MessageRouter) -> Option<Message> {
-        // 尝试直接处理消息
+        // 先尝试直接处理消息
         if self.try_handle_direct(&msg) {
-            return None;
+            return;
         }
 
-        // 其他消息通过路由器处理
+        // 将 router 从 self 中取出，避免 &mut self 与 &mut self.message_router 冲突
+        // 使用临时空 router 占位，使用完毕后归还
+        let mut router = std::mem::take(&mut self.message_router);
         router.route(self, msg);
-        None
+        self.message_router = router;
     }
 
     /// 直接处理不需要路由的消息
@@ -389,12 +379,6 @@ impl Root {
             }
             _ => false,
         }
-    }
-
-    /// 处理剩余的消息（备用）
-    fn handle_remaining_messages(&mut self, msg: Message) {
-        // 未处理的消息（通常意味着需要扩展处理器）
-        let _ = std::mem::discriminant(&msg);
     }
 
     // ====================================================================

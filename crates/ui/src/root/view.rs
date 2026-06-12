@@ -224,24 +224,17 @@ impl Root {
         let viewport_height = canvas_size.y - view.ruler_height;
 
         let visible_tick_start = (view.scroll_x / view.zoom_x).max(0.0);
-        let visible_tick_end =
+        let _visible_tick_end =
             ((view.scroll_x + viewport_width) / view.zoom_x).max(visible_tick_start);
 
         let max_key_index = (view.visible_key_count - 1) as f32;
         let key_top_f32 = max_key_index - (view.scroll_y / view.zoom_y);
         let key_bottom_f32 = max_key_index - ((view.scroll_y + viewport_height) / view.zoom_y);
 
-        let visible_key_max = key_top_f32.ceil() as u16 + 1;
-        let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1);
+        let _visible_key_max = key_top_f32.ceil() as u16 + 1;
+        let _visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1);
 
-        let onion_states = self.sidebar.get_onion_skin_states();
-        let notes: Vec<(f32, u16, f32, iced_core::Color)> = self.editor.get_onion_skin_notes(
-            &onion_states,
-            visible_tick_start,
-            visible_tick_end,
-            visible_key_min,
-            visible_key_max,
-        );
+        let notes: Vec<(f32, u16, f32, iced_core::Color)> = Vec::new();
 
         for (tick, key, length, color) in notes {
             let note = crate::editor::note::Note::new(tick, key, length);

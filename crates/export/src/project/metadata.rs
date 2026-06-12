@@ -186,8 +186,8 @@ mod tests {
             note_count: 500,
         });
 
-        let toml_str = meta.to_toml_str().unwrap();
-        let decoded = ProjectMetadata::from_toml_str(&toml_str).unwrap();
+        let toml_str = meta.to_toml_str().expect("序列化元数据为TOML失败");
+        let decoded = ProjectMetadata::from_toml_str(&toml_str).expect("从TOML反序列化元数据失败");
 
         assert_eq!(decoded.project.name, "Test Project");
         assert_eq!(decoded.audio.track_count, 2);

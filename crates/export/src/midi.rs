@@ -384,7 +384,7 @@ mod tests {
         };
         let result = export_midi_to_bytes(&data);
         assert!(result.is_ok(), "empty MIDI should export successfully");
-        let bytes = result.unwrap();
+        let bytes = result.expect("导出空MIDI数据失败");
         // MIDI 文件头: "MThd" + 6 bytes header
         assert!(bytes.len() >= 14, "MIDI header should be at least 14 bytes");
         assert_eq!(&bytes[0..4], b"MThd", "should start with MThd");
@@ -420,7 +420,7 @@ mod tests {
             result.is_ok(),
             "single note MIDI should export successfully"
         );
-        let bytes = result.unwrap();
+        let bytes = result.expect("导出单音符MIDI数据失败");
         assert_eq!(&bytes[0..4], b"MThd", "should start with MThd");
         // 格式 1 应包含轨道数据
         assert!(bytes.len() > 14, "should contain track data beyond header");
@@ -456,7 +456,7 @@ mod tests {
         };
         let result = export_midi_to_bytes(&data);
         assert!(result.is_ok(), "format 0 MIDI should export successfully");
-        let bytes = result.unwrap();
+        let bytes = result.expect("导出Format 0 MIDI数据失败");
         assert_eq!(&bytes[0..4], b"MThd", "should start with MThd");
         // Format 0: 单个轨道
         assert_eq!(bytes[10], 0, "format 0 should have 1 track (high byte)");

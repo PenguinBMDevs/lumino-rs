@@ -202,7 +202,7 @@ mod tests {
             track_id: 42,
         };
         let bytes = header.to_bytes();
-        let decoded = LmtrackHeader::from_bytes(&bytes).unwrap();
+        let decoded = LmtrackHeader::from_bytes(&bytes).expect("解码LmtrackHeader失败");
         assert_eq!(&decoded.magic, b"LMTR");
         assert_eq!(decoded.version, 1);
         assert_eq!(decoded.track_id, 42);
@@ -227,8 +227,8 @@ mod tests {
         assert_eq!(data.event_count, 2);
         assert_eq!(data.note_count, 1);
 
-        let encoded = data.encode().unwrap();
-        let decoded = LmtrackData::decode(&encoded).unwrap();
+        let encoded = data.encode().expect("编码LmtrackData失败");
+        let decoded = LmtrackData::decode(&encoded).expect("解码LmtrackData失败");
 
         assert_eq!(decoded.meta.track_id, 0);
         assert_eq!(decoded.event_count, 2);

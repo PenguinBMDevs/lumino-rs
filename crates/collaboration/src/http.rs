@@ -74,7 +74,7 @@ impl HttpClient {
         let text = response.text().await?;
 
         if !status.is_success() {
-            return Err(format!("HTTP error: {}", text).into());
+            return Err(crate::CollaborationError::Other(format!("HTTP error: {}", text)));
         }
 
         debug!(response = %text, "[HTTP] Response");
@@ -97,7 +97,7 @@ impl HttpClient {
         let error_text = response.text().await?;
 
         if !status.is_success() {
-            return Err(format!("HTTP error: {}", error_text).into());
+            return Err(crate::CollaborationError::Other(format!("HTTP error: {}", error_text)));
         }
 
         let room_info: RoomInfo = serde_json::from_str(&error_text)?;
@@ -110,7 +110,7 @@ impl HttpClient {
         let response: reqwest::Response = self.client.get(&url).send().await?;
 
         if !response.status().is_success() {
-            return Err("Health check failed".into());
+            return Err(crate::CollaborationError::Other("Health check failed".to_string()));
         }
 
         let health: serde_json::Value = response.json().await?;
@@ -151,7 +151,7 @@ mod tests {
             host_id: "user_123".to_string(),
             host_name: Some("测试用户".to_string()),
         };
-        let json = serde_json::to_string(&req).unwrap();
+        let json = serde_json::to_string(&req).expect("序列化创建房间请求失败");
         assert!(json.contains("\"name\":\"测试房间\""));
         assert!(json.contains("\"hostId\":\"user_123\""));
         assert!(json.contains("\"hostName\":\"测试用户\""));

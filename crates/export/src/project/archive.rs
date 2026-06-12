@@ -341,7 +341,7 @@ mod tests {
             _reserved: [0u8; 16],
         };
         let bytes = header.to_bytes();
-        let decoded = ArchiveHeader::from_bytes(&bytes).unwrap();
+        let decoded = ArchiveHeader::from_bytes(&bytes).expect("解码归档头部失败");
         assert_eq!(&decoded.magic, b"LMPJ");
         assert_eq!(decoded.version, 1);
         assert_eq!(decoded.file_table_offset, 1024);
@@ -358,7 +358,7 @@ mod tests {
             is_compressed: true,
         };
         let encoded = entry.encode();
-        let (decoded, consumed) = FileEntry::decode(&encoded).unwrap();
+        let (decoded, consumed) = FileEntry::decode(&encoded).expect("解码文件条目失败");
         assert_eq!(consumed, encoded.len());
         assert_eq!(decoded.path, entry.path);
         assert_eq!(decoded.data_offset, entry.data_offset);
@@ -377,16 +377,16 @@ mod tests {
             ),
         ];
 
-        let archive = build_archive(&files).unwrap();
+        let archive = build_archive(&files).expect("构建归档数据失败");
         assert!(!archive.is_empty());
 
         // 读取 metadata.toml
-        let metadata = read_file_from_archive(&archive, "metadata.toml").unwrap();
+        let metadata = read_file_from_archive(&archive, "metadata.toml").expect("从归档读取metadata.toml失败");
         assert!(metadata.is_some());
-        assert_eq!(metadata.unwrap(), b"name = \"Test\"");
+        assert_eq!(metadata.expect("metadata.toml内容应为Some"), b"name = \"Test\"");
 
         // 读取不存在的文件
-        let missing = read_file_from_archive(&archive, "notexist").unwrap();
+        let missing = read_file_from_archive(&archive, "notexist").expect("从归档读取不存在的文件失败");
         assert!(missing.is_none());
     }
 }

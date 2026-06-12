@@ -593,7 +593,7 @@ impl MidiDocument {
     ///
     /// **已不再被公开查询路径调用** — 所有 `get_track_notes*` 已切换到 `track_notes_cache`。
     /// 保留此方法作为 fallback/测试用。
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn collect_notes(events: &[CompactEvent]) -> Vec<(f32, u8, f32, u8, u8)> {
         use crate::constants::{MAX_CONCURRENT_NOTES, MIDI_KEY_RANGE};
         use lumino_midi_io::MIDI_CHANNEL_COUNT;
@@ -643,7 +643,7 @@ impl MidiDocument {
 
     /// 将音符收集到指定的 Vec 中，避免中间分配。
     /// 与 `collect_notes` 逻辑相同，但直接追加到传入的 Vec。
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn collect_notes_to(events: &[CompactEvent], out: &mut Vec<(f32, u8, f32, u8, u8)>) {
         use crate::constants::{MAX_CONCURRENT_NOTES, MIDI_KEY_RANGE};
         use lumino_midi_io::MIDI_CHANNEL_COUNT;

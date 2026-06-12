@@ -71,10 +71,6 @@ impl DmsNode for DmsDataNode {
         self.layer
     }
 
-    fn parent(&self) -> Option<&dyn DmsNode> {
-        None
-    }
-
     #[inline]
     fn has_data(&self) -> bool {
         true

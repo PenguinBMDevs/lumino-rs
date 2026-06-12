@@ -12,7 +12,7 @@ fn decode_and_resave_lmpj_if_present() {
         eprintln!("跳过 LMPJ 集成测试：未找到测试文件（可设置 LUMINO_TEST_LMPJ 环境变量）");
         return;
     }
-    let path = path.unwrap();
+    let path = path.expect("路径应为Some");
 
     // 尝试解码为 ParsedMidi
     let bytes = std::fs::read(&path).expect("读取 LMPJ 失败");

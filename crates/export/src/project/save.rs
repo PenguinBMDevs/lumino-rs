@@ -276,7 +276,7 @@ mod tests {
         let tmp = std::env::temp_dir().join("lumino_save_folder_test");
         let _ = std::fs::remove_dir_all(&tmp);
 
-        save_to_folder(&project, &tmp).unwrap();
+        save_to_folder(&project, &tmp).expect("保存项目到文件夹失败");
 
         assert!(tmp.join("metadata.toml").exists());
         assert!(tmp.join(".lumino/version").exists());
@@ -287,16 +287,16 @@ mod tests {
         assert!(tmp.join("data/project/track_names.lmnames").exists());
 
         // 验证魔数
-        let tempo_bytes = std::fs::read(tmp.join("data/project/tempo.lmtemp")).unwrap();
+        let tempo_bytes = std::fs::read(tmp.join("data/project/tempo.lmtemp")).expect("读取tempo文件失败");
         assert_eq!(&tempo_bytes[0..4], b"LMTM");
 
-        let sig_bytes = std::fs::read(tmp.join("data/project/signature.lmsig")).unwrap();
+        let sig_bytes = std::fs::read(tmp.join("data/project/signature.lmsig")).expect("读取signature文件失败");
         assert_eq!(&sig_bytes[0..4], b"LMSG");
 
-        let ctl_bytes = std::fs::read(tmp.join("data/project/controls.lmctl")).unwrap();
+        let ctl_bytes = std::fs::read(tmp.join("data/project/controls.lmctl")).expect("读取controls文件失败");
         assert_eq!(&ctl_bytes[0..4], b"LMCT");
 
-        let names_bytes = std::fs::read(tmp.join("data/project/track_names.lmnames")).unwrap();
+        let names_bytes = std::fs::read(tmp.join("data/project/track_names.lmnames")).expect("读取track_names文件失败");
         assert_eq!(&names_bytes[0..4], b"LMNM");
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -308,10 +308,10 @@ mod tests {
         let tmp = std::env::temp_dir().join("lumino_save_archive_test.lmpj");
         let _ = std::fs::remove_file(&tmp);
 
-        save_to_archive(&project, &tmp).unwrap();
+        save_to_archive(&project, &tmp).expect("保存项目到归档失败");
 
         assert!(tmp.exists());
-        let bytes = std::fs::read(&tmp).unwrap();
+        let bytes = std::fs::read(&tmp).expect("读取归档文件失败");
         assert!(bytes.len() > 4);
         assert_eq!(&bytes[0..4], b"LMPJ");
 

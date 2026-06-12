@@ -540,7 +540,7 @@ mod state_tests {
             .data
             .track_notes
             .get_mut(&0)
-            .unwrap()
+            .expect("轨道 0 应已插入空 Vector，get_mut 应返回 Some")
             .push_back(Note::new(0.0, 62, 240.0));
 
         let mem = editor.memory_breakdown();

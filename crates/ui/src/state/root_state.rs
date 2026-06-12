@@ -565,20 +565,20 @@ mod tests {
     fn test_speed_change_parse_factor_decimal() {
         let mut state = SpeedChangeDialogState::new();
         state.factor_input = "2.0".to_string();
-        assert!((state.parse_factor().unwrap() - 2.0).abs() < 0.001);
+        assert!((state.parse_factor().expect("解析 \"2.0\" 应为有效小数，返回 Some") - 2.0).abs() < 0.001);
 
         state.factor_input = "0.25".to_string();
-        assert!((state.parse_factor().unwrap() - 0.25).abs() < 0.001);
+        assert!((state.parse_factor().expect("解析 \"0.25\" 应为有效小数，返回 Some") - 0.25).abs() < 0.001);
     }
 
     #[test]
     fn test_speed_change_parse_factor_fraction() {
         let mut state = SpeedChangeDialogState::new();
         state.factor_input = "1/3".to_string();
-        assert!((state.parse_factor().unwrap() - 1.0 / 3.0).abs() < 0.001);
+        assert!((state.parse_factor().expect("解析 \"1/3\" 应为有效分数，返回 Some") - 1.0 / 3.0).abs() < 0.001);
 
         state.factor_input = "3/2".to_string();
-        assert!((state.parse_factor().unwrap() - 1.5).abs() < 0.001);
+        assert!((state.parse_factor().expect("解析 \"3/2\" 应为有效分数，返回 Some") - 1.5).abs() < 0.001);
     }
 
     #[test]

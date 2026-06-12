@@ -24,7 +24,6 @@ mod note_split_glue;
 mod note_transform;
 mod note_transpose;
 mod onion_skin_editor;
-mod onion_skin_ops;
 mod rendering;
 mod scroll;
 mod settings;

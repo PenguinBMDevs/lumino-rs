@@ -98,9 +98,9 @@ fn test_loop_wrapping_seek_back() {
     let min_event_tick = events
         .iter()
         .map(|e| e.tick)
-        .min_by(|a, b| a.partial_cmp(b).unwrap());
+        .min_by(|a, b| a.partial_cmp(b).expect("f64 的 partial_cmp 应返回 Some，因为 tick 不是 NaN"));
     assert!(
-        min_event_tick.is_some() && min_event_tick.unwrap() >= 50.0,
+        min_event_tick.is_some() && min_event_tick.expect("事件队列不应为空，至少应有一个事件") >= 50.0,
         "队列中最先要播放的事件 tick 应 >= loop_start(50)，实际 = {:?}",
         min_event_tick,
     );

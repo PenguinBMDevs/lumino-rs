@@ -62,10 +62,6 @@ impl DmsNode for DmsCompositeNode {
         self.layer
     }
 
-    fn parent(&self) -> Option<&dyn DmsNode> {
-        None
-    }
-
     #[inline]
     fn has_data(&self) -> bool {
         false

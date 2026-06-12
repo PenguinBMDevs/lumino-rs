@@ -184,7 +184,7 @@ mod tests {
             _reserved: 0,
         };
         let bytes = header.to_bytes();
-        let decoded = LmloadedHeader::from_bytes(&bytes).unwrap();
+        let decoded = LmloadedHeader::from_bytes(&bytes).expect("解码LmloadedHeader失败");
         assert_eq!(&decoded.magic, b"LMLD");
         assert_eq!(decoded.version, 1);
         assert_eq!(decoded.data_type, 0);
@@ -208,11 +208,11 @@ mod tests {
             imported_at: "2026-05-28T10:00:00+08:00".into(),
         };
 
-        let encoded = encode_loaded_data(&data, LoadedDataType::Midi).unwrap();
-        let (dtype, decoded_bytes) = decode_loaded_data(&encoded).unwrap();
+        let encoded = encode_loaded_data(&data, LoadedDataType::Midi).expect("编码已加载的MIDI数据失败");
+        let (dtype, decoded_bytes) = decode_loaded_data(&encoded).expect("解码已加载的数据失败");
 
         assert_eq!(dtype, LoadedDataType::Midi);
-        let decoded: LoadedMidiData = bincode::deserialize(&decoded_bytes).unwrap();
+        let decoded: LoadedMidiData = bincode::deserialize(&decoded_bytes).expect("反序列化LoadedMidiData失败");
         assert_eq!(decoded.original_info.track_count, 2);
         assert_eq!(decoded.raw_midi_bytes.len(), 4);
     }

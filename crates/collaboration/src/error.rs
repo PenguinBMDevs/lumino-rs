@@ -45,18 +45,6 @@ pub enum CollaborationError {
 /// 协作模块结果类型别名
 pub type Result<T> = std::result::Result<T, CollaborationError>;
 
-impl From<String> for CollaborationError {
-    fn from(err: String) -> Self {
-        CollaborationError::Other(err)
-    }
-}
-
-impl From<&str> for CollaborationError {
-    fn from(err: &str) -> Self {
-        CollaborationError::Other(err.to_string())
-    }
-}
-
 impl From<Box<dyn std::error::Error>> for CollaborationError {
     fn from(err: Box<dyn std::error::Error>) -> Self {
         CollaborationError::Other(err.to_string())

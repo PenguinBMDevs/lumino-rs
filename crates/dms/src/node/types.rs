@@ -12,10 +12,6 @@ pub trait DmsNode: Send + Sync {
     /// 获取层级深度（根节点为 -1）
     fn layer(&self) -> i32;
 
-    /// 获取父节点引用（未实现）
-    #[deprecated(note = "当前未实现父子关系追踪")]
-    fn parent(&self) -> Option<&dyn DmsNode>;
-
     /// 是否包含数据
     fn has_data(&self) -> bool;
 
@@ -84,10 +80,6 @@ impl<T: DmsLeafDataProvider + 'static> DmsNode for T {
     #[inline]
     fn layer(&self) -> i32 {
         self.base_data().layer
-    }
-
-    fn parent(&self) -> Option<&dyn DmsNode> {
-        None
     }
 
     #[inline]
@@ -179,7 +171,7 @@ mod tests {
 
     #[test]
     fn test_create_composite_node() {
-        let node = create_node(DmsNodeType::ROOT, -1, Bytes::new()).unwrap();
+        let node = create_node(DmsNodeType::ROOT, -1, Bytes::new()).expect("创建根复合节点失败");
         assert!(node.is_composite());
         assert_eq!(node.type_id(), DmsNodeType::ROOT);
         assert_eq!(node.layer(), -1);
@@ -189,7 +181,7 @@ mod tests {
     #[test]
     fn test_create_string_node() {
         let data = Bytes::from("Hello DMS");
-        let node = create_node(DmsNodeType::SONG_NAME, 0, data).unwrap();
+        let node = create_node(DmsNodeType::SONG_NAME, 0, data).expect("创建字符串类型节点失败");
         assert!(!node.is_composite());
         assert!(node.type_id().is_string());
         assert_eq!(node.type_id(), DmsNodeType::SONG_NAME);
@@ -200,7 +192,7 @@ mod tests {
     #[test]
     fn test_create_integer_node() {
         let data = Bytes::from(&[42u8, 0, 0, 0][..]);
-        let node = create_node(DmsNodeType::SONG_PPQN, 1, data).unwrap();
+        let node = create_node(DmsNodeType::SONG_PPQN, 1, data).expect("创建整数类型节点失败");
         assert!(!node.is_composite());
         assert!(node.type_id().is_integer());
         assert_eq!(node.type_id(), DmsNodeType::SONG_PPQN);
@@ -227,7 +219,7 @@ mod tests {
         let mut root = DmsCompositeNode::new(DmsNodeType::ROOT, -1);
 
         let child_data = Bytes::from("Track 1");
-        let child = create_node(DmsNodeType::TRACK_NAME, 0, child_data).unwrap();
+        let child = create_node(DmsNodeType::TRACK_NAME, 0, child_data).expect("创建子节点失败");
         root.children.push(child);
 
         assert_eq!(root.children.len(), 1);
@@ -241,7 +233,7 @@ mod tests {
     #[test]
     fn test_dms_node_trait_basics() {
         let data = Bytes::from(&[10u8, 0, 0, 0][..]);
-        let node = create_node(DmsNodeType::NOTE_VELOCITY, 0, data).unwrap();
+        let node = create_node(DmsNodeType::NOTE_VELOCITY, 0, data).expect("创建音符力度节点失败");
 
         assert!(node.has_data());
         assert_eq!(node.raw_data(), &[10u8, 0, 0, 0]);
@@ -268,7 +260,7 @@ mod tests {
         use std::io::Cursor;
         writer
             .write_tree(&mut Cursor::new(&mut buf), &root)
-            .unwrap();
+            .expect("序列化节点树到缓冲区失败");
         assert!(!buf.is_empty(), "written data should not be empty");
     }
 }

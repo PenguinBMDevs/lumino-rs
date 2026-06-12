@@ -89,9 +89,9 @@ fn test_loop_wrapping_full_pipeline_position_verification() {
         let screen_x = editor.get_playback_indicator_screen_x();
         assert!(screen_x.is_some(), "指示线位置应存在");
         assert!(
-            (screen_x.unwrap() - 360.0).abs() < f32::EPSILON,
+            (screen_x.expect("指示线 screen_x 应为 Some，因上一行已断言 is_some") - 360.0).abs() < f32::EPSILON,
             "FixedIndicatorLeft 模式指示线应在 360px，实际 = {}",
-            screen_x.unwrap(),
+            screen_x.expect("指示线 screen_x 应为 Some，用于显示实际值"),
         );
     }
 
@@ -111,11 +111,11 @@ fn test_loop_wrapping_full_pipeline_position_verification() {
         let screen_x = editor.get_playback_indicator_screen_x();
         assert!(screen_x.is_some(), "指示线位置应存在");
         assert!(
-            (screen_x.unwrap() - expected_indicator_x).abs() < 1.0,
+            (screen_x.expect("ScrollingIndicator 指示线 screen_x 应为 Some，因上一行已断言 is_some") - expected_indicator_x).abs() < 1.0,
             "ScrollingIndicator 模式指示线应在 {:.0}px ({}*2+60)，实际 = {}",
             expected_indicator_x,
             current_tick,
-            screen_x.unwrap(),
+            screen_x.expect("ScrollingIndicator 指示线 screen_x 应为 Some，用于显示实际值"),
         );
     }
 
@@ -133,11 +133,11 @@ fn test_loop_wrapping_full_pipeline_position_verification() {
         let screen_x = editor.get_playback_indicator_screen_x();
         assert!(screen_x.is_some(), "指示线位置应存在");
         assert!(
-            (screen_x.unwrap() - expected_indicator_x).abs() < 1.0,
+            (screen_x.expect("Off 模式指示线 screen_x 应为 Some，因上一行已断言 is_some") - expected_indicator_x).abs() < 1.0,
             "Off 模式指示线应在 {:.0}px ({}*2+60)，实际 = {}",
             expected_indicator_x,
             current_tick,
-            screen_x.unwrap(),
+            screen_x.expect("Off 模式指示线 screen_x 应为 Some，用于显示实际值"),
         );
     }
 

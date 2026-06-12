@@ -116,11 +116,11 @@ fn test_roundtrip_simple() {
 
     // 写入字节
     let writer = DmsWriter::new();
-    let tree_bytes = writer.to_bytes(&root).unwrap();
+    let tree_bytes = writer.to_bytes(&root).expect("写入测试树到字节失败");
 
     // 读回数据
     let reader = DmsReader::new();
-    let parsed = reader.parse_data(Bytes::from(tree_bytes)).unwrap();
+    let parsed = reader.parse_data(Bytes::from(tree_bytes)).expect("解析回读的DMS数据失败");
 
     assert_eq!(parsed.children.len(), 1);
     assert_eq!(parsed.children[0].type_id().0, DmsNodeType::SONG_PPQN.0);
@@ -152,7 +152,7 @@ fn test_scan_dms_streaming() {
     let result = scan_dms_streaming(&mut cursor);
 
     assert!(result.is_ok());
-    let scan_result = result.unwrap();
+    let scan_result = result.expect("流式扫描DMS文件失败");
     assert_eq!(scan_result.track_count, 0);
     assert_eq!(scan_result.total_notes, 0);
 }

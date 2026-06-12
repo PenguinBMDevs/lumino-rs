@@ -182,9 +182,9 @@ fn run_manual_test() {
         &inputs[0]
     } else {
         print!("请输入设备编号 [0-{}]: ", inputs.len() - 1);
-        io::stdout().flush().unwrap();
+        io::stdout().flush().expect("刷新标准输出失败");
         let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
+        io::stdin().read_line(&mut input).expect("读取用户输入失败");
         let idx: usize = input.trim().parse().unwrap_or(0);
         &inputs[idx.min(inputs.len() - 1)]
     };
@@ -232,12 +232,12 @@ fn run_manual_test() {
     std::thread::spawn(move || {
         let mut input = String::new();
         io::stdin().read_line(&mut input).ok();
-        *running_clone.lock().unwrap() = false;
+        *running_clone.lock().expect("锁定运行状态标志失败") = false;
     });
 
     loop {
         // 检查是否应该退出
-        if !*running.lock().unwrap() {
+        if !*running.lock().expect("锁定运行状态标志失败") {
             break;
         }
 

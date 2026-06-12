@@ -94,7 +94,7 @@ use super::*;
 
         let coords = loop_range.to_screen_coords(200.0, 0.0, 1.0);
         assert!(coords.is_some());
-        let (start, end) = coords.unwrap();
+        let (start, end) = coords.expect("启用 loop range 并设置范围后，to_screen_coords 应返回 Some");
         assert!((start - 300.0).abs() < f32::EPSILON);
         assert!((end - 700.0).abs() < f32::EPSILON);
     }

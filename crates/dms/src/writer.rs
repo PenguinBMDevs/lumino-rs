@@ -165,7 +165,7 @@ mod tests {
     fn test_write_to_bytes() {
         let root = build_test_tree();
         let writer = DmsWriter::new();
-        let bytes = writer.to_bytes(&root).unwrap();
+        let bytes = writer.to_bytes(&root).expect("写入测试树到字节失败");
         assert!(!bytes.is_empty(), "writer output should not be empty");
         assert!(bytes.len() > 10, "should produce reasonable output size");
     }
@@ -174,13 +174,13 @@ mod tests {
     fn test_write_file_roundtrip() {
         let root = build_test_tree();
         let writer = DmsWriter::new();
-        let file_bytes = writer.to_file_bytes(&root).unwrap();
+        let file_bytes = writer.to_file_bytes(&root).expect("生成DMS文件字节失败");
 
         // 验证文件头包含 magic
         assert_eq!(&file_bytes[..DMS_MAGIC.len()], &DMS_MAGIC[..]);
 
         // 读回并验证结构
-        let read_root = read_dms_file(&file_bytes).unwrap();
+        let read_root = read_dms_file(&file_bytes).expect("读取回写后的DMS文件失败");
         assert_eq!(read_root.type_id(), DmsNodeType::ROOT);
         assert!(
             read_root.children().len() >= 2,
@@ -191,8 +191,8 @@ mod tests {
     #[test]
     fn test_roundtrip_preserves_song_name() {
         let root = build_test_tree();
-        let file_bytes = DmsWriter::new().to_file_bytes(&root).unwrap();
-        let read_root = read_dms_file(&file_bytes).unwrap();
+        let file_bytes = DmsWriter::new().to_file_bytes(&root).expect("生成DMS文件字节失败");
+        let read_root = read_dms_file(&file_bytes).expect("读取回写后的DMS文件失败");
 
         // 找到 SONG_NAME 节点
         fn find_song_name(node: &dyn DmsNode) -> Option<String> {
@@ -218,7 +218,7 @@ mod tests {
         let root = DmsCompositeNode::new(DmsNodeType::ROOT, -1);
         let result = DmsWriter::new().to_bytes(&root);
         assert!(result.is_ok(), "empty tree should write successfully");
-        let bytes = result.unwrap();
+        let bytes = result.expect("空树写入应成功");
         assert!(bytes.is_empty(), "empty tree should produce empty output");
     }
 }

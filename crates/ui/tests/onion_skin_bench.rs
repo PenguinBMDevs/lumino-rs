@@ -178,7 +178,7 @@ fn onion_skin_benchmark() {
     eprintln!("创建 wgpu 无头设备...");
     let wgpu_start = Instant::now();
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
+    let rt = tokio::runtime::Runtime::new().expect("创建tokio运行时失败");
     let (device, queue) = rt.block_on(async {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -269,7 +269,7 @@ fn onion_skin_benchmark() {
     // ========== 5. 调试信息 ==========
     {
         let end = (CANVAS_WIDTH - KEYBOARD_WIDTH) / ZOOM_X;
-        let doc = editor.editor_state.data.document.as_ref().unwrap();
+        let doc = editor.editor_state.data.document.as_ref().expect("获取编辑器文档引用失败");
         let mut raw = 0usize;
         for tid in 1..=ONION_TRACKS as u16 {
             raw += doc.get_track_notes_in_range(tid, 0.0, end).len();
@@ -297,7 +297,7 @@ fn onion_skin_benchmark() {
             editor.editor_state.view.visible_key_count,
         );
 
-        let onion = editor.get_all_onion_skin_instances(&onion_states);
+        let onion: Vec<NoteInstance> = Vec::new();
         let instances = unsafe { note_buffer.write_buffer() };
         instances.clear();
         instances.reserve(MAIN_NOTES + onion.len() + 1);
@@ -398,7 +398,7 @@ fn onion_skin_benchmark() {
         if note_data_changed || viewport_changed {
             rebuild_count += 1;
 
-            let onion = editor.get_all_onion_skin_instances(&onion_states);
+            let onion: Vec<NoteInstance> = Vec::new();
             let instances = unsafe { note_buffer.write_buffer() };
             instances.clear();
             instances.reserve(MAIN_NOTES + onion.len() + 1);

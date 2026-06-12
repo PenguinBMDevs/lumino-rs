@@ -99,9 +99,9 @@ mod tests {
             tempo_changes: vec![(0, 120.0), (960, 140.0)],
             default_bpm: 120.0,
         };
-        let encoded = data.encode().unwrap();
+        let encoded = data.encode().expect("编码LmtempData失败");
         assert_eq!(&encoded[0..4], LmtempData::MAGIC);
-        let decoded = LmtempData::decode(&encoded).unwrap();
+        let decoded = LmtempData::decode(&encoded).expect("解码LmtempData失败");
         assert_eq!(decoded.tempo_changes.len(), 2);
         assert!((decoded.default_bpm - 120.0).abs() < 0.001);
     }
@@ -112,9 +112,9 @@ mod tests {
             time_signatures: vec![(0, 4, 4), (960, 3, 4)],
             key_signatures: vec![(0, 0, true)],
         };
-        let encoded = data.encode().unwrap();
+        let encoded = data.encode().expect("编码LmsigData失败");
         assert_eq!(&encoded[0..4], LmsigData::MAGIC);
-        let decoded = LmsigData::decode(&encoded).unwrap();
+        let decoded = LmsigData::decode(&encoded).expect("解码LmsigData失败");
         assert_eq!(decoded.time_signatures.len(), 2);
     }
 
@@ -125,9 +125,9 @@ mod tests {
             program_changes: vec![(0, 0, 0, 1)],
             pitch_bends: vec![(480, 0, 0, 8192)],
         };
-        let encoded = data.encode().unwrap();
+        let encoded = data.encode().expect("编码LmctlData失败");
         assert_eq!(&encoded[0..4], LmctlData::MAGIC);
-        let decoded = LmctlData::decode(&encoded).unwrap();
+        let decoded = LmctlData::decode(&encoded).expect("解码LmctlData失败");
         assert_eq!(decoded.control_changes.len(), 1);
         assert_eq!(decoded.pitch_bends.len(), 1);
     }
@@ -137,9 +137,9 @@ mod tests {
         let data = LmnamesData {
             track_names: vec![Some("Piano".into()), Some("Bass".into()), None],
         };
-        let encoded = data.encode().unwrap();
+        let encoded = data.encode().expect("编码LmnamesData失败");
         assert_eq!(&encoded[0..4], LmnamesData::MAGIC);
-        let decoded = LmnamesData::decode(&encoded).unwrap();
+        let decoded = LmnamesData::decode(&encoded).expect("解码LmnamesData失败");
         assert_eq!(decoded.track_names.len(), 3);
         assert_eq!(decoded.track_names[0], Some("Piano".into()));
         assert_eq!(decoded.track_names[2], None);

@@ -35,7 +35,7 @@ use lumino_midi_loader::constants::TICK_SEARCH_BUFFER;
 /// visible_tick_start/end 已被 collect_onion_notes 用于视口裁剪。
 /// 其余 NDC 坐标字段（scroll_x..max_key_index）和 key 范围字段预留
 /// 供后续 GPU cull shader 的坐标计算使用，当前 cpu 侧裁剪尚未接入。
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub(crate) struct OnionSkinComputationSnapshot {
     // 视口参数（用于洋葱皮过滤与 NDC 坐标计算）
     pub visible_tick_start: f32,
@@ -158,7 +158,7 @@ impl NoteWorker {
     }
 
     /// 关闭 worker 线程
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn shutdown(self) {
         drop(self.sender);
     }
