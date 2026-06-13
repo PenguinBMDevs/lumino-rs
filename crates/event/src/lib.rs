@@ -98,3 +98,85 @@ pub fn emit(event: Event) {
 pub fn take_events() -> Vec<Event> {
     buffer().take_all()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_event_buffer_empty_on_start() {
+        let events = take_events();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_emit_and_take_events() {
+        let e1 = Event::menu_file(menu::file::Event::New);
+        let e2 = Event::menu_edit(menu::edit::Event::Undo);
+        emit(e1.clone());
+        emit(e2.clone());
+
+        let events = take_events();
+        assert_eq!(events.len(), 2);
+        assert!(matches!(events[0], Event::Menu(menu::Event::File(menu::file::Event::New))));
+        assert!(matches!(events[1], Event::Menu(menu::Event::Edit(menu::edit::Event::Undo))));
+
+        // 取出后缓冲区应为空
+        let empty = take_events();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_event_display_name() {
+        let e = Event::menu_file(menu::file::Event::New);
+        assert_eq!(e.display_name(), "新建");
+
+        let e = Event::window(window::Event::Lifecycle(window::lifecycle::Event::Close));
+        assert_eq!(e.display_name(), "关闭");
+    }
+
+    #[test]
+    fn test_event_constructors() {
+        // Menu constructors
+        let e = Event::menu_file(menu::file::Event::Open);
+        assert!(matches!(e, Event::Menu(menu::Event::File(menu::file::Event::Open))));
+
+        let e = Event::menu_edit(menu::edit::Event::Copy);
+        assert!(matches!(e, Event::Menu(menu::Event::Edit(menu::edit::Event::Copy))));
+
+        let e = Event::menu_view(menu::view::Event::ZoomIn);
+        assert!(matches!(e, Event::Menu(menu::Event::View(menu::view::Event::ZoomIn))));
+
+        let e = Event::menu_help(menu::help::Event::About);
+        assert!(matches!(e, Event::Menu(menu::Event::Help(menu::help::Event::About))));
+
+        // Window constructors
+        let e = Event::window(window::Event::drag());
+        assert!(matches!(e, Event::Window(window::Event::Lifecycle(window::lifecycle::Event::Drag))));
+
+        let e = Event::window(window::Event::close());
+        assert!(matches!(e, Event::Window(window::Event::Lifecycle(window::lifecycle::Event::Close))));
+    }
+
+    #[test]
+    fn test_event_clone() {
+        let e = Event::menu_file(menu::file::Event::Save);
+        let cloned = e.clone();
+        assert_eq!(e.display_name(), cloned.display_name());
+    }
+
+    #[test]
+    fn test_event_debug() {
+        let e = Event::menu_file(menu::file::Event::New);
+        let debug = format!("{:?}", e);
+        assert!(debug.contains("New"));
+    }
+
+    #[test]
+    fn test_buffer_is_empty_after_take_all() {
+        emit(Event::menu_file(menu::file::Event::New));
+        emit(Event::menu_file(menu::file::Event::Save));
+        let _ = take_events();
+        assert!(buffer().is_empty());
+    }
+}

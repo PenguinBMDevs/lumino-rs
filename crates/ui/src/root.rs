@@ -273,8 +273,10 @@ impl Root {
         self.editor.invalidate_onion_skin_cache();
     }
 
-    /// 仅标记颜色/透明度变化（无需重查 document，O(C) 快速路径）
+    /// 仅标记颜色/透明度变化（已由瓦片系统替代，保留接口兼容）
+    #[deprecated(since = "0.1.0", note = "已由瓦片系统替代，颜色 LUT 自动更新，此调用为 no-op")]
     pub fn invalidate_onion_skin_colors(&mut self) {
+        #[allow(deprecated)]
         self.editor.invalidate_onion_skin_colors();
     }
 

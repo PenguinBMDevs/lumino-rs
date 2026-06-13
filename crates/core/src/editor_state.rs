@@ -382,7 +382,7 @@ impl EditorData {
         Some(note)
     }
 
-    /// 计算选择框内的音符索引
+    /// 计算选择框内的音符索引（委托到 get_notes_in_selection_box，消除重复逻辑）
     pub fn compute_selection(
         &self,
         start_tick: f32,
@@ -390,22 +390,9 @@ impl EditorData {
         current_tick: f32,
         current_key: u16,
     ) -> HashSet<usize> {
-        let min_tick = start_tick.min(current_tick);
-        let max_tick = start_tick.max(current_tick);
-        let min_key = start_key.min(current_key);
-        let max_key = start_key.max(current_key);
-        let mut selected = HashSet::new();
-        for (i, note) in self.notes.iter().enumerate() {
-            let note_end = note.tick + note.length;
-            if note.key >= min_key
-                && note.key <= max_key
-                && note.tick < max_tick
-                && note_end > min_tick
-            {
-                selected.insert(i);
-            }
-        }
-        selected
+        self.get_notes_in_selection_box(start_tick, start_key, current_tick, current_key)
+            .into_iter()
+            .collect()
     }
 
     /// 获取选择框内的音符索引列表

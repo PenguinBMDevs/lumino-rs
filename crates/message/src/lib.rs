@@ -195,3 +195,321 @@ pub enum Message<W, S, Se, T> {
 pub const fn null<W, S, Se, T>() -> Message<W, S, Se, T> {
     Message::Null
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ─── PerfData ───
+
+    #[test]
+    fn test_perf_data_default() {
+        let data = PerfData::default();
+        assert_eq!(data.fps, 0.0);
+        assert_eq!(data.cpu_usage, 0.0);
+        assert_eq!(data.memory_mb, 0.0);
+        assert_eq!(data.gpu_frame_time_ms, 0.0);
+    }
+
+    #[test]
+    fn test_perf_data_new() {
+        let data = PerfData::new(60.0, 25.5, 512.0, 16.7);
+        assert_eq!(data.fps, 60.0);
+        assert_eq!(data.cpu_usage, 25.5);
+        assert_eq!(data.memory_mb, 512.0);
+        assert_eq!(data.gpu_frame_time_ms, 16.7);
+    }
+
+    // ─── NotePrecision ───
+
+    #[test]
+    fn test_note_precision_default() {
+        assert_eq!(NotePrecision::default(), NotePrecision::Quarter);
+    }
+
+    #[test]
+    fn test_note_precision_display() {
+        assert_eq!(NotePrecision::Whole.to_string(), "全音符");
+        assert_eq!(NotePrecision::Quarter.to_string(), "四分音符");
+        assert_eq!(NotePrecision::Custom.to_string(), "自定义");
+    }
+
+    #[test]
+    fn test_note_precision_as_ticks() {
+        let ppq = 480;
+        assert_eq!(NotePrecision::Whole.as_ticks(ppq), 480.0 * 4.0);
+        assert_eq!(NotePrecision::Quarter.as_ticks(ppq), 480.0);
+        assert_eq!(NotePrecision::Eighth.as_ticks(ppq), 480.0 / 2.0);
+        assert_eq!(NotePrecision::OneTwentyEighth.as_ticks(ppq), 480.0 / 32.0);
+    }
+
+    #[test]
+    fn test_note_precision_presets() {
+        let presets = NotePrecision::presets();
+        assert_eq!(presets.len(), 8);
+        assert!(!presets.contains(&NotePrecision::Custom));
+    }
+
+    // ─── TupletType ───
+
+    #[test]
+    fn test_tuplet_type_default() {
+        assert_eq!(TupletType::default(), TupletType::None);
+    }
+
+    #[test]
+    fn test_tuplet_type_value() {
+        assert_eq!(TupletType::Triplet.value(), 3);
+        assert_eq!(TupletType::Quintuplet.value(), 5);
+        assert_eq!(TupletType::Sextuplet.value(), 6);
+        assert_eq!(TupletType::Septuplet.value(), 7);
+        assert_eq!(TupletType::None.value(), 1);
+    }
+
+    #[test]
+    fn test_tuplet_type_all() {
+        let all = TupletType::all();
+        assert_eq!(all.len(), 5);
+    }
+
+    // ─── DotType ───
+
+    #[test]
+    fn test_dot_type_default() {
+        assert_eq!(DotType::default(), DotType::None);
+    }
+
+    #[test]
+    fn test_dot_type_multiplier() {
+        assert_eq!(DotType::None.multiplier(), 1.0);
+        assert_eq!(DotType::Single.multiplier(), 1.5);
+        assert_eq!(DotType::Double.multiplier(), 1.75);
+    }
+
+    // ─── SpeedFactor ───
+
+    #[test]
+    fn test_speed_factor_default() {
+        assert_eq!(SpeedFactor::default(), SpeedFactor::X05);
+    }
+
+    #[test]
+    fn test_speed_factor_value() {
+        assert_eq!(SpeedFactor::X025.value(), 0.25);
+        assert_eq!(SpeedFactor::X05.value(), 0.5);
+        assert_eq!(SpeedFactor::X1.value(), 1.0);
+        assert_eq!(SpeedFactor::X2.value(), 2.0);
+        assert_eq!(SpeedFactor::X4.value(), 4.0);
+    }
+
+    #[test]
+    fn test_speed_factor_display() {
+        assert_eq!(SpeedFactor::X05.display_name(), "×0.5");
+        assert_eq!(SpeedFactor::X2.display_name(), "×2.0");
+    }
+
+    // ─── Tool ───
+
+    #[test]
+    fn test_tool_default() {
+        assert_eq!(Tool::default(), Tool::Pointer);
+    }
+
+    // ─── AudioChannels ───
+
+    #[test]
+    fn test_audio_channels_default() {
+        assert_eq!(AudioChannels::default(), AudioChannels::Stereo);
+    }
+
+    #[test]
+    fn test_audio_channels_display() {
+        assert_eq!(AudioChannels::Mono.to_string(), "单声道");
+        assert_eq!(AudioChannels::Stereo.to_string(), "立体声");
+    }
+
+    // ─── AudioFormat ───
+
+    #[test]
+    fn test_audio_format_default() {
+        assert_eq!(AudioFormat::default(), AudioFormat::WAV);
+    }
+
+    #[test]
+    fn test_audio_format_display() {
+        assert_eq!(AudioFormat::WAV.to_string(), "WAV");
+        assert_eq!(AudioFormat::FLAC.to_string(), "FLAC");
+    }
+
+    // ─── CcOption ───
+
+    #[test]
+    fn test_cc_option_display() {
+        let bend = CcOption::Bend;
+        assert!(bend.to_string().contains("Bend"));
+
+        let cc7 = CcOption::Cc(7);
+        assert!(cc7.to_string().contains("Volume"));
+    }
+
+    // ─── CC_CONTROLLER_NAMES ───
+
+    #[test]
+    fn test_cc_controller_names_known() {
+        let names = CC_CONTROLLER_NAMES;
+        assert!(names.contains(&(0, "Bank Select")));
+        assert!(names.contains(&(7, "Volume")));
+        assert!(names.contains(&(10, "Pan")));
+        assert!(names.contains(&(64, "Sustain Pedal")));
+        assert!(names.contains(&(127, "Poly Mode")));
+    }
+
+    #[test]
+    fn test_cc_controller_names_all_128() {
+        assert_eq!(CC_CONTROLLER_NAMES.len(), 128);
+        let mut seen = std::collections::HashSet::new();
+        for (num, _) in CC_CONTROLLER_NAMES {
+            assert!(seen.insert(num), "Duplicate CC number: {}", num);
+        }
+    }
+
+    // ─── EditorAction ───
+
+    #[test]
+    fn test_editor_action_clone() {
+        let action = EditorAction::DeletePressed;
+        let cloned = action.clone();
+        assert!(matches!(cloned, EditorAction::DeletePressed));
+    }
+
+    #[test]
+    fn test_editor_action_debug() {
+        let action = EditorAction::Undo;
+        let debug = format!("{:?}", action);
+        assert!(debug.contains("Undo"));
+    }
+
+    // ─── AudioAction ───
+
+    #[test]
+    fn test_audio_action_play_note() {
+        let action = AudioAction::PlayNote { key: 60, velocity: 100 };
+        assert!(matches!(action, AudioAction::PlayNote { key: 60, .. }));
+    }
+
+    #[test]
+    fn test_audio_action_stop_note() {
+        let action = AudioAction::StopNote { key: 60 };
+        assert!(matches!(action, AudioAction::StopNote { key: 60 }));
+    }
+
+    // ─── Message null helper ───
+
+    #[test]
+    fn test_null_message() {
+        let msg: Message<(), (), (), ()> = null();
+        assert!(matches!(msg, Message::Null));
+    }
+
+    // ─── AudioExportAction ───
+
+    #[test]
+    fn test_audio_export_action_variants() {
+        let action = AudioExportAction::OpenDialog;
+        assert!(matches!(action, AudioExportAction::OpenDialog));
+
+        let action = AudioExportAction::Completed;
+        assert!(matches!(action, AudioExportAction::Completed));
+
+        let action = AudioExportAction::Failed("error".to_string());
+        assert!(matches!(action, AudioExportAction::Failed(_)));
+    }
+
+    // ─── CollaborationAction ───
+
+    #[test]
+    fn test_collaboration_action_variants() {
+        let action = CollaborationAction::OpenDialog;
+        assert!(matches!(action, CollaborationAction::OpenDialog));
+
+        let action = CollaborationAction::Disconnect;
+        assert!(matches!(action, CollaborationAction::Disconnect));
+
+        let action = CollaborationAction::Connect {
+            host: "localhost".to_string(),
+            port: 3000,
+            username: "test".to_string(),
+            invite_code: None,
+        };
+        assert!(matches!(action, CollaborationAction::Connect { .. }));
+    }
+
+    // ─── LoopRangeAction ───
+
+    #[test]
+    fn test_loop_range_action_variants() {
+        let action = LoopRangeAction::Toggle;
+        assert!(matches!(action, LoopRangeAction::Toggle));
+
+        let action = LoopRangeAction::SetRange(0.0, 100.0);
+        assert!(matches!(action, LoopRangeAction::SetRange(_, _)));
+    }
+
+    // ─── SpeedChangeAction ───
+
+    #[test]
+    fn test_speed_change_action_variants() {
+        let action = SpeedChangeAction::OpenDialog;
+        assert!(matches!(action, SpeedChangeAction::OpenDialog));
+
+        let action = SpeedChangeAction::FactorChanged("0.5".to_string());
+        assert!(matches!(action, SpeedChangeAction::FactorChanged(_)));
+    }
+
+    // ─── VelocityAction ───
+
+    #[test]
+    fn test_velocity_action_variants() {
+        let action = VelocityAction::DragStart(0, 100);
+        assert!(matches!(action, VelocityAction::DragStart(_, _)));
+
+        let action = VelocityAction::ToggleMode;
+        assert!(matches!(action, VelocityAction::ToggleMode));
+
+        let action = VelocityAction::TempoAdd(0.0, 120.0);
+        assert!(matches!(action, VelocityAction::TempoAdd(_, _)));
+    }
+
+    // ─── PatternAction ───
+
+    #[test]
+    fn test_pattern_action_variants() {
+        let action = PatternAction::Selected(1);
+        assert!(matches!(action, PatternAction::Selected(1)));
+
+        let action = PatternAction::DragEnd;
+        assert!(matches!(action, PatternAction::DragEnd));
+    }
+
+    // ─── ThreadingOption ───
+
+    #[test]
+    fn test_threading_option_display() {
+        assert_eq!(ThreadingOption::None.to_string(), "关闭");
+        assert_eq!(ThreadingOption::Auto.to_string(), "自动");
+        assert_eq!(ThreadingOption::Manual(4).to_string(), "4 线程");
+    }
+
+    // ─── Interpolation ───
+
+    #[test]
+    fn test_interpolation_default() {
+        assert_eq!(Interpolation::default(), Interpolation::Linear);
+    }
+
+    #[test]
+    fn test_interpolation_display() {
+        assert_eq!(Interpolation::None.to_string(), "无插值");
+        assert_eq!(Interpolation::Linear.to_string(), "线性插值");
+    }
+}

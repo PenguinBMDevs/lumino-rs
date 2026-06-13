@@ -12,13 +12,9 @@ impl Editor {
     }
 
     /// 仅标记颜色/透明度变化（已由瓦片系统替代，保留接口兼容）
+    #[deprecated(since = "0.1.0", note = "已由瓦片系统替代，颜色 LUT 自动更新，此调用为 no-op")]
     pub fn invalidate_onion_skin_colors(&mut self) {
         // 旧缓存已移除，瓦片系统通过 pool 颜色 LUT 自动更新
-    }
-
-    /// 使指定音轨的缓存失效（已由瓦片系统替代，保留接口兼容）
-    pub fn invalidate_onion_skin_cache_track(&mut self, track_idx: usize) {
-        let _ = track_idx;
     }
 
     /// 使缓存的可见音轨索引失效（音轨集合/当前音轨变化时调用）
@@ -68,7 +64,6 @@ impl Editor {
     /// 设置音轨的洋葱皮颜色（走颜色快速路径）
     pub fn set_onion_skin_color(&mut self, track_idx: usize, color: iced_core::Color) {
         self.onion_skin.config.set_track_color(track_idx, color);
-        self.invalidate_onion_skin_colors();
     }
 
     /// 获取音轨的洋葱皮颜色
@@ -79,7 +74,6 @@ impl Editor {
     /// 设置洋葱皮透明度（走颜色快速路径）
     pub fn set_onion_skin_opacity(&mut self, opacity: f32) {
         self.onion_skin.config.set_opacity(opacity);
-        self.invalidate_onion_skin_colors();
     }
 
     /// 获取洋葱皮透明度

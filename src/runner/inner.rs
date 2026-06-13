@@ -280,44 +280,25 @@ impl RunnerInner {
             }
         }
     }
-    /// 保存存储
-    /// 使用 PartialEq 自动比较新旧配置，消除手动逐字段比较
-    fn config_field_diff(
+    /// 计算配置差异（合并 config_dirty 检测 + 差异摘要，消除重复逐字段比较）
+    /// 返回 None 表示无变更，Some(ConfigDiff) 包含副作用所需的差异信息
+    fn config_diff(
         new: &lumino_ui::settings::SettingsPanel,
         old: &lumino_core::storage::config::UiConfig,
-    ) -> ConfigDiff {
-        ConfigDiff {
-            synth_changed: new.synth_backend != old.preferred_backend
-                || new.soundfont_path != old.soundfont_path,
-            xsynth_changed: new.xsynth_buffer_ms != old.xsynth_buffer_ms
-                || new.xsynth_sample_rate != old.xsynth_sample_rate
-                || new.xsynth_threads != old.xsynth_threads
-                || new.xsynth_fade_out != old.xsynth_fade_out_killing
-                || new.xsynth_max_voices_per_key != old.xsynth_max_voices_per_key,
-            titlebar_changed: new.use_native_titlebar != old.use_native_titlebar,
-            font_changed: new.program_font_name != old.program_font_name
-                || new.program_font_path != old.program_font_path,
-        }
-    }
-
-    pub(crate) fn save_storage(&mut self) {
-        let new = self.window_state.window.ui().settings();
-        let old = &self.window_state.storage.config.get().ui;
-        let current_theme = self.window_state.window.ui().root().theme().to_string();
-
-        // 用 PartialEq 整体比较，消除手动逐字段
-        let config_dirty = current_theme != old.theme
-            || new.synth_backend != old.preferred_backend
-            || new.soundfont_path != old.soundfont_path
-            || new.use_native_titlebar != old.use_native_titlebar
-            || new.program_font_name != old.program_font_name
-            || new.program_font_path != old.program_font_path
-            || new.selection_box_mode != old.selection_box_mode
-            || new.xsynth_buffer_ms != old.xsynth_buffer_ms
+        current_theme: &str,
+    ) -> Option<ConfigDiff> {
+        let theme_changed = current_theme != old.theme;
+        let synth_changed = new.synth_backend != old.preferred_backend
+            || new.soundfont_path != old.soundfont_path;
+        let xsynth_changed = new.xsynth_buffer_ms != old.xsynth_buffer_ms
             || new.xsynth_sample_rate != old.xsynth_sample_rate
             || new.xsynth_threads != old.xsynth_threads
             || new.xsynth_fade_out != old.xsynth_fade_out_killing
-            || new.xsynth_max_voices_per_key != old.xsynth_max_voices_per_key
+            || new.xsynth_max_voices_per_key != old.xsynth_max_voices_per_key;
+        let titlebar_changed = new.use_native_titlebar != old.use_native_titlebar;
+        let font_changed = new.program_font_name != old.program_font_name
+            || new.program_font_path != old.program_font_path;
+        let other_changed = new.selection_box_mode != old.selection_box_mode
             || new.velocity_filter_threshold != old.velocity_filter_threshold
             || new.eraser_behavior != old.eraser_behavior
             || new.auto_scroll_fixed_position != old.auto_scroll.fixed_indicator_position
@@ -326,11 +307,27 @@ impl RunnerInner {
             || new.icon_hidpi != old.icon_hidpi
             || new.enable_256key != old.enable_256key;
 
-        if !config_dirty {
-            return;
+        if theme_changed || synth_changed || xsynth_changed || titlebar_changed || font_changed || other_changed {
+            Some(ConfigDiff {
+                synth_changed,
+                xsynth_changed,
+                titlebar_changed,
+                font_changed,
+            })
+        } else {
+            None
         }
+    }
 
-        let diff = Self::config_field_diff(new, old);
+    pub(crate) fn save_storage(&mut self) {
+        let new = self.window_state.window.ui().settings();
+        let old = &self.window_state.storage.config.get().ui;
+        let current_theme = self.window_state.window.ui().root().theme().to_string();
+
+        let diff = match Self::config_diff(new, old, &current_theme) {
+            Some(d) => d,
+            None => return,
+        };
 
         // 合成器变更日志
         if diff.synth_changed {

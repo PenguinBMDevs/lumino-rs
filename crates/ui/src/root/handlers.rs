@@ -420,8 +420,6 @@ impl Root {
             self.editor.grid_cache.clear();
             self.editor.keyboard_cache.clear();
             self.editor.ruler_cache.clear();
-            // 主题变化只影响颜色，走快速路径
-            self.invalidate_onion_skin_colors();
         }
     }
 
