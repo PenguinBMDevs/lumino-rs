@@ -31,41 +31,40 @@ pub fn prepare_renderers(
     }
 
     // 准备网格渲染器
-    grid_renderer.prepare(
-        queue,
-        params.logical_size,
-        params.scroll.0,
-        params.scroll.1,
-        params.zoom.0,
-        params.zoom.1,
-        params.keyboard_width,
-        params.ruler_height,
-        params.color_bg,
-        params.color_bg_black_key,
-        params.color_bar,
-        params.color_beat,
-        params.color_half_beat,
-        params.color_grid,
-        params.color_key_line,
-        params.ppq,
-        params.max_key_index,
-        params.canvas_offset.0,
-        params.canvas_offset.1,
-    );
+    let grid_params = crate::grid_renderer::GridPrepareParams {
+        viewport_size: params.logical_size,
+        scroll_x: params.scroll.0,
+        scroll_y: params.scroll.1,
+        zoom_x: params.zoom.0,
+        zoom_y: params.zoom.1,
+        keyboard_width: params.keyboard_width,
+        ruler_height: params.ruler_height,
+        color_bg: params.color_bg,
+        color_bg_black_key: params.color_bg_black_key,
+        color_bar: params.color_bar,
+        color_beat: params.color_beat,
+        color_half_beat: params.color_half_beat,
+        color_grid: params.color_grid,
+        color_key_line: params.color_key_line,
+        ppq: params.ppq,
+        max_key_index: params.max_key_index,
+        canvas_offset_x: params.canvas_offset.0,
+        canvas_offset_y: params.canvas_offset.1,
+    };
+    grid_renderer.prepare(queue, &grid_params);
 
     // 准备标尺渲染器
     if !params.ruler_instances.is_empty() {
-        ruler_renderer.prepare(
-            device,
-            queue,
-            params.logical_size,
-            params.keyboard_width,
-            params.ruler_height,
-            params.scroll.0,
-            params.zoom.0,
-            params.ticks_per_measure,
-            params.ticks_per_beat,
-        );
+        let ruler_params = crate::RulerPrepareParams {
+            viewport_size: params.logical_size,
+            ruler_height: params.ruler_height,
+            keyboard_width: params.keyboard_width,
+            scroll_x: params.scroll.0,
+            zoom_x: params.zoom.0,
+            ticks_per_measure: params.ticks_per_measure,
+            ticks_per_beat: params.ticks_per_beat,
+        };
+        ruler_renderer.prepare(device, queue, &ruler_params);
     }
 
     // 准备 CC 柱状条渲染器（背景/网格/中心线）

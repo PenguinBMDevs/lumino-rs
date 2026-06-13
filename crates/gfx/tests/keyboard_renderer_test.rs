@@ -1,19 +1,18 @@
 //! KeyboardRenderer 集成测试
 
-use lumino_gfx::{KeyInstance, KeyboardRenderer, KeyboardViewportUniform};
+use lumino_gfx::{KeyInstance, KeyboardPrepareParams, KeyboardRenderer, KeyboardViewportUniform};
 
 /// 测试 KeyboardViewportUniform 内存布局
 #[test]
 fn test_keyboard_viewport_uniform_layout() {
-    let uniform = KeyboardViewportUniform::new(
-        1920.0, // viewport_width
-        1080.0, // viewport_height
-        60.0,   // keyboard_width
-        30.0,   // ruler_height
-        100.0,  // scroll_y
-        20.0,   // zoom_y
-        128,    // visible_key_count
-    );
+    let uniform = KeyboardViewportUniform::from_params(&KeyboardPrepareParams {
+        viewport_size: (1920.0, 1080.0),
+        keyboard_width: 60.0,
+        ruler_height: 30.0,
+        scroll_y: 100.0,
+        zoom_y: 20.0,
+        visible_key_count: 128,
+    });
 
     // 验证大小（实际大小可能因对齐而变化）
     let size = std::mem::size_of::<KeyboardViewportUniform>();

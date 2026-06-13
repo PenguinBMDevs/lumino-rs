@@ -67,7 +67,10 @@ fn test_collaboration_handler_opens_dialog() {
     let mut root = create_root();
 
     assert!(!root.state.collaboration_dialog.is_open);
-    handler.handle(&mut root, Message::OpenCollaborationDialog);
+    handler.handle(
+        &mut root,
+        Message::Collaboration(lumino_message::CollaborationAction::OpenDialog),
+    );
     assert!(root.state.collaboration_dialog.is_open);
 }
 

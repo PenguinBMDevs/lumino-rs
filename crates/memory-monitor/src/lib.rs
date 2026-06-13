@@ -293,9 +293,7 @@ pub fn spawn_monitor_thread() -> bool {
 
                 match monitor.check_inner("bg: ") {
                     Some(true) => {
-                        abort_process(
-                            "MemoryMonitor: 内存已达 95% 软限制，主动终止以保护系统稳定",
-                        );
+                        abort_process("MemoryMonitor: 内存已达 95% 软限制，主动终止以保护系统稳定");
                     }
                     None => {}
                     Some(false) => {}

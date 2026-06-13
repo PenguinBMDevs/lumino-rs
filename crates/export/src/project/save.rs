@@ -287,16 +287,20 @@ mod tests {
         assert!(tmp.join("data/project/track_names.lmnames").exists());
 
         // 验证魔数
-        let tempo_bytes = std::fs::read(tmp.join("data/project/tempo.lmtemp")).expect("读取tempo文件失败");
+        let tempo_bytes =
+            std::fs::read(tmp.join("data/project/tempo.lmtemp")).expect("读取tempo文件失败");
         assert_eq!(&tempo_bytes[0..4], b"LMTM");
 
-        let sig_bytes = std::fs::read(tmp.join("data/project/signature.lmsig")).expect("读取signature文件失败");
+        let sig_bytes =
+            std::fs::read(tmp.join("data/project/signature.lmsig")).expect("读取signature文件失败");
         assert_eq!(&sig_bytes[0..4], b"LMSG");
 
-        let ctl_bytes = std::fs::read(tmp.join("data/project/controls.lmctl")).expect("读取controls文件失败");
+        let ctl_bytes =
+            std::fs::read(tmp.join("data/project/controls.lmctl")).expect("读取controls文件失败");
         assert_eq!(&ctl_bytes[0..4], b"LMCT");
 
-        let names_bytes = std::fs::read(tmp.join("data/project/track_names.lmnames")).expect("读取track_names文件失败");
+        let names_bytes = std::fs::read(tmp.join("data/project/track_names.lmnames"))
+            .expect("读取track_names文件失败");
         assert_eq!(&names_bytes[0..4], b"LMNM");
 
         let _ = std::fs::remove_dir_all(&tmp);

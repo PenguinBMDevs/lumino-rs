@@ -91,10 +91,15 @@ impl CollaborationClient {
             state,
             ClientState::Connected | ClientState::Authenticated | ClientState::InRoom
         ) {
-            return Err(crate::CollaborationError::Other(format!("客户端未连接，当前状态: {:?}", state)));
+            return Err(crate::CollaborationError::Other(format!(
+                "客户端未连接，当前状态: {:?}",
+                state
+            )));
         }
 
-        self.message_tx.send(msg).map_err(|e| crate::CollaborationError::Other(e.to_string()))?;
+        self.message_tx
+            .send(msg)
+            .map_err(|e| crate::CollaborationError::Other(e.to_string()))?;
         Ok(())
     }
 

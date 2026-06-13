@@ -1,13 +1,8 @@
 //! Host 编辑器操作子模块 - 处理音符和洋葱皮相关操作
 
-use crate::editor::EditState;
-use lumino_core::view_state::{
-    DEFAULT_NOTE_LENGTH, DEFAULT_PPQ, DEFAULT_SCROLL_X, DEFAULT_SCROLL_Y, DEFAULT_SNAP_PRECISION,
-    DEFAULT_TOTAL_TICKS, DEFAULT_VISIBLE_KEY_COUNT, DEFAULT_ZOOM_X, DEFAULT_ZOOM_Y,
-};
-use crate::editor::editor_state::TempoPoint;
 use crate::host::{Host, types::NoteData};
-use crate::{editor::note::Note, message, toolbar::Tool};
+use crate::{editor::note::Note, message};
+use lumino_core::TempoPoint;
 use lumino_midi_loader::MidiDocument;
 use std::sync::Arc;
 
@@ -277,69 +272,48 @@ impl Host {
     pub fn clear_editor(&mut self) {
         let root = &mut self.root;
 
-        // 音符数据
-        root.editor.editor_state.data.notes.clear();
-        root.editor.editor_state.data.track_notes.clear();
-        root.editor.editor_state.data.current_track = 0;
+        // 使用 EditorState::reset() 统一重置核心状态
+        root.editor.editor_state.reset();
+
+        // 编辑器私有内部状态（洋葱皮配置、播放位置等）
         root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Tempo;
-        // 历史记录（undo/redo 持有全量音符快照 → 必须清理避免内存泄漏）
-        root.editor.editor_state.data.history.clear();
-        // MIDI 文档引用（释放 Arc）
-        root.editor.editor_state.data.document = None;
-        root.midi.document = None;
+        root.editor.reset_internal_state();
+
         // 空间索引（惰性重建）
         root.editor.spatial.note_index = std::cell::RefCell::new(None);
         root.editor.spatial.note_index_dirty = std::cell::Cell::new(true);
         root.editor.spatial.track_note_indices =
             std::cell::RefCell::new(std::collections::HashMap::new());
         root.editor.spatial.query_cache = std::cell::RefCell::new(Vec::new());
+
         // 洋葱皮 + MIDI 控制事件
         root.visual.cached_onion_skin_notes = None;
         root.visual.onion_skin_generation = 0;
         root.editor.invalidate_onion_skin_cache();
         root.playback.track_midi_events.clear();
-        // 交互状态（选中、悬停、编辑）
-        root.editor.editor_state.interaction.selected_notes.clear();
-        root.editor.editor_state.interaction.edit_state = EditState::Idle;
-        root.editor.editor_state.interaction.hover_state = None;
-        root.editor
-            .editor_state
-            .interaction
-            .pending_audio_actions
-            .clear();
-        // 视图状态 → 默认
-        root.editor.editor_state.view.scroll_x = DEFAULT_SCROLL_X;
-        root.editor.editor_state.view.scroll_y = DEFAULT_SCROLL_Y;
-        root.editor.editor_state.view.total_ticks = DEFAULT_TOTAL_TICKS;
-        root.editor.editor_state.view.ppq = DEFAULT_PPQ;
-        root.editor.editor_state.view.snap_precision = DEFAULT_SNAP_PRECISION;
-        root.editor.editor_state.view.default_note_length = DEFAULT_NOTE_LENGTH;
-        // 最大滚动范围
-        root.editor.editor_state.max_scroll = (
-            DEFAULT_TOTAL_TICKS as f32 * DEFAULT_ZOOM_X,
-            DEFAULT_VISIBLE_KEY_COUNT as f32 * DEFAULT_ZOOM_Y,
-        );
-        // 工具 → Pointer
-        root.editor.editor_state.tool = Tool::Pointer;
+
         // 协作远端光标
         root.editor.remote_cursors.clear();
-        // 编辑器私有内部状态（洋葱皮配置、播放位置等）
-        root.editor.reset_internal_state();
+
         // 失效所有 Canvas 缓存
         root.editor.grid_cache.clear();
         root.editor.keyboard_cache.clear();
         root.editor.ruler_cache.clear();
+
         // 播放管理器
         root.reset_playback_manager();
         root.playback.pending_tempo_changes = None;
         root.playback.pending_midi_output = None;
         root.toolbar.is_playing = false;
+
         // 侧边栏音轨列表
         root.sidebar.tracks.clear();
         root.sidebar.selected_track = 0;
+
         // RenderCache 视口哈希失效（强制重建 GPU 实例）
         self.render_ctx.render_cache.grid_viewport_hash = 0;
         self.render_ctx.render_cache.note_viewport_hash = 0;
+
         // UI 缓存
         self.clear_cache();
         self.window_ctx.window.request_redraw();

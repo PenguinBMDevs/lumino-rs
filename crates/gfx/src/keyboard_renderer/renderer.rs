@@ -42,6 +42,8 @@ impl KeyboardRenderer {
 mod generator;
 mod init;
 mod instance;
-mod render;
+pub mod render;
 #[cfg(test)]
 mod tests;
+
+pub use render::KeyboardPrepareParams;

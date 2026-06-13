@@ -381,12 +381,17 @@ mod tests {
         assert!(!archive.is_empty());
 
         // 读取 metadata.toml
-        let metadata = read_file_from_archive(&archive, "metadata.toml").expect("从归档读取metadata.toml失败");
+        let metadata =
+            read_file_from_archive(&archive, "metadata.toml").expect("从归档读取metadata.toml失败");
         assert!(metadata.is_some());
-        assert_eq!(metadata.expect("metadata.toml内容应为Some"), b"name = \"Test\"");
+        assert_eq!(
+            metadata.expect("metadata.toml内容应为Some"),
+            b"name = \"Test\""
+        );
 
         // 读取不存在的文件
-        let missing = read_file_from_archive(&archive, "notexist").expect("从归档读取不存在的文件失败");
+        let missing =
+            read_file_from_archive(&archive, "notexist").expect("从归档读取不存在的文件失败");
         assert!(missing.is_none());
     }
 }

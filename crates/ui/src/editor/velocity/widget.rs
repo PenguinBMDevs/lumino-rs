@@ -144,10 +144,7 @@ impl<'a> VelocityCanvas<'a> {
             state.drag_point_idx = Some(point_idx);
             state._drag_start_velocity = points[point_idx].velocity;
             return Some(canvas::Action::publish(Message::Velocity(
-                VelocityAction::DragStart(
-                    points[point_idx].note_index,
-                    points[point_idx].velocity,
-                ),
+                VelocityAction::DragStart(points[point_idx].note_index, points[point_idx].velocity),
             )));
         }
 

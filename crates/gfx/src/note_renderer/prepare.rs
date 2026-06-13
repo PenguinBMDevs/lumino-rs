@@ -1,3 +1,4 @@
+use super::buffer::CullBuffers;
 use super::types::{CameraUniform, CullUniform, DrawIndirectArgs};
 use crate::note_renderer::NoteRenderer;
 
@@ -80,16 +81,16 @@ impl NoteRenderer {
         let count_changed = current_count != self.last_upload_count as usize;
         if did_grow || count_changed {
             // 实例数变化或扩容 → 绑定的 buffer size 变了 → 必须重建 bind group
-            self.cull_bind_group = Self::create_cull_bind_group(
-                device,
-                &self.cull_bind_group_layout,
-                &self.viewport_buffer,
-                &self.cull_uniform_buffer,
-                self.gpu_note_buffer.buffer(),
-                &self.visible_instance_buffer,
-                &self.indirect_buffer,
-                current_count,
-            );
+            let cull_buffers = CullBuffers {
+                layout: &self.cull_bind_group_layout,
+                viewport_buffer: &self.viewport_buffer,
+                cull_uniform_buffer: &self.cull_uniform_buffer,
+                instance_buffer: self.gpu_note_buffer.buffer(),
+                visible_instance_buffer: &self.visible_instance_buffer,
+                indirect_buffer: &self.indirect_buffer,
+                instance_count: current_count,
+            };
+            self.cull_bind_group = Self::create_cull_bind_group(device, &cull_buffers);
         }
         // else: 实例数相同且未扩容 → 旧 bind group 仍有效，跳过重建
 

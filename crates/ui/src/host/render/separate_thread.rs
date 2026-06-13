@@ -1,6 +1,9 @@
-﻿use crate::host::Host;
 use crate::RenderParams;
-use lumino_gfx::{ArrangementNoteInstance, ArrangementUniform, ARRANGEMENT_PALETTE};
+use crate::host::Host;
+use lumino_gfx::{
+    ARRANGEMENT_PALETTE, ArrangementNoteInstance, ArrangementSceneParams, ArrangementUniform,
+    ArrangementViewColors, CcBarColors, CcBarData, CcBarViewParams,
+};
 
 impl Host {
     /// 收集走带视图全部实例（背景 + lane + 网格线 + 音符 + 演奏指示线）
@@ -63,38 +66,36 @@ impl Host {
                 ..iced_core::Color::WHITE
             }
         };
-        // 使用 DAW 风格的播放头颜色
-        let arr_playhead = iced_core::Color::from_rgba(
-            lumino_gfx::colors::AR_PLAYHEAD_COLOR.0,
-            lumino_gfx::colors::AR_PLAYHEAD_COLOR.1,
-            lumino_gfx::colors::AR_PLAYHEAD_COLOR.2,
-            lumino_gfx::colors::AR_PLAYHEAD_COLOR.3,
-        );
-
-        lumino_gfx::collect_arrangement_instances(
-            &track_order,
-            &track_visible,
-            track_notes,
-            self.root.midi.document.as_deref(),
-            self.root.editor.playback_position,
-            &viewport,
-            &ARRANGEMENT_PALETTE,
-            [arr_bg.r, arr_bg.g, arr_bg.b],
-            [arr_lane_even.r, arr_lane_even.g, arr_lane_even.b],
-            [arr_lane_odd.r, arr_lane_odd.g, arr_lane_odd.b],
-            [
+        let colors = ArrangementViewColors {
+            bg: [arr_bg.r, arr_bg.g, arr_bg.b],
+            lane_even: [arr_lane_even.r, arr_lane_even.g, arr_lane_even.b],
+            lane_odd: [arr_lane_odd.r, arr_lane_odd.g, arr_lane_odd.b],
+            measure_line: [
                 arr_measure_line.r,
                 arr_measure_line.g,
                 arr_measure_line.b,
                 arr_measure_line.a,
             ],
-            [
-                arr_playhead.r,
-                arr_playhead.g,
-                arr_playhead.b,
-                arr_playhead.a,
+            playhead: [
+                lumino_gfx::colors::AR_PLAYHEAD_COLOR.0,
+                lumino_gfx::colors::AR_PLAYHEAD_COLOR.1,
+                lumino_gfx::colors::AR_PLAYHEAD_COLOR.2,
+                lumino_gfx::colors::AR_PLAYHEAD_COLOR.3,
             ],
-        )
+        };
+
+        let scene_params = ArrangementSceneParams {
+            viewport: &viewport,
+            track_order: &track_order,
+            track_colors: &ARRANGEMENT_PALETTE,
+            track_visible: &track_visible,
+            midi_doc: self.root.midi.document.as_deref(),
+            track_notes,
+            playback_position: self.root.editor.playback_position,
+            colors: &colors,
+        };
+
+        lumino_gfx::collect_arrangement_instances(&scene_params)
     }
 
     /// 分离渲染线程模式的主渲染入口
@@ -196,16 +197,17 @@ impl Host {
             vec![] // 走带模式不使用网格
         } else {
             puffin::profile_scope!("generate_grid_instances");
-            self.generate_grid_instances(
-                viewport_size.width,
-                viewport_size.height,
-                super::DEFAULT_KEYBOARD_WIDTH,
-                super::DEFAULT_RULER_HEIGHT,
-                scroll.0,
-                scroll.1,
-                zoom.0,
-                zoom.1,
-            )
+            let grid_params = lumino_gfx::GridViewParams {
+                viewport_width: viewport_size.width,
+                viewport_height: viewport_size.height,
+                keyboard_width: super::DEFAULT_KEYBOARD_WIDTH,
+                ruler_height: super::DEFAULT_RULER_HEIGHT,
+                scroll_x: scroll.0,
+                scroll_y: scroll.1,
+                zoom_x: zoom.0,
+                zoom_y: zoom.1,
+            };
+            self.generate_grid_instances(&grid_params)
         };
 
         // WGPU 渲染模式下不使用 Iced Canvas 键盘
@@ -221,8 +223,6 @@ impl Host {
                 super::DEFAULT_RULER_HEIGHT,
                 scroll.0,
                 zoom.0,
-                super::TICKS_PER_MEASURE,
-                super::TICKS_PER_BEAT,
             )
         };
 
@@ -311,25 +311,30 @@ impl Host {
         let grab_alpha = if theme.is_light() { 0.40 } else { 0.35 };
         let grab_color = [text_c.r, text_c.g, text_c.b, grab_alpha];
 
-        lumino_gfx::build_cc_bar_instances(
-            &panel.edit_mode,
+        let cc_view_params = CcBarViewParams {
             panel_height,
-            view.keyboard_width,
-            view.scroll_x,
-            view.zoom_x,
-            canvas.offset_x,
-            canvas.offset_y,
-            canvas.size_x,
-            canvas.size_y,
-            &velocity_points,
-            &cc_points,
-            &bend_points,
-            &editor.editor_state.data.notes,
+            keyboard_width: view.keyboard_width,
+            scroll_x: view.scroll_x,
+            zoom_x: view.zoom_x,
+            canvas_offset_x: canvas.offset_x,
+            canvas_offset_y: canvas.offset_y,
+            canvas_size_x: canvas.size_x,
+            canvas_size_y: canvas.size_y,
+        };
+        let cc_colors = CcBarColors {
             bar_color,
             bg_color,
             handle_color,
             grab_color,
-        )
+        };
+        let cc_data = CcBarData {
+            velocity_points: &velocity_points,
+            cc_points: &cc_points,
+            bend_points: &bend_points,
+            notes: &editor.editor_state.data.notes,
+        };
+
+        lumino_gfx::build_cc_bar_instances(&panel.edit_mode, &cc_view_params, &cc_data, &cc_colors)
     }
 
     /// 更新 WGPU 渲染线程的音符数据（双缓冲 + 异步计算）
@@ -490,16 +495,21 @@ impl Host {
             } else {
                 -1.0
             };
-            ArrangementUniform::from_arrangement(
-                data.scroll,
-                data.zoom.0,
-                av.track_height,
-                [data.viewport_size.width, data.viewport_size.height],
-                [canvas_offset.0, canvas_offset.1],
+            ArrangementUniform {
+                scroll: [data.scroll.0, data.scroll.1],
+                zoom: data.zoom.0,
+                track_height: av.track_height,
+                viewport_size: [data.viewport_size.width, data.viewport_size.height],
+                canvas_offset: [canvas_offset.0, canvas_offset.1],
                 playhead_x,
-                [bg_color_arr[0], bg_color_arr[1], bg_color_arr[2], bg_color_arr[3]],
-                [bar_color[0], bar_color[1], bar_color[2], bar_color[3]],
-                [
+                bg_color: [
+                    bg_color_arr[0],
+                    bg_color_arr[1],
+                    bg_color_arr[2],
+                    bg_color_arr[3],
+                ],
+                bar_color: [bar_color[0], bar_color[1], bar_color[2], bar_color[3]],
+                playhead_color: [
                     lumino_gfx::colors::AR_PLAYHEAD_COLOR.0,
                     lumino_gfx::colors::AR_PLAYHEAD_COLOR.1,
                     lumino_gfx::colors::AR_PLAYHEAD_COLOR.2,
@@ -507,7 +517,8 @@ impl Host {
                 ],
                 track_colors,
                 track_count,
-            )
+                ..Default::default()
+            }
         } else {
             ArrangementUniform::default()
         };

@@ -59,7 +59,10 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
 
     println!("A creating room...");
     // A create room
-    client_a.create_room("TestRoom".to_string()).await.expect("创建房间失败");
+    client_a
+        .create_room("TestRoom".to_string())
+        .await
+        .expect("创建房间失败");
 
     // Wait for A to create room
     let mut room_created = false;
@@ -79,7 +82,10 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
     assert!(room_created, "Room should be created in A");
 
     // B join room
-    client_b.join_room(room_invite_code).await.expect("加入房间失败");
+    client_b
+        .join_room(room_invite_code)
+        .await
+        .expect("加入房间失败");
 
     // Wait for B to join room
     let mut joined = false;
@@ -119,7 +125,10 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
             key_offset: None,
             timestamp: i as u64,
         };
-        client_a.send_note_batch(op).await.expect("发送音符批次失败");
+        client_a
+            .send_note_batch(op)
+            .await
+            .expect("发送音符批次失败");
         sleep(delay).await;
     }
 

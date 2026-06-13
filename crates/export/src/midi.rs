@@ -277,10 +277,12 @@ fn collect_track_events<'a>(
     // 速度事件 (全局事件)
     if include_globals {
         for tempo in &track_data.tempos {
-            let tempo_value = midly::num::u24::try_from(tempo.tempo)
-                .ok_or_else(|| ExportError::InvalidData(
-                    format!("tempo {} exceeds u24 range (0~16777215 µs/beat)", tempo.tempo)
-                ))?;
+            let tempo_value = midly::num::u24::try_from(tempo.tempo).ok_or_else(|| {
+                ExportError::InvalidData(format!(
+                    "tempo {} exceeds u24 range (0~16777215 µs/beat)",
+                    tempo.tempo
+                ))
+            })?;
             events.push(TrackEvent {
                 delta: tempo.tick.into(),
                 kind: TrackEventKind::Meta(MetaMessage::Tempo(tempo_value)),
@@ -526,8 +528,7 @@ mod tests {
             },
             tracks: vec![track],
         };
-        let bytes =
-            export_midi_to_bytes(&data).expect("export should succeed for valid data");
+        let bytes = export_midi_to_bytes(&data).expect("export should succeed for valid data");
         // 用 midly 重新解析验证输出有效性
         let smf = midly::Smf::parse(&bytes).expect("should parse exported MIDI");
         assert_eq!(smf.tracks.len(), 1, "should have 1 track");

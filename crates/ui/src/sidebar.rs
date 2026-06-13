@@ -123,16 +123,16 @@ impl Sidebar {
     /// 返回完整的侧边栏视图（包括路由图标栏和面板）
     pub fn view<'a>(&'a self, window: &'a window::Window) -> Element<'a> {
         let panel = if self.panel_visible {
-            panel::view(
-                self.panel_route,
-                &self.tracks,
-                self.selected_track,
-                self.add_track_menu_open,
-                self.panel_width,
-                self.is_resizing,
-                self.track_scroll_offset,
-                window,
-            )
+            let sidebar_params = panel::SidebarViewParams {
+                route: self.panel_route,
+                tracks: &self.tracks,
+                selected_track: self.selected_track,
+                add_track_menu_open: self.add_track_menu_open,
+                panel_width: self.panel_width,
+                is_resizing: self.is_resizing,
+                scroll_offset: self.track_scroll_offset,
+            };
+            panel::view(sidebar_params, window)
         } else {
             iced_widget::container(iced_widget::space()).width(0).into()
         };

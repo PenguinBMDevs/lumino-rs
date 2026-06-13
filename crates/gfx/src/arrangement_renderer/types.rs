@@ -41,39 +41,6 @@ pub struct ArrangementUniform {
     pub _pad4: f32,
 }
 
-impl ArrangementUniform {
-    /// 创建走带模式 Uniform（从参数构建）
-    pub fn from_arrangement(
-        scroll: (f32, f32),
-        zoom: f32,
-        track_height: f32,
-        viewport_size: [f32; 2],
-        canvas_offset: [f32; 2],
-        playhead_x: f32,
-        bg_color: [f32; 4],
-        bar_color: [f32; 4],
-        playhead_color: [f32; 4],
-        track_colors: [[f32; 4]; 16],
-        track_count: f32,
-    ) -> Self {
-        Self {
-            scroll: [scroll.0, scroll.1],
-            zoom,
-            track_height,
-            notes_per_track: 128.0,
-            viewport_size,
-            canvas_offset,
-            playhead_x,
-            bg_color,
-            bar_color,
-            playhead_color,
-            track_colors,
-            track_count,
-            ..Self::default()
-        }
-    }
-}
-
 impl Default for ArrangementUniform {
     fn default() -> Self {
         Self {

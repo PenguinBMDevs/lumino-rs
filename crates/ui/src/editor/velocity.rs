@@ -9,8 +9,8 @@ pub use widget::VelocityCanvasState;
 
 // 重新导出自 lumino-core 的数据类型
 pub use lumino_core::{
-    BendDisplay, BendPoint, CcData, CcDisplay, CcPoint, EditMode, VelocityPoint,
-    CC_CONTROLLER_NAMES,
+    BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcData, CcDisplay, CcPoint, EditMode,
+    EditorTransform, VelocityPoint,
 };
 
 use crate::Element;
@@ -165,9 +165,9 @@ impl VelocityPanel {
                 CcOption::Cc(self.selected_cc)
             };
             pick_list(cc_options, Some(selected), move |cc| {
-                crate::message::Message::Velocity(
-                    crate::message::VelocityAction::CcOptionSelected(cc),
-                )
+                crate::message::Message::Velocity(crate::message::VelocityAction::CcOptionSelected(
+                    cc,
+                ))
             })
             .placeholder("Select CC/Bend")
             .padding([2, 6])
@@ -207,7 +207,10 @@ impl VelocityPanel {
 
     /// 构建力度点数据
     pub fn build_velocity_points(notes: &im::Vector<crate::editor::Note>) -> Vec<VelocityPoint> {
-        let data = lumino_core::EditorData { notes: notes.clone(), ..Default::default() };
+        let data = lumino_core::EditorData {
+            notes: notes.clone(),
+            ..Default::default()
+        };
         data.build_velocity_points()
     }
 

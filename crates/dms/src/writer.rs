@@ -191,7 +191,9 @@ mod tests {
     #[test]
     fn test_roundtrip_preserves_song_name() {
         let root = build_test_tree();
-        let file_bytes = DmsWriter::new().to_file_bytes(&root).expect("生成DMS文件字节失败");
+        let file_bytes = DmsWriter::new()
+            .to_file_bytes(&root)
+            .expect("生成DMS文件字节失败");
         let read_root = read_dms_file(&file_bytes).expect("读取回写后的DMS文件失败");
 
         // 找到 SONG_NAME 节点

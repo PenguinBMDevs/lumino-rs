@@ -168,30 +168,33 @@ impl Host {
         color: String,
         username: String,
     ) {
-        self.root
-            .update(message::Message::CollaborationRemoteMouseMoved {
+        self.root.update(message::Message::Collaboration(
+            lumino_message::CollaborationAction::RemoteMouseMoved {
                 user_id: user_id.into(),
                 x,
                 y,
                 color: color.into(),
                 username: username.into(),
-            });
+            },
+        ));
         self.window_ctx.window.request_redraw();
     }
 
     /// 移除远端鼠标
     pub fn remove_remote_cursor(&mut self, user_id: String) {
-        self.root
-            .update(message::Message::CollaborationRemoteUserLeft {
+        self.root.update(message::Message::Collaboration(
+            lumino_message::CollaborationAction::RemoteUserLeft {
                 user_id: user_id.into(),
-            });
+            },
+        ));
         self.window_ctx.window.request_redraw();
     }
 
     /// 更新远端音符
     pub fn update_remote_note(&mut self, operation: String) {
-        self.root
-            .update(message::Message::CollaborationRemoteNoteUpdate { operation });
+        self.root.update(message::Message::Collaboration(
+            lumino_message::CollaborationAction::RemoteNoteUpdate { operation },
+        ));
         self.window_ctx.window.request_redraw();
     }
     /// 应用远程笔记操作到本地编辑器（委托给 Root 实现）

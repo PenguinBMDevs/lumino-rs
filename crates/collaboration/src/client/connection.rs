@@ -31,7 +31,9 @@ impl CollaborationClient {
         note = "请使用 create_room_and_connect 或 join_room_and_connect"
     )]
     pub async fn connect(&mut self, _host: Option<String>, _port: Option<u16>) -> Result<()> {
-        Err(crate::CollaborationError::Other("请使用 create_room_and_connect 或 join_room_and_connect".to_string()))
+        Err(crate::CollaborationError::Other(
+            "请使用 create_room_and_connect 或 join_room_and_connect".to_string(),
+        ))
     }
 
     /// 使用 roomId 连接 WebSocket
@@ -93,7 +95,10 @@ impl CollaborationClient {
             Ok(Err(e)) => Err(e.into()),
             Err(_) => {
                 tracing::debug!("WebSocket 连接超时");
-                Err(crate::CollaborationError::Other(format!("连接超时（{}秒）", timeout_duration.as_secs())))
+                Err(crate::CollaborationError::Other(format!(
+                    "连接超时（{}秒）",
+                    timeout_duration.as_secs()
+                )))
             }
         }
     }
@@ -239,7 +244,10 @@ impl CollaborationClient {
             Ok(Some(Ok(Message::Text(text)))) => {
                 tracing::debug!("Received auth response: {}", text);
                 let msg: ServerMessage = serde_json::from_str(&text).map_err(|e| {
-                    crate::CollaborationError::Other(format!("Failed to parse auth response: {} - text: {}", e, text))
+                    crate::CollaborationError::Other(format!(
+                        "Failed to parse auth response: {} - text: {}",
+                        e, text
+                    ))
                 })?;
                 match msg {
                     ServerMessage::Authenticated {
@@ -286,14 +294,23 @@ impl CollaborationClient {
 
                         Ok(read)
                     }
-                    ServerMessage::Error { error } => Err(crate::CollaborationError::Other(format!("认证失败: {}", error))),
-                    _ => Err(crate::CollaborationError::Other("意外的认证响应".to_string())),
+                    ServerMessage::Error { error } => Err(crate::CollaborationError::Other(
+                        format!("认证失败: {}", error),
+                    )),
+                    _ => Err(crate::CollaborationError::Other(
+                        "意外的认证响应".to_string(),
+                    )),
                 }
             }
             Ok(None) => Err(crate::CollaborationError::Other("连接已关闭".to_string())),
-            Ok(Some(Err(e))) => Err(crate::CollaborationError::Other(format!("WebSocket 错误: {}", e))),
+            Ok(Some(Err(e))) => Err(crate::CollaborationError::Other(format!(
+                "WebSocket 错误: {}",
+                e
+            ))),
             Err(_) => Err(crate::CollaborationError::Other("认证超时".to_string())),
-            _ => Err(crate::CollaborationError::Other("意外的消息类型".to_string())),
+            _ => Err(crate::CollaborationError::Other(
+                "意外的消息类型".to_string(),
+            )),
         }
     }
 }

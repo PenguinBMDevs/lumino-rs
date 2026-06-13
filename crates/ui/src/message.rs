@@ -11,11 +11,26 @@ pub use crate::{
 
 // 重新导出自 lumino-message 的所有公共类型
 pub use lumino_message::{
-    AudioAction, AudioExportAction, EditorAction, LoopRangeAction, Message as GenericMessage,
-    PatternAction, SpeedChangeAction, VelocityAction,
+    AudioAction,
     // 共享类型
-    AudioChannels, AudioFormat, CcOption, DotType, Interpolation, NotePrecision, PerfData,
-    SpeedFactor, ThreadingOption, Tool, TupletType,
+    AudioChannels,
+    AudioExportAction,
+    AudioFormat,
+    CcOption,
+    DotType,
+    EditorAction,
+    Interpolation,
+    LoopRangeAction,
+    Message as GenericMessage,
+    NotePrecision,
+    PatternAction,
+    PerfData,
+    SpeedChangeAction,
+    SpeedFactor,
+    ThreadingOption,
+    Tool,
+    TupletType,
+    VelocityAction,
 };
 
 /// 具体化的消息类型

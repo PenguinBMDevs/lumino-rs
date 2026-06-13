@@ -1,10 +1,11 @@
-use iced_core::Point;
-use crate::constants::editor::NOTE_EDGE_THRESHOLD_PX;
 use super::{Editor, HitType, SelectionHitType};
+use crate::constants::editor::NOTE_EDGE_THRESHOLD_PX;
+use iced_core::Point;
 
 impl Editor {
     pub fn hit_test_note(&self, pos: Point) -> Option<(usize, HitType)> {
-        self.editor_state.hit_test_note((pos.x, pos.y), NOTE_EDGE_THRESHOLD_PX)
+        self.editor_state
+            .hit_test_note((pos.x, pos.y), NOTE_EDGE_THRESHOLD_PX)
     }
 
     pub fn delete_note_by_index(&mut self, index: usize) {
@@ -23,7 +24,10 @@ impl Editor {
     }
 
     pub fn is_note_selected(&self, index: usize) -> bool {
-        self.editor_state.interaction.selected_notes.contains(&index)
+        self.editor_state
+            .interaction
+            .selected_notes
+            .contains(&index)
     }
 
     pub fn selected_notes_count(&self) -> usize {
@@ -42,13 +46,37 @@ impl Editor {
         self.mark_notes_changed();
     }
 
-    pub fn get_notes_in_selection_box(&self, start_tick: f32, start_key: u16, current_tick: f32, current_key: u16) -> Vec<usize> {
-        self.editor_state.get_notes_in_selection_box(start_tick, start_key, current_tick, current_key)
+    pub fn get_notes_in_selection_box(
+        &self,
+        start_tick: f32,
+        start_key: u16,
+        current_tick: f32,
+        current_key: u16,
+    ) -> Vec<usize> {
+        self.editor_state.get_notes_in_selection_box(
+            start_tick,
+            start_key,
+            current_tick,
+            current_key,
+        )
     }
 
-    pub(super) fn delete_notes_in_selection_box(&mut self, start_tick: f32, start_key: u16, current_tick: f32, current_key: u16) {
-        let indices = self.editor_state.get_notes_in_selection_box(start_tick, start_key, current_tick, current_key);
-        if indices.is_empty() { return; }
+    pub(super) fn delete_notes_in_selection_box(
+        &mut self,
+        start_tick: f32,
+        start_key: u16,
+        current_tick: f32,
+        current_key: u16,
+    ) {
+        let indices = self.editor_state.get_notes_in_selection_box(
+            start_tick,
+            start_key,
+            current_tick,
+            current_key,
+        );
+        if indices.is_empty() {
+            return;
+        }
         let set: std::collections::HashSet<usize> = indices.into_iter().collect();
         self.editor_state.data.delete_selected_notes(&set);
         self.editor_state.interaction.selected_notes.clear();

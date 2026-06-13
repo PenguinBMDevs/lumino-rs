@@ -34,7 +34,14 @@ mod tests {
 
     #[test]
     fn test_viewport_uniform_creation() {
-        let uniform = KeyboardViewportUniform::new(1920.0, 1080.0, 60.0, 30.0, 100.0, 20.0, 128);
+        let uniform = KeyboardViewportUniform::from_params(&super::KeyboardPrepareParams {
+            viewport_size: (1920.0, 1080.0),
+            keyboard_width: 60.0,
+            ruler_height: 30.0,
+            scroll_y: 100.0,
+            zoom_y: 20.0,
+            visible_key_count: 128,
+        });
 
         assert_eq!(uniform.viewport_size, [1920.0, 1080.0]);
         assert_eq!(uniform.keyboard_width, 60.0);

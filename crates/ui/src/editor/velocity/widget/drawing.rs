@@ -289,23 +289,28 @@ pub fn draw_tempo_graph(
     }
 }
 
+/// 曲线绘制反馈的画布参数
+pub struct CurvePaintCanvasParams {
+    size: Size,
+    view: ViewState,
+    bounds: Rectangle,
+}
+
 /// 绘制曲线绘制模式的视觉反馈
 pub fn draw_curve_paint_feedback(
     frame: &mut Frame<Renderer>,
     theme: &Theme,
     points: &[VelocityPoint],
     state: &VelocityCanvasState,
-    size: Size,
-    view: &ViewState,
+    canvas_params: &CurvePaintCanvasParams,
     cursor: mouse::Cursor,
-    bounds: Rectangle,
 ) {
-    let width = size.width;
-    let height = size.height;
+    let width = canvas_params.size.width;
+    let height = canvas_params.size.height;
     let start_x = state.curve_start_x;
     let cursor_local = cursor
         .position()
-        .map(|p| Point::new(p.x - bounds.x, p.y - bounds.y));
+        .map(|p| Point::new(p.x - canvas_params.bounds.x, p.y - canvas_params.bounds.y));
     let Some(current_pos) = cursor_local else {
         return;
     };
@@ -341,7 +346,7 @@ pub fn draw_curve_paint_feedback(
         if !state.curve_affected.contains_key(&point.note_index) {
             continue;
         }
-        let pos = VelocityCanvas::point_screen_pos(point, 0, width, height, view);
+        let pos = VelocityCanvas::point_screen_pos(point, 0, width, height, &canvas_params.view);
         let glow = Color::from_rgba(affected_color.r, affected_color.g, affected_color.b, 0.4);
         frame.fill(&canvas::Path::circle(pos, POINT_RADIUS + 4.0), glow);
         frame.fill(

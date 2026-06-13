@@ -23,8 +23,11 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
 
         let canvas = &self.editor.editor_state.canvas;
         let new_size = iced_core::Point::new(bounds.width, bounds.height);
-        if canvas.size_x != new_size.x || canvas.size_y != new_size.y
-            || canvas.offset_x != bounds_pos.x || canvas.offset_y != bounds_pos.y {
+        if canvas.size_x != new_size.x
+            || canvas.size_y != new_size.y
+            || canvas.offset_x != bounds_pos.x
+            || canvas.offset_y != bounds_pos.y
+        {
             return Some(Action::publish(crate::Message::CanvasBoundsChanged {
                 offset: bounds_pos,
                 size: bounds_size,

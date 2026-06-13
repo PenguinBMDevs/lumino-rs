@@ -1,6 +1,7 @@
 use super::data::{GridColors, ViewportInfo};
 use crate::host::Host;
 use iced_wgpu::wgpu;
+use lumino_gfx::GridPrepareParams;
 
 impl Host {
     /// 如果需要则准备网格
@@ -31,27 +32,29 @@ impl Host {
         let v = &editor.editor_state.view;
         let max_key_index = (v.visible_key_count.saturating_sub(1)) as f32;
 
-        self.render_ctx.grid_renderer.prepare(
-            &gfx.queue,
-            (viewport.logical_size.width, viewport.logical_size.height),
-            v.scroll_x,
-            v.scroll_y,
-            v.zoom_x,
-            v.zoom_y,
-            v.keyboard_width,
-            v.ruler_height,
-            colors.bg,
-            colors.black_key,
-            colors.bar_line,
-            colors.beat_line,
-            colors.half_beat_line,
-            colors.grid_line,
-            colors.key_line,
-            v.ppq as f32,
+        let grid_params = GridPrepareParams {
+            viewport_size: (viewport.logical_size.width, viewport.logical_size.height),
+            scroll_x: v.scroll_x,
+            scroll_y: v.scroll_y,
+            zoom_x: v.zoom_x,
+            zoom_y: v.zoom_y,
+            keyboard_width: v.keyboard_width,
+            ruler_height: v.ruler_height,
+            color_bg: colors.bg,
+            color_bg_black_key: colors.black_key,
+            color_bar: colors.bar_line,
+            color_beat: colors.beat_line,
+            color_half_beat: colors.half_beat_line,
+            color_grid: colors.grid_line,
+            color_key_line: colors.key_line,
+            ppq: v.ppq as f32,
             max_key_index,
-            viewport.canvas_offset.x,
-            viewport.canvas_offset.y,
-        );
+            canvas_offset_x: viewport.canvas_offset.x,
+            canvas_offset_y: viewport.canvas_offset.y,
+        };
+        self.render_ctx
+            .grid_renderer
+            .prepare(&gfx.queue, &grid_params);
     }
 
     /// 如果需要则准备音符

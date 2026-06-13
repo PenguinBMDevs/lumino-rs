@@ -93,7 +93,9 @@ mod tests {
         let mut iterations = 0;
         while active && iterations < 100 {
             (x, y, active) = anim.update(x, y);
-            if active { anim.set_target(10.0, 20.0); }
+            if active {
+                anim.set_target(10.0, 20.0);
+            }
             iterations += 1;
         }
         assert!(!active);

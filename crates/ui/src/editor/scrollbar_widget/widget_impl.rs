@@ -10,15 +10,20 @@ use iced_core::{Event, Length, Rectangle, Renderer as _Renderer, Size, mouse};
 
 // ─── Mouse event handlers (extracted for ≤4 nesting) ─────────────────
 
+/// 滚动条计算的几何数据
+struct ScrollGeometry {
+    bounds: Rectangle,
+    thumb_bounds: Rectangle,
+    track_size: f32,
+    thumb_size: f32,
+}
+
 impl<'a> ScrollbarWidget<'a> {
     /// 处理鼠标左键按下
     fn handle_button_pressed(
         &mut self,
         state: &mut ScrollbarState,
-        bounds: Rectangle,
-        thumb_bounds: Rectangle,
-        track_size: f32,
-        thumb_size: f32,
+        geo: &ScrollGeometry,
         cursor: mouse::Cursor,
         shell: &mut iced_core::Shell<'_, Message>,
     ) {
@@ -26,37 +31,37 @@ impl<'a> ScrollbarWidget<'a> {
             return;
         };
 
-        if thumb_bounds.contains(position) {
+        if geo.thumb_bounds.contains(position) {
             let start_pos = match self.orientation {
                 ScrollbarOrientation::Horizontal => position.x,
                 ScrollbarOrientation::Vertical => position.y,
             };
-            if let Some(edge) = self.get_edge(position, thumb_bounds) {
+            if let Some(edge) = self.get_edge(position, geo.thumb_bounds) {
                 *state = ScrollbarState::DraggingEdge {
                     start_pos,
                     start_zoom: self.zoom,
-                    start_thumb_size: thumb_size,
+                    start_thumb_size: geo.thumb_size,
                     edge,
                 };
             } else {
-                let scrollable_size = self.actual_max_scroll(track_size);
+                let scrollable_size = self.actual_max_scroll(geo.track_size);
                 *state = ScrollbarState::Dragging {
                     start_pos,
                     start_scroll: self.scroll.clamp(0.0, scrollable_size),
                 };
             }
             shell.request_redraw();
-        } else if bounds.contains(position) {
+        } else if geo.bounds.contains(position) {
             let relative_pos = match self.orientation {
                 ScrollbarOrientation::Horizontal => {
-                    (position.x - bounds.x - 2.0) / (track_size - thumb_size).max(1.0)
+                    (position.x - geo.bounds.x - 2.0) / (geo.track_size - geo.thumb_size).max(1.0)
                 }
                 ScrollbarOrientation::Vertical => {
-                    (position.y - bounds.y - 2.0) / (track_size - thumb_size).max(1.0)
+                    (position.y - geo.bounds.y - 2.0) / (geo.track_size - geo.thumb_size).max(1.0)
                 }
             };
 
-            let actual_max_scroll = self.actual_max_scroll(track_size);
+            let actual_max_scroll = self.actual_max_scroll(geo.track_size);
             let new_scroll = relative_pos.clamp(0.0, 1.0) * actual_max_scroll;
             shell.publish((self.on_scroll)(new_scroll));
         }
@@ -77,11 +82,9 @@ impl<'a> ScrollbarWidget<'a> {
             return;
         }
 
-        let new_state = cursor
-            .position()
-            .map_or(ScrollbarState::Idle, |pos| {
-                self.determine_state_at_position(pos, thumb_bounds)
-            });
+        let new_state = cursor.position().map_or(ScrollbarState::Idle, |pos| {
+            self.determine_state_at_position(pos, thumb_bounds)
+        });
         *state = new_state;
         shell.request_redraw();
     }
@@ -90,9 +93,7 @@ impl<'a> ScrollbarWidget<'a> {
     fn handle_cursor_moved(
         &mut self,
         state: &mut ScrollbarState,
-        track_size: f32,
-        thumb_size: f32,
-        thumb_bounds: Rectangle,
+        geo: &ScrollGeometry,
         cursor: mouse::Cursor,
         shell: &mut iced_core::Shell<'_, Message>,
     ) {
@@ -101,24 +102,22 @@ impl<'a> ScrollbarWidget<'a> {
                 start_pos,
                 start_scroll,
             } => {
-                self.handle_dragging(track_size, thumb_size, start_pos, start_scroll, cursor, shell);
-            }
-            ScrollbarState::DraggingEdge {
-                start_pos,
-                start_zoom,
-                start_thumb_size,
-                edge,
-            } => {
-                self.handle_dragging_edge(
-                    state, track_size, start_pos, start_zoom, start_thumb_size, edge, cursor, shell,
+                self.handle_dragging(
+                    geo.track_size,
+                    geo.thumb_size,
+                    start_pos,
+                    start_scroll,
+                    cursor,
+                    shell,
                 );
             }
+            ScrollbarState::DraggingEdge { .. } => {
+                self.handle_dragging_edge(state, geo, cursor, shell);
+            }
             _ => {
-                let new_state = cursor
-                    .position()
-                    .map_or(ScrollbarState::Idle, |pos| {
-                        self.determine_state_at_position(pos, thumb_bounds)
-                    });
+                let new_state = cursor.position().map_or(ScrollbarState::Idle, |pos| {
+                    self.determine_state_at_position(pos, geo.thumb_bounds)
+                });
 
                 if *state != new_state {
                     *state = new_state;
@@ -160,14 +159,19 @@ impl<'a> ScrollbarWidget<'a> {
     fn handle_dragging_edge(
         &self,
         state: &mut ScrollbarState,
-        track_size: f32,
-        start_pos: f32,
-        start_zoom: f32,
-        start_thumb_size: f32,
-        edge: Edge,
+        geo: &ScrollGeometry,
         cursor: mouse::Cursor,
         shell: &mut iced_core::Shell<'_, Message>,
     ) {
+        let (start_pos, start_zoom, start_thumb_size, edge) = match *state {
+            ScrollbarState::DraggingEdge {
+                start_pos,
+                start_zoom,
+                start_thumb_size,
+                edge,
+            } => (start_pos, start_zoom, start_thumb_size, edge),
+            _ => return,
+        };
         let Some(position) = cursor.position() else {
             return;
         };
@@ -182,7 +186,7 @@ impl<'a> ScrollbarWidget<'a> {
         // 动态判断滚动是否已达极限，阻止缩小方向的拖拽（放大方向仍可正常工作）
         // 使用 1px 迟滞防止浮点精度导致的误判
         const LIMIT_HYSTERESIS: f32 = 1.0;
-        let actual_max_scroll = self.actual_max_scroll(track_size);
+        let actual_max_scroll = self.actual_max_scroll(geo.track_size);
         let can_zoom_out = match edge {
             Edge::Start => self.scroll > LIMIT_HYSTERESIS,
             Edge::End => self.scroll < actual_max_scroll - LIMIT_HYSTERESIS,
@@ -200,8 +204,8 @@ impl<'a> ScrollbarWidget<'a> {
                 edge,
             };
         } else {
-            let max_delta = (track_size - start_thumb_size).max(track_size * 0.5);
-            let clamped_delta = effective_delta.clamp(-track_size * 0.9, max_delta);
+            let max_delta = (geo.track_size - start_thumb_size).max(geo.track_size * 0.5);
+            let clamped_delta = effective_delta.clamp(-geo.track_size * 0.9, max_delta);
 
             let ratio = (1.0 + clamped_delta / start_thumb_size.max(1.0)).max(0.05);
             let new_zoom = start_zoom / ratio;
@@ -303,6 +307,12 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
         let bounds = layout.bounds();
         let state = tree.state.downcast_mut::<ScrollbarState>();
         let (track_size, thumb_size, thumb_bounds) = self.thumb_geometry(bounds);
+        let geo = ScrollGeometry {
+            bounds,
+            thumb_bounds,
+            track_size,
+            thumb_size,
+        };
 
         let Event::Mouse(mouse_event) = event else {
             return;
@@ -310,15 +320,13 @@ impl<'a> iced_core::Widget<Message, Theme, Renderer> for ScrollbarWidget<'a> {
 
         match mouse_event {
             mouse::Event::ButtonPressed(mouse::Button::Left) => {
-                self.handle_button_pressed(
-                    state, bounds, thumb_bounds, track_size, thumb_size, cursor, shell,
-                );
+                self.handle_button_pressed(state, &geo, cursor, shell);
             }
             mouse::Event::ButtonReleased(mouse::Button::Left) => {
                 self.handle_button_released(state, thumb_bounds, cursor, shell);
             }
             mouse::Event::CursorMoved { .. } => {
-                self.handle_cursor_moved(state, track_size, thumb_size, thumb_bounds, cursor, shell);
+                self.handle_cursor_moved(state, &geo, cursor, shell);
             }
             _ => {}
         }

@@ -31,7 +31,7 @@ mod render_ctx;
 pub mod types;
 mod window_ctx;
 
-use render_ctx::RenderContext;
+use render_ctx::{RenderContext, WgpuResources};
 use window_ctx::WindowContext;
 
 pub use cache::RenderCache;
@@ -73,44 +73,49 @@ pub struct Host {
 }
 
 impl Host {
-    /// 创建新的 Host
-    pub fn new(
+    /// 创建渲染上下文和窗口上下文（三个构造函数的公共逻辑）
+    fn create_render_and_window_context(
         window: Arc<winit::window::Window>,
         width: u32,
         height: u32,
         ui_config: &config::UiConfig,
         gfx: &lumino_gfx::Context,
-        is_progress: bool,
-    ) -> Self {
+    ) -> (RenderContext, WindowContext) {
         let viewport =
             Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
 
-        // 根据配置创建字体
         let font = create_font_from_config(ui_config);
 
-        // 创建 wgpu 音符 + 网格渲染器
         let note_renderer = lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format);
         let grid_renderer = lumino_gfx::GridRenderer::new(&gfx.device, gfx.format);
 
+        let wgpu_resources = WgpuResources {
+            device: gfx.device.clone(),
+            queue: gfx.queue.clone(),
+            format: gfx.format,
+            adapter: gfx.adapter.clone(),
+        };
         let render_ctx = RenderContext::new(
-            gfx.device.clone(),
-            gfx.queue.clone(),
-            gfx.format,
-            &gfx.adapter,
+            &wgpu_resources,
             viewport,
             note_renderer,
             grid_renderer,
             font,
         );
 
+        (render_ctx, WindowContext::new(window))
+    }
+
+    /// 创建 Host 公共字段（三个构造函数的公共 Self 初始化）
+    fn new_common_fields(
+        render_ctx: RenderContext,
+        window_ctx: WindowContext,
+        root: root::Root,
+    ) -> Self {
         Self {
             render_ctx,
-            window_ctx: WindowContext::new(window),
-            root: if is_progress {
-                root::Root::new_progress(&ui_config.theme)
-            } else {
-                root::Root::new(ui_config)
-            },
+            window_ctx,
+            root,
             events: Vec::new(),
             last_frame_time: Instant::now(),
             last_fps_update: Instant::now(),
@@ -120,6 +125,25 @@ impl Host {
             cpu_monitor: CpuMonitor::new(),
             last_gpu_frame_time_ms: 0.0,
         }
+    }
+
+    /// 创建新的 Host
+    pub fn new(
+        window: Arc<winit::window::Window>,
+        width: u32,
+        height: u32,
+        ui_config: &config::UiConfig,
+        gfx: &lumino_gfx::Context,
+        is_progress: bool,
+    ) -> Self {
+        let (render_ctx, window_ctx) =
+            Self::create_render_and_window_context(window, width, height, ui_config, gfx);
+        let root = if is_progress {
+            root::Root::new_progress(&ui_config.theme)
+        } else {
+            root::Root::new(ui_config)
+        };
+        Self::new_common_fields(render_ctx, window_ctx, root)
     }
 
     /// 创建对话框 Host
@@ -131,38 +155,10 @@ impl Host {
         gfx: &lumino_gfx::Context,
         dialog_type: crate::state::root_state::DialogType,
     ) -> Self {
-        let viewport =
-            Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
-
-        let font = create_font_from_config(ui_config);
-
-        let note_renderer = lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format);
-        let grid_renderer = lumino_gfx::GridRenderer::new(&gfx.device, gfx.format);
-
-        let render_ctx = RenderContext::new(
-            gfx.device.clone(),
-            gfx.queue.clone(),
-            gfx.format,
-            &gfx.adapter,
-            viewport,
-            note_renderer,
-            grid_renderer,
-            font,
-        );
-
-        Self {
-            render_ctx,
-            window_ctx: WindowContext::new(window),
-            root: root::Root::new_dialog(&ui_config.theme, dialog_type),
-            events: Vec::new(),
-            last_frame_time: Instant::now(),
-            last_fps_update: Instant::now(),
-            frame_count: 0,
-            skip_ui_rendering: false,
-            ui_dirty: false,
-            cpu_monitor: CpuMonitor::new(),
-            last_gpu_frame_time_ms: 0.0,
-        }
+        let (render_ctx, window_ctx) =
+            Self::create_render_and_window_context(window, width, height, ui_config, gfx);
+        let root = root::Root::new_dialog(&ui_config.theme, dialog_type);
+        Self::new_common_fields(render_ctx, window_ctx, root)
     }
 
     /// 创建设置对话框 Host（使用主窗口的配置）
@@ -173,38 +169,10 @@ impl Host {
         ui_config: &config::UiConfig,
         gfx: &lumino_gfx::Context,
     ) -> Self {
-        let viewport =
-            Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
-
-        let font = create_font_from_config(ui_config);
-
-        let note_renderer = lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format);
-        let grid_renderer = lumino_gfx::GridRenderer::new(&gfx.device, gfx.format);
-
-        let render_ctx = RenderContext::new(
-            gfx.device.clone(),
-            gfx.queue.clone(),
-            gfx.format,
-            &gfx.adapter,
-            viewport,
-            note_renderer,
-            grid_renderer,
-            font,
-        );
-
-        Self {
-            render_ctx,
-            window_ctx: WindowContext::new(window),
-            root: root::Root::new_settings_dialog(&ui_config.theme, ui_config),
-            events: Vec::new(),
-            last_frame_time: Instant::now(),
-            last_fps_update: Instant::now(),
-            frame_count: 0,
-            skip_ui_rendering: false,
-            ui_dirty: false,
-            cpu_monitor: CpuMonitor::new(),
-            last_gpu_frame_time_ms: 0.0,
-        }
+        let (render_ctx, window_ctx) =
+            Self::create_render_and_window_context(window, width, height, ui_config, gfx);
+        let root = root::Root::new_settings_dialog(&ui_config.theme, ui_config);
+        Self::new_common_fields(render_ctx, window_ctx, root)
     }
 
     /// 确保 NoteWorker 已创建（懒加载）
@@ -221,7 +189,9 @@ impl Host {
                     tracing::info!("NoteWorker: spawned");
                 }
                 None => {
-                    tracing::error!("NoteWorker: failed to spawn, onion skin will run on main thread");
+                    tracing::error!(
+                        "NoteWorker: failed to spawn, onion skin will run on main thread"
+                    );
                 }
             }
         }

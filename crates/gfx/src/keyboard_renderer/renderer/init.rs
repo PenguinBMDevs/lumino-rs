@@ -73,8 +73,15 @@ impl KeyboardRenderer {
 
         let viewport_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("keyboard_viewport_uniform"),
-            contents: bytemuck::cast_slice(&[KeyboardViewportUniform::new(
-                800.0, 600.0, 60.0, 30.0, 0.0, 20.0, 128,
+            contents: bytemuck::cast_slice(&[KeyboardViewportUniform::from_params(
+                &super::KeyboardPrepareParams {
+                    viewport_size: (800.0, 600.0),
+                    keyboard_width: 60.0,
+                    ruler_height: 30.0,
+                    scroll_y: 0.0,
+                    zoom_y: 20.0,
+                    visible_key_count: 128,
+                },
             )]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });

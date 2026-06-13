@@ -1,4 +1,4 @@
-﻿//! MIDI 录制端到端集成测试
+//! MIDI 录制端到端集成测试
 //!
 //! 测试覆盖：
 //! 1. MIDI API 初始化 → 设备枚举 → 输入连接打开
@@ -129,7 +129,11 @@ fn test_single_note_recording_lifecycle() {
     // 注意：由于我们无法直接访问回调，需要通过模拟的方式
     // 这里直接操作 midi_input_buffer（测试中允许）
     {
-        let mut buf = root.midi.input_buffer.lock().expect("锁定MIDI输入缓冲区失败");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("锁定MIDI输入缓冲区失败");
         buf.push_back(vec![0x90, 60, 100]); // NoteOn C4 vel=100
     }
 
@@ -145,7 +149,11 @@ fn test_single_note_recording_lifecycle() {
 
     // 模拟时间流逝后 NoteOff
     {
-        let mut buf = root.midi.input_buffer.lock().expect("锁定MIDI输入缓冲区失败");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("锁定MIDI输入缓冲区失败");
         buf.push_back(vec![0x80, 60, 0]); // NoteOff C4
     }
 
@@ -187,7 +195,11 @@ fn test_chord_recording() {
 
     // C大调和弦：C4 + E4 + G4 同时按下
     {
-        let mut buf = root.midi.input_buffer.lock().expect("锁定MIDI输入缓冲区失败");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("锁定MIDI输入缓冲区失败");
         buf.push_back(vec![0x90, 60, 100]); // C4
         buf.push_back(vec![0x90, 64, 100]); // E4
         buf.push_back(vec![0x90, 67, 100]); // G4
@@ -198,7 +210,11 @@ fn test_chord_recording() {
 
     // 分别释放（顺序不重要）
     {
-        let mut buf = root.midi.input_buffer.lock().expect("锁定MIDI输入缓冲区失败");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("锁定MIDI输入缓冲区失败");
         buf.push_back(vec![0x80, 64, 0]); // E4 off
         buf.push_back(vec![0x80, 67, 0]); // G4 off
         buf.push_back(vec![0x80, 60, 0]); // C4 off
@@ -236,7 +252,11 @@ fn test_duplicate_note_on_ignored() {
 
     // 同一个键连续两次 NoteOn
     {
-        let mut buf = root.midi.input_buffer.lock().expect("锁定MIDI输入缓冲区失败");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("锁定MIDI输入缓冲区失败");
         buf.push_back(vec![0x90, 60, 100]); // NoteOn C4
         buf.push_back(vec![0x90, 60, 80]); // 重复 NoteOn C4（应被忽略）
     }
@@ -250,7 +270,11 @@ fn test_duplicate_note_on_ignored() {
 
     // NoteOff
     {
-        let mut buf = root.midi.input_buffer.lock().expect("锁定MIDI输入缓冲区失败");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("锁定MIDI输入缓冲区失败");
         buf.push_back(vec![0x80, 60, 0]);
     }
     root.poll_midi_input();
@@ -273,7 +297,11 @@ fn test_note_on_zero_velocity_as_note_off() {
 
     // NoteOn
     {
-        let mut buf = root.midi.input_buffer.lock().expect("锁定MIDI输入缓冲区失败");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("锁定MIDI输入缓冲区失败");
         buf.push_back(vec![0x90, 60, 100]);
     }
     root.poll_midi_input();
@@ -282,7 +310,11 @@ fn test_note_on_zero_velocity_as_note_off() {
 
     // 零力度 NoteOn（应作为 NoteOff）
     {
-        let mut buf = root.midi.input_buffer.lock().expect("锁定MIDI输入缓冲区失败");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("锁定MIDI输入缓冲区失败");
         buf.push_back(vec![0x90, 60, 0]);
     }
     root.poll_midi_input();
@@ -305,7 +337,11 @@ fn test_orphan_note_off_ignored() {
 
     // 直接发送 NoteOff，没有前置 NoteOn
     {
-        let mut buf = root.midi.input_buffer.lock().expect("锁定MIDI输入缓冲区失败");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("锁定MIDI输入缓冲区失败");
         buf.push_back(vec![0x80, 60, 0]);
     }
     root.poll_midi_input();
@@ -331,7 +367,11 @@ fn test_pending_notes_on_stop() {
 
     // NoteOn 但不发送 NoteOff
     {
-        let mut buf = root.midi.input_buffer.lock().expect("锁定MIDI输入缓冲区失败");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("锁定MIDI输入缓冲区失败");
         buf.push_back(vec![0x90, 60, 100]);
     }
     root.poll_midi_input();
@@ -466,7 +506,11 @@ fn test_recording_preserves_existing_notes() {
 
     // 录制新音符
     {
-        let mut buf = root.midi.input_buffer.lock().expect("锁定MIDI输入缓冲区失败");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("锁定MIDI输入缓冲区失败");
         buf.push_back(vec![0x90, 60, 100]);
         buf.push_back(vec![0x80, 60, 0]);
     }

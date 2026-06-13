@@ -3,6 +3,19 @@
 use crate::constants::rendering::grid::{self, TICKS_PER_BEAT, TICKS_PER_MEASURE};
 use crate::{GridLineInstance, RulerTickInstance};
 
+/// 网格视图参数
+#[derive(Debug, Clone)]
+pub struct GridViewParams {
+    pub viewport_width: f32,
+    pub viewport_height: f32,
+    pub keyboard_width: f32,
+    pub ruler_height: f32,
+    pub scroll_x: f32,
+    pub scroll_y: f32,
+    pub zoom_x: f32,
+    pub zoom_y: f32,
+}
+
 /// 判断是否为黑键
 pub fn is_black_key(key_index: isize) -> bool {
     let note_in_octave = key_index.rem_euclid(12);
@@ -37,34 +50,27 @@ fn adaptive_grid_gap(zoom_x: f32, ppq: f32) -> f32 {
 }
 
 /// 生成网格线实例
-pub fn generate_grid_instances(
-    viewport_width: f32,
-    viewport_height: f32,
-    keyboard_width: f32,
-    ruler_height: f32,
-    scroll_x: f32,
-    scroll_y: f32,
-    zoom_x: f32,
-    zoom_y: f32,
-) -> Vec<GridLineInstance> {
+pub fn generate_grid_instances(params: &GridViewParams) -> Vec<GridLineInstance> {
     puffin::profile_function!();
 
     let mut instances = Vec::new();
 
     // 可见范围（tick 和 key）
-    let visible_tick_start = scroll_x / zoom_x;
-    let visible_tick_end = (scroll_x + viewport_width - keyboard_width) / zoom_x;
-    let visible_key_start = scroll_y / zoom_y;
-    let visible_key_end = (scroll_y + viewport_height - ruler_height) / zoom_y;
+    let visible_tick_start = params.scroll_x / params.zoom_x;
+    let visible_tick_end =
+        (params.scroll_x + params.viewport_width - params.keyboard_width) / params.zoom_x;
+    let visible_key_start = params.scroll_y / params.zoom_y;
+    let visible_key_end =
+        (params.scroll_y + params.viewport_height - params.ruler_height) / params.zoom_y;
 
     // 琴键线（水平线，先添加使在纵向线下方渲染）
     let key_start = visible_key_start.floor() as i32;
     let key_end = visible_key_end.ceil() as i32;
 
     for key in key_start..=key_end {
-        let y = ruler_height + key as f32 * zoom_y - scroll_y;
+        let y = params.ruler_height + key as f32 * params.zoom_y - params.scroll_y;
 
-        if y >= ruler_height && y <= viewport_height {
+        if y >= params.ruler_height && y <= params.viewport_height {
             let is_black = is_black_key(key as isize);
             let color = if is_black {
                 grid::colors::BLACK_KEY_LINE
@@ -74,8 +80,8 @@ pub fn generate_grid_instances(
             let width = if is_black { 0.5 } else { 0.3 };
 
             instances.push(GridLineInstance::new(
-                [keyboard_width, y],
-                [viewport_width, y],
+                [params.keyboard_width, y],
+                [params.viewport_width, y],
                 color,
                 width,
             ));
@@ -84,14 +90,14 @@ pub fn generate_grid_instances(
 
     // 纵向网格线（垂直线）
     let ppq = TICKS_PER_BEAT as f32;
-    let grid_gap = adaptive_grid_gap(zoom_x, ppq);
+    let grid_gap = adaptive_grid_gap(params.zoom_x, ppq);
 
     let mut current_tick = (visible_tick_start / grid_gap).ceil() * grid_gap;
 
     while current_tick < visible_tick_end {
-        let x = keyboard_width + current_tick * zoom_x - scroll_x;
+        let x = params.keyboard_width + current_tick * params.zoom_x - params.scroll_x;
 
-        if x >= keyboard_width && x <= viewport_width {
+        if x >= params.keyboard_width && x <= params.viewport_width {
             let is_measure = (current_tick % TICKS_PER_MEASURE as f32).abs() < 0.1;
             let is_beat = (current_tick % ppq).abs() < 0.1;
             let is_half_beat = (current_tick % (ppq / 2.0)).abs() < 0.1;
@@ -107,8 +113,8 @@ pub fn generate_grid_instances(
             };
 
             instances.push(GridLineInstance::new(
-                [x, ruler_height],
-                [x, viewport_height],
+                [x, params.ruler_height],
+                [x, params.viewport_height],
                 color,
                 width,
             ));

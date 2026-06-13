@@ -9,6 +9,29 @@ use std::collections::HashMap;
 
 type TrackNotesMap = HashMap<usize, im::Vector<Note>>;
 
+/// 走带视图颜色配置
+#[derive(Debug, Clone)]
+pub struct ArrangementViewColors {
+    pub bg: [f32; 3],
+    pub lane_even: [f32; 3],
+    pub lane_odd: [f32; 3],
+    pub measure_line: [f32; 4],
+    pub playhead: [f32; 4],
+}
+
+/// 走带视图场景参数（聚合所有实例构建所需数据）
+#[derive(Debug, Clone)]
+pub struct ArrangementSceneParams<'a> {
+    pub viewport: &'a ArrangementViewport,
+    pub track_order: &'a [usize],
+    pub track_colors: &'a [[f32; 3]],
+    pub track_visible: &'a [bool],
+    pub midi_doc: Option<&'a lumino_midi_loader::MidiDocument>,
+    pub track_notes: &'a TrackNotesMap,
+    pub playback_position: f32,
+    pub colors: &'a ArrangementViewColors,
+}
+
 /// 走带视口状态（GFX 版，纯数据，与 UI 版字段兼容）
 #[derive(Debug, Clone)]
 pub struct ArrangementViewport {
@@ -48,33 +71,17 @@ pub const ARRANGEMENT_PALETTE: [[f32; 3]; 12] = [
 
 /// 构建全部实例（背景 + lane + 网格线 + 音符 + 演奏指示线）
 /// 屏幕坐标，每帧重建，二分查找加速 MidiDocument 音符读取
-///
-/// 颜色参数说明：
-/// - `bg_color`: 背景色 (RGB)
-/// - `lane_even_color`: 偶数轨 lane 背景色 (RGB)
-/// - `lane_odd_color`: 奇数轨 lane 背景色 (RGB)
-/// - `measure_line_color`: 小节线颜色 (RGBA)
-/// - `playhead_color`: 演奏指示线颜色 (RGBA)
 pub fn build_arrangement_all(
     out: &mut Vec<ArrangementNoteInstance>,
-    viewport: &ArrangementViewport,
-    track_order: &[usize],
-    track_colors: &[[f32; 3]],
-    track_visible: &[bool],
-    midi_doc: Option<&lumino_midi_loader::MidiDocument>,
-    track_notes: &TrackNotesMap,
-    playback_position: f32,
-    bg_color: [f32; 3],
-    lane_even_color: [f32; 3],
-    lane_odd_color: [f32; 3],
-    measure_line_color: [f32; 4],
-    playhead_color: [f32; 4],
+    params: &ArrangementSceneParams<'_>,
 ) {
+    let viewport = params.viewport;
+    let colors = params.colors;
     let w = viewport.canvas_size[0];
     let h = viewport.canvas_size[1];
     let lh = viewport.track_height * viewport.zoom_y;
     let ppu = viewport.zoom_x.max(0.001);
-    let nt = track_order.len();
+    let nt = params.track_order.len();
     let cox = viewport.canvas_offset[0];
     let coy = viewport.canvas_offset[1];
 
@@ -84,7 +91,7 @@ pub fn build_arrangement_all(
 
     // ── 1. 背景 ──
     out.push(ArrangementNoteInstance::background(
-        cox, coy, w, h, bg_color,
+        cox, coy, w, h, colors.bg,
     ));
 
     if nt == 0 {
@@ -92,36 +99,36 @@ pub fn build_arrangement_all(
     }
 
     let (tf, tl) = visible_trk_range(viewport, h, nt);
-    let key_h = lh / 128.0;
-    let sx = viewport.scroll_x;
 
     // ── 2. Lane + 音符 ──
-    for (ti, tid) in track_order.iter().enumerate() {
+    for (ti, tid) in params.track_order.iter().enumerate() {
         if ti < tf || ti >= tl {
             continue;
         }
-        if !track_visible.get(ti).copied().unwrap_or(true) {
+        if !params.track_visible.get(ti).copied().unwrap_or(true) {
             continue;
         }
 
-        let color = track_colors.get(ti).copied().unwrap_or([0.5, 0.5, 0.5]);
+        let color = params
+            .track_colors
+            .get(ti)
+            .copied()
+            .unwrap_or([0.5, 0.5, 0.5]);
 
         // Lane 背景
         let lane_y = trk_screen_y(viewport, ti) + coy;
         let c = if ti % 2 == 0 {
-            lane_even_color
+            colors.lane_even
         } else {
-            lane_odd_color
+            colors.lane_odd
         };
         out.push(ArrangementNoteInstance::lane(cox, lane_y, w, lh, c));
 
         // 音符
-        if let Some(notes) = track_notes.get(tid) {
-            collect_notes_cache(out, notes, ti, color, ppu, cox, lane_y, key_h, sx, ts, te);
-        } else if let Some(doc) = midi_doc {
-            collect_notes_doc(
-                out, doc, *tid, ti, color, ppu, cox, lane_y, key_h, sx, ts, te,
-            );
+        if let Some(notes) = params.track_notes.get(tid) {
+            collect_notes_cache(out, notes, color, viewport, cox, lane_y);
+        } else if let Some(doc) = params.midi_doc {
+            collect_notes_doc(out, doc, *tid, color, viewport, cox, lane_y);
         }
     }
 
@@ -136,61 +143,33 @@ pub fn build_arrangement_all(
                 coy,
                 1.0,
                 h,
-                measure_line_color,
+                colors.measure_line,
                 tick as u32,
             ));
         }
     }
 
     // ── 4. 演奏指示线 ──
-    if playback_position > 0.0 {
-        let cx = tick_to_x(viewport, playback_position as f64);
+    if params.playback_position > 0.0 {
+        let cx = tick_to_x(viewport, params.playback_position as f64);
         if cx >= cox && cx <= cox + w {
             out.push(ArrangementNoteInstance::playhead(
                 cx,
                 coy,
                 2.0,
                 h,
-                playhead_color,
+                colors.playhead,
             ));
         }
     }
 }
 
 /// Collect arrangement instances from raw data (no UI dependency).
-///
-/// Takes all data as parameters. The UI layer extracts data from its widgets
-/// and passes it here.
 pub fn collect_arrangement_instances(
-    track_order: &[usize],
-    track_visible: &[bool],
-    track_notes: &TrackNotesMap,
-    midi_doc: Option<&lumino_midi_loader::MidiDocument>,
-    playback_position: f32,
-    viewport: &ArrangementViewport,
-    palette: &[[f32; 3]],
-    bg_color: [f32; 3],
-    lane_even_color: [f32; 3],
-    lane_odd_color: [f32; 3],
-    measure_line_color: [f32; 4],
-    playhead_color: [f32; 4],
+    params: &ArrangementSceneParams<'_>,
 ) -> Vec<ArrangementNoteInstance> {
     let mut instances = Vec::new();
-    build_arrangement_all(
-        &mut instances,
-        viewport,
-        track_order,
-        palette,
-        track_visible,
-        midi_doc,
-        track_notes,
-        playback_position,
-        bg_color,
-        lane_even_color,
-        lane_odd_color,
-        measure_line_color,
-        playhead_color,
-    );
+    build_arrangement_all(&mut instances, params);
     instances
 }
 
@@ -199,16 +178,19 @@ pub fn collect_arrangement_instances(
 fn collect_notes_cache(
     out: &mut Vec<ArrangementNoteInstance>,
     notes: &im::Vector<Note>,
-    _ti: usize,
     color: [f32; 3],
-    ppu: f32,
+    viewport: &ArrangementViewport,
     cox: f32,
     lane_y: f32,
-    key_h: f32,
-    scroll_x: f32,
-    ts: f64,
-    te: f64,
 ) {
+    let ppu = viewport.zoom_x.max(0.001);
+    let w = viewport.canvas_size[0];
+    let ts = (viewport.scroll_x / ppu) as f64;
+    let te = ((viewport.scroll_x + w) / ppu) as f64;
+    let lh = viewport.track_height * viewport.zoom_y;
+    let key_h = lh / 128.0;
+    let scroll_x = viewport.scroll_x;
+
     for n in notes {
         let s = n.tick as f64;
         let e = (n.tick + n.length) as f64;
@@ -233,16 +215,19 @@ fn collect_notes_doc(
     out: &mut Vec<ArrangementNoteInstance>,
     doc: &lumino_midi_loader::MidiDocument,
     tid: usize,
-    _ti: usize,
     color: [f32; 3],
-    ppu: f32,
+    viewport: &ArrangementViewport,
     cox: f32,
     lane_y: f32,
-    key_h: f32,
-    scroll_x: f32,
-    ts: f64,
-    te: f64,
 ) {
+    let ppu = viewport.zoom_x.max(0.001);
+    let w = viewport.canvas_size[0];
+    let ts = (viewport.scroll_x / ppu) as f64;
+    let te = ((viewport.scroll_x + w) / ppu) as f64;
+    let lh = viewport.track_height * viewport.zoom_y;
+    let key_h = lh / 128.0;
+    let scroll_x = viewport.scroll_x;
+
     let notes = doc.track_notes(tid);
     if notes.is_empty() {
         return;

@@ -11,6 +11,14 @@ use lumino_gfx::{GridRenderer, NoteRenderer};
 use super::RenderCache;
 use super::render::note_worker::NoteWorker;
 
+/// WGPU 设备资源集合（减少 RenderContext::new 参数数量）
+pub(crate) struct WgpuResources {
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub format: wgpu::TextureFormat,
+    pub adapter: wgpu::Adapter,
+}
+
 /// 渲染上下文，持有所有渲染所需的 GPU 资源和渲染器实例。
 pub(crate) struct RenderContext {
     /// iced 渲染器
@@ -48,20 +56,17 @@ pub(crate) struct RenderContext {
 impl RenderContext {
     /// 创建渲染上下文
     pub fn new(
-        device: wgpu::Device,
-        queue: wgpu::Queue,
-        format: wgpu::TextureFormat,
-        adapter: &wgpu::Adapter,
+        wgpu: &WgpuResources,
         viewport: Viewport,
         note_renderer: NoteRenderer,
         grid_renderer: GridRenderer,
         font: Font,
     ) -> Self {
         let engine = Engine::new(
-            adapter,
-            device.clone(),
-            queue.clone(),
-            format,
+            &wgpu.adapter,
+            wgpu.device.clone(),
+            wgpu.queue.clone(),
+            wgpu.format,
             None,
             iced_wgpu::graphics::Shell::headless(),
         );
@@ -81,9 +86,9 @@ impl RenderContext {
             note_worker: None,
             use_separate_render_thread: false,
             has_rendered_ui: false,
-            device,
-            queue,
-            format,
+            device: wgpu.device.clone(),
+            queue: wgpu.queue.clone(),
+            format: wgpu.format,
         }
     }
 }

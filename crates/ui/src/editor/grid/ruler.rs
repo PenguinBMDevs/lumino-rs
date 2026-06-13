@@ -90,16 +90,14 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
     if let Some(loop_range) = &editor.loop_range
         && loop_range.enabled()
     {
-        draw_loop_range(
-            frame,
-            loop_range,
+        let loop_view = LoopRangeViewParams {
             keyboard_width,
-            view.scroll_x,
-            view.zoom_x,
+            scroll_x: view.scroll_x,
+            zoom_x: view.zoom_x,
             ruler_height,
-            bounds.width,
-            theme,
-        );
+            bounds_width: bounds.width,
+        };
+        draw_loop_range(frame, loop_range, &loop_view, theme);
     }
 }
 
@@ -109,29 +107,35 @@ const LOOP_BORDER_ALPHA: f32 = 0.7;
 const LOOP_HANDLE_WIDTH: f32 = 6.0;
 const LOOP_HANDLE_HEIGHT: f32 = 16.0;
 
-/// 绘制循环区域高亮和标记点
-fn draw_loop_range(
-    frame: &mut Frame<Renderer>,
-    loop_range: &LoopRange,
+/// 绘制循环区域高亮和标记点的视图参数
+struct LoopRangeViewParams {
     keyboard_width: f32,
     scroll_x: f32,
     zoom_x: f32,
     ruler_height: f32,
     bounds_width: f32,
+}
+
+/// 绘制循环区域高亮和标记点
+fn draw_loop_range(
+    frame: &mut Frame<Renderer>,
+    loop_range: &LoopRange,
+    view: &LoopRangeViewParams,
     theme: &crate::Theme,
 ) {
-    let Some((start_x, end_x)) = loop_range.to_screen_coords(keyboard_width, scroll_x, zoom_x)
+    let Some((start_x, end_x)) =
+        loop_range.to_screen_coords(view.keyboard_width, view.scroll_x, view.zoom_x)
     else {
         return;
     };
 
     // 如果循环区域完全不在可视范围内，不绘制
-    if end_x < keyboard_width || start_x > bounds_width {
+    if end_x < view.keyboard_width || start_x > view.bounds_width {
         return;
     }
 
-    let visible_start = start_x.max(keyboard_width);
-    let visible_end = end_x.min(bounds_width);
+    let visible_start = start_x.max(view.keyboard_width);
+    let visible_end = end_x.min(view.bounds_width);
 
     if visible_end <= visible_start {
         return;
@@ -151,7 +155,7 @@ fn draw_loop_range(
 
     let loop_rect = Rectangle::new(
         Point::new(visible_start, 2.0),
-        Size::new(visible_end - visible_start, ruler_height - 4.0),
+        Size::new(visible_end - visible_start, view.ruler_height - 4.0),
     );
 
     let fill_path = Path::rectangle(loop_rect.position(), loop_rect.size());
@@ -168,13 +172,13 @@ fn draw_loop_range(
     frame.stroke(&fill_path, border_stroke);
 
     // 绘制起始手柄（左侧三角形/竖条）
-    if start_x >= keyboard_width && start_x <= bounds_width {
-        draw_handle(frame, start_x, ruler_height, true, border_color);
+    if start_x >= view.keyboard_width && start_x <= view.bounds_width {
+        draw_handle(frame, start_x, view.ruler_height, true, border_color);
     }
 
     // 绘制结束手柄（右侧三角形/竖条）
-    if end_x >= keyboard_width && end_x <= bounds_width {
-        draw_handle(frame, end_x, ruler_height, false, border_color);
+    if end_x >= view.keyboard_width && end_x <= view.bounds_width {
+        draw_handle(frame, end_x, view.ruler_height, false, border_color);
     }
 }
 

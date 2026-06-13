@@ -8,19 +8,22 @@ use crate::{
     window,
 };
 
-pub fn view<'a>(
-    route: Route,
-    tracks: &'a [Track],
-    selected_track: usize,
-    add_track_menu_open: bool,
-    panel_width: f32,
-    is_resizing: bool,
-    scroll_offset: f32,
-    window: &'a window::Window,
-) -> Element<'a> {
+/// 侧边栏视图参数
+#[derive(Clone)]
+pub struct SidebarViewParams<'a> {
+    pub route: Route,
+    pub tracks: &'a [Track],
+    pub selected_track: usize,
+    pub add_track_menu_open: bool,
+    pub panel_width: f32,
+    pub is_resizing: bool,
+    pub scroll_offset: f32,
+}
+
+pub fn view<'a>(params: SidebarViewParams<'a>, window: &'a window::Window) -> Element<'a> {
     let palette = window.theme.extended_palette();
 
-    let content: Element<'a> = match route {
+    let content: Element<'a> = match params.route {
         Route::Arrangement => {
             // 音轨总览模式下左侧面板已隐藏，此处返回空
             container(space()).into()
@@ -33,9 +36,11 @@ pub fn view<'a>(
             const VISIBLE_COUNT: usize = 30; // 一次渲染 ~30 条
             const BUFFER: usize = 5; // 上下各多 5 条防白边
 
-            let first_visible = ((scroll_offset / TRACK_HEIGHT) as usize).saturating_sub(BUFFER);
-            let first_visible = first_visible.min(tracks.len());
-            let last_visible = (first_visible + VISIBLE_COUNT + BUFFER * 2).min(tracks.len());
+            let first_visible =
+                ((params.scroll_offset / TRACK_HEIGHT) as usize).saturating_sub(BUFFER);
+            let first_visible = first_visible.min(params.tracks.len());
+            let last_visible =
+                (first_visible + VISIBLE_COUNT + BUFFER * 2).min(params.tracks.len());
 
             let mut col = column![].spacing(0).padding(8);
 
@@ -54,13 +59,14 @@ pub fn view<'a>(
                 ));
             }
 
-            for track in &tracks[first_visible..last_visible] {
-                let track_container = view_track_item(track, track.id == selected_track, window);
+            for track in &params.tracks[first_visible..last_visible] {
+                let track_container =
+                    view_track_item(track, track.id == params.selected_track, window);
                 col = col.push(track_container);
             }
 
             // 添加音轨按钮区域
-            if add_track_menu_open {
+            if params.add_track_menu_open {
                 // 展开状态：显示更多选项按钮
                 let add_track_row = row![
                     container(icon::view_with_size_and_theme(
@@ -197,7 +203,7 @@ pub fn view<'a>(
             }
 
             // 底部占位（未渲染的音轨高度）
-            let remaining = tracks.len() - last_visible;
+            let remaining = params.tracks.len() - last_visible;
             if remaining > 0 {
                 col = col.push(
                     space()
@@ -222,6 +228,7 @@ pub fn view<'a>(
     };
 
     // 调整大小手柄
+    let is_resizing = params.is_resizing;
     let resize_handle = iced_widget::mouse_area(
         container(space().width(Length::Fixed(RESIZE_HANDLE_WIDTH)))
             .height(Length::Fill)
@@ -240,7 +247,7 @@ pub fn view<'a>(
     // 面板内容 + 调整手柄（手柄在右侧）
     let panel_with_handle = row![
         container(content)
-            .width(Length::Fixed(panel_width - RESIZE_HANDLE_WIDTH))
+            .width(Length::Fixed(params.panel_width - RESIZE_HANDLE_WIDTH))
             .height(Length::Fill)
             .style(|theme: &Theme| {
                 let palette = theme.extended_palette();
@@ -250,13 +257,17 @@ pub fn view<'a>(
     ];
 
     container(panel_with_handle)
-        .width(Length::Fixed(panel_width))
+        .width(Length::Fixed(params.panel_width))
         .height(Length::Fill)
         .into()
 }
 
 /// 渲染单个音轨行
-fn view_track_item<'a>(track: &'a Track, is_selected: bool, window: &'a window::Window) -> Element<'a> {
+fn view_track_item<'a>(
+    track: &'a Track,
+    is_selected: bool,
+    window: &'a window::Window,
+) -> Element<'a> {
     let palette = window.theme.extended_palette();
 
     let left_icon: Element<'a> = if track.is_conductor {
@@ -315,14 +326,12 @@ fn view_track_item<'a>(track: &'a Track, is_selected: bool, window: &'a window::
                 weight: iced_core::font::Weight::Bold,
                 ..Default::default()
             })
-            .style(move |_theme: &Theme| {
-                text::Style {
-                    color: Some(if track.is_muted {
-                        palette.danger.base.color
-                    } else {
-                        palette.background.strong.color
-                    }),
-                }
+            .style(move |_theme: &Theme| text::Style {
+                color: Some(if track.is_muted {
+                    palette.danger.base.color
+                } else {
+                    palette.background.strong.color
+                }),
             }),
     )
     .on_press(Event::track_mute_toggled(track.id))

@@ -74,7 +74,10 @@ impl HttpClient {
         let text = response.text().await?;
 
         if !status.is_success() {
-            return Err(crate::CollaborationError::Other(format!("HTTP error: {}", text)));
+            return Err(crate::CollaborationError::Other(format!(
+                "HTTP error: {}",
+                text
+            )));
         }
 
         debug!(response = %text, "[HTTP] Response");
@@ -97,7 +100,10 @@ impl HttpClient {
         let error_text = response.text().await?;
 
         if !status.is_success() {
-            return Err(crate::CollaborationError::Other(format!("HTTP error: {}", error_text)));
+            return Err(crate::CollaborationError::Other(format!(
+                "HTTP error: {}",
+                error_text
+            )));
         }
 
         let room_info: RoomInfo = serde_json::from_str(&error_text)?;
@@ -110,7 +116,9 @@ impl HttpClient {
         let response: reqwest::Response = self.client.get(&url).send().await?;
 
         if !response.status().is_success() {
-            return Err(crate::CollaborationError::Other("Health check failed".to_string()));
+            return Err(crate::CollaborationError::Other(
+                "Health check failed".to_string(),
+            ));
         }
 
         let health: serde_json::Value = response.json().await?;

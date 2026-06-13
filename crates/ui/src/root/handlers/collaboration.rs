@@ -130,78 +130,79 @@ impl Default for CollaborationHandler {
 impl MessageHandler for CollaborationHandler {
     fn handle(&mut self, root: &mut Root, msg: Message) -> Option<Message> {
         match msg {
-            Message::OpenCollaborationDialog => {
-                self.handle_collaboration_dialog_open(root);
-                None
-            }
-            Message::CloseCollaborationDialog => {
-                self.handle_collaboration_dialog_close(root);
-                None
-            }
-            Message::CollaborationConnect {
-                host,
-                port,
-                username,
-                invite_code,
-            } => {
-                self.handle_collaboration_connect(root, host, port, username, invite_code);
-                None
-            }
-            Message::CollaborationCreateRoom { name } => {
-                self.handle_collaboration_create_room(root, name);
-                None
-            }
-            Message::CollaborationJoinRoom { invite_code } => {
-                self.handle_collaboration_join_room(root, invite_code);
-                None
-            }
-            Message::CollaborationDisconnect => {
-                self.handle_collaboration_disconnect(root);
-                None
-            }
-            Message::CollaborationCopyInviteCode => {
-                self.handle_collaboration_copy_invite_code(root);
-                None
-            }
-            Message::CollaborationRemoteMouseMoved {
-                user_id,
-                x,
-                y,
-                color,
-                username,
-            } => {
-                self.handle_remote_mouse_moved(root, user_id, x, y, color, username);
-                None
-            }
-            Message::CollaborationRemoteUserLeft { user_id } => {
-                root.editor.remove_remote_cursor(&user_id);
-                None
-            }
-            Message::CollaborationRemoteNoteUpdate { operation } => {
-                self.handle_remote_note_update(root, operation);
-                None
-            }
-            // 协作状态更新
-            Message::CollaborationHostChanged(host) => {
-                root.state.collaboration_dialog.server_host = host;
-                None
-            }
-            Message::CollaborationPortChanged(port) => {
-                root.state.collaboration_dialog.server_port = port;
-                None
-            }
-            Message::CollaborationUsernameChanged(username) => {
-                root.state.collaboration_dialog.username = username;
-                None
-            }
-            Message::CollaborationRoomNameChanged(name) => {
-                root.state.collaboration_dialog.room_name = name;
-                None
-            }
-            Message::CollaborationInviteCodeChanged(code) => {
-                root.state.collaboration_dialog.invite_code = code;
-                None
-            }
+            Message::Collaboration(action) => match action {
+                lumino_message::CollaborationAction::OpenDialog => {
+                    self.handle_collaboration_dialog_open(root);
+                    None
+                }
+                lumino_message::CollaborationAction::CloseDialog => {
+                    self.handle_collaboration_dialog_close(root);
+                    None
+                }
+                lumino_message::CollaborationAction::Connect {
+                    host,
+                    port,
+                    username,
+                    invite_code,
+                } => {
+                    self.handle_collaboration_connect(root, host, port, username, invite_code);
+                    None
+                }
+                lumino_message::CollaborationAction::CreateRoom { name } => {
+                    self.handle_collaboration_create_room(root, name);
+                    None
+                }
+                lumino_message::CollaborationAction::JoinRoom { invite_code } => {
+                    self.handle_collaboration_join_room(root, invite_code);
+                    None
+                }
+                lumino_message::CollaborationAction::Disconnect => {
+                    self.handle_collaboration_disconnect(root);
+                    None
+                }
+                lumino_message::CollaborationAction::CopyInviteCode => {
+                    self.handle_collaboration_copy_invite_code(root);
+                    None
+                }
+                lumino_message::CollaborationAction::RemoteMouseMoved {
+                    user_id,
+                    x,
+                    y,
+                    color,
+                    username,
+                } => {
+                    self.handle_remote_mouse_moved(root, user_id, x, y, color, username);
+                    None
+                }
+                lumino_message::CollaborationAction::RemoteUserLeft { user_id } => {
+                    root.editor.remove_remote_cursor(&user_id);
+                    None
+                }
+                lumino_message::CollaborationAction::RemoteNoteUpdate { operation } => {
+                    self.handle_remote_note_update(root, operation);
+                    None
+                }
+                lumino_message::CollaborationAction::HostChanged(host) => {
+                    root.state.collaboration_dialog.server_host = host;
+                    None
+                }
+                lumino_message::CollaborationAction::PortChanged(port) => {
+                    root.state.collaboration_dialog.server_port = port;
+                    None
+                }
+                lumino_message::CollaborationAction::UsernameChanged(username) => {
+                    root.state.collaboration_dialog.username = username;
+                    None
+                }
+                lumino_message::CollaborationAction::RoomNameChanged(name) => {
+                    root.state.collaboration_dialog.room_name = name;
+                    None
+                }
+                lumino_message::CollaborationAction::InviteCodeChanged(code) => {
+                    root.state.collaboration_dialog.invite_code = code;
+                    None
+                }
+            },
             other => Some(other),
         }
     }

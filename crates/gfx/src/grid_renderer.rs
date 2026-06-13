@@ -255,6 +255,29 @@ impl GridLineInstance {
     }
 }
 
+/// 网格渲染器准备参数（聚合 GridRenderer::prepare 的 18 个参数）
+#[derive(Debug, Clone)]
+pub struct GridPrepareParams {
+    pub viewport_size: (f32, f32),
+    pub scroll_x: f32,
+    pub scroll_y: f32,
+    pub zoom_x: f32,
+    pub zoom_y: f32,
+    pub keyboard_width: f32,
+    pub ruler_height: f32,
+    pub color_bg: [f32; 4],
+    pub color_bg_black_key: [f32; 4],
+    pub color_bar: [f32; 4],
+    pub color_beat: [f32; 4],
+    pub color_half_beat: [f32; 4],
+    pub color_grid: [f32; 4],
+    pub color_key_line: [f32; 4],
+    pub ppq: f32,
+    pub max_key_index: f32,
+    pub canvas_offset_x: f32,
+    pub canvas_offset_y: f32,
+}
+
 /// 网格渲染器
 pub struct GridRenderer {
     /// 渲染管线
@@ -360,44 +383,23 @@ impl GridRenderer {
     }
 
     /// 准备渲染数据（带缓存优化）
-    pub fn prepare(
-        &mut self,
-        queue: &wgpu::Queue,
-        viewport_size: (f32, f32),
-        scroll_x: f32,
-        scroll_y: f32,
-        zoom_x: f32,
-        zoom_y: f32,
-        keyboard_width: f32,
-        ruler_height: f32,
-        color_bg: [f32; 4],
-        color_bg_black_key: [f32; 4],
-        color_bar: [f32; 4],
-        color_beat: [f32; 4],
-        color_half_beat: [f32; 4],
-        color_grid: [f32; 4],
-        color_key_line: [f32; 4],
-        ppq: f32,
-        max_key_index: f32,
-        canvas_offset_x: f32,
-        canvas_offset_y: f32,
-    ) {
+    pub fn prepare(&mut self, queue: &wgpu::Queue, params: &GridPrepareParams) {
         puffin::profile_function!();
         let viewport = GridCameraUniform::builder()
-            .viewport_size(viewport_size.0, viewport_size.1)
-            .camera_pos(scroll_x, scroll_y)
-            .zoom(zoom_x, zoom_y)
-            .margins(keyboard_width, ruler_height)
-            .color_bg(color_bg)
-            .color_bg_black_key(color_bg_black_key)
-            .color_bar(color_bar)
-            .color_beat(color_beat)
-            .color_half_beat(color_half_beat)
-            .color_grid(color_grid)
-            .color_key_line(color_key_line)
-            .ppq(ppq)
-            .max_key_index(max_key_index)
-            .canvas_offset(canvas_offset_x, canvas_offset_y)
+            .viewport_size(params.viewport_size.0, params.viewport_size.1)
+            .camera_pos(params.scroll_x, params.scroll_y)
+            .zoom(params.zoom_x, params.zoom_y)
+            .margins(params.keyboard_width, params.ruler_height)
+            .color_bg(params.color_bg)
+            .color_bg_black_key(params.color_bg_black_key)
+            .color_bar(params.color_bar)
+            .color_beat(params.color_beat)
+            .color_half_beat(params.color_half_beat)
+            .color_grid(params.color_grid)
+            .color_key_line(params.color_key_line)
+            .ppq(params.ppq)
+            .max_key_index(params.max_key_index)
+            .canvas_offset(params.canvas_offset_x, params.canvas_offset_y)
             .build();
 
         if self.cached_uniform.as_ref() != Some(&viewport) {

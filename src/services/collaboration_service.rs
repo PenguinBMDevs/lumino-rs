@@ -127,7 +127,10 @@ impl CollaborationService {
             if let Ok(mut guard) = client_arc.lock() {
                 *guard = Some(client);
             } else {
-                tracing::error!("协作: 连接完成后无法放回客户端: {}", messages::CLIENT_LOCK_POISONED);
+                tracing::error!(
+                    "协作: 连接完成后无法放回客户端: {}",
+                    messages::CLIENT_LOCK_POISONED
+                );
             }
 
             tokio::select! {
@@ -274,7 +277,10 @@ impl CollaborationService {
         if let Ok(mut guard) = self.lock_client() {
             *guard = client;
         } else {
-            tracing::error!("协作: 异步调用后无法放回客户端: {}", messages::CLIENT_LOCK_POISONED);
+            tracing::error!(
+                "协作: 异步调用后无法放回客户端: {}",
+                messages::CLIENT_LOCK_POISONED
+            );
         }
         result
     }

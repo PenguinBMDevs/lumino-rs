@@ -1,20 +1,19 @@
 //! RulerRenderer 集成测试
 
-use lumino_gfx::{RulerRenderer, RulerTickInstance, RulerViewportUniform};
+use lumino_gfx::{RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform};
 
 /// 测试 RulerViewportUniform 内存布局
 #[test]
 fn test_ruler_viewport_uniform_layout() {
-    let uniform = RulerViewportUniform::new(
-        1920.0, // viewport_width
-        1080.0, // viewport_height
-        30.0,   // ruler_height
-        60.0,   // keyboard_width
-        100.0,  // scroll_x
-        0.1,    // zoom_x
-        1920,   // ticks_per_measure
-        480,    // ticks_per_beat
-    );
+    let uniform = RulerViewportUniform::from_params(&RulerPrepareParams {
+        viewport_size: (1920.0, 1080.0),
+        ruler_height: 30.0,
+        keyboard_width: 60.0,
+        scroll_x: 100.0,
+        zoom_x: 0.1,
+        ticks_per_measure: 1920,
+        ticks_per_beat: 480,
+    });
 
     // 验证大小（实际大小可能因对齐而变化）
     let size = std::mem::size_of::<RulerViewportUniform>();

@@ -2,9 +2,7 @@
 //!
 //! 共享类型定义已迁移至 lumino-message crate，此处重新导出以保持路径兼容。
 
-pub use lumino_message::{
-    DotType, NotePrecision, SpeedFactor, Tool, TupletType,
-};
+pub use lumino_message::{DotType, NotePrecision, SpeedFactor, Tool, TupletType};
 
 /// 自定义精度对话框状态
 #[derive(Debug, Clone)]

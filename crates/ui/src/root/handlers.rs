@@ -14,8 +14,8 @@ use crate::{sidebar, window};
 // 重新导出子模块
 pub mod collaboration;
 pub mod dialog;
-pub mod toolbar;
 pub mod loop_range;
+pub mod toolbar;
 pub mod velocity;
 
 // 重新导出处理器类型
@@ -478,7 +478,6 @@ impl Root {
             self.invalidate_onion_skin_cache();
         }
     }
-
 }
 
 #[cfg(test)]

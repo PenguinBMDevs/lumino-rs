@@ -2,12 +2,16 @@
 
 use super::Editor;
 use crate::toolbar::FlipHorizontalMode;
+use lumino_core::EditorTransform;
 
 impl Editor {
     pub fn flip_selected_notes_vertical(&mut self) -> usize {
         let selected = self.editor_state.interaction.selected_notes.clone();
         let max_key_index = (self.editor_state.view.visible_key_count - 1) as f32;
-        let result = self.editor_state.data.flip_vertical(&selected, max_key_index);
+        let result = self
+            .editor_state
+            .data
+            .flip_vertical(&selected, max_key_index);
         if result > 0 {
             self.editor_state.interaction.selected_notes.clear();
             self.editor_state.interaction.hover_state = None;
@@ -20,7 +24,9 @@ impl Editor {
         let selected = self.editor_state.interaction.selected_notes.clone();
         let notes = &self.editor_state.data.notes;
         let indices: Vec<usize> = selected.iter().copied().collect();
-        if indices.is_empty() { return 0; }
+        if indices.is_empty() {
+            return 0;
+        }
         let mut min_tick = f32::INFINITY;
         let mut max_tick_end = f32::NEG_INFINITY;
         for &i in &indices {

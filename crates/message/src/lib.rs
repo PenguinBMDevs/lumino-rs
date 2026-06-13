@@ -3,19 +3,21 @@
 //! 本 crate 定义了整个 lumino 应用的消息传递系统和跨模块共享类型。
 //! Message 枚举是泛型的，由上层 crate（lumino-ui）实例化具体的 UI 事件类型。
 
+pub mod audio_export;
+pub mod collaboration;
+pub mod loop_range;
+pub mod pattern;
+pub mod speed_change;
 pub mod types;
 pub mod velocity;
-pub mod loop_range;
-pub mod audio_export;
-pub mod speed_change;
-pub mod pattern;
 
+pub use audio_export::AudioExportAction;
+pub use collaboration::CollaborationAction;
+pub use loop_range::LoopRangeAction;
+pub use pattern::PatternAction;
+pub use speed_change::SpeedChangeAction;
 pub use types::*;
 pub use velocity::VelocityAction;
-pub use loop_range::LoopRangeAction;
-pub use audio_export::AudioExportAction;
-pub use speed_change::SpeedChangeAction;
-pub use pattern::PatternAction;
 
 use lumino_event::Event;
 
@@ -137,55 +139,8 @@ pub enum Message<W, S, Se, T> {
     CustomPrecisionNoteValueChanged(String),
     /// 除数变更
     CustomPrecisionDivisorChanged(String),
-    /// 打开协作对话框
-    OpenCollaborationDialog,
-    /// 关闭协作对话框
-    CloseCollaborationDialog,
-    /// 连接协作服务器
-    CollaborationConnect {
-        host: String,
-        port: u16,
-        username: String,
-        invite_code: Option<String>,
-    },
-    /// 创建协作房间
-    CollaborationCreateRoom {
-        name: String,
-    },
-    /// 加入协作房间
-    CollaborationJoinRoom {
-        invite_code: String,
-    },
-    /// 断开协作连接
-    CollaborationDisconnect,
-    /// 协作服务器地址变更
-    CollaborationHostChanged(String),
-    /// 协作服务器端口变更
-    CollaborationPortChanged(String),
-    /// 协作用户名变更
-    CollaborationUsernameChanged(String),
-    /// 协作房间名称变更
-    CollaborationRoomNameChanged(String),
-    /// 协作邀请码变更
-    CollaborationInviteCodeChanged(String),
-    /// 协作复制邀请码到剪贴板
-    CollaborationCopyInviteCode,
-    /// 协作远端鼠标移动
-    CollaborationRemoteMouseMoved {
-        user_id: std::sync::Arc<str>,
-        x: f32,
-        y: f32,
-        color: std::sync::Arc<str>,
-        username: std::sync::Arc<str>,
-    },
-    /// 协作用户离开
-    CollaborationRemoteUserLeft {
-        user_id: std::sync::Arc<str>,
-    },
-    /// 协作远端音符更新
-    CollaborationRemoteNoteUpdate {
-        operation: String,
-    },
+    /// 协作动作
+    Collaboration(CollaborationAction),
     /// 加载确认对话框 - 确认
     ConfirmLoadConfirm,
     /// 加载确认对话框 - 取消

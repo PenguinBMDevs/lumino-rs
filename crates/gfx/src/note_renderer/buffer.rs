@@ -1,6 +1,17 @@
 use super::types::{NoteInstance, VERTEX_ATTRIBUTES};
 use crate::note_renderer::NoteRenderer;
 
+/// Cull bind group 的 GPU 缓冲区集合
+pub(super) struct CullBuffers<'a> {
+    pub layout: &'a wgpu::BindGroupLayout,
+    pub viewport_buffer: &'a wgpu::Buffer,
+    pub cull_uniform_buffer: &'a wgpu::Buffer,
+    pub instance_buffer: &'a wgpu::Buffer,
+    pub visible_instance_buffer: &'a wgpu::Buffer,
+    pub indirect_buffer: &'a wgpu::Buffer,
+    pub instance_count: usize,
+}
+
 impl NoteRenderer {
     /// 创建实例缓冲区
     pub(super) fn create_instance_buffer(
@@ -48,16 +59,16 @@ impl NoteRenderer {
         self.capacity = new_capacity;
 
         // 重新创建 cull bind group（扩容后使用当前上传的实例数）
-        self.cull_bind_group = Self::create_cull_bind_group(
-            device,
-            &self.cull_bind_group_layout,
-            &self.viewport_buffer,
-            &self.cull_uniform_buffer,
-            self.gpu_note_buffer.buffer(),
-            &self.visible_instance_buffer,
-            &self.indirect_buffer,
-            self.last_upload_count as usize,
-        );
+        let cull_buffers = CullBuffers {
+            layout: &self.cull_bind_group_layout,
+            viewport_buffer: &self.viewport_buffer,
+            cull_uniform_buffer: &self.cull_uniform_buffer,
+            instance_buffer: self.gpu_note_buffer.buffer(),
+            visible_instance_buffer: &self.visible_instance_buffer,
+            indirect_buffer: &self.indirect_buffer,
+            instance_count: self.last_upload_count as usize,
+        };
+        self.cull_bind_group = Self::create_cull_bind_group(device, &cull_buffers);
     }
 
     /// 实例缓冲区布局描述
@@ -72,59 +83,53 @@ impl NoteRenderer {
     /// 创建计算 bind group（带实际数据大小限制）
     pub(super) fn create_cull_bind_group(
         device: &wgpu::Device,
-        layout: &wgpu::BindGroupLayout,
-        viewport_buffer: &wgpu::Buffer,
-        cull_uniform_buffer: &wgpu::Buffer,
-        instance_buffer: &wgpu::Buffer,
-        visible_instance_buffer: &wgpu::Buffer,
-        indirect_buffer: &wgpu::Buffer,
-        instance_count: usize,
+        buffers: &CullBuffers<'_>,
     ) -> wgpu::BindGroup {
         puffin::profile_function!();
         let instance_size = std::mem::size_of::<NoteInstance>() as u64;
-        let actual_data_size = (instance_count as u64) * instance_size;
-        let buffer_size = instance_buffer.size();
+        let actual_data_size = (buffers.instance_count as u64) * instance_size;
+        let buffer_size = buffers.instance_buffer.size();
 
         // 限制绑定范围到实际数据大小，避免GPU预取超出范围
         let instance_binding = if let Some(size) = std::num::NonZeroU64::new(actual_data_size) {
             if actual_data_size < buffer_size {
                 wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: instance_buffer,
+                    buffer: buffers.instance_buffer,
                     offset: 0,
                     size: Some(size),
                 })
             } else {
-                instance_buffer.as_entire_binding()
+                buffers.instance_buffer.as_entire_binding()
             }
         } else {
-            instance_buffer.as_entire_binding()
+            buffers.instance_buffer.as_entire_binding()
         };
 
         let visible_binding = if let Some(size) = std::num::NonZeroU64::new(actual_data_size) {
-            if actual_data_size < visible_instance_buffer.size() {
+            if actual_data_size < buffers.visible_instance_buffer.size() {
                 wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: visible_instance_buffer,
+                    buffer: buffers.visible_instance_buffer,
                     offset: 0,
                     size: Some(size),
                 })
             } else {
-                visible_instance_buffer.as_entire_binding()
+                buffers.visible_instance_buffer.as_entire_binding()
             }
         } else {
-            visible_instance_buffer.as_entire_binding()
+            buffers.visible_instance_buffer.as_entire_binding()
         };
 
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("note_cull_bind_group"),
-            layout,
+            layout: buffers.layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: viewport_buffer.as_entire_binding(),
+                    resource: buffers.viewport_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: cull_uniform_buffer.as_entire_binding(),
+                    resource: buffers.cull_uniform_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -136,7 +141,7 @@ impl NoteRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: indirect_buffer.as_entire_binding(),
+                    resource: buffers.indirect_buffer.as_entire_binding(),
                 },
             ],
         })

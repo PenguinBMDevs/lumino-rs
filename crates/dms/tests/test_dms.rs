@@ -120,7 +120,9 @@ fn test_roundtrip_simple() {
 
     // 读回数据
     let reader = DmsReader::new();
-    let parsed = reader.parse_data(Bytes::from(tree_bytes)).expect("解析回读的DMS数据失败");
+    let parsed = reader
+        .parse_data(Bytes::from(tree_bytes))
+        .expect("解析回读的DMS数据失败");
 
     assert_eq!(parsed.children.len(), 1);
     assert_eq!(parsed.children[0].type_id().0, DmsNodeType::SONG_PPQN.0);

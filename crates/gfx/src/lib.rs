@@ -4,8 +4,8 @@ mod arrangement_renderer;
 mod cc_bar_renderer;
 pub mod constants;
 mod context;
-pub mod grid;
 mod gpu_note_buffer;
+pub mod grid;
 mod grid_renderer;
 mod keyboard_renderer;
 mod note_renderer;
@@ -17,16 +17,21 @@ mod ruler_renderer;
 mod swappable_buffer;
 
 pub use arrangement_instances::{
-    build_arrangement_all, collect_arrangement_instances, ArrangementViewport, ARRANGEMENT_PALETTE,
+    ARRANGEMENT_PALETTE, ArrangementSceneParams, ArrangementViewColors, ArrangementViewport,
+    build_arrangement_all, collect_arrangement_instances,
 };
 pub use arrangement_renderer::{
     ArrangementNoteInstance, ArrangementRenderer, ArrangementUniform, colors,
 };
-pub use cc_bar_renderer::{build_cc_bar_instances, CcBarInstance, CcBarRenderer, CcBarViewportUniform};
+pub use cc_bar_renderer::{
+    CcBarColors, CcBarData, CcBarInstance, CcBarRenderer, CcBarViewParams, CcBarViewportUniform,
+    build_cc_bar_instances,
+};
 pub use context::{Context, ContextError, Result};
 pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent};
-pub use grid::{generate_grid_instances, generate_ruler_instances, is_black_key};
-pub use grid_renderer::{GridLineInstance, GridRenderer};
+pub use grid::{GridViewParams, generate_grid_instances, generate_ruler_instances, is_black_key};
+pub use grid_renderer::{GridLineInstance, GridPrepareParams, GridRenderer};
+pub use keyboard_renderer::renderer::KeyboardPrepareParams;
 pub use keyboard_renderer::{KeyInstance, KeyboardRenderer, KeyboardViewportUniform};
 pub use note_renderer::{
     CameraParams, CameraUniform, CullUniform, NoteInstance, NoteRenderer, OnionBgTileRef,
@@ -36,5 +41,7 @@ pub use onion_renderer::{
     OnionNote, OnionRenderer, OnionTrackColors, OnionTrackMask, OnionViewportUniform, TrackColor,
     convert_onion_colors,
 };
-pub use ruler_renderer::{RulerRenderer, RulerTickInstance, RulerViewportUniform};
+pub use ruler_renderer::{
+    RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,
+};
 pub use swappable_buffer::{AtomicSwappableBuffer, MpscQueue, RenderData, SwappableBuffer};

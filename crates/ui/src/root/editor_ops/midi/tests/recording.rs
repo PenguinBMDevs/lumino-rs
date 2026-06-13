@@ -38,7 +38,11 @@ fn test_poll_midi_input_note_on() {
     // 模拟 MIDI NoteOn：通道0，按键60（Middle C），力度100
     let midi_data = vec![0x90, 60, 100];
     {
-        let mut buf = root.midi.input_buffer.lock().expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
         buf.push_back(midi_data);
     }
 
@@ -67,14 +71,22 @@ fn test_poll_midi_input_note_on_off() {
 
     // 模拟 NoteOn 事件
     {
-        let mut buf = root.midi.input_buffer.lock().expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
         buf.push_back(vec![0x90, 60, 100]);
     }
     root.poll_midi_input();
 
     // 模拟 NoteOff
     {
-        let mut buf = root.midi.input_buffer.lock().expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
         buf.push_back(vec![0x80, 60, 0]);
     }
     root.poll_midi_input();
@@ -100,7 +112,11 @@ fn test_note_on_with_velocity_zero_treated_as_note_off() {
 
     // 先发送 NoteOn
     {
-        let mut buf = root.midi.input_buffer.lock().expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
         buf.push_back(vec![0x90, 60, 100]);
     }
     root.poll_midi_input();
@@ -109,7 +125,11 @@ fn test_note_on_with_velocity_zero_treated_as_note_off() {
 
     // 发送 velocity=0 的 NoteOn（MIDI 规范中视为 NoteOff）
     {
-        let mut buf = root.midi.input_buffer.lock().expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
         buf.push_back(vec![0x90, 60, 0]);
     }
     root.poll_midi_input();
@@ -131,7 +151,11 @@ fn test_no_duplicate_note_on_while_pending() {
 
     // 发送两次相同的 NoteOn
     {
-        let mut buf = root.midi.input_buffer.lock().expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
         buf.push_back(vec![0x90, 60, 100]);
         buf.push_back(vec![0x90, 60, 90]); // 重复按键，不同力度
     }
@@ -152,7 +176,11 @@ fn test_poll_midi_input_no_op_when_not_recording() {
     root.recording.is_recording = false;
 
     {
-        let mut buf = root.midi.input_buffer.lock().expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
+        let mut buf = root
+            .midi
+            .input_buffer
+            .lock()
+            .expect("MIDI 输入缓冲区的锁未被其他线程持有，加锁应成功");
         buf.push_back(vec![0x90, 60, 100]);
     }
 

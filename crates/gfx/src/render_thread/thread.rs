@@ -120,11 +120,7 @@ impl WgpuRenderThread {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) {
-        let texture_ref = self
-            .latest_texture
-            .try_lock()
-            .ok()
-            .and_then(|g| g.clone());
+        let texture_ref = self.latest_texture.try_lock().ok().and_then(|g| g.clone());
 
         let Some(texture) = texture_ref else {
             return;
@@ -135,10 +131,9 @@ impl WgpuRenderThread {
         }
 
         puffin::profile_scope!("copy_offscreen_texture");
-        let mut encoder = device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("copy_offscreen_texture_encoder"),
-            });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("copy_offscreen_texture_encoder"),
+        });
 
         encoder.copy_texture_to_texture(
             texture.as_image_copy(),

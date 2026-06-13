@@ -232,7 +232,8 @@ impl Editor {
 
     /// 开始编辑现有音符
     fn start_note_edit(&mut self, index: usize, hit_type: HitType, pos: iced_core::Point) {
-        self.editor_state.start_note_edit(index, hit_type, (pos.x, pos.y));
+        self.editor_state
+            .start_note_edit(index, hit_type, (pos.x, pos.y));
     }
 
     /// 开始绘制新音符
@@ -310,7 +311,10 @@ impl Editor {
         new_key: Option<u16>,
         new_length: Option<f32>,
     ) {
-        if self.editor_state.apply_note_changes(new_tick, new_key, new_length) {
+        if self
+            .editor_state
+            .apply_note_changes(new_tick, new_key, new_length)
+        {
             self.spatial.note_index_dirty.set(true);
         }
     }
@@ -400,10 +404,8 @@ impl Editor {
     /// 使用平滑滚动动画，不直接设置位置
     pub(crate) fn handle_scrolled(&mut self, delta_x: f32, delta_y: f32) {
         let v = &mut self.editor_state.view;
-        v.smooth_scroll.set_target(
-            v.scroll_x + delta_x,
-            v.scroll_y + delta_y,
-        );
+        v.smooth_scroll
+            .set_target(v.scroll_x + delta_x, v.scroll_y + delta_y);
     }
 
     /// 处理双击事件
@@ -437,7 +439,9 @@ mod tests {
         assert!(!editor.notes_changed()); // 没有选中音符，notes_changed 不应变化
 
         // Moved 不应 panic
-        editor.handle_action(super::EditorAction::Moved(iced_core::Point::new(100.0, 200.0)));
+        editor.handle_action(super::EditorAction::Moved(iced_core::Point::new(
+            100.0, 200.0,
+        )));
     }
 
     #[test]

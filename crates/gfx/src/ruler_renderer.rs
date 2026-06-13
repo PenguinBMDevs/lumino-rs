@@ -63,25 +63,28 @@ pub struct RulerViewportUniform {
     pub _padding: [f32; 2],
 }
 
+/// 标尺准备参数
+#[derive(Debug, Clone)]
+pub struct RulerPrepareParams {
+    pub viewport_size: (f32, f32),
+    pub ruler_height: f32,
+    pub keyboard_width: f32,
+    pub scroll_x: f32,
+    pub zoom_x: f32,
+    pub ticks_per_measure: u32,
+    pub ticks_per_beat: u32,
+}
+
 impl RulerViewportUniform {
-    pub fn new(
-        viewport_width: f32,
-        viewport_height: f32,
-        ruler_height: f32,
-        keyboard_width: f32,
-        scroll_x: f32,
-        zoom_x: f32,
-        ticks_per_measure: u32,
-        ticks_per_beat: u32,
-    ) -> Self {
+    pub fn from_params(params: &RulerPrepareParams) -> Self {
         Self {
-            viewport_size: [viewport_width, viewport_height],
-            ruler_height,
-            keyboard_width,
-            scroll_x,
-            zoom_x,
-            ticks_per_measure: ticks_per_measure as f32,
-            ticks_per_beat: ticks_per_beat as f32,
+            viewport_size: [params.viewport_size.0, params.viewport_size.1],
+            ruler_height: params.ruler_height,
+            keyboard_width: params.keyboard_width,
+            scroll_x: params.scroll_x,
+            zoom_x: params.zoom_x,
+            ticks_per_measure: params.ticks_per_measure as f32,
+            ticks_per_beat: params.ticks_per_beat as f32,
             _padding: [0.0; 2],
         }
     }
@@ -198,8 +201,16 @@ impl RulerRenderer {
 
         let viewport_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("ruler_viewport_uniform"),
-            contents: bytemuck::cast_slice(&[RulerViewportUniform::new(
-                800.0, 600.0, 30.0, 60.0, 0.0, 0.1, 1920, 480,
+            contents: bytemuck::cast_slice(&[RulerViewportUniform::from_params(
+                &RulerPrepareParams {
+                    viewport_size: (800.0, 600.0),
+                    ruler_height: 30.0,
+                    keyboard_width: 60.0,
+                    scroll_x: 0.0,
+                    zoom_x: 0.1,
+                    ticks_per_measure: 1920,
+                    ticks_per_beat: 480,
+                },
             )]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -301,34 +312,25 @@ impl RulerRenderer {
     }
 
     /// 生成标尺刻度实例
-    fn generate_tick_instances(
-        &self,
-        viewport_width: f32,
-        keyboard_width: f32,
-        ruler_height: f32,
-        scroll_x: f32,
-        zoom_x: f32,
-        ticks_per_measure: u32,
-        ticks_per_beat: u32,
-    ) -> Vec<RulerTickInstance> {
+    fn generate_tick_instances(&self, params: &RulerPrepareParams) -> Vec<RulerTickInstance> {
         let mut instances = Vec::new();
 
         // 计算可见时间范围
-        let visible_tick_start = scroll_x / zoom_x;
-        let visible_tick_end = (scroll_x + viewport_width) / zoom_x;
+        let visible_tick_start = params.scroll_x / params.zoom_x;
+        let visible_tick_end = (params.scroll_x + params.viewport_size.0) / params.zoom_x;
 
         // 小节线
-        let measure_start = (visible_tick_start / ticks_per_measure as f32).floor() as u32;
-        let measure_end = (visible_tick_end / ticks_per_measure as f32).ceil() as u32;
+        let measure_start = (visible_tick_start / params.ticks_per_measure as f32).floor() as u32;
+        let measure_end = (visible_tick_end / params.ticks_per_measure as f32).ceil() as u32;
 
         for measure in measure_start..=measure_end {
-            let tick = measure as f32 * ticks_per_measure as f32;
-            let x = keyboard_width + tick * zoom_x - scroll_x;
+            let tick = measure as f32 * params.ticks_per_measure as f32;
+            let x = params.keyboard_width + tick * params.zoom_x - params.scroll_x;
 
-            if x >= keyboard_width && x <= viewport_width {
+            if x >= params.keyboard_width && x <= params.viewport_size.0 {
                 instances.push(RulerTickInstance::new(
                     [x, 0.0],
-                    [2.0, ruler_height],
+                    [2.0, params.ruler_height],
                     self.measure_color,
                     0, // 小节线
                     tick,
@@ -337,22 +339,22 @@ impl RulerRenderer {
         }
 
         // 拍线
-        let beat_start = (visible_tick_start / ticks_per_beat as f32).floor() as u32;
-        let beat_end = (visible_tick_end / ticks_per_beat as f32).ceil() as u32;
+        let beat_start = (visible_tick_start / params.ticks_per_beat as f32).floor() as u32;
+        let beat_end = (visible_tick_end / params.ticks_per_beat as f32).ceil() as u32;
 
         for beat in beat_start..=beat_end {
-            let tick = beat as f32 * ticks_per_beat as f32;
-            let x = keyboard_width + tick * zoom_x - scroll_x;
+            let tick = beat as f32 * params.ticks_per_beat as f32;
+            let x = params.keyboard_width + tick * params.zoom_x - params.scroll_x;
 
             // 跳过小节线位置
-            if tick % ticks_per_measure as f32 == 0.0 {
+            if tick % params.ticks_per_measure as f32 == 0.0 {
                 continue;
             }
 
-            if x >= keyboard_width && x <= viewport_width {
+            if x >= params.keyboard_width && x <= params.viewport_size.0 {
                 instances.push(RulerTickInstance::new(
-                    [x, ruler_height * 0.3],
-                    [1.0, ruler_height * 0.7],
+                    [x, params.ruler_height * 0.3],
+                    [1.0, params.ruler_height * 0.7],
                     self.beat_color,
                     1, // 拍线
                     tick,
@@ -368,42 +370,29 @@ impl RulerRenderer {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        viewport_size: (f32, f32),
-        ruler_height: f32,
-        keyboard_width: f32,
-        scroll_x: f32,
-        zoom_x: f32,
-        ticks_per_measure: u32,
-        ticks_per_beat: u32,
+        params: &RulerPrepareParams,
     ) {
         puffin::profile_function!();
 
+        let p = params;
         let params_changed = !self.cache_valid
-            || self.cache_scroll_x != scroll_x
-            || self.cache_zoom_x != zoom_x
-            || self.cache_viewport_width != viewport_size.0
-            || self.cache_keyboard_width != keyboard_width
-            || self.cache_ruler_height != ruler_height
-            || self.cache_ticks_per_measure != ticks_per_measure
-            || self.cache_ticks_per_beat != ticks_per_beat;
+            || self.cache_scroll_x != p.scroll_x
+            || self.cache_zoom_x != p.zoom_x
+            || self.cache_viewport_width != p.viewport_size.0
+            || self.cache_keyboard_width != p.keyboard_width
+            || self.cache_ruler_height != p.ruler_height
+            || self.cache_ticks_per_measure != p.ticks_per_measure
+            || self.cache_ticks_per_beat != p.ticks_per_beat;
 
         if params_changed {
-            self.cached_instances = self.generate_tick_instances(
-                viewport_size.0,
-                keyboard_width,
-                ruler_height,
-                scroll_x,
-                zoom_x,
-                ticks_per_measure,
-                ticks_per_beat,
-            );
-            self.cache_scroll_x = scroll_x;
-            self.cache_zoom_x = zoom_x;
-            self.cache_viewport_width = viewport_size.0;
-            self.cache_keyboard_width = keyboard_width;
-            self.cache_ruler_height = ruler_height;
-            self.cache_ticks_per_measure = ticks_per_measure;
-            self.cache_ticks_per_beat = ticks_per_beat;
+            self.cached_instances = self.generate_tick_instances(p);
+            self.cache_scroll_x = p.scroll_x;
+            self.cache_zoom_x = p.zoom_x;
+            self.cache_viewport_width = p.viewport_size.0;
+            self.cache_keyboard_width = p.keyboard_width;
+            self.cache_ruler_height = p.ruler_height;
+            self.cache_ticks_per_measure = p.ticks_per_measure;
+            self.cache_ticks_per_beat = p.ticks_per_beat;
             self.cache_valid = true;
         }
 
@@ -420,16 +409,7 @@ impl RulerRenderer {
             queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
         }
 
-        let viewport_uniform = RulerViewportUniform::new(
-            viewport_size.0,
-            viewport_size.1,
-            ruler_height,
-            keyboard_width,
-            scroll_x,
-            zoom_x,
-            ticks_per_measure,
-            ticks_per_beat,
-        );
+        let viewport_uniform = RulerViewportUniform::from_params(p);
         queue.write_buffer(
             &self.viewport_buffer,
             0,
@@ -473,7 +453,16 @@ mod tests {
 
     #[test]
     fn test_viewport_uniform_creation() {
-        let uniform = RulerViewportUniform::new(1920.0, 1080.0, 30.0, 60.0, 100.0, 0.1, 1920, 480);
+        let p = RulerPrepareParams {
+            viewport_size: (1920.0, 1080.0),
+            ruler_height: 30.0,
+            keyboard_width: 60.0,
+            scroll_x: 100.0,
+            zoom_x: 0.1,
+            ticks_per_measure: 1920,
+            ticks_per_beat: 480,
+        };
+        let uniform = RulerViewportUniform::from_params(&p);
 
         assert_eq!(uniform.viewport_size, [1920.0, 1080.0]);
         assert_eq!(uniform.ruler_height, 30.0);

@@ -58,22 +58,15 @@ pub struct KeyboardViewportUniform {
 }
 
 impl KeyboardViewportUniform {
-    pub fn new(
-        viewport_width: f32,
-        viewport_height: f32,
-        keyboard_width: f32,
-        ruler_height: f32,
-        scroll_y: f32,
-        zoom_y: f32,
-        visible_key_count: u16,
-    ) -> Self {
+    /// 从准备参数创建 Uniform
+    pub fn from_params(params: &super::renderer::KeyboardPrepareParams) -> Self {
         Self {
-            viewport_size: [viewport_width, viewport_height],
-            keyboard_width,
-            ruler_height,
-            scroll_y,
-            zoom_y,
-            visible_key_count: visible_key_count as f32,
+            viewport_size: [params.viewport_size.0, params.viewport_size.1],
+            keyboard_width: params.keyboard_width,
+            ruler_height: params.ruler_height,
+            scroll_y: params.scroll_y,
+            zoom_y: params.zoom_y,
+            visible_key_count: params.visible_key_count as f32,
             _padding: [0.0; 2],
         }
     }

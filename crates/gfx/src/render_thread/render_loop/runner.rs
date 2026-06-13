@@ -71,18 +71,19 @@ pub fn run_render_thread(
             let height = params.viewport_size.1.max(1);
 
             // 确保离屏纹理已创建
-            ensure_textures(
-                &device,
+            let mut tex_resources = super::textures::OffscreenTextureResources {
+                device: &device,
                 texture_format,
                 width,
                 height,
-                &mut current_size,
-                &mut current_texture,
-                &mut depth_texture,
-                &mut depth_texture_view,
-                &latest_texture_clone,
+                current_size: &mut current_size,
+                current_texture: &mut current_texture,
+                depth_texture: &mut depth_texture,
+                depth_texture_view: &mut depth_texture_view,
+                latest_texture_clone: &latest_texture_clone,
                 params,
-            );
+            };
+            ensure_textures(&mut tex_resources);
 
             // 仅检测主音符版本号变化后上传
             let note_version = note_instances_buffer.version();

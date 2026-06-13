@@ -1,41 +1,48 @@
 use super::super::types::KeyboardViewportUniform;
 use super::KeyboardRenderer;
 
+/// 键盘渲染器准备参数
+#[derive(Debug, Clone)]
+pub struct KeyboardPrepareParams {
+    pub viewport_size: (f32, f32),
+    pub keyboard_width: f32,
+    pub ruler_height: f32,
+    pub scroll_y: f32,
+    pub zoom_y: f32,
+    pub visible_key_count: u16,
+}
+
 impl KeyboardRenderer {
     /// 准备渲染数据（带缓存优化）
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        viewport_size: (f32, f32),
-        keyboard_width: f32,
-        ruler_height: f32,
-        scroll_y: f32,
-        zoom_y: f32,
-        visible_key_count: u16,
+        params: &KeyboardPrepareParams,
     ) {
         puffin::profile_function!();
 
+        let p = params;
         let params_changed = !self.cache_valid
-            || self.cache_scroll_y != scroll_y
-            || self.cache_zoom_y != zoom_y
-            || self.cache_visible_key_count != visible_key_count
-            || self.cache_keyboard_width != keyboard_width
-            || self.cache_ruler_height != ruler_height;
+            || self.cache_scroll_y != p.scroll_y
+            || self.cache_zoom_y != p.zoom_y
+            || self.cache_visible_key_count != p.visible_key_count
+            || self.cache_keyboard_width != p.keyboard_width
+            || self.cache_ruler_height != p.ruler_height;
 
         if params_changed {
             self.cached_instances = self.generate_key_instances(
-                visible_key_count,
-                keyboard_width,
-                zoom_y,
-                scroll_y,
-                ruler_height,
+                p.visible_key_count,
+                p.keyboard_width,
+                p.zoom_y,
+                p.scroll_y,
+                p.ruler_height,
             );
-            self.cache_scroll_y = scroll_y;
-            self.cache_zoom_y = zoom_y;
-            self.cache_visible_key_count = visible_key_count;
-            self.cache_keyboard_width = keyboard_width;
-            self.cache_ruler_height = ruler_height;
+            self.cache_scroll_y = p.scroll_y;
+            self.cache_zoom_y = p.zoom_y;
+            self.cache_visible_key_count = p.visible_key_count;
+            self.cache_keyboard_width = p.keyboard_width;
+            self.cache_ruler_height = p.ruler_height;
             self.cache_valid = true;
         }
 
@@ -52,15 +59,7 @@ impl KeyboardRenderer {
             queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
         }
 
-        let viewport_uniform = KeyboardViewportUniform::new(
-            viewport_size.0,
-            viewport_size.1,
-            keyboard_width,
-            ruler_height,
-            scroll_y,
-            zoom_y,
-            visible_key_count,
-        );
+        let viewport_uniform = KeyboardViewportUniform::from_params(p);
         queue.write_buffer(
             &self.viewport_buffer,
             0,

@@ -1,3 +1,4 @@
+use super::buffer::CullBuffers;
 use super::types::{CameraUniform, CullUniform};
 use crate::note_renderer::NoteRenderer;
 use wgpu::util::DeviceExt;
@@ -195,16 +196,16 @@ impl NoteRenderer {
         });
 
         // 创建计算 bind group（初始时无实例数据，使用0作为计数）
-        let cull_bind_group = Self::create_cull_bind_group(
-            device,
-            &cull_bind_group_layout,
-            &viewport_buffer,
-            &cull_uniform_buffer,
-            gpu_note_buffer.buffer(),
-            &visible_instance_buffer,
-            &indirect_buffer,
-            0,
-        );
+        let cull_buffers = CullBuffers {
+            layout: &cull_bind_group_layout,
+            viewport_buffer: &viewport_buffer,
+            cull_uniform_buffer: &cull_uniform_buffer,
+            instance_buffer: gpu_note_buffer.buffer(),
+            visible_instance_buffer: &visible_instance_buffer,
+            indirect_buffer: &indirect_buffer,
+            instance_count: 0,
+        };
+        let cull_bind_group = Self::create_cull_bind_group(device, &cull_buffers);
 
         Self {
             pipeline,

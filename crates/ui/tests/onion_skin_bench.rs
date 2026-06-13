@@ -244,32 +244,38 @@ fn onion_skin_benchmark() {
     let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     // 准备网格（一次，视口不变时不需要重准备）
-    grid_renderer.prepare(
-        &queue,
-        (CANVAS_WIDTH, CANVAS_HEIGHT),
-        0.0,
-        0.0,
-        ZOOM_X,
-        ZOOM_Y,
-        KEYBOARD_WIDTH,
-        RULER_HEIGHT,
-        [0.1, 0.1, 0.12, 1.0],   // bg
-        [0.08, 0.08, 0.1, 1.0],  // black_key
-        [0.3, 0.3, 0.4, 1.0],    // bar
-        [0.2, 0.2, 0.3, 1.0],    // beat
-        [0.15, 0.15, 0.2, 1.0],  // half_beat
-        [0.12, 0.12, 0.15, 1.0], // grid
-        [0.25, 0.25, 0.35, 1.0], // key_line
-        480.0,
-        127.0,
-        0.0,
-        0.0,
-    );
+    use lumino_gfx::GridPrepareParams;
+    let grid_params = GridPrepareParams {
+        viewport_size: (CANVAS_WIDTH, CANVAS_HEIGHT),
+        scroll_x: 0.0,
+        scroll_y: 0.0,
+        zoom_x: ZOOM_X,
+        zoom_y: ZOOM_Y,
+        keyboard_width: KEYBOARD_WIDTH,
+        ruler_height: RULER_HEIGHT,
+        color_bg: [0.1, 0.1, 0.12, 1.0],
+        color_bg_black_key: [0.08, 0.08, 0.1, 1.0],
+        color_bar: [0.3, 0.3, 0.4, 1.0],
+        color_beat: [0.2, 0.2, 0.3, 1.0],
+        color_half_beat: [0.15, 0.15, 0.2, 1.0],
+        color_grid: [0.12, 0.12, 0.15, 1.0],
+        color_key_line: [0.25, 0.25, 0.35, 1.0],
+        ppq: 480.0,
+        max_key_index: 127.0,
+        canvas_offset_x: 0.0,
+        canvas_offset_y: 0.0,
+    };
+    grid_renderer.prepare(&queue, &grid_params);
 
     // ========== 5. 调试信息 ==========
     {
         let end = (CANVAS_WIDTH - KEYBOARD_WIDTH) / ZOOM_X;
-        let doc = editor.editor_state.data.document.as_ref().expect("获取编辑器文档引用失败");
+        let doc = editor
+            .editor_state
+            .data
+            .document
+            .as_ref()
+            .expect("获取编辑器文档引用失败");
         let mut raw = 0usize;
         for tid in 1..=ONION_TRACKS as u16 {
             raw += doc.get_track_notes_in_range(tid, 0.0, end).len();

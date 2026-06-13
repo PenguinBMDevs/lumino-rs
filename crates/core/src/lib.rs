@@ -1,4 +1,5 @@
 pub mod editor_state;
+pub mod editor_transform;
 pub mod error;
 pub mod font_scanner;
 pub mod history;
@@ -11,15 +12,15 @@ pub mod storage;
 pub mod view_state;
 
 pub use editor_state::{
-    CanvasState, EditState, EditorData, EditorState, HitType, InteractionState,
-    SelectionHitType,
+    CanvasState, EditState, EditorData, EditorState, HitType, InteractionState, SelectionHitType,
 };
+pub use editor_transform::EditorTransform;
 pub use error::{CoreError, Result};
 pub use font_scanner::{FontInfo, scan_system_fonts};
 pub use history::{EditorSnapshot, History};
 pub use midi_types::{
-    BendDisplay, BendPoint, CcData, CcDisplay, CcPoint, EditMode, TempoPoint, VelocityPoint,
-    CC_CONTROLLER_NAMES,
+    BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcData, CcDisplay, CcPoint, EditMode, TempoPoint,
+    VelocityPoint,
 };
 pub use note::Note;
 pub use pattern::Pattern;

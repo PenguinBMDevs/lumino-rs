@@ -22,6 +22,16 @@ pub use types::{DmsLightweightData, DmsParseContext, DmsScanResult, FileHeader, 
 /// DMS 文件读取器
 pub struct DmsReader;
 
+/// 复合节点解析参数（byte range + metadata）
+struct CompositeNodeParseCtx<'a> {
+    type_id: DmsNodeType,
+    layer: i32,
+    start_offset: usize,
+    length: usize,
+    progress_callback: Option<&'a dyn Fn(f64)>,
+    current_offset: &'a mut usize,
+}
+
 impl DmsReader {
     /// 创建读取器
     #[must_use]
@@ -62,15 +72,15 @@ impl DmsReader {
         let length = ctx.as_slice().len();
         let mut offset = 0usize;
 
-        self.parse_composite_node(
-            &ctx,
-            DmsNodeType::ROOT,
-            -1,
-            offset,
+        let mut parse_ctx = CompositeNodeParseCtx {
+            type_id: DmsNodeType::ROOT,
+            layer: -1,
+            start_offset: offset,
             length,
             progress_callback,
-            &mut offset,
-        )
+            current_offset: &mut offset,
+        };
+        self.parse_composite_node(&ctx, &mut parse_ctx)
     }
 
     /// # Errors
@@ -86,21 +96,16 @@ impl DmsReader {
     fn parse_composite_node(
         &self,
         ctx: &DmsParseContext,
-        type_id: DmsNodeType,
-        layer: i32,
-        start_offset: usize,
-        length: usize,
-        progress_callback: Option<&dyn Fn(f64)>,
-        current_offset: &mut usize,
+        p: &mut CompositeNodeParseCtx<'_>,
     ) -> Result<DmsCompositeNode> {
-        let mut node = DmsCompositeNode::new(type_id, layer);
+        let mut node = DmsCompositeNode::new(p.type_id, p.layer);
 
-        if length == 0 {
+        if p.length == 0 {
             return Ok(node);
         }
 
-        let end_offset = start_offset + length;
-        let mut child_offset = start_offset;
+        let end_offset = p.start_offset + p.length;
+        let mut child_offset = p.start_offset;
         let total_length = ctx.as_slice().len();
 
         while child_offset < end_offset {
@@ -108,30 +113,31 @@ impl DmsReader {
             let child_data_length = self.read_data_length_at(ctx, child_offset + TYPEID_SIZE)?;
             let child_data_start = child_offset + HEADER_SIZE;
 
-            let full_type_id = DmsNodeType::from_parts(child_type_id, layer + 1, Some(&type_id));
+            let full_type_id =
+                DmsNodeType::from_parts(child_type_id, p.layer + 1, Some(&p.type_id));
 
             let child = if full_type_id.is_composite() {
-                let composite = self.parse_composite_node(
-                    ctx,
-                    full_type_id,
-                    layer + 1,
-                    child_data_start,
-                    child_data_length,
-                    progress_callback,
-                    current_offset,
-                )?;
+                let mut child_ctx = CompositeNodeParseCtx {
+                    type_id: full_type_id,
+                    layer: p.layer + 1,
+                    start_offset: child_data_start,
+                    length: child_data_length,
+                    progress_callback: p.progress_callback,
+                    current_offset: p.current_offset,
+                };
+                let composite = self.parse_composite_node(ctx, &mut child_ctx)?;
                 Box::new(composite) as Box<dyn DmsNode>
             } else {
                 let data = ctx.slice(child_data_start, child_data_start + child_data_length);
-                create_node(full_type_id, layer + 1, data)?
+                create_node(full_type_id, p.layer + 1, data)?
             };
 
             node.children.push(child);
             child_offset += HEADER_SIZE + child_data_length;
-            *current_offset = child_offset;
+            *p.current_offset = child_offset;
 
-            if let Some(cb) = progress_callback {
-                cb(*current_offset as f64 / total_length as f64);
+            if let Some(cb) = p.progress_callback {
+                cb(*p.current_offset as f64 / total_length as f64);
             }
         }
 

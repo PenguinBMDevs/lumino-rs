@@ -390,8 +390,16 @@ mod integration_tests {
         let (_infos, notes_map, _events) = extract_notes_from_file().ok_or("解析失败")?;
         let track2 = notes_map.get(&2).ok_or("音轨 2 应有音符")?;
         let keys: Vec<u8> = track2.iter().map(|(_, k, _, _, _)| *k).collect();
-        assert_eq!(*keys.iter().min().ok_or("keys 不应为空")?, 0, "最低音应为 key=0");
-        assert_eq!(*keys.iter().max().ok_or("keys 不应为空")?, 254, "最高音应为 key=254");
+        assert_eq!(
+            *keys.iter().min().ok_or("keys 不应为空")?,
+            0,
+            "最低音应为 key=0"
+        );
+        assert_eq!(
+            *keys.iter().max().ok_or("keys 不应为空")?,
+            254,
+            "最高音应为 key=254"
+        );
         Ok(())
     }
 

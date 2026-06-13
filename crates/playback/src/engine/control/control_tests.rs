@@ -95,12 +95,13 @@ fn test_loop_wrapping_seek_back() {
     // 检查 event_queue 中的事件 tick >= loop_start
     let events: Vec<_> = engine.event_queue.iter().collect();
     // BinaryHeap 是最大堆，注意 tick 小的优先级高
-    let min_event_tick = events
-        .iter()
-        .map(|e| e.tick)
-        .min_by(|a, b| a.partial_cmp(b).expect("f64 的 partial_cmp 应返回 Some，因为 tick 不是 NaN"));
+    let min_event_tick = events.iter().map(|e| e.tick).min_by(|a, b| {
+        a.partial_cmp(b)
+            .expect("f64 的 partial_cmp 应返回 Some，因为 tick 不是 NaN")
+    });
     assert!(
-        min_event_tick.is_some() && min_event_tick.expect("事件队列不应为空，至少应有一个事件") >= 50.0,
+        min_event_tick.is_some()
+            && min_event_tick.expect("事件队列不应为空，至少应有一个事件") >= 50.0,
         "队列中最先要播放的事件 tick 应 >= loop_start(50)，实际 = {:?}",
         min_event_tick,
     );
