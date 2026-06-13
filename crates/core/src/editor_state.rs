@@ -334,6 +334,28 @@ impl EditorData {
         points.sort_by(|a, b| a.tick.partial_cmp(&b.tick).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.note_index.cmp(&b.note_index)));
         points
     }
+
+    /// 完成绘制新音符（纯业务逻辑），返回创建的 Note
+    pub fn finish_drawing(&mut self, start_tick: f32, key: u16, current_tick: f32, snap_precision: f32, default_note_length: f32) -> Option<Note> {
+        if self.current_track == 0 {
+            tracing::debug!("编辑器: Conductor 轨道禁止放置音符");
+            return None;
+        }
+        let (tick, length) = if current_tick > start_tick {
+            (start_tick, current_tick - start_tick)
+        } else if current_tick < start_tick {
+            (current_tick, start_tick - current_tick)
+        } else {
+            (start_tick, default_note_length)
+        };
+        let length = length.max(snap_precision);
+        self.push_history();
+        let note = Note::new(tick, key, length);
+        self.notes.push_back(note.clone());
+        self.track_notes.insert(self.current_track, self.notes.clone());
+        tracing::debug!("编辑器: 已保存 {} 个音符到音轨 {}", self.notes.len(), self.current_track);
+        Some(note)
+    }
 }
 
 // ─── TempoPoint ───
@@ -560,6 +582,94 @@ impl EditorState {
     ) -> HashSet<usize> {
         self.data.compute_selection(start_tick, start_key, current_tick, current_key)
     }
+
+    // ── 交互业务逻辑 ──
+
+    /// 开始编辑现有音符
+    pub fn start_note_edit(&mut self, index: usize, hit_type: HitType, pos: (f32, f32)) {
+        match hit_type {
+            HitType::Start => {
+                self.data.push_history();
+                let note = &self.data.notes[index];
+                self.interaction.edit_state = EditState::ResizingStart {
+                    note_index: index,
+                    original_tick: note.tick,
+                    original_length: note.length,
+                };
+            }
+            HitType::End => {
+                self.data.push_history();
+                self.interaction.edit_state = EditState::ResizingEnd { note_index: index };
+            }
+            HitType::Middle => {
+                let note = &self.data.notes[index];
+                self.interaction.edit_state = EditState::PendingDrag {
+                    note_index: index,
+                    start_pos: pos,
+                    original_tick: note.tick,
+                    original_key: note.key,
+                };
+                self.interaction.play_note_audio(note.key, 100);
+            }
+        }
+    }
+
+    /// 开始绘制新音符
+    pub fn start_drawing(&mut self, snapped_tick: f32, key: u16) {
+        self.interaction.edit_state = EditState::Drawing {
+            start_tick: snapped_tick,
+            key,
+            current_tick: snapped_tick,
+        };
+        self.interaction.play_note_audio(key, 100);
+    }
+
+    /// 应用音符变化（单音符编辑），返回是否发生了变更
+    pub fn apply_note_changes(
+        &mut self,
+        new_tick: Option<f32>,
+        new_key: Option<u16>,
+        new_length: Option<f32>,
+    ) -> bool {
+        let note_index = match self.interaction.edit_state {
+            EditState::Dragging { note_index, .. }
+            | EditState::ResizingStart { note_index, .. }
+            | EditState::ResizingEnd { note_index, .. } => note_index,
+            EditState::DraggingSelection { .. }
+            | EditState::ResizingSelectionStart { .. }
+            | EditState::ResizingSelectionEnd { .. } => return false,
+            _ => return false,
+        };
+
+        if let Some(note) = self.data.notes.get_mut(note_index) {
+            let mut changed = false;
+            if let Some(t) = new_tick {
+                note.tick = t;
+                changed = true;
+            }
+            if let Some(k) = new_key {
+                note.key = k;
+                changed = true;
+            }
+            if let Some(l) = new_length {
+                note.length = l;
+                changed = true;
+            }
+            return changed;
+        }
+        false
+    }
+
+    /// 处理删除键按下事件，返回被删除音符的索引
+    pub fn handle_delete_pressed(&mut self) -> Option<usize> {
+        if let Some((index, _)) = self.interaction.hover_state {
+            self.data.delete_note_by_index(index);
+            Some(index)
+        } else {
+            None
+        }
+    }
+}
 
 // Re-export Tool
 pub use crate::Tool;

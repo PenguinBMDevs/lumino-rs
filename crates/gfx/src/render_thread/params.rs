@@ -101,3 +101,80 @@ impl Default for RenderParams {
         }
     }
 }
+
+impl RenderParams {
+    /// 从收集的渲染数据和配置构建 RenderParams。
+    ///
+    /// 替代手动逐字段赋值，提供单一构造入口。
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_data(
+        // Physical/logical viewport
+        physical_size: (u32, u32),
+        logical_size: (f32, f32),
+        scale_factor: f32,
+        // Scroll/zoom
+        scroll: (f32, f32),
+        zoom: (f32, f32),
+        // Canvas geometry
+        keyboard_width: f32,
+        ruler_height: f32,
+        canvas_offset: (f32, f32),
+        canvas_size: (f32, f32),
+        // Colors
+        background_color: [f64; 4],
+        color_bg: [f32; 4],
+        color_bg_black_key: [f32; 4],
+        color_bar: [f32; 4],
+        color_beat: [f32; 4],
+        color_half_beat: [f32; 4],
+        color_grid: [f32; 4],
+        color_key_line: [f32; 4],
+        // Timing
+        ppq: f32,
+        max_key_index: f32,
+        // Mode
+        is_arrangement_mode: bool,
+        // Instances
+        grid_instances: Vec<GridLineInstance>,
+        ruler_instances: Vec<RulerTickInstance>,
+        keyboard_instances: Vec<KeyInstance>,
+        arrangement_note_instances: Vec<ArrangementNoteInstance>,
+        arrangement_uniform: ArrangementUniform,
+        cc_bar_instances: Vec<CcBarInstance>,
+        velocity_panel_rect: Option<(f32, f32, f32, f32)>,
+    ) -> Self {
+        Self {
+            viewport_size: (physical_size.0, physical_size.1),
+            logical_size,
+            scale_factor,
+            scroll,
+            zoom,
+            keyboard_width,
+            ruler_height,
+            background_color,
+            color_bg,
+            color_bg_black_key,
+            color_bar,
+            color_beat,
+            color_half_beat,
+            color_grid,
+            color_key_line,
+            grid_instances,
+            note_instances: Vec::new(),
+            ruler_instances,
+            keyboard_instances,
+            ticks_per_measure: (ppq as u32) * 4,
+            ticks_per_beat: ppq as u32,
+            regenerate_grid: false,
+            canvas_offset,
+            canvas_size,
+            ppq,
+            max_key_index,
+            is_arrangement_mode,
+            arrangement_note_instances,
+            arrangement_uniform,
+            cc_bar_instances,
+            velocity_panel_rect,
+        }
+    }
+}

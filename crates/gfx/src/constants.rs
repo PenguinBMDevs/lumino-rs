@@ -11,6 +11,24 @@ pub mod rendering {
     /// 深度纹理格式
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+    /// 网格渲染常量
+    pub mod grid {
+        /// 默认每小节 tick 数 (1920)
+        pub const TICKS_PER_MEASURE: u32 = 1920;
+        /// 默认每拍 tick 数 (480)
+        pub const TICKS_PER_BEAT: u32 = 480;
+
+        /// 默认网格颜色（独立线程渲染路径）
+        pub mod colors {
+            pub const BLACK_KEY_LINE: [f32; 4] = [0.15, 0.15, 0.15, 1.0];
+            pub const WHITE_KEY_LINE: [f32; 4] = [0.1, 0.1, 0.1, 1.0];
+            pub const BAR_LINE: [f32; 4] = [0.3, 0.3, 0.3, 1.0];
+            pub const BEAT_LINE: [f32; 4] = [0.2, 0.2, 0.2, 1.0];
+            pub const HALF_BEAT_LINE: [f32; 4] = [0.2, 0.2, 0.2, 0.5];
+            pub const GRID_LINE: [f32; 4] = [0.2, 0.2, 0.2, 0.2];
+        }
+    }
+
     /// 标准深度/模板状态
     pub fn depth_stencil_state() -> Option<wgpu::DepthStencilState> {
         Some(wgpu::DepthStencilState {

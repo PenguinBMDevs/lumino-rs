@@ -1,8 +1,10 @@
 #![allow(deprecated)]
+mod arrangement_instances;
 mod arrangement_renderer;
 mod cc_bar_renderer;
 pub mod constants;
 mod context;
+pub mod grid;
 mod gpu_note_buffer;
 mod grid_renderer;
 mod keyboard_renderer;
@@ -14,12 +16,16 @@ mod ruler_renderer;
 
 mod swappable_buffer;
 
+pub use arrangement_instances::{
+    build_arrangement_all, collect_arrangement_instances, ArrangementViewport, ARRANGEMENT_PALETTE,
+};
 pub use arrangement_renderer::{
     ArrangementNoteInstance, ArrangementRenderer, ArrangementUniform, colors,
 };
-pub use cc_bar_renderer::{CcBarInstance, CcBarRenderer, CcBarViewportUniform};
+pub use cc_bar_renderer::{build_cc_bar_instances, CcBarInstance, CcBarRenderer, CcBarViewportUniform};
 pub use context::{Context, ContextError, Result};
 pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent};
+pub use grid::{generate_grid_instances, generate_ruler_instances, is_black_key};
 pub use grid_renderer::{GridLineInstance, GridRenderer};
 pub use keyboard_renderer::{KeyInstance, KeyboardRenderer, KeyboardViewportUniform};
 pub use note_renderer::{

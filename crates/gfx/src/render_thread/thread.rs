@@ -110,6 +110,49 @@ impl WgpuRenderThread {
         self.stats.lock().map(|s| s.clone()).unwrap_or_default()
     }
 
+    /// 将离屏渲染结果复制到 Surface 纹理
+    ///
+    /// 在主线程调用，将渲染线程生成的离屏纹理复制到当前 Surface。
+    /// 如果尺寸不匹配或纹理不可用，则静默跳过。
+    pub fn copy_offscreen_to_surface(
+        &self,
+        frame: &wgpu::SurfaceTexture,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) {
+        let texture_ref = self
+            .latest_texture
+            .try_lock()
+            .ok()
+            .and_then(|g| g.clone());
+
+        let Some(texture) = texture_ref else {
+            return;
+        };
+
+        if texture.width() != frame.texture.width() || texture.height() != frame.texture.height() {
+            return;
+        }
+
+        puffin::profile_scope!("copy_offscreen_texture");
+        let mut encoder = device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("copy_offscreen_texture_encoder"),
+            });
+
+        encoder.copy_texture_to_texture(
+            texture.as_image_copy(),
+            frame.texture.as_image_copy(),
+            wgpu::Extent3d {
+                width: texture.width(),
+                height: texture.height(),
+                depth_or_array_layers: 1,
+            },
+        );
+
+        queue.submit(std::iter::once(encoder.finish()));
+    }
+
     /// 关闭渲染线程
     pub fn shutdown(mut self) {
         self.running.store(false, Ordering::Relaxed);

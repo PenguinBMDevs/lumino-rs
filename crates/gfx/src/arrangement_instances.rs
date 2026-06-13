@@ -3,12 +3,48 @@
 //! 所有实例用屏幕坐标，每帧重建。音符从 MidiDocument 通过二分查找
 //! 定位可见范围起点，只扫描 O(log N + K) 个事件。
 
-use crate::editor::arrangement::ArrangementViewport;
-use crate::editor::note::Note;
-use lumino_gfx::ArrangementNoteInstance;
+use crate::ArrangementNoteInstance;
+use lumino_core::note::Note;
 use std::collections::HashMap;
 
 type TrackNotesMap = HashMap<usize, im::Vector<Note>>;
+
+/// 走带视口状态（GFX 版，纯数据，与 UI 版字段兼容）
+#[derive(Debug, Clone)]
+pub struct ArrangementViewport {
+    /// 水平滚动（像素）
+    pub scroll_x: f32,
+    /// 垂直滚动（像素）
+    pub scroll_y: f32,
+    /// 水平缩放（像素/tick）
+    pub zoom_x: f32,
+    /// 垂直缩放（倍率，1.0 = 默认高度）
+    pub zoom_y: f32,
+    /// 每轨高度（像素）
+    pub track_height: f32,
+    /// Canvas 偏移（屏幕坐标）[x, y]
+    pub canvas_offset: [f32; 2],
+    /// Canvas 尺寸 [width, height]
+    pub canvas_size: [f32; 2],
+    /// 总 tick 数
+    pub total_ticks: u32,
+}
+
+/// 走带视图音轨调色板（12 色，与 view.rs 保持同步）
+pub const ARRANGEMENT_PALETTE: [[f32; 3]; 12] = [
+    [0.90, 0.30, 0.30], // 红
+    [0.30, 0.70, 0.30], // 绿
+    [0.30, 0.50, 0.90], // 蓝
+    [0.90, 0.70, 0.20], // 黄
+    [0.70, 0.30, 0.80], // 紫
+    [0.20, 0.80, 0.80], // 青
+    [0.90, 0.50, 0.50], // 粉红
+    [0.50, 0.90, 0.30], // lime
+    [0.30, 0.30, 0.70], // 深蓝
+    [0.90, 0.80, 0.30], // 橙
+    [0.60, 0.40, 0.20], // 棕
+    [0.50, 0.50, 0.50], // 灰
+];
 
 /// 构建全部实例（背景 + lane + 网格线 + 音符 + 演奏指示线）
 /// 屏幕坐标，每帧重建，二分查找加速 MidiDocument 音符读取
@@ -34,13 +70,13 @@ pub fn build_arrangement_all(
     measure_line_color: [f32; 4],
     playhead_color: [f32; 4],
 ) {
-    let w = viewport.canvas_size.x;
-    let h = viewport.canvas_size.y;
+    let w = viewport.canvas_size[0];
+    let h = viewport.canvas_size[1];
     let lh = viewport.track_height * viewport.zoom_y;
     let ppu = viewport.zoom_x.max(0.001);
     let nt = track_order.len();
-    let cox = viewport.canvas_offset.x;
-    let coy = viewport.canvas_offset.y;
+    let cox = viewport.canvas_offset[0];
+    let coy = viewport.canvas_offset[1];
 
     // 可见 tick 范围（屏幕坐标模式下，这是所有元素的计算基准）
     let ts = (viewport.scroll_x / ppu) as f64;
@@ -119,6 +155,43 @@ pub fn build_arrangement_all(
             ));
         }
     }
+}
+
+/// Collect arrangement instances from raw data (no UI dependency).
+///
+/// Takes all data as parameters. The UI layer extracts data from its widgets
+/// and passes it here.
+pub fn collect_arrangement_instances(
+    track_order: &[usize],
+    track_visible: &[bool],
+    track_notes: &TrackNotesMap,
+    midi_doc: Option<&lumino_midi_loader::MidiDocument>,
+    playback_position: f32,
+    viewport: &ArrangementViewport,
+    palette: &[[f32; 3]],
+    bg_color: [f32; 3],
+    lane_even_color: [f32; 3],
+    lane_odd_color: [f32; 3],
+    measure_line_color: [f32; 4],
+    playhead_color: [f32; 4],
+) -> Vec<ArrangementNoteInstance> {
+    let mut instances = Vec::new();
+    build_arrangement_all(
+        &mut instances,
+        viewport,
+        track_order,
+        palette,
+        track_visible,
+        midi_doc,
+        track_notes,
+        playback_position,
+        bg_color,
+        lane_even_color,
+        lane_odd_color,
+        measure_line_color,
+        playhead_color,
+    );
+    instances
 }
 
 // ─── 音符读取 ──────────────────────────────────────────────
@@ -225,5 +298,5 @@ fn visible_trk_range(viewport: &ArrangementViewport, h: f32, nt: usize) -> (usiz
 }
 
 fn tick_to_x(viewport: &ArrangementViewport, tick: f64) -> f32 {
-    viewport.canvas_offset.x + (tick as f32 * viewport.zoom_x) - viewport.scroll_x
+    viewport.canvas_offset[0] + (tick as f32 * viewport.zoom_x) - viewport.scroll_x
 }

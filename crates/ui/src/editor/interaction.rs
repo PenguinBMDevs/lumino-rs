@@ -232,42 +232,12 @@ impl Editor {
 
     /// 开始编辑现有音符
     fn start_note_edit(&mut self, index: usize, hit_type: HitType, pos: iced_core::Point) {
-        match hit_type {
-            HitType::Start => {
-                self.push_history();
-                let note = &self.editor_state.data.notes[index];
-                self.editor_state.interaction.edit_state = EditState::ResizingStart {
-                    note_index: index,
-                    original_tick: note.tick,
-                    original_length: note.length,
-                };
-            }
-            HitType::End => {
-                self.push_history();
-                self.editor_state.interaction.edit_state =
-                    EditState::ResizingEnd { note_index: index };
-            }
-            HitType::Middle => {
-                let note = &self.editor_state.data.notes[index];
-                self.editor_state.interaction.edit_state = EditState::PendingDrag {
-                    note_index: index,
-                    start_pos: pos,
-                    original_tick: note.tick,
-                    original_key: note.key,
-                };
-                self.play_note_audio(note.key, "点击音符");
-            }
-        }
+        self.editor_state.start_note_edit(index, hit_type, (pos.x, pos.y));
     }
 
     /// 开始绘制新音符
     fn start_drawing(&mut self, snapped_tick: f32, key: u16) {
-        self.editor_state.interaction.edit_state = EditState::Drawing {
-            start_tick: snapped_tick,
-            key,
-            current_tick: snapped_tick,
-        };
-        self.play_note_audio(key, "新音符");
+        self.editor_state.start_drawing(snapped_tick, key);
     }
 
     /// 播放音符音频
@@ -340,36 +310,8 @@ impl Editor {
         new_key: Option<u16>,
         new_length: Option<f32>,
     ) {
-        let note_index = match self.editor_state.interaction.edit_state {
-            EditState::Dragging { note_index, .. }
-            | EditState::ResizingStart { note_index, .. }
-            | EditState::ResizingEnd { note_index, .. } => note_index,
-            EditState::DraggingSelection { .. }
-            | EditState::ResizingSelectionStart { .. }
-            | EditState::ResizingSelectionEnd { .. } => {
-                // 多音符操作已在 compute_state_changes 中直接处理
-                return;
-            }
-            _ => return,
-        };
-
-        if let Some(note) = self.editor_state.data.notes.get_mut(note_index) {
-            let mut changed = false;
-            if let Some(t) = new_tick {
-                note.tick = t;
-                changed = true;
-            }
-            if let Some(k) = new_key {
-                note.key = k;
-                changed = true;
-            }
-            if let Some(l) = new_length {
-                note.length = l;
-                changed = true;
-            }
-            if changed {
-                self.spatial.note_index_dirty.set(true);
-            }
+        if self.editor_state.apply_note_changes(new_tick, new_key, new_length) {
+            self.spatial.note_index_dirty.set(true);
         }
     }
 
@@ -427,37 +369,17 @@ impl Editor {
 
     /// 完成绘制新音符
     pub(crate) fn finish_drawing(&mut self, start_tick: f32, key: u16, current_tick: f32) {
-        // Conductor 轨道（track 0）禁止放置音符
-        if self.editor_state.data.current_track == 0 {
-            tracing::debug!("编辑器: Conductor 轨道禁止放置音符");
-            return;
-        }
-
         let v = &self.editor_state.view;
-        let (tick, length) = if current_tick > start_tick {
-            (start_tick, current_tick - start_tick)
-        } else if current_tick < start_tick {
-            (current_tick, start_tick - current_tick)
-        } else {
-            (start_tick, v.default_note_length)
-        };
-        let length = length.max(v.snap_precision);
-
-        self.push_history();
-        let note = Note::new(tick, key, length);
-        self.editor_state.data.notes.push_back(note.clone());
-        self.editor_state.data.track_notes.insert(
-            self.editor_state.data.current_track,
-            self.editor_state.data.notes.clone(),
-        );
-
-        self.emit_note_added_event(&note);
-        tracing::debug!(
-            "编辑器: 已保存 {} 个音符到音轨 {}",
-            self.editor_state.data.notes.len(),
-            self.editor_state.data.current_track
-        );
-        self.mark_notes_changed();
+        if let Some(note) = self.editor_state.data.finish_drawing(
+            start_tick,
+            key,
+            current_tick,
+            v.snap_precision,
+            v.default_note_length,
+        ) {
+            self.emit_note_added_event(&note);
+            self.mark_notes_changed();
+        }
     }
 
     /// 发送新音符添加的协作同步事件
@@ -491,8 +413,8 @@ impl Editor {
 
     /// 处理删除键按下事件
     pub(crate) fn handle_delete_pressed(&mut self) {
-        if let Some((index, _)) = self.editor_state.interaction.hover_state {
-            self.delete_note_by_index(index);
+        if self.editor_state.handle_delete_pressed().is_some() {
+            self.mark_notes_changed();
         }
     }
 }
