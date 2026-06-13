@@ -298,7 +298,8 @@ impl RunnerInner {
         let titlebar_changed = new.use_native_titlebar != old.use_native_titlebar;
         let font_changed = new.program_font_name != old.program_font_name
             || new.program_font_path != old.program_font_path;
-        let other_changed = new.selection_box_mode != old.selection_box_mode
+        let other_changed = new.language != old.language
+            || new.selection_box_mode != old.selection_box_mode
             || new.velocity_filter_threshold != old.velocity_filter_threshold
             || new.eraser_behavior != old.eraser_behavior
             || new.auto_scroll_fixed_position != old.auto_scroll.fixed_indicator_position
@@ -393,6 +394,7 @@ impl RunnerInner {
         // 保存配置
         self.window_state.storage.config.patch(|config| {
             config.ui.theme.clone_from(&current_theme);
+            config.ui.language = new.language;
             config.ui.preferred_backend = new.synth_backend;
             config.ui.soundfont_path = new.soundfont_path.clone();
             config.ui.use_native_titlebar = new.use_native_titlebar;

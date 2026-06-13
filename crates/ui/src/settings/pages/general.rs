@@ -10,13 +10,46 @@ use crate::settings::SettingsPanel;
 use lumino_core::i18n::settings_translations;
 use lumino_core::storage::config::EraserBehavior;
 
+/// 本地化橡皮擦行为包装
+#[derive(Debug, Clone, Copy)]
+struct LocalizedEraser {
+    inner: EraserBehavior,
+    name: &'static str,
+}
+
+impl PartialEq for LocalizedEraser {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for LocalizedEraser {}
+
+impl std::fmt::Display for LocalizedEraser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl LocalizedEraser {
+    fn new(behavior: EraserBehavior, lang: lumino_core::i18n::Language) -> Self {
+        Self {
+            inner: behavior,
+            name: lumino_core::i18n::eraser_behavior_name(behavior, lang),
+        }
+    }
+}
+
 /// 渲染常规设置页面
 pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
     let t = settings_translations(settings.language);
 
-    // 橡皮擦行为选项
-    let eraser_options = vec![EraserBehavior::Default, EraserBehavior::DirectSelect];
-    let current_eraser = settings.eraser_behavior;
+    // 橡皮擦行为选项（本地化）
+    let eraser_options = vec![
+        LocalizedEraser::new(EraserBehavior::Default, settings.language),
+        LocalizedEraser::new(EraserBehavior::DirectSelect, settings.language),
+    ];
+    let current_eraser = LocalizedEraser::new(settings.eraser_behavior, settings.language);
 
     column![
         text(t.general_title)
@@ -29,8 +62,8 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            pick_list(eraser_options, Some(current_eraser), |behavior| {
-                Message::Settings(crate::settings::Event::EraserBehaviorChanged(behavior))
+            pick_list(eraser_options, Some(current_eraser), |le| {
+                Message::Settings(crate::settings::Event::EraserBehaviorChanged(le.inner))
             })
             .width(200.0),
         ]

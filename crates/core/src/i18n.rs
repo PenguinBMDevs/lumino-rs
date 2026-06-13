@@ -57,6 +57,30 @@ pub fn dot_type_name(dot_type: lumino_message::DotType, lang: Language) -> &'sta
     main::dot_type_name(dot_type, lang)
 }
 
+/// 获取框选框模式名称（按语言）
+pub fn selection_box_mode_name(
+    mode: crate::storage::config::SelectionBoxMode,
+    lang: Language,
+) -> &'static str {
+    main::selection_box_mode_name(mode, lang)
+}
+
+/// 获取橡皮擦行为名称（按语言）
+pub fn eraser_behavior_name(
+    behavior: crate::storage::config::EraserBehavior,
+    lang: Language,
+) -> &'static str {
+    main::eraser_behavior_name(behavior, lang)
+}
+
+/// 获取合成器后端名称（按语言）
+pub fn synth_backend_name(
+    backend: crate::storage::config::SynthBackend,
+    lang: Language,
+) -> &'static str {
+    main::synth_backend_name(backend, lang)
+}
+
 /// 获取设置面板翻译
 pub fn settings_translations(lang: Language) -> &'static SettingsTranslations {
     settings::get(lang)

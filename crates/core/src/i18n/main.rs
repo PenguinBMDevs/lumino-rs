@@ -329,6 +329,62 @@ pub fn dot_type_name(dot_type: lumino_message::DotType, lang: Language) -> &'sta
     }
 }
 
+/// 获取框选框模式显示名称（按语言）
+pub fn selection_box_mode_name(
+    mode: crate::storage::config::SelectionBoxMode,
+    lang: Language,
+) -> &'static str {
+    use crate::storage::config::SelectionBoxMode::*;
+    match lang {
+        Language::ZhCn => match mode {
+            Direct => "直接跟随",
+            Spring => "弹簧动画",
+        },
+        Language::EnUs => match mode {
+            Direct => "Direct",
+            Spring => "Spring Animation",
+        },
+    }
+}
+
+/// 获取橡皮擦行为显示名称（按语言）
+pub fn eraser_behavior_name(
+    behavior: crate::storage::config::EraserBehavior,
+    lang: Language,
+) -> &'static str {
+    use crate::storage::config::EraserBehavior::*;
+    match lang {
+        Language::ZhCn => match behavior {
+            Default => "默认 (Shift+拖动框选)",
+            DirectSelect => "直接框选 (无需Shift)",
+        },
+        Language::EnUs => match behavior {
+            Default => "Default (Shift+drag)",
+            DirectSelect => "Direct Select (no Shift)",
+        },
+    }
+}
+
+/// 获取合成器后端显示名称（按语言）
+pub fn synth_backend_name(
+    backend: crate::storage::config::SynthBackend,
+    lang: Language,
+) -> &'static str {
+    use crate::storage::config::SynthBackend::*;
+    match lang {
+        Language::ZhCn => match backend {
+            XSynth => "XSynth (内置)",
+            Kdmapi => "KDMAPI",
+            System => "系统 MIDI",
+        },
+        Language::EnUs => match backend {
+            XSynth => "XSynth (Built-in)",
+            Kdmapi => "KDMAPI",
+            System => "System MIDI",
+        },
+    }
+}
+
 /// 获取主界面翻译
 pub fn get(lang: Language) -> &'static MainTranslations {
     match lang {

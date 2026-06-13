@@ -10,6 +10,37 @@ use super::super::components::styles::{create_content_text_style, create_placeho
 use crate::settings::SettingsPanel;
 use crate::window;
 use lumino_core::i18n::{Language, settings_translations};
+use lumino_core::storage::config::SelectionBoxMode;
+
+/// 本地化框选框模式包装
+#[derive(Debug, Clone, Copy)]
+struct LocalizedSelectionBox {
+    inner: SelectionBoxMode,
+    name: &'static str,
+}
+
+impl PartialEq for LocalizedSelectionBox {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for LocalizedSelectionBox {}
+
+impl std::fmt::Display for LocalizedSelectionBox {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl LocalizedSelectionBox {
+    fn new(mode: SelectionBoxMode, lang: Language) -> Self {
+        Self {
+            inner: mode,
+            name: lumino_core::i18n::selection_box_mode_name(mode, lang),
+        }
+    }
+}
 
 /// 渲染界面设置页面
 pub fn view<'a>(
@@ -233,11 +264,11 @@ pub fn view<'a>(
             iced_widget::space().width(SPACING_MAIN),
             pick_list(
                 vec![
-                    lumino_core::storage::config::SelectionBoxMode::Direct,
-                    lumino_core::storage::config::SelectionBoxMode::Spring,
+                    LocalizedSelectionBox::new(SelectionBoxMode::Direct, settings.language),
+                    LocalizedSelectionBox::new(SelectionBoxMode::Spring, settings.language),
                 ],
-                Some(settings.selection_box_mode),
-                |mode| Message::Settings(crate::settings::Event::SelectionBoxModeChanged(mode)),
+                Some(LocalizedSelectionBox::new(settings.selection_box_mode, settings.language)),
+                |ls| Message::Settings(crate::settings::Event::SelectionBoxModeChanged(ls.inner)),
             )
             .width(200.0),
         ]

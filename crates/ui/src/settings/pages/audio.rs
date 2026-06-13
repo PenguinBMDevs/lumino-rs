@@ -10,14 +10,45 @@ use crate::settings::SettingsPanel;
 use lumino_core::i18n::settings_translations;
 use lumino_core::storage::config::SynthBackend;
 
+/// 本地化合成器后端包装
+#[derive(Debug, Clone, Copy)]
+struct LocalizedSynth {
+    inner: SynthBackend,
+    name: &'static str,
+}
+
+impl PartialEq for LocalizedSynth {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for LocalizedSynth {}
+
+impl std::fmt::Display for LocalizedSynth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl LocalizedSynth {
+    fn new(backend: SynthBackend, lang: lumino_core::i18n::Language) -> Self {
+        Self {
+            inner: backend,
+            name: lumino_core::i18n::synth_backend_name(backend, lang),
+        }
+    }
+}
+
 /// 渲染音频设置页面
 pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
     let t = settings_translations(settings.language);
-    let synth_options = [
-        SynthBackend::XSynth,
-        SynthBackend::Kdmapi,
-        SynthBackend::System,
+    let synth_options = vec![
+        LocalizedSynth::new(SynthBackend::XSynth, settings.language),
+        LocalizedSynth::new(SynthBackend::Kdmapi, settings.language),
+        LocalizedSynth::new(SynthBackend::System, settings.language),
     ];
+    let current_synth = LocalizedSynth::new(settings.synth_backend, settings.language);
 
     let mut col = column![
         text(t.audio_title)
@@ -30,8 +61,8 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            pick_list(synth_options, Some(settings.synth_backend), |backend| {
-                Message::Settings(crate::settings::Event::SynthBackendChanged(backend))
+            pick_list(synth_options, Some(current_synth), |ls| {
+                Message::Settings(crate::settings::Event::SynthBackendChanged(ls.inner))
             })
             .width(200.0),
         ]
