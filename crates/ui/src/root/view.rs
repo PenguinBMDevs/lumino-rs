@@ -136,7 +136,7 @@ impl Root {
                 let velocity_panel = self
                     .editor
                     .velocity_panel
-                    .view(&self.editor, self.visual.velocity_panel_height);
+                    .view(&self.editor, self.visual.velocity_panel_height, self.settings.language);
                 // 编辑器视图（卷帘 + 滚动条）
                 let editor_view = self.editor.view(
                     message::Message::ScrollbarScrolled,

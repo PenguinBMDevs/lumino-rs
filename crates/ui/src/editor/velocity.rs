@@ -14,6 +14,7 @@ pub use lumino_core::{
 };
 
 use crate::Element;
+use lumino_core::i18n::Language;
 
 /// 面板高度（像素）
 pub const VELOCITY_PANEL_HEIGHT: f32 = 150.0;
@@ -56,11 +57,17 @@ impl VelocityPanel {
     }
 
     /// 渲染编辑面板视图
-    pub fn view<'a>(&'a self, editor: &'a crate::editor::Editor, panel_height: f32) -> Element<'a> {
+    pub fn view<'a>(
+        &'a self,
+        editor: &'a crate::editor::Editor,
+        panel_height: f32,
+        language: Language,
+    ) -> Element<'a> {
         use iced_core::Alignment;
         use iced_widget::canvas::Canvas;
         use iced_widget::{column, container, row, space, text};
 
+        let t = lumino_core::i18n::main_translations(language);
         let toolbar_height = TOOLBAR_HEIGHT;
         let canvas_height = (panel_height - toolbar_height).max(10.0);
 
@@ -69,11 +76,11 @@ impl VelocityPanel {
 
         let toolbar = container(
             row![
-                self.build_mode_button(is_tempo, is_velocity),
+                self.build_mode_button(is_tempo, is_velocity, language, t),
                 space().width(8),
                 self.build_cc_selector(),
                 space().width(iced_core::Length::Fill),
-                text(self.build_info_text())
+                text(self.build_info_text(language))
                     .size(11)
                     .color(iced_core::Color::from_rgba(0.5, 0.5, 0.5, 0.7)),
             ]
@@ -109,13 +116,19 @@ impl VelocityPanel {
     }
 
     /// 构建模式切换按钮（力度/速度/CC/Bend）
-    fn build_mode_button<'a>(&'a self, is_tempo: bool, is_velocity: bool) -> Element<'a> {
+    fn build_mode_button<'a>(
+        &'a self,
+        is_tempo: bool,
+        is_velocity: bool,
+        _language: Language,
+        t: &'static lumino_core::i18n::MainTranslations,
+    ) -> Element<'a> {
         use iced_widget::{button, text};
 
         let mode_label = if is_tempo {
-            "速度"
+            t.velocity_panel_tempo
         } else if is_velocity {
-            "力度"
+            t.velocity_panel_velocity
         } else if self.edit_mode == EditMode::Bend {
             "Bend"
         } else {
@@ -179,11 +192,12 @@ impl VelocityPanel {
     }
 
     /// 构建模式信息文字
-    fn build_info_text(&self) -> String {
+    fn build_info_text(&self, language: Language) -> String {
+        let t = lumino_core::i18n::main_translations(language);
         if self.edit_mode == EditMode::Tempo {
-            "速度 BPM".to_string()
+            t.velocity_panel_tempo_info.to_string()
         } else if self.edit_mode == EditMode::Velocity {
-            "力度 0-127".to_string()
+            t.velocity_panel_velocity_info.to_string()
         } else if self.edit_mode == EditMode::Bend {
             "Bend: -8192..8191".to_string()
         } else {

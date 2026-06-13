@@ -76,6 +76,14 @@ pub struct MainTranslations {
     pub precision_divide_by: &'static str,
     pub precision_ok: &'static str,
     pub precision_cancel: &'static str,
+
+    // ── 力度/速度编辑面板 ──
+    pub velocity_panel_velocity: &'static str,
+    pub velocity_panel_tempo: &'static str,
+    pub velocity_panel_velocity_info: &'static str,
+    pub velocity_panel_tempo_info: &'static str,
+
+    // ── 工程设置对话框 ──
     pub project_title: &'static str,
     pub project_name_label: &'static str,
     pub project_name_placeholder: &'static str,
@@ -161,6 +169,13 @@ static ZHCN_MAIN: MainTranslations = MainTranslations {
     precision_divide_by: "除以",
     precision_ok: "确定",
     precision_cancel: "取消",
+
+    // 力度/速度编辑面板
+    velocity_panel_velocity: "力度",
+    velocity_panel_tempo: "速度",
+    velocity_panel_velocity_info: "力度 0-127",
+    velocity_panel_tempo_info: "速度 BPM",
+
     project_title: "工程信息设置",
     project_name_label: "项目名称",
     project_name_placeholder: "输入项目名称（留空显示为'无标题'）",
@@ -246,6 +261,13 @@ static ENUS_MAIN: MainTranslations = MainTranslations {
     precision_divide_by: "divide by",
     precision_ok: "OK",
     precision_cancel: "Cancel",
+
+    // Velocity/Tempo panel
+    velocity_panel_velocity: "Velocity",
+    velocity_panel_tempo: "Tempo",
+    velocity_panel_velocity_info: "Velocity 0-127",
+    velocity_panel_tempo_info: "Tempo BPM",
+
     project_title: "Project Settings",
     project_name_label: "Project Name",
     project_name_placeholder: "Enter project name (blank = 'Untitled')",
