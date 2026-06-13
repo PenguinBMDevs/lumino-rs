@@ -19,8 +19,8 @@ impl RunnerInner {
         tracing::debug!(
             "协作同步：cursor_position={:?}, canvas_offset=({}, {}), scroll=({}, {})",
             cursor_pos,
-            es.canvas.offset.x,
-            es.canvas.offset.y,
+            es.canvas.offset_x,
+            es.canvas.offset_y,
             es.view.scroll_x,
             es.view.scroll_y
         );
@@ -28,7 +28,7 @@ impl RunnerInner {
         if let Some(pos) = cursor_pos {
             // 先转换为 Canvas 视口坐标（不含滚动偏移），用于边界检查
             let viewport_pos =
-                iced_core::Point::new(pos.x - es.canvas.offset.x, pos.y - es.canvas.offset.y);
+                iced_core::Point::new(pos.x - es.canvas.offset_x, pos.y - es.canvas.offset_y);
 
             if editor.is_inside_canvas(viewport_pos) {
                 // 通过边界检查后，加上滚动偏移得到内容空间坐标

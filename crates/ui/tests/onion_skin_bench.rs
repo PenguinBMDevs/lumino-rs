@@ -158,8 +158,8 @@ fn onion_skin_benchmark() {
     editor.editor_state.view.keyboard_width = KEYBOARD_WIDTH;
     editor.editor_state.view.visible_key_count = 128;
     editor.editor_state.view.ppq = 480;
-    editor.editor_state.canvas.size.x = CANVAS_WIDTH;
-    editor.editor_state.canvas.size.y = CANVAS_HEIGHT;
+    editor.editor_state.canvas.size_x = CANVAS_WIDTH;
+    editor.editor_state.canvas.size_y = CANVAS_HEIGHT;
 
     editor.enable_onion_skin();
     editor.set_onion_skin_show_all(true);

@@ -1,7 +1,7 @@
 //! 音符逻辑表示 — 重新导出自 lumino-core
 //!
 //! 保持与原有 `crate::editor::note::*` 路径完全兼容。
-//! UI 特有的方法（screen_bounds, to_instance）定义在此处。
+//! UI 特有的方法（screen_bounds, to_instance）通过扩展 trait 定义在此处。
 
 use iced_core::{Color, Point, Rectangle, Size};
 use lumino_gfx::NoteInstance;
@@ -10,9 +10,17 @@ pub use lumino_core::Note;
 
 use crate::editor::editor_state::ViewState;
 
-impl Note {
+/// UI 特有的 Note 扩展方法
+pub trait NoteExt {
     /// 计算音符在屏幕上的边界矩形
-    pub fn screen_bounds(&self, view_state: &ViewState) -> Rectangle {
+    fn screen_bounds(&self, view_state: &ViewState) -> Rectangle;
+    /// 转换为 GPU 实例
+    fn to_instance(&self, color: Color) -> NoteInstance;
+}
+
+impl NoteExt for Note {
+    /// 计算音符在屏幕上的边界矩形
+    fn screen_bounds(&self, view_state: &ViewState) -> Rectangle {
         let x = self.tick * view_state.zoom_x - view_state.scroll_x + view_state.keyboard_width;
         let max_key_index = (view_state.visible_key_count - 1) as f32;
         let y = (max_key_index - self.key as f32) * view_state.zoom_y - view_state.scroll_y
@@ -23,7 +31,7 @@ impl Note {
     }
 
     /// 转换为 GPU 实例
-    pub fn to_instance(&self, color: Color) -> NoteInstance {
+    fn to_instance(&self, color: Color) -> NoteInstance {
         NoteInstance::new(
             self.tick,
             self.key as f32,

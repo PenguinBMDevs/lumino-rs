@@ -4,6 +4,7 @@ use iced_core::Length;
 use iced_widget::{Stack, column, container, progress_bar, row, space, text};
 use lumino_gfx::NoteInstance;
 
+use crate::editor::note::NoteExt;
 use crate::message;
 use crate::root::{Element, Root, Theme};
 use crate::state::root_state::DialogType;
@@ -219,9 +220,9 @@ impl Root {
         // 计算可见区域用于洋葱皮音符的视锥裁剪
         let es = &self.editor.editor_state;
         let view = &es.view;
-        let canvas_size = es.canvas.size;
-        let viewport_width = canvas_size.x - view.keyboard_width;
-        let viewport_height = canvas_size.y - view.ruler_height;
+        let canvas_size = es.canvas.size_x;
+        let viewport_width = canvas_size - view.keyboard_width;
+        let viewport_height = es.canvas.size_y - view.ruler_height;
 
         let visible_tick_start = (view.scroll_x / view.zoom_x).max(0.0);
         let _visible_tick_end =

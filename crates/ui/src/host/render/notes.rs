@@ -1,9 +1,10 @@
-//! 洋葱皮数据快照收�?—�?在主线程快速快照编辑状态，发送给 NoteWorker
+//! 洋葱皮数据快照收集 — 在主线程快速快照编辑状态，发送给 NoteWorker
 
 use crate::host::Host;
 
 impl Host {
-    /// 收集洋葱皮计算所需的数据快照（非阻塞，O(1) 级别开销�?    pub(super) fn collect_onion_skin_snapshot(
+    /// 收集洋葱皮计算所需的数据快照（非阻塞，O(1) 级别开销）
+    pub(super) fn collect_onion_skin_snapshot(
         &self,
         viewport_logical_size: (f32, f32),
     ) -> super::note_worker::OnionSkinComputationSnapshot {
@@ -21,7 +22,7 @@ impl Host {
         let visible_tick_end =
             ((view.scroll_x + canvas_width - keyboard_width) / view.zoom_x).max(visible_tick_start);
 
-        // �?scroll_y 计算真实的可�?key 范围（与 rendering.rs 保持一致）
+        // 从 scroll_y 计算真实的可见 key 范围（与 rendering.rs 保持一致）
         let max_key_index = (view.visible_key_count - 1) as f32;
         let viewport_height = (canvas_height - view.ruler_height).max(0.0);
         let key_top_f32 = max_key_index - (view.scroll_y / view.zoom_y);
@@ -35,7 +36,7 @@ impl Host {
             visible_tick_end,
             visible_key_min,
             visible_key_max,
-            // 视口参数（用�?NDC 坐标计算，与 note.wgsl 一致）
+            // 视口参数（用于 NDC 坐标计算，与 note.wgsl 一致）
             scroll_x: view.scroll_x,
             scroll_y: view.scroll_y,
             zoom_x: view.zoom_x,
@@ -47,7 +48,8 @@ impl Host {
             viewport_logical_width: viewport_logical_size.0,
             viewport_logical_height: viewport_logical_size.1,
             max_key_index,
-            // 洋葱皮数�?            onion_skin_enabled: editor.is_onion_skin_enabled(),
+            // 洋葱皮数据
+            onion_skin_enabled: editor.is_onion_skin_enabled(),
             track_onion_states: self.root.sidebar.get_onion_skin_states(),
             current_track: es.data.current_track,
             document: es.data.document.clone(),

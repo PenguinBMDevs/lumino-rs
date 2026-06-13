@@ -301,7 +301,7 @@ pub(super) fn collect_onion_notes(
 pub(super) fn build_main_note_instances(
     buffer: &SwappableBuffer<lumino_gfx::NoteInstance>,
     notes: &im::Vector<crate::editor::note::Note>,
-    edit_state: &crate::editor::editor_state::interaction::EditState,
+    edit_state: &crate::editor::editor_state::EditState,
     default_note_length: f32,
     snap_precision: f32,
 ) {
@@ -325,7 +325,7 @@ pub(super) fn build_main_note_instances(
     instances.extend(main);
 
     const DRAWING_NOTE_COLOR: [f32; 4] = [0.4, 0.8, 1.0, 1.0];
-    if let crate::editor::editor_state::interaction::EditState::Drawing {
+    if let crate::editor::editor_state::EditState::Drawing {
         start_tick,
         key,
         current_tick,

@@ -193,7 +193,16 @@ impl VelocityPanel {
 
     /// 构建速度点数据
     pub fn build_tempo_points(editor: &crate::editor::Editor) -> Vec<TempoPoint> {
-        editor.editor_state.data.tempo_points.clone()
+        editor
+            .editor_state
+            .data
+            .tempo_points
+            .iter()
+            .map(|tp| TempoPoint {
+                tick: tp.tick,
+                bpm: tp.bpm,
+            })
+            .collect()
     }
 
     /// 构建力度点数据

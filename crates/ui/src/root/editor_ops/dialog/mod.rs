@@ -133,7 +133,7 @@ impl Root {
 
         // 同步到编辑器 tempo 数据（用户编辑的源）
         self.editor.editor_state.data.tempo_points =
-            vec![crate::editor::velocity::widget::TempoPoint {
+            vec![crate::editor::editor_state::TempoPoint {
                 tick: 0.0,
                 bpm: tempo,
             }];

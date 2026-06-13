@@ -1,14 +1,13 @@
 //! Host 编辑器操作子模块 - 处理音符和洋葱皮相关操作
 
 use crate::editor::EditState;
-use crate::editor::editor_state::view::{
+use lumino_core::view_state::{
     DEFAULT_NOTE_LENGTH, DEFAULT_PPQ, DEFAULT_SCROLL_X, DEFAULT_SCROLL_Y, DEFAULT_SNAP_PRECISION,
     DEFAULT_TOTAL_TICKS, DEFAULT_VISIBLE_KEY_COUNT, DEFAULT_ZOOM_X, DEFAULT_ZOOM_Y,
 };
-use crate::editor::velocity::widget::TempoPoint;
+use crate::editor::editor_state::TempoPoint;
 use crate::host::{Host, types::NoteData};
 use crate::{editor::note::Note, message, toolbar::Tool};
-use iced_core::Point;
 use lumino_midi_loader::MidiDocument;
 use std::sync::Arc;
 
@@ -316,7 +315,7 @@ impl Host {
         root.editor.editor_state.view.snap_precision = DEFAULT_SNAP_PRECISION;
         root.editor.editor_state.view.default_note_length = DEFAULT_NOTE_LENGTH;
         // 最大滚动范围
-        root.editor.editor_state.max_scroll = Point::new(
+        root.editor.editor_state.max_scroll = (
             DEFAULT_TOTAL_TICKS as f32 * DEFAULT_ZOOM_X,
             DEFAULT_VISIBLE_KEY_COUNT as f32 * DEFAULT_ZOOM_Y,
         );

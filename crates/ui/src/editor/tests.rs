@@ -198,7 +198,8 @@ mod tests {
     #[test]
     fn test_scroll_boundaries() {
         let mut editor = Editor::new();
-        editor.editor_state.canvas.size = iced_core::Point::new(800.0, 600.0);
+        editor.editor_state.canvas.size_x = 800.0;
+        editor.editor_state.canvas.size_y = 600.0;
         editor.editor_state.view.total_ticks = 1000;
 
         // 设置一个超出范围的 scroll_x
@@ -213,7 +214,8 @@ mod tests {
     #[test]
     fn test_zoom_limits() {
         let mut editor = Editor::new();
-        editor.editor_state.canvas.size = iced_core::Point::new(800.0, 600.0);
+        editor.editor_state.canvas.size_x = 800.0;
+        editor.editor_state.canvas.size_y = 600.0;
 
         // 测试 X 轴最小缩放
         editor.set_zoom_x(0.0001, 0.5);

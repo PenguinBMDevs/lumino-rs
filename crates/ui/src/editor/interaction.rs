@@ -399,7 +399,11 @@ impl Editor {
     /// 处理滚动事件（鼠标滚轮）
     /// 使用平滑滚动动画，不直接设置位置
     pub(crate) fn handle_scrolled(&mut self, delta_x: f32, delta_y: f32) {
-        self.editor_state.smooth_scroll_by(delta_x, delta_y);
+        let v = &mut self.editor_state.view;
+        v.smooth_scroll.set_target(
+            v.scroll_x + delta_x,
+            v.scroll_y + delta_y,
+        );
     }
 
     /// 处理双击事件

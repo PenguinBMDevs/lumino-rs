@@ -14,16 +14,18 @@ use super::{EditState, Editor};
 use crate::editor::note::color_to_array;
 
 impl Editor {
-    /// 构建编辑器视�?    pub fn view(
+    /// 构建编辑器视图
+    pub fn view(
         &self,
         on_scroll_x: impl Fn(f32) -> Message + 'static,
         on_scroll_y: impl Fn(f32) -> Message + 'static,
         on_zoom_x: impl Fn(f32, f32) -> Message + 'static,
         on_zoom_y: impl Fn(f32, f32) -> Message + 'static,
     ) -> Element<'_> {
-        // 使用 editor_state 读取视图状�?        let es = &self.editor_state;
+        // 使用 editor_state 获取视图状态
+        let es = &self.editor_state;
 
-        // 创建带鼠标追踪的 Canvas
+        // 创建跟随滚动的 Canvas
         let grid = Canvas::new(PianoRollGrid::new(self))
             .width(Length::Fill)
             .height(Length::Fill);
@@ -52,8 +54,14 @@ impl Editor {
         iced_widget::column![content_with_vscroll, horizontal_scrollbar].into()
     }
 
-    /// 获取当前需要绘制的音符实例（用�?wgpu 渲染�?    ///
-    /// 优化�?    /// 1. 使用 rayon 并行处理音符�?instance 的转�?    /// 2. 预分配容量减少内存分�?    /// 3. 空间索引已经做过裁剪，避免重复检�?    /// 4. 使用线程本地存储的工作缓冲区，避免重复分�?    pub fn update_note_instances(
+    /// 获取当前需要绘制的音符实例（用于 wgpu 渲染）
+    ///
+    /// 优化：
+    /// 1. 使用 rayon 进行并行处理，将 NoteInstance 转换并行化
+    /// 2. 预分配足够的内存，减少重新分配
+    /// 3. 利用空间索引的查询缓存，避免重复查询
+    /// 4. 使用线程本地存储的中间缓冲区，减少内存分配
+    pub fn update_note_instances(
         &self,
         theme: &crate::Theme,
         _sidebar_width: f32,
@@ -62,15 +70,17 @@ impl Editor {
         instances.clear();
         let palette = theme.extended_palette();
 
-        // 默认音符颜色（更弱颜色）
+        // 默认音符颜色（主色弱化）
         let default_color = color_to_array(palette.primary.weak.color);
         // 悬停音符颜色
         let hover_color = color_to_array(palette.primary.base.color);
-        // 正在绘制/选中的音符颜色（最强颜色）
+        // 正在编辑/选中的音符颜色（主色强化）
         let active_color = color_to_array(palette.primary.strong.color);
-        // 选中音符的颜色（高亮�?        let selected_color = color_to_array(palette.secondary.strong.color);
+        // 选中音符的颜色（辅色）
+        let selected_color = color_to_array(palette.secondary.strong.color);
 
-        // 使用 editor_state 读取视图/交互/画布状�?        let es = &self.editor_state;
+        // 使用 editor_state 获取视图/交互/画布状态
+        let es = &self.editor_state;
         let view = &es.view;
         let interaction = &es.interaction;
         let canvas = &es.canvas;
@@ -78,21 +88,24 @@ impl Editor {
         let viewport_width = canvas.size_x - view.keyboard_width;
         let viewport_height = canvas.size_y - view.ruler_height;
 
-        // 计算可见�?tick 范围（使�?scroll_x，不需�?canvas_offset�?        let visible_tick_start = (view.scroll_x / view.zoom_x).max(0.0);
+        // 计算可见 tick 范围（使用 scroll_x，不含 canvas_offset）
+        let visible_tick_start = (view.scroll_x / view.zoom_x).max(0.0);
         let visible_tick_end =
             ((view.scroll_x + viewport_width) / view.zoom_x).max(visible_tick_start);
 
-        // 计算可见�?key 范围（使�?scroll_y，考虑 max_key_index�?        let max_key_index = (view.visible_key_count - 1) as f32;
+        // 计算可见 key 范围（使用 scroll_y，含 max_key_index）
+        let max_key_index = (view.visible_key_count - 1) as f32;
 
-        // key_top 对应屏幕最上方 (Y = ruler_height)，值最�?(最高音)
+        // key_top 对应屏幕上方 (Y = ruler_height)，值最大（高音）
         let key_top_f32 = max_key_index - (view.scroll_y / view.zoom_y);
-        // key_bottom 对应屏幕最下方 (Y = canvas_size.y)，值最�?(最低音)
+        // key_bottom 对应屏幕下方 (Y = canvas_size.y)，值最小（低音）
         let key_bottom_f32 = max_key_index - ((view.scroll_y + viewport_height) / view.zoom_y);
 
-        let visible_key_max = key_top_f32.ceil() as u16 + 1; // �?1 容错
-        let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1); // �?1 容错
+        let visible_key_max = key_top_f32.ceil() as u16 + 1; // 多取 1 个作为缓冲
+        let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1); // 多取 1 个作为缓冲
 
-        // 重建空间索引（仅在音符数据变化时�?        if self.spatial.note_index_dirty.get() {
+        // 重建空间索引（仅当数据变化时）
+        if self.spatial.note_index_dirty.get() {
             let notes_vec: Vec<_> = self.editor_state.data.notes.iter().cloned().collect();
             *self.spatial.note_index.borrow_mut() = Some(
                 crate::editor::spatial_index::NoteSpatialIndex::from_notes(&notes_vec),
@@ -104,8 +117,9 @@ impl Editor {
             );
         }
 
-        // 查询可见范围内的音符（每次渲染都执行，确保滚�?缩放时刷新）
-        // 使用线程本地存储的缓冲区，避免重复分�?        let candidate_count = {
+        // 查询可见范围内的音符（每帧渲染时执行，确保视图变化时刷新）
+        // 使用线程本地存储的缓存来避免重复分配
+        let candidate_count = {
             let mut cache = self.spatial.query_cache.borrow_mut();
             if let Some(index) = &*self.spatial.note_index.borrow() {
                 index.update_query(
@@ -121,15 +135,19 @@ impl Editor {
             cache.len()
         };
 
-        // 预分配容�?        instances.reserve(candidate_count);
+        // 预分配内存
+        instances.reserve(candidate_count);
 
-        // 直接顺序处理（对于小数据量，顺序处理比并行更快，且避免内存分配）
-        // 只有当候选数量超过阈值时才使用并行处�?        const PARALLEL_THRESHOLD: usize = 500;
+        // 直接顺序处理（小数据量）：顺序访问性能更好，且避免内存分配
+        // 只有当候选音符数量超过阈值时，才使用并行处理
+        const PARALLEL_THRESHOLD: usize = 500;
 
         if candidate_count >= PARALLEL_THRESHOLD {
-            // 大数据量：并行处�?            let cache = self.spatial.query_cache.borrow();
+            // 大数据量：使用并行处理
+            let cache = self.spatial.query_cache.borrow();
 
-            // 预收集所有需要的数据到线程安全的结构�?            // 收集 (index, tick, key, length) 的元组，避免在并行闭包中访问 self.editor_state.data.notes
+            // 预收集需要在线程安全的结构中访问的数据
+            // 收集 (index, tick, key, length) 元组，避免在并行闭包中访问 self.editor_state.data.notes
             let note_data: Vec<(usize, f32, u16, f32)> = cache
                 .iter()
                 .filter_map(|&i| {
@@ -141,13 +159,14 @@ impl Editor {
                 })
                 .collect();
 
-            // 预收集选中音符的状态，避免在闭包中访问 HashSet
+            // 预收集选中状态（避免在闭包中访问 HashSet）
             let selected_indices: Vec<bool> = note_data
                 .iter()
                 .map(|&(i, _, _, _)| interaction.selected_notes.contains(&i))
                 .collect();
 
-            // 并行处理：使�?fold + reduce 模式，减少内存分�?            let edit_state_copy = interaction.edit_state.clone();
+            // 并行处理：使用 fold + reduce 模式，避免中间内存分配
+            let edit_state_copy = interaction.edit_state.clone();
             let hover_state_copy = interaction.hover_state;
 
             let note_instances: Vec<NoteInstance> = note_data
@@ -227,7 +246,8 @@ impl Editor {
             }
         }
 
-        // 渲染正在绘制的音�?        if let EditState::Drawing {
+        // 渲染正在绘制的音符
+        if let EditState::Drawing {
             start_tick,
             key,
             current_tick,
@@ -244,11 +264,12 @@ impl Editor {
 
             instances.push(NoteInstance::new(tick, key as f32, length, active_color));
         } else if let Some(pos) = canvas.cursor_position {
-            // 预览音符 - 仅在空闲状态、没有悬停在其他音符上且使用铅笔工具时显�?            if interaction.edit_state == EditState::Idle
+            // 预览音符 - 当处于空闲状态且没有悬停音符时，使用铅笔工具时显示
+            if interaction.edit_state == EditState::Idle
                 && interaction.hover_state.is_none()
                 && es.tool == Tool::Pencil
             {
-                let local_pos = Point::new(pos.x - canvas.offset_x, pos.y - canvas.offset_y);
+                let local_pos = Point::new(pos.0 - canvas.offset_x, pos.1 - canvas.offset_y);
                 if self.is_inside_canvas(local_pos) {
                     let tick = self.snap_tick(self.x_to_tick(local_pos.x));
                     let key = self.y_to_key(local_pos.y);
@@ -267,9 +288,10 @@ impl Editor {
         }
     }
 
-    /// 获取框选框的屏幕坐标（用于渲染选择框）
+    /// 获取选择框的屏幕坐标（用于渲染选择框）
     ///
-    /// 将世界坐标（tick/key）转换为屏幕坐标，确保框选框随内容一起滚�?    pub fn get_selection_box(&self) -> Option<(Point, Point)> {
+    /// 将选择框坐标（tick/key）转换为屏幕坐标，确保选择框与音符对齐
+    pub fn get_selection_box(&self) -> Option<(Point, Point)> {
         if let EditState::Selecting {
             start_tick,
             start_key,
@@ -290,22 +312,27 @@ impl Editor {
         }
     }
 
-    /// 检查点是否�?Canvas 有效区域�?    /// 有效区域 = Canvas 区域减去键盘区域（左侧）、时间轴标尺（顶部）和滚动条区域（底部和右侧�?    /// 同时避开顶部可能被下拉菜单覆盖的区域
+    /// 判断是否在 Canvas 有效区域内
+    /// 有效区域 = Canvas 除去键盘区域（左侧）、标尺区域（顶部）、滚动条区域（底部和右侧）
+    /// 同时避开窗口边框和菜单栏的边界区域
     pub fn is_inside_canvas(&self, local_pos: Point) -> bool {
         let es = &self.editor_state;
 
-        // 基本�?Canvas 边界检�?        if local_pos.x < 0.0 || local_pos.x > es.canvas.size_x {
+        // 检查 Canvas 边界
+        if local_pos.x < 0.0 || local_pos.x > es.canvas.size_x {
             return false;
         }
         if local_pos.y < 0.0 || local_pos.y > es.canvas.size_y {
             return false;
         }
 
-        // 检查是否在键盘区域外（x 必须大于键盘宽度�?        if local_pos.x < es.view.keyboard_width {
+        // 检查是否在键盘区域外（x 大于键盘宽度）
+        if local_pos.x < es.view.keyboard_width {
             return false;
         }
 
-        // 检查是否在时间轴标尺下方（y 必须大于标尺高度�?        if local_pos.y < es.view.ruler_height {
+        // 检查是否在标尺区域下方（y 大于标尺高度）
+        if local_pos.y < es.view.ruler_height {
             return false;
         }
 

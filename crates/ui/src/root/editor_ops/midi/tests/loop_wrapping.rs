@@ -25,7 +25,8 @@ fn test_loop_wrapping_full_pipeline_position_verification() {
     editor.editor_state.view.zoom_x = 2.0;
     editor.editor_state.view.keyboard_width = 60.0;
     editor.editor_state.view.scroll_x = 0.0;
-    editor.editor_state.canvas.size = iced_core::Point::new(1280.0, 800.0);
+    editor.editor_state.canvas.size_x = 1280.0;
+    editor.editor_state.canvas.size_y = 800.0;
 
     manager.set_looping(true);
     manager.set_loop_range(100.0, 500.0);

@@ -2,6 +2,7 @@
 
 use super::Editor;
 use crate::constants::editor::{CLIPBOARD_FORMAT, CLIPBOARD_VERSION, DEFAULT_PASTE_ANCHOR_KEY};
+use iced_core::Point;
 
 impl Editor {
     /// 剪切选中音符
@@ -108,8 +109,8 @@ impl Editor {
             .editor_state
             .canvas
             .cursor_position
-            .filter(|pos| self.is_inside_canvas(*pos))
-            .map(|pos| (self.snap_tick(self.x_to_tick(pos.x)), self.y_to_key(pos.y)))
+            .filter(|pos| self.is_inside_canvas(Point::new(pos.0, pos.1)))
+            .map(|pos| (self.snap_tick(self.x_to_tick(pos.0)), self.y_to_key(pos.1)))
             .unwrap_or((self.playback_position, DEFAULT_PASTE_ANCHOR_KEY));
 
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);

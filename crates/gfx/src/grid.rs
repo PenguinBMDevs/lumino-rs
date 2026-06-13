@@ -1,10 +1,10 @@
 //! 网格线和标尺实例生成
 
-use crate::constants::grid::{self, TICKS_PER_BEAT, TICKS_PER_MEASURE};
+use crate::constants::rendering::grid::{self, TICKS_PER_BEAT, TICKS_PER_MEASURE};
 use crate::{GridLineInstance, RulerTickInstance};
 
 /// 判断是否为黑键
-fn is_black_key(key_index: isize) -> bool {
+pub fn is_black_key(key_index: isize) -> bool {
     let note_in_octave = key_index.rem_euclid(12);
     matches!(note_in_octave, 1 | 3 | 6 | 8 | 10)
 }

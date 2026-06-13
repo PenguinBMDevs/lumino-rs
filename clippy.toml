@@ -1,2 +1,3 @@
-too-many-arguments-threshold = 20
-enum-variant-name-threshold = 10
+# 保持默认阈值，对确实需要多参数的函数使用局部 #[allow] 并注明原因
+# too-many-arguments-threshold = 7   (默认值)
+# enum-variant-name-threshold = 3    (默认值)

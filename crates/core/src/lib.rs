@@ -12,13 +12,13 @@ pub mod view_state;
 
 pub use editor_state::{
     CanvasState, EditState, EditorData, EditorState, HitType, InteractionState,
-    SelectionHitType, TempoPoint,
+    SelectionHitType,
 };
 pub use error::{CoreError, Result};
 pub use font_scanner::{FontInfo, scan_system_fonts};
 pub use history::{EditorSnapshot, History};
 pub use midi_types::{
-    BendDisplay, BendPoint, CcData, CcDisplay, CcPoint, EditMode, VelocityPoint,
+    BendDisplay, BendPoint, CcData, CcDisplay, CcPoint, EditMode, TempoPoint, VelocityPoint,
     CC_CONTROLLER_NAMES,
 };
 pub use note::Note;

@@ -20,8 +20,8 @@ impl Editor {
         let keyboard_width = view.keyboard_width;
         let ruler_height = view.ruler_height;
 
-        let canvas_width = canvas_state.size.x;
-        let canvas_height = canvas_state.size.y;
+        let canvas_width = canvas_state.size_x;
+        let canvas_height = canvas_state.size_y;
 
         // === 先添加横向琴键分隔线（在纵向网格线下方渲染）===
         let start_key = view.scroll_y / view.zoom_y;
@@ -32,15 +32,15 @@ impl Editor {
         while (current_key as f32) < end_key {
             let screen_y = (current_key as f32 * view.zoom_y) - view.scroll_y
                 + ruler_height
-                + canvas_state.offset.y;
+                + canvas_state.offset_y;
 
-            if screen_y >= canvas_state.offset.y + ruler_height
-                && screen_y <= canvas_state.offset.y + canvas_height
+            if screen_y >= canvas_state.offset_y + ruler_height
+                && screen_y <= canvas_state.offset_y + canvas_height
             {
                 let is_white_key = [0, 2, 4, 5, 7, 9, 11].contains(&(current_key % 12));
                 if !is_white_key {
-                    let x_start = keyboard_width + canvas_state.offset.x;
-                    let x_end = canvas_width + canvas_state.offset.x;
+                    let x_start = keyboard_width + canvas_state.offset_x;
+                    let x_end = canvas_width + canvas_state.offset_x;
                     instances.push(lumino_gfx::GridLineInstance::new(
                         [x_start, screen_y],
                         [x_end, screen_y],
@@ -68,10 +68,10 @@ impl Editor {
         while current_tick < end_tick {
             let screen_x = (current_tick * view.zoom_x) - view.scroll_x
                 + keyboard_width
-                + canvas_state.offset.x;
+                + canvas_state.offset_x;
 
-            if screen_x >= canvas_state.offset.x + keyboard_width
-                && screen_x <= canvas_state.offset.x + canvas_width
+            if screen_x >= canvas_state.offset_x + keyboard_width
+                && screen_x <= canvas_state.offset_x + canvas_width
             {
                 let is_measure = (current_tick % measure_ticks).abs() < 0.1;
                 let is_beat = (current_tick % ppq).abs() < 0.1;
@@ -101,8 +101,8 @@ impl Editor {
                     )
                 };
 
-                let y_start = ruler_height + canvas_state.offset.y;
-                let y_end = canvas_height + canvas_state.offset.y;
+                let y_start = ruler_height + canvas_state.offset_y;
+                let y_end = canvas_height + canvas_state.offset_y;
                 instances.push(lumino_gfx::GridLineInstance::new(
                     [screen_x, y_start],
                     [screen_x, y_end],

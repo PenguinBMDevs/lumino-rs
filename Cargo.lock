@@ -3456,9 +3456,12 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "font-kit",
+ "im",
  "libc",
  "lumino-memory-monitor",
+ "lumino-message",
  "lumino-midi-loader",
+ "puffin",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -3478,6 +3481,14 @@ dependencies = [
  "num-traits",
  "tempfile",
  "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "lumino-event"
+version = "0.1.0"
+dependencies = [
+ "lumino-midi-loader",
  "tracing",
 ]
 
@@ -3517,9 +3528,13 @@ dependencies = [
 name = "lumino-gfx"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bytemuck",
  "futures",
  "half",
+ "im",
+ "lumino-core",
+ "lumino-midi-loader",
  "puffin",
  "thiserror 2.0.18",
  "tracing",
@@ -3533,6 +3548,14 @@ dependencies = [
  "libc",
  "tracing",
  "winapi",
+]
+
+[[package]]
+name = "lumino-message"
+version = "0.1.0"
+dependencies = [
+ "iced_core",
+ "lumino-event",
 ]
 
 [[package]]
@@ -3567,6 +3590,18 @@ dependencies = [
  "tokio",
  "tracing",
  "zstd",
+]
+
+[[package]]
+name = "lumino-playback"
+version = "0.1.0"
+dependencies = [
+ "lumino-midi-io",
+ "lumino-midi-loader",
+ "midly",
+ "parking_lot",
+ "puffin",
+ "tracing",
 ]
 
 [[package]]
@@ -3632,10 +3667,13 @@ dependencies = [
  "image",
  "lumino-collaboration",
  "lumino-core",
+ "lumino-event",
  "lumino-gfx",
  "lumino-memory-monitor",
+ "lumino-message",
  "lumino-midi-io",
  "lumino-midi-loader",
+ "lumino-playback",
  "midly",
  "once_cell",
  "parking_lot",

@@ -385,11 +385,6 @@ impl Editor {
         if self.editor_state.data.redo() {
             self.grid_cache.clear();
             self.mark_notes_changed();
-            true
-        } else {
-            false
-        }
-    }
             tracing::info!("重做操作成功");
             true
         } else {

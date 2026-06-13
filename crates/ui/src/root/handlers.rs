@@ -294,7 +294,13 @@ impl Root {
             self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Editor;
         }
 
-        let scroll_animating = self.editor.editor_state.update_smooth_scroll();
+        let scroll_animating = {
+            let v = &mut self.editor.editor_state.view;
+            let (new_x, new_y, still_active) = v.smooth_scroll.update(v.scroll_x, v.scroll_y);
+            v.scroll_x = new_x;
+            v.scroll_y = new_y;
+            still_active
+        };
         if scroll_animating {
             self.editor
                 .invalidate_caches(crate::editor::CacheInvalidation::ALL);
@@ -431,9 +437,9 @@ impl Root {
 
         // 更新画布偏移
         let sidebar_width = self.sidebar.width() as f32;
-        let current_offset = self.editor.editor_state.canvas.offset;
+        let current_offset_y = self.editor.editor_state.canvas.offset_y;
         self.editor
-            .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset.y));
+            .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset_y));
 
         // 洋葱皮开关变化，使缓存失效
         if onion_skin_toggled {

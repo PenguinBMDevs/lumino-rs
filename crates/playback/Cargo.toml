@@ -9,6 +9,7 @@ edition.workspace = true
 [dependencies]
 lumino-midi-io = { workspace = true }
 lumino-midi-loader = { workspace = true }
+midly = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
 puffin = { workspace = true }

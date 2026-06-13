@@ -46,21 +46,10 @@ pub const DEFAULT_RULER_HEIGHT: f32 = 30.0;
 pub const TICKS_PER_MEASURE: u32 = 1920;
 /// 每拍 tick 数（480 PPQ）
 pub const TICKS_PER_BEAT: u32 = 480;
-/// 一个八度内的音符数
-pub const NOTES_PER_OCTAVE: isize = 12;
 /// FPS 更新间隔（毫秒）
 pub const FPS_UPDATE_INTERVAL_MS: u128 = 50;
 
 impl Host {
-    /// 判断指定琴键是否为黑键
-    ///
-    /// 钢琴键盘布局：每个八度有12个键，其中黑键位于第1, 3, 6, 8, 10位
-    ///（以C大调为例：C(白), C#(黑), D(白), D#(黑), E(白), F(白), F#(黑), G(白), G#(黑), A(白), A#(黑), B(白)）
-    #[inline]
-    pub(super) fn is_black_key(key_index: isize) -> bool {
-        let note_in_octave = key_index.rem_euclid(NOTES_PER_OCTAVE);
-        matches!(note_in_octave, 1 | 3 | 6 | 8 | 10)
-    }
 
     /// 主渲染入口
     ///

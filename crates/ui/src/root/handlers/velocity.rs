@@ -2,7 +2,7 @@
 //!
 //! 处理 VelocityAction 相关的消息（力度拖拽、曲线绘制、Tempo 编辑、CC 控制器切换等）。
 
-use crate::editor::velocity::widget::TempoPoint;
+use crate::editor::editor_state::TempoPoint;
 use crate::message::{Message, VelocityAction};
 use crate::root::Root;
 use crate::root::handlers::MessageHandler;

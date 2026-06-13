@@ -146,11 +146,11 @@ fn test_build_tempo_points_from_editor_data() {
     let mut editor = Editor::new();
     // 直接向 tempo_points 写入数据模拟已加载文档
     editor.editor_state.data.tempo_points = vec![
-        TempoPoint {
+        lumino_core::TempoPoint {
             tick: 0.0,
             bpm: 120.0,
         },
-        TempoPoint {
+        lumino_core::TempoPoint {
             tick: 480.0,
             bpm: 140.0,
         },

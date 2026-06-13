@@ -8,7 +8,6 @@ use std::sync::Arc;
 use crate::history::{EditorSnapshot, History};
 use crate::midi_types::{CcData, TempoPoint, VelocityPoint};
 use crate::note::Note;
-use crate::smooth_scroll::SmoothScrollAnimation;
 use crate::storage::config::{AutoScrollConfig, EraserBehavior, SelectionBoxMode};
 use crate::view_state::ViewState;
 use lumino_message::{AudioAction, Tool};
@@ -356,15 +355,54 @@ impl EditorData {
         tracing::debug!("编辑器: 已保存 {} 个音符到音轨 {}", self.notes.len(), self.current_track);
         Some(note)
     }
-}
 
-// ─── TempoPoint ───
+    /// 计算选择框内的音符索引
+    pub fn compute_selection(
+        &self,
+        start_tick: f32,
+        start_key: u16,
+        current_tick: f32,
+        current_key: u16,
+    ) -> HashSet<usize> {
+        let min_tick = start_tick.min(current_tick);
+        let max_tick = start_tick.max(current_tick);
+        let min_key = start_key.min(current_key);
+        let max_key = start_key.max(current_key);
+        let mut selected = HashSet::new();
+        for (i, note) in self.notes.iter().enumerate() {
+            let note_end = note.tick + note.length;
+            if note.key >= min_key
+                && note.key <= max_key
+                && note.tick < max_tick
+                && note_end > min_tick
+            {
+                selected.insert(i);
+            }
+        }
+        selected
+    }
 
-/// 速度控制点
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TempoPoint {
-    pub tick: f32,
-    pub bpm: f64,
+    /// 获取选择框内的音符索引列表
+    pub fn get_notes_in_selection_box(
+        &self,
+        start_tick: f32,
+        start_key: u16,
+        current_tick: f32,
+        current_key: u16,
+    ) -> Vec<usize> {
+        let ts = start_tick.min(current_tick);
+        let te = start_tick.max(current_tick);
+        let km = start_key.min(current_key);
+        let kx = start_key.max(current_key);
+        let mut r = Vec::new();
+        for (i, n) in self.notes.iter().enumerate() {
+            let ne = n.tick + n.length;
+            if n.key >= km && n.key <= kx && n.tick < te && ne > ts {
+                r.push(i);
+            }
+        }
+        r
+    }
 }
 
 // ─── EditorState（完整编辑器状态） ───
@@ -394,7 +432,7 @@ impl EditorState {
             canvas: CanvasState::default(),
             interaction: InteractionState::default(),
             data: EditorData::new(),
-            tool: super::Tool::Pointer,
+            tool: Tool::Pointer,
             auto_scroll: AutoScrollConfig::default(),
         }
     }
@@ -510,54 +548,6 @@ impl EditorState {
         if orr && !ol { return Some(SelectionHitType::RightEdge); }
         Some(SelectionHitType::Inside)
     }
-
-    /// 计算选择框内的音符索引
-    pub fn compute_selection(
-        &self,
-        start_tick: f32,
-        start_key: u16,
-        current_tick: f32,
-        current_key: u16,
-    ) -> HashSet<usize> {
-        let min_tick = start_tick.min(current_tick);
-        let max_tick = start_tick.max(current_tick);
-        let min_key = start_key.min(current_key);
-        let max_key = start_key.max(current_key);
-        let mut selected = HashSet::new();
-        for (i, note) in self.notes.iter().enumerate() {
-            let note_end = note.tick + note.length;
-            if note.key >= min_key
-                && note.key <= max_key
-                && note.tick < max_tick
-                && note_end > min_tick
-            {
-                selected.insert(i);
-            }
-        }
-        selected
-    }
-
-    /// 获取选择框内的音符索引列表
-    pub fn get_notes_in_selection_box(
-        &self,
-        start_tick: f32,
-        start_key: u16,
-        current_tick: f32,
-        current_key: u16,
-    ) -> Vec<usize> {
-        let ts = start_tick.min(current_tick);
-        let te = start_tick.max(current_tick);
-        let km = start_key.min(current_key);
-        let kx = start_key.max(current_key);
-        let mut r = Vec::new();
-        for (i, n) in self.notes.iter().enumerate() {
-            let ne = n.tick + n.length;
-            if n.key >= km && n.key <= kx && n.tick < te && ne > ts {
-                r.push(i);
-            }
-        }
-        r
-    }
 }
 
 impl EditorState {
@@ -670,6 +660,3 @@ impl EditorState {
         }
     }
 }
-
-// Re-export Tool
-pub use crate::Tool;

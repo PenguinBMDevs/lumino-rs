@@ -45,8 +45,8 @@ impl Host {
                 logical_size: self.render_ctx.viewport.logical_size(),
                 physical_size: (phys.width, phys.height),
                 scale: self.render_ctx.viewport.scale_factor(),
-                canvas_offset: es.canvas.offset,
-                canvas_size: es.canvas.size,
+                canvas_offset: iced_core::Point::new(es.canvas.offset_x, es.canvas.offset_y),
+                canvas_size: iced_core::Point::new(es.canvas.size_x, es.canvas.size_y),
             }
         }
     }

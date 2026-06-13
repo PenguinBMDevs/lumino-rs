@@ -2,7 +2,7 @@ use super::CacheInvalidation;
 use crate::constants::editor::zoom::{MAX_ZOOM_X, MAX_ZOOM_Y, MIN_ZOOM_X, MIN_ZOOM_Y};
 
 impl super::Editor {
-    // 滚动控制 �?全部委托�?editor_state
+    // 滚动控制 — 全部委托给 editor_state
 
     pub fn set_max_scroll_x(&mut self, max_scroll: f32) {
         self.editor_state.max_scroll.0 = max_scroll;

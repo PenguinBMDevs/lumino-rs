@@ -1,6 +1,7 @@
 //! 拖动和调整大小操作
 
 use super::{EditState, Editor};
+use iced_core::Point;
 
 impl Editor {
     /// 检查是否应从 PendingDrag 转换到 Dragging 状态
@@ -15,12 +16,12 @@ impl Editor {
             return;
         };
 
-        if !self.should_start_dragging(pos, start_pos) {
+        if !self.should_start_dragging(pos, Point::new(start_pos.0, start_pos.1)) {
             return;
         }
 
-        let tick = self.x_to_tick(start_pos.x);
-        let key = self.y_to_key(start_pos.y);
+        let tick = self.x_to_tick(start_pos.0);
+        let key = self.y_to_key(start_pos.1);
         self.push_history();
         // 更新 editor_state
         self.editor_state.interaction.edit_state = EditState::Dragging {
