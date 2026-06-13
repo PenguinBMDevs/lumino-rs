@@ -159,15 +159,41 @@ fn render_xsynth_options<'a>(
             write!(f, "{}", self.1)
         }
     }
+    fn voice_name(value: Option<usize>, lang: lumino_core::i18n::Language) -> &'static str {
+        match lang {
+            lumino_core::i18n::Language::ZhCn => match value {
+                Some(1) => "1 (极保守)",
+                Some(2) => "2",
+                Some(4) => "4 (默认)",
+                Some(8) => "8",
+                Some(16) => "16 (推荐)",
+                Some(32) => "32",
+                Some(64) => "64 (密集)",
+                None => "不限制",
+                _ => "",
+            },
+            lumino_core::i18n::Language::EnUs => match value {
+                Some(1) => "1 (Conservative)",
+                Some(2) => "2",
+                Some(4) => "4 (Default)",
+                Some(8) => "8",
+                Some(16) => "16 (Recommended)",
+                Some(32) => "32",
+                Some(64) => "64 (Dense)",
+                None => "Unlimited",
+                _ => "",
+            },
+        }
+    }
     let voice_options = [
-        VoiceOption(Some(1), "1 (极保守)"),
-        VoiceOption(Some(2), "2"),
-        VoiceOption(Some(4), "4 (默认)"),
-        VoiceOption(Some(8), "8"),
-        VoiceOption(Some(16), "16 (推荐)"),
-        VoiceOption(Some(32), "32"),
-        VoiceOption(Some(64), "64 (密集)"),
-        VoiceOption(None, "不限制"),
+        VoiceOption(Some(1), voice_name(Some(1), settings.language)),
+        VoiceOption(Some(2), voice_name(Some(2), settings.language)),
+        VoiceOption(Some(4), voice_name(Some(4), settings.language)),
+        VoiceOption(Some(8), voice_name(Some(8), settings.language)),
+        VoiceOption(Some(16), voice_name(Some(16), settings.language)),
+        VoiceOption(Some(32), voice_name(Some(32), settings.language)),
+        VoiceOption(Some(64), voice_name(Some(64), settings.language)),
+        VoiceOption(None, voice_name(None, settings.language)),
     ];
     let current_voice = voice_options
         .iter()

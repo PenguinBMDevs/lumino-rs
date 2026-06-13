@@ -1,6 +1,5 @@
 //! 设置页面 - 界面设置
 
-use crate::theme::HIGH_CONTRAST_DISPLAY;
 use crate::{Element, Message, Theme};
 use iced_core::Alignment;
 use iced_widget::{button, column, pick_list, row, text, text_input};
@@ -11,6 +10,27 @@ use crate::settings::SettingsPanel;
 use crate::window;
 use lumino_core::i18n::{Language, settings_translations};
 use lumino_core::storage::config::SelectionBoxMode;
+
+/// 本地化主题选项（显示名 vs 规范标识符）
+#[derive(Debug, Clone)]
+struct ThemeOption {
+    display: String,
+    value: String,
+}
+
+impl std::fmt::Display for ThemeOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display)
+    }
+}
+
+impl PartialEq for ThemeOption {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl Eq for ThemeOption {}
 
 /// 本地化框选框模式包装
 #[derive(Debug, Clone, Copy)]
@@ -64,9 +84,19 @@ pub fn view<'a>(
     };
 
     // 主题选项（在 Iced 内置主题前插入高对比度选项）
-    let mut theme_options: Vec<String> = vec![HIGH_CONTRAST_DISPLAY.to_string()];
-    theme_options.extend(Theme::ALL.iter().map(|t| t.to_string()));
-    let current_theme = window.theme.to_string();
+    let hc_canonical = crate::theme::HIGH_CONTRAST_DISPLAY;
+    let mut theme_options: Vec<ThemeOption> = vec![ThemeOption {
+        display: t.high_contrast.to_string(),
+        value: hc_canonical.to_string(),
+    }];
+    theme_options.extend(Theme::ALL.iter().map(|t| ThemeOption {
+        display: t.to_string(),
+        value: t.to_string(),
+    }));
+    let current_theme = ThemeOption {
+        display: window.theme.to_string(),
+        value: window.theme.to_string(),
+    };
 
     // 字体选项 - 从系统扫描的字体列表构建
     let font_options: Vec<String> = system_fonts.iter().map(|f| f.name.clone()).collect();
@@ -147,8 +177,8 @@ pub fn view<'a>(
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            pick_list(theme_options, Some(current_theme), |theme| {
-                Message::Window(window::Event::Theme(theme))
+            pick_list(theme_options, Some(current_theme), |to| {
+                Message::Window(window::Event::Theme(to.value))
             })
             .width(200.0),
         ]

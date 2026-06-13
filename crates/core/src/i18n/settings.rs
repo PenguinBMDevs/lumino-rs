@@ -79,6 +79,8 @@ pub struct SettingsTranslations {
     pub app_name: &'static str,
     pub version: &'static str,
     pub app_description: &'static str,
+    /// 高对比度主题显示名称
+    pub high_contrast: &'static str,
 }
 
 static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -143,6 +145,7 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     app_name: "Lumino",
     version: "版本 1.0.0",
     app_description: "一个高效的MIDI编辑工具",
+    high_contrast: "高对比度",
 };
 
 static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -207,6 +210,7 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     app_name: "Lumino",
     version: "Version 1.0.0",
     app_description: "An efficient MIDI editor",
+    high_contrast: "High Contrast",
 };
 
 /// 获取设置面板翻译
