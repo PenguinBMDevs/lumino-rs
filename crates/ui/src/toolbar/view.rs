@@ -11,6 +11,36 @@ use lumino_core::i18n::Language;
 
 use super::Toolbar;
 
+/// 本地化音符精度包装（支持按语言显示名称）
+#[derive(Debug, Clone, Copy)]
+struct LocalizedPrecision {
+    inner: NotePrecision,
+    name: &'static str,
+}
+
+impl PartialEq for LocalizedPrecision {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for LocalizedPrecision {}
+
+impl std::fmt::Display for LocalizedPrecision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl LocalizedPrecision {
+    fn new(precision: NotePrecision, lang: Language) -> Self {
+        Self {
+            inner: precision,
+            name: lumino_core::i18n::note_precision_name(precision, lang),
+        }
+    }
+}
+
 impl Toolbar {
     /// 渲染工具栏视图
     pub fn view<'a>(
@@ -246,22 +276,24 @@ impl Toolbar {
         .into();
 
         // 精度设置区域
-        let precision_options: Vec<NotePrecision> = NotePrecision::presets()
+        let precision_options: Vec<LocalizedPrecision> = NotePrecision::presets()
             .iter()
             .copied()
             .chain(std::iter::once(NotePrecision::Custom))
+            .map(|p| LocalizedPrecision::new(p, language))
             .collect();
+        let current_precision = LocalizedPrecision::new(self.note_precision, language);
 
         let precision_selector = container(
             row![
                 text(t.precision_label).size(14),
                 space().width(8),
-                pick_list(precision_options, Some(self.note_precision), |precision| {
-                    if precision == NotePrecision::Custom {
+                pick_list(precision_options, Some(current_precision), |lp| {
+                    if lp.inner == NotePrecision::Custom {
                         // 选择自定义时，发送消息到Root打开对话框
                         Message::OpenCustomPrecisionDialog
                     } else {
-                        Event::precision_changed(precision)
+                        Event::precision_changed(lp.inner)
                     }
                 },)
                 .placeholder(t.precision_placeholder)

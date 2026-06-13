@@ -6,6 +6,36 @@ use crate::message::Message;
 use crate::state::root_state::CustomPrecisionDialogState;
 use crate::toolbar::DotType;
 
+/// 本地化符点类型包装（支持按语言显示名称）
+#[derive(Debug, Clone, Copy)]
+struct LocalizedDotType {
+    inner: DotType,
+    name: &'static str,
+}
+
+impl PartialEq for LocalizedDotType {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for LocalizedDotType {}
+
+impl std::fmt::Display for LocalizedDotType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl LocalizedDotType {
+    fn new(dot_type: DotType, lang: Language) -> Self {
+        Self {
+            inner: dot_type,
+            name: lumino_core::i18n::dot_type_name(dot_type, lang),
+        }
+    }
+}
+
 /// 渲染自定义精度对话框
 pub fn view_custom_precision_dialog<'a>(
     state: &'a CustomPrecisionDialogState,
@@ -30,6 +60,14 @@ pub fn view_custom_precision_dialog<'a>(
     // 当符点类型为（无）时，禁用三连音数量输入框
     let is_tuplet_disabled = state.dot_type == DotType::None;
 
+    // 本地化符点下拉选项
+    let dot_options: Vec<LocalizedDotType> = DotType::all()
+        .iter()
+        .copied()
+        .map(|d| LocalizedDotType::new(d, language))
+        .collect();
+    let current_dot = LocalizedDotType::new(state.dot_type, language);
+
     let first_row = row![
         // 三连音数量输入框
         container(
@@ -46,11 +84,9 @@ pub fn view_custom_precision_dialog<'a>(
         .style(input_style),
         space().width(8),
         // 符点类型下拉框
-        pick_list(
-            DotType::all(),
-            Some(state.dot_type),
-            Message::CustomPrecisionDotTypeChanged,
-        )
+        pick_list(dot_options, Some(current_dot), |ld| {
+            Message::CustomPrecisionDotTypeChanged(ld.inner)
+        })
         .padding([6, 8])
         .width(Length::Fixed(100.0)),
         space().width(8),

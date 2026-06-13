@@ -259,6 +259,54 @@ static ENUS_MAIN: MainTranslations = MainTranslations {
     project_cancel: "Cancel",
 };
 
+/// 获取音符精度名称（按语言）
+pub fn note_precision_name(precision: lumino_message::NotePrecision, lang: Language) -> &'static str {
+    use lumino_message::NotePrecision::*;
+    match lang {
+        Language::ZhCn => match precision {
+            Whole => "全音符",
+            Half => "二分音符",
+            Quarter => "四分音符",
+            Eighth => "八分音符",
+            Sixteenth => "十六分音符",
+            ThirtySecond => "三十二分音符",
+            SixtyFourth => "六十四分音符",
+            OneTwentyEighth => "128分音符",
+            Custom => "自定义",
+        },
+        Language::EnUs => match precision {
+            Whole => "Whole Note",
+            Half => "Half Note",
+            Quarter => "Quarter Note",
+            Eighth => "Eighth Note",
+            Sixteenth => "Sixteenth Note",
+            ThirtySecond => "32nd Note",
+            SixtyFourth => "64th Note",
+            OneTwentyEighth => "128th Note",
+            Custom => "Custom",
+        },
+    }
+}
+
+/// 获取符点类型名称（按语言）
+pub fn dot_type_name(dot_type: lumino_message::DotType, lang: Language) -> &'static str {
+    use lumino_message::DotType::*;
+    match lang {
+        Language::ZhCn => match dot_type {
+            None => "（无）",
+            Tuplet => "连音符",
+            Single => "符点",
+            Double => "双符点",
+        },
+        Language::EnUs => match dot_type {
+            None => "(None)",
+            Tuplet => "Tuplet",
+            Single => "Dotted",
+            Double => "Double Dotted",
+        },
+    }
+}
+
 /// 获取主界面翻译
 pub fn get(lang: Language) -> &'static MainTranslations {
     match lang {

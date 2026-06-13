@@ -44,6 +44,19 @@ pub fn main_translations(lang: Language) -> &'static MainTranslations {
     main::get(lang)
 }
 
+/// 获取音符精度名称（按语言）
+pub fn note_precision_name(
+    precision: lumino_message::NotePrecision,
+    lang: Language,
+) -> &'static str {
+    main::note_precision_name(precision, lang)
+}
+
+/// 获取符点类型名称（按语言）
+pub fn dot_type_name(dot_type: lumino_message::DotType, lang: Language) -> &'static str {
+    main::dot_type_name(dot_type, lang)
+}
+
 /// 获取设置面板翻译
 pub fn settings_translations(lang: Language) -> &'static SettingsTranslations {
     settings::get(lang)
