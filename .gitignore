@@ -90,3 +90,6 @@ cache/
 .dirty
 
 daemon.pid
+
+# macOS
+.DS_Store

@@ -158,7 +158,7 @@ impl Runner {
         event_loop.set_control_flow(ControlFlow::Wait);
 
         #[cfg(target_os = "macos")]
-        if let Err(e) = crate::platform::macos::init() {
+        if let Err(e) = crate::platform::macos::init(config.ui.language) {
             tracing::error!("Failed to init macOS menu: {:?}", e);
         }
 
