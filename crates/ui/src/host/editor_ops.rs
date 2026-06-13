@@ -92,6 +92,11 @@ impl Host {
                 .data
                 .track_notes
                 .insert(track_idx, track_notes);
+            self.root
+                .editor
+                .editor_state
+                .data
+                .mark_track_notes_changed();
             self.root.invalidate_onion_skin_cache();
         }
 

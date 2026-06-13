@@ -282,7 +282,10 @@ static ENUS_MAIN: MainTranslations = MainTranslations {
 };
 
 /// 获取音符精度名称（按语言）
-pub fn note_precision_name(precision: lumino_message::NotePrecision, lang: Language) -> &'static str {
+pub fn note_precision_name(
+    precision: lumino_message::NotePrecision,
+    lang: Language,
+) -> &'static str {
     use lumino_message::NotePrecision::*;
     match lang {
         Language::ZhCn => match precision {

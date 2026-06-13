@@ -83,6 +83,7 @@ impl Root {
             .data
             .track_notes
             .insert(track_idx, track_notes);
+        self.editor.editor_state.data.mark_track_notes_changed();
         self.editor
             .spatial
             .track_note_indices

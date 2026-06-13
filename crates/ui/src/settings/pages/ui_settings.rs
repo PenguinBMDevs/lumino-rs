@@ -297,7 +297,10 @@ pub fn view<'a>(
                     LocalizedSelectionBox::new(SelectionBoxMode::Direct, settings.language),
                     LocalizedSelectionBox::new(SelectionBoxMode::Spring, settings.language),
                 ],
-                Some(LocalizedSelectionBox::new(settings.selection_box_mode, settings.language)),
+                Some(LocalizedSelectionBox::new(
+                    settings.selection_box_mode,
+                    settings.language
+                )),
                 |ls| Message::Settings(crate::settings::Event::SelectionBoxModeChanged(ls.inner)),
             )
             .width(200.0),

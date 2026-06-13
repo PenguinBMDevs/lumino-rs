@@ -19,6 +19,7 @@
 //!     │                             │                       ├─ upload to OnionRenderer
 //!     │                             │                       ├─ compute cull + draw
 
+use std::collections::HashMap;
 use std::sync::{Arc, mpsc};
 use std::thread;
 
@@ -35,6 +36,11 @@ use lumino_midi_loader::constants::TICK_SEARCH_BUFFER;
 /// visible_tick_start/end 已被 collect_onion_notes 用于视口裁剪。
 /// 其余 NDC 坐标字段（scroll_x..max_key_index）和 key 范围字段预留
 /// 供后续 GPU cull shader 的坐标计算使用，当前 cpu 侧裁剪尚未接入。
+///
+/// == 零拷贝设计 ==
+/// `track_notes` 使用 `Arc<HashMap<...>>` 而非裸 HashMap，由 Host 的
+/// `RenderCache::get_or_create_track_notes_arc` 负责缓存。仅在
+/// `EditorData.track_notes_gen` 变化时重建 Arc，其余帧直接 O(1) clone Arc。
 #[expect(dead_code)]
 pub(crate) struct OnionSkinComputationSnapshot {
     // 视口参数（用于洋葱皮过滤与 NDC 坐标计算）
@@ -56,11 +62,11 @@ pub(crate) struct OnionSkinComputationSnapshot {
     pub max_key_index: f32,
     // 洋葱皮数据
     pub onion_skin_enabled: bool,
-    pub track_onion_states: std::collections::HashMap<usize, bool>,
+    pub track_onion_states: HashMap<usize, bool>,
     pub current_track: usize,
     pub document: Option<Arc<MidiDocument>>,
-    /// 用户手动编辑的音轨音符缓存（用于无 MIDI 或用户编辑过的音轨）
-    pub track_notes: std::collections::HashMap<usize, im::Vector<crate::editor::note::Note>>,
+    /// 用户手动编辑的音轨音符缓存（Arc 零拷贝共享，仅在 gen 变化时重建）
+    pub track_notes: Arc<HashMap<usize, im::Vector<crate::editor::note::Note>>>,
 }
 
 /// 发送给 NoteWorker 的作业
@@ -134,7 +140,7 @@ impl NoteWorker {
                 &snapshot.track_onion_states,
                 snapshot.visible_tick_start,
                 snapshot.visible_tick_end,
-                &snapshot.track_notes,
+                &snapshot.track_notes, // Arc 自动 deref 到 HashMap
             );
 
             {

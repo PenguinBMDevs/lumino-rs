@@ -140,6 +140,9 @@ pub struct EditorData {
     pub notes: im::Vector<Note>,
     pub current_track: usize,
     pub track_notes: HashMap<usize, im::Vector<Note>>,
+    /// 递增版本号，track_notes 每次变化时 bump。
+    /// 用于 NoteWorker 快照的 Arc 缓存失效检测，避免每帧全量克隆 HashMap。
+    pub track_notes_gen: u64,
     pub document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     pub history: History,
     pub cc_data: CcData,
@@ -158,6 +161,7 @@ impl EditorData {
             notes: im::Vector::new(),
             current_track: 0,
             track_notes: HashMap::new(),
+            track_notes_gen: 0,
             document: None,
             history: History::new(),
             cc_data: CcData::default(),
@@ -168,10 +172,20 @@ impl EditorData {
         }
     }
 
+    /// 标记 track_notes 已变化（递增版本号）
+    ///
+    /// 所有直接修改 `self.track_notes` 的地方都必须在操作后调用此方法，
+    /// 否则 NoteWorker 快照缓存无法感知数据变化。
+    #[inline]
+    pub fn mark_track_notes_changed(&mut self) {
+        self.track_notes_gen = self.track_notes_gen.wrapping_add(1);
+    }
+
     /// 重置编辑器数据到初始状态（释放所有内存）
     pub fn reset(&mut self) {
         self.notes.clear();
         self.track_notes.clear();
+        self.mark_track_notes_changed();
         self.current_track = 0;
         self.history.clear();
         self.document = None;
@@ -226,6 +240,7 @@ impl EditorData {
             self.track_notes
                 .insert(self.current_track, self.notes.clone());
         }
+        self.mark_track_notes_changed();
     }
 
     // ── 音符操作 ──
@@ -374,6 +389,7 @@ impl EditorData {
         self.notes.push_back(note.clone());
         self.track_notes
             .insert(self.current_track, self.notes.clone());
+        self.mark_track_notes_changed();
         tracing::debug!(
             "编辑器: 已保存 {} 个音符到音轨 {}",
             self.notes.len(),

@@ -110,17 +110,19 @@ impl Host {
 
         // ═══ Phase 2: 洋葱皮异步派发（独立 buffer，不碰主音符） ═══
         self.ensure_note_worker();
+
+        // 收集快照（需要 &mut self）必须在借用 worker 之前完成
+        let vp_logical = self.render_ctx.viewport.logical_size();
+        let os_snapshot = self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));
+        let onion_note_buffer =
+            std::sync::Arc::clone(&self.render_ctx.render_cache.onion_note_buffer);
+
         if let Some(ref worker) = self.render_ctx.note_worker {
-            let vp_logical = self.render_ctx.viewport.logical_size();
-            let os_snapshot =
-                self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));
             let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
 
             worker.send(super::note_worker::OnionSkinJob {
                 snapshot: os_snapshot,
-                onion_note_buffer: std::sync::Arc::clone(
-                    &self.render_ctx.render_cache.onion_note_buffer,
-                ),
+                onion_note_buffer,
                 done_tx: Some(done_tx),
             });
 

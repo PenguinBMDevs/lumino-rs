@@ -3,8 +3,8 @@
 //! 提供类型安全的多语言翻译，支持简体中文和 English。
 //! 所有翻译字符串集中在此模块管理，避免散落在 UI 代码中。
 
-pub mod settings;
 pub mod main;
+pub mod settings;
 
 pub use main::MainTranslations;
 pub use settings::SettingsTranslations;

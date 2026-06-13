@@ -1,11 +1,21 @@
 //! 洋葱皮数据快照收集 — 在主线程快速快照编辑状态，发送给 NoteWorker
+//!
+//! == 零拷贝优化 ==
+//! `track_notes` 使用 Arc 缓存（`RenderCache::get_or_create_track_notes_arc`），
+//! 仅在 `EditorData.track_notes_gen` 变化时重建 Arc，其余帧直接 O(1) clone Arc。
+//! `document` 本身已是 `Arc<MidiDocument>`，clone 也是 O(1)。
 
 use crate::host::Host;
 
 impl Host {
-    /// 收集洋葱皮计算所需的数据快照（非阻塞，O(1) 级别开销）
+    /// 收集洋葱皮计算所需的数据快照
+    ///
+    /// # 零拷贝设计
+    /// - `track_notes` 通过 `RenderCache` 的 Arc 缓存实现，不在本帧全量克隆 HashMap
+    /// - `document` 为 `Arc<MidiDocument>`，clone 仅递增引用计数
+    /// - 视口参数为 float 标量复制，无内存分配
     pub(super) fn collect_onion_skin_snapshot(
-        &self,
+        &mut self,
         viewport_logical_size: (f32, f32),
     ) -> super::note_worker::OnionSkinComputationSnapshot {
         let editor = &self.root.editor;
@@ -30,6 +40,12 @@ impl Host {
         let visible_key_max = key_top_f32.ceil() as u16 + 1;
         let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1);
 
+        // 通过 RenderCache 获取零拷贝 Arc，避免每帧全量克隆 HashMap
+        let track_notes_arc = self
+            .render_ctx
+            .render_cache
+            .get_or_create_track_notes_arc(&es.data.track_notes, es.data.track_notes_gen);
+
         super::note_worker::OnionSkinComputationSnapshot {
             // 视口参数（用于瓦片过滤）
             visible_tick_start,
@@ -53,7 +69,7 @@ impl Host {
             track_onion_states: self.root.sidebar.get_onion_skin_states(),
             current_track: es.data.current_track,
             document: es.data.document.clone(),
-            track_notes: es.data.track_notes.clone(),
+            track_notes: track_notes_arc,
         }
     }
 }

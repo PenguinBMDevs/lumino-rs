@@ -416,17 +416,19 @@ impl Host {
         // 发送给 NoteWorker 后台计算，完成后 swap
         if note_data_changed || onion_viewport_changed {
             self.ensure_note_worker();
+
+            // 收集快照（需要 &mut self）必须在借用 worker 之前完成
+            let vp_logical = self.render_ctx.viewport.logical_size();
+            let os_snapshot =
+                self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));
+            let onion_note_buffer =
+                std::sync::Arc::clone(&self.render_ctx.render_cache.onion_note_buffer);
+
             if let Some(ref worker) = self.render_ctx.note_worker {
                 puffin::profile_scope!("dispatch_onion_skin_job");
-                let vp_logical = self.render_ctx.viewport.logical_size();
-                let os_snapshot =
-                    self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));
-
                 worker.send(super::note_worker::OnionSkinJob {
                     snapshot: os_snapshot,
-                    onion_note_buffer: std::sync::Arc::clone(
-                        &self.render_ctx.render_cache.onion_note_buffer,
-                    ),
+                    onion_note_buffer,
                     done_tx: None,
                 });
                 self.render_ctx.render_cache.onion_viewport_hash = current_onion_hash;
