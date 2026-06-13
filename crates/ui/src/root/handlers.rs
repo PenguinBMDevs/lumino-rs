@@ -295,10 +295,14 @@ impl Root {
         }
 
         let scroll_animating = {
-            let v = &mut self.editor.editor_state.view;
+            let state = &mut self.editor.editor_state;
+            let v = &mut state.view;
             let (new_x, new_y, still_active) = v.smooth_scroll.update(v.scroll_x, v.scroll_y);
-            v.scroll_x = new_x;
-            v.scroll_y = new_y;
+            // 钳制到有效滚动范围，防止平滑滚动超出键盘/音轨边界
+            let max_y = (state.max_scroll.1 - (state.canvas.size_y - v.ruler_height).max(0.0)).max(0.0);
+            let max_x = (state.max_scroll.0 - (state.canvas.size_x - v.keyboard_width).max(0.0)).max(0.0);
+            v.scroll_x = new_x.clamp(0.0, max_x);
+            v.scroll_y = new_y.clamp(0.0, max_y);
             still_active
         };
         if scroll_animating {
