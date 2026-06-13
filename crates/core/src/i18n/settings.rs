@@ -143,7 +143,7 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     shortcuts_placeholder: "快捷键设置内容",
     about_title: "关于",
     app_name: "Lumino",
-    version: "版本 1.0.0",
+    version: "版本 0.1.1-dev",
     app_description: "一个高效的MIDI编辑工具",
     high_contrast: "高对比度",
 };
@@ -208,7 +208,7 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     shortcuts_placeholder: "Shortcut settings content",
     about_title: "About",
     app_name: "Lumino",
-    version: "Version 1.0.0",
+    version: "Version 0.1.1-dev",
     app_description: "An efficient MIDI editor",
     high_contrast: "High Contrast",
 };

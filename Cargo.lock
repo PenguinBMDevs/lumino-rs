@@ -3431,7 +3431,7 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "lumino-collaboration"
-version = "0.1.0"
+version = "0.1.1-dev"
 dependencies = [
  "chrono",
  "futures",
@@ -3452,7 +3452,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-core"
-version = "0.1.0"
+version = "0.1.1-dev"
 dependencies = [
  "chrono",
  "font-kit",
@@ -3472,7 +3472,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-dms"
-version = "0.1.0"
+version = "0.1.1-dev"
 dependencies = [
  "bytes",
  "encoding_rs",
@@ -3486,7 +3486,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-event"
-version = "0.1.0"
+version = "0.1.1-dev"
 dependencies = [
  "lumino-midi-loader",
  "tracing",
@@ -3494,7 +3494,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-export"
-version = "0.1.0"
+version = "0.1.1-dev"
 dependencies = [
  "atomic_float",
  "bincode",
@@ -3526,7 +3526,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-gfx"
-version = "0.1.0"
+version = "0.1.1-dev"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -3543,7 +3543,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-memory-monitor"
-version = "0.1.0"
+version = "0.1.1-dev"
 dependencies = [
  "libc",
  "tracing",
@@ -3552,7 +3552,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-message"
-version = "0.1.0"
+version = "0.1.1-dev"
 dependencies = [
  "iced_core",
  "lumino-event",
@@ -3560,7 +3560,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-midi-io"
-version = "0.1.0"
+version = "0.1.1-dev"
 dependencies = [
  "libloading 0.9.0",
  "midir",
@@ -3574,7 +3574,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-midi-loader"
-version = "0.1.0"
+version = "0.1.1-dev"
 dependencies = [
  "bincode",
  "encoding_rs",
@@ -3594,7 +3594,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-playback"
-version = "0.1.0"
+version = "0.1.1-dev"
 dependencies = [
  "lumino-midi-io",
  "lumino-midi-loader",
@@ -3606,7 +3606,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-rs"
-version = "0.1.0"
+version = "0.1.1-dev"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -3653,7 +3653,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-ui"
-version = "0.1.0"
+version = "0.1.1-dev"
 dependencies = [
  "anyhow",
  "arboard",
