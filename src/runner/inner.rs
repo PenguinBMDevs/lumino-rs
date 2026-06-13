@@ -288,8 +288,8 @@ impl RunnerInner {
         current_theme: &str,
     ) -> Option<ConfigDiff> {
         let theme_changed = current_theme != old.theme;
-        let synth_changed = new.synth_backend != old.preferred_backend
-            || new.soundfont_path != old.soundfont_path;
+        let synth_changed =
+            new.synth_backend != old.preferred_backend || new.soundfont_path != old.soundfont_path;
         let xsynth_changed = new.xsynth_buffer_ms != old.xsynth_buffer_ms
             || new.xsynth_sample_rate != old.xsynth_sample_rate
             || new.xsynth_threads != old.xsynth_threads
@@ -307,7 +307,13 @@ impl RunnerInner {
             || new.icon_hidpi != old.icon_hidpi
             || new.enable_256key != old.enable_256key;
 
-        if theme_changed || synth_changed || xsynth_changed || titlebar_changed || font_changed || other_changed {
+        if theme_changed
+            || synth_changed
+            || xsynth_changed
+            || titlebar_changed
+            || font_changed
+            || other_changed
+        {
             Some(ConfigDiff {
                 synth_changed,
                 xsynth_changed,

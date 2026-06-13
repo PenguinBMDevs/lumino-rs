@@ -393,7 +393,10 @@ mod tests {
 
     #[test]
     fn test_audio_action_play_note() {
-        let action = AudioAction::PlayNote { key: 60, velocity: 100 };
+        let action = AudioAction::PlayNote {
+            key: 60,
+            velocity: 100,
+        };
         assert!(matches!(action, AudioAction::PlayNote { key: 60, .. }));
     }
 

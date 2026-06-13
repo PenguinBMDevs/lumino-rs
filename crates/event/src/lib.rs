@@ -118,8 +118,14 @@ mod tests {
 
         let events = take_events();
         assert_eq!(events.len(), 2);
-        assert!(matches!(events[0], Event::Menu(menu::Event::File(menu::file::Event::New))));
-        assert!(matches!(events[1], Event::Menu(menu::Event::Edit(menu::edit::Event::Undo))));
+        assert!(matches!(
+            events[0],
+            Event::Menu(menu::Event::File(menu::file::Event::New))
+        ));
+        assert!(matches!(
+            events[1],
+            Event::Menu(menu::Event::Edit(menu::edit::Event::Undo))
+        ));
 
         // 取出后缓冲区应为空
         let empty = take_events();
@@ -139,23 +145,41 @@ mod tests {
     fn test_event_constructors() {
         // Menu constructors
         let e = Event::menu_file(menu::file::Event::Open);
-        assert!(matches!(e, Event::Menu(menu::Event::File(menu::file::Event::Open))));
+        assert!(matches!(
+            e,
+            Event::Menu(menu::Event::File(menu::file::Event::Open))
+        ));
 
         let e = Event::menu_edit(menu::edit::Event::Copy);
-        assert!(matches!(e, Event::Menu(menu::Event::Edit(menu::edit::Event::Copy))));
+        assert!(matches!(
+            e,
+            Event::Menu(menu::Event::Edit(menu::edit::Event::Copy))
+        ));
 
         let e = Event::menu_view(menu::view::Event::ZoomIn);
-        assert!(matches!(e, Event::Menu(menu::Event::View(menu::view::Event::ZoomIn))));
+        assert!(matches!(
+            e,
+            Event::Menu(menu::Event::View(menu::view::Event::ZoomIn))
+        ));
 
         let e = Event::menu_help(menu::help::Event::About);
-        assert!(matches!(e, Event::Menu(menu::Event::Help(menu::help::Event::About))));
+        assert!(matches!(
+            e,
+            Event::Menu(menu::Event::Help(menu::help::Event::About))
+        ));
 
         // Window constructors
         let e = Event::window(window::Event::drag());
-        assert!(matches!(e, Event::Window(window::Event::Lifecycle(window::lifecycle::Event::Drag))));
+        assert!(matches!(
+            e,
+            Event::Window(window::Event::Lifecycle(window::lifecycle::Event::Drag))
+        ));
 
         let e = Event::window(window::Event::close());
-        assert!(matches!(e, Event::Window(window::Event::Lifecycle(window::lifecycle::Event::Close))));
+        assert!(matches!(
+            e,
+            Event::Window(window::Event::Lifecycle(window::lifecycle::Event::Close))
+        ));
     }
 
     #[test]

@@ -7,22 +7,25 @@ use iced_widget::{column, pick_list, row, text};
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::settings::SettingsPanel;
+use lumino_core::i18n::settings_translations;
 use lumino_core::storage::config::EraserBehavior;
 
 /// 渲染常规设置页面
 pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
+    let t = settings_translations(settings.language);
+
     // 橡皮擦行为选项
     let eraser_options = vec![EraserBehavior::Default, EraserBehavior::DirectSelect];
     let current_eraser = settings.eraser_behavior;
 
     column![
-        text("常规")
+        text(t.general_title)
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
         iced_widget::space().height(20),
         // 橡皮擦行为选择
         row![
-            text("橡皮擦行为:")
+            text(t.eraser_behavior)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
@@ -34,7 +37,10 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
-        text("默认: Shift+拖动框选删除，点击删除单个\n直接框选: 拖动框选删除，Shift+点击删除单个")
+        text(t.eraser_default_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+        text(t.eraser_direct_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
     ]

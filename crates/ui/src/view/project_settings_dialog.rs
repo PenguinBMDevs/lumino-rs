@@ -1,5 +1,6 @@
 use iced_core::Length;
 use iced_widget::{button, column, container, row, scrollable, space, text, text_input};
+use lumino_core::i18n::{Language, main_translations};
 
 use crate::message::Message;
 use crate::state::root_state::ProjectSettingsDialogState;
@@ -8,7 +9,9 @@ use crate::state::root_state::ProjectSettingsDialogState;
 pub fn view_project_settings_dialog<'a>(
     state: &'a ProjectSettingsDialogState,
     theme: &'a iced_core::Theme,
+    language: Language,
 ) -> crate::Element<'a> {
+    let t = main_translations(language);
     let palette = theme.extended_palette();
 
     // 输入框样式
@@ -33,15 +36,15 @@ pub fn view_project_settings_dialog<'a>(
     };
 
     // 标题
-    let title = text("工程信息设置")
+    let title = text(t.project_title)
         .size(18)
         .font(iced_core::Font::with_name("Microsoft YaHei"))
         .style(label_style);
 
     // 项目名称
-    let title_label = text("项目名称").size(14).style(label_style);
+    let title_label = text(t.project_name_label).size(14).style(label_style);
     let title_input = container(
-        text_input("输入项目名称（留空显示为'无标题'）", &state.title)
+        text_input(t.project_name_placeholder, &state.title)
             .on_input(Message::ProjectSettingsTitleChanged)
             .padding([6, 10])
             .width(Length::Fill),
@@ -50,7 +53,7 @@ pub fn view_project_settings_dialog<'a>(
     .style(input_style);
 
     // BPM 速度
-    let tempo_label = text("BPM 速度").size(14).style(label_style);
+    let tempo_label = text(t.project_bpm_label).size(14).style(label_style);
     let tempo_input = container(
         text_input("120", &state.tempo)
             .on_input(Message::ProjectSettingsTempoChanged)
@@ -70,9 +73,9 @@ pub fn view_project_settings_dialog<'a>(
         .width(Length::Fill);
 
     // 版权信息
-    let copyright_label = text("版权信息").size(14).style(label_style);
+    let copyright_label = text(t.project_copyright_label).size(14).style(label_style);
     let copyright_input = container(
-        text_input("输入版权信息（可选）", &state.copyright)
+        text_input(t.project_copyright_placeholder, &state.copyright)
             .on_input(Message::ProjectSettingsCopyrightChanged)
             .padding([6, 10])
             .width(Length::Fill),
@@ -81,21 +84,23 @@ pub fn view_project_settings_dialog<'a>(
     .style(input_style);
 
     // 创建日期 (只读)
-    let created_label = text("创建日期").size(14).style(label_style);
+    let created_label = text(t.project_created_label).size(14).style(label_style);
     let created_value = if state.created_display.is_empty() {
-        text("未知").size(14).style(readonly_style)
+        text(t.project_unknown).size(14).style(readonly_style)
     } else {
         text(&state.created_display).size(14).style(readonly_style)
     };
 
     // 累计创作时间 (只读)
-    let editing_time_label = text("累计创作时间").size(14).style(label_style);
+    let editing_time_label = text(t.project_editing_time_label)
+        .size(14)
+        .style(label_style);
     let editing_time_value = text(state.format_editing_time())
         .size(14)
         .style(readonly_style);
 
     // 按钮区域
-    let ok_button = button(text("确定").size(14))
+    let ok_button = button(text(t.project_ok).size(14))
         .on_press(Message::ConfirmProjectSettings)
         .padding([8, 32])
         .width(Length::Fixed(100.0))
@@ -117,7 +122,7 @@ pub fn view_project_settings_dialog<'a>(
             }
         });
 
-    let cancel_button = button(text("取消").size(14))
+    let cancel_button = button(text(t.project_cancel).size(14))
         .on_press(Message::CloseProjectSettingsDialog)
         .padding([8, 32])
         .width(Length::Fixed(100.0))

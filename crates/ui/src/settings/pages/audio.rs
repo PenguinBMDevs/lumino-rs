@@ -7,10 +7,12 @@ use iced_widget::{column, pick_list, row, text, text_input};
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::settings::SettingsPanel;
+use lumino_core::i18n::settings_translations;
 use lumino_core::storage::config::SynthBackend;
 
 /// 渲染音频设置页面
 pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
+    let t = settings_translations(settings.language);
     let synth_options = [
         SynthBackend::XSynth,
         SynthBackend::Kdmapi,
@@ -18,13 +20,13 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
     ];
 
     let mut col = column![
-        text("音频")
+        text(t.audio_title)
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
         iced_widget::space().height(20),
         // 合成器后端选择
         row![
-            text("合成器:")
+            text(t.synthesizer)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
@@ -37,22 +39,22 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
         .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
         // MIDI 输入设备选择
-        render_midi_device_selector(settings),
+        render_midi_device_selector(settings, t),
         iced_widget::space().height(SPACING_CONTENT),
     ];
 
     // 只在 XSynth 模式下显示音色库选择
     if settings.synth_backend == SynthBackend::XSynth {
-        col = col.push(render_xsynth_options(settings));
+        col = col.push(render_xsynth_options(settings, t));
     } else if settings.synth_backend == SynthBackend::Kdmapi {
         col = col.push(
-            text("KDMAPI 模式使用系统驱动，无需音色库")
+            text(t.kdmapi_hint)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_placeholder_text_style()),
         );
     } else if settings.synth_backend == SynthBackend::System {
         col = col.push(
-            text("System 模式使用系统默认的WinMM MIDI输出，无需音色库")
+            text(t.system_hint)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_placeholder_text_style()),
         );
@@ -61,20 +63,21 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
     col.spacing(SPACING_CONTENT).padding(PADDING_CONTENT).into()
 }
 
-/// 渲染 XSynt 选项
+/// 渲染 XSynth 选项
 fn render_xsynth_options<'a>(
     settings: &SettingsPanel,
+    t: &lumino_core::i18n::SettingsTranslations,
 ) -> iced_widget::Column<'a, Message, Theme, crate::Renderer> {
     let mut col = column![];
 
     // 音色库选择
     col = col.push(
         row![
-            text("音色库:")
+            text(t.soundfont)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            text_input("选择音色库文件 (SFZ/SF2)...", &settings.soundfont_path)
+            text_input(t.soundfont_placeholder, &settings.soundfont_path)
                 .width(Length::Fill)
                 .on_input(|s| Message::Settings(crate::settings::Event::SoundfontPathChanged(s))),
         ]
@@ -83,7 +86,7 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
     col = col.push(
-        iced_widget::button("浏览...")
+        iced_widget::button(t.browse)
             .on_press(Message::Settings(crate::settings::Event::BrowseSoundfont)),
     );
     col = col.push(iced_widget::space().height(20));
@@ -92,8 +95,8 @@ fn render_xsynth_options<'a>(
     col = col.push(
         row![
             text(format!(
-                "缓冲区 (延迟): {:.1} ms",
-                settings.xsynth_buffer_ms
+                "{}: {:.1} ms",
+                t.buffer_latency, settings.xsynth_buffer_ms
             ))
             .size(TEXT_SIZE_CONTENT)
             .style(create_content_text_style())
@@ -112,7 +115,7 @@ fn render_xsynth_options<'a>(
     // 音符释放淡出
     col = col.push(
         iced_widget::Checkbox::new(settings.xsynth_fade_out)
-            .label("释放音符时平滑淡出 (防止爆音)")
+            .label(t.fade_out_label)
             .on_toggle(|f| Message::Settings(crate::settings::Event::XSynthFadeOutChanged(f))),
     );
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
@@ -143,7 +146,7 @@ fn render_xsynth_options<'a>(
 
     col = col.push(
         row![
-            text("每键最大同音数:")
+            text(t.max_voices)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
@@ -157,7 +160,7 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
     col = col.push(
-        text("同键快速重复/密集和弦时，提高此值减少 voice stealing 导致的断音")
+        text(t.max_voices_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
     );
@@ -167,8 +170,8 @@ fn render_xsynth_options<'a>(
     col = col.push(
         row![
             text(format!(
-                "力度过滤阈值: {}",
-                settings.velocity_filter_threshold
+                "{}: {}",
+                t.velocity_filter, settings.velocity_filter_threshold
             ))
             .size(TEXT_SIZE_CONTENT)
             .style(create_content_text_style())
@@ -186,7 +189,7 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
     col = col.push(
-        text("力度小于等于阈值的音符将不播放（0=关闭过滤）")
+        text(t.velocity_filter_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
     );
@@ -194,17 +197,17 @@ fn render_xsynth_options<'a>(
 
     // 帮助文本
     col = col.push(
-        text("XSynth: 内置高性能合成器，支持SFZ/SF2格式音色库")
+        text(t.xsynth_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
     );
     col = col.push(
-        text("KDMAPI: 使用系统KDMAPI驱动，需要安装OmniMIDI")
+        text(t.kdmapi_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
     );
     col = col.push(
-        text("System: 使用系统默认的WinMM MIDI输出")
+        text(t.system_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
     );
@@ -213,15 +216,18 @@ fn render_xsynth_options<'a>(
 }
 
 /// 渲染 MIDI 输入设备选择器
-fn render_midi_device_selector<'a>(settings: &'a SettingsPanel) -> Element<'a> {
+fn render_midi_device_selector<'a>(
+    settings: &'a SettingsPanel,
+    t: &lumino_core::i18n::SettingsTranslations,
+) -> Element<'a> {
     let device_count = settings.midi_devices.len();
     if device_count == 0 {
         return row![
-            text("MIDI 输入设备:")
+            text(t.midi_input_device)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            text("无可用设备")
+            text(t.no_device)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_placeholder_text_style()),
         ]
@@ -241,7 +247,7 @@ fn render_midi_device_selector<'a>(settings: &'a SettingsPanel) -> Element<'a> {
     let selected = selected_idx.map(|i| device_options[i]);
 
     row![
-        text("MIDI 输入设备:")
+        text(t.midi_input_device)
             .size(TEXT_SIZE_CONTENT)
             .style(create_content_text_style()),
         iced_widget::space().width(SPACING_MAIN),
@@ -256,7 +262,7 @@ fn render_midi_device_selector<'a>(settings: &'a SettingsPanel) -> Element<'a> {
                 Message::Null
             }
         })
-        .placeholder("选择MIDI设备")
+        .placeholder(t.select_device_placeholder)
         .padding([4, 8])
         .width(200.0),
     ]

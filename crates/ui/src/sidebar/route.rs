@@ -1,18 +1,28 @@
 use iced_core::{Alignment, Color, Length};
 use iced_widget::{button, column, container, row, space};
+use lumino_core::i18n::Language;
 
 use super::{Event, ROUTES, Route, RouteConfig};
 
 use crate::widget;
 use crate::{Element, Theme, resources::icon, window};
 
-pub fn view<'a>(active: Route, panel_visible: bool, window: &window::Window) -> Element<'a> {
+pub fn view<'a>(
+    active: Route,
+    panel_visible: bool,
+    window: &window::Window,
+    language: Language,
+) -> Element<'a> {
     let items = ROUTES
         .into_iter()
         .map(|r| match r {
-            RouteConfig::Item { route, icon } => {
-                item(route, icon, panel_visible && route == active, window)
-            }
+            RouteConfig::Item { route, icon } => item(
+                route,
+                icon,
+                panel_visible && route == active,
+                window,
+                language,
+            ),
             RouteConfig::Space => space().height(Length::Fill).into(),
         })
         .collect::<Vec<_>>();
@@ -32,6 +42,7 @@ fn item<'a>(
     icon_enum: icon::Icon,
     active: bool,
     window: &window::Window,
+    language: Language,
 ) -> Element<'a> {
     let split = container(space())
         .width(2)
@@ -80,5 +91,10 @@ fn item<'a>(
         })
         .on_press(event);
 
-    widget::with_tooltip(btn, route.tooltip(), iced_widget::tooltip::Position::Right).into()
+    widget::with_tooltip(
+        btn,
+        route.tooltip(language),
+        iced_widget::tooltip::Position::Right,
+    )
+    .into()
 }

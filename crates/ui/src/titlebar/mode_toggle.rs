@@ -3,6 +3,7 @@ use iced_widget::{button, container, row, text};
 
 use crate::widget;
 use crate::{Element, Message, Theme, resources::icon};
+use lumino_core::i18n::{Language, main_translations};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AppMode {
@@ -11,16 +12,13 @@ pub enum AppMode {
     Waterfall,
 }
 
-impl std::fmt::Display for AppMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AppMode::Editor => write!(f, "编辑器"),
-            AppMode::Waterfall => write!(f, "瀑布流"),
-        }
-    }
-}
-
-pub fn view(theme: &Theme, _current_mode: AppMode, progress: f32) -> Element<'_> {
+pub fn view(
+    theme: &Theme,
+    _current_mode: AppMode,
+    progress: f32,
+    language: Language,
+) -> Element<'_> {
+    let t = main_translations(language);
     let p = progress.clamp(0.0, 1.0);
     let palette = theme.extended_palette();
 
@@ -32,14 +30,14 @@ pub fn view(theme: &Theme, _current_mode: AppMode, progress: f32) -> Element<'_>
         icon::Icon::PencilOutline
     };
     let label = if is_waterfall {
-        "瀑布流"
+        t.mode_waterfall
     } else {
-        "编辑器"
+        t.mode_editor
     };
     let tooltip_text = if is_waterfall {
-        "切换到编辑器模式"
+        t.mode_switch_to_editor
     } else {
-        "切换到瀑布流模式"
+        t.mode_switch_to_waterfall
     };
 
     let icon_bg = palette.background.strong.color;

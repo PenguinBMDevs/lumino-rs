@@ -2,6 +2,7 @@ pub mod performance;
 
 use iced_core::Length;
 use iced_widget::{button, container, row, text};
+use lumino_core::i18n::{Language, main_translations};
 
 use super::Element;
 use crate::Theme;
@@ -57,12 +58,12 @@ impl StatusBar {
     }
 
     /// 获取 FPS 文本内容
-    pub fn fps_text(&self) -> String {
+    pub fn fps_text(&self, ready_text: &str) -> String {
         if self.info.left_text.is_empty() {
             if let Some(fps) = self.fps {
                 format!("FPS: {:.1}", fps)
             } else {
-                "就绪".to_string()
+                ready_text.to_string()
             }
         } else {
             self.info.left_text.clone()
@@ -74,8 +75,9 @@ impl StatusBar {
         self.info.left_text.is_empty() && self.fps.is_some()
     }
 
-    pub fn view<'a>(&'a self) -> Element<'a> {
-        let left_text = self.fps_text();
+    pub fn view<'a>(&'a self, language: Language) -> Element<'a> {
+        let t = main_translations(language);
+        let left_text = self.fps_text(t.status_ready);
         let use_fps_style = self.use_fps_style();
 
         let arrow = if self.perf_panel_expanded {

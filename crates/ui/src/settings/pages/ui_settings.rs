@@ -9,6 +9,7 @@ use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::settings::SettingsPanel;
 use crate::window;
+use lumino_core::i18n::{Language, settings_translations};
 
 /// 渲染界面设置页面
 pub fn view<'a>(
@@ -16,13 +17,15 @@ pub fn view<'a>(
     window: &crate::window::Window,
     system_fonts: &[lumino_core::font_scanner::FontInfo],
 ) -> Element<'a> {
+    let t = settings_translations(settings.language);
+
     // 创建复选框
     let native_titlebar_checkbox = if cfg!(target_os = "macos") {
         row![] // macOS 不需要这个选项
     } else {
         row![
             iced_widget::Checkbox::new(settings.use_native_titlebar)
-                .label("使用经典系统标题栏")
+                .label(t.native_titlebar)
                 .on_toggle(|enabled| {
                     Message::Settings(crate::settings::Event::NativeTitlebarChanged(enabled))
                 })
@@ -47,24 +50,24 @@ pub fn view<'a>(
     .placeholder("选择系统字体...");
 
     // 自定义字体路径输入
-    let font_path_input = text_input("或输入字体文件路径...", &settings.program_font_path)
+    let font_path_input = text_input(t.font_path_placeholder, &settings.program_font_path)
         .on_input(|path| Message::Settings(crate::settings::Event::ProgramFontPathChanged(path)));
 
     // 浏览字体文件按钮
     let browse_font_button =
-        button("浏览...").on_press(Message::Settings(crate::settings::Event::BrowseProgramFont));
+        button(t.browse).on_press(Message::Settings(crate::settings::Event::BrowseProgramFont));
 
     // 字体设置部分
     let font_section = column![
         // 系统字体下拉菜单
         row![
-            text("程序字体:")
+            text(t.program_font)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
             font_dropdown,
             iced_widget::space().width(SPACING_ICON_LABEL),
-            text("或").size(12.0).style(create_placeholder_text_style()),
+            text(t.or).size(12.0).style(create_placeholder_text_style()),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
@@ -79,19 +82,37 @@ pub fn view<'a>(
         .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
         // 字体设置说明
-        text("选择系统字体或指定自定义字体文件路径。如果自定义路径无效，将回退到默认字体。")
+        text(t.font_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
     ];
 
+    // 语言选项
+    let language_options = Language::all();
+    let current_language = settings.language;
+
     column![
-        text("界面")
+        text(t.ui_title)
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
         iced_widget::space().height(20),
+        // 语言选择
+        row![
+            text("语言 / Language:")
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            pick_list(language_options, Some(current_language), |lang| {
+                Message::Settings(crate::settings::Event::LanguageChanged(lang))
+            })
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
         // 主题选择
         row![
-            text("主题:")
+            text(t.theme)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
@@ -110,13 +131,13 @@ pub fn view<'a>(
             .spacing(SPACING_ICON_LABEL)
             .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
-        text("启用后，将使用系统原生标题栏，隐藏 Logo 和自定义窗口控制按钮")
+        text(t.native_titlebar_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
         // HiDPI 图标渲染选项
         row![
             iced_widget::Checkbox::new(settings.icon_hidpi)
-                .label("启用 HiDPI 图标渲染（推荐）")
+                .label(t.hidpi_icon)
                 .on_toggle(|enabled| {
                     Message::Settings(crate::settings::Event::IconHiDPIChanged(enabled))
                 })
@@ -124,28 +145,28 @@ pub fn view<'a>(
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
-        text("开启后图标以2x分辨率渲染，在视网膜屏幕上更清晰。关闭可节省少量内存和渲染开销。")
+        text(t.hidpi_icon_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
         iced_widget::space().height(24),
         // 自动滚动配置
-        text("自动滚动设置")
+        text(t.auto_scroll)
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
         iced_widget::space().height(12),
         // 模式1：指示线固定位置
         row![
-            text("模式1 - 指示线固定位置:")
+            text(t.auto_scroll_fixed)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            text_input("像素", &settings.auto_scroll_fixed_position.to_string())
+            text_input(t.pixel, &settings.auto_scroll_fixed_position.to_string())
                 .on_input(|v| Message::Settings(
                     crate::settings::Event::AutoScrollFixedPositionChanged(v)
                 ))
                 .width(80.0),
             iced_widget::space().width(SPACING_ICON_LABEL),
-            text("像素 (从左边缘算起)")
+            text(t.from_left)
                 .size(12.0)
                 .style(create_placeholder_text_style()),
         ]
@@ -154,12 +175,12 @@ pub fn view<'a>(
         iced_widget::space().height(SPACING_CONTENT),
         // 模式2：翻页触发位置
         row![
-            text("模式2 - 翻页触发位置:")
+            text(t.auto_scroll_trigger)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
             text_input(
-                "像素",
+                t.pixel,
                 &settings.auto_scroll_page_trigger_offset.to_string()
             )
             .on_input(|v| Message::Settings(
@@ -167,7 +188,7 @@ pub fn view<'a>(
             ))
             .width(80.0),
             iced_widget::space().width(SPACING_ICON_LABEL),
-            text("像素 (从右边缘算起)")
+            text(t.from_right)
                 .size(12.0)
                 .style(create_placeholder_text_style()),
         ]
@@ -176,12 +197,12 @@ pub fn view<'a>(
         iced_widget::space().height(SPACING_CONTENT),
         // 模式2：翻页后回到的位置
         row![
-            text("模式2 - 翻页后位置:")
+            text(t.auto_scroll_return)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
             text_input(
-                "像素",
+                t.pixel,
                 &settings.auto_scroll_page_return_position.to_string()
             )
             .on_input(|v| Message::Settings(
@@ -189,78 +210,78 @@ pub fn view<'a>(
             ))
             .width(80.0),
             iced_widget::space().width(SPACING_ICON_LABEL),
-            text("像素 (从左边缘算起)")
+            text(t.from_left)
                 .size(12.0)
                 .style(create_placeholder_text_style()),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
-        text("设置卷帘自动滚动时演奏指示线的位置行为")
+        text(t.auto_scroll_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
         iced_widget::space().height(24),
-    // 框选框模式设置
-    text("交互")
-        .size(TEXT_SIZE_TITLE)
-        .style(create_content_text_style()),
-    iced_widget::space().height(12),
-    row![
-        text("框选框模式:")
-            .size(TEXT_SIZE_CONTENT)
+        // 框选框模式设置
+        text(t.interaction)
+            .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
-        iced_widget::space().width(SPACING_MAIN),
-        pick_list(
-            vec![
-                lumino_core::storage::config::SelectionBoxMode::Direct,
-                lumino_core::storage::config::SelectionBoxMode::Spring,
-            ],
-            Some(settings.selection_box_mode),
-            |mode| Message::Settings(crate::settings::Event::SelectionBoxModeChanged(mode)),
-        )
-        .width(200.0),
-    ]
-    .spacing(SPACING_ICON_LABEL)
-    .align_y(Alignment::Center),
-    iced_widget::space().height(SPACING_CONTENT),
-    text("直接跟随：框选框实时跟随鼠标，响应最即时。弹簧动画：框选框边界带有弹性动画效果，视觉更生动。")
-        .size(12.0)
-        .style(create_placeholder_text_style()),
-    iced_widget::space().height(24),
-    // 256键钢琴卷帘设置
-    text("钢琴卷帘")
-        .size(TEXT_SIZE_TITLE)
-        .style(create_content_text_style()),
-    iced_widget::space().height(12),
-    row![
-        iced_widget::Checkbox::new(settings.enable_256key)
-            .label("启用 256 键扩展钢琴卷帘")
-            .on_toggle(|enabled| {
-                Message::Settings(crate::settings::Event::Enable256keyChanged(enabled))
-            }),
-    ]
+        iced_widget::space().height(12),
+        row![
+            text(t.selection_box_mode)
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            pick_list(
+                vec![
+                    lumino_core::storage::config::SelectionBoxMode::Direct,
+                    lumino_core::storage::config::SelectionBoxMode::Spring,
+                ],
+                Some(settings.selection_box_mode),
+                |mode| Message::Settings(crate::settings::Event::SelectionBoxModeChanged(mode)),
+            )
+            .width(200.0),
+        ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
-        text("开启后钢琴卷帘拓展至 256 键 (0-255)，扩展区域（128-255）颜色略深以便区分。需要较强的 GPU 性能。")
+        text(t.selection_box_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+        iced_widget::space().height(24),
+        // 256键钢琴卷帘设置
+        text(t.piano_roll)
+            .size(TEXT_SIZE_TITLE)
+            .style(create_content_text_style()),
+        iced_widget::space().height(12),
+        row![
+            iced_widget::Checkbox::new(settings.enable_256key)
+                .label(t.enable_256key)
+                .on_toggle(|enabled| {
+                    Message::Settings(crate::settings::Event::Enable256keyChanged(enabled))
+                }),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        text(t.enable_256key_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
         iced_widget::space().height(SPACING_CONTENT),
         // 钢琴仿真键盘开关
         row![
-        iced_widget::Checkbox::new(settings.use_textured_keyboard)
-            .label("使用钢琴仿真键盘（推荐）")
-            .on_toggle(|enabled| {
-                Message::Settings(crate::settings::Event::TexturedKeyboardChanged(enabled))
-            }),
-    ]
+            iced_widget::Checkbox::new(settings.use_textured_keyboard)
+                .label(t.textured_keyboard)
+                .on_toggle(|enabled| {
+                    Message::Settings(crate::settings::Event::TexturedKeyboardChanged(enabled))
+                }),
+        ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
-        text("开启后使用真实钢琴贴图渲染键盘，视觉效果更佳。关闭则使用传统纯色键盘。")
+        text(t.textured_keyboard_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
-]
+    ]
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT)
     .into()

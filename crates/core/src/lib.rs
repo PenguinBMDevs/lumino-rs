@@ -3,6 +3,7 @@ pub mod editor_transform;
 pub mod error;
 pub mod font_scanner;
 pub mod history;
+pub mod i18n;
 pub mod midi_types;
 pub mod note;
 pub mod pattern;

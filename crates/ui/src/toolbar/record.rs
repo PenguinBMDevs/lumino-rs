@@ -4,6 +4,7 @@ use crate::toolbar::{Event, Toolbar};
 use crate::widget;
 use crate::{Element, Theme, window};
 use iced_widget::{button, container, text};
+use lumino_core::i18n::Language;
 
 impl Toolbar {
     /// 渲染录制按钮
@@ -12,7 +13,9 @@ impl Toolbar {
         content_height: f32,
         _palette: &iced_core::theme::palette::Extended,
         _window: &'a window::Window,
+        language: Language,
     ) -> Element<'a> {
+        let t = lumino_core::i18n::main_translations(language);
         let is_recording = self.is_recording;
         let weak_color = _palette.background.weak.color;
         let strong_color = _palette.background.strong.color;
@@ -34,9 +37,9 @@ impl Toolbar {
         };
 
         let tooltip_text: &'a str = if is_recording {
-            "停止录制"
+            t.record_stop
         } else {
-            "开始录制"
+            t.record_start
         };
 
         container(widget::with_tooltip_bottom(

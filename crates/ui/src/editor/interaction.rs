@@ -409,7 +409,8 @@ impl Editor {
     pub(crate) fn handle_scrolled(&mut self, delta_x: f32, delta_y: f32) {
         let state = &mut self.editor_state;
         let v = &mut state.view;
-        let max_x = (state.max_scroll.0 - (state.canvas.size_x - v.keyboard_width).max(0.0)).max(0.0);
+        let max_x =
+            (state.max_scroll.0 - (state.canvas.size_x - v.keyboard_width).max(0.0)).max(0.0);
         let max_y = (state.max_scroll.1 - (state.canvas.size_y - v.ruler_height).max(0.0)).max(0.0);
         let target_x = (v.scroll_x + delta_x).clamp(0.0, max_x);
         let target_y = (v.scroll_y - delta_y).clamp(0.0, max_y);
@@ -586,9 +587,9 @@ mod tests {
         // 向下滚很大 → target_y 应被上界钳制到 max_y
         // max_y = 2560 - (500 - 24).max(0) = 2560 - 476 = 2084
         editor.handle_scrolled(0.0, -999999.0);
-        let max_y = (DEFAULT_MAX_Y - (editor.editor_state.canvas.size_y
-            - editor.editor_state.view.ruler_height).max(0.0))
-            .max(0.0);
+        let max_y = (DEFAULT_MAX_Y
+            - (editor.editor_state.canvas.size_y - editor.editor_state.view.ruler_height).max(0.0))
+        .max(0.0);
         assert_eq!(
             editor.editor_state.view.smooth_scroll.target_y, max_y,
             "向下滚到极限应停在 max_y={}，实际 target_y={}",
@@ -605,9 +606,10 @@ mod tests {
         // 向右滚很大 → target_x 应被上界钳制到 max_x
         // max_x = 76800 - (1000 - 120).max(0) = 76800 - 880 = 75920
         editor.handle_scrolled(999999.0, 0.0);
-        let max_x = (DEFAULT_MAX_X - (editor.editor_state.canvas.size_x
-            - editor.editor_state.view.keyboard_width).max(0.0))
-            .max(0.0);
+        let max_x = (DEFAULT_MAX_X
+            - (editor.editor_state.canvas.size_x - editor.editor_state.view.keyboard_width)
+                .max(0.0))
+        .max(0.0);
         assert_eq!(
             editor.editor_state.view.smooth_scroll.target_x, max_x,
             "向右滚到极限应停在 max_x={}，实际 target_x={}",

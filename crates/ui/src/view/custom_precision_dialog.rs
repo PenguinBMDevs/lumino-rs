@@ -1,5 +1,6 @@
 use iced_core::Length;
 use iced_widget::{button, column, container, pick_list, row, space, text, text_input};
+use lumino_core::i18n::{Language, main_translations};
 
 use crate::message::Message;
 use crate::state::root_state::CustomPrecisionDialogState;
@@ -9,7 +10,9 @@ use crate::toolbar::DotType;
 pub fn view_custom_precision_dialog<'a>(
     state: &'a CustomPrecisionDialogState,
     theme: &'a iced_core::Theme,
+    language: Language,
 ) -> crate::Element<'a> {
+    let t = main_translations(language);
     let palette = theme.extended_palette();
 
     // 输入框样式
@@ -62,7 +65,7 @@ pub fn view_custom_precision_dialog<'a>(
         .style(input_style),
         space().width(8),
         // "分音符" 标签
-        text("分音符")
+        text(t.precision_note_label)
             .size(14)
             .style(move |_theme: &iced_core::Theme| text::Style {
                 color: Some(palette.background.neutral.text),
@@ -72,7 +75,7 @@ pub fn view_custom_precision_dialog<'a>(
 
     // 第二行："除以" + 除数输入框
     let second_row = row![
-        text("除以")
+        text(t.precision_divide_by)
             .size(14)
             .style(move |_theme: &iced_core::Theme| text::Style {
                 color: Some(palette.background.neutral.text),
@@ -96,7 +99,7 @@ pub fn view_custom_precision_dialog<'a>(
 
     // 右侧按钮区域（垂直排列）
     let buttons = column![
-        button(text("确定").size(14))
+        button(text(t.precision_ok).size(14))
             .on_press(Message::ConfirmCustomPrecision)
             .padding([8, 32])
             .width(Length::Fixed(100.0))
@@ -118,7 +121,7 @@ pub fn view_custom_precision_dialog<'a>(
                 }
             }),
         space().height(12),
-        button(text("取消").size(14))
+        button(text(t.precision_cancel).size(14))
             .on_press(Message::CloseCustomPrecisionDialog)
             .padding([8, 32])
             .width(Length::Fixed(100.0))

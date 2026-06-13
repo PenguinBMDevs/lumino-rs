@@ -3,6 +3,7 @@ use iced_widget::{button, column, container, row, space, text};
 
 use crate::message::Message;
 use crate::{settings, window};
+use lumino_core::i18n::settings_translations;
 
 /// 渲染设置对话框
 pub fn view_settings_dialog<'a>(
@@ -10,13 +11,14 @@ pub fn view_settings_dialog<'a>(
     window: &'a window::Window,
     system_fonts: &'a [lumino_core::font_scanner::FontInfo],
 ) -> crate::Element<'a> {
+    let t = settings_translations(settings.language);
     let palette = window.theme.extended_palette();
 
     // 设置内容（复用现有的 settings::view）
     let settings_content = settings::view(settings, window, system_fonts);
 
     // 确认按钮
-    let confirm_button = button(text("确认").size(14))
+    let confirm_button = button(text(t.confirm).size(14))
         .on_press(Message::CloseSettingsDialog)
         .padding([8, 32])
         .width(Length::Fixed(100.0))

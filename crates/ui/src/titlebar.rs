@@ -9,6 +9,7 @@ use iced_widget::{container, mouse_area, row, space};
 use super::Element;
 use crate::titlebar::mode_toggle::AppMode;
 use crate::{Theme, window};
+use lumino_core::i18n::Language;
 
 pub struct Titlebar;
 
@@ -29,10 +30,11 @@ impl Titlebar {
         use_native_titlebar: bool,
         current_mode: AppMode,
         toggle_progress: f32,
+        language: Language,
     ) -> Element<'a> {
         // 如果使用经典系统标题栏，只显示菜单（在最左侧）
         if use_native_titlebar {
-            return self.view_native_titlebar(window);
+            return self.view_native_titlebar(window, language);
         }
 
         // 自定义标题栏模式
@@ -42,8 +44,8 @@ impl Titlebar {
         } else {
             row![
                 logo::view(window),
-                mode_toggle::view(&window.theme, current_mode, toggle_progress),
-                menu::view()
+                mode_toggle::view(&window.theme, current_mode, toggle_progress, language),
+                menu::view(language)
             ]
             .align_y(Alignment::Center)
         };
@@ -104,12 +106,16 @@ impl Titlebar {
     }
 
     /// 经典系统标题栏模式：只显示菜单，在最左侧
-    fn view_native_titlebar<'a>(&'a self, window: &'a window::Window) -> Element<'a> {
+    fn view_native_titlebar<'a>(
+        &'a self,
+        window: &'a window::Window,
+        language: Language,
+    ) -> Element<'a> {
         // 菜单在最左侧，没有 logo 和窗口控制按钮
         let row = if cfg!(target_os = "macos") {
             row![]
         } else {
-            row![menu::view()]
+            row![menu::view(language)]
         };
 
         let inner = container(row)

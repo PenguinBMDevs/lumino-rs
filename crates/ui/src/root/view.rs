@@ -83,6 +83,7 @@ impl Root {
             DialogType::ProjectSettings => view_project_settings_dialog(
                 &self.state.project_settings_dialog,
                 &self.window.theme,
+                self.settings.language,
             ),
             DialogType::Settings => {
                 view_settings_dialog(&self.settings, &self.window, &self.state.system_fonts)
@@ -96,6 +97,7 @@ impl Root {
             DialogType::CustomPrecision => view_custom_precision_dialog(
                 &self.state.custom_precision_dialog,
                 &self.window.theme,
+                self.settings.language,
             ),
             // DialogType::None: 关闭过程中 dialog_type 可能被复位为 None，
             // 此时渲染空容器避免闪跳到精度面板。实际关闭由 DialogWindow 的 should_close 驱动。
@@ -118,7 +120,7 @@ impl Root {
 
         // 左侧栏（包含图标栏和音轨面板）
         puffin::profile_scope!("root_view_sidebar");
-        let left_bar = self.sidebar.view(&self.window);
+        let left_bar = self.sidebar.view(&self.window, self.settings.language);
 
         // 右侧内容区域（工具栏 + 编辑器 + 力度面板 / 瀑布流占位）
         puffin::profile_scope!("root_view_right_content");
@@ -143,8 +145,11 @@ impl Root {
                     |zoom, fixed_ratio| message::Message::ZoomYChanged { zoom, fixed_ratio },
                 );
                 column![
-                    self.toolbar
-                        .view(&self.window, self.editor.selected_notes_count() > 0),
+                    self.toolbar.view(
+                        &self.window,
+                        self.editor.selected_notes_count() > 0,
+                        self.settings.language
+                    ),
                     column![container(editor_view).height(Length::Fill), velocity_panel,]
                         .height(Length::Fill),
                 ]
@@ -166,6 +171,7 @@ impl Root {
                     self.settings.use_native_titlebar,
                     self.state.current_mode,
                     self.state.toggle_animation.position,
+                    self.settings.language,
                 ),
                 row![left_bar, right_content].height(Length::Fill),
                 self.view_status_section(),
@@ -280,7 +286,7 @@ impl Root {
 
     /// 渲染状态栏（性能面板已交由 Stack 浮动层处理）
     fn view_status_section(&self) -> Element<'_> {
-        self.statusbar.view()
+        self.statusbar.view(self.settings.language)
     }
 
     /// 渲染工程走带视图
@@ -372,7 +378,8 @@ impl Root {
         let arrangement_row = iced_widget::row![track_list, arrangement_area, v_scrollbar,];
 
         column![
-            self.toolbar.view(&self.window, false),
+            self.toolbar
+                .view(&self.window, false, self.settings.language),
             arrangement_row.height(Length::Fill),
             h_scrollbar,
         ]

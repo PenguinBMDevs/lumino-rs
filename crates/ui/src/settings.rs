@@ -13,6 +13,7 @@ use iced_core::{Border, Length};
 use iced_widget::{column, container, row, scrollable, text};
 
 use crate::{Element, Message, Theme, window};
+use lumino_core::i18n::Language;
 use lumino_core::storage::config::SynthBackend;
 
 use components::*;
@@ -49,6 +50,8 @@ pub enum Event {
     TexturedKeyboardChanged(bool),
     /// MIDI 输入设备选择
     DeviceSelected(u32),
+    /// 界面语言切换
+    LanguageChanged(Language),
 }
 
 #[derive(Debug, Clone)]
@@ -82,6 +85,8 @@ pub struct SettingsPanel {
     pub midi_devices: Vec<(u32, String)>,
     /// 当前选中的 MIDI 输入设备 ID
     pub selected_midi_device: Option<u32>,
+    /// 界面语言
+    pub language: Language,
 }
 
 impl SettingsPanel {
@@ -109,6 +114,7 @@ impl SettingsPanel {
             use_textured_keyboard: ui_config.use_textured_keyboard,
             midi_devices: Vec::new(),
             selected_midi_device: None,
+            language: ui_config.language,
         }
     }
 
@@ -210,6 +216,10 @@ impl SettingsPanel {
                 self.selected_midi_device = Some(id);
                 tracing::debug!("设置: MIDI 输入设备选择为 #{}", id);
             }
+            Event::LanguageChanged(lang) => {
+                self.language = lang;
+                tracing::debug!("设置: 界面语言切换为 {:?}", lang);
+            }
         }
     }
 }
@@ -220,7 +230,7 @@ pub fn view<'a>(
     window: &'a window::Window,
     system_fonts: &'a [lumino_core::font_scanner::FontInfo],
 ) -> Element<'a> {
-    let menu_items = menu::create_menu_items();
+    let menu_items = menu::create_menu_items(settings.language);
 
     let menu_list = menu::render_menu_list(settings, window, &menu_items);
     let content_area = render_content_area(settings, window, system_fonts);
@@ -249,8 +259,8 @@ fn render_content_area<'a>(
         0 => general_view(settings),
         1 => audio_view(settings),
         2 => ui_settings_view(settings, window, system_fonts),
-        3 => shortcuts_view(),
-        4 => about_view(),
+        3 => shortcuts_view(settings),
+        4 => about_view(settings),
         _ => render_placeholder("设置内容区域").into(),
     };
 

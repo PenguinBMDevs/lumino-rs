@@ -1,3 +1,4 @@
+use crate::i18n::Language;
 use serde::{Deserialize, Serialize};
 
 /// 用户界面配置
@@ -122,6 +123,9 @@ impl std::fmt::Display for AutoScrollMode {
 pub struct UiConfig {
     #[serde(default)]
     pub theme: String,
+    /// 界面语言
+    #[serde(default)]
+    pub language: Language,
     /// 用户偏好的合成器后端（用户设置中选择的）
     #[serde(default = "default_synth_backend")]
     pub preferred_backend: SynthBackend,
@@ -208,6 +212,7 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             theme: "Light".into(),
+            language: Language::default(),
             preferred_backend: SynthBackend::XSynth,
             soundfont_path: String::new(),
             use_native_titlebar: false,

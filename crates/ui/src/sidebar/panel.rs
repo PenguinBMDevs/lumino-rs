@@ -1,5 +1,6 @@
 use iced_core::{Alignment, Length, Padding};
 use iced_widget::{button, column, container, row, scrollable, space, text};
+use lumino_core::i18n::{Language, main_translations};
 
 use crate::{
     Element, Theme,
@@ -20,7 +21,12 @@ pub struct SidebarViewParams<'a> {
     pub scroll_offset: f32,
 }
 
-pub fn view<'a>(params: SidebarViewParams<'a>, window: &'a window::Window) -> Element<'a> {
+pub fn view<'a>(
+    params: SidebarViewParams<'a>,
+    window: &'a window::Window,
+    language: Language,
+) -> Element<'a> {
+    let t = main_translations(language);
     let palette = window.theme.extended_palette();
 
     let content: Element<'a> = match params.route {
@@ -45,7 +51,7 @@ pub fn view<'a>(params: SidebarViewParams<'a>, window: &'a window::Window) -> El
             let mut col = column![].spacing(0).padding(8);
 
             // 音轨列表标题
-            col = col.push(text("音轨列表").size(12).style(|theme: &Theme| {
+            col = col.push(text(t.sidebar_track_list).size(12).style(|theme: &Theme| {
                 let palette = theme.extended_palette();
                 text::Style {
                     color: Some(palette.background.base.text),
@@ -85,7 +91,7 @@ pub fn view<'a>(params: SidebarViewParams<'a>, window: &'a window::Window) -> El
                         left: 2.0,
                     }),
                     space().width(4),
-                    text("添加音轨").size(14).width(Length::Fill),
+                    text(t.sidebar_add_track).size(14).width(Length::Fill),
                     container(
                         button(icon::view_with_size_and_theme(
                             Icon::EllipsisVertical,
@@ -158,7 +164,7 @@ pub fn view<'a>(params: SidebarViewParams<'a>, window: &'a window::Window) -> El
                         left: 2.0,
                     }),
                     space().width(4),
-                    text("添加音轨").size(14).width(Length::Fill),
+                    text(t.sidebar_add_track).size(14).width(Length::Fill),
                     container(
                         button(icon::view_with_size_and_theme(
                             Icon::EllipsisVertical,

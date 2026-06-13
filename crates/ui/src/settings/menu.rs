@@ -9,14 +9,16 @@ use crate::{
     resources::icon::{self, Icon},
     window,
 };
+use lumino_core::i18n::{Language, settings_translations};
 
-pub(super) fn create_menu_items() -> Vec<(&'static str, Icon)> {
+pub(super) fn create_menu_items(lang: Language) -> Vec<(&'static str, Icon)> {
+    let t = settings_translations(lang);
     vec![
-        ("常规", Icon::Gear),
-        ("音频", Icon::WaveForm),
-        ("界面", Icon::FolderTree),
-        ("快捷键", Icon::Clock),
-        ("关于", Icon::GitHub),
+        (t.general, Icon::Gear),
+        (t.audio, Icon::WaveForm),
+        (t.ui, Icon::FolderTree),
+        (t.shortcuts, Icon::Clock),
+        (t.about, Icon::GitHub),
     ]
 }
 

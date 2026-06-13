@@ -2,6 +2,8 @@ use iced_aw::{Menu, MenuBar, menu::Item, style::menu_bar};
 use iced_core::{Alignment, Background, Border, Color, Length};
 use iced_widget::{button, column, container, row, space, text};
 
+use lumino_core::i18n::{Language, main_translations};
+
 use crate::{Element, Message, Renderer, Theme, message, resources::icon};
 
 use crate::event::Event;
@@ -17,20 +19,21 @@ pub enum MenuKind {
 }
 
 impl MenuKind {
-    /// 获取菜单类型的中文显示名称
-    pub fn display_name(&self) -> &'static str {
+    /// 获取菜单类型的显示名称
+    pub fn display_name(&self, lang: Language) -> &'static str {
+        let t = main_translations(lang);
         match self {
-            Self::File => "文件",
-            Self::Edit => "编辑",
-            Self::View => "视图",
-            Self::Help => "帮助",
+            Self::File => t.menu_file,
+            Self::Edit => t.menu_edit,
+            Self::View => t.menu_view,
+            Self::Help => t.menu_help,
         }
     }
 }
 
 impl std::fmt::Display for MenuKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.display_name())
+        write!(f, "{}", self.display_name(Language::ZhCn))
     }
 }
 
@@ -49,7 +52,8 @@ pub struct MenuConfig {
     pub items: Vec<MenuItem>,
 }
 
-pub fn file_menu() -> MenuConfig {
+pub fn file_menu(lang: Language) -> MenuConfig {
+    let t = main_translations(lang);
     use crate::event::menu::file;
     use MenuItem::*;
     MenuConfig {
@@ -71,7 +75,7 @@ pub fn file_menu() -> MenuConfig {
                         file::Event::export_project_folder(),
                     )),
                 ],
-                "导出工程".into(),
+                t.file_export_project.to_string(),
             ),
             Action(crate::event::Event::menu_file(file::Event::audio_export())),
             Separator,
@@ -86,7 +90,7 @@ pub fn file_menu() -> MenuConfig {
     }
 }
 
-pub fn edit_menu() -> MenuConfig {
+pub fn edit_menu(_lang: Language) -> MenuConfig {
     use crate::event::menu::edit;
     use MenuItem::*;
     MenuConfig {
@@ -105,7 +109,7 @@ pub fn edit_menu() -> MenuConfig {
     }
 }
 
-pub fn view_menu() -> MenuConfig {
+pub fn view_menu(_lang: Language) -> MenuConfig {
     use crate::event::menu::view;
     use MenuItem::*;
     MenuConfig {
@@ -118,7 +122,7 @@ pub fn view_menu() -> MenuConfig {
     }
 }
 
-pub fn help_menu() -> MenuConfig {
+pub fn help_menu(_lang: Language) -> MenuConfig {
     use crate::event::menu::help;
     use MenuItem::*;
     MenuConfig {
@@ -127,20 +131,25 @@ pub fn help_menu() -> MenuConfig {
     }
 }
 
-pub fn menus() -> [MenuConfig; 4] {
-    [file_menu(), edit_menu(), view_menu(), help_menu()]
+pub fn menus(lang: Language) -> [MenuConfig; 4] {
+    [
+        file_menu(lang),
+        edit_menu(lang),
+        view_menu(lang),
+        help_menu(lang),
+    ]
 }
 
-pub fn view<'a>() -> Element<'a> {
-    let menus = menus()
+pub fn view<'a>(language: Language) -> Element<'a> {
+    let menus = menus(language)
         .iter()
         .map(|cfg| {
             Item::with_menu(
-                menu_button(cfg.kind.to_string()),
+                menu_button(cfg.kind.display_name(language)),
                 // 不要删除 'width(200)'！
                 // 删除它会导致 panic。原因未知
                 // 使用 offset 来与标题栏对齐
-                Menu::new(menu_items(&cfg.items))
+                Menu::new(menu_items(&cfg.items, language))
                     .width(MENU_WIDTH)
                     .offset(9.0),
             )
@@ -162,7 +171,7 @@ pub fn view<'a>() -> Element<'a> {
     inner.into()
 }
 
-fn menu_items<'a>(items: &[MenuItem]) -> Vec<Item<'a, Message, Theme, Renderer>> {
+fn menu_items<'a>(items: &[MenuItem], lang: Language) -> Vec<Item<'a, Message, Theme, Renderer>> {
     items
         .iter()
         .map(|item| {
@@ -170,13 +179,15 @@ fn menu_items<'a>(items: &[MenuItem]) -> Vec<Item<'a, Message, Theme, Renderer>>
                 MenuItem::Action(r) => {
                     // 点击菜单项时发送菜单关闭消息
                     let msg = Message::Core(r.clone());
-                    base_button(event_display_name(r), Some(msg))
+                    base_button(event_display_name(r, lang), Some(msg))
                 }
                 MenuItem::Separator => base_split(),
                 MenuItem::Submenu(r, n) => {
                     return Item::with_menu(
                         submenu_button(n),
-                        Menu::new(menu_items(r)).width(MENU_WIDTH).offset(12.0),
+                        Menu::new(menu_items(r, lang))
+                            .width(MENU_WIDTH)
+                            .offset(12.0),
                     );
                 }
             };
@@ -270,7 +281,8 @@ fn base_split<'a>() -> Element<'a> {
 }
 
 /// 获取事件的友好显示名称
-fn event_display_name(event: &Event) -> String {
+fn event_display_name(event: &Event, lang: Language) -> String {
+    let t = main_translations(lang);
     use crate::event::menu::{
         edit::Event as EditEvent, file::Event as FileEvent, help::Event as HelpEvent,
         view::Event as ViewEvent,
@@ -279,36 +291,36 @@ fn event_display_name(event: &Event) -> String {
     match event {
         Event::Menu(menu_event) => match menu_event {
             crate::event::menu::Event::File(file_event) => match file_event {
-                FileEvent::New => "新建".to_string(),
-                FileEvent::Open => "打开".to_string(),
-                FileEvent::Save => "保存".to_string(),
-                FileEvent::Close => "关闭".to_string(),
-                FileEvent::ImportFiles => "导入文件".to_string(),
-                FileEvent::ExportProjectArchive => "导出为单文件".to_string(),
-                FileEvent::ExportProjectFolder => "导出为文件夹".to_string(),
-                FileEvent::AudioExport => "导出音频".to_string(),
-                FileEvent::ProjectSettings => "工程设置".to_string(),
-                FileEvent::Settings => "设置".to_string(),
-                FileEvent::Exit => "退出".to_string(),
+                FileEvent::New => t.file_new.to_string(),
+                FileEvent::Open => t.file_open.to_string(),
+                FileEvent::Save => t.file_save.to_string(),
+                FileEvent::Close => t.file_close.to_string(),
+                FileEvent::ImportFiles => t.file_import.to_string(),
+                FileEvent::ExportProjectArchive => t.file_export_archive.to_string(),
+                FileEvent::ExportProjectFolder => t.file_export_folder.to_string(),
+                FileEvent::AudioExport => t.file_export_audio.to_string(),
+                FileEvent::ProjectSettings => t.file_project_settings.to_string(),
+                FileEvent::Settings => t.file_settings.to_string(),
+                FileEvent::Exit => t.file_exit.to_string(),
                 _ => format!("{file_event:?}"),
             },
             crate::event::menu::Event::Edit(edit_event) => match edit_event {
-                EditEvent::Undo => "撤销".to_string(),
-                EditEvent::Redo => "重做".to_string(),
-                EditEvent::Cut => "剪切".to_string(),
-                EditEvent::Copy => "复制".to_string(),
-                EditEvent::Paste => "粘贴".to_string(),
-                EditEvent::SelectAll => "全选".to_string(),
-                EditEvent::Find => "查找".to_string(),
+                EditEvent::Undo => t.edit_undo.to_string(),
+                EditEvent::Redo => t.edit_redo.to_string(),
+                EditEvent::Cut => t.edit_cut.to_string(),
+                EditEvent::Copy => t.edit_copy.to_string(),
+                EditEvent::Paste => t.edit_paste.to_string(),
+                EditEvent::SelectAll => t.edit_select_all.to_string(),
+                EditEvent::Find => t.edit_find.to_string(),
             },
             crate::event::menu::Event::View(view_event) => match view_event {
-                ViewEvent::ZoomIn => "放大".to_string(),
-                ViewEvent::ZoomOut => "缩小".to_string(),
-                ViewEvent::ZoomReset => "重置缩放".to_string(),
+                ViewEvent::ZoomIn => t.view_zoom_in.to_string(),
+                ViewEvent::ZoomOut => t.view_zoom_out.to_string(),
+                ViewEvent::ZoomReset => t.view_zoom_reset.to_string(),
                 _ => format!("{view_event:?}"),
             },
             crate::event::menu::Event::Help(help_event) => match help_event {
-                HelpEvent::About => "关于".to_string(),
+                HelpEvent::About => t.help_about.to_string(),
             },
         },
         Event::Window(window_event) => format!("{window_event:?}"),

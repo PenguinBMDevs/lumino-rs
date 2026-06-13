@@ -1,4 +1,5 @@
 use iced_widget::{container, row};
+use lumino_core::i18n::Language;
 
 pub mod event;
 mod panel;
@@ -26,11 +27,12 @@ pub enum Route {
 }
 
 impl Route {
-    pub fn tooltip(&self) -> &'static str {
+    pub fn tooltip(&self, lang: Language) -> &'static str {
+        let t = lumino_core::i18n::main_translations(lang);
         match self {
-            Route::File => "文件管理",
-            Route::Arrangement => "音轨总览",
-            Route::Audio => "音频设置",
+            Route::File => t.sidebar_file,
+            Route::Arrangement => t.sidebar_arrangement,
+            Route::Audio => t.sidebar_audio,
         }
     }
 }
@@ -121,7 +123,7 @@ impl Sidebar {
     }
 
     /// 返回完整的侧边栏视图（包括路由图标栏和面板）
-    pub fn view<'a>(&'a self, window: &'a window::Window) -> Element<'a> {
+    pub fn view<'a>(&'a self, window: &'a window::Window, language: Language) -> Element<'a> {
         let panel = if self.panel_visible {
             let sidebar_params = panel::SidebarViewParams {
                 route: self.panel_route,
@@ -132,12 +134,15 @@ impl Sidebar {
                 is_resizing: self.is_resizing,
                 scroll_offset: self.track_scroll_offset,
             };
-            panel::view(sidebar_params, window)
+            panel::view(sidebar_params, window, language)
         } else {
             iced_widget::container(iced_widget::space()).width(0).into()
         };
 
-        let inner = row![route::view(self.route, self.panel_visible, window), panel,];
+        let inner = row![
+            route::view(self.route, self.panel_visible, window, language),
+            panel,
+        ];
 
         container(inner).into()
     }

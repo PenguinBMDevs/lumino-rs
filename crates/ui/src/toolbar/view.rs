@@ -7,32 +7,49 @@ use crate::resources::icon;
 use crate::toolbar::buttons::{flip_button, tool_button, tool_selector};
 use crate::toolbar::{Event, FlipHorizontalMode, NotePrecision, RESIZE_HANDLE_HEIGHT, Tool};
 use crate::{Element, Message, Theme, window};
+use lumino_core::i18n::Language;
 
 use super::Toolbar;
 
 impl Toolbar {
     /// 渲染工具栏视图
-    pub fn view<'a>(&'a self, window: &'a window::Window, has_selection: bool) -> Element<'a> {
+    pub fn view<'a>(
+        &'a self,
+        window: &'a window::Window,
+        has_selection: bool,
+        language: Language,
+    ) -> Element<'a> {
+        let t = lumino_core::i18n::main_translations(language);
         let palette = window.theme.extended_palette();
 
         // 计算内容区域高度（总高度减去手柄高度）
         let content_height = self.height - RESIZE_HANDLE_HEIGHT;
 
         // 录制按钮区域
-        let record_button = self.render_record_button(content_height, palette, window);
+        let record_button = self.render_record_button(content_height, palette, window, language);
 
         // 播放控制区域 (132px 宽)
         let playback_controls = container(
             row![
-                tool_button(icon::SkipBackward, "快退", Event::skip_backward(), window),
+                tool_button(
+                    icon::SkipBackward,
+                    t.skip_backward,
+                    Event::skip_backward(),
+                    window
+                ),
                 space().width(4),
                 if self.is_playing {
-                    tool_button(icon::Pause, "暂停", Event::pause(), window)
+                    tool_button(icon::Pause, t.pause, Event::pause(), window)
                 } else {
-                    tool_button(icon::Play, "播放", Event::play(), window)
+                    tool_button(icon::Play, t.play, Event::play(), window)
                 },
                 space().width(4),
-                tool_button(icon::SkipForward, "快进", Event::skip_forward(), window),
+                tool_button(
+                    icon::SkipForward,
+                    t.skip_forward,
+                    Event::skip_forward(),
+                    window
+                ),
             ]
             .align_y(Alignment::Center),
         )
@@ -87,9 +104,9 @@ impl Toolbar {
             })
             .padding(4),
             if self.is_looping {
-                "循环播放: 开"
+                t.loop_on
             } else {
-                "循环播放: 关"
+                t.loop_off
             },
         ))
         .width(40)
@@ -115,7 +132,7 @@ impl Toolbar {
             row![
                 tool_selector(
                     icon::MousePointer,
-                    "选择工具",
+                    t.tool_pointer,
                     Tool::Pointer,
                     self.current_tool,
                     window
@@ -123,7 +140,7 @@ impl Toolbar {
                 space().width(4),
                 tool_selector(
                     icon::Pencil,
-                    "铅笔工具",
+                    t.tool_pencil,
                     Tool::Pencil,
                     self.current_tool,
                     window
@@ -131,21 +148,27 @@ impl Toolbar {
                 space().width(4),
                 tool_selector(
                     icon::Eraser,
-                    "橡皮擦",
+                    t.tool_eraser,
                     Tool::Eraser,
                     self.current_tool,
                     window
                 ),
                 space().width(4),
-                tool_button(icon::Quantize, "量化", Event::quantize(), window),
+                tool_button(icon::Quantize, t.tool_quantize, Event::quantize(), window),
                 space().width(4),
                 // 变速按钮始终可点击：Ctrl+Click 打开变速对话框不需要选中音符。
                 // 普通点击的无选中情况由 handler 内部的 selected.is_empty() 兜底。
-                flip_button(icon::Speed, "变速", Event::speed_change(), true, window),
+                flip_button(
+                    icon::Speed,
+                    t.tool_speed,
+                    Event::speed_change(),
+                    true,
+                    window
+                ),
                 space().width(4),
                 flip_button(
                     icon::FlipVertical,
-                    "垂直翻转",
+                    t.tool_flip_vertical,
                     Event::flip_vertical(),
                     has_selection,
                     window
@@ -153,7 +176,7 @@ impl Toolbar {
                 space().width(4),
                 flip_button(
                     icon::FlipHorizontal,
-                    "水平翻转",
+                    t.tool_flip_horizontal,
                     if self.shift_pressed {
                         Event::flip_horizontal(FlipHorizontalMode::Right)
                     } else if self.ctrl_pressed {
@@ -166,14 +189,14 @@ impl Toolbar {
                 ),
                 space().width(8),
                 // 分割/合并按钮
-                tool_button(icon::Split, "分割(Split)", Event::split(), window),
+                tool_button(icon::Split, t.tool_split, Event::split(), window),
                 space().width(4),
-                tool_button(icon::Glue, "合并(Glue)", Event::glue(), window),
+                tool_button(icon::Glue, t.tool_glue, Event::glue(), window),
                 space().width(8),
                 // 移调按钮
                 flip_button(
                     icon::TransposeDown,
-                    "移调 -1",
+                    t.tool_transpose_down,
                     Event::transpose_down(),
                     has_selection,
                     window
@@ -181,7 +204,7 @@ impl Toolbar {
                 space().width(4),
                 flip_button(
                     icon::TransposeUp,
-                    "移调 +1",
+                    t.tool_transpose_up,
                     Event::transpose_up(),
                     has_selection,
                     window
@@ -231,7 +254,7 @@ impl Toolbar {
 
         let precision_selector = container(
             row![
-                text("精度:").size(14),
+                text(t.precision_label).size(14),
                 space().width(8),
                 pick_list(precision_options, Some(self.note_precision), |precision| {
                     if precision == NotePrecision::Custom {
@@ -241,7 +264,7 @@ impl Toolbar {
                         Event::precision_changed(precision)
                     }
                 },)
-                .placeholder("选择精度")
+                .placeholder(t.precision_placeholder)
                 .padding([4, 8])
                 .width(iced_widget::core::Length::Fixed(120.0)),
             ]
@@ -257,9 +280,9 @@ impl Toolbar {
         // 自动滚动按钮区域
         use lumino_core::storage::config::AutoScrollMode;
         let auto_scroll_label = match self.auto_scroll_mode {
-            AutoScrollMode::FixedIndicatorLeft => "自动滚动: 固定",
-            AutoScrollMode::ScrollingIndicator => "自动滚动: 滚动",
-            AutoScrollMode::Off => "自动滚动: 关闭",
+            AutoScrollMode::FixedIndicatorLeft => t.auto_scroll_fixed,
+            AutoScrollMode::ScrollingIndicator => t.auto_scroll_scrolling,
+            AutoScrollMode::Off => t.auto_scroll_off,
         };
         let auto_scroll_icon = match self.auto_scroll_mode {
             AutoScrollMode::FixedIndicatorLeft => icon::ArrowsLeftRight,
@@ -294,7 +317,7 @@ impl Toolbar {
                 .with_background(bg)
             })
             .padding([8, 12]),
-            "切换自动滚动模式",
+            t.auto_scroll_tooltip,
         ))
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
@@ -309,7 +332,7 @@ impl Toolbar {
                 row![
                     icon::view_with_size_and_theme(icon::Users, 18, 18, Some(&window.theme)),
                     space().width(6),
-                    text("多人协作")
+                    text(t.collaboration_label)
                         .size(14)
                         .color(palette.background.weakest.text),
                 ]
@@ -332,7 +355,7 @@ impl Toolbar {
                 .with_background(bg)
             })
             .padding([8, 12]),
-            "打开协作面板",
+            t.collaboration_tooltip,
         ))
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
@@ -344,9 +367,9 @@ impl Toolbar {
         // 撤销/重做按钮区域
         let undo_redo_controls = container(
             row![
-                tool_button(icon::Undo, "撤销", Event::undo(), window),
+                tool_button(icon::Undo, t.undo, Event::undo(), window),
                 space().width(4),
-                tool_button(icon::Redo, "重做", Event::redo(), window),
+                tool_button(icon::Redo, t.redo, Event::redo(), window),
             ]
             .align_y(Alignment::Center),
         )

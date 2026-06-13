@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 use crate::root::handlers::MessageHandler;
 
 #[test]
@@ -229,10 +229,14 @@ fn test_speed_change_button_always_enabled_in_view() {
     let root = Root::new(&ui_config);
 
     // 有选中 -> view
-    let _element = root.toolbar.view(&root.window, true);
+    let _element = root
+        .toolbar
+        .view(&root.window, true, root.settings.language);
 
     // 无选中 -> view（不应 panic/assert）
-    let _element = root.toolbar.view(&root.window, false);
+    let _element = root
+        .toolbar
+        .view(&root.window, false, root.settings.language);
 
     // 验证通过：两种情况下 view 均正常返回
 }
