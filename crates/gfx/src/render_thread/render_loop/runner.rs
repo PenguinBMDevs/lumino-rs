@@ -158,13 +158,21 @@ pub fn run_render_thread(
                 });
 
                 // 计算可见 tick/pitch 范围用于视口裁剪
+                // 必须与 host/render/notes.rs 中的计算一致，
+                // 否则 GPU 会等一批 CPU 没采集的音符 → 空白区域。
+                let note_area_width =
+                    (params.canvas_size.0 - params.keyboard_width).max(0.0);
+                let note_area_height =
+                    (params.canvas_size.1 - params.ruler_height).max(0.0);
+
                 let visible_tick_start = (params.scroll.0 / params.zoom.0).max(0.0);
-                let visible_tick_end = ((params.scroll.0 + params.logical_size.0) / params.zoom.0)
-                    .max(visible_tick_start);
+                let visible_tick_end =
+                    ((params.scroll.0 + note_area_width) / params.zoom.0)
+                        .max(visible_tick_start);
                 let max_key = params.max_key_index;
                 let key_top = max_key - (params.scroll.1 / params.zoom.1);
                 let key_bottom =
-                    max_key - ((params.scroll.1 + params.logical_size.1) / params.zoom.1);
+                    max_key - ((params.scroll.1 + note_area_height) / params.zoom.1);
                 let visible_pitch_max = (key_top.ceil() as u16 + 1) as f32;
                 let visible_pitch_min =
                     (key_bottom.floor().max(0.0) as u16).saturating_sub(1) as f32;
