@@ -221,11 +221,13 @@ impl OnionSkinBucket {
     /// - `params`: 视口参数集合
     /// - `cursor`: 每个 key 的渲染游标，由调用方持有并维护
     /// - `track_filter`: 音轨可见性过滤
+    /// - `track_color_fn`: 音轨颜色查询函数，返回 RGBA8 打包颜色
     pub fn collect_visible_with_cursor(
         &self,
         params: OnionCollectParams,
         cursor: &mut [usize; 256],
         track_filter: impl Fn(u16) -> bool,
+        track_color_fn: impl Fn(u16) -> u32,
         out: &mut Vec<OnionNote>,
     ) {
         let ts = params.tick_start as u32;
@@ -258,8 +260,6 @@ impl OnionSkinBucket {
             // 从游标开始扫描可见音符
             // 注意：游标仅表示"第一个 end_tick > ts 的音符"。
             // 扫描时不修改游标——游标只在前面的 while 循环中推进。
-            // 之前代码会在这里把游标推进到 start_tick >= te，这会导致
-            // 下一帧跳过 ts~te 之间仍可见的音符（引起洋葱皮消失）。
             for note in bucket[*key_cursor..].iter() {
                 if note.start_tick >= te {
                     break;
@@ -270,7 +270,11 @@ impl OnionSkinBucket {
                 if !track_filter(note.track_idx()) {
                     continue;
                 }
-                out.push(*note);
+                // 为每个音符设置颜色（per-note 颜色编码，支持任意数量音轨）
+                let color = track_color_fn(note.track_idx());
+                let mut visible_note = *note;
+                visible_note.set_color_packed(color);
+                out.push(visible_note);
             }
         }
     }

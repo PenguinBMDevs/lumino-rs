@@ -1,7 +1,4 @@
-use super::{
-    CameraUniform, DrawIndirectArgs, OnionNote, OnionRenderer, OnionTrackColors, OnionTrackMask,
-    OnionViewportUniform,
-};
+use super::{CameraUniform, DrawIndirectArgs, OnionNote, OnionRenderer, OnionViewportUniform};
 use wgpu::util::DeviceExt;
 
 impl OnionRenderer {
@@ -27,11 +24,14 @@ impl OnionRenderer {
             .min(Self::INITIAL_NOTE_CAPACITY);
 
         // ─── Compute bind group layout ──────────────────
+        // binding 0: viewport uniform
+        // binding 1: note_pool storage (read)
+        // binding 2: instance_indices storage (read_write)
+        // binding 3: indirect_args storage (read_write)
         let compute_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("onion_compute_bind_group_layout"),
                 entries: &[
-                    // binding 0: viewport uniform
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::COMPUTE,
@@ -42,20 +42,8 @@ impl OnionRenderer {
                         },
                         count: None,
                     },
-                    // binding 1: track mask uniform
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // binding 2: note pool storage (read)
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
                         visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -64,9 +52,8 @@ impl OnionRenderer {
                         },
                         count: None,
                     },
-                    // binding 3: instance indices storage (read_write)
                     wgpu::BindGroupLayoutEntry {
-                        binding: 3,
+                        binding: 2,
                         visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: false },
@@ -75,9 +62,8 @@ impl OnionRenderer {
                         },
                         count: None,
                     },
-                    // binding 4: indirect args storage (read_write)
                     wgpu::BindGroupLayoutEntry {
-                        binding: 4,
+                        binding: 3,
                         visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: false },
@@ -90,11 +76,13 @@ impl OnionRenderer {
             });
 
         // ─── Render bind group layout ───────────────────
+        // binding 0: camera uniform
+        // binding 1: instance_indices storage (read)
+        // binding 2: note_pool storage (read)
         let render_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("onion_render_bind_group_layout"),
                 entries: &[
-                    // binding 0: camera uniform
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::VERTEX,
@@ -105,20 +93,8 @@ impl OnionRenderer {
                         },
                         count: None,
                     },
-                    // binding 1: track colors uniform
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // binding 2: instance indices storage (read)
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
                         visibility: wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -127,9 +103,8 @@ impl OnionRenderer {
                         },
                         count: None,
                     },
-                    // binding 3: note pool storage (read)
                     wgpu::BindGroupLayoutEntry {
-                        binding: 3,
+                        binding: 2,
                         visibility: wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -225,16 +200,6 @@ impl OnionRenderer {
             contents: bytemuck::cast_slice(&[OnionViewportUniform::default()]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let track_mask_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("onion_track_mask_uniform"),
-            contents: bytemuck::cast_slice(&[OnionTrackMask::all()]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let track_color_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("onion_track_color_uniform"),
-            contents: bytemuck::cast_slice(&[OnionTrackColors::default()]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("onion_camera_uniform"),
             contents: bytemuck::cast_slice(&[CameraUniform::default()]),
@@ -246,7 +211,6 @@ impl OnionRenderer {
             device,
             &compute_bind_group_layout,
             &viewport_buffer,
-            &track_mask_buffer,
             &note_pool_buffer,
             &instance_indices_buffer,
             &indirect_buffer,
@@ -255,7 +219,6 @@ impl OnionRenderer {
             device,
             &render_bind_group_layout,
             &camera_buffer,
-            &track_color_buffer,
             &instance_indices_buffer,
             &note_pool_buffer,
         );
@@ -265,8 +228,6 @@ impl OnionRenderer {
             instance_indices_buffer,
             indirect_buffer,
             viewport_buffer,
-            track_mask_buffer,
-            track_color_buffer,
             camera_buffer,
             render_pipeline,
             compute_pipeline,
@@ -281,7 +242,6 @@ impl OnionRenderer {
             bind_groups_dirty: false,
             last_viewport: None,
             last_camera: None,
-            last_track_mask: None,
             notes_dirty: false,
         }
     }

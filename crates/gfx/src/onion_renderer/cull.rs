@@ -1,10 +1,10 @@
 use super::{CameraUniform, OnionNote, OnionRenderer, OnionViewportUniform};
 
 impl OnionRenderer {
-    /// 准备计算剔除（视口或轨道掩码变化时调用）
+    /// 准备计算剔除（视口变化时调用）
     ///
     /// 执行 compute shader 剔除，结果写入 instance_indices_buffer 和 indirect_buffer。
-    /// 内置 dirty tracking：当视口/相机/轨道掩码/音符均未变化时跳过 compute dispatch。
+    /// 内置 dirty tracking：当视口/相机/音符均未变化时跳过 compute dispatch。
     /// `notes` 参数提供 CPU 端音符切片，用于二分查找定位可见范围，减少 GPU 扫描量。
     pub fn prepare_cull(
         &mut self,
@@ -36,7 +36,7 @@ impl OnionRenderer {
             full_viewport.fill_cull_range(note_slice);
         }
 
-        // Dirty check：检测视口/相机/轨道掩码/音符是否有变化
+        // Dirty check：检测视口/相机/音符是否有变化
         let viewport_changed = self.last_viewport.as_ref() != Some(&full_viewport);
         let camera_changed = self.last_camera.as_ref() != Some(camera);
         let anything_dirty = viewport_changed || camera_changed || self.notes_dirty;
@@ -46,8 +46,6 @@ impl OnionRenderer {
         }
 
         // 上传视口 uniform，仅在变化时上传
-        // 注意：notes_dirty 也会影响视口 uniform 中的 note_count/visible_start/visible_end，
-        // 因此要在更新缓存状态之前检查
         if viewport_changed || self.notes_dirty {
             queue.write_buffer(
                 &self.viewport_buffer,
@@ -60,7 +58,7 @@ impl OnionRenderer {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[*camera]));
         }
 
-        // 更新缓存状态（必须在 upload 之后，否则 viewport_changed 和 self.notes_dirty 永远是 false）
+        // 更新缓存状态
         self.last_viewport = Some(full_viewport);
         self.last_camera = Some(*camera);
         self.notes_dirty = false;

@@ -7,7 +7,7 @@ pub use crate::note_renderer::CameraUniform;
 /// - start_tick / end_tick: tick 范围（u32，单位 tick）
 /// - pitch: 音高 (u8)
 /// - track_idx: 音轨索引 (u16)
-/// - 填充至 16 字节满足 storage buffer 对齐要求
+/// - color_packed: RGBA8 颜色（替代 uniform 查表，支持任意数量音轨）
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct OnionNote {
@@ -17,8 +17,8 @@ pub struct OnionNote {
     pub end_tick: u32,
     /// 低 8 位 = pitch，位 8-23 = track_idx，高 8 位保留
     pub packed: u32,
-    /// 填充至 16 字节
-    pub _padding: u32,
+    /// RGBA8 打包颜色（r << 24 | g << 16 | b << 8 | a），替代 uniform 颜色表
+    pub color_packed: u32,
 }
 
 impl OnionNote {
@@ -27,7 +27,22 @@ impl OnionNote {
             start_tick,
             end_tick,
             packed: (track_idx as u32) << 8 | pitch as u32,
-            _padding: 0,
+            color_packed: 0, // 默认透明黑，调用方负责设置
+        }
+    }
+
+    pub fn new_with_color(
+        start_tick: u32,
+        end_tick: u32,
+        pitch: u8,
+        track_idx: u16,
+        color_packed: u32,
+    ) -> Self {
+        Self {
+            start_tick,
+            end_tick,
+            packed: (track_idx as u32) << 8 | pitch as u32,
+            color_packed,
         }
     }
 
@@ -37,6 +52,25 @@ impl OnionNote {
 
     pub fn track_idx(&self) -> u16 {
         ((self.packed >> 8) & 0xFFFF) as u16
+    }
+
+    /// 设置 RGBA8 打包颜色
+    pub fn set_color_packed(&mut self, rgba: u32) {
+        self.color_packed = rgba;
+    }
+
+    /// 获取 RGBA8 打包颜色
+    pub fn color_packed(&self) -> u32 {
+        self.color_packed
+    }
+
+    /// 从 RGBA f32 分量打包为 u32
+    pub fn pack_rgba(r: f32, g: f32, b: f32, a: f32) -> u32 {
+        let ri = (r.clamp(0.0, 1.0) * 255.0) as u32;
+        let gi = (g.clamp(0.0, 1.0) * 255.0) as u32;
+        let bi = (b.clamp(0.0, 1.0) * 255.0) as u32;
+        let ai = (a.clamp(0.0, 1.0) * 255.0) as u32;
+        (ri << 24) | (gi << 16) | (bi << 8) | ai
     }
 }
 
@@ -98,7 +132,7 @@ impl OnionViewportUniform {
     }
 }
 
-/// 轨道掩码 uniform — 支持最多 64 个轨道
+/// 轨道掩码 — 支持最多 64 个轨道（CPU 端过滤用）
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct OnionTrackMask {
@@ -148,51 +182,19 @@ impl OnionTrackMask {
         self.mask_lo = new as u32;
         self.mask_hi = (new >> 32) as u32;
     }
-}
 
-/// 轨道颜色 uniform — 固定 64 条轨道，每条 16 字节对齐
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct OnionTrackColors {
-    pub colors: [TrackColor; 64],
-}
-
-impl Default for OnionTrackColors {
-    fn default() -> Self {
-        Self {
-            colors: [TrackColor::default(); 64],
+    /// 检查指定音轨是否可见
+    pub fn is_track_visible(&self, track_idx: u16) -> bool {
+        if track_idx >= 64 {
+            return false;
         }
+        let mask = 1u64 << track_idx;
+        let current = (self.mask_hi as u64) << 32 | self.mask_lo as u64;
+        (current & mask) != 0
     }
 }
 
-/// 单条轨道颜色 — vec4<f32> 对齐
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct TrackColor {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
-}
-
-impl Default for TrackColor {
-    fn default() -> Self {
-        Self {
-            r: 0.5,
-            g: 0.5,
-            b: 0.5,
-            a: 0.3,
-        }
-    }
-}
-
-impl TrackColor {
-    pub fn from_rgba(r: f32, g: f32, b: f32, a: f32) -> Self {
-        Self { r, g, b, a }
-    }
-}
-
-/// 间接绘制参数 — 匹配 VkDrawIndexedIndirectCommand（16 字节）
+/// 间接绘制参数 — 匹配 VkDrawIndirectCommand（16 字节）
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct DrawIndirectArgs {

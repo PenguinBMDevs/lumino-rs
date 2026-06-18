@@ -1,9 +1,10 @@
-use super::{OnionNote, OnionRenderer, OnionTrackColors, OnionTrackMask};
+use super::{OnionNote, OnionRenderer};
 
 impl OnionRenderer {
     /// 上传所有洋葱皮音符到 GPU
     ///
     /// 替换整个音符池内容。传入所有需要显示的其它音轨的音符。
+    /// 颜色已编码在每个音符的 color_packed 字段中。
     pub fn upload_notes(
         &mut self,
         notes: &[OnionNote],
@@ -90,23 +91,6 @@ impl OnionRenderer {
         }
     }
 
-    /// 上传轨道颜色表
-    pub fn upload_track_colors(&self, colors: &OnionTrackColors, queue: &wgpu::Queue) {
-        queue.write_buffer(
-            &self.track_color_buffer,
-            0,
-            bytemuck::cast_slice(&[*colors]),
-        );
-    }
-
-    /// 设置轨道掩码
-    pub fn upload_track_mask(&mut self, mask: &OnionTrackMask, queue: &wgpu::Queue) {
-        if Some(mask) != self.last_track_mask.as_ref() {
-            self.last_track_mask = Some(*mask);
-        }
-        queue.write_buffer(&self.track_mask_buffer, 0, bytemuck::cast_slice(&[*mask]));
-    }
-
     /// 获取当前音符数量
     pub fn note_count(&self) -> usize {
         self.note_count
@@ -123,8 +107,6 @@ impl OnionRenderer {
             + self.instance_indices_buffer.size()
             + self.indirect_buffer.size()
             + self.viewport_buffer.size()
-            + self.track_mask_buffer.size()
-            + self.track_color_buffer.size()
             + self.camera_buffer.size()
     }
 }

@@ -30,7 +30,6 @@ impl OnionRenderer {
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
         viewport_buffer: &wgpu::Buffer,
-        track_mask_buffer: &wgpu::Buffer,
         note_pool_buffer: &wgpu::Buffer,
         instance_indices_buffer: &wgpu::Buffer,
         indirect_buffer: &wgpu::Buffer,
@@ -45,18 +44,14 @@ impl OnionRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: track_mask_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
                     resource: note_pool_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 3,
+                    binding: 2,
                     resource: instance_indices_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 4,
+                    binding: 3,
                     resource: indirect_buffer.as_entire_binding(),
                 },
             ],
@@ -67,7 +62,6 @@ impl OnionRenderer {
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
         camera_buffer: &wgpu::Buffer,
-        track_color_buffer: &wgpu::Buffer,
         instance_indices_buffer: &wgpu::Buffer,
         note_pool_buffer: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
@@ -81,14 +75,10 @@ impl OnionRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: track_color_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
                     resource: instance_indices_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 3,
+                    binding: 2,
                     resource: note_pool_buffer.as_entire_binding(),
                 },
             ],
@@ -100,7 +90,6 @@ impl OnionRenderer {
             device,
             &self.compute_bind_group_layout,
             &self.viewport_buffer,
-            &self.track_mask_buffer,
             &self.note_pool_buffer,
             &self.instance_indices_buffer,
             &self.indirect_buffer,
@@ -109,7 +98,6 @@ impl OnionRenderer {
             device,
             &self.render_bind_group_layout,
             &self.camera_buffer,
-            &self.track_color_buffer,
             &self.instance_indices_buffer,
             &self.note_pool_buffer,
         );

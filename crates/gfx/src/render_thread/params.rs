@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, KeyInstance,
-    NoteInstance, OnionSkinBucket, OnionTrackColors, OnionTrackMask, RulerTickInstance,
+    NoteInstance, OnionSkinBucket, RulerTickInstance,
 };
 
 /// 渲染参数 - 从 UI 线程传递到 WGPU 线程
@@ -64,10 +64,8 @@ pub struct RenderParams {
     pub cc_bar_instances: Vec<CcBarInstance>,
     /// 力度面板区域 (x, y, width, height) — 屏幕坐标，用于 scissor
     pub velocity_panel_rect: Option<(f32, f32, f32, f32)>,
-    /// 洋葱皮轨道掩码（GPU 可见性过滤）
-    pub onion_track_mask: Option<OnionTrackMask>,
-    /// 洋葱皮轨道颜色表（GPU 颜色 LUT）
-    pub onion_track_colors: Option<OnionTrackColors>,
+    /// 洋葱皮轨道颜色表（per-track RGBA8 打包颜色，index = track_idx）
+    pub onion_track_colors: Option<Vec<u32>>,
     /// 洋葱皮按 key 分桶缓存（渲染线程直接采集用）
     pub onion_bucket: Option<Arc<OnionSkinBucket>>,
     /// bucket 版本号，用于渲染线程检测数据变化
@@ -114,7 +112,6 @@ impl Default for RenderParams {
             arrangement_uniform: ArrangementUniform::default(),
             cc_bar_instances: Vec::new(),
             velocity_panel_rect: None,
-            onion_track_mask: None,
             onion_track_colors: None,
             onion_bucket: None,
             onion_bucket_version: 0,
@@ -165,9 +162,8 @@ impl RenderParams {
         arrangement_uniform: ArrangementUniform,
         cc_bar_instances: Vec<CcBarInstance>,
         velocity_panel_rect: Option<(f32, f32, f32, f32)>,
-        // Onion skin (GPU track mask & colors)
-        onion_track_mask: Option<OnionTrackMask>,
-        onion_track_colors: Option<OnionTrackColors>,
+        // Onion skin (per-track packed colors)
+        onion_track_colors: Option<Vec<u32>>,
         // Onion skin (render-thread collection)
         onion_bucket: Option<Arc<OnionSkinBucket>>,
         onion_bucket_version: u64,
@@ -207,7 +203,6 @@ impl RenderParams {
             arrangement_uniform,
             cc_bar_instances,
             velocity_panel_rect,
-            onion_track_mask,
             onion_track_colors,
             onion_bucket,
             onion_bucket_version,

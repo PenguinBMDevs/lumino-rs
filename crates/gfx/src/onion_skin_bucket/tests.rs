@@ -7,6 +7,11 @@ fn make_note_info(start: u32, length: u32, key: u8) -> NoteInfo {
     NoteInfo::new(start, length, key, 100, 0)
 }
 
+/// 测试用颜色函数：始终返回白色
+fn test_color_fn(_track_idx: u16) -> u32 {
+    0xFFFFFFFF
+}
+
 #[test]
 fn test_bucket_build_and_collect() {
     let notes = vec![
@@ -25,6 +30,7 @@ fn test_bucket_build_and_collect() {
         OnionCollectParams::new(0.0, 15.0, 60, 61, 0.0),
         &mut cursor,
         |_| true,
+        test_color_fn,
         &mut out,
     );
     assert_eq!(out.len(), 2);
@@ -34,6 +40,7 @@ fn test_bucket_build_and_collect() {
         OnionCollectParams::new(15.0, 25.0, 60, 61, 0.0),
         &mut cursor,
         |_| true,
+        test_color_fn,
         &mut out,
     );
     assert_eq!(out.len(), 1);
@@ -61,10 +68,14 @@ fn test_cursor_reuse() {
         OnionCollectParams::new(0.0, 50.0, 60, 60, 0.0),
         &mut cursor,
         |_| true,
+        test_color_fn,
         &mut out,
     );
     assert_eq!(out.len(), 1);
-    assert_eq!(cursor[60], 0, "cursor should stay at 0 since note[0].end=10 > ts=0");
+    assert_eq!(
+        cursor[60], 0,
+        "cursor should stay at 0 since note[0].end=10 > ts=0"
+    );
 
     // Frame 2: ts=50, te=150
     //  - cursor[60]=0, while: note[0].end=10 <= 50? Yes → cursor=1.
@@ -76,11 +87,15 @@ fn test_cursor_reuse() {
         OnionCollectParams::new(50.0, 150.0, 60, 60, 0.0),
         &mut cursor,
         |_| true,
+        test_color_fn,
         &mut out,
     );
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].start_tick, 100);
-    assert_eq!(cursor[60], 1, "cursor should advance to 1 after note[0] is behind viewport");
+    assert_eq!(
+        cursor[60], 1,
+        "cursor should advance to 1 after note[0] is behind viewport"
+    );
 }
 
 #[test]
@@ -98,6 +113,7 @@ fn test_cursor_reset_on_backward() {
         OnionCollectParams::new(50.0, 150.0, 60, 60, 0.0),
         &mut cursor,
         |_| true,
+        test_color_fn,
         &mut out,
     );
     assert_eq!(cursor[60], 1);
@@ -109,6 +125,7 @@ fn test_cursor_reset_on_backward() {
         OnionCollectParams::new(0.0, 50.0, 60, 60, 50.0),
         &mut cursor,
         |_| true,
+        test_color_fn,
         &mut out,
     );
     assert_eq!(out.len(), 1);
@@ -147,6 +164,7 @@ fn test_track_filter() {
         OnionCollectParams::new(0.0, 20.0, 60, 61, 0.0),
         &mut cursor,
         |_| false,
+        test_color_fn,
         &mut out,
     );
     assert_eq!(out.len(), 0);

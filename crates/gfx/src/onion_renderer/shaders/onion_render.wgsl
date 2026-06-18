@@ -1,6 +1,7 @@
 // 洋葱皮实例化渲染着色器
 // 与 note.wgsl 完全一致的拓扑：TriangleStrip + 4 顶点
 // 通过 draw indirect 绘制，顶点着色器从 instance_indices → note_pool 查数据
+// 颜色从 per-note color_packed 字段解包，支持任意数量音轨
 
 struct CameraUniform {
     scroll: vec2<f32>,
@@ -13,21 +14,16 @@ struct CameraUniform {
     _padding: f32,
 };
 
-struct OnionTrackColors {
-    colors: array<vec4<f32>, 64>,
-};
-
 struct OnionNote {
     start_tick: u32,
     end_tick: u32,
     packed: u32,
-    _padding: u32,
+    color_packed: u32,
 };
 
 @group(0) @binding(0) var<uniform> camera: CameraUniform;
-@group(0) @binding(1) var<uniform> track_colors: OnionTrackColors;
-@group(0) @binding(2) var<storage, read> instance_indices: array<u32>;
-@group(0) @binding(3) var<storage, read> note_pool: array<OnionNote>;
+@group(0) @binding(1) var<storage, read> instance_indices: array<u32>;
+@group(0) @binding(2) var<storage, read> note_pool: array<OnionNote>;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -40,6 +36,14 @@ fn unpack_pitch(packed: u32) -> u32 {
 
 fn unpack_track_idx(packed: u32) -> u32 {
     return (packed >> 8u) & 0xFFFFu;
+}
+
+fn unpack_color_rgba(packed: u32) -> vec4<f32> {
+    let r = f32((packed >> 24u) & 0xFFu) / 255.0;
+    let g = f32((packed >> 16u) & 0xFFu) / 255.0;
+    let b = f32((packed >> 8u) & 0xFFu) / 255.0;
+    let a = f32(packed & 0xFFu) / 255.0;
+    return vec4<f32>(r, g, b, a);
 }
 
 @vertex
@@ -80,13 +84,12 @@ fn vs_main(
     let ndc_x = (screen_pos.x / camera.viewport_size.x) * 2.0 - 1.0;
     let ndc_y = 1.0 - (screen_pos.y / camera.viewport_size.y) * 2.0;
 
-    // 从轨道颜色表查找颜色
-    let color_idx = min(track, 63u);
-    let tc = track_colors.colors[color_idx];
+    // 从 per-note color_packed 解包颜色 — 无音轨数量限制
+    let color = unpack_color_rgba(note.color_packed);
 
     var output: VertexOutput;
     output.position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
-    output.color = vec4<f32>(tc.r, tc.g, tc.b, tc.a);
+    output.color = color;
     return output;
 }
 

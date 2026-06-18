@@ -2,7 +2,7 @@ use crate::RenderParams;
 use crate::host::Host;
 use lumino_gfx::{
     ARRANGEMENT_PALETTE, ArrangementNoteInstance, ArrangementSceneParams, ArrangementUniform,
-    ArrangementViewColors, CcBarColors, CcBarData, CcBarViewParams, convert_onion_colors,
+    ArrangementViewColors, CcBarColors, CcBarData, CcBarViewParams, OnionNote,
 };
 
 impl Host {
@@ -527,18 +527,15 @@ impl Host {
             ))
         };
 
-        // ── 洋葱皮 GPU 轨道掩码 & 颜色 ──
-        let onion_track_mask = Some(self.root.sidebar.get_onion_track_mask());
-
+        // ── 洋葱皮 per-track 打包颜色 ──
         let onion_skin_colors = &self.root.editor.onion_skin.config.colors;
         let track_count = self.root.sidebar.tracks.len();
-        let max_colors = track_count.min(64);
-        let mut raw_colors: Vec<(f32, f32, f32, f32)> = Vec::with_capacity(max_colors);
-        for i in 0..max_colors {
+        let mut packed_colors: Vec<u32> = Vec::with_capacity(track_count);
+        for i in 0..track_count {
             let c = onion_skin_colors.get_raw(i);
-            raw_colors.push((c.r, c.g, c.b, c.a));
+            packed_colors.push(OnionNote::pack_rgba(c.r, c.g, c.b, c.a));
         }
-        let onion_track_colors = Some(convert_onion_colors(&raw_colors));
+        let onion_track_colors = Some(packed_colors);
 
         // ── 洋葱皮渲染线程采集参数 ──
         let onion_bucket = self
@@ -580,7 +577,6 @@ impl Host {
             arrangement_uniform,
             data.cc_bar_instances,
             velocity_panel_rect,
-            onion_track_mask,
             onion_track_colors,
             onion_bucket,
             onion_bucket_version,
