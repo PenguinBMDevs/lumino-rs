@@ -412,6 +412,9 @@ impl Host {
             );
         }
 
+        // M1: 增量维护洋葱皮按 key 分桶缓存
+        let _bucket_changed = self.update_onion_bucket();
+
         // Phase 2: 洋葱皮实例构建（异步）
         // 发送给 NoteWorker 后台计算，完成后 swap
         if note_data_changed || onion_viewport_changed {

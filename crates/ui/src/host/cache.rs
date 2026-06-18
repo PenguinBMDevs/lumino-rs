@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::editor::onion_bg_pool::OnionBgTilePool;
 use iced_wgpu::wgpu;
-use lumino_gfx::{OnionBgTileRef, OnionNote, SwappableBuffer};
+use lumino_gfx::{OnionBgTileRef, OnionNote, OnionSkinBucket, SwappableBuffer};
 
 /// 渲染缓存 - 避免每帧重复上传相同数据
 ///
@@ -40,6 +40,12 @@ pub struct RenderCache {
     pub cached_track_notes_arc: Option<Arc<HashMap<usize, im::Vector<crate::editor::note::Note>>>>,
     /// 上一次缓存时的 track_notes_gen 值，用于检测变化。
     pub cached_track_notes_gen: u64,
+    /// 洋葱皮按 key 分桶缓存（M1：从 Kiva 移植的数据层）
+    pub onion_bucket: Option<OnionSkinBucket>,
+    /// 上一次构建 bucket 时的 document Arc 指针
+    pub onion_bucket_doc_ptr: Option<*const ()>,
+    /// 上一次构建 bucket 时的 track_notes_gen
+    pub onion_bucket_track_gen: u64,
 }
 
 impl RenderCache {
@@ -58,6 +64,9 @@ impl RenderCache {
             arrangement_instances: Vec::new(),
             cached_track_notes_arc: None,
             cached_track_notes_gen: u64::MAX, // 初始值确保首次触发重建
+            onion_bucket: None,
+            onion_bucket_doc_ptr: None,
+            onion_bucket_track_gen: u64::MAX,
         }
     }
 

@@ -5,9 +5,94 @@
 //! 仅在 `EditorData.track_notes_gen` 变化时重建 Arc，其余帧直接 O(1) clone Arc。
 //! `document` 本身已是 `Arc<MidiDocument>`，clone 也是 O(1)。
 
+use std::sync::Arc;
+
 use crate::host::Host;
+use lumino_gfx::OnionSkinBucket;
 
 impl Host {
+    /// 更新洋葱皮按 key 分桶缓存
+    ///
+    /// 仅在底层数据变化时重建/增量更新 bucket，避免每帧全量扫描。
+    /// 返回值：bucket 是否发生变化（版本号递增）
+    pub(super) fn update_onion_bucket(&mut self) -> bool {
+        let es = &self.root.editor.editor_state;
+        let data = &es.data;
+        let current_track = data.current_track;
+        let cache = &mut self.render_ctx.render_cache;
+
+        let current_doc_ptr: Option<*const ()> = data
+            .document
+            .as_ref()
+            .map(|arc| Arc::as_ptr(arc) as *const ());
+        let current_track_gen = data.track_notes_gen;
+
+        // 情况1：document 变化 → 全量重建
+        let doc_changed = cache.onion_bucket_doc_ptr != current_doc_ptr;
+        let track_gen_changed = cache.onion_bucket_track_gen != current_track_gen;
+
+        if doc_changed {
+            if let Some(doc) = &data.document {
+                let new_bucket = OnionSkinBucket::from_midi_document(
+                    doc,
+                    |_| true, // bucket 包含所有非当前音轨，具体过滤在 collect_visible 时做
+                    current_track,
+                );
+                cache.onion_bucket = Some(new_bucket);
+            } else {
+                cache.onion_bucket = None;
+            }
+            cache.onion_bucket_doc_ptr = current_doc_ptr;
+            cache.onion_bucket_track_gen = current_track_gen;
+            return true;
+        }
+
+        // 情况2：只有用户编辑音轨变化 → 增量更新
+        if track_gen_changed {
+            let bucket = match cache.onion_bucket.as_mut() {
+                Some(b) => b,
+                None => return false, // 没有 document 时无法建立 bucket，由旧逻辑兜底
+            };
+
+            // 移除已不在 track_notes 中的音轨
+            let mut tracks_in_bucket: std::collections::HashSet<u16> =
+                std::collections::HashSet::new();
+            for key in 0..256u16 {
+                for note in bucket.key_notes(key as u8) {
+                    tracks_in_bucket.insert(note.track_idx());
+                }
+            }
+
+            let mut changed = false;
+
+            // 移除已不在 track_notes 中的 track
+            for track_idx in tracks_in_bucket {
+                let track_idx_usize = track_idx as usize;
+                if track_idx_usize != current_track
+                    && track_idx_usize < 64
+                    && !data.track_notes.contains_key(&track_idx_usize)
+                {
+                    bucket.remove_track(track_idx);
+                    changed = true;
+                }
+            }
+
+            // 更新/添加 track_notes 中的音轨
+            for (&track_idx, notes) in &data.track_notes {
+                if track_idx == current_track {
+                    continue;
+                }
+                bucket.update_user_track(track_idx as u16, notes.iter());
+                changed = true;
+            }
+
+            cache.onion_bucket_track_gen = current_track_gen;
+            changed
+        } else {
+            false
+        }
+    }
+
     /// 收集洋葱皮计算所需的数据快照
     ///
     /// # 零拷贝设计
