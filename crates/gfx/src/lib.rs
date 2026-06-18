@@ -10,6 +10,7 @@ mod grid_renderer;
 mod keyboard_renderer;
 mod note_renderer;
 mod onion_renderer;
+mod onion_skin_bucket;
 pub mod render_thread;
 mod ruler_renderer;
 // mod velocity_line_renderer; // 已弃用 — 改用 CcBarRenderer
@@ -41,6 +42,7 @@ pub use onion_renderer::{
     OnionNote, OnionRenderer, OnionTrackColors, OnionTrackMask, OnionViewportUniform, TrackColor,
     convert_onion_colors,
 };
+pub use onion_skin_bucket::{OnionCollectParams, OnionSkinBucket, build_bucket_from_notes};
 pub use ruler_renderer::{
     RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,
 };

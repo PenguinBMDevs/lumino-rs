@@ -111,6 +111,9 @@ impl Host {
         // ═══ Phase 2: 洋葱皮异步派发（独立 buffer，不碰主音符） ═══
         self.ensure_note_worker();
 
+        // M2: 增量维护洋葱皮按 key 分桶缓存（单线程渲染路径）
+        let _bucket_changed = self.update_onion_bucket();
+
         // 收集快照（需要 &mut self）必须在借用 worker 之前完成
         let vp_logical = self.render_ctx.viewport.logical_size();
         let os_snapshot = self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));

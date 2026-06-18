@@ -1,55 +1,42 @@
-//! 洋葱皮计算 coordinator — 无缓存，直接读取 MIDI 文档
+//! 洋葱皮计算 coordinator — 基于 Kiva 分桶 + 游标复用
 //!
 //! == 架构 ==
-//! `NoteWorker` 是 coordinator 线程，接收 `OnionSkinJob` 后直接处理。
-//! 无 per-track 缓存（避免黑乐谱 100M+ 音符的内存爆炸），
-//! 直接从 `MidiDocument::track_notes` 读取已排序的 `NoteInfo`，
-//! 通过二分查找定位视口可见范围，构造 `OnionNote` 后并行排序。
+//! `NoteWorker` 是 coordinator 线程，接收 `OnionSkinJob` 后处理。
+//! 数据来自 `OnionSkinBucket`（按 key 分桶、按 start_tick 升序），
+//! Worker 持有渲染游标，正向滚动时只扫描新进入视口的音符。
+//!
+//! == M3 优化 ==
+//! 移除了 Phase 2 自适应排序 —— GPU cull shader 扫描全量可见子集，
+//! 不再需要全局 `start_tick` 排序。CPU 每帧省下 ~22ms（2M 音符）。
 //!
 //! == 数据流 ==
 //!   Main Thread              NoteWorker (coordinator)          WGPU Thread
 //!     │                            │                               │
-//!     ├─ snapshot ────────────────►├─ 遍历音轨                      │
-//!     │                            │  ├─ binary search              │
-//!     │                            │  ├─ 构建 OnionNote(可见范围)   │
-//!     │                            │  └─ par_sort                   │
-//!     │                            ├─ swap combined buffer ────────►│
-//!     │                            │                               ├─ upload to GPU
+//!     ├─ Arc<OnionSkinBucket> ────►├─ 按 key 游标扫描             │
+//!     │   + 视口参数               │  ├─ 可见性过滤(仅当前音轨)    │
+//!     │                            │  └─ swap combined buffer ────►│
+//!     │                            │                               ├─ upload + cull (GPU)
 
-use std::collections::HashMap;
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use lumino_gfx::{OnionNote, SwappableBuffer};
-use lumino_midi_loader::MidiDocument;
-use lumino_midi_loader::constants::TICK_SEARCH_BUFFER;
+use lumino_gfx::{OnionCollectParams, OnionNote, OnionSkinBucket, SwappableBuffer};
 
 // ─── 数据快照 ───────────────────────────────────────────────────────────────
 
 /// 洋葱皮计算所需的全部数据快照（Send 安全）
-#[expect(dead_code)]
 pub(crate) struct OnionSkinComputationSnapshot {
     pub visible_tick_start: f32,
     pub visible_tick_end: f32,
     pub visible_key_min: u16,
     pub visible_key_max: u16,
-    pub scroll_x: f32,
-    pub scroll_y: f32,
-    pub zoom_x: f32,
-    pub zoom_y: f32,
-    pub keyboard_width: f32,
-    pub ruler_height: f32,
-    pub canvas_offset_x: f32,
-    pub canvas_offset_y: f32,
-    pub viewport_logical_width: f32,
-    pub viewport_logical_height: f32,
-    pub max_key_index: f32,
     pub onion_skin_enabled: bool,
-    pub track_onion_states: HashMap<usize, bool>,
     pub current_track: usize,
-    pub document: Option<Arc<MidiDocument>>,
-    pub track_notes: Arc<HashMap<usize, im::Vector<crate::editor::note::Note>>>,
+    /// 按 key 分桶的洋葱皮数据（跨线程共享）
+    pub onion_bucket: Option<Arc<OnionSkinBucket>>,
+    /// bucket 版本号，用于 Worker 检测数据变化并重置游标
+    pub bucket_version: u64,
     /// 右侧 overscan 扩展 ticks（补偿 fire-and-forget 模式下 buffer 滞后）
     pub overscan_ticks: f32,
 }
@@ -142,6 +129,39 @@ pub(crate) struct NoteWorker {
     _thread: thread::JoinHandle<()>,
 }
 
+/// 每个 Worker 持有的渲染游标状态
+///
+/// 与 `OnionSkinBucket` 分离，使桶本身只读、可跨线程共享。
+struct CursorState {
+    /// 每个 key 的扫描游标
+    ///
+    /// 语义：每个 key 中第一个 `end_tick > ts` 的音符索引。
+    /// 只会在 while 循环中单调推进（跳过 `end_tick <= ts` 的音符）。
+    /// 不再跳到 `start_tick >= te`，避免跳过仍可见的音符。
+    cursors: Box<[usize; 256]>,
+    /// 上一帧的 tick_start，用于检测时间回退
+    last_tick_start: f32,
+    /// 上一次使用的 bucket 版本号
+    last_bucket_version: u64,
+}
+
+impl CursorState {
+    fn new() -> Self {
+        Self {
+            cursors: Box::new([0; 256]),
+            last_tick_start: 0.0,
+            last_bucket_version: u64::MAX,
+        }
+    }
+
+    /// 数据变化或时间回退时重置游标
+    fn reset(&mut self, bucket_version: u64, tick_start: f32) {
+        self.cursors.fill(0);
+        self.last_bucket_version = bucket_version;
+        self.last_tick_start = tick_start;
+    }
+}
+
 impl NoteWorker {
     pub fn spawn() -> Option<Self> {
         let (tx, rx) = mpsc::channel::<OnionSkinJob>();
@@ -157,6 +177,8 @@ impl NoteWorker {
     }
 
     fn run_coordinator(rx: mpsc::Receiver<OnionSkinJob>) {
+        let mut cursor_state = CursorState::new();
+
         loop {
             let mut job = match rx.recv() {
                 Ok(j) => j,
@@ -182,64 +204,56 @@ impl NoteWorker {
                 continue;
             }
 
+            let Some(bucket) = &snap.onion_bucket else {
+                tracing::debug!("NoteWorker: no onion bucket available, clearing buffer");
+                unsafe { job.onion_note_buffer.write_buffer() }.clear();
+                job.onion_note_buffer.swap();
+                if let Some(tx) = job.done_tx {
+                    let _ = tx.send(());
+                }
+                continue;
+            };
+
+            // 数据变化时重置游标；时间回退由 collect_visible_with_cursor 内部处理
+            if snap.bucket_version != cursor_state.last_bucket_version {
+                cursor_state.reset(snap.bucket_version, snap.visible_tick_start);
+            }
+
             // ── Phase 1: 右侧 overscan（补偿 fire-and-forget buffer 滞后） ──
-            // 当用户播放时，scroll_x 每帧都在右移，但 NoteWorker 计算出的 buffer
-            // 总是对应 ~40ms 前的视口位置。右侧 overscan 提前算好即将出现的音符，
-            // 让 buffer 即使落后 1 个 worker 周期也能覆盖实际视口。
             const MAX_VISIBLE_NOTES: usize = 3_000_000;
             let viewport_width = snap.visible_tick_end - snap.visible_tick_start;
-            let right_pad = (snap.overscan_ticks).min(viewport_width * 1.5);
+            let right_pad = snap.overscan_ticks.min(viewport_width * 1.5);
             let extended_end = (snap.visible_tick_end + right_pad).max(0.0);
 
             let buf = unsafe { job.onion_note_buffer.write_buffer() };
             buf.clear();
 
-            // 1a: MIDI 文档音轨
-            if let Some(doc) = &snap.document {
-                let nt = doc.track_count();
-                for ti in 0..nt {
-                    if ti == snap.current_track {
-                        continue;
-                    }
-                    if !snap.track_onion_states.get(&ti).copied().unwrap_or(true) {
-                        continue;
-                    }
-                    if snap.track_notes.contains_key(&ti) {
-                        continue;
-                    }
-                    let notes = doc.track_notes(ti);
-                    if notes.is_empty() {
-                        continue;
-                    }
-                    collect_visible(notes, ti as u16, snap.visible_tick_start, extended_end, buf);
-                    if buf.len() >= MAX_VISIBLE_NOTES {
-                        break;
-                    }
-                }
-            }
-            // 1b: 用户编辑音轨
-            if buf.len() < MAX_VISIBLE_NOTES {
-                for (&ti, v) in snap.track_notes.iter() {
-                    if ti == snap.current_track {
-                        continue;
-                    }
-                    if !snap.track_onion_states.get(&ti).copied().unwrap_or(true) {
-                        continue;
-                    }
-                    collect_visible_user(v, ti as u16, snap.visible_tick_start, extended_end, buf);
-                    if buf.len() >= MAX_VISIBLE_NOTES {
-                        break;
-                    }
-                }
+            // M3: 只排除当前编辑音轨；音轨可见性由 GPU track_mask 处理
+            let current_track_u16 = snap.current_track as u16;
+            let track_filter = |track_idx: u16| track_idx != current_track_u16;
+
+            bucket.collect_visible_with_cursor(
+                OnionCollectParams::new(
+                    snap.visible_tick_start,
+                    extended_end,
+                    snap.visible_key_min,
+                    snap.visible_key_max,
+                    cursor_state.last_tick_start,
+                ),
+                &mut cursor_state.cursors,
+                track_filter,
+                buf,
+            );
+
+            // 简单上限保护
+            if buf.len() > MAX_VISIBLE_NOTES {
+                buf.truncate(MAX_VISIBLE_NOTES);
             }
 
-            // ── Phase 2: 自适应排序（小 N 用 seq sort 避免 rayon 开销） ──
-            if buf.len() < 100_000 {
-                buf.sort_unstable_by_key(|n| n.start_tick);
-            } else {
-                use rayon::prelude::*;
-                buf.par_sort_unstable_by_key(|n| n.start_tick);
-            }
+            // M3: 不再需要全局 sort —— GPU cull shader 扫描全量可见子集
+            // 省去每帧 ~22ms (2M 音符) 的自适应排序
+
+            cursor_state.last_tick_start = snap.visible_tick_start;
 
             job.onion_note_buffer.swap();
 
@@ -255,55 +269,9 @@ impl NoteWorker {
         }
     }
 
-    #[expect(dead_code)]
+    #[cfg(test)]
     pub fn shutdown(self) {
         drop(self.sender);
-    }
-}
-
-// ─── 视口范围计算（二分查找） ──────────────────────────────────────────────
-
-/// 将 NoteInfo 中可见范围的音符提取为 OnionNote（直接写入目标 Vec）
-fn collect_visible(
-    notes: &[lumino_midi_loader::NoteInfo],
-    track_idx: u16,
-    ts: f32,
-    te: f32,
-    out: &mut Vec<OnionNote>,
-) {
-    let ts_u = ts as u32;
-    let te_u = te as u32;
-    let start = notes.partition_point(|n| n.start_tick < ts_u.saturating_sub(TICK_SEARCH_BUFFER));
-    if start >= notes.len() {
-        return;
-    }
-    let end = notes
-        .len()
-        .min(start + notes[start..].partition_point(|n| n.start_tick <= te_u));
-    for n in &notes[start..end] {
-        let et = n.end_tick();
-        if et > ts_u && n.start_tick < te_u {
-            out.push(OnionNote::new(n.start_tick, et, n.key, track_idx));
-        }
-    }
-}
-
-/// 将用户编辑音符中可见范围提取为 OnionNote（直接写入目标 Vec）
-fn collect_visible_user(
-    notes: &im::Vector<crate::editor::note::Note>,
-    track_idx: u16,
-    ts: f32,
-    te: f32,
-    out: &mut Vec<OnionNote>,
-) {
-    let ts_u = ts as u32;
-    let te_u = te as u32;
-    for n in notes.iter() {
-        let st = n.tick as u32;
-        let et = (n.tick + n.length) as u32;
-        if et > ts_u && st < te_u {
-            out.push(OnionNote::new(st, et, n.key as u8, track_idx));
-        }
     }
 }
 

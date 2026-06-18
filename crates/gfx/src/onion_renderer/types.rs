@@ -152,7 +152,7 @@ impl OnionTrackMask {
 
 /// 轨道颜色 uniform — 固定 64 条轨道，每条 16 字节对齐
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct OnionTrackColors {
     pub colors: [TrackColor; 64],
 }
@@ -167,7 +167,7 @@ impl Default for OnionTrackColors {
 
 /// 单条轨道颜色 — vec4<f32> 对齐
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct TrackColor {
     pub r: f32,
     pub g: f32,

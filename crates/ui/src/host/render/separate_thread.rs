@@ -2,7 +2,7 @@ use crate::RenderParams;
 use crate::host::Host;
 use lumino_gfx::{
     ARRANGEMENT_PALETTE, ArrangementNoteInstance, ArrangementSceneParams, ArrangementUniform,
-    ArrangementViewColors, CcBarColors, CcBarData, CcBarViewParams,
+    ArrangementViewColors, CcBarColors, CcBarData, CcBarViewParams, convert_onion_colors,
 };
 
 impl Host {
@@ -412,6 +412,9 @@ impl Host {
             );
         }
 
+        // M1: 增量维护洋葱皮按 key 分桶缓存
+        let _bucket_changed = self.update_onion_bucket();
+
         // Phase 2: 洋葱皮实例构建（异步）
         // 发送给 NoteWorker 后台计算，完成后 swap
         if note_data_changed || onion_viewport_changed {
@@ -540,6 +543,19 @@ impl Host {
             ))
         };
 
+        // ── 洋葱皮 GPU 轨道掩码 & 颜色 ──
+        let onion_track_mask = Some(self.root.sidebar.get_onion_track_mask());
+
+        let onion_skin_colors = &self.root.editor.onion_skin.config.colors;
+        let track_count = self.root.sidebar.tracks.len();
+        let max_colors = track_count.min(64);
+        let mut raw_colors: Vec<(f32, f32, f32, f32)> = Vec::with_capacity(max_colors);
+        for i in 0..max_colors {
+            let c = onion_skin_colors.get_raw(i);
+            raw_colors.push((c.r, c.g, c.b, c.a));
+        }
+        let onion_track_colors = Some(convert_onion_colors(&raw_colors));
+
         RenderParams::from_data(
             (physical_size.width, physical_size.height),
             (data.viewport_size.width, data.viewport_size.height),
@@ -568,6 +584,8 @@ impl Host {
             arrangement_uniform,
             data.cc_bar_instances,
             velocity_panel_rect,
+            onion_track_mask,
+            onion_track_colors,
         )
     }
 

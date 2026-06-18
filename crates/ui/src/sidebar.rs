@@ -309,15 +309,18 @@ impl Sidebar {
         }
     }
 
-    /// 获取所有音轨的洋葱皮开关状态
+    /// 获取轨道掩码（GPU 可见性过滤用）
     ///
-    /// 返回一个 HashMap，key 是音轨 ID，value 是洋葱皮是否启用
-    pub fn get_onion_skin_states(&self) -> std::collections::HashMap<usize, bool> {
-        let mut states = std::collections::HashMap::new();
-        for track in &self.tracks {
-            states.insert(track.id, track.is_onion_skin_on);
-        }
-        states
+    /// 将音轨的洋葱皮开关状态编译为 `OnionTrackMask` 位掩码，
+    /// 直接上传到 GPU 统一缓冲区，避免 CPU 每帧逐音轨过滤。
+    pub fn get_onion_track_mask(&self) -> lumino_gfx::OnionTrackMask {
+        let visible: Vec<u16> = self
+            .tracks
+            .iter()
+            .filter(|t| t.is_onion_skin_on && t.id < 64)
+            .map(|t| t.id as u16)
+            .collect();
+        lumino_gfx::OnionTrackMask::new(&visible)
     }
 }
 
