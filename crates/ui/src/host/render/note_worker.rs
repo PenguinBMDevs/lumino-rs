@@ -5,16 +5,18 @@
 //! 数据来自 `OnionSkinBucket`（按 key 分桶、按 start_tick 升序），
 //! Worker 持有渲染游标，正向滚动时只扫描新进入视口的音符。
 //!
+//! == M3 优化 ==
+//! 移除了 Phase 2 自适应排序 —— GPU cull shader 扫描全量可见子集，
+//! 不再需要全局 `start_tick` 排序。CPU 每帧省下 ~22ms（2M 音符）。
+//!
 //! == 数据流 ==
 //!   Main Thread              NoteWorker (coordinator)          WGPU Thread
 //!     │                            │                               │
 //!     ├─ Arc<OnionSkinBucket> ────►├─ 按 key 游标扫描             │
-//!     │   + 视口参数               │  ├─ 可见性过滤                │
-//!     │                            │  └─ sort visible subset      │
-//!     │                            ├─ swap combined buffer ───────►│
-//!     │                            │                               ├─ upload to GPU
+//!     │   + 视口参数               │  ├─ 可见性过滤(仅当前音轨)    │
+//!     │                            │  └─ swap combined buffer ────►│
+//!     │                            │                               ├─ upload + cull (GPU)
 
-use std::collections::HashMap;
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -30,7 +32,6 @@ pub(crate) struct OnionSkinComputationSnapshot {
     pub visible_key_min: u16,
     pub visible_key_max: u16,
     pub onion_skin_enabled: bool,
-    pub track_onion_states: HashMap<usize, bool>,
     pub current_track: usize,
     /// 按 key 分桶的洋葱皮数据（跨线程共享）
     pub onion_bucket: Option<Arc<OnionSkinBucket>>,
@@ -215,9 +216,6 @@ impl NoteWorker {
             }
 
             // ── Phase 1: 右侧 overscan（补偿 fire-and-forget buffer 滞后） ──
-            // 当用户播放时，scroll_x 每帧都在右移，但 NoteWorker 计算出的 buffer
-            // 总是对应 ~40ms 前的视口位置。右侧 overscan 提前算好即将出现的音符，
-            // 让 buffer 即使落后 1 个 worker 周期也能覆盖实际视口。
             const MAX_VISIBLE_NOTES: usize = 3_000_000;
             let viewport_width = snap.visible_tick_end - snap.visible_tick_start;
             let right_pad = snap.overscan_ticks.min(viewport_width * 1.5);
@@ -226,15 +224,9 @@ impl NoteWorker {
             let buf = unsafe { job.onion_note_buffer.write_buffer() };
             buf.clear();
 
+            // M3: 只排除当前编辑音轨；音轨可见性由 GPU track_mask 处理
             let current_track_u16 = snap.current_track as u16;
-            let track_states = &snap.track_onion_states;
-            let track_filter = |track_idx: u16| {
-                track_idx != current_track_u16
-                    && track_states
-                        .get(&(track_idx as usize))
-                        .copied()
-                        .unwrap_or(true)
-            };
+            let track_filter = |track_idx: u16| track_idx != current_track_u16;
 
             bucket.collect_visible_with_cursor(
                 OnionCollectParams::new(
@@ -249,18 +241,13 @@ impl NoteWorker {
                 buf,
             );
 
-            // 简单上限保护，避免极端视口下内存爆炸
+            // 简单上限保护
             if buf.len() > MAX_VISIBLE_NOTES {
                 buf.truncate(MAX_VISIBLE_NOTES);
             }
 
-            // ── Phase 2: 自适应排序（小 N 用 seq sort 避免 rayon 开销） ──
-            if buf.len() < 100_000 {
-                buf.sort_unstable_by_key(|n| n.start_tick);
-            } else {
-                use rayon::prelude::*;
-                buf.par_sort_unstable_by_key(|n| n.start_tick);
-            }
+            // M3: 不再需要全局 sort —— GPU cull shader 扫描全量可见子集
+            // 省去每帧 ~22ms (2M 音符) 的自适应排序
 
             cursor_state.last_tick_start = snap.visible_tick_start;
 

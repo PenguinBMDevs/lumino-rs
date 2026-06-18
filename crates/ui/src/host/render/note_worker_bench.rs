@@ -57,7 +57,6 @@ fn make_snap(
         visible_key_min: 0,
         visible_key_max: 127,
         onion_skin_enabled: true,
-        track_onion_states: HashMap::new(),
         current_track: 0,
         onion_bucket: Some(Arc::clone(bucket)),
         bucket_version,

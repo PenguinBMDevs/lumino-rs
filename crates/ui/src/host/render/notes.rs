@@ -101,6 +101,7 @@ impl Host {
     /// # 零拷贝设计
     /// - `OnionSkinBucket` 通过 RenderCache 的 Arc 缓存，clone 仅递增引用计数
     /// - 视口参数为 float 标量复制，无内存分配
+    /// - M3: 音轨可见性（track mask）通过 RenderParams 传给 GPU，不再经 snapshot
     pub(super) fn collect_onion_skin_snapshot(
         &mut self,
         _viewport_logical_size: (f32, f32),
@@ -146,7 +147,6 @@ impl Host {
             visible_key_max,
             // 洋葱皮数据
             onion_skin_enabled: editor.is_onion_skin_enabled(),
-            track_onion_states: self.root.sidebar.get_onion_skin_states(),
             current_track: es.data.current_track,
             onion_bucket,
             bucket_version,

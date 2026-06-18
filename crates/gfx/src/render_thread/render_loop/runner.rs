@@ -14,7 +14,7 @@ use super::prepare::prepare_renderers;
 use super::render_pass::execute_render_pass;
 use super::render_pass::update_stats;
 use super::textures::ensure_textures;
-use crate::{CameraParams, CameraUniform, OnionViewportUniform};
+use crate::{CameraParams, CameraUniform, OnionTrackColors, OnionTrackMask, OnionViewportUniform};
 
 /// 运行渲染线程主循环
 #[allow(clippy::too_many_arguments)]
@@ -49,6 +49,8 @@ pub fn run_render_thread(
     let mut current_size = (0, 0);
     let mut last_note_version: u64 = 0;
     let mut last_onion_note_version: u64 = 0;
+    let mut last_onion_mask: Option<OnionTrackMask> = None;
+    let mut last_onion_colors: Option<OnionTrackColors> = None;
 
     while running.load(Ordering::Relaxed) {
         // 处理命令：先 drain 积压，然后如果没有 RenderCommand 则阻塞等待
@@ -97,25 +99,34 @@ pub fn run_render_thread(
             }
 
             // 检测洋葱皮音符数据变化，上传到 OnionRenderer
-            // 先读 version，再读 buffer（消除 TOCTOU 竞态：原代码先 read_buffer 后 version，
-            // 中间 worker swap 会导致上传旧数据。修正后至多一次额外上传，不产生错误渲染）
-            let onion_notes_for_cull: Option<&[crate::OnionNote]> =
-                if let Some(buf) = &onion_note_buffer {
-                    let ver = buf.version();
-                    if ver != last_onion_note_version {
-                        last_onion_note_version = ver;
-                        let notes = unsafe { buf.read_buffer() };
-                        if notes.is_empty() {
-                            onion_renderer.upload_notes(&[], &device, &queue);
-                        } else {
-                            onion_renderer.upload_notes(notes, &device, &queue);
-                        }
+            if let Some(buf) = &onion_note_buffer {
+                let ver = buf.version();
+                if ver != last_onion_note_version {
+                    last_onion_note_version = ver;
+                    let notes = unsafe { buf.read_buffer() };
+                    if notes.is_empty() {
+                        onion_renderer.upload_notes(&[], &device, &queue);
+                    } else {
+                        onion_renderer.upload_notes(notes, &device, &queue);
                     }
-                    // 上传后重新读取用于 CPU cull range 二分查找
-                    Some(unsafe { &**buf.read_buffer() })
-                } else {
-                    None
-                };
+                }
+            }
+
+            // M3: 上传轨道掩码（仅变化时）
+            if let Some(mask) = &params.onion_track_mask
+                && last_onion_mask.as_ref() != Some(mask)
+            {
+                onion_renderer.upload_track_mask(mask, &queue);
+                last_onion_mask = Some(*mask);
+            }
+
+            // M3: 上传轨道颜色表（仅变化时）
+            if let Some(colors) = &params.onion_track_colors
+                && last_onion_colors.as_ref() != Some(colors)
+            {
+                onion_renderer.upload_track_colors(colors, &queue);
+                last_onion_colors = Some(*colors);
+            }
 
             if let (Some(_texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -158,6 +169,8 @@ pub fn run_render_thread(
                 let visible_pitch_min =
                     (key_bottom.floor().max(0.0) as u16).saturating_sub(1) as f32;
 
+                // M3: 不再传递 CPU 端音符切片做 fill_cull_range，
+                // GPU 扫描全量可见子集（移除 sort 后数据无序，无法二分查找）
                 let viewport = OnionViewportUniform {
                     tick_start: visible_tick_start,
                     tick_end: visible_tick_end,
@@ -175,7 +188,7 @@ pub fn run_render_thread(
                     &camera,
                     &queue,
                     &device,
-                    onion_notes_for_cull,
+                    None, // <-- 不传 notes，令 shader 扫描全范围
                 );
 
                 // 执行渲染通道（含洋葱皮背景和主音符）
