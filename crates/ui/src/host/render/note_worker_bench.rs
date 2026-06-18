@@ -1,10 +1,23 @@
 use super::*;
 use std::time::{Duration, Instant};
 
-fn load_test_midi() -> Option<Arc<MidiDocument>> {
-    let path = std::env::var("NOTE_WORKER_BENCH_MIDI")
-        .unwrap_or_else(|_| r"D:\BM-DATA\MIDI File\rekt apple!!.mid".to_owned());
-    let pb = std::path::PathBuf::from(&path);
+fn load_test_midi() -> Option<Arc<lumino_midi_loader::MidiDocument>> {
+    // 优先从环境变量读取；否则使用仓库内置的轻量测试资源
+    let pb = if let Ok(path) = std::env::var("NOTE_WORKER_BENCH_MIDI") {
+        std::path::PathBuf::from(path)
+    } else {
+        let assets_dir = std::path::PathBuf::from(
+            r"D:\source\lumino-rs\test-file\test_note_worker_bench_assets",
+        );
+        std::fs::read_dir(&assets_dir)
+            .ok()?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .find(|p| {
+                p.extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("mid"))
+            })?
+    };
+
     if !pb.exists() {
         println!("WARN: bench MIDI not found: {:?}", pb);
         return None;
@@ -27,28 +40,27 @@ fn load_test_midi() -> Option<Arc<MidiDocument>> {
     }
 }
 
-fn make_snap(doc: &Arc<MidiDocument>, ts: f32, te: f32) -> OnionSkinComputationSnapshot {
+fn build_bucket(doc: &Arc<lumino_midi_loader::MidiDocument>) -> Arc<OnionSkinBucket> {
+    let bucket = OnionSkinBucket::from_midi_document(doc, |_| true, 0);
+    Arc::new(bucket)
+}
+
+fn make_snap(
+    bucket: &Arc<OnionSkinBucket>,
+    bucket_version: u64,
+    ts: f32,
+    te: f32,
+) -> OnionSkinComputationSnapshot {
     OnionSkinComputationSnapshot {
         visible_tick_start: ts,
         visible_tick_end: te,
         visible_key_min: 0,
         visible_key_max: 127,
-        scroll_x: ts * 10.0,
-        scroll_y: 0.0,
-        zoom_x: 10.0,
-        zoom_y: 0.5,
-        keyboard_width: 60.0,
-        ruler_height: 30.0,
-        canvas_offset_x: 60.0,
-        canvas_offset_y: 30.0,
-        viewport_logical_width: 1920.0,
-        viewport_logical_height: 1080.0,
-        max_key_index: 127.0,
         onion_skin_enabled: true,
         track_onion_states: HashMap::new(),
         current_track: 0,
-        document: Some(Arc::clone(doc)),
-        track_notes: Arc::new(HashMap::new()),
+        onion_bucket: Some(Arc::clone(bucket)),
+        bucket_version,
         overscan_ticks: 0.0,
     }
 }
@@ -58,7 +70,7 @@ fn get_mem_kb() -> u64 {
     {
         use std::mem::MaybeUninit;
         #[repr(C)]
-        struct PMC {
+        struct Pmc {
             cb: u32,
             _pf: u32,
             _pws: usize,
@@ -67,15 +79,15 @@ fn get_mem_kb() -> u64 {
         }
         #[link(name = "psapi")]
         unsafe extern "system" {
-            fn GetProcessMemoryInfo(h: *mut std::ffi::c_void, p: *mut PMC, cb: u32) -> i32;
+            fn GetProcessMemoryInfo(h: *mut std::ffi::c_void, p: *mut Pmc, cb: u32) -> i32;
             fn GetCurrentProcess() -> *mut std::ffi::c_void;
         }
-        let mut pmc = MaybeUninit::<PMC>::zeroed();
+        let mut pmc = MaybeUninit::<Pmc>::zeroed();
         unsafe {
             if GetProcessMemoryInfo(
                 GetCurrentProcess(),
                 pmc.as_mut_ptr(),
-                size_of::<PMC>() as u32,
+                size_of::<Pmc>() as u32,
             ) != 0
             {
                 return (pmc.assume_init().ws / 1024) as u64;
@@ -114,13 +126,15 @@ fn test_note_worker_bench() {
             return;
         }
     };
+    let bucket = build_bucket(&doc);
+    let bucket_version = bucket.version();
     let num_tracks = doc.track_count();
     let total_ticks = doc.total_ticks() as f32;
     let total_notes: usize = (0..num_tracks).map(|t| doc.track_notes(t).len()).sum();
     let mem_before = get_mem_kb();
 
     println!("┌───────────────────────────────────────┐");
-    println!("│ NoteWorker 基准测试 (no-cache)          │");
+    println!("│ NoteWorker 基准测试 (bucket+cursor)     │");
     println!("├───────────────────────────────────────┤");
     println!("│ 音轨数: {:>8}                        │", num_tracks);
     println!("│ 总音符: {:>8}                        │", total_notes);
@@ -139,7 +153,7 @@ fn test_note_worker_bench() {
         let (tx, rx) = mpsc::channel();
         let t0 = Instant::now();
         worker.send(OnionSkinJob {
-            snapshot: make_snap(&doc, 0.0, vw),
+            snapshot: make_snap(&bucket, bucket_version, 0.0, vw),
             onion_note_buffer: Arc::clone(&buf),
             done_tx: Some(tx),
         });
@@ -155,7 +169,7 @@ fn test_note_worker_bench() {
         let (tx, rx) = mpsc::channel();
         let t0 = Instant::now();
         worker.send(OnionSkinJob {
-            snapshot: make_snap(&doc, ts, ts + vw),
+            snapshot: make_snap(&bucket, bucket_version, ts, ts + vw),
             onion_note_buffer: Arc::clone(&buf),
             done_tx: Some(tx),
         });

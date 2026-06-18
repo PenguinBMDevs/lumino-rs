@@ -2,7 +2,8 @@
 //!
 //! 核心设计：
 //! - 256 个 key，每个 key 单独维护按 start_tick 升序排列的 `OnionNote` 数组
-//! - 每个 key 保存一个渲染游标，正向滚动时从游标处开始扫描，避免每帧全量遍历
+//! - 渲染游标交给调用方（如 NoteWorker）持有，桶本身只读，可安全跨线程共享
+//! - 正向滚动时调用方从游标处开始扫描，避免每帧全量遍历
 //! - 数据来源变化（MIDI 文档加载 / 编辑音轨变更）时增量更新对应音轨的分桶
 //!
 //! 与现有 SoA 存储的关系：
@@ -15,7 +16,7 @@ use crate::OnionNote;
 
 /// 洋葱皮可见性收集参数
 ///
-/// 把 `collect_visible` 的多个视口参数聚合为单个结构体，避免 clippy 参数过多警告，
+/// 把 `collect_visible_with_cursor` 的多个视口参数聚合为单个结构体，避免 clippy 参数过多警告，
 /// 同时提高调用端可读性。
 #[derive(Debug, Clone, Copy)]
 pub struct OnionCollectParams {
@@ -54,13 +55,11 @@ impl OnionCollectParams {
 /// 洋葱皮按 key 分桶缓存
 ///
 /// 256 个 key 各自保存按 `start_tick` 升序排列的音符。
-/// 渲染游标 `render_cursor[key]` 记录上一帧扫描到的位置，正向滚动时复用。
+/// 桶本身不可变；渲染游标由调用方持有，通过 `collect_visible_with_cursor` 传入。
 #[derive(Debug, Clone)]
 pub struct OnionSkinBucket {
     /// 按 key 分桶的音符数组
     by_key: Box<[Vec<OnionNote>; 256]>,
-    /// 每个 key 的渲染游标
-    render_cursor: Box<[usize; 256]>,
     /// 数据版本号，每次 rebuild/update 后递增
     version: u64,
     /// 总音符数量
@@ -81,7 +80,6 @@ impl OnionSkinBucket {
         const EMPTY: Vec<OnionNote> = Vec::new();
         Self {
             by_key: Box::new([EMPTY; 256]),
-            render_cursor: Box::new([0; 256]),
             version: 0,
             total_notes: 0,
         }
@@ -108,12 +106,11 @@ impl OnionSkinBucket {
         &self.by_key[key as usize]
     }
 
-    /// 清空所有分桶并重置游标
+    /// 清空所有分桶
     pub fn clear(&mut self) {
         for bucket in self.by_key.iter_mut() {
             bucket.clear();
         }
-        self.render_cursor.fill(0);
         self.total_notes = 0;
         self.version = self.version.wrapping_add(1);
     }
@@ -203,27 +200,23 @@ impl OnionSkinBucket {
         }
         if removed > 0 {
             self.total_notes -= removed;
-            self.reset_cursors();
             self.version = self.version.wrapping_add(1);
         }
     }
 
-    /// 重置所有渲染游标（时间回退或数据变化时调用）
-    pub fn reset_cursors(&mut self) {
-        self.render_cursor.fill(0);
-    }
-
     /// 收集可见范围内的洋葱皮音符
     ///
-    /// 按 key 并行/顺序扫描，利用游标复用减少正向滚动时的扫描量。
+    /// 按 key 顺序扫描，利用 `cursor` 复用减少正向滚动时的扫描量。
     /// 输出追加到 `out`，调用方负责清空 out。
     ///
     /// # 参数
     /// - `params`: 视口参数集合
+    /// - `cursor`: 每个 key 的渲染游标，由调用方持有并维护
     /// - `track_filter`: 音轨可见性过滤
-    pub fn collect_visible(
-        &mut self,
+    pub fn collect_visible_with_cursor(
+        &self,
         params: OnionCollectParams,
+        cursor: &mut [usize; 256],
         track_filter: impl Fn(u16) -> bool,
         out: &mut Vec<OnionNote>,
     ) {
@@ -232,28 +225,32 @@ impl OnionSkinBucket {
 
         // 时间回退时重置游标
         if params.tick_start < params.last_tick_start {
-            self.reset_cursors();
+            cursor.fill(0);
         }
 
         let key_min = params.key_min.min(255) as usize;
         let key_max = params.key_max.min(255) as usize;
 
-        for key in key_min..=key_max {
+        for (key, key_cursor) in cursor
+            .iter_mut()
+            .enumerate()
+            .take(key_max + 1)
+            .skip(key_min)
+        {
             let bucket = &self.by_key[key];
             if bucket.is_empty() {
                 continue;
             }
 
-            let cursor = &mut self.render_cursor[key];
             // 推进游标：跳过已经完全离开视口的音符
-            while *cursor < bucket.len() && bucket[*cursor].end_tick <= ts {
-                *cursor += 1;
+            while *key_cursor < bucket.len() && bucket[*key_cursor].end_tick <= ts {
+                *key_cursor += 1;
             }
 
             // 从游标开始扫描可见音符
-            let mut scan_end = *cursor;
-            for (i, note) in bucket[*cursor..].iter().enumerate() {
-                let idx = *cursor + i;
+            let mut scan_end = *key_cursor;
+            for (i, note) in bucket[*key_cursor..].iter().enumerate() {
+                let idx = *key_cursor + i;
                 if note.start_tick >= te {
                     break;
                 }
@@ -271,7 +268,7 @@ impl OnionSkinBucket {
             while scan_end < bucket.len() && bucket[scan_end].start_tick < te {
                 scan_end += 1;
             }
-            *cursor = scan_end;
+            *key_cursor = scan_end;
         }
     }
 

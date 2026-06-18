@@ -1,7 +1,5 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use crate::editor::onion_bg_pool::OnionBgTilePool;
 use iced_wgpu::wgpu;
 use lumino_gfx::{OnionBgTileRef, OnionNote, OnionSkinBucket, SwappableBuffer};
 
@@ -31,17 +29,11 @@ pub struct RenderCache {
     /// 缓存的深度纹理 (宽, 高, view)
     pub depth_texture: Option<(u32, u32, wgpu::TextureView)>,
     /// 洋葱皮背景瓦片池（主线程创建，NoteWorker 与 WGPU 线程共享）
-    pub tile_pool: Option<Arc<Mutex<OnionBgTilePool>>>,
+    pub tile_pool: Option<Arc<std::sync::Mutex<crate::editor::onion_bg_pool::OnionBgTilePool>>>,
     /// 走带视图实例缓存（避免每帧重建）
     pub arrangement_instances: Vec<lumino_gfx::ArrangementNoteInstance>,
-    // ── 洋葱皮快照 Arc 缓存（避免每帧克隆 track_notes HashMap） ──
-    /// 缓存的 track_notes Arc，避免每帧全量克隆 HashMap。
-    /// 当 `track_notes_gen` 不变时直接 clone Arc（O(1) 引用计数递增）。
-    pub cached_track_notes_arc: Option<Arc<HashMap<usize, im::Vector<crate::editor::note::Note>>>>,
-    /// 上一次缓存时的 track_notes_gen 值，用于检测变化。
-    pub cached_track_notes_gen: u64,
-    /// 洋葱皮按 key 分桶缓存（M1：从 Kiva 移植的数据层）
-    pub onion_bucket: Option<OnionSkinBucket>,
+    /// 洋葱皮按 key 分桶缓存（M1/M2：从 Kiva 移植的数据层 + Worker 共享）
+    pub onion_bucket: Option<Arc<OnionSkinBucket>>,
     /// 上一次构建 bucket 时的 document Arc 指针
     pub onion_bucket_doc_ptr: Option<*const ()>,
     /// 上一次构建 bucket 时的 track_notes_gen
@@ -62,8 +54,6 @@ impl RenderCache {
             depth_texture: None,
             tile_pool: None,
             arrangement_instances: Vec::new(),
-            cached_track_notes_arc: None,
-            cached_track_notes_gen: u64::MAX, // 初始值确保首次触发重建
             onion_bucket: None,
             onion_bucket_doc_ptr: None,
             onion_bucket_track_gen: u64::MAX,
@@ -78,36 +68,6 @@ impl RenderCache {
     /// 检查音符实例是否为空
     pub fn note_instances_is_empty(&self) -> bool {
         unsafe { self.note_instances_buffer.read_buffer().is_empty() }
-    }
-
-    /// 获取或创建 track_notes 的 Arc 缓存。
-    ///
-    /// 当 `current_gen` 与缓存版本匹配时，直接 clone 缓存的 Arc（O(1)），
-    /// 避免每帧全量克隆 HashMap。仅当版本变化时才从 source 新建 Arc。
-    ///
-    /// # 参数
-    /// * `source` - 用于构建 Arc 的数据源（仅在 gen 变化时访问）
-    /// * `current_gen` - 当前数据源的版本号
-    ///
-    /// # 返回
-    /// 一个 Arc 包裹的 track_notes HashMap
-    pub fn get_or_create_track_notes_arc(
-        &mut self,
-        source: &HashMap<usize, im::Vector<crate::editor::note::Note>>,
-        current_gen: u64,
-    ) -> Arc<HashMap<usize, im::Vector<crate::editor::note::Note>>> {
-        // 缓存命中：gen 未变，直接 clone Arc
-        if let Some(ref cached) = self.cached_track_notes_arc
-            && self.cached_track_notes_gen == current_gen
-        {
-            return Arc::clone(cached);
-        }
-
-        // 缓存未命中：从 source 构建新的 Arc
-        let new_arc = Arc::new(source.clone());
-        self.cached_track_notes_arc = Some(Arc::clone(&new_arc));
-        self.cached_track_notes_gen = current_gen;
-        new_arc
     }
 
     /// 计算洋葱皮视口哈希（带量化节流）

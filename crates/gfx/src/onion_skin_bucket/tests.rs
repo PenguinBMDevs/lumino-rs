@@ -20,17 +20,19 @@ fn test_bucket_build_and_collect() {
     assert_eq!(bucket.key_notes(61).len(), 1);
 
     let mut out = Vec::new();
-    let mut bucket = bucket;
-    bucket.collect_visible(
+    let mut cursor = [0usize; 256];
+    bucket.collect_visible_with_cursor(
         OnionCollectParams::new(0.0, 15.0, 60, 61, 0.0),
+        &mut cursor,
         |_| true,
         &mut out,
     );
     assert_eq!(out.len(), 2);
 
     out.clear();
-    bucket.collect_visible(
+    bucket.collect_visible_with_cursor(
         OnionCollectParams::new(15.0, 25.0, 60, 61, 0.0),
+        &mut cursor,
         |_| true,
         &mut out,
     );
@@ -45,44 +47,50 @@ fn test_cursor_reuse() {
         make_note_info(100, 10, 60),
         make_note_info(200, 10, 60),
     ];
-    let mut bucket = build_bucket_from_notes(&notes, 1);
+    let bucket = build_bucket_from_notes(&notes, 1);
 
     let mut out = Vec::new();
-    bucket.collect_visible(
+    let mut cursor = [0usize; 256];
+    bucket.collect_visible_with_cursor(
         OnionCollectParams::new(0.0, 50.0, 60, 60, 0.0),
+        &mut cursor,
         |_| true,
         &mut out,
     );
     assert_eq!(out.len(), 1);
-    assert_eq!(bucket.render_cursor[60], 1);
+    assert_eq!(cursor[60], 1);
 
     out.clear();
-    bucket.collect_visible(
+    bucket.collect_visible_with_cursor(
         OnionCollectParams::new(50.0, 150.0, 60, 60, 0.0),
+        &mut cursor,
         |_| true,
         &mut out,
     );
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].start_tick, 100);
-    assert_eq!(bucket.render_cursor[60], 2);
+    assert_eq!(cursor[60], 2);
 }
 
 #[test]
 fn test_cursor_reset_on_backward() {
     let notes = vec![make_note_info(0, 10, 60), make_note_info(100, 10, 60)];
-    let mut bucket = build_bucket_from_notes(&notes, 1);
+    let bucket = build_bucket_from_notes(&notes, 1);
 
     let mut out = Vec::new();
-    bucket.collect_visible(
+    let mut cursor = [0usize; 256];
+    bucket.collect_visible_with_cursor(
         OnionCollectParams::new(50.0, 150.0, 60, 60, 0.0),
+        &mut cursor,
         |_| true,
         &mut out,
     );
-    assert_eq!(bucket.render_cursor[60], 2);
+    assert_eq!(cursor[60], 2);
 
     out.clear();
-    bucket.collect_visible(
+    bucket.collect_visible_with_cursor(
         OnionCollectParams::new(0.0, 50.0, 60, 60, 50.0),
+        &mut cursor,
         |_| true,
         &mut out,
     );
@@ -114,11 +122,13 @@ fn test_update_user_track() {
 #[test]
 fn test_track_filter() {
     let notes = vec![make_note_info(0, 10, 60), make_note_info(5, 10, 61)];
-    let mut bucket = build_bucket_from_notes(&notes, 1);
+    let bucket = build_bucket_from_notes(&notes, 1);
 
     let mut out = Vec::new();
-    bucket.collect_visible(
+    let mut cursor = [0usize; 256];
+    bucket.collect_visible_with_cursor(
         OnionCollectParams::new(0.0, 20.0, 60, 61, 0.0),
+        &mut cursor,
         |_| false,
         &mut out,
     );
