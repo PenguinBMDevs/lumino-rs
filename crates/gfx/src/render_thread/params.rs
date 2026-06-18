@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use crate::{
     ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, KeyInstance,
-    NoteInstance, OnionTrackColors, OnionTrackMask, RulerTickInstance,
+    NoteInstance, OnionSkinBucket, OnionTrackColors, OnionTrackMask, RulerTickInstance,
 };
 
 /// 渲染参数 - 从 UI 线程传递到 WGPU 线程
@@ -66,6 +68,16 @@ pub struct RenderParams {
     pub onion_track_mask: Option<OnionTrackMask>,
     /// 洋葱皮轨道颜色表（GPU 颜色 LUT）
     pub onion_track_colors: Option<OnionTrackColors>,
+    /// 洋葱皮按 key 分桶缓存（渲染线程直接采集用）
+    pub onion_bucket: Option<Arc<OnionSkinBucket>>,
+    /// bucket 版本号，用于渲染线程检测数据变化
+    pub onion_bucket_version: u64,
+    /// 右侧 overscan ticks（补偿 fire-and-forget 模式下 buffer 滞后）
+    pub onion_overscan_ticks: f32,
+    /// 当前编辑音轨索引（采集时排除）
+    pub onion_current_track: u16,
+    /// 洋葱皮是否启用
+    pub onion_enabled: bool,
 }
 
 impl Default for RenderParams {
@@ -104,6 +116,11 @@ impl Default for RenderParams {
             velocity_panel_rect: None,
             onion_track_mask: None,
             onion_track_colors: None,
+            onion_bucket: None,
+            onion_bucket_version: 0,
+            onion_overscan_ticks: 0.0,
+            onion_current_track: 0,
+            onion_enabled: false,
         }
     }
 }
@@ -151,6 +168,12 @@ impl RenderParams {
         // Onion skin (GPU track mask & colors)
         onion_track_mask: Option<OnionTrackMask>,
         onion_track_colors: Option<OnionTrackColors>,
+        // Onion skin (render-thread collection)
+        onion_bucket: Option<Arc<OnionSkinBucket>>,
+        onion_bucket_version: u64,
+        onion_overscan_ticks: f32,
+        onion_current_track: u16,
+        onion_enabled: bool,
     ) -> Self {
         Self {
             viewport_size: (physical_size.0, physical_size.1),
@@ -186,6 +209,11 @@ impl RenderParams {
             velocity_panel_rect,
             onion_track_mask,
             onion_track_colors,
+            onion_bucket,
+            onion_bucket_version,
+            onion_overscan_ticks,
+            onion_current_track,
+            onion_enabled,
         }
     }
 }

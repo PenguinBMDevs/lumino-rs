@@ -1,9 +1,7 @@
-//! 洋葱皮数据快照收集 — 在主线程快速快照编辑状态，发送给 NoteWorker
+//! 洋葱皮按 key 分桶缓存维护
 //!
-//! == 零拷贝优化 ==
-//! `OnionSkinBucket` 使用 `Arc` 缓存（`RenderCache::update_onion_bucket`），
-//! 仅在 `document` 或 `track_notes_gen` 变化时重建/增量更新。
-//! 其余帧直接 clone Arc（O(1) 引用计数递增）发给 Worker。
+//! `OnionSkinBucket` 的增量更新逻辑。
+//! 采集已搬到渲染线程（方案 C），本模块只负责维护 bucket 数据。
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -93,64 +91,6 @@ impl Host {
             true
         } else {
             false
-        }
-    }
-
-    /// 收集洋葱皮计算所需的数据快照
-    ///
-    /// # 零拷贝设计
-    /// - `OnionSkinBucket` 通过 RenderCache 的 Arc 缓存，clone 仅递增引用计数
-    /// - 视口参数为 float 标量复制，无内存分配
-    /// - M3: 音轨可见性（track mask）通过 RenderParams 传给 GPU，不再经 snapshot
-    pub(super) fn collect_onion_skin_snapshot(
-        &mut self,
-        _viewport_logical_size: (f32, f32),
-    ) -> super::note_worker::OnionSkinComputationSnapshot {
-        let editor = &self.root.editor;
-        let es = &editor.editor_state;
-        let canvas = &es.canvas;
-        let view = &es.view;
-        let canvas_width = canvas.size_x;
-        let canvas_height = canvas.size_y;
-        let keyboard_width = view.keyboard_width;
-
-        let visible_tick_start = (view.scroll_x / view.zoom_x).max(0.0);
-        let visible_tick_end =
-            ((view.scroll_x + canvas_width - keyboard_width) / view.zoom_x).max(visible_tick_start);
-
-        // 从 scroll_y 计算真实的可见 key 范围（与 rendering.rs 保持一致）
-        let max_key_index = (view.visible_key_count - 1) as f32;
-        let viewport_height = (canvas_height - view.ruler_height).max(0.0);
-        let key_top_f32 = max_key_index - (view.scroll_y / view.zoom_y);
-        let key_bottom_f32 = max_key_index - ((view.scroll_y + viewport_height) / view.zoom_y);
-        let visible_key_max = key_top_f32.ceil() as u16 + 1;
-        let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1);
-
-        // 通过 RenderCache 获取零拷贝 Arc，避免每帧全量克隆数据
-        let onion_bucket = self
-            .render_ctx
-            .render_cache
-            .onion_bucket
-            .as_ref()
-            .map(Arc::clone);
-        let bucket_version = onion_bucket.as_ref().map_or(0, |b| b.version());
-
-        // 更新滚动速度追踪，计算右侧 overscan ticks
-        let _velocity = self.scroll_tracker.update(view.scroll_x, view.zoom_x);
-        let overscan_ticks = self.scroll_tracker.overscan_ticks(60.0); // 60ms > worker P95 56ms
-
-        super::note_worker::OnionSkinComputationSnapshot {
-            // 视口参数（用于瓦片过滤）
-            visible_tick_start,
-            visible_tick_end,
-            visible_key_min,
-            visible_key_max,
-            // 洋葱皮数据
-            onion_skin_enabled: editor.is_onion_skin_enabled(),
-            current_track: es.data.current_track,
-            onion_bucket,
-            bucket_version,
-            overscan_ticks,
         }
     }
 }

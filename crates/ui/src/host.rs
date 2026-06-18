@@ -20,7 +20,6 @@ use iced_winit::winit;
 
 use crate::statusbar::performance::CpuMonitor;
 use crate::{WgpuRenderThread, config, root, settings};
-use render::note_worker::NoteWorker;
 
 mod cache;
 mod dialog;
@@ -178,28 +177,6 @@ impl Host {
         Self::new_common_fields(render_ctx, window_ctx, root)
     }
 
-    /// 确保 NoteWorker 已创建（懒加载）
-    ///
-    /// NoteWorker 用于将音符实例构建从主线程卸载到独立线程。
-    /// 在两种渲染模式下都会使用：
-    /// - 分离线程模式：非阻塞 fire-and-forget
-    /// - 单线程模式：dispatch + 同步等待（仍能在本帧内并行化）
-    fn ensure_note_worker(&mut self) {
-        if self.render_ctx.note_worker.is_none() {
-            match NoteWorker::spawn() {
-                Some(worker) => {
-                    self.render_ctx.note_worker = Some(worker);
-                    tracing::info!("NoteWorker: spawned");
-                }
-                None => {
-                    tracing::error!(
-                        "NoteWorker: failed to spawn, onion skin will run on main thread"
-                    );
-                }
-            }
-        }
-    }
-
     /// 启用真正的分离渲染线程（新架构）
     ///
     /// 这会将所有 WGPU 渲染（音符、网格、键盘、标尺）从 UI 线程完全分离
@@ -208,8 +185,8 @@ impl Host {
             return;
         }
 
-        // 创建音符事件通道
-        let (tx, rx) = std::sync::mpsc::channel();
+        // 创建音符事件通道（tx 不再存储，由 render thread 持有 rx）
+        let (_tx, rx) = std::sync::mpsc::channel();
 
         // 启动 WGPU 渲染线程
         match WgpuRenderThread::spawn(
@@ -218,11 +195,9 @@ impl Host {
             self.render_ctx.format,
             rx,
             Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
-            Some(Arc::clone(&self.render_ctx.render_cache.onion_note_buffer)),
         ) {
             Ok(thread) => {
                 self.render_ctx.wgpu_render_thread = Some(thread);
-                self.render_ctx.note_events_tx = Some(tx);
                 self.render_ctx.use_separate_render_thread = true;
                 tracing::info!("Host: Separate WGPU render thread enabled");
             }
@@ -237,7 +212,6 @@ impl Host {
         if let Some(thread) = self.render_ctx.wgpu_render_thread.take() {
             thread.shutdown();
             self.render_ctx.use_separate_render_thread = false;
-            self.render_ctx.note_events_tx = None;
             tracing::info!("Host: Separate WGPU render thread disabled");
         }
     }
@@ -293,24 +267,15 @@ impl Host {
             .render_cache
             .note_instances_buffer
             .back_info();
-        // 洋葱皮双缓冲容量
-        let (onion_front_cap, onion_front_len) =
-            self.render_ctx.render_cache.onion_note_buffer.front_info();
-        let (onion_back_cap, onion_back_len) =
-            self.render_ctx.render_cache.onion_note_buffer.back_info();
-        let note_size = std::mem::size_of::<lumino_gfx::OnionNote>() as u64;
+        // 洋葱皮双缓冲已移除（方案 C：采集搬到渲染线程，不再需要双缓冲）
+        let _note_size = std::mem::size_of::<lumino_gfx::OnionNote>() as u64;
 
         tracing::debug!(
-            "MemoryBreakdown: note front(cap={}, len={}) back(cap={}, len={}) onion front(cap={}, len={}) back(cap={}, len={}) note_size={}",
+            "MemoryBreakdown: note front(cap={}, len={}) back(cap={}, len={})",
             front_cap,
             front_len,
             back_cap,
             back_len,
-            onion_front_cap,
-            onion_front_len,
-            onion_back_cap,
-            onion_back_len,
-            note_size
         );
 
         // 将双缓冲容量写入 breakdown 的附加字段
@@ -319,10 +284,10 @@ impl Host {
         breakdown.note_instances_back_cap = back_cap;
         breakdown.note_instances_back_len = back_len;
         breakdown.note_instance_size = std::mem::size_of::<lumino_gfx::NoteInstance>() as usize;
-        breakdown.onion_note_front_cap = onion_front_cap;
-        breakdown.onion_note_front_len = onion_front_len;
-        breakdown.onion_note_back_cap = onion_back_cap;
-        breakdown.onion_note_back_len = onion_back_len;
+        breakdown.onion_note_front_cap = 0;
+        breakdown.onion_note_front_len = 0;
+        breakdown.onion_note_back_cap = 0;
+        breakdown.onion_note_back_len = 0;
 
         breakdown
     }

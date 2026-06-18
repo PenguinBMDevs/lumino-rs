@@ -39,7 +39,6 @@ impl WgpuRenderThread {
         texture_format: wgpu::TextureFormat,
         note_events_rx: std::sync::mpsc::Receiver<crate::NoteEvent>,
         note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
-        onion_note_buffer: Option<Arc<SwappableBuffer<crate::OnionNote>>>,
     ) -> anyhow::Result<Self> {
         tracing::info!("WgpuRenderThread::spawn - Starting render thread with offscreen texture");
 
@@ -52,7 +51,6 @@ impl WgpuRenderThread {
         let running_clone = Arc::clone(&running);
         let latest_texture_clone = Arc::clone(&latest_texture);
         let note_instances_buffer_clone = Arc::clone(&note_instances_buffer);
-        let onion_note_buffer_clone = onion_note_buffer.clone();
 
         // 启动渲染线程
         let thread_handle = thread::spawn(move || {
@@ -66,7 +64,6 @@ impl WgpuRenderThread {
                 stats_clone,
                 note_events_rx,
                 note_instances_buffer_clone,
-                onion_note_buffer_clone,
             );
         });
 

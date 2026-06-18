@@ -151,11 +151,6 @@ impl Host {
             return false;
         }
 
-        if self.render_ctx.note_events_tx.is_none() {
-            tracing::error!("redraw_separate_thread called but note_events_tx is None");
-            return false;
-        }
-
         true
     }
 
@@ -412,30 +407,19 @@ impl Host {
             );
         }
 
+        // 提取 scroll 值（避免 update_onion_bucket 的 &mut self 与 v 的借用冲突）
+        let scroll_x = v.scroll_x;
+        let zoom_x = v.zoom_x;
+
         // M1: 增量维护洋葱皮按 key 分桶缓存
         let _bucket_changed = self.update_onion_bucket();
 
-        // Phase 2: 洋葱皮实例构建（异步）
-        // 发送给 NoteWorker 后台计算，完成后 swap
+        // 更新滚动速度追踪（用于 overscan 计算，在 build_render_params 中读取）
+        let _velocity = self.scroll_tracker.update(scroll_x, zoom_x);
+
+        // 方案 C：渲染线程负责采集，主线程只更新视口哈希
         if note_data_changed || onion_viewport_changed {
-            self.ensure_note_worker();
-
-            // 收集快照（需要 &mut self）必须在借用 worker 之前完成
-            let vp_logical = self.render_ctx.viewport.logical_size();
-            let os_snapshot =
-                self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));
-            let onion_note_buffer =
-                std::sync::Arc::clone(&self.render_ctx.render_cache.onion_note_buffer);
-
-            if let Some(ref worker) = self.render_ctx.note_worker {
-                puffin::profile_scope!("dispatch_onion_skin_job");
-                worker.send(super::note_worker::OnionSkinJob {
-                    snapshot: os_snapshot,
-                    onion_note_buffer,
-                    done_tx: None,
-                });
-                self.render_ctx.render_cache.onion_viewport_hash = current_onion_hash;
-            }
+            self.render_ctx.render_cache.onion_viewport_hash = current_onion_hash;
         }
 
         if note_index_dirty {
@@ -556,6 +540,18 @@ impl Host {
         }
         let onion_track_colors = Some(convert_onion_colors(&raw_colors));
 
+        // ── 洋葱皮渲染线程采集参数 ──
+        let onion_bucket = self
+            .render_ctx
+            .render_cache
+            .onion_bucket
+            .as_ref()
+            .map(std::sync::Arc::clone);
+        let onion_bucket_version = onion_bucket.as_ref().map_or(0, |b| b.version());
+        let onion_overscan_ticks = self.scroll_tracker.overscan_ticks(60.0);
+        let onion_current_track = es.data.current_track as u16;
+        let onion_enabled = self.root.editor.is_onion_skin_enabled();
+
         RenderParams::from_data(
             (physical_size.width, physical_size.height),
             (data.viewport_size.width, data.viewport_size.height),
@@ -586,6 +582,11 @@ impl Host {
             velocity_panel_rect,
             onion_track_mask,
             onion_track_colors,
+            onion_bucket,
+            onion_bucket_version,
+            onion_overscan_ticks,
+            onion_current_track,
+            onion_enabled,
         )
     }
 

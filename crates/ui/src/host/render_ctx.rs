@@ -9,7 +9,6 @@ use iced_winit::runtime::user_interface::Cache;
 use lumino_gfx::{GridRenderer, NoteRenderer};
 
 use super::RenderCache;
-use super::render::note_worker::NoteWorker;
 
 /// WGPU 设备资源集合（减少 RenderContext::new 参数数量）
 pub(crate) struct WgpuResources {
@@ -39,10 +38,6 @@ pub(crate) struct RenderContext {
     pub last_cursor_position: Option<iced_core::Point>,
     /// 渲染线程
     pub wgpu_render_thread: Option<crate::WgpuRenderThread>,
-    /// 渲染线程通信
-    pub note_events_tx: Option<std::sync::mpsc::Sender<lumino_gfx::NoteEvent>>,
-    /// 音符计算专用线程（主线程发送快照，worker 线程负责实例构建+双缓冲写入）
-    pub note_worker: Option<NoteWorker>,
     /// 分离渲染架构标识
     pub use_separate_render_thread: bool,
     /// 首次渲染标识
@@ -82,8 +77,6 @@ impl RenderContext {
             last_edit_state: crate::editor::EditState::default(),
             last_cursor_position: None,
             wgpu_render_thread: None,
-            note_events_tx: None,
-            note_worker: None,
             use_separate_render_thread: false,
             has_rendered_ui: false,
             device: wgpu.device.clone(),
