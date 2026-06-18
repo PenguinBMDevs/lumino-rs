@@ -1,11 +1,14 @@
-use super::{CameraUniform, OnionNote, OnionRenderer, OnionViewportUniform};
+use super::{CameraUniform, OnionRenderer, OnionViewportUniform};
 
 impl OnionRenderer {
     /// 准备计算剔除（视口变化时调用）
     ///
     /// 执行 compute shader 剔除，结果写入 instance_indices_buffer 和 indirect_buffer。
     /// 内置 dirty tracking：当视口/相机/音符均未变化时跳过 compute dispatch。
-    /// `notes` 参数提供 CPU 端音符切片，用于二分查找定位可见范围，减少 GPU 扫描量。
+    ///
+    /// 注意：音符池按 key 分桶输出，全局上不按 start_tick 单调，因此不能再用
+    /// CPU 二分查找缩小扫描区间。这里直接令 GPU 扫描 [0, note_count)，
+    /// 由 compute shader 自行做 tick/pitch 裁剪。
     pub fn prepare_cull(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -13,28 +16,23 @@ impl OnionRenderer {
         camera: &CameraUniform,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-        notes: Option<&[OnionNote]>,
     ) {
         if self.note_count == 0 {
             return;
         }
 
         // 构建完整的 viewport uniform（合并 cull 参数）
-        let mut full_viewport = OnionViewportUniform {
+        let full_viewport = OnionViewportUniform {
             tick_start: viewport.tick_start,
             tick_end: viewport.tick_end,
             pitch_min: viewport.pitch_min,
             pitch_max: viewport.pitch_max,
             note_count: self.note_count as u32,
             indices_capacity: self.indices_capacity as u32,
+            // 全局不保证单调，直接扫描全部音符
             visible_start: 0,
             visible_end: self.note_count as u32,
         };
-
-        // CPU 二分查找定位可见音符范围，GPU 跳过区间外的音符扫描
-        if let Some(note_slice) = notes {
-            full_viewport.fill_cull_range(note_slice);
-        }
 
         // Dirty check：检测视口/相机/音符是否有变化
         let viewport_changed = self.last_viewport.as_ref() != Some(&full_viewport);

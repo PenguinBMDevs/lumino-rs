@@ -264,15 +264,7 @@ pub fn run_render_thread(
                     visible_end: 0,
                 };
 
-                // 传入 onion_notes_buf 启用 fill_cull_range 二分查找
-                onion_renderer.prepare_cull(
-                    &mut encoder,
-                    &viewport,
-                    &camera,
-                    &queue,
-                    &device,
-                    Some(&onion_notes_buf),
-                );
+                onion_renderer.prepare_cull(&mut encoder, &viewport, &camera, &queue, &device);
 
                 // 执行渲染通道（含洋葱皮背景和主音符）
                 execute_render_pass(

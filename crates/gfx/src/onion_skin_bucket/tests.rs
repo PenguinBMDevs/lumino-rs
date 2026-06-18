@@ -169,3 +169,36 @@ fn test_track_filter() {
     );
     assert_eq!(out.len(), 0);
 }
+
+/// 回归测试：per-key 有序输出不能用于全局 start_tick 二分查找。
+///
+/// key 60 有音符跨越 tick_end，key 61 的音符全部在 tick_end 内。
+/// 若对全局 slice 做 start_tick 二分查找，会误把 key 61 的音符切掉。
+/// 本测试保证 collect_visible_with_cursor 会把两个 key 的可见音符都输出，
+/// 供 GPU 全量裁剪。
+#[test]
+fn test_cross_key_collection_not_truncated() {
+    let notes = vec![
+        make_note_info(0, 200, 60), // 长音符，start=0, end=200
+        make_note_info(1, 2, 61),   // 短音符，start=1, end=3
+        make_note_info(2, 2, 61),   // 短音符，start=2, end=4
+    ];
+    let bucket = build_bucket_from_notes(&notes, 1);
+
+    let mut out = Vec::new();
+    let mut cursor = [0usize; 256];
+    // tick 窗口 [0, 50)：key 60 的长音符与 key 61 的两个短音符都应可见
+    bucket.collect_visible_with_cursor(
+        OnionCollectParams::new(0.0, 50.0, 60, 61, 0.0),
+        &mut cursor,
+        |_| true,
+        test_color_fn,
+        &mut out,
+    );
+
+    assert_eq!(out.len(), 3, "key 60 和 key 61 的可见音符都应被收集");
+
+    let keys: std::collections::HashSet<u8> = out.iter().map(|n| n.pitch()).collect();
+    assert!(keys.contains(&60));
+    assert!(keys.contains(&61));
+}
