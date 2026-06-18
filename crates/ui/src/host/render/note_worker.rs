@@ -134,6 +134,10 @@ pub(crate) struct NoteWorker {
 /// 与 `OnionSkinBucket` 分离，使桶本身只读、可跨线程共享。
 struct CursorState {
     /// 每个 key 的扫描游标
+    ///
+    /// 语义：每个 key 中第一个 `end_tick > ts` 的音符索引。
+    /// 只会在 while 循环中单调推进（跳过 `end_tick <= ts` 的音符）。
+    /// 不再跳到 `start_tick >= te`，避免跳过仍可见的音符。
     cursors: Box<[usize; 256]>,
     /// 上一帧的 tick_start，用于检测时间回退
     last_tick_start: f32,

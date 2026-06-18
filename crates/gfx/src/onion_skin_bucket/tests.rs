@@ -42,6 +42,7 @@ fn test_bucket_build_and_collect() {
 
 #[test]
 fn test_cursor_reuse() {
+    // Notes at ticks 0, 100, 200 — all key 60
     let notes = vec![
         make_note_info(0, 10, 60),
         make_note_info(100, 10, 60),
@@ -51,6 +52,11 @@ fn test_cursor_reuse() {
 
     let mut out = Vec::new();
     let mut cursor = [0usize; 256];
+
+    // Frame 1: ts=0, te=50
+    //  - cursor[60]=0, while: note[0].end=10 <= 0? No. cursor stays 0.
+    //  - scan from 0: note 0 visible.
+    //  - cursor stays 0 (no post-scan advancement).
     bucket.collect_visible_with_cursor(
         OnionCollectParams::new(0.0, 50.0, 60, 60, 0.0),
         &mut cursor,
@@ -58,8 +64,13 @@ fn test_cursor_reuse() {
         &mut out,
     );
     assert_eq!(out.len(), 1);
-    assert_eq!(cursor[60], 1);
+    assert_eq!(cursor[60], 0, "cursor should stay at 0 since note[0].end=10 > ts=0");
 
+    // Frame 2: ts=50, te=150
+    //  - cursor[60]=0, while: note[0].end=10 <= 50? Yes → cursor=1.
+    //  - while: note[1].end=110 <= 50? No.
+    //  - scan from 1: note 100 visible.
+    //  - cursor stays 1.
     out.clear();
     bucket.collect_visible_with_cursor(
         OnionCollectParams::new(50.0, 150.0, 60, 60, 0.0),
@@ -69,7 +80,7 @@ fn test_cursor_reuse() {
     );
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].start_tick, 100);
-    assert_eq!(cursor[60], 2);
+    assert_eq!(cursor[60], 1, "cursor should advance to 1 after note[0] is behind viewport");
 }
 
 #[test]
@@ -79,14 +90,20 @@ fn test_cursor_reset_on_backward() {
 
     let mut out = Vec::new();
     let mut cursor = [0usize; 256];
+
+    // Frame 1: ts=50, te=150 (forward from beginning)
+    //  - cursor[60]=0, while: note[0].end=10 <= 50? Yes → cursor=1.
+    //  - scan from 1: note 100 collected.
     bucket.collect_visible_with_cursor(
         OnionCollectParams::new(50.0, 150.0, 60, 60, 0.0),
         &mut cursor,
         |_| true,
         &mut out,
     );
-    assert_eq!(cursor[60], 2);
+    assert_eq!(cursor[60], 1);
 
+    // Frame 2: ts=0, te=50 (backward! last_tick_start=50 > ts=0)
+    //  - params.tick_start < params.last_tick_start → cursor filled with 0
     out.clear();
     bucket.collect_visible_with_cursor(
         OnionCollectParams::new(0.0, 50.0, 60, 60, 50.0),

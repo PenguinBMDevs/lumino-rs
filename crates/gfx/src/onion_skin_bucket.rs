@@ -209,6 +209,14 @@ impl OnionSkinBucket {
     /// 按 key 顺序扫描，利用 `cursor` 复用减少正向滚动时的扫描量。
     /// 输出追加到 `out`，调用方负责清空 out。
     ///
+    /// # 游标语义
+    /// - 游标 `cursor[key]` 指向第一个 `end_tick > tick_start` 的音符
+    ///   （即"尚未完全离开视口"的音符）。
+    /// - 每帧在 while 循环中单调推进（跳过 `end_tick <= tick_start` 的音符）。
+    /// - **不** 推进到 `start_tick >= tick_end` —— 那样会跳过 ts~te 之间
+    ///   仍可见的音符，导致下一帧出现"洋葱皮消失"。
+    /// - 时间回退时（`tick_start < last_tick_start`）将游标数组全置 0。
+    ///
     /// # 参数
     /// - `params`: 视口参数集合
     /// - `cursor`: 每个 key 的渲染游标，由调用方持有并维护
@@ -248,9 +256,11 @@ impl OnionSkinBucket {
             }
 
             // 从游标开始扫描可见音符
-            let mut scan_end = *key_cursor;
-            for (i, note) in bucket[*key_cursor..].iter().enumerate() {
-                let idx = *key_cursor + i;
+            // 注意：游标仅表示"第一个 end_tick > ts 的音符"。
+            // 扫描时不修改游标——游标只在前面的 while 循环中推进。
+            // 之前代码会在这里把游标推进到 start_tick >= te，这会导致
+            // 下一帧跳过 ts~te 之间仍可见的音符（引起洋葱皮消失）。
+            for note in bucket[*key_cursor..].iter() {
                 if note.start_tick >= te {
                     break;
                 }
@@ -261,14 +271,7 @@ impl OnionSkinBucket {
                     continue;
                 }
                 out.push(*note);
-                scan_end = idx + 1;
             }
-
-            // 游标推进到第一个 start_tick >= te 的音符，供下一帧复用
-            while scan_end < bucket.len() && bucket[scan_end].start_tick < te {
-                scan_end += 1;
-            }
-            *key_cursor = scan_end;
         }
     }
 
