@@ -46,6 +46,10 @@ impl Host {
             .render_cache
             .get_or_create_track_notes_arc(&es.data.track_notes, es.data.track_notes_gen);
 
+        // 更新滚动速度追踪，计算右侧 overscan ticks
+        let _velocity = self.scroll_tracker.update(view.scroll_x, view.zoom_x);
+        let overscan_ticks = self.scroll_tracker.overscan_ticks(60.0); // 60ms > worker P95 56ms
+
         super::note_worker::OnionSkinComputationSnapshot {
             // 视口参数（用于瓦片过滤）
             visible_tick_start,
@@ -70,6 +74,7 @@ impl Host {
             current_track: es.data.current_track,
             document: es.data.document.clone(),
             track_notes: track_notes_arc,
+            overscan_ticks,
         }
     }
 }

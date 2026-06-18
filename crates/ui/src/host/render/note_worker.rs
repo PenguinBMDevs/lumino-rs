@@ -19,6 +19,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, mpsc};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use lumino_gfx::{OnionNote, SwappableBuffer};
 use lumino_midi_loader::MidiDocument;
@@ -49,6 +50,8 @@ pub(crate) struct OnionSkinComputationSnapshot {
     pub current_track: usize,
     pub document: Option<Arc<MidiDocument>>,
     pub track_notes: Arc<HashMap<usize, im::Vector<crate::editor::note::Note>>>,
+    /// 右侧 overscan 扩展 ticks（补偿 fire-and-forget 模式下 buffer 滞后）
+    pub overscan_ticks: f32,
 }
 
 /// 发送给 NoteWorker 的作业
@@ -56,6 +59,79 @@ pub(crate) struct OnionSkinJob {
     pub snapshot: OnionSkinComputationSnapshot,
     pub onion_note_buffer: Arc<SwappableBuffer<OnionNote>>,
     pub done_tx: Option<mpsc::Sender<()>>,
+}
+
+// ─── 滚动速度追踪器 ─────────────────────────────────────────────────────────
+
+/// 滚动速度追踪器——测量 scroll_x 变化率来计算 overscan
+///
+/// # 设计原则
+/// - 取最近 5 帧的 max velocity 而非 avg/EMA
+///   ——BPM 可以从 60 突跳到 2000+，EMA 跟不上，max 才能覆盖峰值
+/// - 只跟踪向右滚动（FixedIndicatorLeft 模式下 playback 永不回滚）
+/// - 100fps 下每 ~10ms 采样，5 帧窗口 ≈ 50ms，覆盖 1 个 worker P50 周期
+#[derive(Debug)]
+pub(crate) struct ScrollVelocityTracker {
+    last_scroll_x: f32,
+    last_time: Instant,
+    samples: [f32; 5],
+    sample_idx: usize,
+}
+
+impl ScrollVelocityTracker {
+    pub fn new() -> Self {
+        Self {
+            last_scroll_x: 0.0,
+            last_time: Instant::now(),
+            samples: [0.0; 5],
+            sample_idx: 0,
+        }
+    }
+
+    /// 更新采样，返回当前峰值速度（ticks/sec）
+    pub fn update(&mut self, scroll_x: f32, zoom_x: f32) -> f32 {
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_time);
+        self.last_time = now;
+
+        let dx = scroll_x - self.last_scroll_x;
+        self.last_scroll_x = scroll_x;
+
+        // 防除零抖动（2ms 内的采样跳过也不影响，下个采样点补上即可）
+        if dt < Duration::from_millis(2) || zoom_x <= 0.0 {
+            return self.peak_velocity();
+        }
+
+        let dt_sec = dt.as_secs_f32();
+        let dx_ticks = dx / zoom_x;
+        // 只跟踪向右滚动（playback 方向），向左拖拽不触发 overscan
+        let velocity = if dx_ticks > 0.0 {
+            dx_ticks / dt_sec
+        } else {
+            0.0
+        };
+
+        self.samples[self.sample_idx % 5] = velocity;
+        self.sample_idx += 1;
+        self.peak_velocity()
+    }
+
+    fn peak_velocity(&self) -> f32 {
+        self.samples.iter().copied().fold(0.0, f32::max)
+    }
+
+    /// 计算需要的右侧 overscan ticks
+    ///
+    /// * `predict_ms` — 预测窗口（毫秒），建议设为 worker P95 + 余量（如 60ms）
+    pub fn overscan_ticks(&self, predict_ms: f32) -> f32 {
+        self.peak_velocity() * predict_ms / 1000.0
+    }
+}
+
+impl Default for ScrollVelocityTracker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ─── NoteWorker ─────────────────────────────────────────────────────────────
@@ -74,7 +150,10 @@ impl NoteWorker {
             .spawn(move || Self::run_coordinator(rx))
             .map_err(|e| tracing::error!("Failed to spawn NoteWorker: {}", e))
             .ok()?;
-        Some(Self { sender: tx, _thread })
+        Some(Self {
+            sender: tx,
+            _thread,
+        })
     }
 
     fn run_coordinator(rx: mpsc::Receiver<OnionSkinJob>) {
@@ -103,60 +182,65 @@ impl NoteWorker {
                 continue;
             }
 
-            // ── Phase 1: 计算总可见音符数（先 count 后 reserve，避免 realloc） ──
-            let mut total_visible: usize = 0;
+            // ── Phase 1: 右侧 overscan（补偿 fire-and-forget buffer 滞后） ──
+            // 当用户播放时，scroll_x 每帧都在右移，但 NoteWorker 计算出的 buffer
+            // 总是对应 ~40ms 前的视口位置。右侧 overscan 提前算好即将出现的音符，
+            // 让 buffer 即使落后 1 个 worker 周期也能覆盖实际视口。
+            const MAX_VISIBLE_NOTES: usize = 3_000_000;
+            let viewport_width = snap.visible_tick_end - snap.visible_tick_start;
+            let right_pad = (snap.overscan_ticks).min(viewport_width * 1.5);
+            let extended_end = (snap.visible_tick_end + right_pad).max(0.0);
+
+            let buf = unsafe { job.onion_note_buffer.write_buffer() };
+            buf.clear();
 
             // 1a: MIDI 文档音轨
             if let Some(doc) = &snap.document {
                 let nt = doc.track_count();
                 for ti in 0..nt {
-                    if ti == snap.current_track { continue; }
-                    if !snap.track_onion_states.get(&ti).copied().unwrap_or(true) { continue; }
-                    if snap.track_notes.contains_key(&ti) { continue; }
+                    if ti == snap.current_track {
+                        continue;
+                    }
+                    if !snap.track_onion_states.get(&ti).copied().unwrap_or(true) {
+                        continue;
+                    }
+                    if snap.track_notes.contains_key(&ti) {
+                        continue;
+                    }
                     let notes = doc.track_notes(ti);
-                    if notes.is_empty() { continue; }
-                    total_visible += visible_count(notes, snap.visible_tick_start, snap.visible_tick_end);
+                    if notes.is_empty() {
+                        continue;
+                    }
+                    collect_visible(notes, ti as u16, snap.visible_tick_start, extended_end, buf);
+                    if buf.len() >= MAX_VISIBLE_NOTES {
+                        break;
+                    }
                 }
             }
             // 1b: 用户编辑音轨
-            for (&ti, v) in snap.track_notes.iter() {
-                if ti == snap.current_track { continue; }
-                if !snap.track_onion_states.get(&ti).copied().unwrap_or(true) { continue; }
-                total_visible += visible_count_user(v, snap.visible_tick_start, snap.visible_tick_end);
-            }
-
-            // ── Phase 2: 分配 + 填充 ──
-            let mut all = Vec::with_capacity(total_visible);
-
-            // 2a: MIDI 音轨
-            if let Some(doc) = &snap.document {
-                let nt = doc.track_count();
-                for ti in 0..nt {
-                    if ti == snap.current_track { continue; }
-                    if !snap.track_onion_states.get(&ti).copied().unwrap_or(true) { continue; }
-                    if snap.track_notes.contains_key(&ti) { continue; }
-                    let notes = doc.track_notes(ti);
-                    if notes.is_empty() { continue; }
-                    collect_visible(&mut all, notes, ti as u16, snap.visible_tick_start, snap.visible_tick_end);
+            if buf.len() < MAX_VISIBLE_NOTES {
+                for (&ti, v) in snap.track_notes.iter() {
+                    if ti == snap.current_track {
+                        continue;
+                    }
+                    if !snap.track_onion_states.get(&ti).copied().unwrap_or(true) {
+                        continue;
+                    }
+                    collect_visible_user(v, ti as u16, snap.visible_tick_start, extended_end, buf);
+                    if buf.len() >= MAX_VISIBLE_NOTES {
+                        break;
+                    }
                 }
             }
-            // 2b: 用户编辑音轨
-            for (&ti, v) in snap.track_notes.iter() {
-                if ti == snap.current_track { continue; }
-                if !snap.track_onion_states.get(&ti).copied().unwrap_or(true) { continue; }
-                collect_visible_user(&mut all, v, ti as u16, snap.visible_tick_start, snap.visible_tick_end);
+
+            // ── Phase 2: 自适应排序（小 N 用 seq sort 避免 rayon 开销） ──
+            if buf.len() < 100_000 {
+                buf.sort_unstable_by_key(|n| n.start_tick);
+            } else {
+                use rayon::prelude::*;
+                buf.par_sort_unstable_by_key(|n| n.start_tick);
             }
 
-            // ── Phase 3: 并行排序 ──
-            use rayon::prelude::*;
-            all.par_sort_unstable_by_key(|n| n.start_tick);
-
-            // ── Phase 4: 写入 combined buffer ──
-            {
-                let buf = unsafe { job.onion_note_buffer.write_buffer() };
-                buf.clear();
-                buf.extend(all);
-            }
             job.onion_note_buffer.swap();
 
             if let Some(tx) = job.done_tx {
@@ -179,49 +263,23 @@ impl NoteWorker {
 
 // ─── 视口范围计算（二分查找） ──────────────────────────────────────────────
 
-/// 计算 NoteInfo 切片中落在视口内的音符数
-fn visible_count(notes: &[lumino_midi_loader::NoteInfo], ts: f32, te: f32) -> usize {
-    let ts_u = ts as u32;
-    let te_u = te as u32;
-    let start = notes.partition_point(|n| n.start_tick < ts_u.saturating_sub(TICK_SEARCH_BUFFER));
-    let end = notes.len().min(
-        start + notes[start..].partition_point(|n| n.start_tick <= te_u),
-    );
-    if start >= end { return 0; }
-    let mut count = 0usize;
-    for n in &notes[start..end] {
-        if n.end_tick() > ts_u && n.start_tick < te_u {
-            count += 1;
-        }
-    }
-    count
-}
-
-/// 计算用户编辑音符中落在视口内的数量
-fn visible_count_user(notes: &im::Vector<crate::editor::note::Note>, ts: f32, te: f32) -> usize {
-    let ts_u = ts as u32;
-    let te_u = te as u32;
-    notes.iter().filter(|n| {
-        let et = (n.tick + n.length) as u32;
-        et > ts_u && (n.tick as u32) < te_u
-    }).count()
-}
-
-/// 将 NoteInfo 中可见范围的音符提取为 OnionNote
+/// 将 NoteInfo 中可见范围的音符提取为 OnionNote（直接写入目标 Vec）
 fn collect_visible(
-    out: &mut Vec<OnionNote>,
     notes: &[lumino_midi_loader::NoteInfo],
     track_idx: u16,
     ts: f32,
     te: f32,
+    out: &mut Vec<OnionNote>,
 ) {
     let ts_u = ts as u32;
     let te_u = te as u32;
     let start = notes.partition_point(|n| n.start_tick < ts_u.saturating_sub(TICK_SEARCH_BUFFER));
-    if start >= notes.len() { return; }
-    let end = notes.len().min(
-        start + notes[start..].partition_point(|n| n.start_tick <= te_u),
-    );
+    if start >= notes.len() {
+        return;
+    }
+    let end = notes
+        .len()
+        .min(start + notes[start..].partition_point(|n| n.start_tick <= te_u));
     for n in &notes[start..end] {
         let et = n.end_tick();
         if et > ts_u && n.start_tick < te_u {
@@ -230,13 +288,13 @@ fn collect_visible(
     }
 }
 
-/// 将用户编辑音符中可见范围提取为 OnionNote
+/// 将用户编辑音符中可见范围提取为 OnionNote（直接写入目标 Vec）
 fn collect_visible_user(
-    out: &mut Vec<OnionNote>,
     notes: &im::Vector<crate::editor::note::Note>,
     track_idx: u16,
     ts: f32,
     te: f32,
+    out: &mut Vec<OnionNote>,
 ) {
     let ts_u = ts as u32;
     let te_u = te as u32;
@@ -266,13 +324,23 @@ pub(super) fn build_main_note_instances(
     let main: Vec<lumino_gfx::NoteInstance> = notes
         .par_iter()
         .map(|note| {
-            lumino_gfx::NoteInstance::new(note.tick, note.key as f32, note.length, [0.2, 0.5, 1.0, 0.9])
+            lumino_gfx::NoteInstance::new(
+                note.tick,
+                note.key as f32,
+                note.length,
+                [0.2, 0.5, 1.0, 0.9],
+            )
         })
         .collect();
     instances.extend(main);
 
     const DRAWING_NOTE_COLOR: [f32; 4] = [0.4, 0.8, 1.0, 1.0];
-    if let crate::editor::editor_state::EditState::Drawing { start_tick, key, current_tick } = edit_state {
+    if let crate::editor::editor_state::EditState::Drawing {
+        start_tick,
+        key,
+        current_tick,
+    } = edit_state
+    {
         let (tick, length) = if *current_tick > *start_tick {
             (*start_tick, *current_tick - *start_tick)
         } else if *current_tick < *start_tick {
@@ -281,154 +349,19 @@ pub(super) fn build_main_note_instances(
             (*start_tick, default_note_length)
         };
         instances.push(lumino_gfx::NoteInstance::new(
-            tick, *key as f32, length.max(snap_precision), DRAWING_NOTE_COLOR,
+            tick,
+            *key as f32,
+            length.max(snap_precision),
+            DRAWING_NOTE_COLOR,
         ));
     }
     buffer.swap();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 基准测试
+// 基准测试（外部文件，仅 test 编译）
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[cfg(test)]
-mod bench {
-    use super::*;
-    use std::time::{Duration, Instant};
-
-    fn load_test_midi() -> Option<Arc<MidiDocument>> {
-        let path = std::env::var("NOTE_WORKER_BENCH_MIDI")
-            .unwrap_or_else(|_| r"D:\BM-DATA\MIDI File\rekt apple!!.mid".to_owned());
-        let pb = std::path::PathBuf::from(&path);
-        if !pb.exists() { println!("WARN: bench MIDI not found: {:?}", pb); return None; }
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        match rt.block_on(lumino_midi_loader::loader::load_parsed_midi(pb, None)) {
-            Ok(p) => {
-                let doc = p.document.expect("no document after loading");
-                println!("Loaded MIDI: {} tracks, doc has {} tracks",
-                    doc.track_count(), doc.track_count());
-                Some(doc)
-            }
-            Err(e) => { println!("WARN: load failed: {}", e); None }
-        }
-    }
-
-    fn make_snap(doc: &Arc<MidiDocument>, ts: f32, te: f32) -> OnionSkinComputationSnapshot {
-        OnionSkinComputationSnapshot {
-            visible_tick_start: ts, visible_tick_end: te,
-            visible_key_min: 0, visible_key_max: 127,
-            scroll_x: ts * 10.0, scroll_y: 0.0, zoom_x: 10.0, zoom_y: 0.5,
-            keyboard_width: 60.0, ruler_height: 30.0,
-            canvas_offset_x: 60.0, canvas_offset_y: 30.0,
-            viewport_logical_width: 1920.0, viewport_logical_height: 1080.0,
-            max_key_index: 127.0, onion_skin_enabled: true,
-            track_onion_states: HashMap::new(), current_track: 0,
-            document: Some(Arc::clone(doc)),
-            track_notes: Arc::new(HashMap::new()),
-        }
-    }
-
-    fn get_mem_kb() -> u64 {
-        #[cfg(windows)] {
-            use std::mem::MaybeUninit;
-            #[repr(C)] struct PMC { cb: u32, _pf: u32, _pws: usize, ws: usize, _rest: [usize; 6] }
-            #[link(name = "psapi")] unsafe extern "system" {
-                fn GetProcessMemoryInfo(h: *mut std::ffi::c_void, p: *mut PMC, cb: u32) -> i32;
-                fn GetCurrentProcess() -> *mut std::ffi::c_void;
-            }
-            let mut pmc = MaybeUninit::<PMC>::zeroed();
-            unsafe {
-                if GetProcessMemoryInfo(GetCurrentProcess(), pmc.as_mut_ptr(), size_of::<PMC>() as u32) != 0 {
-                    return (pmc.assume_init().ws / 1024) as u64;
-                }
-            }
-            0
-        }
-        #[cfg(target_os = "linux")] {
-            if let Ok(s) = std::fs::read_to_string("/proc/self/status") {
-                for line in s.lines() {
-                    if line.starts_with("VmRSS:") {
-                        if let Some(v) = line.split_whitespace().nth(1).and_then(|x| x.parse::<u64>().ok()) { return v; }
-                    }
-                }
-            }
-            0
-        }
-        #[cfg(not(any(windows, target_os = "linux")))] { 0 }
-    }
-
-    #[test]
-    fn test_note_worker_bench() {
-        let doc = match load_test_midi() { Some(d) => d, None => { return; } };
-        let num_tracks = doc.track_count();
-        let total_ticks = doc.total_ticks() as f32;
-        let total_notes: usize = (0..num_tracks).map(|t| doc.track_notes(t).len()).sum();
-        let mem_before = get_mem_kb();
-
-        println!("┌───────────────────────────────────────┐");
-        println!("│ NoteWorker 基准测试 (no-cache)          │");
-        println!("├───────────────────────────────────────┤");
-        println!("│ 音轨数: {:>8}                        │", num_tracks);
-        println!("│ 总音符: {:>8}                        │", total_notes);
-        println!("│ Ticks:  {:>8}                        │", total_ticks as u32);
-        println!("└───────────────────────────────────────┘");
-
-        let worker = NoteWorker::spawn().expect("spawn");
-        let buf: Arc<SwappableBuffer<OnionNote>> = Arc::new(SwappableBuffer::new(256 * 1024));
-        let vw = total_ticks / 20.0;
-
-        // 首次加载
-        {
-            let (tx, rx) = mpsc::channel();
-            let t0 = Instant::now();
-            worker.send(OnionSkinJob { snapshot: make_snap(&doc, 0.0, vw), onion_note_buffer: Arc::clone(&buf), done_tx: Some(tx) });
-            let _ = rx.recv();
-            println!("首次: {:.3} ms", t0.elapsed().as_secs_f64() * 1000.0);
-        }
-
-        // 10 个不同位置的单次滚动延迟
-        let mut times = Vec::with_capacity(10);
-        for i in 0..10 {
-            let frac = (i + 1) as f32 / 11.0;
-            let ts = ((total_ticks - vw) * frac).max(0.0);
-            let (tx, rx) = mpsc::channel();
-            let t0 = Instant::now();
-            worker.send(OnionSkinJob { snapshot: make_snap(&doc, ts, ts + vw), onion_note_buffer: Arc::clone(&buf), done_tx: Some(tx) });
-            let _ = rx.recv();
-            times.push(t0.elapsed());
-        }
-
-        worker.shutdown();
-        let mem_after = get_mem_kb();
-        let mem_delta = mem_after.saturating_sub(mem_before);
-
-        let total: Duration = times.iter().sum();
-        let avg = total / times.len() as u32;
-        let max = times.iter().copied().max().unwrap_or_default();
-        let min = times.iter().copied().min().unwrap_or_default();
-        let mut s = times.clone(); s.sort();
-        let p50 = s[s.len() / 2];
-        let p95_idx = (s.len() as f64 * 0.95) as usize;
-        let p95 = s[p95_idx.min(s.len() - 1)];
-
-        println!("┌───────── 性能明细 ─────────┐");
-        println!("  avg={:.3}ms min={:.3}ms max={:.3}ms", avg.as_secs_f64()*1000.0, min.as_secs_f64()*1000.0, max.as_secs_f64()*1000.0);
-        println!("  P50={:.3}ms P95={:.3}ms", p50.as_secs_f64()*1000.0, p95.as_secs_f64()*1000.0);
-        println!("├────────────────────────────┤");
-        println!("│ 内存增量: {:>8} KB           │", mem_delta);
-        println!("│ 内存基线: {:>8} KB           │", mem_before);
-        println!("│ 峰值内存: {:>8} KB           │", mem_after);
-        if mem_delta > 300 * 1024 { println!("│ ⚠ 超限! {}MB                   │", mem_delta / 1024); }
-        println!("└────────────────────────────┘");
-
-        // 对于 100M 音符的黑乐谱（1673 音轨），50ms P50 已是优异的性能表现。
-        // 10ms 阈值在常规 MIDI 文件（<500K 音符）下完全可以达到。
-        // 此处仅输出警告而非断言失败，让调用方根据实际 MIDI 规模判断。
-        if avg >= Duration::from_millis(10) {
-            println!("⚠ 平均 {:.3}ms >= 10ms（黑乐谱 100M 音符场景属正常）", avg.as_secs_f64()*1000.0);
-        }
-        if mem_delta >= 300 * 1024 {
-            println!("⚠ 内存 {}MB >= 300MB（黑乐谱场景主要由 MidiDocument 自身存储占用）", mem_delta / 1024);
-        }
-    }
-}
+#[path = "note_worker_bench.rs"]
+mod bench;

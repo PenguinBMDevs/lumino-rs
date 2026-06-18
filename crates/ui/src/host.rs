@@ -70,6 +70,8 @@ pub struct Host {
     pub(crate) cpu_monitor: CpuMonitor,
     /// 上一次 GPU 帧耗时（ms）
     pub(crate) last_gpu_frame_time_ms: f32,
+    /// 滚动速度追踪器（用于 overscan 计算）
+    pub(crate) scroll_tracker: render::note_worker::ScrollVelocityTracker,
 }
 
 impl Host {
@@ -124,6 +126,7 @@ impl Host {
             ui_dirty: false,
             cpu_monitor: CpuMonitor::new(),
             last_gpu_frame_time_ms: 0.0,
+            scroll_tracker: render::note_worker::ScrollVelocityTracker::new(),
         }
     }
 
