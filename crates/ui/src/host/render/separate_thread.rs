@@ -1,4 +1,4 @@
-use crate::RenderParams;
+﻿use crate::RenderParams;
 use crate::host::Host;
 use lumino_gfx::{
     ARRANGEMENT_PALETTE, ArrangementNoteInstance, ArrangementSceneParams, ArrangementUniform,
@@ -428,7 +428,7 @@ impl Host {
     }
 
     /// 构建渲染参数
-    pub(super) fn build_render_params(&self, data: super::data::RenderData) -> RenderParams {
+    pub(super) fn build_render_params(&mut self, data: super::data::RenderData) -> RenderParams {
         use crate::editor::velocity::PANEL_PADDING_Y;
         let es = &self.root.editor.editor_state;
         let physical_size = self.render_ctx.viewport.physical_size();
@@ -528,14 +528,29 @@ impl Host {
         };
 
         // ── 洋葱皮 per-track 打包颜色 ──
-        let onion_skin_colors = &self.root.editor.onion_skin.config.colors;
-        let track_count = self.root.sidebar.tracks.len();
-        let mut packed_colors: Vec<u32> = Vec::with_capacity(track_count);
-        for i in 0..track_count {
-            let c = onion_skin_colors.get_raw(i);
-            packed_colors.push(OnionNote::pack_rgba(c.r, c.g, c.b, c.a));
-        }
-        let onion_track_colors = Some(packed_colors);
+        // 仅在颜色配置/音轨数量变化时重建，避免每帧 O(track_count) 分配
+        let onion_track_colors = {
+            let cache = &mut self.render_ctx.render_cache;
+            let onion_skin_colors = &self.root.editor.onion_skin.config.colors;
+            let track_count = self.root.sidebar.tracks.len();
+            let colors_dirty = cache
+                .onion_track_colors
+                .as_ref()
+                .is_none_or(|c| c.len() != track_count)
+                || cache.onion_colors_version != onion_skin_colors.version();
+
+            if colors_dirty {
+                let mut packed_colors: Vec<u32> = Vec::with_capacity(track_count);
+                for i in 0..track_count {
+                    let c = onion_skin_colors.get_raw(i);
+                    packed_colors.push(OnionNote::pack_rgba(c.r, c.g, c.b, c.a));
+                }
+                cache.onion_track_colors = Some(packed_colors);
+                cache.onion_colors_version = onion_skin_colors.version();
+            }
+
+            cache.onion_track_colors.clone()
+        };
 
         // ── 洋葱皮渲染线程采集参数 ──
         let onion_bucket = self

@@ -7,9 +7,61 @@ fn make_note_info(start: u32, length: u32, key: u8) -> NoteInfo {
     NoteInfo::new(start, length, key, 100, 0)
 }
 
-/// 测试用颜色函数：始终返回白色
-fn test_color_fn(_track_idx: u16) -> u32 {
-    0xFFFFFFFF
+/// 测试用颜色表：所有音轨返回白色
+const TEST_TRACK_COLORS: [u32; 256] = [0xFFFFFFFF; 256];
+
+/// 测试 flatten_with_key_offsets 生成的扁平数组和累积偏移正确
+#[test]
+fn test_flatten_with_key_offsets() {
+    let notes = vec![
+        make_note_info(0, 10, 60),
+        make_note_info(5, 10, 61),
+        make_note_info(20, 10, 60),
+    ];
+    let bucket = build_bucket_from_notes(&notes, 1);
+
+    let mut note_pool = Vec::new();
+    let mut key_offsets = [0u32; 257];
+    let colors = [0xFF0000FFu32; 256];
+    bucket.flatten_with_key_offsets(&mut note_pool, &mut key_offsets, &colors);
+
+    assert_eq!(note_pool.len(), 3);
+    // key 60 的音符应排在 key 61 之前
+    assert_eq!(note_pool[0].pitch(), 60);
+    assert_eq!(note_pool[1].pitch(), 60);
+    assert_eq!(note_pool[2].pitch(), 61);
+
+    // 颜色应被填充
+    assert_eq!(note_pool[0].color_packed(), colors[1]);
+    assert_eq!(note_pool[2].color_packed(), colors[1]);
+
+    assert_eq!(key_offsets[60], 0);
+    assert_eq!(key_offsets[61], 2);
+    assert_eq!(key_offsets[62], 3);
+    assert_eq!(key_offsets[256], 3);
+}
+
+/// 测试 find_visible_range 二分查找结果
+#[test]
+fn test_find_visible_range() {
+    let notes = vec![
+        make_note_info(0, 10, 60),  // end=10
+        make_note_info(20, 10, 60), // end=30
+        make_note_info(50, 10, 60), // end=60
+    ];
+    let bucket = build_bucket_from_notes(&notes, 1);
+
+    // 视口 [15, 45)：只有第二个音符 start=20 < 45 且 end=30 > 15
+    let (start, end) = bucket.find_visible_range(60, 15, 45);
+    assert_eq!((start, end), (1, 2));
+
+    // 视口 [0, 15)：第一个音符 end=10 <= 15，第二个 start=20 >= 15
+    let (start, end) = bucket.find_visible_range(60, 0, 15);
+    assert_eq!((start, end), (0, 1));
+
+    // 空 key
+    let (start, end) = bucket.find_visible_range(70, 0, 100);
+    assert_eq!((start, end), (0, 0));
 }
 
 #[test]
@@ -30,7 +82,7 @@ fn test_bucket_build_and_collect() {
         OnionCollectParams::new(0.0, 15.0, 60, 61, 0.0),
         &mut cursor,
         |_| true,
-        test_color_fn,
+        &TEST_TRACK_COLORS,
         &mut out,
     );
     assert_eq!(out.len(), 2);
@@ -40,7 +92,7 @@ fn test_bucket_build_and_collect() {
         OnionCollectParams::new(15.0, 25.0, 60, 61, 0.0),
         &mut cursor,
         |_| true,
-        test_color_fn,
+        &TEST_TRACK_COLORS,
         &mut out,
     );
     assert_eq!(out.len(), 1);
@@ -68,7 +120,7 @@ fn test_cursor_reuse() {
         OnionCollectParams::new(0.0, 50.0, 60, 60, 0.0),
         &mut cursor,
         |_| true,
-        test_color_fn,
+        &TEST_TRACK_COLORS,
         &mut out,
     );
     assert_eq!(out.len(), 1);
@@ -87,7 +139,7 @@ fn test_cursor_reuse() {
         OnionCollectParams::new(50.0, 150.0, 60, 60, 0.0),
         &mut cursor,
         |_| true,
-        test_color_fn,
+        &TEST_TRACK_COLORS,
         &mut out,
     );
     assert_eq!(out.len(), 1);
@@ -113,7 +165,7 @@ fn test_cursor_reset_on_backward() {
         OnionCollectParams::new(50.0, 150.0, 60, 60, 0.0),
         &mut cursor,
         |_| true,
-        test_color_fn,
+        &TEST_TRACK_COLORS,
         &mut out,
     );
     assert_eq!(cursor[60], 1);
@@ -125,7 +177,7 @@ fn test_cursor_reset_on_backward() {
         OnionCollectParams::new(0.0, 50.0, 60, 60, 50.0),
         &mut cursor,
         |_| true,
-        test_color_fn,
+        &TEST_TRACK_COLORS,
         &mut out,
     );
     assert_eq!(out.len(), 1);
@@ -164,7 +216,7 @@ fn test_track_filter() {
         OnionCollectParams::new(0.0, 20.0, 60, 61, 0.0),
         &mut cursor,
         |_| false,
-        test_color_fn,
+        &TEST_TRACK_COLORS,
         &mut out,
     );
     assert_eq!(out.len(), 0);
@@ -192,7 +244,7 @@ fn test_cross_key_collection_not_truncated() {
         OnionCollectParams::new(0.0, 50.0, 60, 61, 0.0),
         &mut cursor,
         |_| true,
-        test_color_fn,
+        &TEST_TRACK_COLORS,
         &mut out,
     );
 

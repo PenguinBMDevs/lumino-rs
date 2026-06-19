@@ -1,4 +1,4 @@
-use super::{CameraUniform, DrawIndirectArgs, OnionNote, OnionRenderer, OnionViewportUniform};
+use super::{CameraUniform, DrawIndirectArgs, OnionRenderer, OnionViewportUniform};
 use wgpu::util::DeviceExt;
 
 impl OnionRenderer {
@@ -17,17 +17,18 @@ impl OnionRenderer {
         });
 
         let max_storage_binding = device.limits().max_storage_buffer_binding_size as u64;
-        let max_buffer_size = device.limits().max_buffer_size;
-        let max_note_pool_bytes =
-            max_storage_binding.min(max_buffer_size).min(1_600_000_000) as usize;
-        let note_pool_capacity = (max_note_pool_bytes / std::mem::size_of::<OnionNote>())
-            .min(Self::INITIAL_NOTE_CAPACITY);
+        let _max_buffer_size = device.limits().max_buffer_size;
+        // 初始容量不要设太大，避免空项目占用过多 GPU 显存；
+        // bucket 模式上传时会按需扩容。
+        let initial_note_pool_capacity = Self::INITIAL_NOTE_CAPACITY;
 
         // ─── Compute bind group layout ──────────────────
         // binding 0: viewport uniform
         // binding 1: note_pool storage (read)
         // binding 2: instance_indices storage (read_write)
         // binding 3: indirect_args storage (read_write)
+        // binding 4: key_offsets storage (read) — bucket 模式
+        // binding 5: key_ranges storage (read) — bucket 模式
         let compute_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("onion_compute_bind_group_layout"),
@@ -67,6 +68,26 @@ impl OnionRenderer {
                         visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
                             min_binding_size: None,
                         },
@@ -183,7 +204,7 @@ impl OnionRenderer {
         });
 
         // ─── Buffers ────────────────────────────────────
-        let note_pool_buffer = Self::create_note_pool_buffer(device, note_pool_capacity);
+        let note_pool_buffer = Self::create_note_pool_buffer(device, initial_note_pool_capacity);
         let indices_capacity = Self::INITIAL_INDICES_CAPACITY;
         let instance_indices_buffer =
             Self::create_instance_indices_buffer(device, indices_capacity);
@@ -205,6 +226,8 @@ impl OnionRenderer {
             contents: bytemuck::cast_slice(&[CameraUniform::default()]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        let key_offsets_buffer = Self::create_key_offsets_buffer(device);
+        let key_ranges_buffer = Self::create_key_ranges_buffer(device);
 
         // ─── Bind groups ────────────────────────────────
         let compute_bind_group = Self::create_compute_bind_group(
@@ -214,6 +237,8 @@ impl OnionRenderer {
             &note_pool_buffer,
             &instance_indices_buffer,
             &indirect_buffer,
+            &key_offsets_buffer,
+            &key_ranges_buffer,
         );
         let render_bind_group = Self::create_render_bind_group(
             device,
@@ -229,16 +254,21 @@ impl OnionRenderer {
             indirect_buffer,
             viewport_buffer,
             camera_buffer,
+            key_offsets_buffer,
+            key_ranges_buffer,
             render_pipeline,
             compute_pipeline,
             compute_bind_group,
             render_bind_group,
             compute_bind_group_layout,
             render_bind_group_layout,
-            note_pool_capacity,
+            note_pool_capacity: initial_note_pool_capacity,
             note_count: 0,
             indices_capacity,
             max_storage_binding,
+            bucket_mode: false,
+            last_bucket_version: 0,
+            last_color_version: 0,
             bind_groups_dirty: false,
             last_viewport: None,
             last_camera: None,

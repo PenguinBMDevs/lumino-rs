@@ -59,6 +59,12 @@ fn test_render_params_clone() {
         arrangement_uniform: lumino_gfx::ArrangementUniform::default(),
         cc_bar_instances: Vec::new(),
         velocity_panel_rect: None,
+        onion_track_colors: None,
+        onion_bucket: None,
+        onion_bucket_version: 0,
+        onion_overscan_ticks: 0.0,
+        onion_current_track: 0,
+        onion_enabled: false,
     };
 
     let cloned = params.clone();

@@ -1,4 +1,5 @@
-use super::{CameraUniform, OnionRenderer, OnionViewportUniform};
+use super::{CameraUniform, OnionKeyRange, OnionRenderer, OnionViewportUniform};
+use crate::OnionSkinBucket;
 
 impl OnionRenderer {
     /// 准备计算剔除（视口变化时调用）
@@ -6,9 +7,12 @@ impl OnionRenderer {
     /// 执行 compute shader 剔除，结果写入 instance_indices_buffer 和 indirect_buffer。
     /// 内置 dirty tracking：当视口/相机/音符均未变化时跳过 compute dispatch。
     ///
-    /// 注意：音符池按 key 分桶输出，全局上不按 start_tick 单调，因此不能再用
-    /// CPU 二分查找缩小扫描区间。这里直接令 GPU 扫描 [0, note_count)，
-    /// 由 compute shader 自行做 tick/pitch 裁剪。
+    /// # Bucket 模式
+    /// 如果 `bucket` 不为 None，使用 GPU 常驻音符池 + per-key 可见范围：
+    /// - CPU 端对每个可见 key 做二分查找，得到 `[start, end)`；
+    /// - 只上传 256 个 `OnionKeyRange`（约 2KB），替代原先最多 3M 音符的上传；
+    /// - GPU 每个 workgroup 处理一个 key，只扫描该 key 的可见子区间。
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare_cull(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -16,23 +20,37 @@ impl OnionRenderer {
         camera: &CameraUniform,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
+        bucket: Option<&OnionSkinBucket>,
+        current_track: u16,
     ) {
         if self.note_count == 0 {
             return;
         }
 
-        // 构建完整的 viewport uniform（合并 cull 参数）
-        let full_viewport = OnionViewportUniform {
-            tick_start: viewport.tick_start,
-            tick_end: viewport.tick_end,
-            pitch_min: viewport.pitch_min,
-            pitch_max: viewport.pitch_max,
-            note_count: self.note_count as u32,
-            indices_capacity: self.indices_capacity as u32,
-            // 全局不保证单调，直接扫描全部音符
-            visible_start: 0,
-            visible_end: self.note_count as u32,
-        };
+        let mut full_viewport = *viewport;
+        full_viewport.current_track = current_track as u32;
+
+        let mut key_ranges = [OnionKeyRange::default(); 256];
+
+        if let Some(b) = bucket {
+            full_viewport.use_key_ranges = 1;
+            // 二分查找每个 key 的可见范围
+            let ts = viewport.tick_start as u32;
+            let te = viewport.tick_end as u32;
+            let key_min = viewport.pitch_min.max(0.0) as u16;
+            let key_max = viewport.pitch_max.min(255.0) as u16;
+            for key in key_min..=key_max {
+                let (start, end) = b.find_visible_range(key as u8, ts, te);
+                key_ranges[key as usize] = OnionKeyRange {
+                    start: start as u32,
+                    end: end as u32,
+                };
+            }
+        } else {
+            full_viewport.use_key_ranges = 0;
+            full_viewport.visible_start = 0;
+            full_viewport.visible_end = self.note_count as u32;
+        }
 
         // Dirty check：检测视口/相机/音符是否有变化
         let viewport_changed = self.last_viewport.as_ref() != Some(&full_viewport);
@@ -55,6 +73,14 @@ impl OnionRenderer {
         if camera_changed {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[*camera]));
         }
+        // Bucket 模式：每帧上传 key_ranges
+        if bucket.is_some() {
+            queue.write_buffer(
+                &self.key_ranges_buffer,
+                0,
+                bytemuck::cast_slice(&key_ranges),
+            );
+        }
 
         // 更新缓存状态
         self.last_viewport = Some(full_viewport);
@@ -67,9 +93,18 @@ impl OnionRenderer {
             self.bind_groups_dirty = false;
         }
 
-        // 执行 Compute Culling — 仅派发可见范围内的 workgroup
-        let cull_count = full_viewport.visible_end - full_viewport.visible_start;
-        let workgroup_count = cull_count.div_ceil(Self::WORKGROUP_SIZE).max(1);
+        // 执行 Compute Culling
+        // Bucket 模式：固定 256 个 workgroup，每个处理一个 key
+        // 兼容模式：按 visible_end - visible_start 计算
+        let workgroup_count = if bucket.is_some() {
+            256u32
+        } else {
+            full_viewport
+                .visible_end
+                .saturating_sub(full_viewport.visible_start)
+                .div_ceil(Self::WORKGROUP_SIZE)
+                .max(1)
+        };
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("onion_cull_pass"),
             timestamp_writes: None,

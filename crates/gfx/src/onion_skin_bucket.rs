@@ -106,6 +106,61 @@ impl OnionSkinBucket {
         &self.by_key[key as usize]
     }
 
+    /// 查找指定 key 中可见 tick 范围的起止索引
+    ///
+    /// 利用每个 key 内部按 `start_tick` 升序排列的特性，在 CPU 端做二分查找，
+    /// 将扫描区间从“整个音符池”缩小到“可见 tick 范围内的音符”。
+    /// 返回 `[start_idx, end_idx)`，可直接填充到 `OnionKeyRange`。
+    #[must_use]
+    pub fn find_visible_range(&self, key: u8, tick_start: u32, tick_end: u32) -> (usize, usize) {
+        let bucket = self.key_notes(key);
+        if bucket.is_empty() {
+            return (0, 0);
+        }
+
+        // 第一个 end_tick > tick_start 的音符（即尚未完全离开视口）
+        let start = bucket.partition_point(|note| note.end_tick <= tick_start);
+        // 第一个 start_tick >= tick_end 的音符（即完全进入视口右侧）
+        let end = bucket.partition_point(|note| note.start_tick < tick_end);
+
+        (start, end.min(bucket.len()))
+    }
+
+    /// 将每个 key 的音符按 key 顺序平铺，并生成 257 个累积偏移
+    ///
+    /// 输出：`note_pool` 为按 key 升序排列的扁平数组；
+    /// `key_offsets` 长度 257，`key_offsets[i]` 表示 key `i` 在 `note_pool` 中的起始偏移，
+    /// `key_offsets[256]` 为总长度。
+    ///
+    /// 若提供 `track_colors`，会在平铺时为每个音符填充对应音轨颜色。
+    pub fn flatten_with_key_offsets(
+        &self,
+        note_pool: &mut Vec<OnionNote>,
+        key_offsets: &mut [u32; 257],
+        track_colors: &[u32],
+    ) {
+        note_pool.clear();
+        let mut offset = 0u32;
+        for (key, bucket) in self.by_key.iter().enumerate() {
+            key_offsets[key] = offset;
+            if track_colors.is_empty() {
+                note_pool.extend_from_slice(bucket);
+            } else {
+                note_pool.extend(bucket.iter().map(|note| {
+                    let color = track_colors
+                        .get(note.track_idx() as usize)
+                        .copied()
+                        .unwrap_or(0);
+                    let mut colored = *note;
+                    colored.set_color_packed(color);
+                    colored
+                }));
+            }
+            offset = note_pool.len() as u32;
+        }
+        key_offsets[256] = offset;
+    }
+
     /// 清空所有分桶
     pub fn clear(&mut self) {
         for bucket in self.by_key.iter_mut() {
@@ -221,13 +276,14 @@ impl OnionSkinBucket {
     /// - `params`: 视口参数集合
     /// - `cursor`: 每个 key 的渲染游标，由调用方持有并维护
     /// - `track_filter`: 音轨可见性过滤
-    /// - `track_color_fn`: 音轨颜色查询函数，返回 RGBA8 打包颜色
+    /// - `track_colors`: 音轨颜色表，按 `track_idx` 直接索引返回 RGBA8 打包颜色；
+    ///   调用方需保证长度覆盖所有可能出现的 `track_idx`，否则越界颜色返回 0
     pub fn collect_visible_with_cursor(
         &self,
         params: OnionCollectParams,
         cursor: &mut [usize; 256],
         track_filter: impl Fn(u16) -> bool,
-        track_color_fn: impl Fn(u16) -> u32,
+        track_colors: &[u32],
         out: &mut Vec<OnionNote>,
     ) {
         let ts = params.tick_start as u32;
@@ -267,11 +323,12 @@ impl OnionSkinBucket {
                 if note.end_tick <= ts {
                     continue;
                 }
-                if !track_filter(note.track_idx()) {
+                let track_idx = note.track_idx();
+                if !track_filter(track_idx) {
                     continue;
                 }
                 // 为每个音符设置颜色（per-note 颜色编码，支持任意数量音轨）
-                let color = track_color_fn(note.track_idx());
+                let color = track_colors.get(track_idx as usize).copied().unwrap_or(0);
                 let mut visible_note = *note;
                 visible_note.set_color_packed(color);
                 out.push(visible_note);

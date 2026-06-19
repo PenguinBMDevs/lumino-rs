@@ -14,30 +14,7 @@ use super::prepare::prepare_renderers;
 use super::render_pass::execute_render_pass;
 use super::render_pass::update_stats;
 use super::textures::ensure_textures;
-use crate::{CameraParams, CameraUniform, OnionCollectParams, OnionViewportUniform};
-
-/// 渲染线程持有的洋葱皮游标状态
-struct OnionCursorState {
-    cursors: Box<[usize; 256]>,
-    last_tick_start: f32,
-    last_bucket_version: u64,
-}
-
-impl OnionCursorState {
-    fn new() -> Self {
-        Self {
-            cursors: Box::new([0; 256]),
-            last_tick_start: 0.0,
-            last_bucket_version: u64::MAX,
-        }
-    }
-
-    fn reset(&mut self, bucket_version: u64, tick_start: f32) {
-        self.cursors.fill(0);
-        self.last_bucket_version = bucket_version;
-        self.last_tick_start = tick_start;
-    }
-}
+use crate::{CameraParams, CameraUniform, OnionViewportUniform};
 
 /// 运行渲染线程主循环
 #[allow(clippy::too_many_arguments)]
@@ -70,10 +47,6 @@ pub fn run_render_thread(
     let mut depth_texture_view: Option<wgpu::TextureView> = None;
     let mut current_size = (0, 0);
     let mut last_note_version: u64 = 0;
-    // 洋葱皮采集游标（渲染线程本地，跨帧持久）
-    let mut onion_cursor = OnionCursorState::new();
-    // 临时 Vec 复用，避免每帧分配
-    let mut onion_notes_buf: Vec<crate::OnionNote> = Vec::with_capacity(256 * 1024);
 
     while running.load(Ordering::Relaxed) {
         // 处理命令：先 drain 积压，然后如果没有 RenderCommand 则阻塞等待
@@ -121,92 +94,26 @@ pub fn run_render_thread(
                 note_renderer.upload_instances(notes, &device, &queue);
             }
 
-            // ── 方案 C：渲染线程直接采集洋葱皮 ──
+            // ── 洋葱皮：GPU 常驻 bucket 模式 ──
             if params.onion_enabled {
                 if let Some(bucket) = &params.onion_bucket {
-                    // 数据变化时重置游标
-                    if params.onion_bucket_version != onion_cursor.last_bucket_version {
-                        onion_cursor
-                            .reset(params.onion_bucket_version, params.onion_overscan_ticks);
-                    }
-
-                    // 计算可见 tick 范围（与 notes.rs 一致）
-                    let note_area_width = (params.canvas_size.0 - params.keyboard_width).max(0.0);
-                    let visible_tick_start = (params.scroll.0 / params.zoom.0).max(0.0);
-                    let visible_tick_end = ((params.scroll.0 + note_area_width) / params.zoom.0)
-                        .max(visible_tick_start);
-
-                    // 右侧 overscan
-                    let right_pad = params
-                        .onion_overscan_ticks
-                        .min((visible_tick_end - visible_tick_start) * 1.5);
-                    let extended_end = (visible_tick_end + right_pad).max(0.0);
-
-                    // 计算可见 key 范围（与 notes.rs 一致）
-                    let note_area_height = (params.canvas_size.1 - params.ruler_height).max(0.0);
-                    let max_key = params.max_key_index;
-                    let key_top = max_key - (params.scroll.1 / params.zoom.1);
-                    let key_bottom =
-                        max_key - ((params.scroll.1 + note_area_height) / params.zoom.1);
-                    let visible_key_max = (key_top.ceil() as u16 + 1).min(255);
-                    let visible_key_min = (key_bottom.floor().max(0.0) as u16).saturating_sub(1);
-
-                    // 采集可见音符
-                    onion_notes_buf.clear();
-                    let current_track = params.onion_current_track;
-                    let track_filter = |track_idx: u16| track_idx != current_track;
-
-                    // 颜色查询函数：从 params 中的 per-track 颜色表获取
-                    let track_colors = &params.onion_track_colors;
-                    let track_color_fn = |track_idx: u16| -> u32 {
-                        track_colors
-                            .as_ref()
-                            .and_then(|colors| colors.get(track_idx as usize).copied())
-                            .unwrap_or(0)
-                    };
-
-                    bucket.collect_visible_with_cursor(
-                        OnionCollectParams::new(
-                            visible_tick_start,
-                            extended_end,
-                            visible_key_min,
-                            visible_key_max,
-                            onion_cursor.last_tick_start,
-                        ),
-                        &mut onion_cursor.cursors,
-                        track_filter,
-                        track_color_fn,
-                        &mut onion_notes_buf,
+                    let bucket_version = params.onion_bucket_version;
+                    let track_colors = params.onion_track_colors.as_deref().unwrap_or(&[]);
+                    let color_version = track_colors
+                        .iter()
+                        .fold(0u64, |acc, &c| acc.wrapping_mul(31).wrapping_add(c as u64));
+                    onion_renderer.upload_bucket(
+                        bucket,
+                        bucket_version,
+                        track_colors,
+                        color_version,
+                        &device,
+                        &queue,
                     );
-
-                    // 上限保护 — 按 key 比例分配 cap，保证每个 key 都有音符
-                    const MAX_VISIBLE_NOTES: usize = 3_000_000;
-                    if onion_notes_buf.len() > MAX_VISIBLE_NOTES {
-                        let visible_keys =
-                            (visible_key_max.saturating_sub(visible_key_min)).max(1) as usize;
-                        let per_key_cap = MAX_VISIBLE_NOTES / visible_keys;
-                        let mut filtered = Vec::with_capacity(MAX_VISIBLE_NOTES);
-                        let mut key_counts = [0usize; 256];
-                        for note in onion_notes_buf.drain(..) {
-                            let key = note.pitch() as usize;
-                            if key_counts[key] < per_key_cap {
-                                key_counts[key] += 1;
-                                filtered.push(note);
-                            }
-                        }
-                        onion_notes_buf = filtered;
-                    }
-
-                    // 直接上传到 GPU
-                    onion_renderer.upload_notes(&onion_notes_buf, &device, &queue);
-
-                    onion_cursor.last_tick_start = visible_tick_start;
                 } else {
-                    // 没有 bucket 时清空
                     onion_renderer.upload_notes(&[], &device, &queue);
                 }
             } else {
-                // 洋葱皮关闭时清空
                 onion_renderer.upload_notes(&[], &device, &queue);
             }
 
@@ -258,13 +165,23 @@ pub fn run_render_thread(
                     tick_end: visible_tick_end,
                     pitch_min: visible_pitch_min,
                     pitch_max: visible_pitch_max,
-                    note_count: 0,
-                    indices_capacity: 65536,
+                    note_count: onion_renderer.note_count() as u32,
+                    indices_capacity: onion_renderer.indices_capacity() as u32,
+                    current_track: params.onion_current_track as u32,
+                    use_key_ranges: 0,
                     visible_start: 0,
-                    visible_end: 0,
+                    visible_end: onion_renderer.note_count() as u32,
                 };
 
-                onion_renderer.prepare_cull(&mut encoder, &viewport, &camera, &queue, &device);
+                onion_renderer.prepare_cull(
+                    &mut encoder,
+                    &viewport,
+                    &camera,
+                    &queue,
+                    &device,
+                    params.onion_bucket.as_deref(),
+                    params.onion_current_track,
+                );
 
                 // 执行渲染通道（含洋葱皮背景和主音符）
                 execute_render_pass(

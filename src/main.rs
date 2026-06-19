@@ -1,5 +1,10 @@
-// 防止 Windows release 模式显示控制台窗口
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Windows 子系统控制（由 build.rs 根据 DEBUG env var 自动发射 cfg 标记）：
+//   release profile（DEBUG=false, windows_gui_subsystem 标记激活）→ windows 子系统，隐藏终端
+//   debug / fast-release（DEBUG=true, 无标记）→ console 子系统，显示终端
+#![cfg_attr(
+    all(target_os = "windows", windows_gui_subsystem),
+    windows_subsystem = "windows"
+)]
 
 use winit::event_loop::EventLoop;
 

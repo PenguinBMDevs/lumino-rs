@@ -13,6 +13,8 @@ pub struct OnionSkinColors {
     colors: Vec<Color>,
     /// 透明度 (0.0 - 1.0)
     opacity: f32,
+    /// 版本号，每次颜色/透明度变化时递增，用于渲染缓存失效
+    version: u64,
 }
 
 impl Default for OnionSkinColors {
@@ -64,7 +66,15 @@ impl OnionSkinColors {
         Self {
             colors,
             opacity: 0.7, // 默认70%透明度
+            version: 1,
         }
+    }
+
+    /// 获取当前颜色版本号（用于渲染缓存失效）
+    #[inline]
+    #[must_use]
+    pub fn version(&self) -> u64 {
+        self.version
     }
 
     /// 获取指定索引的颜色
@@ -130,6 +140,7 @@ impl OnionSkinColors {
             self.colors.resize(index + 1, color);
         }
         self.colors[index] = color;
+        self.version = self.version.wrapping_add(1);
     }
 
     /// 获取所有颜色
@@ -158,6 +169,7 @@ impl OnionSkinColors {
     /// * `opacity` - 透明度值，范围 0.0（完全透明）到 1.0（完全不透明）
     pub fn set_opacity(&mut self, opacity: f32) {
         self.opacity = opacity.clamp(0.0, 1.0);
+        self.version = self.version.wrapping_add(1);
     }
 
     /// 重置为默认颜色

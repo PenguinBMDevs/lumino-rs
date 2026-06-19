@@ -18,7 +18,9 @@
 
 pub mod types;
 
-pub use types::{CameraUniform, DrawIndirectArgs, OnionNote, OnionTrackMask, OnionViewportUniform};
+pub use types::{
+    CameraUniform, DrawIndirectArgs, OnionKeyRange, OnionNote, OnionTrackMask, OnionViewportUniform,
+};
 
 mod buffer;
 mod cull;
@@ -38,6 +40,10 @@ pub struct OnionRenderer {
     viewport_buffer: wgpu::Buffer,
     /// 相机 uniform buffer（复用 CameraUniform）
     camera_buffer: wgpu::Buffer,
+    /// key 累积偏移缓冲区（bucket 模式）：257 个 u32
+    key_offsets_buffer: wgpu::Buffer,
+    /// 每帧可见 key 范围缓冲区（bucket 模式）：256 个 OnionKeyRange
+    key_ranges_buffer: wgpu::Buffer,
 
     // ─── Pipeline ──────────────────────────────────────
     render_pipeline: wgpu::RenderPipeline,
@@ -56,6 +62,12 @@ pub struct OnionRenderer {
     indices_capacity: usize,
     /// GPU 最大 storage buffer binding size
     max_storage_binding: u64,
+    /// 当前是否使用 bucket 模式（GPU 常驻音符池 + per-key 范围）
+    bucket_mode: bool,
+    /// 上一次上传的 bucket 版本号（避免重复上传）
+    last_bucket_version: u64,
+    /// 上一次上传的颜色表版本号（颜色变化时强制重新上传）
+    last_color_version: u64,
     /// Bind group 是否需要重建（buffer 被重建时置 true）
     bind_groups_dirty: bool,
     /// 上一次 cull 的视口数据（用于 dirty tracking）

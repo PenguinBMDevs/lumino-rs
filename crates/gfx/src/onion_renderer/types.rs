@@ -74,12 +74,22 @@ impl OnionNote {
     }
 }
 
+/// 单个 key 在 GPU 音符池中的可见扫描范围
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct OnionKeyRange {
+    /// 起始索引（含）
+    pub start: u32,
+    /// 结束索引（不含）
+    pub end: u32,
+}
+
 /// 视口裁剪 uniform — 定义可见 tick/pitch 范围 + cull 参数
 ///
-/// GPU 在 [visible_start, visible_end) 区间内做可见性剔除。
-/// 注意：音符池目前按 key 分桶输出（每 key 内部按 tick 有序），
-/// 全局上并不保证按 start_tick 单调，因此调用方不应做全局二分查找，
-/// 应直接令 visible_start=0、visible_end=note_count，由 GPU 全量裁剪。
+/// 两种工作模式：
+/// 1. 兼容模式（use_key_ranges == 0）：GPU 在 [visible_start, visible_end) 区间内做全量裁剪。
+/// 2. Bucket 模式（use_key_ranges != 0）：GPU 通过 `OnionKeyRange` 缓冲区只扫描每个 key 的
+///    可见子区间，避免扫描整个音符池。
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct OnionViewportUniform {
@@ -93,9 +103,11 @@ pub struct OnionViewportUniform {
     pub note_count: u32,
     /// 实例索引缓冲区容量
     pub indices_capacity: u32,
-    /// GPU 扫描区间 [visible_start, visible_end)
-    ///
-    /// 因音符池为 per-key 排序，全局不单调，此处固定为 [0, note_count)。
+    /// 当前编辑音轨（GPU 剔除时排除）
+    pub current_track: u32,
+    /// 0=兼容模式全量扫描；1=使用 per-key 范围缓冲区
+    pub use_key_ranges: u32,
+    /// GPU 扫描区间 [visible_start, visible_end)（兼容模式使用）
     pub visible_start: u32,
     pub visible_end: u32,
 }
@@ -109,6 +121,8 @@ impl Default for OnionViewportUniform {
             pitch_max: 0.0,
             note_count: 0,
             indices_capacity: 65536,
+            current_track: 0,
+            use_key_ranges: 0,
             visible_start: 0,
             visible_end: 0,
         }

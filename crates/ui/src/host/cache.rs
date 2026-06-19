@@ -36,6 +36,10 @@ pub struct RenderCache {
     pub onion_bucket_doc_ptr: Option<*const ()>,
     /// 上一次构建 bucket 时的 track_notes_gen
     pub onion_bucket_track_gen: u64,
+    /// 缓存的洋葱皮 per-track 打包颜色（避免每帧重建）
+    pub onion_track_colors: Option<Vec<u32>>,
+    /// 缓存颜色对应的 OnionSkinColors 版本号
+    pub onion_colors_version: u64,
 }
 
 impl RenderCache {
@@ -54,6 +58,8 @@ impl RenderCache {
             onion_bucket: None,
             onion_bucket_doc_ptr: None,
             onion_bucket_track_gen: u64::MAX,
+            onion_track_colors: None,
+            onion_colors_version: u64::MAX,
         }
     }
 
