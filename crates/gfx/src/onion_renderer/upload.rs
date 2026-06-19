@@ -1,15 +1,18 @@
-use super::{DrawIndirectArgs, OnionNote, OnionRenderer, OnionViewportUniform};
+use super::{DrawIndirectArgs, OnionRenderer, OnionViewportUniform};
+use crate::OnionNoteList;
 
 /// 洋葱皮音符上传参数包（避免 `upload_notes` 参数超过 clippy 阈值）
 pub struct OnionUploadParams<'a> {
-    /// 待上传的洋葱皮音符列表
-    pub notes: &'a [OnionNote],
+    /// 洋葱皮音符列表（按时间分块）
+    pub note_list: Option<&'a OnionNoteList>,
     /// 音符列表版本号（dirty tracking）
     pub list_version: u64,
     /// 每音轨打包颜色表（index = track_idx）
     pub track_colors: &'a [u32],
     /// 颜色表哈希（dirty tracking）
     pub color_hash: u64,
+    /// 当前视口（用于 chunk 选择）
+    pub viewport: &'a OnionViewportUniform,
     /// wgpu 设备
     pub device: &'a wgpu::Device,
     /// wgpu 队列
@@ -17,57 +20,96 @@ pub struct OnionUploadParams<'a> {
 }
 
 impl OnionRenderer {
-    /// 上传洋葱皮音符到 GPU（全量常驻 + 颜色注入）
+    /// 上传洋葱皮音符到 GPU（只上传当前视口时间范围内覆盖的 chunk）
     ///
     /// # 数据流
-    /// 1. CPU 只在上游数据/颜色变化时执行一次：颜色注入 + write_buffer
-    /// 2. 音符数据常驻 GPU storage buffer（按 GPU 最大容量截取）
-    /// 3. 滚动/缩放时不再触发任何 CPU 过滤或重传，只更新 viewport uniform
-    /// 4. Compute shader 在 GPU 端做视口剔除
+    /// 1. OnionNoteList 已经把音符按 start_tick 排序并分块（CHUNK_SIZE=1M）
+    /// 2. 每帧先 O(log chunks) 定位可能覆盖视口的 chunk，再哈希可见 chunk 集合
+    /// 3. 若音符数据/颜色/可见 chunk 集合均未变化 → 直接跳过上传（零 CPU 扫描）
+    /// 4. 否则只扫描可见 chunk，按精确时间重叠过滤，颜色注入后上传
+    /// 5. Compute shader 在 GPU 端按 pitch / 当前音轨做精确剔除
     pub fn upload_notes(&mut self, params: OnionUploadParams<'_>) {
-        // Dirty tracking：note list / 颜色 都未变化 → 跳过
+        // 1. 计算当前视口覆盖的 chunk 集合哈希（仅扫描 chunk 元数据，不碰音符）
+        let mut chunk_hash = 0u64;
+        if let Some(note_list) = params.note_list {
+            let chunks = note_list.chunks();
+            if !chunks.is_empty() && params.viewport.tick_end > params.viewport.tick_start {
+                // 所有 tick_start < viewport.tick_end 的 chunk 都可能包含起始点在视口内的音符
+                let end_idx = chunks
+                    .partition_point(|c| (c.tick_start as f32) < params.viewport.tick_end);
+                // 在这些候选 chunk 中，再按 tick_end > viewport.tick_start 精筛
+                for (i, chunk) in chunks[..end_idx].iter().enumerate() {
+                    if (chunk.tick_end as f32) > params.viewport.tick_start {
+                        chunk_hash = chunk_hash
+                            .wrapping_mul(31)
+                            .wrapping_add((i as u64).wrapping_add(1));
+                    }
+                }
+            }
+        }
+
+        // 2. Dirty tracking：note list / 颜色 / 可见 chunk 集合 都未变化 → 跳过
         if params.list_version == self.last_list_version
             && params.color_hash == self.last_color_hash
+            && chunk_hash == self.last_chunk_hash
         {
             return;
         }
 
-        let source_count = params.notes.len();
-        let upload_count = source_count.min(self.max_capacity);
-
-        if source_count > self.max_capacity {
-            tracing::warn!(
-                "Onion note pool capacity exceeded: source {} notes, max_capacity {}, \
-                 uploaded {} notes. 后续音轨将不可见；如需完整显示请使用显存更大的 GPU。",
-                source_count,
-                self.max_capacity,
-                upload_count
-            );
-        }
-
-        self.total_note_count = upload_count as u32;
-
-        // 颜色注入 + CPU 缓存
+        // 3. 收集可见 chunk 中的音符，并注入颜色
         self.cpu_note_pool.clear();
-        self.cpu_note_pool.reserve(upload_count);
-        if params.track_colors.is_empty() {
-            self.cpu_note_pool
-                .extend_from_slice(&params.notes[..upload_count]);
-        } else {
-            for note in &params.notes[..upload_count] {
-                let color = params
-                    .track_colors
-                    .get(note.track_idx() as usize)
-                    .copied()
-                    .unwrap_or(0);
-                let mut colored = *note;
-                colored.set_color_packed(color);
-                self.cpu_note_pool.push(colored);
+        let mut dropped = 0usize;
+
+        if let Some(note_list) = params.note_list {
+            let notes = note_list.notes();
+            let chunks = note_list.chunks();
+            if !chunks.is_empty() && params.viewport.tick_end > params.viewport.tick_start {
+                let end_idx = chunks
+                    .partition_point(|c| (c.tick_start as f32) < params.viewport.tick_end);
+                for chunk in &chunks[..end_idx] {
+                    // chunk 的时间范围与视口无交集 → 跳过整个 chunk
+                    if (chunk.tick_end as f32) <= params.viewport.tick_start {
+                        continue;
+                    }
+
+                    for note in &notes[chunk.note_start..chunk.note_end] {
+                        // 精确时间重叠过滤：只上传真正落在视口时间范围内的音符
+                        if (note.end_tick() as f32) <= params.viewport.tick_start
+                            || (note.start_tick() as f32) >= params.viewport.tick_end
+                        {
+                            continue;
+                        }
+
+                        if self.cpu_note_pool.len() >= self.max_capacity {
+                            dropped += 1;
+                            continue;
+                        }
+                        let color = params
+                            .track_colors
+                            .get(note.track_idx() as usize)
+                            .copied()
+                            .unwrap_or(0);
+                        let mut colored = *note;
+                        colored.set_color_packed(color);
+                        self.cpu_note_pool.push(colored);
+                    }
+                }
             }
         }
 
-        // 按需扩容 note_pool
-        let required = upload_count.max(Self::INITIAL_NOTE_CAPACITY);
+        let uploaded = self.cpu_note_pool.len();
+        self.total_note_count = uploaded as u32;
+
+        if dropped > 0 {
+            tracing::warn!(
+                "Onion visible chunk capacity exceeded: dropped {} notes (capacity {})",
+                dropped,
+                self.max_capacity
+            );
+        }
+
+        // 4. 按需扩容 note_pool
+        let required = uploaded.max(Self::INITIAL_NOTE_CAPACITY);
         if required > self.note_pool_capacity {
             let new_cap = required
                 .next_power_of_two()
@@ -80,9 +122,8 @@ impl OnionRenderer {
             }
         }
 
-        // 按需扩容 instance_indices：与 note_pool 同容量即可覆盖
-        // “所有音符同时可见”的最坏情况
-        let required_idx = upload_count.max(Self::INITIAL_INDICES_CAPACITY);
+        // 5. 按需扩容 instance_indices
+        let required_idx = uploaded.max(Self::INITIAL_INDICES_CAPACITY);
         if required_idx > self.indices_capacity {
             let new_cap = required_idx
                 .next_power_of_two()
@@ -96,7 +137,7 @@ impl OnionRenderer {
             }
         }
 
-        let write_count = upload_count.min(self.note_pool_capacity);
+        let write_count = uploaded.min(self.note_pool_capacity);
         params.queue.write_buffer(
             &self.note_pool_buffer,
             0,
@@ -105,6 +146,7 @@ impl OnionRenderer {
 
         self.last_list_version = params.list_version;
         self.last_color_hash = params.color_hash;
+        self.last_chunk_hash = chunk_hash;
     }
 
     /// GPU 端视口剔除 — dispatch compute shader

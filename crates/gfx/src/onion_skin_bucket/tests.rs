@@ -113,3 +113,47 @@ fn test_zero_length_note() {
     assert_eq!(note.start_tick, 0);
     assert_eq!(note.end_tick, 0);
 }
+
+/// 测试音符按 start_tick 排序并正确分块
+#[test]
+fn test_notes_sorted_and_chunked() {
+    let notes = vec![
+        make_note_info(100, 10, 60),
+        make_note_info(0, 10, 61),
+        make_note_info(50, 10, 62),
+    ];
+    let list = build_list_from_notes(&notes, 1);
+
+    // 按 start_tick 排序：0, 50, 100
+    let slice = list.as_slice();
+    assert_eq!(slice[0].start_tick(), 0);
+    assert_eq!(slice[1].start_tick(), 50);
+    assert_eq!(slice[2].start_tick(), 100);
+
+    // 只有 3 个音符，应该只有 1 个 chunk
+    let chunks = list.chunks();
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0].tick_start, 0);
+    assert_eq!(chunks[0].tick_end, 110); // 100 + 10
+    assert_eq!(chunks[0].note_start, 0);
+    assert_eq!(chunks[0].note_end, 3);
+}
+
+/// 测试 update_user_track 后重新排序并分块
+#[test]
+fn test_update_user_track_rechunks() {
+    let mut list = build_list_from_notes(&[make_note_info(10, 5, 60)], 1);
+    assert_eq!(list.chunks().len(), 1);
+
+    list.update_user_track(2, [lumino_core::Note::new(5.0, 61, 3.0)].iter());
+    assert_eq!(list.len(), 2);
+
+    let slice = list.as_slice();
+    assert_eq!(slice[0].start_tick(), 5);
+    assert_eq!(slice[1].start_tick(), 10);
+
+    let chunks = list.chunks();
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0].tick_start, 5);
+    assert_eq!(chunks[0].tick_end, 15); // 10 + 5
+}

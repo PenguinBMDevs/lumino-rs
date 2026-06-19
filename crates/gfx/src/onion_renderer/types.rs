@@ -53,6 +53,14 @@ impl OnionNote {
         ((self.packed >> 8) & 0xFFFF) as u16
     }
 
+    pub fn start_tick(&self) -> u32 {
+        self.start_tick
+    }
+
+    pub fn end_tick(&self) -> u32 {
+        self.end_tick
+    }
+
     /// 设置 RGBA8 打包颜色
     pub fn set_color_packed(&mut self, rgba: u32) {
         self.color_packed = rgba;

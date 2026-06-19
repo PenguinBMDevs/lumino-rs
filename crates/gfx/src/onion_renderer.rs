@@ -1,10 +1,11 @@
 //! 洋葱皮 GPU 渲染管线
 //!
 //! 数据流:
-//!   1. upload_notes → 全量音符颜色注入 → GPU storage buffer（一次上传，常驻显存）
-//!   2. prepare_cull → Compute Shader 剔除（视口 + 当前音轨）→ instance_indices buffer
-//!   3. prepare_viewport → 更新视口 uniform
-//!   4. draw → indirect draw（TriangleStrip + 4 顶点/实例）
+//!   1. OnionNoteList 按 start_tick 排序并分块（chunk）
+//!   2. upload_notes 只上传与当前视口时间重叠的 chunk
+//!   3. prepare_cull → Compute Shader 剔除（视口 + 当前音轨）→ instance_indices buffer
+//!   4. prepare_viewport → 更新视口 uniform
+//!   5. draw → indirect draw（TriangleStrip + 4 顶点/实例）
 //!
 //! 方向：钢琴卷帘方向（X=time, Y=pitch）
 //!
@@ -25,7 +26,7 @@ pub use upload::OnionUploadParams;
 /// 洋葱皮渲染器 — GPU compute cull + indirect draw
 pub struct OnionRenderer {
     // ─── GPU 资源 ──────────────────────────────────────
-    /// 音符池 Storage Buffer（全量音符，compute shader 读取）
+    /// 音符池 Storage Buffer（当前视口 chunk 中的音符，compute shader 读取）
     note_pool_buffer: wgpu::Buffer,
     /// 实例索引缓冲区（compute shader 输出 → vertex shader 输入）
     instance_indices_buffer: wgpu::Buffer,
@@ -57,6 +58,8 @@ pub struct OnionRenderer {
     last_list_version: u64,
     /// 上一次上传的颜色哈希值
     last_color_hash: u64,
+    /// 上一次上传的可见 chunk 哈希（用于判断是否需要重新上传）
+    last_chunk_hash: u64,
     /// 上一次的视口数据（prepare_cull dirty tracking）
     last_viewport: Option<OnionViewportUniform>,
 }

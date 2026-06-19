@@ -119,8 +119,8 @@ pub fn run_render_thread(
                 max_key_index: params.max_key_index,
             };
 
-            // 洋葱皮：全量上传 + dirty tracking
-            // 只在上游数据版本/颜色变化时才重传；滚动/缩放只改 viewport，不触发 upload
+            // 洋葱皮：只上传当前视口时间范围内的 chunk
+            // 滚动时若 chunk 未变，upload_notes 内部 dirty tracking 直接跳过
             if params.onion_enabled {
                 if let Some(note_list) = &params.onion_note_list {
                     let list_version = note_list.version();
@@ -129,29 +129,32 @@ pub fn run_render_thread(
                         .iter()
                         .fold(0u64, |acc, &c| acc.wrapping_mul(31).wrapping_add(c as u64));
                     onion_renderer.upload_notes(crate::OnionUploadParams {
-                        notes: note_list.as_slice(),
+                        note_list: Some(note_list),
                         list_version,
                         track_colors,
                         color_hash,
+                        viewport: &viewport,
                         device: &device,
                         queue: &queue,
                     });
                 } else {
                     onion_renderer.upload_notes(crate::OnionUploadParams {
-                        notes: &[],
+                        note_list: None,
                         list_version: 0,
                         track_colors: &[],
                         color_hash: 0,
+                        viewport: &viewport,
                         device: &device,
                         queue: &queue,
                     });
                 }
             } else {
                 onion_renderer.upload_notes(crate::OnionUploadParams {
-                    notes: &[],
+                    note_list: None,
                     list_version: 0,
                     track_colors: &[],
                     color_hash: 0,
+                    viewport: &viewport,
                     device: &device,
                     queue: &queue,
                 });
@@ -175,11 +178,10 @@ pub fn run_render_thread(
                     &queue,
                 );
 
-                // 回填实际上传的音符数，供 compute cull 使用
+                // 回填实际上传的可见 chunk 音符数，供 compute cull 使用
                 viewport.note_count = onion_renderer.note_count();
 
-                // GPU compute cull：视口剔除，间接绘制（dirty tracking 内部，无变化时零开销）
-                // 滚动/缩放时只更新 uniform，不重新上传音符数据
+                // GPU compute cull：按 pitch / 当前音轨做精确剔除
                 onion_renderer.prepare_cull(&mut encoder, &viewport, &device, &queue);
 
                 // 执行渲染通道（含洋葱皮背景和主音符）
