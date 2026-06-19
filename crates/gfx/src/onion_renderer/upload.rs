@@ -1,4 +1,4 @@
-use super::{OnionNote, OnionRenderer};
+use super::{OnionKeyRange, OnionNote, OnionRenderer};
 use crate::OnionSkinBucket;
 
 impl OnionRenderer {
@@ -10,10 +10,15 @@ impl OnionRenderer {
     /// - GPU compute 只扫描可见 key 的可见 tick 范围，而非整个收集后的音符集合。
     ///
     /// 为避免 GPU storage buffer 上限（通常 128MB = ~8M 个 OnionNote），仅上传
-    /// `key_min..=key_max` 可见 key 范围内的音符。当可见 key 范围变化时自动重传。
+    /// 仅上传可见 key 范围 + 可见 tick 范围内的音符。
+    ///
+    /// 对于 10亿 级数据，单 key 的可见 tick 范围可能仍包含数百万音符，
+    /// upload 时通过 `find_visible_range` 做 tick 过滤，大幅减少 GPU storage 压力。
+    /// `prepare_cull` 会基于 `last_upload_tick_start/end` 做坐标映射。
     ///
     /// # 参数
-    /// - `key_min`, `key_max`: 可见 key 范围（0-255），仅这些 key 的音符会被上传
+    /// - `key_min`, `key_max`: 可见 key 范围（0-255）
+    /// - `tick_start`, `tick_end`: 可见 tick 范围
     pub fn upload_bucket(
         &mut self,
         bucket: &OnionSkinBucket,
@@ -22,6 +27,8 @@ impl OnionRenderer {
         color_version: u64,
         key_min: u8,
         key_max: u8,
+        tick_start: u32,
+        tick_end: u32,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) {
@@ -29,7 +36,9 @@ impl OnionRenderer {
             && bucket_version == self.last_bucket_version
             && color_version == self.last_color_version
             && key_min == self.last_key_min
-            && key_max == self.last_key_max;
+            && key_max == self.last_key_max
+            && tick_start == self.last_upload_tick_start
+            && tick_end == self.last_upload_tick_end;
         if no_change {
             return;
         }
@@ -38,29 +47,42 @@ impl OnionRenderer {
 
         let _perf_start = std::time::Instant::now();
 
-        // 仅 flatten 可见 key 范围内的音符，其余 key 的 key_offsets 置 0
+        // 仅 flatten 可见 key + 可见 tick 范围内的音符
+        // 用 find_visible_range 做 tick 过滤，而非全量 flatten
         let mut note_pool = Vec::new();
         let mut key_offsets = [0u32; 257];
+        let mut upload_key_ranges = [OnionKeyRange::default(); 256];
         let mut offset = 0u32;
         for key in key_min..=key_max {
             key_offsets[key as usize] = offset;
             let bucket_notes = bucket.key_notes(key);
+            let (range_start, range_end) = bucket.find_visible_range(key, tick_start, tick_end);
+            upload_key_ranges[key as usize] = OnionKeyRange {
+                start: range_start as u32,
+                end: range_end as u32,
+            };
+            let visible_notes = &bucket_notes[range_start..range_end];
             if track_colors.is_empty() {
-                note_pool.extend_from_slice(bucket_notes);
+                note_pool.extend_from_slice(visible_notes);
             } else {
-                note_pool.extend(bucket_notes.iter().map(|note| {
+                for note in visible_notes {
                     let color = track_colors
                         .get(note.track_idx() as usize)
                         .copied()
                         .unwrap_or(0);
                     let mut colored = *note;
                     colored.set_color_packed(color);
-                    colored
-                }));
+                    note_pool.push(colored);
+                }
             }
             offset = note_pool.len() as u32;
         }
         key_offsets[256] = offset;
+
+        // 保存 upload 元数据供 prepare_cull 做坐标映射
+        self.upload_key_ranges = upload_key_ranges;
+        self.last_upload_tick_start = tick_start;
+        self.last_upload_tick_end = tick_end;
 
         let count = note_pool.len();
         if count == 0 {

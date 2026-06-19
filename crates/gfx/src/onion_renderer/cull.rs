@@ -34,17 +34,27 @@ impl OnionRenderer {
 
         if let Some(b) = bucket {
             full_viewport.use_key_ranges = 1;
-            // 二分查找每个 key 的可见范围
+            // 二分查找每个 key 的可见范围，并映射到 uploaded pool 的坐标空间
             let ts = viewport.tick_start as u32;
             let te = viewport.tick_end as u32;
             let key_min = viewport.pitch_min.max(0.0) as u16;
             let key_max = viewport.pitch_max.min(255.0) as u16;
             for key in key_min..=key_max {
-                let (start, end) = b.find_visible_range(key as u8, ts, te);
-                key_ranges[key as usize] = OnionKeyRange {
-                    start: start as u32,
-                    end: end as u32,
-                };
+                // 当前视口的 visible range（在 full bucket 坐标系中）
+                let (curr_start, curr_end) = b.find_visible_range(key as u8, ts, te);
+                // upload 时保存的 range（在 full bucket 坐标系中）
+                let upload = &self.upload_key_ranges[key as usize];
+                // 取交集：overlap 在 uploaded pool 中的 local 索引
+                let overlap_start = curr_start.max(upload.start as usize);
+                let overlap_end = curr_end.min(upload.end as usize);
+                if overlap_start < overlap_end {
+                    key_ranges[key as usize] = OnionKeyRange {
+                        start: (overlap_start - upload.start as usize) as u32,
+                        end: (overlap_end - upload.start as usize) as u32,
+                    };
+                }
+                // 无交集：uploaded 数据未覆盖当前视口，触发下次 upload 刷新
+                // （Runner 中的 no_change 检测会捕捉到 tick range 变化并重新 upload）
             }
         } else {
             full_viewport.use_key_ranges = 0;

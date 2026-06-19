@@ -1,4 +1,4 @@
-use super::{CameraUniform, DrawIndirectArgs, OnionRenderer, OnionViewportUniform};
+use super::{CameraUniform, DrawIndirectArgs, OnionKeyRange, OnionRenderer, OnionViewportUniform};
 use wgpu::util::DeviceExt;
 
 impl OnionRenderer {
@@ -271,6 +271,9 @@ impl OnionRenderer {
             last_color_version: 0,
             last_key_min: 0,
             last_key_max: 255,
+            last_upload_tick_start: 0,
+            last_upload_tick_end: 0,
+            upload_key_ranges: [OnionKeyRange::default(); 256],
             bind_groups_dirty: false,
             last_viewport: None,
             last_camera: None,

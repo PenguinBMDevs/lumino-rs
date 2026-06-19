@@ -71,6 +71,12 @@ pub struct OnionRenderer {
     /// 上一次上传的可见 key 范围（范围变化时强制重新上传）
     last_key_min: u8,
     last_key_max: u8,
+    /// 上一次上传时使用的 tick 范围（范围变化时强制重新上传）
+    last_upload_tick_start: u32,
+    last_upload_tick_end: u32,
+    /// 每个 key 在 upload 时的 local range（在 full bucket 中的 [start, end)），
+    /// 用于 prepare_cull 将当前 visible range 映射到 uploaded pool 坐标空间。
+    upload_key_ranges: [OnionKeyRange; 256],
     /// Bind group 是否需要重建（buffer 被重建时置 true）
     bind_groups_dirty: bool,
     /// 上一次 cull 的视口数据（用于 dirty tracking）

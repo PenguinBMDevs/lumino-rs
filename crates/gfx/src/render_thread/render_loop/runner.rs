@@ -127,6 +127,8 @@ pub fn run_render_thread(
                         color_version,
                         bucket_key_min,
                         bucket_key_max,
+                        visible_tick_start as u32,
+                        visible_tick_end as u32,
                         &device,
                         &queue,
                     );
