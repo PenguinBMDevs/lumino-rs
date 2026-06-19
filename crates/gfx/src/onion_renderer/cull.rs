@@ -32,13 +32,14 @@ impl OnionRenderer {
 
         let mut key_ranges = [OnionKeyRange::default(); 256];
 
-        if let Some(b) = bucket {
+        if self.bucket_mode {
             full_viewport.use_key_ranges = 1;
             // 二分查找每个 key 的可见范围，并映射到 uploaded pool 的坐标空间
             let ts = viewport.tick_start as u32;
             let te = viewport.tick_end as u32;
             let key_min = viewport.pitch_min.max(0.0) as u16;
             let key_max = viewport.pitch_max.min(255.0) as u16;
+            let b = bucket.expect("bucket_mode requires Some(bucket)");
             for key in key_min..=key_max {
                 // 当前视口的 visible range（在 full bucket 坐标系中）
                 let (curr_start, curr_end) = b.find_visible_range(key as u8, ts, te);
@@ -84,7 +85,7 @@ impl OnionRenderer {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[*camera]));
         }
         // Bucket 模式：每帧上传 key_ranges
-        if bucket.is_some() {
+        if self.bucket_mode {
             queue.write_buffer(
                 &self.key_ranges_buffer,
                 0,
@@ -119,7 +120,7 @@ impl OnionRenderer {
         // 执行 Compute Culling
         // Bucket 模式：固定 256 个 workgroup，每个处理一个 key
         // 兼容模式：按 visible_end - visible_start 计算
-        let workgroup_count = if bucket.is_some() {
+        let workgroup_count = if self.bucket_mode {
             256u32
         } else {
             full_viewport

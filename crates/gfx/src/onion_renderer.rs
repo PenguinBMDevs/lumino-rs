@@ -64,6 +64,8 @@ pub struct OnionRenderer {
     max_storage_binding: u64,
     /// 当前是否使用 bucket 模式（GPU 常驻音符池 + per-key 范围）
     bucket_mode: bool,
+    /// CPU 侧临时音符缓冲（跨帧复用，避免每帧分配）
+    cpu_note_pool: Vec<OnionNote>,
     /// 上一次上传的 bucket 版本号（避免重复上传）
     last_bucket_version: u64,
     /// 上一次上传的颜色表版本号（颜色变化时强制重新上传）
@@ -74,6 +76,8 @@ pub struct OnionRenderer {
     /// 上一次上传时使用的 tick 范围（范围变化时强制重新上传）
     last_upload_tick_start: u32,
     last_upload_tick_end: u32,
+    /// 上一次上传时的 tick 缩放（像素/tick），影响像素级剔除阈值
+    last_zoom_tick: f32,
     /// 每个 key 在 upload 时的 local range（在 full bucket 中的 [start, end)），
     /// 用于 prepare_cull 将当前 visible range 映射到 uploaded pool 坐标空间。
     upload_key_ranges: [OnionKeyRange; 256],
@@ -90,8 +94,8 @@ pub struct OnionRenderer {
 impl OnionRenderer {
     const INITIAL_NOTE_CAPACITY: usize = 8192;
     const INITIAL_INDICES_CAPACITY: usize = 65536;
-    const INDICES_SHRINK_THRESHOLD: f64 = 0.25;
     const MAX_INDICES_CAPACITY: usize = 33_554_432;
+    const MAX_NOTE_POOL_CAPACITY: usize = 33_554_432; // 512 MB for OnionNote@16B
     const WORKGROUP_SIZE: u32 = 256;
 
     const VERTEX_SHADER_SRC: &'static str =

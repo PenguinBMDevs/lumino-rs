@@ -109,7 +109,7 @@ pub fn run_render_thread(
                 (key_bottom.floor().max(0.0) as u16).saturating_sub(2) as f32; // -1 overscan
 
             // 上传 bucket 时只包含可见 key 范围的音符（避免 GPU storage buffer 溢出）
-            let bucket_key_min = (visible_pitch_min_overscan.max(0.0) as u8).min(255);
+            let bucket_key_min = visible_pitch_min_overscan.max(0.0) as u8;
             let bucket_key_max = (visible_pitch_max_overscan.min(255.0) as u8).max(bucket_key_min);
 
             // ── 洋葱皮：GPU 常驻 bucket 模式 ──
@@ -129,6 +129,7 @@ pub fn run_render_thread(
                         bucket_key_max,
                         visible_tick_start as u32,
                         visible_tick_end as u32,
+                        params.zoom.0,
                         &device,
                         &queue,
                     );

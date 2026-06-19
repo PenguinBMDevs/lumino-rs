@@ -19,5 +19,6 @@ half = "2.4"
 futures = { workspace = true }
 anyhow = { workspace = true }
 im = { version = "15.1.0", features = ["rayon"] }
+rayon = "1.10"
 lumino-core = { path = "../core" }
 lumino-midi-loader = { path = "../midi-loader" }

@@ -3536,6 +3536,7 @@ dependencies = [
  "lumino-core",
  "lumino-midi-loader",
  "puffin",
+ "rayon",
  "thiserror 2.0.18",
  "tracing",
  "wgpu",
