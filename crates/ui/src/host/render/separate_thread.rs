@@ -1,4 +1,4 @@
-﻿use crate::RenderParams;
+﻿﻿use crate::RenderParams;
 use crate::host::Host;
 use lumino_gfx::{
     ARRANGEMENT_PALETTE, ArrangementNoteInstance, ArrangementSceneParams, ArrangementUniform,
@@ -407,12 +407,12 @@ impl Host {
             );
         }
 
-        // 提取 scroll 值（避免 update_onion_bucket 的 &mut self 与 v 的借用冲突）
+        // 提取 scroll 值（避免 update_onion_note_list 的 &mut self 与 v 的借用冲突）
         let scroll_x = v.scroll_x;
         let zoom_x = v.zoom_x;
 
-        // M1: 增量维护洋葱皮按 key 分桶缓存
-        let _bucket_changed = self.update_onion_bucket();
+        // 增量维护洋葱皮音符列表（参考 Wasabi 瀑布流简化方案）
+        let _list_changed = self.update_onion_note_list();
 
         // 更新滚动速度追踪（用于 overscan 计算，在 build_render_params 中读取）
         let _velocity = self.scroll_tracker.update(scroll_x, zoom_x);
@@ -553,13 +553,13 @@ impl Host {
         };
 
         // ── 洋葱皮渲染线程采集参数 ──
-        let onion_bucket = self
+        let onion_note_list = self
             .render_ctx
             .render_cache
-            .onion_bucket
+            .onion_note_list
             .as_ref()
             .map(std::sync::Arc::clone);
-        let onion_bucket_version = onion_bucket.as_ref().map_or(0, |b| b.version());
+        let onion_list_version = onion_note_list.as_ref().map_or(0, |l| l.version());
         let onion_overscan_ticks = self.scroll_tracker.overscan_ticks(60.0);
         let onion_current_track = es.data.current_track as u16;
         let onion_enabled = self.root.editor.is_onion_skin_enabled();
@@ -593,8 +593,8 @@ impl Host {
             data.cc_bar_instances,
             velocity_panel_rect,
             onion_track_colors,
-            onion_bucket,
-            onion_bucket_version,
+            onion_note_list,
+            onion_list_version,
             onion_overscan_ticks,
             onion_current_track,
             onion_enabled,

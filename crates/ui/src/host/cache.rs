@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use iced_wgpu::wgpu;
-use lumino_gfx::{OnionBgTileRef, OnionSkinBucket, SwappableBuffer};
+use lumino_gfx::{OnionBgTileRef, OnionNoteList, SwappableBuffer};
 
 /// 渲染缓存 - 避免每帧重复上传相同数据
 ///
@@ -30,12 +30,12 @@ pub struct RenderCache {
     pub tile_pool: Option<Arc<std::sync::Mutex<crate::editor::onion_bg_pool::OnionBgTilePool>>>,
     /// 走带视图实例缓存（避免每帧重建）
     pub arrangement_instances: Vec<lumino_gfx::ArrangementNoteInstance>,
-    /// 洋葱皮按 key 分桶缓存（M1/M2：从 Kiva 移植的数据层 + Worker 共享）
-    pub onion_bucket: Option<Arc<OnionSkinBucket>>,
-    /// 上一次构建 bucket 时的 document Arc 指针
-    pub onion_bucket_doc_ptr: Option<*const ()>,
-    /// 上一次构建 bucket 时的 track_notes_gen
-    pub onion_bucket_track_gen: u64,
+    /// 洋葱皮音符列表（从 Wasabi 瀑布流简化而来，扁平存储）
+    pub onion_note_list: Option<Arc<OnionNoteList>>,
+    /// 上一次构建 note list 时的 document Arc 指针
+    pub onion_list_doc_ptr: Option<*const ()>,
+    /// 上一次构建 note list 时的 track_notes_gen
+    pub onion_list_track_gen: u64,
     /// 缓存的洋葱皮 per-track 打包颜色（避免每帧重建）
     pub onion_track_colors: Option<Vec<u32>>,
     /// 缓存颜色对应的 OnionSkinColors 版本号
@@ -55,9 +55,9 @@ impl RenderCache {
             depth_texture: None,
             tile_pool: None,
             arrangement_instances: Vec::new(),
-            onion_bucket: None,
-            onion_bucket_doc_ptr: None,
-            onion_bucket_track_gen: u64::MAX,
+            onion_note_list: None,
+            onion_list_doc_ptr: None,
+            onion_list_track_gen: u64::MAX,
             onion_track_colors: None,
             onion_colors_version: u64::MAX,
         }

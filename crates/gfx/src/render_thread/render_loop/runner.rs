@@ -14,7 +14,7 @@ use super::prepare::prepare_renderers;
 use super::render_pass::execute_render_pass;
 use super::render_pass::update_stats;
 use super::textures::ensure_textures;
-use crate::{CameraParams, CameraUniform, OnionViewportUniform};
+use crate::OnionViewportUniform;
 
 /// 运行渲染线程主循环
 #[allow(clippy::too_many_arguments)]
@@ -94,50 +94,28 @@ pub fn run_render_thread(
                 note_renderer.upload_instances(notes, &device, &queue);
             }
 
-            // 计算可见 tick/pitch 范围（在 upload_bucket 和 prepare_cull 中都用到）
-            let note_area_width = (params.canvas_size.0 - params.keyboard_width).max(0.0);
-            let note_area_height = (params.canvas_size.1 - params.ruler_height).max(0.0);
-
-            let visible_tick_start = (params.scroll.0 / params.zoom.0).max(0.0);
-            let visible_tick_end =
-                ((params.scroll.0 + note_area_width) / params.zoom.0).max(visible_tick_start);
-            let max_key = params.max_key_index;
-            let key_top = max_key - (params.scroll.1 / params.zoom.1);
-            let key_bottom = max_key - ((params.scroll.1 + note_area_height) / params.zoom.1);
-            let visible_pitch_max_overscan = (key_top.ceil() as u16 + 2) as f32; // +1 overscan
-            let visible_pitch_min_overscan =
-                (key_bottom.floor().max(0.0) as u16).saturating_sub(2) as f32; // -1 overscan
-
-            // 上传 bucket 时只包含可见 key 范围的音符（避免 GPU storage buffer 溢出）
-            let bucket_key_min = visible_pitch_min_overscan.max(0.0) as u8;
-            let bucket_key_max = (visible_pitch_max_overscan.min(255.0) as u8).max(bucket_key_min);
-
-            // ── 洋葱皮：GPU 常驻 bucket 模式 ──
+            // ── 洋葱皮：全量 GPU 上传 + dirty tracking ──
+            // 只在上游数据版本/颜色变化时才重传，静止帧跳过 upload（零分配）
             if params.onion_enabled {
-                if let Some(bucket) = &params.onion_bucket {
-                    let bucket_version = params.onion_bucket_version;
+                if let Some(note_list) = &params.onion_note_list {
+                    let list_version = note_list.version();
                     let track_colors = params.onion_track_colors.as_deref().unwrap_or(&[]);
-                    let color_version = track_colors
+                    let color_hash = track_colors
                         .iter()
                         .fold(0u64, |acc, &c| acc.wrapping_mul(31).wrapping_add(c as u64));
-                    onion_renderer.upload_bucket(
-                        bucket,
-                        bucket_version,
+                    onion_renderer.upload_notes(
+                        note_list.as_slice(),
+                        list_version,
                         track_colors,
-                        color_version,
-                        bucket_key_min,
-                        bucket_key_max,
-                        visible_tick_start as u32,
-                        visible_tick_end as u32,
-                        params.zoom.0,
+                        color_hash,
                         &device,
                         &queue,
                     );
                 } else {
-                    onion_renderer.upload_notes(&[], &device, &queue);
+                    onion_renderer.upload_notes(&[], 0, &[], 0, &device, &queue);
                 }
             } else {
-                onion_renderer.upload_notes(&[], &device, &queue);
+                onion_renderer.upload_notes(&[], 0, &[], 0, &device, &queue);
             }
 
             if let (Some(_texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
@@ -158,39 +136,29 @@ pub fn run_render_thread(
                     &queue,
                 );
 
-                // 准备洋葱皮计算剔除（每帧执行，因为视口可能变化）
-                let camera = CameraUniform::new(CameraParams {
-                    scroll: [params.scroll.0, params.scroll.1],
-                    zoom: [params.zoom.0, params.zoom.1],
-                    viewport: [params.logical_size.0, params.logical_size.1],
-                    offset: [params.canvas_offset.0, params.canvas_offset.1],
+                // 准备洋葱皮视口 uniform（参考 Wasabi push constants 方式）
+                let viewport = OnionViewportUniform {
+                    tick_start: params.scroll.0 / params.zoom.0,
+                    tick_end: (params.scroll.0 + params.canvas_size.0 - params.keyboard_width)
+                        / params.zoom.0,
+                    pitch_min: 0.0,
+                    pitch_max: params.max_key_index,
+                    note_count: onion_renderer.note_count(),
+                    current_track: params.onion_current_track as u32,
                     keyboard_width: params.keyboard_width,
                     ruler_height: params.ruler_height,
+                    canvas_width: params.logical_size.0,
+                    canvas_height: params.logical_size.1,
+                    canvas_offset_x: params.canvas_offset.0,
+                    canvas_offset_y: params.canvas_offset.1,
+                    scroll_x: params.scroll.0,
+                    scroll_y: params.scroll.1,
+                    zoom_x: params.zoom.0,
+                    zoom_y: params.zoom.1,
                     max_key_index: params.max_key_index,
-                });
-
-                let viewport = OnionViewportUniform {
-                    tick_start: visible_tick_start,
-                    tick_end: visible_tick_end,
-                    pitch_min: visible_pitch_min_overscan,
-                    pitch_max: visible_pitch_max_overscan,
-                    note_count: onion_renderer.note_count() as u32,
-                    indices_capacity: onion_renderer.indices_capacity() as u32,
-                    current_track: params.onion_current_track as u32,
-                    use_key_ranges: 0,
-                    visible_start: 0,
-                    visible_end: onion_renderer.note_count() as u32,
                 };
 
-                onion_renderer.prepare_cull(
-                    &mut encoder,
-                    &viewport,
-                    &camera,
-                    &queue,
-                    &device,
-                    params.onion_bucket.as_deref(),
-                    params.onion_current_track,
-                );
+                onion_renderer.prepare_viewport(&viewport, &queue);
 
                 // 执行渲染通道（含洋葱皮背景和主音符）
                 execute_render_pass(

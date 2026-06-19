@@ -1,104 +1,71 @@
-//! 洋葱皮 GPU 驱动渲染管线
+//! 洋葱皮 GPU 渲染管线 — 参考 Wasabi 瀑布流实现的简化版本
 //!
-//! 完全消除 CPU 侧的音符遍历、矩形合并、顶点数据生成。
-//! 使用 compute shader 进行可见性剔除，通过间接绘制实现实例化渲染。
-//! 颜色通过 per-note color_packed 字段编码，支持任意数量音轨。
+//! 移除了旧版的 compute shader 可见性剔除、间接绘制、bucket 模式等复杂逻辑。
+//! 新的渲染方案：
 //!
 //! 数据流:
-//!   1. 所有音轨音符平铺为 SoA 布局 → Storage Buffer 常驻 GPU
-//!   2. 视口变化时 → 调度 Compute Shader 剔除（dirty tracking 跳过无变化帧）
-//!   3. 剔除结果 → Instance Index Buffer → draw_indexed_indirect
+//!   1. 所有洋葱皮音符作为 OnionNote 数组上传到 GPU storage buffer
+//!   2. 每帧更新视口 uniform（OnionViewportUniform）
+//!   3. 使用 TriangleStrip + 4 顶点/实例绘制所有音符
+//!   4. Vertex shader 读取 OnionNote 计算 NDC 坐标
+//!   5. GPU 自动裁剪超出 [-1, 1] 的音符（无需 CPU 或 compute 预处理）
 //!
-//! 优化要点：
-//!   - Bind group 仅在 buffer 重建时重建（非每帧）
-//!   - GPU 端清零 indirect args（消除 CPU 冗余 write_buffer）
-//!   - Dirty tracking 跳过静止帧的 compute dispatch
-//!   - Buffer 按需扩容 + 空闲缩容
-//!   - Per-note 颜色编码（替代 uniform 颜色表，无 64 轨限制）
+//! 方向：钢琴卷帘方向（X=time, Y=pitch），参考 Wasabi 瀑布流旋转 90°
+//!
+//! 参考 Wasabi 文件：
+//! - gui/window/scene/note_list_system/mod.rs (NoteRenderer::draw)
+//! - shaders/notes/notes.geom (几何着色器展开点→矩形)
+//! - shaders/notes/notes.frag (片段着色器)
+//!
+//! 因为 WGSL 不支持 geometry shader，改用 instanced rendering 等效实现
 
 pub mod types;
 
-pub use types::{
-    CameraUniform, DrawIndirectArgs, OnionKeyRange, OnionNote, OnionTrackMask, OnionViewportUniform,
-};
+pub use types::{OnionNote, OnionViewportUniform};
 
 mod buffer;
-mod cull;
 mod init;
 mod upload;
 
-/// 洋葱皮 GPU 渲染器
+/// 洋葱皮渲染器（简化版 — 无 compute cull，无 indirect draw）
 pub struct OnionRenderer {
     // ─── GPU 资源 ──────────────────────────────────────
-    /// 音符池 Storage Buffer（所有音轨的音符，SoA 布局）
+    /// 音符池 Storage Buffer（所有洋葱皮音符，SoA 布局）
     note_pool_buffer: wgpu::Buffer,
-    /// 实例索引缓冲区（compute shader 输出）
-    instance_indices_buffer: wgpu::Buffer,
-    /// 间接绘制参数缓冲区
-    indirect_buffer: wgpu::Buffer,
     /// 视口 uniform buffer
     viewport_buffer: wgpu::Buffer,
-    /// 相机 uniform buffer（复用 CameraUniform）
-    camera_buffer: wgpu::Buffer,
-    /// key 累积偏移缓冲区（bucket 模式）：257 个 u32
-    key_offsets_buffer: wgpu::Buffer,
-    /// 每帧可见 key 范围缓冲区（bucket 模式）：256 个 OnionKeyRange
-    key_ranges_buffer: wgpu::Buffer,
 
     // ─── Pipeline ──────────────────────────────────────
     render_pipeline: wgpu::RenderPipeline,
-    compute_pipeline: wgpu::ComputePipeline,
-    compute_bind_group: wgpu::BindGroup,
     render_bind_group: wgpu::BindGroup,
-    compute_bind_group_layout: wgpu::BindGroupLayout,
     render_bind_group_layout: wgpu::BindGroupLayout,
 
     // ─── 状态 ──────────────────────────────────────────
     /// 音符池容量（OnionNote 数量）
     note_pool_capacity: usize,
-    /// 实际音符数量
-    note_count: usize,
-    /// 实例索引缓冲区容量
-    indices_capacity: usize,
-    /// GPU 最大 storage buffer binding size
+    /// 实际音符数量（准备渲染）
+    note_count: u32,
+    /// GPU max storage buffer binding size
     max_storage_binding: u64,
-    /// 当前是否使用 bucket 模式（GPU 常驻音符池 + per-key 范围）
-    bucket_mode: bool,
-    /// CPU 侧临时音符缓冲（跨帧复用，避免每帧分配）
+    /// CPU 侧缓存的上色音符（跨帧复用，避免每帧分配）
     cpu_note_pool: Vec<OnionNote>,
-    /// 上一次上传的 bucket 版本号（避免重复上传）
-    last_bucket_version: u64,
-    /// 上一次上传的颜色表版本号（颜色变化时强制重新上传）
-    last_color_version: u64,
-    /// 上一次上传的可见 key 范围（范围变化时强制重新上传）
-    last_key_min: u8,
-    last_key_max: u8,
-    /// 上一次上传时使用的 tick 范围（范围变化时强制重新上传）
-    last_upload_tick_start: u32,
-    last_upload_tick_end: u32,
-    /// 上一次上传时的 tick 缩放（像素/tick），影响像素级剔除阈值
-    last_zoom_tick: f32,
-    /// 每个 key 在 upload 时的 local range（在 full bucket 中的 [start, end)），
-    /// 用于 prepare_cull 将当前 visible range 映射到 uploaded pool 坐标空间。
-    upload_key_ranges: [OnionKeyRange; 256],
-    /// Bind group 是否需要重建（buffer 被重建时置 true）
-    bind_groups_dirty: bool,
-    /// 上一次 cull 的视口数据（用于 dirty tracking）
-    last_viewport: Option<OnionViewportUniform>,
-    /// 上一次 cull 的相机数据（用于 dirty tracking）
-    last_camera: Option<CameraUniform>,
-    /// 音符数据是否在上次 cull 后变化过
-    notes_dirty: bool,
+    /// 上一次上传的 note list 版本号（dirty tracking）
+    last_list_version: u64,
+    /// 上一次上传的颜色哈希值（dirty tracking）
+    last_color_hash: u64,
 }
 
 impl OnionRenderer {
+    /// 初始音符池容量（起步 8K，按需扩容）
     const INITIAL_NOTE_CAPACITY: usize = 8192;
-    const INITIAL_INDICES_CAPACITY: usize = 65536;
-    const MAX_INDICES_CAPACITY: usize = 33_554_432;
-    const MAX_NOTE_POOL_CAPACITY: usize = 33_554_432; // 512 MB for OnionNote@16B
-    const WORKGROUP_SIZE: u32 = 256;
+    /// 最大音符池容量（~512 MB for OnionNote@16B）
+    const MAX_NOTE_POOL_CAPACITY: usize = 33_554_432;
 
-    const VERTEX_SHADER_SRC: &'static str =
-        include_str!("onion_renderer/shaders/onion_render.wgsl");
-    const COMPUTE_SHADER_SRC: &'static str = include_str!("onion_renderer/shaders/onion_cull.wgsl");
+    /// 着色器源码
+    const SHADER_SRC: &'static str = include_str!("./shaders/onion_render.wgsl");
+
+    /// 获取当前音符数量
+    pub fn note_count(&self) -> u32 {
+        self.note_count
+    }
 }

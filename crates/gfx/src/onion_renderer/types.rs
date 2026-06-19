@@ -1,5 +1,9 @@
-// 重新导出相机 uniform（复用 note_renderer 的 CameraUniform）
-pub use crate::note_renderer::CameraUniform;
+//! 洋葱皮渲染类型定义 — 参考 Wasabi 瀑布流的简化类型系统
+//!
+//! 移除了旧版 compute shader 相关的类型（OnionViewportUniform, OnionKeyRange,
+//! OnionTrackMask, DrawIndirectArgs），因为新的渲染管线不再需要 compute cull。
+//!
+//! 核心类型 `OnionNote` 保持不变（start_tick, end_tick, packed=pitch+track_idx, color_packed）。
 
 /// SoA 布局的洋葱皮音符 — 16 字节对齐
 ///
@@ -74,24 +78,11 @@ impl OnionNote {
     }
 }
 
-/// 单个 key 在 GPU 音符池中的可见扫描范围
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct OnionKeyRange {
-    /// 起始索引（含）
-    pub start: u32,
-    /// 结束索引（不含）
-    pub end: u32,
-}
-
-/// 视口裁剪 uniform — 定义可见 tick/pitch 范围 + cull 参数
+/// 视口 uniform — 传递给 vertex shader 用于坐标变换
 ///
-/// 两种工作模式：
-/// 1. 兼容模式（use_key_ranges == 0）：GPU 在 [visible_start, visible_end) 区间内做全量裁剪。
-/// 2. Bucket 模式（use_key_ranges != 0）：GPU 通过 `OnionKeyRange` 缓冲区只扫描每个 key 的
-///    可见子区间，避免扫描整个音符池。
+/// 参考 Wasabi 的 push constants 设计，但通过 uniform buffer 传递。
 #[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct OnionViewportUniform {
     /// 可见 tick 范围 [start, end)
     pub tick_start: f32,
@@ -101,15 +92,20 @@ pub struct OnionViewportUniform {
     pub pitch_max: f32,
     /// 音符总数
     pub note_count: u32,
-    /// 实例索引缓冲区容量
-    pub indices_capacity: u32,
-    /// 当前编辑音轨（GPU 剔除时排除）
+    /// 当前编辑音轨（vertex shader 剔除时排除）
     pub current_track: u32,
-    /// 0=兼容模式全量扫描；1=使用 per-key 范围缓冲区
-    pub use_key_ranges: u32,
-    /// GPU 扫描区间 [visible_start, visible_end)（兼容模式使用）
-    pub visible_start: u32,
-    pub visible_end: u32,
+    /// 视口变换参数（像素坐标 → NDC）
+    pub keyboard_width: f32,
+    pub ruler_height: f32,
+    pub canvas_width: f32,
+    pub canvas_height: f32,
+    pub canvas_offset_x: f32,
+    pub canvas_offset_y: f32,
+    pub scroll_x: f32,
+    pub scroll_y: f32,
+    pub zoom_x: f32,
+    pub zoom_y: f32,
+    pub max_key_index: f32,
 }
 
 impl Default for OnionViewportUniform {
@@ -120,94 +116,18 @@ impl Default for OnionViewportUniform {
             pitch_min: 0.0,
             pitch_max: 0.0,
             note_count: 0,
-            indices_capacity: 65536,
             current_track: 0,
-            use_key_ranges: 0,
-            visible_start: 0,
-            visible_end: 0,
-        }
-    }
-}
-
-/// 轨道掩码 — 支持最多 64 个轨道（CPU 端过滤用）
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct OnionTrackMask {
-    /// 低 32 位
-    pub mask_lo: u32,
-    /// 高 32 位
-    pub mask_hi: u32,
-}
-
-impl OnionTrackMask {
-    pub fn new(track_indices: &[u16]) -> Self {
-        let mut lo = 0u64;
-        for &idx in track_indices {
-            lo |= 1u64 << idx;
-        }
-        Self {
-            mask_lo: lo as u32,
-            mask_hi: (lo >> 32) as u32,
-        }
-    }
-
-    pub fn all() -> Self {
-        Self {
-            mask_lo: u32::MAX,
-            mask_hi: u32::MAX,
-        }
-    }
-
-    pub fn empty() -> Self {
-        Self {
-            mask_lo: 0,
-            mask_hi: 0,
-        }
-    }
-
-    pub fn set(&mut self, track_idx: u16, visible: bool) {
-        if track_idx >= 64 {
-            return;
-        }
-        let mask = 1u64 << track_idx;
-        let current = (self.mask_hi as u64) << 32 | self.mask_lo as u64;
-        let new = if visible {
-            current | mask
-        } else {
-            current & !mask
-        };
-        self.mask_lo = new as u32;
-        self.mask_hi = (new >> 32) as u32;
-    }
-
-    /// 检查指定音轨是否可见
-    pub fn is_track_visible(&self, track_idx: u16) -> bool {
-        if track_idx >= 64 {
-            return false;
-        }
-        let mask = 1u64 << track_idx;
-        let current = (self.mask_hi as u64) << 32 | self.mask_lo as u64;
-        (current & mask) != 0
-    }
-}
-
-/// 间接绘制参数 — 匹配 VkDrawIndirectCommand（16 字节）
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct DrawIndirectArgs {
-    pub vertex_count: u32,
-    pub instance_count: u32,
-    pub first_vertex: u32,
-    pub first_instance: u32,
-}
-
-impl Default for DrawIndirectArgs {
-    fn default() -> Self {
-        Self {
-            vertex_count: 4,
-            instance_count: 0,
-            first_vertex: 0,
-            first_instance: 0,
+            keyboard_width: 0.0,
+            ruler_height: 0.0,
+            canvas_width: 800.0,
+            canvas_height: 600.0,
+            canvas_offset_x: 0.0,
+            canvas_offset_y: 0.0,
+            scroll_x: 0.0,
+            scroll_y: 0.0,
+            zoom_x: 0.1,
+            zoom_y: 20.0,
+            max_key_index: 127.0,
         }
     }
 }

@@ -308,20 +308,6 @@ impl Sidebar {
             self.panel_visible = true;
         }
     }
-
-    /// 获取轨道掩码（GPU 可见性过滤用）
-    ///
-    /// 将音轨的洋葱皮开关状态编译为 `OnionTrackMask` 位掩码，
-    /// 直接上传到 GPU 统一缓冲区，避免 CPU 每帧逐音轨过滤。
-    pub fn get_onion_track_mask(&self) -> lumino_gfx::OnionTrackMask {
-        let visible: Vec<u16> = self
-            .tracks
-            .iter()
-            .filter(|t| t.is_onion_skin_on && t.id < 64)
-            .map(|t| t.id as u16)
-            .collect();
-        lumino_gfx::OnionTrackMask::new(&visible)
-    }
 }
 
 #[cfg(test)]
