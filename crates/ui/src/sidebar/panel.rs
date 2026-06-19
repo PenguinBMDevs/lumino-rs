@@ -18,7 +18,6 @@ pub struct SidebarViewParams<'a> {
     pub add_track_menu_open: bool,
     pub panel_width: f32,
     pub is_resizing: bool,
-    pub scroll_offset: f32,
 }
 
 pub fn view<'a>(
@@ -35,22 +34,10 @@ pub fn view<'a>(
             container(space()).into()
         }
         Route::File => {
-            // === 虚拟滚动 ===
-            // 825 轨全部生成 iced widget 会导致每帧 8000+ widget 树重建。
-            // 只渲染视口附近 ~30 条，其余用 spacer 占高度。
-            const TRACK_HEIGHT: f32 = 32.0;
-            const VISIBLE_COUNT: usize = 30; // 一次渲染 ~30 条
-            const BUFFER: usize = 5; // 上下各多 5 条防白边
-
-            let first_visible =
-                ((params.scroll_offset / TRACK_HEIGHT) as usize).saturating_sub(BUFFER);
-            let first_visible = first_visible.min(params.tracks.len());
-            let last_visible =
-                (first_visible + VISIBLE_COUNT + BUFFER * 2).min(params.tracks.len());
-
+            // 全量渲染所有音轨——由 iced scrollable 原生处理滚动。
+            // 此前的虚拟滚动（VISIBLE_COUNT=30 + BUFFER=5）会在 scroll_offset
+            // 未正确更新时把可见范围锁死在前 40 条，导致音轨列表被截断。
             let mut col = column![].spacing(0).padding(8);
-
-            // 音轨列表标题
             col = col.push(text(t.sidebar_track_list).size(12).style(|theme: &Theme| {
                 let palette = theme.extended_palette();
                 text::Style {
@@ -58,14 +45,7 @@ pub fn view<'a>(
                 }
             }));
 
-            // 顶部占位（已滚出视口的音轨）
-            if first_visible > 0 {
-                col = col.push(space().width(iced_core::Length::Fixed(0.0)).height(
-                    iced_core::Length::Fixed(first_visible as f32 * TRACK_HEIGHT),
-                ));
-            }
-
-            for track in &params.tracks[first_visible..last_visible] {
+            for track in params.tracks {
                 let track_container =
                     view_track_item(track, track.id == params.selected_track, window);
                 col = col.push(track_container);
@@ -208,21 +188,8 @@ pub fn view<'a>(
                 col = col.push(add_track_container);
             }
 
-            // 底部占位（未渲染的音轨高度）
-            let remaining = params.tracks.len() - last_visible;
-            if remaining > 0 {
-                col = col.push(
-                    space()
-                        .width(iced_core::Length::Fixed(0.0))
-                        .height(iced_core::Length::Fixed(remaining as f32 * TRACK_HEIGHT)),
-                );
-            }
-
-            // 使用 scrollable 包裹音轨列表，支持垂直滚动 + 虚拟滚动
+            // 使用 scrollable 包裹音轨列表，支持垂直滚动
             let scrollable_content = scrollable(col)
-                .on_scroll(|viewport| {
-                    crate::Message::Sidebar(Event::TrackScrolled(viewport.absolute_offset().y))
-                })
                 .direction(scrollable::Direction::Vertical(
                     scrollable::Scrollbar::new().width(8).scroller_width(6),
                 ))

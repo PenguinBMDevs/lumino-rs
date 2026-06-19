@@ -28,8 +28,6 @@ pub enum Event {
     ResizeDragged(Point),
     /// 结束拖拽调整面板宽度
     ResizeDragEnded,
-    /// 音轨列表滚动位置
-    TrackScrolled(f32),
 }
 
 impl Event {

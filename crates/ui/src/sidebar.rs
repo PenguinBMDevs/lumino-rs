@@ -74,8 +74,6 @@ pub struct Sidebar {
     resize_start_x: f32,
     /// 拖拽开始时的面板宽度
     resize_start_width: f32,
-    /// 音轨列表滚动偏移（虚拟滚动）
-    track_scroll_offset: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -118,7 +116,6 @@ impl Sidebar {
             is_resizing: false,
             resize_start_x: 0.0,
             resize_start_width: DEFAULT_PANEL_WIDTH,
-            track_scroll_offset: 0.0,
         }
     }
 
@@ -132,7 +129,6 @@ impl Sidebar {
                 add_track_menu_open: self.add_track_menu_open,
                 panel_width: self.panel_width,
                 is_resizing: self.is_resizing,
-                scroll_offset: self.track_scroll_offset,
             };
             panel::view(sidebar_params, window, language)
         } else {
@@ -224,9 +220,6 @@ impl Sidebar {
             }
             ResizeDragEnded => {
                 self.is_resizing = false;
-            }
-            TrackScrolled(offset) => {
-                self.track_scroll_offset = offset;
             }
         }
         // 最终保护：音轨总览模式下强制关闭面板
