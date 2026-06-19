@@ -1,7 +1,7 @@
 //! 洋葱皮 GPU 渲染管线
 //!
 //! 数据流:
-//!   1. upload_notes → 音符颜色注入 → GPU storage buffer（全量上传）
+//!   1. upload_notes → 按视口过滤 + 音符颜色注入 → GPU storage buffer（仅上传可见音符）
 //!   2. prepare_cull → Compute Shader 剔除（视口 + 当前音轨）→ instance_indices buffer
 //!   3. prepare_viewport → 更新视口 uniform
 //!   4. draw → indirect draw（TriangleStrip + 4 顶点/实例）
@@ -19,6 +19,8 @@ pub use types::{DrawIndirectArgs, OnionNote, OnionViewportUniform};
 mod buffer;
 mod init;
 mod upload;
+
+pub use upload::OnionUploadParams;
 
 /// 洋葱皮渲染器 — GPU compute cull + indirect draw
 pub struct OnionRenderer {
@@ -55,7 +57,9 @@ pub struct OnionRenderer {
     last_list_version: u64,
     /// 上一次上传的颜色哈希值
     last_color_hash: u64,
-    /// 上一次的视口数据（dirty tracking）
+    /// 上一次上传时使用的视口哈希（CPU 视口过滤 dirty tracking）
+    last_upload_viewport_hash: u64,
+    /// 上一次的视口数据（prepare_cull dirty tracking）
     last_viewport: Option<OnionViewportUniform>,
 }
 

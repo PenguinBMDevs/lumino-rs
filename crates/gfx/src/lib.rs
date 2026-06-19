@@ -38,7 +38,7 @@ pub use note_renderer::{
     CameraParams, CameraUniform, CullUniform, NoteInstance, NoteRenderer, OnionBgTileRef,
     RenderUniform, pack_color, unpack_color,
 };
-pub use onion_renderer::{DrawIndirectArgs, OnionNote, OnionRenderer, OnionViewportUniform};
+pub use onion_renderer::{DrawIndirectArgs, OnionNote, OnionRenderer, OnionUploadParams, OnionViewportUniform};
 pub use onion_skin_bucket::{OnionNoteList, build_list_from_notes};
 pub use ruler_renderer::{
     RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,

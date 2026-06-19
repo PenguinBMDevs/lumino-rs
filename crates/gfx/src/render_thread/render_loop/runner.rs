@@ -94,8 +94,33 @@ pub fn run_render_thread(
                 note_renderer.upload_instances(notes, &device, &queue);
             }
 
-            // ── 洋葱皮：全量 GPU 上传 + dirty tracking ──
-            // 只在上游数据版本/颜色变化时才重传，静止帧跳过 upload（零分配）
+            // ── 洋葱皮：视口范围先算，上传前按视口过滤 ──
+            let overscan = params.onion_overscan_ticks.max(0.0);
+
+            // 先构建视口 uniform（note_count 占位，upload 后回填）
+            let mut viewport = OnionViewportUniform {
+                tick_start: params.scroll.0 / params.zoom.0 - overscan,
+                tick_end: (params.scroll.0 + params.canvas_size.0 - params.keyboard_width)
+                    / params.zoom.0 + overscan,
+                pitch_min: 0.0,
+                pitch_max: params.max_key_index,
+                note_count: 0,
+                current_track: params.onion_current_track as u32,
+                keyboard_width: params.keyboard_width,
+                ruler_height: params.ruler_height,
+                canvas_width: params.logical_size.0,
+                canvas_height: params.logical_size.1,
+                canvas_offset_x: params.canvas_offset.0,
+                canvas_offset_y: params.canvas_offset.1,
+                scroll_x: params.scroll.0,
+                scroll_y: params.scroll.1,
+                zoom_x: params.zoom.0,
+                zoom_y: params.zoom.1,
+                max_key_index: params.max_key_index,
+            };
+
+            // 洋葱皮：按视口过滤后上传 + dirty tracking
+            // 只在上游数据版本/颜色/视口变化时才重传，静止帧跳过 upload（零分配）
             if params.onion_enabled {
                 if let Some(note_list) = &params.onion_note_list {
                     let list_version = note_list.version();
@@ -103,19 +128,36 @@ pub fn run_render_thread(
                     let color_hash = track_colors
                         .iter()
                         .fold(0u64, |acc, &c| acc.wrapping_mul(31).wrapping_add(c as u64));
-                    onion_renderer.upload_notes(
-                        note_list.as_slice(),
+                    onion_renderer.upload_notes(crate::OnionUploadParams {
+                        notes: note_list.as_slice(),
                         list_version,
                         track_colors,
                         color_hash,
-                        &device,
-                        &queue,
-                    );
+                        viewport: &viewport,
+                        device: &device,
+                        queue: &queue,
+                    });
                 } else {
-                    onion_renderer.upload_notes(&[], 0, &[], 0, &device, &queue);
+                    onion_renderer.upload_notes(crate::OnionUploadParams {
+                        notes: &[],
+                        list_version: 0,
+                        track_colors: &[],
+                        color_hash: 0,
+                        viewport: &viewport,
+                        device: &device,
+                        queue: &queue,
+                    });
                 }
             } else {
-                onion_renderer.upload_notes(&[], 0, &[], 0, &device, &queue);
+                onion_renderer.upload_notes(crate::OnionUploadParams {
+                    notes: &[],
+                    list_version: 0,
+                    track_colors: &[],
+                    color_hash: 0,
+                    viewport: &viewport,
+                    device: &device,
+                    queue: &queue,
+                });
             }
 
             if let (Some(_texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
@@ -136,27 +178,8 @@ pub fn run_render_thread(
                     &queue,
                 );
 
-                // 准备洋葱皮视口 uniform（参考 Wasabi push constants 方式）
-                let viewport = OnionViewportUniform {
-                    tick_start: params.scroll.0 / params.zoom.0,
-                    tick_end: (params.scroll.0 + params.canvas_size.0 - params.keyboard_width)
-                        / params.zoom.0,
-                    pitch_min: 0.0,
-                    pitch_max: params.max_key_index,
-                    note_count: onion_renderer.note_count(),
-                    current_track: params.onion_current_track as u32,
-                    keyboard_width: params.keyboard_width,
-                    ruler_height: params.ruler_height,
-                    canvas_width: params.logical_size.0,
-                    canvas_height: params.logical_size.1,
-                    canvas_offset_x: params.canvas_offset.0,
-                    canvas_offset_y: params.canvas_offset.1,
-                    scroll_x: params.scroll.0,
-                    scroll_y: params.scroll.1,
-                    zoom_x: params.zoom.0,
-                    zoom_y: params.zoom.1,
-                    max_key_index: params.max_key_index,
-                };
+                // 回填实际上传的音符数，供 compute cull 使用
+                viewport.note_count = onion_renderer.note_count();
 
                 // GPU compute cull：视口剔除，间接绘制（dirty tracking 内部，无变化时零开销）
                 onion_renderer.prepare_cull(&mut encoder, &viewport, &device, &queue);

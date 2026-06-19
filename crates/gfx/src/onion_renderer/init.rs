@@ -228,6 +228,7 @@ impl OnionRenderer {
             cpu_note_pool: Vec::new(),
             last_list_version: u64::MAX,
             last_color_hash: u64::MAX,
+            last_upload_viewport_hash: u64::MAX,
             last_viewport: None,
         }
     }
