@@ -2,26 +2,34 @@ use super::{OnionNote, OnionRenderer};
 use crate::OnionSkinBucket;
 
 impl OnionRenderer {
-    /// 从 `OnionSkinBucket` 上传整个音符池到 GPU
+    /// 从 `OnionSkinBucket` 上传可见 key 范围的音符池到 GPU
     ///
     /// Bucket 模式核心优化：
     /// - 音符池常驻 GPU，视口变化时只在 CPU 端二分查找每个 key 的可见范围；
     /// - 每帧上传 256 个 `OnionKeyRange`（约 2KB），替代原来的最多 3M 个音符（48MB）上传；
     /// - GPU compute 只扫描可见 key 的可见 tick 范围，而非整个收集后的音符集合。
     ///
-    /// 仅在 bucket 数据版本或颜色表版本变化时调用；视口变化只更新 `key_ranges_buffer`。
+    /// 为避免 GPU storage buffer 上限（通常 128MB = ~8M 个 OnionNote），仅上传
+    /// `key_min..=key_max` 可见 key 范围内的音符。当可见 key 范围变化时自动重传。
+    ///
+    /// # 参数
+    /// - `key_min`, `key_max`: 可见 key 范围（0-255），仅这些 key 的音符会被上传
     pub fn upload_bucket(
         &mut self,
         bucket: &OnionSkinBucket,
         bucket_version: u64,
         track_colors: &[u32],
         color_version: u64,
+        key_min: u8,
+        key_max: u8,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) {
         let no_change = self.bucket_mode
             && bucket_version == self.last_bucket_version
-            && color_version == self.last_color_version;
+            && color_version == self.last_color_version
+            && key_min == self.last_key_min
+            && key_max == self.last_key_max;
         if no_change {
             return;
         }
@@ -29,17 +37,30 @@ impl OnionRenderer {
         puffin::profile_function!();
 
         let _perf_start = std::time::Instant::now();
-        let note_count = bucket.total_notes();
-        tracing::debug!(
-            "upload_bucket: start flatten {} notes (bv={}, cv={})",
-            note_count,
-            bucket_version,
-            color_version,
-        );
 
-        let mut note_pool = Vec::with_capacity(bucket.total_notes());
+        // 仅 flatten 可见 key 范围内的音符，其余 key 的 key_offsets 置 0
+        let mut note_pool = Vec::new();
         let mut key_offsets = [0u32; 257];
-        bucket.flatten_with_key_offsets(&mut note_pool, &mut key_offsets, track_colors);
+        let mut offset = 0u32;
+        for key in key_min..=key_max {
+            key_offsets[key as usize] = offset;
+            let bucket_notes = bucket.key_notes(key);
+            if track_colors.is_empty() {
+                note_pool.extend_from_slice(bucket_notes);
+            } else {
+                note_pool.extend(bucket_notes.iter().map(|note| {
+                    let color = track_colors
+                        .get(note.track_idx() as usize)
+                        .copied()
+                        .unwrap_or(0);
+                    let mut colored = *note;
+                    colored.set_color_packed(color);
+                    colored
+                }));
+            }
+            offset = note_pool.len() as u32;
+        }
+        key_offsets[256] = offset;
 
         let count = note_pool.len();
         if count == 0 {
@@ -47,15 +68,29 @@ impl OnionRenderer {
             self.bucket_mode = true;
             self.last_bucket_version = bucket_version;
             self.last_color_version = color_version;
+            self.last_key_min = key_min;
+            self.last_key_max = key_max;
             self.notes_dirty = true;
             return;
         }
+
+        let note_count_total = bucket.total_notes();
+        tracing::debug!(
+            "upload_bucket: flatten keys [{},{}] ({} of {} notes, bv={}, cv={})",
+            key_min,
+            key_max,
+            count,
+            note_count_total,
+            bucket_version,
+            color_version,
+        );
 
         let mut buffer_rebuilt = false;
 
         // 按需扩容 note_pool_buffer，使用 hysteresis 避免缩容抖动
         let required = count.next_power_of_two().max(Self::INITIAL_NOTE_CAPACITY);
         if required > self.note_pool_capacity {
+            // 仅受 GPU storage buffer 限制；如果不够就拉满限制，宁可亏待非可见 key
             let max_capacity = (self.max_storage_binding as usize
                 / std::mem::size_of::<OnionNote>())
             .min(100_000_000);
@@ -73,7 +108,6 @@ impl OnionRenderer {
         }
 
         // 空闲缩容：带 hysteresis，避免视口轻微变化导致反复重建 buffer。
-        // 只有当使用量低于容量的 12.5% 且容量超过初始值 4 倍时才缩容。
         let shrink_threshold =
             (self.note_pool_capacity as f64 * Self::INDICES_SHRINK_THRESHOLD * 0.5) as usize;
         if count < shrink_threshold && self.note_pool_capacity > Self::INITIAL_NOTE_CAPACITY * 4 {
@@ -92,8 +126,7 @@ impl OnionRenderer {
             }
         }
 
-        // instance_indices 容量按可能的最大可见数预留：
-        // 一个视口内通常不会同时显示所有音符，但为了避免溢出，至少分配 count。
+        // instance_indices 容量按可能的最大可见数预留
         let required_indices = count.max(Self::INITIAL_INDICES_CAPACITY);
         if required_indices > self.indices_capacity {
             let new_indices_cap = required_indices
@@ -117,6 +150,8 @@ impl OnionRenderer {
         self.bucket_mode = true;
         self.last_bucket_version = bucket_version;
         self.last_color_version = color_version;
+        self.last_key_min = key_min;
+        self.last_key_max = key_max;
         self.notes_dirty = true;
 
         queue.write_buffer(

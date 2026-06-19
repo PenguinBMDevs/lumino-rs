@@ -269,6 +269,8 @@ impl OnionRenderer {
             bucket_mode: false,
             last_bucket_version: 0,
             last_color_version: 0,
+            last_key_min: 0,
+            last_key_max: 255,
             bind_groups_dirty: false,
             last_viewport: None,
             last_camera: None,

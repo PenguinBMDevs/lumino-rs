@@ -94,6 +94,24 @@ pub fn run_render_thread(
                 note_renderer.upload_instances(notes, &device, &queue);
             }
 
+            // 计算可见 tick/pitch 范围（在 upload_bucket 和 prepare_cull 中都用到）
+            let note_area_width = (params.canvas_size.0 - params.keyboard_width).max(0.0);
+            let note_area_height = (params.canvas_size.1 - params.ruler_height).max(0.0);
+
+            let visible_tick_start = (params.scroll.0 / params.zoom.0).max(0.0);
+            let visible_tick_end =
+                ((params.scroll.0 + note_area_width) / params.zoom.0).max(visible_tick_start);
+            let max_key = params.max_key_index;
+            let key_top = max_key - (params.scroll.1 / params.zoom.1);
+            let key_bottom = max_key - ((params.scroll.1 + note_area_height) / params.zoom.1);
+            let visible_pitch_max_overscan = (key_top.ceil() as u16 + 2) as f32; // +1 overscan
+            let visible_pitch_min_overscan =
+                (key_bottom.floor().max(0.0) as u16).saturating_sub(2) as f32; // -1 overscan
+
+            // 上传 bucket 时只包含可见 key 范围的音符（避免 GPU storage buffer 溢出）
+            let bucket_key_min = (visible_pitch_min_overscan.max(0.0) as u8).min(255);
+            let bucket_key_max = (visible_pitch_max_overscan.min(255.0) as u8).max(bucket_key_min);
+
             // ── 洋葱皮：GPU 常驻 bucket 模式 ──
             if params.onion_enabled {
                 if let Some(bucket) = &params.onion_bucket {
@@ -107,6 +125,8 @@ pub fn run_render_thread(
                         bucket_version,
                         track_colors,
                         color_version,
+                        bucket_key_min,
+                        bucket_key_max,
                         &device,
                         &queue,
                     );
@@ -146,25 +166,11 @@ pub fn run_render_thread(
                     max_key_index: params.max_key_index,
                 });
 
-                // 计算可见 tick/pitch 范围用于视口裁剪
-                let note_area_width = (params.canvas_size.0 - params.keyboard_width).max(0.0);
-                let note_area_height = (params.canvas_size.1 - params.ruler_height).max(0.0);
-
-                let visible_tick_start = (params.scroll.0 / params.zoom.0).max(0.0);
-                let visible_tick_end =
-                    ((params.scroll.0 + note_area_width) / params.zoom.0).max(visible_tick_start);
-                let max_key = params.max_key_index;
-                let key_top = max_key - (params.scroll.1 / params.zoom.1);
-                let key_bottom = max_key - ((params.scroll.1 + note_area_height) / params.zoom.1);
-                let visible_pitch_max = (key_top.ceil() as u16 + 1) as f32;
-                let visible_pitch_min =
-                    (key_bottom.floor().max(0.0) as u16).saturating_sub(1) as f32;
-
                 let viewport = OnionViewportUniform {
                     tick_start: visible_tick_start,
                     tick_end: visible_tick_end,
-                    pitch_min: visible_pitch_min,
-                    pitch_max: visible_pitch_max,
+                    pitch_min: visible_pitch_min_overscan,
+                    pitch_max: visible_pitch_max_overscan,
                     note_count: onion_renderer.note_count() as u32,
                     indices_capacity: onion_renderer.indices_capacity() as u32,
                     current_track: params.onion_current_track as u32,

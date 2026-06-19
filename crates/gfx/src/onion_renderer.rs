@@ -68,6 +68,9 @@ pub struct OnionRenderer {
     last_bucket_version: u64,
     /// 上一次上传的颜色表版本号（颜色变化时强制重新上传）
     last_color_version: u64,
+    /// 上一次上传的可见 key 范围（范围变化时强制重新上传）
+    last_key_min: u8,
+    last_key_max: u8,
     /// Bind group 是否需要重建（buffer 被重建时置 true）
     bind_groups_dirty: bool,
     /// 上一次 cull 的视口数据（用于 dirty tracking）
