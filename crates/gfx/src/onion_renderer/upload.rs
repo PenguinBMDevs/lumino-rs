@@ -10,8 +10,6 @@ pub struct OnionUploadParams<'a> {
     pub track_colors: &'a [u32],
     /// 颜色表哈希（dirty tracking）
     pub color_hash: u64,
-    /// 当前视口（用于 CPU 端过滤，只上传可见音符）
-    pub viewport: &'a OnionViewportUniform,
     /// wgpu 设备
     pub device: &'a wgpu::Device,
     /// wgpu 队列
@@ -19,79 +17,62 @@ pub struct OnionUploadParams<'a> {
 }
 
 impl OnionRenderer {
-    /// 上传洋葱皮音符到 GPU（颜色注入 + 视口过滤 + storage buffer）
+    /// 上传洋葱皮音符到 GPU（全量常驻 + 颜色注入）
     ///
     /// # 数据流
-    /// 1. 按视口过滤：只保留当前可见（含 overscan）区域内的音符，避免 160M
-    ///    音符全量上传撑爆 GPU storage buffer
-    /// 2. 颜色注入（per-note color_packed）
-    /// 3. write_buffer 到 GPU note_pool_buffer
-    /// 4. Compute shader 随后通过 prepare_cull 读取 note_pool_buffer 做剔除
+    /// 1. CPU 只在上游数据/颜色变化时执行一次：颜色注入 + write_buffer
+    /// 2. 音符数据常驻 GPU storage buffer（按 GPU 最大容量截取）
+    /// 3. 滚动/缩放时不再触发任何 CPU 过滤或重传，只更新 viewport uniform
+    /// 4. Compute shader 在 GPU 端做视口剔除
     pub fn upload_notes(&mut self, params: OnionUploadParams<'_>) {
-        let vp_hash = Self::viewport_hash(params.viewport);
-
-        // Dirty tracking：note list / 颜色 / 视口 都未变化 → 跳过
+        // Dirty tracking：note list / 颜色 都未变化 → 跳过
         if params.list_version == self.last_list_version
             && params.color_hash == self.last_color_hash
-            && vp_hash == self.last_upload_viewport_hash
         {
             return;
         }
 
-        // 按视口过滤 + 颜色注入
-        let max_capacity = (self.max_storage_binding as usize / std::mem::size_of::<OnionNote>())
-            .min(Self::MAX_NOTE_POOL_CAPACITY);
+        let source_count = params.notes.len();
+        let upload_count = source_count.min(self.max_capacity);
 
-        self.cpu_note_pool.clear();
-        self.cpu_note_pool.reserve(params.notes.len().min(max_capacity));
-
-        let mut dropped = 0usize;
-        for note in params.notes {
-            if self.cpu_note_pool.len() >= max_capacity {
-                dropped += 1;
-                continue;
-            }
-
-            // 视口剔除：不在当前可见区域内的音符不上传
-            let pitch = note.pitch() as f32;
-            if pitch < params.viewport.pitch_min || pitch > params.viewport.pitch_max {
-                continue;
-            }
-            if (note.end_tick as f32) <= params.viewport.tick_start
-                || (note.start_tick as f32) >= params.viewport.tick_end
-            {
-                continue;
-            }
-
-            let color = params
-                .track_colors
-                .get(note.track_idx() as usize)
-                .copied()
-                .unwrap_or(0);
-            let mut colored = *note;
-            colored.set_color_packed(color);
-            self.cpu_note_pool.push(colored);
-        }
-
-        if dropped > 0 {
+        if source_count > self.max_capacity {
             tracing::warn!(
-                "Onion note pool capacity exceeded: dropped {} notes (capacity {})",
-                dropped,
-                max_capacity
+                "Onion note pool capacity exceeded: source {} notes, max_capacity {}, \
+                 uploaded {} notes. 后续音轨将不可见；如需完整显示请使用显存更大的 GPU。",
+                source_count,
+                self.max_capacity,
+                upload_count
             );
         }
 
-        let uploaded = self.cpu_note_pool.len();
-        self.total_note_count = uploaded as u32;
+        self.total_note_count = upload_count as u32;
+
+        // 颜色注入 + CPU 缓存
+        self.cpu_note_pool.clear();
+        self.cpu_note_pool.reserve(upload_count);
+        if params.track_colors.is_empty() {
+            self.cpu_note_pool
+                .extend_from_slice(&params.notes[..upload_count]);
+        } else {
+            for note in &params.notes[..upload_count] {
+                let color = params
+                    .track_colors
+                    .get(note.track_idx() as usize)
+                    .copied()
+                    .unwrap_or(0);
+                let mut colored = *note;
+                colored.set_color_packed(color);
+                self.cpu_note_pool.push(colored);
+            }
+        }
 
         // 按需扩容 note_pool
-        let required = uploaded.max(Self::INITIAL_NOTE_CAPACITY);
-        if required > self.note_pool_capacity && self.note_pool_capacity < max_capacity {
-            let new_cap = if self.note_pool_capacity == Self::INITIAL_NOTE_CAPACITY {
-                max_capacity
-            } else {
-                required.next_power_of_two().min(max_capacity)
-            };
+        let required = upload_count.max(Self::INITIAL_NOTE_CAPACITY);
+        if required > self.note_pool_capacity {
+            let new_cap = required
+                .next_power_of_two()
+                .min(self.max_capacity)
+                .max(Self::INITIAL_NOTE_CAPACITY);
             if new_cap > self.note_pool_capacity {
                 self.note_pool_buffer = Self::create_note_pool_buffer(params.device, new_cap);
                 self.note_pool_capacity = new_cap;
@@ -99,12 +80,14 @@ impl OnionRenderer {
             }
         }
 
-        // 按需扩容 instance_indices
-        let required_idx = uploaded.max(Self::INITIAL_INDICES_CAPACITY);
+        // 按需扩容 instance_indices：与 note_pool 同容量即可覆盖
+        // “所有音符同时可见”的最坏情况
+        let required_idx = upload_count.max(Self::INITIAL_INDICES_CAPACITY);
         if required_idx > self.indices_capacity {
             let new_cap = required_idx
                 .next_power_of_two()
-                .min(Self::MAX_INDICES_CAPACITY);
+                .min(self.max_capacity)
+                .max(Self::INITIAL_INDICES_CAPACITY);
             if new_cap > self.indices_capacity {
                 self.instance_indices_buffer =
                     Self::create_instance_indices_buffer(params.device, new_cap);
@@ -113,26 +96,15 @@ impl OnionRenderer {
             }
         }
 
-        let upload_count = uploaded.min(self.note_pool_capacity);
+        let write_count = upload_count.min(self.note_pool_capacity);
         params.queue.write_buffer(
             &self.note_pool_buffer,
             0,
-            bytemuck::cast_slice(&self.cpu_note_pool[..upload_count]),
+            bytemuck::cast_slice(&self.cpu_note_pool[..write_count]),
         );
 
         self.last_list_version = params.list_version;
         self.last_color_hash = params.color_hash;
-        self.last_upload_viewport_hash = vp_hash;
-    }
-
-    /// 计算视口几何哈希（仅用于 CPU 过滤 dirty tracking）
-    fn viewport_hash(vp: &OnionViewportUniform) -> u64 {
-        let mut h = 0u64;
-        h = h.wrapping_mul(31).wrapping_add(vp.tick_start.to_bits() as u64);
-        h = h.wrapping_mul(31).wrapping_add(vp.tick_end.to_bits() as u64);
-        h = h.wrapping_mul(31).wrapping_add(vp.pitch_min.to_bits() as u64);
-        h = h.wrapping_mul(31).wrapping_add(vp.pitch_max.to_bits() as u64);
-        h
     }
 
     /// GPU 端视口剔除 — dispatch compute shader
@@ -200,66 +172,5 @@ impl OnionRenderer {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.render_bind_group, &[]);
         render_pass.draw_indirect(&self.indirect_buffer, 0);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::OnionRenderer;
-    use crate::OnionViewportUniform;
-
-    #[test]
-    fn viewport_hash_same_viewport_equal() {
-        let vp = OnionViewportUniform {
-            tick_start: 100.0,
-            tick_end: 500.0,
-            pitch_min: 20.0,
-            pitch_max: 80.0,
-            ..OnionViewportUniform::default()
-        };
-        assert_eq!(
-            OnionRenderer::viewport_hash(&vp),
-            OnionRenderer::viewport_hash(&vp)
-        );
-    }
-
-    #[test]
-    fn viewport_hash_different_viewport_differs() {
-        let a = OnionViewportUniform {
-            tick_start: 100.0,
-            tick_end: 500.0,
-            pitch_min: 20.0,
-            pitch_max: 80.0,
-            ..OnionViewportUniform::default()
-        };
-        let b = OnionViewportUniform {
-            tick_start: 100.0,
-            tick_end: 501.0,
-            pitch_min: 20.0,
-            pitch_max: 80.0,
-            ..OnionViewportUniform::default()
-        };
-        assert_ne!(OnionRenderer::viewport_hash(&a), OnionRenderer::viewport_hash(&b));
-    }
-
-    #[test]
-    fn viewport_hash_ignores_note_count() {
-        let a = OnionViewportUniform {
-            tick_start: 100.0,
-            tick_end: 500.0,
-            pitch_min: 20.0,
-            pitch_max: 80.0,
-            note_count: 0,
-            ..OnionViewportUniform::default()
-        };
-        let b = OnionViewportUniform {
-            tick_start: 100.0,
-            tick_end: 500.0,
-            pitch_min: 20.0,
-            pitch_max: 80.0,
-            note_count: 9999,
-            ..OnionViewportUniform::default()
-        };
-        assert_eq!(OnionRenderer::viewport_hash(&a), OnionRenderer::viewport_hash(&b));
     }
 }

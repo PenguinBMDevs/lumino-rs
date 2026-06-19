@@ -1,4 +1,4 @@
-use super::{OnionRenderer, OnionViewportUniform};
+use super::{OnionNote, OnionRenderer, OnionViewportUniform};
 use wgpu::util::DeviceExt;
 
 impl OnionRenderer {
@@ -16,6 +16,16 @@ impl OnionRenderer {
         });
 
         let max_storage_binding = device.limits().max_storage_buffer_binding_size as u64;
+        let max_buffer_size = device.limits().max_buffer_size;
+        let max_bytes = max_storage_binding.min(max_buffer_size);
+        let max_capacity = (max_bytes as usize / std::mem::size_of::<OnionNote>())
+            .max(Self::INITIAL_NOTE_CAPACITY);
+        tracing::debug!(
+            "OnionRenderer max_capacity={} notes (max_storage_binding={} MB, max_buffer_size={} MB)",
+            max_capacity,
+            max_storage_binding / (1024 * 1024),
+            max_buffer_size / (1024 * 1024)
+        );
 
         // ─── Compute bind group layout (4 bindings) ───
         // binding 0: viewport uniform
@@ -224,11 +234,10 @@ impl OnionRenderer {
             note_pool_capacity: Self::INITIAL_NOTE_CAPACITY,
             indices_capacity: Self::INITIAL_INDICES_CAPACITY,
             total_note_count: 0,
-            max_storage_binding,
+            max_capacity,
             cpu_note_pool: Vec::new(),
             last_list_version: u64::MAX,
             last_color_hash: u64::MAX,
-            last_upload_viewport_hash: u64::MAX,
             last_viewport: None,
         }
     }

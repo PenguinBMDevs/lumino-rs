@@ -94,10 +94,10 @@ pub fn run_render_thread(
                 note_renderer.upload_instances(notes, &device, &queue);
             }
 
-            // ── 洋葱皮：视口范围先算，上传前按视口过滤 ──
+            // ── 洋葱皮：全量常驻 GPU，CPU 只做一次上传，GPU 负责剔除 ──
             let overscan = params.onion_overscan_ticks.max(0.0);
 
-            // 先构建视口 uniform（note_count 占位，upload 后回填）
+            // 先构建视口 uniform（note_count 在上传后回填）
             let mut viewport = OnionViewportUniform {
                 tick_start: params.scroll.0 / params.zoom.0 - overscan,
                 tick_end: (params.scroll.0 + params.canvas_size.0 - params.keyboard_width)
@@ -119,8 +119,8 @@ pub fn run_render_thread(
                 max_key_index: params.max_key_index,
             };
 
-            // 洋葱皮：按视口过滤后上传 + dirty tracking
-            // 只在上游数据版本/颜色/视口变化时才重传，静止帧跳过 upload（零分配）
+            // 洋葱皮：全量上传 + dirty tracking
+            // 只在上游数据版本/颜色变化时才重传；滚动/缩放只改 viewport，不触发 upload
             if params.onion_enabled {
                 if let Some(note_list) = &params.onion_note_list {
                     let list_version = note_list.version();
@@ -133,7 +133,6 @@ pub fn run_render_thread(
                         list_version,
                         track_colors,
                         color_hash,
-                        viewport: &viewport,
                         device: &device,
                         queue: &queue,
                     });
@@ -143,7 +142,6 @@ pub fn run_render_thread(
                         list_version: 0,
                         track_colors: &[],
                         color_hash: 0,
-                        viewport: &viewport,
                         device: &device,
                         queue: &queue,
                     });
@@ -154,7 +152,6 @@ pub fn run_render_thread(
                     list_version: 0,
                     track_colors: &[],
                     color_hash: 0,
-                    viewport: &viewport,
                     device: &device,
                     queue: &queue,
                 });
@@ -182,6 +179,7 @@ pub fn run_render_thread(
                 viewport.note_count = onion_renderer.note_count();
 
                 // GPU compute cull：视口剔除，间接绘制（dirty tracking 内部，无变化时零开销）
+                // 滚动/缩放时只更新 uniform，不重新上传音符数据
                 onion_renderer.prepare_cull(&mut encoder, &viewport, &device, &queue);
 
                 // 执行渲染通道（含洋葱皮背景和主音符）

@@ -78,7 +78,7 @@ fn main(
 
     if (in_pitch && in_tick) {
         let slot = atomicAdd(&indirect_args.instance_count, 1u);
-        if (slot < 33554432u) {
+        if (slot < arrayLength(&instance_indices)) {
             instance_indices[slot] = index;
         }
     }

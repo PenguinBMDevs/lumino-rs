@@ -1,7 +1,7 @@
 //! 洋葱皮 GPU 渲染管线
 //!
 //! 数据流:
-//!   1. upload_notes → 按视口过滤 + 音符颜色注入 → GPU storage buffer（仅上传可见音符）
+//!   1. upload_notes → 全量音符颜色注入 → GPU storage buffer（一次上传，常驻显存）
 //!   2. prepare_cull → Compute Shader 剔除（视口 + 当前音轨）→ instance_indices buffer
 //!   3. prepare_viewport → 更新视口 uniform
 //!   4. draw → indirect draw（TriangleStrip + 4 顶点/实例）
@@ -47,18 +47,16 @@ pub struct OnionRenderer {
     note_pool_capacity: usize,
     /// 实例索引缓冲区容量
     indices_capacity: usize,
-    /// 全量音符数量（compute shader dispatch 用）
+    /// 实际上传的音符数量（compute shader dispatch 用）
     total_note_count: u32,
-    /// GPU max storage buffer binding size
-    max_storage_binding: u64,
+    /// 基于 GPU limits 的最大音符容量（note_pool 上限）
+    max_capacity: usize,
     /// CPU 侧临时音符缓冲（跨帧复用）
     cpu_note_pool: Vec<OnionNote>,
     /// 上一次上传的 list 版本号
     last_list_version: u64,
     /// 上一次上传的颜色哈希值
     last_color_hash: u64,
-    /// 上一次上传时使用的视口哈希（CPU 视口过滤 dirty tracking）
-    last_upload_viewport_hash: u64,
     /// 上一次的视口数据（prepare_cull dirty tracking）
     last_viewport: Option<OnionViewportUniform>,
 }
@@ -66,8 +64,6 @@ pub struct OnionRenderer {
 impl OnionRenderer {
     const INITIAL_NOTE_CAPACITY: usize = 8192;
     const INITIAL_INDICES_CAPACITY: usize = 65536;
-    const MAX_NOTE_POOL_CAPACITY: usize = 33_554_432;
-    const MAX_INDICES_CAPACITY: usize = 33_554_432;
     const WORKGROUP_SIZE: u32 = 256;
 
     const VERTEX_SHADER_SRC: &'static str = include_str!("./shaders/onion_render.wgsl");
