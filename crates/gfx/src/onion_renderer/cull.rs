@@ -1,4 +1,4 @@
-use super::{CameraUniform, OnionKeyRange, OnionRenderer, OnionViewportUniform};
+use super::{CameraUniform, DrawIndirectArgs, OnionKeyRange, OnionRenderer, OnionViewportUniform};
 use crate::OnionSkinBucket;
 
 impl OnionRenderer {
@@ -92,6 +92,19 @@ impl OnionRenderer {
             self.rebuild_bind_groups(device);
             self.bind_groups_dirty = false;
         }
+
+        // CPU 端重置 indirect args（vertex_count=4, instance_count=0）
+        // 替代原有的 GPU 端 `global_id.x == 0u` 重置方式，消除多 workgroup 并行竞态。
+        queue.write_buffer(
+            &self.indirect_buffer,
+            0,
+            bytemuck::cast_slice(&[DrawIndirectArgs {
+                vertex_count: 4,
+                instance_count: 0,
+                first_vertex: 0,
+                first_instance: 0,
+            }]),
+        );
 
         // 执行 Compute Culling
         // Bucket 模式：固定 256 个 workgroup，每个处理一个 key

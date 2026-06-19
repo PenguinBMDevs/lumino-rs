@@ -1,12 +1,16 @@
 // 洋葱皮可见性剔除 Compute Shader
 // 工作组大小: 256
 //
-// 两种工作模式（由 viewport.use_key_ranges 控制）：
-// 1. 兼容模式（use_key_ranges == 0）：
-//    音符池为扁平数组，GPU 在 [visible_start, visible_end) 区间内全量裁剪。
-// 2. Bucket 模式（use_key_ranges != 0）：
-//    音符池按 key 分桶（key_offsets 给出累积偏移），每个 workgroup 处理一个 key，
-//    只扫描 key_ranges[key] 指定的 [start, end) tick 范围。
+// 设计要点：
+// - 不使用 workgroup 本地内存（wg_indices[256] 在桶模式下会溢出）。
+// - 每个线程直接通过 `atomicAdd(&indirect_args.instance_count, 1u)` 获取全局槽位并写入。
+// - 桶模式（use_key_ranges != 0）：每个 workgroup 处理一个 key，每个线程循环扫描该 key 的
+//   [start, end) 可见 tick 子区间。一个 key 的可见音符数量不受 256 限制。
+// - 兼容模式（use_key_ranges == 0）：在 [visible_start, visible_end) 区间内，
+//   每个线程处理一个音符（最多 256 个/ workgroup）。
+//
+// 计数器重置由 CPU 端在 dispatch 前通过 write_buffer 完成，消除 GPU 端多 workgroup
+// 并行执行时的竞态条件。
 
 struct OnionNote {
     start_tick: u32,
@@ -47,11 +51,6 @@ struct DrawIndirectArgs {
 @group(0) @binding(4) var<storage, read> key_offsets: array<u32>;
 @group(0) @binding(5) var<storage, read> key_ranges: array<OnionKeyRange>;
 
-var<workgroup> wg_count: atomic<u32>;
-var<workgroup> wg_indices: array<u32, 256>;
-var<workgroup> wg_global_base: u32;
-var<workgroup> wg_total: u32;
-
 fn unpack_pitch(packed: u32) -> u32 {
     return packed & 0xFFu;
 }
@@ -60,8 +59,9 @@ fn unpack_track_idx(packed: u32) -> u32 {
     return (packed >> 8u) & 0xFFFFu;
 }
 
-// 处理一个音符，若可见则通过 workgroup-local atomic 写入 wg_indices
-fn process_note(index: u32) {
+/// 主剔除函数：判断音符是否在视口内，可见则直写全局缓冲区。
+/// 不使用 workgroup 本地内存，每个线程通过全局 atomicAdd 获取写入槽位。
+fn cull_and_write(index: u32) {
     let note = note_pool[index];
     let pitch = unpack_pitch(note.packed);
     let track_idx = unpack_track_idx(note.packed);
@@ -79,8 +79,11 @@ fn process_note(index: u32) {
     let in_pitch_range = pitch_f >= viewport.pitch_min && pitch_f <= viewport.pitch_max;
 
     if (in_tick_range && in_pitch_range) {
-        let slot = atomicAdd(&wg_count, 1u);
-        wg_indices[slot] = index;
+        // 获取全局槽位并直写。indirect_args.instance_count 已在 dispatch 前由 CPU 归零。
+        let slot = atomicAdd(&indirect_args.instance_count, 1u);
+        if (slot < viewport.indices_capacity) {
+            instance_indices[slot] = index;
+        }
     }
 }
 
@@ -90,16 +93,16 @@ fn main(
     @builtin(local_invocation_id) local_id: vec3<u32>,
     @builtin(global_invocation_id) global_id: vec3<u32>,
 ) {
-    // 线程 0 负责清零 indirect args
-    if (global_id.x == 0u) {
-        atomicStore(&indirect_args.instance_count, 0u);
-        indirect_args.vertex_count = 4u;
-    }
+    // 注意：indirect_args.vertex_count 和 instance_count 已由 CPU 端在 dispatch 前
+    // 通过 write_buffer 初始化（vertex_count=4, instance_count=0）。
+    // 无需在 GPU 端做任何重置，消除多 workgroup 并行竞态。
 
     if (viewport.use_key_ranges != 0u) {
         // ── Bucket 模式：一个 workgroup 处理一个 key ──
+        // 每个 key 的可见音符数可能远超 256，每个线程通过 while 循环处理多个音符，
+        // 每个音符直接写入全局缓冲区，不受 workgroup 本地内存限制。
         let key = workgroup_id.x;
-        // key 必须在 [0, 256) 内；dispatch 为 256，所以不会越界
+        // key 在 [0, 256) 内；dispatch 为 256 且 WGSL 做了 bounds check，不会越界
         let pitch_f = f32(key);
         let key_active = pitch_f >= viewport.pitch_min && pitch_f <= viewport.pitch_max;
 
@@ -108,38 +111,20 @@ fn main(
             let base = key_offsets[key];
             let count = range.end - range.start;
 
-            // workgroup 内线程循环扫描该 key 的可见 tick 范围
+            // workgroup 内所有线程循环扫描该 key 的可见 tick 范围
+            // 每步 stride=256，不共享任何 workgroup 状态，无 barrier 依赖
             var i = local_id.x;
             while (i < count) {
-                process_note(base + range.start + i);
+                cull_and_write(base + range.start + i);
                 i += 256u;
             }
         }
     } else {
         // ── 兼容模式：扁平扫描 [visible_start, visible_end) ──
+        // 每个 workgroup 最多处理 256 个音符（每个线程 1 个），直写全局缓冲区
         let index = viewport.visible_start + global_id.x;
-        let in_range = index < viewport.visible_end;
-        if (in_range) {
-            process_note(index);
-        }
-    }
-
-    workgroupBarrier();
-
-    // 线程 0 做 1 次全局 atomicAdd，代表整个 workgroup
-    if (local_id.x == 0u) {
-        let n = atomicLoad(&wg_count);
-        wg_total = n;
-        wg_global_base = atomicAdd(&indirect_args.instance_count, n);
-    }
-    workgroupBarrier();
-
-    // 写入可见索引
-    if (local_id.x < wg_total) {
-        let src_idx = wg_indices[local_id.x];
-        let dst = wg_global_base + local_id.x;
-        if (dst < viewport.indices_capacity) {
-            instance_indices[dst] = src_idx;
+        if (index < viewport.visible_end) {
+            cull_and_write(index);
         }
     }
 }

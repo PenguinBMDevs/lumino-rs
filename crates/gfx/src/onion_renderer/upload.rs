@@ -28,6 +28,15 @@ impl OnionRenderer {
 
         puffin::profile_function!();
 
+        let _perf_start = std::time::Instant::now();
+        let note_count = bucket.total_notes();
+        tracing::debug!(
+            "upload_bucket: start flatten {} notes (bv={}, cv={})",
+            note_count,
+            bucket_version,
+            color_version,
+        );
+
         let mut note_pool = Vec::with_capacity(bucket.total_notes());
         let mut key_offsets = [0u32; 257];
         bucket.flatten_with_key_offsets(&mut note_pool, &mut key_offsets, track_colors);
@@ -125,6 +134,13 @@ impl OnionRenderer {
         if buffer_rebuilt || !self.bucket_mode {
             self.rebuild_bind_groups(device);
         }
+
+        let elapsed = _perf_start.elapsed();
+        tracing::debug!(
+            "upload_bucket: done ({} bytes uploaded, took {:?})",
+            upload_count * std::mem::size_of::<OnionNote>(),
+            elapsed,
+        );
     }
 
     /// 上传所有洋葱皮音符到 GPU（兼容模式）

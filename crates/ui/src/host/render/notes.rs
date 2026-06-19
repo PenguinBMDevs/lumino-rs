@@ -15,6 +15,7 @@ impl Host {
     /// 仅在底层数据变化时重建/增量更新 bucket，避免每帧全量扫描。
     /// 返回值：bucket 是否发生变化（版本号递增）
     pub(super) fn update_onion_bucket(&mut self) -> bool {
+        let _perf = std::time::Instant::now();
         let es = &self.root.editor.editor_state;
         let data = &es.data;
         let current_track = data.current_track;
@@ -29,7 +30,7 @@ impl Host {
         let doc_changed = cache.onion_bucket_doc_ptr != current_doc_ptr;
         let track_gen_changed = cache.onion_bucket_track_gen != current_track_gen;
 
-        if doc_changed {
+        let result = if doc_changed {
             let mut bucket = OnionSkinBucket::new();
             if let Some(doc) = &data.document {
                 bucket.rebuild_from_midi_document(doc, |_| true, current_track);
@@ -43,10 +44,8 @@ impl Host {
             cache.onion_bucket = Some(Arc::new(bucket));
             cache.onion_bucket_doc_ptr = current_doc_ptr;
             cache.onion_bucket_track_gen = current_track_gen;
-            return true;
-        }
-
-        if track_gen_changed {
+            true
+        } else if track_gen_changed {
             let bucket_arc = match cache.onion_bucket.as_mut() {
                 Some(b) => b,
                 None => {
@@ -60,7 +59,7 @@ impl Host {
                     cache.onion_bucket = Some(Arc::new(bucket));
                     cache.onion_bucket_doc_ptr = current_doc_ptr;
                     cache.onion_bucket_track_gen = current_track_gen;
-                    return true;
+                    return true; // 无现有 bucket，快速重建并返回
                 }
             };
             let bucket = Arc::make_mut(bucket_arc);
@@ -91,6 +90,18 @@ impl Host {
             true
         } else {
             false
+        };
+
+        // 性能诊断：记录每次 bucket 操作的耗时（超过 500μs 才记，忽略无操作帧）
+        let elapsed = _perf.elapsed();
+        if result && elapsed.as_micros() > 500 {
+            tracing::debug!(
+                "update_onion_bucket: changed=true, took={:?} (doc={}, track_gen={})",
+                elapsed,
+                doc_changed,
+                track_gen_changed,
+            );
         }
+        result
     }
 }
