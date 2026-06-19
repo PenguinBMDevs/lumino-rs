@@ -158,7 +158,8 @@ pub fn run_render_thread(
                     max_key_index: params.max_key_index,
                 };
 
-                onion_renderer.prepare_viewport(&viewport, &queue);
+                // GPU compute cull：视口剔除，间接绘制（dirty tracking 内部，无变化时零开销）
+                onion_renderer.prepare_cull(&mut encoder, &viewport, &device, &queue);
 
                 // 执行渲染通道（含洋葱皮背景和主音符）
                 execute_render_pass(

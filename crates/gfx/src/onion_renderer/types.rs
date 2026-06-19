@@ -1,9 +1,4 @@
-//! 洋葱皮渲染类型定义 — 参考 Wasabi 瀑布流的简化类型系统
-//!
-//! 移除了旧版 compute shader 相关的类型（OnionViewportUniform, OnionKeyRange,
-//! OnionTrackMask, DrawIndirectArgs），因为新的渲染管线不再需要 compute cull。
-//!
-//! 核心类型 `OnionNote` 保持不变（start_tick, end_tick, packed=pitch+track_idx, color_packed）。
+//! 洋葱皮渲染类型定义 — GPU compute cull + indirect draw 类型系统
 
 /// SoA 布局的洋葱皮音符 — 16 字节对齐
 ///
@@ -82,7 +77,7 @@ impl OnionNote {
 ///
 /// 参考 Wasabi 的 push constants 设计，但通过 uniform buffer 传递。
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct OnionViewportUniform {
     /// 可见 tick 范围 [start, end)
     pub tick_start: f32,
@@ -106,6 +101,27 @@ pub struct OnionViewportUniform {
     pub zoom_x: f32,
     pub zoom_y: f32,
     pub max_key_index: f32,
+}
+
+/// 间接绘制参数 — 匹配 VkDrawIndirectCommand（16 字节）
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct DrawIndirectArgs {
+    pub vertex_count: u32,
+    pub instance_count: u32,
+    pub first_vertex: u32,
+    pub first_instance: u32,
+}
+
+impl Default for DrawIndirectArgs {
+    fn default() -> Self {
+        Self {
+            vertex_count: 4,
+            instance_count: 0,
+            first_vertex: 0,
+            first_instance: 0,
+        }
+    }
 }
 
 impl Default for OnionViewportUniform {
