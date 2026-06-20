@@ -140,6 +140,51 @@ impl winit::application::ApplicationHandler for Runner {
             }
         }
 
+        // 高精度贴图冷静期检查：到期后触发脏音轨重生成
+        {
+            puffin::profile_scope!("runner_about_to_wait_hires_regen");
+            let dirty_tracks = this.window_state.window.ui_mut().check_hires_regen();
+            if let Some(tracks) = dirty_tracks {
+                // 收集重生成所需上下文（clone 出来避免循环里反复借用）
+                let regen_context = {
+                    let ui = this.window_state.window.ui();
+                    let hash = ui.hires_midi_hash().map(|s| s.to_string());
+                    let info = ui.hires_gen_info();
+                    let ui_cfg = this.window_state.storage.config.get().ui.clone();
+                    let config = lumino_gfx::HiResConfig {
+                        enabled: ui_cfg.hires_onion_enabled,
+                        measures_per_group: ui_cfg.hires_measures_per_group,
+                        tile_width_px: ui_cfg.hires_tile_width_px,
+                        cooldown_secs: ui_cfg.hires_cooldown_secs,
+                        gpu_mem_limit_mb: ui_cfg.hires_gpu_mem_limit_mb,
+                        group_tile_mem_limit_mb: 256,
+                        low_precision_threshold: ui_cfg.hires_low_precision_threshold,
+                        cache_dir: lumino_gfx::HiResConfig::default().cache_dir,
+                    };
+                    hash.zip(info).map(|(h, i)| (h, i, config))
+                };
+                if let Some((midi_hash, (ppq, key_count, total_ticks), config)) = regen_context {
+                    tracing::info!("高精度贴图冷静期到期，重生 {} 个脏音轨", tracks.len());
+                    for track_idx in tracks {
+                        let notes = this
+                            .window_state
+                            .window
+                            .ui()
+                            .get_track_notes_for_hires(track_idx);
+                        this.window_state.window.ui_mut().send_hires_regen(
+                            track_idx,
+                            notes,
+                            ppq,
+                            key_count,
+                            total_ticks,
+                            config.clone(),
+                            midi_hash.clone(),
+                        );
+                    }
+                }
+            }
+        }
+
         // 更新进度窗口
         puffin::profile_scope!("runner_about_to_wait_progress_update");
         let ui_config = this.window_state.storage.config.get().ui.clone();

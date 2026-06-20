@@ -236,7 +236,10 @@ impl Host {
 
     /// 处理编辑器动作
     pub fn handle_action(&mut self, action: message::EditorAction) {
+        let track_idx = self.root.editor.current_track() as u16;
         self.root.handle_editor_action(action);
+        // 编辑动作可能改变音符 → 标记当前音轨高精度贴图为脏
+        self.mark_hires_dirty(track_idx);
         // 仅请求重绘，不重建UI树（编辑器动作由canvas/WGPU层处理）
         self.window_ctx.window.request_redraw();
     }

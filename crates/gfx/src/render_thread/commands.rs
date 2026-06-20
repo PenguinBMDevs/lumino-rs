@@ -36,6 +36,23 @@ pub enum ControlCommand {
     },
     /// 释放高精度洋葱皮资源
     DisposeHiResOnionSkin,
+    /// 重生成指定音轨的高精度贴图（编辑后冷静期到期触发）
+    RegenerateHiResTrack {
+        /// 脏音轨索引
+        track_idx: u16,
+        /// 该音轨当前的音符列表
+        notes: Vec<OnionSkinNote>,
+        /// MIDI ppq
+        ppq: u16,
+        /// 键位数量
+        key_count: u16,
+        /// 全曲总 tick
+        total_ticks: u32,
+        /// 高精度贴图配置
+        config: HiResConfig,
+        /// MIDI 内容哈希（缓存分桶）
+        midi_hash: String,
+    },
 }
 
 /// 渲染命令（UI 线程 -> 渲染线程）

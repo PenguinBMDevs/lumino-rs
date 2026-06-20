@@ -62,7 +62,8 @@ fn classify_command(
             onion @ (ControlCommand::GenerateOnionSkin { .. }
             | ControlCommand::DisposeOnionSkin
             | ControlCommand::GenerateHiResOnionSkin { .. }
-            | ControlCommand::DisposeHiResOnionSkin),
+            | ControlCommand::DisposeHiResOnionSkin
+            | ControlCommand::RegenerateHiResTrack { .. }),
         ) => {
             deferred.push(onion);
         }

@@ -7,8 +7,9 @@ use std::time::Instant;
 
 use crate::SwappableBuffer;
 use crate::{
-    GroupTile, HiResConfig, HiResProgressCallback, HiResRenderer, HiResUniform, KeyMode,
-    OnionSkinRenderer, TileCoord,
+    CacheMeta, GroupTile, HiResConfig, HiResProgressCallback, HiResRenderer, HiResUniform, KeyMode,
+    OnionSkinRenderer, TRACKS_PER_GROUP, TileCoord, generate_track_tile, merge_group_tiles,
+    read_track_tile_cache,
 };
 
 use super::super::commands::{ControlCommand, RenderCommand};
@@ -77,7 +78,8 @@ pub fn run_render_thread(
         for cmd in deferred.drain(..) {
             match &cmd {
                 ControlCommand::GenerateHiResOnionSkin { .. }
-                | ControlCommand::DisposeHiResOnionSkin => handle_hires_control(
+                | ControlCommand::DisposeHiResOnionSkin
+                | ControlCommand::RegenerateHiResTrack { .. } => handle_hires_control(
                     cmd,
                     &device,
                     &mut hires_renderer,
@@ -319,6 +321,101 @@ fn handle_hires_control(
             hires_tiles.clear();
             *hires_config = None;
             push_onion_progress(onion_progress, "高精度洋葱皮资源已释放", 1.0);
+        }
+        // 重生成指定音轨的高精度贴图（编辑后冷静期到期触发）
+        ControlCommand::RegenerateHiResTrack {
+            track_idx,
+            notes,
+            ppq,
+            key_count,
+            total_ticks,
+            config,
+            midi_hash,
+        } => {
+            let ticks_per_group = config.ticks_per_group(ppq);
+            let time_groups = config.time_group_count(total_ticks, ppq);
+            let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
+            let width = config.tile_width_px;
+
+            // 从现有 tiles 推断音轨组的音轨范围
+            let track_range = hires_tiles
+                .values()
+                .find(|t| t.coord.track_group == track_group)
+                .map(|t| t.track_range)
+                .unwrap_or((track_idx, track_idx + 1));
+
+            push_onion_progress(
+                onion_progress,
+                &format!("重生音轨 {track_idx} 高精度贴图…"),
+                0.0,
+            );
+
+            for time_g in 0..time_groups {
+                let tick_start = time_g * ticks_per_group;
+                let tick_end = tick_start + ticks_per_group;
+                let coord = TileCoord::new(track_group, time_g);
+
+                // 重新生成脏音轨的单音轨贴图
+                let dirty_tile = generate_track_tile(
+                    &notes, track_idx, time_g, tick_start, tick_end, width, key_count,
+                );
+
+                // 从缓存加载同组其他音轨的单音轨贴图
+                let mut track_tiles = Vec::new();
+                for t in track_range.0..track_range.1 {
+                    if t == track_idx {
+                        track_tiles.push(dirty_tile.clone());
+                    } else {
+                        let meta = CacheMeta::from_tile(
+                            &dirty_tile,
+                            key_count,
+                            ppq,
+                            config.measures_per_group,
+                        );
+                        match read_track_tile_cache(&config.cache_dir, &midi_hash, t, time_g, &meta)
+                        {
+                            Ok(Some(tile)) => track_tiles.push(tile),
+                            Ok(None) => {
+                                // 缓存未命中，用空贴图（该音轨在该时间组无内容）
+                                tracing::debug!(
+                                    "重生成：音轨 {t} 时间组 {time_g} 缓存未命中，跳过"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!("重生成：音轨 {t} 缓存读取失败: {e}");
+                            }
+                        }
+                    }
+                }
+
+                // 合并为新的整合组贴图
+                let group_tile = merge_group_tiles(
+                    &track_tiles,
+                    coord,
+                    tick_start,
+                    tick_end,
+                    width,
+                    key_count,
+                    track_range,
+                );
+
+                // 更新内存缓冲
+                hires_tiles.insert(coord, group_tile);
+
+                // 如果该整合组已在 GPU，移除旧纹理（下一帧自动重新上传）
+                if let Some(renderer) = hires_renderer {
+                    renderer.remove_tile(&coord);
+                }
+
+                let pct = (time_g as f32 + 1.0) / time_groups as f32;
+                push_onion_progress(
+                    onion_progress,
+                    &format!("重生音轨 {track_idx}：{}/{}", time_g + 1, time_groups),
+                    pct,
+                );
+            }
+
+            push_onion_progress(onion_progress, "高精度贴图重生完成", 1.0);
         }
         // 其它命令由 handle_onion_control 处理，不会到达此处
         _ => {}
