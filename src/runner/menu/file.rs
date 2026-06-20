@@ -1,4 +1,4 @@
-﻿﻿//! Runner 文件菜单处理
+﻿//! Runner 文件菜单处理
 
 mod export;
 mod helpers;
@@ -152,24 +152,23 @@ impl RunnerInner {
         };
 
         let total_ticks = document.total_ticks.max(parsed.info.duration_ticks);
-        let notes: Vec<Vec<lumino_gfx::OnionSkinNote>> = document
-            .track_notes_cache
-            .iter()
-            .enumerate()
-            .map(|(track_idx, track)| {
-                track
-                    .iter()
-                    .map(|n| {
-                        lumino_gfx::OnionSkinNote::from_ms(
-                            n.start_tick as f32,
-                            n.end_tick() as f32,
-                            n.key,
-                            onion_track_color(track_idx),
-                        )
-                    })
-                    .collect()
-            })
-            .collect();
+        let track_count = document.track_count();
+        let mut notes: Vec<Vec<lumino_gfx::OnionSkinNote>> = Vec::with_capacity(track_count);
+        for track_idx in 0..track_count {
+            let track_notes = document.track_notes(track_idx);
+            let converted: Vec<lumino_gfx::OnionSkinNote> = track_notes
+                .iter()
+                .map(|n| {
+                    lumino_gfx::OnionSkinNote::from_ms(
+                        n.start_tick as f32,
+                        n.end_tick() as f32,
+                        n.key,
+                        onion_track_color(track_idx),
+                    )
+                })
+                .collect();
+            notes.push(converted);
+        }
 
         let key_mode = if self.window_state.storage.config.get().ui.enable_256key {
             lumino_gfx::KeyMode::Key256

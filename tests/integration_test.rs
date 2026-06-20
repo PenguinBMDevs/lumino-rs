@@ -283,16 +283,19 @@ fn test_midi_lmpj_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
 
     let info = lumino_midi_loader::MidiInfo::from_path(midi_path.clone())?;
 
-    let parsed_midi = lumino_midi_loader::ParsedMidi {
+    // ParsedMidi 不再缓存原始 MIDI 字节（解析后即释放）。
+    // LMPJ 格式兼容性测试直接通过 LmpjData 构建。
+    let lmpj_data = lumino_midi_loader::LmpjData {
         info: info.clone(),
         midi_data: Some(original_midi_bytes.clone()),
-        document: None,
     };
 
     let temp_dir = std::env::temp_dir();
     let lmpj_path = temp_dir.join("lumino_test_roundtrip.lmpj");
 
-    lumino_export::save_sync(&parsed_midi, &lmpj_path)?;
+    let encoded = lumino_export::format::encode_lmpj(&lmpj_data)
+        .map_err(|e| format!("LMPJ 编码失败: {e}"))?;
+    std::fs::write(&lmpj_path, &encoded).map_err(|e| format!("写入 LMPJ 文件失败: {e}"))?;
 
     let lmpj_bytes = std::fs::read(&lmpj_path)?;
 

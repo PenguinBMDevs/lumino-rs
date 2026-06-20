@@ -115,18 +115,15 @@ impl RunnerInner {
     }
 
     /// 保存为 LMPJ 文件（兼容旧版格式：zstd(bincode(LmpjData))，确保可重新加载）
+    ///
+    /// LMPJ 是本机工程格式，从内存中 `MidiDocument` 重建 MIDI 字节（含用户编辑的 tempo 等），
+    /// **不依赖原始 .mid 文件**。保存时确保工程自包含——原始文件可删除后仍能完整加载。
     fn save_as_lmpj_project(&mut self, save_path: PathBuf) {
         let (info, midi_bytes) = if let Some(parsed_midi) = self.midi_state.current_midi.as_ref() {
-            let bytes = match self.maybe_rebuild_midi_with_tempo(parsed_midi) {
-                Some(b) => b,
-                None => match parsed_midi.get_midi_bytes() {
-                    Ok(b) => b,
-                    Err(e) => {
-                        tracing::error!("获取 MIDI 数据失败: {}", e);
-                        return;
-                    }
-                },
-            };
+            // 从 document 重建 MIDI 字节（含 tempo 编辑），始终返回 Some
+            let bytes = self
+                .maybe_rebuild_midi_with_tempo(parsed_midi)
+                .expect("已加载的 MIDI 文件必有 document，重建不应失败");
             (parsed_midi.info.clone(), bytes)
         } else if let Some((ms, mb)) = self.export_editor_notes_as_legacy_lmpj() {
             (ms, mb)

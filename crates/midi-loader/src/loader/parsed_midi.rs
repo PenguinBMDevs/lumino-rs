@@ -56,16 +56,34 @@ pub async fn load_parsed_midi(
         cb("解析 Lumino 工程文件", 0.5);
 
         let parsed = tokio::task::spawn_blocking(move || {
-            let lmpj_data: LmpjData = decode_lmpj(&data)
+            let mut lmpj_data: LmpjData = decode_lmpj(&data)
                 .map_err(|e| LoaderError::FileFormat(format!("解析 LMPJ 失败: {e}")))?;
 
             tracing::info!(
-                "LMPJ 解析成功: info.path={:?}, midi_data.len={:?}",
+                "LMPJ 解析成功: info.path={:?}, midi_data 存在={}",
                 lmpj_data.info.path,
-                lmpj_data.midi_data.as_ref().map(|d| d.len())
+                lmpj_data.midi_data.is_some()
             );
 
-            Ok::<ParsedMidi, LoaderError>(lmpj_data.to_parsed_midi())
+            // LMPJ 加载时直接构建 MidiDocument，避免中间态 midi_data 常驻内存
+            let track_count = lmpj_data.info.track_count;
+            let midi_bytes = lmpj_data.midi_data.take();
+            let mut parsed = lmpj_data.to_parsed_midi();
+            if let Some(midi_bytes) = midi_bytes {
+                match build_document_from_midi_bytes(&midi_bytes, track_count) {
+                    Ok(doc) => {
+                        let total_events = doc.all_events().len() as u64;
+                        parsed.info.total_notes = total_events / 2;
+                        parsed.info.duration_ticks = doc.total_ticks();
+                        parsed.document = Some(std::sync::Arc::new(doc));
+                    }
+                    Err(e) => {
+                        tracing::warn!("LMPJ 内嵌 MIDI 构建文档失败: {e}，将回退到重新加载");
+                    }
+                }
+            }
+
+            Ok::<ParsedMidi, LoaderError>(parsed)
         })
         .await
         .map_err(|e| {
@@ -146,12 +164,10 @@ pub async fn load_parsed_midi(
         1.0,
     );
 
-    // 读取原始 MIDI 字节并保留在 midi_data 中，供音频导出复用（避免重复读盘）
-    let midi_data = std::fs::read(&path).ok();
-
+    // 不再缓存原始 MIDI 字节。356MB 的黑乐谱原始数据仅在解析时暂存，
+    // 解析为 MidiDocument 后立即释放。音频导出等场景从 info.division 读取 PPQN。
     Ok(ParsedMidi {
         info,
-        midi_data,
         document: Some(std::sync::Arc::new(document)),
     })
 }
@@ -160,6 +176,8 @@ pub async fn load_parsed_midi(
 ///
 /// 适用于已从其他格式（如 DMS）转换得到 MIDI 字节的场景，
 /// 避免写入临时文件再读取的 IO 开销。
+///
+/// **不再缓存原始字节**——解析后立即释放，避免黑乐谱 356MB 冗余内存。
 pub async fn load_parsed_midi_from_bytes(
     midi_bytes: Vec<u8>,
     track_count: u16,
@@ -180,22 +198,8 @@ pub async fn load_parsed_midi_from_bytes(
         );
     }
 
-    // 克隆原始字节用于后续复用（音频导出等），避免 midi_bytes 被 move 消耗
-    let saved_bytes = midi_bytes.clone();
-
     let document = tokio::task::spawn_blocking(move || {
-        let (notes, tempo_changes, control_events) =
-            midly::loader::extract_notes_and_control_events_from_bytes(&midi_bytes)
-                .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
-        let track_names = crate::document::scan::scan_track_names(&midi_bytes);
-        MidiDocument::build_from_extracted_notes(
-            notes,
-            tempo_changes,
-            control_events,
-            track_names,
-            None,
-        )
-        .map_err(|e| LoaderError::MidiParse(format!("构建文档失败: {e}")))
+        build_document_from_midi_bytes(&midi_bytes, track_count)
     })
     .await
     .map_err(|e| LoaderError::Other(format!("加载线程 panic: {e}")))??;
@@ -216,7 +220,27 @@ pub async fn load_parsed_midi_from_bytes(
 
     Ok(ParsedMidi {
         info,
-        midi_data: Some(saved_bytes),
         document: Some(std::sync::Arc::new(document)),
     })
+}
+
+/// 从 MIDI 字节构建 MidiDocument（同步函数，供 LMPJ 加载和 from_bytes 共用）
+///
+/// 不再返回 midi_data——原始字节解析后立即释放。
+pub(super) fn build_document_from_midi_bytes(
+    midi_bytes: &[u8],
+    _track_count: u16,
+) -> LoaderResult<MidiDocument> {
+    let (notes, tempo_changes, control_events) =
+        midly::loader::extract_notes_and_control_events_from_bytes(midi_bytes)
+            .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
+    let track_names = crate::document::scan::scan_track_names(midi_bytes);
+    MidiDocument::build_from_extracted_notes(
+        notes,
+        tempo_changes,
+        control_events,
+        track_names,
+        None,
+    )
+    .map_err(|e| LoaderError::MidiParse(format!("构建文档失败: {e}")))
 }
