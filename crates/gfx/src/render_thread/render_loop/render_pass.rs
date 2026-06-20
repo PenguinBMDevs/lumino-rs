@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
-use crate::{CameraParams, CameraUniform, HiResRenderer, OnionSkinRenderer, TileCoord};
+use crate::{CameraParams, CameraUniform, HiResRenderer, TileCoord};
 
 /// 执行渲染通道（含走带/钢琴卷帘/CC 柱状条）
 #[allow(clippy::too_many_arguments)]
@@ -19,7 +19,6 @@ pub fn execute_render_pass(
     arrangement_renderer: &mut crate::ArrangementRenderer,
     queue: &wgpu::Queue,
     cc_bar_renderer: &mut crate::CcBarRenderer,
-    onion_skin_renderer: &Option<OnionSkinRenderer>,
     hires_renderer: &Option<HiResRenderer>,
     hires_visible_coords: &[TileCoord],
 ) {
@@ -124,12 +123,6 @@ pub fn execute_render_pass(
         if let Some(hires) = hires_renderer {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             hires.render(&mut render_pass, hires_visible_coords);
-        }
-
-        // 绘制洋葱皮概览覆盖层（网格之上、音符之下，半透明叠加）
-        if let Some(onion) = onion_skin_renderer {
-            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            onion.render(&mut render_pass);
         }
 
         // 绘制音符

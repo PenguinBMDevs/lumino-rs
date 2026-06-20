@@ -7,9 +7,8 @@ use std::time::Instant;
 
 use crate::SwappableBuffer;
 use crate::{
-    CacheMeta, GroupTile, HiResConfig, HiResProgressCallback, HiResRenderer, HiResUniform, KeyMode,
-    OnionSkinRenderer, TRACKS_PER_GROUP, TileCoord, generate_track_tile, merge_group_tiles,
-    read_track_tile_cache,
+    CacheMeta, GroupTile, HiResConfig, HiResProgressCallback, HiResRenderer, HiResUniform,
+    TRACKS_PER_GROUP, TileCoord, generate_track_tile, merge_group_tiles, read_track_tile_cache,
 };
 
 use super::super::commands::{ControlCommand, RenderCommand};
@@ -53,9 +52,6 @@ pub fn run_render_thread(
     let mut current_size = (0, 0);
     let mut last_note_version: u64 = 0;
 
-    // 洋葱皮渲染器状态：lazy 创建于首次 GenerateOnionSkin 命令
-    let mut onion_skin_renderer: Option<OnionSkinRenderer> = None;
-    let mut onion_key_mode: Option<KeyMode> = None;
     // 高精度洋葱皮渲染器状态：lazy 创建于首次 GenerateHiResOnionSkin 命令
     let mut hires_renderer: Option<HiResRenderer> = None;
     let mut hires_tiles: HashMap<TileCoord, GroupTile> = HashMap::new();
@@ -74,30 +70,17 @@ pub fn run_render_thread(
             &mut deferred,
         );
 
-        // 处理延迟的洋葱皮控制命令（需要 device/queue 上下文）
+        // 处理延迟的高精度洋葱皮控制命令（需要 device/queue 上下文）
         for cmd in deferred.drain(..) {
-            match &cmd {
-                ControlCommand::GenerateHiResOnionSkin { .. }
-                | ControlCommand::DisposeHiResOnionSkin
-                | ControlCommand::RegenerateHiResTrack { .. } => handle_hires_control(
-                    cmd,
-                    &device,
-                    &mut hires_renderer,
-                    &mut hires_tiles,
-                    &mut hires_config,
-                    &onion_progress,
-                    texture_format,
-                ),
-                _ => handle_onion_control(
-                    &mut onion_skin_renderer,
-                    &mut onion_key_mode,
-                    &device,
-                    &queue,
-                    texture_format,
-                    cmd,
-                    &onion_progress,
-                ),
-            }
+            handle_hires_control(
+                cmd,
+                &device,
+                &mut hires_renderer,
+                &mut hires_tiles,
+                &mut hires_config,
+                &onion_progress,
+                texture_format,
+            );
         }
 
         if should_shutdown {
@@ -156,23 +139,6 @@ pub fn run_render_thread(
                     &queue,
                 );
 
-                // 洋葱皮：进度轮询 + 贴图上传 + uniform 更新（在 render pass 之前）
-                if let Some(ref mut onion) = onion_skin_renderer {
-                    if let Some(progress) = onion.poll_progress() {
-                        push_onion_progress(
-                            &onion_progress,
-                            "正在生成洋葱皮概览贴图…",
-                            progress.percent() / 100.0,
-                        );
-                    }
-                    if let Some(vp) = params.onion_skin_viewport {
-                        if onion.check_and_upload(&device, &queue) {
-                            push_onion_progress(&onion_progress, "洋葱皮概览贴图生成完成", 1.0);
-                        }
-                        onion.update_uniform(&queue, vp);
-                    }
-                }
-
                 // 高精度贴图视口驱动：上传可见贴图、准备 uniform，返回可见坐标列表
                 let hires_visible = update_hires_viewport(
                     &mut hires_renderer,
@@ -198,7 +164,6 @@ pub fn run_render_thread(
                     &mut arrangement_renderer,
                     &queue,
                     &mut cc_bar_renderer,
-                    &onion_skin_renderer,
                     &hires_renderer,
                     &hires_visible_coords,
                 );
@@ -220,48 +185,6 @@ pub fn run_render_thread(
     }
 
     tracing::info!("Render thread stopped");
-}
-
-/// 处理洋葱皮控制命令（在渲染线程主循环中调用，拥有 device/queue 上下文）
-#[allow(clippy::too_many_arguments)]
-fn handle_onion_control(
-    onion: &mut Option<OnionSkinRenderer>,
-    onion_key_mode: &mut Option<KeyMode>,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    texture_format: wgpu::TextureFormat,
-    cmd: ControlCommand,
-    progress: &Arc<Mutex<Vec<(String, f32)>>>,
-) {
-    match cmd {
-        ControlCommand::GenerateOnionSkin {
-            notes,
-            duration_ms,
-            key_mode,
-        } => {
-            // key_mode 变化时重建渲染器（贴图高度不同）
-            if *onion_key_mode != Some(key_mode) {
-                *onion = None; // Drop → dispose 旧渲染器
-                let mut renderer = OnionSkinRenderer::new(device, queue, key_mode);
-                renderer.update_render_format(device, texture_format);
-                *onion = Some(renderer);
-                *onion_key_mode = Some(key_mode);
-            }
-            if let Some(renderer) = onion.as_mut() {
-                // tempo_table=None：以 tick 作为时间单位，与钢琴卷帘的 tick-线性映射对齐
-                renderer.generate(device, queue, notes, duration_ms, None);
-                push_onion_progress(progress, "正在生成洋葱皮概览贴图…", 0.0);
-            }
-        }
-        ControlCommand::DisposeOnionSkin if onion.is_some() => {
-            *onion = None; // Drop → dispose，取消后台生成线程
-            *onion_key_mode = None;
-            // 关闭可能仍开启的进度窗口
-            push_onion_progress(progress, "洋葱皮资源已释放", 1.0);
-        }
-        // Resize / Shutdown 已在 process_commands 中处理，不会到达此处
-        _ => {}
-    }
 }
 
 /// 向共享进度缓冲推送一条进度（渲染线程 → UI 线程）

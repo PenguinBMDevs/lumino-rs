@@ -57,15 +57,13 @@ fn classify_command(
         RenderCommand::Control(ControlCommand::Resize { width, height }) => {
             tracing::debug!("Render thread: resize to {}x{}", width, height);
         }
-        // 洋葱皮命令需要 GPU 资源上下文，延迟到主循环处理
+        // 洋葱皮控制命令需要 GPU 资源上下文，延迟到主循环处理
         RenderCommand::Control(
-            onion @ (ControlCommand::GenerateOnionSkin { .. }
-            | ControlCommand::DisposeOnionSkin
-            | ControlCommand::GenerateHiResOnionSkin { .. }
+            cmd @ (ControlCommand::GenerateHiResOnionSkin { .. }
             | ControlCommand::DisposeHiResOnionSkin
             | ControlCommand::RegenerateHiResTrack { .. }),
         ) => {
-            deferred.push(onion);
+            deferred.push(cmd);
         }
     }
 }

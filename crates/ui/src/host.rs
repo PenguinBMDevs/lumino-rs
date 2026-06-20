@@ -71,8 +71,6 @@ pub struct Host {
     pub(crate) last_gpu_frame_time_ms: f32,
     /// 滚动速度追踪器（用于 overscan 计算）
     pub(crate) scroll_tracker: render::note_worker::ScrollVelocityTracker,
-    /// 洋葱皮概览贴图是否处于激活状态（MIDI 加载后置 true，关闭后置 false）
-    pub(crate) onion_skin_active: bool,
     /// 高精度贴图：有脏标记的音轨集合（编辑后需重生成）
     pub(crate) hires_dirty_tracks: std::collections::HashSet<u16>,
     /// 高精度贴图：最后一次编辑时间（用于冷静期判断）
@@ -138,7 +136,6 @@ impl Host {
             cpu_monitor: CpuMonitor::new(),
             last_gpu_frame_time_ms: 0.0,
             scroll_tracker: render::note_worker::ScrollVelocityTracker::new(),
-            onion_skin_active: false,
             hires_dirty_tracks: std::collections::HashSet::new(),
             hires_last_edit: None,
             hires_regen_cooldown_secs: 10,
@@ -242,37 +239,7 @@ impl Host {
             .map(|t| t.stats())
     }
 
-    /// 启动洋葱皮概览贴图后台生成（MIDI 加载后调用）
-    pub fn generate_onion_skin(
-        &mut self,
-        notes: Vec<Vec<lumino_gfx::OnionSkinNote>>,
-        duration_ms: u32,
-        key_mode: lumino_gfx::KeyMode,
-    ) {
-        self.onion_skin_active = true;
-        if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
-            thread.send_control(
-                lumino_gfx::render_thread::ControlCommand::GenerateOnionSkin {
-                    notes,
-                    duration_ms,
-                    key_mode,
-                },
-            );
-        }
-    }
-
-    /// 释放洋葱皮资源（关闭 MIDI 时调用）
-    pub fn dispose_onion_skin(&mut self) {
-        if !self.onion_skin_active {
-            return;
-        }
-        self.onion_skin_active = false;
-        if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
-            thread.send_control(lumino_gfx::render_thread::ControlCommand::DisposeOnionSkin);
-        }
-    }
-
-    /// 启动高精度洋葱皮贴图生成（MIDI 加载后与低精度一起调用）
+    /// 启动高精度洋葱皮贴图生成（MIDI 加载后调用）
     pub fn generate_hires_onion_skin(
         &mut self,
         notes: Vec<Vec<lumino_gfx::OnionSkinNote>>,

@@ -1,6 +1,6 @@
 use crate::{
     ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, KeyInstance,
-    NoteInstance, RulerTickInstance, ViewportParams,
+    NoteInstance, RulerTickInstance,
 };
 
 /// 渲染参数 - 从 UI 线程传递到 WGPU 线程
@@ -62,8 +62,6 @@ pub struct RenderParams {
     pub cc_bar_instances: Vec<CcBarInstance>,
     /// 力度面板区域 (x, y, width, height) — 屏幕坐标，用于 scissor
     pub velocity_panel_rect: Option<(f32, f32, f32, f32)>,
-    /// 洋葱皮视口参数（None 表示本帧不绘制洋葱皮覆盖层）
-    pub onion_skin_viewport: Option<ViewportParams>,
 }
 
 impl Default for RenderParams {
@@ -100,7 +98,6 @@ impl Default for RenderParams {
             arrangement_uniform: ArrangementUniform::default(),
             cc_bar_instances: Vec::new(),
             velocity_panel_rect: None,
-            onion_skin_viewport: None,
         }
     }
 }
@@ -145,7 +142,6 @@ impl RenderParams {
         arrangement_uniform: ArrangementUniform,
         cc_bar_instances: Vec<CcBarInstance>,
         velocity_panel_rect: Option<(f32, f32, f32, f32)>,
-        onion_skin_viewport: Option<ViewportParams>,
     ) -> Self {
         Self {
             viewport_size: (physical_size.0, physical_size.1),
@@ -179,7 +175,6 @@ impl RenderParams {
             arrangement_uniform,
             cc_bar_instances,
             velocity_panel_rect,
-            onion_skin_viewport,
         }
     }
 }

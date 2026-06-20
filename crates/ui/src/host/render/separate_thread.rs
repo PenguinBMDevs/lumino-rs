@@ -506,41 +506,6 @@ impl Host {
             ))
         };
 
-        // 计算可见 tick 范围（用于洋葱皮视口和底层洋葱皮显示判断）
-        let (visible_time_start, visible_time_end) = if !is_arrangement_mode {
-            let zoom_x = data.zoom.0.max(1e-6);
-            let time_start = data.scroll.0 / zoom_x;
-            let time_end = (data.scroll.0 + canvas_size.0) / zoom_x;
-            (time_start, time_end)
-        } else {
-            (0.0, 0.0)
-        };
-
-        // 计算洋葱皮视口参数（仅在钢琴卷帘模式且洋葱皮激活时）
-        //
-        // 单位约定：钢琴卷帘 note shader 为 tick-线性映射（screen_x = tick*zoom_x - scroll_x + ...），
-        // 故 onion 的时间轴也以 tick 为单位（字段名 _ms 实为 tick），确保覆盖层与卷帘像素级对齐。
-        // area 使用物理像素（onion shader 的 @builtin(position) 为 framebuffer 坐标）。
-        let onion_skin_viewport = if self.onion_skin_active && !is_arrangement_mode {
-            let scale = self.render_ctx.viewport.scale_factor();
-            let zoom_y = data.zoom.1.max(1e-6);
-            // 可见键位范围（卷帘顶部=高音 key_start，底部=低音 key_end）
-            let key_start = max_key_index - data.scroll.1 / zoom_y;
-            let key_end = max_key_index - (data.scroll.1 + canvas_size.1) / zoom_y;
-            Some(lumino_gfx::ViewportParams {
-                area_x: (canvas_offset.0 + keyboard_width) * scale,
-                area_y: (canvas_offset.1 + ruler_height) * scale,
-                area_w: canvas_size.0 * scale,
-                area_h: canvas_size.1 * scale,
-                time_start_ms: visible_time_start,
-                time_end_ms: visible_time_end,
-                key_start,
-                key_end,
-            })
-        } else {
-            None
-        };
-
         RenderParams::from_data(
             (physical_size.width, physical_size.height),
             (data.viewport_size.width, data.viewport_size.height),
@@ -569,7 +534,6 @@ impl Host {
             arrangement_uniform,
             data.cc_bar_instances,
             velocity_panel_rect,
-            onion_skin_viewport,
         )
     }
 

@@ -77,7 +77,6 @@ impl RunnerInner {
                 self.midi_state.current_midi = None;
                 self.midi_state.current_midi_source = None;
                 self.midi_state.current_dms = None;
-                self.window_state.window.ui_mut().dispose_onion_skin();
                 self.window_state.window.ui_mut().dispose_hires_onion_skin();
                 self.window_state.window.ui_mut().clear_editor();
                 tracing::info!("工程已关闭");
@@ -170,26 +169,11 @@ impl RunnerInner {
             notes.push(converted);
         }
 
-        let key_mode = if self.window_state.storage.config.get().ui.enable_256key {
-            lumino_gfx::KeyMode::Key256
+        // 高精度贴图生成
+        let key_count = if self.window_state.storage.config.get().ui.enable_256key {
+            256
         } else {
-            lumino_gfx::KeyMode::Key128
-        };
-
-        tracing::info!(
-            "洋葱皮：启动生成，{} 轨，总 tick = {}",
-            notes.len(),
-            total_ticks
-        );
-        self.window_state
-            .window
-            .ui_mut()
-            .generate_onion_skin(notes.clone(), total_ticks, key_mode);
-
-        // 高精度贴图生成：与低精度底图一起触发
-        let key_count = match key_mode {
-            lumino_gfx::KeyMode::Key128 => 128,
-            lumino_gfx::KeyMode::Key256 => 256,
+            128
         };
         let ppq = parsed.info.division;
         // 轻量 midi_hash：用 total_ticks + track_count + 每轨音符数组合
