@@ -9,6 +9,8 @@ edition.workspace = true
 [dependencies]
 lumino-onion-skin = { path = "../onion-skin" }
 rayon = "1.10"
+wgpu = "27.0"
+bytemuck = { version = "1.21", features = ["derive"] }
 zstd = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true }
