@@ -257,6 +257,37 @@ impl Host {
         }
     }
 
+    /// 启动高精度洋葱皮贴图生成（MIDI 加载后与低精度一起调用）
+    pub fn generate_hires_onion_skin(
+        &mut self,
+        notes: Vec<Vec<lumino_gfx::OnionSkinNote>>,
+        ppq: u16,
+        key_count: u16,
+        total_ticks: u32,
+        config: lumino_gfx::HiResConfig,
+        midi_hash: String,
+    ) {
+        if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
+            thread.send_control(
+                lumino_gfx::render_thread::ControlCommand::GenerateHiResOnionSkin {
+                    notes,
+                    ppq,
+                    key_count,
+                    total_ticks,
+                    config,
+                    midi_hash,
+                },
+            );
+        }
+    }
+
+    /// 释放高精度洋葱皮资源（关闭 MIDI 时调用）
+    pub fn dispose_hires_onion_skin(&mut self) {
+        if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
+            thread.send_control(lumino_gfx::render_thread::ControlCommand::DisposeHiResOnionSkin);
+        }
+    }
+
     /// 取出洋葱皮生成进度（runner 每帧调用并转发到进度窗口）
     pub fn drain_onion_progress(&self) -> Vec<(String, f32)> {
         self.render_ctx

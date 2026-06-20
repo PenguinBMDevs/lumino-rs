@@ -39,7 +39,7 @@ pub use lumino_onion_skin::{
 /// 高精度洋葱皮贴图渲染器（从 lumino-onion-skin-hires 重导出）
 pub use lumino_onion_skin_hires::{
     GenerateError, GroupTile, HiResConfig, HiResProgressCallback, HiResRenderer, HiResUniform,
-    TileCoord, TrackTile,
+    TileCoord, TrackTile, compute_midi_hash,
 };
 pub use note_renderer::{
     CameraParams, CameraUniform, CullUniform, NoteInstance, NoteRenderer, OnionBgTileRef,

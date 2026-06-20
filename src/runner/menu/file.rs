@@ -78,6 +78,7 @@ impl RunnerInner {
                 self.midi_state.current_midi_source = None;
                 self.midi_state.current_dms = None;
                 self.window_state.window.ui_mut().dispose_onion_skin();
+                self.window_state.window.ui_mut().dispose_hires_onion_skin();
                 self.window_state.window.ui_mut().clear_editor();
                 tracing::info!("工程已关闭");
             }
@@ -184,7 +185,38 @@ impl RunnerInner {
         self.window_state
             .window
             .ui_mut()
-            .generate_onion_skin(notes, total_ticks, key_mode);
+            .generate_onion_skin(notes.clone(), total_ticks, key_mode);
+
+        // 高精度贴图生成：与低精度底图一起触发
+        let key_count = match key_mode {
+            lumino_gfx::KeyMode::Key128 => 128,
+            lumino_gfx::KeyMode::Key256 => 256,
+        };
+        let ppq = parsed.info.division;
+        // 轻量 midi_hash：用 total_ticks + track_count + 每轨音符数组合
+        let mut hash_input = Vec::new();
+        hash_input.extend_from_slice(&total_ticks.to_le_bytes());
+        hash_input.extend_from_slice(&(notes.len() as u32).to_le_bytes());
+        for track in &notes {
+            hash_input.extend_from_slice(&(track.len() as u32).to_le_bytes());
+        }
+        let midi_hash = lumino_gfx::compute_midi_hash(&hash_input);
+        let config = lumino_gfx::HiResConfig::default();
+        tracing::info!(
+            "高精度洋葱皮：启动生成，{} 轨，ppq={}，key_count={}，hash={}",
+            notes.len(),
+            ppq,
+            key_count,
+            midi_hash
+        );
+        self.window_state.window.ui_mut().generate_hires_onion_skin(
+            notes,
+            ppq,
+            key_count,
+            total_ticks,
+            config,
+            midi_hash,
+        );
     }
 }
 
