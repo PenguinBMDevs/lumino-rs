@@ -59,7 +59,10 @@ fn classify_command(
         }
         // 洋葱皮命令需要 GPU 资源上下文，延迟到主循环处理
         RenderCommand::Control(
-            onion @ (ControlCommand::GenerateOnionSkin { .. } | ControlCommand::DisposeOnionSkin),
+            onion @ (ControlCommand::GenerateOnionSkin { .. }
+            | ControlCommand::DisposeOnionSkin
+            | ControlCommand::GenerateHiResOnionSkin { .. }
+            | ControlCommand::DisposeHiResOnionSkin),
         ) => {
             deferred.push(onion);
         }

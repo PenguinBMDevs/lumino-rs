@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -5,7 +6,10 @@ use std::sync::{
 use std::time::Instant;
 
 use crate::SwappableBuffer;
-use crate::{KeyMode, OnionSkinRenderer};
+use crate::{
+    GroupTile, HiResConfig, HiResProgressCallback, HiResRenderer, HiResUniform, KeyMode,
+    OnionSkinRenderer, TileCoord,
+};
 
 use super::super::commands::{ControlCommand, RenderCommand};
 use super::super::params::RenderParams;
@@ -51,6 +55,10 @@ pub fn run_render_thread(
     // 洋葱皮渲染器状态：lazy 创建于首次 GenerateOnionSkin 命令
     let mut onion_skin_renderer: Option<OnionSkinRenderer> = None;
     let mut onion_key_mode: Option<KeyMode> = None;
+    // 高精度洋葱皮渲染器状态：lazy 创建于首次 GenerateHiResOnionSkin 命令
+    let mut hires_renderer: Option<HiResRenderer> = None;
+    let mut hires_tiles: HashMap<TileCoord, GroupTile> = HashMap::new();
+    let mut hires_config: Option<HiResConfig> = None;
     let mut deferred: Vec<ControlCommand> = Vec::new();
 
     while running.load(Ordering::Relaxed) {
@@ -67,15 +75,26 @@ pub fn run_render_thread(
 
         // 处理延迟的洋葱皮控制命令（需要 device/queue 上下文）
         for cmd in deferred.drain(..) {
-            handle_onion_control(
-                &mut onion_skin_renderer,
-                &mut onion_key_mode,
-                &device,
-                &queue,
-                texture_format,
-                cmd,
-                &onion_progress,
-            );
+            match &cmd {
+                ControlCommand::GenerateHiResOnionSkin { .. }
+                | ControlCommand::DisposeHiResOnionSkin => handle_hires_control(
+                    cmd,
+                    &device,
+                    &mut hires_renderer,
+                    &mut hires_tiles,
+                    &mut hires_config,
+                    &onion_progress,
+                ),
+                _ => handle_onion_control(
+                    &mut onion_skin_renderer,
+                    &mut onion_key_mode,
+                    &device,
+                    &queue,
+                    texture_format,
+                    cmd,
+                    &onion_progress,
+                ),
+            }
         }
 
         if should_shutdown {
@@ -151,6 +170,18 @@ pub fn run_render_thread(
                     }
                 }
 
+                // 高精度贴图视口驱动：上传可见贴图、准备 uniform，返回可见坐标列表
+                let hires_visible = update_hires_viewport(
+                    &mut hires_renderer,
+                    &hires_tiles,
+                    &hires_config,
+                    params,
+                    &device,
+                    &queue,
+                );
+                let hires_visible_coords: Vec<TileCoord> =
+                    hires_visible.iter().map(|(c, _)| *c).collect();
+
                 // 执行渲染通道
                 execute_render_pass(
                     &mut encoder,
@@ -165,6 +196,8 @@ pub fn run_render_thread(
                     &queue,
                     &mut cc_bar_renderer,
                     &onion_skin_renderer,
+                    &hires_renderer,
+                    &hires_visible_coords,
                 );
 
                 // 提交渲染指令
@@ -233,4 +266,150 @@ fn push_onion_progress(progress: &Arc<Mutex<Vec<(String, f32)>>>, msg: &str, val
     if let Ok(mut buf) = progress.lock() {
         buf.push((msg.to_string(), value.clamp(0.0, 1.0)));
     }
+}
+
+/// 处理高精度洋葱皮控制命令（在渲染线程主循环中调用，拥有 device 上下文）
+fn handle_hires_control(
+    cmd: ControlCommand,
+    device: &wgpu::Device,
+    hires_renderer: &mut Option<HiResRenderer>,
+    hires_tiles: &mut HashMap<TileCoord, GroupTile>,
+    hires_config: &mut Option<HiResConfig>,
+    onion_progress: &Arc<Mutex<Vec<(String, f32)>>>,
+) {
+    match cmd {
+        ControlCommand::GenerateHiResOnionSkin {
+            notes,
+            ppq,
+            key_count,
+            total_ticks,
+            config,
+            midi_hash,
+        } => {
+            // 创建/重建高精度渲染器
+            *hires_renderer = Some(HiResRenderer::new(device, config.clone()));
+            *hires_config = Some(config.clone());
+
+            // 构造进度回调：把生成进度推入共享缓冲（UI 线程读取）
+            let progress_buf = onion_progress.clone();
+            let cb: HiResProgressCallback = Arc::new(move |msg, pct| {
+                if let Ok(mut buf) = progress_buf.lock() {
+                    buf.push((msg.to_string(), pct.clamp(0.0, 1.0)));
+                }
+            });
+
+            push_onion_progress(onion_progress, "正在生成高精度洋葱皮贴图…", 0.0);
+
+            // 同步生成全曲贴图（阻塞渲染线程，缓存命中时较快）
+            let tiles = lumino_onion_skin_hires::generate_all_tiles(
+                &notes,
+                &config,
+                ppq,
+                key_count,
+                total_ticks,
+                &midi_hash,
+                Some(cb),
+            );
+            *hires_tiles = tiles;
+
+            push_onion_progress(onion_progress, "高精度洋葱皮贴图生成完成", 1.0);
+        }
+        ControlCommand::DisposeHiResOnionSkin => {
+            *hires_renderer = None;
+            hires_tiles.clear();
+            *hires_config = None;
+            push_onion_progress(onion_progress, "高精度洋葱皮资源已释放", 1.0);
+        }
+        // 其它命令由 handle_onion_control 处理，不会到达此处
+        _ => {}
+    }
+}
+
+/// 高精度贴图视口驱动：上传可见贴图、淘汰超限贴图、准备 uniform
+///
+/// 返回当前帧可见贴图的坐标与 uniform 列表，供 `HiResRenderer::render` 使用。
+fn update_hires_viewport(
+    renderer: &mut Option<HiResRenderer>,
+    tiles: &HashMap<TileCoord, GroupTile>,
+    config: &Option<HiResConfig>,
+    params: &RenderParams,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> Vec<(TileCoord, HiResUniform)> {
+    let mut visible: Vec<(TileCoord, HiResUniform)> = Vec::new();
+    let (Some(renderer), Some(config)) = (renderer, config) else {
+        return visible;
+    };
+    if params.is_arrangement_mode || tiles.is_empty() {
+        return visible;
+    }
+
+    let scale = params.scale_factor;
+    let zoom_x = params.zoom.0;
+    let zoom_y = params.zoom.1;
+    if zoom_x <= 0.0 || zoom_y <= 0.0 {
+        return visible;
+    }
+
+    let ppq = params.ppq as u16;
+    let ticks_per_group = config.ticks_per_group(ppq);
+    if ticks_per_group == 0 {
+        return visible;
+    }
+
+    // 可见 tick 范围 → 时间组索引范围
+    let scroll_x = params.scroll.0;
+    let canvas_w_logical = params.canvas_size.0;
+    let t_start = (scroll_x / zoom_x).max(0.0) as u32;
+    let t_end = ((scroll_x + canvas_w_logical) / zoom_x) as u32;
+    let g_start = t_start / ticks_per_group;
+    let g_end = (t_end / ticks_per_group).saturating_add(1);
+
+    // 音轨组数：从已生成贴图中推断最大音轨索引
+    let track_count = tiles.values().map(|t| t.track_range.1).max().unwrap_or(0);
+    let track_groups = config.track_group_count(track_count);
+
+    // 全 key 高度（像素），从贴图高度推断（128 或 256）
+    let key_count = tiles.values().next().map(|t| t.height).unwrap_or(128);
+
+    // area 矩形（framebuffer 物理像素）：
+    // - X：卷帘区域起点 + (tick_start*zoom_x - scroll_x) * scale
+    // - Y：最高音 key 在 framebuffer 的 y = (canvas_offset.y + ruler_height - scroll_y) * scale
+    // - W：ticks_per_group * zoom_x * scale
+    // - H：全 key 范围高度 = key_count * zoom_y * scale
+    let base_x = (params.canvas_offset.0 + params.keyboard_width) * scale;
+    let scroll_y = params.scroll.1;
+    let area_y = (params.canvas_offset.1 + params.ruler_height - scroll_y) * scale;
+    let area_h = key_count as f32 * zoom_y * scale;
+    let canvas_w = params.viewport_size.0 as f32;
+    let canvas_h = params.viewport_size.1 as f32;
+
+    for tg in 0..track_groups {
+        for time_g in g_start..g_end {
+            let coord = TileCoord::new(tg, time_g);
+            // 上传尚未在 GPU 的可见贴图
+            if !renderer.has_tile(&coord)
+                && let Some(tile) = tiles.get(&coord)
+            {
+                renderer.upload_tile(device, queue, coord, &tile.pixels, tile.width, tile.height);
+            }
+            if renderer.has_tile(&coord) {
+                let tick_start = time_g * ticks_per_group;
+                let area_x = base_x + (tick_start as f32 * zoom_x - scroll_x) * scale;
+                let area_w = ticks_per_group as f32 * zoom_x * scale;
+                let uniform = HiResUniform::new(area_x, area_y, area_w, area_h, canvas_w, canvas_h);
+                visible.push((coord, uniform));
+            }
+        }
+    }
+
+    // 显存超限时清空所有贴图（简化 LRU，下一帧重新上传可见的）
+    if renderer.is_over_limit() {
+        renderer.clear();
+        visible.clear();
+    }
+
+    // 准备可见贴图的 uniform buffer
+    renderer.prepare(queue, &visible);
+    visible
 }

@@ -36,6 +36,11 @@ pub use keyboard_renderer::{KeyInstance, KeyboardRenderer, KeyboardViewportUnifo
 pub use lumino_onion_skin::{
     GenerateProgress, KeyMode, OnionSkinNote, OnionSkinRenderer, ViewportParams,
 };
+/// 高精度洋葱皮贴图渲染器（从 lumino-onion-skin-hires 重导出）
+pub use lumino_onion_skin_hires::{
+    GenerateError, GroupTile, HiResConfig, HiResProgressCallback, HiResRenderer, HiResUniform,
+    TileCoord, TrackTile,
+};
 pub use note_renderer::{
     CameraParams, CameraUniform, CullUniform, NoteInstance, NoteRenderer, OnionBgTileRef,
     RenderUniform, pack_color, unpack_color,

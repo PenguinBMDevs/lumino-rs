@@ -1,5 +1,5 @@
 use super::params::RenderParams;
-use crate::{KeyMode, OnionSkinNote};
+use crate::{HiResConfig, KeyMode, OnionSkinNote};
 
 /// 控制命令
 #[derive(Debug)]
@@ -19,6 +19,23 @@ pub enum ControlCommand {
     },
     /// 释放洋葱皮资源（关闭 MIDI 时调用）
     DisposeOnionSkin,
+    /// 启动高精度洋葱皮贴图生成
+    GenerateHiResOnionSkin {
+        /// 每轨音符列表
+        notes: Vec<Vec<OnionSkinNote>>,
+        /// MIDI ppq
+        ppq: u16,
+        /// 键位数量（128 或 256，决定贴图高度）
+        key_count: u16,
+        /// 全曲总 tick
+        total_ticks: u32,
+        /// 高精度贴图配置
+        config: HiResConfig,
+        /// MIDI 内容哈希（缓存分桶）
+        midi_hash: String,
+    },
+    /// 释放高精度洋葱皮资源
+    DisposeHiResOnionSkin,
 }
 
 /// 渲染命令（UI 线程 -> 渲染线程）
