@@ -21,7 +21,7 @@ var<uniform> u: Uniform;
 var texture: texture_2d<f32>;
 
 @group(0) @binding(2)
-var sampler: sampler;
+var tex_sampler: sampler;
 
 @vertex
 fn vs_main(@builtin(vertex_index) idx: u32) -> @builtin(position) vec4<f32> {
@@ -57,5 +57,5 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let uv_x = time_ms / u.duration_ms;
     let uv_y = key / u.total_keys;
 
-    return textureSample(texture, sampler, vec2(uv_x, uv_y));
+    return textureSample(texture, tex_sampler, vec2(uv_x, uv_y));
 }
