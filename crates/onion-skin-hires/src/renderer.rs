@@ -83,7 +83,11 @@ pub struct HiResRenderer {
 
 impl HiResRenderer {
     /// 创建渲染器（pipeline + sampler + layout）
-    pub fn new(device: &wgpu::Device, config: HiResConfig) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        config: HiResConfig,
+        texture_format: wgpu::TextureFormat,
+    ) -> Self {
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("hires_tile_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -127,7 +131,7 @@ impl HiResRenderer {
             ],
         });
 
-        let pipeline = Self::create_pipeline(device, &bind_group_layout);
+        let pipeline = Self::create_pipeline(device, &bind_group_layout, texture_format);
 
         Self {
             pipeline,
@@ -142,6 +146,7 @@ impl HiResRenderer {
     fn create_pipeline(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
+        color_format: wgpu::TextureFormat,
     ) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("hires_tile_shader"),
@@ -168,7 +173,7 @@ impl HiResRenderer {
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    format: color_format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -340,5 +345,14 @@ impl HiResRenderer {
     /// 显存是否超限
     pub fn is_over_limit(&self) -> bool {
         self.gpu_mem_used > self.gpu_mem_limit()
+    }
+
+    /// 更新渲染目标格式（surface 格式变化时重建 pipeline）
+    pub fn update_render_format(
+        &mut self,
+        device: &wgpu::Device,
+        color_format: wgpu::TextureFormat,
+    ) {
+        self.pipeline = Self::create_pipeline(device, &self.bind_group_layout, color_format);
     }
 }

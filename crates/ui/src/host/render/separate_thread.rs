@@ -1,4 +1,4 @@
-use crate::RenderParams;
+﻿use crate::RenderParams;
 use crate::host::Host;
 use lumino_gfx::{
     ARRANGEMENT_PALETTE, ArrangementNoteInstance, ArrangementSceneParams, ArrangementUniform,

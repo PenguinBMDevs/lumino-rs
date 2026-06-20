@@ -86,6 +86,7 @@ pub fn run_render_thread(
                     &mut hires_tiles,
                     &mut hires_config,
                     &onion_progress,
+                    texture_format,
                 ),
                 _ => handle_onion_control(
                     &mut onion_skin_renderer,
@@ -278,6 +279,7 @@ fn handle_hires_control(
     hires_tiles: &mut HashMap<TileCoord, GroupTile>,
     hires_config: &mut Option<HiResConfig>,
     onion_progress: &Arc<Mutex<Vec<(String, f32)>>>,
+    texture_format: wgpu::TextureFormat,
 ) {
     match cmd {
         ControlCommand::GenerateHiResOnionSkin {
@@ -289,7 +291,7 @@ fn handle_hires_control(
             midi_hash,
         } => {
             // 创建/重建高精度渲染器
-            *hires_renderer = Some(HiResRenderer::new(device, config.clone()));
+            *hires_renderer = Some(HiResRenderer::new(device, config.clone(), texture_format));
             *hires_config = Some(config.clone());
 
             // 构造进度回调：把生成进度推入共享缓冲（UI 线程读取）
