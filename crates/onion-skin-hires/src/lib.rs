@@ -22,8 +22,13 @@
 //! 视口可见范围 / 全曲 < 阈值（默认 40%）时启用高精度贴图，
 //! 按可见时间组上传 GPU，不可见贴图 LRU 淘汰。
 
+mod cache;
 mod config;
 mod types;
 
+pub use cache::{
+    CacheError, CacheMeta, cache_path, clear_all_cache, clear_midi_cache, compute_midi_hash,
+    read_track_tile_cache, write_track_tile_cache,
+};
 pub use config::{ConfigError, HiResConfig, TRACKS_PER_GROUP};
 pub use types::{DirtyKind, DirtyRegion, GroupTile, TileCoord, TrackTile};
