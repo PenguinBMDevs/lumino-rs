@@ -21,3 +21,7 @@
 //! ## 视口驱动
 //! 视口可见范围 / 全曲 < 阈值（默认 40%）时启用高精度贴图，
 //! 按可见时间组上传 GPU，不可见贴图 LRU 淘汰。
+
+mod types;
+
+pub use types::{DirtyKind, DirtyRegion, GroupTile, TileCoord, TrackTile};
