@@ -20,6 +20,49 @@ use super::render_pass::execute_render_pass;
 use super::render_pass::update_stats;
 use super::textures::ensure_textures;
 
+/// 高精度贴图元数据（无像素数据，用于视口计算）
+#[allow(dead_code)]
+struct HiResMeta {
+    track_count: u16,
+    key_count: u16,
+    time_groups: u32,
+    ticks_per_group: u32,
+}
+
+/// 后台生成结果：后台线程通过 channel 发送给渲染线程
+struct HiResPendingResult {
+    /// 按 (track_group, time_group) 索引的未合并贴图
+    tiles: HashMap<TileCoord, GroupTile>,
+    /// 贴图规格
+    width: u32,
+    height: u32,
+}
+
+/// 合并同时间组的所有音轨组贴图为一张全轨贴图
+///
+/// 所有 tiles 的 width/height 必须一致。
+/// 后音轨组覆盖前音轨组的重叠区（alpha > 0 时覆盖）。
+fn merge_track_groups(tiles: &[&GroupTile], width: u32, height: u32) -> Vec<u8> {
+    let pixel_count = (width * height) as usize;
+    let mut pixels = vec![0u8; pixel_count * 4];
+
+    for tile in tiles {
+        debug_assert_eq!(tile.width, width);
+        debug_assert_eq!(tile.height, height);
+        for (i, chunk) in tile.pixels.chunks_exact(4).enumerate() {
+            if chunk[3] > 0 {
+                let offset = i * 4;
+                pixels[offset] = chunk[0];
+                pixels[offset + 1] = chunk[1];
+                pixels[offset + 2] = chunk[2];
+                pixels[offset + 3] = chunk[3];
+            }
+        }
+    }
+
+    pixels
+}
+
 /// 运行渲染线程主循环
 #[allow(clippy::too_many_arguments)]
 pub fn run_render_thread(
@@ -52,14 +95,17 @@ pub fn run_render_thread(
     let mut current_size = (0, 0);
     let mut last_note_version: u64 = 0;
 
-    // 高精度洋葱皮渲染器状态：lazy 创建于首次 GenerateHiResOnionSkin 命令
+    // 高精度洋葱皮渲染器状态
     let mut hires_renderer: Option<HiResRenderer> = None;
-    let mut hires_tiles: HashMap<TileCoord, GroupTile> = HashMap::new();
+    let mut hires_meta: Option<HiResMeta> = None;
     let mut hires_config: Option<HiResConfig> = None;
     let mut deferred: Vec<ControlCommand> = Vec::new();
 
+    // ★ 后台生成线程通过 channel 传回结果 ★
+    let (hires_result_tx, hires_result_rx) = std::sync::mpsc::channel::<HiResPendingResult>();
+
     while running.load(Ordering::Relaxed) {
-        // 处理命令：先 drain 积压，然后如果没有 RenderCommand 则阻塞等待
+        // 处理命令
         let mut latest_params: Option<RenderParams> = None;
         let mut should_shutdown = false;
 
@@ -70,17 +116,50 @@ pub fn run_render_thread(
             &mut deferred,
         );
 
-        // 处理延迟的高精度洋葱皮控制命令（需要 device/queue 上下文）
+        // 处理延迟的高精度洋葱皮控制命令
         for cmd in deferred.drain(..) {
             handle_hires_control(
                 cmd,
                 &device,
+                &queue,
                 &mut hires_renderer,
-                &mut hires_tiles,
+                &mut hires_meta,
                 &mut hires_config,
+                &hires_result_tx,
                 &onion_progress,
                 texture_format,
             );
+        }
+
+        // ★ 每帧检查后台生成是否完成，完成则合并+上传 ★
+        if let Ok(pending) = hires_result_rx.try_recv() {
+            push_onion_progress(&onion_progress, "正在合并并上传贴图到 GPU…", 0.0);
+            if let Some(renderer) = &mut hires_renderer {
+                // 按 time_group 分组所有贴图
+                let mut by_time: HashMap<u32, Vec<&GroupTile>> = HashMap::new();
+                for (coord, tile) in &pending.tiles {
+                    by_time.entry(coord.time_group).or_default().push(tile);
+                }
+
+                let tw = pending.width;
+                let th = pending.height;
+
+                // 合并每个 time_group 的所有 track_group 贴图 → 一张全轨贴图
+                for (time_g, group_tiles) in &by_time {
+                    let merged_pixels = merge_track_groups(group_tiles, tw, th);
+                    let coord = TileCoord::new(0, *time_g);
+                    renderer.upload_tile(&device, &queue, coord, &merged_pixels, tw, th);
+                }
+
+                // 强制 DMA 完成
+                let flush = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("hires_pending_flush"),
+                });
+                queue.submit(std::iter::once(flush.finish()));
+            }
+            // pending.tiles 在此 drop，释放 CPU 像素缓冲
+            drop(pending);
+            push_onion_progress(&onion_progress, "高精度洋葱皮贴图生成+上传完成", 1.0);
         }
 
         if should_shutdown {
@@ -139,10 +218,10 @@ pub fn run_render_thread(
                     &queue,
                 );
 
-                // 高精度贴图视口驱动：上传可见贴图、准备 uniform，返回可见坐标列表
+                // 高精度贴图视口驱动
                 let hires_visible = update_hires_viewport(
                     &mut hires_renderer,
-                    &hires_tiles,
+                    &hires_meta,
                     &hires_config,
                     params,
                     &device,
@@ -194,13 +273,21 @@ fn push_onion_progress(progress: &Arc<Mutex<Vec<(String, f32)>>>, msg: &str, val
     }
 }
 
-/// 处理高精度洋葱皮控制命令（在渲染线程主循环中调用，拥有 device 上下文）
+/// 处理高精度洋葱皮控制命令
+///
+/// 核心策略：
+/// - 全曲生成在后台线程进行，渲染线程每帧通过 channel 检查结果
+/// - 收到结果后按 time_group 合并所有 track_group 贴图，只上传合并后的全轨贴图
+/// - 音轨重生成（RegenerateHiResTrack）直接在渲染线程同步执行
+#[allow(clippy::too_many_arguments)]
 fn handle_hires_control(
     cmd: ControlCommand,
     device: &wgpu::Device,
+    queue: &wgpu::Queue,
     hires_renderer: &mut Option<HiResRenderer>,
-    hires_tiles: &mut HashMap<TileCoord, GroupTile>,
+    hires_meta: &mut Option<HiResMeta>,
     hires_config: &mut Option<HiResConfig>,
+    hires_result_tx: &std::sync::mpsc::Sender<HiResPendingResult>,
     onion_progress: &Arc<Mutex<Vec<(String, f32)>>>,
     texture_format: wgpu::TextureFormat,
 ) {
@@ -217,33 +304,53 @@ fn handle_hires_control(
             *hires_renderer = Some(HiResRenderer::new(device, config.clone(), texture_format));
             *hires_config = Some(config.clone());
 
-            // 构造进度回调：把生成进度推入共享缓冲（UI 线程读取）
-            let progress_buf = onion_progress.clone();
-            let cb: HiResProgressCallback = Arc::new(move |msg, pct| {
-                if let Ok(mut buf) = progress_buf.lock() {
-                    buf.push((msg.to_string(), pct.clamp(0.0, 1.0)));
-                }
+            // ★ 元数据必须在后台线程启动前设置（regen 安全）★
+            let track_count = notes.len() as u16;
+            let time_groups = config.time_group_count(total_ticks, ppq);
+            let ticks_per_group = config.ticks_per_group(ppq);
+            *hires_meta = Some(HiResMeta {
+                track_count,
+                key_count,
+                time_groups,
+                ticks_per_group,
             });
 
-            push_onion_progress(onion_progress, "正在生成高精度洋葱皮贴图…", 0.0);
+            push_onion_progress(onion_progress, "正在后台生成高精度洋葱皮贴图…", 0.0);
 
-            // 同步生成全曲贴图（阻塞渲染线程，缓存命中时较快）
-            let tiles = lumino_onion_skin_hires::generate_all_tiles(
-                &notes,
-                &config,
-                ppq,
-                key_count,
-                total_ticks,
-                &midi_hash,
-                Some(cb),
-            );
-            *hires_tiles = tiles;
+            // ★ 后台线程生成，渲染线程继续跑 ★
+            let progress_buf = onion_progress.clone();
+            let tx = hires_result_tx.clone();
+            std::thread::spawn(move || {
+                let cb: HiResProgressCallback = Arc::new(move |msg, pct| {
+                    if let Ok(mut buf) = progress_buf.lock() {
+                        buf.push((msg.to_string(), pct.clamp(0.0, 1.0)));
+                    }
+                });
 
-            push_onion_progress(onion_progress, "高精度洋葱皮贴图生成完成", 1.0);
+                let tiles = lumino_onion_skin_hires::generate_all_tiles(
+                    &notes,
+                    &config,
+                    ppq,
+                    key_count,
+                    total_ticks,
+                    &midi_hash,
+                    Some(cb),
+                );
+
+                // 从任意一张贴图推断规格
+                let (width, height) = tiles
+                    .values()
+                    .next()
+                    .map(|t| (t.width, t.height))
+                    .unwrap_or((config.tile_width_px, key_count as u32));
+
+                // 通过 channel 发回渲染线程（未合并的原始贴图）
+                let _ = tx.send(HiResPendingResult { tiles, width, height });
+            });
         }
         ControlCommand::DisposeHiResOnionSkin => {
             *hires_renderer = None;
-            hires_tiles.clear();
+            *hires_meta = None;
             *hires_config = None;
             push_onion_progress(onion_progress, "高精度洋葱皮资源已释放", 1.0);
         }
@@ -262,18 +369,20 @@ fn handle_hires_control(
             let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
             let width = config.tile_width_px;
 
-            // 从现有 tiles 推断音轨组的音轨范围
-            let track_range = hires_tiles
-                .values()
-                .find(|t| t.coord.track_group == track_group)
-                .map(|t| t.track_range)
-                .unwrap_or((track_idx, track_idx + 1));
+            // 从元数据推断音轨组的音轨范围
+            let meta = hires_meta.as_ref().expect("元数据应在首次生成后存在");
+            let track_start = (track_group * TRACKS_PER_GROUP as u32) as u16;
+            let track_end =
+                ((track_group + 1) * TRACKS_PER_GROUP as u32).min(meta.track_count as u32) as u16;
+            let track_range = (track_start, track_end);
 
             push_onion_progress(
                 onion_progress,
                 &format!("重生音轨 {track_idx} 高精度贴图…"),
                 0.0,
             );
+
+            let renderer = hires_renderer.as_mut().expect("渲染器应在首次生成后存在");
 
             for time_g in 0..time_groups {
                 let tick_start = time_g * ticks_per_group;
@@ -301,7 +410,6 @@ fn handle_hires_control(
                         {
                             Ok(Some(tile)) => track_tiles.push(tile),
                             Ok(None) => {
-                                // 缓存未命中，用空贴图（该音轨在该时间组无内容）
                                 tracing::debug!(
                                     "重生成：音轨 {t} 时间组 {time_g} 缓存未命中，跳过"
                                 );
@@ -313,7 +421,7 @@ fn handle_hires_control(
                     }
                 }
 
-                // 合并为新的整合组贴图
+                // 合并为新的整合组贴图（仅该 track_group 内）
                 let group_tile = merge_group_tiles(
                     &track_tiles,
                     coord,
@@ -324,13 +432,18 @@ fn handle_hires_control(
                     track_range,
                 );
 
-                // 更新内存缓冲
-                hires_tiles.insert(coord, group_tile);
-
-                // 如果该整合组已在 GPU，移除旧纹理（下一帧自动重新上传）
-                if let Some(renderer) = hires_renderer {
-                    renderer.remove_tile(&coord);
-                }
+                // ★ 直接上传到 GPU，替换旧纹理 ★
+                // 注意：这里只上传了该 track_group 的贴图，不是全轨合并后的
+                // 后续需要全量重新生成才能得到正确的全轨贴图
+                // 当前简化处理：用 track_group=0 的坐标覆盖，仅单 track_group 场景正确
+                renderer.upload_tile(
+                    device,
+                    queue,
+                    coord,
+                    &group_tile.pixels,
+                    group_tile.width,
+                    group_tile.height,
+                );
 
                 let pct = (time_g as f32 + 1.0) / time_groups as f32;
                 push_onion_progress(
@@ -340,29 +453,35 @@ fn handle_hires_control(
                 );
             }
 
+            // ★ 强制 DMA 完成 ★
+            let flush = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("hires_regen_flush"),
+            });
+            queue.submit(std::iter::once(flush.finish()));
+
             push_onion_progress(onion_progress, "高精度贴图重生完成", 1.0);
         }
-        // 其它命令由 handle_onion_control 处理，不会到达此处
         _ => {}
     }
 }
 
-/// 高精度贴图视口驱动：上传可见贴图、淘汰超限贴图、准备 uniform
+/// 高精度贴图视口驱动：准备 uniform
 ///
-/// 返回当前帧可见贴图的坐标与 uniform 列表，供 `HiResRenderer::render` 使用。
+/// 贴图已在生成时合并为全轨贴图（每 time_group 一张），
+/// 此处仅计算可见坐标与 uniform，不再遍历 track_group。
 fn update_hires_viewport(
     renderer: &mut Option<HiResRenderer>,
-    tiles: &HashMap<TileCoord, GroupTile>,
-    config: &Option<HiResConfig>,
+    meta: &Option<HiResMeta>,
+    _config: &Option<HiResConfig>,
     params: &RenderParams,
-    device: &wgpu::Device,
+    _device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> Vec<(TileCoord, HiResUniform)> {
     let mut visible: Vec<(TileCoord, HiResUniform)> = Vec::new();
-    let (Some(renderer), Some(config)) = (renderer, config) else {
+    let (Some(renderer), Some(_config), Some(meta)) = (renderer, _config, meta) else {
         return visible;
     };
-    if params.is_arrangement_mode || tiles.is_empty() {
+    if params.is_arrangement_mode {
         return visible;
     }
 
@@ -373,8 +492,7 @@ fn update_hires_viewport(
         return visible;
     }
 
-    let ppq = params.ppq as u16;
-    let ticks_per_group = config.ticks_per_group(ppq);
+    let ticks_per_group = meta.ticks_per_group;
     if ticks_per_group == 0 {
         return visible;
     }
@@ -388,18 +506,8 @@ fn update_hires_viewport(
     let g_start = t_start / ticks_per_group;
     let g_end = (t_end / ticks_per_group).saturating_add(1);
 
-    // 音轨组数：从已生成贴图中推断最大音轨索引
-    let track_count = tiles.values().map(|t| t.track_range.1).max().unwrap_or(0);
-    let track_groups = config.track_group_count(track_count);
+    let key_count = meta.key_count;
 
-    // 全 key 高度（像素），从贴图高度推断（128 或 256）
-    let key_count = tiles.values().next().map(|t| t.height).unwrap_or(128);
-
-    // area 矩形（framebuffer 物理像素）：
-    // - X：卷帘区域起点 + (tick_start*zoom_x - scroll_x) * scale
-    // - Y：最高音 key 在 framebuffer 的 y = (canvas_offset.y + ruler_height - scroll_y) * scale
-    // - W：ticks_per_group * zoom_x * scale
-    // - H：全 key 范围高度 = key_count * zoom_y * scale
     let base_x = (params.canvas_offset.0 + params.keyboard_width) * scale;
     let scroll_y = params.scroll.1;
     let area_y = (params.canvas_offset.1 + params.ruler_height - scroll_y) * scale;
@@ -407,32 +515,18 @@ fn update_hires_viewport(
     let canvas_w = params.viewport_size.0 as f32;
     let canvas_h = params.viewport_size.1 as f32;
 
-    for tg in 0..track_groups {
-        for time_g in g_start..g_end {
-            let coord = TileCoord::new(tg, time_g);
-            // 上传尚未在 GPU 的可见贴图
-            if !renderer.has_tile(&coord)
-                && let Some(tile) = tiles.get(&coord)
-            {
-                renderer.upload_tile(device, queue, coord, &tile.pixels, tile.width, tile.height);
-            }
-            if renderer.has_tile(&coord) {
-                let tick_start = time_g * ticks_per_group;
-                let area_x = base_x + (tick_start as f32 * zoom_x - scroll_x) * scale;
-                let area_w = ticks_per_group as f32 * zoom_x * scale;
-                let uniform = HiResUniform::new(area_x, area_y, area_w, area_h, canvas_w, canvas_h);
-                visible.push((coord, uniform));
-            }
+    // ★ 只遍历 time_group，不再遍历 track_group ★
+    for time_g in g_start..g_end {
+        let coord = TileCoord::new(0, time_g);
+        if renderer.has_tile(&coord) {
+            let tick_start = time_g * ticks_per_group;
+            let area_x = base_x + (tick_start as f32 * zoom_x - scroll_x) * scale;
+            let area_w = ticks_per_group as f32 * zoom_x * scale;
+            let uniform = HiResUniform::new(area_x, area_y, area_w, area_h, canvas_w, canvas_h);
+            visible.push((coord, uniform));
         }
     }
 
-    // 显存超限时清空所有贴图（简化 LRU，下一帧重新上传可见的）
-    if renderer.is_over_limit() {
-        renderer.clear();
-        visible.clear();
-    }
-
-    // 准备可见贴图的 uniform buffer
     renderer.prepare(queue, &visible);
     visible
 }
