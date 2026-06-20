@@ -60,8 +60,6 @@ impl MidiHandler {
             {
                 let first_notes = document.get_track_notes(*first_track_idx as u16);
                 ui.load_track_notes(*first_track_idx, &first_notes);
-                // 同时加入 track_notes 缓存（让洋葱皮也能看到当前轨）
-                ui.load_track_notes_for_onion_skin(*first_track_idx, &first_notes);
                 ui.set_current_track(*first_track_idx);
             }
 

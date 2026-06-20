@@ -3594,6 +3594,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumino-onion-skin"
+version = "0.1.1-dev"
+dependencies = [
+ "bytemuck",
+ "lumino-core",
+ "lumino-midi-loader",
+ "thiserror 2.0.18",
+ "tracing",
+ "wgpu",
+]
+
+[[package]]
 name = "lumino-playback"
 version = "0.1.1-dev"
 dependencies = [

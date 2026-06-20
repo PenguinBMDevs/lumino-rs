@@ -108,8 +108,7 @@ impl Host {
             );
         }
 
-        // ═══ Phase 2: 洋葱皮缓存维护（不采集——encoder 路径不渲染洋葱皮） ═══
-        let _list_changed = self.update_onion_note_list();
+        // ═══ Phase 2: (removed onion skin) ═══
 
         self.render_ctx.last_edit_state = current_edit_state;
         self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;

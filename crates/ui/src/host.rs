@@ -267,27 +267,12 @@ impl Host {
             .render_cache
             .note_instances_buffer
             .back_info();
-        // 洋葱皮双缓冲已移除（方案 C：采集搬到渲染线程，不再需要双缓冲）
-        let _note_size = std::mem::size_of::<lumino_gfx::OnionNote>() as u64;
-
-        tracing::debug!(
-            "MemoryBreakdown: note front(cap={}, len={}) back(cap={}, len={})",
-            front_cap,
-            front_len,
-            back_cap,
-            back_len,
-        );
-
         // 将双缓冲容量写入 breakdown 的附加字段
         breakdown.note_instances_front_cap = front_cap;
         breakdown.note_instances_front_len = front_len;
         breakdown.note_instances_back_cap = back_cap;
         breakdown.note_instances_back_len = back_len;
         breakdown.note_instance_size = std::mem::size_of::<lumino_gfx::NoteInstance>() as usize;
-        breakdown.onion_note_front_cap = 0;
-        breakdown.onion_note_front_len = 0;
-        breakdown.onion_note_back_cap = 0;
-        breakdown.onion_note_back_len = 0;
 
         breakdown
     }

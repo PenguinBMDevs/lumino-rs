@@ -149,7 +149,6 @@ impl Root {
             track_notes.push_back(editor_note);
         }
         // 音符由 wgpu 渲染，不需要清 grid cache
-        self.invalidate_onion_skin_cache();
         tracing::info!("协作: 已添加 {} 个远程音符", operation.notes.len());
     }
 
@@ -176,7 +175,6 @@ impl Root {
             }
         }
         // 音符由 wgpu 渲染，不需要清 grid cache
-        self.invalidate_onion_skin_cache();
         tracing::info!("协作: 已更新 {} 个远程音符", operation.notes.len());
     }
 
@@ -210,7 +208,6 @@ impl Root {
                 .unwrap_or_default();
         }
         // 音符由 wgpu 渲染，不需要清 grid cache
-        self.invalidate_onion_skin_cache();
         tracing::info!("协作: 已删除 {} 个远程音符", operation.notes.len());
     }
 
@@ -276,7 +273,6 @@ impl Root {
             self.editor.editor_state.data.notes = track_notes.clone();
         }
         // 音符由 wgpu 渲染，不需要清 grid cache
-        self.invalidate_onion_skin_cache();
         tracing::info!(
             "协作: Move 完成 - 匹配 {}/{} 个音符, current_track={}",
             matched_count,

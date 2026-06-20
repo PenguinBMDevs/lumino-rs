@@ -83,7 +83,6 @@ pub struct Track {
     pub is_conductor: bool,
     pub can_delete: bool,
     pub is_muted: bool,
-    pub is_onion_skin_on: bool,
 }
 
 impl Sidebar {
@@ -99,7 +98,6 @@ impl Sidebar {
                     is_conductor: true,
                     can_delete: false,
                     is_muted: false,
-                    is_onion_skin_on: true,
                 },
                 Track {
                     id: 1,
@@ -107,7 +105,6 @@ impl Sidebar {
                     is_conductor: false,
                     can_delete: true,
                     is_muted: false,
-                    is_onion_skin_on: true,
                 },
             ],
             selected_track: 0,
@@ -190,11 +187,6 @@ impl Sidebar {
                     track.is_muted = !track.is_muted;
                 }
             }
-            TrackOnionSkinToggled(id) => {
-                if let Some(track) = self.tracks.iter_mut().find(|t| t.id == id) {
-                    track.is_onion_skin_on = !track.is_onion_skin_on;
-                }
-            }
             AddTrack => {
                 // 添加新音轨
                 let new_id = self.tracks.len();
@@ -204,7 +196,6 @@ impl Sidebar {
                     is_conductor: false,
                     can_delete: true,
                     is_muted: false,
-                    is_onion_skin_on: true,
                 });
                 self.selected_track = new_id;
                 self.add_track_menu_open = false;
@@ -283,7 +274,6 @@ impl Sidebar {
                 is_conductor: *track_idx == 0,
                 can_delete: *track_idx != 0,
                 is_muted: false,
-                is_onion_skin_on: true,
             });
         }
         // 如果有音轨，默认选择第一个

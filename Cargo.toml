@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/dms", "crates/event", "crates/export", "crates/gfx", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/message", "crates/playback", "crates/ui", "crates/collaboration"]
+members = ["crates/core", "crates/dms", "crates/event", "crates/export", "crates/gfx", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/message", "crates/onion-skin", "crates/playback", "crates/ui", "crates/collaboration"]
 resolver = "3"
 
 [workspace.package]
@@ -18,6 +18,7 @@ lumino-export = { path = "crates/export" }
 lumino-gfx = { path = "crates/gfx" }
 lumino-midi-io = { path = "crates/midi-io" }
 lumino-midi-loader = { path = "crates/midi-loader" }
+lumino-onion-skin = { path = "crates/onion-skin" }
 lumino-memory-monitor = { path = "crates/memory-monitor" }
 lumino-message = { path = "crates/message" }
 lumino-playback = { path = "crates/playback" }

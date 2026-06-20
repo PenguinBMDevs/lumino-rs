@@ -354,7 +354,6 @@ impl Root {
                 self.editor.set_canvas_offset(*offset);
                 self.editor
                     .set_canvas_size(iced_core::Point::new(size.width, size.height));
-                self.invalidate_onion_skin_cache();
                 true
             }
             Message::MenuStateChanged(is_open) => {
@@ -436,9 +435,6 @@ impl Root {
             None
         };
 
-        // 检查是否是洋葱皮开关
-        let onion_skin_toggled = matches!(&event, sidebar::Event::TrackOnionSkinToggled(_));
-
         // 更新 sidebar，获取是否需要重新渲染
         let needs_redraw = self.sidebar.update(event);
 
@@ -447,11 +443,6 @@ impl Root {
         let current_offset_y = self.editor.editor_state.canvas.offset_y;
         self.editor
             .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset_y));
-
-        // 洋葱皮开关变化，使缓存失效
-        if onion_skin_toggled {
-            self.invalidate_onion_skin_cache();
-        }
 
         // 如果是音轨切换，发送 Core 事件
         if let Some(track_idx) = track_selected_idx {
@@ -481,8 +472,6 @@ impl Root {
         if self.editor.notes_changed() {
             self.update_playback_notes();
             self.editor.clear_notes_changed();
-            // 音符变化影响洋葱皮缓存
-            self.invalidate_onion_skin_cache();
         }
     }
 }

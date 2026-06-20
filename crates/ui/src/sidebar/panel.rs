@@ -313,34 +313,9 @@ fn view_track_item<'a>(
     })
     .padding(0);
 
-    let eye_icon = if track.is_onion_skin_on {
-        Icon::Eye
-    } else {
-        Icon::EyeSlash
-    };
-
-    let eye_btn = button(icon::view_with_size_and_theme(
-        eye_icon,
-        16,
-        16,
-        Some(&window.theme),
-    ))
-    .on_press(Event::track_onion_skin_toggled(track.id))
-    .style(|_theme: &Theme, _status| {
-        button::Style::default().with_background(iced_core::Color::TRANSPARENT)
-    })
-    .padding(0);
-
-    let track_row = row![
-        left_icon,
-        space().width(4),
-        name,
-        mute_btn,
-        space().width(4),
-        eye_btn,
-    ]
-    .align_y(Alignment::Start)
-    .padding(4);
+    let track_row = row![left_icon, space().width(4), name, mute_btn,]
+        .align_y(Alignment::Start)
+        .padding(4);
 
     button(track_row)
         .width(Length::Fill)

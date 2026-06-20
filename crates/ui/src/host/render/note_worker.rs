@@ -61,6 +61,7 @@ impl ScrollVelocityTracker {
     }
 
     /// 计算需要的右侧 overscan ticks
+    #[allow(dead_code)]
     pub fn overscan_ticks(&self, predict_ms: f32) -> f32 {
         self.peak_velocity() * predict_ms / 1000.0
     }

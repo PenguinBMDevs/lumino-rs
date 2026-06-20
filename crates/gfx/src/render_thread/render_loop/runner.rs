@@ -14,7 +14,6 @@ use super::prepare::prepare_renderers;
 use super::render_pass::execute_render_pass;
 use super::render_pass::update_stats;
 use super::textures::ensure_textures;
-use crate::OnionViewportUniform;
 
 /// 运行渲染线程主循环
 #[allow(clippy::too_many_arguments)]
@@ -35,7 +34,6 @@ pub fn run_render_thread(
     let mut grid_renderer = crate::GridRenderer::new(&device, texture_format);
     let mut note_renderer = crate::NoteRenderer::new(&device, &queue, texture_format);
     let mut ruler_renderer = crate::RulerRenderer::new(&device, texture_format);
-    let mut onion_renderer = crate::OnionRenderer::new(&device, &queue, texture_format);
     let mut arrangement_renderer = crate::ArrangementRenderer::new(&device, texture_format);
     let mut cc_bar_renderer = crate::CcBarRenderer::new(&device, texture_format);
 
@@ -94,72 +92,6 @@ pub fn run_render_thread(
                 note_renderer.upload_instances(notes, &device, &queue);
             }
 
-            // ── 洋葱皮：全量常驻 GPU，CPU 只做一次上传，GPU 负责剔除 ──
-            let overscan = params.onion_overscan_ticks.max(0.0);
-
-            // 先构建视口 uniform（note_count 在上传后回填）
-            let mut viewport = OnionViewportUniform {
-                tick_start: params.scroll.0 / params.zoom.0 - overscan,
-                tick_end: (params.scroll.0 + params.canvas_size.0 - params.keyboard_width)
-                    / params.zoom.0 + overscan,
-                pitch_min: 0.0,
-                pitch_max: params.max_key_index,
-                note_count: 0,
-                current_track: params.onion_current_track as u32,
-                keyboard_width: params.keyboard_width,
-                ruler_height: params.ruler_height,
-                canvas_width: params.logical_size.0,
-                canvas_height: params.logical_size.1,
-                canvas_offset_x: params.canvas_offset.0,
-                canvas_offset_y: params.canvas_offset.1,
-                scroll_x: params.scroll.0,
-                scroll_y: params.scroll.1,
-                zoom_x: params.zoom.0,
-                zoom_y: params.zoom.1,
-                max_key_index: params.max_key_index,
-            };
-
-            // 洋葱皮：只上传当前视口时间范围内的 chunk
-            // 滚动时若 chunk 未变，upload_notes 内部 dirty tracking 直接跳过
-            if params.onion_enabled {
-                if let Some(note_list) = &params.onion_note_list {
-                    let list_version = note_list.version();
-                    let track_colors = params.onion_track_colors.as_deref().unwrap_or(&[]);
-                    let color_hash = track_colors
-                        .iter()
-                        .fold(0u64, |acc, &c| acc.wrapping_mul(31).wrapping_add(c as u64));
-                    onion_renderer.upload_notes(crate::OnionUploadParams {
-                        note_list: Some(note_list),
-                        list_version,
-                        track_colors,
-                        color_hash,
-                        viewport: &viewport,
-                        device: &device,
-                        queue: &queue,
-                    });
-                } else {
-                    onion_renderer.upload_notes(crate::OnionUploadParams {
-                        note_list: None,
-                        list_version: 0,
-                        track_colors: &[],
-                        color_hash: 0,
-                        viewport: &viewport,
-                        device: &device,
-                        queue: &queue,
-                    });
-                }
-            } else {
-                onion_renderer.upload_notes(crate::OnionUploadParams {
-                    note_list: None,
-                    list_version: 0,
-                    track_colors: &[],
-                    color_hash: 0,
-                    viewport: &viewport,
-                    device: &device,
-                    queue: &queue,
-                });
-            }
-
             if let (Some(_texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("offscreen_render_encoder"),
@@ -178,13 +110,7 @@ pub fn run_render_thread(
                     &queue,
                 );
 
-                // 回填实际上传的可见 chunk 音符数，供 compute cull 使用
-                viewport.note_count = onion_renderer.note_count();
-
-                // GPU compute cull：按 pitch / 当前音轨做精确剔除
-                onion_renderer.prepare_cull(&mut encoder, &viewport, &device, &queue);
-
-                // 执行渲染通道（含洋葱皮背景和主音符）
+                // 执行渲染通道
                 execute_render_pass(
                     &mut encoder,
                     &device,
@@ -196,7 +122,6 @@ pub fn run_render_thread(
                     &mut ruler_renderer,
                     &mut arrangement_renderer,
                     &queue,
-                    &mut onion_renderer,
                     &mut cc_bar_renderer,
                 );
 

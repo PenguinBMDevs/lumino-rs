@@ -3,8 +3,6 @@ pub mod editor_state;
 pub mod grid;
 pub mod history;
 pub mod note;
-pub mod onion_bg_pool;
-pub mod onion_skin;
 pub mod recording;
 pub mod scrollbar_widget;
 pub mod smooth_scroll;
@@ -23,7 +21,6 @@ mod note_ops;
 mod note_split_glue;
 mod note_transform;
 mod note_transpose;
-mod onion_skin_editor;
 mod rendering;
 mod scroll;
 mod settings;
@@ -38,8 +35,6 @@ use iced_widget::canvas;
 use std::cell::{Cell, RefCell};
 
 use note::Note;
-pub use onion_bg_pool::*;
-pub use onion_skin::OnionSkinConfig;
 // 统一从 editor_state 导入（重构迁移）
 pub use editor_state::{EditState, HitType, SelectionHitType, ViewState};
 
@@ -78,21 +73,6 @@ impl Default for SpatialIndexState {
     }
 }
 
-/// 洋葱皮缓存状态（从 Editor 提取，减少字段数）
-#[derive(Debug, Default)]
-pub struct OnionSkinState {
-    /// 洋葱皮配置
-    pub config: OnionSkinConfig,
-    /// 缓存的可见音轨索引（洋葱皮用），避免每帧重复计算
-    pub cached_track_indices: Vec<usize>,
-    /// 缓存的可见音轨哈希值（不含颜色）
-    pub cached_track_hash: u64,
-    /// 缓存的音轨颜色哈希值
-    pub cached_config_hash: u64,
-    /// 缓存是否有效
-    pub cache_valid: bool,
-}
-
 /// 钢琴卷帘编辑器
 pub struct Editor {
     pub grid_cache: canvas::Cache<crate::Renderer>,
@@ -103,9 +83,6 @@ pub struct Editor {
 
     /// 空间索引状态（音符索引、查询缓存等）
     pub spatial: SpatialIndexState,
-
-    /// 洋葱皮状态（配置、缓存）
-    pub onion_skin: OnionSkinState,
 
     /// 协作远端用户光标信息（用户ID -> (位置, 颜色, 用户名)）
     pub remote_cursors: std::collections::HashMap<String, (Point, String, String)>,
@@ -226,7 +203,6 @@ impl Editor {
             keyboard_cache: canvas::Cache::new(),
             ruler_cache: canvas::Cache::new(),
             spatial: SpatialIndexState::default(),
-            onion_skin: OnionSkinState::default(),
             remote_cursors: std::collections::HashMap::new(),
             playback_position: 0.0,
             loop_range: Some(grid::LoopRange::new()),
@@ -345,12 +321,9 @@ impl Editor {
     /// 重置编辑器内部状态到默认值（释放私有字段内存）
     ///
     /// 供 `clear_editor()` 调用，重置本模块私有的字段：
-    /// - `onion_skin_config`：洋葱皮配置
     /// - `notes_changed`：音符变更标志
     /// - `playback_position`：播放指示线位置
     pub fn reset_internal_state(&mut self) {
-        use crate::editor::onion_skin::OnionSkinConfig;
-        self.onion_skin.config = OnionSkinConfig::new();
         self.notes_changed = false;
         self.playback_position = 0.0;
         self.velocity_panel = velocity::VelocityPanel::new();

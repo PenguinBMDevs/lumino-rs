@@ -2,7 +2,7 @@
 use crate::host::Host;
 use lumino_gfx::{
     ARRANGEMENT_PALETTE, ArrangementNoteInstance, ArrangementSceneParams, ArrangementUniform,
-    ArrangementViewColors, CcBarColors, CcBarData, CcBarViewParams, OnionNote,
+    ArrangementViewColors, CcBarColors, CcBarData, CcBarViewParams,
 };
 
 impl Host {
@@ -367,19 +367,6 @@ impl Host {
         let viewport_changed =
             current_viewport_hash != self.render_ctx.render_cache.note_viewport_hash;
 
-        // 洋葱皮视口哈希（32px 偏移容差，减少不必要的重算）
-        let current_onion_hash = crate::host::RenderCache::compute_onion_viewport_hash(
-            v.scroll_x,
-            v.scroll_y,
-            v.zoom_x,
-            v.zoom_y,
-            canvas.size_x,
-            canvas.size_y,
-            v.visible_key_count,
-        );
-        let onion_viewport_changed =
-            current_onion_hash != self.render_ctx.render_cache.onion_viewport_hash;
-
         let note_data_changed = note_index_dirty
             || self.render_ctx.render_cache.note_instances_is_empty()
             || is_drawing;
@@ -407,20 +394,12 @@ impl Host {
             );
         }
 
-        // 提取 scroll 值（避免 update_onion_note_list 的 &mut self 与 v 的借用冲突）
+        // 提取 scroll 值
         let scroll_x = v.scroll_x;
         let zoom_x = v.zoom_x;
 
-        // 增量维护洋葱皮音符列表（参考 Wasabi 瀑布流简化方案）
-        let _list_changed = self.update_onion_note_list();
-
-        // 更新滚动速度追踪（用于 overscan 计算，在 build_render_params 中读取）
+        // 更新滚动速度追踪
         let _velocity = self.scroll_tracker.update(scroll_x, zoom_x);
-
-        // 方案 C：渲染线程负责采集，主线程只更新视口哈希
-        if note_data_changed || onion_viewport_changed {
-            self.render_ctx.render_cache.onion_viewport_hash = current_onion_hash;
-        }
 
         if note_index_dirty {
             self.root.editor.spatial.note_index_dirty.set(false);
@@ -527,43 +506,6 @@ impl Host {
             ))
         };
 
-        // ── 洋葱皮 per-track 打包颜色 ──
-        // 仅在颜色配置/音轨数量变化时重建，避免每帧 O(track_count) 分配
-        let onion_track_colors = {
-            let cache = &mut self.render_ctx.render_cache;
-            let onion_skin_colors = &self.root.editor.onion_skin.config.colors;
-            let track_count = self.root.sidebar.tracks.len();
-            let colors_dirty = cache
-                .onion_track_colors
-                .as_ref()
-                .is_none_or(|c| c.len() != track_count)
-                || cache.onion_colors_version != onion_skin_colors.version();
-
-            if colors_dirty {
-                let mut packed_colors: Vec<u32> = Vec::with_capacity(track_count);
-                for i in 0..track_count {
-                    let c = onion_skin_colors.get_raw(i);
-                    packed_colors.push(OnionNote::pack_rgba(c.r, c.g, c.b, c.a));
-                }
-                cache.onion_track_colors = Some(packed_colors);
-                cache.onion_colors_version = onion_skin_colors.version();
-            }
-
-            cache.onion_track_colors.clone()
-        };
-
-        // ── 洋葱皮渲染线程采集参数 ──
-        let onion_note_list = self
-            .render_ctx
-            .render_cache
-            .onion_note_list
-            .as_ref()
-            .map(std::sync::Arc::clone);
-        let onion_list_version = onion_note_list.as_ref().map_or(0, |l| l.version());
-        let onion_overscan_ticks = self.scroll_tracker.overscan_ticks(60.0);
-        let onion_current_track = es.data.current_track as u16;
-        let onion_enabled = self.root.editor.is_onion_skin_enabled();
-
         RenderParams::from_data(
             (physical_size.width, physical_size.height),
             (data.viewport_size.width, data.viewport_size.height),
@@ -592,12 +534,6 @@ impl Host {
             arrangement_uniform,
             data.cc_bar_instances,
             velocity_panel_rect,
-            onion_track_colors,
-            onion_note_list,
-            onion_list_version,
-            onion_overscan_ticks,
-            onion_current_track,
-            onion_enabled,
         )
     }
 

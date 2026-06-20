@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use crate::{
     ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, KeyInstance,
-    NoteInstance, OnionNoteList, RulerTickInstance,
+    NoteInstance, RulerTickInstance,
 };
 
 /// 渲染参数 - 从 UI 线程传递到 WGPU 线程
@@ -64,18 +62,6 @@ pub struct RenderParams {
     pub cc_bar_instances: Vec<CcBarInstance>,
     /// 力度面板区域 (x, y, width, height) — 屏幕坐标，用于 scissor
     pub velocity_panel_rect: Option<(f32, f32, f32, f32)>,
-    /// 洋葱皮轨道颜色表（per-track RGBA8 打包颜色，index = track_idx）
-    pub onion_track_colors: Option<Vec<u32>>,
-    /// 洋葱皮音符列表（从 wasabi 瀑布流简化而来，扁平存储）
-    pub onion_note_list: Option<Arc<OnionNoteList>>,
-    /// note list 版本号，用于渲染线程检测数据变化
-    pub onion_list_version: u64,
-    /// 右侧 overscan ticks（补偿 fire-and-forget 模式下 buffer 滞后）
-    pub onion_overscan_ticks: f32,
-    /// 当前编辑音轨索引（采集时排除）
-    pub onion_current_track: u16,
-    /// 洋葱皮是否启用
-    pub onion_enabled: bool,
 }
 
 impl Default for RenderParams {
@@ -112,12 +98,6 @@ impl Default for RenderParams {
             arrangement_uniform: ArrangementUniform::default(),
             cc_bar_instances: Vec::new(),
             velocity_panel_rect: None,
-            onion_track_colors: None,
-            onion_note_list: None,
-            onion_list_version: 0,
-            onion_overscan_ticks: 0.0,
-            onion_current_track: 0,
-            onion_enabled: false,
         }
     }
 }
@@ -162,14 +142,6 @@ impl RenderParams {
         arrangement_uniform: ArrangementUniform,
         cc_bar_instances: Vec<CcBarInstance>,
         velocity_panel_rect: Option<(f32, f32, f32, f32)>,
-        // Onion skin (per-track packed colors)
-        onion_track_colors: Option<Vec<u32>>,
-        // Onion skin (render-thread collection)
-        onion_note_list: Option<Arc<OnionNoteList>>,
-        onion_list_version: u64,
-        onion_overscan_ticks: f32,
-        onion_current_track: u16,
-        onion_enabled: bool,
     ) -> Self {
         Self {
             viewport_size: (physical_size.0, physical_size.1),
@@ -203,12 +175,6 @@ impl RenderParams {
             arrangement_uniform,
             cc_bar_instances,
             velocity_panel_rect,
-            onion_track_colors,
-            onion_note_list,
-            onion_list_version,
-            onion_overscan_ticks,
-            onion_current_track,
-            onion_enabled,
         }
     }
 }
