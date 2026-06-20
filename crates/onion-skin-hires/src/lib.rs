@@ -24,6 +24,7 @@
 
 mod cache;
 mod config;
+mod generate;
 mod types;
 
 pub use cache::{
@@ -31,4 +32,5 @@ pub use cache::{
     read_track_tile_cache, write_track_tile_cache,
 };
 pub use config::{ConfigError, HiResConfig, TRACKS_PER_GROUP};
+pub use generate::{generate_track_tile, merge_group_tiles};
 pub use types::{DirtyKind, DirtyRegion, GroupTile, TileCoord, TrackTile};
