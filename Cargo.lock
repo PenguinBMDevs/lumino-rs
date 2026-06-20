@@ -3535,6 +3535,7 @@ dependencies = [
  "im",
  "lumino-core",
  "lumino-midi-loader",
+ "lumino-onion-skin",
  "puffin",
  "rayon",
  "thiserror 2.0.18",

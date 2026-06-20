@@ -26,6 +26,8 @@ pub struct WgpuRenderThread {
     pub latest_texture: Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
     /// 双缓冲音符实例数据（UI线程写入，渲染线程读取）
     pub note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
+    /// 洋葱皮生成进度缓冲（渲染线程写入，UI 线程读取并转发到进度窗口）
+    onion_progress: Arc<Mutex<Vec<(String, f32)>>>,
 }
 
 impl WgpuRenderThread {
@@ -46,11 +48,13 @@ impl WgpuRenderThread {
         let running = Arc::new(AtomicBool::new(true));
         let (command_sender, command_receiver) = std::sync::mpsc::channel::<RenderCommand>();
         let latest_texture: Arc<Mutex<Option<Arc<wgpu::Texture>>>> = Arc::new(Mutex::new(None));
+        let onion_progress: Arc<Mutex<Vec<(String, f32)>>> = Arc::new(Mutex::new(Vec::new()));
 
         let stats_clone = Arc::clone(&stats);
         let running_clone = Arc::clone(&running);
         let latest_texture_clone = Arc::clone(&latest_texture);
         let note_instances_buffer_clone = Arc::clone(&note_instances_buffer);
+        let onion_progress_clone = Arc::clone(&onion_progress);
 
         // 启动渲染线程
         let thread_handle = thread::spawn(move || {
@@ -64,6 +68,7 @@ impl WgpuRenderThread {
                 stats_clone,
                 note_events_rx,
                 note_instances_buffer_clone,
+                onion_progress_clone,
             );
         });
 
@@ -74,6 +79,7 @@ impl WgpuRenderThread {
             thread_handle: Some(thread_handle),
             latest_texture,
             note_instances_buffer,
+            onion_progress,
         })
     }
 
@@ -105,6 +111,14 @@ impl WgpuRenderThread {
     /// 获取渲染统计
     pub fn stats(&self) -> RenderStats {
         self.stats.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    /// 取出并清空洋葱皮生成进度缓冲（UI 线程每帧调用）
+    pub fn drain_onion_progress(&self) -> Vec<(String, f32)> {
+        self.onion_progress
+            .lock()
+            .map(|mut buf| std::mem::take(&mut *buf))
+            .unwrap_or_default()
     }
 
     /// 将离屏渲染结果复制到 Surface 纹理

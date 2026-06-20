@@ -44,6 +44,13 @@ impl RunnerInner {
                     Some(std::path::PathBuf::from(&parsed.info.path));
                 self.midi_state.current_midi = Some(parsed);
 
+                // 启动洋葱皮概览贴图后台生成
+                // 先 clone Arc 释放 self 的不可变借用，再调可变方法
+                let midi_for_onion = self.midi_state.current_midi.clone();
+                if let Some(parsed) = midi_for_onion {
+                    self.trigger_onion_skin_generation(&parsed);
+                }
+
                 if let Some(state) = &mut self.test_state.test_mode_state {
                     state.active = true;
                 }
@@ -70,6 +77,7 @@ impl RunnerInner {
                 self.midi_state.current_midi = None;
                 self.midi_state.current_midi_source = None;
                 self.midi_state.current_dms = None;
+                self.window_state.window.ui_mut().dispose_onion_skin();
                 self.window_state.window.ui_mut().clear_editor();
                 tracing::info!("工程已关闭");
             }
@@ -131,4 +139,66 @@ impl RunnerInner {
 
         tracing::info!("已创建新工程");
     }
+
+    /// 构建 onion-skin 音符数据并启动后台概览贴图生成
+    ///
+    /// 单位策略：以 tick 作为时间轴单位（对齐钢琴卷帘的 tick-线性映射），
+    /// 因此 `duration_ms` 实为总 tick 数，`OnionSkinNote` 的 start_ms/end_ms 实为 tick。
+    fn trigger_onion_skin_generation(&mut self, parsed: &lumino_midi_loader::ParsedMidi) {
+        let Some(document) = parsed.document.as_ref() else {
+            tracing::debug!("洋葱皮：MIDI 无 document（LMPJ 路径），跳过生成");
+            return;
+        };
+
+        let total_ticks = document.total_ticks.max(parsed.info.duration_ticks);
+        let notes: Vec<Vec<lumino_gfx::OnionSkinNote>> = document
+            .track_notes_cache
+            .iter()
+            .enumerate()
+            .map(|(track_idx, track)| {
+                track
+                    .iter()
+                    .map(|n| {
+                        lumino_gfx::OnionSkinNote::from_ms(
+                            n.start_tick as f32,
+                            n.end_tick() as f32,
+                            n.key,
+                            onion_track_color(track_idx),
+                        )
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let key_mode = if self.window_state.storage.config.get().ui.enable_256key {
+            lumino_gfx::KeyMode::Key256
+        } else {
+            lumino_gfx::KeyMode::Key128
+        };
+
+        tracing::info!(
+            "洋葱皮：启动生成，{} 轨，总 tick = {}",
+            notes.len(),
+            total_ticks
+        );
+        self.window_state
+            .window
+            .ui_mut()
+            .generate_onion_skin(notes, total_ticks, key_mode);
+    }
+}
+
+/// 洋葱皮音轨调色板（按音轨索引循环取色，alpha 由 onion-skin 内部固定为 255）
+fn onion_track_color(track_idx: usize) -> [u8; 4] {
+    const PALETTE: [[u8; 4]; 8] = [
+        [200, 80, 80, 255],
+        [80, 200, 120, 255],
+        [80, 120, 220, 255],
+        [220, 200, 80, 255],
+        [200, 100, 200, 255],
+        [80, 200, 200, 255],
+        [240, 150, 80, 255],
+        [180, 180, 180, 255],
+    ];
+    PALETTE[track_idx % PALETTE.len()]
 }

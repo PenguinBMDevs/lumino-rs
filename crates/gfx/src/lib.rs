@@ -32,6 +32,10 @@ pub use grid::{GridViewParams, generate_grid_instances, generate_ruler_instances
 pub use grid_renderer::{GridLineInstance, GridPrepareParams, GridRenderer};
 pub use keyboard_renderer::renderer::KeyboardPrepareParams;
 pub use keyboard_renderer::{KeyInstance, KeyboardRenderer, KeyboardViewportUniform};
+/// 洋葱皮概览贴图渲染器（从 lumino-onion-skin 重导出）
+pub use lumino_onion_skin::{
+    GenerateProgress, KeyMode, OnionSkinNote, OnionSkinRenderer, ViewportParams,
+};
 pub use note_renderer::{
     CameraParams, CameraUniform, CullUniform, NoteInstance, NoteRenderer, OnionBgTileRef,
     RenderUniform, pack_color, unpack_color,
