@@ -1,0 +1,16 @@
+[package]
+name = "lumino-onion-skin-hires"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+lumino-onion-skin = { path = "../onion-skin" }
+rayon = "1.10"
+zstd = { workspace = true }
+bincode = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

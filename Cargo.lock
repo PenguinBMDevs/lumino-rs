@@ -3607,6 +3607,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumino-onion-skin-hires"
+version = "0.1.1-dev"
+dependencies = [
+ "bincode",
+ "lumino-onion-skin",
+ "rayon",
+ "serde",
+ "thiserror 2.0.18",
+ "tracing",
+ "zstd",
+]
+
+[[package]]
 name = "lumino-playback"
 version = "0.1.1-dev"
 dependencies = [
