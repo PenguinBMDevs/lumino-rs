@@ -110,6 +110,156 @@ pub fn generate_all_tiles(
     buffer
 }
 
+/// 流式生成全曲高精度贴图（time_group 同步推进模型）
+///
+/// 模型：所有音轨组线程并行生成**同一个 time_group** 的贴图，收齐后回调输出，
+/// 调用方合并上传 GPU 并释放 CPU 缓冲，再进入下一个 time_group。
+/// 避免按 track_group 维度独立并行导致的 channel 无界积压与 CPU 内存峰值。
+///
+/// # 参数
+/// 除与 `generate_all_tiles` 相同的参数外：
+/// - `time_group_cb`: 某个 time_group 的所有音轨组贴图收齐后回调，
+///   参数为 `(time_group, Vec<GroupTile>)`，Vec 长度 = track_groups。
+///   回调返回后 Vec 被 drop 释放 CPU 内存，才进入下一个 time_group。
+#[allow(clippy::too_many_arguments)]
+pub fn generate_all_tiles_streaming<F>(
+    notes: &[Vec<OnionSkinNote>],
+    config: &HiResConfig,
+    ppq: u16,
+    key_count: u16,
+    total_ticks: u32,
+    midi_hash: &str,
+    progress_cb: Option<HiResProgressCallback>,
+    time_group_cb: &F,
+) where
+    F: Fn(u32, Vec<GroupTile>) + Sync,
+{
+    let track_count = notes.len() as u16;
+    let track_groups = config.track_group_count(track_count);
+    let time_groups = config.time_group_count(total_ticks, ppq);
+    let ticks_per_group = config.ticks_per_group(ppq);
+    let total_tiles = (track_groups as usize) * (time_groups as usize);
+
+    if total_tiles == 0 {
+        if let Some(cb) = &progress_cb {
+            cb("高精度贴图：无内容需生成", 1.0);
+        }
+        return;
+    }
+
+    info!(
+        "高精度贴图流式生成开始（time_group 同步推进）：{} 轨 / {} 音轨组 × {} 时间组 = {} 贴图",
+        track_count, track_groups, time_groups, total_tiles
+    );
+
+    let cache_dir = config.cache_dir.clone();
+    let width = config.tile_width_px;
+    let measures_per_group = config.measures_per_group;
+    let completed = Arc::new(Mutex::new(0usize));
+
+    // ★ 外层串行 time_group，内层并行 track_group，rayon collect 天然 Barrier ★
+    // 所有 track_group 线程完成同一个 time_group 后才回调，回调期间并行线程空闲
+    // （对应"装袋期间工人等着"），回调返回后 Vec drop 释放，进入下一个 time_group
+    for time_group in 0..time_groups {
+        let tick_start = time_group * ticks_per_group;
+        let tick_end = tick_start + ticks_per_group;
+
+        // 所有音轨组并行生成这一个 time_group 的贴图，collect 等待全部完成
+        let group_tiles: Vec<GroupTile> = (0..track_groups)
+            .into_par_iter()
+            .map(|track_group| {
+                generate_one_time_group_tile(
+                    track_group,
+                    time_group,
+                    tick_start,
+                    tick_end,
+                    notes,
+                    ppq,
+                    key_count,
+                    width,
+                    measures_per_group,
+                    &cache_dir,
+                    midi_hash,
+                )
+            })
+            .collect();
+
+        // ★ 所有 track_group 的 GroupTile 收齐，回调合并+上传+释放 ★
+        time_group_cb(time_group, group_tiles);
+
+        // 更新进度（按 time_group 粒度）
+        let mut done = completed.lock().expect("进度锁中毒");
+        *done += 1;
+        if let Some(cb) = &progress_cb {
+            let pct = *done as f32 / time_groups as f32;
+            cb(
+                &format!("高精度贴图 time_group {}/{}", *done, time_groups),
+                pct,
+            );
+        }
+    }
+
+    if let Some(cb) = &progress_cb {
+        cb("高精度贴图流式生成完成", 1.0);
+    }
+
+    info!("高精度贴图流式生成完成：{} 个 time_group", time_groups);
+}
+
+/// 生成单个音轨组在指定 time_group 的整合组贴图
+///
+/// 内部：生成组内每轨的单音轨贴图（缓存优先），合并为整合组贴图。
+/// 由 `generate_all_tiles_streaming` 在 rayon 并行任务中调用。
+#[allow(clippy::too_many_arguments)]
+fn generate_one_time_group_tile(
+    track_group: u32,
+    time_group: u32,
+    tick_start: u32,
+    tick_end: u32,
+    notes: &[Vec<OnionSkinNote>],
+    ppq: u16,
+    key_count: u16,
+    width: u32,
+    measures_per_group: u32,
+    cache_dir: &Path,
+    midi_hash: &str,
+) -> GroupTile {
+    let track_start = (track_group * crate::config::TRACKS_PER_GROUP as u32) as u16;
+    let track_end =
+        ((track_group + 1) * crate::config::TRACKS_PER_GROUP as u32).min(notes.len() as u32) as u16;
+
+    // 生成组内每轨的单音轨贴图（缓存优先）
+    let mut track_tiles = Vec::with_capacity((track_end - track_start) as usize);
+    for track_idx in track_start..track_end {
+        let tile = generate_or_load_track_tile(
+            &notes[track_idx as usize],
+            track_idx,
+            time_group,
+            tick_start,
+            tick_end,
+            width,
+            key_count,
+            ppq,
+            measures_per_group,
+            cache_dir,
+            midi_hash,
+        );
+        track_tiles.push(tile);
+    }
+
+    // 合并为整合组贴图（后轨覆盖前轨重叠区）
+    let coord = TileCoord::new(track_group, time_group);
+    merge_group_tiles(
+        &track_tiles,
+        coord,
+        tick_start,
+        tick_end,
+        width,
+        key_count,
+        (track_start, track_end),
+    )
+}
+
 /// 生成单个音轨组的所有时间组贴图
 #[allow(clippy::too_many_arguments)]
 fn generate_one_track_group(

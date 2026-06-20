@@ -1,7 +1,13 @@
 use std::sync::mpsc::Receiver;
+use std::time::Duration;
 
 use super::super::commands::{ControlCommand, RenderCommand};
 use super::super::params::RenderParams;
+
+/// 命令接收阻塞超时：防止渲染线程在 `recv()` 上无限阻塞，
+/// 导致后台 hires 贴图 channel 不被消费（死锁）。
+/// 超时后醒来检查 hires channel + 渲染帧，然后重新进入等待。
+const COMMAND_RECV_TIMEOUT: Duration = Duration::from_millis(16);
 
 /// 处理渲染命令
 ///
@@ -10,6 +16,9 @@ use super::super::params::RenderParams;
 ///
 /// 洋葱皮控制命令（Generate/Dispose）需要 device/queue 上下文，无法在此处理，
 /// 因此收集到 `deferred` 供主循环在拥有 GPU 资源时处理。
+///
+/// 使用 `recv_timeout` 而非 `recv`：防止渲染线程在无命令时无限阻塞，
+/// 确保定期返回主循环以消费后台 hires 贴图 channel（避免死锁）。
 pub fn process_commands(
     command_receiver: &Receiver<RenderCommand>,
     latest_params: &mut Option<RenderParams>,
@@ -26,11 +35,13 @@ pub fn process_commands(
         return false;
     }
 
-    // 如果没有渲染参数，阻塞等待下一个命令
+    // 如果没有渲染参数，限时等待下一个命令（而非无限阻塞）
+    // 超时后返回主循环，使其能消费 hires channel 等后台数据
     if latest_params.is_none() {
-        match command_receiver.recv() {
+        match command_receiver.recv_timeout(COMMAND_RECV_TIMEOUT) {
             Ok(cmd) => classify_command(cmd, latest_params, should_shutdown, deferred),
-            Err(_) => {
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 tracing::info!("Render thread: command channel closed");
                 *should_shutdown = true;
             }

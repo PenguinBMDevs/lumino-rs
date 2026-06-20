@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -24,18 +23,31 @@ use super::textures::ensure_textures;
 #[allow(dead_code)]
 struct HiResMeta {
     track_count: u16,
+    /// 音轨组数（= ceil(track_count / TRACKS_PER_GROUP)），用于判断 time_group 贴图是否收齐
+    track_groups: u32,
     key_count: u16,
     time_groups: u32,
     ticks_per_group: u32,
 }
 
-/// 后台生成结果：后台线程通过 channel 发送给渲染线程
-struct HiResPendingResult {
-    /// 按 (track_group, time_group) 索引的未合并贴图
-    tiles: HashMap<TileCoord, GroupTile>,
-    /// 贴图规格
-    width: u32,
-    height: u32,
+/// 后台生成线程流式输出的消息
+///
+/// 按 time_group 同步推进：所有音轨组线程并行生成同一个 time_group 的贴图，
+/// 后台线程合并为单张全轨像素缓冲后发送。渲染线程收到后仅做 GPU 上传（DMA，非阻塞），
+/// 避免渲染线程被像素合并阻塞导致掉帧/窗口未响应。
+///
+/// 使用 `sync_channel(1)` 有界通道：channel 满时后台 send 阻塞，
+/// 强制后台线程等待渲染线程消费——背压机制，防止无界积压导致 CPU 内存峰值。
+enum HiResStreamMsg {
+    /// 某个 time_group 已合并的全轨像素缓冲（width × height × 4 字节）
+    TimeGroupMerged {
+        time_group: u32,
+        pixels: Vec<u8>,
+        width: u32,
+        height: u32,
+    },
+    /// 所有贴图生成完毕
+    Finished,
 }
 
 /// 合并同时间组的所有音轨组贴图为一张全轨贴图
@@ -101,8 +113,10 @@ pub fn run_render_thread(
     let mut hires_config: Option<HiResConfig> = None;
     let mut deferred: Vec<ControlCommand> = Vec::new();
 
-    // ★ 后台生成线程通过 channel 传回结果 ★
-    let (hires_result_tx, hires_result_rx) = std::sync::mpsc::channel::<HiResPendingResult>();
+    // ★ 后台生成线程通过有界同步通道流式传回贴图（容量1，背压）★
+    // sync_channel(1)：channel 满时 send 阻塞，强制后台等渲染线程消费，
+    // 防止无界积压导致 CPU 内存峰值（对应"装袋期间工人等着"）
+    let (hires_result_tx, hires_result_rx) = std::sync::mpsc::sync_channel::<HiResStreamMsg>(1);
 
     while running.load(Ordering::Relaxed) {
         // 处理命令
@@ -131,35 +145,35 @@ pub fn run_render_thread(
             );
         }
 
-        // ★ 每帧检查后台生成是否完成，完成则合并+上传 ★
-        if let Ok(pending) = hires_result_rx.try_recv() {
-            push_onion_progress(&onion_progress, "正在合并并上传贴图到 GPU…", 0.0);
-            if let Some(renderer) = &mut hires_renderer {
-                // 按 time_group 分组所有贴图
-                let mut by_time: HashMap<u32, Vec<&GroupTile>> = HashMap::new();
-                for (coord, tile) in &pending.tiles {
-                    by_time.entry(coord.time_group).or_default().push(tile);
+        // ★ 流式接收：每帧循环 try_recv，收到已合并像素立即 upload（GPU DMA，非阻塞）★
+        loop {
+            match hires_result_rx.try_recv() {
+                Ok(HiResStreamMsg::TimeGroupMerged {
+                    time_group,
+                    pixels,
+                    width,
+                    height,
+                }) => {
+                    // ★ merge 已在后台线程完成，渲染线程仅做 GPU 上传（DMA 异步，非阻塞）★
+                    if let Some(renderer) = &mut hires_renderer {
+                        let coord = TileCoord::new(0, time_group);
+                        renderer.upload_tile(&device, &queue, coord, &pixels, width, height);
+                    }
+                    // pixels 在此 drop，释放 CPU 像素缓冲
                 }
-
-                let tw = pending.width;
-                let th = pending.height;
-
-                // 合并每个 time_group 的所有 track_group 贴图 → 一张全轨贴图
-                for (time_g, group_tiles) in &by_time {
-                    let merged_pixels = merge_track_groups(group_tiles, tw, th);
-                    let coord = TileCoord::new(0, *time_g);
-                    renderer.upload_tile(&device, &queue, coord, &merged_pixels, tw, th);
+                Ok(HiResStreamMsg::Finished) => {
+                    // 后台生成全部完毕：flush DMA
+                    if hires_renderer.is_some() {
+                        let flush =
+                            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                                label: Some("hires_stream_flush"),
+                            });
+                        queue.submit(std::iter::once(flush.finish()));
+                    }
+                    push_onion_progress(&onion_progress, "高精度洋葱皮贴图流式生成+上传完成", 1.0);
                 }
-
-                // 强制 DMA 完成
-                let flush = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("hires_pending_flush"),
-                });
-                queue.submit(std::iter::once(flush.finish()));
+                Err(_) => break, // 无更多消息，退出本帧接收
             }
-            // pending.tiles 在此 drop，释放 CPU 像素缓冲
-            drop(pending);
-            push_onion_progress(&onion_progress, "高精度洋葱皮贴图生成+上传完成", 1.0);
         }
 
         if should_shutdown {
@@ -287,7 +301,7 @@ fn handle_hires_control(
     hires_renderer: &mut Option<HiResRenderer>,
     hires_meta: &mut Option<HiResMeta>,
     hires_config: &mut Option<HiResConfig>,
-    hires_result_tx: &std::sync::mpsc::Sender<HiResPendingResult>,
+    hires_result_tx: &std::sync::mpsc::SyncSender<HiResStreamMsg>,
     onion_progress: &Arc<Mutex<Vec<(String, f32)>>>,
     texture_format: wgpu::TextureFormat,
 ) {
@@ -306,10 +320,12 @@ fn handle_hires_control(
 
             // ★ 元数据必须在后台线程启动前设置（regen 安全）★
             let track_count = notes.len() as u16;
+            let track_groups = config.track_group_count(track_count);
             let time_groups = config.time_group_count(total_ticks, ppq);
             let ticks_per_group = config.ticks_per_group(ppq);
             *hires_meta = Some(HiResMeta {
                 track_count,
+                track_groups,
                 key_count,
                 time_groups,
                 ticks_per_group,
@@ -317,9 +333,12 @@ fn handle_hires_control(
 
             push_onion_progress(onion_progress, "正在后台生成高精度洋葱皮贴图…", 0.0);
 
-            // ★ 后台线程生成，渲染线程继续跑 ★
+            // ★ 后台线程流式生成（time_group 同步推进），merge 在后台完成，渲染线程仅 upload ★
+            // sync_channel(1) 有界背压：send 满了阻塞，等渲染线程消费后才继续下一个 time_group
             let progress_buf = onion_progress.clone();
-            let tx = hires_result_tx.clone();
+            let tx = Arc::new(Mutex::new(hires_result_tx.clone()));
+            let tile_width = config.tile_width_px;
+            let tile_height = key_count as u32;
             std::thread::spawn(move || {
                 let cb: HiResProgressCallback = Arc::new(move |msg, pct| {
                     if let Ok(mut buf) = progress_buf.lock() {
@@ -327,7 +346,30 @@ fn handle_hires_control(
                     }
                 });
 
-                let tiles = lumino_onion_skin_hires::generate_all_tiles(
+                // time_group 回调：该 time_group 的所有 track_group 贴图已收齐，
+                // 在后台线程同步合并为单张全轨像素缓冲，再发送给渲染线程（渲染线程仅 upload）
+                let time_group_cb = {
+                    let tx = tx.clone();
+                    let tw = tile_width;
+                    let th = tile_height;
+                    move |time_group: u32, tiles: Vec<GroupTile>| {
+                        // ★ merge 在后台线程完成，避免渲染线程被像素合并阻塞 ★
+                        let refs: Vec<&GroupTile> = tiles.iter().collect();
+                        let merged_pixels = merge_track_groups(&refs, tw, th);
+                        // tiles 在此 drop 释放 CPU 像素缓冲（原始分轨贴图）
+                        drop(tiles);
+                        // sync_channel(1) 有界：channel 满时 send 阻塞，背压等渲染线程消费
+                        if let Ok(guard) = tx.lock() {
+                            let _ = guard.send(HiResStreamMsg::TimeGroupMerged {
+                                time_group,
+                                pixels: merged_pixels,
+                                width: tw,
+                                height: th,
+                            });
+                        }
+                    }
+                };
+                lumino_onion_skin_hires::generate_all_tiles_streaming(
                     &notes,
                     &config,
                     ppq,
@@ -335,17 +377,13 @@ fn handle_hires_control(
                     total_ticks,
                     &midi_hash,
                     Some(cb),
+                    &time_group_cb,
                 );
 
-                // 从任意一张贴图推断规格
-                let (width, height) = tiles
-                    .values()
-                    .next()
-                    .map(|t| (t.width, t.height))
-                    .unwrap_or((config.tile_width_px, key_count as u32));
-
-                // 通过 channel 发回渲染线程（未合并的原始贴图）
-                let _ = tx.send(HiResPendingResult { tiles, width, height });
+                // 全部生成完毕
+                if let Ok(guard) = tx.lock() {
+                    let _ = guard.send(HiResStreamMsg::Finished);
+                }
             });
         }
         ControlCommand::DisposeHiResOnionSkin => {
