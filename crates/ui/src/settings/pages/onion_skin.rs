@@ -15,6 +15,21 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
         iced_widget::space().height(20),
+        // 显示底层洋葱皮贴图开关
+        row![
+            iced_widget::Checkbox::new(settings.show_onion_skin)
+                .label("显示底层洋葱皮贴图（低精度/概览）")
+                .on_toggle(|enabled| {
+                    Message::Settings(crate::settings::Event::ShowOnionSkinChanged(enabled))
+                }),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        text("关闭后不再渲染最初生成的整张 4K 长度洋葱皮概览贴图。开启后仅在视口范围达到全曲 40% 以上时显示。")
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+        iced_widget::space().height(24),
         // 启用高精度贴图开关
         row![
             iced_widget::Checkbox::new(settings.hires_onion_enabled)

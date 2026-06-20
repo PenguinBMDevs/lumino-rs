@@ -506,6 +506,29 @@ impl Host {
             ))
         };
 
+        // 计算可见 tick 范围（用于洋葱皮视口和底层洋葱皮显示判断）
+        let (visible_time_start, visible_time_end) = if !is_arrangement_mode {
+            let zoom_x = data.zoom.0.max(1e-6);
+            let time_start = data.scroll.0 / zoom_x;
+            let time_end = (data.scroll.0 + canvas_size.0) / zoom_x;
+            (time_start, time_end)
+        } else {
+            (0.0, 0.0)
+        };
+
+        // 计算视口范围占全曲比例，未达到 40% 时强制禁用底层洋葱皮贴图
+        let show_onion_skin = if let Some((_, _, total_ticks)) = self.hires_gen_info {
+            if total_ticks > 0 && !is_arrangement_mode {
+                let visible_ticks = (visible_time_end - visible_time_start).max(0.0);
+                let visible_ratio = visible_ticks / total_ticks as f32;
+                self.settings().show_onion_skin && visible_ratio >= 0.4
+            } else {
+                self.settings().show_onion_skin
+            }
+        } else {
+            self.settings().show_onion_skin
+        };
+
         // 计算洋葱皮视口参数（仅在钢琴卷帘模式且洋葱皮激活时）
         //
         // 单位约定：钢琴卷帘 note shader 为 tick-线性映射（screen_x = tick*zoom_x - scroll_x + ...），
@@ -513,11 +536,7 @@ impl Host {
         // area 使用物理像素（onion shader 的 @builtin(position) 为 framebuffer 坐标）。
         let onion_skin_viewport = if self.onion_skin_active && !is_arrangement_mode {
             let scale = self.render_ctx.viewport.scale_factor();
-            let zoom_x = data.zoom.0.max(1e-6);
             let zoom_y = data.zoom.1.max(1e-6);
-            // 可见 tick 范围（卷帘左/右边缘对应的 tick）
-            let time_start = data.scroll.0 / zoom_x;
-            let time_end = (data.scroll.0 + canvas_size.0) / zoom_x;
             // 可见键位范围（卷帘顶部=高音 key_start，底部=低音 key_end）
             let key_start = max_key_index - data.scroll.1 / zoom_y;
             let key_end = max_key_index - (data.scroll.1 + canvas_size.1) / zoom_y;
@@ -526,8 +545,8 @@ impl Host {
                 area_y: (canvas_offset.1 + ruler_height) * scale,
                 area_w: canvas_size.0 * scale,
                 area_h: canvas_size.1 * scale,
-                time_start_ms: time_start,
-                time_end_ms: time_end,
+                time_start_ms: visible_time_start,
+                time_end_ms: visible_time_end,
                 key_start,
                 key_end,
             })
@@ -564,6 +583,7 @@ impl Host {
             data.cc_bar_instances,
             velocity_panel_rect,
             onion_skin_viewport,
+            show_onion_skin,
         )
     }
 
