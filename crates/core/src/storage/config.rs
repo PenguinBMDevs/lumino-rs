@@ -193,9 +193,6 @@ pub struct UiConfig {
     /// 高精度洋葱皮贴图：GPU 显存上限 MB（128-4096）
     #[serde(default = "default_hires_gpu_mem_limit")]
     pub hires_gpu_mem_limit_mb: u32,
-    /// 高精度洋葱皮贴图：低精度底图启用阈值（视口可见范围/全曲，0.1-0.9）
-    #[serde(default = "default_hires_threshold")]
-    pub hires_low_precision_threshold: f32,
 }
 
 fn default_true() -> bool {
@@ -237,10 +234,6 @@ fn default_hires_cooldown() -> u64 {
 fn default_hires_gpu_mem_limit() -> u32 {
     512
 }
-fn default_hires_threshold() -> f32 {
-    0.4
-}
-
 /// 用户界面配置默认值
 impl Default for UiConfig {
     fn default() -> Self {
@@ -269,7 +262,6 @@ impl Default for UiConfig {
             hires_tile_width_px: default_hires_tile_width(),
             hires_cooldown_secs: default_hires_cooldown(),
             hires_gpu_mem_limit_mb: default_hires_gpu_mem_limit(),
-            hires_low_precision_threshold: default_hires_threshold(),
         }
     }
 }

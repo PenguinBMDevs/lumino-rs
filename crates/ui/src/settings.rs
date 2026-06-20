@@ -58,7 +58,6 @@ pub enum Event {
     HiresTileWidthChanged(String),
     HiresCooldownChanged(String),
     HiresGpuMemLimitChanged(String),
-    HiresLowPrecisionThresholdChanged(String),
 }
 
 #[derive(Debug, Clone)]
@@ -100,7 +99,6 @@ pub struct SettingsPanel {
     pub hires_tile_width_px: u32,
     pub hires_cooldown_secs: u64,
     pub hires_gpu_mem_limit_mb: u32,
-    pub hires_low_precision_threshold: f32,
 }
 
 impl SettingsPanel {
@@ -134,7 +132,6 @@ impl SettingsPanel {
             hires_tile_width_px: ui_config.hires_tile_width_px,
             hires_cooldown_secs: ui_config.hires_cooldown_secs,
             hires_gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
-            hires_low_precision_threshold: ui_config.hires_low_precision_threshold,
         }
     }
 
@@ -262,11 +259,6 @@ impl SettingsPanel {
             Event::HiresGpuMemLimitChanged(s) => {
                 if let Ok(v) = s.parse::<u32>() {
                     self.hires_gpu_mem_limit_mb = v.clamp(128, 4096);
-                }
-            }
-            Event::HiresLowPrecisionThresholdChanged(s) => {
-                if let Ok(v) = s.parse::<f32>() {
-                    self.hires_low_precision_threshold = v.clamp(0.1, 0.9);
                 }
             }
         }

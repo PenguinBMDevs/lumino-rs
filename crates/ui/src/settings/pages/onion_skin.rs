@@ -15,21 +15,6 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
         iced_widget::space().height(20),
-        // 显示底层洋葱皮贴图开关
-        row![
-            iced_widget::Checkbox::new(settings.show_onion_skin)
-                .label("显示底层洋葱皮贴图（低精度/概览）")
-                .on_toggle(|enabled| {
-                    Message::Settings(crate::settings::Event::ShowOnionSkinChanged(enabled))
-                }),
-        ]
-        .spacing(SPACING_ICON_LABEL)
-        .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        text("关闭后不再渲染最初生成的整张 4K 长度洋葱皮概览贴图。开启后仅在视口范围达到全曲 40% 以上时显示。")
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-        iced_widget::space().height(24),
         // 启用高精度贴图开关
         row![
             iced_widget::Checkbox::new(settings.hires_onion_enabled)
@@ -112,25 +97,6 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
         text("GPU 显存上限越大可同时显示越多贴图。")
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-        iced_widget::space().height(SPACING_CONTENT),
-        // 低精度阈值
-        row![
-            text("低精度底图启用阈值 (0.1-0.9)")
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
-            iced_widget::space().width(SPACING_MAIN),
-            text_input("0.4", &settings.hires_low_precision_threshold.to_string())
-                .on_input(|v| Message::Settings(
-                    crate::settings::Event::HiresLowPrecisionThresholdChanged(v)
-                ))
-                .width(80.0),
-        ]
-        .spacing(SPACING_ICON_LABEL)
-        .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        text("视口可见范围占全曲比例达到此阈值时切换为低精度底图，值越小越早切换。")
             .size(12.0)
             .style(create_placeholder_text_style()),
     ]

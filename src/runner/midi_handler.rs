@@ -13,12 +13,12 @@ impl MidiHandler {
     pub fn import_midi_to_editor(&self, ui: &mut lumino_ui::Host, parsed: &ParsedMidi) {
         ui.reset_playback_manager();
 
-        let Some(document) = parsed.document.as_ref() else {
+        let Some(doc_arc) = parsed.document.as_ref() else {
             // LMPJ 文件加载时已同步构建 MidiDocument，理论上不应走到此路径
             tracing::warn!("MIDI 没有 document，无法导入");
             return;
         };
-        let document = document.as_ref();
+        let document = doc_arc.as_ref();
         tracing::info!("导入 MIDI 文档：{} 音轨", document.track_count());
 
         let track_count = document.track_count();
@@ -39,7 +39,7 @@ impl MidiHandler {
 
         // 将 MidiDocument 传递给编辑器供懒加载使用
         // Arc::clone 是 O(1) 引用计数递增，避免深拷贝 120MB+ 事件数据
-        ui.set_midi_document(document.clone());
+        ui.set_midi_document(std::sync::Arc::clone(doc_arc));
 
         // 从预存储的 tempo_changes 加载
         let tempo_ui: Vec<(u32, u32)> = document

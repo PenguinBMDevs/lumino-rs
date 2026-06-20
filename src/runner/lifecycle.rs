@@ -158,7 +158,6 @@ impl winit::application::ApplicationHandler for Runner {
                         cooldown_secs: ui_cfg.hires_cooldown_secs,
                         gpu_mem_limit_mb: ui_cfg.hires_gpu_mem_limit_mb,
                         group_tile_mem_limit_mb: 256,
-                        low_precision_threshold: ui_cfg.hires_low_precision_threshold,
                         cache_dir: lumino_gfx::HiResConfig::default().cache_dir,
                     };
                     hash.zip(info).map(|(h, i)| (h, i, config))

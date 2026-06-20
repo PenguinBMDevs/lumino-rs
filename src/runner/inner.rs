@@ -418,7 +418,6 @@ impl RunnerInner {
             config.ui.hires_tile_width_px = new.hires_tile_width_px;
             config.ui.hires_cooldown_secs = new.hires_cooldown_secs;
             config.ui.hires_gpu_mem_limit_mb = new.hires_gpu_mem_limit_mb;
-            config.ui.hires_low_precision_threshold = new.hires_low_precision_threshold;
         });
 
         if let Err(e) = self.window_state.storage.config.save() {

@@ -462,15 +462,6 @@ fn update_hires_viewport(
     let t_start = (scroll_x / zoom_x).max(0.0) as u32;
     let t_end = ((scroll_x + canvas_w_logical) / zoom_x) as u32;
 
-    // 高低精度切换：视口可见范围占全曲比例 >= 阈值时用低精度底图
-    let total_ticks = tiles.values().map(|t| t.tick_end).max().unwrap_or(0);
-    if total_ticks > 0 {
-        let visible_ratio = (t_end.saturating_sub(t_start)) as f32 / total_ticks as f32;
-        if visible_ratio >= config.low_precision_threshold {
-            return visible; // 返回空列表，不显示高精度
-        }
-    }
-
     let g_start = t_start / ticks_per_group;
     let g_end = (t_end / ticks_per_group).saturating_add(1);
 

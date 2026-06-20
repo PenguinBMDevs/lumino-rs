@@ -516,19 +516,6 @@ impl Host {
             (0.0, 0.0)
         };
 
-        // 计算视口范围占全曲比例，未达到 40% 时强制禁用底层洋葱皮贴图
-        let show_onion_skin = if let Some((_, _, total_ticks)) = self.hires_gen_info {
-            if total_ticks > 0 && !is_arrangement_mode {
-                let visible_ticks = (visible_time_end - visible_time_start).max(0.0);
-                let visible_ratio = visible_ticks / total_ticks as f32;
-                self.settings().show_onion_skin && visible_ratio >= 0.4
-            } else {
-                self.settings().show_onion_skin
-            }
-        } else {
-            self.settings().show_onion_skin
-        };
-
         // 计算洋葱皮视口参数（仅在钢琴卷帘模式且洋葱皮激活时）
         //
         // 单位约定：钢琴卷帘 note shader 为 tick-线性映射（screen_x = tick*zoom_x - scroll_x + ...），
@@ -583,7 +570,6 @@ impl Host {
             data.cc_bar_instances,
             velocity_panel_rect,
             onion_skin_viewport,
-            show_onion_skin,
         )
     }
 

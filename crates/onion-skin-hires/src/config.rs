@@ -18,9 +18,6 @@ pub const DEFAULT_COOLDOWN_SECS: u64 = 10;
 /// 默认 GPU 显存上限（MB）
 pub const DEFAULT_GPU_MEM_LIMIT_MB: u32 = 512;
 
-/// 默认低精度底图启用阈值（视口可见范围 / 全曲）
-pub const DEFAULT_LOW_PRECISION_THRESHOLD: f32 = 0.4;
-
 /// 默认整合组内存缓冲上限（MB）
 pub const DEFAULT_GROUP_TILE_MEM_LIMIT_MB: u32 = 256;
 
@@ -35,8 +32,6 @@ pub enum ConfigError {
     CooldownOutOfRange(u64),
     #[error("GPU 显存上限必须在 128..=4096 MB 之间，当前为 {0}")]
     GpuMemLimitOutOfRange(u32),
-    #[error("低精度阈值必须在 0.1..=0.9 之间，当前为 {0}")]
-    ThresholdOutOfRange(f32),
 }
 
 /// 高精度贴图运行时配置
@@ -57,8 +52,6 @@ pub struct HiResConfig {
     pub gpu_mem_limit_mb: u32,
     /// 整合组内存缓冲上限（MB），默认 256
     pub group_tile_mem_limit_mb: u32,
-    /// 低精度底图启用阈值（视口可见范围/全曲 ≥ 此值用低精度），默认 0.4
-    pub low_precision_threshold: f32,
     /// 硬盘缓存目录，默认系统 temp/lumino/onion-cache
     pub cache_dir: PathBuf,
 }
@@ -72,7 +65,6 @@ impl Default for HiResConfig {
             cooldown_secs: DEFAULT_COOLDOWN_SECS,
             gpu_mem_limit_mb: DEFAULT_GPU_MEM_LIMIT_MB,
             group_tile_mem_limit_mb: DEFAULT_GROUP_TILE_MEM_LIMIT_MB,
-            low_precision_threshold: DEFAULT_LOW_PRECISION_THRESHOLD,
             cache_dir: default_cache_dir(),
         }
     }
@@ -122,19 +114,7 @@ impl HiResConfig {
         if !(128..=4096).contains(&self.gpu_mem_limit_mb) {
             return Err(ConfigError::GpuMemLimitOutOfRange(self.gpu_mem_limit_mb));
         }
-        if !(0.1..=0.9).contains(&self.low_precision_threshold) {
-            return Err(ConfigError::ThresholdOutOfRange(
-                self.low_precision_threshold,
-            ));
-        }
         Ok(())
-    }
-
-    /// 判断给定视口占比是否应启用低精度底图
-    ///
-    /// `visible_ratio` = 视口可见 tick 范围 / 全曲总 tick
-    pub fn should_use_low_precision(&self, visible_ratio: f32) -> bool {
-        visible_ratio >= self.low_precision_threshold
     }
 }
 
@@ -156,7 +136,6 @@ mod tests {
         assert_eq!(cfg.cooldown_secs, 10);
         assert_eq!(cfg.gpu_mem_limit_mb, 512);
         assert_eq!(cfg.group_tile_mem_limit_mb, 256);
-        assert!((cfg.low_precision_threshold - 0.4).abs() < f32::EPSILON);
         assert!(cfg.cache_dir.ends_with("onion-cache"));
     }
 
@@ -246,22 +225,5 @@ mod tests {
             ..HiResConfig::default()
         };
         assert!(cfg.validate().is_err());
-
-        let cfg = HiResConfig {
-            low_precision_threshold: 0.05,
-            ..HiResConfig::default()
-        };
-        assert!(cfg.validate().is_err());
-    }
-
-    #[test]
-    fn test_should_use_low_precision() {
-        let cfg = HiResConfig::default();
-        // 阈值 0.4
-        assert!(cfg.should_use_low_precision(0.4));
-        assert!(cfg.should_use_low_precision(0.5));
-        assert!(cfg.should_use_low_precision(1.0));
-        assert!(!cfg.should_use_low_precision(0.39));
-        assert!(!cfg.should_use_low_precision(0.1));
     }
 }

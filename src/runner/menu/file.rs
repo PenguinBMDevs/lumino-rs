@@ -208,7 +208,6 @@ impl RunnerInner {
             cooldown_secs: ui_config.hires_cooldown_secs,
             gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
             group_tile_mem_limit_mb: 256, // 默认值，P2.5 可加设置项
-            low_precision_threshold: ui_config.hires_low_precision_threshold,
             cache_dir: lumino_gfx::HiResConfig::default().cache_dir, // 用默认缓存目录
         };
         tracing::info!(
