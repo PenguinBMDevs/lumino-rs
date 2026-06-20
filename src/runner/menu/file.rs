@@ -201,7 +201,17 @@ impl RunnerInner {
             hash_input.extend_from_slice(&(track.len() as u32).to_le_bytes());
         }
         let midi_hash = lumino_gfx::compute_midi_hash(&hash_input);
-        let config = lumino_gfx::HiResConfig::default();
+        let ui_config = &self.window_state.storage.config.get().ui;
+        let config = lumino_gfx::HiResConfig {
+            enabled: ui_config.hires_onion_enabled,
+            measures_per_group: ui_config.hires_measures_per_group,
+            tile_width_px: ui_config.hires_tile_width_px,
+            cooldown_secs: ui_config.hires_cooldown_secs,
+            gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
+            group_tile_mem_limit_mb: 256, // 默认值，P2.5 可加设置项
+            low_precision_threshold: ui_config.hires_low_precision_threshold,
+            cache_dir: lumino_gfx::HiResConfig::default().cache_dir, // 用默认缓存目录
+        };
         tracing::info!(
             "高精度洋葱皮：启动生成，{} 轨，ppq={}，key_count={}，hash={}",
             notes.len(),

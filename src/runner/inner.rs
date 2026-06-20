@@ -413,6 +413,12 @@ impl RunnerInner {
             config.ui.auto_scroll.page_return_position = new.auto_scroll_page_return_position;
             config.ui.icon_hidpi = new.icon_hidpi;
             config.ui.enable_256key = new.enable_256key;
+            config.ui.hires_onion_enabled = new.hires_onion_enabled;
+            config.ui.hires_measures_per_group = new.hires_measures_per_group;
+            config.ui.hires_tile_width_px = new.hires_tile_width_px;
+            config.ui.hires_cooldown_secs = new.hires_cooldown_secs;
+            config.ui.hires_gpu_mem_limit_mb = new.hires_gpu_mem_limit_mb;
+            config.ui.hires_low_precision_threshold = new.hires_low_precision_threshold;
         });
 
         if let Err(e) = self.window_state.storage.config.save() {
