@@ -89,8 +89,8 @@ impl MidiDocument {
 
         let track_names = scan::scan_track_names(&file_bytes);
 
-        let (notes, tempo_changes, control_events) =
-            midly::loader::extract_notes_and_control_events_from_bytes(&file_bytes)
+        let tracks =
+            midly::loader::extract_notes_and_control_events_per_track_from_bytes(&file_bytes)
                 .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
 
         drop(file_bytes);
@@ -99,180 +99,89 @@ impl MidiDocument {
             (cb)(0.50);
         }
 
-        Self::build_from_extracted_notes(
-            notes,
-            tempo_changes,
-            control_events,
-            track_names,
-            progress,
-        )
+        Self::build_from_extracted_tracks(tracks, track_names, progress)
     }
 
-    pub(crate) fn build_from_extracted_notes(
-        notes: Vec<midly::loader::PackedNote>,
-        tempo_changes: Vec<(u32, f32)>,
-        control_events: Vec<midly::loader::PackedControlEvent>,
+    pub(crate) fn build_from_extracted_tracks(
+        tracks: Vec<midly::loader::TrackExtractResult>,
         track_names: Vec<Option<String>>,
         progress: Option<&dyn Fn(f64)>,
     ) -> LoaderResult<Self> {
+        use rayon::prelude::*;
+
+        let track_count = tracks.len();
         let (total_ticks, track_note_counts, total_note_count) =
-            Self::build_track_statistics(&notes);
+            Self::build_track_statistics(&tracks);
 
         if let Some(cb) = progress {
             (cb)(0.55);
         }
 
         let track_events_offset = Self::compute_track_offsets(&track_note_counts);
-        let track_events = Self::convert_notes_parallel(&notes, &track_note_counts);
 
-        // 不再预构建 track_notes_cache（160MB 冗余）。
-        // 首次查询 `get_track_notes*` 时从 events 懒加载计算。
-        drop(notes);
+        // 预分配全局 events Arena：音符事件 + 速度事件（去重后最多 +1）
+        let total_events = total_note_count.saturating_mul(2);
+        let estimated_tempo_events =
+            tracks.iter().map(|t| t.tempo_changes.len()).sum::<usize>() + 1;
+        let mut events: Vec<CompactEvent> =
+            Vec::with_capacity(total_events.saturating_add(estimated_tempo_events));
 
-        let track_events_range =
-            Self::build_track_event_ranges(&track_note_counts, &track_events_offset);
-        let (events, all_tempo_changes) =
-            Self::merge_events_with_tempos(track_events, total_note_count, tempo_changes);
-
-        if let Some(cb) = progress {
-            (cb)(0.75);
-        }
-
-        let mut events = events;
-        events.shrink_to_fit();
-
-        if let Some(cb) = progress {
-            (cb)(0.90);
-        }
-
-        let track_count = track_note_counts.len() as u16;
-        let tracks = TrackManager::new(track_count);
-
-        tracing::info!(
-            "MidiDocument: 已加载 {} 个音符事件, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化 (多线程并行处理)",
-            events.len(),
-            control_events.len(),
-            track_count,
-            total_ticks,
-            all_tempo_changes.len(),
-        );
-
-        Ok(Self {
-            events,
-            track_events_range,
-            tempo_changes: all_tempo_changes,
-            control_events,
-            track_names,
-            total_ticks,
-            track_count,
-            tracks,
-            track_notes_cache: OnceLock::new(),
-        })
-    }
-
-    /// 阶段1：统计每个音轨的音符数量和总 ticks
-    fn build_track_statistics(notes: &[midly::loader::PackedNote]) -> (u32, Vec<u64>, usize) {
-        let mut total_ticks: u32 = 0;
-        let mut track_note_counts: Vec<u64> = Vec::new();
-        let mut total_note_count: usize = 0;
-
-        for note in notes {
-            total_ticks = total_ticks.max(note.end_tick);
-            let tid = note.track as usize;
-            while track_note_counts.len() <= tid {
-                track_note_counts.push(0);
-            }
-            track_note_counts[tid] += 1;
-            total_note_count += 1;
-        }
-
-        (total_ticks, track_note_counts, total_note_count)
-    }
-
-    /// 计算每个音轨在最终 events 数组中的起始偏移
-    fn compute_track_offsets(track_note_counts: &[u64]) -> Vec<usize> {
-        let mut offsets = Vec::with_capacity(track_note_counts.len());
-        let mut offset: usize = 0;
-        for count in track_note_counts {
-            offsets.push(offset);
-            offset += *count as usize * 2;
-        }
-        offsets
-    }
-
-    /// 阶段2：并行处理 - 按音轨分组并转换为 CompactEvent
-    fn convert_notes_parallel(
-        notes: &[midly::loader::PackedNote],
-        track_note_counts: &[u64],
-    ) -> Vec<Vec<CompactEvent>> {
-        use rayon::prelude::*;
-
-        let track_count = track_note_counts.len();
-        let mut track_note_indices: Vec<Vec<usize>> = vec![Vec::new(); track_count];
-        for (idx, note) in notes.iter().enumerate() {
-            track_note_indices[note.track as usize].push(idx);
-        }
-
-        track_note_indices
+        // 按轨并行将 PackedNote 顺序写入 Arena 的独立切片。
+        // 每轨数据局部性好，避免全局 notes 大数组的随机访问。
+        //
+        // SAFETY: 将裸指针转为 usize 后跨线程传递，再转回指针写入。
+        // Vec 在此阶段不会被访问或重新分配，因此指针保持有效。
+        let events_ptr = events.as_mut_ptr() as usize;
+        tracks
             .par_iter()
-            .map(|indices| {
-                let mut events = Vec::with_capacity(indices.len() * 2);
-                for &idx in indices {
-                    let note = &notes[idx];
-                    events.push(CompactEvent::new(
+            .enumerate()
+            .for_each(|(track_idx, track)| {
+                let note_count = track.notes.len();
+                if note_count == 0 {
+                    return;
+                }
+                let start = track_events_offset[track_idx];
+                let slice_len = note_count.saturating_mul(2);
+                // SAFETY: events_ptr 指向容量为 total_events + estimated_tempo_events 的已分配内存。
+                // track_events_offset 保证各轨的 [start, start + slice_len) 区间互不重叠。
+                let events_ptr = events_ptr as *mut CompactEvent;
+                let slice =
+                    unsafe { core::slice::from_raw_parts_mut(events_ptr.add(start), slice_len) };
+
+                let track_idx_u16 = track_idx as u16;
+                let mut head = 0;
+                for note in &track.notes {
+                    slice[head] = CompactEvent::new(
                         note.start_tick,
-                        note.track,
+                        track_idx_u16,
                         EventKind::NoteOn,
                         0,
                         note.key as u16,
                         note.velocity as u16,
-                    ));
-                    events.push(CompactEvent::new(
+                    );
+                    slice[head + 1] = CompactEvent::new(
                         note.end_tick,
-                        note.track,
+                        track_idx_u16,
                         EventKind::NoteOff,
                         0,
                         note.key as u16,
                         note.velocity as u16,
-                    ));
+                    );
+                    head += 2;
                 }
-                events.sort_by_key(|e| e.delta_tick());
-                events
-            })
-            .collect()
-    }
 
-    /// 阶段3：合并所有音轨的事件 + tempo 事件
-    fn merge_events_with_tempos(
-        track_events: Vec<Vec<CompactEvent>>,
-        total_note_count: usize,
-        tempo_changes: Vec<(u32, f32)>,
-    ) -> (Vec<CompactEvent>, Vec<(u32, f32)>) {
-        let estimated_capacity = total_note_count
-            .saturating_mul(2)
-            .saturating_add(tempo_changes.len());
-        let mut events: Vec<CompactEvent> = Vec::with_capacity(estimated_capacity);
+                // 大多数 MIDI 每轨事件已按 tick 有序，检测后再决定是否排序。
+                ensure_sorted_by_delta_tick(slice);
+            });
 
-        for track_ev in track_events {
-            events.extend(track_ev);
-        }
+        // SAFETY: 上面已经完整写入了 total_events 个事件。
+        unsafe { events.set_len(total_events) };
 
-        // 处理 tempo 变化
-        let mut all_tempo_changes: Vec<(u32, f32)> = Vec::with_capacity(tempo_changes.len() + 1);
+        let track_events_range =
+            Self::build_track_event_ranges(&track_note_counts, &track_events_offset);
 
-        // MIDI 标准默认速度为 120 BPM。如果 MIDI 文件提供了 tick 0 处的 tempo 事件，
-        // 则使用文件速度；否则插入默认值确保至少有一个有效的起始速度
-        if !tempo_changes.iter().any(|(t, _)| *t == 0) {
-            all_tempo_changes.push((0u32, 120.0f32));
-        }
-
-        for &(tick, bpm) in &tempo_changes {
-            if !all_tempo_changes.iter().any(|(t, _)| *t == tick) {
-                all_tempo_changes.push((tick, bpm));
-            }
-        }
-        all_tempo_changes.sort_unstable_by_key(|&(t, _)| t);
-
+        // 合并每轨的速度变化，并生成 Tempo 事件追加到 Arena 末尾。
+        let all_tempo_changes = Self::merge_tempo_changes(&tracks);
         for &(tick, bpm) in &all_tempo_changes {
             let tempo_microseconds = if bpm > 0.0 {
                 crate::bpm_to_tempo(bpm as f64)
@@ -289,7 +198,101 @@ impl MidiDocument {
             ));
         }
 
-        (events, all_tempo_changes)
+        // 合并每轨控制事件并按 tick 排序。
+        let total_control_events = tracks.iter().map(|t| t.control_events.len()).sum();
+        let mut control_events = Vec::with_capacity(total_control_events);
+        for track in &tracks {
+            control_events.extend_from_slice(&track.control_events);
+        }
+        control_events.sort_unstable_by_key(|e| e.tick);
+
+        if let Some(cb) = progress {
+            (cb)(0.75);
+        }
+
+        events.shrink_to_fit();
+
+        if let Some(cb) = progress {
+            (cb)(0.90);
+        }
+
+        let track_count_u16 = track_count as u16;
+        let tracks_manager = TrackManager::new(track_count_u16);
+
+        tracing::info!(
+            "MidiDocument: 已加载 {} 个音符事件, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化 (多线程并行处理)",
+            events.len(),
+            control_events.len(),
+            track_count_u16,
+            total_ticks,
+            all_tempo_changes.len(),
+        );
+
+        Ok(Self {
+            events,
+            track_events_range,
+            tempo_changes: all_tempo_changes,
+            control_events,
+            track_names,
+            total_ticks,
+            track_count: track_count_u16,
+            tracks: tracks_manager,
+            track_notes_cache: OnceLock::new(),
+        })
+    }
+
+    /// 阶段1：统计每个音轨的音符数量和总 ticks
+    fn build_track_statistics(
+        tracks: &[midly::loader::TrackExtractResult],
+    ) -> (u32, Vec<u64>, usize) {
+        let mut total_ticks: u32 = 0;
+        let mut track_note_counts: Vec<u64> = Vec::with_capacity(tracks.len());
+        let mut total_note_count: usize = 0;
+
+        for track in tracks {
+            let count = track.notes.len() as u64;
+            track_note_counts.push(count);
+            total_note_count += count as usize;
+
+            if let Some(last_note) = track.notes.last() {
+                total_ticks = total_ticks.max(last_note.end_tick);
+            }
+        }
+
+        (total_ticks, track_note_counts, total_note_count)
+    }
+
+    /// 计算每个音轨在最终 events 数组中的起始偏移
+    fn compute_track_offsets(track_note_counts: &[u64]) -> Vec<usize> {
+        let mut offsets = Vec::with_capacity(track_note_counts.len());
+        let mut offset: usize = 0;
+        for count in track_note_counts {
+            offsets.push(offset);
+            offset += *count as usize * 2;
+        }
+        offsets
+    }
+
+    /// 合并每轨的速度变化，按 tick 去重并补齐 tick 0 默认值。
+    fn merge_tempo_changes(tracks: &[midly::loader::TrackExtractResult]) -> Vec<(u32, f32)> {
+        let mut all_tempo_changes: Vec<(u32, f32)> = Vec::new();
+
+        for track in tracks {
+            for &(tick, bpm) in &track.tempo_changes {
+                if !all_tempo_changes.iter().any(|(t, _)| *t == tick) {
+                    all_tempo_changes.push((tick, bpm));
+                }
+            }
+        }
+
+        // MIDI 标准默认速度为 120 BPM。如果 MIDI 文件提供了 tick 0 处的 tempo 事件，
+        // 则使用文件速度；否则插入默认值确保至少有一个有效的起始速度
+        if !all_tempo_changes.iter().any(|(t, _)| *t == 0) {
+            all_tempo_changes.push((0u32, 120.0f32));
+        }
+
+        all_tempo_changes.sort_unstable_by_key(|&(t, _)| t);
+        all_tempo_changes
     }
 
     /// 构建音轨事件范围索引
@@ -761,5 +764,21 @@ impl MidiDocument {
             .get(track_id)
             .map(|v| v.as_slice())
             .unwrap_or(&[])
+    }
+}
+
+/// 确保事件按 delta_tick 升序排列。
+///
+/// 大多数 MIDI 文件在解析后已经按 tick 有序，因此先用 O(N) 检测有序性，
+/// 仅在检测到乱序时才调用排序，避免对已有序数据做无用功。
+fn ensure_sorted_by_delta_tick(events: &mut [CompactEvent]) {
+    if events.len() < 2 {
+        return;
+    }
+    let sorted = events
+        .windows(2)
+        .all(|w| w[0].delta_tick() <= w[1].delta_tick());
+    if !sorted {
+        events.sort_unstable_by_key(|e| e.delta_tick());
     }
 }
