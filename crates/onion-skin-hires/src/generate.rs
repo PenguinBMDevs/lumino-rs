@@ -46,7 +46,8 @@ pub fn generate_track_tile(
     }
 
     let tick_range = (tick_end - tick_start) as f32;
-    let width_f = width as f32;
+    // 预计算 scale 因子，将每音符两次除法改为两次乘法
+    let scale_x = width as f32 / tick_range;
 
     for note in notes {
         // 裁剪到当前时间组范围（音符跨越组边界时只取组内部分）
@@ -58,11 +59,10 @@ pub fn generate_track_tile(
             continue; // 音符不在当前组范围内
         }
 
-        // tick → X 像素（线性映射）
-        let x_start = ((effective_start - tick_start) as f32 / tick_range * width_f)
-            .clamp(0.0, (width - 1) as f32) as u32;
-        let x_end = ((effective_end - tick_start) as f32 / tick_range * width_f)
-            .clamp(0.0, width as f32) as u32;
+        // tick → X 像素（线性映射，用预乘 scale_x 避免每音符除法）
+        let x_start =
+            ((effective_start - tick_start) as f32 * scale_x).clamp(0.0, (width - 1) as f32) as u32;
+        let x_end = ((effective_end - tick_start) as f32 * scale_x).clamp(0.0, width as f32) as u32;
         if x_start >= x_end {
             continue;
         }
@@ -71,14 +71,13 @@ pub fn generate_track_tile(
         let y = (note.key as u32).clamp(0, height - 1);
 
         // 写入颜色（简单覆盖，不 blend，alpha 固定 255）
-        let color = note.color;
-        let row_offset = (y * width * 4) as usize;
-        for x in x_start..x_end {
-            let idx = row_offset + (x * 4) as usize;
-            pixels[idx] = color[0];
-            pixels[idx + 1] = color[1];
-            pixels[idx + 2] = color[2];
-            pixels[idx + 3] = 255;
+        // 按 4 字节块批量复制，编译器可自动向量化
+        let color = [note.color[0], note.color[1], note.color[2], 255];
+        let row_offset = (y * width) as usize * 4;
+        let row_start = row_offset + (x_start as usize) * 4;
+        let row_end = row_offset + (x_end as usize) * 4;
+        for chunk in pixels[row_start..row_end].chunks_exact_mut(4) {
+            chunk.copy_from_slice(&color);
         }
     }
 
@@ -111,17 +110,16 @@ pub fn merge_group_tiles(
     let pixel_count = (width * height) as usize;
     let mut pixels = vec![0u8; pixel_count * 4];
 
+    // 将目标缓冲按 u32 字寻址：RGBA8 little-endian 下 alpha 位于最高字节
+    let dst = bytemuck::cast_slice_mut::<u8, u32>(&mut pixels);
     for tile in tiles {
         debug_assert_eq!(tile.width, width, "贴图宽度不一致");
         debug_assert_eq!(tile.height, height, "贴图高度不一致");
-        // 后轨覆盖前轨：只覆盖非透明像素（alpha > 0），保留下层
-        for (i, chunk) in tile.pixels.chunks_exact(4).enumerate() {
-            if chunk[3] > 0 {
-                let offset = i * 4;
-                pixels[offset] = chunk[0];
-                pixels[offset + 1] = chunk[1];
-                pixels[offset + 2] = chunk[2];
-                pixels[offset + 3] = chunk[3];
+        // 后轨覆盖前轨：单条 u32 指令完成读/写/alpha 判断
+        let src = bytemuck::cast_slice::<u8, u32>(&tile.pixels);
+        for (i, &pixel) in src.iter().enumerate() {
+            if pixel & 0xFF00_0000 != 0 {
+                dst[i] = pixel;
             }
         }
     }
