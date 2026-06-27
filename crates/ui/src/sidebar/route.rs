@@ -10,19 +10,22 @@ use crate::{Element, Theme, resources::icon, window};
 pub fn view<'a>(
     active: Route,
     panel_visible: bool,
+    automation_panel_visible: bool,
     window: &window::Window,
     language: Language,
 ) -> Element<'a> {
     let items = ROUTES
         .into_iter()
         .map(|r| match r {
-            RouteConfig::Item { route, icon } => item(
-                route,
-                icon,
-                panel_visible && route == active,
-                window,
-                language,
-            ),
+            RouteConfig::Item { route, icon } => {
+                // 自动化面板独立控制指示条
+                let is_active = if route == Route::Automation {
+                    automation_panel_visible
+                } else {
+                    panel_visible && route == active
+                };
+                item(route, icon, is_active, window, language)
+            }
             RouteConfig::Space => space().height(Length::Fill).into(),
         })
         .collect::<Vec<_>>();
@@ -66,8 +69,11 @@ fn item<'a>(
         .align_y(Alignment::Center);
 
     // 音轨总览路由使用 RouteUpdated 事件，避免触发面板切换
+    // 自动化路由使用 AutomationPanelToggled 事件，独立控制
     let event = if route == Route::Arrangement {
         Event::route_updated(route)
+    } else if route == Route::Automation {
+        Event::automation_panel_toggled()
     } else {
         Event::panel_toggled(route)
     };

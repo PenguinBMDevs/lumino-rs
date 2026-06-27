@@ -26,6 +26,8 @@ pub enum Event {
     ResizeDragged(Point),
     /// 结束拖拽调整面板宽度
     ResizeDragEnded,
+    /// 自动化面板切换
+    AutomationPanelToggled,
 }
 
 impl Event {
@@ -63,5 +65,9 @@ impl Event {
 
     pub const fn resize_drag_ended() -> Message {
         Message::Sidebar(Self::ResizeDragEnded)
+    }
+
+    pub const fn automation_panel_toggled() -> Message {
+        Message::Sidebar(Self::AutomationPanelToggled)
     }
 }

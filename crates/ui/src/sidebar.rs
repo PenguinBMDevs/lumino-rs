@@ -23,7 +23,7 @@ pub const RESIZE_HANDLE_WIDTH: f32 = 6.0;
 pub enum Route {
     File,
     Arrangement,
-    Audio,
+    Automation,
 }
 
 impl Route {
@@ -32,7 +32,7 @@ impl Route {
         match self {
             Route::File => t.sidebar_file,
             Route::Arrangement => t.sidebar_arrangement,
-            Route::Audio => t.sidebar_audio,
+            Route::Automation => t.sidebar_automation,
         }
     }
 }
@@ -53,7 +53,7 @@ const ROUTES: [RouteConfig; 4] = [
         icon: icon::Arrangement,
     },
     RouteConfig::Item {
-        route: Route::Audio,
+        route: Route::Automation,
         icon: icon::WaveForm,
     },
     RouteConfig::Space,
@@ -74,6 +74,8 @@ pub struct Sidebar {
     resize_start_x: f32,
     /// 拖拽开始时的面板宽度
     resize_start_width: f32,
+    /// 自动化面板是否可见（独立于路由面板）
+    pub automation_panel_visible: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +115,7 @@ impl Sidebar {
             is_resizing: false,
             resize_start_x: 0.0,
             resize_start_width: DEFAULT_PANEL_WIDTH,
+            automation_panel_visible: false,
         }
     }
 
@@ -133,7 +136,13 @@ impl Sidebar {
         };
 
         let inner = row![
-            route::view(self.route, self.panel_visible, window, language),
+            route::view(
+                self.route,
+                self.panel_visible,
+                self.automation_panel_visible,
+                window,
+                language
+            ),
             panel,
         ];
 
@@ -211,6 +220,9 @@ impl Sidebar {
             }
             ResizeDragEnded => {
                 self.is_resizing = false;
+            }
+            AutomationPanelToggled => {
+                self.automation_panel_visible = !self.automation_panel_visible;
             }
         }
         // 最终保护：音轨总览模式下强制关闭面板

@@ -1,14 +1,13 @@
 //! Root 视图渲染子模块
 
 use iced_core::Length;
-use iced_widget::{Stack, column, container, progress_bar, row, space, text};
+use iced_widget::{column, container, progress_bar, row, space, text};
 use lumino_gfx::NoteInstance;
 
 use crate::editor::note::NoteExt;
 use crate::message;
 use crate::root::{Element, Root, Theme};
 use crate::state::root_state::DialogType;
-use crate::statusbar::performance;
 use crate::view::{
     audio_export_dialog::view_audio_export_dialog, collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
@@ -132,12 +131,17 @@ impl Root {
                 // 音轨总览模式：使用 wgpu 原生渲染
                 self.view_arrangement()
             } else {
-                // 力度面板：位于卷帘下方单独占位
-                let velocity_panel = self.editor.velocity_panel.view(
-                    &self.editor,
-                    self.visual.velocity_panel_height,
-                    self.settings.language,
-                );
+                // 自动化面板（力度/CC/Tempo/Bend 绘制面板）
+                // 由侧边栏自动化按钮控制显示/隐藏
+                let velocity_panel: Element<'_> = if self.sidebar.automation_panel_visible {
+                    self.editor.velocity_panel.view(
+                        &self.editor,
+                        self.visual.velocity_panel_height,
+                        self.settings.language,
+                    )
+                } else {
+                    iced_widget::Space::new().height(0).into()
+                };
                 // 编辑器视图（卷帘 + 滚动条）
                 let editor_view = self.editor.view(
                     message::Message::ScrollbarScrolled,
@@ -183,9 +187,9 @@ impl Root {
         if self.statusbar.perf_panel_expanded {
             puffin::profile_scope!("root_view_perf_panel");
             let perf_data = self.statusbar.perf_data();
-            let panel = performance::performance_panel_view(perf_data);
+            let panel = crate::statusbar::performance::performance_panel_view(perf_data);
 
-            Stack::new()
+            iced_widget::Stack::new()
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .push(

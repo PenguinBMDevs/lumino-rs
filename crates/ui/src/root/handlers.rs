@@ -428,6 +428,12 @@ impl Root {
     }
 
     fn handle_sidebar_event(&mut self, event: sidebar::Event) -> bool {
+        // 自动化面板切换始终触发重绘
+        if matches!(&event, sidebar::Event::AutomationPanelToggled) {
+            self.sidebar.update(event);
+            return true;
+        }
+
         // 先检查是否是音轨切换
         let track_selected_idx = if let sidebar::Event::TrackSelected(idx) = &event {
             Some(*idx)
