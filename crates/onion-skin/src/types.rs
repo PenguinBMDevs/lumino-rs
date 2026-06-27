@@ -24,36 +24,51 @@ pub struct OnionSkinNote {
 
 impl OnionSkinNote {
     /// 从 NoteInfo 创建（tick 单位）
+    ///
+    /// 注意：`generate_track_tile` 以 `start_ms`/`end_ms` 字段作为 tick 值筛选，
+    /// 因此 tick 单位的构造器需将 tick 同步写入这两个字段。
     pub fn from_note_info(note: &NoteInfo, color: [u8; 4]) -> Self {
+        let start_tick = note.start_tick;
+        let end_tick = note.end_tick();
         Self {
-            start_tick: note.start_tick,
-            end_tick: note.end_tick(),
-            start_ms: 0.0,
-            end_ms: 0.0,
+            start_tick,
+            end_tick,
+            start_ms: start_tick as f32,
+            end_ms: end_tick as f32,
             key: note.key,
             color,
         }
     }
 
     /// 从 NoteEvent 创建（tick 单位）
+    ///
+    /// 注意：`generate_track_tile` 以 `start_ms`/`end_ms` 字段作为 tick 值筛选，
+    /// 因此 tick 单位的构造器需将 tick 同步写入这两个字段。
     pub fn from_note_event(note: &lumino_midi_loader::NoteEvent, color: [u8; 4]) -> Self {
+        let start_tick = note.start_tick;
+        let end_tick = note.end_tick();
         Self {
-            start_tick: note.start_tick,
-            end_tick: note.end_tick(),
-            start_ms: 0.0,
-            end_ms: 0.0,
+            start_tick,
+            end_tick,
+            start_ms: start_tick as f32,
+            end_ms: end_tick as f32,
             key: note.key,
             color,
         }
     }
 
     /// 从 Note 创建（tick 单位）
+    ///
+    /// 注意：`generate_track_tile` 以 `start_ms`/`end_ms` 字段作为 tick 值筛选，
+    /// 因此 tick 单位的构造器需将 tick 同步写入这两个字段。
     pub fn from_note(note: &Note, color: [u8; 4]) -> Self {
+        let start_tick = note.tick as u32;
+        let end_tick = (note.tick + note.length) as u32;
         Self {
-            start_tick: note.tick as u32,
-            end_tick: (note.tick + note.length) as u32,
-            start_ms: 0.0,
-            end_ms: 0.0,
+            start_tick,
+            end_tick,
+            start_ms: start_tick as f32,
+            end_ms: end_tick as f32,
             key: note.key as u8,
             color,
         }
