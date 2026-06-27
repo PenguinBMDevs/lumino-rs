@@ -9,7 +9,7 @@ use xsynth_core::channel_group::SynthEvent;
 use xsynth_core::soundfont::{SampleSoundfont, SoundfontBase};
 use xsynth_core::{AudioStreamParams, ChannelCount};
 
-use lumino_midi_io::compact::EventKind;
+use lumino_midi_io::compact::{CompactEvent, EventKind};
 use lumino_midi_loader::MidiDocument;
 use lumino_midi_loader::ParsedMidi;
 
@@ -40,8 +40,16 @@ impl MidiEventParser {
 
         // 按音轨顺序处理（与 SMF 路径行为一致）
         for track_id in 0..document.track_count() as u16 {
-            let (start, end) = document.track_events_range(track_id);
-            let track_events = &document.events[start..end];
+            let track_notes = document.track_notes(track_id as usize);
+
+            // 从 NoteEvent 构造本轨的 NoteOn/NoteOff 事件，并按 tick 排序
+            let mut track_events: Vec<CompactEvent> = Vec::with_capacity(track_notes.len() * 2);
+            for note in track_notes {
+                let [on, off] = note.to_compact_events(track_id);
+                track_events.push(on);
+                track_events.push(off);
+            }
+            track_events.sort_unstable_by_key(|e| e.delta_tick());
 
             // 筛选本轨的控制事件（control_events 全程按 tick 排序）
             let track_controls: Vec<&midly::loader::PackedControlEvent> = document
@@ -185,8 +193,8 @@ impl MidiEventParser {
 /// 从已解析的 ParsedMidi 导出音频（直接使用内存中 CompactEvent 数据，零解析）
 ///
 /// 与 `export_audio_from_bytes` 不同，此函数**不会**再次 `midly::Smf::parse()`，
-/// 而是直接读取 `MidiDocument.events`（CompactEvent）+ `control_events`
-/// （PackedControlEvent）流式渲染，彻底消除 Smf 结构占用。
+/// 而是从 `MidiDocument.track_notes()` 的 `NoteEvent` 实时构造 CompactEvent，
+/// 结合 `control_events`（PackedControlEvent）流式渲染，彻底消除 Smf 结构占用。
 ///
 /// # 参数
 /// - `parsed_midi`: 已解析的 MIDI 数据（必须包含 `document`）
@@ -231,13 +239,15 @@ pub fn export_audio_from_parsed(
     // 从预提取的 tempo 变化构建速度图（已由 midly loader 扫描完毕）
     let tempo_map = TempoMap::from_changes(&document.tempo_changes, ppqn);
 
+    let total_notes: usize = document.notes.iter().map(|v| v.len()).sum();
     tracing::info!(
         "开始音频导出(CompactEvent 直连): 输出={:?}, 格式={}, \
-         采样率={}Hz, 事件数={}, 音轨数={}, PPQN={}",
+         采样率={}Hz, 音符数={}, 控制事件数={}, 音轨数={}, PPQN={}",
         output_path,
         options.format,
         options.sample_rate,
-        document.events.len() + document.control_events.len(),
+        total_notes,
+        document.control_events.len(),
         document.track_count(),
         ppqn,
     );

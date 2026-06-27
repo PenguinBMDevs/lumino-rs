@@ -67,8 +67,10 @@ pub async fn load_parsed_midi(
             if let Some(midi_bytes) = midi_bytes {
                 match build_document_from_midi_bytes(&midi_bytes, track_count) {
                     Ok(doc) => {
-                        let total_events = doc.all_events().len() as u64;
-                        parsed.info.total_notes = total_events / 2;
+                        let total_notes: u64 = (0..doc.track_count())
+                            .map(|t| doc.track_note_count(t as u16))
+                            .sum();
+                        parsed.info.total_notes = total_notes;
                         parsed.info.duration_ticks = doc.total_ticks();
                         parsed.document = Some(std::sync::Arc::new(doc));
                     }

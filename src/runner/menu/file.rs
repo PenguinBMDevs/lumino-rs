@@ -1,4 +1,4 @@
-﻿//! Runner 文件菜单处理
+//! Runner 文件菜单处理
 
 mod export;
 mod helpers;
@@ -158,12 +158,7 @@ impl RunnerInner {
             let converted: Vec<lumino_gfx::OnionSkinNote> = track_notes
                 .iter()
                 .map(|n| {
-                    lumino_gfx::OnionSkinNote::from_ms(
-                        n.start_tick as f32,
-                        n.end_tick() as f32,
-                        n.key,
-                        onion_track_color(track_idx),
-                    )
+                    lumino_gfx::OnionSkinNote::from_note_event(n, onion_track_color(track_idx))
                 })
                 .collect();
             notes.push(converted);

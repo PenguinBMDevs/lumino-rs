@@ -35,6 +35,18 @@ impl OnionSkinNote {
         }
     }
 
+    /// 从 NoteEvent 创建（tick 单位）
+    pub fn from_note_event(note: &lumino_midi_loader::NoteEvent, color: [u8; 4]) -> Self {
+        Self {
+            start_tick: note.start_tick,
+            end_tick: note.end_tick(),
+            start_ms: 0.0,
+            end_ms: 0.0,
+            key: note.key,
+            color,
+        }
+    }
+
     /// 从 Note 创建（tick 单位）
     pub fn from_note(note: &Note, color: [u8; 4]) -> Self {
         Self {

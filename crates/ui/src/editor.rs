@@ -158,18 +158,18 @@ impl Editor {
             track_notes_bytes += notes.len() * note_size;
         }
 
-        // document events (CompactEvent=12B, (u32,f32)=8B)
+        // document notes (NoteEvent=16B, (u32,f32)=8B)
         let doc_is_some = d.document.is_some();
-        let doc_event_cap = d
+        let doc_notes_cap: usize = d
             .document
             .as_ref()
-            .map(|d| d.events.capacity())
+            .map(|d| d.notes.iter().map(|v| v.capacity()).sum())
             .unwrap_or(0);
         let doc_events_bytes = d
             .document
             .as_ref()
             .map(|doc| {
-                doc.events.capacity() * 12       // CompactEvent
+                doc_notes_cap * std::mem::size_of::<lumino_midi_loader::NoteEvent>() // NoteEvent
                     + doc.tempo_changes.capacity() * 8 // (u32, f32)
             })
             .unwrap_or(0);
@@ -178,9 +178,9 @@ impl Editor {
         let track_note_indices_entries = self.spatial.track_note_indices.borrow().len();
 
         tracing::info!(
-            "[MEMORY_DEBUG] document={}, events_cap={}, notes_len={}, track_notes_entries={}, track_notes_count={}",
+            "[MEMORY_DEBUG] document={}, notes_cap={}, notes_len={}, track_notes_entries={}, track_notes_count={}",
             doc_is_some,
-            doc_event_cap,
+            doc_notes_cap,
             notes_len,
             track_notes_entries,
             track_notes_count,

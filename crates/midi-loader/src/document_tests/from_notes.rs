@@ -12,7 +12,8 @@ fn test_from_notes_file() {
     let doc = MidiDocument::from_notes_file(&tmp, None).expect("测试：加载MIDI文档失败");
     assert_eq!(doc.track_count(), 1);
     assert!(doc.total_ticks > 0);
-    assert!(!doc.events.is_empty());
+    assert!(!doc.notes.is_empty());
+    assert!(!doc.notes[0].is_empty());
 
     let evs = doc.get_track_events(0);
     assert!(!evs.is_empty());

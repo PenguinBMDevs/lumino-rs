@@ -23,10 +23,12 @@ pub struct PlaybackEngine {
     notes: Vec<NoteEvent>,
     /// 非音符MIDI事件（CC/PC/PB等）
     midi_events: Vec<MidiTrackEvent>,
-    /// MIDI 文档（其他音轨从此流式读取，零额外内存）
+    /// MIDI 文档（其他音轨从此流式读取）
     document: Option<Arc<MidiDocument>>,
     /// 每个音轨的事件游标（当前处理到第几个事件）
     track_cursors: Vec<usize>,
+    /// 其他音轨的 CompactEvent 缓冲区（从 `NoteEvent` 按需构造，按 tick 排序）
+    track_event_buffers: Vec<Vec<CompactEvent>>,
     /// 当前音轨索引（此轨从 self.notes 读，不从 document 读）
     current_track: u16,
     /// 单位：tick
@@ -49,6 +51,7 @@ impl PlaybackEngine {
             midi_events: Vec::new(),
             document: None,
             track_cursors: Vec::new(),
+            track_event_buffers: Vec::new(),
             current_track: 0,
             last_processed_tick: 0.0,
             looping: false,
@@ -57,10 +60,24 @@ impl PlaybackEngine {
         }
     }
 
-    /// 设置 MIDI 文档引用（其他音轨从此流式读取，零额外内存）
+    /// 设置 MIDI 文档引用（其他音轨从此流式读取）
     pub fn set_document(&mut self, doc: Arc<MidiDocument>, current_track: u16) {
         let track_count = doc.track_count();
         self.track_cursors = vec![0usize; track_count];
+        self.track_event_buffers = (0..track_count)
+            .map(|t| {
+                let notes = doc.track_notes(t);
+                let track_id = t as u16;
+                let mut events: Vec<CompactEvent> = Vec::with_capacity(notes.len() * 2);
+                for note in notes {
+                    let [on, off] = note.to_compact_events(track_id);
+                    events.push(on);
+                    events.push(off);
+                }
+                events.sort_unstable_by_key(|e| e.delta_tick());
+                events
+            })
+            .collect();
         self.control_event_cursor = 0;
         self.current_track = current_track;
         self.document = Some(doc);
@@ -173,7 +190,7 @@ impl PlaybackEngine {
         }
     }
 
-    /// 处理其他音轨的事件（从 document 流式读取）
+    /// 处理其他音轨的事件（从预生成的 CompactEvent 缓冲区流式读取）
     fn process_other_tracks(&mut self, current_tick: f32, messages: &mut Vec<MidiMessage>) {
         let Some(doc) = &self.document else { return };
         let tick_start_u = self.last_processed_tick as u32;
@@ -183,11 +200,10 @@ impl PlaybackEngine {
             if t == self.current_track as usize {
                 continue;
             }
-            let (range_start, range_end) = doc.track_events_range(t as u16);
-            if range_start >= range_end {
-                continue;
-            }
-            let events = &doc.events[range_start..range_end];
+            let events = match self.track_event_buffers.get(t) {
+                Some(e) if !e.is_empty() => e,
+                _ => continue,
+            };
             let cursor = &mut self.track_cursors[t];
 
             while *cursor < events.len() {
@@ -244,11 +260,10 @@ impl PlaybackEngine {
                     if t == self.current_track as usize {
                         continue;
                     }
-                    let (range_start, range_end) = doc.track_events_range(t as u16);
-                    if range_start >= range_end {
-                        continue;
-                    }
-                    let events = &doc.events[range_start..range_end];
+                    let events = match self.track_event_buffers.get(t) {
+                        Some(e) if !e.is_empty() => e,
+                        _ => continue,
+                    };
                     let cursor = &mut self.track_cursors[t];
                     *cursor = events.partition_point(|ev| ev.delta_tick() < seek_tick_u);
                 }
@@ -394,18 +409,17 @@ impl PlaybackEngine {
         Some(self.playback.lock())
     }
 
-    /// 将 document 游标定位到指定 tick 之后第一个事件
+    /// 将 event buffer 游标定位到指定 tick 之后第一个事件
     fn reset_cursors_to(&mut self, tick: f32) {
         let Some(doc) = &self.document else { return };
         for t in 0..self.track_cursors.len() {
             if t == self.current_track as usize {
                 continue;
             }
-            let (start, end) = doc.track_events_range(t as u16);
-            if start >= end {
-                continue;
-            }
-            let events = &doc.events[start..end];
+            let events = match self.track_event_buffers.get(t) {
+                Some(e) if !e.is_empty() => e,
+                _ => continue,
+            };
             // 二分查找第一个 >= tick 的事件
             let pos = events.partition_point(|e| e.delta_tick() < tick as u32);
             self.track_cursors[t] = pos;

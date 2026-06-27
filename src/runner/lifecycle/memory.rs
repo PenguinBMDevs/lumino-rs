@@ -33,7 +33,7 @@ impl RunnerInner {
                 ┌─ Memory Usage ──────────────────────────────────────────┐\n\
                 │ 进程 RSS:              {:>8} MB                         │\n\
                 ├─────────────────────────────────────────────────────────┤\n\
-                │ MidiDocument.events:   {:>8} MB  (Vec<CompactEvent>)    │\n\
+                │ MidiDocument.notes:    {:>8} MB  (Vec<NoteEvent>)      │\n\
                 │ editor.notes:          {:>8} MB  (im::Vector<Note>)     │\n\
                 │ track_notes({}条):  {:>8} MB  ({} 音符)              │\n\
             │ track_midi_events:     {:>8} MB  ({} 条)               │\n\

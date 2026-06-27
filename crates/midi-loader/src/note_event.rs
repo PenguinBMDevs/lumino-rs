@@ -48,6 +48,12 @@ impl NoteEvent {
         self.end_tick.saturating_sub(self.start_tick)
     }
 
+    /// 音符结束 tick（与 `end_tick` 字段等价，方便与 `NoteInfo` 接口兼容）。
+    #[inline]
+    pub fn end_tick(&self) -> u32 {
+        self.end_tick
+    }
+
     /// 转换为 NoteOn + NoteOff 两个 `CompactEvent`。
     ///
     /// 用于尚未迁移到 `NoteEvent` 的下游路径（如音频导出）。
@@ -148,5 +154,12 @@ mod tests {
         assert_eq!(note.key, 60);
         assert_eq!(note.velocity, 100);
         assert_eq!(note.channel, 5);
+    }
+
+    #[test]
+    fn test_note_event_end_tick_method() {
+        let note = NoteEvent::new(100, 200, 60, 100, 5);
+        assert_eq!(note.end_tick(), 200);
+        assert_eq!(note.length(), 100);
     }
 }
