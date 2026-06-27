@@ -7,7 +7,7 @@ version = "0.1.1-dev"
 rust-version = "1.92.0"
 homepage = "https://github.com/PenguinBMDevs/lumino-rs"
 repository = "https://github.com/PenguinBMDevs/lumino-rs"
-license = "Mulan PSL v2"
+license = "AGPL-3.0-or-later"
 edition = "2024"
 
 [workspace.dependencies]
