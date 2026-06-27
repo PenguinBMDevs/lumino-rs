@@ -3858,7 +3858,7 @@ dependencies = [
 [[package]]
 name = "midly"
 version = "0.6.0"
-source = "git+https://github.com/PenguinBMDevs/midly-fork#d5da510f4799047779bfebe08664d494818158f8"
+source = "git+https://github.com/PenguinBMDevs/midly-fork#f6b798d256c7262846b6126933011aa1a1fa891f"
 dependencies = [
  "memmap2",
  "rayon",
