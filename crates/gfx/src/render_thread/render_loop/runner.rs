@@ -292,12 +292,12 @@ fn push_onion_progress(progress: &Arc<Mutex<Vec<(String, f32)>>>, msg: &str, val
 /// 核心策略：
 /// - 全曲生成在后台线程进行，渲染线程每帧通过 channel 检查结果
 /// - 收到结果后按 time_group 合并所有 track_group 贴图，只上传合并后的全轨贴图
-/// - 音轨重生成（RegenerateHiResTrack）直接在渲染线程同步执行
+/// - 音轨重生成（RegenerateHiResTrack）也移到后台线程，避免阻塞渲染主循环
 #[allow(clippy::too_many_arguments)]
 fn handle_hires_control(
     cmd: ControlCommand,
     device: &wgpu::Device,
-    queue: &wgpu::Queue,
+    _queue: &wgpu::Queue,
     hires_renderer: &mut Option<HiResRenderer>,
     hires_meta: &mut Option<HiResMeta>,
     hires_config: &mut Option<HiResConfig>,
@@ -307,7 +307,7 @@ fn handle_hires_control(
 ) {
     match cmd {
         ControlCommand::GenerateHiResOnionSkin {
-            notes,
+            mut notes,
             ppq,
             key_count,
             total_ticks,
@@ -370,7 +370,7 @@ fn handle_hires_control(
                     }
                 };
                 lumino_onion_skin_hires::generate_all_tiles_streaming(
-                    &notes,
+                    &mut notes,
                     &config,
                     ppq,
                     key_count,
@@ -395,7 +395,7 @@ fn handle_hires_control(
         // 重生成指定音轨的高精度贴图（编辑后冷静期到期触发）
         ControlCommand::RegenerateHiResTrack {
             track_idx,
-            notes,
+            mut notes,
             ppq,
             key_count,
             total_ticks,
@@ -406,9 +406,14 @@ fn handle_hires_control(
             let time_groups = config.time_group_count(total_ticks, ppq);
             let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
             let width = config.tile_width_px;
+            let measures_per_group = config.measures_per_group;
+            let cache_dir = config.cache_dir.clone();
 
             // 从元数据推断音轨组的音轨范围
-            let meta = hires_meta.as_ref().expect("元数据应在首次生成后存在");
+            let Some(meta) = hires_meta.as_ref() else {
+                tracing::warn!("重生音轨 {track_idx} 时元数据不存在，跳过");
+                return;
+            };
             let track_start = (track_group * TRACKS_PER_GROUP as u32) as u16;
             let track_end =
                 ((track_group + 1) * TRACKS_PER_GROUP as u32).min(meta.track_count as u32) as u16;
@@ -420,84 +425,85 @@ fn handle_hires_control(
                 0.0,
             );
 
-            let renderer = hires_renderer.as_mut().expect("渲染器应在首次生成后存在");
+            // ★ 重生成移到后台线程，避免阻塞渲染线程 ★
+            // 生成完成后通过已有 hires_result_tx 传回，渲染线程仅做 GPU upload。
+            // 简化语义与之前一致：假设单 track_group，用 group_tile 像素覆盖全轨贴图。
+            let tx = Arc::new(Mutex::new(hires_result_tx.clone()));
+            let progress_buf = onion_progress.clone();
+            std::thread::spawn(move || {
+                // generate_track_tile 要求音符按 start_ms 升序排列
+                notes.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
 
-            for time_g in 0..time_groups {
-                let tick_start = time_g * ticks_per_group;
-                let tick_end = tick_start + ticks_per_group;
-                let coord = TileCoord::new(track_group, time_g);
+                for time_g in 0..time_groups {
+                    let tick_start = time_g * ticks_per_group;
+                    let tick_end = tick_start + ticks_per_group;
+                    let coord = TileCoord::new(track_group, time_g);
 
-                // 重新生成脏音轨的单音轨贴图
-                let dirty_tile = generate_track_tile(
-                    &notes, track_idx, time_g, tick_start, tick_end, width, key_count,
-                );
+                    // 重新生成脏音轨的单音轨贴图
+                    let dirty_tile = generate_track_tile(
+                        &notes, track_idx, time_g, tick_start, tick_end, width, key_count,
+                    );
 
-                // 从缓存加载同组其他音轨的单音轨贴图
-                let mut track_tiles = Vec::new();
-                for t in track_range.0..track_range.1 {
-                    if t == track_idx {
-                        track_tiles.push(dirty_tile.clone());
-                    } else {
-                        let meta = CacheMeta::from_tile(
-                            &dirty_tile,
-                            key_count,
-                            ppq,
-                            config.measures_per_group,
-                        );
-                        match read_track_tile_cache(&config.cache_dir, &midi_hash, t, time_g, &meta)
-                        {
-                            Ok(Some(tile)) => track_tiles.push(tile),
-                            Ok(None) => {
-                                tracing::debug!(
-                                    "重生成：音轨 {t} 时间组 {time_g} 缓存未命中，跳过"
-                                );
-                            }
-                            Err(e) => {
-                                tracing::warn!("重生成：音轨 {t} 缓存读取失败: {e}");
+                    // 从缓存加载同组其他音轨的单音轨贴图
+                    let mut track_tiles = Vec::new();
+                    for t in track_range.0..track_range.1 {
+                        if t == track_idx {
+                            track_tiles.push(dirty_tile.clone());
+                        } else {
+                            let meta = CacheMeta::from_tile(
+                                &dirty_tile,
+                                key_count,
+                                ppq,
+                                measures_per_group,
+                            );
+                            match read_track_tile_cache(&cache_dir, &midi_hash, t, time_g, &meta) {
+                                Ok(Some(tile)) => track_tiles.push(tile),
+                                Ok(None) => {
+                                    tracing::debug!(
+                                        "重生成：音轨 {t} 时间组 {time_g} 缓存未命中，跳过"
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!("重生成：音轨 {t} 缓存读取失败: {e}");
+                                }
                             }
                         }
                     }
+
+                    // 合并为新的整合组贴图（仅该 track_group 内）
+                    let group_tile = merge_group_tiles(
+                        &track_tiles,
+                        coord,
+                        tick_start,
+                        tick_end,
+                        width,
+                        key_count,
+                        track_range,
+                    );
+
+                    // 传回渲染线程执行 GPU 上传
+                    if let Ok(guard) = tx.lock() {
+                        let _ = guard.send(HiResStreamMsg::TimeGroupMerged {
+                            time_group: time_g,
+                            pixels: group_tile.pixels,
+                            width: group_tile.width,
+                            height: group_tile.height,
+                        });
+                    }
+
+                    let pct = (time_g as f32 + 1.0) / time_groups as f32;
+                    push_onion_progress(
+                        &progress_buf,
+                        &format!("重生音轨 {track_idx}：{}/{}", time_g + 1, time_groups),
+                        pct,
+                    );
                 }
 
-                // 合并为新的整合组贴图（仅该 track_group 内）
-                let group_tile = merge_group_tiles(
-                    &track_tiles,
-                    coord,
-                    tick_start,
-                    tick_end,
-                    width,
-                    key_count,
-                    track_range,
-                );
-
-                // ★ 直接上传到 GPU，替换旧纹理 ★
-                // 注意：这里只上传了该 track_group 的贴图，不是全轨合并后的
-                // 后续需要全量重新生成才能得到正确的全轨贴图
-                // 当前简化处理：用 track_group=0 的坐标覆盖，仅单 track_group 场景正确
-                renderer.upload_tile(
-                    device,
-                    queue,
-                    coord,
-                    &group_tile.pixels,
-                    group_tile.width,
-                    group_tile.height,
-                );
-
-                let pct = (time_g as f32 + 1.0) / time_groups as f32;
-                push_onion_progress(
-                    onion_progress,
-                    &format!("重生音轨 {track_idx}：{}/{}", time_g + 1, time_groups),
-                    pct,
-                );
-            }
-
-            // ★ 强制 DMA 完成 ★
-            let flush = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("hires_regen_flush"),
+                if let Ok(guard) = tx.lock() {
+                    let _ = guard.send(HiResStreamMsg::Finished);
+                }
+                push_onion_progress(&progress_buf, "高精度贴图重生完成", 1.0);
             });
-            queue.submit(std::iter::once(flush.finish()));
-
-            push_onion_progress(onion_progress, "高精度贴图重生完成", 1.0);
         }
         _ => {}
     }

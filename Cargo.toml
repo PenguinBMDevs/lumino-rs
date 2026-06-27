@@ -57,6 +57,7 @@ winapi = { version = "0.3", features = ["winuser", "windef", "minwindef", "proce
 muda = "0.17.1"
 # duplicated dependencies — unified to workspace
 zstd = "0.13.2"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
 encoding_rs = "0.8"
 num-bigint = "0.4"
 puffin = "0.19.1"

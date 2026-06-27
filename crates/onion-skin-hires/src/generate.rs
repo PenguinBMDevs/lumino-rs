@@ -9,7 +9,7 @@ use lumino_onion_skin::OnionSkinNote;
 /// 生成单音轨在一个时间组的高精度贴图
 ///
 /// # 参数
-/// - `notes`: 该音轨的音符列表（任意 tick 范围，函数自动筛选当前组范围内部分）
+/// - `notes`: 该音轨的音符列表，**必须按 `start_ms` 升序排列**；调用方负责排序
 /// - `track_idx`: 音轨索引
 /// - `time_group`: 时间组索引
 /// - `tick_start`: 时间组起始 tick（含）
@@ -49,7 +49,14 @@ pub fn generate_track_tile(
     // 预计算 scale 因子，将每音符两次除法改为两次乘法
     let scale_x = width as f32 / tick_range;
 
-    for note in notes {
+    // 二分定位与当前时间组重叠的音符区间，避免全量扫描
+    let tick_start_f = tick_start as f32;
+    let tick_end_f = tick_end as f32;
+    let start_idx = notes.partition_point(|n| n.end_ms < tick_start_f);
+    let range = &notes[start_idx..];
+    let count = range.partition_point(|n| n.start_ms < tick_end_f);
+
+    for note in &range[..count] {
         // 裁剪到当前时间组范围（音符跨越组边界时只取组内部分）
         let note_start = note.start_ms as u32;
         let note_end = note.end_ms as u32;
@@ -71,14 +78,13 @@ pub fn generate_track_tile(
         let y = (note.key as u32).clamp(0, height - 1);
 
         // 写入颜色（简单覆盖，不 blend，alpha 固定 255）
-        // 按 4 字节块批量复制，编译器可自动向量化
-        let color = [note.color[0], note.color[1], note.color[2], 255];
+        // 把行切片按 u32 寻址后 fill，编译器可生成 memset/rep stos
+        let color_u32 = u32::from_le_bytes([note.color[0], note.color[1], note.color[2], 255]);
         let row_offset = (y * width) as usize * 4;
         let row_start = row_offset + (x_start as usize) * 4;
         let row_end = row_offset + (x_end as usize) * 4;
-        for chunk in pixels[row_start..row_end].chunks_exact_mut(4) {
-            chunk.copy_from_slice(&color);
-        }
+        let row_pixels: &mut [u32] = bytemuck::cast_slice_mut(&mut pixels[row_start..row_end]);
+        row_pixels.fill(color_u32);
     }
 
     TrackTile {

@@ -279,6 +279,7 @@ impl Host {
     }
 
     /// 发送高精度贴图重生命令（冷静期到期后由 runner 调用）
+    #[allow(clippy::too_many_arguments)]
     pub fn send_hires_regen(
         &mut self,
         track_idx: u16,

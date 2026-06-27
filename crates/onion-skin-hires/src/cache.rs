@@ -13,8 +13,6 @@
 //! 文件命名：`{midi_hash}_t{track_idx}_g{time_group}.lmocache`
 //! 按 MIDI 内容哈希分桶，不同 MIDI 不会串台。
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
@@ -96,13 +94,12 @@ pub enum CacheError {
     SpecMismatch(String),
 }
 
-/// 生成 MIDI 内容哈希（轻量方案：DefaultHasher，16 位十六进制）
+/// 生成 MIDI 内容哈希（轻量方案：xxh3，16 位十六进制）
 ///
 /// 非加密哈希，碰撞概率极低且 `.lmocache` 仅是缓存可容忍偶发碰撞。
+/// 使用 xxh3 默认种子（0），保证跨进程、跨会话哈希稳定，使磁盘缓存真正生效。
 pub fn compute_midi_hash(data: &[u8]) -> String {
-    let mut hasher = DefaultHasher::new();
-    data.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    format!("{:016x}", xxhash_rust::xxh3::xxh3_64(data))
 }
 
 /// 生成缓存文件名
