@@ -7,6 +7,7 @@ pub mod error;
 pub mod event;
 pub mod info;
 pub mod loader;
+pub mod note_event;
 pub mod note_info;
 pub mod quantize;
 pub mod track;
@@ -16,6 +17,7 @@ pub use document::MidiDocument;
 pub use error::{LoaderError, LoaderResult};
 pub use event::MidiEvent;
 pub use info::MidiInfo;
+pub use note_event::NoteEvent;
 pub use note_info::NoteInfo;
 pub use track::{TrackManager, TrackView, TrackVisibility};
 
