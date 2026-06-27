@@ -22,19 +22,12 @@ pub struct MemoryBreakdown {
     /// track_midi_events HashMap 中的总条目数和估算字节
     pub track_midi_events_entries: usize,
     pub track_midi_events_bytes: usize,
-    /// cached_onion_skin_notes 的字节数
-    pub cached_onion_skin_bytes: usize,
     /// note_instances_buffer 双缓冲信息（由 Host::memory_breakdown 填充）
     pub note_instances_front_cap: usize,
     pub note_instances_front_len: usize,
     pub note_instances_back_cap: usize,
     pub note_instances_back_len: usize,
     pub note_instance_size: usize,
-    /// onion_note_buffer 双缓冲信息（由 Host::memory_breakdown 填充）
-    pub onion_note_front_cap: usize,
-    pub onion_note_front_len: usize,
-    pub onion_note_back_cap: usize,
-    pub onion_note_back_len: usize,
 }
 
 pub mod theme;
@@ -267,22 +260,6 @@ impl Root {
             .unwrap_or_default()
     }
 
-    /// 标记洋葱皮缓存全量失效（数据变化/音轨集合变化时调用）
-    pub fn invalidate_onion_skin_cache(&mut self) {
-        self.visual.onion_skin_generation += 1;
-        self.editor.invalidate_onion_skin_cache();
-    }
-
-    /// 仅标记颜色/透明度变化（已由瓦片系统替代，保留接口兼容）
-    #[deprecated(
-        since = "0.1.0",
-        note = "已由瓦片系统替代，颜色 LUT 自动更新，此调用为 no-op"
-    )]
-    pub fn invalidate_onion_skin_colors(&mut self) {
-        #[allow(deprecated)]
-        self.editor.invalidate_onion_skin_colors();
-    }
-
     /// 设置 MIDI 文档引用（供懒加载使用）
     pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
         // 从 control_events 提取弯音数据
@@ -316,20 +293,10 @@ impl Root {
             .map(|v| v.capacity() * std::mem::size_of::<crate::playback::MidiTrackEvent>())
             .sum();
 
-        // cached_onion_skin_notes: Option<Vec<(f32, u16, f32, Color)>>
-        // tuple = 4 + 2 + 4 + 16 = 26 bytes, with alignment ~28 bytes
-        let cached_onion_skin_bytes = self
-            .visual
-            .cached_onion_skin_notes
-            .as_ref()
-            .map(|v| v.capacity() * 28)
-            .unwrap_or(0);
-
         MemoryBreakdown {
             editor: editor_mem,
             track_midi_events_entries,
             track_midi_events_bytes,
-            cached_onion_skin_bytes,
             ..Default::default()
         }
     }

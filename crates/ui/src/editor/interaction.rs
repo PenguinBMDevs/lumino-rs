@@ -478,13 +478,6 @@ mod tests {
     }
 
     #[test]
-    fn test_onion_skin_state_default() {
-        let state = crate::editor::OnionSkinState::default();
-        assert!(!state.cache_valid);
-        assert!(state.cached_track_indices.is_empty());
-    }
-
-    #[test]
     fn test_cache_invalidation() {
         use crate::editor::CacheInvalidation;
         assert_eq!(

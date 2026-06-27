@@ -3,9 +3,9 @@ use std::time::{Duration, Instant};
 
 use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
-use crate::{CameraParams, CameraUniform};
+use crate::{CameraParams, CameraUniform, HiResRenderer, TileCoord};
 
-/// 执行渲染通道（含走带/钢琴卷帘/洋葱皮/CC 柱状条）
+/// 执行渲染通道（含走带/钢琴卷帘/CC 柱状条）
 #[allow(clippy::too_many_arguments)]
 pub fn execute_render_pass(
     encoder: &mut wgpu::CommandEncoder,
@@ -18,8 +18,9 @@ pub fn execute_render_pass(
     ruler_renderer: &mut crate::RulerRenderer,
     arrangement_renderer: &mut crate::ArrangementRenderer,
     queue: &wgpu::Queue,
-    onion_renderer: &mut crate::OnionRenderer,
     cc_bar_renderer: &mut crate::CcBarRenderer,
+    hires_renderer: &Option<HiResRenderer>,
+    hires_visible_coords: &[TileCoord],
 ) {
     let (Some(texture), Some(depth_view)) = (current_texture, depth_texture_view) else {
         return;
@@ -118,9 +119,11 @@ pub fn execute_render_pass(
         render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
         grid_renderer.draw(&mut render_pass, 1);
 
-        // 绘制洋葱皮背景
-        render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-        onion_renderer.draw(&mut render_pass);
+        // 绘制高精度洋葱皮贴图（网格之上、低精度洋葱皮之下，半透明叠加）
+        if let Some(hires) = hires_renderer {
+            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+            hires.render(&mut render_pass, hires_visible_coords);
+        }
 
         // 绘制音符
         render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);

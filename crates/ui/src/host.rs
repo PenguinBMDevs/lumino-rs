@@ -20,7 +20,6 @@ use iced_winit::winit;
 
 use crate::statusbar::performance::CpuMonitor;
 use crate::{WgpuRenderThread, config, root, settings};
-use render::note_worker::NoteWorker;
 
 mod cache;
 mod dialog;
@@ -72,6 +71,16 @@ pub struct Host {
     pub(crate) last_gpu_frame_time_ms: f32,
     /// 滚动速度追踪器（用于 overscan 计算）
     pub(crate) scroll_tracker: render::note_worker::ScrollVelocityTracker,
+    /// 高精度贴图：有脏标记的音轨集合（编辑后需重生成）
+    pub(crate) hires_dirty_tracks: std::collections::HashSet<u16>,
+    /// 高精度贴图：最后一次编辑时间（用于冷静期判断）
+    pub(crate) hires_last_edit: Option<Instant>,
+    /// 高精度贴图：冷静期秒数（从配置初始化）
+    pub(crate) hires_regen_cooldown_secs: u64,
+    /// 高精度贴图：生成时的 MIDI 哈希（重生成时复用缓存分桶）
+    pub(crate) hires_midi_hash: Option<String>,
+    /// 高精度贴图：生成时的 (ppq, key_count, total_ticks)（重生成时复用）
+    pub(crate) hires_gen_info: Option<(u16, u16, u32)>,
 }
 
 impl Host {
@@ -127,6 +136,11 @@ impl Host {
             cpu_monitor: CpuMonitor::new(),
             last_gpu_frame_time_ms: 0.0,
             scroll_tracker: render::note_worker::ScrollVelocityTracker::new(),
+            hires_dirty_tracks: std::collections::HashSet::new(),
+            hires_last_edit: None,
+            hires_regen_cooldown_secs: 10,
+            hires_midi_hash: None,
+            hires_gen_info: None,
         }
     }
 
@@ -178,28 +192,6 @@ impl Host {
         Self::new_common_fields(render_ctx, window_ctx, root)
     }
 
-    /// 确保 NoteWorker 已创建（懒加载）
-    ///
-    /// NoteWorker 用于将音符实例构建从主线程卸载到独立线程。
-    /// 在两种渲染模式下都会使用：
-    /// - 分离线程模式：非阻塞 fire-and-forget
-    /// - 单线程模式：dispatch + 同步等待（仍能在本帧内并行化）
-    fn ensure_note_worker(&mut self) {
-        if self.render_ctx.note_worker.is_none() {
-            match NoteWorker::spawn() {
-                Some(worker) => {
-                    self.render_ctx.note_worker = Some(worker);
-                    tracing::info!("NoteWorker: spawned");
-                }
-                None => {
-                    tracing::error!(
-                        "NoteWorker: failed to spawn, onion skin will run on main thread"
-                    );
-                }
-            }
-        }
-    }
-
     /// 启用真正的分离渲染线程（新架构）
     ///
     /// 这会将所有 WGPU 渲染（音符、网格、键盘、标尺）从 UI 线程完全分离
@@ -208,8 +200,8 @@ impl Host {
             return;
         }
 
-        // 创建音符事件通道
-        let (tx, rx) = std::sync::mpsc::channel();
+        // 创建音符事件通道（tx 不再存储，由 render thread 持有 rx）
+        let (_tx, rx) = std::sync::mpsc::channel();
 
         // 启动 WGPU 渲染线程
         match WgpuRenderThread::spawn(
@@ -218,11 +210,9 @@ impl Host {
             self.render_ctx.format,
             rx,
             Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
-            Some(Arc::clone(&self.render_ctx.render_cache.onion_note_buffer)),
         ) {
             Ok(thread) => {
                 self.render_ctx.wgpu_render_thread = Some(thread);
-                self.render_ctx.note_events_tx = Some(tx);
                 self.render_ctx.use_separate_render_thread = true;
                 tracing::info!("Host: Separate WGPU render thread enabled");
             }
@@ -237,7 +227,6 @@ impl Host {
         if let Some(thread) = self.render_ctx.wgpu_render_thread.take() {
             thread.shutdown();
             self.render_ctx.use_separate_render_thread = false;
-            self.render_ctx.note_events_tx = None;
             tracing::info!("Host: Separate WGPU render thread disabled");
         }
     }
@@ -248,6 +237,149 @@ impl Host {
             .wgpu_render_thread
             .as_ref()
             .map(|t| t.stats())
+    }
+
+    /// 启动高精度洋葱皮贴图生成（MIDI 加载后调用）
+    pub fn generate_hires_onion_skin(
+        &mut self,
+        notes: Vec<Vec<lumino_gfx::OnionSkinNote>>,
+        ppq: u16,
+        key_count: u16,
+        total_ticks: u32,
+        config: lumino_gfx::HiResConfig,
+        midi_hash: String,
+    ) {
+        // 存下上下文供重生成使用
+        self.hires_midi_hash = Some(midi_hash.clone());
+        self.hires_gen_info = Some((ppq, key_count, total_ticks));
+        self.hires_regen_cooldown_secs = config.cooldown_secs;
+        if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
+            thread.send_control(
+                lumino_gfx::render_thread::ControlCommand::GenerateHiResOnionSkin {
+                    notes,
+                    ppq,
+                    key_count,
+                    total_ticks,
+                    config,
+                    midi_hash,
+                },
+            );
+        }
+    }
+
+    /// 释放高精度洋葱皮资源（关闭 MIDI 时调用）
+    pub fn dispose_hires_onion_skin(&mut self) {
+        if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
+            thread.send_control(lumino_gfx::render_thread::ControlCommand::DisposeHiResOnionSkin);
+        }
+        self.hires_dirty_tracks.clear();
+        self.hires_last_edit = None;
+        self.hires_midi_hash = None;
+        self.hires_gen_info = None;
+    }
+
+    /// 发送高精度贴图重生命令（冷静期到期后由 runner 调用）
+    pub fn send_hires_regen(
+        &mut self,
+        track_idx: u16,
+        notes: Vec<lumino_gfx::OnionSkinNote>,
+        ppq: u16,
+        key_count: u16,
+        total_ticks: u32,
+        config: lumino_gfx::HiResConfig,
+        midi_hash: String,
+    ) {
+        if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
+            thread.send_control(
+                lumino_gfx::render_thread::ControlCommand::RegenerateHiResTrack {
+                    track_idx,
+                    notes,
+                    ppq,
+                    key_count,
+                    total_ticks,
+                    config,
+                    midi_hash,
+                },
+            );
+        }
+    }
+
+    /// 获取高精度贴图生成时的 MIDI 哈希（供 runner 冷静期检查使用）
+    pub fn hires_midi_hash(&self) -> Option<&str> {
+        self.hires_midi_hash.as_deref()
+    }
+
+    /// 获取高精度贴图生成时的 (ppq, key_count, total_ticks)（供 runner 冷静期检查使用）
+    pub fn hires_gen_info(&self) -> Option<(u16, u16, u32)> {
+        self.hires_gen_info
+    }
+
+    /// 标记当前音轨高精度贴图为脏（音符编辑后调用）
+    pub fn mark_hires_dirty(&mut self, track_idx: u16) {
+        self.hires_dirty_tracks.insert(track_idx);
+        self.hires_last_edit = Some(Instant::now());
+    }
+
+    /// 检查冷静期是否到期，返回需要重生成的脏音轨列表
+    pub fn check_hires_regen(&mut self) -> Option<Vec<u16>> {
+        if self.hires_dirty_tracks.is_empty() {
+            return None;
+        }
+        if let Some(last) = self.hires_last_edit
+            && last.elapsed().as_secs() >= self.hires_regen_cooldown_secs
+        {
+            let dirty: Vec<u16> = self.hires_dirty_tracks.iter().copied().collect();
+            self.hires_dirty_tracks.clear();
+            self.hires_last_edit = None;
+            return Some(dirty);
+        }
+        None
+    }
+
+    /// 设置高精度贴图冷静期秒数（从配置初始化）
+    pub fn set_hires_cooldown(&mut self, secs: u64) {
+        self.hires_regen_cooldown_secs = secs;
+    }
+
+    /// 获取指定音轨的音符列表（用于高精度贴图重生成）
+    ///
+    /// 当前音轨从 editor.notes 取，其他音轨从 track_notes 缓存取。
+    pub fn get_track_notes_for_hires(&self, track_idx: u16) -> Vec<lumino_gfx::OnionSkinNote> {
+        let editor = &self.root.editor;
+        let current_track = editor.current_track();
+        let notes = if current_track as u16 == track_idx {
+            &editor.editor_state.data.notes
+        } else {
+            match editor
+                .editor_state
+                .data
+                .track_notes
+                .get(&(track_idx as usize))
+            {
+                Some(n) => n,
+                None => return Vec::new(),
+            }
+        };
+        notes
+            .iter()
+            .map(|n| {
+                lumino_gfx::OnionSkinNote::from_ms(
+                    n.tick,
+                    n.tick + n.length,
+                    n.key as u8,
+                    onion_track_color(track_idx as usize),
+                )
+            })
+            .collect()
+    }
+
+    /// 取出洋葱皮生成进度（runner 每帧调用并转发到进度窗口）
+    pub fn drain_onion_progress(&self) -> Vec<(String, f32)> {
+        self.render_ctx
+            .wgpu_render_thread
+            .as_ref()
+            .map(|t| t.drain_onion_progress())
+            .unwrap_or_default()
     }
 
     /// 获取 root 引用
@@ -293,39 +425,30 @@ impl Host {
             .render_cache
             .note_instances_buffer
             .back_info();
-        // 洋葱皮双缓冲容量
-        let (onion_front_cap, onion_front_len) =
-            self.render_ctx.render_cache.onion_note_buffer.front_info();
-        let (onion_back_cap, onion_back_len) =
-            self.render_ctx.render_cache.onion_note_buffer.back_info();
-        let note_size = std::mem::size_of::<lumino_gfx::OnionNote>() as u64;
-
-        tracing::debug!(
-            "MemoryBreakdown: note front(cap={}, len={}) back(cap={}, len={}) onion front(cap={}, len={}) back(cap={}, len={}) note_size={}",
-            front_cap,
-            front_len,
-            back_cap,
-            back_len,
-            onion_front_cap,
-            onion_front_len,
-            onion_back_cap,
-            onion_back_len,
-            note_size
-        );
-
         // 将双缓冲容量写入 breakdown 的附加字段
         breakdown.note_instances_front_cap = front_cap;
         breakdown.note_instances_front_len = front_len;
         breakdown.note_instances_back_cap = back_cap;
         breakdown.note_instances_back_len = back_len;
         breakdown.note_instance_size = std::mem::size_of::<lumino_gfx::NoteInstance>() as usize;
-        breakdown.onion_note_front_cap = onion_front_cap;
-        breakdown.onion_note_front_len = onion_front_len;
-        breakdown.onion_note_back_cap = onion_back_cap;
-        breakdown.onion_note_back_len = onion_back_len;
 
         breakdown
     }
+}
+
+/// 洋葱皮音轨调色板（按音轨索引循环取色，alpha 固定 255）
+fn onion_track_color(track_idx: usize) -> [u8; 4] {
+    const PALETTE: [[u8; 4]; 8] = [
+        [200, 80, 80, 255],
+        [80, 200, 120, 255],
+        [80, 120, 220, 255],
+        [220, 200, 80, 255],
+        [200, 100, 200, 255],
+        [80, 200, 200, 255],
+        [240, 150, 80, 255],
+        [180, 180, 180, 255],
+    ];
+    PALETTE[track_idx % PALETTE.len()]
 }
 
 /// 字体名称缓存 —— OnceLock 确保只泄漏一次，而不是每次重绘都泄漏

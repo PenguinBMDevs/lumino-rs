@@ -52,6 +52,12 @@ pub enum Event {
     DeviceSelected(u32),
     /// 界面语言切换
     LanguageChanged(Language),
+    // 高精度洋葱皮贴图设置
+    HiresOnionEnabledChanged(bool),
+    HiresMeasuresPerGroupChanged(String),
+    HiresTileWidthChanged(String),
+    HiresCooldownChanged(String),
+    HiresGpuMemLimitChanged(String),
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +93,12 @@ pub struct SettingsPanel {
     pub selected_midi_device: Option<u32>,
     /// 界面语言
     pub language: Language,
+    // 高精度洋葱皮贴图设置
+    pub hires_onion_enabled: bool,
+    pub hires_measures_per_group: u32,
+    pub hires_tile_width_px: u32,
+    pub hires_cooldown_secs: u64,
+    pub hires_gpu_mem_limit_mb: u32,
 }
 
 impl SettingsPanel {
@@ -115,6 +127,11 @@ impl SettingsPanel {
             midi_devices: Vec::new(),
             selected_midi_device: None,
             language: ui_config.language,
+            hires_onion_enabled: ui_config.hires_onion_enabled,
+            hires_measures_per_group: ui_config.hires_measures_per_group,
+            hires_tile_width_px: ui_config.hires_tile_width_px,
+            hires_cooldown_secs: ui_config.hires_cooldown_secs,
+            hires_gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
         }
     }
 
@@ -220,6 +237,30 @@ impl SettingsPanel {
                 self.language = lang;
                 tracing::debug!("设置: 界面语言切换为 {:?}", lang);
             }
+            // 高精度洋葱皮贴图设置
+            Event::HiresOnionEnabledChanged(v) => {
+                self.hires_onion_enabled = v;
+            }
+            Event::HiresMeasuresPerGroupChanged(s) => {
+                if let Ok(v) = s.parse::<u32>() {
+                    self.hires_measures_per_group = v.clamp(1, 16);
+                }
+            }
+            Event::HiresTileWidthChanged(s) => {
+                if let Ok(v) = s.parse::<u32>() {
+                    self.hires_tile_width_px = v.clamp(480, 7680);
+                }
+            }
+            Event::HiresCooldownChanged(s) => {
+                if let Ok(v) = s.parse::<u64>() {
+                    self.hires_cooldown_secs = v.clamp(3, 60);
+                }
+            }
+            Event::HiresGpuMemLimitChanged(s) => {
+                if let Ok(v) = s.parse::<u32>() {
+                    self.hires_gpu_mem_limit_mb = v.clamp(128, 4096);
+                }
+            }
         }
     }
 }
@@ -260,7 +301,8 @@ fn render_content_area<'a>(
         1 => audio_view(settings),
         2 => ui_settings_view(settings, window, system_fonts),
         3 => shortcuts_view(settings),
-        4 => about_view(settings),
+        4 => onion_skin_view(settings),
+        5 => about_view(settings),
         _ => render_placeholder("设置内容区域").into(),
     };
 

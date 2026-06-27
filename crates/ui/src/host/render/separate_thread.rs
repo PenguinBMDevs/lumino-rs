@@ -1,8 +1,8 @@
-use crate::RenderParams;
+﻿use crate::RenderParams;
 use crate::host::Host;
 use lumino_gfx::{
     ARRANGEMENT_PALETTE, ArrangementNoteInstance, ArrangementSceneParams, ArrangementUniform,
-    ArrangementViewColors, CcBarColors, CcBarData, CcBarViewParams, convert_onion_colors,
+    ArrangementViewColors, CcBarColors, CcBarData, CcBarViewParams,
 };
 
 impl Host {
@@ -148,11 +148,6 @@ impl Host {
     pub(super) fn validate_render_thread_ready(&self) -> bool {
         if self.render_ctx.wgpu_render_thread.is_none() {
             tracing::error!("redraw_separate_thread called but wgpu_render_thread is None");
-            return false;
-        }
-
-        if self.render_ctx.note_events_tx.is_none() {
-            tracing::error!("redraw_separate_thread called but note_events_tx is None");
             return false;
         }
 
@@ -372,19 +367,6 @@ impl Host {
         let viewport_changed =
             current_viewport_hash != self.render_ctx.render_cache.note_viewport_hash;
 
-        // 洋葱皮视口哈希（32px 偏移容差，减少不必要的重算）
-        let current_onion_hash = crate::host::RenderCache::compute_onion_viewport_hash(
-            v.scroll_x,
-            v.scroll_y,
-            v.zoom_x,
-            v.zoom_y,
-            canvas.size_x,
-            canvas.size_y,
-            v.visible_key_count,
-        );
-        let onion_viewport_changed =
-            current_onion_hash != self.render_ctx.render_cache.onion_viewport_hash;
-
         let note_data_changed = note_index_dirty
             || self.render_ctx.render_cache.note_instances_is_empty()
             || is_drawing;
@@ -412,31 +394,12 @@ impl Host {
             );
         }
 
-        // M1: 增量维护洋葱皮按 key 分桶缓存
-        let _bucket_changed = self.update_onion_bucket();
+        // 提取 scroll 值
+        let scroll_x = v.scroll_x;
+        let zoom_x = v.zoom_x;
 
-        // Phase 2: 洋葱皮实例构建（异步）
-        // 发送给 NoteWorker 后台计算，完成后 swap
-        if note_data_changed || onion_viewport_changed {
-            self.ensure_note_worker();
-
-            // 收集快照（需要 &mut self）必须在借用 worker 之前完成
-            let vp_logical = self.render_ctx.viewport.logical_size();
-            let os_snapshot =
-                self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));
-            let onion_note_buffer =
-                std::sync::Arc::clone(&self.render_ctx.render_cache.onion_note_buffer);
-
-            if let Some(ref worker) = self.render_ctx.note_worker {
-                puffin::profile_scope!("dispatch_onion_skin_job");
-                worker.send(super::note_worker::OnionSkinJob {
-                    snapshot: os_snapshot,
-                    onion_note_buffer,
-                    done_tx: None,
-                });
-                self.render_ctx.render_cache.onion_viewport_hash = current_onion_hash;
-            }
-        }
+        // 更新滚动速度追踪
+        let _velocity = self.scroll_tracker.update(scroll_x, zoom_x);
 
         if note_index_dirty {
             self.root.editor.spatial.note_index_dirty.set(false);
@@ -444,7 +407,7 @@ impl Host {
     }
 
     /// 构建渲染参数
-    pub(super) fn build_render_params(&self, data: super::data::RenderData) -> RenderParams {
+    pub(super) fn build_render_params(&mut self, data: super::data::RenderData) -> RenderParams {
         use crate::editor::velocity::PANEL_PADDING_Y;
         let es = &self.root.editor.editor_state;
         let physical_size = self.render_ctx.viewport.physical_size();
@@ -543,19 +506,6 @@ impl Host {
             ))
         };
 
-        // ── 洋葱皮 GPU 轨道掩码 & 颜色 ──
-        let onion_track_mask = Some(self.root.sidebar.get_onion_track_mask());
-
-        let onion_skin_colors = &self.root.editor.onion_skin.config.colors;
-        let track_count = self.root.sidebar.tracks.len();
-        let max_colors = track_count.min(64);
-        let mut raw_colors: Vec<(f32, f32, f32, f32)> = Vec::with_capacity(max_colors);
-        for i in 0..max_colors {
-            let c = onion_skin_colors.get_raw(i);
-            raw_colors.push((c.r, c.g, c.b, c.a));
-        }
-        let onion_track_colors = Some(convert_onion_colors(&raw_colors));
-
         RenderParams::from_data(
             (physical_size.width, physical_size.height),
             (data.viewport_size.width, data.viewport_size.height),
@@ -584,8 +534,6 @@ impl Host {
             arrangement_uniform,
             data.cc_bar_instances,
             velocity_panel_rect,
-            onion_track_mask,
-            onion_track_colors,
         )
     }
 

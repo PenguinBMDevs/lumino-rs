@@ -108,33 +108,7 @@ impl Host {
             );
         }
 
-        // ═══ Phase 2: 洋葱皮异步派发（独立 buffer，不碰主音符） ═══
-        self.ensure_note_worker();
-
-        // M2: 增量维护洋葱皮按 key 分桶缓存（单线程渲染路径）
-        let _bucket_changed = self.update_onion_bucket();
-
-        // 收集快照（需要 &mut self）必须在借用 worker 之前完成
-        let vp_logical = self.render_ctx.viewport.logical_size();
-        let os_snapshot = self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));
-        let onion_note_buffer =
-            std::sync::Arc::clone(&self.render_ctx.render_cache.onion_note_buffer);
-
-        if let Some(ref worker) = self.render_ctx.note_worker {
-            let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
-
-            worker.send(super::note_worker::OnionSkinJob {
-                snapshot: os_snapshot,
-                onion_note_buffer,
-                done_tx: Some(done_tx),
-            });
-
-            // 单线程模式：等待洋葱皮完成后才能开始渲染
-            //（分离渲染模式不需要等待，fire-and-forget）
-            let _ = done_rx.recv();
-        } else {
-            tracing::warn!("prepare_notes_if_needed: No NoteWorker available");
-        }
+        // ═══ Phase 2: (removed onion skin) ═══
 
         self.render_ctx.last_edit_state = current_edit_state;
         self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;

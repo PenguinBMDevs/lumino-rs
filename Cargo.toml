@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/dms", "crates/event", "crates/export", "crates/gfx", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/message", "crates/playback", "crates/ui", "crates/collaboration"]
+members = ["crates/core", "crates/dms", "crates/event", "crates/export", "crates/gfx", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/message", "crates/onion-skin", "crates/onion-skin-hires", "crates/playback", "crates/ui", "crates/collaboration"]
 resolver = "3"
 
 [workspace.package]
@@ -7,7 +7,7 @@ version = "0.1.1-dev"
 rust-version = "1.92.0"
 homepage = "https://github.com/PenguinBMDevs/lumino-rs"
 repository = "https://github.com/PenguinBMDevs/lumino-rs"
-license = "Mulan PSL v2"
+license = "AGPL-3.0-or-later"
 edition = "2024"
 
 [workspace.dependencies]
@@ -18,6 +18,7 @@ lumino-export = { path = "crates/export" }
 lumino-gfx = { path = "crates/gfx" }
 lumino-midi-io = { path = "crates/midi-io" }
 lumino-midi-loader = { path = "crates/midi-loader" }
+lumino-onion-skin = { path = "crates/onion-skin" }
 lumino-memory-monitor = { path = "crates/memory-monitor" }
 lumino-message = { path = "crates/message" }
 lumino-playback = { path = "crates/playback" }
@@ -176,7 +177,7 @@ inherits = "release"                # 基于 release 默认设置
 opt-level = 1                       # 基本优化，编译速度远快于 3
 lto = false                         # 禁用链接时优化（大幅减少链接时间）
 codegen-units = 16                  # 增加并行代码生成单元（最大 16，加速编译）
-debug = false                       # 不生成调试信息
-strip = "symbols"                  # 剥离符号表（减小体积，减少 I/O）
+debug = 1                           # 行号表（函数名+行号），支持 backtrace 和 profiler
+strip = "none"                      # 保留符号用于调试分析（体积换调试能力）
 panic = "abort"                    # 使用 abort 而非 unwind（减少生成的代码量）
 incremental = true                 # 启用增量编译（对多次构建友好）

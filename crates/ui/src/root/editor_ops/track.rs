@@ -38,7 +38,6 @@ impl Root {
             .track_note_indices
             .borrow_mut()
             .remove(&self.editor.editor_state.data.current_track);
-        self.invalidate_onion_skin_cache();
         self.editor.mark_notes_changed();
     }
 
@@ -46,7 +45,6 @@ impl Root {
     pub fn set_current_track(&mut self, track_idx: usize) {
         self.sidebar.set_selected_track(track_idx);
         self.editor.switch_to_track(track_idx);
-        self.invalidate_onion_skin_cache();
         self.update_playback_notes();
 
         // Conductor 轨道自动进入 Tempo 模式，普通轨道切回 Velocity
@@ -91,7 +89,6 @@ impl Root {
             .remove(&track_idx);
 
         self.editor.editor_state.data.current_track = track_idx;
-        self.invalidate_onion_skin_cache();
         self.editor.mark_notes_changed();
         self.update_playback_notes();
     }
@@ -112,22 +109,6 @@ impl Root {
                     .get(&track_idx)
                     .map_or(0, |v| v.len())
             );
-        }
-    }
-
-    /// 预加载音轨 MIDI 控制事件到洋葱皮缓存
-    pub fn load_track_midi_events_for_onion_skin(
-        &mut self,
-        track_idx: usize,
-        events: Vec<crate::playback::MidiTrackEvent>,
-    ) {
-        if !events.is_empty() {
-            // 合并到已有事件（如果有）
-            self.playback
-                .track_midi_events
-                .entry(track_idx)
-                .or_default()
-                .extend(events);
         }
     }
 }

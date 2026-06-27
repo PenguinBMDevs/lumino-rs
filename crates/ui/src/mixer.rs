@@ -280,7 +280,6 @@ mod tests {
                 is_conductor: true,
                 can_delete: false,
                 is_muted: false,
-                is_onion_skin_on: true,
             },
             crate::sidebar::Track {
                 id: 1,
@@ -288,7 +287,6 @@ mod tests {
                 is_conductor: false,
                 can_delete: true,
                 is_muted: false,
-                is_onion_skin_on: true,
             },
         ];
 
@@ -314,7 +312,6 @@ mod tests {
             is_conductor: true,
             can_delete: false,
             is_muted: false,
-            is_onion_skin_on: true,
         }];
 
         state.sync_from_tracks(&tracks);

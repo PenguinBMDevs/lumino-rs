@@ -222,21 +222,3 @@ pub mod scrollbar {
     /// 滑块与轨道边缘的间距
     pub const THUMB_TRACK_EDGE_GAP: f32 = 2.0;
 }
-
-/// 洋葱皮默认颜色
-pub mod onion_skin {
-    use iced_core::Color;
-
-    /// 洋葱皮默认透明度
-    pub const DEFAULT_OPACITY: f32 = 0.3;
-
-    /// 默认颜色列表
-    pub const DEFAULT_COLORS: [Color; 6] = [
-        Color::from_rgb(1.0, 0.5, 0.31),   // 橙色
-        Color::from_rgb(0.53, 0.81, 0.92), // 天蓝色
-        Color::from_rgb(0.56, 0.93, 0.56), // 浅绿色
-        Color::from_rgb(0.93, 0.51, 0.93), // 紫色
-        Color::from_rgb(0.5, 1.0, 0.0),    // 黄绿色
-        Color::from_rgb(0.98, 0.5, 0.45),  // 珊瑚色
-    ];
-}

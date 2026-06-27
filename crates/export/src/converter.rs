@@ -22,12 +22,8 @@ pub fn export_midi_from_parsed_midi_sync(source_path: &Path) -> ExportResult<Vec
             let parsed: lumino_midi_loader::ParsedMidi = crate::format::decode_lmpj(&data)
                 .map_err(|e| ExportError::InvalidData(format!("解析 LMPJ 失败: {e}")))?;
 
-            // 如果序列化数据中包含原始 midi bytes，则直接返回
-            if let Some(midi_bytes) = parsed.midi_data {
-                return Ok(midi_bytes);
-            }
-
-            // 否则尝试从保存的原始路径读取（如果存在）
+            // ParsedMidi 不再缓存原始 MIDI 字节（解析后即释放）。
+            // 从原始路径读取，或从 MidiDocument 重新构建 MIDI。
             let original = parsed.info.path;
             if original.exists() {
                 std::fs::read(&original).map_err(ExportError::Io)

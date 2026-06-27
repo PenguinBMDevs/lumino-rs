@@ -178,6 +178,21 @@ pub struct UiConfig {
     /// 是否使用钢琴仿真贴图键盘（默认开启，关闭则使用旧版纯色键盘）
     #[serde(default = "default_true")]
     pub use_textured_keyboard: bool,
+    /// 高精度洋葱皮贴图：是否启用
+    #[serde(default = "default_true")]
+    pub hires_onion_enabled: bool,
+    /// 高精度洋葱皮贴图：每组小节数（1-16）
+    #[serde(default = "default_hires_measures_per_group")]
+    pub hires_measures_per_group: u32,
+    /// 高精度洋葱皮贴图：贴图宽度像素（480-7680）
+    #[serde(default = "default_hires_tile_width")]
+    pub hires_tile_width_px: u32,
+    /// 高精度洋葱皮贴图：编辑后重生成冷静期秒数（3-60）
+    #[serde(default = "default_hires_cooldown")]
+    pub hires_cooldown_secs: u64,
+    /// 高精度洋葱皮贴图：GPU 显存上限 MB（128-4096）
+    #[serde(default = "default_hires_gpu_mem_limit")]
+    pub hires_gpu_mem_limit_mb: u32,
 }
 
 fn default_true() -> bool {
@@ -207,6 +222,18 @@ fn default_velocity_filter_threshold() -> u8 {
     1
 }
 
+fn default_hires_measures_per_group() -> u32 {
+    4
+}
+fn default_hires_tile_width() -> u32 {
+    1920
+}
+fn default_hires_cooldown() -> u64 {
+    10
+}
+fn default_hires_gpu_mem_limit() -> u32 {
+    512
+}
 /// 用户界面配置默认值
 impl Default for UiConfig {
     fn default() -> Self {
@@ -230,6 +257,11 @@ impl Default for UiConfig {
             icon_hidpi: true,
             enable_256key: false,
             use_textured_keyboard: true,
+            hires_onion_enabled: true,
+            hires_measures_per_group: default_hires_measures_per_group(),
+            hires_tile_width_px: default_hires_tile_width(),
+            hires_cooldown_secs: default_hires_cooldown(),
+            hires_gpu_mem_limit_mb: default_hires_gpu_mem_limit(),
         }
     }
 }

@@ -9,8 +9,6 @@ pub mod grid;
 mod grid_renderer;
 mod keyboard_renderer;
 mod note_renderer;
-mod onion_renderer;
-mod onion_skin_bucket;
 pub mod render_thread;
 mod ruler_renderer;
 // mod velocity_line_renderer; // 已弃用 — 改用 CcBarRenderer
@@ -34,15 +32,18 @@ pub use grid::{GridViewParams, generate_grid_instances, generate_ruler_instances
 pub use grid_renderer::{GridLineInstance, GridPrepareParams, GridRenderer};
 pub use keyboard_renderer::renderer::KeyboardPrepareParams;
 pub use keyboard_renderer::{KeyInstance, KeyboardRenderer, KeyboardViewportUniform};
+/// 洋葱皮音符类型（从 lumino-onion-skin 重导出）
+pub use lumino_onion_skin::OnionSkinNote;
+/// 高精度洋葱皮贴图渲染器（从 lumino-onion-skin-hires 重导出）
+pub use lumino_onion_skin_hires::{
+    CacheMeta, GenerateError, GroupTile, HiResConfig, HiResProgressCallback, HiResRenderer,
+    HiResUniform, TRACKS_PER_GROUP, TileCoord, TrackTile, compute_midi_hash, generate_track_tile,
+    merge_group_tiles, read_track_tile_cache,
+};
 pub use note_renderer::{
     CameraParams, CameraUniform, CullUniform, NoteInstance, NoteRenderer, OnionBgTileRef,
     RenderUniform, pack_color, unpack_color,
 };
-pub use onion_renderer::{
-    OnionNote, OnionRenderer, OnionTrackColors, OnionTrackMask, OnionViewportUniform, TrackColor,
-    convert_onion_colors,
-};
-pub use onion_skin_bucket::{OnionCollectParams, OnionSkinBucket, build_bucket_from_notes};
 pub use ruler_renderer::{
     RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,
 };

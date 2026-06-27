@@ -1,7 +1,7 @@
 //! Host 编辑器操作子模块 - 处理音符和洋葱皮相关操作
 
 use crate::host::{Host, types::NoteData};
-use crate::{editor::note::Note, message};
+use crate::message;
 use lumino_core::TempoPoint;
 use lumino_midi_loader::MidiDocument;
 use std::sync::Arc;
@@ -63,46 +63,6 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
-    /// 预加载音轨音符到 track_notes（仅用于洋葱皮，不显示）
-    ///
-    /// # 参数
-    /// * `track_idx` - 音轨索引
-    /// * `notes` - 音符列表，格式为 (tick, key, length, velocity, channel)
-    pub fn load_track_notes_for_onion_skin(
-        &mut self,
-        track_idx: usize,
-        notes: &[(f32, u8, f32, u8, u8)],
-    ) {
-        tracing::debug!(
-            "UI::load_track_notes_for_onion_skin: track_idx={}, notes_count={}",
-            track_idx,
-            notes.len()
-        );
-
-        // 直接保存到 editor.track_notes，不更新当前显示
-        let mut track_notes: im::Vector<Note> = im::Vector::new();
-        for &(tick, key, length, velocity, channel) in notes {
-            track_notes.push_back(Note::from_raw(tick, key as u16, length, velocity, channel));
-        }
-
-        if !track_notes.is_empty() {
-            self.root
-                .editor
-                .editor_state
-                .data
-                .track_notes
-                .insert(track_idx, track_notes);
-            self.root
-                .editor
-                .editor_state
-                .data
-                .mark_track_notes_changed();
-            self.root.invalidate_onion_skin_cache();
-        }
-
-        // 不需要重绘，因为这些音符是用于洋葱皮的，不是当前显示的
-    }
-
     /// 加载 Tempo 变化事件到播放管理器
     /// tempo_changes: Vec<(tick, tempo_in_microseconds_per_quarter_note)>
     pub fn load_tempo_changes(&mut self, tempo_changes: Vec<(u32, u32)>) {
@@ -135,16 +95,6 @@ impl Host {
         self.root.load_track_midi_events(track_idx, events);
     }
 
-    /// 预加载音轨 MIDI 控制事件到洋葱皮缓存
-    pub fn load_track_midi_events_for_onion_skin(
-        &mut self,
-        track_idx: usize,
-        events: Vec<crate::playback::MidiTrackEvent>,
-    ) {
-        self.root
-            .load_track_midi_events_for_onion_skin(track_idx, events);
-    }
-
     /// 设置播放用 MIDI 输出连接
     pub fn set_playback_midi_output(&mut self, output: Box<dyn lumino_midi_io::OutputConnection>) {
         self.root.set_midi_output(output);
@@ -170,103 +120,6 @@ impl Host {
         self.root.is_playing()
     }
 
-    // ════════════════════════════════════════════════════════════════════════════
-    // 洋葱皮 API
-    // ════════════════════════════════════════════════════════════════════════════
-
-    /// 启用洋葱皮功能
-    pub fn enable_onion_skin(&mut self) {
-        self.root.editor.enable_onion_skin();
-        self.root.invalidate_onion_skin_cache();
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 禁用洋葱皮功能
-    pub fn disable_onion_skin(&mut self) {
-        self.root.editor.disable_onion_skin();
-        self.root.invalidate_onion_skin_cache();
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 切换洋葱皮开关状态
-    pub fn toggle_onion_skin(&mut self) {
-        self.root.editor.toggle_onion_skin();
-        self.root.invalidate_onion_skin_cache();
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 检查洋葱皮是否启用
-    pub fn is_onion_skin_enabled(&self) -> bool {
-        self.root.editor.is_onion_skin_enabled()
-    }
-
-    /// 设置音轨的洋葱皮 RGB 颜色（透明度保持不变）
-    ///
-    /// # 参数
-    /// * `track_idx` - 音轨索引
-    /// * `r`, `g`, `b` - RGB 颜色分量 (0.0 - 1.0)
-    ///
-    /// 优化：颜色变化走快速路径 O(C)，不触发 document 重查。
-    pub fn set_onion_skin_color_rgb(&mut self, track_idx: usize, r: f32, g: f32, b: f32) {
-        let alpha = self.root.editor.onion_skin_opacity();
-        self.root
-            .editor
-            .set_onion_skin_color(track_idx, iced_core::Color::from_rgba(r, g, b, alpha));
-        self.window_ctx.window.request_redraw();
-    }
-
-    pub fn set_onion_skin_color_rgba(&mut self, track_idx: usize, r: f32, g: f32, b: f32, a: f32) {
-        self.root
-            .editor
-            .set_onion_skin_color(track_idx, iced_core::Color::from_rgba(r, g, b, a));
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 获取音轨的洋葱皮颜色
-    ///
-    /// 返回 (r, g, b, a) 元组
-    pub fn get_onion_skin_color(&self, track_idx: usize) -> (f32, f32, f32, f32) {
-        let color = self.root.editor.get_onion_skin_color(track_idx);
-        (color.r, color.g, color.b, color.a)
-    }
-
-    /// 设置洋葱皮透明度
-    ///
-    /// # 参数
-    /// * `opacity` - 透明度值，范围 0.0（完全透明）到 1.0（完全不透明）
-    ///
-    /// 优化：透明度变化走快速路径 O(C)，不触发 document 重查。
-    pub fn set_onion_skin_opacity(&mut self, opacity: f32) {
-        self.root.editor.set_onion_skin_opacity(opacity);
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 获取洋葱皮透明度
-    pub fn onion_skin_opacity(&self) -> f32 {
-        self.root.editor.onion_skin_opacity()
-    }
-
-    /// 设置是否显示所有音轨的洋葱皮
-    pub fn set_onion_skin_show_all(&mut self, show_all: bool) {
-        self.root.editor.set_onion_skin_show_all(show_all);
-        self.root.invalidate_onion_skin_cache();
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 添加音轨到洋葱皮显示列表
-    pub fn add_onion_skin_track(&mut self, track_idx: usize) {
-        self.root.editor.add_onion_skin_track(track_idx);
-        self.root.invalidate_onion_skin_cache();
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 从洋葱皮显示列表移除音轨
-    pub fn remove_onion_skin_track(&mut self, track_idx: usize) {
-        self.root.editor.remove_onion_skin_track(track_idx);
-        self.root.invalidate_onion_skin_cache();
-        self.window_ctx.window.request_redraw();
-    }
-
     /// 清空编辑器（用于新建工程 / 关闭文件）
     ///
     /// 释放所有编辑器内存（音符数据、历史记录、空间索引、MIDI 事件、文档引用）
@@ -277,7 +130,7 @@ impl Host {
         // 使用 EditorState::reset() 统一重置核心状态
         root.editor.editor_state.reset();
 
-        // 编辑器私有内部状态（洋葱皮配置、播放位置等）
+        // 编辑器私有内部状态（播放位置等）
         root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Tempo;
         root.editor.reset_internal_state();
 
@@ -288,10 +141,7 @@ impl Host {
             std::cell::RefCell::new(std::collections::HashMap::new());
         root.editor.spatial.query_cache = std::cell::RefCell::new(Vec::new());
 
-        // 洋葱皮 + MIDI 控制事件
-        root.visual.cached_onion_skin_notes = None;
-        root.visual.onion_skin_generation = 0;
-        root.editor.invalidate_onion_skin_cache();
+        // MIDI 控制事件
         root.playback.track_midi_events.clear();
 
         // 协作远端光标
@@ -386,7 +236,10 @@ impl Host {
 
     /// 处理编辑器动作
     pub fn handle_action(&mut self, action: message::EditorAction) {
+        let track_idx = self.root.editor.current_track() as u16;
         self.root.handle_editor_action(action);
+        // 编辑动作可能改变音符 → 标记当前音轨高精度贴图为脏
+        self.mark_hires_dirty(track_idx);
         // 仅请求重绘，不重建UI树（编辑器动作由canvas/WGPU层处理）
         self.window_ctx.window.request_redraw();
     }

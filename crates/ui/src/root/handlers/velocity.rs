@@ -164,7 +164,6 @@ impl VelocityHandler {
         if root.editor.notes_changed() {
             root.update_playback_notes();
             root.editor.clear_notes_changed();
-            root.invalidate_onion_skin_cache();
         }
     }
 

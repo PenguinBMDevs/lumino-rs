@@ -16,8 +16,6 @@ pub enum Event {
     TrackSelected(usize),
     /// 音轨静音切换
     TrackMuteToggled(usize),
-    /// 音轨洋葱皮切换
-    TrackOnionSkinToggled(usize),
     /// 添加音轨
     AddTrack,
     /// 添加音轨菜单切换
@@ -28,8 +26,6 @@ pub enum Event {
     ResizeDragged(Point),
     /// 结束拖拽调整面板宽度
     ResizeDragEnded,
-    /// 音轨列表滚动位置
-    TrackScrolled(f32),
 }
 
 impl Event {
@@ -47,10 +43,6 @@ impl Event {
 
     pub const fn track_mute_toggled(id: usize) -> Message {
         Message::Sidebar(Self::TrackMuteToggled(id))
-    }
-
-    pub const fn track_onion_skin_toggled(id: usize) -> Message {
-        Message::Sidebar(Self::TrackOnionSkinToggled(id))
     }
 
     pub const fn add_track() -> Message {

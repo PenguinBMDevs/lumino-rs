@@ -85,16 +85,12 @@ impl DmsNodeType {
     pub const TRACK_SELECTED_GATE: Self = Self(1007 | (Self::TRACK.0 << 16));
     /// 鼓组名称
     pub const TRACK_DRUM_SET_NAME: Self = Self(1009 | (Self::TRACK.0 << 16));
-    /// 洋葱皮数据
-    pub const TRACK_ONIONSKIN_DATA: Self = Self(1010 | (Self::TRACK.0 << 16));
     /// Tick 补偿
     pub const TRACK_TICK_COMP: Self = Self(1012 | (Self::TRACK.0 << 16));
     /// 门限补偿百分比
     pub const TRACK_GATE_COMP_PERCENT: Self = Self(1016 | (Self::TRACK.0 << 16));
     /// 键补偿
     pub const TRACK_KEY_COMP: Self = Self(1017 | (Self::TRACK.0 << 16));
-    /// 洋葱皮颜色索引
-    pub const TRACK_ONIONSKIN_COLOR_INDEX: Self = Self(1018 | (Self::TRACK.0 << 16));
     /// 从小节开始的 Tick 补偿
     pub const TRACK_TICK_COMP_FROM_MEA: Self = Self(1019 | (Self::TRACK.0 << 16));
     /// 音符范围下限
@@ -246,7 +242,6 @@ impl DmsNodeType {
                 | Self::PORT_CFG_N
                 | Self::PORT_CFG_O
                 | Self::PORT_CFG_P
-                | Self::TRACK_ONIONSKIN_DATA
                 | Self::NOTE_EVENT
                 | Self::PROGRAM_CHANGE_EVENT
                 | Self::CONTROL_EVENT
@@ -303,7 +298,6 @@ impl DmsNodeType {
                 | Self::TRACK_TICK_COMP
                 | Self::TRACK_GATE_COMP_PERCENT
                 | Self::TRACK_KEY_COMP
-                | Self::TRACK_ONIONSKIN_COLOR_INDEX
                 | Self::TRACK_TICK_COMP_FROM_MEA
                 | Self::TRACK_NOTE_RANGE_L
                 | Self::TRACK_NOTE_RANGE_H

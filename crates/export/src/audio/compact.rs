@@ -17,7 +17,7 @@ use crate::error::{ExportError, ExportResult};
 
 use super::MidiEventParser;
 use super::exporter::AudioExporter;
-use super::tempo::{TempoMap, extract_ppqn_from_bytes};
+use super::tempo::TempoMap;
 use super::types::AudioExportOptions;
 use super::writer::AudioFileWriter;
 
@@ -224,12 +224,9 @@ pub fn export_audio_from_parsed(
     })?;
     let document: &MidiDocument = document.as_ref();
 
-    // 从 MIDI 头部提取 PPQN（仅 14 字节，不解析完整文件）
-    let ppqn = if let Some(ref midi_data) = parsed_midi.midi_data {
-        extract_ppqn_from_bytes(midi_data)?
-    } else {
-        480
-    };
+    // 使用预解析的 division（PPQN），无需从原始字节提取
+    // （原始字节已在解析后释放，不再常驻内存）
+    let ppqn = parsed_midi.info.division.max(1) as u32;
 
     // 从预提取的 tempo 变化构建速度图（已由 midly loader 扫描完毕）
     let tempo_map = TempoMap::from_changes(&document.tempo_changes, ppqn);

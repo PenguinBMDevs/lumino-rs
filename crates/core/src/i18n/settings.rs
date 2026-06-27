@@ -11,6 +11,7 @@ pub struct SettingsTranslations {
     pub ui: &'static str,
     pub shortcuts: &'static str,
     pub about: &'static str,
+    pub onion_skin: &'static str,
 
     // ── 通用 ──
     pub confirm: &'static str,
@@ -89,6 +90,7 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     ui: "界面",
     shortcuts: "快捷键",
     about: "关于",
+    onion_skin: "洋葱皮",
     confirm: "确认",
     cancel: "取消",
     ok: "确定",
@@ -154,6 +156,7 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     ui: "UI",
     shortcuts: "Shortcuts",
     about: "About",
+    onion_skin: "Onion Skin",
     confirm: "Confirm",
     cancel: "Cancel",
     ok: "OK",

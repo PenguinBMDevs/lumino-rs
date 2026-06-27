@@ -85,34 +85,11 @@ pub fn view<'a>(track: &'a Track, is_selected: bool, window: &window::Window) ->
         if track.is_muted { "取消静音" } else { "静音" },
     );
 
-    let eye_icon = if track.is_onion_skin_on {
-        Icon::Eye
-    } else {
-        Icon::EyeSlash
-    };
-
-    let eye_btn = widget::with_tooltip_bottom(
-        button(icon::view_with_size_and_theme(
-            eye_icon,
-            16,
-            16,
-            Some(&window.theme),
-        ))
-        .on_press(Event::track_onion_skin_toggled(track.id))
-        .style(|_theme: &Theme, _status| {
-            button::Style::default().with_background(iced_core::Color::TRANSPARENT)
-        })
-        .padding(0),
-        "洋葱皮开关",
-    );
-
     let track_row = row![
         left_icon,
         space().width(4),
         name,
         mute_btn,
-        space().width(4),
-        eye_btn,
     ]
     .align_y(Alignment::Start)
     .padding(4);

@@ -99,6 +99,9 @@ impl TempoMap {
 }
 
 /// 从 MIDI 文件头部（仅 14 字节）提取 PPQN（每四分音符脉冲数），零分配。
+///
+/// 当前未被直接调用（已改用 ParsedMidi.info.division），保留以备未来直接 PPQN 提取场景。
+#[expect(dead_code)]
 pub(super) fn extract_ppqn_from_bytes(midi_data: &[u8]) -> ExportResult<u32> {
     if midi_data.len() < 14 {
         return Err(ExportError::InvalidData(
