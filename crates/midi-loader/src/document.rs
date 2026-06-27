@@ -64,42 +64,61 @@ impl std::fmt::Debug for MidiDocument {
 impl MidiDocument {
     /// 使用 midly 从 MIDI 文件加载并构建紧凑内存文档。
     ///
-    /// 使用 per-track 提取避免全量 `Vec<PackedNote>` 中间态的峰值内存。
-    /// 每个音轨的音符提取后立即转换为 `CompactEvent`，该音轨的中间数据即释放。
-    ///
-    /// 内存优化：原来 1 个 PackedNote (12B) + 2 个 CompactEvent (24B) = 36B/note 峰值，
-    /// 现在只有 CompactEvent (24B/note) 在构造过程中常驻，per-track PackedNote 用完即丢。
+    /// 便捷函数：读取文件字节后委托给 [`Self::from_notes_bytes`]。
     pub fn from_notes_file<P: AsRef<Path>>(
         midi_path: P,
         progress: Option<&dyn Fn(f64)>,
     ) -> LoaderResult<Self> {
-        MemoryMonitor::global().check();
-
         let path = midi_path.as_ref();
+        let file_bytes = std::fs::read(path).map_err(LoaderError::Io)?;
+        let (doc, _, _) = Self::from_notes_bytes(&file_bytes, progress)?;
+        Ok(doc)
+    }
+
+    /// 使用 midly 从 MIDI 字节加载并构建紧凑内存文档。
+    ///
+    /// 使用 per-track 提取避免全量 `Vec<PackedNote>` 中间态的峰值内存。
+    /// 每个音轨的音符提取后立即转换为 `CompactEvent`，该音轨的中间数据即释放。
+    ///
+    /// 返回 `(document, division, total_notes)`，调用方只需读取一次文件。
+    ///
+    /// 内存优化：原来 1 个 PackedNote (12B) + 2 个 CompactEvent (24B) = 36B/note 峰值，
+    /// 现在只有 CompactEvent (24B/note) 在构造过程中常驻，per-track PackedNote 用完即丢。
+    pub fn from_notes_bytes(
+        file_bytes: &[u8],
+        progress: Option<&dyn Fn(f64)>,
+    ) -> LoaderResult<(Self, u16, u64)> {
+        MemoryMonitor::global().check();
 
         if let Some(cb) = progress {
             (cb)(0.05);
         }
 
-        let file_bytes = std::fs::read(path).map_err(LoaderError::Io)?;
+        let (_, division) = scan::scan_header_info(file_bytes)
+            .ok_or_else(|| LoaderError::FileFormat("无法解析 MIDI 文件头".to_string()))?;
+
+        if let Some(cb) = progress {
+            (cb)(0.10);
+        }
+
+        let track_names = scan::scan_track_names(file_bytes);
 
         if let Some(cb) = progress {
             (cb)(0.15);
         }
 
-        let track_names = scan::scan_track_names(&file_bytes);
-
         let tracks =
-            midly::loader::extract_notes_and_control_events_per_track_from_bytes(&file_bytes)
+            midly::loader::extract_notes_and_control_events_per_track_from_bytes(file_bytes)
                 .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
 
-        drop(file_bytes);
+        let total_notes = tracks.iter().map(|t| t.notes.len() as u64).sum();
 
         if let Some(cb) = progress {
             (cb)(0.50);
         }
 
-        Self::build_from_extracted_tracks(tracks, track_names, progress)
+        let doc = Self::build_from_extracted_tracks(tracks, track_names, progress)?;
+        Ok((doc, division, total_notes))
     }
 
     pub(crate) fn build_from_extracted_tracks(

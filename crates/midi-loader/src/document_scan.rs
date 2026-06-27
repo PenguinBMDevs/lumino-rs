@@ -77,6 +77,43 @@ fn scan_track_name_in_chunk(data: &[u8], chunk_start: usize, chunk_end: usize) -
     None
 }
 
+/// 如果数据有 RIFF wrapper，返回 MThd 起始位置之后的切片；否则返回原切片。
+fn midi_data_after_riff(data: &[u8]) -> Option<&[u8]> {
+    if data.len() < 4 {
+        return None;
+    }
+
+    if &data[..4] == b"RIFF" {
+        data.windows(4)
+            .position(|w| w == b"MThd")
+            .map(|pos| &data[pos..])
+    } else if &data[..4] == b"MThd" {
+        Some(data)
+    } else {
+        None
+    }
+}
+
+/// 轻量扫描原始 MIDI 文件头，返回 (track_count, division)。
+///
+/// 支持普通 SMF 与 RIFF wrapper。
+pub fn scan_header_info(data: &[u8]) -> Option<(u16, u16)> {
+    let data = midi_data_after_riff(data)?;
+
+    if data.len() < 14 {
+        return None;
+    }
+
+    let header_len = u32::from_be_bytes([data[4], data[5], data[6], data[7]]) as usize;
+    if header_len < 6 || 8 + header_len > data.len() {
+        return None;
+    }
+
+    let track_count = u16::from_be_bytes([data[10], data[11]]);
+    let division = u16::from_be_bytes([data[12], data[13]]);
+    Some((track_count, division))
+}
+
 /// 轻量扫描原始 MIDI 字节，提取所有音轨的 TrackName 事件。
 /// 使用 encoding_rs 自动检测编码（UTF-8 → Shift-JIS → GBK → Latin-1）。
 pub fn scan_track_names(data: &[u8]) -> Vec<Option<String>> {
@@ -84,16 +121,9 @@ pub fn scan_track_names(data: &[u8]) -> Vec<Option<String>> {
         return Vec::new();
     }
 
-    let data = if &data[..4] == b"RIFF" {
-        let mthd_pos = data.windows(4).position(|w| w == b"MThd");
-        match mthd_pos {
-            Some(pos) => &data[pos..],
-            None => return Vec::new(),
-        }
-    } else if &data[..4] == b"MThd" {
-        data
-    } else {
-        return Vec::new();
+    let data = match midi_data_after_riff(data) {
+        Some(d) => d,
+        None => return Vec::new(),
     };
 
     if data.len() < 14 {
