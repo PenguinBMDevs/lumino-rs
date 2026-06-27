@@ -81,9 +81,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let key_f32 = camera.max_key_index - world_y;
     let key_int = i32(ceil(key_f32));
 
-    // 计算背景色 (黑白键)
+    // 检查是否在有效 key 范围内 [0, max_key_index]
+    // 当滚动/缩放导致 viewport 超出琴键区时，外部区域不应显示琴键线和背景色交替
+    let in_valid_key_range = key_f32 >= 0.0 && key_f32 <= camera.max_key_index;
+
+    // 计算背景色 (黑白键) — 仅在有效 key 范围内启用交替背景
     var bg_color = camera.color_bg;
-    if is_black_key(key_int) {
+    if in_valid_key_range && is_black_key(key_int) {
         bg_color = camera.color_bg_black_key;
     }
 
@@ -98,51 +102,57 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let ticks_per_grid = camera.ppq / 4.0;
 
     let base_width = 1.0;
+    let before_tick_zero = world_tick < 0.0;
 
     // X轴网格线（先检查）：纵向线（小节线/拍线/1/8分割线/1/16网格线）
     // 在横向线上方渲染，使得交叉点处纵向线优先显示
-
-    // 小节线（最粗）
-    let measure_frac = fract(world_tick / ticks_per_measure);
-    let dist_measure = min(measure_frac, 1.0 - measure_frac) * ticks_per_measure * camera.zoom.x;
-    if dist_measure < base_width * 2.0 {
-        return camera.color_bar;
-    }
-
-    // 拍线 / 1/4分割线
-    let beat_frac = fract(world_tick / ticks_per_beat);
-    let dist_beat = min(beat_frac, 1.0 - beat_frac) * ticks_per_beat * camera.zoom.x;
-    if dist_beat < base_width * 1.5 {
-        // 跳过小节线位置（避免重叠）
-        if dist_measure >= base_width * 2.0 {
-            return mix(bg_color, camera.color_beat, 0.8);
+    // 跳过负 tick 区域，避免镜像线显示在 tick 0 左侧
+    if !before_tick_zero {
+        // 小节线（最粗）
+        let measure_frac = fract(world_tick / ticks_per_measure);
+        let dist_measure = min(measure_frac, 1.0 - measure_frac) * ticks_per_measure * camera.zoom.x;
+        if dist_measure < base_width * 2.0 {
+            return camera.color_bar;
         }
-    }
 
-    // 1/8分割线（半拍线）
-    let half_frac = fract(world_tick / ticks_per_half_beat);
-    let dist_half = min(half_frac, 1.0 - half_frac) * ticks_per_half_beat * camera.zoom.x;
-    if dist_half < base_width {
-        if camera.zoom.x > 0.02 && dist_beat >= base_width * 1.5 {
-            return mix(bg_color, camera.color_half_beat, 0.7);
+        // 拍线 / 1/4分割线
+        let beat_frac = fract(world_tick / ticks_per_beat);
+        let dist_beat = min(beat_frac, 1.0 - beat_frac) * ticks_per_beat * camera.zoom.x;
+        if dist_beat < base_width * 1.5 {
+            // 跳过小节线位置（避免重叠）
+            if dist_measure >= base_width * 2.0 {
+                return mix(bg_color, camera.color_beat, 0.8);
+            }
         }
-    }
 
-    // 1/16细分网格线
-    let grid_frac = fract(world_tick / ticks_per_grid);
-    let dist_grid = min(grid_frac, 1.0 - grid_frac) * ticks_per_grid * camera.zoom.x;
-    if dist_grid < base_width * 0.5 {
-        if camera.zoom.x > 0.06 && dist_half >= base_width {
-            return mix(bg_color, camera.color_grid, 0.5);
+        // 1/8分割线（半拍线）
+        let half_frac = fract(world_tick / ticks_per_half_beat);
+        let dist_half = min(half_frac, 1.0 - half_frac) * ticks_per_half_beat * camera.zoom.x;
+        if dist_half < base_width {
+            if camera.zoom.x > 0.02 && dist_beat >= base_width * 1.5 {
+                return mix(bg_color, camera.color_half_beat, 0.7);
+            }
+        }
+
+        // 1/16细分网格线
+        let grid_frac = fract(world_tick / ticks_per_grid);
+        let dist_grid = min(grid_frac, 1.0 - grid_frac) * ticks_per_grid * camera.zoom.x;
+        if dist_grid < base_width * 0.5 {
+            if camera.zoom.x > 0.06 && dist_half >= base_width {
+                return mix(bg_color, camera.color_grid, 0.5);
+            }
         }
     }
 
     // Y轴网格线（后检查）：横向琴键分隔线
     // 在纵向线下方渲染，使得交叉点处纵向线优先显示
-    let key_frac = fract(key_f32);
-    let dist_key = min(key_frac, 1.0 - key_frac);
-    if dist_key * camera.zoom.y < base_width {
-        return mix(bg_color, camera.color_key_line, 0.8);
+    // 仅在有效 key 范围内绘制，防止 viewport 超出琴键区时空格出现额外线
+    if in_valid_key_range {
+        let key_frac = fract(key_f32);
+        let dist_key = min(key_frac, 1.0 - key_frac);
+        if dist_key * camera.zoom.y < base_width {
+            return mix(bg_color, camera.color_key_line, 0.8);
+        }
     }
 
     return bg_color;
