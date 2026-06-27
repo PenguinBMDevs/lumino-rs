@@ -19,7 +19,7 @@ pub(super) fn create_menu_items(lang: Language) -> Vec<(&'static str, Icon)> {
         (t.ui, Icon::FolderTree),
         (t.shortcuts, Icon::Clock),
         (t.onion_skin, Icon::Eye),
-        (t.about, Icon::GitHub),
+        (t.about, Icon::LogoInApp),
     ]
 }
 

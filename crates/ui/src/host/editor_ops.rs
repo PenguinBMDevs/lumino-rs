@@ -49,8 +49,24 @@ impl Host {
     }
 
     /// 设置当前音轨
+    ///
+    /// 如果切换到新音轨时旧音轨有脏标记的高精度贴图，
+    /// 会立即触发后台重生（绕过冷静期）：
+    /// - 用户放置音符后切换音轨 → 立刻开始重生，不必等冷静期到期
     pub fn set_current_track(&mut self, track_idx: usize) {
+        // 检查是否从脏音轨切出 → 立即触发重生
+        let old_track = self.root.editor.current_track() as u16;
+        let old_track_dirty = self.hires_dirty_tracks.contains(&old_track);
+
+        // 执行音轨切换（保存旧音轨 notes 到 track_notes 缓存）
         self.root.set_current_track(track_idx);
+
+        // 如果旧音轨有脏标记，立即触发重生（绕过冷静期）
+        if old_track_dirty {
+            tracing::info!("音轨切换：旧音轨 {} 有脏标记，立即触发贴图重生", old_track);
+            self.force_hires_regen(old_track);
+        }
+
         // 仅请求重绘，不重建UI树（音轨切换由WGPU层处理）
         self.window_ctx.window.request_redraw();
     }

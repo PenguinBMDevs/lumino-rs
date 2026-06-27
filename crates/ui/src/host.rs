@@ -73,10 +73,12 @@ pub struct Host {
     pub(crate) scroll_tracker: render::note_worker::ScrollVelocityTracker,
     /// 高精度贴图：有脏标记的音轨集合（编辑后需重生成）
     pub(crate) hires_dirty_tracks: std::collections::HashSet<u16>,
+    /// 高精度贴图：脏区域追踪（track_idx → 脏音符列表），用于临时贴图覆层
+    pub(crate) hires_dirty_regions: std::collections::HashMap<u16, Vec<lumino_gfx::OnionSkinNote>>,
     /// 高精度贴图：最后一次编辑时间（用于冷静期判断）
     pub(crate) hires_last_edit: Option<Instant>,
-    /// 高精度贴图：冷静期秒数（从配置初始化）
-    pub(crate) hires_regen_cooldown_secs: u64,
+    /// 高精度贴图：全量配置（重生成时直接使用副本）
+    pub(crate) hires_config: Option<lumino_gfx::HiResConfig>,
     /// 高精度贴图：生成时的 MIDI 哈希（重生成时复用缓存分桶）
     pub(crate) hires_midi_hash: Option<String>,
     /// 高精度贴图：生成时的 (ppq, key_count, total_ticks)（重生成时复用）
@@ -137,8 +139,9 @@ impl Host {
             last_gpu_frame_time_ms: 0.0,
             scroll_tracker: render::note_worker::ScrollVelocityTracker::new(),
             hires_dirty_tracks: std::collections::HashSet::new(),
+            hires_dirty_regions: std::collections::HashMap::new(),
             hires_last_edit: None,
-            hires_regen_cooldown_secs: 10,
+            hires_config: None,
             hires_midi_hash: None,
             hires_gen_info: None,
         }
@@ -252,7 +255,7 @@ impl Host {
         // 存下上下文供重生成使用
         self.hires_midi_hash = Some(midi_hash.clone());
         self.hires_gen_info = Some((ppq, key_count, total_ticks));
-        self.hires_regen_cooldown_secs = config.cooldown_secs;
+        self.hires_config = Some(config.clone());
         if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
             thread.send_control(
                 lumino_gfx::render_thread::ControlCommand::GenerateHiResOnionSkin {
@@ -273,7 +276,9 @@ impl Host {
             thread.send_control(lumino_gfx::render_thread::ControlCommand::DisposeHiResOnionSkin);
         }
         self.hires_dirty_tracks.clear();
+        self.hires_dirty_regions.clear();
         self.hires_last_edit = None;
+        self.hires_config = None;
         self.hires_midi_hash = None;
         self.hires_gen_info = None;
     }
@@ -316,8 +321,13 @@ impl Host {
     }
 
     /// 标记当前音轨高精度贴图为脏（音符编辑后调用）
+    ///
+    /// 同时收集该音轨的脏区域音符快照，用于生成临时贴图覆层。
     pub fn mark_hires_dirty(&mut self, track_idx: u16) {
         self.hires_dirty_tracks.insert(track_idx);
+        // 收集当前音轨的所有音符作为脏区域快照
+        let notes = self.get_track_notes_for_hires(track_idx);
+        self.hires_dirty_regions.insert(track_idx, notes);
         self.hires_last_edit = Some(Instant::now());
     }
 
@@ -326,11 +336,17 @@ impl Host {
         if self.hires_dirty_tracks.is_empty() {
             return None;
         }
+        let cooldown = self
+            .hires_config
+            .as_ref()
+            .map(|c| c.cooldown_secs)
+            .unwrap_or(10);
         if let Some(last) = self.hires_last_edit
-            && last.elapsed().as_secs() >= self.hires_regen_cooldown_secs
+            && last.elapsed().as_secs() >= cooldown
         {
             let dirty: Vec<u16> = self.hires_dirty_tracks.iter().copied().collect();
             self.hires_dirty_tracks.clear();
+            self.hires_dirty_regions.clear();
             self.hires_last_edit = None;
             return Some(dirty);
         }
@@ -339,7 +355,46 @@ impl Host {
 
     /// 设置高精度贴图冷静期秒数（从配置初始化）
     pub fn set_hires_cooldown(&mut self, secs: u64) {
-        self.hires_regen_cooldown_secs = secs;
+        if let Some(ref mut cfg) = self.hires_config {
+            cfg.cooldown_secs = secs;
+        }
+    }
+
+    /// 获取高精度贴图配置引用（供 runner 构建重生成上下文时使用）
+    pub fn hires_config_ref(&self) -> Option<&lumino_gfx::HiResConfig> {
+        self.hires_config.as_ref()
+    }
+
+    /// 立即触发脏音轨重生成（绕过冷静期）
+    ///
+    /// 在以下场景调用：
+    /// - 用户从脏音轨切换到其他音轨
+    /// - 需要在渲染线程开始后台重生，生成的贴图通过流式通道传回 GPU 上传
+    ///
+    /// 仅在 `hires_dirty_tracks` 包含该音轨且配置信息完整时生效。
+    /// 调用后会从脏集合中移除该音轨。
+    pub fn force_hires_regen(&mut self, track_idx: u16) {
+        if !self.hires_dirty_tracks.remove(&track_idx) {
+            return; // 该音轨不脏，不触发
+        }
+        self.hires_dirty_regions.remove(&track_idx);
+
+        let notes = self.get_track_notes_for_hires(track_idx);
+        if notes.is_empty() {
+            return;
+        }
+
+        let Some(cfg) = self.hires_config.clone() else {
+            return;
+        };
+        let Some(hash) = self.hires_midi_hash.clone() else {
+            return;
+        };
+        let Some((ppq, key_count, total_ticks)) = self.hires_gen_info else {
+            return;
+        };
+
+        self.send_hires_regen(track_idx, notes, ppq, key_count, total_ticks, cfg, hash);
     }
 
     /// 获取指定音轨的音符列表（用于高精度贴图重生成）

@@ -1,7 +1,7 @@
 //! 高精度贴图调度器单元测试
 
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::compute_midi_hash;
 use crate::config::HiResConfig;
