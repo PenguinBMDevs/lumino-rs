@@ -39,11 +39,19 @@ impl Route {
 
 #[derive(Debug, Clone)]
 pub enum RouteConfig {
-    Item { route: Route, icon: icon::Icon },
+    Item {
+        route: Route,
+        icon: icon::Icon,
+    },
+    /// 独立切换按钮（不绑定 Route，用于钢琴卷帘等开关）
+    Toggle {
+        icon: icon::Icon,
+    },
     Space,
 }
 
-const ROUTES: [RouteConfig; 4] = [
+const ROUTES: [RouteConfig; 5] = [
+    RouteConfig::Toggle { icon: icon::Keys },
     RouteConfig::Item {
         route: Route::File,
         icon: icon::FolderTree,
@@ -76,6 +84,8 @@ pub struct Sidebar {
     resize_start_width: f32,
     /// 自动化面板是否可见（独立于路由面板）
     pub automation_panel_visible: bool,
+    /// 钢琴卷帘编辑器是否可见（默认打开）
+    pub piano_roll_visible: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +126,7 @@ impl Sidebar {
             resize_start_x: 0.0,
             resize_start_width: DEFAULT_PANEL_WIDTH,
             automation_panel_visible: false,
+            piano_roll_visible: true,
         }
     }
 
@@ -140,6 +151,7 @@ impl Sidebar {
                 self.route,
                 self.panel_visible,
                 self.automation_panel_visible,
+                self.piano_roll_visible,
                 window,
                 language
             ),
@@ -168,6 +180,8 @@ impl Sidebar {
                 // 切换到音轨总览路由时，自动隐藏左侧面板
                 if r == Route::Arrangement {
                     self.panel_visible = false;
+                    // 互斥：打开工程走带时关闭钢琴卷帘
+                    self.piano_roll_visible = false;
                 }
             }
             PanelToggled(r) => {
@@ -177,6 +191,8 @@ impl Sidebar {
                 } else if r == Route::Arrangement {
                     // 切换到音轨总览路由时，关闭面板
                     self.panel_visible = false;
+                    // 互斥：打开工程走带时关闭钢琴卷帘
+                    self.piano_roll_visible = false;
                     self.panel_route = r;
                     self.route = r;
                 } else if self.panel_visible && self.panel_route == r {
@@ -223,6 +239,15 @@ impl Sidebar {
             }
             AutomationPanelToggled => {
                 self.automation_panel_visible = !self.automation_panel_visible;
+            }
+            PianoRollToggled => {
+                self.piano_roll_visible = !self.piano_roll_visible;
+                // 互斥：打开钢琴卷帘时关闭工程走带，切回 File 路由并保持面板开启
+                if self.piano_roll_visible && self.route == Route::Arrangement {
+                    self.route = Route::File;
+                    self.panel_route = Route::File;
+                    self.panel_visible = true;
+                }
             }
         }
         // 最终保护：音轨总览模式下强制关闭面板

@@ -11,6 +11,7 @@ pub fn view<'a>(
     active: Route,
     panel_visible: bool,
     automation_panel_visible: bool,
+    piano_roll_visible: bool,
     window: &window::Window,
     language: Language,
 ) -> Element<'a> {
@@ -18,14 +19,18 @@ pub fn view<'a>(
         .into_iter()
         .map(|r| match r {
             RouteConfig::Item { route, icon } => {
-                // 自动化面板独立控制指示条
-                let is_active = if route == Route::Automation {
+                // 工程走带模式下：只有 Arrangement 按钮亮，其他按钮全部熄灭
+                // 因为工程走带独占全屏，不显示任何侧边栏面板内容
+                let is_active = if active == Route::Arrangement {
+                    route == Route::Arrangement
+                } else if route == Route::Automation {
                     automation_panel_visible
                 } else {
                     panel_visible && route == active
                 };
                 item(route, icon, is_active, window, language)
             }
+            RouteConfig::Toggle { icon } => toggle_item(icon, piano_roll_visible, window, language),
             RouteConfig::Space => space().height(Length::Fill).into(),
         })
         .collect::<Vec<_>>();
@@ -100,6 +105,64 @@ fn item<'a>(
     widget::with_tooltip(
         btn,
         route.tooltip(language),
+        iced_widget::tooltip::Position::Right,
+    )
+    .into()
+}
+
+/// 渲染独立切换按钮（如钢琴卷帘开关）
+fn toggle_item<'a>(
+    icon_enum: icon::Icon,
+    active: bool,
+    window: &window::Window,
+    language: Language,
+) -> Element<'a> {
+    let split = container(space())
+        .width(2)
+        .height(Length::Fill)
+        .style(move |theme: &Theme| {
+            let palette = theme.extended_palette();
+            let background = match active {
+                true => palette.primary.base.color,
+                false => Color::TRANSPARENT,
+            };
+
+            container::Style::default().background(background)
+        });
+
+    let icon_img = icon::view_with_size_and_theme(icon_enum, 20, 20, Some(&window.theme));
+
+    let inner = row![split, icon_img,]
+        .spacing(12)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_y(Alignment::Center);
+
+    let btn = button(inner)
+        .width(48)
+        .height(48)
+        .padding(0)
+        .style(move |theme: &Theme, status| {
+            use button::Status::*;
+            let palette = theme.extended_palette();
+            let text_color = match status {
+                Hovered | Pressed => palette.background.base.color,
+                _ => palette.background.weakest.color,
+            };
+            button::Style {
+                text_color,
+                ..Default::default()
+            }
+            .with_background(Color::TRANSPARENT)
+        })
+        .on_press(Event::piano_roll_toggled());
+
+    widget::with_tooltip(
+        btn,
+        match language {
+            Language::ZhCn => "钢琴卷帘",
+            Language::EnUs => "Piano Roll",
+        },
         iced_widget::tooltip::Position::Right,
     )
     .into()

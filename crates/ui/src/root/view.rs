@@ -130,6 +130,20 @@ impl Root {
             } else if is_arrangement_route {
                 // 音轨总览模式：使用 wgpu 原生渲染
                 self.view_arrangement()
+            } else if !self.sidebar.piano_roll_visible {
+                // 钢琴卷帘已关闭：显示空白区域
+                container(
+                    iced_widget::column![]
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                )
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|theme: &Theme| container::Style {
+                    background: Some(iced_core::Background::Color(theme.palette().background)),
+                    ..Default::default()
+                })
+                .into()
             } else {
                 // 自动化面板（力度/CC/Tempo/Bend 绘制面板）
                 // 由侧边栏自动化按钮控制显示/隐藏

@@ -28,6 +28,8 @@ pub enum Event {
     ResizeDragEnded,
     /// 自动化面板切换
     AutomationPanelToggled,
+    /// 钢琴卷帘面板切换
+    PianoRollToggled,
 }
 
 impl Event {
@@ -69,5 +71,9 @@ impl Event {
 
     pub const fn automation_panel_toggled() -> Message {
         Message::Sidebar(Self::AutomationPanelToggled)
+    }
+
+    pub const fn piano_roll_toggled() -> Message {
+        Message::Sidebar(Self::PianoRollToggled)
     }
 }

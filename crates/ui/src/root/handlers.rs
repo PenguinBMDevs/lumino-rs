@@ -364,11 +364,10 @@ impl Root {
 
                 if th < vh {
                     // content 没填满 viewport → 调高 zoom
-                    let fill_zoom = (vh / state.view.visible_key_count as f32)
-                        .clamp(
-                            crate::constants::editor::zoom::MIN_ZOOM_Y,
-                            crate::constants::editor::zoom::MAX_ZOOM_Y,
-                        );
+                    let fill_zoom = (vh / state.view.visible_key_count as f32).clamp(
+                        crate::constants::editor::zoom::MIN_ZOOM_Y,
+                        crate::constants::editor::zoom::MAX_ZOOM_Y,
+                    );
                     if (fill_zoom - state.view.zoom_y).abs() > f32::EPSILON {
                         state.view.zoom_y = fill_zoom;
                         state.update_max_scroll(state.view.total_ticks);
@@ -460,6 +459,12 @@ impl Root {
     fn handle_sidebar_event(&mut self, event: sidebar::Event) -> bool {
         // 自动化面板切换始终触发重绘
         if matches!(&event, sidebar::Event::AutomationPanelToggled) {
+            self.sidebar.update(event);
+            return true;
+        }
+
+        // 钢琴卷帘切换始终触发重绘
+        if matches!(&event, sidebar::Event::PianoRollToggled) {
             self.sidebar.update(event);
             return true;
         }
