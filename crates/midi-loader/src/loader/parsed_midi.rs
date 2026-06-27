@@ -224,9 +224,6 @@ pub(super) fn build_document_from_midi_bytes(
     midi_bytes: &[u8],
     _track_count: u16,
 ) -> LoaderResult<MidiDocument> {
-    let tracks = midly::loader::extract_notes_and_control_events_per_track_from_bytes(midi_bytes)
-        .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
-    let track_names = crate::document::scan::scan_track_names(midi_bytes);
-    MidiDocument::build_from_extracted_tracks(tracks, track_names, None)
-        .map_err(|e| LoaderError::MidiParse(format!("构建文档失败: {e}")))
+    let (doc, _, _) = MidiDocument::from_notes_bytes(midi_bytes, None)?;
+    Ok(doc)
 }

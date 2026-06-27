@@ -64,8 +64,8 @@ impl MidiDocument {
 
     /// 使用 midly 从 MIDI 字节加载并构建紧凑内存文档。
     ///
-    /// 使用 per-track 提取避免全量 `Vec<PackedNote>` 中间态的峰值内存。
-    /// 每个音轨的音符提取后立即转换为 `NoteEvent`，该音轨的中间数据即释放。
+    /// 使用按轨流式提取 API，每解析完一轨立即转换为 `NoteEvent` 并释放该轨的
+    /// `PackedNote` 中间数据，避免所有音轨的 PackedNote 同时驻留内存。
     ///
     /// 返回 `(document, division, total_notes)`，调用方只需读取一次文件。
     pub fn from_notes_bytes(
@@ -91,125 +91,81 @@ impl MidiDocument {
             (cb)(0.15);
         }
 
-        let tracks =
-            midly::loader::extract_notes_and_control_events_per_track_from_bytes(file_bytes)
-                .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
+        let mut notes: Vec<Vec<NoteEvent>> = Vec::new();
+        let mut all_tempo_changes: Vec<(u32, f32)> = Vec::new();
+        let mut control_events: Vec<midly::loader::PackedControlEvent> = Vec::new();
+        let mut total_notes: u64 = 0;
+        let mut total_ticks: u32 = 0;
 
-        let total_notes = tracks.iter().map(|t| t.notes.len() as u64).sum();
+        midly::loader::extract_notes_and_control_events_per_track_streaming_from_bytes(
+            file_bytes,
+            |track_idx, packed_notes, tempos, ctrls| {
+                if track_idx >= notes.len() {
+                    notes.resize_with(track_idx + 1, Vec::new);
+                }
 
-        if let Some(cb) = progress {
-            (cb)(0.50);
-        }
-
-        let doc = Self::build_from_extracted_tracks(tracks, track_names, progress)?;
-        Ok((doc, division, total_notes))
-    }
-
-    pub(crate) fn build_from_extracted_tracks(
-        tracks: Vec<midly::loader::TrackExtractResult>,
-        track_names: Vec<Option<String>>,
-        progress: Option<&dyn Fn(f64)>,
-    ) -> LoaderResult<Self> {
-        use rayon::prelude::*;
-
-        let track_count = tracks.len();
-        let (total_ticks, _track_note_counts, total_note_count) =
-            Self::build_track_statistics(&tracks);
-
-        // 预合并 tempo 和控制事件（在移动 tracks 之前完成）
-        let all_tempo_changes = Self::merge_tempo_changes(&tracks);
-        let total_control_events = tracks.iter().map(|t| t.control_events.len()).sum();
-        let mut control_events = Vec::with_capacity(total_control_events);
-        for track in &tracks {
-            control_events.extend_from_slice(&track.control_events);
-        }
-        control_events.sort_unstable_by_key(|e| e.tick);
-
-        if let Some(cb) = progress {
-            (cb)(0.55);
-        }
-
-        // 按轨并行构建 NoteEvent，每轨按 start_tick 排序
-        let notes: Vec<Vec<NoteEvent>> = tracks
-            .into_par_iter()
-            .map(|track| {
                 let mut track_notes: Vec<NoteEvent> =
-                    track.notes.into_iter().map(NoteEvent::from).collect();
+                    packed_notes.into_iter().map(NoteEvent::from).collect();
+                if let Some(last) = track_notes.iter().max_by_key(|n| n.end_tick) {
+                    total_ticks = total_ticks.max(last.end_tick);
+                }
                 if track_notes.len() > 1 {
                     track_notes.sort_unstable_by_key(|n| n.start_tick);
                 }
-                track_notes
-            })
-            .collect();
+                total_notes += track_notes.len() as u64;
+                notes[track_idx] = track_notes;
 
-        if let Some(cb) = progress {
-            (cb)(0.75);
-        }
-
-        let track_count_u16 = track_count as u16;
-        let tracks_manager = TrackManager::new(track_count_u16);
-
-        tracing::info!(
-            "MidiDocument: 已加载 {} 个音符, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化 (多线程并行处理)",
-            total_note_count,
-            control_events.len(),
-            track_count_u16,
-            total_ticks,
-            all_tempo_changes.len(),
-        );
-
-        Ok(Self {
-            notes,
-            tempo_changes: all_tempo_changes,
-            control_events,
-            track_names,
-            total_ticks,
-            track_count: track_count_u16,
-            tracks: tracks_manager,
-        })
-    }
-
-    /// 阶段1：统计每个音轨的音符数量和总 ticks
-    fn build_track_statistics(
-        tracks: &[midly::loader::TrackExtractResult],
-    ) -> (u32, Vec<u64>, usize) {
-        let mut total_ticks: u32 = 0;
-        let mut track_note_counts: Vec<u64> = Vec::with_capacity(tracks.len());
-        let mut total_note_count: usize = 0;
-
-        for track in tracks {
-            let count = track.notes.len() as u64;
-            track_note_counts.push(count);
-            total_note_count += count as usize;
-
-            if let Some(last_note) = track.notes.last() {
-                total_ticks = total_ticks.max(last_note.end_tick);
-            }
-        }
-
-        (total_ticks, track_note_counts, total_note_count)
-    }
-
-    /// 合并每轨的速度变化，按 tick 去重并补齐 tick 0 默认值。
-    fn merge_tempo_changes(tracks: &[midly::loader::TrackExtractResult]) -> Vec<(u32, f32)> {
-        let mut all_tempo_changes: Vec<(u32, f32)> = Vec::new();
-
-        for track in tracks {
-            for &(tick, bpm) in &track.tempo_changes {
-                if !all_tempo_changes.iter().any(|(t, _)| *t == tick) {
-                    all_tempo_changes.push((tick, bpm));
+                for tempo in tempos {
+                    if !all_tempo_changes.iter().any(|(t, _)| *t == tempo.0) {
+                        all_tempo_changes.push(tempo);
+                    }
                 }
-            }
-        }
+                control_events.extend_from_slice(&ctrls);
+            },
+        )
+        .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
 
         // MIDI 标准默认速度为 120 BPM。如果 MIDI 文件提供了 tick 0 处的 tempo 事件，
         // 则使用文件速度；否则插入默认值确保至少有一个有效的起始速度
         if !all_tempo_changes.iter().any(|(t, _)| *t == 0) {
             all_tempo_changes.push((0u32, 120.0f32));
         }
-
         all_tempo_changes.sort_unstable_by_key(|&(t, _)| t);
-        all_tempo_changes
+        control_events.sort_unstable_by_key(|e| e.tick);
+
+        if let Some(cb) = progress {
+            (cb)(0.75);
+        }
+
+        let track_count = notes.len() as u16;
+        let tracks_manager = TrackManager::new(track_count);
+
+        tracing::info!(
+            "MidiDocument: 已加载 {} 个音符, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化",
+            total_notes,
+            control_events.len(),
+            track_count,
+            total_ticks,
+            all_tempo_changes.len(),
+        );
+
+        if let Some(cb) = progress {
+            (cb)(0.90);
+        }
+
+        Ok((
+            Self {
+                notes,
+                tempo_changes: all_tempo_changes,
+                control_events,
+                track_names,
+                total_ticks,
+                track_count,
+                tracks: tracks_manager,
+            },
+            division,
+            total_notes,
+        ))
     }
 
     /// 获取总 tick 数
