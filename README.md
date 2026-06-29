@@ -25,11 +25,14 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/BuickMeow/lumino-rs.git
+git clone https://github.com/PenguinBMDevs/lumino-rs.git
 cd lumino-rs
 
 # 开发构建
 cargo build
+
+# 高性能开发构建
+cargo build --profile fast-release
 
 # 发布构建（优化）
 cargo build --release
@@ -40,6 +43,9 @@ cargo build --release
 ```bash
 # 开发模式
 cargo run
+
+# 高性能开发测试运行
+cargo run --profile fast-release
 
 # 发布模式
 cargo run --release
@@ -56,7 +62,7 @@ cargo run --release
 
 ```bash
 # 查看所有 lumino 日志（DEBUG 级别，但是我觉得你不需要看这么多）
-RUST_LOG=lumino=debug cargo run
+RUST_LOG=debug cargo run
 
 # 仅显示 WARN 及以上
 RUST_LOG=warn cargo run
@@ -64,7 +70,7 @@ RUST_LOG=warn cargo run
 
 ## 许可证
 
-[Mulan PSL v2](LICENSE)
+[AGPL-3.0](LICENSE)
 
 ## 贡献
 
