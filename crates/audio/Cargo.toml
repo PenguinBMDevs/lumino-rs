@@ -1,0 +1,16 @@
+[package]
+name = "lumino-audio"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+lumino-midi-loader = { workspace = true }
+xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth" }
+xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth" }
+cpal = { workspace = true }
+crossbeam-channel = { workspace = true }
+hound = { workspace = true }
+tracing = { workspace = true }
