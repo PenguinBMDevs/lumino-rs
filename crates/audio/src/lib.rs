@@ -8,6 +8,7 @@
 //!
 //! cpal 回调只做 `ring.pop_into()` + 静音填充，**永不阻塞**。
 
+mod adapter;
 mod audio_model;
 mod audio_renderer;
 mod audio_ring;
@@ -19,4 +20,5 @@ pub mod export;
 mod prepare_model;
 pub mod spawn;
 
+pub use adapter::AudioCommandAdapter;
 pub use spawn::{AudioCommand, AudioSpawnError, CpalAudioHandle, channels_for_model, spawn_cpal_audio};

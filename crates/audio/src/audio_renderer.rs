@@ -102,29 +102,22 @@ fn render_if_needed(
     let stereo_target = target_fill - (target_fill % STEREO_CHANNELS);
 
     while ring.len() < stereo_target {
-        let eng = engine.lock().unwrap();
-        if eng.play_state != PlayState::Playing {
-            break;
-        }
-        let duration = eng.duration_samples();
-        if duration > 0 && eng.cursor.position >= duration {
-            // 播放结束
-            drop(eng);
-            let mut eng = engine.lock().unwrap();
-            eng.play_state = PlayState::Stopped;
-            eng.all_notes_off();
-            break;
-        }
-        drop(eng);
+        let mut eng = engine.lock().unwrap();
 
-        // 渲染一块
-        let eng = engine.lock().unwrap();
-        // 临时释放锁来渲染？不行，engine 需要持有锁
-        // 但 read_samples 可能很耗时...
-        // 这里需要重新设计：render_block 需要持有 engine 的锁
+        // 播放结束检查
+        if eng.play_state == PlayState::Playing {
+            let duration = eng.duration_samples();
+            if duration > 0 && eng.cursor.position >= duration {
+                eng.play_state = PlayState::Stopped;
+                eng.all_notes_off();
+                break;
+            }
+        }
 
-        // 实际上 render_block 会修改 engine 状态，所以需要持有锁
-        crate::engine_render::render_block(&mut *engine.lock().unwrap(), scratch);
+        // 无论是否在播放，都渲染一块音频：
+        // - 播放时：渲染 MIDI 事件
+        // - 非播放时：渲染预览音符的 release 尾声
+        crate::engine_render::render_block(&mut eng, scratch);
         drop(eng);
 
         let written = ring.push_slice(scratch);

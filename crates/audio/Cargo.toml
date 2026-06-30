@@ -8,9 +8,11 @@ edition.workspace = true
 
 [dependencies]
 lumino-midi-loader = { workspace = true }
+lumino-midi-io = { workspace = true }
 xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth" }
 xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth" }
 cpal = { workspace = true }
 crossbeam-channel = { workspace = true }
 hound = { workspace = true }
+midly = { workspace = true }
 tracing = { workspace = true }
