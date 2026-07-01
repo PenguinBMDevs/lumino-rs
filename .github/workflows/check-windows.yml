@@ -1,0 +1,74 @@
+name: Windows Check (cargo check + clippy + test)
+
+on:
+  workflow_dispatch:
+    inputs:
+      check_command:
+        description: 'check / clippy / test / all'
+        required: true
+        default: 'check'
+        type: choice
+        options:
+          - check
+          - clippy
+          - test
+          - all
+
+  pull_request:
+    branches: [dev, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "--cap-lints warn"
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    name: cargo check (Windows x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-check-${{ hashFiles('**/Cargo.lock') }}
+      - uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "17"
+      - run: cargo check --workspace
+
+  clippy:
+    name: cargo clippy (Windows x64)
+    runs-on: windows-latest
+    if: github.event_name == 'pull_request' || inputs.check_command == 'clippy' || inputs.check_command == 'all'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-clippy-${{ hashFiles('**/Cargo.lock') }}
+      - uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "17"
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: cargo test (Windows x64)
+    runs-on: windows-latest
+    if: github.event_name == 'pull_request' || inputs.check_command == 'test' || inputs.check_command == 'all'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-test-${{ hashFiles('**/Cargo.lock') }}
+      - uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "17"
+      - run: cargo test --workspace
