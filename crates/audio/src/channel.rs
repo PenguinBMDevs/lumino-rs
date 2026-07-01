@@ -64,23 +64,28 @@ impl ChannelState {
     /// 将状态发送到 ChannelGroup（用于 seek 后恢复）。
     ///
     /// 只发送 lumino xsynth fork 支持的事件类型。
+    ///
+    /// 注意：CC=0 的值也会被发送（比如 Volume=0 或 Sustain=0 是被显式设置的，
+    /// 不能跳过），否则 seek 后音色状态不正确。
     pub(crate) fn send_to(&self, ch: u32, cg: &mut ChannelGroup) {
         let mut send = |event: ChannelAudioEvent| {
             cg.send_event(SynthEvent::Channel(ch, ChannelEvent::Audio(event)));
         };
 
-        // 发送所有已记录的 CC 值（包括 bank select, volume, pan 等）
-        // 按 CC 编号顺序发送，确保 bank select 在 program change 之前
+        // 发送 Bank Select（必须在 ProgramChange 之前）
         send(ChannelAudioEvent::Control(ControlEvent::Raw(0, self.bank_msb)));
         send(ChannelAudioEvent::Control(ControlEvent::Raw(32, self.bank_lsb)));
 
-        // 发送其他 CC（跳过 0 和 32，已单独发送）
+        // 发送其他 CC（包括值为 0 的，如 Sustain=0 是合法且必要的）
+        // 跳过 0 和 32（已单独发送），只发送被显式设置过的（非默认值的或需要清零的）
         for cc in 1..128u8 {
             if cc == 32 {
                 continue;
             }
             let val = self.cc_values[cc as usize];
-            if val != 0 {
+            // 发送非零值，以及需要明确清零的控制器
+            let must_send_zero = matches!(cc, 64 | 91 | 92 | 93 | 94); // sustain, reverb, chorus, etc.
+            if val != 0 || must_send_zero {
                 send(ChannelAudioEvent::Control(ControlEvent::Raw(cc, val)));
             }
         }
@@ -123,5 +128,16 @@ mod tests {
         assert_eq!(state.expression, 127);
         assert_eq!(state.program, 0);
         assert!(state.pitch_bend.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_zero_cc_is_recorded() {
+        // CC=0 应该被记录并发送（比如 Sustain=0 是合法且必要的）
+        let mut state = ChannelState::default();
+        state.apply(&ChannelAudioEvent::Control(ControlEvent::Raw(64, 127)));
+        assert_eq!(state.sustain, 127);
+        state.apply(&ChannelAudioEvent::Control(ControlEvent::Raw(64, 0)));
+        assert_eq!(state.sustain, 0);
+        assert_eq!(state.cc_values[64], 0);
     }
 }

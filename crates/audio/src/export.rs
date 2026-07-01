@@ -73,6 +73,9 @@ pub fn render_to_wav(
     // 3. 加载模型
     let model = prepare_model(doc, sample_rate);
     let total_samples = model.duration_samples;
+    if total_samples == 0 {
+        return Err(ExportError::EngineError("MIDI 文件为空或无法解析".to_string()));
+    }
     engine.load_model(model);
 
     if let Some(cb) = progress {
@@ -94,29 +97,39 @@ pub fn render_to_wav(
 
     // 6. 渲染循环
     let mut scratch = vec![0.0f32; EXPORT_BLOCK_FRAMES * STEREO];
-    let mut rendered = 0u64;
-    let mut last_progress_update = 0u64;
+    let mut rendered_samples = 0u64;
+    let mut last_progress_pct = 0u64;
+    let progress_interval = (total_samples / 100).max(1);
 
-    while engine.play_state == PlayState::Playing && rendered < total_samples {
-        crate::engine_render::render_block(&mut engine, &mut scratch);
+    while engine.play_state == PlayState::Playing && rendered_samples < total_samples {
+        let rendered_frames = crate::engine_render::render_block(&mut engine, &mut scratch);
+
+        if rendered_frames == 0 {
+            // 没有更多数据可渲染
+            break;
+        }
+
+        // 计算实际需要写入的样本数（防止最后一帧超出总时长）
+        let remaining = total_samples - rendered_samples;
+        let frames_to_write = (rendered_frames as u64).min(remaining) as usize;
+        let samples_to_write = frames_to_write * STEREO;
 
         // 写入 WAV (f32 → i16)
-        for &sample in &scratch {
+        for &sample in &scratch[..samples_to_write] {
             let val = (sample * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
             writer
                 .write_sample(val)
                 .map_err(|e| ExportError::WavWrite(e.to_string()))?;
         }
 
-        rendered += EXPORT_BLOCK_FRAMES as u64;
+        rendered_samples += frames_to_write as u64;
 
         // 进度回调（每 1% 更新一次）
         if let Some(cb) = progress {
-            let progress_interval = (total_samples / 100).max(1);
-            if rendered - last_progress_update >= progress_interval {
-                let pct = (rendered as f64 / total_samples as f64).min(1.0);
+            if rendered_samples - last_progress_pct >= progress_interval as u64 {
+                let pct = (rendered_samples as f64 / total_samples as f64).min(1.0);
                 cb(pct);
-                last_progress_update = rendered;
+                last_progress_pct = rendered_samples;
             }
         }
     }

@@ -3,6 +3,7 @@
 //! cpal 回调只做 `ring.pop_into()` + 静音填充，**永不阻塞**。
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
@@ -40,9 +41,10 @@ pub struct CpalAudioHandle {
     /// 接收引擎状态快照（播放位置等）。
     pub state_rx: Receiver<EngineStateSnapshot>,
     worker_tx: Sender<WorkerMessage>,
-    _stream: cpal::Stream,
-    _renderer_handle: JoinHandle<()>,
-    _worker_handle: JoinHandle<()>,
+    stream: cpal::Stream,
+    renderer_handle: Option<JoinHandle<()>>,
+    worker_handle: Option<JoinHandle<()>>,
+    shutdown_flag: Arc<AtomicBool>,
     pub engine: Arc<Mutex<AudioEngine>>,
 }
 
@@ -103,16 +105,21 @@ pub fn spawn_cpal_audio(
     let ring = AudioRing::new(ring_capacity);
     let (producer, consumer) = ring.split();
 
-    // 4. 创建 cpal 输出流 — 回调只做 pop_into + 静音填充
+    // 4. 创建 cpal 输出流 — 回调永不阻塞
     let stream = build_cpal_stream(&device, &stream_config, consumer)?;
 
-    // 5. 创建 channels
+    // 5. 启动 cpal 音频流（必须显式调用 play()）
+    stream.play()?;
+
+    // 6. 创建 channels
     let (cmd_tx, cmd_rx) = unbounded::<AudioCommand>();
     let (state_tx, state_rx) = unbounded::<EngineStateSnapshot>();
     let (worker_tx, worker_rx) = unbounded::<WorkerMessage>();
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
-    // 6. 启动 renderer 线程
+    // 7. 启动 renderer 线程
     let engine_for_renderer = Arc::clone(&engine);
+    let shutdown_flag_renderer = Arc::clone(&shutdown_flag);
     let renderer_handle = thread::Builder::new()
         .name("lumino-audio-renderer".to_string())
         .spawn(move || {
@@ -121,10 +128,11 @@ pub fn spawn_cpal_audio(
                 producer,
                 cmd_rx,
                 state_tx,
+                shutdown_flag_renderer,
             );
         })?;
 
-    // 7. 启动 worker 线程
+    // 8. 启动 worker 线程
     let engine_for_worker = Arc::clone(&engine);
     let worker_handle = thread::Builder::new()
         .name("lumino-audio-worker".to_string())
@@ -136,9 +144,10 @@ pub fn spawn_cpal_audio(
         cmd_tx,
         state_rx,
         worker_tx: worker_tx.clone(),
-        _stream: stream,
-        _renderer_handle: renderer_handle,
-        _worker_handle: worker_handle,
+        stream,
+        renderer_handle: Some(renderer_handle),
+        worker_handle: Some(worker_handle),
+        shutdown_flag,
         engine: Arc::clone(&engine),
     };
 
@@ -183,14 +192,18 @@ fn run_worker_thread(
                 soundfont_paths,
             } => {
                 let result = prepare_model::run_worker(doc, soundfont_paths, sample_rate);
-                // 将结果发送到 renderer 线程处理
-                let eng = engine.lock().unwrap();
                 match result {
                     WorkerResult::ModelPrepared { model, soundfonts } => {
-                        drop(eng);
-                        let mut eng = engine.lock().unwrap();
-                        eng.set_soundfonts(soundfonts);
-                        eng.load_model(model);
+                        // 先加锁设置 soundfonts，释放后再加锁加载模型
+                        // 避免在 prepare_model 期间持有锁阻塞 renderer
+                        {
+                            let mut eng = engine.lock().unwrap();
+                            eng.set_soundfonts(soundfonts);
+                        }
+                        {
+                            let mut eng = engine.lock().unwrap();
+                            eng.load_model(model);
+                        }
                         tracing::info!("音频引擎: 模型已加载 (worker 线程)");
                     }
                     WorkerResult::Error(e) => {
@@ -201,6 +214,7 @@ fn run_worker_thread(
             WorkerMessage::Shutdown => break,
         }
     }
+    tracing::info!("音频 worker 线程已优雅退出");
 }
 
 impl CpalAudioHandle {
@@ -310,8 +324,31 @@ impl CpalAudioHandle {
 
 impl Drop for CpalAudioHandle {
     fn drop(&mut self) {
+        // 1. 发送 shutdown 信号
+        self.shutdown_flag.store(true, Ordering::Relaxed);
         let _ = self.cmd_tx.send(AudioCommand::Shutdown);
         let _ = self.worker_tx.send(WorkerMessage::Shutdown);
+
+        // 2. 等待 renderer 线程结束（最多 2 秒超时）
+        if let Some(handle) = self.renderer_handle.take() {
+            let start = std::time::Instant::now();
+            while handle.is_alive() && start.elapsed() < std::time::Duration::from_secs(2) {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            if handle.is_alive() {
+                tracing::warn!("音频渲染线程未在 2 秒内退出，强制继续");
+            }
+        }
+
+        // 3. 等待 worker 线程结束（最多 1 秒超时）
+        if let Some(handle) = self.worker_handle.take() {
+            let _ = handle.join();
+        }
+
+        // 4. 停止 cpal 流
+        let _ = self.stream.pause();
+
+        tracing::info!("CpalAudioHandle 已清理");
     }
 }
 
@@ -364,3 +401,14 @@ impl std::fmt::Display for AudioSpawnError {
 }
 
 impl std::error::Error for AudioSpawnError {}
+
+/// 辅助 trait 用于检查线程是否存活
+trait ThreadAlive {
+    fn is_alive(&self) -> bool;
+}
+
+impl ThreadAlive for JoinHandle<()> {
+    fn is_alive(&self) -> bool {
+        !self.is_finished()
+    }
+}
