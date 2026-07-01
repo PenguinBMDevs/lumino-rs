@@ -34,52 +34,77 @@ impl RenderCursor {
 /// 渲染一块音频到 output buffer（interleaved stereo: L, R, L, R, ...）。
 ///
 /// `output` 长度必须是偶数（每帧 2 个 sample）。
+///
+/// 返回实际渲染的帧数（如果到达文件末尾则可能比 output.len()/2 少）。
 pub(crate) fn render_block(
     engine: &mut crate::engine::AudioEngine,
     output: &mut [f32],
-) {
+) -> usize {
     let block_size = output.len() / 2;
     if block_size == 0 {
-        return;
+        return 0;
     }
 
     let block_start = engine.cursor.position;
     let block_end = block_start + block_size as u64;
 
+    // 检查是否到达文件末尾，截断最后一帧
+    let duration = engine.duration_samples();
+    let effective_end = if duration > 0 {
+        block_end.min(duration)
+    } else {
+        block_end
+    };
+    let effective_block_size = (effective_end - block_start) as usize;
+    if effective_block_size == 0 {
+        return 0;
+    }
+
     let sr = engine.config.sample_rate as f64;
 
     let mut written_frames = 0usize;
 
-    while written_frames < block_size {
+    while written_frames < effective_block_size {
         let current_sample = block_start + written_frames as u64;
-        let remaining_frames = block_size - written_frames;
+        let remaining_frames = effective_block_size - written_frames;
 
         // 找到下一个事件的 sample 位置
-        let next_event_sample = next_event_sample(engine, current_sample, block_end);
+        let next_event_sample = next_event_sample(engine, current_sample, effective_end);
 
         // 渲染到下一个事件位置（或 block 结束）
         let frames_until_event = if let Some(ev_sample) = next_event_sample {
-            (ev_sample - current_sample) as usize
+            ((ev_sample - current_sample) as usize).min(remaining_frames)
         } else {
             remaining_frames
         };
 
-        let render_frames = frames_until_event.min(remaining_frames);
-        if render_frames > 0 {
+        if frames_until_event > 0 {
             let start = written_frames * 2;
-            let end = start + render_frames * 2;
+            let end = start + frames_until_event * 2;
             engine.channel_group.read_samples(&mut output[start..end]);
-            written_frames += render_frames;
+            written_frames += frames_until_event;
         }
 
         // 派发当前位置的事件
         let dispatch_sample = block_start + written_frames as u64;
-        if dispatch_sample < block_end {
+        if dispatch_sample < effective_end {
             dispatch_events_at(engine, dispatch_sample, sr);
         }
     }
 
-    engine.cursor.advance(block_size as u64);
+    // 剩余部分填充静音（如果 duration 截断了 block）
+    if written_frames < block_size {
+        for sample in &mut output[written_frames * 2..block_size * 2] {
+            *sample = 0.0;
+        }
+    }
+
+    // 应用音量限制器防止削波
+    let rendered_samples = written_frames * 2;
+    engine.limiter.process(&mut output[..rendered_samples]);
+
+    engine.cursor.advance(effective_block_size as u64);
+    written_frames
 }
 
 /// 找到当前播放位置之后、block_end 之前的下一个事件 sample 位置。
@@ -151,9 +176,9 @@ fn dispatch_events_at(
 
     // NoteOn 事件
     for key in 0..128u8 {
-        let cursor = engine.note_cursors[key as usize];
         let bucket = &model.notes_by_key[key as usize];
-        while cursor < bucket.len() {
+        while engine.note_cursors[key as usize] < bucket.len() {
+            let cursor = engine.note_cursors[key as usize];
             let note = &bucket[cursor];
             let note_sample = tick_to_sample(note.start_tick as u64, &model.tempo_segments, sr);
             if note_sample > sample {

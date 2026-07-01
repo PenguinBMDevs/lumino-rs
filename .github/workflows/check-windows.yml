@@ -1,0 +1,54 @@
+name: Windows Check (cargo check + test)
+
+on:
+  workflow_dispatch:
+    inputs:
+      check_command:
+        description: 'check / test / all'
+        required: true
+        default: 'check'
+        type: choice
+        options:
+          - check
+          - test
+          - all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "--cap-lints warn"
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    name: cargo check (Windows x64)
+    runs-on: windows-latest
+    if: inputs.check_command == 'check' || inputs.check_command == 'all'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-check-${{ hashFiles('**/Cargo.lock') }}
+      - uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "17"
+      - run: cargo check --workspace
+
+  test:
+    name: cargo test (Windows x64)
+    runs-on: windows-latest
+    if: inputs.check_command == 'test' || inputs.check_command == 'all'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-test-${{ hashFiles('**/Cargo.lock') }}
+      - uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "17"
+      - run: cargo test --workspace

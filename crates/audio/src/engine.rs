@@ -87,6 +87,7 @@ impl AudioEngine {
 
     /// 加载预计算模型，重置渲染状态。
     pub(crate) fn load_model(&mut self, model: PreparedModel) {
+        self.reset_all();
         self.state.load_model(model);
         self.reset_cursors();
         self.play_state = PlayState::Stopped;
@@ -142,6 +143,14 @@ impl AudioEngine {
 
     /// 发送即时 NoteOn（用于试听）。
     pub(crate) fn preview_note_on(&mut self, channel: u8, key: u8, velocity: u8) {
+        if channel >= 16 {
+            tracing::warn!("preview_note_on: channel {} 超出范围 (0-15)", channel);
+            return;
+        }
+        if key >= 128 {
+            tracing::warn!("preview_note_on: key {} 超出范围 (0-127)", key);
+            return;
+        }
         self.channel_group.send_event(SynthEvent::Channel(
             channel as u32,
             ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
@@ -153,6 +162,12 @@ impl AudioEngine {
 
     /// 发送即时 NoteOff（用于试听）。
     pub(crate) fn preview_note_off(&mut self, channel: u8, key: u8) {
+        if channel >= 16 {
+            return;
+        }
+        if key >= 128 {
+            return;
+        }
         self.channel_group.send_event(SynthEvent::Channel(
             channel as u32,
             ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key }),
@@ -161,6 +176,10 @@ impl AudioEngine {
 
     /// 发送即时 CC 事件（用于试听）。
     pub(crate) fn preview_cc(&mut self, channel: u8, controller: u8, value: u8) {
+        if channel >= 16 {
+            tracing::warn!("preview_cc: channel {} 超出范围 (0-15)", channel);
+            return;
+        }
         let event = ChannelAudioEvent::Control(ControlEvent::Raw(controller, value));
         self.channel_states[channel as usize].apply(&event);
         self.channel_group.send_event(SynthEvent::Channel(
@@ -171,6 +190,10 @@ impl AudioEngine {
 
     /// 发送即时 ProgramChange（用于试听）。
     pub(crate) fn preview_program_change(&mut self, channel: u8, program: u8) {
+        if channel >= 16 {
+            tracing::warn!("preview_program_change: channel {} 超出范围 (0-15)", channel);
+            return;
+        }
         let event = ChannelAudioEvent::ProgramChange(program);
         self.channel_states[channel as usize].apply(&event);
         self.channel_group.send_event(SynthEvent::Channel(
@@ -181,6 +204,10 @@ impl AudioEngine {
 
     /// 发送即时 PitchBend（用于试听）。
     pub(crate) fn preview_pitch_bend(&mut self, channel: u8, value: f32) {
+        if channel >= 16 {
+            tracing::warn!("preview_pitch_bend: channel {} 超出范围 (0-15)", channel);
+            return;
+        }
         let event = ChannelAudioEvent::Control(ControlEvent::PitchBendValue(value));
         self.channel_states[channel as usize].apply(&event);
         self.channel_group.send_event(SynthEvent::Channel(
@@ -266,6 +293,7 @@ impl AudioEngine {
         if let Some(model) = self.state.model() {
             // 重置通道状态为默认
             self.channel_states = std::array::from_fn(|_| ChannelState::default());
+            self.cc_cursor = 0;
 
             // 重放所有 sample 位置之前的控制事件
             for cc in &model.cc_events {
