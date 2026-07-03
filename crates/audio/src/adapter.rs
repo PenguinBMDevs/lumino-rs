@@ -55,11 +55,17 @@ impl OutputConnection for AudioCommandAdapter {
 
     fn control_change(&mut self, ch: u8, controller: u8, value: u8) -> Result<(), Error> {
         let channel = ch & MIDI_CHANNEL_MASK;
-        let _ = self.cmd_tx.send(AudioCommand::ControlChange {
-            channel,
-            controller,
-            value,
-        });
+        if controller == CC_ALL_NOTES_OFF {
+            let _ = self.cmd_tx.send(AudioCommand::AllNotesOff);
+        } else if controller == CC_RESET_ALL_CONTROLLERS {
+            let _ = self.cmd_tx.send(AudioCommand::ResetAll);
+        } else {
+            let _ = self.cmd_tx.send(AudioCommand::ControlChange {
+                channel,
+                controller,
+                value,
+            });
+        }
         Ok(())
     }
 
@@ -95,11 +101,18 @@ impl OutputConnection for AudioCommandAdapter {
                 });
             }
             STATUS_CONTROL_CHANGE => {
-                let _ = self.cmd_tx.send(AudioCommand::ControlChange {
-                    channel,
-                    controller: data[1],
-                    value: data[2],
-                });
+                let controller = data[1];
+                if controller == CC_ALL_NOTES_OFF {
+                    let _ = self.cmd_tx.send(AudioCommand::AllNotesOff);
+                } else if controller == CC_RESET_ALL_CONTROLLERS {
+                    let _ = self.cmd_tx.send(AudioCommand::ResetAll);
+                } else {
+                    let _ = self.cmd_tx.send(AudioCommand::ControlChange {
+                        channel,
+                        controller,
+                        value: data[2],
+                    });
+                }
             }
             STATUS_PROGRAM_CHANGE => {
                 let _ = self.cmd_tx.send(AudioCommand::ProgramChange {
