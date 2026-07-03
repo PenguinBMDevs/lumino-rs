@@ -6,8 +6,8 @@
 
 use std::sync::Arc;
 
-use xsynth_core::channel::ChannelAudioEvent;
 use lumino_midi_loader::MidiDocument;
+use xsynth_core::channel::ChannelAudioEvent;
 
 /// 按 sample 排序的控制事件（CC / PC / PB）。
 pub(crate) struct SortedCC {
@@ -52,10 +52,7 @@ pub(crate) struct PreparedModel {
 }
 
 /// 从 lumino 的 `MidiDocument` 构建预计算模型。
-pub(crate) fn prepare_model(
-    doc: &Arc<MidiDocument>,
-    sample_rate: u32,
-) -> PreparedModel {
+pub(crate) fn prepare_model(doc: &Arc<MidiDocument>, sample_rate: u32) -> PreparedModel {
     let sr = sample_rate as f64;
 
     // ── 构建 tempo segments ──
@@ -63,7 +60,8 @@ pub(crate) fn prepare_model(
     let duration_samples = tick_to_sample(doc.total_ticks as u64, &tempo_segments, sr);
 
     // ── 按 key 分桶 ──
-    let mut notes_by_key: Box<[Vec<NoteBucketEntry>; 128]> = Box::new(std::array::from_fn(|_| Vec::new()));
+    let mut notes_by_key: Box<[Vec<NoteBucketEntry>; 128]> =
+        Box::new(std::array::from_fn(|_| Vec::new()));
     for (track_idx, track_notes) in doc.notes.iter().enumerate() {
         for note in track_notes {
             if note.velocity <= 1 {
@@ -97,9 +95,9 @@ pub(crate) fn prepare_model(
                 cc_events.push(SortedCC {
                     sample,
                     channel,
-                    event: ChannelAudioEvent::Control(
-                        xsynth_core::channel::ControlEvent::Raw(controller, value),
-                    ),
+                    event: ChannelAudioEvent::Control(xsynth_core::channel::ControlEvent::Raw(
+                        controller, value,
+                    )),
                 });
             }
             1 => {
@@ -136,10 +134,7 @@ pub(crate) fn prepare_model(
 }
 
 /// 从 lumino 的 tempo_changes (tick, bpm) 构建速度段。
-fn build_tempo_segments(
-    tempo_changes: &[(u32, f32)],
-    total_ticks: u32,
-) -> Vec<TempoSegment> {
+fn build_tempo_segments(tempo_changes: &[(u32, f32)], total_ticks: u32) -> Vec<TempoSegment> {
     if tempo_changes.is_empty() {
         return vec![TempoSegment {
             start_tick: 0,
@@ -190,7 +185,8 @@ pub(crate) fn tick_to_sample(tick: u64, segments: &[TempoSegment], sr: f64) -> u
     let seg = &segments[idx];
     let delta_ticks = tick - seg.start_tick as u64;
     let division = 480.0f64;
-    let secs = seg.start_time + delta_ticks as f64 / division * seg.micros_per_quarter / 1_000_000.0;
+    let secs =
+        seg.start_time + delta_ticks as f64 / division * seg.micros_per_quarter / 1_000_000.0;
     (secs * sr) as u64
 }
 
@@ -200,7 +196,11 @@ pub(crate) fn sample_to_tick(sample: u64, segments: &[TempoSegment], sr: f64) ->
         return 0.0;
     }
     let target_secs = sample as f64 / sr;
-    let idx = match segments.binary_search_by(|s| s.start_time.partial_cmp(&target_secs).unwrap_or(std::cmp::Ordering::Equal)) {
+    let idx = match segments.binary_search_by(|s| {
+        s.start_time
+            .partial_cmp(&target_secs)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }) {
         Ok(i) => i,
         Err(i) => i.saturating_sub(1),
     };

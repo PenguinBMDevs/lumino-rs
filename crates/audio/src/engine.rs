@@ -5,8 +5,12 @@
 
 use std::sync::Arc;
 
-use xsynth_core::channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ChannelInitOptions, ControlEvent};
-use xsynth_core::channel_group::{ChannelGroup, ChannelGroupConfig, SynthEvent, SynthFormat, ParallelismOptions};
+use xsynth_core::channel::{
+    ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ChannelInitOptions, ControlEvent,
+};
+use xsynth_core::channel_group::{
+    ChannelGroup, ChannelGroupConfig, ParallelismOptions, SynthEvent, SynthFormat,
+};
 use xsynth_core::effects::VolumeLimiter;
 use xsynth_core::soundfont::SoundfontBase;
 use xsynth_core::{AudioStreamParams, ChannelCount};
@@ -153,10 +157,7 @@ impl AudioEngine {
         }
         self.channel_group.send_event(SynthEvent::Channel(
             channel as u32,
-            ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
-                key,
-                vel: velocity,
-            }),
+            ChannelEvent::Audio(ChannelAudioEvent::NoteOn { key, vel: velocity }),
         ));
     }
 
@@ -191,7 +192,10 @@ impl AudioEngine {
     /// 发送即时 ProgramChange（用于试听）。
     pub(crate) fn preview_program_change(&mut self, channel: u8, program: u8) {
         if channel >= 16 {
-            tracing::warn!("preview_program_change: channel {} 超出范围 (0-15)", channel);
+            tracing::warn!(
+                "preview_program_change: channel {} 超出范围 (0-15)",
+                channel
+            );
             return;
         }
         let event = ChannelAudioEvent::ProgramChange(program);

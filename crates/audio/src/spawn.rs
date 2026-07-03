@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
-use cpal::traits::{DeviceTrait, HostTrait};
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use lumino_midi_loader::MidiDocument;
 
 use crate::audio_renderer::{self, EngineStateSnapshot};
@@ -24,11 +24,28 @@ pub enum AudioCommand {
     Stop,
     SeekSample(u64),
     SeekTick(u32),
-    NoteOn { channel: u8, key: u8, velocity: u8 },
-    NoteOff { channel: u8, key: u8 },
-    ControlChange { channel: u8, controller: u8, value: u8 },
-    ProgramChange { channel: u8, program: u8 },
-    PitchBend { channel: u8, value: f32 },
+    NoteOn {
+        channel: u8,
+        key: u8,
+        velocity: u8,
+    },
+    NoteOff {
+        channel: u8,
+        key: u8,
+    },
+    ControlChange {
+        channel: u8,
+        controller: u8,
+        value: u8,
+    },
+    ProgramChange {
+        channel: u8,
+        program: u8,
+    },
+    PitchBend {
+        channel: u8,
+        value: f32,
+    },
     AllNotesOff,
     ResetAll,
     Shutdown,
@@ -219,11 +236,7 @@ fn run_worker_thread(
 
 impl CpalAudioHandle {
     /// 加载 MIDI 文档和音色库（在 worker 线程异步执行）。
-    pub fn load_model(
-        &self,
-        doc: Arc<MidiDocument>,
-        soundfont_paths: Vec<PathBuf>,
-    ) {
+    pub fn load_model(&self, doc: Arc<MidiDocument>, soundfont_paths: Vec<PathBuf>) {
         let _ = self.worker_tx.send(WorkerMessage::LoadModel {
             doc,
             soundfont_paths,
@@ -280,10 +293,9 @@ impl CpalAudioHandle {
 
     /// 发送 ProgramChange。
     pub fn program_change(&self, channel: u8, program: u8) {
-        let _ = self.cmd_tx.send(AudioCommand::ProgramChange {
-            channel,
-            program,
-        });
+        let _ = self
+            .cmd_tx
+            .send(AudioCommand::ProgramChange { channel, program });
     }
 
     /// 发送 PitchBend。

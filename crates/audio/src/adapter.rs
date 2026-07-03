@@ -65,10 +65,9 @@ impl OutputConnection for AudioCommandAdapter {
 
     fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error> {
         let channel = ch & MIDI_CHANNEL_MASK;
-        let _ = self.cmd_tx.send(AudioCommand::ProgramChange {
-            channel,
-            program,
-        });
+        let _ = self
+            .cmd_tx
+            .send(AudioCommand::ProgramChange { channel, program });
         Ok(())
     }
 

@@ -73,8 +73,14 @@ impl ChannelState {
         };
 
         // 发送 Bank Select（必须在 ProgramChange 之前）
-        send(ChannelAudioEvent::Control(ControlEvent::Raw(0, self.bank_msb)));
-        send(ChannelAudioEvent::Control(ControlEvent::Raw(32, self.bank_lsb)));
+        send(ChannelAudioEvent::Control(ControlEvent::Raw(
+            0,
+            self.bank_msb,
+        )));
+        send(ChannelAudioEvent::Control(ControlEvent::Raw(
+            32,
+            self.bank_lsb,
+        )));
 
         // 发送其他 CC（包括值为 0 的，如 Sustain=0 是合法且必要的）
         // 跳过 0 和 32（已单独发送），只发送被显式设置过的（非默认值的或需要清零的）
@@ -116,7 +122,9 @@ mod tests {
         state.apply(&ChannelAudioEvent::ProgramChange(42));
         assert_eq!(state.program, 42);
 
-        state.apply(&ChannelAudioEvent::Control(ControlEvent::PitchBendValue(0.5)));
+        state.apply(&ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
+            0.5,
+        )));
         assert!((state.pitch_bend - 0.5).abs() < f32::EPSILON);
     }
 

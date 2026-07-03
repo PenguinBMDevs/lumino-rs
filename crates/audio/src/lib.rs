@@ -21,4 +21,6 @@ mod prepare_model;
 pub mod spawn;
 
 pub use adapter::AudioCommandAdapter;
-pub use spawn::{AudioCommand, AudioSpawnError, CpalAudioHandle, channels_for_model, spawn_cpal_audio};
+pub use spawn::{
+    AudioCommand, AudioSpawnError, CpalAudioHandle, channels_for_model, spawn_cpal_audio,
+};

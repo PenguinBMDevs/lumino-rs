@@ -38,8 +38,7 @@ pub(crate) fn run_audio_renderer(
     state_tx: crossbeam_channel::Sender<EngineStateSnapshot>,
     shutdown_flag: Arc<AtomicBool>,
 ) {
-    let mut scratch =
-        vec![0.0f32; RENDER_CHUNK_FRAMES * STEREO_CHANNELS];
+    let mut scratch = vec![0.0f32; RENDER_CHUNK_FRAMES * STEREO_CHANNELS];
 
     while !shutdown_flag.load(Ordering::Relaxed) {
         let mut did_work = false;
@@ -75,13 +74,21 @@ fn process_commands(
             AudioCommand::Stop => eng.stop(),
             AudioCommand::SeekSample(s) => eng.seek_to_sample(s),
             AudioCommand::SeekTick(t) => eng.seek_to_tick(t),
-            AudioCommand::NoteOn { channel, key, velocity } => {
+            AudioCommand::NoteOn {
+                channel,
+                key,
+                velocity,
+            } => {
                 eng.preview_note_on(channel, key, velocity);
             }
             AudioCommand::NoteOff { channel, key } => {
                 eng.preview_note_off(channel, key);
             }
-            AudioCommand::ControlChange { channel, controller, value } => {
+            AudioCommand::ControlChange {
+                channel,
+                controller,
+                value,
+            } => {
                 eng.preview_cc(channel, controller, value);
             }
             AudioCommand::ProgramChange { channel, program } => {

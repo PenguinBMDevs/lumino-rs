@@ -6,11 +6,11 @@
 //! 3. 在精确位置派发事件（CC/NoteOn/NoteOff）
 //! 4. 重复直到 block 结束
 
+use xsynth_core::AudioPipe;
 use xsynth_core::channel::{ChannelAudioEvent, ChannelEvent};
 use xsynth_core::channel_group::SynthEvent;
-use xsynth_core::AudioPipe;
 
-use crate::audio_model::{tick_to_sample, ActiveNote};
+use crate::audio_model::{ActiveNote, tick_to_sample};
 
 /// 渲染游标 — 跟踪当前播放位置和已渲染位置。
 pub(crate) struct RenderCursor {
@@ -36,10 +36,7 @@ impl RenderCursor {
 /// `output` 长度必须是偶数（每帧 2 个 sample）。
 ///
 /// 返回实际渲染的帧数（如果到达文件末尾则可能比 output.len()/2 少）。
-pub(crate) fn render_block(
-    engine: &mut crate::engine::AudioEngine,
-    output: &mut [f32],
-) -> usize {
+pub(crate) fn render_block(engine: &mut crate::engine::AudioEngine, output: &mut [f32]) -> usize {
     let block_size = output.len() / 2;
     if block_size == 0 {
         return 0;
@@ -101,7 +98,7 @@ pub(crate) fn render_block(
 
     // 应用音量限制器防止削波
     let rendered_samples = written_frames * 2;
-    engine.limiter.process(&mut output[..rendered_samples]);
+    engine.limiter.limit(&mut output[..rendered_samples]);
 
     engine.cursor.advance(effective_block_size as u64);
     written_frames
@@ -150,11 +147,7 @@ fn next_event_sample(
 }
 
 /// 在指定 sample 位置派发所有到期的事件。
-fn dispatch_events_at(
-    engine: &mut crate::engine::AudioEngine,
-    sample: u64,
-    sr: f64,
-) {
+fn dispatch_events_at(engine: &mut crate::engine::AudioEngine, sample: u64, sr: f64) {
     let model = match engine.state.model() {
         Some(m) => m,
         None => return,
@@ -166,10 +159,9 @@ fn dispatch_events_at(
     {
         let cc = &model.cc_events[engine.cc_cursor];
         let channel = cc.channel;
-        engine.channel_group.send_event(SynthEvent::Channel(
-            channel,
-            ChannelEvent::Audio(cc.event),
-        ));
+        engine
+            .channel_group
+            .send_event(SynthEvent::Channel(channel, ChannelEvent::Audio(cc.event)));
         engine.channel_states[channel as usize].apply(&cc.event);
         engine.cc_cursor += 1;
     }

@@ -5,10 +5,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use xsynth_core::soundfont::{SampleSoundfont, SoundfontBase, SoundfontInitOptions};
+use lumino_midi_loader::MidiDocument;
 use xsynth_core::AudioStreamParams;
 use xsynth_core::ChannelCount;
-use lumino_midi_loader::MidiDocument;
+use xsynth_core::soundfont::{SampleSoundfont, SoundfontBase, SoundfontInitOptions};
 
 use crate::audio_model::prepare_model;
 
@@ -45,8 +45,5 @@ pub(crate) fn run_worker(
         })
         .collect();
 
-    WorkerResult::ModelPrepared {
-        model,
-        soundfonts,
-    }
+    WorkerResult::ModelPrepared { model, soundfonts }
 }

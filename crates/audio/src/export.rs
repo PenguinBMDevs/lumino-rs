@@ -64,9 +64,7 @@ pub fn render_to_wav(
         })
         .collect();
     if soundfonts.is_empty() && !soundfont_paths.is_empty() {
-        return Err(ExportError::SoundfontLoad(
-            "无法加载任何音色库".to_string(),
-        ));
+        return Err(ExportError::SoundfontLoad("无法加载任何音色库".to_string()));
     }
     engine.set_soundfonts(soundfonts);
 
@@ -74,7 +72,9 @@ pub fn render_to_wav(
     let model = prepare_model(doc, sample_rate);
     let total_samples = model.duration_samples;
     if total_samples == 0 {
-        return Err(ExportError::EngineError("MIDI 文件为空或无法解析".to_string()));
+        return Err(ExportError::EngineError(
+            "MIDI 文件为空或无法解析".to_string(),
+        ));
     }
     engine.load_model(model);
 

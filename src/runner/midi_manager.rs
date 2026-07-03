@@ -141,7 +141,9 @@ impl MidiManager {
 
         match lumino_midi_io::new_api(&ApiKind::System) {
             Ok(api) => {
-                let output = api.outputs().ok()
+                let output = api
+                    .outputs()
+                    .ok()
                     .and_then(|outputs| outputs.first().cloned())
                     .and_then(|output| api.open_output(output.id).ok());
 
@@ -174,7 +176,9 @@ impl MidiManager {
         let path = PathBuf::from("OmniMIDI.dll");
         match lumino_midi_io::new_api(&ApiKind::Kdmapi { path }) {
             Ok(api) => {
-                let output = api.outputs().ok()
+                let output = api
+                    .outputs()
+                    .ok()
                     .and_then(|outputs| outputs.first().cloned())
                     .and_then(|output| api.open_output(output.id).ok());
 
@@ -211,9 +215,9 @@ impl MidiManager {
         match self.active_backend {
             SynthBackend::XSynth => {
                 // XSynth: 创建共享同一 cmd_tx 的 adapter
-                self.cmd_tx_clone.as_ref().map(|tx| {
-                    Box::new(AudioCommandAdapter::new(tx.clone())) as MidiOutput
-                })
+                self.cmd_tx_clone
+                    .as_ref()
+                    .map(|tx| Box::new(AudioCommandAdapter::new(tx.clone())) as MidiOutput)
             }
             SynthBackend::System | SynthBackend::Kdmapi => {
                 // ── 策略1：在现有 API 上尝试打开第二个连接 ──
@@ -228,11 +232,9 @@ impl MidiManager {
 
                 // ── 策略2：创建全新的 API 实例 ──
                 let api_kind = match self.active_backend {
-                    SynthBackend::Kdmapi => {
-                        lumino_midi_io::ApiKind::Kdmapi {
-                            path: PathBuf::from("OmniMIDI.dll"),
-                        }
-                    }
+                    SynthBackend::Kdmapi => lumino_midi_io::ApiKind::Kdmapi {
+                        path: PathBuf::from("OmniMIDI.dll"),
+                    },
                     _ => lumino_midi_io::ApiKind::System,
                 };
 
@@ -263,11 +265,9 @@ impl MidiManager {
                 tracing::info!("MIDI 输入 API: XSynth 不支持输入，使用 System 后端");
                 lumino_midi_io::ApiKind::System
             }
-            SynthBackend::Kdmapi => {
-                lumino_midi_io::ApiKind::Kdmapi {
-                    path: PathBuf::from("OmniMIDI.dll"),
-                }
-            }
+            SynthBackend::Kdmapi => lumino_midi_io::ApiKind::Kdmapi {
+                path: PathBuf::from("OmniMIDI.dll"),
+            },
             SynthBackend::System => lumino_midi_io::ApiKind::System,
         };
 
@@ -332,10 +332,7 @@ impl MidiManager {
 }
 
 /// 处理音频动作（预览音符）
-pub fn handle_audio_action(
-    output: &mut MidiOutput,
-    action: lumino_ui::message::AudioAction,
-) {
+pub fn handle_audio_action(output: &mut MidiOutput, action: lumino_ui::message::AudioAction) {
     use lumino_ui::message::AudioAction;
 
     match action {
