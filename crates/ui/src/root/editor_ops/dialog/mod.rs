@@ -300,6 +300,15 @@ impl Root {
             self.editor.editor_state.view.key_count = new_count;
         }
 
+        // 同步 MIDI 输入后端（需要标记重新初始化）
+        if old_settings.midi_input_backend != new_settings.midi_input_backend {
+            tracing::info!(
+                "同步 MIDI 输入后端: {:?} -> {:?}",
+                old_settings.midi_input_backend,
+                new_settings.midi_input_backend
+            );
+        }
+
         // 同步合成器后端（需要标记重新初始化）
         if old_settings.synth_backend != new_settings.synth_backend {
             tracing::info!(

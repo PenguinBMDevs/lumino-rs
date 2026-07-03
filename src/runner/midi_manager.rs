@@ -1,5 +1,5 @@
 use lumino_audio::{AudioCommandAdapter, CpalAudioHandle, spawn_cpal_audio};
-use lumino_core::storage::config::{SynthBackend, UiConfig};
+use lumino_core::storage::config::{MidiInputBackend, SynthBackend, UiConfig};
 use std::path::PathBuf;
 
 /// MIDI API 类型别名
@@ -32,6 +32,8 @@ pub struct MidiManager {
     soundfont_path: String,
     /// XSynth 采样率
     sample_rate: u32,
+    /// MIDI 输入后端选择
+    midi_input_backend: MidiInputBackend,
     /// cmd_tx 的克隆（用于创建额外的 OutputConnection adapter）
     cmd_tx_clone: Option<crossbeam_channel::Sender<lumino_audio::AudioCommand>>,
 }
@@ -48,6 +50,7 @@ impl Default for MidiManager {
             preferred_backend: SynthBackend::System,
             soundfont_path: String::new(),
             sample_rate: 44100,
+            midi_input_backend: MidiInputBackend::default(),
             cmd_tx_clone: None,
         }
     }
@@ -57,12 +60,15 @@ impl MidiManager {
     /// 从配置初始化 MIDI 管理器
     pub fn from_config(ui_config: &UiConfig) -> Self {
         let preferred = ui_config.preferred_backend;
+        let midi_input = ui_config.midi_input_backend;
 
-        match preferred {
+        let mut mgr = match preferred {
             SynthBackend::XSynth => Self::init_xsynth(ui_config),
             SynthBackend::Kdmapi => Self::init_kdmapi(),
             SynthBackend::System => Self::init_system(),
-        }
+        };
+        mgr.midi_input_backend = midi_input;
+        mgr
     }
 
     /// 初始化 XSynth 后端（使用新的 lumino-audio 引擎）
@@ -117,6 +123,7 @@ impl MidiManager {
                     preferred_backend: SynthBackend::XSynth,
                     soundfont_path: ui_config.soundfont_path.clone(),
                     sample_rate,
+                    midi_input_backend: MidiInputBackend::default(),
                     cmd_tx_clone: Some(cmd_tx),
                 }
             }
@@ -127,6 +134,7 @@ impl MidiManager {
                     preferred_backend: SynthBackend::XSynth,
                     soundfont_path: ui_config.soundfont_path.clone(),
                     sample_rate,
+                    midi_input_backend: MidiInputBackend::default(),
                     ..system
                 }
             }
@@ -157,6 +165,7 @@ impl MidiManager {
                     preferred_backend: SynthBackend::System,
                     soundfont_path: String::new(),
                     sample_rate: 44100,
+                    midi_input_backend: MidiInputBackend::default(),
                     cmd_tx_clone: None,
                 }
             }
@@ -192,6 +201,7 @@ impl MidiManager {
                     preferred_backend: SynthBackend::Kdmapi,
                     soundfont_path: String::new(),
                     sample_rate: 44100,
+                    midi_input_backend: MidiInputBackend::default(),
                     cmd_tx_clone: None,
                 }
             }
@@ -259,21 +269,32 @@ impl MidiManager {
     }
 
     /// 创建独立的 MIDI 输入 API（用于录制功能）
+    ///
+    /// LuminoAudio：音频引擎内置输入处理，无需外部 MIDI API。
+    /// XSynth（即将弃用）：旧版 XSynth 不支持 MIDI 输入，不再回退。
+    /// KDMAPI / System：使用对应后端的 API 创建输入连接。
     pub fn create_input_api(&self) -> Option<MidiApi> {
-        let api_kind = match self.active_backend {
-            SynthBackend::XSynth => {
-                tracing::info!("MIDI 输入 API: XSynth 不支持输入，使用 System 后端");
-                lumino_midi_io::ApiKind::System
+        let api_kind = match self.midi_input_backend {
+            MidiInputBackend::LuminoAudio => {
+                tracing::info!("MIDI 输入 API: LuminoAudio 内置输入，无需外部 API");
+                return None;
             }
-            SynthBackend::Kdmapi => lumino_midi_io::ApiKind::Kdmapi {
+            MidiInputBackend::XSynth => {
+                tracing::warn!("MIDI 输入 API: XSynth（即将弃用）不支持输入，录制功能不可用");
+                return None;
+            }
+            MidiInputBackend::Kdmapi => lumino_midi_io::ApiKind::Kdmapi {
                 path: PathBuf::from("OmniMIDI.dll"),
             },
-            SynthBackend::System => lumino_midi_io::ApiKind::System,
+            MidiInputBackend::System => lumino_midi_io::ApiKind::System,
         };
 
         match lumino_midi_io::new_api(&api_kind) {
             Ok(api) => {
-                tracing::info!("MIDI 输入 API: 已创建 (backend={:?})", self.active_backend);
+                tracing::info!(
+                    "MIDI 输入 API: 已创建 (backend={:?})",
+                    self.midi_input_backend
+                );
                 Some(api)
             }
             Err(e) => {

@@ -8,7 +8,7 @@ use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::settings::SettingsPanel;
 use lumino_core::i18n::settings_translations;
-use lumino_core::storage::config::SynthBackend;
+use lumino_core::storage::config::{MidiInputBackend, SynthBackend};
 
 /// 本地化合成器后端包装
 #[derive(Debug, Clone, Copy)]
@@ -36,6 +36,36 @@ impl LocalizedSynth {
         Self {
             inner: backend,
             name: lumino_core::i18n::synth_backend_name(backend, lang),
+        }
+    }
+}
+
+/// 本地化 MIDI 输入后端包装
+#[derive(Debug, Clone, Copy)]
+struct LocalizedMidiInput {
+    inner: MidiInputBackend,
+    name: &'static str,
+}
+
+impl PartialEq for LocalizedMidiInput {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for LocalizedMidiInput {}
+
+impl std::fmt::Display for LocalizedMidiInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl LocalizedMidiInput {
+    fn new(backend: MidiInputBackend, lang: lumino_core::i18n::Language) -> Self {
+        Self {
+            inner: backend,
+            name: lumino_core::i18n::midi_input_backend_name(backend, lang),
         }
     }
 }
@@ -68,6 +98,30 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        // MIDI 输入后端选择
+        {
+            let midi_input_options = vec![
+                LocalizedMidiInput::new(MidiInputBackend::LuminoAudio, settings.language),
+                LocalizedMidiInput::new(MidiInputBackend::XSynth, settings.language),
+                LocalizedMidiInput::new(MidiInputBackend::Kdmapi, settings.language),
+                LocalizedMidiInput::new(MidiInputBackend::System, settings.language),
+            ];
+            let current_midi_input =
+                LocalizedMidiInput::new(settings.midi_input_backend, settings.language);
+            row![
+                text(t.midi_input_device)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                iced_widget::space().width(SPACING_MAIN),
+                pick_list(midi_input_options, Some(current_midi_input), |ls| {
+                    Message::Settings(crate::settings::Event::MidiInputBackendChanged(ls.inner))
+                })
+                .width(200.0),
+            ]
+            .spacing(SPACING_ICON_LABEL)
+            .align_y(Alignment::Center)
+        },
         iced_widget::space().height(SPACING_CONTENT),
         // MIDI 输入设备选择
         render_midi_device_selector(settings, t),

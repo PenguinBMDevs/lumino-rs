@@ -72,6 +72,18 @@ impl std::fmt::Display for SynthBackend {
     }
 }
 
+/// MIDI 输入后端选择
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum MidiInputBackend {
+    /// LuminoAudio 内置音频引擎输入（默认）
+    #[default]
+    LuminoAudio,
+    /// 旧版 XSynth 后端（即将弃用）
+    XSynth,
+    Kdmapi,
+    System,
+}
+
 /// 自动滚动模式
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum AutoScrollMode {
@@ -138,6 +150,9 @@ pub struct UiConfig {
     /// XSynth 渲染缓冲区大小(毫秒)，影响延迟和性能
     #[serde(default = "default_synth_buffer")]
     pub xsynth_buffer_ms: f64,
+    /// MIDI 输入后端选择
+    #[serde(default)]
+    pub midi_input_backend: MidiInputBackend,
     /// XSynth 采样率
     #[serde(default = "default_synth_sample_rate")]
     pub xsynth_sample_rate: u32,
@@ -243,6 +258,7 @@ impl Default for UiConfig {
             preferred_backend: SynthBackend::XSynth,
             soundfont_path: String::new(),
             use_native_titlebar: false,
+            midi_input_backend: MidiInputBackend::default(),
             xsynth_buffer_ms: default_synth_buffer(),
             xsynth_sample_rate: default_synth_sample_rate(),
             xsynth_threads: default_synth_threads(),

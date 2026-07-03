@@ -388,6 +388,28 @@ pub fn synth_backend_name(
     }
 }
 
+/// 获取 MIDI 输入后端显示名称（按语言）
+pub fn midi_input_backend_name(
+    backend: crate::storage::config::MidiInputBackend,
+    lang: Language,
+) -> &'static str {
+    use crate::storage::config::MidiInputBackend::*;
+    match lang {
+        Language::ZhCn => match backend {
+            LuminoAudio => "LuminoAudio",
+            XSynth => "XSynth（即将弃用）",
+            Kdmapi => "KDMAPI",
+            System => "系统 MIDI",
+        },
+        Language::EnUs => match backend {
+            LuminoAudio => "LuminoAudio",
+            XSynth => "XSynth (Deprecating)",
+            Kdmapi => "KDMAPI",
+            System => "System MIDI",
+        },
+    }
+}
+
 /// 获取主界面翻译
 pub fn get(lang: Language) -> &'static MainTranslations {
     match lang {

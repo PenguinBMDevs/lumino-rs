@@ -91,7 +91,8 @@ pub fn spawn_cpal_audio(
         .default_output_device()
         .ok_or(AudioSpawnError::NoOutputDevice)?;
 
-    let _supported_config = device
+    // 查询设备支持的音频配置
+    let supported_config = device
         .supported_output_configs()
         .map_err(|e| AudioSpawnError::DeviceError(e.to_string()))?
         .find(|c| {
@@ -102,13 +103,22 @@ pub fn spawn_cpal_audio(
         .or_else(|| device.supported_output_configs().ok()?.next())
         .ok_or(AudioSpawnError::NoSupportedConfig)?;
 
-    let stream_config = cpal::StreamConfig {
-        channels: 2,
-        sample_rate: cpal::SampleRate(sample_rate),
-        buffer_size: cpal::BufferSize::Default,
-    };
+    // 用设备实际支持的采样率构建流配置。
+    // 如果请求的采样率不在设备支持的范围内，自动 clamp 到最接近的值。
+    let actual_config = supported_config
+        .try_with_sample_rate(cpal::SampleRate(sample_rate))
+        .or_else(|| {
+            let fallback_rate = if sample_rate < supported_config.min_sample_rate().0 {
+                supported_config.min_sample_rate()
+            } else {
+                supported_config.max_sample_rate()
+            };
+            supported_config.try_with_sample_rate(fallback_rate)
+        })
+        .ok_or(AudioSpawnError::NoSupportedConfig)?;
 
-    let actual_sr = sample_rate;
+    let stream_config = actual_config.config();
+    let actual_sr = actual_config.sample_rate().0;
 
     // 2. 创建 AudioEngine
     let config = RenderConfig {
