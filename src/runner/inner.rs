@@ -223,8 +223,35 @@ impl RunnerInner {
         }
 
         for action in actions {
-            if let Some(output) = midi.output_mut() {
-                handle_audio_action(output, action);
+            match action {
+                // 音符预览 → 走 OutputConnection（AudioCommandAdapter）
+                lumino_ui::message::AudioAction::PlayNote { .. }
+                | lumino_ui::message::AudioAction::StopNote { .. } => {
+                    if let Some(output) = midi.output_mut() {
+                        handle_audio_action(output, action);
+                    }
+                }
+                // 播放状态同步 → 走 CpalAudioHandle（驱动 AudioEngine.play_state）
+                lumino_ui::message::AudioAction::StartPlayback => {
+                    tracing::debug!("[RUNNER] Sync: start playback");
+                    if let Some(handle) = midi.audio_handle() {
+                        handle.play();
+                    } else {
+                        tracing::warn!("[RUNNER] 无音频句柄，无法同步播放状态");
+                    }
+                }
+                lumino_ui::message::AudioAction::PausePlayback => {
+                    tracing::debug!("[RUNNER] Sync: pause playback");
+                    if let Some(handle) = midi.audio_handle() {
+                        handle.pause();
+                    }
+                }
+                lumino_ui::message::AudioAction::StopPlayback => {
+                    tracing::debug!("[RUNNER] Sync: stop playback");
+                    if let Some(handle) = midi.audio_handle() {
+                        handle.stop();
+                    }
+                }
             }
         }
     }

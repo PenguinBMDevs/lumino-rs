@@ -7,6 +7,7 @@
 use std::sync::Arc;
 
 use lumino_midi_loader::MidiDocument;
+use midly::loader::PackedControlEvent;
 use xsynth_core::channel::ChannelAudioEvent;
 
 /// 按 sample 排序的控制事件（CC / PC / PB）。
@@ -43,23 +44,47 @@ pub(crate) struct TempoSegment {
 }
 
 /// 预计算模型数据，在 worker 线程构建后原子应用到音频引擎。
+///
+/// `notes_by_key` 在实时播放路径中为 `None`（零拷贝，不复制音符数据），
+/// 仅在离线导出路径中为 `Some(...)`（构建按 key 分桶的索引）。
 pub(crate) struct PreparedModel {
-    pub notes_by_key: Box<[Vec<NoteBucketEntry>; 128]>,
+    /// 按 key 分桶的音符索引。`None` 表示实时播放模式，跳过事件派发。
+    pub notes_by_key: Option<Box<[Vec<NoteBucketEntry>; 128]>>,
     pub cc_events: Vec<SortedCC>,
     pub tempo_segments: Vec<TempoSegment>,
     pub duration_samples: u64,
     pub division: u16,
 }
 
-/// 从 lumino 的 `MidiDocument` 构建预计算模型。
-pub(crate) fn prepare_model(doc: &Arc<MidiDocument>, sample_rate: u32) -> PreparedModel {
+/// 为**实时播放**构建轻量模型 — 只提取 tempo + CC 数据，**不拷贝音符**。
+///
+/// 实时播放的事件通过 MIDI-stream（PlaybackManager → AudioCommandAdapter）直接注入
+/// ChannelGroup，不需要 PreparedModel 的按 key 分桶索引。因此 notes_by_key = None，
+/// 避免 160M 音符的全量拷贝和排序。
+pub(crate) fn prepare_playback_model(doc: &MidiDocument, sample_rate: u32) -> PreparedModel {
     let sr = sample_rate as f64;
+    let tempo_segments = build_tempo_segments(&doc.tempo_changes, doc.total_ticks);
+    let duration_samples = tick_to_sample(doc.total_ticks as u64, &tempo_segments, sr);
+    let cc_events = build_cc_events(&doc.control_events, &tempo_segments, sr);
+    PreparedModel {
+        notes_by_key: None,
+        cc_events,
+        tempo_segments,
+        duration_samples,
+        division: 480,
+    }
+}
 
-    // ── 构建 tempo segments ──
+/// 为**离线导出**构建完整预计算模型 — 包含按 key 分桶的音符索引。
+///
+/// 与 `prepare_playback_model` 的区别：额外构建 `notes_by_key`（160M 音符的全量拷贝），
+/// 用于 `render_block` 的 sample-accurate 事件派发。仅在导出 WAV 时调用。
+pub(crate) fn prepare_export_model(doc: &Arc<MidiDocument>, sample_rate: u32) -> PreparedModel {
+    let sr = sample_rate as f64;
     let tempo_segments = build_tempo_segments(&doc.tempo_changes, doc.total_ticks);
     let duration_samples = tick_to_sample(doc.total_ticks as u64, &tempo_segments, sr);
 
-    // ── 按 key 分桶 ──
+    // ── 按 key 分桶（仅导出路径需要） ──
     let mut notes_by_key: Box<[Vec<NoteBucketEntry>; 128]> =
         Box::new(std::array::from_fn(|_| Vec::new()));
     for (track_idx, track_notes) in doc.notes.iter().enumerate() {
@@ -79,15 +104,32 @@ pub(crate) fn prepare_model(doc: &Arc<MidiDocument>, sample_rate: u32) -> Prepar
             }
         }
     }
-    // 每个 key 桶内按 start_tick 排序
     for bucket in notes_by_key.iter_mut() {
         bucket.sort_unstable_by_key(|n| n.start_tick);
     }
 
-    // ── 构建控制事件 ──
-    let mut cc_events = Vec::new();
-    for ev in &doc.control_events {
-        let sample = tick_to_sample(ev.tick as u64, &tempo_segments, sr);
+    let cc_events = build_cc_events(&doc.control_events, &tempo_segments, sr);
+
+    PreparedModel {
+        notes_by_key: Some(notes_by_key),
+        cc_events,
+        tempo_segments,
+        duration_samples,
+        division: 480,
+    }
+}
+
+/// 从 MIDI 控制事件构建排序去重的 SortedCC 列表。
+///
+/// 被 `prepare_playback_model` 和 `prepare_export_model` 共享。
+fn build_cc_events(
+    control_events: &[PackedControlEvent],
+    tempo_segments: &[TempoSegment],
+    sr: f64,
+) -> Vec<SortedCC> {
+    let mut cc_events = Vec::with_capacity(control_events.len());
+    for ev in control_events {
+        let sample = tick_to_sample(ev.tick as u64, tempo_segments, sr);
         let channel = ev.channel as u32;
         match ev.kind {
             0 => {
@@ -123,14 +165,7 @@ pub(crate) fn prepare_model(doc: &Arc<MidiDocument>, sample_rate: u32) -> Prepar
     }
     cc_events.sort_unstable_by_key(|e| e.sample);
     cc_events.dedup_by(|a, b| a.channel == b.channel && a.event == b.event);
-
-    PreparedModel {
-        notes_by_key,
-        cc_events,
-        tempo_segments,
-        duration_samples,
-        division: 480, // lumino 默认 PPQ，实际从 document 外部传入
-    }
+    cc_events
 }
 
 /// 从 lumino 的 tempo_changes (tick, bpm) 构建速度段。

@@ -79,15 +79,29 @@ impl ToolbarHandler {
 
     /// 执行播放逻辑
     fn do_play(root: &mut Root) {
+        let has_manager = root.playback.manager.is_some();
+        tracing::debug!(
+            "[UI-PLAY] do_play: has_manager={}, pending_midi_output={}",
+            has_manager,
+            root.playback.pending_midi_output.is_some(),
+        );
+
         if root.playback.manager.is_none() {
             Self::init_playback_manager(root);
         }
 
         if let Some(manager) = &mut root.playback.manager {
+            let tick = manager.current_tick();
+            tracing::debug!("[UI-PLAY] 开始播放: current_tick={}", tick);
             manager.play();
             root.toolbar.is_playing = true;
-            tracing::info!("Root: 开始播放");
         }
+
+        // 通知音频引擎切换到播放状态（关键修复：否则 renderer 填充静音）
+        root.editor
+            .editor_state
+            .interaction
+            .push_audio_action(crate::message::AudioAction::StartPlayback);
     }
 
     /// 执行暂停逻辑
@@ -97,6 +111,11 @@ impl ToolbarHandler {
             root.toolbar.is_playing = false;
             tracing::info!("Root: 暂停播放");
         }
+
+        root.editor
+            .editor_state
+            .interaction
+            .push_audio_action(crate::message::AudioAction::PausePlayback);
     }
 
     /// 执行停止逻辑
@@ -107,6 +126,11 @@ impl ToolbarHandler {
             root.editor.playback_position = 0.0;
             tracing::info!("Root: 停止播放");
         }
+
+        root.editor
+            .editor_state
+            .interaction
+            .push_audio_action(crate::message::AudioAction::StopPlayback);
     }
 
     /// 执行循环切换逻辑

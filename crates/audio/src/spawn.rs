@@ -67,7 +67,13 @@ pub struct CpalAudioHandle {
 
 /// Worker 线程消息。
 enum WorkerMessage {
-    LoadModel {
+    /// 加载**实时播放**模型（轻量，不拷贝音符数据）。
+    LoadPlaybackModel {
+        doc: Arc<MidiDocument>,
+        soundfont_paths: Vec<PathBuf>,
+    },
+    /// 加载**离线导出**模型（完整，含 notes_by_key 索引）。
+    LoadExportModel {
         doc: Arc<MidiDocument>,
         soundfont_paths: Vec<PathBuf>,
     },
@@ -214,29 +220,31 @@ fn run_worker_thread(
 ) {
     while let Ok(msg) = worker_rx.recv() {
         match msg {
-            WorkerMessage::LoadModel {
+            WorkerMessage::LoadPlaybackModel {
                 doc,
                 soundfont_paths,
             } => {
-                let result = prepare_model::run_worker(doc, soundfont_paths, sample_rate);
-                match result {
-                    WorkerResult::ModelPrepared { model, soundfonts } => {
-                        // 先加锁设置 soundfonts，释放后再加锁加载模型
-                        // 避免在 prepare_model 期间持有锁阻塞 renderer
-                        {
-                            let mut eng = engine.lock().unwrap();
-                            eng.set_soundfonts(soundfonts);
-                        }
-                        {
-                            let mut eng = engine.lock().unwrap();
-                            eng.load_model(model);
-                        }
-                        tracing::info!("音频引擎: 模型已加载 (worker 线程)");
-                    }
-                    WorkerResult::Error(e) => {
-                        tracing::error!("音频引擎 worker 错误: {}", e);
-                    }
-                }
+                tracing::debug!(
+                    "[AUDIO-WORKER] 收到 LoadPlaybackModel: {} tracks, {} ticks",
+                    doc.track_count(),
+                    doc.total_ticks,
+                );
+                // 轻量加载：只处理 tempo + CC，跳过 160M 音符的拷贝
+                let result = prepare_model::run_worker_playback(doc, soundfont_paths, sample_rate);
+                apply_worker_result(&engine, result, "playback");
+            }
+            WorkerMessage::LoadExportModel {
+                doc,
+                soundfont_paths,
+            } => {
+                tracing::debug!(
+                    "[AUDIO-WORKER] 收到 LoadExportModel: {} tracks, {} ticks",
+                    doc.track_count(),
+                    doc.total_ticks,
+                );
+                // 完整加载：包含 notes_by_key 索引，用于离线导出
+                let result = prepare_model::run_worker_export(doc, soundfont_paths, sample_rate);
+                apply_worker_result(&engine, result, "export");
             }
             WorkerMessage::Shutdown => break,
         }
@@ -244,10 +252,61 @@ fn run_worker_thread(
     tracing::info!("音频 worker 线程已优雅退出");
 }
 
+/// 应用 WorkerResult 到 AudioEngine（先设 soundfonts，再加载模型）。
+fn apply_worker_result(engine: &Arc<Mutex<AudioEngine>>, result: WorkerResult, mode: &str) {
+    match result {
+        WorkerResult::ModelPrepared { model, soundfonts } => {
+            tracing::debug!(
+                "[AUDIO-WORKER] {} 模型准备完成: {} tempo segments, {} CC events, {} samples, {} SF2, notes_by_key={}",
+                mode,
+                model.tempo_segments.len(),
+                model.cc_events.len(),
+                model.duration_samples,
+                soundfonts.len(),
+                model.notes_by_key.is_some(),
+            );
+            // 先加锁设置 soundfonts，释放后再加锁加载模型
+            // 避免在 prepare_model 期间持有锁阻塞 renderer
+            {
+                let mut eng = engine.lock().unwrap();
+                eng.set_soundfonts(soundfonts);
+            }
+            {
+                let mut eng = engine.lock().unwrap();
+                eng.load_model(model);
+                tracing::debug!(
+                    "[AUDIO-WORKER] {} 模型已加载到引擎: play_state={:?}, cursor={}, duration={}",
+                    mode,
+                    eng.play_state,
+                    eng.cursor.position,
+                    eng.duration_samples(),
+                );
+            }
+        }
+        WorkerResult::Error(e) => {
+            tracing::error!("[AUDIO-WORKER] {} 错误: {}", mode, e);
+        }
+    }
+}
+
 impl CpalAudioHandle {
-    /// 加载 MIDI 文档和音色库（在 worker 线程异步执行）。
+    /// 加载 MIDI 文档用于**实时播放**（在 worker 线程异步执行）。
+    ///
+    /// 轻量级路径：不拷贝音符数据（`notes_by_key = None`），只处理 tempo + CC。
+    /// 实时播放的事件通过 MIDI-stream 注入 ChannelGroup。
+    pub fn load_playback(&self, doc: Arc<MidiDocument>, soundfont_paths: Vec<PathBuf>) {
+        let _ = self.worker_tx.send(WorkerMessage::LoadPlaybackModel {
+            doc,
+            soundfont_paths,
+        });
+    }
+
+    /// 加载 MIDI 文档用于**离线导出**（在 worker 线程异步执行）。
+    ///
+    /// 完整路径：构建 notes_by_key 索引，用于 WAV 导出等需要 sample-accurate
+    /// 事件派发的场景。对于大型文件，此方法会消耗大量内存和时间。
     pub fn load_model(&self, doc: Arc<MidiDocument>, soundfont_paths: Vec<PathBuf>) {
-        let _ = self.worker_tx.send(WorkerMessage::LoadModel {
+        let _ = self.worker_tx.send(WorkerMessage::LoadExportModel {
             doc,
             soundfont_paths,
         });

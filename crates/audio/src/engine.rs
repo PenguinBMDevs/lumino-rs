@@ -91,6 +91,13 @@ impl AudioEngine {
 
     /// 加载预计算模型，重置渲染状态。
     pub(crate) fn load_model(&mut self, model: PreparedModel) {
+        tracing::debug!(
+            "[AUDIO-ENGINE] load_model: duration={}, notes_by_key={}, tempo_segments={}, cc_events={}",
+            model.duration_samples,
+            model.notes_by_key.is_some(),
+            model.tempo_segments.len(),
+            model.cc_events.len(),
+        );
         self.reset_all();
         self.state.load_model(model);
         self.reset_cursors();
@@ -278,18 +285,24 @@ impl AudioEngine {
     }
 
     fn reset_note_cursors_for_position(&mut self, sample: u64) {
-        if let Some(model) = self.state.model() {
-            for key in 0..128 {
-                let bucket = &model.notes_by_key[key];
-                self.note_cursors[key] = bucket.partition_point(|n| {
-                    let start_sample = tick_to_sample(
-                        n.start_tick as u64,
-                        &model.tempo_segments,
-                        self.config.sample_rate as f64,
-                    );
-                    start_sample < sample
-                });
-            }
+        let model = match self.state.model() {
+            Some(m) => m,
+            None => return,
+        };
+        let notes_by_key = match model.notes_by_key.as_ref() {
+            Some(n) => n,
+            None => return, // 实时播放模式，无模型事件需派发
+        };
+        for key in 0..128 {
+            let bucket = &notes_by_key[key];
+            self.note_cursors[key] = bucket.partition_point(|n| {
+                let start_sample = tick_to_sample(
+                    n.start_tick as u64,
+                    &model.tempo_segments,
+                    self.config.sample_rate as f64,
+                );
+                start_sample < sample
+            });
         }
     }
 

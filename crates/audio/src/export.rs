@@ -10,7 +10,7 @@ use lumino_midi_loader::MidiDocument;
 use xsynth_core::soundfont::{SampleSoundfont, SoundfontBase, SoundfontInitOptions};
 use xsynth_core::{AudioStreamParams, ChannelCount};
 
-use crate::audio_model::prepare_model;
+use crate::audio_model::prepare_export_model;
 use crate::engine::{AudioEngine, PlayState, RenderConfig};
 
 const EXPORT_BLOCK_FRAMES: usize = 256;
@@ -69,7 +69,7 @@ pub fn render_to_wav(
     engine.set_soundfonts(soundfonts);
 
     // 3. 加载模型
-    let model = prepare_model(doc, sample_rate);
+    let model = prepare_export_model(doc, sample_rate);
     let total_samples = model.duration_samples;
     if total_samples == 0 {
         return Err(ExportError::EngineError(

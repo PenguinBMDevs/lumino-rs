@@ -96,7 +96,7 @@ impl MidiManager {
                     let path = PathBuf::from(&ui_config.soundfont_path);
                     if path.exists() {
                         tracing::info!("XSynth: 加载音色库 {:?}", path);
-                        handle.load_model(
+                        handle.load_playback(
                             std::sync::Arc::new(lumino_midi_loader::MidiDocument {
                                 notes: vec![],
                                 control_events: vec![],
@@ -350,6 +350,11 @@ impl MidiManager {
     pub fn check_async_init_complete(&mut self) -> bool {
         false
     }
+
+    /// 获取音频引擎句柄引用（用于控制播放状态）
+    pub fn audio_handle(&self) -> Option<&CpalAudioHandle> {
+        self.audio_handle.as_ref()
+    }
 }
 
 /// 处理音频动作（预览音符）
@@ -369,5 +374,7 @@ pub fn handle_audio_action(output: &mut MidiOutput, action: lumino_ui::message::
                 tracing::warn!("停止音符失败: {}", e);
             }
         }
+        // 播放状态同步动作由 process_audio_actions 处理，这里不走
+        AudioAction::StartPlayback | AudioAction::PausePlayback | AudioAction::StopPlayback => {}
     }
 }

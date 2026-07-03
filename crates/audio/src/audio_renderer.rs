@@ -43,7 +43,7 @@ pub(crate) fn run_audio_renderer(
     while !shutdown_flag.load(Ordering::Relaxed) {
         let mut did_work = false;
 
-        did_work |= process_commands(&engine, &cmd_rx, &shutdown_flag);
+        did_work |= process_commands(&engine, &cmd_rx, &mut ring_producer, &shutdown_flag);
         did_work |= render_if_needed(&engine, &mut scratch, &mut ring_producer);
         publish_state(&engine, &state_tx);
 
@@ -63,15 +63,30 @@ pub(crate) fn run_audio_renderer(
 fn process_commands(
     engine: &Arc<Mutex<AudioEngine>>,
     cmd_rx: &Receiver<AudioCommand>,
+    ring: &mut AudioRingProducer,
     shutdown_flag: &AtomicBool,
 ) -> bool {
     let mut did_work = false;
     while let Ok(cmd) = cmd_rx.try_recv() {
         let mut eng = engine.lock().unwrap();
         match cmd {
-            AudioCommand::Play => eng.play(),
-            AudioCommand::Pause => eng.pause(),
-            AudioCommand::Stop => eng.stop(),
+            AudioCommand::Play => {
+                tracing::debug!(
+                    "[AUDIO] 收到 Play 命令, play_state={:?} -> Playing",
+                    eng.play_state
+                );
+                // 清除 ring buffer 中积压的静音数据，消除播放启动延迟
+                ring.clear();
+                eng.play();
+            }
+            AudioCommand::Pause => {
+                tracing::debug!("[AUDIO] 收到 Pause 命令");
+                eng.pause();
+            }
+            AudioCommand::Stop => {
+                tracing::debug!("[AUDIO] 收到 Stop 命令");
+                eng.stop();
+            }
             AudioCommand::SeekSample(s) => eng.seek_to_sample(s),
             AudioCommand::SeekTick(t) => eng.seek_to_tick(t),
             AudioCommand::NoteOn {
@@ -79,9 +94,11 @@ fn process_commands(
                 key,
                 velocity,
             } => {
+                tracing::debug!("[AUDIO] NoteOn ch={} key={} vel={}", channel, key, velocity);
                 eng.preview_note_on(channel, key, velocity);
             }
             AudioCommand::NoteOff { channel, key } => {
+                tracing::debug!("[AUDIO] NoteOff ch={} key={}", channel, key);
                 eng.preview_note_off(channel, key);
             }
             AudioCommand::ControlChange {
@@ -126,6 +143,13 @@ fn render_if_needed(
             // 预览音符的 release 尾音需要继续渲染几个 block
             // 但如果没有活跃音符，直接填充静音
             if eng.active_notes.is_empty() {
+                tracing::debug!(
+                    "[AUDIO] 静音填充: play_state={:?}, active_notes={}, cursor={}, duration={}",
+                    eng.play_state,
+                    eng.active_notes.len(),
+                    eng.cursor.position,
+                    eng.duration_samples(),
+                );
                 drop(eng);
                 let silence = vec![0.0f32; scratch.len()];
                 let written = ring.push_slice(&silence);
@@ -141,6 +165,11 @@ fn render_if_needed(
         if eng.play_state == PlayState::Playing {
             let duration = eng.duration_samples();
             if duration > 0 && eng.cursor.position >= duration {
+                tracing::debug!(
+                    "[AUDIO] 播放结束: cursor={} >= duration={}",
+                    eng.cursor.position,
+                    duration,
+                );
                 eng.play_state = PlayState::Stopped;
                 eng.all_notes_off();
                 drop(eng);

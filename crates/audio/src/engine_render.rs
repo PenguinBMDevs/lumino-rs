@@ -1,10 +1,10 @@
-//! Sample-accurate 渲染逻辑 — 在渲染每块音频时精确派发事件。
+//! 音频渲染逻辑 — 分两个模式：
 //!
-//! 核心思路（借鉴 yinhe）：
-//! 1. 找到当前 block 内下一个事件的 sample 位置
-//! 2. 先渲染到该位置
-//! 3. 在精确位置派发事件（CC/NoteOn/NoteOff）
-//! 4. 重复直到 block 结束
+//! - **实时播放**（`PreparedModel.notes_by_key == None`）：直接从 ChannelGroup 读音频，
+//!   不涉及 PreparedModel 事件派发。所有事件通过 MIDI-stream（PlaybackManager →
+//!   AudioCommandAdapter）直接注入 ChannelGroup。
+//! - **离线导出**（`notes_by_key == Some(...)`）：sample-accurate 事件派发，由
+//!   `render_block` 在精确样本位置派发 NoteOn/NoteOff/CC，确保输出和 MIDI 定时一致。
 
 use xsynth_core::AudioPipe;
 use xsynth_core::channel::{ChannelAudioEvent, ChannelEvent};
@@ -33,7 +33,9 @@ impl RenderCursor {
 
 /// 渲染一块音频到 output buffer（interleaved stereo: L, R, L, R, ...）。
 ///
-/// `output` 长度必须是偶数（每帧 2 个 sample）。
+/// 渲染模式由 `model.notes_by_key` 决定：
+/// - `None` → 实时播放模式：纯 `read_samples`，无事件派发
+/// - `Some(...)` → 离线导出模式：sample-accurate 事件派发 + `read_samples`
 ///
 /// 返回实际渲染的帧数（如果到达文件末尾则可能比 output.len()/2 少）。
 pub(crate) fn render_block(engine: &mut crate::engine::AudioEngine, output: &mut [f32]) -> usize {
@@ -57,8 +59,94 @@ pub(crate) fn render_block(engine: &mut crate::engine::AudioEngine, output: &mut
         return 0;
     }
 
-    let sr = engine.config.sample_rate as f64;
+    let model_has_notes = engine
+        .state
+        .model()
+        .and_then(|m| m.notes_by_key.as_ref())
+        .is_some();
 
+    if model_has_notes {
+        // ── 离线导出模式：sample-accurate 事件派发 ──
+        render_block_with_dispatch(
+            engine,
+            output,
+            block_start,
+            effective_block_size,
+            block_size,
+        )
+    } else {
+        // ── 实时播放模式：纯 read_samples，事件通过 MIDI-stream 注入 ──
+        render_block_realtime(engine, output, effective_block_size, block_size)
+    }
+}
+
+/// 检查 output buffer 中是否有非零样本（用于调试是否真的产生了声音）。
+fn has_audio_content(buf: &[f32]) -> bool {
+    buf.iter().any(|&s| s.abs() > 0.001)
+}
+
+/// 实时播放模式：直接从 ChannelGroup 读取音频，不派发任何事件。
+///
+/// 所有事件（NoteOn/NoteOff/CC/PC/PB）通过 MIDI-stream 路径
+/// （PlaybackManager → AudioCommandAdapter → process_commands → preview_*）
+/// 在 `render_block` 之外注入 ChannelGroup。
+fn render_block_realtime(
+    engine: &mut crate::engine::AudioEngine,
+    output: &mut [f32],
+    effective_block_size: usize,
+    block_size: usize,
+) -> usize {
+    let frames = effective_block_size.min(block_size);
+    if frames == 0 {
+        return 0;
+    }
+
+    let end = frames * 2;
+    engine.channel_group.read_samples(&mut output[..end]);
+
+    // 检查 read_samples 是否产生了非零音频
+    let has_audio = has_audio_content(&output[..end]);
+    if has_audio {
+        tracing::debug!(
+            "[AUDIO] render_block_realtime: {} frames, 有音频输出, cursor_before={}",
+            frames,
+            engine.cursor.position,
+        );
+    } else {
+        tracing::debug!(
+            "[AUDIO] render_block_realtime: {} frames, 静音输出, cursor_before={}",
+            frames,
+            engine.cursor.position,
+        );
+    }
+
+    // 剩余部分填充静音
+    if frames < block_size {
+        for sample in &mut output[frames * 2..block_size * 2] {
+            *sample = 0.0;
+        }
+    }
+
+    // 应用音量限制器防止削波
+    engine.limiter.limit(&mut output[..end]);
+
+    engine.cursor.advance(frames as u64);
+    frames
+}
+
+/// 离线导出模式：sample-accurate 事件派发 + 渲染。
+///
+/// 从 PreparedModel 中按 sample 位置精确派发 NoteOn/NoteOff/CC 事件，
+/// 适用于 WAV 导出等需要精确时间控制的场景。
+fn render_block_with_dispatch(
+    engine: &mut crate::engine::AudioEngine,
+    output: &mut [f32],
+    block_start: u64,
+    effective_block_size: usize,
+    block_size: usize,
+) -> usize {
+    let sr = engine.config.sample_rate as f64;
+    let effective_end = block_start + effective_block_size as u64;
     let mut written_frames = 0usize;
 
     while written_frames < effective_block_size {
@@ -66,10 +154,10 @@ pub(crate) fn render_block(engine: &mut crate::engine::AudioEngine, output: &mut
         let remaining_frames = effective_block_size - written_frames;
 
         // 找到下一个事件的 sample 位置
-        let next_event_sample = next_event_sample(engine, current_sample, effective_end);
+        let next_ev = next_event_sample(engine, current_sample, effective_end);
 
         // 渲染到下一个事件位置（或 block 结束）
-        let frames_until_event = if let Some(ev_sample) = next_event_sample {
+        let frames_until_event = if let Some(ev_sample) = next_ev {
             ((ev_sample - current_sample) as usize).min(remaining_frames)
         } else {
             remaining_frames
@@ -105,12 +193,16 @@ pub(crate) fn render_block(engine: &mut crate::engine::AudioEngine, output: &mut
 }
 
 /// 找到当前播放位置之后、block_end 之前的下一个事件 sample 位置。
+///
+/// 仅在 `notes_by_key` 为 `Some(...)` 时有效（离线导出模式）。
+/// 实时播放模式下 `next_event_sample` 不会被调用。
 fn next_event_sample(
     engine: &crate::engine::AudioEngine,
     current: u64,
     block_end: u64,
 ) -> Option<u64> {
     let model = engine.state.model()?;
+    let notes_by_key = model.notes_by_key.as_ref()?;
     let sr = engine.config.sample_rate as f64;
 
     let mut next: Option<u64> = None;
@@ -126,7 +218,7 @@ fn next_event_sample(
     // NoteOn 事件
     for key in 0..128 {
         let cursor = engine.note_cursors[key];
-        let bucket = &model.notes_by_key[key];
+        let bucket = &notes_by_key[key];
         if cursor < bucket.len() {
             let note = &bucket[cursor];
             let note_sample = tick_to_sample(note.start_tick as u64, &model.tempo_segments, sr);
@@ -147,9 +239,15 @@ fn next_event_sample(
 }
 
 /// 在指定 sample 位置派发所有到期的事件。
+///
+/// 仅在 `notes_by_key` 为 `Some(...)` 时有效（离线导出模式）。
 fn dispatch_events_at(engine: &mut crate::engine::AudioEngine, sample: u64, sr: f64) {
     let model = match engine.state.model() {
         Some(m) => m,
+        None => return,
+    };
+    let notes_by_key = match model.notes_by_key.as_ref() {
+        Some(n) => n,
         None => return,
     };
 
@@ -168,7 +266,7 @@ fn dispatch_events_at(engine: &mut crate::engine::AudioEngine, sample: u64, sr: 
 
     // NoteOn 事件
     for key in 0..128u8 {
-        let bucket = &model.notes_by_key[key as usize];
+        let bucket = &notes_by_key[key as usize];
         while engine.note_cursors[key as usize] < bucket.len() {
             let cursor = engine.note_cursors[key as usize];
             let note = &bucket[cursor];
