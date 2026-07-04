@@ -7,8 +7,42 @@ use std::sync::Arc;
 use crate::{Playback, PlaybackAccessor, PlaybackState};
 
 use super::{EventType, MidiMessage, MidiTrackEvent, NoteEvent, ScheduledEvent};
-use lumino_midi_io::compact::{CompactEvent, EventKind};
 use lumino_midi_loader::MidiDocument;
+
+/// 其他音轨的事件读取状态。
+///
+/// 不再预先构建 CompactEvent 缓冲区和排序，而是直接引用 `MidiDocument` 中
+/// 已按 `start_tick` 排好序的音符，通过游标 + 最小堆在播放时按需生成 NoteOn/NoteOff。
+#[derive(Debug, Default)]
+struct TrackEventState {
+    /// 下一个尚未处理的 NoteOn 在音轨音符切片中的索引
+    note_cursor: usize,
+    /// 已经触发 NoteOn、等待 NoteOff 的音符，按 `end_tick` 组织为最小堆
+    pending_offs: BinaryHeap<PendingNoteOff>,
+}
+
+/// 等待释放的音符，按 `end_tick` 升序排在 `BinaryHeap` 中。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PendingNoteOff {
+    end_tick: u32,
+    note_index: usize,
+}
+
+impl PartialOrd for PendingNoteOff {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PendingNoteOff {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // `BinaryHeap` 是最大堆，反转比较以得到最小堆
+        other
+            .end_tick
+            .cmp(&self.end_tick)
+            .then_with(|| other.note_index.cmp(&self.note_index))
+    }
+}
 
 /// 播放引擎
 ///
@@ -25,10 +59,8 @@ pub struct PlaybackEngine {
     midi_events: Vec<MidiTrackEvent>,
     /// MIDI 文档（其他音轨从此流式读取）
     document: Option<Arc<MidiDocument>>,
-    /// 每个音轨的事件游标（当前处理到第几个事件）
-    track_cursors: Vec<usize>,
-    /// 其他音轨的 CompactEvent 缓冲区（从 `NoteEvent` 按需构造，按 tick 排序）
-    track_event_buffers: Vec<Vec<CompactEvent>>,
+    /// 每个非当前音轨的事件读取状态
+    track_states: Vec<TrackEventState>,
     /// 当前音轨索引（此轨从 self.notes 读，不从 document 读）
     current_track: u16,
     /// 单位：tick
@@ -50,8 +82,7 @@ impl PlaybackEngine {
             notes: Vec::new(),
             midi_events: Vec::new(),
             document: None,
-            track_cursors: Vec::new(),
-            track_event_buffers: Vec::new(),
+            track_states: Vec::new(),
             current_track: 0,
             last_processed_tick: 0.0,
             looping: false,
@@ -61,22 +92,14 @@ impl PlaybackEngine {
     }
 
     /// 设置 MIDI 文档引用（其他音轨从此流式读取）
+    ///
+    /// 不再预先把所有音符转换成 CompactEvent 并排序，而是直接保存 `MidiDocument`
+    /// 的 `Arc` 引用，并为每个音轨初始化一个读取状态。播放时按需从 document
+    /// 的音符切片中读取，消除播放前的大块拷贝与排序开销。
     pub fn set_document(&mut self, doc: Arc<MidiDocument>, current_track: u16) {
         let track_count = doc.track_count();
-        self.track_cursors = vec![0usize; track_count];
-        self.track_event_buffers = (0..track_count)
-            .map(|t| {
-                let notes = doc.track_notes(t);
-                let track_id = t as u16;
-                let mut events: Vec<CompactEvent> = Vec::with_capacity(notes.len() * 2);
-                for note in notes {
-                    let [on, off] = note.to_compact_events(track_id);
-                    events.push(on);
-                    events.push(off);
-                }
-                events.sort_unstable_by_key(|e| e.delta_tick());
-                events
-            })
+        self.track_states = (0..track_count)
+            .map(|_| TrackEventState::default())
             .collect();
         self.control_event_cursor = 0;
         self.current_track = current_track;
@@ -190,32 +213,68 @@ impl PlaybackEngine {
         }
     }
 
-    /// 处理其他音轨的事件（从预生成的 CompactEvent 缓冲区流式读取）
+    /// 处理其他音轨的事件（直接从 `MidiDocument` 音符切片流式读取）
+    ///
+    /// 每个非当前音轨维护一个 `note_cursor` 指向下一颗待触发 NoteOn 的音符，
+    /// 并用最小堆保存已触发 NoteOn、等待 NoteOff 的音符。播放时按时间顺序
+    /// 合并 NoteOn/NoteOff，避免预先把整轨事件拷贝排序。
     fn process_other_tracks(&mut self, current_tick: f32, messages: &mut Vec<MidiMessage>) {
         let Some(doc) = &self.document else { return };
         let tick_start_u = self.last_processed_tick as u32;
         let tick_end_u = current_tick as u32;
 
-        for t in 0..self.track_cursors.len() {
+        for t in 0..self.track_states.len() {
             if t == self.current_track as usize {
                 continue;
             }
-            let events = match self.track_event_buffers.get(t) {
-                Some(e) if !e.is_empty() => e,
-                _ => continue,
-            };
-            let cursor = &mut self.track_cursors[t];
+            let notes = doc.track_notes(t);
+            if notes.is_empty() {
+                continue;
+            }
+            let state = &mut self.track_states[t];
 
-            while *cursor < events.len() {
-                let ev = &events[*cursor];
-                let ev_tick = ev.delta_tick();
-                if ev_tick > tick_end_u {
+            loop {
+                let next_on_tick = notes
+                    .get(state.note_cursor)
+                    .map(|n| n.start_tick)
+                    .unwrap_or(u32::MAX);
+                let next_off_tick = state
+                    .pending_offs
+                    .peek()
+                    .map(|off| off.end_tick)
+                    .unwrap_or(u32::MAX);
+
+                let next_tick = next_on_tick.min(next_off_tick);
+                if next_tick > tick_end_u {
                     break;
                 }
-                if ev_tick >= tick_start_u {
-                    Self::push_event(ev, messages);
+
+                if next_tick == next_on_tick {
+                    let note = &notes[state.note_cursor];
+                    if note.start_tick >= tick_start_u {
+                        messages.push(MidiMessage::NoteOn {
+                            channel: note.channel,
+                            key: note.key,
+                            velocity: note.velocity,
+                        });
+                    }
+                    state.pending_offs.push(PendingNoteOff {
+                        end_tick: note.end_tick,
+                        note_index: state.note_cursor,
+                    });
+                    state.note_cursor += 1;
+                } else {
+                    let Some(off) = state.pending_offs.pop() else {
+                        break;
+                    };
+                    if off.end_tick >= tick_start_u {
+                        let note = &notes[off.note_index];
+                        messages.push(MidiMessage::NoteOff {
+                            channel: note.channel,
+                            key: note.key,
+                        });
+                    }
                 }
-                *cursor += 1;
             }
         }
 
@@ -255,17 +314,12 @@ impl PlaybackEngine {
                 playback.seek(loop_start);
             }
             let seek_tick_u = loop_start as u32;
-            if let Some(doc) = &self.document {
-                for t in 0..self.track_cursors.len() {
+            if let Some(doc) = self.document.clone() {
+                for t in 0..self.track_states.len() {
                     if t == self.current_track as usize {
                         continue;
                     }
-                    let events = match self.track_event_buffers.get(t) {
-                        Some(e) if !e.is_empty() => e,
-                        _ => continue,
-                    };
-                    let cursor = &mut self.track_cursors[t];
-                    *cursor = events.partition_point(|ev| ev.delta_tick() < seek_tick_u);
+                    self.reset_track_state_to(t, seek_tick_u, &doc);
                 }
                 let ctrl_events = &doc.control_events;
                 self.control_event_cursor = ctrl_events.partition_point(|ev| ev.tick < seek_tick_u);
@@ -275,23 +329,23 @@ impl PlaybackEngine {
         }
     }
 
-    #[inline]
-    fn push_event(ev: &CompactEvent, messages: &mut Vec<MidiMessage>) {
-        match ev.kind() {
-            EventKind::NoteOn => {
-                messages.push(MidiMessage::NoteOn {
-                    channel: ev.channel(),
-                    key: ev.param1() as u8,
-                    velocity: ev.param2() as u8,
+    /// 将指定音轨的读取状态重置到 `seek_tick` 位置。
+    ///
+    /// `note_cursor` 指向第一颗 `start_tick >= seek_tick` 的音符；`pending_offs`
+    /// 收集所有在 `seek_tick` 之前已经开始、但在 `seek_tick` 仍未结束的音符，
+    /// 保证循环回绕或 seek 后这些音符的 NoteOff 能被正确发出。
+    fn reset_track_state_to(&mut self, track: usize, seek_tick: u32, doc: &MidiDocument) {
+        let notes = doc.track_notes(track);
+        let state = &mut self.track_states[track];
+        state.pending_offs.clear();
+        state.note_cursor = notes.partition_point(|n| n.start_tick < seek_tick);
+        for (i, note) in notes.iter().enumerate().take(state.note_cursor) {
+            if note.end_tick >= seek_tick {
+                state.pending_offs.push(PendingNoteOff {
+                    end_tick: note.end_tick,
+                    note_index: i,
                 });
             }
-            EventKind::NoteOff => {
-                messages.push(MidiMessage::NoteOff {
-                    channel: ev.channel(),
-                    key: ev.param1() as u8,
-                });
-            }
-            _ => {}
         }
     }
 
@@ -378,8 +432,11 @@ impl PlaybackEngine {
         if let Some(mut playback) = self.lock_playback() {
             playback.stop();
         }
-        // 重置游标
-        self.track_cursors.fill(0);
+        // 重置所有音轨读取状态
+        for state in &mut self.track_states {
+            state.note_cursor = 0;
+            state.pending_offs.clear();
+        }
         self.control_event_cursor = 0;
         self.event_queue.clear();
         self.last_processed_tick = 0.0;
@@ -409,23 +466,20 @@ impl PlaybackEngine {
         Some(self.playback.lock())
     }
 
-    /// 将 event buffer 游标定位到指定 tick 之后第一个事件
+    /// 将各音轨读取状态定位到指定 tick 位置
     fn reset_cursors_to(&mut self, tick: f32) {
-        let Some(doc) = &self.document else { return };
-        for t in 0..self.track_cursors.len() {
+        let Some(doc) = self.document.clone() else {
+            return;
+        };
+        let seek_tick = tick as u32;
+        for t in 0..self.track_states.len() {
             if t == self.current_track as usize {
                 continue;
             }
-            let events = match self.track_event_buffers.get(t) {
-                Some(e) if !e.is_empty() => e,
-                _ => continue,
-            };
-            // 二分查找第一个 >= tick 的事件
-            let pos = events.partition_point(|e| e.delta_tick() < tick as u32);
-            self.track_cursors[t] = pos;
+            self.reset_track_state_to(t, seek_tick, &doc);
         }
         // 重置控制事件游标
-        self.control_event_cursor = doc.control_events.partition_point(|e| e.tick < tick as u32);
+        self.control_event_cursor = doc.control_events.partition_point(|e| e.tick < seek_tick);
         self.last_processed_tick = tick;
     }
 }
