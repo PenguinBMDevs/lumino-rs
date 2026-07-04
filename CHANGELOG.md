@@ -188,6 +188,128 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.1-preview1] - 2026-07-04
+
+### 工程与架构重构
+
+- **项目结构重整** — 拆分 monolith 为独立 crates（`midi-loader`、`midi-io`、`playback`、`event`、`message`、`memory-monitor`、`onion-skin`），项目 Crate 数从 8 增长至 16（`53bcc68`）
+- **编辑器核心抽离** — 将 `editor_state`、`spatial_index`、`history`、`note`、`transform`、`view_state` 等核心逻辑迁移至 `lumino-core` crate（`45250a1`、`618b810`、`38e4fcd`、`48bdc08`）
+- **渲染线程迁移** — 将 `wgpu_render_thread` 整体迁移至 `lumino-gfx` crate，消除 UI crate 对 GPU 的直接依赖（`786d5b9`、`fb237b1`）
+- **事件系统独立** — 将 `core::event` 模块抽取为独立 `lumino-event` crate，统一窗口/菜单/对话框事件类型（`d87f882`、`1bb07b8`、`ca82f18`）
+- **消息类型集中** — 创建 `lumino-message` crate，统一跨模块消息传递（`78fedc1`）
+- **导出模块迁移** — 将 `core::project` 相关逻辑迁移至 `lumino-export` crate，统一 LMPJ/MIDI 导入导出（`d60c22c`、`2bbdae4`、`79e0247`）
+- **代码清理** — 清理废弃代码、统一魔法数值、优化错误处理（`9a6037b`、`865a5ad`、`9fb20cc`）
+
+### Added
+
+- **多语言国际化系统（i18n）** — 完整 i18n 框架，覆盖编辑器、设置面板、工具栏、菜单、对话框等全界面（`c9d3174`、`5705496`、`cf50632`、`31e1b60`、`b272615`）
+- **高精度洋葱皮贴图系统** — 全新 `onion-skin-hires` crate，基于 WGPU Compute Shader 实现 GPU 端高精度贴图生成（`fe70377`、`bf1c05a`、`3698a09`、`c83f346`、`b449eb2`、`9a6e156`、`ef48708`）
+  - 高精度贴图首帧生成/缓存/调度整套管线（`72461df`）
+  - 流式后台静默重生，按音轨组合并处理（`81c41de`、`84c272e`、`2d2b915`）
+  - 脏区域临时覆层，编辑可见性与冷静期重生成（`4fa4ed6`）
+  - 设置面板与控制开关（`89c98d4`、`c4639c9`）
+  - GPU compute 剔除 + 间接绘制架构（`207dda2`）
+  - 并行上传 + 音符过滤优化（`e33f48a`）
+- **自动化面板侧边栏** — 新增自动化控制面板（`d9188fb`）
+- **钢琴卷帘侧边栏切换** — 支持侧边栏路由切换（`21dc4d3`）
+- **实时音频引擎与 WAV 导出** — 基于 ring buffer + 同步渲染引擎的全新音频架构，支持实时播放与 WAV 文件导出（`6bf38a7`、`5f42ed1`）
+- **MIDI 输入后端选择** — 支持 KDMAPI / 系统 MIDI 后端动态切换（`8b28b29`）
+- **NoteEvent 单条音符类型** — 替代 NoteOn/NoteOff 事件对，简化音符存储与处理（`e4d1af8`）
+- **音频模型加载拆分** — 实时播放与离线导出各用独立模型加载路径（`dc74e3f`）
+- **MIDI 录制功能增强** — 全音符关闭与重置控制器事件处理（`c039392`）
+- **滚动速度追踪与 overscan 补偿** — note-worker 新增智能滚动预测（`8deb506`）
+- **macOS 平台菜单初始化语言支持**（`d445547`）
+- **NW 性能基准测试**（`00c5d1f`）
+- **安全策略与行为准则** — 新增 `SECURITY.md` 和 `CODE_OF_CONDUCT.md`（`b98a67b`、`84df3d2`）
+- **修复后的应用图标** — 重新生成 `lumino.ico`，修复 RC2176 old DIB 错误（`a9e5c54`、`4ef1cfc`、`10dc57f`）
+- **高精度贴图性能测试** — 贴图生成性能测试与基准（`60b94b5`）
+- **高精度贴图概览模式** — P1.5 集成概览贴图到主应用（`83d2769`）
+
+### Fixed
+
+- **音频 Critical 级别 Bug 修复** — 修复音频模块导致程序无响应的关键问题（`ae34cac`）
+- **播放引擎响应性修复** — 修复播放引擎响应迟钝与 MIDI 重初始化后无声问题（`ca87018`）
+- **洋葱皮贴图空白修复** — 修复 tick 单位构造器未填充 `start_ms`/`end_ms` 导致的空白贴图（`e555bae`）
+- **WGPU 验证错误修复** — 修复 pipeline color format 不匹配与 uniform 可见性导致的验证层错误（`088f69a`、`1d8796c`）
+- **洋葱皮运行时缺陷修复** — 修复洋葱皮运行时缺陷并改用 Nearest 采样提升清晰度（`f9839ef`）
+- **2GB 显存截断修复** — 洋葱皮按时间分块渲染，突破单贴图 2GB 显存上限（`a8c9ce5`）
+- **洋葱皮音轨消失修复** — 修复部分音轨整体消失的渲染 Bug（`b1adbad`）
+- **虚拟滚动 Bug 修复** — 修复卷帘模式音轨列表只显示前 40 条的问题（`fba34ee`）
+- **滚动越界修复** — 修复滚动越界问题并调整滚动方向逻辑（`c7d2add`）
+- **琴键和网格绘制溢出修复** — 修复绘制溢出与缩放留白问题（`046e6f6`）
+- **棋盘格与留白修复** — 修复音符区域可见范围计算与游标跳过可见音符的问题（`b7695af`、`ad3ec45`）
+- **Shift+滚轮水平滚动符号修复** — 修复水平滚动方向与直觉相反的问题（`22cde1b`）
+- **对话框闪跳修复** — 修复对话框闪跳和变速按钮禁用问题（`a4df1ce`）
+
+### Changed
+
+- **许可证变更** — 项目许可证从专有变更为 AGPL-3.0-or-later（`a9e3f3f`）
+- **版本升级** — 项目版本从 0.1.0 升级至 0.1.1-dev（`533cc68`）
+- **ONNX 推理移至后台线程** — 避免阻塞渲染线程（`5f42ed1`）
+- **MIDI 加载器完全重写** — 使用 midly 流式 API 替代全局中间态，支持 RIFF 封装 MIDI 格式（`eed8e8e`、`02f11ec`、`59940ee`、`6f42155`）
+- **低精度洋葱皮渲染移除** — 全面移除旧版 CPU 洋葱皮渲染代码，迁移至独立 `onion-skin` crate（`57b41b5`、`8a62463`、`da84265`）
+- **LMPJ 加载导出重构** — 移除冗余原始 MIDI 字节缓存（`08617ef`）
+- **midly-fork 依赖更新** — 更新到支持并行流式 API 的新版本（`13695dc`）
+- **README 与仓库 URL 更新** — 文档信息同步（`a29a97c`）
+- **Cargo 依赖更新** — 全面更新依赖版本（隐于 `Cargo.lock`）
+
+### Refactored
+
+- **高精度洋葱皮渲染管线重构** — 替换分桶缓存为扁平音符列表，GPU 全量扫描替代 CPU 二分裁剪，移除轨道掩码和颜色 uniform（`4464ddb`、`7e34e8b`、`d63a7e5`、`818fa72`）
+- **洋葱皮渲染分桶逻辑重构** — 实现增量缓存与游标复用，按 key 分桶缓存增量更新（`2144ec9`、`57c704a`）
+- **洋葱皮渲染线程重构** — 移除独立工作线程，采集逻辑移至渲染线程，修复剔除计数器竞态（`47b9a57`、`fa0e4ac`）
+- **高精度贴图模块重构** — 优化性能与体验（`9f3786b`）
+- **渲染线程流程重构** — 将高精度洋葱皮渲染线程流程整体重写（`8558b60`）
+- **音频播放重构** — 重构其他音轨事件处理逻辑，改用流式按需生成（`59baa89`）
+- **编辑器状态重构完成** — 空间索引和洋葱皮状态提取为独立结构体（`76e1ca2`、`2c951fe`）
+- **MIDI 相关模块拆分** — 独立测试文件与 spatial 路径修复（`e33ef8f`、`968da93`）
+- **事件处理器拆分** — 拆分 `root/handlers.rs` 神处理器，按功能域独立（`78fedc1`、`2418abe`）
+- **文件菜单重构** — `file.rs` 神函数拆分为 `export`/`load`/`save`/`helpers` 子模块（`9fb20cc`）
+- **velocity 编辑器重构** — 拆分 velocity 面板绘制/状态逻辑（`79e0247`）
+- **loop_range 模块重构** — 拆分 loop_range 为独立模块并补充测试（`ca82f18`）
+- **音符分割/合并/翻转/移调/变速重构** — 通用函数提取，消除重复逻辑（`79e0247`、`76e1ca2`）
+- **MIDI handler/parser 重构** — 播放引擎与 MIDI 处理逻辑解耦（`968da93`、`d60c22c`）
+
+### Perf
+
+- **洋葱皮回归 GPU 驱动架构** — 解决滚动卡顿，大幅提升渲染帧率（`58efa95`）
+- **洋葱渲染器上传与剔除优化** — 减少 GPU 数据量（`501d49f`）
+- **移除 CPU 端排序与过滤** — 洋葱皮渲染性能进一步优化（`84058c1`）
+- **贴图生成速度优化** — 引入 scale 预乘，批量化 `copy_from_slice` 并合并 u32 节省内存（`60b94b5`）
+- **音符数据零拷贝优化** — 调整模块顺序实现零拷贝（`a84f057`）
+
+### Removed
+
+- **废弃的 `audio` crate 代码** — 清理旧音频模块（`7c9da38`）
+- **MIDI 输入后端相关死代码** — 简化音频播放链路（`154609b`）
+- **旧版洋葱皮渲染器** — `onion_renderer` 整模块移除（`57b41b5`）
+- **旧 `wgpu_render_thread`** — 迁移至 gfx crate 后移除（`786d5b9`）
+- **`core::event`** — 迁移至独立 `lumino-event` crate 后移除（`78fedc1`）
+- **`core::project`** — 迁移至 `lumino-export` 后移除（`d60c22c`）
+- **`core::midi`** — 迁移至 `midi-loader` 后移除（`968da93`）
+- **`ui::playback`** — 迁移至 `lumino-playback` crate 后移除（`48bdc08`）
+- **`middleware`** — 废弃中间件模块（`9a6037b`）
+- **`onion_bg_pool`** — 废弃背景池（`9a6037b`）
+- **`onion_skin_editor`/`onion_skin_ops`** — 废弃低精度编辑相关（`9a6037b`）
+- **旧版 `loop_range` 实现** — 替换为独立模块（`ca82f18`）
+- **旧版 `note_flip`/`note_ops`/`note_split_glue`/`note_transpose`** — 统一迁移至核心模块（`76e1ca2`）
+- **旧资源文件** — 清理旧版 logo 资源（`dbaff15`）
+- **废弃测试资源** — `tests/common/mod.rs` → `tests/common.rs` 扁平化（`2418abe`）
+- **`onion_skin_bench` 测试** — 低精度性能测试不再需要（`57b41b5`）
+
+### CI/CD
+
+- **新增 Windows CI** — `fast-check.yml` + `fast-release.yml` + `ci.yml` 三套并行工作流（`437e9a9`、`05c9832`、`eec463c`）
+- **fast-release 纠正** — 修复错误行为并添加 ALSA 开发库安装（`31a2dd2`、`1a258ad`、`9ab5c4a`、`25be638`）
+- **简化 Workflow** — 移除 clippy 步骤以加速构建（`a095f0e`）
+
+### Docs
+
+- **黑乐谱优化文档** — 新增 `docs/black_midi_optimization.md`，详细记录黑乐谱大文件加载与渲染优化方案
+- **技术债务备忘** — 新增 `docs/technical-debt.md`，记录已知技术债务与待重构项
+
+---
+
 ## [Unreleased]
 
 ### Planned

@@ -415,7 +415,7 @@ impl Host {
         self.hires_dirty_tracks.insert(track_idx);
         // 收集当前音轨的所有音符作为脏区域快照
         let notes = self.get_track_notes_for_hires(track_idx);
-        tracing::info!(
+        tracing::debug!(
             "[onion-dirty] mark_hires_dirty: track={}, notes={}",
             track_idx,
             notes.len()
@@ -470,9 +470,9 @@ impl Host {
     /// 重生成以音轨组为单位，使用整个 track_group 的最新音符数据，
     /// 避免同组其他音轨被覆盖为旧数据或空数据。
     pub fn force_hires_regen(&mut self, track_idx: u16) {
-        tracing::info!("[onion-dirty] force_hires_regen 进入: track={}", track_idx);
+        tracing::debug!("[onion-dirty] force_hires_regen 进入: track={}", track_idx);
         if !self.hires_dirty_tracks.remove(&track_idx) {
-            tracing::info!(
+            tracing::debug!(
                 "[onion-dirty] force_hires_regen 退出: track={} 不在脏集合",
                 track_idx
             );
@@ -497,7 +497,7 @@ impl Host {
         // 确保干净启动时也能正确推断音轨组范围。
         let track_count = (self.root.sidebar.tracks.len() as u16).max(track_idx + 1);
         let group_notes = self.collect_group_notes(track_idx, track_count);
-        tracing::info!(
+        tracing::debug!(
             "[onion-dirty] force_hires_regen 发送命令: track={}, group_tracks={}, track_count={}, ppq={}, total_ticks={}",
             track_idx,
             group_notes.len(),

@@ -132,7 +132,7 @@ pub fn run_render_thread(
                     height,
                 }) => {
                     // ★ merge 已在后台线程完成，渲染线程仅做 GPU 上传（DMA 异步，非阻塞）★
-                    tracing::info!(
+                    tracing::debug!(
                         "[onion-render] 收到并上传整合组贴图: track_group={}, time_group={}, pixels={}",
                         track_group,
                         time_group,
@@ -386,7 +386,7 @@ fn handle_hires_control(
             midi_hash: _,
         } => {
             let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
-            tracing::info!(
+            tracing::debug!(
                 "[onion-render] RegenerateHiResTrack: track={}, track_group={}, group_tracks={}, track_count={}, meta_exists={}",
                 track_idx,
                 track_group,
@@ -396,14 +396,14 @@ fn handle_hires_control(
             );
             // 若尚未创建高精度渲染器（干净启动 / 新建工程），用当前配置初始化
             if hires_renderer.is_none() {
-                tracing::info!("[onion-render] RegenerateHiResTrack: 初始化 HiResRenderer");
+                tracing::debug!("[onion-render] RegenerateHiResTrack: 初始化 HiResRenderer");
                 *hires_renderer = Some(HiResRenderer::new(device, config.clone(), texture_format));
             }
             *hires_config = Some(config.clone());
 
             // 若元数据不存在（未执行过全曲生成），用命令参数重建元数据
             if hires_meta.is_none() {
-                tracing::info!("[onion-render] RegenerateHiResTrack: 初始化 hires_meta");
+                tracing::debug!("[onion-render] RegenerateHiResTrack: 初始化 hires_meta");
                 let track_groups = config.track_group_count(track_count);
                 let time_groups = config.time_group_count(total_ticks, ppq);
                 let ticks_per_group = config.ticks_per_group(ppq);
@@ -426,7 +426,7 @@ fn handle_hires_control(
             let track_range = (track_start, track_end);
 
             // 音轨重生成改为完全后台静默执行，不再推送进度窗口消息。
-            tracing::info!(
+            tracing::debug!(
                 "[onion-render] RegenerateHiResTrack 启动后台静默重生: track_group={}, time_groups={}",
                 track_group,
                 time_groups
@@ -442,7 +442,7 @@ fn handle_hires_control(
                 for notes in &mut group_notes {
                     notes.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
                 }
-                tracing::info!(
+                tracing::debug!(
                     "[onion-render] RegenerateHiResTrack 后台线程启动: track_group={}, time_groups={}",
                     track_group,
                     time_groups
@@ -461,7 +461,7 @@ fn handle_hires_control(
                             notes, t, time_g, tick_start, tick_end, width, key_count,
                         );
                         if time_g == 0 && local_idx == 0 {
-                            tracing::info!(
+                            tracing::debug!(
                                 "[onion-render] RegenerateHiResTrack 生成首个贴图: track={}, coord={:?}, pixels={}",
                                 t,
                                 coord,
@@ -506,7 +506,7 @@ fn handle_hires_control(
                 if let Ok(guard) = tx.lock() {
                     let _ = guard.send(HiResStreamMsg::Finished);
                 }
-                tracing::info!(
+                tracing::debug!(
                     "[onion-render] RegenerateHiResTrack 后台线程完成: track_group={}",
                     track_group
                 );
@@ -524,7 +524,7 @@ fn handle_hires_control(
             midi_hash: _,
         } => {
             let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
-            tracing::info!(
+            tracing::debug!(
                 "[onion-render] ShowHiResDirtyOverlay: track={}, track_group={}, group_tracks={}, meta_exists={}",
                 track_idx,
                 track_group,
@@ -533,7 +533,7 @@ fn handle_hires_control(
             );
             // 若尚未创建高精度渲染器，用当前配置初始化
             if hires_renderer.is_none() {
-                tracing::info!("[onion-render] ShowHiResDirtyOverlay: 初始化 HiResRenderer");
+                tracing::debug!("[onion-render] ShowHiResDirtyOverlay: 初始化 HiResRenderer");
                 *hires_renderer = Some(HiResRenderer::new(device, config.clone(), texture_format));
             }
             *hires_config = Some(config.clone());
@@ -542,7 +542,7 @@ fn handle_hires_control(
             let needed_track_count = track_count.max(track_idx + 1);
             let needed_track_groups = config.track_group_count(needed_track_count);
             if hires_meta.is_none() {
-                tracing::info!("[onion-render] ShowHiResDirtyOverlay: 初始化 hires_meta");
+                tracing::debug!("[onion-render] ShowHiResDirtyOverlay: 初始化 hires_meta");
                 let time_groups = config.time_group_count(total_ticks, ppq);
                 let ticks_per_group = config.ticks_per_group(ppq);
                 *hires_meta = Some(HiResMeta {
@@ -555,7 +555,7 @@ fn handle_hires_control(
             } else if let Some(meta) = hires_meta {
                 // 若已有元数据但音轨组范围不足，扩展范围以确保覆层可被遍历到
                 if meta.track_groups < needed_track_groups {
-                    tracing::info!(
+                    tracing::debug!(
                         "[onion-render] ShowHiResDirtyOverlay: 扩展 track_groups {} -> {}",
                         meta.track_groups,
                         needed_track_groups
@@ -614,7 +614,7 @@ fn handle_hires_control(
                         group_tile.height,
                     );
                 }
-                tracing::info!(
+                tracing::debug!(
                     "[onion-render] ShowHiResDirtyOverlay: 已上传 {} 个覆层贴图 (track_group={})",
                     time_groups,
                     track_group

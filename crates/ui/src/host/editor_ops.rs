@@ -61,7 +61,7 @@ impl Host {
         // 收集当前所有脏音轨，避免切换时只显示单个音轨的覆盖层
         let dirty_tracks: Vec<u16> = self.hires_dirty_tracks.iter().copied().collect();
         let old_track = self.root.editor.current_track() as u16;
-        tracing::info!(
+        tracing::debug!(
             "[onion-dirty] set_current_track: old_track={}, new_track={}, dirty_tracks={:?}",
             old_track,
             track_idx,
@@ -72,7 +72,7 @@ impl Host {
         let context_ready = self.hires_config.is_some()
             && self.hires_midi_hash.is_some()
             && self.hires_gen_info.is_some();
-        tracing::info!(
+        tracing::debug!(
             "[onion-dirty] context_ready={}, config={}, hash={}, gen_info={}",
             context_ready,
             self.hires_config.is_some(),
@@ -114,7 +114,7 @@ impl Host {
                 }
 
                 let representative = tracks[0];
-                tracing::info!(
+                tracing::debug!(
                     "[onion-dirty] 发送 ShowHiResDirtyOverlay: representative_track={}, group={}, group_tracks={}",
                     representative,
                     group,
@@ -143,7 +143,7 @@ impl Host {
         for &dirty_track in &dirty_tracks {
             let group = (dirty_track / lumino_gfx::TRACKS_PER_GROUP) as u32;
             if regen_groups.insert(group) {
-                tracing::info!(
+                tracing::debug!(
                     "[onion-dirty] 触发 force_hires_regen: track={}",
                     dirty_track
                 );
