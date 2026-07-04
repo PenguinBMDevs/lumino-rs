@@ -76,10 +76,6 @@ impl MidiHandler {
 
         let total_ticks = parsed.info.duration_ticks as f32;
         ui.set_total_ticks(total_ticks);
-
-        // 预创建播放管理器，让后台线程提前构建 event buffers
-        // 这样用户首次点击播放时无需等待秒级文档准备
-        ui.prepare_playback();
     }
 
     /// 从 MIDI 字节流导入音符到编辑器（用于 LMPJ 文件）

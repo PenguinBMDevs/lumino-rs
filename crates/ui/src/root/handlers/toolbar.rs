@@ -79,29 +79,15 @@ impl ToolbarHandler {
 
     /// 执行播放逻辑
     fn do_play(root: &mut Root) {
-        let has_manager = root.playback.manager.is_some();
-        tracing::debug!(
-            "[UI-PLAY] do_play: has_manager={}, pending_midi_output={}",
-            has_manager,
-            root.playback.pending_midi_output.is_some(),
-        );
-
         if root.playback.manager.is_none() {
             Self::init_playback_manager(root);
         }
 
         if let Some(manager) = &mut root.playback.manager {
-            let tick = manager.current_tick();
-            tracing::debug!("[UI-PLAY] 开始播放: current_tick={}", tick);
             manager.play();
             root.toolbar.is_playing = true;
+            tracing::info!("Root: 开始播放");
         }
-
-        // 通知音频引擎切换到播放状态（关键修复：否则 renderer 填充静音）
-        root.editor
-            .editor_state
-            .interaction
-            .push_audio_action(crate::message::AudioAction::StartPlayback);
     }
 
     /// 执行暂停逻辑
@@ -111,11 +97,6 @@ impl ToolbarHandler {
             root.toolbar.is_playing = false;
             tracing::info!("Root: 暂停播放");
         }
-
-        root.editor
-            .editor_state
-            .interaction
-            .push_audio_action(crate::message::AudioAction::PausePlayback);
     }
 
     /// 执行停止逻辑
@@ -126,11 +107,6 @@ impl ToolbarHandler {
             root.editor.playback_position = 0.0;
             tracing::info!("Root: 停止播放");
         }
-
-        root.editor
-            .editor_state
-            .interaction
-            .push_audio_action(crate::message::AudioAction::StopPlayback);
     }
 
     /// 执行循环切换逻辑
@@ -144,49 +120,6 @@ impl ToolbarHandler {
     /// 初始化播放管理器
     fn init_playback_manager(root: &mut Root) {
         use crate::playback::PlaybackManager;
-
-        // 检查是否已有预创建的 manager（由 prepare_playback 在文件加载时创建）
-        if let Some(manager) = &mut root.playback.manager {
-            // 只更新当前音轨音符（不重新 set_document，避免重复构建）
-            let velocity_threshold = root.visual.velocity_filter_threshold;
-            let current_notes: Vec<crate::playback::NoteEvent> = root
-                .editor
-                .editor_state
-                .data
-                .notes
-                .iter()
-                .filter(|note| note.velocity > velocity_threshold)
-                .map(|note| crate::playback::NoteEvent {
-                    tick: note.tick,
-                    channel: note.channel,
-                    key: note.key as u8,
-                    velocity: note.velocity,
-                    length: note.length,
-                })
-                .collect();
-            manager.set_current_track_notes(current_notes);
-
-            // 同步 MIDI 控制事件
-            let mut midi_events: Vec<crate::playback::MidiTrackEvent> = Vec::new();
-            for events in root.playback.track_midi_events.values() {
-                midi_events.extend(events.clone());
-            }
-            if !midi_events.is_empty() {
-                midi_events.sort_by(|a, b| a.tick.total_cmp(&b.tick));
-                manager.set_midi_events(midi_events);
-            }
-
-            // 同步循环状态到播放引擎
-            if let Some(loop_range) = &root.editor.loop_range
-                && loop_range.enabled()
-            {
-                manager.set_looping(true);
-                manager.set_loop_range(loop_range.start_tick(), loop_range.end_tick());
-            }
-
-            tracing::debug!("Root: 播放管理器已存在，跳过创建（仅同步音符）");
-            return;
-        }
 
         let division = root.editor.editor_state.view.ppq;
         let mut manager = PlaybackManager::new(division);

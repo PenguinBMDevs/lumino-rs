@@ -203,7 +203,6 @@ impl Runner {
 /// 配置变更差异摘要（用于 save_storage 日志和副作用触发）
 struct ConfigDiff {
     synth_changed: bool,
-    midi_input_changed: bool,
     xsynth_changed: bool,
     titlebar_changed: bool,
     font_changed: bool,
@@ -223,35 +222,8 @@ impl RunnerInner {
         }
 
         for action in actions {
-            match action {
-                // 音符预览 → 走 OutputConnection（AudioCommandAdapter）
-                lumino_ui::message::AudioAction::PlayNote { .. }
-                | lumino_ui::message::AudioAction::StopNote { .. } => {
-                    if let Some(output) = midi.output_mut() {
-                        handle_audio_action(output, action);
-                    }
-                }
-                // 播放状态同步 → 走 CpalAudioHandle（驱动 AudioEngine.play_state）
-                lumino_ui::message::AudioAction::StartPlayback => {
-                    tracing::debug!("[RUNNER] Sync: start playback");
-                    if let Some(handle) = midi.audio_handle() {
-                        handle.play();
-                    } else {
-                        tracing::warn!("[RUNNER] 无音频句柄，无法同步播放状态");
-                    }
-                }
-                lumino_ui::message::AudioAction::PausePlayback => {
-                    tracing::debug!("[RUNNER] Sync: pause playback");
-                    if let Some(handle) = midi.audio_handle() {
-                        handle.pause();
-                    }
-                }
-                lumino_ui::message::AudioAction::StopPlayback => {
-                    tracing::debug!("[RUNNER] Sync: stop playback");
-                    if let Some(handle) = midi.audio_handle() {
-                        handle.stop();
-                    }
-                }
+            if let Some(output) = midi.output_mut() {
+                handle_audio_action(output, action);
             }
         }
     }
@@ -318,7 +290,6 @@ impl RunnerInner {
         let theme_changed = current_theme != old.theme;
         let synth_changed =
             new.synth_backend != old.preferred_backend || new.soundfont_path != old.soundfont_path;
-        let midi_input_changed = new.midi_input_backend != old.midi_input_backend;
         let xsynth_changed = new.xsynth_buffer_ms != old.xsynth_buffer_ms
             || new.xsynth_sample_rate != old.xsynth_sample_rate
             || new.xsynth_threads != old.xsynth_threads
@@ -339,7 +310,6 @@ impl RunnerInner {
 
         if theme_changed
             || synth_changed
-            || midi_input_changed
             || xsynth_changed
             || titlebar_changed
             || font_changed
@@ -347,7 +317,6 @@ impl RunnerInner {
         {
             Some(ConfigDiff {
                 synth_changed,
-                midi_input_changed,
                 xsynth_changed,
                 titlebar_changed,
                 font_changed,
@@ -366,16 +335,6 @@ impl RunnerInner {
             Some(d) => d,
             None => return,
         };
-
-        // MIDI 输入后端变更日志
-        if diff.midi_input_changed {
-            tracing::info!(
-                "MIDI 输入后端已改变: {:?} -> {:?}",
-                old.midi_input_backend,
-                new.midi_input_backend,
-            );
-            self.midi_state.midi.mark_for_reinit();
-        }
 
         // 合成器变更日志
         if diff.synth_changed {
@@ -437,7 +396,6 @@ impl RunnerInner {
             config.ui.theme.clone_from(&current_theme);
             config.ui.language = new.language;
             config.ui.preferred_backend = new.synth_backend;
-            config.ui.midi_input_backend = new.midi_input_backend;
             config.ui.soundfont_path = new.soundfont_path.clone();
             config.ui.use_native_titlebar = new.use_native_titlebar;
             config.ui.program_font_name = new.program_font_name.clone();

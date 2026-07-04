@@ -81,14 +81,6 @@ pub fn synth_backend_name(
     main::synth_backend_name(backend, lang)
 }
 
-/// 获取 MIDI 输入后端名称（按语言）
-pub fn midi_input_backend_name(
-    backend: crate::storage::config::MidiInputBackend,
-    lang: Language,
-) -> &'static str {
-    main::midi_input_backend_name(backend, lang)
-}
-
 /// 获取设置面板翻译
 pub fn settings_translations(lang: Language) -> &'static SettingsTranslations {
     settings::get(lang)

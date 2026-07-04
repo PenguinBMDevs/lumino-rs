@@ -14,7 +14,7 @@ use iced_widget::{column, container, row, scrollable, text};
 
 use crate::{Element, Message, Theme, window};
 use lumino_core::i18n::Language;
-use lumino_core::storage::config::{MidiInputBackend, SynthBackend};
+use lumino_core::storage::config::SynthBackend;
 
 use components::*;
 use pages::*;
@@ -23,7 +23,6 @@ use pages::*;
 pub enum Event {
     MenuSelected(usize),
     SynthBackendChanged(SynthBackend),
-    MidiInputBackendChanged(MidiInputBackend),
     SoundfontPathChanged(String),
     BrowseSoundfont,
     NativeTitlebarChanged(bool),
@@ -65,7 +64,6 @@ pub enum Event {
 pub struct SettingsPanel {
     pub selected_menu_index: usize,
     pub synth_backend: SynthBackend,
-    pub midi_input_backend: MidiInputBackend,
     pub soundfont_path: String,
     pub use_native_titlebar: bool,
     pub xsynth_buffer_ms: f64,
@@ -108,7 +106,6 @@ impl SettingsPanel {
         Self {
             selected_menu_index: 0,
             synth_backend: ui_config.preferred_backend,
-            midi_input_backend: ui_config.midi_input_backend,
             soundfont_path: ui_config.soundfont_path.clone(),
             use_native_titlebar: ui_config.use_native_titlebar,
             xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
@@ -145,9 +142,6 @@ impl SettingsPanel {
             }
             Event::SynthBackendChanged(backend) => {
                 self.synth_backend = backend;
-            }
-            Event::MidiInputBackendChanged(backend) => {
-                self.midi_input_backend = backend;
             }
             Event::SoundfontPathChanged(path) => {
                 self.soundfont_path = path;

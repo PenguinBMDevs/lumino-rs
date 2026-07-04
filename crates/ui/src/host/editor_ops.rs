@@ -116,41 +116,6 @@ impl Host {
         self.root.set_midi_output(output);
     }
 
-    /// 在后台准备播放数据（文件加载时调用）
-    ///
-    /// 创建 PlaybackManager 并开始后台构建 CompactEvent 缓冲区。
-    /// 这样用户点播放时，文档已经准备好，无需等待秒级构建。
-    /// 如果 PlaybackManager 已存在（例如用户正在编辑），则不重复创建。
-    pub fn prepare_playback(&mut self) {
-        if self.root.playback.manager.is_some() {
-            return;
-        }
-        let Some(doc) = self.root.midi.document.clone() else {
-            return;
-        };
-        let division = self.root.editor.editor_state.view.ppq;
-        let current_track = self.root.editor.editor_state.data.current_track as u16;
-
-        let mut manager = crate::playback::PlaybackManager::new(division);
-
-        // 发送文档到后台线程开始构建 event buffers（异步，不阻塞）
-        manager.set_document(doc, current_track);
-        manager.set_current_track_notes(Vec::new());
-
-        // 如果已经有缓存的 MIDI 输出连接，直接设置
-        if let Some(output) = self.root.playback.pending_midi_output.take() {
-            manager.set_midi_output(output);
-        }
-
-        // 如果有缓存的 tempo 变化，也设置上
-        if let Some(changes) = self.root.playback.pending_tempo_changes.take() {
-            manager.set_tempo_changes(changes);
-        }
-
-        tracing::info!("Root: 播放管理器已在后台预准备（文档={}）", "loaded");
-        self.root.playback.manager = Some(manager);
-    }
-
     /// 清除播放用 MIDI 输出连接
     pub fn clear_playback_midi_output(&mut self) {
         self.root.clear_midi_output();
@@ -169,11 +134,6 @@ impl Host {
     /// 检查是否正在播放
     pub fn is_playing(&self) -> bool {
         self.root.is_playing()
-    }
-
-    /// 暂停播放（音频引擎重初始化时使用，阻止墙钟继续走）
-    pub fn pause_playback(&mut self) {
-        self.root.pause_playback();
     }
 
     /// 清空编辑器（用于新建工程 / 关闭文件）

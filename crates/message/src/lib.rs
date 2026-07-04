@@ -67,19 +67,8 @@ pub enum EditorAction {
 /// 音频动作
 #[derive(Debug, Clone)]
 pub enum AudioAction {
-    PlayNote {
-        key: u8,
-        velocity: u8,
-    },
-    StopNote {
-        key: u8,
-    },
-    /// 启动播放（同步 PlaybackManager 状态到 AudioEngine）
-    StartPlayback,
-    /// 暂停播放
-    PausePlayback,
-    /// 停止播放
-    StopPlayback,
+    PlayNote { key: u8, velocity: u8 },
+    StopNote { key: u8 },
 }
 
 /// 应用消息

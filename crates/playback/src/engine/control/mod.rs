@@ -61,18 +61,7 @@ impl PlaybackEngine {
     }
 
     /// 设置 MIDI 文档引用（其他音轨从此流式读取）
-    ///
-    /// 幂等：如果文档 Arc 指针相同且 current_track 未变，跳过重建。
-    /// 避免 `update_playback_notes` 多次调用时重复构建 track_event_buffers。
     pub fn set_document(&mut self, doc: Arc<MidiDocument>, current_track: u16) {
-        // 幂等检查：同一文档 + 同一 current_track → 跳过重建
-        if let Some(ref existing) = self.document
-            && Arc::ptr_eq(existing, &doc)
-            && self.current_track == current_track
-        {
-            return;
-        }
-
         let track_count = doc.track_count();
         self.track_cursors = vec![0usize; track_count];
         self.track_event_buffers = (0..track_count)
