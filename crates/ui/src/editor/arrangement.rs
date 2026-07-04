@@ -32,6 +32,10 @@ pub struct ArrangementViewport {
     pub canvas_size: Point,
     /// 总 tick 数
     pub total_ticks: u32,
+    /// 缓存的音符最大 tick 终点，避免每帧全量扫描 track_notes
+    pub cached_max_tick_end: f32,
+    /// 缓存失效版本号，对应 EditorData::track_notes_gen
+    pub cached_track_notes_gen: u64,
 }
 
 impl Default for ArrangementViewport {
@@ -45,6 +49,8 @@ impl Default for ArrangementViewport {
             canvas_offset: Point::new(0.0, 0.0),
             canvas_size: Point::new(800.0, 600.0),
             total_ticks: 0,
+            cached_max_tick_end: 0.0,
+            cached_track_notes_gen: 0,
         }
     }
 }
@@ -78,6 +84,8 @@ mod tests {
         assert_eq!(vp.track_height, 48.0);
         assert_eq!(vp.canvas_size, Point::new(800.0, 600.0));
         assert_eq!(vp.total_ticks, 0);
+        assert_eq!(vp.cached_max_tick_end, 0.0);
+        assert_eq!(vp.cached_track_notes_gen, 0);
     }
 
     #[test]

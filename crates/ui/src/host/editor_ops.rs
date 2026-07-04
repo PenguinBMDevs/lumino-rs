@@ -344,9 +344,18 @@ impl Host {
     /// 避免滚动、点击播放位置等不改变音符的操作被误判为脏音轨。
     pub fn handle_action(&mut self, action: message::EditorAction) {
         let track_idx = self.root.editor.current_track() as u16;
+        tracing::debug!(
+            "[onion-dirty] Host::handle_action: action={:?}, track={}",
+            action,
+            track_idx
+        );
         let notes_changed = self.root.handle_editor_action(action);
         if notes_changed {
             // 编辑动作确实改变了音符 → 标记当前音轨高精度贴图为脏
+            tracing::info!(
+                "[onion-dirty] EditorAction 改变音符，标记脏音轨: track={}",
+                track_idx
+            );
             self.mark_hires_dirty(track_idx);
         }
         // 仅请求重绘，不重建UI树（编辑器动作由canvas/WGPU层处理）

@@ -205,6 +205,26 @@ impl Root {
         }
     }
 
+    /// 获取工程走带视图的最大 tick 终点（缓存，按 track_notes_gen 失效）
+    ///
+    /// 播放时每帧需要计算最大滚动范围，全量扫描 track_notes 在大型 MIDI 下会导致主线程卡顿。
+    /// 使用 EditorData::track_notes_gen 作为缓存版本号，只在音符数据变化时重新计算。
+    pub fn arrangement_max_tick_end(&mut self) -> f32 {
+        let data = &self.editor.editor_state.data;
+        let vp = &mut self.arrangement_view.viewport;
+        let current_gen = data.track_notes_gen;
+        if vp.cached_track_notes_gen != current_gen {
+            vp.cached_max_tick_end = data
+                .track_notes
+                .values()
+                .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
+                .fold(0.0_f32, f32::max);
+            vp.cached_track_notes_gen = current_gen;
+        }
+        vp.cached_max_tick_end
+            .max(crate::constants::editor::DEFAULT_MIN_TICKS)
+    }
+
     /// 更新工程走带视图的自动滚动（基于编辑器自动滚动配置）
     /// 使演奏指示线的滚动模式在工程走带界面同样适用
     pub fn update_arrangement_auto_scroll(&mut self, playback_tick: f32) {
@@ -213,20 +233,15 @@ impl Root {
             return;
         }
 
+        // 先计算缓存的最大 tick（可能扫描 track_notes），再借用 viewport
+        let max_tick = self.arrangement_max_tick_end();
+
         let vp = &mut self.arrangement_view.viewport;
         let viewport_width = vp.canvas_size.x.max(1.0);
         let ppu = vp.zoom_x.max(0.001);
 
         // 计算最大滚动值（使用视口尺寸和总宽度）
         let canvas_w = vp.canvas_size.x.max(1.0);
-        let max_tick = self
-            .editor
-            .editor_state
-            .data
-            .track_notes
-            .values()
-            .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
-            .fold(crate::constants::editor::DEFAULT_MIN_TICKS, f32::max);
         let total_w = max_tick * vp.zoom_x;
         let max_scroll = (total_w - canvas_w).max(0.0);
 

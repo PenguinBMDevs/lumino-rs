@@ -133,17 +133,10 @@ impl Root {
 
     /// 处理走带视图水平滚动
     fn handle_arrangement_scroll_x(&mut self, x: f32) -> bool {
+        // 先计算缓存的最大 tick（可能扫描 track_notes），再借用 viewport
+        let max_tick = self.arrangement_max_tick_end();
         let vp = &mut self.arrangement_view.viewport;
         let canvas_w = vp.canvas_size.x.max(1.0);
-        let max_tick = self
-            .editor
-            .editor_state
-            .data
-            .track_notes
-            .values()
-            .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
-            .fold(0.0_f32, f32::max)
-            .max(crate::constants::editor::DEFAULT_MIN_TICKS);
         let total_w = max_tick * vp.zoom_x;
         let max_scroll = (total_w - canvas_w).max(0.0);
         vp.scroll_x = x.max(0.0).min(max_scroll);
@@ -500,6 +493,16 @@ impl Root {
     ///
     /// 返回 `true` 表示音符数据确实发生了变化。
     pub(crate) fn handle_editor_action(&mut self, action: EditorAction) -> bool {
+        // 演奏指示线移动与滚动不修改音符数据，直接返回 false，
+        // 避免被误判为脏音轨而触发昂贵的后台重生成。
+        let is_playhead_or_scroll = matches!(
+            action,
+            EditorAction::Scrubbed { .. }
+                | EditorAction::IndicatorDragStart { .. }
+                | EditorAction::IndicatorDragMove { .. }
+                | EditorAction::Scrolled { .. }
+        );
+
         let old_tick = self.editor.playback_position;
         self.editor.handle_action(action);
         let new_tick = self.editor.playback_position;
@@ -509,6 +512,10 @@ impl Root {
             && let Some(manager) = &mut self.playback.manager
         {
             manager.seek(new_tick);
+        }
+
+        if is_playhead_or_scroll {
+            return false;
         }
 
         // 检查音符数据是否变化

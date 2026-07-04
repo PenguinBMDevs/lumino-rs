@@ -131,3 +131,29 @@ fn test_handle_core_event_re_emits_event() {
         "handle_core_event 应重新发出传入的事件"
     );
 }
+
+#[test]
+fn test_playhead_actions_do_not_change_notes() {
+    let mut root = create_root();
+
+    // 演奏指示线移动不应被识别为音符变化
+    assert!(
+        !root.handle_editor_action(crate::message::EditorAction::Scrubbed { tick: 100.0 }),
+        "Scrubbed 不应改变音符"
+    );
+    assert!(
+        !root.handle_editor_action(crate::message::EditorAction::IndicatorDragStart { x: 50.0 }),
+        "IndicatorDragStart 不应改变音符"
+    );
+    assert!(
+        !root.handle_editor_action(crate::message::EditorAction::IndicatorDragMove { x: 60.0 }),
+        "IndicatorDragMove 不应改变音符"
+    );
+    assert!(
+        !root.handle_editor_action(crate::message::EditorAction::Scrolled {
+            delta_x: 10.0,
+            delta_y: 0.0,
+        }),
+        "Scrolled 不应改变音符"
+    );
+}

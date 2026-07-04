@@ -639,16 +639,16 @@ fn handle_hires_control(
 fn update_hires_viewport(
     renderer: &mut Option<HiResRenderer>,
     meta: &Option<HiResMeta>,
-    _config: &Option<HiResConfig>,
+    config: &Option<HiResConfig>,
     params: &RenderParams,
     _device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> Vec<(TileCoord, HiResUniform)> {
     let mut visible: Vec<(TileCoord, HiResUniform)> = Vec::new();
-    let (Some(renderer), Some(_config), Some(meta)) = (renderer, _config, meta) else {
+    let (Some(renderer), Some(config), Some(meta)) = (renderer, config, meta) else {
         return visible;
     };
-    if params.is_arrangement_mode {
+    if !config.enabled || params.is_arrangement_mode {
         return visible;
     }
 

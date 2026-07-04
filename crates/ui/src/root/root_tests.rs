@@ -240,3 +240,44 @@ fn test_speed_change_button_always_enabled_in_view() {
 
     // 验证通过：两种情况下 view 均正常返回
 }
+
+// ================================================================
+// 工程走带视图最大 tick 缓存测试
+//
+// 播放时每帧需要最大 tick 来计算滚动范围；若每帧全量扫描 track_notes，
+// 大型 MIDI 会在主线程造成卡顿。此测试验证缓存按 track_notes_gen 失效。
+// ================================================================
+
+#[test]
+fn test_arrangement_max_tick_end_caches_by_gen() {
+    use lumino_core::storage::config::UiConfig;
+
+    let ui_config = UiConfig::default();
+    let mut root = Root::new(&ui_config);
+
+    // 无音符时返回 DEFAULT_MIN_TICKS
+    assert_eq!(
+        root.arrangement_max_tick_end(),
+        crate::constants::editor::DEFAULT_MIN_TICKS
+    );
+
+    // 在非指挥轨道添加音符（tick=4000, length=100，终点=4100）
+    // 必须超过 DEFAULT_MIN_TICKS（3840），否则会被最小值覆盖
+    root.editor.editor_state.data.current_track = 1;
+    let _ = root
+        .editor
+        .editor_state
+        .data
+        .finish_drawing(4000.0, 60, 4100.0, 1.0, 10.0);
+
+    // track_notes_gen 已变化，缓存应重新计算
+    let max_tick = root.arrangement_max_tick_end();
+    assert!((max_tick - 4100.0).abs() < f32::EPSILON);
+
+    // 缓存已写入
+    assert!((root.arrangement_view.viewport.cached_max_tick_end - 4100.0).abs() < f32::EPSILON);
+    assert_eq!(
+        root.arrangement_view.viewport.cached_track_notes_gen,
+        root.editor.editor_state.data.track_notes_gen
+    );
+}

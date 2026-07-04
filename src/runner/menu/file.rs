@@ -153,6 +153,7 @@ impl RunnerInner {
         let total_ticks = document.total_ticks.max(parsed.info.duration_ticks);
         let track_count = document.track_count();
         let mut notes: Vec<Vec<lumino_gfx::OnionSkinNote>> = Vec::with_capacity(track_count);
+        let mut editor_track_notes: Vec<Vec<lumino_core::Note>> = Vec::with_capacity(track_count);
         for track_idx in 0..track_count {
             let track_notes = document.track_notes(track_idx);
             let converted: Vec<lumino_gfx::OnionSkinNote> = track_notes
@@ -162,6 +163,21 @@ impl RunnerInner {
                 })
                 .collect();
             notes.push(converted);
+
+            // 同步填充 editor 的 track_notes 缓存，供后续重生成使用
+            let editor_notes: Vec<lumino_core::Note> = track_notes
+                .iter()
+                .map(|n| {
+                    lumino_core::Note::from_raw(
+                        n.start_tick as f32,
+                        n.key as u16,
+                        n.length() as f32,
+                        n.velocity,
+                        n.channel,
+                    )
+                })
+                .collect();
+            editor_track_notes.push(editor_notes);
         }
 
         // 高精度贴图生成
@@ -196,6 +212,12 @@ impl RunnerInner {
             key_count,
             midi_hash
         );
+        // 先预加载 track_notes 缓存，再启动后台生成，
+        // 保证后续编辑触发重生成时同组其他音轨数据完整。
+        self.window_state
+            .window
+            .ui_mut()
+            .preload_track_notes(editor_track_notes);
         self.window_state.window.ui_mut().generate_hires_onion_skin(
             notes,
             ppq,
