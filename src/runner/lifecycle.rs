@@ -164,20 +164,43 @@ impl winit::application::ApplicationHandler for Runner {
                 };
                 if let Some((midi_hash, (ppq, key_count, total_ticks), config)) = regen_context {
                     tracing::info!("高精度贴图冷静期到期，重生 {} 个脏音轨", tracks.len());
-                    for track_idx in tracks {
-                        let notes = this
-                            .window_state
-                            .window
-                            .ui()
-                            .get_track_notes_for_hires(track_idx);
-                        // 音轨总数取当前侧边栏音轨数与脏音轨索引+1 的较大值
+                    // 按音轨组分组，每个 group 只重生一次，避免同组重复生成
+                    let mut tracks_by_group: std::collections::HashMap<u32, Vec<u16>> =
+                        std::collections::HashMap::new();
+                    for track_idx in &tracks {
+                        let group = (*track_idx / lumino_gfx::TRACKS_PER_GROUP) as u32;
+                        tracks_by_group.entry(group).or_default().push(*track_idx);
+                    }
+
+                    for (group, group_tracks) in &tracks_by_group {
+                        let max_track = group_tracks.iter().copied().max().unwrap_or(0);
+                        // 音轨总数取当前侧边栏音轨数与组内最大音轨索引+1 的较大值
                         let track_count = {
                             let ui = this.window_state.window.ui();
-                            (ui.track_count() as u16).max(track_idx + 1)
+                            (ui.track_count() as u16).max(max_track + 1)
                         };
+
+                        // 收集该 group 内所有音轨的最新音符
+                        let group_start = (group * lumino_gfx::TRACKS_PER_GROUP as u32) as u16;
+                        let group_end =
+                            (group_start + lumino_gfx::TRACKS_PER_GROUP).min(track_count);
+                        let mut group_notes =
+                            Vec::with_capacity((group_end - group_start) as usize);
+                        for t in group_start..group_end {
+                            let notes = this.window_state.window.ui().get_track_notes_for_hires(t);
+                            group_notes.push(notes);
+                        }
+
+                        let representative = group_tracks[0];
+                        tracing::info!(
+                            "高精度贴图冷静期到期重生: group={}, representative_track={}, group_tracks={}",
+                            group,
+                            representative,
+                            group_notes.len()
+                        );
                         this.window_state.window.ui_mut().send_hires_regen(
-                            track_idx,
-                            notes,
+                            representative,
+                            group_notes,
                             ppq,
                             key_count,
                             total_ticks,

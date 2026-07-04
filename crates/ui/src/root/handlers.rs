@@ -497,7 +497,9 @@ impl Root {
     }
 
     /// 处理编辑器动作
-    pub(crate) fn handle_editor_action(&mut self, action: EditorAction) {
+    ///
+    /// 返回 `true` 表示音符数据确实发生了变化。
+    pub(crate) fn handle_editor_action(&mut self, action: EditorAction) -> bool {
         let old_tick = self.editor.playback_position;
         self.editor.handle_action(action);
         let new_tick = self.editor.playback_position;
@@ -510,10 +512,12 @@ impl Root {
         }
 
         // 检查音符数据是否变化
-        if self.editor.notes_changed() {
+        let notes_changed = self.editor.notes_changed();
+        if notes_changed {
             self.update_playback_notes();
             self.editor.clear_notes_changed();
         }
+        notes_changed
     }
 }
 

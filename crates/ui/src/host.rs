@@ -338,11 +338,14 @@ impl Host {
     }
 
     /// 发送高精度贴图重生命令（冷静期到期后由 runner 调用）
+    ///
+    /// `group_notes` 需包含该 `track_idx` 所在 track_group 的所有音轨音符，
+    /// runner 将使用这些最新数据重新合并 group tile，避免读取过期缓存。
     #[allow(clippy::too_many_arguments)]
     pub fn send_hires_regen(
         &mut self,
         track_idx: u16,
-        notes: Vec<lumino_gfx::OnionSkinNote>,
+        group_notes: Vec<Vec<lumino_gfx::OnionSkinNote>>,
         ppq: u16,
         key_count: u16,
         total_ticks: u32,
@@ -354,7 +357,7 @@ impl Host {
             thread.send_control(
                 lumino_gfx::render_thread::ControlCommand::RegenerateHiResTrack {
                     track_idx,
-                    notes,
+                    group_notes,
                     ppq,
                     key_count,
                     total_ticks,
@@ -371,10 +374,11 @@ impl Host {
     pub fn send_hires_dirty_overlay(
         &mut self,
         track_idx: u16,
-        notes: Vec<lumino_gfx::OnionSkinNote>,
+        group_notes: Vec<Vec<lumino_gfx::OnionSkinNote>>,
         ppq: u16,
         key_count: u16,
         total_ticks: u32,
+        track_count: u16,
         config: lumino_gfx::HiResConfig,
         midi_hash: String,
     ) {
@@ -382,10 +386,11 @@ impl Host {
             thread.send_control(
                 lumino_gfx::render_thread::ControlCommand::ShowHiResDirtyOverlay {
                     track_idx,
-                    notes,
+                    group_notes,
                     ppq,
                     key_count,
                     total_ticks,
+                    track_count,
                     config,
                     midi_hash,
                 },
@@ -461,6 +466,9 @@ impl Host {
     ///
     /// 仅在 `hires_dirty_tracks` 包含该音轨且配置信息完整时生效。
     /// 调用后会从脏集合中移除该音轨。
+    ///
+    /// 重生成以音轨组为单位，使用整个 track_group 的最新音符数据，
+    /// 避免同组其他音轨被覆盖为旧数据或空数据。
     pub fn force_hires_regen(&mut self, track_idx: u16) {
         tracing::info!("[onion-dirty] force_hires_regen 进入: track={}", track_idx);
         if !self.hires_dirty_tracks.remove(&track_idx) {
@@ -471,20 +479,6 @@ impl Host {
             return; // 该音轨不脏，不触发
         }
         self.hires_dirty_regions.remove(&track_idx);
-
-        let notes = self.get_track_notes_for_hires(track_idx);
-        tracing::info!(
-            "[onion-dirty] force_hires_regen 取到音符: track={}, count={}",
-            track_idx,
-            notes.len()
-        );
-        if notes.is_empty() {
-            tracing::info!(
-                "[onion-dirty] force_hires_regen 退出: track={} 无音符",
-                track_idx
-            );
-            return;
-        }
 
         let Some(cfg) = self.hires_config.clone() else {
             tracing::warn!("[onion-dirty] force_hires_regen 退出: hires_config 缺失");
@@ -502,10 +496,11 @@ impl Host {
         // 音轨总数：取当前侧边栏音轨数与脏音轨索引+1 的较大值，
         // 确保干净启动时也能正确推断音轨组范围。
         let track_count = (self.root.sidebar.tracks.len() as u16).max(track_idx + 1);
+        let group_notes = self.collect_group_notes(track_idx, track_count);
         tracing::info!(
-            "[onion-dirty] force_hires_regen 发送命令: track={}, notes={}, track_count={}, ppq={}, total_ticks={}",
+            "[onion-dirty] force_hires_regen 发送命令: track={}, group_tracks={}, track_count={}, ppq={}, total_ticks={}",
             track_idx,
-            notes.len(),
+            group_notes.len(),
             track_count,
             ppq,
             total_ticks
@@ -513,7 +508,7 @@ impl Host {
 
         self.send_hires_regen(
             track_idx,
-            notes,
+            group_notes,
             ppq,
             key_count,
             total_ticks,
@@ -521,6 +516,22 @@ impl Host {
             cfg,
             hash,
         );
+    }
+
+    /// 收集指定音轨所在 track_group 的所有音轨音符
+    ///
+    /// 返回的 Vec 索引 0 对应该 track_group 的第一个音轨。
+    fn collect_group_notes(
+        &self,
+        track_idx: u16,
+        track_count: u16,
+    ) -> Vec<Vec<lumino_gfx::OnionSkinNote>> {
+        let track_group = (track_idx / lumino_gfx::TRACKS_PER_GROUP) as u32;
+        let track_start = (track_group * lumino_gfx::TRACKS_PER_GROUP as u32) as u16;
+        let track_end = (track_start + lumino_gfx::TRACKS_PER_GROUP).min(track_count);
+        (track_start..track_end)
+            .map(|t| self.get_track_notes_for_hires(t))
+            .collect()
     }
 
     /// 获取指定音轨的音符列表（用于高精度贴图重生成）

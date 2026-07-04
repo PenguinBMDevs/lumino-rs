@@ -6,8 +6,8 @@ use std::time::Instant;
 
 use crate::SwappableBuffer;
 use crate::{
-    CacheMeta, GroupTile, HiResConfig, HiResProgressCallback, HiResRenderer, HiResUniform,
-    TRACKS_PER_GROUP, TileCoord, generate_track_tile, merge_group_tiles, read_track_tile_cache,
+    GroupTile, HiResConfig, HiResProgressCallback, HiResRenderer, HiResUniform, TRACKS_PER_GROUP,
+    TileCoord, generate_track_tile, merge_group_tiles,
 };
 
 use super::super::commands::{ControlCommand, RenderCommand};
@@ -377,18 +377,20 @@ fn handle_hires_control(
         // 重生成指定音轨的高精度贴图（编辑后冷静期到期触发）
         ControlCommand::RegenerateHiResTrack {
             track_idx,
-            mut notes,
+            mut group_notes,
             ppq,
             key_count,
             total_ticks,
             track_count,
             config,
-            midi_hash,
+            midi_hash: _,
         } => {
+            let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
             tracing::info!(
-                "[onion-render] RegenerateHiResTrack: track={}, notes={}, track_count={}, meta_exists={}",
+                "[onion-render] RegenerateHiResTrack: track={}, track_group={}, group_tracks={}, track_count={}, meta_exists={}",
                 track_idx,
-                notes.len(),
+                track_group,
+                group_notes.len(),
                 track_count,
                 hires_meta.is_some()
             );
@@ -416,33 +418,33 @@ fn handle_hires_control(
 
             let ticks_per_group = config.ticks_per_group(ppq);
             let time_groups = config.time_group_count(total_ticks, ppq);
-            let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
             let width = config.tile_width_px;
-            let measures_per_group = config.measures_per_group;
-            let cache_dir = config.cache_dir.clone();
 
             let track_start = (track_group * TRACKS_PER_GROUP as u32) as u16;
             let track_end =
-                ((track_group + 1) * TRACKS_PER_GROUP as u32).min(track_count as u32) as u16;
+                (track_start as u32 + group_notes.len() as u32).min(track_count as u32) as u16;
             let track_range = (track_start, track_end);
 
-            push_onion_progress(
-                onion_progress,
-                &format!("重生音轨 {track_idx} 高精度贴图…"),
-                0.0,
+            // 音轨重生成改为完全后台静默执行，不再推送进度窗口消息。
+            tracing::info!(
+                "[onion-render] RegenerateHiResTrack 启动后台静默重生: track_group={}, time_groups={}",
+                track_group,
+                time_groups
             );
 
             // ★ 重生成移到后台线程，避免阻塞渲染线程 ★
             // 生成完成后通过已有 hires_result_tx 传回，渲染线程仅做 GPU upload。
-            // 简化语义与之前一致：假设单 track_group，用 group_tile 像素覆盖全轨贴图。
+            // 使用 Host 提供的 group_notes 重新合并整个 track_group，
+            // 避免读取可能过期的硬盘缓存导致同组其他音轨被覆盖为旧数据。
             let tx = Arc::new(Mutex::new(hires_result_tx.clone()));
-            let progress_buf = onion_progress.clone();
             std::thread::spawn(move || {
                 // generate_track_tile 要求音符按 start_ms 升序排列
-                notes.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
+                for notes in &mut group_notes {
+                    notes.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
+                }
                 tracing::info!(
-                    "[onion-render] RegenerateHiResTrack 后台线程启动: track={}, time_groups={}",
-                    track_idx,
+                    "[onion-render] RegenerateHiResTrack 后台线程启动: track_group={}, time_groups={}",
+                    track_group,
                     time_groups
                 );
 
@@ -451,43 +453,22 @@ fn handle_hires_control(
                     let tick_end = tick_start + ticks_per_group;
                     let coord = TileCoord::new(track_group, time_g);
 
-                    // 重新生成脏音轨的单音轨贴图
-                    let dirty_tile = generate_track_tile(
-                        &notes, track_idx, time_g, tick_start, tick_end, width, key_count,
-                    );
-                    if time_g == 0 {
-                        tracing::info!(
-                            "[onion-render] RegenerateHiResTrack 生成首个贴图: track={}, coord={:?}, pixels={}",
-                            track_idx,
-                            coord,
-                            dirty_tile.pixels.len()
+                    // 重新生成该 group 内每轨的单音轨贴图
+                    let mut track_tiles = Vec::with_capacity(group_notes.len());
+                    for (local_idx, notes) in group_notes.iter().enumerate() {
+                        let t = track_start + local_idx as u16;
+                        let tile = generate_track_tile(
+                            notes, t, time_g, tick_start, tick_end, width, key_count,
                         );
-                    }
-
-                    // 从缓存加载同组其他音轨的单音轨贴图
-                    let mut track_tiles = Vec::new();
-                    for t in track_range.0..track_range.1 {
-                        if t == track_idx {
-                            track_tiles.push(dirty_tile.clone());
-                        } else {
-                            let meta = CacheMeta::from_tile(
-                                &dirty_tile,
-                                key_count,
-                                ppq,
-                                measures_per_group,
+                        if time_g == 0 && local_idx == 0 {
+                            tracing::info!(
+                                "[onion-render] RegenerateHiResTrack 生成首个贴图: track={}, coord={:?}, pixels={}",
+                                t,
+                                coord,
+                                tile.pixels.len()
                             );
-                            match read_track_tile_cache(&cache_dir, &midi_hash, t, time_g, &meta) {
-                                Ok(Some(tile)) => track_tiles.push(tile),
-                                Ok(None) => {
-                                    tracing::debug!(
-                                        "重生成：音轨 {t} 时间组 {time_g} 缓存未命中，跳过"
-                                    );
-                                }
-                                Err(e) => {
-                                    tracing::warn!("重生成：音轨 {t} 缓存读取失败: {e}");
-                                }
-                            }
                         }
+                        track_tiles.push(tile);
                     }
 
                     // 合并为新的整合组贴图（仅该 track_group 内）
@@ -513,10 +494,12 @@ fn handle_hires_control(
                     }
 
                     let pct = (time_g as f32 + 1.0) / time_groups as f32;
-                    push_onion_progress(
-                        &progress_buf,
-                        &format!("重生音轨 {track_idx}：{}/{}", time_g + 1, time_groups),
-                        pct,
+                    tracing::debug!(
+                        "[onion-render] RegenerateHiResTrack 进度: track_group={}, {}/{} ({:.1}%)",
+                        track_group,
+                        time_g + 1,
+                        time_groups,
+                        pct * 100.0
                     );
                 }
 
@@ -524,26 +507,28 @@ fn handle_hires_control(
                     let _ = guard.send(HiResStreamMsg::Finished);
                 }
                 tracing::info!(
-                    "[onion-render] RegenerateHiResTrack 后台线程完成: track={}",
-                    track_idx
+                    "[onion-render] RegenerateHiResTrack 后台线程完成: track_group={}",
+                    track_group
                 );
-                push_onion_progress(&progress_buf, "高精度贴图重生完成", 1.0);
             });
         }
         // 显示编辑后的临时脏区域贴图覆层（切换音轨前立即触发）
         ControlCommand::ShowHiResDirtyOverlay {
             track_idx,
-            mut notes,
+            mut group_notes,
             ppq,
             key_count,
             total_ticks,
+            track_count,
             config,
             midi_hash: _,
         } => {
+            let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
             tracing::info!(
-                "[onion-render] ShowHiResDirtyOverlay: track={}, notes={}, meta_exists={}",
+                "[onion-render] ShowHiResDirtyOverlay: track={}, track_group={}, group_tracks={}, meta_exists={}",
                 track_idx,
-                notes.len(),
+                track_group,
+                group_notes.len(),
                 hires_meta.is_some()
             );
             // 若尚未创建高精度渲染器，用当前配置初始化
@@ -554,7 +539,7 @@ fn handle_hires_control(
             *hires_config = Some(config.clone());
 
             // ★ 干净启动 / 新建工程时元数据可能为空，必须初始化，否则视口遍历找不到覆层 ★
-            let needed_track_count = track_idx + 1;
+            let needed_track_count = track_count.max(track_idx + 1);
             let needed_track_groups = config.track_group_count(needed_track_count);
             if hires_meta.is_none() {
                 tracing::info!("[onion-render] ShowHiResDirtyOverlay: 初始化 hires_meta");
@@ -582,27 +567,51 @@ fn handle_hires_control(
 
             let ticks_per_group = config.ticks_per_group(ppq);
             let time_groups = config.time_group_count(total_ticks, ppq);
-            let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
             let width = config.tile_width_px;
+            let track_start = (track_group * TRACKS_PER_GROUP as u32) as u16;
+            let track_end =
+                (track_start as u32 + group_notes.len() as u32).min(track_count as u32) as u16;
+            let track_range = (track_start, track_end);
 
             // 直接在渲染线程生成临时覆层贴图（音符少，耗时可控）
-            notes.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
+            for notes in &mut group_notes {
+                notes.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
+            }
 
             if let Some(renderer) = hires_renderer {
                 for time_g in 0..time_groups {
                     let tick_start = time_g * ticks_per_group;
                     let tick_end = tick_start + ticks_per_group;
-                    let tile = generate_track_tile(
-                        &notes, track_idx, time_g, tick_start, tick_end, width, key_count,
-                    );
                     let coord = TileCoord::new(track_group, time_g);
+
+                    // 重新生成该 group 内每轨的单音轨贴图
+                    let mut track_tiles = Vec::with_capacity(group_notes.len());
+                    for (local_idx, notes) in group_notes.iter().enumerate() {
+                        let t = track_start + local_idx as u16;
+                        let tile = generate_track_tile(
+                            notes, t, time_g, tick_start, tick_end, width, key_count,
+                        );
+                        track_tiles.push(tile);
+                    }
+
+                    // 合并为新的整合组贴图覆层（仅该 track_group 内）
+                    let group_tile = merge_group_tiles(
+                        &track_tiles,
+                        coord,
+                        tick_start,
+                        tick_end,
+                        width,
+                        key_count,
+                        track_range,
+                    );
+
                     renderer.upload_dirty_overlay(
                         device,
                         _queue,
                         coord,
-                        &tile.pixels,
-                        tile.width,
-                        tile.height,
+                        &group_tile.pixels,
+                        group_tile.width,
+                        group_tile.height,
                     );
                 }
                 tracing::info!(
@@ -614,7 +623,7 @@ fn handle_hires_control(
 
             push_onion_progress(
                 onion_progress,
-                &format!("音轨 {track_idx} 脏区域临时覆层已生成"),
+                &format!("音轨组 {track_group} 脏区域临时覆层已生成"),
                 1.0,
             );
         }

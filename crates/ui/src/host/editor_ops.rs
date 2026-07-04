@@ -54,18 +54,21 @@ impl Host {
     /// 1. 先发送临时脏区域覆层命令，在旧音轨位置立即显示编辑内容；
     /// 2. 执行音轨切换；
     /// 3. 立即触发后台重生（绕过冷静期），重生完成后自动替换覆层。
+    ///
+    /// 覆层与重生均以音轨组（track_group）为单位合并处理，
+    /// 避免同组多个脏音轨互相覆盖或重生成时丢失同组其他音轨数据。
     pub fn set_current_track(&mut self, track_idx: usize) {
-        // 检查是否从脏音轨切出
+        // 收集当前所有脏音轨，避免切换时只显示单个音轨的覆盖层
+        let dirty_tracks: Vec<u16> = self.hires_dirty_tracks.iter().copied().collect();
         let old_track = self.root.editor.current_track() as u16;
-        let old_track_dirty = self.hires_dirty_tracks.contains(&old_track);
         tracing::info!(
-            "[onion-dirty] set_current_track: old_track={}, new_track={}, dirty={}",
+            "[onion-dirty] set_current_track: old_track={}, new_track={}, dirty_tracks={:?}",
             old_track,
             track_idx,
-            old_track_dirty
+            dirty_tracks
         );
 
-        // 切换前先发送临时脏区域覆层，确保用户立刻看到刚编辑的音符
+        // 切换前先发送临时脏区域覆层，确保用户立刻看到所有刚编辑的音符
         let context_ready = self.hires_config.is_some()
             && self.hires_midi_hash.is_some()
             && self.hires_gen_info.is_some();
@@ -77,43 +80,75 @@ impl Host {
             self.hires_gen_info.is_some()
         );
 
-        if old_track_dirty
-            && let (Some(cfg), Some(hash), Some((ppq, key_count, total_ticks))) = (
-                self.hires_config.clone(),
-                self.hires_midi_hash.clone(),
-                self.hires_gen_info,
-            )
-        {
-            let dirty_notes = self
-                .hires_dirty_regions
-                .get(&old_track)
-                .cloned()
-                .unwrap_or_default();
-            tracing::info!(
-                "[onion-dirty] 发送 ShowHiResDirtyOverlay: track={}, notes={}",
-                old_track,
-                dirty_notes.len()
-            );
-            if !dirty_notes.is_empty() {
-                self.send_hires_dirty_overlay(
-                    old_track,
-                    dirty_notes,
-                    ppq,
-                    key_count,
-                    total_ticks,
-                    cfg,
-                    hash,
+        if let (Some(cfg), Some(hash), Some((ppq, key_count, total_ticks))) = (
+            self.hires_config.clone(),
+            self.hires_midi_hash.clone(),
+            self.hires_gen_info,
+        ) {
+            // 按音轨组分组脏音轨，同组只发送一个合并覆层
+            let mut dirty_by_group: std::collections::HashMap<u32, Vec<u16>> =
+                std::collections::HashMap::new();
+            for &dirty_track in &dirty_tracks {
+                let group = (dirty_track / lumino_gfx::TRACKS_PER_GROUP) as u32;
+                dirty_by_group.entry(group).or_default().push(dirty_track);
+            }
+
+            // 推断需要的音轨总数
+            let max_dirty = dirty_tracks.iter().copied().max().unwrap_or(0);
+            let track_count = (self.root.sidebar.tracks.len() as u16)
+                .max(max_dirty + 1)
+                .max(track_idx as u16 + 1);
+
+            for (group, tracks) in &dirty_by_group {
+                let group_start = (group * lumino_gfx::TRACKS_PER_GROUP as u32) as u16;
+                let group_end = (group_start + lumino_gfx::TRACKS_PER_GROUP).min(track_count);
+                let mut group_notes = Vec::with_capacity((group_end - group_start) as usize);
+                for t in group_start..group_end {
+                    // 脏音轨使用快照（当前帧可能尚未保存到 track_notes）
+                    let notes = if let Some(dirty_notes) = self.hires_dirty_regions.get(&t) {
+                        dirty_notes.clone()
+                    } else {
+                        self.get_track_notes_for_hires(t)
+                    };
+                    group_notes.push(notes);
+                }
+
+                let representative = tracks[0];
+                tracing::info!(
+                    "[onion-dirty] 发送 ShowHiResDirtyOverlay: representative_track={}, group={}, group_tracks={}",
+                    representative,
+                    group,
+                    group_notes.len()
                 );
+                if group_notes.iter().any(|n| !n.is_empty()) {
+                    self.send_hires_dirty_overlay(
+                        representative,
+                        group_notes,
+                        ppq,
+                        key_count,
+                        total_ticks,
+                        track_count,
+                        cfg.clone(),
+                        hash.clone(),
+                    );
+                }
             }
         }
 
         // 执行音轨切换（保存旧音轨 notes 到 track_notes 缓存）
         self.root.set_current_track(track_idx);
 
-        // 如果旧音轨有脏标记，立即触发重生（绕过冷静期）
-        if old_track_dirty {
-            tracing::info!("[onion-dirty] 触发 force_hires_regen: track={}", old_track);
-            self.force_hires_regen(old_track);
+        // 按音轨组触发后台重生，每个 group 只重生一次
+        let mut regen_groups = std::collections::HashSet::new();
+        for &dirty_track in &dirty_tracks {
+            let group = (dirty_track / lumino_gfx::TRACKS_PER_GROUP) as u32;
+            if regen_groups.insert(group) {
+                tracing::info!(
+                    "[onion-dirty] 触发 force_hires_regen: track={}",
+                    dirty_track
+                );
+                self.force_hires_regen(dirty_track);
+            }
         }
 
         // 仅请求重绘，不重建UI树（音轨切换由WGPU层处理）
@@ -304,11 +339,16 @@ impl Host {
     }
 
     /// 处理编辑器动作
+    ///
+    /// 仅在音符数据确实发生变化时才标记当前音轨高精度贴图为脏，
+    /// 避免滚动、点击播放位置等不改变音符的操作被误判为脏音轨。
     pub fn handle_action(&mut self, action: message::EditorAction) {
         let track_idx = self.root.editor.current_track() as u16;
-        self.root.handle_editor_action(action);
-        // 编辑动作可能改变音符 → 标记当前音轨高精度贴图为脏
-        self.mark_hires_dirty(track_idx);
+        let notes_changed = self.root.handle_editor_action(action);
+        if notes_changed {
+            // 编辑动作确实改变了音符 → 标记当前音轨高精度贴图为脏
+            self.mark_hires_dirty(track_idx);
+        }
         // 仅请求重绘，不重建UI树（编辑器动作由canvas/WGPU层处理）
         self.window_ctx.window.request_redraw();
     }
