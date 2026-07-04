@@ -251,10 +251,17 @@ impl MidiManager {
     }
 
     /// 快速初始化 KDMAPI 后端（不阻塞）
+    ///
+    /// 支持多路径自动搜索（详见 `kdmapi.rs` 的 `find_omnimidi_paths`）：
+    /// 1. 当前目录 / DLL 搜索路径
+    /// 2. `%WINDIR%\System32\OmniMIDI\OmniMIDI.dll`（标准安装路径）
+    /// 3. `%PROGRAMFILES%\OmniMIDI\OmniMIDI.dll`
+    ///
+    /// 如果 KDMAPI 初始化失败，会自动回退到 System 后端，保证至少能出声。
     fn init_kdmapi_output() -> BackendInitResult {
         use lumino_midi_io::ApiKind;
 
-        tracing::info!("MIDI: 快速启动 KDMAPI 后端");
+        tracing::info!("MIDI: 尝试启动 KDMAPI 后端");
 
         let path = std::path::PathBuf::from("OmniMIDI.dll");
 
@@ -271,19 +278,14 @@ impl MidiManager {
                         backend: SynthBackend::Kdmapi,
                     };
                 }
-                BackendInitResult {
-                    api: Some(api),
-                    output: None,
-                    backend: SynthBackend::Kdmapi,
-                }
+                tracing::warn!("MIDI: KDMAPI 已初始化但无法打开输出，回退到 System 后端");
+                // 有 api 但无 output → 回退到 System 后端
+                Self::init_system_output()
             }
             Err(e) => {
-                tracing::warn!("MIDI: KDMAPI 后端启动失败: {:?}", e);
-                BackendInitResult {
-                    api: None,
-                    output: None,
-                    backend: SynthBackend::Kdmapi,
-                }
+                tracing::warn!("MIDI: KDMAPI 后端启动失败: {:?}，回退到 System 后端", e);
+                // KDMAPI 完全不可用 → 回退到 System 后端
+                Self::init_system_output()
             }
         }
     }
