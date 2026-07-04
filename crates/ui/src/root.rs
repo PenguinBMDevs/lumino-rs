@@ -260,6 +260,16 @@ impl Root {
             .unwrap_or_default()
     }
 
+    /// 暂停播放（重初始化音频引擎时使用，防止墙钟继续走导致位置不同步）
+    pub fn pause_playback(&mut self) {
+        if let Some(manager) = &mut self.playback.manager {
+            if manager.state() == crate::playback::PlaybackState::Playing {
+                manager.pause();
+                tracing::info!("Root: 播放管理器已暂停（音频重初始化触发）");
+            }
+        }
+    }
+
     /// 设置 MIDI 文档引用（供懒加载使用）
     pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
         // 从 control_events 提取弯音数据

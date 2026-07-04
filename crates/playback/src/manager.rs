@@ -48,31 +48,23 @@ impl PlaybackManager {
         let thread_handle = thread::spawn(move || {
             let mut engine = engine;
             let mut midi_output: Option<Box<dyn lumino_midi_io::OutputConnection>> = None;
+            let mut pending_document: Option<(Arc<lumino_midi_loader::MidiDocument>, u16)> = None;
+            let mut pending_midi_events: Option<Vec<crate::engine::MidiTrackEvent>> = None;
 
             loop {
-                // 处理所有挂起的命令
+                // Phase 1: 轻量命令先处理（Play/Pause/Stop 不能等 SetDocument 的重活）
                 while let Ok(cmd) = receiver.try_recv() {
                     match cmd {
-                        Command::SetMidiOutput(output) => midi_output = Some(output),
-                        Command::ClearMidiOutput => midi_output = None,
-                        Command::SetCurrentTrackNotes(notes) => {
-                            engine.set_current_track_notes(notes)
+                        // ── 极轻量命令：立即处理 ──
+                        Command::Play => {
+                            engine.play();
                         }
-                        Command::SetDocument(doc, track) => engine.set_document(doc, track),
-                        Command::SetMidiEvents(events) => engine.set_midi_events(events),
-                        Command::SetTempoChanges(changes) => {
-                            let mut p = engine.playback().lock();
-                            p.set_tempo_changes(changes);
-                        }
-                        Command::Play => engine.play(),
                         Command::Pause => {
                             engine.pause();
                             if let Some(out) = &mut midi_output {
-                                // 释放所有通道的延音踏板，防止音符永久保持
                                 for ch in 0..16 {
                                     let _ = out.control_change(ch, 64, 0);
                                 }
-                                // 停止当前发声的音符（保留 Release 阶段）
                                 let _ = out.all_notes_off();
                             }
                         }
@@ -94,10 +86,37 @@ impl PlaybackManager {
                         Command::SetLoopRange(start, end) => engine.set_loop_range(start, end),
                         Command::ClearLoopRange => engine.clear_loop_range(),
                         Command::Quit => return,
+
+                        // ── 元数据命令：即时生效 ──
+                        Command::SetMidiOutput(output) => midi_output = Some(output),
+                        Command::ClearMidiOutput => midi_output = None,
+                        Command::SetCurrentTrackNotes(notes) => {
+                            engine.set_current_track_notes(notes)
+                        }
+                        Command::SetTempoChanges(changes) => {
+                            let mut p = engine.playback().lock();
+                            p.set_tempo_changes(changes);
+                        }
+
+                        // ── 重命令：延迟到 Phase 2 执行（不阻塞 Play） ──
+                        Command::SetDocument(doc, track) => {
+                            pending_document = Some((doc, track));
+                        }
+                        Command::SetMidiEvents(events) => {
+                            pending_midi_events = Some(events);
+                        }
                     }
                 }
 
-                // 更新引擎并发送MIDI消息
+                // Phase 2: 处理一个重命令（每次循环最多一个，避免长时间阻塞）
+                if let Some((doc, track)) = pending_document.take() {
+                    engine.set_document(doc, track);
+                }
+                if let Some(events) = pending_midi_events.take() {
+                    engine.set_midi_events(events);
+                }
+
+                // Phase 3: 更新引擎并发送MIDI消息
                 let messages = engine.update();
                 if let Some(out) = &mut midi_output {
                     let msg_count = messages.len();

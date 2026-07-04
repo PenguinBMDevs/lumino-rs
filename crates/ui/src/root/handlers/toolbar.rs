@@ -145,6 +145,49 @@ impl ToolbarHandler {
     fn init_playback_manager(root: &mut Root) {
         use crate::playback::PlaybackManager;
 
+        // 检查是否已有预创建的 manager（由 prepare_playback 在文件加载时创建）
+        if let Some(manager) = &mut root.playback.manager {
+            // 只更新当前音轨音符（不重新 set_document，避免重复构建）
+            let velocity_threshold = root.visual.velocity_filter_threshold;
+            let current_notes: Vec<crate::playback::NoteEvent> = root
+                .editor
+                .editor_state
+                .data
+                .notes
+                .iter()
+                .filter(|note| note.velocity > velocity_threshold)
+                .map(|note| crate::playback::NoteEvent {
+                    tick: note.tick,
+                    channel: note.channel,
+                    key: note.key as u8,
+                    velocity: note.velocity,
+                    length: note.length,
+                })
+                .collect();
+            manager.set_current_track_notes(current_notes);
+
+            // 同步 MIDI 控制事件
+            let mut midi_events: Vec<crate::playback::MidiTrackEvent> = Vec::new();
+            for events in root.playback.track_midi_events.values() {
+                midi_events.extend(events.clone());
+            }
+            if !midi_events.is_empty() {
+                midi_events.sort_by(|a, b| a.tick.total_cmp(&b.tick));
+                manager.set_midi_events(midi_events);
+            }
+
+            // 同步循环状态到播放引擎
+            if let Some(loop_range) = &root.editor.loop_range
+                && loop_range.enabled()
+            {
+                manager.set_looping(true);
+                manager.set_loop_range(loop_range.start_tick(), loop_range.end_tick());
+            }
+
+            tracing::debug!("Root: 播放管理器已存在，跳过创建（仅同步音符）");
+            return;
+        }
+
         let division = root.editor.editor_state.view.ppq;
         let mut manager = PlaybackManager::new(division);
 

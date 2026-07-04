@@ -18,7 +18,7 @@ use crate::spawn::AudioCommand;
 
 const RENDER_CHUNK_FRAMES: usize = 256;
 const STEREO_CHANNELS: usize = 2;
-const RING_TARGET_FILL_RATIO: f32 = 0.5;
+const RING_TARGET_FILL_RATIO: f32 = 0.125;
 
 /// 引擎状态快照 — 供 UI 查询播放进度。
 #[derive(Clone, Copy, Debug)]
@@ -135,6 +135,9 @@ fn render_if_needed(
     let target_fill = (ring.capacity() as f32 * RING_TARGET_FILL_RATIO) as usize;
     let stereo_target = target_fill - (target_fill % STEREO_CHANNELS);
 
+    // 预分配静音 buffer，避免每次循环都分配内存
+    let silence = vec![0.0f32; scratch.len()];
+
     while ring.len() < stereo_target {
         let mut eng = engine.lock().unwrap();
 
@@ -151,7 +154,6 @@ fn render_if_needed(
                     eng.duration_samples(),
                 );
                 drop(eng);
-                let silence = vec![0.0f32; scratch.len()];
                 let written = ring.push_slice(&silence);
                 if written == 0 {
                     break;
@@ -182,7 +184,6 @@ fn render_if_needed(
 
         if rendered == 0 {
             // 没有更多数据可渲染，填充静音
-            let silence = vec![0.0f32; scratch.len()];
             let written = ring.push_slice(&silence);
             if written == 0 {
                 break;
@@ -216,4 +217,48 @@ fn publish_state(
         has_model: eng.state.has_model(),
     };
     let _ = state_tx.try_send(snapshot);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 验证 RING_TARGET_FILL_RATIO 在合理范围内
+    /// 目标值：低于 0.5 意味着初始状况下 ring buffer 预填 < 1.5秒，
+    /// 高于 0.05 意味着不会因为预填太少导致 underrun
+    #[test]
+    fn test_ring_target_fill_ratio_range() {
+        assert!(
+            RING_TARGET_FILL_RATIO > 0.05,
+            "RING_TARGET_FILL_RATIO 太低会导致 underrun: {}",
+            RING_TARGET_FILL_RATIO
+        );
+        assert!(
+            RING_TARGET_FILL_RATIO < 0.5,
+            "RING_TARGET_FILL_RATIO 太高会导致初始延迟过大: {}",
+            RING_TARGET_FILL_RATIO
+        );
+    }
+
+    /// 验证 RING_TARGET_FILL_RATIO 的具体值
+    /// 修复后目标值 0.125（~0.37 秒缓冲）
+    #[test]
+    fn test_ring_target_fill_ratio_value() {
+        // 0.125 = 1/8 缓冲。这个值确保初始延迟 < 0.5s
+        assert!(
+            (RING_TARGET_FILL_RATIO - 0.125).abs() < f32::EPSILON,
+            "RING_TARGET_FILL_RATIO 应为 0.125，实际 {}",
+            RING_TARGET_FILL_RATIO
+        );
+    }
+
+    /// 验证 RENDER_CHUNK_FRAMES 与采样率的兼容性
+    #[test]
+    fn test_render_chunk_frames_valid() {
+        // 必须 > 0 且为合理的块大小
+        assert!(RENDER_CHUNK_FRAMES > 0);
+        assert!(RENDER_CHUNK_FRAMES <= 4096);
+        // 必须是偶数（用于立体声输出）
+        assert!(RENDER_CHUNK_FRAMES % 2 == 0);
+    }
 }
