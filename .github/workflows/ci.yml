@@ -3,7 +3,7 @@ name: CI Check
 
 on:
   push:
-    branches-ignore: []  # 不忽略任何分支，所有分支 push 都触发
+    branches-ignore: []
   pull_request:
 
 concurrency:
@@ -20,6 +20,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install system dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libssl-dev \
+            libasound2-dev \
+            libvulkan-dev \
+            libx11-dev \
+            libwayland-dev \
+            libfontconfig-dev \
+            libfreetype6-dev \
+            libxkbcommon-dev \
+            libegl1-mesa-dev
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Cache
         uses: actions/cache@v4
         with:
@@ -29,15 +47,8 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Cargo check
         run: cargo check --workspace
 
       - name: Cargo test
         run: cargo test --workspace
-
-
-
-
