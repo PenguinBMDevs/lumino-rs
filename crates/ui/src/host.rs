@@ -120,11 +120,29 @@ impl Host {
     }
 
     /// 创建 Host 公共字段（三个构造函数的公共 Self 初始化）
+    ///
+    /// 干净启动时即初始化默认高精度洋葱皮上下文，确保无 MIDI 文件时
+    /// 编辑音符也能触发贴图生成。
     fn new_common_fields(
         render_ctx: RenderContext,
         window_ctx: WindowContext,
         root: root::Root,
+        ui_config: &config::UiConfig,
     ) -> Self {
+        let key_count = if ui_config.enable_256key { 256 } else { 128 };
+        let hires_config = lumino_gfx::HiResConfig {
+            enabled: ui_config.hires_onion_enabled,
+            measures_per_group: ui_config.hires_measures_per_group,
+            tile_width_px: ui_config.hires_tile_width_px,
+            cooldown_secs: ui_config.hires_cooldown_secs,
+            gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
+            group_tile_mem_limit_mb: 256,
+            cache_dir: lumino_gfx::HiResConfig::default().cache_dir,
+        };
+        let midi_hash = lumino_gfx::compute_midi_hash(b"empty-project");
+        let ppq = lumino_core::view_state::DEFAULT_PPQ;
+        let total_ticks = lumino_core::view_state::DEFAULT_TOTAL_TICKS;
+
         Self {
             render_ctx,
             window_ctx,
@@ -141,9 +159,9 @@ impl Host {
             hires_dirty_tracks: std::collections::HashSet::new(),
             hires_dirty_regions: std::collections::HashMap::new(),
             hires_last_edit: None,
-            hires_config: None,
-            hires_midi_hash: None,
-            hires_gen_info: None,
+            hires_config: Some(hires_config),
+            hires_midi_hash: Some(midi_hash),
+            hires_gen_info: Some((ppq, key_count, total_ticks)),
         }
     }
 
@@ -163,7 +181,7 @@ impl Host {
         } else {
             root::Root::new(ui_config)
         };
-        Self::new_common_fields(render_ctx, window_ctx, root)
+        Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
     }
 
     /// 创建对话框 Host
@@ -178,7 +196,7 @@ impl Host {
         let (render_ctx, window_ctx) =
             Self::create_render_and_window_context(window, width, height, ui_config, gfx);
         let root = root::Root::new_dialog(&ui_config.theme, dialog_type);
-        Self::new_common_fields(render_ctx, window_ctx, root)
+        Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
     }
 
     /// 创建设置对话框 Host（使用主窗口的配置）
@@ -192,7 +210,7 @@ impl Host {
         let (render_ctx, window_ctx) =
             Self::create_render_and_window_context(window, width, height, ui_config, gfx);
         let root = root::Root::new_settings_dialog(&ui_config.theme, ui_config);
-        Self::new_common_fields(render_ctx, window_ctx, root)
+        Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
     }
 
     /// 启用真正的分离渲染线程（新架构）
@@ -270,7 +288,10 @@ impl Host {
         }
     }
 
-    /// 释放高精度洋葱皮资源（关闭 MIDI 时调用）
+    /// 释放高精度洋葱皮资源（关闭 MIDI / 新建工程时调用）
+    ///
+    /// 释放 GPU 资源后，根据当前编辑器视图状态重新初始化默认上下文，
+    /// 保证干净启动或关闭文件后仍能继续编辑并生成贴图。
     pub fn dispose_hires_onion_skin(&mut self) {
         if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
             thread.send_control(lumino_gfx::render_thread::ControlCommand::DisposeHiResOnionSkin);
@@ -278,9 +299,42 @@ impl Host {
         self.hires_dirty_tracks.clear();
         self.hires_dirty_regions.clear();
         self.hires_last_edit = None;
-        self.hires_config = None;
-        self.hires_midi_hash = None;
-        self.hires_gen_info = None;
+        self.init_default_hires_context();
+    }
+
+    /// 根据当前编辑器视图状态初始化默认高精度洋葱皮上下文
+    ///
+    /// 无 MIDI 文件时（干净启动 / 新建工程）使用 editor 的默认 ppq/key_count/total_ticks。
+    fn init_default_hires_context(&mut self) {
+        let view = &self.root.editor.editor_state.view;
+        let key_count = view.key_count;
+        let ppq = view.ppq;
+        let total_ticks = view.total_ticks;
+        let ui_cfg = self.hires_config.clone().unwrap_or_else(|| {
+            let default = lumino_gfx::HiResConfig::default();
+            lumino_gfx::HiResConfig {
+                enabled: default.enabled,
+                measures_per_group: default.measures_per_group,
+                tile_width_px: default.tile_width_px,
+                cooldown_secs: default.cooldown_secs,
+                gpu_mem_limit_mb: default.gpu_mem_limit_mb,
+                group_tile_mem_limit_mb: default.group_tile_mem_limit_mb,
+                cache_dir: default.cache_dir,
+            }
+        });
+        let config = lumino_gfx::HiResConfig {
+            enabled: ui_cfg.enabled,
+            measures_per_group: ui_cfg.measures_per_group,
+            tile_width_px: ui_cfg.tile_width_px,
+            cooldown_secs: ui_cfg.cooldown_secs,
+            gpu_mem_limit_mb: ui_cfg.gpu_mem_limit_mb,
+            group_tile_mem_limit_mb: ui_cfg.group_tile_mem_limit_mb,
+            cache_dir: ui_cfg.cache_dir,
+        };
+        let midi_hash = lumino_gfx::compute_midi_hash(b"empty-project");
+        self.hires_config = Some(config);
+        self.hires_midi_hash = Some(midi_hash);
+        self.hires_gen_info = Some((ppq, key_count, total_ticks));
     }
 
     /// 发送高精度贴图重生命令（冷静期到期后由 runner 调用）
@@ -292,12 +346,41 @@ impl Host {
         ppq: u16,
         key_count: u16,
         total_ticks: u32,
+        track_count: u16,
         config: lumino_gfx::HiResConfig,
         midi_hash: String,
     ) {
         if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
             thread.send_control(
                 lumino_gfx::render_thread::ControlCommand::RegenerateHiResTrack {
+                    track_idx,
+                    notes,
+                    ppq,
+                    key_count,
+                    total_ticks,
+                    track_count,
+                    config,
+                    midi_hash,
+                },
+            );
+        }
+    }
+
+    /// 发送编辑后的临时脏区域覆层显示命令（切换音轨前立即触发）
+    #[allow(clippy::too_many_arguments)]
+    pub fn send_hires_dirty_overlay(
+        &mut self,
+        track_idx: u16,
+        notes: Vec<lumino_gfx::OnionSkinNote>,
+        ppq: u16,
+        key_count: u16,
+        total_ticks: u32,
+        config: lumino_gfx::HiResConfig,
+        midi_hash: String,
+    ) {
+        if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
+            thread.send_control(
+                lumino_gfx::render_thread::ControlCommand::ShowHiResDirtyOverlay {
                     track_idx,
                     notes,
                     ppq,
@@ -327,6 +410,11 @@ impl Host {
         self.hires_dirty_tracks.insert(track_idx);
         // 收集当前音轨的所有音符作为脏区域快照
         let notes = self.get_track_notes_for_hires(track_idx);
+        tracing::info!(
+            "[onion-dirty] mark_hires_dirty: track={}, notes={}",
+            track_idx,
+            notes.len()
+        );
         self.hires_dirty_regions.insert(track_idx, notes);
         self.hires_last_edit = Some(Instant::now());
     }
@@ -374,27 +462,65 @@ impl Host {
     /// 仅在 `hires_dirty_tracks` 包含该音轨且配置信息完整时生效。
     /// 调用后会从脏集合中移除该音轨。
     pub fn force_hires_regen(&mut self, track_idx: u16) {
+        tracing::info!("[onion-dirty] force_hires_regen 进入: track={}", track_idx);
         if !self.hires_dirty_tracks.remove(&track_idx) {
+            tracing::info!(
+                "[onion-dirty] force_hires_regen 退出: track={} 不在脏集合",
+                track_idx
+            );
             return; // 该音轨不脏，不触发
         }
         self.hires_dirty_regions.remove(&track_idx);
 
         let notes = self.get_track_notes_for_hires(track_idx);
+        tracing::info!(
+            "[onion-dirty] force_hires_regen 取到音符: track={}, count={}",
+            track_idx,
+            notes.len()
+        );
         if notes.is_empty() {
+            tracing::info!(
+                "[onion-dirty] force_hires_regen 退出: track={} 无音符",
+                track_idx
+            );
             return;
         }
 
         let Some(cfg) = self.hires_config.clone() else {
+            tracing::warn!("[onion-dirty] force_hires_regen 退出: hires_config 缺失");
             return;
         };
         let Some(hash) = self.hires_midi_hash.clone() else {
+            tracing::warn!("[onion-dirty] force_hires_regen 退出: hires_midi_hash 缺失");
             return;
         };
         let Some((ppq, key_count, total_ticks)) = self.hires_gen_info else {
+            tracing::warn!("[onion-dirty] force_hires_regen 退出: hires_gen_info 缺失");
             return;
         };
 
-        self.send_hires_regen(track_idx, notes, ppq, key_count, total_ticks, cfg, hash);
+        // 音轨总数：取当前侧边栏音轨数与脏音轨索引+1 的较大值，
+        // 确保干净启动时也能正确推断音轨组范围。
+        let track_count = (self.root.sidebar.tracks.len() as u16).max(track_idx + 1);
+        tracing::info!(
+            "[onion-dirty] force_hires_regen 发送命令: track={}, notes={}, track_count={}, ppq={}, total_ticks={}",
+            track_idx,
+            notes.len(),
+            track_count,
+            ppq,
+            total_ticks
+        );
+
+        self.send_hires_regen(
+            track_idx,
+            notes,
+            ppq,
+            key_count,
+            total_ticks,
+            track_count,
+            cfg,
+            hash,
+        );
     }
 
     /// 获取指定音轨的音符列表（用于高精度贴图重生成）
@@ -404,8 +530,16 @@ impl Host {
         let editor = &self.root.editor;
         let current_track = editor.current_track();
         let notes = if current_track as u16 == track_idx {
+            tracing::debug!(
+                "[onion-dirty] get_track_notes_for_hires: track={} 使用当前编辑器音符",
+                track_idx
+            );
             &editor.editor_state.data.notes
         } else {
+            tracing::debug!(
+                "[onion-dirty] get_track_notes_for_hires: track={} 使用 track_notes 缓存",
+                track_idx
+            );
             match editor
                 .editor_state
                 .data
@@ -413,10 +547,16 @@ impl Host {
                 .get(&(track_idx as usize))
             {
                 Some(n) => n,
-                None => return Vec::new(),
+                None => {
+                    tracing::debug!(
+                        "[onion-dirty] get_track_notes_for_hires: track={} 缓存未命中，返回空",
+                        track_idx
+                    );
+                    return Vec::new();
+                }
             }
         };
-        notes
+        let result: Vec<_> = notes
             .iter()
             .map(|n| {
                 lumino_gfx::OnionSkinNote::from_ms(
@@ -426,7 +566,13 @@ impl Host {
                     onion_track_color(track_idx as usize),
                 )
             })
-            .collect()
+            .collect();
+        tracing::debug!(
+            "[onion-dirty] get_track_notes_for_hires: track={}, count={}",
+            track_idx,
+            result.len()
+        );
+        result
     }
 
     /// 取出洋葱皮生成进度（runner 每帧调用并转发到进度窗口）
@@ -446,6 +592,11 @@ impl Host {
     /// 获取 root 可变引用
     pub fn root_mut(&mut self) -> &mut root::Root {
         &mut self.root
+    }
+
+    /// 获取当前侧边栏音轨数量（用于推断高精度贴图音轨组范围）
+    pub fn track_count(&self) -> usize {
+        self.root.sidebar.tracks.len()
     }
 
     /// 获取设置面板引用

@@ -39,8 +39,9 @@ struct HiResMeta {
 /// 使用 `sync_channel(1)` 有界通道：channel 满时后台 send 阻塞，
 /// 强制后台线程等待渲染线程消费——背压机制，防止无界积压导致 CPU 内存峰值。
 enum HiResStreamMsg {
-    /// 某个 time_group 已合并的全轨像素缓冲（width × height × 4 字节）
+    /// 某个 (track_group, time_group) 已合并的整合组像素缓冲（width × height × 4 字节）
     TimeGroupMerged {
+        track_group: u32,
         time_group: u32,
         pixels: Vec<u8>,
         width: u32,
@@ -48,31 +49,6 @@ enum HiResStreamMsg {
     },
     /// 所有贴图生成完毕
     Finished,
-}
-
-/// 合并同时间组的所有音轨组贴图为一张全轨贴图
-///
-/// 所有 tiles 的 width/height 必须一致。
-/// 后音轨组覆盖前音轨组的重叠区（alpha > 0 时覆盖）。
-fn merge_track_groups(tiles: &[&GroupTile], width: u32, height: u32) -> Vec<u8> {
-    let pixel_count = (width * height) as usize;
-    let mut pixels = vec![0u8; pixel_count * 4];
-
-    for tile in tiles {
-        debug_assert_eq!(tile.width, width);
-        debug_assert_eq!(tile.height, height);
-        for (i, chunk) in tile.pixels.chunks_exact(4).enumerate() {
-            if chunk[3] > 0 {
-                let offset = i * 4;
-                pixels[offset] = chunk[0];
-                pixels[offset + 1] = chunk[1];
-                pixels[offset + 2] = chunk[2];
-                pixels[offset + 3] = chunk[3];
-            }
-        }
-    }
-
-    pixels
 }
 
 /// 运行渲染线程主循环
@@ -149,14 +125,21 @@ pub fn run_render_thread(
         loop {
             match hires_result_rx.try_recv() {
                 Ok(HiResStreamMsg::TimeGroupMerged {
+                    track_group,
                     time_group,
                     pixels,
                     width,
                     height,
                 }) => {
                     // ★ merge 已在后台线程完成，渲染线程仅做 GPU 上传（DMA 异步，非阻塞）★
+                    tracing::info!(
+                        "[onion-render] 收到并上传整合组贴图: track_group={}, time_group={}, pixels={}",
+                        track_group,
+                        time_group,
+                        pixels.len()
+                    );
                     if let Some(renderer) = &mut hires_renderer {
-                        let coord = TileCoord::new(0, time_group);
+                        let coord = TileCoord::new(track_group, time_group);
                         renderer.upload_tile(&device, &queue, coord, &pixels, width, height);
                     }
                     // pixels 在此 drop，释放 CPU 像素缓冲
@@ -346,26 +329,25 @@ fn handle_hires_control(
                     }
                 });
 
-                // time_group 回调：该 time_group 的所有 track_group 贴图已收齐，
-                // 在后台线程同步合并为单张全轨像素缓冲，再发送给渲染线程（渲染线程仅 upload）
+                // time_group 回调：该 time_group 的所有 track_group 贴图已收齐。
+                // 按 track_group 分别发送，渲染线程上传到自己的坐标位置，避免全曲重合并。
                 let time_group_cb = {
                     let tx = tx.clone();
                     let tw = tile_width;
                     let th = tile_height;
                     move |time_group: u32, tiles: Vec<GroupTile>| {
-                        // ★ merge 在后台线程完成，避免渲染线程被像素合并阻塞 ★
-                        let refs: Vec<&GroupTile> = tiles.iter().collect();
-                        let merged_pixels = merge_track_groups(&refs, tw, th);
-                        // tiles 在此 drop 释放 CPU 像素缓冲（原始分轨贴图）
-                        drop(tiles);
-                        // sync_channel(1) 有界：channel 满时 send 阻塞，背压等渲染线程消费
+                        // sync_channel(1) 有界：逐个 group 发送，背压等渲染线程消费
                         if let Ok(guard) = tx.lock() {
-                            let _ = guard.send(HiResStreamMsg::TimeGroupMerged {
-                                time_group,
-                                pixels: merged_pixels,
-                                width: tw,
-                                height: th,
-                            });
+                            for tile in tiles {
+                                let track_group = tile.coord.track_group;
+                                let _ = guard.send(HiResStreamMsg::TimeGroupMerged {
+                                    track_group,
+                                    time_group,
+                                    pixels: tile.pixels,
+                                    width: tw,
+                                    height: th,
+                                });
+                            }
                         }
                     }
                 };
@@ -399,9 +381,39 @@ fn handle_hires_control(
             ppq,
             key_count,
             total_ticks,
+            track_count,
             config,
             midi_hash,
         } => {
+            tracing::info!(
+                "[onion-render] RegenerateHiResTrack: track={}, notes={}, track_count={}, meta_exists={}",
+                track_idx,
+                notes.len(),
+                track_count,
+                hires_meta.is_some()
+            );
+            // 若尚未创建高精度渲染器（干净启动 / 新建工程），用当前配置初始化
+            if hires_renderer.is_none() {
+                tracing::info!("[onion-render] RegenerateHiResTrack: 初始化 HiResRenderer");
+                *hires_renderer = Some(HiResRenderer::new(device, config.clone(), texture_format));
+            }
+            *hires_config = Some(config.clone());
+
+            // 若元数据不存在（未执行过全曲生成），用命令参数重建元数据
+            if hires_meta.is_none() {
+                tracing::info!("[onion-render] RegenerateHiResTrack: 初始化 hires_meta");
+                let track_groups = config.track_group_count(track_count);
+                let time_groups = config.time_group_count(total_ticks, ppq);
+                let ticks_per_group = config.ticks_per_group(ppq);
+                *hires_meta = Some(HiResMeta {
+                    track_count,
+                    track_groups,
+                    key_count,
+                    time_groups,
+                    ticks_per_group,
+                });
+            }
+
             let ticks_per_group = config.ticks_per_group(ppq);
             let time_groups = config.time_group_count(total_ticks, ppq);
             let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
@@ -409,14 +421,9 @@ fn handle_hires_control(
             let measures_per_group = config.measures_per_group;
             let cache_dir = config.cache_dir.clone();
 
-            // 从元数据推断音轨组的音轨范围
-            let Some(meta) = hires_meta.as_ref() else {
-                tracing::warn!("重生音轨 {track_idx} 时元数据不存在，跳过");
-                return;
-            };
             let track_start = (track_group * TRACKS_PER_GROUP as u32) as u16;
             let track_end =
-                ((track_group + 1) * TRACKS_PER_GROUP as u32).min(meta.track_count as u32) as u16;
+                ((track_group + 1) * TRACKS_PER_GROUP as u32).min(track_count as u32) as u16;
             let track_range = (track_start, track_end);
 
             push_onion_progress(
@@ -433,6 +440,11 @@ fn handle_hires_control(
             std::thread::spawn(move || {
                 // generate_track_tile 要求音符按 start_ms 升序排列
                 notes.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
+                tracing::info!(
+                    "[onion-render] RegenerateHiResTrack 后台线程启动: track={}, time_groups={}",
+                    track_idx,
+                    time_groups
+                );
 
                 for time_g in 0..time_groups {
                     let tick_start = time_g * ticks_per_group;
@@ -443,6 +455,14 @@ fn handle_hires_control(
                     let dirty_tile = generate_track_tile(
                         &notes, track_idx, time_g, tick_start, tick_end, width, key_count,
                     );
+                    if time_g == 0 {
+                        tracing::info!(
+                            "[onion-render] RegenerateHiResTrack 生成首个贴图: track={}, coord={:?}, pixels={}",
+                            track_idx,
+                            coord,
+                            dirty_tile.pixels.len()
+                        );
+                    }
 
                     // 从缓存加载同组其他音轨的单音轨贴图
                     let mut track_tiles = Vec::new();
@@ -484,6 +504,7 @@ fn handle_hires_control(
                     // 传回渲染线程执行 GPU 上传
                     if let Ok(guard) = tx.lock() {
                         let _ = guard.send(HiResStreamMsg::TimeGroupMerged {
+                            track_group,
                             time_group: time_g,
                             pixels: group_tile.pixels,
                             width: group_tile.width,
@@ -502,17 +523,110 @@ fn handle_hires_control(
                 if let Ok(guard) = tx.lock() {
                     let _ = guard.send(HiResStreamMsg::Finished);
                 }
+                tracing::info!(
+                    "[onion-render] RegenerateHiResTrack 后台线程完成: track={}",
+                    track_idx
+                );
                 push_onion_progress(&progress_buf, "高精度贴图重生完成", 1.0);
             });
         }
+        // 显示编辑后的临时脏区域贴图覆层（切换音轨前立即触发）
+        ControlCommand::ShowHiResDirtyOverlay {
+            track_idx,
+            mut notes,
+            ppq,
+            key_count,
+            total_ticks,
+            config,
+            midi_hash: _,
+        } => {
+            tracing::info!(
+                "[onion-render] ShowHiResDirtyOverlay: track={}, notes={}, meta_exists={}",
+                track_idx,
+                notes.len(),
+                hires_meta.is_some()
+            );
+            // 若尚未创建高精度渲染器，用当前配置初始化
+            if hires_renderer.is_none() {
+                tracing::info!("[onion-render] ShowHiResDirtyOverlay: 初始化 HiResRenderer");
+                *hires_renderer = Some(HiResRenderer::new(device, config.clone(), texture_format));
+            }
+            *hires_config = Some(config.clone());
+
+            // ★ 干净启动 / 新建工程时元数据可能为空，必须初始化，否则视口遍历找不到覆层 ★
+            let needed_track_count = track_idx + 1;
+            let needed_track_groups = config.track_group_count(needed_track_count);
+            if hires_meta.is_none() {
+                tracing::info!("[onion-render] ShowHiResDirtyOverlay: 初始化 hires_meta");
+                let time_groups = config.time_group_count(total_ticks, ppq);
+                let ticks_per_group = config.ticks_per_group(ppq);
+                *hires_meta = Some(HiResMeta {
+                    track_count: needed_track_count,
+                    track_groups: needed_track_groups,
+                    key_count,
+                    time_groups,
+                    ticks_per_group,
+                });
+            } else if let Some(meta) = hires_meta {
+                // 若已有元数据但音轨组范围不足，扩展范围以确保覆层可被遍历到
+                if meta.track_groups < needed_track_groups {
+                    tracing::info!(
+                        "[onion-render] ShowHiResDirtyOverlay: 扩展 track_groups {} -> {}",
+                        meta.track_groups,
+                        needed_track_groups
+                    );
+                    meta.track_groups = needed_track_groups;
+                    meta.track_count = meta.track_count.max(needed_track_count);
+                }
+            }
+
+            let ticks_per_group = config.ticks_per_group(ppq);
+            let time_groups = config.time_group_count(total_ticks, ppq);
+            let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
+            let width = config.tile_width_px;
+
+            // 直接在渲染线程生成临时覆层贴图（音符少，耗时可控）
+            notes.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
+
+            if let Some(renderer) = hires_renderer {
+                for time_g in 0..time_groups {
+                    let tick_start = time_g * ticks_per_group;
+                    let tick_end = tick_start + ticks_per_group;
+                    let tile = generate_track_tile(
+                        &notes, track_idx, time_g, tick_start, tick_end, width, key_count,
+                    );
+                    let coord = TileCoord::new(track_group, time_g);
+                    renderer.upload_dirty_overlay(
+                        device,
+                        _queue,
+                        coord,
+                        &tile.pixels,
+                        tile.width,
+                        tile.height,
+                    );
+                }
+                tracing::info!(
+                    "[onion-render] ShowHiResDirtyOverlay: 已上传 {} 个覆层贴图 (track_group={})",
+                    time_groups,
+                    track_group
+                );
+            }
+
+            push_onion_progress(
+                onion_progress,
+                &format!("音轨 {track_idx} 脏区域临时覆层已生成"),
+                1.0,
+            );
+        }
+        // Resize / Shutdown 已在命令分发阶段处理，此处无需重复处理
         _ => {}
     }
 }
 
 /// 高精度贴图视口驱动：准备 uniform
 ///
-/// 贴图已在生成时合并为全轨贴图（每 time_group 一张），
-/// 此处仅计算可见坐标与 uniform，不再遍历 track_group。
+/// 遍历可见范围内的所有 (track_group, time_group) 组合。
+/// 正常贴图与临时脏区域覆层使用同一套 uniform，覆层在正常贴图之后绘制。
 fn update_hires_viewport(
     renderer: &mut Option<HiResRenderer>,
     meta: &Option<HiResMeta>,
@@ -559,18 +673,21 @@ fn update_hires_viewport(
     let canvas_w = params.viewport_size.0 as f32;
     let canvas_h = params.viewport_size.1 as f32;
 
-    // ★ 只遍历 time_group，不再遍历 track_group ★
-    for time_g in g_start..g_end {
-        let coord = TileCoord::new(0, time_g);
-        if renderer.has_tile(&coord) {
-            let tick_start = time_g * ticks_per_group;
-            let area_x = base_x + (tick_start as f32 * zoom_x - scroll_x) * scale;
-            let area_w = ticks_per_group as f32 * zoom_x * scale;
-            let uniform = HiResUniform::new(area_x, area_y, area_w, area_h, canvas_w, canvas_h);
-            visible.push((coord, uniform));
+    // 遍历所有音轨组与时间组，收集有正常贴图或临时覆层的可见坐标
+    for track_g in 0..meta.track_groups {
+        for time_g in g_start..g_end {
+            let coord = TileCoord::new(track_g, time_g);
+            if renderer.has_tile_or_dirty_overlay(&coord) {
+                let tick_start = time_g * ticks_per_group;
+                let area_x = base_x + (tick_start as f32 * zoom_x - scroll_x) * scale;
+                let area_w = ticks_per_group as f32 * zoom_x * scale;
+                let uniform = HiResUniform::new(area_x, area_y, area_w, area_h, canvas_w, canvas_h);
+                visible.push((coord, uniform));
+            }
         }
     }
 
     renderer.prepare(queue, &visible);
+    renderer.prepare_dirty_overlays(queue, &visible);
     visible
 }

@@ -75,6 +75,8 @@ pub struct HiResRenderer {
     sampler: wgpu::Sampler,
     /// 已上传的贴图纹理（TileCoord → GPU 资源）
     tiles: HashMap<TileCoord, TileGpuResource>,
+    /// 编辑后的临时脏区域贴图覆层（叠加在正常贴图之上）
+    dirty_overlays: HashMap<TileCoord, TileGpuResource>,
     /// GPU 显存占用（字节）
     gpu_mem_used: usize,
     /// 配置（含显存上限等）
@@ -138,6 +140,7 @@ impl HiResRenderer {
             bind_group_layout,
             sampler,
             tiles: HashMap::new(),
+            dirty_overlays: HashMap::new(),
             gpu_mem_used: 0,
             config,
         }
@@ -205,6 +208,10 @@ impl HiResRenderer {
         // 若已存在则先移除
         if self.tiles.contains_key(&coord) {
             self.remove_tile(&coord);
+        }
+        // 新的整合组贴图已就绪，清理对应临时脏区域覆层
+        if let Some(gpu) = self.dirty_overlays.remove(&coord) {
+            self.gpu_mem_used = self.gpu_mem_used.saturating_sub(gpu.byte_size);
         }
 
         let byte_size = pixels.len();
@@ -295,7 +302,103 @@ impl HiResRenderer {
     /// 清空所有贴图
     pub fn clear(&mut self) {
         self.tiles.clear();
+        self.dirty_overlays.clear();
         self.gpu_mem_used = 0;
+    }
+
+    /// 清空指定音轨组的临时脏区域覆层
+    pub fn clear_dirty_overlays(&mut self, track_group: u32) {
+        self.dirty_overlays
+            .retain(|coord, _| coord.track_group != track_group);
+    }
+
+    /// 上传一张临时脏区域贴图覆层
+    pub fn upload_dirty_overlay(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        coord: TileCoord,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) {
+        if let Some(gpu) = self.dirty_overlays.remove(&coord) {
+            self.gpu_mem_used = self.gpu_mem_used.saturating_sub(gpu.byte_size);
+        }
+
+        let byte_size = pixels.len();
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(&format!("hires_dirty_overlay_{coord:?}")),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("hires_dirty_overlay_uniform"),
+            size: std::mem::size_of::<HiResUniform>() as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("hires_dirty_overlay_bind_group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+
+        self.dirty_overlays.insert(
+            coord,
+            TileGpuResource {
+                texture,
+                view,
+                bind_group,
+                uniform_buffer,
+                byte_size,
+            },
+        );
+        self.gpu_mem_used += byte_size;
     }
 
     /// 准备可见贴图的 uniform（在 render_pass 开始前调用）
@@ -322,9 +425,42 @@ impl HiResRenderer {
         }
     }
 
+    /// 准备临时脏区域覆层的 uniform
+    pub fn prepare_dirty_overlays(
+        &self,
+        queue: &wgpu::Queue,
+        visible: &[(TileCoord, HiResUniform)],
+    ) {
+        for (coord, uniform) in visible {
+            if let Some(gpu) = self.dirty_overlays.get(coord) {
+                queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(uniform));
+            }
+        }
+    }
+
+    /// 绘制临时脏区域覆层（在正常贴图之后调用，实现叠加）
+    pub fn render_dirty_overlays<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        visible_coords: &[TileCoord],
+    ) {
+        render_pass.set_pipeline(&self.pipeline);
+        for coord in visible_coords {
+            if let Some(gpu) = self.dirty_overlays.get(coord) {
+                render_pass.set_bind_group(0, &gpu.bind_group, &[]);
+                render_pass.draw(0..6, 0..1);
+            }
+        }
+    }
+
     /// 检查贴图是否已上传
     pub fn has_tile(&self, coord: &TileCoord) -> bool {
         self.tiles.contains_key(coord)
+    }
+
+    /// 检查贴图或临时脏区域覆层是否已上传
+    pub fn has_tile_or_dirty_overlay(&self, coord: &TileCoord) -> bool {
+        self.tiles.contains_key(coord) || self.dirty_overlays.contains_key(coord)
     }
 
     /// 已上传贴图数量

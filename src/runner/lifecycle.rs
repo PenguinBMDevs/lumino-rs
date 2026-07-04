@@ -170,12 +170,18 @@ impl winit::application::ApplicationHandler for Runner {
                             .window
                             .ui()
                             .get_track_notes_for_hires(track_idx);
+                        // 音轨总数取当前侧边栏音轨数与脏音轨索引+1 的较大值
+                        let track_count = {
+                            let ui = this.window_state.window.ui();
+                            (ui.track_count() as u16).max(track_idx + 1)
+                        };
                         this.window_state.window.ui_mut().send_hires_regen(
                             track_idx,
                             notes,
                             ppq,
                             key_count,
                             total_ticks,
+                            track_count,
                             config.clone(),
                             midi_hash.clone(),
                         );

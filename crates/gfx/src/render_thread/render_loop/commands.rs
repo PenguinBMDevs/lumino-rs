@@ -72,7 +72,8 @@ fn classify_command(
         RenderCommand::Control(
             cmd @ (ControlCommand::GenerateHiResOnionSkin { .. }
             | ControlCommand::DisposeHiResOnionSkin
-            | ControlCommand::RegenerateHiResTrack { .. }),
+            | ControlCommand::RegenerateHiResTrack { .. }
+            | ControlCommand::ShowHiResDirtyOverlay { .. }),
         ) => {
             deferred.push(cmd);
         }

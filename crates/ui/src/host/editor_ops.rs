@@ -50,20 +50,69 @@ impl Host {
 
     /// 设置当前音轨
     ///
-    /// 如果切换到新音轨时旧音轨有脏标记的高精度贴图，
-    /// 会立即触发后台重生（绕过冷静期）：
-    /// - 用户放置音符后切换音轨 → 立刻开始重生，不必等冷静期到期
+    /// 如果切换到新音轨时旧音轨有脏标记的高精度贴图：
+    /// 1. 先发送临时脏区域覆层命令，在旧音轨位置立即显示编辑内容；
+    /// 2. 执行音轨切换；
+    /// 3. 立即触发后台重生（绕过冷静期），重生完成后自动替换覆层。
     pub fn set_current_track(&mut self, track_idx: usize) {
-        // 检查是否从脏音轨切出 → 立即触发重生
+        // 检查是否从脏音轨切出
         let old_track = self.root.editor.current_track() as u16;
         let old_track_dirty = self.hires_dirty_tracks.contains(&old_track);
+        tracing::info!(
+            "[onion-dirty] set_current_track: old_track={}, new_track={}, dirty={}",
+            old_track,
+            track_idx,
+            old_track_dirty
+        );
+
+        // 切换前先发送临时脏区域覆层，确保用户立刻看到刚编辑的音符
+        let context_ready = self.hires_config.is_some()
+            && self.hires_midi_hash.is_some()
+            && self.hires_gen_info.is_some();
+        tracing::info!(
+            "[onion-dirty] context_ready={}, config={}, hash={}, gen_info={}",
+            context_ready,
+            self.hires_config.is_some(),
+            self.hires_midi_hash.is_some(),
+            self.hires_gen_info.is_some()
+        );
+
+        if old_track_dirty
+            && let (Some(cfg), Some(hash), Some((ppq, key_count, total_ticks))) = (
+                self.hires_config.clone(),
+                self.hires_midi_hash.clone(),
+                self.hires_gen_info,
+            )
+        {
+            let dirty_notes = self
+                .hires_dirty_regions
+                .get(&old_track)
+                .cloned()
+                .unwrap_or_default();
+            tracing::info!(
+                "[onion-dirty] 发送 ShowHiResDirtyOverlay: track={}, notes={}",
+                old_track,
+                dirty_notes.len()
+            );
+            if !dirty_notes.is_empty() {
+                self.send_hires_dirty_overlay(
+                    old_track,
+                    dirty_notes,
+                    ppq,
+                    key_count,
+                    total_ticks,
+                    cfg,
+                    hash,
+                );
+            }
+        }
 
         // 执行音轨切换（保存旧音轨 notes 到 track_notes 缓存）
         self.root.set_current_track(track_idx);
 
         // 如果旧音轨有脏标记，立即触发重生（绕过冷静期）
         if old_track_dirty {
-            tracing::info!("音轨切换：旧音轨 {} 有脏标记，立即触发贴图重生", old_track);
+            tracing::info!("[onion-dirty] 触发 force_hires_regen: track={}", old_track);
             self.force_hires_regen(old_track);
         }
 
@@ -184,6 +233,10 @@ impl Host {
 
         // UI 缓存
         self.clear_cache();
+
+        // 清空后重新初始化默认高精度洋葱皮上下文，确保后续编辑仍能生成贴图
+        self.init_default_hires_context();
+
         self.window_ctx.window.request_redraw();
         tracing::info!("UI: 编辑器已完全清空（含历史记录、空间索引、播放状态）");
     }

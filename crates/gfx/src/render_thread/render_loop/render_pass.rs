@@ -123,6 +123,8 @@ pub fn execute_render_pass(
         if let Some(hires) = hires_renderer {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             hires.render(&mut render_pass, hires_visible_coords);
+            // 绘制编辑后的临时脏区域覆层（在正常贴图之上，颜色与当前音轨一致）
+            hires.render_dirty_overlays(&mut render_pass, hires_visible_coords);
         }
 
         // 绘制音符

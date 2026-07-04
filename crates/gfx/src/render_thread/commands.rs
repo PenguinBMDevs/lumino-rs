@@ -37,6 +37,25 @@ pub enum ControlCommand {
         key_count: u16,
         /// 全曲总 tick
         total_ticks: u32,
+        /// 音轨总数（用于推断音轨组范围）
+        track_count: u16,
+        /// 高精度贴图配置
+        config: HiResConfig,
+        /// MIDI 内容哈希（缓存分桶）
+        midi_hash: String,
+    },
+    /// 显示编辑后的临时脏区域贴图覆层（切换音轨前立即触发）
+    ShowHiResDirtyOverlay {
+        /// 脏音轨索引
+        track_idx: u16,
+        /// 该音轨当前的音符列表
+        notes: Vec<OnionSkinNote>,
+        /// MIDI ppq
+        ppq: u16,
+        /// 键位数量
+        key_count: u16,
+        /// 全曲总 tick
+        total_ticks: u32,
         /// 高精度贴图配置
         config: HiResConfig,
         /// MIDI 内容哈希（缓存分桶）
