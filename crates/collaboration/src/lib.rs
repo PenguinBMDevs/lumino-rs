@@ -6,6 +6,7 @@
 pub mod client;
 pub mod error;
 pub mod http;
+pub mod overlay;
 pub mod types;
 
 pub use client::{ClientMessage, CollaborationClient, CollaborationEvent, ServerMessage};

@@ -143,6 +143,8 @@ pub struct EditorData {
     /// 递增版本号，track_notes 每次变化时 bump。
     /// 用于 NoteWorker 快照的 Arc 缓存失效检测，避免每帧全量克隆 HashMap。
     pub track_notes_gen: u64,
+    /// 被编辑过的音轨集合（用于协作同步，记录需要广播变更的所有音轨）
+    pub edited_tracks: HashSet<usize>,
     pub document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     pub history: History,
     pub cc_data: CcData,
@@ -162,6 +164,7 @@ impl EditorData {
             current_track: 0,
             track_notes: HashMap::new(),
             track_notes_gen: 0,
+            edited_tracks: HashSet::new(),
             document: None,
             history: History::new(),
             cc_data: CcData::default(),
@@ -185,6 +188,7 @@ impl EditorData {
     pub fn reset(&mut self) {
         self.notes.clear();
         self.track_notes.clear();
+        self.edited_tracks.clear();
         self.mark_track_notes_changed();
         self.current_track = 0;
         self.history.clear();
