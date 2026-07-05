@@ -111,4 +111,21 @@ impl Root {
             );
         }
     }
+
+    /// 添加远程音轨（来自协作同步）
+    pub fn add_remote_track(&mut self, track_idx: usize) {
+        // 确保 sidebar tracks 足够容纳新音轨
+        if track_idx >= self.sidebar.tracks.len() {
+            self.sidebar.tracks.push(crate::sidebar::Track {
+                id: track_idx,
+                name: format!("Track {}", track_idx),
+                is_conductor: false,
+                can_delete: true,
+                is_muted: false,
+            });
+            tracing::info!("协作: 已添加远程音轨 - track_index={}", track_idx);
+        } else {
+            tracing::warn!("协作: 远程音轨 track_index={} 已存在", track_idx);
+        }
+    }
 }

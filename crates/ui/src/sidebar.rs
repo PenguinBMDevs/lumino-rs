@@ -5,6 +5,7 @@ pub mod event;
 mod panel;
 mod route;
 
+use crate::event as ui_event;
 use crate::{Element, resources::icon, window};
 pub use event::Event;
 
@@ -224,6 +225,11 @@ impl Sidebar {
                 });
                 self.selected_track = new_id;
                 self.add_track_menu_open = false;
+
+                // 发射协作同步事件
+                ui_event::emit(ui_event::Event::Window(
+                    ui_event::window::Event::local_track_added(new_id),
+                ));
             }
             AddTrackMenuToggled => {
                 self.add_track_menu_open = !self.add_track_menu_open;

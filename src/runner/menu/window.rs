@@ -252,6 +252,10 @@ impl RunnerInner {
                 self.handle_remote_note_update(user_id, operation);
                 self.window_state.window.window().request_redraw();
             }
+            ProjectUpdate { user_id, update } => {
+                self.handle_remote_project_update(user_id, update);
+                self.window_state.window.window().request_redraw();
+            }
             UserLeft { user_id } => {
                 self.window_state
                     .window
@@ -291,6 +295,19 @@ impl RunnerInner {
                     key_offset,
                     track_index,
                 );
+            }
+            LocalNoteDeleted {
+                tick,
+                key,
+                length,
+                velocity,
+                channel,
+                track_index,
+            } => {
+                self.handle_local_note_deleted(tick, key, length, velocity, channel, track_index);
+            }
+            LocalTrackAdded { track_index } => {
+                self.handle_local_track_added(track_index);
             }
         }
     }

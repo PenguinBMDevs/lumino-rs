@@ -142,6 +142,9 @@ impl Event {
     pub fn collaboration_note_update(user_id: String, operation: String) -> Self {
         Self::Collaboration(collaboration::Event::note_update(user_id, operation))
     }
+    pub fn collaboration_project_update(user_id: String, update: String) -> Self {
+        Self::Collaboration(collaboration::Event::project_update(user_id, update))
+    }
 
     pub fn local_note_added(
         tick: f32,
@@ -176,5 +179,25 @@ impl Event {
             key_offset,
             track_index,
         ))
+    }
+    pub fn local_note_deleted(
+        tick: f32,
+        key: u16,
+        length: f32,
+        velocity: u8,
+        channel: u8,
+        track_index: usize,
+    ) -> Self {
+        Self::Sync(sync::Event::local_note_deleted(
+            tick,
+            key,
+            length,
+            velocity,
+            channel,
+            track_index,
+        ))
+    }
+    pub fn local_track_added(track_index: usize) -> Self {
+        Self::Sync(sync::Event::local_track_added(track_index))
     }
 }

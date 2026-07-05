@@ -427,9 +427,14 @@ impl Editor {
     }
 
     /// 处理删除键按下事件
+    ///
+    /// 优先删除悬停音符，若无悬停则删除选中的音符。
+    /// 使用 Editor 层方法以触发协作同步事件。
     pub(crate) fn handle_delete_pressed(&mut self) {
-        if self.editor_state.handle_delete_pressed().is_some() {
-            self.mark_notes_changed();
+        if let Some((index, _)) = self.editor_state.interaction.hover_state {
+            self.delete_note_by_index(index);
+        } else if !self.editor_state.interaction.selected_notes.is_empty() {
+            self.delete_selected_notes();
         }
     }
 }

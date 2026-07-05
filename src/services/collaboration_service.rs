@@ -252,6 +252,15 @@ impl CollaborationService {
                     ));
                 }
             }
+            CollaborationEvent::ProjectUpdate { user_id, update } => {
+                if let Ok(json) = serde_json::to_string(&update) {
+                    lumino_ui::event::emit(lumino_ui::event::Event::window(
+                        lumino_ui::event::window::Event::collaboration_project_update(
+                            user_id, json,
+                        ),
+                    ));
+                }
+            }
             CollaborationEvent::Error { message } => tracing::error!("协作错误: {}", message),
             _ => {}
         }
@@ -345,6 +354,14 @@ impl CollaborationService {
         operation: lumino_collaboration::types::NoteBatchOperation,
     ) -> Result<(), String> {
         self.with_client_async(|client| Box::pin(client.send_note_batch(operation)))
+    }
+
+    /// 发送工程更新（同步 API）
+    pub fn send_project_update(
+        &self,
+        update: lumino_collaboration::types::ProjectUpdate,
+    ) -> Result<(), String> {
+        self.with_client_async(|client| Box::pin(client.send_project_update(update)))
     }
 
     /// 检查客户端实例是否存在（同步 API）

@@ -206,6 +206,12 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 添加远程音轨（委托给 Root 实现）
+    pub fn add_remote_track(&mut self, track_idx: usize) {
+        self.root.add_remote_track(track_idx);
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 获取当前 PPQ (Pulses Per Quarter note)
     pub fn ppq(&self) -> u16 {
         self.root.editor.editor_state.view.ppq

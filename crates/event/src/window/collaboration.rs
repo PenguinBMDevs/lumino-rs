@@ -48,6 +48,11 @@ pub enum Event {
         user_id: String,
         operation: String, // JSON string of NoteBatchOperation
     },
+    /// 协作工程更新（来自其他用户，如音轨变更）
+    ProjectUpdate {
+        user_id: String,
+        update: String, // JSON string of ProjectUpdate
+    },
 }
 
 impl Event {
@@ -64,6 +69,7 @@ impl Event {
             Self::UserLeft { .. } => "用户离开".to_string(),
             Self::MouseUpdate { .. } => "鼠标位置更新".to_string(),
             Self::NoteUpdate { .. } => "音符更新".to_string(),
+            Self::ProjectUpdate { .. } => "工程更新".to_string(),
         }
     }
 
@@ -120,5 +126,8 @@ impl Event {
     }
     pub fn note_update(user_id: String, operation: String) -> Self {
         Self::NoteUpdate { user_id, operation }
+    }
+    pub fn project_update(user_id: String, update: String) -> Self {
+        Self::ProjectUpdate { user_id, update }
     }
 }
