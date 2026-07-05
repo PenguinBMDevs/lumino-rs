@@ -83,6 +83,8 @@ pub struct Host {
     pub(crate) hires_midi_hash: Option<String>,
     /// 高精度贴图：生成时的 (ppq, key_count, total_ticks)（重生成时复用）
     pub(crate) hires_gen_info: Option<(u16, u16, u32)>,
+    /// 高精度贴图：脏区域覆层是否已发送到渲染线程（防止每帧重复发送）
+    pub(crate) hires_overlay_sent: bool,
 }
 
 impl Host {
@@ -162,6 +164,7 @@ impl Host {
             hires_config: Some(hires_config),
             hires_midi_hash: Some(midi_hash),
             hires_gen_info: Some((ppq, key_count, total_ticks)),
+            hires_overlay_sent: false,
         }
     }
 
@@ -470,6 +473,66 @@ impl Host {
         );
         self.hires_dirty_regions.insert(track_idx, notes);
         self.hires_last_edit = Some(Instant::now());
+        self.hires_overlay_sent = false; // 新脏数据，覆层需重新发送
+    }
+
+    /// 将所有当前脏区域作为临时覆层发送到渲染线程
+    ///
+    /// 在轮询周期调用，让远程编辑的增量变化立即显示为洋葱皮覆层，
+    /// 不等冷静期到期或音轨切换。
+    ///
+    /// **一次性守卫**：同一批脏区域只发送一次覆层到渲染线程，
+    /// 防止每帧重复发命令导致渲染线程阻塞。`mark_hires_dirty` 调用后重置。
+    ///
+    /// 此操作不清理脏标记——覆层只是临时显示，主贴图重生仍需等待冷静期。
+    pub fn show_hires_dirty_overlays(&mut self) -> bool {
+        if self.hires_dirty_regions.is_empty() {
+            return false;
+        }
+        if self.hires_overlay_sent {
+            return false; // 同一批脏区域已发送过，跳过
+        }
+        let Some((ppq, key_count, total_ticks)) = self.hires_gen_info else {
+            return false;
+        };
+        let Some(config) = self.hires_config.clone() else {
+            return false;
+        };
+        let track_count = self.track_count() as u16;
+
+        // 先收集所有脏音轨的快照数据，避免迭代时同时 borrow self
+        let dirty_snapshots: Vec<(u16, Vec<lumino_gfx::OnionSkinNote>)> = self
+            .hires_dirty_regions
+            .iter()
+            .map(|(&t, n)| (t, n.clone()))
+            .collect();
+
+        for (track_idx, notes) in &dirty_snapshots {
+            let track_group = track_idx / lumino_gfx::TRACKS_PER_GROUP;
+            let group_start = track_group * lumino_gfx::TRACKS_PER_GROUP;
+            let group_end = (group_start + lumino_gfx::TRACKS_PER_GROUP).min(track_count);
+            let mut group_notes: Vec<Vec<lumino_gfx::OnionSkinNote>> = Vec::new();
+            for t in group_start..group_end {
+                if t == *track_idx {
+                    group_notes.push(notes.clone());
+                } else {
+                    group_notes.push(self.get_track_notes_for_hires(t));
+                }
+            }
+
+            self.send_hires_dirty_overlay(
+                *track_idx,
+                group_notes,
+                ppq,
+                key_count,
+                total_ticks,
+                track_count,
+                config.clone(),
+                String::new(),
+            );
+        }
+        self.hires_overlay_sent = true;
+        true
     }
 
     /// 检查冷静期是否到期，返回需要重生成的脏音轨列表
@@ -489,6 +552,7 @@ impl Host {
             self.hires_dirty_tracks.clear();
             self.hires_dirty_regions.clear();
             self.hires_last_edit = None;
+            self.hires_overlay_sent = false;
             return Some(dirty);
         }
         None
