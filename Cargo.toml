@@ -185,3 +185,6 @@ debug = 1                           # 行号表（函数名+行号），支持 b
 strip = "none"                      # 保留符号用于调试分析（体积换调试能力）
 panic = "abort"                    # 使用 abort 而非 unwind（减少生成的代码量）
 incremental = true                 # 启用增量编译（对多次构建友好）
+
+[lints.clippy]
+mod_module_files = "deny"  # 或 "warn"
