@@ -1,12 +1,16 @@
 use midly::{Smf, TrackEventKind};
 use std::collections::HashMap;
 
+// 下方类型和函数仅在测试中使用，编译 binary 时视为 dead code
+#[allow(dead_code)]
 /// 音轨信息: (track_index, track_name, note_count)
 pub type TrackInfo = (usize, Option<String>, u64);
 
+#[allow(dead_code)]
 /// 音轨音符映射: track_index -> notes (tick, key, length, velocity, channel)
 pub type TrackNotesMap = HashMap<usize, Vec<(f32, u8, f32, u8, u8)>>;
 
+#[allow(dead_code)]
 /// 音轨MIDI控制事件
 #[derive(Debug, Clone, Default)]
 pub struct TrackMidiEvents {
@@ -15,6 +19,7 @@ pub struct TrackMidiEvents {
     pub pitch_bends: Vec<(f32, u8, f32)>,        // tick, channel, value (-1.0~1.0)
 }
 
+#[allow(dead_code)]
 /// 从 midly Smf 数据解析音符和控制事件
 pub fn parse_smf(
     smf: &Smf,

@@ -16,13 +16,11 @@
 //! | `ui` | UI | PerfData, TupletType, SpeedFactor |
 
 pub mod audio;
-pub mod collab;
 pub mod editor;
 pub mod midi;
 pub mod ui;
 
 pub use audio::*;
-pub use collab::*;
 pub use editor::*;
 pub use midi::*;
 pub use ui::*;

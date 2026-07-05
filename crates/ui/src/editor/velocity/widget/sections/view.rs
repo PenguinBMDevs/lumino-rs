@@ -7,7 +7,7 @@ use iced_widget::canvas::{self, Frame, Program};
 use crate::{Message, Renderer, Theme};
 
 use super::super::super::{
-    EditMode, PANEL_PADDING_X, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT, VelocityPanel,
+    EditMode, PANEL_PADDING_X, RESIZE_HANDLE_HEIGHT, VelocityPanel,
 };
 use super::super::drawing::{
     draw_horizontal_lines, draw_scale_labels, draw_tempo_graph, draw_vertical_lines,

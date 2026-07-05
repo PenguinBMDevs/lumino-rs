@@ -6,8 +6,6 @@
 //! - `encoding`: 编码辅助（bpm_to_tempo, tempo_to_bpm 重导出）
 //! - `calc`: 计算辅助（预留）
 
-use midly::{MetaMessage, TrackEvent, TrackEventKind};
-
 mod calc;
 mod encoding;
 mod export;

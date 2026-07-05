@@ -1,4 +1,7 @@
 fn main() {
+    // 声明自定义 cfg 标记，消除 unexpected_cfgs 警告
+    println!("cargo::rustc-check-cfg=cfg(windows_gui_subsystem)");
+
     // 嵌入 Windows 应用程序图标（.ico 文件，含 16x16~512x512 多分辨率）
     // embed_resource::compile("resources/icons/logo/lumino.rc", embed_resource::NONE)
     //     .manifest_optional()

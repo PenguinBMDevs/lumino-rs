@@ -1,5 +1,3 @@
-use bytemuck;
-
 use crate::types::TileCoord;
 
 use super::core_impl::HiResRenderer;

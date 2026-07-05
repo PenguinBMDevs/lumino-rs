@@ -6,5 +6,4 @@
 //! - `undo()` / `redo()` → editor.rs（父模块）
 //!
 //! 此模块为占位模块，dispatch 入口在 `handle_action()` 中保持。
-
-use crate::editor::Editor;
+//! `Editor` 类型仅在宏展开时使用，通过父模块路径访问。

@@ -1,7 +1,5 @@
 //! 翻译数据/字典 — 主界面翻译的静态数据（MainTranslations 结构体 + 中英文翻译表）
 
-use crate::i18n::Language;
-
 /// 主界面翻译
 #[derive(Debug, Clone)]
 pub struct MainTranslations {

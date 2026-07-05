@@ -8,7 +8,7 @@ mod panel;
 mod route;
 
 pub use core::{
-    DEFAULT_PANEL_WIDTH, MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH,
+    RESIZE_HANDLE_WIDTH,
     ROUTES, Route, RouteConfig, Sidebar, Track,
 };
 pub use event::Event;

@@ -3,10 +3,6 @@
 //! 子模块：
 //! - `core`: 核心入口点（render_with_separate_thread, redraw_separate_thread, validate_render_thread_ready）
 //! - `runner`: 渲染数据收集与参数构建
-//! - `stats`: 统计指标相关
 
 mod core;
 mod runner;
-mod stats;
-
-pub use core::WgpuRenderThread;

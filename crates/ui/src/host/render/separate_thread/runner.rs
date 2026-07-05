@@ -9,7 +9,6 @@
 
 use crate::RenderParams;
 use crate::host::Host;
-use crate::host::render::data;
 use crate::host::render::data::{GridColors, RenderData};
 use crate::host::render::note_worker;
 use crate::host::render::{DEFAULT_KEYBOARD_WIDTH, DEFAULT_RULER_HEIGHT};

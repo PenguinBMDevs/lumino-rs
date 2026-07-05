@@ -9,7 +9,7 @@ use crate::message::VelocityAction;
 
 use super::super::super::{
     RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT, VELOCITY_PANEL_MAX_HEIGHT, VELOCITY_PANEL_MIN_HEIGHT,
-    VelocityPanel, VelocityPoint,
+    VelocityPoint,
 };
 use super::super::state::VelocityCanvasState;
 

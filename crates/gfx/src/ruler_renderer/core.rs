@@ -5,7 +5,7 @@
 
 use wgpu::util::DeviceExt;
 
-use super::{GROWTH_FACTOR, INITIAL_CAPACITY, RulerRenderer, VERTEX_SHADER};
+use super::{INITIAL_CAPACITY, RulerRenderer, VERTEX_SHADER};
 
 /// 标尺刻度实例数据
 #[repr(C)]

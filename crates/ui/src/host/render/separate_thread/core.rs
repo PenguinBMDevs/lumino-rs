@@ -1,10 +1,8 @@
 //! 核心入口点 — 分离渲染线程模式的主入口、验证和参数发送
 //!
-//! 提供 WgpuRenderThread 类型的重导出，以及 Host 的渲染入口方法。
+//! 提供分离渲染线程模式的主入口、验证和参数发送方法。
 
 use crate::host::Host;
-
-pub use lumino_gfx::render_thread::WgpuRenderThread;
 
 impl Host {
     /// 分离渲染线程模式的主渲染入口

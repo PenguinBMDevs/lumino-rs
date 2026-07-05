@@ -4,7 +4,7 @@
 
 use crate::editor::note::Note;
 use crate::editor::velocity::VelocityPanel;
-use crate::editor::{Editor, EditorMemory, SelectionBoxAnimState, SpatialIndexState, grid};
+use crate::editor::{Editor, EditorMemory, SpatialIndexState, grid};
 use crate::message::AudioAction;
 use iced_core::Point;
 use iced_widget::canvas;
