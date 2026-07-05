@@ -1,86 +1,27 @@
-//! 高精度贴图 wgpu 渲染器
-//!
-//! 管理多个整合组贴图的 GPU 纹理，按视口可见性上传/淘汰，
-//! 每帧绘制可见贴图。每张贴图覆盖一个 area 矩形（framebuffer 像素）。
-
 use std::collections::HashMap;
-
-use bytemuck::{Pod, Zeroable};
 
 use crate::config::HiResConfig;
 use crate::types::TileCoord;
 
+use super::texture::TileGpuResource;
+use super::uniform::HiResUniform;
+
 /// 着色器源码
-const SHADER_SOURCE: &str = include_str!("shaders/hires_tile.wgsl");
-
-/// 每张贴图的 uniform（32 字节，满足 16 字节对齐）
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-pub struct HiResUniform {
-    /// area 矩形在 framebuffer 中的 X（左上角）
-    pub area_x: f32,
-    /// area 矩形在 framebuffer 中的 Y（左上角）
-    pub area_y: f32,
-    /// area 矩形宽度
-    pub area_w: f32,
-    /// area 矩形高度
-    pub area_h: f32,
-    /// canvas 总宽度（像素）
-    pub canvas_w: f32,
-    /// canvas 总高度（像素）
-    pub canvas_h: f32,
-    _pad0: f32,
-    _pad1: f32,
-}
-
-impl HiResUniform {
-    pub fn new(
-        area_x: f32,
-        area_y: f32,
-        area_w: f32,
-        area_h: f32,
-        canvas_w: f32,
-        canvas_h: f32,
-    ) -> Self {
-        Self {
-            area_x,
-            area_y,
-            area_w,
-            area_h,
-            canvas_w,
-            canvas_h,
-            _pad0: 0.0,
-            _pad1: 0.0,
-        }
-    }
-}
-
-/// 单张贴图的 GPU 资源
-///
-/// `texture` 和 `view` 虽不直接读取，但必须保活以持有 GPU 资源所有权，
-/// drop 时自动释放显存。
-#[allow(dead_code)]
-struct TileGpuResource {
-    texture: wgpu::Texture,
-    view: wgpu::TextureView,
-    bind_group: wgpu::BindGroup,
-    uniform_buffer: wgpu::Buffer,
-    byte_size: usize,
-}
+const SHADER_SOURCE: &str = include_str!("../shaders/hires_tile.wgsl");
 
 /// 高精度贴图渲染器
 pub struct HiResRenderer {
-    pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
-    sampler: wgpu::Sampler,
+    pub(super) pipeline: wgpu::RenderPipeline,
+    pub(super) bind_group_layout: wgpu::BindGroupLayout,
+    pub(super) sampler: wgpu::Sampler,
     /// 已上传的贴图纹理（TileCoord → GPU 资源）
-    tiles: HashMap<TileCoord, TileGpuResource>,
+    pub(super) tiles: HashMap<TileCoord, TileGpuResource>,
     /// 编辑后的临时脏区域贴图覆层（叠加在正常贴图之上）
-    dirty_overlays: HashMap<TileCoord, TileGpuResource>,
+    pub(super) dirty_overlays: HashMap<TileCoord, TileGpuResource>,
     /// GPU 显存占用（字节）
-    gpu_mem_used: usize,
+    pub(super) gpu_mem_used: usize,
     /// 配置（含显存上限等）
-    config: HiResConfig,
+    pub(super) config: HiResConfig,
 }
 
 impl HiResRenderer {
@@ -410,60 +351,6 @@ impl HiResRenderer {
         }
     }
 
-    /// 绘制可见贴图（在 render_pass 内调用）
-    ///
-    /// 若某个坐标存在临时脏区域覆层，则跳过该坐标的基础贴图绘制。
-    /// 因为脏区域覆层已包含该音轨组当前完整状态（含删除后的音符），
-    /// 直接替代基础贴图可避免旧音符透过覆层继续显示。
-    pub fn render<'a>(
-        &'a self,
-        render_pass: &mut wgpu::RenderPass<'a>,
-        visible_coords: &[TileCoord],
-    ) {
-        render_pass.set_pipeline(&self.pipeline);
-        for coord in visible_coords {
-            // 有临时覆层时跳过基础贴图——覆层会覆盖完整当前状态
-            if self.dirty_overlays.contains_key(coord) {
-                continue;
-            }
-            if let Some(gpu) = self.tiles.get(coord) {
-                render_pass.set_bind_group(0, &gpu.bind_group, &[]);
-                render_pass.draw(0..6, 0..1);
-            }
-        }
-    }
-
-    /// 准备临时脏区域覆层的 uniform
-    pub fn prepare_dirty_overlays(
-        &self,
-        queue: &wgpu::Queue,
-        visible: &[(TileCoord, HiResUniform)],
-    ) {
-        for (coord, uniform) in visible {
-            if let Some(gpu) = self.dirty_overlays.get(coord) {
-                queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(uniform));
-            }
-        }
-    }
-
-    /// 绘制临时脏区域覆层（替代对应坐标的基础贴图）
-    ///
-    /// 覆层贴图包含该音轨组的完整当前状态，`render` 会跳过同一坐标的基础贴图，
-    /// 因此此处直接绘制即可，无需再与基础贴图做 Alpha 叠加。
-    pub fn render_dirty_overlays<'a>(
-        &'a self,
-        render_pass: &mut wgpu::RenderPass<'a>,
-        visible_coords: &[TileCoord],
-    ) {
-        render_pass.set_pipeline(&self.pipeline);
-        for coord in visible_coords {
-            if let Some(gpu) = self.dirty_overlays.get(coord) {
-                render_pass.set_bind_group(0, &gpu.bind_group, &[]);
-                render_pass.draw(0..6, 0..1);
-            }
-        }
-    }
-
     /// 检查贴图是否已上传
     pub fn has_tile(&self, coord: &TileCoord) -> bool {
         self.tiles.contains_key(coord)
@@ -506,65 +393,5 @@ impl HiResRenderer {
         color_format: wgpu::TextureFormat,
     ) {
         self.pipeline = Self::create_pipeline(device, &self.bind_group_layout, color_format);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::HiResConfig;
-
-    /// 尝试创建 wgpu 设备；无可用 GPU 时返回 None，测试自动跳过。
-    fn try_create_device() -> Option<(wgpu::Device, wgpu::Queue)> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
-        });
-        let adapter =
-            futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: None,
-                force_fallback_adapter: false,
-            }))
-            .ok()?;
-        let (device, queue) =
-            futures::executor::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults(),
-                memory_hints: wgpu::MemoryHints::default(),
-                trace: wgpu::Trace::Off,
-                experimental_features: wgpu::ExperimentalFeatures::disabled(),
-            }))
-            .ok()?;
-        Some((device, queue))
-    }
-
-    #[test]
-    fn test_dirty_overlay_replaces_base_tile_state() {
-        let Some((device, queue)) = try_create_device() else {
-            // 当前环境无可用 GPU，跳过 GPU 相关断言
-            return;
-        };
-
-        let config = HiResConfig::default();
-        let mut renderer = HiResRenderer::new(&device, config, wgpu::TextureFormat::Rgba8UnormSrgb);
-        let coord = TileCoord::new(0, 0);
-        let pixels = vec![128u8; 64 * 64 * 4];
-
-        // 上传基础贴图：应存在基础贴图，无覆层
-        renderer.upload_tile(&device, &queue, coord, &pixels, 64, 64);
-        assert!(renderer.has_tile(&coord));
-        assert!(!renderer.has_dirty_overlay(&coord));
-
-        // 上传脏区域覆层：基础贴图仍在，但 render 会跳过它，由覆层替代
-        renderer.upload_dirty_overlay(&device, &queue, coord, &pixels, 64, 64);
-        assert!(renderer.has_tile(&coord));
-        assert!(renderer.has_dirty_overlay(&coord));
-
-        // 新的基础贴图上传后，脏区域覆层被清理（模拟冷静期后重生成）
-        renderer.upload_tile(&device, &queue, coord, &pixels, 64, 64);
-        assert!(renderer.has_tile(&coord));
-        assert!(!renderer.has_dirty_overlay(&coord));
     }
 }

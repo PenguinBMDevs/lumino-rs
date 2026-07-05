@@ -12,260 +12,27 @@
 //!
 //! 文件命名：`{midi_hash}_t{track_idx}_g{time_group}.lmocache`
 //! 按 MIDI 内容哈希分桶，不同 MIDI 不会串台。
+//!
+//! # 内部模块
+//!
+//! - [`core`]：缓存核心结构体、错误类型与工具函数
+//! - [`io`]：磁盘读写操作（save/load）
+//! - [`cleanup`]：清理与淘汰逻辑
 
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+mod cleanup;
+mod core;
+mod io;
 
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
-
-use crate::types::TrackTile;
-
-/// 缓存文件 magic 标识
-const MAGIC: &[u8; 8] = b"LMOCache";
-
-/// 缓存格式版本
-const VERSION: u16 = 1;
-
-/// zstd 压缩级别（与 LMPJ 工程文件一致，快速压缩）
-const ZSTD_LEVEL: i32 = 3;
-
-/// 缓存元数据（随像素一起落盘，用于失效校验）
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct CacheMeta {
-    pub track_idx: u16,
-    pub time_group: u32,
-    pub width: u32,
-    pub height: u32,
-    pub tick_start: u32,
-    pub tick_end: u32,
-    pub key_count: u16,
-    pub ppq: u16,
-    pub measures_per_group: u32,
-}
-
-impl CacheMeta {
-    /// 从贴图块与当前规格构造元数据
-    pub fn from_tile(tile: &TrackTile, key_count: u16, ppq: u16, measures_per_group: u32) -> Self {
-        Self {
-            track_idx: tile.track_idx,
-            time_group: tile.time_group,
-            width: tile.width,
-            height: tile.height,
-            tick_start: tile.tick_start,
-            tick_end: tile.tick_end,
-            key_count,
-            ppq,
-            measures_per_group,
-        }
-    }
-
-    /// 校验规格是否与期望一致（ppq/小节数/宽高/key数变化则缓存失效）
-    pub fn matches_spec(
-        &self,
-        width: u32,
-        height: u32,
-        key_count: u16,
-        ppq: u16,
-        measures_per_group: u32,
-    ) -> bool {
-        self.width == width
-            && self.height == height
-            && self.key_count == key_count
-            && self.ppq == ppq
-            && self.measures_per_group == measures_per_group
-    }
-}
-
-/// 缓存读写错误
-#[derive(Debug, Error)]
-pub enum CacheError {
-    #[error("IO 错误: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("magic 不匹配: 期望 {expected:?}, 实际 {actual:?}")]
-    MagicMismatch { expected: [u8; 8], actual: [u8; 8] },
-    #[error("版本不匹配: 期望 {expected}, 实际 {actual}")]
-    VersionMismatch { expected: u16, actual: u16 },
-    #[error("元数据序列化/反序列化失败: {0}")]
-    MetaCodec(String),
-    #[error("像素压缩/解压失败: {0}")]
-    PixelCodec(String),
-    #[error("规格不匹配（缓存失效）: {0}")]
-    SpecMismatch(String),
-}
-
-/// 生成 MIDI 内容哈希（轻量方案：xxh3，16 位十六进制）
-///
-/// 非加密哈希，碰撞概率极低且 `.lmocache` 仅是缓存可容忍偶发碰撞。
-/// 使用 xxh3 默认种子（0），保证跨进程、跨会话哈希稳定，使磁盘缓存真正生效。
-pub fn compute_midi_hash(data: &[u8]) -> String {
-    format!("{:016x}", xxhash_rust::xxh3::xxh3_64(data))
-}
-
-/// 生成缓存文件名
-fn cache_file_name(midi_hash: &str, track_idx: u16, time_group: u32) -> String {
-    format!("{midi_hash}_t{track_idx}_g{time_group}.lmocache")
-}
-
-/// 生成缓存文件完整路径
-pub fn cache_path(cache_dir: &Path, midi_hash: &str, track_idx: u16, time_group: u32) -> PathBuf {
-    cache_dir.join(cache_file_name(midi_hash, track_idx, time_group))
-}
-
-/// 写入单音轨贴图缓存
-///
-/// 成功返回写入的文件路径。若缓存目录不存在会自动创建。
-pub fn write_track_tile_cache(
-    cache_dir: &Path,
-    midi_hash: &str,
-    tile: &TrackTile,
-    meta: &CacheMeta,
-) -> Result<PathBuf, CacheError> {
-    std::fs::create_dir_all(cache_dir)?;
-    let path = cache_path(cache_dir, midi_hash, tile.track_idx, tile.time_group);
-    write_cache_file(&path, tile, meta)?;
-    Ok(path)
-}
-
-fn write_cache_file(path: &Path, tile: &TrackTile, meta: &CacheMeta) -> Result<(), CacheError> {
-    let meta_bytes = bincode::serialize(meta).map_err(|e| CacheError::MetaCodec(e.to_string()))?;
-    let compressed = zstd::stream::encode_all(tile.pixels.as_slice(), ZSTD_LEVEL)
-        .map_err(|e| CacheError::PixelCodec(e.to_string()))?;
-
-    let mut file = std::fs::File::create(path)?;
-    file.write_all(MAGIC)?;
-    file.write_all(&VERSION.to_le_bytes())?;
-    file.write_all(&(meta_bytes.len() as u32).to_le_bytes())?;
-    file.write_all(&meta_bytes)?;
-    file.write_all(&compressed)?;
-    Ok(())
-}
-
-/// 读取单音轨贴图缓存（含失效校验）
-///
-/// 文件不存在返回 `Ok(None)`。文件存在但 magic/version/规格不匹配返回 `Err`，
-/// 调用方应捕获后删除损坏文件并重生成。
-pub fn read_track_tile_cache(
-    cache_dir: &Path,
-    midi_hash: &str,
-    track_idx: u16,
-    time_group: u32,
-    expected: &CacheMeta,
-) -> Result<Option<TrackTile>, CacheError> {
-    let path = cache_path(cache_dir, midi_hash, track_idx, time_group);
-    if !path.exists() {
-        return Ok(None);
-    }
-    read_cache_file(&path, track_idx, time_group, expected).map(Some)
-}
-
-fn read_cache_file(
-    path: &Path,
-    track_idx: u16,
-    time_group: u32,
-    expected: &CacheMeta,
-) -> Result<TrackTile, CacheError> {
-    let mut file = std::fs::File::open(path)?;
-
-    let mut magic = [0u8; 8];
-    file.read_exact(&mut magic)?;
-    if &magic != MAGIC {
-        return Err(CacheError::MagicMismatch {
-            expected: *MAGIC,
-            actual: magic,
-        });
-    }
-
-    let mut version_buf = [0u8; 2];
-    file.read_exact(&mut version_buf)?;
-    let version = u16::from_le_bytes(version_buf);
-    if version != VERSION {
-        return Err(CacheError::VersionMismatch {
-            expected: VERSION,
-            actual: version,
-        });
-    }
-
-    let mut meta_len_buf = [0u8; 4];
-    file.read_exact(&mut meta_len_buf)?;
-    let meta_len = u32::from_le_bytes(meta_len_buf) as usize;
-
-    let mut meta_bytes = vec![0u8; meta_len];
-    file.read_exact(&mut meta_bytes)?;
-    let meta: CacheMeta =
-        bincode::deserialize(&meta_bytes).map_err(|e| CacheError::MetaCodec(e.to_string()))?;
-
-    if !meta.matches_spec(
-        expected.width,
-        expected.height,
-        expected.key_count,
-        expected.ppq,
-        expected.measures_per_group,
-    ) {
-        return Err(CacheError::SpecMismatch(format!(
-            "缓存元数据 {meta:?} 与期望规格 (w={},h={},key={},ppq={},mpg={}) 不符",
-            expected.width,
-            expected.height,
-            expected.key_count,
-            expected.ppq,
-            expected.measures_per_group
-        )));
-    }
-
-    let mut compressed = Vec::new();
-    file.read_to_end(&mut compressed)?;
-    let pixels = zstd::stream::decode_all(compressed.as_slice())
-        .map_err(|e| CacheError::PixelCodec(e.to_string()))?;
-
-    Ok(TrackTile {
-        track_idx,
-        time_group,
-        pixels,
-        width: meta.width,
-        height: meta.height,
-        tick_start: meta.tick_start,
-        tick_end: meta.tick_end,
-    })
-}
-
-/// 清理指定 MIDI 的所有缓存文件，返回删除数量
-pub fn clear_midi_cache(cache_dir: &Path, midi_hash: &str) -> Result<u32, CacheError> {
-    let prefix = format!("{midi_hash}_");
-    let mut count = 0;
-    if cache_dir.exists() {
-        for entry in std::fs::read_dir(cache_dir)? {
-            let entry = entry?;
-            if let Some(name) = entry.file_name().to_str()
-                && name.starts_with(&prefix)
-                && name.ends_with(".lmocache")
-            {
-                std::fs::remove_file(entry.path())?;
-                count += 1;
-            }
-        }
-    }
-    Ok(count)
-}
-
-/// 清理缓存目录下全部 `.lmocache` 文件，返回删除数量
-pub fn clear_all_cache(cache_dir: &Path) -> Result<u32, CacheError> {
-    let mut count = 0;
-    if cache_dir.exists() {
-        for entry in std::fs::read_dir(cache_dir)? {
-            let entry = entry?;
-            if let Some(name) = entry.file_name().to_str()
-                && name.ends_with(".lmocache")
-            {
-                std::fs::remove_file(entry.path())?;
-                count += 1;
-            }
-        }
-    }
-    Ok(count)
-}
+pub use cleanup::{clear_all_cache, clear_midi_cache};
+pub use core::{CacheError, CacheMeta, cache_path, compute_midi_hash};
+pub use io::{read_track_tile_cache, write_track_tile_cache};
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use crate::types::TrackTile;
+
     use super::*;
 
     /// 构造测试用临时缓存目录（按进程 id + 计数隔离）
