@@ -14,6 +14,7 @@ pub mod view_state;
 
 pub use editor_state::{
     CanvasState, EditState, EditorData, EditorState, HitType, InteractionState, SelectionHitType,
+    DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, GLUE_PROXIMITY_THRESHOLD, SELECTION_BOX_EDGE_THRESHOLD,
 };
 pub use editor_transform::EditorTransform;
 pub use error::{CoreError, Result};

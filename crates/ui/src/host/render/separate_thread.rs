@@ -506,35 +506,35 @@ impl Host {
             ))
         };
 
-        RenderParams::from_data(
-            (physical_size.width, physical_size.height),
-            (data.viewport_size.width, data.viewport_size.height),
-            self.render_ctx.viewport.scale_factor(),
-            data.scroll,
-            data.zoom,
-            keyboard_width,
-            ruler_height,
-            (canvas_offset.0, canvas_offset.1),
-            (canvas_size.0, canvas_size.1),
-            bg_color,
-            colors.bg,
-            colors.black_key,
-            colors.bar_line,
-            colors.beat_line,
-            colors.half_beat_line,
-            colors.grid_line,
-            colors.key_line,
-            ppq as f32,
-            max_key_index,
-            is_arrangement_mode,
-            data.grid_instances,
-            data.ruler_instances,
-            data.keyboard_instances,
-            data.arrangement_note_instances,
-            arrangement_uniform,
-            data.cc_bar_instances,
-            velocity_panel_rect,
-        )
+        RenderParams::builder()
+            .viewport_size((physical_size.width, physical_size.height))
+            .logical_size((data.viewport_size.width, data.viewport_size.height))
+            .scale_factor(self.render_ctx.viewport.scale_factor())
+            .scroll(data.scroll)
+            .zoom(data.zoom)
+            .keyboard_width(keyboard_width)
+            .ruler_height(ruler_height)
+            .canvas_offset((canvas_offset.0, canvas_offset.1))
+            .canvas_size((canvas_size.0, canvas_size.1))
+            .background_color(bg_color)
+            .color_bg(colors.bg)
+            .color_bg_black_key(colors.black_key)
+            .color_bar(colors.bar_line)
+            .color_beat(colors.beat_line)
+            .color_half_beat(colors.half_beat_line)
+            .color_grid(colors.grid_line)
+            .color_key_line(colors.key_line)
+            .ppq(ppq as f32)
+            .max_key_index(max_key_index)
+            .is_arrangement_mode(is_arrangement_mode)
+            .grid_instances(data.grid_instances)
+            .ruler_instances(data.ruler_instances)
+            .keyboard_instances(data.keyboard_instances)
+            .arrangement_note_instances(data.arrangement_note_instances)
+            .arrangement_uniform(arrangement_uniform)
+            .cc_bar_instances(data.cc_bar_instances)
+            .velocity_panel_rect(velocity_panel_rect)
+            .build()
     }
 
     // build_velocity_graph_instances 已迁移到 build_cc_bar_instances

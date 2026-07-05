@@ -12,6 +12,18 @@ use crate::storage::config::{AutoScrollConfig, EraserBehavior, SelectionBoxMode}
 use crate::view_state::ViewState;
 use lumino_message::{AudioAction, Tool};
 
+/// 默认 BPM（用于新文档初始化和重置）
+pub const DEFAULT_BPM: f64 = 120.0;
+
+/// 默认预览音符力度（点击/绘制音符时的试听力度）
+pub const DEFAULT_PREVIEW_VELOCITY: u8 = 100;
+
+/// 选择框边缘命中阈值（像素）
+pub const SELECTION_BOX_EDGE_THRESHOLD: f32 = 4.0;
+
+/// 音符合并邻近阈值（tick）
+pub const GLUE_PROXIMITY_THRESHOLD: f32 = 1.0;
+
 // ─── CanvasState ───
 
 /// Canvas 状态（尺寸和偏移）
@@ -170,7 +182,7 @@ impl EditorData {
             cc_data: CcData::default(),
             tempo_points: vec![TempoPoint {
                 tick: 0.0,
-                bpm: 120.0,
+                bpm: DEFAULT_BPM,
             }],
         }
     }
@@ -327,7 +339,7 @@ impl EditorData {
         for note in &sn {
             let added = match groups.last_mut() {
                 Some(g) => match g.last() {
-                    Some(last) if last.2 == note.2 && note.1 <= last.1 + last.3 + 1.0 => {
+                    Some(last) if last.2 == note.2 && note.1 <= last.1 + last.3 + GLUE_PROXIMITY_THRESHOLD => {
                         g.push(*note);
                         true
                     }
@@ -655,7 +667,7 @@ impl EditorState {
         if pos.0 < min_x || pos.0 > max_x || pos.1 < min_y || pos.1 > max_y {
             return None;
         }
-        let et = 4.0f32;
+        let et = SELECTION_BOX_EDGE_THRESHOLD;
         let ol = (pos.0 - min_x).abs() < et;
         let orr = (pos.0 - max_x).abs() < et;
         if ol && !orr {
@@ -719,7 +731,7 @@ impl EditorState {
                     original_tick: note.tick,
                     original_key: note.key,
                 };
-                self.interaction.play_note_audio(note.key, 100);
+                self.interaction.play_note_audio(note.key, DEFAULT_PREVIEW_VELOCITY);
             }
         }
     }
@@ -731,7 +743,7 @@ impl EditorState {
             key,
             current_tick: snapped_tick,
         };
-        self.interaction.play_note_audio(key, 100);
+        self.interaction.play_note_audio(key, DEFAULT_PREVIEW_VELOCITY);
     }
 
     /// 应用音符变化（单音符编辑），返回是否发生了变更
