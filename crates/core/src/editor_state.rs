@@ -1,459 +1,31 @@
 //! 编辑器状态与业务逻辑
 //!
-//! 包含 EditorData、InteractionState、CanvasState 以及所有音符操作业务逻辑。
+//! 本模块将原先单一 God Object 文件拆分为内聚子模块：
+//!
+//! - `constants`: 编辑器相关常量
+//! - `canvas_state`: Canvas 几何状态
+//! - `interaction_state`: 交互状态机
+//! - `editor_data`: 音符数据与音轨缓存
+//!
+//! `EditorState` 作为 facade 聚合以上模块，保留跨领域的协调业务逻辑。
 
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+pub mod canvas_state;
+pub mod constants;
+pub mod editor_data;
+pub mod interaction_state;
 
-use crate::history::{EditorSnapshot, History};
-use crate::midi_types::{CcData, TempoPoint};
-use crate::note::Note;
+pub use canvas_state::CanvasState;
+pub use constants::{
+    DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, GLUE_PROXIMITY_THRESHOLD, SELECTION_BOX_EDGE_THRESHOLD,
+};
+pub use editor_data::EditorData;
+pub use interaction_state::{EditState, HitType, InteractionState, SelectionHitType};
+
+use std::collections::HashSet;
+
+use crate::Tool;
 use crate::storage::config::{AutoScrollConfig, EraserBehavior, SelectionBoxMode};
 use crate::view_state::ViewState;
-use crate::{AudioAction, Tool};
-
-/// 默认 BPM（用于新文档初始化和重置）
-pub const DEFAULT_BPM: f64 = 120.0;
-
-/// 默认预览音符力度（点击/绘制音符时的试听力度）
-pub const DEFAULT_PREVIEW_VELOCITY: u8 = 100;
-
-/// 选择框边缘命中阈值（像素）
-pub const SELECTION_BOX_EDGE_THRESHOLD: f32 = 4.0;
-
-/// 音符合并邻近阈值（tick）
-pub const GLUE_PROXIMITY_THRESHOLD: f32 = 1.0;
-
-// ─── CanvasState ───
-
-/// Canvas 状态（尺寸和偏移）
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CanvasState {
-    /// Canvas 在窗口中的偏移量（用于坐标转换）
-    pub offset_x: f32,
-    pub offset_y: f32,
-    /// Canvas 尺寸（宽, 高）
-    pub size_x: f32,
-    pub size_y: f32,
-    /// 当前鼠标在窗口中的位置
-    pub cursor_position: Option<(f32, f32)>,
-}
-
-impl CanvasState {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-// ─── 交互状态 ───
-
-/// 编辑状态
-#[derive(Debug, Clone, Default, PartialEq)]
-pub enum EditState {
-    #[default]
-    Idle,
-    Selecting {
-        start_tick: f32,
-        start_key: u16,
-        current_tick: f32,
-        current_key: u16,
-    },
-    Drawing {
-        start_tick: f32,
-        key: u16,
-        current_tick: f32,
-    },
-    PendingDrag {
-        note_index: usize,
-        start_pos: (f32, f32),
-        original_tick: f32,
-        original_key: u16,
-    },
-    Dragging {
-        note_index: usize,
-        offset_tick: f32,
-        offset_key: i32,
-        last_played_key: u16,
-        original_tick: f32,
-        original_key: u16,
-    },
-    ResizingStart {
-        note_index: usize,
-        original_tick: f32,
-        original_length: f32,
-    },
-    ResizingEnd {
-        note_index: usize,
-    },
-    DraggingSelection {
-        last_tick: f32,
-        last_key: u16,
-    },
-    ResizingSelectionStart {
-        last_tick: f32,
-    },
-    ResizingSelectionEnd {
-        last_tick: f32,
-    },
-    Scrubbing,
-}
-
-/// 点击命中类型
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum HitType {
-    Start,
-    Middle,
-    End,
-}
-
-/// 选择框命中类型
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SelectionHitType {
-    Inside,
-    LeftEdge,
-    RightEdge,
-}
-
-/// 交互状态
-#[derive(Debug, Default)]
-pub struct InteractionState {
-    pub edit_state: EditState,
-    pub hover_state: Option<(usize, HitType)>,
-    pub selected_notes: HashSet<usize>,
-    /// 待处理的音频动作
-    pub pending_audio_actions: Vec<AudioAction>,
-}
-
-impl InteractionState {
-    /// 获取并清空待处理的音频动作
-    pub fn take_audio_actions(&mut self) -> Vec<AudioAction> {
-        std::mem::take(&mut self.pending_audio_actions)
-    }
-
-    /// 添加音频动作
-    pub fn push_audio_action(&mut self, action: AudioAction) {
-        self.pending_audio_actions.push(action);
-    }
-
-    /// 添加播放音符的音频动作
-    pub fn play_note_audio(&mut self, key: u16, velocity: u8) {
-        self.pending_audio_actions.push(AudioAction::PlayNote {
-            key: key as u8,
-            velocity,
-        });
-    }
-}
-
-// ─── EditorData ───
-
-/// 编辑器数据
-#[derive(Debug)]
-pub struct EditorData {
-    pub notes: im::Vector<Note>,
-    pub current_track: usize,
-    pub track_notes: HashMap<usize, im::Vector<Note>>,
-    /// 递增版本号，track_notes 每次变化时 bump。
-    /// 用于 NoteWorker 快照的 Arc 缓存失效检测，避免每帧全量克隆 HashMap。
-    pub track_notes_gen: u64,
-    /// 被编辑过的音轨集合（用于协作同步，记录需要广播变更的所有音轨）
-    pub edited_tracks: HashSet<usize>,
-    pub document: Option<Arc<lumino_midi_loader::MidiDocument>>,
-    pub history: History,
-    pub cc_data: CcData,
-    pub tempo_points: Vec<TempoPoint>,
-}
-
-impl Default for EditorData {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl EditorData {
-    pub fn new() -> Self {
-        Self {
-            notes: im::Vector::new(),
-            current_track: 0,
-            track_notes: HashMap::new(),
-            track_notes_gen: 0,
-            edited_tracks: HashSet::new(),
-            document: None,
-            history: History::new(),
-            cc_data: CcData::default(),
-            tempo_points: vec![TempoPoint {
-                tick: 0.0,
-                bpm: DEFAULT_BPM,
-            }],
-        }
-    }
-
-    /// 标记 track_notes 已变化（递增版本号）
-    ///
-    /// 所有直接修改 `self.track_notes` 的地方都必须在操作后调用此方法，
-    /// 否则 NoteWorker 快照缓存无法感知数据变化。
-    #[inline]
-    pub fn mark_track_notes_changed(&mut self) {
-        self.track_notes_gen = self.track_notes_gen.wrapping_add(1);
-    }
-
-    /// 重置编辑器数据到初始状态（释放所有内存）
-    pub fn reset(&mut self) {
-        self.notes.clear();
-        self.track_notes.clear();
-        self.edited_tracks.clear();
-        self.mark_track_notes_changed();
-        self.current_track = 0;
-        self.history.clear();
-        self.document = None;
-        self.cc_data = CcData::default();
-        self.tempo_points = vec![TempoPoint {
-            tick: 0.0,
-            bpm: 120.0,
-        }];
-    }
-
-    // ── 历史记录 ──
-
-    pub fn push_history(&mut self) {
-        self.history
-            .push(EditorSnapshot::new(self.notes.clone(), self.current_track));
-    }
-
-    pub fn undo(&mut self) -> bool {
-        let current = EditorSnapshot::new(self.notes.clone(), self.current_track);
-        if let Some(snapshot) = self.history.undo(current) {
-            self.notes = snapshot.notes;
-            self.current_track = snapshot.current_track;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn redo(&mut self) -> bool {
-        let current = EditorSnapshot::new(self.notes.clone(), self.current_track);
-        if let Some(snapshot) = self.history.redo(current) {
-            self.notes = snapshot.notes;
-            self.current_track = snapshot.current_track;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn can_undo(&self) -> bool {
-        self.history.can_undo()
-    }
-    pub fn can_redo(&self) -> bool {
-        self.history.can_redo()
-    }
-
-    /// 同步 notes 到 track_notes 缓存
-    pub fn sync_track_notes(&mut self) {
-        if self.notes.is_empty() {
-            self.track_notes.remove(&self.current_track);
-        } else {
-            self.track_notes
-                .insert(self.current_track, self.notes.clone());
-        }
-        self.mark_track_notes_changed();
-    }
-
-    // ── 音符操作 ──
-
-    pub fn delete_note_by_index(&mut self, index: usize) {
-        if index < self.notes.len() {
-            self.push_history();
-            self.notes.remove(index);
-            self.sync_track_notes();
-        }
-    }
-
-    pub fn delete_selected_notes(&mut self, selected: &HashSet<usize>) {
-        if selected.is_empty() {
-            return;
-        }
-        self.push_history();
-        let mut indices: Vec<usize> = selected.iter().copied().collect();
-        indices.sort_by(|a, b| b.cmp(a));
-        for &i in &indices {
-            if i < self.notes.len() {
-                self.notes.remove(i);
-            }
-        }
-        self.sync_track_notes();
-    }
-
-    pub fn select_all_notes(&self) -> HashSet<usize> {
-        (0..self.notes.len()).collect()
-    }
-
-    /// 分割音符
-    pub fn split_note(&mut self, index: usize, split_tick: f32) -> bool {
-        if index >= self.notes.len() {
-            return false;
-        }
-        let (note_tick, note_length, key, velocity, channel) = {
-            let n = &self.notes[index];
-            if split_tick <= n.tick || split_tick >= n.tick + n.length {
-                return false;
-            }
-            (n.tick, n.length, n.key, n.velocity, n.channel)
-        };
-        self.push_history();
-        self.notes.remove(index);
-        let right = Note::from_raw(
-            split_tick,
-            key,
-            note_tick + note_length - split_tick,
-            velocity,
-            channel,
-        );
-        self.notes.insert(index, right);
-        let left = Note::from_raw(note_tick, key, split_tick - note_tick, velocity, channel);
-        self.notes.insert(index, left);
-        self.sync_track_notes();
-        true
-    }
-
-    /// 合并选中音符
-    pub fn glue_selected_notes(&mut self, selected: &HashSet<usize>) -> usize {
-        let sel: Vec<usize> = selected.iter().copied().collect();
-        if sel.is_empty() {
-            return 0;
-        }
-        type NT = (usize, f32, u16, f32, u8, u8);
-        let mut sn: Vec<NT> = sel
-            .iter()
-            .filter_map(|&i| {
-                self.notes
-                    .get(i)
-                    .map(|n| (i, n.tick, n.key, n.length, n.velocity, n.channel))
-            })
-            .collect();
-        if sn.is_empty() {
-            return 0;
-        }
-        sn.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        let mut groups: Vec<Vec<NT>> = Vec::new();
-        for note in &sn {
-            let added = match groups.last_mut() {
-                Some(g) => match g.last() {
-                    Some(last)
-                        if last.2 == note.2
-                            && note.1 <= last.1 + last.3 + GLUE_PROXIMITY_THRESHOLD =>
-                    {
-                        g.push(*note);
-                        true
-                    }
-                    _ => false,
-                },
-                None => false,
-            };
-            if !added {
-                groups.push(vec![*note]);
-            }
-        }
-        let groups: Vec<Vec<NT>> = groups.into_iter().filter(|g| g.len() >= 2).collect();
-        if groups.is_empty() {
-            return 0;
-        }
-        self.push_history();
-        let mut merged = 0usize;
-        for group in &groups {
-            let first = &group[0];
-            let last = &group[group.len() - 1];
-            let merged_tick = first.1;
-            let merged_length = (last.1 + last.3) - merged_tick;
-            let rm: Vec<usize> = group.iter().map(|n| n.0).collect();
-            let mut rm_sorted = rm.clone();
-            rm_sorted.sort_by(|a, b| b.cmp(a));
-            for &idx in &rm_sorted {
-                self.notes.remove(idx);
-            }
-            let adj = rm[0].min(self.notes.len());
-            self.notes.insert(
-                adj,
-                Note::from_raw(merged_tick, first.2, merged_length, first.4, first.5),
-            );
-            merged += 1;
-        }
-        self.sync_track_notes();
-        merged
-    }
-
-    /// 完成绘制新音符（纯业务逻辑），返回创建的 Note
-    pub fn finish_drawing(
-        &mut self,
-        start_tick: f32,
-        key: u16,
-        current_tick: f32,
-        snap_precision: f32,
-        default_note_length: f32,
-    ) -> Option<Note> {
-        if self.current_track == 0 {
-            tracing::debug!("编辑器: Conductor 轨道禁止放置音符");
-            return None;
-        }
-        let (tick, length) = if current_tick > start_tick {
-            (start_tick, current_tick - start_tick)
-        } else if current_tick < start_tick {
-            (current_tick, start_tick - current_tick)
-        } else {
-            (start_tick, default_note_length)
-        };
-        let length = length.max(snap_precision);
-        self.push_history();
-        let note = Note::new(tick, key, length);
-        self.notes.push_back(note.clone());
-        self.track_notes
-            .insert(self.current_track, self.notes.clone());
-        self.mark_track_notes_changed();
-        tracing::debug!(
-            "编辑器: 已保存 {} 个音符到音轨 {}",
-            self.notes.len(),
-            self.current_track
-        );
-        Some(note)
-    }
-
-    /// 计算选择框内的音符索引（委托到 get_notes_in_selection_box，消除重复逻辑）
-    pub fn compute_selection(
-        &self,
-        start_tick: f32,
-        start_key: u16,
-        current_tick: f32,
-        current_key: u16,
-    ) -> HashSet<usize> {
-        self.get_notes_in_selection_box(start_tick, start_key, current_tick, current_key)
-            .into_iter()
-            .collect()
-    }
-
-    /// 获取选择框内的音符索引列表
-    pub fn get_notes_in_selection_box(
-        &self,
-        start_tick: f32,
-        start_key: u16,
-        current_tick: f32,
-        current_key: u16,
-    ) -> Vec<usize> {
-        let ts = start_tick.min(current_tick);
-        let te = start_tick.max(current_tick);
-        let km = start_key.min(current_key);
-        let kx = start_key.max(current_key);
-        let mut r = Vec::new();
-        for (i, n) in self.notes.iter().enumerate() {
-            let ne = n.tick + n.length;
-            if n.key >= km && n.key <= kx && n.tick < te && ne > ts {
-                r.push(i);
-            }
-        }
-        r
-    }
-}
-
-// ─── EditorState（完整编辑器状态） ───
 
 /// 编辑器完整状态（包含所有业务逻辑）
 #[derive(Debug)]
@@ -474,6 +46,7 @@ impl Default for EditorState {
 }
 
 impl EditorState {
+    /// 创建新的编辑器状态
     pub fn new() -> Self {
         let view = ViewState::default();
         Self {
@@ -503,6 +76,7 @@ impl EditorState {
         );
     }
 
+    /// 根据总 tick 数更新最大滚动范围
     pub fn update_max_scroll(&mut self, total_ticks: u32) {
         self.max_scroll = (
             total_ticks as f32 * self.view.zoom_x,
@@ -510,6 +84,7 @@ impl EditorState {
         );
     }
 
+    /// 设置当前工具
     pub fn set_tool(&mut self, tool: Tool) {
         self.tool = tool;
         if tool != Tool::Pointer {
@@ -517,10 +92,12 @@ impl EditorState {
         }
     }
 
+    /// 获取当前工具
     pub fn current_tool(&self) -> Tool {
         self.tool
     }
 
+    /// 设置水平滚动位置
     pub fn set_scroll_x(&mut self, scroll_x: f32, keyboard_width: f32, canvas_width: f32) {
         let tw = self.view.total_ticks as f32 * self.view.zoom_x;
         let vw = (canvas_width - keyboard_width).max(0.0);
@@ -530,6 +107,7 @@ impl EditorState {
         self.view.smooth_scroll.active = false;
     }
 
+    /// 设置垂直滚动位置
     pub fn set_scroll_y(&mut self, scroll_y: f32, canvas_height: f32) {
         let th = self.view.visible_key_count as f32 * self.view.zoom_y;
         let vh = (canvas_height - self.view.ruler_height).max(0.0);
@@ -539,6 +117,7 @@ impl EditorState {
         self.view.smooth_scroll.active = false;
     }
 
+    /// 设置水平缩放
     pub fn set_zoom_x(
         &mut self,
         zoom_x: f32,
@@ -559,6 +138,7 @@ impl EditorState {
         self.view.scroll_x = self.view.scroll_x.max(0.0).min(ms);
     }
 
+    /// 设置垂直缩放
     pub fn set_zoom_y(
         &mut self,
         zoom_y: f32,
@@ -579,6 +159,7 @@ impl EditorState {
         self.view.scroll_y = self.view.scroll_y.max(0.0).min(ms);
     }
 
+    /// 设置可见键数量
     pub fn set_visible_key_count(
         &mut self,
         count: u16,
@@ -595,24 +176,34 @@ impl EditorState {
         }
     }
 
+    /// 设置键盘宽度
     pub fn set_keyboard_width(&mut self, width: f32) {
         self.view.keyboard_width = width.max(0.0);
     }
+
+    /// 设置吸附精度
     pub fn set_snap_precision(&mut self, precision: f32) {
         self.view.snap_precision = precision.max(1.0);
     }
+
+    /// 设置默认音符长度
     pub fn set_default_note_length(&mut self, length: f32) {
         self.view.default_note_length = length.max(1.0);
     }
+
+    /// 设置橡皮擦行为
     pub fn set_eraser_behavior(&mut self, behavior: EraserBehavior) {
         self.view.eraser_behavior = behavior;
     }
+
+    /// 设置选择框模式
     pub fn set_selection_box_mode(&mut self, mode: SelectionBoxMode) {
         self.view.selection_box_mode = mode;
     }
 
     // ── 碰撞检测 ──
 
+    /// 命中测试：检测坐标是否落在某个音符上
     pub fn hit_test_note(
         &self,
         pos: (f32, f32),
@@ -637,6 +228,7 @@ impl EditorState {
         None
     }
 
+    /// 获取选中音符的边界框
     pub fn get_selection_box_bounds(&self) -> Option<(f32, f32, f32, f32)> {
         let sel = &self.interaction.selected_notes;
         if sel.is_empty() {
@@ -665,6 +257,7 @@ impl EditorState {
         ))
     }
 
+    /// 命中测试选择框边界
     pub fn hit_test_selection_box(&self, pos: (f32, f32)) -> Option<SelectionHitType> {
         let (min_x, max_x, min_y, max_y) = self.get_selection_box_bounds()?;
         if pos.0 < min_x || pos.0 > max_x || pos.1 < min_y || pos.1 > max_y {
@@ -681,9 +274,7 @@ impl EditorState {
         }
         Some(SelectionHitType::Inside)
     }
-}
 
-impl EditorState {
     /// 获取选择框内的音符索引列表（委托到 EditorData）
     pub fn get_notes_in_selection_box(
         &self,
@@ -795,5 +386,86 @@ impl EditorState {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::note::Note;
+
+    #[test]
+    fn test_editor_state_new() {
+        let state = EditorState::new();
+        assert_eq!(state.tool, Tool::Pointer);
+        assert!(state.data.notes.is_empty());
+    }
+
+    #[test]
+    fn test_editor_state_reset() {
+        let mut state = EditorState::new();
+        state.tool = Tool::Eraser;
+        state.data.notes.push_back(Note::new(0.0, 60, 1.0));
+        state.reset();
+        assert_eq!(state.tool, Tool::Pointer);
+        assert!(state.data.notes.is_empty());
+    }
+
+    #[test]
+    fn test_set_tool_clears_selection() {
+        let mut state = EditorState::new();
+        state.interaction.selected_notes.insert(0);
+        state.set_tool(Tool::Eraser);
+        assert!(state.interaction.selected_notes.is_empty());
+    }
+
+    #[test]
+    fn test_set_tool_pointer_keeps_selection() {
+        let mut state = EditorState::new();
+        state.interaction.selected_notes.insert(0);
+        state.set_tool(Tool::Pointer);
+        assert_eq!(state.interaction.selected_notes.len(), 1);
+    }
+
+    #[test]
+    fn test_apply_note_changes_dragging() {
+        let mut state = EditorState::new();
+        state.data.notes.push_back(Note::new(0.0, 60, 1.0));
+        state.interaction.edit_state = EditState::Dragging {
+            note_index: 0,
+            offset_tick: 0.0,
+            offset_key: 0,
+            last_played_key: 60,
+            original_tick: 0.0,
+            original_key: 60,
+        };
+        assert!(state.apply_note_changes(Some(2.0), Some(64), Some(3.0)));
+        let note = &state.data.notes[0];
+        assert_eq!(note.tick, 2.0);
+        assert_eq!(note.key, 64);
+        assert_eq!(note.length, 3.0);
+    }
+
+    #[test]
+    fn test_apply_note_changes_non_edit_state() {
+        let mut state = EditorState::new();
+        state.data.notes.push_back(Note::new(0.0, 60, 1.0));
+        state.interaction.edit_state = EditState::Idle;
+        assert!(!state.apply_note_changes(Some(2.0), None, None));
+    }
+
+    #[test]
+    fn test_handle_delete_pressed() {
+        let mut state = EditorState::new();
+        state.data.notes.push_back(Note::new(0.0, 60, 1.0));
+        state.interaction.hover_state = Some((0, HitType::Middle));
+        assert_eq!(state.handle_delete_pressed(), Some(0));
+        assert!(state.data.notes.is_empty());
+    }
+
+    #[test]
+    fn test_handle_delete_pressed_no_hover() {
+        let mut state = EditorState::new();
+        assert!(state.handle_delete_pressed().is_none());
     }
 }
