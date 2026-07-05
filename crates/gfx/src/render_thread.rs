@@ -20,7 +20,7 @@ pub mod render_loop;
 pub mod stats;
 pub mod thread;
 
-pub use commands::{ControlCommand, RenderCommand};
+pub use commands::{ControlCommand, HiResTrackParams, RenderCommand};
 pub use params::RenderParams;
 pub use stats::RenderStats;
 pub use thread::WgpuRenderThread;

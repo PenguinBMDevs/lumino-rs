@@ -10,9 +10,10 @@ use crate::{
     TileCoord, generate_track_tile, merge_group_tiles,
 };
 
-use super::super::commands::{ControlCommand, RenderCommand};
+use super::super::commands::{ControlCommand, HiResTrackParams, RenderCommand};
 use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
+use super::Renderers;
 use super::commands::process_commands;
 use super::prepare::prepare_renderers;
 use super::render_pass::execute_render_pass;
@@ -68,11 +69,13 @@ pub fn run_render_thread(
     tracing::info!("Render thread started");
 
     // 初始化渲染器
-    let mut grid_renderer = crate::GridRenderer::new(&device, texture_format);
-    let mut note_renderer = crate::NoteRenderer::new(&device, &queue, texture_format);
-    let mut ruler_renderer = crate::RulerRenderer::new(&device, texture_format);
-    let mut arrangement_renderer = crate::ArrangementRenderer::new(&device, texture_format);
-    let mut cc_bar_renderer = crate::CcBarRenderer::new(&device, texture_format);
+    let mut renderers = Renderers {
+        grid: crate::GridRenderer::new(&device, texture_format),
+        note: crate::NoteRenderer::new(&device, &queue, texture_format),
+        ruler: crate::RulerRenderer::new(&device, texture_format),
+        arrangement: crate::ArrangementRenderer::new(&device, texture_format),
+        cc_bar: crate::CcBarRenderer::new(&device, texture_format),
+    };
 
     // 渲染循环状态
     let mut frame_count = 0u64;
@@ -194,7 +197,7 @@ pub fn run_render_thread(
                 puffin::profile_scope!("upload_note_instances_from_buffer");
                 let notes = unsafe { note_instances_buffer.read_buffer() };
 
-                note_renderer.upload_instances(notes, &device, &queue);
+                renderers.note.upload_instances(notes, &device, &queue);
             }
 
             if let (Some(_texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
@@ -204,11 +207,7 @@ pub fn run_render_thread(
 
                 // 准备渲染器
                 prepare_renderers(
-                    &mut grid_renderer,
-                    &mut note_renderer,
-                    &mut ruler_renderer,
-                    &mut arrangement_renderer,
-                    &mut cc_bar_renderer,
+                    &mut renderers,
                     params,
                     &note_events_rx,
                     &device,
@@ -234,12 +233,8 @@ pub fn run_render_thread(
                     &current_texture,
                     &depth_texture_view,
                     params,
-                    &mut grid_renderer,
-                    &mut note_renderer,
-                    &mut ruler_renderer,
-                    &mut arrangement_renderer,
+                    &mut renderers,
                     &queue,
-                    &mut cc_bar_renderer,
                     &hires_renderer,
                     &hires_visible_coords,
                 );
@@ -375,16 +370,17 @@ fn handle_hires_control(
             push_onion_progress(onion_progress, "高精度洋葱皮资源已释放", 1.0);
         }
         // 重生成指定音轨的高精度贴图（编辑后冷静期到期触发）
-        ControlCommand::RegenerateHiResTrack {
-            track_idx,
-            mut group_notes,
-            ppq,
-            key_count,
-            total_ticks,
-            track_count,
-            config,
-            midi_hash: _,
-        } => {
+        ControlCommand::RegenerateHiResTrack(params) => {
+            let HiResTrackParams {
+                track_idx,
+                mut group_notes,
+                ppq,
+                key_count,
+                total_ticks,
+                track_count,
+                config,
+                midi_hash: _,
+            } = params;
             let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
             tracing::debug!(
                 "[onion-render] RegenerateHiResTrack: track={}, track_group={}, group_tracks={}, track_count={}, meta_exists={}",
@@ -513,16 +509,17 @@ fn handle_hires_control(
             });
         }
         // 显示编辑后的临时脏区域贴图覆层（切换音轨前立即触发）
-        ControlCommand::ShowHiResDirtyOverlay {
-            track_idx,
-            mut group_notes,
-            ppq,
-            key_count,
-            total_ticks,
-            track_count,
-            config,
-            midi_hash: _,
-        } => {
+        ControlCommand::ShowHiResDirtyOverlay(params) => {
+            let HiResTrackParams {
+                track_idx,
+                mut group_notes,
+                ppq,
+                key_count,
+                total_ticks,
+                track_count,
+                config,
+                midi_hash: _,
+            } = params;
             let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
             tracing::debug!(
                 "[onion-render] ShowHiResDirtyOverlay: track={}, track_group={}, group_tracks={}, meta_exists={}",

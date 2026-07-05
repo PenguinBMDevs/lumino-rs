@@ -2,16 +2,12 @@ use std::sync::mpsc::Receiver;
 
 use crate::NoteEvent;
 
+use super::Renderers;
 use super::super::params::RenderParams;
 
 /// 准备渲染器实例
-#[allow(clippy::too_many_arguments)]
 pub fn prepare_renderers(
-    grid_renderer: &mut crate::GridRenderer,
-    note_renderer: &mut crate::NoteRenderer,
-    ruler_renderer: &mut crate::RulerRenderer,
-    arrangement_renderer: &mut crate::ArrangementRenderer,
-    cc_bar_renderer: &mut crate::CcBarRenderer,
+    renderers: &mut Renderers,
     params: &RenderParams,
     note_events_rx: &Receiver<NoteEvent>,
     device: &wgpu::Device,
@@ -21,7 +17,7 @@ pub fn prepare_renderers(
 
     // 音轨总览模式：准备走带渲染器，跳过钢琴卷帘相关渲染器
     if params.is_arrangement_mode {
-        arrangement_renderer.prepare(
+        renderers.arrangement.prepare(
             device,
             queue,
             params.arrangement_uniform,
@@ -51,7 +47,7 @@ pub fn prepare_renderers(
         canvas_offset_x: params.canvas_offset.0,
         canvas_offset_y: params.canvas_offset.1,
     };
-    grid_renderer.prepare(queue, &grid_params);
+    renderers.grid.prepare(queue, &grid_params);
 
     // 准备标尺渲染器
     if !params.ruler_instances.is_empty() {
@@ -64,14 +60,16 @@ pub fn prepare_renderers(
             ticks_per_measure: params.ticks_per_measure,
             ticks_per_beat: params.ticks_per_beat,
         };
-        ruler_renderer.prepare(device, queue, &ruler_params);
+        renderers.ruler.prepare(device, queue, &ruler_params);
     }
 
     // 准备 CC 柱状条渲染器（背景/网格/中心线）
     if params.velocity_panel_rect.is_some() {
-        cc_bar_renderer.prepare(device, queue, &params.cc_bar_instances, params.logical_size);
+        renderers
+            .cc_bar
+            .prepare(device, queue, &params.cc_bar_instances, params.logical_size);
     }
 
     // 音符事件始终处理（不影响走带模式，但需要保持事件管道畅通）
-    note_renderer.process_events(note_events_rx, device, queue);
+    renderers.note.process_events(note_events_rx, device, queue);
 }

@@ -392,60 +392,23 @@ impl Host {
     ///
     /// `group_notes` 需包含该 `track_idx` 所在 track_group 的所有音轨音符，
     /// runner 将使用这些最新数据重新合并 group tile，避免读取过期缓存。
-    #[allow(clippy::too_many_arguments)]
-    pub fn send_hires_regen(
-        &mut self,
-        track_idx: u16,
-        group_notes: Vec<Vec<lumino_gfx::OnionSkinNote>>,
-        ppq: u16,
-        key_count: u16,
-        total_ticks: u32,
-        track_count: u16,
-        config: lumino_gfx::HiResConfig,
-        midi_hash: String,
-    ) {
-        if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
-            thread.send_control(
-                lumino_gfx::render_thread::ControlCommand::RegenerateHiResTrack {
-                    track_idx,
-                    group_notes,
-                    ppq,
-                    key_count,
-                    total_ticks,
-                    track_count,
-                    config,
-                    midi_hash,
-                },
-            );
-        }
+    pub fn send_hires_regen(&mut self, params: lumino_gfx::render_thread::HiResTrackParams) {
+        self.send_hires_track_cmd(
+            lumino_gfx::render_thread::ControlCommand::regenerate_track(params),
+        );
     }
 
     /// 发送编辑后的临时脏区域覆层显示命令（切换音轨前立即触发）
-    #[allow(clippy::too_many_arguments)]
-    pub fn send_hires_dirty_overlay(
-        &mut self,
-        track_idx: u16,
-        group_notes: Vec<Vec<lumino_gfx::OnionSkinNote>>,
-        ppq: u16,
-        key_count: u16,
-        total_ticks: u32,
-        track_count: u16,
-        config: lumino_gfx::HiResConfig,
-        midi_hash: String,
-    ) {
+    pub fn send_hires_dirty_overlay(&mut self, params: lumino_gfx::render_thread::HiResTrackParams) {
+        self.send_hires_track_cmd(
+            lumino_gfx::render_thread::ControlCommand::show_dirty_overlay(params),
+        );
+    }
+
+    /// 内部：发送高精度音轨相关控制命令
+    fn send_hires_track_cmd(&mut self, cmd: lumino_gfx::render_thread::ControlCommand) {
         if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
-            thread.send_control(
-                lumino_gfx::render_thread::ControlCommand::ShowHiResDirtyOverlay {
-                    track_idx,
-                    group_notes,
-                    ppq,
-                    key_count,
-                    total_ticks,
-                    track_count,
-                    config,
-                    midi_hash,
-                },
-            );
+            thread.send_control(cmd);
         }
     }
 
@@ -520,16 +483,16 @@ impl Host {
                 }
             }
 
-            self.send_hires_dirty_overlay(
-                *track_idx,
+            self.send_hires_dirty_overlay(lumino_gfx::render_thread::HiResTrackParams {
+                track_idx: *track_idx,
                 group_notes,
                 ppq,
                 key_count,
                 total_ticks,
                 track_count,
-                config.clone(),
-                String::new(),
-            );
+                config: config.clone(),
+                midi_hash: String::new(),
+            });
         }
         self.hires_overlay_sent = true;
         true
@@ -618,16 +581,16 @@ impl Host {
             total_ticks
         );
 
-        self.send_hires_regen(
+        self.send_hires_regen(lumino_gfx::render_thread::HiResTrackParams {
             track_idx,
             group_notes,
             ppq,
             key_count,
             total_ticks,
             track_count,
-            cfg,
-            hash,
-        );
+            config: cfg,
+            midi_hash: hash,
+        });
     }
 
     /// 收集指定音轨所在 track_group 的所有音轨音符
