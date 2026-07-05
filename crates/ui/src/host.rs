@@ -138,7 +138,7 @@ impl Host {
             tile_width_px: ui_config.hires_tile_width_px,
             cooldown_secs: ui_config.hires_cooldown_secs,
             gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
-            group_tile_mem_limit_mb: 256,
+            group_tile_mem_limit_mb: crate::constants::memory::DEFAULT_GROUP_TILE_MEM_LIMIT_MB,
             cache_dir: lumino_gfx::HiResConfig::default().cache_dir,
         };
         let midi_hash = lumino_gfx::compute_midi_hash(b"empty-project");
@@ -544,7 +544,7 @@ impl Host {
             .hires_config
             .as_ref()
             .map(|c| c.cooldown_secs)
-            .unwrap_or(10);
+            .unwrap_or(crate::constants::timing::DEFAULT_HIRES_COOLDOWN_SECS);
         if let Some(last) = self.hires_last_edit
             && last.elapsed().as_secs() >= cooldown
         {

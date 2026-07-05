@@ -24,6 +24,20 @@ pub(super) struct CacheWriteJob {
     pub(super) meta: CacheMeta,
 }
 
+/// 贴图生成共享上下文（替代 7 个重复参数）
+///
+/// 将 `ppq`、`key_count`、`width`、`measures_per_group`、`cache_dir`、
+/// `midi_hash`、`cache_tx` 聚合为单一结构体，减少函数签名膨胀。
+pub(super) struct TileGenContext<'a> {
+    pub ppq: u16,
+    pub key_count: u16,
+    pub width: u32,
+    pub measures_per_group: u32,
+    pub cache_dir: &'a Path,
+    pub midi_hash: &'a str,
+    pub cache_tx: &'a SyncSender<CacheWriteJob>,
+}
+
 /// 对每轨音符按 `start_ms` 升序排序，供后续二分剪枝使用。
 pub(super) fn sort_notes_per_track(notes: &mut [Vec<OnionSkinNote>]) {
     for track in notes.iter_mut() {
@@ -36,20 +50,13 @@ pub(super) fn sort_notes_per_track(notes: &mut [Vec<OnionSkinNote>]) {
 ///
 /// 内部：生成组内每轨的单音轨贴图（缓存优先），合并为整合组贴图。
 /// 由 `generate_all_tiles_streaming` 在 rayon 并行任务中调用。
-#[allow(clippy::too_many_arguments)]
 pub(super) fn generate_one_time_group_tile(
     track_group: u32,
     time_group: u32,
     tick_start: u32,
     tick_end: u32,
     notes: &[Vec<OnionSkinNote>],
-    ppq: u16,
-    key_count: u16,
-    width: u32,
-    measures_per_group: u32,
-    cache_dir: &Path,
-    midi_hash: &str,
-    cache_tx: &SyncSender<CacheWriteJob>,
+    ctx: &TileGenContext<'_>,
 ) -> GroupTile {
     let track_start = (track_group * crate::config::TRACKS_PER_GROUP as u32) as u16;
     let track_end =
@@ -64,13 +71,7 @@ pub(super) fn generate_one_time_group_tile(
             time_group,
             tick_start,
             tick_end,
-            width,
-            key_count,
-            ppq,
-            measures_per_group,
-            cache_dir,
-            midi_hash,
-            cache_tx,
+            ctx,
         );
         track_tiles.push(tile);
     }
@@ -82,29 +83,22 @@ pub(super) fn generate_one_time_group_tile(
         coord,
         tick_start,
         tick_end,
-        width,
-        key_count,
+        ctx.width,
+        ctx.key_count,
         (track_start, track_end),
     )
 }
 
 /// 生成单个音轨组的所有时间组贴图
-#[allow(clippy::too_many_arguments)]
 pub(super) fn generate_one_track_group(
     track_group: u32,
     notes: &[Vec<OnionSkinNote>],
-    ppq: u16,
-    key_count: u16,
     ticks_per_group: u32,
     time_groups: u32,
-    cache_dir: &Path,
-    midi_hash: &str,
-    width: u32,
-    measures_per_group: u32,
     completed: &Arc<AtomicUsize>,
     total_tiles: usize,
     progress_cb: &Option<HiResProgressCallback>,
-    cache_tx: &SyncSender<CacheWriteJob>,
+    ctx: &TileGenContext<'_>,
 ) -> Vec<(TileCoord, GroupTile)> {
     let track_start = (track_group * crate::config::TRACKS_PER_GROUP as u32) as u16;
     let track_end =
@@ -124,13 +118,7 @@ pub(super) fn generate_one_track_group(
                 time_group,
                 tick_start,
                 tick_end,
-                width,
-                key_count,
-                ppq,
-                measures_per_group,
-                cache_dir,
-                midi_hash,
-                cache_tx,
+                ctx,
             );
             track_tiles.push(tile);
         }
@@ -142,8 +130,8 @@ pub(super) fn generate_one_track_group(
             coord,
             tick_start,
             tick_end,
-            width,
-            key_count,
+            ctx.width,
+            ctx.key_count,
             (track_start, track_end),
         );
         group_tiles.push((coord, group_tile));
@@ -160,56 +148,49 @@ pub(super) fn generate_one_track_group(
 }
 
 /// 生成或从缓存加载单音轨贴图
-#[allow(clippy::too_many_arguments)]
 pub(super) fn generate_or_load_track_tile(
     notes: &[OnionSkinNote],
     track_idx: u16,
     time_group: u32,
     tick_start: u32,
     tick_end: u32,
-    width: u32,
-    key_count: u16,
-    ppq: u16,
-    measures_per_group: u32,
-    cache_dir: &Path,
-    midi_hash: &str,
-    cache_tx: &SyncSender<CacheWriteJob>,
+    ctx: &TileGenContext<'_>,
 ) -> TrackTile {
     let expected_meta = CacheMeta {
         track_idx,
         time_group,
-        width,
-        height: key_count as u32,
+        width: ctx.width,
+        height: ctx.key_count as u32,
         tick_start,
         tick_end,
-        key_count,
-        ppq,
-        measures_per_group,
+        key_count: ctx.key_count,
+        ppq: ctx.ppq,
+        measures_per_group: ctx.measures_per_group,
     };
 
     // 先查缓存
-    match cache::read_track_tile_cache(cache_dir, midi_hash, track_idx, time_group, &expected_meta)
+    match cache::read_track_tile_cache(ctx.cache_dir, ctx.midi_hash, track_idx, time_group, &expected_meta)
     {
         Ok(Some(tile)) => return tile, // 缓存命中
         Ok(None) => {}                 // 缓存未命中，生成
         Err(e) => {
             warn!("缓存读取失败（将重生成）: {e}");
-            let path = cache_path(cache_dir, midi_hash, track_idx, time_group);
+            let path = cache_path(ctx.cache_dir, ctx.midi_hash, track_idx, time_group);
             let _ = std::fs::remove_file(path);
         }
     }
 
     // 生成单音轨贴图
     let tile = generate_track_tile(
-        notes, track_idx, time_group, tick_start, tick_end, width, key_count,
+        notes, track_idx, time_group, tick_start, tick_end, ctx.width, ctx.key_count,
     );
 
     // 写缓存入队，后台线程执行 zstd+IO，避免阻塞 rayon 并行生成
     // 使用有界 channel + try_send：队列满时直接丢弃缓存任务，避免无界堆积导致 OOM。
     // 缓存是性能优化，跳过不影响生成正确性。
-    match cache_tx.try_send(CacheWriteJob {
-        cache_dir: cache_dir.to_path_buf(),
-        midi_hash: midi_hash.to_string(),
+    match ctx.cache_tx.try_send(CacheWriteJob {
+        cache_dir: ctx.cache_dir.to_path_buf(),
+        midi_hash: ctx.midi_hash.to_string(),
         tile: tile.clone(),
         meta: expected_meta,
     }) {

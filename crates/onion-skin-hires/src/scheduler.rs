@@ -15,7 +15,8 @@ use tracing::{info, warn};
 use crate::cache;
 use crate::config::HiResConfig;
 use crate::scheduler::generate::{
-    CacheWriteJob, generate_one_time_group_tile, generate_one_track_group, sort_notes_per_track,
+    CacheWriteJob, TileGenContext, generate_one_time_group_tile, generate_one_track_group,
+    sort_notes_per_track,
 };
 use crate::types::{GroupTile, TileCoord};
 use lumino_onion_skin::OnionSkinNote;
@@ -96,26 +97,29 @@ pub fn generate_all_tiles(
         );
     });
 
+    let ctx = TileGenContext {
+        ppq,
+        key_count,
+        width,
+        measures_per_group,
+        cache_dir: &cache_dir,
+        midi_hash,
+        cache_tx: &cache_tx,
+    };
+
     // rayon 并行：音轨组维度（每组 8 轨）
     let group_results: Vec<Vec<(TileCoord, GroupTile)>> = (0..track_groups)
         .into_par_iter()
         .map(|track_group| {
-            let cache_tx = cache_tx.clone();
             generate_one_track_group(
                 track_group,
                 notes,
-                ppq,
-                key_count,
                 ticks_per_group,
                 time_groups,
-                &cache_dir,
-                midi_hash,
-                width,
-                measures_per_group,
                 &completed,
                 total_tiles,
                 &progress_cb,
-                &cache_tx,
+                &ctx,
             )
         })
         .collect();
@@ -153,7 +157,6 @@ pub fn generate_all_tiles(
 /// - `time_group_cb`: 某个 time_group 的所有音轨组贴图收齐后回调，
 ///   参数为 `(time_group, Vec<GroupTile>)`，Vec 长度 = track_groups。
 ///   回调返回后 Vec 被 drop 释放 CPU 内存，才进入下一个 time_group。
-#[allow(clippy::too_many_arguments)]
 pub fn generate_all_tiles_streaming<F>(
     notes: &mut [Vec<OnionSkinNote>],
     config: &HiResConfig,
@@ -209,6 +212,16 @@ pub fn generate_all_tiles_streaming<F>(
         );
     });
 
+    let ctx = TileGenContext {
+        ppq,
+        key_count,
+        width,
+        measures_per_group,
+        cache_dir: &cache_dir,
+        midi_hash,
+        cache_tx: &cache_tx,
+    };
+
     // ★ 外层串行 time_group，内层并行 track_group，rayon collect 天然 Barrier ★
     // 所有 track_group 线程完成同一个 time_group 后才回调，回调期间并行线程空闲
     // （对应"装袋期间工人等着"），回调返回后 Vec drop 释放，进入下一个 time_group
@@ -220,20 +233,13 @@ pub fn generate_all_tiles_streaming<F>(
         let group_tiles: Vec<GroupTile> = (0..track_groups)
             .into_par_iter()
             .map(|track_group| {
-                let cache_tx = cache_tx.clone();
                 generate_one_time_group_tile(
                     track_group,
                     time_group,
                     tick_start,
                     tick_end,
                     notes,
-                    ppq,
-                    key_count,
-                    width,
-                    measures_per_group,
-                    &cache_dir,
-                    midi_hash,
-                    &cache_tx,
+                    &ctx,
                 )
             })
             .collect();

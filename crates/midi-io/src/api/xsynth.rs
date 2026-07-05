@@ -59,7 +59,7 @@ impl XSynth {
         // 提前加载音色库。这样在音频流启动时，音色库已经就绪，
         // BufferedRenderer 的 render pipeline 能立即产生有效数据，
         // 避免 callback 在 recv() 上阻塞导致 ALSA underrun。
-        let sample_rate = options.as_ref().map(|o| o.sample_rate).unwrap_or(44100);
+        let sample_rate = options.as_ref().map(|o| o.sample_rate).unwrap_or(DEFAULT_SAMPLE_RATE);
         let load_params = AudioStreamParams::new(sample_rate, ChannelCount::Stereo);
 
         tracing::info!("XSynth: 预加载音色库 (sample_rate={})...", sample_rate);
