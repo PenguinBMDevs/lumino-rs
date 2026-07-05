@@ -80,7 +80,10 @@ pub fn view_collaboration_dialog<'a>(
                     .on_press(Message::Collaboration(
                         lumino_message::CollaborationAction::Connect {
                             host: state.server_host.clone(),
-                            port: state.server_port.parse().unwrap_or(crate::constants::collaboration::DEFAULT_PORT),
+                            port: state
+                                .server_port
+                                .parse()
+                                .unwrap_or(crate::constants::collaboration::DEFAULT_PORT),
                             username: state.username.clone(),
                             invite_code: if state.invite_code.trim().is_empty() {
                                 None

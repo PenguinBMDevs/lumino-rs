@@ -1,7 +1,9 @@
-//! 跨模块共享类型
+//! lumino-message 内部共享类型
 //!
 //! 这些类型原本分散在 lumino-ui 的各个模块中（state::root_state, toolbar::types,
-//! editor::velocity, statusbar::performance），因为被 message 枚举引用而被提取到此处。
+//! editor::velocity, statusbar::performance），因为被 Message 枚举引用而被提取到此处。
+//! 跨 crate 共享的领域类型（AudioAction, DotType, NotePrecision, Tool）位于
+//! `lumino-core`，请通过 `lumino_message::*` 的 re-export 使用。
 
 // ─── 性能监控数据 ───
 
@@ -26,96 +28,6 @@ impl PerfData {
             memory_mb,
             gpu_frame_time_ms,
         }
-    }
-}
-
-// ─── 音符精度/网格对齐 ───
-
-/// 音符精度/网格对齐设置
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum NotePrecision {
-    /// 全音符 (4拍)
-    Whole,
-    /// 二分音符 (2拍)
-    Half,
-    /// 四分音符 (1拍)
-    #[default]
-    Quarter,
-    /// 八分音符 (1/2拍)
-    Eighth,
-    /// 十六分音符 (1/4拍)
-    Sixteenth,
-    /// 三十二分音符 (1/8拍)
-    ThirtySecond,
-    /// 六十四分音符 (1/16拍)
-    SixtyFourth,
-    /// 128分音符 (1/32拍)
-    OneTwentyEighth,
-    /// 自定义
-    Custom,
-}
-
-impl std::fmt::Display for NotePrecision {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
-            NotePrecision::Whole => "全音符",
-            NotePrecision::Half => "二分音符",
-            NotePrecision::Quarter => "四分音符",
-            NotePrecision::Eighth => "八分音符",
-            NotePrecision::Sixteenth => "十六分音符",
-            NotePrecision::ThirtySecond => "三十二分音符",
-            NotePrecision::SixtyFourth => "六十四分音符",
-            NotePrecision::OneTwentyEighth => "128分音符",
-            NotePrecision::Custom => "自定义",
-        };
-        write!(f, "{}", name)
-    }
-}
-
-impl NotePrecision {
-    /// 获取精度显示名称
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            NotePrecision::Whole => "全音符",
-            NotePrecision::Half => "二分音符",
-            NotePrecision::Quarter => "四分音符",
-            NotePrecision::Eighth => "八分音符",
-            NotePrecision::Sixteenth => "十六分音符",
-            NotePrecision::ThirtySecond => "三十二分音符",
-            NotePrecision::SixtyFourth => "六十四分音符",
-            NotePrecision::OneTwentyEighth => "128分音符",
-            NotePrecision::Custom => "自定义",
-        }
-    }
-
-    /// 根据PPQ计算对应的tick值
-    pub fn as_ticks(self, ppq: u16) -> f32 {
-        let ppq = ppq as f32;
-        match self {
-            NotePrecision::Whole => ppq * 4.0,
-            NotePrecision::Half => ppq * 2.0,
-            NotePrecision::Quarter => ppq,
-            NotePrecision::Eighth => ppq / 2.0,
-            NotePrecision::Sixteenth => ppq / 4.0,
-            NotePrecision::ThirtySecond => ppq / 8.0,
-            NotePrecision::SixtyFourth => ppq / 16.0,
-            NotePrecision::OneTwentyEighth => ppq / 32.0,
-            NotePrecision::Custom => ppq / 4.0,
-        }
-    }
-
-    /// 获取所有预设选项（不包括自定义）
-    pub fn presets() -> &'static [NotePrecision] {
-        &[
-            NotePrecision::Whole,
-            NotePrecision::Half,
-            NotePrecision::Quarter,
-            NotePrecision::Eighth,
-            NotePrecision::Sixteenth,
-            NotePrecision::ThirtySecond,
-            NotePrecision::SixtyFourth,
-            NotePrecision::OneTwentyEighth,
-        ]
     }
 }
 
@@ -170,56 +82,6 @@ impl TupletType {
             TupletType::Quintuplet => 5,
             TupletType::Sextuplet => 6,
             TupletType::Septuplet => 7,
-        }
-    }
-}
-
-// ─── 符点类型 ───
-
-/// 符点类型选项
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DotType {
-    /// 无符点
-    #[default]
-    None,
-    /// 连音符
-    Tuplet,
-    /// 单符点
-    Single,
-    /// 双符点
-    Double,
-}
-
-impl std::fmt::Display for DotType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
-            DotType::None => "（无）",
-            DotType::Tuplet => "连音符",
-            DotType::Single => "符点",
-            DotType::Double => "双符点",
-        };
-        write!(f, "{}", name)
-    }
-}
-
-impl DotType {
-    /// 获取所有选项
-    pub fn all() -> &'static [DotType] {
-        &[
-            DotType::None,
-            DotType::Tuplet,
-            DotType::Single,
-            DotType::Double,
-        ]
-    }
-
-    /// 获取倍数（符点增加原时值的多少）
-    pub fn multiplier(&self) -> f32 {
-        match self {
-            DotType::None => 1.0,
-            DotType::Tuplet => 1.0,
-            DotType::Single => 1.5,
-            DotType::Double => 1.75,
         }
     }
 }
@@ -281,20 +143,6 @@ impl std::fmt::Display for SpeedFactor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.display_name())
     }
-}
-
-// ─── 工具类型 ───
-
-/// 工具类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Tool {
-    #[default]
-    Pointer,
-    Pencil,
-    Brush,
-    Pen,
-    Eraser,
-    Razor,
 }
 
 // ─── 音频导出相关类型 ───

@@ -10,11 +10,13 @@ pub mod pattern;
 pub mod smooth_scroll;
 pub mod spatial_index;
 pub mod storage;
+pub mod types;
 pub mod view_state;
 
 pub use editor_state::{
-    CanvasState, EditState, EditorData, EditorState, HitType, InteractionState, SelectionHitType,
-    DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, GLUE_PROXIMITY_THRESHOLD, SELECTION_BOX_EDGE_THRESHOLD,
+    CanvasState, DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, EditState, EditorData, EditorState,
+    GLUE_PROXIMITY_THRESHOLD, HitType, InteractionState, SELECTION_BOX_EDGE_THRESHOLD,
+    SelectionHitType,
 };
 pub use editor_transform::EditorTransform;
 pub use error::{CoreError, Result};
@@ -28,4 +30,5 @@ pub use note::Note;
 pub use pattern::Pattern;
 pub use smooth_scroll::SmoothScrollAnimation;
 pub use spatial_index::{NoteRef, NoteSpatialIndex};
+pub use types::{AudioAction, DotType, NotePrecision, Tool};
 pub use view_state::ViewState;

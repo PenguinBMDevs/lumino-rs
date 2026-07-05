@@ -10,7 +10,7 @@ use crate::midi_types::{CcData, TempoPoint};
 use crate::note::Note;
 use crate::storage::config::{AutoScrollConfig, EraserBehavior, SelectionBoxMode};
 use crate::view_state::ViewState;
-use lumino_message::{AudioAction, Tool};
+use crate::{AudioAction, Tool};
 
 /// 默认 BPM（用于新文档初始化和重置）
 pub const DEFAULT_BPM: f64 = 120.0;
@@ -339,7 +339,10 @@ impl EditorData {
         for note in &sn {
             let added = match groups.last_mut() {
                 Some(g) => match g.last() {
-                    Some(last) if last.2 == note.2 && note.1 <= last.1 + last.3 + GLUE_PROXIMITY_THRESHOLD => {
+                    Some(last)
+                        if last.2 == note.2
+                            && note.1 <= last.1 + last.3 + GLUE_PROXIMITY_THRESHOLD =>
+                    {
                         g.push(*note);
                         true
                     }
@@ -731,7 +734,8 @@ impl EditorState {
                     original_tick: note.tick,
                     original_key: note.key,
                 };
-                self.interaction.play_note_audio(note.key, DEFAULT_PREVIEW_VELOCITY);
+                self.interaction
+                    .play_note_audio(note.key, DEFAULT_PREVIEW_VELOCITY);
             }
         }
     }
@@ -743,7 +747,8 @@ impl EditorState {
             key,
             current_tick: snapped_tick,
         };
-        self.interaction.play_note_audio(key, DEFAULT_PREVIEW_VELOCITY);
+        self.interaction
+            .play_note_audio(key, DEFAULT_PREVIEW_VELOCITY);
     }
 
     /// 应用音符变化（单音符编辑），返回是否发生了变更

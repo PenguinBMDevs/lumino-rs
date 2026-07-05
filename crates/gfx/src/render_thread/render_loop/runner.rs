@@ -206,13 +206,7 @@ pub fn run_render_thread(
                 });
 
                 // 准备渲染器
-                prepare_renderers(
-                    &mut renderers,
-                    params,
-                    &note_events_rx,
-                    &device,
-                    &queue,
-                );
+                prepare_renderers(&mut renderers, params, &note_events_rx, &device, &queue);
 
                 // 高精度贴图视口驱动
                 let hires_visible = update_hires_viewport(

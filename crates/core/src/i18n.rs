@@ -9,6 +9,7 @@ pub mod settings;
 pub use main::MainTranslations;
 pub use settings::SettingsTranslations;
 
+use crate::{DotType, NotePrecision};
 use serde::{Deserialize, Serialize};
 
 /// 支持的语言
@@ -45,15 +46,12 @@ pub fn main_translations(lang: Language) -> &'static MainTranslations {
 }
 
 /// 获取音符精度名称（按语言）
-pub fn note_precision_name(
-    precision: lumino_message::NotePrecision,
-    lang: Language,
-) -> &'static str {
+pub fn note_precision_name(precision: NotePrecision, lang: Language) -> &'static str {
     main::note_precision_name(precision, lang)
 }
 
 /// 获取符点类型名称（按语言）
-pub fn dot_type_name(dot_type: lumino_message::DotType, lang: Language) -> &'static str {
+pub fn dot_type_name(dot_type: DotType, lang: Language) -> &'static str {
     main::dot_type_name(dot_type, lang)
 }
 

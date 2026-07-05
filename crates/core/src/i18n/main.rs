@@ -1,6 +1,7 @@
 //! 主界面翻译（工具栏、标题栏、状态栏、侧边栏、对话框等）
 
 use super::Language;
+use crate::{DotType, NotePrecision};
 
 /// 主界面翻译
 #[derive(Debug, Clone)]
@@ -282,11 +283,8 @@ static ENUS_MAIN: MainTranslations = MainTranslations {
 };
 
 /// 获取音符精度名称（按语言）
-pub fn note_precision_name(
-    precision: lumino_message::NotePrecision,
-    lang: Language,
-) -> &'static str {
-    use lumino_message::NotePrecision::*;
+pub fn note_precision_name(precision: NotePrecision, lang: Language) -> &'static str {
+    use crate::NotePrecision::*;
     match lang {
         Language::ZhCn => match precision {
             Whole => "全音符",
@@ -314,8 +312,8 @@ pub fn note_precision_name(
 }
 
 /// 获取符点类型名称（按语言）
-pub fn dot_type_name(dot_type: lumino_message::DotType, lang: Language) -> &'static str {
-    use lumino_message::DotType::*;
+pub fn dot_type_name(dot_type: DotType, lang: Language) -> &'static str {
+    use crate::DotType::*;
     match lang {
         Language::ZhCn => match dot_type {
             None => "（无）",

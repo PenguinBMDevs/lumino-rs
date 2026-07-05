@@ -3456,7 +3456,6 @@ dependencies = [
  "im",
  "libc",
  "lumino-memory-monitor",
- "lumino-message",
  "lumino-midi-loader",
  "puffin",
  "serde",
@@ -3555,6 +3554,7 @@ name = "lumino-message"
 version = "0.1.1-dev"
 dependencies = [
  "iced_core",
+ "lumino-core",
  "lumino-event",
 ]
 

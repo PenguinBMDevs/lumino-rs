@@ -2,8 +2,8 @@ use std::sync::mpsc::Receiver;
 
 use crate::NoteEvent;
 
-use super::Renderers;
 use super::super::params::RenderParams;
+use super::Renderers;
 
 /// 准备渲染器实例
 pub fn prepare_renderers(

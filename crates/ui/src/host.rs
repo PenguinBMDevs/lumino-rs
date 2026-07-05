@@ -393,13 +393,16 @@ impl Host {
     /// `group_notes` 需包含该 `track_idx` 所在 track_group 的所有音轨音符，
     /// runner 将使用这些最新数据重新合并 group tile，避免读取过期缓存。
     pub fn send_hires_regen(&mut self, params: lumino_gfx::render_thread::HiResTrackParams) {
-        self.send_hires_track_cmd(
-            lumino_gfx::render_thread::ControlCommand::regenerate_track(params),
-        );
+        self.send_hires_track_cmd(lumino_gfx::render_thread::ControlCommand::regenerate_track(
+            params,
+        ));
     }
 
     /// 发送编辑后的临时脏区域覆层显示命令（切换音轨前立即触发）
-    pub fn send_hires_dirty_overlay(&mut self, params: lumino_gfx::render_thread::HiResTrackParams) {
+    pub fn send_hires_dirty_overlay(
+        &mut self,
+        params: lumino_gfx::render_thread::HiResTrackParams,
+    ) {
         self.send_hires_track_cmd(
             lumino_gfx::render_thread::ControlCommand::show_dirty_overlay(params),
         );

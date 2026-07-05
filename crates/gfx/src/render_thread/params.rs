@@ -313,10 +313,7 @@ impl RenderParamsBuilder {
     }
 
     /// 设置音轨总览模式音符实例
-    pub fn arrangement_note_instances(
-        mut self,
-        instances: Vec<ArrangementNoteInstance>,
-    ) -> Self {
+    pub fn arrangement_note_instances(mut self, instances: Vec<ArrangementNoteInstance>) -> Self {
         self.arrangement_note_instances = instances;
         self
     }

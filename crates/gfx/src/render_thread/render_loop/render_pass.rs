@@ -1,9 +1,9 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use super::Renderers;
 use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
+use super::Renderers;
 use crate::{CameraParams, CameraUniform, HiResRenderer, TileCoord};
 
 /// 执行渲染通道（含走带/钢琴卷帘/CC 柱状条）
@@ -135,7 +135,9 @@ pub fn execute_render_pass(
         // 绘制标尺
         if !params.ruler_instances.is_empty() {
             render_pass.set_scissor_rect(0, 0, width, height);
-            renderers.ruler.draw(&mut render_pass, params.ruler_instances.len() as u32);
+            renderers
+                .ruler
+                .draw(&mut render_pass, params.ruler_instances.len() as u32);
         }
 
         // 绘制 CC 柱状条（力度面板 — 统一矩形渲染，覆盖所有模式）
@@ -147,7 +149,9 @@ pub fn execute_render_pass(
             let vscissor_h = ((vh * scale) as u32).min(height.saturating_sub(vscissor_y));
 
             render_pass.set_scissor_rect(vscissor_x, vscissor_y, vscissor_w, vscissor_h);
-            renderers.cc_bar.draw(&mut render_pass, params.cc_bar_instances.len() as u32);
+            renderers
+                .cc_bar
+                .draw(&mut render_pass, params.cc_bar_instances.len() as u32);
         }
     }
 }

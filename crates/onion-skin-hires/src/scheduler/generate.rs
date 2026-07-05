@@ -169,8 +169,13 @@ pub(super) fn generate_or_load_track_tile(
     };
 
     // 先查缓存
-    match cache::read_track_tile_cache(ctx.cache_dir, ctx.midi_hash, track_idx, time_group, &expected_meta)
-    {
+    match cache::read_track_tile_cache(
+        ctx.cache_dir,
+        ctx.midi_hash,
+        track_idx,
+        time_group,
+        &expected_meta,
+    ) {
         Ok(Some(tile)) => return tile, // 缓存命中
         Ok(None) => {}                 // 缓存未命中，生成
         Err(e) => {
@@ -182,7 +187,13 @@ pub(super) fn generate_or_load_track_tile(
 
     // 生成单音轨贴图
     let tile = generate_track_tile(
-        notes, track_idx, time_group, tick_start, tick_end, ctx.width, ctx.key_count,
+        notes,
+        track_idx,
+        time_group,
+        tick_start,
+        tick_end,
+        ctx.width,
+        ctx.key_count,
     );
 
     // 写缓存入队，后台线程执行 zstd+IO，避免阻塞 rayon 并行生成

@@ -19,6 +19,8 @@ pub use speed_change::SpeedChangeAction;
 pub use types::*;
 pub use velocity::VelocityAction;
 
+pub use lumino_core::{AudioAction, DotType, NotePrecision, Tool};
+
 use lumino_event::Event;
 
 /// 编辑器动作
@@ -62,13 +64,6 @@ pub enum EditorAction {
     IndicatorDragMove {
         x: f32,
     },
-}
-
-/// 音频动作
-#[derive(Debug, Clone)]
-pub enum AudioAction {
-    PlayNote { key: u8, velocity: u8 },
-    StopNote { key: u8 },
 }
 
 /// 应用消息
@@ -220,36 +215,6 @@ mod tests {
         assert_eq!(data.gpu_frame_time_ms, 16.7);
     }
 
-    // ─── NotePrecision ───
-
-    #[test]
-    fn test_note_precision_default() {
-        assert_eq!(NotePrecision::default(), NotePrecision::Quarter);
-    }
-
-    #[test]
-    fn test_note_precision_display() {
-        assert_eq!(NotePrecision::Whole.to_string(), "全音符");
-        assert_eq!(NotePrecision::Quarter.to_string(), "四分音符");
-        assert_eq!(NotePrecision::Custom.to_string(), "自定义");
-    }
-
-    #[test]
-    fn test_note_precision_as_ticks() {
-        let ppq = 480;
-        assert_eq!(NotePrecision::Whole.as_ticks(ppq), 480.0 * 4.0);
-        assert_eq!(NotePrecision::Quarter.as_ticks(ppq), 480.0);
-        assert_eq!(NotePrecision::Eighth.as_ticks(ppq), 480.0 / 2.0);
-        assert_eq!(NotePrecision::OneTwentyEighth.as_ticks(ppq), 480.0 / 32.0);
-    }
-
-    #[test]
-    fn test_note_precision_presets() {
-        let presets = NotePrecision::presets();
-        assert_eq!(presets.len(), 8);
-        assert!(!presets.contains(&NotePrecision::Custom));
-    }
-
     // ─── TupletType ───
 
     #[test]
@@ -272,20 +237,6 @@ mod tests {
         assert_eq!(all.len(), 5);
     }
 
-    // ─── DotType ───
-
-    #[test]
-    fn test_dot_type_default() {
-        assert_eq!(DotType::default(), DotType::None);
-    }
-
-    #[test]
-    fn test_dot_type_multiplier() {
-        assert_eq!(DotType::None.multiplier(), 1.0);
-        assert_eq!(DotType::Single.multiplier(), 1.5);
-        assert_eq!(DotType::Double.multiplier(), 1.75);
-    }
-
     // ─── SpeedFactor ───
 
     #[test]
@@ -306,13 +257,6 @@ mod tests {
     fn test_speed_factor_display() {
         assert_eq!(SpeedFactor::X05.display_name(), "×0.5");
         assert_eq!(SpeedFactor::X2.display_name(), "×2.0");
-    }
-
-    // ─── Tool ───
-
-    #[test]
-    fn test_tool_default() {
-        assert_eq!(Tool::default(), Tool::Pointer);
     }
 
     // ─── AudioChannels ───
@@ -387,23 +331,6 @@ mod tests {
         let action = EditorAction::Undo;
         let debug = format!("{:?}", action);
         assert!(debug.contains("Undo"));
-    }
-
-    // ─── AudioAction ───
-
-    #[test]
-    fn test_audio_action_play_note() {
-        let action = AudioAction::PlayNote {
-            key: 60,
-            velocity: 100,
-        };
-        assert!(matches!(action, AudioAction::PlayNote { key: 60, .. }));
-    }
-
-    #[test]
-    fn test_audio_action_stop_note() {
-        let action = AudioAction::StopNote { key: 60 };
-        assert!(matches!(action, AudioAction::StopNote { key: 60 }));
     }
 
     // ─── Message null helper ───
