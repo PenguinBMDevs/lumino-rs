@@ -11,6 +11,7 @@ use crate::note::Note;
 
 use super::constants::DEFAULT_BPM;
 use super::constants::GLUE_PROXIMITY_THRESHOLD;
+use super::note_grouping::{self, NoteTuple};
 
 /// 编辑器数据
 #[derive(Debug)]
@@ -198,8 +199,7 @@ impl EditorData {
         if sel.is_empty() {
             return 0;
         }
-        type NT = (usize, f32, u16, f32, u8, u8);
-        let mut sn: Vec<NT> = sel
+        let selected_notes: Vec<NoteTuple> = sel
             .iter()
             .filter_map(|&i| {
                 self.notes
@@ -207,33 +207,15 @@ impl EditorData {
                     .map(|n| (i, n.tick, n.key, n.length, n.velocity, n.channel))
             })
             .collect();
-        if sn.is_empty() {
+        if selected_notes.is_empty() {
             return 0;
         }
-        sn.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        let mut groups: Vec<Vec<NT>> = Vec::new();
-        for note in &sn {
-            let added = match groups.last_mut() {
-                Some(g) => match g.last() {
-                    Some(last)
-                        if last.2 == note.2
-                            && note.1 <= last.1 + last.3 + GLUE_PROXIMITY_THRESHOLD =>
-                    {
-                        g.push(*note);
-                        true
-                    }
-                    _ => false,
-                },
-                None => false,
-            };
-            if !added {
-                groups.push(vec![*note]);
-            }
-        }
-        let groups: Vec<Vec<NT>> = groups.into_iter().filter(|g| g.len() >= 2).collect();
+
+        let groups = note_grouping::group_adjacent_notes(&selected_notes, GLUE_PROXIMITY_THRESHOLD);
         if groups.is_empty() {
             return 0;
         }
+
         self.push_history();
         let mut merged = 0usize;
         for group in &groups {

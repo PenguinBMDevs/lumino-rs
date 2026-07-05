@@ -32,6 +32,7 @@ mod tests;
 use crate::{message::AudioAction, toolbar::Tool};
 use iced_core::Point;
 use iced_widget::canvas;
+use lumino_core::editor_state::viewport::Viewport;
 use std::cell::{Cell, RefCell};
 
 use note::Note;
@@ -276,7 +277,11 @@ impl Editor {
     /// 设置总 ticks
     pub fn set_total_ticks(&mut self, total_ticks: u32) {
         self.editor_state.view.total_ticks = total_ticks;
-        self.editor_state.update_max_scroll(total_ticks);
+        Viewport::new(
+            &mut self.editor_state.view,
+            &mut self.editor_state.max_scroll,
+        )
+        .update_max_scroll(total_ticks);
     }
 
     /// 设置 PPQ

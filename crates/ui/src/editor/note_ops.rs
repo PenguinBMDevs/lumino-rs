@@ -2,11 +2,16 @@ use super::{Editor, HitType, SelectionHitType};
 use crate::constants::editor::NOTE_EDGE_THRESHOLD_PX;
 use crate::event;
 use iced_core::Point;
+use lumino_core::editor_state::hit_test;
 
 impl Editor {
     pub fn hit_test_note(&self, pos: Point) -> Option<(usize, HitType)> {
-        self.editor_state
-            .hit_test_note((pos.x, pos.y), NOTE_EDGE_THRESHOLD_PX)
+        hit_test::hit_test_note(
+            &self.editor_state.data.notes,
+            &self.editor_state.view,
+            (pos.x, pos.y),
+            NOTE_EDGE_THRESHOLD_PX,
+        )
     }
 
     pub fn delete_note_by_index(&mut self, index: usize) {
@@ -165,10 +170,15 @@ impl Editor {
     }
 
     pub fn get_selection_box_bounds(&self) -> Option<(f32, f32, f32, f32)> {
-        self.editor_state.get_selection_box_bounds()
+        hit_test::get_selection_box_bounds(
+            &self.editor_state.data.notes,
+            &self.editor_state.view,
+            &self.editor_state.interaction.selected_notes,
+        )
     }
 
     pub fn hit_test_selection_box(&self, pos: Point) -> Option<SelectionHitType> {
-        self.editor_state.hit_test_selection_box((pos.x, pos.y))
+        let bounds = self.get_selection_box_bounds()?;
+        hit_test::hit_test_selection_box(bounds, (pos.x, pos.y))
     }
 }

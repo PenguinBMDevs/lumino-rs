@@ -10,6 +10,7 @@
 use crate::message::{EditorAction, Message};
 use crate::root::Root;
 use crate::{sidebar, window};
+use lumino_core::editor_state::viewport::Viewport;
 
 // 重新导出子模块
 pub mod collaboration;
@@ -362,8 +363,10 @@ impl Root {
                         crate::constants::editor::zoom::MAX_ZOOM_Y,
                     );
                     if (fill_zoom - state.view.zoom_y).abs() > f32::EPSILON {
+                        let total_ticks = state.view.total_ticks;
                         state.view.zoom_y = fill_zoom;
-                        state.update_max_scroll(state.view.total_ticks);
+                        Viewport::new(&mut state.view, &mut state.max_scroll)
+                            .update_max_scroll(total_ticks);
                     }
                 }
 

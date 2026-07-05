@@ -3,6 +3,7 @@ use crate::constants::editor::{DEFAULT_MIDI_CHANNEL, DEFAULT_NOTE_VELOCITY};
 use crate::event;
 use crate::message::EditorAction;
 use crate::toolbar::Tool;
+use lumino_core::editor_state::interaction_ops;
 use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
 
 impl Editor {
@@ -232,13 +233,18 @@ impl Editor {
 
     /// 开始编辑现有音符
     fn start_note_edit(&mut self, index: usize, hit_type: HitType, pos: iced_core::Point) {
-        self.editor_state
-            .start_note_edit(index, hit_type, (pos.x, pos.y));
+        interaction_ops::start_note_edit(
+            &mut self.editor_state.data,
+            &mut self.editor_state.interaction,
+            index,
+            hit_type,
+            (pos.x, pos.y),
+        );
     }
 
     /// 开始绘制新音符
     fn start_drawing(&mut self, snapped_tick: f32, key: u16) {
-        self.editor_state.start_drawing(snapped_tick, key);
+        interaction_ops::start_drawing(&mut self.editor_state.interaction, snapped_tick, key);
     }
 
     /// 播放音符音频
@@ -311,10 +317,13 @@ impl Editor {
         new_key: Option<u16>,
         new_length: Option<f32>,
     ) {
-        if self
-            .editor_state
-            .apply_note_changes(new_tick, new_key, new_length)
-        {
+        if interaction_ops::apply_note_changes(
+            &mut self.editor_state.data,
+            &self.editor_state.interaction.edit_state,
+            new_tick,
+            new_key,
+            new_length,
+        ) {
             self.spatial.note_index_dirty.set(true);
         }
     }
