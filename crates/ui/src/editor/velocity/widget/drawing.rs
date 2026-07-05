@@ -101,10 +101,16 @@ const TEMPO_BPM_MIN: f64 = 20.0;
 const TEMPO_BPM_MAX: f64 = 10000.0;
 
 /// 将 BPM 值映射到面板 Y 坐标
+///
+/// 保持低 BPM 在面板底部、高 BPM 在面板顶部的视觉顺序。
+/// 通过将 BPM 按对数归一化，低 BPM 区域（刻度值密集）参考线分布更舒展，
+/// 高 BPM 区域（刻度值稀疏）参考线更紧凑，实现用户期望的疏密分布。
 pub fn tempo_bpm_to_y(bpm: f64, bounds_height: f32) -> f32 {
     let max_y = bounds_height;
     let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
-    let normalized = ((bpm - TEMPO_BPM_MIN) / (TEMPO_BPM_MAX - TEMPO_BPM_MIN)) as f32;
+    let log_min = TEMPO_BPM_MIN.ln();
+    let log_max = TEMPO_BPM_MAX.ln();
+    let normalized = ((bpm.ln() - log_min) / (log_max - log_min)) as f32;
     max_y - normalized * (max_y - min_y)
 }
 
@@ -132,19 +138,19 @@ pub fn bend_value_to_y(value: i16, bounds_height: f32) -> f32 {
 }
 
 /// 计算 Tempo 控制点屏幕位置
+///
+/// 注意：该函数用于折线图绘制，使用与 `tempo_bpm_to_y` 相同的对数映射，
+/// 以保证数据点与参考线对齐。
 pub fn tempo_point_screen_pos(
     point: &TempoPoint,
     _bounds_width: f32,
     bounds_height: f32,
     view: &ViewState,
-    min_bpm: f64,
-    bpm_range: f64,
+    _min_bpm: f64,
+    _bpm_range: f64,
 ) -> Point {
     let x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
-    let max_y = bounds_height;
-    let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
-    let normalized = ((point.bpm - min_bpm) / bpm_range) as f32;
-    let y = max_y - normalized * (max_y - min_y);
+    let y = tempo_bpm_to_y(point.bpm, bounds_height);
     Point::new(x, y)
 }
 

@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::editor::Note;
+use crate::editor::editor_state::ViewState;
 
 // ===== Velocity 测试 =====
 
@@ -129,6 +130,51 @@ fn test_edit_mode_display_name() {
 }
 
 // ===== Tempo 数据测试 =====
+
+#[test]
+fn test_tempo_bpm_to_y_min_at_bottom() {
+    let height = 200.0;
+    let y = widget::tempo_bpm_to_y(20.0, height);
+    assert!((y - height).abs() < f32::EPSILON, "最小 BPM 应位于面板底部");
+}
+
+#[test]
+fn test_tempo_bpm_to_y_max_at_top() {
+    let height = 200.0;
+    let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
+    let y = widget::tempo_bpm_to_y(10000.0, height);
+    assert!((y - min_y).abs() < f32::EPSILON, "最大 BPM 应位于面板顶部");
+}
+
+#[test]
+fn test_tempo_bpm_to_y_density_sparse_at_top() {
+    let height = 200.0;
+    let y_20 = widget::tempo_bpm_to_y(20.0, height);
+    let y_60 = widget::tempo_bpm_to_y(60.0, height);
+    let y_5000 = widget::tempo_bpm_to_y(5000.0, height);
+    let y_10000 = widget::tempo_bpm_to_y(10000.0, height);
+
+    let bottom_spacing = y_20 - y_60;
+    let top_spacing = y_5000 - y_10000;
+    assert!(
+        top_spacing < bottom_spacing,
+        "顶部线条应更密集，底部应更稀疏：top_spacing={top_spacing}, bottom_spacing={bottom_spacing}"
+    );
+}
+
+#[test]
+fn test_tempo_point_screen_pos_matches_bpm_to_y() {
+    let height = 200.0;
+    let width = 800.0;
+    let view = ViewState::default();
+    let point = widget::TempoPoint {
+        tick: 0.0,
+        bpm: 120.0,
+    };
+    let pos = widget::tempo_point_screen_pos(&point, width, height, &view, 20.0, 9980.0);
+    let expected_y = widget::tempo_bpm_to_y(120.0, height);
+    assert!((pos.y - expected_y).abs() < f32::EPSILON);
+}
 
 #[test]
 fn test_build_tempo_points_no_document() {
