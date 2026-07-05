@@ -152,7 +152,7 @@ fn get_or_create_handle(icon: Icon, is_dark: bool) -> Result<Handle, IconError> 
     }
 
     let data = get_icon_data(icon)?;
-    let rgba = if is_dark {
+    let rgba = if should_invert_icon(icon, is_dark) {
         invert_rgba(&data.rgba)
     } else {
         data.rgba
@@ -160,6 +160,12 @@ fn get_or_create_handle(icon: Icon, is_dark: bool) -> Result<Handle, IconError> 
     let handle = Handle::from_rgba(data.width, data.height, rgba);
     cache.insert((icon, is_dark), handle.clone());
     Ok(handle)
+}
+
+/// 判断指定图标在当前主题下是否需要反色。
+/// Logo 类图标（Lumino / LogoInApp）在暗色/亮色模式下均保持原色，不反色。
+fn should_invert_icon(icon: Icon, is_dark: bool) -> bool {
+    is_dark && !matches!(icon, Icon::Lumino | Icon::LogoInApp)
 }
 
 /// 渲染图标（可能 panic，仅用于向后兼容）
@@ -288,3 +294,39 @@ fn render_svg(
 }
 
 // bytes() 函数由 define_icons! 宏生成
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_invert_rgba_inverts_opaque_pixels() {
+        let rgba = vec![10, 20, 30, 255, 40, 50, 60, 255];
+        let inverted = invert_rgba(&rgba);
+        assert_eq!(inverted, vec![245, 235, 225, 255, 215, 205, 195, 255]);
+    }
+
+    #[test]
+    fn test_invert_rgba_preserves_transparent_pixels() {
+        let rgba = vec![10, 20, 30, 0, 40, 50, 60, 128];
+        let inverted = invert_rgba(&rgba);
+        // 完全透明像素保持原样，半透明像素仍做反色
+        assert_eq!(inverted, vec![10, 20, 30, 0, 215, 205, 195, 128]);
+    }
+
+    #[test]
+    fn test_logo_icons_never_invert() {
+        assert!(!should_invert_icon(Icon::Lumino, true));
+        assert!(!should_invert_icon(Icon::LogoInApp, true));
+        assert!(!should_invert_icon(Icon::Lumino, false));
+        assert!(!should_invert_icon(Icon::LogoInApp, false));
+    }
+
+    #[test]
+    fn test_regular_icons_invert_only_in_dark_mode() {
+        assert!(should_invert_icon(Icon::Gear, true));
+        assert!(!should_invert_icon(Icon::Gear, false));
+        assert!(should_invert_icon(Icon::Play, true));
+        assert!(!should_invert_icon(Icon::Play, false));
+    }
+}
