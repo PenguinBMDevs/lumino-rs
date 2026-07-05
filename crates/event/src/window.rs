@@ -41,47 +41,50 @@ impl Event {
         Self::Lifecycle(lifecycle::Event::Minimize)
     }
 
+    // ── 对话框构造函数（直接构造 dialog::Event） ──
+
     pub const fn open_custom_precision_dialog() -> Self {
-        Self::Dialog(dialog::Event::open_custom_precision_dialog())
+        Self::Dialog(dialog::Event::OpenCustomPrecisionDialog)
     }
     pub const fn close_custom_precision_dialog() -> Self {
-        Self::Dialog(dialog::Event::close_custom_precision_dialog())
+        Self::Dialog(dialog::Event::CloseCustomPrecisionDialog)
     }
     pub const fn apply_custom_precision(numerator: u32, denominator: u32) -> Self {
-        Self::Dialog(dialog::Event::apply_custom_precision(
-            numerator,
-            denominator,
-        ))
+        Self::Dialog(dialog::Event::ApplyCustomPrecision(numerator, denominator))
     }
     pub fn open_load_confirm_dialog(path: String, size_mb: f64) -> Self {
-        Self::Dialog(dialog::Event::open_load_confirm_dialog(path, size_mb))
+        Self::Dialog(dialog::Event::OpenLoadConfirmDialog { path, size_mb })
     }
     pub const fn open_collaboration_dialog() -> Self {
-        Self::Dialog(dialog::Event::open_collaboration_dialog())
+        Self::Dialog(dialog::Event::OpenCollaborationDialog)
     }
     pub const fn close_collaboration_dialog() -> Self {
-        Self::Dialog(dialog::Event::close_collaboration_dialog())
+        Self::Dialog(dialog::Event::CloseCollaborationDialog)
     }
     pub const fn open_speed_change_dialog() -> Self {
-        Self::Dialog(dialog::Event::open_speed_change_dialog())
+        Self::Dialog(dialog::Event::OpenSpeedChangeDialog)
     }
     pub const fn close_speed_change_dialog() -> Self {
-        Self::Dialog(dialog::Event::close_speed_change_dialog())
+        Self::Dialog(dialog::Event::CloseSpeedChangeDialog)
     }
     pub const fn confirm_speed_change(factor: f32) -> Self {
-        Self::Dialog(dialog::Event::confirm_speed_change(factor))
+        Self::Dialog(dialog::Event::ConfirmSpeedChange(factor))
     }
     pub const fn open_project_settings_dialog() -> Self {
-        Self::Dialog(dialog::Event::open_project_settings_dialog())
+        Self::Dialog(dialog::Event::OpenProjectSettingsDialog)
     }
     pub const fn close_project_settings_dialog() -> Self {
-        Self::Dialog(dialog::Event::close_project_settings_dialog())
+        Self::Dialog(dialog::Event::CloseProjectSettingsDialog)
     }
     pub fn apply_project_settings(title: String, tempo: f64, copyright: String) -> Self {
-        Self::Dialog(dialog::Event::apply_project_settings(
-            title, tempo, copyright,
-        ))
+        Self::Dialog(dialog::Event::ApplyProjectSettings {
+            title,
+            tempo,
+            copyright,
+        })
     }
+
+    // ── 协作构造函数（直接构造 collaboration::Event） ──
 
     pub fn collaboration_connect(
         host: String,
@@ -89,44 +92,50 @@ impl Event {
         username: String,
         invite_code: Option<String>,
     ) -> Self {
-        Self::Collaboration(collaboration::Event::connect(
+        Self::Collaboration(collaboration::Event::Connect {
             host,
             port,
             username,
             invite_code,
-        ))
+        })
     }
     pub fn collaboration_create_room(name: String) -> Self {
-        Self::Collaboration(collaboration::Event::create_room(name))
+        Self::Collaboration(collaboration::Event::CreateRoom { name })
     }
     pub fn collaboration_join_room(invite_code: String) -> Self {
-        Self::Collaboration(collaboration::Event::join_room(invite_code))
+        Self::Collaboration(collaboration::Event::JoinRoom { invite_code })
     }
     pub const fn collaboration_disconnect() -> Self {
-        Self::Collaboration(collaboration::Event::disconnect())
+        Self::Collaboration(collaboration::Event::Disconnect)
     }
     pub fn collaboration_authenticated(user_id: String, invite_code: String) -> Self {
-        Self::Collaboration(collaboration::Event::authenticated(user_id, invite_code))
+        Self::Collaboration(collaboration::Event::Authenticated {
+            user_id,
+            invite_code,
+        })
     }
     pub fn collaboration_room_created(room_name: String, invite_code: String) -> Self {
-        Self::Collaboration(collaboration::Event::room_created(room_name, invite_code))
+        Self::Collaboration(collaboration::Event::RoomCreated {
+            room_name,
+            invite_code,
+        })
     }
     pub fn collaboration_room_joined(
         room_name: String,
         invite_code: String,
         user_count: usize,
     ) -> Self {
-        Self::Collaboration(collaboration::Event::room_joined(
+        Self::Collaboration(collaboration::Event::RoomJoined {
             room_name,
             invite_code,
             user_count,
-        ))
+        })
     }
     pub const fn collaboration_disconnected() -> Self {
-        Self::Collaboration(collaboration::Event::disconnected())
+        Self::Collaboration(collaboration::Event::Disconnected)
     }
     pub fn collaboration_user_left(user_id: String) -> Self {
-        Self::Collaboration(collaboration::Event::user_left(user_id))
+        Self::Collaboration(collaboration::Event::UserLeft { user_id })
     }
     pub fn collaboration_mouse_update(
         user_id: String,
@@ -135,16 +144,22 @@ impl Event {
         color: String,
         username: String,
     ) -> Self {
-        Self::Collaboration(collaboration::Event::mouse_update(
-            user_id, x, y, color, username,
-        ))
+        Self::Collaboration(collaboration::Event::MouseUpdate {
+            user_id,
+            x,
+            y,
+            color,
+            username,
+        })
     }
     pub fn collaboration_note_update(user_id: String, operation: String) -> Self {
-        Self::Collaboration(collaboration::Event::note_update(user_id, operation))
+        Self::Collaboration(collaboration::Event::NoteUpdate { user_id, operation })
     }
     pub fn collaboration_project_update(user_id: String, update: String) -> Self {
-        Self::Collaboration(collaboration::Event::project_update(user_id, update))
+        Self::Collaboration(collaboration::Event::ProjectUpdate { user_id, update })
     }
+
+    // ── 同步构造函数（直接构造 sync::Event） ──
 
     pub fn local_note_added(
         tick: f32,
@@ -154,14 +169,14 @@ impl Event {
         channel: u8,
         track_index: usize,
     ) -> Self {
-        Self::Sync(sync::Event::local_note_added(
+        Self::Sync(sync::Event::LocalNoteAdded {
             tick,
             key,
             length,
             velocity,
             channel,
             track_index,
-        ))
+        })
     }
     pub fn local_note_moved(
         tick: f32,
@@ -171,14 +186,14 @@ impl Event {
         key_offset: i16,
         track_index: usize,
     ) -> Self {
-        Self::Sync(sync::Event::local_note_moved(
+        Self::Sync(sync::Event::LocalNoteMoved {
             tick,
             key,
             length,
             tick_offset,
             key_offset,
             track_index,
-        ))
+        })
     }
     pub fn local_note_deleted(
         tick: f32,
@@ -188,16 +203,16 @@ impl Event {
         channel: u8,
         track_index: usize,
     ) -> Self {
-        Self::Sync(sync::Event::local_note_deleted(
+        Self::Sync(sync::Event::LocalNoteDeleted {
             tick,
             key,
             length,
             velocity,
             channel,
             track_index,
-        ))
+        })
     }
     pub fn local_track_added(track_index: usize) -> Self {
-        Self::Sync(sync::Event::local_track_added(track_index))
+        Self::Sync(sync::Event::LocalTrackAdded { track_index })
     }
 }

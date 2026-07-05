@@ -49,45 +49,4 @@ impl Event {
             Self::ApplyProjectSettings { .. } => "应用工程设置".to_string(),
         }
     }
-
-    pub const fn open_custom_precision_dialog() -> Self {
-        Self::OpenCustomPrecisionDialog
-    }
-    pub const fn close_custom_precision_dialog() -> Self {
-        Self::CloseCustomPrecisionDialog
-    }
-    pub const fn apply_custom_precision(numerator: u32, denominator: u32) -> Self {
-        Self::ApplyCustomPrecision(numerator, denominator)
-    }
-    pub const fn open_collaboration_dialog() -> Self {
-        Self::OpenCollaborationDialog
-    }
-    pub const fn close_collaboration_dialog() -> Self {
-        Self::CloseCollaborationDialog
-    }
-    pub const fn open_speed_change_dialog() -> Self {
-        Self::OpenSpeedChangeDialog
-    }
-    pub const fn close_speed_change_dialog() -> Self {
-        Self::CloseSpeedChangeDialog
-    }
-    pub const fn confirm_speed_change(factor: f32) -> Self {
-        Self::ConfirmSpeedChange(factor)
-    }
-    pub const fn open_project_settings_dialog() -> Self {
-        Self::OpenProjectSettingsDialog
-    }
-    pub const fn close_project_settings_dialog() -> Self {
-        Self::CloseProjectSettingsDialog
-    }
-    pub fn apply_project_settings(title: String, tempo: f64, copyright: String) -> Self {
-        Self::ApplyProjectSettings {
-            title,
-            tempo,
-            copyright,
-        }
-    }
-    pub fn open_load_confirm_dialog(path: String, size_mb: f64) -> Self {
-        Self::OpenLoadConfirmDialog { path, size_mb }
-    }
 }
