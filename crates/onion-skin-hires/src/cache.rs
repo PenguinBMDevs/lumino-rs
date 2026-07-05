@@ -86,10 +86,12 @@ mod tests {
         let meta = sample_meta(&tile);
         let hash = compute_midi_hash(b"test-midi");
 
-        let written = write_track_tile_cache(&dir, &hash, &tile, &meta).unwrap();
+        let written = write_track_tile_cache(&dir, &hash, &tile, &meta)
+            .expect("写缓存应成功");
         assert!(written.exists());
 
-        let read = read_track_tile_cache(&dir, &hash, 3, 5, &meta).unwrap();
+        let read = read_track_tile_cache(&dir, &hash, 3, 5, &meta)
+            .expect("读缓存应成功");
         let read = read.expect("应读到缓存");
         assert_eq!(read.track_idx, 3);
         assert_eq!(read.time_group, 5);
@@ -105,7 +107,8 @@ mod tests {
         let dir = test_cache_dir("miss");
         let meta = sample_meta(&sample_tile(0, 0));
         let hash = compute_midi_hash(b"no-such-midi");
-        let read = read_track_tile_cache(&dir, &hash, 0, 0, &meta).unwrap();
+        let read = read_track_tile_cache(&dir, &hash, 0, 0, &meta)
+            .expect("缓存 miss 时读缓存应返回 Ok(None)");
         assert!(read.is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -117,7 +120,8 @@ mod tests {
         let meta = sample_meta(&tile); // key_count=128, ppq=1920, mpg=4
         let hash = compute_midi_hash(b"spec-test");
 
-        write_track_tile_cache(&dir, &hash, &tile, &meta).unwrap();
+        write_track_tile_cache(&dir, &hash, &tile, &meta)
+            .expect("写缓存应成功");
 
         // 用不同规格读取（ppq 变了）→ SpecMismatch
         let wrong_meta = CacheMeta { ppq: 480, ..meta };
@@ -142,9 +146,11 @@ mod tests {
         let meta = sample_meta(&tile);
         let hash = compute_midi_hash(b"corrupt");
 
-        let path = write_track_tile_cache(&dir, &hash, &tile, &meta).unwrap();
+        let path = write_track_tile_cache(&dir, &hash, &tile, &meta)
+            .expect("写缓存应成功");
         // 破坏 magic
-        std::fs::write(&path, b"XXXXXXX").unwrap();
+        std::fs::write(&path, b"XXXXXXX")
+            .expect("写入损坏数据应成功");
         let result = read_track_tile_cache(&dir, &hash, 0, 0, &meta);
         assert!(result.is_err());
 
@@ -159,24 +165,29 @@ mod tests {
         for (t, g) in [(0u16, 0u32), (1, 0), (0, 1)] {
             let tile = sample_tile(t, g);
             let meta = sample_meta(&tile);
-            write_track_tile_cache(&dir, &hash, &tile, &meta).unwrap();
+            write_track_tile_cache(&dir, &hash, &tile, &meta)
+                .expect("写缓存应成功");
         }
         // 写一个别的 MIDI 的缓存
         let other_hash = compute_midi_hash(b"other");
         let other_tile = sample_tile(0, 0);
         let other_meta = sample_meta(&other_tile);
-        write_track_tile_cache(&dir, &other_hash, &other_tile, &other_meta).unwrap();
+        write_track_tile_cache(&dir, &other_hash, &other_tile, &other_meta)
+            .expect("写 other MIDI 缓存应成功");
 
         // 只清当前 MIDI
-        let removed = clear_midi_cache(&dir, &hash).unwrap();
+        let removed = clear_midi_cache(&dir, &hash)
+            .expect("清理 MIDI 缓存应成功");
         assert_eq!(removed, 3);
 
         // 另一个 MIDI 的缓存还在
-        let read = read_track_tile_cache(&dir, &other_hash, 0, 0, &other_meta).unwrap();
+        let read = read_track_tile_cache(&dir, &other_hash, 0, 0, &other_meta)
+            .expect("读 other MIDI 缓存应成功");
         assert!(read.is_some());
 
         // 清全部
-        let removed_all = clear_all_cache(&dir).unwrap();
+        let removed_all = clear_all_cache(&dir)
+            .expect("清理全部缓存应成功");
         assert_eq!(removed_all, 1);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -186,9 +197,11 @@ mod tests {
     fn test_clear_nonexistent_dir() {
         let dir = test_cache_dir("nonexistent");
         // 目录不存在，清理应返回 0 不报错
-        let removed = clear_all_cache(&dir).unwrap();
+        let removed = clear_all_cache(&dir)
+            .expect("清理不存在的目录应返回 Ok(0)");
         assert_eq!(removed, 0);
-        let removed = clear_midi_cache(&dir, "deadbeef").unwrap();
+        let removed = clear_midi_cache(&dir, "deadbeef")
+            .expect("清理不存在的 MIDI 缓存应返回 Ok(0)");
         assert_eq!(removed, 0);
     }
 }

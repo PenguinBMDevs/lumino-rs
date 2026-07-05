@@ -188,3 +188,4 @@ incremental = true                 # 启用增量编译（对多次构建友好�
 
 [lints.clippy]
 mod_module_files = "deny"  # 或 "warn"
+unwrap_used = "deny"       # AGENTS.md 红线：NEVER use unwrap()

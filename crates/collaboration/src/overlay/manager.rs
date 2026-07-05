@@ -283,7 +283,10 @@ mod tests {
 
         let overlays = mgr.get_overlays(&coord);
         assert!(overlays.is_some());
-        assert_eq!(overlays.unwrap().len(), 1);
+        assert_eq!(
+            overlays.expect("生成一个 overlay 后应有值").len(),
+            1
+        );
     }
 
     #[test]
@@ -292,10 +295,10 @@ mod tests {
         let coord = RegionCoord::new(0, 0);
 
         mgr.generate_overlay(&coord);
-        let v1 = mgr.get_overlays(&coord).unwrap()[0].version;
+        let v1 = mgr.get_overlays(&coord).expect("应有 overlay")[0].version;
 
         mgr.generate_overlay(&coord);
-        let v2 = mgr.get_overlays(&coord).unwrap()[1].version;
+        let v2 = mgr.get_overlays(&coord).expect("两次生成应有两个 overlay")[1].version;
 
         assert!(v2 > v1);
     }
@@ -308,7 +311,7 @@ mod tests {
         mgr.generate_overlay(&coord);
         mgr.generate_overlay(&coord);
 
-        let overlays = mgr.get_overlays(&coord).unwrap();
+        let overlays = mgr.get_overlays(&coord).expect("两次生成后应有 overlay");
         assert_eq!(overlays.len(), 2);
         assert_eq!(overlays[0].version, 1);
         assert_eq!(overlays[1].version, 2);
@@ -330,7 +333,10 @@ mod tests {
 
         let overlays = mgr.get_overlays(&coord);
         assert!(overlays.is_some());
-        assert_eq!(overlays.unwrap().len(), 1);
+        assert_eq!(
+            overlays.expect("merge 后应仍有 overlay").len(),
+            1
+        );
     }
 
     #[test]

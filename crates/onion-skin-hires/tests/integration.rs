@@ -45,10 +45,11 @@ fn test_generate_cache_roundtrip() {
     let meta = CacheMeta::from_tile(&tile, KEYS, PPQ, cfg.measures_per_group);
 
     // 写缓存 → 读缓存 → 像素一致
-    write_track_tile_cache(&dir, &hash, &tile, &meta).unwrap();
+    write_track_tile_cache(&dir, &hash, &tile, &meta)
+        .expect("写缓存应成功");
     let read = read_track_tile_cache(&dir, &hash, 0, 0, &meta)
-        .unwrap()
-        .unwrap();
+        .expect("读缓存应返回 Ok")
+        .expect("缓存应存在");
     assert_eq!(read.pixels, tile.pixels);
     assert_eq!(read.width, WIDTH);
     assert_eq!(read.height, KEYS as u32);
@@ -109,7 +110,8 @@ fn test_cache_invalidation_on_spec_change() {
 
     let tile = generate_track_tile(&notes, 0, 0, 0, TICKS_PER_GROUP, WIDTH, KEYS);
     let meta = CacheMeta::from_tile(&tile, KEYS, PPQ, 4);
-    write_track_tile_cache(&dir, &hash, &tile, &meta).unwrap();
+    write_track_tile_cache(&dir, &hash, &tile, &meta)
+        .expect("写缓存应成功");
 
     // 用不同 ppq 读 → 规格失效
     let wrong_meta = CacheMeta { ppq: 480, ..meta };
@@ -117,7 +119,8 @@ fn test_cache_invalidation_on_spec_change() {
     assert!(result.is_err());
 
     // 原规格仍可读
-    let read = read_track_tile_cache(&dir, &hash, 0, 0, &meta).unwrap();
+    let read = read_track_tile_cache(&dir, &hash, 0, 0, &meta)
+        .expect("读原规格缓存应成功");
     assert!(read.is_some());
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -148,16 +151,18 @@ fn test_multi_time_group_layout() {
     // 分别写缓存
     let meta0 = CacheMeta::from_tile(&tile0, KEYS, PPQ, cfg.measures_per_group);
     let meta1 = CacheMeta::from_tile(&tile1, KEYS, PPQ, cfg.measures_per_group);
-    write_track_tile_cache(&dir, &hash, &tile0, &meta0).unwrap();
-    write_track_tile_cache(&dir, &hash, &tile1, &meta1).unwrap();
+    write_track_tile_cache(&dir, &hash, &tile0, &meta0)
+        .expect("写 tile0 缓存应成功");
+    write_track_tile_cache(&dir, &hash, &tile1, &meta1)
+        .expect("写 tile1 缓存应成功");
 
     // 分别读缓存
     let read0 = read_track_tile_cache(&dir, &hash, 0, 0, &meta0)
-        .unwrap()
-        .unwrap();
+        .expect("读 tile0 缓存应返回 Ok")
+        .expect("tile0 缓存应存在");
     let read1 = read_track_tile_cache(&dir, &hash, 0, 1, &meta1)
-        .unwrap()
-        .unwrap();
+        .expect("读 tile1 缓存应返回 Ok")
+        .expect("tile1 缓存应存在");
 
     assert_eq!(read0.time_group, 0);
     assert_eq!(read1.time_group, 1);

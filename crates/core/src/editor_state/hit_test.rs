@@ -158,7 +158,8 @@ mod tests {
             &state.interaction.selected_notes,
         );
         assert!(bounds.is_some());
-        let (min_x, max_x, min_y, max_y) = bounds.unwrap();
+        let (min_x, max_x, min_y, max_y) =
+            bounds.expect("选中了 2 个音符，get_selection_box_bounds 应返回 Some");
         assert!(min_x < max_x);
         assert!(min_y < max_y);
     }

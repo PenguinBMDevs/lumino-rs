@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::core_impl::HiResRenderer;
-    use super::uniform::HiResUniform;
+    use super::super::core_impl::HiResRenderer;
     use crate::config::HiResConfig;
     use crate::types::TileCoord;
 

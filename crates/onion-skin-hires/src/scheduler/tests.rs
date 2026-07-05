@@ -144,8 +144,10 @@ fn test_cache_hit_skips_generation() {
     let first = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
     let second = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
 
-    let t1 = first.get(&TileCoord::new(0, 0)).unwrap();
-    let t2 = second.get(&TileCoord::new(0, 0)).unwrap();
+    let t1 = first.get(&TileCoord::new(0, 0))
+        .expect("第一次生成应有 Tile (0,0)");
+    let t2 = second.get(&TileCoord::new(0, 0))
+        .expect("第二次生成应有 Tile (0,0)");
     assert_eq!(t1.pixels, t2.pixels, "缓存命中应产生相同像素");
 
     cleanup(&config);
@@ -165,7 +167,7 @@ fn test_progress_callback_invoked() {
     let cb_pct = final_pct.clone();
     let cb: HiResProgressCallback = Arc::new(move |_msg, pct| {
         cb_count.fetch_add(1, Ordering::SeqCst);
-        *cb_pct.lock().unwrap() = pct;
+        *cb_pct.lock().expect("Mutex 未 poison") = pct;
     });
 
     let result = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, Some(cb));
@@ -174,7 +176,7 @@ fn test_progress_callback_invoked() {
     // 至少调用：1 次进度 + 1 次完成
     assert!(call_count.load(Ordering::SeqCst) >= 2);
     // 最终 pct 应为 1.0
-    let pct = *final_pct.lock().unwrap();
+    let pct = *final_pct.lock().expect("Mutex 未 poison");
     assert!((pct - 1.0).abs() < 0.001, "最终进度应为 1.0，实际 {pct}");
 
     cleanup(&config);

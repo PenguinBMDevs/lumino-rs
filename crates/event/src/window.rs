@@ -23,22 +23,22 @@ impl Event {
         }
     }
 
-    // ── 构造函数（替代 event! 宏，IDE 友好） ──
+    // ── 生命周期构造函数（直接构造，无需中间函数） ──
 
     pub const fn drag() -> Self {
-        Self::Lifecycle(lifecycle::Event::drag())
+        Self::Lifecycle(lifecycle::Event::Drag)
     }
     pub const fn close() -> Self {
-        Self::Lifecycle(lifecycle::Event::close())
+        Self::Lifecycle(lifecycle::Event::Close)
     }
     pub const fn toggle_maximize() -> Self {
-        Self::Lifecycle(lifecycle::Event::toggle_maximize())
+        Self::Lifecycle(lifecycle::Event::ToggleMaximize)
     }
     pub const fn maximize() -> Self {
-        Self::Lifecycle(lifecycle::Event::maximize())
+        Self::Lifecycle(lifecycle::Event::Maximize)
     }
     pub const fn minimize() -> Self {
-        Self::Lifecycle(lifecycle::Event::minimize())
+        Self::Lifecycle(lifecycle::Event::Minimize)
     }
 
     pub const fn open_custom_precision_dialog() -> Self {
