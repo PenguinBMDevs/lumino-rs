@@ -102,31 +102,23 @@ const TEMPO_BPM_MAX: f64 = 10000.0;
 
 /// 将 BPM 值映射到面板 Y 坐标
 ///
-/// 保持低 BPM 在面板底部、高 BPM 在面板顶部的视觉顺序。
-/// 通过将 BPM 按对数归一化，低 BPM 区域（刻度值密集）参考线分布更舒展，
-/// 高 BPM 区域（刻度值稀疏）参考线更紧凑，实现用户期望的疏密分布。
+/// 采用线性映射，保证 `generate_tempo_levels` 生成的等差刻度在 Y 轴上均匀分布。
 pub fn tempo_bpm_to_y(bpm: f64, bounds_height: f32) -> f32 {
     let max_y = bounds_height;
     let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
-    let log_min = TEMPO_BPM_MIN.ln();
-    let log_max = TEMPO_BPM_MAX.ln();
-    let normalized = ((bpm.ln() - log_min) / (log_max - log_min)) as f32;
+    let normalized = ((bpm - TEMPO_BPM_MIN) / (TEMPO_BPM_MAX - TEMPO_BPM_MIN)) as f32;
     max_y - normalized * (max_y - min_y)
 }
 
 /// 生成 BPM 标尺刻度值
+///
+/// 使用等差分布，让参考线在 Y 轴上以相同间隔均匀分布。
 pub fn generate_tempo_levels() -> Vec<f64> {
-    vec![
-        TEMPO_BPM_MIN,
-        60.0,
-        120.0,
-        240.0,
-        480.0,
-        1000.0,
-        2000.0,
-        5000.0,
-        TEMPO_BPM_MAX,
-    ]
+    let count = 9;
+    let step = (TEMPO_BPM_MAX - TEMPO_BPM_MIN) / (count - 1) as f64;
+    (0..count)
+        .map(|i| TEMPO_BPM_MIN + step * i as f64)
+        .collect()
 }
 
 /// 将弯音值 (-8192 ~ +8191) 映射到面板 Y 坐标
@@ -139,8 +131,7 @@ pub fn bend_value_to_y(value: i16, bounds_height: f32) -> f32 {
 
 /// 计算 Tempo 控制点屏幕位置
 ///
-/// 注意：该函数用于折线图绘制，使用与 `tempo_bpm_to_y` 相同的对数映射，
-/// 以保证数据点与参考线对齐。
+/// 使用与 `tempo_bpm_to_y` 相同的线性映射，保证数据点与参考线对齐。
 pub fn tempo_point_screen_pos(
     point: &TempoPoint,
     _bounds_width: f32,

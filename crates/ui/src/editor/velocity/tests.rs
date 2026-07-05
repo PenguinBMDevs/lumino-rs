@@ -132,34 +132,26 @@ fn test_edit_mode_display_name() {
 // ===== Tempo 数据测试 =====
 
 #[test]
-fn test_tempo_bpm_to_y_min_at_bottom() {
+fn test_tempo_bpm_to_y_density_uniform() {
     let height = 200.0;
-    let y = widget::tempo_bpm_to_y(20.0, height);
-    assert!((y - height).abs() < f32::EPSILON, "最小 BPM 应位于面板底部");
-}
+    let levels = widget::generate_tempo_levels();
+    assert_eq!(levels.len(), 9);
 
-#[test]
-fn test_tempo_bpm_to_y_max_at_top() {
-    let height = 200.0;
-    let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
-    let y = widget::tempo_bpm_to_y(10000.0, height);
-    assert!((y - min_y).abs() < f32::EPSILON, "最大 BPM 应位于面板顶部");
-}
+    let mut spacings = Vec::new();
+    let mut prev_y = widget::tempo_bpm_to_y(levels[0], height);
+    for &bpm in levels.iter().skip(1) {
+        let y = widget::tempo_bpm_to_y(bpm, height);
+        spacings.push((prev_y - y).abs());
+        prev_y = y;
+    }
 
-#[test]
-fn test_tempo_bpm_to_y_density_sparse_at_top() {
-    let height = 200.0;
-    let y_20 = widget::tempo_bpm_to_y(20.0, height);
-    let y_60 = widget::tempo_bpm_to_y(60.0, height);
-    let y_5000 = widget::tempo_bpm_to_y(5000.0, height);
-    let y_10000 = widget::tempo_bpm_to_y(10000.0, height);
-
-    let bottom_spacing = y_20 - y_60;
-    let top_spacing = y_5000 - y_10000;
-    assert!(
-        top_spacing < bottom_spacing,
-        "顶部线条应更密集，底部应更稀疏：top_spacing={top_spacing}, bottom_spacing={bottom_spacing}"
-    );
+    let first = spacings[0];
+    for &spacing in &spacings {
+        assert!(
+            (spacing - first).abs() < f32::EPSILON,
+            "等差刻度应在 Y 轴上均匀分布：spacing={spacing}, first={first}"
+        );
+    }
 }
 
 #[test]
