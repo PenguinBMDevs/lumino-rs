@@ -17,3 +17,6 @@ bincode = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+futures = { workspace = true }
