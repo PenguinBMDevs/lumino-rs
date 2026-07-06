@@ -71,6 +71,8 @@ define_icons! {
     (Eye, "../../../../resources/icons/sidebar/eye.svg"),
     (EyeSlash, "../../../../resources/icons/sidebar/eye-slash.svg"),
     (Plus, "../../../../resources/icons/sidebar/plus.svg"),
+    (Download, "../../../../resources/icons/sidebar/download.svg"),
+    (PlayCircle, "../../../../resources/icons/sidebar/play-circle.svg"),
     (EllipsisVertical, "../../../../resources/icons/sidebar/ellipsis-vertical.svg"),
     (Users, "../../../../resources/icons/toolbar/users.svg"),
     // 工具栏图标

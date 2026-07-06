@@ -214,7 +214,9 @@ impl PlaybackManager {
 
     /// 设置力度过滤阈值（语义过滤，非性能节流）
     pub fn set_velocity_filter_threshold(&mut self, threshold: u8) {
-        let _ = self.sender.send(Command::SetVelocityFilterThreshold(threshold));
+        let _ = self
+            .sender
+            .send(Command::SetVelocityFilterThreshold(threshold));
     }
 
     /// 更新速度变化（别名方法）

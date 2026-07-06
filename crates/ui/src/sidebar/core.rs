@@ -41,10 +41,15 @@ pub enum RouteConfig {
     Toggle {
         icon: icon::Icon,
     },
+    /// 瀑布流模式切换按钮（圆圈播放按钮样式）
+    WaterfallToggle,
+    /// 音频导出按钮
+    AudioExport,
     Space,
 }
 
-pub const ROUTES: [RouteConfig; 5] = [
+pub const ROUTES: [RouteConfig; 7] = [
+    RouteConfig::WaterfallToggle,
     RouteConfig::Toggle { icon: icon::Keys },
     RouteConfig::Item {
         route: Route::File,
@@ -58,6 +63,7 @@ pub const ROUTES: [RouteConfig; 5] = [
         route: Route::Automation,
         icon: icon::WaveForm,
     },
+    RouteConfig::AudioExport,
     RouteConfig::Space,
 ];
 

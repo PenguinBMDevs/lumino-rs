@@ -28,8 +28,8 @@ impl Titlebar {
         &'a self,
         window: &'a window::Window,
         use_native_titlebar: bool,
-        current_mode: AppMode,
-        toggle_progress: f32,
+        _current_mode: AppMode,
+        _toggle_progress: f32,
         language: Language,
     ) -> Element<'a> {
         // 如果使用经典系统标题栏，只显示菜单（在最左侧）
@@ -42,12 +42,7 @@ impl Titlebar {
         let menu_row = if cfg!(target_os = "macos") {
             row![]
         } else {
-            row![
-                logo::view(window),
-                mode_toggle::view(&window.theme, current_mode, toggle_progress, language),
-                menu::view(language)
-            ]
-            .align_y(Alignment::Center)
+            row![logo::view(window), menu::view(language)].align_y(Alignment::Center)
         };
 
         // 构建标题栏内容：左侧菜单 + 中间可拖动区域 + 右侧窗口控制

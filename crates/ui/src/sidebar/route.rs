@@ -3,6 +3,8 @@ use iced_widget::{button, column, container, row, space};
 use lumino_core::i18n::Language;
 
 use super::{Event, ROUTES, Route, RouteConfig};
+use crate::message::{AudioExportAction, Message};
+use crate::titlebar::mode_toggle::AppMode;
 
 use crate::widget;
 use crate::{Element, Theme, resources::icon, window};
@@ -12,7 +14,8 @@ pub fn view<'a>(
     panel_visible: bool,
     automation_panel_visible: bool,
     piano_roll_visible: bool,
-    window: &window::Window,
+    current_mode: AppMode,
+    window: &'a window::Window,
     language: Language,
 ) -> Element<'a> {
     let items = ROUTES
@@ -31,6 +34,8 @@ pub fn view<'a>(
                 item(route, icon, is_active, window, language)
             }
             RouteConfig::Toggle { icon } => toggle_item(icon, piano_roll_visible, window, language),
+            RouteConfig::WaterfallToggle => waterfall_toggle_item(current_mode, window, language),
+            RouteConfig::AudioExport => audio_export_item(window, language),
             RouteConfig::Space => space().height(Length::Fill).into(),
         })
         .collect::<Vec<_>>();
@@ -162,6 +167,113 @@ fn toggle_item<'a>(
         match language {
             Language::ZhCn => "钢琴卷帘",
             Language::EnUs => "Piano Roll",
+        },
+        iced_widget::tooltip::Position::Right,
+    )
+    .into()
+}
+
+/// 渲染瀑布流模式切换按钮（使用 PlayCircle SVG 图标，遵循 sidebar 按钮风格）
+fn waterfall_toggle_item<'a>(
+    current_mode: AppMode,
+    window: &'a window::Window,
+    language: Language,
+) -> Element<'a> {
+    let is_waterfall = current_mode == AppMode::Waterfall;
+
+    // 左侧激活指示条（瀑布流模式下高亮）
+    let split = container(space())
+        .width(2)
+        .height(Length::Fill)
+        .style(move |theme: &Theme| {
+            let p = theme.extended_palette();
+            let background = match is_waterfall {
+                true => p.primary.base.color,
+                false => Color::TRANSPARENT,
+            };
+            container::Style::default().background(background)
+        });
+
+    // PlayCircle SVG 图标
+    let icon_img = icon::view_with_size_and_theme(icon::PlayCircle, 20, 20, Some(&window.theme));
+
+    let inner = row![split, icon_img,]
+        .spacing(12)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_y(Alignment::Center);
+
+    let btn = button(inner)
+        .width(48)
+        .height(48)
+        .padding(0)
+        .style(move |theme: &Theme, status| {
+            use button::Status::*;
+            let p = theme.extended_palette();
+            let text_color = match status {
+                Hovered | Pressed => p.background.base.color,
+                _ => p.background.weakest.color,
+            };
+            button::Style {
+                text_color,
+                ..Default::default()
+            }
+            .with_background(Color::TRANSPARENT)
+        })
+        .on_press(Message::ModeToggled);
+
+    let tooltip_text = if is_waterfall {
+        match language {
+            Language::ZhCn => "切换到编辑器",
+            Language::EnUs => "Switch to Editor",
+        }
+    } else {
+        match language {
+            Language::ZhCn => "切换到瀑布流",
+            Language::EnUs => "Switch to Waterfall",
+        }
+    };
+
+    widget::with_tooltip(btn, tooltip_text, iced_widget::tooltip::Position::Right).into()
+}
+
+/// 渲染音频导出按钮（使用 Download SVG 图标，遵循 sidebar 按钮风格）
+fn audio_export_item<'a>(window: &'a window::Window, language: Language) -> Element<'a> {
+    let icon_img = icon::view_with_size_and_theme(icon::Download, 20, 20, Some(&window.theme));
+
+    let inner = row![
+        iced_widget::Space::new().width(2),
+        icon_img,
+    ]
+    .spacing(12)
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_y(Alignment::Center);
+
+    let btn = button(inner)
+        .width(48)
+        .height(48)
+        .padding(0)
+        .style(move |theme: &Theme, status| {
+            use button::Status::*;
+            let p = theme.extended_palette();
+            let text_color = match status {
+                Hovered | Pressed => p.background.base.color,
+                _ => p.background.weakest.color,
+            };
+            button::Style {
+                text_color,
+                ..Default::default()
+            }
+            .with_background(Color::TRANSPARENT)
+        })
+        .on_press(Message::AudioExport(AudioExportAction::OpenDialog));
+
+    widget::with_tooltip(
+        btn,
+        match language {
+            Language::ZhCn => "音频导出",
+            Language::EnUs => "Audio Export",
         },
         iced_widget::tooltip::Position::Right,
     )

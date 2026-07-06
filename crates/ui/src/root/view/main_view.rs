@@ -32,7 +32,11 @@ impl Root {
 
         // 左侧栏（包含图标栏和音轨面板）
         puffin::profile_scope!("root_view_sidebar");
-        let left_bar = self.sidebar.view(&self.window, self.settings.language);
+        let left_bar = self.sidebar.view(
+            &self.window,
+            self.settings.language,
+            self.state.current_mode,
+        );
 
         // 右侧内容区域（工具栏 + 编辑器 + 力度面板 / 瀑布流占位）
         puffin::profile_scope!("root_view_right_content");
