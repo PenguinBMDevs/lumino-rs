@@ -7,7 +7,7 @@ pub mod event;
 mod panel;
 mod route;
 
-pub use core::{RESIZE_HANDLE_WIDTH, ROUTES, Route, RouteConfig, Sidebar, Track};
+pub use core::{GroupId, RESIZE_HANDLE_WIDTH, ROUTES, Route, RouteConfig, Sidebar, Track};
 pub use event::Event;
 
 #[cfg(test)]

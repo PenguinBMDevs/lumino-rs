@@ -2,28 +2,44 @@ use iced_core::{Alignment, Color, Length};
 use iced_widget::{button, column, container, row, space};
 use lumino_core::i18n::Language;
 
-use super::{Event, ROUTES, Route, RouteConfig};
-use crate::message::{AudioExportAction, Message};
+use super::{Event, GroupId, ROUTES, Route, RouteConfig};
 use crate::titlebar::mode_toggle::AppMode;
 
 use crate::widget;
 use crate::{Element, Theme, resources::icon, window};
 
+#[allow(clippy::too_many_arguments)]
 pub fn view<'a>(
     active: Route,
     panel_visible: bool,
     automation_panel_visible: bool,
     piano_roll_visible: bool,
     current_mode: AppMode,
+    active_group: Option<GroupId>,
     window: &'a window::Window,
     language: Language,
 ) -> Element<'a> {
     let items = ROUTES
         .into_iter()
         .map(|r| match r {
-            RouteConfig::Item { route, icon } => {
-                // 工程走带模式下：只有 Arrangement 按钮亮，其他按钮全部熄灭
-                // 因为工程走带独占全屏，不显示任何侧边栏面板内容
+            // ── 组父按钮 ──
+            RouteConfig::GroupParent { group, icon } => {
+                let is_active = match group {
+                    GroupId::PianoRoll => piano_roll_visible,
+                    GroupId::Waterfall => current_mode == AppMode::Waterfall,
+                    GroupId::Renderer => active_group == Some(GroupId::Renderer),
+                };
+                group_parent_item(group, icon, is_active, window, language)
+            }
+            // ── 路由项（子按钮） ──
+            RouteConfig::Item { route, icon, group } => {
+                // 子按钮仅当父组激活时可见
+                if let Some(g) = group
+                    && active_group != Some(g)
+                {
+                    // 不渲染，用空占位保持布局
+                    return iced_widget::Space::new().width(48).height(0).into();
+                }
                 let is_active = if active == Route::Arrangement {
                     route == Route::Arrangement
                 } else if route == Route::Automation {
@@ -31,11 +47,15 @@ pub fn view<'a>(
                 } else {
                     panel_visible && route == active
                 };
-                item(route, icon, is_active, window, language)
+                item_with_color(
+                    route,
+                    icon,
+                    is_active,
+                    group.map(|g| g.child_color()),
+                    window,
+                    language,
+                )
             }
-            RouteConfig::Toggle { icon } => toggle_item(icon, piano_roll_visible, window, language),
-            RouteConfig::WaterfallToggle => waterfall_toggle_item(current_mode, window, language),
-            RouteConfig::AudioExport => audio_export_item(window, language),
             RouteConfig::Space => space().height(Length::Fill).into(),
         })
         .collect::<Vec<_>>();
@@ -50,23 +70,23 @@ pub fn view<'a>(
         .into()
 }
 
-fn item<'a>(
-    route: Route,
+/// 渲染组父按钮（带硬编码分组颜色的指示条）
+fn group_parent_item<'a>(
+    group: GroupId,
     icon_enum: icon::Icon,
     active: bool,
-    window: &window::Window,
+    window: &'a window::Window,
     language: Language,
 ) -> Element<'a> {
+    let parent_color = group.parent_color();
     let split = container(space())
         .width(2)
         .height(Length::Fill)
-        .style(move |theme: &Theme| {
-            let palette = theme.extended_palette();
+        .style(move |_theme: &Theme| {
             let background = match active {
-                true => palette.primary.base.color,
+                true => parent_color,
                 false => Color::TRANSPARENT,
             };
-
             container::Style::default().background(background)
         });
 
@@ -78,8 +98,70 @@ fn item<'a>(
         .height(Length::Fill)
         .align_y(Alignment::Center);
 
-    // 音轨总览路由使用 RouteUpdated 事件，避免触发面板切换
-    // 自动化路由使用 AutomationPanelToggled 事件，独立控制
+    let event = match group {
+        GroupId::PianoRoll => Event::group_toggled(GroupId::PianoRoll),
+        GroupId::Waterfall => Event::group_toggled(GroupId::Waterfall),
+        GroupId::Renderer => Event::group_toggled(GroupId::Renderer),
+    };
+
+    let btn = button(inner)
+        .width(48)
+        .height(48)
+        .padding(0)
+        .style(move |theme: &Theme, status| {
+            use button::Status::*;
+            let p = theme.extended_palette();
+            let text_color = match status {
+                Hovered | Pressed => p.background.base.color,
+                _ => p.background.weakest.color,
+            };
+            button::Style {
+                text_color,
+                ..Default::default()
+            }
+            .with_background(Color::TRANSPARENT)
+        })
+        .on_press(event);
+
+    widget::with_tooltip(
+        btn,
+        group.tooltip(language),
+        iced_widget::tooltip::Position::Right,
+    )
+    .into()
+}
+
+/// 渲染带可选颜色的路由项（子按钮用浅色指示条）
+fn item_with_color<'a>(
+    route: Route,
+    icon_enum: icon::Icon,
+    active: bool,
+    indicator_color: Option<Color>,
+    window: &window::Window,
+    language: Language,
+) -> Element<'a> {
+    let indicator_color = indicator_color.unwrap_or(Color::TRANSPARENT);
+
+    let split = container(space())
+        .width(2)
+        .height(Length::Fill)
+        .style(move |_theme: &Theme| {
+            // 使用传入的硬编码颜色
+            let background = match active {
+                true => indicator_color,
+                false => Color::TRANSPARENT,
+            };
+            container::Style::default().background(background)
+        });
+
+    let icon_img = icon::view_with_size_and_theme(icon_enum, 20, 20, Some(&window.theme));
+
+    let inner = row![split, icon_img,]
+        .spacing(12)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_y(Alignment::Center);
+
     let event = if route == Route::Arrangement {
         Event::route_updated(route)
     } else if route == Route::Automation {
@@ -94,10 +176,10 @@ fn item<'a>(
         .padding(0)
         .style(move |theme: &Theme, status| {
             use button::Status::*;
-            let palette = theme.extended_palette();
+            let p = theme.extended_palette();
             let text_color = match status {
-                Hovered | Pressed => palette.background.base.color,
-                _ => palette.background.weakest.color,
+                Hovered | Pressed => p.background.base.color,
+                _ => p.background.weakest.color,
             };
             button::Style {
                 text_color,
@@ -115,160 +197,4 @@ fn item<'a>(
     .into()
 }
 
-/// 渲染独立切换按钮（如钢琴卷帘开关）
-fn toggle_item<'a>(
-    icon_enum: icon::Icon,
-    active: bool,
-    window: &window::Window,
-    language: Language,
-) -> Element<'a> {
-    let split = container(space())
-        .width(2)
-        .height(Length::Fill)
-        .style(move |theme: &Theme| {
-            let palette = theme.extended_palette();
-            let background = match active {
-                true => palette.primary.base.color,
-                false => Color::TRANSPARENT,
-            };
-
-            container::Style::default().background(background)
-        });
-
-    let icon_img = icon::view_with_size_and_theme(icon_enum, 20, 20, Some(&window.theme));
-
-    let inner = row![split, icon_img,]
-        .spacing(12)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_y(Alignment::Center);
-
-    let btn = button(inner)
-        .width(48)
-        .height(48)
-        .padding(0)
-        .style(move |theme: &Theme, status| {
-            use button::Status::*;
-            let palette = theme.extended_palette();
-            let text_color = match status {
-                Hovered | Pressed => palette.background.base.color,
-                _ => palette.background.weakest.color,
-            };
-            button::Style {
-                text_color,
-                ..Default::default()
-            }
-            .with_background(Color::TRANSPARENT)
-        })
-        .on_press(Event::piano_roll_toggled());
-
-    widget::with_tooltip(
-        btn,
-        match language {
-            Language::ZhCn => "钢琴卷帘",
-            Language::EnUs => "Piano Roll",
-        },
-        iced_widget::tooltip::Position::Right,
-    )
-    .into()
-}
-
-/// 渲染瀑布流模式切换按钮（使用 PlayCircle SVG 图标，遵循 sidebar 按钮风格）
-fn waterfall_toggle_item<'a>(
-    current_mode: AppMode,
-    window: &'a window::Window,
-    language: Language,
-) -> Element<'a> {
-    let is_waterfall = current_mode == AppMode::Waterfall;
-
-    // 左侧激活指示条（瀑布流模式下高亮）
-    let split = container(space())
-        .width(2)
-        .height(Length::Fill)
-        .style(move |theme: &Theme| {
-            let p = theme.extended_palette();
-            let background = match is_waterfall {
-                true => p.primary.base.color,
-                false => Color::TRANSPARENT,
-            };
-            container::Style::default().background(background)
-        });
-
-    // PlayCircle SVG 图标
-    let icon_img = icon::view_with_size_and_theme(icon::PlayCircle, 20, 20, Some(&window.theme));
-
-    let inner = row![split, icon_img,]
-        .spacing(12)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_y(Alignment::Center);
-
-    let btn = button(inner)
-        .width(48)
-        .height(48)
-        .padding(0)
-        .style(move |theme: &Theme, status| {
-            use button::Status::*;
-            let p = theme.extended_palette();
-            let text_color = match status {
-                Hovered | Pressed => p.background.base.color,
-                _ => p.background.weakest.color,
-            };
-            button::Style {
-                text_color,
-                ..Default::default()
-            }
-            .with_background(Color::TRANSPARENT)
-        })
-        .on_press(Message::ModeToggled);
-
-    let tooltip_text = match language {
-        Language::ZhCn => "瀑布流播放器",
-        Language::EnUs => "Waterfall Player",
-    };
-
-    widget::with_tooltip(btn, tooltip_text, iced_widget::tooltip::Position::Right).into()
-}
-
-/// 渲染音频导出按钮（使用 Download SVG 图标，遵循 sidebar 按钮风格）
-fn audio_export_item<'a>(window: &'a window::Window, language: Language) -> Element<'a> {
-    let icon_img = icon::view_with_size_and_theme(icon::Download, 20, 20, Some(&window.theme));
-
-    let inner = row![
-        iced_widget::Space::new().width(2),
-        icon_img,
-    ]
-    .spacing(12)
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .align_y(Alignment::Center);
-
-    let btn = button(inner)
-        .width(48)
-        .height(48)
-        .padding(0)
-        .style(move |theme: &Theme, status| {
-            use button::Status::*;
-            let p = theme.extended_palette();
-            let text_color = match status {
-                Hovered | Pressed => p.background.base.color,
-                _ => p.background.weakest.color,
-            };
-            button::Style {
-                text_color,
-                ..Default::default()
-            }
-            .with_background(Color::TRANSPARENT)
-        })
-        .on_press(Message::AudioExport(AudioExportAction::OpenDialog));
-
-    widget::with_tooltip(
-        btn,
-        match language {
-            Language::ZhCn => "渲染器",
-            Language::EnUs => "Renderer",
-        },
-        iced_widget::tooltip::Position::Right,
-    )
-    .into()
-}
+// toggle_item removed - piano roll is now Group 1 parent

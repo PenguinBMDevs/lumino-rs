@@ -1,4 +1,6 @@
-use super::core::{MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, Route, Sidebar, Track};
+use super::core::{
+    GroupId, GroupSubState, MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, Route, Sidebar, Track,
+};
 use crate::event as ui_event;
 use crate::sidebar::Event;
 
@@ -7,30 +9,30 @@ impl Sidebar {
         use Event::*;
         let prev_visible = self.panel_visible;
         let prev_route = self.route;
+        let prev_group = self.active_group;
         match event {
+            // ── 分组切换（核心逻辑） ──
+            GroupToggled(group) => {
+                self.handle_group_toggle(group);
+            }
+            // ── 路由/面板 ──
             RouteUpdated(r) => {
                 self.route = r;
-                // 切换到音轨总览路由时，自动隐藏左侧面板
                 if r == Route::Arrangement {
                     self.panel_visible = false;
-                    // 互斥：打开工程走带时关闭钢琴卷帘
                     self.piano_roll_visible = false;
                 }
             }
             PanelToggled(r) => {
-                // 音轨总览模式下：点击其他路由按钮只切换路由，不打开面板
-                if self.route == Route::Arrangement && r != Route::Arrangement {
+                // 子按钮只能在对应分组激活时操作
+                let not_allowed = matches!(r, Route::File | Route::Automation)
+                    && self.active_group != Some(GroupId::PianoRoll);
+                if not_allowed || (self.route == Route::Arrangement && r != Route::Arrangement) {
                     self.route = r;
                 } else if r == Route::Arrangement {
-                    // 切换到音轨总览路由时，关闭面板
                     self.panel_visible = false;
-                    // 互斥：打开工程走带时关闭钢琴卷帘
                     self.piano_roll_visible = false;
                     self.panel_route = r;
-                    self.route = r;
-                } else if r == Route::File && !self.piano_roll_visible {
-                    // 互斥：音轨列表面板只能在钢琴卷帘模式下打开
-                    // 钢琴卷帘关闭（如瀑布流模式）时不允许打开文件面板
                     self.route = r;
                 } else if self.panel_visible && self.panel_route == r {
                     self.panel_visible = false;
@@ -40,6 +42,7 @@ impl Sidebar {
                     self.route = r;
                 }
             }
+            // ── 音轨 ──
             TrackSelected(id) => {
                 tracing::debug!("Sidebar: 音轨选择 id={}", id);
                 self.selected_track = id;
@@ -50,7 +53,6 @@ impl Sidebar {
                 }
             }
             AddTrack => {
-                // 添加新音轨
                 let new_id = self.tracks.len();
                 self.tracks.push(Track {
                     id: new_id,
@@ -61,8 +63,6 @@ impl Sidebar {
                 });
                 self.selected_track = new_id;
                 self.add_track_menu_open = false;
-
-                // 发射协作同步事件
                 ui_event::emit(ui_event::Event::Window(
                     ui_event::window::Event::local_track_added(new_id),
                 ));
@@ -70,21 +70,20 @@ impl Sidebar {
             AddTrackMenuToggled => {
                 self.add_track_menu_open = !self.add_track_menu_open;
             }
+            // ── 调整宽度 ──
             ResizeDragStarted(_) => {
                 self.is_resizing = true;
             }
-            ResizeDragged(_) => {
-                // 拖拽中的位置更新由 Host 通过 update_resize_position 处理
-            }
+            ResizeDragged(_) => {}
             ResizeDragEnded => {
                 self.is_resizing = false;
             }
+            // ── 子按钮切换 ──
             AutomationPanelToggled => {
                 self.automation_panel_visible = !self.automation_panel_visible;
             }
             PianoRollToggled => {
                 self.piano_roll_visible = !self.piano_roll_visible;
-                // 互斥：打开钢琴卷帘时关闭工程走带，切回 File 路由并保持面板开启
                 if self.piano_roll_visible && self.route == Route::Arrangement {
                     self.route = Route::File;
                     self.panel_route = Route::File;
@@ -92,13 +91,107 @@ impl Sidebar {
                 }
             }
         }
-        // 最终保护：音轨总览模式下强制关闭面板
+        // 最终保护
         if self.route == Route::Arrangement {
             self.panel_visible = false;
         }
 
-        // 当面板可见性变化或路由变化时，都需要重新渲染
-        self.panel_visible != prev_visible || self.route != prev_route
+        self.panel_visible != prev_visible
+            || self.route != prev_route
+            || self.active_group != prev_group
+    }
+
+    /// 分组切换：保存旧组状态 → 恢复新组状态，互斥
+    fn handle_group_toggle(&mut self, group: GroupId) {
+        // 如果点击的是已激活的分组，则关闭该分组
+        if self.active_group == Some(group) {
+            self.deactivate_group(group);
+            return;
+        }
+
+        // 保存当前激活组的状态（如果有）
+        if let Some(old_group) = self.active_group {
+            self.save_group_state(old_group);
+        }
+
+        // 切换到新分组
+        self.activate_group(group);
+    }
+
+    /// 保存当前分组子按钮状态
+    fn save_group_state(&mut self, group: GroupId) {
+        match group {
+            GroupId::PianoRoll => {
+                self.piano_roll_sub_state = GroupSubState {
+                    panel_visible: self.panel_visible && self.panel_route != Route::Automation,
+                    panel_route: self.panel_route,
+                    automation_panel_visible: self.automation_panel_visible,
+                };
+            }
+            GroupId::Renderer => {
+                self.renderer_sub_state = GroupSubState {
+                    panel_visible: self.panel_visible,
+                    panel_route: self.panel_route,
+                    automation_panel_visible: self.automation_panel_visible,
+                };
+            }
+            GroupId::Waterfall => {
+                // 瀑布流无子按钮，无需保存
+            }
+        }
+    }
+
+    /// 激活分组
+    fn activate_group(&mut self, group: GroupId) {
+        match group {
+            GroupId::PianoRoll => {
+                self.piano_roll_visible = true;
+                // 恢复保存的子按钮状态
+                let state = &self.piano_roll_sub_state;
+                self.panel_route = state.panel_route;
+                self.panel_visible = state.panel_visible;
+                self.automation_panel_visible = state.automation_panel_visible;
+                self.route = if state.panel_visible {
+                    state.panel_route
+                } else {
+                    Route::File
+                };
+            }
+            GroupId::Waterfall => {
+                // 瀑布流：关闭钢琴卷帘
+                self.piano_roll_visible = false;
+                self.panel_visible = false;
+                self.automation_panel_visible = false;
+                self.route = Route::File;
+            }
+            GroupId::Renderer => {
+                // 渲染组：当前无子按钮，保持基本状态
+                self.piano_roll_visible = false;
+                self.panel_visible = false;
+                self.automation_panel_visible = false;
+                self.route = Route::File;
+            }
+        }
+        self.active_group = Some(group);
+    }
+
+    /// 取消激活分组
+    fn deactivate_group(&mut self, group: GroupId) {
+        match group {
+            GroupId::PianoRoll => {
+                self.piano_roll_visible = false;
+                self.panel_visible = false;
+                self.automation_panel_visible = false;
+            }
+            GroupId::Waterfall => {
+                // 退出瀑布流时切回钢琴卷帘组（如果有保存状态）
+                // 默认回到编辑器模式
+            }
+            GroupId::Renderer => {
+                // 关闭渲染组
+            }
+        }
+        self.active_group = None;
     }
 
     /// 检查是否正在调整大小
@@ -106,14 +199,12 @@ impl Sidebar {
         self.is_resizing
     }
 
-    /// 开始调整大小，记录起始鼠标 X 坐标
     pub fn start_resize(&mut self, cursor_x: f32) {
         self.is_resizing = true;
         self.resize_start_x = cursor_x;
         self.resize_start_width = self.panel_width;
     }
 
-    /// 更新拖拽位置（从外部传入当前鼠标 X 坐标）
     pub fn update_resize_position(&mut self, cursor_x: f32) {
         if self.is_resizing {
             let delta_x = cursor_x - self.resize_start_x;
@@ -122,7 +213,6 @@ impl Sidebar {
         }
     }
 
-    /// 结束调整大小
     pub fn end_resize(&mut self) {
         self.is_resizing = false;
     }

@@ -258,20 +258,20 @@ impl Root {
 
     /// 处理模式切换（编辑器 ↔ 瀑布流）
     fn handle_mode_toggle(&mut self) -> bool {
+        use crate::sidebar::GroupId;
         use crate::titlebar::mode_toggle::AppMode;
         let target_mode = match self.state.current_mode {
             AppMode::Editor => AppMode::Waterfall,
             AppMode::Waterfall => AppMode::Editor,
         };
-        // 互斥：进入瀑布流模式时关闭钢琴卷帘（反之亦然）
         if target_mode == AppMode::Waterfall {
-            self.sidebar.piano_roll_visible = false;
-            // 如果当前是工程走带路由，切回 File 路由
-            if self.sidebar.route == crate::sidebar::Route::Arrangement {
-                self.sidebar.route = crate::sidebar::Route::File;
-                self.sidebar.panel_route = crate::sidebar::Route::File;
-                self.sidebar.panel_visible = true;
-            }
+            // 通过分组系统切换
+            self.sidebar
+                .update(crate::sidebar::Event::GroupToggled(GroupId::Waterfall));
+        } else {
+            // 从瀑布流转回 → 恢复钢琴卷帘组
+            self.sidebar
+                .update(crate::sidebar::Event::GroupToggled(GroupId::PianoRoll));
         }
         let target_progress = match target_mode {
             AppMode::Editor => 0.0,
@@ -462,6 +462,26 @@ impl Root {
     }
 
     fn handle_sidebar_event(&mut self, event: sidebar::Event) -> bool {
+        use crate::titlebar::mode_toggle::AppMode;
+
+        // 分组切换 → 同步 AppMode
+        if let sidebar::Event::GroupToggled(group) = &event {
+            match group {
+                sidebar::GroupId::PianoRoll => {
+                    self.state.current_mode = AppMode::Editor;
+                    self.state.toggle_animation.animate_to(0.0);
+                }
+                sidebar::GroupId::Waterfall => {
+                    // 如果当前不是瀑布流，由 sidebar 内部切换后同步
+                    // 这里处理从瀑布流转回的情况
+                }
+                sidebar::GroupId::Renderer => {
+                    self.state.current_mode = AppMode::Editor;
+                    self.state.toggle_animation.animate_to(0.0);
+                }
+            }
+        }
+
         // 自动化面板切换始终触发重绘
         if matches!(&event, sidebar::Event::AutomationPanelToggled) {
             self.sidebar.update(event);
@@ -472,8 +492,7 @@ impl Root {
         if matches!(&event, sidebar::Event::PianoRollToggled) {
             // 互斥：打开钢琴卷帘时退出瀑布流模式
             if !self.sidebar.piano_roll_visible {
-                self.state.current_mode =
-                    crate::titlebar::mode_toggle::AppMode::Editor;
+                self.state.current_mode = AppMode::Editor;
                 self.state.toggle_animation.animate_to(0.0);
             }
             self.sidebar.update(event);

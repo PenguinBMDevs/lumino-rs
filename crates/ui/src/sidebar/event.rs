@@ -3,7 +3,7 @@
 use iced_core::Point;
 
 use crate::Message;
-use crate::sidebar::Route;
+use crate::sidebar::{GroupId, Route};
 
 /// 侧边栏事件
 #[derive(Debug, Clone)]
@@ -30,6 +30,8 @@ pub enum Event {
     AutomationPanelToggled,
     /// 钢琴卷帘面板切换
     PianoRollToggled,
+    /// 分组切换
+    GroupToggled(GroupId),
 }
 
 impl Event {
@@ -75,5 +77,9 @@ impl Event {
 
     pub const fn piano_roll_toggled() -> Message {
         Message::Sidebar(Self::PianoRollToggled)
+    }
+
+    pub const fn group_toggled(g: GroupId) -> Message {
+        Message::Sidebar(Self::GroupToggled(g))
     }
 }

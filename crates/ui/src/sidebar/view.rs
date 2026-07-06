@@ -35,6 +35,7 @@ impl Sidebar {
                 self.automation_panel_visible,
                 self.piano_roll_visible,
                 current_mode,
+                self.active_group,
                 window,
                 language
             ),
