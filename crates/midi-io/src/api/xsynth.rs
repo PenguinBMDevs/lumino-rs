@@ -7,7 +7,9 @@ use xsynth_core::{
     channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
     soundfont::SoundfontBase,
 };
-use xsynth_realtime::{RealtimeEventSender, RealtimeSynth, SynthEvent, XSynthRealtimeConfig};
+use xsynth_realtime::{
+    RealtimeEventSender, RealtimeRenderMode, RealtimeSynth, SynthEvent, XSynthRealtimeConfig,
+};
 
 use crate::constants::*;
 use crate::soundfont_cache;
@@ -35,6 +37,10 @@ pub struct XSynthOptions {
     /// 调高可减少密集钢琴/快速重复音符/拖音过程中的 voice stealing
     /// 最大并发发音数（git 版 xsynth 暂不支持此字段）
     pub max_voices_per_key: Option<usize>,
+    /// 全局最大并发 voice 数。超过此值时新 NoteOn 的 voice 创建被静默跳过。
+    /// 设置越小则渲染越快（但同一声道的并发发音数越少）。
+    /// None = 使用 xsynth 默认值 4096
+    pub global_voice_limit: Option<usize>,
 }
 
 pub struct XSynth {
@@ -91,7 +97,12 @@ impl XSynth {
             rt_config.multithreading = thread_count;
             rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
             rt_config.channel_init_options.max_voices_per_key = opt.max_voices_per_key;
+            rt_config.channel_init_options.global_voice_limit = opt.global_voice_limit;
         }
+
+        // 使用 ChannelGroup 同步渲染模式，消除 16 个通道线程和阻塞 collect 阶段，
+        // 显著降低 macOS 上的音频卡顿风险。
+        rt_config.render_mode = RealtimeRenderMode::ChannelGroup;
 
         let mut synth = RealtimeSynth::open_with_default_output(rt_config);
 

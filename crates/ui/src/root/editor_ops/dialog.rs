@@ -198,7 +198,7 @@ impl Root {
 
     /// 应用设置面板配置到主窗口（只同步修改过的配置）
     pub fn apply_settings(&mut self, new_settings: crate::settings::SettingsPanel) {
-        let old_settings = &self.settings;
+        let old_settings = self.settings.clone();
 
         tracing::info!("apply_settings: 开始同步设置到主窗口");
 
@@ -234,6 +234,8 @@ impl Root {
                 new_settings.velocity_filter_threshold
             );
             self.visual.velocity_filter_threshold = new_settings.velocity_filter_threshold;
+            // 阈值变化会改变哪些音符应当发声，需要重建播放队列
+            self.update_playback_notes();
         }
 
         // 同步自动滚动配置（只同步修改过的项）

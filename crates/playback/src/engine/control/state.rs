@@ -95,17 +95,19 @@ impl PlaybackEngine {
 
                 if next_tick == next_on_tick {
                     let note = &notes[state.note_cursor];
-                    if note.start_tick >= tick_start_u {
+                    if note.start_tick >= tick_start_u
+                        && note.velocity > self.velocity_filter_threshold
+                    {
                         messages.push(MidiMessage::NoteOn {
                             channel: note.channel,
                             key: note.key,
                             velocity: note.velocity,
                         });
+                        state.pending_offs.push(super::core::PendingNoteOff {
+                            end_tick: note.end_tick,
+                            note_index: state.note_cursor,
+                        });
                     }
-                    state.pending_offs.push(super::core::PendingNoteOff {
-                        end_tick: note.end_tick,
-                        note_index: state.note_cursor,
-                    });
                     state.note_cursor += 1;
                 } else {
                     let Some(off) = state.pending_offs.pop() else {

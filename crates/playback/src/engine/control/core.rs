@@ -69,6 +69,8 @@ pub struct PlaybackEngine {
     pub(crate) loop_range: Option<(f32, f32)>,
     /// 控制事件（CC/PC/PB）游标
     pub(crate) control_event_cursor: usize,
+    /// 力度过滤阈值：velocity 小于等于此值的音符不发声（0 表示不过滤）。
+    pub(crate) velocity_filter_threshold: u8,
 }
 
 impl PlaybackEngine {
@@ -86,6 +88,7 @@ impl PlaybackEngine {
             looping: false,
             loop_range: None,
             control_event_cursor: 0,
+            velocity_filter_threshold: 1,
         }
     }
 
@@ -117,6 +120,14 @@ impl PlaybackEngine {
         self.midi_events = events;
     }
 
+    /// 设置力度过滤阈值。仅当阈值变化时才重建当前轨队列，避免不必要的重排。
+    pub fn set_velocity_filter_threshold(&mut self, threshold: u8) {
+        if self.velocity_filter_threshold != threshold {
+            self.velocity_filter_threshold = threshold;
+            self.rebuild_queue_from_current_track(None);
+        }
+    }
+
     /// 设置循环
     pub fn set_looping(&mut self, looping: bool) {
         self.looping = looping;
@@ -141,6 +152,11 @@ impl PlaybackEngine {
             if let Some(st) = seek_tick
                 && note.tick + note.length <= st
             {
+                continue;
+            }
+            // 力度过滤：低于等于阈值的音符不加入播放队列。
+            // 这是用户配置的语义过滤，不是性能节流；默认阈值 1 只过滤 velocity=0。
+            if note.velocity <= self.velocity_filter_threshold {
                 continue;
             }
             self.event_queue.push(ScheduledEvent {

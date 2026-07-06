@@ -16,6 +16,7 @@ enum Command {
     SetDocument(Arc<lumino_midi_loader::MidiDocument>, u16),
     SetMidiEvents(Vec<MidiTrackEvent>),
     SetTempoChanges(Vec<TempoChange>),
+    SetVelocityFilterThreshold(u8),
     // 旧 SetCache/SetSkipTracksInCache 已移除（disk_cache future support）
     Play,
     Pause,
@@ -63,6 +64,9 @@ impl PlaybackManager {
                         Command::SetTempoChanges(changes) => {
                             let mut p = engine.playback().lock();
                             p.set_tempo_changes(changes);
+                        }
+                        Command::SetVelocityFilterThreshold(threshold) => {
+                            engine.set_velocity_filter_threshold(threshold);
                         }
                         Command::Play => engine.play(),
                         Command::Pause => {
@@ -206,6 +210,11 @@ impl PlaybackManager {
     /// 设置速度变化
     pub fn set_tempo_changes(&mut self, changes: Vec<TempoChange>) {
         let _ = self.sender.send(Command::SetTempoChanges(changes));
+    }
+
+    /// 设置力度过滤阈值（语义过滤，非性能节流）
+    pub fn set_velocity_filter_threshold(&mut self, threshold: u8) {
+        let _ = self.sender.send(Command::SetVelocityFilterThreshold(threshold));
     }
 
     /// 更新速度变化（别名方法）

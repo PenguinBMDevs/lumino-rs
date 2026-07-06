@@ -60,6 +60,8 @@ pub struct MidiManager {
     xsynth_fade_out_killing: bool,
     /// XSynth 每个键最大同音数
     xsynth_max_voices_per_key: Option<usize>,
+    /// XSynth 全局最大并发 voice 数
+    xsynth_global_voice_limit: Option<usize>,
 }
 
 impl Default for MidiManager {
@@ -79,6 +81,7 @@ impl Default for MidiManager {
             xsynth_sample_rate: 0,
             xsynth_fade_out_killing: false,
             xsynth_max_voices_per_key: None,
+            xsynth_global_voice_limit: None,
         }
     }
 }
@@ -113,6 +116,7 @@ impl MidiManager {
             xsynth_sample_rate: ui_config.xsynth_sample_rate,
             xsynth_fade_out_killing: ui_config.xsynth_fade_out_killing,
             xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
+            xsynth_global_voice_limit: ui_config.xsynth_global_voice_limit,
         };
 
         // 如果偏好 XSynth，在后台异步初始化
@@ -182,6 +186,7 @@ impl MidiManager {
             sample_rate: ui_config.xsynth_sample_rate,
             fade_out_killing: ui_config.xsynth_fade_out_killing,
             max_voices_per_key: ui_config.xsynth_max_voices_per_key,
+            global_voice_limit: ui_config.xsynth_global_voice_limit,
         };
 
         let api = lumino_midi_io::new_api_with_options(&api_kind, Some(options))
@@ -502,6 +507,7 @@ impl MidiManager {
         self.xsynth_sample_rate = ui_config.xsynth_sample_rate;
         self.xsynth_fade_out_killing = ui_config.xsynth_fade_out_killing;
         self.xsynth_max_voices_per_key = ui_config.xsynth_max_voices_per_key;
+        self.xsynth_global_voice_limit = ui_config.xsynth_global_voice_limit;
 
         // 清空 SoundFont 缓存，防止旧条目无限累积（每个 SF2 30-300MB）
         lumino_midi_io::soundfont_cache::clear_cache();

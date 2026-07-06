@@ -169,6 +169,11 @@ pub struct UiConfig {
     /// 力度过滤阈值（力度 <= 此值的音符不播放，0=关闭过滤，最大127）
     #[serde(default = "default_velocity_filter_threshold")]
     pub velocity_filter_threshold: u8,
+    /// XSynth 全局最大并发 voice 数
+    /// 设置越低，渲染越快，但并发发音数越少。
+    /// None = 使用 xsynth 默认值 (4096)
+    #[serde(default)]
+    pub xsynth_global_voice_limit: Option<usize>,
     /// 是否启用 HiDPI 图标渲染（关闭时使用1x获得零性能开销，开启时使用2x获得视网膜清晰度）
     #[serde(default = "default_true")]
     pub icon_hidpi: bool,
@@ -254,6 +259,7 @@ impl Default for UiConfig {
             program_font_path: String::new(),
             auto_scroll: AutoScrollConfig::default(),
             velocity_filter_threshold: default_velocity_filter_threshold(),
+            xsynth_global_voice_limit: None,
             icon_hidpi: true,
             enable_256key: false,
             use_textured_keyboard: true,

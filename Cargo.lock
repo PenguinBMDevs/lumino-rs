@@ -3515,8 +3515,8 @@ dependencies = [
  "tokio",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
- "xsynth-core",
- "xsynth-soundfonts",
+ "xsynth-core 0.3.4 (git+https://github.com/PenguinBMDevs/xsynth)",
+ "xsynth-soundfonts 0.3.4 (git+https://github.com/PenguinBMDevs/xsynth)",
  "zstd",
 ]
 
@@ -3567,9 +3567,9 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "windows 0.62.2",
- "xsynth-core",
+ "xsynth-core 0.3.4",
  "xsynth-realtime",
- "xsynth-soundfonts",
+ "xsynth-soundfonts 0.3.4",
 ]
 
 [[package]]
@@ -8287,6 +8287,26 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 [[package]]
 name = "xsynth-core"
 version = "0.3.4"
+dependencies = [
+ "atomic_refcell",
+ "biquad",
+ "bytemuck",
+ "crossbeam-channel",
+ "lazy_static",
+ "proc-macro2",
+ "rayon",
+ "rustc-hash 2.1.2",
+ "simdeez",
+ "spin_sleep",
+ "symphonia",
+ "thiserror 1.0.69",
+ "to_vec",
+ "xsynth-soundfonts 0.3.4",
+]
+
+[[package]]
+name = "xsynth-core"
+version = "0.3.4"
 source = "git+https://github.com/PenguinBMDevs/xsynth#6aa29c91195f60c86f0f501e5b116061f95d16b8"
 dependencies = [
  "atomic_refcell",
@@ -8302,13 +8322,12 @@ dependencies = [
  "symphonia",
  "thiserror 1.0.69",
  "to_vec",
- "xsynth-soundfonts",
+ "xsynth-soundfonts 0.3.4 (git+https://github.com/PenguinBMDevs/xsynth)",
 ]
 
 [[package]]
 name = "xsynth-realtime"
 version = "0.3.4"
-source = "git+https://github.com/PenguinBMDevs/xsynth#6aa29c91195f60c86f0f501e5b116061f95d16b8"
 dependencies = [
  "atomic_refcell",
  "bytemuck",
@@ -8320,7 +8339,21 @@ dependencies = [
  "spin_sleep",
  "to_vec",
  "wav",
- "xsynth-core",
+ "xsynth-core 0.3.4",
+]
+
+[[package]]
+name = "xsynth-soundfonts"
+version = "0.3.4"
+dependencies = [
+ "encoding_rs",
+ "encoding_rs_io",
+ "lazy-regex",
+ "rayon",
+ "regex-bnf",
+ "simdeez",
+ "soundfont",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -8654,4 +8687,3 @@ dependencies = [
 [[patch.unused]]
 name = "xsynth-render"
 version = "0.3.4"
-source = "git+https://github.com/PenguinBMDevs/xsynth#6aa29c91195f60c86f0f501e5b116061f95d16b8"

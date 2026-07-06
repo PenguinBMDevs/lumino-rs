@@ -22,15 +22,14 @@ impl Root {
             );
         }
 
-        // 当前音轨音符（编辑过的，从 editor.notes 实时送）
-        let velocity_threshold = self.visual.velocity_filter_threshold;
+        // 当前音轨音符（编辑过的，从 editor.notes 实时送）。
+        // 力度过滤现在在 PlaybackEngine 内部统一处理，避免当前轨与其他轨行为不一致。
         let current_notes: Vec<NoteEvent> = self
             .editor
             .editor_state
             .data
             .notes
             .iter()
-            .filter(|note| note.velocity > velocity_threshold)
             .map(|note| NoteEvent {
                 tick: note.tick,
                 channel: note.channel,
@@ -40,6 +39,7 @@ impl Root {
             })
             .collect();
         manager.set_current_track_notes(current_notes);
+        manager.set_velocity_filter_threshold(self.visual.velocity_filter_threshold);
 
         // 同步 MIDI 控制事件
         let mut midi_events: Vec<crate::playback::MidiTrackEvent> = Vec::new();
