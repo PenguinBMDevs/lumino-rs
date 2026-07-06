@@ -278,6 +278,31 @@ impl MessageHandler for DialogHandler {
                                 path.to_string_lossy().to_string();
                         }
                     }
+                    A::BrowseMidi => {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("音乐文件", &["mid", "midi", "lmpj", "dms"])
+                            .add_filter("MIDI 文件", &["mid", "midi"])
+                            .add_filter("Lumino 项目", &["lmpj"])
+                            .add_filter("Domino 项目", &["dms"])
+                            .add_filter("所有文件", &["*"])
+                            .pick_file()
+                        {
+                            root.state.audio_export_dialog.midi_path =
+                                path.to_string_lossy().to_string();
+                        }
+                    }
+                    A::BrowseSoundfont => {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("音色库文件", &["sf2", "sfz"])
+                            .add_filter("SF2 文件", &["sf2"])
+                            .add_filter("SFZ 文件", &["sfz"])
+                            .add_filter("所有文件", &["*"])
+                            .pick_file()
+                        {
+                            root.state.audio_export_dialog.soundfont_path =
+                                path.to_string_lossy().to_string();
+                        }
+                    }
                     A::Progress(_pct, _msg) => {} // 进度更新在外部渲染层处理
                     A::Completed => {}
                     A::Failed(_err) => {}

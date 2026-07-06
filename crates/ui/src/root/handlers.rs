@@ -505,6 +505,16 @@ impl Root {
             }
         }
 
+        // 音频导出面板打开时，从设置自动填充音色库路径（用户选择可覆盖）
+        if matches!(
+            &event,
+            sidebar::Event::RouteUpdated(sidebar::Route::AudioExport)
+        ) && self.sidebar.audio_export_visible
+            && self.state.audio_export_dialog.soundfont_path.is_empty()
+        {
+            self.state.audio_export_dialog.soundfont_path = self.settings.soundfont_path.clone();
+        }
+
         // 导出类路由 → 同步 sidebar 面板状态（已在 sidebar.update 中处理）
         // 音频渲染面板状态由 sidebar.audio_export_visible 驱动，view_main 中渲染
 

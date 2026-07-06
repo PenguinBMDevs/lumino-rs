@@ -15,7 +15,20 @@ pub fn view_audio_export_dialog<'a>(
 ) -> crate::Element<'a> {
     let palette = theme.extended_palette();
 
-    // 标签样式
+    // 复选框样式（修复暗色主题文字反色）
+    let checkbox_style = move |_theme: &iced_core::Theme,
+                               _status: iced_widget::checkbox::Status| {
+        iced_widget::checkbox::Style {
+            background: iced_core::Background::Color(palette.background.weak.color),
+            icon_color: palette.background.neutral.text,
+            border: iced_core::Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: palette.background.strong.color,
+            },
+            text_color: Some(palette.background.neutral.text),
+        }
+    };
     let label_style = move |_theme: &iced_core::Theme| text::Style {
         color: Some(palette.background.neutral.text),
     };
@@ -52,29 +65,45 @@ pub fn view_audio_export_dialog<'a>(
         space().height(12),
         text("MIDI 路径").size(14).style(label_style),
         space().height(4),
-        container(
-            text(&state.midi_path)
-                .size(12)
-                .style(move |_t: &iced_core::Theme| text::Style {
-                    color: Some(palette.background.weak.text),
-                })
-                .width(Length::Fill),
-        )
-        .width(Length::Fill)
-        .style(input_style),
+        row![
+            container(
+                text(&state.midi_path)
+                    .size(12)
+                    .style(move |_t: &iced_core::Theme| text::Style {
+                        color: Some(palette.background.weak.text),
+                    })
+                    .width(Length::Fill),
+            )
+            .width(Length::Fill)
+            .style(input_style),
+            space().width(8),
+            button(text("浏览...").size(14))
+                .on_press(Message::AudioExport(AudioExportAction::BrowseMidi))
+                .padding([6, 16]),
+        ]
+        .spacing(8)
+        .align_y(iced_core::Alignment::Center),
         space().height(12),
         text("音色库 (SF2)").size(14).style(label_style),
         space().height(4),
-        container(
-            text(&state.soundfont_path)
-                .size(12)
-                .style(move |_t: &iced_core::Theme| text::Style {
-                    color: Some(palette.background.weak.text),
-                })
-                .width(Length::Fill),
-        )
-        .width(Length::Fill)
-        .style(input_style),
+        row![
+            container(
+                text(&state.soundfont_path)
+                    .size(12)
+                    .style(move |_t: &iced_core::Theme| text::Style {
+                        color: Some(palette.background.weak.text),
+                    })
+                    .width(Length::Fill),
+            )
+            .width(Length::Fill)
+            .style(input_style),
+            space().width(8),
+            button(text("浏览...").size(14))
+                .on_press(Message::AudioExport(AudioExportAction::BrowseSoundfont))
+                .padding([6, 16]),
+        ]
+        .spacing(8)
+        .align_y(iced_core::Alignment::Center),
     ]
     .width(Length::Fill);
 
@@ -189,15 +218,18 @@ pub fn view_audio_export_dialog<'a>(
         // 选项复选框
         checkbox(state.apply_limiter)
             .label("应用限制器 (防止削波)")
-            .on_toggle(|v| Message::AudioExport(AudioExportAction::ApplyLimiterChanged(v))),
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::ApplyLimiterChanged(v)))
+            .style(checkbox_style),
         space().height(4),
         checkbox(state.disable_fade_out)
             .label("禁用淡出 (可能爆音)")
-            .on_toggle(|v| Message::AudioExport(AudioExportAction::DisableFadeOutChanged(v))),
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::DisableFadeOutChanged(v)))
+            .style(checkbox_style),
         space().height(4),
         checkbox(state.linear_envelope)
             .label("线性包络")
-            .on_toggle(|v| Message::AudioExport(AudioExportAction::LinearEnvelopeChanged(v))),
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::LinearEnvelopeChanged(v)))
+            .style(checkbox_style),
     ]
     .width(Length::Fill);
 

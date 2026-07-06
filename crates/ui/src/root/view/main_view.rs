@@ -331,28 +331,16 @@ impl Root {
         let palette = theme.extended_palette();
 
         container(
-            column![
-                // 工具栏
-                self.toolbar.toolbar_view(
-                    &self.window,
-                    self.editor.selected_notes_count() > 0,
-                    self.settings.language
-                ),
-                // 音频导出面板（可滚动）
-                container(scrollable(
-                    view_audio_export_dialog(&self.state.audio_export_dialog, theme)
-                ))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(move |_theme: &iced_core::Theme| container::Style {
-                    background: Some(iced_core::Background::Color(
-                        palette.background.base.color,
-                    )),
-                    ..Default::default()
-                }),
-            ]
+            container(scrollable(view_audio_export_dialog(
+                &self.state.audio_export_dialog,
+                theme,
+            )))
             .width(Length::Fill)
-            .height(Length::Fill),
+            .height(Length::Fill)
+            .style(move |_theme: &iced_core::Theme| container::Style {
+                background: Some(iced_core::Background::Color(palette.background.base.color)),
+                ..Default::default()
+            }),
         )
         .width(Length::Fill)
         .height(Length::Fill)

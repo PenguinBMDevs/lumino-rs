@@ -39,6 +39,10 @@ pub enum AudioExportAction {
     OutputPathChanged(String),
     /// 浏览输出路径
     BrowseOutput,
+    /// 浏览 MIDI 文件
+    BrowseMidi,
+    /// 浏览音色库文件
+    BrowseSoundfont,
     /// 进度更新
     Progress(f32, String),
     /// 完成
