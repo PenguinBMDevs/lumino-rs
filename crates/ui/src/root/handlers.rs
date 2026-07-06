@@ -258,17 +258,24 @@ impl Root {
 
     /// 处理模式切换（编辑器 ↔ 瀑布流）
     fn handle_mode_toggle(&mut self) -> bool {
+        use crate::titlebar::mode_toggle::AppMode;
         let target_mode = match self.state.current_mode {
-            crate::titlebar::mode_toggle::AppMode::Editor => {
-                crate::titlebar::mode_toggle::AppMode::Waterfall
-            }
-            crate::titlebar::mode_toggle::AppMode::Waterfall => {
-                crate::titlebar::mode_toggle::AppMode::Editor
-            }
+            AppMode::Editor => AppMode::Waterfall,
+            AppMode::Waterfall => AppMode::Editor,
         };
+        // 互斥：进入瀑布流模式时关闭钢琴卷帘（反之亦然）
+        if target_mode == AppMode::Waterfall {
+            self.sidebar.piano_roll_visible = false;
+            // 如果当前是工程走带路由，切回 File 路由
+            if self.sidebar.route == crate::sidebar::Route::Arrangement {
+                self.sidebar.route = crate::sidebar::Route::File;
+                self.sidebar.panel_route = crate::sidebar::Route::File;
+                self.sidebar.panel_visible = true;
+            }
+        }
         let target_progress = match target_mode {
-            crate::titlebar::mode_toggle::AppMode::Editor => 0.0,
-            crate::titlebar::mode_toggle::AppMode::Waterfall => 1.0,
+            AppMode::Editor => 0.0,
+            AppMode::Waterfall => 1.0,
         };
         self.state.current_mode = target_mode;
         self.state.toggle_animation.animate_to(target_progress);
@@ -463,6 +470,12 @@ impl Root {
 
         // 钢琴卷帘切换始终触发重绘
         if matches!(&event, sidebar::Event::PianoRollToggled) {
+            // 互斥：打开钢琴卷帘时退出瀑布流模式
+            if !self.sidebar.piano_roll_visible {
+                self.state.current_mode =
+                    crate::titlebar::mode_toggle::AppMode::Editor;
+                self.state.toggle_animation.animate_to(0.0);
+            }
             self.sidebar.update(event);
             return true;
         }

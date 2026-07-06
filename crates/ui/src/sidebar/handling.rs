@@ -28,6 +28,10 @@ impl Sidebar {
                     self.piano_roll_visible = false;
                     self.panel_route = r;
                     self.route = r;
+                } else if r == Route::File && !self.piano_roll_visible {
+                    // 互斥：音轨列表面板只能在钢琴卷帘模式下打开
+                    // 钢琴卷帘关闭（如瀑布流模式）时不允许打开文件面板
+                    self.route = r;
                 } else if self.panel_visible && self.panel_route == r {
                     self.panel_visible = false;
                 } else {

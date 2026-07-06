@@ -222,16 +222,9 @@ fn waterfall_toggle_item<'a>(
         })
         .on_press(Message::ModeToggled);
 
-    let tooltip_text = if is_waterfall {
-        match language {
-            Language::ZhCn => "切换到编辑器",
-            Language::EnUs => "Switch to Editor",
-        }
-    } else {
-        match language {
-            Language::ZhCn => "切换到瀑布流",
-            Language::EnUs => "Switch to Waterfall",
-        }
+    let tooltip_text = match language {
+        Language::ZhCn => "瀑布流播放器",
+        Language::EnUs => "Waterfall Player",
     };
 
     widget::with_tooltip(btn, tooltip_text, iced_widget::tooltip::Position::Right).into()
@@ -272,8 +265,8 @@ fn audio_export_item<'a>(window: &'a window::Window, language: Language) -> Elem
     widget::with_tooltip(
         btn,
         match language {
-            Language::ZhCn => "音频导出",
-            Language::EnUs => "Audio Export",
+            Language::ZhCn => "渲染器",
+            Language::EnUs => "Renderer",
         },
         iced_widget::tooltip::Position::Right,
     )
