@@ -89,6 +89,8 @@ pub enum Route {
     File,
     Arrangement,
     Automation,
+    VideoExport,
+    AudioExport,
 }
 
 impl Route {
@@ -98,6 +100,14 @@ impl Route {
             Route::File => t.sidebar_file,
             Route::Arrangement => t.sidebar_arrangement,
             Route::Automation => t.sidebar_automation,
+            Route::VideoExport => match lang {
+                Language::ZhCn => "视频渲染",
+                Language::EnUs => "Video Render",
+            },
+            Route::AudioExport => match lang {
+                Language::ZhCn => "音频渲染",
+                Language::EnUs => "Audio Render",
+            },
         }
     }
 }
@@ -118,7 +128,7 @@ pub enum RouteConfig {
     Space,
 }
 
-pub const ROUTES: [RouteConfig; 6] = [
+pub const ROUTES: [RouteConfig; 8] = [
     // ── 钢琴卷帘组（红色） ──
     RouteConfig::GroupParent {
         group: GroupId::PianoRoll,
@@ -143,6 +153,16 @@ pub const ROUTES: [RouteConfig; 6] = [
     RouteConfig::GroupParent {
         group: GroupId::Renderer,
         icon: icon::Download,
+    },
+    RouteConfig::Item {
+        route: Route::VideoExport,
+        icon: icon::VideoCamera,
+        group: Some(GroupId::Renderer),
+    },
+    RouteConfig::Item {
+        route: Route::AudioExport,
+        icon: icon::MusicNote,
+        group: Some(GroupId::Renderer),
     },
     // ── 弹性空间 ──
     RouteConfig::Space,
@@ -187,6 +207,8 @@ pub struct Sidebar {
     pub piano_roll_sub_state: GroupSubState,
     /// 渲染组的子按钮保存状态
     pub renderer_sub_state: GroupSubState,
+    /// 音频渲染面板是否可见（在主界面钢琴卷帘区域显示）
+    pub audio_export_visible: bool,
 }
 
 impl Sidebar {
@@ -222,6 +244,7 @@ impl Sidebar {
             active_group: Some(GroupId::PianoRoll),
             piano_roll_sub_state: GroupSubState::default(),
             renderer_sub_state: GroupSubState::default(),
+            audio_export_visible: false,
         }
     }
 

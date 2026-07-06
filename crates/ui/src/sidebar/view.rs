@@ -36,6 +36,7 @@ impl Sidebar {
                 self.piano_roll_visible,
                 current_mode,
                 self.active_group,
+                self.audio_export_visible,
                 window,
                 language
             ),

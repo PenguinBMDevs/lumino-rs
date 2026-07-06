@@ -464,24 +464,6 @@ impl Root {
     fn handle_sidebar_event(&mut self, event: sidebar::Event) -> bool {
         use crate::titlebar::mode_toggle::AppMode;
 
-        // 分组切换 → 同步 AppMode
-        if let sidebar::Event::GroupToggled(group) = &event {
-            match group {
-                sidebar::GroupId::PianoRoll => {
-                    self.state.current_mode = AppMode::Editor;
-                    self.state.toggle_animation.animate_to(0.0);
-                }
-                sidebar::GroupId::Waterfall => {
-                    // 如果当前不是瀑布流，由 sidebar 内部切换后同步
-                    // 这里处理从瀑布流转回的情况
-                }
-                sidebar::GroupId::Renderer => {
-                    self.state.current_mode = AppMode::Editor;
-                    self.state.toggle_animation.animate_to(0.0);
-                }
-            }
-        }
-
         // 自动化面板切换始终触发重绘
         if matches!(&event, sidebar::Event::AutomationPanelToggled) {
             self.sidebar.update(event);
@@ -507,7 +489,24 @@ impl Root {
         };
 
         // 更新 sidebar，获取是否需要重新渲染
-        let needs_redraw = self.sidebar.update(event);
+        let needs_redraw = self.sidebar.update(event.clone());
+
+        // 分组切换 → 同步 AppMode（必须在 sidebar.update 之后，因为 active_group 在那里改变）
+        if matches!(&event, sidebar::Event::GroupToggled(_)) {
+            match self.sidebar.active_group {
+                Some(sidebar::GroupId::Waterfall) => {
+                    self.state.current_mode = AppMode::Waterfall;
+                    self.state.toggle_animation.animate_to(1.0);
+                }
+                _ => {
+                    self.state.current_mode = AppMode::Editor;
+                    self.state.toggle_animation.animate_to(0.0);
+                }
+            }
+        }
+
+        // 导出类路由 → 同步 sidebar 面板状态（已在 sidebar.update 中处理）
+        // 音频渲染面板状态由 sidebar.audio_export_visible 驱动，view_main 中渲染
 
         // 更新画布偏移
         let sidebar_width = self.sidebar.width() as f32;

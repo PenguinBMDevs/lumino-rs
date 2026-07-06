@@ -17,10 +17,22 @@ impl Sidebar {
             }
             // ── 路由/面板 ──
             RouteUpdated(r) => {
-                self.route = r;
-                if r == Route::Arrangement {
+                // 音频渲染：切换独立面板（主界面钢琴卷帘区域）
+                if r == Route::AudioExport {
+                    self.audio_export_visible = !self.audio_export_visible;
+                    self.route = if self.audio_export_visible {
+                        Route::AudioExport
+                    } else {
+                        Route::File
+                    };
                     self.panel_visible = false;
                     self.piano_roll_visible = false;
+                } else {
+                    self.route = r;
+                    if r == Route::Arrangement {
+                        self.panel_visible = false;
+                        self.piano_roll_visible = false;
+                    }
                 }
             }
             PanelToggled(r) => {

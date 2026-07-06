@@ -102,6 +102,8 @@ define_icons! {
     // 标题栏图标
     (PencilOutline, "../../../../resources/icons/titlebar/pencil-outline.svg"),
     (Keys, "../../../../resources/icons/titlebar/keys.svg"),
+    (VideoCamera, "../../../../resources/icons/sidebar/video-camera.svg"),
+    (MusicNote, "../../../../resources/icons/sidebar/music-note.svg"),
 }
 
 #[derive(Clone)]

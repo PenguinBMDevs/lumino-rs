@@ -3,12 +3,13 @@
 //! 包含 Root 主入口视图、主窗口渲染、工程走带视图和瀑布流占位页面。
 
 use iced_core::Length;
-use iced_widget::{column, container, row, text};
+use iced_widget::{column, container, row, scrollable, text};
 use lumino_gfx::NoteInstance;
 
 use crate::editor::note::NoteExt;
 use crate::message;
 use crate::root::{Element, Root, Theme};
+use crate::view::audio_export_dialog::view_audio_export_dialog;
 
 impl Root {
     /// 渲染视图（主入口，根据窗口类型分发）
@@ -47,6 +48,9 @@ impl Root {
             } else if is_arrangement_route {
                 // 音轨总览模式：使用 wgpu 原生渲染
                 self.view_arrangement()
+            } else if self.sidebar.audio_export_visible {
+                // 音频渲染面板（在主界面钢琴卷帘区域显示）
+                self.view_audio_export_panel()
             } else if !self.sidebar.piano_roll_visible {
                 // 钢琴卷帘已关闭：显示空白区域
                 container(
@@ -314,6 +318,42 @@ impl Root {
             arrangement_row.height(Length::Fill),
             h_scrollbar,
         ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    }
+
+    /// 渲染音频渲染面板（在主界面钢琴卷帘区域显示）
+    pub(super) fn view_audio_export_panel(&self) -> Element<'_> {
+        puffin::profile_scope!("root_view_audio_export_panel");
+
+        let theme = &self.window.theme;
+        let palette = theme.extended_palette();
+
+        container(
+            column![
+                // 工具栏
+                self.toolbar.toolbar_view(
+                    &self.window,
+                    self.editor.selected_notes_count() > 0,
+                    self.settings.language
+                ),
+                // 音频导出面板（可滚动）
+                container(scrollable(
+                    view_audio_export_dialog(&self.state.audio_export_dialog, theme)
+                ))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(move |_theme: &iced_core::Theme| container::Style {
+                    background: Some(iced_core::Background::Color(
+                        palette.background.base.color,
+                    )),
+                    ..Default::default()
+                }),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill),
+        )
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
