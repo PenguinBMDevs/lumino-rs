@@ -34,7 +34,7 @@ pub use cache::{
     read_track_tile_cache, write_track_tile_cache,
 };
 pub use config::{ConfigError, HiResConfig, TRACKS_PER_GROUP};
-pub use generate::{generate_track_tile, merge_group_tiles};
+pub use generate::{generate_track_tile, merge_group_tiles, merge_track_tile_into};
 pub use renderer::{HiResRenderer, HiResUniform};
 pub use scheduler::{
     GenerateError, HiResProgressCallback, generate_all_tiles, generate_all_tiles_streaming,

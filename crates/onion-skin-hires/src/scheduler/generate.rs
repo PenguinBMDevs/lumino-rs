@@ -11,7 +11,7 @@ use std::sync::mpsc::SyncSender;
 use tracing::warn;
 
 use crate::cache::{self, CacheMeta, cache_path};
-use crate::generate::{generate_track_tile, merge_group_tiles};
+use crate::generate::{generate_track_tile, merge_group_tiles, merge_track_tile_into};
 use crate::scheduler::HiResProgressCallback;
 use crate::types::{GroupTile, TileCoord, TrackTile};
 use lumino_onion_skin::OnionSkinNote;
@@ -48,8 +48,8 @@ pub(super) fn sort_notes_per_track(notes: &mut [Vec<OnionSkinNote>]) {
 
 /// 生成单个音轨组在指定 time_group 的整合组贴图
 ///
-/// 内部：生成组内每轨的单音轨贴图（缓存优先），合并为整合组贴图。
-/// 由 `generate_all_tiles_streaming` 在 rayon 并行任务中调用。
+/// 内部：逐轨生成单音轨贴图（缓存优先），边生成边合并到整合组缓冲，
+/// 合并后立即释放单轨贴图，避免 8 张完整尺寸贴图同时堆积在内存中。
 pub(super) fn generate_one_time_group_tile(
     track_group: u32,
     time_group: u32,
@@ -62,8 +62,12 @@ pub(super) fn generate_one_time_group_tile(
     let track_end =
         ((track_group + 1) * crate::config::TRACKS_PER_GROUP as u32).min(notes.len() as u32) as u16;
 
-    // 生成组内每轨的单音轨贴图（缓存优先）
-    let mut track_tiles = Vec::with_capacity((track_end - track_start) as usize);
+    let coord = TileCoord::new(track_group, time_group);
+    let pixel_count = (ctx.width * ctx.key_count as u32) as usize;
+    let mut pixels = vec![0u8; pixel_count * 4];
+
+    // ★ streaming merge：生成一轨、合并一轨、释放一轨 ★
+    // 避免 Vec<TrackTile> 同时持有 8 张完整尺寸贴图导致的内存峰值。
     for track_idx in track_start..track_end {
         let tile = generate_or_load_track_tile(
             &notes[track_idx as usize],
@@ -73,20 +77,19 @@ pub(super) fn generate_one_time_group_tile(
             tick_end,
             ctx,
         );
-        track_tiles.push(tile);
+        merge_track_tile_into(&mut pixels, &tile);
+        // tile 在此作用域结束时 drop，CPU 像素缓冲立即释放
     }
 
-    // 合并为整合组贴图（后轨覆盖前轨重叠区）
-    let coord = TileCoord::new(track_group, time_group);
-    merge_group_tiles(
-        &track_tiles,
+    GroupTile {
         coord,
+        pixels,
+        width: ctx.width,
+        height: ctx.key_count as u32,
         tick_start,
         tick_end,
-        ctx.width,
-        ctx.key_count,
-        (track_start, track_end),
-    )
+        track_range: (track_start, track_end),
+    }
 }
 
 /// 生成单个音轨组的所有时间组贴图
@@ -199,6 +202,9 @@ pub(super) fn generate_or_load_track_tile(
     // 写缓存入队，后台线程执行 zstd+IO，避免阻塞 rayon 并行生成
     // 使用有界 channel + try_send：队列满时直接丢弃缓存任务，避免无界堆积导致 OOM。
     // 缓存是性能优化，跳过不影响生成正确性。
+    //
+    // ★ TrackTile.pixels 已改为 Arc<Vec<u8>>，tile.clone() 仅增加引用计数，
+    // 不再复制整张贴图像素，显著降低大 MIDI 场景下缓存队列的内存峰值。
     match ctx.cache_tx.try_send(CacheWriteJob {
         cache_dir: ctx.cache_dir.to_path_buf(),
         midi_hash: ctx.midi_hash.to_string(),

@@ -34,15 +34,9 @@ pub fn generate_track_tile(
 
     // tick 范围为 0 或无效时直接返回空贴图
     if tick_end <= tick_start {
-        return TrackTile {
-            track_idx,
-            time_group,
-            pixels,
-            width,
-            height,
-            tick_start,
-            tick_end,
-        };
+        return TrackTile::new(
+            track_idx, time_group, pixels, width, height, tick_start, tick_end,
+        );
     }
 
     let tick_range = (tick_end - tick_start) as f32;
@@ -87,14 +81,35 @@ pub fn generate_track_tile(
         row_pixels.fill(color_u32);
     }
 
-    TrackTile {
-        track_idx,
-        time_group,
-        pixels,
-        width,
-        height,
-        tick_start,
-        tick_end,
+    TrackTile::new(
+        track_idx, time_group, pixels, width, height, tick_start, tick_end,
+    )
+}
+
+/// 将单音轨贴图合并到整合组贴图像素缓冲中
+///
+/// 后轨覆盖前轨的非透明重叠区。`group_pixels` 必须已初始化为零或
+/// 包含前序轨道的合并结果，且长度与 `tile.pixels` 相同。
+pub fn merge_track_tile_into(group_pixels: &mut [u8], tile: &TrackTile) {
+    debug_assert_eq!(group_pixels.len(), tile.pixels.len(), "贴图像素长度不一致");
+    debug_assert_eq!(tile.pixels.len() % 4, 0, "贴图像素长度不是 4 的倍数");
+
+    merge_pixels_into(group_pixels, &tile.pixels);
+}
+
+/// 将一张贴图像素缓冲合并到目标缓冲中
+///
+/// 非透明像素覆盖目标缓冲对应位置。`dst` 必须与 `src` 等长且为 4 字节对齐。
+pub fn merge_pixels_into(dst: &mut [u8], src: &[u8]) {
+    debug_assert_eq!(dst.len(), src.len(), "像素缓冲长度不一致");
+    debug_assert_eq!(dst.len() % 4, 0, "像素缓冲长度不是 4 的倍数");
+
+    let dst32 = bytemuck::cast_slice_mut::<u8, u32>(dst);
+    let src32 = bytemuck::cast_slice::<u8, u32>(src);
+    for (i, &pixel) in src32.iter().enumerate() {
+        if pixel & 0xFF00_0000 != 0 {
+            dst32[i] = pixel;
+        }
     }
 }
 
@@ -116,18 +131,10 @@ pub fn merge_group_tiles(
     let pixel_count = (width * height) as usize;
     let mut pixels = vec![0u8; pixel_count * 4];
 
-    // 将目标缓冲按 u32 字寻址：RGBA8 little-endian 下 alpha 位于最高字节
-    let dst = bytemuck::cast_slice_mut::<u8, u32>(&mut pixels);
     for tile in tiles {
         debug_assert_eq!(tile.width, width, "贴图宽度不一致");
         debug_assert_eq!(tile.height, height, "贴图高度不一致");
-        // 后轨覆盖前轨：单条 u32 指令完成读/写/alpha 判断
-        let src = bytemuck::cast_slice::<u8, u32>(&tile.pixels);
-        for (i, &pixel) in src.iter().enumerate() {
-            if pixel & 0xFF00_0000 != 0 {
-                dst[i] = pixel;
-            }
-        }
+        merge_track_tile_into(&mut pixels, tile);
     }
 
     GroupTile {

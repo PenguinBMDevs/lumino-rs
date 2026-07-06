@@ -3611,6 +3611,7 @@ dependencies = [
  "bincode",
  "bytemuck",
  "futures",
+ "lumino-memory-monitor",
  "lumino-onion-skin",
  "rayon",
  "serde",

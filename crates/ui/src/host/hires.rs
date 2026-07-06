@@ -190,7 +190,7 @@ impl Host {
                 total_ticks,
                 track_count,
                 config: config.clone(),
-                midi_hash: String::new(),
+                midi_hash: self.hires_midi_hash.clone().unwrap_or_default(),
             });
         }
         self.hires_overlay_sent = true;

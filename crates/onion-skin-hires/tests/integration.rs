@@ -49,7 +49,7 @@ fn test_generate_cache_roundtrip() {
     let read = read_track_tile_cache(&dir, &hash, 0, 0, &meta)
         .expect("读缓存应返回 Ok")
         .expect("缓存应存在");
-    assert_eq!(read.pixels, tile.pixels);
+    assert_eq!(*read.pixels, *tile.pixels);
     assert_eq!(read.width, WIDTH);
     assert_eq!(read.height, KEYS as u32);
     assert_eq!(read.track_idx, 0);
@@ -161,8 +161,8 @@ fn test_multi_time_group_layout() {
 
     assert_eq!(read0.time_group, 0);
     assert_eq!(read1.time_group, 1);
-    assert_eq!(read0.pixels, tile0.pixels);
-    assert_eq!(read1.pixels, tile1.pixels);
+    assert_eq!(*read0.pixels, *tile0.pixels);
+    assert_eq!(*read1.pixels, *tile1.pixels);
 
     let _ = std::fs::remove_dir_all(&dir);
 }

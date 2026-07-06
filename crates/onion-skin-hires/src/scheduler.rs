@@ -1,7 +1,9 @@
 //! 高精度贴图并行生成调度
 //!
-//! 按**音轨组**维度 rayon 并行，组内顺序生成 8 轨 × N 时间组的单音轨贴图，
-//! 缓存命中则跳过计算，组内全部就绪后合并为整合组贴图。
+//! 提供两个生成模式：
+//! - `generate_all_tiles`：按音轨组 rayon 并行，返回完整 HashMap，适合小 MIDI。
+//! - `generate_all_tiles_streaming`：按 time_group 串行推进，每生成一张整合组贴图
+//!   立即回调上传，不累积 Vec，适合大 MIDI 低内存峰值场景。
 //!
 //! 进度回调线程安全，多线程并发上报（与项目现有 ProgressManager 行为一致）。
 
@@ -14,11 +16,13 @@ use tracing::{info, warn};
 
 use crate::cache;
 use crate::config::HiResConfig;
+use crate::generate::merge_pixels_into;
 use crate::scheduler::generate::{
     CacheWriteJob, TileGenContext, generate_one_time_group_tile, generate_one_track_group,
     sort_notes_per_track,
 };
 use crate::types::{GroupTile, TileCoord};
+use lumino_memory_monitor::MemoryMonitor;
 use lumino_onion_skin::OnionSkinNote;
 
 mod generate;
@@ -146,17 +150,16 @@ pub fn generate_all_tiles(
     buffer
 }
 
-/// 流式生成全曲高精度贴图（time_group 同步推进模型）
+/// 流式生成全曲高精度贴图（单 tile 流式回调模型）
 ///
-/// 模型：所有音轨组线程并行生成**同一个 time_group** 的贴图，收齐后回调输出，
-/// 调用方合并上传 GPU 并释放 CPU 缓冲，再进入下一个 time_group。
-/// 避免按 track_group 维度独立并行导致的 channel 无界积压与 CPU 内存峰值。
+/// 模型：按 time_group 串行推进，每个 track_group 的整合组贴图一生成完毕
+/// 立即通过回调输出，调用方直接上传 GPU 并释放 CPU 缓冲，再生成下一张。
+/// 避免一个 time_group 的所有贴图在内存中累积成 Vec 后再统一上传。
 ///
 /// # 参数
 /// 除与 `generate_all_tiles` 相同的参数外：
-/// - `time_group_cb`: 某个 time_group 的所有音轨组贴图收齐后回调，
-///   参数为 `(time_group, Vec<GroupTile>)`，Vec 长度 = track_groups。
-///   回调返回后 Vec 被 drop 释放 CPU 内存，才进入下一个 time_group。
+/// - `time_group_cb`: 每生成一张整合组贴图立即回调，参数为 `(time_group, GroupTile)`。
+///   回调返回后该贴图的 CPU 像素缓冲即可释放，才继续生成下一张。
 pub fn generate_all_tiles_streaming<F>(
     notes: &mut [Vec<OnionSkinNote>],
     config: &HiResConfig,
@@ -167,7 +170,7 @@ pub fn generate_all_tiles_streaming<F>(
     progress_cb: Option<HiResProgressCallback>,
     time_group_cb: &F,
 ) where
-    F: Fn(u32, Vec<GroupTile>) + Sync,
+    F: Fn(u32, GroupTile) + Sync,
 {
     sort_notes_per_track(notes);
     let track_count = notes.len() as u16;
@@ -222,30 +225,43 @@ pub fn generate_all_tiles_streaming<F>(
         cache_tx: &cache_tx,
     };
 
-    // ★ 外层串行 time_group，内层并行 track_group，rayon collect 天然 Barrier ★
-    // 所有 track_group 线程完成同一个 time_group 后才回调，回调期间并行线程空闲
-    // （对应"装袋期间工人等着"），回调返回后 Vec drop 释放，进入下一个 time_group
+    // ★ 跨 track_group 合并：一个 time_group 内所有 track_group 的 GroupTile 合并为一张 ★
+    // 避免 104 × 101 = 10504 张零散贴图塞进 GPU 显存。
+    // GPU 最终只持有 time_groups 张合并贴图（用户预期：~101 张而非 10504 张）。
     for time_group in 0..time_groups {
+        // 大分配前主动检查内存，接近上限时提前 panic，避免 OOM 把系统拖死
+        MemoryMonitor::global().check();
+
         let tick_start = time_group * ticks_per_group;
         let tick_end = tick_start + ticks_per_group;
 
-        // 所有音轨组并行生成这一个 time_group 的贴图，collect 等待全部完成
-        let group_tiles: Vec<GroupTile> = (0..track_groups)
-            .into_par_iter()
-            .map(|track_group| {
-                generate_one_time_group_tile(
-                    track_group,
-                    time_group,
-                    tick_start,
-                    tick_end,
-                    notes,
-                    &ctx,
-                )
-            })
-            .collect();
+        let buf_size = (width * key_count as u32) as usize * 4;
+        let mut merged_pixels = vec![0u8; buf_size];
 
-        // ★ 所有 track_group 的 GroupTile 收齐，回调合并+上传+释放 ★
-        time_group_cb(time_group, group_tiles);
+        for track_group in 0..track_groups {
+            let group_tile = generate_one_time_group_tile(
+                track_group,
+                time_group,
+                tick_start,
+                tick_end,
+                notes,
+                &ctx,
+            );
+            // 合并整张贴图像素到跨 track_group 缓冲
+            merge_pixels_into(&mut merged_pixels, &group_tile.pixels);
+            // group_tile 在此作用域结束时 drop
+        }
+
+        let merged = GroupTile {
+            coord: TileCoord::new(0, time_group),
+            pixels: merged_pixels,
+            width,
+            height: key_count as u32,
+            tick_start,
+            tick_end,
+            track_range: (0, track_count),
+        };
+        time_group_cb(time_group, merged);
 
         // 更新进度（按 time_group 粒度），原子计数替代 Mutex
         let done = completed.fetch_add(1, Ordering::Relaxed) + 1;

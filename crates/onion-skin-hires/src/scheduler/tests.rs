@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use crate::compute_midi_hash;
 use crate::config::HiResConfig;
-use crate::scheduler::{HiResProgressCallback, generate_all_tiles};
-use crate::types::TileCoord;
+use crate::scheduler::{HiResProgressCallback, generate_all_tiles, generate_all_tiles_streaming};
+use crate::types::{GroupTile, TileCoord};
 use lumino_onion_skin::OnionSkinNote;
 
 fn note(start: u32, end: u32, key: u8, color: [u8; 4]) -> OnionSkinNote {
@@ -150,7 +150,7 @@ fn test_cache_hit_skips_generation() {
     let t2 = second
         .get(&TileCoord::new(0, 0))
         .expect("第二次生成应有 Tile (0,0)");
-    assert_eq!(t1.pixels, t2.pixels, "缓存命中应产生相同像素");
+    assert_eq!(*t1.pixels, *t2.pixels, "缓存命中应产生相同像素");
 
     cleanup(&config);
 }
@@ -180,6 +180,65 @@ fn test_progress_callback_invoked() {
     // 最终 pct 应为 1.0
     let pct = *final_pct.lock().expect("Mutex 未 poison");
     assert!((pct - 1.0).abs() < 0.001, "最终进度应为 1.0，实际 {pct}");
+
+    cleanup(&config);
+}
+
+#[test]
+fn test_streaming_callback_per_tile() {
+    // ★ 跨 track_group 合并：2 个 time_group 各生成一张全轨合并贴图，共 2 张 ★
+    let (config, hash) = test_config();
+    let mut notes: Vec<Vec<OnionSkinNote>> = (0..10)
+        .map(|i| {
+            let key = i as u8;
+            // 轨 i 在 time_group 0 和 1 各放一个音符
+            vec![
+                note(0, 100, key, [i as u8, 0, 0, 255]),
+                note(30720, 30820, key, [i as u8, 0, 0, 255]),
+            ]
+        })
+        .collect();
+
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let received_cb = received.clone();
+    let cb = move |time_group: u32, tile: GroupTile| {
+        received_cb.lock().expect("Mutex 未 poison").push((
+            time_group,
+            tile.coord,
+            tile.pixels.clone(),
+        ));
+    };
+
+    generate_all_tiles_streaming(&mut notes, &config, 1920, 128, 61440, &hash, None, &cb);
+
+    let guard = received.lock().expect("Mutex 未 poison");
+    assert_eq!(
+        guard.len(),
+        2,
+        "应收到 2 张全轨合并流式贴图（每 time_group 一张）"
+    );
+
+    // 坐标：跨 track_group 合并后只用 (0, 0) 和 (0, 1)
+    let coords: std::collections::HashSet<_> = guard.iter().map(|(_, c, _)| *c).collect();
+    assert!(coords.contains(&TileCoord::new(0, 0)));
+    assert!(coords.contains(&TileCoord::new(0, 1)));
+    assert_eq!(coords.len(), 2);
+
+    // 每张合并贴图应包含全部 10 轨的音符（跨 track_group 合并验证）
+    for (time_group, coord, pixels) in guard.iter() {
+        assert_eq!(coord.track_group, 0, "合并后 track_group 固定为 0");
+        for t in 0..10 {
+            let key = t as u8;
+            let x = 0u32;
+            assert_eq!(
+                pixel_at(pixels, 1920, x, key as u32),
+                [t as u8, 0, 0, 255],
+                "time_group={}, track={} 应有颜色（跨 track_group 合并）",
+                time_group,
+                t
+            );
+        }
+    }
 
     cleanup(&config);
 }

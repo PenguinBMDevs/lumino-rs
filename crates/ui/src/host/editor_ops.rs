@@ -342,8 +342,9 @@ impl Host {
 
     /// 处理编辑器动作
     ///
-    /// 仅在音符数据确实发生变化时才标记当前音轨高精度贴图为脏，
-    /// 避免滚动、点击播放位置等不改变音符的操作被误判为脏音轨。
+    /// 仅在音符数据确实发生变化时才标记当前音轨高精度贴图为脏。
+    /// 先按动作类型过滤：只有可能修改音符的动作才检查 `notes_changed()`，
+    /// 避免 Moved/Released/Copy/SelectAll 等不会改音符的动作被误判为脏音轨。
     pub fn handle_action(&mut self, action: message::EditorAction) {
         let track_idx = self.root.editor.current_track() as u16;
         tracing::debug!(
@@ -351,8 +352,27 @@ impl Host {
             action,
             track_idx
         );
+
+        // 先确定该动作是否可能修改音符数据
+        // 确定会改：Delete/Cut/Paste → 直接标记脏，不问 notes_changed
+        // 可能改：Pressed/DoubleClicked/Undo/Redo → 依赖 notes_changed 判断
+        // 绝不会改：Moved/Released/Copy/SelectAll/Scrubbed/Scrolled/IndicatorDrag → 跳过
+        let is_definite_mutation = matches!(
+            action,
+            message::EditorAction::DeletePressed
+                | message::EditorAction::Cut
+                | message::EditorAction::Paste
+        );
+        let is_possible_mutation = matches!(
+            action,
+            message::EditorAction::Pressed { .. }
+                | message::EditorAction::DoubleClicked(_)
+                | message::EditorAction::Undo
+                | message::EditorAction::Redo
+        );
+
         let notes_changed = self.root.handle_editor_action(action);
-        if notes_changed {
+        if is_definite_mutation || (is_possible_mutation && notes_changed) {
             // 编辑动作确实改变了音符 → 标记当前音轨高精度贴图为脏
             tracing::info!(
                 "[onion-dirty] EditorAction 改变音符，标记脏音轨: track={}",

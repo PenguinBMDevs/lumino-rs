@@ -52,15 +52,11 @@ mod tests {
         let height = 128u32;
         // 用 track_idx 作像素值便于校验往返
         let pixels = vec![track_idx as u8; (width * height * 4) as usize];
-        TrackTile {
-            track_idx,
-            time_group,
-            pixels,
-            width,
-            height,
-            tick_start: time_group * 30720,
-            tick_end: (time_group + 1) * 30720,
-        }
+        let tick_start = time_group * 30720;
+        let tick_end = (time_group + 1) * 30720;
+        TrackTile::new(
+            track_idx, time_group, pixels, width, height, tick_start, tick_end,
+        )
     }
 
     fn sample_meta(tile: &TrackTile) -> CacheMeta {
@@ -95,7 +91,7 @@ mod tests {
         assert_eq!(read.time_group, 5);
         assert_eq!(read.width, 1920);
         assert_eq!(read.height, 128);
-        assert_eq!(read.pixels, tile.pixels);
+        assert_eq!(*read.pixels, *tile.pixels);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

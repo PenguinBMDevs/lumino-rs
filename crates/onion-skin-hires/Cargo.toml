@@ -8,6 +8,7 @@ edition.workspace = true
 
 [dependencies]
 lumino-onion-skin = { path = "../onion-skin" }
+lumino-memory-monitor = { path = "../memory-monitor" }
 rayon = "1.10"
 xxhash-rust = { workspace = true }
 wgpu = "27.0"

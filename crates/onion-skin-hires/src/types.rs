@@ -1,5 +1,7 @@
 //! 高精度贴图系统类型定义
 
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 /// 贴图坐标（矩阵位置）
@@ -62,6 +64,9 @@ impl DirtyRegion {
 ///
 /// 一个音轨在一个时间组范围内的 RGBA8 像素数据，
 /// 是 `.lmocache` 文件的内容载体。
+///
+/// `pixels` 使用 `Arc<Vec<u8>>` 共享，避免缓存写入与贴图合并时
+/// 同一份像素数据被反复 clone，显著降低大 MIDI 场景下的内存峰值。
 #[derive(Clone, Debug)]
 pub struct TrackTile {
     /// 音轨索引
@@ -69,7 +74,9 @@ pub struct TrackTile {
     /// 时间组索引
     pub time_group: u32,
     /// RGBA8 像素数据（width × height × 4 字节）
-    pub pixels: Vec<u8>,
+    ///
+    /// 使用 Arc 共享，clone 仅增加引用计数。
+    pub pixels: Arc<Vec<u8>>,
     /// 贴图宽度（像素）
     pub width: u32,
     /// 贴图高度（像素）
@@ -81,6 +88,27 @@ pub struct TrackTile {
 }
 
 impl TrackTile {
+    /// 创建新的单音轨贴图块
+    pub fn new(
+        track_idx: u16,
+        time_group: u32,
+        pixels: Vec<u8>,
+        width: u32,
+        height: u32,
+        tick_start: u32,
+        tick_end: u32,
+    ) -> Self {
+        Self {
+            track_idx,
+            time_group,
+            pixels: Arc::new(pixels),
+            width,
+            height,
+            tick_start,
+            tick_end,
+        }
+    }
+
     /// 像素数据字节数
     pub fn byte_len(&self) -> usize {
         self.pixels.len()
@@ -178,21 +206,13 @@ mod tests {
 
     #[test]
     fn test_track_tile_validate() {
-        let tile = TrackTile {
-            track_idx: 0,
-            time_group: 0,
-            pixels: vec![0u8; 1920 * 128 * 4],
-            width: 1920,
-            height: 128,
-            tick_start: 0,
-            tick_end: 30720,
-        };
+        let tile = TrackTile::new(0, 0, vec![0u8; 1920 * 128 * 4], 1920, 128, 0, 30720);
         assert!(tile.validate());
         assert_eq!(tile.byte_len(), 1920 * 128 * 4);
         assert_eq!(tile.expected_byte_len(), 1920 * 128 * 4);
 
         let bad = TrackTile {
-            pixels: vec![0u8; 100],
+            pixels: Arc::new(vec![0u8; 100]),
             ..tile
         };
         assert!(!bad.validate());

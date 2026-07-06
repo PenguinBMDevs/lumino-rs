@@ -6,9 +6,10 @@ use super::uniform::HiResUniform;
 impl HiResRenderer {
     /// 绘制可见贴图（在 render_pass 内调用）
     ///
-    /// 若某个坐标存在临时脏区域覆层，则跳过该坐标的基础贴图绘制。
-    /// 因为脏区域覆层已包含该音轨组当前完整状态（含删除后的音符），
-    /// 直接替代基础贴图可避免旧音符透过覆层继续显示。
+    /// 基础贴图始终绘制。脏区域覆层在其之上用 Alpha 混合叠加，
+    /// 透明像素（未修改的音轨）让基础贴图透出，不透明像素（已修改的音符）覆盖基础贴图。
+    /// 避免在跨 track_group 全轨合并模式下，脏覆层（仅含修改音轨组数据）直接替代
+    /// 基础贴图（含全部音轨数据）导致未修改音轨消失。
     pub fn render<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
@@ -16,10 +17,8 @@ impl HiResRenderer {
     ) {
         render_pass.set_pipeline(&self.pipeline);
         for coord in visible_coords {
-            // 有临时覆层时跳过基础贴图——覆层会覆盖完整当前状态
-            if self.dirty_overlays.contains_key(coord) {
-                continue;
-            }
+            // Always draw base tile; dirty_overlay renders on top with alpha blending.
+            // Transparent overlay pixels let base tile show through for non-modified tracks.
             if let Some(gpu) = self.tiles.get(coord) {
                 render_pass.set_bind_group(0, &gpu.bind_group, &[]);
                 render_pass.draw(0..6, 0..1);
@@ -40,10 +39,11 @@ impl HiResRenderer {
         }
     }
 
-    /// 绘制临时脏区域覆层（替代对应坐标的基础贴图）
+    /// 绘制临时脏区域覆层（Alpha 混合叠加在基础贴图之上）
     ///
-    /// 覆层贴图包含该音轨组的完整当前状态，`render` 会跳过同一坐标的基础贴图，
-    /// 因此此处直接绘制即可，无需再与基础贴图做 Alpha 叠加。
+    /// 利用管线 ALPHA_BLENDING：覆层中的透明像素让基础贴图透出，
+    /// 不透明像素（已修改音轨）覆盖基础贴图。因删除导致的不透明像素残留
+    /// 会在 `RegenerateHiResTrack` 全轨合并后由新合并贴图替代。
     pub fn render_dirty_overlays<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
