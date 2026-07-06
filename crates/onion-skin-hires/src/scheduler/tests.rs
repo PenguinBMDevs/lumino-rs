@@ -144,9 +144,11 @@ fn test_cache_hit_skips_generation() {
     let first = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
     let second = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
 
-    let t1 = first.get(&TileCoord::new(0, 0))
+    let t1 = first
+        .get(&TileCoord::new(0, 0))
         .expect("第一次生成应有 Tile (0,0)");
-    let t2 = second.get(&TileCoord::new(0, 0))
+    let t2 = second
+        .get(&TileCoord::new(0, 0))
         .expect("第二次生成应有 Tile (0,0)");
     assert_eq!(t1.pixels, t2.pixels, "缓存命中应产生相同像素");
 

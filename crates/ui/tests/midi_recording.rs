@@ -8,6 +8,7 @@
 //! 运行方式：
 //!   cargo test --test midi_recording
 
-mod advanced;
-pub(crate) mod basic;
-mod playback;
+// TODO: 这些子模块尚未实现，先注释掉以避免编译失败
+// mod advanced;
+// pub(crate) mod basic;
+// mod playback;

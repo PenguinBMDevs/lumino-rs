@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::editor::*;
+    use crate::message::EditorAction;
 
     #[test]
     fn test_editor_action_dispatch() {
@@ -8,13 +9,11 @@ mod tests {
         assert!(!editor.notes_changed());
 
         // DeletePressed 不应 panic（空 editor 下无 hover note）
-        editor.handle_action(super::EditorAction::DeletePressed);
+        editor.handle_action(EditorAction::DeletePressed);
         assert!(!editor.notes_changed()); // 没有选中音符，notes_changed 不应变化
 
         // Moved 不应 panic
-        editor.handle_action(super::EditorAction::Moved(iced_core::Point::new(
-            100.0, 200.0,
-        )));
+        editor.handle_action(EditorAction::Moved(iced_core::Point::new(100.0, 200.0)));
     }
 
     #[test]

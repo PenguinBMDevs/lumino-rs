@@ -56,7 +56,7 @@ mod tests {
         assert_eq!(n.key, 60);
         assert_eq!(n.length, 480.0);
         assert_eq!(n.velocity, 100); // 默认力度
-        assert_eq!(n.channel, 0);    // 默认通道
+        assert_eq!(n.channel, 0); // 默认通道
     }
 
     #[test]
@@ -83,9 +83,7 @@ mod tests {
 
     #[test]
     fn test_note_builder_chain() {
-        let n = Note::new(10.0, 64, 240.0)
-            .with_velocity(90)
-            .with_channel(3);
+        let n = Note::new(10.0, 64, 240.0).with_velocity(90).with_channel(3);
         assert_eq!(n.tick, 10.0);
         assert_eq!(n.key, 64);
         assert_eq!(n.length, 240.0);

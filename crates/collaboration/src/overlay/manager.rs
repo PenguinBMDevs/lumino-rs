@@ -283,10 +283,7 @@ mod tests {
 
         let overlays = mgr.get_overlays(&coord);
         assert!(overlays.is_some());
-        assert_eq!(
-            overlays.expect("生成一个 overlay 后应有值").len(),
-            1
-        );
+        assert_eq!(overlays.expect("生成一个 overlay 后应有值").len(), 1);
     }
 
     #[test]
@@ -333,10 +330,7 @@ mod tests {
 
         let overlays = mgr.get_overlays(&coord);
         assert!(overlays.is_some());
-        assert_eq!(
-            overlays.expect("merge 后应仍有 overlay").len(),
-            1
-        );
+        assert_eq!(overlays.expect("merge 后应仍有 overlay").len(), 1);
     }
 
     #[test]

@@ -77,30 +77,43 @@ impl Default for ScrollVelocityTracker {
 
 pub(super) fn build_main_note_instances(
     buffer: &SwappableBuffer<lumino_gfx::NoteInstance>,
-    notes: &im::Vector<crate::editor::note::Note>,
+    visible_notes: &[(f32, u16, f32)],
     edit_state: &crate::editor::editor_state::EditState,
     default_note_length: f32,
     snap_precision: f32,
 ) {
     use rayon::prelude::*;
+
+    const FIXED_NOTE_COLOR: [f32; 4] = [0.2, 0.5, 1.0, 0.9];
+    const DRAWING_NOTE_COLOR: [f32; 4] = [0.4, 0.8, 1.0, 1.0];
+    const PARALLEL_THRESHOLD: usize = 500;
+
     let instances = unsafe { buffer.write_buffer() };
     instances.clear();
-    instances.reserve(notes.len() + 1);
+    instances.reserve(visible_notes.len() + 1);
 
-    let main: Vec<lumino_gfx::NoteInstance> = notes
-        .par_iter()
-        .map(|note| {
-            lumino_gfx::NoteInstance::new(
-                note.tick,
-                note.key as f32,
-                note.length,
-                [0.2, 0.5, 1.0, 0.9],
-            )
-        })
-        .collect();
-    instances.extend(main);
+    // 大数据量：并行直接写入 SwappableBuffer，避免中间 Vec 分配
+    if visible_notes.len() >= PARALLEL_THRESHOLD {
+        instances.resize(
+            visible_notes.len(),
+            lumino_gfx::NoteInstance::new(0.0, 0.0, 0.0, [0.0; 4]),
+        );
+        instances
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(i, instance)| {
+                let (tick, key, length) = visible_notes[i];
+                *instance =
+                    lumino_gfx::NoteInstance::new(tick, key as f32, length, FIXED_NOTE_COLOR);
+            });
+    } else {
+        // 小数据量：顺序写入，避免并行分片开销
+        instances.extend(visible_notes.iter().map(|(tick, key, length)| {
+            lumino_gfx::NoteInstance::new(*tick, *key as f32, *length, FIXED_NOTE_COLOR)
+        }));
+    }
 
-    const DRAWING_NOTE_COLOR: [f32; 4] = [0.4, 0.8, 1.0, 1.0];
+    // 正在绘制的音符
     if let crate::editor::editor_state::EditState::Drawing {
         start_tick,
         key,
@@ -121,5 +134,6 @@ pub(super) fn build_main_note_instances(
             DRAWING_NOTE_COLOR,
         ));
     }
+
     buffer.swap();
 }

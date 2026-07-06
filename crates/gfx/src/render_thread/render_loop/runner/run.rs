@@ -194,8 +194,12 @@ pub fn run_render_thread(
                     &current_texture,
                     &depth_texture_view,
                     params,
-                    &mut renderers,
+                    &mut renderers.grid,
+                    &mut renderers.note,
+                    &mut renderers.ruler,
+                    &mut renderers.arrangement,
                     &queue,
+                    &mut renderers.cc_bar,
                     &hires_renderer,
                     &hires_visible_coords,
                 );

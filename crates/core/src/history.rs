@@ -111,7 +111,10 @@ mod tests {
     fn test_history_push_and_undo() {
         let mut h = History::new();
         let s1 = make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0);
-        let s2 = make_snapshot(vec![Note::new(0.0, 64, 480.0), Note::new(480.0, 67, 240.0)], 0);
+        let s2 = make_snapshot(
+            vec![Note::new(0.0, 64, 480.0), Note::new(480.0, 67, 240.0)],
+            0,
+        );
 
         h.push(s1);
         assert!(h.can_undo());
@@ -170,7 +173,10 @@ mod tests {
         let mut h = History::new();
         h.max_size = 3;
         for i in 0..5 {
-            h.push(make_snapshot(vec![Note::new(i as f32 * 10.0, 60, 480.0)], 0));
+            h.push(make_snapshot(
+                vec![Note::new(i as f32 * 10.0, 60, 480.0)],
+                0,
+            ));
         }
         // 栈大小不应超过 max_size
         assert_eq!(h.undo_stack.len(), 3);

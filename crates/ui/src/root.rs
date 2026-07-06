@@ -221,7 +221,8 @@ impl Root {
                 .fold(0.0_f32, f32::max);
             vp.cached_track_notes_gen = current_gen;
         }
-        vp.cached_max_tick_end.max(crate::constants::editor::DEFAULT_MIN_TICKS)
+        vp.cached_max_tick_end
+            .max(crate::constants::editor::DEFAULT_MIN_TICKS)
     }
 
     /// 更新工程走带视图的自动滚动（基于编辑器自动滚动配置）

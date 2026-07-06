@@ -76,5 +76,4 @@ impl MidiHandler {
         let total_ticks = parsed.info.duration_ticks as f32;
         ui.set_total_ticks(total_ticks);
     }
-
 }

@@ -339,6 +339,7 @@ impl Host {
             self.root.editor.ruler_cache.clear();
             self.render_ctx.render_cache.grid_viewport_hash = 0;
             self.render_ctx.render_cache.note_viewport_hash = 0;
+            self.render_ctx.render_cache.note_render_viewport = None;
             self.root.editor.grid_cache.clear();
             return true;
         }

@@ -36,6 +36,7 @@ impl Host {
         self.root.editor.ruler_cache.clear();
         self.render_ctx.render_cache.grid_viewport_hash = 0;
         self.render_ctx.render_cache.note_viewport_hash = 0;
+        self.render_ctx.render_cache.note_render_viewport = None;
         // 仅请求重绘，不重建UI树（网格线数据由WGPU层处理）
         self.window_ctx.window.request_redraw();
     }
@@ -121,16 +122,16 @@ impl Host {
                     group_notes.len()
                 );
                 if group_notes.iter().any(|n| !n.is_empty()) {
-                    self.send_hires_dirty_overlay(
-                        representative,
+                    self.send_hires_dirty_overlay(lumino_gfx::render_thread::HiResTrackParams {
+                        track_idx: representative,
                         group_notes,
                         ppq,
                         key_count,
                         total_ticks,
                         track_count,
-                        cfg.clone(),
-                        hash.clone(),
-                    );
+                        config: cfg.clone(),
+                        midi_hash: hash.clone(),
+                    });
                 }
             }
         }
@@ -265,6 +266,7 @@ impl Host {
         // RenderCache 视口哈希失效（强制重建 GPU 实例）
         self.render_ctx.render_cache.grid_viewport_hash = 0;
         self.render_ctx.render_cache.note_viewport_hash = 0;
+        self.render_ctx.render_cache.note_render_viewport = None;
 
         // UI 缓存
         self.clear_cache();

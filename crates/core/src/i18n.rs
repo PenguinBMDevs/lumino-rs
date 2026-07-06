@@ -109,18 +109,18 @@ mod tests {
 
     #[test]
     fn test_language_serde() {
-        let json = serde_json::to_string(&Language::ZhCn)
-            .expect("Language::ZhCn 序列化为 JSON 不应失败");
+        let json =
+            serde_json::to_string(&Language::ZhCn).expect("Language::ZhCn 序列化为 JSON 不应失败");
         assert_eq!(json, "\"zh-CN\"");
-        let deserialized: Language = serde_json::from_str(&json)
-            .expect("Language JSON 反序列化不应失败");
+        let deserialized: Language =
+            serde_json::from_str(&json).expect("Language JSON 反序列化不应失败");
         assert_eq!(deserialized, Language::ZhCn);
 
-        let json = serde_json::to_string(&Language::EnUs)
-            .expect("Language::EnUs 序列化为 JSON 不应失败");
+        let json =
+            serde_json::to_string(&Language::EnUs).expect("Language::EnUs 序列化为 JSON 不应失败");
         assert_eq!(json, "\"en-US\"");
-        let deserialized: Language = serde_json::from_str(&json)
-            .expect("Language JSON 反序列化不应失败");
+        let deserialized: Language =
+            serde_json::from_str(&json).expect("Language JSON 反序列化不应失败");
         assert_eq!(deserialized, Language::EnUs);
     }
 }

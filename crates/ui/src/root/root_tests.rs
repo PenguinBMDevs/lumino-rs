@@ -231,12 +231,12 @@ fn test_speed_change_button_always_enabled_in_view() {
     // 有选中 -> view
     let _element = root
         .toolbar
-        .view(&root.window, true, root.settings.language);
+        .toolbar_view(&root.window, true, root.settings.language);
 
     // 无选中 -> view（不应 panic/assert）
     let _element = root
         .toolbar
-        .view(&root.window, false, root.settings.language);
+        .toolbar_view(&root.window, false, root.settings.language);
 
     // 验证通过：两种情况下 view 均正常返回
 }
@@ -275,9 +275,7 @@ fn test_arrangement_max_tick_end_caches_by_gen() {
     assert!((max_tick - 4100.0).abs() < f32::EPSILON);
 
     // 缓存已写入
-    assert!(
-        (root.arrangement_view.viewport.cached_max_tick_end - 4100.0).abs() < f32::EPSILON
-    );
+    assert!((root.arrangement_view.viewport.cached_max_tick_end - 4100.0).abs() < f32::EPSILON);
     assert_eq!(
         root.arrangement_view.viewport.cached_track_notes_gen,
         root.editor.editor_state.data.track_notes_gen

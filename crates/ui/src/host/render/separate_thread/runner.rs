@@ -290,12 +290,12 @@ impl Host {
 
     /// 更新 WGPU 渲染线程的音符数据（双缓冲 + 异步计算）
     ///
-    /// Phase 1: 主音符实例构建（同步，O(N) ~1ms）
-    ///   直接写入双缓冲的 write buffer，然后 swap
-    /// Phase 2: 洋葱皮实例构建（异步，发送给 NoteWorker 后台计算后 swap）
-    ///   耗时 50-200ms 的复杂计算在后台进行
+    /// 优化策略：
+    /// 1. CPU 端可见性裁剪：仅构建视口内（含 overscan）的音符实例
+    /// 2. Overscan 缓存：若当前视口仍在上一次渲染的扩展视口内且数据未变，跳过重建
     pub(super) fn update_note_data_for_wgpu_thread(&mut self) {
         puffin::profile_scope!("update_note_data");
+        const OVERSCAN_FACTOR: f32 = 0.5;
 
         // 走带模式使用 arrangement_renderer，不需要音符实例
         if self.root.is_arrangement_mode() {
@@ -327,39 +327,63 @@ impl Host {
             || self.render_ctx.render_cache.note_instances_is_empty()
             || is_drawing;
 
-        if !note_data_changed && !viewport_changed {
+        // 计算当前精确视口范围
+        let (tick_start, tick_end, key_min, key_max) = self.root.editor.compute_visible_range(0.0);
+
+        // 若数据未变且当前视口在缓存的渲染视口内，跳过重建
+        if !note_data_changed
+            && !viewport_changed
+            && self
+                .render_ctx
+                .render_cache
+                .note_render_viewport
+                .as_ref()
+                .is_some_and(|vp| vp.contains(tick_start, tick_end, key_min, key_max))
+        {
             return;
         }
 
         self.render_ctx.render_cache.note_viewport_hash = current_viewport_hash;
 
-        // Phase 1: 主音符实例构建（同步）
-        // 直接写入双缓冲的 write buffer，然后 swap
-        if note_data_changed {
+        // Phase 1: 主音符实例构建（仅构建可见音符）
+        if note_data_changed || viewport_changed {
             puffin::profile_scope!("phase1_main_notes_sync");
-            let notes_clone = self.root.editor.editor_state.data.notes.clone(); // O(1)
             let edit_state_clone = self.root.editor.editor_state.interaction.edit_state.clone();
             let default_note_length = self.root.editor.editor_state.view.default_note_length;
             let snap_precision = self.root.editor.editor_state.view.snap_precision;
+
+            let visible_count = self.root.editor.collect_visible_note_data(
+                &mut self.render_ctx.render_cache.visible_notes_buffer,
+                OVERSCAN_FACTOR,
+            );
+            let visible_notes = &self.render_ctx.render_cache.visible_notes_buffer;
             note_worker::build_main_note_instances(
                 &self.render_ctx.render_cache.note_instances_buffer,
-                &notes_clone,
+                visible_notes,
                 &edit_state_clone,
                 default_note_length,
                 snap_precision,
             );
+            tracing::debug!(
+                "WGPU thread: built {} visible note instances from expanded query",
+                visible_count
+            );
         }
 
-        // 提取 scroll 值
-        let scroll_x = v.scroll_x;
-        let zoom_x = v.zoom_x;
+        // 更新缓存的渲染视口为本次使用的扩展视口
+        let (render_tick_start, render_tick_end, render_key_min, render_key_max) =
+            self.root.editor.compute_visible_range(OVERSCAN_FACTOR);
+        self.render_ctx.render_cache.note_render_viewport =
+            Some(crate::host::cache::NoteRenderViewport {
+                tick_start: render_tick_start,
+                tick_end: render_tick_end,
+                key_min: render_key_min,
+                key_max: render_key_max,
+            });
 
-        // 更新滚动速度追踪
-        let _velocity = self.scroll_tracker.update(scroll_x, zoom_x);
-
-        if note_index_dirty {
-            self.root.editor.spatial.note_index_dirty.set(false);
-        }
+        // 滚动速度追踪保留，供未来 overscan 预测使用
+        let _velocity = self.scroll_tracker.update(v.scroll_x, v.zoom_x);
+        let _ = _velocity;
     }
 
     /// 构建渲染参数

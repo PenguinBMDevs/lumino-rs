@@ -199,14 +199,16 @@ impl winit::application::ApplicationHandler for Runner {
                             group_notes.len()
                         );
                         this.window_state.window.ui_mut().send_hires_regen(
-                            representative,
-                            group_notes,
-                            ppq,
-                            key_count,
-                            total_ticks,
-                            track_count,
-                            config.clone(),
-                            midi_hash.clone(),
+                            lumino_gfx::render_thread::HiResTrackParams::new(
+                                representative,
+                                group_notes,
+                                ppq,
+                                key_count,
+                                total_ticks,
+                                track_count,
+                                config.clone(),
+                                midi_hash.clone(),
+                            ),
                         );
                     }
                 }

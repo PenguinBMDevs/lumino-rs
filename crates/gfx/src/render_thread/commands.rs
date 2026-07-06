@@ -1,6 +1,61 @@
 use super::params::RenderParams;
 use crate::{HiResConfig, OnionSkinNote};
 
+/// 高精度音轨重生成/脏覆层命令参数
+///
+/// 抽取出公共字段，避免在 `ControlCommand` 中重复定义，
+/// 同时方便 UI 层构造命令。
+#[derive(Debug, Clone)]
+pub struct HiResTrackParams {
+    /// 脏音轨索引（用于日志和确定 track_group）
+    pub track_idx: u16,
+    /// 该 track_group 内所有音轨的音符列表。
+    /// 索引 0 对应 track_group 内的第一个音轨，即
+    /// `track_group * TRACKS_PER_GROUP`。
+    /// 使用 Host 提供的最新音符数据重新合并 group tile，
+    /// 避免读取可能过期的硬盘缓存导致同组其他音轨被覆盖为旧数据。
+    pub group_notes: Vec<Vec<OnionSkinNote>>,
+    /// MIDI ppq
+    pub ppq: u16,
+    /// 键位数量
+    pub key_count: u16,
+    /// 全曲总 tick
+    pub total_ticks: u32,
+    /// 音轨总数（用于推断音轨组范围）
+    pub track_count: u16,
+    /// 高精度贴图配置
+    pub config: HiResConfig,
+    /// MIDI 内容哈希（缓存分桶）
+    pub midi_hash: String,
+}
+
+impl HiResTrackParams {
+    /// 创建新的高精度音轨参数
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub fn new(
+        track_idx: u16,
+        group_notes: Vec<Vec<OnionSkinNote>>,
+        ppq: u16,
+        key_count: u16,
+        total_ticks: u32,
+        track_count: u16,
+        config: HiResConfig,
+        midi_hash: String,
+    ) -> Self {
+        Self {
+            track_idx,
+            group_notes,
+            ppq,
+            key_count,
+            total_ticks,
+            track_count,
+            config,
+            midi_hash,
+        }
+    }
+}
+
 /// 控制命令
 #[derive(Debug)]
 pub enum ControlCommand {
@@ -26,49 +81,23 @@ pub enum ControlCommand {
     /// 释放高精度洋葱皮资源
     DisposeHiResOnionSkin,
     /// 重生成指定音轨组的高精度贴图（编辑后冷静期到期触发）
-    RegenerateHiResTrack {
-        /// 脏音轨索引（用于日志和确定 track_group）
-        track_idx: u16,
-        /// 该 track_group 内所有音轨的音符列表。
-        /// 索引 0 对应 track_group 内的第一个音轨，即
-        /// `track_group * TRACKS_PER_GROUP`。
-        /// 使用 Host 提供的最新音符数据重新合并 group tile，
-        /// 避免读取可能过期的硬盘缓存导致同组其他音轨被覆盖为旧数据。
-        group_notes: Vec<Vec<OnionSkinNote>>,
-        /// MIDI ppq
-        ppq: u16,
-        /// 键位数量
-        key_count: u16,
-        /// 全曲总 tick
-        total_ticks: u32,
-        /// 音轨总数（用于推断音轨组范围）
-        track_count: u16,
-        /// 高精度贴图配置
-        config: HiResConfig,
-        /// MIDI 内容哈希（缓存分桶）
-        midi_hash: String,
-    },
+    RegenerateHiResTrack(HiResTrackParams),
     /// 显示编辑后的临时脏区域贴图覆层（切换音轨前立即触发）
-    ShowHiResDirtyOverlay {
-        /// 脏音轨索引（用于日志和确定 track_group）
-        track_idx: u16,
-        /// 该 track_group 内所有音轨的音符列表。
-        /// 索引 0 对应 track_group 内的第一个音轨。
-        /// 合并为整合组贴图覆层，避免同组多个脏音轨互相覆盖。
-        group_notes: Vec<Vec<OnionSkinNote>>,
-        /// MIDI ppq
-        ppq: u16,
-        /// 键位数量
-        key_count: u16,
-        /// 全曲总 tick
-        total_ticks: u32,
-        /// 音轨总数（用于推断音轨组范围）
-        track_count: u16,
-        /// 高精度贴图配置
-        config: HiResConfig,
-        /// MIDI 内容哈希（缓存分桶）
-        midi_hash: String,
-    },
+    ShowHiResDirtyOverlay(HiResTrackParams),
+}
+
+impl ControlCommand {
+    /// 构造 `RegenerateHiResTrack` 命令
+    #[must_use]
+    pub fn regenerate_track(params: HiResTrackParams) -> Self {
+        Self::RegenerateHiResTrack(params)
+    }
+
+    /// 构造 `ShowHiResDirtyOverlay` 命令
+    #[must_use]
+    pub fn show_dirty_overlay(params: HiResTrackParams) -> Self {
+        Self::ShowHiResDirtyOverlay(params)
+    }
 }
 
 /// 渲染命令（UI 线程 -> 渲染线程）

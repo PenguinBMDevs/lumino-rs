@@ -223,25 +223,41 @@ mod tests {
 
     #[test]
     fn test_cc_point_construction() {
-        let p = CcPoint { tick: 480.0, value: 64 };
+        let p = CcPoint {
+            tick: 480.0,
+            value: 64,
+        };
         assert_eq!(p.tick, 480.0);
         assert_eq!(p.value, 64);
     }
 
     #[test]
     fn test_bend_point_construction() {
-        let p = BendPoint { tick: 960.0, value: 0 };
+        let p = BendPoint {
+            tick: 960.0,
+            value: 0,
+        };
         assert_eq!(p.tick, 960.0);
         assert_eq!(p.value, 0);
-        let p_neg = BendPoint { tick: 0.0, value: -8192 };
+        let p_neg = BendPoint {
+            tick: 0.0,
+            value: -8192,
+        };
         assert_eq!(p_neg.value, -8192);
-        let p_pos = BendPoint { tick: 0.0, value: 8191 };
+        let p_pos = BendPoint {
+            tick: 0.0,
+            value: 8191,
+        };
         assert_eq!(p_pos.value, 8191);
     }
 
     #[test]
     fn test_velocity_point_construction() {
-        let p = VelocityPoint { note_index: 5, tick: 100.0, velocity: 80 };
+        let p = VelocityPoint {
+            note_index: 5,
+            tick: 100.0,
+            velocity: 80,
+        };
         assert_eq!(p.note_index, 5);
         assert_eq!(p.tick, 100.0);
         assert_eq!(p.velocity, 80);
@@ -249,7 +265,10 @@ mod tests {
 
     #[test]
     fn test_tempo_point_construction() {
-        let t = TempoPoint { tick: 0.0, bpm: 120.0 };
+        let t = TempoPoint {
+            tick: 0.0,
+            bpm: 120.0,
+        };
         assert_eq!(t.tick, 0.0);
         assert_eq!(t.bpm, 120.0);
     }

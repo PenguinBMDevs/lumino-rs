@@ -133,6 +133,7 @@ pub struct MidiExportData {
 mod tests {
     use super::tracks::convert_to_delta_times;
     use super::*;
+    use midly::{MetaMessage, TrackEvent, TrackEventKind};
 
     #[test]
     fn test_export_empty_midi() {
