@@ -140,19 +140,6 @@ impl winit::application::ApplicationHandler for Runner {
             }
         }
 
-        // 高精度贴图脏区域覆层刷新：轮询时若有远程编辑增量，立即显示覆层
-        {
-            puffin::profile_scope!("runner_about_to_wait_hires_overlay");
-            let had_updates = this
-                .window_state
-                .window
-                .ui_mut()
-                .show_hires_dirty_overlays();
-            if had_updates {
-                this.window_state.window.window().request_redraw();
-            }
-        }
-
         // 高精度贴图冷静期检查：到期后触发脏音轨重生成
         {
             puffin::profile_scope!("runner_about_to_wait_hires_regen");
@@ -212,16 +199,14 @@ impl winit::application::ApplicationHandler for Runner {
                             group_notes.len()
                         );
                         this.window_state.window.ui_mut().send_hires_regen(
-                            lumino_gfx::render_thread::HiResTrackParams {
-                                track_idx: representative,
-                                group_notes,
-                                ppq,
-                                key_count,
-                                total_ticks,
-                                track_count,
-                                config: config.clone(),
-                                midi_hash: midi_hash.clone(),
-                            },
+                            representative,
+                            group_notes,
+                            ppq,
+                            key_count,
+                            total_ticks,
+                            track_count,
+                            config.clone(),
+                            midi_hash.clone(),
                         );
                     }
                 }

@@ -11,7 +11,7 @@
 
 如果你发现了安全漏洞，请通过以下方式报告：
 
-- **邮箱**: m18981160776@163.com（或你的实际邮箱）
+- **邮箱**: m18981160776@163.com
 - **GitHub Private Vulnerability Reporting**: 本仓库 Security → Advisories → Report a vulnerability
 
 我们会在 7 个工作日内确认收到，并在修复后协调披露。

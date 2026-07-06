@@ -102,4 +102,111 @@ mod tests {
         assert_eq!(x, 10.0);
         assert_eq!(y, 20.0);
     }
+
+    #[test]
+    fn test_smooth_scroll_inactive_returns_current() {
+        let anim = SmoothScrollAnimation::new();
+        let (x, y, active) = anim.update(50.0, 100.0);
+        assert!(!active);
+        assert_eq!(x, 50.0);
+        assert_eq!(y, 100.0);
+    }
+
+    #[test]
+    fn test_smooth_scroll_within_threshold_snaps_to_target() {
+        let mut anim = SmoothScrollAnimation::new();
+        anim.factor = 0.1;
+        anim.threshold = 5.0;
+        anim.set_target(100.0, 200.0);
+        // 在 threshold 范围内 → 直接吸附
+        let (x, y, active) = anim.update(97.0, 197.0);
+        assert!(!active);
+        assert_eq!(x, 100.0);
+        assert_eq!(y, 200.0);
+    }
+
+    #[test]
+    fn test_smooth_scroll_one_axis_within_threshold() {
+        let mut anim = SmoothScrollAnimation::new();
+        anim.threshold = 5.0;
+        anim.set_target(100.0, 200.0);
+        // x 在阈值内但 y 不在 → 仍 active（两根轴都低于阈值才吸附）
+        let (x, y, active) = anim.update(98.0, 100.0);
+        assert!(active);
+        assert!(x > 98.0 && x < 100.0); // x 向目标靠近但未吸附
+        assert!(y > 100.0 && y < 200.0);
+    }
+
+    #[test]
+    fn test_smooth_scroll_stop() {
+        let mut anim = SmoothScrollAnimation::new();
+        anim.set_target(100.0, 200.0);
+        assert!(anim.active);
+        anim.stop();
+        let (x, y, active) = anim.update(0.0, 0.0);
+        assert!(!active);
+        assert_eq!(x, 0.0);
+        assert_eq!(y, 0.0);
+    }
+
+    #[test]
+    fn test_smooth_scroll_sync() {
+        let mut anim = SmoothScrollAnimation::new();
+        anim.set_target(100.0, 200.0);
+        anim.sync(50.0, 60.0);
+        assert!(!anim.active);
+        assert_eq!(anim.target_x, 50.0);
+        assert_eq!(anim.target_y, 60.0);
+        let (x, y, active) = anim.update(0.0, 0.0);
+        assert!(!active);
+        assert_eq!(x, 0.0);
+        assert_eq!(y, 0.0);
+    }
+
+    #[test]
+    fn test_smooth_scroll_zero_factor() {
+        let mut anim = SmoothScrollAnimation::new();
+        anim.factor = 0.0;
+        anim.set_target(100.0, 200.0);
+        let (x, y, active) = anim.update(0.0, 0.0);
+        assert!(active);
+        assert_eq!(x, 0.0); // 不动
+        assert_eq!(y, 0.0);
+    }
+
+    #[test]
+    fn test_smooth_scroll_negative_target() {
+        let mut anim = SmoothScrollAnimation::new();
+        anim.set_target(-100.0, -200.0);
+        let (x, y, active) = anim.update(0.0, 0.0);
+        assert!(active);
+        assert!(x < 0.0);
+        assert!(y < 0.0);
+    }
+
+    #[test]
+    fn test_smooth_scroll_default_values() {
+        let anim = SmoothScrollAnimation::default();
+        assert!(!anim.active);
+        assert!((anim.factor - 0.25).abs() < f32::EPSILON);
+        assert!((anim.threshold - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_smooth_scroll_convergence_without_reset() {
+        // 不每帧 reset target，测试自然收敛
+        let mut anim = SmoothScrollAnimation::new();
+        anim.factor = 0.5;
+        anim.threshold = 0.1;
+        anim.set_target(100.0, 0.0);
+        let mut x = 0.0;
+        let mut active = true;
+        let mut iterations = 0;
+        while active && iterations < 100 {
+            (x, _, active) = anim.update(x, 0.0);
+            iterations += 1;
+        }
+        assert!(!active, "应在 {iterations} 次内收敛");
+        assert!((x - 100.0).abs() < 0.1);
+    }
 }

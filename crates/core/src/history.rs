@@ -91,3 +91,120 @@ impl Default for History {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_snapshot(notes: Vec<Note>, current_track: usize) -> EditorSnapshot {
+        EditorSnapshot::new(Vector::from(notes), current_track)
+    }
+
+    #[test]
+    fn test_history_new_is_empty() {
+        let h = History::new();
+        assert!(!h.can_undo());
+        assert!(!h.can_redo());
+    }
+
+    #[test]
+    fn test_history_push_and_undo() {
+        let mut h = History::new();
+        let s1 = make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0);
+        let s2 = make_snapshot(vec![Note::new(0.0, 64, 480.0), Note::new(480.0, 67, 240.0)], 0);
+
+        h.push(s1);
+        assert!(h.can_undo());
+        assert!(!h.can_redo());
+
+        // undo 返回上一个状态，当前状态放入 redo
+        let restored = h.undo(s2).expect("undo 应返回 Some");
+        assert_eq!(restored.notes.len(), 1);
+        assert_eq!(restored.notes[0].key, 60);
+        assert!(h.can_redo());
+    }
+
+    #[test]
+    fn test_history_undo_empty() {
+        let mut h = History::new();
+        let current = make_snapshot(vec![], 0);
+        assert!(h.undo(current).is_none());
+    }
+
+    #[test]
+    fn test_history_redo_empty() {
+        let mut h = History::new();
+        let current = make_snapshot(vec![], 0);
+        assert!(h.redo(current).is_none());
+    }
+
+    #[test]
+    fn test_history_redo_after_undo() {
+        let mut h = History::new();
+        let s1 = make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0);
+        let s2 = make_snapshot(vec![Note::new(0.0, 64, 480.0)], 0);
+
+        h.push(s1);
+        let _ = h.undo(s2);
+        assert!(h.can_redo());
+
+        let restored = h.redo(make_snapshot(vec![], 0)).expect("redo 应返回 Some");
+        assert_eq!(restored.notes.len(), 1);
+        assert_eq!(restored.notes[0].key, 64);
+    }
+
+    #[test]
+    fn test_history_new_push_clears_redo() {
+        let mut h = History::new();
+        h.push(make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0));
+        let s2 = make_snapshot(vec![Note::new(0.0, 64, 480.0)], 0);
+        let _ = h.undo(s2);
+
+        // 新操作应清空 redo 栈
+        h.push(make_snapshot(vec![Note::new(0.0, 67, 480.0)], 0));
+        assert!(!h.can_redo());
+    }
+
+    #[test]
+    fn test_history_max_size() {
+        let mut h = History::new();
+        h.max_size = 3;
+        for i in 0..5 {
+            h.push(make_snapshot(vec![Note::new(i as f32 * 10.0, 60, 480.0)], 0));
+        }
+        // 栈大小不应超过 max_size
+        assert_eq!(h.undo_stack.len(), 3);
+    }
+
+    #[test]
+    fn test_history_clear() {
+        let mut h = History::new();
+        h.push(make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0));
+        h.push(make_snapshot(vec![Note::new(0.0, 64, 480.0)], 0));
+        h.clear();
+        assert!(!h.can_undo());
+        assert!(!h.can_redo());
+    }
+
+    #[test]
+    fn test_history_undo_redo_roundtrip() {
+        let mut h = History::new();
+        let original = make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0);
+        let modified = make_snapshot(vec![Note::new(0.0, 64, 480.0)], 0);
+
+        h.push(original);
+        let restored = h.undo(modified).expect("undo");
+        assert_eq!(restored.notes[0].key, 60);
+
+        let redone = h.redo(restored).expect("redo");
+        assert_eq!(redone.notes[0].key, 64);
+    }
+
+    #[test]
+    fn test_editor_snapshot_new() {
+        let notes = vec![Note::new(10.0, 72, 960.0)];
+        let snap = EditorSnapshot::new(Vector::from(notes), 1);
+        assert_eq!(snap.current_track, 1);
+        assert_eq!(snap.notes.len(), 1);
+    }
+}

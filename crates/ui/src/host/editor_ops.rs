@@ -121,16 +121,16 @@ impl Host {
                     group_notes.len()
                 );
                 if group_notes.iter().any(|n| !n.is_empty()) {
-                    self.send_hires_dirty_overlay(lumino_gfx::render_thread::HiResTrackParams {
-                        track_idx: representative,
+                    self.send_hires_dirty_overlay(
+                        representative,
                         group_notes,
                         ppq,
                         key_count,
                         total_ticks,
                         track_count,
-                        config: cfg.clone(),
-                        midi_hash: hash.clone(),
-                    });
+                        cfg.clone(),
+                        hash.clone(),
+                    );
                 }
             }
         }
