@@ -14,7 +14,9 @@ use xsynth_soundfonts::sf2::load_soundfont_with_samples;
 // ── 常量 ─────────────────────────────────────────────
 const MAX_VOICES: u32 = 512;
 const WGS: u32 = 256;
-pub(crate) const GPU_BLOCK_SAMPLES: u32 = 262_144;
+/// GPU 渲染每 chunk 的样本数。越小越实时（~21ms at 48kHz），
+/// 但 dispatch 开销比例越高。1024 是 CPU 抽事件和 GPU 渲染的平衡点。
+pub(crate) const GPU_BLOCK_SAMPLES: u32 = 1024;
 const MAX_EVENTS: usize = 16_000_000;
 const MIN_VEL: u8 = 1;
 
@@ -29,7 +31,6 @@ pub(crate) struct RawEvent {
 }
 
 impl RawEvent {
-    #[expect(dead_code)]
     pub(crate) fn new(tick_offset: u32, kind: u32, channel: u32, key: u32, vel: u32) -> Self {
         Self {
             tick_offset,
@@ -96,11 +97,22 @@ struct GpuRenderer {
     buf_params: wgpu::Buffer,
     buf_output: wgpu::Buffer,
     buf_staging: wgpu::Buffer,
+    buf_staging2: wgpu::Buffer,
     buf_uni: wgpu::Buffer,
     params_cpu: Vec<GpuVoiceParams>,
     bs: u32,
     ch: u16,
     num_regions: u32,
+    /// 0 → 本次用 buf_staging, 1 → 用 buf_staging2，轮换实现双缓冲流水线
+    staging_toggle: u8,
+}
+
+/// GPU 异步提交的句柄。调用 `submit` 获得此句柄，之后调用 `readback` 等待 GPU 完成并取回音频。
+pub(crate) struct PendingRender {
+    rx: std::sync::mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>,
+    ns: u32,
+    ch: u32,
+    uses_buf2: bool,
 }
 
 impl GpuRenderer {
@@ -148,6 +160,12 @@ impl GpuRenderer {
         });
         let buf_staging = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging"),
+            size: out_sz,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let buf_staging2 = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("staging2"),
             size: out_sz,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -348,25 +366,33 @@ impl GpuRenderer {
             buf_params,
             buf_output,
             buf_staging,
+            buf_staging2,
             buf_uni,
             params_cpu: vec![GpuVoiceParams::zeroed(); MAX_VOICES as usize],
             bs,
             ch,
             num_regions: regions.len() as u32,
+            staging_toggle: 0,
         })
     }
 
+    /// 同步渲染（向后兼容，供单次调用场景使用）。
+    #[expect(dead_code)]
     fn run(&self, events: &[RawEvent]) -> Vec<f32> {
+        let p = self.submit(events, self.bs);
+        self.readback(&p)
+    }
+
+    /// 非阻塞提交：上传事件 + dispatch compute → 返回句柄。
+    /// GPU 开始工作后立即返回，CPU 可继续抽下 block 的事件。
+    fn submit(&self, events: &[RawEvent], ns: u32) -> PendingRender {
         let ne = events.len() as u32;
-        let ns = self.bs;
         let ch = self.ch as u32;
         let zs = (ns * ch * 4) as usize;
 
-        // upload events
         self.queue
             .write_buffer(&self.buf_events, 0, bytemuck::cast_slice(events));
 
-        // upload uniform (shared by both passes)
         self.queue.write_buffer(
             &self.buf_uni,
             0,
@@ -382,21 +408,17 @@ impl GpuRenderer {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("enc") });
 
-        // ── Pass 1: event_proc ──
         if ne > 0 {
             let nwg = ne.div_ceil(WGS);
-            {
-                let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("event"),
-                    timestamp_writes: None,
-                });
-                cp.set_pipeline(&self.pipe_event);
-                cp.set_bind_group(0, &self.bg_event, &[]);
-                cp.dispatch_workgroups(nwg, 1, 1);
-            }
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("event"),
+                timestamp_writes: None,
+            });
+            cp.set_pipeline(&self.pipe_event);
+            cp.set_bind_group(0, &self.bg_event, &[]);
+            cp.dispatch_workgroups(nwg, 1, 1);
         }
 
-        // ── Pass 2: render ──
         {
             let nwg = ns.div_ceil(WGS);
             let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -408,22 +430,48 @@ impl GpuRenderer {
             cp.dispatch_workgroups(nwg, 1, 1);
         }
 
-        enc.copy_buffer_to_buffer(&self.buf_output, 0, &self.buf_staging, 0, zs as u64);
+        // 双缓冲：轮换使用 buf_staging / buf_staging2
+        let uses_buf2 = self.staging_toggle & 1 == 1;
+        let staging = if uses_buf2 {
+            &self.buf_staging2
+        } else {
+            &self.buf_staging
+        };
+        enc.copy_buffer_to_buffer(&self.buf_output, 0, staging, 0, zs as u64);
         self.queue.submit(Some(enc.finish()));
 
-        // readback audio
-        let ss = self.buf_staging.slice(..);
+        // 发起异步 map（不阻塞），返回 channel receiver 供 readback 等待
+        let ss = staging.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         ss.map_async(wgpu::MapMode::Read, move |r| {
-            tx.send(r).ok();
+            let _ = tx.send(r);
         });
+
+        PendingRender {
+            rx,
+            ns,
+            ch,
+            uses_buf2,
+        }
+    }
+
+    /// 阻塞读回：等待 GPU 完成 + 读取 staging buffer 中的音频数据。
+    fn readback(&self, pending: &PendingRender) -> Vec<f32> {
         self.device.poll(wgpu::Maintain::Wait);
-        let _ = rx.recv().unwrap().ok();
+        let _ = pending.rx.recv().ok();
+
+        let staging = if pending.uses_buf2 {
+            &self.buf_staging2
+        } else {
+            &self.buf_staging
+        };
+        let ss = staging.slice(..);
         let data = ss.get_mapped_range();
         let smp: &[f32] = bytemuck::cast_slice(&data);
-        let result = smp[..(ns * ch) as usize].to_vec();
+        let n = (pending.ns * pending.ch) as usize;
+        let result = smp[..n.min(smp.len())].to_vec();
         drop(data);
-        self.buf_staging.unmap();
+        staging.unmap();
         result
     }
 }
@@ -434,6 +482,8 @@ pub(crate) struct GpuSynth {
     sample_rate: u32,
     /// GPU 端管理的 voice params 的 CPU 副本（初始为零，每块读回覆盖）
     _params: Vec<GpuVoiceParams>,
+    /// 预分配的 params staging buffer（避免 readback_params 每块创建临时 buffer）
+    buf_params_staging: wgpu::Buffer,
 }
 
 impl GpuSynth {
@@ -508,43 +558,76 @@ impl GpuSynth {
         tracing::info!("[GPU] {} regions, {} samples", regions.len(), flat.len());
 
         let gpu = GpuRenderer::new(device, queue, &flat, &regions, channels)?;
-        Ok(Self {
-            gpu,
-            sample_rate,
-            _params: vec![GpuVoiceParams::zeroed(); MAX_VOICES as usize],
-        })
-    }
-
-    pub(crate) fn render_block(&mut self, events: &[RawEvent]) -> Vec<f32> {
-        // upload 上一块 params（初始为零，后续每块读回+上传）
-        self.gpu.queue.write_buffer(
-            &self.gpu.buf_params,
-            0,
-            bytemuck::cast_slice(&self.gpu.params_cpu),
-        );
-        let audio = self.gpu.run(events);
-        // read back params for next block carryover
-        self.readback_params();
-        audio
-    }
-
-    fn readback_params(&mut self) {
         let psize = (std::mem::size_of::<GpuVoiceParams>() * MAX_VOICES as usize) as u64;
-        let staging = self.gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let buf_params_staging = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("param_staging"),
             size: psize,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        Ok(Self {
+            gpu,
+            sample_rate,
+            _params: vec![GpuVoiceParams::zeroed(); MAX_VOICES as usize],
+            buf_params_staging,
+        })
+    }
+
+    /// 同步渲染（向后兼容）。
+    #[expect(dead_code)]
+    pub(crate) fn render_block(&mut self, events: &[RawEvent]) -> Vec<f32> {
+        let p = self.submit(events);
+        self.readback_audio(&p)
+    }
+
+    /// 非阻塞提交：上传 params + 事件 + dispatch compute。
+    /// GPU 立刻开始工作，CPU 可继续抽下一 block 的事件。
+    pub(crate) fn submit(&mut self, events: &[RawEvent]) -> PendingRender {
+        self.gpu.queue.write_buffer(
+            &self.gpu.buf_params,
+            0,
+            bytemuck::cast_slice(&self.gpu.params_cpu),
+        );
+        self.gpu.submit(events, GPU_BLOCK_SAMPLES)
+    }
+
+    /// 阻塞读回：等待 GPU 完成 → 读音频 → 读回 params 供下 block 使用。
+    pub(crate) fn readback_audio(&mut self, pending: &PendingRender) -> Vec<f32> {
+        // 先读音频（这会等 GPU 完成）
+        self.gpu.device.poll(wgpu::Maintain::Wait);
+        let _ = pending.rx.recv().ok();
+
+        let staging = if pending.uses_buf2 {
+            &self.gpu.buf_staging2
+        } else {
+            &self.gpu.buf_staging
+        };
+        let ss = staging.slice(..);
+        let data = ss.get_mapped_range();
+        let smp: &[f32] = bytemuck::cast_slice(&data);
+        let n = (pending.ns * pending.ch) as usize;
+        let result = smp[..n.min(smp.len())].to_vec();
+        drop(data);
+        staging.unmap();
+
+        // 在同一个 poll 周期内顺带读回 params（GPU 已完成）
+        self.readback_params();
+
+        result
+    }
+
+    /// 读回 GPU voice params（用预分配的 staging buffer）。
+    fn readback_params(&mut self) {
+        let psize = (std::mem::size_of::<GpuVoiceParams>() * MAX_VOICES as usize) as u64;
         let mut enc = self
             .gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("param_read"),
             });
-        enc.copy_buffer_to_buffer(&self.gpu.buf_params, 0, &staging, 0, psize);
+        enc.copy_buffer_to_buffer(&self.gpu.buf_params, 0, &self.buf_params_staging, 0, psize);
         self.gpu.queue.submit(Some(enc.finish()));
-        let ss = staging.slice(..);
+        let ss = self.buf_params_staging.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         ss.map_async(wgpu::MapMode::Read, move |r| {
             tx.send(r).ok();
@@ -557,9 +640,10 @@ impl GpuSynth {
             .params_cpu
             .copy_from_slice(&smp[..MAX_VOICES as usize]);
         drop(data);
-        staging.unmap();
+        self.buf_params_staging.unmap();
     }
 
+    #[expect(dead_code)]
     pub(crate) fn take_samples(&mut self) -> Vec<f32> {
         Vec::new() // GpuSynth 不再持有 output，render_block 直接返回
     }

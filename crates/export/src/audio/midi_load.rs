@@ -32,7 +32,7 @@ use xsynth_core::soundfont::{SampleSoundfont, SoundfontBase};
 use xsynth_core::{AudioStreamParams, ChannelCount};
 
 use crate::audio::block_render::{RenderCommand, render_tail, send_command};
-use crate::audio::gpu_renderer::{GPU_BLOCK_SAMPLES, GpuSynth, RawEvent};
+use crate::audio::gpu_renderer::{GPU_BLOCK_SAMPLES, GpuSynth, PendingRender, RawEvent};
 use crate::audio::tempo::TempoMap;
 use crate::audio::types::{AudioExportOptions, ExportProgress};
 use crate::error::{ExportError, ExportResult};
@@ -153,20 +153,17 @@ pub fn render_streaming<'a>(
         options.channels,
     )?;
 
-    // 4. 创建流式播放器 + TempoMap
+    // 4. 创建流式播放器 + TempoCursor（O(1) amortized tick→秒）
     let mut player = StreamingMidiPlayer::from_bytes(midi_bytes)
         .map_err(|e| ExportError::MidiParse(format!("流式 MIDI 解析失败: {}", e)))?;
     let tempo_map = TempoMap::from_changes(player.tempo_changes(), player.ppqn());
-
-    // 用总 tick 估算总时长（仅用于进度条上限）。StreamingMidiPlayer 的
-    // scan_tempos 已经全扫描过一次总 tick，无需额外遍历。
     let total_seconds = tempo_map.tick_to_seconds(player.total_ticks());
+    let mut tempo_cur = tempo_map.cursor();
 
-    // 5. 流式渲染主循环 — 逐块消费事件，不缓存全量
+    // 5. 流式渲染主循环 — PA+PB 一起跑，per-block 逐块消费
     const BLOCK_SAMPLES: usize = 16384;
     let block_sec = BLOCK_SAMPLES as f64 / options.sample_rate as f64;
     let mut block_start = 0.0_f64;
-    // 最多缓存一个跨块事件（next_event 消费后无法回退）
     let mut pending_event: Option<(u64, usize, TrackEventKind<'a>)> = None;
 
     // ---- 统计 ----
@@ -178,8 +175,10 @@ pub fn render_streaming<'a>(
     let mut ch_map: BTreeMap<u32, u64> = BTreeMap::new();
     let mut key_out_of_range: u64 = 0;
 
+    // ---- 实时进度 ----
+    let mut last_progress = std::time::Instant::now();
+
     while block_start < total_seconds {
-        // 检查取消
         if let Some(ref cancel) = cancel_flag
             && cancel.load(Ordering::Relaxed)
         {
@@ -189,21 +188,19 @@ pub fn render_streaming<'a>(
         let block_end = (block_start + block_sec).min(total_seconds);
         let delta = block_end - block_start;
 
-        // 消费本块内所有事件（time_sec <= block_end）
+        // 消费本块内所有事件 — 用 TempoCursor 而非 TempoMap::tick_to_seconds，
+        // 前者 O(1) amortized，后者 O(num_tempo_changes) 每事件从头扫描
         loop {
-            // 从 pending 或 player 获取下一事件
-            let next: Option<(u64, usize, TrackEventKind<'_>)> =
-                pending_event.take().or_else(|| player.next_event());
+            let next = pending_event.take().or_else(|| player.next_event());
             let (tick, _track_idx, kind) = match next {
                 Some(ev) => ev,
                 None => break,
             };
 
-            let time_sec = tempo_map.tick_to_seconds(tick);
+            let time_sec = tempo_cur.advance_to(tick);
             total_events += 1;
 
             if time_sec <= block_end {
-                // 本块内事件：立即 dispatch 并统计
                 for cmd in kind_to_command(kind) {
                     match &cmd {
                         RenderCommand::NoteOn { key, channel, .. } => {
@@ -220,9 +217,21 @@ pub fn render_streaming<'a>(
                     send_command(&mut exporter, &cmd);
                 }
             } else {
-                // 超出本块：缓存到 pending，等下一块处理
                 pending_event = Some((tick, _track_idx, kind));
                 break;
+            }
+
+            // 实时进度：每 20ms 一次，基于事件时间位置
+            let now = std::time::Instant::now();
+            if now.duration_since(last_progress).as_millis() >= 20 {
+                last_progress = now;
+                if let Some(ref cb) = progress_callback {
+                    cb(ExportProgress {
+                        progress: ((time_sec / total_seconds.max(1.0)) * 100.0).min(99.0) as f32,
+                        note_on: note_on_count,
+                        note_off: note_off_count,
+                    });
+                }
             }
         }
 
@@ -235,13 +244,17 @@ pub fn render_streaming<'a>(
             }
         }
 
-        // 进度
-        if let Some(callback) = &progress_callback {
-            callback(ExportProgress {
-                progress: ((block_end / total_seconds.max(1.0)) * 100.0).min(99.0) as f32,
-                note_on: 0,
-                note_off: 0,
-            });
+        // 渲染后进度 — 每 50ms 或 block 结束
+        let now = std::time::Instant::now();
+        if now.duration_since(last_progress).as_millis() >= 50 || block_end >= total_seconds {
+            last_progress = now;
+            if let Some(ref cb) = progress_callback {
+                cb(ExportProgress {
+                    progress: ((block_end / total_seconds.max(1.0)) * 100.0).min(99.0) as f32,
+                    note_on: note_on_count,
+                    note_off: note_off_count,
+                });
+            }
         }
 
         // 所有事件消费完毕 → 提前退出主循环
@@ -357,94 +370,24 @@ pub fn render_streaming_gpu(
         options.channels,
     )?;
 
-    // 3. 使用 StreamingMidiPlayer（MmapSmf 零拷贝）+ TempoCursor（O(1) amortized tick→秒）
+    // 3. 使用 StreamingMidiPlayer + TempoCursor，事件流式直通 GPU
+    //    双缓冲流水线：submit() 非阻塞，GPU 渲染 block N 的同时 CPU 抽 block N+1 的事件
     let mut player = StreamingMidiPlayer::from_bytes(midi_bytes)
         .map_err(|e| ExportError::MidiParse(format!("流式 MIDI 解析失败: {}", e)))?;
     let tempo_map = TempoMap::from_changes(player.tempo_changes(), player.ppqn());
     let total_seconds = tempo_map.tick_to_seconds(player.total_ticks());
+    let mut tempo_cur = tempo_map.cursor();
+
     let block_sec = GPU_BLOCK_SAMPLES as f64 / options.sample_rate as f64;
     let sample_rate_f = options.sample_rate as f64;
-
-    // ═══════════════════════════════════════════════════════
-    // Phase A：预提取全量事件，一次 StreamingMidiPlayer 遍历
-    // ═══════════════════════════════════════════════════════
-    // 优化核心：将 O(num_tracks × num_events) 的 per-block 扫描降为 O(num_events) 的
-    // 单次遍历。事件以 (time_sec, packed_data) 预缓存，Rendering 阶段只需切片引用。
-    tracing::info!("[GPU] Phase A: 预提取事件...");
-    let estimated = (midi_bytes.len() / 32).max(4096); // 约每个 MIDI 事件 32B
-    let mut stored_events: Vec<(f64, u32)> = Vec::with_capacity(estimated);
-    let mut tempo_cur = tempo_map.cursor();
+    let mut block_start = 0.0_f64;
+    let mut pending: Option<(u64, usize, TrackEventKind<'_>)> = None;
     let mut total_note_on: u64 = 0;
     let mut total_note_off: u64 = 0;
-    let mut total_other: u64 = 0;
     let mut last_progress = std::time::Instant::now();
-
-    while let Some(ev) = player.next_event() {
-        if let Some(ref cancel) = cancel_flag
-            && cancel.load(Ordering::Relaxed)
-        {
-            return Err(ExportError::AudioWrite("导出已取消".to_string()));
-        }
-
-        let time_sec = tempo_cur.advance_to(ev.0);
-
-        // 只提取 GPU 关注的 NoteOn/NoteOff，pack 方式与 RawEvent::data 一致
-        if let TrackEventKind::Midi { channel, message } = ev.2 {
-            let ch = u8::from(channel) as u32;
-            match message {
-                MidiMessage::NoteOn { key, vel } => {
-                    total_note_on += 1;
-                    // data: kind(0) | ch<<8 | key<<16 | vel<<24
-                    let data = (ch << 8) | ((key as u32) << 16) | ((u8::from(vel) as u32) << 24);
-                    stored_events.push((time_sec, data));
-                }
-                MidiMessage::NoteOff { key, .. } => {
-                    total_note_off += 1;
-                    // data: kind(1) | ch<<8 | key<<16 | vel(0)
-                    let data = 1u32 | (ch << 8) | ((key as u32) << 16);
-                    stored_events.push((time_sec, data));
-                }
-                _ => {
-                    total_other += 1;
-                }
-            }
-        } else {
-            total_other += 1;
-        }
-
-        // 实时进度：每 20ms 一次，基于事件时间位置
-        let now = std::time::Instant::now();
-        if now.duration_since(last_progress).as_millis() >= 20 {
-            last_progress = now;
-            if let Some(ref cb) = progress_callback {
-                cb(ExportProgress {
-                    progress: ((time_sec / total_seconds.max(1.0)) * 100.0).min(99.0) as f32,
-                    note_on: total_note_on,
-                    note_off: total_note_off,
-                });
-            }
-        }
-    }
-    let total_stored = stored_events.len();
-    tracing::info!(
-        "[GPU] Phase A 完成: {} 事件 (NoteOn={}, NoteOff={}, 其他={}), 耗时 {:.2}s",
-        total_stored,
-        total_note_on,
-        total_note_off,
-        total_other,
-        start.elapsed().as_secs_f64(),
-    );
-
-    // ═══════════════════════════════════════════════════════
-    // Phase B：逐块 GPU 渲染（从预提取事件切片）
-    // ═══════════════════════════════════════════════════════
-    // 不再有 per-block player.next_event() / find_min_tick_fast 的 O(tracks) 开销，
-    // 也不再有 per-block tempo_cur.advance_to 的浮点数计算。
-    // raw_events 的 tick_offset 在切片时按 block_start_smp 计算。
-    tracing::info!("[GPU] Phase B: GPU 渲染...");
-    let mut ev_idx = 0usize;
-    let mut block_start = 0.0_f64;
-    let mut block_i: u64 = 0;
+    // 预分配事件 buffer + GPU 流水线句柄
+    let mut raw_events: Vec<RawEvent> = Vec::with_capacity(2048);
+    let mut gpu_pending: Option<PendingRender> = None;
 
     while block_start < total_seconds {
         if let Some(ref cancel) = cancel_flag
@@ -454,34 +397,68 @@ pub fn render_streaming_gpu(
         }
 
         let block_end = (block_start + block_sec).min(total_seconds);
-        let delta = block_end - block_start;
         let block_start_smp = (block_start * sample_rate_f) as u32;
 
-        // 切片：收集落在此 block 内的事件
-        let slice_start = ev_idx;
-        while ev_idx < stored_events.len() && stored_events[ev_idx].0 <= block_end {
-            ev_idx += 1;
-        }
-        let raw_events: Vec<RawEvent> = stored_events[slice_start..ev_idx]
-            .iter()
-            .map(|&(time_sec, data)| {
-                let to = (time_sec * sample_rate_f) as u32 - block_start_smp;
-                RawEvent {
-                    tick_offset: to,
-                    data,
-                }
-            })
-            .collect();
-
-        // 渲染
-        if delta > 0.0 {
-            let samples = synth.render_block(&raw_events);
-            if !samples.is_empty() {
-                writer.write_samples(&samples)?;
+        // ── Step 1: 读回上一 block 的音频（GPU 已完成，不阻塞 CPU） ──
+        if let Some(p) = gpu_pending.take() {
+            let audio = synth.readback_audio(&p);
+            if !audio.is_empty() {
+                writer.write_samples(&audio)?;
             }
         }
 
-        // 实时进度：每 50ms 一次，基于音频时间位置
+        // ── Step 2: 抽本 block 的事件（CPU 工作，GPU 同时在渲染上一 block） ──
+        raw_events.clear();
+        loop {
+            let ev = if let Some(p) = pending.take() {
+                p
+            } else {
+                match player.next_event() {
+                    Some(e) => e,
+                    None => break,
+                }
+            };
+            let time_sec = tempo_cur.advance_to(ev.0);
+            if time_sec <= block_end {
+                let to = (time_sec * sample_rate_f) as u32 - block_start_smp;
+                if let TrackEventKind::Midi { channel, message } = ev.2 {
+                    let ch = u8::from(channel) as u32;
+                    match message {
+                        MidiMessage::NoteOn { key, vel } => {
+                            let v = u8::from(vel);
+                            total_note_on += 1;
+                            raw_events.push(RawEvent::new(to, 0, ch, key as u32, v as u32));
+                        }
+                        MidiMessage::NoteOff { key, .. } => {
+                            total_note_off += 1;
+                            raw_events.push(RawEvent::new(to, 1, ch, key as u32, 0));
+                        }
+                        _ => {}
+                    }
+                }
+            } else {
+                pending = Some(ev);
+                break;
+            }
+
+            // 实时进度：每 20ms 一次
+            let now = std::time::Instant::now();
+            if now.duration_since(last_progress).as_millis() >= 20 {
+                last_progress = now;
+                if let Some(ref cb) = progress_callback {
+                    cb(ExportProgress {
+                        progress: ((time_sec / total_seconds.max(1.0)) * 100.0).min(99.0) as f32,
+                        note_on: total_note_on,
+                        note_off: total_note_off,
+                    });
+                }
+            }
+        }
+
+        // ── Step 3: 非阻塞提交给 GPU（不等待，GPU 立即开始渲染） ──
+        gpu_pending = Some(synth.submit(&raw_events));
+
+        // 渲染后进度
         let now = std::time::Instant::now();
         if now.duration_since(last_progress).as_millis() >= 50 || block_end >= total_seconds {
             last_progress = now;
@@ -494,35 +471,27 @@ pub fn render_streaming_gpu(
             }
         }
 
-        // 所有事件消费完毕 → 提前退出主循环
-        if ev_idx >= stored_events.len() {
-            // 记录最后一块 padded（无新事件，靠 tail 处理余音）
-            tracing::info!(
-                "[GPU] 所有事件已渲染 (block={}), 剩余 {:.2}s 交由 tail 处理",
-                block_i,
-                total_seconds - block_end,
-            );
+        // 所有事件消费完毕 → 提前退出（最后一块由循环后 readback）
+        if player.is_exhausted() && pending.is_none() {
             break;
         }
 
-        if block_i.is_multiple_of(5) {
-            tracing::info!(
-                "[GPU] Phase B block={} time={:.2}..{:.2}s rawev={}",
-                block_i,
-                block_start,
-                block_end,
-                raw_events.len(),
-            );
-        }
-
         block_start = block_end;
-        block_i += 1;
+    }
+
+    // 读回最后一块的音频
+    if let Some(p) = gpu_pending.take() {
+        let audio = synth.readback_audio(&p);
+        if !audio.is_empty() {
+            writer.write_samples(&audio)?;
+        }
     }
 
     // 5. 尾部衰减（用 GPU 渲染剩余的 voice，无新事件）
     let mut tail_remaining = 5.0_f64;
     while tail_remaining > 0.0 && synth.is_active() {
-        let samples = synth.render_block(&[]);
+        let p = synth.submit(&[]);
+        let samples = synth.readback_audio(&p);
         if !samples.is_empty() {
             let is_silent = samples.iter().all(|s| s.abs() <= 0.0001);
             writer.write_samples(&samples)?;
