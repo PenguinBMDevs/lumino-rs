@@ -184,11 +184,7 @@ impl<'a> StreamingMidiPlayer<'a> {
             ppqn,
         } = scan_tempos(&mmap_smf);
 
-        let tracks: Vec<TrackCursor> = mmap_smf
-            .tracks()
-            .iter()
-            .map(TrackCursor::new)
-            .collect();
+        let tracks: Vec<TrackCursor> = mmap_smf.tracks().iter().map(TrackCursor::new).collect();
 
         let mut player = Self {
             _data: core::marker::PhantomData,
@@ -302,20 +298,28 @@ mod tests {
     #[test]
     fn test_real_midi_parses() {
         let data = std::fs::read(TEST_MIDI_PATH).expect("test MIDI file should exist");
-        let mut player = StreamingMidiPlayer::from_bytes(&data)
-            .expect("real MIDI file should parse");
+        let mut player =
+            StreamingMidiPlayer::from_bytes(&data).expect("real MIDI file should parse");
 
         assert!(player.ppqn > 0, "PPQN should be positive");
         assert!(player.total_ticks > 0, "total ticks should be positive");
         assert!(player.track_count() > 0, "track count should be positive");
-        assert!(!player.tempo_changes.is_empty(), "should have tempo changes");
+        assert!(
+            !player.tempo_changes.is_empty(),
+            "should have tempo changes"
+        );
 
         // 逐事件遍历——验证不 panic
         let mut event_count = 0u64;
         while let Some((tick, _track, _kind)) = player.next_event() {
             event_count += 1;
             // tick 应该非递减（但同一 tick 可有多个事件）
-            assert!(tick <= player.total_ticks, "tick {} should not exceed {}", tick, player.total_ticks);
+            assert!(
+                tick <= player.total_ticks,
+                "tick {} should not exceed {}",
+                tick,
+                player.total_ticks
+            );
         }
         assert!(event_count > 0, "should have at least one event");
         assert!(player.is_exhausted(), "player should be exhausted");
@@ -325,8 +329,8 @@ mod tests {
     #[test]
     fn test_events_in_order() {
         let data = std::fs::read(TEST_MIDI_PATH).expect("test MIDI file should exist");
-        let mut player = StreamingMidiPlayer::from_bytes(&data)
-            .expect("real MIDI file should parse");
+        let mut player =
+            StreamingMidiPlayer::from_bytes(&data).expect("real MIDI file should parse");
 
         let mut prev_tick: u64 = 0;
         while let Some((tick, _track, _kind)) = player.next_event() {
@@ -348,13 +352,17 @@ mod tests {
     #[test]
     fn test_multi_track_interleave() {
         let data = std::fs::read(TEST_MIDI_PATH).expect("test MIDI file should exist");
-        let mut player = StreamingMidiPlayer::from_bytes(&data)
-            .expect("real MIDI file should parse");
+        let mut player =
+            StreamingMidiPlayer::from_bytes(&data).expect("real MIDI file should parse");
 
         let track_count = player.track_count();
-        assert!(track_count >= 2, "test MIDI should have at least 2 tracks for multi-track test");
+        assert!(
+            track_count >= 2,
+            "test MIDI should have at least 2 tracks for multi-track test"
+        );
 
-        let mut distinct_tracks: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+        let mut distinct_tracks: std::collections::BTreeSet<usize> =
+            std::collections::BTreeSet::new();
         while let Some((_tick, track_idx, kind)) = player.next_event() {
             // 只统计有意义的 MIDI 事件（忽略 Meta 事件所在的 conductor track）
             if matches!(kind, TrackEventKind::Midi { .. }) {
@@ -374,8 +382,8 @@ mod tests {
     #[test]
     fn test_note_on_events() {
         let data = std::fs::read(TEST_MIDI_PATH).expect("test MIDI file should exist");
-        let mut player = StreamingMidiPlayer::from_bytes(&data)
-            .expect("real MIDI file should parse");
+        let mut player =
+            StreamingMidiPlayer::from_bytes(&data).expect("real MIDI file should parse");
 
         let mut note_count = 0u64;
         while let Some((_tick, _track, kind)) = player.next_event() {

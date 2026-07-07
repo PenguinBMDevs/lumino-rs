@@ -9,11 +9,19 @@
 //! MIDI bytes
 //!     │
 //!     ▼
-//! lumino_midi_loader::StreamingMidiPlayer  →  Vec<TimedCommand>
-//!     │                                       │
-//!     ▼                                       ▼
-//! block_render::render_events_blocked()  →  AudioFileWriter
+//! lumino_midi_loader::StreamingMidiPlayer (按 tick 排序)
+//!     │
+//!     ▼
+//! block_render::render_tail()        (尾部衰减)
+//! AudioFileWriter
 //! ```
+//!
+//! # 流式特性
+//!
+//! 本模块是真正的事件流式渲染——不预缓存任何事件到 `Vec`：
+//! - `StreamingMidiPlayer.next_event()` 逐事件输出，零拷贝
+//! - 渲染循环按固定时间块（512 samples）消费，每个块结算一次音频
+//! - 最多缓冲一个跨块事件（O(1) 内存）, 不存在 OOM 风险
 
 use std::path::Path;
 use std::sync::Arc;
@@ -25,7 +33,7 @@ use xsynth_core::{AudioStreamParams, ChannelCount};
 
 use lumino_midi_loader::StreamingMidiPlayer;
 
-use crate::audio::block_render::{RenderCommand, TimedCommand, render_events_blocked, render_tail};
+use crate::audio::block_render::{RenderCommand, render_tail, send_command};
 use crate::audio::tempo::TempoMap;
 use crate::audio::types::AudioExportOptions;
 use crate::error::{ExportError, ExportResult};
@@ -81,12 +89,19 @@ fn kind_to_command(kind: TrackEventKind) -> Vec<RenderCommand> {
     }
 }
 
-/// 使用流式 MIDI 播放器渲染音频文件（block_render 引擎）。
+/// 使用流式 MIDI 播放器渲染音频文件（真正的流式渲染）。
 ///
-/// 从文件字节创建 `StreamingMidiPlayer`，逐事件消费 → 展平成 `Vec<TimedCommand>`
-/// → 按秒排序 → `render_events_blocked` 固定块渲染。
-pub fn render_streaming(
-    midi_bytes: &[u8],
+/// 与旧版不同，本实现**不缓存全量事件到 `Vec`**，而是在固定块循环中
+/// 逐帧消费 `StreamingMidiPlayer`：
+///
+/// 1. 将时间划分为固定块（512 samples）
+/// 2. 每块内从 `StreamingMidiPlayer` 拉取落在本块时间范围内的事件
+/// 3. 立即 dispatch 到 xsynth，渲染本块，写入文件
+/// 4. 最多缓冲一个跨块事件（O(1) 内存）
+///
+/// 优点：O(1) 常驻内存，不受 MIDI 长度影响，不存在 OOM 风险。
+pub fn render_streaming<'a>(
+    midi_bytes: &'a [u8],
     soundfont_path: &Path,
     output_path: &Path,
     options: &AudioExportOptions,
@@ -143,9 +158,27 @@ pub fn render_streaming(
         .map_err(|e| ExportError::MidiParse(format!("流式 MIDI 解析失败: {}", e)))?;
     let tempo_map = TempoMap::from_changes(player.tempo_changes(), player.ppqn());
 
-    // 5. 展平所有事件到 TimedCommand（流式播放器保持原始轨道内事件顺序）
-    let mut commands: Vec<TimedCommand> = Vec::new();
-    while let Some((tick, _track_idx, kind)) = player.next_event() {
+    // 用总 tick 估算总时长（仅用于进度条上限）。StreamingMidiPlayer 的
+    // scan_tempos 已经全扫描过一次总 tick，无需额外遍历。
+    let total_seconds = tempo_map.tick_to_seconds(player.total_ticks());
+
+    // 5. 流式渲染主循环 — 逐块消费事件，不缓存全量
+    const BLOCK_SAMPLES: usize = 512;
+    let block_sec = BLOCK_SAMPLES as f64 / options.sample_rate as f64;
+    let mut block_start = 0.0_f64;
+    // 最多缓存一个跨块事件（next_event 消费后无法回退）
+    let mut pending_event: Option<(u64, usize, TrackEventKind<'a>)> = None;
+
+    // ---- 统计 ----
+    let mut total_events: u64 = 0;
+    let mut note_on_count: u64 = 0;
+    let mut note_off_count: u64 = 0;
+    let mut pc_count: u64 = 0;
+    use std::collections::BTreeMap;
+    let mut ch_map: BTreeMap<u32, u64> = BTreeMap::new();
+    let mut key_out_of_range: u64 = 0;
+
+    while block_start < total_seconds {
         // 检查取消
         if let Some(ref cancel) = cancel_flag
             && cancel.load(Ordering::Relaxed)
@@ -153,91 +186,90 @@ pub fn render_streaming(
             return Err(ExportError::AudioWrite("导出已取消".to_string()));
         }
 
-        let time_sec = tempo_map.tick_to_seconds(tick);
-        for cmd in kind_to_command(kind) {
-            commands.push(TimedCommand { time_sec, cmd });
-        }
-    }
+        let block_end = (block_start + block_sec).min(total_seconds);
+        let delta = block_end - block_start;
 
-    // 按时间排序（流式播放器输出已按 tick 排序，但同 tick 事件来自不同轨道，
-    // 排序确保一致性）
-    commands.sort_by(|a, b| {
-        a.time_sec
-            .partial_cmp(&b.time_sec)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+        // 消费本块内所有事件（time_sec <= block_end）
+        loop {
+            // 从 pending 或 player 获取下一事件
+            let next: Option<(u64, usize, TrackEventKind<'_>)> =
+                pending_event.take().or_else(|| player.next_event());
+            let (tick, _track_idx, kind) = match next {
+                Some(ev) => ev,
+                None => break,
+            };
 
-    let note_on_count = commands
-        .iter()
-        .filter(|c| matches!(c.cmd, RenderCommand::NoteOn { .. }))
-        .count();
-    let pc_count = commands
-        .iter()
-        .filter(|c| matches!(c.cmd, RenderCommand::ProgramChange { .. }))
-        .count();
+            let time_sec = tempo_map.tick_to_seconds(tick);
+            total_events += 1;
 
-    // 按通道统计 NoteOn 分布
-    use std::collections::BTreeMap;
-    let mut ch_map: BTreeMap<u32, usize> = BTreeMap::new();
-    let mut keys_out_of_range: Vec<u8> = Vec::new();
-    for cmd in &commands {
-        if let RenderCommand::NoteOn { channel, key, .. } = cmd.cmd {
-            *ch_map.entry(channel).or_default() += 1;
-            if key >= 128 {
-                keys_out_of_range.push(key);
+            if time_sec <= block_end {
+                // 本块内事件：立即 dispatch 并统计
+                for cmd in kind_to_command(kind) {
+                    match &cmd {
+                        RenderCommand::NoteOn { key, channel, .. } => {
+                            note_on_count += 1;
+                            *ch_map.entry(*channel).or_default() += 1;
+                            if *key >= 128 {
+                                key_out_of_range += 1;
+                            }
+                        }
+                        RenderCommand::NoteOff { .. } => note_off_count += 1,
+                        RenderCommand::ProgramChange { .. } => pc_count += 1,
+                        _ => {}
+                    }
+                    send_command(&mut exporter, &cmd);
+                }
+            } else {
+                // 超出本块：缓存到 pending，等下一块处理
+                pending_event = Some((tick, _track_idx, kind));
+                break;
             }
         }
+
+        // 渲染本块
+        if delta > 0.0 {
+            exporter.render_batch(delta);
+            let samples = exporter.take_samples();
+            if !samples.is_empty() {
+                writer.write_samples(&samples)?;
+            }
+        }
+
+        // 进度
+        if let Some(callback) = &progress_callback {
+            let progress = ((block_end / total_seconds.max(1.0)) * 100.0).min(99.0) as f32;
+            callback(progress);
+        }
+
+        // 所有事件消费完毕 → 提前退出主循环
+        if player.is_exhausted() && pending_event.is_none() {
+            break;
+        }
+
+        block_start = block_end;
     }
-    // 统计 key 分布（min/max 以及超出 127 的数量）
-    let keys: Vec<u8> = commands
-        .iter()
-        .filter_map(|c| match c.cmd {
-            RenderCommand::NoteOn { key, .. } => Some(key),
-            _ => None,
-        })
-        .collect();
-    let key_min = keys.iter().copied().min().unwrap_or(0);
-    let key_max = keys.iter().copied().max().unwrap_or(0);
+
+    // 6. 诊断日志
     let ch_dist: String = ch_map
         .iter()
         .map(|(ch, n)| format!("ch{}:{}", ch, n))
         .collect::<Vec<_>>()
         .join(", ");
     tracing::info!(
-        "[PATH_B] extract_commands: {} NoteOn, {} NoteOff, {} PC, total_events={}, channels=[{}], keys=[{},{}], out_of_range={}",
+        "[PATH_B] extract_commands: {} NoteOn, {} NoteOff, {} PC, total_events={}, channels=[{}], out_of_range={}",
         note_on_count,
-        commands
-            .iter()
-            .filter(|c| matches!(c.cmd, RenderCommand::NoteOff { .. }))
-            .count(),
+        note_off_count,
         pc_count,
-        commands.len(),
+        total_events,
         ch_dist,
-        key_min,
-        key_max,
-        keys_out_of_range.len(),
+        key_out_of_range,
     );
-
-    // 总时长取最后一个事件的时间
-    let total_seconds = commands.last().map(|e| e.time_sec).unwrap_or(0.0);
-
-    // 6. 核心渲染 — 固定块渲染
-    render_events_blocked(
-        &commands,
-        total_seconds,
-        &mut exporter,
-        &mut writer,
-        options.sample_rate,
-        512,
-        progress_callback.as_ref(),
-        cancel_flag.as_ref(),
-    )?;
 
     // 渲染完成后检查 voice 数量（诊断）
     let voice_count = exporter.voice_count();
     tracing::info!(
         "[PATH_B] 渲染完成: {} events, {} voices, total={:.2}s",
-        commands.len(),
+        total_events,
         voice_count,
         total_seconds,
     );
@@ -247,7 +279,7 @@ pub fn render_streaming(
         &mut exporter,
         &mut writer,
         options.sample_rate,
-        512,
+        BLOCK_SAMPLES,
         progress_callback.as_ref(),
         cancel_flag.as_ref(),
     )?;

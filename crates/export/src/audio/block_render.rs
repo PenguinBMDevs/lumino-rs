@@ -59,7 +59,7 @@ pub(crate) struct TimedCommand {
 }
 
 /// 将命令发送到 xsynth。
-fn send_command(exporter: &mut AudioExporter, cmd: &RenderCommand) {
+pub(super) fn send_command(exporter: &mut AudioExporter, cmd: &RenderCommand) {
     match *cmd {
         RenderCommand::NoteOn { key, vel, channel } => {
             exporter.send_event(SynthEvent::Channel(
