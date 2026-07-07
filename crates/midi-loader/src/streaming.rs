@@ -235,13 +235,11 @@ impl<'a> StreamingMidiPlayer<'a> {
     ///
     /// `TrackEventKind` 借用自原始数据，不受 `self` 后续调用的影响。
     pub fn next_event(&mut self) -> Option<(u64, usize, TrackEventKind<'a>)> {
-        let (min_tick, tracks_at_min) = self.find_min_tick();
+        let (min_tick, ti) = self.find_min_tick_fast();
         if min_tick == u64::MAX {
             return None;
         }
 
-        // 取第一个有事件的最小 tick 轨道的第一个事件
-        let ti = tracks_at_min[0];
         let result = self.tracks[ti].consume()?;
 
         match result {
@@ -262,24 +260,19 @@ impl<'a> StreamingMidiPlayer<'a> {
         }
     }
 
-    /// 找到当前最小 tick 及对应的轨道索引。
-    fn find_min_tick(&self) -> (u64, Vec<usize>) {
+    /// 找到当前最小 tick 及对应的轨道索引（无分配版本）。
+    /// 返回 (min_tick, first_track_index)。若有多个同 tick 轨道，后续 next_event 会取到。
+    fn find_min_tick_fast(&self) -> (u64, usize) {
         let mut min_tick = u64::MAX;
-        for track in &self.tracks {
+        let mut min_track = 0;
+        for (i, track) in self.tracks.iter().enumerate() {
             let nt = track.next_tick();
             if nt < min_tick {
                 min_tick = nt;
+                min_track = i;
             }
         }
-
-        let mut tracks_at_min: Vec<usize> = Vec::new();
-        for (i, track) in self.tracks.iter().enumerate() {
-            if track.next_tick() == min_tick {
-                tracks_at_min.push(i);
-            }
-        }
-
-        (min_tick, tracks_at_min)
+        (min_tick, min_track)
     }
 }
 

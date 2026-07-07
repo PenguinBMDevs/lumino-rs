@@ -13,6 +13,9 @@ use xsynth_soundfonts::sf2::load_soundfont_with_samples;
 
 const MAX_VOICES: usize = 512;
 const WORKGROUP_SIZE: u32 = 256; // 硬件上限，用 stride 循环处理 >256 voices
+/// 最低有效力度——黑乐谱"音符画"的 vel=1 不产生可闻音频，直接跳过
+/// vel>1（含 2）才算是 real voice；对应的 NoteOff 也被计数器跳过
+const MIN_VELOCITY: u8 = 1;
 /// GPU 渲染块大小（样本数）= ~5.94s @ 44100Hz
 /// 大块减少 dispatch 次数、提高 GPU occupancy、摊销 overhead
 pub(crate) const GPU_BLOCK_SAMPLES: u32 = 262_144;
@@ -72,6 +75,7 @@ struct Voice {
 }
 
 /// 预计算 region 元数据（flat lookup 用）
+#[derive(Clone)]
 struct RegionMeta {
     key_low: u8,
     key_high: u8,
@@ -376,6 +380,13 @@ pub(crate) struct GpuSynth {
     block_samples: u32,
     /// 输出缓存
     output: Vec<f32>,
+    /// 当前激活 preset 的缓存——避免 send_note_on 热路径走 HashMap::get
+    cache_regions: Vec<RegionMeta>,
+    cache_key_idx: Vec<Vec<u16>>,
+    cache_preset_key: (u16, u16),
+    /// 每个 (channel, key) 上当前活跃的 real voice 数量
+    /// NoteOn(vel>threshold) +1，NoteOff 释放时 -1；=0 时该 key 的 NoteOff 可跳过
+    real_voice_counts: std::collections::HashMap<(u32, u8), u32>,
 }
 
 impl GpuSynth {
@@ -476,6 +487,14 @@ impl GpuSynth {
         let gpu = GpuRenderer::new(device, queue, &flat, channels)?;
         let output = vec![0.0f32; (block_samples * channels as u32) as usize];
 
+        // 初始化 active preset cache：取第一个 preset（通常是 bank=0, program=0）
+        let (cache_regions, cache_key_idx, cache_preset_key) =
+            if let Some((&pk, pr)) = regions_by_preset.iter().next() {
+                (pr.regions.clone(), pr.key_idx.clone(), pk)
+            } else {
+                (Vec::new(), (0..256).map(|_| Vec::new()).collect(), (0, 0))
+            };
+
         Ok(Self {
             gpu,
             regions_by_preset,
@@ -488,6 +507,10 @@ impl GpuSynth {
             _channels: channels,
             block_samples,
             output,
+            cache_regions,
+            cache_key_idx,
+            cache_preset_key,
+            real_voice_counts: std::collections::HashMap::new(),
         })
     }
 
@@ -517,29 +540,34 @@ impl GpuSynth {
     }
 
     /// 发送 MIDI 事件
+    #[inline]
     pub(crate) fn send_note_on(&mut self, channel: u32, key: u8, vel: u8) {
         if vel == 0 {
             return self.send_note_off(channel, key);
         }
-        // swap_remove(0) = 用末尾 voice 替换最旧 voice → O(1) 淘汰
-        // 相比 Vec::remove(0) 的 O(N) memmove，对黑乐谱密集 NoteOn 区别巨大
+        // 跳过黑乐谱音符画（vel <= 阈值，不产生可闻音频）
+        if vel <= MIN_VELOCITY {
+            return;
+        }
+        *self.real_voice_counts.entry((channel, key)).or_insert(0) += 1;
         if self.voices.len() >= MAX_VOICES {
             self.voices.swap_remove(0);
         }
         let ch = channel as usize;
-        // O(1) 按 (bank, program) 定位 preset，再用 key 二级索引定位 ~100 候选 region
-        let preset_key = (self.banks[ch], self.programs[ch] as u16);
-        let meta = self.regions_by_preset.get(&preset_key).and_then(|pr| {
-            let kidx = key as usize;
-            pr.key_idx.get(kidx).and_then(|indices| {
-                indices.iter().find_map(|&ri| {
-                    let r = &pr.regions[ri as usize];
-                    if vel >= r.vel_low && vel <= r.vel_high {
-                        Some(r)
-                    } else {
-                        None
-                    }
-                })
+        // 热路径：用缓存 preset 避免 HashMap::get（500 次按桶查找 vs 1 次分支）
+        let pk = (self.banks[ch], self.programs[ch] as u16);
+        if pk != self.cache_preset_key {
+            self.update_preset_cache(pk);
+        }
+        let kidx = key as usize;
+        let meta = self.cache_key_idx.get(kidx).and_then(|indices| {
+            indices.iter().find_map(|&ri| {
+                let r = &self.cache_regions[ri as usize];
+                if vel >= r.vel_low && vel <= r.vel_high {
+                    Some(r)
+                } else {
+                    None
+                }
             })
         });
         let Some(meta) = meta else { return };
@@ -571,18 +599,34 @@ impl GpuSynth {
         });
     }
 
+    /// 更新 active preset cache（ProgramChange 时调用）
+    fn update_preset_cache(&mut self, pk: (u16, u16)) {
+        if let Some(pr) = self.regions_by_preset.get(&pk) {
+            self.cache_regions.clone_from(&pr.regions);
+            self.cache_key_idx.clone_from(&pr.key_idx);
+            self.cache_preset_key = pk;
+        }
+    }
+
     pub(crate) fn send_note_off(&mut self, channel: u32, key: u8) {
-        // 大多数 NoteOff 匹配恰好一个 voice，find 命中即 break，避免 O(512) 全扫
-        for v in self.voices.iter_mut() {
-            if v.channel == channel
-                && v.key == key
-                && v.env_phase != EnvPhase::Release
-                && v.env_phase != EnvPhase::Done
-            {
-                v.env_phase = EnvPhase::Release;
-                break;
+        // 有 real voice 计数器且 >0 → 释放一个 real voice，计数器 -1
+        if let Some(cnt) = self.real_voice_counts.get_mut(&(channel, key)) {
+            if *cnt > 0 {
+                *cnt -= 1;
+                for v in self.voices.iter_mut() {
+                    if v.channel == channel
+                        && v.key == key
+                        && v.env_phase != EnvPhase::Release
+                        && v.env_phase != EnvPhase::Done
+                    {
+                        v.env_phase = EnvPhase::Release;
+                        break;
+                    }
+                }
+                return;
             }
         }
+        // 无 real voice → 被跳过的音符画 NoteOff，无需扫描
     }
 
     pub(crate) fn send_program_change(&mut self, channel: u32, program: u8) {

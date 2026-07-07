@@ -351,53 +351,20 @@ pub fn render_streaming_gpu<'a>(
         options.channels,
     )?;
 
-    // 3. 预提取全量事件（一次性调 StreamingMidiPlayer::next_event）
-    //    避免 per-block 的 find_min_tick Vec 分配开销
-    let _t_extract = std::time::Instant::now();
+    // 3. 创建流式播放器
     let mut player = StreamingMidiPlayer::from_bytes(midi_bytes)
         .map_err(|e| ExportError::MidiParse(format!("流式 MIDI 解析失败: {}", e)))?;
     let tempo_map = TempoMap::from_changes(player.tempo_changes(), player.ppqn());
     let total_seconds = tempo_map.tick_to_seconds(player.total_ticks());
 
-    // 预分配按秒对齐的 (time_sec, RenderCommand) 数组
-    let mut all_cmds: Vec<(f64, RenderCommand)> = Vec::new();
-    let mut n_noteon: u64 = 0;
-    let mut n_noteoff: u64 = 0;
-    let mut n_cc: u64 = 0;
-    let mut n_pc: u64 = 0;
-    let mut n_pb: u64 = 0;
-    while let Some((abs_tick, _track_idx, kind)) = player.next_event() {
-        let time_sec = tempo_map.tick_to_seconds(abs_tick);
-        for cmd in kind_to_command(kind) {
-            match &cmd {
-                RenderCommand::NoteOn { .. } => n_noteon += 1,
-                RenderCommand::NoteOff { .. } => n_noteoff += 1,
-                RenderCommand::ControlChange { .. } => n_cc += 1,
-                RenderCommand::ProgramChange { .. } => n_pc += 1,
-                RenderCommand::PitchBend { .. } => n_pb += 1,
-            }
-            all_cmds.push((time_sec, cmd));
-        }
-    }
-    tracing::info!(
-        "[GPU] 预提取完成: {} NoteOn {} NoteOff {} CC {} PC {} PB = 总事件{}, 耗时={:?}",
-        n_noteon,
-        n_noteoff,
-        n_cc,
-        n_pc,
-        n_pb,
-        all_cmds.len(),
-        _t_extract.elapsed(),
-    );
-
     let block_sec = GPU_BLOCK_SAMPLES as f64 / options.sample_rate as f64;
 
-    // 4. 渲染主循环 — 从预提取的 Vec 直接遍历，无 find_min_tick 开销
+    // 4. 流式渲染主循环 — 每块从 player 拉事件，不缓存全量
     let mut block_start = 0.0_f64;
-    let mut cmd_cursor: usize = 0;
+    let mut pending_event: Option<(u64, usize, TrackEventKind<'_>)> = None;
     let mut block_i: u64 = 0;
 
-    while block_start < total_seconds && cmd_cursor < all_cmds.len() {
+    while block_start < total_seconds {
         let _b0 = std::time::Instant::now();
 
         // 检查取消
@@ -410,13 +377,54 @@ pub fn render_streaming_gpu<'a>(
         let block_end = (block_start + block_sec).min(total_seconds);
         let delta = block_end - block_start;
 
-        // 消费本块内所有事件
+        // 消费本块内所有事件（流式，O(1) 内存）
         let mut ev_count: u64 = 0;
-        while cmd_cursor < all_cmds.len() && all_cmds[cmd_cursor].0 <= block_end {
-            let (_ts, ref cmd) = all_cmds[cmd_cursor];
-            synth.send_command(cmd);
-            cmd_cursor += 1;
-            ev_count += 1;
+        loop {
+            let ev = if let Some(p) = pending_event.take() {
+                p
+            } else {
+                match player.next_event() {
+                    Some(e) => e,
+                    None => break,
+                }
+            };
+            let time_sec = tempo_map.tick_to_seconds(ev.0);
+            if time_sec <= block_end {
+                // 内联 kind_to_command 避免 Vec 分配
+                if let TrackEventKind::Midi { channel, message } = ev.2 {
+                    let ch = u8::from(channel) as u32;
+                    match message {
+                        MidiMessage::NoteOn { key, vel } if u8::from(vel) > 0 => {
+                            synth.send_note_on(ch, key, u8::from(vel));
+                            ev_count += 1;
+                        }
+                        MidiMessage::NoteOn { key, .. } => {
+                            synth.send_note_off(ch, key);
+                            ev_count += 1;
+                        }
+                        MidiMessage::NoteOff { key, .. } => {
+                            synth.send_note_off(ch, key);
+                            ev_count += 1;
+                        }
+                        MidiMessage::Controller { controller, value } => {
+                            synth.send_control_change(ch, u8::from(controller), u8::from(value));
+                            ev_count += 1;
+                        }
+                        MidiMessage::ProgramChange { program } => {
+                            synth.send_program_change(ch, u8::from(program));
+                            ev_count += 1;
+                        }
+                        MidiMessage::PitchBend { bend } => {
+                            synth.send_pitch_bend(ch, bend.as_int());
+                            ev_count += 1;
+                        }
+                        _ => {}
+                    }
+                }
+            } else {
+                pending_event = Some(ev);
+                break;
+            }
         }
         let _b1 = std::time::Instant::now();
 
@@ -434,6 +442,10 @@ pub fn render_streaming_gpu<'a>(
         if let Some(callback) = &progress_callback {
             let progress = ((block_end / total_seconds.max(1.0)) * 100.0).min(99.0) as f32;
             callback(progress);
+        }
+
+        if player.is_exhausted() && pending_event.is_none() {
+            break;
         }
 
         if block_i % 5 == 0 || ev_count > 0 {
