@@ -12,7 +12,10 @@ use xsynth_soundfonts::sf2::load_soundfont_with_samples;
 // ── GPU 着色器常量 ─────────────────────────────────────
 
 const MAX_VOICES: usize = 512;
-const WORKGROUP_SIZE: u32 = 256;
+const WORKGROUP_SIZE: u32 = 256; // 硬件上限，用 stride 循环处理 >256 voices
+/// GPU 渲染块大小（样本数）= ~5.94s @ 44100Hz
+/// 大块减少 dispatch 次数、提高 GPU occupancy、摊销 overhead
+pub(crate) const GPU_BLOCK_SAMPLES: u32 = 262_144;
 
 // ── WGSL 对齐的数据结构 ────────────────────────────────
 
@@ -70,8 +73,6 @@ struct Voice {
 
 /// 预计算 region 元数据（flat lookup 用）
 struct RegionMeta {
-    bank: u16,
-    program: u16,
     key_low: u8,
     key_high: u8,
     vel_low: u8,
@@ -88,6 +89,17 @@ struct RegionMeta {
     pan: i16,
 }
 
+/// 按 preset 分组的 region 列表 + 按 MIDI key 的二级索引
+///
+/// 查找：先取 `key_idx[key as usize]` 获得 ~50-100 个候选 region index，
+/// 再在其中按 velocity 范围扫描。避免了扫描 preset 全部 10000+ regions。
+struct PresetRegions {
+    regions: Vec<RegionMeta>,
+    /// key_idx[key as usize] = 覆盖该 MIDI key 的 region 在 `regions` 中的下标列表
+    /// key 是 u8 (0-255)，超出标准 0-127 范围的 key 会命中空 Vec，安全返回 None
+    key_idx: Vec<Vec<u16>>,
+}
+
 // ── GPU 渲染器封装 ─────────────────────────────────────
 
 struct GpuRenderer {
@@ -95,11 +107,14 @@ struct GpuRenderer {
     queue: wgpu::Queue,
     pipeline: wgpu::ComputePipeline,
     layout: wgpu::BindGroupLayout,
+    bind_group: wgpu::BindGroup,
     sample_buf: wgpu::Buffer,
     params_buf: wgpu::Buffer,
     uniform_buf: wgpu::Buffer,
     output_buf: wgpu::Buffer,
     staging_buf: wgpu::Buffer,
+    /// 预分配的 voice params——避免每块堆分配
+    params: Vec<GpuVoiceParams>,
     block_samples: u32,
     channels: u16,
 }
@@ -109,9 +124,9 @@ impl GpuRenderer {
         device: wgpu::Device,
         queue: wgpu::Queue,
         sample_data: &[f32],
-        block_samples: u32,
         channels: u16,
     ) -> Result<Self, String> {
+        let block_samples = GPU_BLOCK_SAMPLES;
         let sample_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("sample_buf"),
             contents: bytemuck::cast_slice(sample_data),
@@ -139,7 +154,9 @@ impl GpuRenderer {
         let output_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("output_buf"),
             size: out_bytes,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let staging_buf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -198,6 +215,28 @@ impl GpuRenderer {
                 },
             ],
         });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("bg"),
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: params_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: sample_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: output_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: uniform_buf.as_entire_binding(),
+                },
+            ],
+        });
         let pl_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pl_layout"),
             bind_group_layouts: &[&layout],
@@ -216,20 +255,24 @@ impl GpuRenderer {
             queue,
             pipeline,
             layout,
+            bind_group,
             sample_buf,
             params_buf,
             uniform_buf,
             output_buf,
             staging_buf,
+            params: vec![GpuVoiceParams::zeroed(); MAX_VOICES],
             block_samples,
             channels,
         })
     }
 
     fn render(&mut self, voices: &[Voice], sample_rate: u32) -> Vec<f32> {
+        let _t0 = std::time::Instant::now();
         let nv = voices.len().min(MAX_VOICES) as u32;
         let ns = self.block_samples;
         let ch = self.channels as u32;
+        let zs = (ns * ch * 4) as usize;
 
         // Uniforms
         self.queue.write_buffer(
@@ -242,9 +285,13 @@ impl GpuRenderer {
                 _pad: 0,
             }),
         );
+        let _t1 = std::time::Instant::now();
 
-        // Pack params
-        let mut gp = vec![GpuVoiceParams::zeroed(); MAX_VOICES];
+        // Pack params into pre-allocated vec（无堆分配）
+        let gp = &mut self.params;
+        for v in gp.iter_mut() {
+            *v = GpuVoiceParams::zeroed();
+        }
         for (i, v) in voices.iter().enumerate().take(MAX_VOICES) {
             gp[i] = GpuVoiceParams {
                 position: v.position,
@@ -260,11 +307,8 @@ impl GpuRenderer {
             };
         }
         self.queue
-            .write_buffer(&self.params_buf, 0, bytemuck::cast_slice(&gp));
-
-        // Zero output
-        let zs = (ns * ch * 4) as usize;
-        self.queue.write_buffer(&self.output_buf, 0, &vec![0u8; zs]);
+            .write_buffer(&self.params_buf, 0, bytemuck::cast_slice(gp));
+        let _t2 = std::time::Instant::now();
 
         // Dispatch
         let nwgs = ns.div_ceil(WORKGROUP_SIZE);
@@ -272,38 +316,17 @@ impl GpuRenderer {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("enc") });
         {
-            let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("bg"),
-                layout: &self.layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: self.params_buf.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: self.sample_buf.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: self.output_buf.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: self.uniform_buf.as_entire_binding(),
-                    },
-                ],
-            });
             let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("cp"),
                 timestamp_writes: None,
             });
             cp.set_pipeline(&self.pipeline);
-            cp.set_bind_group(0, &bg, &[]);
+            cp.set_bind_group(0, &self.bind_group, &[]);
             cp.dispatch_workgroups(nwgs, 1, 1);
         }
         enc.copy_buffer_to_buffer(&self.output_buf, 0, &self.staging_buf, 0, zs as u64);
         self.queue.submit(Some(enc.finish()));
+        let _t3 = std::time::Instant::now();
 
         // Readback
         let ss = self.staging_buf.slice(..);
@@ -312,12 +335,25 @@ impl GpuRenderer {
             tx.send(r).ok();
         });
         self.device.poll(wgpu::Maintain::Wait);
+        let _t4 = std::time::Instant::now();
         let _ = rx.recv().unwrap().ok();
         let data = ss.get_mapped_range();
         let smp: &[f32] = bytemuck::cast_slice(&data);
         let result = smp[..(ns * ch) as usize].to_vec();
         drop(data);
         self.staging_buf.unmap();
+        let _t5 = std::time::Instant::now();
+
+        tracing::debug!(
+            "[GPU.perf] upload={:?} pack={:?} submit={:?} poll_wait={:?} readback={:?}  nv={} ns={}",
+            _t1 - _t0,
+            _t2 - _t1,
+            _t3 - _t2,
+            _t4 - _t3,
+            _t5 - _t4,
+            nv,
+            ns,
+        );
         result
     }
 }
@@ -327,8 +363,8 @@ impl GpuRenderer {
 /// GPU 合成器 — 完整替代 xsynth 的合成引擎
 pub(crate) struct GpuSynth {
     gpu: GpuRenderer,
-    /// 扁平 region 查找表（含 bank/program/vel/key 过滤）
-    regions: Vec<RegionMeta>,
+    /// (bank, program) → PresetRegions，含 key 二级索引，避免 10k+ region 线性扫描
+    regions_by_preset: std::collections::HashMap<(u16, u16), PresetRegions>,
     voices: Vec<Voice>,
     programs: [u8; 16],
     banks: [u16; 16],
@@ -344,12 +380,8 @@ pub(crate) struct GpuSynth {
 
 impl GpuSynth {
     /// 创建 GPU 合成器
-    pub(crate) fn new(
-        sf2_path: &Path,
-        sample_rate: u32,
-        channels: u16,
-        block_samples: u32,
-    ) -> Result<Self, String> {
+    pub(crate) fn new(sf2_path: &Path, sample_rate: u32, channels: u16) -> Result<Self, String> {
+        let block_samples = GPU_BLOCK_SAMPLES;
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -362,8 +394,8 @@ impl GpuSynth {
         // SF2 sample buffer 可能超过 wgpu 默认 256MB 限制
         // RTX 2060 Vulkan 后端实际支持 2GB+, 这里设 1GB 安全值
         let limits = wgpu::Limits {
-            max_buffer_size: 1 << 30,                    // 1 GB
-            max_storage_buffer_binding_size: 1 << 30,     // 1 GB
+            max_buffer_size: 1 << 30,                 // 1 GB
+            max_storage_buffer_binding_size: 1 << 30, // 1 GB
             ..wgpu::Limits::default()
         };
         let (device, queue) = pollster::block_on(adapter.request_device(
@@ -381,20 +413,23 @@ impl GpuSynth {
         let (presets, _samples) = load_soundfont_with_samples(sf2_path, sample_rate)
             .map_err(|e| format!("SF2: {}", e))?;
 
-        // 构建 flat sample buffer + region 查找表
+        // 构建 flat sample buffer + 按 preset 分组的 region 查找表
         // 用 Arc 指针去重：同一声 sample 数据只上传一次到 GPU
         use std::collections::HashMap;
         let mut flat: Vec<f32> = Vec::new();
-        let mut regions: Vec<RegionMeta> = Vec::new();
+        let mut regions_by_preset: HashMap<(u16, u16), PresetRegions> = HashMap::new();
         let mut sample_offsets: HashMap<*const f32, u32> = HashMap::new();
+        let mut total_regions: usize = 0;
         for preset in &presets {
+            let pk = (preset.bank, preset.preset);
+            let mut regions: Vec<RegionMeta> = Vec::new();
             for reg in &preset.regions {
                 if reg.sample.is_empty() || reg.sample[0].is_empty() {
                     continue;
                 }
                 let ptr = reg.sample[0].as_ptr();
                 let off = match sample_offsets.get(&ptr) {
-                    Some(&existing_off) => existing_off, // 已存在，复用偏移
+                    Some(&existing_off) => existing_off,
                     None => {
                         let new_off = flat.len() as u32;
                         flat.extend_from_slice(&reg.sample[0]);
@@ -403,8 +438,6 @@ impl GpuSynth {
                     }
                 };
                 regions.push(RegionMeta {
-                    bank: preset.bank,
-                    program: preset.preset,
                     key_low: *reg.keyrange.start(),
                     key_high: *reg.keyrange.end(),
                     vel_low: *reg.velrange.start(),
@@ -420,20 +453,32 @@ impl GpuSynth {
                     volume: reg.volume,
                     pan: reg.pan,
                 });
+                total_regions += 1;
             }
+            // 构建 key 二级索引：每个 region 覆盖的 key range 都加入对应 bucket
+            let mut key_idx: Vec<Vec<u16>> = (0..256).map(|_| Vec::new()).collect();
+            for (ri, r) in regions.iter().enumerate() {
+                let lo = r.key_low as usize;
+                let hi = r.key_high as usize;
+                for k in lo..=hi.min(255) {
+                    key_idx[k].push(ri as u16);
+                }
+            }
+            regions_by_preset.insert(pk, PresetRegions { regions, key_idx });
         }
         tracing::info!(
-            "[GPU] {} regions, {} sample frames",
-            regions.len(),
+            "[GPU] {} presets, {} regions, {} sample frames",
+            regions_by_preset.len(),
+            total_regions,
             flat.len()
         );
 
-        let gpu = GpuRenderer::new(device, queue, &flat, block_samples, channels)?;
+        let gpu = GpuRenderer::new(device, queue, &flat, channels)?;
         let output = vec![0.0f32; (block_samples * channels as u32) as usize];
 
         Ok(Self {
             gpu,
-            regions,
+            regions_by_preset,
             voices: Vec::with_capacity(MAX_VOICES),
             programs: [0; 16],
             banks: [0; 16],
@@ -476,17 +521,26 @@ impl GpuSynth {
         if vel == 0 {
             return self.send_note_off(channel, key);
         }
+        // swap_remove(0) = 用末尾 voice 替换最旧 voice → O(1) 淘汰
+        // 相比 Vec::remove(0) 的 O(N) memmove，对黑乐谱密集 NoteOn 区别巨大
         if self.voices.len() >= MAX_VOICES {
-            self.voices.remove(0);
+            self.voices.swap_remove(0);
         }
         let ch = channel as usize;
-        let meta = self.regions.iter().find(|r| {
-            r.bank == self.banks[ch]
-                && r.program == self.programs[ch] as u16
-                && key >= r.key_low
-                && key <= r.key_high
-                && vel >= r.vel_low
-                && vel <= r.vel_high
+        // O(1) 按 (bank, program) 定位 preset，再用 key 二级索引定位 ~100 候选 region
+        let preset_key = (self.banks[ch], self.programs[ch] as u16);
+        let meta = self.regions_by_preset.get(&preset_key).and_then(|pr| {
+            let kidx = key as usize;
+            pr.key_idx.get(kidx).and_then(|indices| {
+                indices.iter().find_map(|&ri| {
+                    let r = &pr.regions[ri as usize];
+                    if vel >= r.vel_low && vel <= r.vel_high {
+                        Some(r)
+                    } else {
+                        None
+                    }
+                })
+            })
         });
         let Some(meta) = meta else { return };
 
@@ -518,13 +572,15 @@ impl GpuSynth {
     }
 
     pub(crate) fn send_note_off(&mut self, channel: u32, key: u8) {
-        for v in &mut self.voices {
+        // 大多数 NoteOff 匹配恰好一个 voice，find 命中即 break，避免 O(512) 全扫
+        for v in self.voices.iter_mut() {
             if v.channel == channel
                 && v.key == key
                 && v.env_phase != EnvPhase::Release
                 && v.env_phase != EnvPhase::Done
             {
                 v.env_phase = EnvPhase::Release;
+                break;
             }
         }
     }
@@ -568,51 +624,58 @@ impl GpuSynth {
 
     /// 渲染一个 block 的音频
     pub(crate) fn render_block(&mut self, delta_sec: f64) {
-        let _num_samples = self.block_samples;
+        let _t0 = std::time::Instant::now();
         let sample_rate = self.sample_rate as f64;
         let frames = delta_sec * sample_rate;
 
         // 更新所有 voice 的位置和包络
+        let nv_before = self.voices.len();
         self.voices.retain_mut(|v| {
-            // 位置推进
             v.position += v.pitch_ratio * frames as f32;
-
-            // 包络更新 (简单指数 ADSR)
             match v.env_phase {
                 EnvPhase::Attack => {
-                    v.envelope += (1.0 - v.envelope) * 0.3; // fast attack ~5ms
+                    v.envelope += (1.0 - v.envelope) * 0.3;
                     if v.envelope > 0.99 {
                         v.env_phase = EnvPhase::Decay;
                     }
                 }
                 EnvPhase::Decay => {
-                    v.envelope += (0.8 - v.envelope) * 0.05; // decay to sustain
+                    v.envelope += (0.8 - v.envelope) * 0.05;
                     if (v.envelope - 0.8).abs() < 0.01 {
                         v.env_phase = EnvPhase::Sustain;
                     }
                 }
-                EnvPhase::Sustain => {
-                    // hold at sustain level (already at ~0.8)
-                }
+                EnvPhase::Sustain => {}
                 EnvPhase::Release => {
-                    v.envelope *= 0.995; // exponential decay ~200ms
+                    v.envelope *= 0.995;
                     if v.envelope < 0.001 {
                         return false;
                     }
                 }
                 EnvPhase::Done => return false,
             }
-
-            // 非循环 voice 超出样本长度 → 结束
             if !v.is_looping && v.position as u32 >= v.sample_length {
                 return false;
             }
             true
         });
+        let _t1 = std::time::Instant::now();
 
         // GPU 渲染
         let gpu_out = self.gpu.render(&self.voices, self.sample_rate);
+        let _t2 = std::time::Instant::now();
+
         self.output = gpu_out;
+
+        if nv_before > 0 {
+            tracing::debug!(
+                "[GPU.block] env={:?} gpu={:?} nv={}→{}",
+                _t1 - _t0,
+                _t2 - _t1,
+                nv_before,
+                self.voices.len(),
+            );
+        }
     }
 
     pub(crate) fn take_samples(&mut self) -> Vec<f32> {
@@ -631,7 +694,7 @@ impl GpuSynth {
 // ── WGSL 着色器 ───────────────────────────────────────
 
 const SHADER_SRC: &str = r#"
-const MAX_V: u32 = 512u;
+const WGS: u32 = 256u;
 
 struct VP {
     pos: f32,
@@ -669,11 +732,14 @@ fn main(
     let sidx = id.x;
     if sidx >= u.ns { return; }
 
+    // 每个线程用 stride 循环处理多个 voice
+    // 例如 256 threads × 512 voices → 每个线程处理 2 voices
     var L = 0.0f;
     var R = 0.0f;
-
-    if li < u.nv {
-        let p = params[li];
+    var v = li;
+    loop {
+        if v >= u.nv { break; }
+        let p = params[v];
         if p.ena != 0u {
             let pos = p.pos + f32(sidx) * p.pitch;
             var pi = u32(pos);
@@ -696,10 +762,11 @@ fn main(
                 let lg = p.vol * sqrt(max(1.0 - p.pan, 0.0));
                 let rg = p.vol * sqrt(max(1.0 + p.pan, 0.0));
 
-                L = sv * lg;
-                R = sv * rg;
+                L += sv * lg;
+                R += sv * rg;
             }
         }
+        v += WGS;
     }
 
     sl[li] = L;
@@ -707,10 +774,11 @@ fn main(
 
     workgroupBarrier();
 
+    // thread 0 归约全部 256 个线程的贡献
     if li == 0u {
         var tL = 0.0f;
         var tR = 0.0f;
-        for (var i = 0u; i < u.nv; i++) {
+        for (var i = 0u; i < WGS; i++) {
             tL += sl[i];
             tR += sr[i];
         }
