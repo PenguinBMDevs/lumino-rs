@@ -72,7 +72,8 @@ struct GpuVoiceParams {
     key: u32,
     released: u32,
     release_frame: u32,
-    _pad: u32,
+    /// 本块内音符触发开始的 sample offset（render shader 据此跳过 sidx < start_frame 的样本）
+    start_frame: u32,
 }
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -482,6 +483,8 @@ pub(crate) struct GpuSynth {
     sample_rate: u32,
     /// GPU 端管理的 voice params 的 CPU 副本（初始为零，每块读回覆盖）
     _params: Vec<GpuVoiceParams>,
+    /// GPU_BLOCK_SAMPLES 常量
+    block_samples: u32,
     /// 预分配的 params staging buffer（避免 readback_params 每块创建临时 buffer）
     buf_params_staging: wgpu::Buffer,
 }
@@ -570,6 +573,7 @@ impl GpuSynth {
             sample_rate,
             _params: vec![GpuVoiceParams::zeroed(); MAX_VOICES as usize],
             buf_params_staging,
+            block_samples: GPU_BLOCK_SAMPLES,
         })
     }
 
@@ -617,6 +621,7 @@ impl GpuSynth {
     }
 
     /// 读回 GPU voice params（用预分配的 staging buffer）。
+    /// 然后推进每个活跃 voice 的 position（render shader 渲染了 ns 个输出样本）。
     fn readback_params(&mut self) {
         let psize = (std::mem::size_of::<GpuVoiceParams>() * MAX_VOICES as usize) as u64;
         let mut enc = self
@@ -641,6 +646,25 @@ impl GpuSynth {
             .copy_from_slice(&smp[..MAX_VOICES as usize]);
         drop(data);
         self.buf_params_staging.unmap();
+
+        // [Bug Fix] 推进 position：render shader 已经处理了 ns 个输出样本，
+        // 每个 voice 实际播放了 (ns - sf) 个样本。对于持续 voice (sf=0)
+        // 推进 ns * pitch；对于新 voice (sf=to) 推进 (ns - to) * pitch。
+        let ns = self.block_samples;
+        for v in self.gpu.params_cpu.iter_mut() {
+            if v.enabled != 0 {
+                let played = ns.saturating_sub(v.start_frame);
+                v.position += played as f32 * v.pitch_ratio;
+                v.start_frame = 0; // 下 block 不再有 start_frame 门控
+
+                // [Bug Fix] 跨块 release_frame 衰减：release_frame 是原始 block 内的
+                // sample offset，下一块 render shader 比较 sidx >= rf 会不命中。
+                // 减去 ns 后衰减为块内等效偏移。
+                if v.released != 0 {
+                    v.release_frame = v.release_frame.saturating_sub(ns);
+                }
+            }
+        }
     }
 
     #[expect(dead_code)]
@@ -661,7 +685,7 @@ const WGS: u32 = 256u;
 
 struct RE { to: u32, data: u32, }
 struct RG { kl: u32, kh: u32, vl_l: u32, vl_h: u32, bo: u32, bl: u32, ls: u32, le: u32, lm: u32, rk: u32, tn: i32, vol: f32, pan: i32, }
-struct VP { pos: f32, pitch: f32, vol: f32, pan: f32, ss: u32, se: u32, ls: u32, le: u32, ena: u32, lp: u32, ch: u32, ky: u32, rel: u32, rf: u32, _pad: u32, }
+struct VP { pos: f32, pitch: f32, vol: f32, pan: f32, ss: u32, se: u32, ls: u32, le: u32, ena: u32, lp: u32, ch: u32, ky: u32, rel: u32, rf: u32, sf: u32, }
 struct U { ne: u32, nr: u32, ns: u32, sr: u32, }
 
 @group(0) @binding(0) var<storage, read_write> params: array<VP>;
@@ -681,7 +705,19 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let ev_vel = (ev.data >> 24u) & 0xFFu;
 
     if ev_kind == 0u {
-        if ev_vel <= 1u { return; }
+        // MIDI 规范：velocity 0 的 NoteOn = NoteOff
+        if ev_vel == 0u {
+            for (var i = 0u; i < MV; i++) {
+                let p = params[i];
+                if p.ena != 0u && p.ch == ev_ch && p.ky == ev_key && p.rel == 0u {
+                    params[i].rel = 1u;
+                    params[i].rf = ev.to;
+                    break;
+                }
+            }
+            return;
+        }
+        if ev_vel == 1u { return; }
         var ri = 0u;
         var found = false;
         for (var i = 0u; i < u.nr; i++) {
@@ -704,16 +740,20 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         if !found_slot { return; }
 
         let semis = f32(ev_key) - f32(r.rk) + f32(r.tn) / 100.0;
+        let pitch = pow(2.0, semis / 12.0);
         params[slot] = VP(
-            f32(ev.to) * pow(2.0, semis / 12.0),
-            pow(2.0, semis / 12.0),
+            0.0,                               // pos = 0 → 音符从 sample 开头开始
+            pitch,
             (f32(ev_vel) / 127.0) * r.vol,
-            (f32(r.pan) - 64.0) / 63.0,
+            f32(r.pan) / 64.0,
             r.bo, r.bo + r.bl,
             r.bo + r.ls, r.bo + r.le,
             1u,
             select(0u, 1u, r.lm == 1u || r.lm == 2u),
-            ev_ch, ev_key, 0u, 0u, 0u,
+            ev_ch, ev_key,
+            0u,                               // released
+            0u,                               // release_frame
+            ev.to,                            // sf = 本块中音符触发的 sample offset
         );
     } else if ev_kind == 1u {
         for (var i = 0u; i < MV; i++) {
@@ -729,11 +769,17 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 "#;
 
 // ── WGSL: render ────────────────────────────────────
+// [架构修复] 原设计将 voices 按 vi=li, li+WGS 分布到线程，每个 voice 只贡献
+// 4/1024 sample（li=0 只处理 voices 0,256 → 只在 sidx=0,256,512,768 处理）。
+// 再加上 workgroup reduction 的 li==0u 守卫只写 sidx=0,256,512,768 → 其余 1020
+// sample 永远为 0。
+//
+// 修复：每个线程遍历所有 512 voices，直接写入自己的 out[sidx*2..sidx*2+1]。
 const RENDER_SRC: &str = r#"
 const MV: u32 = 512u;
 const WGS: u32 = 256u;
 
-struct VP { pos: f32, pitch: f32, vol: f32, pan: f32, ss: u32, se: u32, ls: u32, le: u32, ena: u32, lp: u32, ch: u32, ky: u32, rel: u32, rf: u32, _pad: u32, }
+struct VP { pos: f32, pitch: f32, vol: f32, pan: f32, ss: u32, se: u32, ls: u32, le: u32, ena: u32, lp: u32, ch: u32, ky: u32, rel: u32, rf: u32, sf: u32, }
 struct U { ne: u32, nr: u32, ns: u32, sr: u32, }
 
 @group(0) @binding(0) var<storage, read> params: array<VP>;
@@ -741,39 +787,48 @@ struct U { ne: u32, nr: u32, ns: u32, sr: u32, }
 @group(0) @binding(2) var<storage, read_write> out: array<f32>;
 @group(0) @binding(3) var<uniform> u: U;
 
-var<workgroup> sl: array<f32, 256>;
-var<workgroup> sr_: array<f32, 256>;
-
 @compute @workgroup_size(256)
 fn main(
     @builtin(global_invocation_id) id: vec3<u32>,
-    @builtin(local_invocation_index) li: u32,
 ) {
     let sidx = id.x;
     if sidx >= u.ns { return; }
 
     var L = 0.0f; var R = 0.0f;
-    var vi = li;
-    loop {
-        if vi >= MV { break; }
+    for (var vi = 0u; vi < MV; vi++) {
         let p = params[vi];
         if p.ena != 0u {
+            // 跳过高音在 start_frame 之前的样本（新音符在本块中间触发）
+            if sidx < p.sf { continue; }
+
             var env = 1.0f;
             if p.rel != 0u && sidx >= p.rf {
                 let rf = f32(sidx - p.rf);
                 env = pow(0.995, rf);
                 if env < 0.001 { env = 0.0; }
             }
-            let pos = p.pos + f32(sidx) * p.pitch;
+            // pos = p.pos + (sidx - sf) * pitch：
+            //   新音符 (pos=0, sf=to)：sidx=to 时 pos=0 ← 音符从 sample 0 开始
+            //   旧音符 (pos=prev_end, sf=0)：sidx=0 时 pos=prev_end ← 连续
+            let pos = p.pos + f32(sidx - p.sf) * p.pitch;
             var pi = u32(pos);
             let fr = pos - f32(pi);
-            if p.lp != 0u && p.le > p.ls {
-                let llen = p.le - p.ls;
-                if llen > 0u && pi >= p.le {
-                    pi = p.ls + (pi - p.ls) % llen;
+            // [Bug Fix] pi 是 sample 内相对偏移（0-based），但 p.le/p.ls/p.se 是
+            // 绝对 flat buffer 索引。用 len/le_rel/ls_rel 做相对比较。
+            let len = p.se - p.ss;
+            if p.lp != 0u {
+                let le_rel = p.le - p.ss;
+                let ls_rel = p.ls - p.ss;
+                if le_rel > ls_rel {
+                    let llen = le_rel - ls_rel;
+                    if llen > 0u && pi >= le_rel {
+                        pi = ls_rel + (pi - ls_rel) % llen;
+                    }
                 }
             }
-            if pi < p.se - 1u {
+            // [Bug Fix] pi < p.se - 1u 在 bo>0 时允许 pi 超过 bl，读取跨 sample 数据。
+            // 正确边界：pi < len - 1u（需要 2 个 sample 做线性插值）。
+            if pi < len - 1u {
                 let i0 = p.ss + pi; let i1 = i0 + 1u;
                 let sv = smpls[i0] + (smpls[i1] - smpls[i0]) * fr;
                 let lg = p.vol * env * sqrt(max(1.0 - p.pan, 0.0));
@@ -781,18 +836,16 @@ fn main(
                 L += sv * lg; R += sv * rg;
             }
         }
-        vi += WGS;
     }
 
-    sl[li] = L; sr_[li] = R;
-    workgroupBarrier();
-    if li == 0u {
-        var tL = 0.0f; var tR = 0.0f;
-        for (var i = 0u; i < WGS; i++) { tL += sl[i]; tR += sr_[i]; }
-        let oi = sidx * 2u;
-        out[oi] = tL;
-        out[oi + 1u] = tR;
-    }
+    // [Bug Fix] 原为 workgroup reduction + li==0u 守卫，只写 4/1024 sample。
+    // 修复后每线程直接写自己的 sidx，无竞态（每个 sidx 唯一）。
+    let oi = sidx * 2u;
+    // Master gain: 防止多 voice 求和超出 [-1,1] 导致削波滋滋声。
+    // xsynth CPU 路径有内部 gain staging，GPU 路径需要显式控制。
+    // 1/8 = 12.5%，给大约 8 个满音量 voice 的 headroom。
+    out[oi] = L * 0.125;
+    out[oi + 1u] = R * 0.125;
 }
 "#;
 

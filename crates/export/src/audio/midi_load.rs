@@ -388,6 +388,7 @@ pub fn render_streaming_gpu(
     // 预分配事件 buffer + GPU 流水线句柄
     let mut raw_events: Vec<RawEvent> = Vec::with_capacity(2048);
     let mut gpu_pending: Option<PendingRender> = None;
+    let mut block_idx: u64 = 0;
 
     while block_start < total_seconds {
         if let Some(ref cancel) = cancel_flag
@@ -403,6 +404,28 @@ pub fn render_streaming_gpu(
         if let Some(p) = gpu_pending.take() {
             let audio = synth.readback_audio(&p);
             if !audio.is_empty() {
+                // 诊断：样本统计（每 10 block 或第一个 block 输出）
+                if block_idx % 10 == 0 || block_idx == 0 {
+                    let min_s = audio.iter().copied().fold(f32::MAX, f32::min);
+                    let max_s = audio.iter().copied().fold(f32::MIN, f32::max);
+                    let mean_s = audio.iter().sum::<f32>() / audio.len() as f32;
+                    let clipped = audio.iter().filter(|&&s| s.abs() >= 1.0).count();
+                    let first_32: Vec<f32> = audio.iter().take(32).copied().collect();
+                    // 计算前 64 个 sample 中非零的数量
+                    let non_zero = audio.iter().take(64).filter(|&&s| s != 0.0).count();
+                    tracing::info!(
+                        "[GPU_DIAG] block={}: events={} samples={} min={:.4} max={:.4} mean={:.4} clipped={} nz64={} first32={:.4?}",
+                        block_idx,
+                        raw_events.len(),
+                        audio.len(),
+                        min_s,
+                        max_s,
+                        mean_s,
+                        clipped,
+                        non_zero,
+                        first_32,
+                    );
+                }
                 writer.write_samples(&audio)?;
             }
         }
@@ -420,7 +443,11 @@ pub fn render_streaming_gpu(
             };
             let time_sec = tempo_cur.advance_to(ev.0);
             if time_sec <= block_end {
-                let to = (time_sec * sample_rate_f) as u32 - block_start_smp;
+                // to = 块内 sample offset。当 time_sec == block_end 时，
+                // to 可能等于 GPU_BLOCK_SAMPLES，超出 sidx 范围 0..ns-1。
+                // clamp 到 ns-1，使音符在块末尾触发、下一块继续。
+                let to = ((time_sec * sample_rate_f) as u32 - block_start_smp)
+                    .min(GPU_BLOCK_SAMPLES - 1);
                 if let TrackEventKind::Midi { channel, message } = ev.2 {
                     let ch = u8::from(channel) as u32;
                     match message {
@@ -456,7 +483,24 @@ pub fn render_streaming_gpu(
         }
 
         // ── Step 3: 非阻塞提交给 GPU（不等待，GPU 立即开始渲染） ──
+        // 诊断：记录事件的 to 值分布
+        if block_idx < 10 || block_idx % 100 == 0 {
+            let mut to_min = u32::MAX;
+            let mut to_max = u32::MIN;
+            for ev in &raw_events {
+                to_min = to_min.min(ev.tick_offset);
+                to_max = to_max.max(ev.tick_offset);
+            }
+            tracing::info!(
+                "[GPU_EV] block={}: n_events={} to_range=[{},{}]",
+                block_idx,
+                raw_events.len(),
+                to_min,
+                to_max,
+            );
+        }
         gpu_pending = Some(synth.submit(&raw_events));
+        block_idx += 1;
 
         // 渲染后进度
         let now = std::time::Instant::now();
@@ -483,6 +527,15 @@ pub fn render_streaming_gpu(
     if let Some(p) = gpu_pending.take() {
         let audio = synth.readback_audio(&p);
         if !audio.is_empty() {
+            let min_s = audio.iter().copied().fold(f32::MAX, f32::min);
+            let max_s = audio.iter().copied().fold(f32::MIN, f32::max);
+            let clipped = audio.iter().filter(|&&s| s.abs() >= 1.0).count();
+            tracing::info!(
+                "[GPU_DIAG] final_block: min={:.4} max={:.4} clipped={}",
+                min_s,
+                max_s,
+                clipped,
+            );
             writer.write_samples(&audio)?;
         }
     }
