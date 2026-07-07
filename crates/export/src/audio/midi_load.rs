@@ -411,7 +411,7 @@ pub fn render_streaming_gpu(
             let audio = synth.readback_audio(&p);
             if !audio.is_empty() {
                 // 诊断：样本统计（每 10 block 或第一个 block 输出）
-                if block_idx % 10 == 0 || block_idx == 0 {
+                if block_idx == 0 || block_idx.is_multiple_of(10) {
                     let min_s = audio.iter().copied().fold(f32::MAX, f32::min);
                     let max_s = audio.iter().copied().fold(f32::MIN, f32::max);
                     let mean_s = audio.iter().sum::<f32>() / audio.len() as f32;
@@ -490,7 +490,7 @@ pub fn render_streaming_gpu(
 
         // ── Step 3: 非阻塞提交给 GPU（不等待，GPU 立即开始渲染） ──
         // 诊断：记录事件的 to 值分布
-        if block_idx < 10 || block_idx % 100 == 0 {
+        if block_idx < 10 || block_idx.is_multiple_of(100) {
             let mut to_min = u32::MAX;
             let mut to_max = u32::MIN;
             for ev in &raw_events {

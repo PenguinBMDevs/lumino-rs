@@ -86,6 +86,9 @@ impl GpuSynth {
                     vel_high: *reg.velrange.end() as u32,
                     buf_offset: off,
                     buf_length: reg.sample[0].len() as u32,
+                    // [Bug Fix] 应用 SF2 region offset，避免 GPU 从 sample 开头播放
+                    // 导致只听到 attack（脑袋）后就被掐掉。
+                    sample_offset: reg.offset,
                     loop_start: reg.loop_start,
                     loop_end: reg.loop_end,
                     loop_mode: lm,

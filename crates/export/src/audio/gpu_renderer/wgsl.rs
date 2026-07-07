@@ -10,7 +10,7 @@ const WGS: u32 = 256u;
 const RELEASE_STEAL_AGE: f32 = 480.0;
 
 struct RE { to: u32, data: u32, }
-struct RG { kl: u32, kh: u32, vl_l: u32, vl_h: u32, bo: u32, bl: u32, ls: u32, le: u32, lm: u32, rk: u32, tn: i32, vol: f32, pan: i32, }
+struct RG { kl: u32, kh: u32, vl_l: u32, vl_h: u32, bo: u32, bl: u32, off: u32, ls: u32, le: u32, lm: u32, rk: u32, tn: i32, vol: f32, pan: i32, }
 struct VP { pos: f32, pitch: f32, vol: f32, pan: f32, ss: u32, se: u32, ls: u32, le: u32, ena: u32, lp: u32, ch: u32, ky: u32, rel: u32, rf: u32, sf: u32, rel_elapsed: f32, }
 struct U { ne: u32, nr: u32, ns: u32, sr: u32, mv: u32, ch: u32, }
 
@@ -46,12 +46,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         // velocity 1 是最小有效力度，不应被丢弃
         if ev_vel < 1u { return; }
 
+        // [Bug Fix] 与 CPU xsynth 保持一致：多个 region 覆盖同一 (key, vel) 时
+        // 取最后一个匹配的 region（CPU 预计算表是后面覆盖前面）。
         var ri = 0u;
         var found = false;
         for (var i = 0u; i < u.nr; i++) {
             let r = rgns[i];
             if ev_key >= r.kl && ev_key <= r.kh && ev_vel >= r.vl_l && ev_vel <= r.vl_h {
-                ri = i; found = true; break;
+                ri = i; found = true;
             }
         }
         if !found { return; }
@@ -97,15 +99,20 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
         let semis = f32(ev_key) - f32(r.rk) + f32(r.tn) / 100.0;
         let pitch = pow(2.0, semis / 12.0);
+        // [Bug Fix] ss 从 offset 开始，避免从 sample 开头播放导致只听到 attack。
+        // pos 始终表示从 ss 开始的相对偏移。
+        let sample_start = r.bo + r.off;
         params[slot] = VP(
-            0.0,                               // pos = 0 → 音符从 sample 开头开始
+            0.0,                               // pos = 0 → 从 sample_start 开始
             pitch,
             (f32(ev_vel) / 127.0) * r.vol,
             f32(r.pan) / 64.0,
-            r.bo, r.bo + r.bl,
-            r.bo + r.ls, r.bo + r.le,
+            sample_start,                     // sample_start
+            r.bo + r.bl,                      // sample_end（sample 物理末尾）
+            r.bo + r.ls,                      // loop_start（绝对 flat buffer 索引）
+            r.bo + r.le,                      // loop_end（绝对 flat buffer 索引）
             1u,
-            select(0u, 1u, r.lm == 1u || r.lm == 2u),
+            r.lm,                             // loop_mode: 0=NoLoop, 1=LoopContinuous, 2=LoopSustain
             ev_ch, ev_key,
             0u,                               // released
             0u,                               // release_frame
@@ -173,23 +180,35 @@ fn main(
             let pos = p.pos + f32(sidx - p.sf) * p.pitch;
             var pi = u32(pos);
             let fr = pos - f32(pi);
-            // [Bug Fix] pi 是 sample 内相对偏移（0-based），但 p.le/p.ls/p.se 是
-            // 绝对 flat buffer 索引。用 len/le_rel/ls_rel 做相对比较。
+            // [Bug Fix] pos 现在从 sample_start 开始，pi 是相对于 ss 的偏移。
+            // p.se/p.ss/p.ls/p.le 是绝对 flat buffer 索引，用 len/le_rel/ls_rel 相对比较。
             let len = p.se - p.ss;
-            if p.lp != 0u {
-                let le_rel = p.le - p.ss;
+
+            // [Bug Fix] LoopSustain: 仅在未 release 时循环；release 后继续向后播放
+            // （与 CPU xsynth 行为一致）。LoopContinuous 始终循环。
+            let should_loop = (p.lp == 1u) || (p.lp == 2u && p.rel == 0u);
+            if should_loop {
+                var le_rel = p.le - p.ss;
                 let ls_rel = p.ls - p.ss;
-                if le_rel > ls_rel {
+                // loop_end 不应超出 sample 物理末尾；超出时 clamp 到 len，
+                // 否则 pi 永远到不了 le_rel，循环永远不会回绕。
+                if le_rel > len { le_rel = len; }
+                // 确保 loop 边界合法：le_rel > ls_rel 且 loop_start 在有效范围内
+                if le_rel > ls_rel && ls_rel < len {
                     let llen = le_rel - ls_rel;
                     if llen > 0u && pi >= le_rel {
                         pi = ls_rel + (pi - ls_rel) % llen;
                     }
                 }
             }
-            // [Bug Fix] pi < p.se - 1u 在 bo>0 时允许 pi 超过 bl，读取跨 sample 数据。
-            // 正确边界：pi < len - 1u（需要 2 个 sample 做线性插值）。
-            if pi < len - 1u {
-                let i0 = p.ss + pi; let i1 = i0 + 1u;
+            // 无效 region 直接跳过，避免 len=0 时下溢。
+            if len == 0u { continue; }
+            // 允许读取到最后一个 sample；i1 Clamp 到合法末尾，避免越界。
+            // 这样 loop_end == sample_end（le_rel == len）的样本也能正常循环。
+            if pi < len {
+                let last = p.ss + len - 1u;
+                let i0 = p.ss + min(pi, len - 1u);
+                let i1 = min(p.ss + pi + 1u, last);
                 let sv = smpls[i0] + (smpls[i1] - smpls[i0]) * fr;
                 let lg = p.vol * env * sqrt(max(1.0 - p.pan, 0.0));
                 let rg = p.vol * env * sqrt(max(1.0 + p.pan, 0.0));

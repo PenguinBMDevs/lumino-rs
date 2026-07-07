@@ -50,6 +50,8 @@ pub(crate) struct GpuRegion {
     vel_high: u32,
     buf_offset: u32,
     buf_length: u32,
+    /// 播放起始偏移（相对 sample 开头，已重采样）
+    sample_offset: u32,
     loop_start: u32,
     loop_end: u32,
     loop_mode: u32,
