@@ -302,8 +302,11 @@ mod tests {
 
     #[test]
     fn test_audio_export_action_variants() {
-        let action = AudioExportAction::OpenDialog;
-        assert!(matches!(action, AudioExportAction::OpenDialog));
+        let action = AudioExportAction::OpenPanel;
+        assert!(matches!(action, AudioExportAction::OpenPanel));
+
+        let action = AudioExportAction::ClosePanel;
+        assert!(matches!(action, AudioExportAction::ClosePanel));
 
         let action = AudioExportAction::Completed;
         assert!(matches!(action, AudioExportAction::Completed));

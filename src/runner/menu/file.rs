@@ -133,6 +133,7 @@ impl RunnerInner {
                 disable_fade_out,
                 linear_envelope,
                 format,
+                use_gpu,
             } => {
                 self.handle_audio_export_start(
                     project_name,
@@ -146,6 +147,7 @@ impl RunnerInner {
                     disable_fade_out,
                     linear_envelope,
                     format,
+                    use_gpu,
                 );
             }
             _ => {

@@ -53,64 +53,26 @@ fn test_close_project_settings_dialog_preserves_dialog_type() {
 }
 
 #[test]
-fn test_close_audio_export_dialog_preserves_dialog_type() {
-    let mut root = Root::new_dialog("dark", DialogType::AudioExport);
+fn test_audio_export_panel_open_close() {
+    let mut root = Root::new("dark");
     let mut handler = handlers::DialogHandler::new();
+
     handler.handle(
         &mut root,
-        Message::AudioExport(crate::message::AudioExportAction::CloseDialog),
-    );
-
-    assert_eq!(
-        root.state.dialog_type,
-        DialogType::AudioExport,
-        "AudioExport::CloseDialog 不应修改 dialog_type"
+        Message::AudioExport(crate::message::AudioExportAction::OpenPanel),
     );
     assert!(
-        !root.state.audio_export_dialog.is_open,
-        "AudioExport::CloseDialog 应关闭音频导出对话框"
+        root.sidebar.audio_export_visible,
+        "AudioExport::OpenPanel 应打开音频导出面板"
     );
-}
 
-#[test]
-fn test_audio_export_confirm_preserves_dialog_type() {
-    let mut root = Root::new_dialog("dark", DialogType::AudioExport);
-    root.state.audio_export_dialog.project_name = "test".to_string();
-    root.state.audio_export_dialog.output_path = "test.wav".to_string();
-    let mut handler = handlers::DialogHandler::new();
     handler.handle(
         &mut root,
-        Message::AudioExport(crate::message::AudioExportAction::Confirm),
-    );
-
-    assert_eq!(
-        root.state.dialog_type,
-        DialogType::AudioExport,
-        "AudioExport::Confirm 不应修改 dialog_type"
+        Message::AudioExport(crate::message::AudioExportAction::ClosePanel),
     );
     assert!(
-        !root.state.audio_export_dialog.is_open,
-        "AudioExport::Confirm 应关闭音频导出对话框"
-    );
-}
-
-#[test]
-fn test_audio_export_cancel_preserves_dialog_type() {
-    let mut root = Root::new_dialog("dark", DialogType::AudioExport);
-    let mut handler = handlers::DialogHandler::new();
-    handler.handle(
-        &mut root,
-        Message::AudioExport(crate::message::AudioExportAction::Cancel),
-    );
-
-    assert_eq!(
-        root.state.dialog_type,
-        DialogType::AudioExport,
-        "AudioExport::Cancel 不应修改 dialog_type"
-    );
-    assert!(
-        !root.state.audio_export_dialog.is_open,
-        "AudioExport::Cancel 应关闭音频导出对话框"
+        !root.sidebar.audio_export_visible,
+        "AudioExport::ClosePanel 应关闭音频导出面板"
     );
 }
 

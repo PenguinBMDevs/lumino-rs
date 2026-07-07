@@ -1,4 +1,4 @@
-﻿//! 编辑器操作 - 对话框管理
+//! 编辑器操作 - 对话框管理
 
 use crate::root::Root;
 use crate::state::root_state::DialogType;
@@ -52,11 +52,6 @@ impl Root {
         } else if self.state.dialog_type == DialogType::Settings {
             self.state.dialog_type = DialogType::None;
         }
-    }
-
-    /// 设置音频导出对话框是否打开
-    pub fn set_audio_export_dialog_open(&mut self, _open: bool) {
-        // 音频导出已迁移为主窗口面板，不再使用独立对话框
     }
 
     /// 设置音符变速对话框是否打开

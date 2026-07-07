@@ -170,6 +170,7 @@ impl RunnerInner {
         disable_fade_out: bool,
         linear_envelope: bool,
         format: u8,
+        use_gpu: bool,
     ) {
         let sf2 = std::path::PathBuf::from(&soundfont_path);
         let output = std::path::PathBuf::from(&output_path);
@@ -189,6 +190,7 @@ impl RunnerInner {
                 lumino_export::audio::AudioChannels::Stereo
             },
             layers,
+            max_voices: 2048,
             channel_threading: lumino_export::audio::ThreadingOption::Auto,
             key_threading: lumino_export::audio::ThreadingOption::Auto,
             apply_limiter,
@@ -200,6 +202,7 @@ impl RunnerInner {
             } else {
                 lumino_export::audio::AudioFormat::FLAC
             },
+            use_gpu,
         };
 
         let cb = self.window_state.progress_cb.clone();
@@ -240,22 +243,47 @@ impl RunnerInner {
                     // 路径 B：流式渲染（零事件常驻）
                     let bytes =
                         std::fs::read(&midi_path_buf).map_err(lumino_export::ExportError::Io)?;
-                    lumino_export::audio::render_streaming_gpu(
-                        &bytes,
-                        &sf2,
-                        &output,
-                        &options,
-                        Some(Arc::new(move |p| {
-                            use std::fmt::Write;
-                            let mut msg = format!("导出中... {:.1}%", p.progress);
-                            if p.note_on > 0 || p.note_off > 0 {
-                                let _ =
-                                    write!(msg, " | NoteOn: {} NoteOff: {}", p.note_on, p.note_off);
-                            }
-                            cb_inner(&msg, p.progress as f64 / 100.0);
-                        })),
-                        None,
-                    )
+                    if options.use_gpu {
+                        lumino_export::audio::render_streaming_gpu(
+                            &bytes,
+                            &sf2,
+                            &output,
+                            &options,
+                            Some(Arc::new(move |p| {
+                                use std::fmt::Write;
+                                let mut msg = format!("导出中... {:.1}%", p.progress);
+                                if p.note_on > 0 || p.note_off > 0 {
+                                    let _ = write!(
+                                        msg,
+                                        " | NoteOn: {} NoteOff: {}",
+                                        p.note_on, p.note_off
+                                    );
+                                }
+                                cb_inner(&msg, p.progress as f64 / 100.0);
+                            })),
+                            None,
+                        )
+                    } else {
+                        lumino_export::audio::render_streaming(
+                            &bytes,
+                            &sf2,
+                            &output,
+                            &options,
+                            Some(Arc::new(move |p| {
+                                use std::fmt::Write;
+                                let mut msg = format!("导出中... {:.1}%", p.progress);
+                                if p.note_on > 0 || p.note_off > 0 {
+                                    let _ = write!(
+                                        msg,
+                                        " | NoteOn: {} NoteOff: {}",
+                                        p.note_on, p.note_off
+                                    );
+                                }
+                                cb_inner(&msg, p.progress as f64 / 100.0);
+                            })),
+                            None,
+                        )
+                    }
                 } else {
                     Err(lumino_export::ExportError::InvalidData(
                         "既无内存 MIDI 数据，也无 MIDI 文件路径，无法导出".to_string(),

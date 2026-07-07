@@ -355,10 +355,16 @@ pub fn render_streaming_gpu(
     let start = std::time::Instant::now();
 
     // 1. 创建 GPU 合成器（加载 SF2 + 初始化 wgpu）
+    let max_voices = if options.max_voices == 0 {
+        2048
+    } else {
+        options.max_voices
+    };
     let mut synth = GpuSynth::new(
         soundfont_path,
         options.sample_rate,
         options.channels.count(),
+        max_voices,
     )
     .map_err(|e| ExportError::AudioWrite(format!("GPU 合成器初始化失败: {}", e)))?;
 

@@ -214,10 +214,9 @@ impl CollaborationDialogState {
     }
 }
 
-/// 音频导出对话框状态
+/// 音频导出面板状态（主界面侧边栏面板，非独立对话框）
 #[derive(Debug, Clone)]
 pub struct AudioExportDialogState {
-    pub is_open: bool,
     /// 工程名称
     pub project_name: String,
     /// MIDI 文件路径
@@ -240,6 +239,8 @@ pub struct AudioExportDialogState {
     pub disable_fade_out: bool,
     /// 线性包络
     pub linear_envelope: bool,
+    /// 使用 GPU 加速渲染
+    pub use_gpu: bool,
     /// 插值算法
     pub interpolation: Interpolation,
     /// 输出格式
@@ -270,7 +271,6 @@ impl Default for AudioExportDialogState {
 impl AudioExportDialogState {
     pub fn new() -> Self {
         Self {
-            is_open: false,
             project_name: String::new(),
             midi_path: String::new(),
             soundfont_path: String::new(),
@@ -282,6 +282,8 @@ impl AudioExportDialogState {
             apply_limiter: true,
             disable_fade_out: false,
             linear_envelope: false,
+            // 默认启用 GPU 加速；兼容性/驱动问题可关闭回退 CPU
+            use_gpu: true,
             interpolation: Interpolation::default(),
             format: AudioFormat::default(),
             output_path: String::new(),
@@ -291,13 +293,6 @@ impl AudioExportDialogState {
             note_on_processed: 0,
             note_off_processed: 0,
         }
-    }
-
-    pub fn reset(&mut self) {
-        self.is_open = false;
-        self.is_exporting = false;
-        self.progress = 0.0;
-        self.status_message.clear();
     }
 }
 

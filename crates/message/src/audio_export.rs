@@ -5,14 +5,12 @@ use crate::{AudioChannels, AudioFormat, Interpolation, ThreadingOption};
 /// 音频导出动作
 #[derive(Debug, Clone)]
 pub enum AudioExportAction {
-    /// 打开音频导出对话框
-    OpenDialog,
-    /// 关闭音频导出对话框
-    CloseDialog,
+    /// 打开音频导出面板（主界面侧边栏面板）
+    OpenPanel,
+    /// 关闭音频导出面板（返回主编辑器）
+    ClosePanel,
     /// 确认音频导出
     Confirm,
-    /// 取消音频导出
-    Cancel,
     /// 工程名称变更
     ProjectNameChanged(String),
     /// 输出格式变更
@@ -35,6 +33,8 @@ pub enum AudioExportAction {
     DisableFadeOutChanged(bool),
     /// 线性包络变更
     LinearEnvelopeChanged(bool),
+    /// 使用 GPU 加速渲染变更
+    UseGpuChanged(bool),
     /// 输出路径变更
     OutputPathChanged(String),
     /// 浏览输出路径

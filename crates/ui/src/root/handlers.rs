@@ -331,7 +331,10 @@ impl Root {
                     if let Some(pos) = msg.rfind("NoteOn: ") {
                         let rest = &msg[pos + 8..];
                         if let Some(end) = rest.find(" NoteOff: ") {
-                            if let (Ok(on), Ok(off)) = (rest[..end].parse::<u64>(), rest[end + 10..].trim().parse::<u64>()) {
+                            if let (Ok(on), Ok(off)) = (
+                                rest[..end].parse::<u64>(),
+                                rest[end + 10..].trim().parse::<u64>(),
+                            ) {
                                 d.note_on_processed = on;
                                 d.note_off_processed = off;
                             }

@@ -182,17 +182,17 @@ impl MessageHandler for DialogHandler {
                 None
             }
 
-            // 音频导出对话框消息
+            // 音频导出面板消息（主界面侧边栏面板，非独立对话框）
             Message::AudioExport(action) => {
                 use AudioExportAction as A;
                 match action {
-                    A::OpenDialog => {
-                        // 音频导出已迁移为主窗口侧边栏面板
+                    A::OpenPanel => {
                         root.sidebar.audio_export_visible = true;
                         root.sidebar.route = crate::sidebar::Route::AudioExport;
                     }
-                    A::CloseDialog => {
-                        root.state.audio_export_dialog.is_open = false;
+                    A::ClosePanel => {
+                        root.sidebar.audio_export_visible = false;
+                        root.sidebar.route = crate::sidebar::Route::Arrangement;
                     }
                     A::Confirm => {
                         let state = &root.state.audio_export_dialog;
@@ -218,14 +218,10 @@ impl MessageHandler for DialogHandler {
                                     state.disable_fade_out,
                                     state.linear_envelope,
                                     format,
+                                    state.use_gpu,
                                 ),
                             ),
                         ));
-                        root.state.audio_export_dialog.is_open = false;
-                    }
-                    A::Cancel => {
-                        root.state.audio_export_dialog.is_open = false;
-                        root.state.dialog_result = Some(DialogResult::Cancel);
                     }
                     A::ProjectNameChanged(value) => {
                         root.state.audio_export_dialog.project_name = value;
@@ -267,6 +263,9 @@ impl MessageHandler for DialogHandler {
                     }
                     A::LinearEnvelopeChanged(value) => {
                         root.state.audio_export_dialog.linear_envelope = value;
+                    }
+                    A::UseGpuChanged(value) => {
+                        root.state.audio_export_dialog.use_gpu = value;
                     }
                     A::BrowseOutput => {
                         let current = root.state.audio_export_dialog.output_path.clone();

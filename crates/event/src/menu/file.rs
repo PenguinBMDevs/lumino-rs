@@ -44,6 +44,7 @@ pub enum Event {
         disable_fade_out: bool,
         linear_envelope: bool,
         format: u8,
+        use_gpu: bool,
     },
     /// 工程设置
     ProjectSettings,
@@ -163,6 +164,7 @@ impl Event {
         disable_fade_out: bool,
         linear_envelope: bool,
         format: u8,
+        use_gpu: bool,
     ) -> Self {
         Self::AudioExportStart {
             project_name,
@@ -176,6 +178,7 @@ impl Event {
             disable_fade_out,
             linear_envelope,
             format,
+            use_gpu,
         }
     }
     pub const fn project_settings() -> Self {

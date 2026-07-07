@@ -230,6 +230,11 @@ pub fn view_audio_export_dialog<'a>(
             .label("线性包络")
             .on_toggle(|v| Message::AudioExport(AudioExportAction::LinearEnvelopeChanged(v)))
             .style(checkbox_style),
+        space().height(4),
+        checkbox(state.use_gpu)
+            .label("使用 GPU 加速渲染")
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::UseGpuChanged(v)))
+            .style(checkbox_style),
     ]
     .width(Length::Fill);
 
@@ -267,7 +272,8 @@ pub fn view_audio_export_dialog<'a>(
         let note_on_widget: crate::Element<'_> = if note_on_count > 0 {
             row![
                 text("NoteOn: ").size(12).style(label_style),
-                text(note_on_count.to_string()).size(12)
+                text(note_on_count.to_string())
+                    .size(12)
                     .style(move |_t: &iced_core::Theme| text::Style {
                         color: Some(palette.primary.base.color),
                         ..Default::default()
@@ -281,7 +287,8 @@ pub fn view_audio_export_dialog<'a>(
         let note_off_widget: crate::Element<'_> = if note_off_count > 0 {
             row![
                 text("NoteOff: ").size(12).style(label_style),
-                text(note_off_count.to_string()).size(12)
+                text(note_off_count.to_string())
+                    .size(12)
                     .style(move |_t: &iced_core::Theme| text::Style {
                         color: Some(palette.secondary.base.color),
                         ..Default::default()
@@ -299,13 +306,11 @@ pub fn view_audio_export_dialog<'a>(
                 space().height(8),
                 // 进度条
                 container(
-                    column![
-                        text(format!("{:.1}%", state.progress)).size(12).style(
-                            move |_t: &iced_core::Theme| text::Style {
-                                color: Some(palette.background.neutral.text),
-                            }
-                        ),
-                    ]
+                    column![text(format!("{:.1}%", state.progress)).size(12).style(
+                        move |_t: &iced_core::Theme| text::Style {
+                            color: Some(palette.background.neutral.text),
+                        }
+                    ),]
                     .padding([2, 8]),
                 )
                 .width(Length::Fill)
@@ -322,8 +327,8 @@ pub fn view_audio_export_dialog<'a>(
                 space().height(8),
                 // 详细统计
                 row![note_on_widget, space().width(16), note_off_widget,]
-                .spacing(4)
-                .align_y(iced_core::Alignment::Center),
+                    .spacing(4)
+                    .align_y(iced_core::Alignment::Center),
             ]
             .width(Length::Fill),
         )
@@ -335,8 +340,8 @@ pub fn view_audio_export_dialog<'a>(
     let buttons = if state.is_exporting {
         // 导出中只显示取消按钮
         row![
-            button(text("取消").size(14))
-                .on_press(Message::AudioExport(AudioExportAction::Cancel))
+            button(text("关闭").size(14))
+                .on_press(Message::AudioExport(AudioExportAction::ClosePanel))
                 .padding([8, 32])
                 .width(Length::Fixed(100.0))
                 .style(move |_t: &iced_core::Theme, status| {
@@ -359,10 +364,10 @@ pub fn view_audio_export_dialog<'a>(
         ]
         .align_y(iced_core::Alignment::Center)
     } else {
-        // 正常状态显示取消和导出按钮
+        // 正常状态显示关闭和导出按钮
         row![
-            button(text("取消").size(14))
-                .on_press(Message::AudioExport(AudioExportAction::CloseDialog))
+            button(text("关闭").size(14))
+                .on_press(Message::AudioExport(AudioExportAction::ClosePanel))
                 .padding([8, 32])
                 .width(Length::Fixed(100.0))
                 .style(move |_t: &iced_core::Theme, status| {
