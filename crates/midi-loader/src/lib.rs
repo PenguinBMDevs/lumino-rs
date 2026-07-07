@@ -10,6 +10,7 @@ pub mod loader;
 pub mod note_event;
 pub mod note_info;
 pub mod quantize;
+pub mod streaming;
 pub mod track;
 
 pub use dms::DmsInfo;
@@ -19,6 +20,7 @@ pub use event::MidiEvent;
 pub use info::MidiInfo;
 pub use note_event::NoteEvent;
 pub use note_info::NoteInfo;
+pub use streaming::StreamingMidiPlayer;
 pub use track::{TrackManager, TrackView, TrackVisibility};
 
 use std::sync::Arc;

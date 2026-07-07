@@ -3,7 +3,7 @@
 use crate::error::{ExportError, ExportResult};
 
 /// MIDI 速度映射表：记录所有 Tempo 事件发生时的 BPM 值
-pub(super) struct TempoMap {
+pub(crate) struct TempoMap {
     /// (tick, bpm)，按 tick 升序排列
     changes: Vec<(u64, f64)>,
     ppqn: u32,
@@ -11,7 +11,7 @@ pub(super) struct TempoMap {
 
 impl TempoMap {
     /// 从预提取的 tempo 变化列表构建速度图（CompactEvent 路径，零扫描）
-    pub(super) fn from_changes(changes: &[(u32, f32)], ppqn: u32) -> Self {
+    pub(crate) fn from_changes(changes: &[(u32, f32)], ppqn: u32) -> Self {
         let mut changes_vec: Vec<(u64, f64)> = changes
             .iter()
             .filter(|(_, bpm)| *bpm > 0.0)
@@ -38,7 +38,7 @@ impl TempoMap {
     }
 
     /// 从 SMF 中扫描所有轨道的 Tempo 事件构建速度图
-    pub(super) fn from_smf(smf: &midly::Smf, ppqn: u32) -> Self {
+    pub(crate) fn from_smf(smf: &midly::Smf, ppqn: u32) -> Self {
         let mut changes = vec![(0u64, 120.0f64)]; // 默认 120 BPM
         for track in &smf.tracks {
             let mut tick: u64 = 0;
@@ -65,7 +65,7 @@ impl TempoMap {
     }
 
     /// 将 tick 转换为秒，考虑所有速度变化
-    pub(super) fn tick_to_seconds(&self, tick: u64) -> f64 {
+    pub(crate) fn tick_to_seconds(&self, tick: u64) -> f64 {
         let ppqn = self.ppqn as f64;
         let mut total = 0.0f64;
         let mut prev_tick = 0u64;
@@ -102,7 +102,7 @@ impl TempoMap {
 ///
 /// 当前未被直接调用（已改用 ParsedMidi.info.division），保留以备未来直接 PPQN 提取场景。
 #[expect(dead_code)]
-pub(super) fn extract_ppqn_from_bytes(midi_data: &[u8]) -> ExportResult<u32> {
+pub(crate) fn extract_ppqn_from_bytes(midi_data: &[u8]) -> ExportResult<u32> {
     if midi_data.len() < 14 {
         return Err(ExportError::InvalidData(
             "MIDI 数据不足 14 字节".to_string(),

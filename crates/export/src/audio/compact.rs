@@ -1,193 +1,145 @@
 //! CompactEvent 渲染路径——直接从 MidiDocument 流式渲染，零 Smf 解析
+//!
+//! 使用 block_render 模块（抄自 nezha-xsynth）代替逐事件渲染。
+//! 所有事件先展平成 `TimedCommand`，排序后按固定块渲染。
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
-use xsynth_core::channel::{ChannelAudioEvent, ChannelEvent, ControlEvent};
-use xsynth_core::channel_group::SynthEvent;
 use xsynth_core::soundfont::{SampleSoundfont, SoundfontBase};
 use xsynth_core::{AudioStreamParams, ChannelCount};
 
-use lumino_midi_io::compact::{CompactEvent, EventKind};
 use lumino_midi_loader::MidiDocument;
 use lumino_midi_loader::ParsedMidi;
 
 use crate::error::{ExportError, ExportResult};
 
-use super::MidiEventParser;
+use super::block_render::{RenderCommand, TimedCommand, render_events_blocked, render_tail};
 use super::exporter::AudioExporter;
 use super::tempo::TempoMap;
 use super::types::AudioExportOptions;
 use super::writer::AudioFileWriter;
 
-impl MidiEventParser {
-    /// 使用内存中的 CompactEvent + PackedControlEvent 直接流式渲染（零 Smf 解析）
-    ///
-    /// 这是 `export_audio_from_parsed` 的核心路径，彻底消除 `midly::Smf` 结构的分配。
-    /// 数据直接从 `MidiDocument`（已由 midly loader 解析为 CompactEvent）流式消费。
-    pub(super) fn render_compact_events(
-        document: &MidiDocument,
-        tempo_map: &TempoMap,
-        exporter: &mut AudioExporter,
-        writer: &mut AudioFileWriter,
-        progress_callback: Option<&Arc<dyn Fn(f32) + Send + Sync>>,
-        cancel_flag: Option<&Arc<AtomicBool>>,
-    ) -> ExportResult<()> {
-        let total_ticks = document.total_ticks as u64;
-        let mut current_tick: u64 = 0;
-        let mut last_progress = 0.0;
+/// 从 MidiDocument 提取所有事件，转换为按秒排序的 TimedCommand 列表。
+fn extract_commands(document: &MidiDocument, tempo_map: &TempoMap) -> (Vec<TimedCommand>, f64) {
+    let mut commands: Vec<TimedCommand> = Vec::new();
+    let mut max_tick: u64 = 0;
 
-        // 按音轨顺序处理（与 SMF 路径行为一致）
-        for track_id in 0..document.track_count() as u16 {
-            let track_notes = document.track_notes(track_id as usize);
-
-            // 从 NoteEvent 构造本轨的 NoteOn/NoteOff 事件，并按 tick 排序
-            let mut track_events: Vec<CompactEvent> = Vec::with_capacity(track_notes.len() * 2);
-            for note in track_notes {
-                let [on, off] = note.to_compact_events(track_id);
-                track_events.push(on);
-                track_events.push(off);
+    // 1. NoteOn/NoteOff
+    for track_notes in &document.notes {
+        for note in track_notes {
+            let ch = note.channel as u32;
+            if ch > 0xFF {
+                // safety: channel should be 0-15
             }
-            track_events.sort_unstable_by_key(|e| e.delta_tick());
-
-            // 筛选本轨的控制事件（control_events 全程按 tick 排序）
-            let track_controls: Vec<&midly::loader::PackedControlEvent> = document
-                .control_events
-                .iter()
-                .filter(|ce| ce.track == track_id)
-                .collect();
-
-            let mut ev_idx = 0;
-            let mut ctrl_idx = 0;
-
-            while ev_idx < track_events.len() || ctrl_idx < track_controls.len() {
-                // 检查取消标志
-                if let Some(cancel) = cancel_flag
-                    && cancel.load(Ordering::Relaxed)
-                {
-                    return Err(ExportError::AudioWrite("导出已取消".to_string()));
-                }
-
-                // 从事件源和控制源中取最小 tick
-                let next_tick = {
-                    let ev_tick = track_events
-                        .get(ev_idx)
-                        .map(|e| e.delta_tick() as u64)
-                        .unwrap_or(u64::MAX);
-                    let ctrl_tick = track_controls
-                        .get(ctrl_idx)
-                        .map(|c| c.tick as u64)
-                        .unwrap_or(u64::MAX);
-                    ev_tick.min(ctrl_tick)
-                };
-
-                if next_tick == u64::MAX {
-                    break;
-                }
-
-                // 渲染时间片
-                let target_time = tempo_map.tick_to_seconds(next_tick);
-                let current_time = tempo_map.tick_to_seconds(current_tick);
-                if target_time > current_time {
-                    let render_time = target_time - current_time;
-                    exporter.render_batch(render_time);
-                    let samples = exporter.take_samples();
-                    if !samples.is_empty() {
-                        writer.write_samples(&samples)?;
-                    }
-                    current_tick = next_tick;
-                }
-
-                // 处理本 tick 的所有 CompactEvent
-                while ev_idx < track_events.len()
-                    && track_events[ev_idx].delta_tick() as u64 == next_tick
-                {
-                    let ev = &track_events[ev_idx];
-                    match ev.kind() {
-                        EventKind::NoteOn => {
-                            let key = ev.param1() as u8;
-                            let vel = ev.param2() as u8;
-                            exporter.send_event(SynthEvent::Channel(
-                                ev.channel() as u32,
-                                ChannelEvent::Audio(ChannelAudioEvent::NoteOn { key, vel }),
-                            ));
-                        }
-                        EventKind::NoteOff => {
-                            exporter.send_event(SynthEvent::Channel(
-                                ev.channel() as u32,
-                                ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
-                                    key: ev.param1() as u8,
-                                }),
-                            ));
-                        }
-                        EventKind::Tempo => {
-                            // Tempo 已由 TempoMap 预扫描，此处跳过
-                        }
-                        _ => {}
-                    }
-                    ev_idx += 1;
-                }
-
-                // 处理本 tick 的所有控制事件
-                while ctrl_idx < track_controls.len()
-                    && track_controls[ctrl_idx].tick as u64 == next_tick
-                {
-                    let ctrl = track_controls[ctrl_idx];
-                    let ch = ctrl.channel as u32;
-                    match ctrl.kind {
-                        0 => {
-                            // ControlChange
-                            let controller = (ctrl.param >> 8) as u8;
-                            let value = (ctrl.param & 0xFF) as u8;
-                            exporter.send_event(SynthEvent::Channel(
-                                ch,
-                                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
-                                    controller, value,
-                                ))),
-                            ));
-                        }
-                        1 => {
-                            // ProgramChange
-                            exporter.send_event(SynthEvent::Channel(
-                                ch,
-                                ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(
-                                    ctrl.param as u8,
-                                )),
-                            ));
-                        }
-                        2 => {
-                            // PitchBend
-                            let bend_value = ctrl.param as f32 / 8192.0;
-                            exporter.send_event(SynthEvent::Channel(
-                                ch,
-                                ChannelEvent::Audio(ChannelAudioEvent::Control(
-                                    ControlEvent::PitchBendValue(bend_value),
-                                )),
-                            ));
-                        }
-                        _ => {}
-                    }
-                    ctrl_idx += 1;
-                }
-
-                // 更新进度（防除零）
-                if let Some(callback) = progress_callback {
-                    let progress = if total_ticks > 0 {
-                        (current_tick as f64 / total_ticks as f64 * 100.0).min(99.0)
-                    } else {
-                        99.0
-                    };
-                    if (progress - last_progress).abs() >= 1.0 {
-                        callback(progress as f32);
-                        last_progress = progress;
-                    }
-                }
+            commands.push(TimedCommand {
+                time_sec: tempo_map.tick_to_seconds(note.start_tick as u64),
+                cmd: RenderCommand::NoteOn {
+                    key: note.key,
+                    vel: note.velocity,
+                    channel: ch,
+                },
+            });
+            commands.push(TimedCommand {
+                time_sec: tempo_map.tick_to_seconds(note.end_tick as u64),
+                cmd: RenderCommand::NoteOff {
+                    key: note.key,
+                    channel: ch,
+                },
+            });
+            if (note.end_tick as u64) > max_tick {
+                max_tick = note.end_tick as u64;
             }
         }
-
-        Ok(())
     }
+
+    // 2. 控制事件 (CC / PC / PB)
+    for ctrl in &document.control_events {
+        let ch = ctrl.channel as u32;
+        let time_sec = tempo_map.tick_to_seconds(ctrl.tick as u64);
+        match ctrl.kind {
+            0 => {
+                // ControlChange
+                let controller = (ctrl.param >> 8) as u8;
+                let value = (ctrl.param & 0xFF) as u8;
+                commands.push(TimedCommand {
+                    time_sec,
+                    cmd: RenderCommand::ControlChange {
+                        controller,
+                        value,
+                        channel: ch,
+                    },
+                });
+            }
+            1 => {
+                // ProgramChange
+                commands.push(TimedCommand {
+                    time_sec,
+                    cmd: RenderCommand::ProgramChange {
+                        program: ctrl.param as u8,
+                        channel: ch,
+                    },
+                });
+            }
+            2 => {
+                // PitchBend
+                commands.push(TimedCommand {
+                    time_sec,
+                    cmd: RenderCommand::PitchBend {
+                        value: ctrl.param as i16,
+                        channel: ch,
+                    },
+                });
+            }
+            _ => {}
+        }
+    }
+
+    // 按时间排序（nezha 方式：所有事件平铺排序）
+    commands.sort_by(|a, b| {
+        a.time_sec
+            .partial_cmp(&b.time_sec)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let total_seconds = tempo_map.tick_to_seconds(max_tick);
+
+    // 诊断日志
+    let note_on_count = commands
+        .iter()
+        .filter(|c| matches!(c.cmd, RenderCommand::NoteOn { .. }))
+        .count();
+    let note_off_count = commands
+        .iter()
+        .filter(|c| matches!(c.cmd, RenderCommand::NoteOff { .. }))
+        .count();
+    let pc_count = commands
+        .iter()
+        .filter(|c| matches!(c.cmd, RenderCommand::ProgramChange { .. }))
+        .count();
+    if note_on_count > 0 {
+        let keys: Vec<u8> = commands
+            .iter()
+            .filter_map(|c| match c.cmd {
+                RenderCommand::NoteOn { key, .. } => Some(key),
+                _ => None,
+            })
+            .collect();
+        let min_key = keys.iter().copied().min().unwrap_or(0);
+        let max_key = keys.iter().copied().max().unwrap_or(0);
+        tracing::info!(
+            "extract_commands: {} NoteOn, {} NoteOff, {} PC, keys=[{},{}], total_events={}",
+            note_on_count,
+            note_off_count,
+            pc_count,
+            min_key,
+            max_key,
+            commands.len(),
+        );
+    }
+
+    (commands, total_seconds)
 }
 
 /// 从已解析的 ParsedMidi 导出音频（直接使用内存中 CompactEvent 数据，零解析）
@@ -195,14 +147,6 @@ impl MidiEventParser {
 /// 与 `export_audio_from_bytes` 不同，此函数**不会**再次 `midly::Smf::parse()`，
 /// 而是从 `MidiDocument.track_notes()` 的 `NoteEvent` 实时构造 CompactEvent，
 /// 结合 `control_events`（PackedControlEvent）流式渲染，彻底消除 Smf 结构占用。
-///
-/// # 参数
-/// - `parsed_midi`: 已解析的 MIDI 数据（必须包含 `document`）
-/// - `soundfont_path`: SF2 音色库路径
-/// - `output_path`: 输出音频文件路径
-/// - `options`: 导出选项
-/// - `progress_callback`: 进度回调 (0.0 - 100.0)
-/// - `cancel_flag`: 取消标志
 pub fn export_audio_from_parsed(
     parsed_midi: &ParsedMidi,
     soundfont_path: &Path,
@@ -241,7 +185,7 @@ pub fn export_audio_from_parsed(
 
     let total_notes: usize = document.notes.iter().map(|v| v.len()).sum();
     tracing::info!(
-        "开始音频导出(CompactEvent 直连): 输出={:?}, 格式={}, \
+        "[PATH_A] 开始音频导出(block_render): 输出={:?}, 格式={}, \
          采样率={}Hz, 音符数={}, 控制事件数={}, 音轨数={}, PPQN={}",
         output_path,
         options.format,
@@ -276,26 +220,33 @@ pub fn export_audio_from_parsed(
         options.channels,
     )?;
 
-    // 核心渲染 — 直接从内存 CompactEvent 流式消费
-    MidiEventParser::render_compact_events(
-        document,
-        &tempo_map,
+    // 提取事件（平铺、按秒排序）
+    let (commands, total_seconds) = extract_commands(document, &tempo_map);
+
+    // 核心渲染 — 固定块渲染
+    render_events_blocked(
+        &commands,
+        total_seconds,
         &mut exporter,
         &mut writer,
+        options.sample_rate,
+        512,
         progress_callback.as_ref(),
         cancel_flag.as_ref(),
     )?;
 
-    // 完成渲染：衰减样本写入
-    exporter.finalize(&mut writer)?;
+    // 尾部衰减
+    render_tail(
+        &mut exporter,
+        &mut writer,
+        options.sample_rate,
+        512,
+        progress_callback.as_ref(),
+        cancel_flag.as_ref(),
+    )?;
 
     // 完成文件写入
     writer.finalize()?;
-
-    // 进度 100%
-    if let Some(callback) = progress_callback {
-        callback(100.0);
-    }
 
     let elapsed = start.elapsed();
     tracing::info!("音频导出完成，耗时: {:.2} 秒", elapsed.as_secs_f64());

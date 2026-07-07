@@ -156,67 +156,132 @@ impl RunnerInner {
     }
 
     /// 打开音频导出对话框（公共方法）
-    fn open_audio_export_dialog(
+    /// 从主窗口面板直接启动音频导出（带完整参数）
+    pub(super) fn handle_audio_export_start(
         &mut self,
         project_name: String,
         midi_path: String,
         soundfont_path: String,
         output_path: String,
+        sample_rate: u32,
+        channels: u16,
+        layers: u32,
+        apply_limiter: bool,
+        disable_fade_out: bool,
+        linear_envelope: bool,
+        format: u8,
     ) {
-        self.window_state.dialog_manager.open_audio_export(
+        let sf2 = std::path::PathBuf::from(&soundfont_path);
+        let output = std::path::PathBuf::from(&output_path);
+
+        // 验证音色库
+        if !sf2.exists() {
+            tracing::error!("音色库文件不存在: {:?}", sf2);
+            return;
+        }
+
+        // 构造导出选项
+        let options = lumino_export::audio::AudioExportOptions {
+            sample_rate,
+            channels: if channels == 1 {
+                lumino_export::audio::AudioChannels::Mono
+            } else {
+                lumino_export::audio::AudioChannels::Stereo
+            },
+            layers,
+            channel_threading: lumino_export::audio::ThreadingOption::Auto,
+            key_threading: lumino_export::audio::ThreadingOption::Auto,
+            apply_limiter,
+            disable_fade_out,
+            linear_envelope,
+            interpolation: lumino_export::audio::Interpolation::default(),
+            format: if format == 0 {
+                lumino_export::audio::AudioFormat::WAV
+            } else {
+                lumino_export::audio::AudioFormat::FLAC
+            },
+        };
+
+        let cb = self.window_state.progress_cb.clone();
+        let midi_path_buf = std::path::PathBuf::from(&midi_path);
+        let midi_on_disk = midi_path_buf.exists();
+        let parsed_midi = self.midi_state.current_midi.clone();
+        let output_display = output_path.clone();
+
+        tracing::info!(
+            "开始音频导出(面板): project={}, midi={}, sf2={}, output={}",
             project_name,
             midi_path,
             soundfont_path,
             output_path,
         );
+
+        tokio::spawn(async move {
+            cb("正在导出音频...", 0.0);
+            let cb_inner = cb.clone();
+
+            let result = tokio::task::spawn_blocking(move || {
+                if let Some(pm) = parsed_midi {
+                    // 路径 A：内存已有 MidiDocument
+                    lumino_export::audio::export_audio_from_parsed(
+                        &pm,
+                        &sf2,
+                        &output,
+                        &options,
+                        Some(Arc::new(move |p| {
+                            cb_inner(
+                                &format!("导出中... {:.0}%", p as f64),
+                                p as f64 / 100.0,
+                            );
+                        })),
+                        None,
+                    )
+                } else if midi_on_disk {
+                    // 路径 B：流式渲染（零事件常驻）
+                    let bytes = std::fs::read(&midi_path_buf)
+                        .map_err(lumino_export::ExportError::Io)?;
+                    lumino_export::audio::render_streaming(
+                        &bytes,
+                        &sf2,
+                        &output,
+                        &options,
+                        Some(Arc::new(move |p| {
+                            cb_inner(
+                                &format!("导出中... {:.0}%", p as f64),
+                                p as f64 / 100.0,
+                            );
+                        })),
+                        None,
+                    )
+                } else {
+                    Err(lumino_export::ExportError::InvalidData(
+                        "既无内存 MIDI 数据，也无 MIDI 文件路径，无法导出".to_string(),
+                    ))
+                }
+            })
+            .await;
+
+            match result {
+                Ok(Ok(())) => {
+                    cb("音频导出成功", 1.0);
+                    tracing::info!("音频导出成功: {:?}", output_display);
+                }
+                Ok(Err(e)) => {
+                    let msg = format!("音频导出失败: {e}");
+                    cb(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                }
+                Err(e) => {
+                    let msg = format!("音频导出任务失败: {e}");
+                    cb(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                }
+            }
+        });
     }
 
-    /// 处理音频导出
+    /// 处理音频导出（菜单触发 → 切换到音频导出面板）
     pub(super) fn handle_audio_export(&mut self) {
-        // 获取当前配置
-        let config = self.window_state.storage.config.get();
-        let soundfont_path = config.ui.soundfont_path.clone();
-
-        // 检查是否有音色库
-        if soundfont_path.is_empty() {
-            tracing::warn!("没有设置音色库路径，无法导出音频");
-            // TODO: 显示错误对话框
-            return;
-        }
-
-        // 场景1: 没有打开文件但工作区有内容 → 自动保存
-        if !self.try_save_workspace_if_needed() {
-            return;
-        }
-
-        // 场景2: 打开了 MIDI 文件（含自动保存后的情况）
-        if let Some(parsed_midi) = &self.midi_state.current_midi {
-            let midi_path = parsed_midi.info.path.clone();
-            let (project_name, output_path) = self.build_export_path_for_midi(&midi_path);
-            self.open_audio_export_dialog(
-                project_name,
-                midi_path.to_string_lossy().to_string(),
-                soundfont_path,
-                output_path,
-            );
-            return;
-        }
-
-        // 场景3: 打开了 DMS 文件（暂不支持）
-        if self.midi_state.current_dms.is_some() {
-            tracing::info!("DMS 文件导出音频功能待实现");
-            return;
-        }
-
-        // 场景4: 有源路径但没有完整文档
-        if let Some(source_path) = &self.midi_state.current_midi_source {
-            let (project_name, output_path) = self.build_export_path_for_source(source_path);
-            self.open_audio_export_dialog(
-                project_name,
-                source_path.to_string_lossy().to_string(),
-                soundfont_path,
-                output_path,
-            );
-        }
+        tracing::info!("音频导出已迁移到侧边栏面板，请点击侧边栏的音频导出按钮");
     }
 }

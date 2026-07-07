@@ -18,6 +18,6 @@ fn test_audio_export_options_default() {
     assert_eq!(options.sample_rate, 48000);
     assert_eq!(options.channels, AudioChannels::Stereo);
     assert_eq!(options.layers, 8);
-    assert!(options.apply_limiter);
+    assert!(!options.apply_limiter);
     assert_eq!(options.format, AudioFormat::WAV);
 }

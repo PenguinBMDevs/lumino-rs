@@ -55,12 +55,8 @@ impl Root {
     }
 
     /// 设置音频导出对话框是否打开
-    pub fn set_audio_export_dialog_open(&mut self, open: bool) {
-        if open {
-            self.state.dialog_type = DialogType::AudioExport;
-        } else if self.state.dialog_type == DialogType::AudioExport {
-            self.state.dialog_type = DialogType::None;
-        }
+    pub fn set_audio_export_dialog_open(&mut self, _open: bool) {
+        // 音频导出已迁移为主窗口面板，不再使用独立对话框
     }
 
     /// 设置音符变速对话框是否打开

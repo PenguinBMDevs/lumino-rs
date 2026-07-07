@@ -267,10 +267,6 @@ impl RunnerInner {
                 tracing::info!("应用设置面板配置，主题: {}", theme);
                 ui.apply_settings(settings, theme);
             }
-            DialogResult::AudioExport { .. } => {
-                // AudioExport 由 lifecycle 的 process_dialog_result 处理
-                tracing::debug!("AudioExport 结果不应通过 apply_dialog_result_to_ui 处理");
-            }
             DialogResult::SpeedChange { factor } => {
                 tracing::info!("应用音符变速: 倍率={}", factor);
                 ui.apply_speed_change(factor);

@@ -34,14 +34,11 @@ impl AudioExporter {
             fade_out_killing: !options.disable_fade_out,
             // layers 默认为 8，限制每键最大 voice 数
             max_voices_per_key: Some(options.layers as usize),
-            // 全局 voice 数量硬限制：128键 × layers + 安全余量
-            // 防止黑乐谱场景下 voice 无限增长导致 OOM
-            //
-            // 注意：xsynth 的 global_voice_limit 是 per-channel，每个 VoiceChannel
-            // 有自己的 global_voice_counter。MIDI 模式下共 16 个通道，所以这里除以
-            // 通道数得到真正的总 voice 上限。
-            // 例如 layers=8: (128*8).max(4096) / 16 = 256 → 总上限 16*256 = 4096
-            global_voice_limit: Some(((128 * options.layers as usize).max(4096) / 16).max(128)),
+            // 全局 voice 数量限制：None = 使用 xsynth 默认 (4096/通道)
+            // 之前的实现: ((128*layers).max(4096)/16).max(128) = 256/通道
+            // 这个值过小，4160 个音符在单通道上轻松突破 256 → 新 NoteOn 被静默丢弃
+            // 这就是"漏音"的根因。
+            global_voice_limit: None,
         };
 
         let group_options = ChannelGroupConfig {

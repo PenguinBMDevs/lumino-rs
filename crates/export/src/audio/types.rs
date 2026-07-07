@@ -94,7 +94,7 @@ impl Default for AudioExportOptions {
             layers: 8,
             channel_threading: ThreadingOption::default(),
             key_threading: ThreadingOption::default(),
-            apply_limiter: true,
+            apply_limiter: false,
             disable_fade_out: false,
             linear_envelope: false,
             interpolation: Interpolation::default(),

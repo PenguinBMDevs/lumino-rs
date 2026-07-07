@@ -29,8 +29,22 @@ pub enum Event {
     ExportProjectArchive,
     /// 导出工程为文件夹 (.lmpj)
     ExportProjectFolder,
-    /// 导出音频文件
+    /// 导出音频文件（仅打开对话框/面板）
     AudioExport,
+    /// 从主窗口面板直接启动音频导出（携带完整参数）
+    AudioExportStart {
+        project_name: String,
+        midi_path: String,
+        soundfont_path: String,
+        output_path: String,
+        sample_rate: u32,
+        channels: u16,
+        layers: u32,
+        apply_limiter: bool,
+        disable_fade_out: bool,
+        linear_envelope: bool,
+        format: u8,
+    },
     /// 工程设置
     ProjectSettings,
     /* */
@@ -71,6 +85,7 @@ impl Event {
             Self::ExportProjectArchive => "导出工程归档".to_string(),
             Self::ExportProjectFolder => "导出工程文件夹".to_string(),
             Self::AudioExport => "音频导出".to_string(),
+            Self::AudioExportStart { .. } => "音频导出开始".to_string(),
             Self::ProjectSettings => "工程设置".to_string(),
             Self::Settings => "设置".to_string(),
             Self::Exit => "退出".to_string(),
@@ -135,6 +150,33 @@ impl Event {
     }
     pub const fn audio_export() -> Self {
         Self::AudioExport
+    }
+    pub fn audio_export_start(
+        project_name: String,
+        midi_path: String,
+        soundfont_path: String,
+        output_path: String,
+        sample_rate: u32,
+        channels: u16,
+        layers: u32,
+        apply_limiter: bool,
+        disable_fade_out: bool,
+        linear_envelope: bool,
+        format: u8,
+    ) -> Self {
+        Self::AudioExportStart {
+            project_name,
+            midi_path,
+            soundfont_path,
+            output_path,
+            sample_rate,
+            channels,
+            layers,
+            apply_limiter,
+            disable_fade_out,
+            linear_envelope,
+            format,
+        }
     }
     pub const fn project_settings() -> Self {
         Self::ProjectSettings

@@ -3,8 +3,10 @@
 //! 使用 xsynth-core 将 MIDI 文件渲染为 WAV/FLAC 音频文件。
 
 // 子模块声明——扁平结构，不嵌套子目录
+mod block_render;
 mod compact;
 mod exporter;
+mod midi_load;
 mod smf;
 mod stream;
 mod tempo;
@@ -17,6 +19,7 @@ mod tests;
 // 公共类型重导出（保持向后兼容）
 pub use compact::export_audio_from_parsed;
 pub use exporter::AudioExporter;
+pub use midi_load::render_streaming;
 pub use stream::{export_audio, export_audio_from_bytes};
 pub use types::*;
 pub use writer::AudioFileWriter;

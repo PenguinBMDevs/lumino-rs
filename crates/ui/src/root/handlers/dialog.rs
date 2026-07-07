@@ -187,29 +187,40 @@ impl MessageHandler for DialogHandler {
                 use AudioExportAction as A;
                 match action {
                     A::OpenDialog => {
-                        root.state.dialog_type = crate::state::root_state::DialogType::AudioExport;
+                        // 音频导出已迁移为主窗口侧边栏面板
+                        root.sidebar.audio_export_visible = true;
+                        root.sidebar.route = crate::sidebar::Route::AudioExport;
                     }
                     A::CloseDialog => {
                         root.state.audio_export_dialog.is_open = false;
                     }
                     A::Confirm => {
                         let state = &root.state.audio_export_dialog;
-                        root.state.dialog_result = Some(DialogResult::AudioExport {
-                            project_name: state.project_name.clone(),
-                            midi_path: state.midi_path.clone(),
-                            soundfont_path: state.soundfont_path.clone(),
-                            output_path: state.output_path.clone(),
-                            sample_rate: state.sample_rate,
-                            channels: state.channels,
-                            layers: state.layers,
-                            channel_threading: state.channel_threading,
-                            key_threading: state.key_threading,
-                            apply_limiter: state.apply_limiter,
-                            disable_fade_out: state.disable_fade_out,
-                            linear_envelope: state.linear_envelope,
-                            interpolation: state.interpolation,
-                            format: state.format,
-                        });
+                        let channels = match state.channels {
+                            crate::state::root_state::AudioChannels::Mono => 1u16,
+                            crate::state::root_state::AudioChannels::Stereo => 2u16,
+                        };
+                        let format = match state.format {
+                            crate::state::root_state::AudioFormat::WAV => 0u8,
+                            crate::state::root_state::AudioFormat::FLAC => 1u8,
+                        };
+                        crate::event::emit(crate::event::Event::Menu(
+                            crate::event::menu::Event::File(
+                                crate::event::menu::file::Event::audio_export_start(
+                                    state.project_name.clone(),
+                                    state.midi_path.clone(),
+                                    state.soundfont_path.clone(),
+                                    state.output_path.clone(),
+                                    state.sample_rate,
+                                    channels,
+                                    state.layers,
+                                    state.apply_limiter,
+                                    state.disable_fade_out,
+                                    state.linear_envelope,
+                                    format,
+                                ),
+                            ),
+                        ));
                         root.state.audio_export_dialog.is_open = false;
                     }
                     A::Cancel => {

@@ -6,7 +6,6 @@ use std::sync::atomic::AtomicBool;
 
 use crate::error::{ExportError, ExportResult};
 
-use super::MidiEventParser;
 use super::types::AudioExportOptions;
 
 /// 导出音频文件（从文件路径）
@@ -60,7 +59,7 @@ pub fn export_audio(
 
     let start = std::time::Instant::now();
 
-    MidiEventParser::parse_and_render(
+    super::smf::parse_and_render(
         midi_path,
         soundfont_path,
         output_path,
@@ -121,7 +120,7 @@ pub fn export_audio_from_bytes(
     let smf = midly::Smf::parse(midi_bytes)
         .map_err(|e| ExportError::MidiParse(format!("MIDI 解析失败: {}", e)))?;
 
-    MidiEventParser::setup_and_render(
+    super::smf::setup_and_render(
         &smf,
         soundfont_path,
         output_path,
