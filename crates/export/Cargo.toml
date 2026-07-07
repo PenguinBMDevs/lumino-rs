@@ -28,7 +28,11 @@ hound = { workspace = true }
 flac-encoder = { workspace = true }
 xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth" }
 xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth" }
+soundfont = "0.1"
+bytemuck = { version = "1.22", features = ["derive"] }
 rayon = "1.10"
+wgpu = "24.0"
+pollster = "0.4"
 atomic_float = "1.0"
 # 工程格式依赖
 crc32fast = "1.3"
@@ -36,4 +40,5 @@ chrono = { version = "0.4", features = ["serde"] }
 toml = "0.9"
 
 [dev-dependencies]
+naga = { version = "30.0.0", features = ["wgsl-in"] }
 tempfile = "3.0"

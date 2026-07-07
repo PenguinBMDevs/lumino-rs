@@ -240,7 +240,7 @@ impl RunnerInner {
                     // 路径 B：流式渲染（零事件常驻）
                     let bytes = std::fs::read(&midi_path_buf)
                         .map_err(lumino_export::ExportError::Io)?;
-                    lumino_export::audio::render_streaming(
+                    lumino_export::audio::render_streaming_gpu(
                         &bytes,
                         &sf2,
                         &output,

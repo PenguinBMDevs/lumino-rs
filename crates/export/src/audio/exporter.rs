@@ -41,11 +41,22 @@ impl AudioExporter {
             global_voice_limit: None,
         };
 
+        // 专用线程池：独占所有核，不与 UI 等共享全局 rayon 池
+        use xsynth_core::channel_group::ThreadCount;
+        let num_cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .max(2);
+        let parallelism = xsynth_core::channel_group::ParallelismOptions {
+            channel: ThreadCount::Manual((num_cpus / 4).max(2)), // 4 线程跑 16 通道
+            key: ThreadCount::Manual(num_cpus),                  // 全部核跑 voice 渲染
+        };
+
         let group_options = ChannelGroupConfig {
             channel_init_options,
             format: xsynth_core::channel_group::SynthFormat::Midi,
             audio_params,
-            parallelism: xsynth_core::channel_group::ParallelismOptions::default(),
+            parallelism,
         };
 
         let channel_group = ChannelGroup::new(group_options);

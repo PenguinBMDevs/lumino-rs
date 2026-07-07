@@ -230,7 +230,7 @@ pub fn export_audio_from_parsed(
         &mut exporter,
         &mut writer,
         options.sample_rate,
-        512,
+        16384,
         progress_callback.as_ref(),
         cancel_flag.as_ref(),
     )?;
@@ -240,7 +240,7 @@ pub fn export_audio_from_parsed(
         &mut exporter,
         &mut writer,
         options.sample_rate,
-        512,
+        16384,
         progress_callback.as_ref(),
         cancel_flag.as_ref(),
     )?;

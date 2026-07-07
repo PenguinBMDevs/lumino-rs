@@ -155,7 +155,7 @@ pub(super) fn setup_and_render(
         &mut exporter,
         &mut writer,
         options.sample_rate,
-        512,
+        16384,
         progress_callback.as_ref(),
         cancel_flag.as_ref(),
     )?;
@@ -165,7 +165,7 @@ pub(super) fn setup_and_render(
         &mut exporter,
         &mut writer,
         options.sample_rate,
-        512,
+        16384,
         progress_callback.as_ref(),
         cancel_flag.as_ref(),
     )?;

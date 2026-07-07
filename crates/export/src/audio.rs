@@ -6,6 +6,7 @@
 mod block_render;
 mod compact;
 mod exporter;
+mod gpu_renderer;
 mod midi_load;
 mod smf;
 mod stream;
@@ -20,6 +21,7 @@ mod tests;
 pub use compact::export_audio_from_parsed;
 pub use exporter::AudioExporter;
 pub use midi_load::render_streaming;
+pub use midi_load::render_streaming_gpu;
 pub use stream::{export_audio, export_audio_from_bytes};
 pub use types::*;
 pub use writer::AudioFileWriter;

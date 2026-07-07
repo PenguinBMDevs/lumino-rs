@@ -50,27 +50,28 @@ impl AudioFileWriter {
     }
 
     /// 写入样本
-    pub fn write_samples(&mut self, samples: &[f32]) -> ExportResult<()> {
-        // 将 f32 样本转换为 i16
-        let i16_samples: Vec<i16> = samples
-            .iter()
-            .map(|&s| {
-                let clamped = s.clamp(-1.0, 1.0);
-                (clamped * 32767.0) as i16
-            })
-            .collect();
-
+    ///
+    /// 流式转换 f32 → i16：跳过中间 `Vec<i16>` 分配，直接流式写入或追加。
+    pub fn write_samples(&mut self, buf: &[f32]) -> ExportResult<()> {
         match self {
             Self::WAV(writer) => {
-                for &sample in &i16_samples {
+                for &s in buf {
+                    let clamped = s.clamp(-1.0, 1.0);
                     writer
-                        .write_sample(sample)
+                        .write_sample((clamped * 32767.0) as i16)
                         .map_err(|e| ExportError::AudioWrite(e.to_string()))?;
                 }
                 Ok(())
             }
-            Self::FLAC { samples, .. } => {
-                samples.extend_from_slice(&i16_samples);
+            Self::FLAC {
+                samples: flac_buf, ..
+            } => {
+                // 直接流式 push，跳过中间 Vec 分配
+                flac_buf.reserve(buf.len());
+                for &s in buf {
+                    let clamped = s.clamp(-1.0, 1.0);
+                    flac_buf.push((clamped * 32767.0) as i16);
+                }
                 Ok(())
             }
         }

@@ -32,7 +32,7 @@ pub mod project;
 /// 音频导出选项与格式定义
 pub use audio::{
     AudioChannels, AudioExportOptions, AudioFormat, Interpolation, ThreadingOption, export_audio,
-    export_audio_from_bytes, export_audio_from_parsed, render_streaming,
+    export_audio_from_bytes, export_audio_from_parsed, render_streaming, render_streaming_gpu,
 };
 
 // ── 格式转换 ──
