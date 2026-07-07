@@ -230,26 +230,29 @@ impl RunnerInner {
                         &options,
                         Some(Arc::new(move |p| {
                             cb_inner(
-                                &format!("导出中... {:.0}%", p as f64),
-                                p as f64 / 100.0,
+                                &format!("导出中... {:.1}%", p.progress),
+                                p.progress as f64 / 100.0,
                             );
                         })),
                         None,
                     )
                 } else if midi_on_disk {
                     // 路径 B：流式渲染（零事件常驻）
-                    let bytes = std::fs::read(&midi_path_buf)
-                        .map_err(lumino_export::ExportError::Io)?;
+                    let bytes =
+                        std::fs::read(&midi_path_buf).map_err(lumino_export::ExportError::Io)?;
                     lumino_export::audio::render_streaming_gpu(
                         &bytes,
                         &sf2,
                         &output,
                         &options,
                         Some(Arc::new(move |p| {
-                            cb_inner(
-                                &format!("导出中... {:.0}%", p as f64),
-                                p as f64 / 100.0,
-                            );
+                            use std::fmt::Write;
+                            let mut msg = format!("导出中... {:.1}%", p.progress);
+                            if p.note_on > 0 || p.note_off > 0 {
+                                let _ =
+                                    write!(msg, " | NoteOn: {} NoteOff: {}", p.note_on, p.note_off);
+                            }
+                            cb_inner(&msg, p.progress as f64 / 100.0);
                         })),
                         None,
                     )

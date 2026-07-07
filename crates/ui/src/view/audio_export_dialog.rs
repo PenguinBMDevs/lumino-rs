@@ -261,19 +261,55 @@ pub fn view_audio_export_dialog<'a>(
 
     // 进度区域（仅在导出时显示）
     let progress_area = if state.is_exporting {
+        // 预构建统计 widget
+        let note_on_count = state.note_on_processed;
+        let note_off_count = state.note_off_processed;
+        let note_on_widget: crate::Element<'_> = if note_on_count > 0 {
+            row![
+                text("NoteOn: ").size(12).style(label_style),
+                text(note_on_count.to_string()).size(12)
+                    .style(move |_t: &iced_core::Theme| text::Style {
+                        color: Some(palette.primary.base.color),
+                        ..Default::default()
+                    }),
+            ]
+            .spacing(4)
+            .into()
+        } else {
+            iced_widget::Space::new().into()
+        };
+        let note_off_widget: crate::Element<'_> = if note_off_count > 0 {
+            row![
+                text("NoteOff: ").size(12).style(label_style),
+                text(note_off_count.to_string()).size(12)
+                    .style(move |_t: &iced_core::Theme| text::Style {
+                        color: Some(palette.secondary.base.color),
+                        ..Default::default()
+                    }),
+            ]
+            .spacing(4)
+            .into()
+        } else {
+            iced_widget::Space::new().into()
+        };
         Some(
             column![
                 space().height(16),
                 text(&state.status_message).size(14).style(label_style),
                 space().height(8),
                 // 进度条
-                container(text(format!("{:.1}%", state.progress)).size(12).style(
-                    move |_t: &iced_core::Theme| text::Style {
-                        color: Some(palette.background.neutral.text),
-                    }
-                ),)
+                container(
+                    column![
+                        text(format!("{:.1}%", state.progress)).size(12).style(
+                            move |_t: &iced_core::Theme| text::Style {
+                                color: Some(palette.background.neutral.text),
+                            }
+                        ),
+                    ]
+                    .padding([2, 8]),
+                )
                 .width(Length::Fill)
-                .height(20)
+                .height(24)
                 .style(move |_t: &iced_core::Theme| container::Style {
                     background: Some(palette.background.weak.color.into()),
                     border: iced_core::Border {
@@ -283,6 +319,11 @@ pub fn view_audio_export_dialog<'a>(
                     },
                     ..Default::default()
                 }),
+                space().height(8),
+                // 详细统计
+                row![note_on_widget, space().width(16), note_off_widget,]
+                .spacing(4)
+                .align_y(iced_core::Alignment::Center),
             ]
             .width(Length::Fill),
         )

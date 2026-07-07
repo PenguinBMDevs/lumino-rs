@@ -252,6 +252,10 @@ pub struct AudioExportDialogState {
     pub progress: f32,
     /// 导出状态消息
     pub status_message: String,
+    /// 已处理的 NoteOn 数量
+    pub note_on_processed: u64,
+    /// 已处理的 NoteOff 数量
+    pub note_off_processed: u64,
 }
 
 /// 音频通道数（UI用）— 重新导出自 lumino-message
@@ -284,6 +288,8 @@ impl AudioExportDialogState {
             is_exporting: false,
             progress: 0.0,
             status_message: String::new(),
+            note_on_processed: 0,
+            note_off_processed: 0,
         }
     }
 

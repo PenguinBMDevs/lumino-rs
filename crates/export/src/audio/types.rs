@@ -103,8 +103,16 @@ impl Default for AudioExportOptions {
     }
 }
 
+/// 音频导出进度信息
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ExportProgress {
+    pub progress: f32,
+    pub note_on: u64,
+    pub note_off: u64,
+}
+
 /// 音频导出进度回调类型
-pub type ProgressCallback = Box<dyn Fn(f32) + Send + Sync>;
+pub type ProgressCallback = Box<dyn Fn(ExportProgress) + Send + Sync>;
 
 /// 最大渲染块大小（秒）。限制单次分配避免 OOM。
 pub(super) const MAX_RENDER_CHUNK_SECONDS: f64 = 1.0;

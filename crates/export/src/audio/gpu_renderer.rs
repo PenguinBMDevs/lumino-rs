@@ -1,27 +1,59 @@
-//! GPU 音频合成器 — 完整替代 xsynth 的 GPU 渲染管线
+//! GPU 音频合成器 v2 — CPU 只切时间片，region 查找 + voice 生命周期全进 GPU
 //!
-//! CPU 端做 voice 生命周期 + SF2 region 查找 + 包络，GPU 端做采样插值 + 混音。
-
-use std::path::Path;
+//! 对比 v1 删掉了整层 CPU voice 管理（Voice, EnvPhase, send_note_on/off,
+//! HashMap preset cache, key_idx, real_voice_counts）。
+//!
+//! 双 pass：event_proc（处理 raw events → voice params）
+//!       → render（voice params → audio samples）
 
 use bytemuck::{Pod, Zeroable};
+use std::path::Path;
 use wgpu::util::DeviceExt;
-use xsynth_soundfonts::LoopMode;
 use xsynth_soundfonts::sf2::load_soundfont_with_samples;
 
-// ── GPU 着色器常量 ─────────────────────────────────────
-
-const MAX_VOICES: usize = 512;
-const WORKGROUP_SIZE: u32 = 256; // 硬件上限，用 stride 循环处理 >256 voices
-/// 最低有效力度——黑乐谱"音符画"的 vel=1 不产生可闻音频，直接跳过
-/// vel>1（含 2）才算是 real voice；对应的 NoteOff 也被计数器跳过
-const MIN_VELOCITY: u8 = 1;
-/// GPU 渲染块大小（样本数）= ~5.94s @ 44100Hz
-/// 大块减少 dispatch 次数、提高 GPU occupancy、摊销 overhead
+// ── 常量 ─────────────────────────────────────────────
+const MAX_VOICES: u32 = 512;
+const WGS: u32 = 256;
 pub(crate) const GPU_BLOCK_SAMPLES: u32 = 262_144;
+const MAX_EVENTS: usize = 16_000_000;
+const MIN_VEL: u8 = 1;
 
-// ── WGSL 对齐的数据结构 ────────────────────────────────
+// ── GPU 数据结构 ────────────────────────────────────
+/// 紧凑 RawEvent：tick_offset(4B) + data(4B 打包 kind|channel|key|vel)
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub(crate) struct RawEvent {
+    pub tick_offset: u32,
+    /// 打包: kind[7:0] | channel[15:8] | key[23:16] | vel[31:24]
+    pub data: u32,
+}
 
+impl RawEvent {
+    #[expect(dead_code)]
+    pub(crate) fn new(tick_offset: u32, kind: u32, channel: u32, key: u32, vel: u32) -> Self {
+        Self {
+            tick_offset,
+            data: kind | (channel << 8) | (key << 16) | (vel << 24),
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct GpuRegion {
+    key_low: u32,
+    key_high: u32,
+    vel_low: u32,
+    vel_high: u32,
+    buf_offset: u32,
+    buf_length: u32,
+    loop_start: u32,
+    loop_end: u32,
+    loop_mode: u32,
+    root_key: u32,
+    tune: i32,
+    volume: f32,
+    pan: i32,
+}
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct GpuVoiceParams {
@@ -35,147 +67,149 @@ struct GpuVoiceParams {
     loop_end: u32,
     enabled: u32,
     is_looping: u32,
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct RenderUniforms {
-    num_voices: u32,
-    num_samples: u32,
-    sample_rate: u32,
+    channel: u32,
+    key: u32,
+    released: u32,
+    release_frame: u32,
     _pad: u32,
 }
-
-// ── CPU 端数据结构 ─────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum EnvPhase {
-    Attack,
-    Decay,
-    Sustain,
-    Release,
-    Done,
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct Uni {
+    ne: u32,
+    nr: u32,
+    ns: u32,
+    sr: u32,
 }
 
-/// 一个活跃的合成 voice
-struct Voice {
-    channel: u32,
-    key: u8,
-    sample_offset: u32,
-    sample_length: u32,
-    loop_start: u32,
-    loop_end: u32,
-    is_looping: bool,
-    position: f32,
-    envelope: f32,
-    env_phase: EnvPhase,
-    target_volume: f32,
-    pan: f32,
-    pitch_ratio: f32,
-}
-
-/// 预计算 region 元数据（flat lookup 用）
-#[derive(Clone)]
-struct RegionMeta {
-    key_low: u8,
-    key_high: u8,
-    vel_low: u8,
-    vel_high: u8,
-    buf_offset: u32,
-    buf_length: u32,
-    loop_start: u32,
-    loop_end: u32,
-    loop_mode: LoopMode,
-    root_key: u8,
-    fine_tune: i16,
-    coarse_tune: i16,
-    volume: f32,
-    pan: i16,
-}
-
-/// 按 preset 分组的 region 列表 + 按 MIDI key 的二级索引
-///
-/// 查找：先取 `key_idx[key as usize]` 获得 ~50-100 个候选 region index，
-/// 再在其中按 velocity 范围扫描。避免了扫描 preset 全部 10000+ regions。
-struct PresetRegions {
-    regions: Vec<RegionMeta>,
-    /// key_idx[key as usize] = 覆盖该 MIDI key 的 region 在 `regions` 中的下标列表
-    /// key 是 u8 (0-255)，超出标准 0-127 范围的 key 会命中空 Vec，安全返回 None
-    key_idx: Vec<Vec<u16>>,
-}
-
-// ── GPU 渲染器封装 ─────────────────────────────────────
-
+// ── GpuRenderer ────────────────────────────────────
 struct GpuRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    pipeline: wgpu::ComputePipeline,
-    layout: wgpu::BindGroupLayout,
-    bind_group: wgpu::BindGroup,
-    sample_buf: wgpu::Buffer,
-    params_buf: wgpu::Buffer,
-    uniform_buf: wgpu::Buffer,
-    output_buf: wgpu::Buffer,
-    staging_buf: wgpu::Buffer,
-    /// 预分配的 voice params——避免每块堆分配
-    params: Vec<GpuVoiceParams>,
-    block_samples: u32,
-    channels: u16,
+    pipe_event: wgpu::ComputePipeline,
+    pipe_render: wgpu::ComputePipeline,
+    bg_event: wgpu::BindGroup,
+    bg_render: wgpu::BindGroup,
+    buf_events: wgpu::Buffer,
+    buf_regions: wgpu::Buffer,
+    buf_samples: wgpu::Buffer,
+    buf_params: wgpu::Buffer,
+    buf_output: wgpu::Buffer,
+    buf_staging: wgpu::Buffer,
+    buf_uni: wgpu::Buffer,
+    params_cpu: Vec<GpuVoiceParams>,
+    bs: u32,
+    ch: u16,
+    num_regions: u32,
 }
 
 impl GpuRenderer {
     fn new(
         device: wgpu::Device,
         queue: wgpu::Queue,
-        sample_data: &[f32],
-        channels: u16,
+        samples: &[f32],
+        regions: &[GpuRegion],
+        ch: u16,
     ) -> Result<Self, String> {
-        let block_samples = GPU_BLOCK_SAMPLES;
-        let sample_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("sample_buf"),
-            contents: bytemuck::cast_slice(sample_data),
+        let bs = GPU_BLOCK_SAMPLES;
+        let out_sz = (bs * ch as u32 * 4) as u64;
+        let params_sz = (std::mem::size_of::<GpuVoiceParams>() * MAX_VOICES as usize) as u64;
+        let ev_sz = (std::mem::size_of::<RawEvent>() * MAX_EVENTS) as u64;
+
+        let buf_samples = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("samples"),
+            contents: bytemuck::cast_slice(samples),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
-        let voice_params_size = (std::mem::size_of::<GpuVoiceParams>() * MAX_VOICES) as u64;
-        let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("params_buf"),
-            size: voice_params_size,
+        let buf_regions = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("regions"),
+            contents: bytemuck::cast_slice(regions),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let buf_events = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("events"),
+            size: ev_sz,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let uniform_init = RenderUniforms {
-            num_voices: 0,
-            num_samples: block_samples,
-            sample_rate: 48000,
-            _pad: 0,
-        };
-        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("uniform_buf"),
-            contents: bytemuck::bytes_of(&uniform_init),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let out_bytes = (block_samples * channels as u32 * 4) as u64;
-        let output_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("output_buf"),
-            size: out_bytes,
+        let buf_params = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("params"),
+            size: params_sz,
             usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_SRC
-                | wgpu::BufferUsages::COPY_DST,
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        let staging_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("staging_buf"),
-            size: out_bytes,
+        let buf_output = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("output"),
+            size: out_sz,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let buf_staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("staging"),
+            size: out_sz,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("voice_shader"),
-            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(SHADER_SRC)),
+        let buf_uni = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("uni"),
+            size: std::mem::size_of::<Uni>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
-        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("bg_layout"),
+
+        // 初始化 params 为零
+        queue.write_buffer(&buf_params, 0, &vec![0u8; params_sz as usize]);
+
+        // ── 两个 bind group layout：event_proc 和 render 资源需求不同 ──
+        let layout_event = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("layout_event"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let layout_render = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("layout_render"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -219,180 +253,191 @@ impl GpuRenderer {
                 },
             ],
         });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("bg"),
-            layout: &layout,
+
+        let bg_event = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("bg_event"),
+            layout: &layout_event,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: params_buf.as_entire_binding(),
+                    resource: buf_params.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: sample_buf.as_entire_binding(),
+                    resource: buf_events.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: output_buf.as_entire_binding(),
+                    resource: buf_regions.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: uniform_buf.as_entire_binding(),
+                    resource: buf_uni.as_entire_binding(),
                 },
             ],
         });
-        let pl_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("pl_layout"),
-            bind_group_layouts: &[&layout],
+        let bg_render = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("bg_render"),
+            layout: &layout_render,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buf_params.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: buf_samples.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: buf_output.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: buf_uni.as_entire_binding(),
+                },
+            ],
+        });
+
+        let module_event = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("event_proc"),
+            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(EVENT_PROC_SRC)),
+        });
+        let module_render = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("render"),
+            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(RENDER_SRC)),
+        });
+
+        let pl_event = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("pl_event"),
+            bind_group_layouts: &[&layout_event],
             push_constant_ranges: &[],
         });
-        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("voice_pipeline"),
-            layout: Some(&pl_layout),
-            module: &shader,
+        let pl_render = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("pl_render"),
+            bind_group_layouts: &[&layout_render],
+            push_constant_ranges: &[],
+        });
+        let pipe_event = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("pipe_event"),
+            layout: Some(&pl_event),
+            module: &module_event,
             entry_point: Some("main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
+        let pipe_render = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("pipe_render"),
+            layout: Some(&pl_render),
+            module: &module_render,
+            entry_point: Some("main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
+
         Ok(Self {
             device,
             queue,
-            pipeline,
-            layout,
-            bind_group,
-            sample_buf,
-            params_buf,
-            uniform_buf,
-            output_buf,
-            staging_buf,
-            params: vec![GpuVoiceParams::zeroed(); MAX_VOICES],
-            block_samples,
-            channels,
+            pipe_event,
+            pipe_render,
+            bg_event,
+            bg_render,
+            buf_events,
+            buf_regions,
+            buf_samples,
+            buf_params,
+            buf_output,
+            buf_staging,
+            buf_uni,
+            params_cpu: vec![GpuVoiceParams::zeroed(); MAX_VOICES as usize],
+            bs,
+            ch,
+            num_regions: regions.len() as u32,
         })
     }
 
-    fn render(&mut self, voices: &[Voice], sample_rate: u32) -> Vec<f32> {
-        let _t0 = std::time::Instant::now();
-        let nv = voices.len().min(MAX_VOICES) as u32;
-        let ns = self.block_samples;
-        let ch = self.channels as u32;
+    fn run(&self, events: &[RawEvent]) -> Vec<f32> {
+        let ne = events.len() as u32;
+        let ns = self.bs;
+        let ch = self.ch as u32;
         let zs = (ns * ch * 4) as usize;
 
-        // Uniforms
+        // upload events
+        self.queue
+            .write_buffer(&self.buf_events, 0, bytemuck::cast_slice(events));
+
+        // upload uniform (shared by both passes)
         self.queue.write_buffer(
-            &self.uniform_buf,
+            &self.buf_uni,
             0,
-            bytemuck::bytes_of(&RenderUniforms {
-                num_voices: nv,
-                num_samples: ns,
-                sample_rate,
-                _pad: 0,
+            bytemuck::bytes_of(&Uni {
+                ne,
+                nr: self.num_regions,
+                ns,
+                sr: 48000,
             }),
         );
-        let _t1 = std::time::Instant::now();
 
-        // Pack params into pre-allocated vec（无堆分配）
-        let gp = &mut self.params;
-        for v in gp.iter_mut() {
-            *v = GpuVoiceParams::zeroed();
-        }
-        for (i, v) in voices.iter().enumerate().take(MAX_VOICES) {
-            gp[i] = GpuVoiceParams {
-                position: v.position,
-                pitch_ratio: v.pitch_ratio,
-                volume: (v.envelope * v.target_volume).clamp(0.0, 1.0),
-                pan: v.pan.clamp(-1.0, 1.0),
-                sample_start: v.sample_offset,
-                sample_end: v.sample_offset + v.sample_length,
-                loop_start: v.sample_offset + v.loop_start,
-                loop_end: v.sample_offset + v.loop_end,
-                enabled: 1,
-                is_looping: if v.is_looping { 1 } else { 0 },
-            };
-        }
-        self.queue
-            .write_buffer(&self.params_buf, 0, bytemuck::cast_slice(gp));
-        let _t2 = std::time::Instant::now();
-
-        // Dispatch
-        let nwgs = ns.div_ceil(WORKGROUP_SIZE);
         let mut enc = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("enc") });
+
+        // ── Pass 1: event_proc ──
+        if ne > 0 {
+            let nwg = ne.div_ceil(WGS);
+            {
+                let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("event"),
+                    timestamp_writes: None,
+                });
+                cp.set_pipeline(&self.pipe_event);
+                cp.set_bind_group(0, &self.bg_event, &[]);
+                cp.dispatch_workgroups(nwg, 1, 1);
+            }
+        }
+
+        // ── Pass 2: render ──
         {
+            let nwg = ns.div_ceil(WGS);
             let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("cp"),
+                label: Some("render"),
                 timestamp_writes: None,
             });
-            cp.set_pipeline(&self.pipeline);
-            cp.set_bind_group(0, &self.bind_group, &[]);
-            cp.dispatch_workgroups(nwgs, 1, 1);
+            cp.set_pipeline(&self.pipe_render);
+            cp.set_bind_group(0, &self.bg_render, &[]);
+            cp.dispatch_workgroups(nwg, 1, 1);
         }
-        enc.copy_buffer_to_buffer(&self.output_buf, 0, &self.staging_buf, 0, zs as u64);
-        self.queue.submit(Some(enc.finish()));
-        let _t3 = std::time::Instant::now();
 
-        // Readback
-        let ss = self.staging_buf.slice(..);
+        enc.copy_buffer_to_buffer(&self.buf_output, 0, &self.buf_staging, 0, zs as u64);
+        self.queue.submit(Some(enc.finish()));
+
+        // readback audio
+        let ss = self.buf_staging.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         ss.map_async(wgpu::MapMode::Read, move |r| {
             tx.send(r).ok();
         });
         self.device.poll(wgpu::Maintain::Wait);
-        let _t4 = std::time::Instant::now();
         let _ = rx.recv().unwrap().ok();
         let data = ss.get_mapped_range();
         let smp: &[f32] = bytemuck::cast_slice(&data);
         let result = smp[..(ns * ch) as usize].to_vec();
         drop(data);
-        self.staging_buf.unmap();
-        let _t5 = std::time::Instant::now();
-
-        tracing::debug!(
-            "[GPU.perf] upload={:?} pack={:?} submit={:?} poll_wait={:?} readback={:?}  nv={} ns={}",
-            _t1 - _t0,
-            _t2 - _t1,
-            _t3 - _t2,
-            _t4 - _t3,
-            _t5 - _t4,
-            nv,
-            ns,
-        );
+        self.buf_staging.unmap();
         result
     }
 }
 
-// ── GpuSynth ──────────────────────────────────────────
-
-/// GPU 合成器 — 完整替代 xsynth 的合成引擎
+// ── GpuSynth ────────────────────────────────────────
 pub(crate) struct GpuSynth {
     gpu: GpuRenderer,
-    /// (bank, program) → PresetRegions，含 key 二级索引，避免 10k+ region 线性扫描
-    regions_by_preset: std::collections::HashMap<(u16, u16), PresetRegions>,
-    voices: Vec<Voice>,
-    programs: [u8; 16],
-    banks: [u16; 16],
-    pitch_bends: [f32; 16],
-    channel_volumes: [f32; 16],
     sample_rate: u32,
-    #[allow(dead_code)]
-    _channels: u16,
-    block_samples: u32,
-    /// 输出缓存
-    output: Vec<f32>,
-    /// 当前激活 preset 的缓存——避免 send_note_on 热路径走 HashMap::get
-    cache_regions: Vec<RegionMeta>,
-    cache_key_idx: Vec<Vec<u16>>,
-    cache_preset_key: (u16, u16),
-    /// 每个 (channel, key) 上当前活跃的 real voice 数量
-    /// NoteOn(vel>threshold) +1，NoteOff 释放时 -1；=0 时该 key 的 NoteOff 可跳过
-    real_voice_counts: std::collections::HashMap<(u32, u8), u32>,
+    /// GPU 端管理的 voice params 的 CPU 副本（初始为零，每块读回覆盖）
+    _params: Vec<GpuVoiceParams>,
 }
 
 impl GpuSynth {
-    /// 创建 GPU 合成器
     pub(crate) fn new(sf2_path: &Path, sample_rate: u32, channels: u16) -> Result<Self, String> {
-        let block_samples = GPU_BLOCK_SAMPLES;
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -402,11 +447,9 @@ impl GpuSynth {
             ..Default::default()
         }))
         .ok_or("无法获取 GPU adapter")?;
-        // SF2 sample buffer 可能超过 wgpu 默认 256MB 限制
-        // RTX 2060 Vulkan 后端实际支持 2GB+, 这里设 1GB 安全值
         let limits = wgpu::Limits {
-            max_buffer_size: 1 << 30,                 // 1 GB
-            max_storage_buffer_binding_size: 1 << 30, // 1 GB
+            max_buffer_size: 1 << 30,
+            max_storage_buffer_binding_size: 1 << 30,
             ..wgpu::Limits::default()
         };
         let (device, queue) = pollster::block_on(adapter.request_device(
@@ -420,353 +463,202 @@ impl GpuSynth {
         ))
         .map_err(|e| format!("设备创建失败: {}", e))?;
 
-        // 加载 SF2
         let (presets, _samples) = load_soundfont_with_samples(sf2_path, sample_rate)
             .map_err(|e| format!("SF2: {}", e))?;
 
-        // 构建 flat sample buffer + 按 preset 分组的 region 查找表
-        // 用 Arc 指针去重：同一声 sample 数据只上传一次到 GPU
+        // flat sample buffer + flat region table
         use std::collections::HashMap;
         let mut flat: Vec<f32> = Vec::new();
-        let mut regions_by_preset: HashMap<(u16, u16), PresetRegions> = HashMap::new();
-        let mut sample_offsets: HashMap<*const f32, u32> = HashMap::new();
-        let mut total_regions: usize = 0;
+        let mut regions: Vec<GpuRegion> = Vec::new();
+        let mut offs: HashMap<*const f32, u32> = HashMap::new();
         for preset in &presets {
-            let pk = (preset.bank, preset.preset);
-            let mut regions: Vec<RegionMeta> = Vec::new();
             for reg in &preset.regions {
                 if reg.sample.is_empty() || reg.sample[0].is_empty() {
                     continue;
                 }
                 let ptr = reg.sample[0].as_ptr();
-                let off = match sample_offsets.get(&ptr) {
-                    Some(&existing_off) => existing_off,
-                    None => {
-                        let new_off = flat.len() as u32;
-                        flat.extend_from_slice(&reg.sample[0]);
-                        sample_offsets.insert(ptr, new_off);
-                        new_off
-                    }
+                let off = *offs.entry(ptr).or_insert_with(|| {
+                    let n = flat.len() as u32;
+                    flat.extend_from_slice(&reg.sample[0]);
+                    n
+                });
+                let tune = reg.coarse_tune as i32 * 100 + reg.fine_tune as i32;
+                let lm = match reg.loop_mode {
+                    xsynth_soundfonts::LoopMode::LoopContinuous => 1u32,
+                    xsynth_soundfonts::LoopMode::LoopSustain => 2u32,
+                    _ => 0u32,
                 };
-                regions.push(RegionMeta {
-                    key_low: *reg.keyrange.start(),
-                    key_high: *reg.keyrange.end(),
-                    vel_low: *reg.velrange.start(),
-                    vel_high: *reg.velrange.end(),
+                regions.push(GpuRegion {
+                    key_low: *reg.keyrange.start() as u32,
+                    key_high: *reg.keyrange.end() as u32,
+                    vel_low: *reg.velrange.start() as u32,
+                    vel_high: *reg.velrange.end() as u32,
                     buf_offset: off,
                     buf_length: reg.sample[0].len() as u32,
                     loop_start: reg.loop_start,
                     loop_end: reg.loop_end,
-                    loop_mode: reg.loop_mode,
-                    root_key: reg.root_key,
-                    fine_tune: reg.fine_tune,
-                    coarse_tune: reg.coarse_tune,
+                    loop_mode: lm,
+                    root_key: reg.root_key as u32,
+                    tune,
                     volume: reg.volume,
-                    pan: reg.pan,
+                    pan: reg.pan as i32,
                 });
-                total_regions += 1;
             }
-            // 构建 key 二级索引：每个 region 覆盖的 key range 都加入对应 bucket
-            let mut key_idx: Vec<Vec<u16>> = (0..256).map(|_| Vec::new()).collect();
-            for (ri, r) in regions.iter().enumerate() {
-                let lo = r.key_low as usize;
-                let hi = r.key_high as usize;
-                for k in lo..=hi.min(255) {
-                    key_idx[k].push(ri as u16);
-                }
-            }
-            regions_by_preset.insert(pk, PresetRegions { regions, key_idx });
         }
-        tracing::info!(
-            "[GPU] {} presets, {} regions, {} sample frames",
-            regions_by_preset.len(),
-            total_regions,
-            flat.len()
-        );
+        tracing::info!("[GPU] {} regions, {} samples", regions.len(), flat.len());
 
-        let gpu = GpuRenderer::new(device, queue, &flat, channels)?;
-        let output = vec![0.0f32; (block_samples * channels as u32) as usize];
-
-        // 初始化 active preset cache：取第一个 preset（通常是 bank=0, program=0）
-        let (cache_regions, cache_key_idx, cache_preset_key) =
-            if let Some((&pk, pr)) = regions_by_preset.iter().next() {
-                (pr.regions.clone(), pr.key_idx.clone(), pk)
-            } else {
-                (Vec::new(), (0..256).map(|_| Vec::new()).collect(), (0, 0))
-            };
-
+        let gpu = GpuRenderer::new(device, queue, &flat, &regions, channels)?;
         Ok(Self {
             gpu,
-            regions_by_preset,
-            voices: Vec::with_capacity(MAX_VOICES),
-            programs: [0; 16],
-            banks: [0; 16],
-            pitch_bends: [0.0; 16],
-            channel_volumes: [1.0; 16],
             sample_rate,
-            _channels: channels,
-            block_samples,
-            output,
-            cache_regions,
-            cache_key_idx,
-            cache_preset_key,
-            real_voice_counts: std::collections::HashMap::new(),
+            _params: vec![GpuVoiceParams::zeroed(); MAX_VOICES as usize],
         })
     }
 
-    /// 发送通用 RenderCommand
-    pub(crate) fn send_command(&mut self, cmd: &super::block_render::RenderCommand) {
-        match *cmd {
-            super::block_render::RenderCommand::NoteOn { key, vel, channel } => {
-                self.send_note_on(channel, key, vel);
-            }
-            super::block_render::RenderCommand::NoteOff { key, channel } => {
-                self.send_note_off(channel, key);
-            }
-            super::block_render::RenderCommand::ProgramChange { program, channel } => {
-                self.send_program_change(channel, program);
-            }
-            super::block_render::RenderCommand::ControlChange {
-                controller,
-                value,
-                channel,
-            } => {
-                self.send_control_change(channel, controller, value);
-            }
-            super::block_render::RenderCommand::PitchBend { value, channel } => {
-                self.send_pitch_bend(channel, value);
-            }
-        }
+    pub(crate) fn render_block(&mut self, events: &[RawEvent]) -> Vec<f32> {
+        // upload 上一块 params（初始为零，后续每块读回+上传）
+        self.gpu.queue.write_buffer(
+            &self.gpu.buf_params,
+            0,
+            bytemuck::cast_slice(&self.gpu.params_cpu),
+        );
+        let audio = self.gpu.run(events);
+        // read back params for next block carryover
+        self.readback_params();
+        audio
     }
 
-    /// 发送 MIDI 事件
-    #[inline]
-    pub(crate) fn send_note_on(&mut self, channel: u32, key: u8, vel: u8) {
-        if vel == 0 {
-            return self.send_note_off(channel, key);
-        }
-        // 跳过黑乐谱音符画（vel <= 阈值，不产生可闻音频）
-        if vel <= MIN_VELOCITY {
-            return;
-        }
-        *self.real_voice_counts.entry((channel, key)).or_insert(0) += 1;
-        if self.voices.len() >= MAX_VOICES {
-            self.voices.swap_remove(0);
-        }
-        let ch = channel as usize;
-        // 热路径：用缓存 preset 避免 HashMap::get（500 次按桶查找 vs 1 次分支）
-        let pk = (self.banks[ch], self.programs[ch] as u16);
-        if pk != self.cache_preset_key {
-            self.update_preset_cache(pk);
-        }
-        let kidx = key as usize;
-        let meta = self.cache_key_idx.get(kidx).and_then(|indices| {
-            indices.iter().find_map(|&ri| {
-                let r = &self.cache_regions[ri as usize];
-                if vel >= r.vel_low && vel <= r.vel_high {
-                    Some(r)
-                } else {
-                    None
-                }
-            })
+    fn readback_params(&mut self) {
+        let psize = (std::mem::size_of::<GpuVoiceParams>() * MAX_VOICES as usize) as u64;
+        let staging = self.gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("param_staging"),
+            size: psize,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
-        let Some(meta) = meta else { return };
-
-        let semis = (key as f32 - meta.root_key as f32)
-            + meta.coarse_tune as f32
-            + meta.fine_tune as f32 / 100.0
-            + self.pitch_bends[ch];
-        let pitch_ratio = 2.0f32.powf(semis / 12.0);
-        let pan = ((meta.pan as f32) - 64.0) / 63.0;
-
-        self.voices.push(Voice {
-            channel,
-            key,
-            sample_offset: meta.buf_offset,
-            sample_length: meta.buf_length,
-            loop_start: meta.loop_start,
-            loop_end: meta.loop_end,
-            is_looping: matches!(
-                meta.loop_mode,
-                LoopMode::LoopContinuous | LoopMode::LoopSustain
-            ),
-            position: 0.0,
-            envelope: 0.0,
-            env_phase: EnvPhase::Attack,
-            target_volume: (vel as f32 / 127.0) * meta.volume * self.channel_volumes[ch],
-            pan,
-            pitch_ratio,
+        let mut enc = self
+            .gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("param_read"),
+            });
+        enc.copy_buffer_to_buffer(&self.gpu.buf_params, 0, &staging, 0, psize);
+        self.gpu.queue.submit(Some(enc.finish()));
+        let ss = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        ss.map_async(wgpu::MapMode::Read, move |r| {
+            tx.send(r).ok();
         });
-    }
-
-    /// 更新 active preset cache（ProgramChange 时调用）
-    fn update_preset_cache(&mut self, pk: (u16, u16)) {
-        if let Some(pr) = self.regions_by_preset.get(&pk) {
-            self.cache_regions.clone_from(&pr.regions);
-            self.cache_key_idx.clone_from(&pr.key_idx);
-            self.cache_preset_key = pk;
-        }
-    }
-
-    pub(crate) fn send_note_off(&mut self, channel: u32, key: u8) {
-        // 有 real voice 计数器且 >0 → 释放一个 real voice，计数器 -1
-        if let Some(cnt) = self.real_voice_counts.get_mut(&(channel, key)) {
-            if *cnt > 0 {
-                *cnt -= 1;
-                for v in self.voices.iter_mut() {
-                    if v.channel == channel
-                        && v.key == key
-                        && v.env_phase != EnvPhase::Release
-                        && v.env_phase != EnvPhase::Done
-                    {
-                        v.env_phase = EnvPhase::Release;
-                        break;
-                    }
-                }
-                return;
-            }
-        }
-        // 无 real voice → 被跳过的音符画 NoteOff，无需扫描
-    }
-
-    pub(crate) fn send_program_change(&mut self, channel: u32, program: u8) {
-        if let Some(p) = self.programs.get_mut(channel as usize) {
-            *p = program;
-        }
-    }
-
-    pub(crate) fn send_control_change(&mut self, channel: u32, controller: u8, value: u8) {
-        let ch = channel as usize;
-        match controller {
-            0 => {
-                if let Some(b) = self.banks.get_mut(ch) {
-                    *b = value as u16;
-                }
-            }
-            7 => {
-                if let Some(v) = self.channel_volumes.get_mut(ch) {
-                    *v = value as f32 / 127.0;
-                }
-            }
-            10 => {
-                let pan = (value as f32 - 64.0) / 63.0;
-                for v in &mut self.voices {
-                    if v.channel == channel {
-                        v.pan = pan;
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    pub(crate) fn send_pitch_bend(&mut self, channel: u32, value: i16) {
-        if let Some(pb) = self.pitch_bends.get_mut(channel as usize) {
-            *pb = (value as f32 / 8192.0) * 2.0;
-        }
-    }
-
-    /// 渲染一个 block 的音频
-    pub(crate) fn render_block(&mut self, delta_sec: f64) {
-        let _t0 = std::time::Instant::now();
-        let sample_rate = self.sample_rate as f64;
-        let frames = delta_sec * sample_rate;
-
-        // 更新所有 voice 的位置和包络
-        let nv_before = self.voices.len();
-        self.voices.retain_mut(|v| {
-            v.position += v.pitch_ratio * frames as f32;
-            match v.env_phase {
-                EnvPhase::Attack => {
-                    v.envelope += (1.0 - v.envelope) * 0.3;
-                    if v.envelope > 0.99 {
-                        v.env_phase = EnvPhase::Decay;
-                    }
-                }
-                EnvPhase::Decay => {
-                    v.envelope += (0.8 - v.envelope) * 0.05;
-                    if (v.envelope - 0.8).abs() < 0.01 {
-                        v.env_phase = EnvPhase::Sustain;
-                    }
-                }
-                EnvPhase::Sustain => {}
-                EnvPhase::Release => {
-                    v.envelope *= 0.995;
-                    if v.envelope < 0.001 {
-                        return false;
-                    }
-                }
-                EnvPhase::Done => return false,
-            }
-            if !v.is_looping && v.position as u32 >= v.sample_length {
-                return false;
-            }
-            true
-        });
-        let _t1 = std::time::Instant::now();
-
-        // GPU 渲染
-        let gpu_out = self.gpu.render(&self.voices, self.sample_rate);
-        let _t2 = std::time::Instant::now();
-
-        self.output = gpu_out;
-
-        if nv_before > 0 {
-            tracing::debug!(
-                "[GPU.block] env={:?} gpu={:?} nv={}→{}",
-                _t1 - _t0,
-                _t2 - _t1,
-                nv_before,
-                self.voices.len(),
-            );
-        }
+        self.gpu.device.poll(wgpu::Maintain::Wait);
+        let _ = rx.recv().unwrap().ok();
+        let data = ss.get_mapped_range();
+        let smp: &[GpuVoiceParams] = bytemuck::cast_slice(&data);
+        self.gpu
+            .params_cpu
+            .copy_from_slice(&smp[..MAX_VOICES as usize]);
+        drop(data);
+        staging.unmap();
     }
 
     pub(crate) fn take_samples(&mut self) -> Vec<f32> {
-        std::mem::take(&mut self.output)
-    }
-
-    pub(crate) fn voice_count(&self) -> usize {
-        self.voices.len()
+        Vec::new() // GpuSynth 不再持有 output，render_block 直接返回
     }
 
     pub(crate) fn is_active(&self) -> bool {
-        !self.voices.is_empty()
+        // 有 GPU voice 活跃（保守返回 true，让 tail 判断）
+        self.gpu.params_cpu.iter().any(|v| v.enabled != 0)
     }
 }
 
-// ── WGSL 着色器 ───────────────────────────────────────
-
-const SHADER_SRC: &str = r#"
+// ── WGSL: event_proc ─────────────────────────────────
+const EVENT_PROC_SRC: &str = r#"
+const MV: u32 = 512u;
 const WGS: u32 = 256u;
 
-struct VP {
-    pos: f32,
-    pitch: f32,
-    vol: f32,
-    pan: f32,
-    s_start: u32,
-    s_end: u32,
-    l_start: u32,
-    l_end: u32,
-    ena: u32,
-    looping: u32,
-}
+struct RE { to: u32, data: u32, }
+struct RG { kl: u32, kh: u32, vl_l: u32, vl_h: u32, bo: u32, bl: u32, ls: u32, le: u32, lm: u32, rk: u32, tn: i32, vol: f32, pan: i32, }
+struct VP { pos: f32, pitch: f32, vol: f32, pan: f32, ss: u32, se: u32, ls: u32, le: u32, ena: u32, lp: u32, ch: u32, ky: u32, rel: u32, rf: u32, _pad: u32, }
+struct U { ne: u32, nr: u32, ns: u32, sr: u32, }
 
-struct U {
-    nv: u32,
-    ns: u32,
-    sr: u32,
-    _pad: u32,
+@group(0) @binding(0) var<storage, read_write> params: array<VP>;
+@group(0) @binding(1) var<storage, read> events: array<RE>;
+@group(0) @binding(2) var<storage, read> rgns: array<RG>;
+@group(0) @binding(3) var<uniform> u: U;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let ei = id.x;
+    if ei >= u.ne { return; }
+    let ev = events[ei];
+
+    let ev_kind = ev.data & 0xFFu;
+    let ev_ch = (ev.data >> 8u) & 0xFFu;
+    let ev_key = (ev.data >> 16u) & 0xFFu;
+    let ev_vel = (ev.data >> 24u) & 0xFFu;
+
+    if ev_kind == 0u {
+        if ev_vel <= 1u { return; }
+        var ri = 0u;
+        var found = false;
+        for (var i = 0u; i < u.nr; i++) {
+            let r = rgns[i];
+            if ev_key >= r.kl && ev_key <= r.kh && ev_vel >= r.vl_l && ev_vel <= r.vl_h {
+                ri = i; found = true; break;
+            }
+        }
+        if !found { return; }
+        let r = rgns[ri];
+
+        var slot = 0u;
+        var found_slot = false;
+        for (var i = 0u; i < MV; i++) {
+            let p = params[i];
+            if p.ena == 0u || (p.rel != 0u && p.rf + 480u < ev.to) {
+                slot = i; found_slot = true; break;
+            }
+        }
+        if !found_slot { return; }
+
+        let semis = f32(ev_key) - f32(r.rk) + f32(r.tn) / 100.0;
+        params[slot] = VP(
+            f32(ev.to) * pow(2.0, semis / 12.0),
+            pow(2.0, semis / 12.0),
+            (f32(ev_vel) / 127.0) * r.vol,
+            (f32(r.pan) - 64.0) / 63.0,
+            r.bo, r.bo + r.bl,
+            r.bo + r.ls, r.bo + r.le,
+            1u,
+            select(0u, 1u, r.lm == 1u || r.lm == 2u),
+            ev_ch, ev_key, 0u, 0u, 0u,
+        );
+    } else if ev_kind == 1u {
+        for (var i = 0u; i < MV; i++) {
+            let p = params[i];
+            if p.ena != 0u && p.ch == ev_ch && p.ky == ev_key && p.rel == 0u {
+                params[i].rel = 1u;
+                params[i].rf = ev.to;
+                break;
+            }
+        }
+    }
 }
+"#;
+
+// ── WGSL: render ────────────────────────────────────
+const RENDER_SRC: &str = r#"
+const MV: u32 = 512u;
+const WGS: u32 = 256u;
+
+struct VP { pos: f32, pitch: f32, vol: f32, pan: f32, ss: u32, se: u32, ls: u32, le: u32, ena: u32, lp: u32, ch: u32, ky: u32, rel: u32, rf: u32, _pad: u32, }
+struct U { ne: u32, nr: u32, ns: u32, sr: u32, }
 
 @group(0) @binding(0) var<storage, read> params: array<VP>;
-@group(0) @binding(1) var<storage, read> samples: array<f32>;
+@group(0) @binding(1) var<storage, read> smpls: array<f32>;
 @group(0) @binding(2) var<storage, read_write> out: array<f32>;
 @group(0) @binding(3) var<uniform> u: U;
 
 var<workgroup> sl: array<f32, 256>;
-var<workgroup> sr: array<f32, 256>;
+var<workgroup> sr_: array<f32, 256>;
 
 @compute @workgroup_size(256)
 fn main(
@@ -776,69 +668,56 @@ fn main(
     let sidx = id.x;
     if sidx >= u.ns { return; }
 
-    // 每个线程用 stride 循环处理多个 voice
-    // 例如 256 threads × 512 voices → 每个线程处理 2 voices
-    var L = 0.0f;
-    var R = 0.0f;
-    var v = li;
+    var L = 0.0f; var R = 0.0f;
+    var vi = li;
     loop {
-        if v >= u.nv { break; }
-        let p = params[v];
+        if vi >= MV { break; }
+        let p = params[vi];
         if p.ena != 0u {
+            var env = 1.0f;
+            if p.rel != 0u && sidx >= p.rf {
+                let rf = f32(sidx - p.rf);
+                env = pow(0.995, rf);
+                if env < 0.001 { env = 0.0; }
+            }
             let pos = p.pos + f32(sidx) * p.pitch;
             var pi = u32(pos);
             let fr = pos - f32(pi);
-
-            if p.looping != 0u && p.l_end > p.l_start {
-                let llen = p.l_end - p.l_start;
-                if llen > 0u && pi >= p.l_end {
-                    pi = p.l_start + (pi - p.l_start) % llen;
+            if p.lp != 0u && p.le > p.ls {
+                let llen = p.le - p.ls;
+                if llen > 0u && pi >= p.le {
+                    pi = p.ls + (pi - p.ls) % llen;
                 }
             }
-
-            if pi < p.s_end - 1u {
-                let i0 = p.s_start + pi;
-                let i1 = i0 + 1u;
-                let s0 = samples[i0];
-                let s1 = samples[i1];
-                let sv = s0 + (s1 - s0) * fr;
-
-                let lg = p.vol * sqrt(max(1.0 - p.pan, 0.0));
-                let rg = p.vol * sqrt(max(1.0 + p.pan, 0.0));
-
-                L += sv * lg;
-                R += sv * rg;
+            if pi < p.se - 1u {
+                let i0 = p.ss + pi; let i1 = i0 + 1u;
+                let sv = smpls[i0] + (smpls[i1] - smpls[i0]) * fr;
+                let lg = p.vol * env * sqrt(max(1.0 - p.pan, 0.0));
+                let rg = p.vol * env * sqrt(max(1.0 + p.pan, 0.0));
+                L += sv * lg; R += sv * rg;
             }
         }
-        v += WGS;
+        vi += WGS;
     }
 
-    sl[li] = L;
-    sr[li] = R;
-
+    sl[li] = L; sr_[li] = R;
     workgroupBarrier();
-
-    // thread 0 归约全部 256 个线程的贡献
     if li == 0u {
-        var tL = 0.0f;
-        var tR = 0.0f;
-        for (var i = 0u; i < WGS; i++) {
-            tL += sl[i];
-            tR += sr[i];
-        }
-        out[sidx * 2u] = tL;
-        out[sidx * 2u + 1u] = tR;
+        var tL = 0.0f; var tR = 0.0f;
+        for (var i = 0u; i < WGS; i++) { tL += sl[i]; tR += sr_[i]; }
+        let oi = sidx * 2u;
+        out[oi] = tL;
+        out[oi + 1u] = tR;
     }
 }
 "#;
 
 #[cfg(test)]
 mod tests {
-    use super::SHADER_SRC;
-
+    use super::{EVENT_PROC_SRC, RENDER_SRC};
     #[test]
-    fn validate_wgsl_shader() {
-        // 编译期验证 WGSL 语法，不用等运行时才炸
-        naga::front::wgsl::parse_str(SHADER_SRC).expect("WGSL shader 语法错误");
+    fn validate_wgsl_shaders() {
+        naga::front::wgsl::parse_str(EVENT_PROC_SRC).expect("event_proc WGSL");
+        naga::front::wgsl::parse_str(RENDER_SRC).expect("render WGSL");
     }
 }

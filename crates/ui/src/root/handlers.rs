@@ -323,7 +323,23 @@ impl Root {
     fn try_handle_simple_state(&mut self, msg: &Message) -> bool {
         match msg {
             Message::Progress(progress) => {
-                self.progress = progress.clone();
+                if let Some((ref msg, p)) = *progress {
+                    self.progress = Some((msg.clone(), p));
+                    let d = &mut self.state.audio_export_dialog;
+                    d.progress = (p * 100.0) as f32;
+                    d.status_message = msg.clone();
+                    if let Some(pos) = msg.rfind("NoteOn: ") {
+                        let rest = &msg[pos + 8..];
+                        if let Some(end) = rest.find(" NoteOff: ") {
+                            if let (Ok(on), Ok(off)) = (rest[..end].parse::<u64>(), rest[end + 10..].trim().parse::<u64>()) {
+                                d.note_on_processed = on;
+                                d.note_off_processed = off;
+                            }
+                        }
+                    }
+                } else {
+                    self.progress = None;
+                }
                 true
             }
             Message::ScrollbarScrolled(x) => {

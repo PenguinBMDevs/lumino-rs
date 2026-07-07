@@ -96,6 +96,52 @@ impl TempoMap {
         }
         total
     }
+
+    /// 创建针对此 TempoMap 的游标（用于 O(1) 增量 tick→秒转换）
+    pub(crate) fn cursor(&self) -> TempoCursor<'_> {
+        TempoCursor {
+            changes: &self.changes,
+            ppqn: self.ppqn as f64,
+            idx: 0,
+            prev_tick: 0,
+            prev_bpm: 120.0,
+            total_sec: 0.0,
+        }
+    }
+}
+
+/// 增量 tick→秒转换游标。针对逐事件升序 tick 优化——只处理增量部分，O(1) amortized。
+pub(crate) struct TempoCursor<'a> {
+    changes: &'a [(u64, f64)],
+    ppqn: f64,
+    idx: usize,
+    prev_tick: u64,
+    prev_bpm: f64,
+    total_sec: f64,
+}
+
+impl<'a> TempoCursor<'a> {
+    /// 前进到指定 tick 并返回秒数。tick 必须 ≥ 上次调用。
+    pub(crate) fn advance_to(&mut self, tick: u64) -> f64 {
+        // 跳过已过的 tempo 变化点
+        while self.idx < self.changes.len() && self.changes[self.idx].0 <= tick {
+            let (ct, bpm) = self.changes[self.idx];
+            if ct > self.prev_tick {
+                let dt = (ct - self.prev_tick) as f64;
+                self.total_sec += dt / (self.ppqn * self.prev_bpm / 60.0);
+            }
+            self.prev_bpm = bpm;
+            self.prev_tick = ct;
+            self.idx += 1;
+        }
+        // 当前速度段到目标 tick
+        if tick > self.prev_tick {
+            let dt = (tick - self.prev_tick) as f64;
+            self.total_sec += dt / (self.ppqn * self.prev_bpm / 60.0);
+            self.prev_tick = tick;
+        }
+        self.total_sec
+    }
 }
 
 /// 从 MIDI 文件头部（仅 14 字节）提取 PPQN（每四分音符脉冲数），零分配。

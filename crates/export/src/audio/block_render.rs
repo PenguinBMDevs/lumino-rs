@@ -19,6 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use xsynth_core::channel::{ChannelAudioEvent, ChannelEvent, ControlEvent};
 use xsynth_core::channel_group::SynthEvent;
 
+use super::types::ExportProgress;
 use crate::error::ExportResult;
 
 use super::exporter::AudioExporter;
@@ -122,7 +123,7 @@ pub(crate) fn render_events_blocked(
     writer: &mut AudioFileWriter,
     sample_rate: u32,
     block_samples: usize,
-    progress_callback: Option<&Arc<dyn Fn(f32) + Send + Sync>>,
+    progress_callback: Option<&Arc<dyn Fn(ExportProgress) + Send + Sync>>,
     cancel_flag: Option<&Arc<AtomicBool>>,
 ) -> ExportResult<()> {
     if events.is_empty() && total_seconds <= 0.0 {
@@ -166,8 +167,11 @@ pub(crate) fn render_events_blocked(
 
         // 进度
         if let Some(callback) = progress_callback {
-            let progress = ((block_end / total_seconds.max(1.0)) * 100.0).min(99.0) as f32;
-            callback(progress);
+            callback(ExportProgress {
+                progress: ((block_end / total_seconds.max(1.0)) * 100.0).min(99.0) as f32,
+                note_on: 0,
+                note_off: 0,
+            });
         }
 
         block_start = block_end;
@@ -187,7 +191,7 @@ pub(crate) fn render_tail(
     writer: &mut AudioFileWriter,
     sample_rate: u32,
     block_samples: usize,
-    progress_callback: Option<&Arc<dyn Fn(f32) + Send + Sync>>,
+    progress_callback: Option<&Arc<dyn Fn(ExportProgress) + Send + Sync>>,
     cancel_flag: Option<&Arc<AtomicBool>>,
 ) -> ExportResult<()> {
     let block_sec = block_samples as f64 / sample_rate as f64;
@@ -247,7 +251,11 @@ pub(crate) fn render_tail(
     }
 
     if let Some(callback) = progress_callback {
-        callback(100.0);
+        callback(ExportProgress {
+            progress: 100.0,
+            note_on: 0,
+            note_off: 0,
+        });
     }
 
     Ok(())

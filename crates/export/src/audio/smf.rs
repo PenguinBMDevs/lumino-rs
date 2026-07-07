@@ -14,7 +14,7 @@ use crate::error::ExportResult;
 use super::block_render::{RenderCommand, TimedCommand, render_events_blocked, render_tail};
 use super::exporter::AudioExporter;
 use super::tempo::TempoMap;
-use super::types::AudioExportOptions;
+use super::types::{AudioExportOptions, ExportProgress};
 use super::writer::AudioFileWriter;
 
 /// 从 midly::Smf 提取事件，转换为按秒排序的 TimedCommand 列表。
@@ -106,7 +106,7 @@ pub(super) fn setup_and_render(
     soundfont_path: &Path,
     output_path: &Path,
     options: &AudioExportOptions,
-    progress_callback: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+    progress_callback: Option<Arc<dyn Fn(ExportProgress) + Send + Sync>>,
     cancel_flag: Option<Arc<AtomicBool>>,
 ) -> ExportResult<()> {
     // 加载音色库
@@ -182,7 +182,7 @@ pub fn parse_and_render(
     soundfont_path: &Path,
     output_path: &Path,
     options: &AudioExportOptions,
-    progress_callback: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+    progress_callback: Option<Arc<dyn Fn(ExportProgress) + Send + Sync>>,
     cancel_flag: Option<Arc<AtomicBool>>,
 ) -> ExportResult<()> {
     // 解析 MIDI 文件

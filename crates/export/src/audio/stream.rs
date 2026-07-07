@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use crate::error::{ExportError, ExportResult};
 
-use super::types::AudioExportOptions;
+use super::types::{AudioExportOptions, ExportProgress};
 
 /// 导出音频文件（从文件路径）
 ///
@@ -25,7 +25,7 @@ pub fn export_audio(
     soundfont_path: &Path,
     output_path: &Path,
     options: &AudioExportOptions,
-    progress_callback: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+    progress_callback: Option<Arc<dyn Fn(ExportProgress) + Send + Sync>>,
     cancel_flag: Option<Arc<AtomicBool>>,
 ) -> ExportResult<()> {
     // 验证输入文件
@@ -91,7 +91,7 @@ pub fn export_audio_from_bytes(
     soundfont_path: &Path,
     output_path: &Path,
     options: &AudioExportOptions,
-    progress_callback: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+    progress_callback: Option<Arc<dyn Fn(ExportProgress) + Send + Sync>>,
     cancel_flag: Option<Arc<AtomicBool>>,
 ) -> ExportResult<()> {
     // 验证音色库文件
