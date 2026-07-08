@@ -80,8 +80,6 @@ rust-code-engineer.md
 *.db-wal
 *.db-shm
 
-# Cache
-cache/
 
 # Logs
 *.log
