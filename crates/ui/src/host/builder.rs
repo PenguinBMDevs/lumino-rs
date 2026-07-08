@@ -19,20 +19,26 @@ use super::{Host, RenderContext, WindowContext};
 
 impl Host {
     /// 创建渲染上下文和窗口上下文（三个构造函数的公共逻辑）
+    ///
+    /// `needs_renderers` 仅主窗口为 `true`；dialog/progress 等轻量窗口不需要
+    /// 音符/网格渲染器，跳过创建可显著降低初始化开销。
     fn create_render_and_window_context(
         window: Arc<winit::window::Window>,
         width: u32,
         height: u32,
         ui_config: &config::UiConfig,
         gfx: &lumino_gfx::Context,
+        needs_renderers: bool,
     ) -> (RenderContext, WindowContext) {
         let viewport =
             Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
 
         let font = super::create_font_from_config(ui_config);
 
-        let note_renderer = lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format);
-        let grid_renderer = lumino_gfx::GridRenderer::new(&gfx.device, gfx.format);
+        let note_renderer = needs_renderers
+            .then(|| lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format));
+        let grid_renderer =
+            needs_renderers.then(|| lumino_gfx::GridRenderer::new(&gfx.device, gfx.format));
 
         let wgpu_resources = WgpuResources {
             device: gfx.device.clone(),
@@ -107,8 +113,14 @@ impl Host {
         gfx: &lumino_gfx::Context,
         is_progress: bool,
     ) -> Self {
-        let (render_ctx, window_ctx) =
-            Self::create_render_and_window_context(window, width, height, ui_config, gfx);
+        let (render_ctx, window_ctx) = Self::create_render_and_window_context(
+            window,
+            width,
+            height,
+            ui_config,
+            gfx,
+            !is_progress,
+        );
         let root = if is_progress {
             root::Root::new_progress(&ui_config.theme)
         } else {
@@ -127,7 +139,7 @@ impl Host {
         dialog_type: crate::state::root_state::DialogType,
     ) -> Self {
         let (render_ctx, window_ctx) =
-            Self::create_render_and_window_context(window, width, height, ui_config, gfx);
+            Self::create_render_and_window_context(window, width, height, ui_config, gfx, false);
         let root = root::Root::new_dialog(&ui_config.theme, dialog_type);
         Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
     }
@@ -141,7 +153,7 @@ impl Host {
         gfx: &lumino_gfx::Context,
     ) -> Self {
         let (render_ctx, window_ctx) =
-            Self::create_render_and_window_context(window, width, height, ui_config, gfx);
+            Self::create_render_and_window_context(window, width, height, ui_config, gfx, false);
         let root = root::Root::new_settings_dialog(&ui_config.theme, ui_config);
         Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
     }

@@ -52,9 +52,10 @@ impl Host {
             canvas_offset_x: viewport.canvas_offset.x,
             canvas_offset_y: viewport.canvas_offset.y,
         };
-        self.render_ctx
-            .grid_renderer
-            .prepare(&gfx.queue, &grid_params);
+        let Some(grid_renderer) = self.render_ctx.grid_renderer.as_mut() else {
+            return;
+        };
+        grid_renderer.prepare(&gfx.queue, &grid_params);
     }
 
     /// 如果需要则准备音符
@@ -157,6 +158,10 @@ impl Host {
         notes_changed: bool,
         camera: lumino_gfx::CameraUniform,
     ) {
+        let Some(note_renderer) = self.render_ctx.note_renderer.as_mut() else {
+            return;
+        };
+
         // 从双缓冲的前缓冲区读取音符实例
         let note_instances = unsafe {
             self.render_ctx
@@ -166,17 +171,9 @@ impl Host {
         };
 
         if notes_changed && !note_instances.is_empty() {
-            self.render_ctx.note_renderer.prepare_notes(
-                encoder,
-                note_instances,
-                &gfx.device,
-                &gfx.queue,
-                camera,
-            );
+            note_renderer.prepare_notes(encoder, note_instances, &gfx.device, &gfx.queue, camera);
         } else if !note_instances.is_empty() {
-            self.render_ctx
-                .note_renderer
-                .prepare_pass(encoder, camera, &gfx.queue);
+            note_renderer.prepare_pass(encoder, camera, &gfx.queue);
         }
     }
 
@@ -262,9 +259,11 @@ impl Host {
         // 工程走带模式下跳过 WGPU 绘制（由 iced Canvas 直接渲染）
         if !self.root.is_arrangement_mode() {
             // 绘制网格线
-            if scissor.has_valid_region {
+            if scissor.has_valid_region
+                && let Some(grid_renderer) = self.render_ctx.grid_renderer.as_mut()
+            {
                 render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
-                self.render_ctx.grid_renderer.draw(&mut render_pass, 1);
+                grid_renderer.draw(&mut render_pass, 1);
             }
 
             // 绘制音符（从双缓冲读取）
@@ -274,9 +273,12 @@ impl Host {
                     .note_instances_buffer
                     .read_buffer()
             };
-            if !note_instances.is_empty() && scissor.has_valid_region {
+            if !note_instances.is_empty()
+                && scissor.has_valid_region
+                && let Some(note_renderer) = self.render_ctx.note_renderer.as_mut()
+            {
                 render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
-                self.render_ctx.note_renderer.draw(
+                note_renderer.draw(
                     &mut render_pass,
                     true,
                     Some((scissor.x, scissor.y, scissor.width, scissor.height)),

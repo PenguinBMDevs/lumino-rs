@@ -26,10 +26,10 @@ pub(crate) struct RenderContext {
     pub cache: Cache,
     /// 视口信息
     pub viewport: Viewport,
-    /// 音符渲染器
-    pub note_renderer: NoteRenderer,
-    /// 网格渲染器
-    pub grid_renderer: GridRenderer,
+    /// 音符渲染器（仅主窗口需要）
+    pub note_renderer: Option<NoteRenderer>,
+    /// 网格渲染器（仅主窗口需要）
+    pub grid_renderer: Option<GridRenderer>,
     /// 渲染缓存
     pub render_cache: RenderCache,
     /// 上次编辑状态
@@ -50,11 +50,14 @@ pub(crate) struct RenderContext {
 
 impl RenderContext {
     /// 创建渲染上下文
+    ///
+    /// `note_renderer` 与 `grid_renderer` 为 `None` 时，表示该窗口仅渲染 iced UI，
+    /// 不进入音符/网格管线（用于 dialog、progress 等轻量窗口）。
     pub fn new(
         wgpu: &WgpuResources,
         viewport: Viewport,
-        note_renderer: NoteRenderer,
-        grid_renderer: GridRenderer,
+        note_renderer: Option<NoteRenderer>,
+        grid_renderer: Option<GridRenderer>,
         font: Font,
     ) -> Self {
         let engine = Engine::new(

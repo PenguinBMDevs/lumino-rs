@@ -10,6 +10,14 @@ impl Host {
         gfx: &lumino_gfx::Context,
     ) {
         // 旧架构：单线程或旧多线程模式
+        // 轻量窗口（dialog/progress）没有音符/网格渲染器，直接渲染 UI
+        if self.render_ctx.note_renderer.is_none() || self.render_ctx.grid_renderer.is_none() {
+            if !self.skip_ui_rendering {
+                self.render_iced_ui(frame, view);
+            }
+            return;
+        }
+
         // 第一步：使用 wgpu 渲染音符和网格（位于 UI 层下方）
         self.render_notes_cached(frame, view, gfx);
 
