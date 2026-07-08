@@ -180,9 +180,7 @@ fn item_with_color<'a>(
         .height(Length::Fill)
         .align_y(Alignment::Center);
 
-    let event = if route == Route::Arrangement {
-        Event::route_updated(route)
-    } else if route == Route::Automation {
+    let event = if route == Route::Automation {
         Event::automation_panel_toggled()
     } else {
         Event::panel_toggled(route)

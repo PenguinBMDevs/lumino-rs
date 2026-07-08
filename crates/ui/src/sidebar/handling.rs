@@ -28,22 +28,33 @@ impl Sidebar {
                     self.panel_visible = false;
                     self.piano_roll_visible = false;
                 } else {
-                    self.route = r;
-                    if r == Route::Arrangement {
-                        self.panel_visible = false;
-                        self.piano_roll_visible = false;
+                    // 工程走带（Arrangement）与其他钢琴卷帘界面按钮互斥：
+                    // 进入走带前保存当前钢琴卷帘状态，离开时恢复。
+                    if self.route == Route::Arrangement && r != Route::Arrangement {
+                        self.restore_piano_roll_state();
+                    } else if r == Route::Arrangement && self.route != Route::Arrangement {
+                        self.enter_arrangement();
                     }
+                    self.route = r;
                 }
             }
             PanelToggled(r) => {
                 // 子按钮只能在对应分组激活时操作
-                let not_allowed = matches!(r, Route::File | Route::Automation)
+                let not_allowed = matches!(r, Route::File | Route::Automation | Route::Arrangement)
                     && self.active_group != Some(GroupId::PianoRoll);
-                if not_allowed || (self.route == Route::Arrangement && r != Route::Arrangement) {
+                if not_allowed {
                     self.route = r;
                 } else if r == Route::Arrangement {
-                    self.panel_visible = false;
-                    self.piano_roll_visible = false;
+                    // 工程走带按钮为切换按钮：再次点击则恢复钢琴卷帘状态
+                    if self.route == Route::Arrangement {
+                        self.restore_piano_roll_state();
+                    } else {
+                        self.enter_arrangement();
+                    }
+                } else if self.route == Route::Arrangement {
+                    // 在工程走带界面点击其他子按钮：先恢复钢琴卷帘状态，再打开目标面板
+                    self.restore_piano_roll_state();
+                    self.panel_visible = true;
                     self.panel_route = r;
                     self.route = r;
                 } else if self.panel_visible && self.panel_route == r {
@@ -92,14 +103,18 @@ impl Sidebar {
             }
             // ── 子按钮切换 ──
             AutomationPanelToggled => {
-                self.automation_panel_visible = !self.automation_panel_visible;
+                if self.route == Route::Arrangement {
+                    // 从工程走带界面打开自动化面板：恢复钢琴卷帘状态并开启自动化
+                    self.restore_piano_roll_state();
+                    self.automation_panel_visible = true;
+                } else {
+                    self.automation_panel_visible = !self.automation_panel_visible;
+                }
             }
             PianoRollToggled => {
                 self.piano_roll_visible = !self.piano_roll_visible;
                 if self.piano_roll_visible && self.route == Route::Arrangement {
-                    self.route = Route::File;
-                    self.panel_route = Route::File;
-                    self.panel_visible = true;
+                    self.restore_piano_roll_state();
                 }
             }
         }
@@ -123,6 +138,11 @@ impl Sidebar {
 
         // 保存当前激活组的状态（如果有）
         if let Some(old_group) = self.active_group {
+            // 若正在工程走带界面，先恢复钢琴卷帘的原始状态再保存，
+            // 避免把走带界面的关闭状态误存为钢琴卷帘状态。
+            if old_group == GroupId::PianoRoll && self.route == Route::Arrangement {
+                self.restore_piano_roll_state();
+            }
             self.save_group_state(old_group);
         }
 
@@ -130,12 +150,36 @@ impl Sidebar {
         self.activate_group(group);
     }
 
+    /// 进入工程走带视图：保存钢琴卷帘状态并关闭音轨列表面板、自动化面板。
+    fn enter_arrangement(&mut self) {
+        self.save_group_state(GroupId::PianoRoll);
+        self.panel_visible = false;
+        self.automation_panel_visible = false;
+        self.piano_roll_visible = false;
+        self.route = Route::Arrangement;
+    }
+
+    /// 退出工程走带视图：恢复之前保存的钢琴卷帘子按钮状态。
+    fn restore_piano_roll_state(&mut self) {
+        let state = &self.piano_roll_sub_state;
+        self.panel_route = state.panel_route;
+        self.panel_visible = state.panel_visible;
+        self.automation_panel_visible = state.automation_panel_visible;
+        self.piano_roll_visible = true;
+        self.route = if state.panel_visible {
+            state.panel_route
+        } else {
+            Route::File
+        };
+    }
+
     /// 保存当前分组子按钮状态
     fn save_group_state(&mut self, group: GroupId) {
         match group {
             GroupId::PianoRoll => {
                 self.piano_roll_sub_state = GroupSubState {
-                    panel_visible: self.panel_visible && self.panel_route != Route::Automation,
+                    panel_visible: self.panel_visible
+                        && !matches!(self.panel_route, Route::Automation | Route::Arrangement),
                     panel_route: self.panel_route,
                     automation_panel_visible: self.automation_panel_visible,
                 };
