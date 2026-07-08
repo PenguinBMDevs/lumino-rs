@@ -1,9 +1,12 @@
 //! Runner 窗口事件处理
 
 use crate::runner::{RunnerInner, dialog_manager::DialogType};
-use lumino_export::audio::config::{AudioChannelMode, AudioInterpolation, AudioRenderConfig, ThreadMode};
+use lumino_export::audio::config::{
+    AudioChannelMode, AudioInterpolation, AudioRenderConfig, ProgressCallback, ThreadMode,
+};
 use lumino_ui::event::window::Event as WindowEvent;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 impl RunnerInner {
     /// 处理窗口事件
@@ -162,7 +165,20 @@ impl RunnerInner {
                     "None" => AudioInterpolation::Nearest,
                     _ => AudioInterpolation::Linear,
                 };
-                let layer_limit = if layer_limit == 0 { None } else { Some(layer_limit as usize) };
+                let layer_limit = if layer_limit == 0 {
+                    None
+                } else {
+                    Some(layer_limit as usize)
+                };
+
+                // 打开导出进度对话框
+                let progress_tx = self.window_state.dialog_manager.open_export_progress();
+
+                // 创建进度回调
+                let progress_callback: ProgressCallback =
+                    Arc::new(move |msg: String, progress: f64| {
+                        let _ = progress_tx.send((msg, progress));
+                    });
 
                 let config = AudioRenderConfig {
                     midi_path,
@@ -177,6 +193,7 @@ impl RunnerInner {
                     apply_limiter,
                     disable_fade_out,
                     linear_envelope,
+                    progress_callback: Some(progress_callback),
                 };
 
                 // 在后台线程执行渲染（避免阻塞 UI）
@@ -187,7 +204,11 @@ impl RunnerInner {
                         match lumino_export::render_audio(&config) {
                             Ok(()) => {
                                 let elapsed = start.elapsed();
-                                tracing::info!("音频导出完成: {:?}, 耗时 {:?}", config.output_path, elapsed);
+                                tracing::info!(
+                                    "音频导出完成: {:?}, 耗时 {:?}",
+                                    config.output_path,
+                                    elapsed
+                                );
                             }
                             Err(e) => {
                                 tracing::error!("音频导出失败: {e}");

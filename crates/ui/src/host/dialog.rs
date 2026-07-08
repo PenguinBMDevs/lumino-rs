@@ -40,6 +40,13 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 设置导出进度对话框是否打开（用于独立对话框窗口）
+    pub fn set_export_progress_dialog_open(&mut self, open: bool) {
+        self.root.set_export_progress_dialog_open(open);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 应用音符变速到主窗口
     pub fn apply_speed_change(&mut self, factor: f32) {
         self.root.apply_speed_change(factor);
@@ -196,6 +203,13 @@ impl Host {
     /// 更新进度
     pub fn update_progress(&mut self, progress: Option<(String, f64)>) {
         self.root.update(message::Message::Progress(progress));
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 更新导出进度对话框
+    pub fn update_export_progress(&mut self, message: String, progress: f64) {
+        self.root.update_export_progress(message, progress);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }

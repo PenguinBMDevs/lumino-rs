@@ -10,6 +10,7 @@ use crate::state::root_state::DialogType;
 use crate::view::{
     collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
+    export_progress_dialog::view_export_progress_dialog,
     load_confirm_dialog::view_load_confirm_dialog,
     project_settings_dialog::view_project_settings_dialog, settings_dialog::view_settings_dialog,
     speed_change_dialog::view_speed_change_dialog,
@@ -81,6 +82,9 @@ impl Root {
                 &self.window.theme,
                 self.settings.language,
             ),
+            DialogType::ExportProgress => {
+                view_export_progress_dialog(&self.state.export_progress_dialog, &self.window.theme)
+            }
             // DialogType::None: 关闭过程中 dialog_type 可能被复位为 None，
             // 此时渲染空容器避免闪跳到精度面板。实际关闭由 DialogWindow 的 should_close 驱动。
             DialogType::None => container(space())

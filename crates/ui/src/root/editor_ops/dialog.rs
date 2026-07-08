@@ -342,6 +342,26 @@ impl Root {
         self.state.note_precision = toolbar::NotePrecision::Custom;
         tracing::info!("自定义精度已设置为 {} ticks", ticks);
     }
+
+    /// 设置导出进度对话框是否打开
+    pub fn set_export_progress_dialog_open(&mut self, open: bool) {
+        self.state.export_progress_dialog.is_open = open;
+        if open {
+            self.state.dialog_type = DialogType::ExportProgress;
+        } else if self.state.dialog_type == DialogType::ExportProgress {
+            self.state.dialog_type = DialogType::None;
+        }
+    }
+
+    /// 更新导出进度对话框状态
+    pub fn update_export_progress(&mut self, message: String, progress: f64) {
+        self.state
+            .export_progress_dialog
+            .update_progress(message, progress);
+        if progress >= 1.0 {
+            self.state.export_progress_dialog.set_completed();
+        }
+    }
 }
 
 #[cfg(test)]

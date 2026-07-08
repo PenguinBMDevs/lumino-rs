@@ -128,6 +128,15 @@ impl winit::application::ApplicationHandler for Runner {
             .progress
             .process_messages(main_ui, &main_window);
 
+        // 处理导出进度消息
+        {
+            puffin::profile_scope!("runner_about_to_wait_export_progress");
+            let main_ui = this.window_state.window.ui_mut();
+            this.window_state
+                .dialog_manager
+                .process_export_progress(main_ui);
+        }
+
         // 转发洋葱皮生成进度到进度窗口（渲染线程 → UI 线程 → ProgressManager）
         {
             puffin::profile_scope!("runner_about_to_wait_onion_progress");

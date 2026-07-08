@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use winit::{
     dpi::LogicalSize,
     event::WindowEvent,
@@ -35,6 +36,7 @@ impl DialogWindow {
             DialogType::ProjectSettings => (450.0, 480.0, "工程设置", true),
             DialogType::Settings => (700.0, 500.0, "设置", true),
             DialogType::SpeedChange => (400.0, 250.0, "变速", false),
+            DialogType::ExportProgress => (400.0, 200.0, "音频导出", false),
         };
 
         let attributes = WindowAttributes::default()
@@ -126,6 +128,9 @@ impl DialogWindow {
             DialogType::SpeedChange => {
                 ui.set_speed_change_dialog_open(true);
             }
+            DialogType::ExportProgress => {
+                ui.set_export_progress_dialog_open(true);
+            }
         }
 
         self.window.set_visible(true);
@@ -166,6 +171,42 @@ impl DialogWindow {
 
         // 设置加载确认对话框状态
         ui.set_load_confirm_dialog(file_path, size_mb);
+
+        self.window.set_visible(true);
+        self.gfx = Some(gfx);
+        self.ui = Some(ui);
+
+        Ok(())
+    }
+
+    /// 初始化导出进度对话框
+    pub fn initialize_export_progress(
+        &mut self,
+        ui_config: &lumino_core::storage::config::UiConfig,
+    ) -> Result<(), String> {
+        let physical_size = self.window.inner_size();
+        if physical_size.width == 0 || physical_size.height == 0 {
+            return Err("窗口大小为零".to_string());
+        }
+
+        let gfx = lumino_gfx::Context::new_blocking(
+            self.window.clone(),
+            physical_size.width,
+            physical_size.height,
+        )
+        .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
+
+        let mut ui = lumino_ui::Host::new_dialog(
+            self.window.clone(),
+            physical_size.width,
+            physical_size.height,
+            ui_config,
+            &gfx,
+            DialogType::ExportProgress,
+        );
+
+        // 设置导出进度对话框状态
+        ui.set_export_progress_dialog_open(true);
 
         self.window.set_visible(true);
         self.gfx = Some(gfx);
@@ -301,6 +342,10 @@ pub struct DialogManager {
     dialogs: HashMap<WindowId, DialogWindow>,
     /// 等待初始化的对话框配置
     pending_dialogs: Vec<PendingDialog>,
+    /// 导出进度发送器
+    export_progress_tx: Option<mpsc::UnboundedSender<(String, f64)>>,
+    /// 导出进度接收器
+    export_progress_rx: Option<mpsc::UnboundedReceiver<(String, f64)>>,
 }
 
 /// 等待创建的对话框配置
@@ -319,6 +364,49 @@ impl DialogManager {
         Self {
             dialogs: HashMap::new(),
             pending_dialogs: Vec::new(),
+            export_progress_tx: None,
+            export_progress_rx: None,
+        }
+    }
+
+    /// 打开导出进度对话框
+    pub fn open_export_progress(&mut self) -> mpsc::UnboundedSender<(String, f64)> {
+        // 如果已有进度对话框，先关闭
+        self.close_export_progress();
+
+        // 创建新的通道
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.export_progress_tx = Some(tx.clone());
+        self.export_progress_rx = Some(rx);
+
+        // 添加到待创建列表
+        self.pending_dialogs.push(PendingDialog {
+            dialog_type: DialogType::ExportProgress,
+            pending_path: None,
+            pending_size_mb: None,
+            pending_title: None,
+        });
+
+        tx
+    }
+
+    /// 关闭导出进度对话框
+    pub fn close_export_progress(&mut self) {
+        self.export_progress_tx = None;
+        self.export_progress_rx = None;
+        self.mark_dialog_for_close(DialogType::ExportProgress);
+    }
+
+    /// 处理导出进度消息（供外部调用）
+    pub fn process_export_progress(&mut self, main_ui: &mut lumino_ui::Host) {
+        if let Some(rx) = &mut self.export_progress_rx {
+            while let Ok((msg, progress)) = rx.try_recv() {
+                main_ui.update_export_progress(msg, progress);
+                if progress >= 1.0 {
+                    self.close_export_progress();
+                    return;
+                }
+            }
         }
     }
 
@@ -394,6 +482,12 @@ impl DialogManager {
                 DialogType::Settings => {
                     if let Err(e) = dialog.initialize_with_collaboration_state(ui_config, main_ui) {
                         tracing::error!("初始化设置对话框失败: {}", e);
+                        continue;
+                    }
+                }
+                DialogType::ExportProgress => {
+                    if let Err(e) = dialog.initialize_export_progress(ui_config) {
+                        tracing::error!("初始化导出进度对话框失败: {}", e);
                         continue;
                     }
                 }

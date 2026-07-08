@@ -1,6 +1,7 @@
 //! 音频渲染配置 — 将 Lumino UI 状态转换为 xsynth 配置
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use xsynth_core::{
     AudioStreamParams, ChannelCount,
@@ -9,8 +10,11 @@ use xsynth_core::{
     soundfont::{EnvelopeCurveType, EnvelopeOptions, Interpolator, SoundfontInitOptions},
 };
 
+/// 进度回调函数类型
+pub type ProgressCallback = Arc<dyn Fn(String, f64) + Send + Sync>;
+
 /// Lumino 侧的音频导出 UI 状态快照，用于构造 xsynth 配置
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AudioRenderConfig {
     /// MIDI 文件路径
     pub midi_path: PathBuf,
@@ -38,6 +42,33 @@ pub struct AudioRenderConfig {
     pub disable_fade_out: bool,
     /// 是否使用线性包络（线性衰减/释音）
     pub linear_envelope: bool,
+
+    // ── 进度回调 ──
+    /// 进度回调函数（可选）
+    pub progress_callback: Option<ProgressCallback>,
+}
+
+impl std::fmt::Debug for AudioRenderConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AudioRenderConfig")
+            .field("midi_path", &self.midi_path)
+            .field("soundfonts", &self.soundfonts)
+            .field("output_path", &self.output_path)
+            .field("sample_rate", &self.sample_rate)
+            .field("channels", &self.channels)
+            .field("layer_limit", &self.layer_limit)
+            .field("channel_threading", &self.channel_threading)
+            .field("key_threading", &self.key_threading)
+            .field("interpolation", &self.interpolation)
+            .field("apply_limiter", &self.apply_limiter)
+            .field("disable_fade_out", &self.disable_fade_out)
+            .field("linear_envelope", &self.linear_envelope)
+            .field(
+                "progress_callback",
+                &self.progress_callback.as_ref().map(|_| "..."),
+            )
+            .finish()
+    }
 }
 
 /// 声道模式（映射到 xsynth ChannelCount）

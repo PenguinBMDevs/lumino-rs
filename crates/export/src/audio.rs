@@ -69,7 +69,12 @@ pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
     let mut tick_conv = TickToTime::new(tempos, ppqn);
 
     // 流式渲染主循环
-    run_streaming_render_loop(&mut renderer, &mut tick_conv, player)?;
+    run_streaming_render_loop(
+        &mut renderer,
+        &mut tick_conv,
+        player,
+        config.progress_callback.clone(),
+    )?;
 
     // 收尾
     finalize_renderer(renderer, config)
@@ -107,7 +112,12 @@ pub fn render_audio_from_document(
     let mut tick_conv = TickToTime::new(tempos, ppqn);
 
     // 文档渲染主循环
-    run_document_render_loop(&mut renderer, &mut tick_conv, &merged)?;
+    run_document_render_loop(
+        &mut renderer,
+        &mut tick_conv,
+        &merged,
+        config.progress_callback.clone(),
+    )?;
 
     // 收尾
     finalize_renderer(renderer, config)
@@ -175,6 +185,7 @@ fn run_streaming_render_loop(
     renderer: &mut AudioRenderer,
     tick_conv: &mut TickToTime,
     mut player: StreamingMidiPlayer,
+    progress_callback: Option<crate::audio::config::ProgressCallback>,
 ) -> ExportResult<()> {
     info!("流式渲染循环开始...");
     let mut event_count = 0_u64;
@@ -191,13 +202,18 @@ fn run_streaming_render_loop(
         if tick - last_progress_tick > total_ticks / 100 {
             let pct = tick as f64 / total_ticks as f64 * 100.0;
             let elapsed = start_time.elapsed();
-            eprint!(
-                "\r  进度: {:5.1}% | 事件: {:>8} | 音符: {:>8} | 耗时: {:>6.1}s",
+            let msg = format!(
+                "进度: {:.1}% | 事件: {} | 音符: {} | 耗时: {:.1}s",
                 pct,
                 event_count,
                 note_count,
                 elapsed.as_secs_f64()
             );
+            if let Some(ref callback) = progress_callback {
+                callback(msg, pct / 100.0);
+            } else {
+                eprint!("\r{}", msg);
+            }
             last_progress_tick = tick;
         }
 
@@ -265,12 +281,17 @@ fn run_streaming_render_loop(
 
     // 完成进度条
     let elapsed = start_time.elapsed();
-    eprintln!(
-        "\r  进度: 100.0% | 事件: {:>8} | 音符: {:>8} | 耗时: {:>6.1}s",
+    let msg = format!(
+        "进度: 100.0% | 事件: {} | 音符: {} | 耗时: {:.1}s",
         event_count,
         note_count,
         elapsed.as_secs_f64()
     );
+    if let Some(ref callback) = progress_callback {
+        callback(msg, 1.0);
+    } else {
+        eprintln!("\r{}", msg);
+    }
 
     info!("流式渲染完成: 处理 {event_count} 个事件, {note_count} 个音符");
     Ok(())
@@ -284,15 +305,39 @@ fn run_document_render_loop(
     renderer: &mut AudioRenderer,
     tick_conv: &mut TickToTime,
     events: &[MergedEvent],
+    progress_callback: Option<crate::audio::config::ProgressCallback>,
 ) -> ExportResult<()> {
     info!("文档渲染循环开始 ({})...", events.len());
     let mut event_count = 0_u64;
     let mut current_tick: u64 = 0;
+    let mut last_progress_tick: u64 = 0;
+
+    // 预计算总 tick 用于进度
+    let total_ticks = events.last().map(|e| e.tick as u64).unwrap_or(1).max(1);
+    let start_time = std::time::Instant::now();
 
     // 按 tick 逐批处理：同一 tick 的事件先累积再发送
     let mut batch_start = 0_usize;
     while batch_start < events.len() {
         let tick = events[batch_start].tick as u64;
+
+        // 进度报告（每约 1% 的 tick 进度）
+        if tick - last_progress_tick > total_ticks / 100 {
+            let pct = tick as f64 / total_ticks as f64 * 100.0;
+            let elapsed = start_time.elapsed();
+            let msg = format!(
+                "进度: {:.1}% | 事件: {} | 耗时: {:.1}s",
+                pct,
+                event_count,
+                elapsed.as_secs_f64()
+            );
+            if let Some(ref callback) = progress_callback {
+                callback(msg, pct / 100.0);
+            } else {
+                eprint!("\r{}", msg);
+            }
+            last_progress_tick = tick;
+        }
 
         // 找到同一 tick 的事件范围
         let mut batch_end = batch_start + 1;
@@ -365,6 +410,19 @@ fn run_document_render_loop(
         }
 
         batch_start = batch_end;
+    }
+
+    // 完成进度
+    let elapsed = start_time.elapsed();
+    let msg = format!(
+        "进度: 100.0% | 事件: {} | 耗时: {:.1}s",
+        event_count,
+        elapsed.as_secs_f64()
+    );
+    if let Some(ref callback) = progress_callback {
+        callback(msg, 1.0);
+    } else {
+        eprintln!("\r{}", msg);
     }
 
     info!("文档渲染完成: 处理 {event_count} 个事件");
