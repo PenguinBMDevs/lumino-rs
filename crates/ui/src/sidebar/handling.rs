@@ -135,9 +135,13 @@ impl Sidebar {
 
     /// 分组切换：保存旧组状态 → 恢复新组状态，互斥
     fn handle_group_toggle(&mut self, group: GroupId) {
-        // 如果点击的是已激活的分组，则关闭该分组
+        // 如果点击的是已激活的分组
         if self.active_group == Some(group) {
-            // 先保存当前状态，确保再次激活时能正确恢复
+            // 钢琴卷帘组：不允许通过再次点击关闭，始终保持钢琴卷帘可见
+            if group == GroupId::PianoRoll {
+                return;
+            }
+            // 其他分组：先保存当前状态，确保再次激活时能正确恢复
             self.save_group_state(group);
             self.deactivate_group(group);
             return;
