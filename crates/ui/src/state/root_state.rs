@@ -244,14 +244,22 @@ pub struct AudioExportDialogState {
     pub disable_fade_out: bool,
     /// 线性包络
     pub linear_envelope: bool,
-    /// 使用 GPU 加速渲染
-    pub use_gpu: bool,
     /// 插值算法
     pub interpolation: Interpolation,
     /// 输出格式
     pub format: AudioFormat,
     /// 输出路径
     pub output_path: String,
+    /// 是否正在渲染（显示内嵌进度条）
+    pub is_rendering: bool,
+    /// 渲染进度消息
+    pub render_message: String,
+    /// 渲染进度 (0.0 - 1.0)
+    pub render_progress: f64,
+    /// 渲染是否完成
+    pub render_completed: bool,
+    /// 渲染错误信息
+    pub render_error: Option<String>,
 }
 
 /// 音频通道数（UI用）— 重新导出自 lumino-message
@@ -278,10 +286,14 @@ impl AudioExportDialogState {
             apply_limiter: true,
             disable_fade_out: false,
             linear_envelope: false,
-            use_gpu: true,
             interpolation: Interpolation::default(),
             format: AudioFormat::default(),
             output_path: String::new(),
+            is_rendering: false,
+            render_message: String::new(),
+            render_progress: 0.0,
+            render_completed: false,
+            render_error: None,
         }
     }
 }

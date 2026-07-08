@@ -353,13 +353,13 @@ impl Root {
         }
     }
 
-    /// 更新导出进度对话框状态
+    /// 更新导出进度（重定向到音频导出面板内嵌进度条）
     pub fn update_export_progress(&mut self, message: String, progress: f64) {
-        self.state
-            .export_progress_dialog
-            .update_progress(message, progress);
+        self.state.audio_export_dialog.render_message = message;
+        self.state.audio_export_dialog.render_progress = progress;
         if progress >= 1.0 {
-            self.state.export_progress_dialog.set_completed();
+            self.state.audio_export_dialog.is_rendering = false;
+            self.state.audio_export_dialog.render_completed = true;
         }
     }
 }

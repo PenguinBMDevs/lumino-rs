@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 use winit::{
     dpi::LogicalSize,
     event::WindowEvent,
@@ -342,10 +341,6 @@ pub struct DialogManager {
     dialogs: HashMap<WindowId, DialogWindow>,
     /// 等待初始化的对话框配置
     pending_dialogs: Vec<PendingDialog>,
-    /// 导出进度发送器
-    export_progress_tx: Option<mpsc::UnboundedSender<(String, f64)>>,
-    /// 导出进度接收器
-    export_progress_rx: Option<mpsc::UnboundedReceiver<(String, f64)>>,
 }
 
 /// 等待创建的对话框配置
@@ -364,49 +359,6 @@ impl DialogManager {
         Self {
             dialogs: HashMap::new(),
             pending_dialogs: Vec::new(),
-            export_progress_tx: None,
-            export_progress_rx: None,
-        }
-    }
-
-    /// 打开导出进度对话框
-    pub fn open_export_progress(&mut self) -> mpsc::UnboundedSender<(String, f64)> {
-        // 如果已有进度对话框，先关闭
-        self.close_export_progress();
-
-        // 创建新的通道
-        let (tx, rx) = mpsc::unbounded_channel();
-        self.export_progress_tx = Some(tx.clone());
-        self.export_progress_rx = Some(rx);
-
-        // 添加到待创建列表
-        self.pending_dialogs.push(PendingDialog {
-            dialog_type: DialogType::ExportProgress,
-            pending_path: None,
-            pending_size_mb: None,
-            pending_title: None,
-        });
-
-        tx
-    }
-
-    /// 关闭导出进度对话框
-    pub fn close_export_progress(&mut self) {
-        self.export_progress_tx = None;
-        self.export_progress_rx = None;
-        self.mark_dialog_for_close(DialogType::ExportProgress);
-    }
-
-    /// 处理导出进度消息（供外部调用）
-    pub fn process_export_progress(&mut self, main_ui: &mut lumino_ui::Host) {
-        if let Some(rx) = &mut self.export_progress_rx {
-            while let Ok((msg, progress)) = rx.try_recv() {
-                main_ui.update_export_progress(msg, progress);
-                if progress >= 1.0 {
-                    self.close_export_progress();
-                    return;
-                }
-            }
         }
     }
 

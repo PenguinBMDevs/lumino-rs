@@ -39,6 +39,8 @@ pub(crate) struct WindowState {
     pub(crate) dialog_manager: DialogManager,
     pub(crate) progress: ProgressManager,
     pub(crate) progress_cb: lumino_midi_loader::loader::ProgressCallback,
+    /// 音频导出进度接收器（独立于 dialog_manager，直接更新 audio_export_dialog）
+    pub(crate) export_progress_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(String, f64)>>,
 }
 
 /// MIDI 相关状态
@@ -170,6 +172,7 @@ impl Runner {
                 progress,
                 progress_cb,
                 needs_window_restart: false,
+                export_progress_rx: None,
             },
             midi_state: MidiState {
                 midi,

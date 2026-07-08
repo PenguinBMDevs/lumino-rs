@@ -171,13 +171,15 @@ impl RunnerInner {
                     Some(layer_limit as usize)
                 };
 
-                // 打开导出进度对话框
-                let progress_tx = self.window_state.dialog_manager.open_export_progress();
+                // 创建进度通道（直接更新 audio_export_dialog 内嵌进度条）
+                let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
+                self.window_state.export_progress_rx = Some(progress_rx);
 
                 // 创建进度回调
+                let progress_tx_cb = progress_tx.clone();
                 let progress_callback: ProgressCallback =
                     Arc::new(move |msg: String, progress: f64| {
-                        let _ = progress_tx.send((msg, progress));
+                        let _ = progress_tx_cb.send((msg, progress));
                     });
 
                 let config = AudioRenderConfig {
@@ -209,9 +211,13 @@ impl RunnerInner {
                                     config.output_path,
                                     elapsed
                                 );
+                                // 通知 UI 渲染完成
+                                let _ = progress_tx.send(("导出完成".to_string(), 1.0));
                             }
                             Err(e) => {
                                 tracing::error!("音频导出失败: {e}");
+                                // 通知 UI 渲染失败
+                                let _ = progress_tx.send((format!("导出失败: {e}"), -1.0));
                             }
                         }
                     })

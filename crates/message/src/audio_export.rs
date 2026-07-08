@@ -33,8 +33,6 @@ pub enum AudioExportAction {
     DisableFadeOutChanged(bool),
     /// 线性包络变更
     LinearEnvelopeChanged(bool),
-    /// 使用 GPU 加速渲染变更
-    UseGpuChanged(bool),
     /// 输出路径变更
     OutputPathChanged(String),
     /// 浏览输出路径
@@ -43,4 +41,14 @@ pub enum AudioExportAction {
     BrowseMidi,
     /// 浏览音色库文件
     BrowseSoundfont,
+    /// 开始渲染（UI 立即显示进度条）
+    StartRendering,
+    /// 更新渲染进度
+    UpdateRenderProgress { message: String, progress: f64 },
+    /// 渲染完成
+    RenderCompleted,
+    /// 渲染失败
+    RenderFailed(String),
+    /// 重置渲染状态
+    ResetRendering,
 }

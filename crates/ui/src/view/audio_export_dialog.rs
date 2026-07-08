@@ -1,6 +1,7 @@
 use iced_core::Length;
 use iced_widget::{
-    button, checkbox, column, container, pick_list, row, scrollable, space, text, text_input,
+    button, checkbox, column, container, pick_list, progress_bar, row, scrollable, space, text,
+    text_input,
 };
 
 use crate::message::{AudioExportAction, Message};
@@ -230,11 +231,6 @@ pub fn view_audio_export_dialog<'a>(
             .label("线性包络")
             .on_toggle(|v| Message::AudioExport(AudioExportAction::LinearEnvelopeChanged(v)))
             .style(checkbox_style),
-        space().height(4),
-        checkbox(state.use_gpu)
-            .label("使用 GPU 加速渲染")
-            .on_toggle(|v| Message::AudioExport(AudioExportAction::UseGpuChanged(v)))
-            .style(checkbox_style),
     ]
     .width(Length::Fill);
 
@@ -264,53 +260,91 @@ pub fn view_audio_export_dialog<'a>(
     ]
     .width(Length::Fill);
 
-    // 按钮区域
-    let buttons = row![
-        button(text("关闭").size(14))
-            .on_press(Message::AudioExport(AudioExportAction::ClosePanel))
-            .padding([8, 32])
-            .width(Length::Fixed(100.0))
-            .style(move |_t: &iced_core::Theme, status| {
-                let bg = match status {
-                    button::Status::Hovered => palette.background.strong.color,
-                    _ => palette.background.weak.color,
-                };
-                button::Style {
-                    background: Some(bg.into()),
-                    text_color: palette.background.neutral.text,
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    snap: false,
-                    shadow: Default::default(),
-                }
-            }),
-        space().width(12),
-        button(text("导出").size(14))
-            .on_press(Message::AudioExport(AudioExportAction::Confirm))
-            .padding([8, 32])
-            .width(Length::Fixed(100.0))
-            .style(move |_t: &iced_core::Theme, status| {
-                let bg = match status {
-                    button::Status::Hovered => palette.primary.strong.color,
-                    _ => palette.primary.base.color,
-                };
-                button::Style {
-                    background: Some(bg.into()),
-                    text_color: iced_core::Color::WHITE,
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    snap: false,
-                    shadow: Default::default(),
-                }
-            }),
-    ]
-    .align_y(iced_core::Alignment::Center);
+    // 按钮区域 / 渲染进度区域
+    let buttons: crate::Element<'a> = if state.is_rendering {
+        // 渲染中：显示内嵌进度条
+        let status_text = if state.render_completed {
+            text("导出完成")
+                .size(14)
+                .style(move |_theme: &iced_core::Theme| text::Style {
+                    color: Some(palette.success.strong.color),
+                })
+        } else if let Some(ref err) = state.render_error {
+            text(format!("导出失败: {err}"))
+                .size(14)
+                .style(move |_theme: &iced_core::Theme| text::Style {
+                    color: Some(palette.danger.strong.color),
+                })
+        } else {
+            text(&state.render_message)
+                .size(14)
+                .style(move |_theme: &iced_core::Theme| text::Style {
+                    color: Some(palette.background.neutral.text),
+                })
+        };
+
+        column![
+            status_text,
+            space().height(8),
+            progress_bar(0.0..=1.0, state.render_progress as f32),
+            space().height(4),
+            text(format!("{:.1}%", state.render_progress * 100.0))
+                .size(12)
+                .style(move |_theme: &iced_core::Theme| text::Style {
+                    color: Some(palette.background.strong.text),
+                }),
+        ]
+        .width(Length::Fill)
+        .into()
+    } else {
+        row![
+            button(text("关闭").size(14))
+                .on_press(Message::AudioExport(AudioExportAction::ClosePanel))
+                .padding([8, 32])
+                .width(Length::Fixed(100.0))
+                .style(move |_t: &iced_core::Theme, status| {
+                    let bg = match status {
+                        button::Status::Hovered => palette.background.strong.color,
+                        _ => palette.background.weak.color,
+                    };
+                    button::Style {
+                        background: Some(bg.into()),
+                        text_color: palette.background.neutral.text,
+                        border: iced_core::Border {
+                            radius: 4.0.into(),
+                            width: 0.0,
+                            color: iced_core::Color::TRANSPARENT,
+                        },
+                        snap: false,
+                        shadow: Default::default(),
+                    }
+                }),
+            space().width(12),
+            button(text("导出").size(14))
+                .on_press(Message::AudioExport(AudioExportAction::Confirm))
+                .padding([8, 32])
+                .width(Length::Fixed(100.0))
+                .style(move |_t: &iced_core::Theme, status| {
+                    let bg = match status {
+                        button::Status::Hovered => palette.primary.strong.color,
+                        _ => palette.primary.base.color,
+                    };
+                    button::Style {
+                        background: Some(bg.into()),
+                        text_color: iced_core::Color::WHITE,
+                        border: iced_core::Border {
+                            radius: 4.0.into(),
+                            width: 0.0,
+                            color: iced_core::Color::TRANSPARENT,
+                        },
+                        snap: false,
+                        shadow: Default::default(),
+                    }
+                }),
+        ]
+        .align_y(iced_core::Alignment::Center)
+        .into()
+    };
 
     // 组装主内容
     let main_content = column![

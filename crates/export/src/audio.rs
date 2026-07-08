@@ -191,30 +191,30 @@ fn run_streaming_render_loop(
     let mut event_count = 0_u64;
     let mut note_count = 0_u64;
     let mut current_tick: u64 = 0;
-    let mut last_progress_tick: u64 = 0;
+    let mut last_progress_time = std::time::Instant::now();
 
     // 预计算总 tick 用于进度
     let total_ticks = player.total_ticks().max(1);
     let start_time = std::time::Instant::now();
 
     while let Some((tick, _track_idx, kind)) = player.next_event() {
-        // 进度报告（每约 1% 的 tick 进度）
-        if tick - last_progress_tick > total_ticks / 100 {
-            let pct = tick as f64 / total_ticks as f64 * 100.0;
+        // 进度报告：每 100ms 一次
+        if last_progress_time.elapsed() >= std::time::Duration::from_millis(100) {
+            let pct = tick as f64 / total_ticks as f64;
             let elapsed = start_time.elapsed();
             let msg = format!(
                 "进度: {:.1}% | 事件: {} | 音符: {} | 耗时: {:.1}s",
-                pct,
+                pct * 100.0,
                 event_count,
                 note_count,
                 elapsed.as_secs_f64()
             );
             if let Some(ref callback) = progress_callback {
-                callback(msg, pct / 100.0);
+                callback(msg, pct);
             } else {
                 eprint!("\r{}", msg);
             }
-            last_progress_tick = tick;
+            last_progress_time = std::time::Instant::now();
         }
 
         // 前进到事件所在 tick（delta 秒数驱动 xsynth 渲染）
@@ -310,7 +310,7 @@ fn run_document_render_loop(
     info!("文档渲染循环开始 ({})...", events.len());
     let mut event_count = 0_u64;
     let mut current_tick: u64 = 0;
-    let mut last_progress_tick: u64 = 0;
+    let mut last_progress_time = std::time::Instant::now();
 
     // 预计算总 tick 用于进度
     let total_ticks = events.last().map(|e| e.tick as u64).unwrap_or(1).max(1);
@@ -321,22 +321,22 @@ fn run_document_render_loop(
     while batch_start < events.len() {
         let tick = events[batch_start].tick as u64;
 
-        // 进度报告（每约 1% 的 tick 进度）
-        if tick - last_progress_tick > total_ticks / 100 {
-            let pct = tick as f64 / total_ticks as f64 * 100.0;
+        // 进度报告：每 100ms 一次
+        if last_progress_time.elapsed() >= std::time::Duration::from_millis(100) {
+            let pct = tick as f64 / total_ticks as f64;
             let elapsed = start_time.elapsed();
             let msg = format!(
                 "进度: {:.1}% | 事件: {} | 耗时: {:.1}s",
-                pct,
+                pct * 100.0,
                 event_count,
                 elapsed.as_secs_f64()
             );
             if let Some(ref callback) = progress_callback {
-                callback(msg, pct / 100.0);
+                callback(msg, pct);
             } else {
                 eprint!("\r{}", msg);
             }
-            last_progress_tick = tick;
+            last_progress_time = std::time::Instant::now();
         }
 
         // 找到同一 tick 的事件范围

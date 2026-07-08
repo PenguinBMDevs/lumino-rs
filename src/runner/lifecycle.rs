@@ -128,13 +128,24 @@ impl winit::application::ApplicationHandler for Runner {
             .progress
             .process_messages(main_ui, &main_window);
 
-        // 处理导出进度消息
+        // 处理导出进度消息（直接更新 audio_export_dialog 内嵌进度条）
         {
             puffin::profile_scope!("runner_about_to_wait_export_progress");
-            let main_ui = this.window_state.window.ui_mut();
-            this.window_state
-                .dialog_manager
-                .process_export_progress(main_ui);
+            if let Some(rx) = &mut this.window_state.export_progress_rx {
+                let main_ui = this.window_state.window.ui_mut();
+                while let Ok((msg, progress)) = rx.try_recv() {
+                    if progress < 0.0 {
+                        // 渲染失败（progress = -1.0）
+                        main_ui.update_export_progress(msg.clone(), 0.0);
+                        main_ui.set_export_render_failed(msg);
+                    } else {
+                        main_ui.update_export_progress(msg, progress);
+                        if progress >= 1.0 {
+                            main_ui.set_export_render_completed();
+                        }
+                    }
+                }
+            }
         }
 
         // 转发洋葱皮生成进度到进度窗口（渲染线程 → UI 线程 → ProgressManager）

@@ -195,6 +195,13 @@ impl MessageHandler for DialogHandler {
                         root.sidebar.route = crate::sidebar::Route::Arrangement;
                     }
                     A::Confirm => {
+                        // 立即设置渲染状态（进度条第一时间刷新）
+                        root.state.audio_export_dialog.is_rendering = true;
+                        root.state.audio_export_dialog.render_completed = false;
+                        root.state.audio_export_dialog.render_error = None;
+                        root.state.audio_export_dialog.render_progress = 0.0;
+                        root.state.audio_export_dialog.render_message = "正在初始化...".to_string();
+
                         // 从 dialog state 读取配置，发送事件到 runner
                         let st = &root.state.audio_export_dialog;
                         let ev = crate::event::window::Event::start_audio_export(
@@ -254,9 +261,6 @@ impl MessageHandler for DialogHandler {
                     A::LinearEnvelopeChanged(value) => {
                         root.state.audio_export_dialog.linear_envelope = value;
                     }
-                    A::UseGpuChanged(value) => {
-                        root.state.audio_export_dialog.use_gpu = value;
-                    }
                     A::BrowseOutput => {
                         let current = root.state.audio_export_dialog.output_path.clone();
                         let default_name = std::path::Path::new(&current)
@@ -302,6 +306,36 @@ impl MessageHandler for DialogHandler {
                             root.state.audio_export_dialog.soundfont_path =
                                 path.to_string_lossy().to_string();
                         }
+                    }
+                    A::StartRendering => {
+                        root.state.audio_export_dialog.is_rendering = true;
+                        root.state.audio_export_dialog.render_completed = false;
+                        root.state.audio_export_dialog.render_error = None;
+                        root.state.audio_export_dialog.render_progress = 0.0;
+                        root.state.audio_export_dialog.render_message = "正在初始化...".to_string();
+                    }
+                    A::UpdateRenderProgress { message, progress } => {
+                        root.state.audio_export_dialog.render_message = message;
+                        root.state.audio_export_dialog.render_progress = progress;
+                    }
+                    A::RenderCompleted => {
+                        root.state.audio_export_dialog.is_rendering = false;
+                        root.state.audio_export_dialog.render_completed = true;
+                        root.state.audio_export_dialog.render_progress = 1.0;
+                        root.state.audio_export_dialog.render_message = "导出完成".to_string();
+                    }
+                    A::RenderFailed(error) => {
+                        root.state.audio_export_dialog.is_rendering = false;
+                        root.state.audio_export_dialog.render_error = Some(error.clone());
+                        root.state.audio_export_dialog.render_message =
+                            format!("导出失败: {error}");
+                    }
+                    A::ResetRendering => {
+                        root.state.audio_export_dialog.is_rendering = false;
+                        root.state.audio_export_dialog.render_completed = false;
+                        root.state.audio_export_dialog.render_error = None;
+                        root.state.audio_export_dialog.render_progress = 0.0;
+                        root.state.audio_export_dialog.render_message.clear();
                     }
                 }
                 None
