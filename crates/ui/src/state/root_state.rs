@@ -215,6 +215,8 @@ impl CollaborationDialogState {
 }
 
 /// 音频导出面板状态（主界面侧边栏面板，非独立对话框）
+///
+/// 纯 UI 状态，仅保存控件值，不含导出处理逻辑。
 #[derive(Debug, Clone)]
 pub struct AudioExportDialogState {
     /// 工程名称
@@ -229,6 +231,8 @@ pub struct AudioExportDialogState {
     pub channels: AudioChannels,
     /// 每通道层数限制
     pub layers: u32,
+    /// GPU 导出时最大同时 voice 数（0 = 使用默认值 2048）
+    pub max_voices: u32,
     /// 通道多线程
     pub channel_threading: ThreadingOption,
     /// 按键多线程
@@ -247,16 +251,6 @@ pub struct AudioExportDialogState {
     pub format: AudioFormat,
     /// 输出路径
     pub output_path: String,
-    /// 是否正在导出
-    pub is_exporting: bool,
-    /// 导出进度 (0.0 - 100.0)
-    pub progress: f32,
-    /// 导出状态消息
-    pub status_message: String,
-    /// 已处理的 NoteOn 数量
-    pub note_on_processed: u64,
-    /// 已处理的 NoteOff 数量
-    pub note_off_processed: u64,
 }
 
 /// 音频通道数（UI用）— 重新导出自 lumino-message
@@ -277,21 +271,16 @@ impl AudioExportDialogState {
             sample_rate: 48000,
             channels: AudioChannels::default(),
             layers: 32,
+            max_voices: 2048,
             channel_threading: ThreadingOption::default(),
             key_threading: ThreadingOption::default(),
             apply_limiter: true,
             disable_fade_out: false,
             linear_envelope: false,
-            // 默认启用 GPU 加速；兼容性/驱动问题可关闭回退 CPU
             use_gpu: true,
             interpolation: Interpolation::default(),
             format: AudioFormat::default(),
             output_path: String::new(),
-            is_exporting: false,
-            progress: 0.0,
-            status_message: String::new(),
-            note_on_processed: 0,
-            note_off_processed: 0,
         }
     }
 }

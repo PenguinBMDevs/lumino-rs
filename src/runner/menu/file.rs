@@ -118,38 +118,6 @@ impl RunnerInner {
             ExportProjectFolder => {
                 self.handle_export_project_folder();
             }
-            AudioExport => {
-                self.handle_audio_export();
-            }
-            AudioExportStart {
-                project_name,
-                midi_path,
-                soundfont_path,
-                output_path,
-                sample_rate,
-                channels,
-                layers,
-                apply_limiter,
-                disable_fade_out,
-                linear_envelope,
-                format,
-                use_gpu,
-            } => {
-                self.handle_audio_export_start(
-                    project_name,
-                    midi_path,
-                    soundfont_path,
-                    output_path,
-                    sample_rate,
-                    channels,
-                    layers,
-                    apply_limiter,
-                    disable_fade_out,
-                    linear_envelope,
-                    format,
-                    use_gpu,
-                );
-            }
             _ => {
                 tracing::debug!("未处理的文件事件：{:?}", file_event);
             }

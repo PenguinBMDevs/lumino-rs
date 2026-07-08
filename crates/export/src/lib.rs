@@ -1,6 +1,6 @@
 //! 文件导出模块
 //!
-//! 提供 MIDI、DMS、音频、工程文件等多种格式的导出能力。
+//! 提供 MIDI、DMS、工程文件等多种格式的导出能力。
 //! 所有导出函数均为同步阻塞调用，适合在后台线程中执行。
 //!
 //! # 主要入口
@@ -9,7 +9,6 @@
 //! |------|------|------|
 //! | MIDI | [`export_midi`] / [`export_midi_to_bytes`] | 导出标准 MIDI 文件 |
 //! | DMS | [`export_dms`] / [`export_dms_to_bytes`] | 导出 DMS (Domino Music Sequencer) 格式 |
-//! | 音频 | [`export_audio`] / [`export_audio_from_bytes`] | 导出 WAV/OGG 音频 |
 //! | 工程 | [`save_to_archive`] / [`save_to_folder`] | 保存 Lumino 工程文件 |
 //! | LMPJ | [`save`] / [`save_sync`] | 导出 LMPJ 项目包 |
 //!
@@ -18,7 +17,6 @@
 //! [`converter`] 模块提供格式间同步转换的便捷函数，
 //! 如 [`export_midi_from_dms_sync`]、[`export_dms_from_midi_sync`] 等。
 
-pub mod audio;
 pub mod converter;
 pub mod dms;
 pub mod error;
@@ -26,14 +24,6 @@ pub mod format;
 pub mod lmpj;
 pub mod midi;
 pub mod project;
-
-// ── 音频导出 ──
-
-/// 音频导出选项与格式定义
-pub use audio::{
-    AudioChannels, AudioExportOptions, AudioFormat, Interpolation, ThreadingOption, export_audio,
-    export_audio_from_bytes, export_audio_from_parsed, render_streaming, render_streaming_gpu,
-};
 
 // ── 格式转换 ──
 

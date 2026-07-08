@@ -312,10 +312,6 @@ pub struct PendingDialog {
     pub pending_size_mb: Option<f64>,
     /// ProjectSettings 的窗口标题
     pub pending_title: Option<String>,
-    /// AudioExport 的音色库路径
-    pub pending_soundfont: Option<String>,
-    /// AudioExport 的输出路径
-    pub pending_output_path: Option<String>,
 }
 
 impl DialogManager {
@@ -333,8 +329,6 @@ impl DialogManager {
             pending_path: None,
             pending_size_mb: None,
             pending_title: None,
-            pending_soundfont: None,
-            pending_output_path: None,
         });
     }
 
@@ -345,8 +339,6 @@ impl DialogManager {
             pending_path: None,
             pending_size_mb: None,
             pending_title: Some(title),
-            pending_soundfont: None,
-            pending_output_path: None,
         });
     }
 
@@ -356,8 +348,6 @@ impl DialogManager {
             pending_path: Some(path),
             pending_size_mb: Some(size_mb),
             pending_title: None,
-            pending_soundfont: None,
-            pending_output_path: None,
         });
     }
 

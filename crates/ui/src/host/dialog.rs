@@ -47,24 +47,6 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
-    /// 设置音频导出对话框数据（用于独立对话框窗口）
-    pub fn set_audio_export_dialog_state(
-        &mut self,
-        project_name: &str,
-        midi_path: &str,
-        soundfont_path: &str,
-        output_path: &str,
-    ) {
-        self.root.set_audio_export_dialog_state(
-            project_name,
-            midi_path,
-            soundfont_path,
-            output_path,
-        );
-        self.ui_dirty = true;
-        self.window_ctx.window.request_redraw();
-    }
-
     /// 设置工程设置对话框数据（用于独立对话框窗口）
     pub fn set_project_settings_data(
         &mut self,

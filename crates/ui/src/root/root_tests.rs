@@ -1,14 +1,6 @@
 use super::*;
 use crate::root::handlers::MessageHandler;
 
-#[test]
-fn test_new_dialog_uses_requested_dialog_type() {
-    let root = Root::new_dialog("dark", DialogType::AudioExport);
-
-    assert!(root.state.is_dialog_window);
-    assert_eq!(root.state.dialog_type, DialogType::AudioExport);
-}
-
 // ================================================================
 // 对话框关闭处理器 —— dialog_type 不复位测试
 //
@@ -49,30 +41,6 @@ fn test_close_project_settings_dialog_preserves_dialog_type() {
     assert!(
         root.state.dialog_result.is_some(),
         "CloseProjectSettingsDialog 应设置 dialog_result"
-    );
-}
-
-#[test]
-fn test_audio_export_panel_open_close() {
-    let mut root = Root::new("dark");
-    let mut handler = handlers::DialogHandler::new();
-
-    handler.handle(
-        &mut root,
-        Message::AudioExport(crate::message::AudioExportAction::OpenPanel),
-    );
-    assert!(
-        root.sidebar.audio_export_visible,
-        "AudioExport::OpenPanel 应打开音频导出面板"
-    );
-
-    handler.handle(
-        &mut root,
-        Message::AudioExport(crate::message::AudioExportAction::ClosePanel),
-    );
-    assert!(
-        !root.sidebar.audio_export_visible,
-        "AudioExport::ClosePanel 应关闭音频导出面板"
     );
 }
 

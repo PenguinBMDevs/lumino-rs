@@ -264,157 +264,56 @@ pub fn view_audio_export_dialog<'a>(
     ]
     .width(Length::Fill);
 
-    // 进度区域（仅在导出时显示）
-    let progress_area = if state.is_exporting {
-        // 预构建统计 widget
-        let note_on_count = state.note_on_processed;
-        let note_off_count = state.note_off_processed;
-        let note_on_widget: crate::Element<'_> = if note_on_count > 0 {
-            row![
-                text("NoteOn: ").size(12).style(label_style),
-                text(note_on_count.to_string())
-                    .size(12)
-                    .style(move |_t: &iced_core::Theme| text::Style {
-                        color: Some(palette.primary.base.color),
-                        ..Default::default()
-                    }),
-            ]
-            .spacing(4)
-            .into()
-        } else {
-            iced_widget::Space::new().into()
-        };
-        let note_off_widget: crate::Element<'_> = if note_off_count > 0 {
-            row![
-                text("NoteOff: ").size(12).style(label_style),
-                text(note_off_count.to_string())
-                    .size(12)
-                    .style(move |_t: &iced_core::Theme| text::Style {
-                        color: Some(palette.secondary.base.color),
-                        ..Default::default()
-                    }),
-            ]
-            .spacing(4)
-            .into()
-        } else {
-            iced_widget::Space::new().into()
-        };
-        Some(
-            column![
-                space().height(16),
-                text(&state.status_message).size(14).style(label_style),
-                space().height(8),
-                // 进度条
-                container(
-                    column![text(format!("{:.1}%", state.progress)).size(12).style(
-                        move |_t: &iced_core::Theme| text::Style {
-                            color: Some(palette.background.neutral.text),
-                        }
-                    ),]
-                    .padding([2, 8]),
-                )
-                .width(Length::Fill)
-                .height(24)
-                .style(move |_t: &iced_core::Theme| container::Style {
-                    background: Some(palette.background.weak.color.into()),
+    // 按钮区域
+    let buttons = row![
+        button(text("关闭").size(14))
+            .on_press(Message::AudioExport(AudioExportAction::ClosePanel))
+            .padding([8, 32])
+            .width(Length::Fixed(100.0))
+            .style(move |_t: &iced_core::Theme, status| {
+                let bg = match status {
+                    button::Status::Hovered => palette.background.strong.color,
+                    _ => palette.background.weak.color,
+                };
+                button::Style {
+                    background: Some(bg.into()),
+                    text_color: palette.background.neutral.text,
                     border: iced_core::Border {
                         radius: 4.0.into(),
-                        width: 1.0,
-                        color: palette.background.strong.color,
+                        width: 0.0,
+                        color: iced_core::Color::TRANSPARENT,
                     },
-                    ..Default::default()
-                }),
-                space().height(8),
-                // 详细统计
-                row![note_on_widget, space().width(16), note_off_widget,]
-                    .spacing(4)
-                    .align_y(iced_core::Alignment::Center),
-            ]
-            .width(Length::Fill),
-        )
-    } else {
-        None
-    };
-
-    // 按钮区域
-    let buttons = if state.is_exporting {
-        // 导出中只显示取消按钮
-        row![
-            button(text("关闭").size(14))
-                .on_press(Message::AudioExport(AudioExportAction::ClosePanel))
-                .padding([8, 32])
-                .width(Length::Fixed(100.0))
-                .style(move |_t: &iced_core::Theme, status| {
-                    let bg = match status {
-                        button::Status::Hovered => palette.background.strong.color,
-                        _ => palette.background.weak.color,
-                    };
-                    button::Style {
-                        background: Some(bg.into()),
-                        text_color: palette.background.neutral.text,
-                        border: iced_core::Border {
-                            radius: 4.0.into(),
-                            width: 0.0,
-                            color: iced_core::Color::TRANSPARENT,
-                        },
-                        snap: false,
-                        shadow: Default::default(),
-                    }
-                }),
-        ]
-        .align_y(iced_core::Alignment::Center)
-    } else {
-        // 正常状态显示关闭和导出按钮
-        row![
-            button(text("关闭").size(14))
-                .on_press(Message::AudioExport(AudioExportAction::ClosePanel))
-                .padding([8, 32])
-                .width(Length::Fixed(100.0))
-                .style(move |_t: &iced_core::Theme, status| {
-                    let bg = match status {
-                        button::Status::Hovered => palette.background.strong.color,
-                        _ => palette.background.weak.color,
-                    };
-                    button::Style {
-                        background: Some(bg.into()),
-                        text_color: palette.background.neutral.text,
-                        border: iced_core::Border {
-                            radius: 4.0.into(),
-                            width: 0.0,
-                            color: iced_core::Color::TRANSPARENT,
-                        },
-                        snap: false,
-                        shadow: Default::default(),
-                    }
-                }),
-            space().width(12),
-            button(text("导出").size(14))
-                .on_press(Message::AudioExport(AudioExportAction::Confirm))
-                .padding([8, 32])
-                .width(Length::Fixed(100.0))
-                .style(move |_t: &iced_core::Theme, status| {
-                    let bg = match status {
-                        button::Status::Hovered => palette.primary.strong.color,
-                        _ => palette.primary.base.color,
-                    };
-                    button::Style {
-                        background: Some(bg.into()),
-                        text_color: iced_core::Color::WHITE,
-                        border: iced_core::Border {
-                            radius: 4.0.into(),
-                            width: 0.0,
-                            color: iced_core::Color::TRANSPARENT,
-                        },
-                        snap: false,
-                        shadow: Default::default(),
-                    }
-                }),
-        ]
-        .align_y(iced_core::Alignment::Center)
-    };
+                    snap: false,
+                    shadow: Default::default(),
+                }
+            }),
+        space().width(12),
+        button(text("导出").size(14))
+            .on_press(Message::AudioExport(AudioExportAction::Confirm))
+            .padding([8, 32])
+            .width(Length::Fixed(100.0))
+            .style(move |_t: &iced_core::Theme, status| {
+                let bg = match status {
+                    button::Status::Hovered => palette.primary.strong.color,
+                    _ => palette.primary.base.color,
+                };
+                button::Style {
+                    background: Some(bg.into()),
+                    text_color: iced_core::Color::WHITE,
+                    border: iced_core::Border {
+                        radius: 4.0.into(),
+                        width: 0.0,
+                        color: iced_core::Color::TRANSPARENT,
+                    },
+                    snap: false,
+                    shadow: Default::default(),
+                }
+            }),
+    ]
+    .align_y(iced_core::Alignment::Center);
 
     // 组装主内容
-    let mut main_content = column![
+    let main_content = column![
         title,
         space().height(16),
         project_info,
@@ -422,15 +321,9 @@ pub fn view_audio_export_dialog<'a>(
         audio_settings,
         space().height(16),
         output_path,
+        space().height(24),
+        buttons,
     ];
-
-    // 添加进度区域（如果有）
-    if let Some(progress) = progress_area {
-        main_content = main_content.push(progress);
-    }
-
-    main_content = main_content.push(space().height(24));
-    main_content = main_content.push(buttons);
 
     let scrollable_content = scrollable(main_content)
         .width(Length::Fill)

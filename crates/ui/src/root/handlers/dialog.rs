@@ -195,33 +195,8 @@ impl MessageHandler for DialogHandler {
                         root.sidebar.route = crate::sidebar::Route::Arrangement;
                     }
                     A::Confirm => {
-                        let state = &root.state.audio_export_dialog;
-                        let channels = match state.channels {
-                            crate::state::root_state::AudioChannels::Mono => 1u16,
-                            crate::state::root_state::AudioChannels::Stereo => 2u16,
-                        };
-                        let format = match state.format {
-                            crate::state::root_state::AudioFormat::WAV => 0u8,
-                            crate::state::root_state::AudioFormat::FLAC => 1u8,
-                        };
-                        crate::event::emit(crate::event::Event::Menu(
-                            crate::event::menu::Event::File(
-                                crate::event::menu::file::Event::audio_export_start(
-                                    state.project_name.clone(),
-                                    state.midi_path.clone(),
-                                    state.soundfont_path.clone(),
-                                    state.output_path.clone(),
-                                    state.sample_rate,
-                                    channels,
-                                    state.layers,
-                                    state.apply_limiter,
-                                    state.disable_fade_out,
-                                    state.linear_envelope,
-                                    format,
-                                    state.use_gpu,
-                                ),
-                            ),
-                        ));
+                        // 音频导出后端已移除，确认按钮当前无实际操作。
+                        tracing::warn!("音频导出后端已移除，确认操作暂时无效");
                     }
                     A::ProjectNameChanged(value) => {
                         root.state.audio_export_dialog.project_name = value;
@@ -313,9 +288,6 @@ impl MessageHandler for DialogHandler {
                                 path.to_string_lossy().to_string();
                         }
                     }
-                    A::Progress(_pct, _msg) => {} // 进度更新在外部渲染层处理
-                    A::Completed => {}
-                    A::Failed(_err) => {}
                 }
                 None
             }

@@ -75,21 +75,6 @@ impl Root {
         }
     }
 
-    /// 设置音频导出对话框数据（从主窗口传递配置）
-    pub fn set_audio_export_dialog_state(
-        &mut self,
-        project_name: &str,
-        midi_path: &str,
-        soundfont_path: &str,
-        output_path: &str,
-    ) {
-        let state = &mut self.state.audio_export_dialog;
-        state.project_name = project_name.to_string();
-        state.midi_path = midi_path.to_string();
-        state.soundfont_path = soundfont_path.to_string();
-        state.output_path = output_path.to_string();
-    }
-
     /// 设置工程设置对话框数据
     pub fn set_project_settings_data(
         &mut self,

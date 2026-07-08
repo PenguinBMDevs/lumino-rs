@@ -307,12 +307,6 @@ mod tests {
 
         let action = AudioExportAction::ClosePanel;
         assert!(matches!(action, AudioExportAction::ClosePanel));
-
-        let action = AudioExportAction::Completed;
-        assert!(matches!(action, AudioExportAction::Completed));
-
-        let action = AudioExportAction::Failed("error".to_string());
-        assert!(matches!(action, AudioExportAction::Failed(_)));
     }
 
     // ─── CollaborationAction ───

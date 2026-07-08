@@ -1,4 +1,4 @@
-//! 音频导出动作
+//! 音频导出动作 — 仅保留 UI 控件交互变体
 
 use crate::{AudioChannels, AudioFormat, Interpolation, ThreadingOption};
 
@@ -9,7 +9,7 @@ pub enum AudioExportAction {
     OpenPanel,
     /// 关闭音频导出面板（返回主编辑器）
     ClosePanel,
-    /// 确认音频导出
+    /// 确认音频导出（由重写的 handler 处理）
     Confirm,
     /// 工程名称变更
     ProjectNameChanged(String),
@@ -43,10 +43,4 @@ pub enum AudioExportAction {
     BrowseMidi,
     /// 浏览音色库文件
     BrowseSoundfont,
-    /// 进度更新
-    Progress(f32, String),
-    /// 完成
-    Completed,
-    /// 失败
-    Failed(String),
 }
