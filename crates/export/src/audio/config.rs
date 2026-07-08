@@ -3,10 +3,10 @@
 use std::path::PathBuf;
 
 use xsynth_core::{
+    AudioStreamParams, ChannelCount,
     channel::ChannelInitOptions,
     channel_group::{ChannelGroupConfig, ParallelismOptions, SynthFormat, ThreadCount},
     soundfont::{EnvelopeCurveType, EnvelopeOptions, Interpolator, SoundfontInitOptions},
-    AudioStreamParams, ChannelCount,
 };
 
 /// Lumino 侧的音频导出 UI 状态快照，用于构造 xsynth 配置
@@ -20,7 +20,6 @@ pub struct AudioRenderConfig {
     pub output_path: PathBuf,
 
     // ── xsynth 核心参数 ──
-
     /// 采样率（Hz）
     pub sample_rate: u32,
     /// 声道数

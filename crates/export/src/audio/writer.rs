@@ -38,11 +38,10 @@ impl AudioFileWriter {
                 let mut w = writer;
                 for batch in rcv {
                     for s in batch {
-                        w.write_sample(s)
-                            .map_err(|e| {
-                                tracing::error!("WAV 写入错误: {e}");
-                                e
-                            })?;
+                        w.write_sample(s).map_err(|e| {
+                            tracing::error!("WAV 写入错误: {e}");
+                            e
+                        })?;
                     }
                 }
                 w.finalize().map_err(|e| {

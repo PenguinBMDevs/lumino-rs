@@ -3,9 +3,9 @@
 use std::path::Path;
 
 use xsynth_core::{
+    AudioPipe, ChannelCount,
     channel_group::{ChannelGroup, SynthEvent},
     effects::VolumeLimiter,
-    AudioPipe, ChannelCount,
 };
 
 use crate::error::ExportResult;
@@ -96,8 +96,7 @@ impl AudioRenderer {
         let samples = (samples_f as usize) * self.channel_count as usize;
 
         self.buffer.output_vec.resize(samples, 0.0);
-        self.channel_group
-            .read_samples(&mut self.buffer.output_vec);
+        self.channel_group.read_samples(&mut self.buffer.output_vec);
 
         // 可应用限幅器
         if let Some(limiter) = &mut self.limiter {
@@ -116,19 +115,14 @@ impl AudioRenderer {
         loop {
             let samples = self.sample_rate as usize * self.channel_count as usize;
             self.buffer.output_vec.resize(samples, 0.0);
-            self.channel_group
-                .read_samples(&mut self.buffer.output_vec);
+            self.channel_group.read_samples(&mut self.buffer.output_vec);
 
             if let Some(limiter) = &mut self.limiter {
                 limiter.limit(&mut self.buffer.output_vec);
             }
 
             // 检测是否静音
-            let is_empty = self
-                .buffer
-                .output_vec
-                .iter()
-                .all(|&s| s.abs() < 0.0001);
+            let is_empty = self.buffer.output_vec.iter().all(|&s| s.abs() < 0.0001);
 
             if let Err(e) = self.audio_writer.write_samples(&mut self.buffer.output_vec) {
                 tracing::error!("尾部渲染写入失败: {e}");

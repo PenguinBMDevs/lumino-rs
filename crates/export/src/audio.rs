@@ -9,7 +9,7 @@
 
 pub mod config;
 mod renderer;
-mod tick_conv;
+pub mod tick_conv;
 mod writer;
 
 use std::sync::Arc;
@@ -22,16 +22,13 @@ use xsynth_core::{
     soundfont::{SampleSoundfont, SoundfontBase},
 };
 
-use lumino_midi_loader::{
-    document::MidiDocument,
-    streaming::StreamingMidiPlayer,
-};
+use lumino_midi_loader::{document::MidiDocument, streaming::StreamingMidiPlayer};
 
 use crate::error::{ExportError, ExportResult};
 
+use self::tick_conv::TickToTime;
 pub use config::AudioRenderConfig;
 pub use renderer::AudioRenderer;
-use self::tick_conv::TickToTime;
 
 // ════════════════════════════════════════════════════════════
 // 公共 API
@@ -50,8 +47,7 @@ pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
     );
 
     // 读取 MIDI 字节（必须持有以维持 StreamingMidiPlayer 的借用）
-    let midi_bytes = std::fs::read(&config.midi_path)
-        .map_err(ExportError::Io)?;
+    let midi_bytes = std::fs::read(&config.midi_path).map_err(ExportError::Io)?;
 
     let player = StreamingMidiPlayer::from_bytes(&midi_bytes)
         .map_err(|e| ExportError::AudioWrite(format!("解析 MIDI 失败: {e}")))?;
@@ -100,7 +96,9 @@ pub fn render_audio_from_document(
     // 从 MidiDocument 构建合并事件列表
     let merged = build_document_events(doc);
     if merged.is_empty() {
-        return Err(ExportError::AudioWrite("MIDI 文档中没有可渲染的事件".into()));
+        return Err(ExportError::AudioWrite(
+            "MIDI 文档中没有可渲染的事件".into(),
+        ));
     }
 
     // 构造 Tick→Time 转换器
@@ -127,8 +125,8 @@ struct MergedEvent {
     /// 0=NoteOn, 1=NoteOff, 2=CC, 3=PC, 4=PB
     kind: u8,
     channel: u8,
-    param1: u8,   // key / controller / program
-    param2: u16,  // velocity / value / raw bend
+    param1: u8,  // key / controller / program
+    param2: u16, // velocity / value / raw bend
 }
 
 // ════════════════════════════════════════════════════════════
@@ -136,7 +134,9 @@ struct MergedEvent {
 // ════════════════════════════════════════════════════════════
 
 /// 初始化 AudioRenderer + 加载 SF2 音色库
-fn init_renderer(config: &AudioRenderConfig) -> ExportResult<(AudioRenderer, xsynth_core::AudioStreamParams)> {
+fn init_renderer(
+    config: &AudioRenderConfig,
+) -> ExportResult<(AudioRenderer, xsynth_core::AudioStreamParams)> {
     let mut renderer = AudioRenderer::new(config, &config.output_path)?;
     let stream_params = renderer.stream_params();
 
@@ -193,7 +193,10 @@ fn run_streaming_render_loop(
             let elapsed = start_time.elapsed();
             eprint!(
                 "\r  进度: {:5.1}% | 事件: {:>8} | 音符: {:>8} | 耗时: {:>6.1}s",
-                pct, event_count, note_count, elapsed.as_secs_f64()
+                pct,
+                event_count,
+                note_count,
+                elapsed.as_secs_f64()
             );
             last_progress_tick = tick;
         }
@@ -242,18 +245,14 @@ fn run_streaming_render_loop(
                     MidiMessage::ProgramChange { program } => {
                         renderer.send_event(SynthEvent::Channel(
                             ch,
-                            ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(
-                                program.as_int(),
-                            )),
+                            ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program.as_int())),
                         ));
                     }
                     MidiMessage::PitchBend { bend } => {
                         renderer.send_event(SynthEvent::Channel(
                             ch,
                             ChannelEvent::Audio(ChannelAudioEvent::Control(
-                                ControlEvent::PitchBendValue(
-                                    bend.as_int() as f32 / 8192.0 - 1.0,
-                                ),
+                                ControlEvent::PitchBendValue(bend.as_int() as f32 / 8192.0 - 1.0),
                             )),
                         ));
                     }
@@ -268,7 +267,9 @@ fn run_streaming_render_loop(
     let elapsed = start_time.elapsed();
     eprintln!(
         "\r  进度: 100.0% | 事件: {:>8} | 音符: {:>8} | 耗时: {:>6.1}s",
-        event_count, note_count, elapsed.as_secs_f64()
+        event_count,
+        note_count,
+        elapsed.as_secs_f64()
     );
 
     info!("流式渲染完成: 处理 {event_count} 个事件, {note_count} 个音符");
@@ -328,9 +329,7 @@ fn run_document_render_loop(
                     // NoteOff
                     renderer.send_event(SynthEvent::Channel(
                         ch,
-                        ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
-                            key: e.param1,
-                        }),
+                        ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: e.param1 }),
                     ));
                     event_count += 1;
                 }
@@ -433,12 +432,16 @@ fn build_document_events(doc: &MidiDocument) -> Vec<MergedEvent> {
                 let p = ctrl.as_program_change();
                 (3, ctrl.channel, p, 0)
             }
-            2 => {
-                (4, ctrl.channel, 0, ctrl.param)
-            }
+            2 => (4, ctrl.channel, 0, ctrl.param),
             _ => continue,
         };
-        events.push(MergedEvent { tick: ctrl.tick, kind, channel: chan, param1: p1, param2: p2 });
+        events.push(MergedEvent {
+            tick: ctrl.tick,
+            kind,
+            channel: chan,
+            param1: p1,
+            param2: p2,
+        });
     }
 
     // 3. 排序：tick → 事件类型优先级

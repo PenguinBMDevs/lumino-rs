@@ -124,7 +124,10 @@ mod tests {
         let tempos = vec![(0, 120.0)];
         let conv = TickToTime::new(tempos, 480);
         let secs = conv.tick_to_seconds(960);
-        assert!((secs - 1.0).abs() < 0.001, "120BPM 960ticks = 1s, got {secs}");
+        assert!(
+            (secs - 1.0).abs() < 0.001,
+            "120BPM 960ticks = 1s, got {secs}"
+        );
     }
 
     #[test]
