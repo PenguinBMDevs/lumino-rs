@@ -128,10 +128,7 @@ mod tests {
         assert_eq!(sidebar.route, Route::File);
         assert!(sidebar.panel_visible, "应恢复音轨列表面板打开状态");
         assert_eq!(sidebar.panel_route, Route::File);
-        assert!(
-            sidebar.automation_panel_visible,
-            "应恢复自动化面板打开状态"
-        );
+        assert!(sidebar.automation_panel_visible, "应恢复自动化面板打开状态");
         assert!(sidebar.piano_roll_visible, "应恢复钢琴卷帘显示");
     }
 
@@ -149,10 +146,7 @@ mod tests {
         assert_eq!(sidebar.route, Route::File);
         assert!(sidebar.panel_visible, "音轨列表面板应被打开");
         assert_eq!(sidebar.panel_route, Route::File);
-        assert!(
-            sidebar.automation_panel_visible,
-            "自动化面板状态应被保留"
-        );
+        assert!(sidebar.automation_panel_visible, "自动化面板状态应被保留");
     }
 
     /// 在工程走带界面点击自动化面板按钮：退出走带并开启自动化面板
@@ -167,10 +161,7 @@ mod tests {
         sidebar.update(Event::AutomationPanelToggled);
 
         assert_ne!(sidebar.route, Route::Arrangement, "应退出工程走带");
-        assert!(
-            sidebar.automation_panel_visible,
-            "自动化面板应被打开"
-        );
+        assert!(sidebar.automation_panel_visible, "自动化面板应被打开");
         assert!(sidebar.piano_roll_visible, "应恢复钢琴卷帘显示");
     }
 

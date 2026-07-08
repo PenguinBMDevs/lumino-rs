@@ -1,5 +1,9 @@
 //! 对话框相关事件
 
+use std::sync::Arc;
+
+use lumino_midi_loader::MidiDocument;
+
 #[derive(Debug, Clone)]
 pub enum Event {
     /// 打开自定义精度对话框窗口
@@ -31,6 +35,9 @@ pub enum Event {
         copyright: String,
     },
     /// 开始音频导出
+    ///
+    /// 如果 `document` 为 `Some`，则使用内存中的 MidiDocument 进行渲染（零拷贝）；
+    /// 否则从 `midi_path` 指定的文件读取。
     StartAudioExport {
         midi_path: String,
         soundfont_path: String,
@@ -44,6 +51,8 @@ pub enum Event {
         apply_limiter: bool,
         disable_fade_out: bool,
         linear_envelope: bool,
+        /// 内存中的 MidiDocument（如果存在）
+        document: Option<Arc<MidiDocument>>,
     },
 }
 
@@ -62,7 +71,13 @@ impl Event {
             Self::OpenProjectSettingsDialog => "工程设置".to_string(),
             Self::CloseProjectSettingsDialog => "关闭工程设置".to_string(),
             Self::ApplyProjectSettings { .. } => "应用工程设置".to_string(),
-            Self::StartAudioExport { .. } => "音频导出".to_string(),
+            Self::StartAudioExport { document, .. } => {
+                if document.is_some() {
+                    "音频导出（内存模式）".to_string()
+                } else {
+                    "音频导出（文件模式）".to_string()
+                }
+            }
         }
     }
 }

@@ -3,6 +3,8 @@ pub mod dialog;
 pub mod lifecycle;
 pub mod sync;
 
+use std::sync::Arc;
+
 #[derive(Debug, Clone)]
 /// 窗口事件
 pub enum Event {
@@ -96,6 +98,7 @@ impl Event {
         apply_limiter: bool,
         disable_fade_out: bool,
         linear_envelope: bool,
+        document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) -> Self {
         Self::Dialog(dialog::Event::StartAudioExport {
             midi_path,
@@ -110,6 +113,7 @@ impl Event {
             apply_limiter,
             disable_fade_out,
             linear_envelope,
+            document,
         })
     }
 

@@ -121,9 +121,17 @@ impl RunnerInner {
                 apply_limiter,
                 disable_fade_out,
                 linear_envelope,
+                document,
             } => {
                 use std::time::Instant;
-                tracing::info!("开始音频导出: MIDI={midi_path}, SF2={soundfont_path}");
+
+                // 根据是否有内存中的 MidiDocument 选择渲染模式
+                let mode_str = if document.is_some() {
+                    "内存模式（零拷贝）"
+                } else {
+                    "文件模式"
+                };
+                tracing::info!("开始音频导出 [{mode_str}]: MIDI={midi_path}, SF2={soundfont_path}");
 
                 let midi_path = PathBuf::from(&midi_path);
                 let soundfont_path = PathBuf::from(&soundfont_path);
@@ -203,7 +211,17 @@ impl RunnerInner {
                     .name("audio-render".into())
                     .spawn(move || {
                         let start = Instant::now();
-                        match lumino_export::render_audio(&config) {
+
+                        // 根据是否有内存中的 MidiDocument 选择渲染方式
+                        let render_result = if let Some(doc) = document {
+                            tracing::info!("使用内存模式渲染音频（零拷贝）");
+                            lumino_export::render_audio_from_document(&config, &doc)
+                        } else {
+                            tracing::info!("使用文件模式渲染音频: {:?}", config.midi_path);
+                            lumino_export::render_audio(&config)
+                        };
+
+                        match render_result {
                             Ok(()) => {
                                 let elapsed = start.elapsed();
                                 tracing::info!(

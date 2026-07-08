@@ -204,6 +204,20 @@ impl MessageHandler for DialogHandler {
 
                         // 从 dialog state 读取配置，发送事件到 runner
                         let st = &root.state.audio_export_dialog;
+
+                        // 检查内存中是否有 MidiDocument
+                        let document = root.midi.document.as_ref().map(|doc| {
+                            tracing::info!("使用内存中的 MidiDocument 进行音频导出（零拷贝模式）");
+                            std::sync::Arc::clone(doc)
+                        });
+
+                        if document.is_none() {
+                            tracing::info!(
+                                "内存中没有 MidiDocument，使用文件模式: {:?}",
+                                st.midi_path
+                            );
+                        }
+
                         let ev = crate::event::window::Event::start_audio_export(
                             st.midi_path.clone(),
                             st.soundfont_path.clone(),
@@ -217,6 +231,7 @@ impl MessageHandler for DialogHandler {
                             st.apply_limiter,
                             st.disable_fade_out,
                             st.linear_envelope,
+                            document,
                         );
                         crate::event::emit(crate::event::Event::Window(ev));
                     }
