@@ -21,6 +21,8 @@ pub const RESIZE_HANDLE_WIDTH: f32 = 6.0;
 pub enum GroupId {
     /// 钢琴卷帘组（红色）
     PianoRoll,
+    /// 工程走带组（绿色）
+    Project,
     /// 瀑布流播放器组（黄色）
     Waterfall,
     /// 渲染组（蓝色）
@@ -32,6 +34,7 @@ impl GroupId {
     pub fn parent_color(&self) -> Color {
         match self {
             GroupId::PianoRoll => Color::from_rgb(0.85, 0.15, 0.15),
+            GroupId::Project => Color::from_rgb(0.15, 0.75, 0.35),
             GroupId::Waterfall => Color::from_rgb(0.85, 0.75, 0.10),
             GroupId::Renderer => Color::from_rgb(0.15, 0.45, 0.85),
         }
@@ -41,6 +44,7 @@ impl GroupId {
     pub fn child_color(&self) -> Color {
         match self {
             GroupId::PianoRoll => Color::from_rgb(0.65, 0.35, 0.35),
+            GroupId::Project => Color::from_rgb(0.35, 0.65, 0.45),
             GroupId::Waterfall => Color::from_rgb(0.65, 0.58, 0.30),
             GroupId::Renderer => Color::from_rgb(0.35, 0.55, 0.65),
         }
@@ -51,6 +55,10 @@ impl GroupId {
             GroupId::PianoRoll => match lang {
                 Language::ZhCn => "钢琴卷帘组",
                 Language::EnUs => "Piano Roll",
+            },
+            GroupId::Project => match lang {
+                Language::ZhCn => "工程走带",
+                Language::EnUs => "Project",
             },
             GroupId::Waterfall => match lang {
                 Language::ZhCn => "瀑布流播放器",
@@ -144,10 +152,10 @@ pub const ROUTES: [RouteConfig; 9] = [
         icon: icon::WaveForm,
         group: Some(GroupId::PianoRoll),
     },
-    RouteConfig::Item {
-        route: Route::Arrangement,
+    // ── 工程走带组（绿色） ──
+    RouteConfig::GroupParent {
+        group: GroupId::Project,
         icon: icon::Arrangement,
-        group: Some(GroupId::PianoRoll),
     },
     // ── 瀑布流播放器组（黄色） ──
     RouteConfig::GroupParent {
@@ -210,6 +218,8 @@ pub struct Sidebar {
     pub active_group: Option<GroupId>,
     /// 钢琴卷帘组的子按钮保存状态
     pub piano_roll_sub_state: GroupSubState,
+    /// 工程走带组的子按钮保存状态
+    pub project_sub_state: GroupSubState,
     /// 渲染组的子按钮保存状态
     pub renderer_sub_state: GroupSubState,
     /// 音频渲染面板是否可见（在主界面钢琴卷帘区域显示）
@@ -248,6 +258,7 @@ impl Sidebar {
             piano_roll_visible: true,
             active_group: Some(GroupId::PianoRoll),
             piano_roll_sub_state: GroupSubState::default(),
+            project_sub_state: GroupSubState::default(),
             renderer_sub_state: GroupSubState::default(),
             audio_export_visible: false,
         }

@@ -92,7 +92,7 @@ mod tests {
         );
     }
 
-    /// 工程走带按钮与音轨列表、自动化面板互斥：打开走带时关闭后两者
+    /// 工程走带组按钮与音轨列表、自动化面板互斥：打开走带时关闭后两者
     #[test]
     fn test_arrangement_button_closes_file_and_automation_panels() {
         let mut sidebar = Sidebar::new();
@@ -102,7 +102,8 @@ mod tests {
         sidebar.automation_panel_visible = true;
         sidebar.piano_roll_visible = true;
 
-        sidebar.update(Event::PanelToggled(Route::Arrangement));
+        // 工程走带现在通过工程组按钮进入
+        sidebar.update(Event::GroupToggled(GroupId::Project));
 
         assert_eq!(sidebar.route, Route::Arrangement);
         assert!(!sidebar.panel_visible, "进入工程走带后音轨列表面板应关闭");
@@ -113,7 +114,7 @@ mod tests {
         assert!(!sidebar.piano_roll_visible, "进入工程走带后钢琴卷帘应隐藏");
     }
 
-    /// 再次点击工程走带按钮可恢复之前的钢琴卷帘子按钮状态
+    /// 再次点击工程组按钮可恢复之前的钢琴卷帘子按钮状态
     #[test]
     fn test_arrangement_button_restores_file_and_automation_state() {
         let mut sidebar = Sidebar::new();
@@ -122,8 +123,9 @@ mod tests {
         sidebar.automation_panel_visible = true;
         sidebar.piano_roll_visible = true;
 
-        sidebar.update(Event::PanelToggled(Route::Arrangement));
-        sidebar.update(Event::PanelToggled(Route::Arrangement));
+        // 先后两次点击工程组按钮 = 进入再退出工程走带
+        sidebar.update(Event::GroupToggled(GroupId::Project));
+        sidebar.update(Event::GroupToggled(GroupId::Project));
 
         assert_eq!(sidebar.route, Route::File);
         assert!(sidebar.panel_visible, "应恢复音轨列表面板打开状态");
@@ -140,7 +142,8 @@ mod tests {
         sidebar.panel_route = Route::File;
         sidebar.automation_panel_visible = true;
 
-        sidebar.update(Event::PanelToggled(Route::Arrangement));
+        sidebar.update(Event::GroupToggled(GroupId::Project));
+        // 在工程组中点击音轨列表按钮：跨组点击，应切回钢琴卷帘组并打开音轨列表
         sidebar.update(Event::PanelToggled(Route::File));
 
         assert_eq!(sidebar.route, Route::File);
@@ -157,7 +160,7 @@ mod tests {
         sidebar.panel_route = Route::File;
         sidebar.automation_panel_visible = false;
 
-        sidebar.update(Event::PanelToggled(Route::Arrangement));
+        sidebar.update(Event::GroupToggled(GroupId::Project));
         sidebar.update(Event::AutomationPanelToggled);
 
         assert_ne!(sidebar.route, Route::Arrangement, "应退出工程走带");
@@ -173,7 +176,7 @@ mod tests {
         sidebar.panel_route = Route::File;
         sidebar.automation_panel_visible = true;
 
-        sidebar.update(Event::PanelToggled(Route::Arrangement));
+        sidebar.update(Event::GroupToggled(GroupId::Project));
         sidebar.update(Event::GroupToggled(GroupId::Waterfall));
         sidebar.update(Event::GroupToggled(GroupId::PianoRoll));
 

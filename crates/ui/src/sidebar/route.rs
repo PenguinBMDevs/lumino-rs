@@ -27,6 +27,7 @@ pub fn view<'a>(
             RouteConfig::GroupParent { group, icon } => {
                 let is_active = match group {
                     GroupId::PianoRoll => piano_roll_visible,
+                    GroupId::Project => active_group == Some(GroupId::Project),
                     GroupId::Waterfall => current_mode == AppMode::Waterfall,
                     GroupId::Renderer => active_group == Some(GroupId::Renderer),
                 };
@@ -118,6 +119,7 @@ fn group_parent_item<'a>(
 
     let event = match group {
         GroupId::PianoRoll => Event::group_toggled(GroupId::PianoRoll),
+        GroupId::Project => Event::group_toggled(GroupId::Project),
         GroupId::Waterfall => Event::group_toggled(GroupId::Waterfall),
         GroupId::Renderer => Event::group_toggled(GroupId::Renderer),
     };

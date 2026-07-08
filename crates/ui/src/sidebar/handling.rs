@@ -32,25 +32,29 @@ impl Sidebar {
                     // 进入走带前保存当前钢琴卷帘状态，离开时恢复。
                     if self.route == Route::Arrangement && r != Route::Arrangement {
                         self.restore_piano_roll_state();
+                        if self.active_group == Some(GroupId::Project) {
+                            self.active_group = Some(GroupId::PianoRoll);
+                        }
                     } else if r == Route::Arrangement && self.route != Route::Arrangement {
                         self.enter_arrangement();
+                        self.active_group = Some(GroupId::Project);
                     }
                     self.route = r;
                 }
             }
             PanelToggled(r) => {
                 // 子按钮只能在对应分组激活时操作
-                let not_allowed = matches!(r, Route::File | Route::Automation | Route::Arrangement)
-                    && self.active_group != Some(GroupId::PianoRoll);
+                let not_allowed = self.active_group != Some(GroupId::PianoRoll)
+                    && matches!(r, Route::File | Route::Automation);
                 if not_allowed {
+                    // 跨组点击 PianoRoll 子按钮：先切回 PianoRoll 组，始终打开面板
+                    self.handle_group_toggle(GroupId::PianoRoll);
+                    self.panel_visible = true;
+                    self.panel_route = r;
                     self.route = r;
                 } else if r == Route::Arrangement {
-                    // 工程走带按钮为切换按钮：再次点击则恢复钢琴卷帘状态
-                    if self.route == Route::Arrangement {
-                        self.restore_piano_roll_state();
-                    } else {
-                        self.enter_arrangement();
-                    }
+                    // 工程走带：通过 GroupToggled 切换分组，此处仅兜底
+                    self.route = Route::Arrangement;
                 } else if self.route == Route::Arrangement {
                     // 在工程走带界面点击其他子按钮：先恢复钢琴卷帘状态，再打开目标面板
                     self.restore_piano_roll_state();
@@ -107,6 +111,7 @@ impl Sidebar {
                     // 从工程走带界面打开自动化面板：恢复钢琴卷帘状态并开启自动化
                     self.restore_piano_roll_state();
                     self.automation_panel_visible = true;
+                    self.active_group = Some(GroupId::PianoRoll);
                 } else {
                     self.automation_panel_visible = !self.automation_panel_visible;
                 }
@@ -132,6 +137,8 @@ impl Sidebar {
     fn handle_group_toggle(&mut self, group: GroupId) {
         // 如果点击的是已激活的分组，则关闭该分组
         if self.active_group == Some(group) {
+            // 先保存当前状态，确保再次激活时能正确恢复
+            self.save_group_state(group);
             self.deactivate_group(group);
             return;
         }
@@ -184,6 +191,13 @@ impl Sidebar {
                     automation_panel_visible: self.automation_panel_visible,
                 };
             }
+            GroupId::Project => {
+                self.project_sub_state = GroupSubState {
+                    panel_visible: self.panel_visible,
+                    panel_route: self.panel_route,
+                    automation_panel_visible: self.automation_panel_visible,
+                };
+            }
             GroupId::Renderer => {
                 self.renderer_sub_state = GroupSubState {
                     panel_visible: self.panel_visible,
@@ -213,6 +227,13 @@ impl Sidebar {
                     Route::File
                 };
             }
+            GroupId::Project => {
+                // 工程走带：隐藏钢琴卷帘，显示走带视图
+                self.piano_roll_visible = false;
+                self.panel_visible = false;
+                self.automation_panel_visible = false;
+                self.route = Route::Arrangement;
+            }
             GroupId::Waterfall => {
                 // 瀑布流：关闭钢琴卷帘
                 self.piano_roll_visible = false;
@@ -238,6 +259,21 @@ impl Sidebar {
                 self.piano_roll_visible = false;
                 self.panel_visible = false;
                 self.automation_panel_visible = false;
+            }
+            GroupId::Project => {
+                // 退出工程走带时恢复钢琴卷帘状态并切回钢琴卷帘组
+                self.piano_roll_visible = true;
+                let state = &self.piano_roll_sub_state;
+                self.panel_route = state.panel_route;
+                self.panel_visible = state.panel_visible;
+                self.automation_panel_visible = state.automation_panel_visible;
+                self.route = if state.panel_visible {
+                    state.panel_route
+                } else {
+                    Route::File
+                };
+                self.active_group = Some(GroupId::PianoRoll);
+                return;
             }
             GroupId::Waterfall => {
                 // 退出瀑布流时切回钢琴卷帘组（如果有保存状态）
