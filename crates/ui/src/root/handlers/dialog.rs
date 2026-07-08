@@ -195,8 +195,23 @@ impl MessageHandler for DialogHandler {
                         root.sidebar.route = crate::sidebar::Route::Arrangement;
                     }
                     A::Confirm => {
-                        // 音频导出后端已移除，确认按钮当前无实际操作。
-                        tracing::warn!("音频导出后端已移除，确认操作暂时无效");
+                        // 从 dialog state 读取配置，发送事件到 runner
+                        let st = &root.state.audio_export_dialog;
+                        let ev = crate::event::window::Event::start_audio_export(
+                            st.midi_path.clone(),
+                            st.soundfont_path.clone(),
+                            st.output_path.clone(),
+                            st.sample_rate,
+                            format!("{:?}", st.channels),
+                            st.layers,
+                            format!("{:?}", st.channel_threading),
+                            format!("{:?}", st.key_threading),
+                            format!("{:?}", st.interpolation),
+                            st.apply_limiter,
+                            st.disable_fade_out,
+                            st.linear_envelope,
+                        );
+                        crate::event::emit(crate::event::Event::Window(ev));
                     }
                     A::ProjectNameChanged(value) => {
                         root.state.audio_export_dialog.project_name = value;

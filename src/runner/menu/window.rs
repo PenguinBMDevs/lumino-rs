@@ -1,7 +1,9 @@
 //! Runner 窗口事件处理
 
 use crate::runner::{RunnerInner, dialog_manager::DialogType};
+use lumino_export::audio::config::{AudioChannelMode, AudioInterpolation, AudioRenderConfig, ThreadMode};
 use lumino_ui::event::window::Event as WindowEvent;
+use std::path::PathBuf;
 
 impl RunnerInner {
     /// 处理窗口事件
@@ -103,6 +105,97 @@ impl RunnerInner {
                 main_ui.apply_speed_change(factor);
             }
             OpenLoadConfirmDialog { .. } => {}
+            StartAudioExport {
+                midi_path,
+                soundfont_path,
+                output_path,
+                sample_rate,
+                channels,
+                layer_limit,
+                channel_threading,
+                key_threading,
+                interpolation,
+                apply_limiter,
+                disable_fade_out,
+                linear_envelope,
+            } => {
+                use std::time::Instant;
+                tracing::info!("开始音频导出: MIDI={midi_path}, SF2={soundfont_path}");
+
+                let midi_path = PathBuf::from(&midi_path);
+                let soundfont_path = PathBuf::from(&soundfont_path);
+                let output_path = PathBuf::from(&output_path);
+
+                // 解析枚举值（来自 UI 的 Debug 格式）
+                let ch = match channels.as_str() {
+                    "Mono" => AudioChannelMode::Mono,
+                    _ => AudioChannelMode::Stereo,
+                };
+                let ct = match channel_threading.as_str() {
+                    "None" => ThreadMode::None,
+                    "Auto" => ThreadMode::Auto,
+                    s if s.starts_with("Manual") => {
+                        // format: "Manual(N)"
+                        let n = s
+                            .trim_start_matches("Manual(")
+                            .trim_end_matches(')')
+                            .parse::<u32>()
+                            .unwrap_or(2);
+                        ThreadMode::Manual(n)
+                    }
+                    _ => ThreadMode::Auto,
+                };
+                let kt = match key_threading.as_str() {
+                    "None" => ThreadMode::None,
+                    "Auto" => ThreadMode::Auto,
+                    s if s.starts_with("Manual") => {
+                        let n = s
+                            .trim_start_matches("Manual(")
+                            .trim_end_matches(')')
+                            .parse::<u32>()
+                            .unwrap_or(2);
+                        ThreadMode::Manual(n)
+                    }
+                    _ => ThreadMode::Auto,
+                };
+                let ip = match interpolation.as_str() {
+                    "None" => AudioInterpolation::Nearest,
+                    _ => AudioInterpolation::Linear,
+                };
+                let layer_limit = if layer_limit == 0 { None } else { Some(layer_limit as usize) };
+
+                let config = AudioRenderConfig {
+                    midi_path,
+                    soundfonts: vec![soundfont_path],
+                    output_path,
+                    sample_rate,
+                    channels: ch,
+                    layer_limit,
+                    channel_threading: ct,
+                    key_threading: kt,
+                    interpolation: ip,
+                    apply_limiter,
+                    disable_fade_out,
+                    linear_envelope,
+                };
+
+                // 在后台线程执行渲染（避免阻塞 UI）
+                std::thread::Builder::new()
+                    .name("audio-render".into())
+                    .spawn(move || {
+                        let start = Instant::now();
+                        match lumino_export::render_audio(&config) {
+                            Ok(()) => {
+                                let elapsed = start.elapsed();
+                                tracing::info!("音频导出完成: {:?}, 耗时 {:?}", config.output_path, elapsed);
+                            }
+                            Err(e) => {
+                                tracing::error!("音频导出失败: {e}");
+                            }
+                        }
+                    })
+                    .expect("无法创建音频渲染线程");
+            }
         }
     }
 

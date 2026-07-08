@@ -83,6 +83,35 @@ impl Event {
             copyright,
         })
     }
+    pub fn start_audio_export(
+        midi_path: String,
+        soundfont_path: String,
+        output_path: String,
+        sample_rate: u32,
+        channels: String,
+        layer_limit: u32,
+        channel_threading: String,
+        key_threading: String,
+        interpolation: String,
+        apply_limiter: bool,
+        disable_fade_out: bool,
+        linear_envelope: bool,
+    ) -> Self {
+        Self::Dialog(dialog::Event::StartAudioExport {
+            midi_path,
+            soundfont_path,
+            output_path,
+            sample_rate,
+            channels,
+            layer_limit,
+            channel_threading,
+            key_threading,
+            interpolation,
+            apply_limiter,
+            disable_fade_out,
+            linear_envelope,
+        })
+    }
 
     // ── 协作构造函数（直接构造 collaboration::Event） ──
 

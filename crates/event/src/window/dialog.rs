@@ -30,6 +30,21 @@ pub enum Event {
         tempo: f64,
         copyright: String,
     },
+    /// 开始音频导出
+    StartAudioExport {
+        midi_path: String,
+        soundfont_path: String,
+        output_path: String,
+        sample_rate: u32,
+        channels: String,
+        layer_limit: u32,
+        channel_threading: String,
+        key_threading: String,
+        interpolation: String,
+        apply_limiter: bool,
+        disable_fade_out: bool,
+        linear_envelope: bool,
+    },
 }
 
 impl Event {
@@ -47,6 +62,7 @@ impl Event {
             Self::OpenProjectSettingsDialog => "工程设置".to_string(),
             Self::CloseProjectSettingsDialog => "关闭工程设置".to_string(),
             Self::ApplyProjectSettings { .. } => "应用工程设置".to_string(),
+            Self::StartAudioExport { .. } => "音频导出".to_string(),
         }
     }
 }

@@ -17,6 +17,7 @@
 //! [`converter`] 模块提供格式间同步转换的便捷函数，
 //! 如 [`export_midi_from_dms_sync`]、[`export_dms_from_midi_sync`] 等。
 
+pub mod audio;
 pub mod converter;
 pub mod dms;
 pub mod error;
@@ -24,6 +25,13 @@ pub mod format;
 pub mod lmpj;
 pub mod midi;
 pub mod project;
+
+// ── 音频渲染 ──
+
+/// 音频渲染（基于 xsynth）—— 流式模式
+pub use audio::render_audio;
+/// 音频渲染（基于 xsynth）—— 内存模式
+pub use audio::render_audio_from_document;
 
 // ── 格式转换 ──
 
