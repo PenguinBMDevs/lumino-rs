@@ -10,7 +10,7 @@
 //!   和 rayon 在音频回调中的并行开销，显著降低延迟与卡顿风险。
 
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Instant;
 
@@ -48,6 +48,8 @@ pub struct RealtimeSynth {
     stream_params: AudioStreamParams,
     /// 渲染线程句柄
     render_thread: Option<thread::JoinHandle<()>>,
+    /// 渲染线程运行标志
+    running: Arc<AtomicBool>,
 }
 
 impl RealtimeSynth {
@@ -115,22 +117,20 @@ impl RealtimeSynth {
         let mut channel_group = ChannelGroup::new(cg_config);
 
         // ── 渲染线程 ───────────────────────────────────────────────
+        let running = Arc::new(AtomicBool::new(true));
+        let running_render = running.clone();
         let perf_render = perf.clone();
         let voice_render = total_voice_count.clone();
 
         let render_thread = thread::Builder::new()
             .name("lumino-render".into())
             .spawn(move || {
-                loop {
+                while running_render.load(Ordering::Relaxed) {
                     let start = Instant::now();
 
-                    // 消费所有待处理 MIDI 事件
+                    // 消费所有待处理事件（包括 AllChannels 配置）
                     let mut event_count = 0u64;
                     for event in event_receiver.try_iter() {
-                        if matches!(&event, SynthEvent::AllChannels(_)) {
-                            // Quit sentinel
-                            break;
-                        }
                         channel_group.send_event(event);
                         event_count += 1;
                     }
@@ -196,6 +196,7 @@ impl RealtimeSynth {
             perf,
             stream_params,
             render_thread: Some(render_thread),
+            running,
         }
     }
 
@@ -254,10 +255,12 @@ impl RealtimeSynth {
 
 impl Drop for RealtimeSynth {
     fn drop(&mut self) {
-        // 停止渲染线程
-        self.render_thread.take();
-        // 释放音频流
+        // 1) 信号量：通知渲染线程退出
+        self.running.store(false, Ordering::Relaxed);
+        // 2) 释放音频流：sample_rx 析构 → send() 失败 → 渲染线程也退出
         self.stream.take();
+        // 3) 等待渲染线程终止
+        self.render_thread.take();
     }
 }
 
