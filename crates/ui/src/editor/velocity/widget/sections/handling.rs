@@ -92,6 +92,8 @@ impl<'a> super::super::VelocityCanvas<'a> {
                 }
             }
             Tool::Pencil | Tool::Pointer => {
+                // Pencil/Pointer 只允许拖拽已有锚点，禁止在空白处创建新锚点
+                // 创建 CC 锚点请使用 Curve 曲线编辑工具
                 if let Some(lane) = lane_ref
                     && let Some(tick) =
                         Self::hit_test_automation_anchor(lane, &view, cursor_pos, max_val)
@@ -99,25 +101,6 @@ impl<'a> super::super::VelocityCanvas<'a> {
                     state.start_move_anchor(tick);
                     state.automation_curve_current = None;
                     return Some(publish_velocity(VelocityAction::AutomationDragStart));
-                }
-
-                if self.editor.current_tool() == Tool::Pencil {
-                    // 空白处添加新锚点
-                    let tick = self.snap_tick(self.x_to_tick(cursor_pos.x)).max(0.0) as u32;
-                    let value = view
-                        .y_to_value(cursor_pos.y, max_val)
-                        .round()
-                        .clamp(0.0, max_val) as u16;
-                    let shape = target.default_shape();
-                    return Some(publish_velocity(VelocityAction::AutomationEdit(
-                        AutomationEdit::Add {
-                            track_idx,
-                            target,
-                            tick,
-                            value,
-                            shape,
-                        },
-                    )));
                 }
             }
             Tool::Curve => {
@@ -449,38 +432,41 @@ impl<'a> super::super::VelocityCanvas<'a> {
                 state.automation_curve_current = Some((current_tick, current_value));
 
                 if current_tick == start_tick {
-                    return None;
+                    // 单点点击：只创建一个 Curve{tension:0} 锚点
+                    return Some(publish_velocity(VelocityAction::AutomationEdit(
+                        AutomationEdit::Add {
+                            track_idx,
+                            target: target.clone(),
+                            tick: current_tick,
+                            value: current_value,
+                            shape: SegmentShape::Curve { tension: 0 },
+                        },
+                    )));
                 }
 
-                let (min_tick, max_tick) =
-                    (start_tick.min(current_tick), start_tick.max(current_tick));
-                let start_f = start_tick as f32;
-                let end_f = current_tick as f32;
-                let value_range = current_value as f32 - start_value as f32;
-                let dx = end_f - start_f;
-
-                let mut edits = Vec::new();
-                for tick in min_tick..=max_tick {
-                    let t = if dx.abs() < f32::EPSILON {
-                        0.0
-                    } else {
-                        (tick as f32 - start_f) / dx
-                    };
-                    let value = (start_value as f32 + value_range * t)
-                        .round()
-                        .clamp(0.0, max_val) as u16;
-                    edits.push(AutomationEdit::Add {
+                // 参考 yinhe 模式：只创建 2 个锚点（起点 Curve{tension:0} + 终点 Step）
+                // 渲染层自动对 Curve 段做插值绘制，不需要逐 tick 插入事件
+                let (t1, v1, t2, v2) = if start_tick < current_tick {
+                    (start_tick, start_value, current_tick, current_value)
+                } else {
+                    (current_tick, current_value, start_tick, start_value)
+                };
+                Some(publish_velocity(VelocityAction::AutomationBatch(vec![
+                    AutomationEdit::Add {
                         track_idx,
                         target: target.clone(),
-                        tick,
-                        value,
+                        tick: t1,
+                        value: v1,
                         shape: SegmentShape::Curve { tension: 0 },
-                    });
-                }
-                if edits.is_empty() {
-                    return None;
-                }
-                Some(publish_velocity(VelocityAction::AutomationBatch(edits)))
+                    },
+                    AutomationEdit::Add {
+                        track_idx,
+                        target: target.clone(),
+                        tick: t2,
+                        value: v2,
+                        shape: SegmentShape::Step,
+                    },
+                ])))
             }
         }
     }

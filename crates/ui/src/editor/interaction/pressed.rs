@@ -37,6 +37,9 @@ impl Editor {
         match self.editor_state.tool {
             Tool::Pointer => self.handle_pointer_pressed(pos, hit_result, snapped_tick),
             Tool::Pencil => self.handle_pencil_pressed(pos, hit_result, snapped_tick, key),
+            Tool::Curve => {
+                // 曲线编辑工具只能在自动化面板中使用，不能在钢琴卷帘上绘制音符
+            }
             Tool::Eraser => self.handle_eraser_pressed(pos, shift, hit_result),
             _ => self.handle_default_tool_pressed(pos, hit_result, snapped_tick, key),
         }
