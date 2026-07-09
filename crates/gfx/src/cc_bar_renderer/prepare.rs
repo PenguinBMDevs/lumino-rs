@@ -3,6 +3,7 @@
 use super::core::{
     CcBarColors, CcBarData, CcBarInstance, CcBarRenderer, CcBarViewParams, CcBarViewportUniform,
 };
+use crate::automation::{AutomationViewParams, build_lane_instances};
 
 impl CcBarRenderer {
     /// 准备渲染数据
@@ -112,13 +113,30 @@ pub fn build_cc_bar_instances(
         return instances;
     }
 
-    // ── Non-Tempo mode: data bars ──
+    // ── Non-Tempo mode: data bars / 自动化曲线 ──
     let canvas_height = view_params.panel_height - TOOLBAR_HEIGHT;
     let max_y = canvas_height;
     let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
     let graph_height = max_y - min_y;
 
     const BAR_WIDTH: f32 = 2.0;
+
+    let curve_color = [
+        colors.bar_color[0],
+        colors.bar_color[1],
+        colors.bar_color[2],
+    ];
+    let automation_view = AutomationViewParams {
+        panel_height: view_params.panel_height,
+        pixels_per_tick: view_params.zoom_x,
+        scroll_x: view_params.scroll_x,
+        keyboard_width: view_params.keyboard_width,
+        value_zoom: view_params.value_zoom,
+        value_scroll: view_params.value_scroll,
+        panel_offset_x: panel_x,
+        panel_offset_y: actual_panel_y,
+        toolbar_height: TOOLBAR_HEIGHT,
+    };
 
     if is_velocity {
         // Velocity mode: bar width = note length (matches C# VelocityBarRenderer)
@@ -155,8 +173,18 @@ pub fn build_cc_bar_instances(
                 colors.bar_color,
             ));
         }
+    } else if let Some(lane) = data.automation_lane {
+        // CC / Bend 曲线模式：使用 AutomationLane 生成 Step/Curve 实例与锚点。
+        build_lane_instances(
+            &mut instances,
+            view_params.canvas_size_x,
+            &automation_view,
+            lane,
+            curve_color,
+            true,
+        );
     } else if is_bend {
-        // Bend mode: value range -8192..8191, center at panel middle
+        // Bend 柱状条兼容路径（无 automation lane 时降级）
         const BEND_MAX: f32 = 8191.0;
         const BEND_MIN: f32 = -8192.0;
 
@@ -183,7 +211,7 @@ pub fn build_cc_bar_instances(
             ));
         }
     } else {
-        // CC mode: value range 0..127
+        // CC 柱状条兼容路径（无 automation lane 时降级）
         const MAX_VALUE: f32 = 127.0;
 
         for point in data.cc_points {

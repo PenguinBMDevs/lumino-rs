@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/dms", "crates/event", "crates/export", "crates/gfx", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/message", "crates/onion-skin", "crates/onion-skin-hires", "crates/playback", "crates/ui", "crates/collaboration"]
+members = ["crates/core", "crates/dms", "crates/event", "crates/export", "crates/gfx", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/message", "crates/onion-skin", "crates/onion-skin-hires", "crates/playback", "crates/realtime", "crates/ui", "crates/collaboration"]
 resolver = "3"
 
 [workspace.package]
@@ -22,6 +22,7 @@ lumino-onion-skin = { path = "crates/onion-skin" }
 lumino-memory-monitor = { path = "crates/memory-monitor" }
 lumino-message = { path = "crates/message" }
 lumino-playback = { path = "crates/playback" }
+lumino-realtime = { path = "crates/realtime" }
 midly = { version = "0.6", features = ["std", "alloc", "parallel", "memmap"] }
 lumino-ui = { path = "crates/ui" }
 lumino-collaboration = { path = "crates/collaboration" }
@@ -164,9 +165,7 @@ winapi = { workspace = true }
 [patch.crates-io]
 midly = { git = "https://github.com/PenguinBMDevs/midly-fork" }
 xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth" }
-xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth" }
 xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth" }
-xsynth-render = { git = "https://github.com/PenguinBMDevs/xsynth" }
 
 [[test]]
 name = "collaboration_full_test"

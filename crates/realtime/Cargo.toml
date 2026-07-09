@@ -1,0 +1,15 @@
+[package]
+name = "lumino-realtime"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+xsynth-core = "0.3"
+xsynth-soundfonts = "0.3"
+cpal = "0.15"
+crossbeam-channel = "0.5"
+tracing = { workspace = true }
+thiserror = { workspace = true }

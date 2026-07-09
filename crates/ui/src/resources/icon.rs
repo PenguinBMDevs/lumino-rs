@@ -85,6 +85,7 @@ define_icons! {
     (MousePointer, "../../../../resources/icons/toolbar/mouse-pointer.svg"),
     (Pencil, "../../../../resources/icons/toolbar/pencil.svg"),
     (Eraser, "../../../../resources/icons/toolbar/eraser.svg"),
+    (Curve, "../../../../resources/icons/toolbar/curve.svg"),
     (Quantize, "../../../../resources/icons/toolbar/quantize.svg"),
     (Speed, "../../../../resources/icons/toolbar/speed.svg"),
     // 音符翻转图标

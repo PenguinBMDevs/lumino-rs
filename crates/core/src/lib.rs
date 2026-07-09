@@ -1,3 +1,4 @@
+pub mod automation;
 pub mod editor_state;
 pub mod editor_transform;
 pub mod error;
@@ -13,6 +14,9 @@ pub mod storage;
 pub mod types;
 pub mod view_state;
 
+pub use automation::{
+    AutomationEdit, AutomationEvent, AutomationLane, AutomationTarget, SegmentShape,
+};
 pub use editor_state::{
     CanvasState, DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, EditState, EditorData, EditorState,
     GLUE_PROXIMITY_THRESHOLD, HitType, InteractionState, SELECTION_BOX_EDGE_THRESHOLD,

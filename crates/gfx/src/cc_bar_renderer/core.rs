@@ -2,7 +2,7 @@
 
 use wgpu::util::DeviceExt;
 
-/// CC 柱状条实例数据 — 24 bytes
+/// CC / 自动化曲线实例数据 — 32 bytes
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CcBarInstance {
@@ -12,6 +12,10 @@ pub struct CcBarInstance {
     pub size: [f32; 2],
     /// 颜色 RGBA
     pub color: [f32; 4],
+    /// 圆角半径（像素）。0 表示直角矩形。
+    pub corner_radius: f32,
+    /// 边框宽度（像素）。0 表示无描边。
+    pub border_width: f32,
 }
 
 impl CcBarInstance {
@@ -22,6 +26,28 @@ impl CcBarInstance {
             position: [x, y],
             size: [width, height],
             color,
+            corner_radius: 0.0,
+            border_width: 0.0,
+        }
+    }
+
+    /// 创建带圆角/边框属性的实例（自动化锚点等）
+    #[must_use]
+    pub fn with_props(
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        corner_radius: f32,
+        border_width: f32,
+    ) -> Self {
+        Self {
+            position: [x, y],
+            size: [width, height],
+            color,
+            corner_radius,
+            border_width,
         }
     }
 }
@@ -191,6 +217,18 @@ impl CcBarRenderer {
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x4,
                 },
+                // corner_radius
+                wgpu::VertexAttribute {
+                    offset: 32,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32,
+                },
+                // border_width
+                wgpu::VertexAttribute {
+                    offset: 36,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Float32,
+                },
             ],
         }
     }
@@ -207,6 +245,10 @@ pub struct CcBarViewParams {
     pub canvas_offset_y: f32,
     pub canvas_size_x: f32,
     pub canvas_size_y: f32,
+    /// 自动化曲线垂直缩放（1.0 = 满量程）。
+    pub value_zoom: f32,
+    /// 自动化曲线垂直滚动偏移（值空间单位）。
+    pub value_scroll: f32,
 }
 
 /// CC 柱状条颜色配置
@@ -225,6 +267,8 @@ pub struct CcBarData<'a> {
     pub cc_points: &'a [lumino_core::CcPoint],
     pub bend_points: &'a [lumino_core::BendPoint],
     pub notes: &'a im::Vector<lumino_core::Note>,
+    /// 可选的自动化 lane（CC / Bend 曲线模式优先使用）。
+    pub automation_lane: Option<&'a lumino_core::AutomationLane>,
 }
 
 #[cfg(test)]

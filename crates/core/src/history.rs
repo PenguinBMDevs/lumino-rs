@@ -1,20 +1,28 @@
 //! History module for undo/redo functionality
 
+use crate::automation::AutomationLane;
 use crate::note::Note;
 use im::Vector;
 
-/// A snapshot of the editor state for undo/redo
+/// A snapshot of the editor state for undo/redo functionality
 #[derive(Debug, Clone)]
 pub struct EditorSnapshot {
     pub notes: Vector<Note>,
     pub current_track: usize,
+    /// 自动化事件 lane 快照，支持 CC/Bend 等控制器编辑的撤销/重做。
+    pub automation_lanes: Vec<AutomationLane>,
 }
 
 impl EditorSnapshot {
-    pub fn new(notes: Vector<Note>, current_track: usize) -> Self {
+    pub fn new(
+        notes: Vector<Note>,
+        current_track: usize,
+        automation_lanes: Vec<AutomationLane>,
+    ) -> Self {
         Self {
             notes,
             current_track,
+            automation_lanes,
         }
     }
 }
@@ -97,7 +105,7 @@ mod tests {
     use super::*;
 
     fn make_snapshot(notes: Vec<Note>, current_track: usize) -> EditorSnapshot {
-        EditorSnapshot::new(Vector::from(notes), current_track)
+        EditorSnapshot::new(Vector::from(notes), current_track, Vec::new())
     }
 
     #[test]
@@ -209,8 +217,9 @@ mod tests {
     #[test]
     fn test_editor_snapshot_new() {
         let notes = vec![Note::new(10.0, 72, 960.0)];
-        let snap = EditorSnapshot::new(Vector::from(notes), 1);
+        let snap = EditorSnapshot::new(Vector::from(notes), 1, Vec::new());
         assert_eq!(snap.current_track, 1);
         assert_eq!(snap.notes.len(), 1);
+        assert!(snap.automation_lanes.is_empty());
     }
 }

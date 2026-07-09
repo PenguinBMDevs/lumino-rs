@@ -232,7 +232,7 @@ impl Host {
             Vec::new()
         };
 
-        // CC/Bend 模式从 cc_data 获取控制点
+        // CC/Bend 模式从 automation_lanes 获取控制点
         let (cc_points, bend_points) = if is_bend {
             let bend_pts = crate::editor::velocity::VelocityPanel::build_bend_points(editor);
             (Vec::new(), bend_pts)
@@ -241,6 +241,28 @@ impl Host {
             (cc_pts, Vec::new())
         } else {
             (Vec::new(), Vec::new())
+        };
+
+        let track_idx = editor.editor_state.data.current_track as u16;
+        let automation_lane = if is_bend {
+            editor
+                .editor_state
+                .data
+                .find_automation_lane(track_idx, &lumino_core::AutomationTarget::PitchBend)
+                .and_then(|idx| editor.editor_state.data.automation_lanes.get(idx))
+        } else if !is_velocity {
+            editor
+                .editor_state
+                .data
+                .find_automation_lane(
+                    track_idx,
+                    &lumino_core::AutomationTarget::CC {
+                        controller: cc_number,
+                    },
+                )
+                .and_then(|idx| editor.editor_state.data.automation_lanes.get(idx))
+        } else {
+            None
         };
 
         let view = &editor.editor_state.view;
@@ -271,6 +293,8 @@ impl Host {
             canvas_offset_y: canvas.offset_y,
             canvas_size_x: canvas.size_x,
             canvas_size_y: canvas.size_y,
+            value_zoom: panel.value_zoom,
+            value_scroll: panel.value_scroll,
         };
         let cc_colors = CcBarColors {
             bar_color,
@@ -283,6 +307,7 @@ impl Host {
             cc_points: &cc_points,
             bend_points: &bend_points,
             notes: &editor.editor_state.data.notes,
+            automation_lane,
         };
 
         lumino_gfx::build_cc_bar_instances(&panel.edit_mode, &cc_view_params, &cc_data, &cc_colors)

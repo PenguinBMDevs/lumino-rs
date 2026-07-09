@@ -1,9 +1,14 @@
 //! 布局相关方法：坐标转换、命中测试、resize 区域检测
 
-use iced_core::Point;
+use iced_core::{Point, Size};
+use lumino_core::{AutomationLane, AutomationTarget};
+use lumino_gfx::automation::AutomationViewParams;
 
-use super::super::super::{HIT_RADIUS, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT, VelocityPoint};
+use super::super::super::{
+    HIT_RADIUS, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT, VelocityPoint,
+};
 use crate::editor::editor_state::ViewState;
+use crate::editor::velocity::EditMode;
 
 impl super::super::VelocityCanvas<'_> {
     /// 获取所有力度点
@@ -70,5 +75,83 @@ impl super::super::VelocityCanvas<'_> {
     /// 判断光标是否在 resize 手柄区域
     pub(super) fn is_in_resize_zone(cursor_pos: Point) -> bool {
         (0.0..=RESIZE_HANDLE_HEIGHT).contains(&cursor_pos.y)
+    }
+
+    /// 当前编辑模式对应的自动化目标。
+    pub(super) fn automation_target(&self) -> Option<AutomationTarget> {
+        match self.edit_mode {
+            EditMode::Bend => Some(AutomationTarget::PitchBend),
+            EditMode::Cc(n) => Some(AutomationTarget::CC { controller: n }),
+            _ => None,
+        }
+    }
+
+    /// 构造 Canvas 局部坐标系的自动化视图参数。
+    pub(super) fn automation_view_params(
+        &self,
+        bounds_size: Size,
+    ) -> Option<(AutomationViewParams, AutomationTarget, f32)> {
+        let target = self.automation_target()?;
+        let view = &self.editor.editor_state.view;
+        let panel = &self.editor.velocity_panel;
+        let params = AutomationViewParams {
+            panel_height: bounds_size.height + TOOLBAR_HEIGHT,
+            pixels_per_tick: view.zoom_x,
+            scroll_x: view.scroll_x,
+            keyboard_width: view.keyboard_width,
+            value_zoom: panel.value_zoom,
+            value_scroll: panel.value_scroll,
+            panel_offset_x: 0.0,
+            panel_offset_y: 0.0,
+            toolbar_height: TOOLBAR_HEIGHT,
+        };
+        let max_val = target.max_value() as f32;
+        Some((params, target, max_val))
+    }
+
+    /// 获取当前音轨当前目标的自动化 lane（若存在）。
+    pub(super) fn current_automation_lane(&self) -> Option<&AutomationLane> {
+        let target = self.automation_target()?;
+        let data = &self.editor.editor_state.data;
+        let track = data.current_track as u16;
+        data.find_automation_lane(track, &target)
+            .and_then(|idx| data.automation_lanes.get(idx))
+    }
+
+    /// 将 X 坐标转换为 tick（值空间）。
+    pub(super) fn x_to_tick(&self, x: f32) -> f32 {
+        let view = &self.editor.editor_state.view;
+        (x - view.keyboard_width + view.scroll_x) / view.zoom_x
+    }
+
+    /// 吸附 tick。
+    pub(super) fn snap_tick(&self, tick: f32) -> f32 {
+        self.editor.snap_tick(tick)
+    }
+
+    /// 命中测试：寻找点击位置最近的自动化锚点，返回其 tick。
+    pub(super) fn hit_test_automation_anchor(
+        lane: &AutomationLane,
+        view: &AutomationViewParams,
+        cursor_pos: Point,
+        max_val: f32,
+    ) -> Option<u32> {
+        let radius = HIT_RADIUS;
+        let mut best: Option<(u32, f32)> = None;
+        for evt in &lane.events {
+            let x = view.tick_to_x(evt.tick);
+            let y = view.value_to_y(evt.value as f32, max_val);
+            let dx = cursor_pos.x - x;
+            let dy = cursor_pos.y - y;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist < radius {
+                match best {
+                    None => best = Some((evt.tick, dist)),
+                    Some((_, best_dist)) if dist < best_dist => best = Some((evt.tick, dist)),
+                    _ => {}
+                }
+            }
+        }
+        best.map(|(tick, _)| tick)
     }
 }

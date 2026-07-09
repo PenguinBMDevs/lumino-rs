@@ -1,6 +1,6 @@
 //! 视图绘制方法：Canvas Program 实现（事件分发、绘制、鼠标交互反馈）
 
-use iced_core::{Point, Rectangle, mouse};
+use iced_core::{Point, Rectangle, keyboard, mouse};
 use iced_wgpu::Geometry as Geom;
 use iced_widget::canvas::{self, Frame, Program};
 
@@ -40,11 +40,21 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
             canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 self.handle_button_pressed(state, cursor_pos, &cursor, bounds_size)
             }
+            canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
+                self.handle_right_button_pressed(state, cursor_pos, bounds_size)
+            }
             canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 self.handle_cursor_moved(state, cursor_pos, &cursor, bounds_size)
             }
             canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 self.handle_button_released(state)
+            }
+            canvas::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                self.handle_wheel_scrolled(state, *delta, bounds_size)
+            }
+            canvas::Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
+                Self::handle_modifiers_changed(state, *modifiers);
+                None
             }
             _ => None,
         }
@@ -99,13 +109,13 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
             }
         }
 
-        if state.curve_active {
+        if state.automation_drag.is_some() || state.curve_active {
             return mouse::Interaction::Crosshair;
         }
 
         if state.drag_point_idx.is_some() {
             mouse::Interaction::ResizingVertically
-        } else if state.hover_point_idx.is_some() {
+        } else if state.hover_point_idx.is_some() || state.hover_anchor_tick.is_some() {
             mouse::Interaction::Pointer
         } else {
             mouse::Interaction::default()

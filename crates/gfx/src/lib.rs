@@ -13,6 +13,8 @@ pub mod render_thread;
 mod ruler_renderer;
 // mod velocity_line_renderer; // 已弃用 — 改用 CcBarRenderer
 
+pub mod automation;
+
 mod swappable_buffer;
 
 pub use arrangement_instances::{

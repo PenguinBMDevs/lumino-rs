@@ -9,8 +9,8 @@ pub use widget::VelocityCanvasState;
 
 // 重新导出自 lumino-core 的数据类型
 pub use lumino_core::{
-    BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcData, CcDisplay, CcPoint, EditMode,
-    EditorTransform, VelocityPoint,
+    BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcDisplay, CcPoint, EditMode, EditorTransform,
+    VelocityPoint,
 };
 
 use crate::Element;
@@ -46,6 +46,10 @@ pub struct VelocityPanel {
     pub edit_mode: EditMode,
     /// CC 模式下选择的控制器编号
     pub selected_cc: u8,
+    /// 自动化曲线垂直缩放。1.0 = 满量程映射到面板数据区高度。
+    pub value_zoom: f32,
+    /// 自动化曲线垂直滚动偏移（值空间单位）。
+    pub value_scroll: f32,
 }
 
 impl VelocityPanel {
@@ -53,7 +57,16 @@ impl VelocityPanel {
         Self {
             edit_mode: EditMode::Velocity,
             selected_cc: 1, // 默认调制轮
+            value_zoom: 1.0,
+            value_scroll: 0.0,
         }
+    }
+
+    /// 根据当前目标的最大值限制 value_scroll，避免滚出有效范围。
+    pub fn clamp_value_scroll(&mut self, max_value: f32) {
+        let visible_range = max_value / self.value_zoom.max(0.001);
+        let max_scroll = (max_value - visible_range).max(0.0);
+        self.value_scroll = self.value_scroll.clamp(0.0, max_scroll);
     }
 
     /// 渲染编辑面板视图
@@ -228,21 +241,14 @@ impl VelocityPanel {
         data.build_velocity_points()
     }
 
-    /// 构建 CC 数据
+    /// 构建 CC 数据（从 automation_lanes 读取当前音轨的 CC 事件）。
     pub fn build_cc_points(editor: &crate::editor::Editor, cc_number: u8) -> Vec<CcPoint> {
-        editor
-            .editor_state
-            .data
-            .cc_data
-            .controllers
-            .get(&cc_number)
-            .cloned()
-            .unwrap_or_default()
+        editor.editor_state.data.build_cc_points(cc_number)
     }
 
-    /// 构建弯音数据
+    /// 构建弯音数据（从 automation_lanes 读取当前音轨的 PitchBend 事件）。
     pub fn build_bend_points(editor: &crate::editor::Editor) -> Vec<BendPoint> {
-        editor.editor_state.data.cc_data.bend_points.clone()
+        editor.editor_state.data.build_bend_points()
     }
 }
 

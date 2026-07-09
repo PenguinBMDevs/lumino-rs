@@ -26,7 +26,7 @@ pub enum Tool {
     /// 指针/选择工具
     #[default]
     Pointer,
-    /// 铅笔工具（绘制音符）
+    /// 铅笔工具（绘制音符 / 自动化点）
     Pencil,
     /// 画笔工具
     Brush,
@@ -36,6 +36,8 @@ pub enum Tool {
     Eraser,
     /// 切割工具
     Razor,
+    /// 曲线工具（自动化曲线绘制）
+    Curve,
 }
 
 // ─── 音符精度/网格对齐 ───

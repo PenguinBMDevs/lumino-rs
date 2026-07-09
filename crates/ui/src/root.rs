@@ -276,22 +276,44 @@ impl Root {
     }
 
     /// 设置 MIDI 文档引用（供懒加载使用）
+    ///
+    /// 将控制事件（CC / PitchBend）按音轨导入 automation_lanes，与 Yinhe 的自动化数据模型对齐。
     pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
-        // 从 control_events 提取弯音数据
-        let mut bend_points = Vec::new();
+        use lumino_core::{AutomationEdit, AutomationTarget, SegmentShape};
+
+        // 每次加载新文档时重建自动化 lane，避免旧数据残留。
+        self.editor.editor_state.data.automation_lanes.clear();
+
         for ev in &doc.control_events {
-            if ev.kind == 2 {
-                // kind=2 是 pitch bend
-                let value = ev.as_pitch_bend();
-                // as_pitch_bend 返回的是 f32 (-1.0..1.0)，转换为 i16 (-8192..8191)
-                let i16_value = (value * crate::constants::editor::PITCH_BEND_FACTOR) as i16;
-                bend_points.push(crate::editor::velocity::BendPoint {
-                    tick: ev.tick as f32,
-                    value: i16_value,
-                });
+            match ev.kind {
+                // CC: param 高 8 位为控制器编号，低 8 位为值。
+                0 => {
+                    let controller = (ev.param >> 8) as u8;
+                    let value = ev.param & 0xFF;
+                    let edit = AutomationEdit::Add {
+                        track_idx: ev.track,
+                        target: AutomationTarget::CC { controller },
+                        tick: ev.tick,
+                        value,
+                        shape: SegmentShape::Step,
+                    };
+                    self.editor.editor_state.data.apply_automation_edit(edit);
+                }
+                // PitchBend: param 为 14-bit 值（0–16383）。
+                2 => {
+                    let edit = AutomationEdit::Add {
+                        track_idx: ev.track,
+                        target: AutomationTarget::PitchBend,
+                        tick: ev.tick,
+                        value: ev.param,
+                        shape: SegmentShape::Step,
+                    };
+                    self.editor.editor_state.data.apply_automation_edit(edit);
+                }
+                _ => {}
             }
         }
-        self.editor.editor_state.data.cc_data.bend_points = bend_points;
+
         self.midi.document = Some(doc);
     }
 

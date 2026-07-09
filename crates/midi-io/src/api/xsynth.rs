@@ -7,8 +7,9 @@ use xsynth_core::{
     channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
     soundfont::SoundfontBase,
 };
-use xsynth_realtime::{
-    RealtimeEventSender, RealtimeRenderMode, RealtimeSynth, SynthEvent, XSynthRealtimeConfig,
+
+use lumino_realtime::{
+    RealtimeSynth, SynthEvent, ThreadCount as LuminoThreadCount, XSynthRealtimeConfig,
 };
 
 use crate::constants::*;
@@ -45,7 +46,7 @@ pub struct XSynthOptions {
 
 pub struct XSynth {
     synth: RealtimeSynth,
-    sender: RealtimeEventSender,
+    sender: crossbeam_channel::Sender<SynthEvent>,
     version: String,
 }
 
@@ -89,10 +90,10 @@ impl XSynth {
 
             // 解析线程数
             let thread_count = match opt.threads {
-                -1 => xsynth_realtime::ThreadCount::None,
-                0 => xsynth_realtime::ThreadCount::Auto,
-                n if n > 0 => xsynth_realtime::ThreadCount::Manual(n as usize),
-                _ => xsynth_realtime::ThreadCount::Auto,
+                -1 => LuminoThreadCount::None,
+                0 => LuminoThreadCount::Auto,
+                n if n > 0 => LuminoThreadCount::Manual(n as usize),
+                _ => LuminoThreadCount::Auto,
             };
             rt_config.multithreading = thread_count;
             rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
@@ -100,13 +101,9 @@ impl XSynth {
             rt_config.channel_init_options.global_voice_limit = opt.global_voice_limit;
         }
 
-        // 使用 ChannelGroup 同步渲染模式，消除 16 个通道线程和阻塞 collect 阶段，
-        // 显著降低 macOS 上的音频卡顿风险。
-        rt_config.render_mode = RealtimeRenderMode::ChannelGroup;
+        let synth = RealtimeSynth::open_with_default_output(rt_config);
 
-        let mut synth = RealtimeSynth::open_with_default_output(rt_config);
-
-        // 注意：xsynth-realtime 使用音频设备的原生采样率，配置中的 sample_rate 仅用于音色库预加载
+        // 注意：lumino-realtime 使用音频设备的原生采样率，配置中的 sample_rate 仅用于音色库预加载
         // 实际采样率由 cpal 决定，可能与请求的不同
         let actual_sample_rate = synth.stream_params().sample_rate;
 
@@ -139,29 +136,38 @@ impl XSynth {
         };
 
         // 获取 sender — 在 open 后立即配置通道，确保音色库在 callback 首次触发前就位
-        let sender = synth.get_sender_mut();
+        let sender = synth
+            .get_sender_ref()
+            .cloned()
+            .ok_or_else(|| Error::InitFailed("Failed to get event sender".to_string()))?;
+
+        // 配置音色库
         let soundfonts: Vec<Arc<dyn SoundfontBase>> = vec![soundfont];
-        sender.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
-            ChannelConfigEvent::SetSoundfonts(soundfonts),
-        )));
+        sender
+            .send(SynthEvent::AllChannels(ChannelEvent::Config(
+                ChannelConfigEvent::SetSoundfonts(soundfonts),
+            )))
+            .map_err(|e| Error::InitFailed(format!("Failed to send event: {}", e)))?;
 
         // 重置所有通道，确保音色库生效
-        sender.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
-            ChannelAudioEvent::AllNotesKilled,
-        )));
-        sender.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
-            ChannelAudioEvent::ResetControl,
-        )));
+        sender
+            .send(SynthEvent::AllChannels(ChannelEvent::Audio(
+                ChannelAudioEvent::AllNotesKilled,
+            )))
+            .map_err(|e| Error::InitFailed(format!("Failed to send event: {}", e)))?;
 
-        // 克隆 sender 用于后续使用
-        let sender_clone = sender.clone();
+        sender
+            .send(SynthEvent::AllChannels(ChannelEvent::Audio(
+                ChannelAudioEvent::ResetControl,
+            )))
+            .map_err(|e| Error::InitFailed(format!("Failed to send event: {}", e)))?;
 
-        let version = "xsynth (buickmeow fork)".to_string();
+        let version = "xsynth (lumino-realtime)".to_string();
         tracing::info!("XSynth: 初始化完成");
 
         Ok(Self {
             synth,
-            sender: sender_clone,
+            sender,
             version,
         })
     }
@@ -170,9 +176,9 @@ impl XSynth {
     pub fn stats(&self) -> XSynthStats {
         let stats = self.synth.get_stats();
         XSynthStats {
-            voice_count: stats.voice_count(),
-            average_renderer_load: stats.buffer().average_renderer_load(),
-            buffer_samples: stats.buffer().last_samples_after_read(),
+            voice_count: stats.voice_count,
+            average_renderer_load: stats.average_renderer_load,
+            buffer_samples: stats.last_samples_after_read,
         }
     }
 }
@@ -214,7 +220,7 @@ impl Api for XSynth {
 }
 
 struct XSynthOutputConn {
-    sender: RealtimeEventSender,
+    sender: crossbeam_channel::Sender<SynthEvent>,
 }
 
 impl OutputConnection for XSynthOutputConn {
@@ -231,13 +237,15 @@ impl OutputConnection for XSynthOutputConn {
 
         let velocity = if vel == 0 { 1 } else { vel };
 
-        self.sender.send_event(SynthEvent::Channel(
-            channel,
-            ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
-                key: key & MIDI_VALUE_MASK,
-                vel: velocity & MIDI_VALUE_MASK,
-            }),
-        ));
+        self.sender
+            .send(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
+                    key: key & MIDI_VALUE_MASK,
+                    vel: velocity & MIDI_VALUE_MASK,
+                }),
+            ))
+            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
 
         tracing::debug!("XSynthOutputConn::note_on: 事件已发送到通道 {}", channel);
         Ok(())
@@ -253,12 +261,14 @@ impl OutputConnection for XSynthOutputConn {
             key
         );
 
-        self.sender.send_event(SynthEvent::Channel(
-            channel,
-            ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
-                key: key & MIDI_VALUE_MASK,
-            }),
-        ));
+        self.sender
+            .send(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
+                    key: key & MIDI_VALUE_MASK,
+                }),
+            ))
+            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
 
         tracing::debug!("XSynthOutputConn::note_off: 事件已发送到通道 {}", channel);
         Ok(())
@@ -274,12 +284,14 @@ impl OutputConnection for XSynthOutputConn {
             value
         );
 
-        self.sender.send_event(SynthEvent::Channel(
-            channel,
-            ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
-                controller, value,
-            ))),
-        ));
+        self.sender
+            .send(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
+                    controller, value,
+                ))),
+            ))
+            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
 
         Ok(())
     }
@@ -293,10 +305,12 @@ impl OutputConnection for XSynthOutputConn {
             program
         );
 
-        self.sender.send_event(SynthEvent::Channel(
-            channel,
-            ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program)),
-        ));
+        self.sender
+            .send(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program)),
+            ))
+            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
 
         Ok(())
     }
@@ -310,12 +324,14 @@ impl OutputConnection for XSynthOutputConn {
             value
         );
 
-        self.sender.send_event(SynthEvent::Channel(
-            channel,
-            ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
-                value,
-            ))),
-        ));
+        self.sender
+            .send(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
+                    value,
+                ))),
+            ))
+            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
 
         Ok(())
     }
@@ -327,39 +343,56 @@ impl OutputConnection for XSynthOutputConn {
         let b2 = data[2];
 
         match status {
-            0x80 => self.sender.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
-                    key: b1 & MIDI_VALUE_MASK,
-                }),
-            )),
-            0x90 => self.sender.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
-                    key: b1 & MIDI_VALUE_MASK,
-                    vel: b2 & MIDI_VALUE_MASK,
-                }),
-            )),
-            0xB0 => self.sender.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(b1, b2))),
-            )),
-            0xC0 => self.sender.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(b1)),
-            )),
-            0xD0 => self.sender.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(0, b1))),
-            )),
+            0x80 => self
+                .sender
+                .send(SynthEvent::Channel(
+                    channel,
+                    ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
+                        key: b1 & MIDI_VALUE_MASK,
+                    }),
+                ))
+                .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?,
+            0x90 => self
+                .sender
+                .send(SynthEvent::Channel(
+                    channel,
+                    ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
+                        key: b1 & MIDI_VALUE_MASK,
+                        vel: b2 & MIDI_VALUE_MASK,
+                    }),
+                ))
+                .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?,
+            0xB0 => self
+                .sender
+                .send(SynthEvent::Channel(
+                    channel,
+                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(b1, b2))),
+                ))
+                .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?,
+            0xC0 => self
+                .sender
+                .send(SynthEvent::Channel(
+                    channel,
+                    ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(b1)),
+                ))
+                .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?,
+            0xD0 => self
+                .sender
+                .send(SynthEvent::Channel(
+                    channel,
+                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(0, b1))),
+                ))
+                .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?,
             0xE0 => {
                 let bend = ((b1 as u16) | ((b2 as u16) << 7)) as f32;
-                self.sender.send_event(SynthEvent::Channel(
-                    channel,
-                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
-                        bend,
-                    ))),
-                ))
+                self.sender
+                    .send(SynthEvent::Channel(
+                        channel,
+                        ChannelEvent::Audio(ChannelAudioEvent::Control(
+                            ControlEvent::PitchBendValue(bend),
+                        )),
+                    ))
+                    .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?
             }
             _ => {
                 return Err(Error::SendFailed(format!(
@@ -374,18 +407,20 @@ impl OutputConnection for XSynthOutputConn {
     fn all_notes_off(&mut self) -> Result<(), Error> {
         // 直接使用 xsynth 的 AllNotesOff，比逐通道发 CC 123 高效
         self.sender
-            .send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+            .send(SynthEvent::AllChannels(ChannelEvent::Audio(
                 ChannelAudioEvent::AllNotesOff,
-            )));
+            )))
+            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
         Ok(())
     }
 
     fn reset_control(&mut self) -> Result<(), Error> {
         // 直接使用 xsynth 的 ResetControl，比逐通道发 CC 121 高效
         self.sender
-            .send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+            .send(SynthEvent::AllChannels(ChannelEvent::Audio(
                 ChannelAudioEvent::ResetControl,
-            )));
+            )))
+            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
         Ok(())
     }
 

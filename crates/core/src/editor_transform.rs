@@ -61,8 +61,11 @@ impl EditorTransform for EditorData {
         if modified > 0 {
             self.sync_track_notes();
         } else {
-            self.history
-                .undo(EditorSnapshot::new(self.notes.clone(), self.current_track));
+            self.history.undo(EditorSnapshot::new(
+                self.notes.clone(),
+                self.current_track,
+                self.automation_lanes.clone(),
+            ));
         }
         modified
     }
@@ -86,8 +89,11 @@ impl EditorTransform for EditorData {
         if modified > 0 {
             self.sync_track_notes();
         } else {
-            self.history
-                .undo(EditorSnapshot::new(self.notes.clone(), self.current_track));
+            self.history.undo(EditorSnapshot::new(
+                self.notes.clone(),
+                self.current_track,
+                self.automation_lanes.clone(),
+            ));
         }
         modified
     }
@@ -116,8 +122,11 @@ impl EditorTransform for EditorData {
         if modified > 0 {
             self.sync_track_notes();
         } else {
-            self.history
-                .undo(EditorSnapshot::new(self.notes.clone(), self.current_track));
+            self.history.undo(EditorSnapshot::new(
+                self.notes.clone(),
+                self.current_track,
+                self.automation_lanes.clone(),
+            ));
         }
         modified
     }
@@ -160,8 +169,11 @@ impl EditorTransform for EditorData {
         if modified > 0 {
             self.sync_track_notes();
         } else {
-            self.history
-                .undo(EditorSnapshot::new(self.notes.clone(), self.current_track));
+            self.history.undo(EditorSnapshot::new(
+                self.notes.clone(),
+                self.current_track,
+                self.automation_lanes.clone(),
+            ));
         }
         modified
     }

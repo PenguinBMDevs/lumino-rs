@@ -3,6 +3,7 @@
 //! 处理 VelocityAction 相关的消息（力度拖拽、曲线绘制、Tempo 编辑、CC 控制器切换等）。
 
 use crate::editor::editor_state::TempoPoint;
+use crate::editor::velocity::EditMode;
 use crate::message::{Message, VelocityAction};
 use crate::root::Root;
 use crate::root::handlers::MessageHandler;
@@ -155,6 +156,61 @@ impl VelocityHandler {
                     root.editor.editor_state.data.tempo_points.remove(idx);
                     root.update_playback_bpm();
                     tracing::debug!("Tempo: 删除点 {}", idx);
+                }
+                return;
+            }
+            // ── 自动化曲线编辑动作 ──
+            VA::AutomationEdit(edit) => {
+                root.editor.push_history();
+                root.editor.editor_state.data.apply_automation_edit(edit);
+                tracing::debug!("自动化面板: 应用编辑");
+                return;
+            }
+            VA::AutomationBatch(edits) => {
+                for edit in edits {
+                    root.editor.editor_state.data.apply_automation_edit(edit);
+                }
+                return;
+            }
+            VA::AutomationDragStart => {
+                root.editor.push_history();
+                tracing::debug!("自动化面板: 拖拽开始");
+                return;
+            }
+            VA::AutomationZoom(factor) => {
+                let panel = &mut root.editor.velocity_panel;
+                let max_val = match panel.edit_mode {
+                    EditMode::Bend => {
+                        Some(lumino_core::AutomationTarget::PitchBend.max_value() as f32)
+                    }
+                    EditMode::Cc(n) => {
+                        Some(lumino_core::AutomationTarget::CC { controller: n }.max_value() as f32)
+                    }
+                    _ => None,
+                };
+                let new_zoom = (panel.value_zoom * factor).clamp(0.01, 8.0);
+                panel.value_zoom = new_zoom;
+                if let Some(max_val) = max_val {
+                    panel.clamp_value_scroll(max_val);
+                }
+                tracing::debug!("自动化面板: 垂直缩放 {}", panel.value_zoom);
+                return;
+            }
+            VA::AutomationScroll(amount) => {
+                let panel = &mut root.editor.velocity_panel;
+                let max_val = match panel.edit_mode {
+                    EditMode::Bend => {
+                        Some(lumino_core::AutomationTarget::PitchBend.max_value() as f32)
+                    }
+                    EditMode::Cc(n) => {
+                        Some(lumino_core::AutomationTarget::CC { controller: n }.max_value() as f32)
+                    }
+                    _ => None,
+                };
+                if let Some(max_val) = max_val {
+                    panel.value_scroll += amount;
+                    panel.clamp_value_scroll(max_val);
+                    tracing::debug!("自动化面板: 垂直滚动 {}", panel.value_scroll);
                 }
                 return;
             }

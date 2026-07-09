@@ -164,6 +164,14 @@ impl Toolbar {
                     window
                 ),
                 space().width(4),
+                tool_selector(
+                    icon::Curve,
+                    t.tool_curve,
+                    Tool::Curve,
+                    self.current_tool,
+                    window
+                ),
+                space().width(4),
                 tool_button(icon::Quantize, t.tool_quantize, Event::quantize(), window),
                 space().width(4),
                 // 变速按钮始终可点击：Ctrl+Click 打开变速对话框不需要选中音符。
