@@ -1,5 +1,7 @@
 //! Runner 窗口事件处理
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use crate::runner::{RunnerInner, dialog_manager::DialogType};
 use lumino_export::audio::config::{
     AudioChannelMode, AudioInterpolation, AudioRenderConfig, ProgressCallback, ThreadMode,
@@ -105,6 +107,10 @@ impl RunnerInner {
                 self.window_state
                     .dialog_manager
                     .mark_dialog_for_close(DialogType::VideoExport);
+                // 设置取消标志，让后台 video-render 线程退出
+                self.window_state
+                    .video_export_cancel
+                    .store(true, Ordering::Relaxed);
             }
             CloseSpeedChangeDialog => {
                 self.window_state
@@ -338,6 +344,10 @@ impl RunnerInner {
                 let ppq = ppq.max(1) as u32;
                 let fps_f64 = fps as f64;
 
+                // 创建取消标志
+                let cancel_flag = Arc::new(AtomicBool::new(false));
+                self.window_state.video_export_cancel = cancel_flag.clone();
+
                 // 后台线程：逐帧渲染 + FFmpeg 编码
                 std::thread::Builder::new()
                     .name("video-render".into())
@@ -392,6 +402,15 @@ impl RunnerInner {
 
                         // 逐帧渲染
                         for frame in 0..total_frames {
+                            // 检查取消标志
+                            if cancel_flag.load(Ordering::Relaxed) {
+                                tracing::info!("视频导出：用户取消，终止渲染");
+                                let _ = cmd_sender.send(RenderCommand::Control(
+                                    ControlCommand::FinishVideoExport,
+                                ));
+                                // encoder 随 closure 退出自动 drop，触发 kill ffmpeg
+                                return;
+                            }
                             let time_sec = frame as f64 / fps_f64;
                             let tick = seconds_to_tick(time_sec, tempo_changes, ppq);
 
@@ -427,6 +446,15 @@ impl RunnerInner {
                                     return;
                                 }
                             };
+
+                            // 帧数据到达后再次检查取消（避免阻塞期间错过取消信号）
+                            if cancel_flag.load(Ordering::Relaxed) {
+                                tracing::info!("视频导出：帧数据到达后检测到取消，终止渲染");
+                                let _ = cmd_sender.send(RenderCommand::Control(
+                                    ControlCommand::FinishVideoExport,
+                                ));
+                                return;
+                            }
 
                             // 预览帧：每 500ms 发送一次，BGRA → RGBA 转换 + 降采样
                             // 必须在 encoder.write_frame(frame_data) 之前捕获数据

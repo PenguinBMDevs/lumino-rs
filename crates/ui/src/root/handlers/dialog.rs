@@ -411,7 +411,10 @@ impl MessageHandler for DialogHandler {
                         if root.state.is_dialog_window {
                             root.state.dialog_result = Some(DialogResult::Cancel);
                         }
-                        // Runner 侧通过 overlay=None 检测取消
+                        // 通知 Runner 取消导出（关闭对话框 → 设置取消标志 → 后台线程退出）
+                        crate::event::emit(crate::event::Event::Window(
+                            crate::event::window::Event::close_video_export_dialog(),
+                        ));
                     }
                     V::ForceFinish => {
                         let st = &root.state.video_export_dialog;
