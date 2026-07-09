@@ -883,6 +883,9 @@ fn build_video_render_params(
     // ★ 修复：max_key_index 必须与 key_count 匹配，确保 Y 轴显示完整
     let max_key_index = (key_count.saturating_sub(1)) as f32;
 
+    // ★ 修复：canvas_size 必须设置为视频帧尺寸，否则 scissor rect 会被默认 800x600 裁剪
+    let canvas_size = (w, h);
+
     lumino_gfx::RenderParams {
         viewport_size: (width.max(1), height.max(1)),
         logical_size: (w, h),
@@ -897,6 +900,7 @@ fn build_video_render_params(
         keyboard_instances,
         ppq: ppq as f32,
         max_key_index,
+        canvas_size,
         ..Default::default()
     }
 }
@@ -933,19 +937,11 @@ fn generate_keyboard_texture(_width: u32, height: u32, key_count: u16) -> (Vec<u
         for px in 0..kb_w {
             let idx = ((py * kb_w + px) * 4) as usize;
 
-            // 黑白键颜色
+            // 黑白键颜色：X 向等宽（黑键也铺满整个键盘宽度）
             let (r, g, b) = if is_black {
-                // 黑键：较暗，带窄宽度效果
-                let black_key_half_w = kb_w as f32 * 0.55;
-                let cx = kb_w as f32 / 2.0;
-                if (px as f32 - cx).abs() <= black_key_half_w / 2.0 {
-                    (26, 26, 31) // 黑键颜色
-                } else {
-                    (56, 56, 64) // 白键区域
-                }
+                (26, 26, 31) // 黑键颜色
             } else {
-                // 白键
-                (56, 56, 64)
+                (56, 56, 64) // 白键颜色
             };
 
             pixels[idx] = r;

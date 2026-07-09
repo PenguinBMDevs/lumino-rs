@@ -78,6 +78,7 @@ RUST_LOG=warn cargo run
 
 ## 致谢
 
+- [btjawa](https://github.com/btjawa) - 项目代码地基贡献者
 - [winit](https://github.com/rust-windowing/winit) - 窗口事件抽象
 - [wgpu](https://github.com/gfx-rs/wgpu) - 跨平台 GPU 抽象
 - [iced](https://github.com/iced-rs/iced) - 数据驱动的 UI 框架
