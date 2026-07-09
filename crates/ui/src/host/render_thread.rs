@@ -83,4 +83,14 @@ impl Host {
             .as_ref()
             .map(|t| t.stats())
     }
+
+    /// 克隆渲染线程命令发送端（用于视频导出后台线程与渲染线程通信）
+    pub fn render_command_sender(
+        &self,
+    ) -> Option<std::sync::mpsc::Sender<lumino_gfx::render_thread::RenderCommand>> {
+        self.render_ctx
+            .wgpu_render_thread
+            .as_ref()
+            .and_then(|t| t.try_clone_command_sender())
+    }
 }

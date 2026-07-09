@@ -224,6 +224,8 @@ pub struct Sidebar {
     pub renderer_sub_state: GroupSubState,
     /// 音频渲染面板是否可见（在主界面钢琴卷帘区域显示）
     pub audio_export_visible: bool,
+    /// 视频渲染面板是否可见（在主界面钢琴卷帘区域显示）
+    pub video_export_visible: bool,
 }
 
 impl Sidebar {
@@ -261,6 +263,7 @@ impl Sidebar {
             project_sub_state: GroupSubState::default(),
             renderer_sub_state: GroupSubState::default(),
             audio_export_visible: false,
+            video_export_visible: false,
         }
     }
 

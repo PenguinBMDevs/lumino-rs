@@ -122,7 +122,10 @@ impl VelocityCanvasState {
 
     /// 设置 Curve 工具绘制。
     pub fn start_curve_draw(&mut self, start_tick: u32, start_value: u16) {
-        self.automation_drag = Some(AutomationDrag::CurveDraw { start_tick, start_value });
+        self.automation_drag = Some(AutomationDrag::CurveDraw {
+            start_tick,
+            start_value,
+        });
     }
 
     /// 当前是否处于自动化拖拽中。

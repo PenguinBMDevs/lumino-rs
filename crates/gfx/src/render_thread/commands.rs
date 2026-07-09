@@ -56,6 +56,18 @@ impl HiResTrackParams {
     }
 }
 
+/// 视频帧数据发送器（包装 mpsc::Sender 以实现 Debug）
+///
+/// 渲染线程读回 BGRA 帧后通过此 sender 发送给 Runner 线程写入 FFmpeg。
+#[derive(Clone)]
+pub struct FrameSender(pub std::sync::mpsc::Sender<Vec<u8>>);
+
+impl std::fmt::Debug for FrameSender {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FrameSender").finish()
+    }
+}
+
 /// 控制命令
 #[derive(Debug)]
 pub enum ControlCommand {
@@ -84,6 +96,21 @@ pub enum ControlCommand {
     RegenerateHiResTrack(HiResTrackParams),
     /// 显示编辑后的临时脏区域贴图覆层（切换音轨前立即触发）
     ShowHiResDirtyOverlay(HiResTrackParams),
+    /// 启动视频导出：初始化 GPU→CPU 读回管线
+    StartVideoExport {
+        /// 视频宽度
+        width: u32,
+        /// 视频高度
+        height: u32,
+        /// 帧数据回传通道（渲染线程 → Runner）
+        frame_tx: FrameSender,
+    },
+    /// 渲染一帧视频并读回 BGRA 数据
+    ///
+    /// 渲染线程执行完整流程：离屏渲染 → copy 到 staging → submit → map_async → wait_read → send
+    RenderVideoFrame(Box<RenderParams>),
+    /// 完成视频导出：释放读回管线资源
+    FinishVideoExport,
 }
 
 impl ControlCommand {

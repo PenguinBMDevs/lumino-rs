@@ -233,6 +233,48 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 更新视频导出进度
+    pub fn update_video_export_progress(&mut self, message: String, progress: f64) {
+        let st = &mut self.root.state.video_export_dialog;
+        st.status_message = message;
+        st.progress = progress;
+        // 从 progress 推算 current_frame（如果 total_frames 已知）
+        if st.total_frames > 0 {
+            st.current_frame = (progress * st.total_frames as f64) as u64;
+        }
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 检查视频导出是否正在进行
+    pub fn is_video_exporting(&self) -> bool {
+        matches!(
+            self.root.state.video_export_dialog.overlay,
+            crate::state::root_state::VideoExportOverlayState::Exporting
+        )
+    }
+
+    /// 标记视频导出完成
+    pub fn set_video_export_completed(&mut self) {
+        let st = &mut self.root.state.video_export_dialog;
+        let total_frames = st.total_frames;
+        st.overlay = crate::state::root_state::VideoExportOverlayState::Completed {
+            total_frames,
+            elapsed_secs: 0.0,
+            avg_fps: st.render_fps,
+        };
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 标记视频导出失败
+    pub fn set_video_export_failed(&mut self, error: String) {
+        self.root.state.video_export_dialog.overlay =
+            crate::state::root_state::VideoExportOverlayState::Error(error);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 更新主题
     pub fn update_theme(&mut self, theme: String) {
         self.root.update(window::Event::theme(theme));

@@ -15,12 +15,14 @@
 //! - `render_loop`: 渲染循环实现
 
 pub mod commands;
+pub mod export_pipeline;
 pub mod params;
 pub mod render_loop;
 pub mod stats;
 pub mod thread;
 
-pub use commands::{ControlCommand, HiResTrackParams, RenderCommand};
+pub use commands::{ControlCommand, FrameSender, HiResTrackParams, RenderCommand};
+pub use export_pipeline::ExportPipeline;
 pub use params::RenderParams;
 pub use stats::RenderStats;
 pub use thread::WgpuRenderThread;

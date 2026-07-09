@@ -10,6 +10,7 @@ use crate::editor::note::NoteExt;
 use crate::message;
 use crate::root::{Element, Root, Theme};
 use crate::view::audio_export_dialog::view_audio_export_dialog;
+use crate::view::video_export_dialog::{view_video_export_dialog, view_video_export_overlay};
 
 impl Root {
     /// 渲染视图（主入口，根据窗口类型分发）
@@ -51,6 +52,9 @@ impl Root {
             } else if self.sidebar.audio_export_visible {
                 // 音频渲染面板（在主界面钢琴卷帘区域显示）
                 self.view_audio_export_panel()
+            } else if self.sidebar.video_export_visible {
+                // 视频渲染面板（在主界面钢琴卷帘区域显示）
+                self.view_video_export_panel()
             } else if !self.sidebar.piano_roll_visible {
                 // 钢琴卷帘已关闭：显示空白区域
                 container(
@@ -333,6 +337,36 @@ impl Root {
         container(
             container(scrollable(view_audio_export_dialog(
                 &self.state.audio_export_dialog,
+                theme,
+            )))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(move |_theme: &iced_core::Theme| container::Style {
+                background: Some(iced_core::Background::Color(palette.background.base.color)),
+                ..Default::default()
+            }),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    }
+
+    /// 渲染视频渲染面板（在主界面钢琴卷帘区域显示）
+    pub(super) fn view_video_export_panel(&self) -> Element<'_> {
+        puffin::profile_scope!("root_view_video_export_panel");
+
+        let theme = &self.window.theme;
+
+        // 如果有覆盖层（导出中/完成/错误），直接返回覆盖层
+        if let Some(overlay) = view_video_export_overlay(&self.state.video_export_dialog, theme) {
+            return overlay;
+        }
+
+        let palette = theme.extended_palette();
+
+        container(
+            container(scrollable(view_video_export_dialog(
+                &self.state.video_export_dialog,
                 theme,
             )))
             .width(Length::Fill)

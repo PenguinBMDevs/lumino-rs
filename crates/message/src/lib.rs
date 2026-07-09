@@ -10,6 +10,7 @@ pub mod pattern;
 pub mod speed_change;
 pub mod types;
 pub mod velocity;
+pub mod video_export;
 
 pub use audio_export::AudioExportAction;
 pub use collaboration::CollaborationAction;
@@ -18,6 +19,7 @@ pub use pattern::PatternAction;
 pub use speed_change::SpeedChangeAction;
 pub use types::*;
 pub use velocity::VelocityAction;
+pub use video_export::VideoExportAction;
 
 pub use lumino_core::{AudioAction, DotType, NotePrecision, Tool};
 
@@ -142,6 +144,8 @@ pub enum Message<W, S, Se, T> {
     SpeedChange(SpeedChangeAction),
     /// Pattern 编辑动作
     Pattern(PatternAction),
+    /// 视频导出动作
+    VideoExport(VideoExportAction),
 }
 
 pub const fn null<W, S, Se, T>() -> Message<W, S, Se, T> {

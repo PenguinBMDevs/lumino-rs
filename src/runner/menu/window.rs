@@ -241,6 +241,224 @@ impl RunnerInner {
                     })
                     .expect("无法创建音频渲染线程");
             }
+            StartVideoExport {
+                output_path,
+                width,
+                height,
+                fps,
+                container,
+                codec,
+                backend,
+                quality,
+                ppq,
+                document,
+            } => {
+                use lumino_export::video::{
+                    FfmpegEncoder, VideoExportConfig,
+                    config::{Container, EncoderBackend, QualityPreset, VideoCodec},
+                };
+                use lumino_gfx::render_thread::{ControlCommand, FrameSender, RenderCommand};
+                use std::str::FromStr;
+
+                tracing::info!(
+                    "开始视频导出: {}x{}@{}fps → {}",
+                    width,
+                    height,
+                    fps,
+                    output_path
+                );
+
+                // 解析配置枚举
+                let container = Container::from_str(&container).unwrap_or(Container::Mp4);
+                let codec = VideoCodec::from_str(&codec).unwrap_or(VideoCodec::H264);
+                let backend =
+                    EncoderBackend::from_str(&backend).unwrap_or(EncoderBackend::Software);
+                let quality = QualityPreset::from_str(&quality).unwrap_or_default();
+
+                // 获取渲染线程命令发送端
+                let main_ui = self.window_state.window.ui();
+                let cmd_sender = main_ui.render_command_sender();
+
+                if cmd_sender.is_none() {
+                    tracing::error!("视频导出失败：渲染线程未启动");
+                    let main_ui = self.window_state.window.ui_mut();
+                    main_ui.set_video_export_failed("渲染线程未启动".to_string());
+                    return;
+                }
+
+                let cmd_sender = cmd_sender.expect("已检查");
+
+                // 创建进度通道（复用音频导出的进度通道机制）
+                let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
+                self.window_state.export_progress_rx = Some(progress_rx);
+
+                // 构建 VideoExportConfig
+                let config = VideoExportConfig {
+                    width,
+                    height,
+                    fps: fps as f64,
+                    container: container.clone(),
+                    codec,
+                    backend,
+                    output_path: std::path::PathBuf::from(&output_path),
+                    quality,
+                };
+
+                // 获取 MidiDocument（编辑器模式）
+                let document = match document {
+                    Some(doc) => doc,
+                    None => {
+                        tracing::error!("视频导出失败：无 MidiDocument（暂不支持流式模式）");
+                        let _ = progress_tx.send(("导出失败：无 MIDI 数据".to_string(), -1.0));
+                        return;
+                    }
+                };
+
+                let ppq = ppq.max(1) as u32;
+                let fps_f64 = fps as f64;
+
+                // 后台线程：逐帧渲染 + FFmpeg 编码
+                std::thread::Builder::new()
+                    .name("video-render".into())
+                    .spawn(move || {
+                        let start = std::time::Instant::now();
+
+                        // 创建 FFmpeg 编码器
+                        let mut encoder = match FfmpegEncoder::new(&config) {
+                            Ok(e) => e,
+                            Err(e) => {
+                                tracing::error!("FFmpeg 创建失败: {e}");
+                                let _ = progress_tx.send((format!("导出失败: {e}"), -1.0));
+                                return;
+                            }
+                        };
+
+                        // 创建帧数据通道
+                        let (frame_tx, frame_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+
+                        // 发送 StartVideoExport 命令
+                        if cmd_sender
+                            .send(RenderCommand::Control(ControlCommand::StartVideoExport {
+                                width,
+                                height,
+                                frame_tx: FrameSender(frame_tx),
+                            }))
+                            .is_err()
+                        {
+                            tracing::error!("发送 StartVideoExport 命令失败");
+                            let _ =
+                                progress_tx.send(("导出失败：渲染线程通信错误".to_string(), -1.0));
+                            return;
+                        }
+
+                        // 计算总帧数
+                        let tempo_changes = &document.tempo_changes;
+                        let total_ticks = document.total_ticks;
+                        let duration_secs = compute_duration_secs(tempo_changes, total_ticks, ppq);
+                        let total_frames = config.total_frames(duration_secs);
+
+                        tracing::info!(
+                            "视频导出: 总时长 {:.1}s, 总帧数 {}, PPQ {}",
+                            duration_secs,
+                            total_frames,
+                            ppq
+                        );
+
+                        let mut last_stat_time = std::time::Instant::now();
+                        let mut frames_since_stat = 0u64;
+                        let mut smoothed_fps = 0.0f64;
+
+                        // 逐帧渲染
+                        for frame in 0..total_frames {
+                            let time_sec = frame as f64 / fps_f64;
+                            let tick = seconds_to_tick(time_sec, tempo_changes, ppq);
+
+                            // 构建 RenderParams（简化版：默认值 + 视频分辨率 + scroll 跟随播放头）
+                            let params =
+                                build_video_render_params(width, height, tick, &document, ppq);
+
+                            // 发送渲染命令
+                            if cmd_sender
+                                .send(RenderCommand::Control(ControlCommand::RenderVideoFrame(
+                                    Box::new(params),
+                                )))
+                                .is_err()
+                            {
+                                tracing::error!("发送 RenderVideoFrame 命令失败");
+                                let _ = progress_tx
+                                    .send(("导出失败：渲染线程通信错误".to_string(), -1.0));
+                                return;
+                            }
+
+                            // 接收帧数据（阻塞）
+                            let frame_data = match frame_rx.recv() {
+                                Ok(data) if !data.is_empty() => data,
+                                Ok(_) => {
+                                    tracing::warn!("帧 {} 读回为空，跳过", frame);
+                                    continue;
+                                }
+                                Err(_) => {
+                                    tracing::error!("帧数据通道关闭");
+                                    let _ = progress_tx
+                                        .send(("导出失败：帧数据通道关闭".to_string(), -1.0));
+                                    return;
+                                }
+                            };
+
+                            // 写入 FFmpeg
+                            if let Err(e) = encoder.write_frame(frame_data) {
+                                tracing::error!("写入 FFmpeg 失败: {e}");
+                                let _ = progress_tx.send((format!("导出失败: {e}"), -1.0));
+                                return;
+                            }
+
+                            // FPS 统计
+                            frames_since_stat += 1;
+                            let now = std::time::Instant::now();
+                            let stat_elapsed = now.duration_since(last_stat_time);
+                            if stat_elapsed.as_millis() >= 500 {
+                                let instant_fps =
+                                    frames_since_stat as f64 / stat_elapsed.as_secs_f64();
+                                smoothed_fps = smoothed_fps * 0.6 + instant_fps * 0.4;
+                                frames_since_stat = 0;
+                                last_stat_time = now;
+                            }
+
+                            // 进度回调
+                            let progress = (frame + 1) as f64 / total_frames as f64;
+                            let _ = progress_tx
+                                .send((format!("帧 {}/{}", frame + 1, total_frames), progress));
+                        }
+
+                        // 发送 FinishVideoExport
+                        let _ = cmd_sender
+                            .send(RenderCommand::Control(ControlCommand::FinishVideoExport));
+
+                        // 完成 FFmpeg 编码
+                        match encoder.finish() {
+                            Ok(()) => {
+                                let elapsed = start.elapsed().as_secs_f64();
+                                let avg_fps = if total_frames > 0 {
+                                    total_frames as f64 / elapsed
+                                } else {
+                                    0.0
+                                };
+                                tracing::info!(
+                                    "视频导出完成: {}帧, 耗时 {:.1}s, 平均 {:.1}fps",
+                                    total_frames,
+                                    elapsed,
+                                    avg_fps
+                                );
+                                let _ = progress_tx.send(("导出完成".to_string(), 1.0));
+                            }
+                            Err(e) => {
+                                tracing::error!("FFmpeg 编码完成失败: {e}");
+                                let _ = progress_tx.send((format!("导出失败: {e}"), -1.0));
+                            }
+                        }
+                    })
+                    .expect("无法创建视频渲染线程");
+            }
         }
     }
 
@@ -448,5 +666,94 @@ impl RunnerInner {
                 self.handle_local_track_added(track_index);
             }
         }
+    }
+}
+
+// ── 视频导出辅助函数 ──
+
+/// 从 tempo_changes 计算总时长（秒）
+fn compute_duration_secs(tempo_changes: &[(u32, f32)], total_ticks: u32, ppq: u32) -> f64 {
+    if tempo_changes.is_empty() || ppq == 0 {
+        return total_ticks as f64 / ppq.max(1) as f64 * 0.5; // 120 BPM
+    }
+    let mut secs = 0.0;
+    let mut prev_tick = 0u32;
+    let mut prev_bpm = tempo_changes[0].1 as f64;
+    for &(tick, bpm) in tempo_changes {
+        if tick > prev_tick {
+            let delta_ticks = (tick - prev_tick) as f64;
+            secs += delta_ticks / ppq as f64 * 60.0 / prev_bpm;
+        }
+        prev_tick = tick;
+        prev_bpm = bpm as f64;
+    }
+    if total_ticks > prev_tick {
+        let delta_ticks = (total_ticks - prev_tick) as f64;
+        secs += delta_ticks / ppq as f64 * 60.0 / prev_bpm;
+    }
+    secs
+}
+
+/// 从秒转换到 tick
+fn seconds_to_tick(secs: f64, tempo_changes: &[(u32, f32)], ppq: u32) -> u32 {
+    if tempo_changes.is_empty() || ppq == 0 {
+        return (secs * ppq.max(1) as f64 * 2.0) as u32; // 120 BPM
+    }
+    let mut remaining = secs;
+    let mut prev_tick = 0u32;
+    let mut prev_bpm = tempo_changes[0].1 as f64;
+    for &(tick, bpm) in tempo_changes {
+        if tick > prev_tick {
+            let delta_ticks = (tick - prev_tick) as f64;
+            let delta_secs = delta_ticks / ppq as f64 * 60.0 / prev_bpm;
+            if remaining <= delta_secs {
+                return prev_tick + (remaining * ppq as f64 * prev_bpm / 60.0) as u32;
+            }
+            remaining -= delta_secs;
+        }
+        prev_tick = tick;
+        prev_bpm = bpm as f64;
+    }
+    prev_tick + (remaining * ppq as f64 * prev_bpm / 60.0) as u32
+}
+
+/// 构建视频导出帧的 RenderParams（简化版）
+fn build_video_render_params(
+    width: u32,
+    height: u32,
+    tick: u32,
+    document: &lumino_midi_loader::MidiDocument,
+    ppq: u32,
+) -> lumino_gfx::RenderParams {
+    use lumino_gfx::NoteInstance;
+
+    let viewport_ticks = ppq * 16; // 4 小节视口
+    let tick_end = tick.saturating_add(viewport_ticks);
+
+    // 收集可见音符
+    let mut note_instances = Vec::new();
+    // 蓝色音符 [0.2, 0.6, 1.0, 1.0] → 打包为 u32
+    let color_packed: u32 = (51u32 << 24) | (153u32 << 16) | (255u32 << 8) | 255u32;
+    for notes in &document.notes {
+        for n in notes {
+            if n.end_tick >= tick && n.start_tick <= tick_end {
+                note_instances.push(NoteInstance {
+                    position: [n.start_tick as f32, n.key as f32],
+                    size_x: n.length() as f32,
+                    color_packed,
+                });
+            }
+        }
+    }
+
+    lumino_gfx::RenderParams {
+        viewport_size: (width, height),
+        logical_size: (width as f32, height as f32),
+        scale_factor: 1.0,
+        scroll: (tick as f32, 0.0),
+        zoom: (0.1, 20.0),
+        note_instances,
+        ppq: ppq as f32,
+        ..Default::default()
     }
 }

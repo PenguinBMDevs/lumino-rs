@@ -17,6 +17,7 @@ pub fn view<'a>(
     current_mode: AppMode,
     active_group: Option<GroupId>,
     audio_export_visible: bool,
+    video_export_visible: bool,
     window: &'a window::Window,
     language: Language,
 ) -> Element<'a> {
@@ -47,6 +48,7 @@ pub fn view<'a>(
                 if matches!(route, Route::VideoExport | Route::AudioExport) {
                     let is_active = match route {
                         Route::AudioExport => audio_export_visible,
+                        Route::VideoExport => video_export_visible,
                         _ => false,
                     };
                     return export_item(

@@ -54,6 +54,25 @@ pub enum Event {
         /// 内存中的 MidiDocument（如果存在）
         document: Option<Arc<MidiDocument>>,
     },
+    /// 开始视频导出
+    ///
+    /// 视频导出暂用编辑器模式的 MidiDocument 作为数据源（不做流式模式）。
+    /// Runner 线程逐帧构建 RenderParams，发送给渲染线程离屏渲染 + GPU 读回，
+    /// 再将 BGRA 帧写入 FFmpeg。
+    StartVideoExport {
+        output_path: String,
+        width: u32,
+        height: u32,
+        fps: u32,
+        container: String,
+        codec: String,
+        backend: String,
+        quality: String,
+        /// MIDI 分辨率（PPQ）
+        ppq: u16,
+        /// 内存中的 MidiDocument（视频导出数据源）
+        document: Option<Arc<MidiDocument>>,
+    },
 }
 
 impl Event {
@@ -78,6 +97,7 @@ impl Event {
                     "音频导出（文件模式）".to_string()
                 }
             }
+            Self::StartVideoExport { .. } => "视频导出".to_string(),
         }
     }
 }

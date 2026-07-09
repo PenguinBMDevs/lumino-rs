@@ -31,6 +31,7 @@ pub use lumino_message::{
     Tool,
     TupletType,
     VelocityAction,
+    VideoExportAction,
 };
 
 /// 具体化的消息类型

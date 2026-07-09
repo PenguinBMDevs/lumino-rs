@@ -25,6 +25,7 @@ pub mod format;
 pub mod lmpj;
 pub mod midi;
 pub mod project;
+pub mod video;
 
 // ── 音频渲染 ──
 
@@ -32,6 +33,11 @@ pub mod project;
 pub use audio::render_audio;
 /// 音频渲染（基于 xsynth）—— 内存模式
 pub use audio::render_audio_from_document;
+
+// ── 视频导出 ──
+
+/// 视频导出模块（基于 FFmpeg）
+pub use video::{FfmpegEncoder, VideoExportConfig, VideoExportError};
 
 // ── 格式转换 ──
 

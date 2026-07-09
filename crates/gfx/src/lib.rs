@@ -50,3 +50,5 @@ pub use ruler_renderer::{
     RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,
 };
 pub use swappable_buffer::{AtomicSwappableBuffer, MpscQueue, RenderData, SwappableBuffer};
+
+pub use render_thread::RenderParams;

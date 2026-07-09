@@ -104,7 +104,11 @@ fn collect_segments(
 
     if visible_events.is_empty() {
         let idx = lane.events.partition_point(|e| e.tick < pad_start);
-        let val = if idx > 0 { lane.events[idx - 1].value } else { 0 };
+        let val = if idx > 0 {
+            lane.events[idx - 1].value
+        } else {
+            0
+        };
         let y = view.value_to_y(val as f32, max_val);
         if width > grid_left_x {
             segs.push(SegSpan {
@@ -118,8 +122,14 @@ fn collect_segments(
         return segs;
     }
 
-    let prev_idx = lane.events.partition_point(|e| e.tick < visible_events[0].tick);
-    let chase_val = if prev_idx > 0 { lane.events[prev_idx - 1].value } else { 0 };
+    let prev_idx = lane
+        .events
+        .partition_point(|e| e.tick < visible_events[0].tick);
+    let chase_val = if prev_idx > 0 {
+        lane.events[prev_idx - 1].value
+    } else {
+        0
+    };
     let first_tick = visible_events[0].tick;
     let first_x = view.tick_to_x(first_tick);
     let chase_y = view.value_to_y(chase_val as f32, max_val);

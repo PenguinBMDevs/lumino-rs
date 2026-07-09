@@ -6,7 +6,8 @@ use std::time::Instant;
 
 use crate::SwappableBuffer;
 
-use super::super::super::commands::{ControlCommand, RenderCommand};
+use super::super::super::commands::{ControlCommand, FrameSender, RenderCommand};
+use super::super::super::export_pipeline::ExportPipeline;
 use super::super::super::params::RenderParams;
 use super::super::super::stats::RenderStats;
 use super::super::Renderers;
@@ -59,6 +60,10 @@ pub fn run_render_thread(
     let mut hires_config: Option<crate::HiResConfig> = None;
     let mut deferred: Vec<ControlCommand> = Vec::new();
 
+    // 视频导出读回管线状态
+    let mut export_pipeline: Option<ExportPipeline> = None;
+    let mut export_frame_tx: Option<FrameSender> = None;
+
     // ★ 后台生成线程通过有界同步通道流式传回贴图（容量1，背压）★
     // sync_channel(1)：channel 满时 send 阻塞，强制后台等渲染线程消费，
     // 防止无界积压导致 CPU 内存峰值（对应"装袋期间工人等着"）
@@ -76,19 +81,65 @@ pub fn run_render_thread(
             &mut deferred,
         );
 
-        // 处理延迟的高精度洋葱皮控制命令
+        // 处理延迟的控制命令
         for cmd in deferred.drain(..) {
-            handle_hires_control(
-                cmd,
-                &device,
-                &queue,
-                &mut hires_renderer,
-                &mut hires_meta,
-                &mut hires_config,
-                &hires_result_tx,
-                &onion_progress,
-                texture_format,
-            );
+            match cmd {
+                // ── 视频导出命令：在此内联处理（需要 GPU 资源 + 离屏纹理）──
+                ControlCommand::StartVideoExport {
+                    width,
+                    height,
+                    frame_tx,
+                } => {
+                    tracing::info!(
+                        "视频导出开始: {}x{}, 初始化 GPU→CPU 读回管线",
+                        width,
+                        height
+                    );
+                    export_pipeline = Some(ExportPipeline::new(&device, width, height));
+                    export_frame_tx = Some(frame_tx);
+                }
+                ControlCommand::RenderVideoFrame(params) => {
+                    handle_video_frame(
+                        *params,
+                        &device,
+                        &queue,
+                        texture_format,
+                        &mut export_pipeline,
+                        &export_frame_tx,
+                        &mut renderers,
+                        &mut current_texture,
+                        &mut depth_texture,
+                        &mut depth_texture_view,
+                        &mut current_size,
+                        &note_instances_buffer,
+                        &note_events_rx,
+                        &mut last_note_version,
+                        &latest_texture_clone,
+                        &mut hires_renderer,
+                        &mut hires_meta,
+                        &mut hires_config,
+                    );
+                }
+                ControlCommand::FinishVideoExport => {
+                    tracing::info!("视频导出完成，释放读回管线");
+                    export_pipeline = None;
+                    export_frame_tx = None;
+                }
+                // ── HiRes 命令走原路径 ──
+                cmd => {
+                    handle_hires_control(
+                        cmd,
+                        &device,
+                        &queue,
+                        &mut hires_renderer,
+                        &mut hires_meta,
+                        &mut hires_config,
+                        &hires_result_tx,
+                        &onion_progress,
+                        texture_format,
+                    );
+                }
+            }
         }
 
         // ★ 流式接收：每帧循环 try_recv，收到已合并像素立即 upload（GPU DMA，非阻塞）★
@@ -221,4 +272,116 @@ pub fn run_render_thread(
     }
 
     tracing::info!("Render thread stopped");
+}
+
+/// 处理视频导出帧：离屏渲染 → copy 到 staging → submit → map_async → wait_read → send
+///
+/// 同步模式：阻塞等待当前帧读回后再发送给 Runner。
+/// 视频导出为非实时任务，同步模式代码简洁且足够可靠。
+#[allow(clippy::too_many_arguments)]
+fn handle_video_frame(
+    params: RenderParams,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    texture_format: wgpu::TextureFormat,
+    export_pipeline: &mut Option<ExportPipeline>,
+    export_frame_tx: &Option<FrameSender>,
+    renderers: &mut super::super::Renderers,
+    current_texture: &mut Option<Arc<wgpu::Texture>>,
+    depth_texture: &mut Option<wgpu::Texture>,
+    depth_texture_view: &mut Option<wgpu::TextureView>,
+    current_size: &mut (u32, u32),
+    note_instances_buffer: &Arc<SwappableBuffer<crate::NoteInstance>>,
+    note_events_rx: &std::sync::mpsc::Receiver<crate::NoteEvent>,
+    last_note_version: &mut u64,
+    latest_texture_clone: &Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
+    hires_renderer: &mut Option<crate::HiResRenderer>,
+    hires_meta: &mut Option<HiResMeta>,
+    hires_config: &mut Option<crate::HiResConfig>,
+) {
+    let (Some(pipeline), Some(tx)) = (export_pipeline.as_mut(), export_frame_tx) else {
+        tracing::warn!("RenderVideoFrame 收到但导出管线未初始化，忽略");
+        return;
+    };
+
+    let width = params.viewport_size.0.max(1);
+    let height = params.viewport_size.1.max(1);
+
+    // 1. 确保离屏纹理已创建
+    let mut tex_resources = super::super::textures::OffscreenTextureResources {
+        device,
+        texture_format,
+        width,
+        height,
+        current_size,
+        current_texture,
+        depth_texture,
+        depth_texture_view,
+        latest_texture_clone,
+        params: &params,
+    };
+    ensure_textures(&mut tex_resources);
+
+    // 2. 音符版本检测后上传
+    let note_version = note_instances_buffer.version();
+    if note_version != *last_note_version {
+        *last_note_version = note_version;
+        let notes = unsafe { note_instances_buffer.read_buffer() };
+        renderers.note.upload_instances(notes, device, queue);
+    }
+
+    let (Some(texture), Some(_depth_view)) = (&*current_texture, &*depth_texture_view) else {
+        tracing::warn!("视频帧渲染：离屏纹理未就绪，跳过");
+        return;
+    };
+
+    // 3. 创建编码器并执行渲染通道
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("video_export_render_encoder"),
+    });
+
+    prepare_renderers(renderers, &params, note_events_rx, device, queue);
+
+    let hires_visible = update_hires_viewport(
+        hires_renderer,
+        hires_meta,
+        hires_config,
+        &params,
+        device,
+        queue,
+    );
+    let hires_visible_coords: Vec<crate::TileCoord> =
+        hires_visible.iter().map(|(c, _)| *c).collect();
+
+    execute_render_pass(
+        &mut encoder,
+        device,
+        current_texture,
+        depth_texture_view,
+        &params,
+        &mut renderers.grid,
+        &mut renderers.note,
+        &mut renderers.ruler,
+        &mut renderers.arrangement,
+        queue,
+        &mut renderers.cc_bar,
+        hires_renderer,
+        &hires_visible_coords,
+    );
+
+    // 4. copy 离屏纹理到 staging buffer + submit + map_async
+    pipeline.ensure_size(width, height);
+    pipeline.copy_and_submit(encoder, texture, queue);
+
+    // 5. 阻塞读回 BGRA 帧数据
+    let frame_data = pipeline.wait_read();
+
+    if frame_data.is_empty() {
+        tracing::warn!("视频帧读回超时，发送空帧（可能丢帧）");
+    }
+
+    // 6. 发送给 Runner 线程写入 FFmpeg
+    if tx.0.send(frame_data).is_err() {
+        tracing::warn!("视频帧发送失败：Runner 通道已关闭");
+    }
 }

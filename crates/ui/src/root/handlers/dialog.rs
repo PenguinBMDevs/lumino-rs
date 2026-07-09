@@ -1,9 +1,10 @@
 //! 对话框管理处理器
 
 use crate::host::DialogResult;
-use crate::message::{AudioExportAction, Message, SpeedChangeAction};
+use crate::message::{AudioExportAction, Message, SpeedChangeAction, VideoExportAction};
 use crate::root::Root;
 use crate::root::handlers::MessageHandler;
+use crate::state::root_state::VideoExportOverlayState;
 
 /// 对话框消息处理器
 pub struct DialogHandler;
@@ -351,6 +352,138 @@ impl MessageHandler for DialogHandler {
                         root.state.audio_export_dialog.render_error = None;
                         root.state.audio_export_dialog.render_progress = 0.0;
                         root.state.audio_export_dialog.render_message.clear();
+                    }
+                }
+                None
+            }
+            // 视频导出面板消息
+            Message::VideoExport(action) => {
+                use VideoExportAction as V;
+                match action {
+                    V::OpenPanel => {
+                        root.sidebar.video_export_visible = true;
+                        root.sidebar.route = crate::sidebar::Route::VideoExport;
+                    }
+                    V::ClosePanel => {
+                        root.sidebar.video_export_visible = false;
+                        root.sidebar.route = crate::sidebar::Route::Arrangement;
+                    }
+                    V::StartExport => {
+                        let st = &root.state.video_export_dialog;
+                        let document = root.midi.document.as_ref().map(std::sync::Arc::clone);
+                        // 先 clone 配置值，避免借用冲突
+                        let output_path = st.output_path.clone();
+                        let width = st.width;
+                        let height = st.height;
+                        let fps = st.fps;
+                        let container = st.container.clone();
+                        let codec = st.codec.clone();
+                        let backend = st.backend.clone();
+                        let quality = st.quality.clone();
+
+                        // 设置导出中状态
+                        root.state.video_export_dialog.overlay = VideoExportOverlayState::Exporting;
+                        root.state.video_export_dialog.progress = 0.0;
+                        root.state.video_export_dialog.status_message = "正在初始化...".to_string();
+                        root.state.video_export_dialog.current_frame = 0;
+                        root.state.video_export_dialog.total_frames = 0;
+                        root.state.video_export_dialog.render_fps = 0.0;
+
+                        let ev = crate::event::window::Event::start_video_export(
+                            output_path,
+                            width,
+                            height,
+                            fps,
+                            container,
+                            codec,
+                            backend,
+                            quality,
+                            480, // ppq 默认值（与音频导出一致）
+                            document,
+                        );
+                        crate::event::emit(crate::event::Event::Window(ev));
+                    }
+                    V::CancelExport => {
+                        root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
+                        // Runner 侧通过 overlay=None 检测取消
+                    }
+                    V::ForceFinish => {
+                        let st = &root.state.video_export_dialog;
+                        root.state.video_export_dialog.overlay =
+                            VideoExportOverlayState::Completed {
+                                total_frames: st.total_frames,
+                                elapsed_secs: 0.0,
+                                avg_fps: st.render_fps,
+                            };
+                    }
+                    V::DismissOverlay => {
+                        root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
+                    }
+                    V::ContainerChanged(v) => {
+                        root.state.video_export_dialog.container = v;
+                    }
+                    V::CodecChanged(v) => {
+                        root.state.video_export_dialog.codec = v;
+                    }
+                    V::BackendChanged(v) => {
+                        root.state.video_export_dialog.backend = v;
+                    }
+                    V::QualityChanged(v) => {
+                        root.state.video_export_dialog.quality = v;
+                    }
+                    V::WidthChanged(v) => {
+                        if v.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(w) = v.parse::<u32>()
+                        {
+                            root.state.video_export_dialog.width = w;
+                        }
+                    }
+                    V::HeightChanged(v) => {
+                        if v.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(h) = v.parse::<u32>()
+                        {
+                            root.state.video_export_dialog.height = h;
+                        }
+                    }
+                    V::FpsChanged(v) => {
+                        root.state.video_export_dialog.fps = v;
+                    }
+                    V::OutputPathChanged(v) => {
+                        root.state.video_export_dialog.output_path = v;
+                    }
+                    V::BrowseOutput => {
+                        let st = &root.state.video_export_dialog;
+                        let ext = st.container.to_lowercase();
+                        let default_name = format!("output.{}", ext);
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_file_name(&default_name)
+                            .add_filter(&st.container, &[ext.as_str()])
+                            .save_file()
+                        {
+                            root.state.video_export_dialog.output_path =
+                                path.to_string_lossy().to_string();
+                        }
+                    }
+                    V::UpdateProgress {
+                        message,
+                        progress,
+                        current_frame,
+                        total_frames,
+                        fps,
+                    } => {
+                        let st = &mut root.state.video_export_dialog;
+                        st.status_message = message;
+                        st.progress = progress;
+                        st.current_frame = current_frame;
+                        st.total_frames = total_frames;
+                        st.render_fps = fps;
+                    }
+                    V::ExportCompleted => {
+                        // 由 Runner 回调设置具体字段，此处不处理
+                    }
+                    V::ExportFailed(err) => {
+                        root.state.video_export_dialog.overlay =
+                            VideoExportOverlayState::Error(err);
                     }
                 }
                 None

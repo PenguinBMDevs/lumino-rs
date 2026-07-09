@@ -121,6 +121,11 @@ impl WgpuRenderThread {
         }
     }
 
+    /// 克隆命令发送端（用于视频导出后台线程与渲染线程通信）
+    pub fn try_clone_command_sender(&self) -> Option<std::sync::mpsc::Sender<RenderCommand>> {
+        self.command_sender.clone()
+    }
+
     /// 发送音符事件到渲染线程（增量更新通道）
     ///
     /// UI 线程编辑音符后调用此方法，渲染线程通过 `process_events()` 消费。

@@ -298,6 +298,97 @@ impl AudioExportDialogState {
     }
 }
 
+/// 视频导出覆盖层状态（参照 nezha ExportState）
+#[derive(Debug, Clone, Default)]
+pub enum VideoExportOverlayState {
+    /// 空闲（无覆盖层）
+    #[default]
+    None,
+    /// 导出中（渲染+写帧）
+    Exporting,
+    /// 编码收尾（等待 ffmpeg 封装）
+    Finalizing,
+    /// 完成
+    Completed {
+        /// 总帧数
+        total_frames: u64,
+        /// 总用时（秒）
+        elapsed_secs: f64,
+        /// 平均渲染速度
+        avg_fps: f64,
+    },
+    /// 错误
+    Error(String),
+}
+
+/// 视频导出面板状态（主界面侧边栏面板）
+///
+/// 纯 UI 状态，保存控件值与导出进度。
+/// 配置值用 String 存储（UI pick_list 原生支持），Runner 端解析回强类型。
+#[derive(Debug, Clone)]
+pub struct VideoExportDialogState {
+    /// 容器格式（"MP4"/"MOV"/"MKV"/"AVI"）
+    pub container: String,
+    /// 视频编码器（"H.264"/"H.265 / HEVC"/"ProRes"/"VP9"/"AV1"）
+    pub codec: String,
+    /// 硬件加速后端（"Software (CPU)"/"NVENC (NVIDIA)" 等）
+    pub backend: String,
+    /// 质量预设（"高"/"中"/"低"）
+    pub quality: String,
+    /// 分辨率宽度
+    pub width: u32,
+    /// 分辨率高度
+    pub height: u32,
+    /// 帧率
+    pub fps: u32,
+    /// 输出路径
+    pub output_path: String,
+    /// 覆盖层状态（None=空闲，其余=显示模态覆盖层）
+    pub overlay: VideoExportOverlayState,
+    /// 进度 (0.0 - 1.0)
+    pub progress: f64,
+    /// 状态消息
+    pub status_message: String,
+    /// 当前已渲染帧
+    pub current_frame: u64,
+    /// 总帧数
+    pub total_frames: u64,
+    /// 渲染速度（fps，EMA 平滑）
+    pub render_fps: f64,
+}
+
+impl Default for VideoExportDialogState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl VideoExportDialogState {
+    pub fn new() -> Self {
+        Self {
+            container: "MP4".to_string(),
+            codec: "H.264".to_string(),
+            backend: "Software (CPU)".to_string(),
+            quality: "中".to_string(),
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            output_path: String::new(),
+            overlay: VideoExportOverlayState::None,
+            progress: 0.0,
+            status_message: String::new(),
+            current_frame: 0,
+            total_frames: 0,
+            render_fps: 0.0,
+        }
+    }
+
+    /// 是否正在导出（覆盖层可见）
+    pub fn is_exporting(&self) -> bool {
+        !matches!(self.overlay, VideoExportOverlayState::None)
+    }
+}
+
 /// 音符变速对话框状态
 #[derive(Debug, Clone)]
 pub struct SpeedChangeDialogState {
@@ -429,6 +520,8 @@ pub struct RootState {
     pub project_settings_dialog: ProjectSettingsDialogState,
     /// 音频导出对话框状态
     pub audio_export_dialog: AudioExportDialogState,
+    /// 视频导出对话框状态
+    pub video_export_dialog: VideoExportDialogState,
     /// 音频导出进度对话框状态
     pub export_progress_dialog: ExportProgressDialogState,
     /// 音符变速对话框状态
@@ -461,6 +554,7 @@ impl RootState {
             collaboration_dialog: CollaborationDialogState::new(),
             project_settings_dialog: ProjectSettingsDialogState::new(),
             audio_export_dialog: AudioExportDialogState::new(),
+            video_export_dialog: VideoExportDialogState::new(),
             export_progress_dialog: ExportProgressDialogState::new(),
             speed_change_dialog: SpeedChangeDialogState::new(),
             note_precision: NotePrecision::default(),

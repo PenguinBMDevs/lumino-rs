@@ -77,5 +77,13 @@ fn classify_command(
         ) => {
             deferred.push(cmd);
         }
+        // 视频导出命令需要 GPU 资源上下文，延迟到主循环处理
+        RenderCommand::Control(
+            cmd @ (ControlCommand::StartVideoExport { .. }
+            | ControlCommand::RenderVideoFrame { .. }
+            | ControlCommand::FinishVideoExport),
+        ) => {
+            deferred.push(cmd);
+        }
     }
 }

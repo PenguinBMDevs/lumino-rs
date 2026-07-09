@@ -116,6 +116,31 @@ impl Event {
             document,
         })
     }
+    pub fn start_video_export(
+        output_path: String,
+        width: u32,
+        height: u32,
+        fps: u32,
+        container: String,
+        codec: String,
+        backend: String,
+        quality: String,
+        ppq: u16,
+        document: Option<Arc<lumino_midi_loader::MidiDocument>>,
+    ) -> Self {
+        Self::Dialog(dialog::Event::StartVideoExport {
+            output_path,
+            width,
+            height,
+            fps,
+            container,
+            codec,
+            backend,
+            quality,
+            ppq,
+            document,
+        })
+    }
 
     // ── 协作构造函数（直接构造 collaboration::Event） ──
 

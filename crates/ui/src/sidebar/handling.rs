@@ -20,8 +20,20 @@ impl Sidebar {
                 // 音频渲染：切换独立面板（主界面钢琴卷帘区域）
                 if r == Route::AudioExport {
                     self.audio_export_visible = !self.audio_export_visible;
+                    self.video_export_visible = false;
                     self.route = if self.audio_export_visible {
                         Route::AudioExport
+                    } else {
+                        Route::File
+                    };
+                    self.panel_visible = false;
+                    self.piano_roll_visible = false;
+                } else if r == Route::VideoExport {
+                    // 视频渲染：切换独立面板（与音频渲染互斥）
+                    self.video_export_visible = !self.video_export_visible;
+                    self.audio_export_visible = false;
+                    self.route = if self.video_export_visible {
+                        Route::VideoExport
                     } else {
                         Route::File
                     };

@@ -37,6 +37,7 @@ impl Sidebar {
                 current_mode,
                 self.active_group,
                 self.audio_export_visible,
+                self.video_export_visible,
                 window,
                 language
             ),
