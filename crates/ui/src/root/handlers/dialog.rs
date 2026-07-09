@@ -399,6 +399,7 @@ impl MessageHandler for DialogHandler {
                             backend,
                             quality,
                             480, // ppq 默认值（与音频导出一致）
+                            root.editor.editor_state.view.visible_key_count,
                             document,
                         );
                         crate::event::emit(crate::event::Event::Window(ev));

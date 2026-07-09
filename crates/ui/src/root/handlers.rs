@@ -520,7 +520,7 @@ impl Root {
         }
 
         // 导出类路由 → 同步 sidebar 面板状态（已在 sidebar.update 中处理）
-        // 音频渲染面板状态由 sidebar.audio_export_visible 驱动，view_main 中渲染
+        // 音频/视频渲染面板状态由 sidebar.*_export_visible 驱动，view_main 中渲染
 
         // 更新画布偏移
         let sidebar_width = self.sidebar.width() as f32;

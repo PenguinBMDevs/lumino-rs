@@ -10,7 +10,7 @@ use crate::editor::note::NoteExt;
 use crate::message;
 use crate::root::{Element, Root, Theme};
 use crate::view::audio_export_dialog::view_audio_export_dialog;
-use crate::view::video_export_dialog::{view_video_export_dialog, view_video_export_overlay};
+use crate::view::video_export_dialog::view_video_export_dialog;
 
 impl Root {
     /// 渲染视图（主入口，根据窗口类型分发）
@@ -357,8 +357,11 @@ impl Root {
 
         let theme = &self.window.theme;
 
-        // 如果有覆盖层（导出中/完成/错误），直接返回覆盖层
-        if let Some(overlay) = view_video_export_overlay(&self.state.video_export_dialog, theme) {
+        // 如果有导出覆盖层（导出中/完成/错误），直接返回覆盖层
+        if let Some(overlay) = crate::view::video_export_dialog::view_video_export_overlay(
+            &self.state.video_export_dialog,
+            theme,
+        ) {
             return overlay;
         }
 

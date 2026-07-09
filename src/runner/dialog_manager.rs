@@ -36,6 +36,7 @@ impl DialogWindow {
             DialogType::Settings => (700.0, 500.0, "设置", true),
             DialogType::SpeedChange => (400.0, 250.0, "变速", false),
             DialogType::ExportProgress => (400.0, 200.0, "音频导出", false),
+            DialogType::VideoExport => (520.0, 560.0, "视频导出", false),
         };
 
         let attributes = WindowAttributes::default()
@@ -129,6 +130,9 @@ impl DialogWindow {
             }
             DialogType::ExportProgress => {
                 ui.set_export_progress_dialog_open(true);
+            }
+            DialogType::VideoExport => {
+                // VideoExport 使用默认状态，不需要额外初始化
             }
         }
 

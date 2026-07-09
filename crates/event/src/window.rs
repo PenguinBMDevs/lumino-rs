@@ -72,6 +72,12 @@ impl Event {
     pub const fn confirm_speed_change(factor: f32) -> Self {
         Self::Dialog(dialog::Event::ConfirmSpeedChange(factor))
     }
+    pub const fn open_video_export_dialog() -> Self {
+        Self::Dialog(dialog::Event::OpenVideoExportDialog)
+    }
+    pub const fn close_video_export_dialog() -> Self {
+        Self::Dialog(dialog::Event::CloseVideoExportDialog)
+    }
     pub const fn open_project_settings_dialog() -> Self {
         Self::Dialog(dialog::Event::OpenProjectSettingsDialog)
     }
@@ -126,6 +132,7 @@ impl Event {
         backend: String,
         quality: String,
         ppq: u16,
+        key_count: u16,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) -> Self {
         Self::Dialog(dialog::Event::StartVideoExport {
@@ -138,6 +145,7 @@ impl Event {
             backend,
             quality,
             ppq,
+            key_count,
             document,
         })
     }

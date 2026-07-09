@@ -95,6 +95,17 @@ impl RunnerInner {
                     .dialog_manager
                     .open_dialog(DialogType::SpeedChange);
             }
+            OpenVideoExportDialog => {
+                tracing::info!("请求打开视频导出对话框");
+                self.window_state
+                    .dialog_manager
+                    .open_dialog(DialogType::VideoExport);
+            }
+            CloseVideoExportDialog => {
+                self.window_state
+                    .dialog_manager
+                    .mark_dialog_for_close(DialogType::VideoExport);
+            }
             CloseSpeedChangeDialog => {
                 self.window_state
                     .dialog_manager
@@ -251,6 +262,7 @@ impl RunnerInner {
                 backend,
                 quality,
                 ppq,
+                key_count,
                 document,
             } => {
                 use lumino_export::video::{
@@ -374,8 +386,9 @@ impl RunnerInner {
                             let tick = seconds_to_tick(time_sec, tempo_changes, ppq);
 
                             // 构建 RenderParams（简化版：默认值 + 视频分辨率 + scroll 跟随播放头）
-                            let params =
-                                build_video_render_params(width, height, tick, &document, ppq);
+                            let params = build_video_render_params(
+                                width, height, tick, &document, ppq, key_count,
+                            );
 
                             // 发送渲染命令
                             if cmd_sender
@@ -717,29 +730,90 @@ fn seconds_to_tick(secs: f64, tempo_changes: &[(u32, f32)], ppq: u32) -> u32 {
     prev_tick + (remaining * ppq as f64 * prev_bpm / 60.0) as u32
 }
 
-/// 构建视频导出帧的 RenderParams（简化版）
+/// 构建视频导出帧的 RenderParams
+///
+/// 包含编辑区域 UI 元素（网格线、标尺、键盘），
+/// Y 向缩放覆盖整个键盘（128 或 256 key），
+/// X 向缩放使可见视口内恰好 4 个小节。
 fn build_video_render_params(
     width: u32,
     height: u32,
     tick: u32,
     document: &lumino_midi_loader::MidiDocument,
     ppq: u32,
+    key_count: u16,
 ) -> lumino_gfx::RenderParams {
-    use lumino_gfx::NoteInstance;
+    use lumino_gfx::{
+        GridViewParams, KeyInstance, NoteInstance, generate_grid_instances,
+        generate_ruler_instances, is_black_key,
+    };
 
-    let viewport_ticks = ppq * 16; // 4 小节视口
-    let tick_end = tick.saturating_add(viewport_ticks);
+    let keyboard_width = 60.0f32;
+    let ruler_height = 30.0f32;
+    let w = width.max(1) as f32;
+    let h = height.max(1) as f32;
 
-    // 收集可见音符
+    // X 向缩放：视口 tick 范围 = 4 小节
+    let viewport_tick_span = (ppq * 16).max(1) as f32;
+    let zoom_x = (w - keyboard_width) / viewport_tick_span;
+
+    // Y 向缩放：覆盖整个键盘
+    let key_count_f = key_count.max(1) as f32;
+    let zoom_y = (h - ruler_height) / key_count_f;
+
+    let scroll_x = tick as f32;
+    let scroll_y = 0.0f32;
+
+    // 1. 生成网格线实例
+    let grid_params = GridViewParams {
+        viewport_width: w,
+        viewport_height: h,
+        keyboard_width,
+        ruler_height,
+        scroll_x,
+        scroll_y,
+        zoom_x,
+        zoom_y,
+    };
+    let grid_instances = generate_grid_instances(&grid_params);
+
+    // 2. 生成标尺实例
+    let ruler_instances =
+        generate_ruler_instances(w, keyboard_width, ruler_height, scroll_x, zoom_x);
+
+    // 3. 生成键盘实例
+    let mut keyboard_instances = Vec::with_capacity(key_count as usize);
+    for key in 0..key_count {
+        let ky = ruler_height + key as f32 * zoom_y - scroll_y;
+        let is_black = is_black_key(key as isize);
+        // 保持在视口内
+        if ky + zoom_y >= ruler_height && ky <= h {
+            keyboard_instances.push(KeyInstance::new(
+                [0.0, ky],
+                [keyboard_width, zoom_y + 1.0], // +1 防止缝隙
+                if is_black {
+                    [0.1, 0.1, 0.12, 1.0] // 黑键
+                } else {
+                    [0.22, 0.22, 0.25, 1.0] // 白键
+                },
+                is_black,
+                key,
+            ));
+        }
+    }
+
+    // 4. 收集可见音符
+    let tick_start = tick;
+    let tick_end = tick.saturating_add(viewport_tick_span as u32);
     let mut note_instances = Vec::new();
-    // 蓝色音符 [0.2, 0.6, 1.0, 1.0] → 打包为 u32
+    // 蓝色音符
     let color_packed: u32 = (51u32 << 24) | (153u32 << 16) | (255u32 << 8) | 255u32;
     for notes in &document.notes {
         for n in notes {
-            if n.end_tick >= tick && n.start_tick <= tick_end {
+            if n.end_tick >= tick_start && n.start_tick <= tick_end {
                 note_instances.push(NoteInstance {
                     position: [n.start_tick as f32, n.key as f32],
-                    size_x: n.length() as f32,
+                    size_x: (n.length() as f32).max(1.0),
                     color_packed,
                 });
             }
@@ -747,12 +821,17 @@ fn build_video_render_params(
     }
 
     lumino_gfx::RenderParams {
-        viewport_size: (width, height),
-        logical_size: (width as f32, height as f32),
+        viewport_size: (width.max(1), height.max(1)),
+        logical_size: (w, h),
         scale_factor: 1.0,
-        scroll: (tick as f32, 0.0),
-        zoom: (0.1, 20.0),
+        scroll: (scroll_x, scroll_y),
+        zoom: (zoom_x, zoom_y),
+        keyboard_width,
+        ruler_height,
         note_instances,
+        grid_instances,
+        ruler_instances,
+        keyboard_instances,
         ppq: ppq as f32,
         ..Default::default()
     }

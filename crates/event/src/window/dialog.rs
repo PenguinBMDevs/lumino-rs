@@ -9,7 +9,10 @@ pub enum Event {
     /// 打开自定义精度对话框窗口
     OpenCustomPrecisionDialog,
     /// 打开加载确认对话框
-    OpenLoadConfirmDialog { path: String, size_mb: f64 },
+    OpenLoadConfirmDialog {
+        path: String,
+        size_mb: f64,
+    },
     /// 关闭自定义精度对话框窗口
     CloseCustomPrecisionDialog,
     /// 应用自定义精度设置 (numerator, denominator)
@@ -59,6 +62,8 @@ pub enum Event {
     /// 视频导出暂用编辑器模式的 MidiDocument 作为数据源（不做流式模式）。
     /// Runner 线程逐帧构建 RenderParams，发送给渲染线程离屏渲染 + GPU 读回，
     /// 再将 BGRA 帧写入 FFmpeg。
+    OpenVideoExportDialog,
+    CloseVideoExportDialog,
     StartVideoExport {
         output_path: String,
         width: u32,
@@ -70,6 +75,8 @@ pub enum Event {
         quality: String,
         /// MIDI 分辨率（PPQ）
         ppq: u16,
+        /// 可见键位数（128 或 256，用于 Y 向缩放）
+        key_count: u16,
         /// 内存中的 MidiDocument（视频导出数据源）
         document: Option<Arc<MidiDocument>>,
     },
@@ -97,6 +104,8 @@ impl Event {
                     "音频导出（文件模式）".to_string()
                 }
             }
+            Self::OpenVideoExportDialog => "打开视频导出对话框".to_string(),
+            Self::CloseVideoExportDialog => "关闭视频导出对话框".to_string(),
             Self::StartVideoExport { .. } => "视频导出".to_string(),
         }
     }

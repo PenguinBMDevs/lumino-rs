@@ -83,14 +83,16 @@ impl Root {
             ),
             // DialogType::None: 关闭过程中 dialog_type 可能被复位为 None，
             // 此时渲染空容器避免闪跳到精度面板。实际关闭由 DialogWindow 的 should_close 驱动。
-            DialogType::None | DialogType::ExportProgress => container(space())
-                .width(iced_core::Length::Fill)
-                .height(iced_core::Length::Fill)
-                .style(|theme: &Theme| container::Style {
-                    background: Some(iced_core::Background::Color(theme.palette().background)),
-                    ..Default::default()
-                })
-                .into(),
+            DialogType::None | DialogType::ExportProgress | DialogType::VideoExport => {
+                container(space())
+                    .width(iced_core::Length::Fill)
+                    .height(iced_core::Length::Fill)
+                    .style(|theme: &Theme| container::Style {
+                        background: Some(iced_core::Background::Color(theme.palette().background)),
+                        ..Default::default()
+                    })
+                    .into()
+            }
         }
     }
 }

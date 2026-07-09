@@ -29,7 +29,7 @@ impl Sidebar {
                     self.panel_visible = false;
                     self.piano_roll_visible = false;
                 } else if r == Route::VideoExport {
-                    // 视频渲染：切换独立面板（与音频渲染互斥）
+                    // 视频渲染：切换独立面板（与音频互斥，不影响钢琴卷帘状态）
                     self.video_export_visible = !self.video_export_visible;
                     self.audio_export_visible = false;
                     self.route = if self.video_export_visible {
@@ -38,7 +38,6 @@ impl Sidebar {
                         Route::File
                     };
                     self.panel_visible = false;
-                    self.piano_roll_visible = false;
                 } else {
                     // 工程走带（Arrangement）与其他钢琴卷帘界面按钮互斥：
                     // 进入走带前保存当前钢琴卷帘状态，离开时恢复。

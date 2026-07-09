@@ -136,6 +136,7 @@ pub enum DialogType {
     Settings,
     SpeedChange,
     ExportProgress,
+    VideoExport,
 }
 
 /// 协作视图状态
