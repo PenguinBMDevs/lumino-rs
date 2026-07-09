@@ -257,7 +257,8 @@ pub fn view_video_export_overlay<'a>(
             state.preview_height,
             frame_data.clone(),
         );
-        let preview_max_w = 520.0 - 48.0; // dialog width - padding
+        // 预览区域宽度基于 dialog 窗口尺寸（520x560）
+        let preview_max_w = 480.0;
         let preview_max_h = 240.0;
         let img_w = state.preview_width as f32;
         let img_h = state.preview_height as f32;
@@ -477,36 +478,17 @@ pub fn view_video_export_overlay<'a>(
         VideoExportOverlayState::None => return None,
     };
 
-    // 浮动对话框（居中，带半透明遮罩层，但遮罩较浅以露出下方配置面板）
-    let dialog_box = container(content)
-        .width(Length::Fixed(520.0))
-        .padding(24)
-        .style(move |_t: &iced_core::Theme| container::Style {
-            background: Some(palette.background.base.color.into()),
-            border: iced_core::Border {
-                radius: 10.0.into(),
-                width: 1.0,
-                color: palette.background.strong.color,
-            },
-            shadow: iced_core::Shadow {
-                color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-                offset: iced_core::Vector::new(0.0, 4.0),
-                blur_radius: 16.0,
-            },
-            ..Default::default()
-        });
-
-    let centered = container(dialog_box)
+    // 直接铺满整个 dialog 窗口，去掉多余的嵌套框框
+    let full = container(content)
         .width(Length::Fill)
         .height(Length::Fill)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center)
+        .padding(20)
         .style(move |_t: &iced_core::Theme| container::Style {
-            background: Some(Color::from_rgba(0.0, 0.0, 0.0, 0.35).into()),
+            background: Some(palette.background.base.color.into()),
             ..Default::default()
         });
 
-    Some(centered.into())
+    Some(full.into())
 }
 
 /// 渲染进度详情（帧数/时间/进度条/速度/倍率/已用剩余）
