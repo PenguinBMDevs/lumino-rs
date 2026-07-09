@@ -400,6 +400,10 @@ impl RunnerInner {
                         let mut smoothed_fps = 0.0f64;
                         let mut last_preview_time = std::time::Instant::now();
 
+                        // ★ 生成键盘贴图（使用 CPU 贴图方式，在帧数据上合成）
+                        let (keyboard_pixels, kb_w, kb_h) =
+                            generate_keyboard_texture(width, height, key_count);
+
                         // 逐帧渲染
                         for frame in 0..total_frames {
                             // 检查取消标志
@@ -433,7 +437,7 @@ impl RunnerInner {
                             }
 
                             // 接收帧数据（阻塞）
-                            let frame_data = match frame_rx.recv() {
+                            let mut frame_data = match frame_rx.recv() {
                                 Ok(data) if !data.is_empty() => data,
                                 Ok(_) => {
                                     tracing::warn!("帧 {} 读回为空，跳过", frame);
@@ -446,6 +450,18 @@ impl RunnerInner {
                                     return;
                                 }
                             };
+
+                            // ★ 在帧上合成键盘贴图（in-place 修改，BGRA 格式）
+                            if !keyboard_pixels.is_empty() {
+                                composite_keyboard(
+                                    &mut frame_data,
+                                    width,
+                                    height,
+                                    &keyboard_pixels,
+                                    kb_w,
+                                    kb_h,
+                                );
+                            }
 
                             // 帧数据到达后再次检查取消（避免阻塞期间错过取消信号）
                             if cancel_flag.load(Ordering::Relaxed) {
@@ -806,8 +822,7 @@ fn build_video_render_params(
     key_count: u16,
 ) -> lumino_gfx::RenderParams {
     use lumino_gfx::{
-        GridViewParams, KeyInstance, NoteInstance, generate_grid_instances,
-        generate_ruler_instances, is_black_key,
+        GridViewParams, NoteInstance, generate_grid_instances, generate_ruler_instances,
     };
 
     let keyboard_width = 60.0f32;
@@ -823,7 +838,8 @@ fn build_video_render_params(
     let key_count_f = key_count.max(1) as f32;
     let zoom_y = (h - ruler_height) / key_count_f;
 
-    let scroll_x = tick as f32;
+    // ★ 修复：scroll_x 必须乘以 zoom_x，因为 note shader 使用 tick * zoom_x - scroll_x
+    let scroll_x = tick as f32 * zoom_x;
     let scroll_y = 0.0f32;
 
     // 1. 生成网格线实例
@@ -843,26 +859,8 @@ fn build_video_render_params(
     let ruler_instances =
         generate_ruler_instances(w, keyboard_width, ruler_height, scroll_x, zoom_x);
 
-    // 3. 生成键盘实例
-    let mut keyboard_instances = Vec::with_capacity(key_count as usize);
-    for key in 0..key_count {
-        let ky = ruler_height + key as f32 * zoom_y - scroll_y;
-        let is_black = is_black_key(key as isize);
-        // 保持在视口内
-        if ky + zoom_y >= ruler_height && ky <= h {
-            keyboard_instances.push(KeyInstance::new(
-                [0.0, ky],
-                [keyboard_width, zoom_y + 1.0], // +1 防止缝隙
-                if is_black {
-                    [0.1, 0.1, 0.12, 1.0] // 黑键
-                } else {
-                    [0.22, 0.22, 0.25, 1.0] // 白键
-                },
-                is_black,
-                key,
-            ));
-        }
-    }
+    // 3. 键盘使用 CPU 贴图方式（视频导出线程中 composite），GPU 不渲染键盘实例
+    let keyboard_instances = Vec::new();
 
     // 4. 收集可见音符
     let tick_start = tick;
@@ -882,6 +880,9 @@ fn build_video_render_params(
         }
     }
 
+    // ★ 修复：max_key_index 必须与 key_count 匹配，确保 Y 轴显示完整
+    let max_key_index = (key_count.saturating_sub(1)) as f32;
+
     lumino_gfx::RenderParams {
         viewport_size: (width.max(1), height.max(1)),
         logical_size: (w, h),
@@ -895,6 +896,99 @@ fn build_video_render_params(
         ruler_instances,
         keyboard_instances,
         ppq: ppq as f32,
+        max_key_index,
         ..Default::default()
+    }
+}
+
+/// 生成完整键盘贴图（RGBA 像素数据）
+///
+/// 生成一个从最高键到最低键的完整键盘图像，与 note shader 的 Y 轴方向一致
+/// （高键在上，低键在下）。返回 (pixels, width, height)。
+fn generate_keyboard_texture(_width: u32, height: u32, key_count: u16) -> (Vec<u8>, u32, u32) {
+    const KB_WIDTH: f32 = 60.0;
+    const RULER_HEIGHT: f32 = 30.0;
+    let kb_w = KB_WIDTH as u32;
+
+    // 键盘区域从 ruler 下方开始
+    let ruler_h = RULER_HEIGHT as u32;
+    if height <= ruler_h || key_count == 0 {
+        return (Vec::new(), 0, 0);
+    }
+    let kb_h = height - ruler_h;
+    let key_count_f = key_count as f32;
+    let zoom_y = kb_h as f32 / key_count_f;
+
+    let mut pixels = vec![0u8; (kb_w * kb_h * 4) as usize];
+
+    for py in 0..kb_h {
+        // Y 向：键 0 在底部，最高键在顶部（与 note shader 一致）
+        let key_f = (key_count_f - 1.0) - py as f32 / zoom_y;
+        let key_idx = key_f.round() as i32;
+        if key_idx < 0 || key_idx >= key_count as i32 {
+            continue;
+        }
+        let is_black = lumino_gfx::is_black_key(key_idx as isize);
+
+        for px in 0..kb_w {
+            let idx = ((py * kb_w + px) * 4) as usize;
+
+            // 黑白键颜色
+            let (r, g, b) = if is_black {
+                // 黑键：较暗，带窄宽度效果
+                let black_key_half_w = kb_w as f32 * 0.55;
+                let cx = kb_w as f32 / 2.0;
+                if (px as f32 - cx).abs() <= black_key_half_w / 2.0 {
+                    (26, 26, 31) // 黑键颜色
+                } else {
+                    (56, 56, 64) // 白键区域
+                }
+            } else {
+                // 白键
+                (56, 56, 64)
+            };
+
+            pixels[idx] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+            pixels[idx + 3] = 255;
+        }
+    }
+
+    (pixels, kb_w, kb_h)
+}
+
+/// 将键盘贴图合成到视频帧上（BGRA 格式，in-place 修改）
+fn composite_keyboard(
+    frame: &mut [u8],
+    frame_width: u32,
+    frame_height: u32,
+    keyboard_pixels: &[u8],
+    kb_width: u32,
+    kb_height: u32,
+) {
+    let ruler_h = 30u32;
+    if frame_width == 0 || frame_height == 0 || keyboard_pixels.is_empty() {
+        return;
+    }
+    let kb_w = kb_width.min(frame_width);
+    let kb_h = kb_height.min(frame_height.saturating_sub(ruler_h));
+
+    for py in 0..kb_h {
+        let frame_y = ruler_h + py;
+        if frame_y >= frame_height {
+            break;
+        }
+        for px in 0..kb_w {
+            let frame_idx = ((frame_y * frame_width + px) * 4) as usize;
+            let kb_idx = ((py * kb_width + px) * 4) as usize;
+            if kb_idx + 3 < keyboard_pixels.len() && frame_idx + 3 < frame.len() {
+                // keyboard_pixels 是 RGBA，frame 是 BGRA
+                frame[frame_idx] = keyboard_pixels[kb_idx + 2]; // B ← R
+                frame[frame_idx + 1] = keyboard_pixels[kb_idx + 1]; // G ← G
+                frame[frame_idx + 2] = keyboard_pixels[kb_idx]; // R ← B
+                // A 保持 255
+            }
+        }
     }
 }
