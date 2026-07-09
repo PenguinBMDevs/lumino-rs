@@ -59,7 +59,9 @@ impl RealtimeSynth {
         let device = host
             .default_output_device()
             .expect("failed to find output device");
-        let stream_config = device.default_output_config().unwrap();
+        let stream_config = device
+            .default_output_config()
+            .expect("failed to query default audio output config");
         RealtimeSynth::open(Default::default(), &device, stream_config)
     }
 
@@ -69,7 +71,9 @@ impl RealtimeSynth {
         let device = host
             .default_output_device()
             .expect("failed to find output device");
-        let stream_config = device.default_output_config().unwrap();
+        let stream_config = device
+            .default_output_config()
+            .expect("failed to query default audio output config");
         RealtimeSynth::open(config, &device, stream_config)
     }
 
@@ -182,12 +186,12 @@ impl RealtimeSynth {
                     // sleep / spin_sleep 皆不需要。
                 }
             })
-            .unwrap();
+            .expect("failed to spawn render thread");
 
         // ── 音频回调（锁无关） ──────────────────────────────────────
         let stream = build_stream(device, stream_config, sample_rx, vec_return_tx.clone());
 
-        stream.play().unwrap();
+        stream.play().expect("failed to start audio stream");
 
         Self {
             sender: event_sender,
@@ -334,5 +338,5 @@ fn build_stream(
             err_fn,
             None,
         )
-        .unwrap()
+        .expect("failed to build output audio stream")
 }

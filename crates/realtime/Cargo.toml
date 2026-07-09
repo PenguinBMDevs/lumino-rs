@@ -6,6 +6,9 @@ homepage.workspace = true
 license.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 xsynth-core = "0.3"
 xsynth-soundfonts = "0.3"

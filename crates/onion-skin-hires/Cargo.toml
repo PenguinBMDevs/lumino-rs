@@ -6,6 +6,9 @@ homepage.workspace = true
 license.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 lumino-onion-skin = { path = "../onion-skin" }
 lumino-memory-monitor = { path = "../memory-monitor" }

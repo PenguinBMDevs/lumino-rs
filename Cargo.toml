@@ -74,6 +74,9 @@ homepage.workspace = true
 license.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 lumino-core = { workspace = true }
 lumino-dms = { workspace = true }
@@ -185,6 +188,6 @@ strip = "none"                      # 保留符号用于调试分析（体积换
 panic = "abort"                    # 使用 abort 而非 unwind（减少生成的代码量）
 incremental = true                 # 启用增量编译（对多次构建友好）
 
-[lints.clippy]
-mod_module_files = "deny"  # 或 "warn"
+[workspace.lints.clippy]
+mod_module_files = "deny"  # AGENTS.md：禁止 mod.rs，使用 Rust 2018 模块命名
 unwrap_used = "deny"       # AGENTS.md 红线：NEVER use unwrap()
