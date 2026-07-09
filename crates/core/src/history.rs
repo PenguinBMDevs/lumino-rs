@@ -14,11 +14,7 @@ pub struct EditorSnapshot {
 }
 
 impl EditorSnapshot {
-    pub fn new(
-        notes: Vector<Note>,
-        current_track: usize,
-        automation_lanes: Vec<AutomationLane>,
-    ) -> Self {
+    pub fn new(notes: Vector<Note>, current_track: usize, automation_lanes: Vec<AutomationLane>) -> Self {
         Self {
             notes,
             current_track,

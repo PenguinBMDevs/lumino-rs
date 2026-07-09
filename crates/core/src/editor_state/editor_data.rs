@@ -309,11 +309,7 @@ impl EditorData {
     // ── 自动化事件操作 ──
 
     /// 查找指定 track + target 的 automation lane 索引。
-    pub fn find_automation_lane(
-        &self,
-        track: u16,
-        target: &crate::automation::AutomationTarget,
-    ) -> Option<usize> {
+    pub fn find_automation_lane(&self, track: u16, target: &crate::automation::AutomationTarget) -> Option<usize> {
         self.automation_lanes
             .iter()
             .position(|l| l.track == track && &l.target == target)
@@ -353,8 +349,7 @@ impl EditorData {
                 let lane = &mut self.automation_lanes[idx];
                 // 移除同一 tick 的已有事件，保证唯一性。
                 lane.events.retain(|e| e.tick != tick);
-                lane.events
-                    .push(crate::automation::AutomationEvent { tick, value, shape });
+                lane.events.push(crate::automation::AutomationEvent { tick, value, shape });
                 lane.events.sort_by_key(|e| e.tick);
                 true
             }

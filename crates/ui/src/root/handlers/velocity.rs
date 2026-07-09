@@ -180,12 +180,8 @@ impl VelocityHandler {
             VA::AutomationZoom(factor) => {
                 let panel = &mut root.editor.velocity_panel;
                 let max_val = match panel.edit_mode {
-                    EditMode::Bend => {
-                        Some(lumino_core::AutomationTarget::PitchBend.max_value() as f32)
-                    }
-                    EditMode::Cc(n) => {
-                        Some(lumino_core::AutomationTarget::CC { controller: n }.max_value() as f32)
-                    }
+                    EditMode::Bend => Some(lumino_core::AutomationTarget::PitchBend.max_value() as f32),
+                    EditMode::Cc(n) => Some(lumino_core::AutomationTarget::CC { controller: n }.max_value() as f32),
                     _ => None,
                 };
                 let new_zoom = (panel.value_zoom * factor).clamp(0.01, 8.0);
@@ -199,12 +195,8 @@ impl VelocityHandler {
             VA::AutomationScroll(amount) => {
                 let panel = &mut root.editor.velocity_panel;
                 let max_val = match panel.edit_mode {
-                    EditMode::Bend => {
-                        Some(lumino_core::AutomationTarget::PitchBend.max_value() as f32)
-                    }
-                    EditMode::Cc(n) => {
-                        Some(lumino_core::AutomationTarget::CC { controller: n }.max_value() as f32)
-                    }
+                    EditMode::Bend => Some(lumino_core::AutomationTarget::PitchBend.max_value() as f32),
+                    EditMode::Cc(n) => Some(lumino_core::AutomationTarget::CC { controller: n }.max_value() as f32),
                     _ => None,
                 };
                 if let Some(max_val) = max_val {

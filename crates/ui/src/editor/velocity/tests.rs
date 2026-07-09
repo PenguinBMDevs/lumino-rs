@@ -65,16 +65,13 @@ fn test_build_cc_points_with_data() {
     let mut editor = Editor::new();
     // 通过 automation_lanes 添加 CC 1 数据（当前音轨为 0）
     for (tick, value) in [(0, 64), (480, 127)] {
-        editor
-            .editor_state
-            .data
-            .apply_automation_edit(AutomationEdit::Add {
-                track_idx: 0,
-                target: AutomationTarget::CC { controller: 1 },
-                tick,
-                value,
-                shape: SegmentShape::Step,
-            });
+        editor.editor_state.data.apply_automation_edit(AutomationEdit::Add {
+            track_idx: 0,
+            target: AutomationTarget::CC { controller: 1 },
+            tick,
+            value,
+            shape: SegmentShape::Step,
+        });
     }
 
     let points = VelocityPanel::build_cc_points(&editor, 1);
@@ -91,16 +88,13 @@ fn test_build_cc_points_wrong_number() {
     use lumino_core::{AutomationEdit, AutomationTarget, SegmentShape};
 
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .apply_automation_edit(AutomationEdit::Add {
-            track_idx: 0,
-            target: AutomationTarget::CC { controller: 1 },
-            tick: 0,
-            value: 64,
-            shape: SegmentShape::Step,
-        });
+    editor.editor_state.data.apply_automation_edit(AutomationEdit::Add {
+        track_idx: 0,
+        target: AutomationTarget::CC { controller: 1 },
+        tick: 0,
+        value: 64,
+        shape: SegmentShape::Step,
+    });
 
     let points = VelocityPanel::build_cc_points(&editor, 7);
     assert!(points.is_empty(), "不同 CC 号应返回空");
