@@ -280,6 +280,11 @@ impl RunnerInner {
                     output_path
                 );
 
+                // 打开视频导出对话框窗口
+                self.window_state
+                    .dialog_manager
+                    .open_dialog(DialogType::VideoExport);
+
                 // 解析配置枚举
                 let container = Container::from_str(&container).unwrap_or(Container::Mp4);
                 let codec = VideoCodec::from_str(&codec).unwrap_or(VideoCodec::H264);
@@ -303,6 +308,10 @@ impl RunnerInner {
                 // 创建进度通道（复用音频导出的进度通道机制）
                 let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
                 self.window_state.export_progress_rx = Some(progress_rx);
+
+                // 创建预览帧通道
+                let (preview_tx, preview_rx) = tokio::sync::mpsc::unbounded_channel();
+                self.window_state.video_preview_rx = Some(preview_rx);
 
                 // 构建 VideoExportConfig
                 let config = VideoExportConfig {
@@ -379,6 +388,7 @@ impl RunnerInner {
                         let mut last_stat_time = std::time::Instant::now();
                         let mut frames_since_stat = 0u64;
                         let mut smoothed_fps = 0.0f64;
+                        let mut last_preview_time = std::time::Instant::now();
 
                         // 逐帧渲染
                         for frame in 0..total_frames {
@@ -417,6 +427,30 @@ impl RunnerInner {
                                     return;
                                 }
                             };
+
+                            // 预览帧：每 500ms 发送一次，BGRA → RGBA 转换 + 降采样
+                            // 必须在 encoder.write_frame(frame_data) 之前捕获数据
+                            let pnow = std::time::Instant::now();
+                            if pnow.duration_since(last_preview_time).as_millis() >= 500 {
+                                last_preview_time = pnow;
+                                let src_w = width as usize;
+                                let src_h = height as usize;
+                                let preview_w = src_w.min(320);
+                                let preview_h = (src_h * preview_w / src_w).max(60);
+                                let mut rgba = Vec::with_capacity(preview_w * preview_h * 4);
+                                for py in 0..preview_h {
+                                    let sy = py * src_h / preview_h;
+                                    for px in 0..preview_w {
+                                        let sx = px * src_w / preview_w;
+                                        let src_idx = (sy * src_w + sx) * 4;
+                                        rgba.push(frame_data[src_idx + 2]); // R
+                                        rgba.push(frame_data[src_idx + 1]); // G
+                                        rgba.push(frame_data[src_idx]); // B
+                                        rgba.push(frame_data[src_idx + 3]); // A
+                                    }
+                                }
+                                let _ = preview_tx.send((rgba, preview_w as u32, preview_h as u32));
+                            }
 
                             // 写入 FFmpeg
                             if let Err(e) = encoder.write_frame(frame_data) {

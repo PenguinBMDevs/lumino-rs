@@ -1,7 +1,7 @@
 //! Host 对话框和协作子模块 - 处理对话框状态和远程协作
 
 use crate::host::{Host, types::DialogResult};
-use crate::state::root_state::CollaborationViewState;
+use crate::state::root_state::{CollaborationViewState, VideoExportOverlayState};
 use crate::{message, window};
 
 impl Host {
@@ -236,12 +236,26 @@ impl Host {
     /// 更新视频导出进度
     pub fn update_video_export_progress(&mut self, message: String, progress: f64) {
         let st = &mut self.root.state.video_export_dialog;
+        // 如果 overlay 尚未激活（e.g. 对话框窗口刚打开时），触发 Exporting 状态
+        if matches!(st.overlay, VideoExportOverlayState::None) {
+            st.overlay = VideoExportOverlayState::Exporting;
+        }
         st.status_message = message;
         st.progress = progress;
         // 从 progress 推算 current_frame（如果 total_frames 已知）
         if st.total_frames > 0 {
             st.current_frame = (progress * st.total_frames as f64) as u64;
         }
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 更新视频导出预览帧
+    pub fn update_video_export_preview_frame(&mut self, data: Vec<u8>, width: u32, height: u32) {
+        let st = &mut self.root.state.video_export_dialog;
+        st.preview_frame = Some(data);
+        st.preview_width = width;
+        st.preview_height = height;
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }

@@ -41,6 +41,8 @@ pub(crate) struct WindowState {
     pub(crate) progress_cb: lumino_midi_loader::loader::ProgressCallback,
     /// 音频导出进度接收器（独立于 dialog_manager，直接更新 audio_export_dialog）
     pub(crate) export_progress_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(String, f64)>>,
+    /// 视频导出预览帧接收器（RGBA 像素数据）
+    pub(crate) video_preview_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(Vec<u8>, u32, u32)>>,
 }
 
 /// MIDI 相关状态
@@ -173,6 +175,7 @@ impl Runner {
                 progress_cb,
                 needs_window_restart: false,
                 export_progress_rx: None,
+                video_preview_rx: None,
             },
             midi_state: MidiState {
                 midi,

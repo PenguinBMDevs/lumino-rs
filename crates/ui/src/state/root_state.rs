@@ -356,6 +356,12 @@ pub struct VideoExportDialogState {
     pub total_frames: u64,
     /// 渲染速度（fps，EMA 平滑）
     pub render_fps: f64,
+    /// 预览帧数据（RGBA 格式，压缩后用于 dialog 内显示预览图像）
+    pub preview_frame: Option<Vec<u8>>,
+    /// 预览帧宽度
+    pub preview_width: u32,
+    /// 预览帧高度
+    pub preview_height: u32,
 }
 
 impl Default for VideoExportDialogState {
@@ -381,6 +387,9 @@ impl VideoExportDialogState {
             current_frame: 0,
             total_frames: 0,
             render_fps: 0.0,
+            preview_frame: None,
+            preview_width: 0,
+            preview_height: 0,
         }
     }
 

@@ -352,19 +352,11 @@ impl Root {
     }
 
     /// 渲染视频渲染面板（在主界面钢琴卷帘区域显示）
+    /// 导出进度+预览已移至独立 VideoExport 对话框窗口
     pub(super) fn view_video_export_panel(&self) -> Element<'_> {
         puffin::profile_scope!("root_view_video_export_panel");
 
         let theme = &self.window.theme;
-
-        // 如果有导出覆盖层（导出中/完成/错误），直接返回覆盖层
-        if let Some(overlay) = crate::view::video_export_dialog::view_video_export_overlay(
-            &self.state.video_export_dialog,
-            theme,
-        ) {
-            return overlay;
-        }
-
         let palette = theme.extended_palette();
 
         container(

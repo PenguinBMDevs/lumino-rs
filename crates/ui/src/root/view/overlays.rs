@@ -10,9 +10,10 @@ use crate::state::root_state::DialogType;
 use crate::view::{
     collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
+    export_progress_dialog::view_export_progress_dialog,
     load_confirm_dialog::view_load_confirm_dialog,
     project_settings_dialog::view_project_settings_dialog, settings_dialog::view_settings_dialog,
-    speed_change_dialog::view_speed_change_dialog,
+    speed_change_dialog::view_speed_change_dialog, video_export_dialog::view_video_export_overlay,
 };
 
 impl Root {
@@ -83,15 +84,35 @@ impl Root {
             ),
             // DialogType::None: 关闭过程中 dialog_type 可能被复位为 None，
             // 此时渲染空容器避免闪跳到精度面板。实际关闭由 DialogWindow 的 should_close 驱动。
-            DialogType::None | DialogType::ExportProgress | DialogType::VideoExport => {
-                container(space())
-                    .width(iced_core::Length::Fill)
-                    .height(iced_core::Length::Fill)
-                    .style(|theme: &Theme| container::Style {
-                        background: Some(iced_core::Background::Color(theme.palette().background)),
-                        ..Default::default()
-                    })
-                    .into()
+            DialogType::None => container(space())
+                .width(iced_core::Length::Fill)
+                .height(iced_core::Length::Fill)
+                .style(|theme: &Theme| container::Style {
+                    background: Some(iced_core::Background::Color(theme.palette().background)),
+                    ..Default::default()
+                })
+                .into(),
+            DialogType::ExportProgress => {
+                view_export_progress_dialog(&self.state.export_progress_dialog, &self.window.theme)
+            }
+            DialogType::VideoExport => {
+                // 视频导出对话框：显示进度+预览
+                if let Some(overlay) =
+                    view_video_export_overlay(&self.state.video_export_dialog, &self.window.theme)
+                {
+                    overlay
+                } else {
+                    container(space())
+                        .width(iced_core::Length::Fill)
+                        .height(iced_core::Length::Fill)
+                        .style(|theme: &Theme| container::Style {
+                            background: Some(iced_core::Background::Color(
+                                theme.palette().background,
+                            )),
+                            ..Default::default()
+                        })
+                        .into()
+                }
             }
         }
     }

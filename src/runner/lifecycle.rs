@@ -13,6 +13,8 @@ mod memory;
 mod midi;
 mod test_mode;
 
+use lumino_ui::state::root_state::DialogType;
+
 use super::inner::{Runner, TestModeState};
 
 impl winit::application::ApplicationHandler for Runner {
@@ -128,7 +130,19 @@ impl winit::application::ApplicationHandler for Runner {
             .progress
             .process_messages(main_ui, &main_window);
 
-        // 处理导出进度消息（直接更新导出对话框进度条）
+        // 处理视频导出预览帧（转发到 VideoExport 对话框窗口）
+        {
+            puffin::profile_scope!("runner_about_to_wait_video_preview");
+            if let Some(rx) = &mut this.window_state.video_preview_rx {
+                while let Ok((data, w, h)) = rx.try_recv() {
+                    this.window_state
+                        .dialog_manager
+                        .forward_video_export_preview_frame(data, w, h);
+                }
+            }
+        }
+
+        // 处理导出进度消息（转发到对应的对话框窗口）
         {
             puffin::profile_scope!("runner_about_to_wait_export_progress");
             if let Some(rx) = &mut this.window_state.export_progress_rx {
@@ -138,11 +152,21 @@ impl winit::application::ApplicationHandler for Runner {
                     let is_video = main_ui.is_video_exporting();
                     if is_video {
                         if progress < 0.0 {
-                            main_ui.set_video_export_failed(msg);
+                            this.window_state
+                                .dialog_manager
+                                .forward_video_export_failed(msg);
+                            // 视频导出失败时关闭对话框
+                            this.window_state
+                                .dialog_manager
+                                .mark_dialog_for_close(DialogType::VideoExport);
                         } else if progress >= 1.0 {
-                            main_ui.set_video_export_completed();
+                            this.window_state
+                                .dialog_manager
+                                .forward_video_export_completed();
                         } else {
-                            main_ui.update_video_export_progress(msg, progress);
+                            this.window_state
+                                .dialog_manager
+                                .forward_video_export_progress(msg, progress);
                         }
                     } else {
                         // 音频导出

@@ -5,7 +5,8 @@
 
 use iced_core::{Alignment, Color, Length};
 use iced_widget::{
-    button, column, container, pick_list, progress_bar, row, scrollable, space, text, text_input,
+    button, column, container, image, pick_list, progress_bar, row, scrollable, space, text,
+    text_input,
 };
 
 use crate::message::{Message, VideoExportAction};
@@ -230,7 +231,7 @@ pub fn view_video_export_dialog<'a>(
         .into()
 }
 
-/// 渲染视频导出覆盖层（模态遮罩 + 居中窗口）
+/// 渲染视频导出覆盖层（浮动 dialog 弹出样式，使用 Stack 层叠在配置面板上方）
 pub fn view_video_export_overlay<'a>(
     state: &'a VideoExportDialogState,
     theme: &'a iced_core::Theme,
@@ -249,15 +250,63 @@ pub fn view_video_export_overlay<'a>(
         color: Some(palette.background.weak.text),
     };
 
+    // ── 预览图像区域 ──
+    let preview_area: crate::Element<'a> = if let Some(ref frame_data) = state.preview_frame {
+        let handle = image::Handle::from_rgba(
+            state.preview_width,
+            state.preview_height,
+            frame_data.clone(),
+        );
+        let preview_max_w = 520.0 - 48.0; // dialog width - padding
+        let preview_max_h = 240.0;
+        let img_w = state.preview_width as f32;
+        let img_h = state.preview_height as f32;
+        let scale = (preview_max_w / img_w).min(preview_max_h / img_h).min(1.0);
+        let display_w = (img_w * scale).max(100.0);
+        let display_h = (img_h * scale).max(56.0);
+
+        container(image(handle).width(display_w).height(display_h))
+            .width(Length::Fill)
+            .center_x(Length::Fill)
+            .style(move |_t: &iced_core::Theme| container::Style {
+                background: Some(palette.background.weak.color.into()),
+                border: iced_core::Border {
+                    radius: 4.0.into(),
+                    width: 1.0,
+                    color: palette.background.strong.color,
+                },
+                ..Default::default()
+            })
+            .into()
+    } else {
+        container(text("等待渲染...").size(14).style(weak_text))
+            .width(Length::Fill)
+            .height(Length::Fixed(120.0))
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .style(move |_t: &iced_core::Theme| container::Style {
+                background: Some(palette.background.weak.color.into()),
+                border: iced_core::Border {
+                    radius: 4.0.into(),
+                    width: 1.0,
+                    color: palette.background.strong.color,
+                },
+                ..Default::default()
+            })
+            .into()
+    };
+
     let content: crate::Element<'a> = match &state.overlay {
         VideoExportOverlayState::Exporting => {
             let detail = render_progress_detail(state, theme);
             column![
-                text("导出视频").size(16).style(label_style),
-                space().height(12),
+                text("视频导出中").size(16).style(label_style),
+                space().height(8),
+                preview_area,
+                space().height(8),
                 detail,
-                space().height(16),
-                button(text("取消").size(14))
+                space().height(12),
+                button(text("取消导出").size(14))
                     .on_press(Message::VideoExport(VideoExportAction::CancelExport))
                     .padding([8, 32])
                     .style(move |_t: &iced_core::Theme, status| {
@@ -283,16 +332,18 @@ pub fn view_video_export_overlay<'a>(
         VideoExportOverlayState::Finalizing => {
             let detail = render_progress_detail(state, theme);
             column![
-                text("导出视频").size(16).style(label_style),
-                space().height(12),
+                text("视频导出中").size(16).style(label_style),
+                space().height(8),
+                preview_area,
+                space().height(8),
                 text("正在完成编码...").size(14).style(label_style),
-                space().height(8),
+                space().height(4),
                 detail,
-                space().height(8),
+                space().height(4),
                 text("ffmpeg 正在封装文件，请稍候")
                     .size(12)
                     .style(weak_text),
-                space().height(12),
+                space().height(8),
                 row![
                     button(text("强制完成").size(14))
                         .on_press(Message::VideoExport(VideoExportAction::ForceFinish))
@@ -343,6 +394,8 @@ pub fn view_video_export_overlay<'a>(
                         color: Some(palette.success.strong.color),
                     }),
                 space().height(12),
+                preview_area,
+                space().height(8),
                 text(format!("总帧数: {}", total_frames))
                     .size(13)
                     .style(weak_text),
@@ -395,7 +448,7 @@ pub fn view_video_export_overlay<'a>(
                         color: Some(palette.danger.weak.color),
                     }
                 }))
-                .height(Length::Fixed(280.0))
+                .height(Length::Fixed(200.0))
             )
             .width(Length::Fill),
             space().height(16),
@@ -424,27 +477,32 @@ pub fn view_video_export_overlay<'a>(
         VideoExportOverlayState::None => return None,
     };
 
-    // 半透明遮罩 + 居中窗口
-    let overlay = container(content)
-        .width(Length::Fixed(420.0))
+    // 浮动对话框（居中，带半透明遮罩层，但遮罩较浅以露出下方配置面板）
+    let dialog_box = container(content)
+        .width(Length::Fixed(520.0))
         .padding(24)
         .style(move |_t: &iced_core::Theme| container::Style {
             background: Some(palette.background.base.color.into()),
             border: iced_core::Border {
-                radius: 8.0.into(),
+                radius: 10.0.into(),
                 width: 1.0,
                 color: palette.background.strong.color,
+            },
+            shadow: iced_core::Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
+                offset: iced_core::Vector::new(0.0, 4.0),
+                blur_radius: 16.0,
             },
             ..Default::default()
         });
 
-    let centered = container(overlay)
+    let centered = container(dialog_box)
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(Alignment::Center)
         .align_y(Alignment::Center)
         .style(move |_t: &iced_core::Theme| container::Style {
-            background: Some(Color::from_rgba(0.0, 0.0, 0.0, 0.6).into()),
+            background: Some(Color::from_rgba(0.0, 0.0, 0.0, 0.35).into()),
             ..Default::default()
         });
 

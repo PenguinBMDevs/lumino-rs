@@ -56,6 +56,15 @@ pub enum VideoExportAction {
         /// 渲染速度（fps）
         fps: f64,
     },
+    /// 更新预览帧（RGBA 像素数据，含宽高）
+    UpdatePreviewFrame {
+        /// RGBA 像素数据
+        data: Vec<u8>,
+        /// 图像宽度
+        width: u32,
+        /// 图像高度
+        height: u32,
+    },
     /// 导出完成
     ExportCompleted,
     /// 导出失败

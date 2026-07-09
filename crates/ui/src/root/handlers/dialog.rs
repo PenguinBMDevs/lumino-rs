@@ -406,6 +406,11 @@ impl MessageHandler for DialogHandler {
                     }
                     V::CancelExport => {
                         root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
+                        root.state.video_export_dialog.preview_frame = None;
+                        // 在对话框窗口中关闭窗口
+                        if root.state.is_dialog_window {
+                            root.state.dialog_result = Some(DialogResult::Cancel);
+                        }
                         // Runner 侧通过 overlay=None 检测取消
                     }
                     V::ForceFinish => {
@@ -419,6 +424,11 @@ impl MessageHandler for DialogHandler {
                     }
                     V::DismissOverlay => {
                         root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
+                        root.state.video_export_dialog.preview_frame = None;
+                        // 在对话框窗口中关闭窗口
+                        if root.state.is_dialog_window {
+                            root.state.dialog_result = Some(DialogResult::Cancel);
+                        }
                     }
                     V::ContainerChanged(v) => {
                         root.state.video_export_dialog.container = v;
@@ -485,6 +495,9 @@ impl MessageHandler for DialogHandler {
                     V::ExportFailed(err) => {
                         root.state.video_export_dialog.overlay =
                             VideoExportOverlayState::Error(err);
+                    }
+                    V::UpdatePreviewFrame { .. } => {
+                        // 由 Host 直接处理，此处不需要
                     }
                 }
                 None

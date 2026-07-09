@@ -336,6 +336,11 @@ impl DialogWindow {
     pub fn request_close(&mut self) {
         self.should_close = true;
     }
+
+    /// 获取对话框 UI 的可变引用
+    pub(crate) fn ui_mut(&mut self) -> Option<&mut lumino_ui::Host> {
+        self.ui.as_mut()
+    }
 }
 
 /// 对话框管理器
@@ -474,6 +479,50 @@ impl DialogManager {
     pub fn close_dialog(&mut self, window_id: WindowId) {
         if self.dialogs.remove(&window_id).is_some() {
             tracing::info!("对话框已关闭: {:?}", window_id);
+        }
+    }
+
+    /// 转发视频导出进度到 VideoExport 对话框
+    pub fn forward_video_export_progress(&mut self, message: String, progress: f64) {
+        for dialog in self.dialogs.values_mut() {
+            if dialog.dialog_type == DialogType::VideoExport
+                && let Some(ui) = dialog.ui_mut()
+            {
+                ui.update_video_export_progress(message.clone(), progress);
+            }
+        }
+    }
+
+    /// 转发视频导出预览帧到 VideoExport 对话框
+    pub fn forward_video_export_preview_frame(&mut self, data: Vec<u8>, w: u32, h: u32) {
+        for dialog in self.dialogs.values_mut() {
+            if dialog.dialog_type == DialogType::VideoExport
+                && let Some(ui) = dialog.ui_mut()
+            {
+                ui.update_video_export_preview_frame(data.clone(), w, h);
+            }
+        }
+    }
+
+    /// 转发视频导出完成到 VideoExport 对话框
+    pub fn forward_video_export_completed(&mut self) {
+        for dialog in self.dialogs.values_mut() {
+            if dialog.dialog_type == DialogType::VideoExport
+                && let Some(ui) = dialog.ui_mut()
+            {
+                ui.set_video_export_completed();
+            }
+        }
+    }
+
+    /// 转发视频导出失败到 VideoExport 对话框
+    pub fn forward_video_export_failed(&mut self, error: String) {
+        for dialog in self.dialogs.values_mut() {
+            if dialog.dialog_type == DialogType::VideoExport
+                && let Some(ui) = dialog.ui_mut()
+            {
+                ui.set_video_export_failed(error.clone());
+            }
         }
     }
 
