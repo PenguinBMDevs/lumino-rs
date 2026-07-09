@@ -376,10 +376,10 @@ impl<'a> super::super::VelocityCanvas<'a> {
             .editor_state
             .data
             .find_automation_lane(track_idx, &target);
-        let lane_idx = lane_idx?;
 
         match drag {
             AutomationDrag::MoveAnchor { old_tick } => {
+                let lane_idx = lane_idx?;
                 let new_tick_f = self.snap_tick(self.x_to_tick(cursor_pos.x)).max(0.0);
                 let new_tick = new_tick_f as u32;
                 let new_value = view

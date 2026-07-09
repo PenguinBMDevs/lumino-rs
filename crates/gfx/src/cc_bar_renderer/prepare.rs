@@ -139,39 +139,118 @@ pub fn build_cc_bar_instances(
     };
 
     if is_velocity {
-        // Velocity mode: bar width = note length (matches C# VelocityBarRenderer)
-        const MIN_BAR_WIDTH: f32 = 2.0;
-        const BAR_MARGIN: f32 = 1.0;
+        if data.velocity_curve_style {
+            // 曲线模式：折线图连接力度点 + 锚点圆
+            const CURVE_ANCHOR_RADIUS: f32 = 3.0;
+            const LINE_ALPHA: f32 = 0.85;
+            let anchor_color = [
+                colors.bar_color[0],
+                colors.bar_color[1],
+                colors.bar_color[2],
+                1.0,
+            ];
+            let line_color = [
+                colors.bar_color[0],
+                colors.bar_color[1],
+                colors.bar_color[2],
+                LINE_ALPHA,
+            ];
 
-        for point in data.velocity_points {
-            let normalized = point.velocity as f32 / 127.0;
-            let bar_h = normalized * graph_height;
+            // 按 tick 排序
+            let mut sorted: Vec<&lumino_core::VelocityPoint> =
+                data.velocity_points.iter().collect();
+            sorted.sort_by(|a, b| {
+                a.tick
+                    .partial_cmp(&b.tick)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
 
-            let note_x = panel_x + view_params.keyboard_width + point.tick * view_params.zoom_x
-                - view_params.scroll_x;
-            let note_w = data
-                .notes
-                .get(point.note_index)
-                .map(|n| n.length * view_params.zoom_x)
-                .unwrap_or(0.0);
-            let bar_w = (note_w - BAR_MARGIN * 2.0).max(MIN_BAR_WIDTH);
-            let bar_x = note_x + BAR_MARGIN;
-            let bar_y = actual_panel_y + TOOLBAR_HEIGHT + max_y - bar_h;
+            for (i, point) in sorted.iter().enumerate() {
+                let x = panel_x + view_params.keyboard_width + point.tick * view_params.zoom_x
+                    - view_params.scroll_x;
+                let y = actual_panel_y + TOOLBAR_HEIGHT + max_y
+                    - (point.velocity as f32 / 127.0 * graph_height);
 
-            // Simple clipping (considering bar width)
-            if bar_x + bar_w < panel_x + view_params.keyboard_width
-                || bar_x > panel_x + view_params.canvas_size_x
-            {
-                continue;
+                if i > 0 {
+                    let prev = sorted[i - 1];
+                    let prev_x =
+                        panel_x + view_params.keyboard_width + prev.tick * view_params.zoom_x
+                            - view_params.scroll_x;
+                    let prev_y = actual_panel_y + TOOLBAR_HEIGHT + max_y
+                        - (prev.velocity as f32 / 127.0 * graph_height);
+
+                    // Step 水平线段
+                    let dx = x - prev_x;
+                    if dx > 0.5 {
+                        instances.push(CcBarInstance::new(
+                            prev_x,
+                            prev_y,
+                            dx.max(1.0),
+                            1.0,
+                            line_color,
+                        ));
+                    }
+                    // Step 垂直线段
+                    let dy = y - prev_y;
+                    if dy.abs() > 0.5 {
+                        instances.push(CcBarInstance::new(
+                            x - 0.5,
+                            prev_y.min(y),
+                            1.0,
+                            dy.abs(),
+                            line_color,
+                        ));
+                    }
+                }
+
+                // 锚点圆（用圆角矩形渲染）
+                if x >= panel_x && x <= panel_x + view_params.canvas_size_x {
+                    instances.push(CcBarInstance::with_props(
+                        x - CURVE_ANCHOR_RADIUS,
+                        y - CURVE_ANCHOR_RADIUS,
+                        CURVE_ANCHOR_RADIUS * 2.0,
+                        CURVE_ANCHOR_RADIUS * 2.0,
+                        anchor_color,
+                        CURVE_ANCHOR_RADIUS,
+                        0.0,
+                    ));
+                }
             }
+        } else {
+            // 柱状图模式：bar width = note length
+            const MIN_BAR_WIDTH: f32 = 2.0;
+            const BAR_MARGIN: f32 = 1.0;
 
-            instances.push(CcBarInstance::new(
-                bar_x,
-                bar_y,
-                bar_w,
-                bar_h,
-                colors.bar_color,
-            ));
+            for point in data.velocity_points {
+                let normalized = point.velocity as f32 / 127.0;
+                let bar_h = normalized * graph_height;
+
+                let note_x = panel_x + view_params.keyboard_width + point.tick * view_params.zoom_x
+                    - view_params.scroll_x;
+                let note_w = data
+                    .notes
+                    .get(point.note_index)
+                    .map(|n| n.length * view_params.zoom_x)
+                    .unwrap_or(0.0);
+                let bar_w = (note_w - BAR_MARGIN * 2.0).max(MIN_BAR_WIDTH);
+                let bar_x = note_x + BAR_MARGIN;
+                let bar_y = actual_panel_y + TOOLBAR_HEIGHT + max_y - bar_h;
+
+                // Simple clipping (considering bar width)
+                if bar_x + bar_w < panel_x + view_params.keyboard_width
+                    || bar_x > panel_x + view_params.canvas_size_x
+                {
+                    continue;
+                }
+
+                instances.push(CcBarInstance::new(
+                    bar_x,
+                    bar_y,
+                    bar_w,
+                    bar_h,
+                    colors.bar_color,
+                ));
+            }
         }
     } else if let Some(lane) = data.automation_lane {
         // CC / Bend 曲线模式：使用 AutomationLane 生成 Step/Curve 实例与锚点。

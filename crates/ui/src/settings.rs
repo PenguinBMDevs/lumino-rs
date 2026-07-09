@@ -48,6 +48,8 @@ pub enum Event {
     Enable256keyChanged(bool),
     /// 钢琴仿真贴图键盘开关
     TexturedKeyboardChanged(bool),
+    /// 力度面板曲线/柱状图样式切换
+    VelocityCurveStyleChanged(bool),
     /// MIDI 输入设备选择
     DeviceSelected(u32),
     /// 界面语言切换
@@ -87,6 +89,8 @@ pub struct SettingsPanel {
     pub enable_256key: bool,
     /// 钢琴仿真贴图键盘
     pub use_textured_keyboard: bool,
+    /// 力度面板显示样式（true=曲线折线图，false=柱状图）
+    pub velocity_curve_style: bool,
     /// 可用的 MIDI 输入设备列表
     pub midi_devices: Vec<(u32, String)>,
     /// 当前选中的 MIDI 输入设备 ID
@@ -124,6 +128,7 @@ impl SettingsPanel {
             icon_hidpi: ui_config.icon_hidpi,
             enable_256key: ui_config.enable_256key,
             use_textured_keyboard: ui_config.use_textured_keyboard,
+            velocity_curve_style: ui_config.velocity_curve_style,
             midi_devices: Vec::new(),
             selected_midi_device: None,
             language: ui_config.language,
@@ -228,6 +233,9 @@ impl SettingsPanel {
             }
             Event::TexturedKeyboardChanged(enabled) => {
                 self.use_textured_keyboard = enabled;
+            }
+            Event::VelocityCurveStyleChanged(enabled) => {
+                self.velocity_curve_style = enabled;
             }
             Event::DeviceSelected(id) => {
                 self.selected_midi_device = Some(id);

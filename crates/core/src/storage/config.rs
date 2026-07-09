@@ -183,6 +183,9 @@ pub struct UiConfig {
     /// 是否使用钢琴仿真贴图键盘（默认开启，关闭则使用旧版纯色键盘）
     #[serde(default = "default_true")]
     pub use_textured_keyboard: bool,
+    /// 力度面板显示样式（默认曲线=折线图，false=柱状图）
+    #[serde(default = "default_true")]
+    pub velocity_curve_style: bool,
     /// 高精度洋葱皮贴图：是否启用
     #[serde(default = "default_true")]
     pub hires_onion_enabled: bool,
@@ -263,6 +266,7 @@ impl Default for UiConfig {
             icon_hidpi: true,
             enable_256key: false,
             use_textured_keyboard: true,
+            velocity_curve_style: true,
             hires_onion_enabled: true,
             hires_measures_per_group: default_hires_measures_per_group(),
             hires_tile_width_px: default_hires_tile_width(),

@@ -345,6 +345,21 @@ pub fn view<'a>(
         text(t.textured_keyboard_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
+        iced_widget::space().height(SPACING_CONTENT),
+        // 力度面板显示样式（曲线/柱状图切换）
+        row![
+            iced_widget::Checkbox::new(settings.velocity_curve_style)
+                .label("力度面板曲线显示（默认）")
+                .on_toggle(|enabled| {
+                    Message::Settings(crate::settings::Event::VelocityCurveStyleChanged(enabled))
+                }),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        text("关闭后使用柱状图显示力度值")
+            .size(12.0)
+            .style(create_placeholder_text_style()),
     ]
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT)

@@ -269,6 +269,8 @@ pub struct CcBarData<'a> {
     pub notes: &'a im::Vector<lumino_core::Note>,
     /// 可选的自动化 lane（CC / Bend 曲线模式优先使用）。
     pub automation_lane: Option<&'a lumino_core::AutomationLane>,
+    /// 力度面板显示样式（true=曲线折线图，false=柱状图）
+    pub velocity_curve_style: bool,
 }
 
 #[cfg(test)]
