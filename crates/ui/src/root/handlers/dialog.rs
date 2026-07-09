@@ -398,7 +398,7 @@ impl MessageHandler for DialogHandler {
                             codec,
                             backend,
                             quality,
-                            480, // ppq 默认值（与音频导出一致）
+                            root.editor.editor_state.view.ppq,
                             root.editor.editor_state.view.visible_key_count,
                             document,
                         );

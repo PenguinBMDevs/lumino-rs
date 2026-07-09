@@ -405,15 +405,13 @@ impl RunnerInner {
                             generate_keyboard_texture(width, height, key_count);
 
                         // 逐帧渲染
+                        let mut cancelled = false;
                         for frame in 0..total_frames {
                             // 检查取消标志
                             if cancel_flag.load(Ordering::Relaxed) {
-                                tracing::info!("视频导出：用户取消，终止渲染");
-                                let _ = cmd_sender.send(RenderCommand::Control(
-                                    ControlCommand::FinishVideoExport,
-                                ));
-                                // encoder 随 closure 退出自动 drop，触发 kill ffmpeg
-                                return;
+                                tracing::info!("视频导出：用户取消，正在收尾...");
+                                cancelled = true;
+                                break;
                             }
                             let time_sec = frame as f64 / fps_f64;
                             let tick = seconds_to_tick(time_sec, tempo_changes, ppq);
@@ -433,7 +431,8 @@ impl RunnerInner {
                                 tracing::error!("发送 RenderVideoFrame 命令失败");
                                 let _ = progress_tx
                                     .send(("导出失败：渲染线程通信错误".to_string(), -1.0));
-                                return;
+                                cancelled = true;
+                                break;
                             }
 
                             // 接收帧数据（阻塞）
@@ -447,7 +446,8 @@ impl RunnerInner {
                                     tracing::error!("帧数据通道关闭");
                                     let _ = progress_tx
                                         .send(("导出失败：帧数据通道关闭".to_string(), -1.0));
-                                    return;
+                                    cancelled = true;
+                                    break;
                                 }
                             };
 
@@ -465,11 +465,11 @@ impl RunnerInner {
 
                             // 帧数据到达后再次检查取消（避免阻塞期间错过取消信号）
                             if cancel_flag.load(Ordering::Relaxed) {
-                                tracing::info!("视频导出：帧数据到达后检测到取消，终止渲染");
-                                let _ = cmd_sender.send(RenderCommand::Control(
-                                    ControlCommand::FinishVideoExport,
-                                ));
-                                return;
+                                tracing::info!("视频导出：帧数据到达后检测到取消，正在收尾...");
+                                // 写入当前已收到的帧后再收尾
+                                let _ = encoder.write_frame(frame_data);
+                                cancelled = true;
+                                break;
                             }
 
                             // 预览帧：每 500ms 发送一次，BGRA → RGBA 转换 + 降采样
@@ -500,7 +500,8 @@ impl RunnerInner {
                             if let Err(e) = encoder.write_frame(frame_data) {
                                 tracing::error!("写入 FFmpeg 失败: {e}");
                                 let _ = progress_tx.send((format!("导出失败: {e}"), -1.0));
-                                return;
+                                cancelled = true;
+                                break;
                             }
 
                             // FPS 统计
@@ -521,26 +522,38 @@ impl RunnerInner {
                                 .send((format!("帧 {}/{}", frame + 1, total_frames), progress));
                         }
 
-                        // 发送 FinishVideoExport
+                        // 发送 FinishVideoExport（GPU 管线清理）
                         let _ = cmd_sender
                             .send(RenderCommand::Control(ControlCommand::FinishVideoExport));
 
-                        // 完成 FFmpeg 编码
+                        // 完成 FFmpeg 编码（关闭 stdin → ffmpeg 写 trailer → 正常退出）
+                        // 无论是否取消，都走此路径让 ffmpeg 正常收尾，避免损坏文件
                         match encoder.finish() {
                             Ok(()) => {
                                 let elapsed = start.elapsed().as_secs_f64();
-                                let avg_fps = if total_frames > 0 {
-                                    total_frames as f64 / elapsed
+                                if cancelled {
+                                    tracing::info!(
+                                        "视频导出已取消（已保存已渲染帧），耗时 {:.1}s",
+                                        elapsed
+                                    );
+                                    let _ = progress_tx.send((
+                                        "已取消（视频已保存已渲染部分）".to_string(),
+                                        1.0,
+                                    ));
                                 } else {
-                                    0.0
-                                };
-                                tracing::info!(
-                                    "视频导出完成: {}帧, 耗时 {:.1}s, 平均 {:.1}fps",
-                                    total_frames,
-                                    elapsed,
-                                    avg_fps
-                                );
-                                let _ = progress_tx.send(("导出完成".to_string(), 1.0));
+                                    let avg_fps = if total_frames > 0 {
+                                        total_frames as f64 / elapsed
+                                    } else {
+                                        0.0
+                                    };
+                                    tracing::info!(
+                                        "视频导出完成: {}帧, 耗时 {:.1}s, 平均 {:.1}fps",
+                                        total_frames,
+                                        elapsed,
+                                        avg_fps
+                                    );
+                                    let _ = progress_tx.send(("导出完成".to_string(), 1.0));
+                                }
                             }
                             Err(e) => {
                                 tracing::error!("FFmpeg 编码完成失败: {e}");
