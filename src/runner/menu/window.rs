@@ -290,7 +290,8 @@ impl RunnerInner {
                     Some(doc) => doc,
                     None => {
                         tracing::error!("视频导出失败：无 MidiDocument（暂不支持流式模式）");
-                        let _ = progress_tx.send(("导出失败：无 MIDI 数据".to_string(), -1.0));
+                        let _ =
+                            progress_tx.send(("导出失败：无 MIDI 数据".to_string(), -1.0, 0, 0.0));
                         return;
                     }
                 };
@@ -313,7 +314,7 @@ impl RunnerInner {
                             Ok(e) => e,
                             Err(e) => {
                                 tracing::error!("FFmpeg 创建失败: {e}");
-                                let _ = progress_tx.send((format!("导出失败: {e}"), -1.0));
+                                let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0));
                                 return;
                             }
                         };
@@ -331,8 +332,12 @@ impl RunnerInner {
                             .is_err()
                         {
                             tracing::error!("发送 StartVideoExport 命令失败");
-                            let _ =
-                                progress_tx.send(("导出失败：渲染线程通信错误".to_string(), -1.0));
+                            let _ = progress_tx.send((
+                                "导出失败：渲染线程通信错误".to_string(),
+                                -1.0,
+                                0,
+                                0.0,
+                            ));
                             return;
                         }
 
@@ -406,13 +411,19 @@ impl RunnerInner {
                                 if last_preview_time.elapsed()
                                     >= std::time::Duration::from_millis(200)
                                 {
-                                    let _ = preview_tx.send((data.clone(), width, height));
+                                    // GPU 读回是 BGRA 格式，但 image::Handle::from_rgba 需要 RGBA
+                                    let mut preview_data = data.clone();
+                                    for pixel in preview_data.chunks_exact_mut(4) {
+                                        pixel.swap(0, 2); // B<->R 交换
+                                    }
+                                    let _ = preview_tx.send((preview_data, width, height));
                                     last_preview_time = std::time::Instant::now();
                                 }
 
                                 if let Err(e) = encoder.write_frame(data) {
                                     tracing::error!("写入视频帧失败: {e}");
-                                    let _ = progress_tx.send((format!("导出失败: {e}"), -1.0));
+                                    let _ =
+                                        progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0));
                                     return true;
                                 }
 
@@ -445,6 +456,8 @@ impl RunnerInner {
                                             eta_secs
                                         ),
                                         progress,
+                                        total_frames,
+                                        smoothed_fps,
                                     ));
                                     last_stat_time = std::time::Instant::now();
                                     frames_since_stat = 0;
@@ -490,8 +503,12 @@ impl RunnerInner {
                                     .is_err()
                                 {
                                     tracing::error!("发送 RenderVideoFrame 命令失败");
-                                    let _ = progress_tx
-                                        .send(("导出失败：渲染线程通信错误".to_string(), -1.0));
+                                    let _ = progress_tx.send((
+                                        "导出失败：渲染线程通信错误".to_string(),
+                                        -1.0,
+                                        0,
+                                        0.0,
+                                    ));
                                     cancelled = true;
                                     break;
                                 }
@@ -507,6 +524,8 @@ impl RunnerInner {
                                                 let _ = progress_tx.send((
                                                     "导出失败：帧数据通道关闭".to_string(),
                                                     -1.0,
+                                                    0,
+                                                    0.0,
                                                 ));
                                                 cancelled = true;
                                                 break;
@@ -522,6 +541,8 @@ impl RunnerInner {
                                                 let _ = progress_tx.send((
                                                     "导出失败：帧数据通道关闭".to_string(),
                                                     -1.0,
+                                                    0,
+                                                    0.0,
                                                 ));
                                                 cancelled = true;
                                                 break;
@@ -567,18 +588,28 @@ impl RunnerInner {
                         let elapsed = start.elapsed();
                         if !cancelled {
                             tracing::info!("视频导出完成: 耗时 {:.1}s", elapsed.as_secs_f64());
-                            let _ = progress_tx.send(("导出完成".to_string(), 1.0));
+                            let _ = progress_tx.send((
+                                "导出完成".to_string(),
+                                1.0,
+                                total_frames,
+                                smoothed_fps,
+                            ));
                         } else {
                             tracing::info!(
                                 "视频导出取消: 已处理 {} 帧, 耗时 {:.1}s, 正在收尾编码器",
                                 processed_frames,
                                 elapsed.as_secs_f64()
                             );
-                            let _ = progress_tx.send(("导出已取消".to_string(), 1.0));
+                            let _ = progress_tx.send((
+                                "导出已取消".to_string(),
+                                1.0,
+                                total_frames,
+                                smoothed_fps,
+                            ));
                         }
                         if let Err(e) = encoder.finish() {
                             tracing::error!("FFmpeg 收尾失败: {e}");
-                            let _ = progress_tx.send((format!("导出失败: {e}"), -1.0));
+                            let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0));
                         }
                     });
             }

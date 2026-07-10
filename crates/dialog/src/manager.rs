@@ -158,12 +158,23 @@ impl DialogManager {
     }
 
     /// 转发视频导出进度到 VideoExport 对话框
-    pub fn forward_video_export_progress(&mut self, message: String, progress: f64) {
+    pub fn forward_video_export_progress(
+        &mut self,
+        message: String,
+        progress: f64,
+        total_frames: u64,
+        render_fps: f64,
+    ) {
         for dialog in self.dialogs.values_mut() {
             if dialog.dialog_type == DialogType::VideoExport
                 && let Some(ui) = dialog.ui_mut()
             {
-                ui.update_video_export_progress(message.clone(), progress);
+                ui.update_video_export_progress(
+                    message.clone(),
+                    progress,
+                    total_frames,
+                    render_fps,
+                );
             }
         }
     }

@@ -234,7 +234,13 @@ impl Host {
     }
 
     /// 更新视频导出进度
-    pub fn update_video_export_progress(&mut self, message: String, progress: f64) {
+    pub fn update_video_export_progress(
+        &mut self,
+        message: String,
+        progress: f64,
+        total_frames: u64,
+        render_fps: f64,
+    ) {
         let st = &mut self.root.state.video_export_dialog;
         // 如果 overlay 尚未激活（e.g. 对话框窗口刚打开时），触发 Exporting 状态
         if matches!(st.overlay, VideoExportOverlayState::None) {
@@ -242,10 +248,9 @@ impl Host {
         }
         st.status_message = message;
         st.progress = progress;
-        // 从 progress 推算 current_frame（如果 total_frames 已知）
-        if st.total_frames > 0 {
-            st.current_frame = (progress * st.total_frames as f64) as u64;
-        }
+        st.total_frames = total_frames;
+        st.render_fps = render_fps;
+        st.current_frame = (progress * total_frames as f64).min(total_frames as f64) as u64;
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }

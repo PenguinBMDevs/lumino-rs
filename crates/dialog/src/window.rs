@@ -129,7 +129,7 @@ impl DialogWindow {
                 ui.set_export_progress_dialog_open(true);
             }
             DialogType::VideoExport => {
-                ui.update_video_export_progress("正在初始化...".to_string(), 0.0);
+                ui.update_video_export_progress("正在初始化...".to_string(), 0.0, 0, 0.0);
             }
         }
 
