@@ -159,13 +159,14 @@ pub(super) fn build_video_render_params(
 
 // ── 键盘贴图 ──
 
-/// 生成完整键盘贴图（RGBA 像素数据）
+/// 生成完整键盘贴图（BGRA 像素数据，与视频帧格式一致）
 ///
 /// 生成一个从最高键到最低键的完整键盘图像，与 note shader 的 Y 轴方向一致
 /// （高键在上，低键在下）。返回 (pixels, width, height)。
 ///
 /// 注意：key_count 固定为 128 以匹配标准 MIDI 键盘。
 /// 使用 ceil() 进行像素到键位的映射，确保键盘边界与 note shader 对齐。
+/// 直接生成 BGRA 格式以避免每帧合成时做 RGBA→BGRA 转换。
 pub(super) fn generate_keyboard_texture(
     _width: u32,
     height: u32,
@@ -227,9 +228,9 @@ pub(super) fn generate_keyboard_texture(
                 }
             };
 
-            pixels[idx] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            pixels[idx] = b; // BGRA: B 通道
+            pixels[idx + 1] = g; // BGRA: G 通道
+            pixels[idx + 2] = r; // BGRA: R 通道
             pixels[idx + 3] = 255;
         }
     }
@@ -408,6 +409,8 @@ pub(super) fn composite_ruler_numbers(
 // ── 键盘合成 ──
 
 /// 将键盘贴图合成到视频帧上（BGRA 格式，in-place 修改）
+///
+/// 贴图与帧均为 BGRA 格式，直接逐行 memcpy，避免逐像素转换。
 pub(super) fn composite_keyboard(
     frame: &mut [u8],
     frame_width: u32,
@@ -422,22 +425,20 @@ pub(super) fn composite_keyboard(
     }
     let kb_w = kb_width.min(frame_width);
     let kb_h = kb_height.min(frame_height.saturating_sub(ruler_h));
+    let row_bytes = (kb_w * 4) as usize;
+    let frame_stride = (frame_width * 4) as usize;
+    let kb_stride = (kb_width * 4) as usize;
 
     for py in 0..kb_h {
         let frame_y = ruler_h + py;
         if frame_y >= frame_height {
             break;
         }
-        for px in 0..kb_w {
-            let frame_idx = ((frame_y * frame_width + px) * 4) as usize;
-            let kb_idx = ((py * kb_width + px) * 4) as usize;
-            if kb_idx + 3 < keyboard_pixels.len() && frame_idx + 3 < frame.len() {
-                // keyboard_pixels 是 RGBA，frame 是 BGRA
-                frame[frame_idx] = keyboard_pixels[kb_idx + 2]; // B ← R
-                frame[frame_idx + 1] = keyboard_pixels[kb_idx + 1]; // G ← G
-                frame[frame_idx + 2] = keyboard_pixels[kb_idx]; // R ← B
-                // A 保持 255
-            }
+        let frame_start = frame_y as usize * frame_stride;
+        let kb_start = py as usize * kb_stride;
+        if frame_start + row_bytes <= frame.len() && kb_start + row_bytes <= keyboard_pixels.len() {
+            frame[frame_start..frame_start + row_bytes]
+                .copy_from_slice(&keyboard_pixels[kb_start..kb_start + row_bytes]);
         }
     }
 }

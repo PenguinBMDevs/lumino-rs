@@ -116,8 +116,6 @@ pub fn run_render_thread(
                         &mut last_note_version,
                         &latest_texture_clone,
                         &mut hires_renderer,
-                        &mut hires_meta,
-                        &mut hires_config,
                     );
                 }
                 ControlCommand::FinishVideoExport => {
@@ -274,10 +272,15 @@ pub fn run_render_thread(
     tracing::info!("Render thread stopped");
 }
 
-/// 处理视频导出帧：离屏渲染 → copy 到 staging → submit → map_async → wait_read → send
+/// 处理视频导出帧：离屏渲染 → copy 到 staging → submit → map_async
 ///
-/// 同步模式：阻塞等待当前帧读回后再发送给 Runner。
-/// 视频导出为非实时任务，同步模式代码简洁且足够可靠。
+/// 流水线模式：不阻塞等待当前帧读回，而是利用四重缓冲让 GPU 渲染与 CPU 读回重叠。
+/// - inflight 达到上限（4）时，阻塞读最早的一帧（此时 GPU 通常已完成 map_async）
+/// - copy_and_submit 后立即返回，GPU 继续处理下一帧
+/// - try_read 非阻塞读回已就绪的帧
+///
+/// 这会打破"每命令一帧"的语义：Runner 发 N 帧命令可能先收到 0~4 帧数据，
+/// 剩余帧在 FinishVideoExport 或后续命令中读回。Runner 侧需用 param_queue 跟踪。
 #[allow(clippy::too_many_arguments)]
 fn handle_video_frame(
     params: RenderParams,
@@ -296,8 +299,6 @@ fn handle_video_frame(
     last_note_version: &mut u64,
     latest_texture_clone: &Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
     hires_renderer: &mut Option<crate::HiResRenderer>,
-    hires_meta: &mut Option<HiResMeta>,
-    hires_config: &mut Option<crate::HiResConfig>,
 ) {
     let (Some(pipeline), Some(tx)) = (export_pipeline.as_mut(), export_frame_tx) else {
         tracing::warn!("RenderVideoFrame 收到但导出管线未初始化，忽略");
@@ -342,17 +343,7 @@ fn handle_video_frame(
 
     prepare_renderers(renderers, &params, note_events_rx, device, queue);
 
-    let hires_visible = update_hires_viewport(
-        hires_renderer,
-        hires_meta,
-        hires_config,
-        &params,
-        device,
-        queue,
-    );
-    let hires_visible_coords: Vec<crate::TileCoord> =
-        hires_visible.iter().map(|(c, _)| *c).collect();
-
+    // 视频导出时跳过 HiRes 洋葱皮渲染（它只是编辑时的视觉辅助，不影响导出画面）
     execute_render_pass(
         &mut encoder,
         device,
@@ -366,22 +357,28 @@ fn handle_video_frame(
         queue,
         &mut renderers.cc_bar,
         hires_renderer,
-        &hires_visible_coords,
+        &[], // 视频导出：不传 HiRes 可见坐标，跳过洋葱皮渲染
     );
 
-    // 4. copy 离屏纹理到 staging buffer + submit + map_async
+    // 4. 流水线模式：inflight 达到上限时阻塞读最早的一帧（背压）
+    //    此时 GPU 通常已完成 map_async，wait_read 立即返回
     pipeline.ensure_size(width, height);
-    pipeline.copy_and_submit(encoder, texture, queue);
-
-    // 5. 阻塞读回 BGRA 帧数据
-    let frame_data = pipeline.wait_read();
-
-    if frame_data.is_empty() {
-        tracing::warn!("视频帧读回超时，发送空帧（可能丢帧）");
+    while !pipeline.can_write() {
+        let data = pipeline.wait_read();
+        if tx.0.send(data).is_err() {
+            tracing::warn!("视频帧发送失败：Runner 通道已关闭");
+            return;
+        }
     }
 
-    // 6. 发送给 Runner 线程写入 FFmpeg
-    if tx.0.send(frame_data).is_err() {
-        tracing::warn!("视频帧发送失败：Runner 通道已关闭");
+    // 5. copy 离屏纹理到 staging buffer + submit + map_async（非阻塞，立即返回）
+    pipeline.copy_and_submit(encoder, texture, queue);
+
+    // 6. 尝试非阻塞读回已就绪的帧（流水线推进，不阻塞下一帧渲染）
+    while let Some(data) = pipeline.try_read() {
+        if tx.0.send(data).is_err() {
+            tracing::warn!("视频帧发送失败：Runner 通道已关闭");
+            return;
+        }
     }
 }

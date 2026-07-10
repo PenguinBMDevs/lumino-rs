@@ -3,9 +3,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::runner::{RunnerInner, dialog_manager::DialogType};
-use lumino_export::audio::config::{
-    AudioChannelMode, AudioInterpolation, AudioRenderConfig, ProgressCallback, ThreadMode,
-};
+use lumino_export::audio::config::{AudioChannelMode, AudioInterpolation, ThreadMode};
 use lumino_ui::event::window::Event as WindowEvent;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -142,6 +140,7 @@ impl RunnerInner {
                 linear_envelope,
                 document,
             } => {
+                use lumino_export::audio::config::AudioRenderConfig;
                 use std::time::Instant;
 
                 // 根据是否有内存中的 MidiDocument 选择渲染模式
@@ -152,59 +151,63 @@ impl RunnerInner {
                 };
                 tracing::info!("开始音频导出 [{mode_str}]: MIDI={midi_path}, SF2={soundfont_path}");
 
-                let midi_path = PathBuf::from(&midi_path);
-                let soundfont_path = PathBuf::from(&soundfont_path);
-                let output_path = PathBuf::from(&output_path);
+                let midi_path_buf = PathBuf::from(&midi_path);
+                let output_path_buf = PathBuf::from(&output_path);
 
-                // 解析枚举值（来自 UI 的 Debug 格式）
-                let channel_mode = AudioChannelMode::from_str(&channels).unwrap_or_default();
-                let interpolation_val =
-                    AudioInterpolation::from_str(&interpolation).unwrap_or_default();
-                let channel_threading_val =
-                    ThreadMode::from_str(&channel_threading).unwrap_or_default();
-                let key_threading_val = ThreadMode::from_str(&key_threading).unwrap_or_default();
+                // 解析枚举值（来自 UI 的 Debug 格式字符串）
+                let channel_mode = match channels.to_ascii_lowercase().as_str() {
+                    "mono" => AudioChannelMode::Mono,
+                    _ => AudioChannelMode::Stereo,
+                };
+                let interpolation_val = match interpolation.to_ascii_lowercase().as_str() {
+                    "nearest" => AudioInterpolation::Nearest,
+                    _ => AudioInterpolation::Linear,
+                };
+                let channel_threading_val = parse_thread_mode(&channel_threading);
+                let key_threading_val = parse_thread_mode(&key_threading);
+
+                let progress_cb: lumino_export::audio::config::ProgressCallback =
+                    Arc::new(move |_msg: String, _pct: f64| {
+                        tracing::debug!("音频导出进度: {:.1}%", _pct * 100.0);
+                    });
 
                 let config = AudioRenderConfig {
+                    midi_path: midi_path_buf.clone(),
+                    soundfonts: vec![PathBuf::from(&soundfont_path)],
+                    output_path: output_path_buf.clone(),
                     sample_rate: sample_rate.max(8000),
                     channels: channel_mode,
-                    layer_limit: layer_limit.max(1),
+                    layer_limit: Some(layer_limit.max(1) as usize),
                     channel_threading: channel_threading_val,
                     key_threading: key_threading_val,
                     interpolation: interpolation_val,
                     apply_limiter,
                     disable_fade_out,
                     linear_envelope,
+                    progress_callback: Some(progress_cb),
                 };
 
-                let progress_cb: ProgressCallback = Box::new(move |current, total, label| {
-                    // 通过进度通道发送到 UI 线程
-                    tracing::debug!("音频导出进度: {}/{} ({})", current, total, label);
-                });
-
                 let start = Instant::now();
-                match lumino_export::audio::render_audio_to_file(
-                    &midi_path,
-                    &soundfont_path,
-                    &output_path,
-                    &config,
-                    document,
-                    progress_cb,
-                ) {
+                let render_result = match &document {
+                    Some(doc) => lumino_export::audio::render_audio_from_document(&config, doc),
+                    None => lumino_export::audio::render_audio(&config),
+                };
+
+                match render_result {
                     Ok(_) => {
                         let elapsed = start.elapsed();
                         tracing::info!(
                             "音频导出完成: 耗时 {:.1}s, 输出={}",
                             elapsed.as_secs_f64(),
-                            output_path.display()
+                            output_path_buf.display()
                         );
                         let main_ui = self.window_state.window.ui_mut();
-                        // 使用音频导出对话框的完成回调
-                        main_ui.audio_export_completed(output_path.to_string_lossy().to_string());
+                        main_ui.set_export_render_completed();
                     }
                     Err(e) => {
                         tracing::error!("音频导出失败: {e}");
                         let main_ui = self.window_state.window.ui_mut();
-                        main_ui.set_audio_export_failed(format!("音频导出失败: {e}"));
+                        main_ui.set_export_render_failed(format!("音频导出失败: {e}"));
                     }
                 }
             }
@@ -356,140 +359,207 @@ impl RunnerInner {
                         let (keyboard_pixels, kb_w, kb_h) =
                             video_export::generate_keyboard_texture(width, height, key_count);
 
-                        // 逐帧渲染
+                        // 流水线渲染：利用四重缓冲让 GPU 渲染与 CPU 合成/编码重叠
+                        // 渲染线程不再每帧 wait_read，inflight 达到上限时才读回
+                        // Runner 用 param_queue 跟踪每帧合成参数，try_recv 非阻塞接收
+                        let mut param_queue: std::collections::VecDeque<(f32, f32, f32, u32)> =
+                            std::collections::VecDeque::new();
+                        let mut processed_frames = 0u64;
                         let mut cancelled = false;
-                        for frame in 0..total_frames {
-                            // 检查取消标志
-                            if cancel_flag.load(Ordering::Relaxed) {
-                                tracing::info!("视频导出：用户取消，正在收尾...");
-                                cancelled = true;
-                                break;
-                            }
-                            let time_sec = frame as f64 / fps_f64;
-                            let tick = video_export::seconds_to_tick(time_sec, tempo_changes, ppq);
 
-                            // 计算 scroll_x / zoom_x，用于标尺小节号合成
-                            let video_kb_width = 60.0f32;
-                            let video_viewport_tick_span = (ppq * 16).max(1) as f32;
-                            let video_zoom_x =
-                                (width as f32 - video_kb_width) / video_viewport_tick_span;
-                            let video_scroll_x = tick as f32 * video_zoom_x;
+                        // 帧处理闭包：composite + write + 统计更新
+                        // 返回 true 表示取消或出错
+                        // 用内层作用域确保闭包 drop 后 encoder 可被 finish 借用
+                        {
+                            let mut process_frame = |data: Vec<u8>,
+                                                     params: (f32, f32, f32, u32)|
+                             -> bool {
+                                let mut data = data;
+                                let (sx, zx, kw, ppq_val) = params;
 
-                            // 构建 RenderParams（简化版：默认值 + 视频分辨率 + scroll 跟随播放头）
-                            let params = video_export::build_video_render_params(
-                                width, height, tick, &document, ppq, key_count,
-                            );
-
-                            // 发送渲染命令
-                            if cmd_sender
-                                .send(RenderCommand::Control(ControlCommand::RenderVideoFrame(
-                                    Box::new(params),
-                                )))
-                                .is_err()
-                            {
-                                tracing::error!("发送 RenderVideoFrame 命令失败");
-                                let _ = progress_tx
-                                    .send(("导出失败：渲染线程通信错误".to_string(), -1.0));
-                                cancelled = true;
-                                break;
-                            }
-
-                            // 接收帧数据（阻塞）
-                            let mut frame_data = match frame_rx.recv() {
-                                Ok(data) if !data.is_empty() => data,
-                                Ok(_) => {
-                                    tracing::warn!("帧 {} 读回为空，跳过", frame);
-                                    continue;
+                                if data.is_empty() {
+                                    tracing::warn!("帧读回为空，跳过");
+                                    return false;
                                 }
-                                Err(_) => {
-                                    tracing::error!("帧数据通道关闭");
-                                    let _ = progress_tx
-                                        .send(("导出失败：帧数据通道关闭".to_string(), -1.0));
-                                    cancelled = true;
-                                    break;
+
+                                if !keyboard_pixels.is_empty() {
+                                    video_export::composite_keyboard(
+                                        &mut data,
+                                        width,
+                                        height,
+                                        &keyboard_pixels,
+                                        kb_w,
+                                        kb_h,
+                                    );
                                 }
-                            };
-
-                            // ★ 在帧上合成键盘贴图（in-place 修改，BGRA 格式）
-                            if !keyboard_pixels.is_empty() {
-                                video_export::composite_keyboard(
-                                    &mut frame_data,
-                                    width,
-                                    height,
-                                    &keyboard_pixels,
-                                    kb_w,
-                                    kb_h,
+                                video_export::composite_ruler_numbers(
+                                    &mut data, width, height, sx, zx, kw, ppq_val,
                                 );
-                            }
 
-                            // ★ 在帧上合成标尺小节号（in-place 修改，BGRA 格式）
-                            video_export::composite_ruler_numbers(
-                                &mut frame_data,
-                                width,
-                                height,
-                                video_scroll_x,
-                                video_zoom_x,
-                                video_kb_width,
-                                ppq,
-                            );
+                                if cancel_flag.load(Ordering::Relaxed) {
+                                    tracing::info!("视频导出：帧数据到达后检测到取消，正在收尾...");
+                                    let _ = encoder.write_frame(data);
+                                    return true;
+                                }
 
-                            // 帧数据到达后再次检查取消（避免阻塞期间错过取消信号）
-                            if cancel_flag.load(Ordering::Relaxed) {
-                                tracing::info!("视频导出：帧数据到达后检测到取消，正在收尾...");
-                                // 写入当前已收到的帧后再收尾
-                                let _ = encoder.write_frame(frame_data);
-                                cancelled = true;
-                                break;
-                            }
+                                // 预览帧：在 write_frame（move data）之前 clone 发送
+                                if last_preview_time.elapsed()
+                                    >= std::time::Duration::from_millis(200)
+                                {
+                                    let _ = preview_tx.send((data.clone(), width, height));
+                                    last_preview_time = std::time::Instant::now();
+                                }
 
-                            // 写入帧
-                            if let Err(e) = encoder.write_frame(frame_data) {
-                                tracing::error!("写入视频帧失败: {e}");
-                                let _ = progress_tx.send((format!("导出失败: {e}"), -1.0));
-                                cancelled = true;
-                                break;
-                            }
+                                if let Err(e) = encoder.write_frame(data) {
+                                    tracing::error!("写入视频帧失败: {e}");
+                                    let _ = progress_tx.send((format!("导出失败: {e}"), -1.0));
+                                    return true;
+                                }
 
-                            // 更新统计
-                            frames_since_stat += 1;
-                            let elapsed = last_stat_time.elapsed();
-                            if elapsed >= std::time::Duration::from_secs(2) {
-                                let fps = frames_since_stat as f64 / elapsed.as_secs_f64();
-                                smoothed_fps = if smoothed_fps == 0.0 {
-                                    fps
-                                } else {
-                                    smoothed_fps * 0.7 + fps * 0.3
-                                };
-                                let progress = (frame + 1) as f64 / total_frames as f64;
-                                let eta_secs = (total_frames - frame - 1) as f64 / smoothed_fps;
-                                tracing::info!(
-                                    "视频导出: 帧 {}/{} ({:.0}%), FPS={:.0}, ETA={:.0}s",
-                                    frame + 1,
-                                    total_frames,
-                                    progress * 100.0,
-                                    smoothed_fps,
-                                    eta_secs
-                                );
-                                let _ = progress_tx.send((
-                                    format!(
-                                        "{:.0}% | FPS {:.0} | ETA {:.0}s",
+                                processed_frames += 1;
+                                frames_since_stat += 1;
+                                let elapsed = last_stat_time.elapsed();
+                                if elapsed >= std::time::Duration::from_secs(2) {
+                                    let fps = frames_since_stat as f64 / elapsed.as_secs_f64();
+                                    smoothed_fps = if smoothed_fps == 0.0 {
+                                        fps
+                                    } else {
+                                        smoothed_fps * 0.7 + fps * 0.3
+                                    };
+                                    let progress = processed_frames as f64 / total_frames as f64;
+                                    let eta_secs =
+                                        (total_frames - processed_frames) as f64 / smoothed_fps;
+                                    tracing::info!(
+                                        "视频导出: 帧 {}/{} ({:.0}%), FPS={:.0}, ETA={:.0}s",
+                                        processed_frames,
+                                        total_frames,
                                         progress * 100.0,
                                         smoothed_fps,
                                         eta_secs
-                                    ),
-                                    progress,
+                                    );
+                                    let _ = progress_tx.send((
+                                        format!(
+                                            "{:.0}% | FPS {:.0} | ETA {:.0}s",
+                                            progress * 100.0,
+                                            smoothed_fps,
+                                            eta_secs
+                                        ),
+                                        progress,
+                                    ));
+                                    last_stat_time = std::time::Instant::now();
+                                    frames_since_stat = 0;
+                                }
+
+                                false
+                            };
+
+                            // 逐帧渲染：发送命令 + try_recv 处理已就绪的帧
+                            for frame in 0..total_frames {
+                                if cancel_flag.load(Ordering::Relaxed) {
+                                    tracing::info!("视频导出：用户取消，正在收尾...");
+                                    cancelled = true;
+                                    break;
+                                }
+                                let time_sec = frame as f64 / fps_f64;
+                                let tick =
+                                    video_export::seconds_to_tick(time_sec, tempo_changes, ppq);
+
+                                // 计算 scroll_x / zoom_x，用于标尺小节号合成
+                                let video_kb_width = 60.0f32;
+                                let video_viewport_tick_span = (ppq * 16).max(1) as f32;
+                                let video_zoom_x =
+                                    (width as f32 - video_kb_width) / video_viewport_tick_span;
+                                let video_scroll_x = tick as f32 * video_zoom_x;
+
+                                // 入队帧合成参数（与帧数据 FIFO 对应）
+                                param_queue.push_back((
+                                    video_scroll_x,
+                                    video_zoom_x,
+                                    video_kb_width,
+                                    ppq,
                                 ));
-                                last_stat_time = std::time::Instant::now();
-                                frames_since_stat = 0;
+
+                                let params = video_export::build_video_render_params(
+                                    width, height, tick, &document, ppq, key_count,
+                                );
+
+                                if cmd_sender
+                                    .send(RenderCommand::Control(ControlCommand::RenderVideoFrame(
+                                        Box::new(params),
+                                    )))
+                                    .is_err()
+                                {
+                                    tracing::error!("发送 RenderVideoFrame 命令失败");
+                                    let _ = progress_tx
+                                        .send(("导出失败：渲染线程通信错误".to_string(), -1.0));
+                                    cancelled = true;
+                                    break;
+                                }
+
+                                // 处理已就绪的帧数据
+                                loop {
+                                    let data = if param_queue.len() >= 4 {
+                                        // inflight 达到上限，阻塞等最早的一帧
+                                        match frame_rx.recv() {
+                                            Ok(d) => d,
+                                            Err(_) => {
+                                                tracing::error!("帧数据通道关闭");
+                                                let _ = progress_tx.send((
+                                                    "导出失败：帧数据通道关闭".to_string(),
+                                                    -1.0,
+                                                ));
+                                                cancelled = true;
+                                                break;
+                                            }
+                                        }
+                                    } else {
+                                        // 非阻塞接收
+                                        match frame_rx.try_recv() {
+                                            Ok(d) => d,
+                                            Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                                            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                                tracing::error!("帧数据通道关闭");
+                                                let _ = progress_tx.send((
+                                                    "导出失败：帧数据通道关闭".to_string(),
+                                                    -1.0,
+                                                ));
+                                                cancelled = true;
+                                                break;
+                                            }
+                                        }
+                                    };
+
+                                    let p =
+                                        param_queue.pop_front().unwrap_or((0.0, 1.0, 60.0, ppq));
+                                    if process_frame(data, p) {
+                                        cancelled = true;
+                                        break;
+                                    }
+                                }
+
+                                if cancelled {
+                                    break;
+                                }
                             }
 
-                            // 预览帧更新：约 5fps
-                            if last_preview_time.elapsed() >= std::time::Duration::from_millis(200)
-                            {
-                                let _ = preview_tx.send(());
-                                last_preview_time = std::time::Instant::now();
+                            // drain 剩余 inflight 帧
+                            while !param_queue.is_empty() && !cancelled {
+                                match frame_rx.recv() {
+                                    Ok(data) => {
+                                        let p = param_queue
+                                            .pop_front()
+                                            .unwrap_or((0.0, 1.0, 60.0, ppq));
+                                        if process_frame(data, p) {
+                                            cancelled = true;
+                                        }
+                                    }
+                                    Err(_) => {
+                                        tracing::error!("drain 阶段帧数据通道关闭");
+                                        cancelled = true;
+                                    }
+                                }
                             }
-                        }
+                        } // process_frame 闭包 drop，释放 encoder 借用
 
                         // 完成编码
                         if !cancelled {
@@ -499,56 +569,6 @@ impl RunnerInner {
                             let _ = encoder.finish();
                         }
                     });
-            }
-            SaveVideoExportConfig { .. } => {}
-            OpenAudioExportDialog => {
-                tracing::info!("请求打开音频导出对话框");
-                self.window_state
-                    .dialog_manager
-                    .open_dialog(DialogType::AudioExport);
-            }
-            CloseAudioExportDialog => {
-                self.window_state
-                    .dialog_manager
-                    .mark_dialog_for_close(DialogType::AudioExport);
-                tracing::info!("请求关闭音频导出对话框");
-            }
-            SaveAudioExportConfig { .. } => {}
-            ChangeAudioSampleRate(sample_rate) => {
-                let main_ui = self.window_state.window.ui_mut();
-                main_ui.change_audio_sample_rate(sample_rate);
-            }
-            ChangeAudioChannels(channels) => {
-                let main_ui = self.window_state.window.ui_mut();
-                main_ui.change_audio_channels(channels);
-            }
-            ChangeAudioLayerLimit(layer_limit) => {
-                let main_ui = self.window_state.window.ui_mut();
-                main_ui.change_audio_layer_limit(layer_limit);
-            }
-            ChangeAudioChannelThreading(threading) => {
-                let main_ui = self.window_state.window.ui_mut();
-                main_ui.change_audio_channel_threading(threading);
-            }
-            ChangeAudioKeyThreading(threading) => {
-                let main_ui = self.window_state.window.ui_mut();
-                main_ui.change_audio_key_threading(threading);
-            }
-            ChangeAudioInterpolation(interpolation) => {
-                let main_ui = self.window_state.window.ui_mut();
-                main_ui.change_audio_interpolation(interpolation);
-            }
-            ChangeAudioLimiter(enabled) => {
-                let main_ui = self.window_state.window.ui_mut();
-                main_ui.change_audio_limiter(enabled);
-            }
-            ChangeAudioFadeOut(disable_fade_out) => {
-                let main_ui = self.window_state.window.ui_mut();
-                main_ui.change_audio_fade_out(disable_fade_out);
-            }
-            ChangeAudioLinearEnvelope(linear_envelope) => {
-                let main_ui = self.window_state.window.ui_mut();
-                main_ui.change_audio_linear_envelope(linear_envelope);
             }
             _ => {
                 tracing::warn!("未处理的窗口事件: {:?}", window_event);
@@ -562,25 +582,62 @@ impl RunnerInner {
     ) {
         use lumino_ui::event::window::collaboration::Event::*;
         match window_event {
-            StartCollaboration(doc_id) => {
-                tracing::info!("请求启动协作: doc_id={}", doc_id);
-                self.handle_collaboration_start(doc_id);
+            Connect {
+                host,
+                port,
+                username,
+                invite_code,
+            } => {
+                tracing::info!("请求连接协作服务器: {host}:{port}");
+                self.handle_collaboration_connect(host, port, username, None, invite_code);
             }
-            StopCollaboration => {
-                tracing::info!("请求停止协作");
-                self.handle_collaboration_stop();
+            CreateRoom { name } => {
+                tracing::info!("请求创建协作房间: {name}");
+                self.handle_collaboration_create_room(name);
             }
-            JoinCollaboration(doc_id) => {
-                tracing::info!("请求加入协作: doc_id={}", doc_id);
-                self.handle_collaboration_join(doc_id);
+            JoinRoom { invite_code } => {
+                tracing::info!("请求加入协作房间: {invite_code}");
+                self.handle_collaboration_join_room(invite_code);
             }
-            LeaveCollaboration => {
-                tracing::info!("请求离开协作");
-                self.handle_collaboration_leave();
+            Disconnect => {
+                tracing::info!("请求断开协作连接");
+                self.handle_collaboration_disconnect();
             }
-            RemoteCursorChanged { .. } => {}
-            _ => {
-                tracing::warn!("未处理的协作事件: {:?}", window_event);
+            Authenticated {
+                user_id,
+                invite_code,
+            } => {
+                tracing::info!("协作认证成功: user={user_id}, invite={invite_code}");
+            }
+            RoomCreated {
+                room_name,
+                invite_code,
+            } => {
+                tracing::info!("协作房间创建成功: {room_name}, invite={invite_code}");
+            }
+            RoomJoined {
+                room_name,
+                invite_code,
+                user_count,
+            } => {
+                tracing::info!(
+                    "已加入协作房间: {room_name}, invite={invite_code}, 用户数={user_count}"
+                );
+            }
+            Disconnected => {
+                tracing::info!("协作连接已断开");
+            }
+            UserLeft { user_id } => {
+                tracing::info!("协作用户离开: {user_id}");
+            }
+            MouseUpdate { user_id, x, y, .. } => {
+                tracing::debug!("协作鼠标更新: user={user_id}, ({x:.0},{y:.0})");
+            }
+            NoteUpdate { user_id, operation } => {
+                self.handle_remote_note_update(user_id, operation);
+            }
+            ProjectUpdate { user_id, update } => {
+                self.handle_remote_project_update(user_id, update);
             }
         }
     }
@@ -588,53 +645,6 @@ impl RunnerInner {
     fn handle_sync_events(&mut self, window_event: lumino_ui::event::window::sync::Event) {
         use lumino_ui::event::window::sync::Event::*;
         match window_event {
-            RemoteNoteAdded {
-                tick,
-                key,
-                length,
-                velocity,
-                channel,
-                track_index,
-            } => {
-                self.handle_remote_note_added(tick, key, length, velocity, channel, track_index);
-            }
-            RemoteNoteDeleted {
-                tick,
-                key,
-                length,
-                velocity,
-                channel,
-                track_index,
-            } => {
-                self.handle_remote_note_deleted(tick, key, length, velocity, channel, track_index);
-            }
-            RemoteNoteMoved {
-                from_tick,
-                to_tick,
-                from_key,
-                to_key,
-                length,
-                velocity,
-                channel,
-                track_index,
-            } => {
-                self.handle_remote_note_moved(
-                    from_tick,
-                    to_tick,
-                    from_key,
-                    to_key,
-                    length,
-                    velocity,
-                    channel,
-                    track_index,
-                );
-            }
-            RemoteTrackAdded { track_index } => {
-                self.handle_remote_track_added(track_index);
-            }
-            RemoteTrackRemoved { track_index } => {
-                self.handle_remote_track_removed(track_index);
-            }
             LocalNoteAdded {
                 tick,
                 key,
@@ -644,6 +654,23 @@ impl RunnerInner {
                 track_index,
             } => {
                 self.handle_local_note_added(tick, key, length, velocity, channel, track_index);
+            }
+            LocalNoteMoved {
+                tick,
+                key,
+                length,
+                tick_offset,
+                key_offset,
+                track_index,
+            } => {
+                self.handle_local_note_moved(
+                    tick,
+                    key,
+                    length,
+                    tick_offset,
+                    key_offset,
+                    track_index,
+                );
             }
             LocalNoteDeleted {
                 tick,
@@ -659,5 +686,19 @@ impl RunnerInner {
                 self.handle_local_track_added(track_index);
             }
         }
+    }
+}
+
+/// 解析 UI 传来的线程模式字符串为 ThreadMode 枚举
+fn parse_thread_mode(s: &str) -> ThreadMode {
+    let lower = s.to_ascii_lowercase();
+    if lower == "none" || lower.is_empty() {
+        ThreadMode::None
+    } else if lower == "auto" {
+        ThreadMode::Auto
+    } else if let Ok(n) = lower.parse::<u32>() {
+        ThreadMode::Manual(n)
+    } else {
+        ThreadMode::None
     }
 }
