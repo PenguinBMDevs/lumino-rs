@@ -258,6 +258,16 @@ impl Host {
     /// 更新视频导出预览帧
     pub fn update_video_export_preview_frame(&mut self, data: Vec<u8>, width: u32, height: u32) {
         let st = &mut self.root.state.video_export_dialog;
+        let expected_len = (width * height * 4) as usize;
+        if data.len() != expected_len {
+            tracing::warn!(
+                "视频导出预览帧尺寸不匹配: {}x{} 期望 {} bytes, 实际 {} bytes",
+                width,
+                height,
+                expected_len,
+                data.len()
+            );
+        }
         st.preview_frame = Some(data);
         st.preview_width = width;
         st.preview_height = height;

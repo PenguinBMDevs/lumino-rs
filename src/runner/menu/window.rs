@@ -366,6 +366,7 @@ impl RunnerInner {
                         let mut frames_since_stat = 0u64;
                         let mut smoothed_fps = 0.0f64;
                         let mut last_preview_time = std::time::Instant::now();
+                        let mut preview_sent = false;
 
                         // ★ 生成键盘贴图（使用 CPU 贴图方式，在帧数据上合成）
                         let (keyboard_pixels, kb_w, kb_h) =
@@ -414,17 +415,29 @@ impl RunnerInner {
                                     return true;
                                 }
 
-                                // 预览帧：在 write_frame（move data）之前 clone 发送
-                                if last_preview_time.elapsed()
-                                    >= std::time::Duration::from_millis(200)
+                                // 预览帧：在 write_frame（move data）之前 clone 发送。
+                                // 第一帧立即发送，让预览界面尽快有内容；后续按 200ms 节流。
+                                if !preview_sent
+                                    || last_preview_time.elapsed()
+                                        >= std::time::Duration::from_millis(200)
                                 {
                                     // GPU 读回是 BGRA 格式，但 image::Handle::from_rgba 需要 RGBA
                                     let mut preview_data = data.clone();
                                     for pixel in preview_data.chunks_exact_mut(4) {
                                         pixel.swap(0, 2); // B<->R 交换
                                     }
-                                    let _ = preview_tx.send((preview_data, width, height));
+                                    tracing::debug!(
+                                        "视频导出: 发送预览帧 {}x{} ({} bytes), 首帧={}",
+                                        width,
+                                        height,
+                                        preview_data.len(),
+                                        !preview_sent
+                                    );
+                                    if preview_tx.send((preview_data, width, height)).is_err() {
+                                        tracing::warn!("视频导出: 预览帧发送失败，接收端已关闭");
+                                    }
                                     last_preview_time = std::time::Instant::now();
+                                    preview_sent = true;
                                 }
 
                                 if let Err(e) = encoder.write_frame(data) {
@@ -442,7 +455,7 @@ impl RunnerInner {
                                 processed_frames += 1;
                                 frames_since_stat += 1;
                                 let elapsed = last_stat_time.elapsed();
-                                if elapsed >= std::time::Duration::from_secs(2) {
+                                if elapsed >= std::time::Duration::from_millis(100) {
                                     let fps = frames_since_stat as f64 / elapsed.as_secs_f64();
                                     smoothed_fps = if smoothed_fps == 0.0 {
                                         fps
