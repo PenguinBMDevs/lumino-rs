@@ -132,7 +132,8 @@ impl DialogWindow {
                 ui.set_export_progress_dialog_open(true);
             }
             DialogType::VideoExport => {
-                // VideoExport 使用默认状态，不需要额外初始化
+                // 从主窗口同步视频导出状态（包括 overlay、进度、配置值）
+                ui.sync_video_export_state_from(main_ui);
             }
         }
 
