@@ -536,10 +536,8 @@ impl RunnerInner {
                                         "视频导出已取消（已保存已渲染帧），耗时 {:.1}s",
                                         elapsed
                                     );
-                                    let _ = progress_tx.send((
-                                        "已取消（视频已保存已渲染部分）".to_string(),
-                                        1.0,
-                                    ));
+                                    let _ = progress_tx
+                                        .send(("已取消（视频已保存已渲染部分）".to_string(), 1.0));
                                 } else {
                                     let avg_fps = if total_frames > 0 {
                                         total_frames as f64 / elapsed
@@ -824,7 +822,7 @@ fn seconds_to_tick(secs: f64, tempo_changes: &[(u32, f32)], ppq: u32) -> u32 {
 /// 构建视频导出帧的 RenderParams
 ///
 /// 包含编辑区域 UI 元素（网格线、标尺、键盘），
-/// Y 向缩放覆盖整个键盘（128 或 256 key），
+/// Y 向缩放覆盖 128 键标准 MIDI 键盘，
 /// X 向缩放使可见视口内恰好 4 个小节。
 fn build_video_render_params(
     width: u32,
@@ -832,11 +830,14 @@ fn build_video_render_params(
     tick: u32,
     document: &lumino_midi_loader::MidiDocument,
     ppq: u32,
-    key_count: u16,
+    _key_count: u16,
 ) -> lumino_gfx::RenderParams {
     use lumino_gfx::{
         GridViewParams, NoteInstance, generate_grid_instances, generate_ruler_instances,
     };
+
+    // 视频导出始终使用标准 128 键 MIDI 键盘
+    const KEY_COUNT: u16 = 128;
 
     let keyboard_width = 60.0f32;
     let ruler_height = 30.0f32;
@@ -847,8 +848,8 @@ fn build_video_render_params(
     let viewport_tick_span = (ppq * 16).max(1) as f32;
     let zoom_x = (w - keyboard_width) / viewport_tick_span;
 
-    // Y 向缩放：覆盖整个键盘
-    let key_count_f = key_count.max(1) as f32;
+    // Y 向缩放：覆盖整个键盘（固定 128 键）
+    let key_count_f = KEY_COUNT as f32;
     let zoom_y = (h - ruler_height) / key_count_f;
 
     // ★ 修复：scroll_x 必须乘以 zoom_x，因为 note shader 使用 tick * zoom_x - scroll_x
@@ -894,7 +895,7 @@ fn build_video_render_params(
     }
 
     // ★ 修复：max_key_index 必须与 key_count 匹配，确保 Y 轴显示完整
-    let max_key_index = (key_count.saturating_sub(1)) as f32;
+    let max_key_index = (KEY_COUNT.saturating_sub(1)) as f32;
 
     // ★ 修复：canvas_size 必须设置为视频帧尺寸，否则 scissor rect 会被默认 800x600 裁剪
     let canvas_size = (w, h);
@@ -922,9 +923,13 @@ fn build_video_render_params(
 ///
 /// 生成一个从最高键到最低键的完整键盘图像，与 note shader 的 Y 轴方向一致
 /// （高键在上，低键在下）。返回 (pixels, width, height)。
+///
+/// 注意：key_count 固定为 128 以匹配标准 MIDI 键盘。
+/// 使用 ceil() 进行像素到键位的映射，确保键盘边界与 note shader 对齐。
 fn generate_keyboard_texture(_width: u32, height: u32, key_count: u16) -> (Vec<u8>, u32, u32) {
     const KB_WIDTH: f32 = 60.0;
     const RULER_HEIGHT: f32 = 30.0;
+    const KEY_COUNT: u16 = 128;
     let kb_w = KB_WIDTH as u32;
 
     // 键盘区域从 ruler 下方开始
@@ -933,28 +938,49 @@ fn generate_keyboard_texture(_width: u32, height: u32, key_count: u16) -> (Vec<u
         return (Vec::new(), 0, 0);
     }
     let kb_h = height - ruler_h;
-    let key_count_f = key_count as f32;
+    let key_count_f = KEY_COUNT as f32;
     let zoom_y = kb_h as f32 / key_count_f;
 
     let mut pixels = vec![0u8; (kb_w * kb_h * 4) as usize];
 
     for py in 0..kb_h {
         // Y 向：键 0 在底部，最高键在顶部（与 note shader 一致）
+        // 使用 ceil() 确保键盘边界与 note shader 的精确边界匹配：
+        // note shader: screen_y = (max_key_index - key) * zoom_y + ruler_height
+        // 键盘像素 py 映射到 key = ceil(max_key_index - py / zoom_y)
+        // 这保证了每个键占据的像素范围与 note shader 渲染的矩形完全一致
         let key_f = (key_count_f - 1.0) - py as f32 / zoom_y;
-        let key_idx = key_f.round() as i32;
-        if key_idx < 0 || key_idx >= key_count as i32 {
+        let key_idx = key_f.ceil() as i32;
+        if key_idx < 0 || key_idx >= KEY_COUNT as i32 {
             continue;
         }
         let is_black = lumino_gfx::is_black_key(key_idx as isize);
 
+        // 标准黑白色：白键纯白，黑键纯黑
+        // 白键底部添加 1px 浅灰边框作键位分隔
+        let is_bottom_border = {
+            let next_key_f = (key_count_f - 1.0) - (py as f32 + 1.0) / zoom_y;
+            let next_key_idx = next_key_f.ceil() as i32;
+            next_key_idx != key_idx
+        };
+
         for px in 0..kb_w {
             let idx = ((py * kb_w + px) * 4) as usize;
 
-            // 黑白键颜色：X 向等宽（黑键也铺满整个键盘宽度）
             let (r, g, b) = if is_black {
-                (26, 26, 31) // 黑键颜色
+                // 黑键：纯黑，底部加 1px 深灰边框
+                if is_bottom_border {
+                    (40, 40, 40)
+                } else {
+                    (0, 0, 0) // 标准黑键
+                }
             } else {
-                (56, 56, 64) // 白键颜色
+                // 白键：纯白，底部加 1px 浅灰边框
+                if is_bottom_border {
+                    (200, 200, 200)
+                } else {
+                    (255, 255, 255) // 标准白键
+                }
             };
 
             pixels[idx] = r;
