@@ -241,6 +241,9 @@ impl Sidebar {
                 } else {
                     Route::File
                 };
+                // 切回钢琴卷帘组时清除渲染面板标志，确保主界面显示编辑器
+                self.audio_export_visible = false;
+                self.video_export_visible = false;
             }
             GroupId::Project => {
                 // 工程走带：隐藏钢琴卷帘，显示走带视图
@@ -248,6 +251,9 @@ impl Sidebar {
                 self.panel_visible = false;
                 self.automation_panel_visible = false;
                 self.route = Route::Arrangement;
+                // 进入走带时清除渲染面板标志
+                self.audio_export_visible = false;
+                self.video_export_visible = false;
             }
             GroupId::Waterfall => {
                 // 瀑布流：关闭钢琴卷帘
@@ -255,6 +261,9 @@ impl Sidebar {
                 self.panel_visible = false;
                 self.automation_panel_visible = false;
                 self.route = Route::File;
+                // 进入瀑布流时清除渲染面板标志
+                self.audio_export_visible = false;
+                self.video_export_visible = false;
             }
             GroupId::Renderer => {
                 // 渲染组：当前无子按钮，保持基本状态
@@ -295,7 +304,9 @@ impl Sidebar {
                 // 默认回到编辑器模式
             }
             GroupId::Renderer => {
-                // 关闭渲染组
+                // 关闭渲染组：清除渲染面板标志
+                self.audio_export_visible = false;
+                self.video_export_visible = false;
             }
         }
         self.active_group = None;

@@ -306,9 +306,9 @@ fn handle_video_frame(
     depth_texture: &mut Option<wgpu::Texture>,
     depth_texture_view: &mut Option<wgpu::TextureView>,
     current_size: &mut (u32, u32),
-    note_instances_buffer: &Arc<SwappableBuffer<crate::NoteInstance>>,
+    _note_instances_buffer: &Arc<SwappableBuffer<crate::NoteInstance>>,
     note_events_rx: &std::sync::mpsc::Receiver<crate::NoteEvent>,
-    last_note_version: &mut u64,
+    _last_note_version: &mut u64,
     latest_texture_clone: &Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
     hires_renderer: &mut Option<crate::HiResRenderer>,
 ) {
@@ -335,12 +335,14 @@ fn handle_video_frame(
     };
     ensure_textures(&mut tex_resources);
 
-    // 2. 音符版本检测后上传
-    let note_version = note_instances_buffer.version();
-    if note_version != *last_note_version {
-        *last_note_version = note_version;
-        let notes = unsafe { note_instances_buffer.read_buffer() };
-        renderers.note.upload_instances(notes, device, queue);
+    // 2. 上传视频导出帧的音符实例（从 params.note_instances 读取，而非共享缓冲区）
+    //    视频导出自定义构建音符实例（build_video_render_params），而共享缓冲区
+    //    note_instances_buffer 仅由编辑器主线程更新，导出期间不会刷新。
+    //    若依赖共享缓冲区，导出帧中将看不到音符。
+    if !params.note_instances.is_empty() {
+        renderers
+            .note
+            .upload_instances(&params.note_instances, device, queue);
     }
 
     let (Some(texture), Some(_depth_view)) = (&*current_texture, &*depth_texture_view) else {

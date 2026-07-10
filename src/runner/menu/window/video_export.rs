@@ -3,8 +3,8 @@
 //! 包含视频帧渲染参数构建、键盘贴图生成、标尺小节号合成等工具函数。
 
 use lumino_gfx::{
-    GridViewParams, NoteInstance, RenderParams, generate_grid_instances, generate_ruler_instances,
-    is_black_key,
+    ARRANGEMENT_PALETTE, GridViewParams, NoteInstance, RenderParams, generate_grid_instances,
+    generate_ruler_instances, is_black_key, pack_color,
 };
 
 // ── 时间计算 ──
@@ -114,13 +114,13 @@ pub(super) fn build_video_render_params(
     // 3. 键盘使用 CPU 贴图方式（视频导出线程中 composite），GPU 不渲染键盘实例
     let keyboard_instances = Vec::new();
 
-    // 4. 收集可见音符
+    // 4. 收集可见音符，按音轨分配颜色
     let tick_start = tick;
     let tick_end = tick.saturating_add(viewport_tick_span as u32);
     let mut note_instances = Vec::new();
-    // 蓝色音符
-    let color_packed: u32 = (51u32 << 24) | (153u32 << 16) | (255u32 << 8) | 255u32;
-    for notes in &document.notes {
+    for (track_idx, notes) in document.notes.iter().enumerate() {
+        let color = ARRANGEMENT_PALETTE[track_idx % ARRANGEMENT_PALETTE.len()];
+        let color_packed = pack_color([color[0], color[1], color[2], 1.0]);
         for n in notes {
             if n.end_tick >= tick_start && n.start_tick <= tick_end {
                 note_instances.push(NoteInstance {
