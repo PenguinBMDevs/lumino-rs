@@ -3366,6 +3366,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumino-dialog"
+version = "0.1.1-dev"
+dependencies = [
+ "lumino-core",
+ "lumino-gfx",
+ "lumino-ui",
+ "tracing",
+ "winit",
+]
+
+[[package]]
 name = "lumino-dms"
 version = "0.1.1-dev"
 dependencies = [
@@ -3565,6 +3576,7 @@ dependencies = [
  "iced_winit",
  "lumino-collaboration",
  "lumino-core",
+ "lumino-dialog",
  "lumino-dms",
  "lumino-export",
  "lumino-gfx",
