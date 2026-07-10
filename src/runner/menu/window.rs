@@ -561,12 +561,24 @@ impl RunnerInner {
                             }
                         } // process_frame 闭包 drop，释放 encoder 借用
 
-                        // 完成编码
+                        // 完成编码：无论是否取消都必须调用 finish()，
+                        // 否则 FFmpeg 收不到 EOF，视频文件头未写入导致损坏。
+                        // 用户取消时已写入的帧仍可生成可播放的部分视频。
+                        let elapsed = start.elapsed();
                         if !cancelled {
-                            let elapsed = start.elapsed();
                             tracing::info!("视频导出完成: 耗时 {:.1}s", elapsed.as_secs_f64());
                             let _ = progress_tx.send(("导出完成".to_string(), 1.0));
-                            let _ = encoder.finish();
+                        } else {
+                            tracing::info!(
+                                "视频导出取消: 已处理 {} 帧, 耗时 {:.1}s, 正在收尾编码器",
+                                processed_frames,
+                                elapsed.as_secs_f64()
+                            );
+                            let _ = progress_tx.send(("导出已取消".to_string(), 1.0));
+                        }
+                        if let Err(e) = encoder.finish() {
+                            tracing::error!("FFmpeg 收尾失败: {e}");
+                            let _ = progress_tx.send((format!("导出失败: {e}"), -1.0));
                         }
                     });
             }
