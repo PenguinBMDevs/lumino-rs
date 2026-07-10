@@ -140,6 +140,18 @@ pub fn run_render_thread(
             }
         }
 
+        // 推进视频导出 inflight：即使没有新的 RenderVideoFrame 命令，
+        // 也需要 try_read 已就绪的帧数据并发回 Runner，否则 inflight 满后
+        // Runner 阻塞在 frame_rx.recv()，渲染线程也不再调用 try_read，形成死锁。
+        if let (Some(pipeline), Some(tx)) = (&mut export_pipeline, &export_frame_tx) {
+            while let Some(data) = pipeline.try_read() {
+                if tx.0.send(data).is_err() {
+                    tracing::warn!("视频帧发送失败：Runner 通道已关闭");
+                    break;
+                }
+            }
+        }
+
         // ★ 流式接收：每帧循环 try_recv，收到已合并像素立即 upload（GPU DMA，非阻塞）★
         loop {
             match hires_result_rx.try_recv() {

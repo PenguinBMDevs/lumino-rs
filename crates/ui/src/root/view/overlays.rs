@@ -96,22 +96,30 @@ impl Root {
                 view_export_progress_dialog(&self.state.export_progress_dialog, &self.window.theme)
             }
             DialogType::VideoExport => {
-                // 视频导出对话框：显示进度+预览
+                // 对话框是进度窗口：overlay != None 时渲染进度覆盖层
+                // overlay == None 时显示"准备中..."占位（不应发生，创建时已设为 Exporting）
                 if let Some(overlay) =
                     view_video_export_overlay(&self.state.video_export_dialog, &self.window.theme)
                 {
                     overlay
                 } else {
-                    container(space())
-                        .width(iced_core::Length::Fill)
-                        .height(iced_core::Length::Fill)
-                        .style(|theme: &Theme| container::Style {
-                            background: Some(iced_core::Background::Color(
-                                theme.palette().background,
-                            )),
-                            ..Default::default()
-                        })
-                        .into()
+                    container(
+                        column![
+                            text("准备中...").size(16),
+                            space().height(20),
+                            progress_bar(0.0..=1.0, 0.0),
+                        ]
+                        .spacing(12)
+                        .align_x(iced_core::Alignment::Center),
+                    )
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .padding(40)
+                    .style(|theme: &Theme| container::Style {
+                        background: Some(iced_core::Background::Color(theme.palette().background)),
+                        ..Default::default()
+                    })
+                    .into()
                 }
             }
         }

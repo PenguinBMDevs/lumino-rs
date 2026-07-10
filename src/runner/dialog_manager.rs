@@ -132,8 +132,9 @@ impl DialogWindow {
                 ui.set_export_progress_dialog_open(true);
             }
             DialogType::VideoExport => {
-                // 从主窗口同步视频导出状态（包括 overlay、进度、配置值）
-                ui.sync_video_export_state_from(main_ui);
+                // 视频导出对话框是进度窗口，创建时立即进入 Exporting 状态
+                // 配置在主窗口侧边栏完成，对话框只负责显示进度
+                ui.update_video_export_progress("正在初始化...".to_string(), 0.0);
             }
         }
 
@@ -481,6 +482,11 @@ impl DialogManager {
         if self.dialogs.remove(&window_id).is_some() {
             tracing::info!("对话框已关闭: {:?}", window_id);
         }
+    }
+
+    /// 检查指定类型的对话框是否存在
+    pub fn has_dialog_type(&self, dialog_type: DialogType) -> bool {
+        self.dialogs.values().any(|d| d.dialog_type == dialog_type)
     }
 
     /// 转发视频导出进度到 VideoExport 对话框

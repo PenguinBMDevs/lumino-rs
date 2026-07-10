@@ -148,8 +148,13 @@ impl winit::application::ApplicationHandler for Runner {
             if let Some(rx) = &mut this.window_state.export_progress_rx {
                 let main_ui = this.window_state.window.ui_mut();
                 while let Ok((msg, progress)) = rx.try_recv() {
-                    // 判断是视频导出还是音频导出
-                    let is_video = main_ui.is_video_exporting();
+                    // 判断是视频导出还是音频导出：
+                    // 检查是否存在 VideoExport 对话框窗口（导出在对话框中启动，
+                    // 主窗口的 overlay 不会变化）
+                    let is_video = this
+                        .window_state
+                        .dialog_manager
+                        .has_dialog_type(DialogType::VideoExport);
                     if is_video {
                         if progress < 0.0 {
                             this.window_state

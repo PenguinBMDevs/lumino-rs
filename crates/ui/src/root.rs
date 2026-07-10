@@ -337,18 +337,6 @@ impl Root {
             ..Default::default()
         }
     }
-
-    /// 从另一个 Root 同步视频导出状态（用于对话框窗口同步主窗口状态）
-    pub fn sync_video_export_state_from(&mut self, other: &Root) {
-        // 复制整个视频导出对话框状态（包括配置值和进度覆盖层）
-        self.state.video_export_dialog = other.state.video_export_dialog.clone();
-        self.state.dialog_type = other.state.dialog_type;
-        tracing::info!(
-            "视频导出对话框状态已同步: overlay={:?}, progress={}",
-            self.state.video_export_dialog.overlay,
-            self.state.video_export_dialog.progress
-        );
-    }
 }
 
 #[cfg(test)]

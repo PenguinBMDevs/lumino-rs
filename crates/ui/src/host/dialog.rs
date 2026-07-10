@@ -320,11 +320,4 @@ impl Host {
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
-
-    /// 从另一个 Host 同步视频导出状态（用于对话框窗口同步主窗口状态）
-    pub fn sync_video_export_state_from(&mut self, other: &Host) {
-        self.root.sync_video_export_state_from(&other.root);
-        self.ui_dirty = true;
-        self.window_ctx.window.request_redraw();
-    }
 }
