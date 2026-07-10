@@ -290,8 +290,13 @@ impl RunnerInner {
                     Some(doc) => doc,
                     None => {
                         tracing::error!("视频导出失败：无 MidiDocument（暂不支持流式模式）");
-                        let _ =
-                            progress_tx.send(("导出失败：无 MIDI 数据".to_string(), -1.0, 0, 0.0));
+                        let _ = progress_tx.send((
+                            "导出失败：无 MIDI 数据".to_string(),
+                            -1.0,
+                            0,
+                            0.0,
+                            0.0,
+                        ));
                         return;
                     }
                 };
@@ -314,7 +319,8 @@ impl RunnerInner {
                             Ok(e) => e,
                             Err(e) => {
                                 tracing::error!("FFmpeg 创建失败: {e}");
-                                let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0));
+                                let _ =
+                                    progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
                                 return;
                             }
                         };
@@ -336,6 +342,7 @@ impl RunnerInner {
                                 "导出失败：渲染线程通信错误".to_string(),
                                 -1.0,
                                 0,
+                                0.0,
                                 0.0,
                             ));
                             return;
@@ -422,8 +429,13 @@ impl RunnerInner {
 
                                 if let Err(e) = encoder.write_frame(data) {
                                     tracing::error!("写入视频帧失败: {e}");
-                                    let _ =
-                                        progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0));
+                                    let _ = progress_tx.send((
+                                        format!("导出失败: {e}"),
+                                        -1.0,
+                                        0,
+                                        0.0,
+                                        0.0,
+                                    ));
                                     return true;
                                 }
 
@@ -458,6 +470,7 @@ impl RunnerInner {
                                         progress,
                                         total_frames,
                                         smoothed_fps,
+                                        0.0, // 进度更新中不传递 elapsed
                                     ));
                                     last_stat_time = std::time::Instant::now();
                                     frames_since_stat = 0;
@@ -508,6 +521,7 @@ impl RunnerInner {
                                         -1.0,
                                         0,
                                         0.0,
+                                        0.0,
                                     ));
                                     cancelled = true;
                                     break;
@@ -526,6 +540,7 @@ impl RunnerInner {
                                                     -1.0,
                                                     0,
                                                     0.0,
+                                                    0.0,
                                                 ));
                                                 cancelled = true;
                                                 break;
@@ -542,6 +557,7 @@ impl RunnerInner {
                                                     "导出失败：帧数据通道关闭".to_string(),
                                                     -1.0,
                                                     0,
+                                                    0.0,
                                                     0.0,
                                                 ));
                                                 cancelled = true;
@@ -593,6 +609,7 @@ impl RunnerInner {
                                 1.0,
                                 total_frames,
                                 smoothed_fps,
+                                elapsed.as_secs_f64(),
                             ));
                         } else {
                             tracing::info!(
@@ -605,11 +622,12 @@ impl RunnerInner {
                                 1.0,
                                 total_frames,
                                 smoothed_fps,
+                                elapsed.as_secs_f64(),
                             ));
                         }
                         if let Err(e) = encoder.finish() {
                             tracing::error!("FFmpeg 收尾失败: {e}");
-                            let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0));
+                            let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
                         }
                     });
             }

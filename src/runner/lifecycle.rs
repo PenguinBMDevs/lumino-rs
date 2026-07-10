@@ -147,7 +147,9 @@ impl winit::application::ApplicationHandler for Runner {
             puffin::profile_scope!("runner_about_to_wait_export_progress");
             if let Some(rx) = &mut this.window_state.export_progress_rx {
                 let main_ui = this.window_state.window.ui_mut();
-                while let Ok((msg, progress, total_frames, render_fps)) = rx.try_recv() {
+                while let Ok((msg, progress, total_frames, render_fps, elapsed_secs)) =
+                    rx.try_recv()
+                {
                     // 判断是视频导出还是音频导出：
                     // 检查是否存在 VideoExport 对话框窗口（导出在对话框中启动，
                     // 主窗口的 overlay 不会变化）
@@ -167,7 +169,7 @@ impl winit::application::ApplicationHandler for Runner {
                         } else if progress >= 1.0 {
                             this.window_state
                                 .dialog_manager
-                                .forward_video_export_completed();
+                                .forward_video_export_completed(elapsed_secs);
                         } else {
                             this.window_state
                                 .dialog_manager

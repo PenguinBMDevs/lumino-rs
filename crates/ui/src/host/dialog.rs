@@ -274,12 +274,12 @@ impl Host {
     }
 
     /// 标记视频导出完成
-    pub fn set_video_export_completed(&mut self) {
+    pub fn set_video_export_completed(&mut self, elapsed_secs: f64) {
         let st = &mut self.root.state.video_export_dialog;
         let total_frames = st.total_frames;
         st.overlay = crate::state::root_state::VideoExportOverlayState::Completed {
             total_frames,
-            elapsed_secs: 0.0,
+            elapsed_secs,
             avg_fps: st.render_fps,
         };
         self.ui_dirty = true;

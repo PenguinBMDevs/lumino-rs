@@ -191,12 +191,12 @@ impl DialogManager {
     }
 
     /// 转发视频导出完成到 VideoExport 对话框
-    pub fn forward_video_export_completed(&mut self) {
+    pub fn forward_video_export_completed(&mut self, elapsed_secs: f64) {
         for dialog in self.dialogs.values_mut() {
             if dialog.dialog_type == DialogType::VideoExport
                 && let Some(ui) = dialog.ui_mut()
             {
-                ui.set_video_export_completed();
+                ui.set_video_export_completed(elapsed_secs);
             }
         }
     }
