@@ -58,7 +58,7 @@ impl Host {
     ///
     /// 覆层与重生均以音轨组（track_group）为单位合并处理，
     /// 避免同组多个脏音轨互相覆盖或重生成时丢失同组其他音轨数据。
-    pub fn set_current_track(&mut self, track_idx: usize) {
+    pub fn set_current_track(&mut self, track_idx: usize, open_panel: bool) {
         // 收集当前所有脏音轨，避免切换时只显示单个音轨的覆盖层
         let dirty_tracks: Vec<u16> = self.hires_dirty_tracks.iter().copied().collect();
         let old_track = self.root.editor.current_track() as u16;
@@ -137,7 +137,7 @@ impl Host {
         }
 
         // 执行音轨切换（保存旧音轨 notes 到 track_notes 缓存）
-        self.root.set_current_track(track_idx);
+        self.root.set_current_track(track_idx, open_panel);
 
         // 按音轨组触发后台重生，每个 group 只重生一次
         let mut regen_groups = std::collections::HashSet::new();

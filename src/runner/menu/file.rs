@@ -110,7 +110,7 @@ impl RunnerInner {
                 self.window_state
                     .window
                     .ui_mut()
-                    .set_current_track(track_idx);
+                    .set_current_track(track_idx, true);
             }
             ExportProjectArchive => {
                 self.handle_export_project_archive();

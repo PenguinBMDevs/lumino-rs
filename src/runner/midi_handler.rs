@@ -64,7 +64,7 @@ impl MidiHandler {
         {
             let first_notes = document.get_track_notes(*first_track_idx as u16);
             ui.load_track_notes(*first_track_idx, &first_notes);
-            ui.set_current_track(*first_track_idx);
+            ui.set_current_track(*first_track_idx, false);
         }
 
         tracing::info!(

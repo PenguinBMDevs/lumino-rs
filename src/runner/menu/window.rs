@@ -426,14 +426,27 @@ impl RunnerInner {
                                     for pixel in preview_data.chunks_exact_mut(4) {
                                         pixel.swap(0, 2); // B<->R 交换
                                     }
+
+                                    // 缩小预览到 ≤480px 宽，确保像素数据 <2MB，
+                                    // 让 iced_wgpu 走同步上传路径而非异步后台上传
+                                    const PREVIEW_MAX_W: u32 = 480;
+                                    let (small_data, small_w, small_h) = if width > PREVIEW_MAX_W {
+                                        let scale = PREVIEW_MAX_W as f64 / width as f64;
+                                        let tw = PREVIEW_MAX_W;
+                                        let th = (height as f64 * scale).round() as u32;
+                                        downscale_rgba(&preview_data, width, height, tw, th)
+                                    } else {
+                                        (preview_data, width, height)
+                                    };
+
                                     tracing::info!(
                                         "视频导出: 发送预览帧 {}x{} ({} bytes), 首帧={}",
-                                        width,
-                                        height,
-                                        preview_data.len(),
+                                        small_w,
+                                        small_h,
+                                        small_data.len(),
                                         !preview_sent
                                     );
-                                    if preview_tx.send((preview_data, width, height)).is_err() {
+                                    if preview_tx.send((small_data, small_w, small_h)).is_err() {
                                         tracing::warn!("视频导出: 预览帧发送失败，接收端已关闭");
                                     }
                                     last_preview_time = std::time::Instant::now();
@@ -775,4 +788,26 @@ fn parse_thread_mode(s: &str) -> ThreadMode {
     } else {
         ThreadMode::None
     }
+}
+
+/// 最近邻 RGBA 缩放，用于将全尺寸预览帧缩小到 dialog 可用尺寸。
+/// iced_wgpu 对 >2MB 的 Handle::from_rgba 走异步 GPU 上传，
+/// 每帧唯一 ID 导致缓存失效、图片永远不显示。缩小到 <2MB 走同步路径。
+fn downscale_rgba(src: &[u8], sw: u32, sh: u32, tw: u32, th: u32) -> (Vec<u8>, u32, u32) {
+    if tw >= sw || th >= sh || tw == 0 || th == 0 {
+        return (src.to_vec(), sw, sh);
+    }
+    let mut dst = vec![0u8; (tw * th * 4) as usize];
+    for dy in 0..th {
+        let sy = (dy as f64 * sh as f64 / th as f64) as u32;
+        let src_row = (sy * sw * 4) as usize;
+        let dst_row = (dy * tw * 4) as usize;
+        for dx in 0..tw {
+            let sx = (dx as f64 * sw as f64 / tw as f64) as u32;
+            let si = src_row + (sx * 4) as usize;
+            let di = dst_row + (dx * 4) as usize;
+            dst[di..di + 4].copy_from_slice(&src[si..si + 4]);
+        }
+    }
+    (dst, tw, th)
 }

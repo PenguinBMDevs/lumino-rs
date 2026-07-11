@@ -42,8 +42,13 @@ impl Root {
     }
 
     /// 设置当前音轨
-    pub fn set_current_track(&mut self, track_idx: usize) {
-        self.sidebar.set_selected_track(track_idx);
+    ///
+    /// `open_panel` 控制是否在非 Arrangement 模式下强制打开侧边栏面板：
+    /// - `true`：用户手动选轨时，确保面板打开以显示选中音轨
+    /// - `false`：MIDI 加载等程序化操作，只刷新数据不强制弹出 UI
+    pub fn set_current_track(&mut self, track_idx: usize, open_panel: bool) {
+        self.sidebar
+            .set_selected_track_with_panel(track_idx, open_panel);
         self.editor.switch_to_track(track_idx);
         self.update_playback_notes();
 

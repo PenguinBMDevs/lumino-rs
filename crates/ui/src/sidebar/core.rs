@@ -294,11 +294,19 @@ impl Sidebar {
         }
     }
 
-    /// 设置当前选中的音轨
+    /// 设置当前选中的音轨（默认强制打开面板，供测试使用）
+    #[cfg(test)]
     pub fn set_selected_track(&mut self, track_idx: usize) {
+        self.set_selected_track_with_panel(track_idx, true);
+    }
+
+    /// 设置当前选中的音轨（可控制是否强制打开面板）
+    ///
+    /// `open_panel` 为 `true` 时，在非 Arrangement 模式下强制打开面板（用户手动选轨）；
+    /// 为 `false` 时只刷新数据，不改变面板可见性（MIDI 加载等程序化操作）。
+    pub fn set_selected_track_with_panel(&mut self, track_idx: usize, open_panel: bool) {
         self.selected_track = track_idx;
-        // 仅在非音轨总览模式下打开面板，确保音轨在面板中可见
-        if self.route != Route::Arrangement {
+        if open_panel && self.route != Route::Arrangement {
             self.panel_visible = true;
         }
     }

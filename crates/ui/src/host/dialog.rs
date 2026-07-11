@@ -275,8 +275,11 @@ impl Host {
             || st.preview_height != height;
 
         if data_changed {
-            st.cached_image_handle =
-                Some(iced_core::image::Handle::from_rgba(width, height, data.clone()));
+            st.cached_image_handle = Some(iced_core::image::Handle::from_rgba(
+                width,
+                height,
+                data.clone(),
+            ));
         }
         // 即使数据未变，也更新 frame 用于 view 中的尺寸判断
         st.preview_frame = Some(data);
