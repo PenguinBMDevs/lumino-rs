@@ -93,11 +93,13 @@ impl RealtimeSynth {
         let perf = Arc::new(RenderPerfShared::new());
 
         // ── 事件通道 ──────────────────────────────────────────────
-        let (event_sender, event_receiver) = bounded::<SynthEvent>(65536);
+        // Unbounded: 永不阻塞、永不丢弃事件。渲染线程过载时事件会堆积，
+        // 但音频输出 thread 独立运行，主线程永不卡顿。
+        let (event_sender, event_receiver) = unbounded::<SynthEvent>();
 
         // ── 音频输出通道 ───────────────────────────────────────────
-        // Bounded(4): 最多缓存约 120ms 数据；满时渲染线程自动阻塞，
-        // 自然与音频回调同步，无需 spin_sleep。
+        // Bounded(4): 最多缓存约 160ms 数据（20ms × 4）。
+        // 满时 try_send 失败，渲染线程跳过帧保护（不阻塞）。
         let (sample_tx, sample_rx) = bounded::<Vec<f32>>(4);
         let (vec_return_tx, vec_return_rx) = unbounded::<Vec<f32>>();
         let vec_return_tx_render = vec_return_tx.clone();
