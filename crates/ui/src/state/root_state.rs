@@ -362,6 +362,11 @@ pub struct VideoExportDialogState {
     pub preview_width: u32,
     /// 预览帧高度
     pub preview_height: u32,
+    /// 缓存的 iced image handle（避免每帧创建唯一 ID 导致 GPU 纹理缓存失效）
+    ///
+    /// `Handle::from_rgba` 每次调用生成唯一 ID，iced_wgpu 对大图（>2MB）走异步上传，
+    /// 每个新 ID 都被视为全新图像重新上传。缓存 handle 后，相同数据复用已上传的纹理。
+    pub cached_image_handle: Option<iced_core::image::Handle>,
 }
 
 impl Default for VideoExportDialogState {
@@ -390,6 +395,7 @@ impl VideoExportDialogState {
             preview_frame: None,
             preview_width: 0,
             preview_height: 0,
+            cached_image_handle: None,
         }
     }
 

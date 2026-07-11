@@ -251,12 +251,8 @@ pub fn view_video_export_overlay<'a>(
     };
 
     // ── 预览图像区域 ──
-    let preview_area: crate::Element<'a> = if let Some(ref frame_data) = state.preview_frame {
-        let handle = image::Handle::from_rgba(
-            state.preview_width,
-            state.preview_height,
-            frame_data.clone(),
-        );
+    let preview_area: crate::Element<'a> = if let Some(ref handle) = state.cached_image_handle {
+        // 使用缓存的 handle（相同数据复用已上传的 GPU 纹理，避免每帧重新异步上传）
         // 预览区域宽度基于 dialog 窗口尺寸（520x560）
         let preview_max_w = 480.0;
         let preview_max_h = 240.0;

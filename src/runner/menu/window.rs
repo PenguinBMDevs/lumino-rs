@@ -426,7 +426,7 @@ impl RunnerInner {
                                     for pixel in preview_data.chunks_exact_mut(4) {
                                         pixel.swap(0, 2); // B<->R 交换
                                     }
-                                    tracing::debug!(
+                                    tracing::info!(
                                         "视频导出: 发送预览帧 {}x{} ({} bytes), 首帧={}",
                                         width,
                                         height,

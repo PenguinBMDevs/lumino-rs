@@ -268,6 +268,17 @@ impl Host {
                 data.len()
             );
         }
+
+        // 仅在数据变化时创建新 handle，避免每帧生成唯一 ID 导致 GPU 缓存失效
+        let data_changed = st.preview_frame.as_deref() != Some(data.as_slice())
+            || st.preview_width != width
+            || st.preview_height != height;
+
+        if data_changed {
+            st.cached_image_handle =
+                Some(iced_core::image::Handle::from_rgba(width, height, data.clone()));
+        }
+        // 即使数据未变，也更新 frame 用于 view 中的尺寸判断
         st.preview_frame = Some(data);
         st.preview_width = width;
         st.preview_height = height;

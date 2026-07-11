@@ -2,6 +2,8 @@
 //!
 //! 管理 iced 渲染器、wgpu 音符/网格渲染器、GPU 资源以及独立渲染线程。
 
+use std::sync::Arc;
+
 use iced_core::{Font, Pixels};
 use iced_wgpu::wgpu;
 use iced_wgpu::{Engine, Renderer, graphics::Viewport};
@@ -9,6 +11,20 @@ use iced_winit::runtime::user_interface::Cache;
 use lumino_gfx::{GridRenderer, NoteRenderer};
 
 use super::RenderCache;
+
+/// 通知器：当后台图像上传完成时，请求窗口重绘
+struct WindowNotifier(Arc<iced_winit::winit::window::Window>);
+
+impl iced_wgpu::graphics::shell::Notifier for WindowNotifier {
+    fn request_redraw(&self) {
+        self.0.request_redraw();
+    }
+
+    fn invalidate_layout(&self) {
+        // 布局失效也触发重绘，确保 image atlas 上传后能刷新
+        self.0.request_redraw();
+    }
+}
 
 /// WGPU 设备资源集合（减少 RenderContext::new 参数数量）
 pub(crate) struct WgpuResources {
@@ -53,20 +69,26 @@ impl RenderContext {
     ///
     /// `note_renderer` 与 `grid_renderer` 为 `None` 时，表示该窗口仅渲染 iced UI，
     /// 不进入音符/网格管线（用于 dialog、progress 等轻量窗口）。
+    ///
+    /// `window` 用于创建通知器：当 iced_wgpu 后台完成图像上传后，
+    /// 通知器会调用 `window.request_redraw()` 触发窗口重绘，否则
+    /// 大尺寸预览图像（>2MB）的异步上传完成后窗口不会刷新，导致预览空白。
     pub fn new(
         wgpu: &WgpuResources,
         viewport: Viewport,
         note_renderer: Option<NoteRenderer>,
         grid_renderer: Option<GridRenderer>,
         font: Font,
+        window: &Arc<iced_winit::winit::window::Window>,
     ) -> Self {
+        let shell = iced_wgpu::graphics::Shell::new(WindowNotifier(window.clone()));
         let engine = Engine::new(
             &wgpu.adapter,
             wgpu.device.clone(),
             wgpu.queue.clone(),
             wgpu.format,
             None,
-            iced_wgpu::graphics::Shell::headless(),
+            shell,
         );
         let renderer = Renderer::new(engine, font, Pixels::from(16));
 

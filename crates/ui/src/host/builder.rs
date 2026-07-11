@@ -52,6 +52,7 @@ impl Host {
             note_renderer,
             grid_renderer,
             font,
+            &window,
         );
 
         (render_ctx, WindowContext::new(window))

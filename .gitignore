@@ -91,3 +91,6 @@ daemon.pid
 
 # macOS
 .DS_Store
+
+# mimocode
+.mimocode/

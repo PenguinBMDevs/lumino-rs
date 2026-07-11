@@ -130,78 +130,6 @@ impl winit::application::ApplicationHandler for Runner {
             .progress
             .process_messages(main_ui, &main_window);
 
-        // 处理视频导出预览帧（转发到 VideoExport 对话框窗口）
-        {
-            puffin::profile_scope!("runner_about_to_wait_video_preview");
-            if let Some(rx) = &mut this.window_state.video_preview_rx {
-                while let Ok((data, w, h)) = rx.try_recv() {
-                    tracing::debug!(
-                        "Runner: 转发视频导出预览帧 {}x{} ({} bytes)",
-                        w,
-                        h,
-                        data.len()
-                    );
-                    this.window_state
-                        .dialog_manager
-                        .forward_video_export_preview_frame(data, w, h);
-                }
-            }
-        }
-
-        // 处理导出进度消息（转发到对应的对话框窗口）
-        {
-            puffin::profile_scope!("runner_about_to_wait_export_progress");
-            if let Some(rx) = &mut this.window_state.export_progress_rx {
-                let main_ui = this.window_state.window.ui_mut();
-                while let Ok((msg, progress, total_frames, render_fps, elapsed_secs)) =
-                    rx.try_recv()
-                {
-                    // 判断是视频导出还是音频导出：
-                    // 检查是否存在 VideoExport 对话框窗口（导出在对话框中启动，
-                    // 主窗口的 overlay 不会变化）
-                    let is_video = this
-                        .window_state
-                        .dialog_manager
-                        .has_dialog_type(DialogType::VideoExport);
-                    if is_video {
-                        if progress < 0.0 {
-                            this.window_state
-                                .dialog_manager
-                                .forward_video_export_failed(msg);
-                            // 视频导出失败时关闭对话框
-                            this.window_state
-                                .dialog_manager
-                                .mark_dialog_for_close(DialogType::VideoExport);
-                        } else if progress >= 1.0 {
-                            this.window_state
-                                .dialog_manager
-                                .forward_video_export_completed(elapsed_secs);
-                        } else {
-                            this.window_state
-                                .dialog_manager
-                                .forward_video_export_progress(
-                                    msg,
-                                    progress,
-                                    total_frames,
-                                    render_fps,
-                                );
-                        }
-                    } else {
-                        // 音频导出
-                        if progress < 0.0 {
-                            main_ui.update_export_progress(msg.clone(), 0.0);
-                            main_ui.set_export_render_failed(msg);
-                        } else {
-                            main_ui.update_export_progress(msg, progress);
-                            if progress >= 1.0 {
-                                main_ui.set_export_render_completed();
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         // 转发洋葱皮生成进度到进度窗口（渲染线程 → UI 线程 → ProgressManager）
         {
             puffin::profile_scope!("runner_about_to_wait_onion_progress");
@@ -325,6 +253,80 @@ impl winit::application::ApplicationHandler for Runner {
                     &dialog_config,
                     main_ui,
                 );
+        }
+
+        // 处理视频导出预览帧（转发到 VideoExport 对话框窗口）
+        // 注意：必须在对话框初始化之后消费，否则导出线程在对话框创建前发送的
+        // 预览帧/进度会被转发到一个不存在的对话框而丢失。
+        {
+            puffin::profile_scope!("runner_about_to_wait_video_preview");
+            if let Some(rx) = &mut this.window_state.video_preview_rx {
+                while let Ok((data, w, h)) = rx.try_recv() {
+                    tracing::info!(
+                        "Runner: 转发视频导出预览帧 {}x{} ({} bytes)",
+                        w,
+                        h,
+                        data.len()
+                    );
+                    this.window_state
+                        .dialog_manager
+                        .forward_video_export_preview_frame(data, w, h);
+                }
+            }
+        }
+
+        // 处理导出进度消息（转发到对应的对话框窗口）
+        {
+            puffin::profile_scope!("runner_about_to_wait_export_progress");
+            if let Some(rx) = &mut this.window_state.export_progress_rx {
+                let main_ui = this.window_state.window.ui_mut();
+                while let Ok((msg, progress, total_frames, render_fps, elapsed_secs)) =
+                    rx.try_recv()
+                {
+                    // 判断是视频导出还是音频导出：
+                    // 检查是否存在 VideoExport 对话框窗口（导出在对话框中启动，
+                    // 主窗口的 overlay 不会变化）
+                    let is_video = this
+                        .window_state
+                        .dialog_manager
+                        .has_dialog_type(DialogType::VideoExport);
+                    if is_video {
+                        if progress < 0.0 {
+                            this.window_state
+                                .dialog_manager
+                                .forward_video_export_failed(msg);
+                            // 视频导出失败时关闭对话框
+                            this.window_state
+                                .dialog_manager
+                                .mark_dialog_for_close(DialogType::VideoExport);
+                        } else if progress >= 1.0 {
+                            this.window_state
+                                .dialog_manager
+                                .forward_video_export_completed(elapsed_secs);
+                        } else {
+                            this.window_state
+                                .dialog_manager
+                                .forward_video_export_progress(
+                                    msg,
+                                    progress,
+                                    total_frames,
+                                    render_fps,
+                                );
+                        }
+                    } else {
+                        // 音频导出
+                        if progress < 0.0 {
+                            main_ui.update_export_progress(msg.clone(), 0.0);
+                            main_ui.set_export_render_failed(msg);
+                        } else {
+                            main_ui.update_export_progress(msg, progress);
+                            if progress >= 1.0 {
+                                main_ui.set_export_render_completed();
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // 更新对话框

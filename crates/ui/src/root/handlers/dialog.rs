@@ -388,6 +388,7 @@ impl MessageHandler for DialogHandler {
                         root.state.video_export_dialog.current_frame = 0;
                         root.state.video_export_dialog.total_frames = 0;
                         root.state.video_export_dialog.render_fps = 0.0;
+                        root.state.video_export_dialog.cached_image_handle = None;
 
                         let ev = crate::event::window::Event::start_video_export(
                             output_path,
@@ -407,6 +408,7 @@ impl MessageHandler for DialogHandler {
                     V::CancelExport => {
                         root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
                         root.state.video_export_dialog.preview_frame = None;
+                        root.state.video_export_dialog.cached_image_handle = None;
                         // 在对话框窗口中关闭窗口
                         if root.state.is_dialog_window {
                             root.state.dialog_result = Some(DialogResult::Cancel);
@@ -428,6 +430,7 @@ impl MessageHandler for DialogHandler {
                     V::DismissOverlay => {
                         root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
                         root.state.video_export_dialog.preview_frame = None;
+                        root.state.video_export_dialog.cached_image_handle = None;
                         // 在对话框窗口中关闭窗口
                         if root.state.is_dialog_window {
                             root.state.dialog_result = Some(DialogResult::Cancel);
