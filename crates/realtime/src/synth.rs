@@ -193,14 +193,15 @@ impl RealtimeSynth {
                     }
 
                     // 闲置检测：没有事件且样本通道已满（音频回调消费太慢或已暂停）
-                    // 跳过渲染并睡眠等待，让出 CPU 避免浪费电
+                    // 用 recv_timeout 替代 sleep：事件到达时立即唤醒，降低首音符延迟
                     if event_count == 0 && sample_tx.len() >= 4 {
                         perf_render.last_render_ns.store(0, Ordering::Relaxed);
                         perf_render
                             .last_event_count
                             .store(event_count, Ordering::Relaxed);
-                        // 睡眠到下一个渲染窗口，让出 CPU 给其他线程
-                        std::thread::sleep(std::time::Duration::from_millis(render_window_ms));
+                        // 等待事件到达或超时（取较短者），避免空转
+                        let _ = event_receiver
+                            .recv_timeout(std::time::Duration::from_millis(render_window_ms));
                         continue;
                     }
 

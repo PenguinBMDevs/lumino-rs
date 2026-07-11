@@ -4,7 +4,9 @@ use parking_lot::Mutex;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
-use crate::{EventType, MidiTrackEvent, NoteEvent, Playback, PlaybackAccessor, ScheduledEvent};
+use crate::{
+    EventType, MidiMessage, MidiTrackEvent, NoteEvent, Playback, PlaybackAccessor, ScheduledEvent,
+};
 use lumino_midi_loader::MidiDocument;
 
 /// 其他音轨的事件读取状态。
@@ -73,6 +75,8 @@ pub struct PlaybackEngine {
     pub(crate) midi_event_cursor: usize,
     /// 力度过滤阈值：velocity 小于等于此值的音符不发声（0 表示不过滤）。
     pub(crate) velocity_filter_threshold: u8,
+    /// 复用的消息缓冲区，避免 update() 每帧分配新 Vec
+    pub(crate) reused_messages: Vec<MidiMessage>,
 }
 
 impl PlaybackEngine {
@@ -92,6 +96,7 @@ impl PlaybackEngine {
             control_event_cursor: 0,
             midi_event_cursor: 0,
             velocity_filter_threshold: 1,
+            reused_messages: Vec::with_capacity(64),
         }
     }
 

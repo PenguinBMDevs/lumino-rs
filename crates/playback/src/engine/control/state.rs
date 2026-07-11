@@ -15,12 +15,12 @@ impl PlaybackEngine {
     ///
     /// 返回：需要发送的MIDI消息列表
     /// 当前音轨从 event_queue 读取，其他音轨从 document 流式读取
-    pub fn update(&mut self) -> Vec<MidiMessage> {
-        let mut messages = Vec::new();
+    pub fn update(&mut self) -> &mut Vec<MidiMessage> {
+        self.reused_messages.clear();
 
         let (current_tick, is_playing) = {
             let Some(playback) = self.lock_playback() else {
-                return messages;
+                return &mut self.reused_messages;
             };
             (
                 playback.current_tick(),
@@ -30,16 +30,19 @@ impl PlaybackEngine {
 
         if !is_playing {
             self.last_processed_tick = current_tick;
-            return messages;
+            return &mut self.reused_messages;
         }
 
+        // 临时取出 messages 避免 &mut self + &mut self.reused_messages 双重借用
+        let mut messages = std::mem::take(&mut self.reused_messages);
         self.process_current_track(current_tick, &mut messages);
         self.process_other_tracks(current_tick, &mut messages);
         self.process_midi_events(current_tick, &mut messages);
         self.last_processed_tick = current_tick;
         self.handle_loop_wrap(current_tick, &mut messages);
+        self.reused_messages = messages;
 
-        messages
+        &mut self.reused_messages
     }
 
     /// 处理当前音轨的事件队列

@@ -106,44 +106,40 @@ impl PlaybackManager {
                 if let Some(out) = &mut midi_output {
                     let msg_count = messages.len();
 
-                    // 直接发送所有消息，不添加任何 sleep
-                    // xsynth-realtime 的 channel 使用 unbounded channel，可以处理突发流量
-                    // 如果发生 underrun，应该通过增大缓冲区或优化 xsynth 配置来解决
-                    // 而不是在播放线程中 sleep（这会导致更严重的音频问题）
-                    for msg in messages {
+                    for msg in messages.iter() {
                         match msg {
                             MidiMessage::NoteOn {
                                 channel,
                                 key,
                                 velocity,
                             } => {
-                                let _ = out.note_on(channel, key, velocity);
+                                let _ = out.note_on(*channel, *key, *velocity);
                             }
                             MidiMessage::NoteOff { channel, key } => {
-                                let _ = out.note_off(channel, key, 0);
+                                let _ = out.note_off(*channel, *key, 0);
                             }
                             MidiMessage::ControlChange {
                                 channel,
                                 controller,
                                 value,
                             } => {
-                                let _ = out.control_change(channel, controller, value);
+                                let _ = out.control_change(*channel, *controller, *value);
                             }
                             MidiMessage::ProgramChange { channel, program } => {
-                                let _ = out.program_change(channel, program);
+                                let _ = out.program_change(*channel, *program);
                             }
                             MidiMessage::PitchBend { channel, value } => {
-                                let _ = out.pitch_bend(channel, value);
+                                let _ = out.pitch_bend(*channel, *value);
                             }
                             MidiMessage::ChannelPressure { channel, pressure } => {
-                                let _ = out.channel_pressure(channel, pressure);
+                                let _ = out.channel_pressure(*channel, *pressure);
                             }
                             MidiMessage::PolyPressure {
                                 channel,
                                 key,
                                 pressure,
                             } => {
-                                let _ = out.poly_pressure(channel, key, pressure);
+                                let _ = out.poly_pressure(*channel, *key, *pressure);
                             }
                         }
                     }
@@ -152,8 +148,15 @@ impl PlaybackManager {
                     }
                 }
 
-                // 睡眠以避免空转，休眠1ms保证音频高精度调度
-                thread::sleep(Duration::from_millis(1));
+                // 高精度定时等待：sleep 大部分时间，最后自旋等待精确唤醒。
+                // Windows 默认定时器分辨率为 15.6ms，纯 sleep(1ms) 实际睡 15.6ms，
+                // 导致事件突发（15ms 的音符被一次性发送）。
+                // 混合策略：sleep(700μs) + spin(300μs) 实现接近 1ms 的精度。
+                let target = std::time::Instant::now() + Duration::from_millis(1);
+                thread::sleep(Duration::from_micros(700));
+                while std::time::Instant::now() < target {
+                    std::hint::spin_loop();
+                }
             }
         });
 

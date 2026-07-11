@@ -8196,7 +8196,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 [[package]]
 name = "xsynth-core"
 version = "0.3.4"
-source = "git+https://github.com/PenguinBMDevs/xsynth#11e245e8b2711215d9fad85c9c13444253047271"
+source = "git+https://github.com/PenguinBMDevs/xsynth#b5e3bb0a64846a76c44ecdfd07356f95b080a56e"
 dependencies = [
  "atomic_refcell",
  "biquad",
@@ -8217,7 +8217,7 @@ dependencies = [
 [[package]]
 name = "xsynth-soundfonts"
 version = "0.3.4"
-source = "git+https://github.com/PenguinBMDevs/xsynth#11e245e8b2711215d9fad85c9c13444253047271"
+source = "git+https://github.com/PenguinBMDevs/xsynth#b5e3bb0a64846a76c44ecdfd07356f95b080a56e"
 dependencies = [
  "encoding_rs",
  "encoding_rs_io",
