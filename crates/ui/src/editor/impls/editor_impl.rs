@@ -22,6 +22,7 @@ impl Editor {
             remote_cursors: std::collections::HashMap::new(),
             playback_position: 0.0,
             playback_key_colors: [0u8; 1024], // 256 keys × 4 bytes
+            playback_key_colors_enabled: false,
             loop_range: Some(grid::LoopRange::new()),
             notes_changed: false,
             velocity_panel: VelocityPanel::new(),
@@ -317,14 +318,21 @@ impl Editor {
     /// 关键优化：不清空 keyboard_cache！
     /// 洋葱皮颜色通过独立的 overlay 层绘制，不触发 keyboard geometry 重建。
     ///
-    /// 播放停止时（`playback_position == 0.0`），清空颜色缓存。
+    /// 播放停止时（`playback_position == 0.0`），清空颜色缓存和空间索引。
+    /// 当 `playback_key_colors_enabled == false` 时直接返回，零额外开销。
     pub fn update_playback_key_colors(&mut self) {
         puffin::profile_function!();
+        if !self.playback_key_colors_enabled {
+            // 功能关闭：直接返回，不构建索引、不消耗内存
+            return;
+        }
+
         if (self.playback_position - 0.0).abs() < f32::EPSILON {
-            // 播放停止：检查是否需要清空
+            // 播放停止：清空颜色并释放空间索引内存
             if self.playback_key_colors != [0u8; 1024] {
                 self.playback_key_colors = [0u8; 1024];
             }
+            self.spatial.track_note_indices.borrow_mut().clear();
             return;
         }
 
@@ -336,21 +344,25 @@ impl Editor {
         for (&track_idx, notes) in track_notes {
             let color = onion_track_color(track_idx);
 
-            // ★ 核心修复：懒构建 track_note_indices 空间索引 ★
-            // 之前 `track_note_indices` 只有删除操作（switch_to_track/mark_notes_changed/load_notes）
-            // 没有任何插入构建，导致始终走回退线性扫描——Black MIDI 500K+ 音符逐帧全量扫描 = 帧时间 178ms
-            // 现改为：索引不存在时自动从 track_notes 构建并缓存，后续帧直接 O(log n + k) 查询
+            // ★ 懒构建 track_note_indices 空间索引 ★
+            // 索引不存在时自动从 track_notes 构建并缓存，后续帧直接 O(log n + k) 查询
+            // 使用 from_note_refs 避免从 im::Vector 克隆所有 Note 到 Vec<Note>
             {
                 let mut indices = self.spatial.track_note_indices.borrow_mut();
                 if !indices.contains_key(&track_idx) && !notes.is_empty() {
-                    // ★ 必须使用 from_notes（非 from_raw_notes）以保证空间索引中
-                    //    NoteRef.index 正确指向音符在原始数组中的位置。
-                    //    from_raw_notes 将所有 index 设为 0，导致查询结果全部指向第 1 个音符，
-                    //    键盘颜色"卡"在固定琴键上不动。
-                    let notes_vec: Vec<Note> = notes.iter().cloned().collect();
+                    let note_refs: Vec<lumino_core::NoteRef> = notes
+                        .iter()
+                        .enumerate()
+                        .map(|(i, n)| lumino_core::NoteRef {
+                            tick: n.tick,
+                            key: n.key,
+                            length: n.length,
+                            index: i,
+                        })
+                        .collect();
                     indices.insert(
                         track_idx,
-                        crate::editor::spatial_index::NoteSpatialIndex::from_notes(&notes_vec),
+                        crate::editor::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs),
                     );
                 }
             }

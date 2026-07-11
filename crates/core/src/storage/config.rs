@@ -201,6 +201,9 @@ pub struct UiConfig {
     /// 高精度洋葱皮贴图：GPU 显存上限 MB（128-4096）
     #[serde(default = "default_hires_gpu_mem_limit")]
     pub hires_gpu_mem_limit_mb: u32,
+    /// 播放时键盘颜色指示（默认关闭以节省内存和性能）
+    #[serde(default)]
+    pub playback_key_colors_enabled: bool,
 }
 
 fn default_true() -> bool {
@@ -272,6 +275,7 @@ impl Default for UiConfig {
             hires_tile_width_px: default_hires_tile_width(),
             hires_cooldown_secs: default_hires_cooldown(),
             hires_gpu_mem_limit_mb: default_hires_gpu_mem_limit(),
+            playback_key_colors_enabled: false,
         }
     }
 }

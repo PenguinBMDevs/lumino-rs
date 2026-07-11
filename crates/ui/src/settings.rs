@@ -60,6 +60,8 @@ pub enum Event {
     HiresTileWidthChanged(String),
     HiresCooldownChanged(String),
     HiresGpuMemLimitChanged(String),
+    // 播放键盘颜色指示
+    PlaybackKeyColorsEnabledChanged(bool),
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +105,8 @@ pub struct SettingsPanel {
     pub hires_tile_width_px: u32,
     pub hires_cooldown_secs: u64,
     pub hires_gpu_mem_limit_mb: u32,
+    // 播放键盘颜色指示
+    pub playback_key_colors_enabled: bool,
 }
 
 impl SettingsPanel {
@@ -137,6 +141,7 @@ impl SettingsPanel {
             hires_tile_width_px: ui_config.hires_tile_width_px,
             hires_cooldown_secs: ui_config.hires_cooldown_secs,
             hires_gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
+            playback_key_colors_enabled: ui_config.playback_key_colors_enabled,
         }
     }
 
@@ -268,6 +273,9 @@ impl SettingsPanel {
                 if let Ok(v) = s.parse::<u32>() {
                     self.hires_gpu_mem_limit_mb = v.clamp(128, 4096);
                 }
+            }
+            Event::PlaybackKeyColorsEnabledChanged(v) => {
+                self.playback_key_colors_enabled = v;
             }
         }
     }

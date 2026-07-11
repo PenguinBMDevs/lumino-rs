@@ -320,6 +320,17 @@ impl Root {
             // XSynth 参数变更需要重新初始化
         }
 
+        // 同步播放键盘颜色指示开关
+        if old_settings.playback_key_colors_enabled != new_settings.playback_key_colors_enabled {
+            tracing::info!(
+                "同步播放键盘颜色: {} -> {}",
+                old_settings.playback_key_colors_enabled,
+                new_settings.playback_key_colors_enabled
+            );
+            self.editor
+                .set_playback_key_colors_enabled(new_settings.playback_key_colors_enabled);
+        }
+
         // 同步 MIDI 输入设备选择
         if old_settings.selected_midi_device != new_settings.selected_midi_device {
             tracing::info!(

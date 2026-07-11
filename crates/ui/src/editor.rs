@@ -108,6 +108,9 @@ pub struct Editor {
     /// 索引 = key (0-255)，值 = [R, G, B, A]，全零表示无颜色
     pub(crate) playback_key_colors: [u8; 1024],
 
+    /// 播放时键盘颜色指示是否启用（默认关闭，节省内存和CPU）
+    pub(crate) playback_key_colors_enabled: bool,
+
     /// 循环区域状态
     pub(crate) loop_range: Option<grid::LoopRange>,
 

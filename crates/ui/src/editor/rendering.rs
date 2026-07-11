@@ -86,11 +86,21 @@ impl Editor {
             self.compute_visible_range(overscan_factor);
 
         // 重建空间索引（仅当数据变化时）
+        // 优化：使用 from_note_refs 直接从 im::Vector 构建，避免克隆 Note 到 Vec<Note>
         if self.spatial.note_index_dirty.get() {
-            let notes_vec: Vec<_> = self.editor_state.data.notes.iter().cloned().collect();
-            *self.spatial.note_index.borrow_mut() = Some(
-                crate::editor::spatial_index::NoteSpatialIndex::from_notes(&notes_vec),
-            );
+            let notes = &self.editor_state.data.notes;
+            let note_refs: Vec<lumino_core::NoteRef> = notes
+                .iter()
+                .enumerate()
+                .map(|(i, n)| lumino_core::NoteRef {
+                    tick: n.tick,
+                    key: n.key,
+                    length: n.length,
+                    index: i,
+                })
+                .collect();
+            *self.spatial.note_index.borrow_mut() =
+                Some(crate::editor::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs));
             self.spatial.note_index_dirty.set(false);
             tracing::debug!(
                 "Editor: rebuild spatial index for {} notes",
@@ -203,11 +213,21 @@ impl Editor {
         let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1); // 多取 1 个作为缓冲
 
         // 重建空间索引（仅当数据变化时）
+        // 优化：使用 from_note_refs 直接从 im::Vector 构建，避免克隆 Note 到 Vec<Note>
         if self.spatial.note_index_dirty.get() {
-            let notes_vec: Vec<_> = self.editor_state.data.notes.iter().cloned().collect();
-            *self.spatial.note_index.borrow_mut() = Some(
-                crate::editor::spatial_index::NoteSpatialIndex::from_notes(&notes_vec),
-            );
+            let notes = &self.editor_state.data.notes;
+            let note_refs: Vec<lumino_core::NoteRef> = notes
+                .iter()
+                .enumerate()
+                .map(|(i, n)| lumino_core::NoteRef {
+                    tick: n.tick,
+                    key: n.key,
+                    length: n.length,
+                    index: i,
+                })
+                .collect();
+            *self.spatial.note_index.borrow_mut() =
+                Some(crate::editor::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs));
             self.spatial.note_index_dirty.set(false);
             tracing::debug!(
                 "Editor: rebuild spatial index for {} notes",

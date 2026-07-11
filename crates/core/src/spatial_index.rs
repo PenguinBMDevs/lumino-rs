@@ -51,10 +51,6 @@ impl NoteSpatialIndex {
     /// 从音符集合构建空间索引
     pub fn from_notes(notes: &[Note]) -> Self {
         puffin::profile_function!();
-        if notes.is_empty() {
-            return Self::new();
-        }
-
         let mut note_refs: Vec<NoteRef> = notes
             .iter()
             .enumerate()
@@ -72,6 +68,29 @@ impl NoteSpatialIndex {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
+        Self::from_sorted_note_refs(note_refs)
+    }
+
+    /// 从 `NoteRef` 切片构建空间索引（自动排序）
+    pub fn from_note_refs(note_refs: &[NoteRef]) -> Self {
+        puffin::profile_function!();
+        if note_refs.is_empty() {
+            return Self::new();
+        }
+        let mut sorted = note_refs.to_vec();
+        sorted.sort_by(|a, b| {
+            a.tick
+                .partial_cmp(&b.tick)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        Self::from_sorted_note_refs(sorted)
+    }
+
+    /// 从已排序的 `Vec<NoteRef>` 构建空间索引（内部方法，避免重复排序）
+    fn from_sorted_note_refs(note_refs: Vec<NoteRef>) -> Self {
+        if note_refs.is_empty() {
+            return Self::new();
+        }
         let mut nodes = Vec::new();
         let root = Self::build_node(note_refs, &mut nodes);
         Self {
@@ -103,12 +122,7 @@ impl NoteSpatialIndex {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        let mut nodes = Vec::new();
-        let root = Self::build_node(note_refs, &mut nodes);
-        Self {
-            nodes,
-            root: Some(root),
-        }
+        Self::from_sorted_note_refs(note_refs)
     }
 
     fn build_node(mut note_refs: Vec<NoteRef>, nodes: &mut Vec<Node>) -> usize {
