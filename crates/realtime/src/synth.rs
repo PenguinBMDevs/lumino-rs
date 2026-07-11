@@ -113,7 +113,7 @@ impl RealtimeSynth {
             },
             audio_params: stream_params,
             parallelism: ParallelismOptions {
-                channel: ThreadCount::None,
+                channel: config.multithreading,
                 key: ThreadCount::None,
             },
         };
@@ -143,7 +143,14 @@ impl RealtimeSynth {
                     let mut buf = vec_return_rx
                         .try_recv()
                         .unwrap_or_else(|_| Vec::with_capacity(render_len));
-                    buf.resize(render_len, 0.0f32);
+                    // 跳过零初始化 — read_samples_unchecked 保证全覆盖
+                    if buf.capacity() < render_len {
+                        buf.reserve(render_len - buf.capacity());
+                    }
+                    // SAFETY: read_samples_unchecked 随后会填充 render_len 个样本
+                    unsafe {
+                        buf.set_len(render_len);
+                    }
 
                     // 渲染一个窗口
                     channel_group.read_samples_unchecked(&mut buf);
