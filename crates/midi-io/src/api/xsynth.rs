@@ -223,116 +223,69 @@ struct XSynthOutputConn {
     sender: crossbeam_channel::Sender<SynthEvent>,
 }
 
+impl XSynthOutputConn {
+    /// 非阻塞发送事件 — 渲染线程过载时丢弃事件，永不阻塞调用线程。
+    fn try_send_event(&self, event: SynthEvent) {
+        if self.sender.try_send(event).is_err() {
+            tracing::warn!("XSynthOutputConn: 事件通道已满，丢弃事件（渲染线程过载）");
+        }
+    }
+}
+
 impl OutputConnection for XSynthOutputConn {
     fn note_on(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
         let channel = (ch & MIDI_CHANNEL_MASK) as u32;
 
-        tracing::debug!(
-            "XSynthOutputConn::note_on: raw_ch={}, channel={}, key={}, vel={}",
-            ch,
-            channel,
-            key,
-            vel
-        );
-
         let velocity = if vel == 0 { 1 } else { vel };
-
-        self.sender
-            .send(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
-                    key: key & MIDI_VALUE_MASK,
-                    vel: velocity & MIDI_VALUE_MASK,
-                }),
-            ))
-            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
-
-        tracing::debug!("XSynthOutputConn::note_on: 事件已发送到通道 {}", channel);
+        self.try_send_event(SynthEvent::Channel(
+            channel,
+            ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
+                key: key & MIDI_VALUE_MASK,
+                vel: velocity & MIDI_VALUE_MASK,
+            }),
+        ));
         Ok(())
     }
 
     fn note_off(&mut self, ch: u8, key: u8, _vel: u8) -> Result<(), Error> {
         let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-
-        tracing::debug!(
-            "XSynthOutputConn::note_off: raw_ch={}, channel={}, key={}",
-            ch,
+        self.try_send_event(SynthEvent::Channel(
             channel,
-            key
-        );
-
-        self.sender
-            .send(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
-                    key: key & MIDI_VALUE_MASK,
-                }),
-            ))
-            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
-
-        tracing::debug!("XSynthOutputConn::note_off: 事件已发送到通道 {}", channel);
+            ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
+                key: key & MIDI_VALUE_MASK,
+            }),
+        ));
         Ok(())
     }
 
     fn control_change(&mut self, ch: u8, controller: u8, value: u8) -> Result<(), Error> {
         let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-
-        tracing::debug!(
-            "XSynthOutputConn::control_change: channel={}, controller={}, value={}",
+        self.try_send_event(SynthEvent::Channel(
             channel,
-            controller,
-            value
-        );
-
-        self.sender
-            .send(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
-                    controller, value,
-                ))),
-            ))
-            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
-
+            ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
+                controller, value,
+            ))),
+        ));
         Ok(())
     }
 
     fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error> {
         let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-
-        tracing::debug!(
-            "XSynthOutputConn::program_change: channel={}, program={}",
+        self.try_send_event(SynthEvent::Channel(
             channel,
-            program
-        );
-
-        self.sender
-            .send(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program)),
-            ))
-            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
-
+            ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program)),
+        ));
         Ok(())
     }
 
     fn pitch_bend(&mut self, ch: u8, value: f32) -> Result<(), Error> {
         let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-
-        tracing::debug!(
-            "XSynthOutputConn::pitch_bend: channel={}, value={}",
+        self.try_send_event(SynthEvent::Channel(
             channel,
-            value
-        );
-
-        self.sender
-            .send(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
-                    value,
-                ))),
-            ))
-            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
-
+            ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
+                value,
+            ))),
+        ));
         Ok(())
     }
 
@@ -343,56 +296,39 @@ impl OutputConnection for XSynthOutputConn {
         let b2 = data[2];
 
         match status {
-            0x80 => self
-                .sender
-                .send(SynthEvent::Channel(
-                    channel,
-                    ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
-                        key: b1 & MIDI_VALUE_MASK,
-                    }),
-                ))
-                .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?,
-            0x90 => self
-                .sender
-                .send(SynthEvent::Channel(
-                    channel,
-                    ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
-                        key: b1 & MIDI_VALUE_MASK,
-                        vel: b2 & MIDI_VALUE_MASK,
-                    }),
-                ))
-                .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?,
-            0xB0 => self
-                .sender
-                .send(SynthEvent::Channel(
-                    channel,
-                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(b1, b2))),
-                ))
-                .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?,
-            0xC0 => self
-                .sender
-                .send(SynthEvent::Channel(
-                    channel,
-                    ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(b1)),
-                ))
-                .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?,
-            0xD0 => self
-                .sender
-                .send(SynthEvent::Channel(
-                    channel,
-                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(0, b1))),
-                ))
-                .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?,
+            0x80 => self.try_send_event(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
+                    key: b1 & MIDI_VALUE_MASK,
+                }),
+            )),
+            0x90 => self.try_send_event(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
+                    key: b1 & MIDI_VALUE_MASK,
+                    vel: b2 & MIDI_VALUE_MASK,
+                }),
+            )),
+            0xB0 => self.try_send_event(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(b1, b2))),
+            )),
+            0xC0 => self.try_send_event(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(b1)),
+            )),
+            0xD0 => self.try_send_event(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(0, b1))),
+            )),
             0xE0 => {
                 let bend = ((b1 as u16) | ((b2 as u16) << 7)) as f32;
-                self.sender
-                    .send(SynthEvent::Channel(
-                        channel,
-                        ChannelEvent::Audio(ChannelAudioEvent::Control(
-                            ControlEvent::PitchBendValue(bend),
-                        )),
-                    ))
-                    .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?
+                self.try_send_event(SynthEvent::Channel(
+                    channel,
+                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
+                        bend,
+                    ))),
+                ));
             }
             _ => {
                 return Err(Error::SendFailed(format!(
@@ -405,22 +341,16 @@ impl OutputConnection for XSynthOutputConn {
     }
 
     fn all_notes_off(&mut self) -> Result<(), Error> {
-        // 直接使用 xsynth 的 AllNotesOff，比逐通道发 CC 123 高效
-        self.sender
-            .send(SynthEvent::AllChannels(ChannelEvent::Audio(
-                ChannelAudioEvent::AllNotesOff,
-            )))
-            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
+        self.try_send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+            ChannelAudioEvent::AllNotesOff,
+        )));
         Ok(())
     }
 
     fn reset_control(&mut self) -> Result<(), Error> {
-        // 直接使用 xsynth 的 ResetControl，比逐通道发 CC 121 高效
-        self.sender
-            .send(SynthEvent::AllChannels(ChannelEvent::Audio(
-                ChannelAudioEvent::ResetControl,
-            )))
-            .map_err(|e| Error::SendFailed(format!("Failed to send event: {}", e)))?;
+        self.try_send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+            ChannelAudioEvent::ResetControl,
+        )));
         Ok(())
     }
 

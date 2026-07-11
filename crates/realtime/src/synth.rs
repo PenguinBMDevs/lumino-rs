@@ -100,6 +100,7 @@ impl RealtimeSynth {
         // 自然与音频回调同步，无需 spin_sleep。
         let (sample_tx, sample_rx) = bounded::<Vec<f32>>(4);
         let (vec_return_tx, vec_return_rx) = unbounded::<Vec<f32>>();
+        let vec_return_tx_render = vec_return_tx.clone();
 
         let render_window = (sample_rate as f64 * config.render_window_ms / 1000.0) as usize;
         let render_len = render_window * channels as usize;
@@ -129,6 +130,10 @@ impl RealtimeSynth {
         let render_thread = thread::Builder::new()
             .name("lumino-render".into())
             .spawn(move || {
+                // 渲染超时阈值：超过 2 倍窗口时间则跳过渲染帧
+                let render_timeout_ns =
+                    (render_len as u64 * 2_000_000_000) / (channels as u64 * sample_rate as u64);
+
                 while running_render.load(Ordering::Relaxed) {
                     let start = Instant::now();
 
@@ -137,6 +142,23 @@ impl RealtimeSynth {
                     for event in event_receiver.try_iter() {
                         channel_group.send_event(event);
                         event_count += 1;
+                    }
+
+                    // 检查上一帧是否超时 — 如果渲染赶不上，跳过本次渲染只消费事件
+                    let prev_render_ns = perf_render.last_render_ns.load(Ordering::Relaxed);
+                    if prev_render_ns > render_timeout_ns {
+                        tracing::trace!(
+                            "lumino-render: 渲染超时 ({}ns > {}ns)，跳过渲染帧",
+                            prev_render_ns,
+                            render_timeout_ns
+                        );
+                        // 占位统计：更新事件计数，保持渲染线程存活
+                        perf_render
+                            .last_event_count
+                            .store(event_count, Ordering::Relaxed);
+                        // 短暂 yield 避免 busy-loop
+                        std::thread::yield_now();
+                        continue;
                     }
 
                     // 获取或重用 Vec
@@ -156,9 +178,11 @@ impl RealtimeSynth {
                     channel_group.read_samples_unchecked(&mut buf);
                     voice_render.store(channel_group.voice_count(), Ordering::Relaxed);
 
-                    // 发送给音频回调
-                    if sample_tx.send(buf).is_err() {
-                        break; // Stream 已销毁
+                    // 非阻塞发送给音频回调 — 满时丢弃，永不阻塞渲染线程
+                    if let Err(err) = sample_tx.try_send(buf) {
+                        let buf = err.into_inner();
+                        // 音频回调消费太慢，回收 buffer 避免泄漏
+                        let _ = vec_return_tx_render.send(buf);
                     }
 
                     // 性能统计
@@ -187,10 +211,6 @@ impl RealtimeSynth {
                             .average_load
                             .store(ema.to_bits(), Ordering::Relaxed);
                     }
-
-                    // 通过 bounded(4) 通道自然节流：
-                    // 满 4 个 buffer 后 send() 阻塞，直到回调消费。
-                    // sleep / spin_sleep 皆不需要。
                 }
             })
             .expect("failed to spawn render thread");

@@ -43,10 +43,22 @@ fn test_keyboard_colors_binary_search_at_mid_note() {
     editor.update_playback_key_colors();
 
     // 验证：C4 (key=60) 和 G4 (key=67) 应该被着色
-    assert_ne!(editor.playback_key_colors[60 * 4 + 3], 0, "C4 should be colored at tick 240");
-    assert_ne!(editor.playback_key_colors[67 * 4 + 3], 0, "G4 should be colored at tick 240");
+    assert_ne!(
+        editor.playback_key_colors[60 * 4 + 3],
+        0,
+        "C4 should be colored at tick 240"
+    );
+    assert_ne!(
+        editor.playback_key_colors[67 * 4 + 3],
+        0,
+        "G4 should be colored at tick 240"
+    );
     // E4 (key=64) 从 tick 480 开始，在 tick 240 不应该被着色
-    assert_eq!(editor.playback_key_colors[64 * 4 + 3], 0, "E4 should NOT be colored at tick 240");
+    assert_eq!(
+        editor.playback_key_colors[64 * 4 + 3],
+        0,
+        "E4 should NOT be colored at tick 240"
+    );
 }
 
 #[test]
@@ -63,9 +75,21 @@ fn test_keyboard_colors_at_note_boundary() {
     editor.playback_position = 480.0;
     editor.update_playback_key_colors();
 
-    assert_eq!(editor.playback_key_colors[60 * 4 + 3], 0, "C4 should have ended at tick 480");
-    assert_ne!(editor.playback_key_colors[64 * 4 + 3], 0, "E4 should be active at tick 480");
-    assert_ne!(editor.playback_key_colors[67 * 4 + 3], 0, "G4 should still be active at tick 480");
+    assert_eq!(
+        editor.playback_key_colors[60 * 4 + 3],
+        0,
+        "C4 should have ended at tick 480"
+    );
+    assert_ne!(
+        editor.playback_key_colors[64 * 4 + 3],
+        0,
+        "E4 should be active at tick 480"
+    );
+    assert_ne!(
+        editor.playback_key_colors[67 * 4 + 3],
+        0,
+        "G4 should still be active at tick 480"
+    );
 }
 
 #[test]
