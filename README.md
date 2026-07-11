@@ -7,7 +7,7 @@
 
 - 🎹 **专业 MIDI 编辑**：支持多轨编辑、音符绘制、力度编辑
 - ⚡ **高性能渲染**：使用 wgpu 进行 GPU 加速渲染
-- 🖥️ **原生体验**：基于 winit + iced，各平台原生外观
+- 🖥️ **简约外观**：基于 winit + iced，提供现代化UI体验
 - 🔌 **多后端 MIDI I/O**：同时支持KDMAPI，winmm和跨平台xsynth后端，提供强劲性能
 - ⚙️ **配置持久化**：窗口状态、主题设置自动保存
 
@@ -19,7 +19,7 @@
 - 各平台构建工具：
   - **Windows**: Visual Studio Build Tools（推荐） 或 MSVC
   - **macOS**: Xcode Command Line Tools
-  - **Linux**: GCC/Clang, pkg-config
+  - **Linux**: GCC/Clang, pkg-config （建议直接运行构建脚本）
 
 ### 编译
 
@@ -82,4 +82,4 @@ RUST_LOG=warn cargo run
 - [winit](https://github.com/rust-windowing/winit) - 窗口事件抽象
 - [wgpu](https://github.com/gfx-rs/wgpu) - 跨平台 GPU 抽象
 - [iced](https://github.com/iced-rs/iced) - 数据驱动的 UI 框架
-- [midir](https://github.com/Boddln/midir) - Rust MIDI I/O 库
+- [midir](https://github.com/Boddlnagg/midir) - Rust MIDI I/O 库
