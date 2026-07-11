@@ -193,15 +193,20 @@ impl RealtimeSynth {
                     }
 
                     // 闲置检测：没有事件且样本通道已满（音频回调消费太慢或已暂停）
-                    // 用 recv_timeout 替代 sleep：事件到达时立即唤醒，降低首音符延迟
+                    // 用 recv_timeout 替代 sleep：事件到达时立即唤醒，降低首音符延迟。
+                    // 注意：收到的事件必须立即处理，不能让 recv_timeout 丢弃它，
+                    // 否则高负载下会频繁丢失 NoteOn，导致播放无声或音符缺失。
                     if event_count == 0 && sample_tx.len() >= 4 {
                         perf_render.last_render_ns.store(0, Ordering::Relaxed);
                         perf_render
                             .last_event_count
                             .store(event_count, Ordering::Relaxed);
-                        // 等待事件到达或超时（取较短者），避免空转
-                        let _ = event_receiver
-                            .recv_timeout(std::time::Duration::from_millis(render_window_ms));
+                        // 等待事件到达或超时；收到的事件立即处理，避免丢失
+                        if let Ok(event) = event_receiver
+                            .recv_timeout(std::time::Duration::from_millis(render_window_ms))
+                        {
+                            channel_group.send_event(event);
+                        }
                         continue;
                     }
 
