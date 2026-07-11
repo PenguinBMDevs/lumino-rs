@@ -74,6 +74,12 @@ impl RealtimeSynth {
         let stream_config = device
             .default_output_config()
             .expect("failed to query default audio output config");
+        tracing::info!(
+            "RealtimeSynth: 打开音频设备 (device={:?}, sample_rate={}Hz, channels={})",
+            device.name().unwrap_or_default(),
+            stream_config.sample_rate().0,
+            stream_config.channels(),
+        );
         RealtimeSynth::open(config, &device, stream_config)
     }
 
@@ -98,8 +104,9 @@ impl RealtimeSynth {
         let (event_sender, event_receiver) = unbounded::<SynthEvent>();
 
         // ── 音频输出通道 ───────────────────────────────────────────
-        // Bounded(4): 最多缓存约 160ms 数据（20ms × 4）。
-        // 满时 try_send 失败，渲染线程跳过帧保护（不阻塞）。
+        // Bounded(4): 最多缓存约 80ms 数据（20ms × 4）。
+        // 改用阻塞 send() 而非 try_send()：当通道满时渲染线程阻塞等待音频回调消费，
+        // 确保永不丢弃帧。这是自然的 pacing 机制——渲染线程不会比回调更快。
         let (sample_tx, sample_rx) = bounded::<Vec<f32>>(4);
         let (vec_return_tx, vec_return_rx) = unbounded::<Vec<f32>>();
         let vec_return_tx_render = vec_return_tx.clone();
@@ -136,6 +143,9 @@ impl RealtimeSynth {
                 let render_timeout_ns =
                     (render_len as u64 * 2_000_000_000) / (channels as u64 * sample_rate as u64);
 
+                // 渲染窗口时间（毫秒），用于闲置时睡眠等待
+                let render_window_ms = render_timeout_ns / 2_000_000;
+
                 while running_render.load(Ordering::Relaxed) {
                     let start = Instant::now();
 
@@ -145,21 +155,36 @@ impl RealtimeSynth {
                         channel_group.send_event(event);
                         event_count += 1;
                     }
-
                     // 检查上一帧是否超时 — 如果渲染赶不上，跳过本次渲染只消费事件
                     let prev_render_ns = perf_render.last_render_ns.load(Ordering::Relaxed);
                     if prev_render_ns > render_timeout_ns {
-                        tracing::trace!(
-                            "lumino-render: 渲染超时 ({}ns > {}ns)，跳过渲染帧",
+                        tracing::warn!(
+                            "lumino-render: 渲染超时 ({}ns > {}ns)，跳过渲染帧，事件数={}",
                             prev_render_ns,
-                            render_timeout_ns
+                            render_timeout_ns,
+                            event_count,
                         );
+                        // 重置超时标记，下一次迭代重新尝试渲染
+                        // 如果不重置，会导致永久跳过渲染帧，音频回调得不到数据而输出静音
+                        perf_render.last_render_ns.store(0, Ordering::Relaxed);
                         // 占位统计：更新事件计数，保持渲染线程存活
                         perf_render
                             .last_event_count
                             .store(event_count, Ordering::Relaxed);
                         // 短暂 yield 避免 busy-loop
                         std::thread::yield_now();
+                        continue;
+                    }
+
+                    // 闲置检测：没有事件且样本通道已满（音频回调消费太慢或已暂停）
+                    // 跳过渲染并睡眠等待，让出 CPU 避免浪费电
+                    if event_count == 0 && sample_tx.len() >= 4 {
+                        perf_render.last_render_ns.store(0, Ordering::Relaxed);
+                        perf_render
+                            .last_event_count
+                            .store(event_count, Ordering::Relaxed);
+                        // 睡眠到下一个渲染窗口，让出 CPU 给其他线程
+                        std::thread::sleep(std::time::Duration::from_millis(render_window_ms));
                         continue;
                     }
 
@@ -178,13 +203,15 @@ impl RealtimeSynth {
 
                     // 渲染一个窗口
                     channel_group.read_samples_unchecked(&mut buf);
-                    voice_render.store(channel_group.voice_count(), Ordering::Relaxed);
+                    let vc = channel_group.voice_count();
+                    voice_render.store(vc, Ordering::Relaxed);
 
-                    // 非阻塞发送给音频回调 — 满时丢弃，永不阻塞渲染线程
-                    if let Err(err) = sample_tx.try_send(buf) {
+                    // 阻塞发送给音频回调 — 通道满时渲染线程等待，永不丢弃帧
+                    if let Err(err) = sample_tx.send(buf) {
+                        // 音频回调已断开连接，回收到返回池
                         let buf = err.into_inner();
-                        // 音频回调消费太慢，回收 buffer 避免泄漏
                         let _ = vec_return_tx_render.send(buf);
+                        break;
                     }
 
                     // 性能统计

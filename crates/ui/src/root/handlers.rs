@@ -205,6 +205,12 @@ impl Root {
                     if let Ok(val) = value.parse::<u8>() {
                         self.visual.velocity_filter_threshold = val;
                         tracing::debug!("Root: 力度过滤阈值同步为 {}", val);
+                        // 立即传播到播放引擎，让力度过滤实时生效。
+                        // 不能只依赖 apply_settings 中的 diff 检测——因为
+                        // self.settings.update(event) 已在 match 前执行，
+                        // 导致 apply_settings 的 old_settings == new_settings，
+                        // diff 检测永远为 false，update_playback_notes() 不会被调用。
+                        self.update_playback_notes();
                     }
                 }
                 crate::settings::Event::AutoScrollFixedPositionChanged(value) => {
