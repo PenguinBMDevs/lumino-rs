@@ -5,6 +5,7 @@
 //! 的 BufferedRenderer 包装层，消除锁竞争与线程间拷贝，显著降低延迟。
 
 mod config;
+pub mod engine;
 mod events;
 mod stats;
 mod synth;

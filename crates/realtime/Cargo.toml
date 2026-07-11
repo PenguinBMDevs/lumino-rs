@@ -9,6 +9,10 @@ edition.workspace = true
 [lints]
 workspace = true
 
+[[bench]]
+name = "event_throughput"
+harness = false
+
 [dependencies]
 xsynth-core = "0.3"
 xsynth-soundfonts = "0.3"
