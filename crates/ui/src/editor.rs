@@ -30,6 +30,7 @@ mod track;
 mod tests {
     mod drawing;
     mod interaction;
+    mod keyboard_colors_test;
     mod scroll;
     mod state;
 }
@@ -81,9 +82,6 @@ pub struct SpatialIndexState {
     pub(crate) note_index: RefCell<Option<spatial_index::NoteSpatialIndex>>,
     pub(crate) note_index_dirty: Cell<bool>,
     pub(crate) query_cache: RefCell<Vec<usize>>,
-    /// 其他音轨的音符空间索引（用于洋葱皮等，懒加载）
-    pub(crate) track_note_indices:
-        RefCell<std::collections::HashMap<usize, spatial_index::NoteSpatialIndex>>,
 }
 
 /// 钢琴卷帘编辑器
@@ -156,6 +154,4 @@ pub struct EditorMemory {
     pub track_notes_entries: usize,
     /// document Arc 指向事件的 Vec 内存
     pub document_events_bytes: usize,
-    /// 空间索引追踪条目数
-    pub track_note_indices_entries: usize,
 }

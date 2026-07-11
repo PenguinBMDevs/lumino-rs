@@ -33,11 +33,6 @@ impl Root {
                 .notes
                 .push_back(Note::from_raw(tick, key as u16, length, velocity, channel));
         }
-        self.editor
-            .spatial
-            .track_note_indices
-            .borrow_mut()
-            .remove(&self.editor.editor_state.data.current_track);
         self.editor.mark_notes_changed();
     }
 
@@ -87,11 +82,6 @@ impl Root {
             .track_notes
             .insert(track_idx, track_notes);
         self.editor.editor_state.data.mark_track_notes_changed();
-        self.editor
-            .spatial
-            .track_note_indices
-            .borrow_mut()
-            .remove(&track_idx);
 
         self.editor.editor_state.data.current_track = track_idx;
         self.editor.mark_notes_changed();

@@ -132,6 +132,9 @@ impl Root {
             root.editor.set_visible_key_count(256);
             root.editor.editor_state.view.key_count = 256;
         }
+        // 同步播放键盘颜色配置（防止重启后配置被默认值覆盖）
+        root.editor
+            .set_playback_key_colors_enabled(ui_config.playback_key_colors_enabled);
         // 初始音轨 0 是指挥轨道 → 速度面板应为 Tempo 模式
         root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Tempo;
         root

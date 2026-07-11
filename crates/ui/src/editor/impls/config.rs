@@ -93,9 +93,7 @@ impl Editor {
     pub fn set_playback_key_colors_enabled(&mut self, enabled: bool) {
         self.playback_key_colors_enabled = enabled;
         if !enabled {
-            // 关闭时清空颜色并释放空间索引
             self.playback_key_colors = [0u8; 1024];
-            self.spatial.track_note_indices.borrow_mut().clear();
         }
     }
 }

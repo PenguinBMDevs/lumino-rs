@@ -11,7 +11,6 @@ impl Default for SpatialIndexState {
             note_index: RefCell::new(None),
             note_index_dirty: Cell::new(false),
             query_cache: RefCell::new(Vec::new()),
-            track_note_indices: RefCell::new(std::collections::HashMap::new()),
         }
     }
 }
@@ -21,9 +20,5 @@ impl Editor {
     pub fn mark_notes_changed(&mut self) {
         self.notes_changed = true;
         self.spatial.note_index_dirty.set(true);
-        self.spatial
-            .track_note_indices
-            .borrow_mut()
-            .remove(&self.editor_state.data.current_track);
     }
 }

@@ -238,8 +238,6 @@ impl Host {
         // 空间索引（惰性重建）
         root.editor.spatial.note_index = std::cell::RefCell::new(None);
         root.editor.spatial.note_index_dirty = std::cell::Cell::new(true);
-        root.editor.spatial.track_note_indices =
-            std::cell::RefCell::new(std::collections::HashMap::new());
         root.editor.spatial.query_cache = std::cell::RefCell::new(Vec::new());
 
         // MIDI 控制事件

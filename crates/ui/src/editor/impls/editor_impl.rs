@@ -64,9 +64,6 @@ impl Editor {
             })
             .unwrap_or(0);
 
-        // track_note_indices
-        let track_note_indices_entries = self.spatial.track_note_indices.borrow().len();
-
         tracing::info!(
             "[MEMORY_DEBUG] document={}, notes_cap={}, notes_len={}, track_notes_entries={}, track_notes_count={}",
             doc_is_some,
@@ -82,7 +79,6 @@ impl Editor {
             track_notes_bytes,
             track_notes_entries,
             document_events_bytes: doc_events_bytes,
-            track_note_indices_entries,
         }
     }
 
@@ -315,78 +311,54 @@ impl Default for Editor {
 impl Editor {
     /// 根据当前播放位置，计算每个 key 上被洋葱皮音符覆盖的颜色
     ///
-    /// 关键优化：不清空 keyboard_cache！
-    /// 洋葱皮颜色通过独立的 overlay 层绘制，不触发 keyboard geometry 重建。
+    /// 直接从 `MidiDocument.track_notes()` 读取，数据已在 MIDI 导入时按 track 分组
+    /// 并按 `start_tick` 升序排列。使用 `partition_point` 二分查找当前 tick 的活动音符，
+    /// 零额外内存开销。
     ///
-    /// 播放停止时（`playback_position == 0.0`），清空颜色缓存和空间索引。
-    /// 当 `playback_key_colors_enabled == false` 时直接返回，零额外开销。
+    /// 播放停止时（`playback_position == 0.0`）清空颜色立即返回。
+    /// 当 `playback_key_colors_enabled == false` 时直接返回。
     pub fn update_playback_key_colors(&mut self) {
         puffin::profile_function!();
         if !self.playback_key_colors_enabled {
-            // 功能关闭：直接返回，不构建索引、不消耗内存
             return;
         }
 
         if (self.playback_position - 0.0).abs() < f32::EPSILON {
-            // 播放停止：清空颜色并释放空间索引内存
             if self.playback_key_colors != [0u8; 1024] {
                 self.playback_key_colors = [0u8; 1024];
             }
-            self.spatial.track_note_indices.borrow_mut().clear();
             return;
         }
 
+        let Some(doc) = self.editor_state.data.document.as_ref() else {
+            return;
+        };
+
         let tick = self.playback_position;
+        let tick_u32 = tick as u32;
         let mut new_colors = [0u8; 1024];
 
-        // 遍历所有音轨
-        let track_notes = &self.editor_state.data.track_notes;
-        for (&track_idx, notes) in track_notes {
-            let color = onion_track_color(track_idx);
-
-            // ★ 懒构建 track_note_indices 空间索引 ★
-            // 索引不存在时自动从 track_notes 构建并缓存，后续帧直接 O(log n + k) 查询
-            // 使用 from_note_refs 避免从 im::Vector 克隆所有 Note 到 Vec<Note>
-            {
-                let mut indices = self.spatial.track_note_indices.borrow_mut();
-                if !indices.contains_key(&track_idx) && !notes.is_empty() {
-                    let note_refs: Vec<lumino_core::NoteRef> = notes
-                        .iter()
-                        .enumerate()
-                        .map(|(i, n)| lumino_core::NoteRef {
-                            tick: n.tick,
-                            key: n.key,
-                            length: n.length,
-                            index: i,
-                        })
-                        .collect();
-                    indices.insert(
-                        track_idx,
-                        crate::editor::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs),
-                    );
-                }
+        // 遍历所有音轨，直接从 MidiDocument 读
+        for track_idx in 0..doc.track_count() {
+            let notes = doc.track_notes(track_idx);
+            if notes.is_empty() {
+                continue;
             }
 
-            // 利用空间索引进行二分查找
-            if let Some(index) = self.spatial.track_note_indices.borrow().get(&track_idx) {
-                let mut result = Vec::with_capacity(16);
-                index.update_query(tick, tick + 1.0, 0, 255, &mut result);
-                for &note_idx in &result {
-                    if let Some(note) = notes.get(note_idx)
-                        && note.tick <= tick
-                        && tick < note.tick + note.length
-                    {
-                        let offset = (note.key as usize) * 4;
-                        new_colors[offset..offset + 4].copy_from_slice(&color);
-                    }
-                }
-            } else {
-                // 回退：线性扫描（仅 notes 为空时触发，此时索引也未构建）
-                for note in notes.iter() {
-                    if note.tick <= tick && tick < note.tick + note.length {
-                        let offset = (note.key as usize) * 4;
-                        new_colors[offset..offset + 4].copy_from_slice(&color);
-                    }
+            let color = onion_track_color(track_idx);
+
+            // 二分查找：找到所有 start_tick <= current_tick 的音符
+            // notes 每轨内按 start_tick 升序排列，partition_point 返回第一个 > tick 的索引
+            let end = notes.partition_point(|n| n.start_tick <= tick_u32);
+            if end == 0 {
+                continue;
+            }
+
+            // 遍历候选音符，过滤出 end_tick > tick 的活动音符
+            for n in &notes[..end] {
+                if n.end_tick() > tick_u32 {
+                    let offset = (n.key as usize) * 4;
+                    new_colors[offset..offset + 4].copy_from_slice(&color);
                 }
             }
         }
