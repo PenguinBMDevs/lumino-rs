@@ -1,10 +1,10 @@
 //! Editor 核心方法
 //!
-//! 包含：构造函数、内存分析、远端光标、音频动作、撤销重做、框选动画
+//! 包含：构造函数、内存分析、远端光标、音频动作、撤销重做、框选动画、播放键色
 
 use crate::editor::note::Note;
 use crate::editor::velocity::VelocityPanel;
-use crate::editor::{Editor, EditorMemory, SpatialIndexState, grid};
+use crate::editor::{Editor, EditorMemory, SpatialIndexState, grid, onion_track_color};
 use crate::message::AudioAction;
 use iced_core::Point;
 use iced_widget::canvas;
@@ -21,6 +21,7 @@ impl Editor {
             spatial: SpatialIndexState::default(),
             remote_cursors: std::collections::HashMap::new(),
             playback_position: 0.0,
+            playback_key_colors: std::collections::HashMap::new(),
             loop_range: Some(grid::LoopRange::new()),
             notes_changed: false,
             velocity_panel: VelocityPanel::new(),
@@ -307,5 +308,55 @@ impl Editor {
 impl Default for Editor {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Editor {
+    /// 根据当前播放位置，计算每个 key 上被洋葱皮音符覆盖的颜色
+    ///
+    /// 遍历所有音轨的 `track_notes`，找出在 `playback_position` 时刻正在发声的音符，
+    /// 将其对应轨道的洋葱皮颜色记录到 `playback_key_colors` 中。
+    /// 同一 key 被多个音轨覆盖时，后轨覆盖前轨（与洋葱皮渲染一致）。
+    ///
+    /// 播放停止时（`playback_position == 0.0`），清空缓存。
+    pub fn update_playback_key_colors(&mut self) {
+        if (self.playback_position - 0.0).abs() < f32::EPSILON {
+            if !self.playback_key_colors.is_empty() {
+                self.playback_key_colors.clear();
+                self.keyboard_cache.clear();
+            }
+            return;
+        }
+
+        let tick = self.playback_position;
+        let mut colors: std::collections::HashMap<u16, [u8; 4]> =
+            std::collections::HashMap::with_capacity(16);
+
+        // 遍历所有音轨的 track_notes
+        let track_notes = &self.editor_state.data.track_notes;
+        for (&track_idx, notes) in track_notes {
+            let color = onion_track_color(track_idx);
+            // 查找在当前 tick 时刻正在发声的音符
+            // im::Vector 不保证排序，线性扫描；典型 MIDI 每轨 100-5000 音符，每帧开销可接受
+            for note in notes.iter() {
+                if note.tick <= tick && tick < note.tick + note.length {
+                    colors.insert(note.key, color);
+                }
+            }
+        }
+
+        // 检查是否发生变化，避免无意义的 keyboard_cache 重建
+        let changed = colors.len() != self.playback_key_colors.len()
+            || colors.iter().any(|(k, v)| {
+                self.playback_key_colors
+                    .get(k)
+                    .map(|c| c != v)
+                    .unwrap_or(true)
+            });
+
+        if changed {
+            self.playback_key_colors = colors;
+            self.keyboard_cache.clear();
+        }
     }
 }

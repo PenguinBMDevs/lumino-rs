@@ -36,6 +36,9 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
     let bg_color = theme.keyboard_background_color();
     frame.fill(&keyboard_bg_path, bg_color);
 
+    // 播放期间的洋葱皮琴键颜色映射（key → RGBA）
+    let key_colors = &editor.playback_key_colors;
+
     // 绘制每个琴键
     for i in 0..view.visible_key_count {
         let keynum = i as isize;
@@ -73,12 +76,26 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
                 base_color
             };
 
+            // 播放期间：如果该 key 有洋葱皮音符正在发声，叠加洋葱皮颜色
+            let final_color = if let Some(&onion_rgba) = key_colors.get(&i) {
+                let onion_color = iced_core::Color::from_rgba8(
+                    onion_rgba[0],
+                    onion_rgba[1],
+                    onion_rgba[2],
+                    onion_rgba[3] as f32 / 255.0,
+                );
+                // 混合：洋葱皮颜色以 60% 不透明度叠加在基础琴键颜色之上
+                blend_colors(key_color, onion_color, 0.6)
+            } else {
+                key_color
+            };
+
             let key_rect = Rectangle::new(
                 Point::new(0.0, screen_y),
                 Size::new(keyboard_width, view.zoom_y),
             );
             let key_path = Path::rectangle(key_rect.position(), key_rect.size());
-            frame.fill(&key_path, key_color);
+            frame.fill(&key_path, final_color);
 
             let border_stroke = Stroke::default()
                 .with_width(1.0)
@@ -104,4 +121,23 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
             frame.fill_text(label);
         }
     }
+}
+
+/// 将两个颜色按指定比例混合（alpha-aware 正面合成）
+///
+/// `overlay_alpha` 控制覆盖层颜色的不透明度（0.0~1.0）。
+/// 结果 = base × (1 - overlay_alpha × overlay.a) + overlay × overlay_alpha × overlay.a
+fn blend_colors(
+    base: iced_core::Color,
+    overlay: iced_core::Color,
+    overlay_alpha: f32,
+) -> iced_core::Color {
+    let oa = overlay.a * overlay_alpha;
+    let inv = 1.0 - oa;
+    iced_core::Color::from_rgba(
+        (base.r * inv + overlay.r * oa).clamp(0.0, 1.0),
+        (base.g * inv + overlay.g * oa).clamp(0.0, 1.0),
+        (base.b * inv + overlay.b * oa).clamp(0.0, 1.0),
+        base.a.max(overlay.a),
+    )
 }

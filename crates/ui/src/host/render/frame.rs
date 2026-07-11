@@ -73,6 +73,8 @@ impl Host {
                 self.root.editor.update_auto_scroll(tick);
                 // 工程走带视图也应用相同的自动滚动配置
                 self.root.update_arrangement_auto_scroll(tick);
+                // 更新播放期间琴键洋葱皮颜色（实时检测音符并着色键盘）
+                self.root.editor.update_playback_key_colors();
                 // 播放时总是请求重绘并标记 UI 脏，确保播放指示线位置更新。
                 // 关键：即使自动滚动不触发（如循环回绕后指示线回到起点），
                 // 也必须重建 iced canvas UI 使指示线在新位置绘制。

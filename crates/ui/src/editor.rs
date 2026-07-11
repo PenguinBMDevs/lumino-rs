@@ -37,12 +37,31 @@ mod tests {
 use iced_core::Point;
 use iced_widget::canvas;
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 
 // 统一从 editor_state 导入（重构迁移）
 pub use editor_state::{EditState, HitType, SelectionHitType, ViewState};
 pub use note::Note;
 
 mod impls;
+
+/// 洋葱皮音轨调色板（按音轨索引循环取色，alpha 固定 255）
+///
+/// 与 `host.rs` 中的 `onion_track_color` 保持一致。
+/// 8 色调色板循环使用，覆盖多轨场景。
+pub fn onion_track_color(track_idx: usize) -> [u8; 4] {
+    const PALETTE: [[u8; 4]; 8] = [
+        [200, 80, 80, 255],
+        [80, 200, 120, 255],
+        [80, 120, 220, 255],
+        [220, 200, 80, 255],
+        [200, 100, 200, 255],
+        [80, 200, 200, 255],
+        [240, 150, 80, 255],
+        [180, 180, 180, 255],
+    ];
+    PALETTE[track_idx % PALETTE.len()]
+}
 
 /// 缓存失效标志位
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,6 +103,10 @@ pub struct Editor {
 
     /// 演奏指示线位置（以 tick 为单位）
     pub(crate) playback_position: f32,
+
+    /// 播放期间琴键洋葱皮颜色（key → RGBA 颜色）
+    /// 仅在播放期间有效，每帧根据 playback_position 重新计算
+    pub(crate) playback_key_colors: HashMap<u16, [u8; 4]>,
 
     /// 循环区域状态
     pub(crate) loop_range: Option<grid::LoopRange>,
