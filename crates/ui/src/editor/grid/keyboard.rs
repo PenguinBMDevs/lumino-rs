@@ -21,6 +21,9 @@ pub fn draw_to_geometry(
 }
 
 /// 绘制钢琴键盘（左侧键位指示器）
+///
+/// 注意：此函数只绘制基础键盘，不包含洋葱皮颜色。
+/// 洋葱皮颜色通过 `draw_onion_overlay` 独立绘制，避免触发 keyboard_cache 重建。
 pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &crate::Theme) {
     let view = &editor.editor_state.view;
     let keyboard_width = view.keyboard_width;
@@ -36,10 +39,7 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
     let bg_color = theme.keyboard_background_color();
     frame.fill(&keyboard_bg_path, bg_color);
 
-    // 播放期间的洋葱皮琴键颜色映射（固定大小数组，直接索引）
-    let key_colors = &editor.playback_key_colors;
-
-    // 绘制每个琴键
+    // 绘制每个琴键（基础颜色，不含洋葱皮）
     for i in 0..view.visible_key_count {
         let keynum = i as isize;
         let world_y = (max_key_index - keynum as f32) * view.zoom_y;
@@ -54,7 +54,6 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
             };
 
             // 256键扩展区域（128-255）的颜色微调
-            // 亮色模式加深，暗色模式变浅
             let key_color = if i >= 128 {
                 let is_light = theme.is_light();
                 if is_light {
@@ -76,36 +75,19 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
                 base_color
             };
 
-            // 播放期间：如果该 key 有洋葱皮音符正在发声，叠加洋葱皮颜色
-            // 使用固定大小数组直接索引，O(1) 复杂度
-            let offset = (i as usize) * 4;
-            let final_color = if key_colors[offset + 3] != 0 {
-                // alpha != 0 表示有颜色
-                let onion_color = iced_core::Color::from_rgba8(
-                    key_colors[offset],
-                    key_colors[offset + 1],
-                    key_colors[offset + 2],
-                    key_colors[offset + 3] as f32 / 255.0,
-                );
-                // 混合：洋葱皮颜色以 60% 不透明度叠加在基础琴键颜色之上
-                blend_colors(key_color, onion_color, 0.6)
-            } else {
-                key_color
-            };
-
             let key_rect = Rectangle::new(
                 Point::new(0.0, screen_y),
                 Size::new(keyboard_width, view.zoom_y),
             );
             let key_path = Path::rectangle(key_rect.position(), key_rect.size());
-            frame.fill(&key_path, final_color);
+            frame.fill(&key_path, key_color);
 
             let border_stroke = Stroke::default()
                 .with_width(1.0)
                 .with_color(theme.border_color());
             frame.stroke(&key_path, border_stroke);
 
-            // 绘制音符名称标签（亮色模式=黑色文字，暗色模式=白色文字）
+            // 绘制音符名称标签
             let label_text = note_name(i as u8);
             let label_color = theme.text_color();
 
@@ -126,21 +108,54 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
     }
 }
 
-/// 将两个颜色按指定比例混合（alpha-aware 正面合成）
+/// 绘制洋葱皮颜色覆盖层（不使用缓存，每帧独立绘制）
 ///
-/// `overlay_alpha` 控制覆盖层颜色的不透明度（0.0~1.0）。
-/// 结果 = base × (1 - overlay_alpha × overlay.a) + overlay × overlay_alpha × overlay.a
-fn blend_colors(
-    base: iced_core::Color,
-    overlay: iced_core::Color,
-    overlay_alpha: f32,
-) -> iced_core::Color {
-    let oa = overlay.a * overlay_alpha;
-    let inv = 1.0 - oa;
-    iced_core::Color::from_rgba(
-        (base.r * inv + overlay.r * oa).clamp(0.0, 1.0),
-        (base.g * inv + overlay.g * oa).clamp(0.0, 1.0),
-        (base.b * inv + overlay.b * oa).clamp(0.0, 1.0),
-        base.a.max(overlay.a),
-    )
+/// 此函数在 keyboard_cache 之上叠加半透明的洋葱皮颜色。
+/// 由于不使用缓存，即使每帧绘制也不会触发 keyboard geometry 重建。
+pub fn draw_onion_overlay(
+    editor: &Editor,
+    renderer: &Renderer,
+    bounds: Rectangle,
+) -> Option<Geometry<Renderer>> {
+    let key_colors = &editor.playback_key_colors;
+
+    // 快速检查：如果没有洋葱皮颜色，直接返回 None
+    if *key_colors == [0u8; 1024] {
+        return None;
+    }
+
+    let mut frame = Frame::new(renderer, bounds.size());
+    let view = &editor.editor_state.view;
+    let keyboard_width = view.keyboard_width;
+    let ruler_height = view.ruler_height;
+    let max_key_index = (view.visible_key_count - 1) as f32;
+
+    for i in 0..view.visible_key_count {
+        let offset = (i as usize) * 4;
+        if key_colors[offset + 3] == 0 {
+            continue; // 无颜色，跳过
+        }
+
+        let keynum = i as isize;
+        let world_y = (max_key_index - keynum as f32) * view.zoom_y;
+        let screen_y = world_y - view.scroll_y + ruler_height;
+
+        if screen_y + view.zoom_y >= ruler_height && screen_y <= bounds.height {
+            let onion_color = iced_core::Color::from_rgba8(
+                key_colors[offset],
+                key_colors[offset + 1],
+                key_colors[offset + 2],
+                key_colors[offset + 3] as f32 / 255.0 * 0.6, // 60% 不透明度
+            );
+
+            let key_rect = Rectangle::new(
+                Point::new(0.0, screen_y),
+                Size::new(keyboard_width, view.zoom_y),
+            );
+            let key_path = Path::rectangle(key_rect.position(), key_rect.size());
+            frame.fill(&key_path, onion_color);
+        }
+    }
+
+    Some(frame.into_geometry())
 }

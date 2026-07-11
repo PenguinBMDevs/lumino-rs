@@ -314,18 +314,16 @@ impl Default for Editor {
 impl Editor {
     /// 根据当前播放位置，计算每个 key 上被洋葱皮音符覆盖的颜色
     ///
-    /// 优化策略：
-    /// 1. 使用固定大小数组 `[u8; 1024]` 替代 HashMap，直接索引 O(1)
-    /// 2. 利用已有的 `track_note_indices` 空间索引进行二分查找，O(log N)
-    /// 3. 增量更新：只更新实际变化的 key，避免无意义的 keyboard_cache 重建
+    /// 关键优化：不清空 keyboard_cache！
+    /// 洋葱皮颜色通过独立的 overlay 层绘制，不触发 keyboard geometry 重建。
     ///
-    /// 播放停止时（`playback_position == 0.0`），清空缓存。
+    /// 播放停止时（`playback_position == 0.0`），清空颜色缓存。
     pub fn update_playback_key_colors(&mut self) {
+        puffin::profile_function!();
         if (self.playback_position - 0.0).abs() < f32::EPSILON {
             // 播放停止：检查是否需要清空
             if self.playback_key_colors != [0u8; 1024] {
                 self.playback_key_colors = [0u8; 1024];
-                self.keyboard_cache.clear();
             }
             return;
         }
@@ -338,23 +336,40 @@ impl Editor {
         for (&track_idx, notes) in track_notes {
             let color = onion_track_color(track_idx);
 
-            // 优化：利用空间索引进行二分查找
-            // 查询在 [tick, tick+1) 范围内的音符（单点查询）
+            // ★ 核心修复：懒构建 track_note_indices 空间索引 ★
+            // 之前 `track_note_indices` 只有删除操作（switch_to_track/mark_notes_changed/load_notes）
+            // 没有任何插入构建，导致始终走回退线性扫描——Black MIDI 500K+ 音符逐帧全量扫描 = 帧时间 178ms
+            // 现改为：索引不存在时自动从 track_notes 构建并缓存，后续帧直接 O(log n + k) 查询
+            {
+                let mut indices = self.spatial.track_note_indices.borrow_mut();
+                if !indices.contains_key(&track_idx) && !notes.is_empty() {
+                    // ★ 必须使用 from_notes（非 from_raw_notes）以保证空间索引中
+                    //    NoteRef.index 正确指向音符在原始数组中的位置。
+                    //    from_raw_notes 将所有 index 设为 0，导致查询结果全部指向第 1 个音符，
+                    //    键盘颜色"卡"在固定琴键上不动。
+                    let notes_vec: Vec<Note> = notes.iter().cloned().collect();
+                    indices.insert(
+                        track_idx,
+                        crate::editor::spatial_index::NoteSpatialIndex::from_notes(&notes_vec),
+                    );
+                }
+            }
+
+            // 利用空间索引进行二分查找
             if let Some(index) = self.spatial.track_note_indices.borrow().get(&track_idx) {
-                // 使用空间索引查询
                 let mut result = Vec::with_capacity(16);
                 index.update_query(tick, tick + 1.0, 0, 255, &mut result);
                 for &note_idx in &result {
-                    if let Some(note) = notes.get(note_idx) {
-                        // 验证音符确实在当前 tick 时刻发声
-                        if note.tick <= tick && tick < note.tick + note.length {
-                            let offset = (note.key as usize) * 4;
-                            new_colors[offset..offset + 4].copy_from_slice(&color);
-                        }
+                    if let Some(note) = notes.get(note_idx)
+                        && note.tick <= tick
+                        && tick < note.tick + note.length
+                    {
+                        let offset = (note.key as usize) * 4;
+                        new_colors[offset..offset + 4].copy_from_slice(&color);
                     }
                 }
             } else {
-                // 回退：如果没有空间索引，使用线性扫描（但只扫描当前track）
+                // 回退：线性扫描（仅 notes 为空时触发，此时索引也未构建）
                 for note in notes.iter() {
                     if note.tick <= tick && tick < note.tick + note.length {
                         let offset = (note.key as usize) * 4;
@@ -364,10 +379,8 @@ impl Editor {
             }
         }
 
-        // 增量比较：只在颜色实际变化时才重建 keyboard_cache
-        if new_colors != self.playback_key_colors {
-            self.playback_key_colors = new_colors;
-            self.keyboard_cache.clear();
-        }
+        // 直接更新颜色，不清空 keyboard_cache！
+        // overlay 层会独立绘制这些颜色
+        self.playback_key_colors = new_colors;
     }
 }

@@ -6,6 +6,8 @@ use crate::window;
 impl Host {
     /// 帧准备：处理事件和计算 FPS，收集性能数据
     pub(super) fn process_frame_preparation(&mut self) {
+        puffin::profile_function!();
+
         // 处理待处理的事件队列（合并后的）
         // 这样可以确保同一帧内的多个事件被合并处理，减少 UI 重建次数
         self.process_pending_events();
@@ -65,6 +67,7 @@ impl Host {
 
     /// 更新播放状态
     pub(super) fn update_playback_state(&mut self) {
+        puffin::profile_function!();
         if let Some(tick) = self.root.update_playback() {
             let old_pos = self.root.editor.playback_position;
             self.root.editor.playback_position = tick;

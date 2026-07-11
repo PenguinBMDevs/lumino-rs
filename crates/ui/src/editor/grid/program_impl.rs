@@ -222,6 +222,11 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             });
         geometries.push(keyboard_geom);
 
+        // 洋葱皮颜色覆盖层（不使用缓存，每帧独立绘制）
+        if let Some(onion_geom) = keyboard::draw_onion_overlay(self.editor, renderer, bounds) {
+            geometries.push(onion_geom);
+        }
+
         let ruler_geom = self
             .editor
             .ruler_cache
