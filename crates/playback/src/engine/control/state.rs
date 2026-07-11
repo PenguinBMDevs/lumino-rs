@@ -141,11 +141,19 @@ impl PlaybackEngine {
     }
 
     /// 处理额外 MIDI 控制事件
-    fn process_midi_events(&self, current_tick: f32, messages: &mut Vec<MidiMessage>) {
-        for ev in &self.midi_events {
-            if ev.tick >= self.last_processed_tick && ev.tick <= current_tick {
+    ///
+    /// 使用游标推进，避免每次 update 线性扫描全部事件。
+    /// 假设 midi_events 已按 tick 排序。
+    fn process_midi_events(&mut self, current_tick: f32, messages: &mut Vec<MidiMessage>) {
+        while self.midi_event_cursor < self.midi_events.len() {
+            let ev = &self.midi_events[self.midi_event_cursor];
+            if ev.tick > current_tick {
+                break;
+            }
+            if ev.tick >= self.last_processed_tick {
                 Self::push_midi_message_from_event(&ev.message, messages);
             }
+            self.midi_event_cursor += 1;
         }
     }
 
@@ -169,6 +177,8 @@ impl PlaybackEngine {
                 }
                 let ctrl_events = &doc.control_events;
                 self.control_event_cursor = ctrl_events.partition_point(|ev| ev.tick < seek_tick_u);
+                self.midi_event_cursor =
+                    self.midi_events.partition_point(|ev| ev.tick < loop_start);
             }
             self.rebuild_queue_from_current_track(Some(loop_start));
             self.last_processed_tick = loop_start;

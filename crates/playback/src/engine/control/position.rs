@@ -32,6 +32,10 @@ impl PlaybackEngine {
         }
         // 重置控制事件游标
         self.control_event_cursor = doc.control_events.partition_point(|e| e.tick < seek_tick);
+        // 重置额外 MIDI 事件游标
+        self.midi_event_cursor = self
+            .midi_events
+            .partition_point(|e| e.tick < seek_tick as f32);
         self.last_processed_tick = tick;
     }
 

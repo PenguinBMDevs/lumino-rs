@@ -31,6 +31,7 @@ impl PlaybackEngine {
             state.pending_offs.clear();
         }
         self.control_event_cursor = 0;
+        self.midi_event_cursor = 0;
         self.event_queue.clear();
         self.last_processed_tick = 0.0;
     }

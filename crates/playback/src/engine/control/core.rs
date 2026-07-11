@@ -69,6 +69,8 @@ pub struct PlaybackEngine {
     pub(crate) loop_range: Option<(f32, f32)>,
     /// 控制事件（CC/PC/PB）游标
     pub(crate) control_event_cursor: usize,
+    /// 额外 MIDI 事件游标（避免每次 update 线性扫描全部事件）
+    pub(crate) midi_event_cursor: usize,
     /// 力度过滤阈值：velocity 小于等于此值的音符不发声（0 表示不过滤）。
     pub(crate) velocity_filter_threshold: u8,
 }
@@ -88,6 +90,7 @@ impl PlaybackEngine {
             looping: false,
             loop_range: None,
             control_event_cursor: 0,
+            midi_event_cursor: 0,
             velocity_filter_threshold: 1,
         }
     }
@@ -103,6 +106,7 @@ impl PlaybackEngine {
             .map(|_| TrackEventState::default())
             .collect();
         self.control_event_cursor = 0;
+        self.midi_event_cursor = 0;
         self.current_track = current_track;
         self.document = Some(doc);
     }

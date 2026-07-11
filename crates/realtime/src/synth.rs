@@ -146,24 +146,40 @@ impl RealtimeSynth {
                 // 渲染窗口时间（毫秒），用于闲置时睡眠等待
                 let render_window_ms = render_timeout_ns / 2_000_000;
 
+                // 每帧事件处理的时间预算：半个渲染窗口。
+                // 超过此时间则停止消费事件，剩余事件留到下一帧。
+                // 这防止极端高 NPS 场景下事件雪崩导致单帧耗时数十秒。
+                let event_budget_ns = render_timeout_ns / 4;
+
                 while running_render.load(Ordering::Relaxed) {
                     let start = Instant::now();
 
-                    // 消费所有待处理事件（包括 AllChannels 配置）
+                    // 消费待处理事件，但限制每帧处理时间。
+                    // 当事件通道中堆积了大量事件时（如极端高 NPS 场景），
+                    // 一次性排空可能耗时数十秒，导致音频回调得不到数据。
+                    // 时间预算用完后剩余事件留到下一帧。
                     let mut event_count = 0u64;
+                    let event_deadline = start + std::time::Duration::from_nanos(event_budget_ns);
                     for event in event_receiver.try_iter() {
                         channel_group.send_event(event);
                         event_count += 1;
+                        // 每 1024 个事件检查一次时间预算
+                        if event_count & 0x3FF == 0 && Instant::now() > event_deadline {
+                            break;
+                        }
                     }
                     // 检查上一帧是否超时 — 如果渲染赶不上，跳过本次渲染只消费事件
                     let prev_render_ns = perf_render.last_render_ns.load(Ordering::Relaxed);
                     if prev_render_ns > render_timeout_ns {
-                        tracing::warn!(
-                            "lumino-render: 渲染超时 ({}ns > {}ns)，跳过渲染帧，事件数={}",
-                            prev_render_ns,
-                            render_timeout_ns,
-                            event_count,
-                        );
+                        // 限制日志频率：每 10 次超时只输出 1 次，避免日志 I/O 拖慢渲染线程
+                        if event_count > 0 || prev_render_ns > render_timeout_ns * 10 {
+                            tracing::warn!(
+                                "lumino-render: 渲染超时 ({}ns > {}ns)，跳过渲染帧，事件数={}",
+                                prev_render_ns,
+                                render_timeout_ns,
+                                event_count,
+                            );
+                        }
                         // 重置超时标记，下一次迭代重新尝试渲染
                         // 如果不重置，会导致永久跳过渲染帧，音频回调得不到数据而输出静音
                         perf_render.last_render_ns.store(0, Ordering::Relaxed);
