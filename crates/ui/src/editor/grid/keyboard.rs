@@ -36,7 +36,7 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
     let bg_color = theme.keyboard_background_color();
     frame.fill(&keyboard_bg_path, bg_color);
 
-    // 播放期间的洋葱皮琴键颜色映射（key → RGBA）
+    // 播放期间的洋葱皮琴键颜色映射（固定大小数组，直接索引）
     let key_colors = &editor.playback_key_colors;
 
     // 绘制每个琴键
@@ -77,12 +77,15 @@ pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, the
             };
 
             // 播放期间：如果该 key 有洋葱皮音符正在发声，叠加洋葱皮颜色
-            let final_color = if let Some(&onion_rgba) = key_colors.get(&i) {
+            // 使用固定大小数组直接索引，O(1) 复杂度
+            let offset = (i as usize) * 4;
+            let final_color = if key_colors[offset + 3] != 0 {
+                // alpha != 0 表示有颜色
                 let onion_color = iced_core::Color::from_rgba8(
-                    onion_rgba[0],
-                    onion_rgba[1],
-                    onion_rgba[2],
-                    onion_rgba[3] as f32 / 255.0,
+                    key_colors[offset],
+                    key_colors[offset + 1],
+                    key_colors[offset + 2],
+                    key_colors[offset + 3] as f32 / 255.0,
                 );
                 // 混合：洋葱皮颜色以 60% 不透明度叠加在基础琴键颜色之上
                 blend_colors(key_color, onion_color, 0.6)

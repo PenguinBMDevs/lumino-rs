@@ -37,7 +37,6 @@ mod tests {
 use iced_core::Point;
 use iced_widget::canvas;
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 
 // 统一从 editor_state 导入（重构迁移）
 pub use editor_state::{EditState, HitType, SelectionHitType, ViewState};
@@ -105,8 +104,9 @@ pub struct Editor {
     pub(crate) playback_position: f32,
 
     /// 播放期间琴键洋葱皮颜色（key → RGBA 颜色）
-    /// 仅在播放期间有效，每帧根据 playback_position 重新计算
-    pub(crate) playback_key_colors: HashMap<u16, [u8; 4]>,
+    /// 使用固定大小数组替代HashMap，直接索引O(1)，避免hash计算开销
+    /// 索引 = key (0-255)，值 = [R, G, B, A]，全零表示无颜色
+    pub(crate) playback_key_colors: [u8; 1024],
 
     /// 循环区域状态
     pub(crate) loop_range: Option<grid::LoopRange>,

@@ -21,7 +21,7 @@ impl Editor {
             spatial: SpatialIndexState::default(),
             remote_cursors: std::collections::HashMap::new(),
             playback_position: 0.0,
-            playback_key_colors: std::collections::HashMap::new(),
+            playback_key_colors: [0u8; 1024], // 256 keys × 4 bytes
             loop_range: Some(grid::LoopRange::new()),
             notes_changed: false,
             velocity_panel: VelocityPanel::new(),
@@ -314,48 +314,59 @@ impl Default for Editor {
 impl Editor {
     /// 根据当前播放位置，计算每个 key 上被洋葱皮音符覆盖的颜色
     ///
-    /// 遍历所有音轨的 `track_notes`，找出在 `playback_position` 时刻正在发声的音符，
-    /// 将其对应轨道的洋葱皮颜色记录到 `playback_key_colors` 中。
-    /// 同一 key 被多个音轨覆盖时，后轨覆盖前轨（与洋葱皮渲染一致）。
+    /// 优化策略：
+    /// 1. 使用固定大小数组 `[u8; 1024]` 替代 HashMap，直接索引 O(1)
+    /// 2. 利用已有的 `track_note_indices` 空间索引进行二分查找，O(log N)
+    /// 3. 增量更新：只更新实际变化的 key，避免无意义的 keyboard_cache 重建
     ///
     /// 播放停止时（`playback_position == 0.0`），清空缓存。
     pub fn update_playback_key_colors(&mut self) {
         if (self.playback_position - 0.0).abs() < f32::EPSILON {
-            if !self.playback_key_colors.is_empty() {
-                self.playback_key_colors.clear();
+            // 播放停止：检查是否需要清空
+            if self.playback_key_colors != [0u8; 1024] {
+                self.playback_key_colors = [0u8; 1024];
                 self.keyboard_cache.clear();
             }
             return;
         }
 
         let tick = self.playback_position;
-        let mut colors: std::collections::HashMap<u16, [u8; 4]> =
-            std::collections::HashMap::with_capacity(16);
+        let mut new_colors = [0u8; 1024];
 
-        // 遍历所有音轨的 track_notes
+        // 遍历所有音轨
         let track_notes = &self.editor_state.data.track_notes;
         for (&track_idx, notes) in track_notes {
             let color = onion_track_color(track_idx);
-            // 查找在当前 tick 时刻正在发声的音符
-            // im::Vector 不保证排序，线性扫描；典型 MIDI 每轨 100-5000 音符，每帧开销可接受
-            for note in notes.iter() {
-                if note.tick <= tick && tick < note.tick + note.length {
-                    colors.insert(note.key, color);
+
+            // 优化：利用空间索引进行二分查找
+            // 查询在 [tick, tick+1) 范围内的音符（单点查询）
+            if let Some(index) = self.spatial.track_note_indices.borrow().get(&track_idx) {
+                // 使用空间索引查询
+                let mut result = Vec::with_capacity(16);
+                index.update_query(tick, tick + 1.0, 0, 255, &mut result);
+                for &note_idx in &result {
+                    if let Some(note) = notes.get(note_idx) {
+                        // 验证音符确实在当前 tick 时刻发声
+                        if note.tick <= tick && tick < note.tick + note.length {
+                            let offset = (note.key as usize) * 4;
+                            new_colors[offset..offset + 4].copy_from_slice(&color);
+                        }
+                    }
+                }
+            } else {
+                // 回退：如果没有空间索引，使用线性扫描（但只扫描当前track）
+                for note in notes.iter() {
+                    if note.tick <= tick && tick < note.tick + note.length {
+                        let offset = (note.key as usize) * 4;
+                        new_colors[offset..offset + 4].copy_from_slice(&color);
+                    }
                 }
             }
         }
 
-        // 检查是否发生变化，避免无意义的 keyboard_cache 重建
-        let changed = colors.len() != self.playback_key_colors.len()
-            || colors.iter().any(|(k, v)| {
-                self.playback_key_colors
-                    .get(k)
-                    .map(|c| c != v)
-                    .unwrap_or(true)
-            });
-
-        if changed {
-            self.playback_key_colors = colors;
+        // 增量比较：只在颜色实际变化时才重建 keyboard_cache
+        if new_colors != self.playback_key_colors {
+            self.playback_key_colors = new_colors;
             self.keyboard_cache.clear();
         }
     }
