@@ -10,7 +10,7 @@ edition.workspace = true
 workspace = true
 
 [features]
-default = ["realtime"]
+default = ["xsynth-realtime"]
 realtime = ["xsynth-core", "xsynth-soundfonts", "cpal", "crossbeam-channel"]
 xsynth-realtime = ["dep:xsynth-realtime", "xsynth-core", "xsynth-soundfonts"]
 

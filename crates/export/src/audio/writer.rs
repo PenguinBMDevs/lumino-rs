@@ -1,4 +1,7 @@
 //! 音频文件写入器 — 基于 hound 的 WAV 输出
+//!
+//! 支持 Vec 回收：写入线程消费完样本后通过 `vec_return` 通道将 Vec 归还，
+//! 渲染线程可复用这些 Vec，减少重复分配。
 
 use std::{
     path::Path,
@@ -11,6 +14,8 @@ use hound::{WavSpec, WavWriter};
 use crate::error::{ExportError, ExportResult};
 
 /// 通过独立线程写入 WAV 文件的异步写入器
+///
+/// 支持 Vec 回收：写入线程完成写入后通过 `vec_return_tx` 将 Vec 归还给渲染线程。
 pub struct AudioFileWriter {
     /// Option 包装以便 finalize 时 take 丢弃 sender 关闭通道
     sender: Option<Sender<Vec<f32>>>,
@@ -18,8 +23,16 @@ pub struct AudioFileWriter {
 }
 
 impl AudioFileWriter {
-    /// 创建新的 WAV 写入器
-    pub fn new(sample_rate: u32, channels: u16, path: &Path) -> ExportResult<Self> {
+    /// 创建新的 WAV 写入器。
+    ///
+    /// `vec_return_tx` 是 Vec 回收通道的发送端 — 写入线程写完后将 Vec 发回，
+    /// 渲染线程通过对应的 `Receiver` 回收。
+    pub fn new(
+        sample_rate: u32,
+        channels: u16,
+        path: &Path,
+        vec_return_tx: Sender<Vec<f32>>,
+    ) -> ExportResult<Self> {
         let spec = WavSpec {
             channels,
             sample_rate,
@@ -37,12 +50,17 @@ impl AudioFileWriter {
             .spawn(move || {
                 let mut w = writer;
                 for batch in rcv {
-                    for s in batch {
-                        w.write_sample(s).map_err(|e| {
+                    // 逐个样点写入
+                    for s in &batch {
+                        if let Err(e) = w.write_sample(*s) {
                             tracing::error!("WAV 写入错误: {e}");
-                            e
-                        })?;
+                            // 即使写入失败也继续回收 Vec
+                            let _ = vec_return_tx.send(batch);
+                            return Err(e);
+                        }
                     }
+                    // 写入完成后将 Vec 归还给渲染线程复用
+                    let _ = vec_return_tx.send(batch);
                 }
                 w.finalize().map_err(|e| {
                     tracing::error!("WAV finalize 错误: {e}");
@@ -59,7 +77,9 @@ impl AudioFileWriter {
         })
     }
 
-    /// 将一批样点发送到写入线程
+    /// 将一批样点发送到写入线程。
+    ///
+    /// 通过 `take` 转移所有权，避免拷贝。
     pub fn write_samples(&mut self, samples: &mut Vec<f32>) -> ExportResult<()> {
         let buf = std::mem::take(samples);
         self.sender

@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use xsynth_core::{
@@ -9,7 +9,8 @@ use xsynth_core::{
 };
 
 use lumino_realtime::{
-    RealtimeSynth, SynthEvent, ThreadCount as LuminoThreadCount, XSynthRealtimeConfig,
+    RealtimeEventSender, RealtimeSynth, SynthEvent, ThreadCount as LuminoThreadCount,
+    XSynthRealtimeConfig,
 };
 
 use crate::constants::*;
@@ -38,7 +39,7 @@ pub struct XSynthOptions {
 
 pub struct XSynth {
     synth: RealtimeSynth,
-    sender: crossbeam_channel::Sender<SynthEvent>,
+    sender: RealtimeEventSender,
     version: String,
 }
 
@@ -91,7 +92,8 @@ impl XSynth {
             rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
         }
 
-        let synth = RealtimeSynth::open_with_default_output(rt_config);
+        let synth = RealtimeSynth::open_with_default_output(rt_config)
+            .map_err(|e| Error::InitFailed(format!("xsynth-realtime: {}", e)))?;
 
         // 注意：lumino-realtime 使用音频设备的原生采样率，配置中的 sample_rate 仅用于音色库预加载
         // 实际采样率由 cpal 决定，可能与请求的不同
@@ -126,33 +128,24 @@ impl XSynth {
         };
 
         // 获取 sender — 在 open 后立即配置通道，确保音色库在 callback 首次触发前就位
-        let sender = synth
-            .get_sender_ref()
-            .cloned()
-            .ok_or_else(|| Error::InitFailed("Failed to get event sender".to_string()))?;
+        let mut sender = synth.get_sender_ref().clone();
 
         // 配置音色库
         let soundfonts: Vec<Arc<dyn SoundfontBase>> = vec![soundfont];
-        sender
-            .send(SynthEvent::AllChannels(ChannelEvent::Config(
-                ChannelConfigEvent::SetSoundfonts(soundfonts),
-            )))
-            .map_err(|e| Error::InitFailed(format!("Failed to send event: {}", e)))?;
+        sender.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
+            ChannelConfigEvent::SetSoundfonts(soundfonts),
+        )));
 
         // 重置所有通道，确保音色库生效
-        sender
-            .send(SynthEvent::AllChannels(ChannelEvent::Audio(
-                ChannelAudioEvent::AllNotesKilled,
-            )))
-            .map_err(|e| Error::InitFailed(format!("Failed to send event: {}", e)))?;
+        sender.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+            ChannelAudioEvent::AllNotesKilled,
+        )));
 
-        sender
-            .send(SynthEvent::AllChannels(ChannelEvent::Audio(
-                ChannelAudioEvent::ResetControl,
-            )))
-            .map_err(|e| Error::InitFailed(format!("Failed to send event: {}", e)))?;
+        sender.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+            ChannelAudioEvent::ResetControl,
+        )));
 
-        let version = "xsynth (lumino-realtime)".to_string();
+        let version = "xsynth-realtime 0.4.0 (lumino-realtime)".to_string();
         tracing::info!("XSynth: 初始化完成");
 
         Ok(Self {
@@ -166,9 +159,9 @@ impl XSynth {
     pub fn stats(&self) -> XSynthStats {
         let stats = self.synth.get_stats();
         XSynthStats {
-            voice_count: stats.voice_count,
-            average_renderer_load: stats.average_renderer_load,
-            buffer_samples: stats.last_samples_after_read,
+            voice_count: stats.voice_count(),
+            average_renderer_load: stats.buffer().average_renderer_load(),
+            buffer_samples: stats.buffer().last_samples_after_read(),
         }
     }
 }
@@ -194,7 +187,7 @@ impl Api for XSynth {
             return Err(Error::DeviceNotFound(id));
         }
         Ok(Box::new(XSynthOutputConn {
-            sender: self.sender.clone(),
+            sender: Mutex::new(self.sender.clone()),
         }))
     }
 
@@ -210,14 +203,13 @@ impl Api for XSynth {
 }
 
 struct XSynthOutputConn {
-    sender: crossbeam_channel::Sender<SynthEvent>,
+    sender: Mutex<RealtimeEventSender>,
 }
 
 impl XSynthOutputConn {
-    /// 发送事件到渲染线程 — 事件通道是 unbounded，永不阻塞永不丢弃。
+    /// 发送事件到渲染线程 — 通过 xsynth-realtime 的 RealtimeEventSender。
     fn send_event(&self, event: SynthEvent) {
-        // Unbounded channel 的 send() 永远不会阻塞也不会失败。
-        let _ = self.sender.send(event);
+        self.sender.lock().unwrap().send_event(event);
     }
 }
 

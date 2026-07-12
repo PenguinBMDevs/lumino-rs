@@ -11,7 +11,7 @@ workspace = true
 
 [features]
 default = ["new-audio-backend"]
-new-audio-backend = ["lumino-realtime/realtime", "xsynth-core", "xsynth-soundfonts", "cpal", "crossbeam-channel", "spin_sleep"]
+new-audio-backend = ["lumino-realtime/xsynth-realtime", "xsynth-core", "xsynth-soundfonts", "cpal", "crossbeam-channel", "spin_sleep"]
 
 [dependencies]
 libloading = "0.9.0"
