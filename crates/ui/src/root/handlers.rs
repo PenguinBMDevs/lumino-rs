@@ -542,6 +542,15 @@ impl Root {
             )));
         }
 
+        // 如果是添加音轨，sidebar 已自动更新 selected_track，同步编辑器切换到新音轨
+        if matches!(&event, sidebar::Event::AddTrack) {
+            let track_idx = self.sidebar.selected_track;
+            tracing::debug!("Root: 添加音轨后自动选中新音轨 {}", track_idx);
+            crate::event::emit(crate::event::Event::Menu(crate::event::menu::Event::File(
+                crate::event::menu::file::Event::TrackSelected(track_idx),
+            )));
+        }
+
         needs_redraw
     }
 
