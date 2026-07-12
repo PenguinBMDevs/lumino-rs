@@ -15,6 +15,8 @@ pub enum AudioExportAction {
     ProjectNameChanged(String),
     /// 输出格式变更
     FormatChanged(AudioFormat),
+    /// 编码比特率变更（kbps，仅 MP3/Vorbis）
+    BitrateChanged(String),
     /// 采样率变更
     SampleRateChanged(u32),
     /// 通道数变更
@@ -33,6 +35,22 @@ pub enum AudioExportAction {
     DisableFadeOutChanged(bool),
     /// 线性包络变更
     LinearEnvelopeChanged(bool),
+    /// 忽略音色变化事件
+    IgnoreProgramChangesChanged(bool),
+    /// 启用音符力度过滤
+    FilterVelocityChanged(bool),
+    /// 最低力度变更
+    VelocityLowChanged(String),
+    /// 最高力度变更
+    VelocityHighChanged(String),
+    /// 启用键位过滤
+    FilterKeyChanged(bool),
+    /// 最低键位变更
+    KeyLowChanged(String),
+    /// 最高键位变更
+    KeyHighChanged(String),
+    /// 音符强制结束延迟（毫秒）
+    NoteForceEndDelayChanged(String),
     /// 输出路径变更
     OutputPathChanged(String),
     /// 浏览输出路径

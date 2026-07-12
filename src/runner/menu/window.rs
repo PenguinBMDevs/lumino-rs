@@ -3,7 +3,10 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::runner::{RunnerInner, dialog_manager::DialogType};
-use lumino_export::audio::config::{AudioChannelMode, AudioInterpolation, ThreadMode};
+use lumino_export::audio::{
+    codec::AudioCodec,
+    config::{AudioChannelMode, AudioInterpolation, AudioRenderConfig, ThreadMode},
+};
 use lumino_ui::event::window::Event as WindowEvent;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -138,9 +141,18 @@ impl RunnerInner {
                 apply_limiter,
                 disable_fade_out,
                 linear_envelope,
+                audio_format,
+                audio_bitrate,
+                ignore_program_changes,
+                filter_velocity,
+                velocity_low,
+                velocity_high,
+                filter_key,
+                key_low,
+                key_high,
+                note_force_end_delay,
                 document,
             } => {
-                use lumino_export::audio::config::AudioRenderConfig;
                 use std::time::Instant;
 
                 // 根据是否有内存中的 MidiDocument 选择渲染模式
@@ -166,6 +178,15 @@ impl RunnerInner {
                 let channel_threading_val = parse_thread_mode(&channel_threading);
                 let key_threading_val = parse_thread_mode(&key_threading);
 
+                // 解析音频格式字符串 → AudioCodec
+                let audio_codec = match audio_format.to_ascii_lowercase().as_str() {
+                    "flac" => AudioCodec::Flac,
+                    "mp3" => AudioCodec::Mp3,
+                    "ogg" | "vorbis" => AudioCodec::Vorbis,
+                    "wavpack" => AudioCodec::WavPack,
+                    _ => AudioCodec::Pcm,
+                };
+
                 // 1. 创建进度通道，将渲染进度发回主线程更新 UI
                 let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
                 self.window_state.export_progress_rx = Some(progress_rx);
@@ -188,6 +209,16 @@ impl RunnerInner {
                     apply_limiter,
                     disable_fade_out,
                     linear_envelope,
+                    audio_codec,
+                    audio_bitrate,
+                    ignore_program_changes,
+                    filter_velocity,
+                    velocity_low,
+                    velocity_high,
+                    filter_key,
+                    key_low,
+                    key_high,
+                    note_force_end_delay,
                     progress_callback: Some(progress_cb),
                 };
 

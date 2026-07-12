@@ -244,6 +244,27 @@ mod tests {
     fn test_audio_format_display() {
         assert_eq!(AudioFormat::WAV.to_string(), "WAV");
         assert_eq!(AudioFormat::FLAC.to_string(), "FLAC");
+        assert_eq!(AudioFormat::MP3.to_string(), "MP3");
+        assert_eq!(AudioFormat::Ogg.to_string(), "Ogg Vorbis");
+        assert_eq!(AudioFormat::WavPack.to_string(), "WavPack");
+    }
+
+    #[test]
+    fn test_audio_format_extension() {
+        assert_eq!(AudioFormat::WAV.extension(), "wav");
+        assert_eq!(AudioFormat::FLAC.extension(), "flac");
+        assert_eq!(AudioFormat::MP3.extension(), "mp3");
+        assert_eq!(AudioFormat::Ogg.extension(), "ogg");
+        assert_eq!(AudioFormat::WavPack.extension(), "wv");
+    }
+
+    #[test]
+    fn test_audio_format_needs_ffmpeg() {
+        assert!(!AudioFormat::WAV.needs_ffmpeg());
+        assert!(!AudioFormat::FLAC.needs_ffmpeg());
+        assert!(AudioFormat::MP3.needs_ffmpeg());
+        assert!(AudioFormat::Ogg.needs_ffmpeg());
+        assert!(AudioFormat::WavPack.needs_ffmpeg());
     }
 
     // ─── CcOption ───
@@ -312,11 +333,23 @@ mod tests {
         let action = AudioExportAction::ClosePanel;
         assert!(matches!(action, AudioExportAction::ClosePanel));
 
-        let action = AudioExportAction::Completed;
-        assert!(matches!(action, AudioExportAction::Completed));
+        let action = AudioExportAction::BitrateChanged("320".to_string());
+        assert!(matches!(action, AudioExportAction::BitrateChanged(_)));
 
-        let action = AudioExportAction::Failed("error".to_string());
-        assert!(matches!(action, AudioExportAction::Failed(_)));
+        let action = AudioExportAction::IgnoreProgramChangesChanged(true);
+        assert!(matches!(
+            action,
+            AudioExportAction::IgnoreProgramChangesChanged(_)
+        ));
+
+        let action = AudioExportAction::FilterVelocityChanged(true);
+        assert!(matches!(
+            action,
+            AudioExportAction::FilterVelocityChanged(_)
+        ));
+
+        let action = AudioExportAction::FilterKeyChanged(true);
+        assert!(matches!(action, AudioExportAction::FilterKeyChanged(_)));
     }
 
     // ─── CollaborationAction ───

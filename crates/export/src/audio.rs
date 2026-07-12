@@ -87,12 +87,8 @@ pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
     let mut tick_conv = TickToTime::new(tempos, ppqn);
 
     // 事件处理流水线
-    let mut processor = MidiEventProcessor::new(
-        config,
-        engine.channel_group(),
-        &mut tick_conv,
-        &mut sink,
-    );
+    let mut processor =
+        MidiEventProcessor::new(config, engine.channel_group(), &mut tick_conv, &mut sink);
 
     // 流式渲染主循环
     run_streaming_render(config, &mut processor, player)?;
@@ -135,12 +131,8 @@ pub fn render_audio_from_document(
     let mut tick_conv = TickToTime::new(tempos, ppqn);
 
     // 事件处理流水线
-    let mut processor = MidiEventProcessor::new(
-        config,
-        engine.channel_group(),
-        &mut tick_conv,
-        &mut sink,
-    );
+    let mut processor =
+        MidiEventProcessor::new(config, engine.channel_group(), &mut tick_conv, &mut sink);
 
     // 总 tick 数（以最后音符的 end_tick 为准）
     let total_tick = doc
@@ -190,11 +182,7 @@ fn create_output_sink(config: &AudioRenderConfig) -> ExportResult<Box<dyn Sample
         Ok(Box::new(sink))
     } else {
         let channels = config.channels.channel_count();
-        let sink = WavFileSink::new(
-            &config.output_path,
-            config.sample_rate,
-            channels,
-        )?;
+        let sink = WavFileSink::new(&config.output_path, config.sample_rate, channels)?;
         Ok(Box::new(sink))
     }
 }
@@ -224,7 +212,11 @@ fn run_streaming_render(
         processor.process_midi_event(tick, &kind)?;
 
         // 统计
-        if let TrackEventKind::Midi { channel: _, message } = &kind {
+        if let TrackEventKind::Midi {
+            channel: _,
+            message,
+        } = &kind
+        {
             match message {
                 MidiMessage::NoteOn { .. } => {
                     event_count += 1;
@@ -477,9 +469,7 @@ impl<'a> MidiDocEventStream<'a> {
         if let Some(event) = &best_event {
             match event.kind {
                 0 | 1 => {
-                    for (track_idx, cursor) in
-                        self.note_cursors.iter_mut().enumerate()
-                    {
+                    for (track_idx, cursor) in self.note_cursors.iter_mut().enumerate() {
                         let (note_idx, note_on_emitted) = cursor;
                         if *note_idx < self.doc.notes[track_idx].len() {
                             let note = &self.doc.notes[track_idx][*note_idx];

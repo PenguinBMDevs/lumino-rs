@@ -261,10 +261,7 @@ impl SampleSink for FfmpegSink {
             .ok_or_else(|| ExportError::AudioWrite("ffmpeg 管道已关闭".into()))?;
 
         // 将 f32 样本转换为 little-endian 字节写入
-        let bytes: Vec<u8> = samples
-            .iter()
-            .flat_map(|s| s.to_le_bytes())
-            .collect();
+        let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
 
         stdin
             .write_all(&bytes)

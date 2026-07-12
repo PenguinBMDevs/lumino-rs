@@ -20,7 +20,14 @@ struct Compressor {
 }
 
 impl Compressor {
-    fn new(sample_rate: f32, threshold: f32, ratio: f32, attack_ms: f32, release_ms: f32, lookahead_ms: f32) -> Self {
+    fn new(
+        sample_rate: f32,
+        threshold: f32,
+        ratio: f32,
+        attack_ms: f32,
+        release_ms: f32,
+        lookahead_ms: f32,
+    ) -> Self {
         let attack_coeff = if attack_ms > 0.0 {
             (-1.0 / (attack_ms * 0.001 * sample_rate)).exp()
         } else {
@@ -56,9 +63,11 @@ impl Compressor {
         // Envelope detection
         let rectified = input.abs();
         if rectified > self.envelope {
-            self.envelope = self.attack_coeff * self.envelope + (1.0 - self.attack_coeff) * rectified;
+            self.envelope =
+                self.attack_coeff * self.envelope + (1.0 - self.attack_coeff) * rectified;
         } else {
-            self.envelope = self.release_coeff * self.envelope + (1.0 - self.release_coeff) * rectified;
+            self.envelope =
+                self.release_coeff * self.envelope + (1.0 - self.release_coeff) * rectified;
         }
 
         // Gain computation

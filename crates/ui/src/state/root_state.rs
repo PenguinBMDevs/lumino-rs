@@ -249,6 +249,24 @@ pub struct AudioExportDialogState {
     pub interpolation: Interpolation,
     /// 输出格式
     pub format: AudioFormat,
+    /// 编码比特率（kbps，仅 MP3/Vorbis 有效）
+    pub audio_bitrate: u32,
+    /// 忽略音色变化事件
+    pub ignore_program_changes: bool,
+    /// 启用音符力度过滤
+    pub filter_velocity: bool,
+    /// 最低力度
+    pub velocity_low: u8,
+    /// 最高力度
+    pub velocity_high: u8,
+    /// 启用键位过滤
+    pub filter_key: bool,
+    /// 最低键位
+    pub key_low: u8,
+    /// 最高键位
+    pub key_high: u8,
+    /// 音符强制结束延迟（毫秒）
+    pub note_force_end_delay: u32,
     /// 输出路径
     pub output_path: String,
     /// 是否正在渲染（显示内嵌进度条）
@@ -289,6 +307,15 @@ impl AudioExportDialogState {
             linear_envelope: false,
             interpolation: Interpolation::default(),
             format: AudioFormat::default(),
+            audio_bitrate: 320,
+            ignore_program_changes: false,
+            filter_velocity: false,
+            velocity_low: 0,
+            velocity_high: 127,
+            filter_key: false,
+            key_low: 0,
+            key_high: 127,
+            note_force_end_delay: 0,
             output_path: String::new(),
             is_rendering: false,
             render_message: String::new(),

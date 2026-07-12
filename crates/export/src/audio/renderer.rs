@@ -5,10 +5,7 @@
 //! - Vec 回收池减少重复分配
 //! - 支持限制器
 
-use xsynth_core::{
-    AudioPipe,
-    channel_group::ChannelGroup,
-};
+use xsynth_core::{AudioPipe, channel_group::ChannelGroup};
 
 use crate::error::ExportResult;
 
@@ -48,7 +45,10 @@ impl<'a> BatchRenderer<'a> {
 
     /// 从池中获取 Vec
     fn acquire_vec(&mut self, min_cap: usize) -> Vec<f32> {
-        let mut v = self.vec_pool.pop().unwrap_or_else(|| Vec::with_capacity(min_cap));
+        let mut v = self
+            .vec_pool
+            .pop()
+            .unwrap_or_else(|| Vec::with_capacity(min_cap));
         if v.capacity() < min_cap {
             v.reserve(min_cap - v.capacity());
         }
@@ -94,7 +94,8 @@ impl<'a> BatchRenderer<'a> {
                 buffer.output_vec.set_len(sample_count);
             }
 
-            self.channel_group.read_samples_unchecked(&mut buffer.output_vec);
+            self.channel_group
+                .read_samples_unchecked(&mut buffer.output_vec);
 
             remaining -= batch;
         }
@@ -133,7 +134,11 @@ impl<'a> BatchRenderer<'a> {
     }
 
     /// 驱动事件，渲染 delta 时间，然后发送 MIDI 事件到 ChannelGroup
-    pub fn process_event_delta(&mut self, delta_seconds: f64, sink: &mut dyn super::stream::SampleSink) -> ExportResult<()> {
+    pub fn process_event_delta(
+        &mut self,
+        delta_seconds: f64,
+        sink: &mut dyn super::stream::SampleSink,
+    ) -> ExportResult<()> {
         self.render_to_sink(delta_seconds, sink)
     }
 }

@@ -119,11 +119,31 @@ pub fn view_audio_export_dialog<'a>(
         row![
             text("输出格式:").size(14).style(label_style).width(120),
             pick_list(
-                [AudioFormat::WAV, AudioFormat::FLAC],
+                [
+                    AudioFormat::WAV,
+                    AudioFormat::FLAC,
+                    AudioFormat::MP3,
+                    AudioFormat::Ogg,
+                    AudioFormat::WavPack,
+                ],
                 Some(state.format),
                 |v| Message::AudioExport(AudioExportAction::FormatChanged(v)),
             )
             .width(200),
+        ]
+        .spacing(8)
+        .align_y(iced_core::Alignment::Center),
+        space().height(8),
+        // 编码比特率（仅无损外的格式有效）
+        row![
+            text("比特率 (kbps):")
+                .size(14)
+                .style(label_style)
+                .width(120),
+            text_input("320", &state.audio_bitrate.to_string())
+                .on_input(|v| Message::AudioExport(AudioExportAction::BitrateChanged(v)))
+                .padding([6, 10])
+                .width(200),
         ]
         .spacing(8)
         .align_y(iced_core::Alignment::Center),
@@ -231,6 +251,84 @@ pub fn view_audio_export_dialog<'a>(
             .label("线性包络")
             .on_toggle(|v| Message::AudioExport(AudioExportAction::LinearEnvelopeChanged(v)))
             .style(checkbox_style),
+    ]
+    .width(Length::Fill);
+
+    // ── 事件过滤区域（参考 OmniConverter EventSettings） ──
+    let event_filter = column![
+        text("事件过滤")
+            .size(16)
+            .font(iced_core::Font::with_name("Microsoft YaHei"))
+            .style(label_style),
+        space().height(8),
+        checkbox(state.ignore_program_changes)
+            .label("忽略音色变化事件")
+            .on_toggle(|v| {
+                Message::AudioExport(AudioExportAction::IgnoreProgramChangesChanged(v))
+            })
+            .style(checkbox_style),
+        space().height(8),
+        // 音符力度过滤
+        text("音符力度过滤").size(14).style(label_style),
+        space().height(4),
+        checkbox(state.filter_velocity)
+            .label("启用力度过滤")
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::FilterVelocityChanged(v)))
+            .style(checkbox_style),
+        space().height(4),
+        row![
+            text("力度范围:").size(14).style(label_style).width(120),
+            text_input("0", &state.velocity_low.to_string())
+                .on_input(|v| Message::AudioExport(AudioExportAction::VelocityLowChanged(v)))
+                .padding([6, 10])
+                .width(80),
+            text(" ~ ").size(14).style(label_style),
+            text_input("127", &state.velocity_high.to_string())
+                .on_input(|v| Message::AudioExport(AudioExportAction::VelocityHighChanged(v)))
+                .padding([6, 10])
+                .width(80),
+        ]
+        .spacing(4)
+        .align_y(iced_core::Alignment::Center),
+        space().height(8),
+        // 音符键位过滤
+        text("音符键位过滤").size(14).style(label_style),
+        space().height(4),
+        checkbox(state.filter_key)
+            .label("启用键位过滤")
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::FilterKeyChanged(v)))
+            .style(checkbox_style),
+        space().height(4),
+        row![
+            text("键位范围:").size(14).style(label_style).width(120),
+            text_input("0", &state.key_low.to_string())
+                .on_input(|v| Message::AudioExport(AudioExportAction::KeyLowChanged(v)))
+                .padding([6, 10])
+                .width(80),
+            text(" ~ ").size(14).style(label_style),
+            text_input("127", &state.key_high.to_string())
+                .on_input(|v| Message::AudioExport(AudioExportAction::KeyHighChanged(v)))
+                .padding([6, 10])
+                .width(80),
+        ]
+        .spacing(4)
+        .align_y(iced_core::Alignment::Center),
+        space().height(8),
+        // 音符强制结束延迟
+        row![
+            text("音符结束延迟 (ms):")
+                .size(14)
+                .style(label_style)
+                .width(120),
+            text_input("0", &state.note_force_end_delay.to_string())
+                .on_input(|v| {
+                    Message::AudioExport(AudioExportAction::NoteForceEndDelayChanged(v))
+                })
+                .padding([6, 10])
+                .width(200),
+        ]
+        .spacing(8)
+        .align_y(iced_core::Alignment::Center),
     ]
     .width(Length::Fill);
 
@@ -353,6 +451,8 @@ pub fn view_audio_export_dialog<'a>(
         project_info,
         space().height(16),
         audio_settings,
+        space().height(16),
+        event_filter,
         space().height(16),
         output_path,
         space().height(24),

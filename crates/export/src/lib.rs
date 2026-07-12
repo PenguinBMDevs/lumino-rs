@@ -29,16 +29,16 @@ pub mod video;
 
 // ── 音频渲染 ──
 
-/// 音频渲染（基于 xsynth）—— 流式模式
-pub use audio::render_audio;
-/// 音频渲染（基于 xsynth）—— 内存模式
-pub use audio::render_audio_from_document;
 /// 音频编码器类型
 pub use audio::codec::AudioCodec;
 /// 音频渲染配置
 pub use audio::config::AudioRenderConfig;
 /// 进度回调类型
 pub use audio::config::ProgressCallback;
+/// 音频渲染（基于 xsynth）—— 流式模式
+pub use audio::render_audio;
+/// 音频渲染（基于 xsynth）—— 内存模式
+pub use audio::render_audio_from_document;
 
 // ── 视频导出 ──
 

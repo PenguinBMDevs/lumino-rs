@@ -54,6 +54,26 @@ pub enum Event {
         apply_limiter: bool,
         disable_fade_out: bool,
         linear_envelope: bool,
+        /// 输出音频格式（"WAV"/"FLAC"/"MP3"/"Ogg"/"WavPack"）
+        audio_format: String,
+        /// 编码比特率（kbps，仅 MP3/Vorbis 有效）
+        audio_bitrate: u32,
+        /// 忽略音色变化事件
+        ignore_program_changes: bool,
+        /// 启用音符力度过滤
+        filter_velocity: bool,
+        /// 最低力度
+        velocity_low: u8,
+        /// 最高力度
+        velocity_high: u8,
+        /// 启用键位过滤
+        filter_key: bool,
+        /// 最低键位
+        key_low: u8,
+        /// 最高键位
+        key_high: u8,
+        /// 音符强制结束延迟（毫秒）
+        note_force_end_delay: u32,
         /// 内存中的 MidiDocument（如果存在）
         document: Option<Arc<MidiDocument>>,
     },

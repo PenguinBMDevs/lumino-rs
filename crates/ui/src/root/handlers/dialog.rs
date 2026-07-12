@@ -232,6 +232,16 @@ impl MessageHandler for DialogHandler {
                             st.apply_limiter,
                             st.disable_fade_out,
                             st.linear_envelope,
+                            format!("{:?}", st.format),
+                            st.audio_bitrate,
+                            st.ignore_program_changes,
+                            st.filter_velocity,
+                            st.velocity_low,
+                            st.velocity_high,
+                            st.filter_key,
+                            st.key_low,
+                            st.key_high,
+                            st.note_force_end_delay,
                             document,
                         );
                         crate::event::emit(crate::event::Event::Window(ev));
@@ -244,6 +254,13 @@ impl MessageHandler for DialogHandler {
                     }
                     A::FormatChanged(value) => {
                         root.state.audio_export_dialog.format = value;
+                    }
+                    A::BitrateChanged(value) => {
+                        if value.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(v) = value.parse::<u32>()
+                        {
+                            root.state.audio_export_dialog.audio_bitrate = v;
+                        }
                     }
                     A::SampleRateChanged(value) => {
                         root.state.audio_export_dialog.sample_rate = value;
@@ -277,8 +294,58 @@ impl MessageHandler for DialogHandler {
                     A::LinearEnvelopeChanged(value) => {
                         root.state.audio_export_dialog.linear_envelope = value;
                     }
+                    A::IgnoreProgramChangesChanged(value) => {
+                        root.state.audio_export_dialog.ignore_program_changes = value;
+                    }
+                    A::FilterVelocityChanged(value) => {
+                        root.state.audio_export_dialog.filter_velocity = value;
+                    }
+                    A::VelocityLowChanged(value) => {
+                        if value.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(v) = value.parse::<u8>()
+                            && v <= 127
+                        {
+                            root.state.audio_export_dialog.velocity_low = v;
+                        }
+                    }
+                    A::VelocityHighChanged(value) => {
+                        if value.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(v) = value.parse::<u8>()
+                            && v <= 127
+                        {
+                            root.state.audio_export_dialog.velocity_high = v;
+                        }
+                    }
+                    A::FilterKeyChanged(value) => {
+                        root.state.audio_export_dialog.filter_key = value;
+                    }
+                    A::KeyLowChanged(value) => {
+                        if value.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(v) = value.parse::<u8>()
+                            && v <= 127
+                        {
+                            root.state.audio_export_dialog.key_low = v;
+                        }
+                    }
+                    A::KeyHighChanged(value) => {
+                        if value.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(v) = value.parse::<u8>()
+                            && v <= 127
+                        {
+                            root.state.audio_export_dialog.key_high = v;
+                        }
+                    }
+                    A::NoteForceEndDelayChanged(value) => {
+                        if value.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(v) = value.parse::<u32>()
+                        {
+                            root.state.audio_export_dialog.note_force_end_delay = v;
+                        }
+                    }
                     A::BrowseOutput => {
-                        let current = root.state.audio_export_dialog.output_path.clone();
+                        let st = &root.state.audio_export_dialog;
+                        let current = st.output_path.clone();
+                        let ext = st.format.extension();
                         let default_name = std::path::Path::new(&current)
                             .file_name()
                             .and_then(|n| n.to_str())
@@ -288,10 +355,14 @@ impl MessageHandler for DialogHandler {
                             .and_then(|p| p.to_str())
                             .unwrap_or(".");
                         if let Some(path) = rfd::FileDialog::new()
-                            .set_file_name(default_name)
+                            .set_file_name(
+                                default_name
+                                    .rsplit_once('.')
+                                    .map(|(base, _)| format!("{base}.{ext}"))
+                                    .unwrap_or_else(|| format!("export.{ext}")),
+                            )
                             .set_directory(default_dir)
-                            .add_filter("WAV 文件", &["wav"])
-                            .add_filter("FLAC 文件", &["flac"])
+                            .add_filter(&format!("{} 文件", st.format), &[ext])
                             .save_file()
                         {
                             root.state.audio_export_dialog.output_path =

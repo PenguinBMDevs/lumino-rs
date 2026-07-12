@@ -104,6 +104,16 @@ impl Event {
         apply_limiter: bool,
         disable_fade_out: bool,
         linear_envelope: bool,
+        audio_format: String,
+        audio_bitrate: u32,
+        ignore_program_changes: bool,
+        filter_velocity: bool,
+        velocity_low: u8,
+        velocity_high: u8,
+        filter_key: bool,
+        key_low: u8,
+        key_high: u8,
+        note_force_end_delay: u32,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) -> Self {
         Self::Dialog(dialog::Event::StartAudioExport {
@@ -119,6 +129,16 @@ impl Event {
             apply_limiter,
             disable_fade_out,
             linear_envelope,
+            audio_format,
+            audio_bitrate,
+            ignore_program_changes,
+            filter_velocity,
+            velocity_low,
+            velocity_high,
+            filter_key,
+            key_low,
+            key_high,
+            note_force_end_delay,
             document,
         })
     }

@@ -4,10 +4,7 @@
 //! - Engine 负责加载 SoundFont 和配置
 //! - Renderer 负责渲染音频样本
 
-use xsynth_core::{
-    AudioPipe,
-    channel_group::ChannelGroup,
-};
+use xsynth_core::{AudioPipe, channel_group::ChannelGroup};
 
 use crate::error::ExportResult;
 

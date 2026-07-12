@@ -16,11 +16,7 @@ use xsynth_core::{
 
 use crate::error::{ExportError, ExportResult};
 
-use super::{
-    config::AudioRenderConfig,
-    stream::SampleSink,
-    tick_conv::TickToTime,
-};
+use super::{config::AudioRenderConfig, stream::SampleSink, tick_conv::TickToTime};
 
 /// 事件处理器 — 将 MIDI 事件流式渲染到 SampleSink
 ///
@@ -62,7 +58,9 @@ impl<'a> MidiEventProcessor<'a> {
 
     /// 从 Vec 池获取或创建新 Vec
     fn acquire_buffer(&mut self, capacity: usize) -> Vec<f32> {
-        self.vec_pool.pop().unwrap_or_else(|| Vec::with_capacity(capacity))
+        self.vec_pool
+            .pop()
+            .unwrap_or_else(|| Vec::with_capacity(capacity))
     }
 
     /// 归还 Vec 到池
@@ -113,7 +111,11 @@ impl<'a> MidiEventProcessor<'a> {
     }
 
     /// 处理一个 MIDI 事件，渲染到该事件的时间点
-    pub fn process_midi_event(&mut self, tick: u64, event_kind: &TrackEventKind) -> ExportResult<()> {
+    pub fn process_midi_event(
+        &mut self,
+        tick: u64,
+        event_kind: &TrackEventKind,
+    ) -> ExportResult<()> {
         // 计算到该事件的时间增量
         let delta = self.tick_conv.advance_to(tick);
         self.render_duration(delta)?;
@@ -170,12 +172,14 @@ impl<'a> MidiEventProcessor<'a> {
     /// 完成渲染：发送 NoteOff，渲染尾部直到静音
     pub fn finalize(&mut self) -> ExportResult<()> {
         // 发送所有音符关闭
-        self.channel_group.send_event(SynthEvent::AllChannels(
-            ChannelEvent::Audio(ChannelAudioEvent::AllNotesOff),
-        ));
-        self.channel_group.send_event(SynthEvent::AllChannels(
-            ChannelEvent::Audio(ChannelAudioEvent::ResetControl),
-        ));
+        self.channel_group
+            .send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+                ChannelAudioEvent::AllNotesOff,
+            )));
+        self.channel_group
+            .send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+                ChannelAudioEvent::ResetControl,
+            )));
 
         // 持续渲染尾部直到静音
         let frame_size = self.channel_count as usize;

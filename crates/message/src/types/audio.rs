@@ -55,12 +55,15 @@ impl std::fmt::Display for Interpolation {
     }
 }
 
-/// 音频格式（UI用）
+/// 音频格式（UI用）— 同步自 lumino_export::audio::codec::AudioCodec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AudioFormat {
     #[default]
     WAV,
     FLAC,
+    MP3,
+    Ogg,
+    WavPack,
 }
 
 impl std::fmt::Display for AudioFormat {
@@ -68,6 +71,30 @@ impl std::fmt::Display for AudioFormat {
         match self {
             AudioFormat::WAV => write!(f, "WAV"),
             AudioFormat::FLAC => write!(f, "FLAC"),
+            AudioFormat::MP3 => write!(f, "MP3"),
+            AudioFormat::Ogg => write!(f, "Ogg Vorbis"),
+            AudioFormat::WavPack => write!(f, "WavPack"),
+        }
+    }
+}
+
+impl AudioFormat {
+    /// 是否需要 FFmpeg 才能编码
+    pub fn needs_ffmpeg(self) -> bool {
+        matches!(
+            self,
+            AudioFormat::MP3 | AudioFormat::Ogg | AudioFormat::WavPack
+        )
+    }
+
+    /// 获取文件扩展名
+    pub fn extension(self) -> &'static str {
+        match self {
+            AudioFormat::WAV => "wav",
+            AudioFormat::FLAC => "flac",
+            AudioFormat::MP3 => "mp3",
+            AudioFormat::Ogg => "ogg",
+            AudioFormat::WavPack => "wv",
         }
     }
 }
