@@ -340,9 +340,27 @@ impl RunnerInner {
         let old = &self.window_state.storage.config.get().ui;
         let current_theme = self.window_state.window.ui().root().theme().to_string();
 
+        // 自动滚动模式（toolbar 上切换）不在 SettingsPanel 中，需要独立检测
+        let auto_scroll_mode = self
+            .window_state
+            .window
+            .ui()
+            .root()
+            .editor
+            .editor_state
+            .auto_scroll
+            .mode;
+        let auto_scroll_mode_changed = auto_scroll_mode != old.auto_scroll.mode;
+
         let diff = match Self::config_diff(new, old, &current_theme) {
             Some(d) => d,
-            None => return,
+            None if !auto_scroll_mode_changed => return,
+            None => ConfigDiff {
+                synth_changed: false,
+                xsynth_changed: false,
+                titlebar_changed: false,
+                font_changed: false,
+            },
         };
 
         // 合成器变更日志
@@ -417,6 +435,15 @@ impl RunnerInner {
             config.ui.xsynth_max_voices_per_key = new.xsynth_max_voices_per_key;
             config.ui.velocity_filter_threshold = new.velocity_filter_threshold;
             config.ui.eraser_behavior = new.eraser_behavior;
+            config.ui.auto_scroll.mode = self
+                .window_state
+                .window
+                .ui()
+                .root()
+                .editor
+                .editor_state
+                .auto_scroll
+                .mode;
             config.ui.auto_scroll.fixed_indicator_position = new.auto_scroll_fixed_position;
             config.ui.auto_scroll.page_trigger_offset = new.auto_scroll_page_trigger_offset;
             config.ui.auto_scroll.page_return_position = new.auto_scroll_page_return_position;

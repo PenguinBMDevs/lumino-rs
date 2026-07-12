@@ -89,12 +89,19 @@ impl Root {
             state.dialog_type = dt;
         }
 
+        // 应用已保存的自动滚动配置到 Editor 和 Toolbar，
+        // 否则它们始终使用 AutoScrollConfig::default() 导致用户设置不生效。
+        let mut editor = editor::Editor::new();
+        editor.editor_state.auto_scroll = params.ui_config.auto_scroll;
+        let mut toolbar = toolbar::Toolbar::new();
+        toolbar.auto_scroll_mode = params.ui_config.auto_scroll.mode;
+
         Self {
             sidebar: sidebar::Sidebar::new(),
             titlebar: titlebar::Titlebar::new(),
             statusbar: statusbar::StatusBar::new(),
-            toolbar: toolbar::Toolbar::new(),
-            editor: editor::Editor::new(),
+            toolbar,
+            editor,
             arrangement_view: editor::arrangement::ArrangementView::new(),
             window: window::Window::new(&params.theme),
             settings: settings::SettingsPanel::new(&params.ui_config),
