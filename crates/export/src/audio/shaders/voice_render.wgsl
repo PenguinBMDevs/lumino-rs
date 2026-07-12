@@ -1,5 +1,4 @@
 // Lumino GPU 音频渲染着色器
-// 每个工作线程处理一个 voice，将插值后的样本累加到输出缓冲区
 //
 // 注意：避免使用 ptr<function, T> 函数参数，naga 的 SPIR-V 后端
 // 在复杂指针传递时存在 "Expression not cached" 内部错误。
@@ -35,7 +34,13 @@ struct VoiceState {
     env_stage: u32,
     env_time: f32,
     is_active: u32,
-    _pad: u32,
+    start_sample_offset: u32,
+    release_sample_offset: u32,
+    key: u32,
+    channel: u32,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
 };
 
 @group(0) @binding(0) var<uniform> params: RenderParams;
@@ -49,9 +54,21 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
     return a + (b - a) * t;
 }
 
+// ===== 输出清零入口 =====
+
+@compute @workgroup_size(256)
+fn clear_output(@builtin(global_invocation_id) id: vec3<u32>) {
+    let idx = id.x;
+    let total = params.num_samples * 2u;
+    if (idx >= total) {
+        return;
+    }
+    output_buffer[idx] = 0.0;
+}
+
 // ===== 主计算入口 =====
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let voice_idx = id.x;
     if (voice_idx >= params.num_voices) {
@@ -68,8 +85,17 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let output_offset = params.output_offset;
     let delta_time = 1.0 / sample_rate;
 
-    // 每个工作线程处理一个 voice 的完整样点序列
-    for (var s: u32 = 0u; s < num_samples; s++) {
+    // 直接从 start_sample_offset 开始，避免为静音前缀支付循环与分支开销。
+    let start_s = voice.start_sample_offset;
+    if (start_s >= num_samples) {
+        return;
+    }
+    for (var s: u32 = start_s; s < num_samples; s++) {
+        if (s == voice.release_sample_offset && voice.env_stage < 3u) {
+            voice.env_stage = 3u;
+            voice.env_time = 0.0;
+        }
+
         // === 内联包络计算（避免 ptr<function> 函数参数，绕过 naga SPIR-V bug） ===
         let env_stage = voice.env_stage;
         var ev = voice.envelope_value;

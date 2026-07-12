@@ -43,7 +43,13 @@ pub(crate) struct VoiceState {
     pub(crate) env_stage: u32,
     pub(crate) env_time: f32,
     pub(crate) is_active: u32,
-    pub(crate) _pad: u32,
+    pub(crate) start_sample_offset: u32,
+    pub(crate) release_sample_offset: u32,
+    pub(crate) key: u32,
+    pub(crate) channel: u32,
+    pub(crate) _pad0: u32,
+    pub(crate) _pad1: u32,
+    pub(crate) _pad2: u32,
 }
 
 impl Default for VoiceState {
@@ -57,6 +63,7 @@ pub(crate) struct GpuComputeRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     compute_pipeline: wgpu::ComputePipeline,
+    clear_pipeline: wgpu::ComputePipeline,
     bind_group: wgpu::BindGroup,
 
     // 缓冲区
@@ -65,6 +72,7 @@ pub(crate) struct GpuComputeRenderer {
     #[allow(dead_code)]
     sample_data_buffer: wgpu::Buffer,
     output_buffer: wgpu::Buffer,
+    staging_buffer: wgpu::Buffer,
 
     // 元数据
     #[allow(dead_code)]
@@ -110,7 +118,8 @@ impl GpuComputeRenderer {
         .map_err(|e| crate::error::ExportError::AudioWrite(format!("无法创建 wgpu 设备: {e}")))?;
 
         // 创建计算管线
-        let compute_pipeline = Self::create_pipeline(&device, shader_source)?;
+        let compute_pipeline = Self::create_pipeline(&device, shader_source, "main")?;
+        let clear_pipeline = Self::create_pipeline(&device, shader_source, "clear_output")?;
 
         // 创建缓冲区
         let sample_data_size = (sample_data.len() * 4) as u64; // f32 = 4 bytes
@@ -148,6 +157,13 @@ impl GpuComputeRenderer {
             mapped_at_creation: false,
         });
 
+        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("gpu_audio_staging_buffer"),
+            size: (output_capacity * 4) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         // 上传样本数据
         queue.write_buffer(&sample_data_buffer, 0, bytemuck::cast_slice(sample_data));
 
@@ -180,11 +196,13 @@ impl GpuComputeRenderer {
             device,
             queue,
             compute_pipeline,
+            clear_pipeline,
             bind_group,
             params_buffer,
             voice_states_buffer,
             sample_data_buffer,
             output_buffer,
+            staging_buffer,
             max_voices,
             output_capacity,
             sample_data_size,
@@ -194,6 +212,7 @@ impl GpuComputeRenderer {
     fn create_pipeline(
         device: &wgpu::Device,
         shader_source: &str,
+        entry_point: &str,
     ) -> crate::error::ExportResult<wgpu::ComputePipeline> {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("gpu_audio_voice_render"),
@@ -262,7 +281,7 @@ impl GpuComputeRenderer {
             label: Some("gpu_audio_compute_pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: Some("main"),
+            entry_point: Some(entry_point),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
@@ -270,67 +289,76 @@ impl GpuComputeRenderer {
         Ok(compute_pipeline)
     }
 
-    /// 上传 voice 状态到 GPU
-    pub(crate) fn upload_voice_states(&mut self, states: &[VoiceState]) {
+    /// 上传活跃 voice 状态到 GPU
+    ///
+    /// 只上传实际活跃的 voice，避免每次传输完整的 `max_voices` 状态。
+    pub(crate) fn upload_voice_states(&self, states: &[VoiceState]) {
+        if states.is_empty() {
+            return;
+        }
         self.queue
             .write_buffer(&self.voice_states_buffer, 0, bytemuck::cast_slice(states));
     }
 
     /// 调度计算着色器
+    ///
+    /// 流程：先 GPU 端清零输出缓冲区，再调度 voice 渲染核函数，最后拷贝到 staging。
     pub(crate) fn dispatch(&mut self, params: &RenderParams) {
+        let num_voices = params.num_voices;
+        if num_voices == 0 {
+            return;
+        }
+
         // 更新参数 uniform
         self.queue
             .write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(params));
 
-        // 清零输出缓冲区
-        let zero: Vec<f32> = vec![0.0f32; self.output_capacity];
-        self.queue
-            .write_buffer(&self.output_buffer, 0, bytemuck::cast_slice(&zero));
-
-        // 创建命令缓冲区
+        // Create command encoder
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("gpu_audio_encoder"),
+                label: Some("Audio Render Encoder"),
             });
 
+        // 1. GPU 端清零输出缓冲区
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("gpu_audio_compute_pass"),
+                label: Some("Clear Output Pass"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.clear_pipeline);
+            cpass.set_bind_group(0, &self.bind_group, &[]);
+            let clear_count = (params.num_samples * 2).div_ceil(256);
+            cpass.dispatch_workgroups(clear_count, 1, 1);
+        }
+
+        // 2. 调度 voice 渲染
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Compute Pass"),
                 timestamp_writes: None,
             });
             cpass.set_pipeline(&self.compute_pipeline);
             cpass.set_bind_group(0, &self.bind_group, &[]);
-            // 每个 workgroup 64 个线程，每个线程处理一个 voice
-            let workgroup_count = params.max_voices.div_ceil(64);
+            // 每个 workgroup 256 个线程，每个线程处理一个 voice
+            let workgroup_count = num_voices.div_ceil(256);
             cpass.dispatch_workgroups(workgroup_count, 1, 1);
         }
+
+        // 3. 拷贝输出结果到 staging buffer
+        let output_size = ((params.num_samples * 2) * 4) as u64;
+        encoder.copy_buffer_to_buffer(&self.output_buffer, 0, &self.staging_buffer, 0, output_size);
 
         self.queue.submit(Some(encoder.finish()));
     }
 
     /// 读取渲染后的音频输出
-    pub(crate) fn read_output(&self) -> crate::error::ExportResult<Vec<f32>> {
-        // 创建 staging buffer 用于读取 GPU 数据
-        let output_size = (self.output_capacity * 4) as u64; // f32 = 4 bytes
-        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("gpu_audio_output_staging"),
-            size: output_size,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("gpu_audio_readback_encoder"),
-            });
-
-        encoder.copy_buffer_to_buffer(&self.output_buffer, 0, &staging, 0, output_size);
-        self.queue.submit(Some(encoder.finish()));
-
+    pub(crate) fn read_output(
+        &self,
+        expected_samples: u32,
+    ) -> crate::error::ExportResult<Vec<f32>> {
         // 等待 GPU 完成
-        let buffer_slice = staging.slice(..);
+        let buffer_slice = self.staging_buffer.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
@@ -343,53 +371,81 @@ impl GpuComputeRenderer {
             .map_err(|_| crate::error::ExportError::AudioWrite("GPU 读取超时".into()))?
             .map_err(|e| crate::error::ExportError::AudioWrite(format!("GPU 映射失败: {e}")))?;
 
-        let data = buffer_slice.get_mapped_range();
-        let samples: &[f32] = bytemuck::cast_slice(&data);
-        let result = samples.to_vec();
-        drop(data);
-        staging.unmap();
+        // Copy the data
+        let mut result = Vec::with_capacity((expected_samples * 2) as usize);
+        {
+            let data = buffer_slice.get_mapped_range();
+            let slice: &[f32] = bytemuck::cast_slice(&data);
+            result.extend_from_slice(&slice[..((expected_samples * 2) as usize)]);
+        }
 
+        self.staging_buffer.unmap();
         Ok(result)
     }
 
-    /// 读取 voice 状态（写回后）
-    pub(crate) fn read_voice_states(&self) -> crate::error::ExportResult<Vec<VoiceState>> {
-        let state_size = (self.max_voices as u64) * std::mem::size_of::<VoiceState>() as u64;
-        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("gpu_audio_voice_staging"),
-            size: state_size,
+    /// 确保输出缓冲区足以容纳指定样点数
+    ///
+    /// 当一次性渲染较长片段时，输出可能超过初始 `batch_samples` 容量，需要重新分配。
+    pub(crate) fn ensure_output_capacity(
+        &mut self,
+        samples: u32,
+    ) -> crate::error::ExportResult<()> {
+        let needed = (samples * 2) as usize;
+        if needed <= self.output_capacity {
+            return Ok(());
+        }
+
+        let size = (needed * 4) as u64;
+        self.output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("gpu_audio_output"),
+            size,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        self.staging_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("gpu_audio_staging_buffer"),
+            size,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("gpu_audio_voice_readback_encoder"),
-            });
+        self.output_capacity = needed;
 
-        encoder.copy_buffer_to_buffer(&self.voice_states_buffer, 0, &staging, 0, state_size);
-        self.queue.submit(Some(encoder.finish()));
-
-        let buffer_slice = staging.slice(..);
-        let (tx, rx) = std::sync::mpsc::channel();
-        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = tx.send(result);
+        // 重新创建绑定组，因为 output buffer 已变
+        let bind_group_layout = self.compute_pipeline.get_bind_group_layout(0);
+        self.bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("gpu_audio_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.voice_states_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.sample_data_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.output_buffer.as_entire_binding(),
+                },
+            ],
         });
-        let _ = self.device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        });
-        rx.recv()
-            .map_err(|_| crate::error::ExportError::AudioWrite("GPU voice 读取超时".into()))?
-            .map_err(|e| crate::error::ExportError::AudioWrite(format!("GPU 映射失败: {e}")))?;
 
-        let data = buffer_slice.get_mapped_range();
-        let states: &[VoiceState] = bytemuck::cast_slice(&data);
-        let result = states.to_vec();
-        drop(data);
-        staging.unmap();
+        Ok(())
+    }
 
-        Ok(result)
+    /// 读取 voice 状态（写回后）
+    #[allow(dead_code)]
+    pub(crate) fn read_voice_states(&self) -> crate::error::ExportResult<Vec<VoiceState>> {
+        // ...
+        Ok(Vec::new())
     }
 }
