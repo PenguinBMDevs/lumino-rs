@@ -29,7 +29,7 @@ impl Storage {
 
         Ok(Self {
             // 成功
-            config: config::ConfigWrapper::new(config.join("config.toml"))?,
+            config: config::ConfigWrapper::new(config.join("config.json"))?,
             ui_state: ui_state::UiStateWrapper::new(preference.join("ui_state.json")),
         })
     }
