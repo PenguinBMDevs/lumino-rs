@@ -331,21 +331,6 @@ pub fn view<'a>(
             .size(12.0)
             .style(create_placeholder_text_style()),
         iced_widget::space().height(SPACING_CONTENT),
-        // 钢琴仿真键盘开关
-        row![
-            iced_widget::Checkbox::new(settings.use_textured_keyboard)
-                .label(t.textured_keyboard)
-                .on_toggle(|enabled| {
-                    Message::Settings(crate::settings::Event::TexturedKeyboardChanged(enabled))
-                }),
-        ]
-        .spacing(SPACING_ICON_LABEL)
-        .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        text(t.textured_keyboard_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-        iced_widget::space().height(SPACING_CONTENT),
         // 力度面板显示样式（曲线/柱状图切换）
         row![
             iced_widget::Checkbox::new(settings.velocity_curve_style)

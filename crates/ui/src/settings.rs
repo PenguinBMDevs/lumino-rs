@@ -46,8 +46,6 @@ pub enum Event {
     IconHiDPIChanged(bool),
     /// 256键扩展钢琴卷帘开关
     Enable256keyChanged(bool),
-    /// 钢琴仿真贴图键盘开关
-    TexturedKeyboardChanged(bool),
     /// 力度面板曲线/柱状图样式切换
     VelocityCurveStyleChanged(bool),
     /// MIDI 输入设备选择
@@ -89,8 +87,6 @@ pub struct SettingsPanel {
     pub icon_hidpi: bool,
     /// 256键扩展钢琴卷帘
     pub enable_256key: bool,
-    /// 钢琴仿真贴图键盘
-    pub use_textured_keyboard: bool,
     /// 力度面板显示样式（true=曲线折线图，false=柱状图）
     pub velocity_curve_style: bool,
     /// 可用的 MIDI 输入设备列表
@@ -131,7 +127,6 @@ impl SettingsPanel {
             velocity_filter_threshold: ui_config.velocity_filter_threshold,
             icon_hidpi: ui_config.icon_hidpi,
             enable_256key: ui_config.enable_256key,
-            use_textured_keyboard: ui_config.use_textured_keyboard,
             velocity_curve_style: ui_config.velocity_curve_style,
             midi_devices: Vec::new(),
             selected_midi_device: None,
@@ -235,9 +230,6 @@ impl SettingsPanel {
             }
             Event::Enable256keyChanged(enabled) => {
                 self.enable_256key = enabled;
-            }
-            Event::TexturedKeyboardChanged(enabled) => {
-                self.use_textured_keyboard = enabled;
             }
             Event::VelocityCurveStyleChanged(enabled) => {
                 self.velocity_curve_style = enabled;

@@ -180,9 +180,6 @@ pub struct UiConfig {
     /// 是否启用 256 键扩展钢琴卷帘（默认关闭）
     #[serde(default)]
     pub enable_256key: bool,
-    /// 是否使用钢琴仿真贴图键盘（默认开启，关闭则使用旧版纯色键盘）
-    #[serde(default = "default_true")]
-    pub use_textured_keyboard: bool,
     /// 力度面板显示样式（默认曲线=折线图，false=柱状图）
     #[serde(default = "default_true")]
     pub velocity_curve_style: bool,
@@ -268,7 +265,6 @@ impl Default for UiConfig {
             xsynth_global_voice_limit: None,
             icon_hidpi: true,
             enable_256key: false,
-            use_textured_keyboard: true,
             velocity_curve_style: true,
             hires_onion_enabled: true,
             hires_measures_per_group: default_hires_measures_per_group(),
