@@ -102,7 +102,7 @@ impl GpuComputeRenderer {
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("Lumino GPU Audio Render"),
             required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::default(),
+            required_limits: adapter.limits(),
             memory_hints: wgpu::MemoryHints::default(),
             experimental_features: wgpu::ExperimentalFeatures::default(),
             trace: wgpu::Trace::default(),
