@@ -3493,6 +3493,7 @@ dependencies = [
  "lumino-memory-monitor",
  "lumino-midi-io",
  "lumino-midi-loader",
+ "memmap2",
  "midly",
  "num-bigint",
  "serde",

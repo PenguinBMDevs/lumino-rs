@@ -46,10 +46,11 @@ pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
         config.midi_path, config.soundfonts, config.output_path
     );
 
-    // 读取 MIDI 字节（必须持有以维持 StreamingMidiPlayer 的借用）
-    let midi_bytes = std::fs::read(&config.midi_path).map_err(ExportError::Io)?;
+    // 使用 mmap 映射 MIDI 文件，操作系统按需加载页面，不预读整个文件
+    let file = std::fs::File::open(&config.midi_path)?;
+    let mmap = unsafe { memmap2::Mmap::map(&file)? };
 
-    let player = StreamingMidiPlayer::from_bytes(&midi_bytes)
+    let player = StreamingMidiPlayer::from_bytes(&mmap)
         .map_err(|e| ExportError::AudioWrite(format!("解析 MIDI 失败: {e}")))?;
 
     info!(
@@ -91,16 +92,17 @@ pub fn render_audio_from_document(
     doc: &MidiDocument,
 ) -> ExportResult<()> {
     info!(
-        "[内存] 音频渲染: SF2={:?}, 输出={:?}",
+        "[内存-流式] 音频渲染: SF2={:?}, 输出={:?}",
         config.soundfonts, config.output_path
     );
 
     // 初始化渲染引擎 + SF2 加载
     let (mut renderer, _) = init_renderer(config)?;
 
-    // 从 MidiDocument 构建合并事件列表
-    let merged = build_document_events(doc);
-    if merged.is_empty() {
+    // 流式迭代 MidiDocument 中的事件，无需构建 Vec<MergedEvent>
+    let total_events: usize =
+        doc.notes.iter().map(|v| v.len()).sum::<usize>() * 2 + doc.control_events.len();
+    if total_events == 0 {
         return Err(ExportError::AudioWrite(
             "MIDI 文档中没有可渲染的事件".into(),
         ));
@@ -111,11 +113,11 @@ pub fn render_audio_from_document(
     let ppqn = 480; // MidiDocument 不保存 PPQN，480 是标准默认值
     let mut tick_conv = TickToTime::new(tempos, ppqn);
 
-    // 文档渲染主循环
+    // 文档渲染主循环（流式）
     run_document_render_loop(
         &mut renderer,
         &mut tick_conv,
-        &merged,
+        doc,
         config.progress_callback.clone(),
     )?;
 
@@ -137,6 +139,192 @@ struct MergedEvent {
     channel: u8,
     param1: u8,  // key / controller / program
     param2: u16, // velocity / value / raw bend
+}
+
+/// MidiDocEventStream — 流式迭代 MidiDocument 中的事件，
+/// 避免创建 Vec<MergedEvent> 冗余分配。
+///
+/// 内部维护每轨的 note 游标，每次迭代扫描所有轨道找到最小 tick，
+/// 按优先级发射事件（NoteOff < CC < PC < PB < NoteOn）。
+struct MidiDocEventStream<'a> {
+    doc: &'a MidiDocument,
+    /// 每轨的 Note 游标：(note_idx, note_on_emitted)
+    note_cursors: Vec<(usize, bool)>,
+    /// 控制事件游标
+    ctrl_cursor: usize,
+    total_events: usize,
+    emitted: usize,
+}
+
+enum SourceId {
+    Note(usize),
+    Control,
+}
+
+impl<'a> MidiDocEventStream<'a> {
+    fn new(doc: &'a MidiDocument) -> Self {
+        let track_count = doc.notes.len();
+        let note_cursors = vec![(0_usize, false); track_count];
+        let total_notes: usize = doc.notes.iter().map(|v| v.len()).sum();
+        let total_events = total_notes * 2 + doc.control_events.len();
+        MidiDocEventStream {
+            doc,
+            note_cursors,
+            ctrl_cursor: 0,
+            total_events,
+            emitted: 0,
+        }
+    }
+
+    /// 获取下一个事件（按 tick 升序，同 tick 内 NoteOff < CC < PC < PB < NoteOn）
+    #[allow(unused_assignments)]
+    fn next_event(&mut self) -> Option<MergedEvent> {
+        if self.emitted >= self.total_events {
+            return None;
+        }
+
+        // 1. 找到最小 tick
+        let mut min_tick = u32::MAX;
+
+        for (track_idx, &(note_idx, note_on_emitted)) in self.note_cursors.iter().enumerate() {
+            if note_idx < self.doc.notes[track_idx].len() {
+                let note = &self.doc.notes[track_idx][note_idx];
+                let tick = if note_on_emitted {
+                    note.end_tick
+                } else {
+                    note.start_tick
+                };
+                if tick < min_tick {
+                    min_tick = tick;
+                }
+            }
+        }
+        if self.ctrl_cursor < self.doc.control_events.len() {
+            let tick = self.doc.control_events[self.ctrl_cursor].tick;
+            if tick < min_tick {
+                min_tick = tick;
+            }
+        }
+
+        if min_tick == u32::MAX {
+            return None;
+        }
+
+        // 2. 在最小 tick 处找到优先级最高的事件
+        // 优先级: NoteOff(1) < CC(2) < PC(3) < PB(4) < NoteOn(5)
+        let mut best_source: Option<SourceId> = None;
+        let mut best_priority = 6u8;
+        let mut best_event: Option<MergedEvent> = None;
+
+        // 检查 Note 游标
+        for (track_idx, &(note_idx, note_on_emitted)) in self.note_cursors.iter().enumerate() {
+            if note_idx >= self.doc.notes[track_idx].len() {
+                continue;
+            }
+            let note = &self.doc.notes[track_idx][note_idx];
+            let tick = if note_on_emitted {
+                note.end_tick
+            } else {
+                note.start_tick
+            };
+            if tick != min_tick {
+                continue;
+            }
+            let priority = if note_on_emitted { 1 } else { 5 };
+            if priority < best_priority {
+                best_priority = priority;
+                best_source = Some(SourceId::Note(track_idx));
+                best_event = if note_on_emitted {
+                    Some(MergedEvent {
+                        tick: note.end_tick,
+                        kind: 1, // NoteOff
+                        channel: note.channel,
+                        param1: note.key,
+                        param2: 0,
+                    })
+                } else {
+                    Some(MergedEvent {
+                        tick: note.start_tick,
+                        kind: 0, // NoteOn
+                        channel: note.channel,
+                        param1: note.key,
+                        param2: note.velocity as u16,
+                    })
+                };
+            }
+        }
+
+        // 检查控制事件
+        if self.ctrl_cursor < self.doc.control_events.len() {
+            let ctrl = &self.doc.control_events[self.ctrl_cursor];
+            if ctrl.tick == min_tick {
+                let (priority, event) = match ctrl.kind {
+                    0 => {
+                        let (c, v) = ctrl.as_control_change();
+                        (
+                            2,
+                            MergedEvent {
+                                tick: ctrl.tick,
+                                kind: 2,
+                                channel: ctrl.channel,
+                                param1: c,
+                                param2: v as u16,
+                            },
+                        )
+                    }
+                    1 => (
+                        3,
+                        MergedEvent {
+                            tick: ctrl.tick,
+                            kind: 3,
+                            channel: ctrl.channel,
+                            param1: ctrl.as_program_change(),
+                            param2: 0,
+                        },
+                    ),
+                    2 => (
+                        4,
+                        MergedEvent {
+                            tick: ctrl.tick,
+                            kind: 4,
+                            channel: ctrl.channel,
+                            param1: 0,
+                            param2: ctrl.param,
+                        },
+                    ),
+                    _ => unreachable!("PackedControlEvent.kind 只能是 0/1/2，实际为 {}", ctrl.kind),
+                };
+                if priority < best_priority {
+                    best_priority = priority;
+                    best_source = Some(SourceId::Control);
+                    best_event = Some(event);
+                }
+            }
+        }
+
+        // 3. 推进游标
+        if let Some(source) = best_source {
+            match source {
+                SourceId::Note(track_idx) => {
+                    let (ref mut note_idx, ref mut note_on_emitted) = self.note_cursors[track_idx];
+                    if *note_on_emitted {
+                        // NoteOff 已发射 → 前进到下一音符
+                        *note_idx += 1;
+                        *note_on_emitted = false;
+                    } else {
+                        // NoteOn 已发射 → 下一事件是 NoteOff
+                        *note_on_emitted = true;
+                    }
+                }
+                SourceId::Control => {
+                    self.ctrl_cursor += 1;
+                }
+            }
+        }
+
+        self.emitted += 1;
+        best_event
+    }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -227,56 +415,53 @@ fn run_streaming_render_loop(
         }
 
         // 转换并发送事件
-        match kind {
-            TrackEventKind::Midi { channel, message } => {
-                let ch = channel.as_int() as u32;
-                match message {
-                    MidiMessage::NoteOn { key, vel } => {
-                        renderer.send_event(SynthEvent::Channel(
-                            ch,
-                            ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
-                                key,
-                                vel: vel.as_int(),
-                            }),
-                        ));
-                        event_count += 1;
-                        note_count += 1;
-                    }
-                    MidiMessage::NoteOff { key, .. } => {
-                        renderer.send_event(SynthEvent::Channel(
-                            ch,
-                            ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key }),
-                        ));
-                        event_count += 1;
-                    }
-                    MidiMessage::Controller { controller, value } => {
-                        renderer.send_event(SynthEvent::Channel(
-                            ch,
-                            ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
-                                controller.as_int(),
-                                value.as_int(),
-                            ))),
-                        ));
-                    }
-                    MidiMessage::ProgramChange { program } => {
-                        renderer.send_event(SynthEvent::Channel(
-                            ch,
-                            ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program.as_int())),
-                        ));
-                    }
-                    MidiMessage::PitchBend { bend } => {
-                        renderer.send_event(SynthEvent::Channel(
-                            ch,
-                            ChannelEvent::Audio(ChannelAudioEvent::Control(
-                                ControlEvent::PitchBendValue(bend.as_int() as f32 / 8192.0 - 1.0),
-                            )),
-                        ));
-                    }
-                    _ => {}
+        if let TrackEventKind::Midi { channel, message } = kind {
+            let ch = channel.as_int() as u32;
+            match message {
+                MidiMessage::NoteOn { key, vel } => {
+                    renderer.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
+                            key,
+                            vel: vel.as_int(),
+                        }),
+                    ));
+                    event_count += 1;
+                    note_count += 1;
                 }
+                MidiMessage::NoteOff { key, .. } => {
+                    renderer.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key }),
+                    ));
+                    event_count += 1;
+                }
+                MidiMessage::Controller { controller, value } => {
+                    renderer.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
+                            controller.as_int(),
+                            value.as_int(),
+                        ))),
+                    ));
+                }
+                MidiMessage::ProgramChange { program } => {
+                    renderer.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program.as_int())),
+                    ));
+                }
+                MidiMessage::PitchBend { bend } => {
+                    renderer.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::Control(
+                            ControlEvent::PitchBendValue(bend.as_int() as f32 / 8192.0 - 1.0),
+                        )),
+                    ));
+                }
+                _ => {}
             }
-            _ => {} // 跳过 Meta / SysEx
-        }
+        } // Meta / SysEx 被跳过
     }
 
     // 完成进度条
@@ -298,32 +483,37 @@ fn run_streaming_render_loop(
 }
 
 // ════════════════════════════════════════════════════════════
-// 文档渲染主循环（MidiDocument）
+// 文档渲染主循环（MidiDocEventStream — 零 Vec 分配）
 // ════════════════════════════════════════════════════════════
 
 fn run_document_render_loop(
     renderer: &mut AudioRenderer,
     tick_conv: &mut TickToTime,
-    events: &[MergedEvent],
+    doc: &MidiDocument,
     progress_callback: Option<crate::audio::config::ProgressCallback>,
 ) -> ExportResult<()> {
-    info!("文档渲染循环开始 ({})...", events.len());
+    let mut stream = MidiDocEventStream::new(doc);
+    let total_tick = doc
+        .notes
+        .iter()
+        .flat_map(|t| t.iter())
+        .map(|n| n.end_tick)
+        .max()
+        .unwrap_or(0)
+        .max(1) as u64;
+
+    info!("文档流式渲染循环开始 ({} 事件)...", stream.total_events);
     let mut event_count = 0_u64;
     let mut current_tick: u64 = 0;
     let mut last_progress_time = std::time::Instant::now();
-
-    // 预计算总 tick 用于进度
-    let total_ticks = events.last().map(|e| e.tick as u64).unwrap_or(1).max(1);
     let start_time = std::time::Instant::now();
 
-    // 按 tick 逐批处理：同一 tick 的事件先累积再发送
-    let mut batch_start = 0_usize;
-    while batch_start < events.len() {
-        let tick = events[batch_start].tick as u64;
+    while let Some(event) = stream.next_event() {
+        let tick = event.tick as u64;
 
         // 进度报告：每 100ms 一次
         if last_progress_time.elapsed() >= std::time::Duration::from_millis(100) {
-            let pct = tick as f64 / total_ticks as f64;
+            let pct = tick as f64 / total_tick as f64;
             let elapsed = start_time.elapsed();
             let msg = format!(
                 "进度: {:.1}% | 事件: {} | 耗时: {:.1}s",
@@ -339,12 +529,6 @@ fn run_document_render_loop(
             last_progress_time = std::time::Instant::now();
         }
 
-        // 找到同一 tick 的事件范围
-        let mut batch_end = batch_start + 1;
-        while batch_end < events.len() && events[batch_end].tick == events[batch_start].tick {
-            batch_end += 1;
-        }
-
         // 前进时间
         if tick > current_tick {
             let delta = tick_conv.advance_to(tick);
@@ -354,62 +538,52 @@ fn run_document_render_loop(
             current_tick = tick;
         }
 
-        // 处理本 tick 的所有事件
-        for i in batch_start..batch_end {
-            let e = &events[i];
-            let ch = e.channel as u32;
-            match e.kind {
-                0 => {
-                    // NoteOn
-                    renderer.send_event(SynthEvent::Channel(
-                        ch,
-                        ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
-                            key: e.param1,
-                            vel: e.param2 as u8,
-                        }),
-                    ));
-                    event_count += 1;
-                }
-                1 => {
-                    // NoteOff
-                    renderer.send_event(SynthEvent::Channel(
-                        ch,
-                        ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: e.param1 }),
-                    ));
-                    event_count += 1;
-                }
-                2 => {
-                    // CC
-                    renderer.send_event(SynthEvent::Channel(
-                        ch,
-                        ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
-                            e.param1,
-                            e.param2 as u8,
-                        ))),
-                    ));
-                }
-                3 => {
-                    // PC
-                    renderer.send_event(SynthEvent::Channel(
-                        ch,
-                        ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(e.param1)),
-                    ));
-                }
-                4 => {
-                    // PB
-                    let normalized = (e.param2 as i16 - 8192) as f32 / 8192.0;
-                    renderer.send_event(SynthEvent::Channel(
-                        ch,
-                        ChannelEvent::Audio(ChannelAudioEvent::Control(
-                            ControlEvent::PitchBendValue(normalized),
-                        )),
-                    ));
-                }
-                _ => {}
+        // 发送事件
+        let ch = event.channel as u32;
+        match event.kind {
+            0 => {
+                renderer.send_event(SynthEvent::Channel(
+                    ch,
+                    ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
+                        key: event.param1,
+                        vel: event.param2 as u8,
+                    }),
+                ));
+                event_count += 1;
             }
+            1 => {
+                renderer.send_event(SynthEvent::Channel(
+                    ch,
+                    ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: event.param1 }),
+                ));
+                event_count += 1;
+            }
+            2 => {
+                renderer.send_event(SynthEvent::Channel(
+                    ch,
+                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
+                        event.param1,
+                        event.param2 as u8,
+                    ))),
+                ));
+            }
+            3 => {
+                renderer.send_event(SynthEvent::Channel(
+                    ch,
+                    ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(event.param1)),
+                ));
+            }
+            4 => {
+                let normalized = (event.param2 as i16 - 8192) as f32 / 8192.0;
+                renderer.send_event(SynthEvent::Channel(
+                    ch,
+                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
+                        normalized,
+                    ))),
+                ));
+            }
+            _ => {}
         }
-
-        batch_start = batch_end;
     }
 
     // 完成进度
@@ -425,7 +599,7 @@ fn run_document_render_loop(
         eprintln!("\r{}", msg);
     }
 
-    info!("文档渲染完成: 处理 {event_count} 个事件");
+    info!("文档流式渲染完成: 处理 {event_count} 个事件");
     Ok(())
 }
 
@@ -446,65 +620,4 @@ fn finalize_renderer(renderer: AudioRenderer, config: &AudioRenderConfig) -> Exp
     Ok(())
 }
 
-// ════════════════════════════════════════════════════════════
-// MidiDocument → 合并事件列表
-// ════════════════════════════════════════════════════════════
-
-/// 从 MidiDocument 构建按 tick 排序的合并事件列表。
-///
-/// - 每个 `NoteEvent` 拆为 NoteOn(start_tick) + NoteOff(end_tick)
-/// - `PackedControlEvent` 按 kind 映射为 CC/PC/PB
-/// - 结果按 tick 升序，同 tick 内 NoteOff → CC → PC → PB → NoteOn
-fn build_document_events(doc: &MidiDocument) -> Vec<MergedEvent> {
-    let total_notes: usize = doc.notes.iter().map(|v| v.len()).sum();
-    let mut events = Vec::with_capacity(total_notes * 2 + doc.control_events.len());
-
-    // 1. 音符 → NoteOn + NoteOff
-    for track_notes in &doc.notes {
-        for note in track_notes {
-            events.push(MergedEvent {
-                tick: note.start_tick,
-                kind: 0, // NoteOn
-                channel: note.channel,
-                param1: note.key,
-                param2: note.velocity as u16,
-            });
-            events.push(MergedEvent {
-                tick: note.end_tick,
-                kind: 1, // NoteOff
-                channel: note.channel,
-                param1: note.key,
-                param2: 0,
-            });
-        }
-    }
-
-    // 2. 控制事件
-    for ctrl in &doc.control_events {
-        let (kind, chan, p1, p2): (u8, u8, u8, u16) = match ctrl.kind {
-            0 => {
-                let (c, v) = ctrl.as_control_change();
-                (2, ctrl.channel, c, v as u16)
-            }
-            1 => {
-                let p = ctrl.as_program_change();
-                (3, ctrl.channel, p, 0)
-            }
-            2 => (4, ctrl.channel, 0, ctrl.param),
-            _ => continue,
-        };
-        events.push(MergedEvent {
-            tick: ctrl.tick,
-            kind,
-            channel: chan,
-            param1: p1,
-            param2: p2,
-        });
-    }
-
-    // 3. 排序：tick → 事件类型优先级
-    // NoteOff(1) < CC(2) < PC(3) < PB(4) < NoteOn(0→映射为5)
-    events.sort_unstable_by_key(|e| (e.tick, if e.kind == 0 { 5 } else { e.kind as u32 }));
-
-    events
-}
+// build_document_events 已废弃 — 由 MidiDocEventStream 流式替代

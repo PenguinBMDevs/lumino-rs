@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use crossbeam_channel::unbounded;
+use crossbeam_channel::bounded;
 use xsynth_core::{
     AudioPipe, ChannelCount,
     channel_group::{ChannelGroup, SynthEvent},
@@ -65,7 +65,7 @@ impl AudioRenderer {
         let channel_group = ChannelGroup::new(group_config.clone());
 
         // 创建 Vec 回收通道：写入线程消费完 Vec 后发回，本线程复用
-        let (vec_recycle_tx, vec_recycle_rx) = unbounded::<Vec<f32>>();
+        let (vec_recycle_tx, vec_recycle_rx) = bounded::<Vec<f32>>(2);
         let audio_writer = AudioFileWriter::new(sample_rate, channel_count, path, vec_recycle_tx)?;
 
         // 构建限幅器

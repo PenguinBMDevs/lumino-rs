@@ -8,7 +8,7 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{Receiver, Sender, bounded};
 use hound::{WavSpec, WavWriter};
 
 use crate::error::{ExportError, ExportResult};
@@ -43,7 +43,7 @@ impl AudioFileWriter {
         let writer = WavWriter::create(path, spec)
             .map_err(|e| ExportError::AudioWrite(format!("无法创建 WAV 文件: {e}")))?;
 
-        let (snd, rcv): (Sender<Vec<f32>>, Receiver<Vec<f32>>) = unbounded();
+        let (snd, rcv): (Sender<Vec<f32>>, Receiver<Vec<f32>>) = bounded(2);
 
         let handle = thread::Builder::new()
             .name("audio-writer".into())
