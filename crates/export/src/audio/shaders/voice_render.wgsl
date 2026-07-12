@@ -34,7 +34,7 @@ struct VoiceState {
     envelope_value: f32,       // 当前包络值
     env_stage: u32,            // 0=attack, 1=decay, 2=sustain, 3=release, 4=finished
     env_time: f32,             // 当前阶段经过时间
-    active: u32,               // 1=活跃, 0=空闲
+    is_active: u32,            // 1=活跃, 0=空闲
     _pad: u32,                 // 16 字节对齐
 };
 
@@ -121,7 +121,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     var voice = voice_states[voice_idx];
-    if (voice.active == 0u) {
+    if (voice.is_active == 0u) {
         return;
     }
 

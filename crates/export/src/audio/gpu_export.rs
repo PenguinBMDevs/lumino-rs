@@ -128,14 +128,18 @@ impl GpuExportRenderer {
     ///
     /// # 样本去重
     ///
-    /// SF2 音色库中多个 region 可能共享同一份样本数据（通过 `Arc<[Arc<[f32]>]>`
-    /// 指针共享）。使用 `Arc::as_ptr()` 作为 HashMap key 检测重复，只复制每个
-    /// 唯一样本一次，避免 OOM。
+    /// SF2 音色库中多个 region 可能共享同一份样本数据（通过 `Arc<[f32]>`
+    /// 指针共享）。注意：`xsynth_soundfonts` 的 `build_region_samples()` 为
+    /// 每个 region 创建独立的 `Arc<[Arc<[f32]>]>`（外层），但内层 `Arc<[f32]>`
+    /// 是共享的。因此使用内层 Arc 指针 `(channel0_ptr, channel1_ptr)` 作为
+    /// HashMap key 检测重复，只复制每个唯一样本一次，避免 OOM。
     fn extract_samples(presets: &[Sf2Preset]) -> ExportResult<(Vec<f32>, RegionMap)> {
         let mut all_samples: Vec<f32> = Vec::new();
         let mut bank_map: RegionMap = Vec::new();
-        // 样本去重映射：Arc 指针 → 扁平缓冲区中的偏移
-        let mut sample_map: HashMap<*const [Arc<[f32]>], u32> = HashMap::new();
+        // 样本去重映射：内层 Arc<[f32]> 指针 → 扁平缓冲区中的偏移
+        // 键为 (channel0_ptr as usize, channel1_ptr as usize)
+        // 单声道时 channel1_ptr = 0
+        let mut sample_map: HashMap<(usize, usize), u32> = HashMap::new();
 
         for preset in presets {
             let bank = preset.bank as usize;
@@ -150,16 +154,25 @@ impl GpuExportRenderer {
             }
 
             for region in &preset.regions {
-                let sample_ptr = Arc::as_ptr(&region.sample);
-                let sample_offset = if let Some(&offset) = sample_map.get(&sample_ptr) {
+                let sample_arcs = region.sample.as_ref();
+                let dedup_key = if sample_arcs.len() >= 2 {
+                    (
+                        Arc::as_ptr(&sample_arcs[0]) as *const f32 as usize,
+                        Arc::as_ptr(&sample_arcs[1]) as *const f32 as usize,
+                    )
+                } else if sample_arcs.len() == 1 {
+                    (Arc::as_ptr(&sample_arcs[0]) as *const f32 as usize, 0)
+                } else {
+                    (0, 0)
+                };
+
+                let sample_offset = if let Some(&offset) = sample_map.get(&dedup_key) {
                     // 样本已存在，复用偏移
                     offset
                 } else {
                     let offset = all_samples.len() as u32;
 
                     // 展开样本数据（立体声交错）
-                    // region.sample 是 Arc<[Arc<[f32]>]>，每个内层 Arc 是一个声道
-                    let sample_arcs = region.sample.as_ref();
                     if sample_arcs.len() >= 2 {
                         // 立体声
                         let left = &sample_arcs[0];
@@ -180,7 +193,7 @@ impl GpuExportRenderer {
                         }
                     }
 
-                    sample_map.insert(sample_ptr, offset);
+                    sample_map.insert(dedup_key, offset);
                     offset
                 };
 
@@ -264,7 +277,7 @@ impl GpuExportRenderer {
                 envelope_value: 0.0,
                 env_stage: 0, // attack
                 env_time: 0.0,
-                active: 1,
+                is_active: 1,
                 _pad: 0,
             };
 
@@ -286,7 +299,7 @@ impl GpuExportRenderer {
     /// 处理 NoteOff 事件：将 voice 切换到 release 阶段
     pub(crate) fn note_off(&mut self, _channel: u32, _key: u8) {
         for voice in &mut self.voices {
-            if voice.active == 0 {
+            if voice.is_active == 0 {
                 continue;
             }
             // 简单匹配：按 key 找 voice 比较困难，因为 sample_pos 不直接对应 key
@@ -302,7 +315,7 @@ impl GpuExportRenderer {
     /// 查找空闲 voice 槽
     fn find_free_voice(&self) -> u32 {
         for (i, voice) in self.voices.iter().enumerate() {
-            if voice.active == 0 || voice.env_stage == 4 {
+            if voice.is_active == 0 || voice.env_stage == 4 {
                 return i as u32;
             }
         }
@@ -319,7 +332,7 @@ impl GpuExportRenderer {
         // 统计当前活跃 voice
         let mut active_count = 0u32;
         for voice in &self.voices {
-            if voice.active != 0 && voice.env_stage != 4 {
+            if voice.is_active != 0 && voice.env_stage != 4 {
                 active_count += 1;
             }
         }
@@ -358,7 +371,7 @@ impl GpuExportRenderer {
         // 更新活跃 voice 计数
         self.active_voices = 0;
         for voice in &self.voices {
-            if voice.active != 0 && voice.env_stage != 4 {
+            if voice.is_active != 0 && voice.env_stage != 4 {
                 self.active_voices += 1;
             }
         }
@@ -398,7 +411,7 @@ impl GpuExportRenderer {
             let all_finished = self
                 .voices
                 .iter()
-                .all(|v| v.active == 0 || v.env_stage == 4);
+                .all(|v| v.is_active == 0 || v.env_stage == 4);
             if all_finished {
                 break;
             }

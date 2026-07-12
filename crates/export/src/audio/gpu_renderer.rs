@@ -42,7 +42,7 @@ pub(crate) struct VoiceState {
     pub(crate) envelope_value: f32,
     pub(crate) env_stage: u32,
     pub(crate) env_time: f32,
-    pub(crate) active: u32,
+    pub(crate) is_active: u32,
     pub(crate) _pad: u32,
 }
 
