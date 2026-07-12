@@ -69,13 +69,13 @@ pub(crate) struct GpuComputeRenderer {
     // 缓冲区
     params_buffer: wgpu::Buffer,
     voice_states_buffer: wgpu::Buffer,
+    voice_staging_buffer: wgpu::Buffer,
     #[allow(dead_code)]
     sample_data_buffer: wgpu::Buffer,
     output_buffer: wgpu::Buffer,
     staging_buffer: wgpu::Buffer,
 
     // 元数据
-    #[allow(dead_code)]
     max_voices: u32,
     output_capacity: usize,
     #[allow(dead_code)]
@@ -132,12 +132,20 @@ impl GpuComputeRenderer {
             mapped_at_creation: false,
         });
 
+        let voice_states_size = (max_voices as u64) * std::mem::size_of::<VoiceState>() as u64;
         let voice_states_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("gpu_audio_voice_states"),
-            size: (max_voices as u64) * std::mem::size_of::<VoiceState>() as u64,
+            size: voice_states_size,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let voice_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("gpu_audio_voice_states_staging"),
+            size: voice_states_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -200,6 +208,7 @@ impl GpuComputeRenderer {
             bind_group,
             params_buffer,
             voice_states_buffer,
+            voice_staging_buffer,
             sample_data_buffer,
             output_buffer,
             staging_buffer,
@@ -442,10 +451,57 @@ impl GpuComputeRenderer {
         Ok(())
     }
 
-    /// 读取 voice 状态（写回后）
-    #[allow(dead_code)]
-    pub(crate) fn read_voice_states(&self) -> crate::error::ExportResult<Vec<VoiceState>> {
-        // ...
-        Ok(Vec::new())
+    /// 读取 GPU 写回后的 voice 状态
+    ///
+    /// 仅读取前 `count` 个 voice（即本次 dispatch 实际使用的部分），
+    /// 避免每次回读完整的 `max_voices` 状态。
+    pub(crate) fn read_voice_states(
+        &self,
+        count: u32,
+    ) -> crate::error::ExportResult<Vec<VoiceState>> {
+        let count = count.min(self.max_voices) as usize;
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+
+        let size = (count as u64) * std::mem::size_of::<VoiceState>() as u64;
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Read Voice States Encoder"),
+            });
+        encoder.copy_buffer_to_buffer(
+            &self.voice_states_buffer,
+            0,
+            &self.voice_staging_buffer,
+            0,
+            size,
+        );
+        self.queue.submit(Some(encoder.finish()));
+
+        let buffer_slice = self.voice_staging_buffer.slice(..size);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
+        rx.recv()
+            .map_err(|_| crate::error::ExportError::AudioWrite("GPU voice 读取超时".into()))?
+            .map_err(|e| {
+                crate::error::ExportError::AudioWrite(format!("GPU voice 映射失败: {e}"))
+            })?;
+
+        let mut result = Vec::with_capacity(count);
+        {
+            let data = buffer_slice.get_mapped_range();
+            let slice: &[VoiceState] = bytemuck::cast_slice(&data);
+            result.extend_from_slice(&slice[..count]);
+        }
+        self.voice_staging_buffer.unmap();
+        Ok(result)
     }
 }

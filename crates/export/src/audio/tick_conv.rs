@@ -14,6 +14,8 @@
 pub struct TickToTime {
     /// (tick, bpm) 按 tick 升序排列
     tempos: Vec<(u32, f32)>,
+    /// 预计算的累积秒数：cum_secs[i] = 从 tick 0 到 tempos[i].tick 的总秒数
+    cum_secs: Vec<f64>,
     ppqn: u32,
     /// 上一次调用 advance_to 时的 tick
     prev_tick: u64,
@@ -36,8 +38,24 @@ impl TickToTime {
             tempos.insert(0, (0, 120.0));
         }
 
+        // 预计算每个 tempo 边界处的累积秒数
+        let mut cum_secs = Vec::with_capacity(tempos.len());
+        let mut seconds_acc = 0.0_f64;
+        let ppqn_f = ppqn as f64;
+        for i in 0..tempos.len() {
+            if i > 0 {
+                let prev_tick = tempos[i - 1].0 as u64;
+                let cur_tick = tempos[i].0 as u64;
+                let ticks = cur_tick - prev_tick;
+                let bpm = tempos[i - 1].1 as f64;
+                seconds_acc += ticks as f64 * 60.0 / (ppqn_f * bpm);
+            }
+            cum_secs.push(seconds_acc);
+        }
+
         Self {
             tempos,
+            cum_secs,
             ppqn,
             prev_tick: 0,
         }
@@ -53,35 +71,23 @@ impl TickToTime {
     ///
     /// 从 tick 0 到目标 tick 的总秒数
     pub fn tick_to_seconds(&self, tick: u64) -> f64 {
-        let mut seconds = 0.0_f64;
-        let mut current = 0_u64;
+        // 二分查找：找到 tick 所在的 tempo 段
+        // 找到最后一个 cum_secs[i].tick <= tick 的 i
+        let idx = self.tempos.partition_point(|&(t, _)| (t as u64) <= tick);
+        // idx 是第一个 tick > target 的位置，所以 idx-1 是最后一个 <= target 的
 
-        for i in 0..self.tempos.len() {
-            let seg_start = self.tempos[i].0 as u64;
-            let seg_end = self
-                .tempos
-                .get(i + 1)
-                .map(|t| t.0 as u64)
-                .unwrap_or(u64::MAX);
-            let bpm = self.tempos[i].1 as f64;
-
-            if tick <= seg_start {
-                break;
-            }
-
-            let seg_limit = tick.min(seg_end);
-            let ticks = seg_limit - current;
-            if ticks > 0 {
-                seconds += ticks as f64 * 60.0 / (self.ppqn as f64 * bpm);
-            }
-            current = seg_limit;
-
-            if current >= tick {
-                break;
-            }
+        if idx == 0 {
+            // tick 在第一个 tempo 之前（不应该发生，因为第一个 tick=0）
+            return 0.0;
         }
 
-        seconds
+        let seg_idx = idx - 1;
+        let base_secs = self.cum_secs[seg_idx];
+        let seg_start_tick = self.tempos[seg_idx].0 as u64;
+        let ticks = tick - seg_start_tick;
+        let bpm = self.tempos[seg_idx].1 as f64;
+
+        base_secs + ticks as f64 * 60.0 / (self.ppqn as f64 * bpm)
     }
 
     /// 从上一次调用位置前进到 `tick`，返回 delta 秒数。
