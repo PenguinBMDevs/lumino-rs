@@ -166,15 +166,19 @@ impl RunnerInner {
                 let channel_threading_val = parse_thread_mode(&channel_threading);
                 let key_threading_val = parse_thread_mode(&key_threading);
 
+                // 1. 创建进度通道，将渲染进度发回主线程更新 UI
+                let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
+                self.window_state.export_progress_rx = Some(progress_rx);
+
                 let progress_cb: lumino_export::audio::config::ProgressCallback =
-                    Arc::new(move |_msg: String, _pct: f64| {
-                        tracing::debug!("音频导出进度: {:.1}%", _pct * 100.0);
+                    Arc::new(move |msg: String, pct: f64| {
+                        let _ = progress_tx.send((msg, pct, 0, 0.0, 0.0));
                     });
 
                 let config = AudioRenderConfig {
-                    midi_path: midi_path_buf.clone(),
+                    midi_path: midi_path_buf,
                     soundfonts: vec![PathBuf::from(&soundfont_path)],
-                    output_path: output_path_buf.clone(),
+                    output_path: output_path_buf,
                     sample_rate: sample_rate.max(8000),
                     channels: channel_mode,
                     layer_limit: Some(layer_limit.max(1) as usize),
@@ -187,29 +191,34 @@ impl RunnerInner {
                     progress_callback: Some(progress_cb),
                 };
 
-                let start = Instant::now();
-                let render_result = match &document {
-                    Some(doc) => lumino_export::audio::render_audio_from_document(&config, doc),
-                    None => lumino_export::audio::render_audio(&config),
-                };
+                // 2. 在后台线程执行音频渲染，避免阻塞主线程 UI
+                let output_path_display = config.output_path.display().to_string();
+                let doc_clone = document.clone();
+                let _ = std::thread::Builder::new()
+                    .name("audio-render".into())
+                    .spawn(move || {
+                        let start = Instant::now();
+                        let render_result = match &doc_clone {
+                            Some(doc) => {
+                                lumino_export::audio::render_audio_from_document(&config, doc)
+                            }
+                            None => lumino_export::audio::render_audio(&config),
+                        };
 
-                match render_result {
-                    Ok(_) => {
-                        let elapsed = start.elapsed();
-                        tracing::info!(
-                            "音频导出完成: 耗时 {:.1}s, 输出={}",
-                            elapsed.as_secs_f64(),
-                            output_path_buf.display()
-                        );
-                        let main_ui = self.window_state.window.ui_mut();
-                        main_ui.set_export_render_completed();
-                    }
-                    Err(e) => {
-                        tracing::error!("音频导出失败: {e}");
-                        let main_ui = self.window_state.window.ui_mut();
-                        main_ui.set_export_render_failed(format!("音频导出失败: {e}"));
-                    }
-                }
+                        match render_result {
+                            Ok(_) => {
+                                let elapsed = start.elapsed();
+                                tracing::info!(
+                                    "音频导出完成: 耗时 {:.1}s, 输出={}",
+                                    elapsed.as_secs_f64(),
+                                    output_path_display,
+                                );
+                            }
+                            Err(e) => {
+                                tracing::error!("音频导出失败: {e}");
+                            }
+                        }
+                    });
             }
             StartVideoExport {
                 width,
