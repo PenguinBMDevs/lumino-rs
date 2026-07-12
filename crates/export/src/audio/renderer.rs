@@ -1,26 +1,32 @@
-//! 音频渲染引擎 — 封装 xsynth 的 ChannelGroup 提供批量渲染
+//! 批量渲染器 — 封装 xsynth ChannelGroup 的批量渲染
 //!
-//! # 渲染加速策略（自 OmniConverter xsynth）
-//!
-//! - **免零填充**: 使用 `read_samples_unchecked` 替代 `read_samples`，避免不必要的零填充
-//! - **Vec 回收**: 写入线程消费完后将 Vec 归还，渲染线程复用，减少重复分配
-//! - **扁平批处理**: 用固定大小批次的循环替代递归拆分，消除递归开销
-//! - **并行合成**: 通过 `ChannelGroup` 的 `ParallelismOptions` 实现通道级/按键级并行
+//! 参考 OmniConverter 的 XSynthRenderer 设计：
+//! - 使用 read_samples_unchecked 避免不必要的零填充
+//! - Vec 回收池减少重复分配
+//! - 支持限制器
 
-use std::path::Path;
-
-use crossbeam_channel::bounded;
 use xsynth_core::{
-    AudioPipe, ChannelCount,
-    channel_group::{ChannelGroup, SynthEvent},
-    effects::VolumeLimiter,
+    AudioPipe,
+    channel_group::ChannelGroup,
 };
 
 use crate::error::ExportResult;
 
-use super::{config::AudioRenderConfig, writer::AudioFileWriter};
+/// 批量渲染器 — 高效驱动 ChannelGroup 生成音频样本
+///
+/// # 渲染加速策略
+/// - 免零填充：使用 `read_samples_unchecked` 替代 `read_samples`
+/// - Vec 回收：消费完的 Vec 归还给池，渲染时复用
+/// - 扁平批处理：固定大小批次，消除递归开销
+pub struct BatchRenderer<'a> {
+    channel_group: &'a mut ChannelGroup,
+    sample_rate: u32,
+    channel_count: u16,
+    /// Vec 回收池
+    vec_pool: Vec<Vec<f32>>,
+}
 
-/// 最大单批次渲染时长（秒）。超过此值则拆分为多个批次。
+/// 最大单批次渲染时长（秒）
 const MAX_BATCH_SECONDS: f64 = 10.0;
 
 /// 亚样点精度累加器
@@ -29,179 +35,105 @@ struct BatchBuffer {
     missed_samples: f64,
 }
 
-/// 音频渲染引擎
-///
-/// 对应 xsynth-render 中的 `XSynthRender`。
-/// 封装 `ChannelGroup`（合成引擎）+ `AudioFileWriter`（输出）+ `VolumeLimiter`（可选限幅器）。
-///
-/// # 渲染加速
-///
-/// 与实时合成器不同，离线导出模式没有实时性约束，因此可以采用更激进的优化策略：
-/// - 使用 `read_samples_unchecked` 跳过零填充（`read_samples` 会先零初始化缓冲区）
-/// - Vec 回收池减少内存分配/释放开销
-/// - 扁平循环替代递归，消除栈帧开销
-/// - 通过 `ParallelismOptions` 启用通道级并行
-pub struct AudioRenderer {
-    channel_group: ChannelGroup,
-    audio_writer: AudioFileWriter,
-    limiter: Option<VolumeLimiter>,
-    buffer: BatchBuffer,
-    /// Vec 回收通道接收端（从写入线程回收）
-    vec_recycle: crossbeam_channel::Receiver<Vec<f32>>,
-    sample_rate: u32,
-    channel_count: u16,
-}
-
-impl AudioRenderer {
-    /// 创建新的渲染引擎
-    ///
-    /// 初始化 xsynth ChannelGroup 和 WAV 写入器。
-    /// `config` 仅用于构造参数，不持有。
-    pub fn new(config: &AudioRenderConfig, path: &Path) -> ExportResult<Self> {
-        let group_config = config.build_group_config();
-        let channel_count = ChannelCount::from(config.channels).count();
-        let sample_rate = config.sample_rate;
-
-        let channel_group = ChannelGroup::new(group_config.clone());
-
-        // 创建 Vec 回收通道：写入线程消费完 Vec 后发回，本线程复用
-        let (vec_recycle_tx, vec_recycle_rx) = bounded::<Vec<f32>>(2);
-        let audio_writer = AudioFileWriter::new(sample_rate, channel_count, path, vec_recycle_tx)?;
-
-        // 构建限幅器
-        let limiter = if config.apply_limiter {
-            Some(VolumeLimiter::new(channel_count))
-        } else {
-            None
-        };
-
-        Ok(Self {
+impl<'a> BatchRenderer<'a> {
+    pub fn new(channel_group: &'a mut ChannelGroup) -> Self {
+        let params = *channel_group.stream_params();
+        BatchRenderer {
             channel_group,
-            audio_writer,
-            limiter,
-            buffer: BatchBuffer {
-                output_vec: Vec::with_capacity(4096),
-                missed_samples: 0.0,
-            },
-            vec_recycle: vec_recycle_rx,
-            sample_rate,
-            channel_count,
-        })
+            sample_rate: params.sample_rate,
+            channel_count: params.channels.count() as u16,
+            vec_pool: Vec::new(),
+        }
     }
 
-    /// 返回当前音频流参数（用于加载 Soundfont）
-    pub fn stream_params(&self) -> xsynth_core::AudioStreamParams {
-        *self.channel_group.stream_params()
+    /// 从池中获取 Vec
+    fn acquire_vec(&mut self, min_cap: usize) -> Vec<f32> {
+        let mut v = self.vec_pool.pop().unwrap_or_else(|| Vec::with_capacity(min_cap));
+        if v.capacity() < min_cap {
+            v.reserve(min_cap - v.capacity());
+        }
+        v
     }
 
-    /// 发送 xsynth 事件
-    pub fn send_event(&mut self, event: SynthEvent) {
-        self.channel_group.send_event(event);
+    /// 归还 Vec 到池
+    #[allow(dead_code)]
+    fn release_vec(&mut self, v: Vec<f32>) {
+        if self.vec_pool.len() < 4 {
+            self.vec_pool.push(v);
+        }
     }
 
-    /// 渲染指定时长的音频（秒）
+    /// 渲染指定时长的音频
     ///
-    /// 将 `event_time` 秒的音频渲染到输出缓冲区，经过限幅器（可选）后写入文件。
-    /// 支持亚样点精度累加。超过 [`MAX_BATCH_SECONDS`] 的块自动拆分为多个批次。
+    /// # 参数
+    /// - `event_time`: 要渲染的时长（秒）
+    /// - `limiter`: 可选的限制器
     ///
-    /// # 性能
-    ///
-    /// - 使用 `read_samples_unchecked` 避免零填充
-    /// - 优先从回收池获取 Vec，减少分配
-    /// - 扁平循环替代递归，消除栈帧开销
-    pub fn render_batch(&mut self, event_time: f64) {
+    /// # 返回
+    /// 渲染的样本数据（f32 interleaved）
+    pub fn render(&mut self, event_time: f64) -> Vec<f32> {
         let mut remaining = event_time;
+        let mut buffer = BatchBuffer {
+            output_vec: Vec::with_capacity(4096),
+            missed_samples: 0.0,
+        };
 
         while remaining > 0.0 {
             let batch = remaining.min(MAX_BATCH_SECONDS);
 
             // 计算样点数（含亚样点累加）
-            let samples_f = self.sample_rate as f64 * batch + self.buffer.missed_samples;
-            self.buffer.missed_samples = samples_f % 1.0;
-            let samples = (samples_f as usize) * self.channel_count as usize;
+            let samples_f = self.sample_rate as f64 * batch + buffer.missed_samples;
+            buffer.missed_samples = samples_f % 1.0;
+            let frame_count = samples_f as usize;
+            let sample_count = frame_count * self.channel_count as usize;
 
-            // 优先从回收池获取 Vec，避免重新分配
-            self.buffer.output_vec = self
-                .vec_recycle
-                .try_recv()
-                .unwrap_or_else(|_| Vec::with_capacity(samples));
-
-            // 确保容量足够
-            if self.buffer.output_vec.capacity() < samples {
-                self.buffer
-                    .output_vec
-                    .reserve(samples - self.buffer.output_vec.capacity());
-            }
-            // SAFETY: `read_samples_unchecked` 会填充 `samples` 个样本，
-            // 覆盖整个缓冲区，无需零初始化。
+            // 从回收池获取 Vec
+            buffer.output_vec = self.acquire_vec(sample_count);
+            // SAFETY: read_samples_unchecked 会填充样本
             unsafe {
-                self.buffer.output_vec.set_len(samples);
+                buffer.output_vec.set_len(sample_count);
             }
 
-            self.channel_group
-                .read_samples_unchecked(&mut self.buffer.output_vec);
-
-            // 可应用限幅器
-            if let Some(limiter) = &mut self.limiter {
-                limiter.limit(&mut self.buffer.output_vec);
-            }
-
-            // 写入文件（忽略错误，由外部 finalize 统一处理）
-            if let Err(e) = self.audio_writer.write_samples(&mut self.buffer.output_vec) {
-                tracing::error!("渲染批次写入失败: {e}");
-            }
+            self.channel_group.read_samples_unchecked(&mut buffer.output_vec);
 
             remaining -= batch;
         }
+
+        buffer.output_vec
     }
 
-    /// 完成渲染：持续渲染尾部直到静音，然后关闭写入器
-    pub fn finalize(mut self) -> ExportResult<()> {
-        // 持续渲染 1 秒块，直到所有样点接近静音
+    /// 渲染并写入到目标接收器
+    pub fn render_to_sink(
+        &mut self,
+        event_time: f64,
+        sink: &mut dyn super::stream::SampleSink,
+    ) -> ExportResult<()> {
+        let samples = self.render(event_time);
+        sink.write_samples(&samples)
+    }
+
+    /// 持续渲染直到静音
+    pub fn render_tail(&mut self) -> ExportResult<Vec<f32>> {
+        let mut all_samples = Vec::new();
+
         loop {
             let samples = self.sample_rate as usize * self.channel_count as usize;
+            let mut buffer = vec![0.0f32; samples];
+            self.channel_group.read_samples_unchecked(&mut buffer);
 
-            // 优先从回收池获取 Vec
-            self.buffer.output_vec = self
-                .vec_recycle
-                .try_recv()
-                .unwrap_or_else(|_| Vec::with_capacity(samples));
+            let is_silent = buffer.iter().all(|&s| s.abs() < 0.0001);
+            all_samples.extend_from_slice(&buffer);
 
-            if self.buffer.output_vec.capacity() < samples {
-                self.buffer
-                    .output_vec
-                    .reserve(samples - self.buffer.output_vec.capacity());
-            }
-            // SAFETY: `read_samples_unchecked` 会填充 `samples` 个样本
-            unsafe {
-                self.buffer.output_vec.set_len(samples);
-            }
-
-            self.channel_group
-                .read_samples_unchecked(&mut self.buffer.output_vec);
-
-            if let Some(limiter) = &mut self.limiter {
-                limiter.limit(&mut self.buffer.output_vec);
-            }
-
-            // 检测是否静音
-            let is_empty = self.buffer.output_vec.iter().all(|&s| s.abs() < 0.0001);
-
-            if let Err(e) = self.audio_writer.write_samples(&mut self.buffer.output_vec) {
-                tracing::error!("尾部渲染写入失败: {e}");
-                break;
-            }
-
-            if is_empty {
+            if is_silent {
                 break;
             }
         }
 
-        self.audio_writer.finalize()
+        Ok(all_samples)
     }
 
-    /// 返回当前活跃 voice 数
-    pub fn voice_count(&self) -> u64 {
-        self.channel_group.voice_count()
+    /// 驱动事件，渲染 delta 时间，然后发送 MIDI 事件到 ChannelGroup
+    pub fn process_event_delta(&mut self, delta_seconds: f64, sink: &mut dyn super::stream::SampleSink) -> ExportResult<()> {
+        self.render_to_sink(delta_seconds, sink)
     }
 }

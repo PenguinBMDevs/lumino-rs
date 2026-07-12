@@ -1,4 +1,7 @@
 //! 音频渲染配置 — 将 Lumino UI 状态转换为 xsynth 配置
+//!
+//! 参考 OmniConverter 的 Settings / RenderSettings 设计：
+//! - 统一的配置结构，包含编码器、渲染器、事件处理等参数
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -10,10 +13,12 @@ use xsynth_core::{
     soundfont::{EnvelopeCurveType, EnvelopeOptions, Interpolator, SoundfontInitOptions},
 };
 
+use super::codec::AudioCodec;
+
 /// 进度回调函数类型
 pub type ProgressCallback = Arc<dyn Fn(String, f64) + Send + Sync>;
 
-/// Lumino 侧的音频导出 UI 状态快照，用于构造 xsynth 配置
+/// Lumino 侧的音频导出配置，用于构造 xsynth 和编码器参数
 #[derive(Clone)]
 pub struct AudioRenderConfig {
     /// MIDI 文件路径
@@ -43,6 +48,30 @@ pub struct AudioRenderConfig {
     /// 是否使用线性包络（线性衰减/释音）
     pub linear_envelope: bool,
 
+    // ── 编码器参数（参考 OmniConverter EncoderSettings） ──
+    /// 输出音频编码器
+    pub audio_codec: AudioCodec,
+    /// 编码比特率（kbps，仅 MP3/Vorbis 使用）
+    pub audio_bitrate: u32,
+
+    // ── 事件处理参数（参考 OmniConverter EventSettings） ──
+    /// 忽略音色变化事件
+    pub ignore_program_changes: bool,
+    /// 音符力度过滤 - 最低力度
+    pub velocity_low: u8,
+    /// 音符力度过滤 - 最高力度
+    pub velocity_high: u8,
+    /// 启用音符过滤
+    pub filter_velocity: bool,
+    /// 音符力度过滤 - 最低键位
+    pub key_low: u8,
+    /// 音符力度过滤 - 最高键位
+    pub key_high: u8,
+    /// 启用键位过滤
+    pub filter_key: bool,
+    /// 音符结束后额外延迟（毫秒）
+    pub note_force_end_delay: u32,
+
     // ── 进度回调 ──
     /// 进度回调函数（可选）
     pub progress_callback: Option<ProgressCallback>,
@@ -63,6 +92,8 @@ impl std::fmt::Debug for AudioRenderConfig {
             .field("apply_limiter", &self.apply_limiter)
             .field("disable_fade_out", &self.disable_fade_out)
             .field("linear_envelope", &self.linear_envelope)
+            .field("audio_codec", &self.audio_codec)
+            .field("audio_bitrate", &self.audio_bitrate)
             .field(
                 "progress_callback",
                 &self.progress_callback.as_ref().map(|_| "..."),
@@ -151,8 +182,8 @@ impl AudioRenderConfig {
         } else {
             EnvelopeOptions {
                 attack_curve: EnvelopeCurveType::Exponential,
-                decay_curve: EnvelopeCurveType::Linear,
-                release_curve: EnvelopeCurveType::Linear,
+                decay_curve: EnvelopeCurveType::Exponential,
+                release_curve: EnvelopeCurveType::Exponential,
             }
         };
 
@@ -162,6 +193,36 @@ impl AudioRenderConfig {
             vol_envelope_options,
             use_effects: true,
             interpolator: Interpolator::from(self.interpolation),
+        }
+    }
+}
+
+impl Default for AudioRenderConfig {
+    fn default() -> Self {
+        Self {
+            midi_path: PathBuf::new(),
+            soundfonts: Vec::new(),
+            output_path: PathBuf::new(),
+            sample_rate: 44100,
+            channels: AudioChannelMode::Stereo,
+            layer_limit: None,
+            channel_threading: ThreadMode::Auto,
+            key_threading: ThreadMode::None,
+            interpolation: AudioInterpolation::Linear,
+            apply_limiter: false,
+            disable_fade_out: false,
+            linear_envelope: false,
+            audio_codec: AudioCodec::Pcm,
+            audio_bitrate: 320,
+            ignore_program_changes: false,
+            velocity_low: 0,
+            velocity_high: 127,
+            filter_velocity: false,
+            key_low: 0,
+            key_high: 127,
+            filter_key: false,
+            note_force_end_delay: 0,
+            progress_callback: None,
         }
     }
 }

@@ -1,105 +1,120 @@
-//! 音频渲染模块 — 基于 xsynth 的 MIDI→WAV 离线渲染引擎
+//! 音频渲染模块 — MIDI→音频渲染流水线
 //!
-//! # 双模式设计
+//! 参考 OmniConverter 的 MIDIConverter + EventsProcesser 架构设计：
+//!
+//! ```text
+//! Config + MIDI
+//!    ↓
+//! AudioEngine (初始化 xsynth + 加载 SoundFont)
+//!    ↓
+//! EventProcessor (逐事件渲染，时间驱动)
+//!    ↓
+//! SampleSink (写入 WAV / FFmpeg 编码)
+//!    ↓
+//! 输出文件
+//! ```
+//!
+//! # 双模式
 //!
 //! | 模式 | 函数 | 场景 |
 //! |------|------|------|
-//! | **流式** | [`render_audio`] | 从磁盘 MIDI 文件流式渲染（零事件常驻）|
-//! | **内存** | [`render_audio_from_document`] | 复用已加载的 `MidiDocument`（零拷贝）|
+//! | **流式** | [`render_audio`] | 从磁盘 MIDI 文件流式渲染 |
+//! | **内存** | [`render_audio_from_document`] | 复用已加载的 `MidiDocument` |
 
+pub mod codec;
 pub mod config;
-mod renderer;
+pub mod engine;
+pub mod event;
+pub mod limiter;
+pub mod renderer;
+pub mod stream;
 pub mod tick_conv;
-mod writer;
 
-use std::sync::Arc;
-
-use midly::{MidiMessage, TrackEventKind};
+use midly::{MidiMessage, PitchBend, TrackEventKind};
 use tracing::info;
-use xsynth_core::{
-    channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
-    channel_group::SynthEvent,
-    soundfont::{SampleSoundfont, SoundfontBase},
-};
 
 use lumino_midi_loader::{document::MidiDocument, streaming::StreamingMidiPlayer};
 
 use crate::error::{ExportError, ExportResult};
 
-use self::tick_conv::TickToTime;
 pub use config::AudioRenderConfig;
-pub use renderer::AudioRenderer;
+pub use engine::AudioEngine;
+pub use stream::SampleSink;
+
+use self::{
+    event::MidiEventProcessor,
+    stream::{FfmpegSink, WavFileSink},
+    tick_conv::TickToTime,
+};
 
 // ════════════════════════════════════════════════════════════
 // 公共 API
 // ════════════════════════════════════════════════════════════
 
-/// **流式模式**：直接从磁盘 MIDI 文件渲染为 WAV，零事件常驻内存。
-///
-/// 内部使用 `StreamingMidiPlayer`（基于 midly::mmap 零拷贝），
-/// 逐事件从磁盘读取、逐 tick 渲染、用完即弃。
-///
-/// 适用于用户选择了一个磁盘上的 MIDI 文件进行导出的场景。
+/// 流式模式：直接从磁盘 MIDI 文件渲染为音频文件
 pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
     info!(
         "[流式] 音频渲染: MIDI={:?}, SF2={:?}, 输出={:?}",
         config.midi_path, config.soundfonts, config.output_path
     );
 
-    // 使用 mmap 映射 MIDI 文件，操作系统按需加载页面，不预读整个文件
+    // 使用 mmap 映射 MIDI 文件
     let file = std::fs::File::open(&config.midi_path)?;
     let mmap = unsafe { memmap2::Mmap::map(&file)? };
 
     let player = StreamingMidiPlayer::from_bytes(&mmap)
         .map_err(|e| ExportError::AudioWrite(format!("解析 MIDI 失败: {e}")))?;
 
+    let total_ticks = player.total_ticks().max(1);
+    let tempos = player.tempo_changes().to_vec();
+    let ppqn = player.ppqn();
+
     info!(
         "MIDI: {} 音轨, {} ticks, PPQN={}, 速度变化={}",
         player.track_count(),
-        player.total_ticks(),
-        player.ppqn(),
-        player.tempo_changes().len()
+        total_ticks,
+        ppqn,
+        tempos.len()
     );
 
-    // 初始化渲染引擎 + SF2 加载
-    let (mut renderer, _) = init_renderer(config)?;
+    // 创建输出接收器
+    let mut sink = create_output_sink(config)?;
 
-    // 构造 Tick→Time 转换器
-    let tempos: Vec<(u32, f32)> = player.tempo_changes().to_vec();
-    let ppqn = player.ppqn();
+    // 初始化渲染引擎
+    let mut engine = AudioEngine::new(config.clone())?;
+
+    // Tick→时间转换
     let mut tick_conv = TickToTime::new(tempos, ppqn);
 
-    // 流式渲染主循环
-    run_streaming_render_loop(
-        &mut renderer,
+    // 事件处理流水线
+    let mut processor = MidiEventProcessor::new(
+        config,
+        engine.channel_group(),
         &mut tick_conv,
-        player,
-        config.progress_callback.clone(),
-    )?;
+        &mut sink,
+    );
+
+    // 流式渲染主循环
+    run_streaming_render(config, &mut processor, player)?;
 
     // 收尾
-    finalize_renderer(renderer, config)
+    processor.finalize()?;
+    sink.finalize()?;
+
+    info!("音频渲染完成: {:?}", config.output_path);
+    Ok(())
 }
 
-/// **内存模式**：复用内存中已加载的 `MidiDocument` 渲染为 WAV，不拷贝音符数据。
-///
-/// 直接从 `doc.notes`（`Vec<Vec<NoteEvent>>`）和 `doc.control_events` 中
-/// 引用数据，拆解为 NoteOn/NoteOff/CC/PC/PB 事件序列。
-///
-/// 适用于编辑器已加载 MIDI 时直接导出音频的场景。
+/// 内存模式：复用内存中已加载的 MidiDocument 渲染为音频文件
 pub fn render_audio_from_document(
     config: &AudioRenderConfig,
     doc: &MidiDocument,
 ) -> ExportResult<()> {
     info!(
-        "[内存-流式] 音频渲染: SF2={:?}, 输出={:?}",
+        "[内存] 音频渲染: SF2={:?}, 输出={:?}",
         config.soundfonts, config.output_path
     );
 
-    // 初始化渲染引擎 + SF2 加载
-    let (mut renderer, _) = init_renderer(config)?;
-
-    // 流式迭代 MidiDocument 中的事件，无需构建 Vec<MergedEvent>
     let total_events: usize =
         doc.notes.iter().map(|v| v.len()).sum::<usize>() * 2 + doc.control_events.len();
     if total_events == 0 {
@@ -108,28 +123,199 @@ pub fn render_audio_from_document(
         ));
     }
 
-    // 构造 Tick→Time 转换器
+    // 创建输出接收器
+    let mut sink = create_output_sink(config)?;
+
+    // 初始化渲染引擎
+    let mut engine = AudioEngine::new(config.clone())?;
+
+    // Tick→时间转换
     let tempos = doc.tempo_changes.clone();
-    let ppqn = 480; // MidiDocument 不保存 PPQN，480 是标准默认值
+    let ppqn = 480;
     let mut tick_conv = TickToTime::new(tempos, ppqn);
 
-    // 文档渲染主循环（流式）
-    run_document_render_loop(
-        &mut renderer,
+    // 事件处理流水线
+    let mut processor = MidiEventProcessor::new(
+        config,
+        engine.channel_group(),
         &mut tick_conv,
-        doc,
-        config.progress_callback.clone(),
-    )?;
+        &mut sink,
+    );
+
+    // 总 tick 数（以最后音符的 end_tick 为准）
+    let total_tick = doc
+        .notes
+        .iter()
+        .flat_map(|t| t.iter())
+        .map(|n| n.end_tick as u64)
+        .max()
+        .unwrap_or(0)
+        .max(1);
+
+    // 文档渲染主循环
+    run_document_render(config, &mut processor, doc, total_tick)?;
 
     // 收尾
-    finalize_renderer(renderer, config)
+    processor.finalize()?;
+    sink.finalize()?;
+
+    info!("文档音频渲染完成: {:?}", config.output_path);
+    Ok(())
 }
 
 // ════════════════════════════════════════════════════════════
-// 内部类型
+// 内部函数
 // ════════════════════════════════════════════════════════════
 
-/// 源自 MidiDocument 的合并事件（8 字节对齐）
+/// 根据配置创建输出接收器
+fn create_output_sink(config: &AudioRenderConfig) -> ExportResult<Box<dyn SampleSink>> {
+    let codec = config.audio_codec;
+
+    if codec.needs_ffmpeg() {
+        let ffmpeg_path = codec::find_ffmpeg().ok_or_else(|| {
+            ExportError::AudioWrite(format!(
+                "需要 ffmpeg 来编码 {} 格式，但未找到 ffmpeg",
+                codec.extension()
+            ))
+        })?;
+
+        let sink = FfmpegSink::new(
+            &ffmpeg_path,
+            &config.output_path,
+            codec,
+            config.sample_rate,
+            config.channels.channel_count(),
+            config.audio_bitrate,
+        )?;
+        Ok(Box::new(sink))
+    } else {
+        let channels = config.channels.channel_count();
+        let sink = WavFileSink::new(
+            &config.output_path,
+            config.sample_rate,
+            channels,
+        )?;
+        Ok(Box::new(sink))
+    }
+}
+
+/// 流式渲染主循环（从 StreamingMidiPlayer 读取事件）
+fn run_streaming_render(
+    config: &AudioRenderConfig,
+    processor: &mut MidiEventProcessor,
+    mut player: StreamingMidiPlayer,
+) -> ExportResult<()> {
+    let total_ticks = player.total_ticks().max(1);
+    let mut event_count = 0_u64;
+    let mut note_count = 0_u64;
+    let mut last_progress_time = std::time::Instant::now();
+    let start_time = std::time::Instant::now();
+
+    while let Some((tick, _track_idx, kind)) = player.next_event() {
+        // 进度报告
+        let now = std::time::Instant::now();
+        if now.duration_since(last_progress_time) >= std::time::Duration::from_millis(100) {
+            let pct = tick as f64 / total_ticks as f64;
+            report_progress(config, pct, event_count, note_count, start_time);
+            last_progress_time = now;
+        }
+
+        // 处理事件（渲染到该 tick + 发送事件）
+        processor.process_midi_event(tick, &kind)?;
+
+        // 统计
+        if let TrackEventKind::Midi { channel: _, message } = &kind {
+            match message {
+                MidiMessage::NoteOn { .. } => {
+                    event_count += 1;
+                    note_count += 1;
+                }
+                MidiMessage::NoteOff { .. } => {
+                    event_count += 1;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // 完成进度
+    report_progress(config, 1.0, event_count, note_count, start_time);
+
+    info!("流式渲染完成: 处理 {event_count} 个事件, {note_count} 个音符");
+    Ok(())
+}
+
+/// 文档渲染主循环（从 MidiDocument 读取事件）
+fn run_document_render(
+    config: &AudioRenderConfig,
+    processor: &mut MidiEventProcessor,
+    doc: &MidiDocument,
+    total_tick: u64,
+) -> ExportResult<()> {
+    let mut event_count = 0_u64;
+    let mut last_progress_time = std::time::Instant::now();
+    let start_time = std::time::Instant::now();
+
+    // 使用 MidiDocEventStream 流式迭代事件
+    let mut stream = MidiDocEventStream::new(doc);
+    let total_events = stream.total_events();
+
+    info!("文档流式渲染循环开始 ({} 事件)...", total_events);
+
+    while let Some(event) = stream.next_event() {
+        let tick = event.tick as u64;
+
+        // 进度报告
+        let now = std::time::Instant::now();
+        if now.duration_since(last_progress_time) >= std::time::Duration::from_millis(100) {
+            let pct = tick as f64 / total_tick as f64;
+            report_progress(config, pct, event_count, 0, start_time);
+            last_progress_time = now;
+        }
+
+        // 构建 TrackEventKind
+        let kind = build_track_event_kind(&event);
+
+        // 处理事件
+        processor.process_midi_event(tick, &kind)?;
+        event_count += 1;
+    }
+
+    // 完成进度
+    report_progress(config, 1.0, event_count, 0, start_time);
+
+    info!("文档流式渲染完成: 处理 {event_count} 个事件");
+    Ok(())
+}
+
+/// 报告进度
+fn report_progress(
+    config: &AudioRenderConfig,
+    pct: f64,
+    event_count: u64,
+    note_count: u64,
+    start_time: std::time::Instant,
+) {
+    let elapsed = start_time.elapsed();
+    let msg = format!(
+        "进度: {:.1}% | 事件: {} | 音符: {} | 耗时: {:.1}s",
+        pct * 100.0,
+        event_count,
+        note_count,
+        elapsed.as_secs_f64()
+    );
+    if let Some(ref callback) = config.progress_callback {
+        callback(msg, pct);
+    } else {
+        eprint!("\r{}  ", msg);
+    }
+}
+
+// ════════════════════════════════════════════════════════════
+// MidiDocEventStream — 流式迭代 MidiDocument 中的事件
+// ════════════════════════════════════════════════════════════
+
+/// 合并事件（8 字节对齐）
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 struct MergedEvent {
@@ -137,28 +323,17 @@ struct MergedEvent {
     /// 0=NoteOn, 1=NoteOff, 2=CC, 3=PC, 4=PB
     kind: u8,
     channel: u8,
-    param1: u8,  // key / controller / program
-    param2: u16, // velocity / value / raw bend
+    param1: u8,
+    param2: u16,
 }
 
-/// MidiDocEventStream — 流式迭代 MidiDocument 中的事件，
-/// 避免创建 Vec<MergedEvent> 冗余分配。
-///
-/// 内部维护每轨的 note 游标，每次迭代扫描所有轨道找到最小 tick，
-/// 按优先级发射事件（NoteOff < CC < PC < PB < NoteOn）。
+/// MidiDocEventStream — 流式迭代 MidiDocument 中的事件
 struct MidiDocEventStream<'a> {
     doc: &'a MidiDocument,
-    /// 每轨的 Note 游标：(note_idx, note_on_emitted)
     note_cursors: Vec<(usize, bool)>,
-    /// 控制事件游标
     ctrl_cursor: usize,
     total_events: usize,
     emitted: usize,
-}
-
-enum SourceId {
-    Note(usize),
-    Control,
 }
 
 impl<'a> MidiDocEventStream<'a> {
@@ -176,8 +351,10 @@ impl<'a> MidiDocEventStream<'a> {
         }
     }
 
-    /// 获取下一个事件（按 tick 升序，同 tick 内 NoteOff < CC < PC < PB < NoteOn）
-    #[allow(unused_assignments)]
+    fn total_events(&self) -> usize {
+        self.total_events
+    }
+
     fn next_event(&mut self) -> Option<MergedEvent> {
         if self.emitted >= self.total_events {
             return None;
@@ -211,12 +388,9 @@ impl<'a> MidiDocEventStream<'a> {
         }
 
         // 2. 在最小 tick 处找到优先级最高的事件
-        // 优先级: NoteOff(1) < CC(2) < PC(3) < PB(4) < NoteOn(5)
-        let mut best_source: Option<SourceId> = None;
         let mut best_priority = 6u8;
         let mut best_event: Option<MergedEvent> = None;
 
-        // 检查 Note 游标
         for (track_idx, &(note_idx, note_on_emitted)) in self.note_cursors.iter().enumerate() {
             if note_idx >= self.doc.notes[track_idx].len() {
                 continue;
@@ -233,11 +407,10 @@ impl<'a> MidiDocEventStream<'a> {
             let priority = if note_on_emitted { 1 } else { 5 };
             if priority < best_priority {
                 best_priority = priority;
-                best_source = Some(SourceId::Note(track_idx));
                 best_event = if note_on_emitted {
                     Some(MergedEvent {
                         tick: note.end_tick,
-                        kind: 1, // NoteOff
+                        kind: 1,
                         channel: note.channel,
                         param1: note.key,
                         param2: 0,
@@ -245,7 +418,7 @@ impl<'a> MidiDocEventStream<'a> {
                 } else {
                     Some(MergedEvent {
                         tick: note.start_tick,
-                        kind: 0, // NoteOn
+                        kind: 0,
                         channel: note.channel,
                         param1: note.key,
                         param2: note.velocity as u16,
@@ -254,7 +427,6 @@ impl<'a> MidiDocEventStream<'a> {
             }
         }
 
-        // 检查控制事件
         if self.ctrl_cursor < self.doc.control_events.len() {
             let ctrl = &self.doc.control_events[self.ctrl_cursor];
             if ctrl.tick == min_tick {
@@ -292,33 +464,46 @@ impl<'a> MidiDocEventStream<'a> {
                             param2: ctrl.param,
                         },
                     ),
-                    _ => unreachable!("PackedControlEvent.kind 只能是 0/1/2，实际为 {}", ctrl.kind),
+                    _ => unreachable!(),
                 };
                 if priority < best_priority {
                     best_priority = priority;
-                    best_source = Some(SourceId::Control);
                     best_event = Some(event);
                 }
             }
         }
 
         // 3. 推进游标
-        if let Some(source) = best_source {
-            match source {
-                SourceId::Note(track_idx) => {
-                    let (ref mut note_idx, ref mut note_on_emitted) = self.note_cursors[track_idx];
-                    if *note_on_emitted {
-                        // NoteOff 已发射 → 前进到下一音符
-                        *note_idx += 1;
-                        *note_on_emitted = false;
-                    } else {
-                        // NoteOn 已发射 → 下一事件是 NoteOff
-                        *note_on_emitted = true;
+        if let Some(event) = &best_event {
+            match event.kind {
+                0 | 1 => {
+                    for (track_idx, cursor) in
+                        self.note_cursors.iter_mut().enumerate()
+                    {
+                        let (note_idx, note_on_emitted) = cursor;
+                        if *note_idx < self.doc.notes[track_idx].len() {
+                            let note = &self.doc.notes[track_idx][*note_idx];
+                            let note_tick = if *note_on_emitted {
+                                note.end_tick
+                            } else {
+                                note.start_tick
+                            };
+                            if note_tick == event.tick {
+                                if *note_on_emitted {
+                                    *note_idx += 1;
+                                    *note_on_emitted = false;
+                                } else {
+                                    *note_on_emitted = true;
+                                }
+                                break;
+                            }
+                        }
                     }
                 }
-                SourceId::Control => {
+                2..=4 => {
                     self.ctrl_cursor += 1;
                 }
+                _ => unreachable!(),
             }
         }
 
@@ -327,297 +512,62 @@ impl<'a> MidiDocEventStream<'a> {
     }
 }
 
-// ════════════════════════════════════════════════════════════
-// 初始化
-// ════════════════════════════════════════════════════════════
-
-/// 初始化 AudioRenderer + 加载 SF2 音色库
-fn init_renderer(
-    config: &AudioRenderConfig,
-) -> ExportResult<(AudioRenderer, xsynth_core::AudioStreamParams)> {
-    let mut renderer = AudioRenderer::new(config, &config.output_path)?;
-    let stream_params = renderer.stream_params();
-
-    if config.soundfonts.is_empty() {
-        return Err(ExportError::AudioWrite("未指定音色库文件".into()));
+/// 将 MergedEvent 转换为 TrackEventKind
+fn build_track_event_kind(event: &MergedEvent) -> TrackEventKind<'static> {
+    use midly::num::{u4, u7, u14};
+    let channel = u4::new(event.channel & 0x0f);
+    match event.kind {
+        0 => TrackEventKind::Midi {
+            channel,
+            message: MidiMessage::NoteOn {
+                key: event.param1,
+                vel: u7::new(event.param2 as u8),
+            },
+        },
+        1 => TrackEventKind::Midi {
+            channel,
+            message: MidiMessage::NoteOff {
+                key: event.param1,
+                vel: u7::new(0),
+            },
+        },
+        2 => TrackEventKind::Midi {
+            channel,
+            message: MidiMessage::Controller {
+                controller: u7::new(event.param1),
+                value: u7::new(event.param2 as u8),
+            },
+        },
+        3 => TrackEventKind::Midi {
+            channel,
+            message: MidiMessage::ProgramChange {
+                program: u7::new(event.param1),
+            },
+        },
+        4 => TrackEventKind::Midi {
+            channel,
+            message: MidiMessage::PitchBend {
+                bend: PitchBend(u14::new(event.param2)),
+            },
+        },
+        _ => unreachable!(),
     }
-
-    let sf_options = config.build_sf_options();
-    let soundfonts: Vec<Arc<dyn SoundfontBase>> = config
-        .soundfonts
-        .iter()
-        .map(|sf_path| {
-            let sf: Arc<dyn SoundfontBase> = Arc::new(
-                SampleSoundfont::new(sf_path, stream_params, sf_options)
-                    .map_err(|e| ExportError::AudioWrite(format!("音色库 {sf_path:?}: {e}")))?,
-            );
-            Ok(sf)
-        })
-        .collect::<ExportResult<Vec<_>>>()?;
-
-    renderer.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
-        ChannelConfigEvent::SetSoundfonts(soundfonts),
-    )));
-    renderer.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
-        ChannelConfigEvent::SetLayerCount(config.layer_limit),
-    )));
-
-    Ok((renderer, stream_params))
 }
 
 // ════════════════════════════════════════════════════════════
-// 流式渲染主循环（StreamingMidiPlayer）
+// 辅助 trait 扩展
 // ════════════════════════════════════════════════════════════
 
-fn run_streaming_render_loop(
-    renderer: &mut AudioRenderer,
-    tick_conv: &mut TickToTime,
-    mut player: StreamingMidiPlayer,
-    progress_callback: Option<crate::audio::config::ProgressCallback>,
-) -> ExportResult<()> {
-    info!("流式渲染循环开始...");
-    let mut event_count = 0_u64;
-    let mut note_count = 0_u64;
-    let mut current_tick: u64 = 0;
-    let mut last_progress_time = std::time::Instant::now();
-
-    // 预计算总 tick 用于进度
-    let total_ticks = player.total_ticks().max(1);
-    let start_time = std::time::Instant::now();
-
-    while let Some((tick, _track_idx, kind)) = player.next_event() {
-        // 进度报告：每 100ms 一次
-        if last_progress_time.elapsed() >= std::time::Duration::from_millis(100) {
-            let pct = tick as f64 / total_ticks as f64;
-            let elapsed = start_time.elapsed();
-            let msg = format!(
-                "进度: {:.1}% | 事件: {} | 音符: {} | 耗时: {:.1}s",
-                pct * 100.0,
-                event_count,
-                note_count,
-                elapsed.as_secs_f64()
-            );
-            if let Some(ref callback) = progress_callback {
-                callback(msg, pct);
-            } else {
-                eprint!("\r{}", msg);
-            }
-            last_progress_time = std::time::Instant::now();
-        }
-
-        // 前进到事件所在 tick（delta 秒数驱动 xsynth 渲染）
-        if tick > current_tick {
-            let delta = tick_conv.advance_to(tick);
-            if delta > 0.0 {
-                renderer.render_batch(delta);
-            }
-            current_tick = tick;
-        }
-
-        // 转换并发送事件
-        if let TrackEventKind::Midi { channel, message } = kind {
-            let ch = channel.as_int() as u32;
-            match message {
-                MidiMessage::NoteOn { key, vel } => {
-                    renderer.send_event(SynthEvent::Channel(
-                        ch,
-                        ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
-                            key,
-                            vel: vel.as_int(),
-                        }),
-                    ));
-                    event_count += 1;
-                    note_count += 1;
-                }
-                MidiMessage::NoteOff { key, .. } => {
-                    renderer.send_event(SynthEvent::Channel(
-                        ch,
-                        ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key }),
-                    ));
-                    event_count += 1;
-                }
-                MidiMessage::Controller { controller, value } => {
-                    renderer.send_event(SynthEvent::Channel(
-                        ch,
-                        ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
-                            controller.as_int(),
-                            value.as_int(),
-                        ))),
-                    ));
-                }
-                MidiMessage::ProgramChange { program } => {
-                    renderer.send_event(SynthEvent::Channel(
-                        ch,
-                        ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program.as_int())),
-                    ));
-                }
-                MidiMessage::PitchBend { bend } => {
-                    renderer.send_event(SynthEvent::Channel(
-                        ch,
-                        ChannelEvent::Audio(ChannelAudioEvent::Control(
-                            ControlEvent::PitchBendValue(bend.as_int() as f32 / 8192.0 - 1.0),
-                        )),
-                    ));
-                }
-                _ => {}
-            }
-        } // Meta / SysEx 被跳过
-    }
-
-    // 完成进度条
-    let elapsed = start_time.elapsed();
-    let msg = format!(
-        "进度: 100.0% | 事件: {} | 音符: {} | 耗时: {:.1}s",
-        event_count,
-        note_count,
-        elapsed.as_secs_f64()
-    );
-    if let Some(ref callback) = progress_callback {
-        callback(msg, 1.0);
-    } else {
-        eprintln!("\r{}", msg);
-    }
-
-    info!("流式渲染完成: 处理 {event_count} 个事件, {note_count} 个音符");
-    Ok(())
+/// 为 AudioChannelMode 添加 channel_count 方法
+pub trait ChannelCountExt {
+    fn channel_count(&self) -> u16;
 }
 
-// ════════════════════════════════════════════════════════════
-// 文档渲染主循环（MidiDocEventStream — 零 Vec 分配）
-// ════════════════════════════════════════════════════════════
-
-fn run_document_render_loop(
-    renderer: &mut AudioRenderer,
-    tick_conv: &mut TickToTime,
-    doc: &MidiDocument,
-    progress_callback: Option<crate::audio::config::ProgressCallback>,
-) -> ExportResult<()> {
-    let mut stream = MidiDocEventStream::new(doc);
-    let total_tick = doc
-        .notes
-        .iter()
-        .flat_map(|t| t.iter())
-        .map(|n| n.end_tick)
-        .max()
-        .unwrap_or(0)
-        .max(1) as u64;
-
-    info!("文档流式渲染循环开始 ({} 事件)...", stream.total_events);
-    let mut event_count = 0_u64;
-    let mut current_tick: u64 = 0;
-    let mut last_progress_time = std::time::Instant::now();
-    let start_time = std::time::Instant::now();
-
-    while let Some(event) = stream.next_event() {
-        let tick = event.tick as u64;
-
-        // 进度报告：每 100ms 一次
-        if last_progress_time.elapsed() >= std::time::Duration::from_millis(100) {
-            let pct = tick as f64 / total_tick as f64;
-            let elapsed = start_time.elapsed();
-            let msg = format!(
-                "进度: {:.1}% | 事件: {} | 耗时: {:.1}s",
-                pct * 100.0,
-                event_count,
-                elapsed.as_secs_f64()
-            );
-            if let Some(ref callback) = progress_callback {
-                callback(msg, pct);
-            } else {
-                eprint!("\r{}", msg);
-            }
-            last_progress_time = std::time::Instant::now();
-        }
-
-        // 前进时间
-        if tick > current_tick {
-            let delta = tick_conv.advance_to(tick);
-            if delta > 0.0 {
-                renderer.render_batch(delta);
-            }
-            current_tick = tick;
-        }
-
-        // 发送事件
-        let ch = event.channel as u32;
-        match event.kind {
-            0 => {
-                renderer.send_event(SynthEvent::Channel(
-                    ch,
-                    ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
-                        key: event.param1,
-                        vel: event.param2 as u8,
-                    }),
-                ));
-                event_count += 1;
-            }
-            1 => {
-                renderer.send_event(SynthEvent::Channel(
-                    ch,
-                    ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: event.param1 }),
-                ));
-                event_count += 1;
-            }
-            2 => {
-                renderer.send_event(SynthEvent::Channel(
-                    ch,
-                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
-                        event.param1,
-                        event.param2 as u8,
-                    ))),
-                ));
-            }
-            3 => {
-                renderer.send_event(SynthEvent::Channel(
-                    ch,
-                    ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(event.param1)),
-                ));
-            }
-            4 => {
-                let normalized = (event.param2 as i16 - 8192) as f32 / 8192.0;
-                renderer.send_event(SynthEvent::Channel(
-                    ch,
-                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
-                        normalized,
-                    ))),
-                ));
-            }
-            _ => {}
+impl ChannelCountExt for config::AudioChannelMode {
+    fn channel_count(&self) -> u16 {
+        match self {
+            config::AudioChannelMode::Mono => 1,
+            config::AudioChannelMode::Stereo => 2,
         }
     }
-
-    // 完成进度
-    let elapsed = start_time.elapsed();
-    let msg = format!(
-        "进度: 100.0% | 事件: {} | 耗时: {:.1}s",
-        event_count,
-        elapsed.as_secs_f64()
-    );
-    if let Some(ref callback) = progress_callback {
-        callback(msg, 1.0);
-    } else {
-        eprintln!("\r{}", msg);
-    }
-
-    info!("文档流式渲染完成: 处理 {event_count} 个事件");
-    Ok(())
 }
-
-// ════════════════════════════════════════════════════════════
-// 收尾
-// ════════════════════════════════════════════════════════════
-
-fn finalize_renderer(renderer: AudioRenderer, config: &AudioRenderConfig) -> ExportResult<()> {
-    let mut r = renderer;
-    r.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
-        ChannelAudioEvent::AllNotesOff,
-    )));
-    r.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
-        ChannelAudioEvent::ResetControl,
-    )));
-    r.finalize()?;
-    info!("音频渲染完成: {:?}", config.output_path);
-    Ok(())
-}
-
-// build_document_events 已废弃 — 由 MidiDocEventStream 流式替代
