@@ -7,6 +7,25 @@ pub struct Config {
     pub ui: UiConfig,
 }
 
+/// 添加音轨时的行为
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum TrackAddBehavior {
+    /// 自动跳转到被添加的新音轨
+    #[default]
+    AutoSwitch,
+    /// 保持当前音轨位置不变
+    StayCurrent,
+}
+
+impl std::fmt::Display for TrackAddBehavior {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TrackAddBehavior::AutoSwitch => write!(f, "自动跳转到新音轨"),
+            TrackAddBehavior::StayCurrent => write!(f, "保持当前音轨"),
+        }
+    }
+}
+
 /// 用户界面配置默认值
 impl Default for Config {
     fn default() -> Self {
@@ -201,6 +220,9 @@ pub struct UiConfig {
     /// 播放时键盘颜色指示（默认关闭以节省内存和性能）
     #[serde(default)]
     pub playback_key_colors_enabled: bool,
+    /// 添加音轨时的行为（自动跳转到新音轨 / 保持当前音轨）
+    #[serde(default)]
+    pub track_add_behavior: TrackAddBehavior,
 }
 
 fn default_true() -> bool {
@@ -272,6 +294,7 @@ impl Default for UiConfig {
             hires_cooldown_secs: default_hires_cooldown(),
             hires_gpu_mem_limit_mb: default_hires_gpu_mem_limit(),
             playback_key_colors_enabled: false,
+            track_add_behavior: TrackAddBehavior::default(),
         }
     }
 }

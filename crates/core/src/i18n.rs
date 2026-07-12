@@ -71,6 +71,14 @@ pub fn eraser_behavior_name(
     main::eraser_behavior_name(behavior, lang)
 }
 
+/// 获取音轨添加行为名称（按语言）
+pub fn track_add_behavior_name(
+    behavior: crate::storage::config::TrackAddBehavior,
+    lang: Language,
+) -> &'static str {
+    main::track_add_behavior_name(behavior, lang)
+}
+
 /// 获取合成器后端名称（按语言）
 pub fn synth_backend_name(
     backend: crate::storage::config::SynthBackend,

@@ -87,6 +87,24 @@ pub fn eraser_behavior_name(
     }
 }
 
+/// 获取音轨添加行为显示名称（按语言）
+pub fn track_add_behavior_name(
+    behavior: crate::storage::config::TrackAddBehavior,
+    lang: Language,
+) -> &'static str {
+    use crate::storage::config::TrackAddBehavior::*;
+    match lang {
+        Language::ZhCn => match behavior {
+            AutoSwitch => "自动跳转到新音轨",
+            StayCurrent => "保持当前音轨",
+        },
+        Language::EnUs => match behavior {
+            AutoSwitch => "Auto-switch to new track",
+            StayCurrent => "Stay on current track",
+        },
+    }
+}
+
 /// 获取合成器后端显示名称（按语言）
 pub fn synth_backend_name(
     backend: crate::storage::config::SynthBackend,

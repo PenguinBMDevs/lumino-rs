@@ -315,7 +315,8 @@ impl RunnerInner {
             || new.auto_scroll_page_return_position != old.auto_scroll.page_return_position
             || new.icon_hidpi != old.icon_hidpi
             || new.enable_256key != old.enable_256key
-            || new.playback_key_colors_enabled != old.playback_key_colors_enabled;
+            || new.playback_key_colors_enabled != old.playback_key_colors_enabled
+            || new.track_add_behavior != old.track_add_behavior;
 
         if theme_changed
             || synth_changed
@@ -455,6 +456,7 @@ impl RunnerInner {
             config.ui.hires_cooldown_secs = new.hires_cooldown_secs;
             config.ui.hires_gpu_mem_limit_mb = new.hires_gpu_mem_limit_mb;
             config.ui.playback_key_colors_enabled = new.playback_key_colors_enabled;
+            config.ui.track_add_behavior = new.track_add_behavior;
         });
 
         if let Err(e) = self.window_state.storage.config.save() {

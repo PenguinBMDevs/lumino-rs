@@ -25,6 +25,8 @@ pub struct SettingsTranslations {
     pub eraser_behavior: &'static str,
     pub eraser_default_hint: &'static str,
     pub eraser_direct_hint: &'static str,
+    pub track_add_behavior: &'static str,
+    pub track_add_behavior_hint: &'static str,
 
     // ── 音频页面 ──
     pub audio_title: &'static str,
@@ -98,6 +100,8 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     eraser_behavior: "橡皮擦行为:",
     eraser_default_hint: "默认: Shift+拖动框选删除，点击删除单个",
     eraser_direct_hint: "直接框选: 拖动框选删除，Shift+点击删除单个",
+    track_add_behavior: "添加音轨时:",
+    track_add_behavior_hint: "选择添加音轨后是否自动跳转到新音轨",
     audio_title: "音频",
     synthesizer: "合成器:",
     soundfont: "音色库:",
@@ -162,6 +166,8 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     eraser_behavior: "Eraser Behavior:",
     eraser_default_hint: "Default: Shift+drag to box-delete, click to delete single",
     eraser_direct_hint: "Direct Select: drag to box-delete, Shift+click to delete single",
+    track_add_behavior: "Add Track Behavior:",
+    track_add_behavior_hint: "Choose whether to auto-switch to the newly added track",
     audio_title: "Audio",
     synthesizer: "Synthesizer:",
     soundfont: "Soundfont:",

@@ -14,7 +14,7 @@ use iced_widget::{column, container, row, scrollable, text};
 
 use crate::{Element, Message, Theme, window};
 use lumino_core::i18n::Language;
-use lumino_core::storage::config::SynthBackend;
+use lumino_core::storage::config::{SynthBackend, TrackAddBehavior};
 
 use components::*;
 use pages::*;
@@ -60,6 +60,8 @@ pub enum Event {
     HiresGpuMemLimitChanged(String),
     // 播放键盘颜色指示
     PlaybackKeyColorsEnabledChanged(bool),
+    /// 添加音轨行为
+    TrackAddBehaviorChanged(TrackAddBehavior),
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +105,8 @@ pub struct SettingsPanel {
     pub hires_gpu_mem_limit_mb: u32,
     // 播放键盘颜色指示
     pub playback_key_colors_enabled: bool,
+    /// 添加音轨行为
+    pub track_add_behavior: TrackAddBehavior,
 }
 
 impl SettingsPanel {
@@ -137,6 +141,7 @@ impl SettingsPanel {
             hires_cooldown_secs: ui_config.hires_cooldown_secs,
             hires_gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
             playback_key_colors_enabled: ui_config.playback_key_colors_enabled,
+            track_add_behavior: ui_config.track_add_behavior,
         }
     }
 
@@ -268,6 +273,9 @@ impl SettingsPanel {
             }
             Event::PlaybackKeyColorsEnabledChanged(v) => {
                 self.playback_key_colors_enabled = v;
+            }
+            Event::TrackAddBehaviorChanged(v) => {
+                self.track_add_behavior = v;
             }
         }
     }
