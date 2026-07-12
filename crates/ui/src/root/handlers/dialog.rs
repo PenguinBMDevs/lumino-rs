@@ -401,6 +401,7 @@ impl MessageHandler for DialogHandler {
                             quality,
                             root.editor.editor_state.view.ppq,
                             root.editor.editor_state.view.visible_key_count,
+                            root.state.video_export_dialog.render_mode.clone(),
                             document,
                         );
                         crate::event::emit(crate::event::Event::Window(ev));
@@ -467,6 +468,9 @@ impl MessageHandler for DialogHandler {
                     }
                     V::OutputPathChanged(v) => {
                         root.state.video_export_dialog.output_path = v;
+                    }
+                    V::RenderModeChanged(v) => {
+                        root.state.video_export_dialog.render_mode = v;
                     }
                     V::BrowseOutput => {
                         let st = &root.state.video_export_dialog;

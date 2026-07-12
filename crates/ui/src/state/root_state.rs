@@ -344,6 +344,8 @@ pub struct VideoExportDialogState {
     pub fps: u32,
     /// 输出路径
     pub output_path: String,
+    /// 视频导出渲染模式（"note_rectangle"/"hires_texture"）
+    pub render_mode: String,
     /// 覆盖层状态（None=空闲，其余=显示模态覆盖层）
     pub overlay: VideoExportOverlayState,
     /// 进度 (0.0 - 1.0)
@@ -386,6 +388,7 @@ impl VideoExportDialogState {
             height: 1080,
             fps: 60,
             output_path: String::new(),
+            render_mode: "note_rectangle".to_string(),
             overlay: VideoExportOverlayState::None,
             progress: 0.0,
             status_message: String::new(),

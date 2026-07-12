@@ -33,7 +33,7 @@ pub use cache::{
     CacheError, CacheMeta, cache_path, clear_all_cache, clear_midi_cache, compute_midi_hash,
     read_track_tile_cache, write_track_tile_cache,
 };
-pub use config::{ConfigError, HiResConfig, TRACKS_PER_GROUP};
+pub use config::{ConfigError, HiResConfig, HiResRenderMode, TRACKS_PER_GROUP};
 pub use generate::{generate_track_tile, merge_group_tiles, merge_track_tile_into};
 pub use renderer::{HiResRenderer, HiResUniform};
 pub use scheduler::{

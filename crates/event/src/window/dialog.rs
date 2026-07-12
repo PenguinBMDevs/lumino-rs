@@ -77,7 +77,9 @@ pub enum Event {
         ppq: u16,
         /// 可见键位数（128 或 256，用于 Y 向缩放）
         key_count: u16,
-        /// 内存中的 MidiDocument（视频导出数据源）
+        /// 视频导出渲染模式（"note_rectangle"/"hires_texture"）
+        render_mode: String,
+        /// 内存中的 MidiDocument（如果存在）
         document: Option<Arc<MidiDocument>>,
     },
 }

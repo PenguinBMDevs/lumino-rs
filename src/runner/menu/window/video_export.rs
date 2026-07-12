@@ -3,8 +3,9 @@
 //! 包含视频帧渲染参数构建、键盘贴图生成、标尺小节号合成等工具函数。
 
 use lumino_gfx::{
-    ARRANGEMENT_PALETTE, GridViewParams, NoteInstance, RenderParams, generate_grid_instances,
-    generate_ruler_instances, is_black_key, pack_color,
+    ARRANGEMENT_PALETTE, GridViewParams, HiResConfig, HiResRenderMode, NoteInstance, OnionSkinNote,
+    RenderParams, compute_midi_hash, generate_grid_instances, generate_ruler_instances,
+    is_black_key, pack_color,
 };
 
 // ── 时间计算 ──
@@ -155,6 +156,84 @@ pub(super) fn build_video_render_params(
         canvas_size,
         ..Default::default()
     }
+}
+
+// ── HiRes 贴图生成 ──
+
+/// 将 MidiDocument 音符转换为洋葱皮生成所需格式
+pub(super) fn convert_notes_to_onion_skin(
+    document: &lumino_midi_loader::MidiDocument,
+) -> Vec<Vec<OnionSkinNote>> {
+    document
+        .notes
+        .iter()
+        .enumerate()
+        .map(|(track_idx, notes)| {
+            let color = ARRANGEMENT_PALETTE[track_idx % ARRANGEMENT_PALETTE.len()];
+            notes
+                .iter()
+                .map(|n| {
+                    let color_u8 = [
+                        (color[0] * 255.0) as u8,
+                        (color[1] * 255.0) as u8,
+                        (color[2] * 255.0) as u8,
+                        255,
+                    ];
+                    OnionSkinNote::from_note_event(n, color_u8)
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// 构建视频导出用 HiRes 配置
+///
+/// 视频导出强制启用贴图（enabled=true），并锁定为 Stretch 模式以匹配
+/// 视频视口的任意缩放。
+pub(super) fn build_hires_config_for_video(
+    ui_config: &lumino_core::storage::config::UiConfig,
+) -> HiResConfig {
+    HiResConfig {
+        enabled: true,
+        measures_per_group: ui_config.hires_measures_per_group,
+        tile_width_px: ui_config.hires_tile_width_px,
+        cooldown_secs: ui_config.hires_cooldown_secs,
+        gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
+        render_mode: HiResRenderMode::Stretch,
+        group_tile_mem_limit_mb: 256,
+        cache_dir: HiResConfig::default().cache_dir,
+    }
+}
+
+/// 为视频导出计算轻量 MIDI 哈希
+pub(super) fn compute_video_midi_hash(document: &lumino_midi_loader::MidiDocument) -> String {
+    let mut hash_input = Vec::new();
+    hash_input.extend_from_slice(&document.total_ticks.to_le_bytes());
+    hash_input.extend_from_slice(&(document.notes.len() as u32).to_le_bytes());
+    for track in &document.notes {
+        hash_input.extend_from_slice(&(track.len() as u32).to_le_bytes());
+    }
+    compute_midi_hash(&hash_input)
+}
+
+/// 生成视频导出用 HiRes 贴图
+pub(super) fn generate_hires_video_tiles(
+    document: &lumino_midi_loader::MidiDocument,
+    config: &HiResConfig,
+    ppq: u16,
+    key_count: u16,
+) -> std::collections::HashMap<lumino_gfx::TileCoord, lumino_gfx::GroupTile> {
+    let mut notes = convert_notes_to_onion_skin(document);
+    let midi_hash = compute_video_midi_hash(document);
+    lumino_gfx::generate_all_tiles(
+        &mut notes,
+        config,
+        ppq,
+        key_count,
+        document.total_ticks,
+        &midi_hash,
+        None,
+    )
 }
 
 // ── 键盘贴图 ──

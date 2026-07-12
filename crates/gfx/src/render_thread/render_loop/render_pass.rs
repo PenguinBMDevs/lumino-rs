@@ -21,6 +21,7 @@ pub fn execute_render_pass(
     cc_bar_renderer: &mut crate::CcBarRenderer,
     hires_renderer: &Option<HiResRenderer>,
     hires_visible_coords: &[TileCoord],
+    render_notes: bool,
 ) {
     let (Some(texture), Some(depth_view)) = (current_texture, depth_texture_view) else {
         return;
@@ -127,13 +128,15 @@ pub fn execute_render_pass(
             hires.render_dirty_overlays(&mut render_pass, hires_visible_coords);
         }
 
-        // 绘制音符
-        render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-        note_renderer.draw(
-            &mut render_pass,
-            true,
-            Some((scissor_x, scissor_y, scissor_width, scissor_height)),
-        );
+        // 绘制音符（HiRes 贴图模式下音符已包含在贴图中，跳过）
+        if render_notes {
+            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+            note_renderer.draw(
+                &mut render_pass,
+                true,
+                Some((scissor_x, scissor_y, scissor_width, scissor_height)),
+            );
+        }
 
         // 绘制标尺
         if !params.ruler_instances.is_empty() {

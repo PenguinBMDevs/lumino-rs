@@ -132,6 +132,33 @@ pub fn view_video_export_dialog<'a>(
         ]
         .spacing(8)
         .align_y(Alignment::Center),
+        // 视频导出渲染模式
+        space().height(8),
+        {
+            let render_modes = vec!["音符矩形", "HiRes贴图"]
+                .into_iter()
+                .map(String::from)
+                .collect::<Vec<_>>();
+            let selected = if state.render_mode == "hires_texture" {
+                "HiRes贴图"
+            } else {
+                "音符矩形"
+            };
+            row![
+                text("渲染模式:").size(14).style(label_style).width(100),
+                pick_list(render_modes, Some(selected.to_string()), |v| {
+                    let mode = if v == "HiRes贴图" {
+                        "hires_texture"
+                    } else {
+                        "note_rectangle"
+                    };
+                    Message::VideoExport(VideoExportAction::RenderModeChanged(mode.to_string()))
+                })
+                .width(Length::Fixed(200.0)),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+        },
     ]
     .width(Length::Fill);
 

@@ -21,6 +21,16 @@ pub const DEFAULT_GPU_MEM_LIMIT_MB: u32 = 512;
 /// 默认整合组内存缓冲上限（MB）
 pub const DEFAULT_GROUP_TILE_MEM_LIMIT_MB: u32 = 256;
 
+/// 高精度贴图渲染模式
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HiResRenderMode {
+    /// 拉伸模式：贴图随 zoom_x 拉伸填充视口（当前默认行为）
+    #[default]
+    Stretch,
+    /// 原生模式：贴图以原生分辨率渲染，按正确速度均匀滚动
+    Native,
+}
+
 /// 配置校验错误
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -52,6 +62,8 @@ pub struct HiResConfig {
     pub gpu_mem_limit_mb: u32,
     /// 整合组内存缓冲上限（MB），默认 256
     pub group_tile_mem_limit_mb: u32,
+    /// 渲染模式：拉伸（随 zoom_x 缩放）或原生（固定分辨率均匀滚动）
+    pub render_mode: HiResRenderMode,
     /// 硬盘缓存目录，默认系统 temp/lumino/onion-cache
     pub cache_dir: PathBuf,
 }
@@ -65,6 +77,7 @@ impl Default for HiResConfig {
             cooldown_secs: DEFAULT_COOLDOWN_SECS,
             gpu_mem_limit_mb: DEFAULT_GPU_MEM_LIMIT_MB,
             group_tile_mem_limit_mb: DEFAULT_GROUP_TILE_MEM_LIMIT_MB,
+            render_mode: HiResRenderMode::default(),
             cache_dir: default_cache_dir(),
         }
     }

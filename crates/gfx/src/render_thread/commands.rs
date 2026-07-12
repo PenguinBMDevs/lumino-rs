@@ -104,11 +104,33 @@ pub enum ControlCommand {
         height: u32,
         /// 帧数据回传通道（渲染线程 → Runner）
         frame_tx: FrameSender,
+        /// 视频导出渲染模式（"note_rectangle"/"hires_texture"）
+        render_mode: String,
     },
     /// 渲染一帧视频并读回 BGRA 数据
     ///
-    /// 渲染线程执行完整流程：离屏渲染 → copy 到 staging → submit → map_async → wait_read → send
-    RenderVideoFrame(Box<RenderParams>),
+    /// 渲染线程执行完整流程：离屏渲染 → copy 到 staging → submit → map_async → wait_read → 发送
+    RenderVideoFrame {
+        /// 帧渲染参数
+        params: Box<RenderParams>,
+        /// 视频导出渲染模式（"note_rectangle"/"hires_texture"）
+        render_mode: String,
+    },
+    /// 上传视频导出用高精度贴图（Runner 预生成后一次性传入）
+    UploadHiResVideoTiles {
+        /// 整合组贴图列表
+        tiles: Vec<crate::GroupTile>,
+        /// 高精度贴图配置
+        config: crate::HiResConfig,
+        /// 音轨总数
+        track_count: u16,
+        /// 键位数量（128 或 256）
+        key_count: u16,
+        /// 全曲总 tick
+        total_ticks: u32,
+        /// MIDI ppq
+        ppq: u16,
+    },
     /// 完成视频导出：释放读回管线资源
     FinishVideoExport,
 }

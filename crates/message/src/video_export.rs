@@ -31,6 +31,8 @@ pub enum VideoExportAction {
     OutputPathChanged(String),
     /// 浏览输出路径
     BrowseOutput,
+    /// 视频导出渲染模式变更（"note_rectangle"/"hires_texture"）
+    RenderModeChanged(String),
 
     // ── 导出控制 ──
     /// 开始导出（点击「开始导出」按钮，由 handler 发射 StartVideoExport 事件）

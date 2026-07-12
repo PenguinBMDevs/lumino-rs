@@ -1,5 +1,6 @@
 /// 高精度贴图元数据（无像素数据，用于视口计算）
 #[allow(dead_code)]
+#[derive(Clone, Debug)]
 pub(crate) struct HiResMeta {
     pub(crate) track_count: u16,
     /// 音轨组数（= ceil(track_count / TRACKS_PER_GROUP)），用于判断 time_group 贴图是否收齐

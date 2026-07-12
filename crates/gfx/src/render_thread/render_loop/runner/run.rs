@@ -17,7 +17,9 @@ use super::super::render_pass::execute_render_pass;
 use super::super::render_pass::update_stats;
 use super::super::textures::ensure_textures;
 
-use super::hires::{handle_hires_control, push_onion_progress, update_hires_viewport};
+use super::hires::{
+    handle_hires_control, push_onion_progress, update_hires_viewport, upload_hires_video_tiles,
+};
 use super::types::{HiResMeta, HiResStreamMsg};
 
 /// 运行渲染线程主循环
@@ -89,6 +91,7 @@ pub fn run_render_thread(
                     width,
                     height,
                     frame_tx,
+                    render_mode: _,
                 } => {
                     tracing::info!(
                         "视频导出开始: {}x{}, 初始化 GPU→CPU 读回管线",
@@ -98,9 +101,13 @@ pub fn run_render_thread(
                     export_pipeline = Some(ExportPipeline::new(&device, width, height));
                     export_frame_tx = Some(frame_tx);
                 }
-                ControlCommand::RenderVideoFrame(params) => {
+                ControlCommand::RenderVideoFrame {
+                    params,
+                    render_mode,
+                } => {
                     handle_video_frame(
                         *params,
+                        render_mode,
                         &device,
                         &queue,
                         texture_format,
@@ -116,6 +123,31 @@ pub fn run_render_thread(
                         &mut last_note_version,
                         &latest_texture_clone,
                         &mut hires_renderer,
+                        &hires_meta,
+                        &hires_config,
+                    );
+                }
+                ControlCommand::UploadHiResVideoTiles {
+                    tiles,
+                    config,
+                    track_count,
+                    key_count,
+                    total_ticks,
+                    ppq,
+                } => {
+                    upload_hires_video_tiles(
+                        &device,
+                        &queue,
+                        &mut hires_renderer,
+                        &mut hires_meta,
+                        &mut hires_config,
+                        tiles,
+                        config,
+                        track_count,
+                        key_count,
+                        total_ticks,
+                        ppq,
+                        texture_format,
                     );
                 }
                 ControlCommand::FinishVideoExport => {
@@ -263,6 +295,7 @@ pub fn run_render_thread(
                     &mut renderers.cc_bar,
                     &hires_renderer,
                     &hires_visible_coords,
+                    true,
                 );
 
                 // 提交渲染指令
@@ -296,6 +329,7 @@ pub fn run_render_thread(
 #[allow(clippy::too_many_arguments)]
 fn handle_video_frame(
     params: RenderParams,
+    render_mode: String,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     texture_format: wgpu::TextureFormat,
@@ -311,6 +345,8 @@ fn handle_video_frame(
     _last_note_version: &mut u64,
     latest_texture_clone: &Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
     hires_renderer: &mut Option<crate::HiResRenderer>,
+    hires_meta: &Option<super::types::HiResMeta>,
+    hires_config: &Option<crate::HiResConfig>,
 ) {
     let (Some(pipeline), Some(tx)) = (export_pipeline.as_mut(), export_frame_tx) else {
         tracing::warn!("RenderVideoFrame 收到但导出管线未初始化，忽略");
@@ -335,11 +371,26 @@ fn handle_video_frame(
     };
     ensure_textures(&mut tex_resources);
 
-    // 2. 上传视频导出帧的音符实例（从 params.note_instances 读取，而非共享缓冲区）
+    let hires_visible = if render_mode == "hires_texture" {
+        update_hires_viewport(
+            hires_renderer,
+            hires_meta,
+            hires_config,
+            &params,
+            device,
+            queue,
+        )
+    } else {
+        Vec::new()
+    };
+    let hires_visible_coords: Vec<crate::TileCoord> =
+        hires_visible.iter().map(|(c, _)| *c).collect();
+
+    // 2. 上传视频导出帧的音符实例（仅在音符矩形模式下）
     //    视频导出自定义构建音符实例（build_video_render_params），而共享缓冲区
     //    note_instances_buffer 仅由编辑器主线程更新，导出期间不会刷新。
     //    若依赖共享缓冲区，导出帧中将看不到音符。
-    if !params.note_instances.is_empty() {
+    if render_mode == "note_rectangle" && !params.note_instances.is_empty() {
         renderers
             .note
             .upload_instances(&params.note_instances, device, queue);
@@ -357,7 +408,7 @@ fn handle_video_frame(
 
     prepare_renderers(renderers, &params, note_events_rx, device, queue);
 
-    // 视频导出时跳过 HiRes 洋葱皮渲染（它只是编辑时的视觉辅助，不影响导出画面）
+    let render_notes = render_mode == "note_rectangle";
     execute_render_pass(
         &mut encoder,
         device,
@@ -371,7 +422,8 @@ fn handle_video_frame(
         queue,
         &mut renderers.cc_bar,
         hires_renderer,
-        &[], // 视频导出：不传 HiRes 可见坐标，跳过洋葱皮渲染
+        &hires_visible_coords,
+        render_notes,
     );
 
     // 4. 流水线模式：inflight 达到上限时阻塞读最早的一帧（背压）

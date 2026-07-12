@@ -159,6 +159,7 @@ impl winit::application::ApplicationHandler for Runner {
                         tile_width_px: ui_cfg.hires_tile_width_px,
                         cooldown_secs: ui_cfg.hires_cooldown_secs,
                         gpu_mem_limit_mb: ui_cfg.hires_gpu_mem_limit_mb,
+                        render_mode: lumino_gfx::HiResRenderMode::default(),
                         group_tile_mem_limit_mb: 256,
                         cache_dir: lumino_gfx::HiResConfig::default().cache_dir,
                     };

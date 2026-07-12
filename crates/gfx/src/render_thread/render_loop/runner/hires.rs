@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    GroupTile, HiResConfig, HiResProgressCallback, HiResRenderer, HiResUniform, TRACKS_PER_GROUP,
-    TileCoord, generate_track_tile,
+    GroupTile, HiResConfig, HiResProgressCallback, HiResRenderMode, HiResRenderer, HiResUniform,
+    TRACKS_PER_GROUP, TileCoord, generate_track_tile,
 };
 use lumino_onion_skin_hires::{CacheMeta, merge_track_tile_into, read_track_tile_cache};
 
@@ -375,6 +375,56 @@ pub(super) fn handle_hires_control(
     }
 }
 
+/// 上传视频导出预生成的高精度贴图，并初始化渲染器与元数据
+#[allow(clippy::too_many_arguments)]
+pub(super) fn upload_hires_video_tiles(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    hires_renderer: &mut Option<HiResRenderer>,
+    hires_meta: &mut Option<HiResMeta>,
+    hires_config: &mut Option<HiResConfig>,
+    tiles: Vec<GroupTile>,
+    config: HiResConfig,
+    track_count: u16,
+    key_count: u16,
+    total_ticks: u32,
+    ppq: u16,
+    texture_format: wgpu::TextureFormat,
+) {
+    let mut renderer = HiResRenderer::new(device, config.clone(), texture_format);
+    for tile in tiles {
+        renderer.upload_tile(
+            device,
+            queue,
+            tile.coord,
+            &tile.pixels,
+            tile.width,
+            tile.height,
+        );
+    }
+
+    let time_groups = config.time_group_count(total_ticks, ppq);
+    let ticks_per_group = config.ticks_per_group(ppq);
+    let track_groups = config.track_group_count(track_count);
+
+    tracing::info!(
+        "视频导出 HiRes 贴图上传完成: {} 张, track_groups={}, time_groups={}",
+        renderer.tile_count(),
+        track_groups,
+        time_groups
+    );
+
+    *hires_renderer = Some(renderer);
+    *hires_config = Some(config);
+    *hires_meta = Some(HiResMeta {
+        track_count,
+        track_groups,
+        key_count,
+        time_groups,
+        ticks_per_group,
+    });
+}
+
 /// 高精度贴图视口驱动：准备 uniform
 ///
 /// 遍历可见范围内的所有 (track_group, time_group) 组合。
@@ -431,8 +481,25 @@ pub(super) fn update_hires_viewport(
             let coord = TileCoord::new(track_g, time_g);
             if renderer.has_tile_or_dirty_overlay(&coord) {
                 let tick_start = time_g * ticks_per_group;
-                let area_x = base_x + (tick_start as f32 * zoom_x - scroll_x) * scale;
-                let area_w = ticks_per_group as f32 * zoom_x * scale;
+                let (area_x, area_w) = match config.render_mode {
+                    HiResRenderMode::Native => {
+                        // 原生模式：贴图以原生分辨率渲染，按正确速度均匀滚动
+                        // texture_zoom = 贴图像素 / tick 数（原生像素每 tick）
+                        let texture_zoom = config.tile_width_px as f32 / ticks_per_group as f32;
+                        // scroll_x / zoom_x 将滚动偏移从逻辑像素转换为 tick
+                        let tick_offset = scroll_x / zoom_x;
+                        let area_x =
+                            base_x + (tick_start as f32 - tick_offset) * texture_zoom * scale;
+                        let area_w = config.tile_width_px as f32 * scale;
+                        (area_x, area_w)
+                    }
+                    HiResRenderMode::Stretch => {
+                        // 拉伸模式：贴图随 zoom_x 拉伸填充视口（当前默认行为）
+                        let area_x = base_x + (tick_start as f32 * zoom_x - scroll_x) * scale;
+                        let area_w = ticks_per_group as f32 * zoom_x * scale;
+                        (area_x, area_w)
+                    }
+                };
                 let uniform = HiResUniform::new(area_x, area_y, area_w, area_h, canvas_w, canvas_h);
                 visible.push((coord, uniform));
             }

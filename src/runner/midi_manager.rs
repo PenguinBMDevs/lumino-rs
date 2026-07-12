@@ -185,8 +185,6 @@ impl MidiManager {
             threads: ui_config.xsynth_threads,
             sample_rate: ui_config.xsynth_sample_rate,
             fade_out_killing: ui_config.xsynth_fade_out_killing,
-            max_voices_per_key: ui_config.xsynth_max_voices_per_key,
-            global_voice_limit: ui_config.xsynth_global_voice_limit,
         };
 
         let api = lumino_midi_io::new_api_with_options(&api_kind, Some(options))

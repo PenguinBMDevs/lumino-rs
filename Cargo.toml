@@ -57,6 +57,10 @@ tokio-test = "0.4"
 raw-window-handle = "0.6"
 winapi = { version = "0.3", features = ["winuser", "windef", "minwindef", "processthreadsapi", "psapi"] }
 muda = "0.17.1"
+# xsynth deps
+xsynth-core = "0.4.0"
+xsynth-soundfonts = "0.4.0"
+xsynth-realtime = "0.4.0"
 # duplicated dependencies — unified to workspace
 zstd = "0.13.2"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
@@ -169,8 +173,6 @@ winapi = { workspace = true }
 
 [patch.crates-io]
 midly = { git = "https://github.com/PenguinBMDevs/midly-fork" }
-xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth" }
-xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth" }
 
 [[test]]
 name = "collaboration_full_test"

@@ -1,6 +1,8 @@
 pub mod api;
 pub mod compact;
 pub mod constants;
+
+#[cfg(feature = "new-audio-backend")]
 pub mod soundfont_cache;
 
 pub use constants::*;
@@ -11,6 +13,8 @@ use std::path::PathBuf;
 
 use api::Kdmapi;
 use api::System;
+
+#[cfg(feature = "new-audio-backend")]
 use api::XSynth;
 
 #[derive(Error, Debug)]
@@ -169,8 +173,13 @@ pub trait OutputConnection: Send {
 
 #[derive(Debug)]
 pub enum ApiKind {
-    XSynth { soundfont_path: PathBuf },
-    Kdmapi { path: PathBuf },
+    #[cfg(feature = "new-audio-backend")]
+    XSynth {
+        soundfont_path: PathBuf,
+    },
+    Kdmapi {
+        path: PathBuf,
+    },
     System,
 }
 
@@ -180,9 +189,11 @@ pub fn new_api(kind: &ApiKind) -> Result<Box<dyn Api>, Error> {
 
 pub fn new_api_with_options(
     kind: &ApiKind,
-    options: Option<api::xsynth::XSynthOptions>,
+
+    #[allow(unused_variables)] options: Option<api::xsynth::XSynthOptions>,
 ) -> Result<Box<dyn Api>, Error> {
     let engine: Box<dyn Api> = match kind {
+        #[cfg(feature = "new-audio-backend")]
         ApiKind::XSynth { soundfont_path } => Box::new(XSynth::new(soundfont_path, options)?),
         ApiKind::Kdmapi { path } => Box::new(Kdmapi::new(path)?),
         ApiKind::System => Box::new(System::new()?),

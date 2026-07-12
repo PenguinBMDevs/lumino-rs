@@ -81,6 +81,7 @@ fn classify_command(
         RenderCommand::Control(
             cmd @ (ControlCommand::StartVideoExport { .. }
             | ControlCommand::RenderVideoFrame { .. }
+            | ControlCommand::UploadHiResVideoTiles { .. }
             | ControlCommand::FinishVideoExport),
         ) => {
             deferred.push(cmd);

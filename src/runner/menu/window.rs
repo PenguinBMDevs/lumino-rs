@@ -217,6 +217,7 @@ impl RunnerInner {
                 fps,
                 ppq,
                 key_count,
+                render_mode,
                 container,
                 codec,
                 backend,
@@ -303,6 +304,20 @@ impl RunnerInner {
 
                 let ppq = ppq.max(1) as u32;
                 let fps_f64 = fps as f64;
+                let render_mode_for_thread = render_mode.clone();
+
+                // 预先提取 UI 配置中 HiRes 相关字段，避免将非 Send 的 self 捕获进后台线程
+                let hires_video_config = if render_mode_for_thread == "hires_texture" {
+                    let ui_config = &self.window_state.storage.config.get().ui;
+                    Some(video_export::build_hires_config_for_video(ui_config))
+                } else {
+                    None
+                };
+                let hires_key_count = if self.window_state.storage.config.get().ui.enable_256key {
+                    256
+                } else {
+                    128
+                };
 
                 // 创建取消标志
                 let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -328,12 +343,51 @@ impl RunnerInner {
                         // 创建帧数据通道
                         let (frame_tx, frame_rx) = std::sync::mpsc::channel::<Vec<u8>>();
 
+                        // 若使用 HiRes 贴图模式，先在 Runner 线程生成并上传到 GPU
+                        if let Some(hires_config) = hires_video_config {
+                            let ppq_u16 = ppq.max(1).min(u16::MAX as u32) as u16;
+                            let tiles_map = video_export::generate_hires_video_tiles(
+                                &document,
+                                &hires_config,
+                                ppq_u16,
+                                hires_key_count,
+                            );
+                            let tiles: Vec<lumino_gfx::GroupTile> =
+                                tiles_map.into_values().collect();
+                            let track_count = document.notes.len() as u16;
+                            if cmd_sender
+                                .send(RenderCommand::Control(
+                                    ControlCommand::UploadHiResVideoTiles {
+                                        tiles,
+                                        config: hires_config,
+                                        track_count,
+                                        key_count: hires_key_count,
+                                        total_ticks: document.total_ticks,
+                                        ppq: ppq_u16,
+                                    },
+                                ))
+                                .is_err()
+                            {
+                                tracing::error!("发送 UploadHiResVideoTiles 命令失败");
+                                let _ = progress_tx.send((
+                                    "导出失败：渲染线程通信错误".to_string(),
+                                    -1.0,
+                                    0,
+                                    0.0,
+                                    0.0,
+                                ));
+                                return;
+                            }
+                            tracing::info!("视频导出: HiRes 贴图已上传");
+                        }
+
                         // 发送 StartVideoExport 命令
                         if cmd_sender
                             .send(RenderCommand::Control(ControlCommand::StartVideoExport {
                                 width,
                                 height,
                                 frame_tx: FrameSender(frame_tx),
+                                render_mode: render_mode_for_thread.clone(),
                             }))
                             .is_err()
                         {
@@ -536,9 +590,12 @@ impl RunnerInner {
                                 );
 
                                 if cmd_sender
-                                    .send(RenderCommand::Control(ControlCommand::RenderVideoFrame(
-                                        Box::new(params),
-                                    )))
+                                    .send(RenderCommand::Control(
+                                        ControlCommand::RenderVideoFrame {
+                                            params: Box::new(params),
+                                            render_mode: render_mode_for_thread.clone(),
+                                        },
+                                    ))
                                     .is_err()
                                 {
                                     tracing::error!("发送 RenderVideoFrame 命令失败");

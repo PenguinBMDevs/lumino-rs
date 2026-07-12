@@ -75,6 +75,7 @@ impl Host {
             tile_width_px: ui_config.hires_tile_width_px,
             cooldown_secs: ui_config.hires_cooldown_secs,
             gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
+            render_mode: lumino_gfx::HiResRenderMode::default(),
             group_tile_mem_limit_mb: crate::constants::memory::DEFAULT_GROUP_TILE_MEM_LIMIT_MB,
             cache_dir: lumino_gfx::HiResConfig::default().cache_dir,
         };

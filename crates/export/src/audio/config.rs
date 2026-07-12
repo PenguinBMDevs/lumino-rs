@@ -130,8 +130,6 @@ impl AudioRenderConfig {
         ChannelGroupConfig {
             channel_init_options: ChannelInitOptions {
                 fade_out_killing: !self.disable_fade_out,
-                global_voice_limit: None,
-                max_voices_per_key: None,
             },
             format: SynthFormat::Midi,
             audio_params,

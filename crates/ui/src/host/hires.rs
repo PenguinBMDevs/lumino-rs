@@ -66,6 +66,7 @@ impl Host {
                 cooldown_secs: default.cooldown_secs,
                 gpu_mem_limit_mb: default.gpu_mem_limit_mb,
                 group_tile_mem_limit_mb: default.group_tile_mem_limit_mb,
+                render_mode: default.render_mode,
                 cache_dir: default.cache_dir,
             }
         });
@@ -76,6 +77,7 @@ impl Host {
             cooldown_secs: ui_cfg.cooldown_secs,
             gpu_mem_limit_mb: ui_cfg.gpu_mem_limit_mb,
             group_tile_mem_limit_mb: ui_cfg.group_tile_mem_limit_mb,
+            render_mode: ui_cfg.render_mode,
             cache_dir: ui_cfg.cache_dir,
         };
         let midi_hash = lumino_gfx::compute_midi_hash(b"empty-project");

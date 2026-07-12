@@ -1,22 +1,45 @@
 //! Lumino Realtime Synthesizer
 //!
-//! 基于 xsynth-core 的实时音频合成器，提供高性能的 MIDI 渲染能力。
-//! 直接在 cpal 音频回调中驱动 `ChannelGroup` 渲染，不经过 xsynth-realtime
-//! 的 BufferedRenderer 包装层，消除锁竞争与线程间拷贝，显著降低延迟。
+//! 提供基于 xsynth 的实时音频合成能力，支持两种后端：
+//!
+//! - `realtime`（默认）：自定义渲染引擎，直接在 cpal 音频回调中驱动 `ChannelGroup` 渲染。
+//! - `xsynth-realtime`：使用官方的 `xsynth-realtime` crate 作为后端。
 
+#[cfg(feature = "realtime")]
 mod config;
-pub mod engine;
-mod events;
+
+#[cfg(feature = "realtime")]
 mod stats;
+
+#[cfg(any(feature = "realtime", feature = "xsynth-realtime"))]
+mod events;
+
+#[cfg(feature = "realtime")]
+pub mod engine;
+
+#[cfg(feature = "realtime")]
 mod synth;
 
+#[cfg(feature = "xsynth-realtime")]
+mod xsynth_realtime_backend;
+
+#[cfg(feature = "realtime")]
 pub use config::{SynthFormat, XSynthRealtimeConfig};
+
+#[cfg(any(feature = "realtime", feature = "xsynth-realtime"))]
 pub use events::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent, SynthEvent};
+
+#[cfg(feature = "realtime")]
 pub use stats::{RealtimeSynthStatsReader, RenderPerfStats};
+
+#[cfg(feature = "realtime")]
 pub use synth::RealtimeSynth;
 
-// 重新导出 xsynth-core 的 ThreadCount
+#[cfg(any(feature = "realtime", feature = "xsynth-realtime"))]
 pub use xsynth_core::channel_group::ThreadCount;
+
+#[cfg(feature = "xsynth-realtime")]
+pub use xsynth_realtime_backend::*;
 
 /// 默认采样率
 pub const DEFAULT_SAMPLE_RATE: u32 = 44100;

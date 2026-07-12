@@ -133,6 +133,7 @@ impl Event {
         quality: String,
         ppq: u16,
         key_count: u16,
+        render_mode: String,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) -> Self {
         Self::Dialog(dialog::Event::StartVideoExport {
@@ -146,6 +147,7 @@ impl Event {
             quality,
             ppq,
             key_count,
+            render_mode,
             document,
         })
     }

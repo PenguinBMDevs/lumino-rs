@@ -199,6 +199,7 @@ impl RunnerInner {
             tile_width_px: ui_config.hires_tile_width_px,
             cooldown_secs: ui_config.hires_cooldown_secs,
             gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
+            render_mode: lumino_gfx::HiResRenderMode::default(),
             group_tile_mem_limit_mb: 256, // 默认值，P2.5 可加设置项
             cache_dir: lumino_gfx::HiResConfig::default().cache_dir, // 用默认缓存目录
         };

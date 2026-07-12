@@ -34,14 +34,6 @@ pub struct XSynthOptions {
     pub threads: i32,
     pub sample_rate: u32,
     pub fade_out_killing: bool,
-    /// 每个键允许的最大同音数（None = 使用 xsynth 默认值 4）
-    /// 调高可减少密集钢琴/快速重复音符/拖音过程中的 voice stealing
-    /// 最大并发发音数（git 版 xsynth 暂不支持此字段）
-    pub max_voices_per_key: Option<usize>,
-    /// 全局最大并发 voice 数。超过此值时新 NoteOn 的 voice 创建被静默跳过。
-    /// 设置越小则渲染越快（但同一声道的并发发音数越少）。
-    /// None = 使用 xsynth 默认值 4096
-    pub global_voice_limit: Option<usize>,
 }
 
 pub struct XSynth {
@@ -97,8 +89,6 @@ impl XSynth {
             };
             rt_config.multithreading = thread_count;
             rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
-            rt_config.channel_init_options.max_voices_per_key = opt.max_voices_per_key;
-            rt_config.channel_init_options.global_voice_limit = opt.global_voice_limit;
         }
 
         let synth = RealtimeSynth::open_with_default_output(rt_config);
