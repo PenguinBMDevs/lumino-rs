@@ -9,6 +9,10 @@ edition.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["gpu"]
+gpu = ["dep:wgpu", "dep:bytemuck", "dep:pollster"]
+
 [dependencies]
 lumino-dms = { path = "../dms" }
 lumino-core = { path = "../core" }
@@ -36,6 +40,10 @@ xsynth-soundfonts = { workspace = true }
 hound = "3.5"
 crossbeam-channel = "0.5"
 memmap2 = "0.9"
+# GPU 加速渲染依赖
+wgpu = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
+pollster = { version = "1.0", optional = true }
 
 [dev-dependencies]
 tempfile = "3.0"

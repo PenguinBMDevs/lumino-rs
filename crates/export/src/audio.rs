@@ -12,6 +12,11 @@ mod renderer;
 pub mod tick_conv;
 mod writer;
 
+#[cfg(feature = "gpu")]
+mod gpu_export;
+#[cfg(feature = "gpu")]
+mod gpu_renderer;
+
 use std::sync::Arc;
 
 use midly::{MidiMessage, TrackEventKind};
@@ -45,6 +50,12 @@ pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
         "[流式] 音频渲染: MIDI={:?}, SF2={:?}, 输出={:?}",
         config.midi_path, config.soundfonts, config.output_path
     );
+
+    // GPU 加速路径
+    #[cfg(feature = "gpu")]
+    if config.use_gpu {
+        return gpu_export::gpu_render_audio(config);
+    }
 
     // 使用 mmap 映射 MIDI 文件，操作系统按需加载页面，不预读整个文件
     let file = std::fs::File::open(&config.midi_path)?;
@@ -95,6 +106,12 @@ pub fn render_audio_from_document(
         "[内存-流式] 音频渲染: SF2={:?}, 输出={:?}",
         config.soundfonts, config.output_path
     );
+
+    // GPU 加速路径
+    #[cfg(feature = "gpu")]
+    if config.use_gpu {
+        return gpu_export::gpu_render_audio_from_document(config, doc);
+    }
 
     // 初始化渲染引擎 + SF2 加载
     let (mut renderer, _) = init_renderer(config)?;

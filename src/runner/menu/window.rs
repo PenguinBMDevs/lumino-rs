@@ -138,6 +138,7 @@ impl RunnerInner {
                 apply_limiter,
                 disable_fade_out,
                 linear_envelope,
+                use_gpu,
                 document,
             } => {
                 use lumino_export::audio::config::AudioRenderConfig;
@@ -188,6 +189,7 @@ impl RunnerInner {
                     apply_limiter,
                     disable_fade_out,
                     linear_envelope,
+                    use_gpu,
                     progress_callback: Some(progress_cb),
                 };
 

@@ -54,6 +54,8 @@ pub enum Event {
         apply_limiter: bool,
         disable_fade_out: bool,
         linear_envelope: bool,
+        /// 使用 GPU 加速渲染
+        use_gpu: bool,
         /// 内存中的 MidiDocument（如果存在）
         document: Option<Arc<MidiDocument>>,
     },

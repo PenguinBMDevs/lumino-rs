@@ -42,6 +42,8 @@ pub struct AudioRenderConfig {
     pub disable_fade_out: bool,
     /// 是否使用线性包络（线性衰减/释音）
     pub linear_envelope: bool,
+    /// 是否使用 GPU 加速渲染（默认打开）
+    pub use_gpu: bool,
 
     // ── 进度回调 ──
     /// 进度回调函数（可选）
@@ -63,6 +65,7 @@ impl std::fmt::Debug for AudioRenderConfig {
             .field("apply_limiter", &self.apply_limiter)
             .field("disable_fade_out", &self.disable_fade_out)
             .field("linear_envelope", &self.linear_envelope)
+            .field("use_gpu", &self.use_gpu)
             .field(
                 "progress_callback",
                 &self.progress_callback.as_ref().map(|_| "..."),

@@ -232,6 +232,7 @@ impl MessageHandler for DialogHandler {
                             st.apply_limiter,
                             st.disable_fade_out,
                             st.linear_envelope,
+                            st.use_gpu,
                             document,
                         );
                         crate::event::emit(crate::event::Event::Window(ev));
@@ -276,6 +277,9 @@ impl MessageHandler for DialogHandler {
                     }
                     A::LinearEnvelopeChanged(value) => {
                         root.state.audio_export_dialog.linear_envelope = value;
+                    }
+                    A::UseGpuChanged(value) => {
+                        root.state.audio_export_dialog.use_gpu = value;
                     }
                     A::BrowseOutput => {
                         let current = root.state.audio_export_dialog.output_path.clone();

@@ -245,6 +245,8 @@ pub struct AudioExportDialogState {
     pub disable_fade_out: bool,
     /// 线性包络
     pub linear_envelope: bool,
+    /// 使用 GPU 加速渲染
+    pub use_gpu: bool,
     /// 插值算法
     pub interpolation: Interpolation,
     /// 输出格式
@@ -287,6 +289,7 @@ impl AudioExportDialogState {
             apply_limiter: true,
             disable_fade_out: false,
             linear_envelope: false,
+            use_gpu: true,
             interpolation: Interpolation::default(),
             format: AudioFormat::default(),
             output_path: String::new(),

@@ -104,6 +104,7 @@ impl Event {
         apply_limiter: bool,
         disable_fade_out: bool,
         linear_envelope: bool,
+        use_gpu: bool,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) -> Self {
         Self::Dialog(dialog::Event::StartAudioExport {
@@ -119,6 +120,7 @@ impl Event {
             apply_limiter,
             disable_fade_out,
             linear_envelope,
+            use_gpu,
             document,
         })
     }

@@ -231,6 +231,11 @@ pub fn view_audio_export_dialog<'a>(
             .label("线性包络")
             .on_toggle(|v| Message::AudioExport(AudioExportAction::LinearEnvelopeChanged(v)))
             .style(checkbox_style),
+        space().height(4),
+        checkbox(state.use_gpu)
+            .label("GPU 加速渲染 (推荐)")
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::UseGpuChanged(v)))
+            .style(checkbox_style),
     ]
     .width(Length::Fill);
 

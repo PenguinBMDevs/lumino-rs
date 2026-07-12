@@ -33,6 +33,8 @@ pub enum AudioExportAction {
     DisableFadeOutChanged(bool),
     /// 线性包络变更
     LinearEnvelopeChanged(bool),
+    /// GPU 加速渲染变更
+    UseGpuChanged(bool),
     /// 输出路径变更
     OutputPathChanged(String),
     /// 浏览输出路径
