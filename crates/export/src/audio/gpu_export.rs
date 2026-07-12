@@ -234,128 +234,6 @@ impl GpuExportRenderer {
         Ok((all_samples, bank_map))
     }
 
-    /// 处理 NoteOn 事件：查找匹配区域，创建 voice
-    pub(crate) fn note_on(
-        &mut self,
-        channel: u32,
-        key: u8,
-        velocity: u8,
-        program: u8,
-        sample_offset: u32,
-    ) {
-        if velocity == 0 {
-            self.note_off(channel, key, sample_offset);
-            return;
-        }
-        if self.active_voices >= self.max_voices {
-            tracing::debug!("[GPU 导出] voice 池已满，跳过 NoteOn");
-            return;
-        }
-
-        // 查找匹配的区域
-        let bank = 0usize; // 默认 bank 0
-        let program_idx = program as usize;
-
-        let mut matched = false;
-        let mut voice_setup = None;
-
-        if let Some(b) = self.region_map.get(bank)
-            && let Some(regions) = b.get(program_idx)
-        {
-            for entry in regions {
-                if !entry.region.keyrange.contains(&key) {
-                    continue;
-                }
-                if !entry.region.velrange.contains(&velocity) {
-                    continue;
-                }
-
-                // 找到匹配区域，记录参数，脱离 borrow
-                voice_setup = Some((entry.region.clone(), entry.sample_offset));
-                matched = true;
-                break; // 只匹配第一个区域
-            }
-        }
-
-        if let Some((region, sample_offset_idx)) = voice_setup {
-            // 找一个空闲 voice 槽
-            let voice_idx = self.find_free_voice();
-            if voice_idx < self.max_voices {
-                let sample_rate_ratio = region.sample_rate as f32 / self.sample_rate as f32;
-                let key_diff = (key as i16) - (region.root_key as i16);
-                let pitch_ratio = sample_rate_ratio * 2.0f32.powf(key_diff as f32 / 12.0);
-
-                // 计算声像
-                let pan = (region.pan as f32 + 50.0) / 100.0;
-                let pan_left = (1.0 - pan).sqrt();
-                let pan_right = pan.sqrt();
-
-                // 包络参数
-                let env = &region.ampeg_envelope;
-
-                // 将音量从 dB 转换为线性增益
-                let volume_linear = 10.0f32.powf(region.volume / 20.0);
-
-                let new_voice = VoiceState {
-                    sample_pos: region.offset as f32,
-                    pitch_ratio,
-                    volume: volume_linear,
-                    pan_left,
-                    pan_right,
-                    loop_start: region.loop_start as f32,
-                    loop_end: region.loop_end as f32,
-                    loop_mode: match region.loop_mode {
-                        xsynth_soundfonts::LoopMode::LoopContinuous => 1,
-                        _ => 0,
-                    },
-                    sample_index: sample_offset_idx,
-                    envelope_attack: env.ampeg_attack,
-                    envelope_decay: env.ampeg_decay,
-                    envelope_sustain: env.ampeg_sustain,
-                    envelope_release: env.ampeg_release,
-                    envelope_value: 0.0,
-                    env_stage: 0, // attack
-                    env_time: 0.0,
-                    is_active: 1,
-                    start_sample_offset: sample_offset,
-                    release_sample_offset: 0xFFFFFFFF,
-                    key: key as u32,
-                    channel,
-                    _pad0: 0,
-                    _pad1: 0,
-                    _pad2: 0,
-                };
-
-                self.voices[voice_idx as usize] = new_voice;
-                self.active_voices += 1;
-            }
-        }
-
-        if !matched {
-            tracing::debug!(
-                "[GPU 导出] NoteOn(ch={}, key={}, vel={}): 未找到匹配区域",
-                channel,
-                key,
-                velocity
-            );
-        }
-    }
-
-    /// 处理 NoteOff 事件：将 voice 切换到 release 阶段
-    pub(crate) fn note_off(&mut self, channel: u32, key: u8, sample_offset: u32) {
-        for voice in self.voices.iter_mut() {
-            if voice.is_active == 0 {
-                continue;
-            }
-            if voice.key == key as u32
-                && voice.channel == channel
-                && voice.release_sample_offset == 0xFFFFFFFF
-            {
-                voice.release_sample_offset = sample_offset;
-            }
-        }
-    }
-
     /// 查找空闲 voice 槽
     ///
     /// 使用 `free_voices` 栈实现 O(1) 分配，避免 voice 池接近满时扫描整个数组。
@@ -620,27 +498,6 @@ impl GpuExportRenderer {
         }
     }
 
-    /// 发送 MIDI 事件
-    pub(crate) fn send_note_on(
-        &mut self,
-        key: u8,
-        velocity: u8,
-        channel: u32,
-        program: u8,
-        sample_offset: u32,
-    ) {
-        self.note_on(channel, key, velocity, program, sample_offset);
-    }
-
-    pub(crate) fn send_note_off(&mut self, key: u8, channel: u32, sample_offset: u32) {
-        self.note_off(channel, key, sample_offset);
-    }
-
-    pub(crate) fn advance_voices(&mut self, duration: f64) {
-        let samples = (self.sample_rate as f64 * duration) as u32;
-        self.advance_voices_samples(samples);
-    }
-
     /// 完成渲染
     pub(crate) fn finalize(mut self) -> ExportResult<()> {
         // 渲染尾部（所有 voice 进入 release 直至静音）
@@ -787,122 +644,18 @@ impl GpuExportRenderer {
     }
 }
 
-/// GPU 加速音频导出入口（流式模式）
+/// GPU 加速音频导出入口（与测试相同的方式：先加载整个文档到内存，再用 render_full 渲染）
 pub(crate) fn gpu_render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
     info!(
-        "[GPU 导出-流式] MIDI={:?}, SF2={:?}, 输出={:?}",
+        "[GPU 导出-内存] MIDI={:?}, SF2={:?}, 输出={:?}",
         config.midi_path, config.soundfonts, config.output_path
     );
 
-    let file = std::fs::File::open(&config.midi_path)?;
-    let mmap = unsafe { memmap2::Mmap::map(&file)? };
-
-    let mut player = lumino_midi_loader::streaming::StreamingMidiPlayer::from_bytes(&mmap)
+    // 加载整个 MIDI 文档到内存（与测试中相同的方式）
+    let doc = lumino_midi_loader::document::MidiDocument::from_notes_file(&config.midi_path, None)
         .map_err(|e| crate::error::ExportError::AudioWrite(format!("解析 MIDI 失败: {e}")))?;
 
-    let mut renderer = GpuExportRenderer::new(config, &config.output_path)?;
-
-    let tempos: Vec<(u32, f32)> = player.tempo_changes().to_vec();
-    let ppqn = player.ppqn();
-    let mut tick_conv = super::tick_conv::TickToTime::new(tempos, ppqn);
-
-    let total_ticks = player.total_ticks().max(1);
-    let mut current_tick: u64 = 0;
-    let mut event_count = 0_u64;
-    let start_time = std::time::Instant::now();
-    let mut last_progress = std::time::Instant::now();
-
-    use midly::MidiMessage;
-    use midly::TrackEventKind;
-
-    // 跟踪每个通道的当前 program
-    let mut channel_programs = [0u8; 16];
-
-    let mut current_time = 0.0;
-    let mut batch_end_time = BATCH_SECONDS;
-
-    while let Some((tick, _track_idx, kind)) = player.next_event() {
-        // 前进时间
-        if tick > current_tick {
-            let delta = tick_conv.advance_to(tick);
-            if delta > 0.0 {
-                current_time += delta;
-            }
-            current_tick = tick;
-        }
-
-        // 处理跨越批次边界的渲染
-        while current_time >= batch_end_time {
-            renderer.render_batch(BATCH_SECONDS)?;
-            renderer.advance_voices(BATCH_SECONDS);
-            batch_end_time += BATCH_SECONDS;
-
-            // 进度报告：每 100ms 一次
-            if last_progress.elapsed() >= std::time::Duration::from_millis(100) {
-                let pct = tick as f64 / total_ticks as f64;
-                let elapsed = start_time.elapsed();
-                let msg = format!(
-                    "[GPU] 进度: {:.1}% | 事件: {} | 耗时: {:.1}s",
-                    pct * 100.0,
-                    event_count,
-                    elapsed.as_secs_f64()
-                );
-                if let Some(ref callback) = config.progress_callback {
-                    callback(msg, pct);
-                } else {
-                    eprint!("\r{}", msg);
-                }
-                last_progress = std::time::Instant::now();
-            }
-        }
-
-        let sample_offset =
-            ((current_time - (batch_end_time - BATCH_SECONDS)) * config.sample_rate as f64) as u32;
-
-        // 处理 MIDI 事件
-        if let TrackEventKind::Midi { channel, message } = kind {
-            let ch = channel.as_int();
-            match message {
-                MidiMessage::NoteOn { key, vel } => {
-                    let program = channel_programs[ch as usize];
-                    renderer.send_note_on(key, vel.into(), ch as u32, program, sample_offset);
-                    event_count += 1;
-                }
-                MidiMessage::NoteOff { key, .. } => {
-                    renderer.send_note_off(key, ch as u32, sample_offset);
-                    event_count += 1;
-                }
-                MidiMessage::ProgramChange { program } => {
-                    channel_programs[ch as usize] = program.as_int();
-                }
-                _ => {}
-            }
-        }
-    }
-
-    // 渲染最后一个不完整的批次
-    let remainder = current_time - (batch_end_time - BATCH_SECONDS);
-    if remainder > 0.0 {
-        renderer.render_batch(remainder)?;
-        renderer.advance_voices(remainder);
-    }
-
-    // 完成进度
-    let elapsed = start_time.elapsed();
-    let msg = format!(
-        "[GPU] 进度: 100.0% | 事件: {} | 耗时: {:.1}s",
-        event_count,
-        elapsed.as_secs_f64()
-    );
-    if let Some(ref callback) = config.progress_callback {
-        callback(msg, 1.0);
-    } else {
-        eprintln!("\r{}", msg);
-    }
-
-    renderer.finalize()?;
-    info!("[GPU 导出] 渲染完成: {:?}", config.output_path);
-    Ok(())
+    gpu_render_audio_from_document(config, &doc)
 }
 
 /// 构建每个通道的 ProgramChange 查找表，按 tick 升序排列。
@@ -1044,7 +797,10 @@ mod tests {
         let mut renderer = super::GpuExportRenderer::new(&config, &config.output_path)
             .expect("创建 GPU 渲染器失败");
         let t_renderer_create = t1.elapsed().as_secs_f64();
-        eprintln!("[阶段 2] GPU 渲染器创建 (SF2+wgpu): {:.3}s", t_renderer_create);
+        eprintln!(
+            "[阶段 2] GPU 渲染器创建 (SF2+wgpu): {:.3}s",
+            t_renderer_create
+        );
 
         // ===== 阶段 3: 时间转换与 program 表准备 =====
         let t2 = Instant::now();
@@ -1113,7 +869,8 @@ mod tests {
         eprintln!("[阶段 6] finalize: {:.3}s", t_finalize);
 
         // ===== 汇总 =====
-        let total_time = t_midi_load + t_renderer_create + t_tick_prep + t_note_schedule + t_render + t_finalize;
+        let total_time =
+            t_midi_load + t_renderer_create + t_tick_prep + t_note_schedule + t_render + t_finalize;
         eprintln!("═══════════════════════════════════════════════════════════════");
         eprintln!("[汇总] 各阶段耗时占比:");
         eprintln!(
@@ -1146,10 +903,7 @@ mod tests {
             t_finalize,
             t_finalize / total_time * 100.0
         );
-        eprintln!(
-            "  总计:                   {:>8.3}s",
-            total_time
-        );
+        eprintln!("  总计:                   {:>8.3}s", total_time);
         eprintln!("═══════════════════════════════════════════════════════════════");
         eprintln!("渲染音符数: {}", rendered_notes);
         eprintln!("平均速度: {:.2} 音符/s", speed);
