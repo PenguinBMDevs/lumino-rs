@@ -56,10 +56,7 @@ impl Root {
         // 同步选中设备到设置面板
         self.settings.selected_midi_device = Some(device.id);
         // 同时更新设备列表，确保设备选择器正确显示
-        self.settings.midi_devices = inputs
-            .iter()
-            .map(|d| (d.id, d.name.clone()))
-            .collect();
+        self.settings.midi_devices = inputs.iter().map(|d| (d.id, d.name.clone())).collect();
 
         let device_id = device.id;
         let device_name = device.name.clone();

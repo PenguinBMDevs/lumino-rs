@@ -200,7 +200,6 @@ pub struct Sidebar {
     pub(crate) panel_route: Route,
     pub tracks: Vec<Track>,
     pub selected_track: usize,
-    pub add_track_menu_open: bool,
     /// 面板宽度（默认 200）
     pub panel_width: f32,
     /// 是否正在拖拽调整宽度
@@ -251,7 +250,6 @@ impl Sidebar {
                 },
             ],
             selected_track: 0,
-            add_track_menu_open: false,
             panel_width: DEFAULT_PANEL_WIDTH,
             is_resizing: false,
             resize_start_x: 0.0,

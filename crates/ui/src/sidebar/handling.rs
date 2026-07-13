@@ -99,14 +99,9 @@ impl Sidebar {
                     can_delete: true,
                     is_muted: false,
                 });
-                // 音轨选择行为由 handle_sidebar_event 根据用户设置统一处理
-                self.add_track_menu_open = false;
                 ui_event::emit(ui_event::Event::Window(
                     ui_event::window::Event::local_track_added(new_id),
                 ));
-            }
-            AddTrackMenuToggled => {
-                self.add_track_menu_open = !self.add_track_menu_open;
             }
             // ── 调整宽度 ──
             ResizeDragStarted(_) => {

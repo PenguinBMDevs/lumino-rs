@@ -18,8 +18,6 @@ pub enum Event {
     TrackMuteToggled(usize),
     /// 添加音轨
     AddTrack,
-    /// 添加音轨菜单切换
-    AddTrackMenuToggled,
     /// 开始拖拽调整面板宽度
     ResizeDragStarted(Point),
     /// 拖拽中调整面板宽度
@@ -53,10 +51,6 @@ impl Event {
 
     pub const fn add_track() -> Message {
         Message::Sidebar(Self::AddTrack)
-    }
-
-    pub const fn add_track_menu_toggled() -> Message {
-        Message::Sidebar(Self::AddTrackMenuToggled)
     }
 
     pub fn resize_drag_started() -> Message {

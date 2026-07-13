@@ -19,7 +19,6 @@ impl Sidebar {
                 route: self.panel_route,
                 tracks: &self.tracks,
                 selected_track: self.selected_track,
-                add_track_menu_open: self.add_track_menu_open,
                 panel_width: self.panel_width,
                 is_resizing: self.is_resizing,
             };
