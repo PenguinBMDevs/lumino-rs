@@ -151,18 +151,28 @@ impl Host {
     /// 此操作不清理脏标记——覆层只是临时显示，主贴图重生仍需等待冷静期。
     pub fn show_hires_dirty_overlays(&mut self) -> bool {
         if self.hires_dirty_regions.is_empty() {
+            tracing::debug!("[onion-dirty] show_hires_dirty_overlays: 无脏区域");
             return false;
         }
         if self.hires_overlay_sent {
-            return false; // 同一批脏区域已发送过，跳过
+            tracing::debug!("[onion-dirty] show_hires_dirty_overlays: 覆层已发送，跳过");
+            return false;
         }
         let Some((ppq, key_count, total_ticks)) = self.hires_gen_info else {
+            tracing::warn!("[onion-dirty] show_hires_dirty_overlays: hires_gen_info 为空");
             return false;
         };
         let Some(config) = self.hires_config.clone() else {
+            tracing::warn!("[onion-dirty] show_hires_dirty_overlays: hires_config 为空");
             return false;
         };
         let track_count = self.track_count() as u16;
+        tracing::info!(
+            "[onion-dirty] show_hires_dirty_overlays: 发送 {} 个脏区域覆层 (track={:?}, track_count={})",
+            self.hires_dirty_regions.len(),
+            self.hires_dirty_regions.keys().collect::<Vec<_>>(),
+            track_count
+        );
 
         // 先收集所有脏音轨的快照数据，避免迭代时同时 borrow self
         let dirty_snapshots: Vec<(u16, Vec<lumino_gfx::OnionSkinNote>)> = self

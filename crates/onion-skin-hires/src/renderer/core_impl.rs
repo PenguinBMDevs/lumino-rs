@@ -150,10 +150,11 @@ impl HiResRenderer {
         if self.tiles.contains_key(&coord) {
             self.remove_tile(&coord);
         }
-        // 新的整合组贴图已就绪，清理对应临时脏区域覆层
-        if let Some(gpu) = self.dirty_overlays.remove(&coord) {
-            self.gpu_mem_used = self.gpu_mem_used.saturating_sub(gpu.byte_size);
-        }
+        // 注意：不移除 dirty_overlays！这是有意为之——后台流式接收（GenerateHiResOnionSkin
+        // 或 RegenerateHiResTrack）与 ShowHiResDirtyOverlay 在同一帧循环中先后执行，
+        // 若在此处清除覆层，新上传的覆盖层会在同一帧被后台贴图流误清除，导致用户
+        // 永远看不到临时脏区域覆层。脏覆层在 upload_dirty_overlay 替换同坐标覆层时
+        // 自然清理，或在 dispose_hires_onion_skin 全量释放。
 
         let byte_size = pixels.len();
 

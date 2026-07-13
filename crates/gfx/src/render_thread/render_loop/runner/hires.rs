@@ -322,6 +322,18 @@ pub(super) fn handle_hires_control(
             }
 
             if let Some(renderer) = hires_renderer {
+                // 输出 group_notes 的统计信息，诊断空像素问题
+                let note_counts: Vec<usize> = group_notes.iter().map(|v| v.len()).collect();
+                tracing::info!(
+                    "[onion-render] ShowHiResDirtyOverlay: track={}, note_counts={:?}, track_start={}, track_count={}, time_groups={}",
+                    track_idx,
+                    note_counts,
+                    track_start,
+                    track_count,
+                    time_groups,
+                );
+
+                let uploaded = time_groups;
                 for time_g in 0..time_groups {
                     let tick_start = time_g * ticks_per_group;
                     let tick_end = tick_start + ticks_per_group;
@@ -347,6 +359,16 @@ pub(super) fn handle_hires_control(
                         track_range,
                     );
 
+                    // 检查是否有非空像素
+                    let has_non_empty = group_tile.pixels.iter().any(|&b| b != 0);
+                    tracing::info!(
+                        "[onion-render] ShowHiResDirtyOverlay: time_g={}/{}, pixels={}, has_non_empty={}",
+                        time_g,
+                        time_groups,
+                        group_tile.pixels.len(),
+                        has_non_empty
+                    );
+
                     // 上传为脏覆层到 (0, time_g)
                     renderer.upload_dirty_overlay(
                         device,
@@ -358,9 +380,10 @@ pub(super) fn handle_hires_control(
                     );
                 }
                 tracing::debug!(
-                    "[onion-render] ShowHiResDirtyOverlay: 已上传 {} 个覆层贴图 (track_group={})",
+                    "[onion-render] ShowHiResDirtyOverlay: 已上传 {} 个覆层贴图 (track_group={}), time_groups={}",
+                    uploaded,
+                    track_group,
                     time_groups,
-                    track_group
                 );
             }
 
