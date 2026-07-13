@@ -167,12 +167,7 @@ impl Host {
             return false;
         };
         let track_count = self.track_count() as u16;
-        tracing::info!(
-            "[onion-dirty] show_hires_dirty_overlays: 发送 {} 个脏区域覆层 (track={:?}, track_count={})",
-            self.hires_dirty_regions.len(),
-            self.hires_dirty_regions.keys().collect::<Vec<_>>(),
-            track_count
-        );
+
 
         // 先收集所有脏音轨的快照数据，避免迭代时同时 borrow self
         let dirty_snapshots: Vec<(u16, Vec<lumino_gfx::OnionSkinNote>)> = self
