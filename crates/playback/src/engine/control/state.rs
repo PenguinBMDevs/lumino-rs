@@ -128,6 +128,11 @@ impl PlaybackEngine {
         }
 
         // ── 控制事件（CC/PC/PB）从 document 流式读取 ──
+        //
+        // 仅处理非当前音轨的控制事件。当前音轨的控制事件由 `process_midi_events`
+        // 从 automation_lanes / midi_events 路径处理（支持实时编辑）。
+        // 这样避免与 process_midi_events 重复发射同一事件（double-firing），
+        // 同时确保编辑后的 CC 值不会被 doc.control_events 中的原始值覆盖。
         let ctrl_events = &doc.control_events;
         let ctrl_cursor = &mut self.control_event_cursor;
         while *ctrl_cursor < ctrl_events.len() {
@@ -136,7 +141,7 @@ impl PlaybackEngine {
             if ev_tick > current_tick {
                 break;
             }
-            if ev_tick >= self.last_processed_tick {
+            if ev_tick >= self.last_processed_tick && ev.track != self.current_track {
                 Self::push_control_event(ev, messages);
             }
             *ctrl_cursor += 1;
