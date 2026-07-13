@@ -52,9 +52,9 @@ cargo run --release
 ```
 
 首次运行会自动创建配置文件：
-- **Windows**: `%APPDATA%\com.buickmeow.lumino\config.toml`
-- **macOS**: `~/Library/Application Support/com.buickmeow.lumino/config.toml`
-- **Linux**: `~/.config/com.buickmeow.lumino/config.toml`
+- **Windows**: `%APPDATA%\com.PenguinBMDevs.lumino\config.json`
+- **macOS**: `~/Library/Application Support/com.PenguinBMDevs.lumino/config.json`
+- **Linux**: `~/.config/com.PenguinBMDevs.lumino/config.json`
 
 ### 日志控制
 

@@ -6,7 +6,7 @@ use std::io;
 use directories::ProjectDirs;
 
 const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "buickmeow";
+const ORGANIZATION: &str = "PenguinBMDevs";
 const APPLICATION: &str = "lumino";
 
 #[derive(Debug)]

@@ -2,7 +2,7 @@ use crate::{
     Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
 };
 
-const IDENTIFIER: &str = "com.buickmeow.lumino";
+const IDENTIFIER: &str = "com.PenguinBMDevs.lumino";
 
 impl From<midir::InitError> for Error {
     fn from(e: midir::InitError) -> Self {
