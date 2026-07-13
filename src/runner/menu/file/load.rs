@@ -22,23 +22,8 @@ impl RunnerInner {
             return;
         }
 
-        // 检查文件大小，大文件弹出确认对话框
-        const MEMORY_OPTIMIZE_THRESHOLD_MB: u64 = 100;
-        let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-        let size_mb = file_size as f64 / (1024.0 * 1024.0);
-
-        if size_mb > MEMORY_OPTIMIZE_THRESHOLD_MB as f64 {
-            let path_str = path.to_string_lossy().to_string();
-            // 存储 pending 路径，等待对话框结果
-            self.file_state.pending_load_path = Some(path);
-            // 使用已有 dialog 窗口基础设施
-            self.window_state
-                .dialog_manager
-                .open_load_confirm(path_str, size_mb);
-        } else {
-            tracing::info!("文件大小 {:.1}MB ≤ 阈值，标准模式加载", size_mb);
-            self.load_midi_file(path);
-        }
+        tracing::info!("开始加载 MIDI 文件：{:?}", path);
+        self.load_midi_file(path);
     }
 
     /// 加载 DMS 文件
@@ -139,39 +124,26 @@ impl RunnerInner {
             return;
         }
 
-        // 检查文件大小，大文件弹出确认对话框
-        const MEMORY_OPTIMIZE_THRESHOLD_MB: u64 = 100;
-        let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-        let size_mb = file_size as f64 / (1024.0 * 1024.0);
-
-        if size_mb > MEMORY_OPTIMIZE_THRESHOLD_MB as f64 {
-            let path_str = path.to_string_lossy().to_string();
-            self.file_state.pending_load_path = Some(path);
-            self.window_state
-                .dialog_manager
-                .open_load_confirm(path_str, size_mb);
-        } else {
-            tracing::info!("导入文件 {:.1}MB ≤ 阈值，标准模式加载", size_mb);
-            let progress_cb = self.window_state.progress_cb.clone();
-            tokio::spawn(async move {
-                run_async_task(
-                    lumino_midi_loader::loader::load_parsed_midi(path, Some(&progress_cb)),
-                    |parsed| {
-                        lumino_ui::event::Event::menu_file(
-                            lumino_ui::event::menu::file::Event::midi_parsed(std::sync::Arc::new(
-                                parsed,
-                            )),
-                        )
-                    },
-                    |e| {
-                        lumino_ui::event::Event::menu_file(
-                            lumino_ui::event::menu::file::Event::midi_parse_error(e),
-                        )
-                    },
-                )
-                .await;
-            });
-        }
+        tracing::info!("开始导入 MIDI 文件：{:?}", path);
+        let progress_cb = self.window_state.progress_cb.clone();
+        tokio::spawn(async move {
+            run_async_task(
+                lumino_midi_loader::loader::load_parsed_midi(path, Some(&progress_cb)),
+                |parsed| {
+                    lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::midi_parsed(std::sync::Arc::new(
+                            parsed,
+                        )),
+                    )
+                },
+                |e| {
+                    lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::midi_parse_error(e),
+                    )
+                },
+            )
+            .await;
+        });
     }
 
     /// 将 MIDI 数据导入到编辑器

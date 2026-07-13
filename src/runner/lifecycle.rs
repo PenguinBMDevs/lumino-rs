@@ -218,6 +218,15 @@ impl winit::application::ApplicationHandler for Runner {
             }
         }
 
+        // 发送高精度洋葱皮脏区域临时覆层（编辑后立即显示，不等冷静期）
+        {
+            puffin::profile_scope!("runner_about_to_wait_hires_dirty_overlay");
+            this.window_state
+                .window
+                .ui_mut()
+                .show_hires_dirty_overlays();
+        }
+
         // 更新进度窗口
         puffin::profile_scope!("runner_about_to_wait_progress_update");
         let ui_config = this.window_state.storage.config.get().ui.clone();
