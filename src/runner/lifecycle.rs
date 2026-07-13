@@ -131,12 +131,22 @@ impl winit::application::ApplicationHandler for Runner {
             .process_messages(main_ui, &main_window);
 
         // 转发洋葱皮生成进度到进度窗口（渲染线程 → UI 线程 → ProgressManager）
+        // 同时检测洋葱皮生成完成，设置编辑开始时间
         {
             puffin::profile_scope!("runner_about_to_wait_onion_progress");
             let onion_progress = this.window_state.window.ui().drain_onion_progress();
             if !onion_progress.is_empty() {
                 let cb = this.window_state.progress_cb.clone();
                 for (msg, pct) in onion_progress {
+                    // 检测洋葱皮贴图生成完成（progress >= 1.0）
+                    if pct >= 1.0 && this.session_tracker.editing_start_time.is_none() {
+                        this.session_tracker.editing_start_time =
+                            Some(std::time::Instant::now());
+                        tracing::info!(
+                            "洋葱皮贴图生成完成，编辑计时开始（累计 {} 秒）",
+                            this.session_tracker.accumulated_editing_secs
+                        );
+                    }
                     cb(&msg, pct as f64);
                 }
             }

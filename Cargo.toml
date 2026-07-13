@@ -116,6 +116,7 @@ puffin = { workspace = true }
 puffin_http = { workspace = true }
 anyhow = { workspace = true }
 parking_lot = { workspace = true }
+chrono = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }

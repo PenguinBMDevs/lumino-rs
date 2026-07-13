@@ -44,6 +44,28 @@ impl RunnerInner {
                     Some(std::path::PathBuf::from(&parsed.info.path));
                 self.midi_state.current_midi = Some(parsed);
 
+                // 设置工程创建时间（从文件系统获取）
+                if let Some(path) = &self.midi_state.current_midi_source {
+                    if let Ok(metadata) = std::fs::metadata(path) {
+                        if let Ok(created) = metadata.modified() {
+                            // 将 SystemTime 转换为本地时间字符串
+                            let since_epoch = created
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default();
+                            let secs = since_epoch.as_secs() as i64;
+                            let datetime = chrono::DateTime::from_timestamp(secs, 0)
+                                .map(|dt| dt.with_timezone(&chrono::Local))
+                                .unwrap_or_else(|| chrono::Local::now());
+                            self.session_tracker.created_at =
+                                Some(datetime.format("%Y-%m-%d %H:%M:%S").to_string());
+                            tracing::info!(
+                                "工程创建时间已设置: {}",
+                                self.session_tracker.created_at.as_deref().unwrap_or("")
+                            );
+                        }
+                    }
+                }
+
                 // 启动洋葱皮概览贴图后台生成
                 // 先 clone Arc 释放 self 的不可变借用，再调可变方法
                 let midi_for_onion = self.midi_state.current_midi.clone();
@@ -67,6 +89,22 @@ impl RunnerInner {
 
                 // 导入 DMS 到编辑器
                 self.import_dms_to_editor(&parsed);
+
+                // 设置工程创建时间（从文件系统获取）
+                let dms_path = std::path::PathBuf::from(&parsed.info.path);
+                if let Ok(metadata) = std::fs::metadata(&dms_path) {
+                    if let Ok(created) = metadata.modified() {
+                        let since_epoch = created
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default();
+                        let secs = since_epoch.as_secs() as i64;
+                        let datetime = chrono::DateTime::from_timestamp(secs, 0)
+                            .map(|dt| dt.with_timezone(&chrono::Local))
+                            .unwrap_or_else(|| chrono::Local::now());
+                        self.session_tracker.created_at =
+                            Some(datetime.format("%Y-%m-%d %H:%M:%S").to_string());
+                    }
+                }
 
                 self.midi_state.current_dms = Some(parsed);
             }
@@ -94,6 +132,33 @@ impl RunnerInner {
                     saved_title
                 };
                 let title = format!("{} - Lumino Midi", display_title);
+
+                // 计算真实的创建时间和累计编辑时间
+                let created_display = self.session_tracker.created_at.clone().unwrap_or_default();
+                let total_editing_time_seconds = self.session_tracker.current_editing_secs();
+
+                // 从编辑器获取当前 BPM
+                let tempo = {
+                    let ui = self.window_state.window.ui();
+                    let root = ui.root();
+                    root.editor
+                        .editor_state
+                        .data
+                        .tempo_points
+                        .first()
+                        .map(|tp| format!("{:.1}", tp.bpm))
+                        .unwrap_or_else(|| "120.0".to_string())
+                };
+
+                // 将真实数据设置到 UI 状态中
+                self.window_state.window.ui_mut().set_project_settings_data(
+                    display_title.clone(),
+                    tempo,
+                    String::new(), // copyright 保持默认
+                    created_display,
+                    total_editing_time_seconds,
+                );
+
                 self.window_state
                     .dialog_manager
                     .open_project_settings(title);
