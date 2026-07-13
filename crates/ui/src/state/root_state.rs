@@ -415,7 +415,7 @@ impl VideoExportDialogState {
             height: 1080,
             fps: 60,
             output_path: String::new(),
-            render_mode: "note_rectangle".to_string(),
+            render_mode: "hires_texture".to_string(),
             overlay: VideoExportOverlayState::None,
             progress: 0.0,
             status_message: String::new(),

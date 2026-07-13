@@ -91,12 +91,13 @@ pub fn run_render_thread(
                     width,
                     height,
                     frame_tx,
-                    render_mode: _,
+                    render_mode: export_render_mode,
                 } => {
                     tracing::info!(
-                        "视频导出开始: {}x{}, 初始化 GPU→CPU 读回管线",
+                        "视频导出开始: {}x{}, render_mode={}, 初始化 GPU→CPU 读回管线",
                         width,
-                        height
+                        height,
+                        export_render_mode
                     );
                     export_pipeline = Some(ExportPipeline::new(&device, width, height));
                     export_frame_tx = Some(frame_tx);

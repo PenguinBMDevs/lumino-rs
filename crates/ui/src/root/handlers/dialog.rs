@@ -541,6 +541,7 @@ impl MessageHandler for DialogHandler {
                         root.state.video_export_dialog.output_path = v;
                     }
                     V::RenderModeChanged(v) => {
+                        tracing::info!("视频导出渲染模式切换: {}", v);
                         root.state.video_export_dialog.render_mode = v;
                     }
                     V::BrowseOutput => {
