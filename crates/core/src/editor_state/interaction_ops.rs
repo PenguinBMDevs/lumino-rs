@@ -31,7 +31,11 @@ pub fn start_note_edit(
         }
         HitType::End => {
             data.push_history();
-            interaction.edit_state = EditState::ResizingEnd { note_index: index };
+            let note = &data.notes[index];
+            interaction.edit_state = EditState::ResizingEnd {
+                note_index: index,
+                original_length: note.length,
+            };
         }
         HitType::Middle => {
             let note = &data.notes[index];

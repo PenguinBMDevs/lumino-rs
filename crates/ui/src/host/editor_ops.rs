@@ -353,8 +353,8 @@ impl Host {
 
         // 先确定该动作是否可能修改音符数据
         // 确定会改：Delete/Cut/Paste → 直接标记脏，不问 notes_changed
-        // 可能改：Pressed/DoubleClicked/Undo/Redo → 依赖 notes_changed 判断
-        // 绝不会改：Moved/Released/Copy/SelectAll/Scrubbed/Scrolled/IndicatorDrag → 跳过
+        // 可能改：Pressed/Released/DoubleClicked/Undo/Redo → 依赖 notes_changed 判断
+        // 绝不会改：Moved/Copy/SelectAll/Scrubbed/Scrolled/IndicatorDrag → 跳过
         let is_definite_mutation = matches!(
             action,
             message::EditorAction::DeletePressed
@@ -364,6 +364,7 @@ impl Host {
         let is_possible_mutation = matches!(
             action,
             message::EditorAction::Pressed { .. }
+                | message::EditorAction::Released
                 | message::EditorAction::DoubleClicked(_)
                 | message::EditorAction::Undo
                 | message::EditorAction::Redo

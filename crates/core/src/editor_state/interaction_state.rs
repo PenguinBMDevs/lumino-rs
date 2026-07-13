@@ -41,6 +41,7 @@ pub enum EditState {
     },
     ResizingEnd {
         note_index: usize,
+        original_length: f32,
     },
     DraggingSelection {
         last_tick: f32,

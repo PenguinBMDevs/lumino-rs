@@ -372,6 +372,11 @@ impl HiResRenderer {
         self.tiles.len()
     }
 
+    /// 临时脏区域覆层数量
+    pub fn dirty_overlay_count(&self) -> usize {
+        self.dirty_overlays.len()
+    }
+
     /// GPU 显存占用（字节）
     pub fn gpu_mem_used(&self) -> usize {
         self.gpu_mem_used

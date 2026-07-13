@@ -44,10 +44,30 @@ impl Editor {
                 original_key,
                 ..
             } => {
-                self.finalize_dragging(note_index, original_tick, original_key);
+                if self.finalize_dragging(note_index, original_tick, original_key) {
+                    self.mark_notes_changed();
+                }
             }
-            EditState::ResizingStart { .. } | EditState::ResizingEnd { .. } => {
-                tracing::debug!("Editor: 音符调整大小完成");
+            EditState::ResizingStart {
+                note_index,
+                original_tick,
+                original_length,
+            } => {
+                if let Some(note) = self.editor_state.data.notes.get(note_index)
+                    && (note.tick != original_tick || note.length != original_length)
+                {
+                    self.mark_notes_changed();
+                }
+            }
+            EditState::ResizingEnd {
+                note_index,
+                original_length,
+            } => {
+                if let Some(note) = self.editor_state.data.notes.get(note_index)
+                    && note.length != original_length
+                {
+                    self.mark_notes_changed();
+                }
             }
             EditState::DraggingSelection { .. }
             | EditState::ResizingSelectionStart { .. }

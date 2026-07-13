@@ -231,14 +231,16 @@ impl Editor {
     }
 
     /// 完成拖动操作，发送协作同步事件
+    ///
+    /// 返回 `true` 表示音符位置确实发生了变化。
     pub(crate) fn finalize_dragging(
         &mut self,
         note_index: usize,
         original_tick: f32,
         original_key: u16,
-    ) {
+    ) -> bool {
         let Some(note) = self.editor_state.data.notes.get(note_index) else {
-            return;
+            return false;
         };
 
         let tick_offset = note.tick - original_tick;
@@ -254,7 +256,8 @@ impl Editor {
             key_offset
         );
 
-        if tick_offset.abs() > 0.001 || key_offset != 0 {
+        let changed = tick_offset.abs() > 0.001 || key_offset != 0;
+        if changed {
             tracing::info!("Editor: 发送 LocalNoteMoved 同步事件");
             crate::event::emit(crate::event::Event::Window(
                 crate::event::window::Event::local_note_moved(
@@ -269,6 +272,7 @@ impl Editor {
         } else {
             tracing::info!("Editor: 音符偏移量为零，跳过同步");
         }
+        changed
     }
 }
 
