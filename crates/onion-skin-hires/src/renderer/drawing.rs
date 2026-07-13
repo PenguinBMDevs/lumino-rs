@@ -50,20 +50,11 @@ impl HiResRenderer {
         visible_coords: &[TileCoord],
     ) {
         render_pass.set_pipeline(&self.pipeline);
-        let mut drawn = 0u32;
         for coord in visible_coords {
             if let Some(gpu) = self.dirty_overlays.get(coord) {
                 render_pass.set_bind_group(0, &gpu.bind_group, &[]);
                 render_pass.draw(0..6, 0..1);
-                drawn += 1;
             }
-        }
-        if drawn > 0 {
-            tracing::info!(
-                "[onion-render] render_dirty_overlays: 绘制了 {} 个覆层 (visible_coords={})",
-                drawn,
-                visible_coords.len()
-            );
         }
     }
 }

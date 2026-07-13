@@ -52,8 +52,14 @@ mod tests {
         assert!(renderer.has_tile(&coord));
         assert!(renderer.has_dirty_overlay(&coord));
 
-        // 新的基础贴图上传后，脏区域覆层被清理（模拟冷静期后重生成）
+        // 新的基础贴图上传后，基础贴图被替换，但脏区域覆层不会被自动清理
+        // （避免后台流式贴图在同一帧误清除临时覆层）。
+        // 脏覆层需要显式调用 clear_dirty_overlays 清理。
         renderer.upload_tile(&device, &queue, coord, &pixels, 64, 64);
+        assert!(renderer.has_tile(&coord));
+        assert!(renderer.has_dirty_overlay(&coord));
+
+        renderer.clear_dirty_overlays(coord.track_group);
         assert!(renderer.has_tile(&coord));
         assert!(!renderer.has_dirty_overlay(&coord));
     }

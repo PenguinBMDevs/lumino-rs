@@ -322,17 +322,6 @@ pub(super) fn handle_hires_control(
             }
 
             if let Some(renderer) = hires_renderer {
-                // 输出 group_notes 的统计信息，诊断空像素问题
-                let note_counts: Vec<usize> = group_notes.iter().map(|v| v.len()).collect();
-                tracing::info!(
-                    "[onion-render] ShowHiResDirtyOverlay: track={}, note_counts={:?}, track_start={}, track_count={}, time_groups={}",
-                    track_idx,
-                    note_counts,
-                    track_start,
-                    track_count,
-                    time_groups,
-                );
-
                 let uploaded = time_groups;
                 for time_g in 0..time_groups {
                     let tick_start = time_g * ticks_per_group;
@@ -349,7 +338,7 @@ pub(super) fn handle_hires_control(
                     }
 
                     // 合并为整合组贴图（仅该 track_group 内）
-                    let mut group_tile = crate::merge_group_tiles(
+                    let group_tile = crate::merge_group_tiles(
                         &track_tiles,
                         merged_coord,
                         tick_start,
@@ -357,38 +346,6 @@ pub(super) fn handle_hires_control(
                         width,
                         key_count,
                         track_range,
-                    );
-
-                    // 给整个覆盖层叠加半透明底色，让用户肉眼可见"这个区域被编辑过"。
-                    // 使用 dirty track 的音轨调色板颜色，在空区域叠加 alpha≈12% 底色。
-                    const PALETTE: [[u8; 4]; 8] = [
-                        [200, 80, 80, 255],
-                        [80, 200, 120, 255],
-                        [80, 120, 220, 255],
-                        [220, 200, 80, 255],
-                        [200, 100, 200, 255],
-                        [80, 200, 200, 255],
-                        [240, 150, 80, 255],
-                        [180, 180, 180, 255],
-                    ];
-                    let bg = PALETTE[track_idx as usize % PALETTE.len()];
-                    for px in group_tile.pixels.chunks_exact_mut(4) {
-                        if px[3] == 0 {
-                            px[0] = bg[0];
-                            px[1] = bg[1];
-                            px[2] = bg[2];
-                            px[3] = 30; // 半透明底色
-                        }
-                    }
-
-                    // 检查是否有非空像素
-                    let has_non_empty = group_tile.pixels.iter().any(|&b| b != 0);
-                    tracing::info!(
-                        "[onion-render] ShowHiResDirtyOverlay: time_g={}/{}, pixels={}, has_non_empty={}",
-                        time_g,
-                        time_groups,
-                        group_tile.pixels.len(),
-                        has_non_empty
                     );
 
                     // 上传为脏覆层到 (0, time_g)
@@ -488,16 +445,6 @@ pub(super) fn update_hires_viewport(
     };
     if !config.enabled || params.is_arrangement_mode {
         return visible;
-    }
-
-    // 诊断：确认 dirty_overlays 在渲染前是否存在
-    let overlay_count = renderer.dirty_overlay_count();
-    if overlay_count > 0 {
-        tracing::info!(
-            "[onion-viewport] update_hires_viewport: 检测到 {} 个脏覆层, tiles={}",
-            overlay_count,
-            renderer.tile_count(),
-        );
     }
 
     let scale = params.scale_factor;
