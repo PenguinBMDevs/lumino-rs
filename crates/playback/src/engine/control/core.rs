@@ -126,6 +126,7 @@ impl PlaybackEngine {
 
     /// 设置非音符MIDI事件列表
     pub fn set_midi_events(&mut self, events: Vec<MidiTrackEvent>) {
+        self.midi_event_cursor = 0;
         self.midi_events = events;
     }
 

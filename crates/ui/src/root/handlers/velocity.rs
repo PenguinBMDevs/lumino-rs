@@ -163,6 +163,7 @@ impl VelocityHandler {
             VA::AutomationEdit(edit) => {
                 root.editor.push_history();
                 root.editor.editor_state.data.apply_automation_edit(edit);
+                root.update_playback_notes();
                 tracing::debug!("自动化面板: 应用编辑");
                 return;
             }
@@ -170,6 +171,7 @@ impl VelocityHandler {
                 for edit in edits {
                     root.editor.editor_state.data.apply_automation_edit(edit);
                 }
+                root.update_playback_notes();
                 return;
             }
             VA::AutomationDragStart => {

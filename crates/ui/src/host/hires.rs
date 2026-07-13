@@ -168,7 +168,6 @@ impl Host {
         };
         let track_count = self.track_count() as u16;
 
-
         // 先收集所有脏音轨的快照数据，避免迭代时同时 borrow self
         let dirty_snapshots: Vec<(u16, Vec<lumino_gfx::OnionSkinNote>)> = self
             .hires_dirty_regions

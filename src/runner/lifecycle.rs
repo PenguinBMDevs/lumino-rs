@@ -140,8 +140,7 @@ impl winit::application::ApplicationHandler for Runner {
                 for (msg, pct) in onion_progress {
                     // 检测洋葱皮贴图生成完成（progress >= 1.0）
                     if pct >= 1.0 && this.session_tracker.editing_start_time.is_none() {
-                        this.session_tracker.editing_start_time =
-                            Some(std::time::Instant::now());
+                        this.session_tracker.editing_start_time = Some(std::time::Instant::now());
                         tracing::info!(
                             "洋葱皮贴图生成完成，编辑计时开始（累计 {} 秒）",
                             this.session_tracker.accumulated_editing_secs
