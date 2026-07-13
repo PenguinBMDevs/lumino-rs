@@ -123,6 +123,12 @@ impl PlaybackManager {
                                 controller,
                                 value,
                             } => {
+                                tracing::debug!(
+                                    "PlaybackManager: 发送 CC ch={} cc={} val={}",
+                                    channel,
+                                    controller,
+                                    value,
+                                );
                                 let _ = out.control_change(*channel, *controller, *value);
                             }
                             MidiMessage::ProgramChange { channel, program } => {

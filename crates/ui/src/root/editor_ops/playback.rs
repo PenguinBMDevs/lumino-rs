@@ -97,6 +97,23 @@ impl Root {
         }
 
         midi_events.sort_by(|a, b| a.tick.total_cmp(&b.tick));
+
+        // 调试：记录当前音轨的 CC 事件数量
+        let cc_count = midi_events
+            .iter()
+            .filter(|e| matches!(e.message, MidiMessage::ControlChange { .. }))
+            .count();
+        tracing::debug!(
+            "update_playback_notes: 发送 {} 个 MIDI 事件 ({} CC, {} PB, current_track={})",
+            midi_events.len(),
+            cc_count,
+            midi_events
+                .iter()
+                .filter(|e| matches!(e.message, MidiMessage::PitchBend { .. }))
+                .count(),
+            current_track,
+        );
+
         manager.set_midi_events(midi_events);
     }
 

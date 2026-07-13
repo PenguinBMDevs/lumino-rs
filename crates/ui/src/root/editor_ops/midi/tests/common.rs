@@ -8,6 +8,12 @@ use std::sync::atomic::AtomicU32;
 pub struct MockOutput {
     note_on_count: Option<Arc<AtomicU32>>,
     note_off_count: Option<Arc<AtomicU32>>,
+    cc_count: Option<Arc<AtomicU32>>,
+    pb_count: Option<Arc<AtomicU32>>,
+    /// 记录最后收到的 CC 参数
+    pub last_cc: std::sync::Mutex<Option<(u8, u8, u8)>>,
+    /// 记录最后收到的 PitchBend 参数
+    pub last_pb: std::sync::Mutex<Option<(u8, f32)>>,
 }
 
 impl MockOutput {
@@ -16,6 +22,10 @@ impl MockOutput {
         Self {
             note_on_count: None,
             note_off_count: None,
+            cc_count: None,
+            pb_count: None,
+            last_cc: std::sync::Mutex::new(None),
+            last_pb: std::sync::Mutex::new(None),
         }
     }
 
@@ -24,6 +34,27 @@ impl MockOutput {
         Self {
             note_on_count: Some(note_on_count),
             note_off_count: Some(note_off_count),
+            cc_count: None,
+            pb_count: None,
+            last_cc: std::sync::Mutex::new(None),
+            last_pb: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// 创建带完整计数器的 Mock 输出（含 CC 和 PB）
+    pub fn with_all_counters(
+        note_on_count: Arc<AtomicU32>,
+        note_off_count: Arc<AtomicU32>,
+        cc_count: Arc<AtomicU32>,
+        pb_count: Arc<AtomicU32>,
+    ) -> Self {
+        Self {
+            note_on_count: Some(note_on_count),
+            note_off_count: Some(note_off_count),
+            cc_count: Some(cc_count),
+            pb_count: Some(pb_count),
+            last_cc: std::sync::Mutex::new(None),
+            last_pb: std::sync::Mutex::new(None),
         }
     }
 }
@@ -59,10 +90,22 @@ impl lumino_midi_io::OutputConnection for MockOutput {
     }
     fn control_change(
         &mut self,
-        _ch: u8,
-        _controller: u8,
-        _value: u8,
+        ch: u8,
+        controller: u8,
+        value: u8,
     ) -> std::result::Result<(), lumino_midi_io::Error> {
+        if let Some(counter) = &self.cc_count {
+            counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        if let Ok(mut last) = self.last_cc.lock() {
+            *last = Some((ch, controller, value));
+        }
+        tracing::debug!(
+            "MockOutput::control_change ch={} cc={} val={}",
+            ch,
+            controller,
+            value
+        );
         Ok(())
     }
     fn program_change(
@@ -72,11 +115,13 @@ impl lumino_midi_io::OutputConnection for MockOutput {
     ) -> std::result::Result<(), lumino_midi_io::Error> {
         Ok(())
     }
-    fn pitch_bend(
-        &mut self,
-        _ch: u8,
-        _value: f32,
-    ) -> std::result::Result<(), lumino_midi_io::Error> {
+    fn pitch_bend(&mut self, ch: u8, value: f32) -> std::result::Result<(), lumino_midi_io::Error> {
+        if let Some(counter) = &self.pb_count {
+            counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        if let Ok(mut last) = self.last_pb.lock() {
+            *last = Some((ch, value));
+        }
         Ok(())
     }
     fn channel_pressure(

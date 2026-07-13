@@ -142,6 +142,20 @@ impl PlaybackEngine {
                 break;
             }
             if ev_tick >= self.last_processed_tick && ev.track != self.current_track {
+                if ev.kind == 0 {
+                    // 复制 packed 字段到局部变量，避免未对齐引用
+                    let cc_tick = ev.tick;
+                    let cc_track = ev.track;
+                    let cc_ch = ev.channel;
+                    let cc_param = ev.param;
+                    tracing::debug!(
+                        "process_other_tracks: CC 事件 (其他音轨) tick={} track={} ch={} param={}",
+                        cc_tick,
+                        cc_track,
+                        cc_ch,
+                        cc_param,
+                    );
+                }
                 Self::push_control_event(ev, messages);
             }
             *ctrl_cursor += 1;
@@ -159,6 +173,14 @@ impl PlaybackEngine {
                 break;
             }
             if ev.tick >= self.last_processed_tick {
+                if matches!(ev.message, MidiMessage::ControlChange { .. }) {
+                    tracing::debug!(
+                        "process_midi_events: CC 事件触发 tick={} cursor={} cc={:?}",
+                        ev.tick,
+                        self.midi_event_cursor,
+                        ev.message,
+                    );
+                }
                 Self::push_midi_message_from_event(&ev.message, messages);
             }
             self.midi_event_cursor += 1;
