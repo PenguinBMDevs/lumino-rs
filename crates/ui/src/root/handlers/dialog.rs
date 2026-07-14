@@ -5,6 +5,7 @@ use crate::message::{AudioExportAction, Message, SpeedChangeAction, VideoExportA
 use crate::root::Root;
 use crate::root::handlers::MessageHandler;
 use crate::state::root_state::VideoExportOverlayState;
+use std::str::FromStr;
 
 /// 对话框消息处理器
 pub struct DialogHandler;
@@ -460,20 +461,27 @@ impl MessageHandler for DialogHandler {
                         root.state.video_export_dialog.render_fps = 0.0;
                         root.state.video_export_dialog.cached_image_handle = None;
 
-                        let ev = crate::event::window::Event::start_video_export(
+                        let video_config = lumino_event::window::dialog::VideoExportConfig {
                             output_path,
                             width,
                             height,
                             fps,
-                            container,
-                            codec,
-                            backend,
-                            quality,
-                            root.editor.editor_state.view.ppq,
-                            root.editor.editor_state.view.visible_key_count,
-                            root.state.video_export_dialog.render_mode.clone(),
-                            document,
-                        );
+                            ppq: root.editor.editor_state.view.ppq,
+                            key_count: root.editor.editor_state.view.visible_key_count,
+                            container: lumino_event::window::video::Container::from_str(&container)
+                                .unwrap_or_default(),
+                            codec: lumino_event::window::video::VideoCodec::from_str(&codec)
+                                .unwrap_or_default(),
+                            backend: lumino_event::window::video::EncoderBackend::from_str(
+                                &backend,
+                            )
+                            .unwrap_or_default(),
+                            quality: lumino_event::window::video::QualityPreset::from_str(&quality)
+                                .unwrap_or_default(),
+                            render_mode: root.state.video_export_dialog.render_mode.clone(),
+                        };
+                        let ev =
+                            crate::event::window::Event::start_video_export(video_config, document);
                         crate::event::emit(crate::event::Event::Window(ev));
                     }
                     V::CancelExport => {

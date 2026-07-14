@@ -3,6 +3,7 @@ pub mod collaboration;
 pub mod dialog;
 pub mod lifecycle;
 pub mod sync;
+pub mod video;
 
 use std::sync::Arc;
 
@@ -99,33 +100,10 @@ impl Event {
         Self::Dialog(dialog::Event::StartAudioExport { config, document })
     }
     pub fn start_video_export(
-        output_path: String,
-        width: u32,
-        height: u32,
-        fps: u32,
-        container: String,
-        codec: String,
-        backend: String,
-        quality: String,
-        ppq: u16,
-        key_count: u16,
-        render_mode: String,
+        config: dialog::VideoExportConfig,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) -> Self {
-        Self::Dialog(dialog::Event::StartVideoExport {
-            output_path,
-            width,
-            height,
-            fps,
-            container,
-            codec,
-            backend,
-            quality,
-            ppq,
-            key_count,
-            render_mode,
-            document,
-        })
+        Self::Dialog(dialog::Event::StartVideoExport { config, document })
     }
 
     // ── 协作构造函数（直接构造 collaboration::Event） ──

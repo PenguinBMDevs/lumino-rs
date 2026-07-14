@@ -264,26 +264,58 @@ impl RunnerInner {
                         }
                     });
             }
-            StartVideoExport {
-                width,
-                height,
-                fps,
-                ppq,
-                key_count,
-                render_mode,
-                container,
-                codec,
-                backend,
-                quality,
-                output_path,
-                document,
-            } => {
+            StartVideoExport { config, document } => {
                 use lumino_export::video::{
                     FfmpegEncoder, VideoExportConfig,
                     config::{Container, EncoderBackend, QualityPreset, VideoCodec},
                 };
                 use lumino_gfx::render_thread::{ControlCommand, FrameSender, RenderCommand};
-                use std::str::FromStr;
+
+                let lumino_event::window::video::VideoExportConfig {
+                    output_path,
+                    width,
+                    height,
+                    fps,
+                    ppq,
+                    key_count,
+                    container,
+                    codec,
+                    backend,
+                    quality,
+                    render_mode,
+                } = config;
+
+                // 事件层枚举 → 导出层枚举（总映射，无字符串解析、无静默降级）
+                let container = match container {
+                    lumino_event::window::video::Container::Mp4 => Container::Mp4,
+                    lumino_event::window::video::Container::Mov => Container::Mov,
+                    lumino_event::window::video::Container::Mkv => Container::Mkv,
+                    lumino_event::window::video::Container::Avi => Container::Avi,
+                };
+                let codec = match codec {
+                    lumino_event::window::video::VideoCodec::H264 => VideoCodec::H264,
+                    lumino_event::window::video::VideoCodec::H265 => VideoCodec::H265,
+                    lumino_event::window::video::VideoCodec::ProRes => VideoCodec::ProRes,
+                    lumino_event::window::video::VideoCodec::Vp9 => VideoCodec::Vp9,
+                    lumino_event::window::video::VideoCodec::Av1 => VideoCodec::Av1,
+                };
+                let backend = match backend {
+                    lumino_event::window::video::EncoderBackend::Software => {
+                        EncoderBackend::Software
+                    }
+                    lumino_event::window::video::EncoderBackend::VideoToolbox => {
+                        EncoderBackend::VideoToolbox
+                    }
+                    lumino_event::window::video::EncoderBackend::Nvenc => EncoderBackend::Nvenc,
+                    lumino_event::window::video::EncoderBackend::Amf => EncoderBackend::Amf,
+                    lumino_event::window::video::EncoderBackend::Qsv => EncoderBackend::Qsv,
+                    lumino_event::window::video::EncoderBackend::Vaapi => EncoderBackend::Vaapi,
+                };
+                let quality = match quality {
+                    lumino_event::window::video::QualityPreset::High => QualityPreset::High,
+                    lumino_event::window::video::QualityPreset::Medium => QualityPreset::Medium,
+                    lumino_event::window::video::QualityPreset::Low => QualityPreset::Low,
+                };
 
                 tracing::info!(
                     "开始视频导出: {}x{} @ {}fps, 容器={:?}, 编解码器={:?}",
@@ -298,13 +330,6 @@ impl RunnerInner {
                 self.window_state
                     .dialog_manager
                     .open_dialog(DialogType::VideoExport);
-
-                // 解析配置枚举
-                let container = Container::from_str(&container).unwrap_or(Container::Mp4);
-                let codec = VideoCodec::from_str(&codec).unwrap_or(VideoCodec::H264);
-                let backend =
-                    EncoderBackend::from_str(&backend).unwrap_or(EncoderBackend::Software);
-                let quality = QualityPreset::from_str(&quality).unwrap_or_default();
 
                 // 获取渲染线程命令发送端
                 let main_ui = self.window_state.window.ui();
@@ -332,7 +357,7 @@ impl RunnerInner {
                     width,
                     height,
                     fps: fps as f64,
-                    container: container.clone(),
+                    container,
                     codec,
                     backend,
                     output_path: std::path::PathBuf::from(&output_path),

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use lumino_midi_loader::MidiDocument;
 
 pub use super::audio::{AudioChannels, AudioFormat, Interpolation, ThreadingOption};
+pub use super::video::{Container, EncoderBackend, QualityPreset, VideoCodec, VideoExportConfig};
 
 /// 音频导出配置。
 #[derive(Debug, Clone)]
@@ -83,20 +84,8 @@ pub enum Event {
     OpenVideoExportDialog,
     CloseVideoExportDialog,
     StartVideoExport {
-        output_path: String,
-        width: u32,
-        height: u32,
-        fps: u32,
-        container: String,
-        codec: String,
-        backend: String,
-        quality: String,
-        /// MIDI 分辨率（PPQ）
-        ppq: u16,
-        /// 可见键位数（128 或 256，用于 Y 向缩放）
-        key_count: u16,
-        /// 视频导出渲染模式（"note_rectangle"/"hires_texture"）
-        render_mode: String,
+        /// 视频导出配置（强类型，事件层传输结构）
+        config: VideoExportConfig,
         /// 内存中的 MidiDocument（如果存在）
         document: Option<Arc<MidiDocument>>,
     },
