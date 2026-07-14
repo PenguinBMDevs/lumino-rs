@@ -100,6 +100,14 @@ impl PaletteManager {
             });
         }
 
+        // 将名为 "Random" 的调色板冒泡到第一个位置，作为默认调色板
+        if let Some(random_idx) = palettes.iter().position(|p| p.name == "Random")
+            && random_idx != 0
+        {
+            let random = palettes.remove(random_idx);
+            palettes.insert(0, random);
+        }
+
         let names = palettes.iter().map(|p| p.name).collect();
         Self { palettes, names }
     }
@@ -283,6 +291,8 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 static CURRENT_PALETTE_IDX: AtomicU8 = AtomicU8::new(0);
 /// 当前调色板是否已初始化
 static CURRENT_PALETTE_INIT: AtomicBool = AtomicBool::new(false);
+/// MIDI 加载后调色板是否被锁定（禁止用户修改）
+static PALETTE_LOCKED: AtomicBool = AtomicBool::new(false);
 
 /// 获取当前调色板的轨道颜色（RGBA [u8;4]）
 ///
@@ -315,7 +325,12 @@ pub fn current_track_color_f32(track_idx: usize) -> [f32; 4] {
 /// 通过调色板名称设置当前调色板
 ///
 /// 返回是否成功找到该调色板。
+/// 如果调色板已被锁定（MIDI 加载后），返回 false 且不修改当前选择。
 pub fn set_current_palette_by_name(name: &str) -> bool {
+    if PALETTE_LOCKED.load(Ordering::Relaxed) {
+        tracing::debug!("[Palette] 调色板已锁定（MIDI 加载后），忽略切换请求");
+        return false;
+    }
     let mgr = &*PALETTE_MANAGER;
     if let Some(idx) = mgr.palettes().iter().position(|p| p.name == name) {
         CURRENT_PALETTE_IDX.store(idx as u8, Ordering::Relaxed);
@@ -327,6 +342,58 @@ pub fn set_current_palette_by_name(name: &str) -> bool {
         CURRENT_PALETTE_INIT.store(true, Ordering::Relaxed);
         false
     }
+}
+
+/// 锁定当前调色板（MIDI 加载后调用，禁止用户修改）
+pub fn lock_palette() {
+    PALETTE_LOCKED.store(true, Ordering::Relaxed);
+    tracing::info!("[Palette] 调色板已锁定");
+}
+
+/// 解锁调色板（关闭 MIDI 或应用重启时）
+pub fn unlock_palette() {
+    PALETTE_LOCKED.store(false, Ordering::Relaxed);
+    tracing::info!("[Palette] 调色板已解锁");
+}
+
+/// 检查调色板是否被锁定
+pub fn is_palette_locked() -> bool {
+    PALETTE_LOCKED.load(Ordering::Relaxed)
+}
+
+/// 获取洋葱皮音轨颜色（RGBA [u8;4]）
+///
+/// 从当前调色板的第二个颜色开始取色（index 0 保留给主音轨音符），
+/// 超出调色板颜色数时循环取色。
+#[inline]
+pub fn onion_track_color(track_idx: usize) -> PaletteColor {
+    let mgr = &*PALETTE_MANAGER;
+    // 使用 CURRENT_PALETTE_INIT/PALETTE_INIT 判断是否初始化
+    let p = if !CURRENT_PALETTE_INIT.load(Ordering::Relaxed) {
+        mgr.default()
+    } else {
+        let idx = CURRENT_PALETTE_IDX.load(Ordering::Relaxed) as usize;
+        mgr.palettes().get(idx).unwrap_or_else(|| mgr.default())
+    };
+    // 从第二个颜色开始取色（offset = 1）
+    if p.colors.len() <= 1 {
+        // 如果调色板只有 1 种或 0 种颜色，用备用色
+        FALLBACK_PALETTE[track_idx % FALLBACK_PALETTE.len()]
+    } else {
+        p.colors[(1 + track_idx) % p.colors.len()]
+    }
+}
+
+/// 获取洋葱皮音轨颜色（[f32;4]，归一化到 0.0-1.0）
+#[inline]
+pub fn onion_track_color_f32(track_idx: usize) -> [f32; 4] {
+    let c = onion_track_color(track_idx);
+    [
+        c[0] as f32 / 255.0,
+        c[1] as f32 / 255.0,
+        c[2] as f32 / 255.0,
+        c[3] as f32 / 255.0,
+    ]
 }
 
 /// 获取当前调色板名称

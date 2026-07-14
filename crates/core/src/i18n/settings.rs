@@ -86,6 +86,7 @@ pub struct SettingsTranslations {
     pub palette_hint: &'static str,
     pub palette_colors_info: &'static str,
     pub palette_no_preview: &'static str,
+    pub palette_locked: &'static str,
     pub version: &'static str,
     pub app_description: &'static str,
     /// 高对比度主题显示名称
@@ -162,6 +163,7 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     palette_hint: "调色板文件存放在 resources/palettes/ 目录下，编译时自动检测。添加新的 PNG 文件后重新编译即可使用。",
     palette_colors_info: "颜色预览",
     palette_no_preview: "无法预览选中调色板",
+    palette_locked: "已加载，调色板锁定",
 };
 
 static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -234,6 +236,7 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     palette_hint: "Palette files are stored in resources/palettes/ and auto-detected at compile time. Add new PNG files and rebuild to use them.",
     palette_colors_info: "Color Preview",
     palette_no_preview: "Unable to preview selected palette",
+    palette_locked: "loaded, palette locked",
 };
 
 /// 获取设置面板翻译

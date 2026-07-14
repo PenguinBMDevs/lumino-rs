@@ -47,10 +47,9 @@ mod impls;
 
 /// 洋葱皮音轨调色板（按音轨索引循环取色）
 ///
-/// 从当前嵌入的调色板中取色，用户可在设置中切换。
-/// 如果调色板不可用，回退到硬编码的 8 色彩色板。
+/// 从当前调色板的第二个颜色开始取色（第一个颜色保留给主音轨音符）。
 pub fn onion_track_color(track_idx: usize) -> [u8; 4] {
-    lumino_core::palette::current_track_color(track_idx)
+    lumino_core::palette::onion_track_color(track_idx)
 }
 
 /// 缓存失效标志位

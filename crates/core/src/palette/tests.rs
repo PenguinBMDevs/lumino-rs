@@ -16,6 +16,14 @@ fn test_default_palette_not_empty() {
 }
 
 #[test]
+fn test_default_palette_is_random() {
+    // 验证 "Random" 已被冒泡为默认调色板
+    let mgr = &*PALETTE_MANAGER;
+    assert_eq!(mgr.default().name, "Random");
+    assert_eq!(mgr.names()[0], "Random");
+}
+
+#[test]
 fn test_track_color_cycling() {
     let mgr = &*PALETTE_MANAGER;
     let p = mgr.default();
@@ -78,4 +86,125 @@ fn test_decode_random_png() {
             palette.colors.len()
         );
     }
+}
+
+// ─── 锁机制测试 ───────────────────────────────────────────────────────────────
+
+#[test]
+fn test_lock_unlock_palette() {
+    // 初始状态为解锁
+    unlock_palette();
+    assert!(!is_palette_locked(), "初始应为解锁");
+
+    lock_palette();
+    assert!(is_palette_locked(), "锁定后应为 true");
+
+    unlock_palette();
+    assert!(!is_palette_locked(), "解锁后应为 false");
+}
+
+#[test]
+fn test_set_palette_ignored_when_locked() {
+    // 先设置为已知调色板，再锁定
+    let mgr = &*PALETTE_MANAGER;
+    let first_name = mgr.names()[0];
+    let second_name = if mgr.names().len() > 1 {
+        mgr.names()[1]
+    } else {
+        // 只有一个调色板时跳过
+        return;
+    };
+
+    // 解锁并设置到一个非默认调色板
+    unlock_palette();
+    let result = set_current_palette_by_name(second_name);
+    assert!(result, "未锁定时应成功切换");
+    assert_eq!(current_palette_name(), second_name);
+
+    // 锁定后再尝试切换
+    lock_palette();
+    let result = set_current_palette_by_name(first_name);
+    assert!(!result, "锁定时应返回 false");
+    // 确认当前调色板未改变
+    assert_eq!(
+        current_palette_name(),
+        second_name,
+        "锁定时调色板不应被修改"
+    );
+}
+
+// ─── 洋葱皮偏移测试 ────────────────────────────────────────────────────────────
+
+#[test]
+fn test_onion_track_color_differs_from_main() {
+    // 当调色板有至少 2 种颜色时，
+    // onion_track_color(0) 应与 main track_color(0) 不同（offset 1 vs 0）
+    let mgr = &*PALETTE_MANAGER;
+    let p = mgr.default();
+    if p.colors.len() < 2 {
+        return;
+    }
+
+    unlock_palette();
+    set_current_palette_by_name(p.name);
+
+    let main_color = current_track_color(0);
+    let onion_color = onion_track_color(0);
+
+    // onion 从调色板索引 1 开始取色，main 从索引 0 开始
+    assert_eq!(main_color, p.colors[0], "main 应取调色板第一个颜色");
+    assert_eq!(onion_color, p.colors[1], "onion 应从调色板第二个颜色开始");
+}
+
+#[test]
+fn test_onion_track_color_offset_is_one() {
+    // 验证 onion_track_color(i) 对应 palette[(1 + i) % len]
+    // 而非 palette[i % len]
+    let mgr = &*PALETTE_MANAGER;
+    let p = mgr.default();
+    if p.colors.len() < 2 {
+        return;
+    }
+
+    unlock_palette();
+    set_current_palette_by_name(p.name);
+
+    for i in 0..p.colors.len().min(10) {
+        let expected = p.colors[(1 + i) % p.colors.len()];
+        assert_eq!(
+            onion_track_color(i),
+            expected,
+            "onion_track_color({}) 应等于 palette[(1+{}) % {}]",
+            i,
+            i,
+            p.colors.len()
+        );
+    }
+}
+
+#[test]
+fn test_onion_track_color_cycling() {
+    // 验证大量洋葱皮取色不 panic
+    set_current_palette_by_name(default_palette_name());
+    for i in 0..100 {
+        let _color = onion_track_color(i);
+    }
+}
+
+#[test]
+fn test_onion_track_color_f32_bounds() {
+    set_current_palette_by_name(default_palette_name());
+    let c = onion_track_color_f32(0);
+    for &component in &c {
+        assert!(
+            (0.0..=1.0).contains(&component),
+            "f32 颜色分量应在 0-1 范围内"
+        );
+    }
+}
+
+// ─── 辅助函数 ─────────────────────────────────────────────────────────────────
+
+fn default_palette_name() -> &'static str {
+    PALETTE_MANAGER.default().name
 }

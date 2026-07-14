@@ -170,9 +170,9 @@ impl Host {
 
 /// 洋葱皮音轨调色板（按音轨索引循环取色）
 ///
-/// 从当前嵌入的调色板中取色。
+/// 从当前调色板的第二个颜色开始取色（第一个颜色保留给主音轨音符）。
 fn onion_track_color(track_idx: usize) -> [u8; 4] {
-    lumino_core::palette::current_track_color(track_idx)
+    lumino_core::palette::onion_track_color(track_idx)
 }
 
 /// 字体名称缓存 —— OnceLock 确保只泄漏一次，而不是每次重绘都泄漏

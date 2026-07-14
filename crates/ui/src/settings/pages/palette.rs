@@ -25,13 +25,29 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
     // 当前调色板名称
     let current_palette_name = settings.selected_palette.as_str();
 
-    // 调色板选择下拉列表
-    let palette_options: Vec<&str> = settings.available_palettes.iter().copied().collect();
-    let pick_list = pick_list(palette_options, Some(current_palette_name), |name| {
-        Message::Settings(Event::PaletteChanged(name.to_string()))
-    })
-    .width(300.0)
-    .style(create_pick_list_style);
+    // 检查调色板是否被锁定
+    let palette_locked = lumino_core::palette::is_palette_locked();
+
+    // 调色板选择器：MIDI 加载后锁定，显示只读指示
+    let picker: Element<'a> = if palette_locked {
+        // 锁定状态下显示纯文本（不可修改）
+        let locked_text = format!(
+            "{} {} (MIDI {})",
+            t.palette_select, current_palette_name, t.palette_locked,
+        );
+        text(locked_text)
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_placeholder_text_style())
+            .into()
+    } else {
+        let palette_options: Vec<&str> = settings.available_palettes.to_vec();
+        pick_list(palette_options, Some(current_palette_name), |name| {
+            Message::Settings(Event::PaletteChanged(name.to_string()))
+        })
+        .width(300.0)
+        .style(create_pick_list_style)
+        .into()
+    };
 
     // 获取当前选中调色板的详细信息
     let palette_mgr = &*lumino_core::palette::PALETTE_MANAGER;
@@ -58,7 +74,7 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            pick_list,
+            picker,
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),

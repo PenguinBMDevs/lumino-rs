@@ -31,6 +31,10 @@ impl RunnerInner {
             MidiParsed(parsed) => {
                 tracing::info!("MIDI 文件解析完成：{}", parsed.info);
 
+                // MIDI 加载后强制使用 Random 调色板并锁定（禁止用户修改）
+                lumino_core::palette::set_current_palette_by_name("Random");
+                lumino_core::palette::lock_palette();
+
                 // 先导入音符到编辑器（新的懒加载模式：只加载当前音轨，其他音轨按需加载）
                 self.import_midi_to_editor(&parsed);
 
@@ -263,17 +267,9 @@ impl RunnerInner {
     }
 }
 
-/// 洋葱皮音轨调色板（按音轨索引循环取色，alpha 由 onion-skin 内部固定为 255）
+/// 洋葱皮音轨调色板（按音轨索引循环取色）
+///
+/// 从当前调色板的第二个颜色开始取色（第一个颜色保留给主音轨音符）。
 fn onion_track_color(track_idx: usize) -> [u8; 4] {
-    const PALETTE: [[u8; 4]; 8] = [
-        [200, 80, 80, 255],
-        [80, 200, 120, 255],
-        [80, 120, 220, 255],
-        [220, 200, 80, 255],
-        [200, 100, 200, 255],
-        [80, 200, 200, 255],
-        [240, 150, 80, 255],
-        [180, 180, 180, 255],
-    ];
-    PALETTE[track_idx % PALETTE.len()]
+    lumino_core::palette::onion_track_color(track_idx)
 }
