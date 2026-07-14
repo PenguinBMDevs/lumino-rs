@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use midly::loader::scan_midi_file;
 
-use crate::error::LoaderError;
+use crate::LoaderError;
 
 /// MIDI文件元信息（用于列表显示）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

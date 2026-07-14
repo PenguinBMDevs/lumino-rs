@@ -25,7 +25,7 @@ pub struct EditorData {
     pub track_notes_gen: u64,
     /// 被编辑过的音轨集合（用于协作同步，记录需要广播变更的所有音轨）
     pub edited_tracks: HashSet<usize>,
-    pub document: Option<Arc<lumino_midi_loader::MidiDocument>>,
+    pub document: Option<Arc<lumino_midi_model::MidiDocument>>,
     pub history: History,
     pub cc_data: CcData,
     /// 自动化事件 lane 列表（从 yinhe 移植的曲线/CC/Bend/RPN/NRPN 数据模型）。

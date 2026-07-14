@@ -3,9 +3,10 @@
 //! 这是 lumino MIDI 加载的第二刀：把 `CompactEvent` 中拆成两条的音符
 //! 合并成 `(start_tick, end_tick, key, velocity, channel)`，内存减半。
 
-use lumino_midi_model::compact::{CompactEvent, EventKind};
-
+use crate::compact::{CompactEvent, EventKind};
 use crate::note_info::NoteInfo;
+
+use midly;
 
 /// 单个音符的自包含表示。
 ///
@@ -113,8 +114,6 @@ impl From<midly::loader::PackedNote> for NoteEvent {
             end_tick: note.end_tick,
             key: note.key,
             velocity: note.velocity,
-            // midly::loader::PackedNote 不保存 channel，默认 0。
-            // 后续如果 per-track channel 信息可用，应在外部覆写。
             channel: 0,
         }
     }

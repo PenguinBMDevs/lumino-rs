@@ -157,7 +157,7 @@ impl LuminoProject {
     ///
     /// 关键路径：用户打开 MIDI 文件后，需要能保存为新格式。
     /// 将 MidiDocument 中的 per-track 事件拆分为各 `.lmtrack` 文件的数据结构。
-    pub fn from_midi_document(doc: &lumino_midi_loader::document::MidiDocument) -> Self {
+    pub fn from_midi_document(doc: &lumino_midi_loader::MidiDocument) -> Self {
         let mut project = Self::new("Untitled");
         project.metadata.audio.division = 480; // 默认值，应由调用方填充
         project.metadata.audio.total_ticks = doc.total_ticks;

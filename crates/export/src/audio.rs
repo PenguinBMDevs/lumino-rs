@@ -33,7 +33,7 @@ pub mod tick_conv;
 use midly::{MidiMessage, PitchBend, TrackEventKind};
 use tracing::info;
 
-use lumino_midi_loader::{document::MidiDocument, streaming::StreamingMidiPlayer};
+use lumino_midi_loader::{MidiDocument, streaming::StreamingMidiPlayer};
 
 use crate::error::{ExportError, ExportResult};
 

@@ -10,3 +10,11 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
+midly = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+encoding_rs = { workspace = true }
+lumino-memory-monitor = { path = "../memory-monitor" }

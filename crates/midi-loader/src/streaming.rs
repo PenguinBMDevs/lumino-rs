@@ -23,7 +23,7 @@
 use midly::mmap::{MmapEventIter, MmapSmf, MmapTrack};
 use midly::{MetaMessage, TrackEvent, TrackEventKind};
 
-use crate::error::{LoaderError, LoaderResult};
+use crate::{LoaderError, LoaderResult};
 
 // ── 轨道游标 ──────────────────────────────────────────────
 

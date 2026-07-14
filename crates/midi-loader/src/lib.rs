@@ -1,25 +1,21 @@
 pub mod constants;
-pub mod document;
 #[cfg(test)]
 pub mod document_tests;
-pub mod error;
 pub mod event;
 pub mod info;
 pub mod loader;
-pub mod note_event;
-pub mod note_info;
 pub mod quantize;
 pub mod streaming;
-pub mod track;
 
-pub use document::MidiDocument;
-pub use error::{LoaderError, LoaderResult};
+// 重新导出 lumino-midi-model 中的类型（调用链保持 lumino_midi_loader::Xxx 不变）
+pub use lumino_midi_model::{
+    CompactEvent, EventKind, LoaderError, LoaderResult, MidiDocument, NoteEvent, NoteInfo,
+    TrackManager, TrackView, TrackVisibility,
+};
+
 pub use event::MidiEvent;
 pub use info::MidiInfo;
-pub use note_event::NoteEvent;
-pub use note_info::NoteInfo;
 pub use streaming::StreamingMidiPlayer;
-pub use track::{TrackManager, TrackView, TrackVisibility};
 
 use std::sync::Arc;
 
@@ -97,10 +93,4 @@ impl<'de> serde::Deserialize<'de> for ParsedMidi {
             document: None,
         })
     }
-}
-
-impl ParsedMidi {
-    // midi_data 已在架构层面移除——LMPJ 保存时从内存 document 重建，
-    // 不依赖原始 .mid 文件。如需原始 MIDI 字节（如导出标准 MIDI），
-    // 调用方应自行从 info.path 读取或从 document 重建。
 }

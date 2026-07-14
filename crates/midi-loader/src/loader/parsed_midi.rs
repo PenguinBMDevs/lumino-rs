@@ -5,8 +5,7 @@ use lumino_memory_monitor::MemoryMonitor;
 
 use crate::LmpjData;
 use crate::ParsedMidi;
-use crate::document::MidiDocument;
-use crate::error::{LoaderError, LoaderResult};
+use crate::{LoaderError, LoaderResult, MidiDocument};
 use crate::info::MidiInfo;
 
 use super::types::ProgressCallback;

@@ -14,6 +14,9 @@ pub(crate) mod scan;
 
 use std::path::Path;
 
+/// Tick 搜索缓冲区大小（用于二分查找的范围扩展）
+const TICK_SEARCH_BUFFER: u32 = 19200;
+
 /// 解析后的 MIDI 文档（全内存紧凑存放）
 ///
 /// 音符按音轨存放为 `Vec<Vec<NoteEvent>>`，每轨内按 `start_tick` 升序排列。
@@ -50,8 +53,6 @@ impl std::fmt::Debug for MidiDocument {
 
 impl MidiDocument {
     /// 使用 midly 从 MIDI 文件加载并构建紧凑内存文档。
-    ///
-    /// 便捷函数：读取文件字节后委托给 [`Self::from_notes_bytes`]。
     pub fn from_notes_file<P: AsRef<Path>>(
         midi_path: P,
         progress: Option<&dyn Fn(f64)>,
@@ -63,11 +64,6 @@ impl MidiDocument {
     }
 
     /// 使用 midly 从 MIDI 字节加载并构建紧凑内存文档。
-    ///
-    /// 使用按轨流式提取 API，每解析完一轨立即转换为 `NoteEvent` 并释放该轨的
-    /// `PackedNote` 中间数据，避免所有音轨的 PackedNote 同时驻留内存。
-    ///
-    /// 返回 `(document, division, total_notes)`，调用方只需读取一次文件。
     pub fn from_notes_bytes(
         file_bytes: &[u8],
         progress: Option<&dyn Fn(f64)>,
@@ -125,8 +121,6 @@ impl MidiDocument {
         )
         .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
 
-        // MIDI 标准默认速度为 120 BPM。如果 MIDI 文件提供了 tick 0 处的 tempo 事件，
-        // 则使用文件速度；否则插入默认值确保至少有一个有效的起始速度
         if !all_tempo_changes.iter().any(|(t, _)| *t == 0) {
             all_tempo_changes.push((0u32, 120.0f32));
         }
@@ -175,10 +169,7 @@ impl MidiDocument {
     }
 
     /// 获取所有 CompactEvent（按需从 NoteEvent 实时构造）。
-    ///
-    /// 注意：这会为所有音符分配 NoteOn + NoteOff 事件，内存开销较大，
-    /// 仅用于兼容性路径或测试；常规查询请使用 `track_notes`。
-    pub fn all_events(&self) -> Vec<lumino_midi_model::compact::CompactEvent> {
+    pub fn all_events(&self) -> Vec<crate::compact::CompactEvent> {
         let mut events = Vec::with_capacity(self.total_note_count() * 2);
         for (track_id, track_notes) in self.notes.iter().enumerate() {
             let track_id_u16 = track_id as u16;
@@ -192,7 +183,7 @@ impl MidiDocument {
     }
 
     /// 获取指定音轨的所有 CompactEvent（按需从 NoteEvent 构造）。
-    pub fn get_track_events(&self, track_id: u16) -> Vec<lumino_midi_model::compact::CompactEvent> {
+    pub fn get_track_events(&self, track_id: u16) -> Vec<crate::compact::CompactEvent> {
         let tid = track_id as usize;
         match self.notes.get(tid) {
             Some(track_notes) => {
@@ -214,7 +205,7 @@ impl MidiDocument {
         from_tick: u32,
         to_tick: u32,
         max_events: usize,
-    ) -> Vec<lumino_midi_model::compact::CompactEvent> {
+    ) -> Vec<crate::compact::CompactEvent> {
         let limit = if max_events == 0 {
             usize::MAX
         } else {
@@ -268,8 +259,6 @@ impl MidiDocument {
     }
 
     /// 获取指定音轨在指定 tick 范围内的音符。
-    ///
-    /// 返回格式：(start_tick, key, length, velocity, channel)
     pub fn get_track_notes_in_range(
         &self,
         track_id: u16,
@@ -285,9 +274,6 @@ impl MidiDocument {
         let tick_start_u = tick_start as u32;
         let tick_end_u = tick_end as u32;
 
-        use crate::constants::TICK_SEARCH_BUFFER;
-
-        // 二分查找：找到第一个可能落在范围内的音符
         let search_start = notes
             .partition_point(|n| n.start_tick < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER));
         let search_end = notes.len().min(
@@ -317,8 +303,6 @@ impl MidiDocument {
     }
 
     /// 获取指定音轨的所有音符。
-    ///
-    /// 返回格式：(start_tick, key, length, velocity, channel)
     pub fn get_track_notes(&self, track_id: u16) -> Vec<(f32, u8, f32, u8, u8)> {
         let tid = track_id as usize;
         match self.notes.get(tid) {
@@ -340,11 +324,6 @@ impl MidiDocument {
     }
 
     /// 获取所有音轨（排除指定音轨）在指定 tick 范围内的音符。
-    /// 一次性查询所有音轨，避免多次二分查找和多次 Vec 分配。
-    ///
-    /// # 参数
-    /// - `exclude_track`: 要排除的音轨索引（通常是当前编辑音轨）
-    /// - `tick_start / tick_end`: tick 视口范围
     pub fn get_all_notes_in_range_except(
         &self,
         exclude_track: usize,
@@ -353,9 +332,7 @@ impl MidiDocument {
     ) -> Vec<(f32, u8, f32, u8, u8)> {
         let tick_start_u = tick_start as u32;
         let tick_end_u = tick_end as u32;
-        use crate::constants::TICK_SEARCH_BUFFER;
 
-        // 预分配容量，避免多次扩容
         let mut all_notes = Vec::with_capacity(1024);
 
         for track_idx in 0..self.track_count() {
@@ -397,9 +374,7 @@ impl MidiDocument {
             }
         }
 
-        // 按 tick 排序，保证输出顺序稳定
         all_notes.sort_by(|a, b| a.0.total_cmp(&b.0));
-
         all_notes
     }
 
@@ -416,9 +391,6 @@ impl MidiDocument {
     }
 
     /// 获取指定音轨的预解析音符引用。
-    ///
-    /// 返回 `&[NoteEvent]`，每个元素为完整的自包含音符（start_tick + end_tick + key + vel + channel）。
-    /// 音符在每轨内按 `start_tick` 升序排列，可直接用 `partition_point` 二分查找。
     #[inline]
     pub fn track_notes(&self, track_id: usize) -> &[NoteEvent] {
         self.notes

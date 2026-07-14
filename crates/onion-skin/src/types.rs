@@ -91,8 +91,8 @@ impl OnionSkinNote {
 mod tests {
     use super::*;
     use lumino_core::note::Note;
-    use lumino_midi_loader::note_event::NoteEvent;
-    use lumino_midi_loader::note_info::NoteInfo;
+    use lumino_midi_loader::NoteEvent;
+    use lumino_midi_loader::NoteInfo;
 
     #[test]
     fn from_ms_sets_tick_to_zero() {

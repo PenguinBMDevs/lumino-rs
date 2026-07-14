@@ -3433,7 +3433,7 @@ dependencies = [
  "font-kit",
  "im",
  "libc",
- "lumino-midi-loader",
+ "lumino-midi-model",
  "png 0.17.16",
  "puffin",
  "serde",
@@ -3570,6 +3570,16 @@ dependencies = [
 [[package]]
 name = "lumino-midi-model"
 version = "0.1.1"
+dependencies = [
+ "bincode",
+ "encoding_rs",
+ "lumino-memory-monitor",
+ "midly",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
 
 [[package]]
 name = "lumino-onion-skin"

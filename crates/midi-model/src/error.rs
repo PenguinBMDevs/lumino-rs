@@ -1,8 +1,8 @@
-//! MIDI 加载错误类型
+//! MIDI 数据模型错误类型
 
 use thiserror::Error;
 
-/// MIDI 加载错误
+/// MIDI 模型错误
 #[derive(Error, Debug)]
 pub enum LoaderError {
     /// IO 错误
@@ -38,7 +38,7 @@ pub enum LoaderError {
     Other(String),
 }
 
-/// MIDI 加载结果类型别名
+/// MIDI 模型结果类型别名
 pub type LoaderResult<T> = std::result::Result<T, LoaderError>;
 
 impl From<String> for LoaderError {
