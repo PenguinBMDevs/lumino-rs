@@ -3,7 +3,7 @@
 //! 这是 lumino MIDI 加载的第二刀：把 `CompactEvent` 中拆成两条的音符
 //! 合并成 `(start_tick, end_tick, key, velocity, channel)`，内存减半。
 
-use lumino_midi_io::compact::{CompactEvent, EventKind};
+use lumino_midi_model::compact::{CompactEvent, EventKind};
 
 use crate::note_info::NoteInfo;
 

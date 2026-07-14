@@ -178,7 +178,7 @@ impl MidiDocument {
     ///
     /// 注意：这会为所有音符分配 NoteOn + NoteOff 事件，内存开销较大，
     /// 仅用于兼容性路径或测试；常规查询请使用 `track_notes`。
-    pub fn all_events(&self) -> Vec<lumino_midi_io::compact::CompactEvent> {
+    pub fn all_events(&self) -> Vec<lumino_midi_model::compact::CompactEvent> {
         let mut events = Vec::with_capacity(self.total_note_count() * 2);
         for (track_id, track_notes) in self.notes.iter().enumerate() {
             let track_id_u16 = track_id as u16;
@@ -192,7 +192,7 @@ impl MidiDocument {
     }
 
     /// 获取指定音轨的所有 CompactEvent（按需从 NoteEvent 构造）。
-    pub fn get_track_events(&self, track_id: u16) -> Vec<lumino_midi_io::compact::CompactEvent> {
+    pub fn get_track_events(&self, track_id: u16) -> Vec<lumino_midi_model::compact::CompactEvent> {
         let tid = track_id as usize;
         match self.notes.get(tid) {
             Some(track_notes) => {
@@ -214,7 +214,7 @@ impl MidiDocument {
         from_tick: u32,
         to_tick: u32,
         max_events: usize,
-    ) -> Vec<lumino_midi_io::compact::CompactEvent> {
+    ) -> Vec<lumino_midi_model::compact::CompactEvent> {
         let limit = if max_events == 0 {
             usize::MAX
         } else {

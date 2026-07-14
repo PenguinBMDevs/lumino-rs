@@ -245,7 +245,7 @@ fn build_metadata(project: &LuminoProject) -> ProjectMetadata {
 mod tests {
     use super::*;
     use crate::project::track::{LmtrackData, TrackMeta, TrackVisibilitySer};
-    use lumino_midi_io::compact::{CompactEvent, EventKind};
+    use lumino_midi_model::compact::{CompactEvent, EventKind};
 
     fn create_test_project() -> LuminoProject {
         let mut project = LuminoProject::new("Test Project");

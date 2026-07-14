@@ -14,6 +14,7 @@ default = ["new-audio-backend"]
 new-audio-backend = ["lumino-realtime/xsynth-realtime", "xsynth-core", "xsynth-soundfonts", "cpal", "crossbeam-channel", "spin_sleep"]
 
 [dependencies]
+lumino-midi-model = { path = "../midi-model" }
 libloading = "0.9.0"
 midir = "0.10.3"
 thiserror = { workspace = true }

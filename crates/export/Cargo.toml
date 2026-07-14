@@ -11,7 +11,7 @@ workspace = true
 
 [dependencies]
 lumino-core = { path = "../core" }
-lumino-midi-io = { path = "../midi-io" }
+lumino-midi-model = { path = "../midi-model" }
 lumino-midi-loader = { path = "../midi-loader" }
 lumino-memory-monitor = { path = "../memory-monitor" }
 thiserror = { workspace = true }

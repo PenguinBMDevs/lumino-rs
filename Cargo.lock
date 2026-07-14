@@ -3433,7 +3433,6 @@ dependencies = [
  "font-kit",
  "im",
  "libc",
- "lumino-memory-monitor",
  "lumino-midi-loader",
  "png 0.17.16",
  "puffin",
@@ -3477,8 +3476,8 @@ dependencies = [
  "hound",
  "lumino-core",
  "lumino-memory-monitor",
- "lumino-midi-io",
  "lumino-midi-loader",
+ "lumino-midi-model",
  "memmap2",
  "midly",
  "num-bigint",
@@ -3539,6 +3538,7 @@ dependencies = [
  "cpal",
  "crossbeam-channel",
  "libloading 0.9.0",
+ "lumino-midi-model",
  "lumino-realtime",
  "midir",
  "spin_sleep",
@@ -3556,7 +3556,7 @@ dependencies = [
  "bincode",
  "encoding_rs",
  "lumino-memory-monitor",
- "lumino-midi-io",
+ "lumino-midi-model",
  "midly",
  "puffin",
  "rayon",
@@ -3567,6 +3567,10 @@ dependencies = [
  "tracing",
  "zstd",
 ]
+
+[[package]]
+name = "lumino-midi-model"
+version = "0.1.1"
 
 [[package]]
 name = "lumino-onion-skin"

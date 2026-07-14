@@ -210,7 +210,7 @@ fn load_legacy_lmpj(bytes: &[u8]) -> crate::ExportResult<LuminoProject> {
 mod tests {
     use super::*;
     use crate::project::{LmtrackData, TrackMeta, TrackVisibilitySer};
-    use lumino_midi_io::compact::{CompactEvent, EventKind};
+    use lumino_midi_model::compact::{CompactEvent, EventKind};
 
     fn create_test_project() -> LuminoProject {
         let mut project = LuminoProject::new("Test");

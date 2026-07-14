@@ -2,7 +2,7 @@
 //!
 //! `.lmtrack` 文件存储单个音轨的解析后事件数据，采用 bincode + zstd 压缩。
 
-use lumino_midi_io::compact::CompactEvent;
+use lumino_midi_model::compact::CompactEvent;
 
 use crate::{ExportError, ExportResult};
 
@@ -99,7 +99,7 @@ impl LmtrackData {
     pub fn from_compact_events(meta: TrackMeta, events: &[CompactEvent]) -> Self {
         let note_count = events
             .iter()
-            .filter(|e| matches!(e.kind(), lumino_midi_io::compact::EventKind::NoteOn))
+            .filter(|e| matches!(e.kind(), lumino_midi_model::compact::EventKind::NoteOn))
             .count() as u64;
 
         // CompactEvent 扁平化为字节数组
@@ -212,11 +212,11 @@ mod tests {
     fn test_lmtrack_encode_decode() {
         let meta = create_test_meta(0);
         let events = vec![
-            CompactEvent::new(0, 0, lumino_midi_io::compact::EventKind::NoteOn, 0, 60, 100),
+            CompactEvent::new(0, 0, lumino_midi_model::compact::EventKind::NoteOn, 0, 60, 100),
             CompactEvent::new(
                 480,
                 0,
-                lumino_midi_io::compact::EventKind::NoteOff,
+                lumino_midi_model::compact::EventKind::NoteOff,
                 0,
                 60,
                 0,
@@ -250,7 +250,7 @@ mod tests {
             CompactEvent::new(
                 100,
                 1,
-                lumino_midi_io::compact::EventKind::NoteOn,
+                lumino_midi_model::compact::EventKind::NoteOn,
                 2,
                 64,
                 80,
@@ -258,7 +258,7 @@ mod tests {
             CompactEvent::new(
                 200,
                 1,
-                lumino_midi_io::compact::EventKind::NoteOff,
+                lumino_midi_model::compact::EventKind::NoteOff,
                 2,
                 64,
                 0,

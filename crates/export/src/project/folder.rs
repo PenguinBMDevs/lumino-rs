@@ -210,10 +210,10 @@ mod tests {
         };
         let data = LmtrackData::from_compact_events(
             meta,
-            &[lumino_midi_io::compact::CompactEvent::new(
+            &[lumino_midi_model::compact::CompactEvent::new(
                 0,
                 0,
-                lumino_midi_io::compact::EventKind::NoteOn,
+                lumino_midi_model::compact::EventKind::NoteOn,
                 0,
                 60,
                 100,

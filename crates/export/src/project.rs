@@ -172,7 +172,7 @@ impl LuminoProject {
             }
 
             // 从 NoteEvent 构造 CompactEvent，并过滤出音符事件
-            let mut track_events: Vec<lumino_midi_io::compact::CompactEvent> =
+            let mut track_events: Vec<lumino_midi_model::compact::CompactEvent> =
                 Vec::with_capacity(track_notes.len() * 2);
             for note in track_notes {
                 let [on, off] = note.to_compact_events(track_id);

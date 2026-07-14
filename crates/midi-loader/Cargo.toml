@@ -19,7 +19,7 @@ rayon = "1"
 bincode = "1.3.3"
 zstd = { workspace = true }
 encoding_rs = { workspace = true }
-lumino-midi-io = { path = "../midi-io" }
+lumino-midi-model = { path = "../midi-model" }
 lumino-memory-monitor = { path = "../memory-monitor" }
 thiserror = { workspace = true }
 puffin = { workspace = true }
