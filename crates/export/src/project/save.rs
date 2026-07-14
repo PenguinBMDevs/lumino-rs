@@ -228,7 +228,6 @@ fn build_metadata(project: &LuminoProject) -> ProjectMetadata {
                     original_name: f.original_name.clone(),
                     format: match f.format {
                         crate::project::LoadedFormat::Mid => "mid".into(),
-                        crate::project::LoadedFormat::Dms => "dms".into(),
                         crate::project::LoadedFormat::Lmpj => "lmpj".into(),
                     },
                     imported_at: f.imported_at.clone(),

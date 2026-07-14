@@ -70,25 +70,4 @@ impl FileService {
         )
         .await
     }
-
-    /// 导出 DMS 到 MIDI
-    pub async fn export_dms_to_midi(
-        &self,
-        source_path: PathBuf,
-        path: PathBuf,
-    ) -> Result<(), String> {
-        self.run_blocking_task(
-            "准备导出 MIDI 文件",
-            "正在读取 DMS 文件",
-            "DMS 转 MIDI 导出成功",
-            "DMS 转 MIDI 导出成功",
-            move |cb| {
-                let bytes = lumino_export::export_midi_from_dms_sync(&source_path)
-                    .map_err(|e| e.to_string())?;
-                cb("正在写入 MIDI 文件", 0.8);
-                std::fs::write(&path, bytes).map_err(|e| format!("写入文件失败: {e}"))
-            },
-        )
-        .await
-    }
 }

@@ -14,7 +14,6 @@ impl FileHandler {
             .add_filter(filters::MUSIC_FILES.0, filters::MUSIC_FILES.1)
             .add_filter(filters::MIDI_FILES.0, filters::MIDI_FILES.1)
             .add_filter(filters::LUMINO_PROJECT.0, filters::LUMINO_PROJECT.1)
-            .add_filter(filters::DOMINO_PROJECT.0, filters::DOMINO_PROJECT.1)
             .add_filter(filters::ALL_FILES.0, filters::ALL_FILES.1)
             .pick_file()
     }

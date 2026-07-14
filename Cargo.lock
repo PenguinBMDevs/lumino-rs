@@ -3456,20 +3456,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lumino-dms"
-version = "0.1.1"
-dependencies = [
- "bytes",
- "encoding_rs",
- "flate2",
- "num-bigint",
- "num-traits",
- "tempfile",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
 name = "lumino-event"
 version = "0.1.1"
 dependencies = [
@@ -3489,7 +3475,6 @@ dependencies = [
  "encoding_rs",
  "hound",
  "lumino-core",
- "lumino-dms",
  "lumino-memory-monitor",
  "lumino-midi-io",
  "lumino-midi-loader",
@@ -3569,7 +3554,6 @@ version = "0.1.1"
 dependencies = [
  "bincode",
  "encoding_rs",
- "lumino-dms",
  "lumino-memory-monitor",
  "lumino-midi-io",
  "midly",
@@ -3658,7 +3642,6 @@ dependencies = [
  "lumino-collaboration",
  "lumino-core",
  "lumino-dialog",
- "lumino-dms",
  "lumino-export",
  "lumino-gfx",
  "lumino-memory-monitor",

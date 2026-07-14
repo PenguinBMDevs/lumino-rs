@@ -371,10 +371,9 @@ impl MessageHandler for DialogHandler {
                     }
                     A::BrowseMidi => {
                         if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("音乐文件", &["mid", "midi", "lmpj", "dms"])
+                            .add_filter("音乐文件", &["mid", "midi", "lmpj"])
                             .add_filter("MIDI 文件", &["mid", "midi"])
                             .add_filter("Lumino 项目", &["lmpj"])
-                            .add_filter("Domino 项目", &["dms"])
                             .add_filter("所有文件", &["*"])
                             .pick_file()
                         {

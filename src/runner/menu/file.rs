@@ -84,37 +84,9 @@ impl RunnerInner {
                     event_loop.exit();
                 }
             }
-            DmsParsed(parsed) => {
-                tracing::info!("DMS 文件解析完成：{}", parsed.info);
-
-                // 导入 DMS 到编辑器
-                self.import_dms_to_editor(&parsed);
-
-                // 设置工程创建时间（从文件系统获取）
-                let dms_path = std::path::PathBuf::from(&parsed.info.path);
-                if let Ok(metadata) = std::fs::metadata(&dms_path) {
-                    if let Ok(created) = metadata.modified() {
-                        let since_epoch = created
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default();
-                        let secs = since_epoch.as_secs() as i64;
-                        let datetime = chrono::DateTime::from_timestamp(secs, 0)
-                            .map(|dt| dt.with_timezone(&chrono::Local))
-                            .unwrap_or_else(|| chrono::Local::now());
-                        self.session_tracker.created_at =
-                            Some(datetime.format("%Y-%m-%d %H:%M:%S").to_string());
-                    }
-                }
-
-                self.midi_state.current_dms = Some(parsed);
-            }
-            DmsParseError(err) => {
-                tracing::error!("DMS 文件解析失败：{}", err);
-            }
             Close => {
                 self.midi_state.current_midi = None;
                 self.midi_state.current_midi_source = None;
-                self.midi_state.current_dms = None;
                 self.window_state.window.ui_mut().dispose_hires_onion_skin();
                 self.window_state.window.ui_mut().clear_editor();
                 tracing::info!("工程已关闭");
@@ -194,7 +166,6 @@ impl RunnerInner {
         // 清空当前工程
         self.midi_state.current_midi = None;
         self.midi_state.current_midi_source = None;
-        self.midi_state.current_dms = None;
 
         // 清空编辑器
         self.window_state.window.ui_mut().clear_editor();

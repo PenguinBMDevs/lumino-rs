@@ -66,7 +66,6 @@ pub struct LoadedFileEntry {
 #[serde(rename_all = "lowercase")]
 pub enum LoadedFormat {
     Mid,
-    Dms,
     Lmpj,
 }
 

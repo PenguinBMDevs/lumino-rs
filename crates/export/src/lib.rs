@@ -1,6 +1,6 @@
 //! 文件导出模块
 //!
-//! 提供 MIDI、DMS、工程文件等多种格式的导出能力。
+//! 提供 MIDI、工程文件等多种格式的导出能力。
 //! 所有导出函数均为同步阻塞调用，适合在后台线程中执行。
 //!
 //! # 主要入口
@@ -8,18 +8,16 @@
 //! | 格式 | 函数 | 说明 |
 //! |------|------|------|
 //! | MIDI | [`export_midi`] / [`export_midi_to_bytes`] | 导出标准 MIDI 文件 |
-//! | DMS | [`export_dms`] / [`export_dms_to_bytes`] | 导出 DMS (Domino Music Sequencer) 格式 |
 //! | 工程 | [`save_to_archive`] / [`save_to_folder`] | 保存 Lumino 工程文件 |
 //! | LMPJ | [`save`] / [`save_sync`] | 导出 LMPJ 项目包 |
 //!
 //! # 转换器
 //!
 //! [`converter`] 模块提供格式间同步转换的便捷函数，
-//! 如 [`export_midi_from_dms_sync`]、[`export_dms_from_midi_sync`] 等。
+//! 如 [`export_midi_from_parsed_midi_sync`] 等。
 
 pub mod audio;
 pub mod converter;
-pub mod dms;
 pub mod error;
 pub mod format;
 pub mod lmpj;
@@ -48,17 +46,7 @@ pub use video::{FfmpegEncoder, VideoExportConfig, VideoExportError};
 // ── 格式转换 ──
 
 /// 格式间同步转换工具函数
-pub use converter::{
-    copy_file_sync, export_dms_from_midi_sync, export_midi_from_dms_sync,
-    export_midi_from_parsed_midi_sync,
-};
-
-// ── DMS 导出 ──
-
-/// DMS 格式导出（简短别名）
-pub use dms::export_dms;
-/// DMS 格式导出到内存字节流
-pub use dms::export_dms_to_bytes;
+pub use converter::{copy_file_sync, export_midi_from_parsed_midi_sync};
 
 // ── 错误类型 ──
 

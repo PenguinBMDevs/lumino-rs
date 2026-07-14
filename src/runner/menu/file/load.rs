@@ -1,11 +1,8 @@
 //! Runner 文件菜单：加载与导入
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use crate::runner::{RunnerInner, async_helper::run_async_task};
-
-use super::helpers::get_file_extension;
 
 impl RunnerInner {
     /// 打开文件
@@ -15,37 +12,8 @@ impl RunnerInner {
             return;
         };
 
-        let extension = get_file_extension(&path);
-
-        if extension == "dms" {
-            self.load_dms_file(path);
-            return;
-        }
-
         tracing::info!("开始加载 MIDI 文件：{:?}", path);
         self.load_midi_file(path);
-    }
-
-    /// 加载 DMS 文件
-    pub(super) fn load_dms_file(&self, path: PathBuf) {
-        tracing::info!("开始后台加载 DMS 文件：{:?}", path);
-        let progress_cb = self.window_state.progress_cb.clone();
-        tokio::spawn(async move {
-            run_async_task(
-                lumino_midi_loader::loader::load_dms(path, Some(&progress_cb)),
-                |parsed| {
-                    lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::dms_parsed(Arc::new(parsed)),
-                    )
-                },
-                |e| {
-                    lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::dms_parse_error(e),
-                    )
-                },
-            )
-            .await;
-        });
     }
 
     /// 加载 MIDI 文件
@@ -88,10 +56,6 @@ impl RunnerInner {
                 crate::constants::filters::LUMINO_PROJECT.1,
             )
             .add_filter(
-                crate::constants::filters::DOMINO_PROJECT.0,
-                crate::constants::filters::DOMINO_PROJECT.1,
-            )
-            .add_filter(
                 crate::constants::filters::ALL_FILES.0,
                 crate::constants::filters::ALL_FILES.1,
             )
@@ -99,30 +63,6 @@ impl RunnerInner {
         else {
             return;
         };
-
-        let extension = get_file_extension(&path);
-
-        if extension == "dms" {
-            tracing::info!("开始后台导入 DMS 文件：{:?}", path);
-            let progress_cb = self.window_state.progress_cb.clone();
-            tokio::spawn(async move {
-                run_async_task(
-                    lumino_midi_loader::loader::load_dms(path, Some(&progress_cb)),
-                    |parsed| {
-                        lumino_ui::event::Event::menu_file(
-                            lumino_ui::event::menu::file::Event::dms_parsed(Arc::new(parsed)),
-                        )
-                    },
-                    |e| {
-                        lumino_ui::event::Event::menu_file(
-                            lumino_ui::event::menu::file::Event::dms_parse_error(e),
-                        )
-                    },
-                )
-                .await;
-            });
-            return;
-        }
 
         tracing::info!("开始导入 MIDI 文件：{:?}", path);
         let progress_cb = self.window_state.progress_cb.clone();
@@ -165,62 +105,5 @@ impl RunnerInner {
         } else {
             tracing::warn!("Failed to create playback MIDI output connection");
         }
-    }
-
-    /// 将 DMS 数据导入到编辑器
-    pub(super) fn import_dms_to_editor(&mut self, parsed: &Arc<lumino_midi_loader::ParsedDms>) {
-        tracing::info!("[DMS导入] 开始将 DMS 导入编辑器: {:?}", parsed.info.path);
-
-        // DMS 需要先转换为 MIDI 格式才能导入编辑器
-        // 使用 load_parsed_midi_from_bytes 直接从字节加载，避免临时文件
-        let path = parsed.info.path.clone();
-        let track_count = parsed.info.track_count;
-
-        tokio::spawn(async move {
-            tracing::info!("[DMS导入] 步骤1: 导出 DMS 为 MIDI");
-            match lumino_export::export_midi_from_dms_sync(&path) {
-                Ok(midi_bytes) => {
-                    tracing::info!(
-                        "[DMS导入] 步骤2: DMS 转换为 MIDI 成功，共 {} 字节",
-                        midi_bytes.len()
-                    );
-
-                    tracing::info!("[DMS导入] 步骤3: 直接加载 MIDI 字节");
-                    match lumino_midi_loader::loader::load_parsed_midi_from_bytes(
-                        midi_bytes,
-                        track_count as u16,
-                        0,
-                        None,
-                    )
-                    .await
-                    {
-                        Ok(parsed_midi) => {
-                            tracing::info!(
-                                "[DMS导入] 步骤4: DMS 转换的 MIDI 加载成功, 轨道数={}",
-                                parsed_midi.info.track_count
-                            );
-                            tracing::info!("[DMS导入] 步骤5: 发送 MidiParsed 事件");
-                            lumino_ui::event::Event::menu_file(
-                                lumino_ui::event::menu::file::Event::midi_parsed(
-                                    std::sync::Arc::new(parsed_midi),
-                                ),
-                            );
-                            tracing::info!("[DMS导入] 事件发送完成");
-                        }
-                        Err(e) => {
-                            tracing::error!("[DMS导入] 加载转换后的 MIDI 失败: {}", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("[DMS导入] DMS 转换为 MIDI 失败: {}", e);
-                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::dms_parse_error(format!(
-                            "DMS 转换为 MIDI 失败: {e}"
-                        )),
-                    ));
-                }
-            }
-        });
     }
 }

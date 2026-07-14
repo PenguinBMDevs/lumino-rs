@@ -21,7 +21,6 @@ zstd = { workspace = true }
 encoding_rs = { workspace = true }
 lumino-midi-io = { path = "../midi-io" }
 lumino-memory-monitor = { path = "../memory-monitor" }
-lumino-dms = { path = "../dms" }
 thiserror = { workspace = true }
 puffin = { workspace = true }
 

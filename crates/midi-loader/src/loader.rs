@@ -1,6 +1,6 @@
 //! MIDI 加载模块
 //!
-//! 提供 MIDI 文件和 DMS 文件的加载功能。
+//! 提供 MIDI 文件的加载功能。
 //!
 //! 统一使用 cache-only 加载模式：
 //! - scan_midi_file 轻量扫描（峰值 < 10MB）
@@ -9,12 +9,10 @@
 use std::path::PathBuf;
 
 // 子模块
-mod dms;
 mod parsed_midi;
 mod types;
 
 // 公开导出
-pub use dms::load_dms;
 pub use parsed_midi::{load_parsed_midi, load_parsed_midi_from_bytes};
 pub use types::{ProgressCallback, progress_from_sender, silent_progress};
 

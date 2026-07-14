@@ -2,10 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
+use lumino_export::lmpj::extract_pc_cc_events;
 use lumino_export::midi::{
     MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTrackData,
 };
-use lumino_export::lmpj::extract_pc_cc_events;
 use lumino_midi_loader::{ParsedMidi, bpm_to_tempo};
 
 use crate::runner::RunnerInner;
@@ -78,19 +78,18 @@ impl RunnerInner {
         Some(save_path)
     }
 
-    /// 保存文件（统一入口：显示格式选择对话框，支持 lmpj/mid/midi/dms）
+    /// 保存文件（统一入口：显示格式选择对话框，支持 lmpj/mid/midi）
     pub(super) fn handle_save_file(&mut self) {
         self.handle_save_single_file();
     }
 
-    /// 统一保存/导出为单文件：显示格式选择对话框，支持 lmpj/mid/midi/dms
+    /// 统一保存/导出为单文件：显示格式选择对话框，支持 lmpj/mid/midi
     pub(super) fn handle_save_single_file(&mut self) {
         let file_stem = self
             .midi_state
             .current_midi_source
             .as_ref()
             .or_else(|| self.midi_state.current_midi.as_ref().map(|m| &m.info.path))
-            .or_else(|| self.midi_state.current_dms.as_ref().map(|d| &d.info.path))
             .map(|p| get_file_stem(Path::new(p)))
             .unwrap_or_else(|| "untitled".to_string());
 
@@ -98,7 +97,6 @@ impl RunnerInner {
             .add_filter("Lumino MIDI Project", &["lmpj"])
             .add_filter("MIDI 文件 (.mid)", &["mid"])
             .add_filter("MIDI 文件 (.midi)", &["midi"])
-            .add_filter("Domino 项目", &["dms"])
             .set_file_name(format!("{file_stem}.lmpj"))
             .save_file()
         else {
@@ -110,7 +108,6 @@ impl RunnerInner {
         match extension.as_str() {
             "lmpj" => self.save_as_lmpj_project(save_path),
             "mid" | "midi" => self.save_as_midi_with_edits(save_path),
-            "dms" => self.save_as_dms_from_source(save_path),
             _ => tracing::warn!("不支持的保存格式: {}", extension),
         }
     }
@@ -447,18 +444,5 @@ impl RunnerInner {
                 let _ = file_service.save_as_midi(source, save_path).await;
             });
         }
-    }
-
-    /// 从 DMS 源保存
-    fn save_as_dms_from_source(&self, save_path: PathBuf) {
-        let Some(parsed_dms) = self.midi_state.current_dms.as_ref() else {
-            tracing::warn!("没有加载 DMS 文件，无法保存为 DMS 格式");
-            return;
-        };
-        let source = parsed_dms.info.path.clone();
-        let file_service = self.file_state.file_service.clone();
-        tokio::spawn(async move {
-            let _ = file_service.export_dms_to_midi(source, save_path).await;
-        });
     }
 }

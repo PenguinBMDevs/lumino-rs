@@ -1,5 +1,4 @@
 pub mod constants;
-pub mod dms;
 pub mod document;
 #[cfg(test)]
 pub mod document_tests;
@@ -13,7 +12,6 @@ pub mod quantize;
 pub mod streaming;
 pub mod track;
 
-pub use dms::DmsInfo;
 pub use document::MidiDocument;
 pub use error::{LoaderError, LoaderResult};
 pub use event::MidiEvent;
@@ -105,26 +103,4 @@ impl ParsedMidi {
     // midi_data 已在架构层面移除——LMPJ 保存时从内存 document 重建，
     // 不依赖原始 .mid 文件。如需原始 MIDI 字节（如导出标准 MIDI），
     // 调用方应自行从 info.path 读取或从 document 重建。
-}
-
-/// 解析后的 DMS 数据（轻量级）
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ParsedDms {
-    pub info: DmsInfo,
-    #[serde(skip)]
-    data: Option<lumino_dms::DmsLightweightData>,
-}
-
-impl ParsedDms {
-    pub fn parse_full(&self) -> Result<lumino_dms::DmsCompositeNode, String> {
-        self.data
-            .as_ref()
-            .ok_or_else(|| "需要加载完整DMS数据才能解析".to_string())?
-            .parse_full()
-            .map_err(|e| format!("解析 DMS 节点树失败: {e}"))
-    }
-
-    pub fn data_size(&self) -> usize {
-        self.data.as_ref().map(|d| d.len()).unwrap_or(0)
-    }
 }

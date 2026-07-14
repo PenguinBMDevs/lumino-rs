@@ -5,8 +5,8 @@ use lumino_midi_loader::MidiDocument;
 
 use crate::error::{ExportError, ExportResult};
 use crate::midi::{
-    MidiControlChangeEvent, MidiExportData, MidiExportOptions, MidiNoteEvent, MidiProgramChangeEvent,
-    MidiTempoEvent, MidiTrackData,
+    MidiControlChangeEvent, MidiExportData, MidiExportOptions, MidiNoteEvent,
+    MidiProgramChangeEvent, MidiTempoEvent, MidiTrackData,
 };
 
 /// 从 `MidiDocument.control_events` 按轨提取 PC/CC 事件。
@@ -219,9 +219,9 @@ mod tests {
     #[test]
     fn test_extract_cc_events() {
         let doc = make_doc(vec![
-            PackedControlEvent::control_change(0, 0, 0, 7, 100),   // track 0, CC7
-            PackedControlEvent::control_change(480, 0, 0, 10, 64),  // track 0, CC10
-            PackedControlEvent::control_change(0, 1, 1, 7, 80),     // track 1, CC7
+            PackedControlEvent::control_change(0, 0, 0, 7, 100), // track 0, CC7
+            PackedControlEvent::control_change(480, 0, 0, 10, 64), // track 0, CC10
+            PackedControlEvent::control_change(0, 1, 1, 7, 80),  // track 1, CC7
         ]);
         let (pc, cc) = extract_pc_cc_events(&doc);
 
@@ -277,9 +277,7 @@ mod tests {
     #[test]
     fn test_extract_pitch_bend_ignored() {
         // Pitch bend (kind=2) should be ignored
-        let doc = make_doc(vec![
-            PackedControlEvent::pitch_bend(0, 0, 0, 0x2000),
-        ]);
+        let doc = make_doc(vec![PackedControlEvent::pitch_bend(0, 0, 0, 0x2000)]);
         let (pc, cc) = extract_pc_cc_events(&doc);
         assert!(pc.is_empty());
         assert!(cc.is_empty());

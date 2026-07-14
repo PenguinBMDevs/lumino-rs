@@ -45,7 +45,6 @@ pub fn create_folder_structure(base: impl AsRef<Path>) -> ExportResult<()> {
     std::fs::create_dir_all(base.join(FolderPaths::IMAGE_DIR))?;
     std::fs::create_dir_all(base.join(FolderPaths::LOADED_DIR))?;
     std::fs::create_dir_all(base.join(FolderPaths::LOADED_DIR).join("mid"))?;
-    std::fs::create_dir_all(base.join(FolderPaths::LOADED_DIR).join("dms"))?;
     std::fs::create_dir_all(base.join(FolderPaths::LOADED_DIR).join("lmpj"))?;
     Ok(())
 }

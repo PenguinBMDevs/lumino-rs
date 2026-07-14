@@ -12,7 +12,6 @@ use crate::services::collaboration_service::CollaborationService;
 use crate::services::file_service::FileService;
 use crate::storage;
 
-pub use lumino_midi_loader::ParsedDms;
 pub use lumino_midi_loader::ParsedMidi;
 
 /// Runner 初始化错误
@@ -55,7 +54,6 @@ pub(crate) struct MidiState {
     pub(crate) midi: MidiManager,
     pub(crate) current_midi: Option<Arc<ParsedMidi>>,
     pub(crate) current_midi_source: Option<std::path::PathBuf>,
-    pub(crate) current_dms: Option<Arc<ParsedDms>>,
     pub(crate) midi_handler: MidiHandler,
 }
 
@@ -233,7 +231,6 @@ impl Runner {
                 midi,
                 current_midi: None,
                 current_midi_source: None,
-                current_dms: None,
                 midi_handler,
             },
             file_state: FileState {
