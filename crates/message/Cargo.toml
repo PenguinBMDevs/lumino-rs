@@ -12,4 +12,3 @@ workspace = true
 [dependencies]
 lumino-core = { workspace = true }
 lumino-event = { workspace = true }
-iced_core = "0.14.0"

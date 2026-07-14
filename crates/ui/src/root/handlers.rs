@@ -113,6 +113,18 @@ impl Root {
         }
     }
 
+    /// 处理单条消息（供测试与内部调用复用）
+    ///
+    /// 复刻应用运行时 `Host::route_message` 的分发组合：先尝试 `Root` 直接处理，
+    /// 未处理的消息再交给 `MessageRouter` 路由到各专用处理器（Toolbar/Dialog/...）。
+    /// 与运行时使用同一套分发逻辑，保证测试与产品行为一致。
+    pub fn update(&mut self, message: Message) {
+        if !self.try_handle_direct(&message) {
+            let mut router = create_message_router();
+            router.route(self, message);
+        }
+    }
+
     // ─── 子处理函数 ──────────────────────────────────────────────────────────
 
     /// 处理走带视图水平滚动
@@ -345,7 +357,8 @@ impl Root {
                 true
             }
             Message::CanvasBoundsChanged { offset, size } => {
-                self.editor.set_canvas_offset(*offset);
+                self.editor
+                    .set_canvas_offset(iced_core::Point::new(offset.x, offset.y));
                 self.editor
                     .set_canvas_size(iced_core::Point::new(size.width, size.height));
 

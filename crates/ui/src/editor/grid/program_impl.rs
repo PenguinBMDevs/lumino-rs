@@ -29,8 +29,8 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             || canvas.offset_y != bounds_pos.y
         {
             return Some(Action::publish(crate::Message::CanvasBoundsChanged {
-                offset: bounds_pos,
-                size: bounds_size,
+                offset: crate::message::Point2::new(bounds_pos.x, bounds_pos.y),
+                size: crate::message::Size2::new(bounds_size.width, bounds_size.height),
             }));
         }
 
@@ -73,7 +73,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                 }
                 if cursor_over_bounds.is_some() {
                     return Some(Action::publish(Message::EditorAction(EditorAction::Moved(
-                        local_pos,
+                        crate::message::Point2::new(local_pos.x, local_pos.y),
                     ))));
                 }
             }

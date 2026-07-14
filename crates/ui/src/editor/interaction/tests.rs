@@ -13,7 +13,9 @@ mod tests {
         assert!(!editor.notes_changed()); // 没有选中音符，notes_changed 不应变化
 
         // Moved 不应 panic
-        editor.handle_action(EditorAction::Moved(iced_core::Point::new(100.0, 200.0)));
+        editor.handle_action(EditorAction::Moved(crate::message::Point2::new(
+            100.0, 200.0,
+        )));
     }
 
     #[test]

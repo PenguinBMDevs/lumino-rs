@@ -1,20 +1,22 @@
 //! 编辑器相关消息类型
 
+use crate::Point2;
+
 /// 编辑器动作
 #[derive(Debug, Clone)]
 pub enum EditorAction {
     Pressed {
-        pos: iced_core::Point,
+        pos: Point2,
         shift: bool,
     },
-    Moved(iced_core::Point),
+    Moved(Point2),
     Released,
     Scrolled {
         delta_x: f32,
         delta_y: f32,
     },
     /// 双击事件
-    DoubleClicked(iced_core::Point),
+    DoubleClicked(Point2),
     /// 删除键按下（Delete 或 Backspace）
     DeletePressed,
     /// 剪切

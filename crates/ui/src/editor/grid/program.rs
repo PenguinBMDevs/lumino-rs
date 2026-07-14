@@ -91,12 +91,12 @@ impl<'a> PianoRollGrid<'a> {
 
         if self.detect_double_click(state, local_pos) {
             Some(canvas::Action::publish(Message::EditorAction(
-                EditorAction::DoubleClicked(local_pos),
+                EditorAction::DoubleClicked(crate::message::Point2::new(local_pos.x, local_pos.y)),
             )))
         } else {
             Some(canvas::Action::publish(Message::EditorAction(
                 EditorAction::Pressed {
-                    pos: local_pos,
+                    pos: crate::message::Point2::new(local_pos.x, local_pos.y),
                     shift: state.shift_pressed,
                 },
             )))

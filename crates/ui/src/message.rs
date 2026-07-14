@@ -12,6 +12,9 @@ pub use crate::{
 // 重新导出自 lumino-message 的所有公共类型
 pub use lumino_message::{
     AudioAction,
+    // 中立几何类型（domain 层，不依赖 iced_core）
+    Point2,
+    Size2,
     // 共享类型
     AudioChannels,
     AudioExportAction,

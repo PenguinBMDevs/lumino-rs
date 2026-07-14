@@ -23,11 +23,15 @@ impl Editor {
         self.editor_state.interaction.pending_audio_actions.clear();
 
         match action {
-            EditorAction::Pressed { pos, shift } => self.handle_pressed(pos, shift),
-            EditorAction::Moved(pos) => self.handle_moved(pos),
+            EditorAction::Pressed { pos, shift } => {
+                self.handle_pressed(iced_core::Point::new(pos.x, pos.y), shift)
+            }
+            EditorAction::Moved(pos) => self.handle_moved(iced_core::Point::new(pos.x, pos.y)),
             EditorAction::Released => self.handle_released(),
             EditorAction::Scrolled { delta_x, delta_y } => self.handle_scrolled(delta_x, delta_y),
-            EditorAction::DoubleClicked(pos) => self.handle_double_clicked(pos),
+            EditorAction::DoubleClicked(pos) => {
+                self.handle_double_clicked(iced_core::Point::new(pos.x, pos.y))
+            }
             EditorAction::DeletePressed => self.handle_delete_pressed(),
             EditorAction::Cut => self.cut_selected_notes(),
             EditorAction::Copy => {

@@ -72,8 +72,8 @@ pub enum Message<W, S, Se, T> {
     },
     /// Canvas 位置和尺寸更新
     CanvasBoundsChanged {
-        offset: iced_core::Point,
-        size: iced_core::Size,
+        offset: Point2,
+        size: Size2,
     },
     /// 菜单状态更新
     MenuStateChanged(bool),

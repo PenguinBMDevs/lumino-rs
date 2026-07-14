@@ -17,10 +17,12 @@
 
 pub mod audio;
 pub mod editor;
+pub mod geometry;
 pub mod midi;
 pub mod ui;
 
 pub use audio::*;
 pub use editor::*;
+pub use geometry::*;
 pub use midi::*;
 pub use ui::*;
