@@ -18,7 +18,7 @@ use tokio::time::sleep;
 use lumino_collaboration::client::ClientMessage;
 use lumino_collaboration::client::{CollaborationClient, CollaborationEvent};
 use lumino_collaboration::types::{
-    ClientConfig, MousePosition, SyncNote, NoteAction, NoteBatchOperation,
+    ClientConfig, MousePosition, NoteAction, NoteBatchOperation, SyncNote,
 };
 
 use common::EventCollector;

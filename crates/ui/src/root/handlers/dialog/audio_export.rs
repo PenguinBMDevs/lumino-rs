@@ -2,7 +2,7 @@
 
 use crate::message::{AudioExportAction, Message};
 use crate::root::Root;
-use crate::util::{parse_uint, parse_u8_bounded};
+use crate::util::{parse_u8_bounded, parse_uint};
 
 use super::DialogHandler;
 
@@ -49,10 +49,7 @@ impl DialogHandler {
                 });
 
                 if document.is_none() {
-                    tracing::info!(
-                        "内存中没有 MidiDocument，使用文件模式: {:?}",
-                        st.midi_path
-                    );
+                    tracing::info!("内存中没有 MidiDocument，使用文件模式: {:?}", st.midi_path);
                 }
 
                 let config = crate::event::window::dialog::AudioExportConfig {
@@ -182,8 +179,7 @@ impl DialogHandler {
                     .add_filter(&format!("{} 文件", st.format), &[ext])
                     .save_file()
                 {
-                    root.state.audio_export_dialog.output_path =
-                        path.to_string_lossy().to_string();
+                    root.state.audio_export_dialog.output_path = path.to_string_lossy().to_string();
                 }
             }
             A::BrowseMidi => {
@@ -194,8 +190,7 @@ impl DialogHandler {
                     .add_filter("所有文件", &["*"])
                     .pick_file()
                 {
-                    root.state.audio_export_dialog.midi_path =
-                        path.to_string_lossy().to_string();
+                    root.state.audio_export_dialog.midi_path = path.to_string_lossy().to_string();
                 }
             }
             A::BrowseSoundfont => {
@@ -226,8 +221,7 @@ impl DialogHandler {
             A::RenderFailed(error) => {
                 root.state.audio_export_dialog.is_rendering = false;
                 root.state.audio_export_dialog.render_error = Some(error.clone());
-                root.state.audio_export_dialog.render_message =
-                    format!("导出失败: {error}");
+                root.state.audio_export_dialog.render_message = format!("导出失败: {error}");
             }
             A::ResetRendering => {
                 root.state.audio_export_dialog.is_rendering = false;

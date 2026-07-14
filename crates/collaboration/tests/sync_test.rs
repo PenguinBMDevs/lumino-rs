@@ -4,7 +4,7 @@ use tokio::time::sleep;
 
 use lumino_collaboration::{
     client::{CollaborationClient, CollaborationEvent},
-    types::{ClientConfig, SyncNote, NoteAction, NoteBatchOperation},
+    types::{ClientConfig, NoteAction, NoteBatchOperation, SyncNote},
 };
 
 // 工具函数：创建客户端并等待连接和认证

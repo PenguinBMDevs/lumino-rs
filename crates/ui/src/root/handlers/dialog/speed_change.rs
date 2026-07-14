@@ -24,7 +24,8 @@ impl DialogHandler {
                 if let Some(factor) = root.state.speed_change_dialog.parse_factor() {
                     root.toolbar.speed_factor = factor;
                     tracing::info!("Root: 速度因子已更新为 {}", factor);
-                    root.state.dialog_result = Some(crate::host::DialogResult::SpeedChange { factor });
+                    root.state.dialog_result =
+                        Some(crate::host::DialogResult::SpeedChange { factor });
                     if !root
                         .editor
                         .editor_state

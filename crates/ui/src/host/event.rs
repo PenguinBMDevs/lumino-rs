@@ -27,11 +27,9 @@ impl Host {
         // 空格键：播放/暂停切换（统一走 toolbar 消息路径）
         if key == winit::keyboard::KeyCode::Space {
             if self.root.toolbar.is_playing {
-                self
-                    .route_message(message::Message::Toolbar(toolbar::Event::Pause));
+                self.route_message(message::Message::Toolbar(toolbar::Event::Pause));
             } else {
-                self
-                    .route_message(message::Message::Toolbar(toolbar::Event::Play));
+                self.route_message(message::Message::Toolbar(toolbar::Event::Play));
             }
             self.window_ctx.window.request_redraw();
             return;
@@ -49,8 +47,7 @@ impl Host {
             (winit::keyboard::KeyCode::KeyV, true, _) => Some(message::EditorAction::Paste),
             (winit::keyboard::KeyCode::KeyA, true, _) => Some(message::EditorAction::SelectAll),
             (winit::keyboard::KeyCode::KeyQ, true, _) => {
-                self
-                    .route_message(message::Message::Toolbar(toolbar::Event::Quantize));
+                self.route_message(message::Message::Toolbar(toolbar::Event::Quantize));
                 None
             }
             _ => None,

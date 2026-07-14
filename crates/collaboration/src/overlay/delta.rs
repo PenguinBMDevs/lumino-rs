@@ -136,7 +136,7 @@ impl RegionDeltaDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{SyncNote, NoteAction, NoteBatchOperation};
+    use crate::types::{NoteAction, NoteBatchOperation, SyncNote};
 
     fn make_note(tick: f32, key: u16, length: f32, track: usize) -> SyncNote {
         SyncNote {

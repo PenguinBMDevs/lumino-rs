@@ -3,22 +3,22 @@
 #[path = "toggle_animation.rs"]
 pub mod toggle_animation;
 
-#[path = "custom_precision_state.rs"]
-mod custom_precision_state;
-#[path = "project_settings_state.rs"]
-mod project_settings_state;
-#[path = "load_confirm_state.rs"]
-mod load_confirm_state;
-#[path = "collaboration_state.rs"]
-mod collaboration_state;
 #[path = "audio_export_state.rs"]
 mod audio_export_state;
-#[path = "video_export_state.rs"]
-mod video_export_state;
-#[path = "speed_change_state.rs"]
-mod speed_change_state;
+#[path = "collaboration_state.rs"]
+mod collaboration_state;
+#[path = "custom_precision_state.rs"]
+mod custom_precision_state;
 #[path = "export_progress_state.rs"]
 mod export_progress_state;
+#[path = "load_confirm_state.rs"]
+mod load_confirm_state;
+#[path = "project_settings_state.rs"]
+mod project_settings_state;
+#[path = "speed_change_state.rs"]
+mod speed_change_state;
+#[path = "video_export_state.rs"]
+mod video_export_state;
 
 // 重新导出所有对话框状态类型（保持原有路径不变：crate::state::root_state::Xxx）
 pub use audio_export_state::AudioExportDialogState;

@@ -14,7 +14,10 @@ use crate::root::handlers::MessageHandler;
 fn test_close_settings_dialog_preserves_dialog_type() {
     let mut root = Root::new_dialog("dark", DialogType::Settings);
     let mut handler = handlers::DialogHandler::new();
-    handler.handle(&mut root, Message::SettingsDialog(SettingsDialogAction::CloseDialog));
+    handler.handle(
+        &mut root,
+        Message::SettingsDialog(SettingsDialogAction::CloseDialog),
+    );
 
     // 关闭设置对话框不应复位 dialog_type（防止窗口销毁前一帧闪跳到精度面板）
     assert_eq!(

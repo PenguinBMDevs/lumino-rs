@@ -14,10 +14,10 @@ pub mod state;
 mod statusbar;
 pub mod titlebar;
 pub mod toolbar;
+pub mod util;
 mod view;
 pub mod wgpu_render_thread;
 pub(crate) mod widget;
-pub mod util;
 pub mod window;
 
 pub use host::{Host, NoteData, TrackNotes};

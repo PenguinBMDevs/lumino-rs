@@ -416,9 +416,12 @@ pub fn view_video_export_overlay<'a>(
                 text(format!("时长: {}", helpers::format_duration(duration_secs)))
                     .size(13)
                     .style(weak_text),
-                text(format!("总用时: {}", helpers::format_duration(*elapsed_secs)))
-                    .size(13)
-                    .style(weak_text),
+                text(format!(
+                    "总用时: {}",
+                    helpers::format_duration(*elapsed_secs)
+                ))
+                .size(13)
+                .style(weak_text),
                 text(format!("平均速度: {:.1} fps", avg_fps))
                     .size(13)
                     .style(weak_text),
@@ -503,4 +506,3 @@ pub fn view_video_export_overlay<'a>(
 
     Some(full.into())
 }
-

@@ -212,7 +212,14 @@ mod tests {
     fn test_lmtrack_encode_decode() {
         let meta = create_test_meta(0);
         let events = vec![
-            CompactEvent::new(0, 0, lumino_midi_model::compact::EventKind::NoteOn, 0, 60, 100),
+            CompactEvent::new(
+                0,
+                0,
+                lumino_midi_model::compact::EventKind::NoteOn,
+                0,
+                60,
+                100,
+            ),
             CompactEvent::new(
                 480,
                 0,

@@ -32,15 +32,21 @@ impl RunnerInner {
 
     /// 关闭对话框并记录日志（保持「先关闭后日志」顺序）。
     fn close_dialog_traced(&mut self, dialog: DialogType, label: &str) {
-        self.window_state.dialog_manager.mark_dialog_for_close(dialog);
+        self.window_state
+            .dialog_manager
+            .mark_dialog_for_close(dialog);
         tracing::info!("请求关闭{label}对话框");
     }
 
     fn handle_dialog_events(&mut self, window_event: lumino_ui::event::window::dialog::Event) {
         use lumino_ui::event::window::dialog::Event::*;
         match window_event {
-            OpenCustomPrecisionDialog => self.open_dialog_traced(DialogType::CustomPrecision, "自定义精度"),
-            CloseCustomPrecisionDialog => self.close_dialog_traced(DialogType::CustomPrecision, "自定义精度"),
+            OpenCustomPrecisionDialog => {
+                self.open_dialog_traced(DialogType::CustomPrecision, "自定义精度")
+            }
+            CloseCustomPrecisionDialog => {
+                self.close_dialog_traced(DialogType::CustomPrecision, "自定义精度")
+            }
             ApplyCustomPrecision(_, _) => {
                 // 应用精度（在对话框结果中处理）
             }
@@ -65,7 +71,9 @@ impl RunnerInner {
                     .dialog_manager
                     .open_project_settings(title);
             }
-            CloseProjectSettingsDialog => self.close_dialog_traced(DialogType::ProjectSettings, "工程设置"),
+            CloseProjectSettingsDialog => {
+                self.close_dialog_traced(DialogType::ProjectSettings, "工程设置")
+            }
             ApplyProjectSettings {
                 title,
                 tempo,
@@ -164,23 +172,17 @@ impl RunnerInner {
         };
         let interpolation_val = match interpolation {
             lumino_event::window::audio::Interpolation::None => AudioInterpolation::Nearest,
-            lumino_event::window::audio::Interpolation::Linear => {
-                AudioInterpolation::Linear
-            }
+            lumino_event::window::audio::Interpolation::Linear => AudioInterpolation::Linear,
         };
         let channel_threading_val = match channel_threading {
             lumino_event::window::audio::ThreadingOption::None => ThreadMode::None,
             lumino_event::window::audio::ThreadingOption::Auto => ThreadMode::Auto,
-            lumino_event::window::audio::ThreadingOption::Manual(n) => {
-                ThreadMode::Manual(n)
-            }
+            lumino_event::window::audio::ThreadingOption::Manual(n) => ThreadMode::Manual(n),
         };
         let key_threading_val = match key_threading {
             lumino_event::window::audio::ThreadingOption::None => ThreadMode::None,
             lumino_event::window::audio::ThreadingOption::Auto => ThreadMode::Auto,
-            lumino_event::window::audio::ThreadingOption::Manual(n) => {
-                ThreadMode::Manual(n)
-            }
+            lumino_event::window::audio::ThreadingOption::Manual(n) => ThreadMode::Manual(n),
         };
 
         let audio_codec = match audio_format {
@@ -234,9 +236,7 @@ impl RunnerInner {
             .spawn(move || {
                 let start = Instant::now();
                 let render_result = match &doc_clone {
-                    Some(doc) => {
-                        lumino_export::audio::render_audio_from_document(&config, doc)
-                    }
+                    Some(doc) => lumino_export::audio::render_audio_from_document(&config, doc),
                     None => lumino_export::audio::render_audio(&config),
                 };
 
@@ -299,9 +299,7 @@ impl RunnerInner {
             lumino_event::window::video::VideoCodec::Av1 => VideoCodec::Av1,
         };
         let backend = match backend {
-            lumino_event::window::video::EncoderBackend::Software => {
-                EncoderBackend::Software
-            }
+            lumino_event::window::video::EncoderBackend::Software => EncoderBackend::Software,
             lumino_event::window::video::EncoderBackend::VideoToolbox => {
                 EncoderBackend::VideoToolbox
             }
@@ -368,13 +366,7 @@ impl RunnerInner {
             Some(doc) => doc,
             None => {
                 tracing::error!("视频导出失败：无 MidiDocument（暂不支持流式模式）");
-                let _ = progress_tx.send((
-                    "导出失败：无 MIDI 数据".to_string(),
-                    -1.0,
-                    0,
-                    0.0,
-                    0.0,
-                ));
+                let _ = progress_tx.send(("导出失败：无 MIDI 数据".to_string(), -1.0, 0, 0.0, 0.0));
                 return;
             }
         };
@@ -384,14 +376,13 @@ impl RunnerInner {
         let render_mode_for_thread = render_mode.clone();
 
         // 预先提取 UI 配置中 HiRes 相关字段，避免将非 Send 的 self 捕获进后台线程
-        let hires_video_config = if render_mode_for_thread
-            == lumino_event::window::video::RenderMode::HiResTexture
-        {
-            let ui_config = &self.window_state.storage.config.get().ui;
-            Some(video_export::build_hires_config_for_video(ui_config))
-        } else {
-            None
-        };
+        let hires_video_config =
+            if render_mode_for_thread == lumino_event::window::video::RenderMode::HiResTexture {
+                let ui_config = &self.window_state.storage.config.get().ui;
+                Some(video_export::build_hires_config_for_video(ui_config))
+            } else {
+                None
+            };
         let hires_key_count = if self.window_state.storage.config.get().ui.enable_256key {
             256
         } else {
@@ -413,8 +404,7 @@ impl RunnerInner {
                     Ok(e) => e,
                     Err(e) => {
                         tracing::error!("FFmpeg 创建失败: {e}");
-                        let _ =
-                            progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
+                        let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
                         return;
                     }
                 };
@@ -431,8 +421,7 @@ impl RunnerInner {
                         ppq_u16,
                         hires_key_count,
                     );
-                    let tiles: Vec<lumino_gfx::GroupTile> =
-                        tiles_map.into_values().collect();
+                    let tiles: Vec<lumino_gfx::GroupTile> = tiles_map.into_values().collect();
                     let track_count = document.notes.len() as u16;
                     if cmd_sender
                         .send(RenderCommand::Control(
@@ -517,9 +506,7 @@ impl RunnerInner {
                 // 返回 true 表示取消或出错
                 // 用内层作用域确保闭包 drop 后 encoder 可被 finish 借用
                 {
-                    let mut process_frame = |data: Vec<u8>,
-                                             params: (f32, f32, f32, u32)|
-                     -> bool {
+                    let mut process_frame = |data: Vec<u8>, params: (f32, f32, f32, u32)| -> bool {
                         let mut data = data;
                         let (sx, zx, kw, ppq_val) = params;
 
@@ -551,8 +538,7 @@ impl RunnerInner {
                         // 预览帧：在 write_frame（move data）之前 clone 发送。
                         // 第一帧立即发送，让预览界面尽快有内容；后续按 200ms 节流。
                         if !preview_sent
-                            || last_preview_time.elapsed()
-                                >= std::time::Duration::from_millis(200)
+                            || last_preview_time.elapsed() >= std::time::Duration::from_millis(200)
                         {
                             // GPU 读回是 BGRA 格式，但 image::Handle::from_rgba 需要 RGBA
                             let mut preview_data = data.clone();
@@ -588,13 +574,7 @@ impl RunnerInner {
 
                         if let Err(e) = encoder.write_frame(data) {
                             tracing::error!("写入视频帧失败: {e}");
-                            let _ = progress_tx.send((
-                                format!("导出失败: {e}"),
-                                -1.0,
-                                0,
-                                0.0,
-                                0.0,
-                            ));
+                            let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
                             return true;
                         }
 
@@ -609,8 +589,7 @@ impl RunnerInner {
                                 smoothed_fps * 0.7 + fps * 0.3
                             };
                             let progress = processed_frames as f64 / total_frames as f64;
-                            let eta_secs =
-                                (total_frames - processed_frames) as f64 / smoothed_fps;
+                            let eta_secs = (total_frames - processed_frames) as f64 / smoothed_fps;
                             tracing::info!(
                                 "视频导出: 帧 {}/{} ({:.0}%), FPS={:.0}, ETA={:.0}s",
                                 processed_frames,
@@ -646,8 +625,7 @@ impl RunnerInner {
                             break;
                         }
                         let time_sec = frame as f64 / fps_f64;
-                        let tick =
-                            video_export::seconds_to_tick(time_sec, tempo_changes, ppq);
+                        let tick = video_export::seconds_to_tick(time_sec, tempo_changes, ppq);
 
                         // 计算 scroll_x / zoom_x，用于标尺小节号合成
                         let video_kb_width = 60.0f32;
@@ -657,26 +635,17 @@ impl RunnerInner {
                         let video_scroll_x = tick as f32 * video_zoom_x;
 
                         // 入队帧合成参数（与帧数据 FIFO 对应）
-                        param_queue.push_back((
-                            video_scroll_x,
-                            video_zoom_x,
-                            video_kb_width,
-                            ppq,
-                        ));
+                        param_queue.push_back((video_scroll_x, video_zoom_x, video_kb_width, ppq));
 
                         let params = video_export::build_video_render_params(
                             width, height, tick, &document, ppq, key_count,
                         );
 
                         if cmd_sender
-                            .send(RenderCommand::Control(
-                                ControlCommand::RenderVideoFrame {
-                                    params: Box::new(params),
-                                    render_mode: render_mode_for_thread
-                                        .as_str()
-                                        .to_string(),
-                                },
-                            ))
+                            .send(RenderCommand::Control(ControlCommand::RenderVideoFrame {
+                                params: Box::new(params),
+                                render_mode: render_mode_for_thread.as_str().to_string(),
+                            }))
                             .is_err()
                         {
                             tracing::error!("发送 RenderVideoFrame 命令失败");
@@ -730,8 +699,7 @@ impl RunnerInner {
                                 }
                             };
 
-                            let p =
-                                param_queue.pop_front().unwrap_or((0.0, 1.0, 60.0, ppq));
+                            let p = param_queue.pop_front().unwrap_or((0.0, 1.0, 60.0, ppq));
                             if process_frame(data, p) {
                                 cancelled = true;
                                 break;
@@ -747,9 +715,7 @@ impl RunnerInner {
                     while !param_queue.is_empty() && !cancelled {
                         match frame_rx.recv() {
                             Ok(data) => {
-                                let p = param_queue
-                                    .pop_front()
-                                    .unwrap_or((0.0, 1.0, 60.0, ppq));
+                                let p = param_queue.pop_front().unwrap_or((0.0, 1.0, 60.0, ppq));
                                 if process_frame(data, p) {
                                     cancelled = true;
                                 }

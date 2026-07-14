@@ -68,16 +68,13 @@ impl DialogHandler {
                         .unwrap_or_default(),
                     codec: lumino_event::window::video::VideoCodec::from_str(&codec)
                         .unwrap_or_default(),
-                    backend: lumino_event::window::video::EncoderBackend::from_str(
-                        &backend,
-                    )
-                    .unwrap_or_default(),
+                    backend: lumino_event::window::video::EncoderBackend::from_str(&backend)
+                        .unwrap_or_default(),
                     quality: lumino_event::window::video::QualityPreset::from_str(&quality)
                         .unwrap_or_default(),
                     render_mode: root.state.video_export_dialog.render_mode,
                 };
-                let ev =
-                    crate::event::window::Event::start_video_export(video_config, document);
+                let ev = crate::event::window::Event::start_video_export(video_config, document);
                 crate::event::emit(crate::event::Event::Window(ev));
             }
             V::CancelExport => {
@@ -89,12 +86,11 @@ impl DialogHandler {
             }
             V::ForceFinish => {
                 let st = &root.state.video_export_dialog;
-                root.state.video_export_dialog.overlay =
-                    VideoExportOverlayState::Completed {
-                        total_frames: st.total_frames,
-                        elapsed_secs: 0.0,
-                        avg_fps: st.render_fps,
-                    };
+                root.state.video_export_dialog.overlay = VideoExportOverlayState::Completed {
+                    total_frames: st.total_frames,
+                    elapsed_secs: 0.0,
+                    avg_fps: st.render_fps,
+                };
             }
             V::DismissOverlay => {
                 reset_video_export_overlay(root);
@@ -140,8 +136,7 @@ impl DialogHandler {
                     .add_filter(&st.container, &[ext.as_str()])
                     .save_file()
                 {
-                    root.state.video_export_dialog.output_path =
-                        path.to_string_lossy().to_string();
+                    root.state.video_export_dialog.output_path = path.to_string_lossy().to_string();
                 }
             }
             V::UpdateProgress {
@@ -162,8 +157,7 @@ impl DialogHandler {
                 // 由 Runner 回调设置具体字段，此处不处理
             }
             V::ExportFailed(err) => {
-                root.state.video_export_dialog.overlay =
-                    VideoExportOverlayState::Error(err);
+                root.state.video_export_dialog.overlay = VideoExportOverlayState::Error(err);
             }
             V::UpdatePreviewFrame { .. } => {
                 // 由 Host 直接处理，此处不需要
