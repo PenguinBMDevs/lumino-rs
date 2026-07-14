@@ -53,106 +53,15 @@ impl PlaybackManager {
             loop {
                 // 处理所有挂起的命令
                 while let Ok(cmd) = receiver.try_recv() {
-                    match cmd {
-                        Command::SetMidiOutput(output) => midi_output = Some(output),
-                        Command::ClearMidiOutput => midi_output = None,
-                        Command::SetCurrentTrackNotes(notes) => {
-                            engine.set_current_track_notes(notes)
-                        }
-                        Command::SetDocument(doc, track) => engine.set_document(doc, track),
-                        Command::SetMidiEvents(events) => engine.set_midi_events(events),
-                        Command::SetTempoChanges(changes) => {
-                            let mut p = engine.playback().lock();
-                            p.set_tempo_changes(changes);
-                        }
-                        Command::SetVelocityFilterThreshold(threshold) => {
-                            engine.set_velocity_filter_threshold(threshold);
-                        }
-                        Command::Play => engine.play(),
-                        Command::Pause => {
-                            engine.pause();
-                            if let Some(out) = &mut midi_output {
-                                // 释放所有通道的延音踏板，防止音符永久保持
-                                for ch in 0..16 {
-                                    let _ = out.control_change(ch, 64, 0);
-                                }
-                                // 停止当前发声的音符（保留 Release 阶段）
-                                let _ = out.all_notes_off();
-                            }
-                        }
-                        Command::Stop => {
-                            engine.stop();
-                            if let Some(out) = &mut midi_output {
-                                let _ = out.all_notes_off();
-                                let _ = out.reset_control();
-                            }
-                        }
-                        Command::Seek(tick) => {
-                            if let Some(out) = &mut midi_output {
-                                let _ = out.all_notes_off();
-                                let _ = out.reset_control();
-                            }
-                            engine.seek(tick);
-                        }
-                        Command::SetLooping(looping) => engine.set_looping(looping),
-                        Command::SetLoopRange(start, end) => engine.set_loop_range(start, end),
-                        Command::ClearLoopRange => engine.clear_loop_range(),
-                        Command::Quit => return,
+                    if matches!(cmd, Command::Quit) {
+                        return;
                     }
+                    Self::handle_command(cmd, &mut engine, &mut midi_output);
                 }
 
-                // 更新引擎并发送MIDI消息
+                // 更新引擎并发送 MIDI 消息
                 let messages = engine.update();
-                if let Some(out) = &mut midi_output {
-                    let msg_count = messages.len();
-
-                    for msg in messages.iter() {
-                        match msg {
-                            MidiMessage::NoteOn {
-                                channel,
-                                key,
-                                velocity,
-                            } => {
-                                let _ = out.note_on(*channel, *key, *velocity);
-                            }
-                            MidiMessage::NoteOff { channel, key } => {
-                                let _ = out.note_off(*channel, *key, 0);
-                            }
-                            MidiMessage::ControlChange {
-                                channel,
-                                controller,
-                                value,
-                            } => {
-                                tracing::debug!(
-                                    "PlaybackManager: 发送 CC ch={} cc={} val={}",
-                                    channel,
-                                    controller,
-                                    value,
-                                );
-                                let _ = out.control_change(*channel, *controller, *value);
-                            }
-                            MidiMessage::ProgramChange { channel, program } => {
-                                let _ = out.program_change(*channel, *program);
-                            }
-                            MidiMessage::PitchBend { channel, value } => {
-                                let _ = out.pitch_bend(*channel, *value);
-                            }
-                            MidiMessage::ChannelPressure { channel, pressure } => {
-                                let _ = out.channel_pressure(*channel, *pressure);
-                            }
-                            MidiMessage::PolyPressure {
-                                channel,
-                                key,
-                                pressure,
-                            } => {
-                                let _ = out.poly_pressure(*channel, *key, *pressure);
-                            }
-                        }
-                    }
-                    if msg_count > 0 {
-                        tracing::trace!("PlaybackManager: sent {} MIDI events", msg_count);
-                    }
-                }
+                Self::flush_midi_messages(&messages, &mut midi_output);
 
                 // 高精度定时等待：sleep 大部分时间，最后自旋等待精确唤醒。
                 // Windows 默认定时器分辨率为 15.6ms，纯 sleep(1ms) 实际睡 15.6ms，
@@ -170,6 +79,114 @@ impl PlaybackManager {
             sender,
             playback,
             thread_handle: Some(thread_handle),
+        }
+    }
+
+    /// 处理单个播放控制命令。
+    ///
+    /// 从 `new()` 的线程闭包中提取，按命令更新引擎状态和 MIDI 输出连接。
+    fn handle_command(
+        cmd: Command,
+        engine: &mut PlaybackEngine,
+        midi_output: &mut Option<Box<dyn lumino_midi_io::OutputConnection>>,
+    ) {
+        match cmd {
+            Command::SetMidiOutput(output) => *midi_output = Some(output),
+            Command::ClearMidiOutput => *midi_output = None,
+            Command::SetCurrentTrackNotes(notes) => engine.set_current_track_notes(notes),
+            Command::SetDocument(doc, track) => engine.set_document(doc, track),
+            Command::SetMidiEvents(events) => engine.set_midi_events(events),
+            Command::SetTempoChanges(changes) => {
+                let mut p = engine.playback().lock();
+                p.set_tempo_changes(changes);
+            }
+            Command::SetVelocityFilterThreshold(threshold) => {
+                engine.set_velocity_filter_threshold(threshold);
+            }
+            Command::Play => engine.play(),
+            Command::Pause => {
+                engine.pause();
+                if let Some(out) = midi_output {
+                    for ch in 0..16 {
+                        let _ = out.control_change(ch, 64, 0);
+                    }
+                    let _ = out.all_notes_off();
+                }
+            }
+            Command::Stop => {
+                engine.stop();
+                if let Some(out) = midi_output {
+                    let _ = out.all_notes_off();
+                    let _ = out.reset_control();
+                }
+            }
+            Command::Seek(tick) => {
+                if let Some(out) = midi_output {
+                    let _ = out.all_notes_off();
+                    let _ = out.reset_control();
+                }
+                engine.seek(tick);
+            }
+            Command::SetLooping(looping) => engine.set_looping(looping),
+            Command::SetLoopRange(start, end) => engine.set_loop_range(start, end),
+            Command::ClearLoopRange => engine.clear_loop_range(),
+            Command::Quit => {}
+        }
+    }
+
+    /// 将引擎输出的 MIDI 消息发送到 MIDI 输出设备。
+    fn flush_midi_messages(
+        messages: &[MidiMessage],
+        midi_output: &mut Option<Box<dyn lumino_midi_io::OutputConnection>>,
+    ) {
+        let Some(out) = midi_output else { return };
+        let msg_count = messages.len();
+
+        for msg in messages {
+            match msg {
+                MidiMessage::NoteOn {
+                    channel,
+                    key,
+                    velocity,
+                } => {
+                    let _ = out.note_on(*channel, *key, *velocity);
+                }
+                MidiMessage::NoteOff { channel, key } => {
+                    let _ = out.note_off(*channel, *key, 0);
+                }
+                MidiMessage::ControlChange {
+                    channel,
+                    controller,
+                    value,
+                } => {
+                    tracing::debug!(
+                        "PlaybackManager: 发送 CC ch={} cc={} val={}",
+                        channel,
+                        controller,
+                        value,
+                    );
+                    let _ = out.control_change(*channel, *controller, *value);
+                }
+                MidiMessage::ProgramChange { channel, program } => {
+                    let _ = out.program_change(*channel, *program);
+                }
+                MidiMessage::PitchBend { channel, value } => {
+                    let _ = out.pitch_bend(*channel, *value);
+                }
+                MidiMessage::ChannelPressure { channel, pressure } => {
+                    let _ = out.channel_pressure(*channel, *pressure);
+                }
+                MidiMessage::PolyPressure {
+                    channel,
+                    key,
+                    pressure,
+                } => {
+                    let _ = out.poly_pressure(*channel, *key, *pressure);
+                }
+            }
+        }
+        if msg_count > 0 {
+            tracing::trace!("PlaybackManager: sent {} MIDI events", msg_count);
         }
     }
 }

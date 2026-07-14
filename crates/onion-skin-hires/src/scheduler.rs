@@ -8,6 +8,7 @@
 //! 进度回调线程安全，多线程并发上报（与项目现有 ProgressManager 行为一致）。
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -35,6 +36,50 @@ pub type HiResProgressCallback = Arc<dyn Fn(&str, f32) + Send + Sync>;
 pub enum GenerateError {
     #[error("缓存 IO 错误: {0}")]
     CacheIo(String),
+}
+
+/// 高精度贴图缓存写入线程 + 共享上下文创建。
+///
+/// 创建一个独立后台线程从 `cache_rx` 接收 `CacheWriteJob` 并逐条写入硬盘，
+/// 避免 zstd 压缩 + 文件 I/O 阻塞主生成路径。
+/// 有界 channel（16）提供背压，防止无界堆积导致 OOM。
+///
+/// 返回 `(cache_tx, cache_handle)`，调用方应在生成完成后 `drop(cache_tx)`
+/// 再 `join` 句柄等待剩余缓存落盘。
+fn spawn_cache_writer(
+    cache_dir: PathBuf,
+) -> (
+    std::sync::mpsc::SyncSender<CacheWriteJob>,
+    std::thread::JoinHandle<()>,
+) {
+    const CACHE_BACKLOG: usize = 16;
+    let (cache_tx, cache_rx) = std::sync::mpsc::sync_channel::<CacheWriteJob>(CACHE_BACKLOG);
+    let cache_dir_for_thread = cache_dir.clone();
+    let cache_handle = std::thread::spawn(move || {
+        while let Ok(job) = cache_rx.recv() {
+            if let Err(e) =
+                cache::write_track_tile_cache(&job.cache_dir, &job.midi_hash, &job.tile, &job.meta)
+            {
+                warn!("缓存写入失败（不影响生成）: {e}");
+            }
+        }
+        tracing::debug!(
+            "高精度贴图缓存写入线程结束，目录: {:?}",
+            cache_dir_for_thread
+        );
+    });
+    (cache_tx, cache_handle)
+}
+
+/// 关闭缓存发送端，等待后台线程把剩余缓存落盘。
+fn join_cache_thread(
+    cache_tx: std::sync::mpsc::SyncSender<CacheWriteJob>,
+    cache_handle: std::thread::JoinHandle<()>,
+) {
+    drop(cache_tx);
+    if let Err(e) = cache_handle.join() {
+        warn!("缓存写入线程异常结束: {e:?}");
+    }
 }
 
 /// 生成全曲高精度贴图（rayon 并行）
@@ -82,24 +127,8 @@ pub fn generate_all_tiles(
     let width = config.tile_width_px;
     let measures_per_group = config.measures_per_group;
 
-    // ★ 缓存写入独立后台线程，避免 zstd+IO 阻塞 rayon 并行生成 ★
-    // 有界 channel 背压：队列最多缓存 16 个 tile，防止无界堆积导致 OOM。
-    const CACHE_BACKLOG: usize = 16;
-    let (cache_tx, cache_rx) = std::sync::mpsc::sync_channel::<CacheWriteJob>(CACHE_BACKLOG);
-    let cache_dir_for_thread = cache_dir.clone();
-    let cache_handle = std::thread::spawn(move || {
-        while let Ok(job) = cache_rx.recv() {
-            if let Err(e) =
-                cache::write_track_tile_cache(&job.cache_dir, &job.midi_hash, &job.tile, &job.meta)
-            {
-                warn!("缓存写入失败（不影响生成）: {e}");
-            }
-        }
-        tracing::debug!(
-            "高精度贴图缓存写入线程结束，目录: {:?}",
-            cache_dir_for_thread
-        );
-    });
+    // ★ 缓存写入独立后台线程 ★
+    let (cache_tx, cache_handle) = spawn_cache_writer(cache_dir.clone());
 
     let ctx = TileGenContext {
         ppq,
@@ -129,10 +158,7 @@ pub fn generate_all_tiles(
         .collect();
 
     // 关闭缓存发送端，等待后台线程把剩余缓存落盘
-    drop(cache_tx);
-    if let Err(e) = cache_handle.join() {
-        warn!("缓存写入线程异常结束: {e:?}");
-    }
+    join_cache_thread(cache_tx, cache_handle);
 
     // 合并所有音轨组结果到单个 HashMap
     let mut buffer = HashMap::with_capacity(total_tiles);
@@ -196,24 +222,8 @@ pub fn generate_all_tiles_streaming<F>(
     let measures_per_group = config.measures_per_group;
     let completed = Arc::new(AtomicUsize::new(0));
 
-    // ★ 缓存写入独立后台线程，避免 zstd+IO 阻塞 rayon 并行生成 ★
-    // 有界 channel 背压：队列最多缓存 16 个 tile，防止无界堆积导致 OOM。
-    const CACHE_BACKLOG: usize = 16;
-    let (cache_tx, cache_rx) = std::sync::mpsc::sync_channel::<CacheWriteJob>(CACHE_BACKLOG);
-    let cache_dir_for_thread = cache_dir.clone();
-    let cache_handle = std::thread::spawn(move || {
-        while let Ok(job) = cache_rx.recv() {
-            if let Err(e) =
-                cache::write_track_tile_cache(&job.cache_dir, &job.midi_hash, &job.tile, &job.meta)
-            {
-                warn!("缓存写入失败（不影响生成）: {e}");
-            }
-        }
-        tracing::debug!(
-            "高精度贴图缓存写入线程结束，目录: {:?}",
-            cache_dir_for_thread
-        );
-    });
+    // ★ 缓存写入独立后台线程 ★
+    let (cache_tx, cache_handle) = spawn_cache_writer(cache_dir.clone());
 
     let ctx = TileGenContext {
         ppq,
@@ -275,10 +285,7 @@ pub fn generate_all_tiles_streaming<F>(
     }
 
     // 关闭缓存发送端，等待后台线程把剩余缓存落盘
-    drop(cache_tx);
-    if let Err(e) = cache_handle.join() {
-        warn!("缓存写入线程异常结束: {e:?}");
-    }
+    join_cache_thread(cache_tx, cache_handle);
 
     if let Some(cb) = &progress_cb {
         cb("高精度贴图流式生成完成", 1.0);

@@ -10,6 +10,22 @@ use super::event::CollaborationEvent;
 use crate::client::{ClientState, CollaborationSession, EventCallback, ServerMessage};
 use crate::types::RemoteUser;
 
+/// 统一触发协作事件回调（消除各分支重复的 `if let Some(ref cb) = callback` 样板）。
+fn emit(callback: &Option<EventCallback>, event: CollaborationEvent) {
+    if let Some(cb) = callback {
+        cb(event);
+    }
+}
+
+/// 构造一个刚加入/同步的远端用户记录（三处重复的统一收口）。
+fn new_remote_user(info: crate::types::UserInfo) -> RemoteUser {
+    RemoteUser {
+        info,
+        mouse_position: None,
+        last_active: Instant::now(),
+    }
+}
+
 /// 处理服务器消息
 pub async fn handle_server_message(
     text: &str,
@@ -22,19 +38,10 @@ pub async fn handle_server_message(
     match msg {
         ServerMessage::UserJoined { user } => {
             let mut sess = session.write().await;
-            sess.remote_users.insert(
-                user.id.clone(),
-                RemoteUser {
-                    info: user.clone(),
-                    mouse_position: None,
-                    last_active: Instant::now(),
-                },
-            );
+            sess.remote_users.insert(user.id.clone(), new_remote_user(user.clone()));
             drop(sess);
 
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::UserJoined { user });
-            }
+            emit(&callback, CollaborationEvent::UserJoined { user });
         }
 
         ServerMessage::UserLeft { user_id } => {
@@ -42,9 +49,7 @@ pub async fn handle_server_message(
             sess.remote_users.remove(&user_id);
             drop(sess);
 
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::UserLeft { user_id });
-            }
+            emit(&callback, CollaborationEvent::UserLeft { user_id });
         }
 
         ServerMessage::MouseUpdate {
@@ -65,58 +70,39 @@ pub async fn handle_server_message(
             }
             drop(sess);
 
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::MouseUpdate {
-                    user_id,
-                    position,
-                    color,
-                    username,
-                });
-            }
+            emit(&callback, CollaborationEvent::MouseUpdate {
+                user_id,
+                position,
+                color,
+                username,
+            });
         }
 
         ServerMessage::NoteBatchUpdate { user_id, operation } => {
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::NoteBatch { user_id, operation });
-            }
+            emit(&callback, CollaborationEvent::NoteBatch { user_id, operation });
         }
 
         ServerMessage::MidiEventUpdate { user_id, event } => {
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::MidiEvent { user_id, event });
-            }
+            emit(&callback, CollaborationEvent::MidiEvent { user_id, event });
         }
 
         ServerMessage::MidiEventBatchUpdate { user_id, events } => {
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::MidiEventBatch { user_id, events });
-            }
+            emit(&callback, CollaborationEvent::MidiEventBatch { user_id, events });
         }
 
         ServerMessage::ProjectStateUpdate { user_id, update } => {
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::ProjectUpdate { user_id, update });
-            }
+            emit(&callback, CollaborationEvent::ProjectUpdate { user_id, update });
         }
 
         ServerMessage::FullSync { users, .. } => {
             let mut sess = session.write().await;
             sess.remote_users.clear();
             for user in &users {
-                sess.remote_users.insert(
-                    user.id.clone(),
-                    RemoteUser {
-                        info: user.clone(),
-                        mouse_position: None,
-                        last_active: Instant::now(),
-                    },
-                );
+                sess.remote_users.insert(user.id.clone(), new_remote_user(user.clone()));
             }
             drop(sess);
 
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::FullSync { users });
-            }
+            emit(&callback, CollaborationEvent::FullSync { users });
         }
 
         ServerMessage::RoomCreated { room } => {
@@ -126,9 +112,7 @@ pub async fn handle_server_message(
 
             *state.write().await = ClientState::InRoom;
 
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::RoomCreated { room });
-            }
+            emit(&callback, CollaborationEvent::RoomCreated { room });
         }
 
         ServerMessage::RoomJoined { room, users, .. } => {
@@ -138,30 +122,19 @@ pub async fn handle_server_message(
             // 添加所有用户
             for user in &users {
                 if Some(&user.id) != sess.current_user_id.as_ref() {
-                    sess.remote_users.insert(
-                        user.id.clone(),
-                        RemoteUser {
-                            info: user.clone(),
-                            mouse_position: None,
-                            last_active: Instant::now(),
-                        },
-                    );
+                    sess.remote_users.insert(user.id.clone(), new_remote_user(user.clone()));
                 }
             }
             drop(sess);
 
             *state.write().await = ClientState::InRoom;
 
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::RoomJoined { room, users });
-            }
+            emit(&callback, CollaborationEvent::RoomJoined { room, users });
         }
 
         ServerMessage::Error { error } => {
             error!("服务器错误: {}", error);
-            if let Some(ref cb) = callback {
-                cb(CollaborationEvent::Error { message: error });
-            }
+            emit(&callback, CollaborationEvent::Error { message: error });
         }
 
         _ => {
