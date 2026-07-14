@@ -1,7 +1,7 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::{Arc, Mutex, atomic::Ordering};
 use std::time::Instant;
 
-use super::super::super::commands::ControlCommand;
+use super::super::super::commands::{ControlCommand, FrameSender};
 use super::super::super::export_pipeline::ExportPipeline;
 use super::super::super::params::RenderParams;
 use super::super::commands::process_commands;
@@ -153,64 +153,15 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
         // 推进视频导出 inflight：即使没有新的 RenderVideoFrame 命令，
         // 也需要 try_read 已就绪的帧数据并发回 Runner，否则 inflight 满后
         // Runner 阻塞在 frame_rx.recv()，渲染线程也不再调用 try_read，形成死锁。
-        if let (Some(pipeline), Some(tx)) = (&mut export_pipeline, &export_frame_tx) {
-            while let Some(data) = pipeline.try_read() {
-                if tx.0.send(data).is_err() {
-                    tracing::warn!("视频帧发送失败：Runner 通道已关闭");
-                    break;
-                }
-            }
-        }
+        advance_export_inflight(&mut export_pipeline, &export_frame_tx);
 
         // ★ 流式接收：每帧循环 try_recv，收到已合并像素立即 upload（GPU DMA，非阻塞）★
-        loop {
-            match hires_result_rx.try_recv() {
-                Ok(HiResStreamMsg::TimeGroupMerged {
-                    track_group,
-                    time_group,
-                    pixels,
-                    width,
-                    height,
-                }) => {
-                    // ★ merge 已在后台线程完成，渲染线程仅做 GPU 上传（DMA 异步，非阻塞）★
-                    tracing::debug!(
-                        "[onion-render] 收到并上传整合组贴图: track_group={}, time_group={}, pixels={}",
-                        track_group,
-                        time_group,
-                        pixels.len()
-                    );
-                    if let Some(renderer) = &mut hires_renderer {
-                        let coord = crate::TileCoord::new(track_group, time_group);
-                        renderer.upload_tile(
-                            &ctx.device,
-                            &ctx.queue,
-                            coord,
-                            &pixels,
-                            width,
-                            height,
-                        );
-                    }
-                    // pixels 在此 drop，释放 CPU 像素缓冲
-                }
-                Ok(HiResStreamMsg::Finished) => {
-                    // 后台生成全部完毕：flush DMA
-                    if hires_renderer.is_some() {
-                        let flush =
-                            ctx.device
-                                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                                    label: Some("hires_stream_flush"),
-                                });
-                        ctx.queue.submit(std::iter::once(flush.finish()));
-                    }
-                    push_onion_progress(
-                        &channels.onion_progress,
-                        "高精度洋葱皮贴图流式生成+上传完成",
-                        1.0,
-                    );
-                }
-                Err(_) => break, // 无更多消息，退出本帧接收
-            }
-        }
+        drain_hires_stream(
+            &hires_result_rx,
+            &ctx,
+            &mut hires_renderer,
+            &channels.onion_progress,
+        );
 
         if should_shutdown {
             break;
@@ -321,6 +272,77 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     }
 
     tracing::info!("Render thread stopped");
+}
+
+/// 流式接收后台生成的高精度贴图并上传到 GPU。
+///
+/// 每帧循环 `try_recv`，收到已合并像素立即 `upload_tile`（GPU DMA，非阻塞）；
+/// 收到 `Finished` 后 flush DMA 并推送完成进度。无更多消息即退出本帧接收。
+fn drain_hires_stream(
+    hires_result_rx: &std::sync::mpsc::Receiver<HiResStreamMsg>,
+    ctx: &RenderContext,
+    hires_renderer: &mut Option<crate::HiResRenderer>,
+    onion_progress: &Arc<Mutex<Vec<(String, f32)>>>,
+) {
+    loop {
+        match hires_result_rx.try_recv() {
+            Ok(HiResStreamMsg::TimeGroupMerged {
+                track_group,
+                time_group,
+                pixels,
+                width,
+                height,
+            }) => {
+                // ★ merge 已在后台线程完成，渲染线程仅做 GPU 上传（DMA 异步，非阻塞）★
+                tracing::debug!(
+                    "[onion-render] 收到并上传整合组贴图: track_group={}, time_group={}, pixels={}",
+                    track_group,
+                    time_group,
+                    pixels.len()
+                );
+                if let Some(renderer) = hires_renderer {
+                    let coord = crate::TileCoord::new(track_group, time_group);
+                    renderer.upload_tile(&ctx.device, &ctx.queue, coord, &pixels, width, height);
+                }
+                // pixels 在此 drop，释放 CPU 像素缓冲
+            }
+            Ok(HiResStreamMsg::Finished) => {
+                // 后台生成全部完毕：flush DMA
+                if hires_renderer.is_some() {
+                    let flush = ctx
+                        .device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("hires_stream_flush"),
+                        });
+                    ctx.queue.submit(std::iter::once(flush.finish()));
+                }
+                push_onion_progress(
+                    onion_progress,
+                    "高精度洋葱皮贴图流式生成+上传完成",
+                    1.0,
+                );
+            }
+            Err(_) => break, // 无更多消息，退出本帧接收
+        }
+    }
+}
+
+/// 推进视频导出 inflight 帧读回。
+///
+/// 即使没有新的 `RenderVideoFrame` 命令，也需要 `try_read` 已就绪的帧数据并发回 Runner，
+/// 否则 inflight 满后 Runner 阻塞在 `frame_rx.recv()`，渲染线程也不再调用 `try_read`，形成死锁。
+fn advance_export_inflight(
+    export_pipeline: &mut Option<ExportPipeline>,
+    export_frame_tx: &Option<FrameSender>,
+) {
+    if let (Some(pipeline), Some(tx)) = (export_pipeline, export_frame_tx) {
+        while let Some(data) = pipeline.try_read() {
+            if tx.0.send(data).is_err() {
+                tracing::warn!("视频帧发送失败：Runner 通道已关闭");
+                break;
+            }
+        }
+    }
 }
 
 /// 处理视频导出帧：离屏渲染 → copy 到 staging → submit → map_async

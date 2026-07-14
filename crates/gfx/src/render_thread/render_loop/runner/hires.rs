@@ -22,6 +22,27 @@ pub(super) fn push_onion_progress(
     }
 }
 
+/// 确保高精度渲染器与配置已初始化（懒初始化）。
+///
+/// 三个控制命令（Generate / Regenerate / ShowDirtyOverlay）在无活动渲染器时
+/// 都需用同一份配置初始化 `HiResRenderer` 与 `hires_config`。此 helper 收口该逻辑，
+/// 避免三处重复构造。
+fn ensure_renderer_for_config(
+    ctx: &RenderContext,
+    hires_renderer: &mut Option<HiResRenderer>,
+    hires_config: &mut Option<HiResConfig>,
+    config: &HiResConfig,
+) {
+    if hires_renderer.is_none() {
+        *hires_renderer = Some(HiResRenderer::new(
+            &ctx.device,
+            config.clone(),
+            ctx.texture_format,
+        ));
+    }
+    *hires_config = Some(config.clone());
+}
+
 /// 处理高精度洋葱皮控制命令
 pub(super) fn handle_hires_control(
     cmd: ControlCommand,
@@ -42,12 +63,7 @@ pub(super) fn handle_hires_control(
             midi_hash,
         } => {
             // 创建/重建高精度渲染器
-            *hires_renderer = Some(HiResRenderer::new(
-                &ctx.device,
-                config.clone(),
-                ctx.texture_format,
-            ));
-            *hires_config = Some(config.clone());
+            ensure_renderer_for_config(ctx, hires_renderer, hires_config, &config);
 
             // 元数据必须在后台线程启动前设置（regen 安全）
             // track_groups 固定为 1：流式生成已将全部 track_group 合并为一张全轨贴图
@@ -141,20 +157,13 @@ pub(super) fn handle_hires_control(
                 hires_meta.is_some()
             );
             // 若尚未创建高精度渲染器（干净启动 / 新建工程），用当前配置初始化
-            if hires_renderer.is_none() {
-                tracing::debug!("[onion-render] RegenerateHiResTrack: 初始化 HiResRenderer");
-                *hires_renderer = Some(HiResRenderer::new(
-                    &ctx.device,
-                    config.clone(),
-                    ctx.texture_format,
-                ));
-            }
-            *hires_config = Some(config.clone());
+            tracing::debug!("[onion-render] RegenerateHiResTrack: 初始化 HiResRenderer");
+            ensure_renderer_for_config(ctx, hires_renderer, hires_config, &config);
 
             // 若元数据不存在（未执行过全曲生成），用命令参数重建元数据
             // track_groups 固定为 1：与流式生成的合并策略一致
+            tracing::debug!("[onion-render] RegenerateHiResTrack: 初始化 hires_meta");
             if hires_meta.is_none() {
-                tracing::debug!("[onion-render] RegenerateHiResTrack: 初始化 hires_meta");
                 let time_groups = config.time_group_count(total_ticks, ppq);
                 let ticks_per_group = config.ticks_per_group(ppq);
                 *hires_meta = Some(HiResMeta {
@@ -289,21 +298,14 @@ pub(super) fn handle_hires_control(
                 hires_meta.is_some()
             );
             // 若尚未创建高精度渲染器，用当前配置初始化
-            if hires_renderer.is_none() {
-                tracing::debug!("[onion-render] ShowHiResDirtyOverlay: 初始化 HiResRenderer");
-                *hires_renderer = Some(HiResRenderer::new(
-                    &ctx.device,
-                    config.clone(),
-                    ctx.texture_format,
-                ));
-            }
-            *hires_config = Some(config.clone());
+            tracing::debug!("[onion-render] ShowHiResDirtyOverlay: 初始化 HiResRenderer");
+            ensure_renderer_for_config(ctx, hires_renderer, hires_config, &config);
 
             // 干净启动 / 新建工程时元数据可能为空，必须初始化
             // track_groups 固定为 1：与流式生成的全轨合并策略一致
             let needed_track_count = track_count.max(track_idx + 1);
+            tracing::debug!("[onion-render] ShowHiResDirtyOverlay: 初始化 hires_meta");
             if hires_meta.is_none() {
-                tracing::debug!("[onion-render] ShowHiResDirtyOverlay: 初始化 hires_meta");
                 let time_groups = config.time_group_count(total_ticks, ppq);
                 let ticks_per_group = config.ticks_per_group(ppq);
                 *hires_meta = Some(HiResMeta {

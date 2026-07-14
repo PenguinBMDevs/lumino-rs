@@ -205,7 +205,6 @@ impl Root {
             if manager.state() != crate::playback::PlaybackState::Playing {
                 return None;
             }
-            manager.update();
             Some(manager.current_tick())
         } else {
             None
