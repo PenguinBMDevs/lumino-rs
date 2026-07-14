@@ -1,7 +1,10 @@
 //! 对话框管理处理器
 
 use crate::host::DialogResult;
-use crate::message::{AudioExportAction, Message, SpeedChangeAction, VideoExportAction};
+use crate::message::{
+    AudioExportAction, CustomPrecisionAction, Message, ProjectSettingsAction, SpeedChangeAction,
+    VideoExportAction,
+};
 use crate::root::Root;
 use crate::root::handlers::MessageHandler;
 use crate::state::root_state::VideoExportOverlayState;
@@ -91,48 +94,50 @@ impl Default for DialogHandler {
 impl MessageHandler for DialogHandler {
     fn handle(&mut self, root: &mut Root, msg: Message) -> Option<Message> {
         match msg {
-            Message::OpenCustomPrecisionDialog => {
-                self.handle_custom_precision_dialog_open(root);
-                None
-            }
-            Message::CloseCustomPrecisionDialog => {
-                self.handle_custom_precision_dialog_close(root);
-                None
-            }
-            Message::ConfirmCustomPrecision => {
-                self.handle_confirm_custom_precision(root);
-                None
-            }
-            Message::CustomPrecisionTupletCountChanged(value) => {
-                Self::update_precision_if_digit(
-                    &mut root.state.custom_precision_dialog.tuplet_count,
-                    &value,
-                );
-                None
-            }
-            Message::CustomPrecisionTupletTypeChanged(value) => {
-                root.state.custom_precision_dialog.tuplet_type = value;
-                root.state.custom_precision_dialog.tuplet_count = value.value().to_string();
-                None
-            }
-            Message::CustomPrecisionDotTypeChanged(value) => {
-                root.state.custom_precision_dialog.dot_type = value;
-                None
-            }
-            Message::CustomPrecisionNoteValueChanged(value) => {
-                Self::update_precision_if_digit(
-                    &mut root.state.custom_precision_dialog.note_value,
-                    &value,
-                );
-                None
-            }
-            Message::CustomPrecisionDivisorChanged(value) => {
-                Self::update_precision_if_digit(
-                    &mut root.state.custom_precision_dialog.divisor,
-                    &value,
-                );
-                None
-            }
+            Message::CustomPrecision(action) => match action {
+                CustomPrecisionAction::OpenDialog => {
+                    self.handle_custom_precision_dialog_open(root);
+                    None
+                }
+                CustomPrecisionAction::CloseDialog => {
+                    self.handle_custom_precision_dialog_close(root);
+                    None
+                }
+                CustomPrecisionAction::Confirm => {
+                    self.handle_confirm_custom_precision(root);
+                    None
+                }
+                CustomPrecisionAction::TupletCountChanged(value) => {
+                    Self::update_precision_if_digit(
+                        &mut root.state.custom_precision_dialog.tuplet_count,
+                        &value,
+                    );
+                    None
+                }
+                CustomPrecisionAction::TupletTypeChanged(value) => {
+                    root.state.custom_precision_dialog.tuplet_type = value;
+                    root.state.custom_precision_dialog.tuplet_count = value.value().to_string();
+                    None
+                }
+                CustomPrecisionAction::DotTypeChanged(value) => {
+                    root.state.custom_precision_dialog.dot_type = value;
+                    None
+                }
+                CustomPrecisionAction::NoteValueChanged(value) => {
+                    Self::update_precision_if_digit(
+                        &mut root.state.custom_precision_dialog.note_value,
+                        &value,
+                    );
+                    None
+                }
+                CustomPrecisionAction::DivisorChanged(value) => {
+                    Self::update_precision_if_digit(
+                        &mut root.state.custom_precision_dialog.divisor,
+                        &value,
+                    );
+                    None
+                }
+            },
             Message::ConfirmLoadConfirm => {
                 root.handle_confirm_load();
                 None
@@ -141,35 +146,36 @@ impl MessageHandler for DialogHandler {
                 root.handle_cancel_load();
                 None
             }
-            // 工程设置对话框消息
-            Message::OpenProjectSettingsDialog => {
-                root.state.project_settings_dialog.is_open = true;
-                None
-            }
-            Message::CloseProjectSettingsDialog => {
-                root.state.project_settings_dialog.is_open = false;
-                root.state.dialog_result = Some(DialogResult::Cancel);
-                None
-            }
-            Message::ConfirmProjectSettings => {
-                self.handle_confirm_project_settings(root);
-                None
-            }
-            Message::ProjectSettingsTitleChanged(value) => {
-                root.state.project_settings_dialog.title = value;
-                None
-            }
-            Message::ProjectSettingsTempoChanged(value) => {
-                // 只允许数字和小数点
-                if value.chars().all(|c| c.is_ascii_digit() || c == '.') {
-                    root.state.project_settings_dialog.tempo = value;
+            Message::ProjectSettings(action) => match action {
+                ProjectSettingsAction::OpenDialog => {
+                    root.state.project_settings_dialog.is_open = true;
+                    None
                 }
-                None
-            }
-            Message::ProjectSettingsCopyrightChanged(value) => {
-                root.state.project_settings_dialog.copyright = value;
-                None
-            }
+                ProjectSettingsAction::CloseDialog => {
+                    root.state.project_settings_dialog.is_open = false;
+                    root.state.dialog_result = Some(DialogResult::Cancel);
+                    None
+                }
+                ProjectSettingsAction::Confirm => {
+                    self.handle_confirm_project_settings(root);
+                    None
+                }
+                ProjectSettingsAction::TitleChanged(value) => {
+                    root.state.project_settings_dialog.title = value;
+                    None
+                }
+                ProjectSettingsAction::TempoChanged(value) => {
+                    // 只允许数字和小数点
+                    if value.chars().all(|c| c.is_ascii_digit() || c == '.') {
+                        root.state.project_settings_dialog.tempo = value;
+                    }
+                    None
+                }
+                ProjectSettingsAction::CopyrightChanged(value) => {
+                    root.state.project_settings_dialog.copyright = value;
+                    None
+                }
+            },
             // 设置对话框消息
             Message::OpenSettingsDialog => {
                 root.state.dialog_type = crate::state::root_state::DialogType::Settings;
@@ -478,7 +484,7 @@ impl MessageHandler for DialogHandler {
                             .unwrap_or_default(),
                             quality: lumino_event::window::video::QualityPreset::from_str(&quality)
                                 .unwrap_or_default(),
-                            render_mode: root.state.video_export_dialog.render_mode.clone(),
+                            render_mode: root.state.video_export_dialog.render_mode,
                         };
                         let ev =
                             crate::event::window::Event::start_video_export(video_config, document);

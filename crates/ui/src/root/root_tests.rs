@@ -1,4 +1,5 @@
 use super::*;
+use crate::message::ProjectSettingsAction;
 use crate::root::handlers::MessageHandler;
 
 // ================================================================
@@ -31,7 +32,10 @@ fn test_close_settings_dialog_preserves_dialog_type() {
 fn test_close_project_settings_dialog_preserves_dialog_type() {
     let mut root = Root::new_dialog("dark", DialogType::ProjectSettings);
     let mut handler = handlers::DialogHandler::new();
-    handler.handle(&mut root, Message::CloseProjectSettingsDialog);
+    handler.handle(
+        &mut root,
+        Message::ProjectSettings(ProjectSettingsAction::CloseDialog),
+    );
 
     assert_eq!(
         root.state.dialog_type,

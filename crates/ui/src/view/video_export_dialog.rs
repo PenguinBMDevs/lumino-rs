@@ -139,7 +139,7 @@ pub fn view_video_export_dialog<'a>(
             let render_modes = vec![RenderMode::NoteRectangle, RenderMode::HiResTexture];
             row![
                 text("渲染模式:").size(14).style(label_style).width(100),
-                pick_list(render_modes, Some(state.render_mode.clone()), |v| {
+                pick_list(render_modes, Some(state.render_mode), |v| {
                     Message::VideoExport(VideoExportAction::RenderModeChanged(v))
                 })
                 .width(Length::Fixed(200.0)),

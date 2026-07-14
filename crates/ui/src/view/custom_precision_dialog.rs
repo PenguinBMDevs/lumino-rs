@@ -2,7 +2,7 @@ use iced_core::Length;
 use iced_widget::{button, column, container, pick_list, row, space, text, text_input};
 use lumino_core::i18n::{Language, main_translations};
 
-use crate::message::Message;
+use crate::message::{CustomPrecisionAction, Message};
 use crate::state::root_state::CustomPrecisionDialogState;
 use crate::toolbar::DotType;
 
@@ -75,7 +75,7 @@ pub fn view_custom_precision_dialog<'a>(
                 .on_input_maybe(if is_tuplet_disabled {
                     None
                 } else {
-                    Some(Message::CustomPrecisionTupletCountChanged)
+                    Some(|s| Message::CustomPrecision(CustomPrecisionAction::TupletCountChanged(s)))
                 })
                 .padding([6, 10])
                 .width(Length::Fixed(50.0))
@@ -85,7 +85,7 @@ pub fn view_custom_precision_dialog<'a>(
         space().width(8),
         // 符点类型下拉框
         pick_list(dot_options, Some(current_dot), |ld| {
-            Message::CustomPrecisionDotTypeChanged(ld.inner)
+            Message::CustomPrecision(CustomPrecisionAction::DotTypeChanged(ld.inner))
         })
         .padding([6, 8])
         .width(Length::Fixed(100.0)),
@@ -93,7 +93,7 @@ pub fn view_custom_precision_dialog<'a>(
         // 分音符值输入框
         container(
             text_input("", &state.note_value)
-                .on_input(Message::CustomPrecisionNoteValueChanged)
+                .on_input(|s| Message::CustomPrecision(CustomPrecisionAction::NoteValueChanged(s)))
                 .padding([6, 10])
                 .width(Length::Fixed(50.0))
         )
@@ -119,7 +119,7 @@ pub fn view_custom_precision_dialog<'a>(
         space().width(50),
         container(
             text_input("", &state.divisor)
-                .on_input(Message::CustomPrecisionDivisorChanged)
+                .on_input(|s| Message::CustomPrecision(CustomPrecisionAction::DivisorChanged(s)))
                 .padding([6, 10])
                 .width(Length::Fixed(50.0))
         )
@@ -136,7 +136,7 @@ pub fn view_custom_precision_dialog<'a>(
     // 右侧按钮区域（垂直排列）
     let buttons = column![
         button(text(t.precision_ok).size(14))
-            .on_press(Message::ConfirmCustomPrecision)
+            .on_press(Message::CustomPrecision(CustomPrecisionAction::Confirm))
             .padding([8, 32])
             .width(Length::Fixed(100.0))
             .style(move |_theme: &iced_core::Theme, status| {
@@ -158,7 +158,7 @@ pub fn view_custom_precision_dialog<'a>(
             }),
         space().height(12),
         button(text(t.precision_cancel).size(14))
-            .on_press(Message::CloseCustomPrecisionDialog)
+            .on_press(Message::CustomPrecision(CustomPrecisionAction::CloseDialog))
             .padding([8, 32])
             .width(Length::Fixed(100.0))
             .style(move |_theme: &iced_core::Theme, status| {

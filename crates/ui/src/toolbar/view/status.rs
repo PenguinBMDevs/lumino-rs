@@ -5,6 +5,7 @@
 use iced_core::Alignment;
 use iced_widget::{button, container, pick_list, row, space, text};
 
+use crate::message::CustomPrecisionAction;
 use crate::resources::icon;
 use crate::toolbar::{Event, NotePrecision, Toolbar};
 use crate::widget;
@@ -65,7 +66,7 @@ impl Toolbar {
                 pick_list(precision_options, Some(current_precision), |lp| {
                     if lp.inner == NotePrecision::Custom {
                         // 选择自定义时，发送消息到Root打开对话框
-                        Message::OpenCustomPrecisionDialog
+                        Message::CustomPrecision(CustomPrecisionAction::OpenDialog)
                     } else {
                         Event::precision_changed(lp.inner)
                     }

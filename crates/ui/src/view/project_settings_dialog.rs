@@ -2,7 +2,7 @@ use iced_core::Length;
 use iced_widget::{button, column, container, row, scrollable, space, text, text_input};
 use lumino_core::i18n::{Language, main_translations};
 
-use crate::message::Message;
+use crate::message::{Message, ProjectSettingsAction};
 use crate::state::root_state::ProjectSettingsDialogState;
 
 /// 渲染工程设置对话框
@@ -45,7 +45,7 @@ pub fn view_project_settings_dialog<'a>(
     let title_label = text(t.project_name_label).size(14).style(label_style);
     let title_input = container(
         text_input(t.project_name_placeholder, &state.title)
-            .on_input(Message::ProjectSettingsTitleChanged)
+            .on_input(|s| Message::ProjectSettings(ProjectSettingsAction::TitleChanged(s)))
             .padding([6, 10])
             .width(Length::Fill),
     )
@@ -56,7 +56,7 @@ pub fn view_project_settings_dialog<'a>(
     let tempo_label = text(t.project_bpm_label).size(14).style(label_style);
     let tempo_input = container(
         text_input("120", &state.tempo)
-            .on_input(Message::ProjectSettingsTempoChanged)
+            .on_input(|s| Message::ProjectSettings(ProjectSettingsAction::TempoChanged(s)))
             .padding([6, 10])
             .width(Length::Fill),
     )
@@ -76,7 +76,7 @@ pub fn view_project_settings_dialog<'a>(
     let copyright_label = text(t.project_copyright_label).size(14).style(label_style);
     let copyright_input = container(
         text_input(t.project_copyright_placeholder, &state.copyright)
-            .on_input(Message::ProjectSettingsCopyrightChanged)
+            .on_input(|s| Message::ProjectSettings(ProjectSettingsAction::CopyrightChanged(s)))
             .padding([6, 10])
             .width(Length::Fill),
     )
@@ -101,7 +101,7 @@ pub fn view_project_settings_dialog<'a>(
 
     // 按钮区域
     let ok_button = button(text(t.project_ok).size(14))
-        .on_press(Message::ConfirmProjectSettings)
+        .on_press(Message::ProjectSettings(ProjectSettingsAction::Confirm))
         .padding([8, 32])
         .width(Length::Fixed(100.0))
         .style(move |_theme: &iced_core::Theme, status| {
@@ -123,7 +123,7 @@ pub fn view_project_settings_dialog<'a>(
         });
 
     let cancel_button = button(text(t.project_cancel).size(14))
-        .on_press(Message::CloseProjectSettingsDialog)
+        .on_press(Message::ProjectSettings(ProjectSettingsAction::CloseDialog))
         .padding([8, 32])
         .width(Length::Fixed(100.0))
         .style(move |_theme: &iced_core::Theme, status| {

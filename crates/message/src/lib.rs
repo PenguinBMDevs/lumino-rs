@@ -5,8 +5,10 @@
 
 pub mod audio_export;
 pub mod collaboration;
+pub mod custom_precision;
 pub mod loop_range;
 pub mod pattern;
+pub mod project_settings;
 pub mod speed_change;
 pub mod types;
 pub mod velocity;
@@ -14,8 +16,10 @@ pub mod video_export;
 
 pub use audio_export::AudioExportAction;
 pub use collaboration::CollaborationAction;
+pub use custom_precision::CustomPrecisionAction;
 pub use loop_range::LoopRangeAction;
 pub use pattern::PatternAction;
+pub use project_settings::ProjectSettingsAction;
 pub use speed_change::SpeedChangeAction;
 pub use types::*;
 pub use velocity::VelocityAction;
@@ -77,40 +81,16 @@ pub enum Message<W, S, Se, T> {
     ToggleSettings,
     /// 工具栏事件
     Toolbar(T),
-    /// 打开自定义精度对话框
-    OpenCustomPrecisionDialog,
-    /// 关闭自定义精度对话框
-    CloseCustomPrecisionDialog,
-    /// 确认自定义精度
-    ConfirmCustomPrecision,
-    /// 三连音数量变更
-    CustomPrecisionTupletCountChanged(String),
-    /// 三连音类型变更
-    CustomPrecisionTupletTypeChanged(TupletType),
-    /// 符点类型变更
-    CustomPrecisionDotTypeChanged(DotType),
-    /// 分音符值变更
-    CustomPrecisionNoteValueChanged(String),
-    /// 除数变更
-    CustomPrecisionDivisorChanged(String),
+    /// 自定义精度对话框动作
+    CustomPrecision(CustomPrecisionAction),
     /// 协作动作
     Collaboration(CollaborationAction),
     /// 加载确认对话框 - 确认
     ConfirmLoadConfirm,
     /// 加载确认对话框 - 取消
     CloseLoadConfirmDialog,
-    /// 打开工程设置对话框
-    OpenProjectSettingsDialog,
-    /// 关闭工程设置对话框
-    CloseProjectSettingsDialog,
-    /// 确认工程设置
-    ConfirmProjectSettings,
-    /// 工程设置 - 项目名称变更
-    ProjectSettingsTitleChanged(String),
-    /// 工程设置 - BPM 速度变更
-    ProjectSettingsTempoChanged(String),
-    /// 工程设置 - 版权信息变更
-    ProjectSettingsCopyrightChanged(String),
+    /// 工程设置对话框动作
+    ProjectSettings(ProjectSettingsAction),
     /// 打开设置对话框
     OpenSettingsDialog,
     /// 关闭设置对话框

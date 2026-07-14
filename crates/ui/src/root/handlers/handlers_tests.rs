@@ -1,5 +1,5 @@
 use super::*;
-use crate::message::Message;
+use crate::message::{CustomPrecisionAction, Message};
 use crate::root::Root;
 use lumino_core::storage::config::UiConfig;
 
@@ -80,7 +80,10 @@ fn test_dialog_handler_opens_custom_precision() {
     let mut root = create_root();
 
     let _ = crate::event::take_events();
-    let result = handler.handle(&mut root, Message::OpenCustomPrecisionDialog);
+    let result = handler.handle(
+        &mut root,
+        Message::CustomPrecision(CustomPrecisionAction::OpenDialog),
+    );
     assert!(result.is_none(), "处理器应消费消息");
 
     let emitted = crate::event::take_events();
