@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use lumino_export::midi::{
     MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTrackData,
 };
+use lumino_export::lmpj::extract_pc_cc_events;
 use lumino_midi_loader::{ParsedMidi, bpm_to_tempo};
 
 use crate::runner::RunnerInner;
@@ -179,6 +180,14 @@ impl RunnerInner {
             return None;
         }
 
+        // 提取源文档的 PC/CC 事件（如果有的话）
+        let pc_cc_events = self
+            .midi_state
+            .current_midi
+            .as_ref()
+            .and_then(|pm| pm.document.as_ref())
+            .map(|doc| extract_pc_cc_events(doc));
+
         let (notes, tempo_events) = {
             let ui = self.window_state.window.ui();
             let notes = ui.get_editor_notes();
@@ -211,6 +220,14 @@ impl RunnerInner {
                         duration: (length as u32).max(1),
                     })
                     .collect();
+                let track_id = i as u16;
+                let (program_changes, control_changes) = match &pc_cc_events {
+                    Some((pc, cc)) => (
+                        pc.get(&track_id).cloned().unwrap_or_default(),
+                        cc.get(&track_id).cloned().unwrap_or_default(),
+                    ),
+                    None => (Vec::new(), Vec::new()),
+                };
                 MidiTrackData {
                     notes: midi_notes,
                     tempos: if i == 0 {
@@ -218,6 +235,8 @@ impl RunnerInner {
                     } else {
                         Vec::new()
                     },
+                    program_changes,
+                    control_changes,
                     ..Default::default()
                 }
             })
@@ -260,7 +279,7 @@ impl RunnerInner {
         Some((info, midi_bytes))
     }
 
-    /// 当编辑器 tempo 与文档不一致时，重建 MIDI 字节（保留文档音符，替换 tempo 事件）
+    /// 当编辑器 tempo 与文档不一致时，重建 MIDI 字节（保留文档音符 + PC/CC 事件，替换 tempo 事件）
     fn maybe_rebuild_midi_with_tempo(&self, parsed_midi: &ParsedMidi) -> Option<Vec<u8>> {
         // 无条件重建：保证工程设置/指挥轨道 tempo 编辑总被保存
         let document = parsed_midi.document.as_ref()?;
@@ -282,6 +301,9 @@ impl RunnerInner {
                 .collect()
         };
 
+        // 提取 PC/CC 事件并按轨分组
+        let (pc_by_track, cc_by_track) = extract_pc_cc_events(document);
+
         let mut tracks: Vec<MidiTrackData> = (0..track_count)
             .map(|track_id| {
                 let doc_notes = document.get_track_notes(track_id);
@@ -297,6 +319,8 @@ impl RunnerInner {
                     .collect();
                 MidiTrackData {
                     notes: midi_notes,
+                    program_changes: pc_by_track.get(&track_id).cloned().unwrap_or_default(),
+                    control_changes: cc_by_track.get(&track_id).cloned().unwrap_or_default(),
                     ..Default::default()
                 }
             })
@@ -317,7 +341,7 @@ impl RunnerInner {
         lumino_export::midi::export_midi_to_bytes(&export_data).ok()
     }
 
-    /// 保存为 MIDI（包含编辑器编辑）
+    /// 保存为 MIDI（包含编辑器编辑 + 源文件的 PC/CC 事件）
     fn save_as_midi_with_edits(&mut self, save_path: PathBuf) {
         let editor_has_notes = {
             let ui = self.window_state.window.ui();
@@ -325,6 +349,14 @@ impl RunnerInner {
         };
 
         if editor_has_notes {
+            // 提取源文档的 PC/CC 事件（如果有的话）
+            let pc_cc_events = self
+                .midi_state
+                .current_midi
+                .as_ref()
+                .and_then(|pm| pm.document.as_ref())
+                .map(|doc| extract_pc_cc_events(doc));
+
             let (notes, tempo_events) = {
                 let ui = self.window_state.window.ui();
                 let notes = ui.get_editor_notes();
@@ -357,6 +389,14 @@ impl RunnerInner {
                             duration: (length as u32).max(1),
                         })
                         .collect();
+                    let track_id = i as u16;
+                    let (program_changes, control_changes) = match &pc_cc_events {
+                        Some((pc, cc)) => (
+                            pc.get(&track_id).cloned().unwrap_or_default(),
+                            cc.get(&track_id).cloned().unwrap_or_default(),
+                        ),
+                        None => (Vec::new(), Vec::new()),
+                    };
                     MidiTrackData {
                         notes: midi_notes,
                         tempos: if i == 0 {
@@ -364,6 +404,8 @@ impl RunnerInner {
                         } else {
                             Vec::new()
                         },
+                        program_changes,
+                        control_changes,
                         ..Default::default()
                     }
                 })
