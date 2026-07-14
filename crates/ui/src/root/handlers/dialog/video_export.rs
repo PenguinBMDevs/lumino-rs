@@ -4,6 +4,7 @@ use crate::host::DialogResult;
 use crate::message::{Message, VideoExportAction};
 use crate::root::Root;
 use crate::state::root_state::VideoExportOverlayState;
+use crate::util::parse_uint;
 use std::str::FromStr;
 
 use super::DialogHandler;
@@ -113,16 +114,12 @@ impl DialogHandler {
                 root.state.video_export_dialog.quality = v;
             }
             V::WidthChanged(v) => {
-                if v.chars().all(|c| c.is_ascii_digit())
-                    && let Ok(w) = v.parse::<u32>()
-                {
+                if let Some(w) = parse_uint(&v) {
                     root.state.video_export_dialog.width = w;
                 }
             }
             V::HeightChanged(v) => {
-                if v.chars().all(|c| c.is_ascii_digit())
-                    && let Ok(h) = v.parse::<u32>()
-                {
+                if let Some(h) = parse_uint(&v) {
                     root.state.video_export_dialog.height = h;
                 }
             }

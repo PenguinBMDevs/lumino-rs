@@ -17,6 +17,8 @@ pub use types::{
     RESIZE_HANDLE_HEIGHT, Tool, TupletType,
 };
 
+use crate::util::is_digits_or_empty;
+
 /// 工具栏组件
 pub struct Toolbar {
     pub current_tool: Tool,
@@ -103,7 +105,7 @@ impl Toolbar {
                 tracing::debug!("工具栏: 确认自定义精度");
             }
             Event::CustomPrecisionTupletCountChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
+                if is_digits_or_empty(&value) {
                     self.custom_precision_dialog.tuplet_count = value;
                 }
             }
@@ -115,12 +117,12 @@ impl Toolbar {
                 self.custom_precision_dialog.dot_type = value;
             }
             Event::CustomPrecisionNoteValueChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
+                if is_digits_or_empty(&value) {
                     self.custom_precision_dialog.note_value = value;
                 }
             }
             Event::CustomPrecisionDivisorChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit()) || value.is_empty() {
+                if is_digits_or_empty(&value) {
                     self.custom_precision_dialog.divisor = value;
                 }
             }

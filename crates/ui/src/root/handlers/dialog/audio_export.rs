@@ -2,8 +2,22 @@
 
 use crate::message::{AudioExportAction, Message};
 use crate::root::Root;
+use crate::util::{parse_uint, parse_u8_bounded};
 
 use super::DialogHandler;
+
+/// 将音频导出渲染状态重置为“初始化中”。
+///
+/// `Confirm` 与 `StartRendering` 两处原本各有一份逐字段赋值的 5 行样板，
+/// 新增字段时极易只改一处导致状态不一致，故抽离为统一入口。
+fn begin_audio_export_render(root: &mut Root) {
+    let st = &mut root.state.audio_export_dialog;
+    st.is_rendering = true;
+    st.render_completed = false;
+    st.render_error = None;
+    st.render_progress = 0.0;
+    st.render_message = "正在初始化...".to_string();
+}
 
 impl DialogHandler {
     pub(super) fn handle_audio_export(
@@ -23,11 +37,7 @@ impl DialogHandler {
             }
             A::Confirm => {
                 // 立即设置渲染状态（进度条第一时间刷新）
-                root.state.audio_export_dialog.is_rendering = true;
-                root.state.audio_export_dialog.render_completed = false;
-                root.state.audio_export_dialog.render_error = None;
-                root.state.audio_export_dialog.render_progress = 0.0;
-                root.state.audio_export_dialog.render_message = "正在初始化...".to_string();
+                begin_audio_export_render(root);
 
                 // 从 dialog state 读取配置，发送事件到 runner
                 let st = &root.state.audio_export_dialog;
@@ -82,9 +92,7 @@ impl DialogHandler {
                 root.state.audio_export_dialog.format = value;
             }
             A::BitrateChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit())
-                    && let Ok(v) = value.parse::<u32>()
-                {
+                if let Some(v) = parse_uint(&value) {
                     root.state.audio_export_dialog.audio_bitrate = v;
                 }
             }
@@ -95,10 +103,7 @@ impl DialogHandler {
                 root.state.audio_export_dialog.channels = value;
             }
             A::LayersChanged(value) => {
-                // 只允许数字
-                if value.chars().all(|c| c.is_ascii_digit())
-                    && let Ok(v) = value.parse::<u32>()
-                {
+                if let Some(v) = parse_uint(&value) {
                     root.state.audio_export_dialog.layers = v;
                 }
             }
@@ -127,18 +132,12 @@ impl DialogHandler {
                 root.state.audio_export_dialog.filter_velocity = value;
             }
             A::VelocityLowChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit())
-                    && let Ok(v) = value.parse::<u8>()
-                    && v <= 127
-                {
+                if let Some(v) = parse_u8_bounded(&value, 127) {
                     root.state.audio_export_dialog.velocity_low = v;
                 }
             }
             A::VelocityHighChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit())
-                    && let Ok(v) = value.parse::<u8>()
-                    && v <= 127
-                {
+                if let Some(v) = parse_u8_bounded(&value, 127) {
                     root.state.audio_export_dialog.velocity_high = v;
                 }
             }
@@ -146,25 +145,17 @@ impl DialogHandler {
                 root.state.audio_export_dialog.filter_key = value;
             }
             A::KeyLowChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit())
-                    && let Ok(v) = value.parse::<u8>()
-                    && v <= 127
-                {
+                if let Some(v) = parse_u8_bounded(&value, 127) {
                     root.state.audio_export_dialog.key_low = v;
                 }
             }
             A::KeyHighChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit())
-                    && let Ok(v) = value.parse::<u8>()
-                    && v <= 127
-                {
+                if let Some(v) = parse_u8_bounded(&value, 127) {
                     root.state.audio_export_dialog.key_high = v;
                 }
             }
             A::NoteForceEndDelayChanged(value) => {
-                if value.chars().all(|c| c.is_ascii_digit())
-                    && let Ok(v) = value.parse::<u32>()
-                {
+                if let Some(v) = parse_uint(&value) {
                     root.state.audio_export_dialog.note_force_end_delay = v;
                 }
             }
@@ -220,11 +211,7 @@ impl DialogHandler {
                 }
             }
             A::StartRendering => {
-                root.state.audio_export_dialog.is_rendering = true;
-                root.state.audio_export_dialog.render_completed = false;
-                root.state.audio_export_dialog.render_error = None;
-                root.state.audio_export_dialog.render_progress = 0.0;
-                root.state.audio_export_dialog.render_message = "正在初始化...".to_string();
+                begin_audio_export_render(root);
             }
             A::UpdateRenderProgress { message, progress } => {
                 root.state.audio_export_dialog.render_message = message;

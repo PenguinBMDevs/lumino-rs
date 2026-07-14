@@ -17,6 +17,7 @@ pub mod toolbar;
 mod view;
 pub mod wgpu_render_thread;
 pub(crate) mod widget;
+pub mod util;
 pub mod window;
 
 pub use host::{Host, NoteData, TrackNotes};
