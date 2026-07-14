@@ -12,6 +12,7 @@ pub struct SettingsTranslations {
     pub shortcuts: &'static str,
     pub about: &'static str,
     pub onion_skin: &'static str,
+    pub palette: &'static str,
 
     // ── 通用 ──
     pub confirm: &'static str,
@@ -78,6 +79,13 @@ pub struct SettingsTranslations {
     // ── 关于页面 ──
     pub about_title: &'static str,
     pub app_name: &'static str,
+
+    // ── 调色板页面 ──
+    pub palette_title: &'static str,
+    pub palette_select: &'static str,
+    pub palette_hint: &'static str,
+    pub palette_colors_info: &'static str,
+    pub palette_no_preview: &'static str,
     pub version: &'static str,
     pub app_description: &'static str,
     /// 高对比度主题显示名称
@@ -91,6 +99,7 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     shortcuts: "快捷键",
     about: "关于",
     onion_skin: "洋葱皮",
+    palette: "调色板",
     confirm: "确认",
     cancel: "取消",
     ok: "确定",
@@ -148,6 +157,11 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     version: "版本 0.1.1-dev",
     app_description: "一个高效的MIDI编辑工具",
     high_contrast: "高对比度",
+    palette_title: "调色板",
+    palette_select: "选择调色板:",
+    palette_hint: "调色板文件存放在 resources/palettes/ 目录下，编译时自动检测。添加新的 PNG 文件后重新编译即可使用。",
+    palette_colors_info: "颜色预览",
+    palette_no_preview: "无法预览选中调色板",
 };
 
 static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -157,6 +171,7 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     shortcuts: "Shortcuts",
     about: "About",
     onion_skin: "Onion Skin",
+    palette: "Palette",
     confirm: "Confirm",
     cancel: "Cancel",
     ok: "OK",
@@ -214,6 +229,11 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     version: "Version 0.1.1-dev",
     app_description: "An efficient MIDI editor",
     high_contrast: "High Contrast",
+    palette_title: "Palette",
+    palette_select: "Select Palette:",
+    palette_hint: "Palette files are stored in resources/palettes/ and auto-detected at compile time. Add new PNG files and rebuild to use them.",
+    palette_colors_info: "Color Preview",
+    palette_no_preview: "Unable to preview selected palette",
 };
 
 /// 获取设置面板翻译

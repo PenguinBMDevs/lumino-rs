@@ -62,6 +62,8 @@ pub enum Event {
     PlaybackKeyColorsEnabledChanged(bool),
     /// 添加音轨行为
     TrackAddBehaviorChanged(TrackAddBehavior),
+    /// 调色板选择
+    PaletteChanged(String),
 }
 
 #[derive(Debug, Clone)]
@@ -107,10 +109,24 @@ pub struct SettingsPanel {
     pub playback_key_colors_enabled: bool,
     /// 添加音轨行为
     pub track_add_behavior: TrackAddBehavior,
+    /// 当前选中的调色板名称
+    pub selected_palette: String,
+    /// 可用调色板名称列表
+    pub available_palettes: Vec<&'static str>,
 }
 
 impl SettingsPanel {
     pub fn new(ui_config: &lumino_core::storage::config::UiConfig) -> Self {
+        let palette_mgr = &*lumino_core::palette::PALETTE_MANAGER;
+        let available_palettes = palette_mgr.names().to_vec();
+        let selected_palette = if ui_config.selected_palette.is_empty() {
+            palette_mgr.default().name.to_string()
+        } else {
+            palette_mgr
+                .resolve_name(&ui_config.selected_palette)
+                .to_string()
+        };
+
         Self {
             selected_menu_index: 0,
             synth_backend: ui_config.preferred_backend,
@@ -142,6 +158,8 @@ impl SettingsPanel {
             hires_gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
             playback_key_colors_enabled: ui_config.playback_key_colors_enabled,
             track_add_behavior: ui_config.track_add_behavior,
+            selected_palette,
+            available_palettes,
         }
     }
 
@@ -277,6 +295,12 @@ impl SettingsPanel {
             Event::TrackAddBehaviorChanged(v) => {
                 self.track_add_behavior = v;
             }
+            Event::PaletteChanged(name) => {
+                if let Some(p) = self.available_palettes.iter().find(|n| **n == name) {
+                    self.selected_palette = p.to_string();
+                    tracing::debug!("设置: 调色板切换为 '{}'", name);
+                }
+            }
         }
     }
 }
@@ -318,7 +342,8 @@ fn render_content_area<'a>(
         2 => ui_settings_view(settings, window, system_fonts),
         3 => shortcuts_view(settings),
         4 => onion_skin_view(settings),
-        5 => about_view(settings),
+        5 => palette_view(settings),
+        6 => about_view(settings),
         _ => render_placeholder("设置内容区域").into(),
     };
 

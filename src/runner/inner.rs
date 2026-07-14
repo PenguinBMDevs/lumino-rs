@@ -503,7 +503,11 @@ impl RunnerInner {
             config.ui.hires_gpu_mem_limit_mb = new.hires_gpu_mem_limit_mb;
             config.ui.playback_key_colors_enabled = new.playback_key_colors_enabled;
             config.ui.track_add_behavior = new.track_add_behavior;
+            config.ui.selected_palette = new.selected_palette.clone();
         });
+
+        // 同步当前调色板到全局 PaletteManager
+        lumino_core::palette::set_current_palette_by_name(&new.selected_palette);
 
         if let Err(e) = self.window_state.storage.config.save() {
             tracing::warn!("保存配置失败: {e}");

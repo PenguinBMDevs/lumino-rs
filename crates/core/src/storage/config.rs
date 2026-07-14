@@ -223,6 +223,9 @@ pub struct UiConfig {
     /// 添加音轨时的行为（自动跳转到新音轨 / 保持当前音轨）
     #[serde(default)]
     pub track_add_behavior: TrackAddBehavior,
+    /// 当前选中的调色板名称（空字符串表示使用默认）
+    #[serde(default)]
+    pub selected_palette: String,
 }
 
 fn default_true() -> bool {
@@ -295,6 +298,7 @@ impl Default for UiConfig {
             hires_gpu_mem_limit_mb: default_hires_gpu_mem_limit(),
             playback_key_colors_enabled: false,
             track_add_behavior: TrackAddBehavior::default(),
+            selected_palette: String::new(),
         }
     }
 }

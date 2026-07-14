@@ -3435,6 +3435,7 @@ dependencies = [
  "libc",
  "lumino-memory-monitor",
  "lumino-midi-loader",
+ "png 0.17.16",
  "puffin",
  "serde",
  "serde_json",

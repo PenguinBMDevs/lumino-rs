@@ -84,8 +84,9 @@ pub(super) fn build_main_note_instances(
 ) {
     use rayon::prelude::*;
 
-    const FIXED_NOTE_COLOR: [f32; 4] = [0.2, 0.5, 1.0, 0.9];
+    // 主音轨音符颜色来自当前调色板的第一个颜色
     const DRAWING_NOTE_COLOR: [f32; 4] = [0.4, 0.8, 1.0, 1.0];
+    let fixed_note_color: [f32; 4] = lumino_core::palette::current_track_color_f32(0);
     const PARALLEL_THRESHOLD: usize = 500;
 
     let instances = unsafe { buffer.write_buffer() };
@@ -104,12 +105,12 @@ pub(super) fn build_main_note_instances(
             .for_each(|(i, instance)| {
                 let (tick, key, length) = visible_notes[i];
                 *instance =
-                    lumino_gfx::NoteInstance::new(tick, key as f32, length, FIXED_NOTE_COLOR);
+                    lumino_gfx::NoteInstance::new(tick, key as f32, length, fixed_note_color);
             });
     } else {
         // 小数据量：顺序写入，避免并行分片开销
         instances.extend(visible_notes.iter().map(|(tick, key, length)| {
-            lumino_gfx::NoteInstance::new(*tick, *key as f32, *length, FIXED_NOTE_COLOR)
+            lumino_gfx::NoteInstance::new(*tick, *key as f32, *length, fixed_note_color)
         }));
     }
 

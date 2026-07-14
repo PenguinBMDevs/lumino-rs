@@ -45,22 +45,12 @@ pub use note::Note;
 
 mod impls;
 
-/// 洋葱皮音轨调色板（按音轨索引循环取色，alpha 固定 255）
+/// 洋葱皮音轨调色板（按音轨索引循环取色）
 ///
-/// 与 `host.rs` 中的 `onion_track_color` 保持一致。
-/// 8 色调色板循环使用，覆盖多轨场景。
+/// 从当前嵌入的调色板中取色，用户可在设置中切换。
+/// 如果调色板不可用，回退到硬编码的 8 色彩色板。
 pub fn onion_track_color(track_idx: usize) -> [u8; 4] {
-    const PALETTE: [[u8; 4]; 8] = [
-        [200, 80, 80, 255],
-        [80, 200, 120, 255],
-        [80, 120, 220, 255],
-        [220, 200, 80, 255],
-        [200, 100, 200, 255],
-        [80, 200, 200, 255],
-        [240, 150, 80, 255],
-        [180, 180, 180, 255],
-    ];
-    PALETTE[track_idx % PALETTE.len()]
+    lumino_core::palette::current_track_color(track_idx)
 }
 
 /// 缓存失效标志位

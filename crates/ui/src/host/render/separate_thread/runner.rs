@@ -461,8 +461,11 @@ impl Host {
             let av = &self.root.arrangement_view.viewport;
             let track_count = self.root.sidebar.tracks.len().max(1) as f32;
             let mut track_colors = [[0.0_f32; 4]; 16];
-            for (i, &c) in ARRANGEMENT_PALETTE.iter().enumerate().take(16) {
-                track_colors[i] = [c[0], c[1], c[2], 1.0];
+            // 使用当前调色板的颜色（来自 PaletteManager），
+            // 超出调色板颜色数的轨道循环取色
+            for i in 0..16 {
+                let c = lumino_core::palette::current_track_color_f32(i);
+                track_colors[i] = c;
             }
             let playhead_x = if self.root.editor.playback_position > 0.0 {
                 self.root.editor.playback_position * av.zoom_x - data.scroll.0
