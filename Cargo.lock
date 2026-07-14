@@ -3643,6 +3643,7 @@ dependencies = [
  "lumino-collaboration",
  "lumino-core",
  "lumino-dialog",
+ "lumino-event",
  "lumino-export",
  "lumino-gfx",
  "lumino-memory-monitor",

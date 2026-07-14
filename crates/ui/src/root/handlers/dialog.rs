@@ -219,31 +219,31 @@ impl MessageHandler for DialogHandler {
                             );
                         }
 
-                        let ev = crate::event::window::Event::start_audio_export(
-                            st.midi_path.clone(),
-                            st.soundfont_path.clone(),
-                            st.output_path.clone(),
-                            st.sample_rate,
-                            format!("{:?}", st.channels),
-                            st.layers,
-                            format!("{:?}", st.channel_threading),
-                            format!("{:?}", st.key_threading),
-                            format!("{:?}", st.interpolation),
-                            st.apply_limiter,
-                            st.disable_fade_out,
-                            st.linear_envelope,
-                            format!("{:?}", st.format),
-                            st.audio_bitrate,
-                            st.ignore_program_changes,
-                            st.filter_velocity,
-                            st.velocity_low,
-                            st.velocity_high,
-                            st.filter_key,
-                            st.key_low,
-                            st.key_high,
-                            st.note_force_end_delay,
-                            document,
-                        );
+                        let config = crate::event::window::dialog::AudioExportConfig {
+                            midi_path: st.midi_path.clone(),
+                            soundfont_path: st.soundfont_path.clone(),
+                            output_path: st.output_path.clone(),
+                            sample_rate: st.sample_rate,
+                            channels: st.channels,
+                            layer_limit: st.layers,
+                            channel_threading: st.channel_threading,
+                            key_threading: st.key_threading,
+                            interpolation: st.interpolation,
+                            apply_limiter: st.apply_limiter,
+                            disable_fade_out: st.disable_fade_out,
+                            linear_envelope: st.linear_envelope,
+                            audio_format: st.format,
+                            audio_bitrate: st.audio_bitrate,
+                            ignore_program_changes: st.ignore_program_changes,
+                            filter_velocity: st.filter_velocity,
+                            velocity_low: st.velocity_low,
+                            velocity_high: st.velocity_high,
+                            filter_key: st.filter_key,
+                            key_low: st.key_low,
+                            key_high: st.key_high,
+                            note_force_end_delay: st.note_force_end_delay,
+                        };
+                        let ev = crate::event::window::Event::start_audio_export(config, document);
                         crate::event::emit(crate::event::Event::Window(ev));
                     }
                     A::ProjectNameChanged(value) => {

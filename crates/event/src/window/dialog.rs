@@ -4,6 +4,35 @@ use std::sync::Arc;
 
 use lumino_midi_loader::MidiDocument;
 
+pub use super::audio::{AudioChannels, AudioFormat, Interpolation, ThreadingOption};
+
+/// 音频导出配置。
+#[derive(Debug, Clone)]
+pub struct AudioExportConfig {
+    pub midi_path: String,
+    pub soundfont_path: String,
+    pub output_path: String,
+    pub sample_rate: u32,
+    pub channels: AudioChannels,
+    pub layer_limit: u32,
+    pub channel_threading: ThreadingOption,
+    pub key_threading: ThreadingOption,
+    pub interpolation: Interpolation,
+    pub apply_limiter: bool,
+    pub disable_fade_out: bool,
+    pub linear_envelope: bool,
+    pub audio_format: AudioFormat,
+    pub audio_bitrate: u32,
+    pub ignore_program_changes: bool,
+    pub filter_velocity: bool,
+    pub velocity_low: u8,
+    pub velocity_high: u8,
+    pub filter_key: bool,
+    pub key_low: u8,
+    pub key_high: u8,
+    pub note_force_end_delay: u32,
+}
+
 #[derive(Debug, Clone)]
 pub enum Event {
     /// 打开自定义精度对话框窗口
@@ -42,38 +71,7 @@ pub enum Event {
     /// 如果 `document` 为 `Some`，则使用内存中的 MidiDocument 进行渲染（零拷贝）；
     /// 否则从 `midi_path` 指定的文件读取。
     StartAudioExport {
-        midi_path: String,
-        soundfont_path: String,
-        output_path: String,
-        sample_rate: u32,
-        channels: String,
-        layer_limit: u32,
-        channel_threading: String,
-        key_threading: String,
-        interpolation: String,
-        apply_limiter: bool,
-        disable_fade_out: bool,
-        linear_envelope: bool,
-        /// 输出音频格式（"WAV"/"FLAC"/"MP3"/"Ogg"/"WavPack"）
-        audio_format: String,
-        /// 编码比特率（kbps，仅 MP3/Vorbis 有效）
-        audio_bitrate: u32,
-        /// 忽略音色变化事件
-        ignore_program_changes: bool,
-        /// 启用音符力度过滤
-        filter_velocity: bool,
-        /// 最低力度
-        velocity_low: u8,
-        /// 最高力度
-        velocity_high: u8,
-        /// 启用键位过滤
-        filter_key: bool,
-        /// 最低键位
-        key_low: u8,
-        /// 最高键位
-        key_high: u8,
-        /// 音符强制结束延迟（毫秒）
-        note_force_end_delay: u32,
+        config: AudioExportConfig,
         /// 内存中的 MidiDocument（如果存在）
         document: Option<Arc<MidiDocument>>,
     },

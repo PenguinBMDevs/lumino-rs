@@ -1,3 +1,4 @@
+pub mod audio;
 pub mod collaboration;
 pub mod dialog;
 pub mod lifecycle;
@@ -92,55 +93,10 @@ impl Event {
         })
     }
     pub fn start_audio_export(
-        midi_path: String,
-        soundfont_path: String,
-        output_path: String,
-        sample_rate: u32,
-        channels: String,
-        layer_limit: u32,
-        channel_threading: String,
-        key_threading: String,
-        interpolation: String,
-        apply_limiter: bool,
-        disable_fade_out: bool,
-        linear_envelope: bool,
-        audio_format: String,
-        audio_bitrate: u32,
-        ignore_program_changes: bool,
-        filter_velocity: bool,
-        velocity_low: u8,
-        velocity_high: u8,
-        filter_key: bool,
-        key_low: u8,
-        key_high: u8,
-        note_force_end_delay: u32,
+        config: dialog::AudioExportConfig,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) -> Self {
-        Self::Dialog(dialog::Event::StartAudioExport {
-            midi_path,
-            soundfont_path,
-            output_path,
-            sample_rate,
-            channels,
-            layer_limit,
-            channel_threading,
-            key_threading,
-            interpolation,
-            apply_limiter,
-            disable_fade_out,
-            linear_envelope,
-            audio_format,
-            audio_bitrate,
-            ignore_program_changes,
-            filter_velocity,
-            velocity_low,
-            velocity_high,
-            filter_key,
-            key_low,
-            key_high,
-            note_force_end_delay,
-            document,
-        })
+        Self::Dialog(dialog::Event::StartAudioExport { config, document })
     }
     pub fn start_video_export(
         output_path: String,

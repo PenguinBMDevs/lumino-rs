@@ -200,7 +200,10 @@ impl FfmpegSink {
             cmd.args(["-b:a", &format!("{}k", bitrate)]);
         }
 
-        cmd.args(["-c:a", codec_name, output_path.to_str().unwrap()]);
+        let output_str = output_path.to_str().ok_or_else(|| {
+            ExportError::AudioWrite(format!("输出路径不是合法 UTF-8: {}", output_path.display()))
+        })?;
+        cmd.args(["-c:a", codec_name, output_str]);
 
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::null())

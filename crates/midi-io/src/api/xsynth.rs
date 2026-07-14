@@ -209,7 +209,10 @@ struct XSynthOutputConn {
 impl XSynthOutputConn {
     /// 发送事件到渲染线程 — 通过 xsynth-realtime 的 RealtimeEventSender。
     fn send_event(&self, event: SynthEvent) {
-        self.sender.lock().unwrap().send_event(event);
+        self.sender
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .send_event(event);
     }
 }
 

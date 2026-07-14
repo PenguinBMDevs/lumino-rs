@@ -128,32 +128,33 @@ impl RunnerInner {
                 main_ui.apply_speed_change(factor);
             }
             OpenLoadConfirmDialog { .. } => {}
-            StartAudioExport {
-                midi_path,
-                soundfont_path,
-                output_path,
-                sample_rate,
-                channels,
-                layer_limit,
-                channel_threading,
-                key_threading,
-                interpolation,
-                apply_limiter,
-                disable_fade_out,
-                linear_envelope,
-                audio_format,
-                audio_bitrate,
-                ignore_program_changes,
-                filter_velocity,
-                velocity_low,
-                velocity_high,
-                filter_key,
-                key_low,
-                key_high,
-                note_force_end_delay,
-                document,
-            } => {
+            StartAudioExport { config, document } => {
                 use std::time::Instant;
+
+                let lumino_event::window::dialog::AudioExportConfig {
+                    midi_path,
+                    soundfont_path,
+                    output_path,
+                    sample_rate,
+                    channels,
+                    layer_limit,
+                    channel_threading,
+                    key_threading,
+                    interpolation,
+                    apply_limiter,
+                    disable_fade_out,
+                    linear_envelope,
+                    audio_format,
+                    audio_bitrate,
+                    ignore_program_changes,
+                    filter_velocity,
+                    velocity_low,
+                    velocity_high,
+                    filter_key,
+                    key_low,
+                    key_high,
+                    note_force_end_delay,
+                } = config;
 
                 // 根据是否有内存中的 MidiDocument 选择渲染模式
                 let mode_str = if document.is_some() {
@@ -166,25 +167,37 @@ impl RunnerInner {
                 let midi_path_buf = PathBuf::from(&midi_path);
                 let output_path_buf = PathBuf::from(&output_path);
 
-                // 解析枚举值（来自 UI 的 Debug 格式字符串）
-                let channel_mode = match channels.to_ascii_lowercase().as_str() {
-                    "mono" => AudioChannelMode::Mono,
-                    _ => AudioChannelMode::Stereo,
+                let channel_mode = match channels {
+                    lumino_event::window::audio::AudioChannels::Mono => AudioChannelMode::Mono,
+                    lumino_event::window::audio::AudioChannels::Stereo => AudioChannelMode::Stereo,
                 };
-                let interpolation_val = match interpolation.to_ascii_lowercase().as_str() {
-                    "nearest" => AudioInterpolation::Nearest,
-                    _ => AudioInterpolation::Linear,
+                let interpolation_val = match interpolation {
+                    lumino_event::window::audio::Interpolation::None => AudioInterpolation::Nearest,
+                    lumino_event::window::audio::Interpolation::Linear => {
+                        AudioInterpolation::Linear
+                    }
                 };
-                let channel_threading_val = parse_thread_mode(&channel_threading);
-                let key_threading_val = parse_thread_mode(&key_threading);
+                let channel_threading_val = match channel_threading {
+                    lumino_event::window::audio::ThreadingOption::None => ThreadMode::None,
+                    lumino_event::window::audio::ThreadingOption::Auto => ThreadMode::Auto,
+                    lumino_event::window::audio::ThreadingOption::Manual(n) => {
+                        ThreadMode::Manual(n)
+                    }
+                };
+                let key_threading_val = match key_threading {
+                    lumino_event::window::audio::ThreadingOption::None => ThreadMode::None,
+                    lumino_event::window::audio::ThreadingOption::Auto => ThreadMode::Auto,
+                    lumino_event::window::audio::ThreadingOption::Manual(n) => {
+                        ThreadMode::Manual(n)
+                    }
+                };
 
-                // 解析音频格式字符串 → AudioCodec
-                let audio_codec = match audio_format.to_ascii_lowercase().as_str() {
-                    "flac" => AudioCodec::Flac,
-                    "mp3" => AudioCodec::Mp3,
-                    "ogg" | "vorbis" => AudioCodec::Vorbis,
-                    "wavpack" => AudioCodec::WavPack,
-                    _ => AudioCodec::Pcm,
+                let audio_codec = match audio_format {
+                    lumino_event::window::audio::AudioFormat::WAV => AudioCodec::Pcm,
+                    lumino_event::window::audio::AudioFormat::FLAC => AudioCodec::Flac,
+                    lumino_event::window::audio::AudioFormat::MP3 => AudioCodec::Mp3,
+                    lumino_event::window::audio::AudioFormat::Ogg => AudioCodec::Vorbis,
+                    lumino_event::window::audio::AudioFormat::WavPack => AudioCodec::WavPack,
                 };
 
                 // 1. 创建进度通道，将渲染进度发回主线程更新 UI
@@ -870,20 +883,6 @@ impl RunnerInner {
                 self.handle_local_track_added(track_index);
             }
         }
-    }
-}
-
-/// 解析 UI 传来的线程模式字符串为 ThreadMode 枚举
-fn parse_thread_mode(s: &str) -> ThreadMode {
-    let lower = s.to_ascii_lowercase();
-    if lower == "none" || lower.is_empty() {
-        ThreadMode::None
-    } else if lower == "auto" {
-        ThreadMode::Auto
-    } else if let Ok(n) = lower.parse::<u32>() {
-        ThreadMode::Manual(n)
-    } else {
-        ThreadMode::None
     }
 }
 

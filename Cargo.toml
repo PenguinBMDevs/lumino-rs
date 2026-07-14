@@ -83,6 +83,7 @@ workspace = true
 
 [dependencies]
 lumino-core = { workspace = true }
+lumino-event = { workspace = true }
 lumino-export = { workspace = true }
 lumino-gfx = { workspace = true }
 lumino-midi-io = { workspace = true }
