@@ -29,24 +29,11 @@ async fn setup_client(
         let _ = tx.send(event);
     });
 
-    client.connect(None, None).await.expect("Failed to connect");
+    // 注意：连接操作已在 create_room_and_connect / join_room_and_connect 中完成，
+    // 此处仅创建客户端并配置回调，无需单独调用 connect()。
+    // 旧版 connect() 已随重构移除（见 #dead-code-cleanup）。
 
     (client, rx)
-}
-
-async fn wait_for_auth(rx: &mut mpsc::UnboundedReceiver<CollaborationEvent>) -> (String, String) {
-    println!("Waiting for auth...");
-    while let Some(event) = rx.recv().await {
-        println!("Got event during auth: {:?}", event);
-        if let CollaborationEvent::Authenticated {
-            user_id,
-            invite_code,
-        } = event
-        {
-            return (user_id, invite_code);
-        }
-    }
-    panic!("Failed to authenticate");
 }
 
 async fn run_sync_test(rate: u64, total_notes: u32) {
@@ -54,40 +41,38 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
     let (mut client_a, mut rx_a) = setup_client("TestA").await;
     let (mut client_b, mut rx_b) = setup_client("TestB").await;
 
-    let (_a_id, _a_invite) = wait_for_auth(&mut rx_a).await;
-    let (_b_id, _b_invite) = wait_for_auth(&mut rx_b).await;
-
-    println!("A creating room...");
-    // A create room
-    client_a
-        .create_room("TestRoom".to_string())
+    println!("A creating room and connecting...");
+    // A: 创建房间并连接（新 API，同时完成 HTTP 创建 + WebSocket 连接 + 认证）
+    let create_resp = client_a
+        .create_room_and_connect("TestRoom".to_string())
         .await
         .expect("创建房间失败");
 
-    // Wait for A to create room
+    let room_invite_code = create_resp.room.invite_code.clone();
+    println!("Room created, invite_code={}", room_invite_code);
+
+    // 等待 A 的 RoomCreated 事件
     let mut room_created = false;
-    let mut room_invite_code = String::new();
     let start = std::time::Instant::now();
     while start.elapsed() < Duration::from_secs(5) {
         if let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(100), rx_a.recv()).await
         {
-            println!("A event: {:?}", event);
             if let CollaborationEvent::RoomCreated { room } = event {
+                println!("A room created: {:?}", room);
                 room_created = true;
-                room_invite_code = room.invite_code.clone();
                 break;
             }
         }
     }
-    assert!(room_created, "Room should be created in A");
+    assert!(room_created, "A should receive RoomCreated event");
 
-    // B join room
+    // B: 加入房间并连接（新 API）
     client_b
-        .join_room(room_invite_code)
+        .join_room_and_connect(room_invite_code.clone())
         .await
         .expect("加入房间失败");
 
-    // Wait for B to join room
+    // 等待 B 的 RoomJoined 事件
     let mut joined = false;
     let start = std::time::Instant::now();
     while start.elapsed() < Duration::from_secs(5) {

@@ -55,14 +55,6 @@ impl<'a> BatchRenderer<'a> {
         v
     }
 
-    /// 归还 Vec 到池
-    #[allow(dead_code)]
-    fn release_vec(&mut self, v: Vec<f32>) {
-        if self.vec_pool.len() < 4 {
-            self.vec_pool.push(v);
-        }
-    }
-
     /// 渲染指定时长的音频
     ///
     /// # 参数

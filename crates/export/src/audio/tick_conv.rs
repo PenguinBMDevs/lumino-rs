@@ -101,17 +101,6 @@ impl TickToTime {
         total_at_tick - total_at_cur
     }
 
-    /// 重置转换器到 tick 0
-    #[allow(dead_code)]
-    pub fn reset(&mut self) {
-        self.prev_tick = 0;
-    }
-
-    /// 返回总 MIDI 时长（秒）
-    #[allow(dead_code)]
-    pub fn total_seconds(&self, total_ticks: u64) -> f64 {
-        self.tick_to_seconds(total_ticks)
-    }
 }
 
 #[cfg(test)]

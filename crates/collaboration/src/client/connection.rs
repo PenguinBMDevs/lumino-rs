@@ -25,17 +25,6 @@ pub(super) type WsSink = futures::stream::SplitSink<WsStream, Message>;
 pub(super) type WsStreamRead = futures::stream::SplitStream<WsStream>;
 
 impl CollaborationClient {
-    /// 连接到服务器（遗留兼容接口，已废弃）
-    #[deprecated(
-        since = "0.2.0",
-        note = "请使用 create_room_and_connect 或 join_room_and_connect"
-    )]
-    pub async fn connect(&mut self, _host: Option<String>, _port: Option<u16>) -> Result<()> {
-        Err(crate::CollaborationError::Other(
-            "请使用 create_room_and_connect 或 join_room_and_connect".to_string(),
-        ))
-    }
-
     /// 使用 roomId 连接 WebSocket
     pub(super) async fn connect_with_room_id(&mut self, room_id: &str) -> Result<()> {
         let ws_url = self.build_websocket_url(room_id);

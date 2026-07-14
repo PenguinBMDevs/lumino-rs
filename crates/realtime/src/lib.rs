@@ -15,9 +15,6 @@ mod stats;
 mod events;
 
 #[cfg(feature = "realtime")]
-pub mod engine;
-
-#[cfg(feature = "realtime")]
 mod synth;
 
 #[cfg(feature = "xsynth-realtime")]

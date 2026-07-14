@@ -307,13 +307,11 @@ impl VideoExportConfig {
     ///
     /// 示例: "libx264"、"h264_videotoolbox"、"hevc_nvenc"
     pub fn ffmpeg_encoder_name(&self) -> String {
-        match &self.backend {
-            EncoderBackend::Software => self.codec.ffmpeg_software_encoder().to_string(),
-            _ => {
-                let codec = self.codec.ffmpeg_codec_name();
-                let suffix = self.backend.ffmpeg_suffix().expect("硬件后端应有后缀");
-                format!("{}_{}", codec, suffix)
-            }
-        }
+        // ffmpeg_suffix() 对 Software 返回 None（直接用软件编码器名），
+        // 对硬件后端返回对应后缀，拼接成 "codec_suffix" 格式。
+        self.backend
+            .ffmpeg_suffix()
+            .map(|suffix| format!("{}_{}", self.codec.ffmpeg_codec_name(), suffix))
+            .unwrap_or_else(|| self.codec.ffmpeg_software_encoder().to_string())
     }
 }

@@ -11,6 +11,8 @@ use std::sync::Arc;
 use crate::automation::AutomationLane;
 use crate::history::History;
 use crate::midi_types::{CcData, TempoPoint};
+#[cfg(test)]
+use crate::midi_types::PITCH_BEND_CENTER;
 use crate::note::Note;
 
 use super::constants::DEFAULT_BPM;
@@ -406,11 +408,11 @@ mod tests {
         data.find_or_create_automation_lane(0, AutomationTarget::PitchBend);
         data.apply_automation_edit(AutomationEdit::Add {
             track_idx: 0, target: AutomationTarget::PitchBend,
-            tick: 100, value: 8192, shape: SegmentShape::Curve { tension: 0 },
+            tick: 100, value: PITCH_BEND_CENTER as u16, shape: SegmentShape::Curve { tension: 0 },
         });
         let points = data.build_bend_points();
         assert_eq!(points.len(), 1);
         assert_eq!(points[0].tick, 100.0);
-        assert_eq!(points[0].value, 0, "8192 → center = 0");
+        assert_eq!(points[0].value, 0, "PITCH_BEND_CENTER → center = 0");
     }
 }

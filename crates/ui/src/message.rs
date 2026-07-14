@@ -47,6 +47,8 @@ pub use lumino_message::{
 pub type Message = GenericMessage<Window, Sidebar, Settings, Toolbar>;
 
 /// 创建空消息
+///
+/// 委托至 lumino-message 的泛型 null()，由类型别名确定具体类型参数。
 pub const fn null() -> Message {
-    Message::Null
+    lumino_message::null::<Window, Sidebar, Settings, Toolbar>()
 }

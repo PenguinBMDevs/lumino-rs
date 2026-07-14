@@ -28,8 +28,8 @@ pub use error::{CoreError, Result};
 pub use font_scanner::{FontInfo, scan_system_fonts};
 pub use history::{EditorSnapshot, History};
 pub use midi_types::{
-    BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcData, CcDisplay, CcPoint, EditMode, TempoPoint,
-    VelocityPoint,
+    BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcData, CcDisplay, CcPoint, EditMode,
+    PITCH_BEND_CENTER, TempoPoint, VelocityPoint,
 };
 pub use note::Note;
 pub use pattern::Pattern;

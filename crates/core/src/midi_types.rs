@@ -52,6 +52,12 @@ pub struct CcPoint {
     pub value: u8,
 }
 
+/// 弯音 14-bit 范围中心值
+///
+/// MIDI Pitch Bend 值范围为 0–16383，中心（无弯音）为 8192。
+/// 对应键盘编辑器中的有符号范围 -8192..+8191。
+pub const PITCH_BEND_CENTER: i16 = 8192;
+
 /// 弯音控制点
 #[derive(Debug, Clone, Copy)]
 pub struct BendPoint {

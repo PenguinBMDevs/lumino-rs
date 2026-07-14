@@ -269,11 +269,6 @@ impl PlaybackManager {
         self.lock_playback().map_or(120.0, |p| p.current_bpm())
     }
 
-    /// 更新播放（由于已在独立线程更新，这里为空操作）
-    pub fn update(&mut self) {
-        // No-op
-    }
-
     /// 设置循环
     pub fn set_looping(&mut self, looping: bool) {
         let _ = self.sender.send(Command::SetLooping(looping));

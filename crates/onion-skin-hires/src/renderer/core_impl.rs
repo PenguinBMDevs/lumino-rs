@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use crate::config::HiResConfig;
 use crate::types::TileCoord;
@@ -22,6 +22,8 @@ pub struct HiResRenderer {
     pub(super) gpu_mem_used: usize,
     /// 配置（含显存上限等）
     pub(super) config: HiResConfig,
+    /// 贴图上传顺序（用于 FIFO 逐出，最早上传的先被逐出）
+    tile_order: VecDeque<TileCoord>,
 }
 
 impl HiResRenderer {
@@ -84,6 +86,7 @@ impl HiResRenderer {
             dirty_overlays: HashMap::new(),
             gpu_mem_used: 0,
             config,
+            tile_order: VecDeque::new(),
         }
     }
 
@@ -232,6 +235,8 @@ impl HiResRenderer {
             },
         );
         self.gpu_mem_used += byte_size;
+        self.tile_order.push_back(coord);
+        self.evict_if_over_limit();
     }
 
     /// 移除一张贴图（释放显存）
@@ -239,6 +244,7 @@ impl HiResRenderer {
         if let Some(gpu) = self.tiles.remove(coord) {
             self.gpu_mem_used = self.gpu_mem_used.saturating_sub(gpu.byte_size);
         }
+        self.tile_order.retain(|c| c != coord);
     }
 
     /// 清空所有贴图
@@ -246,6 +252,7 @@ impl HiResRenderer {
         self.tiles.clear();
         self.dirty_overlays.clear();
         self.gpu_mem_used = 0;
+        self.tile_order.clear();
     }
 
     /// 清空指定音轨组的临时脏区域覆层
@@ -390,6 +397,23 @@ impl HiResRenderer {
     /// 显存是否超限
     pub fn is_over_limit(&self) -> bool {
         self.gpu_mem_used > self.gpu_mem_limit()
+    }
+
+    /// 超出显存上限时，按 FIFO 顺序逐出最早上传的贴图
+    ///
+    /// 调度器按时间顺序生成贴图，逐出旧时间段的贴图不会影响当前可见区域。
+    /// 若用户滚动到已逐出的时间段，调度器会重新生成对应贴图。
+    fn evict_if_over_limit(&mut self) {
+        while self.is_over_limit() {
+            match self.tile_order.pop_front() {
+                None => break,
+                Some(coord) => {
+                    if self.tiles.contains_key(&coord) {
+                        self.remove_tile(&coord);
+                    }
+                }
+            }
+        }
     }
 
     /// 更新渲染目标格式（surface 格式变化时重建 pipeline）

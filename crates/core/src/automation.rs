@@ -3,6 +3,7 @@
 //! 从 yinhe 项目移植的 AutomationLane 数据模型，统一描述 CC、PitchBend、RPN、NRPN
 //! 等可自动化参数的时序事件，并支持 Step / Curve 两种插值形状。
 
+use crate::midi_types::PITCH_BEND_CENTER;
 use serde::{Deserialize, Serialize};
 
 /// 段插值形状：描述从一个事件到下一个事件的过渡方式。
@@ -103,10 +104,10 @@ impl AutomationTarget {
                 10 | 71 | 72 | 73 | 74 => 64,
                 _ => 0,
             },
-            AutomationTarget::PitchBend => 8192,
+            AutomationTarget::PitchBend => PITCH_BEND_CENTER as u16,
             AutomationTarget::Rpn { parameter } => match parameter {
-                0 => 2,    // Pitch Bend Sensitivity (2 semitones)
-                1 => 8192, // Fine Tune (center of 14-bit range)
+                0 => 2,                         // Pitch Bend Sensitivity (2 semitones)
+                1 => PITCH_BEND_CENTER as u16, // Fine Tune (center of 14-bit range)
                 _ => 0,
             },
             AutomationTarget::Nrpn { .. } => 0,
@@ -412,7 +413,10 @@ mod tests {
         assert_eq!(AutomationTarget::CC { controller: 0 }.default_value(), 0);
         assert_eq!(AutomationTarget::CC { controller: 10 }.default_value(), 64);
         assert_eq!(AutomationTarget::PitchBend.max_value(), 16383);
-        assert_eq!(AutomationTarget::PitchBend.default_value(), 8192);
+        assert_eq!(
+            AutomationTarget::PitchBend.default_value(),
+            PITCH_BEND_CENTER as u16
+        );
         assert!(AutomationTarget::PitchBend.has_center_line());
         assert!(!AutomationTarget::CC { controller: 7 }.has_center_line());
     }
