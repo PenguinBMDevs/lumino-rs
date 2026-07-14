@@ -203,6 +203,34 @@ fn test_onion_track_color_f32_bounds() {
     }
 }
 
+// ─── BUG 回归测试 ─────────────────────────────────────────────────────────────
+
+#[test]
+fn test_unlock_after_lock_allows_palette_switch() {
+    // BUG 回归：MIDI 文件关闭后调色板仍然无法调整
+    // 场景模拟：加载 MIDI（锁定）→ 关闭 MIDI（解锁）→ 应该能切换调色板
+    let mgr = &*PALETTE_MANAGER;
+    if mgr.names().len() < 2 {
+        return;
+    }
+    let name_a = mgr.names()[0];
+    let name_b = mgr.names()[1];
+
+    // 1. 锁状态等同于 MIDI 加载后
+    unlock_palette();
+    set_current_palette_by_name(name_b);
+    lock_palette();
+    assert!(is_palette_locked());
+    assert_eq!(current_palette_name(), name_b);
+
+    // 2. 解锁后（模拟 Close / New 操作）应该能切换调色板
+    unlock_palette();
+    assert!(!is_palette_locked());
+    let result = set_current_palette_by_name(name_a);
+    assert!(result, "解锁后应能切换调色板");
+    assert_eq!(current_palette_name(), name_a);
+}
+
 // ─── 辅助函数 ─────────────────────────────────────────────────────────────────
 
 fn default_palette_name() -> &'static str {

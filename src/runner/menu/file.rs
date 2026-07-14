@@ -91,6 +91,7 @@ impl RunnerInner {
             Close => {
                 self.midi_state.current_midi = None;
                 self.midi_state.current_midi_source = None;
+                lumino_core::palette::unlock_palette();
                 self.window_state.window.ui_mut().dispose_hires_onion_skin();
                 self.window_state.window.ui_mut().clear_editor();
                 tracing::info!("工程已关闭");
@@ -170,6 +171,7 @@ impl RunnerInner {
         // 清空当前工程
         self.midi_state.current_midi = None;
         self.midi_state.current_midi_source = None;
+        lumino_core::palette::unlock_palette();
 
         // 清空编辑器
         self.window_state.window.ui_mut().clear_editor();

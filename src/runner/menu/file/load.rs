@@ -12,6 +12,9 @@ impl RunnerInner {
             return;
         };
 
+        // 解锁调色板，新 MIDI 加载后 MidiParsed 会重新锁定
+        lumino_core::palette::unlock_palette();
+
         tracing::info!("开始加载 MIDI 文件：{:?}", path);
         self.load_midi_file(path);
     }
@@ -63,6 +66,9 @@ impl RunnerInner {
         else {
             return;
         };
+
+        // 解锁调色板，新 MIDI 加载后 MidiParsed 会重新锁定
+        lumino_core::palette::unlock_palette();
 
         tracing::info!("开始导入 MIDI 文件：{:?}", path);
         let progress_cb = self.window_state.progress_cb.clone();
