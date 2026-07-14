@@ -4,7 +4,7 @@ use tokio::time::sleep;
 
 use lumino_collaboration::{
     client::{CollaborationClient, CollaborationEvent},
-    types::{ClientConfig, Note, NoteAction, NoteBatchOperation},
+    types::{ClientConfig, SyncNote, NoteAction, NoteBatchOperation},
 };
 
 // 工具函数：创建客户端并等待连接和认证
@@ -110,7 +110,7 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
     for i in 0..total_notes {
         let op = NoteBatchOperation {
             action: NoteAction::Add,
-            notes: vec![Note {
+            notes: vec![SyncNote {
                 id: format!("note_{}_{}", rate, i),
                 tick: 0.0,
                 key: 60,

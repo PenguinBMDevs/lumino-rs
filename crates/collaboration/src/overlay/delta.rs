@@ -136,10 +136,10 @@ impl RegionDeltaDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Note, NoteAction, NoteBatchOperation};
+    use crate::types::{SyncNote, NoteAction, NoteBatchOperation};
 
-    fn make_note(tick: f32, key: u16, length: f32, track: usize) -> Note {
-        Note {
+    fn make_note(tick: f32, key: u16, length: f32, track: usize) -> SyncNote {
+        SyncNote {
             id: format!("n_{}_{}", tick as u64, key),
             tick,
             key,
@@ -150,7 +150,7 @@ mod tests {
         }
     }
 
-    fn make_add_op(notes: Vec<Note>) -> NoteBatchOperation {
+    fn make_add_op(notes: Vec<SyncNote>) -> NoteBatchOperation {
         NoteBatchOperation {
             action: NoteAction::Add,
             notes,

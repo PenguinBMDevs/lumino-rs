@@ -90,7 +90,7 @@ impl LoopRange {
         }
     }
 
-    #[expect(dead_code)]
+    #[allow(dead_code)]
     fn move_range(&mut self, delta: f32) {
         let new_start = (self.start_tick + delta).max(0.0);
         let new_end = new_start + (self.end_tick - self.start_tick);

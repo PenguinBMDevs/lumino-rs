@@ -140,7 +140,7 @@ impl RunnerInner {
             track_index
         );
 
-        let note = lumino_collaboration::types::Note {
+        let note = lumino_collaboration::types::SyncNote {
             id: note_id,
             tick,
             key,
@@ -200,7 +200,7 @@ impl RunnerInner {
             track_index
         );
 
-        let note = lumino_collaboration::types::Note {
+        let note = lumino_collaboration::types::SyncNote {
             id: note_id,
             tick,
             key,
@@ -265,7 +265,7 @@ impl RunnerInner {
             track_index
         );
 
-        let note = lumino_collaboration::types::Note {
+        let note = lumino_collaboration::types::SyncNote {
             id: note_id,
             tick,
             key,

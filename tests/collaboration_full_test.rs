@@ -18,7 +18,7 @@ use tokio::time::sleep;
 use lumino_collaboration::client::ClientMessage;
 use lumino_collaboration::client::{CollaborationClient, CollaborationEvent};
 use lumino_collaboration::types::{
-    ClientConfig, MousePosition, Note, NoteAction, NoteBatchOperation,
+    ClientConfig, MousePosition, SyncNote, NoteAction, NoteBatchOperation,
 };
 
 use common::EventCollector;
@@ -211,7 +211,7 @@ async fn test_collaboration_full() -> Result<(), Box<dyn std::error::Error>> {
     println!("步骤4: 用户01发送音符创建事件");
     println!("----------------------------------------");
 
-    let note = Note {
+    let note = SyncNote {
         id: format!("note-{}", chrono::Utc::now().timestamp_millis()),
         tick: 1920.0,
         key: 60,

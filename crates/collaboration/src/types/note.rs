@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-/// 音符数据结构（与编辑器对应）
+/// 协作同步音符（与编辑器对应，含会话唯一 ID 与音轨索引）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Note {
+pub struct SyncNote {
     pub id: String,
     pub tick: f32,
     pub key: u16,
@@ -18,7 +18,7 @@ pub struct Note {
 #[serde(rename_all = "camelCase")]
 pub struct NoteBatchOperation {
     pub action: NoteAction,
-    pub notes: Vec<Note>,
+    pub notes: Vec<SyncNote>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_track: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
