@@ -5,7 +5,7 @@
 
 use iced_core::{Alignment, Color, Length};
 use iced_widget::{
-    button, column, container, image, pick_list, progress_bar, row, scrollable, space, text,
+    button, column, container, image, pick_list, row, scrollable, space, text,
     text_input,
 };
 

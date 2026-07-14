@@ -3,7 +3,7 @@
 //! 从 `video_export_dialog.rs` 中提取，降低主文件单文件规模。
 
 use crate::state::root_state::VideoExportDialogState;
-use iced_widget::{column, container, progress_bar, space, text};
+use iced_widget::{column, progress_bar, space, text};
 
 /// 渲染进度详情（帧数/时间/进度条/速度/倍率/已用剩余）
 pub fn render_progress_detail<'a>(

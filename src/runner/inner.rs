@@ -67,7 +67,6 @@ pub(crate) struct FileState {
 /// 协作功能状态
 pub(crate) struct CollabState {
     pub(crate) collaboration_status: CollaborationStatus,
-    pub(crate) pending_invite_code: Option<String>,
     pub(crate) collaboration_service: CollaborationService,
     pub(crate) last_collab_sync: Option<std::time::Instant>,
 }
@@ -241,7 +240,6 @@ impl Runner {
             collab_state: CollabState {
                 collaboration_status,
                 collaboration_service,
-                pending_invite_code: None,
                 last_collab_sync: None,
             },
             test_state: TestState {

@@ -379,9 +379,8 @@ impl<'a> MidiDocEventStream<'a> {
             return None;
         }
 
-        // 2. 在最小 tick 处找到优先级最高的事件
-        let mut best_priority = 6u8;
-        let mut best_event: Option<MergedEvent> = None;
+        // 2. 在最小 tick 处找到优先级最高的事件（priority 数值越小优先级越高）
+        let mut best: Option<(u8, MergedEvent)> = None;
 
         for (track_idx, &(note_idx, note_on_emitted)) in self.note_cursors.iter().enumerate() {
             if note_idx >= self.doc.notes[track_idx].len() {
@@ -397,25 +396,25 @@ impl<'a> MidiDocEventStream<'a> {
                 continue;
             }
             let priority = if note_on_emitted { 1 } else { 5 };
-            if priority < best_priority {
-                best_priority = priority;
-                best_event = if note_on_emitted {
-                    Some(MergedEvent {
-                        tick: note.end_tick,
-                        kind: 1,
-                        channel: note.channel,
-                        param1: note.key,
-                        param2: 0,
-                    })
-                } else {
-                    Some(MergedEvent {
-                        tick: note.start_tick,
-                        kind: 0,
-                        channel: note.channel,
-                        param1: note.key,
-                        param2: note.velocity as u16,
-                    })
-                };
+            let event = if note_on_emitted {
+                MergedEvent {
+                    tick: note.end_tick,
+                    kind: 1,
+                    channel: note.channel,
+                    param1: note.key,
+                    param2: 0,
+                }
+            } else {
+                MergedEvent {
+                    tick: note.start_tick,
+                    kind: 0,
+                    channel: note.channel,
+                    param1: note.key,
+                    param2: note.velocity as u16,
+                }
+            };
+            if best.as_ref().map_or(true, |(p, _)| priority < *p) {
+                best = Some((priority, event));
             }
         }
 
@@ -458,15 +457,14 @@ impl<'a> MidiDocEventStream<'a> {
                     ),
                     _ => unreachable!(),
                 };
-                if priority < best_priority {
-                    best_priority = priority;
-                    best_event = Some(event);
+                if best.as_ref().map_or(true, |(p, _)| priority < *p) {
+                    best = Some((priority, event));
                 }
             }
         }
 
         // 3. 推进游标
-        if let Some(event) = &best_event {
+        if let Some((_, event)) = &best {
             match event.kind {
                 0 | 1 => {
                     for (track_idx, cursor) in self.note_cursors.iter_mut().enumerate() {
@@ -498,7 +496,7 @@ impl<'a> MidiDocEventStream<'a> {
         }
 
         self.emitted += 1;
-        best_event
+        best.map(|(_, e)| e)
     }
 }
 
