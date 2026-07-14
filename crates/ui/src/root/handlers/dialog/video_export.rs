@@ -9,6 +9,16 @@ use std::str::FromStr;
 
 use super::DialogHandler;
 
+/// 重置视频导出对话框的 overlay / 预览帧 / 缓存，并在对话框窗口中登记取消结果。
+fn reset_video_export_overlay(root: &mut Root) {
+    root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
+    root.state.video_export_dialog.preview_frame = None;
+    root.state.video_export_dialog.cached_image_handle = None;
+    if root.state.is_dialog_window {
+        root.state.dialog_result = Some(DialogResult::Cancel);
+    }
+}
+
 impl DialogHandler {
     pub(super) fn handle_video_export(
         &self,
@@ -71,13 +81,7 @@ impl DialogHandler {
                 crate::event::emit(crate::event::Event::Window(ev));
             }
             V::CancelExport => {
-                root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
-                root.state.video_export_dialog.preview_frame = None;
-                root.state.video_export_dialog.cached_image_handle = None;
-                // 在对话框窗口中关闭窗口
-                if root.state.is_dialog_window {
-                    root.state.dialog_result = Some(DialogResult::Cancel);
-                }
+                reset_video_export_overlay(root);
                 // 通知 Runner 取消导出（关闭对话框 → 设置取消标志 → 后台线程退出）
                 crate::event::emit(crate::event::Event::Window(
                     crate::event::window::Event::close_video_export_dialog(),
@@ -93,13 +97,7 @@ impl DialogHandler {
                     };
             }
             V::DismissOverlay => {
-                root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
-                root.state.video_export_dialog.preview_frame = None;
-                root.state.video_export_dialog.cached_image_handle = None;
-                // 在对话框窗口中关闭窗口
-                if root.state.is_dialog_window {
-                    root.state.dialog_result = Some(DialogResult::Cancel);
-                }
+                reset_video_export_overlay(root);
             }
             V::ContainerChanged(v) => {
                 root.state.video_export_dialog.container = v;

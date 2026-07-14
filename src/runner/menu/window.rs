@@ -24,36 +24,28 @@ impl RunnerInner {
         }
     }
 
+    /// 打开对话框并记录日志（保持「先日志后打开」顺序）。
+    fn open_dialog_traced(&mut self, dialog: DialogType, label: &str) {
+        tracing::info!("请求打开{label}对话框");
+        self.window_state.dialog_manager.open_dialog(dialog);
+    }
+
+    /// 关闭对话框并记录日志（保持「先关闭后日志」顺序）。
+    fn close_dialog_traced(&mut self, dialog: DialogType, label: &str) {
+        self.window_state.dialog_manager.mark_dialog_for_close(dialog);
+        tracing::info!("请求关闭{label}对话框");
+    }
+
     fn handle_dialog_events(&mut self, window_event: lumino_ui::event::window::dialog::Event) {
         use lumino_ui::event::window::dialog::Event::*;
         match window_event {
-            OpenCustomPrecisionDialog => {
-                tracing::info!("请求打开自定义精度对话框");
-                self.window_state
-                    .dialog_manager
-                    .open_dialog(DialogType::CustomPrecision);
-            }
-            CloseCustomPrecisionDialog => {
-                self.window_state
-                    .dialog_manager
-                    .mark_dialog_for_close(DialogType::CustomPrecision);
-                tracing::info!("请求关闭自定义精度对话框");
-            }
+            OpenCustomPrecisionDialog => self.open_dialog_traced(DialogType::CustomPrecision, "自定义精度"),
+            CloseCustomPrecisionDialog => self.close_dialog_traced(DialogType::CustomPrecision, "自定义精度"),
             ApplyCustomPrecision(_, _) => {
                 // 应用精度（在对话框结果中处理）
             }
-            OpenCollaborationDialog => {
-                tracing::info!("请求打开协作对话框");
-                self.window_state
-                    .dialog_manager
-                    .open_dialog(DialogType::Collaboration);
-            }
-            CloseCollaborationDialog => {
-                self.window_state
-                    .dialog_manager
-                    .mark_dialog_for_close(DialogType::Collaboration);
-                tracing::info!("请求关闭协作对话框");
-            }
+            OpenCollaborationDialog => self.open_dialog_traced(DialogType::Collaboration, "协作"),
+            CloseCollaborationDialog => self.close_dialog_traced(DialogType::Collaboration, "协作"),
             OpenProjectSettingsDialog => {
                 tracing::info!("请求打开工程设置对话框");
                 // 优先使用已保存的项目标题，回退到文件名
@@ -73,12 +65,7 @@ impl RunnerInner {
                     .dialog_manager
                     .open_project_settings(title);
             }
-            CloseProjectSettingsDialog => {
-                self.window_state
-                    .dialog_manager
-                    .mark_dialog_for_close(DialogType::ProjectSettings);
-                tracing::info!("请求关闭工程设置对话框");
-            }
+            CloseProjectSettingsDialog => self.close_dialog_traced(DialogType::ProjectSettings, "工程设置"),
             ApplyProjectSettings {
                 title,
                 tempo,
@@ -94,18 +81,8 @@ impl RunnerInner {
                 let main_ui = self.window_state.window.ui_mut();
                 main_ui.apply_project_settings(title, tempo, copyright);
             }
-            OpenSpeedChangeDialog => {
-                tracing::info!("请求打开音符变速对话框");
-                self.window_state
-                    .dialog_manager
-                    .open_dialog(DialogType::SpeedChange);
-            }
-            OpenVideoExportDialog => {
-                tracing::info!("请求打开视频导出对话框");
-                self.window_state
-                    .dialog_manager
-                    .open_dialog(DialogType::VideoExport);
-            }
+            OpenSpeedChangeDialog => self.open_dialog_traced(DialogType::SpeedChange, "音符变速"),
+            OpenVideoExportDialog => self.open_dialog_traced(DialogType::VideoExport, "视频导出"),
             CloseVideoExportDialog => {
                 self.window_state
                     .dialog_manager
@@ -115,12 +92,7 @@ impl RunnerInner {
                     .video_export_cancel
                     .store(true, Ordering::Relaxed);
             }
-            CloseSpeedChangeDialog => {
-                self.window_state
-                    .dialog_manager
-                    .mark_dialog_for_close(DialogType::SpeedChange);
-                tracing::info!("请求关闭音符变速对话框");
-            }
+            CloseSpeedChangeDialog => self.close_dialog_traced(DialogType::SpeedChange, "音符变速"),
             ConfirmSpeedChange(factor) => {
                 tracing::info!("应用音符变速: 倍率={}", factor);
                 // 应用变速到主窗口
