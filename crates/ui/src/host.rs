@@ -21,7 +21,7 @@ use iced_core::{Font, Size};
 use iced_wgpu::graphics::Viewport;
 
 use crate::statusbar::performance::CpuMonitor;
-use crate::{config, root, settings};
+use crate::{config, message, root, settings};
 
 mod builder;
 mod cache;
@@ -90,6 +90,8 @@ pub struct Host {
     pub(crate) hires_gen_info: Option<(u16, u16, u32)>,
     /// 高精度贴图：脏区域覆层是否已发送到渲染线程（防止每帧重复发送）
     pub(crate) hires_overlay_sent: bool,
+    /// 消息路由器（分发消息到各处理器）
+    pub(crate) message_router: root::handlers::MessageRouter,
 }
 
 impl Host {
@@ -165,6 +167,14 @@ impl Host {
         breakdown.note_instance_size = std::mem::size_of::<lumino_gfx::NoteInstance>() as usize;
 
         breakdown
+    }
+
+    /// 路由消息：先检查直接处理，未处理则通过路由器分发
+    pub(crate) fn route_message(&mut self, msg: message::Message) {
+        self.root.poll_midi_input();
+        if !self.root.try_handle_direct(&msg) {
+            self.message_router.route(&mut self.root, msg);
+        }
     }
 }
 

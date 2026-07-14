@@ -68,8 +68,6 @@ pub struct Root {
     pub midi: midi_state::MidiConnectionState,
     /// 录制状态
     pub recording: editor::recording::RecordingState,
-    /// 消息路由器（缓存以避免每帧分配）
-    pub message_router: handlers::MessageRouter,
 }
 
 /// Root 构造参数
@@ -115,7 +113,6 @@ impl Root {
             ),
             midi: midi_state::MidiConnectionState::new(),
             recording: editor::recording::RecordingState::new(),
-            message_router: Root::create_message_router(),
         }
     }
 

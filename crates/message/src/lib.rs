@@ -6,9 +6,11 @@
 pub mod audio_export;
 pub mod collaboration;
 pub mod custom_precision;
+pub mod load_confirm;
 pub mod loop_range;
 pub mod pattern;
 pub mod project_settings;
+pub mod settings_dialog;
 pub mod speed_change;
 pub mod types;
 pub mod velocity;
@@ -17,9 +19,11 @@ pub mod video_export;
 pub use audio_export::AudioExportAction;
 pub use collaboration::CollaborationAction;
 pub use custom_precision::CustomPrecisionAction;
+pub use load_confirm::LoadConfirmAction;
 pub use loop_range::LoopRangeAction;
 pub use pattern::PatternAction;
 pub use project_settings::ProjectSettingsAction;
+pub use settings_dialog::SettingsDialogAction;
 pub use speed_change::SpeedChangeAction;
 pub use types::*;
 pub use velocity::VelocityAction;
@@ -85,16 +89,12 @@ pub enum Message<W, S, Se, T> {
     CustomPrecision(CustomPrecisionAction),
     /// 协作动作
     Collaboration(CollaborationAction),
-    /// 加载确认对话框 - 确认
-    ConfirmLoadConfirm,
-    /// 加载确认对话框 - 取消
-    CloseLoadConfirmDialog,
+    /// 加载确认对话框动作
+    LoadConfirm(LoadConfirmAction),
     /// 工程设置对话框动作
     ProjectSettings(ProjectSettingsAction),
-    /// 打开设置对话框
-    OpenSettingsDialog,
-    /// 关闭设置对话框
-    CloseSettingsDialog,
+    /// 设置对话框动作
+    SettingsDialog(SettingsDialogAction),
     /// 力度编辑面板动作
     Velocity(VelocityAction),
     /// 力度面板高度调整

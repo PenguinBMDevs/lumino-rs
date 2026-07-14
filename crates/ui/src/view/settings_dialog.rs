@@ -1,7 +1,7 @@
 use iced_core::Length;
 use iced_widget::{button, column, container, row, space, text};
 
-use crate::message::Message;
+use crate::message::{Message, SettingsDialogAction};
 use crate::{settings, window};
 use lumino_core::i18n::settings_translations;
 
@@ -19,7 +19,7 @@ pub fn view_settings_dialog<'a>(
 
     // 确认按钮
     let confirm_button = button(text(t.confirm).size(14))
-        .on_press(Message::CloseSettingsDialog)
+        .on_press(Message::SettingsDialog(SettingsDialogAction::CloseDialog))
         .padding([8, 32])
         .width(Length::Fixed(100.0))
         .style(move |_theme: &iced_core::Theme, status| {

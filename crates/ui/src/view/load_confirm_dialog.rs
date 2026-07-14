@@ -1,7 +1,7 @@
 use iced_core::Length;
 use iced_widget::{button, column, container, row, space, text};
 
-use crate::message::Message;
+use crate::message::{LoadConfirmAction, Message};
 use crate::state::root_state::LoadConfirmDialogState;
 
 /// 渲染加载确认对话框
@@ -48,7 +48,7 @@ pub fn view_load_confirm_dialog<'a>(
                     color: Some(palette.background.neutral.text),
                 }),
         )
-        .on_press(Message::CloseLoadConfirmDialog)
+        .on_press(Message::LoadConfirm(LoadConfirmAction::CloseDialog))
         .padding([8, 32])
         .width(Length::Fixed(100.0))
         .style(move |_t: &iced_core::Theme, status| {
@@ -70,7 +70,7 @@ pub fn view_load_confirm_dialog<'a>(
         }),
         space().width(12),
         button(text("加载").size(14))
-            .on_press(Message::ConfirmLoadConfirm)
+            .on_press(Message::LoadConfirm(LoadConfirmAction::Confirm))
             .padding([8, 32])
             .width(Length::Fixed(100.0))
             .style(move |_t: &iced_core::Theme, status| {

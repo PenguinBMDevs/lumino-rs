@@ -27,11 +27,11 @@ impl Host {
         // 空格键：播放/暂停切换（统一走 toolbar 消息路径）
         if key == winit::keyboard::KeyCode::Space {
             if self.root.toolbar.is_playing {
-                self.root
-                    .update(message::Message::Toolbar(toolbar::Event::Pause));
+                self
+                    .route_message(message::Message::Toolbar(toolbar::Event::Pause));
             } else {
-                self.root
-                    .update(message::Message::Toolbar(toolbar::Event::Play));
+                self
+                    .route_message(message::Message::Toolbar(toolbar::Event::Play));
             }
             self.window_ctx.window.request_redraw();
             return;
@@ -49,8 +49,8 @@ impl Host {
             (winit::keyboard::KeyCode::KeyV, true, _) => Some(message::EditorAction::Paste),
             (winit::keyboard::KeyCode::KeyA, true, _) => Some(message::EditorAction::SelectAll),
             (winit::keyboard::KeyCode::KeyQ, true, _) => {
-                self.root
-                    .update(message::Message::Toolbar(toolbar::Event::Quantize));
+                self
+                    .route_message(message::Message::Toolbar(toolbar::Event::Quantize));
                 None
             }
             _ => None,
@@ -110,12 +110,12 @@ impl Host {
 
         match &event {
             Resized(_) => {
-                self.root.update(message::Window::maximized(
+                self.route_message(message::Window::maximized(
                     self.window_ctx.window.is_maximized(),
                 ));
             }
             Focused(r) => {
-                self.root.update(message::Window::focused(*r));
+                self.route_message(message::Window::focused(*r));
             }
             KeyboardInput { event, .. } => {
                 // 处理键盘事件
@@ -154,11 +154,11 @@ impl Host {
             }
             ModifiersChanged(new_modifiers) => {
                 let ctrl = is_ctrl_or_cmd_pressed(new_modifiers.state());
-                self.root.update(message::Message::CtrlKeyChanged(ctrl));
+                self.route_message(message::Message::CtrlKeyChanged(ctrl));
                 let shift = new_modifiers
                     .state()
                     .contains(winit::keyboard::ModifiersState::SHIFT);
-                self.root.update(message::Message::ShiftKeyChanged(shift));
+                self.route_message(message::Message::ShiftKeyChanged(shift));
             }
             _ => (),
         }
@@ -334,7 +334,7 @@ impl Host {
 
         // 主题变更：需要同时失效 wgpu 网格/音符缓存以刷新颜色
         if matches!(&message, message::Message::Window(window::Event::Theme(_))) {
-            self.root.update(message);
+            self.route_message(message);
             self.root.editor.keyboard_cache.clear();
             self.root.editor.ruler_cache.clear();
             self.render_ctx.render_cache.grid_viewport_hash = 0;
@@ -351,7 +351,7 @@ impl Host {
         }
 
         // 其他消息交给 root 处理，假设可能有状态变更
-        self.root.update(message);
+        self.route_message(message);
         true
     }
 

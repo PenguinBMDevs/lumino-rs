@@ -11,6 +11,7 @@ use iced_winit::winit;
 
 use crate::config;
 use crate::root;
+use crate::root::handlers;
 use crate::statusbar::performance::CpuMonitor;
 
 use super::render::note_worker::ScrollVelocityTracker;
@@ -103,6 +104,7 @@ impl Host {
             hires_midi_hash: Some(midi_hash),
             hires_gen_info: Some((ppq, key_count, total_ticks)),
             hires_overlay_sent: false,
+            message_router: handlers::create_message_router(),
         }
     }
 

@@ -38,10 +38,10 @@ impl Host {
             let gpu_frame_time = self.last_gpu_frame_time_ms;
 
             let perf_data = PerfData::new(fps, cpu_usage, memory_mb, gpu_frame_time);
-            self.root.update(window::Event::perf_update(perf_data));
+            self.route_message(window::Event::perf_update(perf_data));
 
             // 保持向后兼容：仍然发送 FPS 更新给 Window 状态
-            self.root.update(window::Event::fps_update(fps));
+            self.route_message(window::Event::fps_update(fps));
 
             self.frame_count = 0;
             self.last_fps_update = now;
@@ -60,7 +60,7 @@ impl Host {
             || self.root.editor.editor_state.view.smooth_scroll.active
             || has_selection_anim;
         if needs_animation {
-            self.root.update(Message::AnimationTick);
+            self.route_message(Message::AnimationTick);
             self.window_ctx.window.request_redraw();
         }
     }

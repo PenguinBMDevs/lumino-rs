@@ -77,38 +77,21 @@ impl Default for MessageRouter {
     }
 }
 
+/// 创建配置好的消息路由器
+pub fn create_message_router() -> MessageRouter {
+    let mut router = MessageRouter::new();
+    router.register(Box::new(CollaborationHandler::new()));
+    router.register(Box::new(DialogHandler::new()));
+    router.register(Box::new(VelocityHandler::new()));
+    router.register(Box::new(LoopRangeHandler::new()));
+    router.register(Box::new(ToolbarHandler::new()));
+    router
+}
+
 impl Root {
-    /// 创建配置好的消息路由器
-    pub fn create_message_router() -> MessageRouter {
-        let mut router = MessageRouter::new();
-        router.register(Box::new(CollaborationHandler::new()));
-        router.register(Box::new(DialogHandler::new()));
-        router.register(Box::new(VelocityHandler::new()));
-        router.register(Box::new(LoopRangeHandler::new()));
-        router.register(Box::new(ToolbarHandler::new()));
-        router
-    }
-
-    /// 主更新入口 - 简化为路由分发
-    pub fn update(&mut self, msg: Message) {
-        // 每帧轮询 MIDI 输入缓冲区
-        self.poll_midi_input();
-
-        // 先尝试直接处理消息
-        if self.try_handle_direct(&msg) {
-            return;
-        }
-
-        // 将 router 从 self 中取出，避免 &mut self 与 &mut self.message_router 冲突
-        // 使用临时空 router 占位，使用完毕后归还
-        let mut router = std::mem::take(&mut self.message_router);
-        router.route(self, msg);
-        self.message_router = router;
-    }
-
     /// 直接处理不需要路由的消息
     /// 返回 true 表示消息已被处理
-    fn try_handle_direct(&mut self, msg: &Message) -> bool {
+    pub(crate) fn try_handle_direct(&mut self, msg: &Message) -> bool {
         match msg {
             Message::Core(event) => {
                 self.handle_core_event(event.clone());

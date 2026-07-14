@@ -86,7 +86,7 @@ impl Host {
         // 同步主题
         if self.root.window.theme.to_string() != theme {
             tracing::info!("同步主题: {} -> {}", self.root.window.theme, theme);
-            self.root.update(crate::window::Event::theme(theme));
+            self.route_message(crate::window::Event::theme(theme));
             self.root.editor.grid_cache.clear();
             self.root.editor.keyboard_cache.clear();
             self.root.editor.ruler_cache.clear();
@@ -151,7 +151,7 @@ impl Host {
         color: String,
         username: String,
     ) {
-        self.root.update(message::Message::Collaboration(
+        self.route_message(message::Message::Collaboration(
             lumino_message::CollaborationAction::RemoteMouseMoved {
                 user_id: user_id.into(),
                 x,
@@ -165,7 +165,7 @@ impl Host {
 
     /// 移除远端鼠标
     pub fn remove_remote_cursor(&mut self, user_id: String) {
-        self.root.update(message::Message::Collaboration(
+        self.route_message(message::Message::Collaboration(
             lumino_message::CollaborationAction::RemoteUserLeft {
                 user_id: user_id.into(),
             },
@@ -175,7 +175,7 @@ impl Host {
 
     /// 更新远端音符
     pub fn update_remote_note(&mut self, operation: String) {
-        self.root.update(message::Message::Collaboration(
+        self.route_message(message::Message::Collaboration(
             lumino_message::CollaborationAction::RemoteNoteUpdate { operation },
         ));
         self.window_ctx.window.request_redraw();
@@ -202,7 +202,7 @@ impl Host {
 
     /// 更新进度
     pub fn update_progress(&mut self, progress: Option<(String, f64)>) {
-        self.root.update(message::Message::Progress(progress));
+        self.route_message(message::Message::Progress(progress));
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
@@ -320,7 +320,7 @@ impl Host {
 
     /// 更新主题
     pub fn update_theme(&mut self, theme: String) {
-        self.root.update(window::Event::theme(theme));
+        self.route_message(window::Event::theme(theme));
         self.root.editor.grid_cache.clear();
         self.root.editor.keyboard_cache.clear();
         self.root.editor.ruler_cache.clear();
