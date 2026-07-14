@@ -559,3 +559,83 @@ impl ChannelCountExt for config::AudioChannelMode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lumino_midi_model::{NoteEvent, track::TrackManager};
+
+    fn make_doc(notes: Vec<Vec<NoteEvent>>, total_ticks: u32) -> MidiDocument {
+        let track_count = notes.len() as u16;
+        MidiDocument {
+            notes,
+            tempo_changes: vec![(0, 120.0)],
+            control_events: vec![],
+            track_names: (0..track_count).map(|_| None).collect(),
+            total_ticks,
+            track_count,
+            tracks: TrackManager::new(track_count),
+        }
+    }
+
+    /// 验证单个音符的 next_event 顺序：NoteOn（tick=0）→ NoteOff（tick=end）→ None
+    #[test]
+    fn test_next_event_single_note_order() {
+        let doc = make_doc(vec![vec![NoteEvent::new(0, 10, 60, 100, 0)]], 10);
+        let mut stream = MidiDocEventStream::new(&doc);
+        assert_eq!(stream.total_events(), 2, "1 note = 2 events (on+off)");
+
+        // First: note-on at tick 0（kind: 0 = NoteOn, param2=0 表示无 velocity 编码）
+        let e1 = stream.next_event().expect("first event");
+        assert_eq!(e1.kind, 0, "first should be NoteOn (kind=0)");
+        assert_eq!(e1.tick, 0, "note-on at start tick");
+        assert_eq!(e1.channel, 0);
+        assert_eq!(e1.param1, 60, "param1 = note key");
+
+        // Second: note-off at tick 10（kind: 1 = NoteOff）
+        let e2 = stream.next_event().expect("second event");
+        assert_eq!(e2.kind, 1, "second should be NoteOff (kind=1)");
+        assert_eq!(e2.tick, 10, "note-off at end tick");
+        assert_eq!(e2.channel, 0);
+        assert_eq!(e2.param1, 60, "param1 = note key");
+
+        // Exhausted
+        assert!(stream.next_event().is_none(), "stream should be exhausted");
+    }
+
+    /// 验证跨轨最小 tick 优先：track 1 有更早的音符 → 先发出 track 1 的 NoteOn
+    #[test]
+    fn test_next_event_cross_track_min_tick() {
+        let doc = make_doc(
+            vec![
+                vec![NoteEvent::new(10, 20, 60, 100, 0)],
+                vec![NoteEvent::new(0, 5, 64, 100, 1)],
+            ],
+            20,
+        );
+        let mut stream = MidiDocEventStream::new(&doc);
+        let e = stream.next_event().expect("first event");
+        assert_eq!(e.tick, 0, "first event should be at earliest tick");
+        assert_eq!(e.kind, 0, "first event should be NoteOn (kind=0)");
+        assert_eq!(e.channel, 1, "track 1 has the earlier note");
+        assert_eq!(e.param1, 64, "key from track 1");
+    }
+
+    /// 验证相同最小 tick 时按轨道迭代顺序取第一个（先到先得）
+    #[test]
+    fn test_next_event_tie_same_tick_first_track() {
+        let doc = make_doc(
+            vec![
+                vec![NoteEvent::new(0, 10, 60, 100, 0)],
+                vec![NoteEvent::new(0, 10, 64, 100, 1)],
+            ],
+            10,
+        );
+        let mut stream = MidiDocEventStream::new(&doc);
+        let e = stream.next_event().expect("first event");
+        assert_eq!(e.channel, 0, "track 0 wins tie (iteration order)");
+        let e = stream.next_event().expect("second event");
+        assert_eq!(e.kind, 0, "second event should also be NoteOn (kind=0)");
+        assert_eq!(e.channel, 1, "track 1 second");
+    }
+}
