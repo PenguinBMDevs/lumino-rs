@@ -8,6 +8,7 @@ use lumino_onion_skin_hires::{CacheMeta, merge_track_tile_into, read_track_tile_
 
 use super::super::super::commands::{ControlCommand, HiResTrackParams};
 use super::super::super::params::RenderParams;
+use super::context::{RenderContext, UploadHiResTileParams};
 use super::types::{HiResMeta, HiResStreamMsg};
 
 /// 向共享进度缓冲推送一条进度（渲染线程 → UI 线程）
@@ -22,17 +23,14 @@ pub(super) fn push_onion_progress(
 }
 
 /// 处理高精度洋葱皮控制命令
-#[allow(clippy::too_many_arguments)]
 pub(super) fn handle_hires_control(
     cmd: ControlCommand,
-    device: &wgpu::Device,
-    _queue: &wgpu::Queue,
+    ctx: &RenderContext,
+    hires_result_tx: &std::sync::mpsc::SyncSender<HiResStreamMsg>,
+    onion_progress: &Arc<Mutex<Vec<(String, f32)>>>,
     hires_renderer: &mut Option<HiResRenderer>,
     hires_meta: &mut Option<HiResMeta>,
     hires_config: &mut Option<HiResConfig>,
-    hires_result_tx: &std::sync::mpsc::SyncSender<HiResStreamMsg>,
-    onion_progress: &Arc<Mutex<Vec<(String, f32)>>>,
-    texture_format: wgpu::TextureFormat,
 ) {
     match cmd {
         ControlCommand::GenerateHiResOnionSkin {
@@ -44,7 +42,11 @@ pub(super) fn handle_hires_control(
             midi_hash,
         } => {
             // 创建/重建高精度渲染器
-            *hires_renderer = Some(HiResRenderer::new(device, config.clone(), texture_format));
+            *hires_renderer = Some(HiResRenderer::new(
+                &ctx.device,
+                config.clone(),
+                ctx.texture_format,
+            ));
             *hires_config = Some(config.clone());
 
             // 元数据必须在后台线程启动前设置（regen 安全）
@@ -141,7 +143,11 @@ pub(super) fn handle_hires_control(
             // 若尚未创建高精度渲染器（干净启动 / 新建工程），用当前配置初始化
             if hires_renderer.is_none() {
                 tracing::debug!("[onion-render] RegenerateHiResTrack: 初始化 HiResRenderer");
-                *hires_renderer = Some(HiResRenderer::new(device, config.clone(), texture_format));
+                *hires_renderer = Some(HiResRenderer::new(
+                    &ctx.device,
+                    config.clone(),
+                    ctx.texture_format,
+                ));
             }
             *hires_config = Some(config.clone());
 
@@ -285,7 +291,11 @@ pub(super) fn handle_hires_control(
             // 若尚未创建高精度渲染器，用当前配置初始化
             if hires_renderer.is_none() {
                 tracing::debug!("[onion-render] ShowHiResDirtyOverlay: 初始化 HiResRenderer");
-                *hires_renderer = Some(HiResRenderer::new(device, config.clone(), texture_format));
+                *hires_renderer = Some(HiResRenderer::new(
+                    &ctx.device,
+                    config.clone(),
+                    ctx.texture_format,
+                ));
             }
             *hires_config = Some(config.clone());
 
@@ -350,8 +360,8 @@ pub(super) fn handle_hires_control(
 
                     // 上传为脏覆层到 (0, time_g)
                     renderer.upload_dirty_overlay(
-                        device,
-                        _queue,
+                        &ctx.device,
+                        &ctx.queue,
                         merged_coord,
                         &group_tile.pixels,
                         group_tile.width,
@@ -378,26 +388,18 @@ pub(super) fn handle_hires_control(
 }
 
 /// 上传视频导出预生成的高精度贴图，并初始化渲染器与元数据
-#[allow(clippy::too_many_arguments)]
 pub(super) fn upload_hires_video_tiles(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
+    ctx: &RenderContext,
     hires_renderer: &mut Option<HiResRenderer>,
     hires_meta: &mut Option<HiResMeta>,
     hires_config: &mut Option<HiResConfig>,
-    tiles: Vec<GroupTile>,
-    config: HiResConfig,
-    track_count: u16,
-    key_count: u16,
-    total_ticks: u32,
-    ppq: u16,
-    texture_format: wgpu::TextureFormat,
+    params: UploadHiResTileParams,
 ) {
-    let mut renderer = HiResRenderer::new(device, config.clone(), texture_format);
-    for tile in tiles {
+    let mut renderer = HiResRenderer::new(&ctx.device, params.config.clone(), ctx.texture_format);
+    for tile in params.tiles {
         renderer.upload_tile(
-            device,
-            queue,
+            &ctx.device,
+            &ctx.queue,
             tile.coord,
             &tile.pixels,
             tile.width,
@@ -405,9 +407,11 @@ pub(super) fn upload_hires_video_tiles(
         );
     }
 
-    let time_groups = config.time_group_count(total_ticks, ppq);
-    let ticks_per_group = config.ticks_per_group(ppq);
-    let track_groups = config.track_group_count(track_count);
+    let time_groups = params
+        .config
+        .time_group_count(params.total_ticks, params.ppq);
+    let ticks_per_group = params.config.ticks_per_group(params.ppq);
+    let track_groups = params.config.track_group_count(params.track_count);
 
     tracing::info!(
         "视频导出 HiRes 贴图上传完成: {} 张, track_groups={}, time_groups={}",
@@ -417,11 +421,11 @@ pub(super) fn upload_hires_video_tiles(
     );
 
     *hires_renderer = Some(renderer);
-    *hires_config = Some(config);
+    *hires_config = Some(params.config);
     *hires_meta = Some(HiResMeta {
-        track_count,
+        track_count: params.track_count,
         track_groups,
-        key_count,
+        key_count: params.key_count,
         time_groups,
         ticks_per_group,
     });

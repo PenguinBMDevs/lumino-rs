@@ -3,27 +3,22 @@ use std::time::{Duration, Instant};
 
 use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
-use crate::{CameraParams, CameraUniform, HiResRenderer, TileCoord};
+use super::runner::context::{RenderContext, RenderFrameState};
+use crate::{CameraParams, CameraUniform, TileCoord};
 
 /// 执行渲染通道（含走带/钢琴卷帘/CC 柱状条）
-#[allow(clippy::too_many_arguments)]
 pub fn execute_render_pass(
     encoder: &mut wgpu::CommandEncoder,
-    _device: &wgpu::Device,
-    current_texture: &Option<Arc<wgpu::Texture>>,
-    depth_texture_view: &Option<wgpu::TextureView>,
+    ctx: &RenderContext,
     params: &RenderParams,
-    grid_renderer: &mut crate::GridRenderer,
-    note_renderer: &mut crate::NoteRenderer,
-    ruler_renderer: &mut crate::RulerRenderer,
-    arrangement_renderer: &mut crate::ArrangementRenderer,
-    queue: &wgpu::Queue,
-    cc_bar_renderer: &mut crate::CcBarRenderer,
-    hires_renderer: &Option<HiResRenderer>,
     hires_visible_coords: &[TileCoord],
     render_notes: bool,
+    frame: &mut RenderFrameState,
 ) {
-    let (Some(texture), Some(depth_view)) = (current_texture, depth_texture_view) else {
+    let (Some(texture), Some(depth_view)) = (
+        frame.current_texture.as_ref(),
+        frame.depth_texture_view.as_ref(),
+    ) else {
         return;
     };
 
@@ -65,7 +60,7 @@ pub fn execute_render_pass(
         });
 
         // 走带渲染器绘制（背景 + 网格 + 音符 + 演奏指示线）
-        arrangement_renderer.draw(&mut render_pass);
+        frame.renderers.arrangement.draw(&mut render_pass);
         return;
     }
 
@@ -80,7 +75,10 @@ pub fn execute_render_pass(
         max_key_index: params.max_key_index,
     });
 
-    note_renderer.prepare_pass(encoder, camera, queue);
+    frame
+        .renderers
+        .note
+        .prepare_pass(encoder, camera, &ctx.queue);
 
     {
         puffin::profile_scope!("render_pass");
@@ -118,10 +116,10 @@ pub fn execute_render_pass(
 
         // 绘制背景网格
         render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-        grid_renderer.draw(&mut render_pass, 1);
+        frame.renderers.grid.draw(&mut render_pass, 1);
 
         // 绘制高精度洋葱皮贴图（网格之上、低精度洋葱皮之下，半透明叠加）
-        if let Some(hires) = hires_renderer {
+        if let Some(hires) = frame.hires_renderer.as_ref() {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             hires.render(&mut render_pass, hires_visible_coords);
             // 绘制编辑后的临时脏区域覆层（在正常贴图之上，颜色与当前音轨一致）
@@ -131,7 +129,7 @@ pub fn execute_render_pass(
         // 绘制音符（HiRes 贴图模式下音符已包含在贴图中，跳过）
         if render_notes {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            note_renderer.draw(
+            frame.renderers.note.draw(
                 &mut render_pass,
                 true,
                 Some((scissor_x, scissor_y, scissor_width, scissor_height)),
@@ -141,7 +139,10 @@ pub fn execute_render_pass(
         // 绘制标尺
         if !params.ruler_instances.is_empty() {
             render_pass.set_scissor_rect(0, 0, width, height);
-            ruler_renderer.draw(&mut render_pass, params.ruler_instances.len() as u32);
+            frame
+                .renderers
+                .ruler
+                .draw(&mut render_pass, params.ruler_instances.len() as u32);
         }
 
         // 绘制 CC 柱状条（力度面板 — 统一矩形渲染，覆盖所有模式）
@@ -153,7 +154,10 @@ pub fn execute_render_pass(
             let vscissor_h = ((vh * scale) as u32).min(height.saturating_sub(vscissor_y));
 
             render_pass.set_scissor_rect(vscissor_x, vscissor_y, vscissor_w, vscissor_h);
-            cc_bar_renderer.draw(&mut render_pass, params.cc_bar_instances.len() as u32);
+            frame
+                .renderers
+                .cc_bar
+                .draw(&mut render_pass, params.cc_bar_instances.len() as u32);
         }
     }
 }

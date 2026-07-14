@@ -7,6 +7,7 @@ use std::thread::{self, JoinHandle};
 use super::commands::{ControlCommand, RenderCommand};
 use super::params::RenderParams;
 use super::render_loop::run_render_thread;
+use super::render_loop::runner::context::{RenderContext, RenderThreadChannels};
 use super::stats::RenderStats;
 use crate::SwappableBuffer;
 
@@ -70,18 +71,17 @@ impl WgpuRenderThread {
 
         // 启动渲染线程
         let thread_handle = thread::spawn(move || {
-            run_render_thread(
-                device,
-                queue,
-                texture_format,
-                running_clone,
+            let ctx = RenderContext::new(device, queue, texture_format);
+            let channels = RenderThreadChannels {
+                running: running_clone,
                 command_receiver,
                 latest_texture_clone,
                 stats_clone,
                 note_events_rx,
-                note_instances_buffer_clone,
-                onion_progress_clone,
-            );
+                note_instances_buffer: note_instances_buffer_clone,
+                onion_progress: onion_progress_clone,
+            };
+            run_render_thread(ctx, channels);
         });
 
         Ok(Self {

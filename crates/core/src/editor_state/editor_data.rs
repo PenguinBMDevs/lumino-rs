@@ -8,14 +8,12 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::automation::{AutomationEdit, AutomationLane, SegmentShape};
-use crate::history::{EditorSnapshot, History};
+use crate::automation::AutomationLane;
+use crate::history::History;
 use crate::midi_types::{CcData, TempoPoint};
 use crate::note::Note;
 
 use super::constants::DEFAULT_BPM;
-use super::constants::GLUE_PROXIMITY_THRESHOLD;
-use super::note_grouping::{self, NoteTuple};
 
 mod automation;
 mod history;
@@ -96,7 +94,7 @@ impl EditorData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::automation::AutomationTarget;
+    use crate::automation::{AutomationEdit, AutomationTarget, SegmentShape};
 
     #[test]
     fn test_editor_data_default() {
