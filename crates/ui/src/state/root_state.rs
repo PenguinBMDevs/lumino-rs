@@ -1,89 +1,11 @@
+#[path = "toggle_animation.rs"]
+pub mod toggle_animation;
+
+use toggle_animation::ToggleAnimationState;
+
 use crate::titlebar::mode_toggle::AppMode;
 use crate::toolbar::DotType;
 use crate::toolbar::NotePrecision;
-
-/// 模式切换按钮的弹簧物理动画状态
-#[derive(Debug, Clone)]
-pub struct ToggleAnimationState {
-    /// 动画进度 (0.0 = Editor, 1.0 = Waterfall)
-    pub position: f32,
-    /// 速度（用于弹簧物理模拟）
-    pub velocity: f32,
-    /// 目标位置
-    pub target: f32,
-    /// 是否正在动画中
-    pub active: bool,
-    /// 上次更新时间（用于计算 dt）
-    pub last_update: Option<std::time::Instant>,
-}
-
-impl Default for ToggleAnimationState {
-    fn default() -> Self {
-        Self {
-            position: 0.0,
-            velocity: 0.0,
-            target: 0.0,
-            active: false,
-            last_update: None,
-        }
-    }
-}
-
-impl ToggleAnimationState {
-    const STIFFNESS: f64 = 200.0;
-    const DAMPING: f64 = 15.0;
-    const VELOCITY_THRESHOLD: f64 = 0.001;
-    const POSITION_THRESHOLD: f64 = 0.001;
-
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// 启动动画到目标位置
-    pub fn animate_to(&mut self, target: f32) {
-        self.target = target;
-        if !self.active {
-            self.active = true;
-            self.last_update = Some(std::time::Instant::now());
-        }
-    }
-
-    /// 更新弹簧物理模拟，返回是否仍在动画中
-    pub fn update(&mut self) -> bool {
-        if !self.active {
-            return false;
-        }
-
-        let now = std::time::Instant::now();
-        let dt = self
-            .last_update
-            .map(|t| t.elapsed().as_secs_f64())
-            .unwrap_or(0.016);
-        self.last_update = Some(now);
-
-        let dt = dt.min(0.05);
-
-        let displacement = (self.position - self.target) as f64;
-        let spring_force = -Self::STIFFNESS * displacement;
-        let damping_force = -Self::DAMPING * self.velocity as f64;
-        let acceleration = spring_force + damping_force;
-
-        self.velocity += (acceleration * dt) as f32;
-        self.position += self.velocity * dt as f32;
-
-        let at_target = ((self.position - self.target).abs() as f64) < Self::POSITION_THRESHOLD
-            && (self.velocity.abs() as f64) < Self::VELOCITY_THRESHOLD;
-
-        if at_target {
-            self.position = self.target;
-            self.velocity = 0.0;
-            self.active = false;
-            false
-        } else {
-            true
-        }
-    }
-}
 
 /// 自定义精度对话框状态
 #[derive(Debug, Clone)]
@@ -212,8 +134,9 @@ pub enum DialogType {
     LoadConfirm,
     ProjectSettings,
     Settings,
-    AudioExport,
     SpeedChange,
+    ExportProgress,
+    VideoExport,
 }
 
 /// 协作视图状态
@@ -293,10 +216,11 @@ impl CollaborationDialogState {
     }
 }
 
-/// 音频导出对话框状态
+/// 音频导出面板状态（主界面侧边栏面板，非独立对话框）
+///
+/// 纯 UI 状态，仅保存控件值，不含导出处理逻辑。
 #[derive(Debug, Clone)]
 pub struct AudioExportDialogState {
-    pub is_open: bool,
     /// 工程名称
     pub project_name: String,
     /// MIDI 文件路径
@@ -309,6 +233,8 @@ pub struct AudioExportDialogState {
     pub channels: AudioChannels,
     /// 每通道层数限制
     pub layers: u32,
+    /// GPU 导出时最大同时 voice 数（0 = 使用默认值 2048）
+    pub max_voices: u32,
     /// 通道多线程
     pub channel_threading: ThreadingOption,
     /// 按键多线程
@@ -323,14 +249,36 @@ pub struct AudioExportDialogState {
     pub interpolation: Interpolation,
     /// 输出格式
     pub format: AudioFormat,
+    /// 编码比特率（kbps，仅 MP3/Vorbis 有效）
+    pub audio_bitrate: u32,
+    /// 忽略音色变化事件
+    pub ignore_program_changes: bool,
+    /// 启用音符力度过滤
+    pub filter_velocity: bool,
+    /// 最低力度
+    pub velocity_low: u8,
+    /// 最高力度
+    pub velocity_high: u8,
+    /// 启用键位过滤
+    pub filter_key: bool,
+    /// 最低键位
+    pub key_low: u8,
+    /// 最高键位
+    pub key_high: u8,
+    /// 音符强制结束延迟（毫秒）
+    pub note_force_end_delay: u32,
     /// 输出路径
     pub output_path: String,
-    /// 是否正在导出
-    pub is_exporting: bool,
-    /// 导出进度 (0.0 - 100.0)
-    pub progress: f32,
-    /// 导出状态消息
-    pub status_message: String,
+    /// 是否正在渲染（显示内嵌进度条）
+    pub is_rendering: bool,
+    /// 渲染进度消息
+    pub render_message: String,
+    /// 渲染进度 (0.0 - 1.0)
+    pub render_progress: f64,
+    /// 渲染是否完成
+    pub render_completed: bool,
+    /// 渲染错误信息
+    pub render_error: Option<String>,
 }
 
 /// 音频通道数（UI用）— 重新导出自 lumino-message
@@ -345,13 +293,13 @@ impl Default for AudioExportDialogState {
 impl AudioExportDialogState {
     pub fn new() -> Self {
         Self {
-            is_open: false,
             project_name: String::new(),
             midi_path: String::new(),
             soundfont_path: String::new(),
             sample_rate: 48000,
             channels: AudioChannels::default(),
             layers: 32,
+            max_voices: 2048,
             channel_threading: ThreadingOption::default(),
             key_threading: ThreadingOption::default(),
             apply_limiter: true,
@@ -359,18 +307,131 @@ impl AudioExportDialogState {
             linear_envelope: false,
             interpolation: Interpolation::default(),
             format: AudioFormat::default(),
+            audio_bitrate: 320,
+            ignore_program_changes: false,
+            filter_velocity: false,
+            velocity_low: 0,
+            velocity_high: 127,
+            filter_key: false,
+            key_low: 0,
+            key_high: 127,
+            note_force_end_delay: 0,
             output_path: String::new(),
-            is_exporting: false,
+            is_rendering: false,
+            render_message: String::new(),
+            render_progress: 0.0,
+            render_completed: false,
+            render_error: None,
+        }
+    }
+}
+
+/// 视频导出覆盖层状态（参照 nezha ExportState）
+#[derive(Debug, Clone, Default)]
+pub enum VideoExportOverlayState {
+    /// 空闲（无覆盖层）
+    #[default]
+    None,
+    /// 导出中（渲染+写帧）
+    Exporting,
+    /// 编码收尾（等待 ffmpeg 封装）
+    Finalizing,
+    /// 完成
+    Completed {
+        /// 总帧数
+        total_frames: u64,
+        /// 总用时（秒）
+        elapsed_secs: f64,
+        /// 平均渲染速度
+        avg_fps: f64,
+    },
+    /// 错误
+    Error(String),
+}
+
+/// 视频导出面板状态（主界面侧边栏面板）
+///
+/// 纯 UI 状态，保存控件值与导出进度。
+/// 配置值用 String 存储（UI pick_list 原生支持），Runner 端解析回强类型。
+#[derive(Debug, Clone)]
+pub struct VideoExportDialogState {
+    /// 容器格式（"MP4"/"MOV"/"MKV"/"AVI"）
+    pub container: String,
+    /// 视频编码器（"H.264"/"H.265 / HEVC"/"ProRes"/"VP9"/"AV1"）
+    pub codec: String,
+    /// 硬件加速后端（"Software (CPU)"/"NVENC (NVIDIA)" 等）
+    pub backend: String,
+    /// 质量预设（"高"/"中"/"低"）
+    pub quality: String,
+    /// 分辨率宽度
+    pub width: u32,
+    /// 分辨率高度
+    pub height: u32,
+    /// 帧率
+    pub fps: u32,
+    /// 输出路径
+    pub output_path: String,
+    /// 视频导出渲染模式（"note_rectangle"/"hires_texture"）
+    pub render_mode: String,
+    /// 覆盖层状态（None=空闲，其余=显示模态覆盖层）
+    pub overlay: VideoExportOverlayState,
+    /// 进度 (0.0 - 1.0)
+    pub progress: f64,
+    /// 状态消息
+    pub status_message: String,
+    /// 当前已渲染帧
+    pub current_frame: u64,
+    /// 总帧数
+    pub total_frames: u64,
+    /// 渲染速度（fps，EMA 平滑）
+    pub render_fps: f64,
+    /// 预览帧数据（RGBA 格式，压缩后用于 dialog 内显示预览图像）
+    pub preview_frame: Option<Vec<u8>>,
+    /// 预览帧宽度
+    pub preview_width: u32,
+    /// 预览帧高度
+    pub preview_height: u32,
+    /// 缓存的 iced image handle（避免每帧创建唯一 ID 导致 GPU 纹理缓存失效）
+    ///
+    /// `Handle::from_rgba` 每次调用生成唯一 ID，iced_wgpu 对大图（>2MB）走异步上传，
+    /// 每个新 ID 都被视为全新图像重新上传。缓存 handle 后，相同数据复用已上传的纹理。
+    pub cached_image_handle: Option<iced_core::image::Handle>,
+}
+
+impl Default for VideoExportDialogState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl VideoExportDialogState {
+    pub fn new() -> Self {
+        Self {
+            container: "MP4".to_string(),
+            codec: "H.264".to_string(),
+            backend: "Software (CPU)".to_string(),
+            quality: "中".to_string(),
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            output_path: String::new(),
+            render_mode: "hires_texture".to_string(),
+            overlay: VideoExportOverlayState::None,
             progress: 0.0,
             status_message: String::new(),
+            current_frame: 0,
+            total_frames: 0,
+            render_fps: 0.0,
+            preview_frame: None,
+            preview_width: 0,
+            preview_height: 0,
+            cached_image_handle: None,
         }
     }
 
-    pub fn reset(&mut self) {
-        self.is_open = false;
-        self.is_exporting = false;
-        self.progress = 0.0;
-        self.status_message.clear();
+    /// 是否正在导出（覆盖层可见）
+    pub fn is_exporting(&self) -> bool {
+        !matches!(self.overlay, VideoExportOverlayState::None)
     }
 }
 
@@ -424,6 +485,67 @@ impl Default for SpeedChangeDialogState {
     }
 }
 
+/// 音频导出进度对话框状态
+#[derive(Debug, Clone)]
+pub struct ExportProgressDialogState {
+    /// 是否显示
+    pub is_open: bool,
+    /// 当前进度消息
+    pub message: String,
+    /// 进度值 (0.0 - 1.0)
+    pub progress: f64,
+    /// 是否已完成
+    pub is_completed: bool,
+    /// 是否出错
+    pub error: Option<String>,
+}
+
+impl ExportProgressDialogState {
+    pub fn new() -> Self {
+        Self {
+            is_open: false,
+            message: String::new(),
+            progress: 0.0,
+            is_completed: false,
+            error: None,
+        }
+    }
+
+    /// 重置状态
+    pub fn reset(&mut self) {
+        self.is_open = false;
+        self.message.clear();
+        self.progress = 0.0;
+        self.is_completed = false;
+        self.error = None;
+    }
+
+    /// 更新进度
+    pub fn update_progress(&mut self, message: String, progress: f64) {
+        self.message = message;
+        self.progress = progress;
+    }
+
+    /// 标记完成
+    pub fn set_completed(&mut self) {
+        self.is_completed = true;
+        self.progress = 1.0;
+        self.message = "导出完成".to_string();
+    }
+
+    /// 标记错误
+    pub fn set_error(&mut self, error: String) {
+        self.error = Some(error.clone());
+        self.message = format!("导出失败: {}", error);
+    }
+}
+
+impl Default for ExportProgressDialogState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Root 组件的状态
 pub struct RootState {
     /// 是否有菜单/下拉框打开（打开时不渲染预览音符）
@@ -444,6 +566,10 @@ pub struct RootState {
     pub project_settings_dialog: ProjectSettingsDialogState,
     /// 音频导出对话框状态
     pub audio_export_dialog: AudioExportDialogState,
+    /// 视频导出对话框状态
+    pub video_export_dialog: VideoExportDialogState,
+    /// 音频导出进度对话框状态
+    pub export_progress_dialog: ExportProgressDialogState,
     /// 音符变速对话框状态
     pub speed_change_dialog: SpeedChangeDialogState,
     /// 精度设置
@@ -474,6 +600,8 @@ impl RootState {
             collaboration_dialog: CollaborationDialogState::new(),
             project_settings_dialog: ProjectSettingsDialogState::new(),
             audio_export_dialog: AudioExportDialogState::new(),
+            video_export_dialog: VideoExportDialogState::new(),
+            export_progress_dialog: ExportProgressDialogState::new(),
             speed_change_dialog: SpeedChangeDialogState::new(),
             note_precision: NotePrecision::default(),
             system_fonts: lumino_core::font_scanner::scan_system_fonts(),

@@ -2,6 +2,8 @@
 //!
 //! 管理 iced 渲染器、wgpu 音符/网格渲染器、GPU 资源以及独立渲染线程。
 
+use std::sync::Arc;
+
 use iced_core::{Font, Pixels};
 use iced_wgpu::wgpu;
 use iced_wgpu::{Engine, Renderer, graphics::Viewport};
@@ -9,7 +11,20 @@ use iced_winit::runtime::user_interface::Cache;
 use lumino_gfx::{GridRenderer, NoteRenderer};
 
 use super::RenderCache;
-use super::render::note_worker::NoteWorker;
+
+/// 通知器：当后台图像上传完成时，请求窗口重绘
+struct WindowNotifier(Arc<iced_winit::winit::window::Window>);
+
+impl iced_wgpu::graphics::shell::Notifier for WindowNotifier {
+    fn request_redraw(&self) {
+        self.0.request_redraw();
+    }
+
+    fn invalidate_layout(&self) {
+        // 布局失效也触发重绘，确保 image atlas 上传后能刷新
+        self.0.request_redraw();
+    }
+}
 
 /// WGPU 设备资源集合（减少 RenderContext::new 参数数量）
 pub(crate) struct WgpuResources {
@@ -27,10 +42,10 @@ pub(crate) struct RenderContext {
     pub cache: Cache,
     /// 视口信息
     pub viewport: Viewport,
-    /// 音符渲染器
-    pub note_renderer: NoteRenderer,
-    /// 网格渲染器
-    pub grid_renderer: GridRenderer,
+    /// 音符渲染器（仅主窗口需要）
+    pub note_renderer: Option<NoteRenderer>,
+    /// 网格渲染器（仅主窗口需要）
+    pub grid_renderer: Option<GridRenderer>,
     /// 渲染缓存
     pub render_cache: RenderCache,
     /// 上次编辑状态
@@ -39,10 +54,6 @@ pub(crate) struct RenderContext {
     pub last_cursor_position: Option<iced_core::Point>,
     /// 渲染线程
     pub wgpu_render_thread: Option<crate::WgpuRenderThread>,
-    /// 渲染线程通信
-    pub note_events_tx: Option<std::sync::mpsc::Sender<lumino_gfx::NoteEvent>>,
-    /// 音符计算专用线程（主线程发送快照，worker 线程负责实例构建+双缓冲写入）
-    pub note_worker: Option<NoteWorker>,
     /// 分离渲染架构标识
     pub use_separate_render_thread: bool,
     /// 首次渲染标识
@@ -55,20 +66,29 @@ pub(crate) struct RenderContext {
 
 impl RenderContext {
     /// 创建渲染上下文
+    ///
+    /// `note_renderer` 与 `grid_renderer` 为 `None` 时，表示该窗口仅渲染 iced UI，
+    /// 不进入音符/网格管线（用于 dialog、progress 等轻量窗口）。
+    ///
+    /// `window` 用于创建通知器：当 iced_wgpu 后台完成图像上传后，
+    /// 通知器会调用 `window.request_redraw()` 触发窗口重绘，否则
+    /// 大尺寸预览图像（>2MB）的异步上传完成后窗口不会刷新，导致预览空白。
     pub fn new(
         wgpu: &WgpuResources,
         viewport: Viewport,
-        note_renderer: NoteRenderer,
-        grid_renderer: GridRenderer,
+        note_renderer: Option<NoteRenderer>,
+        grid_renderer: Option<GridRenderer>,
         font: Font,
+        window: &Arc<iced_winit::winit::window::Window>,
     ) -> Self {
+        let shell = iced_wgpu::graphics::Shell::new(WindowNotifier(window.clone()));
         let engine = Engine::new(
             &wgpu.adapter,
             wgpu.device.clone(),
             wgpu.queue.clone(),
             wgpu.format,
             None,
-            iced_wgpu::graphics::Shell::headless(),
+            shell,
         );
         let renderer = Renderer::new(engine, font, Pixels::from(16));
 
@@ -82,8 +102,6 @@ impl RenderContext {
             last_edit_state: crate::editor::EditState::default(),
             last_cursor_position: None,
             wgpu_render_thread: None,
-            note_events_tx: None,
-            note_worker: None,
             use_separate_render_thread: false,
             has_rendered_ui: false,
             device: wgpu.device.clone(),

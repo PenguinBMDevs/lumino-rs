@@ -95,6 +95,31 @@ impl ViewState {
         key_f32.round().clamp(0.0, max_key_index) as u16
     }
 
+    /// 设置键盘宽度
+    pub fn set_keyboard_width(&mut self, width: f32) {
+        self.keyboard_width = width.max(0.0);
+    }
+
+    /// 设置吸附精度
+    pub fn set_snap_precision(&mut self, precision: f32) {
+        self.snap_precision = precision.max(1.0);
+    }
+
+    /// 设置默认音符长度
+    pub fn set_default_note_length(&mut self, length: f32) {
+        self.default_note_length = length.max(1.0);
+    }
+
+    /// 设置橡皮擦行为
+    pub fn set_eraser_behavior(&mut self, behavior: EraserBehavior) {
+        self.eraser_behavior = behavior;
+    }
+
+    /// 设置选择框模式
+    pub fn set_selection_box_mode(&mut self, mode: SelectionBoxMode) {
+        self.selection_box_mode = mode;
+    }
+
     /// 吸附 tick 到网格
     pub fn snap_tick(&self, tick: f32) -> f32 {
         (tick / self.snap_precision).floor() * self.snap_precision

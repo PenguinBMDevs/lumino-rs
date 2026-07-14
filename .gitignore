@@ -80,8 +80,6 @@ rust-code-engineer.md
 *.db-wal
 *.db-shm
 
-# Cache
-cache/
 
 # Logs
 *.log
@@ -90,3 +88,9 @@ cache/
 .dirty
 
 daemon.pid
+
+# macOS
+.DS_Store
+
+# mimocode
+.mimocode/

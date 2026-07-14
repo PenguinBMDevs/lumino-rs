@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use winit::event_loop::ControlFlow;
 
 use super::dialog_manager::{DialogManager, DialogResult};
@@ -11,7 +12,6 @@ use crate::services::collaboration_service::CollaborationService;
 use crate::services::file_service::FileService;
 use crate::storage;
 
-pub use lumino_midi_loader::ParsedDms;
 pub use lumino_midi_loader::ParsedMidi;
 
 /// Runner 初始化错误
@@ -39,6 +39,14 @@ pub(crate) struct WindowState {
     pub(crate) dialog_manager: DialogManager,
     pub(crate) progress: ProgressManager,
     pub(crate) progress_cb: lumino_midi_loader::loader::ProgressCallback,
+    /// 视频导出进度接收器（(message, progress, total_frames, render_fps, elapsed_secs)）
+    #[allow(clippy::type_complexity)]
+    pub(crate) export_progress_rx:
+        Option<tokio::sync::mpsc::UnboundedReceiver<(String, f64, u64, f64, f64)>>,
+    /// 视频导出预览帧接收器（RGBA 像素数据）
+    pub(crate) video_preview_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(Vec<u8>, u32, u32)>>,
+    /// 视频导出取消标志（后台线程通过此标志检测用户取消）
+    pub(crate) video_export_cancel: Arc<AtomicBool>,
 }
 
 /// MIDI 相关状态
@@ -46,7 +54,6 @@ pub(crate) struct MidiState {
     pub(crate) midi: MidiManager,
     pub(crate) current_midi: Option<Arc<ParsedMidi>>,
     pub(crate) current_midi_source: Option<std::path::PathBuf>,
-    pub(crate) current_dms: Option<Arc<ParsedDms>>,
     pub(crate) midi_handler: MidiHandler,
 }
 
@@ -72,12 +79,58 @@ pub(crate) struct TestState {
     pub(crate) last_memory_log: Option<std::time::Instant>,
 }
 
+/// 会话计时跟踪器
+///
+/// 用于工程信息面板中"创建时间"和"创作总用时"的真实统计：
+/// - 软件启动时记录 session_start_time
+/// - MIDI 加载完成 + 洋葱皮贴图生成完成后设置 editing_start_time
+/// - 打开工程设置对话框时计算累计编辑时间
+pub(crate) struct SessionTracker {
+    /// 软件启动时间
+    pub(crate) session_start_time: std::time::Instant,
+    /// 编辑开始时间（MIDI 加载 + 洋葱皮贴图生成完成后设置）
+    /// 如果没有加载 MIDI，从启动时间开始计算
+    pub(crate) editing_start_time: Option<std::time::Instant>,
+    /// 累计编辑时间（秒）—— 从 metadata 中加载的历史数据
+    pub(crate) accumulated_editing_secs: f64,
+    /// 工程创建时间（来自 MIDI 文件元数据或文件系统）
+    pub(crate) created_at: Option<String>,
+}
+
+impl SessionTracker {
+    pub(crate) fn new() -> Self {
+        Self {
+            session_start_time: std::time::Instant::now(),
+            editing_start_time: None,
+            accumulated_editing_secs: 0.0,
+            created_at: None,
+        }
+    }
+
+    /// 获取当前累计编辑时间（秒）
+    ///
+    /// 计算逻辑：
+    /// - 如果已加载 MIDI 且洋葱皮生成完成（editing_start_time 已设置）：
+    ///   accumulated + (now - editing_start_time)
+    /// - 如果未加载 MIDI（editing_start_time 未设置）：
+    ///   accumulated + (now - session_start_time)
+    pub(crate) fn current_editing_secs(&self) -> f64 {
+        let elapsed = if let Some(start) = self.editing_start_time {
+            start.elapsed().as_secs_f64()
+        } else {
+            self.session_start_time.elapsed().as_secs_f64()
+        };
+        self.accumulated_editing_secs + elapsed
+    }
+}
+
 pub(crate) struct RunnerInner {
     pub(crate) window_state: WindowState,
     pub(crate) midi_state: MidiState,
     pub(crate) file_state: FileState,
     pub(crate) collab_state: CollabState,
     pub(crate) test_state: TestState,
+    pub(crate) session_tracker: SessionTracker,
 }
 
 pub(crate) struct TestModeState {
@@ -158,7 +211,7 @@ impl Runner {
         event_loop.set_control_flow(ControlFlow::Wait);
 
         #[cfg(target_os = "macos")]
-        if let Err(e) = crate::platform::macos::init() {
+        if let Err(e) = crate::platform::macos::init(config.ui.language) {
             tracing::error!("Failed to init macOS menu: {:?}", e);
         }
 
@@ -170,12 +223,14 @@ impl Runner {
                 progress,
                 progress_cb,
                 needs_window_restart: false,
+                export_progress_rx: None,
+                video_preview_rx: None,
+                video_export_cancel: Arc::new(AtomicBool::new(false)),
             },
             midi_state: MidiState {
                 midi,
                 current_midi: None,
                 current_midi_source: None,
-                current_dms: None,
                 midi_handler,
             },
             file_state: FileState {
@@ -194,6 +249,7 @@ impl Runner {
                 log_memory_usage: self.log_memory_usage,
                 last_memory_log: None,
             },
+            session_tracker: SessionTracker::new(),
         };
 
         Ok(runner)
@@ -267,10 +323,6 @@ impl RunnerInner {
                 tracing::info!("应用设置面板配置，主题: {}", theme);
                 ui.apply_settings(settings, theme);
             }
-            DialogResult::AudioExport { .. } => {
-                // AudioExport 由 lifecycle 的 process_dialog_result 处理
-                tracing::debug!("AudioExport 结果不应通过 apply_dialog_result_to_ui 处理");
-            }
             DialogResult::SpeedChange { factor } => {
                 tracing::info!("应用音符变速: 倍率={}", factor);
                 ui.apply_speed_change(factor);
@@ -306,7 +358,10 @@ impl RunnerInner {
             || new.auto_scroll_page_trigger_offset != old.auto_scroll.page_trigger_offset
             || new.auto_scroll_page_return_position != old.auto_scroll.page_return_position
             || new.icon_hidpi != old.icon_hidpi
-            || new.enable_256key != old.enable_256key;
+            || new.enable_256key != old.enable_256key
+            || new.velocity_curve_style != old.velocity_curve_style
+            || new.playback_key_colors_enabled != old.playback_key_colors_enabled
+            || new.track_add_behavior != old.track_add_behavior;
 
         if theme_changed
             || synth_changed
@@ -331,9 +386,27 @@ impl RunnerInner {
         let old = &self.window_state.storage.config.get().ui;
         let current_theme = self.window_state.window.ui().root().theme().to_string();
 
+        // 自动滚动模式（toolbar 上切换）不在 SettingsPanel 中，需要独立检测
+        let auto_scroll_mode = self
+            .window_state
+            .window
+            .ui()
+            .root()
+            .editor
+            .editor_state
+            .auto_scroll
+            .mode;
+        let auto_scroll_mode_changed = auto_scroll_mode != old.auto_scroll.mode;
+
         let diff = match Self::config_diff(new, old, &current_theme) {
             Some(d) => d,
-            None => return,
+            None if !auto_scroll_mode_changed => return,
+            None => ConfigDiff {
+                synth_changed: false,
+                xsynth_changed: false,
+                titlebar_changed: false,
+                font_changed: false,
+            },
         };
 
         // 合成器变更日志
@@ -408,12 +481,33 @@ impl RunnerInner {
             config.ui.xsynth_max_voices_per_key = new.xsynth_max_voices_per_key;
             config.ui.velocity_filter_threshold = new.velocity_filter_threshold;
             config.ui.eraser_behavior = new.eraser_behavior;
+            config.ui.auto_scroll.mode = self
+                .window_state
+                .window
+                .ui()
+                .root()
+                .editor
+                .editor_state
+                .auto_scroll
+                .mode;
             config.ui.auto_scroll.fixed_indicator_position = new.auto_scroll_fixed_position;
             config.ui.auto_scroll.page_trigger_offset = new.auto_scroll_page_trigger_offset;
             config.ui.auto_scroll.page_return_position = new.auto_scroll_page_return_position;
             config.ui.icon_hidpi = new.icon_hidpi;
             config.ui.enable_256key = new.enable_256key;
+            config.ui.velocity_curve_style = new.velocity_curve_style;
+            config.ui.hires_onion_enabled = new.hires_onion_enabled;
+            config.ui.hires_measures_per_group = new.hires_measures_per_group;
+            config.ui.hires_tile_width_px = new.hires_tile_width_px;
+            config.ui.hires_cooldown_secs = new.hires_cooldown_secs;
+            config.ui.hires_gpu_mem_limit_mb = new.hires_gpu_mem_limit_mb;
+            config.ui.playback_key_colors_enabled = new.playback_key_colors_enabled;
+            config.ui.track_add_behavior = new.track_add_behavior;
+            config.ui.selected_palette = new.selected_palette.clone();
         });
+
+        // 同步当前调色板到全局 PaletteManager
+        lumino_core::palette::set_current_palette_by_name(&new.selected_palette);
 
         if let Err(e) = self.window_state.storage.config.save() {
             tracing::warn!("保存配置失败: {e}");

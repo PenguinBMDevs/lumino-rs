@@ -3,7 +3,7 @@
 use iced_core::Point;
 
 use crate::Message;
-use crate::sidebar::Route;
+use crate::sidebar::{GroupId, Route};
 
 /// 侧边栏事件
 #[derive(Debug, Clone)]
@@ -16,20 +16,20 @@ pub enum Event {
     TrackSelected(usize),
     /// 音轨静音切换
     TrackMuteToggled(usize),
-    /// 音轨洋葱皮切换
-    TrackOnionSkinToggled(usize),
     /// 添加音轨
     AddTrack,
-    /// 添加音轨菜单切换
-    AddTrackMenuToggled,
     /// 开始拖拽调整面板宽度
     ResizeDragStarted(Point),
     /// 拖拽中调整面板宽度
     ResizeDragged(Point),
     /// 结束拖拽调整面板宽度
     ResizeDragEnded,
-    /// 音轨列表滚动位置
-    TrackScrolled(f32),
+    /// 自动化面板切换
+    AutomationPanelToggled,
+    /// 钢琴卷帘面板切换
+    PianoRollToggled,
+    /// 分组切换
+    GroupToggled(GroupId),
 }
 
 impl Event {
@@ -49,16 +49,8 @@ impl Event {
         Message::Sidebar(Self::TrackMuteToggled(id))
     }
 
-    pub const fn track_onion_skin_toggled(id: usize) -> Message {
-        Message::Sidebar(Self::TrackOnionSkinToggled(id))
-    }
-
     pub const fn add_track() -> Message {
         Message::Sidebar(Self::AddTrack)
-    }
-
-    pub const fn add_track_menu_toggled() -> Message {
-        Message::Sidebar(Self::AddTrackMenuToggled)
     }
 
     pub fn resize_drag_started() -> Message {
@@ -71,5 +63,17 @@ impl Event {
 
     pub const fn resize_drag_ended() -> Message {
         Message::Sidebar(Self::ResizeDragEnded)
+    }
+
+    pub const fn automation_panel_toggled() -> Message {
+        Message::Sidebar(Self::AutomationPanelToggled)
+    }
+
+    pub const fn piano_roll_toggled() -> Message {
+        Message::Sidebar(Self::PianoRollToggled)
+    }
+
+    pub const fn group_toggled(g: GroupId) -> Message {
+        Message::Sidebar(Self::GroupToggled(g))
     }
 }

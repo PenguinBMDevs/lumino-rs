@@ -34,11 +34,10 @@ impl RunnerInner {
             ┌─ Memory Usage (post-import, pre-render) ──────────────┐\n\
             │ 进程 RSS:              {:>8} MB                         │\n\
             ├─────────────────────────────────────────────────────────┤\n\
-            │ MidiDocument.events:   {:>8} MB  (Vec<CompactEvent>)    │\n\
+            │ MidiDocument.notes:    {:>8} MB  (Vec<NoteEvent>)      │\n\
             │ editor.notes:          {:>8} MB  (im::Vector<Note>)     │\n\
             │ track_notes({}条):  {:>8} MB  ({} 音符)             │\n\
             │ track_midi_events:     {:>8} MB  ({} 条)               │\n\
-            │ onion_skin_cache:      {:>8} MB                         │\n\
             ├─────────────────────────────────────────────────────────┤\n\
             │ note_instances(双缓冲):                                │\n\
             │   前缓冲区:            {:>8} MB  (cap={}, len={})      │\n\
@@ -53,7 +52,6 @@ impl RunnerInner {
             mem.editor.track_notes_count,
             mem.track_midi_events_bytes / (1024 * 1024),
             mem.track_midi_events_entries,
-            mem.cached_onion_skin_bytes / (1024 * 1024),
             front_total / (1024 * 1024),
             mem.note_instances_front_cap,
             mem.note_instances_front_len,

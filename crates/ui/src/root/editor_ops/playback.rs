@@ -1,6 +1,6 @@
 //! 编辑器操作 - 播放管理
 
-use crate::playback::NoteEvent;
+use crate::playback::{MidiMessage, MidiTrackEvent, NoteEvent};
 use crate::root::Root;
 use std::sync::Arc;
 
@@ -22,15 +22,14 @@ impl Root {
             );
         }
 
-        // 当前音轨音符（编辑过的，从 editor.notes 实时送）
-        let velocity_threshold = self.visual.velocity_filter_threshold;
+        // 当前音轨音符（编辑过的，从 editor.notes 实时送）。
+        // 力度过滤现在在 PlaybackEngine 内部统一处理，避免当前轨与其他轨行为不一致。
         let current_notes: Vec<NoteEvent> = self
             .editor
             .editor_state
             .data
             .notes
             .iter()
-            .filter(|note| note.velocity > velocity_threshold)
             .map(|note| NoteEvent {
                 tick: note.tick,
                 channel: note.channel,
@@ -40,16 +39,82 @@ impl Root {
             })
             .collect();
         manager.set_current_track_notes(current_notes);
+        manager.set_velocity_filter_threshold(self.visual.velocity_filter_threshold);
 
         // 同步 MIDI 控制事件
-        let mut midi_events: Vec<crate::playback::MidiTrackEvent> = Vec::new();
+        // 来源 1：从编辑器的 automation_lanes 中提取当前音轨的编辑后控制事件
+        let current_tick_channel = self
+            .editor
+            .editor_state
+            .data
+            .notes
+            .get(0)
+            .map_or(0, |n| n.channel);
+        let current_track = self.editor.editor_state.data.current_track as u16;
+
+        let mut midi_events: Vec<MidiTrackEvent> = Vec::new();
+
+        // 扫描当前音轨的所有自动化 lane，生成控制事件
+        for lane in &self.editor.editor_state.data.automation_lanes {
+            if lane.track != current_track {
+                continue;
+            }
+            match &lane.target {
+                lumino_core::automation::AutomationTarget::CC { controller } => {
+                    for ev in &lane.events {
+                        midi_events.push(MidiTrackEvent {
+                            tick: ev.tick as f32,
+                            message: MidiMessage::ControlChange {
+                                channel: current_tick_channel,
+                                controller: *controller,
+                                value: ev.value as u8,
+                            },
+                        });
+                    }
+                }
+                lumino_core::automation::AutomationTarget::PitchBend => {
+                    for ev in &lane.events {
+                        // AutomationEvent.value 范围 0-16383，中心 8192
+                        let pb_value = (ev.value as f32 - 8192.0) / 8192.0;
+                        midi_events.push(MidiTrackEvent {
+                            tick: ev.tick as f32,
+                            message: MidiMessage::PitchBend {
+                                channel: current_tick_channel,
+                                value: pb_value.clamp(-1.0, 1.0),
+                            },
+                        });
+                    }
+                }
+                _ => {
+                    // RPN/NRPN 暂不处理
+                }
+            }
+        }
+
+        // 来源 2：其他音轨的预加载控制事件（来自 load_track_midi_events）
         for events in self.playback.track_midi_events.values() {
             midi_events.extend(events.clone());
         }
-        if !midi_events.is_empty() {
-            midi_events.sort_by(|a, b| a.tick.total_cmp(&b.tick));
-            manager.set_midi_events(midi_events);
-        }
+
+        midi_events.sort_by(|a, b| a.tick.total_cmp(&b.tick));
+
+        // 调试：记录当前音轨的 CC 事件数量
+        let cc_count = midi_events
+            .iter()
+            .filter(|e| matches!(e.message, MidiMessage::ControlChange { .. }))
+            .count();
+        tracing::debug!(
+            "update_playback_notes: 发送 {} 个 MIDI 事件 ({} CC, {} PB, current_track={})",
+            midi_events.len(),
+            cc_count,
+            midi_events
+                .iter()
+                .filter(|e| matches!(e.message, MidiMessage::PitchBend { .. }))
+                .count(),
+            current_track,
+        );
+
+        manager.set_midi_events(midi_events);
     }
 
     /// 将编辑器的 tempo_points 同步到播放管理器

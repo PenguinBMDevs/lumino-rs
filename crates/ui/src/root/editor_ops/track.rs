@@ -33,20 +33,18 @@ impl Root {
                 .notes
                 .push_back(Note::from_raw(tick, key as u16, length, velocity, channel));
         }
-        self.editor
-            .spatial
-            .track_note_indices
-            .borrow_mut()
-            .remove(&self.editor.editor_state.data.current_track);
-        self.invalidate_onion_skin_cache();
         self.editor.mark_notes_changed();
     }
 
     /// 设置当前音轨
-    pub fn set_current_track(&mut self, track_idx: usize) {
-        self.sidebar.set_selected_track(track_idx);
+    ///
+    /// `open_panel` 控制是否在非 Arrangement 模式下强制打开侧边栏面板：
+    /// - `true`：用户手动选轨时，确保面板打开以显示选中音轨
+    /// - `false`：MIDI 加载等程序化操作，只刷新数据不强制弹出 UI
+    pub fn set_current_track(&mut self, track_idx: usize, open_panel: bool) {
+        self.sidebar
+            .set_selected_track_with_panel(track_idx, open_panel);
         self.editor.switch_to_track(track_idx);
-        self.invalidate_onion_skin_cache();
         self.update_playback_notes();
 
         // Conductor 轨道自动进入 Tempo 模式，普通轨道切回 Velocity
@@ -83,14 +81,9 @@ impl Root {
             .data
             .track_notes
             .insert(track_idx, track_notes);
-        self.editor
-            .spatial
-            .track_note_indices
-            .borrow_mut()
-            .remove(&track_idx);
+        self.editor.editor_state.data.mark_track_notes_changed();
 
         self.editor.editor_state.data.current_track = track_idx;
-        self.invalidate_onion_skin_cache();
         self.editor.mark_notes_changed();
         self.update_playback_notes();
     }
@@ -114,19 +107,20 @@ impl Root {
         }
     }
 
-    /// 预加载音轨 MIDI 控制事件到洋葱皮缓存
-    pub fn load_track_midi_events_for_onion_skin(
-        &mut self,
-        track_idx: usize,
-        events: Vec<crate::playback::MidiTrackEvent>,
-    ) {
-        if !events.is_empty() {
-            // 合并到已有事件（如果有）
-            self.playback
-                .track_midi_events
-                .entry(track_idx)
-                .or_default()
-                .extend(events);
+    /// 添加远程音轨（来自协作同步）
+    pub fn add_remote_track(&mut self, track_idx: usize) {
+        // 确保 sidebar tracks 足够容纳新音轨
+        if track_idx >= self.sidebar.tracks.len() {
+            self.sidebar.tracks.push(crate::sidebar::Track {
+                id: track_idx,
+                name: format!("Track {}", track_idx),
+                is_conductor: false,
+                can_delete: true,
+                is_muted: false,
+            });
+            tracing::info!("协作: 已添加远程音轨 - track_index={}", track_idx);
+        } else {
+            tracing::warn!("协作: 远程音轨 track_index={} 已存在", track_idx);
         }
     }
 }

@@ -140,6 +140,7 @@ impl Editor {
             self.editor_state.data.current_track,
             self.editor_state.data.notes.clone(),
         );
+        self.editor_state.data.mark_track_notes_changed();
         for index in start..start + pasted_count {
             self.editor_state.interaction.selected_notes.insert(index);
         }

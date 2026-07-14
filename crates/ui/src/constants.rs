@@ -179,6 +179,18 @@ pub mod rendering {
 pub mod memory {
     /// 默认内存限制（1GB）
     pub const DEFAULT_MEMORY_LIMIT_BYTES: usize = 1024 * 1024 * 1024;
+
+    /// 默认整合组贴图内存限制（MB）
+    pub const DEFAULT_GROUP_TILE_MEM_LIMIT_MB: u32 = 256;
+}
+
+/// 时序/物理常量
+pub mod timing {
+    /// 默认帧间隔（秒，~60fps）— 用于弹簧动画首次 update 的 dt fallback
+    pub const DEFAULT_FRAME_TIME_SECS: f64 = 0.016;
+
+    /// 默认高精度贴图重生成冷却时间（秒）
+    pub const DEFAULT_HIRES_COOLDOWN_SECS: u64 = 10;
 }
 
 /// 进度相关常量
@@ -223,20 +235,8 @@ pub mod scrollbar {
     pub const THUMB_TRACK_EDGE_GAP: f32 = 2.0;
 }
 
-/// 洋葱皮默认颜色
-pub mod onion_skin {
-    use iced_core::Color;
-
-    /// 洋葱皮默认透明度
-    pub const DEFAULT_OPACITY: f32 = 0.3;
-
-    /// 默认颜色列表
-    pub const DEFAULT_COLORS: [Color; 6] = [
-        Color::from_rgb(1.0, 0.5, 0.31),   // 橙色
-        Color::from_rgb(0.53, 0.81, 0.92), // 天蓝色
-        Color::from_rgb(0.56, 0.93, 0.56), // 浅绿色
-        Color::from_rgb(0.93, 0.51, 0.93), // 紫色
-        Color::from_rgb(0.5, 1.0, 0.0),    // 黄绿色
-        Color::from_rgb(0.98, 0.5, 0.45),  // 珊瑚色
-    ];
+/// 协作相关常量
+pub mod collaboration {
+    /// 默认协作服务器端口
+    pub const DEFAULT_PORT: u16 = 3000;
 }

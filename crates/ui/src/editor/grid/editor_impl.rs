@@ -26,15 +26,20 @@ impl Editor {
         // === 先添加横向琴键分隔线（在纵向网格线下方渲染）===
         let start_key = view.scroll_y / view.zoom_y;
         let end_key = (view.scroll_y + canvas_height - ruler_height) / view.zoom_y;
+        let max_key = view.visible_key_count as i32;
 
         let mut current_key = start_key.floor() as i32;
 
         while (current_key as f32) < end_key {
+            // 跳过有效 key 范围 [0, visible_key_count) 之外的琴键
+            // 防止缩放/窗口切换后 viewport 超出琴键区域时绘制额外的分隔线
             let screen_y = (current_key as f32 * view.zoom_y) - view.scroll_y
                 + ruler_height
                 + canvas_state.offset_y;
 
-            if screen_y >= canvas_state.offset_y + ruler_height
+            if current_key >= 0
+                && current_key < max_key
+                && screen_y >= canvas_state.offset_y + ruler_height
                 && screen_y <= canvas_state.offset_y + canvas_height
             {
                 let is_white_key = [0, 2, 4, 5, 7, 9, 11].contains(&(current_key % 12));

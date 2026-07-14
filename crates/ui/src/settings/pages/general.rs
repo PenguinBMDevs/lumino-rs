@@ -8,7 +8,7 @@ use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::settings::SettingsPanel;
 use lumino_core::i18n::settings_translations;
-use lumino_core::storage::config::EraserBehavior;
+use lumino_core::storage::config::{EraserBehavior, TrackAddBehavior};
 
 /// 本地化橡皮擦行为包装
 #[derive(Debug, Clone, Copy)]
@@ -36,6 +36,36 @@ impl LocalizedEraser {
         Self {
             inner: behavior,
             name: lumino_core::i18n::eraser_behavior_name(behavior, lang),
+        }
+    }
+}
+
+/// 本地化音轨添加行为包装
+#[derive(Debug, Clone, Copy)]
+struct LocalizedTrackAdd {
+    inner: TrackAddBehavior,
+    name: &'static str,
+}
+
+impl PartialEq for LocalizedTrackAdd {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for LocalizedTrackAdd {}
+
+impl std::fmt::Display for LocalizedTrackAdd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl LocalizedTrackAdd {
+    fn new(behavior: TrackAddBehavior, lang: lumino_core::i18n::Language) -> Self {
+        Self {
+            inner: behavior,
+            name: lumino_core::i18n::track_add_behavior_name(behavior, lang),
         }
     }
 }
@@ -74,6 +104,32 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
             .size(12.0)
             .style(create_placeholder_text_style()),
         text(t.eraser_direct_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+        iced_widget::space().height(20),
+        // 添加音轨行为选择
+        row![
+            text(t.track_add_behavior)
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            pick_list(
+                vec![
+                    LocalizedTrackAdd::new(TrackAddBehavior::AutoSwitch, settings.language),
+                    LocalizedTrackAdd::new(TrackAddBehavior::StayCurrent, settings.language),
+                ],
+                Some(LocalizedTrackAdd::new(
+                    settings.track_add_behavior,
+                    settings.language
+                )),
+                |lt| Message::Settings(crate::settings::Event::TrackAddBehaviorChanged(lt.inner)),
+            )
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        text(t.track_add_behavior_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
     ]

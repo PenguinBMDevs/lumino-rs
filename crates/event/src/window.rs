@@ -3,6 +3,8 @@ pub mod dialog;
 pub mod lifecycle;
 pub mod sync;
 
+use std::sync::Arc;
+
 #[derive(Debug, Clone)]
 /// 窗口事件
 pub enum Event {
@@ -23,65 +25,154 @@ impl Event {
         }
     }
 
-    // ── 构造函数（替代 event! 宏，IDE 友好） ──
+    // ── 生命周期构造函数（直接构造，无需中间函数） ──
 
     pub const fn drag() -> Self {
-        Self::Lifecycle(lifecycle::Event::drag())
+        Self::Lifecycle(lifecycle::Event::Drag)
     }
     pub const fn close() -> Self {
-        Self::Lifecycle(lifecycle::Event::close())
+        Self::Lifecycle(lifecycle::Event::Close)
     }
     pub const fn toggle_maximize() -> Self {
-        Self::Lifecycle(lifecycle::Event::toggle_maximize())
+        Self::Lifecycle(lifecycle::Event::ToggleMaximize)
     }
     pub const fn maximize() -> Self {
-        Self::Lifecycle(lifecycle::Event::maximize())
+        Self::Lifecycle(lifecycle::Event::Maximize)
     }
     pub const fn minimize() -> Self {
-        Self::Lifecycle(lifecycle::Event::minimize())
+        Self::Lifecycle(lifecycle::Event::Minimize)
     }
 
+    // ── 对话框构造函数（直接构造 dialog::Event） ──
+
     pub const fn open_custom_precision_dialog() -> Self {
-        Self::Dialog(dialog::Event::open_custom_precision_dialog())
+        Self::Dialog(dialog::Event::OpenCustomPrecisionDialog)
     }
     pub const fn close_custom_precision_dialog() -> Self {
-        Self::Dialog(dialog::Event::close_custom_precision_dialog())
+        Self::Dialog(dialog::Event::CloseCustomPrecisionDialog)
     }
     pub const fn apply_custom_precision(numerator: u32, denominator: u32) -> Self {
-        Self::Dialog(dialog::Event::apply_custom_precision(
-            numerator,
-            denominator,
-        ))
+        Self::Dialog(dialog::Event::ApplyCustomPrecision(numerator, denominator))
     }
     pub fn open_load_confirm_dialog(path: String, size_mb: f64) -> Self {
-        Self::Dialog(dialog::Event::open_load_confirm_dialog(path, size_mb))
+        Self::Dialog(dialog::Event::OpenLoadConfirmDialog { path, size_mb })
     }
     pub const fn open_collaboration_dialog() -> Self {
-        Self::Dialog(dialog::Event::open_collaboration_dialog())
+        Self::Dialog(dialog::Event::OpenCollaborationDialog)
     }
     pub const fn close_collaboration_dialog() -> Self {
-        Self::Dialog(dialog::Event::close_collaboration_dialog())
+        Self::Dialog(dialog::Event::CloseCollaborationDialog)
     }
     pub const fn open_speed_change_dialog() -> Self {
-        Self::Dialog(dialog::Event::open_speed_change_dialog())
+        Self::Dialog(dialog::Event::OpenSpeedChangeDialog)
     }
     pub const fn close_speed_change_dialog() -> Self {
-        Self::Dialog(dialog::Event::close_speed_change_dialog())
+        Self::Dialog(dialog::Event::CloseSpeedChangeDialog)
     }
     pub const fn confirm_speed_change(factor: f32) -> Self {
-        Self::Dialog(dialog::Event::confirm_speed_change(factor))
+        Self::Dialog(dialog::Event::ConfirmSpeedChange(factor))
+    }
+    pub const fn open_video_export_dialog() -> Self {
+        Self::Dialog(dialog::Event::OpenVideoExportDialog)
+    }
+    pub const fn close_video_export_dialog() -> Self {
+        Self::Dialog(dialog::Event::CloseVideoExportDialog)
     }
     pub const fn open_project_settings_dialog() -> Self {
-        Self::Dialog(dialog::Event::open_project_settings_dialog())
+        Self::Dialog(dialog::Event::OpenProjectSettingsDialog)
     }
     pub const fn close_project_settings_dialog() -> Self {
-        Self::Dialog(dialog::Event::close_project_settings_dialog())
+        Self::Dialog(dialog::Event::CloseProjectSettingsDialog)
     }
     pub fn apply_project_settings(title: String, tempo: f64, copyright: String) -> Self {
-        Self::Dialog(dialog::Event::apply_project_settings(
-            title, tempo, copyright,
-        ))
+        Self::Dialog(dialog::Event::ApplyProjectSettings {
+            title,
+            tempo,
+            copyright,
+        })
     }
+    pub fn start_audio_export(
+        midi_path: String,
+        soundfont_path: String,
+        output_path: String,
+        sample_rate: u32,
+        channels: String,
+        layer_limit: u32,
+        channel_threading: String,
+        key_threading: String,
+        interpolation: String,
+        apply_limiter: bool,
+        disable_fade_out: bool,
+        linear_envelope: bool,
+        audio_format: String,
+        audio_bitrate: u32,
+        ignore_program_changes: bool,
+        filter_velocity: bool,
+        velocity_low: u8,
+        velocity_high: u8,
+        filter_key: bool,
+        key_low: u8,
+        key_high: u8,
+        note_force_end_delay: u32,
+        document: Option<Arc<lumino_midi_loader::MidiDocument>>,
+    ) -> Self {
+        Self::Dialog(dialog::Event::StartAudioExport {
+            midi_path,
+            soundfont_path,
+            output_path,
+            sample_rate,
+            channels,
+            layer_limit,
+            channel_threading,
+            key_threading,
+            interpolation,
+            apply_limiter,
+            disable_fade_out,
+            linear_envelope,
+            audio_format,
+            audio_bitrate,
+            ignore_program_changes,
+            filter_velocity,
+            velocity_low,
+            velocity_high,
+            filter_key,
+            key_low,
+            key_high,
+            note_force_end_delay,
+            document,
+        })
+    }
+    pub fn start_video_export(
+        output_path: String,
+        width: u32,
+        height: u32,
+        fps: u32,
+        container: String,
+        codec: String,
+        backend: String,
+        quality: String,
+        ppq: u16,
+        key_count: u16,
+        render_mode: String,
+        document: Option<Arc<lumino_midi_loader::MidiDocument>>,
+    ) -> Self {
+        Self::Dialog(dialog::Event::StartVideoExport {
+            output_path,
+            width,
+            height,
+            fps,
+            container,
+            codec,
+            backend,
+            quality,
+            ppq,
+            key_count,
+            render_mode,
+            document,
+        })
+    }
+
+    // ── 协作构造函数（直接构造 collaboration::Event） ──
 
     pub fn collaboration_connect(
         host: String,
@@ -89,44 +180,50 @@ impl Event {
         username: String,
         invite_code: Option<String>,
     ) -> Self {
-        Self::Collaboration(collaboration::Event::connect(
+        Self::Collaboration(collaboration::Event::Connect {
             host,
             port,
             username,
             invite_code,
-        ))
+        })
     }
     pub fn collaboration_create_room(name: String) -> Self {
-        Self::Collaboration(collaboration::Event::create_room(name))
+        Self::Collaboration(collaboration::Event::CreateRoom { name })
     }
     pub fn collaboration_join_room(invite_code: String) -> Self {
-        Self::Collaboration(collaboration::Event::join_room(invite_code))
+        Self::Collaboration(collaboration::Event::JoinRoom { invite_code })
     }
     pub const fn collaboration_disconnect() -> Self {
-        Self::Collaboration(collaboration::Event::disconnect())
+        Self::Collaboration(collaboration::Event::Disconnect)
     }
     pub fn collaboration_authenticated(user_id: String, invite_code: String) -> Self {
-        Self::Collaboration(collaboration::Event::authenticated(user_id, invite_code))
+        Self::Collaboration(collaboration::Event::Authenticated {
+            user_id,
+            invite_code,
+        })
     }
     pub fn collaboration_room_created(room_name: String, invite_code: String) -> Self {
-        Self::Collaboration(collaboration::Event::room_created(room_name, invite_code))
+        Self::Collaboration(collaboration::Event::RoomCreated {
+            room_name,
+            invite_code,
+        })
     }
     pub fn collaboration_room_joined(
         room_name: String,
         invite_code: String,
         user_count: usize,
     ) -> Self {
-        Self::Collaboration(collaboration::Event::room_joined(
+        Self::Collaboration(collaboration::Event::RoomJoined {
             room_name,
             invite_code,
             user_count,
-        ))
+        })
     }
     pub const fn collaboration_disconnected() -> Self {
-        Self::Collaboration(collaboration::Event::disconnected())
+        Self::Collaboration(collaboration::Event::Disconnected)
     }
     pub fn collaboration_user_left(user_id: String) -> Self {
-        Self::Collaboration(collaboration::Event::user_left(user_id))
+        Self::Collaboration(collaboration::Event::UserLeft { user_id })
     }
     pub fn collaboration_mouse_update(
         user_id: String,
@@ -135,13 +232,22 @@ impl Event {
         color: String,
         username: String,
     ) -> Self {
-        Self::Collaboration(collaboration::Event::mouse_update(
-            user_id, x, y, color, username,
-        ))
+        Self::Collaboration(collaboration::Event::MouseUpdate {
+            user_id,
+            x,
+            y,
+            color,
+            username,
+        })
     }
     pub fn collaboration_note_update(user_id: String, operation: String) -> Self {
-        Self::Collaboration(collaboration::Event::note_update(user_id, operation))
+        Self::Collaboration(collaboration::Event::NoteUpdate { user_id, operation })
     }
+    pub fn collaboration_project_update(user_id: String, update: String) -> Self {
+        Self::Collaboration(collaboration::Event::ProjectUpdate { user_id, update })
+    }
+
+    // ── 同步构造函数（直接构造 sync::Event） ──
 
     pub fn local_note_added(
         tick: f32,
@@ -151,14 +257,14 @@ impl Event {
         channel: u8,
         track_index: usize,
     ) -> Self {
-        Self::Sync(sync::Event::local_note_added(
+        Self::Sync(sync::Event::LocalNoteAdded {
             tick,
             key,
             length,
             velocity,
             channel,
             track_index,
-        ))
+        })
     }
     pub fn local_note_moved(
         tick: f32,
@@ -168,13 +274,33 @@ impl Event {
         key_offset: i16,
         track_index: usize,
     ) -> Self {
-        Self::Sync(sync::Event::local_note_moved(
+        Self::Sync(sync::Event::LocalNoteMoved {
             tick,
             key,
             length,
             tick_offset,
             key_offset,
             track_index,
-        ))
+        })
+    }
+    pub fn local_note_deleted(
+        tick: f32,
+        key: u16,
+        length: f32,
+        velocity: u8,
+        channel: u8,
+        track_index: usize,
+    ) -> Self {
+        Self::Sync(sync::Event::LocalNoteDeleted {
+            tick,
+            key,
+            length,
+            velocity,
+            channel,
+            track_index,
+        })
+    }
+    pub fn local_track_added(track_index: usize) -> Self {
+        Self::Sync(sync::Event::LocalTrackAdded { track_index })
     }
 }

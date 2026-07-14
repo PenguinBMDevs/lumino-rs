@@ -282,8 +282,8 @@ rustflags = [
             appdir / "usr/bin/lumino-rs",
         )
 
-        # Use github icon as temporary app icon
-        icon_src = self.ctx.project_dir / "resources/icons/brands/github.svg"
+        # Use Lumino icon as app icon
+        icon_src = self.ctx.project_dir / "resources/icons/brands/Lumino.svg"
         icon_dst = appdir / "usr/share/icons/hicolor/scalable/apps/lumino-rs.svg"
         shutil.copy(icon_src, icon_dst)
         shutil.copy(icon_dst, appdir / "lumino-rs.svg")

@@ -1,6 +1,7 @@
 use iced_core::Length;
 use iced_widget::{
-    button, checkbox, column, container, pick_list, row, scrollable, space, text, text_input,
+    button, checkbox, column, container, pick_list, progress_bar, row, scrollable, space, text,
+    text_input,
 };
 
 use crate::message::{AudioExportAction, Message};
@@ -15,7 +16,20 @@ pub fn view_audio_export_dialog<'a>(
 ) -> crate::Element<'a> {
     let palette = theme.extended_palette();
 
-    // 标签样式
+    // 复选框样式（修复暗色主题文字反色）
+    let checkbox_style = move |_theme: &iced_core::Theme,
+                               _status: iced_widget::checkbox::Status| {
+        iced_widget::checkbox::Style {
+            background: iced_core::Background::Color(palette.background.weak.color),
+            icon_color: palette.background.neutral.text,
+            border: iced_core::Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: palette.background.strong.color,
+            },
+            text_color: Some(palette.background.neutral.text),
+        }
+    };
     let label_style = move |_theme: &iced_core::Theme| text::Style {
         color: Some(palette.background.neutral.text),
     };
@@ -52,29 +66,45 @@ pub fn view_audio_export_dialog<'a>(
         space().height(12),
         text("MIDI 路径").size(14).style(label_style),
         space().height(4),
-        container(
-            text(&state.midi_path)
-                .size(12)
-                .style(move |_t: &iced_core::Theme| text::Style {
-                    color: Some(palette.background.weak.text),
-                })
-                .width(Length::Fill),
-        )
-        .width(Length::Fill)
-        .style(input_style),
+        row![
+            container(
+                text(&state.midi_path)
+                    .size(12)
+                    .style(move |_t: &iced_core::Theme| text::Style {
+                        color: Some(palette.background.weak.text),
+                    })
+                    .width(Length::Fill),
+            )
+            .width(Length::Fill)
+            .style(input_style),
+            space().width(8),
+            button(text("浏览...").size(14))
+                .on_press(Message::AudioExport(AudioExportAction::BrowseMidi))
+                .padding([6, 16]),
+        ]
+        .spacing(8)
+        .align_y(iced_core::Alignment::Center),
         space().height(12),
         text("音色库 (SF2)").size(14).style(label_style),
         space().height(4),
-        container(
-            text(&state.soundfont_path)
-                .size(12)
-                .style(move |_t: &iced_core::Theme| text::Style {
-                    color: Some(palette.background.weak.text),
-                })
-                .width(Length::Fill),
-        )
-        .width(Length::Fill)
-        .style(input_style),
+        row![
+            container(
+                text(&state.soundfont_path)
+                    .size(12)
+                    .style(move |_t: &iced_core::Theme| text::Style {
+                        color: Some(palette.background.weak.text),
+                    })
+                    .width(Length::Fill),
+            )
+            .width(Length::Fill)
+            .style(input_style),
+            space().width(8),
+            button(text("浏览...").size(14))
+                .on_press(Message::AudioExport(AudioExportAction::BrowseSoundfont))
+                .padding([6, 16]),
+        ]
+        .spacing(8)
+        .align_y(iced_core::Alignment::Center),
     ]
     .width(Length::Fill);
 
@@ -89,11 +119,31 @@ pub fn view_audio_export_dialog<'a>(
         row![
             text("输出格式:").size(14).style(label_style).width(120),
             pick_list(
-                [AudioFormat::WAV, AudioFormat::FLAC],
+                [
+                    AudioFormat::WAV,
+                    AudioFormat::FLAC,
+                    AudioFormat::MP3,
+                    AudioFormat::Ogg,
+                    AudioFormat::WavPack,
+                ],
                 Some(state.format),
                 |v| Message::AudioExport(AudioExportAction::FormatChanged(v)),
             )
             .width(200),
+        ]
+        .spacing(8)
+        .align_y(iced_core::Alignment::Center),
+        space().height(8),
+        // 编码比特率（仅无损外的格式有效）
+        row![
+            text("比特率 (kbps):")
+                .size(14)
+                .style(label_style)
+                .width(120),
+            text_input("320", &state.audio_bitrate.to_string())
+                .on_input(|v| Message::AudioExport(AudioExportAction::BitrateChanged(v)))
+                .padding([6, 10])
+                .width(200),
         ]
         .spacing(8)
         .align_y(iced_core::Alignment::Center),
@@ -189,15 +239,96 @@ pub fn view_audio_export_dialog<'a>(
         // 选项复选框
         checkbox(state.apply_limiter)
             .label("应用限制器 (防止削波)")
-            .on_toggle(|v| Message::AudioExport(AudioExportAction::ApplyLimiterChanged(v))),
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::ApplyLimiterChanged(v)))
+            .style(checkbox_style),
         space().height(4),
         checkbox(state.disable_fade_out)
             .label("禁用淡出 (可能爆音)")
-            .on_toggle(|v| Message::AudioExport(AudioExportAction::DisableFadeOutChanged(v))),
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::DisableFadeOutChanged(v)))
+            .style(checkbox_style),
         space().height(4),
         checkbox(state.linear_envelope)
             .label("线性包络")
-            .on_toggle(|v| Message::AudioExport(AudioExportAction::LinearEnvelopeChanged(v))),
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::LinearEnvelopeChanged(v)))
+            .style(checkbox_style),
+    ]
+    .width(Length::Fill);
+
+    // ── 事件过滤区域（参考 OmniConverter EventSettings） ──
+    let event_filter = column![
+        text("事件过滤")
+            .size(16)
+            .font(iced_core::Font::with_name("Microsoft YaHei"))
+            .style(label_style),
+        space().height(8),
+        checkbox(state.ignore_program_changes)
+            .label("忽略音色变化事件")
+            .on_toggle(|v| {
+                Message::AudioExport(AudioExportAction::IgnoreProgramChangesChanged(v))
+            })
+            .style(checkbox_style),
+        space().height(8),
+        // 音符力度过滤
+        text("音符力度过滤").size(14).style(label_style),
+        space().height(4),
+        checkbox(state.filter_velocity)
+            .label("启用力度过滤")
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::FilterVelocityChanged(v)))
+            .style(checkbox_style),
+        space().height(4),
+        row![
+            text("力度范围:").size(14).style(label_style).width(120),
+            text_input("0", &state.velocity_low.to_string())
+                .on_input(|v| Message::AudioExport(AudioExportAction::VelocityLowChanged(v)))
+                .padding([6, 10])
+                .width(80),
+            text(" ~ ").size(14).style(label_style),
+            text_input("127", &state.velocity_high.to_string())
+                .on_input(|v| Message::AudioExport(AudioExportAction::VelocityHighChanged(v)))
+                .padding([6, 10])
+                .width(80),
+        ]
+        .spacing(4)
+        .align_y(iced_core::Alignment::Center),
+        space().height(8),
+        // 音符键位过滤
+        text("音符键位过滤").size(14).style(label_style),
+        space().height(4),
+        checkbox(state.filter_key)
+            .label("启用键位过滤")
+            .on_toggle(|v| Message::AudioExport(AudioExportAction::FilterKeyChanged(v)))
+            .style(checkbox_style),
+        space().height(4),
+        row![
+            text("键位范围:").size(14).style(label_style).width(120),
+            text_input("0", &state.key_low.to_string())
+                .on_input(|v| Message::AudioExport(AudioExportAction::KeyLowChanged(v)))
+                .padding([6, 10])
+                .width(80),
+            text(" ~ ").size(14).style(label_style),
+            text_input("127", &state.key_high.to_string())
+                .on_input(|v| Message::AudioExport(AudioExportAction::KeyHighChanged(v)))
+                .padding([6, 10])
+                .width(80),
+        ]
+        .spacing(4)
+        .align_y(iced_core::Alignment::Center),
+        space().height(8),
+        // 音符强制结束延迟
+        row![
+            text("音符结束延迟 (ms):")
+                .size(14)
+                .style(label_style)
+                .width(120),
+            text_input("0", &state.note_force_end_delay.to_string())
+                .on_input(|v| {
+                    Message::AudioExport(AudioExportAction::NoteForceEndDelayChanged(v))
+                })
+                .padding([6, 10])
+                .width(200),
+        ]
+        .spacing(8)
+        .align_y(iced_core::Alignment::Center),
     ]
     .width(Length::Fill);
 
@@ -227,69 +358,46 @@ pub fn view_audio_export_dialog<'a>(
     ]
     .width(Length::Fill);
 
-    // 进度区域（仅在导出时显示）
-    let progress_area = if state.is_exporting {
-        Some(
-            column![
-                space().height(16),
-                text(&state.status_message).size(14).style(label_style),
-                space().height(8),
-                // 进度条
-                container(text(format!("{:.1}%", state.progress)).size(12).style(
-                    move |_t: &iced_core::Theme| text::Style {
-                        color: Some(palette.background.neutral.text),
-                    }
-                ),)
-                .width(Length::Fill)
-                .height(20)
-                .style(move |_t: &iced_core::Theme| container::Style {
-                    background: Some(palette.background.weak.color.into()),
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 1.0,
-                        color: palette.background.strong.color,
-                    },
-                    ..Default::default()
-                }),
-            ]
-            .width(Length::Fill),
-        )
-    } else {
-        None
-    };
+    // 按钮区域 / 渲染进度区域
+    let buttons: crate::Element<'a> = if state.is_rendering {
+        // 渲染中：显示内嵌进度条
+        let status_text = if state.render_completed {
+            text("导出完成")
+                .size(14)
+                .style(move |_theme: &iced_core::Theme| text::Style {
+                    color: Some(palette.success.strong.color),
+                })
+        } else if let Some(ref err) = state.render_error {
+            text(format!("导出失败: {err}"))
+                .size(14)
+                .style(move |_theme: &iced_core::Theme| text::Style {
+                    color: Some(palette.danger.strong.color),
+                })
+        } else {
+            text(&state.render_message)
+                .size(14)
+                .style(move |_theme: &iced_core::Theme| text::Style {
+                    color: Some(palette.background.neutral.text),
+                })
+        };
 
-    // 按钮区域
-    let buttons = if state.is_exporting {
-        // 导出中只显示取消按钮
-        row![
-            button(text("取消").size(14))
-                .on_press(Message::AudioExport(AudioExportAction::Cancel))
-                .padding([8, 32])
-                .width(Length::Fixed(100.0))
-                .style(move |_t: &iced_core::Theme, status| {
-                    let bg = match status {
-                        button::Status::Hovered => palette.background.strong.color,
-                        _ => palette.background.weak.color,
-                    };
-                    button::Style {
-                        background: Some(bg.into()),
-                        text_color: palette.background.neutral.text,
-                        border: iced_core::Border {
-                            radius: 4.0.into(),
-                            width: 0.0,
-                            color: iced_core::Color::TRANSPARENT,
-                        },
-                        snap: false,
-                        shadow: Default::default(),
-                    }
+        column![
+            status_text,
+            space().height(8),
+            progress_bar(0.0..=1.0, state.render_progress as f32),
+            space().height(4),
+            text(format!("{:.1}%", state.render_progress * 100.0))
+                .size(12)
+                .style(move |_theme: &iced_core::Theme| text::Style {
+                    color: Some(palette.background.strong.text),
                 }),
         ]
-        .align_y(iced_core::Alignment::Center)
+        .width(Length::Fill)
+        .into()
     } else {
-        // 正常状态显示取消和导出按钮
         row![
-            button(text("取消").size(14))
-                .on_press(Message::AudioExport(AudioExportAction::CloseDialog))
+            button(text("关闭").size(14))
+                .on_press(Message::AudioExport(AudioExportAction::ClosePanel))
                 .padding([8, 32])
                 .width(Length::Fixed(100.0))
                 .style(move |_t: &iced_core::Theme, status| {
@@ -333,26 +441,23 @@ pub fn view_audio_export_dialog<'a>(
                 }),
         ]
         .align_y(iced_core::Alignment::Center)
+        .into()
     };
 
     // 组装主内容
-    let mut main_content = column![
+    let main_content = column![
         title,
         space().height(16),
         project_info,
         space().height(16),
         audio_settings,
         space().height(16),
+        event_filter,
+        space().height(16),
         output_path,
+        space().height(24),
+        buttons,
     ];
-
-    // 添加进度区域（如果有）
-    if let Some(progress) = progress_area {
-        main_content = main_content.push(progress);
-    }
-
-    main_content = main_content.push(space().height(24));
-    main_content = main_content.push(buttons);
 
     let scrollable_content = scrollable(main_content)
         .width(Length::Fill)

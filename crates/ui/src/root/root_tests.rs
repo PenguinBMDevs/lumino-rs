@@ -1,14 +1,6 @@
 use super::*;
 use crate::root::handlers::MessageHandler;
 
-#[test]
-fn test_new_dialog_uses_requested_dialog_type() {
-    let root = Root::new_dialog("dark", DialogType::AudioExport);
-
-    assert!(root.state.is_dialog_window);
-    assert_eq!(root.state.dialog_type, DialogType::AudioExport);
-}
-
 // ================================================================
 // 对话框关闭处理器 —— dialog_type 不复位测试
 //
@@ -49,68 +41,6 @@ fn test_close_project_settings_dialog_preserves_dialog_type() {
     assert!(
         root.state.dialog_result.is_some(),
         "CloseProjectSettingsDialog 应设置 dialog_result"
-    );
-}
-
-#[test]
-fn test_close_audio_export_dialog_preserves_dialog_type() {
-    let mut root = Root::new_dialog("dark", DialogType::AudioExport);
-    let mut handler = handlers::DialogHandler::new();
-    handler.handle(
-        &mut root,
-        Message::AudioExport(crate::message::AudioExportAction::CloseDialog),
-    );
-
-    assert_eq!(
-        root.state.dialog_type,
-        DialogType::AudioExport,
-        "AudioExport::CloseDialog 不应修改 dialog_type"
-    );
-    assert!(
-        !root.state.audio_export_dialog.is_open,
-        "AudioExport::CloseDialog 应关闭音频导出对话框"
-    );
-}
-
-#[test]
-fn test_audio_export_confirm_preserves_dialog_type() {
-    let mut root = Root::new_dialog("dark", DialogType::AudioExport);
-    root.state.audio_export_dialog.project_name = "test".to_string();
-    root.state.audio_export_dialog.output_path = "test.wav".to_string();
-    let mut handler = handlers::DialogHandler::new();
-    handler.handle(
-        &mut root,
-        Message::AudioExport(crate::message::AudioExportAction::Confirm),
-    );
-
-    assert_eq!(
-        root.state.dialog_type,
-        DialogType::AudioExport,
-        "AudioExport::Confirm 不应修改 dialog_type"
-    );
-    assert!(
-        !root.state.audio_export_dialog.is_open,
-        "AudioExport::Confirm 应关闭音频导出对话框"
-    );
-}
-
-#[test]
-fn test_audio_export_cancel_preserves_dialog_type() {
-    let mut root = Root::new_dialog("dark", DialogType::AudioExport);
-    let mut handler = handlers::DialogHandler::new();
-    handler.handle(
-        &mut root,
-        Message::AudioExport(crate::message::AudioExportAction::Cancel),
-    );
-
-    assert_eq!(
-        root.state.dialog_type,
-        DialogType::AudioExport,
-        "AudioExport::Cancel 不应修改 dialog_type"
-    );
-    assert!(
-        !root.state.audio_export_dialog.is_open,
-        "AudioExport::Cancel 应关闭音频导出对话框"
     );
 }
 
@@ -231,12 +161,53 @@ fn test_speed_change_button_always_enabled_in_view() {
     // 有选中 -> view
     let _element = root
         .toolbar
-        .view(&root.window, true, root.settings.language);
+        .toolbar_view(&root.window, true, root.settings.language);
 
     // 无选中 -> view（不应 panic/assert）
     let _element = root
         .toolbar
-        .view(&root.window, false, root.settings.language);
+        .toolbar_view(&root.window, false, root.settings.language);
 
     // 验证通过：两种情况下 view 均正常返回
+}
+
+// ================================================================
+// 工程走带视图最大 tick 缓存测试
+//
+// 播放时每帧需要最大 tick 来计算滚动范围；若每帧全量扫描 track_notes，
+// 大型 MIDI 会在主线程造成卡顿。此测试验证缓存按 track_notes_gen 失效。
+// ================================================================
+
+#[test]
+fn test_arrangement_max_tick_end_caches_by_gen() {
+    use lumino_core::storage::config::UiConfig;
+
+    let ui_config = UiConfig::default();
+    let mut root = Root::new(&ui_config);
+
+    // 无音符时返回 DEFAULT_MIN_TICKS
+    assert_eq!(
+        root.arrangement_max_tick_end(),
+        crate::constants::editor::DEFAULT_MIN_TICKS
+    );
+
+    // 在非指挥轨道添加音符（tick=4000, length=100，终点=4100）
+    // 必须超过 DEFAULT_MIN_TICKS（3840），否则会被最小值覆盖
+    root.editor.editor_state.data.current_track = 1;
+    let _ = root
+        .editor
+        .editor_state
+        .data
+        .finish_drawing(4000.0, 60, 4100.0, 1.0, 10.0);
+
+    // track_notes_gen 已变化，缓存应重新计算
+    let max_tick = root.arrangement_max_tick_end();
+    assert!((max_tick - 4100.0).abs() < f32::EPSILON);
+
+    // 缓存已写入
+    assert!((root.arrangement_view.viewport.cached_max_tick_end - 4100.0).abs() < f32::EPSILON);
+    assert_eq!(
+        root.arrangement_view.viewport.cached_track_notes_gen,
+        root.editor.editor_state.data.track_notes_gen
+    );
 }

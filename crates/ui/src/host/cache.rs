@@ -1,8 +1,34 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use crate::editor::onion_bg_pool::OnionBgTilePool;
 use iced_wgpu::wgpu;
-use lumino_gfx::{OnionBgTileRef, OnionNote, SwappableBuffer};
+use lumino_gfx::SwappableBuffer;
+
+/// 音符渲染视口缓存（带 overscan）
+///
+/// 记录上一次渲染时使用的扩展视口范围，用于判断当前可见视口
+/// 是否仍在缓存范围内，避免频繁重建音符实例。
+#[derive(Debug, Clone, Copy)]
+pub struct NoteRenderViewport {
+    /// 扩展后的 tick 起始
+    pub tick_start: f32,
+    /// 扩展后的 tick 结束
+    pub tick_end: f32,
+    /// 扩展后的 key 最小值
+    pub key_min: u16,
+    /// 扩展后的 key 最大值
+    pub key_max: u16,
+}
+
+impl NoteRenderViewport {
+    /// 检查给定视口是否完全包含在此缓存视口内
+    #[inline]
+    pub fn contains(&self, tick_start: f32, tick_end: f32, key_min: u16, key_max: u16) -> bool {
+        self.tick_start <= tick_start
+            && self.tick_end >= tick_end
+            && self.key_min <= key_min
+            && self.key_max >= key_max
+    }
+}
 
 /// 渲染缓存 - 避免每帧重复上传相同数据
 ///
@@ -15,22 +41,18 @@ pub struct RenderCache {
     pub grid_instances: Vec<lumino_gfx::GridLineInstance>,
     /// 双缓冲主音符实例数据（UI线程写入，渲染线程读取）
     pub note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
-    /// 双缓冲洋葱皮背景瓦片引用（Worker线程写入，渲染线程读取）
-    pub onion_bg_tiles_buffer: Arc<SwappableBuffer<OnionBgTileRef>>,
-    /// 双缓冲洋葱皮音符池（SoA 布局，用于 GPU 计算剔除渲染）
-    pub onion_note_buffer: Arc<SwappableBuffer<OnionNote>>,
     /// 主音符版本号（用于检测数据变化）
     pub note_instances_version: u64,
     /// 网格线视口哈希（用于检测变化）
     pub grid_viewport_hash: u64,
     /// 音符视口哈希（用于检测变化）
     pub note_viewport_hash: u64,
-    /// 洋葱皮视口哈希（用于检测显著变化，带量化节流）
-    pub onion_viewport_hash: u64,
+    /// 上一次渲染使用的扩展视口范围
+    pub note_render_viewport: Option<NoteRenderViewport>,
+    /// 可见音符数据临时缓冲（避免每帧重新分配）
+    pub visible_notes_buffer: Vec<(f32, u16, f32)>,
     /// 缓存的深度纹理 (宽, 高, view)
     pub depth_texture: Option<(u32, u32, wgpu::TextureView)>,
-    /// 洋葱皮背景瓦片池（主线程创建，NoteWorker 与 WGPU 线程共享）
-    pub tile_pool: Option<Arc<Mutex<OnionBgTilePool>>>,
     /// 走带视图实例缓存（避免每帧重建）
     pub arrangement_instances: Vec<lumino_gfx::ArrangementNoteInstance>,
 }
@@ -40,14 +62,12 @@ impl RenderCache {
         Self {
             grid_instances: Vec::new(),
             note_instances_buffer: Arc::new(SwappableBuffer::new(1024 * 1024)),
-            onion_bg_tiles_buffer: Arc::new(SwappableBuffer::new(1024)),
-            onion_note_buffer: Arc::new(SwappableBuffer::new(256 * 1024)),
             note_instances_version: 0,
             grid_viewport_hash: 0,
             note_viewport_hash: 0,
-            onion_viewport_hash: 0,
+            note_render_viewport: None,
+            visible_notes_buffer: Vec::new(),
             depth_texture: None,
-            tile_pool: None,
             arrangement_instances: Vec::new(),
         }
     }
@@ -60,40 +80,6 @@ impl RenderCache {
     /// 检查音符实例是否为空
     pub fn note_instances_is_empty(&self) -> bool {
         unsafe { self.note_instances_buffer.read_buffer().is_empty() }
-    }
-
-    /// 计算洋葱皮视口哈希（带量化节流）
-    ///
-    /// 使用量化的 scroll/zoom 值，使得微小移动不触发 OS 重算。
-    /// 量化粒度：scroll 方向 32 像素，zoom 方向 0.1 倍。
-    pub fn compute_onion_viewport_hash(
-        scroll_x: f32,
-        scroll_y: f32,
-        zoom_x: f32,
-        zoom_y: f32,
-        canvas_x: f32,
-        canvas_y: f32,
-        visible_key_count: u16,
-    ) -> u64 {
-        fn hash_compose(state: u64, val: u64) -> u64 {
-            state.wrapping_mul(0x9e3779b97f4a7c15).wrapping_add(val)
-        }
-
-        // 量化：scroll 按 32px 取整，zoom 保留 1 位小数
-        let q_scroll_x = (scroll_x / 32.0).round() as i64;
-        let q_scroll_y = (scroll_y / 32.0).round() as i64;
-        let q_zoom_x = (zoom_x * 10.0).round() as i64;
-        let q_zoom_y = (zoom_y * 10.0).round() as i64;
-
-        let mut hash: u64 = 9_871_654_321_098_765;
-        hash = hash_compose(hash, q_scroll_x as u64);
-        hash = hash_compose(hash, q_scroll_y as u64);
-        hash = hash_compose(hash, q_zoom_x as u64);
-        hash = hash_compose(hash, q_zoom_y as u64);
-        hash = hash_compose(hash, canvas_x.to_bits() as u64);
-        hash = hash_compose(hash, canvas_y.to_bits() as u64);
-        hash = hash_compose(hash, visible_key_count as u64);
-        hash
     }
 
     /// 计算视口哈希（滚动+缩放+画布大小+可见键数）

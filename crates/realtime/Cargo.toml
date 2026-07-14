@@ -1,0 +1,29 @@
+[package]
+name = "lumino-realtime"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["xsynth-realtime"]
+realtime = ["xsynth-core", "xsynth-soundfonts", "cpal", "crossbeam-channel"]
+xsynth-realtime = ["dep:xsynth-realtime", "xsynth-core", "xsynth-soundfonts"]
+
+[[bench]]
+name = "event_throughput"
+harness = false
+required-features = ["realtime"]
+
+[dependencies]
+xsynth-core = { workspace = true, optional = true }
+xsynth-soundfonts = { workspace = true, optional = true }
+cpal = { version = "0.15", optional = true }
+crossbeam-channel = { version = "0.5", optional = true }
+xsynth-realtime = { workspace = true, optional = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }

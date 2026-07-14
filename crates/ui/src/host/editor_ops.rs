@@ -1,7 +1,7 @@
 //! Host 编辑器操作子模块 - 处理音符和洋葱皮相关操作
 
 use crate::host::{Host, types::NoteData};
-use crate::{editor::note::Note, message};
+use crate::message;
 use lumino_core::TempoPoint;
 use lumino_midi_loader::MidiDocument;
 use std::sync::Arc;
@@ -36,6 +36,7 @@ impl Host {
         self.root.editor.ruler_cache.clear();
         self.render_ctx.render_cache.grid_viewport_hash = 0;
         self.render_ctx.render_cache.note_viewport_hash = 0;
+        self.render_ctx.render_cache.note_render_viewport = None;
         // 仅请求重绘，不重建UI树（网格线数据由WGPU层处理）
         self.window_ctx.window.request_redraw();
     }
@@ -49,8 +50,108 @@ impl Host {
     }
 
     /// 设置当前音轨
-    pub fn set_current_track(&mut self, track_idx: usize) {
-        self.root.set_current_track(track_idx);
+    ///
+    /// 如果切换到新音轨时旧音轨有脏标记的高精度贴图：
+    /// 1. 先发送临时脏区域覆层命令，在旧音轨位置立即显示编辑内容；
+    /// 2. 执行音轨切换；
+    /// 3. 立即触发后台重生（绕过冷静期），重生完成后自动替换覆层。
+    ///
+    /// 覆层与重生均以音轨组（track_group）为单位合并处理，
+    /// 避免同组多个脏音轨互相覆盖或重生成时丢失同组其他音轨数据。
+    pub fn set_current_track(&mut self, track_idx: usize, open_panel: bool) {
+        // 收集当前所有脏音轨，避免切换时只显示单个音轨的覆盖层
+        let dirty_tracks: Vec<u16> = self.hires_dirty_tracks.iter().copied().collect();
+        let old_track = self.root.editor.current_track() as u16;
+        tracing::debug!(
+            "[onion-dirty] set_current_track: old_track={}, new_track={}, dirty_tracks={:?}",
+            old_track,
+            track_idx,
+            dirty_tracks
+        );
+
+        // 切换前先发送临时脏区域覆层，确保用户立刻看到所有刚编辑的音符
+        let context_ready = self.hires_config.is_some()
+            && self.hires_midi_hash.is_some()
+            && self.hires_gen_info.is_some();
+        tracing::debug!(
+            "[onion-dirty] context_ready={}, config={}, hash={}, gen_info={}",
+            context_ready,
+            self.hires_config.is_some(),
+            self.hires_midi_hash.is_some(),
+            self.hires_gen_info.is_some()
+        );
+
+        if let (Some(cfg), Some(hash), Some((ppq, key_count, total_ticks))) = (
+            self.hires_config.clone(),
+            self.hires_midi_hash.clone(),
+            self.hires_gen_info,
+        ) {
+            // 按音轨组分组脏音轨，同组只发送一个合并覆层
+            let mut dirty_by_group: std::collections::HashMap<u32, Vec<u16>> =
+                std::collections::HashMap::new();
+            for &dirty_track in &dirty_tracks {
+                let group = (dirty_track / lumino_gfx::TRACKS_PER_GROUP) as u32;
+                dirty_by_group.entry(group).or_default().push(dirty_track);
+            }
+
+            // 推断需要的音轨总数
+            let max_dirty = dirty_tracks.iter().copied().max().unwrap_or(0);
+            let track_count = (self.root.sidebar.tracks.len() as u16)
+                .max(max_dirty + 1)
+                .max(track_idx as u16 + 1);
+
+            for (group, tracks) in &dirty_by_group {
+                let group_start = (group * lumino_gfx::TRACKS_PER_GROUP as u32) as u16;
+                let group_end = (group_start + lumino_gfx::TRACKS_PER_GROUP).min(track_count);
+                let mut group_notes = Vec::with_capacity((group_end - group_start) as usize);
+                for t in group_start..group_end {
+                    // 脏音轨使用快照（当前帧可能尚未保存到 track_notes）
+                    let notes = if let Some(dirty_notes) = self.hires_dirty_regions.get(&t) {
+                        dirty_notes.clone()
+                    } else {
+                        self.get_track_notes_for_hires(t)
+                    };
+                    group_notes.push(notes);
+                }
+
+                let representative = tracks[0];
+                tracing::debug!(
+                    "[onion-dirty] 发送 ShowHiResDirtyOverlay: representative_track={}, group={}, group_tracks={}",
+                    representative,
+                    group,
+                    group_notes.len()
+                );
+                if group_notes.iter().any(|n| !n.is_empty()) {
+                    self.send_hires_dirty_overlay(lumino_gfx::render_thread::HiResTrackParams {
+                        track_idx: representative,
+                        group_notes,
+                        ppq,
+                        key_count,
+                        total_ticks,
+                        track_count,
+                        config: cfg.clone(),
+                        midi_hash: hash.clone(),
+                    });
+                }
+            }
+        }
+
+        // 执行音轨切换（保存旧音轨 notes 到 track_notes 缓存）
+        self.root.set_current_track(track_idx, open_panel);
+
+        // 按音轨组触发后台重生，每个 group 只重生一次
+        let mut regen_groups = std::collections::HashSet::new();
+        for &dirty_track in &dirty_tracks {
+            let group = (dirty_track / lumino_gfx::TRACKS_PER_GROUP) as u32;
+            if regen_groups.insert(group) {
+                tracing::debug!(
+                    "[onion-dirty] 触发 force_hires_regen: track={}",
+                    dirty_track
+                );
+                self.force_hires_regen(dirty_track);
+            }
+        }
+
         // 仅请求重绘，不重建UI树（音轨切换由WGPU层处理）
         self.window_ctx.window.request_redraw();
     }
@@ -61,41 +162,6 @@ impl Host {
         self.root.load_track_notes(track_idx, notes);
         // 仅请求重绘，不重建UI树（音符数据由WGPU层处理）
         self.window_ctx.window.request_redraw();
-    }
-
-    /// 预加载音轨音符到 track_notes（仅用于洋葱皮，不显示）
-    ///
-    /// # 参数
-    /// * `track_idx` - 音轨索引
-    /// * `notes` - 音符列表，格式为 (tick, key, length, velocity, channel)
-    pub fn load_track_notes_for_onion_skin(
-        &mut self,
-        track_idx: usize,
-        notes: &[(f32, u8, f32, u8, u8)],
-    ) {
-        tracing::debug!(
-            "UI::load_track_notes_for_onion_skin: track_idx={}, notes_count={}",
-            track_idx,
-            notes.len()
-        );
-
-        // 直接保存到 editor.track_notes，不更新当前显示
-        let mut track_notes: im::Vector<Note> = im::Vector::new();
-        for &(tick, key, length, velocity, channel) in notes {
-            track_notes.push_back(Note::from_raw(tick, key as u16, length, velocity, channel));
-        }
-
-        if !track_notes.is_empty() {
-            self.root
-                .editor
-                .editor_state
-                .data
-                .track_notes
-                .insert(track_idx, track_notes);
-            self.root.invalidate_onion_skin_cache();
-        }
-
-        // 不需要重绘，因为这些音符是用于洋葱皮的，不是当前显示的
     }
 
     /// 加载 Tempo 变化事件到播放管理器
@@ -130,16 +196,6 @@ impl Host {
         self.root.load_track_midi_events(track_idx, events);
     }
 
-    /// 预加载音轨 MIDI 控制事件到洋葱皮缓存
-    pub fn load_track_midi_events_for_onion_skin(
-        &mut self,
-        track_idx: usize,
-        events: Vec<crate::playback::MidiTrackEvent>,
-    ) {
-        self.root
-            .load_track_midi_events_for_onion_skin(track_idx, events);
-    }
-
     /// 设置播放用 MIDI 输出连接
     pub fn set_playback_midi_output(&mut self, output: Box<dyn lumino_midi_io::OutputConnection>) {
         self.root.set_midi_output(output);
@@ -165,103 +221,6 @@ impl Host {
         self.root.is_playing()
     }
 
-    // ════════════════════════════════════════════════════════════════════════════
-    // 洋葱皮 API
-    // ════════════════════════════════════════════════════════════════════════════
-
-    /// 启用洋葱皮功能
-    pub fn enable_onion_skin(&mut self) {
-        self.root.editor.enable_onion_skin();
-        self.root.invalidate_onion_skin_cache();
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 禁用洋葱皮功能
-    pub fn disable_onion_skin(&mut self) {
-        self.root.editor.disable_onion_skin();
-        self.root.invalidate_onion_skin_cache();
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 切换洋葱皮开关状态
-    pub fn toggle_onion_skin(&mut self) {
-        self.root.editor.toggle_onion_skin();
-        self.root.invalidate_onion_skin_cache();
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 检查洋葱皮是否启用
-    pub fn is_onion_skin_enabled(&self) -> bool {
-        self.root.editor.is_onion_skin_enabled()
-    }
-
-    /// 设置音轨的洋葱皮 RGB 颜色（透明度保持不变）
-    ///
-    /// # 参数
-    /// * `track_idx` - 音轨索引
-    /// * `r`, `g`, `b` - RGB 颜色分量 (0.0 - 1.0)
-    ///
-    /// 优化：颜色变化走快速路径 O(C)，不触发 document 重查。
-    pub fn set_onion_skin_color_rgb(&mut self, track_idx: usize, r: f32, g: f32, b: f32) {
-        let alpha = self.root.editor.onion_skin_opacity();
-        self.root
-            .editor
-            .set_onion_skin_color(track_idx, iced_core::Color::from_rgba(r, g, b, alpha));
-        self.window_ctx.window.request_redraw();
-    }
-
-    pub fn set_onion_skin_color_rgba(&mut self, track_idx: usize, r: f32, g: f32, b: f32, a: f32) {
-        self.root
-            .editor
-            .set_onion_skin_color(track_idx, iced_core::Color::from_rgba(r, g, b, a));
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 获取音轨的洋葱皮颜色
-    ///
-    /// 返回 (r, g, b, a) 元组
-    pub fn get_onion_skin_color(&self, track_idx: usize) -> (f32, f32, f32, f32) {
-        let color = self.root.editor.get_onion_skin_color(track_idx);
-        (color.r, color.g, color.b, color.a)
-    }
-
-    /// 设置洋葱皮透明度
-    ///
-    /// # 参数
-    /// * `opacity` - 透明度值，范围 0.0（完全透明）到 1.0（完全不透明）
-    ///
-    /// 优化：透明度变化走快速路径 O(C)，不触发 document 重查。
-    pub fn set_onion_skin_opacity(&mut self, opacity: f32) {
-        self.root.editor.set_onion_skin_opacity(opacity);
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 获取洋葱皮透明度
-    pub fn onion_skin_opacity(&self) -> f32 {
-        self.root.editor.onion_skin_opacity()
-    }
-
-    /// 设置是否显示所有音轨的洋葱皮
-    pub fn set_onion_skin_show_all(&mut self, show_all: bool) {
-        self.root.editor.set_onion_skin_show_all(show_all);
-        self.root.invalidate_onion_skin_cache();
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 添加音轨到洋葱皮显示列表
-    pub fn add_onion_skin_track(&mut self, track_idx: usize) {
-        self.root.editor.add_onion_skin_track(track_idx);
-        self.root.invalidate_onion_skin_cache();
-        self.window_ctx.window.request_redraw();
-    }
-
-    /// 从洋葱皮显示列表移除音轨
-    pub fn remove_onion_skin_track(&mut self, track_idx: usize) {
-        self.root.editor.remove_onion_skin_track(track_idx);
-        self.root.invalidate_onion_skin_cache();
-        self.window_ctx.window.request_redraw();
-    }
-
     /// 清空编辑器（用于新建工程 / 关闭文件）
     ///
     /// 释放所有编辑器内存（音符数据、历史记录、空间索引、MIDI 事件、文档引用）
@@ -272,21 +231,16 @@ impl Host {
         // 使用 EditorState::reset() 统一重置核心状态
         root.editor.editor_state.reset();
 
-        // 编辑器私有内部状态（洋葱皮配置、播放位置等）
+        // 编辑器私有内部状态（播放位置等）
         root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Tempo;
         root.editor.reset_internal_state();
 
         // 空间索引（惰性重建）
         root.editor.spatial.note_index = std::cell::RefCell::new(None);
         root.editor.spatial.note_index_dirty = std::cell::Cell::new(true);
-        root.editor.spatial.track_note_indices =
-            std::cell::RefCell::new(std::collections::HashMap::new());
         root.editor.spatial.query_cache = std::cell::RefCell::new(Vec::new());
 
-        // 洋葱皮 + MIDI 控制事件
-        root.visual.cached_onion_skin_notes = None;
-        root.visual.onion_skin_generation = 0;
-        root.editor.invalidate_onion_skin_cache();
+        // MIDI 控制事件
         root.playback.track_midi_events.clear();
 
         // 协作远端光标
@@ -310,9 +264,14 @@ impl Host {
         // RenderCache 视口哈希失效（强制重建 GPU 实例）
         self.render_ctx.render_cache.grid_viewport_hash = 0;
         self.render_ctx.render_cache.note_viewport_hash = 0;
+        self.render_ctx.render_cache.note_render_viewport = None;
 
         // UI 缓存
         self.clear_cache();
+
+        // 清空后重新初始化默认高精度洋葱皮上下文，确保后续编辑仍能生成贴图
+        self.init_default_hires_context();
+
         self.window_ctx.window.request_redraw();
         tracing::info!("UI: 编辑器已完全清空（含历史记录、空间索引、播放状态）");
     }
@@ -380,8 +339,42 @@ impl Host {
     }
 
     /// 处理编辑器动作
+    ///
+    /// 仅在音符数据确实发生变化时才标记当前音轨高精度贴图为脏。
+    /// 先按动作类型过滤：只有可能修改音符的动作才检查 `notes_changed()`，
+    /// 避免 Moved/Released/Copy/SelectAll 等不会改音符的动作被误判为脏音轨。
     pub fn handle_action(&mut self, action: message::EditorAction) {
-        self.root.handle_editor_action(action);
+        let track_idx = self.root.editor.current_track() as u16;
+        tracing::debug!(
+            "[onion-dirty] Host::handle_action: action={:?}, track={}",
+            action,
+            track_idx
+        );
+
+        // 先确定该动作是否可能修改音符数据
+        // 确定会改：Delete/Cut/Paste → 直接标记脏，不问 notes_changed
+        // 可能改：Pressed/Released/DoubleClicked/Undo/Redo → 依赖 notes_changed 判断
+        // 绝不会改：Moved/Copy/SelectAll/Scrubbed/Scrolled/IndicatorDrag → 跳过
+        let is_definite_mutation = matches!(
+            action,
+            message::EditorAction::DeletePressed
+                | message::EditorAction::Cut
+                | message::EditorAction::Paste
+        );
+        let is_possible_mutation = matches!(
+            action,
+            message::EditorAction::Pressed { .. }
+                | message::EditorAction::Released
+                | message::EditorAction::DoubleClicked(_)
+                | message::EditorAction::Undo
+                | message::EditorAction::Redo
+        );
+
+        let notes_changed = self.root.handle_editor_action(action);
+        if is_definite_mutation || (is_possible_mutation && notes_changed) {
+            // 编辑动作确实改变了音符 → 标记当前音轨高精度贴图为脏
+            self.mark_hires_dirty(track_idx);
+        }
         // 仅请求重绘，不重建UI树（编辑器动作由canvas/WGPU层处理）
         self.window_ctx.window.request_redraw();
     }

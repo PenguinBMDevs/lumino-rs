@@ -1,6 +1,11 @@
-use super::*;
+use super::PlaybackEngine;
 use crate::Playback;
+use crate::engine::{MidiMessage, NoteEvent};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::time::Duration;
+
+use lumino_midi_loader::{MidiDocument, NoteEvent as DocNoteEvent, TrackManager};
 
 #[test]
 fn test_event_scheduling() {
@@ -77,14 +82,14 @@ fn test_loop_wrapping_seek_back() {
     // current_tick 应回到 loop_start (50) 附近
     let new_tick = engine.current_tick();
     assert!(
-        new_tick >= 48.0 && new_tick <= 52.0,
+        (48.0..=52.0).contains(&new_tick),
         "循环回绕后 current_tick 应接近 loop_start(50)，实际 = {}",
         new_tick,
     );
 
     // last_processed_tick 也应被重置
     assert!(
-        engine.last_processed_tick >= 48.0 && engine.last_processed_tick <= 52.0,
+        (48.0..=52.0).contains(&engine.last_processed_tick),
         "last_processed_tick 应接近 loop_start(50)，实际 = {}",
         engine.last_processed_tick,
     );
@@ -149,10 +154,66 @@ fn test_loop_wrapping_disabled() {
     let _messages = engine.update();
 
     let tick = engine.current_tick();
-    // 没有回绕，tick 应在 150 附近
+    // 没有回绕，tick 应保持在 150 附近
     assert!(
-        tick >= 145.0 && tick <= 155.0,
+        (145.0..=155.0).contains(&tick),
         "禁用循环后 tick 应保持在 seek 位置 (150)，实际 = {}",
         tick,
+    );
+}
+
+#[test]
+fn test_document_streaming_emits_events_in_order() {
+    let playback = Arc::new(Mutex::new(Playback::new(480)));
+    let mut engine = PlaybackEngine::new(Arc::clone(&playback));
+
+    // 构造一个两轨文档：track 0 为当前轨（空），track 1 为其他轨。
+    // 其他轨的音符故意交错，验证 NoteOn/NoteOff 按时间顺序合并输出。
+    let doc = Arc::new(MidiDocument {
+        notes: vec![
+            vec![],
+            vec![
+                DocNoteEvent::new(0, 5, 60, 100, 0),
+                DocNoteEvent::new(3, 8, 64, 100, 0),
+                DocNoteEvent::new(6, 10, 67, 100, 0),
+            ],
+        ],
+        tempo_changes: vec![(0, 120.0)],
+        control_events: vec![],
+        track_names: vec![None, None],
+        total_ticks: 10,
+        track_count: 2,
+        tracks: TrackManager::new(2),
+    });
+
+    engine.set_document(doc, 0);
+    engine.play();
+
+    // 让时间推进足够覆盖全部音符（约 10 tick ≈ 10 ms）
+    std::thread::sleep(Duration::from_millis(20));
+    let messages = engine.update();
+
+    // 收集所有 NoteOn/NoteOff 的 key 与类型，验证时间顺序
+    let event_keys: Vec<_> = messages
+        .iter()
+        .filter_map(|m| match m {
+            MidiMessage::NoteOn { key, .. } => Some(("on", *key)),
+            MidiMessage::NoteOff { key, .. } => Some(("off", *key)),
+            _ => None,
+        })
+        .collect();
+
+    // 期望顺序：0:on(60), 3:on(64), 5:off(60), 6:on(67), 8:off(64), 10:off(67)
+    let expected = vec![
+        ("on", 60),
+        ("on", 64),
+        ("off", 60),
+        ("on", 67),
+        ("off", 64),
+        ("off", 67),
+    ];
+    assert_eq!(
+        event_keys, expected,
+        "从 MidiDocument 直接流式读取应按时序发出 NoteOn/NoteOff"
     );
 }

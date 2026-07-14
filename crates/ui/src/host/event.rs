@@ -57,9 +57,8 @@ impl Host {
         };
 
         if let Some(action) = action {
-            self.root.handle_editor_action(action);
-            // 仅请求重绘，不重建UI树（编辑器操作由canvas/WGPU层处理）
-            self.window_ctx.window.request_redraw();
+            // 通过 Host::handle_action 处理，确保高精度贴图脏标记被正确设置
+            self.handle_action(action);
         }
     }
 
@@ -340,7 +339,14 @@ impl Host {
             self.root.editor.ruler_cache.clear();
             self.render_ctx.render_cache.grid_viewport_hash = 0;
             self.render_ctx.render_cache.note_viewport_hash = 0;
+            self.render_ctx.render_cache.note_render_viewport = None;
             self.root.editor.grid_cache.clear();
+            return true;
+        }
+
+        // 编辑器动作必须通过 Host::handle_action 处理，确保高精度贴图脏标记被正确设置
+        if let message::Message::EditorAction(action) = message {
+            self.handle_action(action);
             return true;
         }
 

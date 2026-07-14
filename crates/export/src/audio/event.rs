@@ -1,0 +1,254 @@
+//! MIDI 事件处理器 — 参考 OmniConverter 的 EventsProcesser
+//!
+//! 将 MIDI 事件流转换为 xsynth 音频样本。
+//! 基于渲染时间驱动，支持进度回调。
+
+use std::sync::Arc;
+
+use midly::{MidiMessage, TrackEventKind};
+use tracing::info;
+use xsynth_core::{
+    AudioPipe,
+    channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
+    channel_group::{ChannelGroup, SynthEvent},
+    soundfont::{SampleSoundfont, SoundfontBase},
+};
+
+use crate::error::{ExportError, ExportResult};
+
+use super::{config::AudioRenderConfig, stream::SampleSink, tick_conv::TickToTime};
+
+/// 事件处理器 — 将 MIDI 事件流式渲染到 SampleSink
+///
+/// 参考 OmniConverter 的 EventsProcesser 设计：
+/// - 以渲染时间（delta seconds）驱动，而非依赖外部定时器
+/// - 使用 Vec 回收池减少分配
+pub struct MidiEventProcessor<'a> {
+    config: &'a AudioRenderConfig,
+    channel_group: &'a mut ChannelGroup,
+    tick_conv: &'a mut TickToTime,
+    sink: &'a mut dyn SampleSink,
+    sample_rate: u32,
+    channel_count: u16,
+    /// Vec 回收池
+    vec_pool: Vec<Vec<f32>>,
+}
+
+/// 进度回调
+pub type ProgressFn = Arc<dyn Fn(String, f64) + Send + Sync>;
+
+impl<'a> MidiEventProcessor<'a> {
+    pub fn new(
+        config: &'a AudioRenderConfig,
+        channel_group: &'a mut ChannelGroup,
+        tick_conv: &'a mut TickToTime,
+        sink: &'a mut dyn SampleSink,
+    ) -> Self {
+        let params = *channel_group.stream_params();
+        MidiEventProcessor {
+            config,
+            channel_group,
+            tick_conv,
+            sink,
+            sample_rate: params.sample_rate,
+            channel_count: params.channels.count() as u16,
+            vec_pool: Vec::new(),
+        }
+    }
+
+    /// 从 Vec 池获取或创建新 Vec
+    fn acquire_buffer(&mut self, capacity: usize) -> Vec<f32> {
+        self.vec_pool
+            .pop()
+            .unwrap_or_else(|| Vec::with_capacity(capacity))
+    }
+
+    /// 归还 Vec 到池
+    fn release_buffer(&mut self, buf: Vec<f32>) {
+        if self.vec_pool.len() < 4 {
+            self.vec_pool.push(buf);
+        }
+    }
+
+    /// 渲染指定时长的音频
+    fn render_duration(&mut self, delta_seconds: f64) -> ExportResult<()> {
+        if delta_seconds <= 0.0 {
+            return Ok(());
+        }
+
+        let total_samples = (delta_seconds * self.sample_rate as f64) as usize;
+        if total_samples == 0 {
+            return Ok(());
+        }
+
+        let frame_size = self.channel_count as usize;
+        let mut remaining = total_samples;
+
+        const MAX_BATCH: usize = 4096;
+
+        while remaining > 0 {
+            let batch = remaining.min(MAX_BATCH);
+            let count = batch * frame_size;
+
+            let mut buffer = self.acquire_buffer(count);
+            buffer.resize(count, 0.0);
+
+            // SAFETY: read_samples_unchecked 会填充所有样本
+            self.channel_group.read_samples_unchecked(&mut buffer);
+
+            // 应用限制器（如果配置）
+            if self.config.apply_limiter {
+                apply_limiter(&mut buffer, self.channel_count);
+            }
+
+            self.sink.write_samples(&buffer)?;
+            self.release_buffer(buffer);
+
+            remaining -= batch;
+        }
+
+        Ok(())
+    }
+
+    /// 处理一个 MIDI 事件，渲染到该事件的时间点
+    pub fn process_midi_event(
+        &mut self,
+        tick: u64,
+        event_kind: &TrackEventKind,
+    ) -> ExportResult<()> {
+        // 计算到该事件的时间增量
+        let delta = self.tick_conv.advance_to(tick);
+        self.render_duration(delta)?;
+
+        // 发送 MIDI 事件到合成器
+        if let TrackEventKind::Midi { channel, message } = event_kind {
+            let ch = channel.as_int() as u32;
+            match message {
+                MidiMessage::NoteOn { key, vel } => {
+                    self.channel_group.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
+                            key: *key,
+                            vel: vel.as_int(),
+                        }),
+                    ));
+                }
+                MidiMessage::NoteOff { key, .. } => {
+                    self.channel_group.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: *key }),
+                    ));
+                }
+                MidiMessage::Controller { controller, value } => {
+                    self.channel_group.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
+                            controller.as_int(),
+                            value.as_int(),
+                        ))),
+                    ));
+                }
+                MidiMessage::ProgramChange { program } => {
+                    self.channel_group.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program.as_int())),
+                    ));
+                }
+                MidiMessage::PitchBend { bend } => {
+                    self.channel_group.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::Control(
+                            ControlEvent::PitchBendValue(bend.as_int() as f32 / 8192.0 - 1.0),
+                        )),
+                    ));
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 完成渲染：发送 NoteOff，渲染尾部直到静音
+    pub fn finalize(&mut self) -> ExportResult<()> {
+        // 发送所有音符关闭
+        self.channel_group
+            .send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+                ChannelAudioEvent::AllNotesOff,
+            )));
+        self.channel_group
+            .send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+                ChannelAudioEvent::ResetControl,
+            )));
+
+        // 持续渲染尾部直到静音
+        let frame_size = self.channel_count as usize;
+        let batch_size = self.sample_rate as usize * frame_size; // 1秒
+
+        loop {
+            let mut buffer = vec![0.0f32; batch_size];
+            self.channel_group.read_samples_unchecked(&mut buffer);
+
+            if self.config.apply_limiter {
+                apply_limiter(&mut buffer, self.channel_count);
+            }
+
+            // 检测是否静音
+            let is_silent = buffer.iter().all(|&s| s.abs() < 0.0001);
+
+            self.sink.write_samples(&buffer)?;
+
+            if is_silent {
+                break;
+            }
+        }
+
+        info!("音频渲染完成");
+        Ok(())
+    }
+}
+
+/// 简单的限幅器（当未使用 AudioLimiter 时作为后备）
+fn apply_limiter(samples: &mut [f32], _channels: u16) {
+    // 简单的峰值限制
+    let threshold = 0.95;
+    for s in samples.iter_mut() {
+        if s.abs() > threshold {
+            *s = s.signum() * threshold;
+        }
+    }
+}
+
+/// 加载 SF2 音色库到 ChannelGroup
+pub fn load_soundfonts(
+    channel_group: &mut ChannelGroup,
+    config: &AudioRenderConfig,
+) -> ExportResult<()> {
+    if config.soundfonts.is_empty() {
+        return Err(ExportError::AudioWrite("未指定音色库文件".into()));
+    }
+
+    let stream_params = *channel_group.stream_params();
+    let sf_options = config.build_sf_options();
+
+    let soundfonts: Vec<Arc<dyn SoundfontBase>> = config
+        .soundfonts
+        .iter()
+        .map(|sf_path| {
+            let sf: Arc<dyn SoundfontBase> = Arc::new(
+                SampleSoundfont::new(sf_path, stream_params, sf_options)
+                    .map_err(|e| ExportError::AudioWrite(format!("音色库 {sf_path:?}: {e}")))?,
+            );
+            Ok(sf)
+        })
+        .collect::<ExportResult<Vec<_>>>()?;
+
+    channel_group.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
+        ChannelConfigEvent::SetSoundfonts(soundfonts),
+    )));
+    channel_group.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
+        ChannelConfigEvent::SetLayerCount(config.layer_limit),
+    )));
+
+    Ok(())
+}

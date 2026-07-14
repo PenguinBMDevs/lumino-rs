@@ -18,7 +18,9 @@ pub(super) fn create_menu_items(lang: Language) -> Vec<(&'static str, Icon)> {
         (t.audio, Icon::WaveForm),
         (t.ui, Icon::FolderTree),
         (t.shortcuts, Icon::Clock),
-        (t.about, Icon::GitHub),
+        (t.onion_skin, Icon::Eye),
+        (t.palette, Icon::Arrangement),
+        (t.about, Icon::LogoInApp),
     ]
 }
 

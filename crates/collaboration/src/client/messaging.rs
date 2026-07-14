@@ -30,4 +30,10 @@ impl CollaborationClient {
     pub async fn send_midi_event(&self, event: MidiEvent) -> Result<()> {
         self.send_message(ClientMessage::MidiEvent { event }).await
     }
+
+    /// 发送工程更新（如音轨变更）
+    pub async fn send_project_update(&self, update: crate::types::ProjectUpdate) -> Result<()> {
+        self.send_message(ClientMessage::ProjectUpdate { update })
+            .await
+    }
 }

@@ -37,6 +37,9 @@ impl WindowManager {
                 .map_err(|e| format!("创建窗口失败: {e}"))?,
         );
 
+        // 先让窗口可见，再执行较重的 GPU/Host 初始化，降低用户感知的启动延迟。
+        window.set_visible(true);
+
         let physical_size = window.inner_size();
 
         let gfx = lumino_gfx::Context::new_blocking(
@@ -57,8 +60,6 @@ impl WindowManager {
 
         // 启用分离渲染线程：将 wgpu 渲染从 UI 线程分离到独立线程
         ui.enable_separate_render_thread();
-
-        window.set_visible(true);
 
         // 在 Windows 上设置自定义拉伸区域（仅自定义标题栏模式）
         #[cfg(target_os = "windows")]

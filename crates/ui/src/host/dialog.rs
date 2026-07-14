@@ -1,7 +1,7 @@
 //! Host 对话框和协作子模块 - 处理对话框状态和远程协作
 
 use crate::host::{Host, types::DialogResult};
-use crate::state::root_state::CollaborationViewState;
+use crate::state::root_state::{CollaborationViewState, VideoExportOverlayState};
 use crate::{message, window};
 
 impl Host {
@@ -33,13 +33,6 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
-    /// 设置音频导出对话框是否打开（用于独立对话框窗口）
-    pub fn set_audio_export_dialog_open(&mut self, open: bool) {
-        self.root.set_audio_export_dialog_open(open);
-        self.ui_dirty = true;
-        self.window_ctx.window.request_redraw();
-    }
-
     /// 设置音符变速对话框是否打开（用于独立对话框窗口）
     pub fn set_speed_change_dialog_open(&mut self, open: bool) {
         self.root.set_speed_change_dialog_open(open);
@@ -47,27 +40,16 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
-    /// 应用音符变速到主窗口
-    pub fn apply_speed_change(&mut self, factor: f32) {
-        self.root.apply_speed_change(factor);
+    /// 设置导出进度对话框是否打开（用于独立对话框窗口）
+    pub fn set_export_progress_dialog_open(&mut self, open: bool) {
+        self.root.set_export_progress_dialog_open(open);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
 
-    /// 设置音频导出对话框数据（用于独立对话框窗口）
-    pub fn set_audio_export_dialog_state(
-        &mut self,
-        project_name: &str,
-        midi_path: &str,
-        soundfont_path: &str,
-        output_path: &str,
-    ) {
-        self.root.set_audio_export_dialog_state(
-            project_name,
-            midi_path,
-            soundfont_path,
-            output_path,
-        );
+    /// 应用音符变速到主窗口
+    pub fn apply_speed_change(&mut self, factor: f32) {
+        self.root.apply_speed_change(factor);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
@@ -110,6 +92,7 @@ impl Host {
             self.root.editor.ruler_cache.clear();
             self.render_ctx.render_cache.grid_viewport_hash = 0;
             self.render_ctx.render_cache.note_viewport_hash = 0;
+            self.render_ctx.render_cache.note_render_viewport = None;
         }
 
         self.root.apply_settings(settings);
@@ -206,6 +189,12 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 添加远程音轨（委托给 Root 实现）
+    pub fn add_remote_track(&mut self, track_idx: usize) {
+        self.root.add_remote_track(track_idx);
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 获取当前 PPQ (Pulses Per Quarter note)
     pub fn ppq(&self) -> u16 {
         self.root.editor.editor_state.view.ppq
@@ -214,6 +203,117 @@ impl Host {
     /// 更新进度
     pub fn update_progress(&mut self, progress: Option<(String, f64)>) {
         self.root.update(message::Message::Progress(progress));
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 更新导出进度对话框
+    pub fn update_export_progress(&mut self, message: String, progress: f64) {
+        self.root.update_export_progress(message, progress);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 标记导出渲染完成
+    pub fn set_export_render_completed(&mut self) {
+        self.root.state.audio_export_dialog.is_rendering = false;
+        self.root.state.audio_export_dialog.render_completed = true;
+        self.root.state.audio_export_dialog.render_progress = 1.0;
+        self.root.state.audio_export_dialog.render_message = "导出完成".to_string();
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 标记导出渲染失败
+    pub fn set_export_render_failed(&mut self, error: String) {
+        self.root.state.audio_export_dialog.is_rendering = false;
+        self.root.state.audio_export_dialog.render_error = Some(error.clone());
+        self.root.state.audio_export_dialog.render_message = format!("导出失败: {error}");
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 更新视频导出进度
+    pub fn update_video_export_progress(
+        &mut self,
+        message: String,
+        progress: f64,
+        total_frames: u64,
+        render_fps: f64,
+    ) {
+        let st = &mut self.root.state.video_export_dialog;
+        // 如果 overlay 尚未激活（e.g. 对话框窗口刚打开时），触发 Exporting 状态
+        if matches!(st.overlay, VideoExportOverlayState::None) {
+            st.overlay = VideoExportOverlayState::Exporting;
+        }
+        st.status_message = message;
+        st.progress = progress;
+        st.total_frames = total_frames;
+        st.render_fps = render_fps;
+        st.current_frame = (progress * total_frames as f64).min(total_frames as f64) as u64;
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 更新视频导出预览帧
+    pub fn update_video_export_preview_frame(&mut self, data: Vec<u8>, width: u32, height: u32) {
+        let st = &mut self.root.state.video_export_dialog;
+        let expected_len = (width * height * 4) as usize;
+        if data.len() != expected_len {
+            tracing::warn!(
+                "视频导出预览帧尺寸不匹配: {}x{} 期望 {} bytes, 实际 {} bytes",
+                width,
+                height,
+                expected_len,
+                data.len()
+            );
+        }
+
+        // 仅在数据变化时创建新 handle，避免每帧生成唯一 ID 导致 GPU 缓存失效
+        let data_changed = st.preview_frame.as_deref() != Some(data.as_slice())
+            || st.preview_width != width
+            || st.preview_height != height;
+
+        if data_changed {
+            st.cached_image_handle = Some(iced_core::image::Handle::from_rgba(
+                width,
+                height,
+                data.clone(),
+            ));
+        }
+        // 即使数据未变，也更新 frame 用于 view 中的尺寸判断
+        st.preview_frame = Some(data);
+        st.preview_width = width;
+        st.preview_height = height;
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 检查视频导出是否正在进行
+    pub fn is_video_exporting(&self) -> bool {
+        matches!(
+            self.root.state.video_export_dialog.overlay,
+            crate::state::root_state::VideoExportOverlayState::Exporting
+        )
+    }
+
+    /// 标记视频导出完成
+    pub fn set_video_export_completed(&mut self, elapsed_secs: f64) {
+        let st = &mut self.root.state.video_export_dialog;
+        let total_frames = st.total_frames;
+        st.overlay = crate::state::root_state::VideoExportOverlayState::Completed {
+            total_frames,
+            elapsed_secs,
+            avg_fps: st.render_fps,
+        };
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 标记视频导出失败
+    pub fn set_video_export_failed(&mut self, error: String) {
+        self.root.state.video_export_dialog.overlay =
+            crate::state::root_state::VideoExportOverlayState::Error(error);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }

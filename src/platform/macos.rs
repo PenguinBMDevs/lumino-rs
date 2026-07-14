@@ -2,6 +2,7 @@
 
 use std::{collections::HashMap, sync::OnceLock};
 
+use lumino_core::i18n::Language;
 use lumino_ui::event::{self as event, Event as CoreEvent};
 use lumino_ui::titlebar::menu::{MenuItem as UiMenuItem, menus as ui_menus};
 use muda::{
@@ -83,11 +84,11 @@ fn build_submenu(
     Submenu::with_items(label, true, &refs)
 }
 
-pub fn init() -> muda::Result<()> {
-    MENU.with(init_inner)
+pub fn init(lang: Language) -> muda::Result<()> {
+    MENU.with(|cell| init_inner(lang, cell))
 }
 
-fn init_inner(cell: &OnceLock<AppMenu>) -> muda::Result<()> {
+fn init_inner(lang: Language, cell: &OnceLock<AppMenu>) -> muda::Result<()> {
     if cell.get().is_some() {
         return Ok(());
     }
@@ -96,7 +97,7 @@ fn init_inner(cell: &OnceLock<AppMenu>) -> muda::Result<()> {
 
     let app = app_menu()?;
 
-    let ui_configs = ui_menus();
+    let ui_configs = ui_menus(lang);
     let file = build_submenu(
         &ui_configs[0].kind.to_string(),
         &ui_configs[0].items,

@@ -22,19 +22,12 @@ pub struct MemoryBreakdown {
     /// track_midi_events HashMap 中的总条目数和估算字节
     pub track_midi_events_entries: usize,
     pub track_midi_events_bytes: usize,
-    /// cached_onion_skin_notes 的字节数
-    pub cached_onion_skin_bytes: usize,
     /// note_instances_buffer 双缓冲信息（由 Host::memory_breakdown 填充）
     pub note_instances_front_cap: usize,
     pub note_instances_front_len: usize,
     pub note_instances_back_cap: usize,
     pub note_instances_back_len: usize,
     pub note_instance_size: usize,
-    /// onion_note_buffer 双缓冲信息（由 Host::memory_breakdown 填充）
-    pub onion_note_front_cap: usize,
-    pub onion_note_front_len: usize,
-    pub onion_note_back_cap: usize,
-    pub onion_note_back_len: usize,
 }
 
 pub mod theme;
@@ -96,12 +89,19 @@ impl Root {
             state.dialog_type = dt;
         }
 
+        // 应用已保存的自动滚动配置到 Editor 和 Toolbar，
+        // 否则它们始终使用 AutoScrollConfig::default() 导致用户设置不生效。
+        let mut editor = editor::Editor::new();
+        editor.editor_state.auto_scroll = params.ui_config.auto_scroll;
+        let mut toolbar = toolbar::Toolbar::new();
+        toolbar.auto_scroll_mode = params.ui_config.auto_scroll.mode;
+
         Self {
             sidebar: sidebar::Sidebar::new(),
             titlebar: titlebar::Titlebar::new(),
             statusbar: statusbar::StatusBar::new(),
-            toolbar: toolbar::Toolbar::new(),
-            editor: editor::Editor::new(),
+            toolbar,
+            editor,
             arrangement_view: editor::arrangement::ArrangementView::new(),
             window: window::Window::new(&params.theme),
             settings: settings::SettingsPanel::new(&params.ui_config),
@@ -139,6 +139,9 @@ impl Root {
             root.editor.set_visible_key_count(256);
             root.editor.editor_state.view.key_count = 256;
         }
+        // 同步播放键盘颜色配置（防止重启后配置被默认值覆盖）
+        root.editor
+            .set_playback_key_colors_enabled(ui_config.playback_key_colors_enabled);
         // 初始音轨 0 是指挥轨道 → 速度面板应为 Tempo 模式
         root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Tempo;
         root
@@ -212,6 +215,26 @@ impl Root {
         }
     }
 
+    /// 获取工程走带视图的最大 tick 终点（缓存，按 track_notes_gen 失效）
+    ///
+    /// 播放时每帧需要计算最大滚动范围，全量扫描 track_notes 在大型 MIDI 下会导致主线程卡顿。
+    /// 使用 EditorData::track_notes_gen 作为缓存版本号，只在音符数据变化时重新计算。
+    pub fn arrangement_max_tick_end(&mut self) -> f32 {
+        let data = &self.editor.editor_state.data;
+        let vp = &mut self.arrangement_view.viewport;
+        let current_gen = data.track_notes_gen;
+        if vp.cached_track_notes_gen != current_gen {
+            vp.cached_max_tick_end = data
+                .track_notes
+                .values()
+                .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
+                .fold(0.0_f32, f32::max);
+            vp.cached_track_notes_gen = current_gen;
+        }
+        vp.cached_max_tick_end
+            .max(crate::constants::editor::DEFAULT_MIN_TICKS)
+    }
+
     /// 更新工程走带视图的自动滚动（基于编辑器自动滚动配置）
     /// 使演奏指示线的滚动模式在工程走带界面同样适用
     pub fn update_arrangement_auto_scroll(&mut self, playback_tick: f32) {
@@ -220,20 +243,15 @@ impl Root {
             return;
         }
 
+        // 先计算缓存的最大 tick（可能扫描 track_notes），再借用 viewport
+        let max_tick = self.arrangement_max_tick_end();
+
         let vp = &mut self.arrangement_view.viewport;
         let viewport_width = vp.canvas_size.x.max(1.0);
         let ppu = vp.zoom_x.max(0.001);
 
         // 计算最大滚动值（使用视口尺寸和总宽度）
         let canvas_w = vp.canvas_size.x.max(1.0);
-        let max_tick = self
-            .editor
-            .editor_state
-            .data
-            .track_notes
-            .values()
-            .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
-            .fold(crate::constants::editor::DEFAULT_MIN_TICKS, f32::max);
         let total_w = max_tick * vp.zoom_x;
         let max_scroll = (total_w - canvas_w).max(0.0);
 
@@ -267,39 +285,45 @@ impl Root {
             .unwrap_or_default()
     }
 
-    /// 标记洋葱皮缓存全量失效（数据变化/音轨集合变化时调用）
-    pub fn invalidate_onion_skin_cache(&mut self) {
-        self.visual.onion_skin_generation += 1;
-        self.editor.invalidate_onion_skin_cache();
-    }
-
-    /// 仅标记颜色/透明度变化（已由瓦片系统替代，保留接口兼容）
-    #[deprecated(
-        since = "0.1.0",
-        note = "已由瓦片系统替代，颜色 LUT 自动更新，此调用为 no-op"
-    )]
-    pub fn invalidate_onion_skin_colors(&mut self) {
-        #[allow(deprecated)]
-        self.editor.invalidate_onion_skin_colors();
-    }
-
     /// 设置 MIDI 文档引用（供懒加载使用）
+    ///
+    /// 将控制事件（CC / PitchBend）按音轨导入 automation_lanes，与 Yinhe 的自动化数据模型对齐。
     pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
-        // 从 control_events 提取弯音数据
-        let mut bend_points = Vec::new();
+        use lumino_core::{AutomationEdit, AutomationTarget, SegmentShape};
+
+        // 每次加载新文档时重建自动化 lane，避免旧数据残留。
+        self.editor.editor_state.data.automation_lanes.clear();
+
         for ev in &doc.control_events {
-            if ev.kind == 2 {
-                // kind=2 是 pitch bend
-                let value = ev.as_pitch_bend();
-                // as_pitch_bend 返回的是 f32 (-1.0..1.0)，转换为 i16 (-8192..8191)
-                let i16_value = (value * crate::constants::editor::PITCH_BEND_FACTOR) as i16;
-                bend_points.push(crate::editor::velocity::BendPoint {
-                    tick: ev.tick as f32,
-                    value: i16_value,
-                });
+            match ev.kind {
+                // CC: param 高 8 位为控制器编号，低 8 位为值。
+                0 => {
+                    let controller = (ev.param >> 8) as u8;
+                    let value = ev.param & 0xFF;
+                    let edit = AutomationEdit::Add {
+                        track_idx: ev.track,
+                        target: AutomationTarget::CC { controller },
+                        tick: ev.tick,
+                        value,
+                        shape: SegmentShape::Step,
+                    };
+                    self.editor.editor_state.data.apply_automation_edit(edit);
+                }
+                // PitchBend: param 为 14-bit 值（0–16383）。
+                2 => {
+                    let edit = AutomationEdit::Add {
+                        track_idx: ev.track,
+                        target: AutomationTarget::PitchBend,
+                        tick: ev.tick,
+                        value: ev.param,
+                        shape: SegmentShape::Step,
+                    };
+                    self.editor.editor_state.data.apply_automation_edit(edit);
+                }
+                _ => {}
             }
         }
-        self.editor.editor_state.data.cc_data.bend_points = bend_points;
+
         self.midi.document = Some(doc);
     }
 
@@ -316,20 +340,10 @@ impl Root {
             .map(|v| v.capacity() * std::mem::size_of::<crate::playback::MidiTrackEvent>())
             .sum();
 
-        // cached_onion_skin_notes: Option<Vec<(f32, u16, f32, Color)>>
-        // tuple = 4 + 2 + 4 + 16 = 26 bytes, with alignment ~28 bytes
-        let cached_onion_skin_bytes = self
-            .visual
-            .cached_onion_skin_notes
-            .as_ref()
-            .map(|v| v.capacity() * 28)
-            .unwrap_or(0);
-
         MemoryBreakdown {
             editor: editor_mem,
             track_midi_events_entries,
             track_midi_events_bytes,
-            cached_onion_skin_bytes,
             ..Default::default()
         }
     }

@@ -1,9 +1,10 @@
 //! 对话框管理处理器
 
 use crate::host::DialogResult;
-use crate::message::{AudioExportAction, Message, SpeedChangeAction};
+use crate::message::{AudioExportAction, Message, SpeedChangeAction, VideoExportAction};
 use crate::root::Root;
 use crate::root::handlers::MessageHandler;
+use crate::state::root_state::VideoExportOverlayState;
 
 /// 对话框消息处理器
 pub struct DialogHandler;
@@ -182,39 +183,68 @@ impl MessageHandler for DialogHandler {
                 None
             }
 
-            // 音频导出对话框消息
+            // 音频导出面板消息（主界面侧边栏面板，非独立对话框）
             Message::AudioExport(action) => {
                 use AudioExportAction as A;
                 match action {
-                    A::OpenDialog => {
-                        root.state.dialog_type = crate::state::root_state::DialogType::AudioExport;
+                    A::OpenPanel => {
+                        root.sidebar.audio_export_visible = true;
+                        root.sidebar.route = crate::sidebar::Route::AudioExport;
                     }
-                    A::CloseDialog => {
-                        root.state.audio_export_dialog.is_open = false;
+                    A::ClosePanel => {
+                        root.sidebar.audio_export_visible = false;
+                        root.sidebar.route = crate::sidebar::Route::Arrangement;
                     }
                     A::Confirm => {
-                        let state = &root.state.audio_export_dialog;
-                        root.state.dialog_result = Some(DialogResult::AudioExport {
-                            project_name: state.project_name.clone(),
-                            midi_path: state.midi_path.clone(),
-                            soundfont_path: state.soundfont_path.clone(),
-                            output_path: state.output_path.clone(),
-                            sample_rate: state.sample_rate,
-                            channels: state.channels,
-                            layers: state.layers,
-                            channel_threading: state.channel_threading,
-                            key_threading: state.key_threading,
-                            apply_limiter: state.apply_limiter,
-                            disable_fade_out: state.disable_fade_out,
-                            linear_envelope: state.linear_envelope,
-                            interpolation: state.interpolation,
-                            format: state.format,
+                        // 立即设置渲染状态（进度条第一时间刷新）
+                        root.state.audio_export_dialog.is_rendering = true;
+                        root.state.audio_export_dialog.render_completed = false;
+                        root.state.audio_export_dialog.render_error = None;
+                        root.state.audio_export_dialog.render_progress = 0.0;
+                        root.state.audio_export_dialog.render_message = "正在初始化...".to_string();
+
+                        // 从 dialog state 读取配置，发送事件到 runner
+                        let st = &root.state.audio_export_dialog;
+
+                        // 检查内存中是否有 MidiDocument
+                        let document = root.midi.document.as_ref().map(|doc| {
+                            tracing::info!("使用内存中的 MidiDocument 进行音频导出（零拷贝模式）");
+                            std::sync::Arc::clone(doc)
                         });
-                        root.state.audio_export_dialog.is_open = false;
-                    }
-                    A::Cancel => {
-                        root.state.audio_export_dialog.is_open = false;
-                        root.state.dialog_result = Some(DialogResult::Cancel);
+
+                        if document.is_none() {
+                            tracing::info!(
+                                "内存中没有 MidiDocument，使用文件模式: {:?}",
+                                st.midi_path
+                            );
+                        }
+
+                        let ev = crate::event::window::Event::start_audio_export(
+                            st.midi_path.clone(),
+                            st.soundfont_path.clone(),
+                            st.output_path.clone(),
+                            st.sample_rate,
+                            format!("{:?}", st.channels),
+                            st.layers,
+                            format!("{:?}", st.channel_threading),
+                            format!("{:?}", st.key_threading),
+                            format!("{:?}", st.interpolation),
+                            st.apply_limiter,
+                            st.disable_fade_out,
+                            st.linear_envelope,
+                            format!("{:?}", st.format),
+                            st.audio_bitrate,
+                            st.ignore_program_changes,
+                            st.filter_velocity,
+                            st.velocity_low,
+                            st.velocity_high,
+                            st.filter_key,
+                            st.key_low,
+                            st.key_high,
+                            st.note_force_end_delay,
+                            document,
+                        );
+                        crate::event::emit(crate::event::Event::Window(ev));
                     }
                     A::ProjectNameChanged(value) => {
                         root.state.audio_export_dialog.project_name = value;
@@ -224,6 +254,13 @@ impl MessageHandler for DialogHandler {
                     }
                     A::FormatChanged(value) => {
                         root.state.audio_export_dialog.format = value;
+                    }
+                    A::BitrateChanged(value) => {
+                        if value.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(v) = value.parse::<u32>()
+                        {
+                            root.state.audio_export_dialog.audio_bitrate = v;
+                        }
                     }
                     A::SampleRateChanged(value) => {
                         root.state.audio_export_dialog.sample_rate = value;
@@ -257,8 +294,58 @@ impl MessageHandler for DialogHandler {
                     A::LinearEnvelopeChanged(value) => {
                         root.state.audio_export_dialog.linear_envelope = value;
                     }
+                    A::IgnoreProgramChangesChanged(value) => {
+                        root.state.audio_export_dialog.ignore_program_changes = value;
+                    }
+                    A::FilterVelocityChanged(value) => {
+                        root.state.audio_export_dialog.filter_velocity = value;
+                    }
+                    A::VelocityLowChanged(value) => {
+                        if value.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(v) = value.parse::<u8>()
+                            && v <= 127
+                        {
+                            root.state.audio_export_dialog.velocity_low = v;
+                        }
+                    }
+                    A::VelocityHighChanged(value) => {
+                        if value.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(v) = value.parse::<u8>()
+                            && v <= 127
+                        {
+                            root.state.audio_export_dialog.velocity_high = v;
+                        }
+                    }
+                    A::FilterKeyChanged(value) => {
+                        root.state.audio_export_dialog.filter_key = value;
+                    }
+                    A::KeyLowChanged(value) => {
+                        if value.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(v) = value.parse::<u8>()
+                            && v <= 127
+                        {
+                            root.state.audio_export_dialog.key_low = v;
+                        }
+                    }
+                    A::KeyHighChanged(value) => {
+                        if value.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(v) = value.parse::<u8>()
+                            && v <= 127
+                        {
+                            root.state.audio_export_dialog.key_high = v;
+                        }
+                    }
+                    A::NoteForceEndDelayChanged(value) => {
+                        if value.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(v) = value.parse::<u32>()
+                        {
+                            root.state.audio_export_dialog.note_force_end_delay = v;
+                        }
+                    }
                     A::BrowseOutput => {
-                        let current = root.state.audio_export_dialog.output_path.clone();
+                        let st = &root.state.audio_export_dialog;
+                        let current = st.output_path.clone();
+                        let ext = st.format.extension();
                         let default_name = std::path::Path::new(&current)
                             .file_name()
                             .and_then(|n| n.to_str())
@@ -268,19 +355,231 @@ impl MessageHandler for DialogHandler {
                             .and_then(|p| p.to_str())
                             .unwrap_or(".");
                         if let Some(path) = rfd::FileDialog::new()
-                            .set_file_name(default_name)
+                            .set_file_name(
+                                default_name
+                                    .rsplit_once('.')
+                                    .map(|(base, _)| format!("{base}.{ext}"))
+                                    .unwrap_or_else(|| format!("export.{ext}")),
+                            )
                             .set_directory(default_dir)
-                            .add_filter("WAV 文件", &["wav"])
-                            .add_filter("FLAC 文件", &["flac"])
+                            .add_filter(&format!("{} 文件", st.format), &[ext])
                             .save_file()
                         {
                             root.state.audio_export_dialog.output_path =
                                 path.to_string_lossy().to_string();
                         }
                     }
-                    A::Progress(_pct, _msg) => {} // 进度更新在外部渲染层处理
-                    A::Completed => {}
-                    A::Failed(_err) => {}
+                    A::BrowseMidi => {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("音乐文件", &["mid", "midi", "lmpj"])
+                            .add_filter("MIDI 文件", &["mid", "midi"])
+                            .add_filter("Lumino 项目", &["lmpj"])
+                            .add_filter("所有文件", &["*"])
+                            .pick_file()
+                        {
+                            root.state.audio_export_dialog.midi_path =
+                                path.to_string_lossy().to_string();
+                        }
+                    }
+                    A::BrowseSoundfont => {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("音色库文件", &["sf2", "sfz"])
+                            .add_filter("SF2 文件", &["sf2"])
+                            .add_filter("SFZ 文件", &["sfz"])
+                            .add_filter("所有文件", &["*"])
+                            .pick_file()
+                        {
+                            root.state.audio_export_dialog.soundfont_path =
+                                path.to_string_lossy().to_string();
+                        }
+                    }
+                    A::StartRendering => {
+                        root.state.audio_export_dialog.is_rendering = true;
+                        root.state.audio_export_dialog.render_completed = false;
+                        root.state.audio_export_dialog.render_error = None;
+                        root.state.audio_export_dialog.render_progress = 0.0;
+                        root.state.audio_export_dialog.render_message = "正在初始化...".to_string();
+                    }
+                    A::UpdateRenderProgress { message, progress } => {
+                        root.state.audio_export_dialog.render_message = message;
+                        root.state.audio_export_dialog.render_progress = progress;
+                    }
+                    A::RenderCompleted => {
+                        root.state.audio_export_dialog.is_rendering = false;
+                        root.state.audio_export_dialog.render_completed = true;
+                        root.state.audio_export_dialog.render_progress = 1.0;
+                        root.state.audio_export_dialog.render_message = "导出完成".to_string();
+                    }
+                    A::RenderFailed(error) => {
+                        root.state.audio_export_dialog.is_rendering = false;
+                        root.state.audio_export_dialog.render_error = Some(error.clone());
+                        root.state.audio_export_dialog.render_message =
+                            format!("导出失败: {error}");
+                    }
+                    A::ResetRendering => {
+                        root.state.audio_export_dialog.is_rendering = false;
+                        root.state.audio_export_dialog.render_completed = false;
+                        root.state.audio_export_dialog.render_error = None;
+                        root.state.audio_export_dialog.render_progress = 0.0;
+                        root.state.audio_export_dialog.render_message.clear();
+                    }
+                }
+                None
+            }
+            // 视频导出面板消息
+            Message::VideoExport(action) => {
+                use VideoExportAction as V;
+                match action {
+                    V::OpenPanel => {
+                        root.sidebar.video_export_visible = true;
+                        root.sidebar.route = crate::sidebar::Route::VideoExport;
+                    }
+                    V::ClosePanel => {
+                        root.sidebar.video_export_visible = false;
+                        root.sidebar.route = crate::sidebar::Route::Arrangement;
+                    }
+                    V::StartExport => {
+                        let st = &root.state.video_export_dialog;
+                        let document = root.midi.document.as_ref().map(std::sync::Arc::clone);
+                        // 先 clone 配置值，避免借用冲突
+                        let output_path = st.output_path.clone();
+                        let width = st.width;
+                        let height = st.height;
+                        let fps = st.fps;
+                        let container = st.container.clone();
+                        let codec = st.codec.clone();
+                        let backend = st.backend.clone();
+                        let quality = st.quality.clone();
+
+                        // 设置导出中状态
+                        root.state.video_export_dialog.overlay = VideoExportOverlayState::Exporting;
+                        root.state.video_export_dialog.progress = 0.0;
+                        root.state.video_export_dialog.status_message = "正在初始化...".to_string();
+                        root.state.video_export_dialog.current_frame = 0;
+                        root.state.video_export_dialog.total_frames = 0;
+                        root.state.video_export_dialog.render_fps = 0.0;
+                        root.state.video_export_dialog.cached_image_handle = None;
+
+                        let ev = crate::event::window::Event::start_video_export(
+                            output_path,
+                            width,
+                            height,
+                            fps,
+                            container,
+                            codec,
+                            backend,
+                            quality,
+                            root.editor.editor_state.view.ppq,
+                            root.editor.editor_state.view.visible_key_count,
+                            root.state.video_export_dialog.render_mode.clone(),
+                            document,
+                        );
+                        crate::event::emit(crate::event::Event::Window(ev));
+                    }
+                    V::CancelExport => {
+                        root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
+                        root.state.video_export_dialog.preview_frame = None;
+                        root.state.video_export_dialog.cached_image_handle = None;
+                        // 在对话框窗口中关闭窗口
+                        if root.state.is_dialog_window {
+                            root.state.dialog_result = Some(DialogResult::Cancel);
+                        }
+                        // 通知 Runner 取消导出（关闭对话框 → 设置取消标志 → 后台线程退出）
+                        crate::event::emit(crate::event::Event::Window(
+                            crate::event::window::Event::close_video_export_dialog(),
+                        ));
+                    }
+                    V::ForceFinish => {
+                        let st = &root.state.video_export_dialog;
+                        root.state.video_export_dialog.overlay =
+                            VideoExportOverlayState::Completed {
+                                total_frames: st.total_frames,
+                                elapsed_secs: 0.0,
+                                avg_fps: st.render_fps,
+                            };
+                    }
+                    V::DismissOverlay => {
+                        root.state.video_export_dialog.overlay = VideoExportOverlayState::None;
+                        root.state.video_export_dialog.preview_frame = None;
+                        root.state.video_export_dialog.cached_image_handle = None;
+                        // 在对话框窗口中关闭窗口
+                        if root.state.is_dialog_window {
+                            root.state.dialog_result = Some(DialogResult::Cancel);
+                        }
+                    }
+                    V::ContainerChanged(v) => {
+                        root.state.video_export_dialog.container = v;
+                    }
+                    V::CodecChanged(v) => {
+                        root.state.video_export_dialog.codec = v;
+                    }
+                    V::BackendChanged(v) => {
+                        root.state.video_export_dialog.backend = v;
+                    }
+                    V::QualityChanged(v) => {
+                        root.state.video_export_dialog.quality = v;
+                    }
+                    V::WidthChanged(v) => {
+                        if v.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(w) = v.parse::<u32>()
+                        {
+                            root.state.video_export_dialog.width = w;
+                        }
+                    }
+                    V::HeightChanged(v) => {
+                        if v.chars().all(|c| c.is_ascii_digit())
+                            && let Ok(h) = v.parse::<u32>()
+                        {
+                            root.state.video_export_dialog.height = h;
+                        }
+                    }
+                    V::FpsChanged(v) => {
+                        root.state.video_export_dialog.fps = v;
+                    }
+                    V::OutputPathChanged(v) => {
+                        root.state.video_export_dialog.output_path = v;
+                    }
+                    V::RenderModeChanged(v) => {
+                        tracing::info!("视频导出渲染模式切换: {}", v);
+                        root.state.video_export_dialog.render_mode = v;
+                    }
+                    V::BrowseOutput => {
+                        let st = &root.state.video_export_dialog;
+                        let ext = st.container.to_lowercase();
+                        let default_name = format!("output.{}", ext);
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_file_name(&default_name)
+                            .add_filter(&st.container, &[ext.as_str()])
+                            .save_file()
+                        {
+                            root.state.video_export_dialog.output_path =
+                                path.to_string_lossy().to_string();
+                        }
+                    }
+                    V::UpdateProgress {
+                        message,
+                        progress,
+                        current_frame,
+                        total_frames,
+                        fps,
+                    } => {
+                        let st = &mut root.state.video_export_dialog;
+                        st.status_message = message;
+                        st.progress = progress;
+                        st.current_frame = current_frame;
+                        st.total_frames = total_frames;
+                        st.render_fps = fps;
+                    }
+                    V::ExportCompleted => {
+                        // 由 Runner 回调设置具体字段，此处不处理
+                    }
+                    V::ExportFailed(err) => {
+                        root.state.video_export_dialog.overlay =
+                            VideoExportOverlayState::Error(err);
+                    }
+                    V::UpdatePreviewFrame { .. } => {
+                        // 由 Host 直接处理，此处不需要
+                    }
                 }
                 None
             }

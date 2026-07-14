@@ -14,6 +14,114 @@ use super::{EditState, Editor};
 use crate::editor::note::color_to_array;
 
 impl Editor {
+    /// 计算当前视口内可见的音符数据范围
+    ///
+    /// 返回 `(visible_tick_start, visible_tick_end, visible_key_min, visible_key_max)`。
+    /// `overscan_factor` 用于扩展查询范围，例如 0.5 表示每边扩展 50%。
+    pub(crate) fn compute_visible_range(&self, overscan_factor: f32) -> (f32, f32, u16, u16) {
+        let es = &self.editor_state;
+        let view = &es.view;
+        let canvas = &es.canvas;
+
+        let viewport_width = canvas.size_x - view.keyboard_width;
+        let viewport_height = canvas.size_y - view.ruler_height;
+
+        let visible_tick_start = (view.scroll_x / view.zoom_x).max(0.0);
+        let visible_tick_end =
+            ((view.scroll_x + viewport_width) / view.zoom_x).max(visible_tick_start);
+
+        let max_key_index = (view.visible_key_count - 1) as f32;
+
+        // key_top 对应屏幕上方 (Y = ruler_height)，值最大（高音）
+        let key_top_f32 = max_key_index - (view.scroll_y / view.zoom_y);
+        // key_bottom 对应屏幕下方 (Y = canvas_size.y)，值最小（低音）
+        let key_bottom_f32 = max_key_index - ((view.scroll_y + viewport_height) / view.zoom_y);
+
+        let visible_key_max = key_top_f32.ceil() as u16 + 1; // 多取 1 个作为缓冲
+        let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1); // 多取 1 个作为缓冲
+
+        if overscan_factor > 0.0 {
+            let tick_span = visible_tick_end - visible_tick_start;
+            let key_span = visible_key_max.saturating_sub(visible_key_min);
+            let tick_expand = tick_span * overscan_factor;
+            let key_expand = ((key_span as f32 * overscan_factor) as u16).max(1);
+
+            let expanded_tick_start = (visible_tick_start - tick_expand).max(0.0);
+            let expanded_tick_end = visible_tick_end + tick_expand;
+            let expanded_key_min = visible_key_min.saturating_sub(key_expand);
+            let expanded_key_max = visible_key_max.saturating_add(key_expand);
+
+            return (
+                expanded_tick_start,
+                expanded_tick_end,
+                expanded_key_min,
+                expanded_key_max,
+            );
+        }
+
+        (
+            visible_tick_start,
+            visible_tick_end,
+            visible_key_min,
+            visible_key_max,
+        )
+    }
+
+    /// 收集当前视口内可见的音符数据（tick, key, length）
+    ///
+    /// `overscan_factor` 用于扩展查询范围，减少频繁重建。0.0 表示精确视口。
+    /// 返回可见音符数量，结果写入传入的 buffer。
+    ///
+    /// 性能优化：
+    /// - 仅在音符数据变化时重建空间索引
+    /// - 使用空间索引 O(log N) 查询替代全量扫描
+    pub fn collect_visible_note_data(
+        &self,
+        result: &mut Vec<(f32, u16, f32)>,
+        overscan_factor: f32,
+    ) -> usize {
+        result.clear();
+
+        let (visible_tick_start, visible_tick_end, visible_key_min, visible_key_max) =
+            self.compute_visible_range(overscan_factor);
+
+        // 重建空间索引（仅当数据变化时）
+        // 优化：使用 from_note_refs 直接从 im::Vector 构建，避免克隆 Note 到 Vec<Note>
+        if self.spatial.note_index_dirty.get() {
+            let notes = &self.editor_state.data.notes;
+            let note_refs: Vec<lumino_core::NoteRef> = notes
+                .iter()
+                .enumerate()
+                .map(|(i, n)| lumino_core::NoteRef {
+                    tick: n.tick,
+                    key: n.key,
+                    length: n.length,
+                    index: i,
+                })
+                .collect();
+            *self.spatial.note_index.borrow_mut() =
+                Some(crate::editor::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs));
+            self.spatial.note_index_dirty.set(false);
+            tracing::debug!(
+                "Editor: rebuild spatial index for {} notes",
+                self.editor_state.data.notes.len()
+            );
+        }
+
+        // 查询可见范围内的音符
+        if let Some(index) = &*self.spatial.note_index.borrow() {
+            index.collect_instances_in_range(
+                visible_tick_start,
+                visible_tick_end,
+                visible_key_min,
+                visible_key_max,
+                result,
+            );
+        }
+
+        result.len()
+    }
+
     /// 构建编辑器视图
     pub fn view(
         &self,
@@ -105,11 +213,21 @@ impl Editor {
         let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1); // 多取 1 个作为缓冲
 
         // 重建空间索引（仅当数据变化时）
+        // 优化：使用 from_note_refs 直接从 im::Vector 构建，避免克隆 Note 到 Vec<Note>
         if self.spatial.note_index_dirty.get() {
-            let notes_vec: Vec<_> = self.editor_state.data.notes.iter().cloned().collect();
-            *self.spatial.note_index.borrow_mut() = Some(
-                crate::editor::spatial_index::NoteSpatialIndex::from_notes(&notes_vec),
-            );
+            let notes = &self.editor_state.data.notes;
+            let note_refs: Vec<lumino_core::NoteRef> = notes
+                .iter()
+                .enumerate()
+                .map(|(i, n)| lumino_core::NoteRef {
+                    tick: n.tick,
+                    key: n.key,
+                    length: n.length,
+                    index: i,
+                })
+                .collect();
+            *self.spatial.note_index.borrow_mut() =
+                Some(crate::editor::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs));
             self.spatial.note_index_dirty.set(false);
             tracing::debug!(
                 "Editor: rebuild spatial index for {} notes",

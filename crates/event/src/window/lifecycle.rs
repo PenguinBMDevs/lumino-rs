@@ -19,20 +19,4 @@ impl Event {
             Self::Minimize => "最小化".to_string(),
         }
     }
-
-    pub const fn drag() -> Self {
-        Self::Drag
-    }
-    pub const fn close() -> Self {
-        Self::Close
-    }
-    pub const fn toggle_maximize() -> Self {
-        Self::ToggleMaximize
-    }
-    pub const fn maximize() -> Self {
-        Self::Maximize
-    }
-    pub const fn minimize() -> Self {
-        Self::Minimize
-    }
 }

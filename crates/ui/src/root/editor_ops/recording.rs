@@ -1,4 +1,4 @@
-﻿//! Root 录制操作子模块
+//! Root 录制操作子模块
 
 use crate::editor::note::Note;
 use crate::editor::recording::RecordingState;
@@ -19,11 +19,14 @@ impl Root {
     /// 开始录制
     ///
     /// 打开选中的 MIDI 输入设备（或第一个可用设备），回调将原始数据写入共享缓冲区。
+    /// 注意：调用前 `toolbar.update(Event::Record)` 会设置 `toolbar.is_recording = true`，
+    /// 此函数在失败时必须将其回滚，避免状态不一致。
     pub fn start_recording(&mut self) {
         let api = match &self.midi.api {
             Some(api) => api,
             None => {
                 tracing::warn!("录制: MIDI API 未初始化，无法录制");
+                self.toolbar.is_recording = false;
                 return;
             }
         };
@@ -32,12 +35,14 @@ impl Root {
             Ok(inputs) => inputs,
             Err(e) => {
                 tracing::error!("录制: 获取输入设备失败: {}", e);
+                self.toolbar.is_recording = false;
                 return;
             }
         };
 
         if inputs.is_empty() {
             tracing::warn!("录制: 没有可用的 MIDI 输入设备");
+            self.toolbar.is_recording = false;
             return;
         }
 
@@ -50,6 +55,8 @@ impl Root {
 
         // 同步选中设备到设置面板
         self.settings.selected_midi_device = Some(device.id);
+        // 同时更新设备列表，确保设备选择器正确显示
+        self.settings.midi_devices = inputs.iter().map(|d| (d.id, d.name.clone())).collect();
 
         let device_id = device.id;
         let device_name = device.name.clone();
@@ -76,6 +83,7 @@ impl Root {
             }
             Err(e) => {
                 tracing::error!("录制: 打开输入设备 #{} 失败: {}", device_id, e);
+                self.toolbar.is_recording = false;
             }
         }
     }

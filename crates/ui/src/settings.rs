@@ -14,7 +14,7 @@ use iced_widget::{column, container, row, scrollable, text};
 
 use crate::{Element, Message, Theme, window};
 use lumino_core::i18n::Language;
-use lumino_core::storage::config::SynthBackend;
+use lumino_core::storage::config::{SynthBackend, TrackAddBehavior};
 
 use components::*;
 use pages::*;
@@ -46,12 +46,24 @@ pub enum Event {
     IconHiDPIChanged(bool),
     /// 256键扩展钢琴卷帘开关
     Enable256keyChanged(bool),
-    /// 钢琴仿真贴图键盘开关
-    TexturedKeyboardChanged(bool),
+    /// 力度面板曲线/柱状图样式切换
+    VelocityCurveStyleChanged(bool),
     /// MIDI 输入设备选择
     DeviceSelected(u32),
     /// 界面语言切换
     LanguageChanged(Language),
+    // 高精度洋葱皮贴图设置
+    HiresOnionEnabledChanged(bool),
+    HiresMeasuresPerGroupChanged(String),
+    HiresTileWidthChanged(String),
+    HiresCooldownChanged(String),
+    HiresGpuMemLimitChanged(String),
+    // 播放键盘颜色指示
+    PlaybackKeyColorsEnabledChanged(bool),
+    /// 添加音轨行为
+    TrackAddBehaviorChanged(TrackAddBehavior),
+    /// 调色板选择
+    PaletteChanged(String),
 }
 
 #[derive(Debug, Clone)]
@@ -79,18 +91,42 @@ pub struct SettingsPanel {
     pub icon_hidpi: bool,
     /// 256键扩展钢琴卷帘
     pub enable_256key: bool,
-    /// 钢琴仿真贴图键盘
-    pub use_textured_keyboard: bool,
+    /// 力度面板显示样式（true=曲线折线图，false=柱状图）
+    pub velocity_curve_style: bool,
     /// 可用的 MIDI 输入设备列表
     pub midi_devices: Vec<(u32, String)>,
     /// 当前选中的 MIDI 输入设备 ID
     pub selected_midi_device: Option<u32>,
     /// 界面语言
     pub language: Language,
+    // 高精度洋葱皮贴图设置
+    pub hires_onion_enabled: bool,
+    pub hires_measures_per_group: u32,
+    pub hires_tile_width_px: u32,
+    pub hires_cooldown_secs: u64,
+    pub hires_gpu_mem_limit_mb: u32,
+    // 播放键盘颜色指示
+    pub playback_key_colors_enabled: bool,
+    /// 添加音轨行为
+    pub track_add_behavior: TrackAddBehavior,
+    /// 当前选中的调色板名称
+    pub selected_palette: String,
+    /// 可用调色板名称列表
+    pub available_palettes: Vec<&'static str>,
 }
 
 impl SettingsPanel {
     pub fn new(ui_config: &lumino_core::storage::config::UiConfig) -> Self {
+        let palette_mgr = &*lumino_core::palette::PALETTE_MANAGER;
+        let available_palettes = palette_mgr.names().to_vec();
+        let selected_palette = if ui_config.selected_palette.is_empty() {
+            palette_mgr.default().name.to_string()
+        } else {
+            palette_mgr
+                .resolve_name(&ui_config.selected_palette)
+                .to_string()
+        };
+
         Self {
             selected_menu_index: 0,
             synth_backend: ui_config.preferred_backend,
@@ -111,10 +147,19 @@ impl SettingsPanel {
             velocity_filter_threshold: ui_config.velocity_filter_threshold,
             icon_hidpi: ui_config.icon_hidpi,
             enable_256key: ui_config.enable_256key,
-            use_textured_keyboard: ui_config.use_textured_keyboard,
+            velocity_curve_style: ui_config.velocity_curve_style,
             midi_devices: Vec::new(),
             selected_midi_device: None,
             language: ui_config.language,
+            hires_onion_enabled: ui_config.hires_onion_enabled,
+            hires_measures_per_group: ui_config.hires_measures_per_group,
+            hires_tile_width_px: ui_config.hires_tile_width_px,
+            hires_cooldown_secs: ui_config.hires_cooldown_secs,
+            hires_gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
+            playback_key_colors_enabled: ui_config.playback_key_colors_enabled,
+            track_add_behavior: ui_config.track_add_behavior,
+            selected_palette,
+            available_palettes,
         }
     }
 
@@ -209,8 +254,8 @@ impl SettingsPanel {
             Event::Enable256keyChanged(enabled) => {
                 self.enable_256key = enabled;
             }
-            Event::TexturedKeyboardChanged(enabled) => {
-                self.use_textured_keyboard = enabled;
+            Event::VelocityCurveStyleChanged(enabled) => {
+                self.velocity_curve_style = enabled;
             }
             Event::DeviceSelected(id) => {
                 self.selected_midi_device = Some(id);
@@ -219,6 +264,42 @@ impl SettingsPanel {
             Event::LanguageChanged(lang) => {
                 self.language = lang;
                 tracing::debug!("设置: 界面语言切换为 {:?}", lang);
+            }
+            // 高精度洋葱皮贴图设置
+            Event::HiresOnionEnabledChanged(v) => {
+                self.hires_onion_enabled = v;
+            }
+            Event::HiresMeasuresPerGroupChanged(s) => {
+                if let Ok(v) = s.parse::<u32>() {
+                    self.hires_measures_per_group = v.clamp(1, 16);
+                }
+            }
+            Event::HiresTileWidthChanged(s) => {
+                if let Ok(v) = s.parse::<u32>() {
+                    self.hires_tile_width_px = v.clamp(480, 7680);
+                }
+            }
+            Event::HiresCooldownChanged(s) => {
+                if let Ok(v) = s.parse::<u64>() {
+                    self.hires_cooldown_secs = v.clamp(3, 60);
+                }
+            }
+            Event::HiresGpuMemLimitChanged(s) => {
+                if let Ok(v) = s.parse::<u32>() {
+                    self.hires_gpu_mem_limit_mb = v.clamp(128, 4096);
+                }
+            }
+            Event::PlaybackKeyColorsEnabledChanged(v) => {
+                self.playback_key_colors_enabled = v;
+            }
+            Event::TrackAddBehaviorChanged(v) => {
+                self.track_add_behavior = v;
+            }
+            Event::PaletteChanged(name) => {
+                if let Some(p) = self.available_palettes.iter().find(|n| **n == name) {
+                    self.selected_palette = p.to_string();
+                    tracing::debug!("设置: 调色板切换为 '{}'", name);
+                }
             }
         }
     }
@@ -260,7 +341,9 @@ fn render_content_area<'a>(
         1 => audio_view(settings),
         2 => ui_settings_view(settings, window, system_fonts),
         3 => shortcuts_view(settings),
-        4 => about_view(settings),
+        4 => onion_skin_view(settings),
+        5 => palette_view(settings),
+        6 => about_view(settings),
         _ => render_placeholder("设置内容区域").into(),
     };
 

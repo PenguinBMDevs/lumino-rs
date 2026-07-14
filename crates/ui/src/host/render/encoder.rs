@@ -52,22 +52,28 @@ impl Host {
             canvas_offset_x: viewport.canvas_offset.x,
             canvas_offset_y: viewport.canvas_offset.y,
         };
-        self.render_ctx
-            .grid_renderer
-            .prepare(&gfx.queue, &grid_params);
+        let Some(grid_renderer) = self.render_ctx.grid_renderer.as_mut() else {
+            return;
+        };
+        grid_renderer.prepare(&gfx.queue, &grid_params);
     }
 
     /// 如果需要则准备音符
     ///
-    /// Phase 1: 主音符同步写入双缓冲 + swap（~1ms，保证 WGPU 立即可见）
-    /// Phase 2: 洋葱皮派发到 NoteWorker + 等待完成（done_tx 同步屏障）
+    /// 优化策略：
+    /// 1. CPU 端可见性裁剪：仅构建视口内（含 overscan）的音符实例
+    /// 2. Overscan 缓存：若当前视口仍在上一次渲染的扩展视口内且数据未变，跳过重建
+    /// 3. 大数据量时使用并行写入，小数据量时顺序写入
     pub(super) fn prepare_notes_if_needed(&mut self, current_hash: u64) -> bool {
-        // 视口变化（滚动/缩放）：重新过滤洋葱皮实例（无需全量重建）
+        const OVERSCAN_FACTOR: f32 = 0.5;
+
+        // 视口变化（滚动/缩放）
         let viewport_changed = current_hash != self.render_ctx.render_cache.note_viewport_hash;
 
         // 工程走带模式：音符由 iced Canvas 绘制，跳过 WGPU 音符准备
         if self.root.is_arrangement_mode() {
             self.render_ctx.render_cache.note_viewport_hash = current_hash;
+            self.render_ctx.render_cache.note_render_viewport = None;
             return false;
         }
 
@@ -80,8 +86,19 @@ impl Host {
             || self.render_ctx.render_cache.note_instances_is_empty()
             || is_drawing;
 
-        if !note_data_changed && !viewport_changed {
-            // 即使没有数据变化也更新状态
+        // 计算当前精确视口范围
+        let (tick_start, tick_end, key_min, key_max) = self.root.editor.compute_visible_range(0.0);
+
+        // 若数据未变且当前视口在缓存的渲染视口内，跳过重建
+        if !note_data_changed
+            && !viewport_changed
+            && self
+                .render_ctx
+                .render_cache
+                .note_render_viewport
+                .as_ref()
+                .is_some_and(|vp| vp.contains(tick_start, tick_end, key_min, key_max))
+        {
             self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;
             self.render_ctx.last_edit_state = current_edit_state;
             return false;
@@ -90,54 +107,44 @@ impl Host {
         // 更新视口哈希
         self.render_ctx.render_cache.note_viewport_hash = current_hash;
 
-        // 提取所需数据，避免 &self 借用冲突
-        let notes_clone = self.root.editor.editor_state.data.notes.clone(); // O(1)
         let edit_state_clone = self.root.editor.editor_state.interaction.edit_state.clone();
         let default_note_length = self.root.editor.editor_state.view.default_note_length;
         let snap_precision = self.root.editor.editor_state.view.snap_precision;
 
-        // ═══ Phase 1: 主音符同步写入（保证 WGPU 立即可见） ═══
+        // ═══ Phase 1: 主音符同步写入（仅构建可见音符） ═══
         {
             puffin::profile_scope!("phase1_main_notes_sync");
+            let visible_count = self.root.editor.collect_visible_note_data(
+                &mut self.render_ctx.render_cache.visible_notes_buffer,
+                OVERSCAN_FACTOR,
+            );
+            let visible_notes = &self.render_ctx.render_cache.visible_notes_buffer;
             super::note_worker::build_main_note_instances(
                 &self.render_ctx.render_cache.note_instances_buffer,
-                &notes_clone,
+                visible_notes,
                 &edit_state_clone,
                 default_note_length,
                 snap_precision,
             );
+            tracing::debug!(
+                "Built {} visible note instances from expanded query",
+                visible_count
+            );
         }
 
-        // ═══ Phase 2: 洋葱皮异步派发（独立 buffer，不碰主音符） ═══
-        self.ensure_note_worker();
-        if let Some(ref worker) = self.render_ctx.note_worker {
-            let vp_logical = self.render_ctx.viewport.logical_size();
-            let os_snapshot =
-                self.collect_onion_skin_snapshot((vp_logical.width, vp_logical.height));
-            let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
-
-            worker.send(super::note_worker::OnionSkinJob {
-                snapshot: os_snapshot,
-                onion_note_buffer: std::sync::Arc::clone(
-                    &self.render_ctx.render_cache.onion_note_buffer,
-                ),
-                done_tx: Some(done_tx),
+        // 更新缓存的渲染视口为本次使用的扩展视口
+        let (render_tick_start, render_tick_end, render_key_min, render_key_max) =
+            self.root.editor.compute_visible_range(OVERSCAN_FACTOR);
+        self.render_ctx.render_cache.note_render_viewport =
+            Some(crate::host::cache::NoteRenderViewport {
+                tick_start: render_tick_start,
+                tick_end: render_tick_end,
+                key_min: render_key_min,
+                key_max: render_key_max,
             });
-
-            // 单线程模式：等待洋葱皮完成后才能开始渲染
-            //（分离渲染模式不需要等待，fire-and-forget）
-            let _ = done_rx.recv();
-        } else {
-            tracing::warn!("prepare_notes_if_needed: No NoteWorker available");
-        }
 
         self.render_ctx.last_edit_state = current_edit_state;
         self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;
-
-        if note_index_dirty {
-            self.root.editor.spatial.note_index_dirty.set(false);
-            tracing::debug!("Cleared note_index_dirty flag");
-        }
 
         // 数据变化或视口变化都需要 GPU 上传
         note_data_changed || viewport_changed
@@ -151,6 +158,10 @@ impl Host {
         notes_changed: bool,
         camera: lumino_gfx::CameraUniform,
     ) {
+        let Some(note_renderer) = self.render_ctx.note_renderer.as_mut() else {
+            return;
+        };
+
         // 从双缓冲的前缓冲区读取音符实例
         let note_instances = unsafe {
             self.render_ctx
@@ -160,17 +171,9 @@ impl Host {
         };
 
         if notes_changed && !note_instances.is_empty() {
-            self.render_ctx.note_renderer.prepare_notes(
-                encoder,
-                note_instances,
-                &gfx.device,
-                &gfx.queue,
-                camera,
-            );
+            note_renderer.prepare_notes(encoder, note_instances, &gfx.device, &gfx.queue, camera);
         } else if !note_instances.is_empty() {
-            self.render_ctx
-                .note_renderer
-                .prepare_pass(encoder, camera, &gfx.queue);
+            note_renderer.prepare_pass(encoder, camera, &gfx.queue);
         }
     }
 
@@ -256,9 +259,11 @@ impl Host {
         // 工程走带模式下跳过 WGPU 绘制（由 iced Canvas 直接渲染）
         if !self.root.is_arrangement_mode() {
             // 绘制网格线
-            if scissor.has_valid_region {
+            if scissor.has_valid_region
+                && let Some(grid_renderer) = self.render_ctx.grid_renderer.as_mut()
+            {
                 render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
-                self.render_ctx.grid_renderer.draw(&mut render_pass, 1);
+                grid_renderer.draw(&mut render_pass, 1);
             }
 
             // 绘制音符（从双缓冲读取）
@@ -268,9 +273,12 @@ impl Host {
                     .note_instances_buffer
                     .read_buffer()
             };
-            if !note_instances.is_empty() && scissor.has_valid_region {
+            if !note_instances.is_empty()
+                && scissor.has_valid_region
+                && let Some(note_renderer) = self.render_ctx.note_renderer.as_mut()
+            {
                 render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
-                self.render_ctx.note_renderer.draw(
+                note_renderer.draw(
                     &mut render_pass,
                     true,
                     Some((scissor.x, scissor.y, scissor.width, scissor.height)),

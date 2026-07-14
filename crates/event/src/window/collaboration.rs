@@ -48,6 +48,11 @@ pub enum Event {
         user_id: String,
         operation: String, // JSON string of NoteBatchOperation
     },
+    /// 协作工程更新（来自其他用户，如音轨变更）
+    ProjectUpdate {
+        user_id: String,
+        update: String, // JSON string of ProjectUpdate
+    },
 }
 
 impl Event {
@@ -64,61 +69,7 @@ impl Event {
             Self::UserLeft { .. } => "用户离开".to_string(),
             Self::MouseUpdate { .. } => "鼠标位置更新".to_string(),
             Self::NoteUpdate { .. } => "音符更新".to_string(),
+            Self::ProjectUpdate { .. } => "工程更新".to_string(),
         }
-    }
-
-    pub fn connect(host: String, port: u16, username: String, invite_code: Option<String>) -> Self {
-        Self::Connect {
-            host,
-            port,
-            username,
-            invite_code,
-        }
-    }
-    pub fn create_room(name: String) -> Self {
-        Self::CreateRoom { name }
-    }
-    pub fn join_room(invite_code: String) -> Self {
-        Self::JoinRoom { invite_code }
-    }
-    pub const fn disconnect() -> Self {
-        Self::Disconnect
-    }
-    pub fn authenticated(user_id: String, invite_code: String) -> Self {
-        Self::Authenticated {
-            user_id,
-            invite_code,
-        }
-    }
-    pub fn room_created(room_name: String, invite_code: String) -> Self {
-        Self::RoomCreated {
-            room_name,
-            invite_code,
-        }
-    }
-    pub fn room_joined(room_name: String, invite_code: String, user_count: usize) -> Self {
-        Self::RoomJoined {
-            room_name,
-            invite_code,
-            user_count,
-        }
-    }
-    pub const fn disconnected() -> Self {
-        Self::Disconnected
-    }
-    pub fn user_left(user_id: String) -> Self {
-        Self::UserLeft { user_id }
-    }
-    pub fn mouse_update(user_id: String, x: f32, y: f32, color: String, username: String) -> Self {
-        Self::MouseUpdate {
-            user_id,
-            x,
-            y,
-            color,
-            username,
-        }
-    }
-    pub fn note_update(user_id: String, operation: String) -> Self {
-        Self::NoteUpdate { user_id, operation }
     }
 }

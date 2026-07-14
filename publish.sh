@@ -193,8 +193,8 @@ build_appimage_amd64() {
 
     cp target/release/lumino-rs "$APPDIR/usr/bin/"
 
-    # Use github icon as temporary app icon
-    cp "$PROJECT_DIR/resources/icons/brands/github.svg" \
+    # Use Lumino icon as app icon
+    cp "$PROJECT_DIR/resources/icons/brands/Lumino.svg" \
        "$APPDIR/usr/share/icons/hicolor/scalable/apps/lumino-rs.svg"
     cp "$APPDIR/usr/share/icons/hicolor/scalable/apps/lumino-rs.svg" "$APPDIR/"
 

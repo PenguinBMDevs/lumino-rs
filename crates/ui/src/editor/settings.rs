@@ -1,15 +1,20 @@
 use super::CacheInvalidation;
 use crate::constants::editor::{MAX_VISIBLE_KEY_COUNT, MIN_VISIBLE_KEY_COUNT};
+use lumino_core::editor_state::viewport::Viewport;
 use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
 
 impl super::Editor {
-    // 键盘设置 — 全部委托给 editor_state
+    // 键盘设置 — 视口相关操作通过 viewport 模块，其余直接修改 ViewState
 
     pub fn set_visible_key_count(&mut self, count: u16) {
         let old_count = self.editor_state.view.visible_key_count;
         let canvas_height = self.editor_state.canvas.size_y;
 
-        self.editor_state.set_visible_key_count(
+        Viewport::new(
+            &mut self.editor_state.view,
+            &mut self.editor_state.max_scroll,
+        )
+        .set_visible_key_count(
             count,
             MIN_VISIBLE_KEY_COUNT,
             MAX_VISIBLE_KEY_COUNT,
@@ -37,7 +42,7 @@ impl super::Editor {
     }
 
     pub fn set_keyboard_width(&mut self, width: f32) {
-        self.editor_state.set_keyboard_width(width);
+        self.editor_state.view.set_keyboard_width(width);
         self.invalidate_caches(CacheInvalidation::GRID);
     }
 
@@ -48,7 +53,7 @@ impl super::Editor {
     // 音符设置
 
     pub fn set_snap_precision(&mut self, precision: f32) {
-        self.editor_state.set_snap_precision(precision);
+        self.editor_state.view.set_snap_precision(precision);
         self.invalidate_caches(CacheInvalidation::GRID);
     }
 
@@ -57,7 +62,7 @@ impl super::Editor {
     }
 
     pub fn set_default_note_length(&mut self, length: f32) {
-        self.editor_state.set_default_note_length(length);
+        self.editor_state.view.set_default_note_length(length);
         self.invalidate_caches(CacheInvalidation::GRID);
     }
 
@@ -67,7 +72,7 @@ impl super::Editor {
 
     // 橡皮擦设置
     pub fn set_eraser_behavior(&mut self, behavior: EraserBehavior) {
-        self.editor_state.set_eraser_behavior(behavior);
+        self.editor_state.view.set_eraser_behavior(behavior);
     }
 
     pub fn eraser_behavior(&self) -> EraserBehavior {
@@ -77,7 +82,7 @@ impl super::Editor {
     // 框选框设置
 
     pub fn set_selection_box_mode(&mut self, mode: SelectionBoxMode) {
-        self.editor_state.set_selection_box_mode(mode);
+        self.editor_state.view.set_selection_box_mode(mode);
     }
 
     pub fn selection_box_mode(&self) -> SelectionBoxMode {

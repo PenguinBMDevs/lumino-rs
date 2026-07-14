@@ -6,32 +6,36 @@
 //! - `event`: 事件处理（窗口事件、输入）
 //! - `editor_ops`: 编辑器操作（音符、洋葱皮）
 //! - `dialog`: 对话框和协作功能
+//! - `builder`: 构造方法（创建渲染/窗口上下文、初始化公共字段）
+//! - `hires`: 高精度贴图（生成、重生成、脏区域追踪、冷静期控制）
+//! - `render_thread`: 分离渲染线程管理（启停、事件通道、统计）
 //!
 //! 架构说明：
 //! - UI线程（主线程）：处理事件、更新状态、生成渲染命令
 //! - 渲染线程（独立线程）：接收命令、管理GPU资源、执行实际渲染
 
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 use std::time::Instant;
 
 use iced_core::{Font, Size};
 use iced_wgpu::graphics::Viewport;
-use iced_winit::winit;
 
 use crate::statusbar::performance::CpuMonitor;
-use crate::{WgpuRenderThread, config, root, settings};
-use render::note_worker::NoteWorker;
+use crate::{config, root, settings};
 
+mod builder;
 mod cache;
 mod dialog;
 mod editor_ops;
 mod event;
+mod hires;
 mod render;
 mod render_ctx;
+mod render_thread;
 pub mod types;
 mod window_ctx;
 
-use render_ctx::{RenderContext, WgpuResources};
+use render_ctx::RenderContext;
 use window_ctx::WindowContext;
 
 pub use cache::RenderCache;
@@ -70,181 +74,39 @@ pub struct Host {
     pub(crate) cpu_monitor: CpuMonitor,
     /// 上一次 GPU 帧耗时（ms）
     pub(crate) last_gpu_frame_time_ms: f32,
+    /// 滚动速度追踪器（用于 overscan 计算）
+    pub(crate) scroll_tracker: render::note_worker::ScrollVelocityTracker,
+    /// 高精度贴图：有脏标记的音轨集合（编辑后需重生成）
+    pub(crate) hires_dirty_tracks: std::collections::HashSet<u16>,
+    /// 高精度贴图：脏区域追踪（track_idx → 脏音符列表），用于临时贴图覆层
+    pub(crate) hires_dirty_regions: std::collections::HashMap<u16, Vec<lumino_gfx::OnionSkinNote>>,
+    /// 高精度贴图：最后一次编辑时间（用于冷静期判断）
+    pub(crate) hires_last_edit: Option<Instant>,
+    /// 高精度贴图：全量配置（重生成时直接使用副本）
+    pub(crate) hires_config: Option<lumino_gfx::HiResConfig>,
+    /// 高精度贴图：生成时的 MIDI 哈希（重生成时复用缓存分桶）
+    pub(crate) hires_midi_hash: Option<String>,
+    /// 高精度贴图：生成时的 (ppq, key_count, total_ticks)（重生成时复用）
+    pub(crate) hires_gen_info: Option<(u16, u16, u32)>,
+    /// 高精度贴图：脏区域覆层是否已发送到渲染线程（防止每帧重复发送）
+    pub(crate) hires_overlay_sent: bool,
 }
 
 impl Host {
-    /// 创建渲染上下文和窗口上下文（三个构造函数的公共逻辑）
-    fn create_render_and_window_context(
-        window: Arc<winit::window::Window>,
-        width: u32,
-        height: u32,
-        ui_config: &config::UiConfig,
-        gfx: &lumino_gfx::Context,
-    ) -> (RenderContext, WindowContext) {
-        let viewport =
-            Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
-
-        let font = create_font_from_config(ui_config);
-
-        let note_renderer = lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format);
-        let grid_renderer = lumino_gfx::GridRenderer::new(&gfx.device, gfx.format);
-
-        let wgpu_resources = WgpuResources {
-            device: gfx.device.clone(),
-            queue: gfx.queue.clone(),
-            format: gfx.format,
-            adapter: gfx.adapter.clone(),
-        };
-        let render_ctx = RenderContext::new(
-            &wgpu_resources,
-            viewport,
-            note_renderer,
-            grid_renderer,
-            font,
+    /// 预加载所有音轨音符到 track_notes 缓存
+    ///
+    /// MIDI 加载后立即调用，确保后续重生成时能从缓存取到完整音轨数据，
+    /// 避免预生成贴图被不完整数据覆盖。
+    pub fn preload_track_notes(&mut self, track_notes: Vec<Vec<lumino_core::Note>>) {
+        let data = &mut self.root.editor.editor_state.data;
+        for (track_idx, notes) in track_notes.into_iter().enumerate() {
+            data.track_notes.insert(track_idx, notes.into());
+        }
+        data.track_notes_gen += 1;
+        tracing::info!(
+            "[onion-dirty] 预加载 track_notes: {} 个音轨",
+            data.track_notes.len()
         );
-
-        (render_ctx, WindowContext::new(window))
-    }
-
-    /// 创建 Host 公共字段（三个构造函数的公共 Self 初始化）
-    fn new_common_fields(
-        render_ctx: RenderContext,
-        window_ctx: WindowContext,
-        root: root::Root,
-    ) -> Self {
-        Self {
-            render_ctx,
-            window_ctx,
-            root,
-            events: Vec::new(),
-            last_frame_time: Instant::now(),
-            last_fps_update: Instant::now(),
-            frame_count: 0,
-            skip_ui_rendering: false,
-            ui_dirty: false,
-            cpu_monitor: CpuMonitor::new(),
-            last_gpu_frame_time_ms: 0.0,
-        }
-    }
-
-    /// 创建新的 Host
-    pub fn new(
-        window: Arc<winit::window::Window>,
-        width: u32,
-        height: u32,
-        ui_config: &config::UiConfig,
-        gfx: &lumino_gfx::Context,
-        is_progress: bool,
-    ) -> Self {
-        let (render_ctx, window_ctx) =
-            Self::create_render_and_window_context(window, width, height, ui_config, gfx);
-        let root = if is_progress {
-            root::Root::new_progress(&ui_config.theme)
-        } else {
-            root::Root::new(ui_config)
-        };
-        Self::new_common_fields(render_ctx, window_ctx, root)
-    }
-
-    /// 创建对话框 Host
-    pub fn new_dialog(
-        window: Arc<winit::window::Window>,
-        width: u32,
-        height: u32,
-        ui_config: &config::UiConfig,
-        gfx: &lumino_gfx::Context,
-        dialog_type: crate::state::root_state::DialogType,
-    ) -> Self {
-        let (render_ctx, window_ctx) =
-            Self::create_render_and_window_context(window, width, height, ui_config, gfx);
-        let root = root::Root::new_dialog(&ui_config.theme, dialog_type);
-        Self::new_common_fields(render_ctx, window_ctx, root)
-    }
-
-    /// 创建设置对话框 Host（使用主窗口的配置）
-    pub fn new_settings_dialog(
-        window: Arc<winit::window::Window>,
-        width: u32,
-        height: u32,
-        ui_config: &config::UiConfig,
-        gfx: &lumino_gfx::Context,
-    ) -> Self {
-        let (render_ctx, window_ctx) =
-            Self::create_render_and_window_context(window, width, height, ui_config, gfx);
-        let root = root::Root::new_settings_dialog(&ui_config.theme, ui_config);
-        Self::new_common_fields(render_ctx, window_ctx, root)
-    }
-
-    /// 确保 NoteWorker 已创建（懒加载）
-    ///
-    /// NoteWorker 用于将音符实例构建从主线程卸载到独立线程。
-    /// 在两种渲染模式下都会使用：
-    /// - 分离线程模式：非阻塞 fire-and-forget
-    /// - 单线程模式：dispatch + 同步等待（仍能在本帧内并行化）
-    fn ensure_note_worker(&mut self) {
-        if self.render_ctx.note_worker.is_none() {
-            match NoteWorker::spawn() {
-                Some(worker) => {
-                    self.render_ctx.note_worker = Some(worker);
-                    tracing::info!("NoteWorker: spawned");
-                }
-                None => {
-                    tracing::error!(
-                        "NoteWorker: failed to spawn, onion skin will run on main thread"
-                    );
-                }
-            }
-        }
-    }
-
-    /// 启用真正的分离渲染线程（新架构）
-    ///
-    /// 这会将所有 WGPU 渲染（音符、网格、键盘、标尺）从 UI 线程完全分离
-    pub fn enable_separate_render_thread(&mut self) {
-        if self.render_ctx.wgpu_render_thread.is_some() {
-            return;
-        }
-
-        // 创建音符事件通道
-        let (tx, rx) = std::sync::mpsc::channel();
-
-        // 启动 WGPU 渲染线程
-        match WgpuRenderThread::spawn(
-            self.render_ctx.device.clone(),
-            self.render_ctx.queue.clone(),
-            self.render_ctx.format,
-            rx,
-            Arc::clone(&self.render_ctx.render_cache.note_instances_buffer),
-            Some(Arc::clone(&self.render_ctx.render_cache.onion_note_buffer)),
-        ) {
-            Ok(thread) => {
-                self.render_ctx.wgpu_render_thread = Some(thread);
-                self.render_ctx.note_events_tx = Some(tx);
-                self.render_ctx.use_separate_render_thread = true;
-                tracing::info!("Host: Separate WGPU render thread enabled");
-            }
-            Err(e) => {
-                tracing::error!("Host: Failed to start separate render thread: {}", e);
-            }
-        }
-    }
-
-    /// 禁用分离渲染线程
-    pub fn disable_separate_render_thread(&mut self) {
-        if let Some(thread) = self.render_ctx.wgpu_render_thread.take() {
-            thread.shutdown();
-            self.render_ctx.use_separate_render_thread = false;
-            self.render_ctx.note_events_tx = None;
-            tracing::info!("Host: Separate WGPU render thread disabled");
-        }
-    }
-
-    /// 获取分离渲染线程统计
-    pub fn separate_render_stats(&self) -> Option<crate::WgpuRenderStats> {
-        self.render_ctx
-            .wgpu_render_thread
-            .as_ref()
-            .map(|t| t.stats())
     }
 
     /// 获取 root 引用
@@ -255,6 +117,11 @@ impl Host {
     /// 获取 root 可变引用
     pub fn root_mut(&mut self) -> &mut root::Root {
         &mut self.root
+    }
+
+    /// 获取当前侧边栏音轨数量（用于推断高精度贴图音轨组范围）
+    pub fn track_count(&self) -> usize {
+        self.root.sidebar.tracks.len()
     }
 
     /// 获取设置面板引用
@@ -290,39 +157,22 @@ impl Host {
             .render_cache
             .note_instances_buffer
             .back_info();
-        // 洋葱皮双缓冲容量
-        let (onion_front_cap, onion_front_len) =
-            self.render_ctx.render_cache.onion_note_buffer.front_info();
-        let (onion_back_cap, onion_back_len) =
-            self.render_ctx.render_cache.onion_note_buffer.back_info();
-        let note_size = std::mem::size_of::<lumino_gfx::OnionNote>() as u64;
-
-        tracing::debug!(
-            "MemoryBreakdown: note front(cap={}, len={}) back(cap={}, len={}) onion front(cap={}, len={}) back(cap={}, len={}) note_size={}",
-            front_cap,
-            front_len,
-            back_cap,
-            back_len,
-            onion_front_cap,
-            onion_front_len,
-            onion_back_cap,
-            onion_back_len,
-            note_size
-        );
-
         // 将双缓冲容量写入 breakdown 的附加字段
         breakdown.note_instances_front_cap = front_cap;
         breakdown.note_instances_front_len = front_len;
         breakdown.note_instances_back_cap = back_cap;
         breakdown.note_instances_back_len = back_len;
         breakdown.note_instance_size = std::mem::size_of::<lumino_gfx::NoteInstance>() as usize;
-        breakdown.onion_note_front_cap = onion_front_cap;
-        breakdown.onion_note_front_len = onion_front_len;
-        breakdown.onion_note_back_cap = onion_back_cap;
-        breakdown.onion_note_back_len = onion_back_len;
 
         breakdown
     }
+}
+
+/// 洋葱皮音轨调色板（按音轨索引循环取色）
+///
+/// 从当前调色板的第二个颜色开始取色（第一个颜色保留给主音轨音符）。
+fn onion_track_color(track_idx: usize) -> [u8; 4] {
+    lumino_core::palette::onion_track_color(track_idx)
 }
 
 /// 字体名称缓存 —— OnceLock 确保只泄漏一次，而不是每次重绘都泄漏

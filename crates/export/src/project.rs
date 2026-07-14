@@ -66,7 +66,6 @@ pub struct LoadedFileEntry {
 #[serde(rename_all = "lowercase")]
 pub enum LoadedFormat {
     Mid,
-    Dms,
     Lmpj,
 }
 
@@ -167,20 +166,20 @@ impl LuminoProject {
 
         // 提取每轨事件
         for track_id in 0..doc.track_count {
-            let (start, end) = doc.track_events_range(track_id);
-            if start >= end {
+            let track_notes = doc.track_notes(track_id as usize);
+            if track_notes.is_empty() {
                 continue;
             }
 
-            let track_events: Vec<_> = doc.events[start..end]
-                .iter()
-                .filter(|ev| !ev.kind().is_meta()) // 过滤全局 meta 事件
-                .copied()
-                .collect();
-
-            if track_events.is_empty() {
-                continue;
+            // 从 NoteEvent 构造 CompactEvent，并过滤出音符事件
+            let mut track_events: Vec<lumino_midi_io::compact::CompactEvent> =
+                Vec::with_capacity(track_notes.len() * 2);
+            for note in track_notes {
+                let [on, off] = note.to_compact_events(track_id);
+                track_events.push(on);
+                track_events.push(off);
             }
+            track_events.sort_unstable_by_key(|e| e.delta_tick());
 
             // 推断 channel：取第一个音符事件的 channel
             let channel = track_events

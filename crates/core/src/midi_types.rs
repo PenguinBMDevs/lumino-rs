@@ -180,3 +180,132 @@ pub struct TempoPoint {
     pub tick: f32,
     pub bpm: f64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_edit_mode_default_is_velocity() {
+        assert_eq!(EditMode::default(), EditMode::Velocity);
+    }
+
+    #[test]
+    fn test_edit_mode_display_name() {
+        assert_eq!(EditMode::Velocity.display_name(), "力度");
+        assert_eq!(EditMode::Tempo.display_name(), "速度");
+        assert_eq!(EditMode::Bend.display_name(), "Bend");
+        assert_eq!(EditMode::Cc(7).display_name(), "CC");
+    }
+
+    #[test]
+    fn test_edit_mode_is_cc() {
+        assert!(!EditMode::Velocity.is_cc());
+        assert!(!EditMode::Tempo.is_cc());
+        assert!(EditMode::Bend.is_cc());
+        assert!(EditMode::Cc(1).is_cc());
+    }
+
+    #[test]
+    fn test_edit_mode_is_tempo() {
+        assert!(!EditMode::Velocity.is_tempo());
+        assert!(EditMode::Tempo.is_tempo());
+        assert!(!EditMode::Bend.is_tempo());
+        assert!(!EditMode::Cc(0).is_tempo());
+    }
+
+    #[test]
+    fn test_edit_mode_all_modes() {
+        let modes = EditMode::all_modes();
+        assert_eq!(modes.len(), 1);
+        assert_eq!(modes[0], EditMode::Velocity);
+    }
+
+    #[test]
+    fn test_cc_point_construction() {
+        let p = CcPoint {
+            tick: 480.0,
+            value: 64,
+        };
+        assert_eq!(p.tick, 480.0);
+        assert_eq!(p.value, 64);
+    }
+
+    #[test]
+    fn test_bend_point_construction() {
+        let p = BendPoint {
+            tick: 960.0,
+            value: 0,
+        };
+        assert_eq!(p.tick, 960.0);
+        assert_eq!(p.value, 0);
+        let p_neg = BendPoint {
+            tick: 0.0,
+            value: -8192,
+        };
+        assert_eq!(p_neg.value, -8192);
+        let p_pos = BendPoint {
+            tick: 0.0,
+            value: 8191,
+        };
+        assert_eq!(p_pos.value, 8191);
+    }
+
+    #[test]
+    fn test_velocity_point_construction() {
+        let p = VelocityPoint {
+            note_index: 5,
+            tick: 100.0,
+            velocity: 80,
+        };
+        assert_eq!(p.note_index, 5);
+        assert_eq!(p.tick, 100.0);
+        assert_eq!(p.velocity, 80);
+    }
+
+    #[test]
+    fn test_tempo_point_construction() {
+        let t = TempoPoint {
+            tick: 0.0,
+            bpm: 120.0,
+        };
+        assert_eq!(t.tick, 0.0);
+        assert_eq!(t.bpm, 120.0);
+    }
+
+    #[test]
+    fn test_cc_display_known_controller() {
+        let d = CcDisplay(7);
+        let s = d.to_string();
+        assert!(s.contains("7"));
+        assert!(s.contains("Volume"));
+    }
+
+    #[test]
+    fn test_cc_display_unknown_controller() {
+        let d = CcDisplay(255);
+        let s = d.to_string();
+        assert_eq!(s, "255");
+    }
+
+    #[test]
+    fn test_bend_display() {
+        let s = BendDisplay.to_string();
+        assert!(s.contains("Bend"));
+        assert!(s.contains("-8192"));
+    }
+
+    #[test]
+    fn test_cc_data_default() {
+        let data = CcData::default();
+        assert!(data.controllers.is_empty());
+        assert!(data.bend_points.is_empty());
+    }
+
+    #[test]
+    fn test_cc_controller_names_contains_known() {
+        assert!(CC_CONTROLLER_NAMES.iter().any(|(n, _)| *n == 7));
+        assert!(CC_CONTROLLER_NAMES.iter().any(|(n, _)| *n == 64));
+        assert!(CC_CONTROLLER_NAMES.iter().any(|(n, _)| *n == 120));
+    }
+}

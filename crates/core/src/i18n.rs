@@ -3,12 +3,13 @@
 //! 提供类型安全的多语言翻译，支持简体中文和 English。
 //! 所有翻译字符串集中在此模块管理，避免散落在 UI 代码中。
 
-pub mod settings;
 pub mod main;
+pub mod settings;
 
 pub use main::MainTranslations;
 pub use settings::SettingsTranslations;
 
+use crate::{DotType, NotePrecision};
 use serde::{Deserialize, Serialize};
 
 /// 支持的语言
@@ -45,15 +46,12 @@ pub fn main_translations(lang: Language) -> &'static MainTranslations {
 }
 
 /// 获取音符精度名称（按语言）
-pub fn note_precision_name(
-    precision: lumino_message::NotePrecision,
-    lang: Language,
-) -> &'static str {
+pub fn note_precision_name(precision: NotePrecision, lang: Language) -> &'static str {
     main::note_precision_name(precision, lang)
 }
 
 /// 获取符点类型名称（按语言）
-pub fn dot_type_name(dot_type: lumino_message::DotType, lang: Language) -> &'static str {
+pub fn dot_type_name(dot_type: DotType, lang: Language) -> &'static str {
     main::dot_type_name(dot_type, lang)
 }
 
@@ -71,6 +69,14 @@ pub fn eraser_behavior_name(
     lang: Language,
 ) -> &'static str {
     main::eraser_behavior_name(behavior, lang)
+}
+
+/// 获取音轨添加行为名称（按语言）
+pub fn track_add_behavior_name(
+    behavior: crate::storage::config::TrackAddBehavior,
+    lang: Language,
+) -> &'static str {
+    main::track_add_behavior_name(behavior, lang)
 }
 
 /// 获取合成器后端名称（按语言）
@@ -111,14 +117,18 @@ mod tests {
 
     #[test]
     fn test_language_serde() {
-        let json = serde_json::to_string(&Language::ZhCn).unwrap();
+        let json =
+            serde_json::to_string(&Language::ZhCn).expect("Language::ZhCn 序列化为 JSON 不应失败");
         assert_eq!(json, "\"zh-CN\"");
-        let deserialized: Language = serde_json::from_str(&json).unwrap();
+        let deserialized: Language =
+            serde_json::from_str(&json).expect("Language JSON 反序列化不应失败");
         assert_eq!(deserialized, Language::ZhCn);
 
-        let json = serde_json::to_string(&Language::EnUs).unwrap();
+        let json =
+            serde_json::to_string(&Language::EnUs).expect("Language::EnUs 序列化为 JSON 不应失败");
         assert_eq!(json, "\"en-US\"");
-        let deserialized: Language = serde_json::from_str(&json).unwrap();
+        let deserialized: Language =
+            serde_json::from_str(&json).expect("Language JSON 反序列化不应失败");
         assert_eq!(deserialized, Language::EnUs);
     }
 }

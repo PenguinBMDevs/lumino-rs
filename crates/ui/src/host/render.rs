@@ -26,7 +26,6 @@ mod encoder;
 mod frame;
 mod grid;
 pub(super) mod note_worker;
-mod notes;
 mod separate_thread;
 mod single_thread;
 mod ui;

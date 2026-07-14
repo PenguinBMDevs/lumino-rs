@@ -7,6 +7,25 @@ pub struct Config {
     pub ui: UiConfig,
 }
 
+/// 添加音轨时的行为
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum TrackAddBehavior {
+    /// 自动跳转到被添加的新音轨
+    #[default]
+    AutoSwitch,
+    /// 保持当前音轨位置不变
+    StayCurrent,
+}
+
+impl std::fmt::Display for TrackAddBehavior {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TrackAddBehavior::AutoSwitch => write!(f, "自动跳转到新音轨"),
+            TrackAddBehavior::StayCurrent => write!(f, "保持当前音轨"),
+        }
+    }
+}
+
 /// 用户界面配置默认值
 impl Default for Config {
     fn default() -> Self {
@@ -169,15 +188,44 @@ pub struct UiConfig {
     /// 力度过滤阈值（力度 <= 此值的音符不播放，0=关闭过滤，最大127）
     #[serde(default = "default_velocity_filter_threshold")]
     pub velocity_filter_threshold: u8,
+    /// XSynth 全局最大并发 voice 数
+    /// 设置越低，渲染越快，但并发发音数越少。
+    /// None = 使用 xsynth 默认值 (4096)
+    #[serde(default)]
+    pub xsynth_global_voice_limit: Option<usize>,
     /// 是否启用 HiDPI 图标渲染（关闭时使用1x获得零性能开销，开启时使用2x获得视网膜清晰度）
     #[serde(default = "default_true")]
     pub icon_hidpi: bool,
     /// 是否启用 256 键扩展钢琴卷帘（默认关闭）
     #[serde(default)]
     pub enable_256key: bool,
-    /// 是否使用钢琴仿真贴图键盘（默认开启，关闭则使用旧版纯色键盘）
+    /// 力度面板显示样式（默认曲线=折线图，false=柱状图）
     #[serde(default = "default_true")]
-    pub use_textured_keyboard: bool,
+    pub velocity_curve_style: bool,
+    /// 高精度洋葱皮贴图：是否启用
+    #[serde(default = "default_true")]
+    pub hires_onion_enabled: bool,
+    /// 高精度洋葱皮贴图：每组小节数（1-16）
+    #[serde(default = "default_hires_measures_per_group")]
+    pub hires_measures_per_group: u32,
+    /// 高精度洋葱皮贴图：贴图宽度像素（480-7680）
+    #[serde(default = "default_hires_tile_width")]
+    pub hires_tile_width_px: u32,
+    /// 高精度洋葱皮贴图：编辑后重生成冷静期秒数（3-60）
+    #[serde(default = "default_hires_cooldown")]
+    pub hires_cooldown_secs: u64,
+    /// 高精度洋葱皮贴图：GPU 显存上限 MB（128-4096）
+    #[serde(default = "default_hires_gpu_mem_limit")]
+    pub hires_gpu_mem_limit_mb: u32,
+    /// 播放时键盘颜色指示（默认关闭以节省内存和性能）
+    #[serde(default)]
+    pub playback_key_colors_enabled: bool,
+    /// 添加音轨时的行为（自动跳转到新音轨 / 保持当前音轨）
+    #[serde(default)]
+    pub track_add_behavior: TrackAddBehavior,
+    /// 当前选中的调色板名称（空字符串表示使用默认）
+    #[serde(default)]
+    pub selected_palette: String,
 }
 
 fn default_true() -> bool {
@@ -207,6 +255,18 @@ fn default_velocity_filter_threshold() -> u8 {
     1
 }
 
+fn default_hires_measures_per_group() -> u32 {
+    4
+}
+fn default_hires_tile_width() -> u32 {
+    1920
+}
+fn default_hires_cooldown() -> u64 {
+    10
+}
+fn default_hires_gpu_mem_limit() -> u32 {
+    512
+}
 /// 用户界面配置默认值
 impl Default for UiConfig {
     fn default() -> Self {
@@ -227,9 +287,18 @@ impl Default for UiConfig {
             program_font_path: String::new(),
             auto_scroll: AutoScrollConfig::default(),
             velocity_filter_threshold: default_velocity_filter_threshold(),
+            xsynth_global_voice_limit: None,
             icon_hidpi: true,
             enable_256key: false,
-            use_textured_keyboard: true,
+            velocity_curve_style: true,
+            hires_onion_enabled: true,
+            hires_measures_per_group: default_hires_measures_per_group(),
+            hires_tile_width_px: default_hires_tile_width(),
+            hires_cooldown_secs: default_hires_cooldown(),
+            hires_gpu_mem_limit_mb: default_hires_gpu_mem_limit(),
+            playback_key_colors_enabled: false,
+            track_add_behavior: TrackAddBehavior::default(),
+            selected_palette: String::new(),
         }
     }
 }

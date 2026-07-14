@@ -6,8 +6,10 @@ homepage.workspace = true
 license.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
-lumino-dms = { path = "../dms" }
 lumino-core = { path = "../core" }
 lumino-midi-io = { path = "../midi-io" }
 lumino-midi-loader = { path = "../midi-loader" }
@@ -23,17 +25,16 @@ zstd = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-# 音频导出依赖
-hound = { workspace = true }
-flac-encoder = { workspace = true }
-xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth" }
-xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth" }
-rayon = "1.10"
-atomic_float = "1.0"
 # 工程格式依赖
 crc32fast = "1.3"
 chrono = { version = "0.4", features = ["serde"] }
 toml = "0.9"
+# 音频渲染依赖
+xsynth-core = { workspace = true }
+xsynth-soundfonts = { workspace = true }
+hound = "3.5"
+crossbeam-channel = "0.5"
+memmap2 = "0.9"
 
 [dev-dependencies]
 tempfile = "3.0"

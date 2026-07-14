@@ -6,6 +6,8 @@ use crate::window;
 impl Host {
     /// 帧准备：处理事件和计算 FPS，收集性能数据
     pub(super) fn process_frame_preparation(&mut self) {
+        puffin::profile_function!();
+
         // 处理待处理的事件队列（合并后的）
         // 这样可以确保同一帧内的多个事件被合并处理，减少 UI 重建次数
         self.process_pending_events();
@@ -65,6 +67,7 @@ impl Host {
 
     /// 更新播放状态
     pub(super) fn update_playback_state(&mut self) {
+        puffin::profile_function!();
         if let Some(tick) = self.root.update_playback() {
             let old_pos = self.root.editor.playback_position;
             self.root.editor.playback_position = tick;
@@ -73,6 +76,8 @@ impl Host {
                 self.root.editor.update_auto_scroll(tick);
                 // 工程走带视图也应用相同的自动滚动配置
                 self.root.update_arrangement_auto_scroll(tick);
+                // 更新播放期间琴键洋葱皮颜色（实时检测音符并着色键盘）
+                self.root.editor.update_playback_key_colors();
                 // 播放时总是请求重绘并标记 UI 脏，确保播放指示线位置更新。
                 // 关键：即使自动滚动不触发（如循环回绕后指示线回到起点），
                 // 也必须重建 iced canvas UI 使指示线在新位置绘制。

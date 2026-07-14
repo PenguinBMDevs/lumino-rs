@@ -240,6 +240,94 @@ impl RunnerInner {
         }
     }
 
+    /// 处理本地音符删除（同步到其他用户）
+    pub(super) fn handle_local_note_deleted(
+        &self,
+        tick: f32,
+        key: u16,
+        length: f32,
+        velocity: u8,
+        channel: u8,
+        track_index: usize,
+    ) {
+        if !self.collab_state.collaboration_service.is_connected() {
+            return;
+        }
+
+        let note_id = format!(
+            "note_del_{}_{}_{}_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis(),
+            tick as u64,
+            key,
+            track_index
+        );
+
+        let note = lumino_collaboration::types::Note {
+            id: note_id,
+            tick,
+            key,
+            length,
+            velocity,
+            channel,
+            track_index,
+        };
+
+        let operation = lumino_collaboration::types::NoteBatchOperation {
+            action: lumino_collaboration::types::NoteAction::Delete,
+            notes: vec![note],
+            source_track: Some(track_index),
+            target_track: None,
+            tick_offset: None,
+            key_offset: None,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        };
+
+        if let Err(e) = self
+            .collab_state
+            .collaboration_service
+            .send_note_batch(operation)
+        {
+            tracing::debug!("协作: 发送音符删除失败: {}", e);
+        } else {
+            tracing::info!("协作: 已发送音符删除 - tick={}, key={}", tick, key);
+        }
+    }
+
+    /// 处理本地音轨添加（同步到其他用户）
+    pub(super) fn handle_local_track_added(&self, track_index: usize) {
+        if !self.collab_state.collaboration_service.is_connected() {
+            return;
+        }
+
+        let update = lumino_collaboration::types::ProjectUpdate {
+            update_type: lumino_collaboration::types::ProjectUpdateType::Track,
+            data: serde_json::json!({
+                "action": "add",
+                "trackIndex": track_index,
+            }),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        };
+
+        if let Err(e) = self
+            .collab_state
+            .collaboration_service
+            .send_project_update(update)
+        {
+            tracing::debug!("协作: 发送音轨添加失败: {}", e);
+        } else {
+            tracing::info!("协作: 已发送音轨添加 - track_index={}", track_index);
+        }
+    }
+
     /// 处理远程笔记更新
     pub(super) fn handle_remote_note_update(&mut self, user_id: String, operation: String) {
         tracing::info!("协作: 处理远程笔记更新 - 用户: {}", user_id);
@@ -259,5 +347,43 @@ impl RunnerInner {
             .window
             .ui_mut()
             .apply_remote_note_operation(&operation);
+    }
+
+    /// 处理远程工程更新（来自其他用户，如音轨变更）
+    pub(super) fn handle_remote_project_update(&mut self, user_id: String, update_json: String) {
+        tracing::info!("协作: 处理远程工程更新 - 用户: {}", user_id);
+
+        let update: lumino_collaboration::types::ProjectUpdate =
+            match serde_json::from_str(&update_json) {
+                Ok(u) => u,
+                Err(e) => {
+                    tracing::error!("协作: 解析工程更新失败: {}", e);
+                    return;
+                }
+            };
+
+        match update.update_type {
+            lumino_collaboration::types::ProjectUpdateType::Track => {
+                if let Some(action) = update.data.get("action").and_then(|v| v.as_str())
+                    && action == "add"
+                {
+                    let track_idx = update
+                        .data
+                        .get("trackIndex")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as usize;
+                    tracing::info!("协作: 远程添加音轨 - track_index={}", track_idx);
+
+                    self.window_state
+                        .window
+                        .ui_mut()
+                        .add_remote_track(track_idx);
+                    self.window_state.window.window().request_redraw();
+                }
+            }
+            _ => {
+                tracing::debug!("协作: 未处理的工程更新类型: {:?}", update.update_type);
+            }
+        }
     }
 }

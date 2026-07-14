@@ -6,8 +6,10 @@ homepage.workspace = true
 license.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
-lumino-message = { path = "../message" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
@@ -19,6 +21,7 @@ toml = "0.9"
 chrono = { version = "0.4", features = ["serde"] }
 im = { version = "15.1.0", features = ["rayon"] }
 puffin = { workspace = true }
+png = "0.17"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

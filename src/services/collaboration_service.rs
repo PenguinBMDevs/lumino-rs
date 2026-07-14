@@ -1,5 +1,6 @@
 use lumino_collaboration::{ClientConfig, CollaborationClient};
 use std::sync::{Arc, Mutex, MutexGuard};
+use tokio::task::block_in_place;
 
 /// 协作服务错误消息常量
 mod messages {
@@ -17,10 +18,16 @@ mod messages {
 ///
 /// 锁设计（2 层）：
 /// - `Arc<std::sync::Mutex<Option<CollaborationClient>>>`
-/// - 外层 `std::sync::Mutex` 提供同步访问（无 block_on，避免嵌套 runtime panic）
+/// - 外层 `std::sync::Mutex` 提供同步访问
 /// - `CollaborationClient` 内部已使用 `Arc<RwLock<>>`，无需额外异步锁
 ///
 /// 同步 API 桥接异步方法时，临时取出 Client 再放回。
+///
+/// # Runtime 嵌套处理
+///
+/// 主函数使用 `#[tokio::main]`，winit 事件循环在 tokio runtime 内运行。
+/// 同步方法（如 `send_mouse_position`）通过 `block_in_place` +
+/// `Handle::block_on()` 安全调用异步方法，避免 nested runtime panic。
 #[derive(Clone)]
 pub struct CollaborationService {
     /// 协作客户端（同步锁 + Option）
@@ -245,6 +252,15 @@ impl CollaborationService {
                     ));
                 }
             }
+            CollaborationEvent::ProjectUpdate { user_id, update } => {
+                if let Ok(json) = serde_json::to_string(&update) {
+                    lumino_ui::event::emit(lumino_ui::event::Event::window(
+                        lumino_ui::event::window::Event::collaboration_project_update(
+                            user_id, json,
+                        ),
+                    ));
+                }
+            }
             CollaborationEvent::Error { message } => tracing::error!("协作错误: {}", message),
             _ => {}
         }
@@ -252,8 +268,15 @@ impl CollaborationService {
 
     /// 在同步上下文中临时取出客户端，调用异步操作后再放回。
     ///
-    /// 使用 `tokio::runtime::Handle::current().block_on()` 驱动异步调用，
-    /// **不得在异步运行时内部调用**，否则会导致嵌套 runtime panic。
+    /// 使用 `tokio::task::block_in_place` + `Handle::block_on()` 驱动异步调用。
+    /// `block_in_place` 会临时释放当前线程的 async 上下文（`ENTERED` 标记），
+    /// 允许 `Handle::block_on()` 安全地 re-enter runtime，避免 nested runtime panic。
+    ///
+    /// # Safety
+    ///
+    /// 当前函数被 `#[tokio::main]` async main 调用（winit 事件循环在 tokio runtime 内），
+    /// 不能直接使用 `Handle::current().block_on()` —— 它会在 `enter()` 时因当前线程
+    /// 已持有 `ENTERED` 标记而 panic。`block_in_place` 是解决此问题的标准 tokio 模式。
     fn with_client_async<F>(&self, f: F) -> Result<(), String>
     where
         F: for<'a> FnOnce(
@@ -266,10 +289,16 @@ impl CollaborationService {
         let client = guard.take();
         drop(guard);
 
-        let result = match &client {
-            Some(c) => {
-                let handle = tokio::runtime::Handle::current();
-                handle.block_on(f(c)).map_err(|e| e.to_string())
+        let result = match client {
+            Some(ref c) => {
+                // SAFETY: block_in_place 同步执行，client 由外层栈帧持有直到
+                // block_in_place 返回后才被操作，因此指针始终有效。
+                let c_ptr: *const CollaborationClient = c;
+                block_in_place(move || {
+                    let c = unsafe { &*c_ptr };
+                    let handle = tokio::runtime::Handle::current();
+                    handle.block_on(f(c)).map_err(|e| e.to_string())
+                })
             }
             None => Err(messages::CLIENT_NOT_INITIALIZED.to_string()),
         };
@@ -294,6 +323,8 @@ impl CollaborationService {
     }
 
     /// 断开连接（同步 API）
+    ///
+    /// 同样使用 `block_in_place` 处理 tokio runtime 嵌套问题。
     pub fn disconnect(&self) -> Result<(), String> {
         if let Ok(mut guard) = self.lock_disconnect_tx()
             && let Some(tx) = guard.take()
@@ -305,8 +336,13 @@ impl CollaborationService {
         drop(guard);
 
         if let Some(ref mut c) = client {
-            let handle = tokio::runtime::Handle::current();
-            let _ = handle.block_on(c.disconnect());
+            // SAFETY: block_in_place 同步执行，client 在外作用域存活
+            let c_ptr: *mut CollaborationClient = c;
+            block_in_place(move || {
+                let c = unsafe { &mut *c_ptr };
+                let handle = tokio::runtime::Handle::current();
+                let _ = handle.block_on(c.disconnect());
+            });
         }
         // 连接已终止，不放回客户端
         Ok(())
@@ -320,9 +356,17 @@ impl CollaborationService {
         self.with_client_async(|client| Box::pin(client.send_note_batch(operation)))
     }
 
+    /// 发送工程更新（同步 API）
+    pub fn send_project_update(
+        &self,
+        update: lumino_collaboration::types::ProjectUpdate,
+    ) -> Result<(), String> {
+        self.with_client_async(|client| Box::pin(client.send_project_update(update)))
+    }
+
     /// 检查客户端实例是否存在（同步 API）
     ///
-    /// 使用同步锁，无 block_on，避免嵌套 runtime panic。
+    /// 纯同步操作，无需 `block_in_place`。
     pub fn is_connected(&self) -> bool {
         self.lock_client().is_ok_and(|guard| guard.is_some())
     }

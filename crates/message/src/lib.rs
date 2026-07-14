@@ -10,6 +10,7 @@ pub mod pattern;
 pub mod speed_change;
 pub mod types;
 pub mod velocity;
+pub mod video_export;
 
 pub use audio_export::AudioExportAction;
 pub use collaboration::CollaborationAction;
@@ -18,58 +19,11 @@ pub use pattern::PatternAction;
 pub use speed_change::SpeedChangeAction;
 pub use types::*;
 pub use velocity::VelocityAction;
+pub use video_export::VideoExportAction;
+
+pub use lumino_core::{AudioAction, DotType, NotePrecision, Tool};
 
 use lumino_event::Event;
-
-/// 编辑器动作
-#[derive(Debug, Clone)]
-pub enum EditorAction {
-    Pressed {
-        pos: iced_core::Point,
-        shift: bool,
-    },
-    Moved(iced_core::Point),
-    Released,
-    Scrolled {
-        delta_x: f32,
-        delta_y: f32,
-    },
-    /// 双击事件
-    DoubleClicked(iced_core::Point),
-    /// 删除键按下（Delete 或 Backspace）
-    DeletePressed,
-    /// 剪切
-    Cut,
-    /// 复制
-    Copy,
-    /// 粘贴
-    Paste,
-    /// 全选
-    SelectAll,
-    /// 撤销
-    Undo,
-    /// 重做
-    Redo,
-    /// 标尺 scrubbing：设置播放位置（tick 值）
-    Scrubbed {
-        tick: f32,
-    },
-    /// 演奏指示线拖拽开始（固定指示线模式下）
-    IndicatorDragStart {
-        x: f32,
-    },
-    /// 演奏指示线拖拽移动
-    IndicatorDragMove {
-        x: f32,
-    },
-}
-
-/// 音频动作
-#[derive(Debug, Clone)]
-pub enum AudioAction {
-    PlayNote { key: u8, velocity: u8 },
-    StopNote { key: u8 },
-}
 
 /// 应用消息
 ///
@@ -190,6 +144,8 @@ pub enum Message<W, S, Se, T> {
     SpeedChange(SpeedChangeAction),
     /// Pattern 编辑动作
     Pattern(PatternAction),
+    /// 视频导出动作
+    VideoExport(VideoExportAction),
 }
 
 pub const fn null<W, S, Se, T>() -> Message<W, S, Se, T> {
@@ -220,36 +176,6 @@ mod tests {
         assert_eq!(data.gpu_frame_time_ms, 16.7);
     }
 
-    // ─── NotePrecision ───
-
-    #[test]
-    fn test_note_precision_default() {
-        assert_eq!(NotePrecision::default(), NotePrecision::Quarter);
-    }
-
-    #[test]
-    fn test_note_precision_display() {
-        assert_eq!(NotePrecision::Whole.to_string(), "全音符");
-        assert_eq!(NotePrecision::Quarter.to_string(), "四分音符");
-        assert_eq!(NotePrecision::Custom.to_string(), "自定义");
-    }
-
-    #[test]
-    fn test_note_precision_as_ticks() {
-        let ppq = 480;
-        assert_eq!(NotePrecision::Whole.as_ticks(ppq), 480.0 * 4.0);
-        assert_eq!(NotePrecision::Quarter.as_ticks(ppq), 480.0);
-        assert_eq!(NotePrecision::Eighth.as_ticks(ppq), 480.0 / 2.0);
-        assert_eq!(NotePrecision::OneTwentyEighth.as_ticks(ppq), 480.0 / 32.0);
-    }
-
-    #[test]
-    fn test_note_precision_presets() {
-        let presets = NotePrecision::presets();
-        assert_eq!(presets.len(), 8);
-        assert!(!presets.contains(&NotePrecision::Custom));
-    }
-
     // ─── TupletType ───
 
     #[test]
@@ -272,20 +198,6 @@ mod tests {
         assert_eq!(all.len(), 5);
     }
 
-    // ─── DotType ───
-
-    #[test]
-    fn test_dot_type_default() {
-        assert_eq!(DotType::default(), DotType::None);
-    }
-
-    #[test]
-    fn test_dot_type_multiplier() {
-        assert_eq!(DotType::None.multiplier(), 1.0);
-        assert_eq!(DotType::Single.multiplier(), 1.5);
-        assert_eq!(DotType::Double.multiplier(), 1.75);
-    }
-
     // ─── SpeedFactor ───
 
     #[test]
@@ -306,13 +218,6 @@ mod tests {
     fn test_speed_factor_display() {
         assert_eq!(SpeedFactor::X05.display_name(), "×0.5");
         assert_eq!(SpeedFactor::X2.display_name(), "×2.0");
-    }
-
-    // ─── Tool ───
-
-    #[test]
-    fn test_tool_default() {
-        assert_eq!(Tool::default(), Tool::Pointer);
     }
 
     // ─── AudioChannels ───
@@ -339,6 +244,27 @@ mod tests {
     fn test_audio_format_display() {
         assert_eq!(AudioFormat::WAV.to_string(), "WAV");
         assert_eq!(AudioFormat::FLAC.to_string(), "FLAC");
+        assert_eq!(AudioFormat::MP3.to_string(), "MP3");
+        assert_eq!(AudioFormat::Ogg.to_string(), "Ogg Vorbis");
+        assert_eq!(AudioFormat::WavPack.to_string(), "WavPack");
+    }
+
+    #[test]
+    fn test_audio_format_extension() {
+        assert_eq!(AudioFormat::WAV.extension(), "wav");
+        assert_eq!(AudioFormat::FLAC.extension(), "flac");
+        assert_eq!(AudioFormat::MP3.extension(), "mp3");
+        assert_eq!(AudioFormat::Ogg.extension(), "ogg");
+        assert_eq!(AudioFormat::WavPack.extension(), "wv");
+    }
+
+    #[test]
+    fn test_audio_format_needs_ffmpeg() {
+        assert!(!AudioFormat::WAV.needs_ffmpeg());
+        assert!(!AudioFormat::FLAC.needs_ffmpeg());
+        assert!(AudioFormat::MP3.needs_ffmpeg());
+        assert!(AudioFormat::Ogg.needs_ffmpeg());
+        assert!(AudioFormat::WavPack.needs_ffmpeg());
     }
 
     // ─── CcOption ───
@@ -389,23 +315,6 @@ mod tests {
         assert!(debug.contains("Undo"));
     }
 
-    // ─── AudioAction ───
-
-    #[test]
-    fn test_audio_action_play_note() {
-        let action = AudioAction::PlayNote {
-            key: 60,
-            velocity: 100,
-        };
-        assert!(matches!(action, AudioAction::PlayNote { key: 60, .. }));
-    }
-
-    #[test]
-    fn test_audio_action_stop_note() {
-        let action = AudioAction::StopNote { key: 60 };
-        assert!(matches!(action, AudioAction::StopNote { key: 60 }));
-    }
-
     // ─── Message null helper ───
 
     #[test]
@@ -418,14 +327,29 @@ mod tests {
 
     #[test]
     fn test_audio_export_action_variants() {
-        let action = AudioExportAction::OpenDialog;
-        assert!(matches!(action, AudioExportAction::OpenDialog));
+        let action = AudioExportAction::OpenPanel;
+        assert!(matches!(action, AudioExportAction::OpenPanel));
 
-        let action = AudioExportAction::Completed;
-        assert!(matches!(action, AudioExportAction::Completed));
+        let action = AudioExportAction::ClosePanel;
+        assert!(matches!(action, AudioExportAction::ClosePanel));
 
-        let action = AudioExportAction::Failed("error".to_string());
-        assert!(matches!(action, AudioExportAction::Failed(_)));
+        let action = AudioExportAction::BitrateChanged("320".to_string());
+        assert!(matches!(action, AudioExportAction::BitrateChanged(_)));
+
+        let action = AudioExportAction::IgnoreProgramChangesChanged(true);
+        assert!(matches!(
+            action,
+            AudioExportAction::IgnoreProgramChangesChanged(_)
+        ));
+
+        let action = AudioExportAction::FilterVelocityChanged(true);
+        assert!(matches!(
+            action,
+            AudioExportAction::FilterVelocityChanged(_)
+        ));
+
+        let action = AudioExportAction::FilterKeyChanged(true);
+        assert!(matches!(action, AudioExportAction::FilterKeyChanged(_)));
     }
 
     // ─── CollaborationAction ───

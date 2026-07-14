@@ -10,6 +10,7 @@
 use crate::message::{EditorAction, Message};
 use crate::root::Root;
 use crate::{sidebar, window};
+use lumino_core::storage::config::TrackAddBehavior;
 
 // 重新导出子模块
 pub mod collaboration;
@@ -133,17 +134,10 @@ impl Root {
 
     /// 处理走带视图水平滚动
     fn handle_arrangement_scroll_x(&mut self, x: f32) -> bool {
+        // 先计算缓存的最大 tick（可能扫描 track_notes），再借用 viewport
+        let max_tick = self.arrangement_max_tick_end();
         let vp = &mut self.arrangement_view.viewport;
         let canvas_w = vp.canvas_size.x.max(1.0);
-        let max_tick = self
-            .editor
-            .editor_state
-            .data
-            .track_notes
-            .values()
-            .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
-            .fold(0.0_f32, f32::max)
-            .max(crate::constants::editor::DEFAULT_MIN_TICKS);
         let total_w = max_tick * vp.zoom_x;
         let max_scroll = (total_w - canvas_w).max(0.0);
         vp.scroll_x = x.max(0.0).min(max_scroll);
@@ -212,6 +206,12 @@ impl Root {
                     if let Ok(val) = value.parse::<u8>() {
                         self.visual.velocity_filter_threshold = val;
                         tracing::debug!("Root: 力度过滤阈值同步为 {}", val);
+                        // 立即传播到播放引擎，让力度过滤实时生效。
+                        // 不能只依赖 apply_settings 中的 diff 检测——因为
+                        // self.settings.update(event) 已在 match 前执行，
+                        // 导致 apply_settings 的 old_settings == new_settings，
+                        // diff 检测永远为 false，update_playback_notes() 不会被调用。
+                        self.update_playback_notes();
                     }
                 }
                 crate::settings::Event::AutoScrollFixedPositionChanged(value) => {
@@ -265,17 +265,24 @@ impl Root {
 
     /// 处理模式切换（编辑器 ↔ 瀑布流）
     fn handle_mode_toggle(&mut self) -> bool {
+        use crate::sidebar::GroupId;
+        use crate::titlebar::mode_toggle::AppMode;
         let target_mode = match self.state.current_mode {
-            crate::titlebar::mode_toggle::AppMode::Editor => {
-                crate::titlebar::mode_toggle::AppMode::Waterfall
-            }
-            crate::titlebar::mode_toggle::AppMode::Waterfall => {
-                crate::titlebar::mode_toggle::AppMode::Editor
-            }
+            AppMode::Editor => AppMode::Waterfall,
+            AppMode::Waterfall => AppMode::Editor,
         };
+        if target_mode == AppMode::Waterfall {
+            // 通过分组系统切换
+            self.sidebar
+                .update(crate::sidebar::Event::GroupToggled(GroupId::Waterfall));
+        } else {
+            // 从瀑布流转回 → 恢复钢琴卷帘组
+            self.sidebar
+                .update(crate::sidebar::Event::GroupToggled(GroupId::PianoRoll));
+        }
         let target_progress = match target_mode {
-            crate::titlebar::mode_toggle::AppMode::Editor => 0.0,
-            crate::titlebar::mode_toggle::AppMode::Waterfall => 1.0,
+            AppMode::Editor => 0.0,
+            AppMode::Waterfall => 1.0,
         };
         self.state.current_mode = target_mode;
         self.state.toggle_animation.animate_to(target_progress);
@@ -323,7 +330,11 @@ impl Root {
     fn try_handle_simple_state(&mut self, msg: &Message) -> bool {
         match msg {
             Message::Progress(progress) => {
-                self.progress = progress.clone();
+                if let Some((ref msg, p)) = *progress {
+                    self.progress = Some((msg.clone(), p));
+                } else {
+                    self.progress = None;
+                }
                 true
             }
             Message::ScrollbarScrolled(x) => {
@@ -354,7 +365,40 @@ impl Root {
                 self.editor.set_canvas_offset(*offset);
                 self.editor
                     .set_canvas_size(iced_core::Point::new(size.width, size.height));
-                self.invalidate_onion_skin_cache();
+
+                // 缩放不应出现空白区域：viewport 变化后，若琴键没填满 viewport，
+                // 自动钳正 zoom_y，始终让 content 高度 ≥ viewport 高度。
+                // 确保面板开关或 window resize 后不留空区。
+                let state = &mut self.editor.editor_state;
+                let vh = (state.canvas.size_y - state.view.ruler_height).max(0.0);
+                let th = state.view.visible_key_count as f32 * state.view.zoom_y;
+
+                if th < vh {
+                    // content 没填满 viewport → 调高 zoom
+                    let fill_zoom = (vh / state.view.visible_key_count as f32).clamp(
+                        crate::constants::editor::zoom::MIN_ZOOM_Y,
+                        crate::constants::editor::zoom::MAX_ZOOM_Y,
+                    );
+                    if (fill_zoom - state.view.zoom_y).abs() > f32::EPSILON {
+                        state.view.zoom_y = fill_zoom;
+                        let total_ticks = state.view.total_ticks;
+                        lumino_core::editor_state::viewport::Viewport::new(
+                            &mut state.view,
+                            &mut state.max_scroll,
+                        )
+                        .update_max_scroll(total_ticks);
+                    }
+                }
+
+                // 重新钳制滚动位置
+                let ms_y = (state.max_scroll.1 - vh).max(0.0);
+                state.view.scroll_y = state.view.scroll_y.min(ms_y);
+                let vw = (state.canvas.size_x - state.view.keyboard_width).max(0.0);
+                let ms_x = (state.max_scroll.0 - vw).max(0.0);
+                state.view.scroll_x = state.view.scroll_x.min(ms_x);
+
+                self.editor
+                    .invalidate_caches(crate::editor::CacheInvalidation::KEYBOARD);
                 true
             }
             Message::MenuStateChanged(is_open) => {
@@ -429,6 +473,25 @@ impl Root {
     }
 
     fn handle_sidebar_event(&mut self, event: sidebar::Event) -> bool {
+        use crate::titlebar::mode_toggle::AppMode;
+
+        // 自动化面板切换始终触发重绘
+        if matches!(&event, sidebar::Event::AutomationPanelToggled) {
+            self.sidebar.update(event);
+            return true;
+        }
+
+        // 钢琴卷帘切换始终触发重绘
+        if matches!(&event, sidebar::Event::PianoRollToggled) {
+            // 互斥：打开钢琴卷帘时退出瀑布流模式
+            if !self.sidebar.piano_roll_visible {
+                self.state.current_mode = AppMode::Editor;
+                self.state.toggle_animation.animate_to(0.0);
+            }
+            self.sidebar.update(event);
+            return true;
+        }
+
         // 先检查是否是音轨切换
         let track_selected_idx = if let sidebar::Event::TrackSelected(idx) = &event {
             Some(*idx)
@@ -436,22 +499,41 @@ impl Root {
             None
         };
 
-        // 检查是否是洋葱皮开关
-        let onion_skin_toggled = matches!(&event, sidebar::Event::TrackOnionSkinToggled(_));
-
         // 更新 sidebar，获取是否需要重新渲染
-        let needs_redraw = self.sidebar.update(event);
+        let needs_redraw = self.sidebar.update(event.clone());
+
+        // 分组切换 → 同步 AppMode（必须在 sidebar.update 之后，因为 active_group 在那里改变）
+        if matches!(&event, sidebar::Event::GroupToggled(_)) {
+            match self.sidebar.active_group {
+                Some(sidebar::GroupId::Waterfall) => {
+                    self.state.current_mode = AppMode::Waterfall;
+                    self.state.toggle_animation.animate_to(1.0);
+                }
+                _ => {
+                    self.state.current_mode = AppMode::Editor;
+                    self.state.toggle_animation.animate_to(0.0);
+                }
+            }
+        }
+
+        // 音频导出面板打开时，从设置自动填充音色库路径（用户选择可覆盖）
+        if matches!(
+            &event,
+            sidebar::Event::RouteUpdated(sidebar::Route::AudioExport)
+        ) && self.sidebar.audio_export_visible
+            && self.state.audio_export_dialog.soundfont_path.is_empty()
+        {
+            self.state.audio_export_dialog.soundfont_path = self.settings.soundfont_path.clone();
+        }
+
+        // 导出类路由 → 同步 sidebar 面板状态（已在 sidebar.update 中处理）
+        // 音频/视频渲染面板状态由 sidebar.*_export_visible 驱动，view_main 中渲染
 
         // 更新画布偏移
         let sidebar_width = self.sidebar.width() as f32;
         let current_offset_y = self.editor.editor_state.canvas.offset_y;
         self.editor
             .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset_y));
-
-        // 洋葱皮开关变化，使缓存失效
-        if onion_skin_toggled {
-            self.invalidate_onion_skin_cache();
-        }
 
         // 如果是音轨切换，发送 Core 事件
         if let Some(track_idx) = track_selected_idx {
@@ -461,11 +543,40 @@ impl Root {
             )));
         }
 
+        // 如果是添加音轨，根据用户设置决定是否切换到新音轨
+        if matches!(&event, sidebar::Event::AddTrack) {
+            if self.settings.track_add_behavior == TrackAddBehavior::AutoSwitch {
+                let track_idx = self.sidebar.tracks.last().map(|t| t.id).unwrap_or(0);
+                self.sidebar.selected_track = track_idx;
+                tracing::debug!("Root: 添加音轨后自动选中新音轨 {}", track_idx);
+                crate::event::emit(crate::event::Event::Menu(crate::event::menu::Event::File(
+                    crate::event::menu::file::Event::TrackSelected(track_idx),
+                )));
+            } else {
+                tracing::debug!(
+                    "Root: 添加音轨，保持当前音轨 {} 不变",
+                    self.sidebar.selected_track
+                );
+            }
+        }
+
         needs_redraw
     }
 
     /// 处理编辑器动作
-    pub(crate) fn handle_editor_action(&mut self, action: EditorAction) {
+    ///
+    /// 返回 `true` 表示音符数据确实发生了变化。
+    pub(crate) fn handle_editor_action(&mut self, action: EditorAction) -> bool {
+        // 演奏指示线移动与滚动不修改音符数据，直接返回 false，
+        // 避免被误判为脏音轨而触发昂贵的后台重生成。
+        let is_playhead_or_scroll = matches!(
+            action,
+            EditorAction::Scrubbed { .. }
+                | EditorAction::IndicatorDragStart { .. }
+                | EditorAction::IndicatorDragMove { .. }
+                | EditorAction::Scrolled { .. }
+        );
+
         let old_tick = self.editor.playback_position;
         self.editor.handle_action(action);
         let new_tick = self.editor.playback_position;
@@ -477,13 +588,17 @@ impl Root {
             manager.seek(new_tick);
         }
 
+        if is_playhead_or_scroll {
+            return false;
+        }
+
         // 检查音符数据是否变化
-        if self.editor.notes_changed() {
+        let notes_changed = self.editor.notes_changed();
+        if notes_changed {
             self.update_playback_notes();
             self.editor.clear_notes_changed();
-            // 音符变化影响洋葱皮缓存
-            self.invalidate_onion_skin_cache();
         }
+        notes_changed
     }
 }
 

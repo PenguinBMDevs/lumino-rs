@@ -2,6 +2,7 @@
 mod tests {
     use super::super::super::{KeyInstance, KeyboardViewportUniform};
     use super::super::KeyboardRenderer;
+    use crate::KeyboardPrepareParams;
 
     #[test]
     fn test_key_instance_creation() {
@@ -34,7 +35,7 @@ mod tests {
 
     #[test]
     fn test_viewport_uniform_creation() {
-        let uniform = KeyboardViewportUniform::from_params(&super::KeyboardPrepareParams {
+        let uniform = KeyboardViewportUniform::from_params(&KeyboardPrepareParams {
             viewport_size: (1920.0, 1080.0),
             keyboard_width: 60.0,
             ruler_height: 30.0,

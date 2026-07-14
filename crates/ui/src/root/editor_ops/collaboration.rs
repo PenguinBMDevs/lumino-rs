@@ -103,20 +103,6 @@ impl Root {
 
         // 标记音符已变化，重建当前音轨的空间索引
         self.editor.mark_notes_changed();
-
-        // 清除所有受影响音轨的洋葱皮空间索引缓存
-        let mut affected_tracks = std::collections::HashSet::new();
-        for note in &operation.notes {
-            affected_tracks.insert(note.track_index);
-        }
-        if let Some(source_track) = operation.source_track {
-            affected_tracks.insert(source_track);
-        }
-
-        let mut indices_map = self.editor.spatial.track_note_indices.borrow_mut();
-        for track_idx in affected_tracks {
-            indices_map.remove(&track_idx);
-        }
     }
 
     fn handle_remote_notes_add(
@@ -149,7 +135,6 @@ impl Root {
             track_notes.push_back(editor_note);
         }
         // 音符由 wgpu 渲染，不需要清 grid cache
-        self.invalidate_onion_skin_cache();
         tracing::info!("协作: 已添加 {} 个远程音符", operation.notes.len());
     }
 
@@ -176,7 +161,6 @@ impl Root {
             }
         }
         // 音符由 wgpu 渲染，不需要清 grid cache
-        self.invalidate_onion_skin_cache();
         tracing::info!("协作: 已更新 {} 个远程音符", operation.notes.len());
     }
 
@@ -210,7 +194,6 @@ impl Root {
                 .unwrap_or_default();
         }
         // 音符由 wgpu 渲染，不需要清 grid cache
-        self.invalidate_onion_skin_cache();
         tracing::info!("协作: 已删除 {} 个远程音符", operation.notes.len());
     }
 
@@ -276,7 +259,6 @@ impl Root {
             self.editor.editor_state.data.notes = track_notes.clone();
         }
         // 音符由 wgpu 渲染，不需要清 grid cache
-        self.invalidate_onion_skin_cache();
         tracing::info!(
             "协作: Move 完成 - 匹配 {}/{} 个音符, current_track={}",
             matched_count,

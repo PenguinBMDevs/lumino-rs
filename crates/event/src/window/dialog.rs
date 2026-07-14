@@ -1,11 +1,18 @@
 //! 对话框相关事件
 
+use std::sync::Arc;
+
+use lumino_midi_loader::MidiDocument;
+
 #[derive(Debug, Clone)]
 pub enum Event {
     /// 打开自定义精度对话框窗口
     OpenCustomPrecisionDialog,
     /// 打开加载确认对话框
-    OpenLoadConfirmDialog { path: String, size_mb: f64 },
+    OpenLoadConfirmDialog {
+        path: String,
+        size_mb: f64,
+    },
     /// 关闭自定义精度对话框窗口
     CloseCustomPrecisionDialog,
     /// 应用自定义精度设置 (numerator, denominator)
@@ -30,6 +37,71 @@ pub enum Event {
         tempo: f64,
         copyright: String,
     },
+    /// 开始音频导出
+    ///
+    /// 如果 `document` 为 `Some`，则使用内存中的 MidiDocument 进行渲染（零拷贝）；
+    /// 否则从 `midi_path` 指定的文件读取。
+    StartAudioExport {
+        midi_path: String,
+        soundfont_path: String,
+        output_path: String,
+        sample_rate: u32,
+        channels: String,
+        layer_limit: u32,
+        channel_threading: String,
+        key_threading: String,
+        interpolation: String,
+        apply_limiter: bool,
+        disable_fade_out: bool,
+        linear_envelope: bool,
+        /// 输出音频格式（"WAV"/"FLAC"/"MP3"/"Ogg"/"WavPack"）
+        audio_format: String,
+        /// 编码比特率（kbps，仅 MP3/Vorbis 有效）
+        audio_bitrate: u32,
+        /// 忽略音色变化事件
+        ignore_program_changes: bool,
+        /// 启用音符力度过滤
+        filter_velocity: bool,
+        /// 最低力度
+        velocity_low: u8,
+        /// 最高力度
+        velocity_high: u8,
+        /// 启用键位过滤
+        filter_key: bool,
+        /// 最低键位
+        key_low: u8,
+        /// 最高键位
+        key_high: u8,
+        /// 音符强制结束延迟（毫秒）
+        note_force_end_delay: u32,
+        /// 内存中的 MidiDocument（如果存在）
+        document: Option<Arc<MidiDocument>>,
+    },
+    /// 开始视频导出
+    ///
+    /// 视频导出暂用编辑器模式的 MidiDocument 作为数据源（不做流式模式）。
+    /// Runner 线程逐帧构建 RenderParams，发送给渲染线程离屏渲染 + GPU 读回，
+    /// 再将 BGRA 帧写入 FFmpeg。
+    OpenVideoExportDialog,
+    CloseVideoExportDialog,
+    StartVideoExport {
+        output_path: String,
+        width: u32,
+        height: u32,
+        fps: u32,
+        container: String,
+        codec: String,
+        backend: String,
+        quality: String,
+        /// MIDI 分辨率（PPQ）
+        ppq: u16,
+        /// 可见键位数（128 或 256，用于 Y 向缩放）
+        key_count: u16,
+        /// 视频导出渲染模式（"note_rectangle"/"hires_texture"）
+        render_mode: String,
+        /// 内存中的 MidiDocument（如果存在）
+        document: Option<Arc<MidiDocument>>,
+    },
 }
 
 impl Event {
@@ -47,47 +119,16 @@ impl Event {
             Self::OpenProjectSettingsDialog => "工程设置".to_string(),
             Self::CloseProjectSettingsDialog => "关闭工程设置".to_string(),
             Self::ApplyProjectSettings { .. } => "应用工程设置".to_string(),
+            Self::StartAudioExport { document, .. } => {
+                if document.is_some() {
+                    "音频导出（内存模式）".to_string()
+                } else {
+                    "音频导出（文件模式）".to_string()
+                }
+            }
+            Self::OpenVideoExportDialog => "打开视频导出对话框".to_string(),
+            Self::CloseVideoExportDialog => "关闭视频导出对话框".to_string(),
+            Self::StartVideoExport { .. } => "视频导出".to_string(),
         }
-    }
-
-    pub const fn open_custom_precision_dialog() -> Self {
-        Self::OpenCustomPrecisionDialog
-    }
-    pub const fn close_custom_precision_dialog() -> Self {
-        Self::CloseCustomPrecisionDialog
-    }
-    pub const fn apply_custom_precision(numerator: u32, denominator: u32) -> Self {
-        Self::ApplyCustomPrecision(numerator, denominator)
-    }
-    pub const fn open_collaboration_dialog() -> Self {
-        Self::OpenCollaborationDialog
-    }
-    pub const fn close_collaboration_dialog() -> Self {
-        Self::CloseCollaborationDialog
-    }
-    pub const fn open_speed_change_dialog() -> Self {
-        Self::OpenSpeedChangeDialog
-    }
-    pub const fn close_speed_change_dialog() -> Self {
-        Self::CloseSpeedChangeDialog
-    }
-    pub const fn confirm_speed_change(factor: f32) -> Self {
-        Self::ConfirmSpeedChange(factor)
-    }
-    pub const fn open_project_settings_dialog() -> Self {
-        Self::OpenProjectSettingsDialog
-    }
-    pub const fn close_project_settings_dialog() -> Self {
-        Self::CloseProjectSettingsDialog
-    }
-    pub fn apply_project_settings(title: String, tempo: f64, copyright: String) -> Self {
-        Self::ApplyProjectSettings {
-            title,
-            tempo,
-            copyright,
-        }
-    }
-    pub fn open_load_confirm_dialog(path: String, size_mb: f64) -> Self {
-        Self::OpenLoadConfirmDialog { path, size_mb }
     }
 }

@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use xsynth_core::{
@@ -7,7 +7,11 @@ use xsynth_core::{
     channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
     soundfont::SoundfontBase,
 };
-use xsynth_realtime::{RealtimeEventSender, RealtimeSynth, SynthEvent, XSynthRealtimeConfig};
+
+use lumino_realtime::{
+    RealtimeEventSender, RealtimeSynth, SynthEvent, ThreadCount as LuminoThreadCount,
+    XSynthRealtimeConfig,
+};
 
 use crate::constants::*;
 use crate::soundfont_cache;
@@ -31,10 +35,6 @@ pub struct XSynthOptions {
     pub threads: i32,
     pub sample_rate: u32,
     pub fade_out_killing: bool,
-    /// 每个键允许的最大同音数（None = 使用 xsynth 默认值 4）
-    /// 调高可减少密集钢琴/快速重复音符/拖音过程中的 voice stealing
-    /// 最大并发发音数（git 版 xsynth 暂不支持此字段）
-    pub max_voices_per_key: Option<usize>,
 }
 
 pub struct XSynth {
@@ -59,7 +59,10 @@ impl XSynth {
         // 提前加载音色库。这样在音频流启动时，音色库已经就绪，
         // BufferedRenderer 的 render pipeline 能立即产生有效数据，
         // 避免 callback 在 recv() 上阻塞导致 ALSA underrun。
-        let sample_rate = options.as_ref().map(|o| o.sample_rate).unwrap_or(44100);
+        let sample_rate = options
+            .as_ref()
+            .map(|o| o.sample_rate)
+            .unwrap_or(DEFAULT_SAMPLE_RATE);
         let load_params = AudioStreamParams::new(sample_rate, ChannelCount::Stereo);
 
         tracing::info!("XSynth: 预加载音色库 (sample_rate={})...", sample_rate);
@@ -80,19 +83,19 @@ impl XSynth {
 
             // 解析线程数
             let thread_count = match opt.threads {
-                -1 => xsynth_realtime::ThreadCount::None,
-                0 => xsynth_realtime::ThreadCount::Auto,
-                n if n > 0 => xsynth_realtime::ThreadCount::Manual(n as usize),
-                _ => xsynth_realtime::ThreadCount::Auto,
+                -1 => LuminoThreadCount::None,
+                0 => LuminoThreadCount::Auto,
+                n if n > 0 => LuminoThreadCount::Manual(n as usize),
+                _ => LuminoThreadCount::Auto,
             };
             rt_config.multithreading = thread_count;
             rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
-            rt_config.channel_init_options.max_voices_per_key = opt.max_voices_per_key;
         }
 
-        let mut synth = RealtimeSynth::open_with_default_output(rt_config);
+        let synth = RealtimeSynth::open_with_default_output(rt_config)
+            .map_err(|e| Error::InitFailed(format!("xsynth-realtime: {}", e)))?;
 
-        // 注意：xsynth-realtime 使用音频设备的原生采样率，配置中的 sample_rate 仅用于音色库预加载
+        // 注意：lumino-realtime 使用音频设备的原生采样率，配置中的 sample_rate 仅用于音色库预加载
         // 实际采样率由 cpal 决定，可能与请求的不同
         let actual_sample_rate = synth.stream_params().sample_rate;
 
@@ -125,7 +128,9 @@ impl XSynth {
         };
 
         // 获取 sender — 在 open 后立即配置通道，确保音色库在 callback 首次触发前就位
-        let sender = synth.get_sender_mut();
+        let mut sender = synth.get_sender_ref().clone();
+
+        // 配置音色库
         let soundfonts: Vec<Arc<dyn SoundfontBase>> = vec![soundfont];
         sender.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
             ChannelConfigEvent::SetSoundfonts(soundfonts),
@@ -135,19 +140,17 @@ impl XSynth {
         sender.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
             ChannelAudioEvent::AllNotesKilled,
         )));
+
         sender.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
             ChannelAudioEvent::ResetControl,
         )));
 
-        // 克隆 sender 用于后续使用
-        let sender_clone = sender.clone();
-
-        let version = "xsynth (buickmeow fork)".to_string();
+        let version = "xsynth-realtime 0.4.0 (lumino-realtime)".to_string();
         tracing::info!("XSynth: 初始化完成");
 
         Ok(Self {
             synth,
-            sender: sender_clone,
+            sender,
             version,
         })
     }
@@ -184,7 +187,7 @@ impl Api for XSynth {
             return Err(Error::DeviceNotFound(id));
         }
         Ok(Box::new(XSynthOutputConn {
-            sender: self.sender.clone(),
+            sender: Mutex::new(self.sender.clone()),
         }))
     }
 
@@ -200,109 +203,69 @@ impl Api for XSynth {
 }
 
 struct XSynthOutputConn {
-    sender: RealtimeEventSender,
+    sender: Mutex<RealtimeEventSender>,
+}
+
+impl XSynthOutputConn {
+    /// 发送事件到渲染线程 — 通过 xsynth-realtime 的 RealtimeEventSender。
+    fn send_event(&self, event: SynthEvent) {
+        self.sender.lock().unwrap().send_event(event);
+    }
 }
 
 impl OutputConnection for XSynthOutputConn {
     fn note_on(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
         let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-
-        tracing::debug!(
-            "XSynthOutputConn::note_on: raw_ch={}, channel={}, key={}, vel={}",
-            ch,
-            channel,
-            key,
-            vel
-        );
-
         let velocity = if vel == 0 { 1 } else { vel };
-
-        self.sender.send_event(SynthEvent::Channel(
+        self.send_event(SynthEvent::Channel(
             channel,
             ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
                 key: key & MIDI_VALUE_MASK,
                 vel: velocity & MIDI_VALUE_MASK,
             }),
         ));
-
-        tracing::debug!("XSynthOutputConn::note_on: 事件已发送到通道 {}", channel);
         Ok(())
     }
 
     fn note_off(&mut self, ch: u8, key: u8, _vel: u8) -> Result<(), Error> {
         let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-
-        tracing::debug!(
-            "XSynthOutputConn::note_off: raw_ch={}, channel={}, key={}",
-            ch,
-            channel,
-            key
-        );
-
-        self.sender.send_event(SynthEvent::Channel(
+        self.send_event(SynthEvent::Channel(
             channel,
             ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
                 key: key & MIDI_VALUE_MASK,
             }),
         ));
-
-        tracing::debug!("XSynthOutputConn::note_off: 事件已发送到通道 {}", channel);
         Ok(())
     }
 
     fn control_change(&mut self, ch: u8, controller: u8, value: u8) -> Result<(), Error> {
         let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-
-        tracing::debug!(
-            "XSynthOutputConn::control_change: channel={}, controller={}, value={}",
-            channel,
-            controller,
-            value
-        );
-
-        self.sender.send_event(SynthEvent::Channel(
+        self.send_event(SynthEvent::Channel(
             channel,
             ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
                 controller, value,
             ))),
         ));
-
         Ok(())
     }
 
     fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error> {
         let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-
-        tracing::debug!(
-            "XSynthOutputConn::program_change: channel={}, program={}",
-            channel,
-            program
-        );
-
-        self.sender.send_event(SynthEvent::Channel(
+        self.send_event(SynthEvent::Channel(
             channel,
             ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program)),
         ));
-
         Ok(())
     }
 
     fn pitch_bend(&mut self, ch: u8, value: f32) -> Result<(), Error> {
         let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-
-        tracing::debug!(
-            "XSynthOutputConn::pitch_bend: channel={}, value={}",
-            channel,
-            value
-        );
-
-        self.sender.send_event(SynthEvent::Channel(
+        self.send_event(SynthEvent::Channel(
             channel,
             ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
                 value,
             ))),
         ));
-
         Ok(())
     }
 
@@ -313,39 +276,39 @@ impl OutputConnection for XSynthOutputConn {
         let b2 = data[2];
 
         match status {
-            0x80 => self.sender.send_event(SynthEvent::Channel(
+            0x80 => self.send_event(SynthEvent::Channel(
                 channel,
                 ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
                     key: b1 & MIDI_VALUE_MASK,
                 }),
             )),
-            0x90 => self.sender.send_event(SynthEvent::Channel(
+            0x90 => self.send_event(SynthEvent::Channel(
                 channel,
                 ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
                     key: b1 & MIDI_VALUE_MASK,
                     vel: b2 & MIDI_VALUE_MASK,
                 }),
             )),
-            0xB0 => self.sender.send_event(SynthEvent::Channel(
+            0xB0 => self.send_event(SynthEvent::Channel(
                 channel,
                 ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(b1, b2))),
             )),
-            0xC0 => self.sender.send_event(SynthEvent::Channel(
+            0xC0 => self.send_event(SynthEvent::Channel(
                 channel,
                 ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(b1)),
             )),
-            0xD0 => self.sender.send_event(SynthEvent::Channel(
+            0xD0 => self.send_event(SynthEvent::Channel(
                 channel,
                 ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(0, b1))),
             )),
             0xE0 => {
                 let bend = ((b1 as u16) | ((b2 as u16) << 7)) as f32;
-                self.sender.send_event(SynthEvent::Channel(
+                self.send_event(SynthEvent::Channel(
                     channel,
                     ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
                         bend,
                     ))),
-                ))
+                ));
             }
             _ => {
                 return Err(Error::SendFailed(format!(
@@ -358,20 +321,16 @@ impl OutputConnection for XSynthOutputConn {
     }
 
     fn all_notes_off(&mut self) -> Result<(), Error> {
-        // 直接使用 xsynth 的 AllNotesOff，比逐通道发 CC 123 高效
-        self.sender
-            .send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
-                ChannelAudioEvent::AllNotesOff,
-            )));
+        self.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+            ChannelAudioEvent::AllNotesOff,
+        )));
         Ok(())
     }
 
     fn reset_control(&mut self) -> Result<(), Error> {
-        // 直接使用 xsynth 的 ResetControl，比逐通道发 CC 121 高效
-        self.sender
-            .send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
-                ChannelAudioEvent::ResetControl,
-            )));
+        self.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+            ChannelAudioEvent::ResetControl,
+        )));
         Ok(())
     }
 

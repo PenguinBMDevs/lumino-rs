@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use lumino_export::lmpj::extract_pc_cc_events;
 use lumino_export::midi::{
     MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTrackData,
 };
@@ -77,19 +78,18 @@ impl RunnerInner {
         Some(save_path)
     }
 
-    /// 保存文件（统一入口：显示格式选择对话框，支持 lmpj/mid/midi/dms）
+    /// 保存文件（统一入口：显示格式选择对话框，支持 lmpj/mid/midi）
     pub(super) fn handle_save_file(&mut self) {
         self.handle_save_single_file();
     }
 
-    /// 统一保存/导出为单文件：显示格式选择对话框，支持 lmpj/mid/midi/dms
+    /// 统一保存/导出为单文件：显示格式选择对话框，支持 lmpj/mid/midi
     pub(super) fn handle_save_single_file(&mut self) {
         let file_stem = self
             .midi_state
             .current_midi_source
             .as_ref()
             .or_else(|| self.midi_state.current_midi.as_ref().map(|m| &m.info.path))
-            .or_else(|| self.midi_state.current_dms.as_ref().map(|d| &d.info.path))
             .map(|p| get_file_stem(Path::new(p)))
             .unwrap_or_else(|| "untitled".to_string());
 
@@ -97,7 +97,6 @@ impl RunnerInner {
             .add_filter("Lumino MIDI Project", &["lmpj"])
             .add_filter("MIDI 文件 (.mid)", &["mid"])
             .add_filter("MIDI 文件 (.midi)", &["midi"])
-            .add_filter("Domino 项目", &["dms"])
             .set_file_name(format!("{file_stem}.lmpj"))
             .save_file()
         else {
@@ -109,24 +108,20 @@ impl RunnerInner {
         match extension.as_str() {
             "lmpj" => self.save_as_lmpj_project(save_path),
             "mid" | "midi" => self.save_as_midi_with_edits(save_path),
-            "dms" => self.save_as_dms_from_source(save_path),
             _ => tracing::warn!("不支持的保存格式: {}", extension),
         }
     }
 
     /// 保存为 LMPJ 文件（兼容旧版格式：zstd(bincode(LmpjData))，确保可重新加载）
+    ///
+    /// LMPJ 是本机工程格式，从内存中 `MidiDocument` 重建 MIDI 字节（含用户编辑的 tempo 等），
+    /// **不依赖原始 .mid 文件**。保存时确保工程自包含——原始文件可删除后仍能完整加载。
     fn save_as_lmpj_project(&mut self, save_path: PathBuf) {
         let (info, midi_bytes) = if let Some(parsed_midi) = self.midi_state.current_midi.as_ref() {
-            let bytes = match self.maybe_rebuild_midi_with_tempo(parsed_midi) {
-                Some(b) => b,
-                None => match parsed_midi.get_midi_bytes() {
-                    Ok(b) => b,
-                    Err(e) => {
-                        tracing::error!("获取 MIDI 数据失败: {}", e);
-                        return;
-                    }
-                },
-            };
+            // 从 document 重建 MIDI 字节（含 tempo 编辑），始终返回 Some
+            let bytes = self
+                .maybe_rebuild_midi_with_tempo(parsed_midi)
+                .expect("已加载的 MIDI 文件必有 document，重建不应失败");
             (parsed_midi.info.clone(), bytes)
         } else if let Some((ms, mb)) = self.export_editor_notes_as_legacy_lmpj() {
             (ms, mb)
@@ -182,6 +177,14 @@ impl RunnerInner {
             return None;
         }
 
+        // 提取源文档的 PC/CC 事件（如果有的话）
+        let pc_cc_events = self
+            .midi_state
+            .current_midi
+            .as_ref()
+            .and_then(|pm| pm.document.as_ref())
+            .map(|doc| extract_pc_cc_events(doc));
+
         let (notes, tempo_events) = {
             let ui = self.window_state.window.ui();
             let notes = ui.get_editor_notes();
@@ -214,6 +217,14 @@ impl RunnerInner {
                         duration: (length as u32).max(1),
                     })
                     .collect();
+                let track_id = i as u16;
+                let (program_changes, control_changes) = match &pc_cc_events {
+                    Some((pc, cc)) => (
+                        pc.get(&track_id).cloned().unwrap_or_default(),
+                        cc.get(&track_id).cloned().unwrap_or_default(),
+                    ),
+                    None => (Vec::new(), Vec::new()),
+                };
                 MidiTrackData {
                     notes: midi_notes,
                     tempos: if i == 0 {
@@ -221,6 +232,8 @@ impl RunnerInner {
                     } else {
                         Vec::new()
                     },
+                    program_changes,
+                    control_changes,
                     ..Default::default()
                 }
             })
@@ -263,7 +276,7 @@ impl RunnerInner {
         Some((info, midi_bytes))
     }
 
-    /// 当编辑器 tempo 与文档不一致时，重建 MIDI 字节（保留文档音符，替换 tempo 事件）
+    /// 当编辑器 tempo 与文档不一致时，重建 MIDI 字节（保留文档音符 + PC/CC 事件，替换 tempo 事件）
     fn maybe_rebuild_midi_with_tempo(&self, parsed_midi: &ParsedMidi) -> Option<Vec<u8>> {
         // 无条件重建：保证工程设置/指挥轨道 tempo 编辑总被保存
         let document = parsed_midi.document.as_ref()?;
@@ -285,6 +298,9 @@ impl RunnerInner {
                 .collect()
         };
 
+        // 提取 PC/CC 事件并按轨分组
+        let (pc_by_track, cc_by_track) = extract_pc_cc_events(document);
+
         let mut tracks: Vec<MidiTrackData> = (0..track_count)
             .map(|track_id| {
                 let doc_notes = document.get_track_notes(track_id);
@@ -300,6 +316,8 @@ impl RunnerInner {
                     .collect();
                 MidiTrackData {
                     notes: midi_notes,
+                    program_changes: pc_by_track.get(&track_id).cloned().unwrap_or_default(),
+                    control_changes: cc_by_track.get(&track_id).cloned().unwrap_or_default(),
                     ..Default::default()
                 }
             })
@@ -320,7 +338,7 @@ impl RunnerInner {
         lumino_export::midi::export_midi_to_bytes(&export_data).ok()
     }
 
-    /// 保存为 MIDI（包含编辑器编辑）
+    /// 保存为 MIDI（包含编辑器编辑 + 源文件的 PC/CC 事件）
     fn save_as_midi_with_edits(&mut self, save_path: PathBuf) {
         let editor_has_notes = {
             let ui = self.window_state.window.ui();
@@ -328,6 +346,14 @@ impl RunnerInner {
         };
 
         if editor_has_notes {
+            // 提取源文档的 PC/CC 事件（如果有的话）
+            let pc_cc_events = self
+                .midi_state
+                .current_midi
+                .as_ref()
+                .and_then(|pm| pm.document.as_ref())
+                .map(|doc| extract_pc_cc_events(doc));
+
             let (notes, tempo_events) = {
                 let ui = self.window_state.window.ui();
                 let notes = ui.get_editor_notes();
@@ -360,6 +386,14 @@ impl RunnerInner {
                             duration: (length as u32).max(1),
                         })
                         .collect();
+                    let track_id = i as u16;
+                    let (program_changes, control_changes) = match &pc_cc_events {
+                        Some((pc, cc)) => (
+                            pc.get(&track_id).cloned().unwrap_or_default(),
+                            cc.get(&track_id).cloned().unwrap_or_default(),
+                        ),
+                        None => (Vec::new(), Vec::new()),
+                    };
                     MidiTrackData {
                         notes: midi_notes,
                         tempos: if i == 0 {
@@ -367,6 +401,8 @@ impl RunnerInner {
                         } else {
                             Vec::new()
                         },
+                        program_changes,
+                        control_changes,
                         ..Default::default()
                     }
                 })
@@ -408,18 +444,5 @@ impl RunnerInner {
                 let _ = file_service.save_as_midi(source, save_path).await;
             });
         }
-    }
-
-    /// 从 DMS 源保存
-    fn save_as_dms_from_source(&self, save_path: PathBuf) {
-        let Some(parsed_dms) = self.midi_state.current_dms.as_ref() else {
-            tracing::warn!("没有加载 DMS 文件，无法保存为 DMS 格式");
-            return;
-        };
-        let source = parsed_dms.info.path.clone();
-        let file_service = self.file_state.file_service.clone();
-        tokio::spawn(async move {
-            let _ = file_service.export_dms_to_midi(source, save_path).await;
-        });
     }
 }

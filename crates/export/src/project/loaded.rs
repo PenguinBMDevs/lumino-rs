@@ -2,7 +2,7 @@
 //!
 //! `data/loaded/` 目录下存储从外部导入文件的解析后数据快照。
 
-use lumino_midi_loader::{DmsInfo, MidiInfo};
+use lumino_midi_loader::MidiInfo;
 
 use crate::{ExportError, ExportResult};
 
@@ -20,21 +20,6 @@ pub struct LoadedMidiData {
     pub track_event_ranges: Option<Vec<(usize, usize)>>,
     /// 解析后的 tempo 变化
     pub tempo_changes: Option<Vec<(u32, f32)>>,
-    /// 导入时间
-    pub imported_at: String,
-}
-
-/// 导入的 DMS 数据缓存
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LoadedDmsData {
-    /// 原始 DMS 信息
-    pub original_info: DmsInfo,
-    /// 轻量级 DMS 原始数据（解压后）
-    pub raw_dms_data: Vec<u8>,
-    /// 是否已转换为 MIDI
-    pub converted_to_midi: bool,
-    /// 转换后的 MIDI 字节（如果已转换）
-    pub converted_midi_bytes: Option<Vec<u8>>,
     /// 导入时间
     pub imported_at: String,
 }
@@ -59,7 +44,7 @@ pub struct LmloadedHeader {
     pub magic: [u8; 4],
     /// 数据格式版本: u16
     pub version: u16,
-    /// 数据类型: u8 (0=midi, 1=dms, 2=lmpj)
+    /// 数据类型: u8 (0=midi, 1=lmpj)
     pub data_type: u8,
     /// 保留: u8
     pub _reserved: u8,
@@ -103,7 +88,6 @@ impl LmloadedHeader {
 #[repr(u8)]
 pub enum LoadedDataType {
     Midi = 0,
-    Dms = 1,
     Lmpj = 2,
 }
 
@@ -111,7 +95,6 @@ impl LoadedDataType {
     pub fn from_u8(v: u8) -> Option<Self> {
         match v {
             0 => Some(Self::Midi),
-            1 => Some(Self::Dms),
             2 => Some(Self::Lmpj),
             _ => None,
         }

@@ -77,7 +77,6 @@ pub fn file_menu(lang: Language) -> MenuConfig {
                 ],
                 t.file_export_project.to_string(),
             ),
-            Action(crate::event::Event::menu_file(file::Event::audio_export())),
             Separator,
             Action(crate::event::Event::menu_file(
                 file::Event::project_settings(),
@@ -298,7 +297,6 @@ fn event_display_name(event: &Event, lang: Language) -> String {
                 FileEvent::ImportFiles => t.file_import.to_string(),
                 FileEvent::ExportProjectArchive => t.file_export_archive.to_string(),
                 FileEvent::ExportProjectFolder => t.file_export_folder.to_string(),
-                FileEvent::AudioExport => t.file_export_audio.to_string(),
                 FileEvent::ProjectSettings => t.file_project_settings.to_string(),
                 FileEvent::Settings => t.file_settings.to_string(),
                 FileEvent::Exit => t.file_exit.to_string(),

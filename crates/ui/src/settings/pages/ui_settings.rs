@@ -297,7 +297,10 @@ pub fn view<'a>(
                     LocalizedSelectionBox::new(SelectionBoxMode::Direct, settings.language),
                     LocalizedSelectionBox::new(SelectionBoxMode::Spring, settings.language),
                 ],
-                Some(LocalizedSelectionBox::new(settings.selection_box_mode, settings.language)),
+                Some(LocalizedSelectionBox::new(
+                    settings.selection_box_mode,
+                    settings.language
+                )),
                 |ls| Message::Settings(crate::settings::Event::SelectionBoxModeChanged(ls.inner)),
             )
             .width(200.0),
@@ -328,18 +331,35 @@ pub fn view<'a>(
             .size(12.0)
             .style(create_placeholder_text_style()),
         iced_widget::space().height(SPACING_CONTENT),
-        // 钢琴仿真键盘开关
+        // 力度面板显示样式（曲线/柱状图切换）
         row![
-            iced_widget::Checkbox::new(settings.use_textured_keyboard)
-                .label(t.textured_keyboard)
+            iced_widget::Checkbox::new(settings.velocity_curve_style)
+                .label("力度面板曲线显示（默认）")
                 .on_toggle(|enabled| {
-                    Message::Settings(crate::settings::Event::TexturedKeyboardChanged(enabled))
+                    Message::Settings(crate::settings::Event::VelocityCurveStyleChanged(enabled))
                 }),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
-        text(t.textured_keyboard_hint)
+        text("关闭后使用柱状图显示力度值")
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+        iced_widget::space().height(SPACING_CONTENT),
+        // 播放键盘颜色指示
+        row![
+            iced_widget::Checkbox::new(settings.playback_key_colors_enabled)
+                .label("播放时键盘颜色指示（默认关闭）")
+                .on_toggle(|enabled| {
+                    Message::Settings(crate::settings::Event::PlaybackKeyColorsEnabledChanged(
+                        enabled,
+                    ))
+                }),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        text("开启后播放时在钢琴键盘上高亮当前音符位置，占用额外内存")
             .size(12.0)
             .style(create_placeholder_text_style()),
     ]

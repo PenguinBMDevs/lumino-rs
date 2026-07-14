@@ -8,10 +8,6 @@ pub enum ExportError {
     #[error("IO 错误: {0}")]
     Io(#[from] std::io::Error),
 
-    /// DMS 写入错误
-    #[error("DMS 写入错误: {0}")]
-    DmsWrite(String),
-
     /// MIDI 写入错误
     #[error("MIDI 写入错误: {0}")]
     MidiWrite(String),

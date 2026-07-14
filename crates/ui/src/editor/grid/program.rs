@@ -120,8 +120,10 @@ impl<'a> PianoRollGrid<'a> {
 
         // Shift+滚轮：将垂直滚动转换为水平滚动
         // 部分平台已自动转换（delta_x 非零），未转换的平台需要手动处理
+        // 注意取反：handle_scrolled 中 X 轴是 scroll_x + delta_x（直接加），
+        // Y 轴是 scroll_y - delta_y（取反减），所以垂直→水平映射时必须取反符号。
         if shift_pressed && delta_x.abs() < f32::EPSILON {
-            delta_x = delta_y;
+            delta_x = -delta_y;
             delta_y = 0.0;
         }
 

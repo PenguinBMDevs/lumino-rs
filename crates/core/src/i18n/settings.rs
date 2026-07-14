@@ -11,6 +11,8 @@ pub struct SettingsTranslations {
     pub ui: &'static str,
     pub shortcuts: &'static str,
     pub about: &'static str,
+    pub onion_skin: &'static str,
+    pub palette: &'static str,
 
     // ── 通用 ──
     pub confirm: &'static str,
@@ -24,6 +26,8 @@ pub struct SettingsTranslations {
     pub eraser_behavior: &'static str,
     pub eraser_default_hint: &'static str,
     pub eraser_direct_hint: &'static str,
+    pub track_add_behavior: &'static str,
+    pub track_add_behavior_hint: &'static str,
 
     // ── 音频页面 ──
     pub audio_title: &'static str,
@@ -64,8 +68,6 @@ pub struct SettingsTranslations {
     pub piano_roll: &'static str,
     pub enable_256key: &'static str,
     pub enable_256key_hint: &'static str,
-    pub textured_keyboard: &'static str,
-    pub textured_keyboard_hint: &'static str,
     pub pixel: &'static str,
     pub from_left: &'static str,
     pub from_right: &'static str,
@@ -77,6 +79,14 @@ pub struct SettingsTranslations {
     // ── 关于页面 ──
     pub about_title: &'static str,
     pub app_name: &'static str,
+
+    // ── 调色板页面 ──
+    pub palette_title: &'static str,
+    pub palette_select: &'static str,
+    pub palette_hint: &'static str,
+    pub palette_colors_info: &'static str,
+    pub palette_no_preview: &'static str,
+    pub palette_locked: &'static str,
     pub version: &'static str,
     pub app_description: &'static str,
     /// 高对比度主题显示名称
@@ -89,6 +99,8 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     ui: "界面",
     shortcuts: "快捷键",
     about: "关于",
+    onion_skin: "洋葱皮",
+    palette: "调色板",
     confirm: "确认",
     cancel: "取消",
     ok: "确定",
@@ -98,6 +110,8 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     eraser_behavior: "橡皮擦行为:",
     eraser_default_hint: "默认: Shift+拖动框选删除，点击删除单个",
     eraser_direct_hint: "直接框选: 拖动框选删除，Shift+点击删除单个",
+    track_add_behavior: "添加音轨时:",
+    track_add_behavior_hint: "选择添加音轨后是否自动跳转到新音轨",
     audio_title: "音频",
     synthesizer: "合成器:",
     soundfont: "音色库:",
@@ -134,8 +148,6 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     piano_roll: "钢琴卷帘",
     enable_256key: "启用 256 键扩展钢琴卷帘",
     enable_256key_hint: "开启后钢琴卷帘拓展至 256 键 (0-255)，扩展区域（128-255）颜色略深以便区分。需要较强的 GPU 性能。",
-    textured_keyboard: "使用钢琴仿真键盘（推荐）",
-    textured_keyboard_hint: "开启后使用真实钢琴贴图渲染键盘，视觉效果更佳。关闭则使用传统纯色键盘。",
     pixel: "像素",
     from_left: "像素 (从左边缘算起)",
     from_right: "像素 (从右边缘算起)",
@@ -143,9 +155,15 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     shortcuts_placeholder: "快捷键设置内容",
     about_title: "关于",
     app_name: "Lumino",
-    version: "版本 1.0.0",
+    version: "版本 0.1.1-dev",
     app_description: "一个高效的MIDI编辑工具",
     high_contrast: "高对比度",
+    palette_title: "调色板",
+    palette_select: "选择调色板:",
+    palette_hint: "调色板文件存放在 resources/palettes/ 目录下，编译时自动检测。添加新的 PNG 文件后重新编译即可使用。",
+    palette_colors_info: "颜色预览",
+    palette_no_preview: "无法预览选中调色板",
+    palette_locked: "已加载，调色板锁定",
 };
 
 static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -154,6 +172,8 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     ui: "UI",
     shortcuts: "Shortcuts",
     about: "About",
+    onion_skin: "Onion Skin",
+    palette: "Palette",
     confirm: "Confirm",
     cancel: "Cancel",
     ok: "OK",
@@ -163,6 +183,8 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     eraser_behavior: "Eraser Behavior:",
     eraser_default_hint: "Default: Shift+drag to box-delete, click to delete single",
     eraser_direct_hint: "Direct Select: drag to box-delete, Shift+click to delete single",
+    track_add_behavior: "Add Track Behavior:",
+    track_add_behavior_hint: "Choose whether to auto-switch to the newly added track",
     audio_title: "Audio",
     synthesizer: "Synthesizer:",
     soundfont: "Soundfont:",
@@ -199,8 +221,6 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     piano_roll: "Piano Roll",
     enable_256key: "Enable 256-key extended piano roll",
     enable_256key_hint: "Extends piano roll to 256 keys (0-255). Extended range (128-255) has darker tint. Requires stronger GPU.",
-    textured_keyboard: "Use textured piano keyboard (recommended)",
-    textured_keyboard_hint: "Renders keyboard with realistic piano texture. Disable for traditional solid-color keyboard.",
     pixel: "px",
     from_left: "px (from left edge)",
     from_right: "px (from right edge)",
@@ -208,9 +228,15 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     shortcuts_placeholder: "Shortcut settings content",
     about_title: "About",
     app_name: "Lumino",
-    version: "Version 1.0.0",
+    version: "Version 0.1.1-dev",
     app_description: "An efficient MIDI editor",
     high_contrast: "High Contrast",
+    palette_title: "Palette",
+    palette_select: "Select Palette:",
+    palette_hint: "Palette files are stored in resources/palettes/ and auto-detected at compile time. Add new PNG files and rebuild to use them.",
+    palette_colors_info: "Color Preview",
+    palette_no_preview: "Unable to preview selected palette",
+    palette_locked: "loaded, palette locked",
 };
 
 /// 获取设置面板翻译

@@ -1,10 +1,20 @@
 //! MIDI 文件导出功能
+//!
+//! 该模块已拆分为以下子模块：
+//! - `export`: 主导出逻辑（export_midi, export_midi_to_bytes）
+//! - `tracks`: 音轨构建（build_midi_smf, 轨道事件收集）
+//! - `encoding`: 编码辅助（bpm_to_tempo, tempo_to_bpm 重导出）
+//! - `calc`: 计算辅助（预留）
 
-use std::path::Path;
+mod calc;
+mod encoding;
+mod export;
+mod tracks;
 
-use midly::{Format, Header, MetaMessage, Smf, Timing, Track, TrackEvent, TrackEventKind};
+pub use encoding::{bpm_to_tempo, tempo_to_bpm};
+pub use export::{export_midi, export_midi_to_bytes};
 
-use crate::error::{ExportError, ExportResult};
+// ── 类型定义 ──────────────────────────────────────────────
 
 /// MIDI 导出选项
 #[derive(Debug, Clone, Default)]
@@ -117,262 +127,13 @@ pub struct MidiExportData {
     pub tracks: Vec<MidiTrackData>,
 }
 
-/// 导出为 MIDI 文件
-pub fn export_midi<P: AsRef<Path>>(path: P, data: &MidiExportData) -> ExportResult<()> {
-    let buffer = export_midi_to_bytes(data)?;
-    std::fs::write(path.as_ref(), buffer)?;
-    Ok(())
-}
-
-/// 导出 MIDI 到字节数组
-pub fn export_midi_to_bytes(data: &MidiExportData) -> ExportResult<Vec<u8>> {
-    // 先收集轨道名称数据到 owned Vec 中，再建立引用切片
-    // 利用 Rust drop 顺序（声明的逆序）：smf → name_bytes → name_buffers
-    let name_buffers: Vec<Option<Vec<u8>>> = data
-        .tracks
-        .iter()
-        .map(|t| t.name.as_ref().map(|n| n.clone().into_bytes()))
-        .collect();
-
-    let name_bytes: Vec<Option<&[u8]>> = name_buffers
-        .iter()
-        .map(|buf| buf.as_ref().map(|b| b.as_slice()))
-        .collect();
-
-    let smf = build_midi_smf(data, &name_bytes)?;
-
-    let mut buffer = Vec::new();
-    smf.write(&mut buffer)
-        .map_err(|e| ExportError::MidiWrite(e.to_string()))?;
-
-    Ok(buffer)
-    // drop 顺序：buffer → smf → name_bytes → name_buffers（安全）
-}
-
-/// 构建 MIDI SMF 结构
-fn build_midi_smf<'a>(
-    data: &'a MidiExportData,
-    name_bytes: &'a [Option<&'a [u8]>],
-) -> ExportResult<Smf<'a>> {
-    let format = match data.options.format {
-        0 => Format::SingleTrack,
-        1 => Format::Parallel,
-        2 => Format::Sequential,
-        _ => Format::Parallel, // 默认使用格式 1
-    };
-
-    let timing = Timing::Metrical(data.options.ppqn.into());
-    let header = Header::new(format, timing);
-
-    let mut tracks: Vec<Track<'_>> = Vec::new();
-
-    // 对于格式 0，所有事件合并到一个轨道
-    if data.options.format == 0 {
-        let combined_name = name_bytes.first().and_then(|n| *n);
-        let mut combined_track = build_combined_track(data, combined_name)?;
-        combined_track.sort_by_key(|e| e.delta);
-        convert_to_delta_times(&mut combined_track);
-        tracks.push(combined_track);
-    } else {
-        // 对于格式 1，每个 MidiTrackData 对应一个 MIDI 轨道
-        // 第一个轨道包含全局元事件（速度、拍号等）
-        let mut first_track = true;
-
-        for (track_data, &name) in data.tracks.iter().zip(name_bytes.iter()) {
-            let mut track = build_track(track_data, first_track, name)?;
-            track.sort_by_key(|e| e.delta);
-            convert_to_delta_times(&mut track);
-            tracks.push(track);
-            first_track = false;
-        }
-    }
-
-    Ok(Smf { header, tracks })
-}
-
-/// 构建合并轨道（格式 0）
-fn build_combined_track<'a>(
-    data: &'a MidiExportData,
-    track_name: Option<&'a [u8]>,
-) -> ExportResult<Track<'a>> {
-    let mut events: Vec<TrackEvent<'a>> = Vec::new();
-
-    // 轨道名称（使用第一个轨道的名称）
-    if let Some(name_bytes) = track_name {
-        events.push(TrackEvent {
-            delta: 0.into(),
-            kind: TrackEventKind::Meta(MetaMessage::TrackName(name_bytes)),
-        });
-    }
-
-    // 收集所有轨道的所有事件
-    for track_data in &data.tracks {
-        collect_track_events(track_data, &mut events, true)?;
-    }
-
-    Ok(events)
-}
-
-/// 构建单个轨道
-fn build_track<'a>(
-    track_data: &'a MidiTrackData,
-    include_globals: bool,
-    track_name: Option<&'a [u8]>,
-) -> ExportResult<Track<'a>> {
-    let mut events: Vec<TrackEvent<'a>> = Vec::new();
-
-    // 轨道名称（使用已在 build_midi_smf 中预泄漏的名称引用）
-    if let Some(name_bytes) = track_name {
-        events.push(TrackEvent {
-            delta: 0.into(),
-            kind: TrackEventKind::Meta(MetaMessage::TrackName(name_bytes)),
-        });
-    }
-
-    collect_track_events(track_data, &mut events, include_globals)?;
-
-    // 轨道结束
-    events.push(TrackEvent {
-        delta: 0.into(),
-        kind: TrackEventKind::Meta(MetaMessage::EndOfTrack),
-    });
-
-    Ok(events)
-}
-
-/// 收集轨道事件
-fn collect_track_events<'a>(
-    track_data: &'a MidiTrackData,
-    events: &mut Vec<TrackEvent<'a>>,
-    include_globals: bool,
-) -> ExportResult<()> {
-    // 音符事件
-    for note in &track_data.notes {
-        // 音符开启
-        events.push(TrackEvent {
-            delta: note.tick.into(),
-            kind: TrackEventKind::Midi {
-                channel: note.channel.into(),
-                message: midly::MidiMessage::NoteOn {
-                    key: note.key,
-                    vel: note.velocity.into(),
-                },
-            },
-        });
-
-        // 音符关闭
-        let end_tick = note.tick.saturating_add(note.duration);
-        events.push(TrackEvent {
-            delta: end_tick.into(),
-            kind: TrackEventKind::Midi {
-                channel: note.channel.into(),
-                message: midly::MidiMessage::NoteOff {
-                    key: note.key,
-                    vel: 0.into(),
-                },
-            },
-        });
-    }
-
-    // 速度事件 (全局事件)
-    if include_globals {
-        for tempo in &track_data.tempos {
-            let tempo_value = midly::num::u24::try_from(tempo.tempo).ok_or_else(|| {
-                ExportError::InvalidData(format!(
-                    "tempo {} exceeds u24 range (0~16777215 µs/beat)",
-                    tempo.tempo
-                ))
-            })?;
-            events.push(TrackEvent {
-                delta: tempo.tick.into(),
-                kind: TrackEventKind::Meta(MetaMessage::Tempo(tempo_value)),
-            });
-        }
-    }
-
-    // 程序变更
-    for pc in &track_data.program_changes {
-        events.push(TrackEvent {
-            delta: pc.tick.into(),
-            kind: TrackEventKind::Midi {
-                channel: pc.channel.into(),
-                message: midly::MidiMessage::ProgramChange {
-                    program: pc.program.into(),
-                },
-            },
-        });
-    }
-
-    // 控制变更
-    for cc in &track_data.control_changes {
-        events.push(TrackEvent {
-            delta: cc.tick.into(),
-            kind: TrackEventKind::Midi {
-                channel: cc.channel.into(),
-                message: midly::MidiMessage::Controller {
-                    controller: cc.controller.into(),
-                    value: cc.value.into(),
-                },
-            },
-        });
-    }
-
-    // 拍号事件 (全局事件)
-    if include_globals {
-        for ts in &track_data.time_signatures {
-            events.push(TrackEvent {
-                delta: ts.tick.into(),
-                kind: TrackEventKind::Meta(MetaMessage::TimeSignature(
-                    ts.numerator,
-                    ts.denominator,
-                    ts.clocks_per_tick,
-                    ts.notated_32nd_notes_per_beat,
-                )),
-            });
-        }
-    }
-
-    // 调号事件 (全局事件)
-    if include_globals {
-        for ks in &track_data.key_signatures {
-            events.push(TrackEvent {
-                delta: ks.tick.into(),
-                kind: TrackEventKind::Meta(MetaMessage::KeySignature(ks.key, ks.is_major)),
-            });
-        }
-    }
-
-    Ok(())
-}
-
-/// 将绝对时间转换为增量时间
-fn convert_to_delta_times(events: &mut [TrackEvent<'_>]) {
-    if events.is_empty() {
-        return;
-    }
-
-    // 先排序
-    events.sort_by_key(|e| u32::from(e.delta));
-
-    // 转换为增量时间
-    let mut last_tick: u32 = 0;
-    for event in events.iter_mut() {
-        let current_tick = u32::from(event.delta);
-        let delta = current_tick.saturating_sub(last_tick);
-        event.delta = delta.into();
-        last_tick = current_tick;
-    }
-}
-
-/// 将 BPM 转换为微秒每拍
-pub use lumino_midi_loader::bpm_to_tempo;
-
-/// 将微秒每拍转换为 BPM
-pub use lumino_midi_loader::tempo_to_bpm;
+// ── 测试 ──────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
+    use super::tracks::convert_to_delta_times;
     use super::*;
+    use midly::{MetaMessage, TrackEvent, TrackEventKind};
 
     #[test]
     fn test_export_empty_midi() {
@@ -543,5 +304,240 @@ mod tests {
         } else {
             panic!("track should have events");
         }
+    }
+
+    #[test]
+    fn test_export_midi_with_program_change() {
+        let track = MidiTrackData {
+            notes: vec![MidiNoteEvent {
+                tick: 0,
+                channel: 0,
+                key: 60,
+                velocity: 100,
+                duration: 480,
+            }],
+            tempos: vec![],
+            program_changes: vec![MidiProgramChangeEvent {
+                tick: 0,
+                channel: 0,
+                program: 5, // Acoustic Grand Piano
+            }],
+            control_changes: vec![],
+            time_signatures: vec![],
+            key_signatures: vec![],
+            name: None,
+        };
+        let data = MidiExportData {
+            options: MidiExportOptions {
+                format: 1,
+                ppqn: 480,
+            },
+            tracks: vec![track],
+        };
+        let bytes = export_midi_to_bytes(&data).expect("export should succeed");
+        let smf = midly::Smf::parse(&bytes).expect("should parse exported MIDI");
+        assert_eq!(smf.tracks.len(), 1);
+
+        // 验证 ProgramChange 事件存在
+        let mut found_pc = false;
+        for event in &smf.tracks[0] {
+            if let TrackEventKind::Midi {
+                channel,
+                message: midly::MidiMessage::ProgramChange { program },
+            } = &event.kind
+            {
+                assert_eq!(u8::from(*channel), 0);
+                assert_eq!(u8::from(*program), 5);
+                found_pc = true;
+            }
+        }
+        assert!(found_pc, "exported MIDI should contain ProgramChange event");
+    }
+
+    #[test]
+    fn test_export_midi_with_control_change() {
+        let track = MidiTrackData {
+            notes: vec![MidiNoteEvent {
+                tick: 0,
+                channel: 0,
+                key: 60,
+                velocity: 100,
+                duration: 480,
+            }],
+            tempos: vec![],
+            program_changes: vec![],
+            control_changes: vec![
+                MidiControlChangeEvent {
+                    tick: 0,
+                    channel: 0,
+                    controller: 7, // Volume
+                    value: 100,
+                },
+                MidiControlChangeEvent {
+                    tick: 480,
+                    channel: 0,
+                    controller: 10, // Pan
+                    value: 64,
+                },
+            ],
+            time_signatures: vec![],
+            key_signatures: vec![],
+            name: None,
+        };
+        let data = MidiExportData {
+            options: MidiExportOptions {
+                format: 1,
+                ppqn: 480,
+            },
+            tracks: vec![track],
+        };
+        let bytes = export_midi_to_bytes(&data).expect("export should succeed");
+        let smf = midly::Smf::parse(&bytes).expect("should parse exported MIDI");
+        assert_eq!(smf.tracks.len(), 1);
+
+        // 验证 Controller 事件存在
+        let mut found_cc7 = false;
+        let mut found_cc10 = false;
+        for event in &smf.tracks[0] {
+            if let TrackEventKind::Midi {
+                channel,
+                message: midly::MidiMessage::Controller { controller, value },
+            } = &event.kind
+            {
+                assert_eq!(u8::from(*channel), 0);
+                match u8::from(*controller) {
+                    7 => {
+                        assert_eq!(u8::from(*value), 100);
+                        found_cc7 = true;
+                    }
+                    10 => {
+                        assert_eq!(u8::from(*value), 64);
+                        found_cc10 = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        assert!(found_cc7, "exported MIDI should contain CC7 (Volume)");
+        assert!(found_cc10, "exported MIDI should contain CC10 (Pan)");
+    }
+
+    #[test]
+    fn test_export_midi_with_pc_and_cc() {
+        let track = MidiTrackData {
+            notes: vec![MidiNoteEvent {
+                tick: 0,
+                channel: 0,
+                key: 60,
+                velocity: 100,
+                duration: 480,
+            }],
+            tempos: vec![],
+            program_changes: vec![MidiProgramChangeEvent {
+                tick: 0,
+                channel: 0,
+                program: 0,
+            }],
+            control_changes: vec![MidiControlChangeEvent {
+                tick: 0,
+                channel: 0,
+                controller: 7,
+                value: 100,
+            }],
+            time_signatures: vec![],
+            key_signatures: vec![],
+            name: Some(String::from("Test")),
+        };
+        let data = MidiExportData {
+            options: MidiExportOptions {
+                format: 1,
+                ppqn: 480,
+            },
+            tracks: vec![track],
+        };
+        let bytes = export_midi_to_bytes(&data).expect("export should succeed");
+        let smf = midly::Smf::parse(&bytes).expect("should parse exported MIDI");
+        assert_eq!(smf.tracks.len(), 1);
+
+        let mut found_pc = false;
+        let mut found_cc = false;
+        for event in &smf.tracks[0] {
+            match &event.kind {
+                TrackEventKind::Midi {
+                    message: midly::MidiMessage::ProgramChange { .. },
+                    ..
+                } => found_pc = true,
+                TrackEventKind::Midi {
+                    message: midly::MidiMessage::Controller { .. },
+                    ..
+                } => found_cc = true,
+                _ => {}
+            }
+        }
+        assert!(found_pc, "should contain ProgramChange");
+        assert!(found_cc, "should contain Controller");
+    }
+
+    #[test]
+    fn test_export_midi_format0_with_pc_cc() {
+        let track = MidiTrackData {
+            notes: vec![MidiNoteEvent {
+                tick: 0,
+                channel: 0,
+                key: 60,
+                velocity: 100,
+                duration: 480,
+            }],
+            tempos: vec![],
+            program_changes: vec![MidiProgramChangeEvent {
+                tick: 0,
+                channel: 0,
+                program: 24,
+            }],
+            control_changes: vec![MidiControlChangeEvent {
+                tick: 0,
+                channel: 0,
+                controller: 7,
+                value: 80,
+            }],
+            time_signatures: vec![],
+            key_signatures: vec![],
+            name: None,
+        };
+        let data = MidiExportData {
+            options: MidiExportOptions {
+                format: 0,
+                ppqn: 480,
+            },
+            tracks: vec![track],
+        };
+        let bytes = export_midi_to_bytes(&data).expect("export should succeed");
+        let smf = midly::Smf::parse(&bytes).expect("should parse exported MIDI");
+        assert_eq!(smf.tracks.len(), 1, "format 0 should have 1 track");
+
+        let mut found_pc = false;
+        let mut found_cc = false;
+        for event in &smf.tracks[0] {
+            match &event.kind {
+                TrackEventKind::Midi {
+                    message: midly::MidiMessage::ProgramChange { program },
+                    ..
+                } => {
+                    assert_eq!(u8::from(*program), 24);
+                    found_pc = true;
+                }
+                TrackEventKind::Midi {
+                    message: midly::MidiMessage::Controller { controller, value },
+                    ..
+                } => {
+                    assert_eq!(u8::from(*controller), 7);
+                    assert_eq!(u8::from(*value), 80);
+                    found_cc = true;
+                }
+                _ => {}
+            }
+        }
+        assert!(found_pc, "format 0 should contain ProgramChange");
+        assert!(found_cc, "format 0 should contain Controller");
     }
 }
