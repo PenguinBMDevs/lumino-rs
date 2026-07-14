@@ -5,7 +5,9 @@ use std::sync::Arc;
 use lumino_midi_loader::MidiDocument;
 
 pub use super::audio::{AudioChannels, AudioFormat, Interpolation, ThreadingOption};
-pub use super::video::{Container, EncoderBackend, QualityPreset, VideoCodec, VideoExportConfig};
+pub use super::video::{
+    Container, EncoderBackend, QualityPreset, RenderMode, VideoCodec, VideoExportConfig,
+};
 
 /// 音频导出配置。
 #[derive(Debug, Clone)]

@@ -100,6 +100,47 @@ impl std::str::FromStr for QualityPreset {
     }
 }
 
+/// 视频导出渲染模式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RenderMode {
+    /// HiRes 贴图渲染（高质量）
+    #[default]
+    HiResTexture,
+    /// 音符矩形渲染
+    NoteRectangle,
+}
+
+impl RenderMode {
+    /// 导出到渲染线程用的规范字符串（"hires_texture" / "note_rectangle"）
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RenderMode::HiResTexture => "hires_texture",
+            RenderMode::NoteRectangle => "note_rectangle",
+        }
+    }
+}
+
+impl std::fmt::Display for RenderMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            RenderMode::HiResTexture => "HiRes贴图",
+            RenderMode::NoteRectangle => "音符矩形",
+        };
+        f.write_str(s)
+    }
+}
+
+impl std::str::FromStr for RenderMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "hires_texture" | "HiRes贴图" => Ok(RenderMode::HiResTexture),
+            "note_rectangle" | "音符矩形" => Ok(RenderMode::NoteRectangle),
+            _ => Err(format!("未知渲染模式: {s}")),
+        }
+    }
+}
+
 /// 视频导出配置（事件层传输结构）。
 #[derive(Debug, Clone)]
 pub struct VideoExportConfig {
@@ -123,6 +164,6 @@ pub struct VideoExportConfig {
     pub backend: EncoderBackend,
     /// 质量预设
     pub quality: QualityPreset,
-    /// 视频导出渲染模式（"note_rectangle"/"hires_texture"）
-    pub render_mode: String,
+    /// 视频导出渲染模式
+    pub render_mode: RenderMode,
 }

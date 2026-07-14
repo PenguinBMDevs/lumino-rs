@@ -385,7 +385,9 @@ impl RunnerInner {
                 let render_mode_for_thread = render_mode.clone();
 
                 // 预先提取 UI 配置中 HiRes 相关字段，避免将非 Send 的 self 捕获进后台线程
-                let hires_video_config = if render_mode_for_thread == "hires_texture" {
+                let hires_video_config = if render_mode_for_thread
+                    == lumino_event::window::video::RenderMode::HiResTexture
+                {
                     let ui_config = &self.window_state.storage.config.get().ui;
                     Some(video_export::build_hires_config_for_video(ui_config))
                 } else {
@@ -465,7 +467,7 @@ impl RunnerInner {
                                 width,
                                 height,
                                 frame_tx: FrameSender(frame_tx),
-                                render_mode: render_mode_for_thread.clone(),
+                                render_mode: render_mode_for_thread.as_str().to_string(),
                             }))
                             .is_err()
                         {
@@ -671,7 +673,9 @@ impl RunnerInner {
                                     .send(RenderCommand::Control(
                                         ControlCommand::RenderVideoFrame {
                                             params: Box::new(params),
-                                            render_mode: render_mode_for_thread.clone(),
+                                            render_mode: render_mode_for_thread
+                                                .as_str()
+                                                .to_string(),
                                         },
                                     ))
                                     .is_err()
