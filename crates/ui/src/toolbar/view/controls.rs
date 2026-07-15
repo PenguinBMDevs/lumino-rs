@@ -10,7 +10,7 @@ use crate::toolbar::buttons::{flip_button, tool_button, tool_selector};
 use crate::toolbar::{Event, FlipHorizontalMode, RESIZE_HANDLE_HEIGHT, Tool, Toolbar};
 use crate::widget;
 use crate::{Element, Message, Theme, window};
-use lumino_core::i18n::MainTranslations;
+use lumino_core::i18n::{Language, MainTranslations};
 
 impl Toolbar {
     /// 渲染播放控制区域（SkipBack / PlayPause / SkipForward），132px 宽
@@ -129,7 +129,7 @@ impl Toolbar {
         .into()
     }
 
-    /// 渲染工具选择区域（指针/铅笔/橡皮/量化/变速/翻转/分割/合并/移调），560px 宽
+    /// 渲染工具选择区域（指针/铅笔/橡皮/量化/变速/翻转/分割/合并/移调 + 精度下拉），宽度自适应
     pub fn render_tools_section<'a>(
         &'a self,
         content_height: f32,
@@ -137,6 +137,7 @@ impl Toolbar {
         has_selection: bool,
         t: &'static MainTranslations,
         window: &'a window::Window,
+        language: Language,
     ) -> Element<'a> {
         container(
             row![
@@ -227,10 +228,12 @@ impl Toolbar {
                     has_selection,
                     window
                 ),
+                space().width(8),
+                self.render_precision_selector(content_height, palette, language, t),
             ]
             .align_y(Alignment::Center),
         )
-        .width(560)
+        .width(iced_widget::core::Length::Shrink)
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
         .align_x(iced_core::alignment::Horizontal::Center)

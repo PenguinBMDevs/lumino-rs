@@ -14,7 +14,9 @@ impl Toolbar {
     /// 调用各子模块的渲染方法构建完整工具栏布局，包含：
     /// - 录制按钮（record.rs）
     /// - 播放控制、循环、工具、调整手柄、撤销/重做（controls.rs）
-    /// - 精度选择、自动滚动、协作（status.rs）
+    /// - 精度选择器已并入工具选择区框内（controls.rs，内容定义于 status.rs）
+    /// - 自动滚动、协作（status.rs）
+    /// - 检测仪表盘（detection_dashboard.rs）
     pub fn toolbar_view<'a>(
         &'a self,
         window: &'a window::Window,
@@ -37,10 +39,7 @@ impl Toolbar {
 
         let undo_redo_controls = self.render_undo_redo_controls(content_height, palette, t, window);
 
-        let tools = self.render_tools_section(content_height, palette, has_selection, t, window);
-
-        let precision_selector =
-            self.render_precision_selector(content_height, palette, language, t);
+        let tools = self.render_tools_section(content_height, palette, has_selection, t, window, language);
 
         let auto_scroll_button = self.render_auto_scroll_button(content_height, palette, t, window);
 
@@ -69,13 +68,11 @@ impl Toolbar {
                 space().width(8),
                 undo_redo_controls,
                 space().width(16),
+                dashboard,
+                space().width(16),
                 tools,
                 space().width(iced_widget::core::Length::Fill),
                 auto_scroll_button,
-                space().width(16),
-                precision_selector,
-                space().width(16),
-                dashboard,
                 space().width(16),
                 collaboration_button,
             ]

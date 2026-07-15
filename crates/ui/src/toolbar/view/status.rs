@@ -43,11 +43,14 @@ impl LocalizedPrecision {
 }
 
 impl Toolbar {
-    /// 渲染精度选择器（含本地化 pick_list）
+    /// 渲染精度选择器内容（label + pick_list），不含外层容器。
+    ///
+    /// 设计为可嵌入其他工具栏框（如工具选择区），因此不自带背景/内边距，
+    /// 由外层框统一控制外观，实现"精度下拉与笔工具在同一个框内"。
     pub fn render_precision_selector<'a>(
         &'a self,
-        content_height: f32,
-        palette: &'a iced_core::theme::palette::Extended,
+        _content_height: f32,
+        _palette: &'a iced_core::theme::palette::Extended,
         language: Language,
         t: &'static MainTranslations,
     ) -> Element<'a> {
@@ -59,30 +62,22 @@ impl Toolbar {
             .collect();
         let current_precision = LocalizedPrecision::new(self.note_precision, language);
 
-        container(
-            row![
-                text(t.precision_label).size(14),
-                space().width(8),
-                pick_list(precision_options, Some(current_precision), |lp| {
-                    if lp.inner == NotePrecision::Custom {
-                        // 选择自定义时，发送消息到Root打开对话框
-                        Message::CustomPrecision(CustomPrecisionAction::OpenDialog)
-                    } else {
-                        Event::precision_changed(lp.inner)
-                    }
-                },)
-                .placeholder(t.precision_placeholder)
-                .padding([4, 8])
-                .width(iced_widget::core::Length::Fixed(120.0)),
-            ]
-            .align_y(Alignment::Center),
-        )
-        .height(content_height)
-        .align_y(iced_core::alignment::Vertical::Center)
-        .padding([0, 16])
-        .style(move |_theme: &Theme| {
-            container::Style::default().background(palette.background.weakest.color)
-        })
+        row![
+            text(t.precision_label).size(14),
+            space().width(8),
+            pick_list(precision_options, Some(current_precision), |lp| {
+                if lp.inner == NotePrecision::Custom {
+                    // 选择自定义时，发送消息到Root打开对话框
+                    Message::CustomPrecision(CustomPrecisionAction::OpenDialog)
+                } else {
+                    Event::precision_changed(lp.inner)
+                }
+            },)
+            .placeholder(t.precision_placeholder)
+            .padding([4, 8])
+            .width(iced_widget::core::Length::Fixed(120.0)),
+        ]
+        .align_y(Alignment::Center)
         .into()
     }
 
