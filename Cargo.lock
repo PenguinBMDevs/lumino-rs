@@ -3710,6 +3710,7 @@ dependencies = [
  "lumino-playback",
  "lumino-ui-constants",
  "lumino-ui-core",
+ "lumino-ui-editor",
  "lumino-ui-host",
  "lumino-ui-settings",
  "midly",
@@ -3753,6 +3754,30 @@ dependencies = [
  "tiny-skia",
  "tracing",
  "usvg",
+]
+
+[[package]]
+name = "lumino-ui-editor"
+version = "0.1.1"
+dependencies = [
+ "arboard",
+ "iced_core",
+ "iced_wgpu",
+ "iced_widget",
+ "im",
+ "lumino-core",
+ "lumino-event",
+ "lumino-gfx",
+ "lumino-message",
+ "lumino-midi-loader",
+ "lumino-ui-constants",
+ "lumino-ui-core",
+ "once_cell",
+ "puffin",
+ "rayon",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]

@@ -26,6 +26,7 @@ lumino-ui-constants = { path = "../ui-constants" }
 lumino-ui-core = { path = "../ui-core" }
 lumino-ui-host = { path = "../ui-host" }
 lumino-ui-settings = { path = "../ui-settings" }
+lumino-ui-editor = { path = "../ui-editor" }
 # crates.io
 midly = { workspace = true }
 # crates.io

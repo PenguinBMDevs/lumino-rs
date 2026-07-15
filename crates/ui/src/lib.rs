@@ -3,7 +3,7 @@ pub mod constants {
     pub use lumino_ui_constants::*;
 }
 pub use lumino_ui_core::app_mode;
-pub mod editor;
+pub use lumino_ui_editor as editor;
 pub mod event;
 pub mod host;
 pub use lumino_ui_core::message;
