@@ -1,19 +1,19 @@
-//! MIDI 连接状态管理
+//! MIDI 连接状态子模块
 //!
-//! 从 Root 中提取的 MIDI 连接相关状态，减少 Root 的字段数。
+//! 由 Root 持有，存储 MIDI 连接相关状态。
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-/// MIDI 连接状态（从 Root 提取）
+/// MIDI 连接状态（由 Root 持有）
 pub struct MidiConnectionState {
-    /// MIDI 文档引用（用于懒加载非当前音轨的音符，避免全量 preload）
+    /// MIDI 文档引用，供懒加载使用（当前窗口未打开文档时为 None，全局 preload 时填充）
     pub document: Option<Arc<lumino_midi_loader::MidiDocument>>,
-    /// MIDI 输入连接（保持打开状态，drop 时自动关闭端口）
+    /// MIDI 输入连接，持有连接状态（drop 时自动关闭端口）
     pub input_connection: Option<Box<dyn lumino_midi_io::InputConnection>>,
     /// MIDI 输入数据缓冲区（midir 回调线程写入，UI 线程读取）
     pub input_buffer: Arc<Mutex<VecDeque<Vec<u8>>>>,
-    /// MIDI API 引用（用于录制时打开输入端口）
+    /// MIDI API 句柄，用于枚举端口时保持端口打开
     pub api: Option<Box<dyn lumino_midi_io::Api>>,
 }
 

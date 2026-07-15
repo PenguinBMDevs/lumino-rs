@@ -13,7 +13,7 @@ use lumino_core::storage::config::UiConfig;
 use lumino_midi_loader::MidiDocument;
 use std::sync::Arc;
 
-pub use visual_state::VisualState;
+pub use lumino_ui_core::visual_state::VisualState;
 
 /// 根组件各组件的内存占用快照（字节和计数）
 #[derive(Debug, Clone, Default)]
@@ -34,10 +34,7 @@ pub struct MemoryBreakdown {
 mod collaboration;
 mod editor_ops;
 pub mod handlers;
-mod midi_state;
-mod playback_state;
 mod view;
-mod visual_state;
 
 /// 应用程序根组件
 pub struct Root {
@@ -55,11 +52,11 @@ pub struct Root {
     /// UI 状态
     pub(crate) state: RootState,
     /// 播放状态（播放管理器、Tempo 变化、MIDI 输出等）
-    pub playback: playback_state::PlaybackState,
+    pub playback: lumino_ui_core::playback_state::PlaybackState,
     /// 视觉/渲染状态（洋葱皮缓存、力度面板等）
-    pub visual: visual_state::VisualState,
+    pub visual: lumino_ui_core::visual_state::VisualState,
     /// MIDI 连接状态（文档引用、输入连接、缓冲区、API）
-    pub midi: midi_state::MidiConnectionState,
+    pub midi: lumino_ui_core::midi_state::MidiConnectionState,
     /// 录制状态
     pub recording: editor::recording::RecordingState,
 }
@@ -100,12 +97,12 @@ impl Root {
             progress: None,
             is_progress_window: params.is_progress_window,
             state,
-            playback: playback_state::PlaybackState::new(),
-            visual: visual_state::VisualState::new(
+            playback: lumino_ui_core::playback_state::PlaybackState::new(),
+            visual: lumino_ui_core::visual_state::VisualState::new(
                 params.ui_config.velocity_filter_threshold,
                 crate::editor::velocity::VELOCITY_PANEL_HEIGHT,
             ),
-            midi: midi_state::MidiConnectionState::new(),
+            midi: lumino_ui_core::midi_state::MidiConnectionState::new(),
             recording: editor::recording::RecordingState::new(),
         }
     }

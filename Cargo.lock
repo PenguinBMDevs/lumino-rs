@@ -3741,6 +3741,9 @@ dependencies = [
  "lumino-core",
  "lumino-event",
  "lumino-message",
+ "lumino-midi-io",
+ "lumino-midi-loader",
+ "lumino-playback",
 ]
 
 [[package]]

@@ -14,6 +14,11 @@ pub mod sidebar_event;
 pub mod message;
 pub mod state;
 
+/// Root 持有的子状态类型（视觉/渲染、MIDI 连接、播放）
+pub mod visual_state;
+pub mod midi_state;
+pub mod playback_state;
+
 pub use message::Message;
 
 /// 使用 Iced 默认主题（内置于 iced_core）。
