@@ -110,14 +110,14 @@ mod tests {
 
     #[test]
     fn test_event_buffer_empty_on_start() {
-        let _guard = TEST_MUTEX.lock().unwrap();
+        let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
         let events = take_events();
         assert!(events.is_empty());
     }
 
     #[test]
     fn test_emit_and_take_events() {
-        let _guard = TEST_MUTEX.lock().unwrap();
+        let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
         // 先清空，避免其它测试残留事件干扰
         let _ = take_events();
 
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_event_display_name() {
-        let _guard = TEST_MUTEX.lock().unwrap();
+        let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
         let e = Event::menu_file(menu::file::Event::New);
         assert_eq!(e.display_name(), "新建");
 
@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_event_constructors() {
-        let _guard = TEST_MUTEX.lock().unwrap();
+        let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
         // Menu constructors
         let e = Event::menu_file(menu::file::Event::Open);
         assert!(matches!(
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn test_event_clone() {
-        let _guard = TEST_MUTEX.lock().unwrap();
+        let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
         let e = Event::menu_file(menu::file::Event::Save);
         let cloned = e.clone();
         assert_eq!(e.display_name(), cloned.display_name());
@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn test_event_debug() {
-        let _guard = TEST_MUTEX.lock().unwrap();
+        let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
         let e = Event::menu_file(menu::file::Event::New);
         let debug = format!("{:?}", e);
         assert!(debug.contains("New"));
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn test_buffer_is_empty_after_take_all() {
-        let _guard = TEST_MUTEX.lock().unwrap();
+        let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
         // 先清空，避免其它测试残留事件干扰
         let _ = take_events();
 

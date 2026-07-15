@@ -53,27 +53,29 @@ pub struct RealtimeSynth {
 }
 
 impl RealtimeSynth {
-    /// 使用默认配置和默认音频输出打开合成器
-    pub fn open_with_all_defaults() -> Self {
+    /// 获取默认音频输出设备及其配置
+    ///
+    /// # Panics
+    /// 如果没有默认音频设备或无法获取配置，则 panic（无音频设备时应用不可用）。
+    fn open_default_device() -> (Device, SupportedStreamConfig) {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
-            .expect("failed to find output device");
+            .expect("failed to find default audio output device");
         let stream_config = device
             .default_output_config()
             .expect("failed to query default audio output config");
-        RealtimeSynth::open(Default::default(), &device, stream_config)
+        (device, stream_config)
+    }
+
+    /// 使用默认配置和默认音频输出打开合成器
+    pub fn open_with_all_defaults() -> Self {
+        Self::open_with_default_output(Default::default())
     }
 
     /// 使用指定配置和默认音频输出打开合成器
     pub fn open_with_default_output(config: XSynthRealtimeConfig) -> Self {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .expect("failed to find output device");
-        let stream_config = device
-            .default_output_config()
-            .expect("failed to query default audio output config");
+        let (device, stream_config) = Self::open_default_device();
         tracing::info!(
             "RealtimeSynth: 打开音频设备 (device={:?}, sample_rate={}Hz, channels={})",
             device.name().unwrap_or_default(),
