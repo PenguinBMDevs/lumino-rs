@@ -142,17 +142,18 @@ pub fn get_current_rss() -> u64 {
 #[cfg(target_os = "windows")]
 pub fn get_current_rss() -> u64 {
     unsafe {
-        let mut pmc: winapi::um::psapi::PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
-        pmc.cb = std::mem::size_of::<winapi::um::psapi::PROCESS_MEMORY_COUNTERS>() as u32;
+        // 使用 PROCESS_MEMORY_COUNTERS_EX 获取 PrivateUsage（私有工作集 = 任务管理器显示的"内存"值）。
+        // PrivateUsage 不包含跨进程共享的页面，与任务管理器读数更一致。
+        let mut pmc: winapi::um::psapi::PROCESS_MEMORY_COUNTERS_EX = std::mem::zeroed();
+        pmc.cb = std::mem::size_of::<winapi::um::psapi::PROCESS_MEMORY_COUNTERS_EX>() as u32;
         if winapi::um::psapi::GetProcessMemoryInfo(
             winapi::um::processthreadsapi::GetCurrentProcess(),
-            &mut pmc,
+            &mut pmc as *mut _ as *mut winapi::um::psapi::PROCESS_MEMORY_COUNTERS,
             pmc.cb,
         ) != 0
         {
-            pmc.WorkingSetSize as u64
+            pmc.PrivateUsage as u64
         } else {
-            tracing::warn!("MemoryMonitor: GetProcessMemoryInfo 失败, 跳过检查");
             0
         }
     }

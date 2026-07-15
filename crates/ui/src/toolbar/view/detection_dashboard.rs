@@ -48,9 +48,9 @@ impl Toolbar {
         let sep_color = palette.background.strong.color;
         let sep_h = (content_height * 0.55).max(8.0);
 
-        let c0 = metric_column(format!("{cpu:.1}%"), format!("{mem:.1} MB"), accent, dim);
-        let c1 = metric_column(format!("{bpm:.1}"), format!("PPQ {ppq}"), accent, dim);
-        let c2 = metric_column(pos, format_time(time_secs), accent, dim);
+        let c0 = metric_column(format!("{cpu:.1}%"), format!("{mem:.1} MB"), accent, dim, 76.0);
+        let c1 = metric_column(format!("{bpm:.1}"), format!("PPQ {ppq}"), accent, dim, 72.0);
+        let c2 = metric_column(pos, format_time(time_secs), accent, dim, 86.0);
 
         container(
             row![
@@ -80,8 +80,8 @@ impl Toolbar {
     }
 }
 
-/// 单列（上行强调色数值 + 下行弱化说明文字），居中显示
-fn metric_column<'a>(top: String, bot: String, accent: iced_core::Color, dim: iced_core::Color) -> Element<'a> {
+/// 单列（上行强调色数值 + 下行弱化说明文字），固定宽度居中显示
+fn metric_column<'a>(top: String, bot: String, accent: iced_core::Color, dim: iced_core::Color, width: f32) -> Element<'a> {
     column![
         text(top).size(13).style(move |_t: &Theme| text::Style {
             color: Some(accent),
@@ -91,6 +91,7 @@ fn metric_column<'a>(top: String, bot: String, accent: iced_core::Color, dim: ic
             .size(11)
             .style(move |_t: &Theme| text::Style { color: Some(dim) }),
     ]
+    .width(iced_widget::core::Length::Fixed(width))
     .align_x(Alignment::Center)
     .into()
 }
