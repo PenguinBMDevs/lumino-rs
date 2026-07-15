@@ -33,13 +33,4 @@ pub enum Event {
     LocalTrackAdded { track_index: usize },
 }
 
-impl Event {
-    pub fn display_name(&self) -> String {
-        match self {
-            Self::LocalNoteAdded { .. } => "本地音符已添加".to_string(),
-            Self::LocalNoteMoved { .. } => "本地音符已移动".to_string(),
-            Self::LocalNoteDeleted { .. } => "本地音符已删除".to_string(),
-            Self::LocalTrackAdded { .. } => "本地音轨已添加".to_string(),
-        }
-    }
-}
+

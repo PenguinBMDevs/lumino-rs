@@ -41,32 +41,6 @@ pub enum Event {
 }
 
 impl Event {
-    /// 获取事件的人类可读显示名称
-    pub fn display_name(&self) -> String {
-        match self {
-            Self::New => "新建".to_string(),
-            Self::Open => "打开".to_string(),
-            Self::Save => "保存".to_string(),
-            Self::Close => "关闭".to_string(),
-            Self::ImportFiles => "导入文件".to_string(),
-            Self::MidiLoaded(_) => "MIDI 加载完成".to_string(),
-            Self::MidiLoadError(_) => "MIDI 加载失败".to_string(),
-            Self::MidiParsed(_) => "MIDI 解析完成".to_string(),
-            Self::MidiParseError(_) => "MIDI 解析失败".to_string(),
-            Self::ShowProgress(_, _) => "显示进度".to_string(),
-            Self::HideProgress => "隐藏进度".to_string(),
-            Self::ExportMidi => "导出 MIDI".to_string(),
-            Self::ExportProjectArchive => "导出工程归档".to_string(),
-            Self::ExportProjectFolder => "导出工程文件夹".to_string(),
-            Self::ProjectSettings => "工程设置".to_string(),
-            Self::Settings => "设置".to_string(),
-            Self::Exit => "退出".to_string(),
-            Self::TrackSelected(_) => "音轨选择".to_string(),
-            #[cfg(debug_assertions)]
-            Self::TestMidiLoaded { .. } => "测试 MIDI 加载".to_string(),
-        }
-    }
-
     // ── 构造函数（替代 event! 宏） ──
 
     pub const fn new_file() -> Self {

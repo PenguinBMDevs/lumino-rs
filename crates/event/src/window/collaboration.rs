@@ -55,21 +55,4 @@ pub enum Event {
     },
 }
 
-impl Event {
-    pub fn display_name(&self) -> String {
-        match self {
-            Self::Connect { .. } => "连接协作服务器".to_string(),
-            Self::CreateRoom { .. } => "创建协作房间".to_string(),
-            Self::JoinRoom { .. } => "加入协作房间".to_string(),
-            Self::Disconnect => "断开协作连接".to_string(),
-            Self::Authenticated { .. } => "协作认证成功".to_string(),
-            Self::RoomCreated { .. } => "房间创建成功".to_string(),
-            Self::RoomJoined { .. } => "已加入房间".to_string(),
-            Self::Disconnected => "协作已断开".to_string(),
-            Self::UserLeft { .. } => "用户离开".to_string(),
-            Self::MouseUpdate { .. } => "鼠标位置更新".to_string(),
-            Self::NoteUpdate { .. } => "音符更新".to_string(),
-            Self::ProjectUpdate { .. } => "工程更新".to_string(),
-        }
-    }
-}
+

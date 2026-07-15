@@ -11,16 +11,6 @@ pub enum Event {
 }
 
 impl Event {
-    /// 获取事件的人类可读显示名称
-    pub fn display_name(&self) -> String {
-        match self {
-            Self::Theme(_) => "主题".to_string(),
-            Self::ZoomIn => "放大".to_string(),
-            Self::ZoomOut => "缩小".to_string(),
-            Self::ZoomReset => "重置缩放".to_string(),
-        }
-    }
-
     // ── 构造函数（替代 event! 宏） ──
 
     pub fn theme(t: String) -> Self {

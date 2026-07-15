@@ -17,16 +17,6 @@ pub enum Event {
 }
 
 impl Event {
-    /// 获取事件的人类可读显示名称
-    pub fn display_name(&self) -> String {
-        match self {
-            Self::Lifecycle(e) => e.display_name(),
-            Self::Dialog(e) => e.display_name(),
-            Self::Collaboration(e) => e.display_name(),
-            Self::Sync(e) => e.display_name(),
-        }
-    }
-
     // ── 生命周期构造函数（直接构造，无需中间函数） ──
 
     pub const fn drag() -> Self {

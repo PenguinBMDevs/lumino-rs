@@ -93,31 +93,4 @@ pub enum Event {
     },
 }
 
-impl Event {
-    pub fn display_name(&self) -> String {
-        match self {
-            Self::OpenCustomPrecisionDialog => "自定义精度".to_string(),
-            Self::OpenLoadConfirmDialog { .. } => "加载确认".to_string(),
-            Self::CloseCustomPrecisionDialog => "关闭自定义精度".to_string(),
-            Self::ApplyCustomPrecision(_, _) => "应用精度设置".to_string(),
-            Self::OpenCollaborationDialog => "协作".to_string(),
-            Self::CloseCollaborationDialog => "关闭协作".to_string(),
-            Self::OpenSpeedChangeDialog => "音符变速".to_string(),
-            Self::CloseSpeedChangeDialog => "关闭音符变速".to_string(),
-            Self::ConfirmSpeedChange(_) => "确认变速".to_string(),
-            Self::OpenProjectSettingsDialog => "工程设置".to_string(),
-            Self::CloseProjectSettingsDialog => "关闭工程设置".to_string(),
-            Self::ApplyProjectSettings { .. } => "应用工程设置".to_string(),
-            Self::StartAudioExport { document, .. } => {
-                if document.is_some() {
-                    "音频导出（内存模式）".to_string()
-                } else {
-                    "音频导出（文件模式）".to_string()
-                }
-            }
-            Self::OpenVideoExportDialog => "打开视频导出对话框".to_string(),
-            Self::CloseVideoExportDialog => "关闭视频导出对话框".to_string(),
-            Self::StartVideoExport { .. } => "视频导出".to_string(),
-        }
-    }
-}
+

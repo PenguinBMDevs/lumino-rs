@@ -16,6 +16,7 @@ use lumino_core::storage::config::TrackAddBehavior;
 pub mod collaboration;
 pub mod dialog;
 pub mod loop_range;
+pub mod settings;
 pub mod toolbar;
 pub mod velocity;
 
@@ -23,6 +24,7 @@ pub mod velocity;
 pub use collaboration::CollaborationHandler;
 pub use dialog::DialogHandler;
 pub use loop_range::LoopRangeHandler;
+pub use settings::SettingsHandler;
 pub use toolbar::ToolbarHandler;
 pub use velocity::VelocityHandler;
 
@@ -82,6 +84,7 @@ pub fn create_message_router() -> MessageRouter {
     let mut router = MessageRouter::new();
     router.register(Box::new(CollaborationHandler::new()));
     router.register(Box::new(DialogHandler::new()));
+    router.register(Box::new(SettingsHandler::new()));
     router.register(Box::new(VelocityHandler::new()));
     router.register(Box::new(LoopRangeHandler::new()));
     router.register(Box::new(ToolbarHandler::new()));
@@ -183,79 +186,6 @@ impl Root {
         vp.scroll_y = (focus_ratio * new_zoom * vp.track_height - canvas_h * fixed_ratio)
             .clamp(0.0, max_scroll);
         true
-    }
-
-    /// 处理设置面板事件
-    fn handle_settings_event(&mut self, event: &Message) -> bool {
-        if let Message::Settings(event) = event {
-            self.settings.update(event.clone());
-            match event {
-                crate::settings::Event::EraserBehaviorChanged(behavior) => {
-                    self.editor.set_eraser_behavior(*behavior);
-                }
-                crate::settings::Event::SelectionBoxModeChanged(mode) => {
-                    self.editor.set_selection_box_mode(*mode);
-                    tracing::debug!("Root: 框选框模式切换为 {:?}", mode);
-                }
-                crate::settings::Event::VelocityFilterThresholdChanged(value) => {
-                    if let Ok(val) = value.parse::<u8>() {
-                        self.visual.velocity_filter_threshold = val;
-                        tracing::debug!("Root: 力度过滤阈值同步为 {}", val);
-                        // 立即传播到播放引擎，让力度过滤实时生效。
-                        // 不能只依赖 apply_settings 中的 diff 检测——因为
-                        // self.settings.update(event) 已在 match 前执行，
-                        // 导致 apply_settings 的 old_settings == new_settings，
-                        // diff 检测永远为 false，update_playback_notes() 不会被调用。
-                        self.update_playback_notes();
-                    }
-                }
-                crate::settings::Event::AutoScrollFixedPositionChanged(value) => {
-                    if let Ok(val) = value.parse::<u32>() {
-                        let mut config = *self.editor.auto_scroll_config();
-                        config.fixed_indicator_position = val;
-                        self.editor.set_auto_scroll_config(config);
-                        tracing::debug!("Root: 自动滚动固定位置同步为 {}", val);
-                    }
-                }
-                crate::settings::Event::AutoScrollPageTriggerOffsetChanged(value) => {
-                    if let Ok(val) = value.parse::<u32>() {
-                        let mut config = *self.editor.auto_scroll_config();
-                        config.page_trigger_offset = val;
-                        self.editor.set_auto_scroll_config(config);
-                        tracing::debug!("Root: 自动滚动翻页触发偏移同步为 {}", val);
-                    }
-                }
-                crate::settings::Event::AutoScrollPageReturnPositionChanged(value) => {
-                    if let Ok(val) = value.parse::<u32>() {
-                        let mut config = *self.editor.auto_scroll_config();
-                        config.page_return_position = val;
-                        self.editor.set_auto_scroll_config(config);
-                        tracing::debug!("Root: 自动滚动翻页返回位置同步为 {}", val);
-                    }
-                }
-                crate::settings::Event::IconHiDPIChanged(enabled) => {
-                    crate::resources::icon::set_hidpi_enabled(*enabled);
-                    tracing::debug!("Root: HiDPI 图标渲染切换为 {}", enabled);
-                }
-                crate::settings::Event::Enable256keyChanged(enabled) => {
-                    let new_count: u16 = if *enabled { 256 } else { 128 };
-                    self.editor.set_visible_key_count(new_count);
-                    self.editor.editor_state.view.key_count = new_count;
-                    tracing::debug!(
-                        "Root: 256键模式切换为 {}，琴键数调整为 {}",
-                        enabled,
-                        new_count
-                    );
-                }
-                crate::settings::Event::LanguageChanged(lang) => {
-                    tracing::debug!("Root: 界面语言切换为 {:?}", lang);
-                }
-                _ => {} // 其他设置变更由 settings.update() 同步
-            }
-            true
-        } else {
-            false
-        }
     }
 
     /// 处理模式切换（编辑器 ↔ 瀑布流）
@@ -409,7 +339,6 @@ impl Root {
                 self.toolbar.shift_pressed = *pressed;
                 true
             }
-            Message::Settings(_) => self.handle_settings_event(msg),
             Message::ToggleSettings | Message::Null => true,
             Message::ModeToggled => self.handle_mode_toggle(),
             Message::AnimationTick => self.handle_animation_tick(),

@@ -21,14 +21,6 @@ pub enum Event {
 }
 
 impl Event {
-    /// 获取事件的人类可读显示名称
-    pub fn display_name(&self) -> String {
-        match self {
-            Self::Menu(e) => e.display_name(),
-            Self::Window(e) => e.display_name(),
-        }
-    }
-
     // ── 构造函数（替代 event! 宏，IDE 友好） ──
 
     pub fn menu_file(event: menu::file::Event) -> Self {
@@ -143,16 +135,6 @@ mod tests {
     }
 
     #[test]
-    fn test_event_display_name() {
-        let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
-        let e = Event::menu_file(menu::file::Event::New);
-        assert_eq!(e.display_name(), "新建");
-
-        let e = Event::window(window::Event::Lifecycle(window::lifecycle::Event::Close));
-        assert_eq!(e.display_name(), "关闭");
-    }
-
-    #[test]
     fn test_event_constructors() {
         let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
         // Menu constructors
@@ -195,19 +177,13 @@ mod tests {
     }
 
     #[test]
-    fn test_event_clone() {
-        let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
-        let e = Event::menu_file(menu::file::Event::Save);
-        let cloned = e.clone();
-        assert_eq!(e.display_name(), cloned.display_name());
-    }
-
-    #[test]
-    fn test_event_debug() {
+    fn test_event_debug_and_clone() {
         let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
         let e = Event::menu_file(menu::file::Event::New);
-        let debug = format!("{:?}", e);
-        assert!(debug.contains("New"));
+        assert!(format!("{:?}", e).contains("New"));
+
+        let cloned = e.clone();
+        assert_eq!(format!("{:?}", e), format!("{:?}", cloned));
     }
 
     #[test]
