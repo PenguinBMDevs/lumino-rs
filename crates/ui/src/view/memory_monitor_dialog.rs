@@ -1,7 +1,9 @@
 //! 内存监控对话框视图
 //!
 //! 移植自 yinhe-egui 的 memory_breakdown.rs，使用 iced 渲染。
-//! 每次 view 被调用时重新 capture Snapshot，利用 dialog 窗口的 ~16ms redraw 频率实现实时刷新。
+//! 每次 view 被调用时重新 capture Snapshot。事件循环默认 `Wait` 模式（iced 自动重绘检测），
+//! 内存监控对话框通过 `ControlFlow::WaitUntil` 以 ~300ms 低频率心跳触发重绘，
+//! 既保持数字实时刷新，又避免 `Poll` 模式持续空刷导致的 GPU 占用爆表。
 
 use iced_core::Length;
 use iced_widget::{button, column, container, row, space, text};

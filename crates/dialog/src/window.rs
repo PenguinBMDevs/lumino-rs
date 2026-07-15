@@ -320,6 +320,18 @@ impl DialogWindow {
         }
     }
 
+    /// 强制重绘：先标记 UI 脏确保 `view()` 重新构建，再执行正常 `redraw`。
+    ///
+    /// 用于内存监控等需要每帧重新捕获快照的对话框，避免 `render_iced_ui`
+    /// 因 `ui_dirty == false` 进入「仅 present 缓存」的早退路径而跳过
+    /// `UserInterface::build`（从而跳过 `view()` 中重新捕获 Snapshot）。
+    pub fn redraw_force(&mut self) {
+        if let Some(ui) = self.ui.as_mut() {
+            ui.mark_dirty();
+        }
+        self.redraw();
+    }
+
     /// 是否应关闭
     pub fn should_close(&self) -> bool {
         self.should_close

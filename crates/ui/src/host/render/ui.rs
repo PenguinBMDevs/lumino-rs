@@ -95,9 +95,13 @@ impl Host {
             }
         }
 
-        // 如果状态有变更或 UI 有更新（如打开下拉菜单），标记 UI 需要重绘并请求下一帧
+        // 如果状态有变更或 UI 有更新（如打开下拉菜单），标记 UI 需要重绘并请求下一帧。
+        // 仅在主窗口（note_renderer.is_some()）中请求自触发重绘，以维持动画/播放头刷新。
+        // 对话框（note_renderer.is_none()）的刷新由 DialogManager::update() 驱动，
+        // 其 redraw_force 已确保 view() 重新构建；此处的 request_redraw 会形成
+        // RedrawRequested → handle_dialog_event → dialog.redraw() 的无用自循环。
         let is_ui_updated = matches!(state, user_interface::State::Updated { .. });
-        if has_state_change || is_ui_updated {
+        if (has_state_change || is_ui_updated) && self.render_ctx.note_renderer.is_some() {
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
         }

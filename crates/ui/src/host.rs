@@ -144,6 +144,14 @@ impl Host {
         self.window_ctx.cursor_position
     }
 
+    /// 标记 UI 脏，强制下一帧重绘时重建界面（而非使用渲染缓存）。
+    ///
+    /// 主要用于内存监控等需要每帧重新捕获快照的对话框，在节流刷新前调用，
+    /// 确保 `render_iced_ui` 不因 `ui_dirty == false` 而跳过 `UserInterface::build`。
+    pub fn mark_dirty(&mut self) {
+        self.ui_dirty = true;
+    }
+
     /// 收集所有组件的内存占用快照（Root + RenderCache）
     pub fn memory_breakdown(&self) -> root::MemoryBreakdown {
         let mut breakdown = self.root.memory_breakdown();

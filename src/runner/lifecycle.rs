@@ -27,6 +27,13 @@ impl winit::application::ApplicationHandler for Runner {
             Ok(inner) => {
                 self.inner = Some(inner);
 
+                // 兜底首帧：显式请求一次主窗口重绘。
+                // Wait 模式下 about_to_wait 不再每轮强制 request_redraw，
+                // 首帧后若无动画/播放，needs_redraw==false 即进入休眠，不会忙循环。
+                if let Some(this) = self.inner.as_mut() {
+                    this.window_state.window.request_redraw();
+                }
+
                 // 如果是测试模式，自动加载 MIDI
                 if let Some(test_config) = self.test_config.take()
                     && let Some(this) = self.inner.as_mut()

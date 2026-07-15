@@ -222,10 +222,21 @@ impl DialogManager {
     }
 
     /// 更新所有对话框（渲染等）
+    ///
+    /// 内存监控对话框使用 `redraw_force` 确保每次刷新重建 UI 界面（`view()` 重新捕获 Snapshot），
+    /// 其他对话框走正常 `redraw`（若 `ui_dirty == false` 则进入 iced 缓存早退路径，无额外开销）。
     pub fn update(&mut self) {
         for dialog in self.dialogs.values_mut() {
-            if !dialog.should_close() {
-                dialog.redraw();
+            if dialog.should_close() {
+                continue;
+            }
+            match dialog.dialog_type {
+                DialogType::MemoryMonitor => {
+                    dialog.redraw_force();
+                }
+                _ => {
+                    dialog.redraw();
+                }
             }
         }
     }
