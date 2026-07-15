@@ -1,12 +1,12 @@
 //! 设置页面 - 音频设置
 
-use crate::{Element, Message, Theme};
+use lumino_ui_core::{Element, Message, Theme};
 use iced_core::{Alignment, Length};
 use iced_widget::{column, pick_list, row, text, text_input};
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
-use crate::settings::SettingsPanel;
+use crate::SettingsPanel;
 use lumino_core::i18n::settings_translations;
 use lumino_core::storage::config::SynthBackend;
 
@@ -62,7 +62,7 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
             pick_list(synth_options, Some(current_synth), |ls| {
-                Message::Settings(crate::settings::Event::SynthBackendChanged(ls.inner))
+                Message::Settings(crate::Event::SynthBackendChanged(ls.inner))
             })
             .width(200.0),
         ]
@@ -98,7 +98,7 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
 fn render_xsynth_options<'a>(
     settings: &SettingsPanel,
     t: &lumino_core::i18n::SettingsTranslations,
-) -> iced_widget::Column<'a, Message, Theme, crate::Renderer> {
+) -> iced_widget::Column<'a, Message, Theme, lumino_ui_core::Renderer> {
     let mut col = column![];
 
     // 音色库选择
@@ -110,7 +110,7 @@ fn render_xsynth_options<'a>(
             iced_widget::space().width(SPACING_MAIN),
             text_input(t.soundfont_placeholder, &settings.soundfont_path)
                 .width(Length::Fill)
-                .on_input(|s| Message::Settings(crate::settings::Event::SoundfontPathChanged(s))),
+                .on_input(|s| Message::Settings(crate::Event::SoundfontPathChanged(s))),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
@@ -118,7 +118,7 @@ fn render_xsynth_options<'a>(
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
     col = col.push(
         iced_widget::button(t.browse)
-            .on_press(Message::Settings(crate::settings::Event::BrowseSoundfont)),
+            .on_press(Message::Settings(crate::Event::BrowseSoundfont)),
     );
     col = col.push(iced_widget::space().height(20));
 
@@ -133,7 +133,7 @@ fn render_xsynth_options<'a>(
             .style(create_content_text_style())
             .width(160.0),
             iced_widget::slider(5.0..=100.0, settings.xsynth_buffer_ms, |ms| {
-                Message::Settings(crate::settings::Event::XSynthBufferChanged(ms))
+                Message::Settings(crate::Event::XSynthBufferChanged(ms))
             })
             .step(1.0)
             .width(200.0),
@@ -147,7 +147,7 @@ fn render_xsynth_options<'a>(
     col = col.push(
         iced_widget::Checkbox::new(settings.xsynth_fade_out)
             .label(t.fade_out_label)
-            .on_toggle(|f| Message::Settings(crate::settings::Event::XSynthFadeOutChanged(f))),
+            .on_toggle(|f| Message::Settings(crate::Event::XSynthFadeOutChanged(f))),
     );
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
 
@@ -208,7 +208,7 @@ fn render_xsynth_options<'a>(
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
             pick_list(voice_options, current_voice, |opt| {
-                Message::Settings(crate::settings::Event::XSynthMaxVoicesChanged(opt.0))
+                Message::Settings(crate::Event::XSynthMaxVoicesChanged(opt.0))
             })
             .width(200.0),
         ]
@@ -234,7 +234,7 @@ fn render_xsynth_options<'a>(
             .style(create_content_text_style())
             .width(180.0),
             iced_widget::slider(0..=127, settings.velocity_filter_threshold, |v| {
-                Message::Settings(crate::settings::Event::VelocityFilterThresholdChanged(
+                Message::Settings(crate::Event::VelocityFilterThresholdChanged(
                     v.to_string(),
                 ))
             })
@@ -314,7 +314,7 @@ fn render_midi_device_selector<'a>(
                 .iter()
                 .find(|(_, n)| n.as_str() == name)
             {
-                Message::Settings(crate::settings::Event::DeviceSelected(*id))
+                Message::Settings(crate::Event::DeviceSelected(*id))
             } else {
                 Message::Null
             }

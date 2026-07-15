@@ -1,6 +1,6 @@
 //! 设置面板样式工厂
 
-use crate::Theme;
+use lumino_ui_core::Theme;
 use iced_core::Border;
 use iced_widget::{button, container, text};
 

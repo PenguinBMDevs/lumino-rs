@@ -1,12 +1,12 @@
 //! 设置页面 - 洋葱皮设置
 
-use crate::{Element, Message};
+use lumino_ui_core::{Element, Message};
 use iced_core::Alignment;
 use iced_widget::{column, row, text, text_input};
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
-use crate::settings::SettingsPanel;
+use crate::SettingsPanel;
 
 /// 渲染洋葱皮设置页面
 pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
@@ -20,7 +20,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
             iced_widget::Checkbox::new(settings.hires_onion_enabled)
                 .label("启用高精度洋葱皮贴图")
                 .on_toggle(|enabled| {
-                    Message::Settings(crate::settings::Event::HiresOnionEnabledChanged(enabled))
+                    Message::Settings(crate::Event::HiresOnionEnabledChanged(enabled))
                 }),
         ]
         .spacing(SPACING_ICON_LABEL)
@@ -38,7 +38,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
             iced_widget::space().width(SPACING_MAIN),
             text_input("4", &settings.hires_measures_per_group.to_string())
                 .on_input(|v| Message::Settings(
-                    crate::settings::Event::HiresMeasuresPerGroupChanged(v)
+                    crate::Event::HiresMeasuresPerGroupChanged(v)
                 ))
                 .width(80.0),
         ]
@@ -56,7 +56,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
             text_input("1920", &settings.hires_tile_width_px.to_string())
-                .on_input(|v| Message::Settings(crate::settings::Event::HiresTileWidthChanged(v)))
+                .on_input(|v| Message::Settings(crate::Event::HiresTileWidthChanged(v)))
                 .width(80.0),
         ]
         .spacing(SPACING_ICON_LABEL)
@@ -73,7 +73,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
             text_input("10", &settings.hires_cooldown_secs.to_string())
-                .on_input(|v| Message::Settings(crate::settings::Event::HiresCooldownChanged(v)))
+                .on_input(|v| Message::Settings(crate::Event::HiresCooldownChanged(v)))
                 .width(80.0),
         ]
         .spacing(SPACING_ICON_LABEL)
@@ -90,7 +90,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
             text_input("512", &settings.hires_gpu_mem_limit_mb.to_string())
-                .on_input(|v| Message::Settings(crate::settings::Event::HiresGpuMemLimitChanged(v)))
+                .on_input(|v| Message::Settings(crate::Event::HiresGpuMemLimitChanged(v)))
                 .width(80.0),
         ]
         .spacing(SPACING_ICON_LABEL)

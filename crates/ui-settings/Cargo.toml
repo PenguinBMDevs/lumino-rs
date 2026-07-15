@@ -1,0 +1,21 @@
+[package]
+name = "lumino-ui-settings"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+
+[lints]
+workspace = true
+
+[dependencies]
+iced_core = { workspace = true }
+iced_widget = { workspace = true }
+lumino-core = { workspace = true }
+lumino-ui-core = { workspace = true }
+rfd = { workspace = true }
+tracing = { workspace = true }

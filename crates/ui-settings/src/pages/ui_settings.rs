@@ -1,13 +1,13 @@
 //! 设置页面 - 界面设置
 
-use crate::{Element, Message, Theme};
+use lumino_ui_core::{Element, Message, Theme};
 use iced_core::Alignment;
 use iced_widget::{button, column, pick_list, row, text, text_input};
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
-use crate::settings::SettingsPanel;
-use crate::window;
+use crate::SettingsPanel;
+use lumino_ui_core::window;
 use lumino_core::i18n::{Language, settings_translations};
 use lumino_core::storage::config::SelectionBoxMode;
 
@@ -65,7 +65,7 @@ impl LocalizedSelectionBox {
 /// 渲染界面设置页面
 pub fn view<'a>(
     settings: &SettingsPanel,
-    window: &crate::window::Window,
+    window: &lumino_ui_core::window::Window,
     system_fonts: &[lumino_core::font_scanner::FontInfo],
 ) -> Element<'a> {
     let t = settings_translations(settings.language);
@@ -78,13 +78,13 @@ pub fn view<'a>(
             iced_widget::Checkbox::new(settings.use_native_titlebar)
                 .label(t.native_titlebar)
                 .on_toggle(|enabled| {
-                    Message::Settings(crate::settings::Event::NativeTitlebarChanged(enabled))
+                    Message::Settings(crate::Event::NativeTitlebarChanged(enabled))
                 })
         ]
     };
 
     // 主题选项（在 Iced 内置主题前插入高对比度选项）
-    let hc_canonical = crate::theme::HIGH_CONTRAST_DISPLAY;
+    let hc_canonical = lumino_ui_core::theme::HIGH_CONTRAST_DISPLAY;
     let mut theme_options: Vec<ThemeOption> = vec![ThemeOption {
         display: t.high_contrast.to_string(),
         value: hc_canonical.to_string(),
@@ -105,18 +105,18 @@ pub fn view<'a>(
     let font_dropdown = pick_list(
         font_options,
         Some(settings.program_font_name.clone()).filter(|s| !s.is_empty()),
-        |font_name| Message::Settings(crate::settings::Event::ProgramFontNameChanged(font_name)),
+        |font_name| Message::Settings(crate::Event::ProgramFontNameChanged(font_name)),
     )
     .width(200.0)
     .placeholder("选择系统字体...");
 
     // 自定义字体路径输入
     let font_path_input = text_input(t.font_path_placeholder, &settings.program_font_path)
-        .on_input(|path| Message::Settings(crate::settings::Event::ProgramFontPathChanged(path)));
+        .on_input(|path| Message::Settings(crate::Event::ProgramFontPathChanged(path)));
 
     // 浏览字体文件按钮
     let browse_font_button =
-        button(t.browse).on_press(Message::Settings(crate::settings::Event::BrowseProgramFont));
+        button(t.browse).on_press(Message::Settings(crate::Event::BrowseProgramFont));
 
     // 字体设置部分
     let font_section = column![
@@ -164,7 +164,7 @@ pub fn view<'a>(
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
             pick_list(language_options, Some(current_language), |lang| {
-                Message::Settings(crate::settings::Event::LanguageChanged(lang))
+                Message::Settings(crate::Event::LanguageChanged(lang))
             })
             .width(200.0),
         ]
@@ -200,7 +200,7 @@ pub fn view<'a>(
             iced_widget::Checkbox::new(settings.icon_hidpi)
                 .label(t.hidpi_icon)
                 .on_toggle(|enabled| {
-                    Message::Settings(crate::settings::Event::IconHiDPIChanged(enabled))
+                    Message::Settings(crate::Event::IconHiDPIChanged(enabled))
                 })
         ]
         .spacing(SPACING_ICON_LABEL)
@@ -223,7 +223,7 @@ pub fn view<'a>(
             iced_widget::space().width(SPACING_MAIN),
             text_input(t.pixel, &settings.auto_scroll_fixed_position.to_string())
                 .on_input(|v| Message::Settings(
-                    crate::settings::Event::AutoScrollFixedPositionChanged(v)
+                    crate::Event::AutoScrollFixedPositionChanged(v)
                 ))
                 .width(80.0),
             iced_widget::space().width(SPACING_ICON_LABEL),
@@ -245,7 +245,7 @@ pub fn view<'a>(
                 &settings.auto_scroll_page_trigger_offset.to_string()
             )
             .on_input(|v| Message::Settings(
-                crate::settings::Event::AutoScrollPageTriggerOffsetChanged(v)
+                crate::Event::AutoScrollPageTriggerOffsetChanged(v)
             ))
             .width(80.0),
             iced_widget::space().width(SPACING_ICON_LABEL),
@@ -267,7 +267,7 @@ pub fn view<'a>(
                 &settings.auto_scroll_page_return_position.to_string()
             )
             .on_input(|v| Message::Settings(
-                crate::settings::Event::AutoScrollPageReturnPositionChanged(v)
+                crate::Event::AutoScrollPageReturnPositionChanged(v)
             ))
             .width(80.0),
             iced_widget::space().width(SPACING_ICON_LABEL),
@@ -301,7 +301,7 @@ pub fn view<'a>(
                     settings.selection_box_mode,
                     settings.language
                 )),
-                |ls| Message::Settings(crate::settings::Event::SelectionBoxModeChanged(ls.inner)),
+                |ls| Message::Settings(crate::Event::SelectionBoxModeChanged(ls.inner)),
             )
             .width(200.0),
         ]
@@ -321,7 +321,7 @@ pub fn view<'a>(
             iced_widget::Checkbox::new(settings.enable_256key)
                 .label(t.enable_256key)
                 .on_toggle(|enabled| {
-                    Message::Settings(crate::settings::Event::Enable256keyChanged(enabled))
+                    Message::Settings(crate::Event::Enable256keyChanged(enabled))
                 }),
         ]
         .spacing(SPACING_ICON_LABEL)
@@ -336,7 +336,7 @@ pub fn view<'a>(
             iced_widget::Checkbox::new(settings.velocity_curve_style)
                 .label("力度面板曲线显示（默认）")
                 .on_toggle(|enabled| {
-                    Message::Settings(crate::settings::Event::VelocityCurveStyleChanged(enabled))
+                    Message::Settings(crate::Event::VelocityCurveStyleChanged(enabled))
                 }),
         ]
         .spacing(SPACING_ICON_LABEL)
@@ -351,7 +351,7 @@ pub fn view<'a>(
             iced_widget::Checkbox::new(settings.playback_key_colors_enabled)
                 .label("播放时键盘颜色指示（默认关闭）")
                 .on_toggle(|enabled| {
-                    Message::Settings(crate::settings::Event::PlaybackKeyColorsEnabledChanged(
+                    Message::Settings(crate::Event::PlaybackKeyColorsEnabledChanged(
                         enabled,
                     ))
                 }),

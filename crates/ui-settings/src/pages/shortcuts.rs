@@ -1,7 +1,7 @@
 //! 设置页面 - 快捷键设置
 
-use crate::Element;
-use crate::settings::SettingsPanel;
+use lumino_ui_core::Element;
+use crate::SettingsPanel;
 use iced_widget::{column, text};
 use lumino_core::i18n::settings_translations;
 

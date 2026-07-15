@@ -19,6 +19,12 @@ pub mod visual_state;
 pub mod midi_state;
 pub mod playback_state;
 
+/// 窗口状态（Window 结构体）
+pub mod window;
+
+/// 共享资源（图标等）
+pub mod resources;
+
 pub use message::Message;
 
 /// 使用 Iced 默认主题（内置于 iced_core）。

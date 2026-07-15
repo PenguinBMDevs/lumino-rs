@@ -3711,6 +3711,7 @@ dependencies = [
  "lumino-ui-constants",
  "lumino-ui-core",
  "lumino-ui-host",
+ "lumino-ui-settings",
  "midly",
  "once_cell",
  "parking_lot",
@@ -3738,12 +3739,20 @@ version = "0.1.1"
 dependencies = [
  "iced_core",
  "iced_wgpu",
+ "iced_widget",
+ "image",
  "lumino-core",
  "lumino-event",
  "lumino-message",
  "lumino-midi-io",
  "lumino-midi-loader",
  "lumino-playback",
+ "once_cell",
+ "resvg",
+ "thiserror 2.0.18",
+ "tiny-skia",
+ "tracing",
+ "usvg",
 ]
 
 [[package]]
@@ -3752,6 +3761,18 @@ version = "0.1.1"
 dependencies = [
  "iced_wgpu",
  "lumino-gfx",
+]
+
+[[package]]
+name = "lumino-ui-settings"
+version = "0.1.1"
+dependencies = [
+ "iced_core",
+ "iced_widget",
+ "lumino-core",
+ "lumino-ui-core",
+ "rfd",
+ "tracing",
 ]
 
 [[package]]

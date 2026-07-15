@@ -2,13 +2,13 @@
 //!
 //! 用户可在已嵌入的调色板之间切换，实时预览各调色板的颜色。
 
-use crate::{Element, Message, Theme};
+use lumino_ui_core::{Element, Message, Theme};
 use iced_core::{Alignment, Border, Length};
 use iced_widget::{column, container, pick_list, row, scrollable, text};
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
-use crate::settings::{Event, SettingsPanel};
+use crate::{Event, SettingsPanel};
 use lumino_core::palette::PaletteColor;
 
 /// 调色板预览颜色条的大小

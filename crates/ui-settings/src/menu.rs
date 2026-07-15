@@ -4,7 +4,7 @@ use iced_core::{Alignment, Border, Length, Padding};
 use iced_widget::{button, column, container, row, text};
 
 use super::{Event, SettingsPanel, components::*};
-use crate::{
+use lumino_ui_core::{
     Message, Theme,
     resources::icon::{self, Icon},
     window,
@@ -28,7 +28,7 @@ pub(super) fn render_menu_list<'a>(
     settings: &SettingsPanel,
     window: &window::Window,
     menu_items: &[(&'static str, Icon)],
-) -> iced_widget::Container<'a, Message, Theme, crate::Renderer> {
+) -> iced_widget::Container<'a, Message, Theme, lumino_ui_core::Renderer> {
     let mut col = column![]
         .spacing(SPACING_MENU_CONTENT)
         .padding(PADDING_MENU);
@@ -50,7 +50,7 @@ fn render_menu_item<'a>(
     index: usize,
     label: &'static str,
     icon: Icon,
-) -> iced_widget::Button<'a, Message, Theme, crate::Renderer> {
+) -> iced_widget::Button<'a, Message, Theme, lumino_ui_core::Renderer> {
     let is_selected = index == settings.selected_menu_index;
 
     let icon_el =

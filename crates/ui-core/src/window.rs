@@ -6,7 +6,7 @@
 use crate::theme::HIGH_CONTRAST_DISPLAY;
 use crate::Theme;
 
-pub use lumino_ui_core::window_event::{Event, TrafficAction};
+pub use crate::window_event::{Event, TrafficAction};
 
 /// 窗口状态
 #[derive(Debug, Clone)]

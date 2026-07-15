@@ -1,12 +1,12 @@
 //! 设置页面 - 常规设置
 
-use crate::{Element, Message};
+use lumino_ui_core::{Element, Message};
 use iced_core::Alignment;
 use iced_widget::{column, pick_list, row, text};
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
-use crate::settings::SettingsPanel;
+use crate::SettingsPanel;
 use lumino_core::i18n::settings_translations;
 use lumino_core::storage::config::{EraserBehavior, TrackAddBehavior};
 
@@ -93,7 +93,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
             pick_list(eraser_options, Some(current_eraser), |le| {
-                Message::Settings(crate::settings::Event::EraserBehaviorChanged(le.inner))
+                Message::Settings(crate::Event::EraserBehaviorChanged(le.inner))
             })
             .width(200.0),
         ]
@@ -122,7 +122,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                     settings.track_add_behavior,
                     settings.language
                 )),
-                |lt| Message::Settings(crate::settings::Event::TrackAddBehaviorChanged(lt.inner)),
+                |lt| Message::Settings(crate::Event::TrackAddBehaviorChanged(lt.inner)),
             )
             .width(200.0),
         ]

@@ -12,7 +12,7 @@ pub mod pages;
 use iced_core::{Border, Length};
 use iced_widget::{column, container, row, scrollable, text};
 
-use crate::{Element, Message, Theme, window};
+use lumino_ui_core::{Element, Message, Theme, window};
 use lumino_core::i18n::Language;
 use lumino_core::storage::config::{SynthBackend, TrackAddBehavior};
 
@@ -290,7 +290,7 @@ fn render_content_area<'a>(
     settings: &'a SettingsPanel,
     window: &'a window::Window,
     system_fonts: &'a [lumino_core::font_scanner::FontInfo],
-) -> iced_widget::Container<'a, Message, Theme, crate::Renderer> {
+) -> iced_widget::Container<'a, Message, Theme, lumino_ui_core::Renderer> {
     let content = match settings.selected_menu_index {
         0 => general_view(settings),
         1 => audio_view(settings),
@@ -356,7 +356,7 @@ fn create_main_container_style() -> impl Fn(&Theme) -> container::Style + 'stati
 
 fn render_placeholder<'a>(
     content: &'a str,
-) -> iced_widget::Column<'a, Message, Theme, crate::Renderer> {
+) -> iced_widget::Column<'a, Message, Theme, lumino_ui_core::Renderer> {
     column![
         text("设置")
             .size(TEXT_SIZE_TITLE)
