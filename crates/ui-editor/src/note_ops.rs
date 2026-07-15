@@ -1,8 +1,8 @@
 use super::{Editor, HitType, SelectionHitType};
-use lumino_ui_constants::editor::NOTE_EDGE_THRESHOLD_PX;
-use lumino_event;
 use iced_core::Point;
 use lumino_core::editor_state::hit_test;
+use lumino_event;
+use lumino_ui_constants::editor::NOTE_EDGE_THRESHOLD_PX;
 
 impl Editor {
     pub fn hit_test_note(&self, pos: Point) -> Option<(usize, HitType)> {

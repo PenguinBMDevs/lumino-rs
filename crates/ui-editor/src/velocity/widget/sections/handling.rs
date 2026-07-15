@@ -4,9 +4,9 @@ use iced_core::{Point, Size, keyboard, mouse};
 use iced_widget::canvas;
 use lumino_core::{AutomationEdit, SegmentShape, Tool};
 
-use lumino_ui_core::Message;
 use crate::editor_state::ViewState;
 use crate::velocity::EditMode;
+use lumino_ui_core::Message;
 use lumino_ui_core::message::VelocityAction;
 
 use super::super::super::{

@@ -1,5 +1,5 @@
 use super::types::{NoteInstance, VERTEX_ATTRIBUTES};
-use crate::note_renderer::NoteRenderer;
+use crate::{gpu_resource_tracker, note_renderer::NoteRenderer};
 
 /// Cull bind group 的 GPU 缓冲区集合
 pub(super) struct CullBuffers<'a> {
@@ -26,7 +26,7 @@ impl NoteRenderer {
             usage |= wgpu::BufferUsages::STORAGE;
         }
 
-        device.create_buffer(&wgpu::BufferDescriptor {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(if is_storage {
                 "note_visible_instance_buffer"
             } else {
@@ -35,7 +35,9 @@ impl NoteRenderer {
             size: (capacity * std::mem::size_of::<NoteInstance>()) as wgpu::BufferAddress,
             usage,
             mapped_at_creation: false,
-        })
+        });
+        gpu_resource_tracker::add_buffer(&buffer);
+        buffer
     }
 
     /// 扩容缓冲区（受 max_capacity 限制）
@@ -55,6 +57,7 @@ impl NoteRenderer {
             required_capacity
         );
 
+        gpu_resource_tracker::sub_buffer(&self.visible_instance_buffer);
         self.visible_instance_buffer = Self::create_instance_buffer(device, new_capacity, true);
         self.capacity = new_capacity;
 

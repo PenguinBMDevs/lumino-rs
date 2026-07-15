@@ -1,8 +1,8 @@
 //! 剪贴板操作：复制、剪切、粘贴音符
 
 use super::Editor;
-use lumino_ui_constants::editor::{CLIPBOARD_FORMAT, CLIPBOARD_VERSION, DEFAULT_PASTE_ANCHOR_KEY};
 use iced_core::Point;
+use lumino_ui_constants::editor::{CLIPBOARD_FORMAT, CLIPBOARD_VERSION, DEFAULT_PASTE_ANCHOR_KEY};
 
 impl Editor {
     /// 剪切选中音符

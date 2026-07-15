@@ -11,8 +11,8 @@ use std::f32;
 use iced_core::{Color, Point, Rectangle, Size, alignment, mouse};
 use iced_widget::canvas::{self, Frame, Program, path};
 
-use lumino_ui_core::message::PatternAction;
 use crate::{Message, Renderer, Theme};
+use lumino_ui_core::message::PatternAction;
 
 // iced_wgpu::Geometry is the concrete canvas geometry type for the wgpu backend
 use iced_wgpu::Geometry as Geom;

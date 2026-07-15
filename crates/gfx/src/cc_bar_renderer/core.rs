@@ -2,6 +2,8 @@
 
 use wgpu::util::DeviceExt;
 
+use crate::gpu_resource_tracker;
+
 /// CC / 自动化曲线实例数据 — 32 bytes
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -163,6 +165,7 @@ impl CcBarRenderer {
             contents: bytemuck::cast_slice(&[CcBarViewportUniform::new(800.0, 600.0)]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        gpu_resource_tracker::add_buffer(&viewport_buffer);
 
         // 创建 bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -185,12 +188,14 @@ impl CcBarRenderer {
 
     /// 创建实例缓冲区
     pub(super) fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
-        device.create_buffer(&wgpu::BufferDescriptor {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cc_bar_instance_buffer"),
             size: (capacity * std::mem::size_of::<CcBarInstance>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
-        })
+        });
+        gpu_resource_tracker::add_buffer(&buffer);
+        buffer
     }
 
     /// 实例缓冲区布局
@@ -231,6 +236,13 @@ impl CcBarRenderer {
                 },
             ],
         }
+    }
+}
+
+impl Drop for CcBarRenderer {
+    fn drop(&mut self) {
+        gpu_resource_tracker::sub_buffer(&self.instance_buffer);
+        gpu_resource_tracker::sub_buffer(&self.viewport_buffer);
     }
 }
 

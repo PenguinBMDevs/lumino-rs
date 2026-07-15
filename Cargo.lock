@@ -3299,6 +3299,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
+name = "libmimalloc-sys"
+version = "0.1.49"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a45a52f43e1c16f667ccfe4dd8c85b7f7c204fd5e3bf46c5b0db9a5c3c0b8e9"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "libredox"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3476,6 +3485,7 @@ dependencies = [
  "hound",
  "lumino-core",
  "lumino-memory-monitor",
+ "lumino-memtrace",
  "lumino-midi-loader",
  "lumino-midi-model",
  "memmap2",
@@ -3503,6 +3513,7 @@ dependencies = [
  "half",
  "im",
  "lumino-core",
+ "lumino-memtrace",
  "lumino-midi-loader",
  "lumino-onion-skin",
  "lumino-onion-skin-hires",
@@ -3523,6 +3534,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumino-memtrace"
+version = "0.1.1"
+dependencies = [
+ "mimalloc",
+ "tikv-jemalloc-ctl",
+ "tikv-jemallocator",
+ "tracing",
+]
+
+[[package]]
 name = "lumino-message"
 version = "0.1.1"
 dependencies = [
@@ -3537,6 +3558,7 @@ dependencies = [
  "cpal",
  "crossbeam-channel",
  "libloading 0.9.0",
+ "lumino-memtrace",
  "lumino-midi-model",
  "lumino-realtime",
  "midir",
@@ -3574,6 +3596,7 @@ dependencies = [
  "bincode",
  "encoding_rs",
  "lumino-memory-monitor",
+ "lumino-memtrace",
  "midly",
  "serde",
  "serde_json",
@@ -3629,6 +3652,7 @@ version = "0.1.1"
 dependencies = [
  "cpal",
  "crossbeam-channel",
+ "lumino-memtrace",
  "thiserror 2.0.18",
  "tracing",
  "xsynth-core",
@@ -3660,6 +3684,7 @@ dependencies = [
  "lumino-export",
  "lumino-gfx",
  "lumino-memory-monitor",
+ "lumino-memtrace",
  "lumino-midi-io",
  "lumino-midi-loader",
  "lumino-ui",
@@ -3704,6 +3729,7 @@ dependencies = [
  "lumino-event",
  "lumino-gfx",
  "lumino-memory-monitor",
+ "lumino-memtrace",
  "lumino-message",
  "lumino-midi-io",
  "lumino-midi-loader",
@@ -3768,6 +3794,7 @@ dependencies = [
  "lumino-core",
  "lumino-event",
  "lumino-gfx",
+ "lumino-memtrace",
  "lumino-message",
  "lumino-midi-loader",
  "lumino-ui-constants",
@@ -3958,6 +3985,15 @@ source = "git+https://github.com/PenguinBMDevs/midly-fork#827764678e93b7a9d3c859
 dependencies = [
  "memmap2",
  "rayon",
+]
+
+[[package]]
+name = "mimalloc"
+version = "0.1.52"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d4139bb28d14ad1facf21d5eb8825051b326e172d216b39f6d31df53cc97862"
+dependencies = [
+ "libmimalloc-sys",
 ]
 
 [[package]]
@@ -6629,6 +6665,37 @@ dependencies = [
  "quick-error",
  "weezl",
  "zune-jpeg 0.5.15",
+]
+
+[[package]]
+name = "tikv-jemalloc-ctl"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "661f1f6a57b3a36dc9174a2c10f19513b4866816e13425d3e418b11cc37bc24c"
+dependencies = [
+ "libc",
+ "paste",
+ "tikv-jemalloc-sys",
+]
+
+[[package]]
+name = "tikv-jemalloc-sys"
+version = "0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd8aa5b2ab86a2cefa406d889139c162cbb230092f7d1d7cbc1716405d852a3b"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "tikv-jemallocator"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0359b4327f954e0567e69fb191cf1436617748813819c94b8cd4a431422d053a"
+dependencies = [
+ "libc",
+ "tikv-jemalloc-sys",
 ]
 
 [[package]]

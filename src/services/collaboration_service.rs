@@ -290,12 +290,10 @@ impl CollaborationService {
         drop(guard);
 
         let result = match client {
-            Some(ref c) => {
-                block_in_place(move || {
-                    let handle = tokio::runtime::Handle::current();
-                    handle.block_on(f(c)).map_err(|e| e.to_string())
-                })
-            }
+            Some(ref c) => block_in_place(move || {
+                let handle = tokio::runtime::Handle::current();
+                handle.block_on(f(c)).map_err(|e| e.to_string())
+            }),
             None => Err(messages::CLIENT_NOT_INITIALIZED.to_string()),
         };
 
@@ -331,12 +329,12 @@ impl CollaborationService {
         let mut client = guard.take();
         drop(guard);
 
-            if let Some(ref mut c) = client {
-                block_in_place(move || {
-                    let handle = tokio::runtime::Handle::current();
-                    let _ = handle.block_on(c.disconnect());
-                });
-            }
+        if let Some(ref mut c) = client {
+            block_in_place(move || {
+                let handle = tokio::runtime::Handle::current();
+                let _ = handle.block_on(c.disconnect());
+            });
+        }
         // 连接已终止，不放回客户端
         Ok(())
     }

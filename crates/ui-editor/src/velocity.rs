@@ -13,8 +13,8 @@ pub use lumino_core::{
     VelocityPoint,
 };
 
-use lumino_ui_core::Element;
 use lumino_core::i18n::Language;
+use lumino_ui_core::Element;
 
 /// 面板高度（像素）
 pub const VELOCITY_PANEL_HEIGHT: f32 = 150.0;
@@ -191,9 +191,9 @@ impl VelocityPanel {
                 CcOption::Cc(self.selected_cc)
             };
             pick_list(cc_options, Some(selected), move |cc| {
-                lumino_ui_core::message::Message::Velocity(lumino_ui_core::message::VelocityAction::CcOptionSelected(
-                    cc,
-                ))
+                lumino_ui_core::message::Message::Velocity(
+                    lumino_ui_core::message::VelocityAction::CcOptionSelected(cc),
+                )
             })
             .placeholder("Select CC/Bend")
             .padding([2, 6])

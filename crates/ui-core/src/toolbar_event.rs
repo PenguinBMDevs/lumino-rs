@@ -42,6 +42,8 @@ pub enum Event {
     OpenCollaborationDialog,
     /// 打开工程设置对话框
     OpenProjectSettingsDialog,
+    /// 打开内存监控对话框
+    OpenMemoryMonitorDialog,
     /// 自动滚动模式切换
     AutoScrollModeChanged,
     /// 循环播放切换
@@ -162,6 +164,10 @@ impl Event {
 
     pub const fn open_project_settings_dialog() -> Message {
         Message::Toolbar(Self::OpenProjectSettingsDialog)
+    }
+
+    pub const fn open_memory_monitor_dialog() -> Message {
+        Message::Toolbar(Self::OpenMemoryMonitorDialog)
     }
 
     pub const fn auto_scroll_mode_changed() -> Message {

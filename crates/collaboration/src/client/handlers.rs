@@ -38,7 +38,8 @@ pub async fn handle_server_message(
     match msg {
         ServerMessage::UserJoined { user } => {
             let mut sess = session.write().await;
-            sess.remote_users.insert(user.id.clone(), new_remote_user(user.clone()));
+            sess.remote_users
+                .insert(user.id.clone(), new_remote_user(user.clone()));
             drop(sess);
 
             emit(&callback, CollaborationEvent::UserJoined { user });
@@ -70,16 +71,22 @@ pub async fn handle_server_message(
             }
             drop(sess);
 
-            emit(&callback, CollaborationEvent::MouseUpdate {
-                user_id,
-                position,
-                color,
-                username,
-            });
+            emit(
+                &callback,
+                CollaborationEvent::MouseUpdate {
+                    user_id,
+                    position,
+                    color,
+                    username,
+                },
+            );
         }
 
         ServerMessage::NoteBatchUpdate { user_id, operation } => {
-            emit(&callback, CollaborationEvent::NoteBatch { user_id, operation });
+            emit(
+                &callback,
+                CollaborationEvent::NoteBatch { user_id, operation },
+            );
         }
 
         ServerMessage::MidiEventUpdate { user_id, event } => {
@@ -87,18 +94,25 @@ pub async fn handle_server_message(
         }
 
         ServerMessage::MidiEventBatchUpdate { user_id, events } => {
-            emit(&callback, CollaborationEvent::MidiEventBatch { user_id, events });
+            emit(
+                &callback,
+                CollaborationEvent::MidiEventBatch { user_id, events },
+            );
         }
 
         ServerMessage::ProjectStateUpdate { user_id, update } => {
-            emit(&callback, CollaborationEvent::ProjectUpdate { user_id, update });
+            emit(
+                &callback,
+                CollaborationEvent::ProjectUpdate { user_id, update },
+            );
         }
 
         ServerMessage::FullSync { users, .. } => {
             let mut sess = session.write().await;
             sess.remote_users.clear();
             for user in &users {
-                sess.remote_users.insert(user.id.clone(), new_remote_user(user.clone()));
+                sess.remote_users
+                    .insert(user.id.clone(), new_remote_user(user.clone()));
             }
             drop(sess);
 
@@ -122,7 +136,8 @@ pub async fn handle_server_message(
             // 添加所有用户
             for user in &users {
                 if Some(&user.id) != sess.current_user_id.as_ref() {
-                    sess.remote_users.insert(user.id.clone(), new_remote_user(user.clone()));
+                    sess.remote_users
+                        .insert(user.id.clone(), new_remote_user(user.clone()));
                 }
             }
             drop(sess);

@@ -5,7 +5,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use lumino_export::audio::codec::AudioCodec;
-use lumino_export::audio::config::{AudioChannelMode, AudioInterpolation, AudioRenderConfig, ThreadMode};
+use lumino_export::audio::config::{
+    AudioChannelMode, AudioInterpolation, AudioRenderConfig, ThreadMode,
+};
 
 impl RunnerInner {
     pub(crate) fn handle_start_audio_export(

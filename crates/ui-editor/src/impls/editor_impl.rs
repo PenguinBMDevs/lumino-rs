@@ -5,29 +5,32 @@
 use crate::note::Note;
 use crate::velocity::VelocityPanel;
 use crate::{Editor, EditorMemory, SpatialIndexState, grid, onion_track_color};
-use lumino_ui_core::message::AudioAction;
 use iced_core::Point;
 use iced_widget::canvas;
+use lumino_ui_core::message::AudioAction;
 use std::cell::Cell;
 
 impl Editor {
     /// 创建新的编辑器实例
     pub fn new() -> Self {
-        Self {
-            editor_state: crate::editor_state::EditorState::new(),
-            grid_cache: canvas::Cache::new(),
-            keyboard_cache: canvas::Cache::new(),
-            ruler_cache: canvas::Cache::new(),
-            spatial: SpatialIndexState::default(),
-            remote_cursors: std::collections::HashMap::new(),
-            playback_position: 0.0,
-            playback_key_colors: [0u8; 1024], // 256 keys × 4 bytes
-            playback_key_colors_enabled: false,
-            loop_range: Some(grid::LoopRange::new()),
-            notes_changed: false,
-            velocity_panel: VelocityPanel::new(),
-            selection_box_anim: Cell::new(None),
-        }
+        // 使用 UI 内存标签包裹编辑器初始化，便于内存监控归因
+        lumino_memtrace::with_tag(lumino_memtrace::AllocTag::Ui, || {
+            Self {
+                editor_state: crate::editor_state::EditorState::new(),
+                grid_cache: canvas::Cache::new(),
+                keyboard_cache: canvas::Cache::new(),
+                ruler_cache: canvas::Cache::new(),
+                spatial: SpatialIndexState::default(),
+                remote_cursors: std::collections::HashMap::new(),
+                playback_position: 0.0,
+                playback_key_colors: [0u8; 1024], // 256 keys × 4 bytes
+                playback_key_colors_enabled: false,
+                loop_range: Some(grid::LoopRange::new()),
+                notes_changed: false,
+                velocity_panel: VelocityPanel::new(),
+                selection_box_anim: Cell::new(None),
+            }
+        })
     }
 
     /// 收集编辑器各组件的内存占用快照

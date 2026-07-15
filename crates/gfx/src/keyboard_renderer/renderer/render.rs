@@ -1,5 +1,6 @@
 use super::super::types::KeyboardViewportUniform;
 use super::KeyboardRenderer;
+use crate::gpu_resource_tracker;
 
 /// 键盘渲染器准备参数
 #[derive(Debug, Clone)]
@@ -51,6 +52,7 @@ impl KeyboardRenderer {
 
         if instance_count > self.capacity {
             let new_capacity = (self.capacity * Self::GROWTH_FACTOR).max(instance_count);
+            gpu_resource_tracker::sub_buffer(&self.instance_buffer);
             self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
             self.capacity = new_capacity;
         }

@@ -1,8 +1,8 @@
 //! 设置页面 - 音频设置
 
-use lumino_ui_core::{Element, Message, Theme};
 use iced_core::{Alignment, Length};
 use iced_widget::{column, pick_list, row, text, text_input};
+use lumino_ui_core::{Element, Message, Theme};
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
@@ -117,8 +117,7 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
     col = col.push(
-        iced_widget::button(t.browse)
-            .on_press(Message::Settings(crate::Event::BrowseSoundfont)),
+        iced_widget::button(t.browse).on_press(Message::Settings(crate::Event::BrowseSoundfont)),
     );
     col = col.push(iced_widget::space().height(20));
 
@@ -234,9 +233,7 @@ fn render_xsynth_options<'a>(
             .style(create_content_text_style())
             .width(180.0),
             iced_widget::slider(0..=127, settings.velocity_filter_threshold, |v| {
-                Message::Settings(crate::Event::VelocityFilterThresholdChanged(
-                    v.to_string(),
-                ))
+                Message::Settings(crate::Event::VelocityFilterThresholdChanged(v.to_string()))
             })
             .step(1)
             .width(200.0),

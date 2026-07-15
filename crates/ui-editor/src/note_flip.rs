@@ -1,8 +1,8 @@
 //! 音符翻转操作模块
 
 use super::Editor;
-use lumino_ui_core::toolbar_event::FlipHorizontalMode;
 use lumino_core::EditorTransform;
+use lumino_ui_core::toolbar_event::FlipHorizontalMode;
 
 impl Editor {
     pub fn flip_selected_notes_vertical(&mut self) -> usize {

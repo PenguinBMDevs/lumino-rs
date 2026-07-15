@@ -2,11 +2,11 @@
 
 use super::theme::ThemeExt;
 use super::utils::{is_key_dark, note_name};
-use lumino_ui_core::Renderer;
-use lumino_ui_constants::editor::KEY_LABEL_FONT_SIZE;
 use crate::Editor;
 use iced_core::{Point, Rectangle, Size, alignment};
 use iced_widget::canvas::{Frame, Geometry, Path, Stroke, Text};
+use lumino_ui_constants::editor::KEY_LABEL_FONT_SIZE;
+use lumino_ui_core::Renderer;
 
 /// 绘制钢琴键盘到 Geometry（用于 Canvas 绘制）
 pub fn draw_to_geometry(
@@ -24,7 +24,12 @@ pub fn draw_to_geometry(
 ///
 /// 注意：此函数只绘制基础键盘，不包含洋葱皮颜色。
 /// 洋葱皮颜色通过 `draw_onion_overlay` 独立绘制，避免触发 keyboard_cache 重建。
-pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &lumino_ui_core::Theme) {
+pub fn draw(
+    editor: &Editor,
+    frame: &mut Frame<Renderer>,
+    bounds: Rectangle,
+    theme: &lumino_ui_core::Theme,
+) {
     let view = &editor.editor_state.view;
     let keyboard_width = view.keyboard_width;
     let ruler_height = view.ruler_height;

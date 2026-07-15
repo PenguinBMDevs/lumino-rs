@@ -1,5 +1,7 @@
 //! 键盘渲染器实现
 
+use crate::gpu_resource_tracker;
+
 /// 键盘渲染器
 pub struct KeyboardRenderer {
     /// 渲染管线
@@ -37,6 +39,13 @@ impl KeyboardRenderer {
     pub(super) const GROWTH_FACTOR: usize = 2;
     /// 顶点着色器代码
     pub(super) const VERTEX_SHADER: &'static str = include_str!("../shaders/keyboard.wgsl");
+}
+
+impl Drop for KeyboardRenderer {
+    fn drop(&mut self) {
+        gpu_resource_tracker::sub_buffer(&self.instance_buffer);
+        gpu_resource_tracker::sub_buffer(&self.viewport_buffer);
+    }
 }
 
 mod generator;

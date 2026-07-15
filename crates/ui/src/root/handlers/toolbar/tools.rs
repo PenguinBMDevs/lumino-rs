@@ -73,6 +73,20 @@ impl ToolbarHandler {
         }
     }
 
+    /// 处理内存监控对话框
+    pub(crate) fn handle_toolbar_memory_monitor(
+        &self,
+        _root: &mut Root,
+        event: &crate::toolbar::Event,
+    ) {
+        if matches!(event, crate::toolbar::Event::OpenMemoryMonitorDialog) {
+            tracing::info!("Root: 触发打开内存监控对话框");
+            crate::event::emit(crate::event::Event::Window(
+                crate::event::window::Event::open_memory_monitor_dialog(),
+            ));
+        }
+    }
+
     /// 处理量化
     pub(crate) fn handle_toolbar_quantize(&self, root: &mut Root, event: &crate::toolbar::Event) {
         if !matches!(event, crate::toolbar::Event::Quantize) {

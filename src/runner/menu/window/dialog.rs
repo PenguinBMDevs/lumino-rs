@@ -4,7 +4,10 @@ use crate::runner::{RunnerInner, dialog_manager::DialogType};
 use std::sync::atomic::Ordering;
 
 impl RunnerInner {
-    pub(crate) fn handle_dialog_events(&mut self, window_event: lumino_ui::event::window::dialog::Event) {
+    pub(crate) fn handle_dialog_events(
+        &mut self,
+        window_event: lumino_ui::event::window::dialog::Event,
+    ) {
         use lumino_ui::event::window::dialog::Event::*;
         match window_event {
             OpenCustomPrecisionDialog => {
@@ -57,6 +60,12 @@ impl RunnerInner {
             }
             OpenSpeedChangeDialog => self.open_dialog_traced(DialogType::SpeedChange, "音符变速"),
             OpenVideoExportDialog => self.open_dialog_traced(DialogType::VideoExport, "视频导出"),
+            OpenMemoryMonitorDialog => {
+                self.open_dialog_traced(DialogType::MemoryMonitor, "内存监控")
+            }
+            CloseMemoryMonitorDialog => {
+                self.close_dialog_traced(DialogType::MemoryMonitor, "内存监控")
+            }
             CloseVideoExportDialog => {
                 self.window_state
                     .dialog_manager

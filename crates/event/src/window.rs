@@ -76,6 +76,12 @@ impl Event {
     pub const fn close_project_settings_dialog() -> Self {
         Self::Dialog(dialog::Event::CloseProjectSettingsDialog)
     }
+    pub const fn open_memory_monitor_dialog() -> Self {
+        Self::Dialog(dialog::Event::OpenMemoryMonitorDialog)
+    }
+    pub const fn close_memory_monitor_dialog() -> Self {
+        Self::Dialog(dialog::Event::CloseMemoryMonitorDialog)
+    }
     pub fn apply_project_settings(title: String, tempo: f64, copyright: String) -> Self {
         Self::Dialog(dialog::Event::ApplyProjectSettings {
             title,

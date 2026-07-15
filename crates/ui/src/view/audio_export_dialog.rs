@@ -63,7 +63,10 @@ fn title_section<'a>(palette: &'a iced_core::theme::palette::Extended) -> crate:
 }
 
 /// 段落小标题
-fn section_title<'a>(text_str: &'a str, palette: &'a iced_core::theme::palette::Extended) -> crate::Element<'a> {
+fn section_title<'a>(
+    text_str: &'a str,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
     text(text_str)
         .size(16)
         .font(iced_core::Font::with_name("Microsoft YaHei"))
@@ -77,7 +80,9 @@ fn project_info_section<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     column![
-        text("工程名称").size(14).style(widgets::dialog_label_style(palette)),
+        text("工程名称")
+            .size(14)
+            .style(widgets::dialog_label_style(palette)),
         space().height(4),
         container(
             text_input("工程名称", &state.project_name)
@@ -88,7 +93,9 @@ fn project_info_section<'a>(
         .width(iced_core::Length::Fill)
         .style(widgets::dialog_input_style(palette)),
         space().height(12),
-        text("MIDI 路径").size(14).style(widgets::dialog_label_style(palette)),
+        text("MIDI 路径")
+            .size(14)
+            .style(widgets::dialog_label_style(palette)),
         space().height(4),
         row![
             container(
@@ -107,7 +114,9 @@ fn project_info_section<'a>(
         .spacing(8)
         .align_y(iced_core::Alignment::Center),
         space().height(12),
-        text("音色库 (SF2)").size(14).style(widgets::dialog_label_style(palette)),
+        text("音色库 (SF2)")
+            .size(14)
+            .style(widgets::dialog_label_style(palette)),
         space().height(4),
         row![
             container(
@@ -139,9 +148,18 @@ fn audio_settings_section<'a>(
         section_title("音频设置", palette),
         space().height(12),
         row![
-            text("输出格式:").size(14).style(widgets::dialog_label_style(palette)).width(120),
+            text("输出格式:")
+                .size(14)
+                .style(widgets::dialog_label_style(palette))
+                .width(120),
             pick_list(
-                [AudioFormat::WAV, AudioFormat::FLAC, AudioFormat::MP3, AudioFormat::Ogg, AudioFormat::WavPack],
+                [
+                    AudioFormat::WAV,
+                    AudioFormat::FLAC,
+                    AudioFormat::MP3,
+                    AudioFormat::Ogg,
+                    AudioFormat::WavPack
+                ],
                 Some(state.format),
                 |v| Message::AudioExport(AudioExportAction::FormatChanged(v)),
             ),
@@ -150,7 +168,10 @@ fn audio_settings_section<'a>(
         .align_y(iced_core::Alignment::Center),
         space().height(8),
         row![
-            text("比特率 (kbps):").size(14).style(widgets::dialog_label_style(palette)).width(120),
+            text("比特率 (kbps):")
+                .size(14)
+                .style(widgets::dialog_label_style(palette))
+                .width(120),
             text_input("320", &state.audio_bitrate.to_string())
                 .on_input(|v| Message::AudioExport(AudioExportAction::BitrateChanged(v)))
                 .padding([6, 10])
@@ -160,7 +181,10 @@ fn audio_settings_section<'a>(
         .align_y(iced_core::Alignment::Center),
         space().height(8),
         row![
-            text("采样率:").size(14).style(widgets::dialog_label_style(palette)).width(120),
+            text("采样率:")
+                .size(14)
+                .style(widgets::dialog_label_style(palette))
+                .width(120),
             pick_list(
                 [22050u32, 44100, 48000, 96000],
                 Some(state.sample_rate),
@@ -171,7 +195,10 @@ fn audio_settings_section<'a>(
         .align_y(iced_core::Alignment::Center),
         space().height(8),
         row![
-            text("通道数:").size(14).style(widgets::dialog_label_style(palette)).width(120),
+            text("通道数:")
+                .size(14)
+                .style(widgets::dialog_label_style(palette))
+                .width(120),
             pick_list(
                 [AudioChannels::Mono, AudioChannels::Stereo],
                 Some(state.channels),
@@ -182,7 +209,10 @@ fn audio_settings_section<'a>(
         .align_y(iced_core::Alignment::Center),
         space().height(8),
         row![
-            text("层数限制:").size(14).style(widgets::dialog_label_style(palette)).width(120),
+            text("层数限制:")
+                .size(14)
+                .style(widgets::dialog_label_style(palette))
+                .width(120),
             text_input("32", &state.layers.to_string())
                 .on_input(|v| Message::AudioExport(AudioExportAction::LayersChanged(v)))
                 .padding([6, 10])
@@ -192,9 +222,18 @@ fn audio_settings_section<'a>(
         .align_y(iced_core::Alignment::Center),
         space().height(8),
         row![
-            text("通道多线程:").size(14).style(widgets::dialog_label_style(palette)).width(120),
+            text("通道多线程:")
+                .size(14)
+                .style(widgets::dialog_label_style(palette))
+                .width(120),
             pick_list(
-                [ThreadingOption::None, ThreadingOption::Auto, ThreadingOption::Manual(2), ThreadingOption::Manual(4), ThreadingOption::Manual(8)],
+                [
+                    ThreadingOption::None,
+                    ThreadingOption::Auto,
+                    ThreadingOption::Manual(2),
+                    ThreadingOption::Manual(4),
+                    ThreadingOption::Manual(8)
+                ],
                 Some(state.channel_threading),
                 |v| Message::AudioExport(AudioExportAction::ChannelThreadingChanged(v)),
             ),
@@ -203,9 +242,18 @@ fn audio_settings_section<'a>(
         .align_y(iced_core::Alignment::Center),
         space().height(8),
         row![
-            text("按键多线程:").size(14).style(widgets::dialog_label_style(palette)).width(120),
+            text("按键多线程:")
+                .size(14)
+                .style(widgets::dialog_label_style(palette))
+                .width(120),
             pick_list(
-                [ThreadingOption::None, ThreadingOption::Auto, ThreadingOption::Manual(2), ThreadingOption::Manual(4), ThreadingOption::Manual(8)],
+                [
+                    ThreadingOption::None,
+                    ThreadingOption::Auto,
+                    ThreadingOption::Manual(2),
+                    ThreadingOption::Manual(4),
+                    ThreadingOption::Manual(8)
+                ],
                 Some(state.key_threading),
                 |v| Message::AudioExport(AudioExportAction::KeyThreadingChanged(v)),
             ),
@@ -214,7 +262,10 @@ fn audio_settings_section<'a>(
         .align_y(iced_core::Alignment::Center),
         space().height(8),
         row![
-            text("插值算法:").size(14).style(widgets::dialog_label_style(palette)).width(120),
+            text("插值算法:")
+                .size(14)
+                .style(widgets::dialog_label_style(palette))
+                .width(120),
             pick_list(
                 [Interpolation::None, Interpolation::Linear],
                 Some(state.interpolation),
@@ -263,7 +314,9 @@ fn event_filter_section<'a>(
             .on_toggle(|v| Message::AudioExport(AudioExportAction::IgnoreProgramChangesChanged(v)))
             .style(widgets::dialog_checkbox_style(palette)),
         space().height(8),
-        text("音符力度过滤").size(14).style(widgets::dialog_label_style(palette)),
+        text("音符力度过滤")
+            .size(14)
+            .style(widgets::dialog_label_style(palette)),
         space().height(4),
         checkbox(state.filter_velocity)
             .label("启用力度过滤")
@@ -271,12 +324,17 @@ fn event_filter_section<'a>(
             .style(widgets::dialog_checkbox_style(palette)),
         space().height(4),
         row![
-            text("力度范围:").size(14).style(widgets::dialog_label_style(palette)).width(120),
+            text("力度范围:")
+                .size(14)
+                .style(widgets::dialog_label_style(palette))
+                .width(120),
             text_input("0", &velocity_low)
                 .on_input(|v| Message::AudioExport(AudioExportAction::VelocityLowChanged(v)))
                 .padding([6, 10])
                 .width(80),
-            text(" ~ ").size(14).style(widgets::dialog_label_style(palette)),
+            text(" ~ ")
+                .size(14)
+                .style(widgets::dialog_label_style(palette)),
             text_input("127", &velocity_high)
                 .on_input(|v| Message::AudioExport(AudioExportAction::VelocityHighChanged(v)))
                 .padding([6, 10])
@@ -285,7 +343,9 @@ fn event_filter_section<'a>(
         .spacing(4)
         .align_y(iced_core::Alignment::Center),
         space().height(8),
-        text("音符键位过滤").size(14).style(widgets::dialog_label_style(palette)),
+        text("音符键位过滤")
+            .size(14)
+            .style(widgets::dialog_label_style(palette)),
         space().height(4),
         checkbox(state.filter_key)
             .label("启用键位过滤")
@@ -293,12 +353,17 @@ fn event_filter_section<'a>(
             .style(widgets::dialog_checkbox_style(palette)),
         space().height(4),
         row![
-            text("键位范围:").size(14).style(widgets::dialog_label_style(palette)).width(120),
+            text("键位范围:")
+                .size(14)
+                .style(widgets::dialog_label_style(palette))
+                .width(120),
             text_input("0", &key_low)
                 .on_input(|v| Message::AudioExport(AudioExportAction::KeyLowChanged(v)))
                 .padding([6, 10])
                 .width(80),
-            text(" ~ ").size(14).style(widgets::dialog_label_style(palette)),
+            text(" ~ ")
+                .size(14)
+                .style(widgets::dialog_label_style(palette)),
             text_input("127", &key_high)
                 .on_input(|v| Message::AudioExport(AudioExportAction::KeyHighChanged(v)))
                 .padding([6, 10])

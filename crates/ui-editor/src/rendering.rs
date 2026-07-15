@@ -3,11 +3,11 @@ use iced_widget::canvas::Canvas;
 use lumino_gfx::NoteInstance;
 use rayon::prelude::*;
 
-use lumino_ui_constants::editor::PREVIEW_NOTE_OPACITY;
 use crate::grid::PianoRollGrid;
 use crate::scrollbar_widget;
-use lumino_message::Tool;
 use crate::{Element, Message};
+use lumino_message::Tool;
+use lumino_ui_constants::editor::PREVIEW_NOTE_OPACITY;
 
 use super::{EditState, Editor};
 
@@ -99,8 +99,9 @@ impl Editor {
                     index: i,
                 })
                 .collect();
-            *self.spatial.note_index.borrow_mut() =
-                Some(crate::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs));
+            *self.spatial.note_index.borrow_mut() = Some(
+                crate::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs),
+            );
             self.spatial.note_index_dirty.set(false);
             tracing::debug!(
                 "Editor: rebuild spatial index for {} notes",
@@ -272,8 +273,9 @@ impl Editor {
                     index: i,
                 })
                 .collect();
-            *self.spatial.note_index.borrow_mut() =
-                Some(crate::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs));
+            *self.spatial.note_index.borrow_mut() = Some(
+                crate::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs),
+            );
             self.spatial.note_index_dirty.set(false);
             tracing::debug!(
                 "Editor: rebuild spatial index for {} notes",
@@ -407,7 +409,9 @@ impl Editor {
                     {
                         active_color
                     }
-                    _ if self.editor_state.interaction.selected_notes.contains(&i) => selected_color,
+                    _ if self.editor_state.interaction.selected_notes.contains(&i) => {
+                        selected_color
+                    }
                     EditState::Idle
                         if self
                             .editor_state

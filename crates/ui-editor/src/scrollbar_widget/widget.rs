@@ -1,7 +1,7 @@
 use super::types::{Edge, ScrollbarOrientation, ScrollbarState};
-use lumino_ui_core::Message;
-use lumino_ui_constants::scrollbar as scrollbar_constants;
 use iced_core::Rectangle;
+use lumino_ui_constants::scrollbar as scrollbar_constants;
+use lumino_ui_core::Message;
 
 pub struct ScrollbarWidget<'a> {
     pub scroll: f32,

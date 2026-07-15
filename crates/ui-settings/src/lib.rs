@@ -12,9 +12,9 @@ pub mod pages;
 use iced_core::{Border, Length};
 use iced_widget::{column, container, row, scrollable, text};
 
-use lumino_ui_core::{Element, Message, Theme, window};
 use lumino_core::i18n::Language;
 use lumino_core::storage::config::{SynthBackend, TrackAddBehavior};
+use lumino_ui_core::{Element, Message, Theme, window};
 
 use components::*;
 use pages::*;

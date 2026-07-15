@@ -4,6 +4,8 @@
 
 use wgpu::util::DeviceExt;
 
+use crate::gpu_resource_tracker;
+
 /// Camera Uniform
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
@@ -322,6 +324,7 @@ impl GridRenderer {
             contents: bytemuck::cast_slice(&[GridCameraUniform::builder().build()]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        gpu_resource_tracker::add_buffer(&camera_buffer);
 
         // 创建 bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -340,7 +343,15 @@ impl GridRenderer {
             cached_uniform: None,
         }
     }
+}
 
+impl Drop for GridRenderer {
+    fn drop(&mut self) {
+        gpu_resource_tracker::sub_buffer(&self.camera_buffer);
+    }
+}
+
+impl GridRenderer {
     /// 准备渲染数据（带缓存优化）
     pub fn prepare(&mut self, queue: &wgpu::Queue, params: &GridPrepareParams) {
         puffin::profile_function!();

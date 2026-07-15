@@ -5,7 +5,6 @@
 use iced_core::Length;
 use iced_widget::{column, container, progress_bar, space, text};
 
-use crate::{Element, Theme};
 use crate::root::Root;
 use crate::state::root_state::DialogType;
 use crate::view::{
@@ -13,9 +12,11 @@ use crate::view::{
     custom_precision_dialog::view_custom_precision_dialog,
     export_progress_dialog::view_export_progress_dialog,
     load_confirm_dialog::view_load_confirm_dialog,
+    memory_monitor_dialog::view_memory_monitor_dialog,
     project_settings_dialog::view_project_settings_dialog, settings_dialog::view_settings_dialog,
     speed_change_dialog::view_speed_change_dialog, video_export_dialog::view_video_export_overlay,
 };
+use crate::{Element, Theme};
 
 impl Root {
     /// 渲染进度窗口
@@ -122,6 +123,9 @@ impl Root {
                     })
                     .into()
                 }
+            }
+            DialogType::MemoryMonitor => {
+                view_memory_monitor_dialog(&self.state.memory_monitor_dialog, &self.window.theme)
             }
         }
     }

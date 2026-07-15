@@ -106,7 +106,7 @@ impl AutomationTarget {
             },
             AutomationTarget::PitchBend => PITCH_BEND_CENTER as u16,
             AutomationTarget::Rpn { parameter } => match parameter {
-                0 => 2,                         // Pitch Bend Sensitivity (2 semitones)
+                0 => 2,                        // Pitch Bend Sensitivity (2 semitones)
                 1 => PITCH_BEND_CENTER as u16, // Fine Tune (center of 14-bit range)
                 _ => 0,
             },

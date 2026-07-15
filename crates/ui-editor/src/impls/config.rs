@@ -3,9 +3,9 @@
 //! 包含：工具切换、光标/画布状态、总 ticks 和 PPQ、音符变更标志、缓存失效
 
 use crate::{CacheInvalidation, Editor};
-use lumino_message::Tool;
 use iced_core::Point;
 use lumino_core::editor_state::viewport::Viewport;
+use lumino_message::Tool;
 
 impl Editor {
     /// 设置当前工具（委托到 editor_state）

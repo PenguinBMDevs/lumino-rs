@@ -1,7 +1,9 @@
 //! 视频导出面板与导出覆盖层视图
 
 use iced_core::{Alignment, Color, Length};
-use iced_widget::{button, column, container, image, pick_list, row, scrollable, space, text, text_input};
+use iced_widget::{
+    button, column, container, image, pick_list, row, scrollable, space, text, text_input,
+};
 
 use crate::message::{Message, VideoExportAction};
 use crate::state::root_state::{VideoExportDialogState, VideoExportOverlayState};
@@ -56,37 +58,67 @@ fn render_settings_section<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     let containers = vec!["MP4", "MOV", "MKV", "AVI"]
-        .into_iter().map(String::from).collect::<Vec<_>>();
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
     let codecs = vec!["H.264", "H.265 / HEVC", "ProRes", "VP9", "AV1"]
-        .into_iter().map(String::from).collect::<Vec<_>>();
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
     let backends = helpers::available_backends();
     let qualities = vec!["高", "中", "低"]
-        .into_iter().map(String::from).collect::<Vec<_>>();
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
     let fps_options = vec![24u32, 30, 60, 120];
 
     let width_str = state.width.to_string();
     let height_str = state.height.to_string();
 
     column![
-        text("渲染设置").size(16)
+        text("渲染设置")
+            .size(16)
             .font(iced_core::Font::with_name("Microsoft YaHei"))
             .style(widgets::dialog_label_style(palette)),
         space().height(12),
-        pick_list_row("渲染格式:", 100.0, containers, Some(state.container.clone()),
-            |v| Message::VideoExport(VideoExportAction::ContainerChanged(v))),
+        pick_list_row(
+            "渲染格式:",
+            100.0,
+            containers,
+            Some(state.container.clone()),
+            |v| Message::VideoExport(VideoExportAction::ContainerChanged(v))
+        ),
         space().height(8),
-        pick_list_row("编码器:", 100.0, codecs, Some(state.codec.clone()),
-            |v| Message::VideoExport(VideoExportAction::CodecChanged(v))),
+        pick_list_row(
+            "编码器:",
+            100.0,
+            codecs,
+            Some(state.codec.clone()),
+            |v| Message::VideoExport(VideoExportAction::CodecChanged(v))
+        ),
         space().height(8),
-        pick_list_row("加速:", 100.0, backends, Some(state.backend.clone()),
-            |v| Message::VideoExport(VideoExportAction::BackendChanged(v))),
+        pick_list_row(
+            "加速:",
+            100.0,
+            backends,
+            Some(state.backend.clone()),
+            |v| Message::VideoExport(VideoExportAction::BackendChanged(v))
+        ),
         space().height(8),
-        pick_list_row("质量:", 100.0, qualities, Some(state.quality.clone()),
-            |v| Message::VideoExport(VideoExportAction::QualityChanged(v))),
+        pick_list_row(
+            "质量:",
+            100.0,
+            qualities,
+            Some(state.quality.clone()),
+            |v| Message::VideoExport(VideoExportAction::QualityChanged(v))
+        ),
         space().height(8),
         // 分辨率行
         row![
-            text("分辨率:").size(14).style(widgets::dialog_label_style(palette)).width(100),
+            text("分辨率:")
+                .size(14)
+                .style(widgets::dialog_label_style(palette))
+                .width(100),
             container(
                 text_input("1920", &width_str)
                     .on_input(|v| Message::VideoExport(VideoExportAction::WidthChanged(v)))
@@ -94,7 +126,9 @@ fn render_settings_section<'a>(
                     .width(Length::Fixed(80.0)),
             )
             .style(widgets::dialog_input_style(palette)),
-            text("x").size(14).style(widgets::dialog_label_style(palette)),
+            text("x")
+                .size(14)
+                .style(widgets::dialog_label_style(palette)),
             container(
                 text_input("1080", &height_str)
                     .on_input(|v| Message::VideoExport(VideoExportAction::HeightChanged(v)))
@@ -106,8 +140,9 @@ fn render_settings_section<'a>(
         .spacing(8)
         .align_y(Alignment::Center),
         space().height(8),
-        pick_list_row("帧率:", 100.0, fps_options, Some(state.fps),
-            |v| Message::VideoExport(VideoExportAction::FpsChanged(v))),
+        pick_list_row("帧率:", 100.0, fps_options, Some(state.fps), |v| {
+            Message::VideoExport(VideoExportAction::FpsChanged(v))
+        }),
         space().height(8),
         render_mode_row(state, palette),
     ]
@@ -122,8 +157,13 @@ fn render_mode_row<'a>(
 ) -> crate::Element<'a> {
     use lumino_event::window::video::RenderMode;
     let render_modes = vec![RenderMode::NoteRectangle, RenderMode::HiResTexture];
-    pick_list_row("渲染模式:", 100.0, render_modes, Some(state.render_mode),
-        |v| Message::VideoExport(VideoExportAction::RenderModeChanged(v)))
+    pick_list_row(
+        "渲染模式:",
+        100.0,
+        render_modes,
+        Some(state.render_mode),
+        |v| Message::VideoExport(VideoExportAction::RenderModeChanged(v)),
+    )
 }
 
 /// 输出路径区域
@@ -132,7 +172,8 @@ fn output_path_section<'a>(
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
     column![
-        text("导出位置").size(16)
+        text("导出位置")
+            .size(16)
             .font(iced_core::Font::with_name("Microsoft YaHei"))
             .style(widgets::dialog_label_style(palette)),
         space().height(8),
@@ -199,8 +240,11 @@ pub fn view_video_export_overlay<'a>(
     let content: crate::Element<'a> = match &state.overlay {
         VideoExportOverlayState::Exporting => exporting_overlay(state, theme, palette),
         VideoExportOverlayState::Finalizing => finalizing_overlay(state, theme, palette),
-        VideoExportOverlayState::Completed { total_frames, elapsed_secs, avg_fps } =>
-            completed_overlay(state, *total_frames, *elapsed_secs, *avg_fps, palette),
+        VideoExportOverlayState::Completed {
+            total_frames,
+            elapsed_secs,
+            avg_fps,
+        } => completed_overlay(state, *total_frames, *elapsed_secs, *avg_fps, palette),
         VideoExportOverlayState::Error(err) => error_overlay(err.clone(), palette),
         VideoExportOverlayState::None => return None,
     };
@@ -225,7 +269,9 @@ fn exporting_overlay<'a>(
 ) -> crate::Element<'a> {
     let detail = helpers::render_progress_detail(state, theme);
     column![
-        text("视频导出中").size(16).style(widgets::dialog_label_style(palette)),
+        text("视频导出中")
+            .size(16)
+            .style(widgets::dialog_label_style(palette)),
         space().height(8),
         preview_area(state, palette),
         space().height(8),
@@ -252,11 +298,15 @@ fn finalizing_overlay<'a>(
 ) -> crate::Element<'a> {
     let detail = helpers::render_progress_detail(state, theme);
     column![
-        text("视频导出中").size(16).style(widgets::dialog_label_style(palette)),
+        text("视频导出中")
+            .size(16)
+            .style(widgets::dialog_label_style(palette)),
         space().height(8),
         preview_area(state, palette),
         space().height(8),
-        text("正在完成编码...").size(14).style(widgets::dialog_label_style(palette)),
+        text("正在完成编码...")
+            .size(14)
+            .style(widgets::dialog_label_style(palette)),
         space().height(4),
         detail,
         space().height(4),
@@ -274,7 +324,8 @@ fn finalizing_overlay<'a>(
                     palette.background.neutral.text,
                 )),
             space().width(8),
-            text("视频已可用，跳过等待").size(12)
+            text("视频已可用，跳过等待")
+                .size(12)
                 .style(widgets::dialog_muted_text_style(palette)),
         ]
         .align_y(Alignment::Center),
@@ -311,15 +362,23 @@ fn completed_overlay<'a>(
         space().height(12),
         preview_area_empty(palette),
         space().height(8),
-        text(format!("总帧数: {total_frames}")).size(13)
+        text(format!("总帧数: {total_frames}"))
+            .size(13)
             .style(widgets::dialog_muted_text_style(palette)),
-        text(format!("时长: {}", helpers::format_duration(duration_secs))).size(13)
+        text(format!("时长: {}", helpers::format_duration(duration_secs)))
+            .size(13)
             .style(widgets::dialog_muted_text_style(palette)),
-        text(format!("总用时: {}", helpers::format_duration(elapsed_secs))).size(13)
+        text(format!(
+            "总用时: {}",
+            helpers::format_duration(elapsed_secs)
+        ))
+        .size(13)
+        .style(widgets::dialog_muted_text_style(palette)),
+        text(format!("平均速度: {avg_fps:.1} fps"))
+            .size(13)
             .style(widgets::dialog_muted_text_style(palette)),
-        text(format!("平均速度: {avg_fps:.1} fps")).size(13)
-            .style(widgets::dialog_muted_text_style(palette)),
-        text(format!("倍率: {speedup:.1}x 原速")).size(13)
+        text(format!("倍率: {speedup:.1}x 原速"))
+            .size(13)
             .style(widgets::dialog_muted_text_style(palette)),
         space().height(16),
         button(text("确定").size(14))
@@ -349,7 +408,8 @@ fn error_overlay<'a>(
         space().height(12),
         container(
             scrollable(
-                text(err).size(13)
+                text(err)
+                    .size(13)
                     .style(move |_t: &iced_core::Theme| text::Style {
                         color: Some(palette.danger.weak.color),
                     })
@@ -386,8 +446,7 @@ fn pick_list_row<'a, T: 'a + Clone + ToString + PartialEq>(
     };
     row![
         text(label).size(14).style(label_style).width(label_width),
-        pick_list(options, selected, on_selected)
-            .width(Length::Fixed(200.0)),
+        pick_list(options, selected, on_selected).width(Length::Fixed(200.0)),
     ]
     .spacing(8)
     .align_y(Alignment::Center)
@@ -428,19 +487,23 @@ fn preview_area<'a>(
 
 /// 预览区域（无图片时）
 fn preview_area_empty<'a>(palette: &'a iced_core::theme::palette::Extended) -> crate::Element<'a> {
-    container(text("等待渲染...").size(14).style(widgets::dialog_muted_text_style(palette)))
-        .width(Length::Fill)
-        .height(Length::Fixed(120.0))
-        .center_x(Length::Fill)
-        .center_y(Length::Fill)
-        .style(move |_t: &iced_core::Theme| container::Style {
-            background: Some(palette.background.weak.color.into()),
-            border: iced_core::Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: palette.background.strong.color,
-            },
-            ..Default::default()
-        })
-        .into()
+    container(
+        text("等待渲染...")
+            .size(14)
+            .style(widgets::dialog_muted_text_style(palette)),
+    )
+    .width(Length::Fill)
+    .height(Length::Fixed(120.0))
+    .center_x(Length::Fill)
+    .center_y(Length::Fill)
+    .style(move |_t: &iced_core::Theme| container::Style {
+        background: Some(palette.background.weak.color.into()),
+        border: iced_core::Border {
+            radius: 4.0.into(),
+            width: 1.0,
+            color: palette.background.strong.color,
+        },
+        ..Default::default()
+    })
+    .into()
 }

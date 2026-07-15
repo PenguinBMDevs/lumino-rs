@@ -1,9 +1,9 @@
 //! 视频导出窗口事件处理：在后台线程执行逐帧渲染 + FFmpeg 编码，进度通过通道回传主线程。
 
 use crate::runner::{RunnerInner, dialog_manager::DialogType};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::sync::mpsc::{channel, TryRecvError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{TryRecvError, channel};
 
 use lumino_export::video::{
     FfmpegEncoder, VideoExportConfig,
@@ -219,8 +219,7 @@ fn run_video_export_task(
     // 计算总帧数
     let tempo_changes = &document.tempo_changes;
     let total_ticks = document.total_ticks;
-    let duration_secs =
-        super::video_export::compute_duration_secs(tempo_changes, total_ticks, ppq);
+    let duration_secs = super::video_export::compute_duration_secs(tempo_changes, total_ticks, ppq);
     let total_frames = config.total_frames(duration_secs);
 
     tracing::info!(
@@ -261,8 +260,7 @@ fn run_video_export_task(
         // 计算 scroll_x / zoom_x，用于标尺小节号合成
         let video_kb_width = 60.0f32;
         let video_viewport_tick_span = (ppq * 16).max(1) as f32;
-        let video_zoom_x =
-            (width as f32 - video_kb_width) / video_viewport_tick_span;
+        let video_zoom_x = (width as f32 - video_kb_width) / video_viewport_tick_span;
         let video_scroll_x = tick as f32 * video_zoom_x;
 
         // 入队帧合成参数（与帧数据 FIFO 对应）
@@ -280,13 +278,7 @@ fn run_video_export_task(
             .is_err()
         {
             tracing::error!("发送 RenderVideoFrame 命令失败");
-            let _ = progress_tx.send((
-                "导出失败：渲染线程通信错误".to_string(),
-                -1.0,
-                0,
-                0.0,
-                0.0,
-            ));
+            let _ = progress_tx.send(("导出失败：渲染线程通信错误".to_string(), -1.0, 0, 0.0, 0.0));
             cancelled = true;
             break;
         }
@@ -439,24 +431,20 @@ fn send_initial_render_commands(
         let tiles: Vec<lumino_gfx::GroupTile> = tiles_map.into_values().collect();
         let track_count = document.notes.len() as u16;
         if cmd_sender
-            .send(RenderCommand::Control(ControlCommand::UploadHiResVideoTiles {
-                tiles,
-                config: hires_config,
-                track_count,
-                key_count: hires_key_count,
-                total_ticks: document.total_ticks,
-                ppq: ppq_u16,
-            }))
+            .send(RenderCommand::Control(
+                ControlCommand::UploadHiResVideoTiles {
+                    tiles,
+                    config: hires_config,
+                    track_count,
+                    key_count: hires_key_count,
+                    total_ticks: document.total_ticks,
+                    ppq: ppq_u16,
+                },
+            ))
             .is_err()
         {
             tracing::error!("发送 UploadHiResVideoTiles 命令失败");
-            let _ = progress_tx.send((
-                "导出失败：渲染线程通信错误".to_string(),
-                -1.0,
-                0,
-                0.0,
-                0.0,
-            ));
+            let _ = progress_tx.send(("导出失败：渲染线程通信错误".to_string(), -1.0, 0, 0.0, 0.0));
             return true;
         }
         tracing::info!("视频导出: HiRes 贴图已上传");
@@ -473,13 +461,7 @@ fn send_initial_render_commands(
         .is_err()
     {
         tracing::error!("发送 StartVideoExport 命令失败");
-        let _ = progress_tx.send((
-            "导出失败：渲染线程通信错误".to_string(),
-            -1.0,
-            0,
-            0.0,
-            0.0,
-        ));
+        let _ = progress_tx.send(("导出失败：渲染线程通信错误".to_string(), -1.0, 0, 0.0, 0.0));
         return true;
     }
 
@@ -527,9 +509,7 @@ fn composite_and_encode_frame(
             kb_h,
         );
     }
-    super::video_export::composite_ruler_numbers(
-        &mut data, width, height, sx, zx, kw, ppq_val,
-    );
+    super::video_export::composite_ruler_numbers(&mut data, width, height, sx, zx, kw, ppq_val);
 
     if cancel_flag.load(Ordering::Relaxed) {
         tracing::info!("视频导出：帧数据到达后检测到取消，正在收尾...");
@@ -539,9 +519,7 @@ fn composite_and_encode_frame(
 
     // 预览帧：在 write_frame（move data）之前 clone 发送。
     // 第一帧立即发送，让预览界面尽快有内容；后续按 200ms 节流。
-    if !*preview_sent
-        || last_preview_time.elapsed() >= std::time::Duration::from_millis(200)
-    {
+    if !*preview_sent || last_preview_time.elapsed() >= std::time::Duration::from_millis(200) {
         // GPU 读回是 BGRA 格式，但 image::Handle::from_rgba 需要 RGBA
         let mut preview_data = data.clone();
         for pixel in preview_data.chunks_exact_mut(4) {

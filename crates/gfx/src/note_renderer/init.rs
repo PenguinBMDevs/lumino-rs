@@ -1,5 +1,6 @@
 use super::buffer::CullBuffers;
 use super::types::{CameraUniform, CullUniform};
+use crate::gpu_resource_tracker;
 use crate::note_renderer::NoteRenderer;
 use wgpu::util::DeviceExt;
 
@@ -23,10 +24,12 @@ impl NoteRenderer {
         let cull_bind_group_layout = Self::create_cull_bind_group_layout(device);
 
         // 创建渲染管线
-        let pipeline = Self::create_render_pipeline(device, &shader, &render_bind_group_layout, format);
+        let pipeline =
+            Self::create_render_pipeline(device, &shader, &render_bind_group_layout, format);
 
         // 创建计算管线
-        let cull_pipeline = Self::create_cull_pipeline(device, &cull_shader, &cull_bind_group_layout);
+        let cull_pipeline =
+            Self::create_cull_pipeline(device, &cull_shader, &cull_bind_group_layout);
 
         // 创建缓冲区
         let max_capacity = (device.limits().max_storage_buffer_binding_size as usize)
@@ -35,8 +38,13 @@ impl NoteRenderer {
             (device.limits().max_buffer_size as usize) / std::mem::size_of::<crate::NoteInstance>(),
         );
 
-        let (gpu_note_buffer, visible_instance_buffer, indirect_buffer, viewport_buffer, cull_uniform_buffer) =
-            Self::create_renderer_buffers(device, queue);
+        let (
+            gpu_note_buffer,
+            visible_instance_buffer,
+            indirect_buffer,
+            viewport_buffer,
+            cull_uniform_buffer,
+        ) = Self::create_renderer_buffers(device, queue);
 
         // 创建渲染 bind group
         let render_bind_group =
@@ -153,11 +161,12 @@ impl NoteRenderer {
         render_bind_group_layout: &wgpu::BindGroupLayout,
         format: wgpu::TextureFormat,
     ) -> wgpu::RenderPipeline {
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("note_render_pipeline_layout"),
-            bind_group_layouts: &[render_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("note_render_pipeline_layout"),
+                bind_group_layouts: &[render_bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("note_pipeline"),
@@ -239,12 +248,14 @@ impl NoteRenderer {
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        gpu_resource_tracker::add_buffer(&indirect_buffer);
 
         let viewport_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("viewport_uniform"),
             contents: bytemuck::cast_slice(&[CameraUniform::default()]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        gpu_resource_tracker::add_buffer(&viewport_buffer);
 
         let cull_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("cull_uniform"),
@@ -254,6 +265,7 @@ impl NoteRenderer {
             }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        gpu_resource_tracker::add_buffer(&cull_uniform_buffer);
 
         (
             gpu_note_buffer,

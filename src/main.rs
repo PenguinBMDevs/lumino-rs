@@ -8,6 +8,10 @@
 
 use winit::event_loop::EventLoop;
 
+/// 全局内存追踪分配器，按子系统统计堆分配。
+#[global_allocator]
+static GLOBAL_ALLOC: lumino_memtrace::TaggedAlloc = lumino_memtrace::TaggedAlloc;
+
 mod cli;
 mod constants;
 mod logging;

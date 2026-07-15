@@ -1,14 +1,19 @@
 //! 小节线/网格线绘制
 
 use super::theme::ThemeExt;
-use lumino_ui_core::Renderer;
 use crate::Editor;
 use iced_core::{Point, Rectangle};
 use iced_widget::canvas::path::Builder;
 use iced_widget::canvas::{Frame, Stroke};
+use lumino_ui_core::Renderer;
 
 /// 绘制小节线和拍线（纵向线）
-pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &lumino_ui_core::Theme) {
+pub fn draw(
+    editor: &Editor,
+    frame: &mut Frame<Renderer>,
+    bounds: Rectangle,
+    theme: &lumino_ui_core::Theme,
+) {
     let view = &editor.editor_state.view;
     let ppq = view.ppq as f32;
     let keyboard_width = view.keyboard_width;

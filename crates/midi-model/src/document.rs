@@ -81,85 +81,88 @@ impl MidiDocument {
             (cb)(0.10);
         }
 
-        let track_names = scan::scan_track_names(file_bytes);
+        // 使用 MIDI 标签追踪解析过程中的密集内存分配
+        lumino_memtrace::with_tag(lumino_memtrace::AllocTag::Midi, || {
+            let track_names = scan::scan_track_names(file_bytes);
 
-        if let Some(cb) = progress {
-            (cb)(0.15);
-        }
+            if let Some(cb) = progress {
+                (cb)(0.15);
+            }
 
-        let mut notes: Vec<Vec<NoteEvent>> = Vec::new();
-        let mut all_tempo_changes: Vec<(u32, f32)> = Vec::new();
-        let mut control_events: Vec<midly::loader::PackedControlEvent> = Vec::new();
-        let mut total_notes: u64 = 0;
-        let mut total_ticks: u32 = 0;
+            let mut notes: Vec<Vec<NoteEvent>> = Vec::new();
+            let mut all_tempo_changes: Vec<(u32, f32)> = Vec::new();
+            let mut control_events: Vec<midly::loader::PackedControlEvent> = Vec::new();
+            let mut total_notes: u64 = 0;
+            let mut total_ticks: u32 = 0;
 
-        midly::loader::extract_notes_and_control_events_per_track_streaming_from_bytes(
-            file_bytes,
-            |track_idx, packed_notes, tempos, ctrls| {
-                if track_idx >= notes.len() {
-                    notes.resize_with(track_idx + 1, Vec::new);
-                }
-
-                let mut track_notes: Vec<NoteEvent> =
-                    packed_notes.into_iter().map(NoteEvent::from).collect();
-                if let Some(last) = track_notes.iter().max_by_key(|n| n.end_tick) {
-                    total_ticks = total_ticks.max(last.end_tick);
-                }
-                if track_notes.len() > 1 {
-                    track_notes.sort_unstable_by_key(|n| n.start_tick);
-                }
-                total_notes += track_notes.len() as u64;
-                notes[track_idx] = track_notes;
-
-                for tempo in tempos {
-                    if !all_tempo_changes.iter().any(|(t, _)| *t == tempo.0) {
-                        all_tempo_changes.push(tempo);
+            midly::loader::extract_notes_and_control_events_per_track_streaming_from_bytes(
+                file_bytes,
+                |track_idx, packed_notes, tempos, ctrls| {
+                    if track_idx >= notes.len() {
+                        notes.resize_with(track_idx + 1, Vec::new);
                     }
-                }
-                control_events.extend_from_slice(&ctrls);
-            },
-        )
-        .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
 
-        if !all_tempo_changes.iter().any(|(t, _)| *t == 0) {
-            all_tempo_changes.push((0u32, 120.0f32));
-        }
-        all_tempo_changes.sort_unstable_by_key(|&(t, _)| t);
-        control_events.sort_unstable_by_key(|e| e.tick);
+                    let mut track_notes: Vec<NoteEvent> =
+                        packed_notes.into_iter().map(NoteEvent::from).collect();
+                    if let Some(last) = track_notes.iter().max_by_key(|n| n.end_tick) {
+                        total_ticks = total_ticks.max(last.end_tick);
+                    }
+                    if track_notes.len() > 1 {
+                        track_notes.sort_unstable_by_key(|n| n.start_tick);
+                    }
+                    total_notes += track_notes.len() as u64;
+                    notes[track_idx] = track_notes;
 
-        if let Some(cb) = progress {
-            (cb)(0.75);
-        }
+                    for tempo in tempos {
+                        if !all_tempo_changes.iter().any(|(t, _)| *t == tempo.0) {
+                            all_tempo_changes.push(tempo);
+                        }
+                    }
+                    control_events.extend_from_slice(&ctrls);
+                },
+            )
+            .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
 
-        let track_count = notes.len() as u16;
-        let tracks_manager = TrackManager::new(track_count);
+            if !all_tempo_changes.iter().any(|(t, _)| *t == 0) {
+                all_tempo_changes.push((0u32, 120.0f32));
+            }
+            all_tempo_changes.sort_unstable_by_key(|&(t, _)| t);
+            control_events.sort_unstable_by_key(|e| e.tick);
 
-        tracing::info!(
-            "MidiDocument: 已加载 {} 个音符, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化",
-            total_notes,
-            control_events.len(),
-            track_count,
-            total_ticks,
-            all_tempo_changes.len(),
-        );
+            if let Some(cb) = progress {
+                (cb)(0.75);
+            }
 
-        if let Some(cb) = progress {
-            (cb)(0.90);
-        }
+            let track_count = notes.len() as u16;
+            let tracks_manager = TrackManager::new(track_count);
 
-        Ok((
-            Self {
-                notes,
-                tempo_changes: all_tempo_changes,
-                control_events,
-                track_names,
-                total_ticks,
+            tracing::info!(
+                "MidiDocument: 已加载 {} 个音符, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化",
+                total_notes,
+                control_events.len(),
                 track_count,
-                tracks: tracks_manager,
-            },
-            division,
-            total_notes,
-        ))
+                total_ticks,
+                all_tempo_changes.len(),
+            );
+
+            if let Some(cb) = progress {
+                (cb)(0.90);
+            }
+
+            Ok((
+                Self {
+                    notes,
+                    tempo_changes: all_tempo_changes,
+                    control_events,
+                    track_names,
+                    total_ticks,
+                    track_count,
+                    tracks: tracks_manager,
+                },
+                division,
+                total_notes,
+            ))
+        })
     }
 
     /// 获取总 tick 数

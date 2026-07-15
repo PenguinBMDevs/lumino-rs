@@ -18,3 +18,4 @@ serde_json = { workspace = true }
 bincode = { workspace = true }
 encoding_rs = { workspace = true }
 lumino-memory-monitor = { path = "../memory-monitor" }
+lumino-memtrace = { path = "../memtrace" }

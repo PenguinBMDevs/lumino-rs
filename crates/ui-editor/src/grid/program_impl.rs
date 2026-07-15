@@ -3,10 +3,10 @@
 use super::state::GridInteractionState;
 use super::{keyboard, playback_indicator, remote_cursors, ruler, selection_box};
 use crate::{EditState, HitType};
-use lumino_message::Tool;
 use crate::{Message, Renderer, Theme, message::EditorAction};
 use iced_core::{Rectangle, mouse};
 use iced_widget::canvas::{Action, Event, Geometry, Program};
+use lumino_message::Tool;
 
 impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
     type State = GridInteractionState;
@@ -28,10 +28,15 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             || canvas.offset_x != bounds_pos.x
             || canvas.offset_y != bounds_pos.y
         {
-            return Some(Action::publish(lumino_ui_core::Message::CanvasBoundsChanged {
-                offset: lumino_ui_core::message::Point2::new(bounds_pos.x, bounds_pos.y),
-                size: lumino_ui_core::message::Size2::new(bounds_size.width, bounds_size.height),
-            }));
+            return Some(Action::publish(
+                lumino_ui_core::Message::CanvasBoundsChanged {
+                    offset: lumino_ui_core::message::Point2::new(bounds_pos.x, bounds_pos.y),
+                    size: lumino_ui_core::message::Size2::new(
+                        bounds_size.width,
+                        bounds_size.height,
+                    ),
+                },
+            ));
         }
 
         if let Some(position) = cursor.position() {

@@ -1,5 +1,7 @@
 //! GPU 音符缓冲区类型定义
 
+use crate::gpu_resource_tracker;
+
 /// GPU 音符缓冲区
 pub struct GpuNoteBuffer {
     /// 实例缓冲区（常驻 GPU 内存）
@@ -16,4 +18,10 @@ pub struct GpuNoteBuffer {
     pub(crate) queue: std::sync::Arc<wgpu::Queue>,
     /// CPU 侧实例缓存（用于支持删除等操作）
     pub(crate) instances: Vec<crate::NoteInstance>,
+}
+
+impl Drop for GpuNoteBuffer {
+    fn drop(&mut self) {
+        gpu_resource_tracker::sub_buffer(&self.instance_buffer);
+    }
 }

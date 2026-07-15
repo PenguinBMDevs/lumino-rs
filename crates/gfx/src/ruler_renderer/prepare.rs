@@ -5,6 +5,7 @@
 use super::{
     GROWTH_FACTOR, RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,
 };
+use crate::gpu_resource_tracker;
 
 impl RulerRenderer {
     /// 生成标尺刻度实例
@@ -97,6 +98,7 @@ impl RulerRenderer {
 
         if instance_count > self.capacity {
             let new_capacity = (self.capacity * GROWTH_FACTOR).max(instance_count);
+            gpu_resource_tracker::sub_buffer(&self.instance_buffer);
             self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
             self.capacity = new_capacity;
         }

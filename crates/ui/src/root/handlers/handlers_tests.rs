@@ -128,7 +128,9 @@ fn test_handle_core_event_re_emits_event() {
 
     let emitted = crate::event::take_events();
     assert!(
-        emitted.iter().any(|e| format!("{:?}", e) == format!("{:?}", event)),
+        emitted
+            .iter()
+            .any(|e| format!("{:?}", e) == format!("{:?}", event)),
         "handle_core_event 应重新发出传入的事件"
     );
 }

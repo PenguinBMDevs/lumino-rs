@@ -54,5 +54,3 @@ pub enum Event {
         update: String, // JSON string of ProjectUpdate
     },
 }
-
-

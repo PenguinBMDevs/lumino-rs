@@ -187,18 +187,14 @@ fn drain_hires_stream(
             Ok(HiResStreamMsg::Finished) => {
                 // 后台生成全部完毕：flush DMA
                 if hires_renderer.is_some() {
-                    let flush = ctx
-                        .device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("hires_stream_flush"),
-                        });
+                    let flush =
+                        ctx.device
+                            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                                label: Some("hires_stream_flush"),
+                            });
                     ctx.queue.submit(std::iter::once(flush.finish()));
                 }
-                push_onion_progress(
-                    onion_progress,
-                    "高精度洋葱皮贴图流式生成+上传完成",
-                    1.0,
-                );
+                push_onion_progress(onion_progress, "高精度洋葱皮贴图流式生成+上传完成", 1.0);
             }
             Err(_) => break, // 无更多消息，退出本帧接收
         }
@@ -325,12 +321,14 @@ fn handle_video_frame(
     // 此时从 frame 获取 pipeline / tx 引用，execute_render_pass 已经完成，
     // 不会再与 frame 的借用冲突。
     // pipeline_ready 已提前保证 export_pipeline / export_frame_tx 不为 None。
-    let pipeline = frame.export_pipeline.as_mut().expect(
-        "export_pipeline 应已通过 pipeline_ready 检查完成初始化，不应为 None",
-    );
-    let tx = frame.export_frame_tx.as_ref().expect(
-        "export_frame_tx 应已通过 pipeline_ready 检查完成初始化，不应为 None",
-    );
+    let pipeline = frame
+        .export_pipeline
+        .as_mut()
+        .expect("export_pipeline 应已通过 pipeline_ready 检查完成初始化，不应为 None");
+    let tx = frame
+        .export_frame_tx
+        .as_ref()
+        .expect("export_frame_tx 应已通过 pipeline_ready 检查完成初始化，不应为 None");
     pipeline.ensure_size(width, height);
     while !pipeline.can_write() {
         let data = pipeline.wait_read();

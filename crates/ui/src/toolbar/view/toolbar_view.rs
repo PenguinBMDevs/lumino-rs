@@ -39,7 +39,8 @@ impl Toolbar {
 
         let undo_redo_controls = self.render_undo_redo_controls(content_height, palette, t, window);
 
-        let tools = self.render_tools_section(content_height, palette, has_selection, t, window, language);
+        let tools =
+            self.render_tools_section(content_height, palette, has_selection, t, window, language);
 
         let auto_scroll_button = self.render_auto_scroll_button(content_height, palette, t, window);
 

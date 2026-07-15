@@ -1,6 +1,7 @@
 use wgpu::util::DeviceExt;
 
 use super::{ArrangementRenderer, ArrangementUniform, INITIAL_CAPACITY, VERTEX_SHADER};
+use crate::gpu_resource_tracker;
 
 impl ArrangementRenderer {
     /// 创建新的走带渲染器
@@ -96,6 +97,7 @@ impl ArrangementRenderer {
             contents: bytemuck::cast_slice(&[ArrangementUniform::default()]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        gpu_resource_tracker::add_buffer(&uniform_buffer);
 
         // 创建 instance buffer（作为 vertex buffer 使用）
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -105,6 +107,7 @@ impl ArrangementRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        gpu_resource_tracker::add_buffer(&instance_buffer);
 
         // 创建 bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -136,6 +139,7 @@ impl ArrangementRenderer {
         let stride = std::mem::size_of::<super::ArrangementNoteInstance>();
         let needed = instance_count.next_power_of_two().max(INITIAL_CAPACITY);
         if needed > *capacity {
+            gpu_resource_tracker::sub_buffer(instance_buffer);
             *capacity = needed;
             *instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("arrangement_instance_buffer"),
@@ -143,6 +147,7 @@ impl ArrangementRenderer {
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
+            gpu_resource_tracker::add_buffer(instance_buffer);
         }
     }
 }

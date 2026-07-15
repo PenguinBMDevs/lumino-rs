@@ -6,9 +6,9 @@
 //! - `view`: 视图渲染
 //! - `editor_ops`: 编辑器操作
 
+use crate::Theme;
 use crate::state::root_state::{DialogType, RootState};
 use crate::{editor, settings, sidebar, statusbar, titlebar, toolbar, window};
-use crate::Theme;
 use lumino_core::storage::config::UiConfig;
 use lumino_midi_loader::MidiDocument;
 use std::sync::Arc;
@@ -72,39 +72,42 @@ struct RootInitParams {
 impl Root {
     /// 内部构造函数，消除 new/new_progress/new_dialog 的重复代码
     fn from_params(params: RootInitParams) -> Self {
-        let mut state = RootState::new();
-        if let Some(dt) = params.dialog_type {
-            state.is_dialog_window = true;
-            state.dialog_type = dt;
-        }
+        // 使用 UI 内存标签包裹 Root 各子组件初始化，便于内存监控归因
+        lumino_memtrace::with_tag(lumino_memtrace::AllocTag::Ui, || {
+            let mut state = RootState::new();
+            if let Some(dt) = params.dialog_type {
+                state.is_dialog_window = true;
+                state.dialog_type = dt;
+            }
 
-        // 应用已保存的自动滚动配置到 Editor 和 Toolbar，
-        // 否则它们始终使用 AutoScrollConfig::default() 导致用户设置不生效。
-        let mut editor = editor::Editor::new();
-        editor.editor_state.auto_scroll = params.ui_config.auto_scroll;
-        let mut toolbar = toolbar::Toolbar::new();
-        toolbar.auto_scroll_mode = params.ui_config.auto_scroll.mode;
+            // 应用已保存的自动滚动配置到 Editor 和 Toolbar，
+            // 否则它们始终使用 AutoScrollConfig::default() 导致用户设置不生效。
+            let mut editor = editor::Editor::new();
+            editor.editor_state.auto_scroll = params.ui_config.auto_scroll;
+            let mut toolbar = toolbar::Toolbar::new();
+            toolbar.auto_scroll_mode = params.ui_config.auto_scroll.mode;
 
-        Self {
-            sidebar: sidebar::Sidebar::new(),
-            titlebar: titlebar::Titlebar::new(),
-            statusbar: statusbar::StatusBar::new(),
-            toolbar,
-            editor,
-            arrangement_view: editor::arrangement::ArrangementView::new(),
-            window: window::Window::new(&params.theme),
-            settings: settings::SettingsPanel::new(&params.ui_config),
-            progress: None,
-            is_progress_window: params.is_progress_window,
-            state,
-            playback: lumino_ui_core::playback_state::PlaybackState::new(),
-            visual: lumino_ui_core::visual_state::VisualState::new(
-                params.ui_config.velocity_filter_threshold,
-                crate::editor::velocity::VELOCITY_PANEL_HEIGHT,
-            ),
-            midi: lumino_ui_core::midi_state::MidiConnectionState::new(),
-            recording: editor::recording::RecordingState::new(),
-        }
+            Self {
+                sidebar: sidebar::Sidebar::new(),
+                titlebar: titlebar::Titlebar::new(),
+                statusbar: statusbar::StatusBar::new(),
+                toolbar,
+                editor,
+                arrangement_view: editor::arrangement::ArrangementView::new(),
+                window: window::Window::new(&params.theme),
+                settings: settings::SettingsPanel::new(&params.ui_config),
+                progress: None,
+                is_progress_window: params.is_progress_window,
+                state,
+                playback: lumino_ui_core::playback_state::PlaybackState::new(),
+                visual: lumino_ui_core::visual_state::VisualState::new(
+                    params.ui_config.velocity_filter_threshold,
+                    crate::editor::velocity::VELOCITY_PANEL_HEIGHT,
+                ),
+                midi: lumino_ui_core::midi_state::MidiConnectionState::new(),
+                recording: editor::recording::RecordingState::new(),
+            }
+        })
     }
 
     /// 创建新的 Root

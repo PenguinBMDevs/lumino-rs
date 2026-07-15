@@ -49,7 +49,8 @@ impl RunnerInner {
                 self.midi_state.current_midi = Some(parsed);
 
                 // 设置工程创建时间（从文件系统获取）
-                self.session_tracker.created_at = self.midi_state
+                self.session_tracker.created_at = self
+                    .midi_state
                     .current_midi_source
                     .as_ref()
                     .and_then(|p| format_created_at_from_path(p));

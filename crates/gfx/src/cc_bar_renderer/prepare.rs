@@ -4,6 +4,7 @@ use super::core::{
     CcBarColors, CcBarData, CcBarInstance, CcBarRenderer, CcBarViewParams, CcBarViewportUniform,
 };
 use crate::automation::{AutomationViewParams, build_lane_instances};
+use crate::gpu_resource_tracker;
 
 impl CcBarRenderer {
     /// 准备渲染数据
@@ -24,6 +25,7 @@ impl CcBarRenderer {
         // 扩容实例缓冲区
         if instance_count > self.capacity {
             let new_capacity = (self.capacity * Self::GROWTH_FACTOR).max(instance_count);
+            gpu_resource_tracker::sub_buffer(&self.instance_buffer);
             self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
             self.capacity = new_capacity;
         }
@@ -159,9 +161,10 @@ pub fn build_cc_bar_instances(
         // Bend 柱状条兼容路径（无 automation lane 时降级）
         const BEND_MAX: f32 = 8191.0;
         const BEND_MIN: f32 = -8192.0;
-        let points = data.bend_points.iter().map(|p| {
-            (p.tick, (p.value as f32 - BEND_MIN) / (BEND_MAX - BEND_MIN))
-        });
+        let points = data
+            .bend_points
+            .iter()
+            .map(|p| (p.tick, (p.value as f32 - BEND_MIN) / (BEND_MAX - BEND_MIN)));
         push_value_bars(
             &mut instances,
             points,
@@ -290,8 +293,13 @@ fn push_velocity_curve_instances(
             // Step 水平线段
             let dx = x - prev_x;
             if dx > 0.5 {
-                instances
-                    .push(CcBarInstance::new(prev_x, prev_y, dx.max(1.0), 1.0, line_color));
+                instances.push(CcBarInstance::new(
+                    prev_x,
+                    prev_y,
+                    dx.max(1.0),
+                    1.0,
+                    line_color,
+                ));
             }
             // Step 垂直线段
             let dy = y - prev_y;
@@ -390,6 +398,8 @@ fn push_value_bars(
             continue;
         }
 
-        instances.push(CcBarInstance::new(bar_x, bar_y, BAR_WIDTH, bar_h, bar_color));
+        instances.push(CcBarInstance::new(
+            bar_x, bar_y, BAR_WIDTH, bar_h, bar_color,
+        ));
     }
 }

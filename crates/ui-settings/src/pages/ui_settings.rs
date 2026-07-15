@@ -1,15 +1,15 @@
 //! 设置页面 - 界面设置
 
-use lumino_ui_core::{Element, Message, Theme};
 use iced_core::Alignment;
 use iced_widget::{button, column, pick_list, row, text, text_input};
+use lumino_ui_core::{Element, Message, Theme};
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::SettingsPanel;
-use lumino_ui_core::window;
 use lumino_core::i18n::{Language, SettingsTranslations, settings_translations};
 use lumino_core::storage::config::SelectionBoxMode;
+use lumino_ui_core::window;
 
 /// 本地化主题选项（显示名 vs 规范标识符）
 #[derive(Debug, Clone)]
@@ -247,9 +247,7 @@ fn build_auto_scroll_section<'a>(
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
             text_input(t.pixel, &settings.auto_scroll_fixed_position.to_string())
-                .on_input(|v| Message::Settings(
-                    crate::Event::AutoScrollFixedPositionChanged(v)
-                ))
+                .on_input(|v| Message::Settings(crate::Event::AutoScrollFixedPositionChanged(v)))
                 .width(80.0),
             iced_widget::space().width(SPACING_ICON_LABEL),
             text(t.from_left)
@@ -269,9 +267,7 @@ fn build_auto_scroll_section<'a>(
                 t.pixel,
                 &settings.auto_scroll_page_trigger_offset.to_string()
             )
-            .on_input(|v| Message::Settings(
-                crate::Event::AutoScrollPageTriggerOffsetChanged(v)
-            ))
+            .on_input(|v| Message::Settings(crate::Event::AutoScrollPageTriggerOffsetChanged(v)))
             .width(80.0),
             iced_widget::space().width(SPACING_ICON_LABEL),
             text(t.from_right)
@@ -291,9 +287,7 @@ fn build_auto_scroll_section<'a>(
                 t.pixel,
                 &settings.auto_scroll_page_return_position.to_string()
             )
-            .on_input(|v| Message::Settings(
-                crate::Event::AutoScrollPageReturnPositionChanged(v)
-            ))
+            .on_input(|v| Message::Settings(crate::Event::AutoScrollPageReturnPositionChanged(v)))
             .width(80.0),
             iced_widget::space().width(SPACING_ICON_LABEL),
             text(t.from_left)
@@ -386,9 +380,7 @@ fn build_interaction_section<'a>(
             iced_widget::Checkbox::new(settings.playback_key_colors_enabled)
                 .label("播放时键盘颜色指示（默认关闭）")
                 .on_toggle(|enabled| {
-                    Message::Settings(crate::Event::PlaybackKeyColorsEnabledChanged(
-                        enabled,
-                    ))
+                    Message::Settings(crate::Event::PlaybackKeyColorsEnabledChanged(enabled))
                 }),
         ]
         .spacing(SPACING_ICON_LABEL)

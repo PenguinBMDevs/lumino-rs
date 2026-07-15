@@ -14,7 +14,7 @@
 //! - 播放时间 / BPM：由 `tempo_points` + `ppq` 将播放位置（tick）换算得到
 
 use iced_core::Alignment;
-use iced_widget::{column, container, row, space, text};
+use iced_widget::{button, column, container, row, space, text};
 
 use crate::statusbar::performance::PerfData;
 use crate::toolbar::Toolbar;
@@ -48,7 +48,13 @@ impl Toolbar {
         let sep_color = palette.background.strong.color;
         let sep_h = (content_height * 0.55).max(8.0);
 
-        let c0 = metric_column(format!("{cpu:.1}%"), format!("{mem:.1} MB"), accent, dim, 76.0);
+        let c0 = metric_column_with_button(
+            format!("{cpu:.1}%"),
+            format!("{mem:.1} MB"),
+            accent,
+            dim,
+            76.0,
+        );
         let c1 = metric_column(format!("{bpm:.1}"), format!("PPQ {ppq}"), accent, dim, 72.0);
         let c2 = metric_column(pos, format_time(time_secs), accent, dim, 86.0);
 
@@ -81,7 +87,13 @@ impl Toolbar {
 }
 
 /// 单列（上行强调色数值 + 下行弱化说明文字），固定宽度居中显示
-fn metric_column<'a>(top: String, bot: String, accent: iced_core::Color, dim: iced_core::Color, width: f32) -> Element<'a> {
+fn metric_column<'a>(
+    top: String,
+    bot: String,
+    accent: iced_core::Color,
+    dim: iced_core::Color,
+    width: f32,
+) -> Element<'a> {
     column![
         text(top).size(13).style(move |_t: &Theme| text::Style {
             color: Some(accent),
@@ -90,6 +102,37 @@ fn metric_column<'a>(top: String, bot: String, accent: iced_core::Color, dim: ic
         text(bot)
             .size(11)
             .style(move |_t: &Theme| text::Style { color: Some(dim) }),
+    ]
+    .width(iced_widget::core::Length::Fixed(width))
+    .align_x(Alignment::Center)
+    .into()
+}
+
+/// 带按钮的单列：上行强调色数值 + 下行可点击的弱化说明文字
+fn metric_column_with_button<'a>(
+    top: String,
+    bot: String,
+    accent: iced_core::Color,
+    dim: iced_core::Color,
+    width: f32,
+) -> Element<'a> {
+    let memory_button = button(text(bot).size(11))
+        .on_press(crate::toolbar::Event::open_memory_monitor_dialog())
+        .padding([0.0, 0.0])
+        .style(move |_t: &Theme, _status| button::Style {
+            background: None,
+            text_color: dim,
+            border: iced_core::Border::default(),
+            shadow: Default::default(),
+            snap: false,
+        });
+
+    column![
+        text(top).size(13).style(move |_t: &Theme| text::Style {
+            color: Some(accent),
+        }),
+        space().height(2),
+        memory_button,
     ]
     .width(iced_widget::core::Length::Fixed(width))
     .align_x(Alignment::Center)

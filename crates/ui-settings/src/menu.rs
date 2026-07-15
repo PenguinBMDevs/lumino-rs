@@ -4,12 +4,12 @@ use iced_core::{Alignment, Border, Length, Padding};
 use iced_widget::{button, column, container, row, text};
 
 use super::{Event, SettingsPanel, components::*};
+use lumino_core::i18n::{Language, settings_translations};
 use lumino_ui_core::{
     Message, Theme,
     resources::icon::{self, Icon},
     window,
 };
-use lumino_core::i18n::{Language, settings_translations};
 
 pub(super) fn create_menu_items(lang: Language) -> Vec<(&'static str, Icon)> {
     let t = settings_translations(lang);

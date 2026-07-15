@@ -1,11 +1,11 @@
 //! 钢琴卷帘网格绘制程序
 
 use super::state::GridInteractionState;
-use lumino_ui_core::Message;
-use lumino_ui_constants::editor as editor_constants;
 use crate::Editor;
 use iced_core::Point;
 use iced_widget::canvas::{self};
+use lumino_ui_constants::editor as editor_constants;
+use lumino_ui_core::Message;
 
 pub struct PianoRollGrid<'a> {
     pub editor: &'a Editor,
@@ -91,7 +91,10 @@ impl<'a> PianoRollGrid<'a> {
 
         if self.detect_double_click(state, local_pos) {
             Some(canvas::Action::publish(Message::EditorAction(
-                EditorAction::DoubleClicked(lumino_ui_core::message::Point2::new(local_pos.x, local_pos.y)),
+                EditorAction::DoubleClicked(lumino_ui_core::message::Point2::new(
+                    local_pos.x,
+                    local_pos.y,
+                )),
             )))
         } else {
             Some(canvas::Action::publish(Message::EditorAction(
@@ -108,8 +111,8 @@ impl<'a> PianoRollGrid<'a> {
         delta: &iced_core::mouse::ScrollDelta,
         shift_pressed: bool,
     ) -> Option<canvas::Action<Message>> {
-        use lumino_ui_core::message::EditorAction;
         use editor_constants::*;
+        use lumino_ui_core::message::EditorAction;
 
         let (mut delta_x, mut delta_y) = match delta {
             iced_core::mouse::ScrollDelta::Lines { x, y } => {

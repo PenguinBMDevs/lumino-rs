@@ -11,32 +11,11 @@ pub use crate::{
 
 // 重新导出自 lumino-message 的所有公共类型
 pub use lumino_message::{
-    AudioAction,
-    AudioChannels,
-    AudioExportAction,
-    AudioFormat,
-    CcOption,
-    CustomPrecisionAction,
-    DotType,
-    EditorAction,
-    Interpolation,
-    LoadConfirmAction,
-    LoopRangeAction,
-    Message as GenericMessage,
-    NotePrecision,
-    PatternAction,
-    PerfData,
-    Point2,
-    ProjectSettingsAction,
-    SettingsDialogAction,
-    Size2,
-    SpeedChangeAction,
-    SpeedFactor,
-    ThreadingOption,
-    Tool,
-    TupletType,
-    VelocityAction,
-    VideoExportAction,
+    AudioAction, AudioChannels, AudioExportAction, AudioFormat, CcOption, CustomPrecisionAction,
+    DotType, EditorAction, Interpolation, LoadConfirmAction, LoopRangeAction,
+    Message as GenericMessage, NotePrecision, PatternAction, PerfData, Point2,
+    ProjectSettingsAction, SettingsDialogAction, Size2, SpeedChangeAction, SpeedFactor,
+    ThreadingOption, Tool, TupletType, VelocityAction, VideoExportAction,
 };
 
 /// 具体化的消息类型

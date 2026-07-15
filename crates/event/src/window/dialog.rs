@@ -63,6 +63,10 @@ pub enum Event {
     OpenProjectSettingsDialog,
     /// 关闭工程设置对话框
     CloseProjectSettingsDialog,
+    /// 打开内存监控对话框
+    OpenMemoryMonitorDialog,
+    /// 关闭内存监控对话框
+    CloseMemoryMonitorDialog,
     /// 应用工程设置
     ApplyProjectSettings {
         title: String,
@@ -92,5 +96,3 @@ pub enum Event {
         document: Option<Arc<MidiDocument>>,
     },
 }
-
-

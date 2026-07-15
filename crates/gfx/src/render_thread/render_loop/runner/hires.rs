@@ -59,22 +59,37 @@ pub(super) fn handle_hires_control(
             config,
             midi_hash,
         } => handle_generate_hires(
-            notes, ppq, key_count, total_ticks, config, midi_hash,
-            ctx, hires_result_tx, onion_progress,
-            hires_renderer, hires_meta, hires_config,
+            notes,
+            ppq,
+            key_count,
+            total_ticks,
+            config,
+            midi_hash,
+            ctx,
+            hires_result_tx,
+            onion_progress,
+            hires_renderer,
+            hires_meta,
+            hires_config,
         ),
-        ControlCommand::DisposeHiResOnionSkin => handle_dispose_hires(
-            hires_renderer, hires_meta, hires_config, onion_progress,
-        ),
+        ControlCommand::DisposeHiResOnionSkin => {
+            handle_dispose_hires(hires_renderer, hires_meta, hires_config, onion_progress)
+        }
         ControlCommand::RegenerateHiResTrack(params) => handle_regenerate_hires_track(
             params,
-            ctx, hires_result_tx,
-            hires_renderer, hires_meta, hires_config,
+            ctx,
+            hires_result_tx,
+            hires_renderer,
+            hires_meta,
+            hires_config,
         ),
         ControlCommand::ShowHiResDirtyOverlay(params) => handle_show_dirty_overlay(
             params,
             ctx,
-            hires_renderer, hires_meta, hires_config, onion_progress,
+            hires_renderer,
+            hires_meta,
+            hires_config,
+            onion_progress,
         ),
         // Resize / Shutdown 已在命令分发阶段处理，此处无需重复处理
         _ => {}
@@ -254,8 +269,7 @@ fn handle_regenerate_hires_track(
 
             for tg in 0..all_track_groups {
                 let tg_start = (tg * TRACKS_PER_GROUP as u32) as u16;
-                let tg_end =
-                    ((tg + 1) * TRACKS_PER_GROUP as u32).min(track_count as u32) as u16;
+                let tg_end = ((tg + 1) * TRACKS_PER_GROUP as u32).min(track_count as u32) as u16;
 
                 if tg == track_group {
                     // 修改音轨组：使用内存中的最新音符生成
@@ -280,13 +294,9 @@ fn handle_regenerate_hires_track(
                             ppq,
                             measures_per_group,
                         };
-                        if let Ok(Some(tile)) = read_track_tile_cache(
-                            &cache_dir,
-                            &mh,
-                            t,
-                            time_g,
-                            &expected_meta,
-                        ) {
+                        if let Ok(Some(tile)) =
+                            read_track_tile_cache(&cache_dir, &mh, t, time_g, &expected_meta)
+                        {
                             merge_track_tile_into(&mut merged_pixels, &tile);
                         }
                     }
@@ -371,8 +381,7 @@ fn handle_show_dirty_overlay(
     let time_groups = config.time_group_count(total_ticks, ppq);
     let width = config.tile_width_px;
     let track_start = (track_group * TRACKS_PER_GROUP as u32) as u16;
-    let track_end =
-        (track_start as u32 + group_notes.len() as u32).min(track_count as u32) as u16;
+    let track_end = (track_start as u32 + group_notes.len() as u32).min(track_count as u32) as u16;
     let track_range = (track_start, track_end);
 
     // 排序音符（保证 time_group 内的合并顺序稳定）
@@ -390,9 +399,8 @@ fn handle_show_dirty_overlay(
             let mut track_tiles = Vec::with_capacity(sorted_notes.len());
             for (local_idx, notes) in sorted_notes.iter().enumerate() {
                 let t = track_start + local_idx as u16;
-                let tile = generate_track_tile(
-                    notes, t, time_g, tick_start, tick_end, width, key_count,
-                );
+                let tile =
+                    generate_track_tile(notes, t, time_g, tick_start, tick_end, width, key_count);
                 track_tiles.push(tile);
             }
 

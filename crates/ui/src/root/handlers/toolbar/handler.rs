@@ -43,6 +43,9 @@ impl ToolbarHandler {
         // 处理协作对话框
         self.handle_toolbar_collaboration(root, &event);
 
+        // 处理内存监控对话框
+        self.handle_toolbar_memory_monitor(root, &event);
+
         // 处理录制
         self.handle_toolbar_recording(root, &event);
 

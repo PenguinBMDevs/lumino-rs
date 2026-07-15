@@ -1,9 +1,9 @@
 //! 设置页面 - 关于
 
-use lumino_ui_core::Element;
 use crate::SettingsPanel;
 use iced_widget::{column, text};
 use lumino_core::i18n::settings_translations;
+use lumino_ui_core::Element;
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};

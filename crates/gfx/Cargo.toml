@@ -27,3 +27,4 @@ lumino-core = { path = "../core" }
 lumino-midi-loader = { path = "../midi-loader" }
 lumino-onion-skin = { path = "../onion-skin" }
 lumino-onion-skin-hires = { path = "../onion-skin-hires" }
+lumino-memtrace = { path = "../memtrace" }

@@ -8,5 +8,3 @@ pub enum Event {
     Maximize,
     Minimize,
 }
-
-

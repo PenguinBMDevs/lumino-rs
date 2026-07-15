@@ -3,8 +3,8 @@
 //! Window 结构体负责管理窗口主题、最大化状态等。
 //! 窗口事件（Event）定义已迁至 lumino-ui-core。
 
-use crate::theme::HIGH_CONTRAST_DISPLAY;
 use crate::Theme;
+use crate::theme::HIGH_CONTRAST_DISPLAY;
 
 pub use crate::window_event::{Event, TrafficAction};
 

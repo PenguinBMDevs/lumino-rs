@@ -1,8 +1,8 @@
 //! 设置页面 - 常规设置
 
-use lumino_ui_core::{Element, Message};
 use iced_core::Alignment;
 use iced_widget::{column, pick_list, row, text};
+use lumino_ui_core::{Element, Message};
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};

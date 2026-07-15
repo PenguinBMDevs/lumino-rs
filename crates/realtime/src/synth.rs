@@ -116,87 +116,95 @@ impl RealtimeSynth {
         let render_window = (sample_rate as f64 * config.render_window_ms / 1000.0) as usize;
         let render_len = render_window * channels as usize;
 
-        // ── ChannelGroup（完全顺序，无 rayon 开销） ────────────────
-        let cg_config = ChannelGroupConfig {
-            channel_init_options: config.channel_init_options,
-            format: match config.format {
-                SynthFormat::Midi => XSynthFormat::Midi,
-                SynthFormat::Custom { channels } => XSynthFormat::Custom { channels },
-            },
-            audio_params: stream_params,
-            parallelism: ParallelismOptions {
-                channel: config.multithreading,
-                key: ThreadCount::None,
-            },
-        };
+        // ── ChannelGroup 与渲染线程创建（音频引擎分配密集区）────────
+        let (render_thread, running) =
+            lumino_memtrace::with_tag(lumino_memtrace::AllocTag::Audio, || {
+                let cg_config = ChannelGroupConfig {
+                    channel_init_options: config.channel_init_options,
+                    format: match config.format {
+                        SynthFormat::Midi => XSynthFormat::Midi,
+                        SynthFormat::Custom { channels } => XSynthFormat::Custom { channels },
+                    },
+                    audio_params: stream_params,
+                    parallelism: ParallelismOptions {
+                        channel: config.multithreading,
+                        key: ThreadCount::None,
+                    },
+                };
 
-        let mut channel_group = ChannelGroup::new(cg_config);
+                let mut channel_group = ChannelGroup::new(cg_config);
 
-        // ── 渲染线程 ───────────────────────────────────────────────
-        let running = Arc::new(AtomicBool::new(true));
-        let running_render = running.clone();
-        let perf_render = perf.clone();
-        let voice_render = total_voice_count.clone();
+                let running = Arc::new(AtomicBool::new(true));
+                let running_render = running.clone();
+                let perf_render = perf.clone();
+                let voice_render = total_voice_count.clone();
 
-        let render_thread = thread::Builder::new()
-            .name("lumino-render".into())
-            .spawn(move || {
-                // 渲染超时阈值与事件处理时间预算（实现见 compute_render_budget）
-                let (render_timeout_ns, render_window_ms, event_budget_ns) =
-                    compute_render_budget(render_len, channels, sample_rate);
+                let render_thread = thread::Builder::new()
+                    .name("lumino-render".into())
+                    .spawn(move || {
+                        // 渲染超时阈值与事件处理时间预算（实现见 compute_render_budget）
+                        let (render_timeout_ns, render_window_ms, event_budget_ns) =
+                            compute_render_budget(render_len, channels, sample_rate);
 
-                while running_render.load(Ordering::Relaxed) {
-                    let start = Instant::now();
+                        while running_render.load(Ordering::Relaxed) {
+                            let start = Instant::now();
 
-                    // 消费待处理事件，但限制每帧处理时间。
-                    // 当事件通道中堆积了大量事件时（如极端高 NPS 场景），
-                    // 一次性排空可能耗时数十秒，导致音频回调得不到数据。
-                    // 时间预算用完后剩余事件留到下一帧。
-                    let event_deadline = start + std::time::Duration::from_nanos(event_budget_ns);
-                    let mut event_count =
-                        drain_events_budgeted(&mut channel_group, &event_receiver, event_deadline);
+                            // 消费待处理事件，但限制每帧处理时间。
+                            // 当事件通道中堆积了大量事件时（如极端高 NPS 场景），
+                            // 一次性排空可能耗时数十秒，导致音频回调得不到数据。
+                            // 时间预算用完后剩余事件留到下一帧。
+                            let event_deadline =
+                                start + std::time::Duration::from_nanos(event_budget_ns);
+                            let mut event_count = drain_events_budgeted(
+                                &mut channel_group,
+                                &event_receiver,
+                                event_deadline,
+                            );
 
-                    // 检查上一帧是否超时 — 如果渲染赶不上，跳过本次渲染只消费事件
-                    if should_skip_render(
-                        &perf_render,
-                        perf_render.last_render_ns.load(Ordering::Relaxed),
-                        render_timeout_ns,
-                        event_count,
-                    ) {
-                        continue;
-                    }
+                            // 检查上一帧是否超时 — 如果渲染赶不上，跳过本次渲染只消费事件
+                            if should_skip_render(
+                                &perf_render,
+                                perf_render.last_render_ns.load(Ordering::Relaxed),
+                                render_timeout_ns,
+                                event_count,
+                            ) {
+                                continue;
+                            }
 
-                    // 闲置检测：没有事件且样本通道已满（音频回调消费太慢或已暂停）
-                    if handle_idle(
-                        &mut channel_group,
-                        &perf_render,
-                        &event_receiver,
-                        &sample_tx,
-                        render_window_ms,
-                        event_count,
-                    ) {
-                        continue;
-                    }
+                            // 闲置检测：没有事件且样本通道已满（音频回调消费太慢或已暂停）
+                            if handle_idle(
+                                &mut channel_group,
+                                &perf_render,
+                                &event_receiver,
+                                &sample_tx,
+                                render_window_ms,
+                                event_count,
+                            ) {
+                                continue;
+                            }
 
-                    // 渲染一个窗口并上报性能统计；返回 true 表示音频回调断开，退出循环
-                    if render_window_and_report(
-                        &mut channel_group,
-                        &sample_tx,
-                        &vec_return_rx,
-                        &vec_return_tx_render,
-                        &perf_render,
-                        start,
-                        render_len,
-                        channels,
-                        sample_rate,
-                        event_count,
-                        &voice_render,
-                    ) {
-                        break;
-                    }
-                }
-            })
-            .expect("failed to spawn render thread");
+                            // 渲染一个窗口并上报性能统计；返回 true 表示音频回调断开，退出循环
+                            if render_window_and_report(
+                                &mut channel_group,
+                                &sample_tx,
+                                &vec_return_rx,
+                                &vec_return_tx_render,
+                                &perf_render,
+                                start,
+                                render_len,
+                                channels,
+                                sample_rate,
+                                event_count,
+                                &voice_render,
+                            ) {
+                                break;
+                            }
+                        }
+                    })
+                    .expect("failed to spawn render thread");
+
+                (render_thread, running)
+            });
 
         // ── 音频回调（锁无关） ──────────────────────────────────────
         let stream = build_stream(device, stream_config, sample_rx, vec_return_tx.clone());
@@ -440,8 +448,8 @@ fn handle_idle(
             .last_event_count
             .store(event_count, Ordering::Relaxed);
         // 等待事件到达或超时；收到的事件立即处理，避免丢失
-        if let Ok(event) = event_receiver
-            .recv_timeout(std::time::Duration::from_millis(render_window_ms))
+        if let Ok(event) =
+            event_receiver.recv_timeout(std::time::Duration::from_millis(render_window_ms))
         {
             channel_group.send_event(event);
         }

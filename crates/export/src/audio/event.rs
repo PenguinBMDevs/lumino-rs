@@ -235,11 +235,14 @@ pub fn load_soundfonts(
         .soundfonts
         .iter()
         .map(|sf_path| {
-            let sf: Arc<dyn SoundfontBase> = Arc::new(
-                SampleSoundfont::new(sf_path, stream_params, sf_options)
-                    .map_err(|e| ExportError::AudioWrite(format!("音色库 {sf_path:?}: {e}")))?,
-            );
-            Ok(sf)
+            // 使用音色库标签追踪每个音色库加载时的内存分配
+            lumino_memtrace::with_tag(lumino_memtrace::AllocTag::SoundFont, || {
+                let sf: Arc<dyn SoundfontBase> = Arc::new(
+                    SampleSoundfont::new(sf_path, stream_params, sf_options)
+                        .map_err(|e| ExportError::AudioWrite(format!("音色库 {sf_path:?}: {e}")))?,
+                );
+                Ok(sf)
+            })
         })
         .collect::<ExportResult<Vec<_>>>()?;
 

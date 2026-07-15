@@ -11,8 +11,8 @@ use iced_core::{Rectangle, mouse};
 use iced_widget::canvas::{self, Frame, Geometry, Program};
 
 use crate::arrangement::ArrangementViewport;
-use lumino_ui_core::message::EditorAction;
 use crate::{Message, Renderer, Theme};
+use lumino_ui_core::message::EditorAction;
 
 /// 工程走带点击 Canvas
 pub struct ArrangementClickCanvas {

@@ -11,6 +11,8 @@ mod init;
 mod prepare;
 mod types;
 
+use crate::gpu_resource_tracker;
+
 pub use types::{ArrangementNoteInstance, ArrangementUniform, colors};
 
 /// 走带视图渲染器
@@ -34,3 +36,10 @@ const VERTEX_SHADER: &str = include_str!("shaders/arrangement.wgsl");
 
 /// 初始实例缓冲区大小
 const INITIAL_CAPACITY: usize = 4096;
+
+impl Drop for ArrangementRenderer {
+    fn drop(&mut self) {
+        gpu_resource_tracker::sub_buffer(&self.uniform_buffer);
+        gpu_resource_tracker::sub_buffer(&self.instance_buffer);
+    }
+}

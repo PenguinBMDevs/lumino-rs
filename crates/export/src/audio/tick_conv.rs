@@ -100,7 +100,6 @@ impl TickToTime {
         self.prev_tick = tick;
         total_at_tick - total_at_cur
     }
-
 }
 
 #[cfg(test)]

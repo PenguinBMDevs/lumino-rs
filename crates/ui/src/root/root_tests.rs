@@ -180,9 +180,9 @@ fn test_speed_change_button_always_enabled_in_view() {
         .toolbar_view(&root.window, true, root.settings.language, &perf_ctx);
 
     // 无选中 -> view（不应 panic/assert）
-    let _element = root
-        .toolbar
-        .toolbar_view(&root.window, false, root.settings.language, &perf_ctx);
+    let _element =
+        root.toolbar
+            .toolbar_view(&root.window, false, root.settings.language, &perf_ctx);
 
     // 验证通过：两种情况下 view 均正常返回
 }

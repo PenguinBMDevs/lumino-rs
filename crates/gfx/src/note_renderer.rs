@@ -1,5 +1,7 @@
 pub mod types;
 
+use crate::gpu_resource_tracker;
+
 pub use types::{
     CameraParams, CameraUniform, CullUniform, NoteInstance, OnionBgTileRef, RenderUniform,
     pack_color, unpack_color,
@@ -49,6 +51,16 @@ impl NoteRenderer {
     const VERTEX_SHADER: &'static str = include_str!("shaders/note.wgsl");
     /// 计算着色器代码 (WGSL)
     const CULL_SHADER: &'static str = include_str!("shaders/cull.wgsl");
+}
+
+impl Drop for NoteRenderer {
+    fn drop(&mut self) {
+        // gpu_note_buffer 在其自身的 Drop 中释放 instance_buffer
+        gpu_resource_tracker::sub_buffer(&self.visible_instance_buffer);
+        gpu_resource_tracker::sub_buffer(&self.indirect_buffer);
+        gpu_resource_tracker::sub_buffer(&self.viewport_buffer);
+        gpu_resource_tracker::sub_buffer(&self.cull_uniform_buffer);
+    }
 }
 
 #[cfg(test)]

@@ -77,16 +77,12 @@ fn view_connect<'a>(
 
     // 连接服务器界面
     let host_input = text_input("服务器地址", &state.server_host)
-        .on_input(|s| {
-            Message::Collaboration(lumino_message::CollaborationAction::HostChanged(s))
-        })
+        .on_input(|s| Message::Collaboration(lumino_message::CollaborationAction::HostChanged(s)))
         .padding(8)
         .width(Length::Fill);
 
     let port_input = text_input("端口", &state.server_port)
-        .on_input(|s| {
-            Message::Collaboration(lumino_message::CollaborationAction::PortChanged(s))
-        })
+        .on_input(|s| Message::Collaboration(lumino_message::CollaborationAction::PortChanged(s)))
         .padding(8)
         .width(Length::Fixed(80.0));
 
@@ -99,9 +95,7 @@ fn view_connect<'a>(
 
     let invite_input = text_input("邀请码（可选）", &state.invite_code)
         .on_input(|s| {
-            Message::Collaboration(lumino_message::CollaborationAction::InviteCodeChanged(
-                s,
-            ))
+            Message::Collaboration(lumino_message::CollaborationAction::InviteCodeChanged(s))
         })
         .padding(8)
         .width(Length::Fill);
@@ -167,8 +161,7 @@ fn view_connect<'a>(
     };
 
     column![
-        row![host_input, space().width(8), port_input]
-            .align_y(iced_core::Alignment::Center),
+        row![host_input, space().width(8), port_input].align_y(iced_core::Alignment::Center),
         space().height(12),
         username_input,
         space().height(12),
@@ -254,9 +247,7 @@ fn view_room_actions<'a>(
 
     let invite_input = text_input("邀请码", &state.invite_code)
         .on_input(|s| {
-            Message::Collaboration(lumino_message::CollaborationAction::InviteCodeChanged(
-                s,
-            ))
+            Message::Collaboration(lumino_message::CollaborationAction::InviteCodeChanged(s))
         })
         .padding(8)
         .width(Length::Fill);

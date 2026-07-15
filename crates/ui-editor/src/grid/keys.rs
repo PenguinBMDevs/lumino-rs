@@ -1,13 +1,18 @@
 //! 琴键分隔线绘制
 
 use super::theme::ThemeExt;
-use lumino_ui_core::Renderer;
 use crate::Editor;
 use iced_core::{Point, Rectangle};
 use iced_widget::canvas::{Frame, Stroke};
+use lumino_ui_core::Renderer;
 
 /// 绘制琴键分隔线（横向线）
-pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &lumino_ui_core::Theme) {
+pub fn draw(
+    editor: &Editor,
+    frame: &mut Frame<Renderer>,
+    bounds: Rectangle,
+    theme: &lumino_ui_core::Theme,
+) {
     use iced_widget::canvas::path::Builder;
 
     let palette = theme.extended_palette().background;

@@ -6,18 +6,18 @@
 //! 模块声明顺序：事件模块在前，message 在后（message 引用事件类型）。
 
 pub mod app_mode;
-pub mod theme;
-pub mod settings_event;
-pub mod window_event;
-pub mod toolbar_event;
-pub mod sidebar_event;
 pub mod message;
+pub mod settings_event;
+pub mod sidebar_event;
 pub mod state;
+pub mod theme;
+pub mod toolbar_event;
+pub mod window_event;
 
-/// Root 持有的子状态类型（视觉/渲染、MIDI 连接、播放）
-pub mod visual_state;
 pub mod midi_state;
 pub mod playback_state;
+/// Root 持有的子状态类型（视觉/渲染、MIDI 连接、播放）
+pub mod visual_state;
 
 /// 窗口状态（Window 结构体）
 pub mod window;

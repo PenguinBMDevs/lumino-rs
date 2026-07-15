@@ -72,8 +72,8 @@ impl StatusBar {
         let left_text = self.fps_text(t.status_ready);
         let use_fps_style = self.use_fps_style();
 
-        let left_section: Element<'a> = row![
-            text(left_text).size(12).style(move |theme: &Theme| {
+        let left_section: Element<'a> =
+            row![text(left_text).size(12).style(move |theme: &Theme| {
                 if use_fps_style {
                     let palette = theme.extended_palette();
                     text::Style {
@@ -82,9 +82,8 @@ impl StatusBar {
                 } else {
                     text::Style::default()
                 }
-            }),
-        ]
-        .into();
+            }),]
+            .into();
 
         container(
             row![

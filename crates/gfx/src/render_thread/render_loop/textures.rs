@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use super::super::params::RenderParams;
+use crate::gpu_resource_tracker;
 
 /// 离屏纹理资源集合
 pub struct OffscreenTextureResources<'a> {
@@ -26,6 +27,18 @@ pub fn ensure_textures(resources: &mut OffscreenTextureResources<'_>) -> bool {
         || resources.current_texture.is_none()
         || resources.depth_texture.is_none()
     {
+        // 先释放旧视图（视图不计入独立内存，但需在其父纹理之前释放）
+        if resources.depth_texture_view.is_some() {
+            resources.depth_texture_view.take();
+        }
+        // 上报旧纹理释放
+        if let Some(old) = resources.depth_texture.take() {
+            gpu_resource_tracker::sub_texture(&old);
+        }
+        if let Some(old) = resources.current_texture.take() {
+            gpu_resource_tracker::sub_texture(old.as_ref());
+        }
+
         // 创建离屏渲染纹理
         let texture = resources.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("offscreen_render_texture"),
@@ -41,6 +54,7 @@ pub fn ensure_textures(resources: &mut OffscreenTextureResources<'_>) -> bool {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
+        gpu_resource_tracker::add_texture(&texture);
 
         // 创建深度纹理
         let depth_tex = resources.device.create_texture(&wgpu::TextureDescriptor {
@@ -57,6 +71,7 @@ pub fn ensure_textures(resources: &mut OffscreenTextureResources<'_>) -> bool {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
+        gpu_resource_tracker::add_texture(&depth_tex);
 
         resources
             .depth_texture_view

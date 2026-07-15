@@ -1,20 +1,23 @@
 //! GPU 音符缓冲区内部方法
 
 use super::types::GpuNoteBuffer;
+use crate::gpu_resource_tracker;
 
 impl GpuNoteBuffer {
     /// 创建缓冲区
     pub(crate) fn create_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
         let size = (capacity * std::mem::size_of::<crate::NoteInstance>()) as wgpu::BufferAddress;
 
-        device.create_buffer(&wgpu::BufferDescriptor {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("gpu_note_buffer"),
             size,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
-        })
+        });
+        gpu_resource_tracker::add_buffer(&buffer);
+        buffer
     }
 
     /// 扩容缓冲区
@@ -33,6 +36,9 @@ impl GpuNoteBuffer {
             new_capacity,
             required_capacity
         );
+
+        // 释放旧缓冲区内存计数（在创建新缓冲区前扣除，避免瞬间重复计数）
+        gpu_resource_tracker::sub_buffer(&self.instance_buffer);
 
         // 创建新缓冲区
         let new_buffer = Self::create_buffer(&self.device, new_capacity);

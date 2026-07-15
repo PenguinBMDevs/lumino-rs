@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/dialog", "crates/event", "crates/export", "crates/gfx", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/midi-model", "crates/message", "crates/onion-skin", "crates/onion-skin-hires", "crates/playback", "crates/realtime", "crates/ui", "crates/ui-constants", "crates/ui-core", "crates/ui-editor", "crates/ui-host", "crates/ui-settings", "crates/collaboration"]
+members = ["crates/core", "crates/dialog", "crates/event", "crates/export", "crates/gfx", "crates/memtrace", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/midi-model", "crates/message", "crates/onion-skin", "crates/onion-skin-hires", "crates/playback", "crates/realtime", "crates/ui", "crates/ui-constants", "crates/ui-core", "crates/ui-editor", "crates/ui-host", "crates/ui-settings", "crates/collaboration"]
 resolver = "3"
 
 [workspace.package]
@@ -19,6 +19,7 @@ lumino-midi-io = { path = "crates/midi-io" }
 lumino-midi-loader = { path = "crates/midi-loader" }
 lumino-onion-skin = { path = "crates/onion-skin" }
 lumino-memory-monitor = { path = "crates/memory-monitor" }
+lumino-memtrace = { path = "crates/memtrace" }
 lumino-midi-model = { path = "crates/midi-model" }
 lumino-message = { path = "crates/message" }
 lumino-playback = { path = "crates/playback" }
@@ -94,6 +95,7 @@ lumino-gfx = { workspace = true }
 lumino-midi-io = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-memory-monitor = { workspace = true }
+lumino-memtrace = { workspace = true }
 lumino-ui = { workspace = true }
 lumino-collaboration = { workspace = true }
 lumino-dialog = { workspace = true }

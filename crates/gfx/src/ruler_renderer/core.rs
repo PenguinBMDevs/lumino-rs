@@ -6,6 +6,7 @@
 use wgpu::util::DeviceExt;
 
 use super::{INITIAL_CAPACITY, RulerRenderer, VERTEX_SHADER};
+use crate::gpu_resource_tracker;
 
 /// 标尺刻度实例数据
 #[repr(C)]
@@ -176,6 +177,7 @@ impl RulerRenderer {
             )]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        gpu_resource_tracker::add_buffer(&viewport_buffer);
 
         // 创建 bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -211,12 +213,14 @@ impl RulerRenderer {
 
     /// 创建实例缓冲区
     pub(super) fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
-        device.create_buffer(&wgpu::BufferDescriptor {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("ruler_instance_buffer"),
             size: (capacity * std::mem::size_of::<RulerTickInstance>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
-        })
+        });
+        gpu_resource_tracker::add_buffer(&buffer);
+        buffer
     }
 
     /// 实例缓冲区布局
@@ -258,7 +262,16 @@ impl RulerRenderer {
             ],
         }
     }
+}
 
+impl Drop for RulerRenderer {
+    fn drop(&mut self) {
+        gpu_resource_tracker::sub_buffer(&self.instance_buffer);
+        gpu_resource_tracker::sub_buffer(&self.viewport_buffer);
+    }
+}
+
+impl RulerRenderer {
     /// 设置颜色主题
     pub fn set_colors(
         &mut self,

@@ -30,7 +30,10 @@ impl RunnerInner {
         }
 
         let save_path = rfd::FileDialog::new()
-            .add_filter(crate::constants::filters::MIDI_FILES.0, crate::constants::filters::MIDI_FILES.1)
+            .add_filter(
+                crate::constants::filters::MIDI_FILES.0,
+                crate::constants::filters::MIDI_FILES.1,
+            )
             .set_file_name("untitled.mid")
             .save_file()?;
 
@@ -93,8 +96,14 @@ impl RunnerInner {
             .unwrap_or_else(|| "untitled".to_string());
 
         let Some(save_path) = rfd::FileDialog::new()
-            .add_filter(crate::constants::filters::LUMINO_PROJECT.0, crate::constants::filters::LUMINO_PROJECT.1)
-            .add_filter(crate::constants::filters::MIDI_FILES.0, crate::constants::filters::MIDI_FILES.1)
+            .add_filter(
+                crate::constants::filters::LUMINO_PROJECT.0,
+                crate::constants::filters::LUMINO_PROJECT.1,
+            )
+            .add_filter(
+                crate::constants::filters::MIDI_FILES.0,
+                crate::constants::filters::MIDI_FILES.1,
+            )
             .set_file_name(format!("{file_stem}.lmpj"))
             .save_file()
         else {

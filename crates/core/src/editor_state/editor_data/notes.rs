@@ -2,10 +2,10 @@
 
 use std::collections::HashSet;
 
+use super::super::constants::GLUE_PROXIMITY_THRESHOLD;
+use super::super::note_grouping::{self, NoteTuple};
 use super::EditorData;
 use crate::note::Note;
-use super::super::note_grouping::{self, NoteTuple};
-use super::super::constants::GLUE_PROXIMITY_THRESHOLD;
 
 impl EditorData {
     /// 同步 notes 到 track_notes 缓存

@@ -23,6 +23,7 @@ lumino-ui-core = { path = "../ui-core" }
 lumino-ui-constants = { path = "../ui-constants" }
 lumino-message = { workspace = true }
 lumino-event = { workspace = true }
+lumino-memtrace = { workspace = true }
 rayon = "1.10"
 tracing = { workspace = true }
 once_cell = "1.20"

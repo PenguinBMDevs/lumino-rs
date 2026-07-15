@@ -2,6 +2,7 @@ use wgpu::util::DeviceExt;
 
 use super::super::types::KeyboardViewportUniform;
 use super::KeyboardRenderer;
+use crate::gpu_resource_tracker;
 
 impl KeyboardRenderer {
     /// 创建新的键盘渲染器
@@ -85,6 +86,7 @@ impl KeyboardRenderer {
             )]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        gpu_resource_tracker::add_buffer(&viewport_buffer);
 
         // 创建 bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

@@ -33,7 +33,8 @@ pub fn dialog_input_style<'a>(
 /// 对话框单选框样式（暗色主题文字反色已修复）
 pub fn dialog_checkbox_style<'a>(
     palette: &'a Extended,
-) -> impl Fn(&iced_core::Theme, iced_widget::checkbox::Status) -> iced_widget::checkbox::Style + 'a {
+) -> impl Fn(&iced_core::Theme, iced_widget::checkbox::Status) -> iced_widget::checkbox::Style + 'a
+{
     move |_theme: &iced_core::Theme, _status: iced_widget::checkbox::Status| {
         iced_widget::checkbox::Style {
             background: iced_core::Background::Color(palette.background.weak.color),

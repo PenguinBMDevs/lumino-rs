@@ -1,7 +1,7 @@
 use super::CacheInvalidation;
-use lumino_ui_constants::editor::{MAX_VISIBLE_KEY_COUNT, MIN_VISIBLE_KEY_COUNT};
 use lumino_core::editor_state::viewport::Viewport;
 use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
+use lumino_ui_constants::editor::{MAX_VISIBLE_KEY_COUNT, MIN_VISIBLE_KEY_COUNT};
 
 impl super::Editor {
     // 键盘设置 — 视口相关操作通过 viewport 模块，其余直接修改 ViewState

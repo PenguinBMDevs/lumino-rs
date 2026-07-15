@@ -4,8 +4,8 @@
 pub use lumino_ui_core::state::{
     AudioExportDialogState, CollaborationDialogState, CollaborationViewState,
     CustomPrecisionDialogState, ExportProgressDialogState, LoadConfirmDialogState,
-    ProjectSettingsDialogState, SpeedChangeDialogState, ToggleAnimationState,
-    VideoExportDialogState, VideoExportOverlayState,
+    MemoryMonitorDialogState, ProjectSettingsDialogState, SpeedChangeDialogState,
+    ToggleAnimationState, VideoExportDialogState, VideoExportOverlayState,
 };
 
 use crate::app_mode::AppMode;
@@ -24,6 +24,7 @@ pub enum DialogType {
     SpeedChange,
     ExportProgress,
     VideoExport,
+    MemoryMonitor,
 }
 
 /// Root 组件的状态
@@ -52,6 +53,8 @@ pub struct RootState {
     pub export_progress_dialog: ExportProgressDialogState,
     /// 音符变速对话框状态
     pub speed_change_dialog: SpeedChangeDialogState,
+    /// 内存监控对话框状态
+    pub memory_monitor_dialog: MemoryMonitorDialogState,
     /// 精度设置
     pub note_precision: NotePrecision,
     /// 系统字体列表
@@ -83,6 +86,7 @@ impl RootState {
             video_export_dialog: VideoExportDialogState::new(),
             export_progress_dialog: ExportProgressDialogState::new(),
             speed_change_dialog: SpeedChangeDialogState::new(),
+            memory_monitor_dialog: MemoryMonitorDialogState::new(),
             note_precision: NotePrecision::default(),
             system_fonts: lumino_core::font_scanner::scan_system_fonts(),
             current_mode: AppMode::default(),

@@ -1,8 +1,8 @@
 //! 设置页面 - 洋葱皮设置
 
-use lumino_ui_core::{Element, Message};
 use iced_core::Alignment;
 use iced_widget::{column, row, text, text_input};
+use lumino_ui_core::{Element, Message};
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
@@ -37,9 +37,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
             text_input("4", &settings.hires_measures_per_group.to_string())
-                .on_input(|v| Message::Settings(
-                    crate::Event::HiresMeasuresPerGroupChanged(v)
-                ))
+                .on_input(|v| Message::Settings(crate::Event::HiresMeasuresPerGroupChanged(v)))
                 .width(80.0),
         ]
         .spacing(SPACING_ICON_LABEL)

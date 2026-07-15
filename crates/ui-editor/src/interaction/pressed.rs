@@ -3,12 +3,12 @@
 //! 包含：按下事件 → 工具分发 → 指针/铅笔/橡皮擦/默认工具处理
 //!       音符编辑开始、绘制开始、音符音频播放、音符添加事件发射
 
-use lumino_ui_constants::editor::{DEFAULT_MIDI_CHANNEL, DEFAULT_NOTE_VELOCITY};
 use crate::{Editor, HitType, Note};
-use lumino_event;
-use lumino_message::Tool;
 use lumino_core::editor_state::interaction_ops;
 use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
+use lumino_event;
+use lumino_message::Tool;
+use lumino_ui_constants::editor::{DEFAULT_MIDI_CHANNEL, DEFAULT_NOTE_VELOCITY};
 
 impl Editor {
     /// 处理鼠标按下事件
@@ -145,13 +145,12 @@ impl Editor {
             EraserBehavior::Default => {
                 if shift {
                     self.editor_state.interaction.selected_notes.clear();
-                    self.editor_state.interaction.edit_state =
-                        crate::EditState::Selecting {
-                            start_tick: selection_start_tick,
-                            start_key: key,
-                            current_tick: selection_start_tick,
-                            current_key: key,
-                        };
+                    self.editor_state.interaction.edit_state = crate::EditState::Selecting {
+                        start_tick: selection_start_tick,
+                        start_key: key,
+                        current_tick: selection_start_tick,
+                        current_key: key,
+                    };
                 } else if hit_result.is_some() {
                     self.delete_note_at(pos);
                 }
@@ -161,13 +160,12 @@ impl Editor {
                     self.delete_note_at(pos);
                 } else {
                     self.editor_state.interaction.selected_notes.clear();
-                    self.editor_state.interaction.edit_state =
-                        crate::EditState::Selecting {
-                            start_tick: selection_start_tick,
-                            start_key: key,
-                            current_tick: selection_start_tick,
-                            current_key: key,
-                        };
+                    self.editor_state.interaction.edit_state = crate::EditState::Selecting {
+                        start_tick: selection_start_tick,
+                        start_key: key,
+                        current_tick: selection_start_tick,
+                        current_key: key,
+                    };
                 }
             }
         }

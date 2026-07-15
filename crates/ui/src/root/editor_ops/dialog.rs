@@ -364,6 +364,16 @@ impl Root {
         }
     }
 
+    /// 设置内存监控对话框是否打开
+    pub fn set_memory_monitor_dialog_open(&mut self, open: bool) {
+        self.state.memory_monitor_dialog.is_open = open;
+        if open {
+            self.state.dialog_type = DialogType::MemoryMonitor;
+        } else if self.state.dialog_type == DialogType::MemoryMonitor {
+            self.state.dialog_type = DialogType::None;
+        }
+    }
+
     /// 更新导出进度（重定向到音频导出面板内嵌进度条）
     pub fn update_export_progress(&mut self, message: String, progress: f64) {
         self.state.audio_export_dialog.render_message = message;

@@ -85,19 +85,26 @@ pub fn load_soundfont_cached(
         return Ok(cached);
     }
 
-    // 缓存未命中，加载音色库
-    tracing::info!(
-        "SoundfontCache: 缓存未命中，加载音色库 {:?} (sr={})",
-        path,
-        sample_rate
-    );
-    let soundfont = SampleSoundfont::new(path, params, Default::default())
-        .map_err(|e| format!("Failed to load soundfont: {:?}", e))?;
+    // 缓存未命中，使用音色库标签追踪加载与缓存插入过程中的内存分配
+    let soundfont = lumino_memtrace::with_tag(
+        lumino_memtrace::AllocTag::SoundFont,
+        || -> Result<Arc<dyn SoundfontBase>, String> {
+            tracing::info!(
+                "SoundfontCache: 缓存未命中，加载音色库 {:?} (sr={})",
+                path,
+                sample_rate
+            );
+            let soundfont = SampleSoundfont::new(path, params, Default::default())
+                .map_err(|e| format!("Failed to load soundfont: {:?}", e))?;
 
-    let soundfont: Arc<dyn SoundfontBase> = Arc::new(soundfont);
+            let soundfont: Arc<dyn SoundfontBase> = Arc::new(soundfont);
 
-    // 添加到缓存
-    add_to_cache(path, sample_rate, soundfont.clone());
+            // 添加到缓存
+            add_to_cache(path, sample_rate, soundfont.clone());
+
+            Ok(soundfont)
+        },
+    )?;
 
     Ok(soundfont)
 }

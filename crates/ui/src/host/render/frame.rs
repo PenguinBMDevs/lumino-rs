@@ -33,8 +33,11 @@ impl Host {
 
             // 收集 CPU、内存、GPU 数据
             let cpu_usage = self.cpu_monitor.usage();
-            let memory_mb =
-                lumino_memory_monitor::platform::get_current_rss() as f32 / (1024.0 * 1024.0);
+            // 内存取分配器追踪总量（含 GPU 资源）与 RSS 的较大值，避免遗漏未追踪的堆外占用。
+            let rss_mb =
+                lumino_memory_monitor::platform::get_current_rss() as f64 / (1024.0 * 1024.0);
+            let tracked_mb = crate::statusbar::performance::aggregate_memory_mb();
+            let memory_mb = tracked_mb.max(rss_mb) as f32;
             let gpu_frame_time = self.last_gpu_frame_time_ms;
 
             let perf_data = PerfData::new(fps, cpu_usage, memory_mb, gpu_frame_time);

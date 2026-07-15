@@ -16,6 +16,15 @@ fn num_cores() -> f64 {
 /// 性能监控数据 — 重新导出自 lumino-message
 pub use lumino_message::PerfData;
 
+/// 汇总 lumino_memtrace 的分配器追踪数据与 GPU 资源占用，返回总内存（MB）。
+///
+/// 该值用于替代单纯的 RSS 读数，使工具栏检测仪表盘能反映被追踪的子系统
+/// 分配（MIDI、音频、UI、GPU 等）的真实占用。
+pub fn aggregate_memory_mb() -> f64 {
+    let snapshot = lumino_memtrace::Snapshot::capture();
+    snapshot.total_with_gpu_mb().max(0.0)
+}
+
 /// CPU 使用率监控器：计算进程 CPU 时间增量
 pub struct CpuMonitor {
     last_cpu_time: u64,
@@ -52,3 +61,17 @@ fn get_cpu_time_us() -> u64 {
 
 // 性能监控面板 UI 已移除：其功能由工具栏检测仪表盘（toolbar::view::detection_dashboard）
 // 承接，复用了下方保留的数据读取接口（CpuMonitor / PerfData / lumino_memory_monitor）。
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aggregate_memory_mb_is_non_negative() {
+        let value = aggregate_memory_mb();
+        assert!(
+            value >= 0.0,
+            "aggregate_memory_mb 不应返回负值，实际为 {value}"
+        );
+    }
+}

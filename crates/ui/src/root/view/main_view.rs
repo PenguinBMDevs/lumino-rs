@@ -8,10 +8,10 @@ use lumino_gfx::NoteInstance;
 
 use crate::editor::note::NoteExt;
 use crate::message;
-use crate::{Element, Theme};
 use crate::root::Root;
 use crate::view::audio_export_dialog::view_audio_export_dialog;
 use crate::view::video_export_dialog::view_video_export_dialog;
+use crate::{Element, Theme};
 
 impl Root {
     /// 渲染视图（主入口，根据窗口类型分发）
@@ -296,12 +296,8 @@ impl Root {
             tempo_points: &self.editor.editor_state.data.tempo_points,
         };
         column![
-            self.toolbar.toolbar_view(
-                &self.window,
-                false,
-                self.settings.language,
-                &perf_ctx,
-            ),
+            self.toolbar
+                .toolbar_view(&self.window, false, self.settings.language, &perf_ctx,),
             arrangement_row.height(Length::Fill),
             h_scrollbar,
         ]

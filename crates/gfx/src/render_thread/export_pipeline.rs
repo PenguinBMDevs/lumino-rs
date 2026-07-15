@@ -11,6 +11,8 @@
 use std::ptr;
 use std::sync::mpsc;
 
+use crate::gpu_resource_tracker;
+
 /// GPU→CPU 读回缓冲区
 struct StagingBuffer {
     buffer: wgpu::Buffer,
@@ -63,6 +65,7 @@ impl StagingRing {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        gpu_resource_tracker::add_buffer(&buffer);
 
         StagingBuffer {
             buffer,
@@ -76,9 +79,15 @@ impl StagingRing {
     fn ensure_size(&mut self, width: u32, height: u32) {
         let mut changed = false;
         for slot in &mut self.slots {
-            if let Some(ref buf) = slot.buffer
-                && (buf.width != width || buf.height != height)
-            {
+            let needs_resize = if let Some(ref buf) = slot.buffer {
+                buf.width != width || buf.height != height
+            } else {
+                false
+            };
+            if needs_resize {
+                if let Some(old) = slot.buffer.take() {
+                    gpu_resource_tracker::sub_buffer(&old.buffer);
+                }
                 slot.buffer = Some(Self::create_staging_buffer(&self.device, width, height));
                 slot.rx = None;
                 changed = true;
@@ -201,6 +210,16 @@ impl StagingRing {
         self.next_read = (self.next_read + 1) % 4;
         self.inflight -= 1;
         result
+    }
+}
+
+impl Drop for StagingRing {
+    fn drop(&mut self) {
+        for slot in &mut self.slots {
+            if let Some(old) = slot.buffer.take() {
+                gpu_resource_tracker::sub_buffer(&old.buffer);
+            }
+        }
     }
 }
 

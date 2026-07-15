@@ -10,9 +10,9 @@ use std::sync::Arc;
 
 use crate::automation::AutomationLane;
 use crate::history::History;
-use crate::midi_types::{CcData, TempoPoint};
 #[cfg(test)]
 use crate::midi_types::PITCH_BEND_CENTER;
+use crate::midi_types::{CcData, TempoPoint};
 use crate::note::Note;
 
 use super::constants::DEFAULT_BPM;
@@ -166,7 +166,10 @@ mod tests {
     #[test]
     fn test_find_automation_lane_returns_none() {
         let data = EditorData::new();
-        assert!(data.find_automation_lane(0, &AutomationTarget::CC { controller: 7 }).is_none());
+        assert!(
+            data.find_automation_lane(0, &AutomationTarget::CC { controller: 7 })
+                .is_none()
+        );
     }
 
     #[test]
@@ -175,7 +178,10 @@ mod tests {
         let idx = data.find_or_create_automation_lane(0, AutomationTarget::CC { controller: 7 });
         assert_eq!(idx, 0, "first lane gets index 0");
         assert_eq!(data.automation_lanes.len(), 1);
-        assert_eq!(data.automation_lanes[0].target, AutomationTarget::CC { controller: 7 });
+        assert_eq!(
+            data.automation_lanes[0].target,
+            AutomationTarget::CC { controller: 7 }
+        );
         assert_eq!(data.automation_lanes[0].track, 0);
     }
 
@@ -211,15 +217,25 @@ mod tests {
     fn test_apply_automation_edit_add_duplicate_tick_replaces() {
         let mut data = EditorData::new();
         data.apply_automation_edit(AutomationEdit::Add {
-            track_idx: 0, target: AutomationTarget::CC { controller: 7 },
-            tick: 100, value: 64, shape: SegmentShape::Step,
+            track_idx: 0,
+            target: AutomationTarget::CC { controller: 7 },
+            tick: 100,
+            value: 64,
+            shape: SegmentShape::Step,
         });
         let replaced = data.apply_automation_edit(AutomationEdit::Add {
-            track_idx: 0, target: AutomationTarget::CC { controller: 7 },
-            tick: 100, value: 127, shape: SegmentShape::Curve { tension: 0 },
+            track_idx: 0,
+            target: AutomationTarget::CC { controller: 7 },
+            tick: 100,
+            value: 127,
+            shape: SegmentShape::Curve { tension: 0 },
         });
         assert!(replaced);
-        assert_eq!(data.automation_lanes[0].events.len(), 1, "same tick replaces");
+        assert_eq!(
+            data.automation_lanes[0].events.len(),
+            1,
+            "same tick replaces"
+        );
         assert_eq!(data.automation_lanes[0].events[0].value, 127);
     }
 
@@ -227,11 +243,18 @@ mod tests {
     fn test_apply_automation_edit_move() {
         let mut data = EditorData::new();
         data.apply_automation_edit(AutomationEdit::Add {
-            track_idx: 0, target: AutomationTarget::CC { controller: 7 },
-            tick: 100, value: 64, shape: SegmentShape::Step,
+            track_idx: 0,
+            target: AutomationTarget::CC { controller: 7 },
+            tick: 100,
+            value: 64,
+            shape: SegmentShape::Step,
         });
         let moved = data.apply_automation_edit(AutomationEdit::Move {
-            track_idx: 0, lane_idx: 0, old_tick: 100, new_tick: 200, new_value: 32,
+            track_idx: 0,
+            lane_idx: 0,
+            old_tick: 100,
+            new_tick: 200,
+            new_value: 32,
         });
         assert!(moved);
         assert_eq!(data.automation_lanes[0].events[0].tick, 200);
@@ -242,17 +265,27 @@ mod tests {
     fn test_apply_automation_edit_cycle_shape() {
         let mut data = EditorData::new();
         data.apply_automation_edit(AutomationEdit::Add {
-            track_idx: 0, target: AutomationTarget::CC { controller: 7 },
-            tick: 100, value: 64, shape: SegmentShape::Step,
+            track_idx: 0,
+            target: AutomationTarget::CC { controller: 7 },
+            tick: 100,
+            value: 64,
+            shape: SegmentShape::Step,
         });
         let cycled = data.apply_automation_edit(AutomationEdit::CycleShape {
-            track_idx: 0, lane_idx: 0, tick: 100,
+            track_idx: 0,
+            lane_idx: 0,
+            tick: 100,
         });
         assert!(cycled);
-        assert_eq!(data.automation_lanes[0].events[0].shape, SegmentShape::Curve { tension: 0 });
+        assert_eq!(
+            data.automation_lanes[0].events[0].shape,
+            SegmentShape::Curve { tension: 0 }
+        );
 
         let cycled2 = data.apply_automation_edit(AutomationEdit::CycleShape {
-            track_idx: 0, lane_idx: 0, tick: 100,
+            track_idx: 0,
+            lane_idx: 0,
+            tick: 100,
         });
         assert!(cycled2);
         assert_eq!(data.automation_lanes[0].events[0].shape, SegmentShape::Step);
@@ -262,17 +295,24 @@ mod tests {
     fn test_apply_automation_edit_delete() {
         let mut data = EditorData::new();
         data.apply_automation_edit(AutomationEdit::Add {
-            track_idx: 0, target: AutomationTarget::CC { controller: 7 },
-            tick: 100, value: 64, shape: SegmentShape::Step,
+            track_idx: 0,
+            target: AutomationTarget::CC { controller: 7 },
+            tick: 100,
+            value: 64,
+            shape: SegmentShape::Step,
         });
         let deleted = data.apply_automation_edit(AutomationEdit::Delete {
-            track_idx: 0, lane_idx: 0, tick: 100,
+            track_idx: 0,
+            lane_idx: 0,
+            tick: 100,
         });
         assert!(deleted);
         assert!(data.automation_lanes[0].events.is_empty());
 
         let deleted2 = data.apply_automation_edit(AutomationEdit::Delete {
-            track_idx: 0, lane_idx: 0, tick: 999,
+            track_idx: 0,
+            lane_idx: 0,
+            tick: 999,
         });
         assert!(!deleted2);
     }
@@ -281,11 +321,18 @@ mod tests {
     fn test_apply_automation_edit_move_wrong_track_returns_false() {
         let mut data = EditorData::new();
         data.apply_automation_edit(AutomationEdit::Add {
-            track_idx: 0, target: AutomationTarget::CC { controller: 7 },
-            tick: 100, value: 64, shape: SegmentShape::Step,
+            track_idx: 0,
+            target: AutomationTarget::CC { controller: 7 },
+            tick: 100,
+            value: 64,
+            shape: SegmentShape::Step,
         });
         let moved = data.apply_automation_edit(AutomationEdit::Move {
-            track_idx: 1, lane_idx: 0, old_tick: 100, new_tick: 200, new_value: 32,
+            track_idx: 1,
+            lane_idx: 0,
+            old_tick: 100,
+            new_tick: 200,
+            new_value: 32,
         });
         assert!(!moved, "should reject move with mismatched track");
     }
@@ -392,8 +439,11 @@ mod tests {
         data.current_track = 0;
         data.find_or_create_automation_lane(0, AutomationTarget::CC { controller: 7 });
         data.apply_automation_edit(AutomationEdit::Add {
-            track_idx: 0, target: AutomationTarget::CC { controller: 7 },
-            tick: 100, value: 64, shape: SegmentShape::Step,
+            track_idx: 0,
+            target: AutomationTarget::CC { controller: 7 },
+            tick: 100,
+            value: 64,
+            shape: SegmentShape::Step,
         });
         let points = data.build_cc_points(7);
         assert_eq!(points.len(), 1);
@@ -407,8 +457,11 @@ mod tests {
         data.current_track = 0;
         data.find_or_create_automation_lane(0, AutomationTarget::PitchBend);
         data.apply_automation_edit(AutomationEdit::Add {
-            track_idx: 0, target: AutomationTarget::PitchBend,
-            tick: 100, value: PITCH_BEND_CENTER as u16, shape: SegmentShape::Curve { tension: 0 },
+            track_idx: 0,
+            target: AutomationTarget::PitchBend,
+            tick: 100,
+            value: PITCH_BEND_CENTER as u16,
+            shape: SegmentShape::Curve { tension: 0 },
         });
         let points = data.build_bend_points();
         assert_eq!(points.len(), 1);

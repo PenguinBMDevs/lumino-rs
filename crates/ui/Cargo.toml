@@ -20,6 +20,7 @@ lumino-message = { workspace = true }
 lumino-midi-io = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-memory-monitor = { workspace = true }
+lumino-memtrace = { workspace = true }
 lumino-playback = { workspace = true }
 lumino-collaboration = { workspace = true }
 lumino-ui-constants = { path = "../ui-constants" }

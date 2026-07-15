@@ -148,6 +148,9 @@ impl Toolbar {
             Event::OpenProjectSettingsDialog => {
                 tracing::debug!("工具栏: 请求打开工程设置对话框");
             }
+            Event::OpenMemoryMonitorDialog => {
+                tracing::debug!("工具栏: 请求打开内存监控对话框");
+            }
             Event::AutoScrollModeChanged => {
                 self.auto_scroll_mode = match self.auto_scroll_mode {
                     lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft => {

@@ -2,11 +2,11 @@
 
 use super::loop_range::LoopRange;
 use super::theme::ThemeExt;
-use lumino_ui_core::Renderer;
-use lumino_ui_constants::editor::MEASURE_NUMBER_FONT_SIZE;
 use crate::Editor;
 use iced_core::{Point, Rectangle, Size, alignment};
 use iced_widget::canvas::{Frame, Geometry, Path, Stroke, Text};
+use lumino_ui_constants::editor::MEASURE_NUMBER_FONT_SIZE;
+use lumino_ui_core::Renderer;
 
 /// 绘制时间轴标尺到 Geometry（用于 Canvas 绘制）
 pub fn draw_to_geometry(
@@ -21,7 +21,12 @@ pub fn draw_to_geometry(
 }
 
 /// 绘制时间轴标尺（小节号显示区域）
-pub fn draw(editor: &Editor, frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &lumino_ui_core::Theme) {
+pub fn draw(
+    editor: &Editor,
+    frame: &mut Frame<Renderer>,
+    bounds: Rectangle,
+    theme: &lumino_ui_core::Theme,
+) {
     let view = &editor.editor_state.view;
     let ppq = view.ppq as f32;
     let keyboard_width = view.keyboard_width;

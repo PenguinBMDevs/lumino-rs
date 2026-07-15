@@ -43,6 +43,7 @@ impl DialogWindow {
             DialogType::SpeedChange => (400.0, 250.0, "变速", false),
             DialogType::ExportProgress => (400.0, 200.0, "音频导出", false),
             DialogType::VideoExport => (520.0, 560.0, "视频导出", false),
+            DialogType::MemoryMonitor => (300.0, 440.0, "内存占用详情", false),
         };
 
         let attributes = WindowAttributes::default()
@@ -130,6 +131,9 @@ impl DialogWindow {
             }
             DialogType::VideoExport => {
                 ui.update_video_export_progress("正在初始化...".to_string(), 0.0, 0, 0.0);
+            }
+            DialogType::MemoryMonitor => {
+                ui.set_memory_monitor_dialog_open(true);
             }
         }
 

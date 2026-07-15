@@ -5,6 +5,7 @@ mod cc_bar_renderer;
 pub mod constants;
 mod context;
 mod gpu_note_buffer;
+mod gpu_resource_tracker;
 pub mod grid;
 mod grid_renderer;
 mod keyboard_renderer;
