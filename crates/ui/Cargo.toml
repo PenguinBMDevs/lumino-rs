@@ -24,6 +24,7 @@ lumino-playback = { workspace = true }
 lumino-collaboration = { workspace = true }
 lumino-ui-constants = { path = "../ui-constants" }
 lumino-ui-core = { path = "../ui-core" }
+lumino-ui-host = { path = "../ui-host" }
 # crates.io
 midly = { workspace = true }
 # crates.io

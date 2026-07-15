@@ -3710,6 +3710,7 @@ dependencies = [
  "lumino-playback",
  "lumino-ui-constants",
  "lumino-ui-core",
+ "lumino-ui-host",
  "midly",
  "once_cell",
  "parking_lot",
@@ -3738,7 +3739,16 @@ dependencies = [
  "iced_core",
  "iced_wgpu",
  "lumino-core",
+ "lumino-event",
  "lumino-message",
+]
+
+[[package]]
+name = "lumino-ui-host"
+version = "0.1.1"
+dependencies = [
+ "iced_wgpu",
+ "lumino-gfx",
 ]
 
 [[package]]

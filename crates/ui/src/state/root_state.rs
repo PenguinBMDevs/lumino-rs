@@ -1,37 +1,14 @@
-//! Root 组件状态 — 定义与子模块 re-export
+//! Root 组件状态 — 定义与子模块 re-export（子模块已迁至 lumino-ui-core）
 
-#[path = "toggle_animation.rs"]
-pub mod toggle_animation;
+// 保持路径不变：crate::state::root_state::Xxx 通过 core 重导出
+pub use lumino_ui_core::state::{
+    AudioExportDialogState, CollaborationDialogState, CollaborationViewState,
+    CustomPrecisionDialogState, ExportProgressDialogState, LoadConfirmDialogState,
+    ProjectSettingsDialogState, SpeedChangeDialogState, ToggleAnimationState,
+    VideoExportDialogState, VideoExportOverlayState,
+};
 
-#[path = "audio_export_state.rs"]
-mod audio_export_state;
-#[path = "collaboration_state.rs"]
-mod collaboration_state;
-#[path = "custom_precision_state.rs"]
-mod custom_precision_state;
-#[path = "export_progress_state.rs"]
-mod export_progress_state;
-#[path = "load_confirm_state.rs"]
-mod load_confirm_state;
-#[path = "project_settings_state.rs"]
-mod project_settings_state;
-#[path = "speed_change_state.rs"]
-mod speed_change_state;
-#[path = "video_export_state.rs"]
-mod video_export_state;
-
-// 重新导出所有对话框状态类型（保持原有路径不变：crate::state::root_state::Xxx）
-pub use audio_export_state::AudioExportDialogState;
-pub use collaboration_state::{CollaborationDialogState, CollaborationViewState};
-pub use custom_precision_state::CustomPrecisionDialogState;
-pub use export_progress_state::ExportProgressDialogState;
-pub use load_confirm_state::LoadConfirmDialogState;
-pub use project_settings_state::ProjectSettingsDialogState;
-pub use speed_change_state::SpeedChangeDialogState;
-pub use toggle_animation::ToggleAnimationState;
-pub use video_export_state::{VideoExportDialogState, VideoExportOverlayState};
-
-use crate::titlebar::mode_toggle::AppMode;
+use crate::app_mode::AppMode;
 use crate::toolbar::NotePrecision;
 
 /// 对话框类型

@@ -1,5 +1,5 @@
 [package]
-name = "lumino-ui-core"
+name = "lumino-ui-host"
 version.workspace = true
 rust-version.workspace = true
 homepage.workspace = true
@@ -13,8 +13,5 @@ default = []
 workspace = true
 
 [dependencies]
-iced_core = { workspace = true }
 iced_wgpu = { workspace = true }
-lumino-core = { workspace = true }
-lumino-event = { workspace = true }
-lumino-message = { workspace = true }
+lumino-gfx = { workspace = true }

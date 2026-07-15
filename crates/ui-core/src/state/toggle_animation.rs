@@ -58,7 +58,7 @@ impl ToggleAnimationState {
         let dt = self
             .last_update
             .map(|t| t.elapsed().as_secs_f64())
-            .unwrap_or(crate::constants::timing::DEFAULT_FRAME_TIME_SECS);
+            .unwrap_or(1.0 / 60.0);
         self.last_update = Some(now);
 
         let dt = dt.min(0.05);

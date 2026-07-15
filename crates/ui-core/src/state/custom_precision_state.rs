@@ -1,6 +1,6 @@
 //! 自定义精度对话框状态
 
-use crate::toolbar::{DotType, TupletType};
+use lumino_message::{DotType, TupletType};
 
 /// 自定义精度对话框状态
 #[derive(Debug, Clone)]

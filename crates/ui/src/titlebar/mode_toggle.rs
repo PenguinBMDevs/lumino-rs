@@ -5,12 +5,7 @@ use crate::widget;
 use crate::{Element, Message, Theme, resources::icon};
 use lumino_core::i18n::{Language, main_translations};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AppMode {
-    #[default]
-    Editor,
-    Waterfall,
-}
+pub use lumino_ui_core::app_mode::AppMode;
 
 pub fn view(
     theme: &Theme,

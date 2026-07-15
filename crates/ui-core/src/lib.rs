@@ -5,12 +5,14 @@
 //!
 //! 模块声明顺序：事件模块在前，message 在后（message 引用事件类型）。
 
+pub mod app_mode;
 pub mod theme;
 pub mod settings_event;
 pub mod window_event;
 pub mod toolbar_event;
 pub mod sidebar_event;
 pub mod message;
+pub mod state;
 
 pub use message::Message;
 
