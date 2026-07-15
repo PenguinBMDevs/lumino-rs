@@ -49,25 +49,15 @@ impl RunnerInner {
                 self.midi_state.current_midi = Some(parsed);
 
                 // 设置工程创建时间（从文件系统获取）
-                if let Some(path) = &self.midi_state.current_midi_source {
-                    if let Ok(metadata) = std::fs::metadata(path) {
-                        if let Ok(created) = metadata.modified() {
-                            // 将 SystemTime 转换为本地时间字符串
-                            let since_epoch = created
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default();
-                            let secs = since_epoch.as_secs() as i64;
-                            let datetime = chrono::DateTime::from_timestamp(secs, 0)
-                                .map(|dt| dt.with_timezone(&chrono::Local))
-                                .unwrap_or_else(|| chrono::Local::now());
-                            self.session_tracker.created_at =
-                                Some(datetime.format("%Y-%m-%d %H:%M:%S").to_string());
-                            tracing::info!(
-                                "工程创建时间已设置: {}",
-                                self.session_tracker.created_at.as_deref().unwrap_or("")
-                            );
-                        }
-                    }
+                self.session_tracker.created_at = self.midi_state
+                    .current_midi_source
+                    .as_ref()
+                    .and_then(|p| format_created_at_from_path(p));
+                if self.session_tracker.created_at.is_some() {
+                    tracing::info!(
+                        "工程创建时间已设置: {}",
+                        self.session_tracker.created_at.as_deref().unwrap_or("")
+                    );
                 }
 
                 // 启动洋葱皮概览贴图后台生成
@@ -274,4 +264,18 @@ impl RunnerInner {
 /// 从当前调色板的第二个颜色开始取色（第一个颜色保留给主音轨音符）。
 fn onion_track_color(track_idx: usize) -> [u8; 4] {
     lumino_core::palette::onion_track_color(track_idx)
+}
+
+/// 从文件路径读取文件创建时间并格式化为本地时间字符串
+fn format_created_at_from_path(path: &std::path::Path) -> Option<String> {
+    let metadata = std::fs::metadata(path).ok()?;
+    let created = metadata.modified().ok()?;
+    let since_epoch = created
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = since_epoch.as_secs() as i64;
+    let datetime = chrono::DateTime::from_timestamp(secs, 0)
+        .map(|dt| dt.with_timezone(&chrono::Local))
+        .unwrap_or_else(|| chrono::Local::now());
+    Some(datetime.format("%Y-%m-%d %H:%M:%S").to_string())
 }

@@ -123,45 +123,23 @@ impl RunnerInner {
         channel: u8,
         track_index: usize,
     ) {
-        // 检查是否已连接
         if !self.collab_state.collaboration_service.is_connected() {
             return;
         }
 
-        // 生成唯一ID
-        let note_id = format!(
-            "note_{}_{}_{}_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis(),
-            tick as u64,
-            key,
-            track_index
-        );
-
-        let note = lumino_collaboration::types::SyncNote {
-            id: note_id,
+        let operation = build_sync_note_operation(
+            lumino_collaboration::types::NoteAction::Add,
+            "note",
             tick,
             key,
             length,
             velocity,
             channel,
             track_index,
-        };
-
-        let operation = lumino_collaboration::types::NoteBatchOperation {
-            action: lumino_collaboration::types::NoteAction::Add,
-            notes: vec![note],
-            source_track: Some(track_index),
-            target_track: Some(track_index),
-            tick_offset: None,
-            key_offset: None,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64,
-        };
+            Some(track_index),
+            None,
+            None,
+        );
 
         if let Err(e) = self
             .collab_state
@@ -188,40 +166,19 @@ impl RunnerInner {
             return;
         }
 
-        // 生成唯一ID
-        let note_id = format!(
-            "note_move_{}_{}_{}_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis(),
-            tick as u64,
-            key,
-            track_index
-        );
-
-        let note = lumino_collaboration::types::SyncNote {
-            id: note_id,
+        let operation = build_sync_note_operation(
+            lumino_collaboration::types::NoteAction::Move,
+            "note_move",
             tick,
             key,
             length,
-            velocity: 100,
-            channel: 0,
+            100,
+            0,
             track_index,
-        };
-
-        let operation = lumino_collaboration::types::NoteBatchOperation {
-            action: lumino_collaboration::types::NoteAction::Move,
-            notes: vec![note],
-            source_track: Some(track_index),
-            target_track: Some(track_index),
-            tick_offset: Some(tick_offset),
-            key_offset: Some(key_offset),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64,
-        };
+            Some(track_index),
+            Some(tick_offset),
+            Some(key_offset),
+        );
 
         if let Err(e) = self
             .collab_state
@@ -254,39 +211,19 @@ impl RunnerInner {
             return;
         }
 
-        let note_id = format!(
-            "note_del_{}_{}_{}_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis(),
-            tick as u64,
-            key,
-            track_index
-        );
-
-        let note = lumino_collaboration::types::SyncNote {
-            id: note_id,
+        let operation = build_sync_note_operation(
+            lumino_collaboration::types::NoteAction::Delete,
+            "note_del",
             tick,
             key,
             length,
             velocity,
             channel,
             track_index,
-        };
-
-        let operation = lumino_collaboration::types::NoteBatchOperation {
-            action: lumino_collaboration::types::NoteAction::Delete,
-            notes: vec![note],
-            source_track: Some(track_index),
-            target_track: None,
-            tick_offset: None,
-            key_offset: None,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64,
-        };
+            None,
+            None,
+            None,
+        );
 
         if let Err(e) = self
             .collab_state
@@ -385,5 +322,62 @@ impl RunnerInner {
                 tracing::debug!("协作: 未处理的工程更新类型: {:?}", update.update_type);
             }
         }
+    }
+}
+
+// ── Helper functions ─────────────────────────────────────────────────
+
+/// Generate a unique note ID from a prefix and note parameters.
+fn generate_note_id(prefix: &str, tick: f32, key: u16, track_index: usize) -> String {
+    format!(
+        "{}_{}_{}_{}_{}",
+        prefix,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        tick as u64,
+        key,
+        track_index
+    )
+}
+
+/// Build a `NoteBatchOperation` for the given action and note parameters.
+fn build_sync_note_operation(
+    action: lumino_collaboration::types::NoteAction,
+    note_id_prefix: &str,
+    tick: f32,
+    key: u16,
+    length: f32,
+    velocity: u8,
+    channel: u8,
+    track_index: usize,
+    target_track: Option<usize>,
+    tick_offset: Option<f32>,
+    key_offset: Option<i16>,
+) -> lumino_collaboration::types::NoteBatchOperation {
+    let note_id = generate_note_id(note_id_prefix, tick, key, track_index);
+
+    let note = lumino_collaboration::types::SyncNote {
+        id: note_id,
+        tick,
+        key,
+        length,
+        velocity,
+        channel,
+        track_index,
+    };
+
+    lumino_collaboration::types::NoteBatchOperation {
+        action,
+        notes: vec![note],
+        source_track: Some(track_index),
+        target_track,
+        tick_offset,
+        key_offset,
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
     }
 }
