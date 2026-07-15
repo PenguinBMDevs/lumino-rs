@@ -142,6 +142,9 @@ impl RealtimeSynth {
                 let render_thread = thread::Builder::new()
                     .name("lumino-render".into())
                     .spawn(move || {
+                        // 将音频渲染线程的分配归因到 Audio：with_tag 是线程局部的，
+                        // 必须在 spawned 线程体内设置，外层 with_tag 不会跨线程传播。
+                        lumino_memtrace::with_tag(lumino_memtrace::AllocTag::Audio, || {
                         // 渲染超时阈值与事件处理时间预算（实现见 compute_render_budget）
                         let (render_timeout_ns, render_window_ms, event_budget_ns) =
                             compute_render_budget(render_len, channels, sample_rate);
@@ -200,6 +203,7 @@ impl RealtimeSynth {
                                 break;
                             }
                         }
+                        });
                     })
                     .expect("failed to spawn render thread");
 

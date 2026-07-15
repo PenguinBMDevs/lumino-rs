@@ -64,8 +64,8 @@ pub fn view_memory_monitor_dialog<'a>(
 
     let mut grid_rows = column![].spacing(4);
     for tag in AllocTag::ALL {
-        // 跳过未分类且无占用的项，避免显示无意义行
-        if tag == AllocTag::Unknown && snapshot.get(tag) <= 0 {
+        // 跳过占用为 0 的子系统，避免显示无意义行（Other 兜底桶通常非空）
+        if snapshot.get(tag) <= 0 {
             continue;
         }
         let name = text(tag.name()).size(13).style(label_style);

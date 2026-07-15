@@ -27,20 +27,20 @@ const BACKEND: MiMalloc = MiMalloc;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum AllocTag {
-    Unknown = 0,
-    Midi = 1,
-    SoundFont = 2,
-    Audio = 3,
-    Gpu = 4,
-    Ui = 5,
-    Other = 6,
+    Midi = 0,
+    SoundFont = 1,
+    Audio = 2,
+    Gpu = 3,
+    Ui = 4,
+    /// 唯一兜底桶：未显式归类的分配（含 3rd-party crate 在其自有线程上的分配，
+    /// 如 xsynth 语音缓冲、iced/wgpu 内部线程）默认落入此处。
+    Other = 5,
 }
 
 impl AllocTag {
-    const COUNT: usize = 7;
+    const COUNT: usize = 6;
 
     pub const ALL: [AllocTag; Self::COUNT] = [
-        AllocTag::Unknown,
         AllocTag::Midi,
         AllocTag::SoundFont,
         AllocTag::Audio,
@@ -51,13 +51,12 @@ impl AllocTag {
 
     pub fn name(self) -> &'static str {
         match self {
-            AllocTag::Unknown => "未分类",
             AllocTag::Midi => "MIDI 数据",
             AllocTag::SoundFont => "音色库采样",
             AllocTag::Audio => "音频引擎",
             AllocTag::Gpu => "GPU 显存/缓冲",
             AllocTag::Ui => "UI / 状态",
-            AllocTag::Other => "其他",
+            AllocTag::Other => "其他（未显式归类）",
         }
     }
 }
@@ -95,7 +94,6 @@ static COUNTERS: [AtomicIsize; AllocTag::COUNT] = [
     AtomicIsize::new(0),
     AtomicIsize::new(0),
     AtomicIsize::new(0),
-    AtomicIsize::new(0),
 ];
 
 /// Tracks GPU resource memory that does not go through the Rust global
@@ -103,7 +101,7 @@ static COUNTERS: [AtomicIsize; AllocTag::COUNT] = [
 static GPU_RESOURCE_BYTES: AtomicIsize = AtomicIsize::new(0);
 
 thread_local! {
-    static CURRENT_TAG: Cell<AllocTag> = const { Cell::new(AllocTag::Unknown) };
+    static CURRENT_TAG: Cell<AllocTag> = const { Cell::new(AllocTag::Other) };
 }
 
 /// Add `bytes` to the GPU resource counter. Called when a wgpu Texture or
