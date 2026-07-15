@@ -1,7 +1,6 @@
-use iced_core::Color;
-use lumino_core::i18n::Language;
-
 use crate::resources::icon;
+
+pub use lumino_ui_core::sidebar_event::{GroupId, Route};
 
 /// 路由栏宽度（固定）
 pub const ROUTE_BAR_WIDTH: f32 = 48.0;
@@ -15,62 +14,6 @@ pub const MAX_PANEL_WIDTH: f32 = 400.0;
 pub const RESIZE_HANDLE_WIDTH: f32 = 6.0;
 
 // ─── 分组系统 ───
-
-/// 侧边栏分组 ID
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GroupId {
-    /// 钢琴卷帘组（红色）
-    PianoRoll,
-    /// 工程走带组（绿色）
-    Project,
-    /// 瀑布流播放器组（黄色）
-    Waterfall,
-    /// 渲染组（蓝色）
-    Renderer,
-}
-
-impl GroupId {
-    /// 父按钮灯条颜色（硬编码）
-    pub fn parent_color(&self) -> Color {
-        match self {
-            GroupId::PianoRoll => Color::from_rgb(0.85, 0.15, 0.15),
-            GroupId::Project => Color::from_rgb(0.15, 0.75, 0.35),
-            GroupId::Waterfall => Color::from_rgb(0.85, 0.75, 0.10),
-            GroupId::Renderer => Color::from_rgb(0.15, 0.45, 0.85),
-        }
-    }
-
-    /// 子按钮灯条颜色（比父按钮浅）
-    pub fn child_color(&self) -> Color {
-        match self {
-            GroupId::PianoRoll => Color::from_rgb(0.65, 0.35, 0.35),
-            GroupId::Project => Color::from_rgb(0.35, 0.65, 0.45),
-            GroupId::Waterfall => Color::from_rgb(0.65, 0.58, 0.30),
-            GroupId::Renderer => Color::from_rgb(0.35, 0.55, 0.65),
-        }
-    }
-
-    pub fn tooltip(&self, lang: Language) -> &'static str {
-        match self {
-            GroupId::PianoRoll => match lang {
-                Language::ZhCn => "钢琴卷帘组",
-                Language::EnUs => "Piano Roll",
-            },
-            GroupId::Project => match lang {
-                Language::ZhCn => "工程走带",
-                Language::EnUs => "Project",
-            },
-            GroupId::Waterfall => match lang {
-                Language::ZhCn => "瀑布流播放器",
-                Language::EnUs => "Waterfall Player",
-            },
-            GroupId::Renderer => match lang {
-                Language::ZhCn => "渲染器",
-                Language::EnUs => "Renderer",
-            },
-        }
-    }
-}
 
 /// 分组子按钮状态（切换分组时保存/恢复）
 #[derive(Debug, Clone)]
@@ -86,36 +29,6 @@ impl Default for GroupSubState {
             panel_visible: false,
             panel_route: Route::File,
             automation_panel_visible: false,
-        }
-    }
-}
-
-// ─── 路由 ───
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Route {
-    File,
-    Arrangement,
-    Automation,
-    VideoExport,
-    AudioExport,
-}
-
-impl Route {
-    pub fn tooltip(&self, lang: Language) -> &'static str {
-        let t = lumino_core::i18n::main_translations(lang);
-        match self {
-            Route::File => t.sidebar_file,
-            Route::Arrangement => t.sidebar_arrangement,
-            Route::Automation => t.sidebar_automation,
-            Route::VideoExport => match lang {
-                Language::ZhCn => "视频渲染",
-                Language::EnUs => "Video Render",
-            },
-            Route::AudioExport => match lang {
-                Language::ZhCn => "音频渲染",
-                Language::EnUs => "Audio Render",
-            },
         }
     }
 }

@@ -1,0 +1,19 @@
+[package]
+name = "lumino-ui-core"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+
+[lints]
+workspace = true
+
+[dependencies]
+iced_core = { workspace = true }
+iced_wgpu = { workspace = true }
+lumino-core = { workspace = true }
+lumino-message = { workspace = true }

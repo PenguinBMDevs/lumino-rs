@@ -19,52 +19,7 @@ use lumino_core::storage::config::{SynthBackend, TrackAddBehavior};
 use components::*;
 use pages::*;
 
-#[derive(Debug, Clone)]
-pub enum Event {
-    MenuSelected(usize),
-    SynthBackendChanged(SynthBackend),
-    SoundfontPathChanged(String),
-    BrowseSoundfont,
-    NativeTitlebarChanged(bool),
-    XSynthBufferChanged(f64),
-    XSynthSampleRateChanged(u32),
-    XSynthFadeOutChanged(bool),
-    XSynthMaxVoicesChanged(Option<usize>),
-    ThemeChanged(String),
-    EraserBehaviorChanged(lumino_core::storage::config::EraserBehavior),
-    SelectionBoxModeChanged(lumino_core::storage::config::SelectionBoxMode),
-    ProgramFontNameChanged(String),
-    ProgramFontPathChanged(String),
-    BrowseProgramFont,
-    // 自动滚动配置事件
-    AutoScrollFixedPositionChanged(String),
-    AutoScrollPageTriggerOffsetChanged(String),
-    AutoScrollPageReturnPositionChanged(String),
-    // 力度过滤
-    VelocityFilterThresholdChanged(String),
-    /// HiDPI 图标渲染开关
-    IconHiDPIChanged(bool),
-    /// 256键扩展钢琴卷帘开关
-    Enable256keyChanged(bool),
-    /// 力度面板曲线/柱状图样式切换
-    VelocityCurveStyleChanged(bool),
-    /// MIDI 输入设备选择
-    DeviceSelected(u32),
-    /// 界面语言切换
-    LanguageChanged(Language),
-    // 高精度洋葱皮贴图设置
-    HiresOnionEnabledChanged(bool),
-    HiresMeasuresPerGroupChanged(String),
-    HiresTileWidthChanged(String),
-    HiresCooldownChanged(String),
-    HiresGpuMemLimitChanged(String),
-    // 播放键盘颜色指示
-    PlaybackKeyColorsEnabledChanged(bool),
-    /// 添加音轨行为
-    TrackAddBehaviorChanged(TrackAddBehavior),
-    /// 调色板选择
-    PaletteChanged(String),
-}
+pub use lumino_ui_core::settings_event::Event;
 
 #[derive(Debug, Clone)]
 pub struct SettingsPanel {

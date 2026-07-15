@@ -6,7 +6,7 @@ use std::time::Instant;
 use iced_core::Alignment;
 use iced_widget::{column, container, row, text};
 
-use crate::root::{Element, Theme};
+use crate::{Element, Theme};
 
 /// 总 CPU 核心数（0.0 ~ 100.0，100% = 所有核心满载）
 fn num_cores() -> f64 {

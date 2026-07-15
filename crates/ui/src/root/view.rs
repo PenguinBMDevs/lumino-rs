@@ -9,7 +9,8 @@ mod main_view;
 mod overlays;
 mod status;
 
-use crate::root::{Element, Root};
+use crate::Element;
+use crate::root::Root;
 
 impl Root {
     /// 渲染视图（委托给 root_view 实现）

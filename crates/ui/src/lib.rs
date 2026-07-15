@@ -1,9 +1,11 @@
 #![allow(deprecated)]
-pub mod constants;
+pub mod constants {
+    pub use lumino_ui_constants::*;
+}
 pub mod editor;
 pub mod event;
 pub mod host;
-pub mod message;
+pub use lumino_ui_core::message;
 pub mod mixer;
 pub mod playback;
 mod resources;
@@ -24,8 +26,10 @@ pub use host::{Host, NoteData, TrackNotes};
 pub(crate) use lumino_core::storage::config;
 pub use root::MemoryBreakdown;
 pub use root::Root;
-pub use root::theme;
-pub(crate) use root::{Element, Message, Renderer, Theme};
+pub mod theme {
+    pub use lumino_ui_core::theme::*;
+}
+pub(crate) use lumino_ui_core::{Element, Message, Renderer, Theme};
 pub use state::root_state::CollaborationViewState;
 pub use wgpu_render_thread::{
     ControlCommand, RenderParams, RenderStats as WgpuRenderStats, WgpuRenderThread,

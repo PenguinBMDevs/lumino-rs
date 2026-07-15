@@ -22,6 +22,8 @@ lumino-midi-loader = { workspace = true }
 lumino-memory-monitor = { workspace = true }
 lumino-playback = { workspace = true }
 lumino-collaboration = { workspace = true }
+lumino-ui-constants = { path = "../ui-constants" }
+lumino-ui-core = { path = "../ui-core" }
 # crates.io
 midly = { workspace = true }
 # crates.io

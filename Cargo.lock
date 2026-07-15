@@ -3708,6 +3708,8 @@ dependencies = [
  "lumino-midi-io",
  "lumino-midi-loader",
  "lumino-playback",
+ "lumino-ui-constants",
+ "lumino-ui-core",
  "midly",
  "once_cell",
  "parking_lot",
@@ -3723,6 +3725,20 @@ dependencies = [
  "usvg",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "lumino-ui-constants"
+version = "0.1.1"
+
+[[package]]
+name = "lumino-ui-core"
+version = "0.1.1"
+dependencies = [
+ "iced_core",
+ "iced_wgpu",
+ "lumino-core",
+ "lumino-message",
 ]
 
 [[package]]

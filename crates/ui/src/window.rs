@@ -1,57 +1,14 @@
-use crate::statusbar::performance::PerfData;
+//! 窗口状态管理
+//!
+//! Window 结构体负责管理窗口主题、最大化状态等。
+//! 窗口事件（Event）定义已迁至 lumino-ui-core。
+
 use crate::theme::HIGH_CONTRAST_DISPLAY;
-use crate::{Message, Theme};
+use crate::Theme;
 
-#[derive(Debug, Clone)]
-pub enum Event {
-    Theme(String),
-    Maximized(bool),
-    Focused(bool),
-    TrafficAction(TrafficAction),
-    Drag,
-    ToggleMaximize,
-    Close,
-    FpsUpdate(f32),
-    PerfUpdate(PerfData),
-}
+pub use lumino_ui_core::window_event::{Event, TrafficAction};
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum TrafficAction {
-    Minimize,
-    ToggleMaximize,
-    Close,
-}
-
-impl Event {
-    pub const fn theme(r: String) -> Message {
-        Message::Window(Self::Theme(r))
-    }
-    pub const fn maximized(r: bool) -> Message {
-        Message::Window(Self::Maximized(r))
-    }
-    pub const fn focused(r: bool) -> Message {
-        Message::Window(Self::Focused(r))
-    }
-    pub fn traffic_action(action: &TrafficAction) -> Message {
-        Message::Window(Self::TrafficAction(action.clone()))
-    }
-    pub const fn drag() -> Message {
-        Message::Window(Self::Drag)
-    }
-    pub const fn toggle_maximize() -> Message {
-        Message::Window(Self::ToggleMaximize)
-    }
-    pub const fn close() -> Message {
-        Message::Window(Self::Close)
-    }
-    pub const fn fps_update(fps: f32) -> Message {
-        Message::Window(Self::FpsUpdate(fps))
-    }
-    pub fn perf_update(data: PerfData) -> Message {
-        Message::Window(Self::PerfUpdate(data))
-    }
-}
-
+/// 窗口状态
 #[derive(Debug, Clone)]
 pub struct Window {
     pub theme: Theme,
@@ -63,8 +20,6 @@ pub struct Window {
 fn get_theme(theme: &str) -> Theme {
     if theme == HIGH_CONTRAST_DISPLAY {
         crate::theme::set_high_contrast(true);
-        // 使用 Iced 的 Custom Theme 机制创建全黑 palette，
-        // 所有 theme.palette() / extended_palette() 调用自动返回黑色系
         crate::theme::hc_theme()
     } else {
         crate::theme::set_high_contrast(false);

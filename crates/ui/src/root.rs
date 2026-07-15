@@ -7,7 +7,8 @@
 //! - `editor_ops`: 编辑器操作
 
 use crate::state::root_state::{DialogType, RootState};
-use crate::{editor, message, settings, sidebar, statusbar, titlebar, toolbar, window};
+use crate::{editor, settings, sidebar, statusbar, titlebar, toolbar, window};
+use crate::Theme;
 use lumino_core::storage::config::UiConfig;
 use lumino_midi_loader::MidiDocument;
 use std::sync::Arc;
@@ -30,8 +31,6 @@ pub struct MemoryBreakdown {
     pub note_instance_size: usize,
 }
 
-pub mod theme;
-
 mod collaboration;
 mod editor_ops;
 pub mod handlers;
@@ -39,11 +38,6 @@ mod midi_state;
 mod playback_state;
 mod view;
 mod visual_state;
-
-pub type Message = message::Message;
-pub type Theme = iced_core::Theme;
-pub type Renderer = iced_wgpu::Renderer;
-pub type Element<'a> = iced_core::Element<'a, Message, Theme, Renderer>;
 
 /// 应用程序根组件
 pub struct Root {

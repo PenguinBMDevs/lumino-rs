@@ -1,18 +1,17 @@
 //! 应用消息 — 重新导出自 lumino-message
 //!
 //! 将泛型 Message<W, S, Se, T> 实例化为具体的 UI 事件类型，
-//! 保持与原有 `crate::message::*` 路径完全兼容。
+//! 将子系统事件类型绑定为确定类型参数。
 
 // 重新导出 UI 特有的事件类型（这些不能放入 lumino-message）
 pub use crate::{
-    settings::Event as Settings, sidebar::Event as Sidebar, toolbar::Event as Toolbar,
-    window::Event as Window,
+    settings_event::Event as Settings, sidebar_event::Event as Sidebar,
+    toolbar_event::Event as Toolbar, window_event::Event as Window,
 };
 
 // 重新导出自 lumino-message 的所有公共类型
 pub use lumino_message::{
     AudioAction,
-    // 共享类型
     AudioChannels,
     AudioExportAction,
     AudioFormat,
@@ -27,7 +26,6 @@ pub use lumino_message::{
     NotePrecision,
     PatternAction,
     PerfData,
-    // 中立几何类型（domain 层，不依赖 iced_core）
     Point2,
     ProjectSettingsAction,
     SettingsDialogAction,

@@ -1,4 +1,5 @@
 use super::*;
+use crate::Message;
 use crate::message::{ProjectSettingsAction, SettingsDialogAction};
 use crate::root::handlers::MessageHandler;
 

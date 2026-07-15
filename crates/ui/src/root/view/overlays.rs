@@ -5,7 +5,8 @@
 use iced_core::Length;
 use iced_widget::{column, container, progress_bar, space, text};
 
-use crate::root::{Element, Root, Theme};
+use crate::{Element, Theme};
+use crate::root::Root;
 use crate::state::root_state::DialogType;
 use crate::view::{
     collaboration_dialog::view_collaboration_dialog,

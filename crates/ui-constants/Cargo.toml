@@ -1,0 +1,13 @@
+[package]
+name = "lumino-ui-constants"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+
+[lints]
+workspace = true

@@ -8,7 +8,8 @@ use lumino_gfx::NoteInstance;
 
 use crate::editor::note::NoteExt;
 use crate::message;
-use crate::root::{Element, Root, Theme};
+use crate::{Element, Theme};
+use crate::root::Root;
 use crate::view::audio_export_dialog::view_audio_export_dialog;
 use crate::view::video_export_dialog::view_video_export_dialog;
 
