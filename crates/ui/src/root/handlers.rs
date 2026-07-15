@@ -346,10 +346,6 @@ impl Root {
                 self.visual.velocity_panel_height = *height;
                 true
             }
-            Message::PerformancePanelToggled => {
-                self.statusbar.toggle_perf_panel();
-                true
-            }
             Message::PerfUpdate(data) => {
                 self.statusbar.set_perf_data(*data);
                 true

@@ -1,7 +1,7 @@
 pub mod performance;
 
 use iced_core::Length;
-use iced_widget::{button, container, row, text};
+use iced_widget::{container, row, text};
 use lumino_core::i18n::{Language, main_translations};
 
 use super::Element;
@@ -23,8 +23,6 @@ pub struct StatusBar {
     fps: Option<f32>,
     /// 性能监控数据
     perf_data: PerfData,
-    /// 性能面板是否展开
-    pub perf_panel_expanded: bool,
 }
 
 impl StatusBar {
@@ -33,7 +31,6 @@ impl StatusBar {
             info: StatusInfo::default(),
             fps: None,
             perf_data: PerfData::default(),
-            perf_panel_expanded: false,
         }
     }
 
@@ -45,11 +42,6 @@ impl StatusBar {
     /// 设置性能监控数据
     pub fn set_perf_data(&mut self, data: PerfData) {
         self.perf_data = data;
-    }
-
-    /// 切换性能面板展开/折叠
-    pub fn toggle_perf_panel(&mut self) {
-        self.perf_panel_expanded = !self.perf_panel_expanded;
     }
 
     /// 获取性能数据引用
@@ -80,12 +72,6 @@ impl StatusBar {
         let left_text = self.fps_text(t.status_ready);
         let use_fps_style = self.use_fps_style();
 
-        let arrow = if self.perf_panel_expanded {
-            " ▼"
-        } else {
-            " ▲"
-        };
-
         let left_section: Element<'a> = row![
             text(left_text).size(12).style(move |theme: &Theme| {
                 if use_fps_style {
@@ -97,10 +83,6 @@ impl StatusBar {
                     text::Style::default()
                 }
             }),
-            button(text(arrow).size(10))
-                .on_press(crate::Message::PerformancePanelToggled)
-                .padding([0, 2])
-                .style(|_: &Theme, _: button::Status| button::Style::default()),
         ]
         .into();
 

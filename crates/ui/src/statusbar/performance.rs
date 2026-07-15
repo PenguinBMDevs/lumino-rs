@@ -3,11 +3,6 @@
 use std::sync::OnceLock;
 use std::time::Instant;
 
-use iced_core::Alignment;
-use iced_widget::{column, container, row, text};
-
-use crate::{Element, Theme};
-
 /// 总 CPU 核心数（0.0 ~ 100.0，100% = 所有核心满载）
 fn num_cores() -> f64 {
     static CORES: OnceLock<f64> = OnceLock::new();
@@ -55,53 +50,5 @@ fn get_cpu_time_us() -> u64 {
     lumino_memory_monitor::platform::get_process_cpu_time_us()
 }
 
-/// 渲染性能面板
-pub fn performance_panel_view<'a>(data: &PerfData) -> Element<'a> {
-    let fps_text = format!("{:.1}", data.fps);
-    let cpu_text = format!("{:.1}%", data.cpu_usage);
-    let mem_text = format!("{:.1} MB", data.memory_mb);
-    let gpu_text = format!("{:.1} ms", data.gpu_frame_time_ms);
-
-    let panel = column![
-        metric_row("FPS", fps_text),
-        metric_row("CPU", cpu_text),
-        metric_row("MEM", mem_text),
-        metric_row("GPU", gpu_text),
-    ]
-    .spacing(2)
-    .padding([6, 10]);
-
-    container(panel)
-        .width(200)
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            container::Style::default()
-                .background(palette.background.neutral.color)
-                .border(iced_core::Border {
-                    color: palette.background.strong.color,
-                    width: 1.0,
-                    radius: 4.0.into(),
-                })
-        })
-        .into()
-}
-
-fn metric_row<'a>(label: &'a str, value: String) -> Element<'a> {
-    row![
-        text(label).size(11).style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            text::Style {
-                color: Some(palette.background.strong.text),
-            }
-        }),
-        iced_widget::space(),
-        text(value).size(11).style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            text::Style {
-                color: Some(palette.primary.strong.color),
-            }
-        }),
-    ]
-    .align_y(Alignment::Center)
-    .into()
-}
+// 性能监控面板 UI 已移除：其功能由工具栏检测仪表盘（toolbar::view::detection_dashboard）
+// 承接，复用了下方保留的数据读取接口（CpuMonitor / PerfData / lumino_memory_monitor）。

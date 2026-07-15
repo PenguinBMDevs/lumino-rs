@@ -166,15 +166,23 @@ fn test_speed_change_button_always_enabled_in_view() {
     let ui_config = lumino_core::storage::config::UiConfig::default();
     let root = Root::new(&ui_config);
 
+    // 构造检测仪表盘所需的性能上下文（与产品运行时一致的数据来源）
+    let perf_ctx = crate::toolbar::ToolbarPerfContext {
+        perf_data: root.statusbar.perf_data(),
+        playback_tick: root.editor.playback_position,
+        ppq: root.editor.editor_state.view.ppq,
+        tempo_points: &root.editor.editor_state.data.tempo_points,
+    };
+
     // 有选中 -> view
     let _element = root
         .toolbar
-        .toolbar_view(&root.window, true, root.settings.language);
+        .toolbar_view(&root.window, true, root.settings.language, &perf_ctx);
 
     // 无选中 -> view（不应 panic/assert）
     let _element = root
         .toolbar
-        .toolbar_view(&root.window, false, root.settings.language);
+        .toolbar_view(&root.window, false, root.settings.language, &perf_ctx);
 
     // 验证通过：两种情况下 view 均正常返回
 }

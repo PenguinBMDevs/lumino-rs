@@ -89,11 +89,18 @@ impl Root {
                     |zoom, fixed_ratio| message::Message::ZoomXChanged { zoom, fixed_ratio },
                     |zoom, fixed_ratio| message::Message::ZoomYChanged { zoom, fixed_ratio },
                 );
+                let perf_ctx = crate::toolbar::ToolbarPerfContext {
+                    perf_data: self.statusbar.perf_data(),
+                    playback_tick: self.editor.playback_position,
+                    ppq: self.editor.editor_state.view.ppq,
+                    tempo_points: &self.editor.editor_state.data.tempo_points,
+                };
                 column![
                     self.toolbar.toolbar_view(
                         &self.window,
                         self.editor.selected_notes_count() > 0,
-                        self.settings.language
+                        self.settings.language,
+                        &perf_ctx,
                     ),
                     column![container(editor_view).height(Length::Fill), velocity_panel,]
                         .height(Length::Fill),
@@ -123,43 +130,8 @@ impl Root {
             ]
         };
 
-        // 性能面板展开时，使用 Stack 将面板作为浮动层渲染在状态栏上方
-        if self.statusbar.perf_panel_expanded {
-            puffin::profile_scope!("root_view_perf_panel");
-            let perf_data = self.statusbar.perf_data();
-            let panel = crate::statusbar::performance::performance_panel_view(perf_data);
-
-            iced_widget::Stack::new()
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .push(
-                    container(main_content)
-                        .width(Length::Fill)
-                        .height(Length::Fill),
-                )
-                .push(
-                    column![
-                        iced_widget::Space::new().height(Length::Fill),
-                        container(panel).padding(iced_core::Padding {
-                            top: 0.0,
-                            right: 0.0,
-                            bottom: 20.0,
-                            left: 0.0,
-                        }),
-                    ]
-                    .width(Length::Fill),
-                )
-                .into()
-        } else {
-            container(main_content)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(|_theme: &Theme| container::Style {
-                    background: Some(iced_core::Background::Color(iced_core::Color::TRANSPARENT)),
-                    ..Default::default()
-                })
-                .into()
-        }
+        // 性能面板已移除，检测仪表盘迁移至工具栏右侧（toolbar_view 内渲染）。
+        main_content.into()
     }
 
     /// 获取当前需要绘制的音符实例
@@ -317,9 +289,19 @@ impl Root {
 
         let arrangement_row = iced_widget::row![track_list, arrangement_area, v_scrollbar,];
 
+        let perf_ctx = crate::toolbar::ToolbarPerfContext {
+            perf_data: self.statusbar.perf_data(),
+            playback_tick: self.editor.playback_position,
+            ppq: self.editor.editor_state.view.ppq,
+            tempo_points: &self.editor.editor_state.data.tempo_points,
+        };
         column![
-            self.toolbar
-                .toolbar_view(&self.window, false, self.settings.language),
+            self.toolbar.toolbar_view(
+                &self.window,
+                false,
+                self.settings.language,
+                &perf_ctx,
+            ),
             arrangement_row.height(Length::Fill),
             h_scrollbar,
         ]

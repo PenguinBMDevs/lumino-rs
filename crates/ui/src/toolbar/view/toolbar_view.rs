@@ -5,7 +5,7 @@
 use iced_core::Alignment;
 use iced_widget::{column, container, row, space};
 
-use crate::toolbar::{RESIZE_HANDLE_HEIGHT, Toolbar};
+use crate::toolbar::{RESIZE_HANDLE_HEIGHT, Toolbar, ToolbarPerfContext};
 use crate::{Element, Theme, window};
 
 impl Toolbar {
@@ -20,6 +20,7 @@ impl Toolbar {
         window: &'a window::Window,
         has_selection: bool,
         language: lumino_core::i18n::Language,
+        perf: &ToolbarPerfContext<'_>,
     ) -> Element<'a> {
         let t = lumino_core::i18n::main_translations(language);
         let palette = window.theme.extended_palette();
@@ -46,6 +47,15 @@ impl Toolbar {
         let collaboration_button =
             self.render_collaboration_button(content_height, palette, t, window);
 
+        let dashboard = self.render_detection_dashboard(
+            content_height,
+            palette,
+            perf.perf_data,
+            perf.playback_tick,
+            perf.ppq,
+            perf.tempo_points,
+        );
+
         let resize_handle = self.render_resize_handle(palette);
 
         // 主工具栏内容 - 横向排列所有区域，协作按钮在最右边
@@ -60,10 +70,12 @@ impl Toolbar {
                 undo_redo_controls,
                 space().width(16),
                 tools,
-                space().width(16),
-                precision_selector,
                 space().width(iced_widget::core::Length::Fill),
                 auto_scroll_button,
+                space().width(16),
+                precision_selector,
+                space().width(16),
+                dashboard,
                 space().width(16),
                 collaboration_button,
             ]
