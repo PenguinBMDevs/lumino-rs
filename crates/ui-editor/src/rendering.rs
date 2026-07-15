@@ -190,7 +190,6 @@ impl Editor {
         // 使用 editor_state 获取视图/交互/画布状态
         let es = &self.editor_state;
         let view = &es.view;
-        let interaction = &es.interaction;
         let canvas = &es.canvas;
 
         let viewport_width = canvas.size_x - view.keyboard_width;
@@ -213,6 +212,53 @@ impl Editor {
         let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1); // 多取 1 个作为缓冲
 
         // 重建空间索引（仅当数据变化时）
+        self.rebuild_spatial_index_if_dirty();
+
+        // 查询可见范围内的音符（每帧渲染时执行，确保视图变化时刷新）
+        let candidate_count = self.query_visible_candidate_count(
+            visible_tick_start,
+            visible_tick_end,
+            visible_key_min,
+            visible_key_max,
+        );
+
+        // 预分配内存
+        instances.reserve(candidate_count);
+
+        // 直接顺序处理（小数据量）：顺序访问性能更好，且避免内存分配
+        // 只有当候选音符数量超过阈值时，才使用并行处理
+        const PARALLEL_THRESHOLD: usize = 500;
+
+        let note_instances = if candidate_count >= PARALLEL_THRESHOLD {
+            // 大数据量：使用并行处理
+            self.collect_parallel_instances(
+                visible_tick_end,
+                candidate_count,
+                default_color,
+                hover_color,
+                active_color,
+                selected_color,
+            )
+        } else {
+            // 小数据量：顺序处理，避免并行开销
+            self.collect_sequential_instances(
+                visible_tick_end,
+                candidate_count,
+                default_color,
+                hover_color,
+                active_color,
+                selected_color,
+            )
+        };
+
+        instances.extend(note_instances);
+
+        // 渲染正在绘制的音符与预览音符
+        self.push_drawing_and_preview_instances(instances, default_color, active_color);
+    }
+
+    /// 仅当空间索引脏时，从 `im::Vector` 直接构建音符空间索引。
+    fn rebuild_spatial_index_if_dirty(&self) {
         // 优化：使用 from_note_refs 直接从 im::Vector 构建，避免克隆 Note 到 Vec<Note>
         if self.spatial.note_index_dirty.get() {
             let notes = &self.editor_state.data.notes;
@@ -234,135 +280,168 @@ impl Editor {
                 self.editor_state.data.notes.len()
             );
         }
+    }
 
-        // 查询可见范围内的音符（每帧渲染时执行，确保视图变化时刷新）
-        // 使用线程本地存储的缓存来避免重复分配
-        let candidate_count = {
-            let mut cache = self.spatial.query_cache.borrow_mut();
-            if let Some(index) = &*self.spatial.note_index.borrow() {
-                index.update_query(
-                    visible_tick_start,
-                    visible_tick_end,
-                    visible_key_min,
-                    visible_key_max,
-                    &mut cache,
-                );
-            } else {
-                cache.clear();
-            }
-            cache.len()
-        };
-
-        // 预分配内存
-        instances.reserve(candidate_count);
-
-        // 直接顺序处理（小数据量）：顺序访问性能更好，且避免内存分配
-        // 只有当候选音符数量超过阈值时，才使用并行处理
-        const PARALLEL_THRESHOLD: usize = 500;
-
-        if candidate_count >= PARALLEL_THRESHOLD {
-            // 大数据量：使用并行处理
-            let cache = self.spatial.query_cache.borrow();
-
-            // 预收集需要在线程安全的结构中访问的数据
-            // 收集 (index, tick, key, length) 元组，避免在并行闭包中访问 self.editor_state.data.notes
-            let note_data: Vec<(usize, f32, u16, f32)> = cache
-                .iter()
-                .filter_map(|&i| {
-                    self.editor_state
-                        .data
-                        .notes
-                        .get(i)
-                        .map(|note| (i, note.tick, note.key, note.length))
-                })
-                .collect();
-
-            // 预收集选中状态（避免在闭包中访问 HashSet）
-            let selected_indices: Vec<bool> = note_data
-                .iter()
-                .map(|&(i, _, _, _)| interaction.selected_notes.contains(&i))
-                .collect();
-
-            // 并行处理：使用 fold + reduce 模式，避免中间内存分配
-            let edit_state_copy = interaction.edit_state.clone();
-            let hover_state_copy = interaction.hover_state;
-
-            let note_instances: Vec<NoteInstance> = note_data
-                .into_par_iter()
-                .enumerate()
-                .filter_map(|(idx, (i, tick, key, length))| {
-                    // 过滤 tick 范围
-                    if tick > visible_tick_end {
-                        return None;
-                    }
-
-                    let is_selected = selected_indices.get(idx).copied().unwrap_or(false);
-
-                    let color_arr = match edit_state_copy {
-                        EditState::Dragging { note_index, .. }
-                        | EditState::ResizingStart { note_index, .. }
-                        | EditState::ResizingEnd { note_index, .. }
-                            if note_index == i =>
-                        {
-                            active_color
-                        }
-                        _ if is_selected => selected_color,
-                        EditState::Idle if hover_state_copy.is_some_and(|(idx, _)| idx == i) => {
-                            hover_color
-                        }
-                        _ => default_color,
-                    };
-
-                    Some(NoteInstance::new(tick, key as f32, length, color_arr))
-                })
-                .fold(
-                    || Vec::with_capacity(candidate_count / rayon::current_num_threads() + 1),
-                    |mut local_instances, instance| {
-                        local_instances.push(instance);
-                        local_instances
-                    },
-                )
-                .reduce(Vec::new, |mut a, b| {
-                    a.extend(b);
-                    a
-                });
-
-            instances.extend(note_instances);
+    /// 用当前视口范围刷新空间索引查询缓存，并返回候选音符数量。
+    fn query_visible_candidate_count(
+        &self,
+        visible_tick_start: f32,
+        visible_tick_end: f32,
+        visible_key_min: u16,
+        visible_key_max: u16,
+    ) -> usize {
+        let mut cache = self.spatial.query_cache.borrow_mut();
+        if let Some(index) = &*self.spatial.note_index.borrow() {
+            index.update_query(
+                visible_tick_start,
+                visible_tick_end,
+                visible_key_min,
+                visible_key_max,
+                &mut cache,
+            );
         } else {
-            // 小数据量：顺序处理，避免并行开销
-            let cache = self.spatial.query_cache.borrow();
-            for &i in cache.iter() {
-                if let Some(note) = self.editor_state.data.notes.get(i) {
-                    if note.tick > visible_tick_end {
-                        continue;
-                    }
+            cache.clear();
+        }
+        cache.len()
+    }
 
-                    let color_arr = match interaction.edit_state {
-                        EditState::Dragging { note_index, .. }
-                        | EditState::ResizingStart { note_index, .. }
-                        | EditState::ResizingEnd { note_index, .. }
-                            if note_index == i =>
-                        {
-                            active_color
-                        }
-                        _ if interaction.selected_notes.contains(&i) => selected_color,
-                        EditState::Idle
-                            if interaction.hover_state.is_some_and(|(idx, _)| idx == i) =>
-                        {
-                            hover_color
-                        }
-                        _ => default_color,
-                    };
+    /// 大数据量路径：并行收集可见音符实例（fold + reduce，避免中间分配）。
+    fn collect_parallel_instances(
+        &self,
+        visible_tick_end: f32,
+        candidate_count: usize,
+        default_color: [f32; 4],
+        hover_color: [f32; 4],
+        active_color: [f32; 4],
+        selected_color: [f32; 4],
+    ) -> Vec<NoteInstance> {
+        let cache = self.spatial.query_cache.borrow();
 
-                    instances.push(NoteInstance::new(
-                        note.tick,
-                        note.key as f32,
-                        note.length,
-                        color_arr,
-                    ));
+        // 预收集需要在线程安全的结构中访问的数据
+        // 收集 (index, tick, key, length) 元组，避免在并行闭包中访问 self.editor_state.data.notes
+        let note_data: Vec<(usize, f32, u16, f32)> = cache
+            .iter()
+            .filter_map(|&i| {
+                self.editor_state
+                    .data
+                    .notes
+                    .get(i)
+                    .map(|note| (i, note.tick, note.key, note.length))
+            })
+            .collect();
+
+        // 预收集选中状态（避免在闭包中访问 HashSet）
+        let selected_indices: Vec<bool> = note_data
+            .iter()
+            .map(|&(i, _, _, _)| self.editor_state.interaction.selected_notes.contains(&i))
+            .collect();
+
+        // 并行处理：使用 fold + reduce 模式，避免中间内存分配
+        let edit_state_copy = self.editor_state.interaction.edit_state.clone();
+        let hover_state_copy = self.editor_state.interaction.hover_state;
+
+        note_data
+            .into_par_iter()
+            .enumerate()
+            .filter_map(|(idx, (i, tick, key, length))| {
+                // 过滤 tick 范围
+                if tick > visible_tick_end {
+                    return None;
                 }
+
+                let is_selected = selected_indices.get(idx).copied().unwrap_or(false);
+
+                let color_arr = match edit_state_copy {
+                    EditState::Dragging { note_index, .. }
+                    | EditState::ResizingStart { note_index, .. }
+                    | EditState::ResizingEnd { note_index, .. }
+                        if note_index == i =>
+                    {
+                        active_color
+                    }
+                    _ if is_selected => selected_color,
+                    EditState::Idle if hover_state_copy.is_some_and(|(idx, _)| idx == i) => {
+                        hover_color
+                    }
+                    _ => default_color,
+                };
+
+                Some(NoteInstance::new(tick, key as f32, length, color_arr))
+            })
+            .fold(
+                || Vec::with_capacity(candidate_count / rayon::current_num_threads() + 1),
+                |mut local_instances, instance| {
+                    local_instances.push(instance);
+                    local_instances
+                },
+            )
+            .reduce(Vec::new, |mut a, b| {
+                a.extend(b);
+                a
+            })
+    }
+
+    /// 小数据量路径：顺序收集可见音符实例，避免并行开销。
+    fn collect_sequential_instances(
+        &self,
+        visible_tick_end: f32,
+        candidate_count: usize,
+        default_color: [f32; 4],
+        hover_color: [f32; 4],
+        active_color: [f32; 4],
+        selected_color: [f32; 4],
+    ) -> Vec<NoteInstance> {
+        let mut result = Vec::with_capacity(candidate_count);
+        let cache = self.spatial.query_cache.borrow();
+        for &i in cache.iter() {
+            if let Some(note) = self.editor_state.data.notes.get(i) {
+                if note.tick > visible_tick_end {
+                    continue;
+                }
+
+                let color_arr = match self.editor_state.interaction.edit_state {
+                    EditState::Dragging { note_index, .. }
+                    | EditState::ResizingStart { note_index, .. }
+                    | EditState::ResizingEnd { note_index, .. }
+                        if note_index == i =>
+                    {
+                        active_color
+                    }
+                    _ if self.editor_state.interaction.selected_notes.contains(&i) => selected_color,
+                    EditState::Idle
+                        if self
+                            .editor_state
+                            .interaction
+                            .hover_state
+                            .is_some_and(|(idx, _)| idx == i) =>
+                    {
+                        hover_color
+                    }
+                    _ => default_color,
+                };
+
+                result.push(NoteInstance::new(
+                    note.tick,
+                    note.key as f32,
+                    note.length,
+                    color_arr,
+                ));
             }
         }
+        result
+    }
+
+    /// 渲染正在绘制的音符与（铅笔工具空闲时的）预览音符。
+    fn push_drawing_and_preview_instances(
+        &self,
+        instances: &mut Vec<NoteInstance>,
+        default_color: [f32; 4],
+        active_color: [f32; 4],
+    ) {
+        let es = &self.editor_state;
+        let view = &es.view;
+        let canvas = &es.canvas;
+        let interaction = &es.interaction;
 
         // 渲染正在绘制的音符
         if let EditState::Drawing {

@@ -294,7 +294,7 @@ impl RunnerInner {
                 if let (Ok(num), Ok(den)) = (numerator.parse::<f32>(), denominator.parse::<f32>()) {
                     // 从编辑器状态获取实际的 PPQ 值
                     let ppq = ui.ppq();
-                    let ticks = (ppq as f32) * 4.0 * num / den;
+                    let ticks = Self::compute_custom_precision_ticks(ppq as f32, num, den);
 
                     ui.set_custom_precision(ticks);
                     tracing::info!("自定义精度已应用: {} ticks (PPQ={})", ticks, ppq);
@@ -379,22 +379,27 @@ impl RunnerInner {
         }
     }
 
+    /// 根据 PPQ 与自定义拍号计算自定义精度的 tick 数（纯计算，便于单独测试）
+    fn compute_custom_precision_ticks(ppq: f32, numerator: f32, denominator: f32) -> f32 {
+        (ppq as f32) * 4.0 * numerator / denominator
+    }
+
+    /// 检测工具栏切换的自动滚动模式是否与已保存配置不同（纯读取比较）
+    fn auto_scroll_mode_changed(
+        window: &WindowManager,
+        old_mode: lumino_core::storage::config::AutoScrollMode,
+    ) -> bool {
+        window.ui().root().editor.editor_state.auto_scroll.mode != old_mode
+    }
+
     pub(crate) fn save_storage(&mut self) {
         let new = self.window_state.window.ui().settings();
         let old = &self.window_state.storage.config.get().ui;
         let current_theme = self.window_state.window.ui().root().theme().to_string();
 
         // 自动滚动模式（toolbar 上切换）不在 SettingsPanel 中，需要独立检测
-        let auto_scroll_mode = self
-            .window_state
-            .window
-            .ui()
-            .root()
-            .editor
-            .editor_state
-            .auto_scroll
-            .mode;
-        let auto_scroll_mode_changed = auto_scroll_mode != old.auto_scroll.mode;
+        let auto_scroll_mode_changed =
+            Self::auto_scroll_mode_changed(&self.window_state.window, old.auto_scroll.mode);
 
         let diff = match Self::config_diff(new, old, &current_theme) {
             Some(d) => d,

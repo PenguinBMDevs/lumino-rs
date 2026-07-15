@@ -8,7 +8,7 @@ use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::SettingsPanel;
 use lumino_ui_core::window;
-use lumino_core::i18n::{Language, settings_translations};
+use lumino_core::i18n::{Language, SettingsTranslations, settings_translations};
 use lumino_core::storage::config::SelectionBoxMode;
 
 /// 本地化主题选项（显示名 vs 规范标识符）
@@ -64,7 +64,7 @@ impl LocalizedSelectionBox {
 
 /// 渲染界面设置页面
 pub fn view<'a>(
-    settings: &SettingsPanel,
+    settings: &'a SettingsPanel,
     window: &lumino_ui_core::window::Window,
     system_fonts: &[lumino_core::font_scanner::FontInfo],
 ) -> Element<'a> {
@@ -98,55 +98,8 @@ pub fn view<'a>(
         value: window.theme.to_string(),
     };
 
-    // 字体选项 - 从系统扫描的字体列表构建
-    let font_options: Vec<String> = system_fonts.iter().map(|f| f.name.clone()).collect();
-
-    // 字体选择下拉菜单
-    let font_dropdown = pick_list(
-        font_options,
-        Some(settings.program_font_name.clone()).filter(|s| !s.is_empty()),
-        |font_name| Message::Settings(crate::Event::ProgramFontNameChanged(font_name)),
-    )
-    .width(200.0)
-    .placeholder("选择系统字体...");
-
-    // 自定义字体路径输入
-    let font_path_input = text_input(t.font_path_placeholder, &settings.program_font_path)
-        .on_input(|path| Message::Settings(crate::Event::ProgramFontPathChanged(path)));
-
-    // 浏览字体文件按钮
-    let browse_font_button =
-        button(t.browse).on_press(Message::Settings(crate::Event::BrowseProgramFont));
-
     // 字体设置部分
-    let font_section = column![
-        // 系统字体下拉菜单
-        row![
-            text(t.program_font)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
-            iced_widget::space().width(SPACING_MAIN),
-            font_dropdown,
-            iced_widget::space().width(SPACING_ICON_LABEL),
-            text(t.or).size(12.0).style(create_placeholder_text_style()),
-        ]
-        .spacing(SPACING_ICON_LABEL)
-        .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_ICON_LABEL),
-        // 自定义路径输入
-        row![
-            font_path_input.width(250.0),
-            iced_widget::space().width(SPACING_ICON_LABEL),
-            browse_font_button,
-        ]
-        .spacing(SPACING_ICON_LABEL)
-        .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        // 字体设置说明
-        text(t.font_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-    ];
+    let font_section = build_font_section(settings, t, system_fonts);
 
     // 语言选项
     let language_options = Language::all();
@@ -211,6 +164,78 @@ pub fn view<'a>(
             .style(create_placeholder_text_style()),
         iced_widget::space().height(24),
         // 自动滚动配置
+        build_auto_scroll_section(settings, t),
+        // 框选框模式设置
+        build_interaction_section(settings, t),
+    ]
+    .spacing(SPACING_CONTENT)
+    .padding(PADDING_CONTENT)
+    .into()
+}
+
+/// 构建字体设置部分（系统字体下拉、自定义路径、浏览按钮、说明）
+fn build_font_section<'a>(
+    settings: &'a SettingsPanel,
+    t: &'static SettingsTranslations,
+    system_fonts: &[lumino_core::font_scanner::FontInfo],
+) -> Element<'a> {
+    // 字体选项 - 从系统扫描的字体列表构建
+    let font_options: Vec<String> = system_fonts.iter().map(|f| f.name.clone()).collect();
+
+    // 字体选择下拉菜单
+    let font_dropdown = pick_list(
+        font_options,
+        Some(settings.program_font_name.clone()).filter(|s| !s.is_empty()),
+        |font_name| Message::Settings(crate::Event::ProgramFontNameChanged(font_name)),
+    )
+    .width(200.0)
+    .placeholder("选择系统字体...");
+
+    // 自定义字体路径输入
+    let font_path_input = text_input(t.font_path_placeholder, &settings.program_font_path)
+        .on_input(|path| Message::Settings(crate::Event::ProgramFontPathChanged(path)));
+
+    // 浏览字体文件按钮
+    let browse_font_button =
+        button(t.browse).on_press(Message::Settings(crate::Event::BrowseProgramFont));
+
+    column![
+        // 系统字体下拉菜单
+        row![
+            text(t.program_font)
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            font_dropdown,
+            iced_widget::space().width(SPACING_ICON_LABEL),
+            text(t.or).size(12.0).style(create_placeholder_text_style()),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_ICON_LABEL),
+        // 自定义路径输入
+        row![
+            font_path_input.width(250.0),
+            iced_widget::space().width(SPACING_ICON_LABEL),
+            browse_font_button,
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        // 字体设置说明
+        text(t.font_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+    ]
+    .into()
+}
+
+/// 构建自动滚动配置部分
+fn build_auto_scroll_section<'a>(
+    settings: &'a SettingsPanel,
+    t: &'static SettingsTranslations,
+) -> Element<'a> {
+    column![
         text(t.auto_scroll)
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
@@ -282,7 +307,17 @@ pub fn view<'a>(
             .size(12.0)
             .style(create_placeholder_text_style()),
         iced_widget::space().height(24),
-        // 框选框模式设置
+    ]
+    .spacing(SPACING_CONTENT)
+    .into()
+}
+
+/// 构建交互设置部分（框选框模式、256 键钢琴卷帘、力度面板样式、播放键盘颜色）
+fn build_interaction_section<'a>(
+    settings: &'a SettingsPanel,
+    t: &'static SettingsTranslations,
+) -> Element<'a> {
+    column![
         text(t.interaction)
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
@@ -364,6 +399,5 @@ pub fn view<'a>(
             .style(create_placeholder_text_style()),
     ]
     .spacing(SPACING_CONTENT)
-    .padding(PADDING_CONTENT)
     .into()
 }

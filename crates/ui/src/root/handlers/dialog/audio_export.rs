@@ -19,6 +19,36 @@ fn begin_audio_export_render(root: &mut Root) {
     st.render_message = "正在初始化...".to_string();
 }
 
+/// 根据音频导出对话框状态构建导出配置
+fn build_audio_export_config(
+    st: &crate::state::root_state::AudioExportDialogState,
+) -> crate::event::window::dialog::AudioExportConfig {
+    crate::event::window::dialog::AudioExportConfig {
+        midi_path: st.midi_path.clone(),
+        soundfont_path: st.soundfont_path.clone(),
+        output_path: st.output_path.clone(),
+        sample_rate: st.sample_rate,
+        channels: st.channels,
+        layer_limit: st.layers,
+        channel_threading: st.channel_threading,
+        key_threading: st.key_threading,
+        interpolation: st.interpolation,
+        apply_limiter: st.apply_limiter,
+        disable_fade_out: st.disable_fade_out,
+        linear_envelope: st.linear_envelope,
+        audio_format: st.format,
+        audio_bitrate: st.audio_bitrate,
+        ignore_program_changes: st.ignore_program_changes,
+        filter_velocity: st.filter_velocity,
+        velocity_low: st.velocity_low,
+        velocity_high: st.velocity_high,
+        filter_key: st.filter_key,
+        key_low: st.key_low,
+        key_high: st.key_high,
+        note_force_end_delay: st.note_force_end_delay,
+    }
+}
+
 impl DialogHandler {
     pub(super) fn handle_audio_export(
         &self,
@@ -52,30 +82,7 @@ impl DialogHandler {
                     tracing::info!("内存中没有 MidiDocument，使用文件模式: {:?}", st.midi_path);
                 }
 
-                let config = crate::event::window::dialog::AudioExportConfig {
-                    midi_path: st.midi_path.clone(),
-                    soundfont_path: st.soundfont_path.clone(),
-                    output_path: st.output_path.clone(),
-                    sample_rate: st.sample_rate,
-                    channels: st.channels,
-                    layer_limit: st.layers,
-                    channel_threading: st.channel_threading,
-                    key_threading: st.key_threading,
-                    interpolation: st.interpolation,
-                    apply_limiter: st.apply_limiter,
-                    disable_fade_out: st.disable_fade_out,
-                    linear_envelope: st.linear_envelope,
-                    audio_format: st.format,
-                    audio_bitrate: st.audio_bitrate,
-                    ignore_program_changes: st.ignore_program_changes,
-                    filter_velocity: st.filter_velocity,
-                    velocity_low: st.velocity_low,
-                    velocity_high: st.velocity_high,
-                    filter_key: st.filter_key,
-                    key_low: st.key_low,
-                    key_high: st.key_high,
-                    note_force_end_delay: st.note_force_end_delay,
-                };
+                let config = build_audio_export_config(st);
                 let ev = crate::event::window::Event::start_audio_export(config, document);
                 crate::event::emit(crate::event::Event::Window(ev));
             }

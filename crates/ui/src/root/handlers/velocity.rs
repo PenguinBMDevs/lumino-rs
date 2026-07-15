@@ -47,42 +47,8 @@ impl VelocityHandler {
                 let panel = &mut root.editor.velocity_panel;
                 let is_conductor = root.sidebar.selected_track == 0
                     && root.sidebar.tracks.first().is_some_and(|t| t.is_conductor);
-                panel.edit_mode = match (panel.edit_mode, is_conductor) {
-                    // 普通音轨：Velocity → Bend → Cc(selected_cc) → Velocity
-                    (crate::editor::velocity::EditMode::Velocity, false) => {
-                        crate::editor::velocity::EditMode::Bend
-                    }
-                    (crate::editor::velocity::EditMode::Bend, false) => {
-                        crate::editor::velocity::EditMode::Cc(panel.selected_cc)
-                    }
-                    (crate::editor::velocity::EditMode::Cc(_), false) => {
-                        crate::editor::velocity::EditMode::Velocity
-                    }
-                    // Conductor 音轨：Tempo → Cc(7) → Cc(selected_cc) → Tempo
-                    (crate::editor::velocity::EditMode::Tempo, true) => {
-                        crate::editor::velocity::EditMode::Cc(7)
-                    }
-                    (crate::editor::velocity::EditMode::Cc(7), true) => {
-                        if panel.selected_cc == 7 {
-                            crate::editor::velocity::EditMode::Tempo
-                        } else {
-                            crate::editor::velocity::EditMode::Cc(panel.selected_cc)
-                        }
-                    }
-                    (crate::editor::velocity::EditMode::Cc(_), true) => {
-                        crate::editor::velocity::EditMode::Tempo
-                    }
-                    // Velocity → 不该在 Conductor 上出现，安全降级到 Tempo
-                    (crate::editor::velocity::EditMode::Velocity, true) => {
-                        crate::editor::velocity::EditMode::Tempo
-                    }
-                    (crate::editor::velocity::EditMode::Bend, true) => {
-                        crate::editor::velocity::EditMode::Tempo
-                    }
-                    (crate::editor::velocity::EditMode::Tempo, false) => {
-                        crate::editor::velocity::EditMode::Bend
-                    }
-                };
+                panel.edit_mode =
+                    Self::next_edit_mode(panel.edit_mode, is_conductor, panel.selected_cc);
                 tracing::debug!("力度面板: 切换模式为 {:?}", panel.edit_mode);
                 return; // 不需要重绘
             }
@@ -181,15 +147,7 @@ impl VelocityHandler {
             }
             VA::AutomationZoom(factor) => {
                 let panel = &mut root.editor.velocity_panel;
-                let max_val = match panel.edit_mode {
-                    EditMode::Bend => {
-                        Some(lumino_core::AutomationTarget::PitchBend.max_value() as f32)
-                    }
-                    EditMode::Cc(n) => {
-                        Some(lumino_core::AutomationTarget::CC { controller: n }.max_value() as f32)
-                    }
-                    _ => None,
-                };
+                let max_val = Self::automation_max_value(panel.edit_mode);
                 let new_zoom = (panel.value_zoom * factor).clamp(0.01, 8.0);
                 panel.value_zoom = new_zoom;
                 if let Some(max_val) = max_val {
@@ -200,15 +158,7 @@ impl VelocityHandler {
             }
             VA::AutomationScroll(amount) => {
                 let panel = &mut root.editor.velocity_panel;
-                let max_val = match panel.edit_mode {
-                    EditMode::Bend => {
-                        Some(lumino_core::AutomationTarget::PitchBend.max_value() as f32)
-                    }
-                    EditMode::Cc(n) => {
-                        Some(lumino_core::AutomationTarget::CC { controller: n }.max_value() as f32)
-                    }
-                    _ => None,
-                };
+                let max_val = Self::automation_max_value(panel.edit_mode);
                 if let Some(max_val) = max_val {
                     panel.value_scroll += amount;
                     panel.clamp_value_scroll(max_val);
@@ -237,6 +187,41 @@ impl VelocityHandler {
                 editor.mark_notes_changed();
                 tracing::debug!("力度面板: 音符[{}] 力度更新为 {}", note_index, clamped);
             }
+        }
+    }
+
+    /// 根据当前编辑模式、是否在 Conductor 音轨以及选中的 CC 计算下一个编辑模式
+    fn next_edit_mode(mode: EditMode, is_conductor: bool, selected_cc: u8) -> EditMode {
+        match (mode, is_conductor) {
+            // 普通音轨：Velocity → Bend → Cc(selected_cc) → Velocity
+            (EditMode::Velocity, false) => EditMode::Bend,
+            (EditMode::Bend, false) => EditMode::Cc(selected_cc),
+            (EditMode::Cc(_), false) => EditMode::Velocity,
+            // Conductor 音轨：Tempo → Cc(7) → Cc(selected_cc) → Tempo
+            (EditMode::Tempo, true) => EditMode::Cc(7),
+            (EditMode::Cc(7), true) => {
+                if selected_cc == 7 {
+                    EditMode::Tempo
+                } else {
+                    EditMode::Cc(selected_cc)
+                }
+            }
+            (EditMode::Cc(_), true) => EditMode::Tempo,
+            // Velocity → 不该在 Conductor 上出现，安全降级到 Tempo
+            (EditMode::Velocity, true) => EditMode::Tempo,
+            (EditMode::Bend, true) => EditMode::Tempo,
+            (EditMode::Tempo, false) => EditMode::Bend,
+        }
+    }
+
+    /// 根据编辑模式返回自动化目标的最大值，用于垂直缩放/滚动裁剪
+    fn automation_max_value(mode: EditMode) -> Option<f32> {
+        match mode {
+            EditMode::Bend => Some(lumino_core::AutomationTarget::PitchBend.max_value() as f32),
+            EditMode::Cc(n) => {
+                Some(lumino_core::AutomationTarget::CC { controller: n }.max_value() as f32)
+            }
+            _ => None,
         }
     }
 }

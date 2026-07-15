@@ -71,25 +71,8 @@ impl RunnerInner {
         lumino_core::palette::unlock_palette();
 
         tracing::info!("开始导入 MIDI 文件：{:?}", path);
-        let progress_cb = self.window_state.progress_cb.clone();
-        tokio::spawn(async move {
-            run_async_task(
-                lumino_midi_loader::loader::load_parsed_midi(path, Some(&progress_cb)),
-                |parsed| {
-                    lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::midi_parsed(std::sync::Arc::new(
-                            parsed,
-                        )),
-                    )
-                },
-                |e| {
-                    lumino_ui::event::Event::menu_file(
-                        lumino_ui::event::menu::file::Event::midi_parse_error(e),
-                    )
-                },
-            )
-            .await;
-        });
+        // 复用 load_midi_file 的后台加载逻辑，避免与 handle_open_file 重复
+        self.load_midi_file(path);
     }
 
     /// 将 MIDI 数据导入到编辑器

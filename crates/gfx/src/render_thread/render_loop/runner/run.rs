@@ -68,87 +68,23 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
         );
 
         // 处理延迟的控制命令
-        for cmd in deferred.drain(..) {
-            match cmd {
-                // ── 视频导出命令：在此内联处理（需要 GPU 资源 + 离屏纹理）──
-                ControlCommand::StartVideoExport {
-                    width,
-                    height,
-                    frame_tx,
-                    render_mode: export_render_mode,
-                } => {
-                    tracing::info!(
-                        "视频导出开始: {}x{}, render_mode={}, 初始化 GPU→CPU 读回管线",
-                        width,
-                        height,
-                        export_render_mode
-                    );
-                    export_pipeline = Some(ExportPipeline::new(&ctx.device, width, height));
-                    export_frame_tx = Some(frame_tx);
-                }
-                ControlCommand::RenderVideoFrame {
-                    params,
-                    render_mode,
-                } => {
-                    let mut frame = RenderFrameState {
-                        renderers: &mut renderers,
-                        current_texture: &mut current_texture,
-                        depth_texture: &mut depth_texture,
-                        depth_texture_view: &mut depth_texture_view,
-                        current_size: &mut current_size,
-                        last_note_version: &mut last_note_version,
-                        latest_texture_clone: &channels.latest_texture_clone,
-                        hires_renderer: &mut hires_renderer,
-                        hires_meta: &mut hires_meta,
-                        hires_config: &mut hires_config,
-                        export_pipeline: &mut export_pipeline,
-                        export_frame_tx: &mut export_frame_tx,
-                    };
-                    handle_video_frame(&ctx, *params, render_mode, &mut frame, &channels);
-                }
-                ControlCommand::UploadHiResVideoTiles {
-                    tiles,
-                    config,
-                    track_count,
-                    key_count,
-                    total_ticks,
-                    ppq,
-                } => {
-                    let params = UploadHiResTileParams {
-                        tiles,
-                        config,
-                        track_count,
-                        key_count,
-                        total_ticks,
-                        ppq,
-                    };
-                    upload_hires_video_tiles(
-                        &ctx,
-                        &mut hires_renderer,
-                        &mut hires_meta,
-                        &mut hires_config,
-                        params,
-                    );
-                }
-                ControlCommand::FinishVideoExport => {
-                    tracing::info!("视频导出完成，释放读回管线");
-                    export_pipeline = None;
-                    export_frame_tx = None;
-                }
-                // ── HiRes 命令走原路径 ──
-                cmd => {
-                    handle_hires_control(
-                        cmd,
-                        &ctx,
-                        &hires_result_tx,
-                        &channels.onion_progress,
-                        &mut hires_renderer,
-                        &mut hires_meta,
-                        &mut hires_config,
-                    );
-                }
-            }
-        }
+        process_deferred_commands(
+            &ctx,
+            &channels,
+            &mut renderers,
+            &mut current_texture,
+            &mut depth_texture,
+            &mut depth_texture_view,
+            &mut current_size,
+            &mut last_note_version,
+            &mut hires_renderer,
+            &mut hires_meta,
+            &mut hires_config,
+            &mut export_pipeline,
+            &mut export_frame_tx,
+            &hires_result_tx,
+            &mut deferred,
+        );
 
         // 推进视频导出 inflight：即使没有新的 RenderVideoFrame 命令，
         // 也需要 try_read 已就绪的帧数据并发回 Runner，否则 inflight 满后
@@ -172,92 +108,34 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
             puffin::profile_scope!("wgpu_render_thread_frame");
             let frame_start = Instant::now();
 
-            let width = params.viewport_size.0.max(1);
-            let height = params.viewport_size.1.max(1);
-
-            // 确保离屏纹理已创建
-            let mut tex_resources = super::super::textures::OffscreenTextureResources {
-                device: &ctx.device,
-                texture_format: ctx.texture_format,
-                width,
-                height,
-                current_size: &mut current_size,
-                current_texture: &mut current_texture,
-                depth_texture: &mut depth_texture,
-                depth_texture_view: &mut depth_texture_view,
-                latest_texture_clone: &channels.latest_texture_clone,
+            ensure_offscreen_textures_and_upload_notes(
+                &ctx,
+                &channels,
+                &mut renderers,
+                &mut current_texture,
+                &mut depth_texture,
+                &mut depth_texture_view,
+                &mut current_size,
+                &mut last_note_version,
                 params,
-            };
-            ensure_textures(&mut tex_resources);
+            );
 
-            // 仅检测主音符版本号变化后上传
-            let note_version = channels.note_instances_buffer.version();
-            if note_version != last_note_version {
-                last_note_version = note_version;
-
-                puffin::profile_scope!("upload_note_instances_from_buffer");
-                let notes = unsafe { channels.note_instances_buffer.read_buffer() };
-
-                renderers
-                    .note
-                    .upload_instances(notes, &ctx.device, &ctx.queue);
-            }
-
-            if let (Some(_texture), Some(_depth_view)) = (&current_texture, &depth_texture_view) {
-                let mut encoder =
-                    ctx.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("offscreen_render_encoder"),
-                        });
-
-                // 准备渲染器
-                prepare_renderers(
-                    &mut renderers,
-                    params,
-                    &channels.note_events_rx,
-                    &ctx.device,
-                    &ctx.queue,
-                );
-
-                // 高精度贴图视口驱动
-                let hires_visible = update_hires_viewport(
-                    &mut hires_renderer,
-                    &hires_meta,
-                    &hires_config,
-                    params,
-                    &ctx.device,
-                    &ctx.queue,
-                );
-                let hires_visible_coords: Vec<crate::TileCoord> =
-                    hires_visible.iter().map(|(c, _)| *c).collect();
-
-                // 执行渲染通道
-                let mut frame = RenderFrameState {
-                    renderers: &mut renderers,
-                    current_texture: &mut current_texture,
-                    depth_texture: &mut depth_texture,
-                    depth_texture_view: &mut depth_texture_view,
-                    current_size: &mut current_size,
-                    last_note_version: &mut last_note_version,
-                    latest_texture_clone: &channels.latest_texture_clone,
-                    hires_renderer: &mut hires_renderer,
-                    hires_meta: &mut hires_meta,
-                    hires_config: &mut hires_config,
-                    export_pipeline: &mut export_pipeline,
-                    export_frame_tx: &mut export_frame_tx,
-                };
-                execute_render_pass(
-                    &mut encoder,
-                    &ctx,
-                    params,
-                    &hires_visible_coords,
-                    true,
-                    &mut frame,
-                );
-
-                // 提交渲染指令
-                ctx.queue.submit(std::iter::once(encoder.finish()));
-            }
+            render_offscreen_pass(
+                &ctx,
+                params,
+                &channels,
+                &mut renderers,
+                &mut current_texture,
+                &mut depth_texture,
+                &mut depth_texture_view,
+                &mut current_size,
+                &mut last_note_version,
+                &mut hires_renderer,
+                &mut hires_meta,
+                &mut hires_config,
+                &mut export_pipeline,
+                &mut export_frame_tx,
+            );
 
             // 更新统计
             let frame_time = frame_start.elapsed();
@@ -446,11 +324,13 @@ fn handle_video_frame(
     // 5. 流水线模式：inflight 达到上限时阻塞读最早的一帧（背压）
     // 此时从 frame 获取 pipeline / tx 引用，execute_render_pass 已经完成，
     // 不会再与 frame 的借用冲突。
-    // pipeline_ready 已提前保证 unwrap 安全。
-    #[allow(clippy::unwrap_used)]
-    let pipeline = frame.export_pipeline.as_mut().unwrap();
-    #[allow(clippy::unwrap_used)]
-    let tx = frame.export_frame_tx.as_ref().unwrap();
+    // pipeline_ready 已提前保证 export_pipeline / export_frame_tx 不为 None。
+    let pipeline = frame.export_pipeline.as_mut().expect(
+        "export_pipeline 应已通过 pipeline_ready 检查完成初始化，不应为 None",
+    );
+    let tx = frame.export_frame_tx.as_ref().expect(
+        "export_frame_tx 应已通过 pipeline_ready 检查完成初始化，不应为 None",
+    );
     pipeline.ensure_size(width, height);
     while !pipeline.can_write() {
         let data = pipeline.wait_read();
@@ -469,5 +349,218 @@ fn handle_video_frame(
             tracing::warn!("视频帧发送失败：Runner 通道已关闭");
             return;
         }
+    }
+}
+
+/// 处理延迟队列中的控制命令（视频导出 / 高精度贴图 / HiRes 控制）。
+fn process_deferred_commands(
+    ctx: &RenderContext,
+    channels: &RenderThreadChannels,
+    renderers: &mut super::super::Renderers,
+    current_texture: &mut Option<Arc<wgpu::Texture>>,
+    depth_texture: &mut Option<wgpu::Texture>,
+    depth_texture_view: &mut Option<wgpu::TextureView>,
+    current_size: &mut (u32, u32),
+    last_note_version: &mut u64,
+    hires_renderer: &mut Option<crate::HiResRenderer>,
+    hires_meta: &mut Option<super::types::HiResMeta>,
+    hires_config: &mut Option<crate::HiResConfig>,
+    export_pipeline: &mut Option<ExportPipeline>,
+    export_frame_tx: &mut Option<FrameSender>,
+    hires_result_tx: &std::sync::mpsc::SyncSender<HiResStreamMsg>,
+    deferred: &mut Vec<ControlCommand>,
+) {
+    for cmd in deferred.drain(..) {
+        match cmd {
+            // ── 视频导出命令：在此内联处理（需要 GPU 资源 + 离屏纹理）──
+            ControlCommand::StartVideoExport {
+                width,
+                height,
+                frame_tx,
+                render_mode: export_render_mode,
+            } => {
+                tracing::info!(
+                    "视频导出开始: {}x{}, render_mode={}, 初始化 GPU→CPU 读回管线",
+                    width,
+                    height,
+                    export_render_mode
+                );
+                *export_pipeline = Some(ExportPipeline::new(&ctx.device, width, height));
+                *export_frame_tx = Some(frame_tx);
+            }
+            ControlCommand::RenderVideoFrame {
+                params,
+                render_mode,
+            } => {
+                let mut frame = RenderFrameState {
+                    renderers: &mut *renderers,
+                    current_texture: &mut *current_texture,
+                    depth_texture: &mut *depth_texture,
+                    depth_texture_view: &mut *depth_texture_view,
+                    current_size: &mut *current_size,
+                    last_note_version: &mut *last_note_version,
+                    latest_texture_clone: &channels.latest_texture_clone,
+                    hires_renderer: &mut *hires_renderer,
+                    hires_meta: &mut *hires_meta,
+                    hires_config: &mut *hires_config,
+                    export_pipeline: &mut *export_pipeline,
+                    export_frame_tx: &mut *export_frame_tx,
+                };
+                handle_video_frame(ctx, *params, render_mode, &mut frame, channels);
+            }
+            ControlCommand::UploadHiResVideoTiles {
+                tiles,
+                config,
+                track_count,
+                key_count,
+                total_ticks,
+                ppq,
+            } => {
+                let params = UploadHiResTileParams {
+                    tiles,
+                    config,
+                    track_count,
+                    key_count,
+                    total_ticks,
+                    ppq,
+                };
+                upload_hires_video_tiles(
+                    ctx,
+                    &mut *hires_renderer,
+                    &mut *hires_meta,
+                    &mut *hires_config,
+                    params,
+                );
+            }
+            ControlCommand::FinishVideoExport => {
+                tracing::info!("视频导出完成，释放读回管线");
+                *export_pipeline = None;
+                *export_frame_tx = None;
+            }
+            // ── HiRes 命令走原路径 ──
+            cmd => {
+                handle_hires_control(
+                    cmd,
+                    ctx,
+                    hires_result_tx,
+                    &channels.onion_progress,
+                    &mut *hires_renderer,
+                    &mut *hires_meta,
+                    &mut *hires_config,
+                );
+            }
+        }
+    }
+}
+
+/// 确保离屏纹理已创建，并在主音符实例版本变化时上传。
+fn ensure_offscreen_textures_and_upload_notes(
+    ctx: &RenderContext,
+    channels: &RenderThreadChannels,
+    renderers: &mut super::super::Renderers,
+    current_texture: &mut Option<Arc<wgpu::Texture>>,
+    depth_texture: &mut Option<wgpu::Texture>,
+    depth_texture_view: &mut Option<wgpu::TextureView>,
+    current_size: &mut (u32, u32),
+    last_note_version: &mut u64,
+    params: &RenderParams,
+) {
+    let width = params.viewport_size.0.max(1);
+    let height = params.viewport_size.1.max(1);
+
+    let mut tex_resources = super::super::textures::OffscreenTextureResources {
+        device: &ctx.device,
+        texture_format: ctx.texture_format,
+        width,
+        height,
+        current_size: &mut *current_size,
+        current_texture: &mut *current_texture,
+        depth_texture: &mut *depth_texture,
+        depth_texture_view: &mut *depth_texture_view,
+        latest_texture_clone: &channels.latest_texture_clone,
+        params,
+    };
+    ensure_textures(&mut tex_resources);
+
+    let note_version = channels.note_instances_buffer.version();
+    if note_version != *last_note_version {
+        *last_note_version = note_version;
+
+        puffin::profile_scope!("upload_note_instances_from_buffer");
+        let notes = unsafe { channels.note_instances_buffer.read_buffer() };
+
+        renderers
+            .note
+            .upload_instances(notes, &ctx.device, &ctx.queue);
+    }
+}
+
+/// 执行离屏渲染通道（在离屏纹理就绪时）：准备渲染器、更新高精度视口、提交命令。
+fn render_offscreen_pass(
+    ctx: &RenderContext,
+    params: &RenderParams,
+    channels: &RenderThreadChannels,
+    renderers: &mut super::super::Renderers,
+    current_texture: &mut Option<Arc<wgpu::Texture>>,
+    depth_texture: &mut Option<wgpu::Texture>,
+    depth_texture_view: &mut Option<wgpu::TextureView>,
+    current_size: &mut (u32, u32),
+    last_note_version: &mut u64,
+    hires_renderer: &mut Option<crate::HiResRenderer>,
+    hires_meta: &mut Option<super::types::HiResMeta>,
+    hires_config: &mut Option<crate::HiResConfig>,
+    export_pipeline: &mut Option<ExportPipeline>,
+    export_frame_tx: &mut Option<FrameSender>,
+) {
+    if let (Some(_texture), Some(_depth_view)) = (&*current_texture, &*depth_texture_view) {
+        let mut encoder = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("offscreen_render_encoder"),
+            });
+
+        prepare_renderers(
+            &mut *renderers,
+            params,
+            &channels.note_events_rx,
+            &ctx.device,
+            &ctx.queue,
+        );
+
+        let hires_visible = update_hires_viewport(
+            &mut *hires_renderer,
+            &*hires_meta,
+            &*hires_config,
+            params,
+            &ctx.device,
+            &ctx.queue,
+        );
+        let hires_visible_coords: Vec<crate::TileCoord> =
+            hires_visible.iter().map(|(c, _)| *c).collect();
+
+        let mut frame = RenderFrameState {
+            renderers,
+            current_texture,
+            depth_texture,
+            depth_texture_view,
+            current_size,
+            last_note_version,
+            latest_texture_clone: &channels.latest_texture_clone,
+            hires_renderer,
+            hires_meta,
+            hires_config,
+            export_pipeline,
+            export_frame_tx,
+        };
+        execute_render_pass(
+            &mut encoder,
+            ctx,
+            params,
+            &hires_visible_coords,
+            true,
+            &mut frame,
+        );
+
+        ctx.queue.submit(std::iter::once(encoder.finish()));
     }
 }

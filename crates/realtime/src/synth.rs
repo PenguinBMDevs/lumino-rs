@@ -139,17 +139,9 @@ impl RealtimeSynth {
         let render_thread = thread::Builder::new()
             .name("lumino-render".into())
             .spawn(move || {
-                // 渲染超时阈值：超过 2 倍窗口时间则跳过渲染帧
-                let render_timeout_ns =
-                    (render_len as u64 * 2_000_000_000) / (channels as u64 * sample_rate as u64);
-
-                // 渲染窗口时间（毫秒），用于闲置时睡眠等待
-                let render_window_ms = render_timeout_ns / 2_000_000;
-
-                // 每帧事件处理的时间预算：半个渲染窗口。
-                // 超过此时间则停止消费事件，剩余事件留到下一帧。
-                // 这防止极端高 NPS 场景下事件雪崩导致单帧耗时数十秒。
-                let event_budget_ns = render_timeout_ns / 4;
+                // 渲染超时阈值与事件处理时间预算（实现见 compute_render_budget）
+                let (render_timeout_ns, render_window_ms, event_budget_ns) =
+                    compute_render_budget(render_len, channels, sample_rate);
 
                 while running_render.load(Ordering::Relaxed) {
                     let start = Instant::now();
@@ -158,109 +150,47 @@ impl RealtimeSynth {
                     // 当事件通道中堆积了大量事件时（如极端高 NPS 场景），
                     // 一次性排空可能耗时数十秒，导致音频回调得不到数据。
                     // 时间预算用完后剩余事件留到下一帧。
-                    let mut event_count = 0u64;
                     let event_deadline = start + std::time::Duration::from_nanos(event_budget_ns);
-                    for event in event_receiver.try_iter() {
-                        channel_group.send_event(event);
-                        event_count += 1;
-                        // 每 1024 个事件检查一次时间预算
-                        if event_count & 0x3FF == 0 && Instant::now() > event_deadline {
-                            break;
-                        }
-                    }
+                    let mut event_count =
+                        drain_events_budgeted(&mut channel_group, &event_receiver, event_deadline);
+
                     // 检查上一帧是否超时 — 如果渲染赶不上，跳过本次渲染只消费事件
-                    let prev_render_ns = perf_render.last_render_ns.load(Ordering::Relaxed);
-                    if prev_render_ns > render_timeout_ns {
-                        // 限制日志频率：每 10 次超时只输出 1 次，避免日志 I/O 拖慢渲染线程
-                        if event_count > 0 || prev_render_ns > render_timeout_ns * 10 {
-                            tracing::warn!(
-                                "lumino-render: 渲染超时 ({}ns > {}ns)，跳过渲染帧，事件数={}",
-                                prev_render_ns,
-                                render_timeout_ns,
-                                event_count,
-                            );
-                        }
-                        // 重置超时标记，下一次迭代重新尝试渲染
-                        // 如果不重置，会导致永久跳过渲染帧，音频回调得不到数据而输出静音
-                        perf_render.last_render_ns.store(0, Ordering::Relaxed);
-                        // 占位统计：更新事件计数，保持渲染线程存活
-                        perf_render
-                            .last_event_count
-                            .store(event_count, Ordering::Relaxed);
-                        // 短暂 yield 避免 busy-loop
-                        std::thread::yield_now();
+                    if should_skip_render(
+                        &perf_render,
+                        perf_render.last_render_ns.load(Ordering::Relaxed),
+                        render_timeout_ns,
+                        event_count,
+                    ) {
                         continue;
                     }
 
                     // 闲置检测：没有事件且样本通道已满（音频回调消费太慢或已暂停）
-                    // 用 recv_timeout 替代 sleep：事件到达时立即唤醒，降低首音符延迟。
-                    // 注意：收到的事件必须立即处理，不能让 recv_timeout 丢弃它，
-                    // 否则高负载下会频繁丢失 NoteOn，导致播放无声或音符缺失。
-                    if event_count == 0 && sample_tx.len() >= 4 {
-                        perf_render.last_render_ns.store(0, Ordering::Relaxed);
-                        perf_render
-                            .last_event_count
-                            .store(event_count, Ordering::Relaxed);
-                        // 等待事件到达或超时；收到的事件立即处理，避免丢失
-                        if let Ok(event) = event_receiver
-                            .recv_timeout(std::time::Duration::from_millis(render_window_ms))
-                        {
-                            channel_group.send_event(event);
-                        }
+                    if handle_idle(
+                        &mut channel_group,
+                        &perf_render,
+                        &event_receiver,
+                        &sample_tx,
+                        render_window_ms,
+                        event_count,
+                    ) {
                         continue;
                     }
 
-                    // 获取或重用 Vec
-                    let mut buf = vec_return_rx
-                        .try_recv()
-                        .unwrap_or_else(|_| Vec::with_capacity(render_len));
-                    // 跳过零初始化 — read_samples_unchecked 保证全覆盖
-                    if buf.capacity() < render_len {
-                        buf.reserve(render_len - buf.capacity());
-                    }
-                    // SAFETY: read_samples_unchecked 随后会填充 render_len 个样本
-                    unsafe {
-                        buf.set_len(render_len);
-                    }
-
-                    // 渲染一个窗口
-                    channel_group.read_samples_unchecked(&mut buf);
-                    let vc = channel_group.voice_count();
-                    voice_render.store(vc, Ordering::Relaxed);
-
-                    // 阻塞发送给音频回调 — 通道满时渲染线程等待，永不丢弃帧
-                    if let Err(err) = sample_tx.send(buf) {
-                        // 音频回调已断开连接，回收到返回池
-                        let buf = err.into_inner();
-                        let _ = vec_return_tx_render.send(buf);
+                    // 渲染一个窗口并上报性能统计；返回 true 表示音频回调断开，退出循环
+                    if render_window_and_report(
+                        &mut channel_group,
+                        &sample_tx,
+                        &vec_return_rx,
+                        &vec_return_tx_render,
+                        &perf_render,
+                        start,
+                        render_len,
+                        channels,
+                        sample_rate,
+                        event_count,
+                        &voice_render,
+                    ) {
                         break;
-                    }
-
-                    // 性能统计
-                    let elapsed_ns = start.elapsed().as_nanos() as u64;
-                    perf_render
-                        .last_render_ns
-                        .store(elapsed_ns, Ordering::Relaxed);
-                    let prev_peak = perf_render.peak_render_ns.load(Ordering::Relaxed);
-                    if elapsed_ns > prev_peak {
-                        perf_render
-                            .peak_render_ns
-                            .store(elapsed_ns, Ordering::Relaxed);
-                    }
-                    perf_render
-                        .last_event_count
-                        .store(event_count, Ordering::Relaxed);
-
-                    // 渲染负载 EMA
-                    let expected_ns = (render_len as u64 * 1_000_000_000)
-                        / (channels as u64 * sample_rate as u64);
-                    if expected_ns > 0 {
-                        let load = (elapsed_ns as f64 / expected_ns as f64).clamp(0.0, 10.0);
-                        let prev = f64::from_bits(perf_render.average_load.load(Ordering::Relaxed));
-                        let ema = prev * 0.9 + load * 0.1;
-                        perf_render
-                            .average_load
-                            .store(ema.to_bits(), Ordering::Relaxed);
                     }
                 }
             })
@@ -417,4 +347,176 @@ fn build_stream(
             None,
         )
         .expect("failed to build output audio stream")
+}
+
+/// 计算渲染线程的三个时间预算：超时阈值、空闲等待窗口、每帧事件处理预算。
+fn compute_render_budget(render_len: usize, channels: u16, sample_rate: u32) -> (u64, u64, u64) {
+    // 渲染超时阈值：超过 2 倍窗口时间则跳过渲染帧
+    let render_timeout_ns =
+        (render_len as u64 * 2_000_000_000) / (channels as u64 * sample_rate as u64);
+
+    // 渲染窗口时间（毫秒），用于闲置时睡眠等待
+    let render_window_ms = render_timeout_ns / 2_000_000;
+
+    // 每帧事件处理的时间预算：半个渲染窗口。
+    // 超过此时间则停止消费事件，剩余事件留到下一帧。
+    // 这防止极端高 NPS 场景下事件雪崩导致单帧耗时数十秒。
+    let event_budget_ns = render_timeout_ns / 4;
+
+    (render_timeout_ns, render_window_ms, event_budget_ns)
+}
+
+/// 在事件时间预算内消费待处理事件，返回本帧处理的事件数。
+///
+/// 一次性排空可能耗时数十秒，导致音频回调得不到数据，故每 1024 个事件
+/// 检查一次 `event_deadline`，超时即停止，剩余事件留到下一帧。
+fn drain_events_budgeted(
+    channel_group: &mut ChannelGroup,
+    event_receiver: &crossbeam_channel::Receiver<SynthEvent>,
+    event_deadline: Instant,
+) -> u64 {
+    let mut event_count = 0u64;
+    for event in event_receiver.try_iter() {
+        channel_group.send_event(event);
+        event_count += 1;
+        // 每 1024 个事件检查一次时间预算
+        if event_count & 0x3FF == 0 && Instant::now() > event_deadline {
+            break;
+        }
+    }
+    event_count
+}
+
+/// 检查上一帧是否超时：若渲染赶不上，重置超时标记并 `continue` 跳过本次渲染。
+///
+/// 返回 `true` 表示应跳过本帧渲染（仅消费事件）。
+fn should_skip_render(
+    perf_render: &RenderPerfShared,
+    prev_render_ns: u64,
+    render_timeout_ns: u64,
+    event_count: u64,
+) -> bool {
+    if prev_render_ns > render_timeout_ns {
+        // 限制日志频率：每 10 次超时只输出 1 次，避免日志 I/O 拖慢渲染线程
+        if event_count > 0 || prev_render_ns > render_timeout_ns * 10 {
+            tracing::warn!(
+                "lumino-render: 渲染超时 ({}ns > {}ns)，跳过渲染帧，事件数={}",
+                prev_render_ns,
+                render_timeout_ns,
+                event_count,
+            );
+        }
+        // 重置超时标记，下一次迭代重新尝试渲染
+        // 如果不重置，会导致永久跳过渲染帧，音频回调得不到数据而输出静音
+        perf_render.last_render_ns.store(0, Ordering::Relaxed);
+        // 占位统计：更新事件计数，保持渲染线程存活
+        perf_render
+            .last_event_count
+            .store(event_count, Ordering::Relaxed);
+        // 短暂 yield 避免 busy-loop
+        std::thread::yield_now();
+        true
+    } else {
+        false
+    }
+}
+
+/// 闲置检测：没有事件且样本通道已满时，阻塞等待事件到达（或超时）以保持低延迟。
+///
+/// 返回 `true` 表示已处理闲置分支并应 `continue` 到下一帧。
+fn handle_idle(
+    channel_group: &mut ChannelGroup,
+    perf_render: &RenderPerfShared,
+    event_receiver: &crossbeam_channel::Receiver<SynthEvent>,
+    sample_tx: &crossbeam_channel::Sender<Vec<f32>>,
+    render_window_ms: u64,
+    event_count: u64,
+) -> bool {
+    if event_count == 0 && sample_tx.len() >= 4 {
+        perf_render.last_render_ns.store(0, Ordering::Relaxed);
+        perf_render
+            .last_event_count
+            .store(event_count, Ordering::Relaxed);
+        // 等待事件到达或超时；收到的事件立即处理，避免丢失
+        if let Ok(event) = event_receiver
+            .recv_timeout(std::time::Duration::from_millis(render_window_ms))
+        {
+            channel_group.send_event(event);
+        }
+        true
+    } else {
+        false
+    }
+}
+
+/// 渲染一个音频窗口，更新 voice 计数与性能统计，并阻塞发送给音频回调。
+///
+/// 返回 `true` 表示音频回调已断开（发送失败），调用方应退出渲染循环。
+#[allow(clippy::too_many_arguments)]
+fn render_window_and_report(
+    channel_group: &mut ChannelGroup,
+    sample_tx: &crossbeam_channel::Sender<Vec<f32>>,
+    vec_return_rx: &crossbeam_channel::Receiver<Vec<f32>>,
+    vec_return_tx_render: &crossbeam_channel::Sender<Vec<f32>>,
+    perf_render: &RenderPerfShared,
+    start: Instant,
+    render_len: usize,
+    channels: u16,
+    sample_rate: u32,
+    event_count: u64,
+    voice_render: &Arc<std::sync::atomic::AtomicU64>,
+) -> bool {
+    // 获取或重用 Vec
+    let mut buf = vec_return_rx
+        .try_recv()
+        .unwrap_or_else(|_| Vec::with_capacity(render_len));
+    // 跳过零初始化 — read_samples_unchecked 保证全覆盖
+    if buf.capacity() < render_len {
+        buf.reserve(render_len - buf.capacity());
+    }
+    // SAFETY: read_samples_unchecked 随后会填充 render_len 个样本
+    unsafe {
+        buf.set_len(render_len);
+    }
+
+    // 渲染一个窗口
+    channel_group.read_samples_unchecked(&mut buf);
+    let vc = channel_group.voice_count();
+    voice_render.store(vc, Ordering::Relaxed);
+
+    // 阻塞发送给音频回调 — 通道满时渲染线程等待，永不丢弃帧
+    if let Err(err) = sample_tx.send(buf) {
+        // 音频回调已断开连接，回收到返回池
+        let buf = err.into_inner();
+        let _ = vec_return_tx_render.send(buf);
+        return true;
+    }
+
+    // 性能统计
+    let elapsed_ns = start.elapsed().as_nanos() as u64;
+    perf_render
+        .last_render_ns
+        .store(elapsed_ns, Ordering::Relaxed);
+    let prev_peak = perf_render.peak_render_ns.load(Ordering::Relaxed);
+    if elapsed_ns > prev_peak {
+        perf_render
+            .peak_render_ns
+            .store(elapsed_ns, Ordering::Relaxed);
+    }
+    perf_render
+        .last_event_count
+        .store(event_count, Ordering::Relaxed);
+
+    // 渲染负载 EMA
+    let expected_ns = (render_len as u64 * 1_000_000_000) / (channels as u64 * sample_rate as u64);
+    if expected_ns > 0 {
+        let load = (elapsed_ns as f64 / expected_ns as f64).clamp(0.0, 10.0);
+        let prev = f64::from_bits(perf_render.average_load.load(Ordering::Relaxed));
+        let ema = prev * 0.9 + load * 0.1;
+        perf_render
+            .average_load
+            .store(ema.to_bits(), Ordering::Relaxed);
+    }
+
+    false
 }
