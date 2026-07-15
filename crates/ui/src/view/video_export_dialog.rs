@@ -1,16 +1,12 @@
 //! 视频导出面板与导出覆盖层视图
-//!
-//! 配置面板参照 audio_export_dialog 的 iced 风格。
-//! 导出覆盖层参照 nezha export_controller 的模态遮罩 + 居中窗口。
 
 use iced_core::{Alignment, Color, Length};
-use iced_widget::{
-    button, column, container, image, pick_list, row, scrollable, space, text,
-    text_input,
-};
+use iced_widget::{button, column, container, image, pick_list, row, scrollable, space, text, text_input};
 
 use crate::message::{Message, VideoExportAction};
 use crate::state::root_state::{VideoExportDialogState, VideoExportOverlayState};
+
+use super::widgets;
 
 pub mod helpers;
 
@@ -21,217 +17,14 @@ pub fn view_video_export_dialog<'a>(
 ) -> crate::Element<'a> {
     let palette = theme.extended_palette();
 
-    let label_style = move |_theme: &iced_core::Theme| text::Style {
-        color: Some(palette.background.neutral.text),
-    };
-
-    let input_style = move |_theme: &iced_core::Theme| container::Style {
-        background: Some(palette.background.weak.color.into()),
-        border: iced_core::Border {
-            radius: 4.0.into(),
-            width: 1.0,
-            color: palette.background.strong.color,
-        },
-        ..Default::default()
-    };
-
-    let title = text("视频导出")
-        .size(18)
-        .font(iced_core::Font::with_name("Microsoft YaHei"))
-        .style(label_style);
-
-    // ── 渲染设置区域 ──
-    let containers = vec!["MP4", "MOV", "MKV", "AVI"]
-        .into_iter()
-        .map(String::from)
-        .collect::<Vec<_>>();
-    let codecs = vec!["H.264", "H.265 / HEVC", "ProRes", "VP9", "AV1"]
-        .into_iter()
-        .map(String::from)
-        .collect::<Vec<_>>();
-    let backends = helpers::available_backends();
-    let qualities = vec!["高", "中", "低"]
-        .into_iter()
-        .map(String::from)
-        .collect::<Vec<_>>();
-    let fps_options = vec![24u32, 30, 60, 120];
-
-    let render_settings = column![
-        text("渲染设置")
-            .size(16)
-            .font(iced_core::Font::with_name("Microsoft YaHei"))
-            .style(label_style),
-        space().height(12),
-        row![
-            text("渲染格式:").size(14).style(label_style).width(100),
-            pick_list(containers, Some(state.container.clone()), |v| {
-                Message::VideoExport(VideoExportAction::ContainerChanged(v))
-            },)
-            .width(Length::Fixed(200.0)),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center),
-        space().height(8),
-        row![
-            text("编码器:").size(14).style(label_style).width(100),
-            pick_list(codecs, Some(state.codec.clone()), |v| Message::VideoExport(
-                VideoExportAction::CodecChanged(v)
-            ),)
-            .width(Length::Fixed(200.0)),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center),
-        space().height(8),
-        row![
-            text("加速:").size(14).style(label_style).width(100),
-            pick_list(backends, Some(state.backend.clone()), |v| {
-                Message::VideoExport(VideoExportAction::BackendChanged(v))
-            },)
-            .width(Length::Fixed(200.0)),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center),
-        space().height(8),
-        row![
-            text("质量:").size(14).style(label_style).width(100),
-            pick_list(qualities, Some(state.quality.clone()), |v| {
-                Message::VideoExport(VideoExportAction::QualityChanged(v))
-            },)
-            .width(Length::Fixed(200.0)),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center),
-        space().height(8),
-        // 分辨率
-        row![
-            text("分辨率:").size(14).style(label_style).width(100),
-            container(
-                text_input("1920", &state.width.to_string())
-                    .on_input(|v| Message::VideoExport(VideoExportAction::WidthChanged(v)))
-                    .padding([6, 10])
-                    .width(Length::Fixed(80.0)),
-            )
-            .style(input_style),
-            text("x").size(14).style(label_style),
-            container(
-                text_input("1080", &state.height.to_string())
-                    .on_input(|v| Message::VideoExport(VideoExportAction::HeightChanged(v)))
-                    .padding([6, 10])
-                    .width(Length::Fixed(80.0)),
-            )
-            .style(input_style),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center),
-        space().height(8),
-        // 帧率
-        row![
-            text("帧率:").size(14).style(label_style).width(100),
-            pick_list(fps_options, Some(state.fps), |v| Message::VideoExport(
-                VideoExportAction::FpsChanged(v)
-            ),)
-            .width(Length::Fixed(200.0)),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center),
-        // 视频导出渲染模式
-        space().height(8),
-        {
-            use lumino_event::window::video::RenderMode;
-            let render_modes = vec![RenderMode::NoteRectangle, RenderMode::HiResTexture];
-            row![
-                text("渲染模式:").size(14).style(label_style).width(100),
-                pick_list(render_modes, Some(state.render_mode), |v| {
-                    Message::VideoExport(VideoExportAction::RenderModeChanged(v))
-                })
-                .width(Length::Fixed(200.0)),
-            ]
-            .spacing(8)
-            .align_y(Alignment::Center)
-        },
-    ]
-    .width(Length::Fill);
-
-    // ── 输出路径区域 ──
-    let output_path = column![
-        text("导出位置")
-            .size(16)
-            .font(iced_core::Font::with_name("Microsoft YaHei"))
-            .style(label_style),
-        space().height(8),
-        row![
-            container(
-                text_input("选择输出路径...", &state.output_path)
-                    .on_input(|v| Message::VideoExport(VideoExportAction::OutputPathChanged(v)))
-                    .padding([6, 10])
-                    .width(Length::Fill),
-            )
-            .width(Length::Fill)
-            .style(input_style),
-            space().width(8),
-            button(text("浏览...").size(14))
-                .on_press(Message::VideoExport(VideoExportAction::BrowseOutput))
-                .padding([6, 16]),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center),
-    ]
-    .width(Length::Fill);
-
-    // ── 按钮区域 ──
-    let buttons = row![
-        button(text("关闭").size(14))
-            .on_press(Message::VideoExport(VideoExportAction::ClosePanel))
-            .padding([8, 32])
-            .width(Length::Fixed(100.0))
-            .style(move |_t: &iced_core::Theme, status| {
-                let bg = match status {
-                    button::Status::Hovered => palette.background.strong.color,
-                    _ => palette.background.weak.color,
-                };
-                button::Style {
-                    background: Some(bg.into()),
-                    text_color: palette.background.neutral.text,
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                }
-            }),
-        space().width(12),
-        button(text("开始导出").size(14))
-            .on_press(Message::VideoExport(VideoExportAction::StartExport))
-            .padding([8, 32])
-            .width(Length::Fixed(120.0))
-            .style(move |_t: &iced_core::Theme, status| {
-                let bg = match status {
-                    button::Status::Hovered => palette.primary.strong.color,
-                    _ => palette.primary.base.color,
-                };
-                button::Style {
-                    background: Some(bg.into()),
-                    text_color: Color::WHITE,
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                }
-            }),
-    ]
-    .align_y(Alignment::Center);
-
     let main_content = column![
-        title,
+        title_section(palette),
         space().height(16),
-        render_settings,
+        render_settings_section(state, palette),
         space().height(16),
-        output_path,
+        output_path_section(state, palette),
         space().height(24),
-        buttons,
+        buttons_section(palette),
     ];
 
     let scrollable_content = scrollable(main_content)
@@ -248,7 +41,152 @@ pub fn view_video_export_dialog<'a>(
         .into()
 }
 
-/// 渲染视频导出覆盖层（浮动 dialog 弹出样式，使用 Stack 层叠在配置面板上方）
+/// 标题
+fn title_section<'a>(palette: &'a iced_core::theme::palette::Extended) -> crate::Element<'a> {
+    text("视频导出")
+        .size(18)
+        .font(iced_core::Font::with_name("Microsoft YaHei"))
+        .style(widgets::dialog_label_style(palette))
+        .into()
+}
+
+/// 渲染设置区域（容器格式、编码器、硬件加速、质量、分辨率、帧率）
+fn render_settings_section<'a>(
+    state: &'a VideoExportDialogState,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    let containers = vec!["MP4", "MOV", "MKV", "AVI"]
+        .into_iter().map(String::from).collect::<Vec<_>>();
+    let codecs = vec!["H.264", "H.265 / HEVC", "ProRes", "VP9", "AV1"]
+        .into_iter().map(String::from).collect::<Vec<_>>();
+    let backends = helpers::available_backends();
+    let qualities = vec!["高", "中", "低"]
+        .into_iter().map(String::from).collect::<Vec<_>>();
+    let fps_options = vec![24u32, 30, 60, 120];
+
+    let width_str = state.width.to_string();
+    let height_str = state.height.to_string();
+
+    column![
+        text("渲染设置").size(16)
+            .font(iced_core::Font::with_name("Microsoft YaHei"))
+            .style(widgets::dialog_label_style(palette)),
+        space().height(12),
+        pick_list_row("渲染格式:", 100.0, containers, Some(state.container.clone()),
+            |v| Message::VideoExport(VideoExportAction::ContainerChanged(v))),
+        space().height(8),
+        pick_list_row("编码器:", 100.0, codecs, Some(state.codec.clone()),
+            |v| Message::VideoExport(VideoExportAction::CodecChanged(v))),
+        space().height(8),
+        pick_list_row("加速:", 100.0, backends, Some(state.backend.clone()),
+            |v| Message::VideoExport(VideoExportAction::BackendChanged(v))),
+        space().height(8),
+        pick_list_row("质量:", 100.0, qualities, Some(state.quality.clone()),
+            |v| Message::VideoExport(VideoExportAction::QualityChanged(v))),
+        space().height(8),
+        // 分辨率行
+        row![
+            text("分辨率:").size(14).style(widgets::dialog_label_style(palette)).width(100),
+            container(
+                text_input("1920", &width_str)
+                    .on_input(|v| Message::VideoExport(VideoExportAction::WidthChanged(v)))
+                    .padding([6, 10])
+                    .width(Length::Fixed(80.0)),
+            )
+            .style(widgets::dialog_input_style(palette)),
+            text("x").size(14).style(widgets::dialog_label_style(palette)),
+            container(
+                text_input("1080", &height_str)
+                    .on_input(|v| Message::VideoExport(VideoExportAction::HeightChanged(v)))
+                    .padding([6, 10])
+                    .width(Length::Fixed(80.0)),
+            )
+            .style(widgets::dialog_input_style(palette)),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
+        space().height(8),
+        pick_list_row("帧率:", 100.0, fps_options, Some(state.fps),
+            |v| Message::VideoExport(VideoExportAction::FpsChanged(v))),
+        space().height(8),
+        render_mode_row(state, palette),
+    ]
+    .width(Length::Fill)
+    .into()
+}
+
+/// 视频渲染模式选择行
+fn render_mode_row<'a>(
+    state: &'a VideoExportDialogState,
+    _palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    use lumino_event::window::video::RenderMode;
+    let render_modes = vec![RenderMode::NoteRectangle, RenderMode::HiResTexture];
+    pick_list_row("渲染模式:", 100.0, render_modes, Some(state.render_mode),
+        |v| Message::VideoExport(VideoExportAction::RenderModeChanged(v)))
+}
+
+/// 输出路径区域
+fn output_path_section<'a>(
+    state: &'a VideoExportDialogState,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    column![
+        text("导出位置").size(16)
+            .font(iced_core::Font::with_name("Microsoft YaHei"))
+            .style(widgets::dialog_label_style(palette)),
+        space().height(8),
+        row![
+            container(
+                text_input("选择输出路径...", &state.output_path)
+                    .on_input(|v| Message::VideoExport(VideoExportAction::OutputPathChanged(v)))
+                    .padding([6, 10])
+                    .width(Length::Fill),
+            )
+            .width(Length::Fill)
+            .style(widgets::dialog_input_style(palette)),
+            space().width(8),
+            button(text("浏览...").size(14))
+                .on_press(Message::VideoExport(VideoExportAction::BrowseOutput))
+                .padding([6, 16]),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
+    ]
+    .width(Length::Fill)
+    .into()
+}
+
+/// 关闭/导出按钮
+fn buttons_section(palette: &iced_core::theme::palette::Extended) -> crate::Element<'static> {
+    row![
+        button(text("关闭").size(14))
+            .on_press(Message::VideoExport(VideoExportAction::ClosePanel))
+            .padding([8, 32])
+            .width(Length::Fixed(100.0))
+            .style(widgets::dialog_button_style(
+                palette.background.strong.color,
+                palette.background.weak.color,
+                palette.background.neutral.text,
+            )),
+        space().width(12),
+        button(text("开始导出").size(14))
+            .on_press(Message::VideoExport(VideoExportAction::StartExport))
+            .padding([8, 32])
+            .width(Length::Fixed(120.0))
+            .style(widgets::dialog_button_style(
+                palette.primary.strong.color,
+                palette.primary.base.color,
+                Color::WHITE,
+            )),
+    ]
+    .align_y(Alignment::Center)
+    .into()
+}
+
+// ── 覆盖层视图 ────────────────────────────────────────────
+
+/// 渲染视频导出覆盖层（浮动 dialog 弹出样式）
 pub fn view_video_export_overlay<'a>(
     state: &'a VideoExportDialogState,
     theme: &'a iced_core::Theme,
@@ -256,21 +194,212 @@ pub fn view_video_export_overlay<'a>(
     if matches!(state.overlay, VideoExportOverlayState::None) {
         return None;
     }
-
     let palette = theme.extended_palette();
 
-    let label_style = move |_theme: &iced_core::Theme| text::Style {
-        color: Some(palette.background.neutral.text),
+    let content: crate::Element<'a> = match &state.overlay {
+        VideoExportOverlayState::Exporting => exporting_overlay(state, theme, palette),
+        VideoExportOverlayState::Finalizing => finalizing_overlay(state, theme, palette),
+        VideoExportOverlayState::Completed { total_frames, elapsed_secs, avg_fps } =>
+            completed_overlay(state, *total_frames, *elapsed_secs, *avg_fps, palette),
+        VideoExportOverlayState::Error(err) => error_overlay(err.clone(), palette),
+        VideoExportOverlayState::None => return None,
     };
 
-    let weak_text = move |_theme: &iced_core::Theme| text::Style {
-        color: Some(palette.background.weak.text),
+    let full = container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(20)
+        .style(move |_t: &iced_core::Theme| container::Style {
+            background: Some(palette.background.base.color.into()),
+            ..Default::default()
+        });
+
+    Some(full.into())
+}
+
+/// 导出中的覆盖层
+fn exporting_overlay<'a>(
+    state: &'a VideoExportDialogState,
+    theme: &'a iced_core::Theme,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    let detail = helpers::render_progress_detail(state, theme);
+    column![
+        text("视频导出中").size(16).style(widgets::dialog_label_style(palette)),
+        space().height(8),
+        preview_area(state, palette),
+        space().height(8),
+        detail,
+        space().height(12),
+        button(text("取消导出").size(14))
+            .on_press(Message::VideoExport(VideoExportAction::CancelExport))
+            .padding([8, 32])
+            .style(widgets::dialog_button_style(
+                palette.danger.strong.color,
+                palette.danger.base.color,
+                Color::WHITE,
+            )),
+    ]
+    .align_x(Alignment::Center)
+    .into()
+}
+
+/// 编码中的覆盖层
+fn finalizing_overlay<'a>(
+    state: &'a VideoExportDialogState,
+    theme: &'a iced_core::Theme,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    let detail = helpers::render_progress_detail(state, theme);
+    column![
+        text("视频导出中").size(16).style(widgets::dialog_label_style(palette)),
+        space().height(8),
+        preview_area(state, palette),
+        space().height(8),
+        text("正在完成编码...").size(14).style(widgets::dialog_label_style(palette)),
+        space().height(4),
+        detail,
+        space().height(4),
+        text("ffmpeg 正在封装文件，请稍候")
+            .size(12)
+            .style(widgets::dialog_muted_text_style(palette)),
+        space().height(8),
+        row![
+            button(text("强制完成").size(14))
+                .on_press(Message::VideoExport(VideoExportAction::ForceFinish))
+                .padding([6, 16])
+                .style(widgets::dialog_button_style(
+                    palette.background.strong.color,
+                    palette.background.weak.color,
+                    palette.background.neutral.text,
+                )),
+            space().width(8),
+            text("视频已可用，跳过等待").size(12)
+                .style(widgets::dialog_muted_text_style(palette)),
+        ]
+        .align_y(Alignment::Center),
+    ]
+    .align_x(Alignment::Center)
+    .into()
+}
+
+/// 导出完成的覆盖层
+fn completed_overlay<'a>(
+    state: &'a VideoExportDialogState,
+    total_frames: u64,
+    elapsed_secs: f64,
+    avg_fps: f64,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    let duration_secs = if state.fps > 0 {
+        total_frames as f64 / state.fps as f64
+    } else {
+        0.0
+    };
+    let speedup = if elapsed_secs > 0.0 && duration_secs > 0.0 {
+        duration_secs / elapsed_secs
+    } else {
+        0.0
     };
 
-    // ── 预览图像区域 ──
-    let preview_area: crate::Element<'a> = if let Some(ref handle) = state.cached_image_handle {
-        // 使用缓存的 handle（相同数据复用已上传的 GPU 纹理，避免每帧重新异步上传）
-        // 预览区域宽度基于 dialog 窗口尺寸（520x560）
+    column![
+        text("导出完成！")
+            .size(16)
+            .style(move |_t: &iced_core::Theme| text::Style {
+                color: Some(palette.success.strong.color),
+            }),
+        space().height(12),
+        preview_area_empty(palette),
+        space().height(8),
+        text(format!("总帧数: {total_frames}")).size(13)
+            .style(widgets::dialog_muted_text_style(palette)),
+        text(format!("时长: {}", helpers::format_duration(duration_secs))).size(13)
+            .style(widgets::dialog_muted_text_style(palette)),
+        text(format!("总用时: {}", helpers::format_duration(elapsed_secs))).size(13)
+            .style(widgets::dialog_muted_text_style(palette)),
+        text(format!("平均速度: {avg_fps:.1} fps")).size(13)
+            .style(widgets::dialog_muted_text_style(palette)),
+        text(format!("倍率: {speedup:.1}x 原速")).size(13)
+            .style(widgets::dialog_muted_text_style(palette)),
+        space().height(16),
+        button(text("确定").size(14))
+            .on_press(Message::VideoExport(VideoExportAction::DismissOverlay))
+            .padding([8, 32])
+            .style(widgets::dialog_button_style(
+                palette.primary.strong.color,
+                palette.primary.base.color,
+                Color::WHITE,
+            )),
+    ]
+    .align_x(Alignment::Center)
+    .into()
+}
+
+/// 导出失败的覆盖层
+fn error_overlay<'a>(
+    err: String,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    column![
+        text("导出失败")
+            .size(16)
+            .style(move |_t: &iced_core::Theme| text::Style {
+                color: Some(palette.danger.strong.color),
+            }),
+        space().height(12),
+        container(
+            scrollable(
+                text(err).size(13)
+                    .style(move |_t: &iced_core::Theme| text::Style {
+                        color: Some(palette.danger.weak.color),
+                    })
+            )
+            .height(Length::Fixed(200.0))
+        )
+        .width(Length::Fill),
+        space().height(16),
+        button(text("确定").size(14))
+            .on_press(Message::VideoExport(VideoExportAction::DismissOverlay))
+            .padding([8, 32])
+            .style(widgets::dialog_button_style(
+                palette.primary.strong.color,
+                palette.primary.base.color,
+                Color::WHITE,
+            )),
+    ]
+    .align_x(Alignment::Center)
+    .into()
+}
+
+// ── 共享辅助函数 ───────────────────────────────────────────
+
+/// pick_list 选择行
+fn pick_list_row<'a, T: 'a + Clone + ToString + PartialEq>(
+    label: &'a str,
+    label_width: f32,
+    options: Vec<T>,
+    selected: Option<T>,
+    on_selected: impl Fn(T) -> Message + 'a,
+) -> crate::Element<'a> {
+    let label_style = move |_t: &iced_core::Theme| text::Style {
+        color: Some(iced_core::Color::WHITE),
+    };
+    row![
+        text(label).size(14).style(label_style).width(label_width),
+        pick_list(options, selected, on_selected)
+            .width(Length::Fixed(200.0)),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+/// 预览区域（有缓存图片时）
+fn preview_area<'a>(
+    state: &'a VideoExportDialogState,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    if let Some(ref handle) = state.cached_image_handle {
         let preview_max_w = 480.0;
         let preview_max_h = 240.0;
         let img_w = state.preview_width as f32;
@@ -293,216 +422,25 @@ pub fn view_video_export_overlay<'a>(
             })
             .into()
     } else {
-        container(text("等待渲染...").size(14).style(weak_text))
-            .width(Length::Fill)
-            .height(Length::Fixed(120.0))
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .style(move |_t: &iced_core::Theme| container::Style {
-                background: Some(palette.background.weak.color.into()),
-                border: iced_core::Border {
-                    radius: 4.0.into(),
-                    width: 1.0,
-                    color: palette.background.strong.color,
-                },
-                ..Default::default()
-            })
-            .into()
-    };
+        preview_area_empty(palette)
+    }
+}
 
-    let content: crate::Element<'a> = match &state.overlay {
-        VideoExportOverlayState::Exporting => {
-            let detail = helpers::render_progress_detail(state, theme);
-            column![
-                text("视频导出中").size(16).style(label_style),
-                space().height(8),
-                preview_area,
-                space().height(8),
-                detail,
-                space().height(12),
-                button(text("取消导出").size(14))
-                    .on_press(Message::VideoExport(VideoExportAction::CancelExport))
-                    .padding([8, 32])
-                    .style(move |_t: &iced_core::Theme, status| {
-                        let bg = match status {
-                            button::Status::Hovered => palette.danger.strong.color,
-                            _ => palette.danger.base.color,
-                        };
-                        button::Style {
-                            background: Some(bg.into()),
-                            text_color: Color::WHITE,
-                            border: iced_core::Border {
-                                radius: 4.0.into(),
-                                width: 0.0,
-                                color: Color::TRANSPARENT,
-                            },
-                            ..Default::default()
-                        }
-                    }),
-            ]
-            .align_x(Alignment::Center)
-            .into()
-        }
-        VideoExportOverlayState::Finalizing => {
-            let detail = helpers::render_progress_detail(state, theme);
-            column![
-                text("视频导出中").size(16).style(label_style),
-                space().height(8),
-                preview_area,
-                space().height(8),
-                text("正在完成编码...").size(14).style(label_style),
-                space().height(4),
-                detail,
-                space().height(4),
-                text("ffmpeg 正在封装文件，请稍候")
-                    .size(12)
-                    .style(weak_text),
-                space().height(8),
-                row![
-                    button(text("强制完成").size(14))
-                        .on_press(Message::VideoExport(VideoExportAction::ForceFinish))
-                        .padding([6, 16])
-                        .style(move |_t: &iced_core::Theme, status| {
-                            let bg = match status {
-                                button::Status::Hovered => palette.background.strong.color,
-                                _ => palette.background.weak.color,
-                            };
-                            button::Style {
-                                background: Some(bg.into()),
-                                text_color: palette.background.neutral.text,
-                                border: iced_core::Border {
-                                    radius: 4.0.into(),
-                                    width: 0.0,
-                                    color: Color::TRANSPARENT,
-                                },
-                                ..Default::default()
-                            }
-                        }),
-                    space().width(8),
-                    text("视频已可用，跳过等待").size(12).style(weak_text),
-                ]
-                .align_y(Alignment::Center),
-            ]
-            .align_x(Alignment::Center)
-            .into()
-        }
-        VideoExportOverlayState::Completed {
-            total_frames,
-            elapsed_secs,
-            avg_fps,
-        } => {
-            let duration_secs = if state.fps > 0 {
-                *total_frames as f64 / state.fps as f64
-            } else {
-                0.0
-            };
-            let speedup = if *elapsed_secs > 0.0 && duration_secs > 0.0 {
-                duration_secs / elapsed_secs
-            } else {
-                0.0
-            };
-            column![
-                text("导出完成！")
-                    .size(16)
-                    .style(move |_t: &iced_core::Theme| text::Style {
-                        color: Some(palette.success.strong.color),
-                    }),
-                space().height(12),
-                preview_area,
-                space().height(8),
-                text(format!("总帧数: {}", total_frames))
-                    .size(13)
-                    .style(weak_text),
-                text(format!("时长: {}", helpers::format_duration(duration_secs)))
-                    .size(13)
-                    .style(weak_text),
-                text(format!(
-                    "总用时: {}",
-                    helpers::format_duration(*elapsed_secs)
-                ))
-                .size(13)
-                .style(weak_text),
-                text(format!("平均速度: {:.1} fps", avg_fps))
-                    .size(13)
-                    .style(weak_text),
-                text(format!("倍率: {:.1}x 原速", speedup))
-                    .size(13)
-                    .style(weak_text),
-                space().height(16),
-                button(text("确定").size(14))
-                    .on_press(Message::VideoExport(VideoExportAction::DismissOverlay))
-                    .padding([8, 32])
-                    .style(move |_t: &iced_core::Theme, status| {
-                        let bg = match status {
-                            button::Status::Hovered => palette.primary.strong.color,
-                            _ => palette.primary.base.color,
-                        };
-                        button::Style {
-                            background: Some(bg.into()),
-                            text_color: Color::WHITE,
-                            border: iced_core::Border {
-                                radius: 4.0.into(),
-                                width: 0.0,
-                                color: Color::TRANSPARENT,
-                            },
-                            ..Default::default()
-                        }
-                    }),
-            ]
-            .align_x(Alignment::Center)
-            .into()
-        }
-        VideoExportOverlayState::Error(err) => column![
-            text("导出失败")
-                .size(16)
-                .style(move |_t: &iced_core::Theme| text::Style {
-                    color: Some(palette.danger.strong.color),
-                }),
-            space().height(12),
-            container(
-                scrollable(text(err).size(13).style(move |_t: &iced_core::Theme| {
-                    text::Style {
-                        color: Some(palette.danger.weak.color),
-                    }
-                }))
-                .height(Length::Fixed(200.0))
-            )
-            .width(Length::Fill),
-            space().height(16),
-            button(text("确定").size(14))
-                .on_press(Message::VideoExport(VideoExportAction::DismissOverlay))
-                .padding([8, 32])
-                .style(move |_t: &iced_core::Theme, status| {
-                    let bg = match status {
-                        button::Status::Hovered => palette.primary.strong.color,
-                        _ => palette.primary.base.color,
-                    };
-                    button::Style {
-                        background: Some(bg.into()),
-                        text_color: Color::WHITE,
-                        border: iced_core::Border {
-                            radius: 4.0.into(),
-                            width: 0.0,
-                            color: Color::TRANSPARENT,
-                        },
-                        ..Default::default()
-                    }
-                }),
-        ]
-        .align_x(Alignment::Center)
-        .into(),
-        VideoExportOverlayState::None => return None,
-    };
-
-    // 直接铺满整个 dialog 窗口，去掉多余的嵌套框框
-    let full = container(content)
+/// 预览区域（无图片时）
+fn preview_area_empty<'a>(palette: &'a iced_core::theme::palette::Extended) -> crate::Element<'a> {
+    container(text("等待渲染...").size(14).style(widgets::dialog_muted_text_style(palette)))
         .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(20)
+        .height(Length::Fixed(120.0))
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
         .style(move |_t: &iced_core::Theme| container::Style {
-            background: Some(palette.background.base.color.into()),
+            background: Some(palette.background.weak.color.into()),
+            border: iced_core::Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: palette.background.strong.color,
+            },
             ..Default::default()
-        });
-
-    Some(full.into())
+        })
+        .into()
 }

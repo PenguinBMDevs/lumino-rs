@@ -7,3 +7,4 @@ pub mod project_settings_dialog;
 pub mod settings_dialog;
 pub mod speed_change_dialog;
 pub mod video_export_dialog;
+pub mod widgets;
