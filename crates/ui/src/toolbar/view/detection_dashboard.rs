@@ -1,11 +1,15 @@
-//! 检测仪表盘（工具栏右侧）
+//! 检测仪表盘（已移至工具选择区框左侧）
 //!
 //! 移植自 yinhe 项目 `chrome/transport_bar.rs` 的 `show_timecode_display`：
 //! 顶部数据显示模块（CPU 占用、内存占用、播放时间等）。
 //!
 //! 说明：yinhe 使用 egui 渲染该模块，而 Lumino 使用 iced，无法逐字照抄 egui 代码。
-//! 此处按 yinhe 的**设计语言**（深色圆角矩形 + 三列 + 上下双行文字 + 强调色）
-//! 用 iced 重写，数据接口复用 Lumino 既有实现：
+//! 此处按 yinhe 的**设计语言**（三列 + 上下双行文字 + 强调色 + 垂直分隔线）
+//! 用 iced 重写，背景/文字色全部通过主题 palette 自动适配，与工具栏工具框风格统一：
+//! - 背景色：`palette.background.weak`（与工具选择框一致）
+//! - 数值色：`palette.primary.strong`（主题强调色）
+//! - 标签色：`palette.background.weak.text`（标签说明文字）
+//! - 分隔线：`palette.background.strong`（微高于背景色，保证可见）
 //! - CPU / 内存：来自 `PerfData`（由 `CpuMonitor` + `lumino_memory_monitor` 计算）
 //! - 播放时间 / BPM：由 `tempo_points` + `ppq` 将播放位置（tick）换算得到
 
@@ -41,8 +45,8 @@ impl Toolbar {
 
         let accent = palette.primary.strong.color;
         let dim = palette.background.weak.text;
-        let sep_color = palette.background.weak.color;
-        let sep_h = (content_height * 0.6).max(8.0);
+        let sep_color = palette.background.strong.color;
+        let sep_h = (content_height * 0.55).max(8.0);
 
         let c0 = metric_column(format!("{cpu:.1}%"), format!("{mem:.1} MB"), accent, dim);
         let c1 = metric_column(format!("{bpm:.1}"), format!("PPQ {ppq}"), accent, dim);
@@ -62,13 +66,14 @@ impl Toolbar {
         )
         .height(content_height)
         .padding([0, 12])
+        .align_y(iced_core::alignment::Vertical::Center)
         .style(move |_t: &Theme| {
             container::Style::default()
-                .background(iced_core::Color::from_rgb(0.07, 0.07, 0.09))
+                .background(palette.background.weak.color)
                 .border(iced_core::Border {
-                    color: sep_color,
-                    width: 1.0,
-                    radius: 6.0.into(),
+                    radius: 4.0.into(),
+                    width: 0.0,
+                    color: iced_core::Color::TRANSPARENT,
                 })
         })
         .into()
