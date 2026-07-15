@@ -21,6 +21,10 @@ pub enum VideoExportError {
     #[error("未找到 ffmpeg 可执行文件")]
     FfmpegNotFound,
 
+    /// 子进程管道建立失败（stdin/stdout/stderr 未被正确重定向）
+    #[error("ffmpeg 管道建立失败: {0}")]
+    PipeSetupFailed(String),
+
     /// 帧数据尺寸不匹配
     #[error("帧数据尺寸不匹配: 实际 {got} 字节, 期望 {expected} 字节")]
     FrameSizeMismatch { got: usize, expected: usize },

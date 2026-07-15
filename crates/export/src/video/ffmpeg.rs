@@ -57,7 +57,10 @@ impl FfmpegEncoder {
         let writer_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
         // stderr 捕获线程：实时读取 ffmpeg stderr
-        let stderr = process.stderr.take().expect("ffmpeg stderr 已 piped");
+        let stderr = process
+            .stderr
+            .take()
+            .ok_or_else(|| VideoExportError::PipeSetupFailed("ffmpeg stderr 未 piped".into()))?;
         let stderr_buf_clone = stderr_buf.clone();
         thread::spawn(move || {
             let mut reader = std::io::BufReader::new(stderr);
@@ -85,7 +88,10 @@ impl FfmpegEncoder {
 
         let mut stdin = BufWriter::with_capacity(
             1024 * 1024, // 1MB 缓冲，批量写入
-            process.stdin.take().expect("ffmpeg stdin 已 piped"),
+            process
+                .stdin
+                .take()
+                .ok_or_else(|| VideoExportError::PipeSetupFailed("ffmpeg stdin 未 piped".into()))?,
         );
         // 小容量背压：8 帧 ≈ 64MB @ 1920x1080x4，避免编码速度跟不上时内存暴涨
         let (tx, rx) = crossbeam_channel::bounded::<Vec<u8>>(8);

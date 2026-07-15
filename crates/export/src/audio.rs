@@ -265,12 +265,11 @@ fn run_document_render(
             last_progress_time = now;
         }
 
-        // 构建 TrackEventKind
-        let kind = build_track_event_kind(&event);
-
-        // 处理事件
-        processor.process_midi_event(tick, &kind)?;
-        event_count += 1;
+        // 构建 TrackEventKind（未知 kind 跳过该事件）
+        if let Some(kind) = build_track_event_kind(&event) {
+            processor.process_midi_event(tick, &kind)?;
+            event_count += 1;
+        }
     }
 
     // 完成进度
@@ -421,10 +420,11 @@ impl<'a> MidiDocEventStream<'a> {
         if self.ctrl_cursor < self.doc.control_events.len() {
             let ctrl = &self.doc.control_events[self.ctrl_cursor];
             if ctrl.tick == min_tick {
-                let (priority, event) = match ctrl.kind {
+                // 未知类型的控制事件直接跳过，避免 panic（合法 kind 仅为 0/1/2）
+                if let Some((priority, event)) = match ctrl.kind {
                     0 => {
                         let (c, v) = ctrl.as_control_change();
-                        (
+                        Some((
                             2,
                             MergedEvent {
                                 tick: ctrl.tick,
@@ -433,9 +433,9 @@ impl<'a> MidiDocEventStream<'a> {
                                 param1: c,
                                 param2: v as u16,
                             },
-                        )
+                        ))
                     }
-                    1 => (
+                    1 => Some((
                         3,
                         MergedEvent {
                             tick: ctrl.tick,
@@ -444,8 +444,8 @@ impl<'a> MidiDocEventStream<'a> {
                             param1: ctrl.as_program_change(),
                             param2: 0,
                         },
-                    ),
-                    2 => (
+                    )),
+                    2 => Some((
                         4,
                         MergedEvent {
                             tick: ctrl.tick,
@@ -454,11 +454,12 @@ impl<'a> MidiDocEventStream<'a> {
                             param1: 0,
                             param2: ctrl.param,
                         },
-                    ),
-                    _ => unreachable!(),
-                };
-                if best.as_ref().map_or(true, |(p, _)| priority < *p) {
-                    best = Some((priority, event));
+                    )),
+                    _ => None,
+                } {
+                    if best.as_ref().map_or(true, |(p, _)| priority < *p) {
+                        best = Some((priority, event));
+                    }
                 }
             }
         }
@@ -491,7 +492,8 @@ impl<'a> MidiDocEventStream<'a> {
                 2..=4 => {
                     self.ctrl_cursor += 1;
                 }
-                _ => unreachable!(),
+                // 未知 kind 不推进任何游标（正常情况下 MergedEvent::kind 恒为 0..=4）
+                _ => {}
             }
         }
 
@@ -500,45 +502,46 @@ impl<'a> MidiDocEventStream<'a> {
     }
 }
 
-/// 将 MergedEvent 转换为 TrackEventKind
-fn build_track_event_kind(event: &MergedEvent) -> TrackEventKind<'static> {
+/// 将 MergedEvent 转换为 TrackEventKind；遇到未知 kind 返回 None（跳过该事件）
+fn build_track_event_kind(event: &MergedEvent) -> Option<TrackEventKind<'static>> {
     use midly::num::{u4, u7, u14};
     let channel = u4::new(event.channel & 0x0f);
     match event.kind {
-        0 => TrackEventKind::Midi {
+        0 => Some(TrackEventKind::Midi {
             channel,
             message: MidiMessage::NoteOn {
                 key: event.param1,
                 vel: u7::new(event.param2 as u8),
             },
-        },
-        1 => TrackEventKind::Midi {
+        }),
+        1 => Some(TrackEventKind::Midi {
             channel,
             message: MidiMessage::NoteOff {
                 key: event.param1,
                 vel: u7::new(0),
             },
-        },
-        2 => TrackEventKind::Midi {
+        }),
+        2 => Some(TrackEventKind::Midi {
             channel,
             message: MidiMessage::Controller {
                 controller: u7::new(event.param1),
                 value: u7::new(event.param2 as u8),
             },
-        },
-        3 => TrackEventKind::Midi {
+        }),
+        3 => Some(TrackEventKind::Midi {
             channel,
             message: MidiMessage::ProgramChange {
                 program: u7::new(event.param1),
             },
-        },
-        4 => TrackEventKind::Midi {
+        }),
+        4 => Some(TrackEventKind::Midi {
             channel,
             message: MidiMessage::PitchBend {
                 bend: PitchBend(u14::new(event.param2)),
             },
-        },
-        _ => unreachable!(),
+        }),
+        // 正常情况下 MergedEvent::kind 恒为 0..=4
+        _ => None,
     }
 }
 
