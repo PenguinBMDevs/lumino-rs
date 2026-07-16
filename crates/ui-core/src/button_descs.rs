@@ -133,8 +133,14 @@ const DESC_EN: &[(&str, &str)] = &[
     ("Split", "Split notes at playhead"),
     ("Glue", "Glue selected adjacent notes"),
     ("Tie", "Tie selected notes"),
-    ("TransposeDown", "Transpose selected notes down (Ctrl for octave)"),
-    ("TransposeUp", "Transpose selected notes up (Ctrl for octave)"),
+    (
+        "TransposeDown",
+        "Transpose selected notes down (Ctrl for octave)",
+    ),
+    (
+        "TransposeUp",
+        "Transpose selected notes up (Ctrl for octave)",
+    ),
     ("Undo", "Undo last action"),
     ("Redo", "Redo undone action"),
     ("Loop", "Toggle loop region"),
@@ -142,7 +148,6 @@ const DESC_EN: &[(&str, &str)] = &[
     ("Collaboration", "Open realtime collaboration panel"),
     ("More", "Open more tools menu"),
 ];
-
 
 pub fn button_desc(id: ButtonId, lang: Language) -> (&'static str, &'static str) {
     let name = button_name(id, main_translations(lang));

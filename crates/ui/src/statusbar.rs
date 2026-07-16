@@ -84,7 +84,9 @@ impl StatusBar {
         };
         let use_fps_style = self.use_fps_style();
 
-        // 左侧预留描述区（固定最小宽度，避免 hover 时布局跳动）
+        // 左侧预留描述区（固定宽度，避免 hover 时布局跳动）
+        // 说明文字强制单行显示：不设置 width=Fill，文本默认 Shrink 不换行，
+        // 超出 220px 容器宽度的内容被裁剪，绝不发生折行。
         let left_section: Element<'a> =
             container(text(left_text).size(12).style(move |theme: &Theme| {
                 if use_fps_style {
@@ -122,7 +124,8 @@ impl StatusBar {
                 text(&self.info.right_text).size(12),
             ]
             .spacing(8)
-            .padding([0, 8]),
+            .padding([0, 8])
+            .align_y(iced_core::Alignment::Center),
         )
         .width(Length::Fill)
         .height(20)

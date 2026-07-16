@@ -99,8 +99,18 @@ impl Toolbar {
 
     /// 更新工具栏状态
     pub fn update(&mut self, event: Event) {
-        // 菜单打开时，除再次点击“更多”按钮外，其余任何操作都先关闭菜单
-        if self.overflow_menu_open && !matches!(event, Event::ToggleOverflowMenu) {
+        // 菜单打开时，除以下情况外其余操作先关闭菜单：
+        // - 再次点击“更多”按钮（ToggleOverflowMenu）用于切换关闭
+        // - 悬停事件（ButtonHovered）由鼠标进出触发，不应关闭菜单，
+        //   否则菜单打开导致重绘、按钮 mouse_area 重新挂载会发出 on_enter，
+        //   立刻把刚打开的菜单关掉（表现为“更多面板打不开”）
+        // - 显式关闭事件（CloseOverflowMenu）
+        if self.overflow_menu_open
+            && !matches!(
+                event,
+                Event::ToggleOverflowMenu | Event::ButtonHovered(_) | Event::CloseOverflowMenu
+            )
+        {
             self.overflow_menu_open = false;
         }
 
