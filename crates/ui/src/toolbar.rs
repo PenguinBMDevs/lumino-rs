@@ -63,6 +63,10 @@ pub struct Toolbar {
     pub custom_precision_dialog: CustomPrecisionDialog,
     /// 自动滚动模式
     pub auto_scroll_mode: lumino_core::storage::config::AutoScrollMode,
+    /// PPQ 编辑模式（true = 正在编辑）
+    pub ppq_editing: bool,
+    /// PPQ 编辑缓冲区（仅包含数字字符）
+    pub ppq_edit_buffer: String,
 }
 
 impl Toolbar {
@@ -83,6 +87,8 @@ impl Toolbar {
             shift_pressed: false,
             custom_precision_dialog: CustomPrecisionDialog::default(),
             auto_scroll_mode: lumino_core::storage::config::AutoScrollMode::default(),
+            ppq_editing: false,
+            ppq_edit_buffer: String::new(),
         }
     }
 
@@ -204,6 +210,29 @@ impl Toolbar {
             Event::ResizeDragged(_) => {}
             Event::ResizeDragEnded => {
                 self.is_resizing = false;
+            }
+            Event::PpqEditToggled(current_ppq) => {
+                if self.ppq_editing {
+                    // 已在编辑状态 → 取消编辑
+                    self.ppq_editing = false;
+                    self.ppq_edit_buffer.clear();
+                } else {
+                    // 进入编辑状态，用当前 PPQ 值初始化缓冲区
+                    self.ppq_editing = true;
+                    self.ppq_edit_buffer = current_ppq.to_string();
+                }
+            }
+            Event::PpqEditChanged(value) => {
+                if self.ppq_editing {
+                    // 只允许输入数字
+                    if value.is_empty() || value.chars().all(|c| c.is_ascii_digit()) {
+                        self.ppq_edit_buffer = value;
+                    }
+                }
+            }
+            Event::PpqEditConfirmed => {
+                self.ppq_editing = false;
+                self.ppq_edit_buffer.clear();
             }
         }
     }

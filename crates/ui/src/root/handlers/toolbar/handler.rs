@@ -16,7 +16,19 @@ impl ToolbarHandler {
     }
 
     fn handle_toolbar_event(&self, root: &mut Root, event: crate::toolbar::Event) {
-        // 先让 toolbar 更新自身状态（包括自动滚动模式切换）
+        // PPQ 编辑确认：直接保存并返回，不再处理其他事件
+        if matches!(event, crate::toolbar::Event::PpqEditConfirmed) {
+            Self::confirm_ppq_edit(root);
+            root.toolbar.update(event);
+            return;
+        }
+
+        // 非 PPQ 事件触发时，若 PPQ 正在编辑则自动保存
+        if root.toolbar.ppq_editing {
+            Self::confirm_ppq_edit(root);
+        }
+
+        // 更新工具栏自身状态
         root.toolbar.update(event.clone());
 
         // 处理播放控制 - 直接执行，不通过消息循环
@@ -60,6 +72,19 @@ impl ToolbarHandler {
 
         // 处理分割/合并
         self.handle_toolbar_split_glue(root, &event);
+    }
+
+    /// 确认 PPQ 编辑：解析缓冲区 → 写入编辑器 → 清除编辑状态
+    fn confirm_ppq_edit(root: &mut Root) {
+        if let Ok(ppq) = root.toolbar.ppq_edit_buffer.parse::<u16>() {
+            // PPQ 必须大于 0（MIDI 规范要求至少 48 但这里只校验有效性）
+            if ppq > 0 {
+                root.set_ppq(ppq);
+                tracing::info!("PPQ 已更新为 {}", ppq);
+            }
+        }
+        root.toolbar.ppq_editing = false;
+        root.toolbar.ppq_edit_buffer.clear();
     }
 }
 

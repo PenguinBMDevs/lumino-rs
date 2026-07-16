@@ -72,6 +72,12 @@ pub enum Event {
     Split,
     /// 音符合并
     Glue,
+    /// Toggle PPQ 编辑模式（开始/取消）。u16 = 当前 PPQ 值
+    PpqEditToggled(u16),
+    /// PPQ 编辑输入变更
+    PpqEditChanged(String),
+    /// PPQ 编辑确认（按 Enter 或外部点击）
+    PpqEditConfirmed,
 }
 
 /// 水平翻转模式
@@ -224,5 +230,20 @@ impl Event {
 
     pub const fn glue() -> Message {
         Message::Toolbar(Self::Glue)
+    }
+
+    /// 切换 PPQ 编辑模式。点击 PPQ 文字时携带当前值以初始化缓冲区。
+    pub fn ppq_edit_toggled(ppq: u16) -> Message {
+        Message::Toolbar(Self::PpqEditToggled(ppq))
+    }
+
+    /// PPQ 编辑输入变更（字符串必须仅含数字）。
+    pub fn ppq_edit_changed(value: String) -> Message {
+        Message::Toolbar(Self::PpqEditChanged(value))
+    }
+
+    /// PPQ 编辑确认（Enter 键或点击外部区域）。
+    pub const fn ppq_edit_confirmed() -> Message {
+        Message::Toolbar(Self::PpqEditConfirmed)
     }
 }

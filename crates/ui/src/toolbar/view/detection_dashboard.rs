@@ -14,10 +14,10 @@
 //! - 播放时间 / BPM：由 `tempo_points` + `ppq` 将播放位置（tick）换算得到
 
 use iced_core::Alignment;
-use iced_widget::{button, column, container, row, space, text};
+use iced_widget::{button, column, container, row, space, text, text_input};
 
 use crate::statusbar::performance::PerfData;
-use crate::toolbar::Toolbar;
+use crate::toolbar::{Event, Toolbar};
 use crate::{Element, Theme};
 use lumino_core::midi_types::TempoPoint;
 
@@ -55,7 +55,17 @@ impl Toolbar {
             dim,
             76.0,
         );
-        let c1 = metric_column(format!("{bpm:.1}"), format!("PPQ {ppq}"), accent, dim, 72.0);
+        let c1 = if self.ppq_editing {
+            ppq_edit_column(
+                format!("{bpm:.1}"),
+                &self.ppq_edit_buffer,
+                accent,
+                dim,
+                80.0,
+            )
+        } else {
+            ppq_display_column(format!("{bpm:.1}"), ppq, accent, dim, 80.0)
+        };
         let c2 = metric_column(pos, format_time(time_secs), accent, dim, 86.0);
 
         container(
@@ -146,6 +156,82 @@ fn v_separator<'a>(height: f32, color: iced_core::Color) -> Element<'a> {
         .height(height)
         .style(move |_t: &Theme| container::Style::default().background(color))
         .into()
+}
+
+/// 可点击的 PPQ 显示列：点击后进入编辑模式
+fn ppq_display_column<'a>(
+    top: String,
+    ppq: u16,
+    accent: iced_core::Color,
+    dim: iced_core::Color,
+    width: f32,
+) -> Element<'a> {
+    let ppq_button = button(
+        text(format!("PPQ {ppq}"))
+            .size(11)
+            .style(move |_t: &Theme| text::Style { color: Some(dim) }),
+    )
+    .on_press(Event::ppq_edit_toggled(ppq))
+    .padding([0.0, 0.0])
+    .style(move |_t: &Theme, _status| button::Style {
+        background: None,
+        text_color: dim,
+        border: iced_core::Border::default(),
+        shadow: Default::default(),
+        snap: false,
+    });
+
+    column![
+        text(top).size(13).style(move |_t: &Theme| text::Style {
+            color: Some(accent),
+        }),
+        space().height(2),
+        ppq_button,
+    ]
+    .width(iced_widget::core::Length::Fixed(width))
+    .align_x(Alignment::Center)
+    .into()
+}
+
+/// PPQ 编辑列：显示 TextInput 供用户编辑 PPQ 值
+fn ppq_edit_column<'a>(
+    top: String,
+    edit_buffer: &'a str,
+    accent: iced_core::Color,
+    _dim: iced_core::Color,
+    width: f32,
+) -> Element<'a> {
+    let input_style = move |_t: &iced_core::Theme| container::Style {
+        background: Some(iced_core::Background::Color(iced_core::Color::from_rgba(
+            0.0, 0.0, 0.0, 0.0,
+        ))),
+        border: iced_core::Border {
+            radius: 0.0.into(),
+            width: 0.0,
+            color: iced_core::Color::TRANSPARENT,
+        },
+        ..Default::default()
+    };
+
+    column![
+        text(top).size(13).style(move |_t: &Theme| text::Style {
+            color: Some(accent),
+        }),
+        space().height(2),
+        container(
+            text_input("PPQ", edit_buffer)
+                .size(11)
+                .on_input(Event::ppq_edit_changed)
+                .on_submit(Event::ppq_edit_confirmed())
+                .padding([0, 4])
+                .width(iced_widget::core::Length::Fixed(width - 8.0))
+        )
+        .width(iced_widget::core::Length::Fixed(width - 4.0))
+        .style(input_style),
+    ]
+    .width(iced_widget::core::Length::Fixed(width))
+    .align_x(Alignment::Center)
+    .into()
 }
 
 /// 取播放位置处的当前 BPM（取 tick 之前最近的速度点）
