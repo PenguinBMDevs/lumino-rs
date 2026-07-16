@@ -139,6 +139,17 @@ impl Toolbar {
         window: &'a window::Window,
         language: Language,
     ) -> Element<'a> {
+        let (transpose_down_tooltip, transpose_down_event) = if self.ctrl_pressed {
+            (t.tool_transpose_down_octave, Event::transpose_down(12))
+        } else {
+            (t.tool_transpose_down, Event::transpose_down(1))
+        };
+        let (transpose_up_tooltip, transpose_up_event) = if self.ctrl_pressed {
+            (t.tool_transpose_up_octave, Event::transpose_up(12))
+        } else {
+            (t.tool_transpose_up, Event::transpose_up(1))
+        };
+
         container(
             row![
                 tool_selector(
@@ -213,18 +224,19 @@ impl Toolbar {
                 tool_button(icon::Glue, t.tool_glue, Event::glue(), window),
                 space().width(8),
                 // 移调按钮
+                // 普通点击 ±1 半音，Ctrl+点击 ±12 半音（一个八度）
                 flip_button(
                     icon::TransposeDown,
-                    t.tool_transpose_down,
-                    Event::transpose_down(),
+                    transpose_down_tooltip,
+                    transpose_down_event,
                     has_selection,
                     window
                 ),
                 space().width(4),
                 flip_button(
                     icon::TransposeUp,
-                    t.tool_transpose_up,
-                    Event::transpose_up(),
+                    transpose_up_tooltip,
+                    transpose_up_event,
                     has_selection,
                     window
                 ),

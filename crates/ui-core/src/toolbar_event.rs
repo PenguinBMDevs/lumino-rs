@@ -64,10 +64,10 @@ pub enum Event {
     FlipVertical,
     /// 水平翻转选中音符
     FlipHorizontal(FlipHorizontalMode),
-    /// 移调 +1 半音
-    TransposeUp,
-    /// 移调 -1 半音
-    TransposeDown,
+    /// 移调 +N 半音
+    TransposeUp(i16),
+    /// 移调 -N 半音
+    TransposeDown(i16),
     /// 音符分割（Razor 工具 onclick，选中时分割选中音符）
     Split,
     /// 音符合并
@@ -218,12 +218,12 @@ impl Event {
         Message::Toolbar(Self::FlipHorizontal(mode))
     }
 
-    pub const fn transpose_up() -> Message {
-        Message::Toolbar(Self::TransposeUp)
+    pub const fn transpose_up(semitones: i16) -> Message {
+        Message::Toolbar(Self::TransposeUp(semitones))
     }
 
-    pub const fn transpose_down() -> Message {
-        Message::Toolbar(Self::TransposeDown)
+    pub const fn transpose_down(semitones: i16) -> Message {
+        Message::Toolbar(Self::TransposeDown(semitones))
     }
 
     pub const fn split() -> Message {

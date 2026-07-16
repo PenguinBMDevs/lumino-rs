@@ -277,10 +277,13 @@ impl ToolbarHandler {
     }
 
     /// 处理移调操作
+    ///
+    /// - 普通点击：按 ±1 半音移调选中音符
+    /// - Ctrl+点击：按 ±12 半音（一个八度）移调选中音符
     pub(crate) fn handle_toolbar_transpose(&self, root: &mut Root, event: &crate::toolbar::Event) {
         let semitones = match event {
-            crate::toolbar::Event::TransposeUp => 1,
-            crate::toolbar::Event::TransposeDown => -1,
+            crate::toolbar::Event::TransposeUp(s) => *s,
+            crate::toolbar::Event::TransposeDown(s) => -*s,
             _ => return,
         };
 

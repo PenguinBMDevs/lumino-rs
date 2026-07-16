@@ -192,11 +192,11 @@ impl Toolbar {
             Event::FlipHorizontal(_) => {
                 tracing::debug!("工具栏: 触发水平翻转");
             }
-            Event::TransposeUp => {
-                tracing::debug!("工具栏: 触发移调 +1");
+            Event::TransposeUp(semitones) => {
+                tracing::debug!("工具栏: 触发移调 +{}", semitones);
             }
-            Event::TransposeDown => {
-                tracing::debug!("工具栏: 触发移调 -1");
+            Event::TransposeDown(semitones) => {
+                tracing::debug!("工具栏: 触发移调 -{}", semitones);
             }
             Event::Split => {
                 tracing::debug!("工具栏: 触发音符分割");
