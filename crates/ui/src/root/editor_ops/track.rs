@@ -20,6 +20,9 @@ impl Root {
         self.editor.set_ppq(ppq);
         self.editor.set_snap_precision(ppq as f32);
         self.editor.set_default_note_length(ppq as f32);
+        // PPQ 变更直接影响小节/拍线位置，必须立即失效网格和标尺缓存
+        self.editor.grid_cache.clear();
+        self.editor.ruler_cache.clear();
     }
 
     /// 加载音符到编辑器
