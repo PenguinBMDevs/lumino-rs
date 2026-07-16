@@ -407,7 +407,10 @@ mod tests {
         let tied = data.tie_selected_notes(&HashSet::from([0, 1]));
         assert_eq!(tied, 1, "should tie one pair");
         assert_eq!(data.notes.len(), 2, "notes count unchanged");
-        assert_eq!(data.notes[0].length, 3.0, "first note extends to second's start");
+        assert_eq!(
+            data.notes[0].length, 3.0,
+            "first note extends to second's start"
+        );
         assert_eq!(data.notes[1].length, 3.0, "last note unchanged");
     }
 
@@ -431,8 +434,24 @@ mod tests {
         data.notes.push_back(Note::new(3.0, 61, 3.0));
         let tied = data.tie_selected_notes(&HashSet::from([0, 1]));
         assert_eq!(tied, 1, "different keys should still tie by tick order");
-        assert_eq!(data.notes[0].length, 3.0, "first note extends to second's start");
+        assert_eq!(
+            data.notes[0].length, 3.0,
+            "first note extends to second's start"
+        );
         assert_eq!(data.notes[1].length, 3.0, "last note unchanged");
+    }
+
+    #[test]
+    fn test_tie_selected_notes_overlapping_notes_not_shortened() {
+        // Note 0 starts at 0, ends at 10. Note 1 starts at 3 (overlap).
+        // Tie 不应缩短 Note 0，因为重叠不算间隙。
+        let mut data = EditorData::new();
+        data.notes.push_back(Note::new(0.0, 60, 10.0));
+        data.notes.push_back(Note::new(3.0, 61, 10.0));
+        let tied = data.tie_selected_notes(&HashSet::from([0, 1]));
+        assert_eq!(tied, 0, "overlapping notes should not be tied");
+        assert_eq!(data.notes[0].length, 10.0, "first note not shortened");
+        assert_eq!(data.notes[1].length, 10.0, "second note unchanged");
     }
 
     #[test]
@@ -465,6 +484,34 @@ mod tests {
         assert_eq!(data.notes[1].length, 3.0, "note1 extends to note2");
         assert_eq!(data.notes[2].length, 3.0, "note2 extends to note3");
         assert_eq!(data.notes[3].length, 3.0, "last note unchanged");
+    }
+
+    #[test]
+    fn test_tie_selected_notes_same_tick_group_extends_to_next_tick() {
+        // 模拟用户场景：第一小节放置多个不同 Key 的音符，
+        // 空一小节，第三小节放置另一组不同 Key 的音符。
+        // 选中所有音符后，第一小节的**全部**音符都应延长到第三小节开头。
+        let mut data = EditorData::new();
+        // 第一小节：tick 0，三个不同 Key 的音符，长度 4.0（完整小节）
+        data.notes.push_back(Note::new(0.0, 60, 4.0));
+        data.notes.push_back(Note::new(0.0, 61, 4.0));
+        data.notes.push_back(Note::new(0.0, 62, 4.0));
+        // 第三小节：tick 8.0，另一组不同 Key 的音符
+        data.notes.push_back(Note::new(8.0, 70, 4.0));
+        data.notes.push_back(Note::new(8.0, 71, 4.0));
+        data.notes.push_back(Note::new(8.0, 72, 4.0));
+
+        let tied = data.tie_selected_notes(&HashSet::from([0, 1, 2, 3, 4, 5]));
+        assert_eq!(
+            tied, 3,
+            "all measure-1 notes should extend to measure-3 start"
+        );
+        assert_eq!(data.notes[0].length, 8.0, "note0 extends to tick 8");
+        assert_eq!(data.notes[1].length, 8.0, "note1 extends to tick 8");
+        assert_eq!(data.notes[2].length, 8.0, "note2 extends to tick 8");
+        assert_eq!(data.notes[3].length, 4.0, "measure-3 note0 unchanged");
+        assert_eq!(data.notes[4].length, 4.0, "measure-3 note1 unchanged");
+        assert_eq!(data.notes[5].length, 4.0, "measure-3 note2 unchanged");
     }
 
     // ── undo / redo 测试 ──

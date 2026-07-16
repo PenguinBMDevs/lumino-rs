@@ -124,18 +124,19 @@ impl EditorData {
         merged
     }
 
-    /// 连奏选中音符：按 tick 排序，前一个音符延长到后一个音符的开始位置。
-    /// 支持不同 Key 的音符连奏，不要求同 Key 分组。最后一个音符保持不变。
+    /// 连奏选中音符：按 tick 排序，填充相邻音符之间的间隙。
+    /// 仅在前一个音符的结尾与后一个音符的开始之间有间隙时延长，
+    /// 不会缩短重叠的音符。最后一个音符保持不变。
     pub fn tie_selected_notes(&mut self, selected: &HashSet<usize>) -> usize {
         let sel: Vec<usize> = selected.iter().copied().collect();
         if sel.len() < 2 {
             return 0;
         }
 
-        // 收集选中音符信息 (index, tick, length)
-        let mut selected_notes: Vec<(usize, f32, f32)> = sel
+        // 收集选中音符信息 (index, tick)
+        let mut selected_notes: Vec<(usize, f32)> = sel
             .iter()
-            .filter_map(|&i| self.notes.get(i).map(|n| (i, n.tick, n.length)))
+            .filter_map(|&i| self.notes.get(i).map(|n| (i, n.tick)))
             .collect();
 
         if selected_notes.len() < 2 {
@@ -145,17 +146,33 @@ impl EditorData {
         // 按 tick 排序（支持不同 Key 混排）
         selected_notes.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
+        // 按相同 tick 分组：同一 tick 的所有音符视为一个“和弦/层”，
+        // 统一延长到下一组的 tick
+        let mut groups: Vec<(f32, Vec<usize>)> = Vec::new();
+        for (idx, tick) in selected_notes {
+            match groups.last_mut() {
+                Some(last) if last.0 == tick => last.1.push(idx),
+                _ => groups.push((tick, vec![idx])),
+            }
+        }
+
+        if groups.len() < 2 {
+            return 0;
+        }
+
         let mut tied = 0usize;
         self.push_history();
 
-        for i in 0..selected_notes.len() - 1 {
-            let prev_idx = selected_notes[i].0;
-            let prev_tick = selected_notes[i].1;
-            let curr_tick = selected_notes[i + 1].1;
+        for i in 0..groups.len() - 1 {
+            let current_tick = groups[i].0;
+            let next_tick = groups[i + 1].0;
+            let new_length = next_tick - current_tick;
 
-            if curr_tick > prev_tick {
-                let new_length = curr_tick - prev_tick;
-                if let Some(note) = self.notes.get_mut(prev_idx) {
+            // 当前 tick 组的所有音符都延长到下一组开头
+            for &idx in &groups[i].1 {
+                if let Some(note) = self.notes.get_mut(idx)
+                    && new_length > note.length
+                {
                     note.length = new_length;
                     tied += 1;
                 }
