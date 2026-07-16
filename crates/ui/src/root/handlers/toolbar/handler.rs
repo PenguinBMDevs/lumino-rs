@@ -23,11 +23,6 @@ impl ToolbarHandler {
             return;
         }
 
-        // 非 PPQ 事件触发时，若 PPQ 正在编辑则自动保存
-        if root.toolbar.ppq_editing {
-            Self::confirm_ppq_edit(root);
-        }
-
         // 更新工具栏自身状态
         root.toolbar.update(event.clone());
 

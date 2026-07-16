@@ -203,9 +203,16 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
             return mouse::Interaction::Crosshair;
         }
 
+        if state.tempo_drag_idx.is_some() {
+            return mouse::Interaction::Grabbing;
+        }
+
         if state.drag_point_idx.is_some() {
             mouse::Interaction::ResizingVertically
-        } else if state.hover_point_idx.is_some() || state.hover_anchor_tick.is_some() {
+        } else if state.hover_point_idx.is_some()
+            || state.hover_anchor_tick.is_some()
+            || state.tempo_hover_idx.is_some()
+        {
             mouse::Interaction::Pointer
         } else {
             mouse::Interaction::default()

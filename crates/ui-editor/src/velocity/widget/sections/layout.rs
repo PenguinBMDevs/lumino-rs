@@ -9,6 +9,7 @@ use super::super::super::{
 };
 use crate::editor_state::ViewState;
 use crate::velocity::EditMode;
+use crate::velocity::widget::TempoPoint;
 
 impl super::super::VelocityCanvas<'_> {
     /// 获取所有力度点
@@ -127,6 +128,43 @@ impl super::super::VelocityCanvas<'_> {
     /// 吸附 tick。
     pub(super) fn snap_tick(&self, tick: f32) -> f32 {
         self.editor.snap_tick(tick)
+    }
+
+    /// 将 Y 坐标映射回 BPM 值 (20.0 ~ 10000.0)
+    pub fn y_to_bpm(y: f32, bounds_height: f32) -> f64 {
+        let max_y = bounds_height;
+        let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
+        let clamped_y = y.clamp(min_y, max_y);
+        let normalized = (max_y - clamped_y) / (max_y - min_y);
+        let bpm_range = 10000.0 - 20.0;
+        20.0 + normalized as f64 * bpm_range
+    }
+
+    /// 命中测试 Tempo 控制点
+    pub(super) fn hit_test_tempo_point(
+        points: &[TempoPoint],
+        click_pos: Point,
+        bounds_width: f32,
+        bounds_height: f32,
+        view: &ViewState,
+    ) -> Option<usize> {
+        use crate::velocity::widget::drawing::tempo_point_screen_pos;
+        let mut closest: Option<(usize, f32)> = None;
+        for (i, point) in points.iter().enumerate() {
+            let pos =
+                tempo_point_screen_pos(point, bounds_width, bounds_height, view, 20.0, 9980.0);
+            let dx = click_pos.x - pos.x;
+            let dy = click_pos.y - pos.y;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist < HIT_RADIUS {
+                match closest {
+                    None => closest = Some((i, dist)),
+                    Some((_, best_dist)) if dist < best_dist => closest = Some((i, dist)),
+                    _ => {}
+                }
+            }
+        }
+        closest.map(|(idx, _)| idx)
     }
 
     /// 命中测试：寻找点击位置最近的自动化锚点，返回其 tick。

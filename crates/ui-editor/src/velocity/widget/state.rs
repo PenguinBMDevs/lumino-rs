@@ -49,6 +49,10 @@ pub struct VelocityCanvasState {
     pub automation_curve_current: Option<(u32, u16)>,
     /// 当前键盘修饰键状态，用于滚轮缩放判断。
     pub modifiers: iced_core::keyboard::Modifiers,
+    /// 当前拖拽的 tempo 点索引
+    pub tempo_drag_idx: Option<usize>,
+    /// 当前悬停的 tempo 点索引
+    pub tempo_hover_idx: Option<usize>,
 }
 
 impl Default for VelocityCanvasState {
@@ -78,6 +82,8 @@ impl VelocityCanvasState {
             last_click: None,
             automation_curve_current: None,
             modifiers: iced_core::keyboard::Modifiers::default(),
+            tempo_drag_idx: None,
+            tempo_hover_idx: None,
         }
     }
 

@@ -11,7 +11,7 @@ use lumino_ui_core::message::VelocityAction;
 
 use super::super::super::{
     RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT, VELOCITY_PANEL_MAX_HEIGHT, VELOCITY_PANEL_MIN_HEIGHT,
-    VelocityPoint,
+    VelocityPanel, VelocityPoint,
 };
 use super::super::state::{AutomationDrag, VelocityCanvasState};
 
@@ -34,7 +34,9 @@ impl<'a> super::super::VelocityCanvas<'a> {
             EditMode::Velocity => {
                 return self.handle_velocity_button_pressed(state, cursor_pos, bounds_size);
             }
-            EditMode::Tempo => return None,
+            EditMode::Tempo => {
+                return self.handle_tempo_button_pressed(state, cursor_pos, bounds_size);
+            }
             _ => {}
         }
 
@@ -124,7 +126,22 @@ impl<'a> super::super::VelocityCanvas<'a> {
         cursor_pos: Point,
         bounds_size: Size,
     ) -> Option<canvas::Action<Message>> {
-        if self.edit_mode == EditMode::Velocity || self.edit_mode == EditMode::Tempo {
+        if self.edit_mode == EditMode::Velocity {
+            return None;
+        }
+        // Tempo 模式：右键点击删除速度点
+        if self.edit_mode == EditMode::Tempo {
+            let tempo_points = VelocityPanel::build_tempo_points(self.editor);
+            let view = &self.editor.editor_state.view;
+            if let Some(idx) = Self::hit_test_tempo_point(
+                &tempo_points,
+                cursor_pos,
+                bounds_size.width,
+                bounds_size.height,
+                view,
+            ) {
+                return Some(publish_velocity(VelocityAction::TempoDelete(idx)));
+            }
             return None;
         }
         let (view, target, max_val) = self.automation_view_params(bounds_size)?;
@@ -191,6 +208,11 @@ impl<'a> super::super::VelocityCanvas<'a> {
             return self.handle_velocity_drag_move(state, drag_idx, cursor_pos, bounds_size);
         }
 
+        // Tempo 点拖拽
+        if let Some(drag_idx) = state.tempo_drag_idx {
+            return self.handle_tempo_drag_move(state, drag_idx, cursor_pos, bounds_size);
+        }
+
         // 更新悬停状态
         self.update_hover_state(state, cursor_pos, bounds_size);
         None
@@ -221,6 +243,12 @@ impl<'a> super::super::VelocityCanvas<'a> {
         state._drag_start_velocity = 0;
         if was_dragging {
             return Some(publish_velocity(VelocityAction::DragEnd));
+        }
+
+        let was_tempo_dragging = state.tempo_drag_idx.is_some();
+        state.tempo_drag_idx = None;
+        if was_tempo_dragging {
+            return Some(publish_velocity(VelocityAction::TempoDragEnd));
         }
         None
     }
@@ -356,6 +384,83 @@ impl<'a> super::super::VelocityCanvas<'a> {
                     new_velocity,
                 )));
             }
+        }
+        None
+    }
+
+    // ── Tempo 模式 ──
+
+    fn handle_tempo_button_pressed(
+        &self,
+        state: &mut VelocityCanvasState,
+        cursor_pos: Point,
+        bounds_size: Size,
+    ) -> Option<canvas::Action<Message>> {
+        let tempo_points = VelocityPanel::build_tempo_points(self.editor);
+        let view = &self.editor.editor_state.view;
+        let hit_idx = Self::hit_test_tempo_point(
+            &tempo_points,
+            cursor_pos,
+            bounds_size.width,
+            bounds_size.height,
+            view,
+        );
+
+        let in_draw_area = cursor_pos.x >= 0.0
+            && cursor_pos.x <= bounds_size.width
+            && cursor_pos.y >= RESIZE_HANDLE_HEIGHT
+            && cursor_pos.y <= bounds_size.height;
+        if !in_draw_area {
+            return None;
+        }
+
+        match self.editor.current_tool() {
+            Tool::Eraser => {
+                if let Some(idx) = hit_idx {
+                    return Some(publish_velocity(VelocityAction::TempoDelete(idx)));
+                }
+                None
+            }
+            Tool::Pencil => {
+                if let Some(idx) = hit_idx {
+                    // 点击已有锚点：开始拖拽
+                    state.tempo_drag_idx = Some(idx);
+                    Some(publish_velocity(VelocityAction::TempoDragStart(idx)))
+                } else {
+                    // 在空白处创建新点（吸附到网格）
+                    let tick = self.snap_tick(self.x_to_tick(cursor_pos.x)).max(0.0);
+                    let bpm = Self::y_to_bpm(cursor_pos.y, bounds_size.height);
+                    Some(publish_velocity(VelocityAction::TempoAdd(tick, bpm)))
+                }
+            }
+            Tool::Pointer => {
+                if let Some(idx) = hit_idx {
+                    // 点击已有锚点：开始拖拽
+                    state.tempo_drag_idx = Some(idx);
+                    Some(publish_velocity(VelocityAction::TempoDragStart(idx)))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn handle_tempo_drag_move(
+        &self,
+        _state: &mut VelocityCanvasState,
+        drag_idx: usize,
+        cursor_pos: Point,
+        bounds_size: Size,
+    ) -> Option<canvas::Action<Message>> {
+        let tempo_points = VelocityPanel::build_tempo_points(self.editor);
+        if drag_idx < tempo_points.len() {
+            let _tick = self.snap_tick(self.x_to_tick(cursor_pos.x)).max(0.0);
+            let bpm = Self::y_to_bpm(cursor_pos.y, bounds_size.height).clamp(20.0, 10000.0);
+            // 更新 BPM（tick 拖拽由 TempoAdd+TempoDelete 模式实现）
+            return Some(publish_velocity(VelocityAction::TempoDragMove(
+                drag_idx, bpm,
+            )));
         }
         None
     }
@@ -498,6 +603,19 @@ impl<'a> super::super::VelocityCanvas<'a> {
                 state.hover_anchor_tick = None;
             }
             EditMode::Tempo => {
+                let tempo_points = VelocityPanel::build_tempo_points(self.editor);
+                let view = &self.editor.editor_state.view;
+                if let Some(idx) = Self::hit_test_tempo_point(
+                    &tempo_points,
+                    cursor_pos,
+                    bounds_size.width,
+                    bounds_size.height,
+                    view,
+                ) {
+                    state.tempo_hover_idx = Some(idx);
+                } else {
+                    state.tempo_hover_idx = None;
+                }
                 state.hover_point_idx = None;
                 state.hover_anchor_tick = None;
             }

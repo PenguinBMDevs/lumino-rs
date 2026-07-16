@@ -122,6 +122,26 @@ impl Root {
     /// 未处理的消息再交给 `MessageRouter` 路由到各专用处理器（Toolbar/Dialog/...）。
     /// 与运行时使用同一套分发逻辑，保证测试与产品行为一致。
     pub fn update(&mut self, message: Message) {
+        // PPQ 编辑时：任何非 PPQ 编辑消息触发时自动确认（实现"点击任意 UI 位置保存"）
+        if self.toolbar.ppq_editing {
+            let is_ppq_edit_msg = matches!(
+                &message,
+                Message::Toolbar(crate::toolbar::Event::PpqEditChanged(_))
+                    | Message::Toolbar(crate::toolbar::Event::PpqEditToggled(_))
+                    | Message::Toolbar(crate::toolbar::Event::PpqEditConfirmed)
+            );
+            if !is_ppq_edit_msg {
+                if let Ok(ppq) = self.toolbar.ppq_edit_buffer.parse::<u16>()
+                    && ppq > 0
+                {
+                    self.set_ppq(ppq);
+                    tracing::info!("PPQ 已更新为 {}", ppq);
+                }
+                self.toolbar.ppq_editing = false;
+                self.toolbar.ppq_edit_buffer.clear();
+            }
+        }
+
         if !self.try_handle_direct(&message) {
             let mut router = create_message_router();
             router.route(self, message);
