@@ -65,6 +65,9 @@ impl ToolbarHandler {
         // 处理移调
         self.handle_toolbar_transpose(root, &event);
 
+        // 处理连奏
+        self.handle_toolbar_tie(root, &event);
+
         // 处理分割/合并
         self.handle_toolbar_split_glue(root, &event);
     }

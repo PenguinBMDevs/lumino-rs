@@ -100,6 +100,8 @@ define_icons! {
     (TransposeDown, "../../../../resources/icons/toolbar/transpose-down.svg"),
     (Split, "../../../../resources/icons/toolbar/split.svg"),
     (Glue, "../../../../resources/icons/toolbar/glue.svg"),
+    // 连奏/同音连接
+    (Tie, "../../../../resources/icons/toolbar/tie.svg"),
     // 标题栏图标
     (PencilOutline, "../../../../resources/icons/titlebar/pencil-outline.svg"),
     (Keys, "../../../../resources/icons/titlebar/keys.svg"),

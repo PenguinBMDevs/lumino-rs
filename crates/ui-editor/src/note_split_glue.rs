@@ -1,4 +1,4 @@
-//! 音符分割与合并操作模块
+//! 音符分割、合并与连奏操作模块
 
 use super::Editor;
 
@@ -16,6 +16,19 @@ impl Editor {
     pub fn glue_selected_notes(&mut self) -> usize {
         let selected = self.editor_state.interaction.selected_notes.clone();
         let result = self.editor_state.data.glue_selected_notes(&selected);
+        if result > 0 {
+            self.editor_state.interaction.selected_notes.clear();
+            self.editor_state.interaction.hover_state = None;
+            self.mark_notes_changed();
+        }
+        result
+    }
+
+    /// 连奏选中音符：对同 Key 的音符按时间排序，前一个音符延长到后一个音符的开始位置。
+    /// 最后一个音符保持不变。
+    pub fn tie_selected_notes(&mut self) -> usize {
+        let selected = self.editor_state.interaction.selected_notes.clone();
+        let result = self.editor_state.data.tie_selected_notes(&selected);
         if result > 0 {
             self.editor_state.interaction.selected_notes.clear();
             self.editor_state.interaction.hover_state = None;

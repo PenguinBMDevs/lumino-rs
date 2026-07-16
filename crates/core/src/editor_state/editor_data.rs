@@ -397,6 +397,75 @@ mod tests {
         assert_eq!(data.glue_selected_notes(&HashSet::new()), 0);
     }
 
+    // ── tie_selected_notes 测试 ──
+
+    #[test]
+    fn test_tie_selected_notes_same_key_adjacent() {
+        let mut data = EditorData::new();
+        data.notes.push_back(Note::new(0.0, 60, 2.0));
+        data.notes.push_back(Note::new(3.0, 60, 3.0));
+        let tied = data.tie_selected_notes(&HashSet::from([0, 1]));
+        assert_eq!(tied, 1, "should tie one pair");
+        assert_eq!(data.notes.len(), 2, "notes count unchanged");
+        assert_eq!(data.notes[0].length, 3.0, "first note extends to second's start");
+        assert_eq!(data.notes[1].length, 3.0, "last note unchanged");
+    }
+
+    #[test]
+    fn test_tie_selected_notes_three_notes() {
+        let mut data = EditorData::new();
+        data.notes.push_back(Note::new(0.0, 60, 2.0));
+        data.notes.push_back(Note::new(4.0, 60, 2.0));
+        data.notes.push_back(Note::new(8.0, 60, 3.0));
+        let tied = data.tie_selected_notes(&HashSet::from([0, 1, 2]));
+        assert_eq!(tied, 2, "should tie two pairs");
+        assert_eq!(data.notes[0].length, 4.0, "first note extends to second");
+        assert_eq!(data.notes[1].length, 4.0, "second note extends to third");
+        assert_eq!(data.notes[2].length, 3.0, "last note unchanged");
+    }
+
+    #[test]
+    fn test_tie_selected_notes_different_key_no_tie() {
+        let mut data = EditorData::new();
+        data.notes.push_back(Note::new(0.0, 60, 2.0));
+        data.notes.push_back(Note::new(3.0, 61, 3.0));
+        let tied = data.tie_selected_notes(&HashSet::from([0, 1]));
+        assert_eq!(tied, 0, "different keys should not tie");
+        assert_eq!(data.notes[0].length, 2.0, "notes unchanged");
+        assert_eq!(data.notes[1].length, 3.0, "notes unchanged");
+    }
+
+    #[test]
+    fn test_tie_selected_notes_single_note() {
+        let mut data = EditorData::new();
+        data.notes.push_back(Note::new(0.0, 60, 2.0));
+        let tied = data.tie_selected_notes(&HashSet::from([0]));
+        assert_eq!(tied, 0, "single note cannot tie");
+    }
+
+    #[test]
+    fn test_tie_selected_notes_empty_selection() {
+        let mut data = EditorData::new();
+        data.notes.push_back(Note::new(0.0, 60, 2.0));
+        assert_eq!(data.tie_selected_notes(&HashSet::new()), 0);
+    }
+
+    #[test]
+    fn test_tie_selected_notes_mixed_keys() {
+        let mut data = EditorData::new();
+        data.notes.push_back(Note::new(0.0, 60, 2.0));
+        data.notes.push_back(Note::new(3.0, 60, 2.0));
+        data.notes.push_back(Note::new(6.0, 61, 2.0));
+        data.notes.push_back(Note::new(9.0, 61, 3.0));
+        let tied = data.tie_selected_notes(&HashSet::from([0, 1, 2, 3]));
+        // Key 60 group: notes 0→1 tied (1 tie). Key 61 group: notes 2→3 tied (1 tie).
+        assert_eq!(tied, 2, "should tie one pair per key group");
+        assert_eq!(data.notes[0].length, 3.0, "note0 extends to note1");
+        assert_eq!(data.notes[1].length, 2.0, "note1 is last in key 60 group, unchanged");
+        assert_eq!(data.notes[2].length, 3.0, "note2 extends to note3");
+        assert_eq!(data.notes[3].length, 3.0, "note3 is last in key 61 group, unchanged");
+    }
+
     // ── undo / redo 测试 ──
 
     #[test]

@@ -204,6 +204,9 @@ impl Toolbar {
             Event::Glue => {
                 tracing::debug!("工具栏: 触发音符合并");
             }
+            Event::Tie => {
+                tracing::debug!("工具栏: 触发音符连奏");
+            }
             Event::ResizeDragStarted(_) => {
                 self.is_resizing = true;
             }

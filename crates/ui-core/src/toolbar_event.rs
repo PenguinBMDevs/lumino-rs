@@ -72,6 +72,8 @@ pub enum Event {
     Split,
     /// 音符合并
     Glue,
+    /// 音符连奏（同音连接）
+    Tie,
     /// Toggle PPQ 编辑模式（开始/取消）。u16 = 当前 PPQ 值
     PpqEditToggled(u16),
     /// PPQ 编辑输入变更
@@ -230,6 +232,10 @@ impl Event {
 
     pub const fn glue() -> Message {
         Message::Toolbar(Self::Glue)
+    }
+
+    pub const fn tie() -> Message {
+        Message::Toolbar(Self::Tie)
     }
 
     /// 切换 PPQ 编辑模式。点击 PPQ 文字时携带当前值以初始化缓冲区。

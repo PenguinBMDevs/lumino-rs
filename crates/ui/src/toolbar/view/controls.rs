@@ -229,6 +229,9 @@ impl Toolbar {
                     window
                 ),
                 space().width(8),
+                // 连奏按钮
+                tool_button(icon::Tie, t.tool_tie, Event::tie(), window),
+                space().width(4),
                 self.render_precision_selector(content_height, palette, language, t),
             ]
             .align_y(Alignment::Center),

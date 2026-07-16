@@ -309,6 +309,37 @@ impl ToolbarHandler {
         }
     }
 
+    /// 处理连奏操作
+    pub(crate) fn handle_toolbar_tie(&self, root: &mut Root, event: &crate::toolbar::Event) {
+        if !matches!(event, crate::toolbar::Event::Tie) {
+            return;
+        }
+
+        tracing::info!("Root: 执行音符连奏操作");
+
+        // 必须有选中音符才能连奏
+        if root
+            .editor
+            .editor_state
+            .interaction
+            .selected_notes
+            .is_empty()
+        {
+            tracing::debug!("Root: 没有选中音符，不执行连奏");
+            return;
+        }
+
+        let tied = root.editor.tie_selected_notes();
+
+        if tied > 0 {
+            tracing::info!("Root: 连奏完成，连接了 {} 个音符", tied);
+            root.update_playback_notes();
+            root.editor.clear_notes_changed();
+        } else {
+            tracing::debug!("Root: 没有音符被连奏（需至少 2 个同 Key 的选中音符）");
+        }
+    }
+
     /// 处理分割/合并操作
     pub(crate) fn handle_toolbar_split_glue(&self, root: &mut Root, event: &crate::toolbar::Event) {
         match event {

@@ -124,6 +124,62 @@ impl EditorData {
         merged
     }
 
+    /// 连奏选中音符：对同Key的音符按时间排序，前一个音符延长到后一个音符的开始位置。
+    /// 每组最后一个音符保持不变。
+    pub fn tie_selected_notes(&mut self, selected: &HashSet<usize>) -> usize {
+        let sel: Vec<usize> = selected.iter().copied().collect();
+        if sel.len() < 2 {
+            return 0;
+        }
+
+        // 收集选中音符信息 (index, tick, key, length)
+        let mut selected_notes: Vec<(usize, f32, u16, f32)> = sel
+            .iter()
+            .filter_map(|&i| self.notes.get(i).map(|n| (i, n.tick, n.key, n.length)))
+            .collect();
+
+        if selected_notes.len() < 2 {
+            return 0;
+        }
+
+        // 按 key 分组，每组按 tick 排序
+        selected_notes.sort_by(|a, b| {
+            a.2.cmp(&b.2)
+                .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        });
+
+        let mut tied = 0usize;
+        self.push_history();
+
+        let mut i = 0;
+        while i < selected_notes.len() {
+            let current_key = selected_notes[i].2;
+            let mut j = i + 1;
+            while j < selected_notes.len() && selected_notes[j].2 == current_key {
+                // 延长前一个音符到后一个音符的开始位置
+                let prev_idx = selected_notes[j - 1].0;
+                let prev_tick = selected_notes[j - 1].1;
+                let curr_tick = selected_notes[j].1;
+
+                if curr_tick > prev_tick {
+                    let new_length = curr_tick - prev_tick;
+                    if let Some(note) = self.notes.get_mut(prev_idx) {
+                        note.length = new_length;
+                        tied += 1;
+                    }
+                }
+                j += 1;
+            }
+            // 跳过当前组（j 指向下一个 key 组）
+            i = j;
+        }
+
+        if tied > 0 {
+            self.sync_track_notes();
+        }
+        tied
+    }
+
     /// 完成绘制新音符（纯业务逻辑），返回创建的 Note
     pub fn finish_drawing(
         &mut self,
