@@ -29,6 +29,7 @@ impl Editor {
                 notes_changed: false,
                 velocity_panel: VelocityPanel::new(),
                 selection_box_anim: Cell::new(None),
+                context_menu: crate::context_menu::PianoRollContextMenuState::default(),
             }
         })
     }

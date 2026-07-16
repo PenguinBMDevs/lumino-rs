@@ -5,6 +5,7 @@
 
 pub mod audio_export;
 pub mod collaboration;
+pub mod context_menu;
 pub mod custom_precision;
 pub mod load_confirm;
 pub mod loop_range;
@@ -18,6 +19,7 @@ pub mod video_export;
 
 pub use audio_export::AudioExportAction;
 pub use collaboration::CollaborationAction;
+pub use context_menu::{PianoRollContextMenuAction, PianoRollContextMenuItem};
 pub use custom_precision::CustomPrecisionAction;
 pub use load_confirm::LoadConfirmAction;
 pub use loop_range::LoopRangeAction;
@@ -124,6 +126,8 @@ pub enum Message<W, S, Se, T> {
     Pattern(PatternAction),
     /// 视频导出动作
     VideoExport(VideoExportAction),
+    /// 钢琴卷帘右键上下文菜单动作
+    PianoRollContextMenu(PianoRollContextMenuAction),
 }
 
 pub const fn null<W, S, Se, T>() -> Message<W, S, Se, T> {
@@ -416,5 +420,20 @@ mod tests {
     fn test_interpolation_display() {
         assert_eq!(Interpolation::None.to_string(), "无插值");
         assert_eq!(Interpolation::Linear.to_string(), "线性插值");
+    }
+
+    // ─── PianoRollContextMenu ───
+
+    #[test]
+    fn test_piano_roll_context_menu_message() {
+        let msg: Message<(), (), (), ()> = Message::PianoRollContextMenu(
+            PianoRollContextMenuAction::ItemClicked(PianoRollContextMenuItem::Copy),
+        );
+        assert!(matches!(
+            msg,
+            Message::PianoRollContextMenu(PianoRollContextMenuAction::ItemClicked(
+                PianoRollContextMenuItem::Copy
+            ))
+        ));
     }
 }

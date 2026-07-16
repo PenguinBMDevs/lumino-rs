@@ -7,6 +7,7 @@ pub use lumino_ui_core::theme;
 pub use lumino_ui_core::{Element, Message, Renderer, Theme};
 
 pub mod arrangement;
+pub mod context_menu;
 pub mod editor_state;
 pub mod grid;
 pub mod history;
@@ -120,6 +121,9 @@ pub struct Editor {
 
     /// 框选框的动画显示状态（用于弹簧物理动画）
     pub selection_box_anim: Cell<Option<SelectionBoxAnimState>>,
+
+    /// 钢琴卷帘右键上下文菜单状态
+    pub context_menu: context_menu::PianoRollContextMenuState,
 }
 
 /// 框选框弹簧动画状态

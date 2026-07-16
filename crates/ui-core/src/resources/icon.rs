@@ -107,6 +107,12 @@ define_icons! {
     (Keys, "../../../../resources/icons/titlebar/keys.svg"),
     (VideoCamera, "../../../../resources/icons/sidebar/video-camera.svg"),
     (MusicNote, "../../../../resources/icons/sidebar/music-note.svg"),
+    // 钢琴卷帘右键上下文菜单图标
+    (ContextMenuCut, "../../../../resources/icons/context-menu/cut.svg"),
+    (ContextMenuCopy, "../../../../resources/icons/context-menu/copy.svg"),
+    (ContextMenuPaste, "../../../../resources/icons/context-menu/paste.svg"),
+    (ContextMenuDelete, "../../../../resources/icons/context-menu/delete.svg"),
+    (ContextMenuSelectAll, "../../../../resources/icons/context-menu/select-all.svg"),
 }
 
 #[derive(Clone)]

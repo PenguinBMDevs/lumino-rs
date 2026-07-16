@@ -112,6 +112,10 @@ impl Root {
                 self.handle_editor_action(action.clone());
                 true
             }
+            Message::PianoRollContextMenu(action) => {
+                self.handle_piano_roll_context_menu(action.clone());
+                true
+            }
             _ => self.try_handle_simple_state(msg),
         }
     }
@@ -540,6 +544,36 @@ impl Root {
             self.editor.clear_notes_changed();
         }
         notes_changed
+    }
+
+    /// 处理钢琴卷帘右键上下文菜单动作
+    fn handle_piano_roll_context_menu(
+        &mut self,
+        action: lumino_message::PianoRollContextMenuAction,
+    ) {
+        use lumino_message::{PianoRollContextMenuAction, PianoRollContextMenuItem};
+
+        match action {
+            PianoRollContextMenuAction::Open { position } => {
+                self.editor
+                    .context_menu
+                    .open(iced_core::Point::new(position.x, position.y));
+            }
+            PianoRollContextMenuAction::Close => {
+                self.editor.context_menu.close();
+            }
+            PianoRollContextMenuAction::ItemClicked(item) => {
+                self.editor.context_menu.close();
+                let editor_action = match item {
+                    PianoRollContextMenuItem::Cut => EditorAction::Cut,
+                    PianoRollContextMenuItem::Copy => EditorAction::Copy,
+                    PianoRollContextMenuItem::Paste => EditorAction::Paste,
+                    PianoRollContextMenuItem::Delete => EditorAction::DeletePressed,
+                    PianoRollContextMenuItem::SelectAll => EditorAction::SelectAll,
+                };
+                self.handle_editor_action(editor_action);
+            }
+        }
     }
 }
 

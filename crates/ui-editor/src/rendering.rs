@@ -124,13 +124,13 @@ impl Editor {
     }
 
     /// 构建编辑器视图
-    pub fn view(
-        &self,
+    pub fn view<'a>(
+        &'a self,
         on_scroll_x: impl Fn(f32) -> Message + 'static,
         on_scroll_y: impl Fn(f32) -> Message + 'static,
         on_zoom_x: impl Fn(f32, f32) -> Message + 'static,
         on_zoom_y: impl Fn(f32, f32) -> Message + 'static,
-    ) -> Element<'_> {
+    ) -> Element<'a> {
         // 使用 editor_state 获取视图状态
         let es = &self.editor_state;
 
@@ -160,7 +160,20 @@ impl Editor {
 
         let content_with_vscroll = iced_widget::row![grid, vertical_scrollbar];
 
-        iced_widget::column![content_with_vscroll, horizontal_scrollbar].into()
+        let editor_content = iced_widget::column![content_with_vscroll, horizontal_scrollbar];
+
+        // 如果右键上下文菜单打开，叠加悬浮面板
+        if self.context_menu.open
+            && let Some(position) = self.context_menu.position
+        {
+            return iced_widget::Stack::new()
+                .push(editor_content)
+                .push(crate::context_menu::background_close_overlay())
+                .push(crate::context_menu::view(position))
+                .into();
+        }
+
+        editor_content.into()
     }
 
     /// 获取当前需要绘制的音符实例（用于 wgpu 渲染）

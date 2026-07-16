@@ -54,6 +54,20 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                     return self.handle_left_press(state, local_pos);
                 }
             }
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
+                if let Some(position) = cursor_over_bounds {
+                    let local_pos =
+                        iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
+                    // 仅在有效钢琴卷帘区域内打开右键菜单
+                    if self.editor.is_inside_canvas(local_pos) {
+                        return Some(Action::publish(Message::PianoRollContextMenu(
+                            lumino_message::PianoRollContextMenuAction::Open {
+                                position: lumino_message::Point2::new(local_pos.x, local_pos.y),
+                            },
+                        )));
+                    }
+                }
+            }
             Event::Keyboard(iced_core::keyboard::Event::ModifiersChanged(modifiers)) => {
                 state.shift_pressed = modifiers.shift();
             }
