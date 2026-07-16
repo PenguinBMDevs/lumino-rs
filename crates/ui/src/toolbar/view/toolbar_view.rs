@@ -36,8 +36,7 @@ impl Toolbar {
         // 计算内容区域高度（总高度减去手柄高度）
         let content_height = self.height - RESIZE_HANDLE_HEIGHT;
 
-        let (visible_groups, hidden_groups) =
-            self.compute_overflow_groups(available_width);
+        let (visible_groups, hidden_groups) = self.compute_overflow_groups(available_width);
         let has_overflow = !hidden_groups.is_empty();
 
         let mut toolbar_elements: Vec<Element<'a>> = Vec::new();
@@ -72,23 +71,17 @@ impl Toolbar {
         // 更多按钮：只要存在隐藏分组就显示
         if has_overflow {
             toolbar_elements.push(space().width(16).into());
-            toolbar_elements.push(self.render_more_button(
-                content_height,
-                palette,
-                t,
-                window,
-            ));
+            toolbar_elements.push(self.render_more_button(content_height, palette, t, window));
         }
 
-        let toolbar_content = container(
-            Row::with_children(toolbar_elements).align_y(Alignment::Center),
-        )
-        .width(iced_widget::core::Length::Fill)
-        .height(iced_widget::core::Length::Fixed(content_height))
-        .padding([8, 16])
-        .style(move |_theme: &Theme| {
-            container::Style::default().background(palette.background.weakest.color)
-        });
+        let toolbar_content =
+            container(Row::with_children(toolbar_elements).align_y(Alignment::Center))
+                .width(iced_widget::core::Length::Fill)
+                .height(iced_widget::core::Length::Fixed(content_height))
+                .padding([8, 16])
+                .style(move |_theme: &Theme| {
+                    container::Style::default().background(palette.background.weakest.color)
+                });
 
         let resize_handle = self.render_resize_handle(palette);
 
@@ -211,9 +204,14 @@ impl Toolbar {
                 perf.ppq,
                 perf.tempo_points,
             ),
-            ToolbarGroup::Tools => {
-                self.render_tools_section(content_height, palette, has_selection, t, window, language)
-            }
+            ToolbarGroup::Tools => self.render_tools_section(
+                content_height,
+                palette,
+                has_selection,
+                t,
+                window,
+                language,
+            ),
             ToolbarGroup::AutoScroll => {
                 self.render_auto_scroll_button(content_height, palette, t, window)
             }
@@ -240,6 +238,7 @@ impl Toolbar {
             t.toolbar_more,
             Event::toggle_overflow_menu(),
             window,
+            Some(Event::button_hovered(Some(t.toolbar_more.to_string()))),
         ))
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)

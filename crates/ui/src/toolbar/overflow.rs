@@ -1,12 +1,11 @@
 //! 工具栏溢出菜单
 //!
-//! 当工具栏宽度不足以放下全部功能按钮时，将低优先级项折叠到“更多”(⋮)
-//! 按钮的弹出菜单中。本模块菜单样式直接复用钢琴卷帘右键上下文菜单
-//! （`ui-editor/src/context_menu.rs`）的深色面板 + 图标按钮 + 右侧 tooltip 方案，
-//! 仅将面板宽度从窄栏改为可单列容纳图标按钮的尺寸。
+//! 当工具栏宽度不足以放下全部功能按钮时，将低优先级项折叠到"更多"(⋮)
+//! 按钮的弹出菜单中。菜单以紧凑小框呈现，按钮按自适应网格（多列多行）
+//! 排列，框体尺寸贴合内容，不会竖向铺满屏幕；背景色贴近工具栏背景色。
 
 use iced_core::{Alignment, Color, Length, Padding};
-use iced_widget::{Space, button, column, container, mouse_area, tooltip};
+use iced_widget::{Space, button, column, container, mouse_area, row, tooltip};
 
 use crate::resources::icon;
 use crate::toolbar::{Event, FlipHorizontalMode, Tool, Toolbar};
@@ -21,11 +20,6 @@ const ICON_SIZE: u32 = 20;
 const BUTTON_SPACING: f32 = 4.0;
 /// 面板内边距
 const PANEL_PADDING: f32 = 8.0;
-/// 面板宽度：单列按钮 + 两侧内边距
-const PANEL_WIDTH: f32 = BUTTON_SIZE + PANEL_PADDING * 2.0;
-
-/// 深色菜单背景，保证在浅色主题下也能明显区分
-const PANEL_BACKGROUND: Color = Color::from_rgba(0.06, 0.06, 0.08, 0.96);
 /// Tooltip 深色背景
 const TOOLTIP_BACKGROUND: Color = Color::from_rgba(0.08, 0.08, 0.10, 0.96);
 /// 浅色悬停/按下颜色，用于深色按钮背景
@@ -79,10 +73,7 @@ impl ToolbarGroup {
     ];
 
     /// 右侧分组（靠右排列）
-    pub const RIGHT: &[ToolbarGroup] = &[
-        ToolbarGroup::AutoScroll,
-        ToolbarGroup::Collaboration,
-    ];
+    pub const RIGHT: &[ToolbarGroup] = &[ToolbarGroup::AutoScroll, ToolbarGroup::Collaboration];
 
     /// 分组收起优先级（数字越小越优先被折叠）
     pub fn collapse_priority(self) -> usize {
@@ -394,11 +385,21 @@ impl Toolbar {
     /// 渲染溢出菜单面板
     ///
     /// 所有隐藏分组被展开为图标按钮，按可见分组顺序排列。
+    ///
+    /// # 参数
+    /// - `panel_background`: 面板背景色，贴近工具栏背景色
+    /// - `theme`: 当前主题，用于图标颜色渲染
+    ///
+    /// # 尺寸计算
+    /// 面板为紧凑小框，按钮按自适应网格（多列多行）排列，框体尺寸贴合内容，
+    /// 不会竖向铺满。列数取接近 √n 的值，使整体接近正方形且不过宽。
     pub fn render_overflow_menu<'a>(
         &'a self,
         hidden_groups: &[ToolbarGroup],
         has_selection: bool,
         language: Language,
+        panel_background: iced_core::Color,
+        theme: &'a Theme,
     ) -> Element<'a> {
         let items: Vec<OverflowMenuItem> = hidden_groups
             .iter()
@@ -407,26 +408,49 @@ impl Toolbar {
 
         let buttons = items
             .into_iter()
-            .map(overflow_menu_button)
+            .map(|item| overflow_menu_button(item, theme))
             .collect::<Vec<_>>();
 
-        let total_height = buttons.len() as f32 * BUTTON_SIZE
-            + (buttons.len().saturating_sub(1)) as f32 * BUTTON_SPACING
+        let button_count = buttons.len().max(1);
+        // 列数：取接近 √n 的整数，保证框体接近正方形且紧凑
+        let cols = (button_count as f32).sqrt().ceil() as usize;
+        let cols = cols.max(1);
+        let rows = button_count.div_ceil(cols);
+
+        // 按列构建：每列是一个纵向 button 列，列间横向排列成网格
+        let mut btn_iter = buttons.into_iter();
+        let mut columns: Vec<Element<'a>> = Vec::with_capacity(cols);
+        for _ in 0..cols {
+            let col_buttons: Vec<Element<'a>> = btn_iter.by_ref().take(rows).collect();
+            if col_buttons.is_empty() {
+                break;
+            }
+            let col = column(col_buttons)
+                .spacing(BUTTON_SPACING)
+                .align_x(Alignment::Center);
+            columns.push(col.into());
+        }
+
+        let grid = row(columns)
+            .spacing(BUTTON_SPACING)
+            .align_y(Alignment::Start);
+
+        let panel_width = cols as f32 * BUTTON_SIZE
+            + (cols.saturating_sub(1)) as f32 * BUTTON_SPACING
+            + PANEL_PADDING * 2.0;
+        let panel_height = rows as f32 * BUTTON_SIZE
+            + (rows.saturating_sub(1)) as f32 * BUTTON_SPACING
             + PANEL_PADDING * 2.0;
 
-        let panel = container(
-            column(buttons)
-                .spacing(BUTTON_SPACING)
-                .align_x(Alignment::Center),
-        )
-        .padding(PANEL_PADDING)
-        .width(Length::Fixed(PANEL_WIDTH))
-        .height(Length::Fixed(total_height))
-        .style(|_theme: &Theme| container::Style {
-            background: Some(iced_core::Background::Color(PANEL_BACKGROUND)),
-            border: iced_core::Border::default().rounded(8),
-            ..Default::default()
-        });
+        let panel = container(grid)
+            .padding(PANEL_PADDING)
+            .width(Length::Fixed(panel_width))
+            .height(Length::Fixed(panel_height))
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(iced_core::Background::Color(panel_background)),
+                border: iced_core::Border::default().rounded(8),
+                ..Default::default()
+            });
 
         // 吞掉菜单面板内部的点击事件，避免触发下层的关闭覆盖层
         mouse_area(panel).on_press(Message::Null).into()
@@ -434,9 +458,9 @@ impl Toolbar {
 }
 
 /// 构建单个溢出菜单按钮
-fn overflow_menu_button(item: OverflowMenuItem) -> Element<'static> {
-    // 面板固定为深色，图标始终按暗色主题反色渲染，保证亮/暗主题下均为浅色可见
-    let icon = icon::view_with_size_and_theme(item.icon, ICON_SIZE, ICON_SIZE, Some(&Theme::Dark));
+fn overflow_menu_button(item: OverflowMenuItem, theme: &Theme) -> Element<'static> {
+    // 图标按当前主题渲染，保证在工具栏背景色面板上可见
+    let icon = icon::view_with_size_and_theme(item.icon, ICON_SIZE, ICON_SIZE, Some(theme));
 
     let btn = button(icon)
         .width(Length::Fixed(BUTTON_SIZE))
@@ -495,10 +519,7 @@ pub fn background_close_overlay<'a>() -> Element<'a> {
 }
 
 /// 将菜单面板定位在容器右上角
-pub fn positioned_overflow_menu<'a>(
-    menu: Element<'a>,
-    toolbar_height: f32,
-) -> Element<'a> {
+pub fn positioned_overflow_menu<'a>(menu: Element<'a>, toolbar_height: f32) -> Element<'a> {
     container(menu)
         .padding(Padding {
             top: toolbar_height,

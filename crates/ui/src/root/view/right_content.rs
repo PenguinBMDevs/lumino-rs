@@ -1,13 +1,15 @@
 //! 右侧内容区域视图
 //!
 //! 提供工具栏溢出菜单覆盖层和 responsive 包装，使工具栏能感知实际可用宽度。
+//! 溢出菜单框体为矩形，自动计算边长贴近正方形，匹配按钮排列方式；
+//! 背景色贴近工具栏背景色。
 
-use iced_core::Size;
+use iced_core::{Color, Size};
 use iced_widget::{Stack, responsive};
 
+use crate::Element;
 use crate::root::Root;
 use crate::toolbar::overflow;
-use crate::{Element};
 
 /// 将右侧内容包装在 responsive 中，并在工具栏溢出菜单打开时叠加覆盖层。
 ///
@@ -41,10 +43,23 @@ fn with_toolbar_overlay<'a>(
         return content;
     }
 
+    // 计算面板背景色：贴近工具栏背景色
+    let palette = root.window.theme.extended_palette();
+    let toolbar_bg = palette.background.weakest.color;
+    // 稍微加深一点，使菜单框更显眼
+    let panel_background = Color::from_rgba(
+        toolbar_bg.r * 0.9,
+        toolbar_bg.g * 0.9,
+        toolbar_bg.b * 0.9,
+        toolbar_bg.a,
+    );
+
     let menu = root.toolbar.render_overflow_menu(
         &hidden,
         has_selection,
         root.settings.language,
+        panel_background,
+        &root.window.theme,
     );
     let menu_overlay = overflow::positioned_overflow_menu(menu, root.toolbar.height());
 

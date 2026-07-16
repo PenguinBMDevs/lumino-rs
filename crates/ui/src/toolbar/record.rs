@@ -42,38 +42,44 @@ impl Toolbar {
             t.record_start
         };
 
+        let hover_label: String = tooltip_text.to_string();
+
         container(widget::with_tooltip_bottom(
-            button(
-                container(text(label).size(16).color(text_color).center())
-                    .width(iced_widget::core::Length::Fill)
-                    .height(iced_widget::core::Length::Fill)
-                    .align_x(iced_core::alignment::Horizontal::Center)
-                    .align_y(iced_core::alignment::Vertical::Center),
-            )
-            .on_press(on_press)
-            .style(move |_theme: &Theme, status| {
-                let bg = if status == iced_widget::button::Status::Hovered {
-                    if is_recording {
-                        iced_core::Color::from_rgb(0.9, 0.2, 0.2)
+            iced_widget::mouse_area(
+                button(
+                    container(text(label).size(16).color(text_color).center())
+                        .width(iced_widget::core::Length::Fill)
+                        .height(iced_widget::core::Length::Fill)
+                        .align_x(iced_core::alignment::Horizontal::Center)
+                        .align_y(iced_core::alignment::Vertical::Center),
+                )
+                .on_press(on_press)
+                .style(move |_theme: &Theme, status| {
+                    let bg = if status == iced_widget::button::Status::Hovered {
+                        if is_recording {
+                            iced_core::Color::from_rgb(0.9, 0.2, 0.2)
+                        } else {
+                            strong_color
+                        }
                     } else {
-                        strong_color
+                        bg_color
+                    };
+                    button::Style {
+                        border: iced_core::Border {
+                            radius: 4.0.into(),
+                            width: 0.0,
+                            color: iced_core::Color::TRANSPARENT,
+                        },
+                        ..Default::default()
                     }
-                } else {
-                    bg_color
-                };
-                button::Style {
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                }
-                .with_background(bg)
-            })
-            .width(iced_widget::core::Length::Fill)
-            .height(iced_widget::core::Length::Fill)
-            .padding(4),
+                    .with_background(bg)
+                })
+                .width(iced_widget::core::Length::Fill)
+                .height(iced_widget::core::Length::Fill)
+                .padding(4),
+            )
+            .on_enter(Event::button_hovered(Some(hover_label)))
+            .on_exit(Event::button_hovered(None)),
             tooltip_text,
         ))
         .width(56)

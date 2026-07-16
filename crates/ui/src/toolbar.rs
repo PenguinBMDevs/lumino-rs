@@ -220,7 +220,11 @@ impl Toolbar {
                 self.overflow_menu_open = !self.overflow_menu_open;
                 tracing::debug!(
                     "工具栏: 溢出菜单 {}",
-                    if self.overflow_menu_open { "打开" } else { "关闭" }
+                    if self.overflow_menu_open {
+                        "打开"
+                    } else {
+                        "关闭"
+                    }
                 );
             }
             Event::CloseOverflowMenu => {
@@ -257,6 +261,8 @@ impl Toolbar {
                 self.ppq_editing = false;
                 self.ppq_edit_buffer.clear();
             }
+            // 悬停描述事件：工具栏自身不处理，交由 Root 写入底部状态栏
+            Event::ButtonHovered(_) => {}
         }
     }
 

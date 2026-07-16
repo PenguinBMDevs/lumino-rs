@@ -70,6 +70,11 @@ impl ToolbarHandler {
 
         // 处理分割/合并
         self.handle_toolbar_split_glue(root, &event);
+
+        // 工具栏按钮悬停：驱动底部状态栏左侧描述区
+        if let crate::toolbar::Event::ButtonHovered(label) = &event {
+            root.statusbar.set_hover_label(label.clone());
+        }
     }
 
     /// 确认 PPQ 编辑：解析缓冲区 → 写入编辑器 → 清除编辑状态

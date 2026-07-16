@@ -14,6 +14,7 @@ pub fn tool_button<'a>(
     tooltip: &'a str,
     on_press: Message,
     window: &'a window::Window,
+    on_hover_msg: Option<Message>,
 ) -> Element<'a> {
     let palette = window.theme.extended_palette();
     let btn = button(icon::view_with_size_and_theme(
@@ -41,6 +42,8 @@ pub fn tool_button<'a>(
     })
     .padding(4);
 
+    let btn = apply_hover(btn, on_hover_msg);
+
     widget::with_tooltip_bottom(btn, tooltip).into()
 }
 
@@ -51,6 +54,7 @@ pub fn flip_button<'a>(
     on_press: Message,
     enabled: bool,
     window: &'a window::Window,
+    on_hover_msg: Option<Message>,
 ) -> Element<'a> {
     let palette = window.theme.extended_palette();
     let btn = button(icon::view_with_size_and_theme(
@@ -81,6 +85,8 @@ pub fn flip_button<'a>(
 
     let btn = if enabled { btn.on_press(on_press) } else { btn };
 
+    let btn = apply_hover(btn, on_hover_msg);
+
     widget::with_tooltip_bottom(btn, tooltip).into()
 }
 
@@ -91,6 +97,7 @@ pub fn tool_selector<'a>(
     tool: Tool,
     current_tool: Tool,
     window: &'a window::Window,
+    on_hover_msg: Option<Message>,
 ) -> Element<'a> {
     let is_selected = tool == current_tool;
     let palette = window.theme.extended_palette();
@@ -123,5 +130,24 @@ pub fn tool_selector<'a>(
     })
     .padding(iced_core::Padding::new(4.0));
 
+    let btn = apply_hover(btn, on_hover_msg);
+
     widget::with_tooltip_bottom(btn, tooltip).into()
+}
+
+/// 为按钮挂接悬停事件：进入时发送按钮名，离开时发送 `None`。
+///
+/// iced 0.14 的 `Button` 本身不带 `on_hover`，需用 `MouseArea` 包裹。
+/// 这样底部状态栏左侧即可在鼠标悬停工具栏按钮时显示对应描述文字。
+fn apply_hover<'a>(
+    btn: iced_widget::button::Button<'a, Message, Theme, iced_wgpu::Renderer>,
+    on_hover_msg: Option<Message>,
+) -> Element<'a> {
+    match on_hover_msg {
+        Some(msg) => iced_widget::mouse_area(btn)
+            .on_enter(msg)
+            .on_exit(Event::button_hovered(None))
+            .into(),
+        None => btn.into(),
+    }
 }

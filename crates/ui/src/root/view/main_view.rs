@@ -6,12 +6,12 @@ use iced_core::Length;
 use iced_widget::{column, container, row, scrollable, text};
 use lumino_gfx::NoteInstance;
 
+use super::right_content;
 use crate::editor::note::NoteExt;
 use crate::message;
 use crate::root::Root;
 use crate::view::audio_export_dialog::view_audio_export_dialog;
 use crate::view::video_export_dialog::view_video_export_dialog;
-use super::right_content;
 use crate::{Element, Theme};
 
 impl Root {
@@ -209,10 +209,7 @@ impl Root {
     ///
     /// 左侧音轨列表（Canvas）+ 右侧 wgpu 渲染区域。
     /// 音符由 WGPU ArrangementRenderer 绘制，不再使用 CPU 端 Canvas 预计算。
-    pub(super) fn view_arrangement(
-        &self,
-        available_width: f32,
-    ) -> Element<'_> {
+    pub(super) fn view_arrangement(&self, available_width: f32) -> Element<'_> {
         puffin::profile_scope!("root_view_arrangement");
 
         const TRACK_LIST_WIDTH: f32 = 160.0;

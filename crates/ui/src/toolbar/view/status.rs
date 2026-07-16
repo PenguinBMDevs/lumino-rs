@@ -96,26 +96,35 @@ impl Toolbar {
             AutoScrollMode::Off => icon::Ban,
         };
         container(widget::with_tooltip_bottom(
-            button(
-                icon::view_with_size_and_theme(auto_scroll_icon, 18, 18, Some(&window.theme))
+            iced_widget::mouse_area(
+                button(icon::view_with_size_and_theme(
+                    auto_scroll_icon,
+                    18,
+                    18,
+                    Some(&window.theme),
+                ))
+                .on_press(Event::auto_scroll_mode_changed())
+                .style(move |_theme: &Theme, status| {
+                    let bg = match status {
+                        iced_widget::button::Status::Hovered => palette.background.weak.color,
+                        _ => palette.background.weakest.color,
+                    };
+                    button::Style {
+                        border: iced_core::Border {
+                            radius: 4.0.into(),
+                            width: 0.0,
+                            color: iced_core::Color::TRANSPARENT,
+                        },
+                        ..Default::default()
+                    }
+                    .with_background(bg)
+                })
+                .padding([8, 8]),
             )
-            .on_press(Event::auto_scroll_mode_changed())
-            .style(move |_theme: &Theme, status| {
-                let bg = match status {
-                    iced_widget::button::Status::Hovered => palette.background.weak.color,
-                    _ => palette.background.weakest.color,
-                };
-                button::Style {
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                }
-                .with_background(bg)
-            })
-            .padding([8, 8]),
+            .on_enter(Event::button_hovered(Some(
+                t.auto_scroll_tooltip.to_string(),
+            )))
+            .on_exit(Event::button_hovered(None)),
             t.auto_scroll_tooltip,
         ))
         .height(content_height)
@@ -136,26 +145,35 @@ impl Toolbar {
         window: &'a window::Window,
     ) -> Element<'a> {
         container(widget::with_tooltip_bottom(
-            button(
-                icon::view_with_size_and_theme(icon::Users, 18, 18, Some(&window.theme))
+            iced_widget::mouse_area(
+                button(icon::view_with_size_and_theme(
+                    icon::Users,
+                    18,
+                    18,
+                    Some(&window.theme),
+                ))
+                .on_press(Event::open_collaboration_dialog())
+                .style(move |_theme: &Theme, status| {
+                    let bg = match status {
+                        iced_widget::button::Status::Hovered => palette.background.weak.color,
+                        _ => palette.background.weakest.color,
+                    };
+                    button::Style {
+                        border: iced_core::Border {
+                            radius: 4.0.into(),
+                            width: 0.0,
+                            color: iced_core::Color::TRANSPARENT,
+                        },
+                        ..Default::default()
+                    }
+                    .with_background(bg)
+                })
+                .padding([8, 8]),
             )
-            .on_press(Event::open_collaboration_dialog())
-            .style(move |_theme: &Theme, status| {
-                let bg = match status {
-                    iced_widget::button::Status::Hovered => palette.background.weak.color,
-                    _ => palette.background.weakest.color,
-                };
-                button::Style {
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                }
-                .with_background(bg)
-            })
-            .padding([8, 8]),
+            .on_enter(Event::button_hovered(Some(
+                t.collaboration_tooltip.to_string(),
+            )))
+            .on_exit(Event::button_hovered(None)),
             t.collaboration_tooltip,
         ))
         .height(content_height)

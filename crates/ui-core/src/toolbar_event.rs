@@ -84,6 +84,11 @@ pub enum Event {
     PpqEditChanged(String),
     /// PPQ 编辑确认（按 Enter 或外部点击）
     PpqEditConfirmed,
+    /// 鼠标悬停在工具栏按钮上。携带按钮名称（None 表示鼠标离开按钮）
+    ///
+    /// 该事件用于驱动底部状态栏左侧的"功能按钮描述"显示区：
+    /// 悬停时显示按钮名，离开时清空。
+    ButtonHovered(Option<String>),
 }
 
 /// 水平翻转模式
@@ -263,5 +268,10 @@ impl Event {
     /// PPQ 编辑确认（Enter 键或点击外部区域）。
     pub const fn ppq_edit_confirmed() -> Message {
         Message::Toolbar(Self::PpqEditConfirmed)
+    }
+
+    /// 鼠标悬停工具栏按钮。`label` 为按钮名称，传 `None` 表示离开按钮。
+    pub fn button_hovered(label: Option<String>) -> Message {
+        Message::Toolbar(Self::ButtonHovered(label))
     }
 }

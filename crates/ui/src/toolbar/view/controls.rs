@@ -27,20 +27,34 @@ impl Toolbar {
                     icon::SkipBackward,
                     t.skip_backward,
                     Event::skip_backward(),
-                    window
+                    window,
+                    Some(Event::button_hovered(Some(t.skip_backward.to_string()))),
                 ),
                 space().width(4),
                 if self.is_playing {
-                    tool_button(icon::Pause, t.pause, Event::pause(), window)
+                    tool_button(
+                        icon::Pause,
+                        t.pause,
+                        Event::pause(),
+                        window,
+                        Some(Event::button_hovered(Some(t.pause.to_string()))),
+                    )
                 } else {
-                    tool_button(icon::Play, t.play, Event::play(), window)
+                    tool_button(
+                        icon::Play,
+                        t.play,
+                        Event::play(),
+                        window,
+                        Some(Event::button_hovered(Some(t.play.to_string()))),
+                    )
                 },
                 space().width(4),
                 tool_button(
                     icon::SkipForward,
                     t.skip_forward,
                     Event::skip_forward(),
-                    window
+                    window,
+                    Some(Event::button_hovered(Some(t.skip_forward.to_string()))),
                 ),
             ]
             .align_y(Alignment::Center),
@@ -69,40 +83,50 @@ impl Toolbar {
         t: &'static MainTranslations,
         window: &'a window::Window,
     ) -> Element<'a> {
+        let loop_hover_label = if self.is_looping {
+            t.loop_on.to_string()
+        } else {
+            t.loop_off.to_string()
+        };
+
         container(widget::with_tooltip_bottom(
-            button(
-                row![icon::view_with_size_and_theme(
-                    if self.is_looping {
-                        icon::ArrowsLeftRight
+            iced_widget::mouse_area(
+                button(
+                    row![icon::view_with_size_and_theme(
+                        if self.is_looping {
+                            icon::ArrowsLeftRight
+                        } else {
+                            icon::Ban
+                        },
+                        20,
+                        20,
+                        Some(&window.theme),
+                    )]
+                    .align_y(Alignment::Center),
+                )
+                .on_press(Event::toggle_loop())
+                .style(move |_theme: &Theme, status| {
+                    let bg = if self.is_looping {
+                        palette.primary.base.color
+                    } else if status == iced_widget::button::Status::Hovered {
+                        palette.background.weak.color
                     } else {
-                        icon::Ban
-                    },
-                    20,
-                    20,
-                    Some(&window.theme),
-                )]
-                .align_y(Alignment::Center),
+                        iced_core::Color::TRANSPARENT
+                    };
+                    button::Style {
+                        border: iced_core::Border {
+                            radius: 4.0.into(),
+                            width: 0.0,
+                            color: iced_core::Color::TRANSPARENT,
+                        },
+                        ..Default::default()
+                    }
+                    .with_background(bg)
+                })
+                .padding(4),
             )
-            .on_press(Event::toggle_loop())
-            .style(move |_theme: &Theme, status| {
-                let bg = if self.is_looping {
-                    palette.primary.base.color
-                } else if status == iced_widget::button::Status::Hovered {
-                    palette.background.weak.color
-                } else {
-                    iced_core::Color::TRANSPARENT
-                };
-                button::Style {
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                }
-                .with_background(bg)
-            })
-            .padding(4),
+            .on_enter(Event::button_hovered(Some(loop_hover_label)))
+            .on_exit(Event::button_hovered(None)),
             if self.is_looping {
                 t.loop_on
             } else {
@@ -157,7 +181,8 @@ impl Toolbar {
                     t.tool_pointer,
                     Tool::Pointer,
                     self.current_tool,
-                    window
+                    window,
+                    Some(Event::button_hovered(Some(t.tool_pointer.to_string()))),
                 ),
                 space().width(4),
                 tool_selector(
@@ -165,7 +190,8 @@ impl Toolbar {
                     t.tool_pencil,
                     Tool::Pencil,
                     self.current_tool,
-                    window
+                    window,
+                    Some(Event::button_hovered(Some(t.tool_pencil.to_string()))),
                 ),
                 space().width(4),
                 tool_selector(
@@ -173,7 +199,8 @@ impl Toolbar {
                     t.tool_eraser,
                     Tool::Eraser,
                     self.current_tool,
-                    window
+                    window,
+                    Some(Event::button_hovered(Some(t.tool_eraser.to_string()))),
                 ),
                 space().width(4),
                 tool_selector(
@@ -181,10 +208,17 @@ impl Toolbar {
                     t.tool_curve,
                     Tool::Curve,
                     self.current_tool,
-                    window
+                    window,
+                    Some(Event::button_hovered(Some(t.tool_curve.to_string()))),
                 ),
                 space().width(4),
-                tool_button(icon::Quantize, t.tool_quantize, Event::quantize(), window),
+                tool_button(
+                    icon::Quantize,
+                    t.tool_quantize,
+                    Event::quantize(),
+                    window,
+                    Some(Event::button_hovered(Some(t.tool_quantize.to_string()))),
+                ),
                 space().width(4),
                 // 变速按钮始终可点击：Ctrl+Click 打开变速对话框不需要选中音符。
                 // 普通点击的无选中情况由 handler 内部的 selected.is_empty() 兜底。
@@ -193,7 +227,8 @@ impl Toolbar {
                     t.tool_speed,
                     Event::speed_change(),
                     true,
-                    window
+                    window,
+                    Some(Event::button_hovered(Some(t.tool_speed.to_string()))),
                 ),
                 space().width(4),
                 flip_button(
@@ -201,7 +236,10 @@ impl Toolbar {
                     t.tool_flip_vertical,
                     Event::flip_vertical(),
                     has_selection,
-                    window
+                    window,
+                    Some(Event::button_hovered(Some(
+                        t.tool_flip_vertical.to_string()
+                    ))),
                 ),
                 space().width(4),
                 flip_button(
@@ -215,13 +253,28 @@ impl Toolbar {
                         Event::flip_horizontal(FlipHorizontalMode::Center)
                     },
                     has_selection,
-                    window
+                    window,
+                    Some(Event::button_hovered(Some(
+                        t.tool_flip_horizontal.to_string()
+                    ))),
                 ),
                 space().width(8),
                 // 分割/合并按钮
-                tool_button(icon::Split, t.tool_split, Event::split(), window),
+                tool_button(
+                    icon::Split,
+                    t.tool_split,
+                    Event::split(),
+                    window,
+                    Some(Event::button_hovered(Some(t.tool_split.to_string()))),
+                ),
                 space().width(4),
-                tool_button(icon::Glue, t.tool_glue, Event::glue(), window),
+                tool_button(
+                    icon::Glue,
+                    t.tool_glue,
+                    Event::glue(),
+                    window,
+                    Some(Event::button_hovered(Some(t.tool_glue.to_string()))),
+                ),
                 space().width(8),
                 // 移调按钮
                 // 普通点击 ±1 半音，Ctrl+点击 ±12 半音（一个八度）
@@ -230,7 +283,10 @@ impl Toolbar {
                     transpose_down_tooltip,
                     transpose_down_event,
                     has_selection,
-                    window
+                    window,
+                    Some(Event::button_hovered(Some(
+                        transpose_down_tooltip.to_string(),
+                    ))),
                 ),
                 space().width(4),
                 flip_button(
@@ -238,11 +294,20 @@ impl Toolbar {
                     transpose_up_tooltip,
                     transpose_up_event,
                     has_selection,
-                    window
+                    window,
+                    Some(Event::button_hovered(Some(
+                        transpose_up_tooltip.to_string(),
+                    ))),
                 ),
                 space().width(8),
                 // 连奏按钮
-                tool_button(icon::Tie, t.tool_tie, Event::tie(), window),
+                tool_button(
+                    icon::Tie,
+                    t.tool_tie,
+                    Event::tie(),
+                    window,
+                    Some(Event::button_hovered(Some(t.tool_tie.to_string()))),
+                ),
                 space().width(4),
                 self.render_precision_selector(content_height, palette, language, t),
             ]
@@ -298,9 +363,21 @@ impl Toolbar {
     ) -> Element<'a> {
         container(
             row![
-                tool_button(icon::Undo, t.undo, Event::undo(), window),
+                tool_button(
+                    icon::Undo,
+                    t.undo,
+                    Event::undo(),
+                    window,
+                    Some(Event::button_hovered(Some(t.undo.to_string()))),
+                ),
                 space().width(4),
-                tool_button(icon::Redo, t.redo, Event::redo(), window),
+                tool_button(
+                    icon::Redo,
+                    t.redo,
+                    Event::redo(),
+                    window,
+                    Some(Event::button_hovered(Some(t.redo.to_string()))),
+                ),
             ]
             .align_y(Alignment::Center),
         )
