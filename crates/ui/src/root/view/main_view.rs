@@ -11,6 +11,7 @@ use crate::message;
 use crate::root::Root;
 use crate::view::audio_export_dialog::view_audio_export_dialog;
 use crate::view::video_export_dialog::view_video_export_dialog;
+use super::right_content;
 use crate::{Element, Theme};
 
 impl Root {
@@ -49,7 +50,9 @@ impl Root {
                 self.view_waterfall_placeholder()
             } else if is_arrangement_route {
                 // 音轨总览模式：使用 wgpu 原生渲染
-                self.view_arrangement()
+                right_content::wrap_right_content(&self, false, |available_width| {
+                    self.view_arrangement(available_width)
+                })
             } else if self.sidebar.audio_export_visible {
                 // 音频渲染面板（在主界面钢琴卷帘区域显示）
                 self.view_audio_export_panel()
@@ -71,43 +74,45 @@ impl Root {
                 })
                 .into()
             } else {
-                // 自动化面板（力度/CC/Tempo/Bend 绘制面板）
-                // 由侧边栏自动化按钮控制显示/隐藏
-                let velocity_panel: Element<'_> = if self.sidebar.automation_panel_visible {
-                    self.editor.velocity_panel.view(
-                        &self.editor,
-                        self.visual.velocity_panel_height,
-                        self.settings.language,
-                    )
-                } else {
-                    iced_widget::Space::new().height(0).into()
-                };
-                // 编辑器视图（卷帘 + 滚动条）
-                let editor_view = self.editor.view(
-                    message::Message::ScrollbarScrolled,
-                    message::Message::ScrollbarScrolledY,
-                    |zoom, fixed_ratio| message::Message::ZoomXChanged { zoom, fixed_ratio },
-                    |zoom, fixed_ratio| message::Message::ZoomYChanged { zoom, fixed_ratio },
-                );
-                let perf_ctx = crate::toolbar::ToolbarPerfContext {
-                    perf_data: self.statusbar.perf_data(),
-                    playback_tick: self.editor.playback_position,
-                    ppq: self.editor.editor_state.view.ppq,
-                    tempo_points: &self.editor.editor_state.data.tempo_points,
-                };
-                column![
-                    self.toolbar.toolbar_view(
+                let has_selection = self.editor.selected_notes_count() > 0;
+                right_content::wrap_right_content(&self, has_selection, move |available_width| {
+                    let velocity_panel = if self.sidebar.automation_panel_visible {
+                        self.editor.velocity_panel.view(
+                            &self.editor,
+                            self.visual.velocity_panel_height,
+                            self.settings.language,
+                        )
+                    } else {
+                        iced_widget::Space::new().height(0).into()
+                    };
+                    let editor_view = self.editor.view(
+                        message::Message::ScrollbarScrolled,
+                        message::Message::ScrollbarScrolledY,
+                        |zoom, fixed_ratio| message::Message::ZoomXChanged { zoom, fixed_ratio },
+                        |zoom, fixed_ratio| message::Message::ZoomYChanged { zoom, fixed_ratio },
+                    );
+                    let perf_ctx = crate::toolbar::ToolbarPerfContext {
+                        perf_data: self.statusbar.perf_data(),
+                        playback_tick: self.editor.playback_position,
+                        ppq: self.editor.editor_state.view.ppq,
+                        tempo_points: &self.editor.editor_state.data.tempo_points,
+                    };
+                    let toolbar = self.toolbar.toolbar_view(
                         &self.window,
-                        self.editor.selected_notes_count() > 0,
+                        has_selection,
                         self.settings.language,
                         &perf_ctx,
-                    ),
-                    column![container(editor_view).height(Length::Fill), velocity_panel,]
-                        .height(Length::Fill),
-                ]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
+                        available_width,
+                    );
+                    column![
+                        toolbar,
+                        column![container(editor_view).height(Length::Fill), velocity_panel,]
+                            .height(Length::Fill),
+                    ]
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into()
+                })
             };
 
         puffin::profile_scope!("root_view_main_content");
@@ -130,7 +135,6 @@ impl Root {
             ]
         };
 
-        // 性能面板已移除，检测仪表盘迁移至工具栏右侧（toolbar_view 内渲染）。
         main_content.into()
     }
 
@@ -205,7 +209,10 @@ impl Root {
     ///
     /// 左侧音轨列表（Canvas）+ 右侧 wgpu 渲染区域。
     /// 音符由 WGPU ArrangementRenderer 绘制，不再使用 CPU 端 Canvas 预计算。
-    pub(super) fn view_arrangement(&self) -> Element<'_> {
+    pub(super) fn view_arrangement(
+        &self,
+        available_width: f32,
+    ) -> Element<'_> {
         puffin::profile_scope!("root_view_arrangement");
 
         const TRACK_LIST_WIDTH: f32 = 160.0;
@@ -296,8 +303,13 @@ impl Root {
             tempo_points: &self.editor.editor_state.data.tempo_points,
         };
         column![
-            self.toolbar
-                .toolbar_view(&self.window, false, self.settings.language, &perf_ctx,),
+            self.toolbar.toolbar_view(
+                &self.window,
+                false,
+                self.settings.language,
+                &perf_ctx,
+                available_width,
+            ),
             arrangement_row.height(Length::Fill),
             h_scrollbar,
         ]

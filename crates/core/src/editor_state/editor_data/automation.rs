@@ -28,6 +28,7 @@ impl EditorData {
         self.automation_lanes.push(AutomationLane {
             target,
             track,
+            channel: 0,
             events: Vec::new(),
         });
         idx
@@ -41,12 +42,15 @@ impl EditorData {
             AutomationEdit::Add {
                 track_idx,
                 target,
+                channel,
                 tick,
                 value,
                 shape,
             } => {
                 let idx = self.find_or_create_automation_lane(track_idx, target);
                 let lane = &mut self.automation_lanes[idx];
+                // 如果 lane 尚未设置 channel，更新为事件的 channel
+                lane.channel = channel;
                 // 移除同一 tick 的已有事件，保证唯一性。
                 lane.events.retain(|e| e.tick != tick);
                 lane.events

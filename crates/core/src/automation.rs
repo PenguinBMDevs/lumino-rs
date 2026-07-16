@@ -237,6 +237,9 @@ pub struct AutomationLane {
     pub target: AutomationTarget,
     /// 音轨索引（与 `EditorData.current_track` 等对应）。
     pub track: u16,
+    /// MIDI 通道号（0-15）。从 MIDI 文件导入时保留原始通道，
+    /// 用户新建事件时默认为 0。
+    pub channel: u8,
     /// 按 tick 排序的事件列表。
     pub events: Vec<AutomationEvent>,
 }
@@ -266,6 +269,7 @@ impl AutomationLane {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         self.track.hash(&mut hasher);
+        self.channel.hash(&mut hasher);
         self.target.hash(&mut hasher);
         self.events.len().hash(&mut hasher);
         for e in &self.events {
@@ -292,6 +296,8 @@ pub enum AutomationEdit {
     Add {
         track_idx: u16,
         target: AutomationTarget,
+        /// MIDI 通道号（0-15）。
+        channel: u8,
         tick: u32,
         value: u16,
         shape: SegmentShape,
@@ -326,6 +332,7 @@ mod tests {
         AutomationLane {
             target,
             track: 0,
+            channel: 0,
             events: ticks
                 .iter()
                 .map(|&t| AutomationEvent {
@@ -360,6 +367,7 @@ mod tests {
         let lane = AutomationLane {
             target: AutomationTarget::CC { controller: 7 },
             track: 0,
+            channel: 0,
             events: vec![
                 AutomationEvent {
                     tick: 100,

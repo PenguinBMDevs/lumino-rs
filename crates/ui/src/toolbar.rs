@@ -7,6 +7,7 @@
 
 mod buttons;
 pub mod event;
+pub(crate) mod overflow;
 mod record;
 pub mod types;
 mod view;
@@ -67,6 +68,8 @@ pub struct Toolbar {
     pub ppq_editing: bool,
     /// PPQ 编辑缓冲区（仅包含数字字符）
     pub ppq_edit_buffer: String,
+    /// 溢出菜单是否打开
+    pub overflow_menu_open: bool,
 }
 
 impl Toolbar {
@@ -89,11 +92,17 @@ impl Toolbar {
             auto_scroll_mode: lumino_core::storage::config::AutoScrollMode::default(),
             ppq_editing: false,
             ppq_edit_buffer: String::new(),
+            overflow_menu_open: false,
         }
     }
 
     /// 更新工具栏状态
     pub fn update(&mut self, event: Event) {
+        // 菜单打开时，除再次点击“更多”按钮外，其余任何操作都先关闭菜单
+        if self.overflow_menu_open && !matches!(event, Event::ToggleOverflowMenu) {
+            self.overflow_menu_open = false;
+        }
+
         match event {
             Event::Play => self.is_playing = true,
             Event::Pause => self.is_playing = false,
@@ -206,6 +215,17 @@ impl Toolbar {
             }
             Event::Tie => {
                 tracing::debug!("工具栏: 触发音符连奏");
+            }
+            Event::ToggleOverflowMenu => {
+                self.overflow_menu_open = !self.overflow_menu_open;
+                tracing::debug!(
+                    "工具栏: 溢出菜单 {}",
+                    if self.overflow_menu_open { "打开" } else { "关闭" }
+                );
+            }
+            Event::CloseOverflowMenu => {
+                self.overflow_menu_open = false;
+                tracing::debug!("工具栏: 关闭溢出菜单");
             }
             Event::ResizeDragStarted(_) => {
                 self.is_resizing = true;

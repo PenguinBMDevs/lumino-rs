@@ -310,6 +310,7 @@ impl Root {
                     let edit = AutomationEdit::Add {
                         track_idx: ev.track,
                         target: AutomationTarget::CC { controller },
+                        channel: ev.channel,
                         tick: ev.tick,
                         value,
                         shape: SegmentShape::Step,
@@ -321,6 +322,7 @@ impl Root {
                     let edit = AutomationEdit::Add {
                         track_idx: ev.track,
                         target: AutomationTarget::PitchBend,
+                        channel: ev.channel,
                         tick: ev.tick,
                         value: ev.param,
                         shape: SegmentShape::Step,

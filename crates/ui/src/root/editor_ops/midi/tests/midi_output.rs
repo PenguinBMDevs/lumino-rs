@@ -270,6 +270,7 @@ fn test_cc_events_reach_midi_output() {
         .push(AutomationLane {
             target: AutomationTarget::CC { controller: 7 },
             track: 0,
+            channel: 0,
             events: vec![AutomationEvent {
                 tick: 0,
                 value: 100,
@@ -283,6 +284,7 @@ fn test_cc_events_reach_midi_output() {
         .push(AutomationLane {
             target: AutomationTarget::CC { controller: 10 },
             track: 0,
+            channel: 0,
             events: vec![AutomationEvent {
                 tick: 480,
                 value: 64,
@@ -298,6 +300,7 @@ fn test_cc_events_reach_midi_output() {
         .push(AutomationLane {
             target: AutomationTarget::PitchBend,
             track: 0,
+            channel: 0,
             events: vec![AutomationEvent {
                 tick: 240,
                 value: 8192, // center

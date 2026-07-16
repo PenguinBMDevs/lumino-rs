@@ -81,7 +81,7 @@ impl Toolbar {
         .into()
     }
 
-    /// 渲染自动滚动模式切换按钮
+    /// 渲染自动滚动模式切换按钮（图标 + tooltip，无常驻文字）
     pub fn render_auto_scroll_button<'a>(
         &'a self,
         content_height: f32,
@@ -90,11 +90,6 @@ impl Toolbar {
         window: &'a window::Window,
     ) -> Element<'a> {
         use lumino_core::storage::config::AutoScrollMode;
-        let auto_scroll_label = match self.auto_scroll_mode {
-            AutoScrollMode::FixedIndicatorLeft => t.auto_scroll_fixed,
-            AutoScrollMode::ScrollingIndicator => t.auto_scroll_scrolling,
-            AutoScrollMode::Off => t.auto_scroll_off,
-        };
         let auto_scroll_icon = match self.auto_scroll_mode {
             AutoScrollMode::FixedIndicatorLeft => icon::ArrowsLeftRight,
             AutoScrollMode::ScrollingIndicator => icon::Scroll,
@@ -102,14 +97,7 @@ impl Toolbar {
         };
         container(widget::with_tooltip_bottom(
             button(
-                row![
-                    icon::view_with_size_and_theme(auto_scroll_icon, 18, 18, Some(&window.theme)),
-                    space().width(6),
-                    text(auto_scroll_label)
-                        .size(14)
-                        .color(palette.background.weakest.text),
-                ]
-                .align_y(Alignment::Center),
+                icon::view_with_size_and_theme(auto_scroll_icon, 18, 18, Some(&window.theme))
             )
             .on_press(Event::auto_scroll_mode_changed())
             .style(move |_theme: &Theme, status| {
@@ -127,19 +115,19 @@ impl Toolbar {
                 }
                 .with_background(bg)
             })
-            .padding([8, 12]),
+            .padding([8, 8]),
             t.auto_scroll_tooltip,
         ))
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
-        .padding([0, 16])
+        .padding([0, 4])
         .style(move |_theme: &Theme| {
             container::Style::default().background(palette.background.weakest.color)
         })
         .into()
     }
 
-    /// 渲染协作按钮
+    /// 渲染协作按钮（图标 + tooltip，无常驻文字）
     pub fn render_collaboration_button<'a>(
         &'a self,
         content_height: f32,
@@ -149,14 +137,7 @@ impl Toolbar {
     ) -> Element<'a> {
         container(widget::with_tooltip_bottom(
             button(
-                row![
-                    icon::view_with_size_and_theme(icon::Users, 18, 18, Some(&window.theme)),
-                    space().width(6),
-                    text(t.collaboration_label)
-                        .size(14)
-                        .color(palette.background.weakest.text),
-                ]
-                .align_y(Alignment::Center),
+                icon::view_with_size_and_theme(icon::Users, 18, 18, Some(&window.theme))
             )
             .on_press(Event::open_collaboration_dialog())
             .style(move |_theme: &Theme, status| {
@@ -174,12 +155,12 @@ impl Toolbar {
                 }
                 .with_background(bg)
             })
-            .padding([8, 12]),
+            .padding([8, 8]),
             t.collaboration_tooltip,
         ))
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)
-        .padding([0, 16])
+        .padding([0, 4])
         .style(move |_theme: &Theme| {
             container::Style::default().background(palette.background.weakest.color)
         })

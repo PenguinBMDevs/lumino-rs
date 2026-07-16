@@ -43,13 +43,6 @@ impl Root {
 
         // 同步 MIDI 控制事件
         // 来源 1：从编辑器的 automation_lanes 中提取当前音轨的编辑后控制事件
-        let current_tick_channel = self
-            .editor
-            .editor_state
-            .data
-            .notes
-            .get(0)
-            .map_or(0, |n| n.channel);
         let current_track = self.editor.editor_state.data.current_track as u16;
 
         let mut midi_events: Vec<MidiTrackEvent> = Vec::new();
@@ -65,7 +58,7 @@ impl Root {
                         midi_events.push(MidiTrackEvent {
                             tick: ev.tick as f32,
                             message: MidiMessage::ControlChange {
-                                channel: current_tick_channel,
+                                channel: lane.channel,
                                 controller: *controller,
                                 value: ev.value as u8,
                             },
@@ -79,7 +72,7 @@ impl Root {
                         midi_events.push(MidiTrackEvent {
                             tick: ev.tick as f32,
                             message: MidiMessage::PitchBend {
-                                channel: current_tick_channel,
+                                channel: lane.channel,
                                 value: pb_value.clamp(-1.0, 1.0),
                             },
                         });
@@ -96,17 +89,41 @@ impl Root {
             midi_events.extend(events.clone());
         }
 
+        // 来源 3：从 document 中读取当前音轨的 ProgramChange 事件。
+        // ProgramChange 不存储在 automation_lanes 中（无对应 variant），
+        // 必须直接从 doc.control_events 提取，否则当前音轨无法切换乐器。
+        // （其他音轨的 PC 事件由 PlaybackEngine::process_other_tracks 直接读取）
+        if let Some(doc) = &self.midi.document {
+            for ev in &doc.control_events {
+                if ev.kind == 1 && ev.track == current_track {
+                    let program = ev.as_program_change();
+                    midi_events.push(MidiTrackEvent {
+                        tick: ev.tick as f32,
+                        message: MidiMessage::ProgramChange {
+                            channel: ev.channel,
+                            program,
+                        },
+                    });
+                }
+            }
+        }
+
         midi_events.sort_by(|a, b| a.tick.total_cmp(&b.tick));
 
-        // 调试：记录当前音轨的 CC 事件数量
+        // 调试：记录当前音轨的各类事件数量
         let cc_count = midi_events
             .iter()
             .filter(|e| matches!(e.message, MidiMessage::ControlChange { .. }))
             .count();
+        let pc_count = midi_events
+            .iter()
+            .filter(|e| matches!(e.message, MidiMessage::ProgramChange { .. }))
+            .count();
         tracing::debug!(
-            "update_playback_notes: 发送 {} 个 MIDI 事件 ({} CC, {} PB, current_track={})",
+            "update_playback_notes: 发送 {} 个 MIDI 事件 ({} CC, {} PC, {} PB, current_track={})",
             midi_events.len(),
             cc_count,
+            pc_count,
             midi_events
                 .iter()
                 .filter(|e| matches!(e.message, MidiMessage::PitchBend { .. }))

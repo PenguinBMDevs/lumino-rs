@@ -202,6 +202,7 @@ mod tests {
         let added = data.apply_automation_edit(AutomationEdit::Add {
             track_idx: 0,
             target: AutomationTarget::CC { controller: 7 },
+            channel: 0,
             tick: 100,
             value: 64,
             shape: SegmentShape::Step,
@@ -219,6 +220,7 @@ mod tests {
         data.apply_automation_edit(AutomationEdit::Add {
             track_idx: 0,
             target: AutomationTarget::CC { controller: 7 },
+            channel: 0,
             tick: 100,
             value: 64,
             shape: SegmentShape::Step,
@@ -226,6 +228,7 @@ mod tests {
         let replaced = data.apply_automation_edit(AutomationEdit::Add {
             track_idx: 0,
             target: AutomationTarget::CC { controller: 7 },
+            channel: 0,
             tick: 100,
             value: 127,
             shape: SegmentShape::Curve { tension: 0 },
@@ -245,6 +248,7 @@ mod tests {
         data.apply_automation_edit(AutomationEdit::Add {
             track_idx: 0,
             target: AutomationTarget::CC { controller: 7 },
+            channel: 0,
             tick: 100,
             value: 64,
             shape: SegmentShape::Step,
@@ -267,6 +271,7 @@ mod tests {
         data.apply_automation_edit(AutomationEdit::Add {
             track_idx: 0,
             target: AutomationTarget::CC { controller: 7 },
+            channel: 0,
             tick: 100,
             value: 64,
             shape: SegmentShape::Step,
@@ -297,6 +302,7 @@ mod tests {
         data.apply_automation_edit(AutomationEdit::Add {
             track_idx: 0,
             target: AutomationTarget::CC { controller: 7 },
+            channel: 0,
             tick: 100,
             value: 64,
             shape: SegmentShape::Step,
@@ -323,6 +329,7 @@ mod tests {
         data.apply_automation_edit(AutomationEdit::Add {
             track_idx: 0,
             target: AutomationTarget::CC { controller: 7 },
+            channel: 0,
             tick: 100,
             value: 64,
             shape: SegmentShape::Step,
@@ -558,6 +565,7 @@ mod tests {
         data.apply_automation_edit(AutomationEdit::Add {
             track_idx: 0,
             target: AutomationTarget::CC { controller: 7 },
+            channel: 0,
             tick: 100,
             value: 64,
             shape: SegmentShape::Step,
@@ -576,6 +584,7 @@ mod tests {
         data.apply_automation_edit(AutomationEdit::Add {
             track_idx: 0,
             target: AutomationTarget::PitchBend,
+            channel: 0,
             tick: 100,
             value: PITCH_BEND_CENTER as u16,
             shape: SegmentShape::Curve { tension: 0 },

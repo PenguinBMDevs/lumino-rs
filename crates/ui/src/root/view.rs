@@ -7,6 +7,7 @@
 
 mod main_view;
 mod overlays;
+mod right_content;
 mod status;
 
 use crate::Element;

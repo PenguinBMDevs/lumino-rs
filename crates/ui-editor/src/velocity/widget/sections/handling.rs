@@ -515,6 +515,7 @@ impl<'a> super::super::VelocityCanvas<'a> {
                     AutomationEdit::Add {
                         track_idx,
                         target: target.clone(),
+                        channel: 0,
                         tick: new_tick,
                         value: new_value,
                         shape: target.default_shape(),
@@ -542,6 +543,7 @@ impl<'a> super::super::VelocityCanvas<'a> {
                         AutomationEdit::Add {
                             track_idx,
                             target: target.clone(),
+                            channel: 0,
                             tick: current_tick,
                             value: current_value,
                             shape: SegmentShape::Curve { tension: 0 },
@@ -560,6 +562,7 @@ impl<'a> super::super::VelocityCanvas<'a> {
                     AutomationEdit::Add {
                         track_idx,
                         target: target.clone(),
+                        channel: 0,
                         tick: t1,
                         value: v1,
                         shape: SegmentShape::Curve { tension: 0 },
@@ -567,6 +570,7 @@ impl<'a> super::super::VelocityCanvas<'a> {
                     AutomationEdit::Add {
                         track_idx,
                         target: target.clone(),
+                        channel: 0,
                         tick: t2,
                         value: v2,
                         shape: SegmentShape::Step,

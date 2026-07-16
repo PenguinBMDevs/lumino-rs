@@ -74,6 +74,10 @@ pub enum Event {
     Glue,
     /// 音符连奏（同音连接）
     Tie,
+    /// 切换溢出菜单显示/隐藏
+    ToggleOverflowMenu,
+    /// 关闭溢出菜单
+    CloseOverflowMenu,
     /// Toggle PPQ 编辑模式（开始/取消）。u16 = 当前 PPQ 值
     PpqEditToggled(u16),
     /// PPQ 编辑输入变更
@@ -236,6 +240,14 @@ impl Event {
 
     pub const fn tie() -> Message {
         Message::Toolbar(Self::Tie)
+    }
+
+    pub const fn toggle_overflow_menu() -> Message {
+        Message::Toolbar(Self::ToggleOverflowMenu)
+    }
+
+    pub const fn close_overflow_menu() -> Message {
+        Message::Toolbar(Self::CloseOverflowMenu)
     }
 
     /// 切换 PPQ 编辑模式。点击 PPQ 文字时携带当前值以初始化缓冲区。

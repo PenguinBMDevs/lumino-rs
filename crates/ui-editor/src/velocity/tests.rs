@@ -71,6 +71,7 @@ fn test_build_cc_points_with_data() {
             .apply_automation_edit(AutomationEdit::Add {
                 track_idx: 0,
                 target: AutomationTarget::CC { controller: 1 },
+                channel: 0,
                 tick,
                 value,
                 shape: SegmentShape::Step,
@@ -97,6 +98,7 @@ fn test_build_cc_points_wrong_number() {
         .apply_automation_edit(AutomationEdit::Add {
             track_idx: 0,
             target: AutomationTarget::CC { controller: 1 },
+            channel: 0,
             tick: 0,
             value: 64,
             shape: SegmentShape::Step,
