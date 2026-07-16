@@ -132,7 +132,7 @@ impl Root {
             );
             if !is_ppq_edit_msg {
                 if let Ok(ppq) = self.toolbar.ppq_edit_buffer.parse::<u16>()
-                    && ppq > 0
+                    && (24..=32767).contains(&ppq)
                 {
                     self.set_ppq(ppq);
                     tracing::info!("PPQ 已更新为 {}", ppq);

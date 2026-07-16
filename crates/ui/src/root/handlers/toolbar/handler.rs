@@ -72,10 +72,12 @@ impl ToolbarHandler {
     /// 确认 PPQ 编辑：解析缓冲区 → 写入编辑器 → 清除编辑状态
     fn confirm_ppq_edit(root: &mut Root) {
         if let Ok(ppq) = root.toolbar.ppq_edit_buffer.parse::<u16>() {
-            // PPQ 必须大于 0（MIDI 规范要求至少 48 但这里只校验有效性）
-            if ppq > 0 {
+            // MIDI 规范：PPQ 范围 24-32767
+            if (24..=32767).contains(&ppq) {
                 root.set_ppq(ppq);
                 tracing::info!("PPQ 已更新为 {}", ppq);
+            } else {
+                tracing::warn!("PPQ 值 {} 超出范围 (24-32767)，已忽略", ppq);
             }
         }
         root.toolbar.ppq_editing = false;
