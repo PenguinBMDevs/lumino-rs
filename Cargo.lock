@@ -3460,7 +3460,9 @@ dependencies = [
  "lumino-core",
  "lumino-gfx",
  "lumino-ui",
+ "raw-window-handle",
  "tracing",
+ "winapi",
  "winit",
 ]
 

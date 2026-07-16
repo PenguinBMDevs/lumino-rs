@@ -45,6 +45,9 @@ impl RunnerInner {
             if !should_close {
                 tracing::debug!("调用 dialog.redraw()");
                 dialog.redraw();
+                // 应用自制标题栏产生的窗口动作（关闭 / 最小化 / 拖动）
+                // 必须在 redraw（事件队列已消费）之后调用
+                dialog.apply_window_actions();
             } else {
                 tracing::debug!("跳过 dialog.redraw()，因为 should_close = true");
             }

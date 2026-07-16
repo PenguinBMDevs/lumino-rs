@@ -31,7 +31,7 @@ impl Root {
             .map(|(m, p)| (m.as_str(), *p))
             .unwrap_or(("正在初始化...", 0.0));
 
-        container(
+        let content: Element<'_> = container(
             column![
                 text("处理中...")
                     .size(24)
@@ -53,7 +53,16 @@ impl Root {
             background: Some(iced_core::Background::Color(theme.palette().background)),
             ..Default::default()
         })
-        .into()
+        .into();
+
+        if self.use_native_titlebar {
+            content
+        } else {
+            column![self.titlebar.view_popup(&self.window), content]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        }
     }
 
     /// 渲染对话框
@@ -61,7 +70,7 @@ impl Root {
         puffin::profile_scope!("root_view_dialog");
 
         // 对话框窗口 - 根据类型显示不同内容
-        match self.state.dialog_type {
+        let content: Element<'_> = match self.state.dialog_type {
             DialogType::Collaboration => {
                 view_collaboration_dialog(&self.state.collaboration_dialog, &self.window.theme)
             }
@@ -127,6 +136,18 @@ impl Root {
             DialogType::MemoryMonitor => {
                 view_memory_monitor_dialog(&self.state.memory_monitor_dialog, &self.window.theme)
             }
+        };
+
+        if self.use_native_titlebar {
+            content
+        } else {
+            column![
+                self.titlebar.view_popup(&self.window),
+                container(content).width(Length::Fill).height(Length::Fill),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
         }
     }
 }

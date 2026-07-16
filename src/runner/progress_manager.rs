@@ -1,3 +1,4 @@
+use lumino_ui::window::TrafficAction;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use winit::{dpi, event::WindowEvent, window::WindowAttributes};
@@ -54,6 +55,9 @@ impl ProgressManager {
         match event {
             WindowEvent::RedrawRequested => {
                 self.handle_redraw(&window);
+                // 应用自制标题栏产生的窗口动作（关闭 / 最小化 / 拖动）
+                // 必须在 redraw（事件队列已消费）之后调用
+                self.apply_window_actions();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if let Some(ref mut ui) = self.ui {
@@ -86,6 +90,50 @@ impl ProgressManager {
                 .is_err()
         {
             window.request_redraw();
+        }
+    }
+
+    /// 应用自制标题栏产生的窗口动作（关闭 / 最小化 / 拖动）
+    ///
+    /// 进度窗口为无边框模式，系统标题栏已移除，窗口控制由 iced 渲染的
+    /// 自制标题栏（`Titlebar`）承担。动作需在 `redraw_requested`（事件队列已消费）
+    /// 之后取出并应用到真实窗口。`Close` 直接关闭进度窗口（与 `CloseRequested` 一致）。
+    fn apply_window_actions(&mut self) {
+        let (action, drag) = match self.ui.as_mut() {
+            Some(ui) => (ui.take_window_action(), ui.take_drag()),
+            None => (None, false),
+        };
+
+        if let Some(action) = action {
+            match action {
+                TrafficAction::Close => {
+                    self.close();
+                }
+                TrafficAction::Minimize => {
+                    if let Some(window) = self.window.as_ref() {
+                        window.set_minimized(true);
+                    }
+                }
+                TrafficAction::ToggleMaximize => {
+                    // 进度窗口不可缩放，无需响应最大化
+                    if let Some(window) = self.window.as_ref()
+                        && window.is_resizable()
+                    {
+                        let is_max = window.is_maximized();
+                        window.set_maximized(!is_max);
+                    }
+                }
+            }
+        }
+
+        if drag
+            && let Some(window) = self.window.clone()
+            && let Err(e) = window.drag_window()
+        {
+            tracing::warn!("拖动进度窗口失败: {}", e);
+            if let Some(ui) = self.ui.as_mut() {
+                ui.release_left_mouse_button();
+            }
         }
     }
 
@@ -131,14 +179,39 @@ impl ProgressManager {
         event_loop: &winit::event_loop::ActiveEventLoop,
         ui_config: &lumino_core::storage::config::UiConfig,
     ) {
-        let attributes = WindowAttributes::default()
+        let mut attributes = WindowAttributes::default()
             .with_inner_size(dpi::LogicalSize {
                 width: PROGRESS_WINDOW_WIDTH,
                 height: PROGRESS_WINDOW_HEIGHT,
             })
             .with_title("MIDI 处理进度")
-            .with_decorations(true)
             .with_visible(true);
+
+        // 进度窗口跟随主窗口的标题栏配置。
+        #[cfg(target_os = "windows")]
+        {
+            use winit::platform::windows::WindowAttributesExtWindows;
+            attributes = if ui_config.use_native_titlebar {
+                attributes.with_decorations(true)
+            } else {
+                attributes
+                    .with_decorations(false)
+                    .with_undecorated_shadow(true)
+            };
+        }
+        #[cfg(target_os = "macos")]
+        {
+            use winit::platform::macos::WindowAttributesExtMacOS;
+            if !ui_config.use_native_titlebar {
+                attributes = attributes
+                    .with_titlebar_transparent(true)
+                    .with_fullsize_content_view(true);
+            }
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            attributes = attributes.with_decorations(ui_config.use_native_titlebar);
+        }
 
         let window = match event_loop.create_window(attributes) {
             Ok(w) => Arc::new(w),

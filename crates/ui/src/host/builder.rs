@@ -126,7 +126,7 @@ impl Host {
             !is_progress,
         );
         let root = if is_progress {
-            root::Root::new_progress(&ui_config.theme)
+            root::Root::new_progress(&ui_config.theme, ui_config)
         } else {
             root::Root::new(ui_config)
         };
@@ -144,7 +144,7 @@ impl Host {
     ) -> Self {
         let (render_ctx, window_ctx) =
             Self::create_render_and_window_context(window, width, height, ui_config, gfx, false);
-        let root = root::Root::new_dialog(&ui_config.theme, dialog_type);
+        let root = root::Root::new_dialog_with_config(&ui_config.theme, dialog_type, ui_config);
         Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
     }
 

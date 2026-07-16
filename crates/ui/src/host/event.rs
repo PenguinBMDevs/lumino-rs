@@ -161,8 +161,7 @@ impl Host {
         }
 
         // 提前判断：当前事件是否为 RedrawRequested（避免 conversion 消耗后无法访问）
-        let is_redraw_requested =
-            matches!(&event, winit::event::WindowEvent::RedrawRequested);
+        let is_redraw_requested = matches!(&event, winit::event::WindowEvent::RedrawRequested);
 
         // 将窗口事件映射到 iced 事件
         if let Some(event) = conversion::window_event(

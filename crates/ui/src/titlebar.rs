@@ -100,6 +100,32 @@ impl Titlebar {
         }
     }
 
+    /// 渲染弹窗专用的自制标题栏。
+    ///
+    /// 弹窗只需要窗口控制和拖动区域，不应携带主窗口的文件、编辑、视图、帮助菜单。
+    pub fn view_popup<'a>(&'a self, window: &'a window::Window) -> Element<'a> {
+        let drag_area = mouse_area(container(space().width(Length::Fill)).height(Length::Fill))
+            .on_press(window::Event::drag())
+            .on_double_click(window::Event::toggle_maximize());
+        let right_section = container(row![traffic::view(window)])
+            .height(Length::Fill)
+            .align_y(Alignment::Center);
+
+        container(row![drag_area, right_section])
+            .width(Length::Fill)
+            .height(30)
+            .style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                container::Style::default().background(if window.is_focused {
+                    palette.background.neutral.color
+                } else {
+                    palette.background.weaker.color
+                })
+            })
+            .align_y(Alignment::Start)
+            .into()
+    }
+
     /// 经典系统标题栏模式：只显示菜单，在最左侧
     fn view_native_titlebar<'a>(
         &'a self,

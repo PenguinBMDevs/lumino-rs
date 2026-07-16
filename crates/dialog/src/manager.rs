@@ -81,14 +81,18 @@ impl DialogManager {
         main_ui: &lumino_ui::Host,
     ) {
         while let Some(pending) = self.pending_dialogs.pop() {
-            let mut dialog =
-                match DialogWindow::new(event_loop, pending.dialog_type, Some(parent_window)) {
-                    Ok(d) => d,
-                    Err(e) => {
-                        tracing::error!("创建对话框失败: {}", e);
-                        continue;
-                    }
-                };
+            let mut dialog = match DialogWindow::new(
+                event_loop,
+                pending.dialog_type,
+                Some(parent_window),
+                ui_config,
+            ) {
+                Ok(d) => d,
+                Err(e) => {
+                    tracing::error!("创建对话框失败: {}", e);
+                    continue;
+                }
+            };
 
             let window_id = dialog.window_id();
 

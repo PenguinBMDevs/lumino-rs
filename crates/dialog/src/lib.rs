@@ -6,6 +6,12 @@
 pub mod manager;
 pub mod window;
 
+#[cfg(target_os = "windows")]
+pub(crate) mod platform;
+
+#[cfg(target_os = "windows")]
+pub use platform::windows::setup_resize_border;
+
 // 重新导出常用类型，方便外部使用
 pub use lumino_ui::host::DialogResult;
 pub use lumino_ui::state::root_state::DialogType;

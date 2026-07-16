@@ -49,6 +49,8 @@ pub struct Root {
     pub(crate) settings: settings::SettingsPanel,
     pub(crate) progress: Option<(String, f64)>,
     pub(crate) is_progress_window: bool,
+    /// 当前窗口是否使用系统标题栏；弹窗不应在该模式下再绘制自制标题栏。
+    pub(crate) use_native_titlebar: bool,
     /// UI 状态
     pub(crate) state: RootState,
     /// 播放状态（播放管理器、Tempo 变化、MIDI 输出等）
@@ -98,6 +100,7 @@ impl Root {
                 settings: settings::SettingsPanel::new(&params.ui_config),
                 progress: None,
                 is_progress_window: params.is_progress_window,
+                use_native_titlebar: params.ui_config.use_native_titlebar,
                 state,
                 playback: lumino_ui_core::playback_state::PlaybackState::new(),
                 visual: lumino_ui_core::visual_state::VisualState::new(
@@ -139,10 +142,10 @@ impl Root {
     }
 
     /// 创建进度窗口 Root
-    pub fn new_progress(theme: &str) -> Self {
+    pub fn new_progress(theme: &str, ui_config: &UiConfig) -> Self {
         Self::from_params(RootInitParams {
             theme: theme.to_string(),
-            ui_config: UiConfig::default(),
+            ui_config: ui_config.clone(),
             is_progress_window: true,
             dialog_type: None,
         })
@@ -153,6 +156,20 @@ impl Root {
         Self::from_params(RootInitParams {
             theme: theme.to_string(),
             ui_config: UiConfig::default(),
+            is_progress_window: false,
+            dialog_type: Some(dialog_type),
+        })
+    }
+
+    /// 创建对话框 Root（使用主窗口的标题栏配置）。
+    pub fn new_dialog_with_config(
+        theme: &str,
+        dialog_type: DialogType,
+        ui_config: &UiConfig,
+    ) -> Self {
+        Self::from_params(RootInitParams {
+            theme: theme.to_string(),
+            ui_config: ui_config.clone(),
             is_progress_window: false,
             dialog_type: Some(dialog_type),
         })

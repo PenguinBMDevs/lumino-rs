@@ -145,64 +145,64 @@ impl RealtimeSynth {
                         // 将音频渲染线程的分配归因到 Audio：with_tag 是线程局部的，
                         // 必须在 spawned 线程体内设置，外层 with_tag 不会跨线程传播。
                         lumino_memtrace::with_tag(lumino_memtrace::AllocTag::Audio, || {
-                        // 渲染超时阈值与事件处理时间预算（实现见 compute_render_budget）
-                        let (render_timeout_ns, render_window_ms, event_budget_ns) =
-                            compute_render_budget(render_len, channels, sample_rate);
+                            // 渲染超时阈值与事件处理时间预算（实现见 compute_render_budget）
+                            let (render_timeout_ns, render_window_ms, event_budget_ns) =
+                                compute_render_budget(render_len, channels, sample_rate);
 
-                        while running_render.load(Ordering::Relaxed) {
-                            let start = Instant::now();
+                            while running_render.load(Ordering::Relaxed) {
+                                let start = Instant::now();
 
-                            // 消费待处理事件，但限制每帧处理时间。
-                            // 当事件通道中堆积了大量事件时（如极端高 NPS 场景），
-                            // 一次性排空可能耗时数十秒，导致音频回调得不到数据。
-                            // 时间预算用完后剩余事件留到下一帧。
-                            let event_deadline =
-                                start + std::time::Duration::from_nanos(event_budget_ns);
-                            let mut event_count = drain_events_budgeted(
-                                &mut channel_group,
-                                &event_receiver,
-                                event_deadline,
-                            );
+                                // 消费待处理事件，但限制每帧处理时间。
+                                // 当事件通道中堆积了大量事件时（如极端高 NPS 场景），
+                                // 一次性排空可能耗时数十秒，导致音频回调得不到数据。
+                                // 时间预算用完后剩余事件留到下一帧。
+                                let event_deadline =
+                                    start + std::time::Duration::from_nanos(event_budget_ns);
+                                let mut event_count = drain_events_budgeted(
+                                    &mut channel_group,
+                                    &event_receiver,
+                                    event_deadline,
+                                );
 
-                            // 检查上一帧是否超时 — 如果渲染赶不上，跳过本次渲染只消费事件
-                            if should_skip_render(
-                                &perf_render,
-                                perf_render.last_render_ns.load(Ordering::Relaxed),
-                                render_timeout_ns,
-                                event_count,
-                            ) {
-                                continue;
+                                // 检查上一帧是否超时 — 如果渲染赶不上，跳过本次渲染只消费事件
+                                if should_skip_render(
+                                    &perf_render,
+                                    perf_render.last_render_ns.load(Ordering::Relaxed),
+                                    render_timeout_ns,
+                                    event_count,
+                                ) {
+                                    continue;
+                                }
+
+                                // 闲置检测：没有事件且样本通道已满（音频回调消费太慢或已暂停）
+                                if handle_idle(
+                                    &mut channel_group,
+                                    &perf_render,
+                                    &event_receiver,
+                                    &sample_tx,
+                                    render_window_ms,
+                                    event_count,
+                                ) {
+                                    continue;
+                                }
+
+                                // 渲染一个窗口并上报性能统计；返回 true 表示音频回调断开，退出循环
+                                if render_window_and_report(
+                                    &mut channel_group,
+                                    &sample_tx,
+                                    &vec_return_rx,
+                                    &vec_return_tx_render,
+                                    &perf_render,
+                                    start,
+                                    render_len,
+                                    channels,
+                                    sample_rate,
+                                    event_count,
+                                    &voice_render,
+                                ) {
+                                    break;
+                                }
                             }
-
-                            // 闲置检测：没有事件且样本通道已满（音频回调消费太慢或已暂停）
-                            if handle_idle(
-                                &mut channel_group,
-                                &perf_render,
-                                &event_receiver,
-                                &sample_tx,
-                                render_window_ms,
-                                event_count,
-                            ) {
-                                continue;
-                            }
-
-                            // 渲染一个窗口并上报性能统计；返回 true 表示音频回调断开，退出循环
-                            if render_window_and_report(
-                                &mut channel_group,
-                                &sample_tx,
-                                &vec_return_rx,
-                                &vec_return_tx_render,
-                                &perf_render,
-                                start,
-                                render_len,
-                                channels,
-                                sample_rate,
-                                event_count,
-                                &voice_render,
-                            ) {
-                                break;
-                            }
-                        }
                         });
                     })
                     .expect("failed to spawn render thread");

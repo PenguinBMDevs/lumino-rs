@@ -128,8 +128,7 @@ pub fn view_memory_monitor_dialog<'a>(
         space().height(16),
         note,
         space().height(16),
-        row![space().width(Length::Fill), close_button]
-            .align_y(iced_core::Alignment::Center),
+        row![space().width(Length::Fill), close_button].align_y(iced_core::Alignment::Center),
     ]
     .spacing(4);
 
