@@ -6,6 +6,8 @@
 //! 模块声明顺序：事件模块在前，message 在后（message 引用事件类型）。
 
 pub mod app_mode;
+/// 工具栏按钮描述配置（按钮名 + i18n 解释说明占位）
+pub mod button_descs;
 pub mod message;
 pub mod settings_event;
 pub mod sidebar_event;

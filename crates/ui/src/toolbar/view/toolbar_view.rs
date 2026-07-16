@@ -7,7 +7,7 @@ use iced_core::Alignment;
 use iced_widget::{Column, Row, container, space};
 
 use crate::toolbar::overflow::ToolbarGroup;
-use crate::toolbar::{RESIZE_HANDLE_HEIGHT, Toolbar, ToolbarPerfContext};
+use crate::toolbar::{ButtonId, RESIZE_HANDLE_HEIGHT, Toolbar, ToolbarPerfContext};
 use crate::{Element, Theme, window};
 
 impl Toolbar {
@@ -238,7 +238,7 @@ impl Toolbar {
             t.toolbar_more,
             Event::toggle_overflow_menu(),
             window,
-            Some(Event::button_hovered(Some(t.toolbar_more.to_string()))),
+            Some(Event::button_hovered(Some(ButtonId::More))),
         ))
         .height(content_height)
         .align_y(iced_core::alignment::Vertical::Center)

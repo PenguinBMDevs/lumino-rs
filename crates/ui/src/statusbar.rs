@@ -3,6 +3,7 @@ pub mod performance;
 use iced_core::Length;
 use iced_widget::{container, row, text};
 use lumino_core::i18n::{Language, main_translations};
+use lumino_ui_core::button_descs::ButtonId;
 
 use super::Element;
 use crate::Theme;
@@ -25,8 +26,9 @@ pub struct StatusBar {
     perf_data: PerfData,
     /// 悬停工具栏按钮时显示的描述文字（左侧预留区）
     ///
-    /// 由 `set_hover_label` 写入：鼠标悬停按钮时显示按钮名，离开时清空。
-    hover_label: String,
+    /// 由 `set_hover_label` 写入按钮角色标识：鼠标悬停时显示
+    /// `按钮名 - {解释说明}`，离开时清空。
+    hover_label: Option<ButtonId>,
 }
 
 impl StatusBar {
@@ -35,7 +37,7 @@ impl StatusBar {
             info: StatusInfo::default(),
             fps: None,
             perf_data: PerfData::default(),
-            hover_label: String::new(),
+            hover_label: None,
         }
     }
 
@@ -56,30 +58,29 @@ impl StatusBar {
 
     /// 设置/清除悬停描述文字。
     ///
-    /// `Some(name)` 表示鼠标正悬停在名为 `name` 的工具栏按钮上；
+    /// `Some(id)` 表示鼠标正悬停在标识为 `id` 的工具栏按钮上；
     /// `None` 表示鼠标已离开，清空描述区。
-    pub fn set_hover_label(&mut self, label: Option<String>) {
-        match label {
-            Some(name) => self.hover_label = name,
-            None => self.hover_label.clear(),
-        }
+    pub fn set_hover_label(&mut self, label: Option<ButtonId>) {
+        self.hover_label = label;
     }
 
     /// 是否处于 FPS 高亮样式（仅当左侧无描述文字且存在 FPS 值时）
     pub fn use_fps_style(&self) -> bool {
-        self.hover_label.is_empty() && self.info.left_text.is_empty() && self.fps.is_some()
+        self.hover_label.is_none() && self.info.left_text.is_empty() && self.fps.is_some()
     }
 
     pub fn view<'a>(&'a self, language: Language) -> Element<'a> {
         let t = main_translations(language);
 
-        // 左侧描述区：优先显示悬停按钮名，其次为显式 left_text，最后为"就绪"
-        let left_text: &str = if !self.hover_label.is_empty() {
-            &self.hover_label
+        // 左侧描述区：优先显示悬停按钮的 `按钮名 - {解释说明}`，
+        // 其次为显式 left_text，最后为"就绪"
+        let left_text: String = if let Some(id) = self.hover_label {
+            let (name, desc) = lumino_ui_core::button_descs::button_desc(id, language);
+            format!("{} - {}", name, desc)
         } else if !self.info.left_text.is_empty() {
-            &self.info.left_text
+            self.info.left_text.clone()
         } else {
-            t.status_ready
+            t.status_ready.to_string()
         };
         let use_fps_style = self.use_fps_style();
 

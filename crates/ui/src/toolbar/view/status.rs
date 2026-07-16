@@ -7,7 +7,7 @@ use iced_widget::{button, container, pick_list, row, space, text};
 
 use crate::message::CustomPrecisionAction;
 use crate::resources::icon;
-use crate::toolbar::{Event, NotePrecision, Toolbar};
+use crate::toolbar::{ButtonId, Event, NotePrecision, Toolbar};
 use crate::widget;
 use crate::{Element, Message, Theme, window};
 use lumino_core::i18n::{Language, MainTranslations};
@@ -121,9 +121,7 @@ impl Toolbar {
                 })
                 .padding([8, 8]),
             )
-            .on_enter(Event::button_hovered(Some(
-                t.auto_scroll_tooltip.to_string(),
-            )))
+            .on_enter(Event::button_hovered(Some(ButtonId::AutoScroll)))
             .on_exit(Event::button_hovered(None)),
             t.auto_scroll_tooltip,
         ))
@@ -170,9 +168,7 @@ impl Toolbar {
                 })
                 .padding([8, 8]),
             )
-            .on_enter(Event::button_hovered(Some(
-                t.collaboration_tooltip.to_string(),
-            )))
+            .on_enter(Event::button_hovered(Some(ButtonId::Collaboration)))
             .on_exit(Event::button_hovered(None)),
             t.collaboration_tooltip,
         ))

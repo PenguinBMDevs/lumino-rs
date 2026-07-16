@@ -13,6 +13,7 @@ pub mod types;
 mod view;
 
 pub use event::{Event, FlipHorizontalMode};
+pub use lumino_ui_core::button_descs::ButtonId;
 pub use types::{
     CustomPrecisionDialog, DEFAULT_HEIGHT, DotType, MAX_HEIGHT, MIN_HEIGHT, NotePrecision,
     RESIZE_HANDLE_HEIGHT, Tool, TupletType,

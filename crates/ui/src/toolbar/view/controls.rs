@@ -7,7 +7,7 @@ use iced_widget::{button, container, mouse_area, row, space};
 
 use crate::resources::icon;
 use crate::toolbar::buttons::{flip_button, tool_button, tool_selector};
-use crate::toolbar::{Event, FlipHorizontalMode, RESIZE_HANDLE_HEIGHT, Tool, Toolbar};
+use crate::toolbar::{ButtonId, Event, FlipHorizontalMode, RESIZE_HANDLE_HEIGHT, Tool, Toolbar};
 use crate::widget;
 use crate::{Element, Message, Theme, window};
 use lumino_core::i18n::{Language, MainTranslations};
@@ -28,7 +28,7 @@ impl Toolbar {
                     t.skip_backward,
                     Event::skip_backward(),
                     window,
-                    Some(Event::button_hovered(Some(t.skip_backward.to_string()))),
+                    Some(Event::button_hovered(Some(ButtonId::SkipBackward))),
                 ),
                 space().width(4),
                 if self.is_playing {
@@ -37,7 +37,7 @@ impl Toolbar {
                         t.pause,
                         Event::pause(),
                         window,
-                        Some(Event::button_hovered(Some(t.pause.to_string()))),
+                        Some(Event::button_hovered(Some(ButtonId::Pause))),
                     )
                 } else {
                     tool_button(
@@ -45,7 +45,7 @@ impl Toolbar {
                         t.play,
                         Event::play(),
                         window,
-                        Some(Event::button_hovered(Some(t.play.to_string()))),
+                        Some(Event::button_hovered(Some(ButtonId::Play))),
                     )
                 },
                 space().width(4),
@@ -54,7 +54,7 @@ impl Toolbar {
                     t.skip_forward,
                     Event::skip_forward(),
                     window,
-                    Some(Event::button_hovered(Some(t.skip_forward.to_string()))),
+                    Some(Event::button_hovered(Some(ButtonId::SkipForward))),
                 ),
             ]
             .align_y(Alignment::Center),
@@ -83,12 +83,6 @@ impl Toolbar {
         t: &'static MainTranslations,
         window: &'a window::Window,
     ) -> Element<'a> {
-        let loop_hover_label = if self.is_looping {
-            t.loop_on.to_string()
-        } else {
-            t.loop_off.to_string()
-        };
-
         container(widget::with_tooltip_bottom(
             iced_widget::mouse_area(
                 button(
@@ -125,7 +119,7 @@ impl Toolbar {
                 })
                 .padding(4),
             )
-            .on_enter(Event::button_hovered(Some(loop_hover_label)))
+            .on_enter(Event::button_hovered(Some(ButtonId::Loop)))
             .on_exit(Event::button_hovered(None)),
             if self.is_looping {
                 t.loop_on
@@ -182,7 +176,7 @@ impl Toolbar {
                     Tool::Pointer,
                     self.current_tool,
                     window,
-                    Some(Event::button_hovered(Some(t.tool_pointer.to_string()))),
+                    Some(Event::button_hovered(Some(ButtonId::Pointer))),
                 ),
                 space().width(4),
                 tool_selector(
@@ -191,7 +185,7 @@ impl Toolbar {
                     Tool::Pencil,
                     self.current_tool,
                     window,
-                    Some(Event::button_hovered(Some(t.tool_pencil.to_string()))),
+                    Some(Event::button_hovered(Some(ButtonId::Pencil))),
                 ),
                 space().width(4),
                 tool_selector(
@@ -200,7 +194,7 @@ impl Toolbar {
                     Tool::Eraser,
                     self.current_tool,
                     window,
-                    Some(Event::button_hovered(Some(t.tool_eraser.to_string()))),
+                    Some(Event::button_hovered(Some(ButtonId::Eraser))),
                 ),
                 space().width(4),
                 tool_selector(
@@ -209,7 +203,7 @@ impl Toolbar {
                     Tool::Curve,
                     self.current_tool,
                     window,
-                    Some(Event::button_hovered(Some(t.tool_curve.to_string()))),
+                    Some(Event::button_hovered(Some(ButtonId::Curve))),
                 ),
                 space().width(4),
                 tool_button(
@@ -217,7 +211,7 @@ impl Toolbar {
                     t.tool_quantize,
                     Event::quantize(),
                     window,
-                    Some(Event::button_hovered(Some(t.tool_quantize.to_string()))),
+                    Some(Event::button_hovered(Some(ButtonId::Quantize))),
                 ),
                 space().width(4),
                 // 变速按钮始终可点击：Ctrl+Click 打开变速对话框不需要选中音符。
@@ -228,7 +222,7 @@ impl Toolbar {
                     Event::speed_change(),
                     true,
                     window,
-                    Some(Event::button_hovered(Some(t.tool_speed.to_string()))),
+                    Some(Event::button_hovered(Some(ButtonId::Speed))),
                 ),
                 space().width(4),
                 flip_button(
@@ -237,9 +231,7 @@ impl Toolbar {
                     Event::flip_vertical(),
                     has_selection,
                     window,
-                    Some(Event::button_hovered(Some(
-                        t.tool_flip_vertical.to_string()
-                    ))),
+                    Some(Event::button_hovered(Some(ButtonId::FlipVertical))),
                 ),
                 space().width(4),
                 flip_button(
@@ -254,9 +246,7 @@ impl Toolbar {
                     },
                     has_selection,
                     window,
-                    Some(Event::button_hovered(Some(
-                        t.tool_flip_horizontal.to_string()
-                    ))),
+                    Some(Event::button_hovered(Some(ButtonId::FlipHorizontal))),
                 ),
                 space().width(8),
                 // 分割/合并按钮
@@ -265,7 +255,7 @@ impl Toolbar {
                     t.tool_split,
                     Event::split(),
                     window,
-                    Some(Event::button_hovered(Some(t.tool_split.to_string()))),
+                    Some(Event::button_hovered(Some(ButtonId::Split))),
                 ),
                 space().width(4),
                 tool_button(
@@ -273,7 +263,7 @@ impl Toolbar {
                     t.tool_glue,
                     Event::glue(),
                     window,
-                    Some(Event::button_hovered(Some(t.tool_glue.to_string()))),
+                    Some(Event::button_hovered(Some(ButtonId::Glue))),
                 ),
                 space().width(8),
                 // 移调按钮
@@ -284,9 +274,7 @@ impl Toolbar {
                     transpose_down_event,
                     has_selection,
                     window,
-                    Some(Event::button_hovered(Some(
-                        transpose_down_tooltip.to_string(),
-                    ))),
+                    Some(Event::button_hovered(Some(ButtonId::TransposeDown))),
                 ),
                 space().width(4),
                 flip_button(
@@ -295,9 +283,7 @@ impl Toolbar {
                     transpose_up_event,
                     has_selection,
                     window,
-                    Some(Event::button_hovered(Some(
-                        transpose_up_tooltip.to_string(),
-                    ))),
+                    Some(Event::button_hovered(Some(ButtonId::TransposeUp))),
                 ),
                 space().width(8),
                 // 连奏按钮
@@ -306,7 +292,7 @@ impl Toolbar {
                     t.tool_tie,
                     Event::tie(),
                     window,
-                    Some(Event::button_hovered(Some(t.tool_tie.to_string()))),
+                    Some(Event::button_hovered(Some(ButtonId::Tie))),
                 ),
                 space().width(4),
                 self.render_precision_selector(content_height, palette, language, t),
@@ -368,7 +354,7 @@ impl Toolbar {
                     t.undo,
                     Event::undo(),
                     window,
-                    Some(Event::button_hovered(Some(t.undo.to_string()))),
+                    Some(Event::button_hovered(Some(ButtonId::Undo))),
                 ),
                 space().width(4),
                 tool_button(
@@ -376,7 +362,7 @@ impl Toolbar {
                     t.redo,
                     Event::redo(),
                     window,
-                    Some(Event::button_hovered(Some(t.redo.to_string()))),
+                    Some(Event::button_hovered(Some(ButtonId::Redo))),
                 ),
             ]
             .align_y(Alignment::Center),

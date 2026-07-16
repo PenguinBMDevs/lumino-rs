@@ -1,6 +1,6 @@
 //! 录制按钮渲染
 
-use crate::toolbar::{Event, Toolbar};
+use crate::toolbar::{ButtonId, Event, Toolbar};
 use crate::widget;
 use crate::{Element, Theme, window};
 use iced_widget::{button, container, text};
@@ -42,8 +42,6 @@ impl Toolbar {
             t.record_start
         };
 
-        let hover_label: String = tooltip_text.to_string();
-
         container(widget::with_tooltip_bottom(
             iced_widget::mouse_area(
                 button(
@@ -78,7 +76,11 @@ impl Toolbar {
                 .height(iced_widget::core::Length::Fill)
                 .padding(4),
             )
-            .on_enter(Event::button_hovered(Some(hover_label)))
+            .on_enter(Event::button_hovered(Some(if is_recording {
+                ButtonId::RecordStop
+            } else {
+                ButtonId::Record
+            })))
             .on_exit(Event::button_hovered(None)),
             tooltip_text,
         ))
