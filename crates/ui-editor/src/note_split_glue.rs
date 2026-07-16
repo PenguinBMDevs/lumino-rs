@@ -24,8 +24,8 @@ impl Editor {
         result
     }
 
-    /// 连奏选中音符：对同 Key 的音符按时间排序，前一个音符延长到后一个音符的开始位置。
-    /// 最后一个音符保持不变。
+    /// 连奏选中音符：按 tick 排序，前一个音符延长到后一个音符的开始位置。
+    /// 支持不同 Key 的音符连奏。最后一个音符保持不变。
     pub fn tie_selected_notes(&mut self) -> usize {
         let selected = self.editor_state.interaction.selected_notes.clone();
         let result = self.editor_state.data.tie_selected_notes(&selected);

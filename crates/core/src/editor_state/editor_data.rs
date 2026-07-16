@@ -425,14 +425,14 @@ mod tests {
     }
 
     #[test]
-    fn test_tie_selected_notes_different_key_no_tie() {
+    fn test_tie_selected_notes_different_key_still_ties() {
         let mut data = EditorData::new();
         data.notes.push_back(Note::new(0.0, 60, 2.0));
         data.notes.push_back(Note::new(3.0, 61, 3.0));
         let tied = data.tie_selected_notes(&HashSet::from([0, 1]));
-        assert_eq!(tied, 0, "different keys should not tie");
-        assert_eq!(data.notes[0].length, 2.0, "notes unchanged");
-        assert_eq!(data.notes[1].length, 3.0, "notes unchanged");
+        assert_eq!(tied, 1, "different keys should still tie by tick order");
+        assert_eq!(data.notes[0].length, 3.0, "first note extends to second's start");
+        assert_eq!(data.notes[1].length, 3.0, "last note unchanged");
     }
 
     #[test]
@@ -458,12 +458,13 @@ mod tests {
         data.notes.push_back(Note::new(6.0, 61, 2.0));
         data.notes.push_back(Note::new(9.0, 61, 3.0));
         let tied = data.tie_selected_notes(&HashSet::from([0, 1, 2, 3]));
-        // Key 60 group: notes 0→1 tied (1 tie). Key 61 group: notes 2→3 tied (1 tie).
-        assert_eq!(tied, 2, "should tie one pair per key group");
+        // All 4 notes sorted by tick: note0→note1→note2→note3
+        // 3 ties: note0→note1, note1→note2, note2→note3
+        assert_eq!(tied, 3, "should tie all consecutive pairs by tick order");
         assert_eq!(data.notes[0].length, 3.0, "note0 extends to note1");
-        assert_eq!(data.notes[1].length, 2.0, "note1 is last in key 60 group, unchanged");
+        assert_eq!(data.notes[1].length, 3.0, "note1 extends to note2");
         assert_eq!(data.notes[2].length, 3.0, "note2 extends to note3");
-        assert_eq!(data.notes[3].length, 3.0, "note3 is last in key 61 group, unchanged");
+        assert_eq!(data.notes[3].length, 3.0, "last note unchanged");
     }
 
     // ── undo / redo 测试 ──
