@@ -109,6 +109,16 @@ pub enum AudioChannelMode {
     Stereo,
 }
 
+impl AudioChannelMode {
+    /// 返回该模式对应的声道数量。
+    pub fn channel_count(self) -> u16 {
+        match self {
+            Self::Mono => 1,
+            Self::Stereo => 2,
+        }
+    }
+}
+
 /// 线程模式（映射到 xsynth ThreadCount）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThreadMode {
@@ -194,6 +204,25 @@ impl AudioRenderConfig {
             use_effects: true,
             interpolator: Interpolator::from(self.interpolation),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audio_channel_mode_channel_count() {
+        assert_eq!(AudioChannelMode::Mono.channel_count(), 1);
+        assert_eq!(AudioChannelMode::Stereo.channel_count(), 2);
+    }
+
+    #[test]
+    fn test_audio_channel_mode_into_channel_count() {
+        let mono = AudioChannelMode::Mono;
+        let stereo = AudioChannelMode::Stereo;
+        assert_eq!(ChannelCount::from(mono).count(), 1);
+        assert_eq!(ChannelCount::from(stereo).count(), 2);
     }
 }
 

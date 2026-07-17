@@ -8,6 +8,16 @@ pub enum AudioChannels {
     Stereo,
 }
 
+impl AudioChannels {
+    /// 返回该模式对应的声道数量。
+    pub fn channel_count(self) -> u16 {
+        match self {
+            Self::Mono => 1,
+            Self::Stereo => 2,
+        }
+    }
+}
+
 impl std::fmt::Display for AudioChannels {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -89,5 +99,16 @@ impl AudioFormat {
             Self::Ogg => "ogg",
             Self::WavPack => "wv",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audio_channels_channel_count() {
+        assert_eq!(AudioChannels::Mono.channel_count(), 1);
+        assert_eq!(AudioChannels::Stereo.channel_count(), 2);
     }
 }

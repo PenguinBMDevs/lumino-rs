@@ -545,24 +545,6 @@ fn build_track_event_kind(event: &MergedEvent) -> Option<TrackEventKind<'static>
     }
 }
 
-// ════════════════════════════════════════════════════════════
-// 辅助 trait 扩展
-// ════════════════════════════════════════════════════════════
-
-/// 为 AudioChannelMode 添加 channel_count 方法
-pub trait ChannelCountExt {
-    fn channel_count(&self) -> u16;
-}
-
-impl ChannelCountExt for config::AudioChannelMode {
-    fn channel_count(&self) -> u16 {
-        match self {
-            config::AudioChannelMode::Mono => 1,
-            config::AudioChannelMode::Stereo => 2,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

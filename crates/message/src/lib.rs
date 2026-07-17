@@ -215,6 +215,12 @@ mod tests {
         assert_eq!(AudioChannels::Stereo.to_string(), "立体声");
     }
 
+    #[test]
+    fn test_audio_channels_channel_count() {
+        assert_eq!(AudioChannels::Mono.channel_count(), 1);
+        assert_eq!(AudioChannels::Stereo.channel_count(), 2);
+    }
+
     // ─── AudioFormat ───
 
     #[test]
