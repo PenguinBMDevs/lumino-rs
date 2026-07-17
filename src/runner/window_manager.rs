@@ -167,10 +167,22 @@ impl WindowManager {
         self.resized = true;
     }
 
+    /// 快速关闭：先销毁窗口（隐藏），再退出事件循环
+    ///
+    /// 用户点击关闭按钮时，窗口立即隐藏，让用户感知到"已关闭"，
+    /// 剩余进程清理在 `about_to_wait` 当前迭代结束后自然完成。
+    fn quick_close(&mut self) {
+        // 先隐藏窗口，让用户立即感知到关闭
+        self.window.set_visible(false);
+        // 重置关闭请求标记，防止重复触发
+        self.close_requested = false;
+    }
+
     /// 处理窗口动作（最小化、最大化、关闭）
     pub fn handle_window_actions(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         // 检查系统关闭请求
         if self.close_requested {
+            self.quick_close();
             event_loop.exit();
             return;
         }
@@ -186,6 +198,7 @@ impl WindowManager {
                     self.window.set_maximized(!is_maximized);
                 }
                 TrafficAction::Close => {
+                    self.quick_close();
                     event_loop.exit();
                 }
             }
