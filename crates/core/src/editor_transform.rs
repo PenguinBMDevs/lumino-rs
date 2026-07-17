@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use crate::editor_state::EditorData;
 use crate::history::EditorSnapshot;
 use crate::midi_types::VelocityPoint;
+use im::Vector;
 
 /// 音符变换操作 trait
 pub trait EditorTransform {
@@ -64,7 +65,7 @@ impl EditorTransform for EditorData {
             self.history.undo(EditorSnapshot::new(
                 self.notes.clone(),
                 self.current_track,
-                self.automation_lanes.clone(),
+                Vector::from(self.automation_lanes.clone()),
             ));
         }
         modified
@@ -92,7 +93,7 @@ impl EditorTransform for EditorData {
             self.history.undo(EditorSnapshot::new(
                 self.notes.clone(),
                 self.current_track,
-                self.automation_lanes.clone(),
+                Vector::from(self.automation_lanes.clone()),
             ));
         }
         modified
@@ -125,7 +126,7 @@ impl EditorTransform for EditorData {
             self.history.undo(EditorSnapshot::new(
                 self.notes.clone(),
                 self.current_track,
-                self.automation_lanes.clone(),
+                Vector::from(self.automation_lanes.clone()),
             ));
         }
         modified
@@ -172,7 +173,7 @@ impl EditorTransform for EditorData {
             self.history.undo(EditorSnapshot::new(
                 self.notes.clone(),
                 self.current_track,
-                self.automation_lanes.clone(),
+                Vector::from(self.automation_lanes.clone()),
             ));
         }
         modified

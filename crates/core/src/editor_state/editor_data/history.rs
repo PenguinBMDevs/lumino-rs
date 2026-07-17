@@ -2,6 +2,7 @@
 
 use super::EditorData;
 use crate::history::EditorSnapshot;
+use im::Vector;
 
 impl EditorData {
     /// 将当前状态快照推入历史记录
@@ -9,7 +10,7 @@ impl EditorData {
         self.history.push(EditorSnapshot::new(
             self.notes.clone(),
             self.current_track,
-            self.automation_lanes.clone(),
+            Vector::from(self.automation_lanes.clone()),
         ));
     }
 
@@ -18,12 +19,12 @@ impl EditorData {
         let current = EditorSnapshot::new(
             self.notes.clone(),
             self.current_track,
-            self.automation_lanes.clone(),
+            Vector::from(self.automation_lanes.clone()),
         );
         if let Some(snapshot) = self.history.undo(current) {
             self.notes = snapshot.notes;
             self.current_track = snapshot.current_track;
-            self.automation_lanes = snapshot.automation_lanes;
+            self.automation_lanes = snapshot.automation_lanes.into_iter().collect();
             true
         } else {
             false
@@ -35,12 +36,12 @@ impl EditorData {
         let current = EditorSnapshot::new(
             self.notes.clone(),
             self.current_track,
-            self.automation_lanes.clone(),
+            Vector::from(self.automation_lanes.clone()),
         );
         if let Some(snapshot) = self.history.redo(current) {
             self.notes = snapshot.notes;
             self.current_track = snapshot.current_track;
-            self.automation_lanes = snapshot.automation_lanes;
+            self.automation_lanes = snapshot.automation_lanes.into_iter().collect();
             true
         } else {
             false

@@ -3,6 +3,7 @@
 use crate::automation::AutomationLane;
 use crate::note::Note;
 use im::Vector;
+use std::collections::VecDeque;
 
 /// A snapshot of the editor state for undo/redo functionality
 #[derive(Debug, Clone)]
@@ -10,14 +11,17 @@ pub struct EditorSnapshot {
     pub notes: Vector<Note>,
     pub current_track: usize,
     /// 自动化事件 lane 快照，支持 CC/Bend 等控制器编辑的撤销/重做。
-    pub automation_lanes: Vec<AutomationLane>,
+    ///
+    /// 使用 `Vector`（持久化数据结构）替代 `Vec`，使快照克隆为 O(1)，
+    /// 撤销栈中相邻快照共享数据，避免编辑自动化数据时撤销内存线性膨胀。
+    pub automation_lanes: Vector<AutomationLane>,
 }
 
 impl EditorSnapshot {
     pub fn new(
         notes: Vector<Note>,
         current_track: usize,
-        automation_lanes: Vec<AutomationLane>,
+        automation_lanes: Vector<AutomationLane>,
     ) -> Self {
         Self {
             notes,
@@ -30,28 +34,29 @@ impl EditorSnapshot {
 /// History manager for undo/redo
 #[derive(Debug)]
 pub struct History {
-    undo_stack: Vec<EditorSnapshot>,
-    redo_stack: Vec<EditorSnapshot>,
+    /// 使用 `VecDeque` 替代 `Vec` 避免栈满时 `remove(0)` 的 O(n) 平移。
+    undo_stack: VecDeque<EditorSnapshot>,
+    redo_stack: VecDeque<EditorSnapshot>,
     max_size: usize,
 }
 
 impl History {
     pub fn new() -> Self {
         Self {
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
+            undo_stack: VecDeque::new(),
+            redo_stack: VecDeque::new(),
             max_size: 100,
         }
     }
 
     /// Push a new snapshot to the undo stack
     pub fn push(&mut self, snapshot: EditorSnapshot) {
-        self.undo_stack.push(snapshot);
+        self.undo_stack.push_back(snapshot);
         // Clear redo stack when new action is performed
         self.redo_stack.clear();
-        // Limit the undo stack size
+        // Limit the undo stack size — VecDeque pop_front is O(1)
         if self.undo_stack.len() > self.max_size {
-            self.undo_stack.remove(0);
+            self.undo_stack.pop_front();
         }
     }
 
@@ -61,9 +66,9 @@ impl History {
             return None;
         }
         // Push current state to redo stack
-        self.redo_stack.push(current_state);
+        self.redo_stack.push_back(current_state);
         // Pop from undo stack
-        self.undo_stack.pop()
+        self.undo_stack.pop_back()
     }
 
     /// Redo the last undone action
@@ -72,9 +77,9 @@ impl History {
             return None;
         }
         // Push current state to undo stack
-        self.undo_stack.push(current_state);
+        self.undo_stack.push_back(current_state);
         // Pop from redo stack
-        self.redo_stack.pop()
+        self.redo_stack.pop_back()
     }
 
     /// Check if undo is available
@@ -105,7 +110,7 @@ mod tests {
     use super::*;
 
     fn make_snapshot(notes: Vec<Note>, current_track: usize) -> EditorSnapshot {
-        EditorSnapshot::new(Vector::from(notes), current_track, Vec::new())
+        EditorSnapshot::new(Vector::from(notes), current_track, Vector::new())
     }
 
     #[test]
@@ -217,7 +222,7 @@ mod tests {
     #[test]
     fn test_editor_snapshot_new() {
         let notes = vec![Note::new(10.0, 72, 960.0)];
-        let snap = EditorSnapshot::new(Vector::from(notes), 1, Vec::new());
+        let snap = EditorSnapshot::new(Vector::from(notes), 1, Vector::new());
         assert_eq!(snap.current_track, 1);
         assert_eq!(snap.notes.len(), 1);
         assert!(snap.automation_lanes.is_empty());

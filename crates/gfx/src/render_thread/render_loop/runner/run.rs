@@ -485,6 +485,11 @@ fn ensure_offscreen_textures_and_upload_notes(
         *last_note_version = note_version;
 
         puffin::profile_scope!("upload_note_instances_from_buffer");
+        // ⚠️ 本帧 acquire 点：渲染线程每帧在此接管 ready 缓冲区。
+        // 若未来新增其他 acquire 路径（如单线程模式），必须保证每帧最多
+        // 调用一次 acquire，否则同帧双 acquire 会导致渲染数据回退到上帧。
+        // 另一潜在 acquire 路径见 handle_video_frame（直接使用 params.note_instances，
+        // 不碰 buffer，因此当前无竞争——但修改时需做互斥检查）。
         let notes = unsafe { channels.note_instances_buffer.acquire_read_buffer() };
 
         renderers

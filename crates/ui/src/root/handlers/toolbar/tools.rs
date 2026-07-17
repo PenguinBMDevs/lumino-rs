@@ -129,7 +129,12 @@ impl ToolbarHandler {
         let snapshot = crate::editor::history::EditorSnapshot::new(
             root.editor.editor_state.data.notes.clone(),
             root.editor.editor_state.data.current_track,
-            root.editor.editor_state.data.automation_lanes.clone(),
+            root.editor
+                .editor_state
+                .data
+                .automation_lanes
+                .clone()
+                .into(),
         );
         root.editor.editor_state.data.history.push(snapshot);
 
@@ -160,7 +165,12 @@ impl ToolbarHandler {
                 crate::editor::history::EditorSnapshot::new(
                     root.editor.editor_state.data.notes.clone(),
                     root.editor.editor_state.data.current_track,
-                    root.editor.editor_state.data.automation_lanes.clone(),
+                    root.editor
+                        .editor_state
+                        .data
+                        .automation_lanes
+                        .clone()
+                        .into(),
                 ),
             );
             tracing::debug!("Root: 没有音符被量化");

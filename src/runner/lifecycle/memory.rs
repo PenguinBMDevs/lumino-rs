@@ -27,7 +27,8 @@ impl RunnerInner {
 
             let writer_total = mem.note_instances_writer_cap as u64 * mem.note_instance_size as u64;
             let ready_total = mem.note_instances_ready_cap as u64 * mem.note_instance_size as u64;
-            let reading_total = mem.note_instances_reading_cap as u64 * mem.note_instance_size as u64;
+            let reading_total =
+                mem.note_instances_reading_cap as u64 * mem.note_instance_size as u64;
 
             tracing::info!(
                 "\n\

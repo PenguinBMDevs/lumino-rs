@@ -54,22 +54,47 @@ struct Symbols {
     send_direct_data: unsafe extern "system" fn(u32),
 }
 
-/// KDMAPI 内部状态：持有 DLL 句柄和函数符号表
-struct KdmapiInner {
-    /// 必须保持存活，否则函数指针失效
-    _lib: Library,
-    sym: Arc<Symbols>,
-    version: String,
+/// 将 DLL 句柄与符号表打包进同一个 `Arc`，从类型层面杜绝"符号比库活得久"的问题。
+///
+/// `lib` 字段在语义上被使用（保持 DLL 加载），但 Rust 编译器可能因字段未被显式
+/// 读取而发出 `dead_code` 警告，故此标注。
+#[allow(dead_code)]
+///
+/// # 设计原理
+///
+/// 之前的设计中 `KdmapiInner` 持有 `_lib: Library` 和 `sym: Arc<Symbols>` 两个独立字段，
+/// `KdmapiOutputConn` 则仅持有 `sym: Arc<Symbols>`。若所有 `KdmapiInner` 实例释放
+/// （`KDMAPI_INSTANCE` 被清空或进程退出前部分析构），`Library` 先于 `Symbols` 被 drop
+/// 导致 DLL 卸载，此时 `KdmapiOutputConn` 中的函数指针变成野指针，调用 = UB。
+///
+/// 通过将 `Library` 和 `Symbols` 绑进同一个 `Arc<KdmapiBundle>`，谁要用符号谁就持有
+/// 这个 `Arc`——只要还有一个输出连接存活，DLL 就不会被卸载。析构顺序由 `Arc` 保证：
+/// 最后一个引用释放时，先 drop `Symbols`（函数指针不再可用），再 drop `Library`。
+///
+/// # 注意事项
+///
+/// `Drop for KdmapiBundle` 中调用 FFI `terminate_kdmapi_stream`。
+/// 在 `panic = "abort"` 下 abort 不走 drop，所以终止代码不应依赖此 drop 确保执行。
+/// 正常退出路径下（走 `Drop`），此清理是安全的。
+struct KdmapiBundle {
+    lib: Library,
+    sym: Symbols,
 }
 
-/// 当最后一个 `KdmapiInner` 引用释放时，清理 KDMAPI 流
-impl Drop for KdmapiInner {
+impl Drop for KdmapiBundle {
     fn drop(&mut self) {
+        // 正常退出时终止 KDMAPI 流（panic=abort 下不走 drop，行为安全但不会执行此处）
         unsafe {
             (self.sym.terminate_kdmapi_stream)();
         }
-        tracing::debug!("KDMAPI: 流已终止");
+        tracing::debug!("KDMAPI: 流已终止，DLL 即将卸载");
     }
+}
+
+/// KDMAPI 内部状态：持有打包的 DLL 句柄+符号表
+struct KdmapiInner {
+    bundle: Arc<KdmapiBundle>,
+    version: String,
 }
 
 /// KDMAPI 实例（公开 API 入口）
@@ -78,8 +103,11 @@ pub struct Kdmapi {
 }
 
 /// KDMAPI 输出端口连接
+///
+/// 持有 `Arc<KdmapiBundle>` 而非 `Arc<Symbols>`，确保输出连接存活期间
+/// DLL 不会被卸载（函数指针始终有效）。
 struct KdmapiOutputConn {
-    sym: Arc<Symbols>,
+    bundle: Arc<KdmapiBundle>,
 }
 
 // ---------------------------------------------------------------------------
@@ -189,13 +217,13 @@ impl Kdmapi {
         let lib = unsafe { try_load_library(&search_paths)? };
 
         unsafe {
-            let sym = Arc::new(Symbols {
+            let sym = Symbols {
                 return_kdmapi_ver: *lib.get(b"ReturnKDMAPIVer\0")?,
                 is_kdmapi_available: *lib.get(b"IsKDMAPIAvailable\0")?,
                 initialize_kdmapi_stream: *lib.get(b"InitializeKDMAPIStream\0")?,
                 terminate_kdmapi_stream: *lib.get(b"TerminateKDMAPIStream\0")?,
                 send_direct_data: *lib.get(b"SendDirectData\0")?,
-            });
+            };
 
             // 1. 检查 KDMAPI 是否可用
             if !(sym.is_kdmapi_available)() {
@@ -223,9 +251,10 @@ impl Kdmapi {
                 return Err(Error::InitFailed("获取 KDMAPI 版本失败".into()));
             }
 
+            let bundle = Arc::new(KdmapiBundle { lib, sym });
+
             let inner = Arc::new(KdmapiInner {
-                _lib: lib,
-                sym,
+                bundle,
                 version: format!("v{major}.{minor}.{patch}.{rev}"),
             });
 
@@ -265,7 +294,7 @@ impl Api for Kdmapi {
             return Err(Error::DeviceNotFound(id));
         }
         Ok(Box::new(KdmapiOutputConn {
-            sym: self.inner.sym.clone(),
+            bundle: self.inner.bundle.clone(),
         }))
     }
 
@@ -302,7 +331,7 @@ impl KdmapiOutputConn {
         // SendDirectData 是 void 函数（不返回值），见 Symbols 文档说明
         // 消息"fail quietly"——不指示成功/失败，所以我们直接发送
         unsafe {
-            (self.sym.send_direct_data)(word);
+            (self.bundle.sym.send_direct_data)(word);
         }
 
         Ok(())
@@ -316,7 +345,7 @@ impl OutputConnection for KdmapiOutputConn {
 
     fn close(self: Box<Self>) {
         tracing::debug!("KDMAPI: 输出连接已关闭");
-        // KDMAPI 连接不需要额外清理，TerminateKDMAPIStream 由 KdmapiInner::drop 处理
+        // KDMAPI 连接不需要额外清理，TerminateKDMAPIStream 由 KdmapiBundle::drop 处理
     }
 }
 

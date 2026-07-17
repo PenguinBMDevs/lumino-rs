@@ -133,6 +133,15 @@ const OFFSET_TRACK_ID: usize = 4;
 const OFFSET_PARAM1: usize = 6;
 const OFFSET_PARAM2: usize = 8;
 
+/// 编译时验证字段偏移常量与实际布局一致。
+/// 若 `CompactEvent` 字段顺序/类型变更导致偏移变化，此处 const assert 将触发编译错误。
+const _: () = {
+    assert!(std::mem::offset_of!(CompactEvent, delta_tick) == OFFSET_DELTA_TICK);
+    assert!(std::mem::offset_of!(CompactEvent, track_id) == OFFSET_TRACK_ID);
+    assert!(std::mem::offset_of!(CompactEvent, param1) == OFFSET_PARAM1);
+    assert!(std::mem::offset_of!(CompactEvent, param2) == OFFSET_PARAM2);
+};
+
 impl CompactEvent {
     /// 构造一个新的紧凑事件
     #[inline]

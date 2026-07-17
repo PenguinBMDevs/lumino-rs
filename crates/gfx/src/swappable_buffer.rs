@@ -139,7 +139,8 @@ impl<T> SwappableBuffer<T> {
                     let buf = unsafe { &(*self.buffers.get())[w] };
                     self.stats_cap[w].store(buf.capacity(), Ordering::Release);
                     self.stats_len[w].store(buf.len(), Ordering::Release);
-                    // 发布新 writer 槽位统计（之前是 reading，渲染线程已完成只读，cap/len 稳定）
+                    // 发布新 writer 槽位统计（之前是 reading，渲染线程可能并发读取，
+                    // 但均为只读访问，Vec 头稳定，cap/len 不变）
                     let reading_buf = unsafe { &(*self.buffers.get())[rd] };
                     self.stats_cap[rd].store(reading_buf.capacity(), Ordering::Release);
                     self.stats_len[rd].store(reading_buf.len(), Ordering::Release);
@@ -195,7 +196,8 @@ impl<T> SwappableBuffer<T> {
     ///
     /// # Safety
     /// 必须在 `acquire_read_buffer` 已在本帧被调用之后才能调用此方法。
-    /// 调用者必须保证当前帧内没有并发 swap（即在渲染/UI 单一线程内调用）。
+    /// 此方法只读取 reading 槽位，`swap()` 只交换 writer↔ready 永不到 reading，
+    /// 因此并发 swap 下 peek 依然安全——无需额外保证"无并发 swap"。
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn peek_read_buffer(&self) -> &Vec<T> {
         let s = self.state.load(Ordering::Acquire);
