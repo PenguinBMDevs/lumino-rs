@@ -249,7 +249,14 @@ impl Host {
                 .editor_state
                 .data
                 .find_automation_lane(track_idx, &lumino_core::AutomationTarget::PitchBend)
-                .and_then(|idx| editor.editor_state.data.automation_lanes.get(idx))
+                .and_then(|idx| {
+                    editor
+                        .editor_state
+                        .data
+                        .automation_lanes
+                        .get(idx)
+                        .map(|a| &**a)
+                })
         } else if !is_velocity {
             editor
                 .editor_state
@@ -260,7 +267,14 @@ impl Host {
                         controller: cc_number,
                     },
                 )
-                .and_then(|idx| editor.editor_state.data.automation_lanes.get(idx))
+                .and_then(|idx| {
+                    editor
+                        .editor_state
+                        .data
+                        .automation_lanes
+                        .get(idx)
+                        .map(|a| &**a)
+                })
         } else {
             None
         };

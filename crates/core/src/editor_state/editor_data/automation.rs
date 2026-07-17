@@ -2,6 +2,7 @@
 
 use super::EditorData;
 use crate::automation::{AutomationEdit, AutomationLane, SegmentShape};
+use std::sync::Arc;
 
 impl EditorData {
     /// 查找指定 track + target 的 automation lane 索引。
@@ -25,12 +26,12 @@ impl EditorData {
             return idx;
         }
         let idx = self.automation_lanes.len();
-        self.automation_lanes.push(AutomationLane {
+        self.automation_lanes.push(Arc::new(AutomationLane {
             target,
             track,
             channel: 0,
             events: Vec::new(),
-        });
+        }));
         idx
     }
 
@@ -48,7 +49,7 @@ impl EditorData {
                 shape,
             } => {
                 let idx = self.find_or_create_automation_lane(track_idx, target);
-                let lane = &mut self.automation_lanes[idx];
+                let lane = Arc::make_mut(&mut self.automation_lanes[idx]);
                 // 如果 lane 尚未设置 channel，更新为事件的 channel
                 lane.channel = channel;
                 // 移除同一 tick 的已有事件，保证唯一性。
@@ -65,9 +66,10 @@ impl EditorData {
                 new_tick,
                 new_value,
             } => {
-                let Some(lane) = self.automation_lanes.get_mut(lane_idx) else {
+                let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
                     return false;
                 };
+                let lane = Arc::make_mut(arc_lane);
                 if lane.track != track_idx {
                     return false;
                 }
@@ -86,9 +88,10 @@ impl EditorData {
                 lane_idx,
                 tick,
             } => {
-                let Some(lane) = self.automation_lanes.get_mut(lane_idx) else {
+                let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
                     return false;
                 };
+                let lane = Arc::make_mut(arc_lane);
                 if lane.track != track_idx {
                     return false;
                 }
@@ -106,9 +109,10 @@ impl EditorData {
                 lane_idx,
                 tick,
             } => {
-                let Some(lane) = self.automation_lanes.get_mut(lane_idx) else {
+                let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
                     return false;
                 };
+                let lane = Arc::make_mut(arc_lane);
                 if lane.track != track_idx {
                     return false;
                 }

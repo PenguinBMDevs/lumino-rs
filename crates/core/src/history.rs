@@ -4,24 +4,23 @@ use crate::automation::AutomationLane;
 use crate::note::Note;
 use im::Vector;
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 /// A snapshot of the editor state for undo/redo functionality
 #[derive(Debug, Clone)]
 pub struct EditorSnapshot {
     pub notes: Vector<Note>,
     pub current_track: usize,
-    /// 自动化事件 lane 快照，支持 CC/Bend 等控制器编辑的撤销/重做。
-    ///
-    /// 使用 `Vector`（持久化数据结构）替代 `Vec`，使快照克隆为 O(1)，
-    /// 撤销栈中相邻快照共享数据，避免编辑自动化数据时撤销内存线性膨胀。
-    pub automation_lanes: Vector<AutomationLane>,
+    /// 自动化 lane 快照。`Arc` 共享：未修改的 lane 在所有快照间物理共址，
+    /// 快照克隆为 O(lane 数) 指针拷贝。编辑路径用 `Arc::make_mut` 写时复制。
+    pub automation_lanes: Vec<Arc<AutomationLane>>,
 }
 
 impl EditorSnapshot {
     pub fn new(
         notes: Vector<Note>,
         current_track: usize,
-        automation_lanes: Vector<AutomationLane>,
+        automation_lanes: Vec<Arc<AutomationLane>>,
     ) -> Self {
         Self {
             notes,
@@ -119,7 +118,7 @@ mod tests {
     use super::*;
 
     fn make_snapshot(notes: Vec<Note>, current_track: usize) -> EditorSnapshot {
-        EditorSnapshot::new(Vector::from(notes), current_track, Vector::new())
+        EditorSnapshot::new(Vector::from(notes), current_track, Vec::new())
     }
 
     #[test]
@@ -205,6 +204,16 @@ mod tests {
     }
 
     #[test]
+    fn test_discard_last_keeps_redo_stack() {
+        let mut h = History::new();
+        h.push(make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0));
+        h.push(make_snapshot(vec![Note::new(0.0, 64, 480.0)], 0));
+        h.discard_last();
+        assert!(h.can_undo(), "discard_last 后 undo 栈应仍有条目");
+        assert!(!h.can_redo(), "discard_last 不触碰 redo 栈");
+    }
+
+    #[test]
     fn test_history_clear() {
         let mut h = History::new();
         h.push(make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0));
@@ -231,7 +240,7 @@ mod tests {
     #[test]
     fn test_editor_snapshot_new() {
         let notes = vec![Note::new(10.0, 72, 960.0)];
-        let snap = EditorSnapshot::new(Vector::from(notes), 1, Vector::new());
+        let snap = EditorSnapshot::new(Vector::from(notes), 1, Vec::new());
         assert_eq!(snap.current_track, 1);
         assert_eq!(snap.notes.len(), 1);
         assert!(snap.automation_lanes.is_empty());

@@ -116,7 +116,7 @@ impl super::super::VelocityCanvas<'_> {
         let data = &self.editor.editor_state.data;
         let track = data.current_track as u16;
         data.find_automation_lane(track, &target)
-            .and_then(|idx| data.automation_lanes.get(idx))
+            .and_then(|idx| data.automation_lanes.get(idx).map(|a| &**a))
     }
 
     /// 将 X 坐标转换为 tick（值空间）。

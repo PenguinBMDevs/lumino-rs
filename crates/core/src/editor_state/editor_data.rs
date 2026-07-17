@@ -35,14 +35,10 @@ pub struct EditorData {
     pub document: Option<Arc<lumino_midi_model::MidiDocument>>,
     pub history: History,
     pub cc_data: CcData,
-    /// 自动化事件 lane 列表（从 yinhe 移植的曲线/CC/Bend/RPN/NRPN 数据模型）。
-    ///
-    /// 以 `Vec` 存储 lane 列表（通常 ≤50 条，索引写 O(1)）。
-    /// 快照时 events 的深克隆开销是各 lane 内部的 `Vec<AutomationEvent>` 造成的，
-    /// 不当外层容器的事。若需在"上千万条极限自动化曲线"场景下实现 O(1) 快照，
-    /// 应重构 `AutomationLane.events` 为持久化数据结构（`im::Vector<AutomationEvent>`），
-    /// 而非换外层容器类型。
-    pub automation_lanes: Vec<AutomationLane>,
+    /// 自动化 lane 列表。`Arc` 使撤销快照可 O(1) 共享未修改的 lane；
+    /// 修改 lane 前必须经 `Arc::make_mut`（见 editor_data/automation.rs）。
+    /// lane 数量通常 ≤50，`Vec` 索引写 O(1)。
+    pub automation_lanes: Vec<Arc<AutomationLane>>,
     pub tempo_points: Vec<TempoPoint>,
 }
 
@@ -552,6 +548,80 @@ mod tests {
         let mut data = EditorData::new();
         assert!(!data.can_undo());
         assert!(!data.undo(), "undo on empty history = false");
+    }
+
+    // ── COW / Arc 共享测试 ──
+
+    #[test]
+    fn test_automation_lane_cow_shares_unmodified_lanes() {
+        let mut data = EditorData::new();
+        data.find_or_create_automation_lane(0, AutomationTarget::CC { controller: 7 });
+        data.find_or_create_automation_lane(0, AutomationTarget::CC { controller: 1 });
+
+        // 快照——所有 lane 的 Arc refcount +1
+        data.push_history();
+
+        // 记录 lane 0 的 Arc 地址
+        let lane0_ptr = Arc::as_ptr(&data.automation_lanes[0]);
+
+        // 修改 lane 1——只有 lane 1 触发 COW（Arc::make_mut 复制 lane 1）
+        data.apply_automation_edit(AutomationEdit::Add {
+            track_idx: 0,
+            target: AutomationTarget::CC { controller: 1 },
+            channel: 0,
+            tick: 100,
+            value: 64,
+            shape: SegmentShape::Step,
+        });
+
+        // lane 0 未被修改→地址不变（物理共享）
+        assert_eq!(
+            lane0_ptr,
+            Arc::as_ptr(&data.automation_lanes[0]),
+            "未修改的 lane 必须在快照前后共享同一 Arc 分配"
+        );
+        // lane 0 的数据也不变
+        assert_eq!(
+            data.automation_lanes[0].target,
+            AutomationTarget::CC { controller: 7 }
+        );
+    }
+
+    #[test]
+    fn test_automation_lane_undo_restores_data() {
+        let mut data = EditorData::new();
+        data.find_or_create_automation_lane(0, AutomationTarget::CC { controller: 7 });
+        data.apply_automation_edit(AutomationEdit::Add {
+            track_idx: 0,
+            target: AutomationTarget::CC { controller: 7 },
+            channel: 0,
+            tick: 100,
+            value: 64,
+            shape: SegmentShape::Step,
+        });
+
+        // 快照（1 lane, 1 event）
+        data.push_history();
+
+        // 添加第二个事件
+        data.apply_automation_edit(AutomationEdit::Add {
+            track_idx: 0,
+            target: AutomationTarget::CC { controller: 7 },
+            channel: 0,
+            tick: 200,
+            value: 127,
+            shape: SegmentShape::Step,
+        });
+        assert_eq!(data.automation_lanes[0].events.len(), 2);
+
+        // 撤销——回到 1 event
+        assert!(data.undo());
+        assert_eq!(data.automation_lanes[0].events.len(), 1);
+        assert_eq!(data.automation_lanes[0].events[0].tick, 100);
+
+        // 重做——回到 2 events
+        assert!(data.redo());
+        assert_eq!(data.automation_lanes[0].events.len(), 2);
     }
 
     // ── build_cc_points / build_bend_points 测试 ──
