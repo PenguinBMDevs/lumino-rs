@@ -21,6 +21,9 @@ impl Sidebar {
                 selected_track: self.selected_track,
                 panel_width: self.panel_width,
                 is_resizing: self.is_resizing,
+                context_menu_target_id: self.track_context_menu.target_track_id,
+                renaming_track: self.renaming_track.as_ref(),
+                color_picking_track: self.color_picking_track,
             };
             panel::view(sidebar_params, window, language)
         } else {

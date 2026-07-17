@@ -267,7 +267,7 @@ fn test_cc_events_reach_midi_output() {
         .editor_state
         .data
         .automation_lanes
-        .push(AutomationLane {
+        .push(Arc::new(AutomationLane {
             target: AutomationTarget::CC { controller: 7 },
             track: 0,
             channel: 0,
@@ -276,12 +276,12 @@ fn test_cc_events_reach_midi_output() {
                 value: 100,
                 shape: SegmentShape::Step,
             }],
-        });
+        }));
     root.editor
         .editor_state
         .data
         .automation_lanes
-        .push(AutomationLane {
+        .push(Arc::new(AutomationLane {
             target: AutomationTarget::CC { controller: 10 },
             track: 0,
             channel: 0,
@@ -290,14 +290,14 @@ fn test_cc_events_reach_midi_output() {
                 value: 64,
                 shape: SegmentShape::Step,
             }],
-        });
+        }));
 
     // 添加 PitchBend 事件
     root.editor
         .editor_state
         .data
         .automation_lanes
-        .push(AutomationLane {
+        .push(Arc::new(AutomationLane {
             target: AutomationTarget::PitchBend,
             track: 0,
             channel: 0,
@@ -306,7 +306,7 @@ fn test_cc_events_reach_midi_output() {
                 value: 8192, // center
                 shape: SegmentShape::Step,
             }],
-        });
+        }));
 
     // 设置带 CC/PB 计数器的模拟 MIDI 输出
     let cc_count = Arc::new(AtomicU32::new(0));

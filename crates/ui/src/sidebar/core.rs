@@ -1,4 +1,5 @@
 use crate::resources::icon;
+use iced_core::Color;
 use lumino_core::storage::config::TrackDisplayMode;
 
 pub use lumino_ui_core::sidebar_event::{GroupId, Route};
@@ -106,6 +107,15 @@ pub struct Track {
     pub is_conductor: bool,
     pub can_delete: bool,
     pub is_muted: bool,
+    /// 选项卡颜色（None 表示使用默认颜色）
+    pub color: Option<Color>,
+}
+
+/// 音轨选项卡右键菜单状态
+#[derive(Debug, Clone, Default)]
+pub struct TrackContextMenuState {
+    /// 当前菜单关联的音轨 ID（None 表示菜单未打开）
+    pub target_track_id: Option<usize>,
 }
 
 // ─── Sidebar 主结构 ───
@@ -143,6 +153,12 @@ pub struct Sidebar {
     pub audio_export_visible: bool,
     /// 视频渲染面板是否可见（在主界面钢琴卷帘区域显示）
     pub video_export_visible: bool,
+    /// 音轨选项卡右键菜单状态
+    pub track_context_menu: TrackContextMenuState,
+    /// 正在重命名的音轨（音轨 ID，当前输入值）
+    pub renaming_track: Option<(usize, String)>,
+    /// 正在选择颜色的音轨 ID
+    pub color_picking_track: Option<usize>,
 }
 
 impl Sidebar {
@@ -160,6 +176,7 @@ impl Sidebar {
                     is_conductor: true,
                     can_delete: false,
                     is_muted: false,
+                    color: None,
                 },
                 Track {
                     id: 1,
@@ -169,6 +186,7 @@ impl Sidebar {
                     is_conductor: false,
                     can_delete: true,
                     is_muted: false,
+                    color: None,
                 },
             ],
             selected_track: 0,
@@ -185,6 +203,9 @@ impl Sidebar {
             audio_export_visible: false,
             video_export_visible: false,
             track_display_mode: TrackDisplayMode::default(),
+            track_context_menu: TrackContextMenuState::default(),
+            renaming_track: None,
+            color_picking_track: None,
         }
     }
 
@@ -236,6 +257,7 @@ impl Sidebar {
                             is_conductor: *track_idx == 0,
                             can_delete: *track_idx != 0,
                             is_muted: false,
+                            color: None,
                         });
                     }
                 }
@@ -260,6 +282,7 @@ impl Sidebar {
                         is_conductor: *track_idx == 0,
                         can_delete: *track_idx != 0,
                         is_muted: false,
+                        color: None,
                     });
                 }
             }
@@ -312,6 +335,7 @@ impl Sidebar {
                             is_conductor: t.is_conductor,
                             can_delete: t.can_delete,
                             is_muted: t.is_muted,
+                            color: t.color,
                         });
                     }
                 }
@@ -330,6 +354,7 @@ impl Sidebar {
                         is_conductor: t.is_conductor,
                         can_delete: t.can_delete,
                         is_muted: t.is_muted,
+                        color: t.color,
                     });
                 }
             }

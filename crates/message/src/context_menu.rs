@@ -31,6 +31,19 @@ pub enum PianoRollContextMenuItem {
     SelectAll,
 }
 
+/// 音轨选项卡右键上下文菜单项
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrackContextMenuItem {
+    /// 删除音轨
+    Delete,
+    /// 重命名音轨
+    Rename,
+    /// 设置选项卡颜色
+    SetColor,
+    /// 设置通道
+    SetChannel,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -43,6 +56,16 @@ mod tests {
             PianoRollContextMenuItem::Paste,
             PianoRollContextMenuItem::Delete,
             PianoRollContextMenuItem::SelectAll,
+        ];
+    }
+
+    #[test]
+    fn test_track_menu_item_variants() {
+        let _items = [
+            TrackContextMenuItem::Delete,
+            TrackContextMenuItem::Rename,
+            TrackContextMenuItem::SetColor,
+            TrackContextMenuItem::SetChannel,
         ];
     }
 

@@ -282,6 +282,7 @@ mod tests {
                 is_conductor: true,
                 can_delete: false,
                 is_muted: false,
+                color: None,
             },
             crate::sidebar::Track {
                 id: 1,
@@ -291,6 +292,7 @@ mod tests {
                 is_conductor: false,
                 can_delete: true,
                 is_muted: false,
+                color: None,
             },
         ];
 
@@ -318,6 +320,7 @@ mod tests {
             is_conductor: true,
             can_delete: false,
             is_muted: false,
+            color: None,
         }];
 
         state.sync_from_tracks(&tracks);

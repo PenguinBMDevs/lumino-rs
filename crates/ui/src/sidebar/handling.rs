@@ -1,8 +1,10 @@
 use super::core::{
     GroupId, GroupSubState, MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, Route, Sidebar, Track,
+    TrackContextMenuState,
 };
 use crate::event as ui_event;
 use crate::sidebar::Event;
+use lumino_message::TrackContextMenuItem;
 
 impl Sidebar {
     pub fn update(&mut self, event: Event) -> bool {
@@ -10,6 +12,9 @@ impl Sidebar {
         let prev_visible = self.panel_visible;
         let prev_route = self.route;
         let prev_group = self.active_group;
+        let prev_context_menu_target = self.track_context_menu.target_track_id;
+        let prev_renaming = self.renaming_track.as_ref().map(|(id, _)| *id);
+        let prev_color_picking = self.color_picking_track;
         match event {
             // ── 分组切换（核心逻辑） ──
             GroupToggled(group) => {
@@ -110,10 +115,92 @@ impl Sidebar {
                     is_conductor: false,
                     can_delete: true,
                     is_muted: false,
+                    color: None,
                 });
                 ui_event::emit(ui_event::Event::Window(
                     ui_event::window::Event::local_track_added(new_id),
                 ));
+            }
+            // ── 音轨选项卡右键菜单 ──
+            TrackContextMenuOpened(id) => {
+                self.track_context_menu = TrackContextMenuState {
+                    target_track_id: Some(id),
+                };
+                self.renaming_track = None;
+                self.color_picking_track = None;
+            }
+            TrackContextMenuClosed => {
+                self.track_context_menu = TrackContextMenuState::default();
+            }
+            TrackContextMenuItemClicked(id, item) => {
+                self.track_context_menu = TrackContextMenuState::default();
+                match item {
+                    TrackContextMenuItem::Delete => {
+                        if let Some(idx) = self.tracks.iter().position(|t| t.id == id)
+                            && self.tracks[idx].can_delete
+                        {
+                            self.tracks.remove(idx);
+                            if self.selected_track == id
+                                || !self.tracks.iter().any(|t| t.id == self.selected_track)
+                            {
+                                self.selected_track =
+                                    self.tracks.first().map(|t| t.id).unwrap_or(0);
+                            }
+                            self.renaming_track = None;
+                            self.color_picking_track = None;
+                        }
+                    }
+                    TrackContextMenuItem::Rename => {
+                        if let Some(track) = self.tracks.iter().find(|t| t.id == id) {
+                            self.renaming_track = Some((id, track.name.clone()));
+                        }
+                        self.color_picking_track = None;
+                    }
+                    TrackContextMenuItem::SetColor => {
+                        self.color_picking_track = Some(id);
+                        self.renaming_track = None;
+                    }
+                    TrackContextMenuItem::SetChannel => {
+                        tracing::info!("设置通道功能待实现，音轨 id={}", id);
+                    }
+                }
+            }
+            TrackRenameStarted(id) => {
+                if let Some(track) = self.tracks.iter().find(|t| t.id == id) {
+                    self.renaming_track = Some((id, track.name.clone()));
+                }
+                self.track_context_menu = TrackContextMenuState::default();
+            }
+            TrackRenameChanged(id, value) => {
+                if let Some((renaming_id, buffer)) = &mut self.renaming_track
+                    && *renaming_id == id
+                {
+                    *buffer = value;
+                }
+            }
+            TrackRenameConfirmed(id) => {
+                if let Some((renaming_id, buffer)) = self.renaming_track.take()
+                    && renaming_id == id
+                    && let Some(track) = self.tracks.iter_mut().find(|t| t.id == id)
+                {
+                    track.name = buffer;
+                }
+            }
+            TrackRenameCancelled(_) => {
+                self.renaming_track = None;
+            }
+            TrackColorPickerOpened(id) => {
+                self.color_picking_track = Some(id);
+                self.track_context_menu = TrackContextMenuState::default();
+            }
+            TrackColorSelected(id, color) => {
+                if let Some(track) = self.tracks.iter_mut().find(|t| t.id == id) {
+                    track.color = Some(color);
+                }
+                self.color_picking_track = None;
+            }
+            TrackColorPickerClosed(_) => {
+                self.color_picking_track = None;
             }
             // ── 调整宽度 ──
             ResizeDragStarted(_) => {
@@ -149,6 +236,9 @@ impl Sidebar {
         self.panel_visible != prev_visible
             || self.route != prev_route
             || self.active_group != prev_group
+            || self.track_context_menu.target_track_id != prev_context_menu_target
+            || self.renaming_track.as_ref().map(|(id, _)| *id) != prev_renaming
+            || self.color_picking_track != prev_color_picking
     }
 
     /// 分组切换：保存旧组状态 → 恢复新组状态，互斥

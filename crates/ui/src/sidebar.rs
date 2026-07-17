@@ -1,4 +1,5 @@
 /// 侧边栏模块 — 路由、面板、音轨列表
+mod context_menu;
 mod core;
 mod handling;
 mod view;
@@ -186,5 +187,136 @@ mod tests {
             sidebar.automation_panel_visible,
             "切回钢琴卷帘组后自动化面板状态应恢复"
         );
+    }
+
+    /// 右键菜单打开时记录目标音轨并清除内联编辑状态
+    #[test]
+    fn test_track_context_menu_opened_sets_target() {
+        let mut sidebar = Sidebar::new();
+        sidebar.renaming_track = Some((1, "Old".to_string()));
+        sidebar.color_picking_track = Some(1);
+
+        sidebar.update(Event::TrackContextMenuOpened(1));
+
+        assert_eq!(sidebar.track_context_menu.target_track_id, Some(1));
+        assert!(sidebar.renaming_track.is_none());
+        assert!(sidebar.color_picking_track.is_none());
+    }
+
+    /// 关闭右键菜单后目标音轨被清空
+    #[test]
+    fn test_track_context_menu_closed_clears_target() {
+        let mut sidebar = Sidebar::new();
+        sidebar.update(Event::TrackContextMenuOpened(1));
+        sidebar.update(Event::TrackContextMenuClosed);
+
+        assert!(sidebar.track_context_menu.target_track_id.is_none());
+    }
+
+    /// 删除菜单项会移除可删除音轨并保持选中音轨有效
+    #[test]
+    fn test_track_context_menu_delete_removes_track() {
+        use lumino_message::TrackContextMenuItem;
+
+        let mut sidebar = Sidebar::new();
+        sidebar.selected_track = 1;
+
+        sidebar.update(Event::TrackContextMenuItemClicked(
+            1,
+            TrackContextMenuItem::Delete,
+        ));
+
+        assert!(!sidebar.tracks.iter().any(|t| t.id == 1));
+        assert_eq!(sidebar.selected_track, sidebar.tracks[0].id);
+    }
+
+    /// 不可删除的音轨不会被删除
+    #[test]
+    fn test_track_context_menu_delete_respects_can_delete() {
+        use lumino_message::TrackContextMenuItem;
+
+        let mut sidebar = Sidebar::new();
+        let conductor_id = sidebar.tracks[0].id;
+        assert!(!sidebar.tracks[0].can_delete);
+
+        sidebar.update(Event::TrackContextMenuItemClicked(
+            conductor_id,
+            TrackContextMenuItem::Delete,
+        ));
+
+        assert!(sidebar.tracks.iter().any(|t| t.id == conductor_id));
+    }
+
+    /// 重命名流程会更新音轨名称
+    #[test]
+    fn test_track_rename_flow_updates_name() {
+        let mut sidebar = Sidebar::new();
+        let track_id = sidebar.tracks[1].id;
+
+        sidebar.update(Event::TrackRenameStarted(track_id));
+        assert_eq!(sidebar.renaming_track.as_ref().unwrap().1, "Setup");
+
+        sidebar.update(Event::TrackRenameChanged(track_id, "New Name".to_string()));
+        assert_eq!(sidebar.renaming_track.as_ref().unwrap().1, "New Name");
+
+        sidebar.update(Event::TrackRenameConfirmed(track_id));
+        assert_eq!(
+            sidebar
+                .tracks
+                .iter()
+                .find(|t| t.id == track_id)
+                .unwrap()
+                .name,
+            "New Name"
+        );
+        assert!(sidebar.renaming_track.is_none());
+    }
+
+    /// 取消重命名不会修改音轨名称
+    #[test]
+    fn test_track_rename_cancelled_leaves_name() {
+        let mut sidebar = Sidebar::new();
+        let track_id = sidebar.tracks[1].id;
+        let original_name = sidebar.tracks[1].name.clone();
+
+        sidebar.update(Event::TrackRenameStarted(track_id));
+        sidebar.update(Event::TrackRenameChanged(track_id, "New Name".to_string()));
+        sidebar.update(Event::TrackRenameCancelled(track_id));
+
+        assert_eq!(
+            sidebar
+                .tracks
+                .iter()
+                .find(|t| t.id == track_id)
+                .unwrap()
+                .name,
+            original_name
+        );
+        assert!(sidebar.renaming_track.is_none());
+    }
+
+    /// 颜色选择会设置音轨选项卡颜色
+    #[test]
+    fn test_track_color_selected_sets_color() {
+        use iced_core::Color;
+
+        let mut sidebar = Sidebar::new();
+        let track_id = sidebar.tracks[1].id;
+        let color = Color::from_rgb(0.5, 0.5, 0.5);
+
+        sidebar.update(Event::TrackColorPickerOpened(track_id));
+        assert_eq!(sidebar.color_picking_track, Some(track_id));
+
+        sidebar.update(Event::TrackColorSelected(track_id, color));
+        assert_eq!(
+            sidebar
+                .tracks
+                .iter()
+                .find(|t| t.id == track_id)
+                .unwrap()
+                .color,
+            Some(color)
+        );
+        assert!(sidebar.color_picking_track.is_none());
     }
 }

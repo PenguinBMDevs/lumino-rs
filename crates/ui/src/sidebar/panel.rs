@@ -1,5 +1,7 @@
-use iced_core::{Alignment, Length, Padding};
-use iced_widget::{button, column, container, row, scrollable, space, text};
+use iced_core::{Alignment, Color, Length, Padding};
+use iced_widget::{
+    button, column, container, mouse_area, row, scrollable, space, text, text_input,
+};
 use lumino_core::i18n::{Language, main_translations};
 
 use crate::{
@@ -17,6 +19,9 @@ pub struct SidebarViewParams<'a> {
     pub selected_track: usize,
     pub panel_width: f32,
     pub is_resizing: bool,
+    pub context_menu_target_id: Option<usize>,
+    pub renaming_track: Option<&'a (usize, String)>,
+    pub color_picking_track: Option<usize>,
 }
 
 pub fn view<'a>(
@@ -43,8 +48,14 @@ pub fn view<'a>(
             }));
 
             for track in params.tracks {
-                let track_container =
-                    view_track_item(track, track.id == params.selected_track, window);
+                let track_container = view_track_item(
+                    track,
+                    track.id == params.selected_track,
+                    window,
+                    params.context_menu_target_id,
+                    params.renaming_track,
+                    params.color_picking_track,
+                );
                 col = col.push(track_container);
             }
 
@@ -143,13 +154,31 @@ pub fn view<'a>(
         .into()
 }
 
+/// 预设音轨颜色
+const TRACK_COLORS: [Color; 8] = [
+    Color::from_rgb(0.85, 0.15, 0.15),
+    Color::from_rgb(0.15, 0.75, 0.35),
+    Color::from_rgb(0.15, 0.45, 0.85),
+    Color::from_rgb(0.85, 0.75, 0.10),
+    Color::from_rgb(0.75, 0.15, 0.75),
+    Color::from_rgb(0.15, 0.75, 0.75),
+    Color::from_rgb(0.95, 0.50, 0.15),
+    Color::from_rgb(0.50, 0.50, 0.50),
+];
+
 /// 渲染单个音轨行
 fn view_track_item<'a>(
     track: &'a Track,
     is_selected: bool,
     window: &'a window::Window,
+    context_menu_target_id: Option<usize>,
+    renaming_track: Option<&'a (usize, String)>,
+    color_picking_track: Option<usize>,
 ) -> Element<'a> {
     let palette = window.theme.extended_palette();
+    let is_context_menu_open = context_menu_target_id == Some(track.id);
+    let is_renaming = renaming_track.map(|(id, _)| *id) == Some(track.id);
+    let is_color_picking = color_picking_track == Some(track.id);
 
     let left_icon: Element<'a> = if track.is_conductor {
         container(icon::view_with_size_and_theme(
@@ -169,9 +198,17 @@ fn view_track_item<'a>(
         })
         .into()
     } else {
-        // 显示通道字母
-        let channel_letter = (b'A' + track.channel) as char;
-        container(
+        // 如果设置了选项卡颜色，显示颜色块；否则显示通道字母
+        let icon_content: Element<'a> = if let Some(color) = track.color {
+            container(space().width(16).height(16))
+                .style(move |_theme: &Theme| container::Style {
+                    background: Some(iced_core::Background::Color(color)),
+                    border: iced_core::Border::default().rounded(4),
+                    ..Default::default()
+                })
+                .into()
+        } else {
+            let channel_letter = (b'A' + track.channel) as char;
             text(channel_letter.to_string())
                 .size(14)
                 .font(iced_core::Font {
@@ -186,21 +223,33 @@ fn view_track_item<'a>(
                         p.background.strong.color
                     };
                     text::Style { color: Some(c) }
-                }),
-        )
-        .width(24)
-        .align_x(iced_core::alignment::Horizontal::Left)
-        .align_y(iced_core::alignment::Vertical::Center)
-        .padding(iced_core::Padding {
-            top: 0.0,
-            right: 0.0,
-            bottom: 0.0,
-            left: 2.0,
-        })
-        .into()
+                })
+                .into()
+        };
+
+        container(icon_content)
+            .width(24)
+            .align_x(iced_core::alignment::Horizontal::Left)
+            .align_y(iced_core::alignment::Vertical::Center)
+            .padding(iced_core::Padding {
+                top: 0.0,
+                right: 0.0,
+                bottom: 0.0,
+                left: 2.0,
+            })
+            .into()
     };
 
-    let name = text(&track.name).size(14).width(Length::Fill);
+    let name: Element<'a> = if is_renaming {
+        let buffer = renaming_track.map(|(_, buf)| buf.as_str()).unwrap_or("");
+        text_input("音轨名称", buffer)
+            .on_input(|value| Event::track_rename_changed(track.id, value))
+            .on_submit(Event::track_rename_confirmed(track.id))
+            .width(Length::Fill)
+            .into()
+    } else {
+        text(&track.name).size(14).width(Length::Fill).into()
+    };
 
     let mute_btn = button(
         text("M")
@@ -224,10 +273,10 @@ fn view_track_item<'a>(
     .padding(0);
 
     let track_row = row![left_icon, space().width(4), name, mute_btn,]
-        .align_y(Alignment::Start)
+        .align_y(Alignment::Center)
         .padding(4);
 
-    button(track_row)
+    let track_button = button(track_row)
         .width(Length::Fill)
         .on_press(Event::track_selected(track.id))
         .style(move |theme: &Theme, status| {
@@ -249,6 +298,57 @@ fn view_track_item<'a>(
                 ..Default::default()
             }
             .with_background(bg)
-        })
-        .into()
+        });
+
+    // 右键点击按钮打开上下文菜单
+    let track_button_with_menu =
+        mouse_area(track_button).on_right_press(Event::track_context_menu_opened(track.id));
+
+    let mut col = column![track_button_with_menu].spacing(2);
+
+    if is_context_menu_open {
+        col = col.push(super::context_menu::panel(track.id));
+    }
+
+    if is_renaming {
+        let confirm_btn = button(text("✓").size(14))
+            .on_press(Event::track_rename_confirmed(track.id))
+            .style(|_theme: &Theme, _status| {
+                button::Style::default().with_background(palette.primary.base.color)
+            });
+        let cancel_btn = button(text("✕").size(14))
+            .on_press(Event::track_rename_cancelled(track.id))
+            .style(|_theme: &Theme, _status| {
+                button::Style::default().with_background(palette.background.strong.color)
+            });
+        let rename_controls =
+            row![confirm_btn, space().width(4), cancel_btn,].align_y(Alignment::Center);
+        col = col.push(rename_controls);
+    }
+
+    if is_color_picking {
+        let color_buttons = TRACK_COLORS
+            .into_iter()
+            .map(|color| {
+                button(space().width(20).height(20))
+                    .on_press(Event::track_color_selected(track.id, color))
+                    .style(move |_theme: &Theme, _status| button::Style {
+                        background: Some(iced_core::Background::Color(color)),
+                        border: iced_core::Border::default().rounded(4),
+                        ..Default::default()
+                    })
+                    .into()
+            })
+            .collect::<Vec<_>>();
+        let color_row = row(color_buttons).spacing(4).wrap();
+        let close_btn = button(text("取消").size(12))
+            .on_press(Event::track_color_picker_closed(track.id))
+            .style(|_theme: &Theme, _status| {
+                button::Style::default().with_background(palette.background.strong.color)
+            });
+        col = col.push(color_row);
+        col = col.push(close_btn);
+    }
+
+    col.into()
 }

@@ -19,7 +19,9 @@ pub mod video_export;
 
 pub use audio_export::AudioExportAction;
 pub use collaboration::CollaborationAction;
-pub use context_menu::{PianoRollContextMenuAction, PianoRollContextMenuItem};
+pub use context_menu::{
+    PianoRollContextMenuAction, PianoRollContextMenuItem, TrackContextMenuItem,
+};
 pub use custom_precision::CustomPrecisionAction;
 pub use load_confirm::LoadConfirmAction;
 pub use loop_range::LoopRangeAction;

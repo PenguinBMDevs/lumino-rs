@@ -4,6 +4,7 @@
 
 use iced_core::{Color, Point};
 use lumino_core::i18n::{Language, main_translations};
+use lumino_message::TrackContextMenuItem;
 
 use crate::Message;
 
@@ -122,6 +123,26 @@ pub enum Event {
     PianoRollToggled,
     /// 分组切换
     GroupToggled(GroupId),
+    /// 打开音轨选项卡右键菜单
+    TrackContextMenuOpened(usize),
+    /// 关闭音轨选项卡右键菜单
+    TrackContextMenuClosed,
+    /// 点击音轨选项卡右键菜单项
+    TrackContextMenuItemClicked(usize, TrackContextMenuItem),
+    /// 开始重命名音轨
+    TrackRenameStarted(usize),
+    /// 重命名输入变化
+    TrackRenameChanged(usize, String),
+    /// 确认重命名
+    TrackRenameConfirmed(usize),
+    /// 取消重命名
+    TrackRenameCancelled(usize),
+    /// 打开颜色选择器
+    TrackColorPickerOpened(usize),
+    /// 选择音轨颜色
+    TrackColorSelected(usize, Color),
+    /// 关闭颜色选择器
+    TrackColorPickerClosed(usize),
 }
 
 impl Event {
@@ -167,5 +188,108 @@ impl Event {
 
     pub const fn group_toggled(g: GroupId) -> Message {
         Message::Sidebar(Self::GroupToggled(g))
+    }
+
+    pub const fn track_context_menu_opened(track_id: usize) -> Message {
+        Message::Sidebar(Self::TrackContextMenuOpened(track_id))
+    }
+
+    pub const fn track_context_menu_closed() -> Message {
+        Message::Sidebar(Self::TrackContextMenuClosed)
+    }
+
+    pub const fn track_context_menu_item_clicked(
+        track_id: usize,
+        item: TrackContextMenuItem,
+    ) -> Message {
+        Message::Sidebar(Self::TrackContextMenuItemClicked(track_id, item))
+    }
+
+    pub fn track_rename_started(track_id: usize) -> Message {
+        Message::Sidebar(Self::TrackRenameStarted(track_id))
+    }
+
+    pub fn track_rename_changed(track_id: usize, value: String) -> Message {
+        Message::Sidebar(Self::TrackRenameChanged(track_id, value))
+    }
+
+    pub fn track_rename_confirmed(track_id: usize) -> Message {
+        Message::Sidebar(Self::TrackRenameConfirmed(track_id))
+    }
+
+    pub fn track_rename_cancelled(track_id: usize) -> Message {
+        Message::Sidebar(Self::TrackRenameCancelled(track_id))
+    }
+
+    pub fn track_color_picker_opened(track_id: usize) -> Message {
+        Message::Sidebar(Self::TrackColorPickerOpened(track_id))
+    }
+
+    pub fn track_color_selected(track_id: usize, color: Color) -> Message {
+        Message::Sidebar(Self::TrackColorSelected(track_id, color))
+    }
+
+    pub fn track_color_picker_closed(track_id: usize) -> Message {
+        Message::Sidebar(Self::TrackColorPickerClosed(track_id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_track_context_menu_event_helpers() {
+        let msg = Event::track_context_menu_opened(3);
+        assert!(matches!(
+            msg,
+            Message::Sidebar(Event::TrackContextMenuOpened(3))
+        ));
+
+        let msg = Event::track_context_menu_closed();
+        assert!(matches!(
+            msg,
+            Message::Sidebar(Event::TrackContextMenuClosed)
+        ));
+
+        let msg = Event::track_context_menu_item_clicked(2, TrackContextMenuItem::Delete);
+        assert!(matches!(
+            msg,
+            Message::Sidebar(Event::TrackContextMenuItemClicked(
+                2,
+                TrackContextMenuItem::Delete
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_track_rename_event_helpers() {
+        let msg = Event::track_rename_started(1);
+        assert!(matches!(
+            msg,
+            Message::Sidebar(Event::TrackRenameStarted(1))
+        ));
+
+        let msg = Event::track_rename_changed(1, "New Name".to_string());
+        assert!(matches!(
+            msg,
+            Message::Sidebar(Event::TrackRenameChanged(1, _))
+        ));
+
+        let msg = Event::track_rename_confirmed(1);
+        assert!(matches!(
+            msg,
+            Message::Sidebar(Event::TrackRenameConfirmed(1))
+        ));
+    }
+
+    #[test]
+    fn test_track_color_event_helpers() {
+        let color = Color::from_rgb(1.0, 0.0, 0.0);
+        let msg = Event::track_color_selected(2, color);
+        assert!(matches!(
+            msg,
+            Message::Sidebar(Event::TrackColorSelected(2, c)) if c == color
+        ));
     }
 }
