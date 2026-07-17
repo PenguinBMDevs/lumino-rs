@@ -82,6 +82,15 @@ impl History {
         self.redo_stack.pop_back()
     }
 
+    /// 丢弃最近一次 undo 条目，不触碰 redo 栈。
+    ///
+    /// 用于 `push_history()` 调用后发现没有实际变更的场景：
+    /// 不应调用 `undo()`（会污染 redo 栈），而应直接丢弃刚 push 的空快照。
+    /// O(1) 操作——VecDeque pop_back。
+    pub fn discard_last(&mut self) {
+        self.undo_stack.pop_back();
+    }
+
     /// Check if undo is available
     pub fn can_undo(&self) -> bool {
         !self.undo_stack.is_empty()

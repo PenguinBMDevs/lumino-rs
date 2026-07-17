@@ -36,6 +36,12 @@ pub struct EditorData {
     pub history: History,
     pub cc_data: CcData,
     /// 自动化事件 lane 列表（从 yinhe 移植的曲线/CC/Bend/RPN/NRPN 数据模型）。
+    ///
+    /// 以 `Vec` 存储 lane 列表（通常 ≤50 条，索引写 O(1)）。
+    /// 快照时 events 的深克隆开销是各 lane 内部的 `Vec<AutomationEvent>` 造成的，
+    /// 不当外层容器的事。若需在"上千万条极限自动化曲线"场景下实现 O(1) 快照，
+    /// 应重构 `AutomationLane.events` 为持久化数据结构（`im::Vector<AutomationEvent>`），
+    /// 而非换外层容器类型。
     pub automation_lanes: Vec<AutomationLane>,
     pub tempo_points: Vec<TempoPoint>,
 }

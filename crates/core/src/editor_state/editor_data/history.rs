@@ -1,4 +1,8 @@
 //! Undo/Redo 历史记录操作
+//!
+//! `EditorData` 用 `Vec<AutomationLane>`（编辑器本体频繁读写），
+//! `EditorSnapshot` 用 `Vector<AutomationLane>`（快照层持久化共享）。
+//! 转换开销仅在快照创建/恢复时发生，不影响编辑器正常渲染循环。
 
 use super::EditorData;
 use crate::history::EditorSnapshot;

@@ -6,9 +6,7 @@
 use std::collections::HashSet;
 
 use crate::editor_state::EditorData;
-use crate::history::EditorSnapshot;
 use crate::midi_types::VelocityPoint;
-use im::Vector;
 
 /// 音符变换操作 trait
 pub trait EditorTransform {
@@ -62,11 +60,7 @@ impl EditorTransform for EditorData {
         if modified > 0 {
             self.sync_track_notes();
         } else {
-            self.history.undo(EditorSnapshot::new(
-                self.notes.clone(),
-                self.current_track,
-                Vector::from(self.automation_lanes.clone()),
-            ));
+            self.history.discard_last();
         }
         modified
     }
@@ -90,11 +84,7 @@ impl EditorTransform for EditorData {
         if modified > 0 {
             self.sync_track_notes();
         } else {
-            self.history.undo(EditorSnapshot::new(
-                self.notes.clone(),
-                self.current_track,
-                Vector::from(self.automation_lanes.clone()),
-            ));
+            self.history.discard_last();
         }
         modified
     }
@@ -123,11 +113,7 @@ impl EditorTransform for EditorData {
         if modified > 0 {
             self.sync_track_notes();
         } else {
-            self.history.undo(EditorSnapshot::new(
-                self.notes.clone(),
-                self.current_track,
-                Vector::from(self.automation_lanes.clone()),
-            ));
+            self.history.discard_last();
         }
         modified
     }
@@ -170,11 +156,7 @@ impl EditorTransform for EditorData {
         if modified > 0 {
             self.sync_track_notes();
         } else {
-            self.history.undo(EditorSnapshot::new(
-                self.notes.clone(),
-                self.current_track,
-                Vector::from(self.automation_lanes.clone()),
-            ));
+            self.history.discard_last();
         }
         modified
     }

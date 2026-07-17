@@ -161,18 +161,7 @@ impl ToolbarHandler {
             root.editor.mark_notes_changed();
             tracing::info!("Root: 量化完成，修改了 {} 个音符", modified_count);
         } else {
-            root.editor.editor_state.data.history.undo(
-                crate::editor::history::EditorSnapshot::new(
-                    root.editor.editor_state.data.notes.clone(),
-                    root.editor.editor_state.data.current_track,
-                    root.editor
-                        .editor_state
-                        .data
-                        .automation_lanes
-                        .clone()
-                        .into(),
-                ),
-            );
+            root.editor.editor_state.data.history.discard_last();
             tracing::debug!("Root: 没有音符被量化");
         }
 
