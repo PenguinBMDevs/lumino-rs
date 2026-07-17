@@ -169,8 +169,10 @@ fn view_track_item<'a>(
         })
         .into()
     } else {
+        // 显示通道字母
+        let channel_letter = (b'A' + track.channel) as char;
         container(
-            text("A01")
+            text(channel_letter.to_string())
                 .size(14)
                 .font(iced_core::Font {
                     weight: iced_core::font::Weight::Bold,

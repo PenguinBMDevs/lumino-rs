@@ -64,6 +64,8 @@ pub struct SettingsPanel {
     pub playback_key_colors_enabled: bool,
     /// 添加音轨行为
     pub track_add_behavior: TrackAddBehavior,
+    /// 音轨列表显示模式
+    pub track_display_mode: lumino_core::storage::config::TrackDisplayMode,
     /// 当前选中的调色板名称
     pub selected_palette: String,
     /// 可用调色板名称列表
@@ -113,6 +115,7 @@ impl SettingsPanel {
             hires_gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
             playback_key_colors_enabled: ui_config.playback_key_colors_enabled,
             track_add_behavior: ui_config.track_add_behavior,
+            track_display_mode: ui_config.track_display_mode,
             selected_palette,
             available_palettes,
         }
@@ -249,6 +252,10 @@ impl SettingsPanel {
             }
             Event::TrackAddBehaviorChanged(v) => {
                 self.track_add_behavior = v;
+            }
+            Event::TrackDisplayModeChanged(mode) => {
+                self.track_display_mode = mode;
+                tracing::debug!("设置: 音轨列表显示模式切换为 {:?}", mode);
             }
             Event::PaletteChanged(name) => {
                 if let Some(p) = self.available_palettes.iter().find(|n| **n == name) {

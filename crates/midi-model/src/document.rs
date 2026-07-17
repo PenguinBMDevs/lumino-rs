@@ -326,6 +326,30 @@ impl MidiDocument {
         }
     }
 
+    /// 获取指定音轨的代表性 MIDI 通道（出现频率最高的通道）。
+    /// 如果音轨没有音符，返回 0。
+    pub fn track_channel(&self, track_id: u16) -> u8 {
+        let tid = track_id as usize;
+        match self.notes.get(tid) {
+            Some(notes) if !notes.is_empty() => {
+                let mut counts = [0u32; 16];
+                for n in notes {
+                    counts[n.channel as usize] += 1;
+                }
+                let mut max_ch = 0;
+                let mut max_count = 0;
+                for (ch, &count) in counts.iter().enumerate() {
+                    if count > max_count {
+                        max_count = count;
+                        max_ch = ch;
+                    }
+                }
+                max_ch as u8
+            }
+            _ => 0,
+        }
+    }
+
     /// 获取所有音轨（排除指定音轨）在指定 tick 范围内的音符。
     pub fn get_all_notes_in_range_except(
         &self,

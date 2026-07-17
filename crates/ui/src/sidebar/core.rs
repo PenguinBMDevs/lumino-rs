@@ -1,4 +1,5 @@
 use crate::resources::icon;
+use lumino_core::storage::config::TrackDisplayMode;
 
 pub use lumino_ui_core::sidebar_event::{GroupId, Route};
 
@@ -100,6 +101,8 @@ pub const ROUTES: [RouteConfig; 9] = [
 pub struct Track {
     pub id: usize,
     pub name: String,
+    pub channel: u8,
+    pub display_label: String,
     pub is_conductor: bool,
     pub can_delete: bool,
     pub is_muted: bool,
@@ -121,6 +124,8 @@ pub struct Sidebar {
     pub(crate) resize_start_x: f32,
     /// 拖拽开始时的面板宽度
     pub(crate) resize_start_width: f32,
+    /// 音轨列表显示模式
+    pub track_display_mode: TrackDisplayMode,
     /// 自动化面板是否可见（独立于路由面板）
     pub automation_panel_visible: bool,
     /// 钢琴卷帘编辑器是否可见（默认打开）
@@ -150,6 +155,8 @@ impl Sidebar {
                 Track {
                     id: 0,
                     name: "Conductor".to_string(),
+                    channel: 0,
+                    display_label: "A01".to_string(),
                     is_conductor: true,
                     can_delete: false,
                     is_muted: false,
@@ -157,6 +164,8 @@ impl Sidebar {
                 Track {
                     id: 1,
                     name: "Setup".to_string(),
+                    channel: 0,
+                    display_label: "A02".to_string(),
                     is_conductor: false,
                     can_delete: true,
                     is_muted: false,
@@ -175,6 +184,7 @@ impl Sidebar {
             renderer_sub_state: GroupSubState::default(),
             audio_export_visible: false,
             video_export_visible: false,
+            track_display_mode: TrackDisplayMode::default(),
         }
     }
 
@@ -184,20 +194,77 @@ impl Sidebar {
     }
 
     /// 从 MIDI 数据更新音轨列表
-    pub fn update_tracks_from_midi(&mut self, track_infos: &[(usize, Option<String>, u64)]) {
+    pub fn update_tracks_from_midi(&mut self, track_infos: &[(usize, Option<String>, u64, u8)]) {
         tracing::info!("update_tracks_from_midi: {} tracks", track_infos.len());
         self.tracks.clear();
-        for (idx, (track_idx, name, _note_count)) in track_infos.iter().enumerate() {
-            let track_name = name.as_deref().unwrap_or("Unknown");
-            tracing::debug!("  track {}: id={}, name={}", idx, track_idx, track_name);
-            self.tracks.push(Track {
-                id: *track_idx,
-                name: format!("{:02} {}", idx + 1, track_name),
-                is_conductor: *track_idx == 0,
-                can_delete: *track_idx != 0,
-                is_muted: false,
-            });
+
+        // 先收集所有音轨的 channel 信息
+        let channels: Vec<u8> = track_infos.iter().map(|(_, _, _, ch)| *ch).collect();
+
+        // 根据模式计算显示标签
+        match self.track_display_mode {
+            TrackDisplayMode::ChannelGrouped => {
+                // 按通道分组，组内按 track_idx 排序
+                let mut grouped: Vec<Vec<usize>> = vec![Vec::new(); 16];
+                for (idx, (_, _, _, _)) in track_infos.iter().enumerate() {
+                    grouped[channels[idx] as usize].push(idx);
+                }
+
+                for group in grouped {
+                    let mut sorted_group = group;
+                    sorted_group.sort_by_key(|&i| {
+                        track_infos[i].0 // track_idx
+                    });
+                    for (label_idx, &idx) in sorted_group.iter().enumerate() {
+                        let (track_idx, name, _note_count, ch) = &track_infos[idx];
+                        let track_name = name.as_deref().unwrap_or("Unknown");
+                        let channel_letter = (b'A' + channels[idx]) as char;
+                        let label = format!("{}{:02}", channel_letter, label_idx + 1);
+                        tracing::debug!(
+                            "  track {}: id={}, name={}, channel={}, label={}",
+                            idx,
+                            track_idx,
+                            track_name,
+                            ch,
+                            label
+                        );
+                        self.tracks.push(Track {
+                            id: *track_idx,
+                            name: label.clone(),
+                            channel: channels[idx],
+                            display_label: label,
+                            is_conductor: *track_idx == 0,
+                            can_delete: *track_idx != 0,
+                            is_muted: false,
+                        });
+                    }
+                }
+            }
+            TrackDisplayMode::TrackIndex => {
+                for (idx, (track_idx, name, _note_count, ch)) in track_infos.iter().enumerate() {
+                    let track_name = name.as_deref().unwrap_or("Unknown");
+                    let label = format!("{:02}", idx + 1);
+                    tracing::debug!(
+                        "  track {}: id={}, name={}, channel={}, label={}",
+                        idx,
+                        track_idx,
+                        track_name,
+                        ch,
+                        label
+                    );
+                    self.tracks.push(Track {
+                        id: *track_idx,
+                        name: label.clone(),
+                        channel: *ch,
+                        display_label: label,
+                        is_conductor: *track_idx == 0,
+                        can_delete: *track_idx != 0,
+                        is_muted: false,
+                    });
+                }
+            }
         }
+
         // 如果有音轨，默认选择第一个
         if !self.tracks.is_empty() {
             self.selected_track = self.tracks[0].id;

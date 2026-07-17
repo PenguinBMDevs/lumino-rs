@@ -92,9 +92,21 @@ impl Sidebar {
             }
             AddTrack => {
                 let new_id = self.tracks.len();
+                let display_mode = self.track_display_mode;
+                let display_label = match display_mode {
+                    lumino_core::storage::config::TrackDisplayMode::ChannelGrouped => {
+                        // 使用通道字母 + 序号（简化处理，实际应计算通道）
+                        format!("A{:02}", new_id + 1)
+                    }
+                    lumino_core::storage::config::TrackDisplayMode::TrackIndex => {
+                        format!("{:02}", new_id + 1)
+                    }
+                };
                 self.tracks.push(Track {
                     id: new_id,
-                    name: format!("Track {}", new_id),
+                    name: display_label.clone(),
+                    channel: 0,
+                    display_label,
                     is_conductor: false,
                     can_delete: true,
                     is_muted: false,

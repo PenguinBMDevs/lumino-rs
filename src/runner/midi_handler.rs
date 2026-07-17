@@ -30,7 +30,8 @@ impl MidiHandler {
         for track_idx in 0..track_count {
             let note_count = document.track_note_count(track_idx as u16);
             let track_name = document.track_name(track_idx).map(|s| s.to_string());
-            track_infos.push((track_idx, track_name, note_count));
+            let channel = document.track_channel(track_idx as u16);
+            track_infos.push((track_idx, track_name, note_count, channel));
         }
 
         ui.set_ppq(parsed.info.division);
@@ -58,9 +59,9 @@ impl MidiHandler {
         }
 
         // 加载第一个有音符的音轨到编辑器（实际显示 + 懒加载缓存）
-        if let Some((first_track_idx, _, _)) = track_infos
+        if let Some((first_track_idx, _, _, _)) = track_infos
             .iter()
-            .find(|(_, _, note_count)| *note_count > 0)
+            .find(|(_, _, note_count, _)| *note_count > 0)
         {
             let first_notes = document.get_track_notes(*first_track_idx as u16);
             ui.load_track_notes(*first_track_idx, &first_notes);

@@ -5,7 +5,7 @@ use crate::root::Root;
 
 impl Root {
     /// 更新音轨列表（从 MIDI 导入）
-    pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64)]) {
+    pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64, u8)]) {
         self.sidebar.update_tracks_from_midi(track_infos);
     }
 
@@ -117,6 +117,8 @@ impl Root {
             self.sidebar.tracks.push(crate::sidebar::Track {
                 id: track_idx,
                 name: format!("Track {}", track_idx),
+                channel: 0,
+                display_label: format!("{:02}", track_idx + 1),
                 is_conductor: false,
                 can_delete: true,
                 is_muted: false,

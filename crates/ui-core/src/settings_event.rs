@@ -4,7 +4,7 @@
 
 use lumino_core::i18n::Language;
 use lumino_core::storage::config::{
-    EraserBehavior, SelectionBoxMode, SynthBackend, TrackAddBehavior,
+    EraserBehavior, SelectionBoxMode, SynthBackend, TrackAddBehavior, TrackDisplayMode,
 };
 
 /// 设置面板事件
@@ -42,4 +42,5 @@ pub enum Event {
     PlaybackKeyColorsEnabledChanged(bool),
     TrackAddBehaviorChanged(TrackAddBehavior),
     PaletteChanged(String),
+    TrackDisplayModeChanged(TrackDisplayMode),
 }
