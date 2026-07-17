@@ -159,6 +159,8 @@ pub struct Sidebar {
     pub renaming_track: Option<(usize, String)>,
     /// 正在选择颜色的音轨 ID
     pub color_picking_track: Option<usize>,
+    /// 单调递增的音轨 ID 计数器（删除后复用 ID 会导致选中冲突）
+    pub(crate) next_track_id: usize,
 }
 
 impl Sidebar {
@@ -206,6 +208,7 @@ impl Sidebar {
             track_context_menu: TrackContextMenuState::default(),
             renaming_track: None,
             color_picking_track: None,
+            next_track_id: 2,
         }
     }
 
@@ -251,7 +254,7 @@ impl Sidebar {
                         );
                         self.tracks.push(Track {
                             id: *track_idx,
-                            name: label.clone(),
+                            name: track_name.to_string(),
                             channel: channels[idx],
                             display_label: label,
                             is_conductor: *track_idx == 0,
@@ -276,7 +279,7 @@ impl Sidebar {
                     );
                     self.tracks.push(Track {
                         id: *track_idx,
-                        name: label.clone(),
+                        name: track_name.to_string(),
                         channel: *ch,
                         display_label: label,
                         is_conductor: *track_idx == 0,
@@ -329,7 +332,7 @@ impl Sidebar {
                         let label = format!("{}{:02}", channel_letter, label_idx + 1);
                         self.tracks.push(Track {
                             id: t.id,
-                            name: label.clone(),
+                            name: t.name.clone(),
                             channel: t.channel,
                             display_label: label,
                             is_conductor: t.is_conductor,
@@ -348,7 +351,7 @@ impl Sidebar {
                     let label = format!("{:02}", idx + 1);
                     self.tracks.push(Track {
                         id: t.id,
-                        name: label.clone(),
+                        name: t.name.clone(),
                         channel: t.channel,
                         display_label: label,
                         is_conductor: t.is_conductor,

@@ -96,7 +96,8 @@ impl Sidebar {
                 }
             }
             AddTrack => {
-                let new_id = self.tracks.len();
+                let new_id = self.next_track_id;
+                self.next_track_id += 1;
                 let display_mode = self.track_display_mode;
                 let display_label = match display_mode {
                     lumino_core::storage::config::TrackDisplayMode::ChannelGrouped => {

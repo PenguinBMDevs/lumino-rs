@@ -211,7 +211,7 @@ fn view_track_item<'a>(
         })
         .into()
     } else {
-        // 如果设置了选项卡颜色，显示颜色块；否则显示通道字母
+        // 如果设置了选项卡颜色，显示颜色块；否则显示通道标签（如 A01/B02）
         let icon_content: Element<'a> = if let Some(color) = track.color {
             container(space().width(16).height(16))
                 .style(move |_theme: &Theme| container::Style {
@@ -221,8 +221,7 @@ fn view_track_item<'a>(
                 })
                 .into()
         } else {
-            let channel_letter = (b'A' + track.channel) as char;
-            text(channel_letter.to_string())
+            text(&track.display_label)
                 .size(14)
                 .font(iced_core::Font {
                     weight: iced_core::font::Weight::Bold,
@@ -241,7 +240,7 @@ fn view_track_item<'a>(
         };
 
         container(icon_content)
-            .width(24)
+            .width(36)
             .align_x(iced_core::alignment::Horizontal::Left)
             .align_y(iced_core::alignment::Vertical::Center)
             .padding(iced_core::Padding {
