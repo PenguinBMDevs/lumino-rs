@@ -113,20 +113,17 @@ impl MidiDocument {
                     total_notes += track_notes.len() as u64;
                     notes[track_idx] = track_notes;
 
-                    for tempo in tempos {
-                        if !all_tempo_changes.iter().any(|(t, _)| *t == tempo.0) {
-                            all_tempo_changes.push(tempo);
-                        }
-                    }
+                    all_tempo_changes.extend(tempos);
                     control_events.extend_from_slice(&ctrls);
                 },
             )
             .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
 
-            if !all_tempo_changes.iter().any(|(t, _)| *t == 0) {
-                all_tempo_changes.push((0u32, 120.0f32));
-            }
             all_tempo_changes.sort_unstable_by_key(|&(t, _)| t);
+            all_tempo_changes.dedup_by(|a, b| a.0 == b.0);
+            if all_tempo_changes.first().is_none_or(|&(t, _)| t != 0) {
+                all_tempo_changes.insert(0, (0u32, 120.0f32));
+            }
             control_events.sort_unstable_by_key(|e| e.tick);
 
             if let Some(cb) = progress {
