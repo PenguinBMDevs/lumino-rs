@@ -1,6 +1,6 @@
 use iced_core::{Alignment, Color, Length, Padding};
 use iced_widget::{
-    button, column, container, mouse_area, row, scrollable, space, text, text_input,
+    Stack, button, column, container, mouse_area, row, scrollable, space, text, text_input,
 };
 use lumino_core::i18n::{Language, main_translations};
 
@@ -52,7 +52,6 @@ pub fn view<'a>(
                     track,
                     track.id == params.selected_track,
                     window,
-                    params.context_menu_target_id,
                     params.renaming_track,
                     params.color_picking_track,
                 );
@@ -114,7 +113,23 @@ pub fn view<'a>(
                 ))
                 .height(Length::Fill);
 
-            container(scrollable_content).into()
+            // 当右键菜单打开时，使用 Stack 覆盖层实现悬浮菜单（不挤占 UI）
+            let base_content = container(scrollable_content);
+            if let Some(target_id) = params.context_menu_target_id {
+                if let Some(track_index) = params.tracks.iter().position(|t| t.id == target_id) {
+                    // 预估菜单垂直位置：面板顶部内边距(8) + 标题行(12) + 间距(8) + 音轨索引 * 音轨行高(34)
+                    let menu_y = 28.0 + track_index as f32 * 34.0;
+                    Stack::new()
+                        .push(base_content)
+                        .push(super::context_menu::background_close_overlay())
+                        .push(super::context_menu::positioned_menu(target_id, menu_y))
+                        .into()
+                } else {
+                    base_content.into()
+                }
+            } else {
+                base_content.into()
+            }
         }
         _ => container(space()).into(),
     };
@@ -171,12 +186,10 @@ fn view_track_item<'a>(
     track: &'a Track,
     is_selected: bool,
     window: &'a window::Window,
-    context_menu_target_id: Option<usize>,
     renaming_track: Option<&'a (usize, String)>,
     color_picking_track: Option<usize>,
 ) -> Element<'a> {
     let palette = window.theme.extended_palette();
-    let is_context_menu_open = context_menu_target_id == Some(track.id);
     let is_renaming = renaming_track.map(|(id, _)| *id) == Some(track.id);
     let is_color_picking = color_picking_track == Some(track.id);
 
@@ -306,24 +319,8 @@ fn view_track_item<'a>(
 
     let mut col = column![track_button_with_menu].spacing(2);
 
-    if is_context_menu_open {
-        col = col.push(super::context_menu::panel(track.id));
-    }
-
     if is_renaming {
-        let confirm_btn = button(text("✓").size(14))
-            .on_press(Event::track_rename_confirmed(track.id))
-            .style(|_theme: &Theme, _status| {
-                button::Style::default().with_background(palette.primary.base.color)
-            });
-        let cancel_btn = button(text("✕").size(14))
-            .on_press(Event::track_rename_cancelled(track.id))
-            .style(|_theme: &Theme, _status| {
-                button::Style::default().with_background(palette.background.strong.color)
-            });
-        let rename_controls =
-            row![confirm_btn, space().width(4), cancel_btn,].align_y(Alignment::Center);
-        col = col.push(rename_controls);
+        // 文字输入框已有 on_submit 处理 Enter 键确认，无需额外按钮
     }
 
     if is_color_picking {

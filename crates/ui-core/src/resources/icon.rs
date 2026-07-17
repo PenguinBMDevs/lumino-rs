@@ -113,6 +113,8 @@ define_icons! {
     (ContextMenuPaste, "../../../../resources/icons/context-menu/paste.svg"),
     (ContextMenuDelete, "../../../../resources/icons/context-menu/delete.svg"),
     (ContextMenuSelectAll, "../../../../resources/icons/context-menu/select-all.svg"),
+    (ContextMenuColorPalette, "../../../../resources/icons/context-menu/color-palette.svg"),
+    (ContextMenuChannel, "../../../../resources/icons/context-menu/channel.svg"),
 }
 
 #[derive(Clone)]
