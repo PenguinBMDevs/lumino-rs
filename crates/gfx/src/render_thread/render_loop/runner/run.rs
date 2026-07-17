@@ -485,7 +485,7 @@ fn ensure_offscreen_textures_and_upload_notes(
         *last_note_version = note_version;
 
         puffin::profile_scope!("upload_note_instances_from_buffer");
-        let notes = unsafe { channels.note_instances_buffer.read_buffer() };
+        let notes = unsafe { channels.note_instances_buffer.acquire_read_buffer() };
 
         renderers
             .note

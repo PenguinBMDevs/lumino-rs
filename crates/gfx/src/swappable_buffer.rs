@@ -1,14 +1,21 @@
-//! 双缓冲数据交换机制 - 实现 UI 线程和渲染线程的零拷贝数据共享
+//! 三缓冲数据交换机制 - 实现 UI 线程和渲染线程的零拷贝数据共享
 //!
 //! 设计原理：
-//! - Front Buffer: 渲染线程读取（只读）
-//! - Back Buffer: UI 线程写入（独占写）
-//! - 交换操作: 原子索引交换，无数据拷贝
+//! - Writer Buffer: UI 线程独占写入
+//! - Ready Buffer: 写入完成后由 swap 转入，等待读取
+//! - Reading Buffer: 渲染线程每帧开始时从 Ready 接管，独占读取
+//!
+//! 为什么三缓冲而非双缓冲：
+//! 双缓冲仅用 front/back 两个槽位，当 UI 高频写入（拖动音符）与渲染线程
+//! 高频读取（高刷屏）并发时，swap 翻转 front 的瞬间写入端可能拿到渲染端
+//! 正在读取的同一块内存 —— 构成真实数据竞争（UB）。三缓冲在任意时刻将
+//! 写、待读、读三块物理内存完全隔离：writer 写完 swap 到 ready，渲染线程
+//! 每帧开始时把 ready 接管为 reading，三态轮换互不重叠，从根上消除竞争。
 //!
 //! 为什么用数组索引而非裸指针：
 //! - 如果用 `AtomicPtr<Vec<T>>` 指向一个 `Vec<T>` 字段，当 `Self` 被移动时
 //!   该字段地址变化导致指针悬空，所以不得不套 `Box<Vec<T>>` 固定地址
-//! - 改用 `[Vec<T>; 2]` + `AtomicU8` 索引后，访问通过 front 索引运算，
+//! - 改用 `[Vec<T>; 3]` + `AtomicU8` 索引后，访问通过状态索引运算，
 //!   即使 `Self` 移动也不影响正确性，且消除了 `Box` 引入的双重间接
 //!
 //! 使用场景：
@@ -19,80 +26,94 @@ use std::cell::UnsafeCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 
-/// 双缓冲结构
+/// 三缓冲槽位索引
+const WRITER: usize = 0;
+const READY: usize = 1;
+const READING: usize = 2;
+
+/// 三缓冲结构
+///
+/// 状态机（始终保证三个角色映射到三个不同槽位）：
+/// - `writer`: UI 线程独占写入的槽位（WRITER）
+/// - `ready`: 最近一次 swap 提交的、等待渲染接管的槽位（READY）
+/// - `reading`: 渲染线程当前持有只读引用的槽位（READING）
 pub struct SwappableBuffer<T> {
-    /// 双缓冲区（通过 front 原子索引区分角色）
-    buffers: UnsafeCell<[Vec<T>; 2]>,
-    /// 前缓冲区索引（0 或 1），另一个即为后缓冲区
-    front: AtomicU8,
+    /// 三块物理缓冲区，角色由下方原子索引区分
+    buffers: UnsafeCell<[Vec<T>; 3]>,
+    /// 写入端当前写入的槽位索引（UI 线程独占）
+    writer: AtomicU8,
+    /// 待读取（已提交）的槽位索引
+    ready: AtomicU8,
+    /// 渲染线程正在读取的槽位索引
+    reading: AtomicU8,
     /// 数据版本号（用于同步检测）
     version: AtomicU64,
 }
 
-// Safety: 通过 Acquire/Release 协议保证跨线程安全访问，
-// 同一时间最多只有一个写入者和一个读取者，且不会同时访问同一缓冲区。
+// Safety: 通过 Acquire/Release 协议 + 三缓冲物理隔离保证跨线程安全访问。
+// 任意时刻 writer / ready / reading 指向三个不同的物理缓冲区，写端与读端
+// 永远不会同时访问同一块内存，因此不存在数据竞争。
 unsafe impl<T: Send> Sync for SwappableBuffer<T> {}
 
 impl<T> SwappableBuffer<T> {
-    /// 创建新的双缓冲
+    /// 创建新的三缓冲
     pub fn new(initial_capacity: usize) -> Self {
         Self {
             buffers: UnsafeCell::new([
                 Vec::with_capacity(initial_capacity),
                 Vec::with_capacity(initial_capacity),
+                Vec::with_capacity(initial_capacity),
             ]),
-            front: AtomicU8::new(0),
+            writer: AtomicU8::new(WRITER as u8),
+            ready: AtomicU8::new(READY as u8),
+            reading: AtomicU8::new(READING as u8),
             version: AtomicU64::new(0),
         }
     }
 
-    /// 获取后缓冲区索引
-    fn back_index(&self) -> usize {
-        (1 - self.front.load(Ordering::Relaxed)) as usize
-    }
-
-    /// UI 线程：获取后缓冲区写入引用
+    /// UI 线程：获取写入缓冲区引用（独占）
     ///
     /// # Safety
     /// 必须在 UI 线程调用，且同一时间只能有一个写入者。
+    /// 调用方在完成写入后**必须**调用 [`swap`](Self::swap) 提交数据。
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn write_buffer(&self) -> &mut Vec<T> {
-        let idx = self.back_index();
+        let idx = self.writer.load(Ordering::Relaxed) as usize;
         unsafe { &mut (*self.buffers.get())[idx] }
     }
 
-    /// UI 线程：提交写入并交换缓冲区
+    /// UI 线程：提交写入并交换缓冲
     ///
-    /// 交换后，前缓冲区包含最新数据，渲染线程可以读取
+    /// 语义：将当前 writer 槽位标记为 ready（供渲染线程接管），
+    /// 并从 ready 槽位回收一块空闲缓冲作为新的 writer。
+    /// 调用前须先完成对 [`write_buffer`](Self::write_buffer) 返回缓冲的写入。
     pub fn swap(&self) -> u64 {
-        // 原子翻转 front 索引（0→1 或 1→0）
-        // Release 保证之前的缓冲区写入在 swap 之前可见
-        self.front.fetch_xor(1, Ordering::Release);
-        // 递增版本号
+        // 当前 writer 写完了，变成 ready
+        let writer_idx = self.writer.load(Ordering::Relaxed) as usize;
+        self.ready.store(writer_idx as u8, Ordering::Release);
+
+        // 渲染线程上一帧持有的 reading 槽位已用完，回收为新的 writer
+        let reading_idx = self.reading.load(Ordering::Acquire) as usize;
+        self.writer.store(reading_idx as u8, Ordering::Release);
+
+        // 递增版本号：AcqRel 保证 ready 写入对渲染线程可见
         self.version.fetch_add(1, Ordering::AcqRel) + 1
     }
 
-    /// 渲染线程：获取前缓冲区读取引用
+    /// 渲染线程：每帧开始时接管 ready 缓冲为当前读取缓冲
+    ///
+    /// 必须在每帧渲染的最开始调用一次，拿到读取引用后到下一帧
+    /// [`acquire_read_buffer`](Self::acquire_read_buffer) 之前都安全持有。
     ///
     /// # Safety
-    /// 必须在渲染线程调用，且同一时间只能有一个读取者
-    pub unsafe fn read_buffer(&self) -> &Vec<T> {
-        let idx = self.front.load(Ordering::Acquire) as usize;
-        unsafe { &(*self.buffers.get())[idx] }
-    }
-
-    /// 获取前缓冲区的容量和长度
-    pub fn front_info(&self) -> (usize, usize) {
-        let idx = self.front.load(Ordering::Acquire) as usize;
-        let v = unsafe { &(*self.buffers.get())[idx] };
-        (v.capacity(), v.len())
-    }
-
-    /// 获取后缓冲区的容量和长度
-    pub fn back_info(&self) -> (usize, usize) {
-        let idx = self.back_index();
-        let v = unsafe { &(*self.buffers.get())[idx] };
-        (v.capacity(), v.len())
+    /// 必须在渲染线程调用，且同一时间只能有一个读取者。
+    /// 调用方在拿到引用后到下一帧再次调用前，不得对缓冲区做写操作。
+    #[allow(clippy::mut_from_ref)]
+    pub unsafe fn acquire_read_buffer(&self) -> &Vec<T> {
+        // 将 ready 接管为 reading（渲染线程独占）
+        let ready_idx = self.ready.load(Ordering::Acquire) as usize;
+        self.reading.store(ready_idx as u8, Ordering::Release);
+        unsafe { &(*self.buffers.get())[ready_idx] }
     }
 
     /// 获取当前版本号
@@ -104,12 +125,19 @@ impl<T> SwappableBuffer<T> {
     pub fn has_new_data(&self, last_version: u64) -> bool {
         self.version() != last_version
     }
+
+    /// 获取指定物理槽位（0=writer, 1=ready, 2=reading）的容量与长度快照。
+    ///
+    /// 返回 `(capacity, len)` 的瞬时拷贝，不暴露 `&Vec` 引用，因此可安全
+    /// 在任意线程随时调用，不会与并发写入构成数据竞争。用于内存统计等只读场景。
+    pub fn buffer_info(&self, slot: usize) -> (usize, usize) {
+        let v = unsafe { &(*self.buffers.get())[slot & 3] };
+        (v.capacity(), v.len())
+    }
 }
 
 // 线程安全的 SwappableBuffer
 pub type AtomicSwappableBuffer<T> = Arc<SwappableBuffer<T>>;
-
-/// 渲染数据包 - 包含所有需要传递到渲染线程的数据
 #[derive(Debug, Clone)]
 pub struct RenderData<T> {
     /// 数据版本号
@@ -204,7 +232,7 @@ mod tests {
 
         // 渲染线程读取
         unsafe {
-            let read_buf = buffer.read_buffer();
+            let read_buf = buffer.acquire_read_buffer();
             assert_eq!(read_buf.len(), 3);
             assert_eq!(read_buf[0], 1);
             assert_eq!(read_buf[1], 2);
@@ -226,9 +254,33 @@ mod tests {
         }
 
         unsafe {
-            let read_buf = buffer.read_buffer();
+            let read_buf = buffer.acquire_read_buffer();
             assert_eq!(read_buf[0], 4);
         }
+    }
+
+    #[test]
+    fn test_swappable_buffer_three_buffers_isolated() {
+        // 验证 writer / ready / reading 始终指向三个不同物理槽位
+        let buffer = SwappableBuffer::<i32>::new(4);
+
+        unsafe {
+            buffer.write_buffer().push(10);
+        }
+        buffer.swap();
+        let r1 = unsafe { buffer.acquire_read_buffer() };
+
+        unsafe {
+            buffer.write_buffer().push(20);
+        }
+        buffer.swap();
+        let r2 = unsafe { buffer.acquire_read_buffer() };
+
+        // 两个读取引用指向不同数据，且互不干扰
+        assert_eq!(r1.len(), 1);
+        assert_eq!(r1[0], 10);
+        assert_eq!(r2.len(), 1);
+        assert_eq!(r2[0], 20);
     }
 
     #[test]

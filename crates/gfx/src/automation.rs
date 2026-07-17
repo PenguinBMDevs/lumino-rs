@@ -347,6 +347,7 @@ mod tests {
         AutomationLane {
             target: AutomationTarget::CC { controller: 7 },
             track: 0,
+            channel: 0,
             events: ticks
                 .iter()
                 .zip(values.iter())

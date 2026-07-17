@@ -50,6 +50,11 @@ impl Playback {
         self.state
     }
 
+    /// 是否正在播放（用于播放线程决定高精度循环还是空闲阻塞）
+    pub fn is_playing(&self) -> bool {
+        self.state == PlaybackState::Playing
+    }
+
     /// 获取当前播放位置（tick）
     pub fn current_tick(&self) -> f32 {
         if self.state == PlaybackState::Playing {

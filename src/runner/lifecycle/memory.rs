@@ -25,8 +25,9 @@ impl RunnerInner {
             let rss_mb =
                 lumino_memory_monitor::MemoryMonitor::global().current_rss() / (1024 * 1024);
 
-            let front_total = mem.note_instances_front_cap as u64 * mem.note_instance_size as u64;
-            let back_total = mem.note_instances_back_cap as u64 * mem.note_instance_size as u64;
+            let writer_total = mem.note_instances_writer_cap as u64 * mem.note_instance_size as u64;
+            let ready_total = mem.note_instances_ready_cap as u64 * mem.note_instance_size as u64;
+            let reading_total = mem.note_instances_reading_cap as u64 * mem.note_instance_size as u64;
 
             tracing::info!(
                 "\n\
@@ -36,12 +37,13 @@ impl RunnerInner {
                 │ MidiDocument.notes:    {:>8} MB  (Vec<NoteEvent>)      │\n\
                 │ editor.notes:          {:>8} MB  (im::Vector<Note>)     │\n\
                 │ track_notes({}条):  {:>8} MB  ({} 音符)              │\n\
-            │ track_midi_events:     {:>8} MB  ({} 条)               │\n\
-            ├─────────────────────────────────────────────────────────┤\n\
-                │ note_instances(双缓冲):                                │\n\
-                │   前缓冲区:            {:>8} MB  (cap={}, len={})      │\n\
-                │   后缓冲区:            {:>8} MB  (cap={}, len={})      │\n\
-                │   双缓冲合计:          {:>8} MB                         │\n\
+                │ track_midi_events:     {:>8} MB  ({} 条)               │\n\
+                ├─────────────────────────────────────────────────────────┤\n\
+                │ note_instances(三缓冲):                                │\n\
+                │   writer 缓冲:         {:>8} MB  (cap={}, len={})      │\n\
+                │   ready 缓冲:          {:>8} MB  (cap={}, len={})      │\n\
+                │   reading 缓冲:        {:>8} MB  (cap={}, len={})      │\n\
+                │   三缓冲合计:          {:>8} MB                         │\n\
                 └─────────────────────────────────────────────────────────┘",
                 rss_mb,
                 mem.editor.document_events_bytes / (1024 * 1024),
@@ -51,13 +53,16 @@ impl RunnerInner {
                 mem.editor.track_notes_count,
                 mem.track_midi_events_bytes / (1024 * 1024),
                 mem.track_midi_events_entries,
-                front_total / (1024 * 1024),
-                mem.note_instances_front_cap,
-                mem.note_instances_front_len,
-                back_total / (1024 * 1024),
-                mem.note_instances_back_cap,
-                mem.note_instances_back_len,
-                (front_total + back_total) / (1024 * 1024),
+                writer_total / (1024 * 1024),
+                mem.note_instances_writer_cap,
+                mem.note_instances_writer_len,
+                ready_total / (1024 * 1024),
+                mem.note_instances_ready_cap,
+                mem.note_instances_ready_len,
+                reading_total / (1024 * 1024),
+                mem.note_instances_reading_cap,
+                mem.note_instances_reading_len,
+                (writer_total + ready_total + reading_total) / (1024 * 1024),
             );
         }
     }

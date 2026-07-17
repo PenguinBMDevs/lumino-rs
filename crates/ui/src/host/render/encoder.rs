@@ -162,12 +162,12 @@ impl Host {
             return;
         };
 
-        // 从双缓冲的前缓冲区读取音符实例
+        // 从三缓冲的 ready 缓冲接管音符实例（每帧开始时调用一次）
         let note_instances = unsafe {
             self.render_ctx
                 .render_cache
                 .note_instances_buffer
-                .read_buffer()
+                .acquire_read_buffer()
         };
 
         if notes_changed && !note_instances.is_empty() {
@@ -266,12 +266,12 @@ impl Host {
                 grid_renderer.draw(&mut render_pass, 1);
             }
 
-            // 绘制音符（从双缓冲读取）
+            // 绘制音符（从三缓冲读取，本帧已在 prepare 时接管）
             let note_instances = unsafe {
                 self.render_ctx
                     .render_cache
                     .note_instances_buffer
-                    .read_buffer()
+                    .acquire_read_buffer()
             };
             if !note_instances.is_empty()
                 && scissor.has_valid_region

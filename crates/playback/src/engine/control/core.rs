@@ -100,6 +100,11 @@ impl PlaybackEngine {
         }
     }
 
+    /// 是否正在播放（用于播放线程决定高精度循环还是空闲阻塞）
+    pub fn is_playing(&self) -> bool {
+        self.playback.lock().is_playing()
+    }
+
     /// 设置 MIDI 文档引用（其他音轨从此流式读取）
     ///
     /// 不再预先把所有音符转换成 CompactEvent 并排序，而是直接保存 `MidiDocument`

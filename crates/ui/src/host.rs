@@ -156,22 +156,29 @@ impl Host {
     pub fn memory_breakdown(&self) -> root::MemoryBreakdown {
         let mut breakdown = self.root.memory_breakdown();
 
-        // 从 RenderCache 获取主音符双缓冲容量
-        let (front_cap, front_len) = self
+        // 从 RenderCache 获取主音符三缓冲容量
+        let (writer_cap, writer_len) = self
             .render_ctx
             .render_cache
             .note_instances_buffer
-            .front_info();
-        let (back_cap, back_len) = self
+            .buffer_info(0);
+        let (ready_cap, ready_len) = self
             .render_ctx
             .render_cache
             .note_instances_buffer
-            .back_info();
-        // 将双缓冲容量写入 breakdown 的附加字段
-        breakdown.note_instances_front_cap = front_cap;
-        breakdown.note_instances_front_len = front_len;
-        breakdown.note_instances_back_cap = back_cap;
-        breakdown.note_instances_back_len = back_len;
+            .buffer_info(1);
+        let (reading_cap, reading_len) = self
+            .render_ctx
+            .render_cache
+            .note_instances_buffer
+            .buffer_info(2);
+        // 将三缓冲容量写入 breakdown 的附加字段
+        breakdown.note_instances_writer_cap = writer_cap;
+        breakdown.note_instances_writer_len = writer_len;
+        breakdown.note_instances_ready_cap = ready_cap;
+        breakdown.note_instances_ready_len = ready_len;
+        breakdown.note_instances_reading_cap = reading_cap;
+        breakdown.note_instances_reading_len = reading_len;
         breakdown.note_instance_size = std::mem::size_of::<lumino_gfx::NoteInstance>() as usize;
 
         breakdown

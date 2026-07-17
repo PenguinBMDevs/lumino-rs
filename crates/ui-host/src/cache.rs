@@ -72,14 +72,14 @@ impl RenderCache {
         }
     }
 
-    /// 获取音符实例数量（从双缓冲的前缓冲区）
+    /// 获取音符实例数量（从三缓冲的当前读取缓冲）
     pub fn note_instances_len(&self) -> usize {
-        unsafe { self.note_instances_buffer.read_buffer().len() }
+        unsafe { self.note_instances_buffer.acquire_read_buffer().len() }
     }
 
     /// 检查音符实例是否为空
     pub fn note_instances_is_empty(&self) -> bool {
-        unsafe { self.note_instances_buffer.read_buffer().is_empty() }
+        unsafe { self.note_instances_buffer.acquire_read_buffer().is_empty() }
     }
 
     /// 计算视口哈希（滚动+缩放+画布大小+可见键数）

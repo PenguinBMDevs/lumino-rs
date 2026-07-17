@@ -484,11 +484,13 @@ fn render_window_and_report(
     let mut buf = vec_return_rx
         .try_recv()
         .unwrap_or_else(|_| Vec::with_capacity(render_len));
-    // 跳过零初始化 — read_samples_unchecked 保证全覆盖
-    if buf.capacity() < render_len {
-        buf.reserve(render_len - buf.capacity());
-    }
+    // 回收池中的缓冲可能容量小于当前 render_len（例如采样率切换后），
+    // 若容量不足则直接按目标尺寸重新分配，避免 reserve 相对 len 计算的 UB。
     // SAFETY: read_samples_unchecked 随后会填充 render_len 个样本
+    if buf.capacity() < render_len {
+        buf = Vec::with_capacity(render_len);
+    }
+    // 跳过零初始化 — read_samples_unchecked 保证全覆盖
     unsafe {
         buf.set_len(render_len);
     }

@@ -59,18 +59,36 @@ impl PlaybackManager {
                     Self::handle_command(cmd, &mut engine, &mut midi_output);
                 }
 
-                // 更新引擎并发送 MIDI 消息
-                let messages = engine.update();
-                Self::flush_midi_messages(&messages, &mut midi_output);
+                // 仅在播放/暂停（仍需要定时推进）时启用高精度 1ms 定时循环；
+                // 空闲时阻塞等待命令，避免空转烧满一个核。
+                if engine.is_playing() {
+                    // 更新引擎并发送 MIDI 消息
+                    let messages = engine.update();
+                    Self::flush_midi_messages(&messages, &mut midi_output);
 
-                // 高精度定时等待：sleep 大部分时间，最后自旋等待精确唤醒。
-                // Windows 默认定时器分辨率为 15.6ms，纯 sleep(1ms) 实际睡 15.6ms，
-                // 导致事件突发（15ms 的音符被一次性发送）。
-                // 混合策略：sleep(700μs) + spin(300μs) 实现接近 1ms 的精度。
-                let target = std::time::Instant::now() + Duration::from_millis(1);
-                thread::sleep(Duration::from_micros(700));
-                while std::time::Instant::now() < target {
-                    std::hint::spin_loop();
+                    // 高精度定时等待：sleep 大部分时间，最后自旋等待精确唤醒。
+                    // Windows 默认定时器分辨率为 15.6ms，纯 sleep(1ms) 实际睡 15.6ms，
+                    // 导致事件突发（15ms 的音符被一次性发送）。
+                    // 混合策略：sleep(700μs) + spin(300μs) 实现接近 1ms 的精度。
+                    let target = std::time::Instant::now() + Duration::from_millis(1);
+                    thread::sleep(Duration::from_micros(700));
+                    while std::time::Instant::now() < target {
+                        std::hint::spin_loop();
+                    }
+                } else {
+                    // 空闲分支：阻塞等待命令（50ms 超时兜底，处理 Seek/Pause 后残留引擎状态）
+                    match receiver.recv_timeout(Duration::from_millis(50)) {
+                        Ok(cmd) => {
+                            if matches!(cmd, Command::Quit) {
+                                return;
+                            }
+                            Self::handle_command(cmd, &mut engine, &mut midi_output);
+                        }
+                        Err(mpsc::RecvTimeoutError::Timeout) => {
+                            // 空闲心跳：清空可能残留的 MIDI 状态（如暂停后的 all_notes_off 已在命令中处理）
+                        }
+                        Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                    }
                 }
             }
         });

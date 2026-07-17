@@ -23,11 +23,13 @@ pub struct MemoryBreakdown {
     /// track_midi_events HashMap 中的总条目数和估算字节
     pub track_midi_events_entries: usize,
     pub track_midi_events_bytes: usize,
-    /// note_instances_buffer 双缓冲信息（由 Host::memory_breakdown 填充）
-    pub note_instances_front_cap: usize,
-    pub note_instances_front_len: usize,
-    pub note_instances_back_cap: usize,
-    pub note_instances_back_len: usize,
+    /// note_instances_buffer 三缓冲信息（由 Host::memory_breakdown 填充）
+    pub note_instances_writer_cap: usize,
+    pub note_instances_writer_len: usize,
+    pub note_instances_ready_cap: usize,
+    pub note_instances_ready_len: usize,
+    pub note_instances_reading_cap: usize,
+    pub note_instances_reading_len: usize,
     pub note_instance_size: usize,
 }
 
