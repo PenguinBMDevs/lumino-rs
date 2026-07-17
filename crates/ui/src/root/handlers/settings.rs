@@ -83,6 +83,11 @@ impl MessageHandler for SettingsHandler {
             crate::settings::Event::LanguageChanged(lang) => {
                 tracing::debug!("Root: 界面语言切换为 {:?}", lang);
             }
+            crate::settings::Event::TrackDisplayModeChanged(mode) => {
+                root.sidebar.track_display_mode = mode;
+                root.sidebar.reapply_display_mode();
+                tracing::debug!("Root: 音轨列表显示模式切换为 {:?}", mode);
+            }
             _ => {} // 其他设置变更由 settings.update() 同步
         }
 

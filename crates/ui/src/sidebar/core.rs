@@ -272,6 +272,83 @@ impl Sidebar {
         }
     }
 
+    /// 重新应用音轨列表显示模式（设置变更时调用）
+    /// 根据当前 `track_display_mode` 重新排列和标记音轨。
+    pub fn reapply_display_mode(&mut self) {
+        if self.tracks.is_empty() {
+            return;
+        }
+
+        // 保存原始数据用于重新计算
+        let old_tracks: Vec<Track> = self.tracks.clone();
+
+        // 保留当前选中音轨
+        let current_selected = self.selected_track;
+
+        self.tracks.clear();
+
+        match self.track_display_mode {
+            TrackDisplayMode::ChannelGrouped => {
+                // 按通道分组，组内按 id 排序
+                let mut grouped: Vec<Vec<usize>> = vec![Vec::new(); 16];
+                for (idx, t) in old_tracks.iter().enumerate() {
+                    grouped[t.channel as usize].push(idx);
+                }
+
+                for group in grouped {
+                    let mut sorted_group = group;
+                    // 默认 conductor 优先，其余按 id 排序
+                    sorted_group
+                        .sort_by_key(|&i| (old_tracks[i].is_conductor as u8, old_tracks[i].id));
+                    for (label_idx, &idx) in sorted_group.iter().enumerate() {
+                        let t = &old_tracks[idx];
+                        let channel_letter = (b'A' + t.channel) as char;
+                        let label = format!("{}{:02}", channel_letter, label_idx + 1);
+                        self.tracks.push(Track {
+                            id: t.id,
+                            name: label.clone(),
+                            channel: t.channel,
+                            display_label: label,
+                            is_conductor: t.is_conductor,
+                            can_delete: t.can_delete,
+                            is_muted: t.is_muted,
+                        });
+                    }
+                }
+            }
+            TrackDisplayMode::TrackIndex => {
+                // 按 id 排序，标记为 01, 02, 03...
+                let mut sorted: Vec<&Track> = old_tracks.iter().collect();
+                sorted.sort_by_key(|t| t.id);
+                for (idx, t) in sorted.iter().enumerate() {
+                    let label = format!("{:02}", idx + 1);
+                    self.tracks.push(Track {
+                        id: t.id,
+                        name: label.clone(),
+                        channel: t.channel,
+                        display_label: label,
+                        is_conductor: t.is_conductor,
+                        can_delete: t.can_delete,
+                        is_muted: t.is_muted,
+                    });
+                }
+            }
+        }
+
+        // 恢复选中音轨（如果还在的话）
+        if self.tracks.iter().any(|t| t.id == current_selected) {
+            self.selected_track = current_selected;
+        } else if !self.tracks.is_empty() {
+            self.selected_track = self.tracks[0].id;
+        }
+
+        tracing::info!(
+            "reapply_display_mode: mode={:?}, tracks={}",
+            self.track_display_mode,
+            self.tracks.len()
+        );
+    }
+
     /// 设置当前选中的音轨（默认强制打开面板，供测试使用）
     #[cfg(test)]
     pub fn set_selected_track(&mut self, track_idx: usize) {

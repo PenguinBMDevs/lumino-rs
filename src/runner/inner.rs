@@ -359,7 +359,8 @@ impl RunnerInner {
             || new.enable_256key != old.enable_256key
             || new.velocity_curve_style != old.velocity_curve_style
             || new.playback_key_colors_enabled != old.playback_key_colors_enabled
-            || new.track_add_behavior != old.track_add_behavior;
+            || new.track_add_behavior != old.track_add_behavior
+            || new.track_display_mode != old.track_display_mode;
 
         if theme_changed
             || synth_changed

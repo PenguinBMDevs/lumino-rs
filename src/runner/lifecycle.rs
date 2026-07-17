@@ -319,6 +319,7 @@ impl crate::runner::inner::RunnerInner {
         // 防止 save_storage 尚未持久化时对话框读取到过期主题
         let mut dialog_config = self.window_state.storage.config.get().ui.clone();
         dialog_config.theme = main_ui.root().theme().to_string();
+        dialog_config.track_display_mode = main_ui.root().settings().track_display_mode;
         self.window_state
             .dialog_manager
             .initialize_pending_with_collaboration_state(

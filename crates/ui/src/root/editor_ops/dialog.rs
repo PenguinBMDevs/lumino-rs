@@ -341,6 +341,17 @@ impl Root {
             // MIDI 设备选择变更需要重新打开设备
         }
 
+        // 同步音轨列表显示模式
+        if old_settings.track_display_mode != new_settings.track_display_mode {
+            tracing::info!(
+                "同步音轨列表显示模式: {:?} -> {:?}",
+                old_settings.track_display_mode,
+                new_settings.track_display_mode
+            );
+            self.sidebar.track_display_mode = new_settings.track_display_mode;
+            self.sidebar.reapply_display_mode();
+        }
+
         // 更新设置面板
         self.settings = new_settings;
         tracing::info!("apply_settings: 设置同步完成");
