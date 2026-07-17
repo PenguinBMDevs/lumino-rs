@@ -266,12 +266,12 @@ impl Host {
                 grid_renderer.draw(&mut render_pass, 1);
             }
 
-            // 绘制音符（从三缓冲读取，本帧已在 prepare 时接管）
+            // 绘制音符（本帧已在 prepare 时 acquire 接管，此处 peek 复用同一槽位）
             let note_instances = unsafe {
                 self.render_ctx
                     .render_cache
                     .note_instances_buffer
-                    .acquire_read_buffer()
+                    .peek_read_buffer()
             };
             if !note_instances.is_empty()
                 && scissor.has_valid_region

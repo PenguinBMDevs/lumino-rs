@@ -64,7 +64,7 @@ impl PlaybackManager {
                 if engine.is_playing() {
                     // 更新引擎并发送 MIDI 消息
                     let messages = engine.update();
-                    Self::flush_midi_messages(&messages, &mut midi_output);
+                    Self::flush_midi_messages(messages, &mut midi_output);
 
                     // 高精度定时等待：sleep 大部分时间，最后自旋等待精确唤醒。
                     // Windows 默认定时器分辨率为 15.6ms，纯 sleep(1ms) 实际睡 15.6ms，
