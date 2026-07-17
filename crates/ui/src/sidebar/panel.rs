@@ -259,6 +259,7 @@ fn view_track_item<'a>(
             .on_input(|value| Event::track_rename_changed(track.id, value))
             .on_submit(Event::track_rename_confirmed(track.id))
             .width(Length::Fill)
+            .padding(Padding::ZERO)
             .into()
     } else {
         text(&track.name).size(14).width(Length::Fill).into()
