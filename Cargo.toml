@@ -179,7 +179,7 @@ tokio-test = { workspace = true }
 winapi = { workspace = true }
 
 [patch.crates-io]
-midly = { git = "https://github.com/PenguinBMDevs/midly-fork" }
+midly = { git = "https://github.com/PenguinBMDevs/midly-fork"}
 
 [[test]]
 name = "collaboration_full_test"

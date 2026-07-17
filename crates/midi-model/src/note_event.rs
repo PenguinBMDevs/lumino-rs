@@ -114,7 +114,7 @@ impl From<midly::loader::PackedNote> for NoteEvent {
             end_tick: note.end_tick,
             key: note.key,
             velocity: note.velocity,
-            channel: 0,
+            channel: note.channel,
         }
     }
 }
