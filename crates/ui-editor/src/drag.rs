@@ -163,7 +163,11 @@ impl Editor {
                     }
 
                     *last_tick = snapped_tick;
-                    self.mark_notes_changed();
+                    // ghost 方案：Resizing 期间 notes 已改，但空间索引不每帧重建。
+                    // 用 mark_ghost_dirty 只触发 wgpu 重绘（基于新 notes），不重建索引。
+                    // 空间索引在松手时（released.rs）一次性 mark_notes_changed 重建。
+                    // **性能关键**：1000W 音符建树 124ms，每帧重建 = 60fps × 124ms = 灾难。
+                    self.mark_ghost_dirty();
                 }
             }
             EditState::ResizingSelectionEnd { last_tick } => {
@@ -188,7 +192,8 @@ impl Editor {
                     }
 
                     *last_tick = snapped_tick;
-                    self.mark_notes_changed();
+                    // ghost 方案：同 ResizingSelectionStart，期间不重建索引
+                    self.mark_ghost_dirty();
                 }
             }
             _ => {}

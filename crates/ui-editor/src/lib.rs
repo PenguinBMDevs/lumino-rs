@@ -44,6 +44,7 @@ mod tests {
     mod interception;
     mod keyboard_colors_test;
     mod pending_drag;
+    mod pressed_priority;
     mod scroll;
     mod state;
 }

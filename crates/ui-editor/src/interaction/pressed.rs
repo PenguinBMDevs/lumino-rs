@@ -47,6 +47,19 @@ impl Editor {
     }
 
     /// 指针工具：框选或编辑现有音符
+    ///
+    /// **命中优先级**（关键交互逻辑）：
+    /// 1. 若已有选中音符，优先检测选择框（`hit_test_selection_box`）：
+    ///    - `Inside`：框选框内任意位置 → `DraggingSelection`（拖动全部选中音符）
+    ///    - `LeftEdge/RightEdge`：框选框左右边缘 → `ResizingSelectionStart/End`（拉伸框选边缘）
+    ///    - `None`：点击在框选框外 → 回退到音符命中检测
+    /// 2. 若未命中选择框（或无选中音符），检测音符命中（`hit_test_note`）：
+    ///    - 命中音符 → 单音符编辑（`ResizingStart/End/PendingDrag`）
+    /// 3. 都未命中 → 点击空白处，提交 pending 拖动 + 开始新框选
+    ///
+    /// **修复历史**：原实现 `hit_test_note` 优先于 `hit_test_selection_box`，导致框选框内点击
+    /// 若命中某个选中音符的边缘，会误进入单音符 `ResizingStart/End` 状态，框选拖动无法触发。
+    /// 调整优先级后，框选框内任意位置都走框选逻辑，符合用户"按住框选框内任意位置移动即拖动"的预期。
     pub(crate) fn handle_pointer_pressed(
         &mut self,
         pos: iced_core::Point,
@@ -61,22 +74,18 @@ impl Editor {
             } else {
                 snapped_tick
             };
-        if let Some((index, hit_type)) = hit_result {
-            // 命中音符：如果有 pending 拖动，先提交（非累积场景）
-            self.flush_pending_drag();
-            if !self
-                .editor_state
-                .interaction
-                .selected_notes
-                .contains(&index)
-            {
-                self.editor_state.interaction.selected_notes.clear();
-                self.editor_state.interaction.selected_notes.insert(index);
-            }
-            self.start_note_edit(index, hit_type, pos);
-        } else if let Some(sel_hit) = self.hit_test_selection_box(pos) {
+
+        // 优先级 1：有选中音符时，先检测选择框命中
+        // 选择框命中时，无论是否同时命中音符，都走框选逻辑（避免边缘误判走单音符拉伸）
+        let sel_hit = if !self.editor_state.interaction.selected_notes.is_empty() {
+            self.hit_test_selection_box(pos)
+        } else {
+            None
+        };
+
+        if let Some(sel_hit_type) = sel_hit {
             // 命中选择框：根据边缘/内部分别进入调整大小或拖动状态
-            match sel_hit {
+            match sel_hit_type {
                 crate::SelectionHitType::Inside => {
                     // ghost 方案（累积模式）：从 selected_notes 构建 DragState
                     let note_count = self.editor_state.data.notes.len();
@@ -95,8 +104,11 @@ impl Editor {
                         crate::EditState::DraggingSelection { drag_state };
                 }
                 crate::SelectionHitType::LeftEdge => {
-                    // 调整大小：如果有 pending 拖动，先提交（非累积场景）
-                    self.flush_pending_drag();
+                    // 框选左边缘拉伸：先提交 pending 拖动（保留选区，要在当前选区上拉伸）
+                    // 注意：不能用 flush_pending_drag（会清空 selected_notes，导致拉伸无目标）
+                    if self.pending_drag_state.is_some() {
+                        self.commit_pending_drag();
+                    }
                     self.push_history();
                     self.editor_state.interaction.edit_state =
                         crate::EditState::ResizingSelectionStart {
@@ -104,8 +116,10 @@ impl Editor {
                         };
                 }
                 crate::SelectionHitType::RightEdge => {
-                    // 调整大小：如果有 pending 拖动，先提交（非累积场景）
-                    self.flush_pending_drag();
+                    // 框选右边缘拉伸：同 LeftEdge，提交 pending 但保留选区
+                    if self.pending_drag_state.is_some() {
+                        self.commit_pending_drag();
+                    }
                     self.push_history();
                     self.editor_state.interaction.edit_state =
                         crate::EditState::ResizingSelectionEnd {
@@ -113,8 +127,22 @@ impl Editor {
                         };
                 }
             }
+        } else if let Some((index, hit_type)) = hit_result {
+            // 优先级 2：未命中选择框但命中音符 → 单音符编辑
+            // （点击在框选框外，或无选中音符时点击音符）
+            self.flush_pending_drag();
+            if !self
+                .editor_state
+                .interaction
+                .selected_notes
+                .contains(&index)
+            {
+                self.editor_state.interaction.selected_notes.clear();
+                self.editor_state.interaction.selected_notes.insert(index);
+            }
+            self.start_note_edit(index, hit_type, pos);
         } else {
-            // 点击空白处：提交 pending 拖动 + 取消框选
+            // 优先级 3：都未命中 → 点击空白处，提交 pending 拖动 + 开始新框选
             self.flush_pending_drag();
             self.playback_position = snapped_tick;
             self.editor_state.interaction.selected_notes.clear();

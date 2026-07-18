@@ -99,7 +99,11 @@ impl Editor {
                 // 不调用 mark_notes_changed（data.notes 未变）
             }
             EditState::ResizingSelectionStart { .. } | EditState::ResizingSelectionEnd { .. } => {
-                tracing::debug!("Editor: 选择框批量编辑完成");
+                // ghost 方案：期间用 mark_ghost_dirty 不重建索引，松手时一次性重建。
+                // notes 已在 drag.rs 每帧被改，此处只需触发空间索引重建 + sync_track_notes。
+                tracing::debug!("Editor: 选择框批量编辑完成，重建空间索引");
+                self.editor_state.data.sync_track_notes();
+                self.mark_notes_changed();
             }
             _ => {}
         }

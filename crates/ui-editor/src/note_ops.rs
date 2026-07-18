@@ -5,13 +5,60 @@ use lumino_event;
 use lumino_ui_constants::editor::NOTE_EDGE_THRESHOLD_PX;
 
 impl Editor {
+    /// 检测坐标是否落在某个音符上
+    ///
+    /// **性能关键**：1000W 音符场景下，原 O(N) 全量扫描 ~168ms/帧。
+    /// 改用空间索引 `update_query` 剪枝 + key 二分查找，降到 O(log N + K)。
+    ///
+    /// 空间索引未建（None）时 fallback 到 O(N) 扫描保证准确性。
+    /// Resizing 期间空间索引可能滞后一帧（dirty 未重建），hover 位置略旧可接受；
+    /// pressed 通常在 Idle 状态触发，空间索引是最新的，准确性有保证。
     pub fn hit_test_note(&self, pos: Point) -> Option<(usize, HitType)> {
-        hit_test::hit_test_note(
-            &self.editor_state.data.notes,
-            &self.editor_state.view,
-            (pos.x, pos.y),
-            NOTE_EDGE_THRESHOLD_PX,
-        )
+        let view = &self.editor_state.view;
+        let tick = view.x_to_tick(pos.x);
+        let key = view.y_to_key(pos.y);
+        let edge_threshold = NOTE_EDGE_THRESHOLD_PX / view.zoom_x;
+
+        // 优先用空间索引（O(log N + K)），fallback 到 O(N) 扫描
+        let candidates: Vec<usize> = if let Some(index) = self.spatial.note_index.borrow().as_ref()
+        {
+            let mut buf = Vec::new();
+            // 查询包含点 (tick, key) 的音符：
+            // - tick 范围 [tick, tick]：剪枝 node.tick_max < tick || node.tick_min > tick
+            // - key 范围 [key, key]：partition_point 二分查找
+            // - 过滤 n.tick + n.length >= tick && n.tick <= tick（包含该点）
+            index.update_query(tick, tick, key, key, &mut buf);
+            buf
+        } else {
+            // 空间索引未建（首次或刚清空），fallback 到 O(N) 扫描
+            self.editor_state
+                .data
+                .notes
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| n.key == key && tick >= n.tick && tick <= n.tick + n.length)
+                .map(|(i, _)| i)
+                .collect()
+        };
+
+        if candidates.is_empty() {
+            return None;
+        }
+
+        // 选 index 最大的（视觉最上层，等价于原 .rev() 的第一个匹配）
+        let best_idx = *candidates.iter().max()?;
+        let note = self.editor_state.data.notes.get(best_idx)?;
+        let start_delta = (tick - note.tick).abs();
+        let end_delta = (tick - (note.tick + note.length)).abs();
+
+        let hit_type = if end_delta < edge_threshold {
+            HitType::End
+        } else if start_delta < edge_threshold {
+            HitType::Start
+        } else {
+            HitType::Middle
+        };
+        Some((best_idx, hit_type))
     }
 
     pub fn delete_note_by_index(&mut self, index: usize) {

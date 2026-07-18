@@ -77,7 +77,12 @@ impl Editor {
             new_key,
             new_length,
         ) {
-            self.spatial.note_index_dirty.set(true);
+            // ghost 方案：单音符 Resizing 期间不每帧重建空间索引。
+            // apply_note_changes 仅在 ResizingStart/End 返回 true（其他状态 noop），
+            // notes 已被改，渲染基于新 notes 正确。空间索引在松手时
+            // （released.rs ResizingStart/End 分支）一次性 mark_notes_changed 重建。
+            // **性能关键**：1000W 音符建树 124ms，每帧重建 = 灾难。
+            self.mark_ghost_dirty();
         }
     }
 }
