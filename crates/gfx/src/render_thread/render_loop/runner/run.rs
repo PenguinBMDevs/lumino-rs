@@ -455,7 +455,7 @@ fn process_deferred_commands(
 fn ensure_offscreen_textures_and_upload_notes(
     ctx: &RenderContext,
     channels: &RenderThreadChannels,
-    renderers: &mut super::super::Renderers,
+    _renderers: &mut super::super::Renderers,
     current_texture: &mut Option<Arc<wgpu::Texture>>,
     depth_texture: &mut Option<wgpu::Texture>,
     depth_texture_view: &mut Option<wgpu::TextureView>,
@@ -484,17 +484,13 @@ fn ensure_offscreen_textures_and_upload_notes(
     if note_version != *last_note_version {
         *last_note_version = note_version;
 
-        puffin::profile_scope!("upload_note_instances_from_buffer");
-        // ⚠️ 本帧 acquire 点：渲染线程每帧在此接管 ready 缓冲区。
-        // 若未来新增其他 acquire 路径（如单线程模式），必须保证每帧最多
-        // 调用一次 acquire，否则同帧双 acquire 会导致渲染数据回退到上帧。
-        // 另一潜在 acquire 路径见 handle_video_frame（直接使用 params.note_instances，
-        // 不碰 buffer，因此当前无竞争——但修改时需做互斥检查）。
-        let notes = unsafe { channels.note_instances_buffer.acquire_read_buffer() };
-
-        renderers
-            .note
-            .upload_instances(notes, &ctx.device, &ctx.queue);
+        // 依赖事件通道（process_events 在 prepare_renderers 中调用）做增量更新，
+        // 而非全量重传。事件通道通过 add_note / update_note / remove_note 做 O(1) 更新，
+        // 避免 160MB 全量 write_buffer 的帧瞬卡。
+        //
+        // 但仍需 acquire_read_buffer 以维持三缓冲状态机正常运转（ready ↔ reading 交换）。
+        // 若 UI 线程 swap 后 reading 槽位未被消费，后续 swap 会反复交换同一槽位。
+        let _ = unsafe { channels.note_instances_buffer.acquire_read_buffer() };
     }
 }
 

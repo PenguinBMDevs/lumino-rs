@@ -139,7 +139,6 @@ pub fn build_cc_bar_instances(
                 view_params.scroll_x,
                 view_params.canvas_size_x,
                 data.velocity_points,
-                data.notes,
             );
         }
     } else if let Some(lane) = data.automation_lane {
@@ -326,7 +325,7 @@ fn push_velocity_curve_instances(
     }
 }
 
-/// 力度柱状图模式：bar 宽度取 note 长度。
+/// 力度柱状图模式：bar 宽度取 note 长度（从 VelocityPoint 直接读取）。
 fn push_velocity_bar_instances(
     instances: &mut Vec<CcBarInstance>,
     panel_x: f32,
@@ -340,7 +339,6 @@ fn push_velocity_bar_instances(
     scroll_x: f32,
     canvas_size_x: f32,
     velocity_points: &[lumino_core::VelocityPoint],
-    notes: &im::Vector<lumino_core::Note>,
 ) {
     const MIN_BAR_WIDTH: f32 = 2.0;
     const BAR_MARGIN: f32 = 1.0;
@@ -351,10 +349,8 @@ fn push_velocity_bar_instances(
         let bar_h = normalized * graph_height;
 
         let note_x = panel_x + keyboard_width + point.tick * zoom_x - scroll_x;
-        let note_w = notes
-            .get(point.note_index)
-            .map(|n| n.length * zoom_x)
-            .unwrap_or(0.0);
+        // 直接从 VelocityPoint 读取 length，避免 im::Vector::get 的 O(log n) 树查找
+        let note_w = point.length * zoom_x;
         let bar_w = (note_w - BAR_MARGIN * 2.0).max(MIN_BAR_WIDTH);
         let bar_x = note_x + BAR_MARGIN;
         let bar_y = actual_panel_y + toolbar_height + max_y - bar_h;

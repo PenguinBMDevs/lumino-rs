@@ -170,6 +170,7 @@ impl EditorTransform for EditorData {
                 note_index: i,
                 tick: n.tick,
                 velocity: n.velocity,
+                length: n.length,
             })
             .collect();
         points.sort_by(|a, b| {

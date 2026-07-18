@@ -71,13 +71,19 @@ fn main(
                 let screen_max_x = screen_min_x + length * camera.zoom.x;
 
                 if (screen_max_x >= 0.0) {
-                    let screen_min_y = (camera.max_key_index - key) * camera.zoom.y
-                                       - camera.scroll.y
-                                       + camera.ruler_height + camera.canvas_offset.y;
-                    let screen_max_y = screen_min_y + camera.zoom.y;
+                    // LOD 剔除：屏幕宽度 < 1px 的音符肉眼不可见，跳过以节省
+                    // vertex shader 带宽。全览缩放时大量音符宽度不足 1px，
+                    // 剔除后 vertex count 可降低 50-90%。
+                    let screen_width = screen_max_x - screen_min_x;
+                    if (screen_width >= 1.0) {
+                        let screen_min_y = (camera.max_key_index - key) * camera.zoom.y
+                                           - camera.scroll.y
+                                           + camera.ruler_height + camera.canvas_offset.y;
+                        let screen_max_y = screen_min_y + camera.zoom.y;
 
-                    if (screen_max_y >= 0.0 && screen_min_y <= camera.viewport_size.y) {
-                        is_visible = true;
+                        if (screen_max_y >= 0.0 && screen_min_y <= camera.viewport_size.y) {
+                            is_visible = true;
+                        }
                     }
                 }
             }

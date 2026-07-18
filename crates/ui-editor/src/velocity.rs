@@ -233,12 +233,26 @@ impl VelocityPanel {
     }
 
     /// 构建力度点数据
+    ///
+    /// 直接遍历 notes 构建 VelocityPoint，避免创建 EditorData 及 notes.clone()。
+    /// 10M 音符场景下，clone 开销可达百毫秒级。
     pub fn build_velocity_points(notes: &im::Vector<crate::Note>) -> Vec<VelocityPoint> {
-        let data = lumino_core::EditorData {
-            notes: notes.clone(),
-            ..Default::default()
-        };
-        data.build_velocity_points()
+        let mut points: Vec<VelocityPoint> = Vec::with_capacity(notes.len());
+        for (i, n) in notes.iter().enumerate() {
+            points.push(VelocityPoint {
+                note_index: i,
+                tick: n.tick,
+                velocity: n.velocity,
+                length: n.length,
+            });
+        }
+        points.sort_by(|a, b| {
+            a.tick
+                .partial_cmp(&b.tick)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.note_index.cmp(&b.note_index))
+        });
+        points
     }
 
     /// 构建 CC 数据（从 automation_lanes 读取当前音轨的 CC 事件）。

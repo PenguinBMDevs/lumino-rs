@@ -278,7 +278,6 @@ pub struct CcBarData<'a> {
     pub velocity_points: &'a [lumino_core::VelocityPoint],
     pub cc_points: &'a [lumino_core::CcPoint],
     pub bend_points: &'a [lumino_core::BendPoint],
-    pub notes: &'a im::Vector<lumino_core::Note>,
     /// 可选的自动化 lane（CC / Bend 曲线模式优先使用）。
     pub automation_lane: Option<&'a lumino_core::AutomationLane>,
     /// 力度面板显示样式（true=曲线折线图，false=柱状图）

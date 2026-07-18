@@ -85,6 +85,8 @@ pub struct VelocityPoint {
     pub tick: f32,
     /// 力度值 0-127
     pub velocity: u8,
+    /// 音符长度（tick），用于柱状条宽度计算
+    pub length: f32,
 }
 
 /// 已知 CC 控制器名称（GM/GS/XG 标准）
@@ -263,6 +265,7 @@ mod tests {
             note_index: 5,
             tick: 100.0,
             velocity: 80,
+            length: 480.0,
         };
         assert_eq!(p.note_index, 5);
         assert_eq!(p.tick, 100.0);

@@ -188,12 +188,14 @@ impl Host {
         };
 
         // 构建 CC 柱状条实例（背景/网格/中心线）
-        let cc_bar_instances = if self.root.is_arrangement_mode() {
-            vec![]
-        } else {
-            puffin::profile_scope!("build_cc_bar_instances");
-            self.build_cc_bar_instances()
-        };
+        // 仅在自动化面板可见时构建，否则跳过 308ms 的无效计算
+        let cc_bar_instances =
+            if self.root.is_arrangement_mode() || !self.root.sidebar.automation_panel_visible {
+                vec![]
+            } else {
+                puffin::profile_scope!("build_cc_bar_instances");
+                self.build_cc_bar_instances()
+            };
 
         RenderData {
             scroll,
@@ -320,7 +322,6 @@ impl Host {
             velocity_points: &velocity_points,
             cc_points: &cc_points,
             bend_points: &bend_points,
-            notes: &editor.editor_state.data.notes,
             automation_lane,
             velocity_curve_style: self.root.settings.velocity_curve_style,
         };
@@ -515,7 +516,10 @@ impl Host {
         };
 
         // 计算力度面板矩形（用于 wgpu scissor 裁剪）
-        let velocity_panel_rect = if is_arrangement_mode {
+        // 仅在自动化面板可见时设置，否则跳过 CC bar 渲染器 prepare/draw
+        let velocity_panel_rect = if is_arrangement_mode
+            || !self.root.sidebar.automation_panel_visible
+        {
             None
         } else {
             let es = &self.root.editor.editor_state;
