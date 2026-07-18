@@ -124,6 +124,9 @@ pub struct Editor {
 
     /// 钢琴卷帘右键上下文菜单状态
     pub context_menu: context_menu::PianoRollContextMenuState,
+
+    /// 播放键色增量扫描状态——避免每帧 O(N) 全量扫描导致的线性性能退化
+    pub(crate) playback_scan_state: impls::PlaybackScanState,
 }
 
 /// 框选框弹簧动画状态

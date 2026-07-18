@@ -83,9 +83,11 @@ impl Editor {
     /// 供 `clear_editor()` 调用，重置本模块私有的字段：
     /// - `notes_changed`：音符变更标志
     /// - `playback_position`：播放指示线位置
+    /// - `playback_scan_state`：播放键色增量扫描状态（避免旧文档残留）
     pub fn reset_internal_state(&mut self) {
         self.notes_changed = false;
         self.playback_position = 0.0;
+        self.playback_scan_state = Default::default();
         self.velocity_panel = crate::velocity::VelocityPanel::new();
     }
 
@@ -94,6 +96,8 @@ impl Editor {
         self.playback_key_colors_enabled = enabled;
         if !enabled {
             self.playback_key_colors = [0u8; 1024];
+            // 关闭时重置扫描状态，下次启用从干净状态开始
+            self.playback_scan_state = Default::default();
         }
     }
 }
