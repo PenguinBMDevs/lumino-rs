@@ -231,7 +231,6 @@ fn advance_export_inflight(
 fn handle_video_frame(
     ctx: &RenderContext,
     params: RenderParams,
-    render_mode: String,
     frame: &mut RenderFrameState,
     channels: &RenderThreadChannels,
 ) {
@@ -260,23 +259,11 @@ fn handle_video_frame(
     };
     ensure_textures(&mut tex_resources);
 
-    let hires_visible = if render_mode == "hires_texture" {
-        update_hires_viewport(
-            frame.hires_renderer,
-            frame.hires_meta,
-            frame.hires_config,
-            &params,
-            &ctx.device,
-            &ctx.queue,
-        )
-    } else {
-        Vec::new()
-    };
-    let hires_visible_coords: Vec<crate::TileCoord> =
-        hires_visible.iter().map(|(c, _)| *c).collect();
+    // 视频导出始终使用音符矩形渲染模式：不上传 HiRes 贴图
+    let hires_visible_coords: Vec<crate::TileCoord> = Vec::new();
 
-    // 2. 上传视频导出帧的音符实例（仅在音符矩形模式下）
-    if render_mode == "note_rectangle" && !params.note_instances.is_empty() {
+    // 2. 上传视频导出帧的音符实例
+    if !params.note_instances.is_empty() {
         frame
             .renderers
             .note
@@ -307,13 +294,12 @@ fn handle_video_frame(
         &ctx.queue,
     );
 
-    let render_notes = render_mode == "note_rectangle";
     execute_render_pass(
         &mut encoder,
         ctx,
         &params,
         &hires_visible_coords,
-        render_notes,
+        true,
         frame,
     );
 
@@ -375,21 +361,16 @@ fn process_deferred_commands(
                 width,
                 height,
                 frame_tx,
-                render_mode: export_render_mode,
             } => {
                 tracing::info!(
-                    "视频导出开始: {}x{}, render_mode={}, 初始化 GPU→CPU 读回管线",
+                    "视频导出开始: {}x{}, 初始化 GPU→CPU 读回管线",
                     width,
                     height,
-                    export_render_mode
                 );
                 *export_pipeline = Some(ExportPipeline::new(&ctx.device, width, height));
                 *export_frame_tx = Some(frame_tx);
             }
-            ControlCommand::RenderVideoFrame {
-                params,
-                render_mode,
-            } => {
+            ControlCommand::RenderVideoFrame { params } => {
                 let mut frame = RenderFrameState {
                     renderers: &mut *renderers,
                     current_texture: &mut *current_texture,
@@ -404,7 +385,7 @@ fn process_deferred_commands(
                     export_pipeline: &mut *export_pipeline,
                     export_frame_tx: &mut *export_frame_tx,
                 };
-                handle_video_frame(ctx, *params, render_mode, &mut frame, channels);
+                handle_video_frame(ctx, *params, &mut frame, channels);
             }
             ControlCommand::UploadHiResVideoTiles {
                 tiles,

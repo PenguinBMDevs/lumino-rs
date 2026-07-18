@@ -28,7 +28,6 @@ impl RunnerInner {
             codec,
             backend,
             quality,
-            render_mode,
         } = config;
 
         // 事件层枚举 → 导出层枚举（总映射，无字符串解析、无静默降级）
@@ -120,21 +119,6 @@ impl RunnerInner {
 
         let ppq = ppq.max(1) as u32;
         let fps_f64 = fps as f64;
-        let render_mode_for_thread = render_mode;
-
-        // 预先提取 UI 配置中 HiRes 相关字段，避免将非 Send 的 self 捕获进后台线程
-        let hires_video_config =
-            if render_mode_for_thread == lumino_event::window::video::RenderMode::HiResTexture {
-                let ui_config = &self.window_state.storage.config.get().ui;
-                Some(super::video_export::build_hires_config_for_video(ui_config))
-            } else {
-                None
-            };
-        let hires_key_count = if self.window_state.storage.config.get().ui.enable_256key {
-            256
-        } else {
-            128
-        };
 
         // 创建取消标志
         let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -155,9 +139,6 @@ impl RunnerInner {
                     key_count,
                     width,
                     height,
-                    render_mode_for_thread,
-                    hires_video_config,
-                    hires_key_count,
                     cancel_flag,
                 );
             });
@@ -180,9 +161,6 @@ fn run_video_export_task(
     key_count: u16,
     width: u32,
     height: u32,
-    render_mode_for_thread: lumino_event::window::video::RenderMode,
-    hires_video_config: Option<lumino_gfx::HiResConfig>,
-    hires_key_count: u16,
     cancel_flag: Arc<AtomicBool>,
 ) {
     let start = std::time::Instant::now();
@@ -200,19 +178,8 @@ fn run_video_export_task(
     // 创建帧数据通道
     let (frame_tx, frame_rx) = channel::<Vec<u8>>();
 
-    // 发送初始渲染命令（HiRes 贴图上传 + StartVideoExport）
-    if send_initial_render_commands(
-        &cmd_sender,
-        &document,
-        hires_video_config,
-        hires_key_count,
-        ppq,
-        width,
-        height,
-        frame_tx,
-        render_mode_for_thread,
-        &progress_tx,
-    ) {
+    // 发送初始渲染命令（StartVideoExport）
+    if send_initial_render_commands(&cmd_sender, ppq, width, height, frame_tx, &progress_tx) {
         return;
     }
 
@@ -273,7 +240,6 @@ fn run_video_export_task(
         if cmd_sender
             .send(RenderCommand::Control(ControlCommand::RenderVideoFrame {
                 params: Box::new(params),
-                render_mode: render_mode_for_thread.as_str().to_string(),
             }))
             .is_err()
         {
@@ -403,60 +369,23 @@ fn run_video_export_task(
     );
 }
 
-/// 发送初始渲染命令：HiRes 贴图上传（如启用）与 `StartVideoExport`。
+/// 发送初始渲染命令：`StartVideoExport`。
 ///
 /// 返回 `true` 表示发生通信错误、调用方应终止后台任务。
-#[allow(clippy::too_many_arguments)]
 fn send_initial_render_commands(
     cmd_sender: &std::sync::mpsc::Sender<lumino_gfx::render_thread::RenderCommand>,
-    document: &Arc<lumino_midi_loader::MidiDocument>,
-    hires_video_config: Option<lumino_gfx::HiResConfig>,
-    hires_key_count: u16,
-    ppq: u32,
+    _ppq: u32,
     width: u32,
     height: u32,
     frame_tx: std::sync::mpsc::Sender<Vec<u8>>,
-    render_mode_for_thread: lumino_event::window::video::RenderMode,
     progress_tx: &tokio::sync::mpsc::UnboundedSender<(String, f64, u64, f64, f64)>,
 ) -> bool {
-    // 若使用 HiRes 贴图模式，先在 Runner 线程生成并上传到 GPU
-    if let Some(hires_config) = hires_video_config {
-        let ppq_u16 = ppq.max(1).min(u16::MAX as u32) as u16;
-        let tiles_map = super::video_export::generate_hires_video_tiles(
-            document,
-            &hires_config,
-            ppq_u16,
-            hires_key_count,
-        );
-        let tiles: Vec<lumino_gfx::GroupTile> = tiles_map.into_values().collect();
-        let track_count = document.notes.len() as u16;
-        if cmd_sender
-            .send(RenderCommand::Control(
-                ControlCommand::UploadHiResVideoTiles {
-                    tiles,
-                    config: hires_config,
-                    track_count,
-                    key_count: hires_key_count,
-                    total_ticks: document.total_ticks,
-                    ppq: ppq_u16,
-                },
-            ))
-            .is_err()
-        {
-            tracing::error!("发送 UploadHiResVideoTiles 命令失败");
-            let _ = progress_tx.send(("导出失败：渲染线程通信错误".to_string(), -1.0, 0, 0.0, 0.0));
-            return true;
-        }
-        tracing::info!("视频导出: HiRes 贴图已上传");
-    }
-
     // 发送 StartVideoExport 命令
     if cmd_sender
         .send(RenderCommand::Control(ControlCommand::StartVideoExport {
             width,
             height,
             frame_tx: FrameSender(frame_tx),
-            render_mode: render_mode_for_thread.as_str().to_string(),
         }))
         .is_err()
     {

@@ -139,31 +139,12 @@ fn render_settings_section<'a>(
         ]
         .spacing(8)
         .align_y(Alignment::Center),
-        space().height(8),
         pick_list_row("帧率:", 100.0, fps_options, Some(state.fps), |v| {
             Message::VideoExport(VideoExportAction::FpsChanged(v))
         }),
-        space().height(8),
-        render_mode_row(state, palette),
     ]
     .width(Length::Fill)
     .into()
-}
-
-/// 视频渲染模式选择行
-fn render_mode_row<'a>(
-    state: &'a VideoExportDialogState,
-    _palette: &'a iced_core::theme::palette::Extended,
-) -> crate::Element<'a> {
-    use lumino_event::window::video::RenderMode;
-    let render_modes = vec![RenderMode::NoteRectangle, RenderMode::HiResTexture];
-    pick_list_row(
-        "渲染模式:",
-        100.0,
-        render_modes,
-        Some(state.render_mode),
-        |v| Message::VideoExport(VideoExportAction::RenderModeChanged(v)),
-    )
 }
 
 /// 输出路径区域

@@ -72,7 +72,6 @@ impl DialogHandler {
                         .unwrap_or_default(),
                     quality: lumino_event::window::video::QualityPreset::from_str(&quality)
                         .unwrap_or_default(),
-                    render_mode: root.state.video_export_dialog.render_mode,
                 };
                 let ev = crate::event::window::Event::start_video_export(video_config, document);
                 crate::event::emit(crate::event::Event::Window(ev));
@@ -122,10 +121,6 @@ impl DialogHandler {
             }
             V::OutputPathChanged(v) => {
                 root.state.video_export_dialog.output_path = v;
-            }
-            V::RenderModeChanged(v) => {
-                tracing::info!("视频导出渲染模式切换: {}", v);
-                root.state.video_export_dialog.render_mode = v;
             }
             V::BrowseOutput => {
                 let st = &root.state.video_export_dialog;

@@ -104,8 +104,6 @@ pub enum ControlCommand {
         height: u32,
         /// 帧数据回传通道（渲染线程 → Runner）
         frame_tx: FrameSender,
-        /// 视频导出渲染模式（"note_rectangle"/"hires_texture"）
-        render_mode: String,
     },
     /// 渲染一帧视频并读回 BGRA 数据
     ///
@@ -113,8 +111,6 @@ pub enum ControlCommand {
     RenderVideoFrame {
         /// 帧渲染参数
         params: Box<RenderParams>,
-        /// 视频导出渲染模式（"note_rectangle"/"hires_texture"）
-        render_mode: String,
     },
     /// 上传视频导出用高精度贴图（Runner 预生成后一次性传入）
     UploadHiResVideoTiles {

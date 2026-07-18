@@ -2,9 +2,6 @@
 //!
 //! 配置值用 String 传递（UI pick_list 原生支持），
 //! Runner 端解析回强类型（与音频导出的 threading/interpolation 解析方式一致）。
-//! 其中渲染模式 `RenderModeChanged` 直接携带强类型 `RenderMode` 枚举。
-
-use lumino_event::window::video::RenderMode;
 
 /// 视频导出动作
 #[derive(Debug, Clone)]
@@ -34,8 +31,6 @@ pub enum VideoExportAction {
     OutputPathChanged(String),
     /// 浏览输出路径
     BrowseOutput,
-    /// 视频导出渲染模式变更
-    RenderModeChanged(RenderMode),
 
     // ── 导出控制 ──
     /// 开始导出（点击「开始导出」按钮，由 handler 发射 StartVideoExport 事件）
