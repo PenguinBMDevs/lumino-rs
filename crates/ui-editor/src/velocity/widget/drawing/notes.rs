@@ -4,7 +4,6 @@ use super::*;
 /// 绘制速度（Tempo）折线图
 pub fn draw_tempo_graph(
     frame: &mut Frame<Renderer>,
-    theme: &Theme,
     points: &[TempoPoint],
     size: Size,
     view: &ViewState,
@@ -15,8 +14,10 @@ pub fn draw_tempo_graph(
 
     let width = size.width;
     let height = size.height;
-    let line_color = theme.extended_palette().secondary.strong.color;
-    let point_color = theme.extended_palette().secondary.base.color;
+    // 自动化节点统一蓝色，与主音轨音符视觉一致
+    let node_color = automation_node_color();
+    let line_color = node_color;
+    let point_color = node_color;
     let min_bpm = TEMPO_BPM_MIN;
     let bpm_range = TEMPO_BPM_MAX - TEMPO_BPM_MIN;
 
@@ -66,7 +67,7 @@ pub fn draw_tempo_graph(
             max_width: width,
             line_height: iced_core::text::LineHeight::Relative(1.0),
             size: iced_core::Pixels(9.0),
-            color: Color::from_rgba(0.6, 0.6, 0.6, 0.7),
+            color: Color::from_rgba(0.2, 0.55, 1.0, 0.7),
             font: iced_core::Font::DEFAULT,
             align_x: alignment::Horizontal::Center.into(),
             align_y: alignment::Vertical::Top,
@@ -109,7 +110,8 @@ pub fn draw_curve_paint_feedback(
     let start_y = VelocityCanvas::velocity_to_y(start_vel, height);
     let current_y = VelocityCanvas::velocity_to_y(current_vel, height);
 
-    let trail_color = velocity_curve_trail_color(theme);
+    // 自动化曲线反馈统一蓝色，与主音轨音符视觉一致
+    let trail_color = automation_node_color();
     let mut trail_builder = path::Builder::new();
     trail_builder.move_to(Point::new(start_x, start_y));
     trail_builder.line_to(Point::new(current_x, current_y));
@@ -120,7 +122,7 @@ pub fn draw_curve_paint_feedback(
             .with_width(2.0),
     );
 
-    let affected_color = theme.extended_palette().secondary.strong.color;
+    let affected_color = automation_node_color();
     for point in points {
         if !state.curve_affected.contains_key(&point.note_index) {
             continue;

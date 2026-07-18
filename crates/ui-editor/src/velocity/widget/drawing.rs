@@ -104,13 +104,10 @@ pub fn velocity_curve_range_color(theme: &Theme) -> Color {
     Color::from_rgba(c.r, c.g, c.b, alpha)
 }
 
-/// 曲线绘制轨迹线颜色
-pub fn velocity_curve_trail_color(theme: &Theme) -> Color {
-    if lumino_ui_core::theme::is_high_contrast() {
-        return Color::from_rgba(1.0, 0.8, 0.0, 0.6);
-    }
-    let c = theme.extended_palette().primary.base.color;
-    Color::from_rgba(c.r, c.g, c.b, 0.5)
+/// 自动化节点统一蓝色，与主音轨已放置音符（MAIN_TRACK_NOTE_COLOR）
+/// 视觉保持一致。Tempo 折线、Velocity 曲线反馈、CC/Bend 自动化节点均使用此色。
+pub fn automation_node_color() -> Color {
+    Color::from_rgb(0.2, 0.55, 1.0)
 }
 
 // ── Tempo 常量 ──

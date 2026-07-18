@@ -6,6 +6,10 @@ use lumino_core::{AutomationLane, SegmentShape};
 
 use crate::cc_bar_renderer::CcBarInstance;
 
+/// 自动化节点（曲线 + 锚点）统一使用的蓝色，与主音轨已放置音符
+/// `MAIN_TRACK_NOTE_COLOR`（ui crate note_worker.rs）保持一致，确保视觉统一。
+pub const AUTOMATION_NODE_COLOR: [f32; 3] = [0.2, 0.55, 1.0];
+
 /// 曲线子采样像素步长。Linear/Curve 段按此步长采样并连成多条 1px 短线。
 const CURVE_SUBSAMPLE_PX: f32 = 2.0;
 /// 锚点半径（像素）。Pencil/Curve 工具下显示。

@@ -10,7 +10,8 @@ use super::super::super::{
     EditMode, PANEL_PADDING_X, RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT, VelocityPanel,
 };
 use super::super::drawing::{
-    draw_horizontal_lines, draw_scale_labels, draw_tempo_graph, draw_vertical_lines,
+    automation_node_color, draw_horizontal_lines, draw_scale_labels, draw_tempo_graph,
+    draw_vertical_lines,
 };
 use super::super::state::{AutomationDrag, VelocityCanvasState};
 use lumino_gfx::automation::AutomationViewParams;
@@ -80,7 +81,7 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                 draw_scale_labels(&mut frame, theme, bounds.size(), self.edit_mode);
                 let tempo_points = VelocityPanel::build_tempo_points(self.editor);
                 if !tempo_points.is_empty() {
-                    draw_tempo_graph(&mut frame, theme, &tempo_points, bounds.size(), view);
+                    draw_tempo_graph(&mut frame, &tempo_points, bounds.size(), view);
                 }
                 vec![frame.into_geometry()]
             }
@@ -115,8 +116,8 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                     let cur_x = view_params.tick_to_x(cur_tick);
                     let cur_y = view_params.value_to_y(cur_value as f32, max_val);
 
-                    // 使用主题 primary 颜色绘制 ghost 线
-                    let ghost_color = theme.extended_palette().primary.strong.color;
+                    // 使用自动化节点统一蓝色绘制 ghost 反馈（与主音轨音符视觉一致）
+                    let ghost_color = automation_node_color();
                     let ghost_alpha = Color {
                         a: 0.5,
                         ..ghost_color

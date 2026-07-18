@@ -98,11 +98,6 @@ pub fn build_cc_bar_instances(
     let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
     let graph_height = max_y - min_y;
 
-    let curve_color = [
-        colors.bar_color[0],
-        colors.bar_color[1],
-        colors.bar_color[2],
-    ];
     let automation_view = AutomationViewParams {
         panel_height: view_params.panel_height,
         pixels_per_tick: view_params.zoom_x,
@@ -149,12 +144,14 @@ pub fn build_cc_bar_instances(
         }
     } else if let Some(lane) = data.automation_lane {
         // CC / Bend 曲线模式：使用 AutomationLane 生成 Step/Curve 实例与锚点。
+        // 节点颜色统一使用主音轨音符蓝（AUTOMATION_NODE_COLOR），
+        // 与主音轨已放置音符视觉一致。
         build_lane_instances(
             &mut instances,
             view_params.canvas_size_x,
             &automation_view,
             lane,
-            curve_color,
+            crate::automation::AUTOMATION_NODE_COLOR,
             true,
         );
     } else if is_bend {
