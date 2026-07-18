@@ -134,8 +134,10 @@ impl Editor {
 
                 if delta_tick_i != drag_state.delta_tick || delta_key_i != drag_state.delta_key {
                     drag_state.set_delta(delta_tick_i, delta_key_i);
-                    // 触发重绘以更新 ghost 位置（数据未变，仅 ghost 偏移变）
-                    self.mark_notes_changed();
+                    // ghost 方案：data.notes 未变，仅 delta 变了。
+                    // 用 mark_ghost_dirty 触发 wgpu 重绘，不触发空间索引重建。
+                    // （误用 mark_notes_changed 会导致 3106 音符每帧重建 47ms × 60fps ≈ 2.8s 卡顿）
+                    self.mark_ghost_dirty();
                 }
             }
             EditState::ResizingSelectionStart { last_tick } => {
@@ -270,7 +272,7 @@ impl Editor {
 
         let tick_offset = drag_state.delta_tick as f32;
         let key_offset = drag_state.delta_key;
-        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1) as u16;
+        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
 
         // ghost 方案：一次性应用 delta 到 notes
         let modified = drag_state.apply_to_notes(&mut self.editor_state.data.notes, max_key);
@@ -299,23 +301,9 @@ impl Editor {
         true
     }
 
-    /// 完成批量拖动（ghost 方案）
-    ///
-    /// 松手时一次性将 `drag_state.delta` 应用到所有选中音符。
-    /// 返回 `true` 表示有音符位置发生了变化。
-    pub(crate) fn finalize_selection_dragging(&mut self, drag_state: DragState) -> bool {
-        if drag_state.is_delta_zero() {
-            tracing::debug!("Editor: 批量拖动 delta 为零，跳过提交");
-            return false;
-        }
-
-        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1) as u16;
-        let modified = drag_state.apply_to_notes(&mut self.editor_state.data.notes, max_key);
-        if modified > 0 {
-            tracing::info!("Editor: 批量拖动完成 - 修改 {} 个音符", modified);
-        }
-        modified > 0
-    }
+    // 注：原 `finalize_selection_dragging` 已移除——延迟提交方案下，松手保存到
+    // `pending_drag_state`，真正提交在 `commit_pending_drag`（点击空白处或
+    // `commit_current_edit` 时触发）。详见 `interaction/released.rs`。
 }
 
 use lumino_ui_constants::editor::DRAG_START_THRESHOLD_RATIO;

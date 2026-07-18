@@ -43,6 +43,7 @@ mod tests {
     mod interaction;
     mod interception;
     mod keyboard_colors_test;
+    mod pending_drag;
     mod scroll;
     mod state;
 }
@@ -115,6 +116,17 @@ pub struct Editor {
 
     /// 音符数据是否已变化（需要更新播放管理器）
     pub(crate) notes_changed: bool,
+
+    /// 批量拖动待提交状态（ghost 方案 - 延迟提交）
+    ///
+    /// `DraggingSelection` 松手后不立即 apply 到 `data.notes`，而是保存到此字段。
+    /// 用户点击空白处取消框选时才真正 apply，避免连续拖动期间触发空间索引重建。
+    ///
+    /// **累积模式**：再次拖动同一选区时，新 delta 会叠加到此字段的 delta 上。
+    /// 渲染时 ghost 位置 = note + pending_drag_state.delta + drag_state.delta。
+    ///
+    /// `None` 表示无待提交的拖动；`Some(drag_state)` 表示有待提交的累积偏移。
+    pub(crate) pending_drag_state: Option<lumino_core::DragState>,
 
     /// 统一状态管理
     pub editor_state: editor_state::EditorState,

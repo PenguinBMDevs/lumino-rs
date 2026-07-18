@@ -29,6 +29,7 @@ impl Editor {
                 playback_key_colors_enabled: false,
                 loop_range: Some(grid::LoopRange::new()),
                 notes_changed: false,
+                pending_drag_state: None,
                 velocity_panel: VelocityPanel::new(),
                 selection_box_anim: Cell::new(None),
                 context_menu: crate::context_menu::PianoRollContextMenuState::default(),
@@ -131,36 +132,77 @@ impl Editor {
     /// 检查当前是否处于编辑状态（拦截 Undo/Redo/Save/Play/Export 用）
     ///
     /// 返回 `true` 当用户正在进行音符编辑（拖动/绘制/调整大小），
-    /// 此时数据可能尚未提交到 `data.notes`（ghost 方案）。
+    /// 或有未提交的批量拖动（pending_drag_state）。
     pub fn is_editing(&self) -> bool {
         use crate::EditState;
-        matches!(
-            self.editor_state.interaction.edit_state,
-            EditState::Dragging { .. }
-                | EditState::DraggingSelection { .. }
-                | EditState::PendingDrag { .. }
-                | EditState::Drawing { .. }
-                | EditState::ResizingStart { .. }
-                | EditState::ResizingEnd { .. }
-                | EditState::ResizingSelectionStart { .. }
-                | EditState::ResizingSelectionEnd { .. }
-        )
+        self.pending_drag_state.is_some()
+            || matches!(
+                self.editor_state.interaction.edit_state,
+                EditState::Dragging { .. }
+                    | EditState::DraggingSelection { .. }
+                    | EditState::PendingDrag { .. }
+                    | EditState::Drawing { .. }
+                    | EditState::ResizingStart { .. }
+                    | EditState::ResizingEnd { .. }
+                    | EditState::ResizingSelectionStart { .. }
+                    | EditState::ResizingSelectionEnd { .. }
+            )
+    }
+
+    /// 是否有未提交的批量拖动（pending commit 状态）
+    pub fn has_pending_drag(&self) -> bool {
+        self.pending_drag_state.is_some()
+    }
+
+    /// 提交 pending 批量拖动到 `data.notes`
+    ///
+    /// 在以下场景调用：
+    /// - 用户点击空白处取消框选时
+    /// - `commit_current_edit()` 自动提交（Save/Play/Export 前的 fallback）
+    ///
+    /// 返回 `true` 表示有数据被提交。如果 pending_drag_state 为 None 或 delta 为零，返回 false。
+    pub fn commit_pending_drag(&mut self) -> bool {
+        let Some(drag_state) = self.pending_drag_state.take() else {
+            return false;
+        };
+        if drag_state.is_delta_zero() {
+            tracing::debug!("Editor: pending drag delta 为零，跳过提交");
+            return false;
+        }
+        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+        let modified = drag_state.apply_to_notes(&mut self.editor_state.data.notes, max_key);
+        if modified > 0 {
+            self.editor_state.data.sync_track_notes();
+            self.mark_notes_changed();
+            tracing::info!("Editor: 提交 pending 批量拖动 - 修改 {} 个音符", modified);
+        }
+        modified > 0
     }
 
     /// 提交当前编辑（Save/Play/Export 前自动调用）
     ///
     /// 如果用户正在编辑（ghost 拖动/绘制/调整大小），先提交到 `data.notes`。
     /// 等价于"模拟用户松开鼠标"。返回 `true` 表示有数据被提交。
+    ///
+    /// **延迟提交方案**：`DraggingSelection` 的 `handle_released` 只把 delta 保存到
+    /// `pending_drag_state`，不真正 apply。这里必须再调 `commit_pending_drag`，
+    /// 否则 Save/Play/Export 时数据会丢失。
     pub fn commit_current_edit(&mut self) -> bool {
         if !self.is_editing() {
             return false;
         }
         let before = self.editor_state.data.notes.len();
+        // handle_released: Dragging/Drawing/Resizing 直接 apply；DraggingSelection 保存到 pending
         self.handle_released();
+        // 延迟提交方案：如果 handle_released 产生了 pending_drag_state，立即提交
+        // （Save/Play/Export 前的 fallback，等价于"点击空白处"）
+        let pending_committed = self.commit_pending_drag();
+        let after = self.editor_state.data.notes.len();
         tracing::debug!(
-            "Editor: 自动提交编辑（commit_current_edit），notes len {} -> {}",
+            "Editor: 自动提交编辑（commit_current_edit），notes len {} -> {}, pending_committed={}",
             before,
-            self.editor_state.data.notes.len()
+            after,
+            pending_committed
         );
         true
     }

@@ -62,6 +62,8 @@ impl Editor {
                 snapped_tick
             };
         if let Some((index, hit_type)) = hit_result {
+            // 命中音符：如果有 pending 拖动，先提交（非累积场景）
+            self.flush_pending_drag();
             if !self
                 .editor_state
                 .interaction
@@ -76,7 +78,7 @@ impl Editor {
             // 命中选择框：根据边缘/内部分别进入调整大小或拖动状态
             match sel_hit {
                 crate::SelectionHitType::Inside => {
-                    // ghost 方案：从 selected_notes HashSet 构建 DragState（内部用 BitVec）
+                    // ghost 方案（累积模式）：从 selected_notes 构建 DragState
                     let note_count = self.editor_state.data.notes.len();
                     let drag_state = DragState::from_indices(
                         self.editor_state.interaction.selected_notes.iter().copied(),
@@ -84,11 +86,17 @@ impl Editor {
                         snapped_tick as i64,
                         key as i16,
                     );
-                    self.push_history();
+                    // 累积模式：pending_drag_state 存在时，history 已在首次拖动时 push，
+                    // 此处不重复 push（避免一次逻辑操作产生多条 history 记录）
+                    if self.pending_drag_state.is_none() {
+                        self.push_history();
+                    }
                     self.editor_state.interaction.edit_state =
                         crate::EditState::DraggingSelection { drag_state };
                 }
                 crate::SelectionHitType::LeftEdge => {
+                    // 调整大小：如果有 pending 拖动，先提交（非累积场景）
+                    self.flush_pending_drag();
                     self.push_history();
                     self.editor_state.interaction.edit_state =
                         crate::EditState::ResizingSelectionStart {
@@ -96,6 +104,8 @@ impl Editor {
                         };
                 }
                 crate::SelectionHitType::RightEdge => {
+                    // 调整大小：如果有 pending 拖动，先提交（非累积场景）
+                    self.flush_pending_drag();
                     self.push_history();
                     self.editor_state.interaction.edit_state =
                         crate::EditState::ResizingSelectionEnd {
@@ -104,6 +114,8 @@ impl Editor {
                 }
             }
         } else {
+            // 点击空白处：提交 pending 拖动 + 取消框选
+            self.flush_pending_drag();
             self.playback_position = snapped_tick;
             self.editor_state.interaction.selected_notes.clear();
             self.editor_state.interaction.edit_state = crate::EditState::Selecting {
@@ -112,6 +124,17 @@ impl Editor {
                 current_tick: selection_start_tick,
                 current_key: key,
             };
+        }
+    }
+
+    /// 提交 pending 批量拖动并清空选区（非累积场景调用）
+    ///
+    /// 在用户开始新操作（点击音符/调整大小/点击空白处）时调用。
+    /// 累积拖动场景（框选内部命中）不调用此方法，保留 pending。
+    fn flush_pending_drag(&mut self) {
+        if self.pending_drag_state.is_some() {
+            self.commit_pending_drag();
+            self.editor_state.interaction.selected_notes.clear();
         }
     }
 

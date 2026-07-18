@@ -70,10 +70,33 @@ impl Editor {
                 }
             }
             EditState::DraggingSelection { drag_state } => {
-                // ghost 方案：松手时一次性应用 delta 到所有选中音符
-                if self.finalize_selection_dragging(drag_state) {
-                    self.mark_notes_changed();
+                // ghost 方案（延迟提交）：松手不 apply，保存到 pending_drag_state。
+                // 用户点击空白处取消框选时才 apply（commit_pending_drag）。
+                //
+                // 累积模式：如果已有 pending_drag_state，新 delta 叠加到 pending.delta。
+                // 渲染时 ghost 位置 = note + pending.delta + drag_state.delta。
+                if drag_state.is_delta_zero() {
+                    tracing::debug!("Editor: 批量拖动 delta 为零，不保存 pending");
+                } else if let Some(mut pending) = self.pending_drag_state.take() {
+                    pending.delta_tick = pending.delta_tick.saturating_add(drag_state.delta_tick);
+                    pending.delta_key = pending.delta_key.saturating_add(drag_state.delta_key);
+                    tracing::debug!(
+                        "Editor: 累积 pending 拖动 - 累积 delta=({}, {})",
+                        pending.delta_tick,
+                        pending.delta_key
+                    );
+                    self.pending_drag_state = Some(pending);
+                } else {
+                    tracing::debug!(
+                        "Editor: 保存 pending 拖动 - delta=({}, {})",
+                        drag_state.delta_tick,
+                        drag_state.delta_key
+                    );
+                    self.pending_drag_state = Some(drag_state);
                 }
+                // 保留 selected_notes 不清空（pending 状态下仍显示框选）
+                // edit_state 切换到 Idle（std::mem::take 已处理）
+                // 不调用 mark_notes_changed（data.notes 未变）
             }
             EditState::ResizingSelectionStart { .. } | EditState::ResizingSelectionEnd { .. } => {
                 tracing::debug!("Editor: 选择框批量编辑完成");
