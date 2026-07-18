@@ -4,7 +4,7 @@ use std::{collections::HashMap, sync::OnceLock};
 
 use lumino_core::i18n::Language;
 use lumino_ui::event::{self as event, Event as CoreEvent};
-use lumino_ui::titlebar::menu::{MenuItem as UiMenuItem, menus as ui_menus};
+use lumino_ui::titlebar::menu::{MenuItem as UiMenuItem, event_display_name, menus as ui_menus};
 use muda::{
     IsMenuItem, Menu, MenuEvent, MenuId, MenuItem as MudaMenuItem, PredefinedMenuItem as PMI,
     Submenu,
@@ -57,6 +57,7 @@ impl MenuElement {
 fn build_submenu(
     label: &str,
     items: &[UiMenuItem],
+    lang: Language,
     map: &mut HashMap<MenuId, CoreEvent>,
 ) -> muda::Result<Submenu> {
     let mut elements: Vec<MenuElement> = Vec::new();
@@ -64,7 +65,7 @@ fn build_submenu(
     for item in items {
         match item {
             UiMenuItem::Action(core_event) => {
-                let display_name = core_event.display_name();
+                let display_name = event_display_name(core_event, lang);
                 let muda_item = MudaMenuItem::new(display_name, true, None);
                 let id = muda_item.id().clone();
                 map.insert(id, core_event.clone());
@@ -74,7 +75,7 @@ fn build_submenu(
                 elements.push(MenuElement::Separator(PMI::separator()));
             }
             UiMenuItem::Submenu(sub_items, sub_label) => {
-                let sub = build_submenu(sub_label, sub_items, map)?;
+                let sub = build_submenu(sub_label, sub_items, lang, map)?;
                 elements.push(MenuElement::Sub(sub));
             }
         }
@@ -101,21 +102,25 @@ fn init_inner(lang: Language, cell: &OnceLock<AppMenu>) -> muda::Result<()> {
     let file = build_submenu(
         &ui_configs[0].kind.to_string(),
         &ui_configs[0].items,
+        lang,
         &mut map,
     )?;
     let edit = build_submenu(
         &ui_configs[1].kind.to_string(),
         &ui_configs[1].items,
+        lang,
         &mut map,
     )?;
     let view = build_submenu(
         &ui_configs[2].kind.to_string(),
         &ui_configs[2].items,
+        lang,
         &mut map,
     )?;
     let help = build_submenu(
         &ui_configs[3].kind.to_string(),
         &ui_configs[3].items,
+        lang,
         &mut map,
     )?;
 

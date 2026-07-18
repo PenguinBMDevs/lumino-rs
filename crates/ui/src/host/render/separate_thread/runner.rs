@@ -517,21 +517,20 @@ impl Host {
 
         // 计算力度面板矩形（用于 wgpu scissor 裁剪）
         // 仅在自动化面板可见时设置，否则跳过 CC bar 渲染器 prepare/draw
-        let velocity_panel_rect = if is_arrangement_mode
-            || !self.root.sidebar.automation_panel_visible
-        {
-            None
-        } else {
-            let es = &self.root.editor.editor_state;
-            // velocity 面板在 grid Canvas 下方，间隔 0px
-            const H_SCROLLBAR_HEIGHT: f32 = 20.0;
-            Some((
-                es.canvas.offset_x,
-                es.canvas.offset_y + es.canvas.size_y + H_SCROLLBAR_HEIGHT,
-                es.canvas.size_x,
-                self.root.visual.velocity_panel_height + PANEL_PADDING_Y + 10.0,
-            ))
-        };
+        let velocity_panel_rect =
+            if is_arrangement_mode || !self.root.sidebar.automation_panel_visible {
+                None
+            } else {
+                let es = &self.root.editor.editor_state;
+                // velocity 面板在 grid Canvas 下方，间隔 0px
+                const H_SCROLLBAR_HEIGHT: f32 = 20.0;
+                Some((
+                    es.canvas.offset_x,
+                    es.canvas.offset_y + es.canvas.size_y + H_SCROLLBAR_HEIGHT,
+                    es.canvas.size_x,
+                    self.root.visual.velocity_panel_height + PANEL_PADDING_Y + 10.0,
+                ))
+            };
 
         RenderParams::builder()
             .viewport_size((physical_size.width, physical_size.height))

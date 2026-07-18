@@ -280,7 +280,7 @@ fn base_split<'a>() -> Element<'a> {
 }
 
 /// 获取事件的友好显示名称
-fn event_display_name(event: &Event, lang: Language) -> String {
+pub fn event_display_name(event: &Event, lang: Language) -> String {
     let t = main_translations(lang);
     use crate::event::menu::{
         edit::Event as EditEvent, file::Event as FileEvent, help::Event as HelpEvent,
