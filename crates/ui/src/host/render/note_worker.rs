@@ -75,6 +75,11 @@ impl Default for ScrollVelocityTracker {
 
 // ─── 主音轨主音符实例构建（主线程同步执行） ─────────────────────────────────
 
+/// 主音轨已放置音符的固定蓝色（与洋葱皮取色区分）
+const MAIN_TRACK_NOTE_COLOR: [f32; 4] = [0.2, 0.55, 1.0, 1.0];
+/// 正在绘制中的音符颜色（蓝色高亮，略亮于已放置音符）
+const DRAWING_NOTE_COLOR: [f32; 4] = [0.4, 0.8, 1.0, 1.0];
+
 pub(super) fn build_main_note_instances(
     buffer: &SwappableBuffer<lumino_gfx::NoteInstance>,
     visible_notes: &[(f32, u16, f32)],
@@ -84,9 +89,8 @@ pub(super) fn build_main_note_instances(
 ) {
     use rayon::prelude::*;
 
-    // 主音轨音符颜色来自当前调色板的第一个颜色
-    const DRAWING_NOTE_COLOR: [f32; 4] = [0.4, 0.8, 1.0, 1.0];
-    let fixed_note_color: [f32; 4] = lumino_core::palette::current_track_color_f32(0);
+    // 主音轨已放置音符统一使用蓝色，与洋葱皮（取自调色板）明确区分
+    let fixed_note_color: [f32; 4] = MAIN_TRACK_NOTE_COLOR;
     const PARALLEL_THRESHOLD: usize = 500;
 
     let instances = unsafe { buffer.write_buffer() };

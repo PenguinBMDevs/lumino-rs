@@ -363,7 +363,7 @@ pub fn is_palette_locked() -> bool {
 
 /// 获取洋葱皮音轨颜色（RGBA [u8;4]）
 ///
-/// 从当前调色板的第二个颜色开始取色（index 0 保留给主音轨音符），
+/// 从当前调色板的第一个颜色开始取色，
 /// 超出调色板颜色数时循环取色。
 #[inline]
 pub fn onion_track_color(track_idx: usize) -> PaletteColor {
@@ -375,12 +375,12 @@ pub fn onion_track_color(track_idx: usize) -> PaletteColor {
         let idx = CURRENT_PALETTE_IDX.load(Ordering::Relaxed) as usize;
         mgr.palettes().get(idx).unwrap_or_else(|| mgr.default())
     };
-    // 从第二个颜色开始取色（offset = 1）
-    if p.colors.len() <= 1 {
-        // 如果调色板只有 1 种或 0 种颜色，用备用色
+    // 从第一个颜色开始取色（offset = 0）
+    if p.colors.is_empty() {
+        // 如果调色板没有颜色，用备用色
         FALLBACK_PALETTE[track_idx % FALLBACK_PALETTE.len()]
     } else {
-        p.colors[(1 + track_idx) % p.colors.len()]
+        p.colors[track_idx % p.colors.len()]
     }
 }
 

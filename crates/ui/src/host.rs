@@ -195,7 +195,7 @@ impl Host {
 
 /// 洋葱皮音轨调色板（按音轨索引循环取色）
 ///
-/// 从当前调色板的第二个颜色开始取色（第一个颜色保留给主音轨音符）。
+/// 从当前调色板的第一个颜色开始取色。
 fn onion_track_color(track_idx: usize) -> [u8; 4] {
     lumino_core::palette::onion_track_color(track_idx)
 }

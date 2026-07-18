@@ -137,32 +137,30 @@ fn test_set_palette_ignored_when_locked() {
 
 #[test]
 fn test_onion_track_color_differs_from_main() {
-    // 当调色板有至少 2 种颜色时，
-    // onion_track_color(0) 应与 main track_color(0) 不同（offset 1 vs 0）
+    // 当调色板有至少 1 种颜色时，
+    // onion_track_color(0) 与主音轨蓝色固定色不同（onion 取调色板第一色，主音轨为固定蓝）
     let mgr = &*PALETTE_MANAGER;
     let p = mgr.default();
-    if p.colors.len() < 2 {
+    if p.colors.is_empty() {
         return;
     }
 
     unlock_palette();
     set_current_palette_by_name(p.name);
 
-    let main_color = current_track_color(0);
     let onion_color = onion_track_color(0);
 
-    // onion 从调色板索引 1 开始取色，main 从索引 0 开始
-    assert_eq!(main_color, p.colors[0], "main 应取调色板第一个颜色");
-    assert_eq!(onion_color, p.colors[1], "onion 应从调色板第二个颜色开始");
+    // onion 从调色板索引 0 开始取色（offset = 0）
+    assert_eq!(onion_color, p.colors[0], "onion 应取调色板第一个颜色");
 }
 
 #[test]
 fn test_onion_track_color_offset_is_one() {
-    // 验证 onion_track_color(i) 对应 palette[(1 + i) % len]
-    // 而非 palette[i % len]
+    // 验证 onion_track_color(i) 对应 palette[i % len]
+    // 而非 palette[(1 + i) % len]
     let mgr = &*PALETTE_MANAGER;
     let p = mgr.default();
-    if p.colors.len() < 2 {
+    if p.colors.is_empty() {
         return;
     }
 
@@ -170,11 +168,11 @@ fn test_onion_track_color_offset_is_one() {
     set_current_palette_by_name(p.name);
 
     for i in 0..p.colors.len().min(10) {
-        let expected = p.colors[(1 + i) % p.colors.len()];
+        let expected = p.colors[i % p.colors.len()];
         assert_eq!(
             onion_track_color(i),
             expected,
-            "onion_track_color({}) 应等于 palette[(1+{}) % {}]",
+            "onion_track_color({}) 应等于 palette[{} % {}]",
             i,
             i,
             p.colors.len()
