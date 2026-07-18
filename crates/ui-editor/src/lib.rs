@@ -38,7 +38,10 @@ mod track;
 #[cfg(test)]
 mod tests {
     mod drawing;
+    mod flow;
+    mod ghost;
     mod interaction;
+    mod interception;
     mod keyboard_colors_test;
     mod scroll;
     mod state;

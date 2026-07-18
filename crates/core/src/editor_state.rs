@@ -16,6 +16,7 @@
 
 pub mod canvas_state;
 pub mod constants;
+pub mod drag_state;
 pub mod editor_data;
 pub mod hit_test;
 pub mod interaction_ops;
@@ -27,6 +28,7 @@ pub use canvas_state::CanvasState;
 pub use constants::{
     DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, GLUE_PROXIMITY_THRESHOLD, SELECTION_BOX_EDGE_THRESHOLD,
 };
+pub use drag_state::DragState;
 pub use editor_data::EditorData;
 pub use interaction_state::{EditState, HitType, InteractionState, SelectionHitType};
 

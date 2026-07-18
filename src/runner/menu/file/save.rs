@@ -86,7 +86,22 @@ impl RunnerInner {
     }
 
     /// 统一保存/导出为单文件：显示格式选择对话框，支持 lmpj/mid/midi
+    ///
+    /// **自动提交编辑**：进入对话框前调用 `commit_current_edit()`，
+    /// 保证保存的数据包含用户当前正在编辑（ghost 拖动/绘制/调整大小）的音符。
     pub(super) fn handle_save_single_file(&mut self) {
+        // 自动提交当前编辑（ghost 方案：松手即提交）
+        let committed = self
+            .window_state
+            .window
+            .ui_mut()
+            .root_mut()
+            .editor
+            .commit_current_edit();
+        if committed {
+            tracing::debug!("保存前自动提交编辑");
+        }
+
         let file_stem = self
             .midi_state
             .current_midi_source

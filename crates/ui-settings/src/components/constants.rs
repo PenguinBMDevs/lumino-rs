@@ -7,6 +7,7 @@ pub const ICON_SIZE_SMALL: u32 = 18;
 pub const TEXT_SIZE_LABEL: f32 = 14.0;
 pub const TEXT_SIZE_ARROW: f32 = 12.0;
 pub const TEXT_SIZE_TITLE: f32 = 18.0;
+pub const TEXT_SIZE_SECTION: f32 = 16.0;
 pub const TEXT_SIZE_CONTENT: f32 = 14.0;
 
 // 布局尺寸

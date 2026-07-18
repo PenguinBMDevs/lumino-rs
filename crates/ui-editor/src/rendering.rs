@@ -331,6 +331,7 @@ impl Editor {
         selected_color: [f32; 4],
     ) -> Vec<NoteInstance> {
         let cache = self.spatial.query_cache.borrow();
+        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1) as u16;
 
         // 预收集需要在线程安全的结构中访问的数据
         // 收集 (index, tick, key, length) 元组，避免在并行闭包中访问 self.editor_state.data.notes
@@ -359,29 +360,56 @@ impl Editor {
             .into_par_iter()
             .enumerate()
             .filter_map(|(idx, (i, tick, key, length))| {
-                // 过滤 tick 范围
+                // 过滤 tick 范围（用原始 tick，ghost 偏移不影响视口过滤）
                 if tick > visible_tick_end {
                     return None;
                 }
 
                 let is_selected = selected_indices.get(idx).copied().unwrap_or(false);
 
-                let color_arr = match edit_state_copy {
-                    EditState::Dragging { note_index, .. }
-                    | EditState::ResizingStart { note_index, .. }
+                // ghost 方案：Dragging/DraggingSelection 期间，选中音符用 ghost 位置渲染
+                let (render_tick, render_key, color_arr) = match &edit_state_copy {
+                    EditState::Dragging { drag_state, .. } => {
+                        let is_ghost = i < drag_state.selected.len() && drag_state.selected[i];
+                        if is_ghost {
+                            let (gt, gk) = drag_state.ghost_position(tick, key, max_key);
+                            (gt, gk, active_color)
+                        } else if is_selected {
+                            (tick, key, selected_color)
+                        } else {
+                            (tick, key, default_color)
+                        }
+                    }
+                    EditState::DraggingSelection { drag_state } => {
+                        let is_ghost = i < drag_state.selected.len() && drag_state.selected[i];
+                        if is_ghost {
+                            let (gt, gk) = drag_state.ghost_position(tick, key, max_key);
+                            (gt, gk, active_color)
+                        } else if is_selected {
+                            (tick, key, selected_color)
+                        } else {
+                            (tick, key, default_color)
+                        }
+                    }
+                    EditState::ResizingStart { note_index, .. }
                     | EditState::ResizingEnd { note_index, .. }
-                        if note_index == i =>
+                        if *note_index == i =>
                     {
-                        active_color
+                        (tick, key, active_color)
                     }
-                    _ if is_selected => selected_color,
+                    _ if is_selected => (tick, key, selected_color),
                     EditState::Idle if hover_state_copy.is_some_and(|(idx, _)| idx == i) => {
-                        hover_color
+                        (tick, key, hover_color)
                     }
-                    _ => default_color,
+                    _ => (tick, key, default_color),
                 };
 
-                Some(NoteInstance::new(tick, key as f32, length, color_arr))
+                Some(NoteInstance::new(
+                    render_tick,
+                    render_key as f32,
+                    length,
+                    color_arr,
+                ))
             })
             .fold(
                 || Vec::with_capacity(candidate_count / rayon::current_num_threads() + 1),
@@ -408,39 +436,66 @@ impl Editor {
     ) -> Vec<NoteInstance> {
         let mut result = Vec::with_capacity(candidate_count);
         let cache = self.spatial.query_cache.borrow();
+        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1) as u16;
         for &i in cache.iter() {
             if let Some(note) = self.editor_state.data.notes.get(i) {
                 if note.tick > visible_tick_end {
                     continue;
                 }
 
-                let color_arr = match self.editor_state.interaction.edit_state {
-                    EditState::Dragging { note_index, .. }
-                    | EditState::ResizingStart { note_index, .. }
-                    | EditState::ResizingEnd { note_index, .. }
-                        if note_index == i =>
-                    {
-                        active_color
-                    }
-                    _ if self.editor_state.interaction.selected_notes.contains(&i) => {
-                        selected_color
-                    }
-                    EditState::Idle
-                        if self
-                            .editor_state
-                            .interaction
-                            .hover_state
-                            .is_some_and(|(idx, _)| idx == i) =>
-                    {
-                        hover_color
-                    }
-                    _ => default_color,
-                };
+                let tick = note.tick;
+                let key = note.key;
+                let length = note.length;
+                let is_selected = self.editor_state.interaction.selected_notes.contains(&i);
+
+                // ghost 方案：Dragging/DraggingSelection 期间，选中音符用 ghost 位置渲染
+                let (render_tick, render_key, color_arr) =
+                    match &self.editor_state.interaction.edit_state {
+                        EditState::Dragging { drag_state, .. } => {
+                            let is_ghost = i < drag_state.selected.len() && drag_state.selected[i];
+                            if is_ghost {
+                                let (gt, gk) = drag_state.ghost_position(tick, key, max_key);
+                                (gt, gk, active_color)
+                            } else if is_selected {
+                                (tick, key, selected_color)
+                            } else {
+                                (tick, key, default_color)
+                            }
+                        }
+                        EditState::DraggingSelection { drag_state } => {
+                            let is_ghost = i < drag_state.selected.len() && drag_state.selected[i];
+                            if is_ghost {
+                                let (gt, gk) = drag_state.ghost_position(tick, key, max_key);
+                                (gt, gk, active_color)
+                            } else if is_selected {
+                                (tick, key, selected_color)
+                            } else {
+                                (tick, key, default_color)
+                            }
+                        }
+                        EditState::ResizingStart { note_index, .. }
+                        | EditState::ResizingEnd { note_index, .. }
+                            if *note_index == i =>
+                        {
+                            (tick, key, active_color)
+                        }
+                        _ if is_selected => (tick, key, selected_color),
+                        EditState::Idle
+                            if self
+                                .editor_state
+                                .interaction
+                                .hover_state
+                                .is_some_and(|(idx, _)| idx == i) =>
+                        {
+                            (tick, key, hover_color)
+                        }
+                        _ => (tick, key, default_color),
+                    };
 
                 result.push(NoteInstance::new(
-                    note.tick,
-                    note.key as f32,
-                    note.length,
+                    render_tick,
+                    render_key as f32,
+                    length,
                     color_arr,
                 ));
             }

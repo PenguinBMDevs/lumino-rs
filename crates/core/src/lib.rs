@@ -19,14 +19,14 @@ pub use automation::{
     AutomationEdit, AutomationEvent, AutomationLane, AutomationTarget, SegmentShape,
 };
 pub use editor_state::{
-    CanvasState, DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, EditState, EditorData, EditorState,
-    GLUE_PROXIMITY_THRESHOLD, HitType, InteractionState, SELECTION_BOX_EDGE_THRESHOLD,
+    CanvasState, DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, DragState, EditState, EditorData,
+    EditorState, GLUE_PROXIMITY_THRESHOLD, HitType, InteractionState, SELECTION_BOX_EDGE_THRESHOLD,
     SelectionHitType,
 };
 pub use editor_transform::EditorTransform;
 pub use error::{CoreError, Result};
 pub use font_scanner::{FontInfo, scan_system_fonts};
-pub use history::{EditorSnapshot, History};
+pub use history::{EditorSnapshot, History, OpKind};
 pub use midi_types::{
     BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcData, CcDisplay, CcPoint, EditMode,
     PITCH_BEND_CENTER, TempoPoint, VelocityPoint,

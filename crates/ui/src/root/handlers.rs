@@ -272,6 +272,10 @@ impl Root {
         }
 
         self.editor.update_selection_box_animation(None);
+
+        // 清理过期 Toast（每帧调用，低成本 O(N) retain）
+        self.toast.cleanup_expired(std::time::Instant::now());
+
         true
     }
 
@@ -521,6 +525,24 @@ impl Root {
                 | EditorAction::IndicatorDragMove { .. }
                 | EditorAction::Scrolled { .. }
         );
+
+        // 编辑拦截：Undo/Redo 在编辑状态下被 Editor::undo/redo 拦截，
+        // 这里检测拦截并按 UiConfig 设置显示 Toast 提示用户。
+        if matches!(action, EditorAction::Undo | EditorAction::Redo) && self.editor.is_editing() {
+            if self.intercept_notification_enabled() {
+                self.toast.push(
+                    crate::toast::ToastLevel::Warning,
+                    "请先完成当前编辑（拖动 / 绘制 / 调整大小）后再执行撤销/重做",
+                );
+            }
+            tracing::debug!(
+                "Editor: 拦截 {:?}（toast_enabled={}, edit_state={:?}）",
+                action,
+                self.intercept_notification_enabled(),
+                self.editor.editor_state.interaction.edit_state
+            );
+            return false;
+        }
 
         let old_tick = self.editor.playback_position;
         self.editor.handle_action(action);

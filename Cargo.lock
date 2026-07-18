@@ -3438,6 +3438,7 @@ dependencies = [
 name = "lumino-core"
 version = "0.2.0-dev"
 dependencies = [
+ "bit-vec",
  "chrono",
  "font-kit",
  "im",

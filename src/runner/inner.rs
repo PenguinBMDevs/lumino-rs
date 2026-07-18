@@ -360,7 +360,11 @@ impl RunnerInner {
             || new.velocity_curve_style != old.velocity_curve_style
             || new.playback_key_colors_enabled != old.playback_key_colors_enabled
             || new.track_add_behavior != old.track_add_behavior
-            || new.track_display_mode != old.track_display_mode;
+            || new.track_display_mode != old.track_display_mode
+            || new.history_total_limit != old.history_total_limit
+            || new.history_entry_limit != old.history_entry_limit
+            || new.merge_window_ms != old.merge_window_ms
+            || new.intercept_notification_enabled != old.intercept_notification_enabled;
 
         if theme_changed
             || synth_changed
@@ -508,6 +512,10 @@ impl RunnerInner {
             config.ui.playback_key_colors_enabled = new.playback_key_colors_enabled;
             config.ui.track_add_behavior = new.track_add_behavior;
             config.ui.selected_palette = new.selected_palette.clone();
+            config.ui.history_total_limit = new.history_total_limit;
+            config.ui.history_entry_limit = new.history_entry_limit;
+            config.ui.merge_window_ms = new.merge_window_ms;
+            config.ui.intercept_notification_enabled = new.intercept_notification_enabled;
         });
 
         // 同步当前调色板到全局 PaletteManager

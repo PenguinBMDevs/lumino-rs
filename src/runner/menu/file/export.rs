@@ -14,7 +14,22 @@ impl RunnerInner {
     }
 
     /// 导出工程为文件夹
+    ///
+    /// **自动提交编辑**：进入导出流程前调用 `commit_current_edit()`，
+    /// 保证导出的数据包含用户当前正在编辑的音符。
     pub(super) fn handle_export_project_folder(&mut self) {
+        // 自动提交当前编辑（ghost 方案：松手即提交）
+        let committed = self
+            .window_state
+            .window
+            .ui_mut()
+            .root_mut()
+            .editor
+            .commit_current_edit();
+        if committed {
+            tracing::debug!("导出工程前自动提交编辑");
+        }
+
         // 如果没有加载 MIDI 但有编辑器内容，先自动保存
         if self.midi_state.current_midi.is_none() && self.midi_state.current_midi_source.is_none() {
             let has_notes = {

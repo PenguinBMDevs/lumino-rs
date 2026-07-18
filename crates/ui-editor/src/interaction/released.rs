@@ -40,11 +40,11 @@ impl Editor {
             EditState::PendingDrag { .. } => {}
             EditState::Dragging {
                 note_index,
-                original_tick,
-                original_key,
+                drag_state,
                 ..
             } => {
-                if self.finalize_dragging(note_index, original_tick, original_key) {
+                // ghost 方案：松手时一次性应用 delta 到 notes
+                if self.finalize_dragging(note_index, drag_state) {
                     self.mark_notes_changed();
                 }
             }
@@ -69,9 +69,13 @@ impl Editor {
                     self.mark_notes_changed();
                 }
             }
-            EditState::DraggingSelection { .. }
-            | EditState::ResizingSelectionStart { .. }
-            | EditState::ResizingSelectionEnd { .. } => {
+            EditState::DraggingSelection { drag_state } => {
+                // ghost 方案：松手时一次性应用 delta 到所有选中音符
+                if self.finalize_selection_dragging(drag_state) {
+                    self.mark_notes_changed();
+                }
+            }
+            EditState::ResizingSelectionStart { .. } | EditState::ResizingSelectionEnd { .. } => {
                 tracing::debug!("Editor: 选择框批量编辑完成");
             }
             _ => {}

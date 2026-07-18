@@ -13,6 +13,7 @@ pub struct SettingsTranslations {
     pub about: &'static str,
     pub onion_skin: &'static str,
     pub palette: &'static str,
+    pub editing: &'static str,
 
     // ── 通用 ──
     pub confirm: &'static str,
@@ -94,6 +95,19 @@ pub struct SettingsTranslations {
     pub app_description: &'static str,
     /// 高对比度主题显示名称
     pub high_contrast: &'static str,
+
+    // ── 编辑页面 ──
+    pub editing_title: &'static str,
+    pub editing_history_section: &'static str,
+    pub editing_history_total_limit: &'static str,
+    pub editing_history_total_limit_hint: &'static str,
+    pub editing_history_entry_limit: &'static str,
+    pub editing_history_entry_limit_hint: &'static str,
+    pub editing_merge_window: &'static str,
+    pub editing_merge_window_hint: &'static str,
+    pub editing_intercept_section: &'static str,
+    pub editing_intercept_notification: &'static str,
+    pub editing_intercept_notification_hint: &'static str,
 }
 
 static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -104,6 +118,7 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     about: "关于",
     onion_skin: "洋葱皮",
     palette: "调色板",
+    editing: "编辑",
     confirm: "确认",
     cancel: "取消",
     ok: "确定",
@@ -170,6 +185,17 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     palette_colors_info: "颜色预览",
     palette_no_preview: "无法预览选中调色板",
     palette_locked: "已加载，调色板锁定",
+    editing_title: "编辑",
+    editing_history_section: "操作历史",
+    editing_history_total_limit: "操作日志总条数上限:",
+    editing_history_total_limit_hint: "超过此值时弹出最早的日志（默认 100，建议 50-200）",
+    editing_history_entry_limit: "单条日志条目上限:",
+    editing_history_entry_limit_hint: "超过此值时强制分割为新日志（默认 1000，建议 500-2000）",
+    editing_merge_window: "合并窗口（毫秒）:",
+    editing_merge_window_hint: "仅 Pencil 连续绘制：在窗口内连续放置的音符合并为一个撤销日志（0=不合并，默认 300）",
+    editing_intercept_section: "编辑拦截",
+    editing_intercept_notification: "拦截时显示 Toast 提示",
+    editing_intercept_notification_hint: "编辑中触发 Undo/Redo/Save/Play/Export 时显示提示（关闭则静默处理）",
 };
 
 static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -180,6 +206,7 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     about: "About",
     onion_skin: "Onion Skin",
     palette: "Palette",
+    editing: "Editing",
     confirm: "Confirm",
     cancel: "Cancel",
     ok: "OK",
@@ -246,6 +273,17 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     palette_colors_info: "Color Preview",
     palette_no_preview: "Unable to preview selected palette",
     palette_locked: "loaded, palette locked",
+    editing_title: "Editing",
+    editing_history_section: "Operation History",
+    editing_history_total_limit: "Total history log limit:",
+    editing_history_total_limit_hint: "Oldest log is evicted when exceeded (default 100, recommended 50-200)",
+    editing_history_entry_limit: "Single log entry limit:",
+    editing_history_entry_limit_hint: "Auto-split into new log when exceeded (default 1000, recommended 500-2000)",
+    editing_merge_window: "Merge window (ms):",
+    editing_merge_window_hint: "Pencil drawing only: notes placed within window merge into one undo log (0=disabled, default 300)",
+    editing_intercept_section: "Edit Interception",
+    editing_intercept_notification: "Show Toast on interception",
+    editing_intercept_notification_hint: "Show notification when Undo/Redo/Save/Play/Export is intercepted during editing (disable for silent handling)",
 };
 
 /// 获取设置面板翻译

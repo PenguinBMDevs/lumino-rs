@@ -248,6 +248,18 @@ pub struct UiConfig {
     /// 当前选中的调色板名称（空字符串表示使用默认）
     #[serde(default)]
     pub selected_palette: String,
+    /// 编辑历史：操作日志总条数上限（默认 100）
+    #[serde(default = "default_history_total_limit")]
+    pub history_total_limit: usize,
+    /// 编辑历史：单条日志条目上限（默认 1000，超限自动分割）
+    #[serde(default = "default_history_entry_limit")]
+    pub history_entry_limit: usize,
+    /// 编辑历史：合并窗口毫秒数（仅 Pencil 绘制，默认 300ms，0=不合并）
+    #[serde(default = "default_merge_window_ms")]
+    pub merge_window_ms: u64,
+    /// 编辑拦截：是否显示 Toast 提示（默认 true）
+    #[serde(default = "default_true")]
+    pub intercept_notification_enabled: bool,
 }
 
 fn default_true() -> bool {
@@ -289,6 +301,18 @@ fn default_hires_cooldown() -> u64 {
 fn default_hires_gpu_mem_limit() -> u32 {
     512
 }
+
+fn default_history_total_limit() -> usize {
+    100
+}
+
+fn default_history_entry_limit() -> usize {
+    1000
+}
+
+fn default_merge_window_ms() -> u64 {
+    300
+}
 /// 用户界面配置默认值
 impl Default for UiConfig {
     fn default() -> Self {
@@ -322,6 +346,10 @@ impl Default for UiConfig {
             track_add_behavior: TrackAddBehavior::default(),
             track_display_mode: TrackDisplayMode::default(),
             selected_palette: String::new(),
+            history_total_limit: default_history_total_limit(),
+            history_entry_limit: default_history_entry_limit(),
+            merge_window_ms: default_merge_window_ms(),
+            intercept_notification_enabled: true,
         }
     }
 }

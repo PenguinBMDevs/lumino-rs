@@ -70,6 +70,15 @@ pub struct SettingsPanel {
     pub selected_palette: String,
     /// 可用调色板名称列表
     pub available_palettes: Vec<&'static str>,
+    // 编辑设置
+    /// 操作日志总条数上限（建议 50-200，默认 100）
+    pub history_total_limit: usize,
+    /// 单条日志条目上限（建议 500-2000，默认 1000）
+    pub history_entry_limit: usize,
+    /// 合并窗口毫秒（仅 Pencil 绘制，0=不合并，默认 300）
+    pub merge_window_ms: u64,
+    /// 编辑拦截时是否显示 Toast 提示
+    pub intercept_notification_enabled: bool,
 }
 
 impl SettingsPanel {
@@ -118,6 +127,10 @@ impl SettingsPanel {
             track_display_mode: ui_config.track_display_mode,
             selected_palette,
             available_palettes,
+            history_total_limit: ui_config.history_total_limit,
+            history_entry_limit: ui_config.history_entry_limit,
+            merge_window_ms: ui_config.merge_window_ms,
+            intercept_notification_enabled: ui_config.intercept_notification_enabled,
         }
     }
 
@@ -263,6 +276,25 @@ impl SettingsPanel {
                     tracing::debug!("设置: 调色板切换为 '{}'", name);
                 }
             }
+            // 编辑设置
+            Event::HistoryTotalLimitChanged(s) => {
+                if let Ok(v) = s.parse::<usize>() {
+                    self.history_total_limit = v.clamp(10, 1000);
+                }
+            }
+            Event::HistoryEntryLimitChanged(s) => {
+                if let Ok(v) = s.parse::<usize>() {
+                    self.history_entry_limit = v.clamp(100, 10000);
+                }
+            }
+            Event::MergeWindowMsChanged(s) => {
+                if let Ok(v) = s.parse::<u64>() {
+                    self.merge_window_ms = v.min(5000);
+                }
+            }
+            Event::InterceptNotificationChanged(enabled) => {
+                self.intercept_notification_enabled = enabled;
+            }
         }
     }
 }
@@ -305,7 +337,8 @@ fn render_content_area<'a>(
         3 => shortcuts_view(settings),
         4 => onion_skin_view(settings),
         5 => palette_view(settings),
-        6 => about_view(settings),
+        6 => editing_view(settings),
+        7 => about_view(settings),
         _ => render_placeholder("设置内容区域").into(),
     };
 

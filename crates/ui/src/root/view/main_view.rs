@@ -135,7 +135,17 @@ impl Root {
             ]
         };
 
-        main_content.into()
+        // 叠加 Toast 通知层（右下角）
+        if let Some(toast_overlay) = self.toast.view(&self.window.theme) {
+            iced_widget::Stack::new()
+                .push(main_content)
+                .push(toast_overlay)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            main_content.into()
+        }
     }
 
     /// 获取当前需要绘制的音符实例

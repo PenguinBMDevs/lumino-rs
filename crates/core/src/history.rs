@@ -1,10 +1,61 @@
 //! History module for undo/redo functionality
+//!
+//! 方案 X：保留 im::Vector 快照 + 元数据增强
+//! - 每个 EditorSnapshot 附带 group_id / parent_group_id / timestamp / op_kind / entry_count
+//! - 批量移动延迟提交（拖动期间不 push，松手时 push 一次）
+//! - 音符创建走 300ms 合并窗口（OpKind::NoteCreate.is_mergeable() = true）
+//! - 超过 max_entries_per_group 时分割为新 group，parent_group_id 指向被分割的旧 group
+//! - undo_logical / redo_logical 跨 parent_group_id 一次性回退/重做整个逻辑操作
 
 use crate::automation::AutomationLane;
 use crate::note::Note;
 use im::Vector;
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::time::Instant;
+
+/// 操作类型（决定是否走合并窗口、是否参与逻辑撤销链）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpKind {
+    /// 音符创建（Pencil 绘制，走 300ms 合并窗口）
+    NoteCreate,
+    /// 音符移动（批量拖动，延迟提交，不走合并）
+    NoteMove,
+    /// 音符删除
+    NoteDelete,
+    /// 音符变换（翻转/移调/变速）
+    NoteTransform,
+    /// 力度调整
+    VelocityEdit,
+    /// 自动化编辑
+    AutomationEdit,
+    /// MIDI 录制
+    Recording,
+    /// 其他操作（默认）
+    Other,
+    /// 逻辑 chain 的 after 标记（undo_logical 时推入 redo_stack，redo_logical 时返回给用户）
+    ///
+    /// 内部使用，用户不直接构造。
+    ChainMarker,
+}
+
+impl OpKind {
+    /// 是否支持合并窗口（仅 NoteCreate 走合并）
+    pub fn is_mergeable(self) -> bool {
+        matches!(self, OpKind::NoteCreate)
+    }
+
+    /// 是否为内部 chain 标记
+    pub fn is_chain_marker(self) -> bool {
+        matches!(self, OpKind::ChainMarker)
+    }
+}
+
+impl Default for OpKind {
+    fn default() -> Self {
+        OpKind::Other
+    }
+}
 
 /// A snapshot of the editor state for undo/redo functionality
 #[derive(Debug, Clone)]
@@ -14,9 +65,20 @@ pub struct EditorSnapshot {
     /// 自动化 lane 快照。`Arc` 共享：未修改的 lane 在所有快照间物理共址，
     /// 快照克隆为 O(lane 数) 指针拷贝。编辑路径用 `Arc::make_mut` 写时复制。
     pub automation_lanes: Vec<Arc<AutomationLane>>,
+    /// 操作元数据：分组 ID（同一逻辑操作的所有快照共享 group_id）
+    pub group_id: Option<u64>,
+    /// 父分组 ID（超限分割时，新分组的 parent 指向被分割的旧分组）
+    pub parent_group_id: Option<u64>,
+    /// 操作时间戳（用于合并窗口判断）
+    pub timestamp: Instant,
+    /// 操作类型
+    pub op_kind: OpKind,
+    /// 该分组内已合并的条目数（用于超限分割判断）
+    pub entry_count: u32,
 }
 
 impl EditorSnapshot {
+    /// 创建快照（向后兼容，元数据用默认值）
     pub fn new(
         notes: Vector<Note>,
         current_track: usize,
@@ -26,6 +88,33 @@ impl EditorSnapshot {
             notes,
             current_track,
             automation_lanes,
+            group_id: None,
+            parent_group_id: None,
+            timestamp: Instant::now(),
+            op_kind: OpKind::Other,
+            entry_count: 1,
+        }
+    }
+
+    /// 创建带元数据的快照
+    pub fn with_metadata(
+        notes: Vector<Note>,
+        current_track: usize,
+        automation_lanes: Vec<Arc<AutomationLane>>,
+        op_kind: OpKind,
+        group_id: Option<u64>,
+        parent_group_id: Option<u64>,
+        entry_count: u32,
+    ) -> Self {
+        Self {
+            notes,
+            current_track,
+            automation_lanes,
+            group_id,
+            parent_group_id,
+            timestamp: Instant::now(),
+            op_kind,
+            entry_count,
         }
     }
 }
@@ -37,47 +126,168 @@ pub struct History {
     undo_stack: VecDeque<EditorSnapshot>,
     redo_stack: VecDeque<EditorSnapshot>,
     max_size: usize,
+    /// 合并窗口（毫秒），仅对 `OpKind::NoteCreate` 生效
+    merge_window_ms: u64,
+    /// 单条分组最大条目数，超过则分割为子分组
+    max_entries_per_group: u32,
+    /// 下一个 group_id（单调递增）
+    next_group_id: u64,
 }
 
 impl History {
     pub fn new() -> Self {
+        Self::with_config(100, 300, 1000)
+    }
+
+    /// 创建带配置的 History
+    pub fn with_config(max_size: usize, merge_window_ms: u64, max_entries_per_group: u32) -> Self {
         Self {
             undo_stack: VecDeque::new(),
             redo_stack: VecDeque::new(),
-            max_size: 100,
+            max_size,
+            merge_window_ms,
+            max_entries_per_group,
+            next_group_id: 1,
         }
     }
 
-    /// Push a new snapshot to the undo stack
+    /// 设置配置（用于运行时从 UiConfig 注入）
+    pub fn set_config(
+        &mut self,
+        max_size: usize,
+        merge_window_ms: u64,
+        max_entries_per_group: u32,
+    ) {
+        self.max_size = max_size;
+        self.merge_window_ms = merge_window_ms;
+        self.max_entries_per_group = max_entries_per_group;
+        // 如果新上限更小，立即裁剪
+        while self.undo_stack.len() > self.max_size {
+            self.undo_stack.pop_front();
+        }
+    }
+
+    /// 分配新的 group_id
+    fn alloc_group_id(&mut self) -> u64 {
+        let id = self.next_group_id;
+        self.next_group_id = self.next_group_id.wrapping_add(1);
+        id
+    }
+
+    /// Push a new snapshot to the undo stack（向后兼容版本，op_kind=Other）
     pub fn push(&mut self, snapshot: EditorSnapshot) {
+        let snap = EditorSnapshot {
+            group_id: Some(self.alloc_group_id()),
+            op_kind: OpKind::Other,
+            ..snapshot
+        };
+        self.push_internal(snap);
+    }
+
+    /// 推入带 op_kind 的快照（不合并，但记录 group_id）
+    pub fn push_with_op_kind(&mut self, snapshot: EditorSnapshot, op_kind: OpKind) {
+        let snap = EditorSnapshot {
+            group_id: Some(self.alloc_group_id()),
+            parent_group_id: None,
+            timestamp: Instant::now(),
+            op_kind,
+            entry_count: 1,
+            ..snapshot
+        };
+        self.push_internal(snap);
+    }
+
+    /// 推入可合并的快照（仅 `OpKind::NoteCreate` 等可合并类型）
+    ///
+    /// 合并规则：
+    /// 1. 栈顶 op_kind 相同 + 在合并窗口内 + 未超 entry 上限 → 替换栈顶，entry_count + 1
+    /// 2. 栈顶 op_kind 相同 + 在合并窗口内 + 超过 entry 上限 → 分割为新分组，parent_group_id 指向旧
+    /// 3. 否则 → 新增分组
+    ///
+    /// 返回 `true` 表示合并到上一条，`false` 表示新增一条。
+    pub fn push_mergeable(&mut self, snapshot: EditorSnapshot, op_kind: OpKind) -> bool {
+        let now = Instant::now();
+
+        if let Some(top) = self.undo_stack.back() {
+            let same_kind = top.op_kind == op_kind;
+            // 严格小于：window=0 时任何间隔都不在窗口内（语义：0 窗口 = 不合并）
+            let within_window =
+                (now.duration_since(top.timestamp).as_millis() as u64) < self.merge_window_ms;
+            let under_limit = top.entry_count < self.max_entries_per_group;
+
+            if same_kind && within_window && under_limit {
+                // 合并：保留栈顶的 notes/current_track/automation_lanes
+                // （chain 中最早操作之前的状态），仅更新 entry_count 和 timestamp。
+                // 这样 undo_logical 跨 chain 撤销时能正确回到 chain 之前的状态。
+                let parent_group_id = top.parent_group_id;
+                let group_id = top.group_id;
+                let merged = EditorSnapshot {
+                    notes: top.notes.clone(),
+                    current_track: top.current_track,
+                    automation_lanes: top.automation_lanes.clone(),
+                    group_id,
+                    parent_group_id,
+                    timestamp: now,
+                    op_kind,
+                    entry_count: top.entry_count + 1,
+                };
+                self.undo_stack.pop_back();
+                self.push_internal(merged);
+                return true;
+            }
+
+            if same_kind && within_window && !under_limit {
+                // 分割：新分组，parent 指向旧分组
+                let parent_id = top.group_id;
+                let split = EditorSnapshot {
+                    group_id: Some(self.alloc_group_id()),
+                    parent_group_id: parent_id,
+                    timestamp: now,
+                    op_kind,
+                    entry_count: 1,
+                    ..snapshot
+                };
+                self.push_internal(split);
+                return false;
+            }
+        }
+
+        // 无可合并项，新增分组
+        let new_snap = EditorSnapshot {
+            group_id: Some(self.alloc_group_id()),
+            parent_group_id: None,
+            timestamp: now,
+            op_kind,
+            entry_count: 1,
+            ..snapshot
+        };
+        self.push_internal(new_snap);
+        false
+    }
+
+    fn push_internal(&mut self, snapshot: EditorSnapshot) {
         self.undo_stack.push_back(snapshot);
-        // Clear redo stack when new action is performed
         self.redo_stack.clear();
-        // Limit the undo stack size — VecDeque pop_front is O(1)
         if self.undo_stack.len() > self.max_size {
             self.undo_stack.pop_front();
         }
     }
 
-    /// Undo the last action and return the previous state
+    /// Undo the last action and return the previous state（单步撤销）
     pub fn undo(&mut self, current_state: EditorSnapshot) -> Option<EditorSnapshot> {
         if self.undo_stack.is_empty() {
             return None;
         }
-        // Push current state to redo stack
         self.redo_stack.push_back(current_state);
-        // Pop from undo stack
         self.undo_stack.pop_back()
     }
 
-    /// Redo the last undone action
+    /// Redo the last undone action（单步重做）
     pub fn redo(&mut self, current_state: EditorSnapshot) -> Option<EditorSnapshot> {
         if self.redo_stack.is_empty() {
             return None;
         }
-        // Push current state to undo stack
         self.undo_stack.push_back(current_state);
-        // Pop from redo stack
         self.redo_stack.pop_back()
     }
 
@@ -105,6 +315,33 @@ impl History {
         self.undo_stack.clear();
         self.redo_stack.clear();
     }
+
+    /// 当前 undo 栈大小（测试用）
+    pub fn undo_len(&self) -> usize {
+        self.undo_stack.len()
+    }
+
+    /// 当前 redo 栈大小（测试用）
+    pub fn redo_len(&self) -> usize {
+        self.redo_stack.len()
+    }
+
+    /// 查看 undo 栈顶（测试用）
+    pub fn undo_back(&self) -> Option<&EditorSnapshot> {
+        self.undo_stack.back()
+    }
+
+    /// 查看 redo 栈顶的 op_kind（测试用，用于验证 ChainMarker 推入）
+    #[cfg(test)]
+    pub fn redo_back_op_kind(&self) -> Option<OpKind> {
+        self.redo_stack.back().map(|s| s.op_kind)
+    }
+
+    /// 查看 redo 栈底的 op_kind（测试用，ChainMarker 在栈底）
+    #[cfg(test)]
+    pub fn redo_front_op_kind(&self) -> Option<OpKind> {
+        self.redo_stack.front().map(|s| s.op_kind)
+    }
 }
 
 impl Default for History {
@@ -113,136 +350,7 @@ impl Default for History {
     }
 }
 
+mod logical;
+
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn make_snapshot(notes: Vec<Note>, current_track: usize) -> EditorSnapshot {
-        EditorSnapshot::new(Vector::from(notes), current_track, Vec::new())
-    }
-
-    #[test]
-    fn test_history_new_is_empty() {
-        let h = History::new();
-        assert!(!h.can_undo());
-        assert!(!h.can_redo());
-    }
-
-    #[test]
-    fn test_history_push_and_undo() {
-        let mut h = History::new();
-        let s1 = make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0);
-        let s2 = make_snapshot(
-            vec![Note::new(0.0, 64, 480.0), Note::new(480.0, 67, 240.0)],
-            0,
-        );
-
-        h.push(s1);
-        assert!(h.can_undo());
-        assert!(!h.can_redo());
-
-        // undo 返回上一个状态，当前状态放入 redo
-        let restored = h.undo(s2).expect("undo 应返回 Some");
-        assert_eq!(restored.notes.len(), 1);
-        assert_eq!(restored.notes[0].key, 60);
-        assert!(h.can_redo());
-    }
-
-    #[test]
-    fn test_history_undo_empty() {
-        let mut h = History::new();
-        let current = make_snapshot(vec![], 0);
-        assert!(h.undo(current).is_none());
-    }
-
-    #[test]
-    fn test_history_redo_empty() {
-        let mut h = History::new();
-        let current = make_snapshot(vec![], 0);
-        assert!(h.redo(current).is_none());
-    }
-
-    #[test]
-    fn test_history_redo_after_undo() {
-        let mut h = History::new();
-        let s1 = make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0);
-        let s2 = make_snapshot(vec![Note::new(0.0, 64, 480.0)], 0);
-
-        h.push(s1);
-        let _ = h.undo(s2);
-        assert!(h.can_redo());
-
-        let restored = h.redo(make_snapshot(vec![], 0)).expect("redo 应返回 Some");
-        assert_eq!(restored.notes.len(), 1);
-        assert_eq!(restored.notes[0].key, 64);
-    }
-
-    #[test]
-    fn test_history_new_push_clears_redo() {
-        let mut h = History::new();
-        h.push(make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0));
-        let s2 = make_snapshot(vec![Note::new(0.0, 64, 480.0)], 0);
-        let _ = h.undo(s2);
-
-        // 新操作应清空 redo 栈
-        h.push(make_snapshot(vec![Note::new(0.0, 67, 480.0)], 0));
-        assert!(!h.can_redo());
-    }
-
-    #[test]
-    fn test_history_max_size() {
-        let mut h = History::new();
-        h.max_size = 3;
-        for i in 0..5 {
-            h.push(make_snapshot(
-                vec![Note::new(i as f32 * 10.0, 60, 480.0)],
-                0,
-            ));
-        }
-        // 栈大小不应超过 max_size
-        assert_eq!(h.undo_stack.len(), 3);
-    }
-
-    #[test]
-    fn test_discard_last_keeps_redo_stack() {
-        let mut h = History::new();
-        h.push(make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0));
-        h.push(make_snapshot(vec![Note::new(0.0, 64, 480.0)], 0));
-        h.discard_last();
-        assert!(h.can_undo(), "discard_last 后 undo 栈应仍有条目");
-        assert!(!h.can_redo(), "discard_last 不触碰 redo 栈");
-    }
-
-    #[test]
-    fn test_history_clear() {
-        let mut h = History::new();
-        h.push(make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0));
-        h.push(make_snapshot(vec![Note::new(0.0, 64, 480.0)], 0));
-        h.clear();
-        assert!(!h.can_undo());
-        assert!(!h.can_redo());
-    }
-
-    #[test]
-    fn test_history_undo_redo_roundtrip() {
-        let mut h = History::new();
-        let original = make_snapshot(vec![Note::new(0.0, 60, 480.0)], 0);
-        let modified = make_snapshot(vec![Note::new(0.0, 64, 480.0)], 0);
-
-        h.push(original);
-        let restored = h.undo(modified).expect("undo");
-        assert_eq!(restored.notes[0].key, 60);
-
-        let redone = h.redo(restored).expect("redo");
-        assert_eq!(redone.notes[0].key, 64);
-    }
-
-    #[test]
-    fn test_editor_snapshot_new() {
-        let notes = vec![Note::new(10.0, 72, 960.0)];
-        let snap = EditorSnapshot::new(Vector::from(notes), 1, Vec::new());
-        assert_eq!(snap.current_track, 1);
-        assert_eq!(snap.notes.len(), 1);
-        assert!(snap.automation_lanes.is_empty());
-    }
-}
+mod tests;

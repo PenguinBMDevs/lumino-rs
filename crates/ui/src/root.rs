@@ -63,6 +63,8 @@ pub struct Root {
     pub midi: lumino_ui_core::midi_state::MidiConnectionState,
     /// 录制状态
     pub recording: editor::recording::RecordingState,
+    /// Toast 通知管理器（用于编辑拦截/操作反馈等临时通知）
+    pub toast: crate::toast::ToastManager,
 }
 
 /// Root 构造参数
@@ -111,6 +113,7 @@ impl Root {
                 ),
                 midi: lumino_ui_core::midi_state::MidiConnectionState::new(),
                 recording: editor::recording::RecordingState::new(),
+                toast: crate::toast::ToastManager::new(),
             }
         })
     }

@@ -16,6 +16,7 @@ mod sidebar;
 pub mod state;
 mod statusbar;
 pub mod titlebar;
+pub mod toast;
 pub mod toolbar;
 pub mod util;
 mod view;

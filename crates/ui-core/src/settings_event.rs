@@ -43,4 +43,9 @@ pub enum Event {
     TrackAddBehaviorChanged(TrackAddBehavior),
     PaletteChanged(String),
     TrackDisplayModeChanged(TrackDisplayMode),
+    // 编辑设置
+    HistoryTotalLimitChanged(String),
+    HistoryEntryLimitChanged(String),
+    MergeWindowMsChanged(String),
+    InterceptNotificationChanged(bool),
 }

@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 
 use crate::AudioAction;
+use crate::editor_state::drag_state::DragState;
 
 /// 编辑状态
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -26,13 +27,15 @@ pub enum EditState {
         original_tick: f32,
         original_key: u16,
     },
+    /// 单音符拖动（ghost 方案）
+    ///
+    /// 拖动期间 `EditorData.notes` 不变，仅维护 `drag_state` 偏移。
+    /// 渲染时用 `ghost_position = (note.tick + delta_tick, note.key + delta_key)` 计算预览位置。
+    /// `note_index` 用于音频播放与渲染高亮；`last_played_key` 用于按键变化时触发新音。
     Dragging {
         note_index: usize,
-        offset_tick: f32,
-        offset_key: i32,
+        drag_state: DragState,
         last_played_key: u16,
-        original_tick: f32,
-        original_key: u16,
     },
     ResizingStart {
         note_index: usize,
@@ -43,9 +46,12 @@ pub enum EditState {
         note_index: usize,
         original_length: f32,
     },
+    /// 多音符批量拖动（ghost 方案）
+    ///
+    /// 拖动期间 `EditorData.notes` 不变，仅维护 `drag_state` 偏移。
+    /// 选中集合以 `BitVec` 形式存于 `drag_state.selected`，与 `InteractionState.selected_notes` 保持同步。
     DraggingSelection {
-        last_tick: f32,
-        last_key: u16,
+        drag_state: DragState,
     },
     ResizingSelectionStart {
         last_tick: f32,

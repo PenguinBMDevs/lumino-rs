@@ -61,6 +61,9 @@ pub fn start_drawing(interaction: &mut InteractionState, snapped_tick: f32, key:
 }
 
 /// 应用音符变化（单音符编辑），返回是否发生了变更
+///
+/// **ghost 方案**：`Dragging` 期间不通过此函数写入（drag 期间 data.notes 不变，
+/// 松手时由 `finalize_dragging` 一次性 apply）。此函数仅服务 `ResizingStart` / `ResizingEnd`。
 pub fn apply_note_changes(
     data: &mut EditorData,
     edit_state: &EditState,
@@ -69,10 +72,12 @@ pub fn apply_note_changes(
     new_length: Option<f32>,
 ) -> bool {
     let note_index = match edit_state {
-        EditState::Dragging { note_index, .. }
-        | EditState::ResizingStart { note_index, .. }
-        | EditState::ResizingEnd { note_index, .. } => *note_index,
-        EditState::DraggingSelection { .. }
+        EditState::ResizingStart { note_index, .. } | EditState::ResizingEnd { note_index, .. } => {
+            *note_index
+        }
+        // ghost 方案：Dragging/DraggingSelection 期间不通过此函数写入
+        EditState::Dragging { .. }
+        | EditState::DraggingSelection { .. }
         | EditState::ResizingSelectionStart { .. }
         | EditState::ResizingSelectionEnd { .. } => return false,
         _ => return false,
@@ -113,6 +118,7 @@ pub fn handle_delete_pressed(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::editor_state::DragState;
     use crate::note::Note;
 
     fn setup_state() -> (EditorData, InteractionState) {
@@ -158,18 +164,16 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_note_changes_dragging() {
+    fn test_apply_note_changes_dragging_is_noop() {
+        // ghost 方案：Dragging 期间 apply_note_changes 不再写入 notes
         let (mut data, mut interaction) = setup_state();
         data.notes.push_back(Note::new(0.0, 60, 1.0));
         interaction.edit_state = EditState::Dragging {
             note_index: 0,
-            offset_tick: 0.0,
-            offset_key: 0,
+            drag_state: DragState::from_single(0, 1, 0, 60),
             last_played_key: 60,
-            original_tick: 0.0,
-            original_key: 60,
         };
-        assert!(apply_note_changes(
+        assert!(!apply_note_changes(
             &mut data,
             &interaction.edit_state,
             Some(2.0),
@@ -177,9 +181,9 @@ mod tests {
             Some(3.0)
         ));
         let note = &data.notes[0];
-        assert_eq!(note.tick, 2.0);
-        assert_eq!(note.key, 64);
-        assert_eq!(note.length, 3.0);
+        assert_eq!(note.tick, 0.0, "Dragging 期间 notes 不应被修改");
+        assert_eq!(note.key, 60);
+        assert_eq!(note.length, 1.0);
     }
 
     #[test]

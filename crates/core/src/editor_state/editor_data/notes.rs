@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use super::super::constants::GLUE_PROXIMITY_THRESHOLD;
 use super::super::note_grouping::{self, NoteTuple};
 use super::EditorData;
+use crate::history::OpKind;
 use crate::note::Note;
 
 impl EditorData {
@@ -206,7 +207,12 @@ impl EditorData {
             (start_tick, default_note_length)
         };
         let length = length.max(snap_precision);
-        self.push_history();
+        // 合并窗口：300ms 内连续放置音符合并为一个 NoteCreate 日志，
+        // 单条日志超过 entry_limit 条目时自动分割为新日志（parent_group_id 串联）
+        let merged = self.push_history_mergeable(OpKind::NoteCreate);
+        if merged {
+            tracing::debug!("编辑器: 音符放置已合并到当前 NoteCreate 日志");
+        }
         let note = Note::new(tick, key, length);
         self.notes.push_back(note.clone());
         self.track_notes

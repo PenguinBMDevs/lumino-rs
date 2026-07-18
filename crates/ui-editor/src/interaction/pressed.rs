@@ -4,6 +4,7 @@
 //!       音符编辑开始、绘制开始、音符音频播放、音符添加事件发射
 
 use crate::{Editor, HitType, Note};
+use lumino_core::DragState;
 use lumino_core::editor_state::interaction_ops;
 use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
 use lumino_event;
@@ -75,12 +76,17 @@ impl Editor {
             // 命中选择框：根据边缘/内部分别进入调整大小或拖动状态
             match sel_hit {
                 crate::SelectionHitType::Inside => {
+                    // ghost 方案：从 selected_notes HashSet 构建 DragState（内部用 BitVec）
+                    let note_count = self.editor_state.data.notes.len();
+                    let drag_state = DragState::from_indices(
+                        self.editor_state.interaction.selected_notes.iter().copied(),
+                        note_count,
+                        snapped_tick as i64,
+                        key as i16,
+                    );
                     self.push_history();
                     self.editor_state.interaction.edit_state =
-                        crate::EditState::DraggingSelection {
-                            last_tick: snapped_tick,
-                            last_key: key,
-                        };
+                        crate::EditState::DraggingSelection { drag_state };
                 }
                 crate::SelectionHitType::LeftEdge => {
                     self.push_history();

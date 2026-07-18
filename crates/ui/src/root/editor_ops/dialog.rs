@@ -354,7 +354,26 @@ impl Root {
 
         // 更新设置面板
         self.settings = new_settings;
+        // 同步编辑历史配置到 Editor history（让 UiConfig 4 字段实时生效）
+        self.sync_history_config();
         tracing::info!("apply_settings: 设置同步完成");
+    }
+
+    /// 同步编辑历史配置（max_size / merge_window_ms / max_entries_per_group）到 Editor history
+    ///
+    /// 在 `apply_settings` 末尾调用，让 UiConfig 的 4 个编辑字段实时生效。
+    pub fn sync_history_config(&mut self) {
+        let s = &self.settings;
+        self.editor.editor_state.data.history.set_config(
+            s.history_total_limit,
+            s.merge_window_ms,
+            s.history_entry_limit as u32,
+        );
+    }
+
+    /// 是否允许显示编辑拦截 Toast（由 UiConfig 控制）
+    pub fn intercept_notification_enabled(&self) -> bool {
+        self.settings.intercept_notification_enabled
     }
 
     /// 设置自定义精度值

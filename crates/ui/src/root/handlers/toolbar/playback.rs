@@ -25,7 +25,15 @@ impl ToolbarHandler {
     }
 
     /// 执行播放逻辑
+    ///
+    /// **自动提交编辑**：开始播放前调用 `commit_current_edit()`，
+    /// 保证播放的是用户当前正在编辑的音符（ghost 方案：松手即提交）。
     fn do_play(root: &mut Root) {
+        // 自动提交当前编辑（ghost 方案：松手即提交）
+        if root.editor.commit_current_edit() {
+            tracing::debug!("播放前自动提交编辑");
+        }
+
         if root.playback.manager.is_none() {
             Self::init_playback_manager(root);
         }
