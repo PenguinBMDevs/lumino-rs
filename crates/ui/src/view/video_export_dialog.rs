@@ -86,7 +86,8 @@ fn render_settings_section<'a>(
             100.0,
             containers,
             Some(state.container.clone()),
-            |v| Message::VideoExport(VideoExportAction::ContainerChanged(v))
+            |v| Message::VideoExport(VideoExportAction::ContainerChanged(v)),
+            palette,
         ),
         space().height(8),
         pick_list_row(
@@ -94,7 +95,8 @@ fn render_settings_section<'a>(
             100.0,
             codecs,
             Some(state.codec.clone()),
-            |v| Message::VideoExport(VideoExportAction::CodecChanged(v))
+            |v| Message::VideoExport(VideoExportAction::CodecChanged(v)),
+            palette,
         ),
         space().height(8),
         pick_list_row(
@@ -102,7 +104,8 @@ fn render_settings_section<'a>(
             100.0,
             backends,
             Some(state.backend.clone()),
-            |v| Message::VideoExport(VideoExportAction::BackendChanged(v))
+            |v| Message::VideoExport(VideoExportAction::BackendChanged(v)),
+            palette,
         ),
         space().height(8),
         pick_list_row(
@@ -110,7 +113,8 @@ fn render_settings_section<'a>(
             100.0,
             qualities,
             Some(state.quality.clone()),
-            |v| Message::VideoExport(VideoExportAction::QualityChanged(v))
+            |v| Message::VideoExport(VideoExportAction::QualityChanged(v)),
+            palette,
         ),
         space().height(8),
         // 分辨率行
@@ -139,9 +143,14 @@ fn render_settings_section<'a>(
         ]
         .spacing(8)
         .align_y(Alignment::Center),
-        pick_list_row("帧率:", 100.0, fps_options, Some(state.fps), |v| {
-            Message::VideoExport(VideoExportAction::FpsChanged(v))
-        }),
+        pick_list_row(
+            "帧率:",
+            100.0,
+            fps_options,
+            Some(state.fps),
+            |v| { Message::VideoExport(VideoExportAction::FpsChanged(v)) },
+            palette
+        ),
     ]
     .width(Length::Fill)
     .into()
@@ -421,9 +430,11 @@ fn pick_list_row<'a, T: 'a + Clone + ToString + PartialEq>(
     options: Vec<T>,
     selected: Option<T>,
     on_selected: impl Fn(T) -> Message + 'a,
+    palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
+    let label_color = palette.background.neutral.text;
     let label_style = move |_t: &iced_core::Theme| text::Style {
-        color: Some(iced_core::Color::WHITE),
+        color: Some(label_color),
     };
     row![
         text(label).size(14).style(label_style).width(label_width),
