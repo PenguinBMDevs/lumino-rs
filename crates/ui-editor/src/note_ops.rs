@@ -1,8 +1,36 @@
-use super::{Editor, HitType, SelectionHitType};
+use super::{EditState, Editor, HitType, SelectionHitType};
 use iced_core::Point;
 use lumino_core::editor_state::hit_test;
-use lumino_event;
 use lumino_ui_constants::editor::NOTE_EDGE_THRESHOLD_PX;
+
+use std::collections::HashSet;
+
+/// 收集当前 ghost 偏移影响的所有音符索引，按索引降序返回
+///
+/// 来源包括：pending_drag_state（异步提交完成前）和当前编辑状态中的 drag_state。
+/// 降序是为了 hit test 时优先匹配视觉上靠上的音符。
+fn collect_ghost_indices(
+    edit_state: &EditState,
+    pending: &Option<lumino_core::DragState>,
+) -> Vec<usize> {
+    let mut set = HashSet::new();
+    if let Some(pending) = pending {
+        for i in pending.selected_indices() {
+            set.insert(i);
+        }
+    }
+    match edit_state {
+        EditState::Dragging { drag_state, .. } | EditState::DraggingSelection { drag_state } => {
+            for i in drag_state.selected_indices() {
+                set.insert(i);
+            }
+        }
+        _ => {}
+    }
+    let mut indices: Vec<usize> = set.into_iter().collect();
+    indices.sort_unstable_by(|a, b| b.cmp(a));
+    indices
+}
 
 impl Editor {
     /// 检测坐标是否落在某个音符上
@@ -18,15 +46,45 @@ impl Editor {
         let tick = view.x_to_tick(pos.x);
         let key = view.y_to_key(pos.y);
         let edge_threshold = NOTE_EDGE_THRESHOLD_PX / view.zoom_x;
+        let max_key = view.visible_key_count.saturating_sub(1);
+        let edit_state = &self.editor_state.interaction.edit_state;
+        let pending = &self.pending_drag_state;
 
-        // 优先用空间索引（O(log N + K)），fallback 到 O(N) 扫描
+        // 1. 先检查 ghost 偏移影响的音符（pending / 当前 drag）。
+        //    这些音符视觉上已移动，但 data.notes 和空间索引仍是旧位置，
+        //    必须按 ghost 位置命中，否则触控判定区域会停留在原地。
+        //    从后向前遍历，优先命中视觉上靠上的音符（与原逻辑一致）。
+        let ghost_indices = collect_ghost_indices(edit_state, pending);
+        let ghost_set: HashSet<usize> = ghost_indices.iter().copied().collect();
+        for &i in &ghost_indices {
+            let Some(note) = self.editor_state.data.notes.get(i) else {
+                continue;
+            };
+            let Some(delta) = crate::rendering::ghost_delta_for_index(i, pending, edit_state)
+            else {
+                continue;
+            };
+            let ghost_tick = (note.tick + delta.0 as f32).max(0.0);
+            let ghost_key = (note.key as i32 + delta.1 as i32).clamp(0, max_key as i32) as u16;
+            if ghost_key == key && tick >= ghost_tick && tick <= ghost_tick + note.length {
+                let start_delta = (tick - ghost_tick).abs();
+                let end_delta = (tick - (ghost_tick + note.length)).abs();
+                let hit_type = if end_delta < edge_threshold {
+                    HitType::End
+                } else if start_delta < edge_threshold {
+                    HitType::Start
+                } else {
+                    HitType::Middle
+                };
+                return Some((i, hit_type));
+            }
+        }
+
+        // 2. 非 ghost 音符使用空间索引（O(log N + K)）。
+        //    排除 ghost 受影响的音符，避免视觉上已移走的音符仍在原位置被命中。
         let candidates: Vec<usize> = if let Some(index) = self.spatial.note_index.borrow().as_ref()
         {
             let mut buf = Vec::new();
-            // 查询包含点 (tick, key) 的音符：
-            // - tick 范围 [tick, tick]：剪枝 node.tick_max < tick || node.tick_min > tick
-            // - key 范围 [key, key]：partition_point 二分查找
-            // - 过滤 n.tick + n.length >= tick && n.tick <= tick（包含该点）
             index.update_query(tick, tick, key, key, &mut buf);
             buf
         } else {
@@ -41,12 +99,10 @@ impl Editor {
                 .collect()
         };
 
-        if candidates.is_empty() {
-            return None;
-        }
-
-        // 选 index 最大的（视觉最上层，等价于原 .rev() 的第一个匹配）
-        let best_idx = *candidates.iter().max()?;
+        let best_idx = *candidates
+            .iter()
+            .filter(|&&i| !ghost_set.contains(&i))
+            .max()?;
         let note = self.editor_state.data.notes.get(best_idx)?;
         let start_delta = (tick - note.tick).abs();
         let end_delta = (tick - (note.tick + note.length)).abs();
@@ -217,11 +273,50 @@ impl Editor {
     }
 
     pub fn get_selection_box_bounds(&self) -> Option<(f32, f32, f32, f32)> {
-        hit_test::get_selection_box_bounds(
-            &self.editor_state.data.notes,
-            &self.editor_state.view,
-            &self.editor_state.interaction.selected_notes,
-        )
+        let notes = &self.editor_state.data.notes;
+        let view = &self.editor_state.view;
+        let selected = &self.editor_state.interaction.selected_notes;
+        let max_key = view.visible_key_count.saturating_sub(1);
+        let edit_state = &self.editor_state.interaction.edit_state;
+        let pending = &self.pending_drag_state;
+
+        if selected.is_empty() {
+            return None;
+        }
+        let mut min_t = f32::INFINITY;
+        let mut max_te = f32::NEG_INFINITY;
+        let mut max_k = u16::MIN;
+        let mut min_k = u16::MAX;
+        let mut any = false;
+        for &i in selected.iter() {
+            let Some(n) = notes.get(i) else {
+                continue;
+            };
+            any = true;
+            let (tick, key) = if let Some((dt, dk)) =
+                crate::rendering::ghost_delta_for_index(i, pending, edit_state)
+            {
+                (
+                    (n.tick + dt as f32).max(0.0),
+                    (n.key as i32 + dk as i32).clamp(0, max_key as i32) as u16,
+                )
+            } else {
+                (n.tick, n.key)
+            };
+            min_t = min_t.min(tick);
+            max_te = max_te.max(tick + n.length);
+            max_k = max_k.max(key);
+            min_k = min_k.min(key);
+        }
+        if !any {
+            return None;
+        }
+        Some((
+            view.tick_to_x(min_t),
+            view.tick_to_x(max_te),
+            view.key_to_y(max_k),
+            view.key_to_y(min_k) + view.zoom_y,
+        ))
     }
 
     pub fn hit_test_selection_box(&self, pos: Point) -> Option<SelectionHitType> {

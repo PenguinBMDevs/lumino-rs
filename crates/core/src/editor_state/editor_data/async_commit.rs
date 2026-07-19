@@ -108,7 +108,24 @@ fn apply_move_ops_to_clones(
     ops: &[MoveOp],
     max_key: u16,
 ) -> Result<AsyncCommitResult> {
+    let total_indices: usize = ops
+        .iter()
+        .map(|op| op.range_end.saturating_sub(op.range_start) as usize)
+        .sum();
+    let start_time = std::time::Instant::now();
+    tracing::info!(
+        "异步提交线程启动: {} 个 op, 预计处理 {} 个音符索引",
+        ops.len(),
+        total_indices
+    );
+
     let mut modified = 0usize;
+    let mut processed = 0usize;
+    let mut next_log_threshold = total_indices / 10; // 每 10% 报告一次
+    if next_log_threshold == 0 {
+        next_log_threshold = total_indices; // 总数很小时只报告一次
+    }
+
     for op in ops {
         let track_id = op.track_id as usize;
         let dt = op.delta_tick as f32;
@@ -138,8 +155,30 @@ fn apply_move_ops_to_clones(
                     note.key = new_key;
                 }
             }
+
+            processed += 1;
+            if processed >= next_log_threshold {
+                let percent = if total_indices > 0 {
+                    processed * 100 / total_indices
+                } else {
+                    100
+                };
+                tracing::info!(
+                    "异步提交进度: {}% ({} / {})",
+                    percent,
+                    processed,
+                    total_indices
+                );
+                next_log_threshold += total_indices / 10;
+            }
         }
     }
+
+    tracing::info!(
+        "异步提交线程完成: 修改 {} 个音符, 耗时 {:?}",
+        modified,
+        start_time.elapsed()
+    );
 
     Ok(AsyncCommitResult {
         notes,

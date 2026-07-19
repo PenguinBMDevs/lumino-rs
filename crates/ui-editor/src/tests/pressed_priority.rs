@@ -17,49 +17,29 @@ use crate::note::Note;
 use iced_core::Point;
 
 /// 在选择框中心位置返回 Point（确保 Inside 命中）
-fn pos_inside_selection(editor: &Editor, note_idx: usize) -> Point {
-    let note = editor
-        .editor_state
-        .data
-        .notes
-        .get(note_idx)
-        .expect("note 应存在");
-    let view = &editor.editor_state.view;
-    let center_tick = note.tick + note.length / 2.0;
-    Point::new(
-        view.tick_to_x(center_tick),
-        view.key_to_y(note.key) + view.zoom_y / 2.0,
-    )
+///
+/// 基于 `get_selection_box_bounds` 计算，自动反映 ghost 偏移后的视觉边界。
+fn pos_inside_selection(editor: &Editor, _note_idx: usize) -> Point {
+    let (x_min, x_max, y_min, y_max) = editor
+        .get_selection_box_bounds()
+        .expect("选中音符应存在选择框边界");
+    Point::new((x_min + x_max) / 2.0, (y_min + y_max) / 2.0)
 }
 
 /// 在选择框左边缘返回 Point
-fn pos_at_left_edge(editor: &Editor, note_idx: usize) -> Point {
-    let note = editor
-        .editor_state
-        .data
-        .notes
-        .get(note_idx)
-        .expect("note 应存在");
-    let view = &editor.editor_state.view;
-    Point::new(
-        view.tick_to_x(note.tick),
-        view.key_to_y(note.key) + view.zoom_y / 2.0,
-    )
+fn pos_at_left_edge(editor: &Editor, _note_idx: usize) -> Point {
+    let (x_min, _x_max, y_min, y_max) = editor
+        .get_selection_box_bounds()
+        .expect("选中音符应存在选择框边界");
+    Point::new(x_min, (y_min + y_max) / 2.0)
 }
 
 /// 在选择框右边缘返回 Point
-fn pos_at_right_edge(editor: &Editor, note_idx: usize) -> Point {
-    let note = editor
-        .editor_state
-        .data
-        .notes
-        .get(note_idx)
-        .expect("note 应存在");
-    let view = &editor.editor_state.view;
-    Point::new(
-        view.tick_to_x(note.tick + note.length),
-        view.key_to_y(note.key) + view.zoom_y / 2.0,
-    )
+fn pos_at_right_edge(editor: &Editor, _note_idx: usize) -> Point {
+    let (_x_min, x_max, y_min, y_max) = editor
+        .get_selection_box_bounds()
+        .expect("选中音符应存在选择框边界");
+    Point::new(x_max, (y_min + y_max) / 2.0)
 }
 
 /// 选择框外，指定音符上的 Point
