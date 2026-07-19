@@ -63,10 +63,6 @@ impl Host {
         if old_track as usize == track_idx {
             // 切换到当前已是激活的音轨：不触发覆盖层/重生，只同步 UI 状态。
             // 避免用户重复点击同一音轨时，因历史脏标记而误触发全量重生。
-            tracing::info!(
-                "[onion-dirty] set_current_track: 目标音轨 {} 已是当前音轨，跳过覆盖层/重生逻辑",
-                track_idx
-            );
             self.root.set_current_track(track_idx, open_panel);
             self.window_ctx.window.request_redraw();
             return;
@@ -74,24 +70,6 @@ impl Host {
 
         // 收集当前所有脏音轨，避免切换时只显示单个音轨的覆盖层
         let dirty_tracks: Vec<u16> = self.hires_dirty_tracks.iter().copied().collect();
-        tracing::info!(
-            "[onion-dirty] set_current_track: old_track={}, new_track={}, dirty_tracks={:?}",
-            old_track,
-            track_idx,
-            dirty_tracks
-        );
-
-        // 切换前先发送临时脏区域覆层，确保用户立刻看到所有刚编辑的音符
-        let context_ready = self.hires_config.is_some()
-            && self.hires_midi_hash.is_some()
-            && self.hires_gen_info.is_some();
-        tracing::info!(
-            "[onion-dirty] context_ready={}, config={}, hash={}, gen_info={}",
-            context_ready,
-            self.hires_config.is_some(),
-            self.hires_midi_hash.is_some(),
-            self.hires_gen_info.is_some()
-        );
 
         if let (Some(cfg), Some(hash), Some((ppq, key_count, total_ticks))) = (
             self.hires_config.clone(),
@@ -139,15 +117,6 @@ impl Host {
                 dirty_time_groups.sort_unstable();
 
                 let representative = tracks[0];
-                let total_notes: usize = group_notes.iter().map(|n| n.len()).sum();
-                tracing::info!(
-                    "[onion-dirty] 发送 ShowHiResDirtyOverlay: representative_track={}, group={}, group_tracks={}, total_notes={}, dirty_time_groups={:?}",
-                    representative,
-                    group,
-                    group_notes.len(),
-                    total_notes,
-                    dirty_time_groups
-                );
                 if group_notes.iter().any(|n| !n.is_empty()) {
                     self.send_hires_dirty_overlay(lumino_gfx::render_thread::HiResTrackParams {
                         track_idx: representative,
@@ -160,15 +129,6 @@ impl Host {
                         config: cfg.clone(),
                         midi_hash: hash.clone(),
                     });
-                    tracing::info!(
-                        "[onion-dirty] ShowHiResDirtyOverlay 命令已发送 (track_group={})",
-                        group
-                    );
-                } else {
-                    tracing::info!(
-                        "[onion-dirty] 跳过 ShowHiResDirtyOverlay：group_notes 全空 (track_group={})",
-                        group
-                    );
                 }
             }
         }
@@ -181,11 +141,6 @@ impl Host {
         for &dirty_track in &dirty_tracks {
             let group = (dirty_track / lumino_gfx::TRACKS_PER_GROUP) as u32;
             if regen_groups.insert(group) {
-                tracing::info!(
-                    "[onion-dirty] 触发 force_hires_regen: track={} (group={})",
-                    dirty_track,
-                    group
-                );
                 self.force_hires_regen(dirty_track);
             }
         }
@@ -390,8 +345,6 @@ impl Host {
     /// 避免 Moved/Released/Copy/SelectAll 等不会改音符的动作被误判为脏音轨。
     pub fn handle_action(&mut self, action: message::EditorAction) {
         let track_idx = self.root.editor.current_track() as u16;
-        let notes_changed_before = self.root.editor.notes_changed();
-        let action_str = format!("{:?}", action);
 
         // 先确定该动作是否可能修改音符数据
         // 确定会改：Delete/Cut/Paste → 直接标记脏，不问 notes_changed
@@ -411,22 +364,7 @@ impl Host {
                 | message::EditorAction::Undo
                 | message::EditorAction::Redo
         );
-        tracing::info!(
-            "[onion-dirty] Host::handle_action 进入: action={}, track={}, notes_changed_before={}, is_definite_mutation={}, is_possible_mutation={}",
-            action_str,
-            track_idx,
-            notes_changed_before,
-            is_definite_mutation,
-            is_possible_mutation
-        );
-
         let notes_changed = self.root.handle_editor_action(action);
-        tracing::info!(
-            "[onion-dirty] Host::handle_action 退出: action={}, notes_changed_after={}, will_mark_dirty={}",
-            action_str,
-            notes_changed,
-            is_definite_mutation || (is_possible_mutation && notes_changed)
-        );
         if is_definite_mutation || (is_possible_mutation && notes_changed) {
             // 编辑动作确实改变了音符 → 标记当前音轨高精度贴图为脏
             self.mark_hires_dirty(track_idx);

@@ -171,13 +171,6 @@ fn drain_hires_stream(
                 width,
                 height,
             }) => {
-                // ★ merge 已在后台线程完成，渲染线程仅做 GPU 上传（DMA 异步，非阻塞）★
-                tracing::info!(
-                    "[onion-render] 收到并上传整合组贴图(重生路径): track_group={}, time_group={}, pixels={}",
-                    track_group,
-                    time_group,
-                    pixels.len()
-                );
                 if let Some(renderer) = hires_renderer {
                     let coord = crate::TileCoord::new(track_group, time_group);
                     renderer.upload_tile(&ctx.device, &ctx.queue, coord, &pixels, width, height);
@@ -187,21 +180,8 @@ fn drain_hires_stream(
             Ok(HiResStreamMsg::ClearDirtyOverlay(track_group)) => {
                 // RegenerateHiResTrack 后台重生已完成，清理该 track_group 的覆层。
                 // 此时新底贴图已全部上传（FIFO 保证），清理覆层后用户看到的就是新底贴图。
-                tracing::info!(
-                    "[onion-render] 收到 ClearDirtyOverlay 消息，清理 track_group={} 的临时脏区域覆层",
-                    track_group
-                );
                 if let Some(renderer) = hires_renderer {
                     renderer.clear_dirty_overlays(track_group);
-                    tracing::info!(
-                        "[onion-render] clear_dirty_overlays 完成: track_group={}",
-                        track_group
-                    );
-                } else {
-                    tracing::warn!(
-                        "[onion-render] ClearDirtyOverlay: hires_renderer 为空，无法清理 track_group={}",
-                        track_group
-                    );
                 }
             }
             Ok(HiResStreamMsg::Finished) => {
@@ -214,7 +194,6 @@ fn drain_hires_stream(
                             });
                     ctx.queue.submit(std::iter::once(flush.finish()));
                 }
-                tracing::info!("[onion-render] 收到 Finished 消息，flush DMA 完成");
                 push_onion_progress(onion_progress, "高精度洋葱皮贴图流式生成+上传完成", 1.0);
             }
             Err(_) => break, // 无更多消息，退出本帧接收

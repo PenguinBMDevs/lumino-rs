@@ -133,19 +133,9 @@ impl Host {
         self.hires_dirty_tracks.insert(track_idx);
         // 收集当前音轨的所有音符作为脏区域快照
         let notes = self.get_track_notes_for_hires(track_idx);
-        tracing::info!(
-            "[onion-dirty] mark_hires_dirty: track={}, notes={}",
-            track_idx,
-            notes.len()
-        );
 
         // 基于当前音符所在 time_group 计算脏 time_group 集合
         let time_groups = self.compute_dirty_time_groups(&notes);
-        tracing::info!(
-            "[onion-dirty] mark_hires_dirty: track={}, dirty_time_groups={:?}",
-            track_idx,
-            time_groups
-        );
         self.hires_dirty_time_groups.insert(track_idx, time_groups);
 
         self.hires_dirty_regions.insert(track_idx, notes);
@@ -191,19 +181,15 @@ impl Host {
     /// 此操作不清理脏标记——覆层只是临时显示，主贴图重生仍需等待冷静期。
     pub fn show_hires_dirty_overlays(&mut self) -> bool {
         if self.hires_dirty_regions.is_empty() {
-            tracing::debug!("[onion-dirty] show_hires_dirty_overlays: 无脏区域");
             return false;
         }
         if self.hires_overlay_sent {
-            tracing::debug!("[onion-dirty] show_hires_dirty_overlays: 覆层已发送，跳过");
             return false;
         }
         let Some((ppq, key_count, total_ticks)) = self.hires_gen_info else {
-            tracing::warn!("[onion-dirty] show_hires_dirty_overlays: hires_gen_info 为空");
             return false;
         };
         let Some(config) = self.hires_config.clone() else {
-            tracing::warn!("[onion-dirty] show_hires_dirty_overlays: hires_config 为空");
             return false;
         };
         let track_count = self.track_count() as u16;
@@ -303,27 +289,19 @@ impl Host {
     /// 重生成以音轨组为单位，使用整个 track_group 的最新音符数据，
     /// 避免同组其他音轨被覆盖为旧数据或空数据。
     pub fn force_hires_regen(&mut self, track_idx: u16) {
-        tracing::info!("[onion-dirty] force_hires_regen 进入: track={}", track_idx);
         if !self.hires_dirty_tracks.remove(&track_idx) {
-            tracing::info!(
-                "[onion-dirty] force_hires_regen 退出: track={} 不在脏集合（无需重生）",
-                track_idx
-            );
             return; // 该音轨不脏，不触发
         }
         self.hires_dirty_regions.remove(&track_idx);
         self.hires_dirty_time_groups.remove(&track_idx);
 
         let Some(cfg) = self.hires_config.clone() else {
-            tracing::warn!("[onion-dirty] force_hires_regen 退出: hires_config 缺失");
             return;
         };
         let Some(hash) = self.hires_midi_hash.clone() else {
-            tracing::warn!("[onion-dirty] force_hires_regen 退出: hires_midi_hash 缺失");
             return;
         };
         let Some((ppq, key_count, total_ticks)) = self.hires_gen_info else {
-            tracing::warn!("[onion-dirty] force_hires_regen 退出: hires_gen_info 缺失");
             return;
         };
 
@@ -331,16 +309,6 @@ impl Host {
         // 确保干净启动时也能正确推断音轨组范围。
         let track_count = (self.root.sidebar.tracks.len() as u16).max(track_idx + 1);
         let group_notes = self.collect_group_notes(track_idx, track_count);
-        let total_notes: usize = group_notes.iter().map(|n| n.len()).sum();
-        tracing::info!(
-            "[onion-dirty] force_hires_regen 发送 RegenerateHiResTrack 命令: track={}, group_tracks={}, total_notes={}, track_count={}, ppq={}, total_ticks={}",
-            track_idx,
-            group_notes.len(),
-            total_notes,
-            track_count,
-            ppq,
-            total_ticks
-        );
 
         self.send_hires_regen(lumino_gfx::render_thread::HiResTrackParams {
             track_idx,
@@ -379,16 +347,8 @@ impl Host {
         let editor = &self.root.editor;
         let current_track = editor.current_track();
         let notes = if current_track as u16 == track_idx {
-            tracing::debug!(
-                "[onion-dirty] get_track_notes_for_hires: track={} 使用当前编辑器音符",
-                track_idx
-            );
             &editor.editor_state.data.notes
         } else {
-            tracing::debug!(
-                "[onion-dirty] get_track_notes_for_hires: track={} 使用 track_notes 缓存",
-                track_idx
-            );
             match editor
                 .editor_state
                 .data
@@ -396,16 +356,10 @@ impl Host {
                 .get(&(track_idx as usize))
             {
                 Some(n) => n,
-                None => {
-                    tracing::debug!(
-                        "[onion-dirty] get_track_notes_for_hires: track={} 缓存未命中，返回空",
-                        track_idx
-                    );
-                    return Vec::new();
-                }
+                None => return Vec::new(),
             }
         };
-        let result: Vec<_> = notes
+        notes
             .iter()
             .map(|n| {
                 lumino_gfx::OnionSkinNote::from_ms(
@@ -415,13 +369,7 @@ impl Host {
                     super::onion_track_color(track_idx as usize),
                 )
             })
-            .collect();
-        tracing::debug!(
-            "[onion-dirty] get_track_notes_for_hires: track={}, count={}",
-            track_idx,
-            result.len()
-        );
-        result
+            .collect()
     }
 
     /// 取出洋葱皮生成进度（runner 每帧调用并转发到进度窗口）

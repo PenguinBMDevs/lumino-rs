@@ -216,14 +216,6 @@ fn handle_regenerate_hires_track(
         midi_hash,
     } = params;
     let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
-    tracing::info!(
-        "[onion-render] RegenerateHiResTrack 收到命令: track={}, track_group={}, group_tracks={}, track_count={}, meta_exists={}",
-        track_idx,
-        track_group,
-        group_notes.len(),
-        track_count,
-        hires_meta.is_some()
-    );
 
     ensure_renderer_for_config(ctx, hires_renderer, hires_config, &config);
 
@@ -256,12 +248,6 @@ fn handle_regenerate_hires_track(
         for notes in &mut sorted_notes {
             notes.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
         }
-        tracing::info!(
-            "[onion-render] RegenerateHiResTrack 后台线程启动: track_group={}, all_groups={}, time_groups={}",
-            track_group,
-            all_track_groups,
-            time_groups
-        );
 
         for time_g in 0..time_groups {
             let tick_start = time_g * ticks_per_group;
@@ -300,13 +286,6 @@ fn handle_regenerate_hires_track(
                             read_track_tile_cache(&cache_dir, &mh, t, time_g, &expected_meta)
                         {
                             merge_track_tile_into(&mut merged_pixels, &tile);
-                        } else {
-                            tracing::info!(
-                                "[onion-render] RegenerateHiResTrack: 缓存缺失 tg={}, time_g={}, track={}",
-                                tg,
-                                time_g,
-                                t
-                            );
                         }
                     }
                 }
@@ -321,13 +300,6 @@ fn handle_regenerate_hires_track(
                     height: key_count as u32,
                 });
             }
-
-            tracing::info!(
-                "[onion-render] RegenerateHiResTrack 进度: {}/{} ({:.1}%)",
-                time_g + 1,
-                time_groups,
-                (time_g as f32 + 1.0) / time_groups as f32 * 100.0
-            );
         }
 
         // 所有 time_group 上传完毕后，清理该 track_group 的临时脏区域覆层。
@@ -340,10 +312,6 @@ fn handle_regenerate_hires_track(
         if let Ok(guard) = tx.lock() {
             let _ = guard.send(HiResStreamMsg::Finished);
         }
-        tracing::info!(
-            "[onion-render] RegenerateHiResTrack 后台全轨合并完成: track_group={}",
-            track_group
-        );
     });
 }
 
@@ -370,16 +338,6 @@ fn handle_show_dirty_overlay(
         midi_hash: _,
     } = params;
     let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
-    let total_notes: usize = group_notes.iter().map(|n| n.len()).sum();
-    tracing::info!(
-        "[onion-render] ShowHiResDirtyOverlay 收到命令: track={}, track_group={}, group_tracks={}, total_notes={}, dirty_time_groups={:?}, meta_exists={}",
-        track_idx,
-        track_group,
-        group_notes.len(),
-        total_notes,
-        dirty_time_groups,
-        hires_meta.is_some()
-    );
 
     ensure_renderer_for_config(ctx, hires_renderer, hires_config, &config);
 
@@ -420,27 +378,14 @@ fn handle_show_dirty_overlay(
     target_time_groups.sort_unstable();
     target_time_groups.dedup();
     // 过滤掉超出 time_groups 范围的无效索引，防止 tick 溢出
-    let original_count = target_time_groups.len();
     target_time_groups.retain(|&g| g < time_groups);
-    if target_time_groups.len() != original_count {
-        tracing::info!(
-            "[onion-render] ShowHiResDirtyOverlay: 过滤掉 {} 个超出 time_groups={} 范围的索引",
-            original_count - target_time_groups.len(),
-            time_groups
-        );
-    }
     let target_time_groups: Vec<u32> = if target_time_groups.is_empty() {
-        tracing::info!(
-            "[onion-render] ShowHiResDirtyOverlay: dirty_time_groups 为空，退化为全量遍历 0..{} (向后兼容路径)",
-            time_groups
-        );
         (0..time_groups).collect()
     } else {
         target_time_groups
     };
 
     if let Some(renderer) = hires_renderer {
-        let mut uploaded = 0u32;
         for &time_g in &target_time_groups {
             let tick_start = time_g * ticks_per_group;
             let tick_end = tick_start + ticks_per_group;
@@ -465,13 +410,6 @@ fn handle_show_dirty_overlay(
                 track_range,
             );
 
-            // 计算覆层中非透明像素数（用于日志诊断）
-            let non_transparent_pixels = group_tile
-                .pixels
-                .chunks_exact(4)
-                .filter(|c| c[3] != 0)
-                .count();
-
             renderer.upload_dirty_overlay(
                 &ctx.device,
                 &ctx.queue,
@@ -480,24 +418,7 @@ fn handle_show_dirty_overlay(
                 group_tile.width,
                 group_tile.height,
             );
-            tracing::info!(
-                "[onion-render] 上传覆层: coord={:?}, total_pixels={}, non_transparent={} ({:.1}%)",
-                merged_coord,
-                group_tile.pixels.len() / 4,
-                non_transparent_pixels,
-                (non_transparent_pixels as f32) * 100.0 / (group_tile.pixels.len() / 4) as f32
-            );
-            uploaded += 1;
         }
-        tracing::info!(
-            "[onion-render] ShowHiResDirtyOverlay 完成: 上传 {} 个覆层贴图 (track_group={}, target_time_groups={:?}), total_time_groups={}",
-            uploaded,
-            track_group,
-            target_time_groups,
-            time_groups,
-        );
-    } else {
-        tracing::warn!("[onion-render] ShowHiResDirtyOverlay: hires_renderer 为空，跳过上传");
     }
 
     push_onion_progress(
