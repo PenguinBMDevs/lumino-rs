@@ -117,23 +117,38 @@ impl DragState {
         (ghost_tick, ghost_key)
     }
 
+    /// 将本拖动状态的 delta 应用到单个音符。
+    ///
+    /// 返回 `true` 表示音符确实发生了变更。
+    #[inline]
+    pub fn apply_to_note(&self, note: &mut Note, max_key: u16) -> bool {
+        let new_tick = (note.tick + self.delta_tick as f32).max(0.0);
+        let new_key = (note.key as i32 + self.delta_key as i32).clamp(0, max_key as i32) as u16;
+        if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
+            note.tick = new_tick;
+            note.key = new_key;
+            true
+        } else {
+            false
+        }
+    }
+
     /// 一次性将 delta 应用到 notes（松手时调用）
     ///
     /// 返回实际被修改的音符数。`max_key` 用于 clamp key 范围。
-    /// 注意：调用方需在调用前 `push_history()`，调用后 `sync_track_notes()`。
+    /// 只遍历选中的音符，避免随总音符数线性扫描。
+    /// 注意：调用方需在调用前 `push_history()`，调用后自行同步 track_notes。
     pub fn apply_to_notes(&self, notes: &mut Vector<Note>, max_key: u16) -> usize {
         if self.is_delta_zero() {
             return 0;
         }
         let mut modified = 0usize;
-        for (i, note) in notes.iter_mut().enumerate() {
-            if i < self.selected.len() && self.selected[i] {
-                let new_tick = (note.tick + self.delta_tick as f32).max(0.0);
-                let new_key =
-                    (note.key as i32 + self.delta_key as i32).clamp(0, max_key as i32) as u16;
-                if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
-                    note.tick = new_tick;
-                    note.key = new_key;
+        for (i, selected) in self.selected.iter().enumerate() {
+            if !selected || i >= notes.len() {
+                continue;
+            }
+            if let Some(note) = notes.get_mut(i) {
+                if self.apply_to_note(note, max_key) {
                     modified += 1;
                 }
             }

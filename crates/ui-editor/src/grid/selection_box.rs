@@ -1,6 +1,7 @@
 //! 选择框渲染
 
 use crate::Editor;
+use crate::rendering::ghost_delta_for_index;
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_ui_constants::editor::SELECTION_BOX_FILL_ALPHA;
@@ -63,22 +64,37 @@ pub fn draw(
         has_content = true;
     }
 
-    // 情况 2：有已选中的音符——绘制围绕所有选中音符的方形边界框
+    // 情况 2：有已选中的音符——绘制围绕所有选中音符的方形边界框。
+    // 拖动期间使用 ghost 位置，使选择框跟随被拖动的音符一起移动。
     let selected = &editor.editor_state.interaction.selected_notes;
     if !selected.is_empty() {
         let notes = &editor.editor_state.data.notes;
+        let edit_state = &editor.editor_state.interaction.edit_state;
+        let pending = &editor.pending_drag_state;
+        let max_key = editor.editor_state.view.visible_key_count.saturating_sub(1);
+
         let mut min_tick = f32::INFINITY;
         let mut max_tick_end = f32::NEG_INFINITY;
-        let mut max_key = u16::MIN;
-        let mut min_key = u16::MAX;
+        let mut max_key_bound = u16::MIN;
+        let mut min_key_bound = u16::MAX;
         let mut has_visible = false;
 
         for &i in selected.iter() {
             if let Some(note) = notes.get(i) {
-                min_tick = min_tick.min(note.tick);
-                max_tick_end = max_tick_end.max(note.tick + note.length);
-                max_key = max_key.max(note.key);
-                min_key = min_key.min(note.key);
+                let (tick, key) =
+                    if let Some((dt, dk)) = ghost_delta_for_index(i, pending, edit_state) {
+                        (
+                            (note.tick + dt as f32).max(0.0),
+                            (note.key as i32 + dk as i32).clamp(0, max_key as i32) as u16,
+                        )
+                    } else {
+                        (note.tick, note.key)
+                    };
+
+                min_tick = min_tick.min(tick);
+                max_tick_end = max_tick_end.max(tick + note.length);
+                max_key_bound = max_key_bound.max(key);
+                min_key_bound = min_key_bound.min(key);
                 has_visible = true;
             }
         }
@@ -86,9 +102,9 @@ pub fn draw(
         if has_visible {
             let min_x = editor.tick_to_x(min_tick);
             let max_x = editor.tick_to_x(max_tick_end);
-            let min_y = editor.key_to_y(max_key);
+            let min_y = editor.key_to_y(max_key_bound);
             let zoom_y = editor.editor_state.view.zoom_y;
-            let max_y = editor.key_to_y(min_key) + zoom_y;
+            let max_y = editor.key_to_y(min_key_bound) + zoom_y;
 
             let width = max_x - min_x;
             let height = max_y - min_y;

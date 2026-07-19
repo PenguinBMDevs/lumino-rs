@@ -100,9 +100,19 @@ impl Editor {
             }
             EditState::ResizingSelectionStart { .. } | EditState::ResizingSelectionEnd { .. } => {
                 // ghost 方案：期间用 mark_ghost_dirty 不重建索引，松手时一次性重建。
-                // notes 已在 drag.rs 每帧被改，此处只需触发空间索引重建 + sync_track_notes。
+                // notes 已在 drag.rs 每帧被改，此处只把发生变更的选中音符流式同步到
+                // track_notes，避免整轨克隆。
                 tracing::debug!("Editor: 选择框批量编辑完成，重建空间索引");
-                self.editor_state.data.sync_track_notes();
+                let selected: Vec<usize> = self
+                    .editor_state
+                    .interaction
+                    .selected_notes
+                    .iter()
+                    .copied()
+                    .collect();
+                self.editor_state
+                    .data
+                    .sync_track_notes_at_indices(&selected);
                 self.mark_notes_changed();
             }
             _ => {}

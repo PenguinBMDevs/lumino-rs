@@ -279,8 +279,11 @@ impl Editor {
         let key_offset = drag_state.delta_key;
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
 
-        // ghost 方案：一次性应用 delta 到 notes
-        let modified = drag_state.apply_to_notes(&mut self.editor_state.data.notes, max_key);
+        // ghost 方案：流式应用 delta 到 notes 与当前 track_notes 缓存
+        let modified = self
+            .editor_state
+            .data
+            .apply_drag_state_streaming(&drag_state, max_key);
         if modified == 0 {
             tracing::debug!("Editor: 单音符拖动未产生实际变更（snap 后 delta 为零）");
             return false;

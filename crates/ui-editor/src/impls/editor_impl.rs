@@ -170,9 +170,11 @@ impl Editor {
             return false;
         }
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
-        let modified = drag_state.apply_to_notes(&mut self.editor_state.data.notes, max_key);
+        let modified = self
+            .editor_state
+            .data
+            .apply_drag_state_streaming(&drag_state, max_key);
         if modified > 0 {
-            self.editor_state.data.sync_track_notes();
             self.mark_notes_changed();
             tracing::info!("Editor: 提交 pending 批量拖动 - 修改 {} 个音符", modified);
         }
