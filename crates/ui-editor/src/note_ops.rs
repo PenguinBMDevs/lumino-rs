@@ -42,6 +42,9 @@ impl Editor {
     /// Resizing 期间空间索引可能滞后一帧（dirty 未重建），hover 位置略旧可接受；
     /// pressed 通常在 Idle 状态触发，空间索引是最新的，准确性有保证。
     pub fn hit_test_note(&self, pos: Point) -> Option<(usize, HitType)> {
+        // 空间索引可能在异步提交后已脏，hit-test 前必须确保其为最新数据。
+        self.ensure_spatial_index();
+
         let view = &self.editor_state.view;
         let tick = view.x_to_tick(pos.x);
         let key = view.y_to_key(pos.y);

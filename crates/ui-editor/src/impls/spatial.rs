@@ -38,4 +38,36 @@ impl Editor {
         self.notes_changed = true;
         self.grid_cache.clear();
     }
+
+    /// 若空间索引已脏，立即重建
+    ///
+    /// 使用内部可变性，允许在 `&self` 的 hit-test 路径中调用。
+    /// 避免 `hit_test_note` 在异步提交后使用旧空间索引命中原位置。
+    pub(crate) fn ensure_spatial_index(&self) {
+        if !self.spatial.note_index_dirty.get() {
+            return;
+        }
+
+        let notes = &self.editor_state.data.notes;
+        let note_refs: Vec<lumino_core::NoteRef> = notes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| lumino_core::NoteRef {
+                tick: n.tick,
+                key: n.key,
+                length: n.length,
+                index: i,
+            })
+            .collect();
+
+        *self.spatial.note_index.borrow_mut() = Some(
+            crate::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs),
+        );
+        self.spatial.note_index_dirty.set(false);
+
+        tracing::debug!(
+            "Editor: rebuild spatial index from ensure_spatial_index for {} notes",
+            notes.len()
+        );
+    }
 }

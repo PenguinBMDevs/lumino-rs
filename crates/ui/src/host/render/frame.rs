@@ -66,6 +66,14 @@ impl Host {
             self.route_message(Message::AnimationTick);
             self.window_ctx.window.request_redraw();
         }
+
+        // 关键：存在 pending 异步提交时，即使没有动画也要触发 AnimationTick，
+        // 否则 `poll_async_commit` 不会被调用，导致撤销/重做等快捷键被阻塞，
+        // 同时空间索引也无法及时重建。
+        if self.root.editor.has_pending_drag() {
+            self.route_message(Message::AnimationTick);
+            self.window_ctx.window.request_redraw();
+        }
     }
 
     /// 更新播放状态
