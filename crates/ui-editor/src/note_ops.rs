@@ -42,7 +42,7 @@ impl Editor {
     /// Resizing 期间空间索引可能滞后一帧（dirty 未重建），hover 位置略旧可接受；
     /// pressed 通常在 Idle 状态触发，空间索引是最新的，准确性有保证。
     pub fn hit_test_note(&self, pos: Point) -> Option<(usize, HitType)> {
-        // 空间索引可能在异步提交后已脏，hit-test 前必须确保其为最新数据。
+        // 按需重建空间索引；小数据量时直接走线性扫描，避免百毫秒级建树开销。
         self.ensure_spatial_index();
 
         let view = &self.editor_state.view;
@@ -69,55 +69,66 @@ impl Editor {
             };
             let ghost_tick = (note.tick + delta.0 as f32).max(0.0);
             let ghost_key = (note.key as i32 + delta.1 as i32).clamp(0, max_key as i32) as u16;
-            if ghost_key == key && tick >= ghost_tick && tick <= ghost_tick + note.length {
-                let start_delta = (tick - ghost_tick).abs();
-                let end_delta = (tick - (ghost_tick + note.length)).abs();
-                let hit_type = if end_delta < edge_threshold {
-                    HitType::End
-                } else if start_delta < edge_threshold {
-                    HitType::Start
-                } else {
-                    HitType::Middle
-                };
+            if ghost_key == key
+                && let Some(hit_type) =
+                    Self::note_hit_type(tick, ghost_tick, note.length, edge_threshold)
+            {
                 return Some((i, hit_type));
             }
         }
 
-        // 2. 非 ghost 音符使用空间索引（O(log N + K)）。
+        // 2. 非 ghost 音符命中判定。
+        //    - 大数据量：使用空间索引 O(log N + K)。
+        //    - 小数据量：线性扫描 O(N)，避免构建索引的固定开销。
         //    排除 ghost 受影响的音符，避免视觉上已移走的音符仍在原位置被命中。
-        let candidates: Vec<usize> = if let Some(index) = self.spatial.note_index.borrow().as_ref()
-        {
+        if let Some(index) = self.spatial.note_index.borrow().as_ref() {
             let mut buf = Vec::new();
             index.update_query(tick, tick, key, key, &mut buf);
-            buf
+            let best_idx = *buf.iter().filter(|&&i| !ghost_set.contains(&i)).max()?;
+            let note = self.editor_state.data.notes.get(best_idx)?;
+            Self::note_hit_type(tick, note.tick, note.length, edge_threshold)
+                .map(|hit_type| (best_idx, hit_type))
         } else {
-            // 空间索引未建（首次或刚清空），fallback 到 O(N) 扫描
-            self.editor_state
-                .data
-                .notes
-                .iter()
-                .enumerate()
-                .filter(|(_, n)| n.key == key && tick >= n.tick && tick <= n.tick + n.length)
-                .map(|(i, _)| i)
-                .collect()
-        };
+            // 小数据量线性扫描：排除 ghost 音符后，剩余音符均无 ghost 偏移，
+            // 直接使用原始 tick/key 判定，避免重复调用 ghost_delta_for_index。
+            let mut best_idx = None;
+            for (i, note) in self.editor_state.data.notes.iter().enumerate().rev() {
+                if ghost_set.contains(&i) {
+                    continue;
+                }
+                if note.key == key
+                    && tick >= note.tick
+                    && tick <= note.tick + note.length
+                    && best_idx.is_none_or(|b| i > b)
+                {
+                    best_idx = Some(i);
+                }
+            }
+            let i = best_idx?;
+            let note = self.editor_state.data.notes.get(i)?;
+            Self::note_hit_type(tick, note.tick, note.length, edge_threshold)
+                .map(|hit_type| (i, hit_type))
+        }
+    }
 
-        let best_idx = *candidates
-            .iter()
-            .filter(|&&i| !ghost_set.contains(&i))
-            .max()?;
-        let note = self.editor_state.data.notes.get(best_idx)?;
-        let start_delta = (tick - note.tick).abs();
-        let end_delta = (tick - (note.tick + note.length)).abs();
-
-        let hit_type = if end_delta < edge_threshold {
-            HitType::End
+    /// 根据点击位置相对音符起止点的距离判定命中类型
+    fn note_hit_type(
+        tick: f32,
+        note_tick: f32,
+        length: f32,
+        edge_threshold: f32,
+    ) -> Option<HitType> {
+        let start_delta = (tick - note_tick).abs();
+        let end_delta = (tick - (note_tick + length)).abs();
+        if end_delta < edge_threshold {
+            Some(HitType::End)
         } else if start_delta < edge_threshold {
-            HitType::Start
+            Some(HitType::Start)
+        } else if tick >= note_tick && tick <= note_tick + length {
+            Some(HitType::Middle)
         } else {
-            HitType::Middle
-        };
-        Some((best_idx, hit_type))
+            None
+        }
     }
 
     pub fn delete_note_by_index(&mut self, index: usize) {

@@ -12,8 +12,15 @@ impl Editor {
         let key = self.y_to_key(pos.y);
         let snapped_tick = self.snap_tick(tick);
 
-        // 先计算 hit_test（不借用 editor_state），再赋值
-        let hover = self.hit_test_note(pos);
+        // 框选过程中 hover 判定无意义，且会触发空间索引重建/线性扫描，跳过以提升性能。
+        let hover = if matches!(
+            self.editor_state.interaction.edit_state,
+            EditState::Selecting { .. }
+        ) {
+            None
+        } else {
+            self.hit_test_note(pos)
+        };
         self.editor_state.interaction.hover_state = hover;
 
         if let EditState::Scrubbing = self.editor_state.interaction.edit_state {

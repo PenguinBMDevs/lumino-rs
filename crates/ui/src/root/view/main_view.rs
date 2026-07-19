@@ -4,10 +4,8 @@
 
 use iced_core::Length;
 use iced_widget::{column, container, row, scrollable, text};
-use lumino_gfx::NoteInstance;
 
 use super::right_content;
-use crate::editor::note::NoteExt;
 use crate::message;
 use crate::root::Root;
 use crate::view::audio_export_dialog::view_audio_export_dialog;
@@ -145,39 +143,6 @@ impl Root {
                 .into()
         } else {
             main_content.into()
-        }
-    }
-
-    /// 获取当前需要绘制的音符实例
-    pub fn update_note_instances(&mut self, instances: &mut Vec<NoteInstance>) {
-        let sidebar_width = self.sidebar.width() as f32;
-        self.editor
-            .update_note_instances(&self.window.theme, sidebar_width, instances);
-
-        // 计算可见区域用于洋葱皮音符的视锥裁剪
-        let es = &self.editor.editor_state;
-        let view = &es.view;
-        let canvas_size = es.canvas.size_x;
-        let viewport_width = canvas_size - view.keyboard_width;
-        let viewport_height = es.canvas.size_y - view.ruler_height;
-
-        let visible_tick_start = (view.scroll_x / view.zoom_x).max(0.0);
-        let _visible_tick_end =
-            ((view.scroll_x + viewport_width) / view.zoom_x).max(visible_tick_start);
-
-        let max_key_index = (view.visible_key_count - 1) as f32;
-        let key_top_f32 = max_key_index - (view.scroll_y / view.zoom_y);
-        let key_bottom_f32 = max_key_index - ((view.scroll_y + viewport_height) / view.zoom_y);
-
-        let _visible_key_max = key_top_f32.ceil() as u16 + 1;
-        let _visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1);
-
-        let notes: Vec<(f32, u16, f32, iced_core::Color)> = Vec::new();
-
-        for (tick, key, length, color) in notes {
-            let note = crate::editor::note::Note::new(tick, key, length);
-            let instance = note.to_instance(color);
-            instances.push(instance);
         }
     }
 

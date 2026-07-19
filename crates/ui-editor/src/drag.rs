@@ -216,16 +216,26 @@ impl Editor {
             let max_key = start_key.max(current_key);
 
             self.editor_state.interaction.selected_notes.clear();
-            for (i, note) in self.editor_state.data.notes.iter().enumerate() {
-                let note_end = note.tick + note.length;
 
-                // 检查音符是否与选择框相交（使用世界坐标直接比较）
-                if note_end >= min_tick
-                    && note.tick <= max_tick
-                    && note.key >= min_key
-                    && note.key <= max_key
-                {
+            // 大数据量时使用空间索引 O(log N + K)，避免每帧 O(N) 全量扫描。
+            self.ensure_spatial_index();
+            if let Some(index) = self.spatial.note_index.borrow().as_ref() {
+                let mut indices = Vec::new();
+                index.update_query(min_tick, max_tick, min_key, max_key, &mut indices);
+                for &i in &indices {
                     self.editor_state.interaction.selected_notes.insert(i);
+                }
+            } else {
+                // 小数据量线性扫描：音符数量低于阈值时，扫描比建索引更快。
+                for (i, note) in self.editor_state.data.notes.iter().enumerate() {
+                    let note_end = note.tick + note.length;
+                    if note_end >= min_tick
+                        && note.tick <= max_tick
+                        && note.key >= min_key
+                        && note.key <= max_key
+                    {
+                        self.editor_state.interaction.selected_notes.insert(i);
+                    }
                 }
             }
         }

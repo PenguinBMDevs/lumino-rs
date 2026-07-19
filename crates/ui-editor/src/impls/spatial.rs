@@ -5,6 +5,12 @@
 use crate::{Editor, SpatialIndexState};
 use std::cell::{Cell, RefCell};
 
+/// 启用空间索引的音符数量阈值
+///
+/// 低于此阈值时，线性扫描比构建二叉空间索引更快（避免小数据量下的建树开销）。
+/// 高于此阈值时，空间索引的 O(log N + K) 查询优势才能抵消建树成本。
+pub(crate) const SPATIAL_INDEX_BUILD_THRESHOLD: usize = 50_000;
+
 impl Default for SpatialIndexState {
     fn default() -> Self {
         Self {
@@ -39,16 +45,23 @@ impl Editor {
         self.grid_cache.clear();
     }
 
-    /// 若空间索引已脏，立即重建
+    /// 若空间索引已脏且音符数量达到阈值，立即重建
     ///
-    /// 使用内部可变性，允许在 `&self` 的 hit-test 路径中调用。
-    /// 避免 `hit_test_note` 在异步提交后使用旧空间索引命中原位置。
+    /// 使用内部可变性，允许在 `&self` 的 hit-test/渲染路径中调用。
+    /// 小数据量时跳过建树，直接走线性扫描，避免不必要的百毫秒级开销。
     pub(crate) fn ensure_spatial_index(&self) {
         if !self.spatial.note_index_dirty.get() {
             return;
         }
 
         let notes = &self.editor_state.data.notes;
+        if notes.len() <= SPATIAL_INDEX_BUILD_THRESHOLD {
+            // 小数据量：直接标记为已更新，使用线性扫描路径
+            self.spatial.note_index_dirty.set(false);
+            *self.spatial.note_index.borrow_mut() = None;
+            return;
+        }
+
         let note_refs: Vec<lumino_core::NoteRef> = notes
             .iter()
             .enumerate()

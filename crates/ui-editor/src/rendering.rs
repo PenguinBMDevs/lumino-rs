@@ -7,8 +7,6 @@ use crate::{Element, Message};
 
 use super::{EditState, Editor};
 
-mod note_instances;
-
 /// 计算音符 i 在当前编辑状态下的 ghost 偏移量
 ///
 /// 合并规则（延迟提交方案）：
@@ -124,8 +122,9 @@ impl Editor {
     /// 的偏移，确保拖动期间主音轨音符（蓝色）的渲染位置与视觉反馈一致。
     ///
     /// 性能优化：
-    /// - 仅在音符数据变化时重建空间索引
-    /// - 使用空间索引 O(log N) 查询替代全量扫描
+    /// - 渲染路径**不触发** `ensure_spatial_index`，避免移动提交后 133ms 全量重建
+    /// - `dirty` 时走线性扫描（O(N)，N=50000 仅 ~0.5ms），`!dirty` 且有索引时用索引查询
+    /// - 索引重建交给交互路径（`hit_test_note` / `update_selection`）按需触发
     pub fn collect_visible_note_data(
         &self,
         result: &mut Vec<(f32, u16, f32)>,
@@ -136,33 +135,19 @@ impl Editor {
         let (visible_tick_start, visible_tick_end, visible_key_min, visible_key_max) =
             self.compute_visible_range(overscan_factor);
 
-        // 重建空间索引（仅当数据变化时）
-        // 优化：使用 from_note_refs 直接从 im::Vector 构建，避免克隆 Note 到 Vec<Note>
-        if self.spatial.note_index_dirty.get() {
-            let notes = &self.editor_state.data.notes;
-            let note_refs: Vec<lumino_core::NoteRef> = notes
-                .iter()
-                .enumerate()
-                .map(|(i, n)| lumino_core::NoteRef {
-                    tick: n.tick,
-                    key: n.key,
-                    length: n.length,
-                    index: i,
-                })
-                .collect();
-            *self.spatial.note_index.borrow_mut() = Some(
-                crate::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs),
-            );
-            self.spatial.note_index_dirty.set(false);
-            tracing::debug!(
-                "Editor: rebuild spatial index for {} notes",
-                self.editor_state.data.notes.len()
-            );
-        }
+        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+        let edit_state = &self.editor_state.interaction.edit_state;
+        let pending = &self.pending_drag_state;
 
-        // 查询可见范围内的音符索引，再应用 ghost 偏移写入 result
-        let mut indices = Vec::new();
-        if let Some(index) = &*self.spatial.note_index.borrow() {
+        // 渲染路径：仅在索引干净（!dirty 且已存在）时复用，否则线性扫描。
+        // 避免渲染帧触发 133ms 的全量重建——重建交给交互路径按需完成。
+        let has_clean_index =
+            !self.spatial.note_index_dirty.get() && self.spatial.note_index.borrow().is_some();
+
+        if has_clean_index {
+            let index = self.spatial.note_index.borrow();
+            let index = index.as_ref().expect("已校验 is_some");
+            let mut indices = Vec::new();
             index.update_query(
                 visible_tick_start,
                 visible_tick_end,
@@ -170,21 +155,34 @@ impl Editor {
                 visible_key_max,
                 &mut indices,
             );
-        }
-
-        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
-        let edit_state = &self.editor_state.interaction.edit_state;
-        let pending = &self.pending_drag_state;
-
-        for &i in &indices {
-            if let Some(note) = self.editor_state.data.notes.get(i) {
+            for &i in &indices {
+                if let Some(note) = self.editor_state.data.notes.get(i) {
+                    let mut tick = note.tick;
+                    let mut key = note.key;
+                    if let Some((dt, dk)) = ghost_delta_for_index(i, pending, edit_state) {
+                        tick = (tick + dt as f32).max(0.0);
+                        key = (key as i32 + dk as i32).clamp(0, max_key as i32) as u16;
+                    }
+                    result.push((tick, key, note.length));
+                }
+            }
+        } else {
+            // 索引脏或不存在：线性扫描视口范围内的音符
+            for (i, note) in self.editor_state.data.notes.iter().enumerate() {
                 let mut tick = note.tick;
                 let mut key = note.key;
                 if let Some((dt, dk)) = ghost_delta_for_index(i, pending, edit_state) {
                     tick = (tick + dt as f32).max(0.0);
                     key = (key as i32 + dk as i32).clamp(0, max_key as i32) as u16;
                 }
-                result.push((tick, key, note.length));
+                let note_end = tick + note.length;
+                if key >= visible_key_min
+                    && key <= visible_key_max
+                    && note_end >= visible_tick_start
+                    && tick <= visible_tick_end
+                {
+                    result.push((tick, key, note.length));
+                }
             }
         }
 
