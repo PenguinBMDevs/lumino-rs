@@ -17,6 +17,7 @@ use crate::note::Note;
 
 use super::constants::DEFAULT_BPM;
 
+pub(crate) mod async_commit;
 mod automation;
 mod history;
 mod notes;
@@ -34,6 +35,8 @@ pub struct EditorData {
     pub edited_tracks: HashSet<usize>,
     pub document: Option<Arc<lumino_midi_model::MidiDocument>>,
     pub history: History,
+    /// 异步提交的待完成状态（MoveOp 后台应用）
+    pub(crate) pending_commit: Option<async_commit::PendingCommit>,
     pub cc_data: CcData,
     /// 自动化 lane 列表。`Arc` 使撤销快照可 O(1) 共享未修改的 lane；
     /// 修改 lane 前必须经 `Arc::make_mut`（见 editor_data/automation.rs）。
@@ -59,6 +62,7 @@ impl EditorData {
             edited_tracks: HashSet::new(),
             document: None,
             history: History::new(),
+            pending_commit: None,
             cc_data: CcData::default(),
             automation_lanes: Vec::new(),
             tempo_points: vec![TempoPoint {
@@ -76,6 +80,7 @@ impl EditorData {
         self.mark_track_notes_changed();
         self.current_track = 0;
         self.history.clear();
+        self.pending_commit = None;
         self.document = None;
         self.cc_data = CcData::default();
         self.automation_lanes.clear();

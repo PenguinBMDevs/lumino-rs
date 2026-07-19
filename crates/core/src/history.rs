@@ -6,6 +6,7 @@
 //! - 音符创建走 300ms 合并窗口（OpKind::NoteCreate.is_mergeable() = true）
 //! - 超过 max_entries_per_group 时分割为新 group，parent_group_id 指向被分割的旧 group
 //! - undo_logical / redo_logical 跨 parent_group_id 一次性回退/重做整个逻辑操作
+//! - NoteMove 使用轻量 MoveOp 操作日志替代完整快照，降低内存占用
 
 use crate::automation::AutomationLane;
 use crate::note::Note;
@@ -13,6 +14,9 @@ use im::Vector;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Instant;
+
+mod entry;
+pub use entry::{HistoryEntry, MoveOp, OperationEntry};
 
 /// 操作类型（决定是否走合并窗口、是否参与逻辑撤销链）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,8 +127,8 @@ impl EditorSnapshot {
 #[derive(Debug)]
 pub struct History {
     /// 使用 `VecDeque` 替代 `Vec` 避免栈满时 `remove(0)` 的 O(n) 平移。
-    undo_stack: VecDeque<EditorSnapshot>,
-    redo_stack: VecDeque<EditorSnapshot>,
+    undo_stack: VecDeque<HistoryEntry>,
+    redo_stack: VecDeque<HistoryEntry>,
     max_size: usize,
     /// 合并窗口（毫秒），仅对 `OpKind::NoteCreate` 生效
     merge_window_ms: u64,
@@ -181,7 +185,7 @@ impl History {
             op_kind: OpKind::Other,
             ..snapshot
         };
-        self.push_internal(snap);
+        self.push_internal(HistoryEntry::Snapshot(snap));
     }
 
     /// 推入带 op_kind 的快照（不合并，但记录 group_id）
@@ -194,7 +198,7 @@ impl History {
             entry_count: 1,
             ..snapshot
         };
-        self.push_internal(snap);
+        self.push_internal(HistoryEntry::Snapshot(snap));
     }
 
     /// 推入可合并的快照（仅 `OpKind::NoteCreate` 等可合并类型）
@@ -208,7 +212,7 @@ impl History {
     pub fn push_mergeable(&mut self, snapshot: EditorSnapshot, op_kind: OpKind) -> bool {
         let now = Instant::now();
 
-        if let Some(top) = self.undo_stack.back() {
+        if let Some(HistoryEntry::Snapshot(top)) = self.undo_stack.back() {
             let same_kind = top.op_kind == op_kind;
             // 严格小于：window=0 时任何间隔都不在窗口内（语义：0 窗口 = 不合并）
             let within_window =
@@ -216,9 +220,6 @@ impl History {
             let under_limit = top.entry_count < self.max_entries_per_group;
 
             if same_kind && within_window && under_limit {
-                // 合并：保留栈顶的 notes/current_track/automation_lanes
-                // （chain 中最早操作之前的状态），仅更新 entry_count 和 timestamp。
-                // 这样 undo_logical 跨 chain 撤销时能正确回到 chain 之前的状态。
                 let parent_group_id = top.parent_group_id;
                 let group_id = top.group_id;
                 let merged = EditorSnapshot {
@@ -232,12 +233,11 @@ impl History {
                     entry_count: top.entry_count + 1,
                 };
                 self.undo_stack.pop_back();
-                self.push_internal(merged);
+                self.push_internal(HistoryEntry::Snapshot(merged));
                 return true;
             }
 
             if same_kind && within_window && !under_limit {
-                // 分割：新分组，parent 指向旧分组
                 let parent_id = top.group_id;
                 let split = EditorSnapshot {
                     group_id: Some(self.alloc_group_id()),
@@ -247,7 +247,7 @@ impl History {
                     entry_count: 1,
                     ..snapshot
                 };
-                self.push_internal(split);
+                self.push_internal(HistoryEntry::Snapshot(split));
                 return false;
             }
         }
@@ -261,12 +261,27 @@ impl History {
             entry_count: 1,
             ..snapshot
         };
-        self.push_internal(new_snap);
+        self.push_internal(HistoryEntry::Snapshot(new_snap));
         false
     }
 
-    fn push_internal(&mut self, snapshot: EditorSnapshot) {
-        self.undo_stack.push_back(snapshot);
+    /// 推入 MoveOp 操作日志（NoteMove 用），返回分配的 group_id
+    pub fn push_move_op(&mut self, ops: Vec<MoveOp>) -> u64 {
+        let group_id = self.alloc_group_id();
+        let entry = OperationEntry {
+            ops,
+            op_kind: OpKind::NoteMove,
+            group_id: Some(group_id),
+            parent_group_id: None,
+            timestamp: Instant::now(),
+            entry_count: 1,
+        };
+        self.push_internal(HistoryEntry::Operation(entry));
+        group_id
+    }
+
+    fn push_internal(&mut self, entry: HistoryEntry) {
+        self.undo_stack.push_back(entry);
         self.redo_stack.clear();
         if self.undo_stack.len() > self.max_size {
             self.undo_stack.pop_front();
@@ -274,21 +289,47 @@ impl History {
     }
 
     /// Undo the last action and return the previous state（单步撤销）
-    pub fn undo(&mut self, current_state: EditorSnapshot) -> Option<EditorSnapshot> {
+    ///
+    /// 对 `Snapshot`：把当前状态快照推入 redo_stack，并返回栈顶快照用于恢复。
+    /// 对 `Operation`：把反向操作推入 redo_stack，不推快照，避免混合堆叠导致
+    /// 多次 undo/redo 时快照覆盖操作结果。
+    pub fn undo(&mut self, current_state: EditorSnapshot) -> Option<HistoryEntry> {
         if self.undo_stack.is_empty() {
             return None;
         }
-        self.redo_stack.push_back(current_state);
-        self.undo_stack.pop_back()
+        match self.undo_stack.pop_back()? {
+            HistoryEntry::Snapshot(s) => {
+                self.redo_stack
+                    .push_back(HistoryEntry::Snapshot(current_state));
+                Some(HistoryEntry::Snapshot(s))
+            }
+            HistoryEntry::Operation(op) => {
+                let inverse = op.inverse();
+                self.redo_stack
+                    .push_back(HistoryEntry::Operation(inverse.clone()));
+                Some(HistoryEntry::Operation(inverse))
+            }
+        }
     }
 
     /// Redo the last undone action（单步重做）
-    pub fn redo(&mut self, current_state: EditorSnapshot) -> Option<EditorSnapshot> {
+    pub fn redo(&mut self, current_state: EditorSnapshot) -> Option<HistoryEntry> {
         if self.redo_stack.is_empty() {
             return None;
         }
-        self.undo_stack.push_back(current_state);
-        self.redo_stack.pop_back()
+        match self.redo_stack.pop_back()? {
+            HistoryEntry::Snapshot(s) => {
+                self.undo_stack
+                    .push_back(HistoryEntry::Snapshot(current_state));
+                Some(HistoryEntry::Snapshot(s))
+            }
+            HistoryEntry::Operation(op) => {
+                let forward = op.inverse();
+                self.undo_stack
+                    .push_back(HistoryEntry::Operation(forward.clone()));
+                Some(HistoryEntry::Operation(forward))
+            }
+        }
     }
 
     /// 丢弃最近一次 undo 条目，不触碰 redo 栈。
@@ -327,20 +368,20 @@ impl History {
     }
 
     /// 查看 undo 栈顶（测试用）
-    pub fn undo_back(&self) -> Option<&EditorSnapshot> {
+    pub fn undo_back(&self) -> Option<&HistoryEntry> {
         self.undo_stack.back()
     }
 
-    /// 查看 redo 栈顶的 op_kind（测试用，用于验证 ChainMarker 推入）
+    /// 查看 redo 栈顶（测试用）
     #[cfg(test)]
-    pub fn redo_back_op_kind(&self) -> Option<OpKind> {
-        self.redo_stack.back().map(|s| s.op_kind)
+    pub(crate) fn redo_back(&self) -> Option<&HistoryEntry> {
+        self.redo_stack.back()
     }
 
-    /// 查看 redo 栈底的 op_kind（测试用，ChainMarker 在栈底）
+    /// 查看 redo 栈底（测试用）
     #[cfg(test)]
-    pub fn redo_front_op_kind(&self) -> Option<OpKind> {
-        self.redo_stack.front().map(|s| s.op_kind)
+    pub(crate) fn redo_front(&self) -> Option<&HistoryEntry> {
+        self.redo_stack.front()
     }
 }
 

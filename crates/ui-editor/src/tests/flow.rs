@@ -19,8 +19,9 @@ fn setup_dragging(editor: &mut Editor, note_index: usize, delta_tick: i64, delta
     let original_tick = editor.editor_state.data.notes[note_index].tick as i64;
     let original_key = editor.editor_state.data.notes[note_index].key as i16;
 
-    // 模拟 try_start_drag：push_history + 进入 Dragging
-    editor.push_history();
+    // 模拟 try_start_drag：进入 Dragging
+    // 注意：单音符拖动现在走 MoveOp，finalize_dragging 会自己 push 操作日志，
+    // 这里不再额外 push 快照，避免两次拖动之间出现冗余快照。
     let mut drag = DragState::from_single(note_index, note_count, original_tick, original_key);
     drag.set_delta(delta_tick, delta_key);
     editor.editor_state.interaction.edit_state = EditState::Dragging {
@@ -209,9 +210,9 @@ fn test_zero_delta_drag_commit_undo_is_noop() {
     assert_eq!(editor.editor_state.data.notes[0].tick, 0.0);
     assert_eq!(editor.editor_state.data.notes[0].key, 60);
 
-    // 此时 push_history 已经在 setup_dragging 中调用，但 notes 没变
-    // undo 会恢复到 push_history 时的状态（也是 0,60），所以看起来是 no-op
-    assert!(editor.undo());
+    // 零 delta 不生成 MoveOp，也不 push 快照，因此没有可撤销的操作
+    assert!(!editor.can_undo(), "零 delta 拖动不应产生历史记录");
+    assert!(!editor.undo());
     assert_eq!(editor.editor_state.data.notes[0].tick, 0.0);
     assert_eq!(editor.editor_state.data.notes[0].key, 60);
 }

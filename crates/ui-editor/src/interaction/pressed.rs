@@ -95,11 +95,8 @@ impl Editor {
                         snapped_tick as i64,
                         key as i16,
                     );
-                    // 累积模式：pending_drag_state 存在时，history 已在首次拖动时 push，
-                    // 此处不重复 push（避免一次逻辑操作产生多条 history 记录）
-                    if self.pending_drag_state.is_none() {
-                        self.push_history();
-                    }
+                    // NoteMove 操作日志化：批量拖动期间不 push 快照，
+                    // 松手时构造 MoveOp 异步提交。
                     self.editor_state.interaction.edit_state =
                         crate::EditState::DraggingSelection { drag_state };
                 }

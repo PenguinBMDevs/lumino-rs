@@ -2,4 +2,4 @@
 //!
 //! 保持与原有 `crate::history::*` 路径完全兼容。
 
-pub use lumino_core::{EditorSnapshot, History};
+pub use lumino_core::{EditorSnapshot, History, HistoryEntry, MoveOp, OperationEntry};

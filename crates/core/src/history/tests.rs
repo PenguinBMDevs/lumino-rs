@@ -8,6 +8,7 @@
 //! - 合并窗口（push_mergeable）：窗口内合并 / 超限分割 / 不同 op_kind 不合并
 //! - 逻辑撤销/重做（undo_logical / redo_logical）：单 group 退化为 undo / 跨 parent chain
 //! - set_config 运行时裁剪栈
+//! - MoveOp inverse / push_move_op / 混合 undo-redo
 
 use super::*;
 use im::Vector;
@@ -20,6 +21,27 @@ fn make_snapshot(notes_len: usize) -> EditorSnapshot {
         notes.push_back(Note::new(i as f32, 60, 1.0));
     }
     EditorSnapshot::new(notes, 0, Vec::new())
+}
+
+fn assert_snapshot(entry: &HistoryEntry) -> &EditorSnapshot {
+    match entry {
+        HistoryEntry::Snapshot(s) => s,
+        HistoryEntry::Operation(_) => panic!("期望 Snapshot，得到 Operation"),
+    }
+}
+
+fn assert_operation(entry: &HistoryEntry) -> &OperationEntry {
+    match entry {
+        HistoryEntry::Snapshot(_) => panic!("期望 Operation，得到 Snapshot"),
+        HistoryEntry::Operation(o) => o,
+    }
+}
+
+fn op_kind_of(entry: &HistoryEntry) -> OpKind {
+    match entry {
+        HistoryEntry::Snapshot(s) => s.op_kind,
+        HistoryEntry::Operation(o) => o.op_kind,
+    }
 }
 
 // ── 基础测试 ──────────────────────────────────────────────────
@@ -42,6 +64,7 @@ fn test_history_push_and_undo() {
 
     let current = make_snapshot(2);
     let prev = h.undo(current).expect("应有快照返回");
+    let prev = assert_snapshot(&prev);
     assert_eq!(prev.notes.len(), 1);
     assert!(h.can_redo());
     assert_eq!(h.undo_len(), 0);
@@ -71,6 +94,7 @@ fn test_history_redo_after_undo() {
 
     let current = make_snapshot(1);
     let restored = h.redo(current).expect("redo 应返回快照");
+    let restored = assert_snapshot(&restored);
     assert_eq!(restored.notes.len(), 2);
     assert!(!h.can_redo());
     assert!(h.can_undo());
@@ -97,7 +121,7 @@ fn test_history_max_size() {
     }
     assert_eq!(h.undo_len(), 3, "栈应被裁剪到 max_size");
     // 最早的 1、2 被弹出，栈顶是 5
-    assert_eq!(h.undo_back().unwrap().notes.len(), 5);
+    assert_eq!(assert_snapshot(h.undo_back().unwrap()).notes.len(), 5);
 }
 
 #[test]
@@ -135,14 +159,14 @@ fn test_history_undo_redo_roundtrip() {
     h.push(make_snapshot(2));
 
     let s1 = h.undo(make_snapshot(3)).unwrap();
-    assert_eq!(s1.notes.len(), 2);
+    assert_eq!(assert_snapshot(&s1).notes.len(), 2);
 
     let s2 = h.redo(make_snapshot(2)).unwrap();
-    assert_eq!(s2.notes.len(), 3);
+    assert_eq!(assert_snapshot(&s2).notes.len(), 3);
 
     // 再次 undo 应能回到 snap2
     let s3 = h.undo(make_snapshot(3)).unwrap();
-    assert_eq!(s3.notes.len(), 2);
+    assert_eq!(assert_snapshot(&s3).notes.len(), 2);
 }
 
 #[test]
@@ -164,7 +188,7 @@ fn test_push_with_op_kind_assigns_group_id() {
     let mut h = History::new();
     h.push_with_op_kind(make_snapshot(1), OpKind::NoteDelete);
 
-    let back = h.undo_back().unwrap();
+    let back = assert_snapshot(h.undo_back().unwrap());
     assert_eq!(back.op_kind, OpKind::NoteDelete);
     assert_eq!(back.entry_count, 1);
     assert!(back.parent_group_id.is_none(), "首次 push 无 parent");
@@ -172,7 +196,7 @@ fn test_push_with_op_kind_assigns_group_id() {
 
     // 第二次 push 应分配不同的 group_id
     h.push_with_op_kind(make_snapshot(2), OpKind::NoteDelete);
-    let back2 = h.undo_back().unwrap();
+    let back2 = assert_snapshot(h.undo_back().unwrap());
     assert_ne!(
         back2.group_id.unwrap(),
         gid,
@@ -208,20 +232,20 @@ fn test_push_mergeable_within_window_merges() {
     let merged = h.push_mergeable(make_snapshot(1), OpKind::NoteCreate);
     assert!(!merged, "首次 push 不应合并");
     assert_eq!(h.undo_len(), 1);
-    assert_eq!(h.undo_back().unwrap().entry_count, 1);
+    assert_eq!(assert_snapshot(h.undo_back().unwrap()).entry_count, 1);
 
     // 第二次 push：合并到栈顶，entry_count + 1，notes 保留 snap1
     let merged = h.push_mergeable(make_snapshot(2), OpKind::NoteCreate);
     assert!(merged, "同 op_kind + 窗口内 + 未超限应合并");
     assert_eq!(h.undo_len(), 1, "合并后栈大小不变");
-    assert_eq!(h.undo_back().unwrap().entry_count, 2);
+    assert_eq!(assert_snapshot(h.undo_back().unwrap()).entry_count, 2);
 
     // 第三次 push：继续合并
     h.push_mergeable(make_snapshot(3), OpKind::NoteCreate);
     assert_eq!(h.undo_len(), 1);
-    assert_eq!(h.undo_back().unwrap().entry_count, 3);
+    assert_eq!(assert_snapshot(h.undo_back().unwrap()).entry_count, 3);
     assert_eq!(
-        h.undo_back().unwrap().notes.len(),
+        assert_snapshot(h.undo_back().unwrap()).notes.len(),
         1,
         "合并后快照内容应保留 chain 中最早操作之前的状态（snap1）"
     );
@@ -234,15 +258,19 @@ fn test_push_mergeable_exceeds_limit_splits_with_parent() {
 
     h.push_mergeable(make_snapshot(1), OpKind::NoteCreate);
     h.push_mergeable(make_snapshot(2), OpKind::NoteCreate);
-    assert_eq!(h.undo_back().unwrap().entry_count, 2, "应已合并到上限");
-    let old_group_id = h.undo_back().unwrap().group_id.unwrap();
+    assert_eq!(
+        assert_snapshot(h.undo_back().unwrap()).entry_count,
+        2,
+        "应已合并到上限"
+    );
+    let old_group_id = assert_snapshot(h.undo_back().unwrap()).group_id.unwrap();
 
     // 第三次 push：应分割为新 group，parent 指向旧 group
     let merged = h.push_mergeable(make_snapshot(3), OpKind::NoteCreate);
     assert!(!merged, "超限分割不算合并");
     assert_eq!(h.undo_len(), 2, "分割后栈大小 +1");
 
-    let top = h.undo_back().unwrap();
+    let top = assert_snapshot(h.undo_back().unwrap());
     assert_eq!(top.entry_count, 1, "新分割组 entry_count 重置为 1");
     assert!(
         top.parent_group_id.is_some(),
@@ -294,6 +322,7 @@ fn test_undo_logical_single_group_degrades_to_undo() {
     let prev = h
         .undo_logical(current)
         .expect("应返回 chain 中最早的 snapshot");
+    let prev = assert_snapshot(&prev);
     assert_eq!(
         prev.notes.len(),
         1,
@@ -303,13 +332,13 @@ fn test_undo_logical_single_group_degrades_to_undo() {
     assert_eq!(h.redo_len(), 2, "current(marker) + 1 个被撤销的快照进 redo");
     // redo 栈底应是 ChainMarker（current），因为先 push marker 再 push chain snapshots
     assert_eq!(
-        h.redo_front_op_kind(),
+        h.redo_front().map(op_kind_of),
         Some(OpKind::ChainMarker),
         "current 应被标记为 ChainMarker 推入 redo 栈底"
     );
     // redo 栈顶是被撤销的 NoteMove 快照
     assert_eq!(
-        h.redo_back_op_kind(),
+        h.redo_back().map(op_kind_of),
         Some(OpKind::NoteMove),
         "redo 栈顶应是被撤销的快照"
     );
@@ -334,6 +363,7 @@ fn test_undo_logical_cross_parent_chain() {
     // 返回的 prev 应为 NoteMove 之前的状态 = snap4
     let current = make_snapshot(5);
     let prev = h.undo_logical(current).expect("应返回 NoteMove 之前的快照");
+    let prev = assert_snapshot(&prev);
     assert_eq!(
         prev.notes.len(),
         4,
@@ -355,6 +385,7 @@ fn test_undo_logical_chain_cross_full_chain() {
 
     let current = make_snapshot(3);
     let prev = h.undo_logical(current).expect("应跨 chain 回退");
+    let prev = assert_snapshot(&prev);
 
     // 整个 chain 应被一次性撤销
     assert_eq!(h.undo_len(), 0, "chain 中所有快照应被 pop 到 redo");
@@ -389,6 +420,7 @@ fn test_redo_logical_cross_parent_chain() {
     let restored = h
         .redo_logical(current_for_redo)
         .expect("应能重做整个 chain");
+    let restored = assert_snapshot(&restored);
     assert_eq!(
         restored.notes.len(),
         3,
@@ -416,7 +448,7 @@ fn test_set_config_trims_stack() {
     h.set_config(5, 300, 1000);
     assert_eq!(h.undo_len(), 5, "set_config 应立即裁剪栈");
     // 最早的 1-5 被弹出，栈顶是 10
-    assert_eq!(h.undo_back().unwrap().notes.len(), 10);
+    assert_eq!(assert_snapshot(h.undo_back().unwrap()).notes.len(), 10);
 }
 
 #[test]
@@ -427,4 +459,221 @@ fn test_set_config_updates_merge_params() {
     h.push_mergeable(make_snapshot(1), OpKind::NoteCreate);
     h.push_mergeable(make_snapshot(2), OpKind::NoteCreate);
     assert_eq!(h.undo_len(), 2, "窗口=0 + 上限=1 时每次 push 都新增");
+}
+
+// ── MoveOp 测试 ──────────────────────────────────────────────
+
+#[test]
+fn test_move_op_inverse() {
+    let op = MoveOp {
+        track_id: 1,
+        range_start: 10,
+        range_end: 20,
+        delta_tick: 100,
+        delta_key: -5,
+        seq: 0,
+        original_ticks: vec![],
+        original_keys: vec![],
+    };
+    let inv = op.inverse();
+    assert_eq!(inv.track_id, op.track_id);
+    assert_eq!(inv.range_start, op.range_start);
+    assert_eq!(inv.range_end, op.range_end);
+    assert_eq!(inv.delta_tick, -100);
+    assert_eq!(inv.delta_key, 5);
+    assert_eq!(inv.seq, op.seq);
+
+    // 双重取反应等于原操作
+    let inv_inv = inv.inverse();
+    assert_eq!(inv_inv, op);
+}
+
+#[test]
+fn test_push_move_op_creates_operation_entry() {
+    let mut h = History::new();
+    let ops = vec![MoveOp {
+        track_id: 0,
+        range_start: 0,
+        range_end: 3,
+        delta_tick: 10,
+        delta_key: 2,
+        seq: 0,
+        original_ticks: vec![],
+        original_keys: vec![],
+    }];
+    let gid = h.push_move_op(ops.clone());
+    assert!(gid > 0);
+
+    let back = h.undo_back().expect("undo 栈顶应存在");
+    let op_entry = assert_operation(back);
+    assert_eq!(op_entry.op_kind, OpKind::NoteMove);
+    assert_eq!(op_entry.ops.len(), 1);
+    assert_eq!(op_entry.ops[0].delta_tick, 10);
+    assert_eq!(op_entry.group_id, Some(gid));
+}
+
+#[test]
+fn test_undo_redo_move_op_roundtrip() {
+    let mut h = History::new();
+    let ops = vec![MoveOp {
+        track_id: 0,
+        range_start: 0,
+        range_end: 2,
+        delta_tick: 5,
+        delta_key: -1,
+        seq: 0,
+        original_ticks: vec![],
+        original_keys: vec![],
+    }];
+    h.push_move_op(ops);
+
+    let current = make_snapshot(2);
+    let entry = h.undo(current).expect("undo 应返回 inverse Operation");
+    let op_entry = assert_operation(&entry);
+    assert_eq!(op_entry.ops[0].delta_tick, -5);
+    assert_eq!(op_entry.ops[0].delta_key, 1);
+    assert_eq!(h.redo_len(), 1, "Operation undo 只应推入一个反向 Operation");
+    assert_eq!(h.undo_len(), 0);
+
+    // redo 应恢复为 forward op
+    let current_for_redo = make_snapshot(1);
+    let redo_entry = h
+        .redo(current_for_redo)
+        .expect("redo 应返回 forward Operation");
+    let redo_op = assert_operation(&redo_entry);
+    assert_eq!(redo_op.ops[0].delta_tick, 5);
+    assert_eq!(redo_op.ops[0].delta_key, -1);
+    assert_eq!(h.undo_len(), 1, "Operation redo 只应推入一个正向 Operation");
+    assert_eq!(h.redo_len(), 0);
+}
+
+#[test]
+fn test_multiple_move_op_undo_redo_sequence() {
+    let mut h = History::new();
+    let ops1 = vec![MoveOp {
+        track_id: 0,
+        range_start: 0,
+        range_end: 1,
+        delta_tick: 100,
+        delta_key: 5,
+        seq: 0,
+        original_ticks: vec![0.0],
+        original_keys: vec![60],
+    }];
+    let ops2 = vec![MoveOp {
+        track_id: 0,
+        range_start: 0,
+        range_end: 1,
+        delta_tick: 50,
+        delta_key: 3,
+        seq: 0,
+        original_ticks: vec![100.0],
+        original_keys: vec![65],
+    }];
+    h.push_move_op(ops1);
+    h.push_move_op(ops2);
+
+    // undo 第二个操作：返回 inverse，delta = -50
+    let entry = h.undo(make_snapshot(2)).expect("第一次 undo");
+    let op = assert_operation(&entry);
+    assert_eq!(op.ops[0].delta_tick, -50);
+
+    // undo 第一个操作：返回 inverse，delta = -100
+    let entry = h.undo(make_snapshot(1)).expect("第二次 undo");
+    let op = assert_operation(&entry);
+    assert_eq!(op.ops[0].delta_tick, -100);
+
+    // redo 第一个操作：delta = 100
+    let entry = h.redo(make_snapshot(0)).expect("第一次 redo");
+    let op = assert_operation(&entry);
+    assert_eq!(op.ops[0].delta_tick, 100);
+
+    // redo 第二个操作：delta = 50
+    let entry = h.redo(make_snapshot(1)).expect("第二次 redo");
+    let op = assert_operation(&entry);
+    assert_eq!(op.ops[0].delta_tick, 50);
+
+    assert_eq!(h.undo_len(), 2);
+    assert_eq!(h.redo_len(), 0);
+}
+
+#[test]
+fn test_mixed_snapshot_and_operation_undo_order() {
+    let mut h = History::new();
+    // 先 push 一个快照
+    h.push(make_snapshot(1));
+    // 再 push 一个 MoveOp
+    let ops = vec![MoveOp {
+        track_id: 0,
+        range_start: 0,
+        range_end: 1,
+        delta_tick: 10,
+        delta_key: 0,
+        seq: 0,
+        original_ticks: vec![],
+        original_keys: vec![],
+    }];
+    h.push_move_op(ops);
+
+    // undo 应先返回 MoveOp 的 inverse
+    let current = make_snapshot(2);
+    let first_undo = h.undo(current).expect("第一次 undo 应返回 MoveOp inverse");
+    assert!(matches!(first_undo, HistoryEntry::Operation(_)));
+    let first_op = assert_operation(&first_undo);
+    assert_eq!(first_op.ops[0].delta_tick, -10);
+
+    // 再次 undo 返回快照
+    let current2 = make_snapshot(1);
+    let second_undo = h.undo(current2).expect("第二次 undo 应返回 Snapshot");
+    assert!(matches!(second_undo, HistoryEntry::Snapshot(_)));
+    let snap = assert_snapshot(&second_undo);
+    assert_eq!(snap.notes.len(), 1);
+}
+
+#[test]
+fn test_logical_undo_operation_degrades_to_single() {
+    let mut h = History::new();
+    let ops = vec![MoveOp {
+        track_id: 0,
+        range_start: 0,
+        range_end: 1,
+        delta_tick: 7,
+        delta_key: 3,
+        seq: 0,
+        original_ticks: vec![],
+        original_keys: vec![],
+    }];
+    h.push_move_op(ops);
+
+    let current = make_snapshot(2);
+    let entry = h
+        .undo_logical(current)
+        .expect("Operation 逻辑 undo 退化为单步");
+    let op_entry = assert_operation(&entry);
+    assert_eq!(op_entry.ops[0].delta_tick, -7);
+    assert_eq!(op_entry.ops[0].delta_key, -3);
+    assert_eq!(h.undo_len(), 0);
+    assert_eq!(
+        h.redo_len(),
+        1,
+        "Operation 逻辑 undo 同样只推入一个反向 Operation"
+    );
+}
+
+#[test]
+fn test_move_op_inverse_with_i32_min() {
+    let op = MoveOp {
+        track_id: 0,
+        range_start: 0,
+        range_end: 1,
+        delta_tick: i32::MIN,
+        delta_key: i16::MIN,
+        seq: 0,
+        original_ticks: vec![],
+        original_keys: vec![],
+    };
+    let inv = op.inverse();
+    // wrapping_neg(i32::MIN) == i32::MIN
+    assert_eq!(inv.delta_tick, i32::MIN);
+    assert_eq!(inv.delta_key, i16::MIN);
 }

@@ -32,6 +32,15 @@ fn start_dragging_selection(
     editor.editor_state.interaction.edit_state = EditState::DraggingSelection { drag_state: drag };
 }
 
+/// 提交 pending 并等待异步提交完成（测试用同步包装）
+fn commit_pending_drag_and_drain(editor: &mut Editor) -> bool {
+    let started = editor.commit_pending_drag();
+    if started {
+        editor.drain_async_commit();
+    }
+    started
+}
+
 // ===== 初始状态判定 =====
 
 #[test]
@@ -57,7 +66,7 @@ fn test_commit_pending_drag_when_none_returns_false() {
         .data
         .notes
         .push_back(Note::new(0.0, 60, 480.0));
-    assert!(!editor.commit_pending_drag());
+    assert!(!commit_pending_drag_and_drain(&mut editor));
     assert!(editor.pending_drag_state.is_none());
 }
 
@@ -73,7 +82,10 @@ fn test_commit_pending_drag_with_zero_delta_returns_false_and_clears() {
     let zero_drag = DragState::from_single(0, 1, 0, 60); // delta = (0, 0)
     editor.pending_drag_state = Some(zero_drag);
 
-    assert!(!editor.commit_pending_drag(), "delta 零应返回 false");
+    assert!(
+        !commit_pending_drag_and_drain(&mut editor),
+        "delta 零应返回 false"
+    );
     assert!(editor.pending_drag_state.is_none(), "pending 应被清空");
     // notes 未被修改
     assert_eq!(editor.editor_state.data.notes[0].tick, 0.0);
@@ -99,7 +111,7 @@ fn test_commit_pending_drag_applies_delta_to_notes() {
     drag.set_delta(200, 7);
     editor.pending_drag_state = Some(drag);
 
-    assert!(editor.commit_pending_drag());
+    assert!(commit_pending_drag_and_drain(&mut editor));
     assert_eq!(editor.editor_state.data.notes[0].tick, 200.0);
     assert_eq!(editor.editor_state.data.notes[0].key, 67);
     // note 1 未选中，不变
@@ -122,7 +134,7 @@ fn test_commit_pending_drag_clamps_negative_tick_to_zero() {
     drag.set_delta(-200, 0); // 50 - 200 = -150，应 clamp 到 0
     editor.pending_drag_state = Some(drag);
 
-    assert!(editor.commit_pending_drag());
+    assert!(commit_pending_drag_and_drain(&mut editor));
     assert_eq!(editor.editor_state.data.notes[0].tick, 0.0, "应 clamp 到 0");
 }
 
@@ -273,7 +285,7 @@ fn test_accumulated_delta_two_drags_sum_up() {
     assert_eq!(editor.editor_state.data.notes[0].key, 60);
 
     // 提交累积 delta
-    assert!(editor.commit_pending_drag());
+    assert!(commit_pending_drag_and_drain(&mut editor));
     assert_eq!(editor.editor_state.data.notes[0].tick, 150.0);
     assert_eq!(editor.editor_state.data.notes[0].key, 68); // 60 + 8
     assert!(!editor.has_pending_drag());
@@ -307,7 +319,7 @@ fn test_accumulated_delta_three_drags_with_negative() {
     assert_eq!(pending.delta_key, 2, "5-3+0 = 2");
 
     // 提交：100 + (-50) = 50
-    assert!(editor.commit_pending_drag());
+    assert!(commit_pending_drag_and_drain(&mut editor));
     assert_eq!(editor.editor_state.data.notes[0].tick, 50.0);
     assert_eq!(editor.editor_state.data.notes[0].key, 62); // 60 + 2
 }
@@ -416,7 +428,7 @@ fn test_idle_with_pending_then_commit_clears_pending() {
     editor.handle_released();
 
     // 模拟点击空白处：commit_pending_drag
-    assert!(editor.commit_pending_drag());
+    assert!(commit_pending_drag_and_drain(&mut editor));
     assert_eq!(editor.editor_state.data.notes[0].tick, 50.0);
     assert_eq!(editor.editor_state.data.notes[0].key, 62); // 60 + 2
     assert_eq!(editor.editor_state.data.notes[1].tick, 150.0); // 100 + 50

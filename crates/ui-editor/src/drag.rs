@@ -29,7 +29,6 @@ impl Editor {
             original_tick as i64,
             original_key as i16,
         );
-        self.push_history();
         // 更新 editor_state
         self.editor_state.interaction.edit_state = EditState::Dragging {
             note_index,
@@ -279,6 +278,9 @@ impl Editor {
         let key_offset = drag_state.delta_key;
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
 
+        // NoteMove 操作日志化：先捕获 MoveOp（记录 apply 前的原始位置），再应用数据
+        let ops = self.editor_state.data.move_ops_from_drag_state(&drag_state);
+
         // ghost 方案：流式应用 delta 到 notes 与当前 track_notes 缓存
         let modified = self
             .editor_state
@@ -287,6 +289,10 @@ impl Editor {
         if modified == 0 {
             tracing::debug!("Editor: 单音符拖动未产生实际变更（snap 后 delta 为零）");
             return false;
+        }
+
+        if !ops.is_empty() {
+            self.editor_state.data.push_move_op(ops);
         }
 
         tracing::info!(

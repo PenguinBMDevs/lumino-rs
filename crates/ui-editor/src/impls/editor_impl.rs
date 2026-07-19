@@ -136,6 +136,7 @@ impl Editor {
     pub fn is_editing(&self) -> bool {
         use crate::EditState;
         self.pending_drag_state.is_some()
+            || self.editor_state.data.has_pending_commit()
             || matches!(
                 self.editor_state.interaction.edit_state,
                 EditState::Dragging { .. }
@@ -151,7 +152,7 @@ impl Editor {
 
     /// 是否有未提交的批量拖动（pending commit 状态）
     pub fn has_pending_drag(&self) -> bool {
-        self.pending_drag_state.is_some()
+        self.pending_drag_state.is_some() || self.editor_state.data.has_pending_commit()
     }
 
     /// 提交 pending 批量拖动到 `data.notes`
@@ -160,25 +161,93 @@ impl Editor {
     /// - 用户点击空白处取消框选时
     /// - `commit_current_edit()` 自动提交（Save/Play/Export 前的 fallback）
     ///
-    /// 返回 `true` 表示有数据被提交。如果 pending_drag_state 为 None 或 delta 为零，返回 false。
+    /// 返回 `true` 表示已启动异步提交。如果 pending_drag_state 为 None 或 delta 为零，
+    /// 返回 false。
+    ///
+    /// **异步提交**：实际数据更新在后台线程执行，UI 层需每帧调用 `poll_async_commit`
+    /// 获取结果。pending_drag_state 会保留到异步提交完成，以维持 ghost 视觉位置。
     pub fn commit_pending_drag(&mut self) -> bool {
-        let Some(drag_state) = self.pending_drag_state.take() else {
+        let Some(drag_state) = self.pending_drag_state.as_ref() else {
             return false;
         };
         if drag_state.is_delta_zero() {
             tracing::debug!("Editor: pending drag delta 为零，跳过提交");
+            self.pending_drag_state = None;
             return false;
         }
-        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
-        let modified = self
-            .editor_state
-            .data
-            .apply_drag_state_streaming(&drag_state, max_key);
-        if modified > 0 {
-            self.mark_notes_changed();
-            tracing::info!("Editor: 提交 pending 批量拖动 - 修改 {} 个音符", modified);
+        // 避免重复提交
+        if self.editor_state.data.has_pending_commit() {
+            return true;
         }
-        modified > 0
+
+        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+        let ops = self.editor_state.data.move_ops_from_drag_state(drag_state);
+        match self.editor_state.data.apply_move_ops_async(ops, max_key) {
+            Ok(true) => {
+                tracing::info!("Editor: 已启动 pending 批量拖动异步提交");
+                true
+            }
+            Ok(false) => {
+                self.pending_drag_state = None;
+                false
+            }
+            Err(e) => {
+                tracing::error!("Editor: 异步提交 MoveOp 失败: {}", e);
+                self.pending_drag_state = None;
+                false
+            }
+        }
+    }
+
+    /// 轮询异步提交结果
+    ///
+    /// 若完成：应用结果到 data，清空 pending_drag_state，并返回修改数。
+    /// 若未完成：返回 `None`。
+    pub fn poll_async_commit(&mut self) -> Option<usize> {
+        match self.editor_state.data.poll_async_commit() {
+            Some(Ok(modified)) => {
+                if modified > 0 {
+                    self.mark_notes_changed();
+                    tracing::info!("Editor: 异步提交完成 - 修改 {} 个音符", modified);
+                }
+                self.pending_drag_state = None;
+                Some(modified)
+            }
+            Some(Err(e)) => {
+                tracing::error!("Editor: 异步提交结果处理失败: {}", e);
+                self.pending_drag_state = None;
+                None
+            }
+            None => None,
+        }
+    }
+
+    /// 阻塞等待所有异步提交完成
+    ///
+    /// 用于 Save/Play/Export 等需要立即可用数据的场景。
+    /// 返回 `true` 表示有数据被修改。
+    pub fn drain_async_commit(&mut self) -> bool {
+        let mut any_modified = false;
+        while self.editor_state.data.has_pending_commit() {
+            match self.editor_state.data.poll_async_commit() {
+                Some(Ok(modified)) => {
+                    if modified > 0 {
+                        self.mark_notes_changed();
+                        any_modified = true;
+                    }
+                    self.pending_drag_state = None;
+                }
+                Some(Err(e)) => {
+                    tracing::error!("Editor: drain 异步提交失败: {}", e);
+                    self.pending_drag_state = None;
+                }
+                None => {
+                    // 避免忙等：让出时间片
+                    std::thread::yield_now();
+                }
+            }
+        }
+        any_modified
     }
 
     /// 提交当前编辑（Save/Play/Export 前自动调用）
@@ -189,6 +258,8 @@ impl Editor {
     /// **延迟提交方案**：`DraggingSelection` 的 `handle_released` 只把 delta 保存到
     /// `pending_drag_state`，不真正 apply。这里必须再调 `commit_pending_drag`，
     /// 否则 Save/Play/Export 时数据会丢失。
+    ///
+    /// **异步提交**：Save/Play/Export 前会调用 `drain_async_commit` 确保数据已落盘。
     pub fn commit_current_edit(&mut self) -> bool {
         if !self.is_editing() {
             return false;
@@ -196,15 +267,17 @@ impl Editor {
         let before = self.editor_state.data.notes.len();
         // handle_released: Dragging/Drawing/Resizing 直接 apply；DraggingSelection 保存到 pending
         self.handle_released();
-        // 延迟提交方案：如果 handle_released 产生了 pending_drag_state，立即提交
-        // （Save/Play/Export 前的 fallback，等价于"点击空白处"）
+        // 延迟提交方案：如果 handle_released 产生了 pending_drag_state，启动异步提交
         let pending_committed = self.commit_pending_drag();
+        // Save/Play/Export 前必须等待异步提交完成
+        let drained = self.drain_async_commit();
         let after = self.editor_state.data.notes.len();
         tracing::debug!(
-            "Editor: 自动提交编辑（commit_current_edit），notes len {} -> {}, pending_committed={}",
+            "Editor: 自动提交编辑（commit_current_edit），notes len {} -> {}, pending_committed={}, drained={}",
             before,
             after,
-            pending_committed
+            pending_committed,
+            drained
         );
         true
     }

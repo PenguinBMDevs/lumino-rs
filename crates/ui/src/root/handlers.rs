@@ -273,6 +273,14 @@ impl Root {
 
         self.editor.update_selection_box_animation(None);
 
+        // 轮询异步 MoveOp 提交结果（每帧一次，将后台线程结果应用到 data 并 push history）
+        if self.editor.poll_async_commit().is_some() {
+            self.editor
+                .invalidate_caches(crate::editor::CacheInvalidation::ALL);
+            self.update_playback_notes();
+            self.editor.clear_notes_changed();
+        }
+
         // 清理过期 Toast（每帧调用，低成本 O(N) retain）
         self.toast.cleanup_expired(std::time::Instant::now());
 
