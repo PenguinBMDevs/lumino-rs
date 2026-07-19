@@ -436,7 +436,7 @@ fn process_deferred_commands(
 fn ensure_offscreen_textures_and_upload_notes(
     ctx: &RenderContext,
     channels: &RenderThreadChannels,
-    _renderers: &mut super::super::Renderers,
+    renderers: &mut super::super::Renderers,
     current_texture: &mut Option<Arc<wgpu::Texture>>,
     depth_texture: &mut Option<wgpu::Texture>,
     depth_texture_view: &mut Option<wgpu::TextureView>,
@@ -465,13 +465,15 @@ fn ensure_offscreen_textures_and_upload_notes(
     if note_version != *last_note_version {
         *last_note_version = note_version;
 
-        // 依赖事件通道（process_events 在 prepare_renderers 中调用）做增量更新，
-        // 而非全量重传。事件通道通过 add_note / update_note / remove_note 做 O(1) 更新，
-        // 避免 160MB 全量 write_buffer 的帧瞬卡。
-        //
-        // 但仍需 acquire_read_buffer 以维持三缓冲状态机正常运转（ready ↔ reading 交换）。
-        // 若 UI 线程 swap 后 reading 槽位未被消费，后续 swap 会反复交换同一槽位。
-        let _ = unsafe { channels.note_instances_buffer.acquire_read_buffer() };
+        // 三缓冲状态机轮换：UI 线程 swap 后 reading 槽位必须被消费，
+        // 否则后续 swap 会反复交换同一槽位。
+        let note_instances = unsafe { channels.note_instances_buffer.acquire_read_buffer() };
+        // 将 UI 线程构建的可见音符实例上传到 GPU。
+        // 分离渲染线程模式下，音符数据通过 SwappableBuffer 共享，
+        // 渲染线程在此处负责实际 GPU 上传与剔除信息更新。
+        renderers
+            .note
+            .upload_instances(note_instances, &ctx.device, &ctx.queue);
     }
 }
 

@@ -80,11 +80,17 @@ impl Host {
         let note_index_dirty = self.root.editor.spatial.note_index_dirty.get();
         let current_edit_state = self.root.editor.editor_state.interaction.edit_state.clone();
         let is_drawing = matches!(current_edit_state, crate::editor::EditState::Drawing { .. });
+        let is_ghost_dragging = matches!(
+            current_edit_state,
+            crate::editor::EditState::Dragging { .. }
+                | crate::editor::EditState::DraggingSelection { .. }
+        ) || self.root.editor.has_pending_drag();
 
-        // 数据变化（编辑/加载）
+        // 数据变化（编辑/加载/ghost 拖动）
         let note_data_changed = note_index_dirty
             || self.render_ctx.render_cache.note_instances_is_empty()
-            || is_drawing;
+            || is_drawing
+            || is_ghost_dragging;
 
         // 计算当前精确视口范围
         let (tick_start, tick_end, key_min, key_max) = self.root.editor.compute_visible_range(0.0);
