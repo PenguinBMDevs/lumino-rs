@@ -12,14 +12,19 @@ mod note_instances;
 /// 计算音符 i 在当前编辑状态下的 ghost 偏移量
 ///
 /// 合并规则（延迟提交方案）：
-/// - `Idle` + `pending_drag_state`：返回 `pending.delta`（表示有未提交的拖动）
-/// - `Dragging`：返回 `drag_state.delta`（仅对 drag_state.selected 中的音符）
-/// - `DraggingSelection`：返回 `pending.delta + drag_state.delta`（仅对选中音符）
-/// - 其他状态：返回 `None`
+/// - 存在 `pending_drag_state` 且音符在 pending 选中集合中：返回 `pending.delta`
+///   （pending 代表已启动异步提交但尚未完成的数据更新，在异步完成前始终可见）
+/// - `Dragging`：额外加上 `drag_state.delta`（仅对 drag_state.selected 中的音符）
+/// - `DraggingSelection`：额外加上 `drag_state.delta`，即 `pending.delta + drag_state.delta`
+/// - 未命中任何选中集合：返回 `None`
 ///
-/// **关键修复**：原实现中 `pending_drag_state` 在 `DraggingSelection` 期间覆盖了
+/// **关键修复 1**：原实现中 `pending_drag_state` 在 `DraggingSelection` 期间覆盖了
 /// 当前 `drag_state` 的渲染，导致第二次拖动时 ghost 位置不随鼠标移动。
 /// 现在合并两个 delta，确保拖动期间视觉反馈正确。
+///
+/// **关键修复 2**：原实现只在 `Idle` / `DraggingSelection` 应用 pending delta，
+/// 导致用户点击空白处开始新框选（`Selecting`）时，异步提交尚未完成就回撤。
+/// 现在 pending delta 在异步完成前对所有状态都生效。
 pub(crate) fn ghost_delta_for_index(
     i: usize,
     pending: &Option<lumino_core::DragState>,
@@ -29,12 +34,10 @@ pub(crate) fn ghost_delta_for_index(
     let mut delta_key = 0i16;
     let mut has_delta = false;
 
-    // Idle 或 DraggingSelection 时，pending delta 生效
+    // 存在 pending 拖动且音符在 pending 选中集合中时，pending delta 生效。
+    // 注意：pending 在异步提交完成前一直保留，因此不能限定为 Idle/DraggingSelection，
+    // 否则用户点击空白处开始新框选（Selecting）时，已移动的音符会回撤。
     if let Some(pending) = pending
-        && matches!(
-            edit_state,
-            EditState::Idle | EditState::DraggingSelection { .. }
-        )
         && i < pending.selected.len()
         && pending.selected[i]
     {
@@ -349,7 +352,9 @@ mod tests {
     }
 
     #[test]
-    fn ghost_delta_selecting_or_resizing_returns_none() {
+    fn ghost_delta_selecting_or_resizing_applies_pending() {
+        // pending 代表已启动异步提交但尚未完成的数据更新，在异步完成前应始终可见，
+        // 不应因进入 Selecting / Resizing 等状态而回撤。
         let pending = Some(drag_state_with_selected(&[0], 2, 10, 1));
         let selecting = EditState::Selecting {
             start_tick: 0.0,
@@ -363,8 +368,13 @@ mod tests {
             original_length: 100.0,
         };
 
-        assert_eq!(ghost_delta_for_index(0, &pending, &selecting), None);
-        assert_eq!(ghost_delta_for_index(0, &pending, &resizing), None);
+        assert_eq!(
+            ghost_delta_for_index(0, &pending, &selecting),
+            Some((10, 1))
+        );
+        assert_eq!(ghost_delta_for_index(0, &pending, &resizing), Some((10, 1)));
+        // 未在 pending 选中集合中的音符无 delta
+        assert_eq!(ghost_delta_for_index(1, &pending, &selecting), None);
     }
 
     #[test]

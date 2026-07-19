@@ -7,6 +7,7 @@
 use crate::EditState;
 use crate::Editor;
 use crate::note::Note;
+use crate::rendering::ghost_delta_for_index;
 use lumino_core::DragState;
 
 // ===== is_editing 判定测试 =====
@@ -248,4 +249,97 @@ fn test_commit_current_edit_with_zero_delta_returns_true_but_no_change() {
         editor.editor_state.interaction.edit_state,
         EditState::Idle
     ));
+}
+
+// ===== ghost_delta_for_index 跨状态测试 =====
+
+#[test]
+fn test_ghost_delta_applies_pending_in_selecting_state() {
+    // 复现：批量拖动松手后进入 pending 状态，用户点击空白处开始新框选（Selecting），
+    // 此时 pending 异步提交尚未完成，音符不应回撤。
+    let mut drag = DragState::from_indices([0, 2], 3, 0, 60);
+    drag.set_delta(100, -5);
+
+    let selecting_state = EditState::Selecting {
+        start_tick: 0.0,
+        start_key: 60,
+        current_tick: 50.0,
+        current_key: 70,
+    };
+
+    let delta = ghost_delta_for_index(0, &Some(drag.clone()), &selecting_state);
+    assert_eq!(
+        delta,
+        Some((100, -5)),
+        "Selecting 状态下 pending delta 仍应生效"
+    );
+
+    let delta = ghost_delta_for_index(1, &Some(drag), &selecting_state);
+    assert_eq!(delta, None, "未选中的音符不应有 pending delta");
+}
+
+#[test]
+fn test_ghost_delta_applies_pending_across_all_states() {
+    // pending 代表已提交到后台但尚未完成的数据更新，在异步完成前应始终可见。
+    let mut drag = DragState::from_single(0, 1, 0, 60);
+    drag.set_delta(50, 3);
+
+    let states = vec![
+        EditState::Idle,
+        EditState::Selecting {
+            start_tick: 0.0,
+            start_key: 60,
+            current_tick: 10.0,
+            current_key: 70,
+        },
+        EditState::Drawing {
+            start_tick: 0.0,
+            key: 60,
+            current_tick: 10.0,
+        },
+        EditState::PendingDrag {
+            note_index: 1,
+            start_pos: (0.0, 0.0),
+            original_tick: 10.0,
+            original_key: 62,
+        },
+        EditState::ResizingStart {
+            note_index: 1,
+            original_tick: 10.0,
+            original_length: 100.0,
+        },
+        EditState::ResizingEnd {
+            note_index: 1,
+            original_length: 100.0,
+        },
+        EditState::ResizingSelectionStart { last_tick: 10.0 },
+        EditState::ResizingSelectionEnd { last_tick: 10.0 },
+        EditState::Scrubbing,
+    ];
+
+    for state in states {
+        let delta = ghost_delta_for_index(0, &Some(drag.clone()), &state);
+        assert_eq!(
+            delta,
+            Some((50, 3)),
+            "状态 {:?} 下 pending delta 仍应生效",
+            state
+        );
+    }
+}
+
+#[test]
+fn test_ghost_delta_accumulates_pending_and_current_drag() {
+    // DraggingSelection 累积模式：pending delta + 当前 drag delta 同时生效
+    let mut pending = DragState::from_indices([0], 1, 0, 60);
+    pending.set_delta(50, 2);
+
+    let mut current = DragState::from_indices([0], 1, 0, 60);
+    current.set_delta(30, -1);
+
+    let state = EditState::DraggingSelection {
+        drag_state: current,
+    };
+    let delta = ghost_delta_for_index(0, &Some(pending), &state);
+    assert_eq!(delta, Some((80, 1)), "pending 与当前 drag delta 应累加");
 }
