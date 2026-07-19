@@ -144,14 +144,10 @@ impl winit::application::ApplicationHandler for Runner {
         // 高精度贴图冷静期检查：到期后触发脏音轨重生成
         this.about_to_wait_hires_regen();
 
-        // 发送高精度洋葱皮脏区域临时覆层（编辑后立即显示，不等冷静期）
-        {
-            puffin::profile_scope!("runner_about_to_wait_hires_dirty_overlay");
-            this.window_state
-                .window
-                .ui_mut()
-                .show_hires_dirty_overlays();
-        }
+        // 注意：脏区域临时覆层只在 set_current_track 中发送，
+        // 不在轮询周期发送——避免编辑当前音轨时立即生成覆层干扰编辑器渲染。
+        // 覆层的目的：切换音轨后让旧音轨的编辑内容立即显示为洋葱皮，
+        // 直到 force_hires_regen 后台重生完成并清理覆层。
 
         // 更新进度窗口
         puffin::profile_scope!("runner_about_to_wait_progress_update");
@@ -298,6 +294,8 @@ impl crate::runner::inner::RunnerInner {
                         lumino_gfx::render_thread::HiResTrackParams::new(
                             representative,
                             group_notes,
+                            // 重生命令做全量替换，不需要按 time_group 过滤
+                            Vec::new(),
                             ppq,
                             key_count,
                             total_ticks,

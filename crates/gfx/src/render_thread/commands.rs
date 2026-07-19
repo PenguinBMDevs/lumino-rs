@@ -15,6 +15,12 @@ pub struct HiResTrackParams {
     /// 使用 Host 提供的最新音符数据重新合并 group tile，
     /// 避免读取可能过期的硬盘缓存导致同组其他音轨被覆盖为旧数据。
     pub group_notes: Vec<Vec<OnionSkinNote>>,
+    /// 需要生成覆层的脏 time_group 集合
+    ///
+    /// 仅 `ShowHiResDirtyOverlay` 命令使用：临时覆层只覆盖实际发生编辑的
+    /// time_group，避免覆盖未编辑区域导致原洋葱皮贴图被空白覆层盖住。
+    /// `RegenerateHiResTrack` 命令传空 Vec（重生以全量替换覆层）。
+    pub dirty_time_groups: Vec<u32>,
     /// MIDI ppq
     pub ppq: u16,
     /// 键位数量
@@ -36,6 +42,7 @@ impl HiResTrackParams {
     pub fn new(
         track_idx: u16,
         group_notes: Vec<Vec<OnionSkinNote>>,
+        dirty_time_groups: Vec<u32>,
         ppq: u16,
         key_count: u16,
         total_ticks: u32,
@@ -46,6 +53,7 @@ impl HiResTrackParams {
         Self {
             track_idx,
             group_notes,
+            dirty_time_groups,
             ppq,
             key_count,
             total_ticks,

@@ -45,6 +45,7 @@ impl Host {
         }
         self.hires_dirty_tracks.clear();
         self.hires_dirty_regions.clear();
+        self.hires_dirty_time_groups.clear();
         self.hires_last_edit = None;
         self.init_default_hires_context();
     }
@@ -126,18 +127,57 @@ impl Host {
     /// 标记当前音轨高精度贴图为脏（音符编辑后调用）
     ///
     /// 同时收集该音轨的脏区域音符快照，用于生成临时贴图覆层。
+    /// 基于当前音符所在 time_group 计算脏 time_group 集合，
+    /// 供 `ShowHiResDirtyOverlay` 命令过滤覆层范围，避免覆盖未编辑区域。
     pub fn mark_hires_dirty(&mut self, track_idx: u16) {
         self.hires_dirty_tracks.insert(track_idx);
         // 收集当前音轨的所有音符作为脏区域快照
         let notes = self.get_track_notes_for_hires(track_idx);
-        tracing::debug!(
+        tracing::info!(
             "[onion-dirty] mark_hires_dirty: track={}, notes={}",
             track_idx,
             notes.len()
         );
+
+        // 基于当前音符所在 time_group 计算脏 time_group 集合
+        let time_groups = self.compute_dirty_time_groups(&notes);
+        tracing::info!(
+            "[onion-dirty] mark_hires_dirty: track={}, dirty_time_groups={:?}",
+            track_idx,
+            time_groups
+        );
+        self.hires_dirty_time_groups.insert(track_idx, time_groups);
+
         self.hires_dirty_regions.insert(track_idx, notes);
         self.hires_last_edit = Some(Instant::now());
         self.hires_overlay_sent = false; // 新脏数据，覆层需重新发送
+    }
+
+    /// 根据音符列表和当前 hires 配置计算脏 time_group 集合
+    ///
+    /// `OnionSkinNote.start_ms` 在 hires 路径中实为 tick 单位，
+    /// 与 `ticks_per_group` 相除得到 time_group 索引。
+    fn compute_dirty_time_groups(
+        &self,
+        notes: &[lumino_gfx::OnionSkinNote],
+    ) -> std::collections::HashSet<u32> {
+        let mut set = std::collections::HashSet::new();
+        let Some(config) = &self.hires_config else {
+            return set;
+        };
+        let Some((ppq, _, _)) = self.hires_gen_info else {
+            return set;
+        };
+        let ticks_per_group = config.ticks_per_group(ppq);
+        if ticks_per_group == 0 {
+            return set;
+        }
+        for note in notes {
+            // start_ms 在 hires 路径中实为 tick，使用 start_ms 兼容毫秒路径
+            let time_g = (note.start_ms.max(0.0) as u32) / ticks_per_group;
+            set.insert(time_g);
+        }
+        set
     }
 
     /// 将所有当前脏区域作为临时覆层发送到渲染线程
@@ -188,9 +228,21 @@ impl Host {
                 }
             }
 
+            // 收集该脏音轨的 time_group 集合，仅覆盖实际编辑区域
+            let dirty_time_groups: Vec<u32> = self
+                .hires_dirty_time_groups
+                .get(track_idx)
+                .map(|s| {
+                    let mut v: Vec<u32> = s.iter().copied().collect();
+                    v.sort_unstable();
+                    v
+                })
+                .unwrap_or_default();
+
             self.send_hires_dirty_overlay(lumino_gfx::render_thread::HiResTrackParams {
                 track_idx: *track_idx,
                 group_notes,
+                dirty_time_groups,
                 ppq,
                 key_count,
                 total_ticks,
@@ -219,6 +271,7 @@ impl Host {
             let dirty: Vec<u16> = self.hires_dirty_tracks.iter().copied().collect();
             self.hires_dirty_tracks.clear();
             self.hires_dirty_regions.clear();
+            self.hires_dirty_time_groups.clear();
             self.hires_last_edit = None;
             self.hires_overlay_sent = false;
             return Some(dirty);
@@ -250,15 +303,16 @@ impl Host {
     /// 重生成以音轨组为单位，使用整个 track_group 的最新音符数据，
     /// 避免同组其他音轨被覆盖为旧数据或空数据。
     pub fn force_hires_regen(&mut self, track_idx: u16) {
-        tracing::debug!("[onion-dirty] force_hires_regen 进入: track={}", track_idx);
+        tracing::info!("[onion-dirty] force_hires_regen 进入: track={}", track_idx);
         if !self.hires_dirty_tracks.remove(&track_idx) {
-            tracing::debug!(
-                "[onion-dirty] force_hires_regen 退出: track={} 不在脏集合",
+            tracing::info!(
+                "[onion-dirty] force_hires_regen 退出: track={} 不在脏集合（无需重生）",
                 track_idx
             );
             return; // 该音轨不脏，不触发
         }
         self.hires_dirty_regions.remove(&track_idx);
+        self.hires_dirty_time_groups.remove(&track_idx);
 
         let Some(cfg) = self.hires_config.clone() else {
             tracing::warn!("[onion-dirty] force_hires_regen 退出: hires_config 缺失");
@@ -277,10 +331,12 @@ impl Host {
         // 确保干净启动时也能正确推断音轨组范围。
         let track_count = (self.root.sidebar.tracks.len() as u16).max(track_idx + 1);
         let group_notes = self.collect_group_notes(track_idx, track_count);
-        tracing::debug!(
-            "[onion-dirty] force_hires_regen 发送命令: track={}, group_tracks={}, track_count={}, ppq={}, total_ticks={}",
+        let total_notes: usize = group_notes.iter().map(|n| n.len()).sum();
+        tracing::info!(
+            "[onion-dirty] force_hires_regen 发送 RegenerateHiResTrack 命令: track={}, group_tracks={}, total_notes={}, track_count={}, ppq={}, total_ticks={}",
             track_idx,
             group_notes.len(),
+            total_notes,
             track_count,
             ppq,
             total_ticks
@@ -289,6 +345,8 @@ impl Host {
         self.send_hires_regen(lumino_gfx::render_thread::HiResTrackParams {
             track_idx,
             group_notes,
+            // 重生命令做全量替换，不需要按 time_group 过滤
+            dirty_time_groups: Vec::new(),
             ppq,
             key_count,
             total_ticks,

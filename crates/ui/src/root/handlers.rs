@@ -543,7 +543,7 @@ impl Root {
                     "请先完成当前编辑（拖动 / 绘制 / 调整大小）后再执行撤销/重做",
                 );
             }
-            tracing::debug!(
+            tracing::info!(
                 "Editor: 拦截 {:?}（toast_enabled={}, edit_state={:?}）",
                 action,
                 self.intercept_notification_enabled(),
@@ -552,6 +552,8 @@ impl Root {
             return false;
         }
 
+        let notes_changed_before = self.editor.notes_changed();
+        let action_str = format!("{:?}", action);
         let old_tick = self.editor.playback_position;
         self.editor.handle_action(action);
         let new_tick = self.editor.playback_position;
@@ -564,11 +566,23 @@ impl Root {
         }
 
         if is_playhead_or_scroll {
+            tracing::info!(
+                "Editor: handle_editor_action 跳过 playhead/scroll 脏检查: action={}, notes_changed_before={}",
+                action_str,
+                notes_changed_before
+            );
             return false;
         }
 
         // 检查音符数据是否变化
         let notes_changed = self.editor.notes_changed();
+        tracing::info!(
+            "Editor: handle_editor_action 脏检查: action={}, notes_changed_before={}, notes_changed_after={}, will_clear={}",
+            action_str,
+            notes_changed_before,
+            notes_changed,
+            notes_changed
+        );
         if notes_changed {
             self.update_playback_notes();
             self.editor.clear_notes_changed();

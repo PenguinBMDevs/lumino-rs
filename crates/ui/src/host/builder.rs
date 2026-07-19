@@ -99,6 +99,7 @@ impl Host {
             scroll_tracker: ScrollVelocityTracker::new(),
             hires_dirty_tracks: std::collections::HashSet::new(),
             hires_dirty_regions: std::collections::HashMap::new(),
+            hires_dirty_time_groups: std::collections::HashMap::new(),
             hires_last_edit: None,
             hires_config: Some(hires_config),
             hires_midi_hash: Some(midi_hash),

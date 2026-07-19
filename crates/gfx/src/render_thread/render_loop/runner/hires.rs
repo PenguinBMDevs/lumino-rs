@@ -206,6 +206,8 @@ fn handle_regenerate_hires_track(
     let HiResTrackParams {
         track_idx,
         group_notes,
+        // 重生命令不使用 dirty_time_groups（全量替换）
+        dirty_time_groups: _,
         ppq,
         key_count,
         total_ticks,
@@ -214,8 +216,8 @@ fn handle_regenerate_hires_track(
         midi_hash,
     } = params;
     let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
-    tracing::debug!(
-        "[onion-render] RegenerateHiResTrack: track={}, track_group={}, group_tracks={}, track_count={}, meta_exists={}",
+    tracing::info!(
+        "[onion-render] RegenerateHiResTrack 收到命令: track={}, track_group={}, group_tracks={}, track_count={}, meta_exists={}",
         track_idx,
         track_group,
         group_notes.len(),
@@ -254,7 +256,7 @@ fn handle_regenerate_hires_track(
         for notes in &mut sorted_notes {
             notes.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
         }
-        tracing::debug!(
+        tracing::info!(
             "[onion-render] RegenerateHiResTrack 后台线程启动: track_group={}, all_groups={}, time_groups={}",
             track_group,
             all_track_groups,
@@ -298,6 +300,13 @@ fn handle_regenerate_hires_track(
                             read_track_tile_cache(&cache_dir, &mh, t, time_g, &expected_meta)
                         {
                             merge_track_tile_into(&mut merged_pixels, &tile);
+                        } else {
+                            tracing::info!(
+                                "[onion-render] RegenerateHiResTrack: 缓存缺失 tg={}, time_g={}, track={}",
+                                tg,
+                                time_g,
+                                t
+                            );
                         }
                     }
                 }
@@ -305,7 +314,7 @@ fn handle_regenerate_hires_track(
 
             if let Ok(guard) = tx.lock() {
                 let _ = guard.send(HiResStreamMsg::TimeGroupMerged {
-                    track_group: 0,
+                    track_group,
                     time_group: time_g,
                     pixels: merged_pixels,
                     width,
@@ -313,7 +322,7 @@ fn handle_regenerate_hires_track(
                 });
             }
 
-            tracing::debug!(
+            tracing::info!(
                 "[onion-render] RegenerateHiResTrack 进度: {}/{} ({:.1}%)",
                 time_g + 1,
                 time_groups,
@@ -321,10 +330,17 @@ fn handle_regenerate_hires_track(
             );
         }
 
+        // 所有 time_group 上传完毕后，清理该 track_group 的临时脏区域覆层。
+        // 必须在所有 TimeGroupMerged 之后发送，渲染线程按 FIFO 处理，
+        // 确保新底贴图全部上传后才清理覆层，避免底贴图缺失期间覆层也被清理
+        // 导致用户看到空白（洋葱皮消失）。
+        if let Ok(guard) = tx.lock() {
+            let _ = guard.send(HiResStreamMsg::ClearDirtyOverlay(track_group));
+        }
         if let Ok(guard) = tx.lock() {
             let _ = guard.send(HiResStreamMsg::Finished);
         }
-        tracing::debug!(
+        tracing::info!(
             "[onion-render] RegenerateHiResTrack 后台全轨合并完成: track_group={}",
             track_group
         );
@@ -345,6 +361,7 @@ fn handle_show_dirty_overlay(
     let HiResTrackParams {
         track_idx,
         group_notes,
+        dirty_time_groups,
         ppq,
         key_count,
         total_ticks,
@@ -353,11 +370,14 @@ fn handle_show_dirty_overlay(
         midi_hash: _,
     } = params;
     let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
-    tracing::debug!(
-        "[onion-render] ShowHiResDirtyOverlay: track={}, track_group={}, group_tracks={}, meta_exists={}",
+    let total_notes: usize = group_notes.iter().map(|n| n.len()).sum();
+    tracing::info!(
+        "[onion-render] ShowHiResDirtyOverlay 收到命令: track={}, track_group={}, group_tracks={}, total_notes={}, dirty_time_groups={:?}, meta_exists={}",
         track_idx,
         track_group,
         group_notes.len(),
+        total_notes,
+        dirty_time_groups,
         hires_meta.is_some()
     );
 
@@ -390,11 +410,42 @@ fn handle_show_dirty_overlay(
         notes.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
     }
 
+    // 确定需要生成覆层的 time_group 列表
+    //
+    // - 若调用方提供 dirty_time_groups（非空），只对这些 time_group 生成覆层，
+    //   避免覆盖未编辑区域导致原洋葱皮贴图被空白覆层盖住。
+    // - 若 dirty_time_groups 为空（例如旧调用方未提供），退化为遍历所有
+    //   time_group 以保持向后兼容。
+    let mut target_time_groups: Vec<u32> = dirty_time_groups;
+    target_time_groups.sort_unstable();
+    target_time_groups.dedup();
+    // 过滤掉超出 time_groups 范围的无效索引，防止 tick 溢出
+    let original_count = target_time_groups.len();
+    target_time_groups.retain(|&g| g < time_groups);
+    if target_time_groups.len() != original_count {
+        tracing::info!(
+            "[onion-render] ShowHiResDirtyOverlay: 过滤掉 {} 个超出 time_groups={} 范围的索引",
+            original_count - target_time_groups.len(),
+            time_groups
+        );
+    }
+    let target_time_groups: Vec<u32> = if target_time_groups.is_empty() {
+        tracing::info!(
+            "[onion-render] ShowHiResDirtyOverlay: dirty_time_groups 为空，退化为全量遍历 0..{} (向后兼容路径)",
+            time_groups
+        );
+        (0..time_groups).collect()
+    } else {
+        target_time_groups
+    };
+
     if let Some(renderer) = hires_renderer {
-        for time_g in 0..time_groups {
+        let mut uploaded = 0u32;
+        for &time_g in &target_time_groups {
             let tick_start = time_g * ticks_per_group;
             let tick_end = tick_start + ticks_per_group;
-            let merged_coord = TileCoord::new(0, time_g);
+            // 修复：使用实际 track_group，而非硬编码 0
+            let merged_coord = TileCoord::new(track_group, time_g);
 
             let mut track_tiles = Vec::with_capacity(sorted_notes.len());
             for (local_idx, notes) in sorted_notes.iter().enumerate() {
@@ -414,6 +465,13 @@ fn handle_show_dirty_overlay(
                 track_range,
             );
 
+            // 计算覆层中非透明像素数（用于日志诊断）
+            let non_transparent_pixels = group_tile
+                .pixels
+                .chunks_exact(4)
+                .filter(|c| c[3] != 0)
+                .count();
+
             renderer.upload_dirty_overlay(
                 &ctx.device,
                 &ctx.queue,
@@ -422,13 +480,24 @@ fn handle_show_dirty_overlay(
                 group_tile.width,
                 group_tile.height,
             );
+            tracing::info!(
+                "[onion-render] 上传覆层: coord={:?}, total_pixels={}, non_transparent={} ({:.1}%)",
+                merged_coord,
+                group_tile.pixels.len() / 4,
+                non_transparent_pixels,
+                (non_transparent_pixels as f32) * 100.0 / (group_tile.pixels.len() / 4) as f32
+            );
+            uploaded += 1;
         }
-        tracing::debug!(
-            "[onion-render] ShowHiResDirtyOverlay: 已上传 {} 个覆层贴图 (track_group={}), time_groups={}",
-            time_groups,
+        tracing::info!(
+            "[onion-render] ShowHiResDirtyOverlay 完成: 上传 {} 个覆层贴图 (track_group={}, target_time_groups={:?}), total_time_groups={}",
+            uploaded,
             track_group,
+            target_time_groups,
             time_groups,
         );
+    } else {
+        tracing::warn!("[onion-render] ShowHiResDirtyOverlay: hires_renderer 为空，跳过上传");
     }
 
     push_onion_progress(

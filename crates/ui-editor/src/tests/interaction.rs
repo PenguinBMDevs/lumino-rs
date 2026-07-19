@@ -91,6 +91,36 @@ fn test_track_switching() {
     assert_eq!(editor.editor_state.data.notes[0].key, 60); // 应该恢复原来的音符
 }
 
+/// 测试音轨切换不会误设 notes_changed
+///
+/// 切轨只是替换 data.notes 为另一轨数据，并非用户编辑，不能设置 notes_changed，
+/// 否则 Host::handle_action 会误判为脏音轨并触发高精度洋葱皮覆盖层/重生。
+#[test]
+fn test_track_switching_does_not_set_notes_changed() {
+    let mut editor = Editor::new();
+
+    editor
+        .editor_state
+        .data
+        .notes
+        .push_back(Note::new(0.0, 60, 480.0));
+    editor.mark_notes_changed();
+    assert!(editor.notes_changed());
+    editor.clear_notes_changed();
+    assert!(!editor.notes_changed());
+
+    // 切换到另一音轨后，notes_changed 必须保持 false
+    editor.switch_to_track(1);
+    assert_eq!(editor.current_track(), 1);
+    assert!(!editor.notes_changed(), "切轨不应设置 notes_changed 标志");
+
+    // 但空间索引必须标记为脏，以便后续命中测试重建
+    assert!(
+        editor.spatial.note_index_dirty.get(),
+        "切轨必须标记空间索引为脏"
+    );
+}
+
 /// 测试工具设置
 #[test]
 fn test_tool_setting() {

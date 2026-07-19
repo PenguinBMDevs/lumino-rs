@@ -30,6 +30,11 @@ impl Editor {
     pub fn mark_notes_changed(&mut self) {
         self.notes_changed = true;
         self.spatial.note_index_dirty.set(true);
+        // 诊断日志：打印调用栈，追踪 notes_changed 被误触发的来源
+        if std::env::var("LUMINO_TRACE_NOTES_CHANGED").is_ok() {
+            let backtrace = std::backtrace::Backtrace::capture();
+            tracing::info!("[onion-dirty] mark_notes_changed 调用栈:\n{}", backtrace);
+        }
     }
 
     /// 仅标记 ghost 位置变化（不触发空间索引重建）

@@ -80,6 +80,13 @@ pub struct Host {
     pub(crate) hires_dirty_tracks: std::collections::HashSet<u16>,
     /// 高精度贴图：脏区域追踪（track_idx → 脏音符列表），用于临时贴图覆层
     pub(crate) hires_dirty_regions: std::collections::HashMap<u16, Vec<lumino_gfx::OnionSkinNote>>,
+    /// 高精度贴图：每个脏音轨受影响的 time_group 集合
+    ///
+    /// 仅用于 `ShowHiResDirtyOverlay` 命令过滤覆层范围，避免覆盖未编辑的
+    /// time_group 导致原洋葱皮贴图被空白覆层盖住。
+    /// `RegenerateHiResTrack` 全量重生，不使用此字段。
+    pub(crate) hires_dirty_time_groups:
+        std::collections::HashMap<u16, std::collections::HashSet<u32>>,
     /// 高精度贴图：最后一次编辑时间（用于冷静期判断）
     pub(crate) hires_last_edit: Option<Instant>,
     /// 高精度贴图：全量配置（重生成时直接使用副本）

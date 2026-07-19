@@ -56,8 +56,12 @@ impl super::Editor {
         self.editor_state.interaction.selected_notes.clear();
         self.editor_state.interaction.hover_state = None;
         self.editor_state.interaction.edit_state = super::EditState::Idle;
-        // 标记音符数据已变化，触发空间索引重建和渲染更新
-        self.mark_notes_changed();
+        // 切轨只是替换当前显示的音符（data.notes 换成另一轨的数据），
+        // 并非用户编辑。需要重建空间索引并失效渲染缓存，
+        // 但不能设置 notes_changed，否则会被 handle_action 误判为脏音轨，
+        // 导致高精度洋葱皮覆盖层/重生被误触发。
+        self.spatial.note_index_dirty.set(true);
+        self.grid_cache.clear();
     }
 
     /// 获取当前音轨索引

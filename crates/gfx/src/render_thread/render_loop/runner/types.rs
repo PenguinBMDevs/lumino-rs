@@ -27,6 +27,11 @@ pub(crate) enum HiResStreamMsg {
         width: u32,
         height: u32,
     },
+    /// 单组重生已完成，清理该 track_group 的临时脏区域覆层
+    ///
+    /// 仅 `RegenerateHiResTrack` 路径发送，必须在所有 `TimeGroupMerged` 之后发送，
+    /// 渲染线程按 FIFO 处理，确保新底贴图全部上传后才清理覆层。
+    ClearDirtyOverlay(u32),
     /// 所有贴图生成完毕
     Finished,
 }
