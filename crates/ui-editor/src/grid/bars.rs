@@ -1,15 +1,22 @@
-//! 小节线/网格线绘制 — LOD（Level of Detail）平滑缩放
+//! 小节线/网格线绘制 — 层级化 LOD 渐隐
 //!
-//! # 算法
+//! # 核心思想
 //!
-//! 以**视口内可见小节数**为核心判断依据，计算每种线型是否显示。
-//! 可见小节数越少（放大）→ 线型越细 → 网格越密。
-//! 可见小节数越多（缩小）→ 线型越粗 → 网格越疏直至消失。
+//! 纵向线按音乐层级组织（粗 → 细）：
 //!
-//! 四种线型（小节线/拍线/半拍线/网格线）在一次遍历中按音乐层级决定。
-//! 多小节是"小节线可见间隔自适应翻倍"，不是独立层级。
+//! ```text
+//! 小节线 > 拍线（4分音符） > 半拍线（8分音符） > 16分网格 > ... > 512分网格
+//! ```
 //!
-//! 核心逻辑位于 [`compute_grid_lod`]，所有三个渲染路径共享同一算法。
+//! 缩放缩小时，**永远是最细的层级先淡出**；如果一条细线恰好落在更粗的层级上，
+//! 它由更粗的层级绘制，从而保持可见。
+//!
+//! 例如当视口最细显示到八分音符线时：
+//! - 八分音符线里属于四分音符的位置，继续按四分音符绘制；
+//! - 其余八分音符线才参与八分音符层的淡出。
+//!
+//! 小节线同样使用该淡出曲线：当基础小节间隔太密时，通过 `measure_power`
+//! 让间隔翻倍，并在每个 power 内保持 `[fade_start, fade_end]` 的连续淡出。
 
 use super::theme::ThemeExt;
 use crate::Editor;
@@ -18,121 +25,185 @@ use iced_widget::canvas::path::Builder;
 use iced_widget::canvas::{Frame, Path, Stroke};
 use lumino_ui_core::Renderer;
 
-// ─── LOD 阈值（基于可见小节数）───
+// ─── LOD 阈值（基于视口内可见小节数）───
 
-/// 网格线分档（可见小节数 → 最细网格间隔）
-/// 每档产生 ~192 线/视口（measures_per_viewport × ticks_per_measure / interval）。
-const GRID_TIERS: &[(f32, f32)] = &[
-    (0.375, 3.75), // 512分音符（beat/128）
-    (0.75, 7.5),   // 256分音符（beat/64）
-    (1.5, 15.0),   // 128分音符（beat/32）
-    (3.0, 30.0),   // 64分音符（beat/16）
-    (6.0, 60.0),   // 32分音符（beat/8）
-    (12.0, 120.0), // 16分音符（beat/4）
-];
-
-/// 半拍线（8分音符）可见上限：< 24 小节
-const HALFBEAT_MAX_MEASURES: f32 = 24.0;
-/// 拍线（4分音符）可见上限：< 48 小节
+/// 拍线（4分音符）完全消失阈值
 const BEAT_MAX_MEASURES: f32 = 48.0;
+/// 半拍线（8分音符）完全消失阈值
+const HALF_BEAT_MAX_MEASURES: f32 = 24.0;
 
-/// 小节间隔自适应：保持 ~48 个小节标记（缩放时线数不变）
-const MEASURE_TARGET_COUNT: f32 = 48.0;
+/// 小节线每个 power 的淡出起始可见小节数
+const MEASURE_FADE_START: f32 = 48.0;
+/// 小节线每个 power 的淡出结束可见小节数
+const MEASURE_FADE_END: f32 = 96.0;
 /// 小节间隔最大翻倍次数（2^6 = 64 小节间隔）
 const MAX_MEASURE_POWER: u32 = 6;
+/// 小节 LOD 层级数量
+const MAX_MEASURE_LEVELS: usize = (MAX_MEASURE_POWER + 1) as usize;
+
+/// 细分网格层级（从最细到最粗）。
+/// 元组为 `(max_measures, interval_ticks)`：
+/// - `max_measures`：该层级完全消失时的可见小节数
+/// - `interval_ticks`：该层级的 tick 间隔
+const GRID_TIERS: &[(f32, f32)] = &[
+    (0.25, 3.75), // 512分音符（beat/128）
+    (0.5, 7.5),   // 256分音符（beat/64）
+    (1.0, 15.0),  // 128分音符（beat/32）
+    (2.0, 30.0),  // 64分音符（beat/16）
+    (4.0, 60.0),  // 32分音符（beat/8）
+    (8.0, 120.0), // 16分音符（beat/4）
+];
 
 // ─── LOD 辅助函数 ───
 
-/// 线型 alpha 淡入（基于可见小节数离阈值的距离）
-fn alpha_fade(visible_measures: f32, max_measures: f32) -> f32 {
+/// 在 `[max/2, max]` 区间内从 1.0 平滑淡出到 0.0。
+fn smooth_fade(visible_measures: f32, max_measures: f32) -> f32 {
     if visible_measures >= max_measures {
         return 0.0;
     }
-    // 在 0 → max_measures 范围，alpha 从 1.0 → 0.0 平滑过渡
-    // 使用对数比例让过渡更自然
-    let t = 1.0 - (visible_measures / max_measures);
-    let t = t * t; // 平方缓出
-    0.3 + 0.7 * t
+    let start = max_measures * 0.5;
+    if visible_measures <= start {
+        return 1.0;
+    }
+    let t = (visible_measures - start) / (max_measures - start);
+    1.0 - t * t
+}
+
+/// 在任意 `[start, end]` 区间内从 1.0 平滑淡出到 0.0。
+fn smooth_fade_range(value: f32, start: f32, end: f32) -> f32 {
+    if value <= start {
+        return 1.0;
+    }
+    if value >= end {
+        return 0.0;
+    }
+    let t = (value - start) / (end - start);
+    1.0 - t * t
 }
 
 /// 小节线宽自适应
 fn measure_line_width(measure_power: u32) -> f32 {
-    // power 0 → 4.0, power 1 → 3.5, power 2 → 3.0, ... power 4+ → 2.0
-    (4.0 - (measure_power as f32 * 0.5).min(2.0)).max(2.0)
+    // power 0 → 4.0, power 1 → 3.5, ... power 4+ → 2.0
+    (4.0 - (measure_power as f32 * 0.5)).max(2.0)
 }
 
-/// 计算 LOD 参数（共享给 bars / editor_impl / gfx grid）
-pub fn compute_grid_lod(
-    visible_tick_range: f32,
-    ppq: f32,
-) -> (f32, f32, bool, bool, Option<f32>, f32, f32, f32, f32) {
-    let ticks_per_measure = ppq * 4.0;
-    let visible_measures = visible_tick_range / ticks_per_measure;
+/// 判断 `tick` 是否落在某条粗线上（允许浮点误差）。
+fn is_on_line(tick: f32, interval: f32) -> bool {
+    (tick % interval).abs() < 0.5
+}
 
-    // ── 1. 小节间隔自适应翻倍 ──
-    let measure_power = if visible_measures > MEASURE_TARGET_COUNT {
-        (visible_measures / MEASURE_TARGET_COUNT).log2().ceil() as u32
-    } else {
-        0
+/// 单个小节线 LOD 层级
+#[derive(Debug, Clone, Copy)]
+struct MeasureLod {
+    interval: f32,
+    alpha: f32,
+    width: f32,
+}
+
+impl MeasureLod {
+    const DEFAULT: Self = Self {
+        interval: 0.0,
+        alpha: 0.0,
+        width: 0.0,
     };
-    let measure_power = measure_power.min(MAX_MEASURE_POWER);
-    let measure_int = ticks_per_measure * (1u32 << measure_power) as f32;
-    let measure_width = measure_line_width(measure_power);
+}
 
-    // ── 2. 拍线 / 半拍线可见性 ──
-    let show_beats = visible_measures < BEAT_MAX_MEASURES;
-    let show_halfbeats = visible_measures < HALFBEAT_MAX_MEASURES;
+/// 单层 LOD 参数
+#[derive(Debug, Clone, Copy)]
+struct GridLod {
+    measures: [MeasureLod; MAX_MEASURE_LEVELS],
+    measure_count: usize,
+    beat_alpha: f32,
+    halfbeat_alpha: f32,
+    grid_alphas: [f32; GRID_TIERS.len()],
+}
 
-    // ── 3. 网格线 ──
-    let finest_grid = GRID_TIERS
-        .iter()
-        .find(|(max_measures, _)| visible_measures <= *max_measures)
-        .map(|(_, interval)| *interval);
+impl GridLod {
+    fn compute(visible_tick_range: f32, ppq: f32) -> Self {
+        let ticks_per_measure = ppq * 4.0;
+        let visible_measures = visible_tick_range / ticks_per_measure;
 
-    // ── 4. alpha ──
-    // 小节线始终有透明度（基于 measure_power）
-    let measure_alpha = if measure_power == 0 {
-        1.0
-    } else {
-        0.7 + 0.3 * (1.0 - (measure_power as f32 / MAX_MEASURE_POWER as f32))
-    };
+        // ── 小节线：每个 power 独立计算 alpha，粗线优先绘制 ──
+        // 这样可以保证：当细密的小节线淡出时，更粗的小节线已经可见，
+        // 不会出现“所有小节线一起消失”的断层。
+        let mut measures = [MeasureLod::DEFAULT; MAX_MEASURE_LEVELS];
+        let mut measure_count = 0;
+        for power in 0..=MAX_MEASURE_POWER {
+            let fade_start = MEASURE_FADE_START * (1u32 << power) as f32;
+            let fade_end = MEASURE_FADE_END * (1u32 << power) as f32;
+            let alpha = smooth_fade_range(visible_measures, fade_start, fade_end);
+            if alpha > 0.0 {
+                measures[measure_count] = MeasureLod {
+                    interval: ticks_per_measure * (1u32 << power) as f32,
+                    alpha,
+                    width: measure_line_width(power),
+                };
+                measure_count += 1;
+            }
+        }
 
-    let beat_alpha = if show_beats {
-        alpha_fade(visible_measures, BEAT_MAX_MEASURES)
-    } else {
-        0.0
-    };
-    let halfbeat_alpha = if show_halfbeats {
-        alpha_fade(visible_measures, HALFBEAT_MAX_MEASURES)
-    } else {
-        0.0
-    };
-    let grid_alpha = if let Some(g) = finest_grid {
-        // 查找阈值
-        let max_m = GRID_TIERS
+        // ── 拍线 / 半拍线 ──
+        let beat_alpha = smooth_fade(visible_measures, BEAT_MAX_MEASURES);
+        let halfbeat_alpha = smooth_fade(visible_measures, HALF_BEAT_MAX_MEASURES);
+
+        // ── 细分网格 ──
+        let mut grid_alphas = [0.0; GRID_TIERS.len()];
+        for (i, (max_measures, _)) in GRID_TIERS.iter().enumerate() {
+            grid_alphas[i] = smooth_fade(visible_measures, *max_measures);
+        }
+
+        Self {
+            measures,
+            measure_count,
+            beat_alpha,
+            halfbeat_alpha,
+            grid_alphas,
+        }
+    }
+}
+
+/// 线段绘制所需的视口/缩放上下文。
+struct LineDrawCtx {
+    zoom_x: f32,
+    scroll_x: f32,
+    keyboard_width: f32,
+    bounds_width: f32,
+    y0: f32,
+    y1: f32,
+}
+
+/// 把某一层的所有可见线段加入对应 Builder。
+///
+/// 若 `tick` 同时落在某个已处理的更粗层级上，则跳过，避免同一点被多次绘制。
+fn add_level_lines(
+    builder: &mut Builder,
+    start_tick: f32,
+    end_tick: f32,
+    interval: f32,
+    coarser_levels: &[(f32, f32)],
+    ctx: &LineDrawCtx,
+) {
+    let mut current_tick = (start_tick / interval).ceil() * interval;
+    while current_tick < end_tick {
+        let skip = coarser_levels
             .iter()
-            .find(|(_, interval)| *interval == g)
-            .map(|(m, _)| *m)
-            .unwrap_or(64.0);
-        alpha_fade(visible_measures, max_m)
-    } else {
-        0.0
-    };
+            .any(|(coarse_interval, coarse_alpha)| {
+                *coarse_alpha > 0.0 && is_on_line(current_tick, *coarse_interval)
+            });
 
-    (
-        measure_int,
-        measure_width,
-        show_beats,
-        show_halfbeats,
-        finest_grid,
-        measure_alpha,
-        beat_alpha,
-        halfbeat_alpha,
-        grid_alpha,
-    )
+        if !skip {
+            let screen_x = current_tick * ctx.zoom_x - ctx.scroll_x + ctx.keyboard_width;
+            if screen_x >= ctx.keyboard_width && screen_x <= ctx.bounds_width {
+                builder.move_to(Point::new(screen_x, ctx.y0));
+                builder.line_to(Point::new(screen_x, ctx.y1));
+            }
+        }
+
+        current_tick += interval;
+    }
 }
 
-/// 绘制小节线和拍线（纵向线）— LOD 平滑缩放
+/// 绘制小节线和拍线（纵向线）— 层级化 LOD 渐隐
 pub fn draw(
     editor: &Editor,
     frame: &mut Frame<Renderer>,
@@ -144,107 +215,125 @@ pub fn draw(
     let keyboard_width = view.keyboard_width;
     let ruler_height = view.ruler_height;
     let zoom_x = view.zoom_x;
+    let scroll_x = view.scroll_x;
 
-    let start_tick = view.scroll_x / zoom_x;
-    let end_tick = (view.scroll_x + bounds.width - keyboard_width) / zoom_x;
-    let tick_range = end_tick - start_tick;
+    let start_tick = scroll_x / zoom_x;
+    let end_tick = (scroll_x + bounds.width - keyboard_width) / zoom_x;
 
     // ── 1. 计算 LOD ──
-    let (
-        measure_int,
-        measure_width,
-        show_beats,
-        show_halfbeats,
-        finest_grid,
-        measure_alpha,
-        beat_alpha,
-        halfbeat_alpha,
-        grid_alpha,
-    ) = compute_grid_lod(tick_range, ppq);
+    let lod = GridLod::compute(end_tick - start_tick, ppq);
 
-    // ── 2. 确定迭代步长 ──
-    let step = finest_grid.unwrap_or(if show_halfbeats {
-        ppq / 2.0
-    } else if show_beats {
-        ppq
-    } else {
-        measure_int
-    });
-
-    // ── 3. 获取主题色 ──
+    // ── 2. 准备层级（从粗到细）──
     let bar_c = theme.bar_line_color();
     let beat_c = theme.beat_line_color();
     let halfbeat_c = theme.half_beat_line_color();
     let grid_c = theme.grid_line_color();
 
-    let bar_c = iced_core::Color {
-        a: bar_c.a * measure_alpha,
-        ..bar_c
-    };
-    let beat_c = iced_core::Color {
-        a: beat_c.a * beat_alpha,
-        ..beat_c
-    };
-    let halfbeat_c = iced_core::Color {
-        a: halfbeat_c.a * halfbeat_alpha,
-        ..halfbeat_c
-    };
-    let grid_c = iced_core::Color {
-        a: grid_c.a * grid_alpha,
-        ..grid_c
-    };
-
-    // ── 4. 一次遍历，音乐层级决定线型 ──
-    let mut bar_builder = Builder::new();
-    let mut beat_builder = Builder::new();
-    let mut halfbeat_builder = Builder::new();
-    let mut grid_builder = Builder::new();
-
-    let mut current_tick = (start_tick / step).ceil() * step;
-    while current_tick < end_tick {
-        let screen_x = (current_tick * zoom_x) - view.scroll_x + keyboard_width;
-
-        if screen_x >= keyboard_width && screen_x <= bounds.width {
-            let is_measure = (current_tick % measure_int).abs() < 0.5;
-            let is_beat = show_beats && (current_tick % ppq).abs() < 0.5;
-            let is_halfbeat = show_halfbeats && (current_tick % (ppq / 2.0)).abs() < 0.5;
-
-            if is_measure {
-                bar_builder.move_to(Point::new(screen_x, ruler_height));
-                bar_builder.line_to(Point::new(screen_x, bounds.height));
-            } else if is_beat {
-                beat_builder.move_to(Point::new(screen_x, ruler_height));
-                beat_builder.line_to(Point::new(screen_x, bounds.height));
-            } else if is_halfbeat {
-                halfbeat_builder.move_to(Point::new(screen_x, ruler_height));
-                halfbeat_builder.line_to(Point::new(screen_x, bounds.height));
-            } else if finest_grid.is_some() {
-                grid_builder.move_to(Point::new(screen_x, ruler_height));
-                grid_builder.line_to(Point::new(screen_x, bounds.height));
-            }
-        }
-        current_tick += step;
+    struct Level {
+        interval: f32,
+        alpha: f32,
+        width: f32,
+        color: iced_core::Color,
     }
 
-    // ── 5. 批量绘制（从粗到细）──
-    frame.stroke(
-        &bar_builder.build(),
-        Stroke::default()
-            .with_width(measure_width)
-            .with_color(bar_c),
-    );
-    frame.stroke(
-        &beat_builder.build(),
-        Stroke::default().with_width(1.5).with_color(beat_c),
-    );
-    frame.stroke(
-        &halfbeat_builder.build(),
-        Stroke::default().with_width(1.0).with_color(halfbeat_c),
-    );
-    frame.stroke(
-        &grid_builder.build(),
-        Stroke::default().with_width(0.5).with_color(grid_c),
-    );
+    let mut levels: Vec<Level> = Vec::with_capacity(lod.measure_count + 3 + GRID_TIERS.len());
+
+    // 小节线层级从粗到细加入（measure_count-1 是最粗的 power）
+    for i in (0..lod.measure_count).rev() {
+        let m = lod.measures[i];
+        levels.push(Level {
+            interval: m.interval,
+            alpha: m.alpha,
+            width: m.width,
+            color: iced_core::Color {
+                a: bar_c.a * m.alpha,
+                ..bar_c
+            },
+        });
+    }
+
+    levels.push(Level {
+        interval: ppq,
+        alpha: lod.beat_alpha,
+        width: 1.5,
+        color: iced_core::Color {
+            a: beat_c.a * lod.beat_alpha,
+            ..beat_c
+        },
+    });
+    levels.push(Level {
+        interval: ppq / 2.0,
+        alpha: lod.halfbeat_alpha,
+        width: 1.0,
+        color: iced_core::Color {
+            a: halfbeat_c.a * lod.halfbeat_alpha,
+            ..halfbeat_c
+        },
+    });
+
+    // 网格层级按从粗到细加入（GRID_TIERS 原始顺序为从细到粗，故反向遍历）
+    for i in (0..GRID_TIERS.len()).rev() {
+        let (max_measures, interval) = GRID_TIERS[i];
+        let alpha = lod.grid_alphas[i];
+        let fineness = (GRID_TIERS.len() - 1 - i) as f32;
+        let width = (0.5 - fineness * 0.05).max(0.25);
+
+        levels.push(Level {
+            interval,
+            alpha,
+            width,
+            color: iced_core::Color {
+                a: grid_c.a * alpha,
+                ..grid_c
+            },
+        });
+
+        // 避免编译器/ clippy 对未使用 `max_measures` 的警告。
+        let _ = max_measures;
+    }
+
+    // ── 3. 为每一层生成 Path ──
+    let mut builders: Vec<Builder> = levels.iter().map(|_| Builder::new()).collect();
+    let mut coarser: Vec<(f32, f32)> = Vec::with_capacity(levels.len());
+    let ctx = LineDrawCtx {
+        zoom_x,
+        scroll_x,
+        keyboard_width,
+        bounds_width: bounds.width,
+        y0: ruler_height,
+        y1: bounds.height,
+    };
+
+    for (i, level) in levels.iter().enumerate() {
+        if level.alpha <= 0.0 {
+            coarser.push((level.interval, level.alpha));
+            continue;
+        }
+
+        add_level_lines(
+            &mut builders[i],
+            start_tick,
+            end_tick,
+            level.interval,
+            &coarser,
+            &ctx,
+        );
+
+        coarser.push((level.interval, level.alpha));
+    }
+
+    // ── 4. 批量绘制（从粗到细，但因已做层级剔除，顺序不影响像素）──
+    for (builder, level) in builders.into_iter().zip(levels) {
+        if level.alpha <= 0.0 {
+            continue;
+        }
+        frame.stroke(
+            &builder.build(),
+            Stroke::default()
+                .with_width(level.width)
+                .with_color(level.color),
+        );
+    }
 
     // 底部基线
     let baseline_stroke = Stroke::default()
@@ -256,3 +345,6 @@ pub fn draw(
     );
     frame.stroke(&baseline, baseline_stroke);
 }
+
+#[cfg(test)]
+mod tests;

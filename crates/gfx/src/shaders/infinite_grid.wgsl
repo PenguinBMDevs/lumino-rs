@@ -1,10 +1,10 @@
-// 无限网格着色器 — LOD 平滑缩放
+// 无限网格着色器 — 层级化 LOD 渐隐
 //
-// 以视口内可见小节数为核心判断依据（与 CPU 端 bars.rs 算法一致）：
-// - < 12 小节 → 显示 1/16 细分网格线
-// - < 24 小节 → 显示半拍线（8分音符）
-// - < 48 小节 → 显示拍线（4分音符）
-// - ≥ 48 小节 → 仅显示小节线（间隔自适应翻倍）
+// 纵向线按音乐层级组织（粗 → 细）：
+//   小节线 > 拍线（4分音符） > 半拍线（8分音符） > 16分网格 > ... > 512分网格
+//
+// 缩放缩小时，最细的层级先淡出；落在更粗层级上的点由更粗的层级绘制。
+// 小节线通过 measure_power 间隔翻倍，并在每个 power 内连续淡出。
 
 // Viewport & Camera Uniforms
 struct CameraUniform {
@@ -68,18 +68,48 @@ fn is_black_key(key: i32) -> bool {
 
 // ─── LOD 阈值（基于可见小节数）───
 
-const GRID_MAX_MEASURES: f32 = 12.0;     // 1/16细分网格线可见上限
-const HALFBEAT_MAX_MEASURES: f32 = 24.0; // 半拍线（8分音符）可见上限
-const BEAT_MAX_MEASURES: f32 = 48.0;     // 拍线（4分音符）可见上限
+const BEAT_MAX_MEASURES: f32 = 48.0;       // 拍线（4分音符）完全消失阈值
+const HALF_BEAT_MAX_MEASURES: f32 = 24.0;  // 半拍线（8分音符）完全消失阈值
+const MEASURE_FADE_START: f32 = 48.0;      // 小节线每个 power 的淡出起始
+const MEASURE_FADE_END: f32 = 96.0;        // 小节线每个 power 的淡出结束
+const MAX_MEASURE_POWER: i32 = 6;          // 小节间隔最大翻倍次数
+const GRID_TIER_COUNT: i32 = 6;            // 细分网格层级数
 
-/// 线型透明度（淡入：阈值处 0.0 → 半阈值处 1.0）
-fn lod_alpha(visible_measures: f32, threshold: f32) -> f32 {
-    if visible_measures >= threshold {
+/// 在 [max/2, max] 内从 1.0 淡出到 0.0。
+fn smooth_fade(visible_measures: f32, max_measures: f32) -> f32 {
+    if visible_measures >= max_measures {
         return 0.0;
     }
-    // 在 threshold → 0 范围，alpha 从 0.0 → 1.0
-    let t = 1.0 - visible_measures / threshold;
-    return min(t * 2.0, 1.0);
+    let start = max_measures * 0.5;
+    if visible_measures <= start {
+        return 1.0;
+    }
+    let t = (visible_measures - start) / (max_measures - start);
+    return 1.0 - t * t;
+}
+
+/// 在 [start, end] 内从 1.0 淡出到 0.0。
+fn smooth_fade_range(value: f32, start: f32, end: f32) -> f32 {
+    if value <= start {
+        return 1.0;
+    }
+    if value >= end {
+        return 0.0;
+    }
+    let t = (value - start) / (end - start);
+    return 1.0 - t * t;
+}
+
+fn grid_tier_max_measures(tier: i32) -> f32 {
+    return 8.0 / f32(1u << u32(tier));
+}
+
+fn grid_tier_divisor(tier: i32) -> f32 {
+    return f32(4u << u32(tier));
+}
+
+fn grid_threshold_px(tier: i32) -> f32 {
+    return max(0.25, 0.5 - f32(tier) * 0.05);
 }
 
 @fragment
@@ -116,61 +146,65 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let tick_width = pixel_width / camera.zoom.x;
     let visible_measures = tick_width / ticks_per_measure;
 
-    // ─── 各线型 LOD alpha ───
-    let grid_alpha = lod_alpha(visible_measures, GRID_MAX_MEASURES);
-    let halfbeat_alpha = lod_alpha(visible_measures, HALFBEAT_MAX_MEASURES);
-    let beat_alpha = lod_alpha(visible_measures, BEAT_MAX_MEASURES);
+    // === 各层级 alpha ===
+    let beat_alpha = smooth_fade(visible_measures, BEAT_MAX_MEASURES);
+    let halfbeat_alpha = smooth_fade(visible_measures, HALF_BEAT_MAX_MEASURES);
 
     // === X轴坐标计算 ===
     let world_tick = (screen_x - camera.margins.x - camera.canvas_offset.x + camera.camera_pos.x) / camera.zoom.x;
 
     let ticks_per_beat = camera.ppq;
     let ticks_per_half_beat = camera.ppq / 2.0;
-    let ticks_per_grid = camera.ppq / 4.0;
 
     let base_width = 1.0;
     let before_tick_zero = world_tick < 0.0;
 
-    // 计算各线型距离（供后续 LOD 层级引用）
-    let measure_frac = fract(world_tick / ticks_per_measure);
-    let dist_measure = min(measure_frac, 1.0 - measure_frac) * ticks_per_measure * camera.zoom.x;
-
-    // 拍线距离
-    let beat_frac = fract(world_tick / ticks_per_beat);
-    let dist_beat = min(beat_frac, 1.0 - beat_frac) * ticks_per_beat * camera.zoom.x;
-
-    // 半拍线距离
-    let half_frac = fract(world_tick / ticks_per_half_beat);
-    let dist_half = min(half_frac, 1.0 - half_frac) * ticks_per_half_beat * camera.zoom.x;
-
-    // 1/16网格线距离
-    let grid_frac = fract(world_tick / ticks_per_grid);
-    let dist_grid = min(grid_frac, 1.0 - grid_frac) * ticks_per_grid * camera.zoom.x;
-
-    // X轴网格线（先检查）：纵向线
+    // X轴网格线（从粗到细检查，粗线优先绘制）
     if !before_tick_zero {
-        // 小节线（始终可见，最粗）
-        if dist_measure < base_width * 2.0 {
-            return camera.color_bar;
+        // 小节线：从粗到细遍历所有 power，保证细密小节线淡出时更粗的小节线已可见
+        for (var p: i32 = MAX_MEASURE_POWER; p >= 0; p = p - 1) {
+            let power = f32(p);
+            let measure_int = ticks_per_measure * pow(2.0, power);
+            let fade_start = MEASURE_FADE_START * pow(2.0, power);
+            let fade_end = MEASURE_FADE_END * pow(2.0, power);
+            let alpha = smooth_fade_range(visible_measures, fade_start, fade_end);
+            if alpha <= 0.0 {
+                continue;
+            }
+            let measure_width = max(2.0, 4.0 - power * 0.5);
+            let measure_frac = fract(world_tick / measure_int);
+            let dist_measure = min(measure_frac, 1.0 - measure_frac) * measure_int * camera.zoom.x;
+            if dist_measure < measure_width * 0.5 {
+                return mix(bg_color, camera.color_bar, alpha);
+            }
         }
 
-        // 拍线（LOD: < 48 小节可见）
-        if beat_alpha > 0.0 && dist_beat < base_width * 1.5 && dist_measure >= base_width * 2.0 {
+        // 拍线（4分音符）
+        let beat_frac = fract(world_tick / ticks_per_beat);
+        let dist_beat = min(beat_frac, 1.0 - beat_frac) * ticks_per_beat * camera.zoom.x;
+        if beat_alpha > 0.0 && dist_beat < base_width * 1.5 {
             return mix(bg_color, camera.color_beat, 0.8 * beat_alpha);
         }
 
-        // 半拍线（LOD: < 24 小节可见）
-        if halfbeat_alpha > 0.0 && dist_half < base_width
-            && dist_beat >= base_width * 1.5
-        {
+        // 半拍线（8分音符）
+        let half_frac = fract(world_tick / ticks_per_half_beat);
+        let dist_half = min(half_frac, 1.0 - half_frac) * ticks_per_half_beat * camera.zoom.x;
+        if halfbeat_alpha > 0.0 && dist_half < base_width {
             return mix(bg_color, camera.color_half_beat, 0.7 * halfbeat_alpha);
         }
 
-        // 1/16细分网格线（LOD: < 12 小节可见）
-        if grid_alpha > 0.0 && dist_grid < base_width * 0.5
-            && dist_half >= base_width
-        {
-            return mix(bg_color, camera.color_grid, 0.5 * grid_alpha);
+        // 细分网格（16分 → 512分，粗网格优先）
+        for (var tier: i32 = 0; tier < GRID_TIER_COUNT; tier = tier + 1) {
+            let tier_alpha = smooth_fade(visible_measures, grid_tier_max_measures(tier));
+            if tier_alpha <= 0.0 {
+                continue;
+            }
+            let interval = camera.ppq / grid_tier_divisor(tier);
+            let frac = fract(world_tick / interval);
+            let dist = min(frac, 1.0 - frac) * interval * camera.zoom.x;
+            if dist < grid_threshold_px(tier) {
+                return mix(bg_color, camera.color_grid, 0.5 * tier_alpha);
+            }
         }
     }
 
