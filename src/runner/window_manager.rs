@@ -53,6 +53,11 @@ impl WindowManager {
         // 因重新编译 pipeline 阻塞事件循环 900ms+。
         lumino_ui::prewarm_dialog_shared_engine(&gfx);
 
+        // 在后台预热系统字体缓存，使首次打开设置对话框时字体下拉菜单
+        // 的列表已就绪，不阻塞 UI 线程。字体扫描在后台线程调用
+        // get_cached_fonts() 完成，OnceLock 保证只扫一次。
+        lumino_core::font_scanner::prewarm_font_cache();
+
         let mut ui = lumino_ui::Host::new(
             window.clone(),
             physical_size.width,

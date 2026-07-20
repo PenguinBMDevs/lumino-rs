@@ -96,13 +96,19 @@ pub fn get_cached_fonts() -> &'static [FontInfo] {
     })
 }
 
-/// 在后台预热字体缓存。
+/// 在后台线程预热字体缓存。
 ///
-/// 应在应用启动的早期调用（例如主窗口创建后、首个对话框打开前），
-/// 使后续对话框的 RootState 构造可以直接克隆缓存而无需阻塞式扫描。
+/// 应在应用启动的早期调用（例如主窗口创建后），
+/// 使首次打开设置对话框时字体列表已缓存，不会阻塞 UI 线程。
+///
+/// 与 `prewarm_dialog_shared_engine` 同样的后台预热 pattern：
+/// 用 `std::thread::spawn` 将耗时的系统字体枚举移到后台，
+/// 主线程渲染时调用 `get_cached_fonts()` 直接获取已缓存的结果。
 pub fn prewarm_font_cache() {
-    puffin::profile_scope!("prewarm_font_cache");
-    let _ = get_cached_fonts();
+    std::thread::spawn(|| {
+        puffin::profile_scope!("prewarm_font_cache");
+        let _ = get_cached_fonts();
+    });
 }
 
 #[cfg(test)]
