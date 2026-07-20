@@ -62,43 +62,44 @@ pub(crate) fn ghost_delta_for_index(
     has_delta.then_some((delta_tick, delta_key))
 }
 
-/// 检查是否存在需要 ghost delta 的活跃拖动状态
+/// 检查是否存在需要 ghost delta 的活跃状态
 ///
-/// 当没有 pending 拖动且当前编辑状态不是 Dragging/DraggingSelection 时，
-/// `ghost_delta_for_index` 对所有音符都返回 None，可以完全跳过 per-element 调用。
+/// 仅检查 `pending_drag_state` 和单音符 `Dragging`。
+/// **DraggingSelection 期间不返回 ghost delta**——批量拖动时所有选中音符变化量相同，
+/// 无需每帧每元素计算，变化量在松开鼠标时一次性算完保存到 `pending_drag_state`。
 #[inline]
 fn has_active_ghost_delta(
     pending: &Option<lumino_core::DragState>,
     edit_state: &EditState,
 ) -> bool {
     pending.is_some()
-        || matches!(
-            edit_state,
-            EditState::Dragging { .. } | EditState::DraggingSelection { .. }
-        )
+        || matches!(edit_state, EditState::Dragging { .. })
 }
 
-/// 应用 ghost delta 到音符的 tick/key，返回幽灵位置
+/// 检查音符在当前状态下是否处于"幽灵"位置（即被拖动或 pending）
 ///
-/// 这是 `ghost_delta_for_index` 的封装，统一处理 None 和 Some 分支。
-/// 仅在 `has_active_ghost_delta` 为 true 时调用。
+/// 调用方在已知 `has_active_ghost_delta` 为 true 时，先用此函数判断是否需要
+/// 应用偏移，再使用预提取的 delta 计算最终位置。
+/// **DraggingSelection 不走此路径**——变化量只在松开鼠标时计算一次。
 #[inline]
-fn apply_ghost_delta(
+fn is_note_ghosted(
     i: usize,
-    tick: f32,
-    key: u16,
-    max_key: u16,
     pending: &Option<lumino_core::DragState>,
     edit_state: &EditState,
-) -> (f32, u16) {
-    if let Some((dt, dk)) = ghost_delta_for_index(i, pending, edit_state) {
-        (
-            (tick + dt as f32).max(0.0),
-            (key as i32 + dk as i32).clamp(0, max_key as i32) as u16,
-        )
-    } else {
-        (tick, key)
+) -> bool {
+    // 检查当前单音符拖动的选中状态
+    if let EditState::Dragging { drag_state, .. } = edit_state
+        && i < drag_state.selected.len() && drag_state.selected[i]
+    {
+        return true;
     }
+    // 检查 pending 拖动是否包含此音符
+    if let Some(pending) = pending
+        && i < pending.selected.len() && pending.selected[i]
+    {
+        return true;
+    }
+    false
 }
 
 impl Editor {
@@ -203,10 +204,30 @@ impl Editor {
                 &mut indices,
             );
             if needs_ghost {
+                // 只有 pending 或 Dragging（单音符）会进入此分支。
+                // DraggingSelection 不走此路径——变化量只在松开鼠标时计算一次。
+                let (drag_dt, drag_dk) = match edit_state {
+                    EditState::Dragging { drag_state, .. } => {
+                        (drag_state.delta_tick, drag_state.delta_key)
+                    }
+                    _ => (0i64, 0i16),
+                };
+
                 for &i in &indices {
                     if let Some(note) = self.editor_state.data.notes.get(i) {
-                        let (tick, key) =
-                            apply_ghost_delta(i, note.tick, note.key, max_key, pending, edit_state);
+                        let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
+                            let mut dt = drag_dt;
+                            let mut dk = drag_dk;
+                            if let Some(pending) = pending
+                                && i < pending.selected.len() && pending.selected[i]
+                            {
+                                dt = dt.saturating_add(pending.delta_tick);
+                                dk = dk.saturating_add(pending.delta_key);
+                            }
+                            ((note.tick + dt as f32).max(0.0), (note.key as i32 + dk as i32).clamp(0, max_key as i32) as u16)
+                        } else {
+                            (note.tick, note.key)
+                        };
                         result.push((tick, key, note.length));
                     }
                 }
@@ -220,9 +241,27 @@ impl Editor {
         } else {
             // 索引脏或不存在：线性扫描视口范围内的音符
             if needs_ghost {
+                let (drag_dt, drag_dk) = match edit_state {
+                    EditState::Dragging { drag_state, .. } => {
+                        (drag_state.delta_tick, drag_state.delta_key)
+                    }
+                    _ => (0i64, 0i16),
+                };
+
                 for (i, note) in self.editor_state.data.notes.iter().enumerate() {
-                    let (tick, key) =
-                        apply_ghost_delta(i, note.tick, note.key, max_key, pending, edit_state);
+                    let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
+                        let mut dt = drag_dt;
+                        let mut dk = drag_dk;
+                        if let Some(pending) = pending
+                            && i < pending.selected.len() && pending.selected[i]
+                        {
+                            dt = dt.saturating_add(pending.delta_tick);
+                            dk = dk.saturating_add(pending.delta_key);
+                        }
+                        ((note.tick + dt as f32).max(0.0), (note.key as i32 + dk as i32).clamp(0, max_key as i32) as u16)
+                    } else {
+                        (note.tick, note.key)
+                    };
                     let note_end = tick + note.length;
                     if key >= visible_key_min
                         && key <= visible_key_max

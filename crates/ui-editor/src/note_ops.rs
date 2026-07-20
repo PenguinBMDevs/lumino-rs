@@ -236,10 +236,7 @@ impl Editor {
 
         // 性能优化：先判断是否需要 ghost delta，避免在循环中每元素调用。
         let needs_ghost = pending.is_some()
-            || matches!(
-                edit_state,
-                EditState::Dragging { .. } | EditState::DraggingSelection { .. }
-            );
+            || matches!(edit_state, EditState::Dragging { .. });
 
         let mut min_t = f32::INFINITY;
         let mut max_te = f32::NEG_INFINITY;
@@ -251,8 +248,7 @@ impl Editor {
             // 性能优化：提取 drag_state delta 一次，避免在循环中每元素调用
             // ghost_delta_for_index。因为所有迭代的音符都是 selected 的。
             let (drag_dt, drag_dk) = match edit_state {
-                EditState::Dragging { drag_state, .. }
-                | EditState::DraggingSelection { drag_state } => {
+                EditState::Dragging { drag_state, .. } => {
                     (drag_state.delta_tick, drag_state.delta_key)
                 }
                 _ => (0i64, 0i16),

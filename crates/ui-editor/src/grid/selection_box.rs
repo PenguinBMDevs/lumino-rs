@@ -75,11 +75,9 @@ pub fn draw(
         let max_key = editor.editor_state.view.visible_key_count.saturating_sub(1);
 
         // 性能优化：先判断是否需要 ghost delta，避免在循环中每元素调用。
+        // DraggingSelection 期间不应用 ghost——变化量只在松开鼠标时计算一次。
         let needs_ghost = pending.is_some()
-            || matches!(
-                edit_state,
-                EditState::Dragging { .. } | EditState::DraggingSelection { .. }
-            );
+            || matches!(edit_state, EditState::Dragging { .. });
 
         let mut min_tick = f32::INFINITY;
         let mut max_tick_end = f32::NEG_INFINITY;
@@ -92,8 +90,7 @@ pub fn draw(
             // ghost_delta_for_index。因为我们知道所有迭代的音符都是 selected 的，
             // drag_state.selected[i] 恒为 true，无需在循环中重复检查。
             let (drag_dt, drag_dk) = match edit_state {
-                EditState::Dragging { drag_state, .. }
-                | EditState::DraggingSelection { drag_state } => {
+                EditState::Dragging { drag_state, .. } => {
                     (drag_state.delta_tick, drag_state.delta_key)
                 }
                 _ => (0i64, 0i16),

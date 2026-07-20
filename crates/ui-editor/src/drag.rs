@@ -128,7 +128,10 @@ impl Editor {
             }
             EditState::DraggingSelection { drag_state } => {
                 crate::puffin_profiler::dragging_selection();
-                // ghost 方案：仅更新 drag_state 的 delta，不写 notes
+                // 变化量不在拖动过程中逐帧计算——所有选中音符的 delta 相同。
+                // 这里只更新 drag_state.delta 供松开鼠标时一次性保存到 pending，
+                // 不触发重绘（collect_visible_note_data 不走 ghost 路径）。
+                // 视觉反馈：拖动期间音符显示原始位置，松开鼠标后 snap 到 ghost 位置。
                 let raw_delta_tick = snapped_tick - drag_state.initial_tick as f32;
                 let snapped_delta_tick = (raw_delta_tick / snap_precision).round() * snap_precision;
                 let delta_tick_i = snapped_delta_tick as i64;
@@ -136,10 +139,6 @@ impl Editor {
 
                 if delta_tick_i != drag_state.delta_tick || delta_key_i != drag_state.delta_key {
                     drag_state.set_delta(delta_tick_i, delta_key_i);
-                    // ghost 方案：data.notes 未变，仅 delta 变了。
-                    // 用 mark_ghost_dirty 触发 wgpu 重绘，不触发空间索引重建。
-                    // （误用 mark_notes_changed 会导致 3106 音符每帧重建 47ms × 60fps ≈ 2.8s 卡顿）
-                    self.mark_ghost_dirty();
                 }
             }
             EditState::ResizingSelectionStart { last_tick } => {
