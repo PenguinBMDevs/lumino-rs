@@ -12,6 +12,8 @@ const SHADER_SOURCE: &str = include_str!("../shaders/hires_tile.wgsl");
 /// 高精度贴图渲染器
 pub struct HiResRenderer {
     pub(super) pipeline: wgpu::RenderPipeline,
+    /// 视频导出等无 depth attachment 的 RenderPass 使用的管线
+    pub(super) pipeline_no_depth: wgpu::RenderPipeline,
     pub(super) bind_group_layout: wgpu::BindGroupLayout,
     pub(super) sampler: wgpu::Sampler,
     /// 已上传的贴图纹理（TileCoord → GPU 资源）
@@ -76,10 +78,13 @@ impl HiResRenderer {
             ],
         });
 
-        let pipeline = Self::create_pipeline(device, &bind_group_layout, texture_format);
+        let pipeline = Self::create_pipeline(device, &bind_group_layout, texture_format, true);
+        let pipeline_no_depth =
+            Self::create_pipeline(device, &bind_group_layout, texture_format, false);
 
         Self {
             pipeline,
+            pipeline_no_depth,
             bind_group_layout,
             sampler,
             tiles: HashMap::new(),
@@ -94,6 +99,7 @@ impl HiResRenderer {
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
         color_format: wgpu::TextureFormat,
+        needs_depth: bool,
     ) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("hires_tile_shader"),
@@ -126,7 +132,7 @@ impl HiResRenderer {
                 })],
             }),
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(wgpu::DepthStencilState {
+            depth_stencil: needs_depth.then_some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
                 depth_write_enabled: false,
                 depth_compare: wgpu::CompareFunction::Always,
@@ -422,6 +428,18 @@ impl HiResRenderer {
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
     ) {
-        self.pipeline = Self::create_pipeline(device, &self.bind_group_layout, color_format);
+        self.pipeline = Self::create_pipeline(device, &self.bind_group_layout, color_format, true);
+        self.pipeline_no_depth =
+            Self::create_pipeline(device, &self.bind_group_layout, color_format, false);
+    }
+
+    /// 根据 RenderPass 是否携带 depth attachment 选择对应的管线。
+    #[inline]
+    pub(super) fn pipeline_for(&self, has_depth: bool) -> &wgpu::RenderPipeline {
+        if has_depth {
+            &self.pipeline
+        } else {
+            &self.pipeline_no_depth
+        }
     }
 }

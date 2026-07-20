@@ -14,8 +14,9 @@ impl HiResRenderer {
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
         visible_coords: &[TileCoord],
+        render_pass_has_depth: bool,
     ) {
-        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_pipeline(self.pipeline_for(render_pass_has_depth));
         for coord in visible_coords {
             // Always draw base tile; dirty_overlay renders on top with alpha blending.
             // Transparent overlay pixels let base tile show through for non-modified tracks.
@@ -48,8 +49,9 @@ impl HiResRenderer {
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
         visible_coords: &[TileCoord],
+        render_pass_has_depth: bool,
     ) {
-        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_pipeline(self.pipeline_for(render_pass_has_depth));
         for coord in visible_coords {
             if let Some(gpu) = self.dirty_overlays.get(coord) {
                 render_pass.set_bind_group(0, &gpu.bind_group, &[]);

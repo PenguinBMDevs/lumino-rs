@@ -12,8 +12,7 @@ fn validate_wgsl(source: &str, label: &str) {
     let module = naga::front::wgsl::parse_str(source)
         .unwrap_or_else(|e| panic!("{} WGSL 解析失败: {:?}", label, e));
     // arrangement.wgsl 使用 f16 与 f32 混合运算，需要显式开启对应 capability。
-    let capabilities =
-        Capabilities::default() | Capabilities::SHADER_FLOAT16_IN_FLOAT32;
+    let capabilities = Capabilities::default() | Capabilities::SHADER_FLOAT16_IN_FLOAT32;
     let mut validator = Validator::new(ValidationFlags::default(), capabilities);
     validator
         .validate(&module)

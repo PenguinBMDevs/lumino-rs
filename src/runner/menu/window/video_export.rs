@@ -4,8 +4,10 @@
 
 use lumino_gfx::{
     ARRANGEMENT_PALETTE, GridViewParams, NoteInstance, RenderParams, generate_grid_instances,
-    generate_ruler_instances, is_black_key, pack_color,
+    generate_ruler_instances, pack_color,
 };
+
+pub mod keyboard;
 
 // ── 时间计算 ──
 
@@ -159,84 +161,7 @@ pub(super) fn build_video_render_params(
 
 // ── 键盘贴图 ──
 
-/// 生成完整键盘贴图（BGRA 像素数据，与视频帧格式一致）
-///
-/// 生成一个从最高键到最低键的完整键盘图像，与 note shader 的 Y 轴方向一致
-/// （高键在上，低键在下）。返回 (pixels, width, height)。
-///
-/// 注意：key_count 固定为 128 以匹配标准 MIDI 键盘。
-/// 使用 ceil() 进行像素到键位的映射，确保键盘边界与 note shader 对齐。
-/// 直接生成 BGRA 格式以避免每帧合成时做 RGBA→BGRA 转换。
-pub(super) fn generate_keyboard_texture(
-    _width: u32,
-    height: u32,
-    key_count: u16,
-) -> (Vec<u8>, u32, u32) {
-    const KB_WIDTH: f32 = 60.0;
-    const RULER_HEIGHT: f32 = 30.0;
-    const KEY_COUNT: u16 = 128;
-    let kb_w = KB_WIDTH as u32;
-
-    // 键盘区域从 ruler 下方开始
-    let ruler_h = RULER_HEIGHT as u32;
-    if height <= ruler_h || key_count == 0 {
-        return (Vec::new(), 0, 0);
-    }
-    let kb_h = height - ruler_h;
-    let key_count_f = KEY_COUNT as f32;
-    let zoom_y = kb_h as f32 / key_count_f;
-
-    let mut pixels = vec![0u8; (kb_w * kb_h * 4) as usize];
-
-    for py in 0..kb_h {
-        // Y 向：键 0 在底部，最高键在顶部（与 note shader 一致）
-        // 使用 ceil() 确保键盘边界与 note shader 的精确边界匹配：
-        // note shader: screen_y = (max_key_index - key) * zoom_y + ruler_height
-        // 键盘像素 py 映射到 key = ceil(max_key_index - py / zoom_y)
-        // 这保证了每个键占据的像素范围与 note shader 渲染的矩形完全一致
-        let key_f = (key_count_f - 1.0) - py as f32 / zoom_y;
-        let key_idx = key_f.ceil() as i32;
-        if key_idx < 0 || key_idx >= KEY_COUNT as i32 {
-            continue;
-        }
-        let is_black = is_black_key(key_idx as isize);
-
-        // 标准黑白色：白键纯白，黑键纯黑
-        // 白键底部添加 1px 浅灰边框作键位分隔
-        let is_bottom_border = {
-            let next_key_f = (key_count_f - 1.0) - (py as f32 + 1.0) / zoom_y;
-            let next_key_idx = next_key_f.ceil() as i32;
-            next_key_idx != key_idx
-        };
-
-        for px in 0..kb_w {
-            let idx = ((py * kb_w + px) * 4) as usize;
-
-            let (r, g, b) = if is_black {
-                // 黑键：纯黑，底部加 1px 深灰边框
-                if is_bottom_border {
-                    (40, 40, 40)
-                } else {
-                    (0, 0, 0) // 标准黑键
-                }
-            } else {
-                // 白键：纯白，底部加 1px 浅灰边框
-                if is_bottom_border {
-                    (200, 200, 200)
-                } else {
-                    (255, 255, 255) // 标准白键
-                }
-            };
-
-            pixels[idx] = b; // BGRA: B 通道
-            pixels[idx + 1] = g; // BGRA: G 通道
-            pixels[idx + 2] = r; // BGRA: R 通道
-            pixels[idx + 3] = 255;
-        }
-    }
-
-    (pixels, kb_w, kb_h)
-}
+pub use keyboard::generate_keyboard_texture;
 
 // ── 标尺小节号数字渲染 ──
 
@@ -408,37 +333,4 @@ pub(super) fn composite_ruler_numbers(
 
 // ── 键盘合成 ──
 
-/// 将键盘贴图合成到视频帧上（BGRA 格式，in-place 修改）
-///
-/// 贴图与帧均为 BGRA 格式，直接逐行 memcpy，避免逐像素转换。
-pub(super) fn composite_keyboard(
-    frame: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    keyboard_pixels: &[u8],
-    kb_width: u32,
-    kb_height: u32,
-) {
-    let ruler_h = 30u32;
-    if frame_width == 0 || frame_height == 0 || keyboard_pixels.is_empty() {
-        return;
-    }
-    let kb_w = kb_width.min(frame_width);
-    let kb_h = kb_height.min(frame_height.saturating_sub(ruler_h));
-    let row_bytes = (kb_w * 4) as usize;
-    let frame_stride = (frame_width * 4) as usize;
-    let kb_stride = (kb_width * 4) as usize;
-
-    for py in 0..kb_h {
-        let frame_y = ruler_h + py;
-        if frame_y >= frame_height {
-            break;
-        }
-        let frame_start = frame_y as usize * frame_stride;
-        let kb_start = py as usize * kb_stride;
-        if frame_start + row_bytes <= frame.len() && kb_start + row_bytes <= keyboard_pixels.len() {
-            frame[frame_start..frame_start + row_bytes]
-                .copy_from_slice(&keyboard_pixels[kb_start..kb_start + row_bytes]);
-        }
-    }
-}
+pub use keyboard::composite_keyboard;

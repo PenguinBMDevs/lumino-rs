@@ -176,6 +176,10 @@ fn run_video_export_task(
 ) {
     let start = std::time::Instant::now();
 
+    // 按键颜色增量扫描状态（与编辑器 PlaybackScanState 等价）
+    let mut key_color_state = super::video_export::keyboard::PlaybackKeyColorState::default();
+    let mut key_colors = [0u8; super::video_export::keyboard::KEY_COLOR_BYTES];
+
     // 创建帧数据通道与回收通道
     let (frame_tx, frame_rx) = channel::<Vec<u8>>();
     let (recycle_tx, recycle_rx) = channel::<Vec<u8>>();
@@ -227,7 +231,8 @@ fn run_video_export_task(
 
     // 流水线渲染：Runner 预填充 4 帧命令，让 staging ring 从开始就满载，
     // 之后每处理完一帧立即补发下一帧，保持 GPU/CPU 流水线持续运转。
-    let mut param_queue: std::collections::VecDeque<(f32, f32, f32, u32)> =
+    // 每帧参数携带该帧的按键高亮颜色（RGBAx256 键），用于后台线程合成键盘。
+    let mut param_queue: std::collections::VecDeque<(f32, f32, f32, u32, [u8; 1024])> =
         std::collections::VecDeque::new();
     let mut processed_frames = 0u64;
     let mut cancelled = false;
@@ -242,37 +247,53 @@ fn run_video_export_task(
     let mut stat_frame_count = 0u64;
 
     // 闭包不捕获 param_queue，而是作为参数传入，避免与主循环中的 pop_front 产生可变借用冲突。
-    let enqueue_frame = |queue: &mut std::collections::VecDeque<(f32, f32, f32, u32)>,
-                         frame_idx: u64|
-     -> bool {
-        let time_sec = frame_idx as f64 / fps_f64;
-        let tick = super::video_export::seconds_to_tick(time_sec, tempo_changes, ppq);
+    let mut enqueue_frame =
+        |queue: &mut std::collections::VecDeque<(f32, f32, f32, u32, [u8; 1024])>,
+         frame_idx: u64|
+         -> bool {
+            let time_sec = frame_idx as f64 / fps_f64;
+            let tick = super::video_export::seconds_to_tick(time_sec, tempo_changes, ppq);
 
-        // 计算 scroll_x / zoom_x，用于标尺小节号合成
-        let video_kb_width = 60.0f32;
-        let video_viewport_tick_span = (ppq * 16).max(1) as f32;
-        let video_zoom_x = (width as f32 - video_kb_width) / video_viewport_tick_span;
-        let video_scroll_x = tick as f32 * video_zoom_x;
+            // 根据当前播放 tick 增量计算按键高亮颜色
+            super::video_export::keyboard::update_playback_key_colors(
+                &document,
+                tick,
+                &mut key_color_state,
+                &mut key_colors,
+            );
 
-        // 入队帧合成参数（与帧数据 FIFO 对应）
-        queue.push_back((video_scroll_x, video_zoom_x, video_kb_width, ppq));
+            // 计算 scroll_x / zoom_x，用于标尺小节号合成
+            let video_kb_width = 60.0f32;
+            let video_viewport_tick_span = (ppq * 16).max(1) as f32;
+            let video_zoom_x = (width as f32 - video_kb_width) / video_viewport_tick_span;
+            let video_scroll_x = tick as f32 * video_zoom_x;
 
-        let params = super::video_export::build_video_render_params(
-            width, height, tick, &document, ppq, key_count,
-        );
+            // 入队帧合成参数（与帧数据 FIFO 对应）
+            queue.push_back((
+                video_scroll_x,
+                video_zoom_x,
+                video_kb_width,
+                ppq,
+                key_colors,
+            ));
 
-        if cmd_sender
-            .send(RenderCommand::Control(ControlCommand::RenderVideoFrame {
-                params: Box::new(params),
-            }))
-            .is_err()
-        {
-            tracing::error!("发送 RenderVideoFrame 命令失败");
-            let _ = progress_tx.send(("导出失败：渲染线程通信错误".to_string(), -1.0, 0, 0.0, 0.0));
-            return true;
-        }
-        false
-    };
+            let params = super::video_export::build_video_render_params(
+                width, height, tick, &document, ppq, key_count,
+            );
+
+            if cmd_sender
+                .send(RenderCommand::Control(ControlCommand::RenderVideoFrame {
+                    params: Box::new(params),
+                }))
+                .is_err()
+            {
+                tracing::error!("发送 RenderVideoFrame 命令失败");
+                let _ =
+                    progress_tx.send(("导出失败：渲染线程通信错误".to_string(), -1.0, 0, 0.0, 0.0));
+                return true;
+            }
+            false
+        };
 
     // 预填充 inflight，让 GPU 从第一帧就进入流水线满载状态
     for _ in 0..PIPELINE_DEPTH.min(total_frames as usize) {
@@ -309,7 +330,9 @@ fn run_video_export_task(
         };
         let recv_us = recv_start.elapsed().as_micros() as u64;
 
-        let p = param_queue.pop_front().unwrap_or((0.0, 1.0, 60.0, ppq));
+        let p = param_queue
+            .pop_front()
+            .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024]));
         let (should_stop, stats) = composite_and_encode_frame(
             data,
             p,
@@ -412,7 +435,9 @@ fn run_video_export_task(
         };
         let recv_us = recv_start.elapsed().as_micros() as u64;
 
-        let p = param_queue.pop_front().unwrap_or((0.0, 1.0, 60.0, ppq));
+        let p = param_queue
+            .pop_front()
+            .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024]));
         let (should_stop, stats) = composite_and_encode_frame(
             data,
             p,
@@ -516,7 +541,7 @@ struct FrameStageStats {
 #[allow(clippy::too_many_arguments)]
 fn composite_and_encode_frame(
     mut data: Vec<u8>,
-    params: (f32, f32, f32, u32),
+    params: (f32, f32, f32, u32, [u8; 1024]),
     encoder: &mut FfmpegEncoder,
     progress_tx: &tokio::sync::mpsc::UnboundedSender<(String, f64, u64, f64, f64)>,
     preview_tx: &tokio::sync::mpsc::UnboundedSender<(Vec<u8>, u32, u32)>,
@@ -531,7 +556,7 @@ fn composite_and_encode_frame(
     recycle_tx: &std::sync::mpsc::Sender<Vec<u8>>,
 ) -> (bool, FrameStageStats) {
     let mut stats = FrameStageStats::default();
-    let (sx, zx, kw, ppq_val) = params;
+    let (sx, zx, kw, ppq_val, key_colors) = params;
 
     if data.is_empty() {
         tracing::warn!("帧读回为空，跳过");
@@ -547,6 +572,7 @@ fn composite_and_encode_frame(
             keyboard_pixels,
             kb_w,
             kb_h,
+            &key_colors,
         );
     }
     super::video_export::composite_ruler_numbers(&mut data, width, height, sx, zx, kw, ppq_val);
