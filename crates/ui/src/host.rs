@@ -138,6 +138,11 @@ impl Host {
         self.root.settings()
     }
 
+    /// 获取当前 wgpu 纹理格式（用于视频导出时匹配 ffmpeg `-pix_fmt`）
+    pub fn texture_format(&self) -> lumino_gfx::TextureFormat {
+        self.render_ctx.format
+    }
+
     /// 调整窗口大小
     pub fn resize(&mut self, width: u32, height: u32) {
         self.render_ctx.viewport = Viewport::with_physical_size(

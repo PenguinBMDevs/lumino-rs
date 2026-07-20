@@ -15,17 +15,36 @@ pub fn execute_render_pass(
     render_notes: bool,
     frame: &mut RenderFrameState,
 ) {
-    let (Some(texture), Some(depth_view)) = (
-        frame.current_texture.as_ref(),
-        frame.depth_texture_view.as_ref(),
-    ) else {
+    let Some(texture) = frame.current_texture.as_ref() else {
         return;
     };
 
     let width = params.viewport_size.0.max(1);
     let height = params.viewport_size.1.max(1);
 
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    // 优先使用 ensure_textures 缓存的 texture view；未命中时退化为每帧创建
+    let mut fresh_view: Option<wgpu::TextureView> = None;
+    let view: &wgpu::TextureView = if let Some(v) = frame.texture_view.as_ref() {
+        v
+    } else {
+        fresh_view = Some(texture.create_view(&wgpu::TextureViewDescriptor::default()));
+        match fresh_view {
+            Some(ref v) => v,
+            None => unreachable!(),
+        }
+    };
+
+    // depth 仅在需要时存在（视频导出为纯 2D，跳过 depth attachment）
+    let depth_view = frame.depth_texture_view.as_ref();
+
+    let depth_stencil_attachment = depth_view.map(|dv| wgpu::RenderPassDepthStencilAttachment {
+        view: dv,
+        depth_ops: Some(wgpu::Operations {
+            load: wgpu::LoadOp::Clear(1.0),
+            store: wgpu::StoreOp::Discard,
+        }),
+        stencil_ops: None,
+    });
 
     let clear_color = wgpu::Color {
         r: params.background_color[0],
@@ -47,14 +66,7 @@ pub fn execute_render_pass(
                 },
                 depth_slice: None,
             })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: depth_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
+            depth_stencil_attachment: depth_stencil_attachment.clone(),
             timestamp_writes: None,
             occlusion_query_set: None,
         });
@@ -93,14 +105,7 @@ pub fn execute_render_pass(
                 },
                 depth_slice: None,
             })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: depth_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
+            depth_stencil_attachment: depth_stencil_attachment.clone(),
             timestamp_writes: None,
             occlusion_query_set: None,
         });
@@ -159,6 +164,11 @@ pub fn execute_render_pass(
                 .cc_bar
                 .draw(&mut render_pass, params.cc_bar_instances.len() as u32);
         }
+    }
+
+    // 若本帧退化为每帧创建 view，则缓存它供后续复用
+    if let Some(v) = fresh_view {
+        *frame.texture_view = Some(v);
     }
 }
 

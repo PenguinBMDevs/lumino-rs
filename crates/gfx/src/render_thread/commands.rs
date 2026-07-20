@@ -112,6 +112,8 @@ pub enum ControlCommand {
         height: u32,
         /// 帧数据回传通道（渲染线程 → Runner）
         frame_tx: FrameSender,
+        /// 帧缓冲区回收通道（ffmpeg 写入线程 → 渲染线程对象池）
+        recycle_rx: std::sync::mpsc::Receiver<Vec<u8>>,
     },
     /// 渲染一帧视频并读回 BGRA 数据
     ///

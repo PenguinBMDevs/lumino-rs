@@ -53,3 +53,5 @@ pub use ruler_renderer::{
 pub use swappable_buffer::{AtomicSwappableBuffer, MpscQueue, RenderData, SwappableBuffer};
 
 pub use render_thread::RenderParams;
+/// 重导出 wgpu 纹理格式，供 UI 层匹配视频导出像素格式
+pub use wgpu::TextureFormat;

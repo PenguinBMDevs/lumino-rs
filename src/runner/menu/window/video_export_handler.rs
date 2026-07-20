@@ -3,7 +3,8 @@
 use crate::runner::{RunnerInner, dialog_manager::DialogType};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{TryRecvError, channel};
+use std::sync::mpsc::channel;
+use std::time::{Duration, Instant};
 
 use lumino_export::video::{
     FfmpegEncoder, VideoExportConfig,
@@ -74,9 +75,17 @@ impl RunnerInner {
             .dialog_manager
             .open_dialog(DialogType::VideoExport);
 
-        // 获取渲染线程命令发送端
+        // 获取渲染线程命令发送端与纹理格式
         let main_ui = self.window_state.window.ui();
         let cmd_sender = main_ui.render_command_sender();
+        let input_pix_fmt =
+            match main_ui.texture_format() {
+                lumino_gfx::TextureFormat::Bgra8Unorm
+                | lumino_gfx::TextureFormat::Bgra8UnormSrgb => "bgra",
+                lumino_gfx::TextureFormat::Rgba8Unorm
+                | lumino_gfx::TextureFormat::Rgba8UnormSrgb => "rgba",
+                _ => "bgra",
+            };
 
         if cmd_sender.is_none() {
             tracing::error!("视频导出失败：渲染线程未启动");
@@ -140,6 +149,7 @@ impl RunnerInner {
                     width,
                     height,
                     cancel_flag,
+                    input_pix_fmt,
                 );
             });
     }
@@ -162,11 +172,16 @@ fn run_video_export_task(
     width: u32,
     height: u32,
     cancel_flag: Arc<AtomicBool>,
+    input_pix_fmt: &'static str,
 ) {
     let start = std::time::Instant::now();
 
-    // 创建 FFmpeg 编码器
-    let mut encoder = match FfmpegEncoder::new(&config) {
+    // 创建帧数据通道与回收通道
+    let (frame_tx, frame_rx) = channel::<Vec<u8>>();
+    let (recycle_tx, recycle_rx) = channel::<Vec<u8>>();
+
+    // 创建 FFmpeg 编码器（直连写入模式，缓冲区由调用方在 write_frame 后归还对象池）
+    let mut encoder = match FfmpegEncoder::new(&config, input_pix_fmt) {
         Ok(e) => e,
         Err(e) => {
             tracing::error!("FFmpeg 创建失败: {e}");
@@ -175,11 +190,15 @@ fn run_video_export_task(
         }
     };
 
-    // 创建帧数据通道
-    let (frame_tx, frame_rx) = channel::<Vec<u8>>();
-
-    // 发送初始渲染命令（StartVideoExport）
-    if send_initial_render_commands(&cmd_sender, ppq, width, height, frame_tx, &progress_tx) {
+    // 发送初始渲染命令（StartVideoExport），携带帧缓冲回收通道
+    if send_initial_render_commands(
+        &cmd_sender,
+        width,
+        height,
+        frame_tx,
+        recycle_rx,
+        &progress_tx,
+    ) {
         return;
     }
 
@@ -196,32 +215,37 @@ fn run_video_export_task(
         ppq
     );
 
-    let mut last_stat_time = std::time::Instant::now();
+    let mut last_stat_time = Instant::now();
     let mut frames_since_stat = 0u64;
     let mut smoothed_fps = 0.0f64;
-    let mut last_preview_time = std::time::Instant::now();
+    let mut last_preview_time = Instant::now();
     let mut preview_sent = false;
 
     // ★ 生成键盘贴图（使用 CPU 贴图方式，在帧数据上合成）
     let (keyboard_pixels, kb_w, kb_h) =
         super::video_export::generate_keyboard_texture(width, height, key_count);
 
-    // 流水线渲染：利用四重缓冲让 GPU 渲染与 CPU 合成/编码重叠
-    // 渲染线程不再每帧 wait_read，inflight 达到上限时才读回
-    // Runner 用 param_queue 跟踪每帧合成参数，try_recv 非阻塞接收
+    // 流水线渲染：Runner 预填充 4 帧命令，让 staging ring 从开始就满载，
+    // 之后每处理完一帧立即补发下一帧，保持 GPU/CPU 流水线持续运转。
     let mut param_queue: std::collections::VecDeque<(f32, f32, f32, u32)> =
         std::collections::VecDeque::new();
     let mut processed_frames = 0u64;
     let mut cancelled = false;
+    let mut next_frame_to_send = 0u64;
+    const PIPELINE_DEPTH: usize = 4;
 
-    // 逐帧渲染：发送命令 + try_recv 处理已就绪的帧
-    for frame in 0..total_frames {
-        if cancel_flag.load(Ordering::Relaxed) {
-            tracing::info!("视频导出：用户取消，正在收尾...");
-            cancelled = true;
-            break;
-        }
-        let time_sec = frame as f64 / fps_f64;
+    // 各阶段耗时累加器（微秒），用于每 100ms 输出阶段打点日志
+    let mut acc_recv_us = 0u64;
+    let mut acc_composite_us = 0u64;
+    let mut acc_preview_us = 0u64;
+    let mut acc_encode_us = 0u64;
+    let mut stat_frame_count = 0u64;
+
+    // 闭包不捕获 param_queue，而是作为参数传入，避免与主循环中的 pop_front 产生可变借用冲突。
+    let enqueue_frame = |queue: &mut std::collections::VecDeque<(f32, f32, f32, u32)>,
+                         frame_idx: u64|
+     -> bool {
+        let time_sec = frame_idx as f64 / fps_f64;
         let tick = super::video_export::seconds_to_tick(time_sec, tempo_changes, ppq);
 
         // 计算 scroll_x / zoom_x，用于标尺小节号合成
@@ -231,7 +255,7 @@ fn run_video_export_task(
         let video_scroll_x = tick as f32 * video_zoom_x;
 
         // 入队帧合成参数（与帧数据 FIFO 对应）
-        param_queue.push_back((video_scroll_x, video_zoom_x, video_kb_width, ppq));
+        queue.push_back((video_scroll_x, video_zoom_x, video_kb_width, ppq));
 
         let params = super::video_export::build_video_render_params(
             width, height, tick, &document, ppq, key_count,
@@ -245,113 +269,190 @@ fn run_video_export_task(
         {
             tracing::error!("发送 RenderVideoFrame 命令失败");
             let _ = progress_tx.send(("导出失败：渲染线程通信错误".to_string(), -1.0, 0, 0.0, 0.0));
+            return true;
+        }
+        false
+    };
+
+    // 预填充 inflight，让 GPU 从第一帧就进入流水线满载状态
+    for _ in 0..PIPELINE_DEPTH.min(total_frames as usize) {
+        if cancel_flag.load(Ordering::Relaxed) {
+            tracing::info!("视频导出：用户取消，正在收尾...");
+            cancelled = true;
+            break;
+        }
+        if enqueue_frame(&mut param_queue, next_frame_to_send) {
+            cancelled = true;
+            break;
+        }
+        next_frame_to_send += 1;
+    }
+
+    // 主循环：每收到一帧就合成/编码，并立即补发下一帧命令
+    while processed_frames < total_frames && !cancelled {
+        if cancel_flag.load(Ordering::Relaxed) {
+            tracing::info!("视频导出：用户取消，正在收尾...");
             cancelled = true;
             break;
         }
 
-        // 处理已就绪的帧数据
-        loop {
-            let data = if param_queue.len() >= 4 {
-                // inflight 达到上限，阻塞等最早的一帧
-                match frame_rx.recv() {
-                    Ok(d) => d,
-                    Err(_) => {
-                        tracing::error!("帧数据通道关闭");
-                        let _ = progress_tx.send((
-                            "导出失败：帧数据通道关闭".to_string(),
-                            -1.0,
-                            0,
-                            0.0,
-                            0.0,
-                        ));
-                        cancelled = true;
-                        break;
-                    }
-                }
-            } else {
-                // 非阻塞接收
-                match frame_rx.try_recv() {
-                    Ok(d) => d,
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => {
-                        tracing::error!("帧数据通道关闭");
-                        let _ = progress_tx.send((
-                            "导出失败：帧数据通道关闭".to_string(),
-                            -1.0,
-                            0,
-                            0.0,
-                            0.0,
-                        ));
-                        cancelled = true;
-                        break;
-                    }
-                }
-            };
-
-            let p = param_queue.pop_front().unwrap_or((0.0, 1.0, 60.0, ppq));
-            if composite_and_encode_frame(
-                data,
-                p,
-                &mut encoder,
-                &progress_tx,
-                &preview_tx,
-                &cancel_flag,
-                &mut last_preview_time,
-                &mut preview_sent,
-                &mut processed_frames,
-                &mut frames_since_stat,
-                &mut last_stat_time,
-                &mut smoothed_fps,
-                width,
-                height,
-                &keyboard_pixels,
-                kb_w,
-                kb_h,
-                total_frames,
-            ) {
+        let recv_start = Instant::now();
+        let data = match frame_rx.recv() {
+            Ok(d) => d,
+            Err(_) => {
+                tracing::error!("帧数据通道关闭");
+                let _ =
+                    progress_tx.send(("导出失败：帧数据通道关闭".to_string(), -1.0, 0, 0.0, 0.0));
                 cancelled = true;
                 break;
             }
+        };
+        let recv_us = recv_start.elapsed().as_micros() as u64;
+
+        let p = param_queue.pop_front().unwrap_or((0.0, 1.0, 60.0, ppq));
+        let (should_stop, stats) = composite_and_encode_frame(
+            data,
+            p,
+            &mut encoder,
+            &progress_tx,
+            &preview_tx,
+            &cancel_flag,
+            &mut last_preview_time,
+            &mut preview_sent,
+            width,
+            height,
+            &keyboard_pixels,
+            kb_w,
+            kb_h,
+            &recycle_tx,
+        );
+
+        acc_recv_us += recv_us;
+        acc_composite_us += stats.composite_us;
+        acc_preview_us += stats.preview_us;
+        acc_encode_us += stats.encode_us;
+        stat_frame_count += 1;
+
+        if should_stop {
+            cancelled = true;
+            break;
         }
 
-        if cancelled {
-            break;
+        processed_frames += 1;
+        frames_since_stat += 1;
+
+        // 维持流水线深度：每处理完一帧立即补发下一帧命令
+        if next_frame_to_send < total_frames {
+            if enqueue_frame(&mut param_queue, next_frame_to_send) {
+                cancelled = true;
+                break;
+            }
+            next_frame_to_send += 1;
+        }
+
+        // 阶段耗时打点：每 100ms 聚合输出一次
+        if last_stat_time.elapsed() >= Duration::from_millis(100) && stat_frame_count > 0 {
+            let elapsed = last_stat_time.elapsed().as_secs_f64();
+            let fps = frames_since_stat as f64 / elapsed;
+            smoothed_fps = if smoothed_fps == 0.0 {
+                fps
+            } else {
+                smoothed_fps * 0.7 + fps * 0.3
+            };
+            let progress = processed_frames as f64 / total_frames as f64;
+            let eta_secs = (total_frames - processed_frames) as f64 / smoothed_fps;
+            let avg_recv = acc_recv_us / stat_frame_count;
+            let avg_composite = acc_composite_us / stat_frame_count;
+            let avg_preview = acc_preview_us / stat_frame_count;
+            let avg_encode = acc_encode_us / stat_frame_count;
+            tracing::info!(
+                "视频导出: 帧 {}/{} ({:.0}%), FPS={:.0}, ETA={:.0}s, 阶段耗时(us) recv={} composite={} preview={} encode={}",
+                processed_frames,
+                total_frames,
+                progress * 100.0,
+                smoothed_fps,
+                eta_secs,
+                avg_recv,
+                avg_composite,
+                avg_preview,
+                avg_encode,
+            );
+            let _ = progress_tx.send((
+                format!(
+                    "{:.0}% | FPS {:.0} | ETA {:.0}s",
+                    progress * 100.0,
+                    smoothed_fps,
+                    eta_secs
+                ),
+                progress,
+                total_frames,
+                smoothed_fps,
+                0.0, // 进度更新中不传递 elapsed
+            ));
+            last_stat_time = Instant::now();
+            frames_since_stat = 0;
+            acc_recv_us = 0;
+            acc_composite_us = 0;
+            acc_preview_us = 0;
+            acc_encode_us = 0;
+            stat_frame_count = 0;
         }
     }
 
     // drain 剩余 inflight 帧
     while !param_queue.is_empty() && !cancelled {
-        match frame_rx.recv() {
-            Ok(data) => {
-                let p = param_queue.pop_front().unwrap_or((0.0, 1.0, 60.0, ppq));
-                if composite_and_encode_frame(
-                    data,
-                    p,
-                    &mut encoder,
-                    &progress_tx,
-                    &preview_tx,
-                    &cancel_flag,
-                    &mut last_preview_time,
-                    &mut preview_sent,
-                    &mut processed_frames,
-                    &mut frames_since_stat,
-                    &mut last_stat_time,
-                    &mut smoothed_fps,
-                    width,
-                    height,
-                    &keyboard_pixels,
-                    kb_w,
-                    kb_h,
-                    total_frames,
-                ) {
-                    cancelled = true;
-                }
-            }
+        let recv_start = Instant::now();
+        let data = match frame_rx.recv() {
+            Ok(d) => d,
             Err(_) => {
                 tracing::error!("drain 阶段帧数据通道关闭");
                 cancelled = true;
+                break;
             }
+        };
+        let recv_us = recv_start.elapsed().as_micros() as u64;
+
+        let p = param_queue.pop_front().unwrap_or((0.0, 1.0, 60.0, ppq));
+        let (should_stop, stats) = composite_and_encode_frame(
+            data,
+            p,
+            &mut encoder,
+            &progress_tx,
+            &preview_tx,
+            &cancel_flag,
+            &mut last_preview_time,
+            &mut preview_sent,
+            width,
+            height,
+            &keyboard_pixels,
+            kb_w,
+            kb_h,
+            &recycle_tx,
+        );
+
+        acc_recv_us += recv_us;
+        acc_composite_us += stats.composite_us;
+        acc_preview_us += stats.preview_us;
+        acc_encode_us += stats.encode_us;
+        stat_frame_count += 1;
+
+        if should_stop {
+            cancelled = true;
+            break;
         }
+        processed_frames += 1;
+    }
+
+    // 输出最后一组阶段打点（如果有未聚合的数据）
+    if let Some(divisor) = std::num::NonZeroU64::new(stat_frame_count) {
+        let d = divisor.get();
+        tracing::info!(
+            "视频导出: 收尾阶段耗时(us) recv={} composite={} preview={} encode={}",
+            acc_recv_us / d,
+            acc_composite_us / d,
+            acc_preview_us / d,
+            acc_encode_us / d,
+        );
     }
 
     // 完成编码：无论是否取消都必须调用 finish()，
@@ -374,18 +475,19 @@ fn run_video_export_task(
 /// 返回 `true` 表示发生通信错误、调用方应终止后台任务。
 fn send_initial_render_commands(
     cmd_sender: &std::sync::mpsc::Sender<lumino_gfx::render_thread::RenderCommand>,
-    _ppq: u32,
     width: u32,
     height: u32,
     frame_tx: std::sync::mpsc::Sender<Vec<u8>>,
+    recycle_rx: std::sync::mpsc::Receiver<Vec<u8>>,
     progress_tx: &tokio::sync::mpsc::UnboundedSender<(String, f64, u64, f64, f64)>,
 ) -> bool {
-    // 发送 StartVideoExport 命令
+    // 发送 StartVideoExport 命令，建立渲染线程对象池回收通道
     if cmd_sender
         .send(RenderCommand::Control(ControlCommand::StartVideoExport {
             width,
             height,
             frame_tx: FrameSender(frame_tx),
+            recycle_rx,
         }))
         .is_err()
     {
@@ -397,9 +499,20 @@ fn send_initial_render_commands(
     false
 }
 
-/// 单帧处理：键盘贴图合成 + 标尺数字合成 + 取消检测 + 预览帧发送 + 编码 + 统计更新。
+/// 单帧处理阶段耗时统计（微秒）
+#[derive(Debug, Default)]
+struct FrameStageStats {
+    /// 键盘 + 标尺合成耗时
+    composite_us: u64,
+    /// 预览帧克隆/缩放/发送耗时
+    preview_us: u64,
+    /// ffmpeg 写入耗时
+    encode_us: u64,
+}
+
+/// 单帧处理：键盘贴图合成 + 标尺数字合成 + 取消检测 + 预览帧发送 + 编码 + 缓冲区归还。
 ///
-/// 返回 `true` 表示应终止渲染循环（取消或出错）。
+/// 返回 `(should_stop, stats)`：`should_stop` 为 true 表示应终止渲染循环（取消或出错）。
 #[allow(clippy::too_many_arguments)]
 fn composite_and_encode_frame(
     mut data: Vec<u8>,
@@ -408,26 +521,24 @@ fn composite_and_encode_frame(
     progress_tx: &tokio::sync::mpsc::UnboundedSender<(String, f64, u64, f64, f64)>,
     preview_tx: &tokio::sync::mpsc::UnboundedSender<(Vec<u8>, u32, u32)>,
     cancel_flag: &Arc<AtomicBool>,
-    last_preview_time: &mut std::time::Instant,
+    last_preview_time: &mut Instant,
     preview_sent: &mut bool,
-    processed_frames: &mut u64,
-    frames_since_stat: &mut u64,
-    last_stat_time: &mut std::time::Instant,
-    smoothed_fps: &mut f64,
     width: u32,
     height: u32,
-    keyboard_pixels: &Vec<u8>,
+    keyboard_pixels: &[u8],
     kb_w: u32,
     kb_h: u32,
-    total_frames: u64,
-) -> bool {
+    recycle_tx: &std::sync::mpsc::Sender<Vec<u8>>,
+) -> (bool, FrameStageStats) {
+    let mut stats = FrameStageStats::default();
     let (sx, zx, kw, ppq_val) = params;
 
     if data.is_empty() {
         tracing::warn!("帧读回为空，跳过");
-        return false;
+        return (false, stats);
     }
 
+    let t0 = Instant::now();
     if !keyboard_pixels.is_empty() {
         super::video_export::composite_keyboard(
             &mut data,
@@ -439,16 +550,28 @@ fn composite_and_encode_frame(
         );
     }
     super::video_export::composite_ruler_numbers(&mut data, width, height, sx, zx, kw, ppq_val);
+    stats.composite_us = t0.elapsed().as_micros() as u64;
 
     if cancel_flag.load(Ordering::Relaxed) {
         tracing::info!("视频导出：帧数据到达后检测到取消，正在收尾...");
-        let _ = encoder.write_frame(data);
-        return true;
+        match encoder.write_frame(data) {
+            Ok(frame) => {
+                if recycle_tx.send(frame).is_err() {
+                    tracing::warn!("取消收尾时帧缓冲区归还失败");
+                }
+            }
+            Err(e) => {
+                tracing::error!("取消收尾写入失败: {e}");
+                let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
+            }
+        }
+        return (true, stats);
     }
 
     // 预览帧：在 write_frame（move data）之前 clone 发送。
     // 第一帧立即发送，让预览界面尽快有内容；后续按 200ms 节流。
-    if !*preview_sent || last_preview_time.elapsed() >= std::time::Duration::from_millis(200) {
+    if !*preview_sent || last_preview_time.elapsed() >= Duration::from_millis(200) {
+        let t0 = Instant::now();
         // GPU 读回是 BGRA 格式，但 image::Handle::from_rgba 需要 RGBA
         let mut preview_data = data.clone();
         for pixel in preview_data.chunks_exact_mut(4) {
@@ -477,53 +600,28 @@ fn composite_and_encode_frame(
         if preview_tx.send((small_data, small_w, small_h)).is_err() {
             tracing::warn!("视频导出: 预览帧发送失败，接收端已关闭");
         }
-        *last_preview_time = std::time::Instant::now();
+        *last_preview_time = Instant::now();
         *preview_sent = true;
+        stats.preview_us = t0.elapsed().as_micros() as u64;
     }
 
-    if let Err(e) = encoder.write_frame(data) {
-        tracing::error!("写入视频帧失败: {e}");
-        let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
-        return true;
+    let t0 = Instant::now();
+    let data = match encoder.write_frame(data) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::error!("写入视频帧失败: {e}");
+            let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
+            return (true, stats);
+        }
+    };
+    stats.encode_us = t0.elapsed().as_micros() as u64;
+
+    // 将已写入的帧缓冲区归还给渲染线程对象池复用
+    if recycle_tx.send(data).is_err() {
+        tracing::warn!("帧缓冲区归还失败：回收通道已关闭");
     }
 
-    *processed_frames += 1;
-    *frames_since_stat += 1;
-    let elapsed = last_stat_time.elapsed();
-    if elapsed >= std::time::Duration::from_millis(100) {
-        let fps = *frames_since_stat as f64 / elapsed.as_secs_f64();
-        *smoothed_fps = if *smoothed_fps == 0.0 {
-            fps
-        } else {
-            *smoothed_fps * 0.7 + fps * 0.3
-        };
-        let progress = *processed_frames as f64 / total_frames as f64;
-        let eta_secs = (total_frames - *processed_frames) as f64 / *smoothed_fps;
-        tracing::info!(
-            "视频导出: 帧 {}/{} ({:.0}%), FPS={:.0}, ETA={:.0}s",
-            *processed_frames,
-            total_frames,
-            progress * 100.0,
-            *smoothed_fps,
-            eta_secs
-        );
-        let _ = progress_tx.send((
-            format!(
-                "{:.0}% | FPS {:.0} | ETA {:.0}s",
-                progress * 100.0,
-                *smoothed_fps,
-                eta_secs
-            ),
-            progress,
-            total_frames,
-            *smoothed_fps,
-            0.0, // 进度更新中不传递 elapsed
-        ));
-        *last_stat_time = std::time::Instant::now();
-        *frames_since_stat = 0;
-    }
-
-    false
+    (false, stats)
 }
 
 /// 收尾编码：根据是否取消发送最终进度，并调用 `finish()` 写入文件头。

@@ -23,13 +23,9 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     tracing::info!("Render thread started");
 
     // 初始化渲染器
-    let mut renderers = super::super::Renderers {
-        grid: crate::GridRenderer::new(&ctx.device, ctx.texture_format),
-        note: crate::NoteRenderer::new(&ctx.device, &ctx.queue, ctx.texture_format),
-        ruler: crate::RulerRenderer::new(&ctx.device, ctx.texture_format),
-        arrangement: crate::ArrangementRenderer::new(&ctx.device, ctx.texture_format),
-        cc_bar: crate::CcBarRenderer::new(&ctx.device, ctx.texture_format),
-    };
+    let mut renderers = super::super::Renderers::new(&ctx.device, &ctx.queue, ctx.texture_format);
+    // 视频导出使用独立的纯 2D 渲染器，避免 depth-stencil 状态与普通预览不一致。
+    let mut export_renderers: Option<super::super::Renderers> = None;
 
     // 渲染循环状态
     let mut frame_count = 0u64;
@@ -37,6 +33,7 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     let mut current_texture: Option<Arc<wgpu::Texture>> = None;
     let mut depth_texture: Option<wgpu::Texture> = None;
     let mut depth_texture_view: Option<wgpu::TextureView> = None;
+    let mut texture_view: Option<wgpu::TextureView> = None;
     let mut current_size = (0, 0);
     let mut last_note_version: u64 = 0;
 
@@ -72,9 +69,11 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
             &ctx,
             &channels,
             &mut renderers,
+            &mut export_renderers,
             &mut current_texture,
             &mut depth_texture,
             &mut depth_texture_view,
+            &mut texture_view,
             &mut current_size,
             &mut last_note_version,
             &mut hires_renderer,
@@ -115,6 +114,7 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                 &mut current_texture,
                 &mut depth_texture,
                 &mut depth_texture_view,
+                &mut texture_view,
                 &mut current_size,
                 &mut last_note_version,
                 params,
@@ -128,6 +128,7 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                 &mut current_texture,
                 &mut depth_texture,
                 &mut depth_texture_view,
+                &mut texture_view,
                 &mut current_size,
                 &mut last_note_version,
                 &mut hires_renderer,
@@ -244,7 +245,7 @@ fn handle_video_frame(
     let width = params.viewport_size.0.max(1);
     let height = params.viewport_size.1.max(1);
 
-    // 1. 确保离屏纹理已创建
+    // 1. 确保离屏纹理已创建（视频导出为纯 2D，禁用 depth）
     let mut tex_resources = super::super::textures::OffscreenTextureResources {
         device: &ctx.device,
         texture_format: ctx.texture_format,
@@ -254,10 +255,11 @@ fn handle_video_frame(
         current_texture: frame.current_texture,
         depth_texture: frame.depth_texture,
         depth_texture_view: frame.depth_texture_view,
+        texture_view: frame.texture_view,
         latest_texture_clone: frame.latest_texture_clone,
         params: &params,
     };
-    ensure_textures(&mut tex_resources);
+    ensure_textures(&mut tex_resources, false);
 
     // 视频导出始终使用音符矩形渲染模式：不上传 HiRes 贴图
     let hires_visible_coords: Vec<crate::TileCoord> = Vec::new();
@@ -273,8 +275,7 @@ fn handle_video_frame(
     // 3. 检查离屏纹理是否就绪（clone Arc 断开与 frame 的借用链，
     //    使后续 execute_render_pass 可以再借 &mut frame）。
     let texture_opt = frame.current_texture.as_ref().map(Arc::clone);
-    let depth_ready = frame.depth_texture_view.is_some();
-    let (Some(texture_arc), true) = (texture_opt, depth_ready) else {
+    let Some(texture_arc) = texture_opt else {
         tracing::warn!("视频帧渲染：离屏纹理未就绪，跳过");
         return;
     };
@@ -292,6 +293,7 @@ fn handle_video_frame(
         &channels.note_events_rx,
         &ctx.device,
         &ctx.queue,
+        true,
     );
 
     execute_render_pass(
@@ -341,9 +343,11 @@ fn process_deferred_commands(
     ctx: &RenderContext,
     channels: &RenderThreadChannels,
     renderers: &mut super::super::Renderers,
+    export_renderers: &mut Option<super::super::Renderers>,
     current_texture: &mut Option<Arc<wgpu::Texture>>,
     depth_texture: &mut Option<wgpu::Texture>,
     depth_texture_view: &mut Option<wgpu::TextureView>,
+    texture_view: &mut Option<wgpu::TextureView>,
     current_size: &mut (u32, u32),
     last_note_version: &mut u64,
     hires_renderer: &mut Option<crate::HiResRenderer>,
@@ -361,21 +365,33 @@ fn process_deferred_commands(
                 width,
                 height,
                 frame_tx,
+                recycle_rx,
             } => {
                 tracing::info!(
                     "视频导出开始: {}x{}, 初始化 GPU→CPU 读回管线",
                     width,
                     height,
                 );
-                *export_pipeline = Some(ExportPipeline::new(&ctx.device, width, height));
+                let mut pipeline = ExportPipeline::new(&ctx.device, width, height);
+                pipeline.set_recycle_receiver(recycle_rx);
+                *export_pipeline = Some(pipeline);
                 *export_frame_tx = Some(frame_tx);
+                // 创建无 depth attachment 的视频导出专用渲染器
+                *export_renderers = Some(super::super::Renderers::new_for_video_export(
+                    &ctx.device,
+                    &ctx.queue,
+                    ctx.texture_format,
+                ));
             }
             ControlCommand::RenderVideoFrame { params } => {
+                // 视频导出帧使用纯 2D 渲染器，确保 pipeline 与无 depth 的 RenderPass 兼容。
+                let video_renderers = export_renderers.as_mut().unwrap_or(&mut *renderers);
                 let mut frame = RenderFrameState {
-                    renderers: &mut *renderers,
+                    renderers: video_renderers,
                     current_texture: &mut *current_texture,
                     depth_texture: &mut *depth_texture,
                     depth_texture_view: &mut *depth_texture_view,
+                    texture_view: &mut *texture_view,
                     current_size: &mut *current_size,
                     last_note_version: &mut *last_note_version,
                     latest_texture_clone: &channels.latest_texture_clone,
@@ -415,6 +431,7 @@ fn process_deferred_commands(
                 tracing::info!("视频导出完成，释放读回管线");
                 *export_pipeline = None;
                 *export_frame_tx = None;
+                *export_renderers = None;
             }
             // ── HiRes 命令走原路径 ──
             cmd => {
@@ -440,6 +457,7 @@ fn ensure_offscreen_textures_and_upload_notes(
     current_texture: &mut Option<Arc<wgpu::Texture>>,
     depth_texture: &mut Option<wgpu::Texture>,
     depth_texture_view: &mut Option<wgpu::TextureView>,
+    texture_view: &mut Option<wgpu::TextureView>,
     current_size: &mut (u32, u32),
     last_note_version: &mut u64,
     params: &RenderParams,
@@ -456,10 +474,12 @@ fn ensure_offscreen_textures_and_upload_notes(
         current_texture: &mut *current_texture,
         depth_texture: &mut *depth_texture,
         depth_texture_view: &mut *depth_texture_view,
+        texture_view: &mut *texture_view,
         latest_texture_clone: &channels.latest_texture_clone,
         params,
     };
-    ensure_textures(&mut tex_resources);
+    // 普通离屏渲染保留 depth attachment（UI 预览可能需要）
+    ensure_textures(&mut tex_resources, true);
 
     let note_version = channels.note_instances_buffer.version();
     if note_version != *last_note_version {
@@ -486,6 +506,7 @@ fn render_offscreen_pass(
     current_texture: &mut Option<Arc<wgpu::Texture>>,
     depth_texture: &mut Option<wgpu::Texture>,
     depth_texture_view: &mut Option<wgpu::TextureView>,
+    texture_view: &mut Option<wgpu::TextureView>,
     current_size: &mut (u32, u32),
     last_note_version: &mut u64,
     hires_renderer: &mut Option<crate::HiResRenderer>,
@@ -507,6 +528,7 @@ fn render_offscreen_pass(
             &channels.note_events_rx,
             &ctx.device,
             &ctx.queue,
+            false,
         );
 
         let hires_visible = update_hires_viewport(
@@ -525,6 +547,7 @@ fn render_offscreen_pass(
             current_texture,
             depth_texture,
             depth_texture_view,
+            texture_view,
             current_size,
             last_note_version,
             latest_texture_clone: &channels.latest_texture_clone,

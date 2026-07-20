@@ -34,7 +34,6 @@ toml = "0.9"
 xsynth-core = { workspace = true }
 xsynth-soundfonts = { workspace = true }
 hound = "3.5"
-crossbeam-channel = "0.5"
 memmap2 = "0.9"
 
 [dev-dependencies]

@@ -6,12 +6,16 @@ use super::super::params::RenderParams;
 use super::Renderers;
 
 /// 准备渲染器实例
+///
+/// `is_video_export` 为 true 时跳过音符事件处理与 CC 柱状条准备，
+/// 视频导出期间无用户编辑事件，避免每帧空 channel 的 `try_recv` 开销。
 pub fn prepare_renderers(
     renderers: &mut Renderers,
     params: &RenderParams,
     note_events_rx: &Receiver<NoteEvent>,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
+    is_video_export: bool,
 ) {
     puffin::profile_scope!("prepare_renderers");
 
@@ -64,12 +68,15 @@ pub fn prepare_renderers(
     }
 
     // 准备 CC 柱状条渲染器（背景/网格/中心线）
+    // 视频导出不使用力度面板，此处已受 `velocity_panel_rect.is_some()` 保护
     if params.velocity_panel_rect.is_some() {
         renderers
             .cc_bar
             .prepare(device, queue, &params.cc_bar_instances, params.logical_size);
     }
 
-    // 音符事件始终处理（不影响走带模式，但需要保持事件管道畅通）
-    renderers.note.process_events(note_events_rx, device, queue);
+    // 视频导出期间无音符编辑事件，跳过空 channel 的 try_recv
+    if !is_video_export {
+        renderers.note.process_events(note_events_rx, device, queue);
+    }
 }

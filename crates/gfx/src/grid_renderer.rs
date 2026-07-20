@@ -255,8 +255,21 @@ impl GridRenderer {
     /// 顶点着色器代码
     const SHADER_SRC: &'static str = include_str!("shaders/infinite_grid.wgsl");
 
-    /// 创建新的网格渲染器
+    /// 创建新的网格渲染器（默认带 depth attachment）
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        Self::new_with_depth(device, format, true)
+    }
+
+    /// 创建不带 depth attachment 的网格渲染器（用于视频导出等纯 2D 路径）
+    pub fn new_without_depth(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        Self::new_with_depth(device, format, false)
+    }
+
+    fn new_with_depth(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        needs_depth: bool,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("infinite_grid_shader"),
             source: wgpu::ShaderSource::Wgsl(Self::SHADER_SRC.into()),
@@ -284,7 +297,7 @@ impl GridRenderer {
             push_constant_ranges: &[],
         });
 
-        // 创建渲染管线
+        // 创建渲染管线，按 needs_depth 决定是否携带 depth-stencil 状态
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("infinite_grid_pipeline"),
             layout: Some(&pipeline_layout),
@@ -313,7 +326,7 @@ impl GridRenderer {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: crate::constants::rendering::depth_stencil_state(),
+            depth_stencil: crate::constants::rendering::depth_stencil_state_for(needs_depth),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,

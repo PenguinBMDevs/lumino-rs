@@ -5,8 +5,26 @@ use crate::note_renderer::NoteRenderer;
 use wgpu::util::DeviceExt;
 
 impl NoteRenderer {
-    /// 创建新的音符渲染器
+    /// 创建新的音符渲染器（默认带 depth attachment）
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
+        Self::new_with_depth(device, queue, format, true)
+    }
+
+    /// 创建不带 depth attachment 的音符渲染器（用于视频导出等纯 2D 路径）
+    pub fn new_without_depth(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+    ) -> Self {
+        Self::new_with_depth(device, queue, format, false)
+    }
+
+    fn new_with_depth(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+        needs_depth: bool,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("note_shader"),
             source: wgpu::ShaderSource::Wgsl(Self::VERTEX_SHADER.into()),
@@ -24,8 +42,13 @@ impl NoteRenderer {
         let cull_bind_group_layout = Self::create_cull_bind_group_layout(device);
 
         // 创建渲染管线
-        let pipeline =
-            Self::create_render_pipeline(device, &shader, &render_bind_group_layout, format);
+        let pipeline = Self::create_render_pipeline(
+            device,
+            &shader,
+            &render_bind_group_layout,
+            format,
+            needs_depth,
+        );
 
         // 创建计算管线
         let cull_pipeline =
@@ -160,6 +183,7 @@ impl NoteRenderer {
         shader: &wgpu::ShaderModule,
         render_bind_group_layout: &wgpu::BindGroupLayout,
         format: wgpu::TextureFormat,
+        needs_depth: bool,
     ) -> wgpu::RenderPipeline {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -196,7 +220,7 @@ impl NoteRenderer {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: crate::constants::rendering::depth_stencil_state(),
+            depth_stencil: crate::constants::rendering::depth_stencil_state_for(needs_depth),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,

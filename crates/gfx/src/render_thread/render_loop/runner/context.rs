@@ -76,6 +76,8 @@ pub struct RenderFrameState<'a> {
     pub depth_texture: &'a mut Option<wgpu::Texture>,
     /// 当前帧的深度纹理视图
     pub depth_texture_view: &'a mut Option<wgpu::TextureView>,
+    /// 当前帧的离屏渲染纹理视图（缓存，避免每帧 create_view）
+    pub texture_view: &'a mut Option<wgpu::TextureView>,
     /// 当前视口尺寸
     pub current_size: &'a mut (u32, u32),
     /// 音符实例版本号（检测是否需重上传）

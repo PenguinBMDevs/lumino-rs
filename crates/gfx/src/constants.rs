@@ -31,12 +31,78 @@ pub mod rendering {
 
     /// 标准深度/模板状态
     pub fn depth_stencil_state() -> Option<wgpu::DepthStencilState> {
-        Some(wgpu::DepthStencilState {
+        depth_stencil_state_for(true)
+    }
+
+    /// 根据是否需要 depth 返回对应的深度/模板状态
+    ///
+    /// 视频导出为纯 2D 渲染，使用 `false` 可创建与无 depth attachment 的 RenderPass 兼容的管线。
+    pub fn depth_stencil_state_for(needs_depth: bool) -> Option<wgpu::DepthStencilState> {
+        needs_depth.then_some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
             depth_write_enabled: true,
             depth_compare: wgpu::CompareFunction::LessEqual,
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         })
+    }
+
+    /// 判断渲染管线深度/模板状态与 RenderPass 是否兼容。
+    ///
+    /// 当 RenderPass 不带 depth attachment 时，管线必须也没有 depth-stencil 状态；
+    /// 当 RenderPass 带 depth attachment 时，管线必须携带匹配的 depth-stencil 状态。
+    #[must_use]
+    pub fn is_depth_stencil_compatible(
+        render_pass_has_depth: bool,
+        pipeline_depth_stencil: Option<&wgpu::DepthStencilState>,
+    ) -> bool {
+        match (render_pass_has_depth, pipeline_depth_stencil) {
+            (false, None) => true,
+            (true, Some(state)) => state.format == DEPTH_FORMAT,
+            _ => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rendering::{DEPTH_FORMAT, depth_stencil_state_for, is_depth_stencil_compatible};
+
+    #[test]
+    fn test_depth_stencil_state_for_video_export_is_none() {
+        assert!(
+            depth_stencil_state_for(false).is_none(),
+            "视频导出的纯 2D 渲染不应携带 depth-stencil 状态"
+        );
+    }
+
+    #[test]
+    fn test_depth_stencil_state_for_ui_has_depth_format() {
+        let state = depth_stencil_state_for(true).expect("普通 UI 渲染应启用 depth-stencil 状态");
+        assert_eq!(state.format, DEPTH_FORMAT);
+        assert!(state.depth_write_enabled);
+    }
+
+    #[test]
+    fn test_video_export_pipeline_compatible_with_no_depth_pass() {
+        let pipeline_state = depth_stencil_state_for(false);
+        assert!(is_depth_stencil_compatible(false, pipeline_state.as_ref()));
+    }
+
+    #[test]
+    fn test_ui_pipeline_compatible_with_depth_pass() {
+        let pipeline_state = depth_stencil_state_for(true);
+        assert!(is_depth_stencil_compatible(true, pipeline_state.as_ref()));
+    }
+
+    #[test]
+    fn test_depth_stencil_mismatch_is_incompatible() {
+        // 视频导出管线（无 depth）不能用于带 depth attachment 的 RenderPass
+        let pipeline_state = depth_stencil_state_for(false);
+        assert!(!is_depth_stencil_compatible(true, pipeline_state.as_ref()));
+
+        // 普通 UI 管线（有 depth）不能用于无 depth attachment 的 RenderPass
+        let pipeline_state = depth_stencil_state_for(true);
+        assert!(!is_depth_stencil_compatible(false, pipeline_state.as_ref()));
     }
 }

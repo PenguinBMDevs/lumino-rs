@@ -35,6 +35,8 @@ struct StagingRing {
     next_read: usize,
     inflight: usize,
     device: wgpu::Device,
+    /// 帧数据对象池：已写入 ffmpeg 的缓冲区归还后复用，避免每帧大对象堆分配
+    frame_pool: Vec<Vec<u8>>,
 }
 
 impl StagingRing {
@@ -49,6 +51,7 @@ impl StagingRing {
             next_read: 0,
             inflight: 0,
             device: device.clone(),
+            frame_pool: Vec::new(),
         }
     }
 
@@ -181,7 +184,16 @@ impl StagingRing {
 
         let data = buf.buffer.slice(..).get_mapped_range();
         let total_unpadded = (buf.unpadded_bytes_per_row * buf.height) as usize;
-        let mut result = Vec::with_capacity(total_unpadded);
+
+        // 从对象池取出复用，或新建缓冲区；确保容量足够当前尺寸
+        let mut result = self
+            .frame_pool
+            .pop()
+            .unwrap_or_else(|| Vec::with_capacity(total_unpadded));
+        if result.capacity() < total_unpadded {
+            result.reserve(total_unpadded - result.capacity());
+        }
+        result.clear();
 
         if buf.padded_bytes_per_row == buf.unpadded_bytes_per_row {
             // 无 padding，直接拷贝
@@ -211,6 +223,23 @@ impl StagingRing {
         self.inflight -= 1;
         result
     }
+
+    /// 将已写入 ffmpeg 的帧缓冲区归还对象池，供下次读回复用
+    fn recycle_frame(&mut self, mut frame: Vec<u8>) {
+        frame.clear();
+        // 限制池大小，避免分辨率切换后占用过量内存
+        const MAX_POOL_SIZE: usize = 8;
+        if self.frame_pool.len() < MAX_POOL_SIZE {
+            self.frame_pool.push(frame);
+        }
+    }
+
+    /// 非阻塞回收已归还的帧缓冲区
+    fn try_recycle(&mut self, rx: &mpsc::Receiver<Vec<u8>>) {
+        while let Ok(frame) = rx.try_recv() {
+            self.recycle_frame(frame);
+        }
+    }
 }
 
 impl Drop for StagingRing {
@@ -233,6 +262,8 @@ pub struct ExportPipeline {
     /// 上次 ensure_size 的尺寸，尺寸不变时跳过迭代检查
     cached_width: u32,
     cached_height: u32,
+    /// 帧缓冲区回收通道：ffmpeg 写入线程归还已用 Vec<u8>
+    recycle_rx: Option<mpsc::Receiver<Vec<u8>>>,
 }
 
 impl ExportPipeline {
@@ -242,7 +273,13 @@ impl ExportPipeline {
             ring: StagingRing::new(device, width, height),
             cached_width: width,
             cached_height: height,
+            recycle_rx: None,
         }
+    }
+
+    /// 设置帧缓冲区回收通道
+    pub fn set_recycle_receiver(&mut self, rx: mpsc::Receiver<Vec<u8>>) {
+        self.recycle_rx = Some(rx);
     }
 
     /// 当输出尺寸变化时重建 staging buffer
@@ -303,11 +340,17 @@ impl ExportPipeline {
 
     /// 非阻塞尝试读回最早提交的帧
     pub fn try_read(&mut self) -> Option<Vec<u8>> {
+        if let Some(ref rx) = self.recycle_rx {
+            self.ring.try_recycle(rx);
+        }
         self.ring.try_read()
     }
 
     /// 阻塞等待最早提交的帧就绪（超时 5s 返回空 Vec）
     pub fn wait_read(&mut self) -> Vec<u8> {
+        if let Some(ref rx) = self.recycle_rx {
+            self.ring.try_recycle(rx);
+        }
         self.ring.wait_read()
     }
 }

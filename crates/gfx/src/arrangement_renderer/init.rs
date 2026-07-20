@@ -4,8 +4,21 @@ use super::{ArrangementRenderer, ArrangementUniform, INITIAL_CAPACITY, VERTEX_SH
 use crate::gpu_resource_tracker;
 
 impl ArrangementRenderer {
-    /// 创建新的走带渲染器
+    /// 创建新的走带渲染器（默认带 depth attachment）
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        Self::new_with_depth(device, format, true)
+    }
+
+    /// 创建不带 depth attachment 的走带渲染器（用于视频导出等纯 2D 路径）
+    pub fn new_without_depth(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        Self::new_with_depth(device, format, false)
+    }
+
+    fn new_with_depth(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        needs_depth: bool,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("arrangement_shader"),
             source: wgpu::ShaderSource::Wgsl(VERTEX_SHADER.into()),
@@ -85,7 +98,7 @@ impl ArrangementRenderer {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: crate::constants::rendering::depth_stencil_state(),
+            depth_stencil: crate::constants::rendering::depth_stencil_state_for(needs_depth),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,

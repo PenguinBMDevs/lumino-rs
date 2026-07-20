@@ -8,7 +8,7 @@
 
 use std::io::{BufRead, BufWriter, Write};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -17,33 +17,39 @@ use crate::video::error::{VideoExportError, VideoExportResult};
 
 /// FFmpeg 编码器
 ///
-/// 持有 ffmpeg 子进程与后台写入线程。写入方通过 channel 投递帧，
-/// 读取方在 finish() 时等待进程退出。Drop 时自动 kill 进程（用户取消场景）。
+/// 持有 ffmpeg 子进程与 `stdin` 写入缓冲。当前为**直连写入模式**：
+/// 调用方线程直接调用 `write_frame` 将帧数据写入 ffmpeg stdin，
+/// 消除跨线程 channel 跳转与额外上下文切换。Drop 时自动 kill 进程（用户取消场景）。
 #[derive(Debug)]
 pub struct FfmpegEncoder {
+    /// 帧数据写入缓冲（1 MB），持有 ffmpeg stdin pipe
+    stdin_writer: Option<BufWriter<ChildStdin>>,
+    /// ffmpeg 子进程
     process: std::process::Child,
-    sender: Option<crossbeam_channel::Sender<Vec<u8>>>,
-    join_handle: Option<std::thread::JoinHandle<Result<(), VideoExportError>>>,
-    /// 帧尺寸（BGRA，width*height*4 字节）
+    /// 帧尺寸（BGRA/RGBA，width*height*4 字节）
     width: u32,
     height: u32,
     /// ffmpeg stderr 捕获缓冲（用于错误诊断）
     stderr_buf: Arc<Mutex<Vec<String>>>,
-    /// 写入线程的 IO 错误（若有）
+    /// 写入时的 IO 错误（若有）
     writer_error: Arc<Mutex<Option<String>>>,
 }
 
 impl FfmpegEncoder {
-    /// 创建并启动 ffmpeg 编码器
+    /// 创建并启动 ffmpeg 编码器（直连写入模式）
     ///
     /// 内部完成：ffmpeg 路径解析、参数组装、子进程启动、stderr 捕获线程、
-    /// stdin 写入线程（带 8 帧背压 channel）。
-    pub fn new(config: &VideoExportConfig) -> VideoExportResult<Self> {
+    /// `stdin` 写入缓冲初始化。当前版本不在编码器内部启动额外线程，
+    /// 调用方直接调用 `write_frame` 写入 pipe，消除 crossbeam channel 跳转。
+    ///
+    /// `input_pix_fmt` 为原始帧数据的像素格式（如 `"bgra"` 或 `"rgba"`），
+    /// 需与 GPU 离屏纹理的实际通道顺序一致。
+    pub fn new(config: &VideoExportConfig, input_pix_fmt: &'static str) -> VideoExportResult<Self> {
         let ffmpeg = ffmpeg_path()?;
 
-        tracing::info!(path = %ffmpeg.display(), "启动 ffmpeg 编码器");
+        tracing::info!(path = %ffmpeg.display(), "启动 ffmpeg 编码器（直连写入模式）");
 
-        let args = build_ffmpeg_args(config);
+        let args = build_ffmpeg_args(config, input_pix_fmt);
         tracing::debug!(?args, "ffmpeg 参数");
 
         let mut process = Command::new(&ffmpeg)
@@ -86,42 +92,17 @@ impl FfmpegEncoder {
             }
         });
 
-        let mut stdin = BufWriter::with_capacity(
+        let stdin_writer = Some(BufWriter::with_capacity(
             1024 * 1024, // 1MB 缓冲，批量写入
             process
                 .stdin
                 .take()
                 .ok_or_else(|| VideoExportError::PipeSetupFailed("ffmpeg stdin 未 piped".into()))?,
-        );
-        // 小容量背压：8 帧 ≈ 64MB @ 1920x1080x4，避免编码速度跟不上时内存暴涨
-        let (tx, rx) = crossbeam_channel::bounded::<Vec<u8>>(8);
-
-        let writer_error_clone = writer_error.clone();
-        let join_handle = std::thread::spawn(move || {
-            for frame_data in rx {
-                if let Err(e) = stdin.write_all(&frame_data) {
-                    let msg = format!("write_all 失败: {e}");
-                    if let Ok(mut err) = writer_error_clone.lock() {
-                        *err = Some(msg);
-                    }
-                    return Err(VideoExportError::Io(e));
-                }
-            }
-            if let Err(e) = stdin.flush() {
-                let msg = format!("flush 失败: {e}");
-                if let Ok(mut err) = writer_error_clone.lock() {
-                    *err = Some(msg);
-                }
-                return Err(VideoExportError::Io(e));
-            }
-            drop(stdin);
-            Ok(())
-        });
+        ));
 
         Ok(Self {
+            stdin_writer,
             process,
-            sender: Some(tx),
-            join_handle: Some(join_handle),
             width: config.width,
             height: config.height,
             stderr_buf,
@@ -131,8 +112,9 @@ impl FfmpegEncoder {
 
     /// 写入一帧 BGRA 数据（width×height×4 字节）
     ///
-    /// 原始 BGRA 数据直接送 ffmpeg stdin，ffmpeg 内部完成像素格式转换。
-    pub fn write_frame(&mut self, frame_data: Vec<u8>) -> VideoExportResult<()> {
+    /// 原始 BGRA 数据直接写入 ffmpeg stdin pipe。成功后将 `frame_data` 原样返回，
+    /// 方便调用方将其归还到对象池复用；失败时数据被丢弃。
+    pub fn write_frame(&mut self, frame_data: Vec<u8>) -> VideoExportResult<Vec<u8>> {
         let expected = (self.width * self.height * 4) as usize;
         if frame_data.len() != expected {
             return Err(VideoExportError::FrameSizeMismatch {
@@ -141,38 +123,27 @@ impl FfmpegEncoder {
             });
         }
 
-        if let Some(sender) = &self.sender {
-            sender.send(frame_data).map_err(|_| {
-                self.build_write_error("channel 已断开（ffmpeg 可能已崩溃或 pipe 断裂）")
-            })?;
+        let Some(writer) = self.stdin_writer.as_mut() else {
+            return Err(self.build_write_error("stdin_writer 已关闭，无法写入帧"));
+        };
+        if let Err(e) = writer.write_all(&frame_data) {
+            let msg = format!("write_all 失败: {e}");
+            if let Ok(mut err) = self.writer_error.lock() {
+                *err = Some(msg);
+            }
+            return Err(VideoExportError::Io(e));
         }
-        Ok(())
+
+        Ok(frame_data)
     }
 
-    /// 完成编码：关闭写入端 → 等待写入线程 → 等待 ffmpeg 进程退出
+    /// 完成编码：flush 并关闭 stdin → 等待 ffmpeg 进程退出
     ///
     /// 消费 self，成功返回 Ok(())，失败返回含 stderr 上下文的错误。
     pub fn finish(mut self) -> VideoExportResult<()> {
-        // 关闭 sender，让写入线程结束循环
-        self.sender.take();
-
-        // 等待写入线程（flush + drop stdin）
-        if let Some(handle) = self.join_handle.take() {
-            match handle.join() {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => {
-                    let stderr_lines = self.stderr_content();
-                    if stderr_lines.is_empty() {
-                        return Err(e);
-                    }
-                    return Err(VideoExportError::FfmpegWriteFailed(format!(
-                        "{e}\nffmpeg stderr:\n{stderr_lines}"
-                    )));
-                }
-                Err(_) => {
-                    return Err(self.build_write_error("写入线程 panic"));
-                }
-            }
+        // 显式 take 并 drop stdin_writer，触发 flush 并关闭 pipe，让 ffmpeg 收到 EOF
+        if let Some(writer) = self.stdin_writer.take() {
+            std::mem::drop(writer);
         }
 
         // 等待 ffmpeg 进程
@@ -223,13 +194,13 @@ impl FfmpegEncoder {
 
 impl Drop for FfmpegEncoder {
     fn drop(&mut self) {
+        // 先 take/drop stdin_writer，确保未写入数据 flush 并关闭 pipe 后再 kill
+        if let Some(writer) = self.stdin_writer.take() {
+            std::mem::drop(writer);
+        }
         // 用户取消时 kill ffmpeg 进程
         let _ = self.process.kill();
         let _ = self.process.wait();
-        // 等待写入线程结束
-        if let Some(handle) = self.join_handle.take() {
-            let _ = handle.join();
-        }
     }
 }
 
@@ -285,15 +256,15 @@ pub fn is_ffmpeg_available() -> bool {
 // ---------------------------------------------------------------------------
 
 /// 组装 ffmpeg 命令行参数（纯视频流，无音频）
-fn build_ffmpeg_args(config: &VideoExportConfig) -> Vec<String> {
+fn build_ffmpeg_args(config: &VideoExportConfig, input_pix_fmt: &str) -> Vec<String> {
     let mut args = Vec::new();
 
-    // ── 视频输入：stdin raw BGRA ──
-    // ffmpeg 内部完成 BGRA→YUV420p 转换
+    // ── 视频输入：stdin raw BGRA/RGBA ──
+    // ffmpeg 内部完成 BGRA/RGBA→YUV 转换
     args.push("-f".to_string());
     args.push("rawvideo".to_string());
     args.push("-pix_fmt".to_string());
-    args.push("bgra".to_string());
+    args.push(input_pix_fmt.to_string());
     args.push("-s".to_string());
     args.push(format!("{}x{}", config.width, config.height));
     args.push("-r".to_string());
