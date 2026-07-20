@@ -30,6 +30,7 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<canvas::Action<Message>> {
+        puffin::profile_function!();
         if let canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event
             && let Some(pos) = cursor.position()
         {

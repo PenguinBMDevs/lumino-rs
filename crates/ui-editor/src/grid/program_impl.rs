@@ -18,6 +18,8 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<Action<Message>> {
+        puffin::profile_function!();
+
         let bounds_pos = iced_core::Point::new(bounds.x, bounds.y);
         let bounds_size = iced_core::Size::new(bounds.width, bounds.height);
 
@@ -134,6 +136,8 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
         _bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> mouse::Interaction {
+        puffin::profile_function!();
+
         if self.editor.current_tool() == Tool::Eraser {
             return mouse::Interaction::Crosshair;
         }
@@ -153,60 +157,71 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             EditState::Scrubbing => mouse::Interaction::Grabbing,
             EditState::Idle => {
                 // 先检查是否悬停在循环区域手柄上
-                if let Some(local_pos) = state.position {
-                    let v = &self.editor.editor_state.view;
-                    if local_pos.y < v.ruler_height
-                        && local_pos.x >= v.keyboard_width
-                        && let Some(loop_range) = self.editor.loop_range.as_ref()
-                    {
-                        let hit = loop_range.hit_test_at(
-                            local_pos.x,
-                            v.keyboard_width,
-                            v.scroll_x,
-                            v.zoom_x,
-                        );
-                        match hit {
-                            crate::grid::LoopHitTest::StartHandle
-                            | crate::grid::LoopHitTest::EndHandle => {
-                                return mouse::Interaction::ResizingHorizontally;
+                {
+                    puffin::profile_scope!("loop_range_hit_test");
+                    if let Some(local_pos) = state.position {
+                        let v = &self.editor.editor_state.view;
+                        if local_pos.y < v.ruler_height
+                            && local_pos.x >= v.keyboard_width
+                            && let Some(loop_range) = self.editor.loop_range.as_ref()
+                        {
+                            let hit = loop_range.hit_test_at(
+                                local_pos.x,
+                                v.keyboard_width,
+                                v.scroll_x,
+                                v.zoom_x,
+                            );
+                            match hit {
+                                crate::grid::LoopHitTest::StartHandle
+                                | crate::grid::LoopHitTest::EndHandle => {
+                                    return mouse::Interaction::ResizingHorizontally;
+                                }
+                                crate::grid::LoopHitTest::Body => {
+                                    return mouse::Interaction::Pointer;
+                                }
+                                crate::grid::LoopHitTest::None => {}
                             }
-                            crate::grid::LoopHitTest::Body => {
-                                return mouse::Interaction::Pointer;
-                            }
-                            crate::grid::LoopHitTest::None => {}
                         }
                     }
                 }
 
                 // 先检查是否悬停在选择框上
-                if let Some(cursor_pos) = _cursor.position() {
-                    let local_pos =
-                        iced_core::Point::new(cursor_pos.x - _bounds.x, cursor_pos.y - _bounds.y);
-                    if let Some(sel_hit) = self.editor.hit_test_selection_box(local_pos) {
-                        return match sel_hit {
-                            crate::SelectionHitType::LeftEdge
-                            | crate::SelectionHitType::RightEdge => {
-                                mouse::Interaction::ResizingHorizontally
-                            }
-                            crate::SelectionHitType::Inside => mouse::Interaction::Pointer,
-                        };
+                {
+                    puffin::profile_scope!("selection_box_hit_test");
+                    if let Some(cursor_pos) = _cursor.position() {
+                        let local_pos = iced_core::Point::new(
+                            cursor_pos.x - _bounds.x,
+                            cursor_pos.y - _bounds.y,
+                        );
+                        if let Some(sel_hit) = self.editor.hit_test_selection_box(local_pos) {
+                            return match sel_hit {
+                                crate::SelectionHitType::LeftEdge
+                                | crate::SelectionHitType::RightEdge => {
+                                    mouse::Interaction::ResizingHorizontally
+                                }
+                                crate::SelectionHitType::Inside => mouse::Interaction::Pointer,
+                            };
+                        }
                     }
                 }
 
                 // 固定指示线模式下：检测是否悬停在指示线上
-                if self.editor.editor_state.auto_scroll.mode
-                    == lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft
-                    && let Some(local_pos) = state.position
                 {
-                    let v = &self.editor.editor_state.view;
-                    if local_pos.y < v.ruler_height && local_pos.x >= v.keyboard_width {
-                        let indicator_screen_x = self
-                            .editor
-                            .get_playback_indicator_screen_x()
-                            .unwrap_or(v.keyboard_width);
-                        let hit_margin = 8.0;
-                        if (local_pos.x - indicator_screen_x).abs() <= hit_margin {
-                            return mouse::Interaction::ResizingHorizontally;
+                    puffin::profile_scope!("playback_indicator_hit_test");
+                    if self.editor.editor_state.auto_scroll.mode
+                        == lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft
+                        && let Some(local_pos) = state.position
+                    {
+                        let v = &self.editor.editor_state.view;
+                        if local_pos.y < v.ruler_height && local_pos.x >= v.keyboard_width {
+                            let indicator_screen_x = self
+                                .editor
+                                .get_playback_indicator_screen_x()
+                                .unwrap_or(v.keyboard_width);
+                            let hit_margin = 8.0;
+                            if (local_pos.x - indicator_screen_x).abs() <= hit_margin {
+                                return mouse::Interaction::ResizingHorizontally;
+                            }
                         }
                     }
                 }
@@ -234,36 +249,59 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
         crate::puffin_profiler::grid_widget_draw();
         let mut geometries = Vec::new();
 
-        let keyboard_geom = self
-            .editor
-            .keyboard_cache
-            .draw(renderer, bounds.size(), |frame| {
-                keyboard::draw(self.editor, frame, bounds, theme);
-            });
-        geometries.push(keyboard_geom);
+        {
+            puffin::profile_scope!("draw::keyboard");
+            let keyboard_geom = self
+                .editor
+                .keyboard_cache
+                .draw(renderer, bounds.size(), |frame| {
+                    keyboard::draw(self.editor, frame, bounds, theme);
+                });
+            geometries.push(keyboard_geom);
+        }
 
         // 洋葱皮颜色覆盖层（不使用缓存，每帧独立绘制）
-        if let Some(onion_geom) = keyboard::draw_onion_overlay(self.editor, renderer, bounds) {
-            geometries.push(onion_geom);
+        {
+            puffin::profile_scope!("draw::onion_overlay");
+            if let Some(onion_geom) =
+                keyboard::draw_onion_overlay(self.editor, renderer, bounds)
+            {
+                geometries.push(onion_geom);
+            }
         }
 
-        let ruler_geom = self
-            .editor
-            .ruler_cache
-            .draw(renderer, bounds.size(), |frame| {
-                ruler::draw(self.editor, frame, bounds, theme);
-            });
-        geometries.push(ruler_geom);
-
-        if let Some(selection_geom) = selection_box::draw(self.editor, renderer, theme, bounds) {
-            geometries.push(selection_geom);
+        {
+            puffin::profile_scope!("draw::ruler");
+            let ruler_geom = self
+                .editor
+                .ruler_cache
+                .draw(renderer, bounds.size(), |frame| {
+                    ruler::draw(self.editor, frame, bounds, theme);
+                });
+            geometries.push(ruler_geom);
         }
 
-        let remote_cursor_geometries = remote_cursors::draw(self.editor, renderer, bounds);
-        geometries.extend(remote_cursor_geometries);
+        {
+            puffin::profile_scope!("draw::selection_box");
+            if let Some(selection_geom) =
+                selection_box::draw(self.editor, renderer, theme, bounds)
+            {
+                geometries.push(selection_geom);
+            }
+        }
 
-        let playback_indicator_geom = playback_indicator::draw(self.editor, renderer, bounds);
-        geometries.push(playback_indicator_geom);
+        {
+            puffin::profile_scope!("draw::remote_cursors");
+            let remote_cursor_geometries = remote_cursors::draw(self.editor, renderer, bounds);
+            geometries.extend(remote_cursor_geometries);
+        }
+
+        {
+            puffin::profile_scope!("draw::playback_indicator");
+            let playback_indicator_geom =
+                playback_indicator::draw(self.editor, renderer, bounds);
+            geometries.push(playback_indicator_geom);
+        }
 
         geometries
     }

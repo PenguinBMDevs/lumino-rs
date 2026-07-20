@@ -17,7 +17,10 @@ impl Host {
         let is_first_render = !self.render_ctx.has_rendered_ui;
 
         // 菜单打开时，不使用缓存机制，每次都重建 UI 以避免菜单闪烁
-        let is_menu_open = !self.root.should_render_preview_note();
+        let is_menu_open = {
+            puffin::profile_scope!("check_menu_open");
+            !self.root.should_render_preview_note()
+        };
 
         if !is_menu_open && !self.ui_dirty && !is_first_render {
             // UI 没有变化且不是第一次渲染，直接 present 之前渲染的内容
@@ -89,9 +92,12 @@ impl Host {
 
         // 处理消息（在 interface 被释放之后，避免借用冲突）
         let mut has_state_change = false;
-        for message in messages {
-            if self.process_message(message) {
-                has_state_change = true;
+        {
+            puffin::profile_scope!("process_iced_messages");
+            for message in messages {
+                if self.process_message(message) {
+                    has_state_change = true;
+                }
             }
         }
 
@@ -100,22 +106,28 @@ impl Host {
         // 对话框（note_renderer.is_none()）的刷新由 DialogManager::update() 驱动，
         // 其 redraw_force 已确保 view() 重新构建；此处的 request_redraw 会形成
         // RedrawRequested → handle_dialog_event → dialog.redraw() 的无用自循环。
-        let is_ui_updated = matches!(state, user_interface::State::Updated { .. });
-        if (has_state_change || is_ui_updated) && self.render_ctx.note_renderer.is_some() {
-            self.ui_dirty = true;
-            self.window_ctx.window.request_redraw();
+        {
+            puffin::profile_scope!("update_ui_state");
+            let is_ui_updated = matches!(state, user_interface::State::Updated { .. });
+            if (has_state_change || is_ui_updated) && self.render_ctx.note_renderer.is_some() {
+                self.ui_dirty = true;
+                self.window_ctx.window.request_redraw();
+            }
         }
 
         // 更新鼠标光标
-        if let user_interface::State::Updated {
-            mouse_interaction, ..
-        } = state
         {
-            if let Some(icon) = iced_winit::conversion::mouse_interaction(mouse_interaction) {
-                self.window_ctx.window.set_cursor(icon);
-                self.window_ctx.window.set_cursor_visible(true);
-            } else {
-                self.window_ctx.window.set_cursor_visible(false);
+            puffin::profile_scope!("update_cursor");
+            if let user_interface::State::Updated {
+                mouse_interaction, ..
+            } = state
+            {
+                if let Some(icon) = iced_winit::conversion::mouse_interaction(mouse_interaction) {
+                    self.window_ctx.window.set_cursor(icon);
+                    self.window_ctx.window.set_cursor_visible(true);
+                } else {
+                    self.window_ctx.window.set_cursor_visible(false);
+                }
             }
         }
     }

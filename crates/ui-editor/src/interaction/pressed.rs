@@ -134,15 +134,15 @@ impl Editor {
                 .selected_notes
                 .contains(&index)
             {
-                self.editor_state.interaction.selected_notes.clear();
-                self.editor_state.interaction.selected_notes.insert(index);
+                self.selection_clear();
+                self.selection_insert(index);
             }
             self.start_note_edit(index, hit_type, pos);
         } else {
             // 优先级 3：都未命中 → 点击空白处，提交 pending 拖动 + 开始新框选
             self.flush_pending_drag();
             self.playback_position = snapped_tick;
-            self.editor_state.interaction.selected_notes.clear();
+            self.selection_clear();
             self.editor_state.interaction.edit_state = crate::EditState::Selecting {
                 start_tick: selection_start_tick,
                 start_key: key,
@@ -159,7 +159,7 @@ impl Editor {
     fn flush_pending_drag(&mut self) {
         if self.pending_drag_state.is_some() {
             self.commit_pending_drag();
-            self.editor_state.interaction.selected_notes.clear();
+            self.selection_clear();
         }
     }
 
@@ -198,7 +198,7 @@ impl Editor {
         match self.editor_state.view.eraser_behavior {
             EraserBehavior::Default => {
                 if shift {
-                    self.editor_state.interaction.selected_notes.clear();
+                    self.selection_clear();
                     self.editor_state.interaction.edit_state = crate::EditState::Selecting {
                         start_tick: selection_start_tick,
                         start_key: key,
@@ -213,7 +213,7 @@ impl Editor {
                 if shift && hit_result.is_some() {
                     self.delete_note_at(pos);
                 } else {
-                    self.editor_state.interaction.selected_notes.clear();
+                    self.selection_clear();
                     self.editor_state.interaction.edit_state = crate::EditState::Selecting {
                         start_tick: selection_start_tick,
                         start_key: key,

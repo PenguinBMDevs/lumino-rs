@@ -67,66 +67,88 @@ pub fn draw(
 
     // 情况 2：有已选中的音符——绘制围绕所有选中音符的方形边界框。
     // 拖动期间使用 ghost 位置，使选择框跟随被拖动的音符一起移动。
+    //
+    // 性能优化（P0-C，2026-07-20）：
+    // - Selecting 状态下，框选矩形的边界已被 `update_selection` 缓存到
+    //   `editor.cached_selection_bounds`，直接从中计算 bbox 即可，避免 O(N) 遍历。
+    // - 非 Selecting 状态（选完松手后）才走原 O(N) 路径——但松手后只绘一帧，不构成性能问题。
+    let edit_state = &editor.editor_state.interaction.edit_state;
+
+    let bbox_from_cache = editor.cached_selection_bounds.get().map(|(mt, mxt, mk, mxk)| {
+        // cached_selection_bounds 是 (min_tick, max_tick, min_key, max_key)
+        // 注意：max_tick 是框选矩形右边界的 tick，不是 note.tick+length。
+        // 需要加一个小 padding（snap_precision）来包含可能超出右边界的音符长度。
+        let snap = editor.editor_state.view.snap_precision.max(1.0);
+        let max_tick_end = mxt + snap; // 至少一个网格，覆盖音符 length 超出部分
+        (mt, max_tick_end, mk, mxk)
+    });
+
     let selected = &editor.editor_state.interaction.selected_notes;
     if !selected.is_empty() {
+        puffin::profile_scope!("draw::selection_box_bbox");
         let notes = &editor.editor_state.data.notes;
-        let edit_state = &editor.editor_state.interaction.edit_state;
         let pending = &editor.pending_drag_state;
         let max_key = editor.editor_state.view.visible_key_count.saturating_sub(1);
 
-        // 性能优化：先判断是否需要 ghost delta，避免在循环中每元素调用。
-        // DraggingSelection 期间不应用 ghost——变化量只在松开鼠标时计算一次。
-        let needs_ghost = pending.is_some()
-            || matches!(edit_state, EditState::Dragging { .. });
+        let (min_tick, max_tick_end, min_key_bound, max_key_bound, has_visible) =
+            if let Some((c_min_t, c_max_t_end, c_min_k, c_max_k)) = bbox_from_cache {
+                // 性能关键路径：Selecting 状态下直接从缓存获取边界，避免 O(N) 遍历
+                (c_min_t, c_max_t_end, c_min_k, c_max_k, true)
+            } else {
+                // 非 Selecting 状态（或缓存不存在）：原 O(N) 退路，通常只执行一帧
+                let mut min_t = f32::INFINITY;
+                let mut max_t_end = f32::NEG_INFINITY;
+                let mut max_k = u16::MIN;
+                let mut min_k = u16::MAX;
+                let mut vis = false;
 
-        let mut min_tick = f32::INFINITY;
-        let mut max_tick_end = f32::NEG_INFINITY;
-        let mut max_key_bound = u16::MIN;
-        let mut min_key_bound = u16::MAX;
-        let mut has_visible = false;
+                // ghost 方案：先判断是否需要 ghost delta
+                let needs_ghost =
+                    pending.is_some() || matches!(edit_state, EditState::Dragging { .. });
 
-        if needs_ghost {
-            // 性能优化：提取 drag_state delta 一次，避免在循环中每元素调用
-            // ghost_delta_for_index。因为我们知道所有迭代的音符都是 selected 的，
-            // drag_state.selected[i] 恒为 true，无需在循环中重复检查。
-            let (drag_dt, drag_dk) = match edit_state {
-                EditState::Dragging { drag_state, .. } => {
-                    (drag_state.delta_tick, drag_state.delta_key)
-                }
-                _ => (0i64, 0i16),
-            };
+                if needs_ghost {
+                    let (drag_dt, drag_dk) = match edit_state {
+                        EditState::Dragging { drag_state, .. } => {
+                            (drag_state.delta_tick, drag_state.delta_key)
+                        }
+                        _ => (0i64, 0i16),
+                    };
 
-            for &i in selected.iter() {
-                if let Some(note) = notes.get(i) {
-                    let mut dt = drag_dt;
-                    let mut dk = drag_dk;
-                    // pending 可能包含之前未提交的拖动的 delta，需要叠加
-                    if let Some(pending) = pending
-                        && i < pending.selected.len() && pending.selected[i]
-                    {
-                        dt = dt.saturating_add(pending.delta_tick);
-                        dk = dk.saturating_add(pending.delta_key);
+                    for &i in selected.iter() {
+                        if let Some(note) = notes.get(i) {
+                            let mut dt = drag_dt;
+                            let mut dk = drag_dk;
+                            if let Some(pending) = pending
+                                && i < pending.selected.len()
+                                && pending.selected[i]
+                            {
+                                dt = dt.saturating_add(pending.delta_tick);
+                                dk = dk.saturating_add(pending.delta_key);
+                            }
+                            let tick = (note.tick + dt as f32).max(0.0);
+                            let key =
+                                (note.key as i32 + dk as i32).clamp(0, max_key as i32) as u16;
+                            min_t = min_t.min(tick);
+                            max_t_end = max_t_end.max(tick + note.length);
+                            max_k = max_k.max(key);
+                            min_k = min_k.min(key);
+                            vis = true;
+                        }
                     }
-                    let tick = (note.tick + dt as f32).max(0.0);
-                    let key = (note.key as i32 + dk as i32).clamp(0, max_key as i32) as u16;
-                    min_tick = min_tick.min(tick);
-                    max_tick_end = max_tick_end.max(tick + note.length);
-                    max_key_bound = max_key_bound.max(key);
-                    min_key_bound = min_key_bound.min(key);
-                    has_visible = true;
+                } else {
+                    for &i in selected.iter() {
+                        if let Some(note) = notes.get(i) {
+                            min_t = min_t.min(note.tick);
+                            max_t_end = max_t_end.max(note.tick + note.length);
+                            max_k = max_k.max(note.key);
+                            min_k = min_k.min(note.key);
+                            vis = true;
+                        }
+                    }
                 }
-            }
-        } else {
-            for &i in selected.iter() {
-                if let Some(note) = notes.get(i) {
-                    min_tick = min_tick.min(note.tick);
-                    max_tick_end = max_tick_end.max(note.tick + note.length);
-                    max_key_bound = max_key_bound.max(note.key);
-                    min_key_bound = min_key_bound.min(note.key);
-                    has_visible = true;
-                }
-            }
-        }
+
+                (min_t, max_t_end, min_k, max_k, vis)
+            };
 
         if has_visible {
             let min_x = editor.tick_to_x(min_tick);

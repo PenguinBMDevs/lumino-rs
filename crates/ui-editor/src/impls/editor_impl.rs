@@ -32,7 +32,9 @@ impl Editor {
                 pending_drag_state: None,
                 velocity_panel: VelocityPanel::new(),
                 selection_box_anim: Cell::new(None),
+                cached_selection_bounds: Cell::new(None),
                 context_menu: crate::context_menu::PianoRollContextMenuState::default(),
+                selected_bounds: Cell::new(None),
                 playback_scan_state: crate::impls::PlaybackScanState::default(),
             }
         })

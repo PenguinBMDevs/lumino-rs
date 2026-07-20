@@ -264,16 +264,22 @@ impl Host {
             mouse_interaction, ..
         } = state
         {
-            if let Some(icon) = iced_winit::conversion::mouse_interaction(mouse_interaction) {
-                self.window_ctx.window.set_cursor(icon);
-                self.window_ctx.window.set_cursor_visible(true);
-            } else {
-                self.window_ctx.window.set_cursor_visible(false);
+            {
+                puffin::profile_scope!("cursor_update");
+                if let Some(icon) = iced_winit::conversion::mouse_interaction(mouse_interaction) {
+                    self.window_ctx.window.set_cursor(icon);
+                    self.window_ctx.window.set_cursor_visible(true);
+                } else {
+                    self.window_ctx.window.set_cursor_visible(false);
+                }
             }
         }
 
-        self.events.clear();
-        self.render_ctx.cache = interface.into_cache();
+        {
+            puffin::profile_scope!("cleanup");
+            self.events.clear();
+            self.render_ctx.cache = interface.into_cache();
+        }
 
         let is_ui_updated = matches!(state, user_interface::State::Updated { .. });
         (messages, is_ui_updated)

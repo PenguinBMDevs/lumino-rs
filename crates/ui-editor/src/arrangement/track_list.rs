@@ -50,6 +50,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
         bounds: Rectangle,
         cursor: iced_core::mouse::Cursor,
     ) -> Option<iced_widget::canvas::Action<Message>> {
+        puffin::profile_function!();
         // 鼠标滚轮滚动
         if let iced_widget::canvas::Event::Mouse(iced_core::mouse::Event::WheelScrolled { delta }) =
             event

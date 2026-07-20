@@ -53,7 +53,7 @@ impl super::Editor {
         );
 
         // 切换音轨时清除选中状态（通过 editor_state）
-        self.editor_state.interaction.selected_notes.clear();
+        self.selection_clear();
         self.editor_state.interaction.hover_state = None;
         self.editor_state.interaction.edit_state = super::EditState::Idle;
         // 切轨只是替换当前显示的音符（data.notes 换成另一轨的数据），

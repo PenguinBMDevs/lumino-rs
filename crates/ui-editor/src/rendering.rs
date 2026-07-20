@@ -72,8 +72,7 @@ fn has_active_ghost_delta(
     pending: &Option<lumino_core::DragState>,
     edit_state: &EditState,
 ) -> bool {
-    pending.is_some()
-        || matches!(edit_state, EditState::Dragging { .. })
+    pending.is_some() || matches!(edit_state, EditState::Dragging { .. })
 }
 
 /// 检查音符在当前状态下是否处于"幽灵"位置（即被拖动或 pending）
@@ -89,13 +88,15 @@ fn is_note_ghosted(
 ) -> bool {
     // 检查当前单音符拖动的选中状态
     if let EditState::Dragging { drag_state, .. } = edit_state
-        && i < drag_state.selected.len() && drag_state.selected[i]
+        && i < drag_state.selected.len()
+        && drag_state.selected[i]
     {
         return true;
     }
     // 检查 pending 拖动是否包含此音符
     if let Some(pending) = pending
-        && i < pending.selected.len() && pending.selected[i]
+        && i < pending.selected.len()
+        && pending.selected[i]
     {
         return true;
     }
@@ -219,12 +220,16 @@ impl Editor {
                             let mut dt = drag_dt;
                             let mut dk = drag_dk;
                             if let Some(pending) = pending
-                                && i < pending.selected.len() && pending.selected[i]
+                                && i < pending.selected.len()
+                                && pending.selected[i]
                             {
                                 dt = dt.saturating_add(pending.delta_tick);
                                 dk = dk.saturating_add(pending.delta_key);
                             }
-                            ((note.tick + dt as f32).max(0.0), (note.key as i32 + dk as i32).clamp(0, max_key as i32) as u16)
+                            (
+                                (note.tick + dt as f32).max(0.0),
+                                (note.key as i32 + dk as i32).clamp(0, max_key as i32) as u16,
+                            )
                         } else {
                             (note.tick, note.key)
                         };
@@ -253,12 +258,16 @@ impl Editor {
                         let mut dt = drag_dt;
                         let mut dk = drag_dk;
                         if let Some(pending) = pending
-                            && i < pending.selected.len() && pending.selected[i]
+                            && i < pending.selected.len()
+                            && pending.selected[i]
                         {
                             dt = dt.saturating_add(pending.delta_tick);
                             dk = dk.saturating_add(pending.delta_key);
                         }
-                        ((note.tick + dt as f32).max(0.0), (note.key as i32 + dk as i32).clamp(0, max_key as i32) as u16)
+                        (
+                            (note.tick + dt as f32).max(0.0),
+                            (note.key as i32 + dk as i32).clamp(0, max_key as i32) as u16,
+                        )
                     } else {
                         (note.tick, note.key)
                     };

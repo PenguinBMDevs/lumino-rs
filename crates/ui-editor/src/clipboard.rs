@@ -132,7 +132,7 @@ impl Editor {
     /// 将解析的音符提交到编辑器并选中
     fn commit_pasted_notes(&mut self, _anchor: (f32, u16), pasted: Vec<super::Note>) {
         self.push_history();
-        self.editor_state.interaction.selected_notes.clear();
+        self.selection_clear();
         let pasted_count = pasted.len();
         let start = self.editor_state.data.notes.len();
         self.editor_state.data.notes.extend(pasted);
@@ -142,7 +142,7 @@ impl Editor {
         );
         self.editor_state.data.mark_track_notes_changed();
         for index in start..start + pasted_count {
-            self.editor_state.interaction.selected_notes.insert(index);
+            self.selection_insert(index);
         }
         self.mark_notes_changed();
         tracing::info!("Editor: 已粘贴 {} 个音符", pasted_count);

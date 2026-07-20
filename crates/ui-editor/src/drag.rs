@@ -204,48 +204,238 @@ impl Editor {
     }
 
     /// 更新框选区域中的音符选中状态
+    ///
+    /// 增量优化（V2）：
+    /// - 缓存上一帧的 raw 边界，用 `rect_subtract` 计算新增/减少的薄条区域
+    /// - 仅对 delta 区域执行 R-tree 查询，插入/删除边缘变化的部分音符
+    /// - 避免每帧 O(N) 全量 HashSet 重建（60W 音符 = 76ms/帧 → 几乎归零）
     pub(crate) fn update_selection(&mut self) {
         crate::puffin_profiler::update_selection();
-        if let EditState::Selecting {
-            start_tick,
-            start_key,
-            current_tick,
-            current_key,
-        } = self.editor_state.interaction.edit_state
+
+        puffin::profile_scope!("diag::update_selection_total");
+
+        // 非 Selecting 状态 → 清除缓存并返回
+        if !matches!(
+            self.editor_state.interaction.edit_state,
+            EditState::Selecting { .. }
+        ) {
+            self.cached_selection_bounds.set(None);
+            return;
+        }
+        let (start_tick, start_key, current_tick, current_key) =
+            match &self.editor_state.interaction.edit_state {
+                EditState::Selecting {
+                    start_tick,
+                    start_key,
+                    current_tick,
+                    current_key,
+                } => (*start_tick, *start_key, *current_tick, *current_key),
+                _ => unreachable!("confirmed Selecting above"),
+            };
+
+        let new_min_t = start_tick.min(current_tick);
+        let new_max_t = start_tick.max(current_tick);
+        let new_min_k = start_key.min(current_key);
+        let new_max_k = start_key.max(current_key);
+        let new_bounds = (new_min_t, new_max_t, new_min_k, new_max_k);
+
+        // ═══ 增量 delta 更新 ═══
+        // 1. 无缓存 → 全量重建（首帧）
+        // 2. 缓存相同 → 跳过（边界未变）
+        // 3. 缓存不同 → 计算 delta 矩形，仅增删边缘变化部分
+        let Some(old_bounds) = self.cached_selection_bounds.get() else {
+            self.cached_selection_bounds.set(Some(new_bounds));
+            puffin::profile_scope!("diag::selection_full_rebuild");
+            self.rebuild_selected_notes(new_min_t, new_max_t, new_min_k, new_max_k);
+            return;
+        };
+
+        if old_bounds == new_bounds {
+            puffin::profile_scope!("diag::selection_cache_hit");
+            return;
+        }
+
+        // 安全保护：selected_notes 为空但缓存在 → 某处被清了，做全量重建
+        if self.editor_state.interaction.selected_notes.is_empty() {
+            self.cached_selection_bounds.set(Some(new_bounds));
+            puffin::profile_scope!("diag::selection_full_rebuild");
+            self.rebuild_selected_notes(new_min_t, new_max_t, new_min_k, new_max_k);
+            return;
+        }
+
+        self.cached_selection_bounds.set(Some(new_bounds));
+
+        let (old_min_t, old_max_t, old_min_k, old_max_k) = old_bounds;
+
+        // 确保空间索引就绪；若不存在则 fallback 全量重建
+        self.ensure_spatial_index();
+        if self.spatial.note_index.borrow().is_none() {
+            puffin::profile_scope!("diag::selection_full_rebuild");
+            self.rebuild_selected_notes(new_min_t, new_max_t, new_min_k, new_max_k);
+            return;
+        }
+
+        // 注意：以下 borrow 块必须分开，避免 RefCell borrow 与 &mut self 的冲突
+        let mut delta_rects: Vec<(f32, f32, u16, u16)> = Vec::with_capacity(8);
+
+        // 计算减少区域（old 里有、new 里没有）
+        rect_subtract(
+            old_min_t,
+            old_max_t,
+            old_min_k,
+            old_max_k,
+            new_min_t,
+            new_max_t,
+            new_min_k,
+            new_max_k,
+            &mut delta_rects,
+        );
+
+        let mut removed_indices = Vec::new();
+        let mut added_indices = Vec::new();
         {
-            let min_tick = start_tick.min(current_tick);
-            let max_tick = start_tick.max(current_tick);
-            let min_key = start_key.min(current_key);
-            let max_key = start_key.max(current_key);
-
-            self.editor_state.interaction.selected_notes.clear();
-
-            // 大数据量时使用空间索引 O(log N + K)，避免每帧 O(N) 全量扫描。
-            self.ensure_spatial_index();
-            if let Some(index) = self.spatial.note_index.borrow().as_ref() {
-                let mut cache = self.spatial.query_cache.borrow_mut();
+            let index = self.spatial.note_index.borrow();
+            let index = index.as_ref().expect("just checked is_some");
+            let mut cache = self.spatial.query_cache.borrow_mut();
+            for &(t_min, t_max, k_min, k_max) in &delta_rects {
                 cache.clear();
-                index.update_query(min_tick, max_tick, min_key, max_key, &mut cache);
-                for &i in cache.iter() {
-                    self.editor_state.interaction.selected_notes.insert(i);
-                }
-            } else {
-                // 小数据量线性扫描：音符数量低于阈值时，扫描比建索引更快。
-                for (i, note) in self.editor_state.data.notes.iter().enumerate() {
-                    let note_end = note.tick + note.length;
-                    if note_end >= min_tick
-                        && note.tick <= max_tick
-                        && note.key >= min_key
-                        && note.key <= max_key
-                    {
-                        self.editor_state.interaction.selected_notes.insert(i);
-                    }
-                }
+                index.update_query(t_min, t_max, k_min, k_max, &mut cache);
+                removed_indices.extend(cache.iter().copied());
             }
+        }
+        delta_rects.clear();
+
+        let removed = removed_indices
+            .iter()
+            .filter(|&&i| self.selection_remove(&i))
+            .count();
+
+        // 计算新增区域（new 里有、old 里没有）
+        rect_subtract(
+            new_min_t,
+            new_max_t,
+            new_min_k,
+            new_max_k,
+            old_min_t,
+            old_max_t,
+            old_min_k,
+            old_max_k,
+            &mut delta_rects,
+        );
+
+        {
+            let index = self.spatial.note_index.borrow();
+            let index = index.as_ref().expect("just checked is_some");
+            let mut cache = self.spatial.query_cache.borrow_mut();
+            for &(t_min, t_max, k_min, k_max) in &delta_rects {
+                cache.clear();
+                index.update_query(t_min, t_max, k_min, k_max, &mut cache);
+                added_indices.extend(cache.iter().copied());
+            }
+        }
+        let added = added_indices.len();
+        for i in added_indices {
+            self.selection_insert(i);
+        }
+
+        puffin::profile_scope!("diag::selection_delta");
+
+        // debug 日志：仅在 delta 较大时打印,避免高频刷屏
+        if removed + added > 100 {
+            tracing::debug!(
+                "diag::selection_delta — 移除了 {} 个, 新增了 {} 个",
+                removed,
+                added,
+            );
         }
     }
 
-    /// 检查是否应该开始拖动
+    /// 全量重建 selected_notes（首帧 / fallback）
+    fn rebuild_selected_notes(&mut self, min_tick: f32, max_tick: f32, min_key: u16, max_key: u16) {
+        self.selection_clear();
+
+        self.ensure_spatial_index();
+        let indices: Vec<usize> = if let Some(index) = self.spatial.note_index.borrow().as_ref() {
+            let mut cache = self.spatial.query_cache.borrow_mut();
+            cache.clear();
+            index.update_query(min_tick, max_tick, min_key, max_key, &mut cache);
+            cache.iter().copied().collect()
+        } else {
+            puffin::profile_scope!("diag::selection_linear_scan");
+            let note_count = self.editor_state.data.notes.len();
+            tracing::debug!(
+                "diag::selection_linear_scan — 音符数={}（无空间索引，线性回退）",
+                note_count
+            );
+            self.editor_state
+                .data
+                .notes
+                .iter()
+                .enumerate()
+                .filter(|&(_, note)| {
+                    let note_end = note.tick + note.length;
+                    note_end >= min_tick
+                        && note.tick <= max_tick
+                        && note.key >= min_key
+                        && note.key <= max_key
+                })
+                .map(|(i, _)| i)
+                .collect()
+        };
+        for i in indices {
+            self.selection_insert(i);
+        }
+    }
+}
+
+/// 矩形差集：outer - inner = outer 中不在 inner 内的部分。
+/// 返回最多 4 个非重叠矩形的列表。
+///
+/// 算法：先 clamp inner 到 outer 边界，然后从上/下/左/右四个方向切 strip。
+/// 上/下 strip 跨越 outer 全宽，左/右 strip 夹在 inner 的垂直范围内 → 不重复。
+#[allow(clippy::too_many_arguments)]
+fn rect_subtract(
+    outer_t_min: f32,
+    outer_t_max: f32,
+    outer_k_min: u16,
+    outer_k_max: u16,
+    inner_t_min: f32,
+    inner_t_max: f32,
+    inner_k_min: u16,
+    inner_k_max: u16,
+    result: &mut Vec<(f32, f32, u16, u16)>,
+) {
+    // Clamp inner to outer bounds
+    let ic_t_min = inner_t_min.max(outer_t_min);
+    let ic_t_max = inner_t_max.min(outer_t_max);
+    let ic_k_min = inner_k_min.max(outer_k_min);
+    let ic_k_max = inner_k_max.min(outer_k_max);
+
+    // 无重叠 → 整个 outer 都是差集
+    if ic_t_min >= ic_t_max || ic_k_min >= ic_k_max {
+        result.push((outer_t_min, outer_t_max, outer_k_min, outer_k_max));
+        return;
+    }
+
+    // 上 strip（outer 在 ic 上方的部分，对应更小的 key 值）
+    if ic_k_min > outer_k_min {
+        result.push((outer_t_min, outer_t_max, outer_k_min, ic_k_min));
+    }
+    // 下 strip（outer 在 ic 下方的部分，对应更大的 key 值）
+    if ic_k_max < outer_k_max {
+        result.push((outer_t_min, outer_t_max, ic_k_max, outer_k_max));
+    }
+    // 左 strip（outer 在 ic 左侧、上下之间）
+    if ic_t_min > outer_t_min {
+        result.push((outer_t_min, ic_t_min, ic_k_min, ic_k_max));
+    }
+    // 右 strip（outer 在 ic 右侧、上下之间）
+    if ic_t_max < outer_t_max {
+        result.push((ic_t_max, outer_t_max, ic_k_min, ic_k_max));
+    }
+}
+
+impl Editor {
     fn should_start_dragging(&self, pos: iced_core::Point, start_pos: iced_core::Point) -> bool {
         let delta_x = pos.x - start_pos.x;
         let delta_y = pos.y - start_pos.y;

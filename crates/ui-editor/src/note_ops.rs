@@ -33,6 +33,63 @@ fn collect_ghost_indices(
 }
 
 impl Editor {
+    /// 向选中集合添加音符，并增量更新选择框边界。
+    /// 避免后续 get_selection_box_bounds() 做 O(N) 全量扫描。
+    pub fn selection_insert(&mut self, index: usize) {
+        let inserted = self.editor_state.interaction.selected_notes.insert(index);
+        if !inserted {
+            return; // 音符已选中，不需要更新边界
+        }
+        if let Some(n) = self.editor_state.data.notes.get(index) {
+            let mut bounds = self.selected_bounds.get();
+            match &mut bounds {
+                Some((min_t, max_te, max_k, min_k)) => {
+                    *min_t = min_t.min(n.tick);
+                    *max_te = max_te.max(n.tick + n.length);
+                    *max_k = u16::max(*max_k, n.key);
+                    *min_k = u16::min(*min_k, n.key);
+                }
+                None => {
+                    bounds = Some((n.tick, n.tick + n.length, n.key, n.key));
+                }
+            }
+            self.selected_bounds.set(bounds);
+        }
+    }
+
+    /// 从选中集合移除音符，如果被移除的音符在边界上则失效缓存。
+    pub fn selection_remove(&mut self, index: &usize) -> bool {
+        let removed = self.editor_state.interaction.selected_notes.remove(index);
+        if !removed {
+            return false;
+        }
+        // 检查被移除的音符是否在边界上，若在则缓存失效
+        if let Some(bounds) = self.selected_bounds.get() {
+            if let Some(n) = self.editor_state.data.notes.get(*index) {
+                let at_boundary = n.tick == bounds.0
+                    || n.tick + n.length == bounds.1
+                    || n.key == bounds.2
+                    || n.key == bounds.3;
+                if at_boundary {
+                    self.selected_bounds.set(None);
+                }
+            }
+        }
+        true
+    }
+
+    /// 清空选中集合，并清除选择框边界缓存。
+    pub fn selection_clear(&mut self) {
+        self.editor_state.interaction.selected_notes.clear();
+        self.selected_bounds.set(None);
+    }
+
+    /// 替换选中集合，并使选择框边界缓存失效（下次调用时重新计算）。
+    pub fn selection_assign(&mut self, new_set: HashSet<usize>) {
+        self.editor_state.interaction.selected_notes = new_set;
+        self.selected_bounds.set(None);
+    }
+
     /// 检测坐标是否落在某个音符上
     ///
     /// **性能关键**：1000W 音符场景下，原 O(N) 全量扫描 ~168ms/帧。
@@ -179,7 +236,7 @@ impl Editor {
     }
 
     pub fn clear_selection(&mut self) {
-        self.editor_state.interaction.selected_notes.clear();
+        self.selection_clear();
     }
 
     pub fn delete_selected_notes(&mut self) {
@@ -203,7 +260,7 @@ impl Editor {
             .collect();
 
         self.editor_state.data.delete_selected_notes(&indices);
-        self.editor_state.interaction.selected_notes.clear();
+        self.selection_clear();
         self.editor_state.interaction.hover_state = None;
         self.mark_notes_changed();
 
@@ -218,11 +275,13 @@ impl Editor {
     }
 
     pub fn select_all_notes(&mut self) {
-        self.editor_state.interaction.selected_notes = self.editor_state.data.select_all_notes();
+        self.selection_assign(self.editor_state.data.select_all_notes());
     }
 
     pub fn get_selection_box_bounds(&self) -> Option<(f32, f32, f32, f32)> {
+        puffin::profile_function!();
         crate::puffin_profiler::get_selection_box_bounds();
+
         let notes = &self.editor_state.data.notes;
         let view = &self.editor_state.view;
         let selected = &self.editor_state.interaction.selected_notes;
@@ -234,9 +293,21 @@ impl Editor {
             return None;
         }
 
-        // 性能优化：先判断是否需要 ghost delta，避免在循环中每元素调用。
-        let needs_ghost = pending.is_some()
-            || matches!(edit_state, EditState::Dragging { .. });
+        // 判断是否需要 ghost delta（拖拽中或松手后待提交状态）
+        let needs_ghost = pending.is_some() || matches!(edit_state, EditState::Dragging { .. });
+
+        // 非 ghost 路径：使用增量维护的 selected_bounds，O(1)
+        if !needs_ghost {
+            if let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
+                return Some((
+                    view.tick_to_x(min_t),
+                    view.tick_to_x(max_te),
+                    view.key_to_y(max_k),
+                    view.key_to_y(min_k) + view.zoom_y,
+                ));
+            }
+            // 缓存失效时回退到全量扫描（理论上不应发生，兜底）
+        }
 
         let mut min_t = f32::INFINITY;
         let mut max_te = f32::NEG_INFINITY;
@@ -262,7 +333,8 @@ impl Editor {
                 let mut dt = drag_dt;
                 let mut dk = drag_dk;
                 if let Some(pending) = pending
-                    && i < pending.selected.len() && pending.selected[i]
+                    && i < pending.selected.len()
+                    && pending.selected[i]
                 {
                     dt = dt.saturating_add(pending.delta_tick);
                     dk = dk.saturating_add(pending.delta_key);
@@ -274,7 +346,11 @@ impl Editor {
                 max_k = max_k.max(key);
                 min_k = min_k.min(key);
             }
-        } else {
+        }
+        // 兜底路径：selected_bounds 失效且非 ghost 时全量扫描
+        // 或 ghost 路径的正常计算
+        // needs_ghost 分支已经处理了，如果走到这里且不是 needs_ghost，说明是兜底
+        if !needs_ghost {
             for &i in selected.iter() {
                 let Some(n) = notes.get(i) else {
                     continue;
@@ -289,12 +365,17 @@ impl Editor {
         if !any {
             return None;
         }
-        Some((
+        let result = Some((
             view.tick_to_x(min_t),
             view.tick_to_x(max_te),
             view.key_to_y(max_k),
             view.key_to_y(min_k) + view.zoom_y,
-        ))
+        ));
+        // 兜底路径中恢复 selected_bounds 缓存
+        if !needs_ghost {
+            self.selected_bounds.set(Some((min_t, max_te, max_k, min_k)));
+        }
+        result
     }
 
     pub fn hit_test_selection_box(&self, pos: Point) -> Option<SelectionHitType> {

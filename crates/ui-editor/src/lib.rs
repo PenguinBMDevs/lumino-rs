@@ -139,8 +139,21 @@ pub struct Editor {
     /// 框选框的动画显示状态（用于弹簧物理动画）
     pub selection_box_anim: Cell<Option<SelectionBoxAnimState>>,
 
+    /// 上一帧框选矩形边界（raw），用于计算增量 delta。
+    ///
+    /// 元组: (min_tick, max_tick, min_key, max_key)
+    /// 存储上一帧精确的 raw 边界，配合 `rect_subtract` 计算新增/减少的薄条区域，
+    /// 仅对 delta 区域执行 R-tree 查询，避免每帧 O(N) 全量重建。
+    /// None = 不在 Selecting 状态 / 未初始化。
+    pub(crate) cached_selection_bounds: Cell<Option<(f32, f32, u16, u16)>>,
+
     /// 钢琴卷帘右键上下文菜单状态
     pub context_menu: context_menu::PianoRollContextMenuState,
+
+    /// 选择框边界缓存（raw 坐标），增量维护，避免每帧 O(N) 全量扫描。
+    /// 每次选中/取消选中音符时增量更新，仅 ghost 路径（拖拽中）需实时计算。
+    /// 元组: (min_tick, max_tick_end, max_key, min_key)
+    pub(crate) selected_bounds: Cell<Option<(f32, f32, u16, u16)>>,
 
     /// 播放键色增量扫描状态——避免每帧 O(N) 全量扫描导致的线性性能退化
     pub(crate) playback_scan_state: impls::PlaybackScanState,
