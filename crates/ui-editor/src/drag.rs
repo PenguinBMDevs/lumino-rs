@@ -220,9 +220,10 @@ impl Editor {
             // 大数据量时使用空间索引 O(log N + K)，避免每帧 O(N) 全量扫描。
             self.ensure_spatial_index();
             if let Some(index) = self.spatial.note_index.borrow().as_ref() {
-                let mut indices = Vec::new();
-                index.update_query(min_tick, max_tick, min_key, max_key, &mut indices);
-                for &i in &indices {
+                let mut cache = self.spatial.query_cache.borrow_mut();
+                cache.clear();
+                index.update_query(min_tick, max_tick, min_key, max_key, &mut cache);
+                for &i in cache.iter() {
                     self.editor_state.interaction.selected_notes.insert(i);
                 }
             } else {

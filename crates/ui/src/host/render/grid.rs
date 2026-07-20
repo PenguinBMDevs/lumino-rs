@@ -1,17 +1,8 @@
-//! 网格线和标尺实例生成 — 委托到 lumino-gfx
+//! 标尺实例生成 — 委托到 lumino-gfx
 
 use crate::host::Host;
-use lumino_gfx::GridViewParams;
 
 impl Host {
-    /// 生成网格线实例
-    pub(super) fn generate_grid_instances(
-        &self,
-        params: &GridViewParams,
-    ) -> Vec<lumino_gfx::GridLineInstance> {
-        lumino_gfx::generate_grid_instances(params)
-    }
-
     /// 生成标尺实例
     pub(super) fn generate_ruler_instances(
         &self,

@@ -315,7 +315,7 @@ impl EditorData {
         let mut r = Vec::new();
         for (i, n) in self.notes.iter().enumerate() {
             let ne = n.tick + n.length;
-            if n.key >= km && n.key <= kx && n.tick < te && ne > ts {
+            if n.key >= km && n.key <= kx && n.tick <= te && ne >= ts {
                 r.push(i);
             }
         }

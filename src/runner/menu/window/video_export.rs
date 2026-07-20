@@ -3,8 +3,7 @@
 //! 包含视频帧渲染参数构建、键盘贴图生成、标尺小节号合成等工具函数。
 
 use lumino_gfx::{
-    ARRANGEMENT_PALETTE, GridViewParams, NoteInstance, RenderParams, generate_grid_instances,
-    generate_ruler_instances, pack_color,
+    ARRANGEMENT_PALETTE, NoteInstance, RenderParams, generate_ruler_instances, pack_color,
 };
 
 pub mod keyboard;
@@ -96,18 +95,8 @@ pub(super) fn build_video_render_params(
     let scroll_x = tick as f32 * zoom_x;
     let scroll_y = 0.0f32;
 
-    // 1. 生成网格线实例
-    let grid_params = GridViewParams {
-        viewport_width: w,
-        viewport_height: h,
-        keyboard_width,
-        ruler_height,
-        scroll_x,
-        scroll_y,
-        zoom_x,
-        zoom_y,
-    };
-    let grid_instances = generate_grid_instances(&grid_params);
+    // 1. 网格线由 GPU 端 infinite_grid.wgsl 自动绘制，不再生成 CPU 实例
+    let grid_instances = Vec::new();
 
     // 2. 生成标尺实例
     let ruler_instances =

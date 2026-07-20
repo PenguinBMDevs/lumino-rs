@@ -10,19 +10,11 @@ impl Editor {
     pub(crate) fn handle_released(&mut self) {
         let edit_state = std::mem::take(&mut self.editor_state.interaction.edit_state);
         match edit_state {
-            EditState::Selecting {
-                start_tick,
-                start_key,
-                current_tick,
-                current_key,
-            } => {
+            EditState::Selecting { .. } => {
                 if self.editor_state.tool == Tool::Eraser {
-                    self.delete_notes_in_selection_box(
-                        start_tick,
-                        start_key,
-                        current_tick,
-                        current_key,
-                    );
+                    // 框选过程中 update_selection 已维护好 selected_notes，
+                    // 直接复用，避免重复线性扫描。
+                    self.delete_selected_notes();
                 } else {
                     tracing::debug!(
                         "框选结束，选中 {} 个音符",

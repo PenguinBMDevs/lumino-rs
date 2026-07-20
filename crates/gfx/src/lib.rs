@@ -31,7 +31,7 @@ pub use cc_bar_renderer::{
 };
 pub use context::{Context, ContextError, Result};
 pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent};
-pub use grid::{GridViewParams, generate_grid_instances, generate_ruler_instances, is_black_key};
+pub use grid::{generate_ruler_instances, is_black_key};
 pub use grid_renderer::{GridLineInstance, GridPrepareParams, GridRenderer};
 pub use keyboard_renderer::renderer::KeyboardPrepareParams;
 pub use keyboard_renderer::{KeyInstance, KeyboardRenderer, KeyboardViewportUniform};

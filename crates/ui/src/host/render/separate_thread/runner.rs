@@ -144,23 +144,6 @@ impl Host {
             (editor.scroll(), editor.zoom())
         };
 
-        let grid_instances = if self.root.is_arrangement_mode() {
-            vec![] // 走带模式不使用网格
-        } else {
-            puffin::profile_scope!("generate_grid_instances");
-            let grid_params = lumino_gfx::GridViewParams {
-                viewport_width: viewport_size.width,
-                viewport_height: viewport_size.height,
-                keyboard_width: DEFAULT_KEYBOARD_WIDTH,
-                ruler_height: DEFAULT_RULER_HEIGHT,
-                scroll_x: scroll.0,
-                scroll_y: scroll.1,
-                zoom_x: zoom.0,
-                zoom_y: zoom.1,
-            };
-            self.generate_grid_instances(&grid_params)
-        };
-
         // WGPU 渲染模式下不使用 Iced Canvas 键盘
         let keyboard_instances = vec![];
 
@@ -201,7 +184,6 @@ impl Host {
             scroll,
             zoom,
             viewport_size,
-            grid_instances,
             keyboard_instances,
             ruler_instances,
             arrangement_note_instances,
@@ -557,7 +539,6 @@ impl Host {
             .ppq(ppq as f32)
             .max_key_index(max_key_index)
             .is_arrangement_mode(is_arrangement_mode)
-            .grid_instances(data.grid_instances)
             .ruler_instances(data.ruler_instances)
             .keyboard_instances(data.keyboard_instances)
             .arrangement_note_instances(data.arrangement_note_instances)

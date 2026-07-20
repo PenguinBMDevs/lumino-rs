@@ -13,10 +13,8 @@
 //! - `playback_indicator`: 播放指示线渲染
 //! - `program`: PianoRollGrid 结构体定义
 //! - `program_impl`: Program trait 实现（事件处理、绘制）
-//! - `editor_impl`: Editor 网格线实例更新方法
 
 pub mod bars;
-pub mod editor_impl;
 pub mod keyboard;
 pub mod keys;
 pub mod loop_range;

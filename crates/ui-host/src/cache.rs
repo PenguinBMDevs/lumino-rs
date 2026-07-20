@@ -37,8 +37,6 @@ impl NoteRenderViewport {
 /// - Front Buffer: 渲染线程读取并上传到 GPU
 /// - 交换操作: 原子指针交换，无数据拷贝
 pub struct RenderCache {
-    /// 缓存的网格线实例
-    pub grid_instances: Vec<lumino_gfx::GridLineInstance>,
     /// 双缓冲主音符实例数据（UI线程写入，渲染线程读取）
     pub note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
     /// 主音符版本号（用于检测数据变化）
@@ -60,7 +58,6 @@ pub struct RenderCache {
 impl RenderCache {
     pub fn new() -> Self {
         Self {
-            grid_instances: Vec::new(),
             note_instances_buffer: Arc::new(SwappableBuffer::new(1024 * 1024)),
             note_instances_version: 0,
             grid_viewport_hash: 0,

@@ -1,4 +1,10 @@
-// 无限网格着色器
+// 无限网格着色器 — LOD 平滑缩放
+//
+// 以视口内可见小节数为核心判断依据（与 CPU 端 bars.rs 算法一致）：
+// - < 12 小节 → 显示 1/16 细分网格线
+// - < 24 小节 → 显示半拍线（8分音符）
+// - < 48 小节 → 显示拍线（4分音符）
+// - ≥ 48 小节 → 仅显示小节线（间隔自适应翻倍）
 
 // Viewport & Camera Uniforms
 struct CameraUniform {
@@ -60,6 +66,22 @@ fn is_black_key(key: i32) -> bool {
     return k == 1 || k == 3 || k == 6 || k == 8 || k == 10;
 }
 
+// ─── LOD 阈值（基于可见小节数）───
+
+const GRID_MAX_MEASURES: f32 = 12.0;     // 1/16细分网格线可见上限
+const HALFBEAT_MAX_MEASURES: f32 = 24.0; // 半拍线（8分音符）可见上限
+const BEAT_MAX_MEASURES: f32 = 48.0;     // 拍线（4分音符）可见上限
+
+/// 线型透明度（淡入：阈值处 0.0 → 半阈值处 1.0）
+fn lod_alpha(visible_measures: f32, threshold: f32) -> f32 {
+    if visible_measures >= threshold {
+        return 0.0;
+    }
+    // 在 threshold → 0 范围，alpha 从 0.0 → 1.0
+    let t = 1.0 - visible_measures / threshold;
+    return min(t * 2.0, 1.0);
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // 屏幕像素坐标 (左上为 0,0)
@@ -74,29 +96,34 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // === Y轴坐标计算 - 与 note.wgsl 完全对齐 ===
-    // note.wgsl: screen_y = (max_key_index - key) * zoom_y - scroll_y + ruler_height + canvas_offset_y
-    // 反推: key = max_key_index - (screen_y - ruler_height - canvas_offset_y + scroll_y) / zoom_y
     let local_y = screen_y - camera.margins.y - camera.canvas_offset.y + camera.camera_pos.y;
     let world_y = local_y / camera.zoom.y;
     let key_f32 = camera.max_key_index - world_y;
     let key_int = i32(ceil(key_f32));
 
     // 检查是否在有效 key 范围内 [0, max_key_index]
-    // 当滚动/缩放导致 viewport 超出琴键区时，外部区域不应显示琴键线和背景色交替
     let in_valid_key_range = key_f32 >= 0.0 && key_f32 <= camera.max_key_index;
 
-    // 计算背景色 (黑白键) — 仅在有效 key 范围内启用交替背景
+    // 计算背景色 (黑白键)
     var bg_color = camera.color_bg;
     if in_valid_key_range && is_black_key(key_int) {
         bg_color = camera.color_bg_black_key;
     }
 
-    // === X轴坐标计算 - 与 note.wgsl 完全对齐 ===
-    // note.wgsl: screen_x = tick * zoom_x - scroll_x + keyboard_width + canvas_offset_x
-    // 反推: tick = (screen_x - keyboard_width - canvas_offset_x + scroll_x) / zoom_x
+    // === 计算视口内可见小节数（LOD 核心指标）===
+    let pixel_width = camera.viewport_size.x - camera.margins.x;
+    let ticks_per_measure = camera.ppq * 4.0;
+    let tick_width = pixel_width / camera.zoom.x;
+    let visible_measures = tick_width / ticks_per_measure;
+
+    // ─── 各线型 LOD alpha ───
+    let grid_alpha = lod_alpha(visible_measures, GRID_MAX_MEASURES);
+    let halfbeat_alpha = lod_alpha(visible_measures, HALFBEAT_MAX_MEASURES);
+    let beat_alpha = lod_alpha(visible_measures, BEAT_MAX_MEASURES);
+
+    // === X轴坐标计算 ===
     let world_tick = (screen_x - camera.margins.x - camera.canvas_offset.x + camera.camera_pos.x) / camera.zoom.x;
 
-    let ticks_per_measure = camera.ppq * 4.0;
     let ticks_per_beat = camera.ppq;
     let ticks_per_half_beat = camera.ppq / 2.0;
     let ticks_per_grid = camera.ppq / 4.0;
@@ -104,49 +131,50 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let base_width = 1.0;
     let before_tick_zero = world_tick < 0.0;
 
-    // X轴网格线（先检查）：纵向线（小节线/拍线/1/8分割线/1/16网格线）
-    // 在横向线上方渲染，使得交叉点处纵向线优先显示
-    // 跳过负 tick 区域，避免镜像线显示在 tick 0 左侧
+    // 计算各线型距离（供后续 LOD 层级引用）
+    let measure_frac = fract(world_tick / ticks_per_measure);
+    let dist_measure = min(measure_frac, 1.0 - measure_frac) * ticks_per_measure * camera.zoom.x;
+
+    // 拍线距离
+    let beat_frac = fract(world_tick / ticks_per_beat);
+    let dist_beat = min(beat_frac, 1.0 - beat_frac) * ticks_per_beat * camera.zoom.x;
+
+    // 半拍线距离
+    let half_frac = fract(world_tick / ticks_per_half_beat);
+    let dist_half = min(half_frac, 1.0 - half_frac) * ticks_per_half_beat * camera.zoom.x;
+
+    // 1/16网格线距离
+    let grid_frac = fract(world_tick / ticks_per_grid);
+    let dist_grid = min(grid_frac, 1.0 - grid_frac) * ticks_per_grid * camera.zoom.x;
+
+    // X轴网格线（先检查）：纵向线
     if !before_tick_zero {
-        // 小节线（最粗）
-        let measure_frac = fract(world_tick / ticks_per_measure);
-        let dist_measure = min(measure_frac, 1.0 - measure_frac) * ticks_per_measure * camera.zoom.x;
+        // 小节线（始终可见，最粗）
         if dist_measure < base_width * 2.0 {
             return camera.color_bar;
         }
 
-        // 拍线 / 1/4分割线
-        let beat_frac = fract(world_tick / ticks_per_beat);
-        let dist_beat = min(beat_frac, 1.0 - beat_frac) * ticks_per_beat * camera.zoom.x;
-        if dist_beat < base_width * 1.5 {
-            // 跳过小节线位置（避免重叠）
-            if dist_measure >= base_width * 2.0 {
-                return mix(bg_color, camera.color_beat, 0.8);
-            }
+        // 拍线（LOD: < 48 小节可见）
+        if beat_alpha > 0.0 && dist_beat < base_width * 1.5 && dist_measure >= base_width * 2.0 {
+            return mix(bg_color, camera.color_beat, 0.8 * beat_alpha);
         }
 
-        // 1/8分割线（半拍线）
-        let half_frac = fract(world_tick / ticks_per_half_beat);
-        let dist_half = min(half_frac, 1.0 - half_frac) * ticks_per_half_beat * camera.zoom.x;
-        if dist_half < base_width {
-            if camera.zoom.x > 0.02 && dist_beat >= base_width * 1.5 {
-                return mix(bg_color, camera.color_half_beat, 0.7);
-            }
+        // 半拍线（LOD: < 24 小节可见）
+        if halfbeat_alpha > 0.0 && dist_half < base_width
+            && dist_beat >= base_width * 1.5
+        {
+            return mix(bg_color, camera.color_half_beat, 0.7 * halfbeat_alpha);
         }
 
-        // 1/16细分网格线
-        let grid_frac = fract(world_tick / ticks_per_grid);
-        let dist_grid = min(grid_frac, 1.0 - grid_frac) * ticks_per_grid * camera.zoom.x;
-        if dist_grid < base_width * 0.5 {
-            if camera.zoom.x > 0.06 && dist_half >= base_width {
-                return mix(bg_color, camera.color_grid, 0.5);
-            }
+        // 1/16细分网格线（LOD: < 12 小节可见）
+        if grid_alpha > 0.0 && dist_grid < base_width * 0.5
+            && dist_half >= base_width
+        {
+            return mix(bg_color, camera.color_grid, 0.5 * grid_alpha);
         }
     }
 
     // Y轴网格线（后检查）：横向琴键分隔线
-    // 在纵向线下方渲染，使得交叉点处纵向线优先显示
-    // 仅在有效 key 范围内绘制，防止 viewport 超出琴键区时空格出现额外线
     if in_valid_key_range {
         let key_frac = fract(key_f32);
         let dist_key = min(key_frac, 1.0 - key_frac);

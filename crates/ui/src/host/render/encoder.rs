@@ -21,9 +21,6 @@ impl Host {
             return;
         }
 
-        // 视口变化，重新生成网格线
-        self.root
-            .update_grid_line_instances(&mut self.render_ctx.render_cache.grid_instances);
         self.render_ctx.render_cache.grid_viewport_hash = current_hash;
 
         let theme = self.root.theme();

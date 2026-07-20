@@ -5,7 +5,6 @@ pub struct RenderData {
     pub scroll: (f32, f32),
     pub zoom: (f32, f32),
     pub viewport_size: Size,
-    pub grid_instances: Vec<lumino_gfx::GridLineInstance>,
     pub keyboard_instances: Vec<lumino_gfx::KeyInstance>,
     pub ruler_instances: Vec<lumino_gfx::RulerTickInstance>,
     pub arrangement_note_instances: Vec<lumino_gfx::ArrangementNoteInstance>,

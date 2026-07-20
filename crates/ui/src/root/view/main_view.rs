@@ -146,40 +146,6 @@ impl Root {
         }
     }
 
-    /// 获取网格线实例（用于 wgpu 渲染）
-    pub fn update_grid_line_instances(&self, instances: &mut Vec<lumino_gfx::GridLineInstance>) {
-        use crate::editor::grid::theme::ThemeExt;
-
-        // 从主题获取颜色
-        let bar_color = self.window.theme.bar_line_color();
-        let beat_color = self.window.theme.beat_line_color();
-        let half_beat_color = self.window.theme.half_beat_line_color();
-        let grid_color = self.window.theme.grid_line_color();
-
-        // 琴键分隔线颜色
-        let _palette = self.window.theme.extended_palette().background;
-        let key_line_color = if self.window.theme.is_light() {
-            iced_core::Color {
-                a: 0.2,
-                ..iced_core::Color::BLACK
-            }
-        } else {
-            iced_core::Color {
-                a: 0.2,
-                ..iced_core::Color::WHITE
-            }
-        };
-
-        self.editor.update_grid_line_instances(
-            bar_color,
-            beat_color,
-            half_beat_color,
-            grid_color,
-            key_line_color,
-            instances,
-        );
-    }
-
     /// 渲染工程走带视图
     ///
     /// 左侧音轨列表（Canvas）+ 右侧 wgpu 渲染区域。
