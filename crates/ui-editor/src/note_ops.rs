@@ -84,10 +84,30 @@ impl Editor {
         self.selected_bounds.set(None);
     }
 
-    /// 替换选中集合，并使选择框边界缓存失效（下次调用时重新计算）。
+    /// 替换选中集合，并重建选择框边界缓存。
+    ///
+    /// 性能优化：直接扫描新集合重建 selected_bounds，避免首次调用
+    /// `get_selection_box_bounds()` 时做 O(N) 兜底扫描。
+    /// 对超大选中集（1600W）的首次调用，将 O(N) 从 `get_selection_box_bounds`
+    /// 和 `selection_box::draw` 各一次合并为一次，消除双重扫描。
     pub fn selection_assign(&mut self, new_set: HashSet<usize>) {
+        let notes = &self.editor_state.data.notes;
+        let mut min_t = f32::INFINITY;
+        let mut max_te = f32::NEG_INFINITY;
+        let mut max_k = u16::MIN;
+        let mut min_k = u16::MAX;
+        let mut any = false;
+        for &i in new_set.iter() {
+            if let Some(n) = notes.get(i) {
+                any = true;
+                min_t = min_t.min(n.tick);
+                max_te = max_te.max(n.tick + n.length);
+                max_k = max_k.max(n.key);
+                min_k = min_k.min(n.key);
+            }
+        }
         self.editor_state.interaction.selected_notes = new_set;
-        self.selected_bounds.set(None);
+        self.selected_bounds.set(if any { Some((min_t, max_te, max_k, min_k)) } else { None });
     }
 
     /// 检测坐标是否落在某个音符上
@@ -280,7 +300,6 @@ impl Editor {
 
     pub fn get_selection_box_bounds(&self) -> Option<(f32, f32, f32, f32)> {
         puffin::profile_function!();
-        crate::puffin_profiler::get_selection_box_bounds();
 
         let notes = &self.editor_state.data.notes;
         let view = &self.editor_state.view;
@@ -379,7 +398,6 @@ impl Editor {
     }
 
     pub fn hit_test_selection_box(&self, pos: Point) -> Option<SelectionHitType> {
-        crate::puffin_profiler::hit_test_selection_box();
         let bounds = self.get_selection_box_bounds()?;
         hit_test::hit_test_selection_box(bounds, (pos.x, pos.y))
     }

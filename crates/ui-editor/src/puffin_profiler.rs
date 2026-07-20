@@ -84,16 +84,6 @@ pub fn collect_visible_note_data() {
     puffin::profile_scope!("selection_move_ui::collect_visible_note_data");
 }
 
-/// 选择框边界获取（`note_ops.rs` → `get_selection_box_bounds`）
-pub fn get_selection_box_bounds() {
-    puffin::profile_scope!("selection_move_ui::get_selection_box_bounds");
-}
-
-/// 选择框命中测试（`note_ops.rs` → `hit_test_selection_box`）
-pub fn hit_test_selection_box() {
-    puffin::profile_scope!("selection_move_ui::hit_test_selection_box");
-}
-
 /// 框选框弹簧物理动画更新（`impls/selection_box_anim.rs` → `update_selection_box_animation`）
 pub fn update_selection_box_animation() {
     puffin::profile_scope!("selection_move_ui::update_selection_box_animation");
