@@ -2,7 +2,6 @@
 
 use crate::EditState;
 use crate::Editor;
-use crate::rendering::ghost_delta_for_index;
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_ui_constants::editor::SELECTION_BOX_FILL_ALPHA;
@@ -89,17 +88,30 @@ pub fn draw(
         let mut has_visible = false;
 
         if needs_ghost {
+            // 性能优化：提取 drag_state delta 一次，避免在循环中每元素调用
+            // ghost_delta_for_index。因为我们知道所有迭代的音符都是 selected 的，
+            // drag_state.selected[i] 恒为 true，无需在循环中重复检查。
+            let (drag_dt, drag_dk) = match edit_state {
+                EditState::Dragging { drag_state, .. }
+                | EditState::DraggingSelection { drag_state } => {
+                    (drag_state.delta_tick, drag_state.delta_key)
+                }
+                _ => (0i64, 0i16),
+            };
+
             for &i in selected.iter() {
                 if let Some(note) = notes.get(i) {
-                    let (tick, key) =
-                        if let Some((dt, dk)) = ghost_delta_for_index(i, pending, edit_state) {
-                            (
-                                (note.tick + dt as f32).max(0.0),
-                                (note.key as i32 + dk as i32).clamp(0, max_key as i32) as u16,
-                            )
-                        } else {
-                            (note.tick, note.key)
-                        };
+                    let mut dt = drag_dt;
+                    let mut dk = drag_dk;
+                    // pending 可能包含之前未提交的拖动的 delta，需要叠加
+                    if let Some(pending) = pending
+                        && i < pending.selected.len() && pending.selected[i]
+                    {
+                        dt = dt.saturating_add(pending.delta_tick);
+                        dk = dk.saturating_add(pending.delta_key);
+                    }
+                    let tick = (note.tick + dt as f32).max(0.0);
+                    let key = (note.key as i32 + dk as i32).clamp(0, max_key as i32) as u16;
                     min_tick = min_tick.min(tick);
                     max_tick_end = max_tick_end.max(tick + note.length);
                     max_key_bound = max_key_bound.max(key);

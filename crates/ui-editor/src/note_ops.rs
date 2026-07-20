@@ -248,21 +248,31 @@ impl Editor {
         let mut any = false;
 
         if needs_ghost {
+            // 性能优化：提取 drag_state delta 一次，避免在循环中每元素调用
+            // ghost_delta_for_index。因为所有迭代的音符都是 selected 的。
+            let (drag_dt, drag_dk) = match edit_state {
+                EditState::Dragging { drag_state, .. }
+                | EditState::DraggingSelection { drag_state } => {
+                    (drag_state.delta_tick, drag_state.delta_key)
+                }
+                _ => (0i64, 0i16),
+            };
+
             for &i in selected.iter() {
                 let Some(n) = notes.get(i) else {
                     continue;
                 };
                 any = true;
-                let (tick, key) = if let Some((dt, dk)) =
-                    crate::rendering::ghost_delta_for_index(i, pending, edit_state)
+                let mut dt = drag_dt;
+                let mut dk = drag_dk;
+                if let Some(pending) = pending
+                    && i < pending.selected.len() && pending.selected[i]
                 {
-                    (
-                        (n.tick + dt as f32).max(0.0),
-                        (n.key as i32 + dk as i32).clamp(0, max_key as i32) as u16,
-                    )
-                } else {
-                    (n.tick, n.key)
-                };
+                    dt = dt.saturating_add(pending.delta_tick);
+                    dk = dk.saturating_add(pending.delta_key);
+                }
+                let tick = (n.tick + dt as f32).max(0.0);
+                let key = (n.key as i32 + dk as i32).clamp(0, max_key as i32) as u16;
                 min_t = min_t.min(tick);
                 max_te = max_te.max(tick + n.length);
                 max_k = max_k.max(key);
