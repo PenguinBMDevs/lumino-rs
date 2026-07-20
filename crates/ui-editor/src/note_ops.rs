@@ -341,6 +341,7 @@ impl Editor {
         // - max_te_ghost = max_te_original + dt（拖拽中 t+dt>=0 时精确，否则近似）
         if needs_ghost && pending.is_none() {
             if let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
+                puffin::profile_scope!("get_selection_box_bounds::ghost_o1");
                 let (drag_dt, drag_dk) = match edit_state {
                     EditState::Dragging { drag_state, .. }
                     | EditState::DraggingSelection { drag_state } => {
@@ -364,6 +365,9 @@ impl Editor {
 
         // ═══ O(N) 回退路径 ═══
         // 场景：pending 非空（松手后待提交）、或 selected_bounds 缓存失效
+        //
+        // 性能优化：O(N) 回退中同时计算 raw_bounds（无 delta）并恢复 selected_bounds 缓存，
+        // 确保后续帧走 O(1) ghost 路径，避免每帧都 O(N) 扫描 1600W 选中音符。
         let mut min_t = f32::INFINITY;
         let mut max_te = f32::NEG_INFINITY;
         let mut max_k = u16::MIN;
@@ -371,6 +375,7 @@ impl Editor {
         let mut any = false;
 
         if needs_ghost {
+            puffin::profile_scope!("get_selection_box_bounds::ghost_on");
             let (drag_dt, drag_dk) = match edit_state {
                 EditState::Dragging { drag_state, .. }
                 | EditState::DraggingSelection { drag_state } => {
@@ -379,11 +384,23 @@ impl Editor {
                 _ => (0i64, 0i16),
             };
 
+            // 同时计算 raw_bounds（用于恢复缓存）和 ghost_bounds（用于返回结果）
+            let mut raw_min_t = f32::INFINITY;
+            let mut raw_max_te = f32::NEG_INFINITY;
+            let mut raw_max_k = u16::MIN;
+            let mut raw_min_k = u16::MAX;
+
             for &i in selected.iter() {
                 let Some(n) = notes.get(i) else {
                     continue;
                 };
                 any = true;
+                // raw bounds（无 delta）— 用于恢复缓存
+                raw_min_t = raw_min_t.min(n.tick);
+                raw_max_te = raw_max_te.max(n.tick + n.length);
+                raw_max_k = raw_max_k.max(n.key);
+                raw_min_k = raw_min_k.min(n.key);
+                // ghost bounds（有 delta）
                 let mut dt = drag_dt;
                 let mut dk = drag_dk;
                 if let Some(pending) = pending
@@ -400,7 +417,15 @@ impl Editor {
                 max_k = max_k.max(key);
                 min_k = min_k.min(key);
             }
+
+            // 恢复 raw bounds 缓存，后续帧走 O(1) ghost 路径
+            if any {
+                self.selected_bounds.set(Some((
+                    raw_min_t, raw_max_te, raw_max_k, raw_min_k,
+                )));
+            }
         } else {
+            puffin::profile_scope!("get_selection_box_bounds::fallback");
             // 兜底路径：selected_bounds 失效且非 ghost 时全量扫描
             for &i in selected.iter() {
                 let Some(n) = notes.get(i) else {
@@ -412,6 +437,10 @@ impl Editor {
                 max_k = max_k.max(n.key);
                 min_k = min_k.min(n.key);
             }
+            // 恢复 selected_bounds 缓存
+            if any {
+                self.selected_bounds.set(Some((min_t, max_te, max_k, min_k)));
+            }
         }
         if !any {
             return None;
@@ -422,10 +451,6 @@ impl Editor {
             view.key_to_y(max_k),
             view.key_to_y(min_k) + view.zoom_y,
         ));
-        // 兜底路径中恢复 selected_bounds 缓存
-        if !needs_ghost {
-            self.selected_bounds.set(Some((min_t, max_te, max_k, min_k)));
-        }
         result
     }
 

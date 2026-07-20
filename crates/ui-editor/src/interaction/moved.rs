@@ -13,10 +13,15 @@ impl Editor {
         let key = self.y_to_key(pos.y);
         let snapped_tick = self.snap_tick(tick);
 
-        // 框选过程中 hover 判定无意义，且会触发空间索引重建/线性扫描，跳过以提升性能。
+        // 框选/拖拽过程中 hover 判定无意义，且会触发空间索引重建/线性扫描或
+        // collect_ghost_indices 的 O(N) 遍历（1600W 选中音符），跳过以提升性能。
+        // Dragging/DraggingSelection 状态下 mouse_interaction 直接返回 Grabbing，
+        // 不依赖 hover 状态，因此跳过是安全的。
         let hover = if matches!(
             self.editor_state.interaction.edit_state,
             EditState::Selecting { .. }
+                | EditState::Dragging { .. }
+                | EditState::DraggingSelection { .. }
         ) {
             None
         } else {
