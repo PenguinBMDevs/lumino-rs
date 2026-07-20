@@ -313,7 +313,10 @@ impl Editor {
         }
 
         // 判断是否需要 ghost delta（拖拽中或松手后待提交状态）
-        let needs_ghost = pending.is_some() || matches!(edit_state, EditState::Dragging { .. });
+        // 注意：DraggingSelection 也需要 ghost，否则 selection_box 不跟随拖动
+        let needs_ghost = pending.is_some()
+            || matches!(edit_state, EditState::Dragging { .. })
+            || matches!(edit_state, EditState::DraggingSelection { .. });
 
         // 非 ghost 路径：使用增量维护的 selected_bounds，O(1)
         if !needs_ghost {
@@ -328,6 +331,39 @@ impl Editor {
             // 缓存失效时回退到全量扫描（理论上不应发生，兜底）
         }
 
+        // ═══ ghost 路径：O(1) 快速路径 ═══
+        // 拖拽中所有选中音符共享同一 delta（pending 为 None 时），
+        // 直接从 selected_bounds 缓存 + 应用 delta，避免 O(N) 遍历 1600W 音符。
+        //
+        // 正确性依据：
+        // - f(t) = max(0, t + dt) 单调递增 → min_t_ghost = f(min_t_original)
+        // - h(k) = clamp(k + dk, 0, max_key) 单调递增 → min/max_key_ghost = h(min/max_key_original)
+        // - max_te_ghost = max_te_original + dt（拖拽中 t+dt>=0 时精确，否则近似）
+        if needs_ghost && pending.is_none() {
+            if let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
+                let (drag_dt, drag_dk) = match edit_state {
+                    EditState::Dragging { drag_state, .. }
+                    | EditState::DraggingSelection { drag_state } => {
+                        (drag_state.delta_tick, drag_state.delta_key)
+                    }
+                    _ => (0i64, 0i16),
+                };
+                let min_t = (min_t + drag_dt as f32).max(0.0);
+                let max_te = max_te + drag_dt as f32;
+                let max_k = (max_k as i32 + drag_dk as i32).clamp(0, max_key as i32) as u16;
+                let min_k = (min_k as i32 + drag_dk as i32).clamp(0, max_key as i32) as u16;
+                // 不缓存 ghost 结果（delta 每帧变化）
+                return Some((
+                    view.tick_to_x(min_t),
+                    view.tick_to_x(max_te),
+                    view.key_to_y(max_k),
+                    view.key_to_y(min_k) + view.zoom_y,
+                ));
+            }
+        }
+
+        // ═══ O(N) 回退路径 ═══
+        // 场景：pending 非空（松手后待提交）、或 selected_bounds 缓存失效
         let mut min_t = f32::INFINITY;
         let mut max_te = f32::NEG_INFINITY;
         let mut max_k = u16::MIN;
@@ -335,10 +371,9 @@ impl Editor {
         let mut any = false;
 
         if needs_ghost {
-            // 性能优化：提取 drag_state delta 一次，避免在循环中每元素调用
-            // ghost_delta_for_index。因为所有迭代的音符都是 selected 的。
             let (drag_dt, drag_dk) = match edit_state {
-                EditState::Dragging { drag_state, .. } => {
+                EditState::Dragging { drag_state, .. }
+                | EditState::DraggingSelection { drag_state } => {
                     (drag_state.delta_tick, drag_state.delta_key)
                 }
                 _ => (0i64, 0i16),
@@ -365,11 +400,8 @@ impl Editor {
                 max_k = max_k.max(key);
                 min_k = min_k.min(key);
             }
-        }
-        // 兜底路径：selected_bounds 失效且非 ghost 时全量扫描
-        // 或 ghost 路径的正常计算
-        // needs_ghost 分支已经处理了，如果走到这里且不是 needs_ghost，说明是兜底
-        if !needs_ghost {
+        } else {
+            // 兜底路径：selected_bounds 失效且非 ghost 时全量扫描
             for &i in selected.iter() {
                 let Some(n) = notes.get(i) else {
                     continue;
