@@ -576,13 +576,6 @@ impl Root {
 
         // 检查音符数据是否变化
         let notes_changed = self.editor.notes_changed();
-        tracing::info!(
-            "Editor: handle_editor_action 脏检查: action={}, notes_changed_before={}, notes_changed_after={}, will_clear={}",
-            action_str,
-            notes_changed_before,
-            notes_changed,
-            notes_changed
-        );
         if notes_changed {
             self.update_playback_notes();
             self.editor.clear_notes_changed();
