@@ -1,8 +1,12 @@
 //! 跨平台字体扫描模块
 //!
-//! 使用 font-kit 调用系统 API 获取准确的字体信息
+//! 使用 font-kit 调用系统 API 获取准确的字体信息。
+//!
+//! 字体扫描是重操作（Windows 上枚举 200-500+ 字体），
+//! 通过全局 OnceLock 缓存避免每次对话框重建时重复扫描约 1.3s 的延迟。
 
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 /// 字体信息
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -72,6 +76,33 @@ pub fn scan_system_fonts() -> Vec<FontInfo> {
     fonts.sort_by_key(|a| a.name.to_lowercase());
 
     fonts
+}
+
+/// 全局缓存的系统字体列表（首次扫描后永久缓存）。
+///
+/// 字体列表在应用运行期间不会变化，因此可安全全局共享。
+static CACHED_FONTS: OnceLock<Vec<FontInfo>> = OnceLock::new();
+
+/// 获取缓存的系统字体列表。
+///
+/// 首次调用时触发真实扫描（约 1s），后续直接返回缓存引用。
+/// 配合启动时 `prewarm_font_cache()` 可消除对话框初始化时的扫码延迟。
+pub fn get_cached_fonts() -> &'static [FontInfo] {
+    CACHED_FONTS.get_or_init(|| {
+        puffin::profile_scope!("scan_system_fonts_cached");
+        let fonts = scan_system_fonts();
+        tracing::info!("系统字体扫描完成，共 {} 个字体", fonts.len());
+        fonts
+    })
+}
+
+/// 在后台预热字体缓存。
+///
+/// 应在应用启动的早期调用（例如主窗口创建后、首个对话框打开前），
+/// 使后续对话框的 RootState 构造可以直接克隆缓存而无需阻塞式扫描。
+pub fn prewarm_font_cache() {
+    puffin::profile_scope!("prewarm_font_cache");
+    let _ = get_cached_fonts();
 }
 
 #[cfg(test)]

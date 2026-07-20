@@ -25,7 +25,7 @@ pub use editor_state::{
 };
 pub use editor_transform::EditorTransform;
 pub use error::{CoreError, Result};
-pub use font_scanner::{FontInfo, scan_system_fonts};
+pub use font_scanner::{FontInfo, get_cached_fonts, prewarm_font_cache, scan_system_fonts};
 pub use history::{EditorSnapshot, History, HistoryEntry, MoveOp, OpKind, OperationEntry};
 pub use midi_types::{
     BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcData, CcDisplay, CcPoint, EditMode,

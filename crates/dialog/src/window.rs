@@ -28,13 +28,18 @@ pub struct DialogWindow {
 }
 
 impl DialogWindow {
-    /// 创建新对话框窗口（尚未初始化 GFX/UI）
+    /// 创建新对话框窗口（仅创建 winit 窗口，不初始化 GFX/UI）
+    ///
+    /// 将原本一次性的阻塞初始化拆分为多阶段：
+    /// 窗口创建 → GFX 初始化 → UI 初始化 → 显示窗口。
+    /// 这样可以避免在 `about_to_wait` 单帧中阻塞事件循环 900ms+。
     pub fn new(
         event_loop: &ActiveEventLoop,
         dialog_type: DialogType,
         _parent_window: Option<&Arc<Window>>,
         ui_config: &UiConfig,
     ) -> Result<Self, String> {
+        puffin::profile_scope!("dialog_init_phase_window");
         let (width, height, title, resizable) = match dialog_type {
             DialogType::None => unreachable!("不会创建 None 类型的对话框"),
             DialogType::CustomPrecision => (480.0, 180.0, "自定义贴合", false),
@@ -101,12 +106,14 @@ impl DialogWindow {
         })
     }
 
-    /// 初始化对话框，并同步协作状态（从主窗口）
-    pub fn initialize_with_collaboration_state(
-        &mut self,
-        ui_config: &UiConfig,
-        main_ui: &lumino_ui::Host,
-    ) -> Result<(), String> {
+    /// 获取 GFX 上下文的引用（用于判断当前处于哪个初始化阶段）
+    pub(crate) fn gfx_ref(&self) -> Option<&lumino_gfx::Context> {
+        self.gfx.as_ref()
+    }
+
+    /// 第二阶段：为已有窗口创建 GFX 上下文
+    pub fn initialize_gfx(&mut self) -> Result<(), String> {
+        puffin::profile_scope!("dialog_init_phase_gfx");
         let physical_size = self.window.inner_size();
 
         if physical_size.width == 0 || physical_size.height == 0 {
@@ -120,20 +127,49 @@ impl DialogWindow {
         )
         .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
 
+        self.gfx = Some(gfx);
+        Ok(())
+    }
+
+    /// 第三阶段：初始化 UI 并显示窗口
+    ///
+    /// 假设 GFX 已通过 `initialize_gfx` 初始化完成。本方法集中处理所有
+    /// 对话框类型的 UI 创建与状态同步，避免为每种类型单独写一个初始化函数。
+    pub fn initialize_ui(
+        &mut self,
+        ui_config: &UiConfig,
+        main_ui: &lumino_ui::Host,
+        pending_path: Option<&str>,
+        size_mb: f64,
+        pending_title: Option<&str>,
+    ) -> Result<(), String> {
+        puffin::profile_scope!("dialog_init_phase_ui");
+        let physical_size = self.window.inner_size();
+
+        if physical_size.width == 0 || physical_size.height == 0 {
+            return Err("窗口大小为零，无法初始化".to_string());
+        }
+
+        let gfx = self.gfx.as_ref().ok_or("GFX 未初始化")?;
+
+        if let Some(title) = pending_title {
+            self.window.set_title(title);
+        }
+
         let mut ui = match self.dialog_type {
             DialogType::Settings => lumino_ui::Host::new_settings_dialog(
                 self.window.clone(),
                 physical_size.width,
                 physical_size.height,
                 ui_config,
-                &gfx,
+                gfx,
             ),
             _ => lumino_ui::Host::new_dialog(
                 self.window.clone(),
                 physical_size.width,
                 physical_size.height,
                 ui_config,
-                &gfx,
+                gfx,
                 self.dialog_type,
             ),
         };
@@ -147,10 +183,20 @@ impl DialogWindow {
                 ui.sync_collaboration_state_from(main_ui);
             }
             DialogType::LoadConfirm => {
-                // LoadConfirm 用默认状态，不需要额外初始化
+                let path = pending_path.unwrap_or_default();
+                ui.set_load_confirm_dialog(path, size_mb);
             }
             DialogType::ProjectSettings => {
                 ui.set_project_settings_dialog_open(true);
+                let (title, tempo, copyright, created_display, editing_time) =
+                    main_ui.get_project_settings_data();
+                ui.set_project_settings_data(
+                    title,
+                    tempo,
+                    copyright,
+                    created_display,
+                    editing_time,
+                );
             }
             DialogType::Settings => {
                 ui.set_settings_dialog_open(true);
@@ -170,116 +216,6 @@ impl DialogWindow {
         }
 
         self.window.set_visible(true);
-        self.gfx = Some(gfx);
-        self.ui = Some(ui);
-
-        Ok(())
-    }
-
-    /// 初始化加载确认对话框（带文件信息）
-    pub fn initialize_load_confirm(
-        &mut self,
-        ui_config: &UiConfig,
-        file_path: &str,
-        size_mb: f64,
-    ) -> Result<(), String> {
-        let physical_size = self.window.inner_size();
-        if physical_size.width == 0 || physical_size.height == 0 {
-            return Err("窗口大小为零".to_string());
-        }
-
-        let gfx = lumino_gfx::Context::new_blocking(
-            self.window.clone(),
-            physical_size.width,
-            physical_size.height,
-        )
-        .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
-
-        let mut ui = lumino_ui::Host::new_dialog(
-            self.window.clone(),
-            physical_size.width,
-            physical_size.height,
-            ui_config,
-            &gfx,
-            DialogType::LoadConfirm,
-        );
-
-        ui.set_load_confirm_dialog(file_path, size_mb);
-
-        self.window.set_visible(true);
-        self.gfx = Some(gfx);
-        self.ui = Some(ui);
-
-        Ok(())
-    }
-
-    /// 初始化导出进度对话框
-    pub fn initialize_export_progress(&mut self, ui_config: &UiConfig) -> Result<(), String> {
-        let physical_size = self.window.inner_size();
-        if physical_size.width == 0 || physical_size.height == 0 {
-            return Err("窗口大小为零".to_string());
-        }
-
-        let gfx = lumino_gfx::Context::new_blocking(
-            self.window.clone(),
-            physical_size.width,
-            physical_size.height,
-        )
-        .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
-
-        let mut ui = lumino_ui::Host::new_dialog(
-            self.window.clone(),
-            physical_size.width,
-            physical_size.height,
-            ui_config,
-            &gfx,
-            DialogType::ExportProgress,
-        );
-
-        ui.set_export_progress_dialog_open(true);
-
-        self.window.set_visible(true);
-        self.gfx = Some(gfx);
-        self.ui = Some(ui);
-
-        Ok(())
-    }
-
-    /// 初始化工程设置对话框（带当前项目数据）
-    pub fn initialize_project_settings(
-        &mut self,
-        ui_config: &UiConfig,
-        main_ui: &lumino_ui::Host,
-    ) -> Result<(), String> {
-        let physical_size = self.window.inner_size();
-        if physical_size.width == 0 || physical_size.height == 0 {
-            return Err("窗口大小为零".to_string());
-        }
-
-        let gfx = lumino_gfx::Context::new_blocking(
-            self.window.clone(),
-            physical_size.width,
-            physical_size.height,
-        )
-        .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
-
-        let mut ui = lumino_ui::Host::new_dialog(
-            self.window.clone(),
-            physical_size.width,
-            physical_size.height,
-            ui_config,
-            &gfx,
-            DialogType::ProjectSettings,
-        );
-
-        let (title, tempo, copyright, created_display, editing_time) =
-            main_ui.get_project_settings_data();
-
-        ui.set_project_settings_dialog_open(true);
-        ui.set_project_settings_data(title, tempo, copyright, created_display, editing_time);
-
-        self.window.set_visible(true);
-        self.gfx = Some(gfx);
         self.ui = Some(ui);
 
         Ok(())
@@ -293,6 +229,11 @@ impl DialogWindow {
     /// 设置窗口标题
     pub fn set_window_title(&self, title: &str) {
         self.window.set_title(title);
+    }
+
+    /// 请求窗口重绘
+    pub fn request_redraw(&self) {
+        self.window.request_redraw();
     }
 
     /// 处理窗口事件

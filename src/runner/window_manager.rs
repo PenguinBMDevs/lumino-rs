@@ -49,6 +49,10 @@ impl WindowManager {
         )
         .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
 
+        // 在后台预热对话框共享的 iced Engine，避免首个对话框创建时
+        // 因重新编译 pipeline 阻塞事件循环 900ms+。
+        lumino_ui::prewarm_dialog_shared_engine(&gfx);
+
         let mut ui = lumino_ui::Host::new(
             window.clone(),
             physical_size.width,

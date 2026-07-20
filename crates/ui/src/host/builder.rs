@@ -23,6 +23,9 @@ impl Host {
     ///
     /// `needs_renderers` 仅主窗口为 `true`；dialog/progress 等轻量窗口不需要
     /// 音符/网格渲染器，跳过创建可显著降低初始化开销。
+    ///
+    /// `use_shared_engine` 为 `true` 时复用对话框共享的 iced Engine；
+    /// 主窗口 / progress 窗口保持独立 Engine 以保留 WindowNotifier。
     fn create_render_and_window_context(
         window: Arc<winit::window::Window>,
         width: u32,
@@ -30,6 +33,7 @@ impl Host {
         ui_config: &config::UiConfig,
         gfx: &lumino_gfx::Context,
         needs_renderers: bool,
+        use_shared_engine: bool,
     ) -> (RenderContext, WindowContext) {
         let viewport =
             Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
@@ -54,6 +58,7 @@ impl Host {
             grid_renderer,
             font,
             &window,
+            use_shared_engine,
         );
 
         (render_ctx, WindowContext::new(window))
@@ -125,6 +130,7 @@ impl Host {
             ui_config,
             gfx,
             !is_progress,
+            false,
         );
         let root = if is_progress {
             root::Root::new_progress(&ui_config.theme, ui_config)
@@ -143,10 +149,17 @@ impl Host {
         gfx: &lumino_gfx::Context,
         dialog_type: crate::state::root_state::DialogType,
     ) -> Self {
-        let (render_ctx, window_ctx) =
-            Self::create_render_and_window_context(window, width, height, ui_config, gfx, false);
-        let root = root::Root::new_dialog_with_config(&ui_config.theme, dialog_type, ui_config);
-        Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
+        let (render_ctx, window_ctx) = Self::create_render_and_window_context(
+            window, width, height, ui_config, gfx, false, true,
+        );
+        let root = {
+            puffin::profile_scope!("dialog_root_new");
+            root::Root::new_dialog_with_config(&ui_config.theme, dialog_type, ui_config)
+        };
+        {
+            puffin::profile_scope!("dialog_common_fields");
+            Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
+        }
     }
 
     /// 创建设置对话框 Host（使用主窗口的配置）
@@ -157,9 +170,16 @@ impl Host {
         ui_config: &config::UiConfig,
         gfx: &lumino_gfx::Context,
     ) -> Self {
-        let (render_ctx, window_ctx) =
-            Self::create_render_and_window_context(window, width, height, ui_config, gfx, false);
-        let root = root::Root::new_settings_dialog(&ui_config.theme, ui_config);
-        Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
+        let (render_ctx, window_ctx) = Self::create_render_and_window_context(
+            window, width, height, ui_config, gfx, false, true,
+        );
+        let root = {
+            puffin::profile_scope!("settings_root_new");
+            root::Root::new_settings_dialog(&ui_config.theme, ui_config)
+        };
+        {
+            puffin::profile_scope!("settings_common_fields");
+            Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
+        }
     }
 }

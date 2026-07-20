@@ -57,8 +57,6 @@ pub struct RootState {
     pub memory_monitor_dialog: MemoryMonitorDialogState,
     /// 精度设置
     pub note_precision: NotePrecision,
-    /// 系统字体列表
-    pub system_fonts: Vec<lumino_core::font_scanner::FontInfo>,
     /// 当前应用模式（编辑器/瀑布流）
     pub current_mode: AppMode,
     /// 模式切换按钮动画状态
@@ -73,6 +71,7 @@ impl Default for RootState {
 
 impl RootState {
     pub fn new() -> Self {
+        puffin::profile_scope!("root_state_new");
         Self {
             is_menu_open: false,
             dialog_result: None,
@@ -88,7 +87,6 @@ impl RootState {
             speed_change_dialog: SpeedChangeDialogState::new(),
             memory_monitor_dialog: MemoryMonitorDialogState::new(),
             note_precision: NotePrecision::default(),
-            system_fonts: lumino_core::font_scanner::scan_system_fonts(),
             current_mode: AppMode::default(),
             toggle_animation: ToggleAnimationState::new(),
         }

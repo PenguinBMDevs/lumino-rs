@@ -309,7 +309,10 @@ impl crate::runner::inner::RunnerInner {
         }
     }
 
-    /// 初始化新创建的对话框，并同步主窗口的协作状态与主题。
+    /// 分帧初始化新创建的对话框，并同步主窗口的协作状态与主题。
+    ///
+    /// 每帧只推进一个对话框的一个初始化阶段（窗口 → GFX → UI），
+    /// 避免在 `about_to_wait` 中单帧阻塞 900ms+。
     fn about_to_wait_init_dialogs(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         puffin::profile_scope!("runner_about_to_wait_dialog_init");
         let main_ui = self.window_state.window.ui();
@@ -320,7 +323,7 @@ impl crate::runner::inner::RunnerInner {
         dialog_config.track_display_mode = main_ui.root().settings().track_display_mode;
         self.window_state
             .dialog_manager
-            .initialize_pending_with_collaboration_state(
+            .process_initialization_step(
                 event_loop,
                 self.window_state.window.window(),
                 &dialog_config,

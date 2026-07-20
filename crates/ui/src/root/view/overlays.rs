@@ -83,7 +83,14 @@ impl Root {
                 self.settings.language,
             ),
             DialogType::Settings => {
-                view_settings_dialog(&self.settings, &self.window, &self.state.system_fonts)
+                // 字体列表仅在设置对话框中使用（字体下拉菜单），
+                // 通过全局 OnceLock 懒加载：首次访问触发扫描并缓存，后续零开销。
+                // 非设置对话框不走此路径，完全不受字体扫描影响。
+                view_settings_dialog(
+                    &self.settings,
+                    &self.window,
+                    lumino_core::font_scanner::get_cached_fonts(),
+                )
             }
             DialogType::SpeedChange => {
                 view_speed_change_dialog(&self.state.speed_change_dialog, &self.window.theme)

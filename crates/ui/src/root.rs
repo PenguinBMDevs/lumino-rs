@@ -78,6 +78,7 @@ struct RootInitParams {
 impl Root {
     /// 内部构造函数，消除 new/new_progress/new_dialog 的重复代码
     fn from_params(params: RootInitParams) -> Self {
+        puffin::profile_scope!("root_from_params");
         // 使用 UI 内存标签包裹 Root 各子组件初始化，便于内存监控归因
         lumino_memtrace::with_tag(lumino_memtrace::AllocTag::Ui, || {
             let mut state = RootState::new();

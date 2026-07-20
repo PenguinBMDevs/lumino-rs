@@ -16,6 +16,7 @@ lumino-ui = { workspace = true }
 # crates.io
 winit = { workspace = true }
 tracing = { workspace = true }
+puffin = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }

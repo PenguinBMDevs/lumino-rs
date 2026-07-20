@@ -18,6 +18,7 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use iced_core::{Font, Size};
+use iced_wgpu::Engine;
 use iced_wgpu::graphics::Viewport;
 
 use crate::statusbar::performance::CpuMonitor;
@@ -203,6 +204,31 @@ impl Host {
             self.message_router.route(&mut self.root, msg);
         }
     }
+}
+
+/// 在后台线程预热对话框共享的 iced Engine。
+///
+/// 主窗口创建后调用，可在用户打开第一个对话框前完成 pipeline 创建，
+/// 避免对话框初始化阻塞 900ms+。若线程未完成，首个对话框会等待该线程结束
+/// 或使用 `get_or_init` 自己创建。
+pub fn prewarm_dialog_shared_engine(gfx: &lumino_gfx::Context) {
+    let adapter = gfx.adapter.clone();
+    let device = gfx.device.clone();
+    let queue = gfx.queue.clone();
+    let format = gfx.format;
+
+    std::thread::spawn(move || {
+        let _ = render_ctx::SHARED_ENGINE.get_or_init(|| {
+            Engine::new(
+                &adapter,
+                device,
+                queue,
+                format,
+                None,
+                iced_wgpu::graphics::Shell::headless(),
+            )
+        });
+    });
 }
 
 /// 洋葱皮音轨调色板（按音轨索引循环取色）

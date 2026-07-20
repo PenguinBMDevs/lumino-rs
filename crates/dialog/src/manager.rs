@@ -31,6 +31,9 @@ pub struct DialogManager {
     dialogs: HashMap<WindowId, DialogWindow>,
     /// 等待初始化的对话框配置
     pending_dialogs: Vec<PendingDialog>,
+    /// 正在分帧初始化的对话框（已创建窗口，但 GFX/UI 尚未就绪）
+    /// 元组保存对应的 PendingDialog，阶段 3 需要其中的配置数据。
+    initializing: Vec<(DialogWindow, PendingDialog)>,
 }
 
 impl DialogManager {
@@ -39,6 +42,7 @@ impl DialogManager {
         Self {
             dialogs: HashMap::new(),
             pending_dialogs: Vec::new(),
+            initializing: Vec::new(),
         }
     }
 
@@ -72,70 +76,70 @@ impl DialogManager {
         });
     }
 
-    /// 初始化等待中的对话框，并同步主窗口的协作状态
-    pub fn initialize_pending_with_collaboration_state(
+    /// 分帧处理等待中的对话框初始化。
+    ///
+    /// 将原本在 `about_to_wait` 中单次同步完成的“创建窗口 + GFX + UI”拆成
+    /// 三个阶段，每帧最多推进一个阶段，避免阻塞事件循环 900ms+。
+    /// 阶段 1：创建 winit 窗口（hidden）。
+    /// 阶段 2：创建 wgpu 图形上下文。
+    /// 阶段 3：创建 iced UI Host、同步状态并显示窗口。
+    pub fn process_initialization_step(
         &mut self,
         event_loop: &ActiveEventLoop,
         parent_window: &Arc<Window>,
         ui_config: &UiConfig,
         main_ui: &lumino_ui::Host,
     ) {
-        while let Some(pending) = self.pending_dialogs.pop() {
-            let mut dialog = match DialogWindow::new(
+        // 阶段 1：从 pending 队列取出一个请求，仅创建窗口。
+        // 限制同时初始化的窗口数量，避免一帧内堆积多个窗口创建。
+        if self.initializing.is_empty()
+            && let Some(pending) = self.pending_dialogs.pop()
+        {
+            puffin::profile_scope!("dialog_manager_init_window");
+            match DialogWindow::new(
                 event_loop,
                 pending.dialog_type,
                 Some(parent_window),
                 ui_config,
             ) {
-                Ok(d) => d,
+                Ok(dialog) => {
+                    tracing::info!("对话框窗口已创建: {:?}", pending.dialog_type);
+                    self.initializing.push((dialog, pending));
+                }
                 Err(e) => {
-                    tracing::error!("创建对话框失败: {}", e);
-                    continue;
-                }
-            };
-
-            let window_id = dialog.window_id();
-
-            match pending.dialog_type {
-                DialogType::LoadConfirm => {
-                    let path = pending.pending_path.unwrap_or_default();
-                    let size_mb = pending.pending_size_mb.unwrap_or(0.0);
-                    if let Err(e) = dialog.initialize_load_confirm(ui_config, &path, size_mb) {
-                        tracing::error!("初始化加载确认对话框失败: {}", e);
-                        continue;
-                    }
-                }
-                DialogType::ProjectSettings => {
-                    if let Some(title) = pending.pending_title {
-                        dialog.set_window_title(&title);
-                    }
-                    if let Err(e) = dialog.initialize_project_settings(ui_config, main_ui) {
-                        tracing::error!("初始化工程设置对话框失败: {}", e);
-                        continue;
-                    }
-                }
-                DialogType::Settings => {
-                    if let Err(e) = dialog.initialize_with_collaboration_state(ui_config, main_ui) {
-                        tracing::error!("初始化设置对话框失败: {}", e);
-                        continue;
-                    }
-                }
-                DialogType::ExportProgress => {
-                    if let Err(e) = dialog.initialize_export_progress(ui_config) {
-                        tracing::error!("初始化导出进度对话框失败: {}", e);
-                        continue;
-                    }
-                }
-                _ => {
-                    if let Err(e) = dialog.initialize_with_collaboration_state(ui_config, main_ui) {
-                        tracing::error!("初始化对话框失败: {}", e);
-                        continue;
-                    }
+                    tracing::error!("创建对话框窗口失败: {}", e);
                 }
             }
+        }
 
-            tracing::info!("对话框已创建: {:?}", pending.dialog_type);
-            self.dialogs.insert(window_id, dialog);
+        // 推进当前正在初始化的对话框一个阶段。
+        if let Some((dialog, pending)) = self.initializing.first_mut() {
+            if dialog.gfx_ref().is_none() {
+                // 阶段 2：创建 GFX。
+                puffin::profile_scope!("dialog_manager_init_gfx");
+                if let Err(e) = dialog.initialize_gfx() {
+                    tracing::error!("初始化对话框 GFX 失败: {}", e);
+                    self.initializing.remove(0);
+                }
+            } else {
+                // 阶段 3：创建 UI 并显示窗口。
+                puffin::profile_scope!("dialog_manager_init_ui");
+                if let Err(e) = dialog.initialize_ui(
+                    ui_config,
+                    main_ui,
+                    pending.pending_path.as_deref(),
+                    pending.pending_size_mb.unwrap_or(0.0),
+                    pending.pending_title.as_deref(),
+                ) {
+                    tracing::error!("初始化对话框 UI 失败: {}", e);
+                    self.initializing.remove(0);
+                } else {
+                    let (dialog, _) = self.initializing.remove(0);
+                    let window_id = dialog.window_id();
+                    tracing::info!("对话框已就绪: {:?}", dialog.dialog_type);
+                    self.dialogs.insert(window_id, dialog);
+                }
+            }
         }
     }
 
@@ -179,6 +183,7 @@ impl DialogManager {
                     total_frames,
                     render_fps,
                 );
+                dialog.request_redraw();
             }
         }
     }
@@ -190,6 +195,7 @@ impl DialogManager {
                 && let Some(ui) = dialog.ui_mut()
             {
                 ui.update_video_export_preview_frame(data.clone(), w, h);
+                dialog.request_redraw();
             }
         }
     }
@@ -201,6 +207,7 @@ impl DialogManager {
                 && let Some(ui) = dialog.ui_mut()
             {
                 ui.set_video_export_completed(elapsed_secs);
+                dialog.request_redraw();
             }
         }
     }
@@ -212,6 +219,7 @@ impl DialogManager {
                 && let Some(ui) = dialog.ui_mut()
             {
                 ui.set_video_export_failed(error.clone());
+                dialog.request_redraw();
             }
         }
     }
