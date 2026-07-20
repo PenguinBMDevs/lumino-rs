@@ -231,6 +231,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry<Renderer>> {
         puffin::profile_scope!("grid_widget_draw");
+        crate::puffin_profiler::grid_widget_draw();
         let mut geometries = Vec::new();
 
         let keyboard_geom = self

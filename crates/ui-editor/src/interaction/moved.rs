@@ -8,6 +8,7 @@ use lumino_core::editor_state::interaction_ops;
 impl Editor {
     /// 处理鼠标移动事件
     pub(crate) fn handle_moved(&mut self, pos: iced_core::Point) {
+        crate::puffin_profiler::moved_handle();
         let tick = self.x_to_tick(pos.x);
         let key = self.y_to_key(pos.y);
         let snapped_tick = self.snap_tick(tick);
@@ -58,6 +59,7 @@ impl Editor {
         key: u16,
         snapped_tick: f32,
     ) -> (Option<f32>, Option<u16>, Option<f32>) {
+        crate::puffin_profiler::calculate_edit_changes();
         self.try_transition_to_dragging(pos);
 
         let (new_tick, new_key, new_length, note_to_play) =
@@ -77,6 +79,7 @@ impl Editor {
         new_key: Option<u16>,
         new_length: Option<f32>,
     ) {
+        crate::puffin_profiler::apply_note_changes();
         if interaction_ops::apply_note_changes(
             &mut self.editor_state.data,
             &self.editor_state.interaction.edit_state,
@@ -89,6 +92,7 @@ impl Editor {
             // notes 已被改，渲染基于新 notes 正确。空间索引在松手时
             // （released.rs ResizingStart/End 分支）一次性 mark_notes_changed 重建。
             // **性能关键**：1000W 音符建树 124ms，每帧重建 = 灾难。
+            crate::puffin_profiler::mark_ghost_dirty();
             self.mark_ghost_dirty();
         }
     }

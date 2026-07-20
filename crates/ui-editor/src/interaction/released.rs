@@ -8,6 +8,7 @@ use lumino_message::Tool;
 impl Editor {
     /// 处理鼠标释放事件
     pub(crate) fn handle_released(&mut self) {
+        crate::puffin_profiler::released_handle();
         let edit_state = std::mem::take(&mut self.editor_state.interaction.edit_state);
         match edit_state {
             EditState::Selecting { .. } => {
@@ -62,6 +63,7 @@ impl Editor {
                 }
             }
             EditState::DraggingSelection { drag_state } => {
+                crate::puffin_profiler::released_dragging_selection();
                 // ghost 方案（延迟提交）：松手不 apply，保存到 pending_drag_state。
                 // 用户点击空白处取消框选时才 apply（commit_pending_drag）。
                 //

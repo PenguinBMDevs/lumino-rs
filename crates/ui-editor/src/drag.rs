@@ -7,6 +7,7 @@ use lumino_core::DragState;
 impl Editor {
     /// 检查是否应从 PendingDrag 转换到 Dragging 状态
     pub(crate) fn try_transition_to_dragging(&mut self, pos: iced_core::Point) {
+        crate::puffin_profiler::try_transition_to_dragging();
         let EditState::PendingDrag {
             note_index,
             start_pos,
@@ -50,6 +51,7 @@ impl Editor {
         key: u16,
         snapped_tick: f32,
     ) -> (Option<f32>, Option<u16>, Option<f32>, Option<u16>) {
+        crate::puffin_profiler::compute_state_changes();
         let v = &self.editor_state.view;
         let snap_precision = v.snap_precision;
         let visible_key_count = v.visible_key_count;
@@ -125,6 +127,7 @@ impl Editor {
                 }
             }
             EditState::DraggingSelection { drag_state } => {
+                crate::puffin_profiler::dragging_selection();
                 // ghost 方案：仅更新 drag_state 的 delta，不写 notes
                 let raw_delta_tick = snapped_tick - drag_state.initial_tick as f32;
                 let snapped_delta_tick = (raw_delta_tick / snap_precision).round() * snap_precision;
@@ -203,6 +206,7 @@ impl Editor {
 
     /// 更新框选区域中的音符选中状态
     pub(crate) fn update_selection(&mut self) {
+        crate::puffin_profiler::update_selection();
         if let EditState::Selecting {
             start_tick,
             start_key,
@@ -266,6 +270,7 @@ impl Editor {
     /// 松手时一次性将 `drag_state.delta` 应用到 `data.notes`，并发送 `LocalNoteMoved` 协作同步事件。
     /// 返回 `true` 表示音符位置确实发生了变化。
     pub(crate) fn finalize_dragging(&mut self, note_index: usize, drag_state: DragState) -> bool {
+        crate::puffin_profiler::finalize_dragging();
         if drag_state.is_delta_zero() {
             tracing::debug!("Editor: 单音符拖动 delta 为零，跳过提交");
             return false;

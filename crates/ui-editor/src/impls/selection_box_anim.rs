@@ -21,6 +21,7 @@ impl Editor {
     /// - `Some(pos)`: 鼠标移动中，重新计算吸附目标
     /// - `None`: 持续推进弹簧物理向现有目标收敛（用于 AnimationTick）
     pub fn update_selection_box_animation(&self, mouse_pos: Option<Point>) {
+        crate::puffin_profiler::update_selection_box_animation();
         use crate::EditState;
         use crate::SelectionBoxAnimState;
         use lumino_core::storage::config::SelectionBoxMode;

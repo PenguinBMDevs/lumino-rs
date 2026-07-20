@@ -167,6 +167,7 @@ impl Editor {
     /// **异步提交**：实际数据更新在后台线程执行，UI 层需每帧调用 `poll_async_commit`
     /// 获取结果。pending_drag_state 会保留到异步提交完成，以维持 ghost 视觉位置。
     pub fn commit_pending_drag(&mut self) -> bool {
+        crate::puffin_profiler::commit_pending_drag();
         let Some(drag_state) = self.pending_drag_state.as_ref() else {
             return false;
         };
@@ -204,6 +205,7 @@ impl Editor {
     /// 若完成：应用结果到 data，清空 pending_drag_state，并返回修改数。
     /// 若未完成：返回 `None`。
     pub fn poll_async_commit(&mut self) -> Option<usize> {
+        crate::puffin_profiler::poll_async_commit();
         match self.editor_state.data.poll_async_commit() {
             Some(Ok(modified)) => {
                 if modified > 0 {

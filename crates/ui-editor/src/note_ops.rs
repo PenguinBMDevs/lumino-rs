@@ -222,6 +222,7 @@ impl Editor {
     }
 
     pub fn get_selection_box_bounds(&self) -> Option<(f32, f32, f32, f32)> {
+        crate::puffin_profiler::get_selection_box_bounds();
         let notes = &self.editor_state.data.notes;
         let view = &self.editor_state.view;
         let selected = &self.editor_state.interaction.selected_notes;
@@ -232,30 +233,52 @@ impl Editor {
         if selected.is_empty() {
             return None;
         }
+
+        // 性能优化：先判断是否需要 ghost delta，避免在循环中每元素调用。
+        let needs_ghost = pending.is_some()
+            || matches!(
+                edit_state,
+                EditState::Dragging { .. } | EditState::DraggingSelection { .. }
+            );
+
         let mut min_t = f32::INFINITY;
         let mut max_te = f32::NEG_INFINITY;
         let mut max_k = u16::MIN;
         let mut min_k = u16::MAX;
         let mut any = false;
-        for &i in selected.iter() {
-            let Some(n) = notes.get(i) else {
-                continue;
-            };
-            any = true;
-            let (tick, key) = if let Some((dt, dk)) =
-                crate::rendering::ghost_delta_for_index(i, pending, edit_state)
-            {
-                (
-                    (n.tick + dt as f32).max(0.0),
-                    (n.key as i32 + dk as i32).clamp(0, max_key as i32) as u16,
-                )
-            } else {
-                (n.tick, n.key)
-            };
-            min_t = min_t.min(tick);
-            max_te = max_te.max(tick + n.length);
-            max_k = max_k.max(key);
-            min_k = min_k.min(key);
+
+        if needs_ghost {
+            for &i in selected.iter() {
+                let Some(n) = notes.get(i) else {
+                    continue;
+                };
+                any = true;
+                let (tick, key) = if let Some((dt, dk)) =
+                    crate::rendering::ghost_delta_for_index(i, pending, edit_state)
+                {
+                    (
+                        (n.tick + dt as f32).max(0.0),
+                        (n.key as i32 + dk as i32).clamp(0, max_key as i32) as u16,
+                    )
+                } else {
+                    (n.tick, n.key)
+                };
+                min_t = min_t.min(tick);
+                max_te = max_te.max(tick + n.length);
+                max_k = max_k.max(key);
+                min_k = min_k.min(key);
+            }
+        } else {
+            for &i in selected.iter() {
+                let Some(n) = notes.get(i) else {
+                    continue;
+                };
+                any = true;
+                min_t = min_t.min(n.tick);
+                max_te = max_te.max(n.tick + n.length);
+                max_k = max_k.max(n.key);
+                min_k = min_k.min(n.key);
+            }
         }
         if !any {
             return None;
@@ -269,6 +292,7 @@ impl Editor {
     }
 
     pub fn hit_test_selection_box(&self, pos: Point) -> Option<SelectionHitType> {
+        crate::puffin_profiler::hit_test_selection_box();
         let bounds = self.get_selection_box_bounds()?;
         hit_test::hit_test_selection_box(bounds, (pos.x, pos.y))
     }

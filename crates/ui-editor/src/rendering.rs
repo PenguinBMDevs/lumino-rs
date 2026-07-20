@@ -28,6 +28,9 @@ pub(crate) fn ghost_delta_for_index(
     pending: &Option<lumino_core::DragState>,
     edit_state: &EditState,
 ) -> Option<(i64, i16)> {
+    // 注意：此函数在 hot loop 中被调用（每帧可达百万次），
+    // 绝对不要在此处添加 puffin::profile_scope! 等 per-element 开销。
+    // puffin scope 应放在外层的循环函数（collect_visible_note_data 等）中。
     let mut delta_tick = 0i64;
     let mut delta_key = 0i16;
     let mut has_delta = false;
@@ -57,6 +60,45 @@ pub(crate) fn ghost_delta_for_index(
     }
 
     has_delta.then_some((delta_tick, delta_key))
+}
+
+/// 检查是否存在需要 ghost delta 的活跃拖动状态
+///
+/// 当没有 pending 拖动且当前编辑状态不是 Dragging/DraggingSelection 时，
+/// `ghost_delta_for_index` 对所有音符都返回 None，可以完全跳过 per-element 调用。
+#[inline]
+fn has_active_ghost_delta(
+    pending: &Option<lumino_core::DragState>,
+    edit_state: &EditState,
+) -> bool {
+    pending.is_some()
+        || matches!(
+            edit_state,
+            EditState::Dragging { .. } | EditState::DraggingSelection { .. }
+        )
+}
+
+/// 应用 ghost delta 到音符的 tick/key，返回幽灵位置
+///
+/// 这是 `ghost_delta_for_index` 的封装，统一处理 None 和 Some 分支。
+/// 仅在 `has_active_ghost_delta` 为 true 时调用。
+#[inline]
+fn apply_ghost_delta(
+    i: usize,
+    tick: f32,
+    key: u16,
+    max_key: u16,
+    pending: &Option<lumino_core::DragState>,
+    edit_state: &EditState,
+) -> (f32, u16) {
+    if let Some((dt, dk)) = ghost_delta_for_index(i, pending, edit_state) {
+        (
+            (tick + dt as f32).max(0.0),
+            (key as i32 + dk as i32).clamp(0, max_key as i32) as u16,
+        )
+    } else {
+        (tick, key)
+    }
 }
 
 impl Editor {
@@ -130,6 +172,7 @@ impl Editor {
         result: &mut Vec<(f32, u16, f32)>,
         overscan_factor: f32,
     ) -> usize {
+        crate::puffin_profiler::collect_visible_note_data();
         result.clear();
 
         let (visible_tick_start, visible_tick_end, visible_key_min, visible_key_max) =
@@ -144,6 +187,10 @@ impl Editor {
         let has_clean_index =
             !self.spatial.note_index_dirty.get() && self.spatial.note_index.borrow().is_some();
 
+        // 性能优化：当没有活跃拖动时，ghost_delta_for_index 对每个音符都返回 None，
+        // 避免 200 万次函数调用开销。先判断再决定走哪条路径。
+        let needs_ghost = has_active_ghost_delta(pending, edit_state);
+
         if has_clean_index {
             let index = self.spatial.note_index.borrow();
             let index = index.as_ref().expect("已校验 is_some");
@@ -155,33 +202,46 @@ impl Editor {
                 visible_key_max,
                 &mut indices,
             );
-            for &i in &indices {
-                if let Some(note) = self.editor_state.data.notes.get(i) {
-                    let mut tick = note.tick;
-                    let mut key = note.key;
-                    if let Some((dt, dk)) = ghost_delta_for_index(i, pending, edit_state) {
-                        tick = (tick + dt as f32).max(0.0);
-                        key = (key as i32 + dk as i32).clamp(0, max_key as i32) as u16;
+            if needs_ghost {
+                for &i in &indices {
+                    if let Some(note) = self.editor_state.data.notes.get(i) {
+                        let (tick, key) =
+                            apply_ghost_delta(i, note.tick, note.key, max_key, pending, edit_state);
+                        result.push((tick, key, note.length));
                     }
-                    result.push((tick, key, note.length));
+                }
+            } else {
+                for &i in &indices {
+                    if let Some(note) = self.editor_state.data.notes.get(i) {
+                        result.push((note.tick, note.key, note.length));
+                    }
                 }
             }
         } else {
             // 索引脏或不存在：线性扫描视口范围内的音符
-            for (i, note) in self.editor_state.data.notes.iter().enumerate() {
-                let mut tick = note.tick;
-                let mut key = note.key;
-                if let Some((dt, dk)) = ghost_delta_for_index(i, pending, edit_state) {
-                    tick = (tick + dt as f32).max(0.0);
-                    key = (key as i32 + dk as i32).clamp(0, max_key as i32) as u16;
+            if needs_ghost {
+                for (i, note) in self.editor_state.data.notes.iter().enumerate() {
+                    let (tick, key) =
+                        apply_ghost_delta(i, note.tick, note.key, max_key, pending, edit_state);
+                    let note_end = tick + note.length;
+                    if key >= visible_key_min
+                        && key <= visible_key_max
+                        && note_end >= visible_tick_start
+                        && tick <= visible_tick_end
+                    {
+                        result.push((tick, key, note.length));
+                    }
                 }
-                let note_end = tick + note.length;
-                if key >= visible_key_min
-                    && key <= visible_key_max
-                    && note_end >= visible_tick_start
-                    && tick <= visible_tick_end
-                {
-                    result.push((tick, key, note.length));
+            } else {
+                for note in self.editor_state.data.notes.iter() {
+                    let note_end = note.tick + note.length;
+                    if note.key >= visible_key_min
+                        && note.key <= visible_key_max
+                        && note_end >= visible_tick_start
+                        && note.tick <= visible_tick_end
+                    {
+                        result.push((note.tick, note.key, note.length));
+                    }
                 }
             }
         }

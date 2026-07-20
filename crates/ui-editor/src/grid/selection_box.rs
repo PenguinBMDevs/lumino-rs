@@ -1,5 +1,6 @@
 //! 选择框渲染
 
+use crate::EditState;
 use crate::Editor;
 use crate::rendering::ghost_delta_for_index;
 use iced_core::{Point, Rectangle, Size};
@@ -18,6 +19,7 @@ pub fn draw(
     theme: &lumino_ui_core::Theme,
     bounds: Rectangle,
 ) -> Option<Geometry<Renderer>> {
+    crate::puffin_profiler::selection_box_draw();
     let palette = theme.extended_palette();
     let selection_stroke_color = palette.secondary.strong.color;
     let selection_fill_color = iced_core::Color {
@@ -73,29 +75,47 @@ pub fn draw(
         let pending = &editor.pending_drag_state;
         let max_key = editor.editor_state.view.visible_key_count.saturating_sub(1);
 
+        // 性能优化：先判断是否需要 ghost delta，避免在循环中每元素调用。
+        let needs_ghost = pending.is_some()
+            || matches!(
+                edit_state,
+                EditState::Dragging { .. } | EditState::DraggingSelection { .. }
+            );
+
         let mut min_tick = f32::INFINITY;
         let mut max_tick_end = f32::NEG_INFINITY;
         let mut max_key_bound = u16::MIN;
         let mut min_key_bound = u16::MAX;
         let mut has_visible = false;
 
-        for &i in selected.iter() {
-            if let Some(note) = notes.get(i) {
-                let (tick, key) =
-                    if let Some((dt, dk)) = ghost_delta_for_index(i, pending, edit_state) {
-                        (
-                            (note.tick + dt as f32).max(0.0),
-                            (note.key as i32 + dk as i32).clamp(0, max_key as i32) as u16,
-                        )
-                    } else {
-                        (note.tick, note.key)
-                    };
-
-                min_tick = min_tick.min(tick);
-                max_tick_end = max_tick_end.max(tick + note.length);
-                max_key_bound = max_key_bound.max(key);
-                min_key_bound = min_key_bound.min(key);
-                has_visible = true;
+        if needs_ghost {
+            for &i in selected.iter() {
+                if let Some(note) = notes.get(i) {
+                    let (tick, key) =
+                        if let Some((dt, dk)) = ghost_delta_for_index(i, pending, edit_state) {
+                            (
+                                (note.tick + dt as f32).max(0.0),
+                                (note.key as i32 + dk as i32).clamp(0, max_key as i32) as u16,
+                            )
+                        } else {
+                            (note.tick, note.key)
+                        };
+                    min_tick = min_tick.min(tick);
+                    max_tick_end = max_tick_end.max(tick + note.length);
+                    max_key_bound = max_key_bound.max(key);
+                    min_key_bound = min_key_bound.min(key);
+                    has_visible = true;
+                }
+            }
+        } else {
+            for &i in selected.iter() {
+                if let Some(note) = notes.get(i) {
+                    min_tick = min_tick.min(note.tick);
+                    max_tick_end = max_tick_end.max(note.tick + note.length);
+                    max_key_bound = max_key_bound.max(note.key);
+                    min_key_bound = min_key_bound.min(note.key);
+                    has_visible = true;
+                }
             }
         }
 
