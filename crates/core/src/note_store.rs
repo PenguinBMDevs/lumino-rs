@@ -148,6 +148,22 @@ impl From<Note> for NoteView {
     }
 }
 
+impl From<&Note> for NoteView {
+    /// 从 &Note 零 clone 构造 NoteView（字段全部 Copy）
+    ///
+    /// 用于 im::Vector 路径下 `for_each_note_view` 等场景，避免先 clone Note
+    /// 再消耗的冗余开销。
+    fn from(n: &Note) -> Self {
+        Self {
+            tick: n.tick,
+            key: n.key,
+            length: n.length,
+            velocity: n.velocity,
+            channel: n.channel,
+        }
+    }
+}
+
 impl From<NoteView> for Note {
     fn from(r: NoteView) -> Self {
         Note::from_raw(r.tick, r.key, r.length, r.velocity, r.channel)

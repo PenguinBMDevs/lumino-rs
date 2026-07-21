@@ -237,6 +237,36 @@ impl EditorData {
         self.note_store_enabled
     }
 
+    /// 获取音符只读视图（NoteStore 启用时走零 clone 路径）
+    ///
+    /// 调用方优先使用此方法替代 `notes.get(idx)`，避免 16M 音符场景下
+    /// 的 Note 结构体 clone 开销。NoteView 是 Copy 语义，零成本传递。
+    ///
+    /// NoteStore 未启用时，从 im::Vector 取出 &Note 后零 clone 转 NoteView
+    /// （通过 `From<&Note>` 实现，字段全部 Copy）。
+    pub fn get_note_view(&self, idx: usize) -> Option<crate::note_store::NoteView> {
+        if self.note_store_enabled {
+            self.note_store.get_ref(idx)
+        } else {
+            self.notes.get(idx).map(Into::into)
+        }
+    }
+
+    /// 遍历所有音符的 NoteView（NoteStore 启用时零 clone）
+    ///
+    /// 用于 hot path 替代 `notes.iter().enumerate()`，避免每个音符一次 Note clone。
+    /// - NoteStore 路径：直接遍历 SoA 数组构造 NoteView（Copy 语义）。
+    /// - im::Vector 路径：从 &Note 零 clone 构造 NoteView（通过 `From<&Note>`）。
+    pub fn for_each_note_view(&self, mut f: impl FnMut(usize, crate::note_store::NoteView)) {
+        if self.note_store_enabled {
+            self.note_store.for_each_ref(f);
+        } else {
+            for (i, n) in self.notes.iter().enumerate() {
+                f(i, n.into());
+            }
+        }
+    }
+
     /// NoteStore 内存占用（MB）
     pub fn note_store_memory_mb(&self) -> f64 {
         if self.note_store_enabled {
