@@ -230,13 +230,16 @@ impl EditorData {
     }
 
     /// 从 DragState 构造 MoveOp 列表（按连续区间拆分）。
+    ///
+    /// **优化**：`selected_indices()` 已按索引升序返回，无需 sort。
+    /// NoteStore 启用时用 `get_ref`（Copy 语义）替代 `notes.get`（clone Note）。
     pub fn move_ops_from_drag_state(&self, drag_state: &DragState) -> Vec<MoveOp> {
         let track_id = self.current_track as u32;
-        let mut indices: Vec<usize> = drag_state.selected_indices();
+        let indices: Vec<usize> = drag_state.selected_indices();
         if indices.is_empty() {
             return Vec::new();
         }
-        indices.sort();
+        // selected_indices() 已升序，无需 sort
 
         let delta_tick = SaturatingInto::<i32>::saturating_into(drag_state.delta_tick);
         let delta_key = drag_state.delta_key;
@@ -246,10 +249,17 @@ impl EditorData {
         let mut range_start = indices[0];
         let mut prev = indices[0];
 
+        // NoteStore 启用时用 get_ref（Copy），否则用 notes.get（clone）
         let make_op = |start: usize, end: usize, seq: u16| {
-            let (ticks, keys): (Vec<f32>, Vec<u16>) = (start..=end)
-                .filter_map(|i| self.notes.get(i).map(|n| (n.tick, n.key)))
-                .unzip();
+            let (ticks, keys): (Vec<f32>, Vec<u16>) = if self.note_store_enabled {
+                (start..=end)
+                    .filter_map(|i| self.note_store.get_ref(i).map(|n| (n.tick, n.key)))
+                    .unzip()
+            } else {
+                (start..=end)
+                    .filter_map(|i| self.notes.get(i).map(|n| (n.tick, n.key)))
+                    .unzip()
+            };
             MoveOp {
                 track_id,
                 range_start: start as u32,

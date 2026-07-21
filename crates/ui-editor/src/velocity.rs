@@ -13,6 +13,7 @@ pub use lumino_core::{
     VelocityPoint,
 };
 
+use lumino_core::NoteStore;
 use lumino_core::i18n::Language;
 use lumino_ui_core::Element;
 
@@ -246,6 +247,31 @@ impl VelocityPanel {
                 length: n.length,
             });
         }
+        points.sort_by(|a, b| {
+            a.tick
+                .partial_cmp(&b.tick)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.note_index.cmp(&b.note_index))
+        });
+        points
+    }
+
+    /// 构建力度点数据（NoteStore 热路径，零 Note clone）
+    ///
+    /// **性能优化**：10M+ 音符场景下，比 `build_velocity_points(&im::Vector)` 节省
+    /// 全部 Note 结构体 clone 开销（百毫秒级）。直接消费 SoA 数组，回调式遍历。
+    ///
+    /// 调用方需保证 `store` 与 `notes` 一致（NoteStore 启用时）。
+    pub fn build_velocity_points_from_store(store: &NoteStore) -> Vec<VelocityPoint> {
+        let mut points: Vec<VelocityPoint> = Vec::with_capacity(store.len());
+        store.for_each_ref(|index, view| {
+            points.push(VelocityPoint {
+                note_index: index,
+                tick: view.tick,
+                velocity: view.velocity,
+                length: view.length,
+            });
+        });
         points.sort_by(|a, b| {
             a.tick
                 .partial_cmp(&b.tick)

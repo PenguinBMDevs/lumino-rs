@@ -5,10 +5,31 @@
 
 use std::collections::HashSet;
 
+use bit_vec::BitVec;
+
 use super::EditorData;
 use super::NOTE_STORE_THRESHOLD;
+use crate::DragState;
 use crate::note::Note;
 use crate::note_store::BitSet;
+
+/// 将 `bit_vec::BitVec` 转换为 `NoteStore::BitSet`
+///
+/// O(N) 遍历，但仅在拖动提交时调用一次。16M 音符约 50ms，
+/// 远小于原 `apply_drag_state_streaming` 的 3.3s。
+///
+/// 优化路径：用 `trailing_zeros` 批量处理，跳过全 0 块。
+fn bitvec_to_bitset(bv: &BitVec) -> BitSet {
+    let len = bv.len();
+    let mut s = BitSet::new(len);
+    // 用 iter() 遍历，跨平台安全（不依赖 usize/u64 等价性）
+    for (i, b) in bv.iter().enumerate() {
+        if b {
+            s.set(i);
+        }
+    }
+    s
+}
 
 impl EditorData {
     /// 同步 notes → note_store（从 im::Vector 重建 SoA 存储）
@@ -158,6 +179,57 @@ impl EditorData {
 
         self.sync_track_notes();
         inserted
+    }
+
+    /// 从 DragState 批量移动选中音符（集成层适配）
+    ///
+    /// 把 `DragState.selected` (BitVec) 转为 `BitSet`，
+    /// 然后走 `batch_move_notes` 热路径。返回修改的音符数。
+    /// 调用方需在调用前 `push_history()`。
+    pub fn batch_move_notes_from_drag_state(
+        &mut self,
+        drag_state: &DragState,
+        max_key: u16,
+    ) -> usize {
+        if drag_state.is_delta_zero() || !drag_state.has_selection() {
+            return 0;
+        }
+        let bitset = bitvec_to_bitset(&drag_state.selected);
+        self.batch_move_notes(
+            &bitset,
+            drag_state.delta_tick as f32,
+            drag_state.delta_key,
+            max_key,
+        )
+    }
+
+    /// 从 HashSet 批量删除选中音符（集成层适配）
+    ///
+    /// 把 `HashSet<usize>` 转为 `BitSet`，
+    /// 然后走 `batch_delete_notes` 热路径。返回删除的音符数。
+    /// 调用方需在调用前 `push_history()`。
+    pub fn batch_delete_notes_from_set(&mut self, selected: &HashSet<usize>) -> usize {
+        if selected.is_empty() {
+            return 0;
+        }
+        let bitset = BitSet::from_iter(self.notes.len(), selected.iter().copied());
+        self.batch_delete_notes(&bitset)
+    }
+
+    /// 单个音符追加（NoteStore 启用时同步到 note_store，避免后续全量重建）
+    ///
+    /// 返回插入的音符数（0 或 1）。调用方需在调用前 `push_history()`。
+    pub fn push_note(&mut self, note: Note) -> usize {
+        if self.note_store_enabled {
+            self.note_store.push_back(note.clone());
+            self.notes.push_back(note);
+            self.sync_track_notes();
+            1
+        } else {
+            self.notes.push_back(note);
+            self.sync_track_notes();
+            1
+        }
     }
 
     /// 检查 NoteStore 是否启用

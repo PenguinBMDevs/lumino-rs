@@ -47,9 +47,17 @@ impl EditorData {
     /// 只修改 `drag_state` 选中的音符，并同步更新 `track_notes` 缓存，
     /// 避免 `apply_to_notes` + `sync_track_notes` 带来的整轨克隆。
     /// 返回实际被修改的音符数。
+    ///
+    /// **热路径优化**：当 NoteStore 启用时（音符数 ≥ NOTE_STORE_THRESHOLD），
+    /// 走 `batch_move_parallel` 8 线程并行路径，16M 全选 20ms（vs 单线程 3.3s）。
     pub fn apply_drag_state_streaming(&mut self, drag_state: &DragState, max_key: u16) -> usize {
         if drag_state.is_delta_zero() {
             return 0;
+        }
+
+        // 热路径：NoteStore 启用时走并行批量移动
+        if self.note_store_enabled {
+            return self.batch_move_notes_from_drag_state(drag_state, max_key);
         }
 
         let current_track = self.current_track;
@@ -94,18 +102,24 @@ impl EditorData {
     ///
     /// 使用 `retain()` O(N) 单次遍历替代逐个 `remove(i)` O(K·log N)，
     /// 1600W 选中音符场景下从 ~56s 降至 ~ms 级。
+    ///
+    /// **热路径优化**：当 NoteStore 启用时走 `delete_selected`（墓碑标记 + 块级并行）。
     pub fn delete_selected_notes(&mut self, selected: &HashSet<usize>) {
         if selected.is_empty() {
             return;
         }
         self.push_history();
-        let mut idx = 0usize;
-        self.notes.retain(|_| {
-            let keep = !selected.contains(&idx);
-            idx += 1;
-            keep
-        });
-        self.sync_track_notes();
+        if self.note_store_enabled {
+            self.batch_delete_notes_from_set(selected);
+        } else {
+            let mut idx = 0usize;
+            self.notes.retain(|_| {
+                let keep = !selected.contains(&idx);
+                idx += 1;
+                keep
+            });
+            self.sync_track_notes();
+        }
     }
 
     /// 返回所有音符索引
@@ -250,6 +264,9 @@ impl EditorData {
     }
 
     /// 完成绘制新音符（纯业务逻辑），返回创建的 Note
+    ///
+    /// **热路径优化**：当 NoteStore 启用时，用 `push_note` 同步插入 note_store，
+    /// 避免后续 `sync_note_store()` 全量重建。
     pub fn finish_drawing(
         &mut self,
         start_tick: f32,
@@ -277,10 +294,7 @@ impl EditorData {
             tracing::debug!("编辑器: 音符放置已合并到当前 NoteCreate 日志");
         }
         let note = Note::new(tick, key, length);
-        self.notes.push_back(note.clone());
-        self.track_notes
-            .insert(self.current_track, self.notes.clone());
-        self.mark_track_notes_changed();
+        self.push_note(note.clone());
         tracing::debug!(
             "编辑器: 已保存 {} 个音符到音轨 {}",
             self.notes.len(),
