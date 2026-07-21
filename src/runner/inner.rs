@@ -364,7 +364,8 @@ impl RunnerInner {
             || new.history_total_limit != old.history_total_limit
             || new.history_entry_limit != old.history_entry_limit
             || new.merge_window_ms != old.merge_window_ms
-            || new.intercept_notification_enabled != old.intercept_notification_enabled;
+            || new.intercept_notification_enabled != old.intercept_notification_enabled
+            || new.automation_line_thickness != old.automation_line_thickness;
 
         if theme_changed
             || synth_changed
@@ -516,6 +517,7 @@ impl RunnerInner {
             config.ui.history_entry_limit = new.history_entry_limit;
             config.ui.merge_window_ms = new.merge_window_ms;
             config.ui.intercept_notification_enabled = new.intercept_notification_enabled;
+            config.ui.automation_line_thickness = new.automation_line_thickness;
         });
 
         // 同步当前调色板到全局 PaletteManager

@@ -331,6 +331,17 @@ impl Root {
                 .set_playback_key_colors_enabled(new_settings.playback_key_colors_enabled);
         }
 
+        // 同步自动化曲线连线粗细
+        if old_settings.automation_line_thickness != new_settings.automation_line_thickness {
+            tracing::info!(
+                "同步自动化曲线连线粗细: {} -> {}",
+                old_settings.automation_line_thickness,
+                new_settings.automation_line_thickness
+            );
+            self.editor.velocity_panel.automation_line_thickness =
+                new_settings.automation_line_thickness;
+        }
+
         // 同步 MIDI 输入设备选择
         if old_settings.selected_midi_device != new_settings.selected_midi_device {
             tracing::info!(

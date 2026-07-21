@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 use lumino_core::storage::config::UiConfig;
 
 #[test]
@@ -194,6 +194,20 @@ fn test_apply_settings_midi_device_changed() {
     root.apply_settings(new_settings.clone());
 
     assert_eq!(root.settings.selected_midi_device, Some(1));
+}
+
+#[test]
+fn test_apply_settings_automation_line_thickness_changed() {
+    let mut root = create_test_root();
+    let old_settings = root.settings.clone();
+
+    let mut new_settings = old_settings.clone();
+    new_settings.automation_line_thickness = 5.5;
+
+    root.apply_settings(new_settings.clone());
+
+    assert_eq!(root.settings.automation_line_thickness, 5.5);
+    assert_eq!(root.editor.velocity_panel.automation_line_thickness, 5.5);
 }
 
 fn create_test_root() -> Root {
