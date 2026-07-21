@@ -257,11 +257,16 @@ impl Editor {
     }
 }
 
-/// 从 EditState 提取当前 drag delta（仅 Dragging 状态有非零值）
+/// 从 EditState 提取当前 drag delta（Dragging 和 DraggingSelection 均有非零值）
+///
+/// `DraggingSelection` 也纳入提取，确保第二次拖动（已有 pending 时）
+/// 当前 drag_state 的 delta 能应用到渲染位置，避免音符视觉位置不随鼠标移动。
 #[inline]
 fn current_drag_delta(edit_state: &EditState) -> (i64, i16) {
     match edit_state {
-        EditState::Dragging { drag_state, .. } => (drag_state.delta_tick, drag_state.delta_key),
+        EditState::Dragging { drag_state, .. } | EditState::DraggingSelection { drag_state } => {
+            (drag_state.delta_tick, drag_state.delta_key)
+        }
         _ => (0i64, 0i16),
     }
 }

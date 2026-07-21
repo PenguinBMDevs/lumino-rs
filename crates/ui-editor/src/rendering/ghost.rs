@@ -65,34 +65,42 @@ pub(crate) fn ghost_delta_for_index(
 
 /// 检查是否存在需要 ghost delta 的活跃状态
 ///
-/// 仅检查 `pending_drag_state` 和单音符 `Dragging`。
-/// **DraggingSelection 期间不返回 ghost delta**——批量拖动时所有选中音符变化量相同，
-/// 无需每帧每元素计算，变化量在松开鼠标时一次性算完保存到 `pending_drag_state`。
+/// 检查 `pending_drag_state`、单音符 `Dragging` 和批量拖动 `DraggingSelection`。
+/// `DraggingSelection` 也纳入检查，确保第二次拖动（已有 pending 时）当前 drag delta
+/// 能正确渲染，避免音符视觉位置不随鼠标移动。性能方面：此函数在 hot loop 之外调用，
+/// 仅用于判断是否走 ghost 路径，开销可忽略。
 #[inline]
 pub(crate) fn has_active_ghost_delta(
     pending: &Option<lumino_core::DragState>,
     edit_state: &EditState,
 ) -> bool {
-    pending.is_some() || matches!(edit_state, EditState::Dragging { .. })
+    pending.is_some()
+        || matches!(
+            edit_state,
+            EditState::Dragging { .. } | EditState::DraggingSelection { .. }
+        )
 }
 
 /// 检查音符在当前状态下是否处于"幽灵"位置（即被拖动或 pending）
 ///
 /// 调用方在已知 `has_active_ghost_delta` 为 true 时，先用此函数判断是否需要
 /// 应用偏移，再使用预提取的 delta 计算最终位置。
-/// **DraggingSelection 不走此路径**——变化量只在松开鼠标时计算一次。
+/// **DraggingSelection 也纳入检查**，确保第二次拖动（已有 pending 时）
+/// 当前 drag_state 的选中音符也能正确渲染 ghost 位置。
 #[inline]
 pub(crate) fn is_note_ghosted(
     i: usize,
     pending: &Option<lumino_core::DragState>,
     edit_state: &EditState,
 ) -> bool {
-    // 检查当前单音符拖动的选中状态
-    if let EditState::Dragging { drag_state, .. } = edit_state
-        && i < drag_state.selected.len()
-        && drag_state.selected[i]
-    {
-        return true;
+    // 检查当前拖动状态的选中集合（含 Dragging 和 DraggingSelection）
+    match edit_state {
+        EditState::Dragging { drag_state, .. } | EditState::DraggingSelection { drag_state }
+            if i < drag_state.selected.len() && drag_state.selected[i] =>
+        {
+            return true;
+        }
+        _ => {}
     }
     // 检查 pending 拖动是否包含此音符
     if let Some(pending) = pending

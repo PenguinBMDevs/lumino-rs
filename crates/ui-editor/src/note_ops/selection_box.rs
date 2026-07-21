@@ -60,16 +60,26 @@ impl Editor {
         if needs_ghost {
             if let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
                 puffin::profile_scope!("get_selection_box_bounds::ghost_o1");
-                let (drag_dt, drag_dk) = if let Some(pending) = pending {
-                    (pending.delta_tick, pending.delta_key)
-                } else {
+                // 合并 pending delta 和当前 drag_state delta
+                // 当 pending 存在时（已松手但未提交），当前 drag_state 的 delta 仍需叠加，
+                // 否则第二次拖动时选择框不跟随鼠标移动。
+                let (drag_dt, drag_dk) = {
+                    // 初始值：从 pending 获取（如果有）
+                    let (mut dt, mut dk) = if let Some(pending) = pending {
+                        (pending.delta_tick, pending.delta_key)
+                    } else {
+                        (0i64, 0i16)
+                    };
+                    // 叠加当前 drag_state 的 delta（Dragging 或 DraggingSelection）
                     match edit_state {
                         EditState::Dragging { drag_state, .. }
                         | EditState::DraggingSelection { drag_state } => {
-                            (drag_state.delta_tick, drag_state.delta_key)
+                            dt = dt.saturating_add(drag_state.delta_tick);
+                            dk = dk.saturating_add(drag_state.delta_key);
                         }
-                        _ => (0i64, 0i16),
+                        _ => {}
                     }
+                    (dt, dk)
                 };
                 let min_t = (min_t + drag_dt as f32).max(0.0);
                 let max_te = max_te + drag_dt as f32;
