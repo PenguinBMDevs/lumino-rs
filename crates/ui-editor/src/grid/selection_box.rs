@@ -65,11 +65,10 @@ pub fn draw(
     }
 
     // 情况 2：有已选中的音符——绘制围绕所有选中音符的方形边界框。
+    // 仅在非 Selecting 状态下绘制，避免与情况 1 的平滑框选框重叠导致两个不同样式框选框。
     // 拖动期间使用 ghost 位置，使选择框跟随被拖动的音符一起移动。
     //
     // 性能优化：
-    // - Selecting 状态下，框选矩形的边界已被 `update_selection` 缓存到
-    //   `cached_selection_bounds`，直接从中计算 bbox 即可，避免全量遍历。
     // - 非 Selecting 状态，使用 `get_selection_box_bounds()`（增量维护的 O(1) 缓存，
     //   或 ghost 路径的 O(N) 计算），消除 selection_box::draw 中重复的 O(N) ghost 路径。
     // - 2026-07-20 重构：消除与 note_ops::get_selection_box_bounds 重复的 ghost 逻辑。
@@ -84,50 +83,33 @@ pub fn draw(
     if has_selection {
         puffin::profile_scope!("draw::selection_box_bbox");
 
-        // cached_selection_bounds 仅在 Selecting 状态下有效
-        let is_selecting = matches!(
+        // Selecting 状态下，情况 1 的半透明填充框已提供拖拽视觉反馈，
+        // 跳过情况 2 的选中音符边界框，避免两个不同样式框选框重叠显示。
+        if matches!(
             editor.editor_state.interaction.edit_state,
             crate::EditState::Selecting { .. }
-        );
-        let has_bbox = if is_selecting {
-            if let Some((c_min_t, c_max_t, c_min_k, c_max_k)) = editor.cached_selection_bounds.get()
-            {
-                // cached_selection_bounds 是 (min_tick, max_tick, min_key, max_key)
-                // 注意：max_tick 是框选矩形右边界的 tick，不是 note.tick+length。
-                // 需要加一个小 padding（snap_precision）来包含可能超出右边界的音符长度。
-                let snap = editor.editor_state.view.snap_precision.max(1.0);
-                let max_tick_end = c_max_t + snap; // 至少一个网格，覆盖音符 length 超出部分
-                let min_x = editor.tick_to_x(c_min_t);
-                let max_x = editor.tick_to_x(max_tick_end);
-                let min_y = editor.key_to_y(c_max_k);
-                let max_y = editor.key_to_y(c_min_k) + editor.editor_state.view.zoom_y;
-                Some((min_x, max_x, min_y, max_y))
-            } else {
-                // Selecting 状态下 cached_selection_bounds 意外失效，兜底
-                editor.get_selection_box_bounds()
-            }
+        ) {
+            // 跳过：Selecting 状态下仅由情况 1 绘制平滑框选框
         } else {
             // 非 Selecting 状态：使用 get_selection_box_bounds（O(1) 缓存、O(N) 兜底、
             // 或 ghost 路径带 delta），确保框选框在 DraggingSelection 时跟随音符拖动，
             // 且在二次框选完成后使用正确的音符位置。
-            editor.get_selection_box_bounds()
-        };
+            if let Some((min_x, max_x, min_y, max_y)) = editor.get_selection_box_bounds() {
+                let width = max_x - min_x;
+                let height = max_y - min_y;
 
-        if let Some((min_x, max_x, min_y, max_y)) = has_bbox {
-            let width = max_x - min_x;
-            let height = max_y - min_y;
+                if width >= 1.0 && height >= 1.0 {
+                    let rect = Rectangle::new(Point::new(min_x, min_y), Size::new(width, height));
+                    let path = Path::rectangle(rect.position(), rect.size());
 
-            if width >= 1.0 && height >= 1.0 {
-                let rect = Rectangle::new(Point::new(min_x, min_y), Size::new(width, height));
-                let path = Path::rectangle(rect.position(), rect.size());
+                    // 只绘制边框，不填充
+                    let stroke = Stroke::default()
+                        .with_width(3.0)
+                        .with_color(selection_stroke_color);
+                    frame.stroke(&path, stroke);
 
-                // 只绘制边框，不填充
-                let stroke = Stroke::default()
-                    .with_width(3.0)
-                    .with_color(selection_stroke_color);
-                frame.stroke(&path, stroke);
-
-                has_content = true;
+                    has_content = true;
+                }
             }
         }
     }
