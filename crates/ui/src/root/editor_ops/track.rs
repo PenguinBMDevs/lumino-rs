@@ -36,6 +36,8 @@ impl Root {
                 .notes
                 .push_back(Note::from_raw(tick, key as u16, length, velocity, channel));
         }
+        // 音符加载后同步 NoteStore，确保后续批量操作走热路径
+        self.editor.editor_state.data.sync_note_store();
         self.editor.mark_notes_changed();
     }
 
@@ -87,6 +89,9 @@ impl Root {
         self.editor.editor_state.data.mark_track_notes_changed();
 
         self.editor.editor_state.data.current_track = track_idx;
+        // 音符加载后同步 NoteStore，确保后续批量操作走热路径
+        // 必须在 current_track 设置后调用，因 switch_to_track 中 current_track==track_idx 时会跳过
+        self.editor.editor_state.data.sync_note_store();
         self.editor.mark_notes_changed();
         self.update_playback_notes();
     }

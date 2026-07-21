@@ -52,6 +52,10 @@ impl super::Editor {
             track_idx
         );
 
+        // 同步 NoteStore：音符数超过阈值时自动启用 NoteStore 热路径
+        // 必须在 selection_clear 之前调用，因为 sync_note_store 会读取 notes
+        self.editor_state.data.sync_note_store();
+
         // 切换音轨时清除选中状态（通过 editor_state）
         self.selection_clear();
         self.editor_state.interaction.hover_state = None;

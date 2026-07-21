@@ -95,7 +95,10 @@ impl NoteStore {
     /// 从 `BitVec` 直接批量移动选中音符（消除 BitVec→BitSet 转换）
     ///
     /// 与 `batch_move_parallel` 等价，但接受 `&BitVec` 而非 `&BitSet`。
-    /// 内部通过 `BitVec::blocks()` 获取 u64 块，再 trailing_zeros 遍历选中位。
+    /// 内部通过 `BitVec::blocks()` 获取 u32 块（bit-vec 0.8 默认），再 trailing_zeros 遍历选中位。
+    ///
+    /// **注意**：bit-vec 0.8 的 `blocks()` 返回 u32 块（每块 32 位），
+    /// 索引计算必须用 `*32` 而非 `*64`，否则选中位全部错位。
     ///
     /// 16M 50% 选中：~18ms（8 线程，与 batch_move_parallel 等价）
     pub fn batch_move_parallel_from_bitvec(
@@ -116,7 +119,8 @@ impl NoteStore {
         let dk = delta_key as i32;
         let mk = max_key as i32;
 
-        // 收集 BitVec 的 u64 块到本地 Vec，支持随机访问
+        // 收集 BitVec 的 u32 块到本地 Vec，支持随机访问
+        // bit-vec 0.8 默认 Block = u32，每块 32 位
         let blocks: Vec<u32> = selected.blocks().collect();
 
         std::thread::scope(|s| {
@@ -131,8 +135,9 @@ impl NoteStore {
                             continue;
                         }
                         let chunk_end = chunk_start + chunk.len;
-                        let start_block = chunk_start / 64;
-                        let end_block = (chunk_end - 1) / 64;
+                        // bit-vec 0.8 默认 Block = u32，每块 32 位
+                        let start_block = chunk_start / 32;
+                        let end_block = (chunk_end - 1) / 32;
 
                         for bi in start_block..=end_block {
                             if bi >= blocks_ref.len() {
@@ -142,7 +147,7 @@ impl NoteStore {
                             if block == 0 {
                                 continue;
                             }
-                            let base = bi * 64;
+                            let base = bi * 32; // 每块 32 位
                             let mut bits = block;
                             while bits != 0 {
                                 let tz = bits.trailing_zeros() as usize;
