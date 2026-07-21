@@ -17,7 +17,12 @@ impl Editor {
         // collect_ghost_indices 的 O(N) 遍历（1600W 选中音符），跳过以提升性能。
         // Dragging/DraggingSelection 状态下 mouse_interaction 直接返回 Grabbing，
         // 不依赖 hover 状态，因此跳过是安全的。
-        let hover = if matches!(
+        //
+        // 松手后（pending_drag_state 非空，edit_state=Idle），hit_test_note 内部
+        // collect_ghost_indices 仍会遍历 pending.selected_indices() 全量选中音符
+        // 构建 HashSet + 排序，1600W 场景下 ~6.7s/帧。此时 hover 无实际意义
+        //（用户未在交互），直接跳过。
+        let hover = if self.pending_drag_state.is_some() || matches!(
             self.editor_state.interaction.edit_state,
             EditState::Selecting { .. }
                 | EditState::Dragging { .. }

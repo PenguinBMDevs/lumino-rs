@@ -344,6 +344,7 @@ impl Host {
     /// 先按动作类型过滤：只有可能修改音符的动作才检查 `notes_changed()`，
     /// 避免 Moved/Released/Copy/SelectAll 等不会改音符的动作被误判为脏音轨。
     pub fn handle_action(&mut self, action: message::EditorAction) {
+        puffin::profile_function!();
         let track_idx = self.root.editor.current_track() as u16;
 
         // 先确定该动作是否可能修改音符数据

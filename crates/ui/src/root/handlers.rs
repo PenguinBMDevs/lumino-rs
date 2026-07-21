@@ -524,6 +524,7 @@ impl Root {
     ///
     /// 返回 `true` 表示音符数据确实发生了变化。
     pub(crate) fn handle_editor_action(&mut self, action: EditorAction) -> bool {
+        puffin::profile_function!();
         // 演奏指示线移动与滚动不修改音符数据，直接返回 false，
         // 避免被误判为脏音轨而触发昂贵的后台重生成。
         let is_playhead_or_scroll = matches!(
@@ -555,7 +556,10 @@ impl Root {
         let notes_changed_before = self.editor.notes_changed();
         let action_str = format!("{:?}", action);
         let old_tick = self.editor.playback_position;
-        self.editor.handle_action(action);
+        {
+            puffin::profile_scope!("editor_handle_action");
+            self.editor.handle_action(action);
+        }
         let new_tick = self.editor.playback_position;
 
         // 检查播放位置是否变化
@@ -577,6 +581,7 @@ impl Root {
         // 检查音符数据是否变化
         let notes_changed = self.editor.notes_changed();
         if notes_changed {
+            puffin::profile_scope!("update_playback_notes_on_release");
             self.update_playback_notes();
             self.editor.clear_notes_changed();
         }

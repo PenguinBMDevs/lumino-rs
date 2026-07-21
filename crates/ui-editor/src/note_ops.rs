@@ -332,22 +332,30 @@ impl Editor {
         }
 
         // ═══ ghost 路径：O(1) 快速路径 ═══
-        // 拖拽中所有选中音符共享同一 delta（pending 为 None 时），
+        // 所有选中音符共享同一 delta（无论是 drag_state 的 delta 还是 pending 的 delta），
         // 直接从 selected_bounds 缓存 + 应用 delta，避免 O(N) 遍历 1600W 音符。
         //
         // 正确性依据：
         // - f(t) = max(0, t + dt) 单调递增 → min_t_ghost = f(min_t_original)
         // - h(k) = clamp(k + dk, 0, max_key) 单调递增 → min/max_key_ghost = h(min/max_key_original)
-        // - max_te_ghost = max_te_original + dt（拖拽中 t+dt>=0 时精确，否则近似）
-        if needs_ghost && pending.is_none() {
+        // - max_te_ghost = max_te_original + dt（t+dt>=0 时精确，否则近似）
+        //
+        // 注意：pending 非空时（松手后待提交），delta 来源为 pending.delta_tick/delta_key；
+        // 否则从 edit_state 中获取。之前的代码用 pending.is_none() 阻塞了 O(1) 路径，
+        // 导致松手后每帧走 O(N) 的 ghost_on 回退（5.2s/帧 × 6帧 = 31s）。
+        if needs_ghost {
             if let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
                 puffin::profile_scope!("get_selection_box_bounds::ghost_o1");
-                let (drag_dt, drag_dk) = match edit_state {
-                    EditState::Dragging { drag_state, .. }
-                    | EditState::DraggingSelection { drag_state } => {
-                        (drag_state.delta_tick, drag_state.delta_key)
+                let (drag_dt, drag_dk) = if let Some(pending) = pending {
+                    (pending.delta_tick, pending.delta_key)
+                } else {
+                    match edit_state {
+                        EditState::Dragging { drag_state, .. }
+                        | EditState::DraggingSelection { drag_state } => {
+                            (drag_state.delta_tick, drag_state.delta_key)
+                        }
+                        _ => (0i64, 0i16),
                     }
-                    _ => (0i64, 0i16),
                 };
                 let min_t = (min_t + drag_dt as f32).max(0.0);
                 let max_te = max_te + drag_dt as f32;
@@ -361,10 +369,11 @@ impl Editor {
                     view.key_to_y(min_k) + view.zoom_y,
                 ));
             }
+            // 缓存失效时回退到 O(N) 计算（理论上不应发生，兜底）
         }
 
         // ═══ O(N) 回退路径 ═══
-        // 场景：pending 非空（松手后待提交）、或 selected_bounds 缓存失效
+        // 场景：selected_bounds 缓存失效（理论上不应发生，兜底）
         //
         // 性能优化：O(N) 回退中同时计算 raw_bounds（无 delta）并恢复 selected_bounds 缓存，
         // 确保后续帧走 O(1) ghost 路径，避免每帧都 O(N) 扫描 1600W 选中音符。

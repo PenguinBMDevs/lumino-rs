@@ -290,7 +290,9 @@ impl Host {
         puffin::profile_scope!("process_messages");
 
         let mut has_state_change = false;
-        for message in messages {
+        let len = messages.len();
+        for (i, message) in messages.into_iter().enumerate() {
+            puffin::profile_scope!("msg", format!("msg_{}/{}", i + 1, len));
             if self.process_message(message) {
                 has_state_change = true;
             }
@@ -316,52 +318,57 @@ impl Host {
     /// 处理单个消息，返回是否有状态变更
     pub(crate) fn process_message(&mut self, message: message::Message) -> bool {
         // 处理窗口动作消息
-        match &message {
-            message::Message::Window(window::Event::TrafficAction(action)) => {
-                self.window_ctx.pending_window_action = Some(action.clone());
-                return false; // 窗口动作不需要 UI 重建
-            }
-            message::Message::Window(window::Event::ToggleMaximize) => {
-                self.window_ctx.pending_window_action = Some(window::TrafficAction::ToggleMaximize);
-                return false;
-            }
-            message::Message::Window(window::Event::Close) => {
-                self.window_ctx.pending_window_action = Some(window::TrafficAction::Close);
-                return false;
-            }
-            message::Message::Window(window::Event::Drag) => {
-                self.window_ctx.pending_drag = true;
-                return false;
-            }
-            // 处理工具栏调整大小事件
-            message::Message::Toolbar(toolbar::Event::ResizeDragStarted(_)) => {
-                if let Some(pos) = self.window_ctx.cursor_position {
-                    self.window_ctx.is_toolbar_resizing = true;
-                    self.root.toolbar.start_resize(pos.y);
+        {
+            puffin::profile_scope!("process_message::window_match");
+            match &message {
+                message::Message::Window(window::Event::TrafficAction(action)) => {
+                    self.window_ctx.pending_window_action = Some(action.clone());
+                    return false; // 窗口动作不需要 UI 重建
                 }
-                return true; // 工具栏大小改变需要 UI 重建
-            }
-            message::Message::Toolbar(toolbar::Event::ResizeDragEnded) => {
-                self.window_ctx.is_toolbar_resizing = false;
-                self.root.toolbar.end_resize();
-                return true;
-            }
-            // 处理侧边栏调整大小事件
-            message::Message::Sidebar(sidebar::Event::ResizeDragStarted(_)) => {
-                if let Some(pos) = self.window_ctx.cursor_position {
-                    self.root.sidebar.start_resize(pos.x);
+                message::Message::Window(window::Event::ToggleMaximize) => {
+                    self.window_ctx.pending_window_action =
+                        Some(window::TrafficAction::ToggleMaximize);
+                    return false;
                 }
-                return true; // 侧边栏大小改变需要 UI 重建
+                message::Message::Window(window::Event::Close) => {
+                    self.window_ctx.pending_window_action = Some(window::TrafficAction::Close);
+                    return false;
+                }
+                message::Message::Window(window::Event::Drag) => {
+                    self.window_ctx.pending_drag = true;
+                    return false;
+                }
+                // 处理工具栏调整大小事件
+                message::Message::Toolbar(toolbar::Event::ResizeDragStarted(_)) => {
+                    if let Some(pos) = self.window_ctx.cursor_position {
+                        self.window_ctx.is_toolbar_resizing = true;
+                        self.root.toolbar.start_resize(pos.y);
+                    }
+                    return true; // 工具栏大小改变需要 UI 重建
+                }
+                message::Message::Toolbar(toolbar::Event::ResizeDragEnded) => {
+                    self.window_ctx.is_toolbar_resizing = false;
+                    self.root.toolbar.end_resize();
+                    return true;
+                }
+                // 处理侧边栏调整大小事件
+                message::Message::Sidebar(sidebar::Event::ResizeDragStarted(_)) => {
+                    if let Some(pos) = self.window_ctx.cursor_position {
+                        self.root.sidebar.start_resize(pos.x);
+                    }
+                    return true; // 侧边栏大小改变需要 UI 重建
+                }
+                message::Message::Sidebar(sidebar::Event::ResizeDragEnded) => {
+                    self.root.sidebar.end_resize();
+                    return true;
+                }
+                _ => {}
             }
-            message::Message::Sidebar(sidebar::Event::ResizeDragEnded) => {
-                self.root.sidebar.end_resize();
-                return true;
-            }
-            _ => {}
         }
 
         // 主题变更：需要同时失效 wgpu 网格/音符缓存以刷新颜色
         if matches!(&message, message::Message::Window(window::Event::Theme(_))) {
+            puffin::profile_scope!("process_message::theme");
             self.route_message(message);
             self.root.editor.keyboard_cache.clear();
             self.root.editor.ruler_cache.clear();
@@ -374,12 +381,18 @@ impl Host {
 
         // 编辑器动作必须通过 Host::handle_action 处理，确保高精度贴图脏标记被正确设置
         if let message::Message::EditorAction(action) = message {
-            self.handle_action(action);
+            {
+                puffin::profile_scope!("process_message::editor_action");
+                self.handle_action(action);
+            }
             return true;
         }
 
         // 其他消息交给 root 处理，假设可能有状态变更
-        self.route_message(message);
+        {
+            puffin::profile_scope!("process_message::route_message");
+            self.route_message(message);
+        }
         true
     }
 

@@ -20,6 +20,7 @@ use lumino_ui_core::message::EditorAction;
 impl Editor {
     /// 主入口：处理编辑器动作
     pub fn handle_action(&mut self, action: EditorAction) {
+        puffin::profile_function!();
         self.editor_state.interaction.pending_audio_actions.clear();
 
         match action {
