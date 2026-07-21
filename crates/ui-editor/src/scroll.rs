@@ -83,11 +83,31 @@ impl super::Editor {
 
     pub fn set_zoom_y(&mut self, zoom_y: f32, fixed_ratio: f32) {
         let canvas_height = self.editor_state.canvas.size_y;
+        let visible_key_count = self.editor_state.view.visible_key_count;
+
+        // 动态最大缩放：防止键盘键高超过视口可接受范围
+        // 限制总内容高度不超过视口高度的 MAX_SCROLLABLE_PAGES 倍，
+        // 128/256 键模式自动适配：键数越多，最大缩放越小
+        const MAX_SCROLLABLE_PAGES: f32 = 16.0;
+        let dynamic_max_zoom = if visible_key_count > 0 && canvas_height > 0.0 {
+            MAX_ZOOM_Y
+                .min(canvas_height * MAX_SCROLLABLE_PAGES / visible_key_count as f32)
+                .max(MIN_ZOOM_Y)
+        } else {
+            MAX_ZOOM_Y
+        };
+
         Viewport::new(
             &mut self.editor_state.view,
             &mut self.editor_state.max_scroll,
         )
-        .set_zoom_y(zoom_y, fixed_ratio, canvas_height, MIN_ZOOM_Y, MAX_ZOOM_Y);
+        .set_zoom_y(
+            zoom_y,
+            fixed_ratio,
+            canvas_height,
+            MIN_ZOOM_Y,
+            dynamic_max_zoom,
+        );
         self.invalidate_caches(CacheInvalidation::KEYBOARD);
     }
 }
