@@ -16,6 +16,10 @@ pub enum EditState {
         start_key: u16,
         current_tick: f32,
         current_key: u16,
+        /// 鼠标起始 Y 像素坐标（直接跟随鼠标，不吸附到键盘格）
+        start_y: f32,
+        /// 鼠标当前 Y 像素坐标（直接跟随鼠标，不吸附到键盘格）
+        current_y: f32,
     },
     Drawing {
         start_tick: f32,

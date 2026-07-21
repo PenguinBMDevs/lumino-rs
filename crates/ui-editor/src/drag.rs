@@ -229,6 +229,7 @@ impl Editor {
                     start_key,
                     current_tick,
                     current_key,
+                    ..
                 } => (*start_tick, *start_key, *current_tick, *current_key),
                 _ => unreachable!("confirmed Selecting above"),
             };

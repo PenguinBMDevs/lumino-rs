@@ -149,6 +149,8 @@ impl Editor {
                 start_key: key,
                 current_tick: selection_start_tick,
                 current_key: key,
+                start_y: pos.y,
+                current_y: pos.y,
             };
         }
     }
@@ -205,6 +207,8 @@ impl Editor {
                         start_key: key,
                         current_tick: selection_start_tick,
                         current_key: key,
+                        start_y: pos.y,
+                        current_y: pos.y,
                     };
                 } else if hit_result.is_some() {
                     self.delete_note_at(pos);
@@ -220,6 +224,8 @@ impl Editor {
                         start_key: key,
                         current_tick: selection_start_tick,
                         current_key: key,
+                        start_y: pos.y,
+                        current_y: pos.y,
                     };
                 }
             }

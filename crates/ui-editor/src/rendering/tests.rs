@@ -65,6 +65,8 @@ fn ghost_delta_selecting_or_resizing_applies_pending() {
         start_key: 0,
         current_tick: 0.0,
         current_key: 0,
+        start_y: 0.0,
+        current_y: 0.0,
     };
     let resizing = EditState::ResizingStart {
         note_index: 0,

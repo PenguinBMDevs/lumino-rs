@@ -43,6 +43,7 @@ impl Editor {
         if let EditState::Selecting {
             current_tick,
             current_key,
+            current_y,
             ..
         } = &mut self.editor_state.interaction.edit_state
         {
@@ -55,6 +56,7 @@ impl Editor {
                 snapped_tick
             };
             *current_key = key;
+            *current_y = pos.y;
         }
 
         let (new_tick, new_key, new_length) =

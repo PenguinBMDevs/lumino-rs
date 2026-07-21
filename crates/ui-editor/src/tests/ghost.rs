@@ -26,6 +26,8 @@ fn test_is_editing_selecting_returns_false() {
         start_key: 60,
         current_tick: 100.0,
         current_key: 70,
+        start_y: 0.0,
+        current_y: 0.0,
     };
     assert!(!editor.is_editing(), "Selecting 不属于数据编辑状态");
 }
@@ -149,6 +151,8 @@ fn test_commit_current_edit_when_selecting_does_not_commit() {
         start_key: 60,
         current_tick: 100.0,
         current_key: 70,
+        start_y: 0.0,
+        current_y: 0.0,
     };
     assert!(!editor.commit_current_edit());
 }
@@ -265,6 +269,8 @@ fn test_ghost_delta_applies_pending_in_selecting_state() {
         start_key: 60,
         current_tick: 50.0,
         current_key: 70,
+        start_y: 0.0,
+        current_y: 0.0,
     };
 
     let delta = ghost_delta_for_index(0, &Some(drag.clone()), &selecting_state);
@@ -291,6 +297,8 @@ fn test_ghost_delta_applies_pending_across_all_states() {
             start_key: 60,
             current_tick: 10.0,
             current_key: 70,
+            start_y: 0.0,
+            current_y: 0.0,
         },
         EditState::Drawing {
             start_tick: 0.0,
