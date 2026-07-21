@@ -7,11 +7,11 @@
 //! 内存增量：16M 音符全选时仅 BitVec ~2 MB，无 Vec<usize> 或 MoveOp 中间分配。
 //! 速度优化：后台线程直接遍历 BitVec，跳过 `selected_indices()` 和 `move_ops_from_drag_state()`。
 
-use super::async_commit::AsyncCommitResult;
 use super::EditorData;
+use super::async_commit::AsyncCommitResult;
+use crate::DragState;
 use crate::error::{CoreError, Result};
 use crate::note::Note;
-use crate::DragState;
 use bit_vec::BitVec;
 use im::Vector;
 use std::collections::HashMap;
@@ -42,7 +42,13 @@ impl EditorData {
 
         std::thread::spawn(move || {
             let result = apply_drag_state_to_clones(
-                notes, track_notes, &selected, delta_tick, delta_key, track_id, max_key,
+                notes,
+                track_notes,
+                &selected,
+                delta_tick,
+                delta_key,
+                track_id,
+                max_key,
             );
             let _ = tx.send(result);
         });
@@ -325,7 +331,8 @@ mod tests {
         let ops = data.move_ops_from_drag_state(&ds);
         let elapsed_old = start_old.elapsed();
         eprintln!("[旧] move_ops_from_drag_state: {:?}", elapsed_old);
-        eprintln!("[旧] MoveOp 数量: {}, 预计内存: {} MB (Vec<usize> + original_ticks/keys)",
+        eprintln!(
+            "[旧] MoveOp 数量: {}, 预计内存: {} MB (Vec<usize> + original_ticks/keys)",
             ops.len(),
             (note_count / 2 * (8 + 4 + 2) as usize) / (1024 * 1024)
         );
@@ -344,7 +351,10 @@ mod tests {
         let elapsed_new = start_new.elapsed();
         let result = result.unwrap();
         eprintln!("[新] 流式提交: {:?}", elapsed_new);
-        eprintln!("[新] 修改: {} 音符, 内存增量: ~2 MB (BitVec)", result.modified);
+        eprintln!(
+            "[新] 修改: {} 音符, 内存增量: ~2 MB (BitVec)",
+            result.modified
+        );
         eprintln!(
             "[新] 速度提升: {:.1}x (移除了 move_ops_from_drag_state 全量构造开销)",
             elapsed_old.as_secs_f64() / elapsed_new.as_secs_f64().max(1e-9)

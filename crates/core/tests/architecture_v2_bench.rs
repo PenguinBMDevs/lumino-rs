@@ -19,12 +19,20 @@ struct Note {
 
 impl Note {
     fn new(tick: f32, key: u16, length: f32) -> Self {
-        Self { tick, key, length, velocity: 100, channel: 0 }
+        Self {
+            tick,
+            key,
+            length,
+            velocity: 100,
+            channel: 0,
+        }
     }
 }
 
 fn generate_notes(count: usize) -> Vec<Note> {
-    (0..count).map(|i| Note::new(i as f32 * 10.0, 60 + (i % 24) as u16, 5.0)).collect()
+    (0..count)
+        .map(|i| Note::new(i as f32 * 10.0, 60 + (i % 24) as u16, 5.0))
+        .collect()
 }
 
 fn generate_selection_50pct(count: usize) -> BitVec {
@@ -44,7 +52,7 @@ fn generate_selection_full(count: usize) -> BitVec {
 /// 可逆操作：undo 时只需反向应用
 #[derive(Clone)]
 struct ReversibleMove {
-    selected: BitVec,     // 哪些音符被选中移动
+    selected: BitVec, // 哪些音符被选中移动
     delta_tick: f32,
     delta_key: i16,
 }
@@ -53,25 +61,28 @@ struct ReversibleMove {
 #[derive(Clone)]
 struct IrreversibleOp {
     indices: Vec<usize>,
-    old_notes: Vec<Note>,  // 删除/修改前的原始数据
+    old_notes: Vec<Note>, // 删除/修改前的原始数据
 }
 
 /// 墓碑删除：不实际删除数据，只标记
 struct TombstoneDelete {
-    was_deleted: BitVec,  // 删除前的墓碑状态
+    was_deleted: BitVec, // 删除前的墓碑状态
 }
 
 // ─── 方案 A: Vec<Note> + 原地修改 + 可逆 undo ──────────────
 
 struct NoteStoreV1 {
     notes: Vec<Note>,
-    tombstone: BitVec,  // 1 = 已删除（不可见），0 = 活跃
+    tombstone: BitVec, // 1 = 已删除（不可见），0 = 活跃
 }
 
 impl NoteStoreV1 {
     fn new(notes: Vec<Note>) -> Self {
         let count = notes.len();
-        Self { notes, tombstone: BitVec::from_elem(count, false) }
+        Self {
+            notes,
+            tombstone: BitVec::from_elem(count, false),
+        }
     }
 
     /// 批量移动（可逆操作）
@@ -90,13 +101,17 @@ impl NoteStoreV1 {
                 handles.push(s.spawn(move || {
                     for (local_i, note) in chunk.iter_mut().enumerate() {
                         let gi = start + local_i;
-                        if gi >= selected.len() || !selected[gi] { continue; }
+                        if gi >= selected.len() || !selected[gi] {
+                            continue;
+                        }
                         note.tick = (note.tick + delta_tick).max(0.0);
                         note.key = (note.key as i32 + delta_key as i32).clamp(0, 127) as u16;
                     }
                 }));
             }
-            for h in handles { h.join().unwrap(); }
+            for h in handles {
+                h.join().unwrap();
+            }
         });
         undo
     }
@@ -144,7 +159,13 @@ impl NoteStoreV1 {
     }
 
     /// 修改单个音符
-    fn modify_note(&mut self, index: usize, new_tick: f32, new_key: u16, new_len: f32) -> Box<Note> {
+    fn modify_note(
+        &mut self,
+        index: usize,
+        new_tick: f32,
+        new_key: u16,
+        new_len: f32,
+    ) -> Box<Note> {
         let old = Box::new(self.notes[index].clone());
         let note = &mut self.notes[index];
         note.tick = new_tick;
@@ -231,8 +252,11 @@ fn bench_reversible_undo_cost() {
         let t0 = Instant::now();
         let op = store.batch_move(&selected, 10.0, 3);
         let exec_time = t0.elapsed();
-        eprintln!("  执行: {:?}, undo 内存: ~{} MB (BitVec)",
-            exec_time, count / 8 / (1024 * 1024));
+        eprintln!(
+            "  执行: {:?}, undo 内存: ~{} MB (BitVec)",
+            exec_time,
+            count / 8 / (1024 * 1024)
+        );
 
         // 2. 撤销
         let t1 = Instant::now();
@@ -266,8 +290,15 @@ fn bench_tombstone_delete() {
         let op = store.delete_selected(&selected);
         let del_time = t0.elapsed();
         let undo_mem = count / 8 / (1024 * 1024);
-        eprintln!("  删除: {:?}, undo 内存: ~{} MB (BitVec)", del_time, undo_mem);
-        eprintln!("  活跃音符: {} / {}", store.active_count(), store.notes.len());
+        eprintln!(
+            "  删除: {:?}, undo 内存: ~{} MB (BitVec)",
+            del_time, undo_mem
+        );
+        eprintln!(
+            "  活跃音符: {} / {}",
+            store.active_count(),
+            store.notes.len()
+        );
 
         // 2. 撤销删除
         let t1 = Instant::now();
@@ -287,14 +318,22 @@ fn bench_insert_and_modify() {
     let mut store = NoteStoreV1::new(notes);
 
     // 插入 1000 个音符
-    eprintln!("\n═════ 插入 + 单音符修改: {} 基础音符 + 1000 插入 ═════", count);
-    let insert_notes: Vec<Note> = (0..1000).map(|i| Note::new(100000.0 + i as f32, 70, 5.0)).collect();
+    eprintln!(
+        "\n═════ 插入 + 单音符修改: {} 基础音符 + 1000 插入 ═════",
+        count
+    );
+    let insert_notes: Vec<Note> = (0..1000)
+        .map(|i| Note::new(100000.0 + i as f32, 70, 5.0))
+        .collect();
 
     let t0 = Instant::now();
     let op = store.insert_notes(&insert_notes);
     let ins_time = t0.elapsed();
     let ins_mem = 1000 * 16;
-    eprintln!("  插入 1000 音符: {:?}, undo 内存: {} bytes", ins_time, ins_mem);
+    eprintln!(
+        "  插入 1000 音符: {:?}, undo 内存: {} bytes",
+        ins_time, ins_mem
+    );
 
     // 撤销插入
     let t1 = Instant::now();
@@ -357,7 +396,9 @@ fn bench_full_workflow() {
     eprintln!("  [4/5] 撤销删除: {:?}", elapsed);
 
     // 5. 插入 1000 音符
-    let insert_notes: Vec<Note> = (0..1000).map(|i| Note::new(99999.0 + i as f32, 70, 5.0)).collect();
+    let insert_notes: Vec<Note> = (0..1000)
+        .map(|i| Note::new(99999.0 + i as f32, 70, 5.0))
+        .collect();
     let t = Instant::now();
     let op5 = store.insert_notes(&insert_notes);
     let elapsed = t.elapsed();
@@ -367,8 +408,10 @@ fn bench_full_workflow() {
 
     eprintln!("  ──────────────────────────");
     eprintln!("  总耗时: {:?}", total_time);
-    eprintln!("  峰值 undo 内存: ~{} MB (仅 BitVec)",
-        count / 8 / (1024 * 1024));
+    eprintln!(
+        "  峰值 undo 内存: ~{} MB (仅 BitVec)",
+        count / 8 / (1024 * 1024)
+    );
 }
 
 // ─── 测试 5: Arc<Vec<Note>> 快照 undo 对比 ────────────────
@@ -428,13 +471,18 @@ fn bench_100m_extrapolation() {
 
     let factor_100m = 100_000_000.0 / count as f64;
     eprintln!("  16M 50% 修改: {:?}", modify_time);
-    eprintln!("  100M 50% 修改预估: {:?}",
-        std::time::Duration::from_secs_f64(modify_time.as_secs_f64() * factor_100m));
-    eprintln!("  100M 数据内存: {} MB",
-        (100_000_000 * 16) / (1024 * 1024));
-    eprintln!("  100M undo 内存 (BitVec): {} MB",
-        (100_000_000 / 8) / (1024 * 1024));
-    eprintln!("  100M undo 内存 (快照): {} MB",
-        (100_000_000 * 16) / (1024 * 1024));
+    eprintln!(
+        "  100M 50% 修改预估: {:?}",
+        std::time::Duration::from_secs_f64(modify_time.as_secs_f64() * factor_100m)
+    );
+    eprintln!("  100M 数据内存: {} MB", (100_000_000 * 16) / (1024 * 1024));
+    eprintln!(
+        "  100M undo 内存 (BitVec): {} MB",
+        (100_000_000 / 8) / (1024 * 1024)
+    );
+    eprintln!(
+        "  100M undo 内存 (快照): {} MB",
+        (100_000_000 * 16) / (1024 * 1024)
+    );
     eprintln!("  建议: 100M 时使用可逆操作, undo 仅 12 MB");
 }

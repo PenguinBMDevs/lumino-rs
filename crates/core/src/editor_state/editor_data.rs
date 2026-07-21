@@ -14,6 +14,7 @@ use crate::history::History;
 use crate::midi_types::PITCH_BEND_CENTER;
 use crate::midi_types::{CcData, TempoPoint};
 use crate::note::Note;
+use crate::note_store::NoteStore;
 
 use super::constants::DEFAULT_BPM;
 
@@ -21,6 +22,7 @@ pub(crate) mod async_commit;
 pub(crate) mod async_commit_streaming;
 mod automation;
 mod history;
+mod note_store_ops;
 mod notes;
 
 /// 编辑器数据
@@ -44,7 +46,22 @@ pub struct EditorData {
     /// lane 数量通常 ≤50，`Vec` 索引写 O(1)。
     pub automation_lanes: Vec<Arc<AutomationLane>>,
     pub tempo_points: Vec<TempoPoint>,
+    /// 高性能 SoA 音符存储（与 `notes` 并存，用于批量操作热路径）
+    ///
+    /// 当音符数超过 `NOTE_STORE_THRESHOLD` 时自动启用：
+    /// - 批量移动走 `batch_move_parallel`（8 线程并行，16M 50% 18ms）
+    /// - 批量删除走 `delete_selected`（O(N) 单次遍历）
+    /// - 批量插入走 `insert_bulk`（无 realloc，1ms/1000 音符）
+    ///
+    /// 启用后 `notes` 仍作为权威源，`note_store` 通过 `sync_note_store()` 同步。
+    /// 后续迁移完成后 `notes` 将退化为 `note_store` 的视图。
+    pub note_store: NoteStore,
+    /// note_store 启用阈值（音符数低于此值时不启用，避免小数据量开销）
+    pub note_store_enabled: bool,
 }
+
+/// NoteStore 启用阈值：音符数超过此值时自动启用 SoA 批量操作
+pub const NOTE_STORE_THRESHOLD: usize = 10_000;
 
 impl Default for EditorData {
     fn default() -> Self {
@@ -70,6 +87,8 @@ impl EditorData {
                 tick: 0.0,
                 bpm: DEFAULT_BPM,
             }],
+            note_store: NoteStore::new(),
+            note_store_enabled: false,
         }
     }
 
@@ -89,6 +108,8 @@ impl EditorData {
             tick: 0.0,
             bpm: 120.0,
         }];
+        self.note_store.clear();
+        self.note_store_enabled = false;
     }
 
     /// 标记 track_notes 已变化（递增版本号）

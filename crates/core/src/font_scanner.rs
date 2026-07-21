@@ -112,6 +112,7 @@ pub fn prewarm_font_cache() {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -145,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_font_info_sorting() {
-        let mut fonts = vec![
+        let mut fonts = [
             FontInfo {
                 name: "Zebra".to_string(),
                 path: PathBuf::from("/path/to/zebra.ttf"),

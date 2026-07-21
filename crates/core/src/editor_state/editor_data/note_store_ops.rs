@@ -1,0 +1,331 @@
+//! NoteStore 集成操作：同步、批量移动、批量删除、批量插入
+//!
+//! 当音符数超过 `NOTE_STORE_THRESHOLD` 时自动启用 NoteStore 作为批量操作热路径。
+//! `notes` (im::Vector) 仍为权威源，操作完成后通过 `sync_note_store()` 同步。
+
+use std::collections::HashSet;
+
+use super::EditorData;
+use super::NOTE_STORE_THRESHOLD;
+use crate::note::Note;
+use crate::note_store::BitSet;
+
+impl EditorData {
+    /// 同步 notes → note_store（从 im::Vector 重建 SoA 存储）
+    ///
+    /// 当音符数超过阈值时自动启用 NoteStore。调用时机：
+    /// - MIDI 文件加载后
+    /// - 音轨切换后（如果 note_store 已启用）
+    /// - 批量操作后保持一致性
+    pub fn sync_note_store(&mut self) {
+        let count = self.notes.len();
+        if count >= NOTE_STORE_THRESHOLD {
+            if !self.note_store_enabled {
+                tracing::info!(
+                    "NoteStore 启用: {} 音符 ≥ 阈值 {}",
+                    count,
+                    NOTE_STORE_THRESHOLD
+                );
+            }
+            self.note_store = crate::note_store::NoteStore::from_im_vector(&self.notes);
+            self.note_store_enabled = true;
+        } else if self.note_store_enabled {
+            // 音符数降至阈值以下，禁用 NoteStore 释放内存
+            self.note_store.clear();
+            self.note_store_enabled = false;
+            tracing::debug!(
+                "NoteStore 禁用: {} 音符 < 阈值 {}",
+                count,
+                NOTE_STORE_THRESHOLD
+            );
+        }
+    }
+
+    /// 从 note_store 回写到 notes（批量操作后恢复一致性）
+    pub fn sync_notes_from_store(&mut self) {
+        if !self.note_store_enabled {
+            return;
+        }
+        self.notes = self.note_store.to_im_vector();
+    }
+
+    /// 批量移动选中音符（NoteStore 并行热路径）
+    ///
+    /// 当 NoteStore 启用时走 `batch_move_parallel`（8 线程并行，16M 50% 18ms），
+    /// 否则回退到 `DragState::apply_to_notes`（单线程遍历 BitVec）。
+    ///
+    /// 返回实际修改的音符数。调用方需在调用前 `push_history()`。
+    pub fn batch_move_notes(
+        &mut self,
+        selected: &BitSet,
+        delta_tick: f32,
+        delta_key: i16,
+        max_key: u16,
+    ) -> usize {
+        if selected.count_ones() == 0 {
+            return 0;
+        }
+
+        if self.note_store_enabled {
+            // 热路径：NoteStore 并行批量移动
+            let modified = self
+                .note_store
+                .batch_move_parallel(selected, delta_tick, delta_key, max_key);
+
+            // 回写到 notes 保持一致性
+            self.sync_notes_from_store();
+            self.sync_track_notes();
+            tracing::debug!(
+                "NoteStore 批量移动: 修改 {} 音符, 选中 {}",
+                modified,
+                selected.count_ones()
+            );
+            modified
+        } else {
+            // 冷路径：直接遍历 notes
+            let mut modified = 0usize;
+            for i in 0..self.notes.len() {
+                if selected.get(i) {
+                    if let Some(note) = self.notes.get_mut(i) {
+                        let new_tick = (note.tick + delta_tick).max(0.0);
+                        let new_key =
+                            (note.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u16;
+                        if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
+                            note.tick = new_tick;
+                            note.key = new_key;
+                            modified += 1;
+                        }
+                    }
+                }
+            }
+            if modified > 0 {
+                self.sync_track_notes();
+            }
+            modified
+        }
+    }
+
+    /// 批量删除选中音符（NoteStore O(N) 单次遍历）
+    ///
+    /// 返回删除的音符数。调用方需在调用前 `push_history()`。
+    pub fn batch_delete_notes(&mut self, selected: &BitSet) -> usize {
+        if selected.count_ones() == 0 {
+            return 0;
+        }
+
+        let deleted = if self.note_store_enabled {
+            let d = self.note_store.delete_selected(selected);
+            self.sync_notes_from_store();
+            d
+        } else {
+            // 冷路径：用 HashSet + retain
+            let indices: HashSet<usize> =
+                (0..self.notes.len()).filter(|&i| selected.get(i)).collect();
+            let before = self.notes.len();
+            let mut idx = 0usize;
+            self.notes.retain(|_| {
+                let keep = !indices.contains(&idx);
+                idx += 1;
+                keep
+            });
+            before - self.notes.len()
+        };
+
+        if deleted > 0 {
+            self.sync_track_notes();
+        }
+        deleted
+    }
+
+    /// 批量插入音符（NoteStore 无 realloc 热路径）
+    ///
+    /// 返回插入的音符数。调用方需在调用前 `push_history()`。
+    pub fn batch_insert_notes(&mut self, notes: &[Note]) -> usize {
+        if notes.is_empty() {
+            return 0;
+        }
+
+        let inserted = if self.note_store_enabled {
+            let n = self.note_store.insert_bulk(notes);
+            self.sync_notes_from_store();
+            n
+        } else {
+            for note in notes {
+                self.notes.push_back(note.clone());
+            }
+            notes.len()
+        };
+
+        self.sync_track_notes();
+        inserted
+    }
+
+    /// 检查 NoteStore 是否启用
+    pub fn is_note_store_enabled(&self) -> bool {
+        self.note_store_enabled
+    }
+
+    /// NoteStore 内存占用（MB）
+    pub fn note_store_memory_mb(&self) -> f64 {
+        if self.note_store_enabled {
+            self.note_store.memory_mb()
+        } else {
+            0.0
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sync_note_store_auto_enable() {
+        let mut data = EditorData::new();
+        // 低于阈值：不启用
+        for i in 0..100 {
+            data.notes.push_back(Note::new(i as f32, 60, 1.0));
+        }
+        data.sync_note_store();
+        assert!(!data.is_note_store_enabled());
+
+        // 超过阈值：启用
+        for i in 0..NOTE_STORE_THRESHOLD {
+            data.notes.push_back(Note::new(i as f32, 60, 1.0));
+        }
+        data.sync_note_store();
+        assert!(data.is_note_store_enabled());
+        assert_eq!(data.note_store.len(), data.notes.len());
+    }
+
+    #[test]
+    fn test_batch_move_cold_path() {
+        let mut data = EditorData::new();
+        data.current_track = 1;
+        for i in 0..5 {
+            data.notes.push_back(Note::new(i as f32 * 10.0, 60, 1.0));
+        }
+        data.sync_track_notes();
+
+        let mut sel = BitSet::new(5);
+        sel.set(0);
+        sel.set(2);
+
+        let modified = data.batch_move_notes(&sel, 10.0, 3, 127);
+        assert_eq!(modified, 2);
+        assert_eq!(data.notes[0].tick, 10.0);
+        assert_eq!(data.notes[0].key, 63);
+        assert_eq!(data.notes[1].tick, 10.0, "未选中不变");
+        assert_eq!(data.notes[2].tick, 30.0);
+    }
+
+    #[test]
+    fn test_batch_move_hot_path() {
+        let mut data = EditorData::new();
+        data.current_track = 1;
+        for i in 0..NOTE_STORE_THRESHOLD + 100 {
+            data.notes.push_back(Note::new(i as f32, 60, 1.0));
+        }
+        data.sync_note_store();
+        assert!(data.is_note_store_enabled());
+
+        let mut sel = BitSet::new(data.notes.len());
+        for i in (0..data.notes.len()).step_by(2) {
+            sel.set(i);
+        }
+
+        let modified = data.batch_move_notes(&sel, 5.0, 2, 127);
+        assert_eq!(modified, (data.notes.len() + 1) / 2);
+
+        // 验证一致性：notes 与 note_store 同步
+        assert_eq!(data.notes.len(), data.note_store.len());
+        assert_eq!(data.notes[0].tick, 5.0);
+        assert_eq!(data.notes[1].tick, 1.0, "未选中不变");
+    }
+
+    #[test]
+    fn test_batch_delete() {
+        let mut data = EditorData::new();
+        data.current_track = 1;
+        for i in 0..10 {
+            data.notes.push_back(Note::new(i as f32 * 10.0, 60, 1.0));
+        }
+        data.sync_track_notes();
+
+        let mut sel = BitSet::new(10);
+        sel.set(2);
+        sel.set(5);
+        sel.set(8);
+
+        let deleted = data.batch_delete_notes(&sel);
+        assert_eq!(deleted, 3);
+        assert_eq!(data.notes.len(), 7);
+        // 保留: 0,1,3,4,6,7,9
+        assert_eq!(data.notes[0].tick, 0.0);
+        assert_eq!(data.notes[1].tick, 10.0);
+        assert_eq!(data.notes[2].tick, 30.0);
+    }
+
+    #[test]
+    fn test_batch_insert() {
+        let mut data = EditorData::new();
+        data.current_track = 1;
+        data.notes.push_back(Note::new(0.0, 60, 1.0));
+        data.sync_track_notes();
+
+        let new_notes = vec![
+            Note::new(100.0, 62, 2.0),
+            Note::new(200.0, 64, 3.0),
+            Note::new(300.0, 66, 4.0),
+        ];
+
+        let inserted = data.batch_insert_notes(&new_notes);
+        assert_eq!(inserted, 3);
+        assert_eq!(data.notes.len(), 4);
+        assert_eq!(data.notes[1].tick, 100.0);
+        assert_eq!(data.notes[3].tick, 300.0);
+    }
+
+    #[test]
+    fn test_consistency_after_operations() {
+        // 端到端一致性测试：批量移动 + 删除 + 插入后 notes 与 note_store 同步
+        let mut data = EditorData::new();
+        data.current_track = 1;
+        for i in 0..NOTE_STORE_THRESHOLD + 50 {
+            data.notes
+                .push_back(Note::new(i as f32, 60 + (i % 12) as u16, 1.0));
+        }
+        data.sync_note_store();
+        assert!(data.is_note_store_enabled());
+
+        // 1. 批量移动 50%
+        let mut sel = BitSet::new(data.notes.len());
+        for i in (0..data.notes.len()).step_by(2) {
+            sel.set(i);
+        }
+        let moved = data.batch_move_notes(&sel, 10.0, 3, 127);
+        assert!(moved > 0);
+        assert_eq!(data.notes.len(), data.note_store.len());
+
+        // 2. 批量删除 25%
+        let mut sel_del = BitSet::new(data.notes.len());
+        for i in (0..data.notes.len()).step_by(4) {
+            sel_del.set(i);
+        }
+        let before = data.notes.len();
+        let deleted = data.batch_delete_notes(&sel_del);
+        assert_eq!(deleted, (before + 3) / 4);
+        assert_eq!(data.notes.len(), data.note_store.len());
+
+        // 3. 批量插入 100 个
+        let new_notes: Vec<Note> = (0..100)
+            .map(|i| Note::new(i as f32 * 5.0, 70, 2.0))
+            .collect();
+        let before_len = data.notes.len();
+        let inserted = data.batch_insert_notes(&new_notes);
+        assert_eq!(inserted, 100);
+        assert_eq!(data.notes.len(), before_len + 100);
+        assert_eq!(data.notes.len(), data.note_store.len());
+    }
+}

@@ -7,6 +7,7 @@ pub mod history;
 pub mod i18n;
 pub mod midi_types;
 pub mod note;
+pub mod note_store;
 pub mod palette;
 pub mod pattern;
 pub mod smooth_scroll;
@@ -32,6 +33,7 @@ pub use midi_types::{
     PITCH_BEND_CENTER, TempoPoint, VelocityPoint,
 };
 pub use note::Note;
+pub use note_store::{BitSet, NoteMut, NoteStore, NoteView};
 pub use pattern::Pattern;
 pub use smooth_scroll::SmoothScrollAnimation;
 pub use spatial_index::{NoteRef, NoteSpatialIndex};

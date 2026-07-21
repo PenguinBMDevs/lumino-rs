@@ -8,6 +8,8 @@
 //!
 //! 运行: cargo test --release -p lumino-core --test architecture_segmented_bench -- --nocapture
 
+#![allow(clippy::unwrap_used)]
+
 use std::time::Instant;
 
 // ═══════════════════════════════════════════════════
@@ -22,30 +24,57 @@ struct BitSet {
 
 impl BitSet {
     fn new(len: usize) -> Self {
-        Self { blocks: vec![0; len.div_ceil(64)], len }
+        Self {
+            blocks: vec![0; len.div_ceil(64)],
+            len,
+        }
     }
 
     fn from_fn<F: Fn(usize) -> bool>(len: usize, f: F) -> Self {
         let mut s = Self::new(len);
-        for i in 0..len { if f(i) { s.set(i); } }
+        for i in 0..len {
+            if f(i) {
+                s.set(i);
+            }
+        }
         s
     }
 
-    fn set(&mut self, i: usize) { self.blocks[i / 64] |= 1 << (i % 64); }
-    fn get(&self, i: usize) -> bool { (self.blocks[i / 64] >> (i % 64)) & 1 == 1 }
-    fn blocks(&self) -> &[u64] { &self.blocks }
-    fn blocks_mut(&mut self) -> &mut [u64] { &mut self.blocks }
-    fn block_count(&self) -> usize { self.blocks.len() }
-    fn clone_blocks(&self) -> Vec<u64> { self.blocks.clone() }
-    fn count_ones(&self) -> usize { self.blocks.iter().map(|b| b.count_ones() as usize).sum() }
-    fn len(&self) -> usize { self.len }
+    fn set(&mut self, i: usize) {
+        self.blocks[i / 64] |= 1 << (i % 64);
+    }
+    fn get(&self, i: usize) -> bool {
+        (self.blocks[i / 64] >> (i % 64)) & 1 == 1
+    }
+    fn blocks(&self) -> &[u64] {
+        &self.blocks
+    }
+    fn blocks_mut(&mut self) -> &mut [u64] {
+        &mut self.blocks
+    }
+    fn block_count(&self) -> usize {
+        self.blocks.len()
+    }
+    fn clone_blocks(&self) -> Vec<u64> {
+        self.blocks.clone()
+    }
+    fn count_ones(&self) -> usize {
+        self.blocks.iter().map(|b| b.count_ones() as usize).sum()
+    }
+    fn len(&self) -> usize {
+        self.len
+    }
 }
 
-fn sel_50pct(count: usize) -> BitSet { BitSet::from_fn(count, |i| i % 2 == 0) }
+fn sel_50pct(count: usize) -> BitSet {
+    BitSet::from_fn(count, |i| i % 2 == 0)
+}
 
 fn sel_full(count: usize) -> BitSet {
     let mut s = BitSet::new(count);
-    for b in s.blocks.iter_mut() { *b = !0; }
+    for b in s.blocks.iter_mut() {
+        *b = !0;
+    }
     let rem = count % 64;
     if rem > 0 {
         let last = s.blocks.len() - 1;
@@ -61,12 +90,12 @@ fn sel_full(count: usize) -> BitSet {
 const CHUNK_SIZE: usize = 4096; // 48KB / chunk
 
 struct Chunk {
-    ticks: Vec<f32>,       // 4 bytes/note
-    keys: Vec<u16>,        // 2 bytes/note
-    lengths: Vec<f32>,     // 4 bytes/note
-    velocities: Vec<u8>,   // 1 byte/note
-    channels: Vec<u8>,     // 1 byte/note
-    len: usize,            // 实际音符数 (≤ CHUNK_SIZE)
+    ticks: Vec<f32>,     // 4 bytes/note
+    keys: Vec<u16>,      // 2 bytes/note
+    lengths: Vec<f32>,   // 4 bytes/note
+    velocities: Vec<u8>, // 1 byte/note
+    channels: Vec<u8>,   // 1 byte/note
+    len: usize,          // 实际音符数 (≤ CHUNK_SIZE)
 }
 
 impl Chunk {
@@ -99,9 +128,15 @@ impl Chunk {
         self.len = new_len;
     }
 
-    fn capacity(&self) -> usize { CHUNK_SIZE }
-    fn remaining(&self) -> usize { CHUNK_SIZE - self.len }
-    fn is_full(&self) -> bool { self.len >= CHUNK_SIZE }
+    fn capacity(&self) -> usize {
+        CHUNK_SIZE
+    }
+    fn remaining(&self) -> usize {
+        CHUNK_SIZE - self.len
+    }
+    fn is_full(&self) -> bool {
+        self.len >= CHUNK_SIZE
+    }
     fn data_bytes(&self) -> usize {
         self.ticks.capacity() * 4
             + self.keys.capacity() * 2
@@ -136,13 +171,7 @@ impl SegmentedNoteStore {
             let count = end - start;
             let mut chunk = Chunk::new();
             for i in start..end {
-                chunk.push(
-                    i as f32 * 10.0,
-                    60 + (i % 24) as u16,
-                    5.0,
-                    100,
-                    0,
-                );
+                chunk.push(i as f32 * 10.0, 60 + (i % 24) as u16, 5.0, 100, 0);
             }
             chunk_offsets.push(note_count.min(chunk_offsets[ci] + count));
             chunks.push(chunk);
@@ -180,7 +209,9 @@ impl SegmentedNoteStore {
     fn batch_move(&mut self, selected: &BitSet, delta_tick: f32, delta_key: i16) {
         let num_threads = 8;
         let chunk_count = self.chunks.len();
-        if chunk_count == 0 { return; }
+        if chunk_count == 0 {
+            return;
+        }
         let chunks_per_thread = chunk_count.div_ceil(num_threads);
 
         // 预计算每个 chunk 的全局起始索引 (共享不可变引用)
@@ -198,7 +229,8 @@ impl SegmentedNoteStore {
                             let gi = chunk_global_start + i;
                             if gi < sel.len() && sel.get(gi) {
                                 chunk.ticks[i] = (chunk.ticks[i] + delta_tick).max(0.0);
-                                chunk.keys[i] = (chunk.keys[i] as i32 + delta_key as i32).clamp(0, 127) as u16;
+                                chunk.keys[i] =
+                                    (chunk.keys[i] as i32 + delta_key as i32).clamp(0, 127) as u16;
                             }
                         }
                     }
@@ -215,7 +247,12 @@ impl SegmentedNoteStore {
 
     fn delete_selected(&mut self, selected: &BitSet) -> Vec<u64> {
         let undo = self.tombstone.clone_blocks();
-        for (t, s) in self.tombstone.blocks_mut().iter_mut().zip(selected.blocks().iter()) {
+        for (t, s) in self
+            .tombstone
+            .blocks_mut()
+            .iter_mut()
+            .zip(selected.blocks().iter())
+        {
             *t |= s;
         }
         undo
@@ -229,7 +266,9 @@ impl SegmentedNoteStore {
 
     fn insert_notes(&mut self, count: usize) -> usize {
         let start = self.total_len;
-        if count == 0 { return start; }
+        if count == 0 {
+            return start;
+        }
 
         if let Some(last) = self.chunks.last_mut() {
             let room = last.remaining();
@@ -252,7 +291,10 @@ impl SegmentedNoteStore {
                     for i in 0..batch {
                         new_chunk.push(
                             (start + count - remaining + i) as f32 * 10.0,
-                            60, 5.0, 100, 0,
+                            60,
+                            5.0,
+                            100,
+                            0,
                         );
                     }
                     self.chunks.push(new_chunk);
@@ -266,10 +308,7 @@ impl SegmentedNoteStore {
                 let batch = remaining.min(CHUNK_SIZE);
                 let mut chunk = Chunk::new();
                 for i in 0..batch {
-                    chunk.push(
-                        (count - remaining + i) as f32 * 10.0,
-                        60, 5.0, 100, 0,
-                    );
+                    chunk.push((count - remaining + i) as f32 * 10.0, 60, 5.0, 100, 0);
                 }
                 self.chunks.push(chunk);
                 remaining -= batch;
@@ -304,7 +343,9 @@ impl SegmentedNoteStore {
         self.rebuild_offsets();
     }
 
-    fn len(&self) -> usize { self.total_len }
+    fn len(&self) -> usize {
+        self.total_len
+    }
 
     fn memory_mb(&self) -> f64 {
         let mut vec_cap: usize = 0;
@@ -359,7 +400,11 @@ impl AoSNoteStore {
                 channel: 0,
             });
         }
-        Self { notes, tombstone: BitSet::new(note_count), total_len: note_count }
+        Self {
+            notes,
+            tombstone: BitSet::new(note_count),
+            total_len: note_count,
+        }
     }
 
     /// 无 slack 版本 (用于公平比较无预分配插入)
@@ -374,7 +419,11 @@ impl AoSNoteStore {
                 channel: 0,
             });
         }
-        Self { notes, tombstone: BitSet::new(note_count), total_len: note_count }
+        Self {
+            notes,
+            tombstone: BitSet::new(note_count),
+            total_len: note_count,
+        }
     }
 
     fn batch_move(&mut self, selected: &BitSet, delta_tick: f32, delta_key: i16) {
@@ -388,7 +437,9 @@ impl AoSNoteStore {
                 let block_end = (block_start + block_chunk_size).min(num_blocks);
                 let sel = &selected;
                 s.spawn(move || {
-                    for (local_bi, &block) in sel.blocks()[block_start..block_end].iter().enumerate() {
+                    for (local_bi, &block) in
+                        sel.blocks()[block_start..block_end].iter().enumerate()
+                    {
                         let base = local_bi * 64;
                         let mut bits = block;
                         while bits != 0 {
@@ -396,7 +447,8 @@ impl AoSNoteStore {
                             let idx = base + tz as usize;
                             if idx < chunk.len() {
                                 chunk[idx].tick = (chunk[idx].tick + delta_tick).max(0.0);
-                                chunk[idx].key = (chunk[idx].key as i32 + delta_key as i32).clamp(0, 127) as u16;
+                                chunk[idx].key =
+                                    (chunk[idx].key as i32 + delta_key as i32).clamp(0, 127) as u16;
                             }
                             bits &= bits - 1;
                         }
@@ -408,7 +460,12 @@ impl AoSNoteStore {
 
     fn delete_selected(&mut self, selected: &BitSet) -> Vec<u64> {
         let undo = self.tombstone.clone_blocks();
-        for (t, s) in self.tombstone.blocks_mut().iter_mut().zip(selected.blocks().iter()) {
+        for (t, s) in self
+            .tombstone
+            .blocks_mut()
+            .iter_mut()
+            .zip(selected.blocks().iter())
+        {
             *t |= s;
         }
         undo
@@ -423,9 +480,17 @@ impl AoSNoteStore {
         // 无预分配: 先 shrink, 再 push, 触发 realloc
         self.notes.shrink_to_fit();
         for _ in 0..count {
-            self.notes.push(Note { tick: 0.0, key: 60, length: 5.0, velocity: 100, channel: 0 });
+            self.notes.push(Note {
+                tick: 0.0,
+                key: 60,
+                length: 5.0,
+                velocity: 100,
+                channel: 0,
+            });
         }
-        self.tombstone.blocks.resize(self.notes.len().div_ceil(64), 0);
+        self.tombstone
+            .blocks
+            .resize(self.notes.len().div_ceil(64), 0);
         self.total_len = self.notes.len();
         start
     }
@@ -436,7 +501,9 @@ impl AoSNoteStore {
         self.total_len = start;
     }
 
-    fn len(&self) -> usize { self.total_len }
+    fn len(&self) -> usize {
+        self.total_len
+    }
 
     fn memory_mb(&self) -> f64 {
         let data = self.notes.capacity() * std::mem::size_of::<Note>();
@@ -469,38 +536,64 @@ fn bench_memory_comparison() {
 
     let seg_chunks = count.div_ceil(CHUNK_SIZE);
     let seg_overhead = seg_chunks * std::mem::size_of::<Chunk>()   // Chunk struct
-        + seg_chunks * 5 * 3 * std::mem::size_of::<usize>();      // Vec 3 pointers × 5 fields
+        + seg_chunks * 5 * 3 * std::mem::size_of::<usize>(); // Vec 3 pointers × 5 fields
 
     eprintln!();
     eprintln!("  类别               |  AoS (v3)  |  SoA (flat) |  Segmented");
     eprintln!("  ────────────────────────────────────────────────────────────");
-    eprintln!("  数据 (16M)         |  {:>6} MB  |  {:>6} MB  |  {:>6} MB",
-        aos_data / (1024*1024), soa_data / (1024*1024), seg_data / (1024*1024));
-    eprintln!("  BitSet ×2          |  {:>6} MB  |  {:>6} MB  |  {:>6} MB",
-        bitset*2 / (1024*1024), bitset*2 / (1024*1024), bitset*2 / (1024*1024));
-    eprintln!("  Slack 10%          |  {:>6} MB  |  {:>6} MB  |  {:>6} MB",
-        (count/10)*16 / (1024*1024), (count/10)*12 / (1024*1024), 0);
-    eprintln!("  块级 Vec 开销      |  {:>6} MB  |  {:>6} MB  |  {:>6} MB",
-        0, 0, seg_overhead / (1024*1024));
+    eprintln!(
+        "  数据 (16M)         |  {:>6} MB  |  {:>6} MB  |  {:>6} MB",
+        aos_data / (1024 * 1024),
+        soa_data / (1024 * 1024),
+        seg_data / (1024 * 1024)
+    );
+    eprintln!(
+        "  BitSet ×2          |  {:>6} MB  |  {:>6} MB  |  {:>6} MB",
+        bitset * 2 / (1024 * 1024),
+        bitset * 2 / (1024 * 1024),
+        bitset * 2 / (1024 * 1024)
+    );
+    eprintln!(
+        "  Slack 10%          |  {:>6} MB  |  {:>6} MB  |  {:>6} MB",
+        (count / 10) * 16 / (1024 * 1024),
+        (count / 10) * 12 / (1024 * 1024),
+        0
+    );
+    eprintln!(
+        "  块级 Vec 开销      |  {:>6} MB  |  {:>6} MB  |  {:>6} MB",
+        0,
+        0,
+        seg_overhead / (1024 * 1024)
+    );
 
-    let aos_total = aos_data + bitset*2 + (count/10)*16;
-    let soa_total = soa_data + bitset*2 + (count/10)*12;
-    let seg_total = seg_data + bitset*2 + seg_overhead;
+    let aos_total = aos_data + bitset * 2 + (count / 10) * 16;
+    let soa_total = soa_data + bitset * 2 + (count / 10) * 12;
+    let seg_total = seg_data + bitset * 2 + seg_overhead;
     eprintln!("  ────────────────────────────────────────────────────────────");
-    eprintln!("  合计               |  {:>6} MB  |  {:>6} MB  |  {:>6} MB",
-        aos_total / (1024*1024), soa_total / (1024*1024), seg_total / (1024*1024));
-    eprintln!("  相对 AoS 节省      |  {:>6} MB  |  {:>6} MB  |  {:>6} MB",
-        0, (aos_total - soa_total) / (1024*1024), (aos_total - seg_total) / (1024*1024));
+    eprintln!(
+        "  合计               |  {:>6} MB  |  {:>6} MB  |  {:>6} MB",
+        aos_total / (1024 * 1024),
+        soa_total / (1024 * 1024),
+        seg_total / (1024 * 1024)
+    );
+    eprintln!(
+        "  相对 AoS 节省      |  {:>6} MB  |  {:>6} MB  |  {:>6} MB",
+        0,
+        (aos_total - soa_total) / (1024 * 1024),
+        (aos_total - seg_total) / (1024 * 1024)
+    );
     eprintln!();
 
     // 100M
     eprintln!("  ── 100M 外推 ──");
-    let _aos_100m = (100_000_000 * 16 + (100_000_000/8)*2 + (100_000_000/10)*16) / (1024*1024);
-    let _soa_100m = (100_000_000 * 12 + (100_000_000/8)*2 + (100_000_000/10)*12) / (1024*1024);
+    let _aos_100m =
+        (100_000_000 * 16 + (100_000_000 / 8) * 2 + (100_000_000 / 10) * 16) / (1024 * 1024);
+    let _soa_100m =
+        (100_000_000 * 12 + (100_000_000 / 8) * 2 + (100_000_000 / 10) * 12) / (1024 * 1024);
     let seg_100m_chunks = 100_000_000usize.div_ceil(CHUNK_SIZE);
     let seg_100m_overhead = seg_100m_chunks * std::mem::size_of::<Chunk>()
         + seg_100m_chunks * 5 * 3 * std::mem::size_of::<usize>();
-    let _seg_100m = (100_000_000 * 12 + (100_000_000/8)*2 + seg_100m_overhead) / (1024*1024);
+    let _seg_100m = (100_000_000 * 12 + (100_000_000 / 8) * 2 + seg_100m_overhead) / (1024 * 1024);
 
     eprintln!("  AoS:     {} MB/100M  (含 10% slack)", _aos_100m);
     eprintln!("  SoA:     {} MB/100M  (含 10% slack)", _soa_100m);
@@ -512,7 +605,8 @@ fn bench_memory_comparison() {
     let aos = AoSNoteStore::new(count);
     eprintln!("  AoS:     {:.0} MB", aos.memory_mb());
     eprintln!("  Segmented: {:.0} MB", seg.memory_mb());
-    drop(seg); drop(aos);
+    drop(seg);
+    drop(aos);
 }
 
 // ═══════════════════════════════════════════════════
@@ -550,8 +644,10 @@ fn bench_insert_no_prealloc() {
             aos_time.as_secs_f64() / seg_time.as_secs_f64()
         };
 
-        eprintln!("  {:>7}  |  {:>10?}  |  {:>10?}  |  {:>5.0}x",
-            ic, seg_time, aos_time, speedup);
+        eprintln!(
+            "  {:>7}  |  {:>10?}  |  {:>10?}  |  {:>5.0}x",
+            ic, seg_time, aos_time, speedup
+        );
     }
 }
 
@@ -585,8 +681,10 @@ fn bench_batch_move_50pct() {
 
         let speedup = aos_time.as_secs_f64() / seg_time.as_secs_f64();
         let rate = (count as f64) / seg_time.as_secs_f64() / 1_000_000.0;
-        eprintln!("  {:>9} |  {:>10?}  |  {:>10?}  |  {:>5.1}x  ({:.0}M/s)",
-            count, seg_time, aos_time, speedup, rate);
+        eprintln!(
+            "  {:>9} |  {:>10?}  |  {:>10?}  |  {:>5.1}x  ({:.0}M/s)",
+            count, seg_time, aos_time, speedup, rate
+        );
     }
 }
 
@@ -618,8 +716,10 @@ fn bench_batch_move_full() {
 
         let speedup = aos_time.as_secs_f64() / seg_time.as_secs_f64();
         let rate = (count as f64) / seg_time.as_secs_f64() / 1_000_000.0;
-        eprintln!("  {:>9} |  {:>10?}  |  {:>10?}  |  {:>5.1}x  ({:.0}M/s)",
-            count, seg_time, aos_time, speedup, rate);
+        eprintln!(
+            "  {:>9} |  {:>10?}  |  {:>10?}  |  {:>5.1}x  ({:.0}M/s)",
+            count, seg_time, aos_time, speedup, rate
+        );
     }
 }
 
@@ -641,33 +741,38 @@ fn bench_full_workflow() {
     // 1. 批量移动 50%
     let t = Instant::now();
     seg.batch_move(&sel, 10.0, 3);
-    let e = t.elapsed(); total += e;
+    let e = t.elapsed();
+    total += e;
     eprintln!("  [1/5] 批量移动 50%: {:?}", e);
 
     // 2. 撤销移动
     let t = Instant::now();
     seg.undo_move(&sel, 10.0, 3);
-    let e = t.elapsed(); total += e;
+    let e = t.elapsed();
+    total += e;
     eprintln!("  [2/5] 撤销移动: {:?}", e);
 
     // 3. 删除 50%
     let t = Instant::now();
     let saved = seg.delete_selected(&sel);
-    let e = t.elapsed(); total += e;
+    let e = t.elapsed();
+    total += e;
     eprintln!("  [3/5] 删除 50%: {:?}", e);
     eprintln!("         undo 内存: {} MB", saved.len() * 8 / (1024 * 1024));
 
     // 4. 撤销删除
     let t = Instant::now();
     seg.undo_delete(saved);
-    let e = t.elapsed(); total += e;
+    let e = t.elapsed();
+    total += e;
     eprintln!("  [4/5] 撤销删除: {:?}", e);
 
     // 5. 插入 1000 音符 (无预分配)
     let t = Instant::now();
     let start = seg.insert_notes(1000);
     seg.undo_insert(start);
-    let e = t.elapsed(); total += e;
+    let e = t.elapsed();
+    total += e;
     eprintln!("  [5/5] 插入 1000 (无预分配): {:?}", e);
 
     eprintln!("  ────────────────────────────────────────");
@@ -681,24 +786,28 @@ fn bench_full_workflow() {
 
     let t = Instant::now();
     aos.batch_move(&sel, 10.0, 3);
-    let e = t.elapsed(); total_aos += e;
+    let e = t.elapsed();
+    total_aos += e;
     eprintln!("  [1/5] 批量移动 50%: {:?}", e);
 
     let t = Instant::now();
     let saved = aos.delete_selected(&sel);
-    let e = t.elapsed(); total_aos += e;
+    let e = t.elapsed();
+    total_aos += e;
     eprintln!("  [3/5] 删除 50%: {:?}", e);
 
     let t = Instant::now();
     aos.undo_delete(saved);
-    let e = t.elapsed(); total_aos += e;
+    let e = t.elapsed();
+    total_aos += e;
     eprintln!("  [4/5] 撤销删除: {:?}", e);
 
     // AoS 插入 (无预分配)
     let t = Instant::now();
     let start = aos.insert_notes(1000);
     aos.undo_insert(start);
-    let e = t.elapsed(); total_aos += e;
+    let e = t.elapsed();
+    total_aos += e;
     eprintln!("  [5/5] 插入 1000 (无预分配): {:?}", e);
 
     eprintln!("  ────────────────────────────────────────");
@@ -722,9 +831,14 @@ fn bench_100m_extrapolation() {
 
     let seg_100m_data = (100_000_000 * 12) as f64 / (1024.0 * 1024.0);
     eprintln!("  Segmented 100M 数据: {:.0} MB", seg_100m_data);
-    eprintln!("  AoS 100M 数据:      {:.0} MB", (100_000_000 * 16) as f64 / (1024.0 * 1024.0));
-    eprintln!("  100M undo 内存:     {} MB (BitVec, 可逆操作)",
-        (100_000_000 / 8) / (1024 * 1024));
+    eprintln!(
+        "  AoS 100M 数据:      {:.0} MB",
+        (100_000_000 * 16) as f64 / (1024.0 * 1024.0)
+    );
+    eprintln!(
+        "  100M undo 内存:     {} MB (BitVec, 可逆操作)",
+        (100_000_000 / 8) / (1024 * 1024)
+    );
 
     let factor = 100_000_000.0 / count as f64;
 
@@ -735,13 +849,17 @@ fn bench_100m_extrapolation() {
         seg.batch_move(&sel_50, 10.0, 3);
         let _16m = t.elapsed();
         eprintln!("\n  Segmented 16M 50%: {:?}", _16m);
-        eprintln!("  Segmented 100M 50%: {:?}",
-            std::time::Duration::from_secs_f64(_16m.as_secs_f64() * factor));
+        eprintln!(
+            "  Segmented 100M 50%: {:?}",
+            std::time::Duration::from_secs_f64(_16m.as_secs_f64() * factor)
+        );
 
         // 预估 100M 实际 (考虑缓存失效, 加 30% 惩罚)
         let with_penalty = _16m.as_secs_f64() * factor * 1.3;
-        eprintln!("  100M 50% (含 30% 缓存惩罚): {:?}",
-            std::time::Duration::from_secs_f64(with_penalty));
+        eprintln!(
+            "  100M 50% (含 30% 缓存惩罚): {:?}",
+            std::time::Duration::from_secs_f64(with_penalty)
+        );
     }
 
     // 全选
@@ -751,12 +869,16 @@ fn bench_100m_extrapolation() {
         seg.batch_move(&sel_full, 10.0, 3);
         let _16m = t.elapsed();
         eprintln!("\n  Segmented 16M 100%: {:?}", _16m);
-        eprintln!("  Segmented 100M 100%: {:?}",
-            std::time::Duration::from_secs_f64(_16m.as_secs_f64() * factor));
+        eprintln!(
+            "  Segmented 100M 100%: {:?}",
+            std::time::Duration::from_secs_f64(_16m.as_secs_f64() * factor)
+        );
 
         let with_penalty = _16m.as_secs_f64() * factor * 1.3;
-        eprintln!("  100M 100% (含 30% 缓存惩罚): {:?}",
-            std::time::Duration::from_secs_f64(with_penalty));
+        eprintln!(
+            "  100M 100% (含 30% 缓存惩罚): {:?}",
+            std::time::Duration::from_secs_f64(with_penalty)
+        );
     }
 
     // 理论极限
@@ -767,8 +889,10 @@ fn bench_100m_extrapolation() {
     let soa_write = soa_ticks_mb / 2.0 + soa_keys_mb / 2.0;
     let total_mb = soa_read + soa_write;
     let theoretical_ms = total_mb * 1024.0 * 1024.0 / (40.0 * 1024.0 * 1024.0 * 1024.0) * 1000.0;
-    eprintln!("  SoA 内存流量: {:.0} MB read + {:.0} MB write = {:.0} MB total",
-        soa_read, soa_write, total_mb);
+    eprintln!(
+        "  SoA 内存流量: {:.0} MB read + {:.0} MB write = {:.0} MB total",
+        soa_read, soa_write, total_mb
+    );
     eprintln!("  理论极限: {:.1} ms", theoretical_ms);
     eprintln!("  实际预期 (50% 效率): {:.1} ms", theoretical_ms * 2.0);
 
@@ -859,8 +983,10 @@ fn bench_thread_scaling() {
         });
         let aos_time = t.elapsed();
 
-        eprintln!("  {:>3}    |  {:>10?} |  {:>10?} |  {:.0}M/s",
-            threads, seg_time, aos_time, rate);
+        eprintln!(
+            "  {:>3}    |  {:>10?} |  {:>10?} |  {:.0}M/s",
+            threads, seg_time, aos_time, rate
+        );
     }
 }
 
@@ -882,8 +1008,11 @@ fn bench_large_insert_and_compact() {
     let start = seg.insert_notes(100_000);
     let insert_time = t.elapsed();
     eprintln!("  插入 100K (无预分配): {:?}", insert_time);
-    eprintln!("  插入后 chunk 数: {}, 总音符: {}",
-        seg.chunks.len(), seg.len());
+    eprintln!(
+        "  插入后 chunk 数: {}, 总音符: {}",
+        seg.chunks.len(),
+        seg.len()
+    );
 
     // 撤销
     let t = Instant::now();
@@ -895,8 +1024,11 @@ fn bench_large_insert_and_compact() {
     let start = seg.insert_notes(1_000_000);
     let insert_1m = t.elapsed();
     eprintln!("\n  插入 1M (无预分配): {:?}", insert_1m);
-    eprintln!("  插入后 chunk 数: {}, 总音符: {}",
-        seg.chunks.len(), seg.len());
+    eprintln!(
+        "  插入后 chunk 数: {}, 总音符: {}",
+        seg.chunks.len(),
+        seg.len()
+    );
     eprintln!("  内存: {:.0} MB", seg.memory_mb());
 
     // 删除 50% + 压缩
@@ -933,14 +1065,22 @@ fn bench_large_insert_and_compact() {
     let compact_time = t.elapsed();
 
     eprintln!("  删除 50%: {:?}", del_time);
-    eprintln!("  压缩: {:?}, 压缩后 {} 音符, {} chunks",
-        compact_time, new_chunks.iter().map(|c| c.len).sum::<usize>(), new_chunks.len());
+    eprintln!(
+        "  压缩: {:?}, 压缩后 {} 音符, {} chunks",
+        compact_time,
+        new_chunks.iter().map(|c| c.len).sum::<usize>(),
+        new_chunks.len()
+    );
 
     // 恢复
     seg.undo_delete(saved);
     seg.undo_insert(start);
 
-    eprintln!("\n  最终恢复: {} 音符, {} chunks", seg.len(), seg.chunks.len());
+    eprintln!(
+        "\n  最终恢复: {} 音符, {} chunks",
+        seg.len(),
+        seg.chunks.len()
+    );
 }
 
 // ═══════════════════════════════════════════════════
@@ -953,14 +1093,22 @@ fn bench_sparse_selection() {
     let sel_sparse = BitSet::from_fn(count, |i| i % 100 == 0);
 
     eprintln!("\n═══════════════════════════════════════════════════");
-    eprintln!("  稀疏选择: {} 音符, 1% 选中 ({})", count, sel_sparse.count_ones());
+    eprintln!(
+        "  稀疏选择: {} 音符, 1% 选中 ({})",
+        count,
+        sel_sparse.count_ones()
+    );
     eprintln!("═══════════════════════════════════════════════════");
 
     // Segmented
     let mut seg = SegmentedNoteStore::new(count);
     let t = Instant::now();
     seg.batch_move(&sel_sparse, 10.0, 3);
-    eprintln!("  Segmented: {:?} (修改 {} 音符)", t.elapsed(), sel_sparse.count_ones());
+    eprintln!(
+        "  Segmented: {:?} (修改 {} 音符)",
+        t.elapsed(),
+        sel_sparse.count_ones()
+    );
 
     // AoS
     let mut aos = AoSNoteStore::new(count);

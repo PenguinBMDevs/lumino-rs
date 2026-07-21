@@ -12,7 +12,7 @@ use bit_vec::BitVec;
 use std::time::Instant;
 
 #[derive(Clone, Debug, PartialEq)]
-#[repr(C)]  // 确保内存布局紧凑，利于 SIMD
+#[repr(C)] // 确保内存布局紧凑，利于 SIMD
 struct Note {
     tick: f32,
     key: u16,
@@ -23,12 +23,20 @@ struct Note {
 
 impl Note {
     fn new(tick: f32, key: u16, length: f32) -> Self {
-        Self { tick, key, length, velocity: 100, channel: 0 }
+        Self {
+            tick,
+            key,
+            length,
+            velocity: 100,
+            channel: 0,
+        }
     }
 }
 
 fn generate_notes(count: usize) -> Vec<Note> {
-    (0..count).map(|i| Note::new(i as f32 * 10.0, 60 + (i % 24) as u16, 5.0)).collect()
+    (0..count)
+        .map(|i| Note::new(i as f32 * 10.0, 60 + (i % 24) as u16, 5.0))
+        .collect()
 }
 
 fn generate_selection_50pct(count: usize) -> BitVec {
@@ -145,9 +153,16 @@ fn bench_release_in_place_parallel() {
             let elapsed = start.elapsed();
             let rate = if elapsed.as_secs_f64() > 0.0 {
                 modified as f64 / elapsed.as_secs_f64()
-            } else { 0.0 };
-            eprintln!("  [{}线程] {:?}, 修改: {} ({:.0}M/s), 内存: 0 MB (原地)",
-                threads, elapsed, modified, rate / 1_000_000.0);
+            } else {
+                0.0
+            };
+            eprintln!(
+                "  [{}线程] {:?}, 修改: {} ({:.0}M/s), 内存: 0 MB (原地)",
+                threads,
+                elapsed,
+                modified,
+                rate / 1_000_000.0
+            );
         }
     }
 }
@@ -166,16 +181,25 @@ fn bench_release_full_selection() {
         let elapsed = start.elapsed();
         let rate = if elapsed.as_secs_f64() > 0.0 {
             modified as f64 / elapsed.as_secs_f64()
-        } else { 0.0 };
-        eprintln!("  [8线程] {:?}, 修改: {} ({:.0}M/s), 内存: 0 MB (原地)",
-            elapsed, modified, rate / 1_000_000.0);
+        } else {
+            0.0
+        };
+        eprintln!(
+            "  [8线程] {:?}, 修改: {} ({:.0}M/s), 内存: 0 MB (原地)",
+            elapsed,
+            modified,
+            rate / 1_000_000.0
+        );
 
         // 检查是否达到目标
         let target = 500_000u64; // 500ms
         if elapsed.as_micros() as u64 <= target {
             eprintln!("  ✓ 达到目标: <500ms");
         } else {
-            eprintln!("  ✗ 未达到目标: {:.1}ms > 500ms", elapsed.as_micros() as f64 / 1000.0);
+            eprintln!(
+                "  ✗ 未达到目标: {:.1}ms > 500ms",
+                elapsed.as_micros() as f64 / 1000.0
+            );
         }
     }
 }
@@ -231,12 +255,18 @@ fn bench_release_track_switch_cost() {
     let _mutable = (*arc_notes).clone();
     let clone_elapsed = start.elapsed();
     let mem = count * 16 / (1024 * 1024);
-    eprintln!("  Vec<Note>::clone() (全量memcpy): {:?}, {} MB", clone_elapsed, mem);
+    eprintln!(
+        "  Vec<Note>::clone() (全量memcpy): {:?}, {} MB",
+        clone_elapsed, mem
+    );
 
     // 内存估算
     let data_mb = count * 16 / (1024 * 1024);
     eprintln!("\n  音轨切换峰值内存: {} MB (Arc 共享, 无克隆)", data_mb);
-    eprintln!("  音轨切换 + 修改峰值内存: {} MB (修改时make_mut)", data_mb + data_mb);
+    eprintln!(
+        "  音轨切换 + 修改峰值内存: {} MB (修改时make_mut)",
+        data_mb + data_mb
+    );
 }
 
 #[test]
@@ -264,5 +294,8 @@ fn bench_release_undo_snapshot_cost() {
     // 方案对比: MoveOp 内存
     let selected_count = count / 2;
     let move_op_mb = (selected_count * (8 + 4 + 2)) / (1024 * 1024);
-    eprintln!("  MoveOp 方案 (50%选中): ~{} MB (仅 original_ticks/keys)", move_op_mb);
+    eprintln!(
+        "  MoveOp 方案 (50%选中): ~{} MB (仅 original_ticks/keys)",
+        move_op_mb
+    );
 }

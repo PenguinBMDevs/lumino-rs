@@ -18,12 +18,20 @@ struct Note {
 
 impl Note {
     fn new(tick: f32, key: u16, length: f32) -> Self {
-        Self { tick, key, length, velocity: 100, channel: 0 }
+        Self {
+            tick,
+            key,
+            length,
+            velocity: 100,
+            channel: 0,
+        }
     }
 }
 
 fn generate_notes(count: usize) -> Vec<Note> {
-    (0..count).map(|i| Note::new(i as f32 * 10.0, 60 + (i % 24) as u16, 5.0)).collect()
+    (0..count)
+        .map(|i| Note::new(i as f32 * 10.0, 60 + (i % 24) as u16, 5.0))
+        .collect()
 }
 
 // ─── BitSet: Vec<u64> 基础, 支持 block 级操作 ───────────────
@@ -37,7 +45,10 @@ struct BitSet {
 impl BitSet {
     fn new(len: usize) -> Self {
         let block_count = (len + 63) / 64;
-        Self { blocks: vec![0; block_count], len }
+        Self {
+            blocks: vec![0; block_count],
+            len,
+        }
     }
 
     fn from_fn<F: Fn(usize) -> bool>(len: usize, f: F) -> Self {
@@ -58,9 +69,15 @@ impl BitSet {
         (self.blocks[index / 64] >> (index % 64)) & 1 == 1
     }
 
-    fn blocks(&self) -> &[u64] { &self.blocks }
-    fn blocks_mut(&mut self) -> &mut [u64] { &mut self.blocks }
-    fn block_count(&self) -> usize { self.blocks.len() }
+    fn blocks(&self) -> &[u64] {
+        &self.blocks
+    }
+    fn blocks_mut(&mut self) -> &mut [u64] {
+        &mut self.blocks
+    }
+    fn block_count(&self) -> usize {
+        self.blocks.len()
+    }
 
     /// 克隆 blocks (用于 undo 保存)
     fn clone_blocks(&self) -> Vec<u64> {
@@ -87,7 +104,9 @@ impl BitSet {
         self.blocks.iter().map(|b| b.count_ones() as usize).sum()
     }
 
-    fn len(&self) -> usize { self.len }
+    fn len(&self) -> usize {
+        self.len
+    }
 }
 
 fn generate_selection_50pct(count: usize) -> BitSet {
@@ -112,7 +131,7 @@ fn generate_selection_full(count: usize) -> BitSet {
 
 struct NoteStore {
     notes: Vec<Note>,
-    tombstone: BitSet,  // 1 = 已删除
+    tombstone: BitSet, // 1 = 已删除
 
     // 预分配 slack, 避免 insert 触发 realloc
     slack: usize,
@@ -147,7 +166,9 @@ impl NoteStore {
 
                 s.spawn(move || {
                     // 只遍历选中的位，跳过所有非选中位
-                    for (local_bi, &block) in selected.blocks()[block_start..block_end].iter().enumerate() {
+                    for (local_bi, &block) in
+                        selected.blocks()[block_start..block_end].iter().enumerate()
+                    {
                         let base = local_bi * 64;
                         let mut bits = block;
                         while bits != 0 {
@@ -155,7 +176,9 @@ impl NoteStore {
                             let idx = base + tz as usize;
                             if idx < note_chunk.len() {
                                 note_chunk[idx].tick = (note_chunk[idx].tick + delta_tick).max(0.0);
-                                note_chunk[idx].key = (note_chunk[idx].key as i32 + delta_key as i32).clamp(0, 127) as u16;
+                                note_chunk[idx].key =
+                                    (note_chunk[idx].key as i32 + delta_key as i32).clamp(0, 127)
+                                        as u16;
                             }
                             bits &= bits - 1;
                         }
@@ -175,7 +198,12 @@ impl NoteStore {
     fn delete_selected(&mut self, selected: &BitSet) -> Vec<u64> {
         let undo = self.tombstone.clone_blocks();
         // 批量 OR: 一次操作 64 位
-        for (t, s) in self.tombstone.blocks_mut().iter_mut().zip(selected.blocks().iter()) {
+        for (t, s) in self
+            .tombstone
+            .blocks_mut()
+            .iter_mut()
+            .zip(selected.blocks().iter())
+        {
             *t |= s;
         }
         undo
@@ -196,7 +224,9 @@ impl NoteStore {
             self.notes.reserve(new_cap - self.notes.len());
         }
         self.notes.extend_from_slice(new_notes);
-        self.tombstone.blocks.resize(self.notes.len().div_ceil(64), 0);
+        self.tombstone
+            .blocks
+            .resize(self.notes.len().div_ceil(64), 0);
         (start_idx, new_notes.to_vec())
     }
 
@@ -233,7 +263,10 @@ fn bench_bitvec_vs_block() {
     let notes = generate_notes(count);
     let selected = generate_selection_50pct(count);
 
-    eprintln!("\n═════ 逐位 vs block-based: {} 音符, 50% 选中 ═════", count);
+    eprintln!(
+        "\n═════ 逐位 vs block-based: {} 音符, 50% 选中 ═════",
+        count
+    );
 
     // 方案 A: 逐位遍历 (当前)
     {
@@ -259,14 +292,19 @@ fn bench_bitvec_vs_block() {
                 let block_start = thread_idx * block_chunk_size;
                 let block_end = (block_start + block_chunk_size).min(num_blocks);
                 s.spawn(move || {
-                    for (local_bi, &block) in sel.blocks()[block_start..block_end].iter().enumerate() {
+                    for (local_bi, &block) in
+                        sel.blocks()[block_start..block_end].iter().enumerate()
+                    {
                         let base = local_bi * 64;
                         for local_i in 0..64 {
                             let global_i = base + local_i;
-                            if global_i >= chunk.len() { break; }
+                            if global_i >= chunk.len() {
+                                break;
+                            }
                             if (block >> local_i) & 1 == 1 {
                                 chunk[global_i].tick += 10.0;
-                                chunk[global_i].key = (chunk[global_i].key as i32 + 3).clamp(0, 127) as u16;
+                                chunk[global_i].key =
+                                    (chunk[global_i].key as i32 + 3).clamp(0, 127) as u16;
                             }
                         }
                     }
@@ -291,7 +329,9 @@ fn bench_bitvec_vs_block() {
                 let block_start = thread_idx * block_chunk_size;
                 let block_end = (block_start + block_chunk_size).min(num_blocks);
                 s.spawn(move || {
-                    for (local_bi, &block) in sel.blocks()[block_start..block_end].iter().enumerate() {
+                    for (local_bi, &block) in
+                        sel.blocks()[block_start..block_end].iter().enumerate()
+                    {
                         let base = local_bi * 64;
                         let mut bits = block;
                         while bits != 0 {
@@ -367,9 +407,15 @@ fn bench_optimized_ops() {
 fn bench_insert_optimized() {
     let count = 16_000_000;
     let notes = generate_notes(count);
-    let insert_notes: Vec<Note> = (0..1000).map(|i| Note::new(99999.0 + i as f32, 70, 5.0)).collect();
+    let insert_notes: Vec<Note> = (0..1000)
+        .map(|i| Note::new(99999.0 + i as f32, 70, 5.0))
+        .collect();
 
-    eprintln!("\n═════ 插入优化: {} 基础音符 + {} 插入 ═════", count, insert_notes.len());
+    eprintln!(
+        "\n═════ 插入优化: {} 基础音符 + {} 插入 ═════",
+        count,
+        insert_notes.len()
+    );
 
     // 无预分配 (模拟当前行为)
     {
@@ -411,7 +457,9 @@ fn bench_full_workflow_optimized() {
     let notes = generate_notes(count);
     let selected = generate_selection_50pct(count);
     let mut store = NoteStore::new(notes);
-    let insert_notes: Vec<Note> = (0..1000).map(|i| Note::new(99999.0 + i as f32, 70, 5.0)).collect();
+    let insert_notes: Vec<Note> = (0..1000)
+        .map(|i| Note::new(99999.0 + i as f32, 70, 5.0))
+        .collect();
 
     eprintln!("\n═════ 极致优化完整工作流: {} 音符 ═════", count);
     let mut total = std::time::Duration::ZERO;
@@ -419,39 +467,46 @@ fn bench_full_workflow_optimized() {
     // 1. 批量移动 50%
     let t = Instant::now();
     store.batch_move(&selected, 10.0, 3);
-    let e = t.elapsed(); total += e;
+    let e = t.elapsed();
+    total += e;
     eprintln!("  [1/5] 批量移动 50%: {:?}", e);
 
     // 2. 撤销移动
     let t = Instant::now();
     store.undo_move(&selected, 10.0, 3);
-    let e = t.elapsed(); total += e;
+    let e = t.elapsed();
+    total += e;
     eprintln!("  [2/5] 撤销移动: {:?}", e);
 
     // 3. 删除 50% (bulk OR)
     let t = Instant::now();
     let saved = store.delete_selected(&selected);
-    let e = t.elapsed(); total += e;
+    let e = t.elapsed();
+    total += e;
     eprintln!("  [3/5] 删除 50%: {:?}", e);
 
     // 4. 撤销删除 (BitVec swap)
     let t = Instant::now();
     store.undo_delete(saved);
-    let e = t.elapsed(); total += e;
+    let e = t.elapsed();
+    total += e;
     eprintln!("  [4/5] 撤销删除: {:?}", e);
 
     // 5. 插入 1000 音符 (预分配)
     let t = Instant::now();
     let (start, _) = store.insert_notes(&insert_notes);
     store.undo_insert(start);
-    let e = t.elapsed(); total += e;
+    let e = t.elapsed();
+    total += e;
     eprintln!("  [5/5] 插入+撤销 1000 音符: {:?}", e);
     drop(store);
 
     eprintln!("  ────────────────────────");
     eprintln!("  总耗时: {:?}", total);
-    eprintln!("  峰值 undo 内存: ~{} MB (BitVec)",
-        count / 8 / (1024 * 1024));
+    eprintln!(
+        "  峰值 undo 内存: ~{} MB (BitVec)",
+        count / 8 / (1024 * 1024)
+    );
 }
 
 // ─── 测试 5: 100M 外推（极致优化后） ──────────────────────
@@ -465,8 +520,10 @@ fn bench_100m_optimized() {
     eprintln!("\n═════ 100M 外推 (极致优化后) ═════");
     eprintln!("  16M 数据: {} MB", count * 16 / (1024 * 1024));
     eprintln!("  100M 数据: {} MB", (100_000_000 * 16) / (1024 * 1024));
-    eprintln!("  100M undo 内存: {} MB (BitVec, 可逆操作)",
-        (100_000_000 / 8) / (1024 * 1024));
+    eprintln!(
+        "  100M undo 内存: {} MB (BitVec, 可逆操作)",
+        (100_000_000 / 8) / (1024 * 1024)
+    );
 
     // 测试 16M 全选
     let full = generate_selection_full(count);
@@ -477,8 +534,10 @@ fn bench_100m_optimized() {
         let _16m_full = t.elapsed();
         let factor = 100_000_000.0 / count as f64;
         eprintln!("\n  16M 全选修改: {:?}", _16m_full);
-        eprintln!("  100M 全选修改预估: {:?}",
-            std::time::Duration::from_secs_f64(_16m_full.as_secs_f64() * factor));
+        eprintln!(
+            "  100M 全选修改预估: {:?}",
+            std::time::Duration::from_secs_f64(_16m_full.as_secs_f64() * factor)
+        );
     }
 
     // 测试 16M 50%
@@ -489,15 +548,23 @@ fn bench_100m_optimized() {
         let _16m_50 = t.elapsed();
         let factor = 100_000_000.0 / count as f64;
         eprintln!("\n  16M 50% 修改: {:?}", _16m_50);
-        eprintln!("  100M 50% 修改预估: {:?}",
-            std::time::Duration::from_secs_f64(_16m_50.as_secs_f64() * factor));
+        eprintln!(
+            "  100M 50% 修改预估: {:?}",
+            std::time::Duration::from_secs_f64(_16m_50.as_secs_f64() * factor)
+        );
     }
 
     // 外推建议
     eprintln!("\n  ── 100M 建议 ──");
-    eprintln!("  存储: Vec<Note> 直接存储, {} MB", (100_000_000 * 16) / (1024 * 1024));
+    eprintln!(
+        "  存储: Vec<Note> 直接存储, {} MB",
+        (100_000_000 * 16) / (1024 * 1024)
+    );
     eprintln!("  修改: 8 线程 block-based, 只遍历选中位");
-    eprintln!("  Undo: 可逆操作, 仅 {} MB bitvec", (100_000_000 / 8) / (1024 * 1024));
+    eprintln!(
+        "  Undo: 可逆操作, 仅 {} MB bitvec",
+        (100_000_000 / 8) / (1024 * 1024)
+    );
     eprintln!("  内存增量: 0 MB (原地修改)");
 }
 
@@ -530,14 +597,21 @@ fn bench_track_switch_and_compact() {
         }
     }
     let compact_time = t.elapsed();
-    eprintln!("  墓碑压缩 (50% 删除): {:?}, 压缩后: {} 音符",
-        compact_time, compacted.len());
-    eprintln!("  压缩速率: {:.0}M/s",
-        store.notes.len() as f64 / compact_time.as_secs_f64() / 1_000_000.0);
+    eprintln!(
+        "  墓碑压缩 (50% 删除): {:?}, 压缩后: {} 音符",
+        compact_time,
+        compacted.len()
+    );
+    eprintln!(
+        "  压缩速率: {:.0}M/s",
+        store.notes.len() as f64 / compact_time.as_secs_f64() / 1_000_000.0
+    );
     drop(compacted);
 
     // 压缩后: 音轨切换用 Arc<Vec<Note>>
-    let compacted_notes = store.notes.iter()
+    let compacted_notes = store
+        .notes
+        .iter()
         .enumerate()
         .filter(|(i, _)| !store.tombstone.get(*i))
         .map(|(_, n)| n.clone())
@@ -575,7 +649,9 @@ fn bench_thread_scaling() {
                 let block_start = thread_idx * block_chunk_size;
                 let block_end = (block_start + block_chunk_size).min(num_blocks);
                 s.spawn(move || {
-                    for (local_bi, &block) in sel.blocks()[block_start..block_end].iter().enumerate() {
+                    for (local_bi, &block) in
+                        sel.blocks()[block_start..block_end].iter().enumerate()
+                    {
                         let base = local_bi * 64;
                         let mut bits = block;
                         while bits != 0 {
@@ -612,7 +688,11 @@ fn bench_sparse_selection() {
         let mut store = NoteStore::new(notes.clone());
         let t = Instant::now();
         store.batch_move(&sparse_1pct, 10.0, 3);
-        eprintln!("  [1% 选中] {:?} (修改 {} 音符)", t.elapsed(), sparse_1pct.count_ones());
+        eprintln!(
+            "  [1% 选中] {:?} (修改 {} 音符)",
+            t.elapsed(),
+            sparse_1pct.count_ones()
+        );
     }
 
     // 0.1% 选中
@@ -621,7 +701,11 @@ fn bench_sparse_selection() {
         let mut store = NoteStore::new(notes.clone());
         let t = Instant::now();
         store.batch_move(&sparse_01pct, 10.0, 3);
-        eprintln!("  [0.1% 选中] {:?} (修改 {} 音符)", t.elapsed(), sparse_01pct.count_ones());
+        eprintln!(
+            "  [0.1% 选中] {:?} (修改 {} 音符)",
+            t.elapsed(),
+            sparse_01pct.count_ones()
+        );
     }
 
     // 0.01% 选中
@@ -630,6 +714,10 @@ fn bench_sparse_selection() {
         let mut store = NoteStore::new(notes);
         let t = Instant::now();
         store.batch_move(&sparse_001pct, 10.0, 3);
-        eprintln!("  [0.01% 选中] {:?} (修改 {} 音符)", t.elapsed(), sparse_001pct.count_ones());
+        eprintln!(
+            "  [0.01% 选中] {:?} (修改 {} 音符)",
+            t.elapsed(),
+            sparse_001pct.count_ones()
+        );
     }
 }
