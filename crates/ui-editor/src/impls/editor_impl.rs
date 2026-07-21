@@ -184,6 +184,26 @@ impl Editor {
         }
 
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+
+        // NoteStore 热路径：直接批量移动，避免 async_commit 的 16M im::Vector clone
+        if self.editor_state.data.is_note_store_enabled() {
+            let ops = self.editor_state.data.move_ops_from_drag_state(drag_state);
+            let modified =
+                self.editor_state
+                    .data
+                    .batch_move_notes_from_drag_state(drag_state, max_key);
+            if modified > 0 {
+                self.editor_state.data.push_move_op(ops);
+                self.mark_notes_changed();
+                tracing::info!(
+                    "Editor: NoteStore 批量移动完成, 修改 {} 个音符",
+                    modified
+                );
+            }
+            self.pending_drag_state = None;
+            return true;
+        }
+
         let ops = self.editor_state.data.move_ops_from_drag_state(drag_state);
         match self.editor_state.data.apply_move_ops_async(ops, max_key) {
             Ok(true) => {

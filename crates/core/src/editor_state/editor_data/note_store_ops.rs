@@ -63,10 +63,14 @@ impl EditorData {
     }
 
     /// 从 note_store 回写到 notes（批量操作后恢复一致性）
+    ///
+    /// 回写前先 compact() 移除墓碑标记的音符，确保 notes 与 store 一致。
     pub fn sync_notes_from_store(&mut self) {
         if !self.note_store_enabled {
             return;
         }
+        // 物理压缩：移除墓碑标记的音符
+        self.note_store.compact();
         self.notes = self.note_store.to_im_vector();
     }
 
@@ -106,16 +110,16 @@ impl EditorData {
             // 冷路径：直接遍历 notes
             let mut modified = 0usize;
             for i in 0..self.notes.len() {
-                if selected.get(i) {
-                    if let Some(note) = self.notes.get_mut(i) {
-                        let new_tick = (note.tick + delta_tick).max(0.0);
-                        let new_key =
-                            (note.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u16;
-                        if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
-                            note.tick = new_tick;
-                            note.key = new_key;
-                            modified += 1;
-                        }
+                if selected.get(i)
+                    && let Some(note) = self.notes.get_mut(i)
+                {
+                    let new_tick = (note.tick + delta_tick).max(0.0);
+                    let new_key =
+                        (note.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u16;
+                    if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
+                        note.tick = new_tick;
+                        note.key = new_key;
+                        modified += 1;
                     }
                 }
             }
@@ -235,6 +239,11 @@ impl EditorData {
     /// 检查 NoteStore 是否启用
     pub fn is_note_store_enabled(&self) -> bool {
         self.note_store_enabled
+    }
+
+    /// 计算所有音符的边界（单次顺序扫描 NoteStore，避免 16M 次二分查找）
+    pub fn compute_all_notes_bounds(&self) -> (f32, f32, u16, u16) {
+        self.note_store.compute_bounds()
     }
 
     /// 获取音符只读视图（NoteStore 启用时走零 clone 路径）

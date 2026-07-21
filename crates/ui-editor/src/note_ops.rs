@@ -30,6 +30,16 @@ impl Editor {
     }
 
     pub fn select_all_notes(&mut self) {
+        // NoteStore 热路径：直接顺序扫描计算边界，避免 16M 次二分查找
+        if self.editor_state.data.is_note_store_enabled() {
+            let count = self.editor_state.data.notes.len();
+            if count > 0 {
+                let bounds = self.editor_state.data.compute_all_notes_bounds();
+                self.editor_state.interaction.selected_notes = (0..count).collect();
+                self.selected_bounds.set(Some(bounds));
+                return;
+            }
+        }
         self.selection_assign(self.editor_state.data.select_all_notes());
     }
 }
