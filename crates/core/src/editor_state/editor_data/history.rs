@@ -249,11 +249,13 @@ impl EditorData {
         let mut range_start = indices[0];
         let mut prev = indices[0];
 
-        // NoteStore 启用时用 get_ref（Copy），否则用 notes.get（clone）
+        // NoteStore 启用时用 range_ticks_keys（顺序扫描，O(N) 一次二分查找），
+        // 否则用 notes.get（clone Note）
         let make_op = |start: usize, end: usize, seq: u16| {
             let (ticks, keys): (Vec<f32>, Vec<u16>) = if self.note_store_enabled {
-                (start..=end)
-                    .filter_map(|i| self.note_store.get_ref(i).map(|n| (n.tick, n.key)))
+                self.note_store
+                    .range_ticks_keys(start, end + 1)
+                    .into_iter()
                     .unzip()
             } else {
                 (start..=end)

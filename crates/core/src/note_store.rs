@@ -455,6 +455,46 @@ impl NoteStore {
             }
         }
     }
+
+    /// 获取连续区间 `[start, end)` 内所有音符的 (tick, key) 对。
+    ///
+    /// **顺序扫描**：只用一次 `resolve(start)` 找到起始 chunk，然后顺序遍历，
+    /// 避免逐个索引调用 `get_ref()` 的 O(N log N) 二分查找开销。
+    /// 用于 `move_ops_from_drag_state` 等场景，16M 连续区间 ~15ms。
+    pub fn range_ticks_keys(&self, start: usize, end: usize) -> Vec<(f32, u16)> {
+        if start >= end || start >= self.total_len {
+            return Vec::new();
+        }
+        let end = end.min(self.total_len);
+        let mut result = Vec::with_capacity(end - start);
+
+        // 一次二分查找定位起始 chunk
+        let (mut ci, mut local) = match self.resolve(start) {
+            Some(v) => v,
+            None => return result,
+        };
+        let mut remaining = end - start;
+
+        loop {
+            let chunk = &self.chunks[ci];
+            let available = chunk.len - local;
+            let to_take = available.min(remaining);
+
+            for i in local..local + to_take {
+                result.push((chunk.ticks[i], chunk.keys[i]));
+            }
+
+            remaining -= to_take;
+            if remaining == 0 {
+                break;
+            }
+
+            ci += 1;
+            local = 0;
+        }
+
+        result
+    }
 }
 
 impl Clone for NoteStore {
