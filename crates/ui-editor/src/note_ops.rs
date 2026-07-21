@@ -15,14 +15,40 @@ use super::Editor;
 
 impl Editor {
     pub fn is_note_selected(&self, index: usize) -> bool {
-        self.editor_state
-            .interaction
-            .selected_notes
-            .contains(&index)
+        let interaction = &self.editor_state.interaction;
+        // `selection_bitset` 优先：O(1) 位测试，零内存分配
+        if let Some(ref bs) = interaction.selection_bitset {
+            return bs.get(index);
+        }
+        interaction.selected_notes.contains(&index)
     }
 
     pub fn selected_notes_count(&self) -> usize {
-        self.editor_state.interaction.selected_notes.len()
+        let interaction = &self.editor_state.interaction;
+        if let Some(ref bs) = interaction.selection_bitset {
+            return bs.count_ones();
+        }
+        interaction.selected_notes.len()
+    }
+
+    /// 是否有任何选中音符（同时检查 `selection_bitset` 和 `selected_notes`）
+    pub fn has_selection(&self) -> bool {
+        let interaction = &self.editor_state.interaction;
+        if interaction.selection_bitset.is_some() {
+            return true;
+        }
+        !interaction.selected_notes.is_empty()
+    }
+
+    /// 获取选中索引列表（兼容 `selection_bitset` 和 `selected_notes`）
+    pub fn get_selected_indices(&self) -> Vec<usize> {
+        let interaction = &self.editor_state.interaction;
+        if let Some(ref bs) = interaction.selection_bitset {
+            let mut indices = Vec::with_capacity(bs.count_ones());
+            bs.for_each_set(|i| indices.push(i));
+            return indices;
+        }
+        interaction.selected_notes.iter().copied().collect()
     }
 
     pub fn clear_selection(&mut self) {
@@ -30,12 +56,15 @@ impl Editor {
     }
 
     pub fn select_all_notes(&mut self) {
-        // NoteStore 热路径：直接顺序扫描计算边界，避免 16M 次二分查找
         if self.editor_state.data.is_note_store_enabled() {
             let count = self.editor_state.data.notes.len();
             if count > 0 {
                 let bounds = self.editor_state.data.compute_all_notes_bounds();
-                self.editor_state.interaction.selected_notes = (0..count).collect();
+                // 用 `BitSet` 替代 16M 条目 HashSet（512MB 表 + 16M SipHash 插入）
+                // BitSet 16M 位仅 256KB，O(N/64) 初始化 ~0.3ms
+                self.editor_state.interaction.selected_notes.clear();
+                self.editor_state.interaction.selection_bitset =
+                    Some(lumino_core::BitSet::all_set(count));
                 self.selected_bounds.set(Some(bounds));
                 return;
             }

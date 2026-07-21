@@ -2,11 +2,13 @@
 
 use super::Editor;
 use lumino_core::EditorTransform;
+use std::collections::HashSet;
+
 use lumino_ui_core::toolbar_event::FlipHorizontalMode;
 
 impl Editor {
     pub fn flip_selected_notes_vertical(&mut self) -> usize {
-        let selected = self.editor_state.interaction.selected_notes.clone();
+        let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
         let max_key_index = (self.editor_state.view.visible_key_count - 1) as f32;
         let result = self
             .editor_state
@@ -21,7 +23,7 @@ impl Editor {
     }
 
     pub fn flip_selected_notes_horizontal(&mut self, mode: FlipHorizontalMode) -> usize {
-        let selected = self.editor_state.interaction.selected_notes.clone();
+        let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
         let notes = &self.editor_state.data.notes;
         let indices: Vec<usize> = selected.iter().copied().collect();
         if indices.is_empty() {

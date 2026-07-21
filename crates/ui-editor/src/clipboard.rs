@@ -19,12 +19,12 @@ impl Editor {
 
     /// 将选中音符复制到系统剪贴板（JSON 格式）
     pub(crate) fn copy_selected_notes_to_clipboard(&mut self) -> bool {
-        let selected = &self.editor_state.interaction.selected_notes;
-        if selected.is_empty() {
+        if !self.has_selection() {
             return false;
         }
 
-        let mut indices: Vec<usize> = selected.iter().copied().collect();
+        let mut indices = self.get_selected_indices();
+        let count = indices.len();
         indices.sort_unstable();
 
         let notes: Vec<&super::Note> = indices
@@ -64,7 +64,7 @@ impl Editor {
         };
         match clipboard.set_text(payload.to_string()) {
             Ok(()) => {
-                tracing::info!("Editor: 已复制 {} 个音符", selected.len());
+                tracing::info!("Editor: 已复制 {} 个音符", count);
                 true
             }
             Err(e) => {

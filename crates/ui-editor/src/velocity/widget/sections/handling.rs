@@ -356,14 +356,16 @@ impl<'a> super::super::VelocityCanvas<'a> {
             return None;
         }
         let view = &self.editor.editor_state.view;
-        let selected_notes = &self.editor.editor_state.interaction.selected_notes;
+        let has_selection = self.editor.has_selection();
+        let is_selected = |idx: usize| self.editor.is_note_selected(idx);
         Self::update_curve_paint(
             state,
             &points,
             cursor_pos,
             bounds_size,
             view,
-            selected_notes,
+            has_selection,
+            &is_selected,
         )
     }
 
@@ -642,7 +644,8 @@ impl<'a> super::super::VelocityCanvas<'a> {
         cursor_pos: Point,
         bounds_size: Size,
         view: &ViewState,
-        selected_notes: &std::collections::HashSet<usize>,
+        has_selection: bool,
+        is_selected: &dyn Fn(usize) -> bool,
     ) -> Option<canvas::Action<Message>> {
         let start_x = state.curve_start_x;
         let current_x = cursor_pos.x;
@@ -650,7 +653,6 @@ impl<'a> super::super::VelocityCanvas<'a> {
         let max_x = start_x.max(current_x);
         let current_velocity = Self::y_to_velocity(cursor_pos.y, bounds_size.height);
         let start_velocity = state.curve_start_velocity;
-        let has_selection = !selected_notes.is_empty();
 
         let mut updates: Vec<(usize, u8)> = Vec::new();
 
@@ -659,7 +661,7 @@ impl<'a> super::super::VelocityCanvas<'a> {
             if point_x < min_x || point_x > max_x {
                 continue;
             }
-            if has_selection && !selected_notes.contains(&point.note_index) {
+            if has_selection && !is_selected(point.note_index) {
                 continue;
             }
 

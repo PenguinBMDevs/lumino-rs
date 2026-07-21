@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use crate::AudioAction;
 use crate::editor_state::drag_state::DragState;
+use crate::note_store::BitSet;
 
 /// 编辑状态
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -84,6 +85,14 @@ pub struct InteractionState {
     pub edit_state: EditState,
     pub hover_state: Option<(usize, HitType)>,
     pub selected_notes: HashSet<usize>,
+    /// 基于位向量的选中集合，用于高效表示"全选"或"大部分选中"。
+    ///
+    /// 当 `Some` 时，`selected_notes` 被忽略，选中状态由 `selection_bitset` 决定。
+    /// 当 `None` 时，选中状态由 `selected_notes` 决定。
+    ///
+    /// 用于 `select_all_notes` 热路径，避免创建 16M 条目的 `HashSet`（512MB 表 + 16M SipHash 插入）。
+    /// `BitSet` 16M 位仅 256KB，支持 O(1) 位测试和 O(K) trailing_zeros 遍历。
+    pub selection_bitset: Option<BitSet>,
     /// 待处理的音频动作
     pub pending_audio_actions: Vec<AudioAction>,
 }

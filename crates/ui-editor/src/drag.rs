@@ -255,8 +255,8 @@ impl Editor {
             return;
         }
 
-        // 安全保护：selected_notes 为空但缓存在 → 某处被清了，做全量重建
-        if self.editor_state.interaction.selected_notes.is_empty() {
+        // 安全保护：无选中音符但缓存在 → 某处被清了，做全量重建
+        if !self.has_selection() {
             self.cached_selection_bounds.set(Some(new_bounds));
             puffin::profile_scope!("diag::selection_full_rebuild");
             self.rebuild_selected_notes(new_min_t, new_max_t, new_min_k, new_max_k);

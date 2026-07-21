@@ -111,7 +111,7 @@ impl Editor {
     pub(crate) fn handle_delete_pressed(&mut self) {
         if let Some((index, _)) = self.editor_state.interaction.hover_state {
             self.delete_note_by_index(index);
-        } else if !self.editor_state.interaction.selected_notes.is_empty() {
+        } else if self.has_selection() {
             self.delete_selected_notes();
         }
     }

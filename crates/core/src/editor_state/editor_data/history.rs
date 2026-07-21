@@ -59,10 +59,14 @@ impl EditorData {
     // ── 单步 undo / redo ────────────────────────────────────
 
     /// 撤销上一步操作（单步，不跨 chain）
+    ///
+    /// 恢复快照后同步 `note_store`，确保 NoteStore 热路径不因 `notes` 回退而不同步。
     pub fn undo(&mut self) -> bool {
         let current = self.make_snapshot();
         if let Some(entry) = self.history.undo(current) {
             self.apply_history_entry(entry, true);
+            // 恢复快照后同步 note_store（快照只存 notes，不存 note_store）
+            self.sync_note_store();
             true
         } else {
             false
@@ -70,10 +74,14 @@ impl EditorData {
     }
 
     /// 重做上一步撤销的操作（单步，不跨 chain）
+    ///
+    /// 恢复快照后同步 `note_store`，确保 NoteStore 热路径不因 `notes` 回退而不同步。
     pub fn redo(&mut self) -> bool {
         let current = self.make_snapshot();
         if let Some(entry) = self.history.redo(current) {
             self.apply_history_entry(entry, false);
+            // 恢复快照后同步 note_store
+            self.sync_note_store();
             true
         } else {
             false
@@ -90,6 +98,7 @@ impl EditorData {
         let current = self.make_snapshot();
         if let Some(entry) = self.history.undo_logical(current) {
             self.apply_history_entry(entry, true);
+            self.sync_note_store();
             true
         } else {
             false
@@ -101,6 +110,7 @@ impl EditorData {
         let current = self.make_snapshot();
         if let Some(entry) = self.history.redo_logical(current) {
             self.apply_history_entry(entry, false);
+            self.sync_note_store();
             true
         } else {
             false

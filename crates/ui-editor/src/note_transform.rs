@@ -1,9 +1,11 @@
 use super::Editor;
 use lumino_core::EditorTransform;
 
+use std::collections::HashSet;
+
 impl Editor {
     pub fn apply_speed_change(&mut self, speed_factor: f32) -> usize {
-        let selected = self.editor_state.interaction.selected_notes.clone();
+        let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
         let result = self
             .editor_state
             .data

@@ -1,5 +1,7 @@
 //! 音符分割、合并与连奏操作模块
 
+use std::collections::HashSet;
+
 use super::Editor;
 
 impl Editor {
@@ -14,7 +16,7 @@ impl Editor {
     }
 
     pub fn glue_selected_notes(&mut self) -> usize {
-        let selected = self.editor_state.interaction.selected_notes.clone();
+        let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
         let result = self.editor_state.data.glue_selected_notes(&selected);
         if result > 0 {
             self.selection_clear();
@@ -27,7 +29,7 @@ impl Editor {
     /// 连奏选中音符：按 tick 排序，填充相邻音符之间的间隙。
     /// 仅在有间隙时延长（不会缩短重叠音符）。最后一个音符保持不变。
     pub fn tie_selected_notes(&mut self) -> usize {
-        let selected = self.editor_state.interaction.selected_notes.clone();
+        let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
         let result = self.editor_state.data.tie_selected_notes(&selected);
         if result > 0 {
             self.selection_clear();

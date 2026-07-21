@@ -74,7 +74,9 @@ pub fn draw(
     //   或 ghost 路径的 O(N) 计算），消除 selection_box::draw 中重复的 O(N) ghost 路径。
     // - 2026-07-20 重构：消除与 note_ops::get_selection_box_bounds 重复的 ghost 逻辑。
     let selected = &editor.editor_state.interaction.selected_notes;
-    if !selected.is_empty() {
+    let has_selection =
+        !selected.is_empty() || editor.editor_state.interaction.selection_bitset.is_some();
+    if has_selection {
         puffin::profile_scope!("draw::selection_box_bbox");
 
         // 优先使用 cached_selection_bounds（Selecting 状态下由 update_selection 增量维护）

@@ -5,6 +5,8 @@
 //! - NoteStore 启用时：SoA 数组顺序遍历，cache-friendly
 //! - NoteStore 未启用时：通过 `From<&Note>` 零 clone 构造 NoteView
 
+use std::collections::HashSet;
+
 use iced_core::Point;
 
 use super::Editor;
@@ -47,17 +49,14 @@ impl Editor {
     }
 
     pub fn delete_selected_notes(&mut self) {
-        let indices = self.editor_state.interaction.selected_notes.clone();
-        if indices.is_empty() {
+        if !self.has_selection() {
             return;
         }
 
+        // 兼容 `selection_bitset` 和 `selected_notes` 两种选中状态
+        let indices: HashSet<usize> = self.get_selected_indices().into_iter().collect();
+
         // 单次 O(N) 遍历捕获待删除音符信息，替代逐个 get(i) O(K·log N)
-        //
-        // 使用 for_each_note_view：
-        // - NoteStore 启用时：SoA 数组顺序遍历，cache-friendly，16M 音符比
-        //   im::Vector B-tree 快 10x+
-        // - NoteStore 未启用时：通过 `From<&Note>` 零 clone 构造 NoteView
         let current_track = self.editor_state.data.current_track;
         let mut deleted_notes: Vec<_> = Vec::with_capacity(indices.len());
         self.editor_state.data.for_each_note_view(|i, n| {

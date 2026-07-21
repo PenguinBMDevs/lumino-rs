@@ -77,7 +77,8 @@ impl Editor {
 
         // 优先级 1：有选中音符时，先检测选择框命中
         // 选择框命中时，无论是否同时命中音符，都走框选逻辑（避免边缘误判走单音符拉伸）
-        let sel_hit = if !self.editor_state.interaction.selected_notes.is_empty() {
+        let has_selection = self.has_selection();
+        let sel_hit = if has_selection {
             self.hit_test_selection_box(pos)
         } else {
             None
@@ -87,10 +88,10 @@ impl Editor {
             // 命中选择框：根据边缘/内部分别进入调整大小或拖动状态
             match sel_hit_type {
                 crate::SelectionHitType::Inside => {
-                    // ghost 方案（累积模式）：从 selected_notes 构建 DragState
+                    // ghost 方案（累积模式）：从选中集合构建 DragState
                     let note_count = self.editor_state.data.notes.len();
                     let drag_state = DragState::from_indices(
-                        self.editor_state.interaction.selected_notes.iter().copied(),
+                        self.get_selected_indices(),
                         note_count,
                         snapped_tick as i64,
                         key as i16,
