@@ -1,7 +1,7 @@
 //! 设置面板菜单渲染
 
 use iced_core::{Alignment, Border, Length, Padding};
-use iced_widget::{button, column, container, row, text};
+use iced_widget::{button, column, container, row, scrollable, text};
 
 use super::{Event, SettingsPanel, components::*};
 use lumino_core::i18n::{Language, settings_translations};
@@ -39,7 +39,9 @@ pub(super) fn render_menu_list<'a>(
         col = col.push(menu_item);
     }
 
-    container(col)
+    let scrolled = scrollable(col).width(Length::Fill).height(Length::Fill);
+
+    container(scrolled)
         .width(MENU_WIDTH)
         .height(Length::Fill)
         .style(create_menu_container_style())

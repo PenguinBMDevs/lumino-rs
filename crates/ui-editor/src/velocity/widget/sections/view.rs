@@ -81,7 +81,13 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                 draw_scale_labels(&mut frame, theme, bounds.size(), self.edit_mode);
                 let tempo_points = VelocityPanel::build_tempo_points(self.editor);
                 if !tempo_points.is_empty() {
-                    draw_tempo_graph(&mut frame, &tempo_points, bounds.size(), view);
+                    draw_tempo_graph(
+                        &mut frame,
+                        &tempo_points,
+                        bounds.size(),
+                        view,
+                        self.editor.velocity_panel.automation_line_thickness,
+                    );
                 }
                 vec![frame.into_geometry()]
             }
@@ -162,7 +168,9 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                                 &ghost_builder.build(),
                                 canvas::Stroke::default()
                                     .with_color(ghost_alpha)
-                                    .with_width(2.0),
+                                    .with_width(
+                                        self.editor.velocity_panel.automation_line_thickness,
+                                    ),
                             );
 
                             // 起点圆点

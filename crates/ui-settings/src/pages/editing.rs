@@ -95,29 +95,6 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         text(t.editing_intercept_notification_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
-        iced_widget::space().height(24),
-        // ── 自动化曲线连线粗细 section ──
-        row![
-            text(t.editing_automation_line_thickness)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style())
-                .width(200.0),
-            iced_widget::slider(1.0..=10.0, settings.automation_line_thickness, |v| {
-                Message::Settings(crate::Event::AutomationLineThicknessChanged(v))
-            })
-            .step(0.5_f32)
-            .width(200.0),
-            text(format!("{:.1} px", settings.automation_line_thickness))
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style())
-                .width(50.0),
-        ]
-        .spacing(SPACING_ICON_LABEL)
-        .align_y(Alignment::Center),
-        iced_widget::space().height(4),
-        text(t.editing_automation_line_thickness_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
     ]
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT)

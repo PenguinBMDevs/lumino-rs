@@ -7,6 +7,7 @@ pub fn draw_tempo_graph(
     points: &[TempoPoint],
     size: Size,
     view: &ViewState,
+    line_thickness: f32,
 ) {
     if points.is_empty() {
         return;
@@ -49,7 +50,7 @@ pub fn draw_tempo_graph(
         &line_builder.build(),
         canvas::Stroke::default()
             .with_color(line_color)
-            .with_width(2.0),
+            .with_width(line_thickness),
     );
 
     // 合批绘制控制点
@@ -84,6 +85,7 @@ pub fn draw_curve_paint_feedback(
     state: &VelocityCanvasState,
     canvas_params: &CurvePaintCanvasParams,
     cursor: mouse::Cursor,
+    line_thickness: f32,
 ) {
     let width = canvas_params.size.width;
     let height = canvas_params.size.height;
@@ -119,7 +121,7 @@ pub fn draw_curve_paint_feedback(
         &trail_builder.build(),
         canvas::Stroke::default()
             .with_color(trail_color)
-            .with_width(2.0),
+            .with_width(line_thickness),
     );
 
     let affected_color = automation_node_color();
