@@ -85,6 +85,16 @@ impl super::Editor {
         let canvas_height = self.editor_state.canvas.size_y;
         let visible_key_count = self.editor_state.view.visible_key_count;
 
+        // 动态最小缩放：确保内容填满视口，防止键盘无限缩小超出渲染范围
+        // 与 CanvasBoundsChanged 处理器的空区填充逻辑保持一致
+        let ruler_height = self.editor_state.view.ruler_height;
+        let vh = (canvas_height - ruler_height).max(0.0);
+        let dynamic_min_zoom = if visible_key_count > 0 && vh > 0.0 {
+            (vh / visible_key_count as f32).clamp(MIN_ZOOM_Y, MAX_ZOOM_Y)
+        } else {
+            MIN_ZOOM_Y
+        };
+
         // 动态最大缩放：防止键盘键高超过视口可接受范围
         // 限制总内容高度不超过视口高度的 MAX_SCROLLABLE_PAGES 倍，
         // 128/256 键模式自动适配：键数越多，最大缩放越小
@@ -105,7 +115,7 @@ impl super::Editor {
             zoom_y,
             fixed_ratio,
             canvas_height,
-            MIN_ZOOM_Y,
+            dynamic_min_zoom,
             dynamic_max_zoom,
         );
         self.invalidate_caches(CacheInvalidation::KEYBOARD);
