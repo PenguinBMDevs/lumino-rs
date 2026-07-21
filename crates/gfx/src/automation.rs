@@ -1,6 +1,6 @@
 //! 自动化曲线渲染 — 从 AutomationLane 生成 GPU 实例
 //!
-//! 从 yinhe 项目移植：将 Step / Curve 插值的事件序列转换为 1px 线段与圆角锚点实例。
+//! 从 yinhe 项目移植：将 Step / Curve 插值的事件序列转换为 2px 线段与圆角锚点实例。
 
 use lumino_core::{AutomationLane, SegmentShape};
 
@@ -10,7 +10,7 @@ use crate::cc_bar_renderer::CcBarInstance;
 /// `MAIN_TRACK_NOTE_COLOR`（ui crate note_worker.rs）保持一致，确保视觉统一。
 pub const AUTOMATION_NODE_COLOR: [f32; 3] = [0.2, 0.55, 1.0];
 
-/// 曲线子采样像素步长。Linear/Curve 段按此步长采样并连成多条 1px 短线。
+/// 曲线子采样像素步长。Linear/Curve 段按此步长采样并连成多条短线。
 const CURVE_SUBSAMPLE_PX: f32 = 2.0;
 /// 锚点半径（像素）。Pencil/Curve 工具下显示。
 const ANCHOR_RADIUS: f32 = 3.0;
@@ -38,6 +38,8 @@ pub struct AutomationViewParams {
     pub panel_offset_y: f32,
     /// 工具栏高度（像素），数据区在工具栏下方
     pub toolbar_height: f32,
+    /// 自动化曲线连线粗细（像素，1-10，默认 2）。
+    pub line_thickness: f32,
 }
 
 impl AutomationViewParams {
@@ -190,6 +192,7 @@ fn collect_segments(
 /// 将 lane 渲染为 CcBarInstance 列表。
 ///
 /// `show_anchors` 控制是否绘制事件锚点。
+/// 线条粗细使用 `view.line_thickness`。
 pub fn build_lane_instances(
     out: &mut Vec<CcBarInstance>,
     width: f32,
@@ -208,9 +211,10 @@ pub fn build_lane_instances(
     let pad_start = tick_start.max(0.0) as u32;
     let pad_end = tick_end.max(0.0) as u32;
 
+    let lt = view.line_thickness;
     let segs = collect_segments(lane, view, max_val, width, pad_start, pad_end);
     for seg in &segs {
-        render_segment(out, seg.x1, seg.y1, seg.x2, seg.y2, seg.shape, color);
+        render_segment(out, seg.x1, seg.y1, seg.x2, seg.y2, seg.shape, color, lt);
     }
 
     if show_anchors {
@@ -247,6 +251,7 @@ fn render_segment(
     y2: f32,
     shape: SegmentShape,
     color: [f32; 3],
+    thickness: f32,
 ) {
     let dx = x2 - x1;
     if dx <= 0.0 {
@@ -254,9 +259,9 @@ fn render_segment(
         let dy = y2 - y1;
         if dy.abs() > 0.0 {
             out.push(CcBarInstance::new(
-                x2 - 0.5,
+                x2 - thickness * 0.5,
                 y1.min(y2),
-                1.0,
+                thickness,
                 dy.abs(),
                 [color[0], color[1], color[2], LINE_ALPHA],
             ));
@@ -268,24 +273,33 @@ fn render_segment(
         SegmentShape::Step => {
             out.push(CcBarInstance::new(
                 x1,
-                y1,
+                y1 - thickness * 0.5,
                 dx,
-                1.0,
+                thickness,
                 [color[0], color[1], color[2], LINE_ALPHA],
             ));
             let dy = y2 - y1;
             if dy.abs() > 0.0 {
                 out.push(CcBarInstance::new(
-                    x2 - 0.5,
+                    x2 - thickness * 0.5,
                     y1.min(y2),
-                    1.0,
+                    thickness,
                     dy.abs(),
                     [color[0], color[1], color[2], LINE_ALPHA],
                 ));
             }
         }
         SegmentShape::Curve { .. } => {
-            push_polyline(out, x1, y1, x2, y2, |t| shape.interpolate(t), color);
+            push_polyline(
+                out,
+                x1,
+                y1,
+                x2,
+                y2,
+                |t| shape.interpolate(t),
+                color,
+                thickness,
+            );
         }
     }
 }
@@ -299,6 +313,7 @@ fn push_polyline(
     y2: f32,
     factor_fn: impl Fn(f32) -> f32,
     color: [f32; 3],
+    thickness: f32,
 ) {
     let dx = x2 - x1;
     let dy = y2 - y1;
@@ -322,17 +337,17 @@ fn push_polyline(
             if seg_dx.abs() >= seg_dy.abs() {
                 out.push(CcBarInstance::new(
                     px.min(nx),
-                    py - 0.5,
-                    seg_dx.abs().max(1.0),
-                    1.0,
+                    py - thickness * 0.5,
+                    seg_dx.abs().max(thickness),
+                    thickness,
                     [color[0], color[1], color[2], LINE_ALPHA],
                 ));
             } else {
                 out.push(CcBarInstance::new(
-                    px - 0.5,
+                    px - thickness * 0.5,
                     py.min(ny),
-                    1.0,
-                    seg_dy.abs().max(1.0),
+                    thickness,
+                    seg_dy.abs().max(thickness),
                     [color[0], color[1], color[2], LINE_ALPHA],
                 ));
             }
@@ -376,6 +391,7 @@ mod tests {
             panel_offset_x: 0.0,
             panel_offset_y: 0.0,
             toolbar_height: 28.0,
+            line_thickness: 2.0,
         };
         assert!((view.value_to_y(0.0, 127.0) - 100.0).abs() < 1e-3);
         assert!((view.value_to_y(127.0, 127.0) - 28.0).abs() < 1e-3);
@@ -395,6 +411,7 @@ mod tests {
             panel_offset_x: 0.0,
             panel_offset_y: 0.0,
             toolbar_height: 28.0,
+            line_thickness: 2.0,
         };
         let mut out = Vec::new();
         build_lane_instances(&mut out, 200.0, &view, &lane, [1.0, 1.0, 1.0], false);

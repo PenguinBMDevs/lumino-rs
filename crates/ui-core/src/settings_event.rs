@@ -48,4 +48,6 @@ pub enum Event {
     HistoryEntryLimitChanged(String),
     MergeWindowMsChanged(String),
     InterceptNotificationChanged(bool),
+    /// 自动化曲线连线粗细（像素，1-10）
+    AutomationLineThicknessChanged(f32),
 }

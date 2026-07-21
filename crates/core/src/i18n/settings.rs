@@ -108,6 +108,9 @@ pub struct SettingsTranslations {
     pub editing_intercept_section: &'static str,
     pub editing_intercept_notification: &'static str,
     pub editing_intercept_notification_hint: &'static str,
+    /// 自动化曲线连线粗细
+    pub editing_automation_line_thickness: &'static str,
+    pub editing_automation_line_thickness_hint: &'static str,
 }
 
 static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -196,6 +199,8 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     editing_intercept_section: "编辑拦截",
     editing_intercept_notification: "拦截时显示 Toast 提示",
     editing_intercept_notification_hint: "编辑中触发 Undo/Redo/Save/Play/Export 时显示提示（关闭则静默处理）",
+    editing_automation_line_thickness: "自动化曲线连线粗细:",
+    editing_automation_line_thickness_hint: "自动化面板中事件瞄点之间的连线粗细（1-10 像素）",
 };
 
 static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -284,6 +289,8 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     editing_intercept_section: "Edit Interception",
     editing_intercept_notification: "Show Toast on interception",
     editing_intercept_notification_hint: "Show notification when Undo/Redo/Save/Play/Export is intercepted during editing (disable for silent handling)",
+    editing_automation_line_thickness: "Automation line thickness:",
+    editing_automation_line_thickness_hint: "Line thickness between event anchor points in the automation panel (1-10 pixels)",
 };
 
 /// 获取设置面板翻译

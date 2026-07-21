@@ -37,8 +37,6 @@ impl MessageHandler for SettingsHandler {
                     root.visual.velocity_filter_threshold = val;
                     tracing::debug!("Root: 力度过滤阈值同步为 {}", val);
                     // 立即传播到播放引擎，让力度过滤实时生效。
-                    // 在 SettingsHandler 中直接调用 update_playback_notes，
-                    // 区别于 DialogHandler 中通过路由传播的方式。
                     root.update_playback_notes();
                 }
             }
@@ -87,6 +85,10 @@ impl MessageHandler for SettingsHandler {
                 root.sidebar.track_display_mode = mode;
                 root.sidebar.reapply_display_mode();
                 tracing::debug!("Root: 音轨列表显示模式切换为 {:?}", mode);
+            }
+            crate::settings::Event::AutomationLineThicknessChanged(v) => {
+                root.editor.velocity_panel.automation_line_thickness = v;
+                tracing::debug!("Root: 自动化曲线连线粗细设置为 {}", v);
             }
             _ => {} // 其他设置变更由 settings.update() 同步
         }

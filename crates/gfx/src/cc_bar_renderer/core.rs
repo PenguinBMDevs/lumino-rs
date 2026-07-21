@@ -274,6 +274,8 @@ pub struct CcBarViewParams {
     pub value_zoom: f32,
     /// 自动化曲线垂直滚动偏移（值空间单位）。
     pub value_scroll: f32,
+    /// 自动化曲线连线粗细（像素，1-10，默认 2）。
+    pub line_thickness: f32,
 }
 
 /// CC 柱状条颜色配置

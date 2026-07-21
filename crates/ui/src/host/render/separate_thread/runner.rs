@@ -293,6 +293,7 @@ impl Host {
             canvas_size_y: canvas.size_y,
             value_zoom: panel.value_zoom,
             value_scroll: panel.value_scroll,
+            line_thickness: panel.automation_line_thickness,
         };
         let cc_colors = CcBarColors {
             bar_color,

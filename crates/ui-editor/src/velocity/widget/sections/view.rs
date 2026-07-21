@@ -106,6 +106,7 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                         panel_offset_x: 0.0,
                         panel_offset_y: 0.0,
                         toolbar_height: TOOLBAR_HEIGHT,
+                        line_thickness: self.editor.velocity_panel.automation_line_thickness,
                     };
                     let max_val = match self.edit_mode {
                         EditMode::Bend => 16383.0,

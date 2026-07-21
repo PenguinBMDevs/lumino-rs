@@ -112,6 +112,7 @@ impl super::super::VelocityCanvas<'_> {
             panel_offset_x: 0.0,
             panel_offset_y: 0.0,
             toolbar_height: TOOLBAR_HEIGHT,
+            line_thickness: panel.automation_line_thickness,
         };
         let max_val = target.max_value() as f32;
         Some((params, target, max_val))

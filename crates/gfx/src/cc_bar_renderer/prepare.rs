@@ -108,6 +108,7 @@ pub fn build_cc_bar_instances(
         panel_offset_x: panel_x,
         panel_offset_y: actual_panel_y,
         toolbar_height: TOOLBAR_HEIGHT,
+        line_thickness: view_params.line_thickness,
     };
 
     if is_velocity {

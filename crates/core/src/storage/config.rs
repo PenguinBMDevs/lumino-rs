@@ -260,6 +260,9 @@ pub struct UiConfig {
     /// 编辑拦截：是否显示 Toast 提示（默认 true）
     #[serde(default = "default_true")]
     pub intercept_notification_enabled: bool,
+    /// 自动化曲线连线粗细（像素，1-10，默认 2）
+    #[serde(default = "default_automation_line_thickness")]
+    pub automation_line_thickness: f32,
 }
 
 fn default_true() -> bool {
@@ -285,6 +288,10 @@ fn default_synth_fade_out() -> bool {
 fn default_max_voices_per_key() -> Option<usize> {
     Some(16)
 }
+fn default_automation_line_thickness() -> f32 {
+    2.0
+}
+
 fn default_velocity_filter_threshold() -> u8 {
     1
 }
@@ -350,6 +357,7 @@ impl Default for UiConfig {
             history_entry_limit: default_history_entry_limit(),
             merge_window_ms: default_merge_window_ms(),
             intercept_notification_enabled: true,
+            automation_line_thickness: default_automation_line_thickness(),
         }
     }
 }

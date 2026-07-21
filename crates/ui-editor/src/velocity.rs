@@ -51,6 +51,8 @@ pub struct VelocityPanel {
     pub value_zoom: f32,
     /// 自动化曲线垂直滚动偏移（值空间单位）。
     pub value_scroll: f32,
+    /// 自动化曲线连线粗细（像素，1-10，默认 2）。
+    pub automation_line_thickness: f32,
 }
 
 impl VelocityPanel {
@@ -60,6 +62,7 @@ impl VelocityPanel {
             selected_cc: 1, // 默认调制轮
             value_zoom: 1.0,
             value_scroll: 0.0,
+            automation_line_thickness: 2.0,
         }
     }
 

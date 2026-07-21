@@ -79,6 +79,8 @@ pub struct SettingsPanel {
     pub merge_window_ms: u64,
     /// 编辑拦截时是否显示 Toast 提示
     pub intercept_notification_enabled: bool,
+    /// 自动化曲线连线粗细（像素，1-10）
+    pub automation_line_thickness: f32,
 }
 
 impl SettingsPanel {
@@ -131,6 +133,7 @@ impl SettingsPanel {
             history_entry_limit: ui_config.history_entry_limit,
             merge_window_ms: ui_config.merge_window_ms,
             intercept_notification_enabled: ui_config.intercept_notification_enabled,
+            automation_line_thickness: ui_config.automation_line_thickness,
         }
     }
 
@@ -294,6 +297,9 @@ impl SettingsPanel {
             }
             Event::InterceptNotificationChanged(enabled) => {
                 self.intercept_notification_enabled = enabled;
+            }
+            Event::AutomationLineThicknessChanged(v) => {
+                self.automation_line_thickness = v.clamp(1.0, 10.0);
             }
         }
     }
