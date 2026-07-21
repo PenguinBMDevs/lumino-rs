@@ -18,6 +18,7 @@ use crate::note::Note;
 use super::constants::DEFAULT_BPM;
 
 pub(crate) mod async_commit;
+pub(crate) mod async_commit_streaming;
 mod automation;
 mod history;
 mod notes;
