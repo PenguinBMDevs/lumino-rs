@@ -196,8 +196,10 @@ impl Editor {
                 .data
                 .batch_move_notes_from_bitvec_no_sync(drag_state, max_key);
             if modified > 0 {
-                // 同步到 im::Vector 供 undo 快照使用
-                self.editor_state.data.sync_notes_from_store();
+                // 跳过 O(N) sync_notes_from_store() — 渲染层直读 NoteStore，undo 快照在
+                // 下次 push_history() 时通过 note_store_dirty 延迟同步，避免每次拖动提交
+                // 都做 O(N) to_im_vector()（16M 音符 ~3.5s）。
+                self.editor_state.data.note_store_dirty = true;
                 self.mark_notes_changed();
                 tracing::info!("Editor: NoteStore 批量移动完成, 修改 {} 个音符", modified);
             } else {

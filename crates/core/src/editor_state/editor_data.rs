@@ -58,6 +58,8 @@ pub struct EditorData {
     pub note_store: NoteStore,
     /// note_store 启用阈值（音符数低于此值时不启用，避免小数据量开销）
     pub note_store_enabled: bool,
+    /// note_store 被修改后尚未同步到 `notes`（避免每次拖动提交都做 O(N) to_im_vector）
+    pub note_store_dirty: bool,
 }
 
 /// NoteStore 启用阈值：音符数超过此值时自动启用 SoA 批量操作
@@ -89,6 +91,7 @@ impl EditorData {
             }],
             note_store: NoteStore::new(),
             note_store_enabled: false,
+            note_store_dirty: false,
         }
     }
 
