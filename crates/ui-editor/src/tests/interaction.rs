@@ -142,7 +142,7 @@ fn test_tool_setting() {
     assert_eq!(editor.selected_notes_count(), 0);
 }
 
-/// 测试全选
+/// 测试全选（小数据量，fallback 路径）
 #[test]
 fn test_select_all_notes() {
     let mut editor = Editor::new();
@@ -162,4 +162,29 @@ fn test_select_all_notes() {
     assert_eq!(editor.selected_notes_count(), 2);
     assert!(editor.is_note_selected(0));
     assert!(editor.is_note_selected(1));
+}
+
+/// 测试全选（NoteStore 路径，>= NOTE_STORE_THRESHOLD 音符）
+#[test]
+fn test_select_all_notes_with_notestore() {
+    let mut editor = Editor::new();
+    // 添加超过 NOTE_STORE_THRESHOLD (10_000) 的音符，触发 NoteStore 启用
+    let count = 10_050usize;
+    for i in 0..count {
+        editor
+            .editor_state
+            .data
+            .notes
+            .push_back(Note::new(i as f32, 60 + (i % 12) as u16, 1.0));
+    }
+    // 同步 NoteStore
+    editor.editor_state.data.sync_note_store();
+    assert!(editor.editor_state.data.is_note_store_enabled());
+
+    editor.select_all_notes();
+
+    assert_eq!(editor.selected_notes_count(), count);
+    assert!(editor.is_note_selected(0));
+    assert!(editor.is_note_selected(count - 1));
+    assert!(editor.is_note_selected(count / 2));
 }

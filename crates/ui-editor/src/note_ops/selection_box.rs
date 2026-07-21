@@ -21,7 +21,8 @@ impl Editor {
         let edit_state = &self.editor_state.interaction.edit_state;
         let pending = &self.pending_drag_state;
 
-        if selected.is_empty() {
+        let has_selection_bitset = self.editor_state.interaction.selection_bitset.is_some();
+        if selected.is_empty() && !has_selection_bitset {
             return None;
         }
 
