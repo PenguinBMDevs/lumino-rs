@@ -107,7 +107,11 @@ impl Editor {
             }
         }
         self.editor_state.interaction.selected_notes = new_set;
-        self.selected_bounds.set(if any { Some((min_t, max_te, max_k, min_k)) } else { None });
+        self.selected_bounds.set(if any {
+            Some((min_t, max_te, max_k, min_k))
+        } else {
+            None
+        });
     }
 
     /// 检测坐标是否落在某个音符上
@@ -261,21 +265,28 @@ impl Editor {
 
     pub fn delete_selected_notes(&mut self) {
         let indices = self.editor_state.interaction.selected_notes.clone();
+        if indices.is_empty() {
+            return;
+        }
 
-        // Capture note info before deletion for sync events
-        let deleted_notes: Vec<_> = indices
+        // 单次 O(N) 遍历捕获待删除音符信息，替代逐个 get(i) O(K·log N)
+        let current_track = self.editor_state.data.current_track;
+        let deleted_notes: Vec<_> = self
+            .editor_state
+            .data
+            .notes
             .iter()
-            .filter_map(|&i| {
-                self.editor_state.data.notes.get(i).map(|n| {
-                    (
-                        n.tick,
-                        n.key,
-                        n.length,
-                        n.velocity,
-                        n.channel,
-                        self.editor_state.data.current_track,
-                    )
-                })
+            .enumerate()
+            .filter(|(i, _)| indices.contains(i))
+            .map(|(_, n)| {
+                (
+                    n.tick,
+                    n.key,
+                    n.length,
+                    n.velocity,
+                    n.channel,
+                    current_track,
+                )
             })
             .collect();
 
@@ -429,9 +440,8 @@ impl Editor {
 
             // 恢复 raw bounds 缓存，后续帧走 O(1) ghost 路径
             if any {
-                self.selected_bounds.set(Some((
-                    raw_min_t, raw_max_te, raw_max_k, raw_min_k,
-                )));
+                self.selected_bounds
+                    .set(Some((raw_min_t, raw_max_te, raw_max_k, raw_min_k)));
             }
         } else {
             puffin::profile_scope!("get_selection_box_bounds::fallback");
@@ -448,7 +458,8 @@ impl Editor {
             }
             // 恢复 selected_bounds 缓存
             if any {
-                self.selected_bounds.set(Some((min_t, max_te, max_k, min_k)));
+                self.selected_bounds
+                    .set(Some((min_t, max_te, max_k, min_k)));
             }
         }
         if !any {

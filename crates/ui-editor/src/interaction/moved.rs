@@ -22,12 +22,13 @@ impl Editor {
         // collect_ghost_indices 仍会遍历 pending.selected_indices() 全量选中音符
         // 构建 HashSet + 排序，1600W 场景下 ~6.7s/帧。此时 hover 无实际意义
         //（用户未在交互），直接跳过。
-        let hover = if self.pending_drag_state.is_some() || matches!(
-            self.editor_state.interaction.edit_state,
-            EditState::Selecting { .. }
-                | EditState::Dragging { .. }
-                | EditState::DraggingSelection { .. }
-        ) {
+        let hover = if self.pending_drag_state.is_some()
+            || matches!(
+                self.editor_state.interaction.edit_state,
+                EditState::Selecting { .. }
+                    | EditState::Dragging { .. }
+                    | EditState::DraggingSelection { .. }
+            ) {
             None
         } else {
             self.hit_test_note(pos)

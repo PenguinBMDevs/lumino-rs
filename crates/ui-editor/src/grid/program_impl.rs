@@ -263,9 +263,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
         // 洋葱皮颜色覆盖层（不使用缓存，每帧独立绘制）
         {
             puffin::profile_scope!("draw::onion_overlay");
-            if let Some(onion_geom) =
-                keyboard::draw_onion_overlay(self.editor, renderer, bounds)
-            {
+            if let Some(onion_geom) = keyboard::draw_onion_overlay(self.editor, renderer, bounds) {
                 geometries.push(onion_geom);
             }
         }
@@ -283,8 +281,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
 
         {
             puffin::profile_scope!("draw::selection_box");
-            if let Some(selection_geom) =
-                selection_box::draw(self.editor, renderer, theme, bounds)
+            if let Some(selection_geom) = selection_box::draw(self.editor, renderer, theme, bounds)
             {
                 geometries.push(selection_geom);
             }
@@ -298,8 +295,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
 
         {
             puffin::profile_scope!("draw::playback_indicator");
-            let playback_indicator_geom =
-                playback_indicator::draw(self.editor, renderer, bounds);
+            let playback_indicator_geom = playback_indicator::draw(self.editor, renderer, bounds);
             geometries.push(playback_indicator_geom);
         }
 
