@@ -252,6 +252,13 @@ impl Editor {
 
         if old_bounds == new_bounds {
             puffin::profile_scope!("diag::selection_cache_hit");
+            // 安全保护：边界未变但选中被清空（如 selection_clear 在 start_new_selection 被调用），
+            // 仍需重建，否则 selected_notes 保持空，二次框选时不会选中任何音符。
+            if !self.has_selection() {
+                self.cached_selection_bounds.set(Some(new_bounds));
+                puffin::profile_scope!("diag::selection_full_rebuild");
+                self.rebuild_selected_notes(new_min_t, new_max_t, new_min_k, new_max_k);
+            }
             return;
         }
 

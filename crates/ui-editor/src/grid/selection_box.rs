@@ -73,29 +73,43 @@ pub fn draw(
     // - 非 Selecting 状态，使用 `get_selection_box_bounds()`（增量维护的 O(1) 缓存，
     //   或 ghost 路径的 O(N) 计算），消除 selection_box::draw 中重复的 O(N) ghost 路径。
     // - 2026-07-20 重构：消除与 note_ops::get_selection_box_bounds 重复的 ghost 逻辑。
+    //
+    // 修复：cached_selection_bounds 仅在 Selecting 状态下有效（由 update_selection 增量维护），
+    // 非 Selecting 状态下必须使用 get_selection_box_bounds()。此前渲染代码未检查 edit_state，
+    // 导致 DraggingSelection/Idle 状态下使用了 stale 的 cached_selection_bounds，框选框不跟随
+    // 音符拖动（缺少 ghost delta），且二次框选时位置/大小异常。
     let selected = &editor.editor_state.interaction.selected_notes;
     let has_selection =
         !selected.is_empty() || editor.editor_state.interaction.selection_bitset.is_some();
     if has_selection {
         puffin::profile_scope!("draw::selection_box_bbox");
 
-        // 优先使用 cached_selection_bounds（Selecting 状态下由 update_selection 增量维护）
-        let has_bbox = if let Some((c_min_t, c_max_t, c_min_k, c_max_k)) =
-            editor.cached_selection_bounds.get()
-        {
-            // cached_selection_bounds 是 (min_tick, max_tick, min_key, max_key)
-            // 注意：max_tick 是框选矩形右边界的 tick，不是 note.tick+length。
-            // 需要加一个小 padding（snap_precision）来包含可能超出右边界的音符长度。
-            let snap = editor.editor_state.view.snap_precision.max(1.0);
-            let max_tick_end = c_max_t + snap; // 至少一个网格，覆盖音符 length 超出部分
-            let min_x = editor.tick_to_x(c_min_t);
-            let max_x = editor.tick_to_x(max_tick_end);
-            let min_y = editor.key_to_y(c_max_k);
-            let max_y = editor.key_to_y(c_min_k) + editor.editor_state.view.zoom_y;
-            Some((min_x, max_x, min_y, max_y))
+        // cached_selection_bounds 仅在 Selecting 状态下有效
+        let is_selecting = matches!(
+            editor.editor_state.interaction.edit_state,
+            crate::EditState::Selecting { .. }
+        );
+        let has_bbox = if is_selecting {
+            if let Some((c_min_t, c_max_t, c_min_k, c_max_k)) = editor.cached_selection_bounds.get()
+            {
+                // cached_selection_bounds 是 (min_tick, max_tick, min_key, max_key)
+                // 注意：max_tick 是框选矩形右边界的 tick，不是 note.tick+length。
+                // 需要加一个小 padding（snap_precision）来包含可能超出右边界的音符长度。
+                let snap = editor.editor_state.view.snap_precision.max(1.0);
+                let max_tick_end = c_max_t + snap; // 至少一个网格，覆盖音符 length 超出部分
+                let min_x = editor.tick_to_x(c_min_t);
+                let max_x = editor.tick_to_x(max_tick_end);
+                let min_y = editor.key_to_y(c_max_k);
+                let max_y = editor.key_to_y(c_min_k) + editor.editor_state.view.zoom_y;
+                Some((min_x, max_x, min_y, max_y))
+            } else {
+                // Selecting 状态下 cached_selection_bounds 意外失效，兜底
+                editor.get_selection_box_bounds()
+            }
         } else {
-            // 非 Selecting 状态：使用 get_selection_box_bounds（O(1) 缓存或 O(N) 兜底）
-            // 消除 selection_box::draw 中重复的 ghost 路径
+            // 非 Selecting 状态：使用 get_selection_box_bounds（O(1) 缓存、O(N) 兜底、
+            // 或 ghost 路径带 delta），确保框选框在 DraggingSelection 时跟随音符拖动，
+            // 且在二次框选完成后使用正确的音符位置。
             editor.get_selection_box_bounds()
         };
 
