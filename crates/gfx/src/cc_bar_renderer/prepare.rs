@@ -125,6 +125,7 @@ pub fn build_cc_bar_instances(
                 view_params.scroll_x,
                 view_params.canvas_size_x,
                 data.velocity_points,
+                view_params.line_thickness,
             );
         } else {
             push_velocity_bar_instances(
@@ -260,6 +261,7 @@ fn push_velocity_curve_instances(
     scroll_x: f32,
     canvas_size_x: f32,
     velocity_points: &[lumino_core::VelocityPoint],
+    line_thickness: f32,
 ) {
     const TOOLBAR_HEIGHT: f32 = 28.0;
     const CURVE_ANCHOR_RADIUS: f32 = 3.0;
@@ -293,8 +295,8 @@ fn push_velocity_curve_instances(
                 instances.push(CcBarInstance::new(
                     prev_x,
                     prev_y,
-                    dx.max(1.0),
-                    1.0,
+                    dx.max(line_thickness),
+                    line_thickness,
                     line_color,
                 ));
             }
@@ -302,9 +304,9 @@ fn push_velocity_curve_instances(
             let dy = y - prev_y;
             if dy.abs() > 0.5 {
                 instances.push(CcBarInstance::new(
-                    x - 0.5,
+                    x - line_thickness / 2.0,
                     prev_y.min(y),
-                    1.0,
+                    line_thickness,
                     dy.abs(),
                     line_color,
                 ));
