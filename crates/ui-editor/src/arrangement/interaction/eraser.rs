@@ -59,7 +59,7 @@ pub fn handle_eraser_event(
             state.primary_down = false;
             if let Some((start_music, end_local)) = state.eraser_drag.take() {
                 let start_pixel = Point::new(
-                    viewport.tick_to_x(start_music.0),
+                    viewport.tick_to_x(start_music.0) - viewport.scroll_x,
                     start_music.1 * viewport.lane_height() - viewport.scroll_y,
                 );
                 let dist = {

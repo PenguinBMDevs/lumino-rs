@@ -411,8 +411,9 @@ fn draw_ghost_note(
     let lh = viewport.lane_height();
     let scroll_y = viewport.scroll_y;
     let y = track as f32 * lh - scroll_y;
-    let sx = viewport.tick_to_x(t_start);
-    let ex = viewport.tick_to_x(t_end);
+    let scroll_x = viewport.scroll_x;
+    let sx = viewport.tick_to_x(t_start) - scroll_x;
+    let ex = viewport.tick_to_x(t_end) - scroll_x;
     let min_x = sx.min(ex);
     let max_x = sx.max(ex);
 
