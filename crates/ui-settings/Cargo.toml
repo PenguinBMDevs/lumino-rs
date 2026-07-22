@@ -3,6 +3,7 @@ name = "lumino-ui-settings"
 version.workspace = true
 rust-version.workspace = true
 homepage.workspace = true
+repository.workspace = true
 license.workspace = true
 description.workspace = true
 edition.workspace = true
