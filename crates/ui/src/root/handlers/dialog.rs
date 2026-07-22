@@ -1,6 +1,7 @@
 //! 对话框管理处理器 — 路由分发
 
 mod audio_export;
+mod batch_edit;
 mod custom_precision;
 mod load_confirm;
 mod project_settings;
@@ -37,6 +38,7 @@ impl MessageHandler for DialogHandler {
             Message::AudioExport(action) => self.handle_audio_export(root, action),
             Message::VideoExport(action) => self.handle_video_export(root, action),
             Message::SpeedChange(action) => self.handle_speed_change(root, action),
+            Message::BatchEdit(action) => self.handle_batch_edit(root, action),
             other => Some(other),
         }
     }

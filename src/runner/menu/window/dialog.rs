@@ -59,6 +59,7 @@ impl RunnerInner {
                 main_ui.apply_project_settings(title, tempo, copyright);
             }
             OpenSpeedChangeDialog => self.open_dialog_traced(DialogType::SpeedChange, "音符变速"),
+            OpenBatchEditDialog => self.open_dialog_traced(DialogType::BatchEdit, "批量编辑"),
             OpenVideoExportDialog => self.open_dialog_traced(DialogType::VideoExport, "视频导出"),
             OpenMemoryMonitorDialog => {
                 self.open_dialog_traced(DialogType::MemoryMonitor, "内存监控")
@@ -81,6 +82,11 @@ impl RunnerInner {
                 // 应用变速到主窗口
                 let main_ui = self.window_state.window.ui_mut();
                 main_ui.apply_speed_change(factor);
+            }
+            CloseBatchEditDialog => self.close_dialog_traced(DialogType::BatchEdit, "批量编辑"),
+            ConfirmBatchEdit { .. } => {
+                // 批量编辑通过对话框结果（DialogResult::BatchEdit）处理，
+                // 此处不直接应用。
             }
             OpenLoadConfirmDialog { .. } => {}
             StartAudioExport { config, document } => {

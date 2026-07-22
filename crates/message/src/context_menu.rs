@@ -29,6 +29,8 @@ pub enum PianoRollContextMenuItem {
     Delete,
     /// 全选
     SelectAll,
+    /// 批量编辑
+    BatchEdit,
 }
 
 /// 音轨选项卡右键上下文菜单项

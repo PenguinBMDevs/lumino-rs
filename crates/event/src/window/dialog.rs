@@ -59,6 +59,17 @@ pub enum Event {
     CloseSpeedChangeDialog,
     /// 确认音符变速
     ConfirmSpeedChange(f32),
+    /// 打开批量编辑对话框
+    OpenBatchEditDialog,
+    /// 关闭批量编辑对话框
+    CloseBatchEditDialog,
+    /// 确认批量编辑
+    ConfirmBatchEdit {
+        velocity: String,
+        gate: String,
+        key: String,
+        tick: String,
+    },
     /// 打开工程设置对话框
     OpenProjectSettingsDialog,
     /// 关闭工程设置对话框

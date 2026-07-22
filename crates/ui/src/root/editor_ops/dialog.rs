@@ -63,6 +63,16 @@ impl Root {
         }
     }
 
+    /// 设置批量编辑对话框是否打开
+    pub fn set_batch_edit_dialog_open(&mut self, open: bool) {
+        self.state.batch_edit_dialog.is_open = open;
+        if open {
+            self.state.dialog_type = DialogType::BatchEdit;
+        } else if self.state.dialog_type == DialogType::BatchEdit {
+            self.state.dialog_type = DialogType::None;
+        }
+    }
+
     /// 应用音符变速
     pub fn apply_speed_change(&mut self, factor: f32) {
         tracing::info!("应用音符变速: 倍率={}", factor);
@@ -70,6 +80,30 @@ impl Root {
         let modified = self.editor.apply_speed_change(factor);
         if modified > 0 {
             tracing::info!("变速完成，修改了 {} 个音符", modified);
+            self.update_playback_notes();
+            self.editor.clear_notes_changed();
+        }
+    }
+
+    /// 应用批量编辑
+    pub fn apply_batch_edit(&mut self, velocity: &str, gate: &str, key: &str, tick: &str) {
+        tracing::info!(
+            "应用批量编辑: velocity={}, gate={}, key={}, tick={}",
+            velocity,
+            gate,
+            key,
+            tick
+        );
+        let max_key = if self.settings.enable_256key {
+            255
+        } else {
+            127
+        };
+        let modified = self
+            .editor
+            .apply_batch_edit(velocity, gate, key, tick, max_key);
+        if modified > 0 {
+            tracing::info!("批量编辑完成，修改了 {} 个音符", modified);
             self.update_playback_notes();
             self.editor.clear_notes_changed();
         }

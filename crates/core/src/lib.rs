@@ -1,4 +1,5 @@
 pub mod automation;
+pub mod batch_edit;
 pub mod editor_state;
 pub mod editor_transform;
 pub mod error;

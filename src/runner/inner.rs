@@ -325,6 +325,15 @@ impl RunnerInner {
                 tracing::info!("应用音符变速: 倍率={}", factor);
                 ui.apply_speed_change(factor);
             }
+            DialogResult::BatchEdit {
+                velocity,
+                gate,
+                key,
+                tick,
+            } => {
+                tracing::info!("应用批量编辑");
+                ui.apply_batch_edit(&velocity, &gate, &key, &tick);
+            }
             DialogResult::Cancel => {
                 tracing::debug!("取消操作，无需处理");
             }

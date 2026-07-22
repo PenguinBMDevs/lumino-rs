@@ -106,6 +106,7 @@ fn menu_panel() -> Element<'static> {
         PianoRollContextMenuItem::Paste,
         PianoRollContextMenuItem::Delete,
         PianoRollContextMenuItem::SelectAll,
+        PianoRollContextMenuItem::BatchEdit,
     ]
     .into_iter()
     .map(menu_button)
@@ -168,6 +169,7 @@ const fn item_icon(item: PianoRollContextMenuItem) -> lumino_ui_core::resources:
         PianoRollContextMenuItem::Paste => Icon::ContextMenuPaste,
         PianoRollContextMenuItem::Delete => Icon::ContextMenuDelete,
         PianoRollContextMenuItem::SelectAll => Icon::ContextMenuSelectAll,
+        PianoRollContextMenuItem::BatchEdit => Icon::Gear,
     }
 }
 
@@ -179,6 +181,7 @@ fn item_label(item: PianoRollContextMenuItem) -> &'static str {
         PianoRollContextMenuItem::Paste => "粘贴",
         PianoRollContextMenuItem::Delete => "删除",
         PianoRollContextMenuItem::SelectAll => "全选",
+        PianoRollContextMenuItem::BatchEdit => "批量编辑",
     }
 }
 
@@ -249,6 +252,10 @@ mod tests {
         assert_eq!(
             item_icon(PianoRollContextMenuItem::SelectAll),
             lumino_ui_core::resources::icon::Icon::ContextMenuSelectAll
+        );
+        assert_eq!(
+            item_icon(PianoRollContextMenuItem::BatchEdit),
+            lumino_ui_core::resources::icon::Icon::Gear
         );
     }
 

@@ -28,6 +28,12 @@ pub enum DialogResult {
     SpeedChange {
         factor: f32,
     },
+    BatchEdit {
+        velocity: String,
+        gate: String,
+        key: String,
+        tick: String,
+    },
 }
 
 /// 将触摸事件转换为鼠标事件（兼容性处理）

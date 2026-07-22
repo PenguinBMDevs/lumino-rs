@@ -10,6 +10,7 @@ use bit_vec::BitVec;
 use super::EditorData;
 use super::NOTE_STORE_THRESHOLD;
 use crate::DragState;
+use crate::batch_edit::parse_batch_edit_input;
 use crate::note::Note;
 use crate::note_store::BitSet;
 
@@ -333,6 +334,105 @@ impl EditorData {
             }
             modified
         }
+    }
+
+    /// 批量编辑选中音符的力度、长度、key、tick
+    ///
+    /// 对 `selected` 中的每个索引，依次应用四个字段的批量编辑运算。
+    /// 空字符串表示该字段无操作。返回实际被修改的音符数（至少一个字段被修改）。
+    ///
+    /// - 力度限制在 0-127
+    /// - key 限制在 0-max_key（128key 模式为 127，256key 模式为 255）
+    /// - 长度最小为 1.0
+    /// - tick 最小为 0.0
+    pub fn apply_batch_edit(
+        &mut self,
+        selected: &HashSet<usize>,
+        velocity: &str,
+        gate: &str,
+        key: &str,
+        tick: &str,
+        max_key: u16,
+    ) -> usize {
+        if selected.is_empty() {
+            return 0;
+        }
+
+        let velocity_op = parse_batch_edit_input(velocity);
+        let gate_op = parse_batch_edit_input(gate);
+        let key_op = parse_batch_edit_input(key);
+        let tick_op = parse_batch_edit_input(tick);
+
+        if velocity_op.is_none() && gate_op.is_none() && key_op.is_none() && tick_op.is_none() {
+            return 0;
+        }
+
+        self.push_history();
+
+        let modified = if self.note_store_enabled {
+            let bitset = BitSet::from_iter(self.note_store.len(), selected.iter().copied());
+            let mut modified = 0usize;
+            if let Some(op) = velocity_op {
+                modified += self.note_store.batch_edit_velocity(&bitset, op);
+            }
+            if let Some(op) = gate_op {
+                modified += self.note_store.batch_edit_gate(&bitset, op);
+            }
+            if let Some(op) = key_op {
+                modified += self.note_store.batch_edit_key(&bitset, op, max_key);
+            }
+            if let Some(op) = tick_op {
+                modified += self.note_store.batch_edit_tick(&bitset, op);
+            }
+            self.sync_notes_from_store();
+            modified
+        } else {
+            let mut modified = 0usize;
+            for &i in selected {
+                if let Some(n) = self.notes.get_mut(i) {
+                    let mut changed = false;
+                    if let Some(op) = velocity_op {
+                        let new_v = op.apply(n.velocity as f32).clamp(0.0, 127.0) as u8;
+                        if n.velocity != new_v {
+                            n.velocity = new_v;
+                            changed = true;
+                        }
+                    }
+                    if let Some(op) = gate_op {
+                        let new_l = op.apply(n.length).max(1.0);
+                        if (n.length - new_l).abs() > f32::EPSILON {
+                            n.length = new_l;
+                            changed = true;
+                        }
+                    }
+                    if let Some(op) = key_op {
+                        let new_k = op.apply(n.key as f32).clamp(0.0, max_key as f32) as u16;
+                        if n.key != new_k {
+                            n.key = new_k;
+                            changed = true;
+                        }
+                    }
+                    if let Some(op) = tick_op {
+                        let new_t = op.apply(n.tick).max(0.0);
+                        if (n.tick - new_t).abs() > f32::EPSILON {
+                            n.tick = new_t;
+                            changed = true;
+                        }
+                    }
+                    if changed {
+                        modified += 1;
+                    }
+                }
+            }
+            modified
+        };
+
+        if modified > 0 {
+            self.sync_track_notes();
+        } else {
+            self.history.discard_last();
+        }
+        modified
     }
 
     /// 从 HashSet 批量删除选中音符（集成层适配）

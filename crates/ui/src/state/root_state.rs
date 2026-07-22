@@ -2,7 +2,7 @@
 
 // 保持路径不变：crate::state::root_state::Xxx 通过 core 重导出
 pub use lumino_ui_core::state::{
-    AudioExportDialogState, CollaborationDialogState, CollaborationViewState,
+    AudioExportDialogState, BatchEditDialogState, CollaborationDialogState, CollaborationViewState,
     CustomPrecisionDialogState, ExportProgressDialogState, LoadConfirmDialogState,
     MemoryMonitorDialogState, ProjectSettingsDialogState, SpeedChangeDialogState,
     ToggleAnimationState, VideoExportDialogState, VideoExportOverlayState,
@@ -22,6 +22,7 @@ pub enum DialogType {
     ProjectSettings,
     Settings,
     SpeedChange,
+    BatchEdit,
     ExportProgress,
     VideoExport,
     MemoryMonitor,
@@ -53,6 +54,8 @@ pub struct RootState {
     pub export_progress_dialog: ExportProgressDialogState,
     /// 音符变速对话框状态
     pub speed_change_dialog: SpeedChangeDialogState,
+    /// 批量编辑对话框状态
+    pub batch_edit_dialog: BatchEditDialogState,
     /// 内存监控对话框状态
     pub memory_monitor_dialog: MemoryMonitorDialogState,
     /// 精度设置
@@ -85,6 +88,7 @@ impl RootState {
             video_export_dialog: VideoExportDialogState::new(),
             export_progress_dialog: ExportProgressDialogState::new(),
             speed_change_dialog: SpeedChangeDialogState::new(),
+            batch_edit_dialog: BatchEditDialogState::new(),
             memory_monitor_dialog: MemoryMonitorDialogState::new(),
             note_precision: NotePrecision::default(),
             current_mode: AppMode::default(),

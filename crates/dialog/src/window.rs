@@ -48,6 +48,7 @@ impl DialogWindow {
             DialogType::ProjectSettings => (450.0, 480.0, "工程设置", true),
             DialogType::Settings => (700.0, 500.0, "设置", true),
             DialogType::SpeedChange => (400.0, 250.0, "变速", false),
+            DialogType::BatchEdit => (420.0, 480.0, "批量编辑", false),
             DialogType::ExportProgress => (400.0, 200.0, "音频导出", false),
             DialogType::VideoExport => (520.0, 560.0, "视频导出", false),
             DialogType::MemoryMonitor => (300.0, 440.0, "内存占用详情", false),
@@ -203,6 +204,9 @@ impl DialogWindow {
             }
             DialogType::SpeedChange => {
                 ui.set_speed_change_dialog_open(true);
+            }
+            DialogType::BatchEdit => {
+                ui.set_batch_edit_dialog_open(true);
             }
             DialogType::ExportProgress => {
                 ui.set_export_progress_dialog_open(true);

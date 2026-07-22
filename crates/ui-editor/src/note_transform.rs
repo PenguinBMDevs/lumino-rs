@@ -15,4 +15,23 @@ impl Editor {
         }
         result
     }
+
+    pub fn apply_batch_edit(
+        &mut self,
+        velocity: &str,
+        gate: &str,
+        key: &str,
+        tick: &str,
+        max_key: u16,
+    ) -> usize {
+        let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
+        let result = self
+            .editor_state
+            .data
+            .apply_batch_edit(&selected, velocity, gate, key, tick, max_key);
+        if result > 0 {
+            self.mark_notes_changed();
+        }
+        result
+    }
 }

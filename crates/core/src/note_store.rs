@@ -27,6 +27,7 @@ mod mutation;
 #[cfg(test)]
 mod tests;
 
+pub use crate::batch_edit::BatchEditOperation;
 pub use bitset::BitSet;
 pub use iter::{NoteMut, NoteStoreIter, NoteStoreRefIter};
 

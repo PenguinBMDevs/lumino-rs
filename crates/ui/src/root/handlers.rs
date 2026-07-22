@@ -606,14 +606,24 @@ impl Root {
             }
             PianoRollContextMenuAction::ItemClicked(item) => {
                 self.editor.context_menu.close();
-                let editor_action = match item {
-                    PianoRollContextMenuItem::Cut => EditorAction::Cut,
-                    PianoRollContextMenuItem::Copy => EditorAction::Copy,
-                    PianoRollContextMenuItem::Paste => EditorAction::Paste,
-                    PianoRollContextMenuItem::Delete => EditorAction::DeletePressed,
-                    PianoRollContextMenuItem::SelectAll => EditorAction::SelectAll,
-                };
-                self.handle_editor_action(editor_action);
+                match item {
+                    PianoRollContextMenuItem::BatchEdit => {
+                        crate::event::emit(crate::event::Event::Window(
+                            crate::event::window::Event::open_batch_edit_dialog(),
+                        ));
+                    }
+                    _ => {
+                        let editor_action = match item {
+                            PianoRollContextMenuItem::Cut => EditorAction::Cut,
+                            PianoRollContextMenuItem::Copy => EditorAction::Copy,
+                            PianoRollContextMenuItem::Paste => EditorAction::Paste,
+                            PianoRollContextMenuItem::Delete => EditorAction::DeletePressed,
+                            PianoRollContextMenuItem::SelectAll => EditorAction::SelectAll,
+                            PianoRollContextMenuItem::BatchEdit => unreachable!(),
+                        };
+                        self.handle_editor_action(editor_action);
+                    }
+                }
             }
         }
     }

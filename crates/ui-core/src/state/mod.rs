@@ -1,4 +1,5 @@
 pub mod audio_export_state;
+pub mod batch_edit_state;
 pub mod collaboration_state;
 pub mod custom_precision_state;
 pub mod export_progress_state;
@@ -10,6 +11,7 @@ pub mod toggle_animation;
 pub mod video_export_state;
 
 pub use audio_export_state::AudioExportDialogState;
+pub use batch_edit_state::{BatchEditDialogState, BatchEditOperation, parse_batch_edit_input};
 pub use collaboration_state::{CollaborationDialogState, CollaborationViewState};
 pub use custom_precision_state::CustomPrecisionDialogState;
 pub use export_progress_state::ExportProgressDialogState;

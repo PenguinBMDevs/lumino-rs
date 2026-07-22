@@ -64,6 +64,20 @@ impl Event {
     pub const fn confirm_speed_change(factor: f32) -> Self {
         Self::Dialog(dialog::Event::ConfirmSpeedChange(factor))
     }
+    pub const fn open_batch_edit_dialog() -> Self {
+        Self::Dialog(dialog::Event::OpenBatchEditDialog)
+    }
+    pub const fn close_batch_edit_dialog() -> Self {
+        Self::Dialog(dialog::Event::CloseBatchEditDialog)
+    }
+    pub fn confirm_batch_edit(velocity: String, gate: String, key: String, tick: String) -> Self {
+        Self::Dialog(dialog::Event::ConfirmBatchEdit {
+            velocity,
+            gate,
+            key,
+            tick,
+        })
+    }
     pub const fn open_video_export_dialog() -> Self {
         Self::Dialog(dialog::Event::OpenVideoExportDialog)
     }

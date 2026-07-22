@@ -8,7 +8,7 @@ use iced_widget::{column, container, progress_bar, space, text};
 use crate::root::Root;
 use crate::state::root_state::DialogType;
 use crate::view::{
-    collaboration_dialog::view_collaboration_dialog,
+    batch_edit_dialog::view_batch_edit_dialog, collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
     export_progress_dialog::view_export_progress_dialog,
     load_confirm_dialog::view_load_confirm_dialog,
@@ -94,6 +94,9 @@ impl Root {
             }
             DialogType::SpeedChange => {
                 view_speed_change_dialog(&self.state.speed_change_dialog, &self.window.theme)
+            }
+            DialogType::BatchEdit => {
+                view_batch_edit_dialog(&self.state.batch_edit_dialog, &self.window.theme)
             }
             DialogType::CustomPrecision => view_custom_precision_dialog(
                 &self.state.custom_precision_dialog,

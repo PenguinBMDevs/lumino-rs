@@ -4,6 +4,7 @@
 //! Message 枚举是泛型的，由上层 crate（lumino-ui）实例化具体的 UI 事件类型。
 
 pub mod audio_export;
+pub mod batch_edit;
 pub mod collaboration;
 pub mod context_menu;
 pub mod custom_precision;
@@ -18,6 +19,7 @@ pub mod velocity;
 pub mod video_export;
 
 pub use audio_export::AudioExportAction;
+pub use batch_edit::{BatchEditAction, BatchEditField};
 pub use collaboration::CollaborationAction;
 pub use context_menu::{
     PianoRollContextMenuAction, PianoRollContextMenuItem, TrackContextMenuItem,
@@ -124,6 +126,8 @@ pub enum Message<W, S, Se, T> {
     AudioExport(AudioExportAction),
     /// 音符变速动作
     SpeedChange(SpeedChangeAction),
+    /// 批量编辑动作
+    BatchEdit(BatchEditAction),
     /// Pattern 编辑动作
     Pattern(PatternAction),
     /// 视频导出动作
