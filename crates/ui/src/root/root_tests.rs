@@ -181,6 +181,7 @@ fn test_speed_change_button_always_enabled_in_view() {
         root.settings.language,
         &perf_ctx,
         1920.0,
+        false,
     );
 
     // 无选中 -> view（不应 panic/assert）
@@ -190,6 +191,7 @@ fn test_speed_change_button_always_enabled_in_view() {
         root.settings.language,
         &perf_ctx,
         1920.0,
+        false,
     );
 
     // 验证通过：两种情况下 view 均正常返回

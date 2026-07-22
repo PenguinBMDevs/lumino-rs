@@ -8,6 +8,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use crate::arrange_selection::ArrangeSelection;
 use crate::automation::AutomationLane;
 use crate::history::History;
 #[cfg(test)]
@@ -60,6 +61,8 @@ pub struct EditorData {
     pub note_store_enabled: bool,
     /// note_store 被修改后尚未同步到 `notes`（避免每次拖动提交都做 O(N) to_im_vector）
     pub note_store_dirty: bool,
+    /// 工程走带视图的选择范围
+    pub arrange_selection: ArrangeSelection,
 }
 
 /// NoteStore 启用阈值：音符数超过此值时自动启用 SoA 批量操作
@@ -92,6 +95,7 @@ impl EditorData {
             note_store: NoteStore::new(),
             note_store_enabled: false,
             note_store_dirty: false,
+            arrange_selection: ArrangeSelection::new(),
         }
     }
 
@@ -113,6 +117,7 @@ impl EditorData {
         }];
         self.note_store.clear();
         self.note_store_enabled = false;
+        self.arrange_selection.clear();
     }
 
     /// 标记 track_notes 已变化（递增版本号）

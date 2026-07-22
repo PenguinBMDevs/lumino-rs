@@ -34,8 +34,57 @@ pub fn view<'a>(
 
     let content: Element<'a> = match params.route {
         Route::Arrangement => {
-            // 音轨总览模式下左侧面板已隐藏，此处返回空
-            container(space()).into()
+            // 音轨总览模式下仅显示添加音轨按钮，不显示音轨列表
+            let mut col = column![].spacing(0).padding(8);
+
+            // 添加音轨按钮
+            let add_track_row = row![
+                container(icon::view_with_size_and_theme(
+                    Icon::Plus,
+                    18,
+                    18,
+                    Some(&window.theme),
+                ))
+                .width(24)
+                .align_x(iced_core::alignment::Horizontal::Left)
+                .align_y(iced_core::alignment::Vertical::Center)
+                .padding(Padding {
+                    top: 0.0,
+                    right: 0.0,
+                    bottom: 0.0,
+                    left: 2.0,
+                }),
+                space().width(4),
+                text(t.sidebar_add_track).size(14).width(Length::Fill),
+            ]
+            .align_y(Alignment::Center)
+            .padding(6);
+
+            let add_track_container = button(add_track_row)
+                .width(Length::Fill)
+                .on_press(Event::add_track())
+                .style(|theme: &Theme, status| {
+                    let palette = theme.extended_palette();
+                    let bg = if status == iced_widget::button::Status::Hovered {
+                        palette.background.weak.color
+                    } else {
+                        palette.background.base.color
+                    };
+
+                    button::Style {
+                        text_color: palette.background.base.text,
+                        border: iced_core::Border {
+                            radius: 4.0.into(),
+                            width: 0.0,
+                            color: iced_core::Color::TRANSPARENT,
+                        },
+                        ..Default::default()
+                    }
+                    .with_background(bg)
+                });
+
+            col = col.push(add_track_container);
+            container(col).into()
         }
         Route::File => {
             // 全量渲染所有音轨——由 iced scrollable 原生处理滚动。

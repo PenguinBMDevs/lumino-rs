@@ -107,6 +107,7 @@ pub struct Track {
     pub is_conductor: bool,
     pub can_delete: bool,
     pub is_muted: bool,
+    pub is_soloed: bool,
     /// 选项卡颜色（None 表示使用默认颜色）
     pub color: Option<Color>,
 }
@@ -178,6 +179,7 @@ impl Sidebar {
                     is_conductor: true,
                     can_delete: false,
                     is_muted: false,
+                    is_soloed: false,
                     color: None,
                 },
                 Track {
@@ -188,6 +190,7 @@ impl Sidebar {
                     is_conductor: false,
                     can_delete: true,
                     is_muted: false,
+                    is_soloed: false,
                     color: None,
                 },
             ],
@@ -260,6 +263,7 @@ impl Sidebar {
                             is_conductor: *track_idx == 0,
                             can_delete: *track_idx != 0,
                             is_muted: false,
+                            is_soloed: false,
                             color: None,
                         });
                     }
@@ -285,6 +289,7 @@ impl Sidebar {
                         is_conductor: *track_idx == 0,
                         can_delete: *track_idx != 0,
                         is_muted: false,
+                        is_soloed: false,
                         color: None,
                     });
                 }
@@ -338,6 +343,7 @@ impl Sidebar {
                             is_conductor: t.is_conductor,
                             can_delete: t.can_delete,
                             is_muted: t.is_muted,
+                            is_soloed: t.is_soloed,
                             color: t.color,
                         });
                     }
@@ -357,6 +363,7 @@ impl Sidebar {
                         is_conductor: t.is_conductor,
                         can_delete: t.can_delete,
                         is_muted: t.is_muted,
+                        is_soloed: t.is_soloed,
                         color: t.color,
                     });
                 }

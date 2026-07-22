@@ -30,6 +30,8 @@ pub struct ArrangementSceneParams<'a> {
     pub track_notes: &'a TrackNotesMap,
     pub playback_position: f32,
     pub colors: &'a ArrangementViewColors,
+    /// ghost 音符预览（tick_start, tick_end, track）
+    pub ghost_notes: &'a [(f64, f64, usize)],
 }
 
 /// 走带视口状态（GFX 版，纯数据，与 UI 版字段兼容）
@@ -149,7 +151,29 @@ pub fn build_arrangement_all(
         }
     }
 
-    // ── 4. 演奏指示线 ──
+    // ── 4. ghost 音符预览 ──
+    if !params.ghost_notes.is_empty() {
+        let ghost_color = [0.9, 0.9, 0.9];
+        for (start, end, track) in params.ghost_notes {
+            let track_i = *track;
+            if track_i >= nt {
+                continue;
+            }
+            let lane_y = trk_screen_y(viewport, track_i) + coy;
+            let sx = cox + (*start as f32) * ppu - viewport.scroll_x;
+            let sw = ((*end - *start) as f32) * ppu;
+            let sy = lane_y + lh * 0.5 - 2.0;
+            out.push(ArrangementNoteInstance::ghost_note(
+                sx,
+                sy,
+                sw.max(2.0),
+                4.0,
+                ghost_color,
+            ));
+        }
+    }
+
+    // ── 5. 演奏指示线 ──
     if params.playback_position > 0.0 {
         let cx = tick_to_x(viewport, params.playback_position as f64);
         if cx >= cox && cx <= cox + w {

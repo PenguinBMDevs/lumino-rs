@@ -137,11 +137,26 @@ impl Toolbar {
     pub fn compute_overflow_groups(
         &self,
         available_width: f32,
+        arrangement_mode: bool,
     ) -> (Vec<ToolbarGroup>, Vec<ToolbarGroup>) {
+        // 工程走带模式下工具区宽度更小
+        let tools_width = if arrangement_mode {
+            200.0
+        } else {
+            ToolbarGroup::Tools.width()
+        };
+
         // 1. 先尝试全部显示
         let total = ToolbarGroup::ORDER
             .iter()
-            .map(|g| g.width() + g.spacing_after())
+            .map(|g| {
+                let width = if *g == ToolbarGroup::Tools {
+                    tools_width
+                } else {
+                    g.width()
+                };
+                width + g.spacing_after()
+            })
             .sum::<f32>();
 
         if total <= available_width {
@@ -159,7 +174,12 @@ impl Toolbar {
             if remaining_width <= available_width {
                 break;
             }
-            let removed = group.width() + group.spacing_after();
+            let width = if group == ToolbarGroup::Tools {
+                tools_width
+            } else {
+                group.width()
+            };
+            let removed = width + group.spacing_after();
             remaining_width -= removed;
             hidden_set.push(group);
         }
@@ -179,6 +199,7 @@ impl Toolbar {
         group: ToolbarGroup,
         has_selection: bool,
         language: Language,
+        arrangement_mode: bool,
     ) -> Vec<OverflowMenuItem> {
         let t = lumino_core::i18n::main_translations(language);
         let ctrl = self.ctrl_pressed;
@@ -260,6 +281,29 @@ impl Toolbar {
                 Vec::new()
             }
             ToolbarGroup::Tools => {
+                if arrangement_mode {
+                    return vec![
+                        OverflowMenuItem {
+                            icon: icon::MousePointer,
+                            tooltip: t.tool_pointer,
+                            on_press: Event::tool_selected(Tool::Pointer),
+                            enabled: true,
+                        },
+                        OverflowMenuItem {
+                            icon: icon::Curve,
+                            tooltip: t.tool_curve,
+                            on_press: Event::tool_selected(Tool::Curve),
+                            enabled: true,
+                        },
+                        OverflowMenuItem {
+                            icon: icon::Eraser,
+                            tooltip: t.tool_eraser,
+                            on_press: Event::tool_selected(Tool::Eraser),
+                            enabled: true,
+                        },
+                    ];
+                }
+
                 let (transpose_down_tooltip, transpose_down_event) = if ctrl {
                     (t.tool_transpose_down_octave, Event::transpose_down(12))
                 } else {
@@ -400,10 +444,11 @@ impl Toolbar {
         language: Language,
         panel_background: iced_core::Color,
         theme: &'a Theme,
+        arrangement_mode: bool,
     ) -> Element<'a> {
         let items: Vec<OverflowMenuItem> = hidden_groups
             .iter()
-            .flat_map(|g| self.group_overflow_items(*g, has_selection, language))
+            .flat_map(|g| self.group_overflow_items(*g, has_selection, language, arrangement_mode))
             .collect();
 
         let buttons = items

@@ -127,6 +127,7 @@ impl Root {
                 is_conductor: false,
                 can_delete: true,
                 is_muted: false,
+                is_soloed: false,
                 color: None,
             });
             tracing::info!("协作: 已添加远程音轨 - track_index={}", track_idx);

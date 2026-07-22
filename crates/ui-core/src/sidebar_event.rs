@@ -109,8 +109,20 @@ pub enum Event {
     TrackSelected(usize),
     /// 音轨静音切换
     TrackMuteToggled(usize),
+    /// 音轨独奏切换
+    TrackSoloToggled(usize),
+    /// 多轨同时选择
+    TracksSelected(Vec<usize>),
     /// 添加音轨
     AddTrack,
+    /// 在指定音轨上方添加
+    TrackAddAbove(usize),
+    /// 在指定音轨下方添加
+    TrackAddBelow(usize),
+    /// 上移指定音轨
+    TrackMoveUp(usize),
+    /// 下移指定音轨
+    TrackMoveDown(usize),
     /// 开始拖拽调整面板宽度
     ResizeDragStarted(Point),
     /// 拖拽中调整面板宽度
@@ -162,8 +174,32 @@ impl Event {
         Message::Sidebar(Self::TrackMuteToggled(id))
     }
 
+    pub const fn track_solo_toggled(id: usize) -> Message {
+        Message::Sidebar(Self::TrackSoloToggled(id))
+    }
+
+    pub const fn tracks_selected(ids: Vec<usize>) -> Message {
+        Message::Sidebar(Self::TracksSelected(ids))
+    }
+
     pub const fn add_track() -> Message {
         Message::Sidebar(Self::AddTrack)
+    }
+
+    pub const fn track_add_above(id: usize) -> Message {
+        Message::Sidebar(Self::TrackAddAbove(id))
+    }
+
+    pub const fn track_add_below(id: usize) -> Message {
+        Message::Sidebar(Self::TrackAddBelow(id))
+    }
+
+    pub const fn track_move_up(id: usize) -> Message {
+        Message::Sidebar(Self::TrackMoveUp(id))
+    }
+
+    pub const fn track_move_down(id: usize) -> Message {
+        Message::Sidebar(Self::TrackMoveDown(id))
     }
 
     pub fn resize_drag_started() -> Message {

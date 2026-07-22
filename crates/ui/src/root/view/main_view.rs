@@ -42,76 +42,78 @@ impl Root {
 
         // 右侧内容区域（工具栏 + 编辑器 + 力度面板 / 瀑布流占位）
         puffin::profile_scope!("root_view_right_content");
-        let right_content: Element<'_> =
-            if self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Waterfall {
-                // 瀑布流模式：显示"实现中"占位页面
-                self.view_waterfall_placeholder()
-            } else if is_arrangement_route {
-                // 音轨总览模式：使用 wgpu 原生渲染
-                right_content::wrap_right_content(&self, false, |available_width| {
-                    self.view_arrangement(available_width)
-                })
-            } else if self.sidebar.audio_export_visible {
-                // 音频渲染面板（在主界面钢琴卷帘区域显示）
-                self.view_audio_export_panel()
-            } else if self.sidebar.video_export_visible {
-                // 视频渲染面板（在主界面钢琴卷帘区域显示）
-                self.view_video_export_panel()
-            } else if !self.sidebar.piano_roll_visible {
-                // 钢琴卷帘已关闭：显示空白区域
-                container(
-                    iced_widget::column![]
-                        .width(Length::Fill)
+        let right_content: Element<'_> = if self.state.current_mode
+            == crate::titlebar::mode_toggle::AppMode::Waterfall
+        {
+            // 瀑布流模式：显示"实现中"占位页面
+            self.view_waterfall_placeholder()
+        } else if is_arrangement_route {
+            // 音轨总览模式：使用 wgpu 原生渲染
+            right_content::wrap_right_content(self, false, true, |available_width| {
+                self.view_arrangement(available_width)
+            })
+        } else if self.sidebar.audio_export_visible {
+            // 音频渲染面板（在主界面钢琴卷帘区域显示）
+            self.view_audio_export_panel()
+        } else if self.sidebar.video_export_visible {
+            // 视频渲染面板（在主界面钢琴卷帘区域显示）
+            self.view_video_export_panel()
+        } else if !self.sidebar.piano_roll_visible {
+            // 钢琴卷帘已关闭：显示空白区域
+            container(
+                iced_widget::column![]
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|theme: &Theme| container::Style {
+                background: Some(iced_core::Background::Color(theme.palette().background)),
+                ..Default::default()
+            })
+            .into()
+        } else {
+            let has_selection = self.editor.selected_notes_count() > 0;
+            right_content::wrap_right_content(self, has_selection, false, move |available_width| {
+                let velocity_panel = if self.sidebar.automation_panel_visible {
+                    self.editor.velocity_panel.view(
+                        &self.editor,
+                        self.visual.velocity_panel_height,
+                        self.settings.language,
+                    )
+                } else {
+                    iced_widget::Space::new().height(0).into()
+                };
+                let editor_view = self.editor.view(
+                    message::Message::ScrollbarScrolled,
+                    message::Message::ScrollbarScrolledY,
+                    |zoom, fixed_ratio| message::Message::ZoomXChanged { zoom, fixed_ratio },
+                    |zoom, fixed_ratio| message::Message::ZoomYChanged { zoom, fixed_ratio },
+                );
+                let perf_ctx = crate::toolbar::ToolbarPerfContext {
+                    perf_data: self.statusbar.perf_data(),
+                    playback_tick: self.editor.playback_position,
+                    ppq: self.editor.editor_state.view.ppq,
+                    tempo_points: &self.editor.editor_state.data.tempo_points,
+                };
+                let toolbar = self.toolbar.toolbar_view(
+                    &self.window,
+                    has_selection,
+                    self.settings.language,
+                    &perf_ctx,
+                    available_width,
+                    false,
+                );
+                column![
+                    toolbar,
+                    column![container(editor_view).height(Length::Fill), velocity_panel,]
                         .height(Length::Fill),
-                )
+                ]
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .style(|theme: &Theme| container::Style {
-                    background: Some(iced_core::Background::Color(theme.palette().background)),
-                    ..Default::default()
-                })
                 .into()
-            } else {
-                let has_selection = self.editor.selected_notes_count() > 0;
-                right_content::wrap_right_content(&self, has_selection, move |available_width| {
-                    let velocity_panel = if self.sidebar.automation_panel_visible {
-                        self.editor.velocity_panel.view(
-                            &self.editor,
-                            self.visual.velocity_panel_height,
-                            self.settings.language,
-                        )
-                    } else {
-                        iced_widget::Space::new().height(0).into()
-                    };
-                    let editor_view = self.editor.view(
-                        message::Message::ScrollbarScrolled,
-                        message::Message::ScrollbarScrolledY,
-                        |zoom, fixed_ratio| message::Message::ZoomXChanged { zoom, fixed_ratio },
-                        |zoom, fixed_ratio| message::Message::ZoomYChanged { zoom, fixed_ratio },
-                    );
-                    let perf_ctx = crate::toolbar::ToolbarPerfContext {
-                        perf_data: self.statusbar.perf_data(),
-                        playback_tick: self.editor.playback_position,
-                        ppq: self.editor.editor_state.view.ppq,
-                        tempo_points: &self.editor.editor_state.data.tempo_points,
-                    };
-                    let toolbar = self.toolbar.toolbar_view(
-                        &self.window,
-                        has_selection,
-                        self.settings.language,
-                        &perf_ctx,
-                        available_width,
-                    );
-                    column![
-                        toolbar,
-                        column![container(editor_view).height(Length::Fill), velocity_panel,]
-                            .height(Length::Fill),
-                    ]
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into()
-                })
-            };
+            })
+        };
 
         puffin::profile_scope!("root_view_main_content");
         let main_content = if cfg!(target_os = "macos") {
@@ -182,8 +184,25 @@ impl Root {
         // 右侧走带区域 — 由 WGPU ArrangementRenderer 渲染
         // 使用空容器作为占位，不设置背景色，让 wgpu 渲染可见
         // 上方叠加透明 Canvas 捕获点击事件以移动演奏指示线
+        let track_count = self.sidebar.tracks.len();
+        let arr_sel_rect = self
+            .editor
+            .editor_state
+            .data
+            .arrange_selection
+            .rects
+            .first()
+            .map(|&(ts, te, _kl, _kh, tl, th)| (ts as f64, te as f64, tl as usize, th as usize));
         let click_canvas = crate::editor::arrangement::ArrangementClickCanvas {
             viewport: vp.clone(),
+            current_tool: self.editor.current_tool(),
+            track_count,
+            arr_sel_rect,
+            selected_notes: self.editor.arrangement_selected_notes(),
+            ppq: self.editor.editor_state.view.ppq,
+            precision: self.toolbar.note_precision,
+            ctrl_pressed: self.toolbar.ctrl_pressed,
+            shift_pressed: self.toolbar.shift_pressed,
         };
         let arrangement_area = iced_widget::Stack::new()
             .width(Length::Fill)
@@ -203,9 +222,13 @@ impl Root {
                     .height(Length::Fill),
             );
 
-        // 水平滚动条
-        let total_ticks_val = vp.total_ticks.max(960 * 4); // 至少 4 小节
-        let total_width = total_ticks_val as f32 * ppu;
+        // 水平滚动条：使用 cached_max_tick_end（已由 arrangement_max_tick_end() 更新），
+        // 回退到 total_ticks 确保至少 4 小节宽度
+        let max_tick_val = vp
+            .cached_max_tick_end
+            .max(vp.total_ticks as f32)
+            .max(960.0 * 4.0);
+        let total_width = max_tick_val * ppu;
         let max_scroll_x = total_width.max(vp.canvas_size.x);
         let h_scrollbar = crate::editor::scrollbar_widget::ScrollbarWidget::horizontal(
             vp.scroll_x,
@@ -247,6 +270,7 @@ impl Root {
                 self.settings.language,
                 &perf_ctx,
                 available_width,
+                true,
             ),
             arrangement_row.height(Length::Fill),
             h_scrollbar,

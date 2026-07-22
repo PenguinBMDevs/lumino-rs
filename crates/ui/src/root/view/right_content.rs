@@ -18,11 +18,12 @@ use crate::toolbar::overflow;
 pub fn wrap_right_content<'a>(
     root: &'a Root,
     has_selection: bool,
+    arrangement_mode: bool,
     build_content: impl Fn(f32) -> Element<'a> + 'a,
 ) -> Element<'a> {
     responsive(move |size: Size| {
         let content = build_content(size.width);
-        with_toolbar_overlay(root, content, size.width, has_selection)
+        with_toolbar_overlay(root, content, size.width, has_selection, arrangement_mode)
     })
     .into()
 }
@@ -33,12 +34,15 @@ fn with_toolbar_overlay<'a>(
     content: Element<'a>,
     available_width: f32,
     has_selection: bool,
+    arrangement_mode: bool,
 ) -> Element<'a> {
     if !root.toolbar.overflow_menu_open {
         return content;
     }
 
-    let (_, hidden) = root.toolbar.compute_overflow_groups(available_width);
+    let (_, hidden) = root
+        .toolbar
+        .compute_overflow_groups(available_width, arrangement_mode);
     if hidden.is_empty() {
         return content;
     }
@@ -60,6 +64,7 @@ fn with_toolbar_overlay<'a>(
         root.settings.language,
         panel_background,
         &root.window.theme,
+        arrangement_mode,
     );
     let menu_overlay = overflow::positioned_overflow_menu(menu, root.toolbar.height());
 

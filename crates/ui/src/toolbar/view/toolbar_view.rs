@@ -29,6 +29,7 @@ impl Toolbar {
         language: lumino_core::i18n::Language,
         perf: &ToolbarPerfContext<'_>,
         available_width: f32,
+        arrangement_mode: bool,
     ) -> Element<'a> {
         let t = lumino_core::i18n::main_translations(language);
         let palette = window.theme.extended_palette();
@@ -36,7 +37,8 @@ impl Toolbar {
         // 计算内容区域高度（总高度减去手柄高度）
         let content_height = self.height - RESIZE_HANDLE_HEIGHT;
 
-        let (visible_groups, hidden_groups) = self.compute_overflow_groups(available_width);
+        let (visible_groups, hidden_groups) =
+            self.compute_overflow_groups(available_width, arrangement_mode);
         let has_overflow = !hidden_groups.is_empty();
 
         let mut toolbar_elements: Vec<Element<'a>> = Vec::new();
@@ -56,6 +58,7 @@ impl Toolbar {
             window,
             language,
             perf,
+            arrangement_mode,
         );
 
         // 右侧分组：AutoScroll / Collaboration
@@ -66,6 +69,7 @@ impl Toolbar {
             palette,
             t,
             window,
+            arrangement_mode,
         );
 
         // 更多按钮：只要存在隐藏分组就显示
@@ -93,6 +97,7 @@ impl Toolbar {
     }
 
     /// 将左侧分组按顺序加入工具栏元素列表
+    #[allow(clippy::too_many_arguments)]
     fn push_left_groups<'a>(
         &'a self,
         elements: &mut Vec<Element<'a>>,
@@ -105,6 +110,7 @@ impl Toolbar {
         window: &'a window::Window,
         language: lumino_core::i18n::Language,
         perf: &ToolbarPerfContext<'_>,
+        arrangement_mode: bool,
     ) {
         let left_groups = ToolbarGroup::LEFT;
         for (i, group) in left_groups.iter().enumerate() {
@@ -121,6 +127,7 @@ impl Toolbar {
                 window,
                 language,
                 perf,
+                arrangement_mode,
             ));
 
             let is_last_left = left_groups[i + 1..]
@@ -135,6 +142,7 @@ impl Toolbar {
     }
 
     /// 将右侧分组按顺序加入工具栏元素列表
+    #[allow(clippy::too_many_arguments)]
     fn push_right_groups<'a>(
         &'a self,
         elements: &mut Vec<Element<'a>>,
@@ -143,6 +151,7 @@ impl Toolbar {
         palette: &'a iced_core::theme::palette::Extended,
         t: &'static lumino_core::i18n::MainTranslations,
         window: &'a window::Window,
+        arrangement_mode: bool,
     ) {
         let right_groups = ToolbarGroup::RIGHT;
         for (i, group) in right_groups.iter().enumerate() {
@@ -165,6 +174,7 @@ impl Toolbar {
                     ppq: 480,
                     tempo_points: &[],
                 },
+                arrangement_mode,
             ));
 
             if i < right_groups.len() - 1 {
@@ -174,6 +184,7 @@ impl Toolbar {
     }
 
     /// 根据分组标识渲染对应工具栏区域
+    #[allow(clippy::too_many_arguments)]
     fn render_group<'a>(
         &'a self,
         group: ToolbarGroup,
@@ -184,6 +195,7 @@ impl Toolbar {
         window: &'a window::Window,
         language: lumino_core::i18n::Language,
         perf: &ToolbarPerfContext<'_>,
+        arrangement_mode: bool,
     ) -> Element<'a> {
         match group {
             ToolbarGroup::Record => {
@@ -211,6 +223,7 @@ impl Toolbar {
                 t,
                 window,
                 language,
+                arrangement_mode,
             ),
             ToolbarGroup::AutoScroll => {
                 self.render_auto_scroll_button(content_height, palette, t, window)

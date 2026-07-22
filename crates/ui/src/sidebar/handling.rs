@@ -95,6 +95,16 @@ impl Sidebar {
                     track.is_muted = !track.is_muted;
                 }
             }
+            TrackSoloToggled(id) => {
+                if let Some(track) = self.tracks.iter_mut().find(|t| t.id == id) {
+                    track.is_soloed = !track.is_soloed;
+                }
+            }
+            TracksSelected(ids) => {
+                if let Some(&first) = ids.first() {
+                    self.selected_track = first;
+                }
+            }
             AddTrack => {
                 let new_id = self.next_track_id;
                 self.next_track_id += 1;
@@ -116,11 +126,75 @@ impl Sidebar {
                     is_conductor: false,
                     can_delete: true,
                     is_muted: false,
+                    is_soloed: false,
                     color: None,
                 });
                 ui_event::emit(ui_event::Event::Window(
                     ui_event::window::Event::local_track_added(new_id),
                 ));
+            }
+            TrackAddAbove(id) => {
+                if let Some(idx) = self.tracks.iter().position(|t| t.id == id) {
+                    let new_id = self.next_track_id;
+                    self.next_track_id += 1;
+                    let display_label = format!("{:02}", new_id + 1);
+                    self.tracks.insert(
+                        idx,
+                        Track {
+                            id: new_id,
+                            name: display_label.clone(),
+                            channel: 0,
+                            display_label,
+                            is_conductor: false,
+                            can_delete: true,
+                            is_muted: false,
+                            is_soloed: false,
+                            color: None,
+                        },
+                    );
+                    ui_event::emit(ui_event::Event::Window(
+                        ui_event::window::Event::local_track_added(new_id),
+                    ));
+                }
+            }
+            TrackAddBelow(id) => {
+                if let Some(idx) = self.tracks.iter().position(|t| t.id == id) {
+                    let new_id = self.next_track_id;
+                    self.next_track_id += 1;
+                    let display_label = format!("{:02}", new_id + 1);
+                    let insert_idx = (idx + 1).min(self.tracks.len());
+                    self.tracks.insert(
+                        insert_idx,
+                        Track {
+                            id: new_id,
+                            name: display_label.clone(),
+                            channel: 0,
+                            display_label,
+                            is_conductor: false,
+                            can_delete: true,
+                            is_muted: false,
+                            is_soloed: false,
+                            color: None,
+                        },
+                    );
+                    ui_event::emit(ui_event::Event::Window(
+                        ui_event::window::Event::local_track_added(new_id),
+                    ));
+                }
+            }
+            TrackMoveUp(id) => {
+                if let Some(idx) = self.tracks.iter().position(|t| t.id == id) {
+                    if idx > 0 {
+                        self.tracks.swap(idx, idx - 1);
+                    }
+                }
+            }
+            TrackMoveDown(id) => {
+                if let Some(idx) = self.tracks.iter().position(|t| t.id == id) {
+                    if idx + 1 < self.tracks.len() {
+                        self.tracks.swap(idx, idx + 1);
+                    }
+                }
             }
             // ── 音轨选项卡右键菜单 ──
             TrackContextMenuOpened(id) => {

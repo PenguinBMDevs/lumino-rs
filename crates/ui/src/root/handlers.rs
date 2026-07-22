@@ -126,6 +126,14 @@ impl Root {
     /// 未处理的消息再交给 `MessageRouter` 路由到各专用处理器（Toolbar/Dialog/...）。
     /// 与运行时使用同一套分发逻辑，保证测试与产品行为一致。
     pub fn update(&mut self, message: Message) {
+        // 批量消息先展开，使每个子消息都能走完整的 PPQ / 路由逻辑
+        if let Message::Batch(messages) = message {
+            for msg in messages {
+                self.update(msg);
+            }
+            return;
+        }
+
         // PPQ 编辑时：任何非 PPQ 编辑消息触发时自动确认（实现"点击任意 UI 位置保存"）
         if self.toolbar.ppq_editing {
             let is_ppq_edit_msg = matches!(
@@ -160,7 +168,12 @@ impl Root {
         let max_tick = self.arrangement_max_tick_end();
         let vp = &mut self.arrangement_view.viewport;
         let canvas_w = vp.canvas_size.x.max(1.0);
-        let total_w = max_tick * vp.zoom_x;
+        // 与 ArrangementViewport::clamp_scroll 保持一致：使用 cached_max_tick_end、
+        // total_ticks 和 DEFAULT_MIN_TICKS 三者中的最大值，确保无音符时也有合理滚动范围
+        let effective_max_tick = max_tick
+            .max(vp.total_ticks as f32)
+            .max(crate::constants::editor::DEFAULT_MIN_TICKS);
+        let total_w = effective_max_tick * vp.zoom_x;
         let max_scroll = (total_w - canvas_w).max(0.0);
         vp.scroll_x = x.max(0.0).min(max_scroll);
         true
@@ -181,11 +194,10 @@ impl Root {
     fn handle_arrangement_zoom_x(&mut self, zoom: f32, fixed_ratio: f32) -> bool {
         let vp = &mut self.arrangement_view.viewport;
         let old_zoom = vp.zoom_x;
-        let new_zoom = zoom.clamp(
-            crate::constants::editor::zoom::MIN_ARRANGEMENT_ZOOM_X,
-            crate::constants::editor::zoom::MAX_ARRANGEMENT_ZOOM_X,
-        );
         let canvas_w = vp.canvas_size.x.max(1.0);
+        let min_zoom = crate::constants::editor::zoom::MIN_ARRANGEMENT_ZOOM_X;
+        let max_zoom_x = (canvas_w / 4.0).max(min_zoom);
+        let new_zoom = zoom.clamp(min_zoom, max_zoom_x);
         let focus_px = vp.scroll_x + canvas_w * fixed_ratio;
         let focus_tick = focus_px / old_zoom;
         vp.zoom_x = new_zoom;
@@ -393,6 +405,109 @@ impl Root {
                 }
                 true
             }
+            Message::ArrangementCursorSet(tick) => {
+                let tick_f = *tick as f32;
+                self.editor.playback_position = tick_f;
+                if let Some(manager) = &mut self.playback.manager {
+                    manager.seek(tick_f);
+                }
+                true
+            }
+            Message::ArrangementSelectionChanged(rect) => {
+                let data = &mut self.editor.editor_state.data;
+                data.arrange_selection.clear();
+                if let Some((tick_start, tick_end, track_lo, track_hi)) = rect {
+                    let ts = tick_start.max(0.0) as u32;
+                    let te = tick_end.max(0.0) as u32;
+                    if te > ts {
+                        let track_lo_u16 = (*track_lo).min(u16::MAX as usize) as u16;
+                        let track_hi_u16 = (*track_hi).min(u16::MAX as usize) as u16;
+                        data.arrange_selection.add_rect_track(
+                            ts,
+                            te,
+                            0,
+                            127,
+                            track_lo_u16,
+                            track_hi_u16,
+                        );
+                    }
+                }
+                true
+            }
+            Message::ArrangementSelectionCleared => {
+                self.editor.editor_state.data.arrange_selection.clear();
+                true
+            }
+            Message::ArrangementMoveNotes {
+                delta_ticks,
+                delta_tracks,
+            } => {
+                let moved = self.editor.arrange_move_notes(*delta_ticks, *delta_tracks);
+                if moved > 0 {
+                    self.editor
+                        .editor_state
+                        .data
+                        .arrange_selection
+                        .offset_ticks(*delta_ticks);
+                    self.editor
+                        .editor_state
+                        .data
+                        .arrange_selection
+                        .offset_tracks(*delta_tracks);
+                    self.update_playback_notes();
+                    self.editor.clear_notes_changed();
+                }
+                true
+            }
+            Message::ArrangementErase {
+                tick_start,
+                tick_end,
+                track_lo,
+                track_hi,
+            } => {
+                let deleted =
+                    self.editor
+                        .arrange_erase(*tick_start, *tick_end, *track_lo, *track_hi);
+                if deleted > 0 {
+                    self.update_playback_notes();
+                    self.editor.clear_notes_changed();
+                }
+                true
+            }
+            Message::ArrangementRazor { tick, track } => {
+                let split = self.editor.arrange_razor(*tick, *track);
+                if split > 0 {
+                    self.update_playback_notes();
+                    self.editor.clear_notes_changed();
+                }
+                true
+            }
+            Message::ArrangementAddNote {
+                track,
+                tick,
+                duration,
+                key,
+                velocity,
+            } => {
+                let track_count = self.sidebar.tracks.len();
+                let added = self.editor.arrange_add_note(
+                    track_count,
+                    *track,
+                    *tick,
+                    *duration,
+                    *key,
+                    *velocity,
+                );
+                if added {
+                    self.update_playback_notes();
+                    self.editor.clear_notes_changed();
+                }
+                true
+            }
+            Message::ArrangementGhostNotesUpdated(notes) => {
+                self.arrangement_view.ghost_notes = notes.clone();
+                true
+            }
             _ => false,
         }
     }
@@ -431,6 +546,17 @@ impl Root {
 
     fn handle_sidebar_event(&mut self, event: sidebar::Event) -> bool {
         use crate::titlebar::mode_toggle::AppMode;
+
+        // 窗口最大化/还原期间阻止路由被意外切换
+        if self.window_resize_guard
+            && matches!(
+                &event,
+                sidebar::Event::RouteUpdated(_) | sidebar::Event::GroupToggled(_)
+            )
+        {
+            tracing::warn!("Root: 窗口最大化/还原期间忽略路由切换");
+            return false;
+        }
 
         // 自动化面板切换始终触发重绘
         if matches!(&event, sidebar::Event::AutomationPanelToggled) {

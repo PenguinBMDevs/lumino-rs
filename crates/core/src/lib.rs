@@ -1,3 +1,4 @@
+pub mod arrange_selection;
 pub mod automation;
 pub mod batch_edit;
 pub mod editor_state;
@@ -17,6 +18,7 @@ pub mod storage;
 pub mod types;
 pub mod view_state;
 
+pub use arrange_selection::ArrangeSelection;
 pub use automation::{
     AutomationEdit, AutomationEvent, AutomationLane, AutomationTarget, SegmentShape,
 };

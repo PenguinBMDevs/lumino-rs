@@ -107,6 +107,9 @@ impl Host {
 
         match &event {
             Resized(_) => {
+                // 最大化/还原时设置保护标志，防止路由被意外切换
+                // 后续在 process_frame_preparation 中清除
+                self.root.window_resize_guard = true;
                 self.route_message(message::Window::maximized(
                     self.window_ctx.window.is_maximized(),
                 ));

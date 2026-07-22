@@ -105,6 +105,7 @@ impl Host {
             track_notes,
             playback_position: self.root.editor.playback_position,
             colors: &colors,
+            ghost_notes: &self.root.arrangement_view.ghost_notes,
         };
 
         lumino_gfx::collect_arrangement_instances(&scene_params)

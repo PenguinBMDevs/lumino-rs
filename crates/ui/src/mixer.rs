@@ -282,6 +282,7 @@ mod tests {
                 is_conductor: true,
                 can_delete: false,
                 is_muted: false,
+                is_soloed: false,
                 color: None,
             },
             crate::sidebar::Track {
@@ -292,6 +293,7 @@ mod tests {
                 is_conductor: false,
                 can_delete: true,
                 is_muted: false,
+                is_soloed: false,
                 color: None,
             },
         ];
@@ -320,6 +322,7 @@ mod tests {
             is_conductor: true,
             can_delete: false,
             is_muted: false,
+            is_soloed: false,
             color: None,
         }];
 

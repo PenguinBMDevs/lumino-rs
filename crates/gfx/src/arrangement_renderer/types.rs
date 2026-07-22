@@ -156,6 +156,20 @@ impl ArrangementNoteInstance {
             tag: 4,
         }
     }
+
+    /// 创建 ghost 音符预览实例
+    pub fn ghost_note(x: f32, y: f32, w: f32, h: f32, color: [f32; 3]) -> Self {
+        Self {
+            x,
+            y,
+            w: w.max(2.0),
+            h,
+            rgba_packed: pack_rgba(color[0], color[1], color[2], 0.5),
+            props_packed: pack_props(2.0, 1.0),
+            velocity: 0,
+            tag: 5,
+        }
+    }
 }
 
 /// Pack RGBA floats (0.0-1.0) into a single u32 (UNORM8 x 4)

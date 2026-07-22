@@ -10,7 +10,6 @@ pub mod context_menu;
 pub mod custom_precision;
 pub mod load_confirm;
 pub mod loop_range;
-pub mod pattern;
 pub mod project_settings;
 pub mod settings_dialog;
 pub mod speed_change;
@@ -27,7 +26,6 @@ pub use context_menu::{
 pub use custom_precision::CustomPrecisionAction;
 pub use load_confirm::LoadConfirmAction;
 pub use loop_range::LoopRangeAction;
-pub use pattern::PatternAction;
 pub use project_settings::ProjectSettingsAction;
 pub use settings_dialog::SettingsDialogAction;
 pub use speed_change::SpeedChangeAction;
@@ -128,12 +126,45 @@ pub enum Message<W, S, Se, T> {
     SpeedChange(SpeedChangeAction),
     /// 批量编辑动作
     BatchEdit(BatchEditAction),
-    /// Pattern 编辑动作
-    Pattern(PatternAction),
     /// 视频导出动作
     VideoExport(VideoExportAction),
+    /// 批量消息（用于 canvas 等一次事件需要发布多条消息的场景）
+    Batch(Vec<Message<W, S, Se, T>>),
     /// 钢琴卷帘右键上下文菜单动作
     PianoRollContextMenu(PianoRollContextMenuAction),
+    /// 工程走带：设置演奏指示线位置
+    ArrangementCursorSet(f64),
+    /// 工程走带：选择矩形变更（tick_start, tick_end, track_lo, track_hi）
+    ArrangementSelectionChanged(Option<(f64, f64, usize, usize)>),
+    /// 工程走带：清空选择
+    ArrangementSelectionCleared,
+    /// 工程走带：移动选中的音符
+    ArrangementMoveNotes {
+        delta_ticks: i64,
+        delta_tracks: i32,
+    },
+    /// 工程走带：擦除矩形范围内的音符
+    ArrangementErase {
+        tick_start: f64,
+        tick_end: f64,
+        track_lo: usize,
+        track_hi: usize,
+    },
+    /// 工程走带：在指定 tick/track 处分割音符
+    ArrangementRazor {
+        tick: f64,
+        track: usize,
+    },
+    /// 工程走带：在指定音轨 tick 处添加音符
+    ArrangementAddNote {
+        track: usize,
+        tick: f64,
+        duration: f64,
+        key: u8,
+        velocity: u8,
+    },
+    /// 工程走带：ghost 音符预览列表更新
+    ArrangementGhostNotesUpdated(Vec<(f64, f64, usize)>),
 }
 
 pub const fn null<W, S, Se, T>() -> Message<W, S, Se, T> {
@@ -399,17 +430,6 @@ mod tests {
 
         let action = VelocityAction::TempoAdd(0.0, 120.0);
         assert!(matches!(action, VelocityAction::TempoAdd(_, _)));
-    }
-
-    // ─── PatternAction ───
-
-    #[test]
-    fn test_pattern_action_variants() {
-        let action = PatternAction::Selected(1);
-        assert!(matches!(action, PatternAction::Selected(1)));
-
-        let action = PatternAction::DragEnd;
-        assert!(matches!(action, PatternAction::DragEnd));
     }
 
     // ─── ThreadingOption ───

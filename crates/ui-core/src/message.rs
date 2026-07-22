@@ -13,7 +13,7 @@ pub use crate::{
 pub use lumino_message::{
     AudioAction, AudioChannels, AudioExportAction, AudioFormat, BatchEditAction, BatchEditField,
     CcOption, CustomPrecisionAction, DotType, EditorAction, Interpolation, LoadConfirmAction,
-    LoopRangeAction, Message as GenericMessage, NotePrecision, PatternAction, PerfData, Point2,
+    LoopRangeAction, Message as GenericMessage, NotePrecision, PerfData, Point2,
     ProjectSettingsAction, SettingsDialogAction, Size2, SpeedChangeAction, SpeedFactor,
     ThreadingOption, Tool, TupletType, VelocityAction, VideoExportAction,
 };

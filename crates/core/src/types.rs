@@ -46,11 +46,11 @@ pub enum Tool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NotePrecision {
     /// 全音符 (4拍)
+    #[default]
     Whole,
     /// 二分音符 (2拍)
     Half,
     /// 四分音符 (1拍)
-    #[default]
     Quarter,
     /// 八分音符 (1/2拍)
     Eighth,
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn test_note_precision_default() {
-        assert_eq!(NotePrecision::default(), NotePrecision::Quarter);
+        assert_eq!(NotePrecision::default(), NotePrecision::Whole);
     }
 
     #[test]

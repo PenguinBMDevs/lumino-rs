@@ -20,6 +20,7 @@ pub mod tempo_envelope;
 pub mod velocity;
 
 // 子模块
+mod arrangement_ops;
 mod auto_scroll;
 mod clipboard;
 mod coords;

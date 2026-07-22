@@ -148,6 +148,7 @@ impl Toolbar {
     }
 
     /// 渲染工具选择区域（指针/铅笔/橡皮/量化/变速/翻转/分割/合并/移调 + 精度下拉），宽度自适应
+    #[allow(clippy::too_many_arguments)]
     pub fn render_tools_section<'a>(
         &'a self,
         content_height: f32,
@@ -156,7 +157,12 @@ impl Toolbar {
         t: &'static MainTranslations,
         window: &'a window::Window,
         language: Language,
+        arrangement_mode: bool,
     ) -> Element<'a> {
+        if arrangement_mode {
+            return self.render_arrangement_tools_section(content_height, palette, window, t);
+        }
+
         let (transpose_down_tooltip, transpose_down_event) = if self.ctrl_pressed {
             (t.tool_transpose_down_octave, Event::transpose_down(12))
         } else {
@@ -296,6 +302,63 @@ impl Toolbar {
                 ),
                 space().width(4),
                 self.render_precision_selector(content_height, palette, language, t),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .width(iced_widget::core::Length::Shrink)
+        .height(content_height)
+        .align_y(iced_core::alignment::Vertical::Center)
+        .align_x(iced_core::alignment::Horizontal::Center)
+        .style(move |_theme: &Theme| {
+            container::Style::default()
+                .background(palette.background.weak.color)
+                .border(iced_core::Border {
+                    radius: 4.0.into(),
+                    width: 0.0,
+                    color: iced_core::Color::TRANSPARENT,
+                })
+        })
+        .into()
+    }
+
+    /// 渲染工程走带视图专用的工具选择区域
+    ///
+    /// 仅开启 yinhe 工程走带面板支持的工具：选择/铅笔/曲线/切割/橡皮擦。
+    fn render_arrangement_tools_section<'a>(
+        &'a self,
+        content_height: f32,
+        palette: &'a iced_core::theme::palette::Extended,
+        window: &'a window::Window,
+        t: &'static MainTranslations,
+    ) -> Element<'a> {
+        container(
+            row![
+                tool_selector(
+                    icon::MousePointer,
+                    t.tool_pointer,
+                    Tool::Pointer,
+                    self.current_tool,
+                    window,
+                    Some(Event::button_hovered(Some(ButtonId::Pointer))),
+                ),
+                space().width(4),
+                tool_selector(
+                    icon::Curve,
+                    t.tool_curve,
+                    Tool::Curve,
+                    self.current_tool,
+                    window,
+                    Some(Event::button_hovered(Some(ButtonId::Curve))),
+                ),
+                space().width(4),
+                tool_selector(
+                    icon::Eraser,
+                    t.tool_eraser,
+                    Tool::Eraser,
+                    self.current_tool,
+                    window,
+                    Some(Event::button_hovered(Some(ButtonId::Eraser))),
+                ),
             ]
             .align_y(Alignment::Center),
         )

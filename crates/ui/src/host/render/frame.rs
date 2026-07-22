@@ -12,8 +12,14 @@ impl Host {
         // 这样可以确保同一帧内的多个事件被合并处理，减少 UI 重建次数
         self.process_pending_events();
 
+        // 清除窗口最大化/还原保护标志（已在 handle_sidebar_event 中阻止路由切换）
+        self.root.window_resize_guard = false;
+
         // 更新播放状态和自动滚动
         self.update_playback_state();
+
+        // 确保工程走带视图的 max_tick_end 缓存是最新的（用于滚动范围计算）
+        self.root.arrangement_max_tick_end();
 
         // 更新 GPU 帧耗时（从渲染线程统计）
         self.last_gpu_frame_time_ms = self
