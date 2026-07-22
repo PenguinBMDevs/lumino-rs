@@ -4,6 +4,7 @@ version.workspace = true
 rust-version.workspace = true
 homepage.workspace = true
 license.workspace = true
+description.workspace = true
 edition.workspace = true
 
 [features]
@@ -19,8 +20,8 @@ iced_widget = { version = "0.14.0", features = ["image", "canvas"] }
 lumino-core = { workspace = true }
 lumino-gfx = { workspace = true }
 lumino-midi-loader = { workspace = true }
-lumino-ui-core = { path = "../ui-core" }
-lumino-ui-constants = { path = "../ui-constants" }
+lumino-ui-core = { workspace = true }
+lumino-ui-constants = { workspace = true }
 lumino-message = { workspace = true }
 lumino-event = { workspace = true }
 lumino-memtrace = { workspace = true }

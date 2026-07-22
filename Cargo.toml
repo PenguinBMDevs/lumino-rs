@@ -1,37 +1,40 @@
 [workspace]
-members = ["crates/core", "crates/dialog", "crates/event", "crates/export", "crates/gfx", "crates/memtrace", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/midi-model", "crates/message", "crates/onion-skin", "crates/onion-skin-hires", "crates/playback", "crates/realtime", "crates/ui", "crates/ui-constants", "crates/ui-core", "crates/ui-editor", "crates/ui-host", "crates/ui-settings", "crates/collaboration"]
+members = ["crates/core", "crates/dialog", "crates/event", "crates/export", "crates/gfx", "crates/memtrace", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/midi-model", "crates/message", "crates/onion-skin", "crates/onion-skin-hires", "crates/playback", "crates/realtime", "crates/ui", "crates/ui-constants", "crates/ui-core", "crates/ui-host", "crates/ui-editor", "crates/ui-settings", "crates/collaboration"]
 resolver = "3"
 
 [workspace.package]
-version = "0.2.0-dev"
+version = "0.2.0-crates-io-preview1"
 rust-version = "1.92.0"
 homepage = "https://github.com/PenguinBMDevs/lumino-rs"
 repository = "https://github.com/PenguinBMDevs/lumino-rs"
 license = "AGPL-3.0-or-later"
+description = "Lumino - A Fast Black MIDI Editor"
 edition = "2024"
 
 [workspace.dependencies]
-lumino-core = { path = "crates/core" }
-lumino-event = { path = "crates/event" }
-lumino-export = { path = "crates/export" }
-lumino-gfx = { path = "crates/gfx" }
-lumino-midi-io = { path = "crates/midi-io" }
-lumino-midi-loader = { path = "crates/midi-loader" }
-lumino-onion-skin = { path = "crates/onion-skin" }
-lumino-memory-monitor = { path = "crates/memory-monitor" }
-lumino-memtrace = { path = "crates/memtrace" }
-lumino-midi-model = { path = "crates/midi-model" }
-lumino-message = { path = "crates/message" }
-lumino-playback = { path = "crates/playback" }
-lumino-realtime = { path = "crates/realtime" }
+lumino-core = { path = "crates/core", version = "0.2.0-crates-io-preview1" }
+lumino-event = { path = "crates/event", version = "0.2.0-crates-io-preview1" }
+lumino-export = { path = "crates/export", version = "0.2.0-crates-io-preview1" }
+lumino-gfx = { path = "crates/gfx", version = "0.2.0-crates-io-preview1" }
+lumino-midi-io = { path = "crates/midi-io", version = "0.2.0-crates-io-preview1" }
+lumino-midi-loader = { path = "crates/midi-loader", version = "0.2.0-crates-io-preview1" }
+lumino-onion-skin = { path = "crates/onion-skin", version = "0.2.0-crates-io-preview1" }
+lumino-onion-skin-hires = { path = "crates/onion-skin-hires", version = "0.2.0-crates-io-preview1" }
+lumino-memory-monitor = { path = "crates/memory-monitor", version = "0.2.0-crates-io-preview1" }
+lumino-memtrace = { path = "crates/memtrace", version = "0.2.0-crates-io-preview1" }
+lumino-midi-model = { path = "crates/midi-model", version = "0.2.0-crates-io-preview1" }
+lumino-message = { path = "crates/message", version = "0.2.0-crates-io-preview1" }
+lumino-playback = { path = "crates/playback", version = "0.2.0-crates-io-preview1" }
+lumino-realtime = { path = "crates/realtime", version = "0.2.0-crates-io-preview1" }
 midly = { version = "0.6", features = ["std", "alloc", "parallel", "memmap"] }
-lumino-dialog = { path = "crates/dialog" }
-lumino-ui = { path = "crates/ui" }
-lumino-ui-core = { path = "crates/ui-core" }
-lumino-ui-host = { path = "crates/ui-host" }
-lumino-ui-settings = { path = "crates/ui-settings" }
-lumino-ui-editor = { path = "crates/ui-editor" }
-lumino-collaboration = { path = "crates/collaboration" }
+lumino-dialog = { path = "crates/dialog", version = "0.2.0-crates-io-preview1" }
+lumino-ui = { path = "crates/ui", version = "0.2.0-crates-io-preview1" }
+lumino-ui-constants = { path = "crates/ui-constants", version = "0.2.0-crates-io-preview1" }
+lumino-ui-core = { path = "crates/ui-core", version = "0.2.0-crates-io-preview1" }
+lumino-ui-host = { path = "crates/ui-host", version = "0.2.0-crates-io-preview1" }
+lumino-ui-settings = { path = "crates/ui-settings", version = "0.2.0-crates-io-preview1" }
+lumino-ui-editor = { path = "crates/ui-editor", version = "0.2.0-crates-io-preview1" }
+lumino-collaboration = { path = "crates/collaboration", version = "0.2.0-crates-io-preview1" }
 # crates.io
 iced_renderer = { version = "0.14.0", features = ["wgpu", "tiny-skia", "x11", "wayland"] }
 iced_core = "0.14.0"
@@ -82,6 +85,7 @@ version.workspace = true
 rust-version.workspace = true
 homepage.workspace = true
 license.workspace = true
+description.workspace = true
 edition.workspace = true
 
 [lints]

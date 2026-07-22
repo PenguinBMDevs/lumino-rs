@@ -4,6 +4,7 @@ version.workspace = true
 rust-version.workspace = true
 homepage.workspace = true
 license.workspace = true
+description.workspace = true
 edition.workspace = true
 
 [lints]
@@ -14,5 +15,5 @@ wgpu = "27.0"
 thiserror = { workspace = true }
 tracing = { workspace = true }
 bytemuck = { version = "1.21", features = ["derive"] }
-lumino-core = { path = "../core" }
-lumino-midi-loader = { path = "../midi-loader" }
+lumino-core = { workspace = true }
+lumino-midi-loader = { workspace = true }

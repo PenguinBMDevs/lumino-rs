@@ -4,14 +4,15 @@ version.workspace = true
 rust-version.workspace = true
 homepage.workspace = true
 license.workspace = true
+description.workspace = true
 edition.workspace = true
 
 [lints]
 workspace = true
 
 [dependencies]
-lumino-onion-skin = { path = "../onion-skin" }
-lumino-memory-monitor = { path = "../memory-monitor" }
+lumino-onion-skin = { workspace = true }
+lumino-memory-monitor = { workspace = true }
 rayon = "1.10"
 xxhash-rust = { workspace = true }
 wgpu = "27.0"
