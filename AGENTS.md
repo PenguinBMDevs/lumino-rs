@@ -87,6 +87,7 @@ use lumino_core::{Event, Result};
 
 ### Error Handling
 - **NEVER use `unwrap()`** - all errors must be properly handled
+- **NEVER use mod.rs** - use `{module}.rs` + `{module}/`
 - Use `thiserror` for custom error types
 - Use `Result<T>` type alias for consistency
 - Propagate errors with `?` operator
@@ -105,22 +106,9 @@ use lumino_core::{Event, Result};
 - Use `tokio::test` for async tests
 
 ### Documentation
-- Use Chinese for comments and documentation
-- Use English for code identifiers and commit messages
+- Use Chinese for comments, documentation, code identifiers and commit messages
 - Follow Conventional Commits: `feat(module): description`
 - Sign all commits with GPG
-
-### Workspace Structure
-```
-crates/
-  core/      # Core functionality
-  dms/       # DMS file format
-  export/    # Export functionality
-  gfx/       # Graphics/rendering
-  midi/      # MIDI handling
-  ui/        # User interface
-  collaboration/  # Collaboration features
-```
 
 ## IDE Settings
 
