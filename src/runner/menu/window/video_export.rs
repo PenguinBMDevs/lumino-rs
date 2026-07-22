@@ -106,22 +106,46 @@ pub(super) fn build_video_render_params(
     let keyboard_instances = Vec::new();
 
     // 4. 收集可见音符，按音轨分配颜色
+    // 排序规则（与 yinhe 一致）：
+    //   第一层：key 分行，不同 key 互不影响
+    //   第二层：start_tick 升序，后 tick 在上（稳定排序下同 tick 的相对顺序保留）
+    //   第三层：同 tick 同 key 时，track 索引大的在上（稳定排序自然保留插入顺序）
     let tick_start = tick;
     let tick_end = tick.saturating_add(viewport_tick_span as u32);
-    let mut note_instances = Vec::new();
+    #[derive(Clone)]
+    struct SortableNote {
+        key: u8,
+        start_tick: u32,
+        length: u32,
+        track_idx: u16,
+    }
+    let mut temp: Vec<SortableNote> = Vec::new();
     for (track_idx, notes) in document.notes.iter().enumerate() {
-        let color = ARRANGEMENT_PALETTE[track_idx % ARRANGEMENT_PALETTE.len()];
-        let color_packed = pack_color([color[0], color[1], color[2], 1.0]);
         for n in notes {
             if n.end_tick >= tick_start && n.start_tick <= tick_end {
-                note_instances.push(NoteInstance {
-                    position: [n.start_tick as f32, n.key as f32],
-                    size_x: (n.length() as f32).max(1.0),
-                    color_packed,
+                temp.push(SortableNote {
+                    key: n.key,
+                    start_tick: n.start_tick,
+                    length: n.length(),
+                    track_idx: track_idx as u16,
                 });
             }
         }
     }
+    // 稳定排序：key → start_tick → track_idx（降序，后 track 在上）
+    temp.sort_by_key(|n| (n.key, n.start_tick, u16::MAX - n.track_idx));
+    let note_instances: Vec<NoteInstance> = temp
+        .into_iter()
+        .map(|n| {
+            let color = ARRANGEMENT_PALETTE[n.track_idx as usize % ARRANGEMENT_PALETTE.len()];
+            let color_packed = pack_color([color[0], color[1], color[2], 1.0]);
+            NoteInstance {
+                position: [n.start_tick as f32, n.key as f32],
+                size_x: (n.length as f32).max(1.0),
+                color_packed,
+            }
+        })
+        .collect();
 
     // max_key_index 必须与 key_count 匹配，确保 Y 轴显示完整
     let max_key_index = (KEY_COUNT.saturating_sub(1)) as f32;
