@@ -3491,8 +3491,8 @@ dependencies = [
  "lumino-memtrace",
  "lumino-midi-loader",
  "lumino-midi-model",
+ "lumino-midly",
  "memmap2",
- "midly",
  "num-bigint",
  "serde",
  "serde_json",
@@ -3582,7 +3582,7 @@ dependencies = [
  "encoding_rs",
  "lumino-memory-monitor",
  "lumino-midi-model",
- "midly",
+ "lumino-midly",
  "puffin",
  "rayon",
  "serde",
@@ -3601,11 +3601,21 @@ dependencies = [
  "encoding_rs",
  "lumino-memory-monitor",
  "lumino-memtrace",
- "midly",
+ "lumino-midly",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "lumino-midly"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c78f2c0e9ca0fd4a7bffdc4155d92625724e822cea354f48ebfa6b54bea639b"
+dependencies = [
+ "memmap2",
+ "rayon",
 ]
 
 [[package]]
@@ -3644,7 +3654,7 @@ version = "0.2.0-crates-io-preview1"
 dependencies = [
  "lumino-midi-io",
  "lumino-midi-loader",
- "midly",
+ "lumino-midly",
  "parking_lot",
  "puffin",
  "tracing",
@@ -3691,8 +3701,8 @@ dependencies = [
  "lumino-memtrace",
  "lumino-midi-io",
  "lumino-midi-loader",
+ "lumino-midly",
  "lumino-ui",
- "midly",
  "muda",
  "parking_lot",
  "puffin",
@@ -3737,13 +3747,13 @@ dependencies = [
  "lumino-message",
  "lumino-midi-io",
  "lumino-midi-loader",
+ "lumino-midly",
  "lumino-playback",
  "lumino-ui-constants",
  "lumino-ui-core",
  "lumino-ui-editor",
  "lumino-ui-host",
  "lumino-ui-settings",
- "midly",
  "once_cell",
  "parking_lot",
  "puffin",
@@ -3980,15 +3990,6 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "windows 0.56.0",
-]
-
-[[package]]
-name = "midly"
-version = "0.6.0"
-source = "git+https://github.com/PenguinBMDevs/midly-fork#1896c4bdbf4a4624a315ee798f285c1b2170b931"
-dependencies = [
- "memmap2",
- "rayon",
 ]
 
 [[package]]
