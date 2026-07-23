@@ -301,6 +301,11 @@ impl Sidebar {
             self.selected_track = self.tracks[0].id;
             tracing::info!("default selected_track = {}", self.selected_track);
         }
+
+        // 同步 next_track_id：取当前值与最大 track id + 1 的较大值，
+        // 防止添加音轨时生成与已有音轨重复的 ID。
+        let max_id = self.tracks.iter().map(|t| t.id).max().unwrap_or(0);
+        self.next_track_id = self.next_track_id.max(max_id + 1);
     }
 
     /// 重新应用音轨列表显示模式（设置变更时调用）

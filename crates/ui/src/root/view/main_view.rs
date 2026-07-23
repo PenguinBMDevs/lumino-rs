@@ -218,9 +218,8 @@ impl Root {
             .with_background(bg)
         });
 
-        // 左侧栏：音轨列表 + 底部添加按钮
-        let track_list_col =
-            column![track_list, add_track_btn].width(Length::Fixed(TRACK_LIST_WIDTH));
+        // 左侧栏：音轨列表 Canvas 直接填满高度，与右侧走带区域对齐。
+        // add_track_btn 移至底部水平滚动条行，避免占用 Canvas 高度导致最后一轨截断。
 
         // 右侧走带区域 — 由 WGPU ArrangementRenderer 渲染
         // 使用空容器作为占位，不设置背景色，让 wgpu 渲染可见
@@ -296,7 +295,7 @@ impl Root {
             },
         );
 
-        let arrangement_row = iced_widget::row![track_list_col, arrangement_area, v_scrollbar,];
+        let arrangement_row = iced_widget::row![track_list, arrangement_area, v_scrollbar,];
 
         let perf_ctx = crate::toolbar::ToolbarPerfContext {
             perf_data: self.statusbar.perf_data(),
@@ -304,6 +303,12 @@ impl Root {
             ppq: self.editor.editor_state.view.ppq,
             tempo_points: &self.editor.editor_state.data.tempo_points,
         };
+        // 底部行：添加音轨按钮（左侧，与音轨列表等宽）+ 水平滚动条（右侧填充）
+        // 两者高度均为 20px，与原 h_scrollbar 占用空间一致，不影响 viewport 计算
+        let bottom_row = iced_widget::row![add_track_btn, h_scrollbar]
+            .width(Length::Fill)
+            .height(Length::Fixed(20.0));
+
         column![
             self.toolbar.toolbar_view(
                 &self.window,
@@ -314,7 +319,7 @@ impl Root {
                 true,
             ),
             arrangement_row.height(Length::Fill),
-            h_scrollbar,
+            bottom_row,
         ]
         .width(Length::Fill)
         .height(Length::Fill)
