@@ -88,6 +88,32 @@ pub fn view<'a>(
             col = col.push(add_track_container);
             container(col).into()
         }
+        Route::EventList => {
+            // 事件列表面板占位（功能实施中）
+            let placeholder = column![
+                text("事件列表").size(14).style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    text::Style {
+                        color: Some(palette.background.base.text),
+                    }
+                }),
+                text("🚧 实施中...").size(12).style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    text::Style {
+                        color: Some(palette.background.strong.text),
+                    }
+                }),
+            ]
+            .spacing(8)
+            .align_x(Alignment::Center);
+
+            container(placeholder)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .into()
+        }
         Route::File => {
             // 全量渲染所有音轨——由 iced scrollable 原生处理滚动。
             let mut col = column![].spacing(0).padding(8);

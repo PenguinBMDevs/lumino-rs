@@ -3,10 +3,10 @@
 //! 参考右键菜单实现：使用 Stack 覆盖层，点击外部区域关闭，
 //! 面板在触发音轨右侧弹出，色块为圆形，并包含斜杠恢复按钮。
 
-use iced_core::{Alignment, Color, Length, Padding};
-use iced_widget::{Space, button, column, container, mouse_area, row, text};
+use iced_core::{Alignment, Color, Length, Padding, Point, Rectangle};
+use iced_widget::{Space, button, canvas, column, container, mouse_area, row};
 
-use crate::{Element, Message, Theme};
+use crate::{Element, Message, Renderer, Theme};
 
 /// 单个色块直径
 const SWATCH_SIZE: f32 = 20.0;
@@ -22,8 +22,12 @@ const PANEL_OFFSET_Y: f32 = 8.0;
 const PANEL_RIGHT_MARGIN: f32 = 8.0;
 /// 深色菜单背景
 const PANEL_BACKGROUND: Color = Color::from_rgba(0.06, 0.06, 0.08, 0.96);
+/// 斜杠颜色
+const SLASH_COLOR: Color = Color::from_rgb(0.90, 0.10, 0.10);
 /// 斜杠按钮边框颜色
 const SLASH_BORDER_COLOR: Color = Color::from_rgb(0.7, 0.7, 0.7);
+/// 斜杠线条粗细
+const SLASH_WIDTH: f32 = 2.0;
 
 /// 预设音轨颜色
 const TRACK_COLORS: [Color; 8] = [
@@ -118,17 +122,11 @@ fn color_button(track_id: usize, color: Color) -> Element<'static> {
     .into()
 }
 
-/// 恢复默认颜色按钮（斜杠图标）
+/// 恢复默认颜色按钮（绘制红色斜杠）
 fn reset_button(track_id: usize) -> Element<'static> {
-    let slash = text("/")
-        .size(12)
-        .font(iced_core::Font {
-            weight: iced_core::font::Weight::Bold,
-            ..Default::default()
-        })
-        .style(|_theme: &Theme| text::Style {
-            color: Some(Color::WHITE),
-        });
+    let slash = canvas(SlashCanvas)
+        .width(Length::Fixed(SWATCH_SIZE))
+        .height(Length::Fixed(SWATCH_SIZE));
 
     button(slash)
         .width(Length::Fixed(SWATCH_SIZE))
@@ -146,6 +144,39 @@ fn reset_button(track_id: usize) -> Element<'static> {
             ..Default::default()
         })
         .into()
+}
+
+/// 绘制红色斜杠的 Canvas
+struct SlashCanvas;
+
+impl canvas::Program<Message, Theme, Renderer> for SlashCanvas {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &Renderer,
+        _theme: &Theme,
+        bounds: Rectangle,
+        _cursor: iced_core::mouse::Cursor,
+    ) -> Vec<canvas::Geometry<Renderer>> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+        let size = bounds.size();
+        let padding = size.width * 0.25;
+
+        let mut path = canvas::path::Builder::new();
+        path.move_to(Point::new(padding, padding));
+        path.line_to(Point::new(size.width - padding, size.height - padding));
+
+        frame.stroke(
+            &path.build(),
+            canvas::Stroke::default()
+                .with_color(SLASH_COLOR)
+                .with_width(SLASH_WIDTH),
+        );
+
+        vec![frame.into_geometry()]
+    }
 }
 
 #[cfg(test)]

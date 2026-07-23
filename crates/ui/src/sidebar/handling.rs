@@ -61,7 +61,7 @@ impl Sidebar {
             PanelToggled(r) => {
                 // 子按钮只能在对应分组激活时操作
                 let not_allowed = self.active_group != Some(GroupId::PianoRoll)
-                    && matches!(r, Route::File | Route::Automation);
+                    && matches!(r, Route::File | Route::Automation | Route::EventList);
                 if not_allowed {
                     // 跨组点击 PianoRoll 子按钮：先切回 PianoRoll 组，始终打开面板
                     self.handle_group_toggle(GroupId::PianoRoll);

@@ -73,6 +73,7 @@ pub enum Route {
     File,
     Arrangement,
     Automation,
+    EventList,
     VideoExport,
     AudioExport,
 }
@@ -84,6 +85,7 @@ impl Route {
             Route::File => t.sidebar_file,
             Route::Arrangement => t.sidebar_arrangement,
             Route::Automation => t.sidebar_automation,
+            Route::EventList => t.sidebar_event_list,
             Route::VideoExport => match lang {
                 Language::ZhCn => "视频渲染",
                 Language::EnUs => "Video Render",

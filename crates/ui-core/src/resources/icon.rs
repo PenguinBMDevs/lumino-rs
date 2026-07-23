@@ -74,6 +74,7 @@ define_icons! {
     (Download, "../../../../resources/icons/sidebar/download.svg"),
     (PlayCircle, "../../../../resources/icons/sidebar/play-circle.svg"),
     (EllipsisVertical, "../../../../resources/icons/sidebar/ellipsis-vertical.svg"),
+    (EventList, "../../../../resources/icons/sidebar/event-list.svg"),
     (Users, "../../../../resources/icons/toolbar/users.svg"),
     // 工具栏图标
     (Play, "../../../../resources/icons/toolbar/play.svg"),

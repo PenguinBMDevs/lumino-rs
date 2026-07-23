@@ -51,7 +51,7 @@ pub enum RouteConfig {
     Space,
 }
 
-pub const ROUTES: [RouteConfig; 9] = [
+pub const ROUTES: [RouteConfig; 10] = [
     // ── 钢琴卷帘组（红色） ──
     RouteConfig::GroupParent {
         group: GroupId::PianoRoll,
@@ -65,6 +65,11 @@ pub const ROUTES: [RouteConfig; 9] = [
     RouteConfig::Item {
         route: Route::Automation,
         icon: icon::WaveForm,
+        group: Some(GroupId::PianoRoll),
+    },
+    RouteConfig::Item {
+        route: Route::EventList,
+        icon: icon::EventList,
         group: Some(GroupId::PianoRoll),
     },
     // ── 工程走带组（绿色） ──
