@@ -74,7 +74,11 @@ impl MidiHandler {
             document.total_ticks()
         );
 
-        let total_ticks = parsed.info.duration_ticks as f32;
+        // 按需识别小节长度，并向后拓展 100 小节作为默认空间
+        let ppq = parsed.info.division;
+        let extra_measures = 100u32;
+        let extra_ticks = (ppq as u32) * 4 * extra_measures;
+        let total_ticks = (parsed.info.duration_ticks as f32).max(1.0) + extra_ticks as f32;
         ui.set_total_ticks(total_ticks);
     }
 }

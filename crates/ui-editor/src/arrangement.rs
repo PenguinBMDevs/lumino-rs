@@ -44,13 +44,13 @@ impl Default for ArrangementViewport {
         Self {
             scroll_x: 0.0,
             scroll_y: 0.0,
-            // 200px 一个小节：tpb = 480 * 4 = 1920 ticks/bar, 1920 * zoom_x = 200 → zoom_x = 200/1920 ≈ 0.1042
-            zoom_x: 200.0 / (480.0 * 4.0),
+            // 200px 一个小节：tpb = DEFAULT_PPQ * 4 = 7680 ticks/bar, 7680 * zoom_x = 200
+            zoom_x: 200.0 / (lumino_core::view_state::DEFAULT_PPQ as f32 * 4.0),
             zoom_y: 1.0,
             track_height: 48.0,
             canvas_offset: Point::new(0.0, 0.0),
             canvas_size: Point::new(800.0, 600.0),
-            total_ticks: 0,
+            total_ticks: lumino_core::view_state::DEFAULT_TOTAL_TICKS,
             ppq: lumino_core::view_state::DEFAULT_PPQ,
             cached_max_tick_end: 0.0,
             cached_track_notes_gen: 0,
@@ -153,11 +153,14 @@ mod tests {
         let vp = ArrangementViewport::default();
         assert_eq!(vp.scroll_x, 0.0);
         assert_eq!(vp.scroll_y, 0.0);
-        assert_eq!(vp.zoom_x, 200.0 / (480.0 * 4.0));
+        assert_eq!(
+            vp.zoom_x,
+            200.0 / (lumino_core::view_state::DEFAULT_PPQ as f32 * 4.0)
+        );
         assert_eq!(vp.zoom_y, 1.0);
         assert_eq!(vp.track_height, 48.0);
         assert_eq!(vp.canvas_size, Point::new(800.0, 600.0));
-        assert_eq!(vp.total_ticks, 0);
+        assert_eq!(vp.total_ticks, lumino_core::view_state::DEFAULT_TOTAL_TICKS);
         assert_eq!(vp.cached_max_tick_end, 0.0);
         assert_eq!(vp.cached_track_notes_gen, 0);
     }

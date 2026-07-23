@@ -31,6 +31,9 @@ pub fn handle_pointer_event(
 ) -> InteractionOutput {
     let mut output = InteractionOutput::new();
 
+    // ctrl_pressed 已废弃：Ctrl 多选功能已移除，保留参数以兼容调用签名。
+    let _ = ctrl_pressed;
+
     // 状态清理：若丢失释放事件（如窗口失焦），当检测到主键未按下时重置拖拽。
     if !state.primary_down {
         if state.drag.is_some() {
@@ -57,10 +60,9 @@ pub fn handle_pointer_event(
                 let click_tick = viewport.x_to_tick(local.x + viewport.scroll_x);
                 let click_track_f = (local.y + viewport.scroll_y) / viewport.lane_height();
 
-                if state.hover_inside_selection && !ctrl_pressed {
+                if state.hover_inside_selection {
                     // 在已有选择内开始移动
                     state.move_orig_sel = arr_sel_rect;
-                    output.push(Message::ArrangementSelectionChanged(None));
                     let origin = (click_tick, click_track_f);
                     state.move_drag = Some((origin, origin));
                     state.drag = None;
@@ -69,9 +71,7 @@ pub fn handle_pointer_event(
                     // 开始新的框选
                     let start_track_y = (local.y + viewport.scroll_y) / viewport.lane_height();
                     state.drag = Some(((click_tick, start_track_y), local));
-                    if !ctrl_pressed {
-                        output.push(Message::ArrangementSelectionCleared);
-                    }
+                    output.push(Message::ArrangementSelectionCleared);
                 }
             }
         }
@@ -167,12 +167,12 @@ pub fn handle_pointer_event(
                 let delta_tracks = (current_tr - origin_tr).round() as i32;
 
                 if delta_ticks != 0 || delta_tracks != 0 {
+                    // 选择在拖拽期间未被清空，arrange_move_notes 可直接找到音符并偏移。
+                    // ArrangementMoveNotes handler 会自动 offset 选择矩形到新位置。
                     output.push(Message::ArrangementMoveNotes {
                         delta_ticks,
                         delta_tracks,
                     });
-                } else {
-                    output.push(Message::ArrangementSelectionChanged(state.move_orig_sel));
                 }
                 state.move_orig_sel = None;
                 return output;
@@ -192,12 +192,10 @@ pub fn handle_pointer_event(
                 };
 
                 if drag_dist < 3.0 {
-                    // 点击：设置光标、清空选择（非 Ctrl 模式）并选中对应音轨
+                    // 点击：设置光标、清空选择并选中对应音轨
                     let tick = viewport.x_to_tick(start_pixel.x + viewport.scroll_x);
                     let snapped = snap_tick(tick, precision, ppq).max(0.0);
-                    if !ctrl_pressed {
-                        output.push(Message::ArrangementSelectionCleared);
-                    }
+                    output.push(Message::ArrangementSelectionCleared);
                     output.push(Message::ArrangementCursorSet(snapped));
 
                     let track_idx = start_music.1.floor() as usize;

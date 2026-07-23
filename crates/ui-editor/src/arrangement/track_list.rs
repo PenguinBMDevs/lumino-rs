@@ -249,7 +249,6 @@ impl TrackListCanvas {
         }
 
         let shift = state.modifiers.shift();
-        let cmd = state.modifiers.command() || state.modifiers.control();
 
         if shift {
             if let Some(anchor_idx) = state.selection_anchor {
@@ -263,13 +262,6 @@ impl TrackListCanvas {
                 }
             } else {
                 state.selected_tracks.clear();
-                state.selected_tracks.insert(track_id);
-            }
-            state.selection_anchor = Some(idx);
-        } else if cmd {
-            if state.selected_tracks.contains(&track_id) {
-                state.selected_tracks.remove(&track_id);
-            } else {
                 state.selected_tracks.insert(track_id);
             }
             state.selection_anchor = Some(idx);
@@ -444,7 +436,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                     max_width: f32::INFINITY,
                     align_x: iced_core::alignment::Horizontal::Left.into(),
                     align_y: iced_core::alignment::Vertical::Center,
-                    shaping: iced_widget::text::Shaping::Basic,
+                    shaping: iced_widget::text::Shaping::Advanced,
                 });
 
                 frame.fill_text(Text {
@@ -459,7 +451,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                     max_width: f32::INFINITY,
                     align_x: iced_core::alignment::Horizontal::Left.into(),
                     align_y: iced_core::alignment::Vertical::Center,
-                    shaping: iced_widget::text::Shaping::Basic,
+                    shaping: iced_widget::text::Shaping::Advanced,
                 });
 
                 let name_size = (self.track_height * 0.25).clamp(9.0, 13.0);
@@ -475,7 +467,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                     max_width: f32::INFINITY,
                     align_x: iced_core::alignment::Horizontal::Left.into(),
                     align_y: iced_core::alignment::Vertical::Center,
-                    shaping: iced_widget::text::Shaping::Basic,
+                    shaping: iced_widget::text::Shaping::Advanced,
                 });
 
                 if !self.track_conductors.get(idx).copied().unwrap_or(false) {
@@ -507,7 +499,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                         max_width: f32::INFINITY,
                         align_x: iced_core::alignment::Horizontal::Center.into(),
                         align_y: iced_core::alignment::Vertical::Center,
-                        shaping: iced_widget::text::Shaping::Basic,
+                        shaping: iced_widget::text::Shaping::Advanced,
                     });
 
                     let solo_x = btn_x_start + BTN_SIZE + BTN_GAP;
@@ -533,7 +525,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                         max_width: f32::INFINITY,
                         align_x: iced_core::alignment::Horizontal::Center.into(),
                         align_y: iced_core::alignment::Vertical::Center,
-                        shaping: iced_widget::text::Shaping::Basic,
+                        shaping: iced_widget::text::Shaping::Advanced,
                     });
                 }
             } else {
@@ -550,7 +542,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                     max_width: f32::INFINITY,
                     align_x: iced_core::alignment::Horizontal::Left.into(),
                     align_y: iced_core::alignment::Vertical::Center,
-                    shaping: iced_widget::text::Shaping::Basic,
+                    shaping: iced_widget::text::Shaping::Advanced,
                 });
                 frame.fill_text(Text {
                     content: name.clone(),
@@ -564,7 +556,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                     max_width: f32::INFINITY,
                     align_x: iced_core::alignment::Horizontal::Left.into(),
                     align_y: iced_core::alignment::Vertical::Center,
-                    shaping: iced_widget::text::Shaping::Basic,
+                    shaping: iced_widget::text::Shaping::Advanced,
                 });
             }
         }
