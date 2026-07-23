@@ -8,6 +8,7 @@
 pub mod app_mode;
 /// 工具栏按钮描述配置（按钮名 + i18n 解释说明占位）
 pub mod button_descs;
+pub mod color;
 pub mod message;
 pub mod settings_event;
 pub mod sidebar_event;

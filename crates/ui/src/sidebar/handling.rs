@@ -274,6 +274,12 @@ impl Sidebar {
                 }
                 self.color_picking_track = None;
             }
+            TrackColorReset(id) => {
+                if let Some(track) = self.tracks.iter_mut().find(|t| t.id == id) {
+                    track.color = None;
+                }
+                self.color_picking_track = None;
+            }
             TrackColorPickerClosed(_) => {
                 self.color_picking_track = None;
             }

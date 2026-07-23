@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use iced_core::{Color, Point, Rectangle, Size, keyboard};
 use iced_widget::canvas::{self, Frame, Geometry, Program, Stroke, Text};
+use lumino_ui_core::color::{blend_color, contrast_text_color};
 
 use crate::grid::theme::ThemeExt;
 use crate::{Message, Renderer, Theme};
@@ -363,18 +364,31 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
             let is_selected =
                 state.selected_tracks.contains(track_id) || *track_id == self.selected_track;
 
-            let bg_color = if is_selected {
-                palette.primary.weak.color
-            } else if idx % 2 == 0 {
-                if is_light {
-                    Color::from_rgb(0.97, 0.97, 0.97)
-                } else {
-                    Color::from_rgb(0.20, 0.20, 0.20)
+            let track_color = self.track_colors.get(idx).copied().flatten();
+
+            let bg_color = match track_color {
+                Some(c) => {
+                    if is_selected {
+                        blend_color(c, palette.primary.weak.color, 0.35)
+                    } else {
+                        c
+                    }
                 }
-            } else if is_light {
-                Color::from_rgb(0.94, 0.94, 0.94)
-            } else {
-                Color::from_rgb(0.15, 0.15, 0.15)
+                None => {
+                    if is_selected {
+                        palette.primary.weak.color
+                    } else if idx % 2 == 0 {
+                        if is_light {
+                            Color::from_rgb(0.97, 0.97, 0.97)
+                        } else {
+                            Color::from_rgb(0.20, 0.20, 0.20)
+                        }
+                    } else if is_light {
+                        Color::from_rgb(0.94, 0.94, 0.94)
+                    } else {
+                        Color::from_rgb(0.15, 0.15, 0.15)
+                    }
+                }
             };
 
             frame.fill_rectangle(
@@ -383,28 +397,29 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                 bg_color,
             );
 
-            let badge_color = self
-                .track_colors
-                .get(idx)
-                .copied()
-                .flatten()
-                .unwrap_or_else(|| {
-                    if is_light {
-                        Color::from_rgb(0.6, 0.6, 0.6)
-                    } else {
-                        Color::from_rgb(0.5, 0.5, 0.5)
-                    }
-                });
-            frame.fill_rectangle(
-                Point::new(0.0, y),
-                Size::new(BADGE_WIDTH, self.track_height),
-                badge_color,
-            );
+            // 未设置音轨颜色时，在左侧绘制默认小色块
+            if track_color.is_none() {
+                let badge_color = if is_light {
+                    Color::from_rgb(0.6, 0.6, 0.6)
+                } else {
+                    Color::from_rgb(0.5, 0.5, 0.5)
+                };
+                frame.fill_rectangle(
+                    Point::new(0.0, y),
+                    Size::new(BADGE_WIDTH, self.track_height),
+                    badge_color,
+                );
+            }
 
-            let text_color = if is_selected {
-                palette.primary.strong.color
-            } else {
-                palette.background.base.text
+            let text_color = match track_color {
+                Some(_) => contrast_text_color(bg_color),
+                None => {
+                    if is_selected {
+                        palette.primary.strong.color
+                    } else {
+                        palette.background.base.text
+                    }
+                }
             };
 
             let text_x = BADGE_WIDTH + TEXT_MARGIN;

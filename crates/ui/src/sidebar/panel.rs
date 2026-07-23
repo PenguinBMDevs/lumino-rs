@@ -1,4 +1,4 @@
-use iced_core::{Alignment, Color, Length, Padding};
+use iced_core::{Alignment, Length, Padding};
 use iced_widget::{
     Stack, button, column, container, mouse_area, row, scrollable, space, text, text_input,
 };
@@ -10,6 +10,8 @@ use crate::{
     sidebar::{Event, RESIZE_HANDLE_WIDTH, Route, Track},
     window,
 };
+
+mod color;
 
 /// 侧边栏视图参数
 #[derive(Clone)]
@@ -102,7 +104,6 @@ pub fn view<'a>(
                     track.id == params.selected_track,
                     window,
                     params.renaming_track,
-                    params.color_picking_track,
                 );
                 col = col.push(track_container);
             }
@@ -162,7 +163,7 @@ pub fn view<'a>(
                 ))
                 .height(Length::Fill);
 
-            // 当右键菜单打开时，使用 Stack 覆盖层实现悬浮菜单（不挤占 UI）
+            // 当右键菜单或颜色选择器打开时，使用 Stack 覆盖层实现悬浮面板（不挤占 UI）
             let base_content = container(scrollable_content);
             if let Some(target_id) = params.context_menu_target_id {
                 if let Some(track_index) = params.tracks.iter().position(|t| t.id == target_id) {
@@ -172,6 +173,17 @@ pub fn view<'a>(
                         .push(base_content)
                         .push(super::context_menu::background_close_overlay())
                         .push(super::context_menu::positioned_menu(target_id, menu_y))
+                        .into()
+                } else {
+                    base_content.into()
+                }
+            } else if let Some(target_id) = params.color_picking_track {
+                if let Some(track_index) = params.tracks.iter().position(|t| t.id == target_id) {
+                    let picker_y = 28.0 + track_index as f32 * 34.0;
+                    Stack::new()
+                        .push(base_content)
+                        .push(super::color_picker::background_close_overlay(target_id))
+                        .push(super::color_picker::positioned_panel(target_id, picker_y))
                         .into()
                 } else {
                     base_content.into()
@@ -218,29 +230,17 @@ pub fn view<'a>(
         .into()
 }
 
-/// 预设音轨颜色
-const TRACK_COLORS: [Color; 8] = [
-    Color::from_rgb(0.85, 0.15, 0.15),
-    Color::from_rgb(0.15, 0.75, 0.35),
-    Color::from_rgb(0.15, 0.45, 0.85),
-    Color::from_rgb(0.85, 0.75, 0.10),
-    Color::from_rgb(0.75, 0.15, 0.75),
-    Color::from_rgb(0.15, 0.75, 0.75),
-    Color::from_rgb(0.95, 0.50, 0.15),
-    Color::from_rgb(0.50, 0.50, 0.50),
-];
-
 /// 渲染单个音轨行
 fn view_track_item<'a>(
     track: &'a Track,
     is_selected: bool,
     window: &'a window::Window,
     renaming_track: Option<&'a (usize, String)>,
-    color_picking_track: Option<usize>,
 ) -> Element<'a> {
     let palette = window.theme.extended_palette();
     let is_renaming = renaming_track.map(|(id, _)| *id) == Some(track.id);
-    let is_color_picking = color_picking_track == Some(track.id);
+    let track_color = track.color;
+    let text_color = color::track_text_color(track_color, &window.theme);
 
     let left_icon: Element<'a> = if track.is_conductor {
         container(icon::view_with_size_and_theme(
@@ -260,45 +260,27 @@ fn view_track_item<'a>(
         })
         .into()
     } else {
-        // 如果设置了选项卡颜色，显示颜色块；否则显示通道标签（如 A01/B02）
-        let icon_content: Element<'a> = if let Some(color) = track.color {
-            container(space().width(16).height(16))
-                .style(move |_theme: &Theme| container::Style {
-                    background: Some(iced_core::Background::Color(color)),
-                    border: iced_core::Border::default().rounded(4),
-                    ..Default::default()
-                })
-                .into()
-        } else {
+        container(
             text(&track.display_label)
                 .size(14)
                 .font(iced_core::Font {
                     weight: iced_core::font::Weight::Bold,
                     ..Default::default()
                 })
-                .style(move |theme: &Theme| {
-                    let p = theme.extended_palette();
-                    let c = if is_selected {
-                        p.background.base.color
-                    } else {
-                        p.background.strong.color
-                    };
-                    text::Style { color: Some(c) }
-                })
-                .into()
-        };
-
-        container(icon_content)
-            .width(36)
-            .align_x(iced_core::alignment::Horizontal::Left)
-            .align_y(iced_core::alignment::Vertical::Center)
-            .padding(iced_core::Padding {
-                top: 0.0,
-                right: 0.0,
-                bottom: 0.0,
-                left: 2.0,
-            })
-            .into()
+                .style(move |_theme: &Theme| text::Style {
+                    color: Some(text_color),
+                }),
+        )
+        .width(36)
+        .align_x(iced_core::alignment::Horizontal::Left)
+        .align_y(iced_core::alignment::Vertical::Center)
+        .padding(iced_core::Padding {
+            top: 0.0,
+            right: 0.0,
+            bottom: 0.0,
+            left: 2.0,
+        })
+        .into()
     };
 
     let name: Element<'a> = if is_renaming {
@@ -310,7 +292,13 @@ fn view_track_item<'a>(
             .padding(Padding::ZERO)
             .into()
     } else {
-        text(&track.name).size(14).width(Length::Fill).into()
+        text(&track.name)
+            .size(14)
+            .width(Length::Fill)
+            .style(move |_theme: &Theme| text::Style {
+                color: Some(text_color),
+            })
+            .into()
     };
 
     let mute_btn = button(
@@ -324,7 +312,7 @@ fn view_track_item<'a>(
                 color: Some(if track.is_muted {
                     palette.danger.base.color
                 } else {
-                    palette.background.strong.color
+                    text_color
                 }),
             }),
     )
@@ -342,16 +330,9 @@ fn view_track_item<'a>(
         .width(Length::Fill)
         .on_press(Event::track_selected(track.id))
         .style(move |theme: &Theme, status| {
-            let p = theme.extended_palette();
-            let bg = if is_selected {
-                p.background.strong.color
-            } else if status == iced_widget::button::Status::Hovered {
-                p.background.weak.color
-            } else {
-                p.background.base.color
-            };
+            let bg = color::track_button_background(track_color, is_selected, status, theme);
             button::Style {
-                text_color: p.background.base.text,
+                text_color,
                 border: iced_core::Border {
                     radius: 6.0.into(),
                     width: 0.0,
@@ -366,35 +347,5 @@ fn view_track_item<'a>(
     let track_button_with_menu =
         mouse_area(track_button).on_right_press(Event::track_context_menu_opened(track.id));
 
-    let mut col = column![track_button_with_menu].spacing(2);
-
-    if is_renaming {
-        // 文字输入框已有 on_submit 处理 Enter 键确认，无需额外按钮
-    }
-
-    if is_color_picking {
-        let color_buttons = TRACK_COLORS
-            .into_iter()
-            .map(|color| {
-                button(space().width(20).height(20))
-                    .on_press(Event::track_color_selected(track.id, color))
-                    .style(move |_theme: &Theme, _status| button::Style {
-                        background: Some(iced_core::Background::Color(color)),
-                        border: iced_core::Border::default().rounded(4),
-                        ..Default::default()
-                    })
-                    .into()
-            })
-            .collect::<Vec<_>>();
-        let color_row = row(color_buttons).spacing(4).wrap();
-        let close_btn = button(text("取消").size(12))
-            .on_press(Event::track_color_picker_closed(track.id))
-            .style(|_theme: &Theme, _status| {
-                button::Style::default().with_background(palette.background.strong.color)
-            });
-        col = col.push(color_row);
-        col = col.push(close_btn);
-    }
-
-    col.into()
+    column![track_button_with_menu].spacing(2).into()
 }

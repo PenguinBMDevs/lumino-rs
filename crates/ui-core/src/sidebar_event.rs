@@ -153,6 +153,8 @@ pub enum Event {
     TrackColorPickerOpened(usize),
     /// 选择音轨颜色
     TrackColorSelected(usize, Color),
+    /// 重置音轨颜色为默认
+    TrackColorReset(usize),
     /// 关闭颜色选择器
     TrackColorPickerClosed(usize),
 }
@@ -263,6 +265,10 @@ impl Event {
 
     pub fn track_color_selected(track_id: usize, color: Color) -> Message {
         Message::Sidebar(Self::TrackColorSelected(track_id, color))
+    }
+
+    pub fn track_color_reset(track_id: usize) -> Message {
+        Message::Sidebar(Self::TrackColorReset(track_id))
     }
 
     pub fn track_color_picker_closed(track_id: usize) -> Message {

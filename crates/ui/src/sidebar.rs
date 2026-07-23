@@ -1,4 +1,5 @@
 /// 侧边栏模块 — 路由、面板、音轨列表
+mod color_picker;
 mod context_menu;
 mod core;
 mod handling;
@@ -316,6 +317,43 @@ mod tests {
                 .unwrap()
                 .color,
             Some(color)
+        );
+        assert!(sidebar.color_picking_track.is_none());
+    }
+
+    /// 重置颜色会清除音轨选项卡颜色并关闭选择器
+    #[test]
+    fn test_track_color_reset_clears_color() {
+        use iced_core::Color;
+
+        let mut sidebar = Sidebar::new();
+        let track_id = sidebar.tracks[1].id;
+
+        sidebar.update(Event::TrackColorPickerOpened(track_id));
+        sidebar.update(Event::TrackColorSelected(
+            track_id,
+            Color::from_rgb(0.5, 0.5, 0.5),
+        ));
+        assert!(
+            sidebar
+                .tracks
+                .iter()
+                .find(|t| t.id == track_id)
+                .unwrap()
+                .color
+                .is_some()
+        );
+
+        sidebar.update(Event::TrackColorPickerOpened(track_id));
+        sidebar.update(Event::TrackColorReset(track_id));
+        assert!(
+            sidebar
+                .tracks
+                .iter()
+                .find(|t| t.id == track_id)
+                .unwrap()
+                .color
+                .is_none()
         );
         assert!(sidebar.color_picking_track.is_none());
     }
