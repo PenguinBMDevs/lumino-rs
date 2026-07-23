@@ -165,6 +165,8 @@ pub enum Message<W, S, Se, T> {
     },
     /// 工程走带：ghost 音符预览列表更新
     ArrangementGhostNotesUpdated(Vec<(f64, f64, usize)>),
+    /// 工程走带：拖拽中的框选矩形（实时预览，由 GPU 渲染）
+    ArrangementDragSelectionRect(Option<(f64, f64, usize, usize)>),
 }
 
 pub const fn null<W, S, Se, T>() -> Message<W, S, Se, T> {

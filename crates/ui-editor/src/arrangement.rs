@@ -133,6 +133,9 @@ pub struct ArrangementView {
     pub viewport: ArrangementViewport,
     /// 移动拖拽时 ghost 音符预览（tick_start, tick_end, track），由 WGPU 渲染。
     pub ghost_notes: Vec<(f64, f64, usize)>,
+    /// 拖拽中的框选矩形（tick_start, tick_end, track_lo, track_hi），由 WGPU 渲染。
+    /// 覆盖 Pointer 框选、移动拖拽、Eraser 拖拽三种场景。
+    pub drag_sel_rect: Option<(f64, f64, usize, usize)>,
 }
 
 impl ArrangementView {

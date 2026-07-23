@@ -508,6 +508,10 @@ impl Root {
                 self.arrangement_view.ghost_notes = notes.clone();
                 true
             }
+            Message::ArrangementDragSelectionRect(rect) => {
+                self.arrangement_view.drag_sel_rect = *rect;
+                true
+            }
             _ => false,
         }
     }

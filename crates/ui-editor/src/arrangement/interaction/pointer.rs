@@ -35,11 +35,13 @@ pub fn handle_pointer_event(
     if !state.primary_down {
         if state.drag.is_some() {
             state.drag = None;
+            output.push(Message::ArrangementDragSelectionRect(None));
         }
         if state.move_drag.is_some() {
             state.move_drag = None;
             state.move_orig_sel = None;
             output.push(Message::ArrangementGhostNotesUpdated(Vec::new()));
+            output.push(Message::ArrangementDragSelectionRect(None));
         }
     }
 
@@ -85,6 +87,26 @@ pub fn handle_pointer_event(
                 let ghosts = compute_ghost_notes(state, selected_notes, ppq, precision);
                 output.push(Message::ArrangementGhostNotesUpdated(ghosts));
 
+                // 计算移动拖拽中的偏移选择矩形（GPU 渲染用）
+                let snapped_origin = snap_tick(origin.0, precision, ppq);
+                let snapped_current = snap_tick(current_tick, precision, ppq);
+                let dt = (snapped_current - snapped_origin).round() as i64;
+                let dtr = (current_track_f - origin.1).round() as i32;
+                if let Some((t_start, t_end, track_lo, track_hi)) = state.move_orig_sel {
+                    let new_lo = (track_lo as i32 + dtr).max(0) as usize;
+                    let new_hi = (track_hi as i32 + dtr).max(0) as usize;
+                    if dt != 0 || dtr != 0 {
+                        output.push(Message::ArrangementDragSelectionRect(Some((
+                            t_start + dt as f64,
+                            t_end + dt as f64,
+                            new_lo,
+                            new_hi,
+                        ))));
+                    } else {
+                        output.push(Message::ArrangementDragSelectionRect(None));
+                    }
+                }
+
                 // 边缘自动滚动
                 auto_scroll_on_drag(
                     pos,
@@ -101,6 +123,25 @@ pub fn handle_pointer_event(
             {
                 let local = clamped_local(pos, bounds);
                 state.drag = Some((start_music, local));
+
+                // 计算拖拽中的框选矩形（GPU 渲染用）
+                let start_pixel = Point::new(
+                    viewport.tick_to_x(start_music.0) - viewport.scroll_x,
+                    start_music.1 * viewport.lane_height() - viewport.scroll_y,
+                );
+                let drag_dist = {
+                    let v = local - start_pixel;
+                    (v.x * v.x + v.y * v.y).sqrt()
+                };
+                if drag_dist >= 3.0 {
+                    let (_, _, _, _, t_start, t_end, track_lo, track_hi) =
+                        arrange_snapped_bounds(start_pixel, local, viewport, precision, ppq);
+                    output.push(Message::ArrangementDragSelectionRect(Some((
+                        t_start, t_end, track_lo, track_hi,
+                    ))));
+                } else {
+                    output.push(Message::ArrangementDragSelectionRect(None));
+                }
 
                 // 框选时同样支持边缘自动滚动
                 auto_scroll_on_drag(
@@ -119,6 +160,7 @@ pub fn handle_pointer_event(
             if let Some(((origin_t, origin_tr), (current_t, current_tr))) = state.move_drag.take() {
                 state.move_drag = None;
                 output.push(Message::ArrangementGhostNotesUpdated(Vec::new()));
+                output.push(Message::ArrangementDragSelectionRect(None));
                 let snapped_origin = snap_tick(origin_t, precision, ppq);
                 let snapped_current = snap_tick(current_t, precision, ppq);
                 let delta_ticks = (snapped_current - snapped_origin).round() as i64;
@@ -139,6 +181,7 @@ pub fn handle_pointer_event(
             // 框选释放
             if let Some((start_music, end_local)) = state.drag.take() {
                 state.drag = None;
+                output.push(Message::ArrangementDragSelectionRect(None));
                 let start_pixel = Point::new(
                     viewport.tick_to_x(start_music.0) - viewport.scroll_x,
                     start_music.1 * viewport.lane_height() - viewport.scroll_y,

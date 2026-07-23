@@ -123,6 +123,7 @@ impl Host {
                 .map(|&(ts, te, _kl, _kh, tl, th)| {
                     (ts as f64, te as f64, tl as usize, th as usize)
                 }),
+            drag_sel_rect: self.root.arrangement_view.drag_sel_rect,
         };
 
         lumino_gfx::collect_arrangement_instances(&scene_params)

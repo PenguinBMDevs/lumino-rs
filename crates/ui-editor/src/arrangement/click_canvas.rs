@@ -6,15 +6,13 @@
 //! - Eraser：拖拽矩形擦除音符
 //! - Curve：点击绘制音符
 
-use iced_core::{Point, Rectangle, mouse};
-use iced_widget::canvas::{self, Frame, Geometry, Path, Program, Stroke};
+use iced_core::{Rectangle, mouse};
+use iced_widget::canvas::{self, Frame, Geometry, Program};
 use lumino_core::{NotePrecision, Tool};
 
 use crate::arrangement::ArrangementViewport;
 use crate::arrangement::interaction::curve::curve_preview_note;
-use crate::arrangement::interaction::{
-    ArrangementInteractionState, arrange_snapped_bounds, handle_event,
-};
+use crate::arrangement::interaction::{ArrangementInteractionState, handle_event};
 use crate::{Message, Renderer, Theme};
 
 /// 工程走带点击 Canvas
@@ -211,80 +209,14 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
 
         let mut frame = Frame::new(renderer, bounds.size());
         let palette = theme.extended_palette();
-        let selection_stroke_color = palette.secondary.strong.color;
-        let selection_fill_color = iced_core::Color {
-            a: 0.15,
-            ..palette.secondary.weak.color
-        };
         let ghost_color = palette.background.strong.text;
 
-        // 绘制框选/移动/橡皮擦预览矩形
+        // 绘制框选/移动/橡皮擦预览矩形（全部由 GPU 渲染）
+        // 保留 Empty 路径以消费 state，避免编译器警告
         match self.current_tool {
             Tool::Pointer => {
-                // 移动拖拽：绘制偏移后的选择矩形
-                if let Some(((origin_t, origin_tr), (current_t, current_tr))) = state.move_drag
-                    && let Some((t_start, t_end, track_lo, track_hi)) = state.move_orig_sel
-                {
-                    let snapped_origin = crate::arrangement::interaction::snap_tick(
-                        origin_t,
-                        self.precision,
-                        self.ppq,
-                    );
-                    let snapped_current = crate::arrangement::interaction::snap_tick(
-                        current_t,
-                        self.precision,
-                        self.ppq,
-                    );
-                    let dt = (snapped_current - snapped_origin).round() as i64;
-                    let dtr = (current_tr - origin_tr).round() as i32;
-
-                    let new_lo = (track_lo as i32 + dtr).max(0) as usize;
-                    let new_hi = (track_hi as i32 + dtr).max(0) as usize;
-                    draw_selection_rect(
-                        &mut frame,
-                        &self.viewport,
-                        t_start + dt as f64,
-                        t_end + dt as f64,
-                        new_lo,
-                        new_hi,
-                        selection_stroke_color,
-                        selection_fill_color,
-                    );
-                }
-
-                // 框选拖拽：实时矩形
-                if let Some((start_music, end_local)) = state.drag {
-                    let start_pixel = Point::new(
-                        self.viewport.tick_to_x(start_music.0) - self.viewport.scroll_x,
-                        start_music.1 * self.viewport.lane_height() - self.viewport.scroll_y,
-                    );
-                    let drag_dist = {
-                        let v = end_local - start_pixel;
-                        (v.x * v.x + v.y * v.y).sqrt()
-                    };
-                    if drag_dist >= 3.0 {
-                        let (_, _, _, _, t_start, t_end, track_lo, track_hi) =
-                            arrange_snapped_bounds(
-                                start_pixel,
-                                end_local,
-                                &self.viewport,
-                                self.precision,
-                                self.ppq,
-                            );
-                        draw_selection_rect(
-                            &mut frame,
-                            &self.viewport,
-                            t_start,
-                            t_end,
-                            track_lo,
-                            track_hi,
-                            selection_stroke_color,
-                            selection_fill_color,
-                        );
-                    }
-                }
-
-                // 已提交的选择矩形（由 GPU 渲染）
+                // 状态已由 handle_pointer_event 通过消息同步到 GPU
+                let _ = state;
             }
             Tool::Curve => {
                 // Curve 拖拽时绘制音符长度预览（仍在 CPU Canvas，轻量反馈）
@@ -302,36 +234,8 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
                 }
             }
             Tool::Eraser => {
-                if let Some((start_music, end_local)) = state.eraser_drag {
-                    let start_pixel = Point::new(
-                        self.viewport.tick_to_x(start_music.0) - self.viewport.scroll_x,
-                        start_music.1 * self.viewport.lane_height() - self.viewport.scroll_y,
-                    );
-                    let drag_dist = {
-                        let v = end_local - start_pixel;
-                        (v.x * v.x + v.y * v.y).sqrt()
-                    };
-                    if drag_dist >= 3.0 {
-                        let (_, _, _, _, t_start, t_end, track_lo, track_hi) =
-                            arrange_snapped_bounds(
-                                start_pixel,
-                                end_local,
-                                &self.viewport,
-                                self.precision,
-                                self.ppq,
-                            );
-                        draw_selection_rect(
-                            &mut frame,
-                            &self.viewport,
-                            t_start,
-                            t_end,
-                            track_lo,
-                            track_hi,
-                            selection_stroke_color,
-                            selection_fill_color,
-                        );
-                    }
-                }
+                // 状态已由 handle_eraser_event 通过消息同步到 GPU
+                let _ = state;
             }
             _ => {}
         }
@@ -350,44 +254,6 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_selection_rect(
-    frame: &mut Frame<Renderer>,
-    viewport: &ArrangementViewport,
-    t_start: f64,
-    t_end: f64,
-    track_lo: usize,
-    track_hi: usize,
-    stroke_color: iced_core::Color,
-    fill_color: iced_core::Color,
-) {
-    let lh = viewport.lane_height();
-    let scroll_y = viewport.scroll_y;
-    let scroll_x = viewport.scroll_x;
-    let sy = track_lo as f32 * lh - scroll_y;
-    let ey = (track_hi as f32 + 1.0) * lh - scroll_y;
-    let sx = viewport.tick_to_x(t_start) - scroll_x;
-    let ex = viewport.tick_to_x(t_end) - scroll_x;
-
-    let min_x = sx.min(ex);
-    let max_x = sx.max(ex);
-    let min_y = sy.min(ey);
-    let max_y = sy.max(ey);
-
-    let rect = iced_core::Rectangle {
-        x: min_x,
-        y: min_y,
-        width: max_x - min_x,
-        height: max_y - min_y,
-    };
-
-    // 填充
-    frame.fill_rectangle(rect.position(), rect.size(), fill_color);
-
-    // 描边
-    let stroke = Stroke::default().with_color(stroke_color).with_width(1.0);
-    frame.stroke(&Path::rectangle(rect.position(), rect.size()), stroke);
-}
-
 fn draw_ghost_note(
     frame: &mut Frame<Renderer>,
     viewport: &ArrangementViewport,

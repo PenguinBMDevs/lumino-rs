@@ -45,6 +45,25 @@ pub fn handle_eraser_event(
                 let local = clamped_local(pos, bounds);
                 state.eraser_drag = Some((start_music, local));
 
+                // 计算拖拽中的框选矩形（GPU 渲染用）
+                let start_pixel = Point::new(
+                    viewport.tick_to_x(start_music.0) - viewport.scroll_x,
+                    start_music.1 * viewport.lane_height() - viewport.scroll_y,
+                );
+                let dist = {
+                    let v = local - start_pixel;
+                    (v.x * v.x + v.y * v.y).sqrt()
+                };
+                if dist >= 3.0 {
+                    let (_, _, _, _, t_start, t_end, track_lo, track_hi) =
+                        arrange_snapped_bounds(start_pixel, local, viewport, precision, ppq);
+                    output.push(Message::ArrangementDragSelectionRect(Some((
+                        t_start, t_end, track_lo, track_hi,
+                    ))));
+                } else {
+                    output.push(Message::ArrangementDragSelectionRect(None));
+                }
+
                 auto_scroll_on_drag(
                     pos,
                     bounds,
@@ -57,6 +76,7 @@ pub fn handle_eraser_event(
         }
         canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
             state.primary_down = false;
+            output.push(Message::ArrangementDragSelectionRect(None));
             if let Some((start_music, end_local)) = state.eraser_drag.take() {
                 let start_pixel = Point::new(
                     viewport.tick_to_x(start_music.0) - viewport.scroll_x,
