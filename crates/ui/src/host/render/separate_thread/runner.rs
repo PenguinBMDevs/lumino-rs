@@ -140,19 +140,22 @@ impl Host {
             const TRACK_LIST_WIDTH: f32 = 160.0;
             const STATUSBAR_HEIGHT: f32 = 20.0;
             const TITLEBAR_HEIGHT: f32 = 30.0;
+            const H_SCROLLBAR_HEIGHT: f32 = 20.0;
+            const V_SCROLLBAR_WIDTH: f32 = 12.0;
+            let sidebar_width = self.root.sidebar.width() as f32;
             let th = self.root.toolbar.height();
             let tbo = if cfg!(target_os = "macos") {
                 0.0
             } else {
                 TITLEBAR_HEIGHT
             };
-            const H_SCROLLBAR_HEIGHT: f32 = 20.0;
             self.root.arrangement_view.viewport.canvas_size = iced_core::Point::new(
-                (viewport_size.width - TRACK_LIST_WIDTH).max(1.0),
+                (viewport_size.width - sidebar_width - TRACK_LIST_WIDTH - V_SCROLLBAR_WIDTH)
+                    .max(1.0),
                 (viewport_size.height - th - STATUSBAR_HEIGHT - H_SCROLLBAR_HEIGHT - tbo).max(1.0),
             );
             self.root.arrangement_view.viewport.canvas_offset =
-                iced_core::Point::new(TRACK_LIST_WIDTH, th + tbo);
+                iced_core::Point::new(sidebar_width + TRACK_LIST_WIDTH, th + tbo);
         }
 
         let (scroll, zoom) = if self.root.is_arrangement_mode() {

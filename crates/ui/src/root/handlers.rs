@@ -212,7 +212,7 @@ impl Root {
         let canvas_h = vp.canvas_size.y.max(1.0);
         let track_count = self.sidebar.tracks.len().max(1) as f32;
         let min_zoom = crate::constants::editor::zoom::MIN_ARRANGEMENT_ZOOM_Y;
-        let max_zoom = (canvas_h / (track_count * vp.track_height)).max(min_zoom);
+        let max_zoom = crate::constants::editor::zoom::MAX_ARRANGEMENT_ZOOM_Y;
         let new_zoom = zoom.clamp(min_zoom, max_zoom);
         let focus_px = vp.scroll_y + canvas_h * fixed_ratio;
         let focus_ratio = focus_px / (old_zoom * vp.track_height);

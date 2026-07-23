@@ -3,11 +3,13 @@
 //! 包含 Root 主入口视图、主窗口渲染、工程走带视图和瀑布流占位页面。
 
 use iced_core::Length;
-use iced_widget::{column, container, row, scrollable, text};
+use iced_widget::{button, column, container, row, scrollable, text};
 
 use super::right_content;
 use crate::message;
+use crate::resources::icon::{self, Icon};
 use crate::root::Root;
+use crate::sidebar::Event as SidebarEvent;
 use crate::view::audio_export_dialog::view_audio_export_dialog;
 use crate::view::video_export_dialog::view_video_export_dialog;
 use crate::{Element, Theme};
@@ -181,6 +183,45 @@ impl Root {
             .width(Length::Fixed(TRACK_LIST_WIDTH))
             .height(Length::Fill);
 
+        // 添加音轨按钮（放在音轨列表底部，参考 yinhe 的 "+" 角落按钮）
+        let add_track_btn = button(
+            container(icon::view_with_size_and_theme(
+                Icon::Plus,
+                16,
+                16,
+                Some(&self.window.theme),
+            ))
+            .width(Length::Fill)
+            .height(Length::Fixed(20.0))
+            .align_x(iced_core::alignment::Horizontal::Center)
+            .align_y(iced_core::alignment::Vertical::Center),
+        )
+        .width(Length::Fixed(TRACK_LIST_WIDTH))
+        .height(Length::Fixed(20.0))
+        .on_press(SidebarEvent::add_track())
+        .style(|theme: &Theme, status| {
+            let palette = theme.extended_palette();
+            let bg = if status == iced_widget::button::Status::Hovered {
+                palette.background.weak.color
+            } else {
+                palette.background.base.color
+            };
+            iced_widget::button::Style {
+                text_color: palette.background.base.text,
+                border: iced_core::Border {
+                    radius: 0.0.into(),
+                    width: 0.0,
+                    color: iced_core::Color::TRANSPARENT,
+                },
+                ..Default::default()
+            }
+            .with_background(bg)
+        });
+
+        // 左侧栏：音轨列表 + 底部添加按钮
+        let track_list_col =
+            column![track_list, add_track_btn].width(Length::Fixed(TRACK_LIST_WIDTH));
+
         // 右侧走带区域 — 由 WGPU ArrangementRenderer 渲染
         // 使用空容器作为占位，不设置背景色，让 wgpu 渲染可见
         // 上方叠加透明 Canvas 捕获点击事件以移动演奏指示线
@@ -255,7 +296,7 @@ impl Root {
             },
         );
 
-        let arrangement_row = iced_widget::row![track_list, arrangement_area, v_scrollbar,];
+        let arrangement_row = iced_widget::row![track_list_col, arrangement_area, v_scrollbar,];
 
         let perf_ctx = crate::toolbar::ToolbarPerfContext {
             perf_data: self.statusbar.perf_data(),

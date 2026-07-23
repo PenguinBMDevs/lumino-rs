@@ -47,6 +47,8 @@ pub mod editor {
         pub const MAX_ARRANGEMENT_ZOOM_X: f32 = 10.0;
         /// 走带视图 Y 轴最小缩放
         pub const MIN_ARRANGEMENT_ZOOM_Y: f32 = 0.2;
+        /// 走带视图 Y 轴最大缩放
+        pub const MAX_ARRANGEMENT_ZOOM_Y: f32 = 5.0;
     }
 
     /// 默认最小 tick 值（用于画布宽度下限）
