@@ -170,6 +170,20 @@ impl ArrangementNoteInstance {
             tag: 5,
         }
     }
+
+    /// 创建框选矩形实例（屏幕坐标，带半透明填充和描边）
+    pub fn selection_rect(x: f32, y: f32, w: f32, h: f32, color: [f32; 3]) -> Self {
+        Self {
+            x,
+            y,
+            w: w.max(1.0),
+            h: h.max(1.0),
+            rgba_packed: pack_rgba(color[0], color[1], color[2], 0.15),
+            props_packed: pack_props(0.0, 1.0),
+            velocity: 0,
+            tag: 6,
+        }
+    }
 }
 
 /// Pack RGBA floats (0.0-1.0) into a single u32 (UNORM8 x 4)

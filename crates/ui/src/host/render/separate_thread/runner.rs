@@ -95,6 +95,11 @@ impl Host {
                 lumino_gfx::colors::AR_PLAYHEAD_COLOR.2,
                 lumino_gfx::colors::AR_PLAYHEAD_COLOR.3,
             ],
+            sel_rect: [
+                theme.extended_palette().secondary.strong.color.r,
+                theme.extended_palette().secondary.strong.color.g,
+                theme.extended_palette().secondary.strong.color.b,
+            ],
         };
 
         let scene_params = ArrangementSceneParams {
@@ -107,6 +112,17 @@ impl Host {
             playback_position: self.root.editor.playback_position,
             colors: &colors,
             ghost_notes: &self.root.arrangement_view.ghost_notes,
+            sel_rect: self
+                .root
+                .editor
+                .editor_state
+                .data
+                .arrange_selection
+                .rects
+                .first()
+                .map(|&(ts, te, _kl, _kh, tl, th)| {
+                    (ts as f64, te as f64, tl as usize, th as usize)
+                }),
         };
 
         lumino_gfx::collect_arrangement_instances(&scene_params)

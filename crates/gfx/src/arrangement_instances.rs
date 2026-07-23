@@ -17,6 +17,8 @@ pub struct ArrangementViewColors {
     pub lane_odd: [f32; 3],
     pub measure_line: [f32; 4],
     pub playhead: [f32; 4],
+    /// 框选矩形颜色（RGB，alpha 由实例硬编码 0.15）
+    pub sel_rect: [f32; 3],
 }
 
 /// 走带视图场景参数（聚合所有实例构建所需数据）
@@ -32,6 +34,8 @@ pub struct ArrangementSceneParams<'a> {
     pub colors: &'a ArrangementViewColors,
     /// ghost 音符预览（tick_start, tick_end, track）
     pub ghost_notes: &'a [(f64, f64, usize)],
+    /// 已提交的框选矩形（tick_start, tick_end, track_lo, track_hi）
+    pub sel_rect: Option<(f64, f64, usize, usize)>,
 }
 
 /// 走带视口状态（GFX 版，纯数据，与 UI 版字段兼容）
@@ -153,7 +157,27 @@ pub fn build_arrangement_all(
         }
     }
 
-    // ── 4. ghost 音符预览 ──
+    // ── 4. 框选矩形 ──
+    if let Some((t_start, t_end, track_lo, track_hi)) = params.sel_rect {
+        let lh = viewport.track_height * viewport.zoom_y;
+        let sx = cox + (t_start as f32) * ppu - viewport.scroll_x;
+        let ex = cox + (t_end as f32) * ppu - viewport.scroll_x;
+        let sy = track_lo as f32 * lh - viewport.scroll_y + coy;
+        let ey = (track_hi as f32 + 1.0) * lh - viewport.scroll_y + coy;
+        let min_x = sx.min(ex);
+        let max_x = sx.max(ex);
+        let min_y = sy.min(ey);
+        let max_y = sy.max(ey);
+        out.push(ArrangementNoteInstance::selection_rect(
+            min_x,
+            min_y,
+            max_x - min_x,
+            max_y - min_y,
+            colors.sel_rect,
+        ));
+    }
+
+    // ── 5. ghost 音符预览 ──
     if !params.ghost_notes.is_empty() {
         let ghost_color = [0.9, 0.9, 0.9];
         for (start, end, track) in params.ghost_notes {
@@ -175,7 +199,7 @@ pub fn build_arrangement_all(
         }
     }
 
-    // ── 5. 演奏指示线 ──
+    // ── 6. 演奏指示线 ──
     if params.playback_position > 0.0 {
         let cx = tick_to_x(viewport, params.playback_position as f64);
         if cx >= cox && cx <= cox + w {

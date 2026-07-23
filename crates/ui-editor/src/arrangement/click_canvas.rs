@@ -284,19 +284,7 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
                     }
                 }
 
-                // 已提交的选择矩形
-                if let Some((t_start, t_end, track_lo, track_hi)) = self.arr_sel_rect {
-                    draw_selection_rect(
-                        &mut frame,
-                        &self.viewport,
-                        t_start,
-                        t_end,
-                        track_lo,
-                        track_hi,
-                        selection_stroke_color,
-                        selection_fill_color,
-                    );
-                }
+                // 已提交的选择矩形（由 GPU 渲染）
             }
             Tool::Curve => {
                 // Curve 拖拽时绘制音符长度预览（仍在 CPU Canvas，轻量反馈）
