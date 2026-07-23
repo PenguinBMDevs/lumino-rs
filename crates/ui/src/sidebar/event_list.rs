@@ -24,10 +24,34 @@ const FONT_SIZE: f32 = 11.0;
 const COL_WIDTHS: [f32; 6] = [36.0, 52.0, 42.0, 82.0, 46.0, 52.0];
 /// 列标题
 const COL_HEADERS: &[&str] = &["Mea", "Tick", "Step", "Event", "Gate", "Vel/Value"];
+/// 分割线命中半径（像素）
+const DIVIDER_HIT_WIDTH: f32 = 4.0;
+/// 最小列宽（像素）
+const MIN_COL_WIDTH: f32 = 20.0;
 
-/// 事件列表 Canvas 状态（当前无需额外运行时状态）
-#[derive(Debug, Default)]
-pub struct EventListState;
+/// 事件列表 Canvas 状态
+#[derive(Debug)]
+pub struct EventListState {
+    /// 当前各列宽度
+    column_widths: [f32; 6],
+    /// 当前正在拖拽的分割线索引（None 表示未拖拽）
+    dragging_divider: Option<usize>,
+    /// 拖拽开始时的鼠标 x 坐标
+    drag_start_x: f32,
+    /// 拖拽开始时的各列宽度快照
+    drag_start_widths: [f32; 6],
+}
+
+impl Default for EventListState {
+    fn default() -> Self {
+        Self {
+            column_widths: COL_WIDTHS,
+            dragging_divider: None,
+            drag_start_x: 0.0,
+            drag_start_widths: COL_WIDTHS,
+        }
+    }
+}
 
 /// 事件列表 Canvas
 pub struct EventListCanvas<'a> {
@@ -65,6 +89,17 @@ impl<'a> EventListCanvas<'a> {
         HEADER_HEIGHT + self.notes.len() as f32 * ROW_HEIGHT
     }
 
+    /// 根据列宽计算各分割线的 x 坐标
+    fn divider_positions(&self, column_widths: &[f32; 6]) -> [f32; 5] {
+        let mut xs = [0.0f32; 5];
+        let mut x = 0.0;
+        for i in 0..5 {
+            x += column_widths[i];
+            xs[i] = x;
+        }
+        xs
+    }
+
     /// 计算可见行范围（包含表头）
     fn visible_range(&self, scroll_y: f32, viewport_height: f32) -> (usize, usize) {
         if self.notes.is_empty() {
@@ -87,17 +122,75 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
 
     fn update(
         &self,
-        _state: &mut EventListState,
-        _event: &canvas::Event,
-        _bounds: Rectangle,
-        _cursor: iced_core::mouse::Cursor,
+        state: &mut EventListState,
+        event: &canvas::Event,
+        bounds: Rectangle,
+        cursor: iced_core::mouse::Cursor,
     ) -> Option<canvas::Action<Message>> {
-        None
+        use iced_core::mouse::{Button, Event as MouseEvent};
+
+        let pos = cursor.position()?;
+        let local_x = pos.x - bounds.x;
+
+        match event {
+            canvas::Event::Mouse(MouseEvent::ButtonPressed(Button::Left)) => {
+                let dividers = self.divider_positions(&state.column_widths);
+                for (i, &x) in dividers.iter().enumerate() {
+                    if (local_x - x).abs() <= DIVIDER_HIT_WIDTH {
+                        state.dragging_divider = Some(i);
+                        state.drag_start_x = local_x;
+                        state.drag_start_widths = state.column_widths;
+                        return Some(canvas::Action::capture());
+                    }
+                }
+                None
+            }
+            canvas::Event::Mouse(MouseEvent::ButtonReleased(Button::Left)) => {
+                if state.dragging_divider.is_some() {
+                    state.dragging_divider = None;
+                    return Some(canvas::Action::capture());
+                }
+                None
+            }
+            canvas::Event::Mouse(MouseEvent::CursorMoved { .. }) => {
+                if let Some(idx) = state.dragging_divider {
+                    let delta = local_x - state.drag_start_x;
+                    let new_width = (state.drag_start_widths[idx] + delta).max(MIN_COL_WIDTH);
+                    state.column_widths[idx] = new_width;
+                    return Some(canvas::Action::request_redraw());
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn mouse_interaction(
+        &self,
+        state: &EventListState,
+        bounds: Rectangle,
+        cursor: iced_core::mouse::Cursor,
+    ) -> iced_core::mouse::Interaction {
+        if state.dragging_divider.is_some() {
+            return iced_core::mouse::Interaction::ResizingHorizontally;
+        }
+        let Some(pos) = cursor.position() else {
+            return iced_core::mouse::Interaction::default();
+        };
+        let local_x = pos.x - bounds.x;
+        let dividers = self.divider_positions(&state.column_widths);
+        if dividers
+            .iter()
+            .any(|&x| (local_x - x).abs() <= DIVIDER_HIT_WIDTH)
+        {
+            return iced_core::mouse::Interaction::ResizingHorizontally;
+        }
+        iced_core::mouse::Interaction::default()
     }
 
     fn draw(
         &self,
-        _state: &EventListState,
+        state: &EventListState,
         renderer: &Renderer,
         theme: &Theme,
         bounds: Rectangle,
@@ -128,7 +221,6 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
             header_color,
         );
 
-        let text_color = palette.background.base.text;
         let header_text_color = if is_light {
             iced_core::Color::from_rgb(0.2, 0.2, 0.2)
         } else {
@@ -136,6 +228,7 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
         };
 
         // 绘制表头文字
+        let column_widths = state.column_widths;
         let mut x = 4.0_f32;
         for (i, &header) in COL_HEADERS.iter().enumerate() {
             frame.fill_text(Text {
@@ -147,12 +240,12 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
                     FONT_SIZE * 1.2,
                 )),
                 font: iced_core::Font::default(),
-                max_width: COL_WIDTHS[i],
+                max_width: column_widths[i],
                 align_x: iced_core::alignment::Horizontal::Left.into(),
                 align_y: iced_core::alignment::Vertical::Center,
                 shaping: iced_widget::text::Shaping::Basic,
             });
-            x += COL_WIDTHS[i];
+            x += column_widths[i];
         }
 
         // 可见行范围：优先使用 scrollable 报告的视口高度，未收到时回退到 canvas 高度
@@ -170,24 +263,28 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
             let Some(note) = self.notes.get(idx) else {
                 continue;
             };
-            let y = HEADER_HEIGHT + idx as f32 * ROW_HEIGHT - self.scroll_y;
-            if y + ROW_HEIGHT < 0.0 || y > canvas_h {
-                continue;
-            }
+            // Canvas 位于 scrollable 内部，scrollable 负责整体平移；这里使用内容坐标
+            let y = HEADER_HEIGHT + idx as f32 * ROW_HEIGHT;
 
-            // 行交替背景
-            if idx % 2 == 0 {
-                let row_bg = if is_light {
-                    iced_core::Color::from_rgb(0.97, 0.97, 0.97)
+            // 行交替背景：白行黑字、黑行白字，并适配当前主题
+            let (row_bg, row_text_color) = if idx % 2 == 0 {
+                // 浅色行
+                let bg = if is_light {
+                    iced_core::Color::from_rgb(1.0, 1.0, 1.0)
                 } else {
-                    iced_core::Color::from_rgb(0.22, 0.22, 0.22)
+                    iced_core::Color::from_rgb(0.85, 0.85, 0.85)
                 };
-                frame.fill_rectangle(
-                    iced_core::Point::new(0.0, y),
-                    iced_core::Size::new(canvas_w, ROW_HEIGHT),
-                    row_bg,
-                );
-            }
+                (bg, iced_core::Color::from_rgb(0.0, 0.0, 0.0))
+            } else {
+                // 深色行
+                let bg = iced_core::Color::from_rgb(0.18, 0.18, 0.18);
+                (bg, iced_core::Color::from_rgb(1.0, 1.0, 1.0))
+            };
+            frame.fill_rectangle(
+                iced_core::Point::new(0.0, y),
+                iced_core::Size::new(canvas_w, ROW_HEIGHT),
+                row_bg,
+            );
 
             let measure = (note.tick / ticks_per_measure).floor() as i32 + 1;
             let tick_in_measure = note.tick - (measure as f32 - 1.0) * ticks_per_measure;
@@ -202,23 +299,24 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
                 format!("{}", note.velocity),
             ];
 
+            let column_widths = state.column_widths;
             let mut x = 4.0_f32;
             for (i, value) in values.iter().enumerate() {
                 frame.fill_text(Text {
                     content: value.clone(),
                     position: iced_core::Point::new(x, y + ROW_HEIGHT * 0.5),
-                    color: text_color,
+                    color: row_text_color,
                     size: iced_core::Pixels(FONT_SIZE),
                     line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(
                         FONT_SIZE * 1.2,
                     )),
                     font: iced_core::Font::default(),
-                    max_width: COL_WIDTHS[i],
+                    max_width: column_widths[i],
                     align_x: iced_core::alignment::Horizontal::Left.into(),
                     align_y: iced_core::alignment::Vertical::Center,
                     shaping: iced_widget::text::Shaping::Basic,
                 });
-                x += COL_WIDTHS[i];
+                x += column_widths[i];
             }
         }
 
@@ -234,7 +332,7 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
         path.line_to(iced_core::Point::new(canvas_w, HEADER_HEIGHT - 1.0));
         // 垂直分隔线
         let mut x = 0.0_f32;
-        for &w in &COL_WIDTHS[..COL_WIDTHS.len() - 1] {
+        for &w in &column_widths[..column_widths.len() - 1] {
             x += w;
             path.move_to(iced_core::Point::new(x, 0.0));
             path.line_to(iced_core::Point::new(x, canvas_h));
@@ -262,7 +360,7 @@ pub fn view_event_list<'a>(
     let total_height = canvas.total_height();
 
     let content = iced_widget::canvas::Canvas::new(canvas)
-        .width(Length::Fixed(COL_WIDTHS.iter().sum::<f32>() + 8.0))
+        .width(Length::Fill)
         .height(Length::Fixed(total_height.max(1.0)));
 
     let scrollable_content = scrollable(container(content).padding(Padding::ZERO))
@@ -281,49 +379,4 @@ pub fn view_event_list<'a>(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sample_notes() -> Vector<Note> {
-        let mut notes = Vector::new();
-        notes.push_back(Note::new(0.0, 60, 480.0).with_velocity(100));
-        notes.push_back(Note::new(480.0, 62, 480.0).with_velocity(90));
-        notes.push_back(Note::new(960.0, 64, 240.0).with_velocity(80));
-        notes
-    }
-
-    #[test]
-    fn test_total_height() {
-        let notes = sample_notes();
-        let canvas = EventListCanvas::new(&notes, 480, 120.0, 0.0, 100.0);
-        assert_eq!(canvas.total_height(), HEADER_HEIGHT + 3.0 * ROW_HEIGHT);
-    }
-
-    #[test]
-    fn test_visible_range_empty() {
-        let empty = Vector::new();
-        let canvas = EventListCanvas::new(&empty, 480, 120.0, 0.0, 100.0);
-        assert_eq!(canvas.visible_range(0.0, 100.0), (0, 0));
-    }
-
-    #[test]
-    fn test_visible_range_clamped() {
-        let notes = sample_notes();
-        let canvas = EventListCanvas::new(&notes, 480, 120.0, 0.0, 36.0);
-        // 视口高度 36px：扣除 20px 表头后剩余 16px，约 1 行可见，含过度绘制共 2 行
-        let (first, last) = canvas.visible_range(0.0, 36.0);
-        assert_eq!(first, 0);
-        assert_eq!(last, 2);
-    }
-
-    #[test]
-    fn test_visible_range_scrolled() {
-        let notes = sample_notes();
-        let canvas = EventListCanvas::new(&notes, 480, 120.0, ROW_HEIGHT, ROW_HEIGHT * 2.0);
-        // 滚动超过表高 + 一行后，first 至少为 1
-        let scroll_y = HEADER_HEIGHT + ROW_HEIGHT;
-        let (first, last) = canvas.visible_range(scroll_y, ROW_HEIGHT * 2.0);
-        assert!(first >= 1);
-        assert!(last <= notes.len());
-    }
-}
+mod tests;
