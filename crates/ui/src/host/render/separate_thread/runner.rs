@@ -37,6 +37,7 @@ impl Host {
             canvas_offset: [viewport_info.canvas_offset.x, viewport_info.canvas_offset.y],
             canvas_size: [viewport_info.canvas_size.x, viewport_info.canvas_size.y],
             total_ticks: av.total_ticks,
+            ppq: av.ppq,
         };
 
         let track_visible: Vec<bool> = self

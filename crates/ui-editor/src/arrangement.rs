@@ -31,6 +31,8 @@ pub struct ArrangementViewport {
     pub canvas_size: Point,
     /// 总 tick 数
     pub total_ticks: u32,
+    /// 分辨率 (Pulses Per Quarter note)
+    pub ppq: u16,
     /// 缓存的音符最大 tick 终点，避免每帧全量扫描 track_notes
     pub cached_max_tick_end: f32,
     /// 缓存失效版本号，对应 EditorData::track_notes_gen
@@ -49,6 +51,7 @@ impl Default for ArrangementViewport {
             canvas_offset: Point::new(0.0, 0.0),
             canvas_size: Point::new(800.0, 600.0),
             total_ticks: 0,
+            ppq: lumino_core::view_state::DEFAULT_PPQ,
             cached_max_tick_end: 0.0,
             cached_track_notes_gen: 0,
         }

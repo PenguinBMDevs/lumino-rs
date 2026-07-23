@@ -53,6 +53,8 @@ pub struct ArrangementViewport {
     pub canvas_size: [f32; 2],
     /// 总 tick 数
     pub total_ticks: u32,
+    /// 分辨率 (Pulses Per Quarter note)
+    pub ppq: u16,
 }
 
 /// 走带视图音轨调色板（12 色，与 view.rs 保持同步）
@@ -135,7 +137,7 @@ pub fn build_arrangement_all(
     }
 
     // ── 3. 小节线 ──
-    let tpb = 480.0_f64 * 4.0;
+    let tpb = viewport.ppq as f64 * 4.0;
     for bar in ((ts / tpb).floor() as i32).max(0)..=(te / tpb).ceil() as i32 {
         let tick = bar as f64 * tpb;
         let x = tick_to_x(viewport, tick);
