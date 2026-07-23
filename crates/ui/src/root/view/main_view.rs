@@ -36,10 +36,15 @@ impl Root {
 
         // 左侧栏（包含图标栏和音轨面板）
         puffin::profile_scope!("root_view_sidebar");
+        let current_track_notes = self.editor.editor_state.data.current_track_notes();
+        let ppq = self.editor.editor_state.view.ppq;
         let left_bar = self.sidebar.view(
             &self.window,
             self.settings.language,
             self.state.current_mode,
+            current_track_notes,
+            ppq,
+            self.toolbar.note_precision.as_ticks(ppq),
         );
 
         // 右侧内容区域（工具栏 + 编辑器 + 力度面板 / 瀑布流占位）

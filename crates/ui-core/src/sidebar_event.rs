@@ -159,6 +159,8 @@ pub enum Event {
     TrackColorReset(usize),
     /// 关闭颜色选择器
     TrackColorPickerClosed(usize),
+    /// 事件列表垂直滚动偏移与视口高度更新
+    EventListScrolled(f32, f32),
 }
 
 impl Event {
@@ -275,6 +277,10 @@ impl Event {
 
     pub fn track_color_picker_closed(track_id: usize) -> Message {
         Message::Sidebar(Self::TrackColorPickerClosed(track_id))
+    }
+
+    pub fn event_list_scrolled(offset: f32, viewport_height: f32) -> Message {
+        Message::Sidebar(Self::EventListScrolled(offset, viewport_height))
     }
 }
 

@@ -18,6 +18,9 @@ pub mod storage;
 pub mod types;
 pub mod view_state;
 
+/// 重新导出 `im` crate，便于上层组件直接引用 `im::Vector` 等持久化集合类型。
+pub use im;
+
 pub use arrange_selection::ArrangeSelection;
 pub use automation::{
     AutomationEdit, AutomationEvent, AutomationLane, AutomationTarget, SegmentShape,

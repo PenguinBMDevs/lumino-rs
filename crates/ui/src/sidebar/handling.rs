@@ -283,6 +283,11 @@ impl Sidebar {
             TrackColorPickerClosed(_) => {
                 self.color_picking_track = None;
             }
+            // ── 事件列表 ──
+            EventListScrolled(offset, viewport_height) => {
+                self.event_list_scroll_y = offset.max(0.0);
+                self.event_list_viewport_height = viewport_height.max(0.0);
+            }
             // ── 调整宽度 ──
             ResizeDragStarted(_) => {
                 self.is_resizing = true;

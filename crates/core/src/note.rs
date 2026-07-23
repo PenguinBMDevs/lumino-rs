@@ -45,6 +45,19 @@ impl Note {
     }
 }
 
+/// 将 MIDI 音高数字转换为音名（升号表示法）。
+///
+/// 例如 `63` → `"D#"`，`64` → `"E"`。八度按 MIDI 标准计算：
+/// C4 = 60，每 12 一个八度。
+pub fn note_name(key: u16) -> String {
+    const NAMES: &[&str] = &[
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
+    let octave = (key as i32 / 12) - 1;
+    let name = NAMES[(key as usize) % 12];
+    format!("{}{}", name, octave)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,5 +119,14 @@ mod tests {
         assert_eq!(n.velocity, 0);
         let n = Note::new(0.0, 60, 480.0).with_velocity(127);
         assert_eq!(n.velocity, 127);
+    }
+
+    #[test]
+    fn test_note_name() {
+        assert_eq!(note_name(60), "C4");
+        assert_eq!(note_name(63), "D#4");
+        assert_eq!(note_name(64), "E4");
+        assert_eq!(note_name(0), "C-1");
+        assert_eq!(note_name(127), "G9");
     }
 }

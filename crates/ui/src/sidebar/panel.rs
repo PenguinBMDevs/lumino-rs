@@ -24,6 +24,16 @@ pub struct SidebarViewParams<'a> {
     pub context_menu_target_id: Option<usize>,
     pub renaming_track: Option<&'a (usize, String)>,
     pub color_picking_track: Option<usize>,
+    /// 当前轨道音符集合（零拷贝引用）
+    pub current_track_notes: &'a lumino_core::im::Vector<lumino_core::Note>,
+    /// 当前 PPQ，用于小节/拍计算
+    pub ppq: u16,
+    /// 当前吸附精度，作为 Step 列显示值
+    pub snap_precision: f32,
+    /// 事件列表垂直滚动偏移
+    pub event_list_scroll_y: f32,
+    /// 事件列表可视区域高度（用于虚拟滚动）
+    pub event_list_viewport_height: f32,
 }
 
 pub fn view<'a>(
@@ -89,30 +99,14 @@ pub fn view<'a>(
             container(col).into()
         }
         Route::EventList => {
-            // 事件列表面板占位（功能实施中）
-            let placeholder = column![
-                text("事件列表").size(14).style(|theme: &Theme| {
-                    let palette = theme.extended_palette();
-                    text::Style {
-                        color: Some(palette.background.base.text),
-                    }
-                }),
-                text("🚧 实施中...").size(12).style(|theme: &Theme| {
-                    let palette = theme.extended_palette();
-                    text::Style {
-                        color: Some(palette.background.strong.text),
-                    }
-                }),
-            ]
-            .spacing(8)
-            .align_x(Alignment::Center);
-
-            container(placeholder)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .into()
+            // 事件列表：直接渲染当前轨道音符，零拷贝传递切片
+            super::event_list::view_event_list(
+                params.current_track_notes,
+                params.ppq,
+                params.snap_precision,
+                params.event_list_scroll_y,
+                params.event_list_viewport_height,
+            )
         }
         Route::File => {
             // 全量渲染所有音轨——由 iced scrollable 原生处理滚动。

@@ -128,6 +128,17 @@ impl EditorData {
     pub fn mark_track_notes_changed(&mut self) {
         self.track_notes_gen = self.track_notes_gen.wrapping_add(1);
     }
+
+    /// 获取当前轨道音符集合的零拷贝引用。
+    ///
+    /// 优先从 `track_notes` 中读取当前选中的音轨；若不存在则返回空 `Vector`，
+    /// 避免构造第二份拷贝。
+    pub fn current_track_notes(&self) -> &im::Vector<Note> {
+        static EMPTY: std::sync::OnceLock<im::Vector<Note>> = std::sync::OnceLock::new();
+        self.track_notes
+            .get(&self.current_track)
+            .unwrap_or_else(|| EMPTY.get_or_init(im::Vector::new))
+    }
 }
 
 #[cfg(test)]

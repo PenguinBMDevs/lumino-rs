@@ -2,6 +2,7 @@
 mod color_picker;
 mod context_menu;
 mod core;
+mod event_list;
 mod handling;
 mod view;
 

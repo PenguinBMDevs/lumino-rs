@@ -13,6 +13,9 @@ impl Sidebar {
         window: &'a window::Window,
         language: Language,
         current_mode: AppMode,
+        current_track_notes: &'a lumino_core::im::Vector<lumino_core::Note>,
+        ppq: u16,
+        snap_precision: f32,
     ) -> Element<'a> {
         let panel = if self.panel_visible {
             let sidebar_params = panel::SidebarViewParams {
@@ -24,6 +27,11 @@ impl Sidebar {
                 context_menu_target_id: self.track_context_menu.target_track_id,
                 renaming_track: self.renaming_track.as_ref(),
                 color_picking_track: self.color_picking_track,
+                current_track_notes,
+                ppq,
+                snap_precision,
+                event_list_scroll_y: self.event_list_scroll_y,
+                event_list_viewport_height: self.event_list_viewport_height,
             };
             panel::view(sidebar_params, window, language)
         } else {

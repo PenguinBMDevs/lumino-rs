@@ -165,6 +165,10 @@ pub struct Sidebar {
     pub renaming_track: Option<(usize, String)>,
     /// 正在选择颜色的音轨 ID
     pub color_picking_track: Option<usize>,
+    /// 事件列表垂直滚动偏移
+    pub event_list_scroll_y: f32,
+    /// 事件列表可视区域高度（用于虚拟滚动）
+    pub event_list_viewport_height: f32,
     /// 单调递增的音轨 ID 计数器（删除后复用 ID 会导致选中冲突）
     pub(crate) next_track_id: usize,
 }
@@ -216,6 +220,8 @@ impl Sidebar {
             track_context_menu: TrackContextMenuState::default(),
             renaming_track: None,
             color_picking_track: None,
+            event_list_scroll_y: 0.0,
+            event_list_viewport_height: 0.0,
             next_track_id: 2,
         }
     }
