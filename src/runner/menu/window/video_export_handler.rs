@@ -575,6 +575,7 @@ fn run_streaming_video_export_task(
         ppq,
         total_ticks
     );
+    tracing::info!("MIDI 缓存就绪，开始逐帧渲染/编码...");
 
     // 创建帧数据通道与回收通道
     let (frame_tx, frame_rx) = channel::<Vec<u8>>();

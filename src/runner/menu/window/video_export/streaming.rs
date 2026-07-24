@@ -88,6 +88,8 @@ pub fn parse_midi_to_cache(
     viewport_beats: f64,
     progress: Option<ProgressCallback>,
 ) -> Result<StreamingMidiResult, String> {
+    tracing::info!("开始流式解析 MIDI 并写入硬盘缓存: {}", midi_path.display());
+
     let midi_bytes = std::fs::read(midi_path).map_err(|e| format!("读取 MIDI 文件失败: {e}"))?;
 
     let _ = send_progress(&progress, "正在扫描 MIDI 头部信息...".to_string(), 0.02);
@@ -132,6 +134,10 @@ pub fn parse_midi_to_cache(
                 "正在解析音符并写入硬盘缓存...".to_string(),
                 0.10 + (percent as f64) * 0.60 / 100.0,
             );
+            // 在终端同步输出关键里程碑日志，方便调试时观察进度
+            if percent % 25 == 0 {
+                tracing::info!("MIDI 解析进度: {}%", percent);
+            }
             last_reported_percent = percent;
         }
 
@@ -208,6 +214,7 @@ pub fn parse_midi_to_cache(
         ppqn,
         total_ticks
     );
+    tracing::info!("音符缓存写入完成，开始构建帧索引...");
 
     let _ = send_progress(&progress, "正在构建帧索引...".to_string(), 0.75);
 
@@ -232,6 +239,7 @@ pub fn parse_midi_to_cache(
             0.0
         }
     );
+    tracing::info!("帧索引构建完成，MIDI 缓存准备就绪");
 
     let _ = send_progress(&progress, "MIDI 缓存准备完成".to_string(), 1.0);
 
