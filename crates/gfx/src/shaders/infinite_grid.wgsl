@@ -167,7 +167,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             let measure_int = ticks_per_measure * pow(2.0, power);
             let fade_start = MEASURE_FADE_START * pow(2.0, power);
             let fade_end = MEASURE_FADE_END * pow(2.0, power);
-            let alpha = smooth_fade_range(visible_measures, fade_start, fade_end);
+            var alpha = smooth_fade_range(visible_measures, fade_start, fade_end);
+            if p > 0 && visible_measures <= fade_start / 2.0 {
+                alpha = 0.0;
+            }
             if alpha <= 0.0 {
                 continue;
             }
