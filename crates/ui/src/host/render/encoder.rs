@@ -80,9 +80,14 @@ impl Host {
         // DraggingSelection 期间 has_active_ghost_delta 返回 false（ghost 方案设计如此），
         // 音符不会被 ghost，渲染结果与无拖拽时完全相同。因此不将其标记为 ghost_dragging，
         // 避免每帧触发 collect_visible_note_data 和 note instances 重建。
+        //
+        // 但 ResizingSelectionStart/End 期间音符直接被修改在 data.notes 中，每帧都不同，
+        // 必须纳入重建条件，否则拉伸过程中视觉无更新。
         let is_ghost_dragging = matches!(
             current_edit_state,
             crate::editor::EditState::Dragging { .. }
+                | crate::editor::EditState::ResizingSelectionStart { .. }
+                | crate::editor::EditState::ResizingSelectionEnd { .. }
         ) || self.root.editor.has_pending_drag();
 
         // 数据变化（编辑/加载/ghost 拖动）

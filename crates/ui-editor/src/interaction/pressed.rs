@@ -106,6 +106,10 @@ impl Editor {
                     // 注意：不能用 flush_pending_drag（会清空 selected_notes，导致拉伸无目标）
                     if self.pending_drag_state.is_some() {
                         self.commit_pending_drag();
+                        // commit_pending_drag 移动音符后，selected_bounds 缓存仍为原始位置，
+                        // 不失效会导致后续 get_selection_box_bounds 返回错误边界，框选框跳变。
+                        // 在下一次访问时通过 O(N) 回退或 ghost 路径重建缓存。
+                        self.selected_bounds.set(None);
                     }
                     self.push_history();
                     self.editor_state.interaction.edit_state =
@@ -117,6 +121,8 @@ impl Editor {
                     // 框选右边缘拉伸：同 LeftEdge，提交 pending 但保留选区
                     if self.pending_drag_state.is_some() {
                         self.commit_pending_drag();
+                        // 同 LeftEdge：清除 selected_bounds 缓存，防止框选框跳变
+                        self.selected_bounds.set(None);
                     }
                     self.push_history();
                     self.editor_state.interaction.edit_state =
