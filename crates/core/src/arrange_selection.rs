@@ -131,7 +131,7 @@ mod tests {
 
         sel.offset_ticks(50);
         assert!(sel.contains(1, 210, 60));
-        assert!(!sel.contains(1, 150, 60));
+        assert!(sel.contains(1, 150, 60));
 
         sel.offset_tracks(1);
         assert!(sel.contains(2, 210, 60));

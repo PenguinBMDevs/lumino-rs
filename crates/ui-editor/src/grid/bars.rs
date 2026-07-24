@@ -131,7 +131,10 @@ impl GridLod {
         for power in 0..=MAX_MEASURE_POWER {
             let fade_start = MEASURE_FADE_START * (1u32 << power) as f32;
             let fade_end = MEASURE_FADE_END * (1u32 << power) as f32;
-            let alpha = smooth_fade_range(visible_measures, fade_start, fade_end);
+            let mut alpha = smooth_fade_range(visible_measures, fade_start, fade_end);
+            if power > 0 && visible_measures <= fade_start / 2.0 {
+                alpha = 0.0;
+            }
             if alpha > 0.0 {
                 measures[measure_count] = MeasureLod {
                     interval: ticks_per_measure * (1u32 << power) as f32,
