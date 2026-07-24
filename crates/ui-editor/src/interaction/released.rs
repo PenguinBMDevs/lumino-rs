@@ -96,6 +96,16 @@ impl Editor {
                 // ghost 方案：期间用 mark_ghost_dirty 不重建索引，松手时一次性重建。
                 // notes 已在 drag.rs 每帧被改，此处只把发生变更的选中音符流式同步到
                 // track_notes，避免整轨克隆。
+                //
+                // 清除 selected_bounds 缓存：拉伸期间虽增量更新，但有个别音符可能因
+                // new_length < snap_precision 被跳过，导致缓存与实际不完全一致。
+                // 松手后强制 O(N) 回退路径重新计算，确保正确性。
+                self.selected_bounds.set(None);
+                // NoteStore 启用时，拉伸期间修改的是 note_store 而非 notes，
+                // 需要同步回 notes 确保一致性（sync_track_notes_at_indices 读取 notes）。
+                if self.editor_state.data.is_note_store_enabled() {
+                    self.editor_state.data.sync_notes_from_store();
+                }
                 tracing::debug!("Editor: 选择框批量编辑完成，重建空间索引");
                 let selected = self.get_selected_indices();
                 self.editor_state

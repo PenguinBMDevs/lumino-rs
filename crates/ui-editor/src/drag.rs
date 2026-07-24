@@ -159,18 +159,45 @@ impl Editor {
 
                 if delta_tick != 0.0 {
                     let selected = &resize_selected_indices;
+                    let note_store_enabled = self.editor_state.data.note_store_enabled;
 
-                    for &i in selected {
-                        if let Some(note) = self.editor_state.data.notes.get_mut(i) {
-                            let new_length = note.length - delta_tick;
-                            if new_length >= snap_precision {
-                                note.tick += delta_tick;
-                                note.length = new_length;
+                    // 同时修改 data.notes（权威源）和 note_store（渲染读取源），
+                    // 确保 note_store_enabled 时渲染路径能读到最新的音符数据。
+                    if note_store_enabled {
+                        for &i in selected {
+                            self.editor_state.data.note_store.modify(i, |n| {
+                                let new_length = n.length - delta_tick;
+                                if new_length >= snap_precision {
+                                    n.tick += delta_tick;
+                                    n.length = new_length;
+                                }
+                            });
+                        }
+                    } else {
+                        for &i in selected {
+                            if let Some(note) = self.editor_state.data.notes.get_mut(i) {
+                                let new_length = note.length - delta_tick;
+                                if new_length >= snap_precision {
+                                    note.tick += delta_tick;
+                                    note.length = new_length;
+                                }
                             }
                         }
                     }
 
                     *last_tick = snapped_tick;
+
+                    // 增量更新 selected_bounds：所有音符右移 delta_tick → min_t 增加
+                    // max_te 不变（tick+length 保持不变），min_k/max_k 不变
+                    if let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
+                        self.selected_bounds.set(Some((
+                            (min_t + delta_tick).max(0.0),
+                            max_te,
+                            max_k,
+                            min_k,
+                        )));
+                    }
+
                     // ghost 方案：Resizing 期间 notes 已改，但空间索引不每帧重建。
                     // 用 mark_ghost_dirty 只触发 wgpu 重绘（基于新 notes），不重建索引。
                     // 空间索引在松手时（released.rs）一次性 mark_notes_changed 重建。
@@ -183,17 +210,37 @@ impl Editor {
 
                 if delta_tick != 0.0 {
                     let selected = &resize_selected_indices;
+                    let note_store_enabled = self.editor_state.data.note_store_enabled;
 
-                    for &i in selected {
-                        if let Some(note) = self.editor_state.data.notes.get_mut(i) {
-                            let new_length = note.length + delta_tick;
-                            if new_length >= snap_precision {
-                                note.length = new_length;
+                    if note_store_enabled {
+                        for &i in selected {
+                            self.editor_state.data.note_store.modify(i, |n| {
+                                let new_length = n.length + delta_tick;
+                                if new_length >= snap_precision {
+                                    n.length = new_length;
+                                }
+                            });
+                        }
+                    } else {
+                        for &i in selected {
+                            if let Some(note) = self.editor_state.data.notes.get_mut(i) {
+                                let new_length = note.length + delta_tick;
+                                if new_length >= snap_precision {
+                                    note.length = new_length;
+                                }
                             }
                         }
                     }
 
                     *last_tick = snapped_tick;
+
+                    // 增量更新 selected_bounds：所有音符长度增加 delta_tick → max_te 增加
+                    // min_t 不变（tick 不变），min_k/max_k 不变
+                    if let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
+                        self.selected_bounds
+                            .set(Some((min_t, max_te + delta_tick, max_k, min_k)));
+                    }
+
                     // ghost 方案：同 ResizingSelectionStart，期间不重建索引
                     self.mark_ghost_dirty();
                 }
