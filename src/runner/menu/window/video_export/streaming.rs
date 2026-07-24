@@ -189,11 +189,13 @@ pub fn parse_midi_to_cache(
     }
 
     // 回写 note_count header
-    let note_writer_ref = note_writer.get_mut();
-    note_writer_ref
+    // 使用 BufWriter::seek 而非 get_mut().seek()，因为 BufWriter::seek 会先 flush
+    // 内部缓冲再 seek，防止剩余缓冲数据在 drop 时冲刷到错误位置（position 8），
+    // 导致大文件时缓存文件比预期小，read_exact 读不到足够数据。
+    note_writer
         .seek(SeekFrom::Start(0))
         .map_err(|e| format!("seek 到缓存 header 失败: {e}"))?;
-    note_writer_ref
+    note_writer
         .write_all(&note_count.to_le_bytes())
         .map_err(|e| format!("写入缓存 note_count 失败: {e}"))?;
     drop(note_writer);
@@ -327,6 +329,18 @@ fn build_frame_index(
     note_file
         .read_to_end(&mut note_data)
         .map_err(|e| format!("读取音符缓存数据失败: {e}"))?;
+
+    // 校验实际读取字节数，防止缓存文件损坏（如 BufWriter 未 flush 就 seek 导致的截断）
+    // 导致 unsafe 读越界未初始化内存。
+    let expected_bytes = (note_count as usize) * NOTE_RECORD_SIZE;
+    if note_data.len() < expected_bytes {
+        return Err(format!(
+            "缓存音符数据不完整: 预期 {} 个记录 ({} bytes), 实际读取 {} bytes",
+            note_count,
+            expected_bytes,
+            note_data.len(),
+        ));
+    }
 
     let records: &[NoteRecord] = unsafe {
         std::slice::from_raw_parts(note_data.as_ptr() as *const NoteRecord, note_count as usize)
@@ -501,10 +515,26 @@ impl StreamingNoteSource {
                 .seek(SeekFrom::Start(offset))
                 .map_err(|e| format!("seek 音符缓存失败: {e}"))?;
 
-            let mut raw = vec![0u8; (entry.note_count as usize) * NOTE_RECORD_SIZE];
-            self.note_file
-                .read_exact(&mut raw)
-                .map_err(|e| format!("读取音符缓存失败: {e}"))?;
+            let expected_bytes = (entry.note_count as usize) * NOTE_RECORD_SIZE;
+            let mut raw = vec![0u8; expected_bytes];
+            if let Err(e) = self.note_file.read_exact(&mut raw) {
+                // 诊断：记录帧索引条目和文件状态
+                let file_len = std::fs::metadata(&self.note_cache_path)
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                tracing::error!(
+                    "read_exact 失败: frame_idx={}, note_offset={}, note_count={}, \
+                     offset={}, expected_bytes={}, file_len={}, NOTE_RECORD_SIZE={}",
+                    frame_idx,
+                    entry.note_offset,
+                    entry.note_count,
+                    offset,
+                    expected_bytes,
+                    file_len,
+                    NOTE_RECORD_SIZE,
+                );
+                return Err(format!("读取音符缓存失败: {e}"));
+            }
 
             unsafe {
                 let ptr = raw.as_ptr() as *const NoteRecord;
