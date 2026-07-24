@@ -297,6 +297,7 @@ fn build_ffmpeg_args(config: &VideoExportConfig, input_pix_fmt: &str) -> Vec<Str
         EncoderBackend::Nvenc => build_nvenc_args(&mut args, &config.codec, &config.quality),
         EncoderBackend::Amf => build_amf_args(&mut args, &config.codec, &config.quality),
         EncoderBackend::Qsv => build_qsv_args(&mut args, &config.codec, &config.quality),
+        EncoderBackend::MediaFoundation => build_mf_args(&mut args, &config.codec, &config.quality),
         EncoderBackend::Vaapi => build_vaapi_args(&mut args, &config.codec, &config.quality),
     }
 
@@ -462,6 +463,22 @@ fn build_qsv_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &QualityP
     args.push(preset.to_string());
     args.push("-pix_fmt".to_string());
     args.push(codec.ffmpeg_pix_fmt().to_string());
+}
+
+/// Windows MediaFoundation：h264_mf / hevc_mf（Windows DXVA/D3D11）
+fn build_mf_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &QualityPreset) {
+    let bitrate = match quality {
+        QualityPreset::High => "30M",
+        QualityPreset::Medium => "15M",
+        QualityPreset::Low => "5M",
+    };
+    args.push("-b:v".to_string());
+    args.push(bitrate.to_string());
+    args.push("-pix_fmt".to_string());
+    args.push(codec.ffmpeg_pix_fmt().to_string());
+    // 使用硬件加速的 DXVA 解码路径
+    args.push("-hwaccel".to_string());
+    args.push("d3d11va".to_string());
 }
 
 /// VAAPI：h264_vaapi / hevc_vaapi / av1_vaapi / vp9_vaapi（Linux）

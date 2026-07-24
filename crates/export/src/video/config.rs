@@ -143,6 +143,8 @@ pub enum EncoderBackend {
     Amf,
     /// Intel QuickSync（Windows/Linux）
     Qsv,
+    /// Windows MediaFoundation（DXVA/D3D11，支持 NVIDIA/AMD/Intel GPU）
+    MediaFoundation,
     /// VAAPI（Linux）
     Vaapi,
 }
@@ -156,6 +158,7 @@ impl EncoderBackend {
             EncoderBackend::Nvenc => Some("nvenc"),
             EncoderBackend::Amf => Some("amf"),
             EncoderBackend::Qsv => Some("qsv"),
+            EncoderBackend::MediaFoundation => Some("mf"),
             EncoderBackend::Vaapi => Some("vaapi"),
         }
     }
@@ -173,6 +176,7 @@ impl EncoderBackend {
             EncoderBackend::Nvenc => "NVENC (NVIDIA)",
             EncoderBackend::Amf => "AMF (AMD)",
             EncoderBackend::Qsv => "QSV (Intel)",
+            EncoderBackend::MediaFoundation => "MediaFoundation (Windows)",
             EncoderBackend::Vaapi => "VAAPI (Linux)",
         }
     }
@@ -190,6 +194,7 @@ impl EncoderBackend {
             list.push(Nvenc);
             list.push(Amf);
             list.push(Qsv);
+            list.push(MediaFoundation);
         }
         // Linux
         #[cfg(target_os = "linux")]
@@ -212,6 +217,7 @@ impl std::str::FromStr for EncoderBackend {
             "NVENC (NVIDIA)" => Ok(EncoderBackend::Nvenc),
             "AMF (AMD)" => Ok(EncoderBackend::Amf),
             "QSV (Intel)" => Ok(EncoderBackend::Qsv),
+            "MediaFoundation (Windows)" => Ok(EncoderBackend::MediaFoundation),
             "VAAPI (Linux)" => Ok(EncoderBackend::Vaapi),
             _ => Err(format!("未知编码后端: {}", s)),
         }
