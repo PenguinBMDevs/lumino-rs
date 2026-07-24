@@ -476,9 +476,6 @@ fn build_mf_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &QualityPr
     args.push(bitrate.to_string());
     args.push("-pix_fmt".to_string());
     args.push(codec.ffmpeg_pix_fmt().to_string());
-    // 使用硬件加速的 DXVA 解码路径
-    args.push("-hwaccel".to_string());
-    args.push("d3d11va".to_string());
 }
 
 /// VAAPI：h264_vaapi / hevc_vaapi / av1_vaapi / vp9_vaapi（Linux）

@@ -43,6 +43,8 @@ pub struct VideoExportDialogState {
     pub height: u32,
     /// 帧率
     pub fps: u32,
+    /// MIDI 文件路径（流式读取模式使用；内存模式优先使用已加载的 MidiDocument）
+    pub midi_path: String,
     /// 输出路径
     pub output_path: String,
     /// 覆盖层状态（None=空闲，其余=显示模态覆盖层）
@@ -86,6 +88,7 @@ impl VideoExportDialogState {
             width: 1920,
             height: 1080,
             fps: 60,
+            midi_path: String::new(),
             output_path: String::new(),
             overlay: VideoExportOverlayState::None,
             progress: 0.0,

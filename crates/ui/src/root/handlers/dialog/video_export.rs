@@ -37,9 +37,23 @@ impl DialogHandler {
             }
             V::StartExport => {
                 let st = &root.state.video_export_dialog;
+                // 内存模式优先：若当前工程已加载 MidiDocument 则零拷贝使用；
+                // 否则若指定了 MIDI 路径，进入流式读取模式。
                 let document = root.midi.document.as_ref().map(std::sync::Arc::clone);
+                let midi_source = if document.is_some() {
+                    tracing::info!("视频导出使用内存 MidiDocument（零拷贝模式）");
+                    "内存模式".to_string()
+                } else if !st.midi_path.is_empty() {
+                    tracing::info!("视频导出使用 MIDI 文件流式读取: {}", st.midi_path);
+                    "流式读取".to_string()
+                } else {
+                    tracing::warn!("视频导出未配置 MIDI 数据源");
+                    "未配置".to_string()
+                };
+
                 // 先 clone 配置值，避免借用冲突
                 let output_path = st.output_path.clone();
+                let midi_path = st.midi_path.clone();
                 let width = st.width;
                 let height = st.height;
                 let fps = st.fps;
@@ -51,7 +65,8 @@ impl DialogHandler {
                 // 设置导出中状态
                 root.state.video_export_dialog.overlay = VideoExportOverlayState::Exporting;
                 root.state.video_export_dialog.progress = 0.0;
-                root.state.video_export_dialog.status_message = "正在初始化...".to_string();
+                root.state.video_export_dialog.status_message =
+                    format!("正在初始化... [{}]", midi_source);
                 root.state.video_export_dialog.current_frame = 0;
                 root.state.video_export_dialog.total_frames = 0;
                 root.state.video_export_dialog.render_fps = 0.0;
@@ -59,6 +74,7 @@ impl DialogHandler {
 
                 let video_config = lumino_event::window::dialog::VideoExportConfig {
                     output_path,
+                    midi_path,
                     width,
                     height,
                     fps,
@@ -132,6 +148,20 @@ impl DialogHandler {
                     .save_file()
                 {
                     root.state.video_export_dialog.output_path = path.to_string_lossy().to_string();
+                }
+            }
+            V::MidiPathChanged(v) => {
+                root.state.video_export_dialog.midi_path = v;
+            }
+            V::BrowseMidi => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("音乐文件", &["mid", "midi", "lmpj"])
+                    .add_filter("MIDI 文件", &["mid", "midi"])
+                    .add_filter("Lumino 项目", &["lmpj"])
+                    .add_filter("所有文件", &["*"])
+                    .pick_file()
+                {
+                    root.state.video_export_dialog.midi_path = path.to_string_lossy().to_string();
                 }
             }
             V::UpdateProgress {

@@ -22,6 +22,8 @@ pub fn view_video_export_dialog<'a>(
     let main_content = column![
         title_section(palette),
         space().height(16),
+        midi_source_section(state, palette),
+        space().height(16),
         render_settings_section(state, palette),
         space().height(16),
         output_path_section(state, palette),
@@ -151,6 +153,48 @@ fn render_settings_section<'a>(
             |v| { Message::VideoExport(VideoExportAction::FpsChanged(v)) },
             palette
         ),
+    ]
+    .width(Length::Fill)
+    .into()
+}
+
+/// MIDI 数据源区域（内存模式优先使用已加载工程；否则使用指定 MIDI 路径流式读取）
+fn midi_source_section<'a>(
+    state: &'a VideoExportDialogState,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    let hint = if state.midi_path.is_empty() {
+        "优先使用当前工程的 MIDI 数据"
+    } else {
+        "使用指定 MIDI 文件流式读取"
+    };
+
+    column![
+        text("MIDI 数据源")
+            .size(16)
+            .font(iced_core::Font::with_name("Microsoft YaHei"))
+            .style(widgets::dialog_label_style(palette)),
+        space().height(8),
+        row![
+            container(
+                text(&state.midi_path)
+                    .size(12)
+                    .style(widgets::dialog_muted_text_style(palette))
+                    .width(Length::Fill),
+            )
+            .width(Length::Fill)
+            .style(widgets::dialog_input_style(palette)),
+            space().width(8),
+            button(text("浏览...").size(14))
+                .on_press(Message::VideoExport(VideoExportAction::BrowseMidi))
+                .padding([6, 16]),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
+        space().height(4),
+        text(hint)
+            .size(12)
+            .style(widgets::dialog_muted_text_style(palette)),
     ]
     .width(Length::Fill)
     .into()

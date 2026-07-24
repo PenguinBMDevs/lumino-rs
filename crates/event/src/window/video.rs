@@ -136,6 +136,8 @@ impl std::str::FromStr for RenderMode {
 pub struct VideoExportConfig {
     /// 输出文件路径
     pub output_path: String,
+    /// MIDI 文件路径（流式读取模式使用）
+    pub midi_path: String,
     /// 视频宽度（像素）
     pub width: u32,
     /// 视频高度（像素）

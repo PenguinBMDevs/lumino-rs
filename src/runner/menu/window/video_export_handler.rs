@@ -12,6 +12,8 @@ use lumino_export::video::{
 };
 use lumino_gfx::render_thread::{ControlCommand, FrameSender, RenderCommand};
 
+use super::video_export::streaming::StreamingNoteSource;
+
 impl RunnerInner {
     pub(crate) fn handle_start_video_export(
         &mut self,
@@ -20,6 +22,7 @@ impl RunnerInner {
     ) {
         let lumino_event::window::video::VideoExportConfig {
             output_path,
+            midi_path,
             width,
             height,
             fps,
@@ -116,16 +119,6 @@ impl RunnerInner {
             quality,
         };
 
-        // 获取 MidiDocument（编辑器模式）
-        let document = match document {
-            Some(doc) => doc,
-            None => {
-                tracing::error!("视频导出失败：无 MidiDocument（暂不支持流式模式）");
-                let _ = progress_tx.send(("导出失败：无 MIDI 数据".to_string(), -1.0, 0, 0.0, 0.0));
-                return;
-            }
-        };
-
         let ppq = ppq.max(1) as u32;
         let fps_f64 = fps as f64;
 
@@ -137,20 +130,40 @@ impl RunnerInner {
         let _ = std::thread::Builder::new()
             .name("video-render".into())
             .spawn(move || {
-                run_video_export_task(
-                    config,
-                    cmd_sender,
-                    progress_tx,
-                    preview_tx,
-                    document,
-                    ppq,
-                    fps_f64,
-                    key_count,
-                    width,
-                    height,
-                    cancel_flag,
-                    input_pix_fmt,
-                );
+                if let Some(document) = document {
+                    run_video_export_task(
+                        config,
+                        cmd_sender,
+                        progress_tx,
+                        preview_tx,
+                        document,
+                        ppq,
+                        fps_f64,
+                        key_count,
+                        width,
+                        height,
+                        cancel_flag,
+                        input_pix_fmt,
+                    );
+                } else if !midi_path.is_empty() {
+                    run_streaming_video_export_task(
+                        config,
+                        cmd_sender,
+                        progress_tx,
+                        preview_tx,
+                        midi_path,
+                        fps_f64,
+                        key_count,
+                        width,
+                        height,
+                        cancel_flag,
+                        input_pix_fmt,
+                    );
+                } else {
+                    tracing::error!("视频导出失败：无 MidiDocument 且未指定 MIDI 路径");
+                    let _ =
+                        progress_tx.send(("导出失败：无 MIDI 数据".to_string(), -1.0, 0, 0.0, 0.0));
+                }
             });
     }
 }
@@ -493,6 +506,402 @@ fn run_video_export_task(
         smoothed_fps,
         &progress_tx,
     );
+}
+
+/// 流式 MIDI 视频导出后台任务。
+///
+/// 1. 解析 MIDI 文件并写入硬盘缓存，同时通过 `progress_tx` 回传解析进度。
+/// 2. 打开流式音符数据源，按帧 seek+read 读取可见音符。
+/// 3. 其余渲染/编码/合成流程与内存模式保持一致。
+#[allow(clippy::too_many_arguments)]
+fn run_streaming_video_export_task(
+    config: lumino_export::video::VideoExportConfig,
+    cmd_sender: std::sync::mpsc::Sender<lumino_gfx::render_thread::RenderCommand>,
+    progress_tx: tokio::sync::mpsc::UnboundedSender<(String, f64, u64, f64, f64)>,
+    preview_tx: tokio::sync::mpsc::UnboundedSender<(Vec<u8>, u32, u32)>,
+    midi_path: String,
+    fps_f64: f64,
+    key_count: u16,
+    width: u32,
+    height: u32,
+    cancel_flag: Arc<AtomicBool>,
+    input_pix_fmt: &'static str,
+) {
+    let start = std::time::Instant::now();
+
+    // 阶段 1：解析 MIDI → 硬盘缓存
+    let progress_tx_for_parse = progress_tx.clone();
+    let parse_progress: std::sync::Arc<dyn Fn(String, f64) + Send + Sync> =
+        std::sync::Arc::new(move |message: String, value: f64| {
+            // 解析阶段进度映射到 0.0 ~ 0.3，与渲染阶段 0.3 ~ 1.0 衔接
+            let scaled = value * 0.3;
+            let _ = progress_tx_for_parse.send((message, scaled, 0, 0.0, 0.0));
+        });
+
+    let parse_result = super::video_export::streaming::parse_midi_to_cache(
+        std::path::Path::new(&midi_path),
+        fps_f64,
+        16.0, // 视口小节数，与内存模式一致（ppq * 16）
+        Some(parse_progress),
+    );
+
+    let streaming_result = match parse_result {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("视频导出 MIDI 解析失败: {e}");
+            let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
+            return;
+        }
+    };
+
+    let mut source = match StreamingNoteSource::open(streaming_result) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("视频导出打开流式数据源失败: {e}");
+            let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
+            return;
+        }
+    };
+
+    let ppq = source.ppqn();
+    let total_frames = source.total_frames();
+    let total_ticks = source.total_ticks();
+    let duration_secs = source.compute_duration_secs();
+
+    tracing::info!(
+        "视频导出流式模式: 总时长 {:.1}s, 总帧数 {}, PPQN {}, total_ticks {}",
+        duration_secs,
+        total_frames,
+        ppq,
+        total_ticks
+    );
+
+    // 创建帧数据通道与回收通道
+    let (frame_tx, frame_rx) = channel::<Vec<u8>>();
+    let (recycle_tx, recycle_rx) = channel::<Vec<u8>>();
+
+    // 创建 FFmpeg 编码器
+    let mut encoder = match FfmpegEncoder::new(&config, input_pix_fmt) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::error!("FFmpeg 创建失败: {e}");
+            let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
+            return;
+        }
+    };
+
+    // 发送初始渲染命令
+    if send_initial_render_commands(
+        &cmd_sender,
+        width,
+        height,
+        frame_tx,
+        recycle_rx,
+        &progress_tx,
+    ) {
+        return;
+    }
+
+    // 生成键盘贴图
+    let (keyboard_pixels, kb_w, kb_h) =
+        super::video_export::generate_keyboard_texture(width, height, key_count);
+
+    let mut last_stat_time = Instant::now();
+    let mut frames_since_stat = 0u64;
+    let mut smoothed_fps = 0.0f64;
+    let mut last_preview_time = Instant::now();
+    let mut preview_sent = false;
+
+    let mut param_queue: std::collections::VecDeque<(f32, f32, f32, u32, [u8; 1024])> =
+        std::collections::VecDeque::new();
+    let mut processed_frames = 0u64;
+    let mut cancelled = false;
+    let mut next_frame_to_send = 0u64;
+    const PIPELINE_DEPTH: usize = 4;
+
+    let mut acc_recv_us = 0u64;
+    let mut acc_composite_us = 0u64;
+    let mut acc_preview_us = 0u64;
+    let mut acc_encode_us = 0u64;
+    let mut stat_frame_count = 0u64;
+
+    // 入队闭包：读取流式音符、计算键色、发送渲染命令
+    {
+        let mut enqueue_frame =
+            |queue: &mut std::collections::VecDeque<(f32, f32, f32, u32, [u8; 1024])>,
+             frame_idx: u64|
+             -> bool {
+                let (notes, params) = match source
+                    .read_notes_and_params_for_frame(frame_idx, width, height, fps_f64)
+                {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::error!("读取流式音符失败: {e}");
+                        let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
+                        return true;
+                    }
+                };
+
+                let tick = super::video_export::seconds_to_tick(
+                    frame_idx as f64 / fps_f64,
+                    source.tempo_changes(),
+                    source.ppqn(),
+                );
+
+                // 计算按键高亮颜色
+                let mut key_colors = [0u8; super::video_export::keyboard::KEY_COLOR_BYTES];
+                let note_tuples: Vec<(u32, u32, u16, u16)> = notes
+                    .iter()
+                    .map(|n| (n.start_tick, n.end_tick, n.key, n.track))
+                    .collect();
+                super::video_export::keyboard::update_playback_key_colors_from_notes(
+                    &note_tuples,
+                    tick,
+                    &mut key_colors,
+                );
+
+                // 计算 scroll_x / zoom_x，用于标尺小节号合成
+                let video_kb_width = 60.0f32;
+                let video_viewport_tick_span = (ppq * 16).max(1) as f32;
+                let video_zoom_x = (width as f32 - video_kb_width) / video_viewport_tick_span;
+                let video_scroll_x = tick as f32 * video_zoom_x;
+
+                queue.push_back((
+                    video_scroll_x,
+                    video_zoom_x,
+                    video_kb_width,
+                    ppq,
+                    key_colors,
+                ));
+
+                if cmd_sender
+                    .send(RenderCommand::Control(ControlCommand::RenderVideoFrame {
+                        params: Box::new(params),
+                    }))
+                    .is_err()
+                {
+                    tracing::error!("发送 RenderVideoFrame 命令失败");
+                    let _ = progress_tx.send((
+                        "导出失败：渲染线程通信错误".to_string(),
+                        -1.0,
+                        0,
+                        0.0,
+                        0.0,
+                    ));
+                    return true;
+                }
+                false
+            };
+
+        // 预填充流水线
+        for _ in 0..PIPELINE_DEPTH.min(total_frames as usize) {
+            if cancel_flag.load(Ordering::Relaxed) {
+                tracing::info!("视频导出：用户取消，正在收尾...");
+                cancelled = true;
+                break;
+            }
+            if enqueue_frame(&mut param_queue, next_frame_to_send) {
+                cancelled = true;
+                break;
+            }
+            next_frame_to_send += 1;
+        }
+
+        // 主循环
+        while processed_frames < total_frames && !cancelled {
+            if cancel_flag.load(Ordering::Relaxed) {
+                tracing::info!("视频导出：用户取消，正在收尾...");
+                cancelled = true;
+                break;
+            }
+
+            let recv_start = Instant::now();
+            let data = match frame_rx.recv() {
+                Ok(d) => d,
+                Err(_) => {
+                    tracing::error!("帧数据通道关闭");
+                    let _ = progress_tx.send((
+                        "导出失败：帧数据通道关闭".to_string(),
+                        -1.0,
+                        0,
+                        0.0,
+                        0.0,
+                    ));
+                    cancelled = true;
+                    break;
+                }
+            };
+            let recv_us = recv_start.elapsed().as_micros() as u64;
+
+            let p = param_queue
+                .pop_front()
+                .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024]));
+            let (should_stop, stats) = composite_and_encode_frame(
+                data,
+                p,
+                &mut encoder,
+                &progress_tx,
+                &preview_tx,
+                &cancel_flag,
+                &mut last_preview_time,
+                &mut preview_sent,
+                width,
+                height,
+                &keyboard_pixels,
+                kb_w,
+                kb_h,
+                &recycle_tx,
+            );
+
+            acc_recv_us += recv_us;
+            acc_composite_us += stats.composite_us;
+            acc_preview_us += stats.preview_us;
+            acc_encode_us += stats.encode_us;
+            stat_frame_count += 1;
+
+            if should_stop {
+                cancelled = true;
+                break;
+            }
+
+            processed_frames += 1;
+            frames_since_stat += 1;
+
+            // 维持流水线深度
+            if next_frame_to_send < total_frames {
+                if enqueue_frame(&mut param_queue, next_frame_to_send) {
+                    cancelled = true;
+                    break;
+                }
+                next_frame_to_send += 1;
+            }
+
+            // 阶段耗时打点：每 100ms 聚合输出一次
+            if last_stat_time.elapsed() >= Duration::from_millis(100) && stat_frame_count > 0 {
+                let elapsed = last_stat_time.elapsed().as_secs_f64();
+                let fps = frames_since_stat as f64 / elapsed;
+                smoothed_fps = if smoothed_fps == 0.0 {
+                    fps
+                } else {
+                    smoothed_fps * 0.7 + fps * 0.3
+                };
+                let raw_progress = processed_frames as f64 / total_frames as f64;
+                let progress = 0.3 + raw_progress * 0.7;
+                let eta_secs = (total_frames - processed_frames) as f64 / smoothed_fps;
+                let avg_recv = acc_recv_us / stat_frame_count;
+                let avg_composite = acc_composite_us / stat_frame_count;
+                let avg_preview = acc_preview_us / stat_frame_count;
+                let avg_encode = acc_encode_us / stat_frame_count;
+                tracing::info!(
+                    "视频导出: 帧 {}/{} ({:.0}%), FPS={:.0}, ETA={:.0}s, 阶段耗时(us) recv={} composite={} preview={} encode={}",
+                    processed_frames,
+                    total_frames,
+                    raw_progress * 100.0,
+                    smoothed_fps,
+                    eta_secs,
+                    avg_recv,
+                    avg_composite,
+                    avg_preview,
+                    avg_encode,
+                );
+                let _ = progress_tx.send((
+                    format!(
+                        "{:.0}% | FPS {:.0} | ETA {:.0}s",
+                        progress * 100.0,
+                        smoothed_fps,
+                        eta_secs
+                    ),
+                    progress,
+                    total_frames,
+                    smoothed_fps,
+                    0.0,
+                ));
+                last_stat_time = Instant::now();
+                frames_since_stat = 0;
+                acc_recv_us = 0;
+                acc_composite_us = 0;
+                acc_preview_us = 0;
+                acc_encode_us = 0;
+                stat_frame_count = 0;
+            }
+        }
+    } // enqueue_frame 在此作用域结束时释放，后续可访问 source
+
+    // drain 剩余 inflight 帧
+    while !param_queue.is_empty() && !cancelled {
+        let recv_start = Instant::now();
+        let data = match frame_rx.recv() {
+            Ok(d) => d,
+            Err(_) => {
+                tracing::error!("drain 阶段帧数据通道关闭");
+                cancelled = true;
+                break;
+            }
+        };
+        let recv_us = recv_start.elapsed().as_micros() as u64;
+
+        let p = param_queue
+            .pop_front()
+            .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024]));
+        let (should_stop, stats) = composite_and_encode_frame(
+            data,
+            p,
+            &mut encoder,
+            &progress_tx,
+            &preview_tx,
+            &cancel_flag,
+            &mut last_preview_time,
+            &mut preview_sent,
+            width,
+            height,
+            &keyboard_pixels,
+            kb_w,
+            kb_h,
+            &recycle_tx,
+        );
+
+        acc_recv_us += recv_us;
+        acc_composite_us += stats.composite_us;
+        acc_preview_us += stats.preview_us;
+        acc_encode_us += stats.encode_us;
+        stat_frame_count += 1;
+
+        if should_stop {
+            cancelled = true;
+            break;
+        }
+        processed_frames += 1;
+    }
+
+    // 输出最后一组阶段打点
+    if let Some(divisor) = std::num::NonZeroU64::new(stat_frame_count) {
+        let d = divisor.get();
+        tracing::info!(
+            "视频导出: 收尾阶段耗时(us) recv={} composite={} preview={} encode={}",
+            acc_recv_us / d,
+            acc_composite_us / d,
+            acc_preview_us / d,
+            acc_encode_us / d,
+        );
+    }
+
+    let elapsed = start.elapsed().as_secs_f64();
+    finalize_video_export(
+        encoder,
+        cancelled,
+        processed_frames,
+        elapsed,
+        total_frames,
+        smoothed_fps,
+        &progress_tx,
+    );
+
+    // 清理流式 MIDI 缓存文件（先关闭文件句柄再删除）
+    let cache_path = source.cache_path().to_path_buf();
+    drop(source);
+    if let Err(e) = std::fs::remove_file(&cache_path) {
+        tracing::warn!("清理 MIDI 缓存文件失败: {e}");
+    }
 }
 
 /// 发送初始渲染命令：`StartVideoExport`。

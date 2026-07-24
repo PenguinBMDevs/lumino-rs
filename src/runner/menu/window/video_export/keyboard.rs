@@ -133,6 +133,30 @@ pub fn update_playback_key_colors(
     }
 }
 
+/// 根据当前播放 tick 和一组音符直接计算每个 key 的覆盖颜色
+///
+/// 与 [`update_playback_key_colors`] 行为一致，但不维护增量扫描状态。
+/// 用于流式读取模式：每帧从硬盘读取的音符列表已经过滤到视口范围，
+/// 直接遍历其中在当前 tick 活跃的音符着色即可。
+///
+/// `notes` 为元组 `(start_tick, end_tick, key, track_idx)`。
+pub fn update_playback_key_colors_from_notes(
+    notes: &[(u32, u32, u16, u16)],
+    tick: u32,
+    out: &mut [u8; KEY_COLOR_BYTES],
+) {
+    out.fill(0);
+    for (start_tick, end_tick, key, track_idx) in notes {
+        if *start_tick <= tick && *end_tick > tick {
+            let color = track_color_rgba(*track_idx as usize);
+            let off = (*key as usize) * 4;
+            if off + 4 <= out.len() {
+                out[off..off + 4].copy_from_slice(&color);
+            }
+        }
+    }
+}
+
 /// 生成完整键盘贴图（BGRA 像素数据，与视频帧格式一致）
 ///
 /// 生成一个从最高键到最低键的完整键盘图像，与 note shader 的 Y 轴方向一致

@@ -7,6 +7,7 @@ use lumino_gfx::{
 };
 
 pub mod keyboard;
+pub mod streaming;
 
 // ── 时间计算 ──
 
