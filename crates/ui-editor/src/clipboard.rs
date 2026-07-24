@@ -1,8 +1,7 @@
 //! 剪贴板操作：复制、剪切、粘贴音符
 
 use super::Editor;
-use iced_core::Point;
-use lumino_ui_constants::editor::{CLIPBOARD_FORMAT, CLIPBOARD_VERSION, DEFAULT_PASTE_ANCHOR_KEY};
+use lumino_ui_constants::editor::{CLIPBOARD_FORMAT, CLIPBOARD_VERSION};
 
 impl Editor {
     /// 剪切选中音符
@@ -76,11 +75,11 @@ impl Editor {
 
     /// 从剪贴板粘贴音符
     pub(crate) fn paste_notes_from_clipboard(&mut self) {
-        let Some(notes_value) = self.read_clipboard_json() else {
+        let Some((origin_key, notes_value)) = self.read_clipboard_json() else {
             return;
         };
 
-        let Some((anchor, pasted)) = self.parse_clipboard_notes(&notes_value) else {
+        let Some((anchor, pasted)) = self.parse_clipboard_notes(origin_key, &notes_value) else {
             return;
         };
 
@@ -91,27 +90,27 @@ impl Editor {
         self.commit_pasted_notes(anchor, pasted);
     }
 
-    /// 从剪贴板读取并解析 JSON 数据，返回 notes 数组
-    fn read_clipboard_json(&self) -> Option<Vec<serde_json::Value>> {
+    /// 从剪贴板读取并解析 JSON 数据，返回 (origin_key, notes 数组)
+    fn read_clipboard_json(&self) -> Option<(u16, Vec<serde_json::Value>)> {
         let mut clipboard = arboard::Clipboard::new().ok()?;
         let text = clipboard.get_text().ok()?;
         let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+        let origin_key = value.get("origin_key")?.as_u64()? as u16;
         let notes = value.get("notes")?.as_array()?.to_vec();
-        Some(notes)
+        Some((origin_key, notes))
     }
 
     /// 从剪贴板 JSON 解析锚点坐标和音符列表
+    ///
+    /// 粘贴位置规则：
+    /// - X 坐标（tick）对齐演奏指示线（playback_position）
+    /// - Y 坐标（key）保持与被复制音符相同（origin_key）
     fn parse_clipboard_notes(
         &self,
+        origin_key: u16,
         notes_value: &[serde_json::Value],
     ) -> Option<((f32, u16), Vec<super::Note>)> {
-        let anchor = self
-            .editor_state
-            .canvas
-            .cursor_position
-            .filter(|pos| self.is_inside_canvas(Point::new(pos.0, pos.1)))
-            .map(|pos| (self.snap_tick(self.x_to_tick(pos.0)), self.y_to_key(pos.1)))
-            .unwrap_or((self.playback_position, DEFAULT_PASTE_ANCHOR_KEY));
+        let anchor = (self.snap_tick(self.playback_position), origin_key);
 
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let pasted: Vec<super::Note> = notes_value
