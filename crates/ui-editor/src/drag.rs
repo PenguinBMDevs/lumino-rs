@@ -72,6 +72,19 @@ impl Editor {
             _ => None,
         };
 
+        // 预读 ResizingSelection 状态下选中索引（兼容 selection_bitset 和 selected_notes）
+        // 必须在 match 之前获取，避免 match 的 mutable borrow 与 self 方法冲突
+        let resize_selected_indices: Vec<usize> = {
+            let interaction = &self.editor_state.interaction;
+            if let Some(ref bs) = interaction.selection_bitset {
+                let mut indices = Vec::with_capacity(bs.count_ones());
+                bs.for_each_set(|i| indices.push(i));
+                indices
+            } else {
+                interaction.selected_notes.iter().copied().collect()
+            }
+        };
+
         match &mut self.editor_state.interaction.edit_state {
             EditState::Selecting { .. } => {
                 self.update_selection();
@@ -145,15 +158,9 @@ impl Editor {
                 let delta_tick = snapped_tick - *last_tick;
 
                 if delta_tick != 0.0 {
-                    let selected: Vec<usize> = self
-                        .editor_state
-                        .interaction
-                        .selected_notes
-                        .iter()
-                        .copied()
-                        .collect();
+                    let selected = &resize_selected_indices;
 
-                    for i in selected {
+                    for &i in selected {
                         if let Some(note) = self.editor_state.data.notes.get_mut(i) {
                             let new_length = note.length - delta_tick;
                             if new_length >= snap_precision {
@@ -175,15 +182,9 @@ impl Editor {
                 let delta_tick = snapped_tick - *last_tick;
 
                 if delta_tick != 0.0 {
-                    let selected: Vec<usize> = self
-                        .editor_state
-                        .interaction
-                        .selected_notes
-                        .iter()
-                        .copied()
-                        .collect();
+                    let selected = &resize_selected_indices;
 
-                    for i in selected {
+                    for &i in selected {
                         if let Some(note) = self.editor_state.data.notes.get_mut(i) {
                             let new_length = note.length + delta_tick;
                             if new_length >= snap_precision {
