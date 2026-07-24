@@ -1022,13 +1022,6 @@ fn composite_and_encode_frame(
             (preview_data, width, height)
         };
 
-        tracing::info!(
-            "视频导出: 发送预览帧 {}x{} ({} bytes), 首帧={}",
-            small_w,
-            small_h,
-            small_data.len(),
-            !*preview_sent
-        );
         if preview_tx.send((small_data, small_w, small_h)).is_err() {
             tracing::warn!("视频导出: 预览帧发送失败，接收端已关闭");
         }

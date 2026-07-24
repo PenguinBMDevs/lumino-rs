@@ -123,7 +123,6 @@ impl NoteRenderer {
             );
             return;
         }
-
         // 上传 viewport uniform
         queue.write_buffer(&self.viewport_buffer, 0, bytemuck::cast_slice(&[camera]));
 

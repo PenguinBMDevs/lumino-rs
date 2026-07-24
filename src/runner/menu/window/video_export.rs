@@ -149,6 +149,22 @@ pub(super) fn build_video_render_params(
         })
         .collect();
 
+    // 首帧诊断：定位音符缺失问题
+    static MEM_DIAG_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let diag_idx = MEM_DIAG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if diag_idx < 3 {
+        let total_notes: usize = document.notes.iter().map(|v| v.len()).sum();
+        tracing::info!(
+            "内存模式诊断[{}]: note_instances={}, total_notes={}, tick={}, vis_range={}..{}",
+            diag_idx,
+            note_instances.len(),
+            total_notes,
+            tick,
+            tick_start,
+            tick_end,
+        );
+    }
+
     // max_key_index 必须与 key_count 匹配，确保 Y 轴显示完整
     let max_key_index = (KEY_COUNT.saturating_sub(1)) as f32;
 

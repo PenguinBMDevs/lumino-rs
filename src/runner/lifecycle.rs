@@ -336,12 +336,6 @@ impl crate::runner::inner::RunnerInner {
         puffin::profile_scope!("runner_about_to_wait_video_preview");
         if let Some(rx) = &mut self.window_state.video_preview_rx {
             while let Ok((data, w, h)) = rx.try_recv() {
-                tracing::info!(
-                    "Runner: 转发视频导出预览帧 {}x{} ({} bytes)",
-                    w,
-                    h,
-                    data.len()
-                );
                 self.window_state
                     .dialog_manager
                     .forward_video_export_preview_frame(data, w, h);

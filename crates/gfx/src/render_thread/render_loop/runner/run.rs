@@ -235,6 +235,22 @@ fn handle_video_frame(
     frame: &mut RenderFrameState,
     channels: &RenderThreadChannels,
 ) {
+    // 首帧诊断 tracing：定位音符缺失问题在哪一层
+    // 使用静态原子计数器，只输出前 3 帧，避免日志嘈杂
+    static DIAG_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let diag_idx = DIAG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if diag_idx < 3 {
+        tracing::info!(
+            "视频帧诊断[{}]: note_instances={}, viewport={}x{}, scroll=({},{})",
+            diag_idx,
+            params.note_instances.len(),
+            params.viewport_size.0,
+            params.viewport_size.1,
+            params.scroll.0,
+            params.scroll.1,
+        );
+    }
+
     // 提前检查导出管线是否已初始化，避免后续重复判断
     let pipeline_ready = frame.export_pipeline.is_some() && frame.export_frame_tx.is_some();
     if !pipeline_ready {
@@ -270,6 +286,14 @@ fn handle_video_frame(
             .renderers
             .note
             .upload_instances(&params.note_instances, &ctx.device, &ctx.queue);
+    }
+    // 首帧诊断：上传后的 last_upload_count
+    if diag_idx < 3 {
+        tracing::info!(
+            "视频帧诊断[{}]: 上传后 last_upload_count={}",
+            diag_idx,
+            frame.renderers.note.last_upload_count(),
+        );
     }
 
     // 3. 检查离屏纹理是否就绪（clone Arc 断开与 frame 的借用链，

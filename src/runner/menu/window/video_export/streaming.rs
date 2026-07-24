@@ -299,7 +299,7 @@ fn build_frame_index(
 ) -> Result<Vec<FrameIndexEntry>, String> {
     let total_secs = ticks_to_seconds(total_ticks as u64, ppqn, tempos);
     let total_frames = (total_secs * fps).ceil() as u64;
-    let viewport_ticks = (viewport_beats * ppqn as f64) as u32;
+    let _ = viewport_beats; // 保留参数语义，帧索引改用渲染层精确过滤
 
     if note_count == 0 {
         return Ok(Vec::new());
@@ -334,32 +334,35 @@ fn build_frame_index(
 
     let mut index = Vec::with_capacity(total_frames as usize);
     let mut left: usize = 0;
-    let mut right: usize = 0;
-    let mut prev_frame_center_tick: u32 = 0;
 
     for frame_idx in 0..total_frames {
         let frame_time = frame_idx as f64 / fps;
         let center_tick = seconds_to_tick(frame_time, ppqn, tempos);
-        let half_viewport = viewport_ticks / 2;
-        let vp_start = center_tick.saturating_sub(half_viewport);
-        let vp_end = center_tick + half_viewport;
+        // 左对齐视口，与 build_video_render_params_from_notes 保持一致：
+        // 可见范围 [tick, tick + viewport_tick_span) = [tick, tick + 16*ppq)
+        let vp_start = center_tick;
 
+        // records 按 end_tick 升序写入（emit_note_record 在 NoteOff 时调用，
+        // player.next_event() 按 tick 升序返回事件，end_tick 单调递增）。
+        //
+        // visible 条件: end_tick >= vp_start && start_tick <= vp_end
+        // - left 双指针: 找第一个 end_tick >= vp_start。前面的 records都
+        //   end_tick < vp_start，音符在视口前结束，不可见，可跳过。end_tick
+        //   单调递增，双指针有效。
+        // - right 双指针: 需要 start_tick <= vp_end，但 records 按 end_tick
+        //   排序，start_tick 无序，无法用双指针确定 right 边界。
+        //
+        // 所以取 right = note_count（从 left 到末尾全部读取），由
+        // build_video_render_params_from_notes 做精确过滤
+        // (n.end_tick >= tick_start && n.start_tick <= tick_end)。
+        // left 指针随帧推进，读取量递减；正确性优先于性能。
         while left < note_count as usize && records[left].end_tick < vp_start {
             left += 1;
         }
 
-        if frame_idx == 0 || center_tick > prev_frame_center_tick {
-            right = right.max(left);
-            while right < note_count as usize && records[right].start_tick < vp_end {
-                right += 1;
-            }
-        }
-
-        prev_frame_center_tick = center_tick;
-
         index.push(FrameIndexEntry {
             note_offset: left as u32,
-            note_count: (right - left) as u32,
+            note_count: (note_count as usize - left) as u32,
         });
     }
 
@@ -575,6 +578,21 @@ fn build_video_render_params_from_notes(
             }
         })
         .collect();
+
+    // 首帧诊断：定位音符缺失问题
+    static STREAM_DIAG_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let diag_idx = STREAM_DIAG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if diag_idx < 3 {
+        tracing::info!(
+            "流式模式诊断[{}]: note_instances={}, notes_in_slice={}, tick={}, vis_range={}..{}",
+            diag_idx,
+            note_instances.len(),
+            notes.len(),
+            tick,
+            tick_start,
+            tick_end,
+        );
+    }
 
     let max_key_index = (KEY_COUNT.saturating_sub(1)) as f32;
     let canvas_size = (w, h);

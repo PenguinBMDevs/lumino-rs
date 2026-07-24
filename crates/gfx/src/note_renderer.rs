@@ -51,6 +51,11 @@ impl NoteRenderer {
     const VERTEX_SHADER: &'static str = include_str!("shaders/note.wgsl");
     /// 计算着色器代码 (WGSL)
     const CULL_SHADER: &'static str = include_str!("shaders/cull.wgsl");
+
+    /// 获取上次上传的实例数量（用于诊断）
+    pub fn last_upload_count(&self) -> u32 {
+        self.last_upload_count
+    }
 }
 
 impl Drop for NoteRenderer {
