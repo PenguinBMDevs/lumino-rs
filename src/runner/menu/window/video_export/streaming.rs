@@ -88,8 +88,6 @@ pub fn parse_midi_to_cache(
     viewport_beats: f64,
     progress: Option<ProgressCallback>,
 ) -> Result<StreamingMidiResult, String> {
-    tracing::info!("开始流式解析 MIDI 并写入硬盘缓存: {}", midi_path.display());
-
     let midi_bytes = std::fs::read(midi_path).map_err(|e| format!("读取 MIDI 文件失败: {e}"))?;
 
     let _ = send_progress(&progress, "正在扫描 MIDI 头部信息...".to_string(), 0.02);
@@ -134,10 +132,6 @@ pub fn parse_midi_to_cache(
                 "正在解析音符并写入硬盘缓存...".to_string(),
                 0.10 + (percent as f64) * 0.60 / 100.0,
             );
-            // 在终端同步输出关键里程碑日志，方便调试时观察进度
-            if percent % 25 == 0 {
-                tracing::info!("MIDI 解析进度: {}%", percent);
-            }
             last_reported_percent = percent;
         }
 
@@ -195,9 +189,6 @@ pub fn parse_midi_to_cache(
     }
 
     // 回写 note_count header
-    let note_file_size = note_writer
-        .stream_position()
-        .map_err(|e| format!("获取缓存文件位置失败: {e}"))?;
     let note_writer_ref = note_writer.get_mut();
     note_writer_ref
         .seek(SeekFrom::Start(0))
@@ -206,15 +197,6 @@ pub fn parse_midi_to_cache(
         .write_all(&note_count.to_le_bytes())
         .map_err(|e| format!("写入缓存 note_count 失败: {e}"))?;
     drop(note_writer);
-
-    tracing::info!(
-        "视频导出流式 MIDI: {} 音符, 缓存大小 {}, PPQN={}, total_ticks={}",
-        note_count,
-        bytes_to_human(note_file_size),
-        ppqn,
-        total_ticks
-    );
-    tracing::info!("音符缓存写入完成，开始构建帧索引...");
 
     let _ = send_progress(&progress, "正在构建帧索引...".to_string(), 0.75);
 
@@ -229,17 +211,6 @@ pub fn parse_midi_to_cache(
     )?;
 
     let total_frames = frame_index.len() as u64;
-
-    tracing::info!(
-        "视频导出流式 MIDI: 帧索引 {} 帧, 每帧 ~{:.0} 音符平均",
-        total_frames,
-        if total_frames > 0 {
-            note_count as f64 / total_frames as f64
-        } else {
-            0.0
-        }
-    );
-    tracing::info!("帧索引构建完成，MIDI 缓存准备就绪");
 
     let _ = send_progress(&progress, "MIDI 缓存准备完成".to_string(), 1.0);
 
@@ -311,17 +282,6 @@ fn send_progress(
         cb(message, value.clamp(0.0, 1.0));
     }
     Ok(())
-}
-
-fn bytes_to_human(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB"];
-    let mut size = bytes as f64;
-    let mut unit_idx = 0;
-    while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_idx += 1;
-    }
-    format!("{:.2} {}", size, UNITS[unit_idx])
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

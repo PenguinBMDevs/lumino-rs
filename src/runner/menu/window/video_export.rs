@@ -6,6 +6,7 @@ use lumino_gfx::{
     ARRANGEMENT_PALETTE, NoteInstance, RenderParams, generate_ruler_instances, pack_color,
 };
 
+pub mod cli_progress;
 pub mod keyboard;
 pub mod streaming;
 

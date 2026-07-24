@@ -2,6 +2,7 @@
 
 use crate::runner::{RunnerInner, dialog_manager::DialogType};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
@@ -12,6 +13,7 @@ use lumino_export::video::{
 };
 use lumino_gfx::render_thread::{ControlCommand, FrameSender, RenderCommand};
 
+use super::video_export::cli_progress::CliProgressBar;
 use super::video_export::streaming::StreamingNoteSource;
 
 impl RunnerInner {
@@ -225,11 +227,13 @@ fn run_video_export_task(
     let duration_secs = super::video_export::compute_duration_secs(tempo_changes, total_ticks, ppq);
     let total_frames = config.total_frames(duration_secs);
 
-    tracing::info!(
-        "视频导出: 总时长 {:.1}s, 总帧数 {}, PPQ {}",
-        duration_secs,
-        total_frames,
-        ppq
+    let mut render_bar = CliProgressBar::new(30, "视频渲染");
+    render_bar.update(
+        0.0,
+        &format!(
+            "总时长 {:.1}s | 总帧数 {} | PPQ {}",
+            duration_secs, total_frames, ppq
+        ),
     );
 
     let mut last_stat_time = Instant::now();
@@ -401,17 +405,19 @@ fn run_video_export_task(
             let avg_composite = acc_composite_us / stat_frame_count;
             let avg_preview = acc_preview_us / stat_frame_count;
             let avg_encode = acc_encode_us / stat_frame_count;
-            tracing::info!(
-                "视频导出: 帧 {}/{} ({:.0}%), FPS={:.0}, ETA={:.0}s, 阶段耗时(us) recv={} composite={} preview={} encode={}",
-                processed_frames,
-                total_frames,
-                progress * 100.0,
-                smoothed_fps,
-                eta_secs,
-                avg_recv,
-                avg_composite,
-                avg_preview,
-                avg_encode,
+            render_bar.update(
+                progress,
+                &format!(
+                    "帧 {}/{} | FPS {:.0} | ETA {:.0}s | recv={} composite={} preview={} encode={}",
+                    processed_frames,
+                    total_frames,
+                    smoothed_fps,
+                    eta_secs,
+                    avg_recv,
+                    avg_composite,
+                    avg_preview,
+                    avg_encode,
+                ),
             );
             let _ = progress_tx.send((
                 format!(
@@ -437,7 +443,6 @@ fn run_video_export_task(
 
     // drain 剩余 inflight 帧
     while !param_queue.is_empty() && !cancelled {
-        let recv_start = Instant::now();
         let data = match frame_rx.recv() {
             Ok(d) => d,
             Err(_) => {
@@ -446,12 +451,11 @@ fn run_video_export_task(
                 break;
             }
         };
-        let recv_us = recv_start.elapsed().as_micros() as u64;
 
         let p = param_queue
             .pop_front()
             .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024]));
-        let (should_stop, stats) = composite_and_encode_frame(
+        let (should_stop, _stats) = composite_and_encode_frame(
             data,
             p,
             &mut encoder,
@@ -468,12 +472,6 @@ fn run_video_export_task(
             &recycle_tx,
         );
 
-        acc_recv_us += recv_us;
-        acc_composite_us += stats.composite_us;
-        acc_preview_us += stats.preview_us;
-        acc_encode_us += stats.encode_us;
-        stat_frame_count += 1;
-
         if should_stop {
             cancelled = true;
             break;
@@ -481,26 +479,24 @@ fn run_video_export_task(
         processed_frames += 1;
     }
 
-    // 输出最后一组阶段打点（如果有未聚合的数据）
-    if let Some(divisor) = std::num::NonZeroU64::new(stat_frame_count) {
-        let d = divisor.get();
-        tracing::info!(
-            "视频导出: 收尾阶段耗时(us) recv={} composite={} preview={} encode={}",
-            acc_recv_us / d,
-            acc_composite_us / d,
-            acc_preview_us / d,
-            acc_encode_us / d,
-        );
-    }
-
     // 完成编码：无论是否取消都必须调用 finish()，
     // 否则 FFmpeg 收不到 EOF，视频文件头未写入导致损坏。
     // 用户取消时已写入的帧仍可生成可播放的部分视频。
     let elapsed = start.elapsed().as_secs_f64();
+    if cancelled {
+        render_bar.finish(&format!(
+            "已取消 | 已处理 {}/{} 帧 | 耗时 {:.1}s",
+            processed_frames, total_frames, elapsed
+        ));
+    } else {
+        render_bar.finish(&format!(
+            "完成 {}/{} 帧 | 耗时 {:.1}s",
+            processed_frames, total_frames, elapsed
+        ));
+    }
     finalize_video_export(
         encoder,
         cancelled,
-        processed_frames,
         elapsed,
         total_frames,
         smoothed_fps,
@@ -529,10 +525,15 @@ fn run_streaming_video_export_task(
 ) {
     let start = std::time::Instant::now();
 
-    // 阶段 1：解析 MIDI → 硬盘缓存
+    // 阶段 1：解析 MIDI → 硬盘缓存（终端进度条）
+    let parse_bar = Arc::new(Mutex::new(CliProgressBar::new(30, "MIDI解析")));
     let progress_tx_for_parse = progress_tx.clone();
+    let parse_bar_for_cb = parse_bar.clone();
     let parse_progress: std::sync::Arc<dyn Fn(String, f64) + Send + Sync> =
         std::sync::Arc::new(move |message: String, value: f64| {
+            if let Ok(mut bar) = parse_bar_for_cb.lock() {
+                bar.update(value, &message);
+            }
             // 解析阶段进度映射到 0.0 ~ 0.3，与渲染阶段 0.3 ~ 1.0 衔接
             let scaled = value * 0.3;
             let _ = progress_tx_for_parse.send((message, scaled, 0, 0.0, 0.0));
@@ -553,6 +554,9 @@ fn run_streaming_video_export_task(
             return;
         }
     };
+    if let Ok(mut bar) = parse_bar.lock() {
+        bar.finish("缓存就绪");
+    }
 
     let mut source = match StreamingNoteSource::open(streaming_result) {
         Ok(s) => s,
@@ -568,14 +572,14 @@ fn run_streaming_video_export_task(
     let total_ticks = source.total_ticks();
     let duration_secs = source.compute_duration_secs();
 
-    tracing::info!(
-        "视频导出流式模式: 总时长 {:.1}s, 总帧数 {}, PPQN {}, total_ticks {}",
-        duration_secs,
-        total_frames,
-        ppq,
-        total_ticks
+    let mut render_bar = CliProgressBar::new(30, "视频渲染");
+    render_bar.update(
+        0.0,
+        &format!(
+            "总时长 {:.1}s | 总帧数 {} | PPQN {} | total_ticks {}",
+            duration_secs, total_frames, ppq, total_ticks
+        ),
     );
-    tracing::info!("MIDI 缓存就绪，开始逐帧渲染/编码...");
 
     // 创建帧数据通道与回收通道
     let (frame_tx, frame_rx) = channel::<Vec<u8>>();
@@ -793,17 +797,19 @@ fn run_streaming_video_export_task(
                 let avg_composite = acc_composite_us / stat_frame_count;
                 let avg_preview = acc_preview_us / stat_frame_count;
                 let avg_encode = acc_encode_us / stat_frame_count;
-                tracing::info!(
-                    "视频导出: 帧 {}/{} ({:.0}%), FPS={:.0}, ETA={:.0}s, 阶段耗时(us) recv={} composite={} preview={} encode={}",
-                    processed_frames,
-                    total_frames,
-                    raw_progress * 100.0,
-                    smoothed_fps,
-                    eta_secs,
-                    avg_recv,
-                    avg_composite,
-                    avg_preview,
-                    avg_encode,
+                render_bar.update(
+                    raw_progress,
+                    &format!(
+                        "帧 {}/{} | FPS {:.0} | ETA {:.0}s | recv={} composite={} preview={} encode={}",
+                        processed_frames,
+                        total_frames,
+                        smoothed_fps,
+                        eta_secs,
+                        avg_recv,
+                        avg_composite,
+                        avg_preview,
+                        avg_encode,
+                    ),
                 );
                 let _ = progress_tx.send((
                     format!(
@@ -830,7 +836,6 @@ fn run_streaming_video_export_task(
 
     // drain 剩余 inflight 帧
     while !param_queue.is_empty() && !cancelled {
-        let recv_start = Instant::now();
         let data = match frame_rx.recv() {
             Ok(d) => d,
             Err(_) => {
@@ -839,12 +844,11 @@ fn run_streaming_video_export_task(
                 break;
             }
         };
-        let recv_us = recv_start.elapsed().as_micros() as u64;
 
         let p = param_queue
             .pop_front()
             .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024]));
-        let (should_stop, stats) = composite_and_encode_frame(
+        let (should_stop, _stats) = composite_and_encode_frame(
             data,
             p,
             &mut encoder,
@@ -861,12 +865,6 @@ fn run_streaming_video_export_task(
             &recycle_tx,
         );
 
-        acc_recv_us += recv_us;
-        acc_composite_us += stats.composite_us;
-        acc_preview_us += stats.preview_us;
-        acc_encode_us += stats.encode_us;
-        stat_frame_count += 1;
-
         if should_stop {
             cancelled = true;
             break;
@@ -874,23 +872,21 @@ fn run_streaming_video_export_task(
         processed_frames += 1;
     }
 
-    // 输出最后一组阶段打点
-    if let Some(divisor) = std::num::NonZeroU64::new(stat_frame_count) {
-        let d = divisor.get();
-        tracing::info!(
-            "视频导出: 收尾阶段耗时(us) recv={} composite={} preview={} encode={}",
-            acc_recv_us / d,
-            acc_composite_us / d,
-            acc_preview_us / d,
-            acc_encode_us / d,
-        );
-    }
-
     let elapsed = start.elapsed().as_secs_f64();
+    if cancelled {
+        render_bar.finish(&format!(
+            "已取消 | 已处理 {}/{} 帧 | 耗时 {:.1}s",
+            processed_frames, total_frames, elapsed
+        ));
+    } else {
+        render_bar.finish(&format!(
+            "完成 {}/{} 帧 | 耗时 {:.1}s",
+            processed_frames, total_frames, elapsed
+        ));
+    }
     finalize_video_export(
         encoder,
         cancelled,
-        processed_frames,
         elapsed,
         total_frames,
         smoothed_fps,
@@ -1064,14 +1060,12 @@ fn composite_and_encode_frame(
 fn finalize_video_export(
     encoder: FfmpegEncoder,
     cancelled: bool,
-    processed_frames: u64,
     elapsed: f64,
     total_frames: u64,
     smoothed_fps: f64,
     progress_tx: &tokio::sync::mpsc::UnboundedSender<(String, f64, u64, f64, f64)>,
 ) {
     if !cancelled {
-        tracing::info!("视频导出完成: 耗时 {:.1}s", elapsed);
         let _ = progress_tx.send((
             "导出完成".to_string(),
             1.0,
@@ -1080,11 +1074,6 @@ fn finalize_video_export(
             elapsed,
         ));
     } else {
-        tracing::info!(
-            "视频导出取消: 已处理 {} 帧, 耗时 {:.1}s, 正在收尾编码器",
-            processed_frames,
-            elapsed
-        );
         let _ = progress_tx.send((
             "导出已取消".to_string(),
             1.0,
