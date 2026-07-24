@@ -93,112 +93,121 @@ pub fn parse_midi_to_cache(
     viewport_beats: f64,
     progress: Option<ProgressCallback>,
 ) -> Result<StreamingMidiResult, String> {
-    let midi_bytes = std::fs::read(midi_path).map_err(|e| format!("读取 MIDI 文件失败: {e}"))?;
-
-    let _ = send_progress(&progress, "正在扫描 MIDI 头部信息...".to_string(), 0.02);
-
-    let mmap_smf = MmapSmf::parse(&midi_bytes).map_err(|e| format!("MmapSmf 解析失败: {e}"))?;
-
-    let ppqn = match mmap_smf.header().timing {
-        midly::Timing::Metrical(t) => u16::from(t) as u32,
-        midly::Timing::Timecode(_, _) => 480,
-    };
-
-    let _ = send_progress(&progress, "正在并行解析所有轨道...".to_string(), 0.05);
-
     let note_cache_path = build_cache_path(midi_path)?;
 
-    // 并行处理所有轨道：每条轨道独立扫描事件，互不干扰
-    type ScanResult = (Vec<(u32, f32)>, u64, Vec<NoteRecord>);
-    let scan_results: Vec<ScanResult> = mmap_smf
-        .tracks()
-        .par_iter()
-        .enumerate()
-        .map(|(track_idx, track)| {
-            let mut local_tick: u64 = 0;
-            let mut local_tempos: Vec<(u32, f32)> = Vec::new();
-            let mut max_tick: u64 = 0;
-            let mut pending: FxHashMap<(u16, u16), PendingNote> = FxHashMap::default();
-            let mut records: Vec<NoteRecord> = Vec::new();
+    // ═══════════════════════════════════════════════════════════════════════
+    // 阶段 1：读取 MIDI 文件 + 并行解析轨道（midi_bytes 在此作用域结束后释放）
+    // ═══════════════════════════════════════════════════════════════════════
+    let _ = send_progress(&progress, "正在扫描 MIDI 头部信息...".to_string(), 0.02);
 
-            for ev in track.iter().flatten() {
-                local_tick += u32::from(ev.delta) as u64;
-                max_tick = max_tick.max(local_tick);
+    let (ppqn, scan_results) = {
+        let midi_bytes =
+            std::fs::read(midi_path).map_err(|e| format!("读取 MIDI 文件失败: {e}"))?;
 
-                match ev.kind {
-                    TrackEventKind::Meta(MetaMessage::Tempo(tempo)) => {
-                        let bpm = 60_000_000.0 / tempo.as_int() as f32;
-                        if bpm > 0.0 {
-                            local_tempos.push((local_tick as u32, bpm));
-                        }
-                    }
-                    TrackEventKind::Midi { channel, message } => match message {
-                        MidiMessage::NoteOn { key, vel } => {
-                            let ch: u8 = channel.into();
-                            let k: u16 = key.into();
-                            let v: u8 = vel.into();
-                            let pk = (ch as u16, k);
+        let mmap_smf = MmapSmf::parse(&midi_bytes).map_err(|e| format!("MmapSmf 解析失败: {e}"))?;
 
-                            if let Some(pn) = pending.remove(&pk) {
-                                records.push(NoteRecord {
-                                    start_tick: pn.start_tick,
-                                    end_tick: local_tick as u32,
-                                    key: k,
-                                    velocity: pn.velocity,
-                                    track: track_idx as u16,
-                                    channel: ch as u16,
-                                });
-                            }
-                            if v > 0 {
-                                pending.insert(
-                                    pk,
-                                    PendingNote {
-                                        start_tick: local_tick as u32,
-                                        velocity: v as u16,
-                                    },
-                                );
+        let ppqn = match mmap_smf.header().timing {
+            midly::Timing::Metrical(t) => u16::from(t) as u32,
+            midly::Timing::Timecode(_, _) => 480,
+        };
+
+        let _ = send_progress(&progress, "正在并行解析所有轨道...".to_string(), 0.05);
+
+        type ScanResult = (Vec<(u32, f32)>, u64, Vec<NoteRecord>);
+        let scan_results: Vec<ScanResult> = mmap_smf
+            .tracks()
+            .par_iter()
+            .enumerate()
+            .map(|(track_idx, track)| {
+                let mut local_tick: u64 = 0;
+                let mut local_tempos: Vec<(u32, f32)> = Vec::new();
+                let mut max_tick: u64 = 0;
+                let mut pending: FxHashMap<(u16, u16), PendingNote> = FxHashMap::default();
+                let mut records: Vec<NoteRecord> = Vec::new();
+
+                for ev in track.iter().flatten() {
+                    local_tick += u32::from(ev.delta) as u64;
+                    max_tick = max_tick.max(local_tick);
+
+                    match ev.kind {
+                        TrackEventKind::Meta(MetaMessage::Tempo(tempo)) => {
+                            let bpm = 60_000_000.0 / tempo.as_int() as f32;
+                            if bpm > 0.0 {
+                                local_tempos.push((local_tick as u32, bpm));
                             }
                         }
-                        MidiMessage::NoteOff { key, .. } => {
-                            let ch: u8 = channel.into();
-                            let k: u16 = key.into();
-                            let pk = (ch as u16, k);
+                        TrackEventKind::Midi { channel, message } => match message {
+                            MidiMessage::NoteOn { key, vel } => {
+                                let ch: u8 = channel.into();
+                                let k: u16 = key.into();
+                                let v: u8 = vel.into();
+                                let pk = (ch as u16, k);
 
-                            if let Some(pn) = pending.remove(&pk) {
-                                records.push(NoteRecord {
-                                    start_tick: pn.start_tick,
-                                    end_tick: local_tick as u32,
-                                    key: k,
-                                    velocity: pn.velocity,
-                                    track: track_idx as u16,
-                                    channel: ch as u16,
-                                });
+                                if let Some(pn) = pending.remove(&pk) {
+                                    records.push(NoteRecord {
+                                        start_tick: pn.start_tick,
+                                        end_tick: local_tick as u32,
+                                        key: k,
+                                        velocity: pn.velocity,
+                                        track: track_idx as u16,
+                                        channel: ch as u16,
+                                    });
+                                }
+                                if v > 0 {
+                                    pending.insert(
+                                        pk,
+                                        PendingNote {
+                                            start_tick: local_tick as u32,
+                                            velocity: v as u16,
+                                        },
+                                    );
+                                }
                             }
-                        }
+                            MidiMessage::NoteOff { key, .. } => {
+                                let ch: u8 = channel.into();
+                                let k: u16 = key.into();
+                                let pk = (ch as u16, k);
+
+                                if let Some(pn) = pending.remove(&pk) {
+                                    records.push(NoteRecord {
+                                        start_tick: pn.start_tick,
+                                        end_tick: local_tick as u32,
+                                        key: k,
+                                        velocity: pn.velocity,
+                                        track: track_idx as u16,
+                                        channel: ch as u16,
+                                    });
+                                }
+                            }
+                            _ => {}
+                        },
                         _ => {}
-                    },
-                    _ => {}
+                    }
                 }
-            }
 
-            for (_, pn) in pending.drain() {
-                records.push(NoteRecord {
-                    start_tick: pn.start_tick,
-                    end_tick: local_tick as u32,
-                    key: 0,
-                    velocity: pn.velocity,
-                    track: track_idx as u16,
-                    channel: 0,
-                });
-            }
+                for (_, pn) in pending.drain() {
+                    records.push(NoteRecord {
+                        start_tick: pn.start_tick,
+                        end_tick: local_tick as u32,
+                        key: 0,
+                        velocity: pn.velocity,
+                        track: track_idx as u16,
+                        channel: 0,
+                    });
+                }
 
-            (local_tempos, max_tick, records)
-        })
-        .collect();
+                (local_tempos, max_tick, records)
+            })
+            .collect();
 
+        (ppqn, scan_results)
+    }; // midi_bytes + mmap_smf 在此释放，释放约 1GB（对大 MIDI 文件）
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 阶段 2：合并轨道数据 → 排序 → 写入硬盘缓存
+    // ═══════════════════════════════════════════════════════════════════════
     let _ = send_progress(&progress, "正在合并轨道数据...".to_string(), 0.65);
 
-    // 合并 Tempo 变化（排序 + 去重）
     let mut tempo_changes: Vec<(u32, f32)> = Vec::new();
     let mut total_ticks: u64 = 0;
     let mut all_records: Vec<NoteRecord> = Vec::new();
@@ -222,33 +231,34 @@ pub fn parse_midi_to_cache(
         }
     });
 
-    let note_count = all_records.len() as u64;
-
     // 并行排序：按 end_tick 排序后写入缓存
     all_records.par_sort_unstable_by_key(|r| r.end_tick);
 
     // 写入缓存文件
-    let note_file = std::fs::File::create(&note_cache_path)
-        .map_err(|e| format!("创建音符缓存文件失败: {e}"))?;
-    let mut note_writer = BufWriter::with_capacity(64 * 1024, note_file);
+    {
+        let note_file = std::fs::File::create(&note_cache_path)
+            .map_err(|e| format!("创建音符缓存文件失败: {e}"))?;
+        let mut note_writer = BufWriter::with_capacity(64 * 1024, note_file);
 
-    note_writer
-        .write_all(&note_count.to_le_bytes())
-        .map_err(|e| format!("写入缓存 header 失败: {e}"))?;
-
-    for record in &all_records {
-        let bytes: [u8; NOTE_RECORD_SIZE] = bytemuck::cast(*record);
         note_writer
-            .write_all(&bytes)
-            .map_err(|e| format!("写入音符记录失败: {e}"))?;
-    }
-    drop(note_writer);
+            .write_all(&(all_records.len() as u64).to_le_bytes())
+            .map_err(|e| format!("写入缓存 header 失败: {e}"))?;
 
+        for record in &all_records {
+            let bytes: [u8; NOTE_RECORD_SIZE] = bytemuck::cast(*record);
+            note_writer
+                .write_all(&bytes)
+                .map_err(|e| format!("写入音符记录失败: {e}"))?;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 阶段 3：直接在内存中构建帧索引（无需重读缓存文件）
+    // ═══════════════════════════════════════════════════════════════════════
     let _ = send_progress(&progress, "正在构建帧索引...".to_string(), 0.75);
 
     let frame_index = build_frame_index(
-        &note_cache_path,
-        note_count,
+        &all_records,
         ppqn,
         total_ticks as u32,
         &tempo_changes,
@@ -258,9 +268,9 @@ pub fn parse_midi_to_cache(
 
     let total_frames = frame_index.len() as u64;
 
-    let _ = send_progress(&progress, "MIDI 缓存准备完成".to_string(), 1.0);
+    // all_records 在此函数末尾自动释放
 
-    drop(midi_bytes);
+    let _ = send_progress(&progress, "MIDI 缓存准备完成".to_string(), 1.0);
 
     Ok(StreamingMidiResult {
         note_cache_path,
@@ -311,8 +321,7 @@ fn send_progress(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 fn build_frame_index(
-    note_cache_path: &Path,
-    note_count: u64,
+    records: &[NoteRecord],
     ppqn: u32,
     total_ticks: u32,
     tempos: &[(u32, f32)],
@@ -323,43 +332,11 @@ fn build_frame_index(
     let total_frames = (total_secs * fps).ceil() as u64;
     let _ = viewport_beats;
 
+    let note_count = records.len();
+
     if note_count == 0 {
         return Ok(Vec::new());
     }
-
-    let mut note_file =
-        std::fs::File::open(note_cache_path).map_err(|e| format!("打开音符缓存文件失败: {e}"))?;
-
-    let mut header = [0u8; 8];
-    note_file
-        .read_exact(&mut header)
-        .map_err(|e| format!("读取缓存 header 失败: {e}"))?;
-    let cached_note_count = u64::from_le_bytes(header);
-    if cached_note_count != note_count {
-        return Err(format!(
-            "缓存音符数量不匹配: header={}, 实际={}",
-            cached_note_count, note_count
-        ));
-    }
-
-    let mut note_data = Vec::with_capacity((note_count as usize) * NOTE_RECORD_SIZE);
-    note_file
-        .read_to_end(&mut note_data)
-        .map_err(|e| format!("读取音符缓存数据失败: {e}"))?;
-
-    let expected_bytes = (note_count as usize) * NOTE_RECORD_SIZE;
-    if note_data.len() < expected_bytes {
-        return Err(format!(
-            "缓存音符数据不完整: 预期 {} 个记录 ({} bytes), 实际读取 {} bytes",
-            note_count,
-            expected_bytes,
-            note_data.len(),
-        ));
-    }
-
-    let records: &[NoteRecord] = unsafe {
-        std::slice::from_raw_parts(note_data.as_ptr() as *const NoteRecord, note_count as usize)
-    };
 
     let index: Vec<FrameIndexEntry> = (0..total_frames)
         .into_par_iter()
@@ -372,7 +349,7 @@ fn build_frame_index(
 
             FrameIndexEntry {
                 note_offset: left as u32,
-                note_count: (note_count as usize - left) as u32,
+                note_count: (note_count as u32).saturating_sub(left as u32),
             }
         })
         .collect();
