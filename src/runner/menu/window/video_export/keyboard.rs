@@ -236,6 +236,10 @@ pub fn generate_keyboard_texture(_width: u32, height: u32, key_count: u16) -> (V
 ///
 /// 贴图与帧均为 BGRA 格式，无高亮时直接逐行 memcpy；有高亮时按 60% 不透明度
 /// 叠加对应音轨颜色，与编辑器左侧键盘的洋葱皮效果保持一致。
+///
+/// # 性能说明
+/// 非高亮行走 `copy_from_slice` 快速路径（逐行 memcpy）。
+/// 高亮行走标量 blend 循环，通过预计算权重系数避免每像素重复除法。
 pub fn composite_keyboard(
     frame: &mut [u8],
     frame_width: u32,
@@ -260,6 +264,23 @@ pub fn composite_keyboard(
     let key_count_f = EXPORT_KEY_COUNT as f32;
     let zoom_y = kb_h as f32 / key_count_f;
 
+    // 预计算每像素所需颜色分量（按 key_idx 索引）
+    // 结构: (overlay_b, overlay_g, overlay_r, overlay_alpha)
+    // key_colors 为 RGBA 格式，frame 为 BGRA，读取时交换 R↔B
+    let mut per_key_overlay = [(0i32, 0i32, 0i32, 0u8); 128];
+    for (key_idx, colors) in key_colors.chunks_exact(4).enumerate().take(128) {
+        let alpha = colors[3];
+        if alpha != 0 {
+            let scaled_alpha = (alpha as u16 * OVERLAY_ALPHA as u16 / 255) as u8;
+            per_key_overlay[key_idx] = (
+                colors[2] as i32, // B (key_colors RGBA → overlay_b)
+                colors[1] as i32, // G
+                colors[0] as i32, // R (key_colors RGBA → overlay_r)
+                scaled_alpha,
+            );
+        }
+    }
+
     for py in 0..kb_h {
         let frame_y = RULER_HEIGHT + py;
         if frame_y >= frame_height {
@@ -270,48 +291,41 @@ pub fn composite_keyboard(
         if frame_start + row_bytes > frame.len() || kb_start + row_bytes > keyboard_pixels.len() {
             continue;
         }
+        let frame_row_end = frame_start + row_bytes;
 
         let key_f = (key_count_f - 1.0) - py as f32 / zoom_y;
         let key_idx = key_f.ceil() as i32;
         if key_idx < 0 || key_idx >= EXPORT_KEY_COUNT as i32 {
-            frame[frame_start..frame_start + row_bytes]
+            frame[frame_start..frame_row_end]
                 .copy_from_slice(&keyboard_pixels[kb_start..kb_start + row_bytes]);
             continue;
         }
 
-        let offset = (key_idx as usize) * 4;
-        let has_color = key_colors[offset + 3] != 0;
-        if !has_color {
-            frame[frame_start..frame_start + row_bytes]
+        let (ob, og, or_, overlay_alpha) = per_key_overlay[key_idx as usize];
+        if overlay_alpha == 0 {
+            frame[frame_start..frame_row_end]
                 .copy_from_slice(&keyboard_pixels[kb_start..kb_start + row_bytes]);
             continue;
         }
 
-        let overlay_alpha = (key_colors[offset + 3] as u16 * OVERLAY_ALPHA as u16 / 255) as u8;
-        let or = key_colors[offset] as i32;
-        let og = key_colors[offset + 1] as i32;
-        let ob = key_colors[offset + 2] as i32;
+        // 高亮行：预计算权重，避免每像素除法
+        let alpha_i = overlay_alpha as i32;
+        // blend = (base * (255 - alpha) + overlay * alpha) / 255
+        // 展开为: base + (overlay - base) * alpha / 255
+        let frame_row = &mut frame[frame_start..frame_row_end];
+        let kb_row = &keyboard_pixels[kb_start..kb_start + row_bytes];
 
-        for px in 0..kb_w as usize {
-            let fidx = frame_start + px * 4;
-            let kidx = kb_start + px * 4;
-            let b = keyboard_pixels[kidx] as i32;
-            let g = keyboard_pixels[kidx + 1] as i32;
-            let r = keyboard_pixels[kidx + 2] as i32;
-            frame[fidx] = blend(b, ob, overlay_alpha);
-            frame[fidx + 1] = blend(g, og, overlay_alpha);
-            frame[fidx + 2] = blend(r, or, overlay_alpha);
-            frame[fidx + 3] = 255;
+        // 使用 chunks_exact 自动向量化友好的方式处理每像素 4 字节
+        for (fchunk, kchunk) in frame_row.chunks_exact_mut(4).zip(kb_row.chunks_exact(4)) {
+            let b = kchunk[0] as i32;
+            let g = kchunk[1] as i32;
+            let r = kchunk[2] as i32;
+            fchunk[0] = (b + (ob - b) * alpha_i / 255).clamp(0, 255) as u8;
+            fchunk[1] = (g + (og - g) * alpha_i / 255).clamp(0, 255) as u8;
+            fchunk[2] = (r + (or_ - r) * alpha_i / 255).clamp(0, 255) as u8;
+            fchunk[3] = 255;
         }
     }
-}
-
-/// 将基础颜色与不透明度混合
-#[inline]
-fn blend(base: i32, overlay: i32, alpha: u8) -> u8 {
-    let a = alpha as i32;
-    let v = base + (overlay - base) * a / 255;
-    v.clamp(0, 255) as u8
 }
 
 #[cfg(test)]

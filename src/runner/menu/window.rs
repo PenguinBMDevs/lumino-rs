@@ -44,12 +44,25 @@ impl RunnerInner {
     }
 }
 
-/// 最近邻 RGBA 缩放，用于将全尺寸预览帧缩小到 dialog 可用尺寸。
-/// iced_wgpu 对 >2MB 的 Handle::from_rgba 走异步 GPU 上传，
-/// 每帧唯一 ID 导致缓存失效、图片永远不显示。缩小到 <2MB 走同步路径。
-fn downscale_rgba(src: &[u8], sw: u32, sh: u32, tw: u32, th: u32) -> (Vec<u8>, u32, u32) {
+/// 最近邻缩放 + BGRA→RGBA 交换（零拷贝预览路径）。
+///
+/// 输入为 BGRA 格式，输出为 RGBA 格式。
+/// 等价于先 `downscale_rgba` 再 `swap(0,2)`，但只需一次内存分配
+/// 且避免全帧 clone（约 8MB@1080p）。
+pub(super) fn downscale_bgra_to_rgba(
+    src: &[u8],
+    sw: u32,
+    sh: u32,
+    tw: u32,
+    th: u32,
+) -> (Vec<u8>, u32, u32) {
     if tw >= sw || th >= sh || tw == 0 || th == 0 {
-        return (src.to_vec(), sw, sh);
+        // 不需缩小：直接 clone 并在 clone 中交换
+        let mut dst = src.to_vec();
+        for pixel in dst.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+        return (dst, sw, sh);
     }
     let mut dst = vec![0u8; (tw * th * 4) as usize];
     for dy in 0..th {
@@ -60,7 +73,11 @@ fn downscale_rgba(src: &[u8], sw: u32, sh: u32, tw: u32, th: u32) -> (Vec<u8>, u
             let sx = (dx as f64 * sw as f64 / tw as f64) as u32;
             let si = src_row + (sx * 4) as usize;
             let di = dst_row + (dx * 4) as usize;
-            dst[di..di + 4].copy_from_slice(&src[si..si + 4]);
+            // BGRA → RGBA: 读取 B,G,R,A → 写入 R,G,B,A
+            dst[di] = src[si + 2]; // R
+            dst[di + 1] = src[si + 1]; // G
+            dst[di + 2] = src[si]; // B
+            dst[di + 3] = src[si + 3]; // A
         }
     }
     (dst, tw, th)

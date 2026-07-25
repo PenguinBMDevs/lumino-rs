@@ -1000,25 +1000,26 @@ fn composite_and_encode_frame(
         return (true, stats);
     }
 
-    // 预览帧：在 write_frame（move data）之前 clone 发送。
+    // 预览帧：在 write_frame（move data）之前生成。
     // 第一帧立即发送，让预览界面尽快有内容；后续按 200ms 节流。
+    // 使用 downscale_bgra_to_rgba 合并 BGRA→RGBA 交换与缩小为单次遍历，
+    // 避免全帧 clone（~8MB@1080p）以节省内存带宽。
     if !*preview_sent || last_preview_time.elapsed() >= Duration::from_millis(200) {
         let t0 = Instant::now();
         // GPU 读回是 BGRA 格式，但 image::Handle::from_rgba 需要 RGBA
-        let mut preview_data = data.clone();
-        for pixel in preview_data.chunks_exact_mut(4) {
-            pixel.swap(0, 2); // B<->R 交换
-        }
-
-        // 缩小预览到 ≤480px 宽，确保像素数据 <2MB，
-        // 让 iced_wgpu 走同步上传路径而非异步后台上传
         const PREVIEW_MAX_W: u32 = 480;
         let (small_data, small_w, small_h) = if width > PREVIEW_MAX_W {
             let scale = PREVIEW_MAX_W as f64 / width as f64;
             let tw = PREVIEW_MAX_W;
             let th = (height as f64 * scale).round() as u32;
-            super::downscale_rgba(&preview_data, width, height, tw, th)
+            // 单次分配 + 缩放 + BGR 交换，零额外 clone
+            super::downscale_bgra_to_rgba(&data, width, height, tw, th)
         } else {
+            // 不需要缩小：clone 并在 clone 上做 BGR 交换
+            let mut preview_data = data.clone();
+            for pixel in preview_data.chunks_exact_mut(4) {
+                pixel.swap(0, 2);
+            }
             (preview_data, width, height)
         };
 

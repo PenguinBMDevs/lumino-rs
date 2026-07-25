@@ -78,6 +78,8 @@ puffin = "0.19.1"
 parking_lot = "0.12"
 hound = "3.5"
 flac-encoder = "0.1"
+rustc-hash = "2.1"
+rayon = "1"
 
 [package]
 name = "lumino-rs"
@@ -128,6 +130,8 @@ puffin_http = { workspace = true }
 anyhow = { workspace = true }
 parking_lot = { workspace = true }
 chrono = { workspace = true }
+rustc-hash = { workspace = true }
+rayon = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }

@@ -14,6 +14,8 @@ use lumino_gfx::{
     ARRANGEMENT_PALETTE, NoteInstance, RenderParams, generate_ruler_instances, pack_color,
 };
 use midly::{MidiMessage, TrackEventKind};
+use rayon::prelude::*;
+use rustc_hash::FxHashMap;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 数据记录
@@ -112,27 +114,29 @@ pub fn parse_midi_to_cache(
         .write_all(&[0u8; 8])
         .map_err(|e| format!("写入缓存 header 失败: {e}"))?;
 
-    let mut pending: std::collections::HashMap<(u16, u16, u16), PendingNote> =
-        std::collections::HashMap::new();
+    let mut pending: FxHashMap<(u16, u16, u16), PendingNote> = FxHashMap::default();
     let mut note_count: u64 = 0;
     let mut last_reported_percent: u32 = 0;
+    let mut event_counter: u64 = 0;
 
     while let Some((tick_u64, track_idx, kind)) = player.next_event() {
         let tick = tick_u64 as u32;
+        event_counter += 1;
 
-        // 每解析 1% 的 tick 报告一次进度
-        let percent = if total_ticks > 0 {
-            (tick as u64 * 100 / player.total_ticks().max(1)) as u32
-        } else {
-            0
-        };
-        if percent > last_reported_percent && percent <= 100 {
-            let _ = send_progress(
-                &progress,
-                "正在解析音符并写入硬盘缓存...".to_string(),
-                0.10 + (percent as f64) * 0.60 / 100.0,
-            );
-            last_reported_percent = percent;
+        if event_counter & 0x3F == 0 {
+            let percent = if total_ticks > 0 {
+                (tick as u64 * 100 / player.total_ticks().max(1)) as u32
+            } else {
+                0
+            };
+            if percent > last_reported_percent && percent <= 100 {
+                let _ = send_progress(
+                    &progress,
+                    "正在解析音符并写入硬盘缓存...".to_string(),
+                    0.10 + (percent as f64) * 0.60 / 100.0,
+                );
+                last_reported_percent = percent;
+            }
         }
 
         match kind {
@@ -301,7 +305,7 @@ fn build_frame_index(
 ) -> Result<Vec<FrameIndexEntry>, String> {
     let total_secs = ticks_to_seconds(total_ticks as u64, ppqn, tempos);
     let total_frames = (total_secs * fps).ceil() as u64;
-    let _ = viewport_beats; // 保留参数语义，帧索引改用渲染层精确过滤
+    let _ = viewport_beats;
 
     if note_count == 0 {
         return Ok(Vec::new());
@@ -310,7 +314,6 @@ fn build_frame_index(
     let mut note_file =
         std::fs::File::open(note_cache_path).map_err(|e| format!("打开音符缓存文件失败: {e}"))?;
 
-    // 读取 header：note_count
     let mut header = [0u8; 8];
     note_file
         .read_exact(&mut header)
@@ -323,15 +326,11 @@ fn build_frame_index(
         ));
     }
 
-    // 一次性读取所有音符以构建索引（索引构建只需要 start_tick/end_tick）
-    // 注意：这里只读取一次，构建完索引后立即释放内存；渲染阶段不再全量加载。
     let mut note_data = Vec::with_capacity((note_count as usize) * NOTE_RECORD_SIZE);
     note_file
         .read_to_end(&mut note_data)
         .map_err(|e| format!("读取音符缓存数据失败: {e}"))?;
 
-    // 校验实际读取字节数，防止缓存文件损坏（如 BufWriter 未 flush 就 seek 导致的截断）
-    // 导致 unsafe 读越界未初始化内存。
     let expected_bytes = (note_count as usize) * NOTE_RECORD_SIZE;
     if note_data.len() < expected_bytes {
         return Err(format!(
@@ -346,39 +345,21 @@ fn build_frame_index(
         std::slice::from_raw_parts(note_data.as_ptr() as *const NoteRecord, note_count as usize)
     };
 
-    let mut index = Vec::with_capacity(total_frames as usize);
-    let mut left: usize = 0;
+    let index: Vec<FrameIndexEntry> = (0..total_frames)
+        .into_par_iter()
+        .map(|frame_idx| {
+            let frame_time = frame_idx as f64 / fps;
+            let center_tick = seconds_to_tick(frame_time, ppqn, tempos);
+            let vp_start = center_tick;
 
-    for frame_idx in 0..total_frames {
-        let frame_time = frame_idx as f64 / fps;
-        let center_tick = seconds_to_tick(frame_time, ppqn, tempos);
-        // 左对齐视口，与 build_video_render_params_from_notes 保持一致：
-        // 可见范围 [tick, tick + viewport_tick_span) = [tick, tick + 16*ppq)
-        let vp_start = center_tick;
+            let left = records.partition_point(|r| r.end_tick < vp_start);
 
-        // records 按 end_tick 升序写入（emit_note_record 在 NoteOff 时调用，
-        // player.next_event() 按 tick 升序返回事件，end_tick 单调递增）。
-        //
-        // visible 条件: end_tick >= vp_start && start_tick <= vp_end
-        // - left 双指针: 找第一个 end_tick >= vp_start。前面的 records都
-        //   end_tick < vp_start，音符在视口前结束，不可见，可跳过。end_tick
-        //   单调递增，双指针有效。
-        // - right 双指针: 需要 start_tick <= vp_end，但 records 按 end_tick
-        //   排序，start_tick 无序，无法用双指针确定 right 边界。
-        //
-        // 所以取 right = note_count（从 left 到末尾全部读取），由
-        // build_video_render_params_from_notes 做精确过滤
-        // (n.end_tick >= tick_start && n.start_tick <= tick_end)。
-        // left 指针随帧推进，读取量递减；正确性优先于性能。
-        while left < note_count as usize && records[left].end_tick < vp_start {
-            left += 1;
-        }
-
-        index.push(FrameIndexEntry {
-            note_offset: left as u32,
-            note_count: (note_count as usize - left) as u32,
-        });
-    }
+            FrameIndexEntry {
+                note_offset: left as u32,
+                note_count: (note_count as usize - left) as u32,
+            }
+        })
+        .collect();
 
     Ok(index)
 }

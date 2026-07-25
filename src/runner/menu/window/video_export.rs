@@ -265,22 +265,37 @@ fn draw_digit(frame: &mut [u8], frame_width: u32, digit: u8, x: u32, y: u32, col
         return;
     };
     let frame_w = frame_width as usize;
+    let color_bytes = color; // [B, G, R, A]
+
     for row in 0..DIGIT_BITMAP_H {
         let mask = bitmap[row as usize];
+        // 该行没有填充像素则跳过整行
+        if mask == 0 {
+            continue;
+        }
+        // base_row_start: 该位图行首字节在 frame 中的索引
+        // py = y + row * DIGIT_SCALE
+        let base_row_start = ((y + row * DIGIT_SCALE) as usize) * frame_w;
+
         for col in 0..DIGIT_BITMAP_W {
-            if mask & (1 << (DIGIT_BITMAP_W - 1 - col)) != 0 {
-                // 每个位图像素扩展为 DIGIT_SCALE × DIGIT_SCALE 的方块
-                for sy in 0..DIGIT_SCALE {
-                    for sx in 0..DIGIT_SCALE {
-                        let px = (x + col * DIGIT_SCALE + sx) as usize;
-                        let py = (y + row * DIGIT_SCALE + sy) as usize;
-                        let idx = (py * frame_w + px) * 4;
-                        if idx + 3 < frame.len() {
-                            frame[idx] = color[0]; // B
-                            frame[idx + 1] = color[1]; // G
-                            frame[idx + 2] = color[2]; // R
-                            frame[idx + 3] = color[3]; // A
-                        }
+            if mask & (1 << (DIGIT_BITMAP_W - 1 - col)) == 0 {
+                continue;
+            }
+            // 预计算方块左边缘在 frame 中的字节偏移
+            // px = x + col * DIGIT_SCALE
+            let block_x_bytes = ((x + col * DIGIT_SCALE) as usize) * 4;
+
+            // 展开 DIGIT_SCALE x DIGIT_SCALE 的方块写入
+            // 每行 DIGIT_SCALE 个像素，共 DIGIT_SCALE 行
+            // 使用 copy_from_slice 替代逐像素写入
+            for sy in 0..DIGIT_SCALE {
+                let row_start = (base_row_start + (sy as usize) * frame_w) + block_x_bytes;
+                let row_end = row_start + (DIGIT_SCALE as usize) * 4;
+                if row_end <= frame.len() {
+                    // 连续写入 DIGIT_SCALE 个像素
+                    for px_offset in (0..DIGIT_SCALE as usize * 4).step_by(4) {
+                        let dst = row_start + px_offset;
+                        frame[dst..dst + 4].copy_from_slice(&color_bytes);
                     }
                 }
             }
@@ -299,21 +314,24 @@ fn draw_number(
     y: u32,
     color: [u8; 4],
 ) {
-    // 将数字转换为数字串
-    let digits: Vec<u8> = if number == 0 {
-        vec![0]
+    // 使用固定大小数组避免 Vec 堆分配（最大支持 10 位数）
+    let mut digits = [0u8; 10];
+    let mut len = 0usize;
+
+    if number == 0 {
+        digits[0] = 0;
+        len = 1;
     } else {
         let mut n = number;
-        let mut d = Vec::new();
         while n > 0 {
-            d.push((n % 10) as u8);
+            digits[len] = (n % 10) as u8;
+            len += 1;
             n /= 10;
         }
-        d.reverse();
-        d
-    };
+        digits[..len].reverse();
+    }
 
-    for &digit in &digits {
+    for &digit in &digits[..len] {
         draw_digit(frame, frame_width, digit, x, y, color);
         x += DIGIT_W + DIGIT_SPACING;
     }
