@@ -7,6 +7,7 @@ use iced_winit::runtime::user_interface;
 
 use crate::host::{Host, types::convert_touch_to_mouse};
 use crate::{message, sidebar, toolbar, window};
+use lumino_ui_core::sidebar_event::Route;
 
 /// 检查是否按下了 Ctrl 或 Command（macOS）
 fn is_ctrl_or_cmd_pressed(modifiers: winit::keyboard::ModifiersState) -> bool {
@@ -33,6 +34,28 @@ impl Host {
             }
             self.window_ctx.window.request_redraw();
             return;
+        }
+
+        // 工程走带视图激活时，键盘快捷键路由到走带操作
+        if self.root.sidebar.route == Route::Arrangement {
+            let arrange_msg = match (key, ctrl, shift) {
+                (winit::keyboard::KeyCode::Delete | winit::keyboard::KeyCode::Backspace, ..) => {
+                    Some(message::Message::ArrangementDeleteSelection)
+                }
+                (winit::keyboard::KeyCode::KeyX, true, _) => Some(message::Message::ArrangementCut),
+                (winit::keyboard::KeyCode::KeyC, true, _) => {
+                    Some(message::Message::ArrangementCopy)
+                }
+                (winit::keyboard::KeyCode::KeyV, true, _) => {
+                    Some(message::Message::ArrangementPaste)
+                }
+                _ => None,
+            };
+            if let Some(msg) = arrange_msg {
+                self.route_message(msg);
+                self.window_ctx.window.request_redraw();
+                return;
+            }
         }
 
         let action = match (key, ctrl, shift) {
@@ -388,6 +411,24 @@ impl Host {
                 puffin::profile_scope!("process_message::editor_action");
                 self.handle_action(action);
             }
+            return true;
+        }
+
+        // 工程走带操作：先通过 route_message 处理数据修改，再标记高精度贴图脏
+        if matches!(
+            &message,
+            message::Message::ArrangementCopy
+                | message::Message::ArrangementPaste
+                | message::Message::ArrangementCut
+                | message::Message::ArrangementDeleteSelection
+        ) {
+            let track_idx = self.root.editor.current_track() as u16;
+            {
+                puffin::profile_scope!("process_message::arrangement_op");
+                self.route_message(message);
+            }
+            self.mark_hires_dirty(track_idx);
+            self.window_ctx.window.request_redraw();
             return true;
         }
 

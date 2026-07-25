@@ -512,6 +512,36 @@ impl Root {
                 self.arrangement_view.drag_sel_rect = *rect;
                 true
             }
+            Message::ArrangementCopy => {
+                self.editor.arrange_copy_selected_notes();
+                true
+            }
+            Message::ArrangementPaste => {
+                let pasted = self.editor.arrange_paste_notes_from_clipboard();
+                if pasted {
+                    self.update_playback_notes();
+                    self.editor.clear_notes_changed();
+                }
+                true
+            }
+            Message::ArrangementCut => {
+                let cut = self.editor.arrange_cut_selected_notes();
+                if cut > 0 {
+                    self.editor.editor_state.data.arrange_selection.clear();
+                    self.update_playback_notes();
+                    self.editor.clear_notes_changed();
+                }
+                true
+            }
+            Message::ArrangementDeleteSelection => {
+                let deleted = self.editor.arrange_delete_selected_notes();
+                if deleted > 0 {
+                    self.editor.editor_state.data.arrange_selection.clear();
+                    self.update_playback_notes();
+                    self.editor.clear_notes_changed();
+                }
+                true
+            }
             _ => false,
         }
     }

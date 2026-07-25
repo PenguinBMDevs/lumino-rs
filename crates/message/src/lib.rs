@@ -167,6 +167,14 @@ pub enum Message<W, S, Se, T> {
     ArrangementGhostNotesUpdated(Vec<(f64, f64, usize)>),
     /// 工程走带：拖拽中的框选矩形（实时预览，由 GPU 渲染）
     ArrangementDragSelectionRect(Option<(f64, f64, usize, usize)>),
+    /// 工程走带：复制选中音符到剪贴板
+    ArrangementCopy,
+    /// 工程走带：从剪贴板粘贴音符
+    ArrangementPaste,
+    /// 工程走带：剪切选中音符（复制 + 删除）
+    ArrangementCut,
+    /// 工程走带：删除选中音符
+    ArrangementDeleteSelection,
 }
 
 pub const fn null<W, S, Se, T>() -> Message<W, S, Se, T> {
