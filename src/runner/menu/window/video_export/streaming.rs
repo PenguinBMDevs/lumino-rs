@@ -10,6 +10,7 @@ use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use bytemuck;
 use lumino_gfx::{
     ARRANGEMENT_PALETTE, NoteInstance, RenderParams, generate_ruler_instances, pack_color,
 };
@@ -23,7 +24,7 @@ use rustc_hash::FxHashMap;
 
 /// 缓存中的单条音符记录（16 bytes）
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct NoteRecord {
     pub start_tick: u32,
     pub end_tick: u32,
@@ -145,21 +146,15 @@ pub fn parse_midi_to_cache(
                 message: MidiMessage::NoteOn { key, vel },
             } => {
                 let ch: u8 = channel.into();
-                let ch_u16 = ch as u16;
                 let k: u16 = key.into();
                 let v: u8 = vel.into();
-                let pending_key = (track_idx as u16, ch_u16, k);
+                let pending_key = (track_idx as u16, ch as u16, k);
 
-                if v == 0 {
-                    if let Some(pn) = pending.remove(&pending_key) {
-                        emit_note_record(&mut note_writer, tick, pn, track_idx as u16, ch_u16, k)?;
-                        note_count += 1;
-                    }
-                } else {
-                    if let Some(pn) = pending.remove(&pending_key) {
-                        emit_note_record(&mut note_writer, tick, pn, track_idx as u16, ch_u16, k)?;
-                        note_count += 1;
-                    }
+                if let Some(pn) = pending.remove(&pending_key) {
+                    emit_note_record(&mut note_writer, tick, pn, track_idx as u16, ch as u16, k)?;
+                    note_count += 1;
+                }
+                if v > 0 {
                     pending.insert(
                         pending_key,
                         PendingNote {
@@ -255,7 +250,7 @@ fn emit_note_record(
         track,
         channel,
     };
-    let bytes: [u8; NOTE_RECORD_SIZE] = unsafe { std::mem::transmute(record) };
+    let bytes: [u8; NOTE_RECORD_SIZE] = bytemuck::cast(record);
     writer
         .write_all(&bytes)
         .map_err(|e| format!("写入音符记录失败: {e}"))?;
@@ -430,6 +425,7 @@ pub struct StreamingNoteSource {
     ppqn: u32,
     total_ticks: u32,
     tempo_changes: Vec<(u32, f32)>,
+    read_buf: Vec<u8>,
 }
 
 impl StreamingNoteSource {
@@ -444,6 +440,7 @@ impl StreamingNoteSource {
             ppqn: result.ppqn,
             total_ticks: result.total_ticks,
             tempo_changes: result.tempo_changes,
+            read_buf: Vec::new(),
         })
     }
 
@@ -497,9 +494,8 @@ impl StreamingNoteSource {
                 .map_err(|e| format!("seek 音符缓存失败: {e}"))?;
 
             let expected_bytes = (entry.note_count as usize) * NOTE_RECORD_SIZE;
-            let mut raw = vec![0u8; expected_bytes];
-            if let Err(e) = self.note_file.read_exact(&mut raw) {
-                // 诊断：记录帧索引条目和文件状态
+            self.read_buf.resize(expected_bytes, 0);
+            if let Err(e) = self.note_file.read_exact(&mut self.read_buf) {
                 let file_len = std::fs::metadata(&self.note_cache_path)
                     .map(|m| m.len())
                     .unwrap_or(0);
@@ -518,7 +514,7 @@ impl StreamingNoteSource {
             }
 
             unsafe {
-                let ptr = raw.as_ptr() as *const NoteRecord;
+                let ptr = self.read_buf.as_ptr() as *const NoteRecord;
                 notes.extend_from_slice(std::slice::from_raw_parts(ptr, entry.note_count as usize));
             }
         }
@@ -575,7 +571,7 @@ fn build_video_render_params_from_notes(
             });
         }
     }
-    temp.sort_by_key(|n| (n.key, n.start_tick, u16::MAX - n.track_idx));
+    temp.sort_unstable_by_key(|n| (n.key, n.start_tick, u16::MAX - n.track_idx));
 
     let note_instances: Vec<NoteInstance> = temp
         .into_iter()
