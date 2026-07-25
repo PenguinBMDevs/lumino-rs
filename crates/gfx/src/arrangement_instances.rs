@@ -119,11 +119,11 @@ pub fn build_arrangement_all(
             continue;
         }
 
-        let color = params
-            .track_colors
-            .get(ti)
-            .copied()
-            .unwrap_or([0.5, 0.5, 0.5]);
+        let color = if params.track_colors.is_empty() {
+            [0.5, 0.5, 0.5]
+        } else {
+            params.track_colors[ti % params.track_colors.len()]
+        };
 
         // Lane 背景
         let lane_y = trk_screen_y(viewport, ti) + coy;
