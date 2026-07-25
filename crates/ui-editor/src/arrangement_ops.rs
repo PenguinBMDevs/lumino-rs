@@ -7,8 +7,20 @@ use std::collections::{HashMap, HashSet};
 
 use super::Editor;
 use crate::note::Note;
+use lumino_midi_loader::NoteEvent;
 
 type ClipboardNoteEntry = (u16, f32, u16, f32, u8, u8);
+
+/// 将 MIDI 模型的 NoteEvent 转换为编辑器 Note。
+fn note_event_to_note(event: &NoteEvent) -> Note {
+    Note::from_raw(
+        event.start_tick as f32,
+        event.key as u16,
+        (event.end_tick - event.start_tick) as f32,
+        event.velocity,
+        event.channel,
+    )
+}
 
 impl Editor {
     /// 移动工程走带选择区内的音符。
@@ -22,6 +34,7 @@ impl Editor {
             return 0;
         }
 
+        self.load_missing_tracks_from_document();
         let selection = self.editor_state.data.arrange_selection.clone();
         let mut indices_by_source: HashMap<usize, HashSet<usize>> = HashMap::new();
         let mut moved_by_dest: HashMap<usize, Vec<Note>> = HashMap::new();
@@ -29,8 +42,9 @@ impl Editor {
         {
             let data = &self.editor_state.data;
             for (&track_idx, notes) in &data.track_notes {
+                let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
                 for (i, note) in notes.iter().enumerate() {
-                    if selection.contains(track_idx as u16, note.tick as u32, note.key as u8) {
+                    if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
                         let dest_track = (track_idx as i32 + delta_tracks).max(0) as usize;
                         let new_tick = (note.tick as f64 + delta_ticks as f64).max(0.0) as f32;
                         let mut moved = note.clone();
@@ -258,9 +272,12 @@ impl Editor {
         }
 
         let mut result = Vec::new();
+
+        // 1. 从 track_notes 缓存收集
         for (&track_idx, notes) in &data.track_notes {
+            let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
             for note in notes {
-                if selection.contains(track_idx as u16, note.tick as u32, note.key as u8) {
+                if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
                     result.push((
                         note.tick as f64,
                         (note.tick + note.length) as f64,
@@ -270,6 +287,28 @@ impl Editor {
                 }
             }
         }
+
+        // 2. 从 MidiDocument 收集未加载到 track_notes 的音轨中的音符
+        if let Some(doc) = &data.document {
+            for track_idx in 0..doc.notes.len() {
+                if data.track_notes.contains_key(&track_idx) {
+                    continue;
+                }
+                let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
+                for note_event in doc.track_notes(track_idx) {
+                    if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key)
+                    {
+                        result.push((
+                            note_event.start_tick as f64,
+                            note_event.end_tick as f64,
+                            track_idx,
+                            note_event.key,
+                        ));
+                    }
+                }
+            }
+        }
+
         result
     }
 
@@ -329,11 +368,31 @@ impl Editor {
             return false;
         }
 
-        let mut all_notes: Vec<(usize, &Note)> = Vec::new();
+        let mut all_notes: Vec<(usize, Note)> = Vec::new();
+
+        // 1. 从 track_notes 缓存收集
         for (&track_idx, notes) in &data.track_notes {
+            let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
             for note in notes {
-                if selection.contains(track_idx as u16, note.tick as u32, note.key as u8) {
-                    all_notes.push((track_idx, note));
+                if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
+                    all_notes.push((track_idx, note.clone()));
+                }
+            }
+        }
+
+        // 2. 从 MidiDocument 收集未加载到 track_notes 的音轨中的音符
+        if let Some(doc) = &data.document {
+            for track_idx in 0..doc.notes.len() {
+                if data.track_notes.contains_key(&track_idx) {
+                    continue;
+                }
+                let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
+                for note_event in doc.track_notes(track_idx) {
+                    if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key)
+                    {
+                        let note = note_event_to_note(note_event);
+                        all_notes.push((track_idx, note));
+                    }
                 }
             }
         }
@@ -541,17 +600,20 @@ impl Editor {
     ///
     /// 返回实际删除的音符数。
     pub fn arrange_delete_selected_notes(&mut self) -> usize {
-        let data = &self.editor_state.data;
-        let selection = &data.arrange_selection;
-        if selection.is_empty() {
+        if self.editor_state.data.arrange_selection.is_empty() {
             return 0;
         }
 
+        self.load_missing_tracks_from_document();
+
+        let data = &self.editor_state.data;
+        let selection = &data.arrange_selection;
         let mut indices_by_track: std::collections::HashMap<usize, Vec<usize>> =
             std::collections::HashMap::new();
         for (&track_idx, notes) in &data.track_notes {
+            let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
             for (i, note) in notes.iter().enumerate() {
-                if selection.contains(track_idx as u16, note.tick as u32, note.key as u8) {
+                if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
                     indices_by_track.entry(track_idx).or_default().push(i);
                 }
             }
@@ -620,6 +682,46 @@ impl Editor {
             data.sync_note_store();
         }
         self.mark_notes_changed();
+    }
+
+    /// 从 MidiDocument 加载尚未被 track_notes 缓存的音轨。
+    ///
+    /// 加载所有音轨而非仅 selection 覆盖的音轨，因为 ArrangeSelection 存储的是
+    /// 视觉音轨位置（侧边栏顺序），而 track_notes 使用文档音轨索引。在默认的
+    /// ChannelGrouped 模式下两者不一致，按 selection 筛选会导致错误/缺失音轨加载。
+    /// 全量加载后由主循环中的 selection.contains 做 tick/key 层面筛选。
+    fn load_missing_tracks_from_document(&mut self) {
+        let tracks_to_load: Vec<usize> = {
+            let data = &self.editor_state.data;
+            let Some(doc) = &data.document else {
+                return;
+            };
+            let mut result = Vec::new();
+            for track_idx in 0..doc.notes.len() {
+                if !data.track_notes.contains_key(&track_idx) {
+                    result.push(track_idx);
+                }
+            }
+            result
+        };
+
+        if tracks_to_load.is_empty() {
+            return;
+        }
+
+        let data = &mut self.editor_state.data;
+        for track_idx in tracks_to_load {
+            let Some(doc) = &data.document else {
+                continue;
+            };
+            let doc_notes = doc.track_notes(track_idx);
+            let mut loaded: im::Vector<Note> = im::Vector::new();
+            for ne in doc_notes {
+                loaded.push_back(note_event_to_note(ne));
+            }
+            data.track_notes.insert(track_idx, loaded);
+        }
+        data.mark_track_notes_changed();
     }
 }
 

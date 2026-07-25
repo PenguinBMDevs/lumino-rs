@@ -7,6 +7,10 @@ impl Root {
     /// 更新音轨列表（从 MIDI 导入）
     pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64, u8)]) {
         self.sidebar.update_tracks_from_midi(track_infos);
+        // 同步视觉位置到文档音轨索引的映射
+        // sidebar.tracks 的顺序就是视觉位置，每个 track.id 是文档音轨索引
+        self.editor.editor_state.data.track_visual_order =
+            self.sidebar.tracks.iter().map(|t| t.id).collect();
     }
 
     /// 设置编辑器总 ticks

@@ -63,6 +63,13 @@ pub struct EditorData {
     pub note_store_dirty: bool,
     /// 工程走带视图的选择范围
     pub arrange_selection: ArrangeSelection,
+    /// 视觉位置 → 文档音轨索引 映射
+    ///
+    /// `track_visual_order[i]` 返回视觉位置 i 对应的文档音轨索引。
+    /// 在 ChannelGrouped 模式下，侧边栏音轨按 channel 分组，视觉位置 i 与
+    /// 文档音轨索引不一定相等。此映射用于 arrangement 操作中正确匹配 selection
+    /// 的 track 范围（视觉位置）与 track_notes 的键（文档音轨索引）。
+    pub track_visual_order: Vec<usize>,
 }
 
 /// NoteStore 启用阈值：音符数超过此值时自动启用 SoA 批量操作
@@ -96,6 +103,7 @@ impl EditorData {
             note_store_enabled: false,
             note_store_dirty: false,
             arrange_selection: ArrangeSelection::new(),
+            track_visual_order: Vec::new(),
         }
     }
 
@@ -118,6 +126,7 @@ impl EditorData {
         self.note_store.clear();
         self.note_store_enabled = false;
         self.arrange_selection.clear();
+        self.track_visual_order.clear();
     }
 
     /// 标记 track_notes 已变化（递增版本号）
@@ -127,6 +136,19 @@ impl EditorData {
     #[inline]
     pub fn mark_track_notes_changed(&mut self) {
         self.track_notes_gen = self.track_notes_gen.wrapping_add(1);
+    }
+
+    /// 返回文档音轨索引对应的视觉位置
+    ///
+    /// 在 ChannelGrouped 模式下，侧边栏音轨按 channel 分组，视觉位置与
+    /// 文档音轨索引不一定相等。此方法用于将 track_notes 的键（文档音轨索引）
+    /// 映射到视觉位置，以便与 ArrangeSelection 中的 track 范围进行比较。
+    ///
+    /// 如果音轨不在映射中，返回 `None`（此时回退到 `track_idx` 本身作为视觉位置）。
+    pub fn visual_position_of(&self, track_id: usize) -> Option<usize> {
+        self.track_visual_order
+            .iter()
+            .position(|&id| id == track_id)
     }
 
     /// 获取当前轨道音符集合的零拷贝引用。
