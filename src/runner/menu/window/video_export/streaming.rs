@@ -2,7 +2,7 @@
 //!
 //! 当内存中没有 MidiDocument 时，使用本模块：
 //! 1. 读取 MIDI 文件字节（一次性，解析后释放）
-//! 2. 使用 StreamingMidiPlayer 流式解析事件，将音符记录写入硬盘缓存
+//! 2. 使用 MmapSmf 零拷贝 + 多轨道并行解析音符，写入硬盘缓存
 //! 3. 构建帧索引，实现 O(1) 视口音符范围查询
 //! 4. 渲染每帧时从硬盘 seek+read 读取可见音符，渲染后立即丢弃
 
@@ -14,7 +14,8 @@ use bytemuck;
 use lumino_gfx::{
     ARRANGEMENT_PALETTE, NoteInstance, RenderParams, generate_ruler_instances, pack_color,
 };
-use midly::{MidiMessage, TrackEventKind};
+use midly::mmap::MmapSmf;
+use midly::{MetaMessage, MidiMessage, TrackEventKind};
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 
@@ -84,6 +85,7 @@ pub type ProgressCallback = Arc<dyn Fn(String, f64) + Send + Sync>;
 
 /// 解析 MIDI 文件并构建硬盘缓存 + 帧索引
 ///
+/// 使用 MmapSmf 零拷贝解析 + 多轨道并行处理。
 /// `progress` 回调在解析阶段被调用：消息 + 0.0~1.0 进度。
 pub fn parse_midi_to_cache(
     midi_path: &Path,
@@ -95,108 +97,151 @@ pub fn parse_midi_to_cache(
 
     let _ = send_progress(&progress, "正在扫描 MIDI 头部信息...".to_string(), 0.02);
 
-    let mut player = lumino_midi_loader::StreamingMidiPlayer::from_bytes(&midi_bytes)
-        .map_err(|e| format!("StreamingMidiPlayer 初始化失败: {e}"))?;
+    let mmap_smf = MmapSmf::parse(&midi_bytes).map_err(|e| format!("MmapSmf 解析失败: {e}"))?;
 
-    let ppqn = player.ppqn();
-    let total_ticks = player.total_ticks() as u32;
-    let tempo_changes: Vec<(u32, f32)> = player.tempo_changes().to_vec();
+    let ppqn = match mmap_smf.header().timing {
+        midly::Timing::Metrical(t) => u16::from(t) as u32,
+        midly::Timing::Timecode(_, _) => 480,
+    };
 
-    let _ = send_progress(&progress, "正在解析音符并写入硬盘缓存...".to_string(), 0.10);
+    let _ = send_progress(&progress, "正在并行解析所有轨道...".to_string(), 0.05);
 
-    // 创建临时缓存文件：放在输出目录附近，避免跨盘 IO
     let note_cache_path = build_cache_path(midi_path)?;
+
+    // 并行处理所有轨道：每条轨道独立扫描事件，互不干扰
+    type ScanResult = (Vec<(u32, f32)>, u64, Vec<NoteRecord>);
+    let scan_results: Vec<ScanResult> = mmap_smf
+        .tracks()
+        .par_iter()
+        .enumerate()
+        .map(|(track_idx, track)| {
+            let mut local_tick: u64 = 0;
+            let mut local_tempos: Vec<(u32, f32)> = Vec::new();
+            let mut max_tick: u64 = 0;
+            let mut pending: FxHashMap<(u16, u16), PendingNote> = FxHashMap::default();
+            let mut records: Vec<NoteRecord> = Vec::new();
+
+            for ev in track.iter().flatten() {
+                local_tick += u32::from(ev.delta) as u64;
+                max_tick = max_tick.max(local_tick);
+
+                match ev.kind {
+                    TrackEventKind::Meta(MetaMessage::Tempo(tempo)) => {
+                        let bpm = 60_000_000.0 / tempo.as_int() as f32;
+                        if bpm > 0.0 {
+                            local_tempos.push((local_tick as u32, bpm));
+                        }
+                    }
+                    TrackEventKind::Midi { channel, message } => match message {
+                        MidiMessage::NoteOn { key, vel } => {
+                            let ch: u8 = channel.into();
+                            let k: u16 = key.into();
+                            let v: u8 = vel.into();
+                            let pk = (ch as u16, k);
+
+                            if let Some(pn) = pending.remove(&pk) {
+                                records.push(NoteRecord {
+                                    start_tick: pn.start_tick,
+                                    end_tick: local_tick as u32,
+                                    key: k,
+                                    velocity: pn.velocity,
+                                    track: track_idx as u16,
+                                    channel: ch as u16,
+                                });
+                            }
+                            if v > 0 {
+                                pending.insert(
+                                    pk,
+                                    PendingNote {
+                                        start_tick: local_tick as u32,
+                                        velocity: v as u16,
+                                    },
+                                );
+                            }
+                        }
+                        MidiMessage::NoteOff { key, .. } => {
+                            let ch: u8 = channel.into();
+                            let k: u16 = key.into();
+                            let pk = (ch as u16, k);
+
+                            if let Some(pn) = pending.remove(&pk) {
+                                records.push(NoteRecord {
+                                    start_tick: pn.start_tick,
+                                    end_tick: local_tick as u32,
+                                    key: k,
+                                    velocity: pn.velocity,
+                                    track: track_idx as u16,
+                                    channel: ch as u16,
+                                });
+                            }
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
+
+            for (_, pn) in pending.drain() {
+                records.push(NoteRecord {
+                    start_tick: pn.start_tick,
+                    end_tick: local_tick as u32,
+                    key: 0,
+                    velocity: pn.velocity,
+                    track: track_idx as u16,
+                    channel: 0,
+                });
+            }
+
+            (local_tempos, max_tick, records)
+        })
+        .collect();
+
+    let _ = send_progress(&progress, "正在合并轨道数据...".to_string(), 0.65);
+
+    // 合并 Tempo 变化（排序 + 去重）
+    let mut tempo_changes: Vec<(u32, f32)> = Vec::new();
+    let mut total_ticks: u64 = 0;
+    let mut all_records: Vec<NoteRecord> = Vec::new();
+
+    for (local_tempos, max_tick, local_records) in scan_results {
+        tempo_changes.extend(local_tempos);
+        total_ticks = total_ticks.max(max_tick);
+        all_records.extend(local_records);
+    }
+
+    if !tempo_changes.iter().any(|(t, _)| *t == 0) {
+        tempo_changes.push((0, 120.0));
+    }
+    tempo_changes.sort_by_key(|a| a.0);
+    tempo_changes.dedup_by(|a, b| {
+        if a.0 == b.0 {
+            std::mem::swap(a, b);
+            true
+        } else {
+            false
+        }
+    });
+
+    let note_count = all_records.len() as u64;
+
+    // 并行排序：按 end_tick 排序后写入缓存
+    all_records.par_sort_unstable_by_key(|r| r.end_tick);
+
+    // 写入缓存文件
     let note_file = std::fs::File::create(&note_cache_path)
         .map_err(|e| format!("创建音符缓存文件失败: {e}"))?;
     let mut note_writer = BufWriter::with_capacity(64 * 1024, note_file);
 
-    // 预留 header：note_count (8 bytes)
-    note_writer
-        .write_all(&[0u8; 8])
-        .map_err(|e| format!("写入缓存 header 失败: {e}"))?;
-
-    let mut pending: FxHashMap<(u16, u16, u16), PendingNote> = FxHashMap::default();
-    let mut note_count: u64 = 0;
-    let mut last_reported_percent: u32 = 0;
-    let mut event_counter: u64 = 0;
-
-    while let Some((tick_u64, track_idx, kind)) = player.next_event() {
-        let tick = tick_u64 as u32;
-        event_counter += 1;
-
-        if event_counter & 0x3F == 0 {
-            let percent = if total_ticks > 0 {
-                (tick as u64 * 100 / player.total_ticks().max(1)) as u32
-            } else {
-                0
-            };
-            if percent > last_reported_percent && percent <= 100 {
-                let _ = send_progress(
-                    &progress,
-                    "正在解析音符并写入硬盘缓存...".to_string(),
-                    0.10 + (percent as f64) * 0.60 / 100.0,
-                );
-                last_reported_percent = percent;
-            }
-        }
-
-        match kind {
-            TrackEventKind::Midi {
-                channel,
-                message: MidiMessage::NoteOn { key, vel },
-            } => {
-                let ch: u8 = channel.into();
-                let k: u16 = key.into();
-                let v: u8 = vel.into();
-                let pending_key = (track_idx as u16, ch as u16, k);
-
-                if let Some(pn) = pending.remove(&pending_key) {
-                    emit_note_record(&mut note_writer, tick, pn, track_idx as u16, ch as u16, k)?;
-                    note_count += 1;
-                }
-                if v > 0 {
-                    pending.insert(
-                        pending_key,
-                        PendingNote {
-                            start_tick: tick,
-                            velocity: v as u16,
-                        },
-                    );
-                }
-            }
-            TrackEventKind::Midi {
-                channel,
-                message: MidiMessage::NoteOff { key, vel: _ },
-            } => {
-                let ch: u8 = channel.into();
-                let k: u16 = key.into();
-                let pending_key = (track_idx as u16, ch as u16, k);
-
-                if let Some(pn) = pending.remove(&pending_key) {
-                    emit_note_record(&mut note_writer, tick, pn, track_idx as u16, ch as u16, k)?;
-                    note_count += 1;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    // 处理孤立的 NoteOn
-    for (_, pn) in pending.drain() {
-        emit_note_record(&mut note_writer, total_ticks, pn, 0, 0, 0)?;
-        note_count += 1;
-    }
-
-    // 回写 note_count header
-    // 使用 BufWriter::seek 而非 get_mut().seek()，因为 BufWriter::seek 会先 flush
-    // 内部缓冲再 seek，防止剩余缓冲数据在 drop 时冲刷到错误位置（position 8），
-    // 导致大文件时缓存文件比预期小，read_exact 读不到足够数据。
-    note_writer
-        .seek(SeekFrom::Start(0))
-        .map_err(|e| format!("seek 到缓存 header 失败: {e}"))?;
     note_writer
         .write_all(&note_count.to_le_bytes())
-        .map_err(|e| format!("写入缓存 note_count 失败: {e}"))?;
+        .map_err(|e| format!("写入缓存 header 失败: {e}"))?;
+
+    for record in &all_records {
+        let bytes: [u8; NOTE_RECORD_SIZE] = bytemuck::cast(*record);
+        note_writer
+            .write_all(&bytes)
+            .map_err(|e| format!("写入音符记录失败: {e}"))?;
+    }
     drop(note_writer);
 
     let _ = send_progress(&progress, "正在构建帧索引...".to_string(), 0.75);
@@ -205,7 +250,7 @@ pub fn parse_midi_to_cache(
         &note_cache_path,
         note_count,
         ppqn,
-        total_ticks,
+        total_ticks as u32,
         &tempo_changes,
         fps,
         viewport_beats,
@@ -215,14 +260,13 @@ pub fn parse_midi_to_cache(
 
     let _ = send_progress(&progress, "MIDI 缓存准备完成".to_string(), 1.0);
 
-    // 释放 MIDI 字节内存
     drop(midi_bytes);
 
     Ok(StreamingMidiResult {
         note_cache_path,
         frame_index,
         ppqn,
-        total_ticks,
+        total_ticks: total_ticks as u32,
         tempo_changes,
         total_frames,
     })
@@ -232,29 +276,6 @@ pub fn parse_midi_to_cache(
 struct PendingNote {
     start_tick: u32,
     velocity: u16,
-}
-
-fn emit_note_record(
-    writer: &mut BufWriter<std::fs::File>,
-    end_tick: u32,
-    pn: PendingNote,
-    track: u16,
-    channel: u16,
-    key: u16,
-) -> Result<(), String> {
-    let record = NoteRecord {
-        start_tick: pn.start_tick,
-        end_tick,
-        key,
-        velocity: pn.velocity,
-        track,
-        channel,
-    };
-    let bytes: [u8; NOTE_RECORD_SIZE] = bytemuck::cast(record);
-    writer
-        .write_all(&bytes)
-        .map_err(|e| format!("写入音符记录失败: {e}"))?;
-    Ok(())
 }
 
 fn build_cache_path(midi_path: &Path) -> Result<PathBuf, String> {
