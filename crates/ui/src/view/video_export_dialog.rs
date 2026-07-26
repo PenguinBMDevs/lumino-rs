@@ -2,7 +2,7 @@
 
 use iced_core::{Alignment, Color, Length};
 use iced_widget::{
-    button, column, container, image, pick_list, row, scrollable, space, text, text_input,
+    button, column, container, image, pick_list, row, scrollable, slider, space, text, text_input,
 };
 
 use crate::message::{Message, VideoExportAction};
@@ -127,6 +127,28 @@ fn render_settings_section<'a>(
             |v| Message::VideoExport(VideoExportAction::RenderModeChanged(v)),
             palette,
         ),
+        space().height(8),
+        // 瀑布流滚动速度滑杆
+        row![
+            text("下落速度:")
+                .size(14)
+                .style(move |_t: &iced_core::Theme| text::Style {
+                    color: Some(palette.background.neutral.text),
+                })
+                .width(100),
+            slider(0.1..=10.0, state.waterfall_speed, |v| {
+                Message::VideoExport(VideoExportAction::WaterfallSpeedChanged(v))
+            })
+            .step(0.1_f32)
+            .width(200.0),
+            text(format!("{:.1}x", state.waterfall_speed))
+                .size(14)
+                .style(move |_t: &iced_core::Theme| text::Style {
+                    color: Some(palette.background.neutral.text),
+                }),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
         space().height(8),
         // 分辨率行
         row![

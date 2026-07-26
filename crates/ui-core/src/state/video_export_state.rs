@@ -39,6 +39,8 @@ pub struct VideoExportDialogState {
     pub quality: String,
     /// 渲染模式（"瀑布流"/"音符矩形"）
     pub render_mode: String,
+    /// 瀑布流滚动速度（默认 1.0）
+    pub waterfall_speed: f32,
     /// 分辨率宽度
     pub width: u32,
     /// 分辨率高度
@@ -88,6 +90,7 @@ impl VideoExportDialogState {
             backend: "Software (CPU)".to_string(),
             quality: "中".to_string(),
             render_mode: "瀑布流".to_string(),
+            waterfall_speed: 1.0,
             width: 1920,
             height: 1080,
             fps: 60,

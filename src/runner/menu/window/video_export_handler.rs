@@ -35,6 +35,7 @@ impl RunnerInner {
             backend,
             quality,
             render_mode,
+            waterfall_scroll_speed,
         } = config;
 
         // 事件层枚举 → 导出层枚举（总映射，无字符串解析、无静默降级）
@@ -152,6 +153,7 @@ impl RunnerInner {
                         cancel_flag,
                         input_pix_fmt,
                         is_waterfall,
+                        waterfall_scroll_speed,
                     );
                 } else if !midi_path.is_empty() {
                     run_streaming_video_export_task(
@@ -195,6 +197,7 @@ fn run_video_export_task(
     cancel_flag: Arc<AtomicBool>,
     input_pix_fmt: &'static str,
     is_waterfall: bool,
+    waterfall_scroll_speed: f32,
 ) {
     let start = std::time::Instant::now();
 
@@ -405,6 +408,7 @@ fn run_video_export_task(
                 width,
                 height,
                 &recycle_tx,
+                waterfall_scroll_speed,
             )
         } else {
             let (sx, zx, kw, ppq_val, key_colors, _tick) = p;
@@ -531,6 +535,7 @@ fn run_video_export_task(
                 width,
                 height,
                 &recycle_tx,
+                waterfall_scroll_speed,
             )
         } else {
             let (sx, zx, kw, ppq_val, key_colors, _tick) = p;
@@ -1149,6 +1154,7 @@ fn composite_waterfall_and_encode_frame(
     width: u32,
     height: u32,
     recycle_tx: &std::sync::mpsc::Sender<Vec<u8>>,
+    waterfall_speed: f32,
 ) -> (bool, FrameStageStats) {
     let mut stats = FrameStageStats::default();
 
@@ -1160,7 +1166,14 @@ fn composite_waterfall_and_encode_frame(
     // 瀑布流渲染：CPU 端渲染 MIDI 音符（X=音高, Y=时间流动）
     let t0 = Instant::now();
     super::video_export::render_waterfall_frame(
-        &mut data, width, height, document, tick, ppq, key_count,
+        &mut data,
+        width,
+        height,
+        document,
+        tick,
+        ppq,
+        key_count,
+        waterfall_speed,
     );
     // 标尺小节号（瀑布流模式同样在顶部显示标尺，辅助定位）
     let keyboard_width = 0.0f32; // 瀑布流无左侧键盘列

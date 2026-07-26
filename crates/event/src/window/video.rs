@@ -167,4 +167,6 @@ pub struct VideoExportConfig {
     pub quality: QualityPreset,
     /// 渲染模式（瀑布流/音符矩形）
     pub render_mode: RenderMode,
+    /// 瀑布流滚动速度（0.1~10.0，默认 1.0）
+    pub waterfall_scroll_speed: f32,
 }

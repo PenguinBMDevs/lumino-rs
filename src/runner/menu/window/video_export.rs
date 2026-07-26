@@ -442,6 +442,7 @@ pub fn render_waterfall_frame(
     tick: u32,
     ppq: u32,
     key_count: u16,
+    waterfall_speed: f32,
 ) {
     if frame_width == 0 || frame_height == 0 || key_count == 0 {
         return;
@@ -458,15 +459,17 @@ pub fn render_waterfall_frame(
         return;
     }
 
-    // 计算瀑布流的可见 tick 范围
+    // 计算瀑布流的可见 tick 范围（速度越高，可见 tick 越少，滚动越快）
     let ticks_per_measure = ppq * 4;
-    let visible_measure_count = 4u32;
+    let speed = waterfall_speed.max(0.1);
+    let visible_measure_count = (4.0f32 / speed).round().max(1.0) as u32;
     let viewport_tick_span = (ticks_per_measure * visible_measure_count).max(1);
     let zoom_x = frame_width as f32 / key_count as f32;
     let zoom_y = content_height as f32 / viewport_tick_span as f32;
 
-    let tick_start = tick.saturating_sub(viewport_tick_span);
-    let tick_end = tick;
+    // 当前 tick 在底部（键盘位置），未来音符从顶部下落
+    let tick_start = tick;
+    let tick_end = tick.saturating_add(viewport_tick_span);
 
     // 收集可见音符
     #[derive(Clone)]

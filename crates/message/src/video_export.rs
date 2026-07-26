@@ -37,6 +37,8 @@ pub enum VideoExportAction {
     BrowseMidi,
     /// 渲染模式变更（"瀑布流"/"音符矩形"）
     RenderModeChanged(String),
+    /// 瀑布流滚动速度变更（0.1~10.0，精度 0.1）
+    WaterfallSpeedChanged(f32),
 
     // ── 导出控制 ──
     /// 开始导出（点击「开始导出」按钮，由 handler 发射 StartVideoExport 事件）
