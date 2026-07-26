@@ -525,6 +525,24 @@ pub fn render_waterfall_frame(
     //
     // 白键等分总宽度，黑键宽度为白键的 65%，位于相邻白键边界中间，
     // 黑键高度为键盘总高度的 60%，渲染顺序：白键（底层）→ 黑键（上层覆盖）。
+    //
+    // 活跃键高亮：收集当前 tick 下正在演奏的音符对应的键位颜色，
+    // 按 60% 透明度混合到键位基础色上，与钢琴卷帘的演奏高亮效果一致。
+    const OVERLAY_ALPHA: u8 = 153; // 60% 不透明度
+    let mut active_key_colors: [Option<[u8; 4]>; 128] = [None; 128];
+    for note in &notes {
+        if note.start_tick <= tick && note.end_tick > tick {
+            let color_f = ARRANGEMENT_PALETTE[note.track_idx as usize % ARRANGEMENT_PALETTE.len()];
+            let b = (color_f[2] * 255.0).round() as u8;
+            let g = (color_f[1] * 255.0).round() as u8;
+            let r = (color_f[0] * 255.0).round() as u8;
+            let key = note.key as usize;
+            if key < 128 {
+                active_key_colors[key] = Some([b, g, r, 255]);
+            }
+        }
+    }
+
     let kb_y = content_height;
     let black_kb_height = (kb_height as f64 * 0.6).round() as u32;
     let total_w = frame_width as f64;
@@ -535,29 +553,52 @@ pub fn render_waterfall_frame(
     let black_w = white_w * 0.65;
     let black_w_offset = black_w * 0.5;
 
-    // 预计算键盘布局：Vec<(x, w, is_black)>
-    let mut kb_layout: Vec<(f32, f32, bool)> = Vec::with_capacity(key_count as usize);
+    // 预计算键盘布局：Vec<(x, w, is_black, key_index)>
+    let mut kb_layout: Vec<(f32, f32, bool, u16)> = Vec::with_capacity(key_count as usize);
     let mut white_count = 0usize;
     for key in 0..key_count {
         if lumino_gfx::is_black_key(key as isize) {
             let boundary_x = white_count as f64 * white_w;
             let x = (boundary_x - black_w_offset) as f32;
-            kb_layout.push((x, black_w as f32, true));
+            kb_layout.push((x, black_w as f32, true, key));
         } else {
             let x = (white_count as f64 * white_w) as f32;
-            kb_layout.push((x, white_w as f32, false));
+            kb_layout.push((x, white_w as f32, false, key));
             white_count += 1;
         }
     }
 
+    /// 混合活跃键颜色到基础色上（与 piano roll 的 OVERLAY_ALPHA 逻辑一致）
+    fn blend_key_color(base: [u8; 4], overlay: Option<[u8; 4]>, alpha: u8) -> [u8; 4] {
+        match overlay {
+            Some(oc) if alpha > 0 => {
+                let a = alpha as i32;
+                [
+                    (base[0] as i32 + (oc[0] as i32 - base[0] as i32) * a / 255).clamp(0, 255)
+                        as u8,
+                    (base[1] as i32 + (oc[1] as i32 - base[1] as i32) * a / 255).clamp(0, 255)
+                        as u8,
+                    (base[2] as i32 + (oc[2] as i32 - base[2] as i32) * a / 255).clamp(0, 255)
+                        as u8,
+                    255,
+                ]
+            }
+            _ => base,
+        }
+    }
+
     // 第一遍：白键（底层）
-    for &(kx, kw, is_black) in &kb_layout {
+    for &(kx, kw, is_black, key) in &kb_layout {
         if is_black {
             continue;
         }
         let kx_i = kx.round() as u32;
         let kw_i = kw.ceil() as u32;
-        // 白键颜色：浅灰
+        let color = blend_key_color(
+            [235, 235, 235, 255],
+            active_key_colors[key as usize],
+            OVERLAY_ALPHA,
+        );
         fill_bgra_rect(
             frame,
             frame_width,
@@ -566,18 +607,22 @@ pub fn render_waterfall_frame(
             kb_y,
             kw_i,
             kb_height,
-            [235, 235, 235, 255],
+            color,
         );
     }
 
     // 第二遍：黑键（上层覆盖，高度为键盘的 60%）
-    for &(kx, kw, is_black) in &kb_layout {
+    for &(kx, kw, is_black, key) in &kb_layout {
         if !is_black {
             continue;
         }
         let kx_i = kx.round() as u32;
         let kw_i = kw.ceil() as u32;
-        // 黑键颜色：深灰
+        let color = blend_key_color(
+            [41, 41, 42, 255],
+            active_key_colors[key as usize],
+            OVERLAY_ALPHA,
+        );
         fill_bgra_rect(
             frame,
             frame_width,
@@ -586,7 +631,7 @@ pub fn render_waterfall_frame(
             kb_y,
             kw_i,
             black_kb_height,
-            [41, 41, 42, 255],
+            color,
         );
     }
 }
