@@ -100,24 +100,32 @@ impl std::str::FromStr for QualityPreset {
     }
 }
 
-/// 视频导出渲染模式（当前仅支持音符矩形渲染）。
+/// 视频导出渲染模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RenderMode {
-    /// 音符矩形渲染（默认且唯一模式）
+    /// 瀑布流渲染（默认模式，音符随时间向下流动）
     #[default]
+    Waterfall,
+    /// 音符矩形渲染（传统钢琴卷帘样式）
     NoteRectangle,
 }
 
 impl RenderMode {
-    /// 导出到渲染线程用的规范字符串（"note_rectangle"）
+    /// 导出到渲染线程用的规范字符串
     pub fn as_str(&self) -> &'static str {
-        "note_rectangle"
+        match self {
+            RenderMode::Waterfall => "waterfall",
+            RenderMode::NoteRectangle => "note_rectangle",
+        }
     }
 }
 
 impl std::fmt::Display for RenderMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("音符矩形")
+        match self {
+            RenderMode::Waterfall => f.write_str("瀑布流"),
+            RenderMode::NoteRectangle => f.write_str("音符矩形"),
+        }
     }
 }
 
@@ -125,6 +133,7 @@ impl std::str::FromStr for RenderMode {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "waterfall" | "瀑布流" => Ok(RenderMode::Waterfall),
             "note_rectangle" | "音符矩形" => Ok(RenderMode::NoteRectangle),
             _ => Err(format!("未知渲染模式: {s}")),
         }
@@ -156,4 +165,6 @@ pub struct VideoExportConfig {
     pub backend: EncoderBackend,
     /// 质量预设
     pub quality: QualityPreset,
+    /// 渲染模式（瀑布流/音符矩形）
+    pub render_mode: RenderMode,
 }

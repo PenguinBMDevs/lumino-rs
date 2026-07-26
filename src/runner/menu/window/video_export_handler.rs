@@ -34,6 +34,7 @@ impl RunnerInner {
             codec,
             backend,
             quality,
+            render_mode,
         } = config;
 
         // 事件层枚举 → 导出层枚举（总映射，无字符串解析、无静默降级）
@@ -132,6 +133,10 @@ impl RunnerInner {
         let _ = std::thread::Builder::new()
             .name("video-render".into())
             .spawn(move || {
+                let is_waterfall = matches!(
+                    render_mode,
+                    lumino_event::window::video::RenderMode::Waterfall
+                );
                 if let Some(document) = document {
                     run_video_export_task(
                         config,
@@ -146,6 +151,7 @@ impl RunnerInner {
                         height,
                         cancel_flag,
                         input_pix_fmt,
+                        is_waterfall,
                     );
                 } else if !midi_path.is_empty() {
                     run_streaming_video_export_task(
@@ -188,6 +194,7 @@ fn run_video_export_task(
     height: u32,
     cancel_flag: Arc<AtomicBool>,
     input_pix_fmt: &'static str,
+    is_waterfall: bool,
 ) {
     let start = std::time::Instant::now();
 
@@ -249,7 +256,8 @@ fn run_video_export_task(
     // 流水线渲染：Runner 预填充 4 帧命令，让 staging ring 从开始就满载，
     // 之后每处理完一帧立即补发下一帧，保持 GPU/CPU 流水线持续运转。
     // 每帧参数携带该帧的按键高亮颜色（RGBAx256 键），用于后台线程合成键盘。
-    let mut param_queue: std::collections::VecDeque<(f32, f32, f32, u32, [u8; 1024])> =
+    // 元组: (scroll_x, zoom_x, keyboard_width, ppq, key_colors, tick)
+    let mut param_queue: std::collections::VecDeque<(f32, f32, f32, u32, [u8; 1024], u32)> =
         std::collections::VecDeque::new();
     let mut processed_frames = 0u64;
     let mut cancelled = false;
@@ -265,7 +273,7 @@ fn run_video_export_task(
 
     // 闭包不捕获 param_queue，而是作为参数传入，避免与主循环中的 pop_front 产生可变借用冲突。
     let mut enqueue_frame =
-        |queue: &mut std::collections::VecDeque<(f32, f32, f32, u32, [u8; 1024])>,
+        |queue: &mut std::collections::VecDeque<(f32, f32, f32, u32, [u8; 1024], u32)>,
          frame_idx: u64|
          -> bool {
             let time_sec = frame_idx as f64 / fps_f64;
@@ -292,22 +300,52 @@ fn run_video_export_task(
                 video_kb_width,
                 ppq,
                 key_colors,
+                tick,
             ));
 
-            let params = super::video_export::build_video_render_params(
-                width, height, tick, &document, ppq, key_count,
-            );
+            // 瀑布流模式：发送空音符实例，在 CPU 端渲染
+            if is_waterfall {
+                let mut params = super::video_export::build_video_render_params(
+                    width, height, tick, &document, ppq, key_count,
+                );
+                params.note_instances = Vec::new();
+                if cmd_sender
+                    .send(RenderCommand::Control(ControlCommand::RenderVideoFrame {
+                        params: Box::new(params),
+                    }))
+                    .is_err()
+                {
+                    tracing::error!("发送 RenderVideoFrame 命令失败");
+                    let _ = progress_tx.send((
+                        "导出失败：渲染线程通信错误".to_string(),
+                        -1.0,
+                        0,
+                        0.0,
+                        0.0,
+                    ));
+                    return true;
+                }
+            } else {
+                let params = super::video_export::build_video_render_params(
+                    width, height, tick, &document, ppq, key_count,
+                );
 
-            if cmd_sender
-                .send(RenderCommand::Control(ControlCommand::RenderVideoFrame {
-                    params: Box::new(params),
-                }))
-                .is_err()
-            {
-                tracing::error!("发送 RenderVideoFrame 命令失败");
-                let _ =
-                    progress_tx.send(("导出失败：渲染线程通信错误".to_string(), -1.0, 0, 0.0, 0.0));
-                return true;
+                if cmd_sender
+                    .send(RenderCommand::Control(ControlCommand::RenderVideoFrame {
+                        params: Box::new(params),
+                    }))
+                    .is_err()
+                {
+                    tracing::error!("发送 RenderVideoFrame 命令失败");
+                    let _ = progress_tx.send((
+                        "导出失败：渲染线程通信错误".to_string(),
+                        -1.0,
+                        0,
+                        0.0,
+                        0.0,
+                    ));
+                    return true;
+                }
             }
             false
         };
@@ -349,23 +387,44 @@ fn run_video_export_task(
 
         let p = param_queue
             .pop_front()
-            .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024]));
-        let (should_stop, stats) = composite_and_encode_frame(
-            data,
-            p,
-            &mut encoder,
-            &progress_tx,
-            &preview_tx,
-            &cancel_flag,
-            &mut last_preview_time,
-            &mut preview_sent,
-            width,
-            height,
-            &keyboard_pixels,
-            kb_w,
-            kb_h,
-            &recycle_tx,
-        );
+            .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024], 0));
+        let (should_stop, stats) = if is_waterfall {
+            let (_sx, _zx, _kw, _ppq, _kc, tick) = p;
+            composite_waterfall_and_encode_frame(
+                data,
+                &document,
+                tick,
+                ppq,
+                key_count,
+                &mut encoder,
+                &progress_tx,
+                &preview_tx,
+                &cancel_flag,
+                &mut last_preview_time,
+                &mut preview_sent,
+                width,
+                height,
+                &recycle_tx,
+            )
+        } else {
+            let (sx, zx, kw, ppq_val, key_colors, _tick) = p;
+            composite_and_encode_frame(
+                data,
+                (sx, zx, kw, ppq_val, key_colors),
+                &mut encoder,
+                &progress_tx,
+                &preview_tx,
+                &cancel_flag,
+                &mut last_preview_time,
+                &mut preview_sent,
+                width,
+                height,
+                &keyboard_pixels,
+                kb_w,
+                kb_h,
+                &recycle_tx,
+            )
+        };
 
         acc_recv_us += recv_us;
         acc_composite_us += stats.composite_us;
@@ -454,23 +513,44 @@ fn run_video_export_task(
 
         let p = param_queue
             .pop_front()
-            .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024]));
-        let (should_stop, _stats) = composite_and_encode_frame(
-            data,
-            p,
-            &mut encoder,
-            &progress_tx,
-            &preview_tx,
-            &cancel_flag,
-            &mut last_preview_time,
-            &mut preview_sent,
-            width,
-            height,
-            &keyboard_pixels,
-            kb_w,
-            kb_h,
-            &recycle_tx,
-        );
+            .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024], 0));
+        let (should_stop, _stats) = if is_waterfall {
+            let (_sx, _zx, _kw, _ppq, _kc, tick) = p;
+            composite_waterfall_and_encode_frame(
+                data,
+                &document,
+                tick,
+                ppq,
+                key_count,
+                &mut encoder,
+                &progress_tx,
+                &preview_tx,
+                &cancel_flag,
+                &mut last_preview_time,
+                &mut preview_sent,
+                width,
+                height,
+                &recycle_tx,
+            )
+        } else {
+            let (sx, zx, kw, ppq_val, key_colors, _tick) = p;
+            composite_and_encode_frame(
+                data,
+                (sx, zx, kw, ppq_val, key_colors),
+                &mut encoder,
+                &progress_tx,
+                &preview_tx,
+                &cancel_flag,
+                &mut last_preview_time,
+                &mut preview_sent,
+                width,
+                height,
+                &keyboard_pixels,
+                kb_w,
+                kb_h,
+                &recycle_tx,
+            )
+        };
 
         if should_stop {
             cancelled = true;
@@ -1043,6 +1123,113 @@ fn composite_and_encode_frame(
     stats.encode_us = t0.elapsed().as_micros() as u64;
 
     // 将已写入的帧缓冲区归还给渲染线程对象池复用
+    if recycle_tx.send(data).is_err() {
+        tracing::warn!("帧缓冲区归还失败：回收通道已关闭");
+    }
+
+    (false, stats)
+}
+
+/// 单帧处理（瀑布流模式）：CPU 渲染瀑布流音符 + 标尺 + 键盘 + 预览 + 编码 + 缓冲区归还。
+///
+/// 返回 `(should_stop, stats)`：`should_stop` 为 true 表示应终止渲染循环（取消或出错）。
+#[allow(clippy::too_many_arguments)]
+fn composite_waterfall_and_encode_frame(
+    mut data: Vec<u8>,
+    document: &lumino_midi_loader::MidiDocument,
+    tick: u32,
+    ppq: u32,
+    key_count: u16,
+    encoder: &mut FfmpegEncoder,
+    progress_tx: &tokio::sync::mpsc::UnboundedSender<(String, f64, u64, f64, f64)>,
+    preview_tx: &tokio::sync::mpsc::UnboundedSender<(Vec<u8>, u32, u32)>,
+    cancel_flag: &Arc<AtomicBool>,
+    last_preview_time: &mut Instant,
+    preview_sent: &mut bool,
+    width: u32,
+    height: u32,
+    recycle_tx: &std::sync::mpsc::Sender<Vec<u8>>,
+) -> (bool, FrameStageStats) {
+    let mut stats = FrameStageStats::default();
+
+    if data.is_empty() {
+        tracing::warn!("帧读回为空，跳过");
+        return (false, stats);
+    }
+
+    // 瀑布流渲染：CPU 端渲染 MIDI 音符（X=音高, Y=时间流动）
+    let t0 = Instant::now();
+    super::video_export::render_waterfall_frame(
+        &mut data, width, height, document, tick, ppq, key_count,
+    );
+    // 标尺小节号（瀑布流模式同样在顶部显示标尺，辅助定位）
+    let keyboard_width = 0.0f32; // 瀑布流无左侧键盘列
+    let viewport_tick_span = (ppq * 16).max(1) as f32;
+    let zoom_x = width as f32 / viewport_tick_span;
+    let scroll_x = tick as f32 * zoom_x;
+    super::video_export::composite_ruler_numbers(
+        &mut data,
+        width,
+        height,
+        scroll_x,
+        zoom_x,
+        keyboard_width,
+        ppq,
+    );
+    stats.composite_us = t0.elapsed().as_micros() as u64;
+
+    if cancel_flag.load(Ordering::Relaxed) {
+        tracing::info!("视频导出：帧数据到达后检测到取消，正在收尾...");
+        match encoder.write_frame(data) {
+            Ok(frame) => {
+                if recycle_tx.send(frame).is_err() {
+                    tracing::warn!("取消收尾时帧缓冲区归还失败");
+                }
+            }
+            Err(e) => {
+                tracing::error!("取消收尾写入失败: {e}");
+                let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
+            }
+        }
+        return (true, stats);
+    }
+
+    // 预览帧
+    if !*preview_sent || last_preview_time.elapsed() >= Duration::from_millis(200) {
+        let t0 = Instant::now();
+        const PREVIEW_MAX_W: u32 = 480;
+        let (small_data, small_w, small_h) = if width > PREVIEW_MAX_W {
+            let scale = PREVIEW_MAX_W as f64 / width as f64;
+            let tw = PREVIEW_MAX_W;
+            let th = (height as f64 * scale).round() as u32;
+            super::downscale_bgra_to_rgba(&data, width, height, tw, th)
+        } else {
+            let mut preview_data = data.clone();
+            for pixel in preview_data.chunks_exact_mut(4) {
+                pixel.swap(0, 2);
+            }
+            (preview_data, width, height)
+        };
+
+        if preview_tx.send((small_data, small_w, small_h)).is_err() {
+            tracing::warn!("视频导出: 预览帧发送失败，接收端已关闭");
+        }
+        *last_preview_time = Instant::now();
+        *preview_sent = true;
+        stats.preview_us = t0.elapsed().as_micros() as u64;
+    }
+
+    let t0 = Instant::now();
+    let data = match encoder.write_frame(data) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::error!("写入视频帧失败: {e}");
+            let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
+            return (true, stats);
+        }
+    };
+    stats.encode_us = t0.elapsed().as_micros() as u64;
+
     if recycle_tx.send(data).is_err() {
         tracing::warn!("帧缓冲区归还失败：回收通道已关闭");
     }

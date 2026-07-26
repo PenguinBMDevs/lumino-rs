@@ -383,3 +383,167 @@ pub(super) fn composite_ruler_numbers(
 // ── 键盘合成 ──
 
 pub use keyboard::composite_keyboard;
+
+// ── 瀑布流渲染 ──
+
+/// 将 BGRA 帧数据填充为黑色背景（GPU 背景色不统一，统一设置为纯黑）
+fn fill_bgra_black(frame: &mut [u8]) {
+    for pixel in frame.chunks_exact_mut(4) {
+        pixel.copy_from_slice(&[0, 0, 0, 255]);
+    }
+}
+
+/// 在 BGRA 帧上绘制一个填充矩形
+fn fill_bgra_rect(
+    frame: &mut [u8],
+    frame_width: u32,
+    frame_height: u32,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    color: [u8; 4],
+) {
+    if w == 0 || h == 0 {
+        return;
+    }
+    let x_end = (x + w).min(frame_width);
+    let y_end = (y + h).min(frame_height);
+    let row_bytes = frame_width as usize * 4;
+    let pixel_bytes = (x_end - x) as usize * 4;
+
+    for py in y..y_end {
+        let row_start = py as usize * row_bytes + x as usize * 4;
+        let row_end = row_start + pixel_bytes;
+        if row_end > frame.len() {
+            break;
+        }
+        // 逐像素填充该行
+        for px in (row_start..row_end).step_by(4) {
+            frame[px..px + 4].copy_from_slice(&color);
+        }
+    }
+}
+
+/// 在 BGRA 帧上以瀑布流风格渲染 MIDI 音符
+///
+/// 瀑布流风格：
+/// - X 轴 = 音高（key），从左到右排列
+/// - Y 轴 = 时间（tick），从上到下流动
+/// - 音符渲染为水平彩色条，宽度固定为 1 个键宽，高度对应音符时长
+/// - 当前播放时刻（tick）位于帧底部，历史音符向上延伸
+/// - 键盘位于帧底部
+/// - 背景为纯黑色
+pub fn render_waterfall_frame(
+    frame: &mut [u8],
+    frame_width: u32,
+    frame_height: u32,
+    document: &lumino_midi_loader::MidiDocument,
+    tick: u32,
+    ppq: u32,
+    key_count: u16,
+) {
+    if frame_width == 0 || frame_height == 0 || key_count == 0 {
+        return;
+    }
+
+    // 先填充纯黑背景
+    fill_bgra_black(frame);
+
+    const KEYBOARD_HEIGHT: u32 = 40;
+    let content_height = frame_height.saturating_sub(KEYBOARD_HEIGHT);
+    if content_height == 0 {
+        return;
+    }
+
+    // 计算瀑布流的可见 tick 范围
+    let ticks_per_measure = ppq * 4;
+    let visible_measure_count = 4u32; // 可见 4 个小节
+    let viewport_tick_span = (ticks_per_measure * visible_measure_count).max(1);
+    let zoom_x = frame_width as f32 / key_count as f32;
+    let zoom_y = content_height as f32 / viewport_tick_span as f32;
+
+    let tick_start = tick.saturating_sub(viewport_tick_span);
+    let tick_end = tick;
+
+    // 收集可见音符
+    #[derive(Clone)]
+    struct WaterfallNote {
+        key: u8,
+        start_tick: u32,
+        end_tick: u32,
+        track_idx: u16,
+    }
+
+    let mut notes: Vec<WaterfallNote> = Vec::new();
+    for (track_idx, track_notes) in document.notes.iter().enumerate() {
+        for n in track_notes {
+            if n.end_tick > tick_start && n.start_tick < tick_end {
+                notes.push(WaterfallNote {
+                    key: n.key,
+                    start_tick: n.start_tick,
+                    end_tick: n.end_tick,
+                    track_idx: track_idx as u16,
+                });
+            }
+        }
+    }
+
+    // 渲染每个音符
+    for note in &notes {
+        let color_f = ARRANGEMENT_PALETTE[note.track_idx as usize % ARRANGEMENT_PALETTE.len()];
+        let color: [u8; 4] = [
+            (color_f[2] * 255.0).round() as u8, // B
+            (color_f[1] * 255.0).round() as u8, // G
+            (color_f[0] * 255.0).round() as u8, // R
+            200, // Alpha (slightly transparent for overlap visibility)
+        ];
+
+        // X 位置：键从左到右，键 0 在最左
+        let note_x = (note.key as f32 * zoom_x).round() as u32;
+        let note_w = zoom_x.ceil() as u32;
+
+        // Y 位置：音符顶部 = (tick_end - note.end_tick) * zoom_y
+        // 音符底部 = (tick_end - note.start_tick) * zoom_y
+        // 音符在时间轴上从 start_tick 延伸到 end_tick
+        let note_top = ((tick_end.saturating_sub(note.end_tick)) as f32 * zoom_y).round() as u32;
+        let note_bottom =
+            ((tick_end.saturating_sub(note.start_tick)) as f32 * zoom_y).round() as u32;
+        let note_h = note_bottom.saturating_sub(note_top).max(1);
+
+        fill_bgra_rect(
+            frame,
+            frame_width,
+            content_height,
+            note_x,
+            note_top,
+            note_w,
+            note_h,
+            color,
+        );
+    }
+
+    // 渲染底部键盘（简化的黑白键）
+    let kb_y = content_height;
+    let kb_h = KEYBOARD_HEIGHT;
+    for key_idx in 0..key_count {
+        let kx = (key_idx as f32 * zoom_x).round() as u32;
+        let kw = zoom_x.ceil() as u32;
+        let is_black = lumino_gfx::is_black_key(key_idx as isize);
+        let kb_color: [u8; 4] = if is_black {
+            [0, 0, 0, 255]
+        } else {
+            [255, 255, 255, 255]
+        };
+        fill_bgra_rect(
+            frame,
+            frame_width,
+            frame_height,
+            kx,
+            kb_y,
+            kw,
+            kb_h,
+            kb_color,
+        );
+    }
+}

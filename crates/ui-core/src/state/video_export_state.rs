@@ -37,6 +37,8 @@ pub struct VideoExportDialogState {
     pub backend: String,
     /// 质量预设（"高"/"中"/"低"）
     pub quality: String,
+    /// 渲染模式（"瀑布流"/"音符矩形"）
+    pub render_mode: String,
     /// 分辨率宽度
     pub width: u32,
     /// 分辨率高度
@@ -85,6 +87,7 @@ impl VideoExportDialogState {
             codec: "H.264".to_string(),
             backend: "Software (CPU)".to_string(),
             quality: "中".to_string(),
+            render_mode: "瀑布流".to_string(),
             width: 1920,
             height: 1080,
             fps: 60,

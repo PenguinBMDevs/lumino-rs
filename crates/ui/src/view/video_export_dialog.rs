@@ -119,6 +119,15 @@ fn render_settings_section<'a>(
             palette,
         ),
         space().height(8),
+        pick_list_row(
+            "渲染模式:",
+            100.0,
+            vec!["瀑布流".to_string(), "音符矩形".to_string()],
+            Some(state.render_mode.clone()),
+            |v| Message::VideoExport(VideoExportAction::RenderModeChanged(v)),
+            palette,
+        ),
+        space().height(8),
         // 分辨率行
         row![
             text("分辨率:")

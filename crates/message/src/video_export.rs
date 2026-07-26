@@ -35,6 +35,8 @@ pub enum VideoExportAction {
     MidiPathChanged(String),
     /// 浏览 MIDI 路径
     BrowseMidi,
+    /// 渲染模式变更（"瀑布流"/"音符矩形"）
+    RenderModeChanged(String),
 
     // ── 导出控制 ──
     /// 开始导出（点击「开始导出」按钮，由 handler 发射 StartVideoExport 事件）
