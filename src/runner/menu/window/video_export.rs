@@ -432,7 +432,7 @@ fn fill_bgra_rect(
 /// - Y 轴 = 时间（tick），从上到下流动
 /// - 音符渲染为水平彩色条，宽度固定为 1 个键宽，高度对应音符时长
 /// - 当前播放时刻（tick）位于帧底部，历史音符向上延伸
-/// - 键盘位于帧底部
+/// - 键盘位于帧底部（钢琴风格：白键等分宽度，黑键 65% 宽 + 60% 高）
 /// - 背景为纯黑色
 pub fn render_waterfall_frame(
     frame: &mut [u8],
@@ -450,15 +450,17 @@ pub fn render_waterfall_frame(
     // 先填充纯黑背景
     fill_bgra_black(frame);
 
-    const KEYBOARD_HEIGHT: u32 = 40;
-    let content_height = frame_height.saturating_sub(KEYBOARD_HEIGHT);
+    // 键盘高度占帧高的 12%（与 nezha 默认键盘比例一致）
+    let kb_height = (frame_height as f64 * 0.12).round() as u32;
+    let kb_height = kb_height.max(20).min(frame_height / 3);
+    let content_height = frame_height.saturating_sub(kb_height);
     if content_height == 0 {
         return;
     }
 
     // 计算瀑布流的可见 tick 范围
     let ticks_per_measure = ppq * 4;
-    let visible_measure_count = 4u32; // 可见 4 个小节
+    let visible_measure_count = 4u32;
     let viewport_tick_span = (ticks_per_measure * visible_measure_count).max(1);
     let zoom_x = frame_width as f32 / key_count as f32;
     let zoom_y = content_height as f32 / viewport_tick_span as f32;
@@ -493,19 +495,15 @@ pub fn render_waterfall_frame(
     for note in &notes {
         let color_f = ARRANGEMENT_PALETTE[note.track_idx as usize % ARRANGEMENT_PALETTE.len()];
         let color: [u8; 4] = [
-            (color_f[2] * 255.0).round() as u8, // B
-            (color_f[1] * 255.0).round() as u8, // G
-            (color_f[0] * 255.0).round() as u8, // R
-            200, // Alpha (slightly transparent for overlap visibility)
+            (color_f[2] * 255.0).round() as u8,
+            (color_f[1] * 255.0).round() as u8,
+            (color_f[0] * 255.0).round() as u8,
+            200,
         ];
 
-        // X 位置：键从左到右，键 0 在最左
         let note_x = (note.key as f32 * zoom_x).round() as u32;
         let note_w = zoom_x.ceil() as u32;
 
-        // Y 位置：音符顶部 = (tick_end - note.end_tick) * zoom_y
-        // 音符底部 = (tick_end - note.start_tick) * zoom_y
-        // 音符在时间轴上从 start_tick 延伸到 end_tick
         let note_top = ((tick_end.saturating_sub(note.end_tick)) as f32 * zoom_y).round() as u32;
         let note_bottom =
             ((tick_end.saturating_sub(note.start_tick)) as f32 * zoom_y).round() as u32;
@@ -523,27 +521,72 @@ pub fn render_waterfall_frame(
         );
     }
 
-    // 渲染底部键盘（简化的黑白键）
+    // ── 钢琴风格键盘渲染（照抄 nezha 方案） ──
+    //
+    // 白键等分总宽度，黑键宽度为白键的 65%，位于相邻白键边界中间，
+    // 黑键高度为键盘总高度的 60%，渲染顺序：白键（底层）→ 黑键（上层覆盖）。
     let kb_y = content_height;
-    let kb_h = KEYBOARD_HEIGHT;
-    for key_idx in 0..key_count {
-        let kx = (key_idx as f32 * zoom_x).round() as u32;
-        let kw = zoom_x.ceil() as u32;
-        let is_black = lumino_gfx::is_black_key(key_idx as isize);
-        let kb_color: [u8; 4] = if is_black {
-            [0, 0, 0, 255]
+    let black_kb_height = (kb_height as f64 * 0.6).round() as u32;
+    let total_w = frame_width as f64;
+    let white_key_count = (0..key_count)
+        .filter(|&k| !lumino_gfx::is_black_key(k as isize))
+        .count() as f64;
+    let white_w = total_w / white_key_count;
+    let black_w = white_w * 0.65;
+    let black_w_offset = black_w * 0.5;
+
+    // 预计算键盘布局：Vec<(x, w, is_black)>
+    let mut kb_layout: Vec<(f32, f32, bool)> = Vec::with_capacity(key_count as usize);
+    let mut white_count = 0usize;
+    for key in 0..key_count {
+        if lumino_gfx::is_black_key(key as isize) {
+            let boundary_x = white_count as f64 * white_w;
+            let x = (boundary_x - black_w_offset) as f32;
+            kb_layout.push((x, black_w as f32, true));
         } else {
-            [255, 255, 255, 255]
-        };
+            let x = (white_count as f64 * white_w) as f32;
+            kb_layout.push((x, white_w as f32, false));
+            white_count += 1;
+        }
+    }
+
+    // 第一遍：白键（底层）
+    for &(kx, kw, is_black) in &kb_layout {
+        if is_black {
+            continue;
+        }
+        let kx_i = kx.round() as u32;
+        let kw_i = kw.ceil() as u32;
+        // 白键颜色：浅灰
         fill_bgra_rect(
             frame,
             frame_width,
             frame_height,
-            kx,
+            kx_i,
             kb_y,
-            kw,
-            kb_h,
-            kb_color,
+            kw_i,
+            kb_height,
+            [235, 235, 235, 255],
+        );
+    }
+
+    // 第二遍：黑键（上层覆盖，高度为键盘的 60%）
+    for &(kx, kw, is_black) in &kb_layout {
+        if !is_black {
+            continue;
+        }
+        let kx_i = kx.round() as u32;
+        let kw_i = kw.ceil() as u32;
+        // 黑键颜色：深灰
+        fill_bgra_rect(
+            frame,
+            frame_width,
+            frame_height,
+            kx_i,
+            kb_y,
+            kw_i,
+            black_kb_height,
+            [41, 41, 42, 255],
         );
     }
 }
