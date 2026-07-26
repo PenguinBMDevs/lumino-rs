@@ -45,7 +45,12 @@ impl Editor {
                 let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
                 for (i, note) in notes.iter().enumerate() {
                     if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
-                        let dest_track = (track_idx as i32 + delta_tracks).max(0) as usize;
+                        let dest_visual = (visual_pos as i32 + delta_tracks).max(0) as usize;
+                        let dest_track = data
+                            .track_visual_order
+                            .get(dest_visual)
+                            .copied()
+                            .unwrap_or(dest_visual);
                         let new_tick = (note.tick as f64 + delta_ticks as f64).max(0.0) as f32;
                         let mut moved = note.clone();
                         moved.tick = new_tick;
@@ -264,6 +269,8 @@ impl Editor {
     /// 获取当前工程走带选择范围内的音符列表。
     ///
     /// 返回 `(tick_start, tick_end, track, key)`，用于 ghost 预览。
+    /// track 为视觉位置（侧边栏顺序），而非文档音轨索引。
+    /// ghost 计算中的 dtr 是视觉空间偏移，与视觉位置相加得到正确的渲染位置。
     pub fn arrangement_selected_notes(&self) -> Vec<(f64, f64, usize, u8)> {
         let data = &self.editor_state.data;
         let selection = &data.arrange_selection;
@@ -281,7 +288,7 @@ impl Editor {
                     result.push((
                         note.tick as f64,
                         (note.tick + note.length) as f64,
-                        track_idx,
+                        visual_pos,
                         note.key as u8,
                     ));
                 }
@@ -301,7 +308,7 @@ impl Editor {
                         result.push((
                             note_event.start_tick as f64,
                             note_event.end_tick as f64,
-                            track_idx,
+                            visual_pos,
                             note_event.key,
                         ));
                     }
