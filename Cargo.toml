@@ -80,6 +80,7 @@ hound = "3.5"
 flac-encoder = "0.1"
 rustc-hash = "2.1"
 rayon = "1"
+png = "0.17"
 
 [package]
 name = "lumino-rs"
@@ -127,6 +128,7 @@ iced_core = { workspace = true }
 iced = { workspace = true }
 puffin = { workspace = true }
 puffin_http = { workspace = true }
+png = { workspace = true }
 anyhow = { workspace = true }
 parking_lot = { workspace = true }
 chrono = { workspace = true }

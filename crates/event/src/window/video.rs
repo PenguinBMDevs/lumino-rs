@@ -108,16 +108,8 @@ pub enum RenderMode {
     Waterfall,
     /// 音符矩形渲染（传统钢琴卷帘样式）
     NoteRectangle,
-    /// Comet Enhanced 风格（3D增强渲染，发光/粒子效果）
-    Enhanced,
-    /// Comet MIDITrail 风格（MIDI轨迹可视化）
+    /// MIDITrail 风格（3D MIDI 轨迹可视化）
     MIDITrail,
-    /// Comet PFA 风格（Piano Forte力度渲染）
-    PFA,
-    /// Comet Velocities 风格（力度可视化渲染）
-    Velocities,
-    /// Comet Channels 风格（通道分离渲染）
-    Channels,
 }
 
 impl RenderMode {
@@ -126,11 +118,7 @@ impl RenderMode {
         match self {
             RenderMode::Waterfall => "waterfall",
             RenderMode::NoteRectangle => "note_rectangle",
-            RenderMode::Enhanced => "enhanced",
             RenderMode::MIDITrail => "miditrail",
-            RenderMode::PFA => "pfa",
-            RenderMode::Velocities => "velocities",
-            RenderMode::Channels => "channels",
         }
     }
 }
@@ -140,11 +128,7 @@ impl std::fmt::Display for RenderMode {
         match self {
             RenderMode::Waterfall => f.write_str("Lumino瀑布流"),
             RenderMode::NoteRectangle => f.write_str("音符矩形"),
-            RenderMode::Enhanced => f.write_str("Enhanced"),
             RenderMode::MIDITrail => f.write_str("MIDITrail"),
-            RenderMode::PFA => f.write_str("PFA"),
-            RenderMode::Velocities => f.write_str("Velocities"),
-            RenderMode::Channels => f.write_str("Channels"),
         }
     }
 }
@@ -155,11 +139,7 @@ impl std::str::FromStr for RenderMode {
         match s {
             "waterfall" | "瀑布流" | "Lumino瀑布流" => Ok(RenderMode::Waterfall),
             "note_rectangle" | "音符矩形" => Ok(RenderMode::NoteRectangle),
-            "enhanced" | "Enhanced" => Ok(RenderMode::Enhanced),
             "miditrail" | "MIDITrail" => Ok(RenderMode::MIDITrail),
-            "pfa" | "PFA" => Ok(RenderMode::PFA),
-            "velocities" | "Velocities" => Ok(RenderMode::Velocities),
-            "channels" | "Channels" => Ok(RenderMode::Channels),
             _ => Err(format!("未知渲染模式: {s}")),
         }
     }

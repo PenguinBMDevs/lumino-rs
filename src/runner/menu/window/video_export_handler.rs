@@ -82,10 +82,10 @@ impl RunnerInner {
             .dialog_manager
             .open_dialog(DialogType::VideoExport);
 
-        // 获取渲染线程命令发送端与纹理格式
+        // 获取渲染线程命令发送端与表面纹理格式（非 GPU compute 样式使用）
         let main_ui = self.window_state.window.ui();
         let cmd_sender = main_ui.render_command_sender();
-        let input_pix_fmt =
+        let surface_pix_fmt =
             match main_ui.texture_format() {
                 lumino_gfx::TextureFormat::Bgra8Unorm
                 | lumino_gfx::TextureFormat::Bgra8UnormSrgb => "bgra",
@@ -134,16 +134,19 @@ impl RunnerInner {
         let _ = std::thread::Builder::new()
             .name("video-render".into())
             .spawn(move || {
-                // 判断是否为全 GPU compute 样式（shader 内部已包含键盘，无需 CPU 再次合成）
                 let is_gpu_compute_style = matches!(
                     render_mode,
                     lumino_event::window::video::RenderMode::Waterfall
-                        | lumino_event::window::video::RenderMode::Enhanced
                         | lumino_event::window::video::RenderMode::MIDITrail
-                        | lumino_event::window::video::RenderMode::PFA
-                        | lumino_event::window::video::RenderMode::Velocities
-                        | lumino_event::window::video::RenderMode::Channels
                 );
+                // GPU compute / 3D 渲染输出为 rgba8unorm storage texture，
+                // 因此编码器输入像素格式必须为 "rgba"；
+                // 非 compute 样式（NoteRectangle）使用 UI 表面纹理，按表面格式选择。
+                let input_pix_fmt = if is_gpu_compute_style {
+                    "rgba"
+                } else {
+                    surface_pix_fmt
+                };
                 let is_cpu_renderer = false;
                 if let Some(document) = document {
                     run_video_export_task(
@@ -176,7 +179,7 @@ impl RunnerInner {
                         width,
                         height,
                         cancel_flag,
-                        input_pix_fmt,
+                        surface_pix_fmt,
                     );
                 } else {
                     tracing::error!("视频导出失败：无 MidiDocument 且未指定 MIDI 路径");
@@ -344,65 +347,8 @@ fn run_video_export_task(
                             waterfall_scroll_speed,
                         );
                     }
-                    RenderMode::Enhanced => {
-                        super::comet_renderer::render_enhanced_frame(
-                            &mut frame_data,
-                            width,
-                            height,
-                            &document,
-                            tick,
-                            ppq,
-                            key_count,
-                            waterfall_scroll_speed,
-                        );
-                    }
-                    RenderMode::MIDITrail => {
-                        super::comet_renderer::render_miditrail_frame(
-                            &mut frame_data,
-                            width,
-                            height,
-                            &document,
-                            tick,
-                            ppq,
-                            key_count,
-                            waterfall_scroll_speed,
-                        );
-                    }
-                    RenderMode::PFA => {
-                        super::comet_renderer::render_pfa_frame(
-                            &mut frame_data,
-                            width,
-                            height,
-                            &document,
-                            tick,
-                            ppq,
-                            key_count,
-                            None,
-                        );
-                    }
-                    RenderMode::Velocities => {
-                        super::comet_renderer::render_velocities_frame(
-                            &mut frame_data,
-                            width,
-                            height,
-                            &document,
-                            tick,
-                            key_count,
-                        );
-                    }
-                    RenderMode::Channels => {
-                        // Comet 的 Channels 模式固定使用 16 个 MIDI 通道
-                        super::comet_renderer::render_channels_frame(
-                            &mut frame_data,
-                            width,
-                            height,
-                            &document,
-                            tick,
-                            key_count,
-                            16,
-                        );
-                    }
                     RenderMode::NoteRectangle => unreachable!("NoteRectangle 应走 GPU 路径"),
+                    RenderMode::MIDITrail => unreachable!("MIDITrail 应走 GPU 3D 路径"),
                 }
 
                 // 帧数据直接送入编码通道，跳过渲染线程的 GPU 路径

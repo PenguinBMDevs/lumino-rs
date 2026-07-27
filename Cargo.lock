@@ -3705,6 +3705,7 @@ dependencies = [
  "lumino-ui",
  "muda",
  "parking_lot",
+ "png 0.17.16",
  "puffin",
  "puffin_http",
  "raw-window-handle",

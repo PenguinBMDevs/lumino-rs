@@ -15,7 +15,7 @@ mod ruler_renderer;
 // mod velocity_line_renderer; // 已弃用 — 改用 CcBarRenderer
 
 pub mod automation;
-pub mod comet_renderer;
+pub mod miditrail_renderer;
 pub mod waterfall_renderer;
 
 mod swappable_buffer;
@@ -54,8 +54,11 @@ pub use ruler_renderer::{
 };
 pub use swappable_buffer::{AtomicSwappableBuffer, MpscQueue, RenderData, SwappableBuffer};
 
-pub use comet_renderer::{CometNoteGpu, CometRenderStyle, CometRenderer, CometUniformGpu};
+pub use miditrail_renderer::{MiditrailNoteGpu, MiditrailRenderer, MiditrailUniformGpu};
 pub use render_thread::RenderParams;
 pub use waterfall_renderer::{WaterfallNoteGpu, WaterfallRenderer, WaterfallUniformGpu};
 /// 重导出 wgpu 纹理格式，供 UI 层匹配视频导出像素格式
 pub use wgpu::TextureFormat;
+
+#[cfg(test)]
+mod test_minimal;

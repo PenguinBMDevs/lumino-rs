@@ -125,11 +125,7 @@ fn render_settings_section<'a>(
             vec![
                 "Lumino瀑布流".to_string(),
                 "音符矩形".to_string(),
-                "Enhanced".to_string(),
                 "MIDITrail".to_string(),
-                "PFA".to_string(),
-                "Velocities".to_string(),
-                "Channels".to_string(),
             ],
             Some(state.render_mode.clone()),
             |v| Message::VideoExport(VideoExportAction::RenderModeChanged(v)),

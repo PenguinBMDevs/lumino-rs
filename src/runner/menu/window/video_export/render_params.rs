@@ -4,8 +4,8 @@
 
 use lumino_event::window::video::RenderMode;
 use lumino_gfx::{
-    ARRANGEMENT_PALETTE, CometNoteGpu, CometRenderStyle, NoteInstance, RenderParams,
-    generate_ruler_instances, pack_color,
+    ARRANGEMENT_PALETTE, MiditrailNoteGpu, NoteInstance, RenderParams, generate_ruler_instances,
+    pack_color,
 };
 use lumino_midi_loader::MidiDocument;
 
@@ -23,7 +23,7 @@ pub struct SortableNote {
 /// 根据 `render_mode` 选择渲染路径：
 /// - `NoteRectangle`：传统 GPU 音符矩形渲染
 /// - `Waterfall`：瀑布流 compute shader 渲染
-/// - Comet 样式（Enhanced / MIDITrail / PFA / Velocities / Channels）：Comet compute shader 渲染
+/// - `MIDITrail`：3D MIDI 轨迹渲染
 #[allow(clippy::too_many_arguments)]
 pub fn build_video_export_render_params(
     width: u32,
@@ -47,18 +47,13 @@ pub fn build_video_export_render_params(
             key_count,
             waterfall_scroll_speed,
         ),
-        RenderMode::Enhanced
-        | RenderMode::MIDITrail
-        | RenderMode::PFA
-        | RenderMode::Velocities
-        | RenderMode::Channels => build_comet_render_params(
+        RenderMode::MIDITrail => build_miditrail_render_params(
             width,
             height,
             tick,
             document,
             ppq,
             key_count,
-            render_mode,
             waterfall_scroll_speed,
         ),
         RenderMode::NoteRectangle => build_note_rectangle_render_params(
@@ -211,28 +206,19 @@ fn build_waterfall_render_params(
     }
 }
 
-/// Comet 样式参数
+/// Miditrail 3D 模式参数
 #[allow(clippy::too_many_arguments)]
-fn build_comet_render_params(
+fn build_miditrail_render_params(
     width: u32,
     height: u32,
     tick: u32,
     document: &MidiDocument,
     ppq: u32,
     key_count: u16,
-    render_mode: RenderMode,
     waterfall_scroll_speed: f32,
 ) -> RenderParams {
     let w = width.max(1) as f32;
     let h = height.max(1) as f32;
-    let style = match render_mode {
-        RenderMode::Enhanced => CometRenderStyle::Enhanced,
-        RenderMode::MIDITrail => CometRenderStyle::MIDITrail,
-        RenderMode::PFA => CometRenderStyle::PFA,
-        RenderMode::Velocities => CometRenderStyle::Velocities,
-        RenderMode::Channels => CometRenderStyle::Channels,
-        _ => panic!("build_comet_render_params 只应接收 Comet 样式"),
-    };
 
     let mut notes = Vec::new();
     collect_visible_notes_for_gpu(
@@ -244,11 +230,11 @@ fn build_comet_render_params(
         &mut notes,
     );
 
-    let mut comet_notes = Vec::with_capacity(notes.len());
+    let mut miditrail_notes = Vec::with_capacity(notes.len());
     for n in &notes {
         let color = ARRANGEMENT_PALETTE[n.track_idx as usize % ARRANGEMENT_PALETTE.len()];
         let color_packed = pack_color([color[0], color[1], color[2], 1.0]);
-        comet_notes.push(CometNoteGpu {
+        miditrail_notes.push(MiditrailNoteGpu {
             key: n.key as u32,
             start_tick: n.start_tick,
             end_tick: n.end_tick,
@@ -267,10 +253,10 @@ fn build_comet_render_params(
         ppq: ppq as f32,
         max_key_index: (key_count.saturating_sub(1)) as f32,
         canvas_size: (w, h),
-        comet_style: Some(style),
-        comet_speed: waterfall_scroll_speed.max(0.1),
-        comet_notes,
-        comet_current_tick: tick,
+        miditrail_enabled: true,
+        miditrail_speed: waterfall_scroll_speed.max(0.1),
+        miditrail_notes,
+        miditrail_current_tick: tick,
         ..Default::default()
     }
 }

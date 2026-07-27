@@ -1,6 +1,6 @@
 use crate::{
-    ArrangementNoteInstance, ArrangementUniform, CcBarInstance, CometNoteGpu, CometRenderStyle,
-    GridLineInstance, KeyInstance, NoteInstance, RulerTickInstance, WaterfallNoteGpu,
+    ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, KeyInstance,
+    MiditrailNoteGpu, NoteInstance, RulerTickInstance, WaterfallNoteGpu,
 };
 
 /// 渲染参数 - 从 UI 线程传递到 WGPU 线程
@@ -70,14 +70,14 @@ pub struct RenderParams {
     pub waterfall_notes: Vec<WaterfallNoteGpu>,
     /// 瀑布流当前 MIDI tick 值（与 scroll.0 不同，scroll.0 是像素位置）
     pub waterfall_current_tick: u32,
-    /// Comet 渲染样式（非 None 时走 Comet GPU 渲染器）
-    pub comet_style: Option<CometRenderStyle>,
-    /// Comet 滚动速度
-    pub comet_speed: f32,
-    /// Comet GPU 音符数据
-    pub comet_notes: Vec<CometNoteGpu>,
-    /// Comet 当前 MIDI tick 值
-    pub comet_current_tick: u32,
+    /// Miditrail 渲染开关（非 None 时走 Miditrail 3D GPU 渲染器）
+    pub miditrail_enabled: bool,
+    /// Miditrail 滚动速度
+    pub miditrail_speed: f32,
+    /// Miditrail GPU 音符数据
+    pub miditrail_notes: Vec<MiditrailNoteGpu>,
+    /// Miditrail 当前 MIDI tick 值
+    pub miditrail_current_tick: u32,
 }
 
 impl Default for RenderParams {
@@ -118,10 +118,10 @@ impl Default for RenderParams {
             waterfall_speed: 1.0,
             waterfall_notes: Vec::new(),
             waterfall_current_tick: 0,
-            comet_style: None,
-            comet_speed: 1.0,
-            comet_notes: Vec::new(),
-            comet_current_tick: 0,
+            miditrail_enabled: false,
+            miditrail_speed: 1.0,
+            miditrail_notes: Vec::new(),
+            miditrail_current_tick: 0,
         }
     }
 }
@@ -177,10 +177,10 @@ pub struct RenderParamsBuilder {
     waterfall_speed: f32,
     waterfall_notes: Vec<WaterfallNoteGpu>,
     waterfall_current_tick: u32,
-    comet_style: Option<CometRenderStyle>,
-    comet_speed: f32,
-    comet_notes: Vec<CometNoteGpu>,
-    comet_current_tick: u32,
+    miditrail_enabled: bool,
+    miditrail_speed: f32,
+    miditrail_notes: Vec<MiditrailNoteGpu>,
+    miditrail_current_tick: u32,
 }
 
 impl Default for RenderParamsBuilder {
@@ -217,10 +217,10 @@ impl Default for RenderParamsBuilder {
             waterfall_speed: 1.0,
             waterfall_notes: Vec::new(),
             waterfall_current_tick: 0,
-            comet_style: None,
-            comet_speed: 1.0,
-            comet_notes: Vec::new(),
-            comet_current_tick: 0,
+            miditrail_enabled: false,
+            miditrail_speed: 1.0,
+            miditrail_notes: Vec::new(),
+            miditrail_current_tick: 0,
         }
     }
 }
@@ -429,10 +429,10 @@ impl RenderParamsBuilder {
             waterfall_speed: self.waterfall_speed,
             waterfall_notes: self.waterfall_notes,
             waterfall_current_tick: self.waterfall_current_tick,
-            comet_style: self.comet_style,
-            comet_speed: self.comet_speed,
-            comet_notes: self.comet_notes,
-            comet_current_tick: self.comet_current_tick,
+            miditrail_enabled: self.miditrail_enabled,
+            miditrail_speed: self.miditrail_speed,
+            miditrail_notes: self.miditrail_notes,
+            miditrail_current_tick: self.miditrail_current_tick,
         }
     }
 }
