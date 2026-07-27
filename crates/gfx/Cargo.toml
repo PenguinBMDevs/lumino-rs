@@ -33,3 +33,4 @@ lumino-memtrace = { workspace = true }
 
 [dev-dependencies]
 naga = "27.0"
+png = { workspace = true }

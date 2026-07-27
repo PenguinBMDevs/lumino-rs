@@ -3521,6 +3521,7 @@ dependencies = [
  "lumino-onion-skin",
  "lumino-onion-skin-hires",
  "naga",
+ "png 0.17.16",
  "puffin",
  "rayon",
  "thiserror 2.0.18",

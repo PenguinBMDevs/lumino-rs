@@ -2,11 +2,12 @@
 
 use super::types::{MiditrailInstanceGpu, MiditrailNoteGpu, MiditrailUniformGpu};
 
-const KEYBOARD_HEIGHT: f32 = 0.05;
-const NOTE_HEIGHT: f32 = 0.05;
-const NOTE_Y: f32 = 0.06;
-const BLACK_KEY_ELEVATION: f32 = 0.02;
-const BLACK_KEY_HEIGHT: f32 = 0.04;
+const KEYBOARD_HEIGHT: f32 = 0.014;
+const KEY_DEPTH: f32 = 0.014;
+const NOTE_HEIGHT: f32 = 0.007;
+const NOTE_Y: f32 = 0.0005;
+const BLACK_KEY_ELEVATION: f32 = 0.0;
+const BLACK_KEY_HEIGHT: f32 = 0.024;
 const SCENE_DEPTH: f32 = 1.0;
 const BLACK_KEY_WIDTH_RATIO: f32 = 0.58;
 
@@ -154,8 +155,8 @@ pub fn build_key_instances(
                 pack_color([0.92, 0.92, 0.92, 1.0])
             }
         });
-        let scale = [width, height, 0.02];
-        let translation = [left, y, -0.01];
+        let scale = [width, height, KEY_DEPTH];
+        let translation = [left, y, 0.0];
         out.push(MiditrailInstanceGpu::new(translation, scale, color, true));
     }
 }
