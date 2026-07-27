@@ -94,6 +94,8 @@ pub struct RenderFrameState<'a> {
     pub export_pipeline: &'a mut Option<ExportPipeline>,
     /// 视频帧数据发送器
     pub export_frame_tx: &'a mut Option<FrameSender>,
+    /// 瀑布流 GPU 渲染器（视频导出使用）
+    pub waterfall_renderer: &'a mut Option<crate::WaterfallRenderer>,
 }
 
 /// 视频导出高精度贴图上传参数。

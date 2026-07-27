@@ -265,34 +265,26 @@ fn draw_digit(frame: &mut [u8], frame_width: u32, digit: u8, x: u32, y: u32, col
         return;
     };
     let frame_w = frame_width as usize;
-    let color_bytes = color; // [B, G, R, A]
+    let row_bytes = frame_w * 4;
+    let color_bytes = color;
 
     for row in 0..DIGIT_BITMAP_H {
         let mask = bitmap[row as usize];
-        // 该行没有填充像素则跳过整行
         if mask == 0 {
             continue;
         }
-        // base_row_start: 该位图行首字节在 frame 中的索引
-        // py = y + row * DIGIT_SCALE
-        let base_row_start = ((y + row * DIGIT_SCALE) as usize) * frame_w;
+        let base_row_start = ((y + row * DIGIT_SCALE) as usize) * row_bytes;
 
         for col in 0..DIGIT_BITMAP_W {
             if mask & (1 << (DIGIT_BITMAP_W - 1 - col)) == 0 {
                 continue;
             }
-            // 预计算方块左边缘在 frame 中的字节偏移
-            // px = x + col * DIGIT_SCALE
             let block_x_bytes = ((x + col * DIGIT_SCALE) as usize) * 4;
 
-            // 展开 DIGIT_SCALE x DIGIT_SCALE 的方块写入
-            // 每行 DIGIT_SCALE 个像素，共 DIGIT_SCALE 行
-            // 使用 copy_from_slice 替代逐像素写入
             for sy in 0..DIGIT_SCALE {
-                let row_start = (base_row_start + (sy as usize) * frame_w) + block_x_bytes;
+                let row_start = base_row_start + (sy as usize) * row_bytes + block_x_bytes;
                 let row_end = row_start + (DIGIT_SCALE as usize) * 4;
                 if row_end <= frame.len() {
-                    // 连续写入 DIGIT_SCALE 个像素
                     for px_offset in (0..DIGIT_SCALE as usize * 4).step_by(4) {
                         let dst = row_start + px_offset;
                         frame[dst..dst + 4].copy_from_slice(&color_bytes);
@@ -386,14 +378,15 @@ pub use keyboard::composite_keyboard;
 
 // ── 瀑布流渲染 ──
 
-/// 将 BGRA 帧数据填充为黑色背景（GPU 背景色不统一，统一设置为纯黑）
+/// 将 BGRA 帧数据填充为黑色背景（使用 bulk fill + alpha 修复）
 fn fill_bgra_black(frame: &mut [u8]) {
-    for pixel in frame.chunks_exact_mut(4) {
-        pixel.copy_from_slice(&[0, 0, 0, 255]);
+    frame.fill(0);
+    for a in frame.iter_mut().skip(3).step_by(4) {
+        *a = 255;
     }
 }
 
-/// 在 BGRA 帧上绘制一个填充矩形
+/// 在 BGRA 帧上绘制一个填充矩形（使用批量行填充）
 fn fill_bgra_rect(
     frame: &mut [u8],
     frame_width: u32,
@@ -410,17 +403,25 @@ fn fill_bgra_rect(
     let x_end = (x + w).min(frame_width);
     let y_end = (y + h).min(frame_height);
     let row_bytes = frame_width as usize * 4;
-    let pixel_bytes = (x_end - x) as usize * 4;
+    let start_byte = x as usize * 4;
+    let pixel_count = (x_end - x) as usize;
+    let pixel_bytes = pixel_count * 4;
 
     for py in y..y_end {
-        let row_start = py as usize * row_bytes + x as usize * 4;
+        let row_start = py as usize * row_bytes + start_byte;
         let row_end = row_start + pixel_bytes;
         if row_end > frame.len() {
             break;
         }
-        // 逐像素填充该行
-        for px in (row_start..row_end).step_by(4) {
-            frame[px..px + 4].copy_from_slice(&color);
+        frame[row_start..row_end].fill(color[0]);
+        for ch in frame[row_start + 1..row_end].chunks_exact_mut(4) {
+            ch[0] = color[1];
+        }
+        for ch in frame[row_start + 2..row_end].chunks_exact_mut(4) {
+            ch[0] = color[2];
+        }
+        for ch in frame[row_start + 3..row_end].chunks_exact_mut(4) {
+            ch[0] = color[3];
         }
     }
 }

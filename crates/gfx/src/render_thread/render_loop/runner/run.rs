@@ -261,6 +261,14 @@ fn handle_video_frame(
     let width = params.viewport_size.0.max(1);
     let height = params.viewport_size.1.max(1);
 
+    // 瀑布流模式：使用 compute shader 全 GPU 渲染
+    if params.is_waterfall_mode {
+        handle_waterfall_frame(ctx, params, frame, width, height);
+        return;
+    }
+
+    // 钢琴卷帘模式：正常 GPU 渲染管线
+
     // 1. 确保离屏纹理已创建（视频导出为纯 2D，禁用 depth）
     let mut tex_resources = super::super::textures::OffscreenTextureResources {
         device: &ctx.device,
@@ -362,6 +370,116 @@ fn handle_video_frame(
     }
 }
 
+/// 瀑布流帧渲染：使用 compute shader 全 GPU 渲染，写入 storage texture 后读回。
+fn handle_waterfall_frame(
+    ctx: &RenderContext,
+    params: RenderParams,
+    frame: &mut RenderFrameState,
+    width: u32,
+    height: u32,
+) {
+    use crate::{WaterfallRenderer, WaterfallUniformGpu};
+
+    // 初始化瀑布流渲染器
+    if frame.waterfall_renderer.is_none() {
+        *frame.waterfall_renderer = Some(WaterfallRenderer::new(&ctx.device));
+    }
+    let renderer = frame
+        .waterfall_renderer
+        .as_mut()
+        .expect("waterfall_renderer 应已初始化");
+
+    // 键盘高度：帧高的 12%
+    let kb_height = ((height as f64) * 0.12).round() as u32;
+    let kb_height = kb_height.max(20).min(height / 3);
+
+    // 构建 uniform 参数
+    let uniform = WaterfallUniformGpu {
+        tick: params.scroll.0 as u32,
+        ppq: params.ppq as u32,
+        key_count: (params.max_key_index + 1.0) as u32,
+        frame_width: width,
+        frame_height: height,
+        kb_height,
+        speed: params.waterfall_speed.max(0.1),
+        _padding: 0,
+    };
+
+    // 使用传入的瀑布流音符数据
+    let notes = &params.waterfall_notes;
+
+    // 构建活跃键颜色数组（128 个 u32，0 表示无高亮）
+    let mut active_key_colors = [0u32; 128];
+    for note in notes {
+        let tick_u = params.scroll.0 as u32;
+        if note.start_tick <= tick_u && note.end_tick > tick_u {
+            let key = note.key as usize;
+            if key < 128 {
+                // 使用音符颜色作为活跃键高亮（混合 60% 透明度）
+                let c = note.color_packed;
+                let b = c & 0xFF;
+                let g = (c >> 8) & 0xFF;
+                let r = (c >> 16) & 0xFF;
+                // 存储 BGRA，alpha=153 表示 60% 混合（与 shader 中 blend_key_color 的 alpha 参数匹配）
+                active_key_colors[key] = b | (g << 8) | (r << 16) | (153u32 << 24);
+            }
+        }
+    }
+
+    // 创建编码器
+    let mut encoder = ctx
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("waterfall_encoder"),
+        });
+
+    // dispatch compute shader
+    renderer.render(
+        &ctx.device,
+        &ctx.queue,
+        &mut encoder,
+        &uniform,
+        notes,
+        &active_key_colors,
+    );
+
+    // 获取输出纹理并拷贝到 staging buffer
+    let pipeline = frame
+        .export_pipeline
+        .as_mut()
+        .expect("export_pipeline 应已初始化");
+    let tx = frame
+        .export_frame_tx
+        .as_ref()
+        .expect("export_frame_tx 应已初始化");
+
+    pipeline.ensure_size(width, height);
+    while !pipeline.can_write() {
+        let data = pipeline.wait_read();
+        if tx.0.send(data).is_err() {
+            tracing::warn!("瀑布流帧发送失败：Runner 通道已关闭");
+            return;
+        }
+    }
+
+    if let Some(tex) = renderer.output_texture() {
+        pipeline.copy_and_submit(encoder, tex, &ctx.queue);
+    } else {
+        tracing::warn!("瀑布流输出纹理未就绪");
+        // 即使没有输出纹理，也必须提交空编码器，否则 GPU 队列死锁
+        ctx.queue.submit(std::iter::once(encoder.finish()));
+        return;
+    }
+
+    // 非阻塞读回已就绪帧
+    while let Some(data) = pipeline.try_read() {
+        if tx.0.send(data).is_err() {
+            tracing::warn!("瀑布流帧发送失败：Runner 通道已关闭");
+            return;
+        }
+    }
+}
+
 /// 处理延迟队列中的控制命令（视频导出 / 高精度贴图 / HiRes 控制）。
 fn process_deferred_commands(
     ctx: &RenderContext,
@@ -424,6 +542,7 @@ fn process_deferred_commands(
                     hires_config: &mut *hires_config,
                     export_pipeline: &mut *export_pipeline,
                     export_frame_tx: &mut *export_frame_tx,
+                    waterfall_renderer: &mut None,
                 };
                 handle_video_frame(ctx, *params, &mut frame, channels);
             }
@@ -580,6 +699,7 @@ fn render_offscreen_pass(
             hires_config,
             export_pipeline,
             export_frame_tx,
+            waterfall_renderer: &mut None,
         };
         execute_render_pass(
             &mut encoder,

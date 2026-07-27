@@ -1,6 +1,6 @@
 use crate::{
     ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, KeyInstance,
-    NoteInstance, RulerTickInstance,
+    NoteInstance, RulerTickInstance, WaterfallNoteGpu,
 };
 
 /// 渲染参数 - 从 UI 线程传递到 WGPU 线程
@@ -62,6 +62,12 @@ pub struct RenderParams {
     pub cc_bar_instances: Vec<CcBarInstance>,
     /// 力度面板区域 (x, y, width, height) — 屏幕坐标，用于 scissor
     pub velocity_panel_rect: Option<(f32, f32, f32, f32)>,
+    /// 是否为瀑布流渲染模式
+    pub is_waterfall_mode: bool,
+    /// 瀑布流滚动速度
+    pub waterfall_speed: f32,
+    /// 瀑布流 GPU 音符数据（仅在瀑布流模式下使用）
+    pub waterfall_notes: Vec<WaterfallNoteGpu>,
 }
 
 impl Default for RenderParams {
@@ -98,6 +104,9 @@ impl Default for RenderParams {
             arrangement_uniform: ArrangementUniform::default(),
             cc_bar_instances: Vec::new(),
             velocity_panel_rect: None,
+            is_waterfall_mode: false,
+            waterfall_speed: 1.0,
+            waterfall_notes: Vec::new(),
         }
     }
 }
@@ -149,6 +158,9 @@ pub struct RenderParamsBuilder {
     canvas_offset: (f32, f32),
     canvas_size: (f32, f32),
     velocity_panel_rect: Option<(f32, f32, f32, f32)>,
+    is_waterfall_mode: bool,
+    waterfall_speed: f32,
+    waterfall_notes: Vec<WaterfallNoteGpu>,
 }
 
 impl Default for RenderParamsBuilder {
@@ -181,6 +193,9 @@ impl Default for RenderParamsBuilder {
             canvas_offset: (0.0, 0.0),
             canvas_size: (800.0, 600.0),
             velocity_panel_rect: None,
+            is_waterfall_mode: false,
+            waterfall_speed: 1.0,
+            waterfall_notes: Vec::new(),
         }
     }
 }
@@ -385,6 +400,9 @@ impl RenderParamsBuilder {
             arrangement_uniform: self.arrangement_uniform,
             cc_bar_instances: self.cc_bar_instances,
             velocity_panel_rect: self.velocity_panel_rect,
+            is_waterfall_mode: self.is_waterfall_mode,
+            waterfall_speed: self.waterfall_speed,
+            waterfall_notes: self.waterfall_notes,
         }
     }
 }

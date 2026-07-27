@@ -11,6 +11,7 @@ use lumino_export::video::{
     FfmpegEncoder, VideoExportConfig,
     config::{Container, EncoderBackend, QualityPreset, VideoCodec},
 };
+use lumino_gfx::WaterfallNoteGpu;
 use lumino_gfx::render_thread::{ControlCommand, FrameSender, RenderCommand};
 
 use super::video_export::cli_progress::CliProgressBar;
@@ -306,12 +307,43 @@ fn run_video_export_task(
                 tick,
             ));
 
-            // 瀑布流模式：发送空音符实例，在 CPU 端渲染
+            // 瀑布流模式：全 GPU 渲染，构建 waterfall 音符数据
             if is_waterfall {
                 let mut params = super::video_export::build_video_render_params(
                     width, height, tick, &document, ppq, key_count,
                 );
                 params.note_instances = Vec::new();
+                params.is_waterfall_mode = true;
+                params.waterfall_speed = waterfall_scroll_speed;
+
+                // 构建瀑布流 GPU 音符数据
+                let ticks_per_measure = ppq * 4;
+                let speed = waterfall_scroll_speed.max(0.1);
+                let visible_measure_count = (4.0f32 / speed).round().max(1.0) as u32;
+                let viewport_tick_span = (ticks_per_measure * visible_measure_count).max(1);
+                let tick_end = tick + viewport_tick_span;
+
+                let mut waterfall_notes: Vec<WaterfallNoteGpu> = Vec::new();
+                for (track_idx, track_notes) in document.notes.iter().enumerate() {
+                    let color_f = lumino_gfx::ARRANGEMENT_PALETTE
+                        [track_idx % lumino_gfx::ARRANGEMENT_PALETTE.len()];
+                    let b = (color_f[2] * 255.0).round() as u32;
+                    let g = (color_f[1] * 255.0).round() as u32;
+                    let r = (color_f[0] * 255.0).round() as u32;
+                    let color_packed = b | (g << 8) | (r << 16) | (200u32 << 24);
+                    for n in track_notes {
+                        if n.end_tick > tick && n.start_tick < tick_end {
+                            waterfall_notes.push(WaterfallNoteGpu {
+                                key: n.key as u32,
+                                start_tick: n.start_tick,
+                                end_tick: n.end_tick,
+                                color_packed,
+                            });
+                        }
+                    }
+                }
+                params.waterfall_notes = waterfall_notes;
+
                 if cmd_sender
                     .send(RenderCommand::Control(ControlCommand::RenderVideoFrame {
                         params: Box::new(params),
@@ -392,13 +424,8 @@ fn run_video_export_task(
             .pop_front()
             .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024], 0));
         let (should_stop, stats) = if is_waterfall {
-            let (_sx, _zx, _kw, _ppq, _kc, tick) = p;
             composite_waterfall_and_encode_frame(
                 data,
-                &document,
-                tick,
-                ppq,
-                key_count,
                 &mut encoder,
                 &progress_tx,
                 &preview_tx,
@@ -408,7 +435,6 @@ fn run_video_export_task(
                 width,
                 height,
                 &recycle_tx,
-                waterfall_scroll_speed,
             )
         } else {
             let (sx, zx, kw, ppq_val, key_colors, _tick) = p;
@@ -519,13 +545,8 @@ fn run_video_export_task(
             .pop_front()
             .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024], 0));
         let (should_stop, _stats) = if is_waterfall {
-            let (_sx, _zx, _kw, _ppq, _kc, tick) = p;
             composite_waterfall_and_encode_frame(
                 data,
-                &document,
-                tick,
-                ppq,
-                key_count,
                 &mut encoder,
                 &progress_tx,
                 &preview_tx,
@@ -535,7 +556,6 @@ fn run_video_export_task(
                 width,
                 height,
                 &recycle_tx,
-                waterfall_scroll_speed,
             )
         } else {
             let (sx, zx, kw, ppq_val, key_colors, _tick) = p;
@@ -1135,16 +1155,12 @@ fn composite_and_encode_frame(
     (false, stats)
 }
 
-/// 单帧处理（瀑布流模式）：CPU 渲染瀑布流音符 + 标尺 + 键盘 + 预览 + 编码 + 缓冲区归还。
+/// 单帧处理（瀑布流模式）：GPU 已完整渲染，此函数仅处理预览 + 编码 + 缓冲区归还。
 ///
 /// 返回 `(should_stop, stats)`：`should_stop` 为 true 表示应终止渲染循环（取消或出错）。
 #[allow(clippy::too_many_arguments)]
 fn composite_waterfall_and_encode_frame(
-    mut data: Vec<u8>,
-    document: &lumino_midi_loader::MidiDocument,
-    tick: u32,
-    ppq: u32,
-    key_count: u16,
+    data: Vec<u8>,
     encoder: &mut FfmpegEncoder,
     progress_tx: &tokio::sync::mpsc::UnboundedSender<(String, f64, u64, f64, f64)>,
     preview_tx: &tokio::sync::mpsc::UnboundedSender<(Vec<u8>, u32, u32)>,
@@ -1154,7 +1170,6 @@ fn composite_waterfall_and_encode_frame(
     width: u32,
     height: u32,
     recycle_tx: &std::sync::mpsc::Sender<Vec<u8>>,
-    waterfall_speed: f32,
 ) -> (bool, FrameStageStats) {
     let mut stats = FrameStageStats::default();
 
@@ -1163,32 +1178,8 @@ fn composite_waterfall_and_encode_frame(
         return (false, stats);
     }
 
-    // 瀑布流渲染：CPU 端渲染 MIDI 音符（X=音高, Y=时间流动）
+    // 瀑布流帧已由 GPU compute shader 完整渲染（音符 + 键盘），无需 CPU 端再渲染
     let t0 = Instant::now();
-    super::video_export::render_waterfall_frame(
-        &mut data,
-        width,
-        height,
-        document,
-        tick,
-        ppq,
-        key_count,
-        waterfall_speed,
-    );
-    // 标尺小节号（瀑布流模式同样在顶部显示标尺，辅助定位）
-    let keyboard_width = 0.0f32; // 瀑布流无左侧键盘列
-    let viewport_tick_span = (ppq * 16).max(1) as f32;
-    let zoom_x = width as f32 / viewport_tick_span;
-    let scroll_x = tick as f32 * zoom_x;
-    super::video_export::composite_ruler_numbers(
-        &mut data,
-        width,
-        height,
-        scroll_x,
-        zoom_x,
-        keyboard_width,
-        ppq,
-    );
     stats.composite_us = t0.elapsed().as_micros() as u64;
 
     if cancel_flag.load(Ordering::Relaxed) {
