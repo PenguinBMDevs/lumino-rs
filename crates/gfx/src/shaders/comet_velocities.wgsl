@@ -12,7 +12,6 @@ fn velocities_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     let key_count = params.key_count;
-    let layout = compute_key_layout(key_count, w);
     let cell_w = f32(w) / f32(key_count);
     let cell_h = f32(h) / 128.0;
 

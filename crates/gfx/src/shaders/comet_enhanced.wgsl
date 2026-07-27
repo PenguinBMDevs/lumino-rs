@@ -57,13 +57,13 @@ fn enhanced_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             }
         }
     } else {
-        // ── 键盘区域 ──
-        let layout = key_layout_with_height(key_count, w, kb_height);
-        let local_y = y - note_area_h;
-        let xf = f32(x);
-
-        let white_key = find_white_key_index(xf, key_count, layout);
-        let black_key = find_black_key_index(xf, local_y, key_count, layout);
+         // ── 键盘区域 ──
+         let key_layout = key_layout_with_height(key_count, w, kb_height);
+         let local_y = y - note_area_h;
+         let xf = f32(x);
+ 
+         let white_key = find_white_key_index(xf, key_count, key_layout);
+         let black_key = find_black_key_index(xf, local_y, key_count, key_layout);
 
         if white_key >= 0 {
             let key_idx = u32(white_key);

@@ -108,17 +108,17 @@ fn compute_key_layout(key_count: u32, frame_width: u32) -> KeyLayout {
 }
 
 fn key_layout_with_height(key_count: u32, frame_width: u32, kb_height: u32) -> KeyLayout {
-    var layout = compute_key_layout(key_count, frame_width);
-    layout.black_h = u32(f32(kb_height) * 0.6);
-    return layout;
+    var key_layout = compute_key_layout(key_count, frame_width);
+    key_layout.black_h = u32(f32(kb_height) * 0.6);
+    return key_layout;
 }
 
-fn find_white_key_index(x: f32, key_count: u32, layout: KeyLayout) -> i32 {
+fn find_white_key_index(x: f32, key_count: u32, key_layout: KeyLayout) -> i32 {
     var wc: u32 = 0u;
     for (var k: u32 = 0u; k < key_count; k++) {
         if !is_black_key(k) {
-            let kx = f32(wc) * layout.white_w;
-            if x >= kx && x < kx + layout.white_w {
+    let kx = f32(wc) * key_layout.white_w;
+    if x >= kx && x < kx + key_layout.white_w {
                 return i32(k);
             }
             wc++;
@@ -127,17 +127,17 @@ fn find_white_key_index(x: f32, key_count: u32, layout: KeyLayout) -> i32 {
     return -1;
 }
 
-fn find_black_key_index(x: f32, y: u32, key_count: u32, layout: KeyLayout) -> i32 {
-    if y >= layout.black_h {
+fn find_black_key_index(x: f32, y: u32, key_count: u32, key_layout: KeyLayout) -> i32 {
+    if y >= key_layout.black_h {
         return -1;
     }
     var wc: u32 = 0u;
     for (var k: u32 = 0u; k < key_count; k++) {
         if is_black_key(k) {
             if wc > 0u {
-                let boundary_x = f32(wc) * layout.white_w;
-                let kx = boundary_x - layout.black_w * 0.5;
-                if x >= kx && x < kx + layout.black_w {
+                let boundary_x = f32(wc) * key_layout.white_w;
+                let kx = boundary_x - key_layout.black_w * 0.5;
+                if x >= kx && x < kx + key_layout.black_w {
                     return i32(k);
                 }
             }
