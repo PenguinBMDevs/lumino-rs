@@ -64,11 +64,25 @@ pub(super) fn seconds_to_tick(secs: f64, tempo_changes: &[(u32, f32)], ppq: u32)
 
 // ── 渲染参数构建 ──
 
+//// 视频导出每帧可见音符的临时数据结构
+#[derive(Clone)]
+pub struct SortableNote {
+    pub key: u8,
+    pub start_tick: u32,
+    pub length: u32,
+    pub track_idx: u16,
+}
+
 /// 构建视频导出帧的 RenderParams
 ///
 /// 包含编辑区域 UI 元素（网格线、标尺、键盘），
 /// Y 向缩放覆盖 128 键标准 MIDI 键盘，
 /// X 向缩放使可见视口内恰好 4 个小节。
+///
+/// # 性能说明
+///
+/// `visible_notes` 和 `note_instances` 缓冲区在连续调用间复用，
+/// 避免每帧堆分配。调用方需保证缓冲区生命周期覆盖整个导出过程。
 pub(super) fn build_video_render_params(
     width: u32,
     height: u32,
@@ -76,6 +90,8 @@ pub(super) fn build_video_render_params(
     document: &lumino_midi_loader::MidiDocument,
     ppq: u32,
     _key_count: u16,
+    visible_notes: &mut Vec<SortableNote>,
+    note_instances_out: &mut Vec<NoteInstance>,
 ) -> RenderParams {
     // 视频导出始终使用标准 128 键 MIDI 键盘
     const KEY_COUNT: u16 = 128;
@@ -114,18 +130,13 @@ pub(super) fn build_video_render_params(
     //   第三层：同 tick 同 key 时，track 索引大的在上（稳定排序自然保留插入顺序）
     let tick_start = tick;
     let tick_end = tick.saturating_add(viewport_tick_span as u32);
-    #[derive(Clone)]
-    struct SortableNote {
-        key: u8,
-        start_tick: u32,
-        length: u32,
-        track_idx: u16,
-    }
-    let mut temp: Vec<SortableNote> = Vec::new();
+
+    // 清空缓冲区（保留容量避免重复分配）
+    visible_notes.clear();
     for (track_idx, notes) in document.notes.iter().enumerate() {
         for n in notes {
             if n.end_tick >= tick_start && n.start_tick <= tick_end {
-                temp.push(SortableNote {
+                visible_notes.push(SortableNote {
                     key: n.key,
                     start_tick: n.start_tick,
                     length: n.length(),
@@ -135,19 +146,18 @@ pub(super) fn build_video_render_params(
         }
     }
     // 稳定排序：key → start_tick → track_idx（降序，后 track 在上）
-    temp.sort_by_key(|n| (n.key, n.start_tick, u16::MAX - n.track_idx));
-    let note_instances: Vec<NoteInstance> = temp
-        .into_iter()
-        .map(|n| {
-            let color = ARRANGEMENT_PALETTE[n.track_idx as usize % ARRANGEMENT_PALETTE.len()];
-            let color_packed = pack_color([color[0], color[1], color[2], 1.0]);
-            NoteInstance {
-                position: [n.start_tick as f32, n.key as f32],
-                size_x: (n.length as f32).max(1.0),
-                color_packed,
-            }
-        })
-        .collect();
+    visible_notes.sort_by_key(|n| (n.key, n.start_tick, u16::MAX - n.track_idx));
+    note_instances_out.clear();
+    note_instances_out.reserve(visible_notes.len());
+    for n in visible_notes.iter() {
+        let color = ARRANGEMENT_PALETTE[n.track_idx as usize % ARRANGEMENT_PALETTE.len()];
+        let color_packed = pack_color([color[0], color[1], color[2], 1.0]);
+        note_instances_out.push(NoteInstance {
+            position: [n.start_tick as f32, n.key as f32],
+            size_x: (n.length as f32).max(1.0),
+            color_packed,
+        });
+    }
 
     // 首帧诊断：定位音符缺失问题
     static MEM_DIAG_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -157,7 +167,7 @@ pub(super) fn build_video_render_params(
         tracing::info!(
             "内存模式诊断[{}]: note_instances={}, total_notes={}, tick={}, vis_range={}..{}",
             diag_idx,
-            note_instances.len(),
+            note_instances_out.len(),
             total_notes,
             tick,
             tick_start,
@@ -179,7 +189,7 @@ pub(super) fn build_video_render_params(
         zoom: (zoom_x, zoom_y),
         keyboard_width,
         ruler_height,
-        note_instances,
+        note_instances: std::mem::take(note_instances_out),
         grid_instances,
         ruler_instances,
         keyboard_instances,

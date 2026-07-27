@@ -275,6 +275,10 @@ fn run_video_export_task(
     let mut acc_encode_us = 0u64;
     let mut stat_frame_count = 0u64;
 
+    // 复用缓冲区避免每帧堆分配
+    let mut visible_note_buf: Vec<super::video_export::SortableNote> = Vec::with_capacity(4096);
+    let mut note_instances_buf: Vec<lumino_gfx::NoteInstance> = Vec::with_capacity(4096);
+
     // 闭包不捕获 param_queue，而是作为参数传入，避免与主循环中的 pop_front 产生可变借用冲突。
     let mut enqueue_frame =
         |queue: &mut std::collections::VecDeque<(f32, f32, f32, u32, [u8; 1024], u32)>,
@@ -310,7 +314,14 @@ fn run_video_export_task(
             // 瀑布流模式：全 GPU 渲染，构建 waterfall 音符数据
             if is_waterfall {
                 let mut params = super::video_export::build_video_render_params(
-                    width, height, tick, &document, ppq, key_count,
+                    width,
+                    height,
+                    tick,
+                    &document,
+                    ppq,
+                    key_count,
+                    &mut visible_note_buf,
+                    &mut note_instances_buf,
                 );
                 params.note_instances = Vec::new();
                 params.is_waterfall_mode = true;
@@ -363,7 +374,14 @@ fn run_video_export_task(
                 }
             } else {
                 let params = super::video_export::build_video_render_params(
-                    width, height, tick, &document, ppq, key_count,
+                    width,
+                    height,
+                    tick,
+                    &document,
+                    ppq,
+                    key_count,
+                    &mut visible_note_buf,
+                    &mut note_instances_buf,
                 );
 
                 if cmd_sender

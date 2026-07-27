@@ -55,6 +55,14 @@ pub fn execute_render_pass(
 
     // 工程走带模式：渲染走带背景和音符
     if params.is_arrangement_mode {
+        // 排列模式同样需要 scissor rect 剔除，避免渲染视口外音符
+        let arr_scissor_x = ((params.canvas_offset.0 * params.scale_factor) as u32).min(width);
+        let arr_scissor_y = ((params.canvas_offset.1 * params.scale_factor) as u32).min(height);
+        let arr_scissor_w = ((params.canvas_size.0 * params.scale_factor) as u32)
+            .min(width.saturating_sub(arr_scissor_x));
+        let arr_scissor_h = ((params.canvas_size.1 * params.scale_factor) as u32)
+            .min(height.saturating_sub(arr_scissor_y));
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("arrangement_render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -71,6 +79,7 @@ pub fn execute_render_pass(
             occlusion_query_set: None,
         });
 
+        render_pass.set_scissor_rect(arr_scissor_x, arr_scissor_y, arr_scissor_w, arr_scissor_h);
         // 走带渲染器绘制（背景 + 网格 + 音符 + 演奏指示线）
         frame.renderers.arrangement.draw(&mut render_pass);
         return;
