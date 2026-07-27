@@ -161,7 +161,7 @@ fn test_export_preview_png() {
         MiditrailNoteGpu {
             key: 60,
             start_tick: 0,
-            end_tick: 4_000,
+            end_tick: 12_000,
             color_packed: 0xFF0000FF, // 红色
             track_idx: 0,
             velocity: 100,
@@ -171,7 +171,7 @@ fn test_export_preview_png() {
         MiditrailNoteGpu {
             key: 64,
             start_tick: 480,
-            end_tick: 4_480,
+            end_tick: 12_480,
             color_packed: 0x00FF00FF, // 绿色
             track_idx: 0,
             velocity: 100,
@@ -181,7 +181,7 @@ fn test_export_preview_png() {
         MiditrailNoteGpu {
             key: 67,
             start_tick: 960,
-            end_tick: 4_960,
+            end_tick: 12_960,
             color_packed: 0x0000FFFF, // 蓝色
             track_idx: 0,
             velocity: 100,

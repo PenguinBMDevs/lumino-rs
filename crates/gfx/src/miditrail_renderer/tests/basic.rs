@@ -6,7 +6,7 @@ use wgpu::util::DeviceExt;
 
 #[test]
 fn test_cube_constants() {
-    assert_eq!(MiditrailRenderer::CUBE_VERTICES.len(), 24);
+    assert_eq!(MiditrailRenderer::CUBE_VERTICES.len(), 144);
     assert_eq!(MiditrailRenderer::CUBE_INDICES.len(), 36);
 }
 

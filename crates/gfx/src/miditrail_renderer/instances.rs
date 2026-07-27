@@ -2,13 +2,15 @@
 
 use super::types::{MiditrailInstanceGpu, MiditrailNoteGpu, MiditrailUniformGpu};
 
-const KEYBOARD_HEIGHT: f32 = 0.014;
-const KEY_DEPTH: f32 = 0.014;
+const KEYBOARD_HEIGHT: f32 = 0.012;
+const WHITE_KEY_DEPTH: f32 = 0.07;
+const BLACK_KEY_DEPTH: f32 = 0.0448;
 const NOTE_HEIGHT: f32 = 0.007;
 const NOTE_Y: f32 = 0.0005;
+const NOTE_Z_OFFSET: f32 = 0.012;
 const BLACK_KEY_ELEVATION: f32 = 0.0;
 const BLACK_KEY_HEIGHT: f32 = 0.024;
-const SCENE_DEPTH: f32 = 1.0;
+const SCENE_DEPTH: f32 = 7.5;
 const BLACK_KEY_WIDTH_RATIO: f32 = 0.58;
 
 /// 更新键位布局缓存。
@@ -79,6 +81,7 @@ pub fn build_note_instances(
     let scene_depth = SCENE_DEPTH;
     let note_height = NOTE_HEIGHT;
     let note_y = NOTE_Y;
+    let note_z_offset = NOTE_Z_OFFSET;
 
     for note in notes {
         if !note.is_visible_at(tick) {
@@ -90,13 +93,13 @@ pub fn build_note_instances(
         }
         let left = key_positions[key];
         let width = key_widths[key];
-        let _x = left + width * 0.5;
 
         let visible_start = note.start_tick.max(tick);
         let visible_end = note.end_tick;
-        let z_start =
-            -((visible_start.saturating_sub(tick)) as f32 / viewport_tick_span * scene_depth);
-        let z_end = -((visible_end.saturating_sub(tick)) as f32 / viewport_tick_span * scene_depth);
+        let z_start = note_z_offset
+            - ((visible_start.saturating_sub(tick)) as f32 / viewport_tick_span * scene_depth);
+        let z_end = note_z_offset
+            - ((visible_end.saturating_sub(tick)) as f32 / viewport_tick_span * scene_depth);
         if z_end >= z_start {
             continue;
         }
@@ -150,12 +153,17 @@ pub fn build_key_instances(
         };
         let color = active_colors[i].unwrap_or_else(|| {
             if is_black {
-                pack_color([0.12, 0.12, 0.12, 1.0])
+                pack_color([0.2, 0.2, 0.2, 1.0])
             } else {
-                pack_color([0.92, 0.92, 0.92, 1.0])
+                pack_color([1.0, 1.0, 1.0, 1.0])
             }
         });
-        let scale = [width, height, KEY_DEPTH];
+        let depth = if is_black {
+            BLACK_KEY_DEPTH
+        } else {
+            WHITE_KEY_DEPTH
+        };
+        let scale = [width, height, depth];
         let translation = [left, y, 0.0];
         out.push(MiditrailInstanceGpu::new(translation, scale, color, true));
     }

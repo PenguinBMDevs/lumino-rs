@@ -41,15 +41,22 @@ pub fn create_render_pipeline(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                // 顶点位置
+                // 顶点位置与法线
                 wgpu::VertexBufferLayout {
-                    array_stride: 12,
+                    array_stride: 24,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[wgpu::VertexAttribute {
-                        format: wgpu::VertexFormat::Float32x3,
-                        offset: 0,
-                        shader_location: 0,
-                    }],
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x3,
+                            offset: 0,
+                            shader_location: 0,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x3,
+                            offset: 12,
+                            shader_location: 1,
+                        },
+                    ],
                 },
                 // 实例数据
                 wgpu::VertexBufferLayout {
@@ -59,22 +66,22 @@ pub fn create_render_pipeline(
                         wgpu::VertexAttribute {
                             format: wgpu::VertexFormat::Float32x3,
                             offset: 0,
-                            shader_location: 1,
+                            shader_location: 2,
                         },
                         wgpu::VertexAttribute {
                             format: wgpu::VertexFormat::Float32x3,
                             offset: 16,
-                            shader_location: 2,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Uint32,
-                            offset: 32,
                             shader_location: 3,
                         },
                         wgpu::VertexAttribute {
                             format: wgpu::VertexFormat::Uint32,
-                            offset: 36,
+                            offset: 32,
                             shader_location: 4,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Uint32,
+                            offset: 36,
+                            shader_location: 5,
                         },
                     ],
                 },
