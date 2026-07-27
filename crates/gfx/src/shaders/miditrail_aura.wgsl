@@ -26,8 +26,8 @@ struct VertexOutput {
     @location(1) color: vec3<f32>,
 }
 
-// 白键前缘 z 坐标，光环应放置在此处并稍向前突出
-const AURA_Z: f32 = 0.075;
+// 键盘背部（音符落入键盘的那一端），光环位于键后缘稍后方
+const AURA_Z: f32 = -0.006;
 // 与音符立方体中心对齐的 y 坐标
 const AURA_Y: f32 = 0.0005;
 
