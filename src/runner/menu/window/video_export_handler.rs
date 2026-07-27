@@ -315,6 +315,7 @@ fn run_video_export_task(
                 params.note_instances = Vec::new();
                 params.is_waterfall_mode = true;
                 params.waterfall_speed = waterfall_scroll_speed;
+                params.waterfall_current_tick = tick;
 
                 // 构建瀑布流 GPU 音符数据
                 let ticks_per_measure = ppq * 4;

@@ -394,8 +394,9 @@ fn handle_waterfall_frame(
     let kb_height = kb_height.max(20).min(height / 3);
 
     // 构建 uniform 参数
+    // 注意：使用 waterfall_current_tick（MIDI tick 值），而非 scroll.0（像素位置 = tick * zoom_x）
     let uniform = WaterfallUniformGpu {
-        tick: params.scroll.0 as u32,
+        tick: params.waterfall_current_tick,
         ppq: params.ppq as u32,
         key_count: (params.max_key_index + 1.0) as u32,
         frame_width: width,
@@ -411,7 +412,7 @@ fn handle_waterfall_frame(
     // 构建活跃键颜色数组（128 个 u32，0 表示无高亮）
     let mut active_key_colors = [0u32; 128];
     for note in notes {
-        let tick_u = params.scroll.0 as u32;
+        let tick_u = params.waterfall_current_tick;
         if note.start_tick <= tick_u && note.end_tick > tick_u {
             let key = note.key as usize;
             if key < 128 {

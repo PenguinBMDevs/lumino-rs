@@ -68,6 +68,8 @@ pub struct RenderParams {
     pub waterfall_speed: f32,
     /// 瀑布流 GPU 音符数据（仅在瀑布流模式下使用）
     pub waterfall_notes: Vec<WaterfallNoteGpu>,
+    /// 瀑布流当前 MIDI tick 值（与 scroll.0 不同，scroll.0 是像素位置）
+    pub waterfall_current_tick: u32,
 }
 
 impl Default for RenderParams {
@@ -107,6 +109,7 @@ impl Default for RenderParams {
             is_waterfall_mode: false,
             waterfall_speed: 1.0,
             waterfall_notes: Vec::new(),
+            waterfall_current_tick: 0,
         }
     }
 }
@@ -161,6 +164,7 @@ pub struct RenderParamsBuilder {
     is_waterfall_mode: bool,
     waterfall_speed: f32,
     waterfall_notes: Vec<WaterfallNoteGpu>,
+    waterfall_current_tick: u32,
 }
 
 impl Default for RenderParamsBuilder {
@@ -196,6 +200,7 @@ impl Default for RenderParamsBuilder {
             is_waterfall_mode: false,
             waterfall_speed: 1.0,
             waterfall_notes: Vec::new(),
+            waterfall_current_tick: 0,
         }
     }
 }
@@ -403,6 +408,7 @@ impl RenderParamsBuilder {
             is_waterfall_mode: self.is_waterfall_mode,
             waterfall_speed: self.waterfall_speed,
             waterfall_notes: self.waterfall_notes,
+            waterfall_current_tick: self.waterfall_current_tick,
         }
     }
 }

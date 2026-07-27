@@ -30,22 +30,21 @@ struct WaterfallNote {
 
 @group(0) @binding(0) var<uniform> params: WaterfallUniform;
 @group(0) @binding(1) var<storage, read> notes: array<WaterfallNote>;
-@group(0) @binding(2) var<storage, read> active_key_colors: array<u32>;  // 128 keys, packed BGRA
+@group(0) @binding(2) var<storage, read> active_key_colors: array<u32>;
 @group(0) @binding(3) var output_tex: texture_storage_2d<rgba8unorm, write>;
 
 // ── 工具函数 ──
 
 fn is_black_key(key: u32) -> bool {
-    // 标准 12 键半音阶黑键判定
     let k = key % 12;
     return k == 1 || k == 3 || k == 6 || k == 8 || k == 10;
 }
 
 fn unpack_color(packed: u32) -> vec4<u32> {
-    let b = (packed >> 0) & 0xFFu;
-    let g = (packed >> 8) & 0xFFu;
-    let r = (packed >> 16) & 0xFFu;
-    let a = (packed >> 24) & 0xFFu;
+    let b = packed & 0xFFu;
+    let g = (packed >> 8u) & 0xFFu;
+    let r = (packed >> 16u) & 0xFFu;
+    let a = (packed >> 24u) & 0xFFu;
     return vec4<u32>(b, g, r, a);
 }
 
@@ -78,7 +77,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     let kb_h = params.kb_height;
-    let note_area_h = h.saturating_sub(kb_h);
+    let note_area_h = h - min(h, kb_h);
     let ppq = params.ppq;
     let tick = params.tick;
     let speed = max(params.speed, 0.1);
@@ -88,7 +87,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let ticks_per_measure = ppq * 4u;
     let visible_measure_count = max(u32(round(4.0 / speed)), 1u);
     let viewport_tick_span = max(ticks_per_measure * visible_measure_count, 1u);
-    let tick_start = tick;
     let tick_end = tick + viewport_tick_span;
     let zoom_x = f32(w) / f32(key_count);
     let zoom_y = f32(note_area_h) / f32(viewport_tick_span);
@@ -98,47 +96,42 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     if y < note_area_h {
         // ── 音符区域 ──
-        // 遍历所有音符，查找覆盖此像素的
         let note_count = arrayLength(&notes);
         for (var i = 0u; i < note_count; i++) {
             let n = notes[i];
-            // 计算音符在屏幕上的位置
+
+            // 将音符的 tick 范围裁剪到视口内，避免 u32 下溢
+            let visible_end = min(n.end_tick, tick_end);
+            let visible_start = max(n.start_tick, tick);
+            if visible_end <= visible_start {
+                continue;
+            }
+
             let note_x = u32(f32(n.key) * zoom_x);
             let note_w = u32(ceil(zoom_x));
-            let note_top = u32(f32(tick_end - n.end_tick) * zoom_y);
-            let note_bottom = u32(f32(tick_end - n.start_tick) * zoom_y);
+            let note_top = u32(f32(tick_end - visible_end) * zoom_y);
+            // 将 note_bottom 限制在 note_area_h 内，防止浮点精度导致音符被裁切
+            let note_bottom = min(u32(f32(tick_end - visible_start) * zoom_y), note_area_h);
             let note_h = max(note_bottom - note_top, 1u);
 
-            // 检查像素是否在音符矩形内
             if x >= note_x && x < note_x + note_w && y >= note_top && y < note_top + note_h {
                 let c = unpack_color(n.color_packed);
                 pixel = pack_u32(c.x, c.y, c.z, 200u);
-                break; // 最上层音符优先
+                break;
             }
         }
     } else {
         // ── 键盘区域 ──
+        // 采用 Nezha 风格的两阶段渲染：
+        // 阶段1：确定像素属于哪个白键
+        // 阶段2：若在键盘上半部分，检查是否被黑键覆盖
+        // 这样黑键下方始终露出白键，符合真实钢琴键盘外观
+
         let kb_y = note_area_h;
         let local_y = y - kb_y;
         let black_kb_h = u32(f32(kb_h) * 0.6);
 
-        // 计算键盘布局
-        var white_count: u32 = 0u;
-        var found_key = false;
-
-        for (var key: u32 = 0u; key < key_count && !found_key; key++) {
-            if is_black_key(key) {
-                // 黑键：位于相邻白键边界中间
-                if white_count == 0u {
-                    continue;
-                }
-                let boundary_x = f32(white_count) * (f32(w) / f32(white_count + u32(1))); // 近似
-                continue;
-            }
-            white_count++;
-        }
-
-        // 更精确的键盘渲染：先计算白键数量
+        // 先计算白键数量
         var total_white: u32 = 0u;
         for (var k: u32 = 0u; k < key_count; k++) {
             if !is_black_key(k) {
@@ -153,60 +146,68 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         let black_w = white_w * 0.65;
         let black_w_offset = black_w * 0.5;
 
-        // 确定当前像素属于哪个键
-        var kx_f: f32 = 0.0;
-        var kw_f: f32 = 0.0;
-        var is_black: bool = false;
-        var key_idx: u32 = 0u;
+        // 阶段1：确定当前像素属于哪个白键
+        var white_key_idx: u32 = 0u;
         var wc: u32 = 0u;
-        var found: bool = false;
-
-        for (var k: u32 = 0u; k < key_count && !found; k++) {
-            if is_black_key(k) {
-                if wc == 0u {
-                    continue;
-                }
-                let boundary_x = f32(wc) * white_w;
-                kx_f = boundary_x - black_w_offset;
-                kw_f = black_w;
+        var white_found: bool = false;
+        for (var k: u32 = 0u; k < key_count && !white_found; k++) {
+            if !is_black_key(k) {
+                let kx_f = f32(wc) * white_w;
+                let kw_f = white_w;
                 if f32(x) >= kx_f && f32(x) < kx_f + kw_f {
-                    is_black = true;
-                    key_idx = k;
-                    found = true;
-                }
-            } else {
-                kx_f = f32(wc) * white_w;
-                kw_f = white_w;
-                if f32(x) >= kx_f && f32(x) < kx_f + kw_f {
-                    is_black = false;
-                    key_idx = k;
-                    found = true;
+                    white_key_idx = k;
+                    white_found = true;
                 }
                 wc++;
             }
         }
 
-        if found {
-            // 获取活跃键颜色
-            let active_color_packed = active_key_colors[key_idx];
-            let active_color = unpack_color(active_color_packed);
+        // 阶段2：若在键盘上半部分，检查是否在黑键区域内
+        var in_black_area: bool = false;
+        var black_key_idx: u32 = 0u;
+        if local_y < black_kb_h {
+            wc = 0u;
+            for (var k: u32 = 0u; k < key_count && !in_black_area; k++) {
+                if is_black_key(k) {
+                    if wc > 0u {
+                        let boundary_x = f32(wc) * white_w;
+                        let kx_f = boundary_x - black_w_offset;
+                        let kw_f = black_w;
+                        if f32(x) >= kx_f && f32(x) < kx_f + kw_f {
+                            black_key_idx = k;
+                            in_black_area = true;
+                        }
+                    }
+                } else {
+                    wc++;
+                }
+            }
+        }
 
-            if is_black && local_y < black_kb_h {
-                // 黑键区域
-                let base = vec4<u32>(41u, 41u, 42u, 255u); // BGRA
-                let blended = blend_key_color(base, active_color, 153u); // 60%
+        // 阶段3：渲染
+        if white_found {
+            if in_black_area {
+                // 黑键覆盖区域：使用黑键颜色和黑键的活跃色
+                let active_color_packed = active_key_colors[black_key_idx];
+                let active_color = unpack_color(active_color_packed);
+                let base = vec4<u32>(41u, 41u, 42u, 255u);
+                let blended = blend_key_color(base, active_color, 153u);
                 pixel = pack_u32(blended.x, blended.y, blended.z, 255u);
-            } else if !is_black {
-                // 白键区域
-                let base = vec4<u32>(235u, 235u, 235u, 255u); // BGRA
+            } else {
+                // 白键区域（含黑键下方露出的白键部分）
+                let active_color_packed = active_key_colors[white_key_idx];
+                let active_color = unpack_color(active_color_packed);
+                let base = vec4<u32>(235u, 235u, 235u, 255u);
                 let blended = blend_key_color(base, active_color, 153u);
                 pixel = pack_u32(blended.x, blended.y, blended.z, 255u);
             }
-            // 黑键区域外（底部 40%）：黑色（已被背景覆盖）
+        } else {
+            // 未找到任何键（边界保护）：深色背景
+            pixel = pack_u32(30u, 30u, 30u, 255u);
         }
     }
 
-    textureStore(output_tex, i32(x), i32(y), vec4<f32>(
+    textureStore(output_tex, vec2<i32>(i32(x), i32(y)), vec4<f32>(
         f32(pixel & 0xFFu) / 255.0,
         f32((pixel >> 8u) & 0xFFu) / 255.0,
         f32((pixel >> 16u) & 0xFFu) / 255.0,
