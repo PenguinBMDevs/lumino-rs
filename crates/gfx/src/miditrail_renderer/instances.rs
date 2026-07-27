@@ -1,6 +1,8 @@
 //! Miditrail 3D 渲染器实例构建
 
-use super::types::{MiditrailInstanceGpu, MiditrailNoteGpu, MiditrailUniformGpu};
+use super::types::{
+    MiditrailAuraInstanceGpu, MiditrailInstanceGpu, MiditrailNoteGpu, MiditrailUniformGpu,
+};
 
 const KEYBOARD_HEIGHT: f32 = 0.012;
 const WHITE_KEY_DEPTH: f32 = 0.07;
@@ -114,6 +116,7 @@ pub fn build_note_instances(
             scale,
             note.color_packed,
             false,
+            0.0,
         ));
     }
 }
@@ -124,6 +127,7 @@ pub fn build_key_instances(
     notes: &[MiditrailNoteGpu],
     key_positions: &[f32],
     key_widths: &[f32],
+    press_factors: &[f32],
     out: &mut Vec<MiditrailInstanceGpu>,
 ) {
     let tick = uniform.tick;
@@ -165,7 +169,60 @@ pub fn build_key_instances(
         };
         let scale = [width, height, depth];
         let translation = [left, y, 0.0];
-        out.push(MiditrailInstanceGpu::new(translation, scale, color, true));
+        let press = press_factors.get(i).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+        out.push(MiditrailInstanceGpu::new(
+            translation,
+            scale,
+            color,
+            true,
+            press,
+        ));
+    }
+}
+
+/// 构建 Aura 实例。
+///
+/// 当某个键在当前 tick 有音符激活时，在对应键下方生成一个光环。
+pub fn build_aura_instances(
+    uniform: &MiditrailUniformGpu,
+    notes: &[MiditrailNoteGpu],
+    key_positions: &[f32],
+    key_widths: &[f32],
+    out: &mut Vec<MiditrailAuraInstanceGpu>,
+) {
+    let tick = uniform.tick;
+    let key_count = (uniform.key_count as usize)
+        .min(key_positions.len())
+        .min(128);
+
+    let mut active = [false; 128];
+    let mut colors = [0u32; 128];
+    for note in notes {
+        if !note.is_active_at(tick) {
+            continue;
+        }
+        let key = note.key as usize;
+        if key < 128 {
+            active[key] = true;
+            colors[key] = note.color_packed;
+        }
+    }
+
+    for i in 0..key_count {
+        if !active[i] {
+            continue;
+        }
+        let left = key_positions[i];
+        let width = key_widths[i];
+        let center = left + width * 0.5;
+        // 光环半径要足够大，以环绕音符立方体（音符宽约键宽、高约 0.007）
+        let size = (width * 4.0).max(0.04);
+        out.push(MiditrailAuraInstanceGpu {
+            size,
+            pos: center,
+            color_packed: colors[i],
+            _padding: 0,
+        });
     }
 }
 
@@ -219,10 +276,42 @@ mod tests {
             channel: 0,
             _padding: 0,
         }];
+        let press_factors = [0.0f32; 128];
         let mut out = Vec::new();
         build_note_instances(&uniform, &notes, &positions, &widths, &mut out);
-        build_key_instances(&uniform, &notes, &positions, &widths, &mut out);
+        build_key_instances(
+            &uniform,
+            &notes,
+            &positions,
+            &widths,
+            &press_factors,
+            &mut out,
+        );
         // 128 个键 + 1 个音符
         assert_eq!(out.len(), 129);
+    }
+
+    #[test]
+    fn test_build_aura_instances() {
+        let mut positions = Vec::new();
+        let mut widths = Vec::new();
+        let mut last = 0u32;
+        update_key_positions(128, &mut last, &mut positions, &mut widths);
+
+        let uniform = MiditrailUniformGpu::default();
+        let notes = vec![MiditrailNoteGpu {
+            key: 60,
+            start_tick: 0,
+            end_tick: 1000,
+            color_packed: 0xFFFF0000,
+            track_idx: 0,
+            velocity: 100,
+            channel: 0,
+            _padding: 0,
+        }];
+        let mut auras = Vec::new();
+        build_aura_instances(&uniform, &notes, &positions, &widths, &mut auras);
+        assert_eq!(auras.len(), 1);
+        assert!(auras[0].size > 0.0);
     }
 }

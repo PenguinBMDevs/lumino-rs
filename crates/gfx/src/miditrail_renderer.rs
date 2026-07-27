@@ -3,18 +3,32 @@
 //! 该渲染器以 3D 透视方式渲染 MIDI 键盘与音符轨迹，结果写入离屏纹理，
 //! 再由导出管线读回 CPU 并编码为视频帧。
 
+mod aura;
 mod instances;
+mod key_press;
 mod math;
 mod pipeline;
+mod render_pass;
 mod types;
 
-pub use types::{MiditrailCameraGpu, MiditrailInstanceGpu, MiditrailNoteGpu, MiditrailUniformGpu};
+pub use types::{
+    MiditrailAuraInstanceGpu, MiditrailCameraGpu, MiditrailInstanceGpu, MiditrailNoteGpu,
+    MiditrailUniformGpu,
+};
 
-use instances::{build_key_instances, build_note_instances, update_key_positions};
+use instances::{
+    build_aura_instances, build_key_instances, build_note_instances, update_key_positions,
+};
 use math::build_camera_uniform;
 use pipeline::{
+    create_aura_buffers, create_aura_render_pipeline, create_aura_sampler,
     create_bind_group_layout, create_buffers, create_render_pipeline, create_shader_module,
+    generate_aura_ring_data,
 };
+
+const KEY_PRESS_SPEED_DOWN: f32 = 15.0;
+const KEY_PRESS_SPEED_UP: f32 = 10.0;
+const AURA_TEXTURE_SIZE: u32 = 128;
 
 /// 3D MIDITrail 渲染器
 ///
@@ -41,23 +55,37 @@ pub struct MiditrailRenderer {
     key_positions: Vec<f32>,
     key_widths: Vec<f32>,
     last_key_count: u32,
+    key_press_factors: [f32; 128],
+
+    // Aura 相关资源
+    aura_pipeline: wgpu::RenderPipeline,
+    aura_vertex_buffer: wgpu::Buffer,
+    aura_index_buffer: wgpu::Buffer,
+    aura_instance_buffer: Option<wgpu::Buffer>,
+    aura_instance_capacity: usize,
+    aura_sampler: wgpu::Sampler,
+    aura_texture: Option<wgpu::Texture>,
+    aura_texture_view: Option<wgpu::TextureView>,
+    aura_image_data: Vec<u8>,
+    aura_resources_ready: bool,
 }
 
 impl MiditrailRenderer {
     const SHADER: &'static str = include_str!("shaders/miditrail_3d.wgsl");
+    const AURA_SHADER: &'static str = include_str!("shaders/miditrail_aura.wgsl");
     // 单位立方体，每面 4 个顶点，含法线（位置 + 法线 = 6 个 f32）
     const CUBE_VERTICES: [f32; 144] = [
         // 顶面 y=1, normal (0,1,0)
         0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0,
         0.0, 1.0, 1.0, 0.0, 1.0, 0.0, // 底面 y=0, normal (0,-1,0)
-        0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0,
-        0.0, 0.0, 1.0, 0.0, -1.0, 0.0, // 正面 z=1, normal (0,0,1)
+        0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0,
+        0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0, // 正面 z=1, normal (0,0,1)
         0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0,
         0.0, 1.0, 1.0, 0.0, 0.0, 1.0, // 背面 z=0, normal (0,0,-1)
-        0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 1.0, 1.0, 0.0, 0.0, 0.0, -1.0,
-        0.0, 1.0, 0.0, 0.0, 0.0, -1.0, // 左面 x=0, normal (-1,0,0)
-        0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, 0.0, 1.0, 1.0, -1.0, 0.0, 0.0,
-        0.0, 1.0, 0.0, -1.0, 0.0, 0.0, // 右面 x=1, normal (1,0,0)
+        0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 1.0, 1.0, 0.0, 0.0, 0.0,
+        -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, // 左面 x=0, normal (-1,0,0)
+        0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, 0.0, 1.0, 1.0, -1.0, 0.0,
+        0.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, // 右面 x=1, normal (1,0,0)
         1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0,
         1.0, 1.0, 0.0, 1.0, 0.0, 0.0,
     ];
@@ -76,10 +104,15 @@ impl MiditrailRenderer {
     /// 创建 Miditrail 渲染器。
     pub fn new(device: &wgpu::Device) -> Self {
         let shader = create_shader_module(device, Self::SHADER);
+        let aura_shader = create_shader_module(device, Self::AURA_SHADER);
         let bind_group_layout = create_bind_group_layout(device);
         let render_pipeline = create_render_pipeline(device, &bind_group_layout, &shader);
+        let aura_pipeline = create_aura_render_pipeline(device, &bind_group_layout, &aura_shader);
         let (uniform_buffer, vertex_buffer, index_buffer) =
             create_buffers(device, &Self::CUBE_VERTICES, &Self::CUBE_INDICES);
+        let (aura_vertex_buffer, aura_index_buffer) = create_aura_buffers(device);
+        let aura_sampler = create_aura_sampler(device);
+        let aura_image_data = generate_aura_ring_data(AURA_TEXTURE_SIZE);
 
         Self {
             render_pipeline,
@@ -99,6 +132,17 @@ impl MiditrailRenderer {
             key_positions: Vec::new(),
             key_widths: Vec::new(),
             last_key_count: 0,
+            key_press_factors: [0.0; 128],
+            aura_pipeline,
+            aura_vertex_buffer,
+            aura_index_buffer,
+            aura_instance_buffer: None,
+            aura_instance_capacity: 0,
+            aura_sampler,
+            aura_texture: None,
+            aura_texture_view: None,
+            aura_image_data,
+            aura_resources_ready: false,
         }
     }
 
@@ -131,6 +175,7 @@ impl MiditrailRenderer {
             &mut self.key_positions,
             &mut self.key_widths,
         );
+        self.update_key_press_factors(uniform, notes);
 
         let mut instances = Vec::with_capacity(notes.len() + uniform.key_count as usize);
         build_note_instances(
@@ -145,6 +190,7 @@ impl MiditrailRenderer {
             notes,
             &self.key_positions,
             &self.key_widths,
+            &self.key_press_factors,
             &mut instances,
         );
 
@@ -153,6 +199,21 @@ impl MiditrailRenderer {
             queue.write_buffer(buf, 0, bytemuck::cast_slice(&instances));
         }
 
+        let mut aura_instances = Vec::new();
+        build_aura_instances(
+            uniform,
+            notes,
+            &self.key_positions,
+            &self.key_widths,
+            &mut aura_instances,
+        );
+        self.ensure_aura_instance_buffer(device, aura_instances.len());
+        if let Some(ref buf) = self.aura_instance_buffer {
+            queue.write_buffer(buf, 0, bytemuck::cast_slice(&aura_instances));
+        }
+
+        self.ensure_aura_resources(device, queue);
+
         let camera = build_camera_uniform(width, height);
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[camera]));
 
@@ -160,7 +221,7 @@ impl MiditrailRenderer {
             self.rebuild_bind_group(device);
         }
 
-        self.execute_render_pass(encoder, &instances);
+        self.execute_render_pass(encoder, &instances, &aura_instances);
     }
 
     /// 获取输出纹理引用。
@@ -259,76 +320,29 @@ impl MiditrailRenderer {
     }
 
     fn rebuild_bind_group(&mut self, device: &wgpu::Device) {
+        let view = self
+            .aura_texture_view
+            .as_ref()
+            .expect("aura 纹理应在创建 bind group 前初始化");
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("miditrail_bind_group"),
             layout: &self.bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: self.uniform_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.aura_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+            ],
         });
         self.bind_group = Some(bind_group);
-    }
-
-    fn execute_render_pass(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        instances: &[MiditrailInstanceGpu],
-    ) {
-        let color_view = self
-            .output_texture_view
-            .as_ref()
-            .expect("output_texture_view 应已初始化");
-        let depth_view = self
-            .depth_texture_view
-            .as_ref()
-            .expect("depth_texture_view 应已初始化");
-        let bind_group = self.bind_group.as_ref().expect("bind_group 应已初始化");
-        let instance_buf = self
-            .instance_buffer
-            .as_ref()
-            .expect("instance_buffer 应已初始化");
-
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("miditrail_render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, instance_buf.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(
-                0..Self::CUBE_INDICES.len() as u32,
-                0,
-                0..instances.len() as u32,
-            );
-        }
     }
 }
 
@@ -337,10 +351,19 @@ impl Drop for MiditrailRenderer {
         crate::gpu_resource_tracker::sub_buffer(&self.uniform_buffer);
         crate::gpu_resource_tracker::sub_buffer(&self.vertex_buffer);
         crate::gpu_resource_tracker::sub_buffer(&self.index_buffer);
+        crate::gpu_resource_tracker::sub_buffer(&self.aura_vertex_buffer);
+        crate::gpu_resource_tracker::sub_buffer(&self.aura_index_buffer);
         if let Some(ref buf) = self.instance_buffer {
             crate::gpu_resource_tracker::sub_buffer(buf);
         }
+        if let Some(ref buf) = self.aura_instance_buffer {
+            crate::gpu_resource_tracker::sub_buffer(buf);
+        }
         self.release_textures();
+        if let Some(tex) = self.aura_texture.take() {
+            crate::gpu_resource_tracker::sub_texture(&tex);
+        }
+        self.aura_texture_view.take();
     }
 }
 

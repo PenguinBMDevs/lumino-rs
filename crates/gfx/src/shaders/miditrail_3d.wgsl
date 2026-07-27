@@ -17,6 +17,7 @@ struct VertexInput {
     @location(3) scale: vec3<f32>,
     @location(4) color: u32,
     @location(5) is_key: u32,
+    @location(6) press_factor: f32,
 }
 
 struct VertexOutput {
@@ -58,11 +59,17 @@ fn key_color_factor(normal: vec3<f32>) -> f32 {
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
+    var translation = in.translation;
+    if (in.is_key == 1u) {
+        // 按下时琴键整体向下凹陷，深度约为键自身高度的 0.5
+        translation.y -= in.press_factor * in.scale.y * 0.5;
+    }
+
     let model = mat4x4<f32>(
         vec4(in.scale.x, 0.0, 0.0, 0.0),
         vec4(0.0, in.scale.y, 0.0, 0.0),
         vec4(0.0, 0.0, in.scale.z, 0.0),
-        vec4(in.translation, 1.0),
+        vec4(translation, 1.0),
     );
     let world_pos = (model * vec4(in.position, 1.0)).xyz;
     let world_normal = (model * vec4(in.normal, 0.0)).xyz;

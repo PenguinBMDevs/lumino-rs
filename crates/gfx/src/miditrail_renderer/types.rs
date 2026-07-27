@@ -112,14 +112,22 @@ pub struct MiditrailInstanceGpu {
     pub color_packed: u32,
     /// 1 表示琴键，0 表示音符
     pub is_key: u32,
+    /// 琴键按下系数（0.0 ~ 1.0）
+    pub press_factor: f32,
     /// 对齐填充到 16 字节边界
-    pub _padding2: [u32; 2],
+    pub _padding2: u32,
 }
 
 impl MiditrailInstanceGpu {
     /// 创建新的实例数据
     #[must_use]
-    pub fn new(translation: [f32; 3], scale: [f32; 3], color_packed: u32, is_key: bool) -> Self {
+    pub fn new(
+        translation: [f32; 3],
+        scale: [f32; 3],
+        color_packed: u32,
+        is_key: bool,
+        press_factor: f32,
+    ) -> Self {
         Self {
             translation,
             _padding0: 0.0,
@@ -127,9 +135,23 @@ impl MiditrailInstanceGpu {
             _padding1: 0.0,
             color_packed,
             is_key: u32::from(is_key),
-            _padding2: [0; 2],
+            press_factor,
+            _padding2: 0,
         }
     }
+}
+
+/// Aura 每实例数据
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct MiditrailAuraInstanceGpu {
+    /// 视觉半径
+    pub size: f32,
+    /// 键中心 x 位置
+    pub pos: f32,
+    /// 打包 RGBA 颜色
+    pub color_packed: u32,
+    pub _padding: u32,
 }
 
 #[cfg(test)]
@@ -158,6 +180,7 @@ mod tests {
     #[test]
     fn test_instance_size() {
         assert_eq!(std::mem::size_of::<MiditrailInstanceGpu>(), 48);
+        assert_eq!(std::mem::size_of::<MiditrailAuraInstanceGpu>(), 16);
         assert_eq!(std::mem::size_of::<MiditrailCameraGpu>(), 80);
     }
 }
