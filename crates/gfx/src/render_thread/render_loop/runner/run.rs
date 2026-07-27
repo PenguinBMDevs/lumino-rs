@@ -47,6 +47,10 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     let mut export_pipeline: Option<ExportPipeline> = None;
     let mut export_frame_tx = None;
 
+    // 视频导出专用 GPU 渲染器（跨帧复用，避免每帧重建 pipeline）
+    let mut waterfall_renderer: Option<crate::WaterfallRenderer> = None;
+    let mut comet_renderer: Option<crate::CometRenderer> = None;
+
     // ★ 后台生成线程通过有界同步通道流式传回贴图（容量1，背压）★
     // sync_channel(1)：channel 满时 send 阻塞，强制后台等渲染线程消费，
     // 防止无界积压导致 CPU 内存峰值（对应"装袋期间工人等着"）
@@ -81,6 +85,8 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
             &mut hires_config,
             &mut export_pipeline,
             &mut export_frame_tx,
+            &mut waterfall_renderer,
+            &mut comet_renderer,
             &hires_result_tx,
             &mut deferred,
         );
@@ -264,6 +270,12 @@ fn handle_video_frame(
     // 瀑布流模式：使用 compute shader 全 GPU 渲染
     if params.is_waterfall_mode {
         handle_waterfall_frame(ctx, params, frame, width, height);
+        return;
+    }
+
+    // Comet 样式模式：使用 Comet GPU 渲染器
+    if let Some(style) = params.comet_style {
+        handle_comet_frame(ctx, params, frame, width, height, style);
         return;
     }
 
@@ -481,6 +493,112 @@ fn handle_waterfall_frame(
     }
 }
 
+/// Comet 样式帧渲染：使用 compute shader 全 GPU 渲染，写入 storage texture 后读回。
+fn handle_comet_frame(
+    ctx: &RenderContext,
+    params: RenderParams,
+    frame: &mut RenderFrameState,
+    width: u32,
+    height: u32,
+    style: crate::CometRenderStyle,
+) {
+    use crate::{CometRenderer, CometUniformGpu};
+
+    // 初始化 Comet 渲染器
+    if frame.comet_renderer.is_none() {
+        *frame.comet_renderer = Some(CometRenderer::new(&ctx.device));
+    }
+    let renderer = frame
+        .comet_renderer
+        .as_mut()
+        .expect("comet_renderer 应已初始化");
+
+    let kb_height = ((height as f64) * 0.12).round() as u32;
+    let kb_height = kb_height.max(20).min(height / 3);
+
+    let uniform = CometUniformGpu {
+        tick: params.comet_current_tick,
+        ppq: params.ppq as u32,
+        key_count: (params.max_key_index + 1.0) as u32,
+        frame_width: width,
+        frame_height: height,
+        kb_height,
+        style: style as u32,
+        speed: params.comet_speed.max(0.1),
+        param1: params.waterfall_speed.max(0.1),
+        param2: 0.0,
+        _padding0: 0,
+        _padding1: 0,
+    };
+
+    let notes = &params.comet_notes;
+
+    // 构建活跃键颜色数组（128 个 u32，0 表示无高亮）
+    let mut active_key_colors = [0u32; 128];
+    for note in notes {
+        let tick_u = params.comet_current_tick;
+        if note.start_tick <= tick_u && note.end_tick > tick_u {
+            let key = note.key as usize;
+            if key < 128 {
+                let c = note.color_packed;
+                let b = c & 0xFF;
+                let g = (c >> 8) & 0xFF;
+                let r = (c >> 16) & 0xFF;
+                active_key_colors[key] = b | (g << 8) | (r << 16) | (153u32 << 24);
+            }
+        }
+    }
+
+    let mut encoder = ctx
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("comet_encoder"),
+        });
+
+    renderer.render(
+        &ctx.device,
+        &ctx.queue,
+        &mut encoder,
+        style,
+        &uniform,
+        notes,
+        &active_key_colors,
+    );
+
+    let pipeline = frame
+        .export_pipeline
+        .as_mut()
+        .expect("export_pipeline 应已初始化");
+    let tx = frame
+        .export_frame_tx
+        .as_ref()
+        .expect("export_frame_tx 应已初始化");
+
+    pipeline.ensure_size(width, height);
+    while !pipeline.can_write() {
+        let data = pipeline.wait_read();
+        if tx.0.send(data).is_err() {
+            tracing::warn!("Comet 帧发送失败：Runner 通道已关闭");
+            return;
+        }
+    }
+
+    if let Some(tex) = renderer.output_texture() {
+        pipeline.copy_and_submit(encoder, tex, &ctx.queue);
+    } else {
+        tracing::warn!("Comet 输出纹理未就绪");
+        ctx.queue.submit(std::iter::once(encoder.finish()));
+        return;
+    }
+
+    while let Some(data) = pipeline.try_read() {
+        if tx.0.send(data).is_err() {
+            tracing::warn!("Comet 帧发送失败：Runner 通道已关闭");
+            return;
+        }
+    }
+}
+
 /// 处理延迟队列中的控制命令（视频导出 / 高精度贴图 / HiRes 控制）。
 fn process_deferred_commands(
     ctx: &RenderContext,
@@ -498,6 +616,8 @@ fn process_deferred_commands(
     hires_config: &mut Option<crate::HiResConfig>,
     export_pipeline: &mut Option<ExportPipeline>,
     export_frame_tx: &mut Option<FrameSender>,
+    waterfall_renderer: &mut Option<crate::WaterfallRenderer>,
+    comet_renderer: &mut Option<crate::CometRenderer>,
     hires_result_tx: &std::sync::mpsc::SyncSender<HiResStreamMsg>,
     deferred: &mut Vec<ControlCommand>,
 ) {
@@ -543,7 +663,8 @@ fn process_deferred_commands(
                     hires_config: &mut *hires_config,
                     export_pipeline: &mut *export_pipeline,
                     export_frame_tx: &mut *export_frame_tx,
-                    waterfall_renderer: &mut None,
+                    waterfall_renderer,
+                    comet_renderer,
                 };
                 handle_video_frame(ctx, *params, &mut frame, channels);
             }
@@ -701,6 +822,7 @@ fn render_offscreen_pass(
             export_pipeline,
             export_frame_tx,
             waterfall_renderer: &mut None,
+            comet_renderer: &mut None,
         };
         execute_render_pass(
             &mut encoder,

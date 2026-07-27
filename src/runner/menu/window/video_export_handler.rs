@@ -134,7 +134,8 @@ impl RunnerInner {
         let _ = std::thread::Builder::new()
             .name("video-render".into())
             .spawn(move || {
-                let is_cpu_renderer = matches!(
+                // 判断是否为全 GPU compute 样式（shader 内部已包含键盘，无需 CPU 再次合成）
+                let is_gpu_compute_style = matches!(
                     render_mode,
                     lumino_event::window::video::RenderMode::Waterfall
                         | lumino_event::window::video::RenderMode::Enhanced
@@ -143,6 +144,7 @@ impl RunnerInner {
                         | lumino_event::window::video::RenderMode::Velocities
                         | lumino_event::window::video::RenderMode::Channels
                 );
+                let is_cpu_renderer = false;
                 if let Some(document) = document {
                     run_video_export_task(
                         config,
@@ -158,6 +160,7 @@ impl RunnerInner {
                         cancel_flag,
                         input_pix_fmt,
                         is_cpu_renderer,
+                        is_gpu_compute_style,
                         waterfall_scroll_speed,
                         render_mode,
                     );
@@ -203,6 +206,7 @@ fn run_video_export_task(
     cancel_flag: Arc<AtomicBool>,
     input_pix_fmt: &'static str,
     is_cpu_renderer: bool,
+    is_gpu_compute_style: bool,
     waterfall_scroll_speed: f32,
     render_mode: lumino_event::window::video::RenderMode,
 ) {
@@ -414,13 +418,15 @@ fn run_video_export_task(
                     return true;
                 }
             } else {
-                let params = super::video_export::build_video_render_params(
+                let params = super::video_export::build_video_export_render_params(
                     width,
                     height,
                     tick,
                     &document,
                     ppq,
                     key_count,
+                    render_mode,
+                    waterfall_scroll_speed,
                     &mut visible_note_buf,
                     &mut note_instances_buf,
                 );
@@ -483,7 +489,7 @@ fn run_video_export_task(
         let p = param_queue
             .pop_front()
             .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024], 0));
-        let (should_stop, stats) = if is_cpu_renderer {
+        let (should_stop, stats) = if is_gpu_compute_style {
             composite_waterfall_and_encode_frame(
                 data,
                 &mut encoder,
@@ -604,7 +610,7 @@ fn run_video_export_task(
         let p = param_queue
             .pop_front()
             .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024], 0));
-        let (should_stop, _stats) = if is_cpu_renderer {
+        let (should_stop, _stats) = if is_gpu_compute_style {
             composite_waterfall_and_encode_frame(
                 data,
                 &mut encoder,
