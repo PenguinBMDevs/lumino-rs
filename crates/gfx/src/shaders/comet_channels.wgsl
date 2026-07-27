@@ -25,15 +25,15 @@ fn channels_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     if key < key_count && channel < channel_count {
         // 查找 (key, channel) 是否有活跃音符
         let note_count = arrayLength(&notes);
-        var active: bool = false;
-        for (var i: u32 = 0u; i < note_count && !active; i++) {
+        var key_active: bool = false;
+        for (var i: u32 = 0u; i < note_count && !key_active; i++) {
             let n = notes[i];
             if n.key == key && (n.channel % 16u) == channel && note_is_active_at(n, params.tick) {
-                active = true;
+                key_active = true;
             }
         }
 
-        if active {
+        if key_active {
             let hue = f32(channel) / f32(channel_count);
             let rgb = hsv_to_rgb(hue, 0.7, 0.9);
             color = vec4<f32>(rgb, 1.0);

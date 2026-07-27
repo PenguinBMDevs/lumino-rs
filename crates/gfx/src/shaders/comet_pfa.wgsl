@@ -27,17 +27,17 @@ fn pfa_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         // ── 左侧键盘 ──
         let key = key_count - 1u - u32(f32(y) / zoom_y);
         if key < key_count {
-            let active = active_keys[key];
-            if is_black_key(key) {
-                color = vec4<f32>(0.16, 0.16, 0.16, 1.0);
-                if active != 0u {
-                    color = vec4<f32>(0.78, 0.71, 0.59, 1.0);
-                }
-            } else {
-                color = vec4<f32>(0.86, 0.86, 0.86, 1.0);
-                if active != 0u {
-                    color = vec4<f32>(1.0, 0.86, 0.59, 1.0);
-                }
+             let key_active = active_keys[key];
+             if is_black_key(key) {
+                 color = vec4<f32>(0.16, 0.16, 0.16, 1.0);
+                 if key_active != 0u {
+                     color = vec4<f32>(0.78, 0.71, 0.59, 1.0);
+                 }
+             } else {
+                 color = vec4<f32>(0.86, 0.86, 0.86, 1.0);
+                 if key_active != 0u {
+                     color = vec4<f32>(1.0, 0.86, 0.59, 1.0);
+                 }
             }
         }
     } else {

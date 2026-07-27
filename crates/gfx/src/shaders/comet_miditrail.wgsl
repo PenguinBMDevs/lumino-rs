@@ -82,23 +82,23 @@ fn miditrail_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
          let white_key = find_white_key_index(xf, key_count, key_layout);
          let black_key = find_black_key_index(xf, local_y, key_count, key_layout);
 
-        if white_key >= 0 {
-            let key_idx = u32(white_key);
-            var base = vec4<f32>(0.92, 0.92, 0.92, 1.0);
-            let active = active_keys[key_idx];
-            if active != 0u {
-                let ac = unpack_color(active);
+         if white_key >= 0 {
+             let key_idx = u32(white_key);
+             var base = vec4<f32>(0.92, 0.92, 0.92, 1.0);
+             let key_active = active_keys[key_idx];
+             if key_active != 0u {
+                 let ac = unpack_color(key_active);
                 base = mix(base, ac, 0.6);
             }
             color = base;
         }
 
-        if black_key >= 0 {
-            let key_idx = u32(black_key);
-            var base = vec4<f32>(0.16, 0.16, 0.16, 1.0);
-            let active = active_keys[key_idx];
-            if active != 0u {
-                let ac = unpack_color(active);
+         if black_key >= 0 {
+             let key_idx = u32(black_key);
+             var base = vec4<f32>(0.16, 0.16, 0.16, 1.0);
+             let key_active = active_keys[key_idx];
+             if key_active != 0u {
+                 let ac = unpack_color(key_active);
                 base = mix(base, ac, 0.6);
             }
             color = base;
