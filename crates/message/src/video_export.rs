@@ -35,7 +35,7 @@ pub enum VideoExportAction {
     MidiPathChanged(String),
     /// 浏览 MIDI 路径
     BrowseMidi,
-    /// 渲染模式变更（"瀑布流"/"音符矩形"）
+    /// 渲染模式变更（"Lumino瀑布流"/"音符矩形"/"Enhanced"/"MIDITrail"/"PFA"/"Velocities"/"Channels"）
     RenderModeChanged(String),
     /// 瀑布流滚动速度变更（0.1~10.0，精度 0.1）
     WaterfallSpeedChanged(f32),

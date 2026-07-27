@@ -134,9 +134,14 @@ impl RunnerInner {
         let _ = std::thread::Builder::new()
             .name("video-render".into())
             .spawn(move || {
-                let is_waterfall = matches!(
+                let is_cpu_renderer = matches!(
                     render_mode,
                     lumino_event::window::video::RenderMode::Waterfall
+                        | lumino_event::window::video::RenderMode::Enhanced
+                        | lumino_event::window::video::RenderMode::MIDITrail
+                        | lumino_event::window::video::RenderMode::PFA
+                        | lumino_event::window::video::RenderMode::Velocities
+                        | lumino_event::window::video::RenderMode::Channels
                 );
                 if let Some(document) = document {
                     run_video_export_task(
@@ -152,8 +157,9 @@ impl RunnerInner {
                         height,
                         cancel_flag,
                         input_pix_fmt,
-                        is_waterfall,
+                        is_cpu_renderer,
                         waterfall_scroll_speed,
+                        render_mode,
                     );
                 } else if !midi_path.is_empty() {
                     run_streaming_video_export_task(
@@ -196,8 +202,9 @@ fn run_video_export_task(
     height: u32,
     cancel_flag: Arc<AtomicBool>,
     input_pix_fmt: &'static str,
-    is_waterfall: bool,
+    is_cpu_renderer: bool,
     waterfall_scroll_speed: f32,
+    render_mode: lumino_event::window::video::RenderMode,
 ) {
     let start = std::time::Instant::now();
 
@@ -313,27 +320,90 @@ fn run_video_export_task(
                 tick,
             ));
 
-            // 瀑布流模式：CPU 端渲染，绕过 GPU compute shader + readback 开销
+            // 瀑布流模式（CPU 端渲染）：绕过 GPU compute shader + readback 开销
             // 参考 Zenith-MIDI 和 fmr 的视频导出策略——CPU 渲染直出 BGRA，无需 GPU 管线参与。
             // waterfall.wgsl compute shader 每像素扫描所有音符(O(notes×pixels))，
             // GPU→CPU 回读(staging buffer)引入额外延迟，而 CPU 路径仅需 O(visible_notes)。
-            if is_waterfall {
-                // 直接调用 CPU 端瀑布流渲染，产生完整 BGRA 帧数据
+            if is_cpu_renderer {
                 let mut frame_data = vec![0u8; (width as usize) * (height as usize) * 4];
-                super::video_export::render_waterfall_frame(
-                    &mut frame_data,
-                    width,
-                    height,
-                    &document,
-                    tick,
-                    ppq,
-                    key_count,
-                    waterfall_scroll_speed,
-                );
+                use lumino_event::window::video::RenderMode;
+                match render_mode {
+                    RenderMode::Waterfall => {
+                        super::video_export::render_waterfall_frame(
+                            &mut frame_data,
+                            width,
+                            height,
+                            &document,
+                            tick,
+                            ppq,
+                            key_count,
+                            waterfall_scroll_speed,
+                        );
+                    }
+                    RenderMode::Enhanced => {
+                        super::comet_renderer::render_enhanced_frame(
+                            &mut frame_data,
+                            width,
+                            height,
+                            &document,
+                            tick,
+                            ppq,
+                            key_count,
+                            waterfall_scroll_speed,
+                        );
+                    }
+                    RenderMode::MIDITrail => {
+                        super::comet_renderer::render_miditrail_frame(
+                            &mut frame_data,
+                            width,
+                            height,
+                            &document,
+                            tick,
+                            ppq,
+                            key_count,
+                            waterfall_scroll_speed,
+                        );
+                    }
+                    RenderMode::PFA => {
+                        super::comet_renderer::render_pfa_frame(
+                            &mut frame_data,
+                            width,
+                            height,
+                            &document,
+                            tick,
+                            ppq,
+                            key_count,
+                            None,
+                        );
+                    }
+                    RenderMode::Velocities => {
+                        super::comet_renderer::render_velocities_frame(
+                            &mut frame_data,
+                            width,
+                            height,
+                            &document,
+                            tick,
+                            key_count,
+                        );
+                    }
+                    RenderMode::Channels => {
+                        // Comet 的 Channels 模式固定使用 16 个 MIDI 通道
+                        super::comet_renderer::render_channels_frame(
+                            &mut frame_data,
+                            width,
+                            height,
+                            &document,
+                            tick,
+                            key_count,
+                            16,
+                        );
+                    }
+                    RenderMode::NoteRectangle => unreachable!("NoteRectangle 应走 GPU 路径"),
+                }
 
                 // 帧数据直接送入编码通道，跳过渲染线程的 GPU 路径
                 if frame_tx_waterfall.send(frame_data).is_err() {
-                    tracing::error!("瀑布流帧发送失败：通道已关闭");
+                    tracing::error!("CPU 渲染帧发送失败：通道已关闭");
                     let _ = progress_tx.send((
                         "导出失败：帧通道通信错误".to_string(),
                         -1.0,
@@ -413,7 +483,7 @@ fn run_video_export_task(
         let p = param_queue
             .pop_front()
             .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024], 0));
-        let (should_stop, stats) = if is_waterfall {
+        let (should_stop, stats) = if is_cpu_renderer {
             composite_waterfall_and_encode_frame(
                 data,
                 &mut encoder,
@@ -534,7 +604,7 @@ fn run_video_export_task(
         let p = param_queue
             .pop_front()
             .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024], 0));
-        let (should_stop, _stats) = if is_waterfall {
+        let (should_stop, _stats) = if is_cpu_renderer {
             composite_waterfall_and_encode_frame(
                 data,
                 &mut encoder,

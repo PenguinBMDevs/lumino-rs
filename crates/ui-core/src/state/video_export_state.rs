@@ -89,7 +89,7 @@ impl VideoExportDialogState {
             codec: "H.264".to_string(),
             backend: "Software (CPU)".to_string(),
             quality: "中".to_string(),
-            render_mode: "瀑布流".to_string(),
+            render_mode: "Lumino瀑布流".to_string(),
             waterfall_speed: 1.0,
             width: 1920,
             height: 1080,

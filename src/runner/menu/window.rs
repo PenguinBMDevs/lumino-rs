@@ -13,6 +13,7 @@ use lumino_ui::event::window::Event as WindowEvent;
 
 mod audio_export;
 mod collaboration;
+mod comet_renderer;
 mod dialog;
 mod sync;
 mod video_export;
