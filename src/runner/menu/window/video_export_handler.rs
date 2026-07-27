@@ -11,7 +11,6 @@ use lumino_export::video::{
     FfmpegEncoder, VideoExportConfig,
     config::{Container, EncoderBackend, QualityPreset, VideoCodec},
 };
-use lumino_gfx::WaterfallNoteGpu;
 use lumino_gfx::render_thread::{ControlCommand, FrameSender, RenderCommand};
 
 use super::video_export::cli_progress::CliProgressBar;
@@ -221,6 +220,9 @@ fn run_video_export_task(
     };
 
     // 发送初始渲染命令（StartVideoExport），携带帧缓冲回收通道
+    // clone frame_tx：send_initial_render_commands 会消费原始 frame_tx（移至渲染线程），
+    // 瀑布流 CPU 路径需在 enqueue_frame 中保留发送能力。
+    let frame_tx_waterfall = frame_tx.clone();
     if send_initial_render_commands(
         &cmd_sender,
         width,
@@ -311,60 +313,29 @@ fn run_video_export_task(
                 tick,
             ));
 
-            // 瀑布流模式：全 GPU 渲染，构建 waterfall 音符数据
+            // 瀑布流模式：CPU 端渲染，绕过 GPU compute shader + readback 开销
+            // 参考 Zenith-MIDI 和 fmr 的视频导出策略——CPU 渲染直出 BGRA，无需 GPU 管线参与。
+            // waterfall.wgsl compute shader 每像素扫描所有音符(O(notes×pixels))，
+            // GPU→CPU 回读(staging buffer)引入额外延迟，而 CPU 路径仅需 O(visible_notes)。
             if is_waterfall {
-                let mut params = super::video_export::build_video_render_params(
+                // 直接调用 CPU 端瀑布流渲染，产生完整 BGRA 帧数据
+                let mut frame_data = vec![0u8; (width as usize) * (height as usize) * 4];
+                super::video_export::render_waterfall_frame(
+                    &mut frame_data,
                     width,
                     height,
-                    tick,
                     &document,
+                    tick,
                     ppq,
                     key_count,
-                    &mut visible_note_buf,
-                    &mut note_instances_buf,
+                    waterfall_scroll_speed,
                 );
-                params.note_instances = Vec::new();
-                params.is_waterfall_mode = true;
-                params.waterfall_speed = waterfall_scroll_speed;
-                params.waterfall_current_tick = tick;
 
-                // 构建瀑布流 GPU 音符数据
-                let ticks_per_measure = ppq * 4;
-                let speed = waterfall_scroll_speed.max(0.1);
-                let visible_measure_count = (4.0f32 / speed).round().max(1.0) as u32;
-                let viewport_tick_span = (ticks_per_measure * visible_measure_count).max(1);
-                let tick_end = tick + viewport_tick_span;
-
-                let mut waterfall_notes: Vec<WaterfallNoteGpu> = Vec::new();
-                for (track_idx, track_notes) in document.notes.iter().enumerate() {
-                    let color_f = lumino_gfx::ARRANGEMENT_PALETTE
-                        [track_idx % lumino_gfx::ARRANGEMENT_PALETTE.len()];
-                    let b = (color_f[2] * 255.0).round() as u32;
-                    let g = (color_f[1] * 255.0).round() as u32;
-                    let r = (color_f[0] * 255.0).round() as u32;
-                    let color_packed = b | (g << 8) | (r << 16) | (200u32 << 24);
-                    for n in track_notes {
-                        if n.end_tick > tick && n.start_tick < tick_end {
-                            waterfall_notes.push(WaterfallNoteGpu {
-                                key: n.key as u32,
-                                start_tick: n.start_tick,
-                                end_tick: n.end_tick,
-                                color_packed,
-                            });
-                        }
-                    }
-                }
-                params.waterfall_notes = waterfall_notes;
-
-                if cmd_sender
-                    .send(RenderCommand::Control(ControlCommand::RenderVideoFrame {
-                        params: Box::new(params),
-                    }))
-                    .is_err()
-                {
-                    tracing::error!("发送 RenderVideoFrame 命令失败");
+                // 帧数据直接送入编码通道，跳过渲染线程的 GPU 路径
+                if frame_tx_waterfall.send(frame_data).is_err() {
+                    tracing::error!("瀑布流帧发送失败：通道已关闭");
                     let _ = progress_tx.send((
-                        "导出失败：渲染线程通信错误".to_string(),
+                        "导出失败：帧通道通信错误".to_string(),
                         -1.0,
                         0,
                         0.0,
