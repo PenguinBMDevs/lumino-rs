@@ -46,6 +46,40 @@ pub fn create_render_pipeline(
     bind_group_layout: &wgpu::BindGroupLayout,
     shader: &wgpu::ShaderModule,
 ) -> wgpu::RenderPipeline {
+    create_instanced_pipeline(
+        device,
+        bind_group_layout,
+        shader,
+        "miditrail_render_pipeline",
+        true,
+    )
+}
+
+/// 创建音符渲染管线（不写入深度缓冲，配合 Painter's algorithm 与琴键最后绘制）。
+///
+/// 参考 Comet MIDITrail：音符先绘制且不写深度，琴键后绘制使用深度测试，
+/// 从而保证琴键始终覆盖在音符之上。
+pub fn create_note_render_pipeline(
+    device: &wgpu::Device,
+    bind_group_layout: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
+) -> wgpu::RenderPipeline {
+    create_instanced_pipeline(
+        device,
+        bind_group_layout,
+        shader,
+        "miditrail_note_render_pipeline",
+        false,
+    )
+}
+
+fn create_instanced_pipeline(
+    device: &wgpu::Device,
+    bind_group_layout: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
+    label: &str,
+    depth_write: bool,
+) -> wgpu::RenderPipeline {
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("miditrail_pipeline_layout"),
         bind_group_layouts: &[bind_group_layout],
@@ -53,7 +87,7 @@ pub fn create_render_pipeline(
     });
 
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("miditrail_render_pipeline"),
+        label: Some(label),
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
             module: shader,
@@ -132,7 +166,7 @@ pub fn create_render_pipeline(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: true,
+            depth_write_enabled: depth_write,
             depth_compare: wgpu::CompareFunction::LessEqual,
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),

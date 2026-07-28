@@ -1,7 +1,8 @@
 //! Miditrail 渲染通道执行
 //!
 //! 负责把音符、Aura 与琴键实例绘制到同一个离屏 render pass 中。
-//! 绘制顺序：音符 → Aura → 琴键，保证琴键在最顶层并遮挡部分光环。
+//! 绘制顺序：音符（不写深度）→ Aura（附加混合，不写深度）→ 琴键（写深度）。
+//! 参考 Comet MIDITrail：音符先绘制、琴键后绘制，确保琴键始终在最顶层。
 
 use super::{MiditrailAuraInstanceGpu, MiditrailInstanceGpu, MiditrailRenderer};
 
@@ -61,19 +62,20 @@ impl MiditrailRenderer {
                 occlusion_query_set: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_pipeline(&self.note_pipeline);
             render_pass.set_bind_group(0, bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, instance_buf.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            // 1. 绘制音符
+            // 1. 绘制音符（不写深度缓冲，参考 Comet MIDITrail 的 Painter's algorithm，
+            //    琴键后绘制并覆盖音符）
             render_pass.draw_indexed(0..Self::CUBE_INDICES.len() as u32, 0, 0..note_count);
 
             // 2. 绘制 Aura（附加混合，不写入深度）
             self.draw_aura(&mut render_pass, aura_instances);
 
-            // 3. 绘制琴键，遮挡部分光环
+            // 3. 绘制琴键，覆盖音符与光环
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));

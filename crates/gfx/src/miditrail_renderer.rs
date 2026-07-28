@@ -23,8 +23,8 @@ use instances::{
 use math::build_camera_uniform;
 use pipeline::{
     create_aura_buffers, create_aura_render_pipeline, create_aura_sampler,
-    create_bind_group_layout, create_buffers, create_render_pipeline, create_shader_module,
-    generate_aura_ring_data,
+    create_bind_group_layout, create_buffers, create_note_render_pipeline, create_render_pipeline,
+    create_shader_module, generate_aura_ring_data,
 };
 
 const KEY_PRESS_SPEED_DOWN: f32 = 15.0;
@@ -36,6 +36,7 @@ const AURA_TEXTURE_SIZE: u32 = 128;
 /// 使用实例化立方体渲染键盘与音符，结果写入 `Rgba8Unorm` 离屏纹理。
 pub struct MiditrailRenderer {
     render_pipeline: wgpu::RenderPipeline,
+    note_pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: Option<wgpu::BindGroup>,
 
@@ -108,6 +109,7 @@ impl MiditrailRenderer {
         let aura_shader = create_shader_module(device, Self::AURA_SHADER);
         let bind_group_layout = create_bind_group_layout(device);
         let render_pipeline = create_render_pipeline(device, &bind_group_layout, &shader);
+        let note_pipeline = create_note_render_pipeline(device, &bind_group_layout, &shader);
         let aura_pipeline = create_aura_render_pipeline(device, &bind_group_layout, &aura_shader);
         let (uniform_buffer, vertex_buffer, index_buffer) =
             create_buffers(device, &Self::CUBE_VERTICES, &Self::CUBE_INDICES);
@@ -117,6 +119,7 @@ impl MiditrailRenderer {
 
         Self {
             render_pipeline,
+            note_pipeline,
             bind_group_layout,
             bind_group: None,
             uniform_buffer,

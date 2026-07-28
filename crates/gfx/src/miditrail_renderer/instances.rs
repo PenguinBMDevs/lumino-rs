@@ -114,6 +114,7 @@ pub fn build_note_instances(
     let note_y = NOTE_Y;
     let note_z_offset = NOTE_Z_OFFSET;
 
+    let mut entries = Vec::with_capacity(notes.len());
     for note in notes {
         if !note.is_visible_at(tick) {
             continue;
@@ -140,26 +141,26 @@ pub fn build_note_instances(
         let scale = [width * 0.92, note_height, z_length];
         let translation = [left + width * 0.04, note_y, z_center - z_length * 0.5];
 
-        out.push(MiditrailInstanceGpu::new(
-            translation,
-            scale,
-            note.color_packed,
-            false,
-            0.0,
-            0.0,
+        entries.push((
+            note.key,
+            z_start,
+            MiditrailInstanceGpu::new(translation, scale, note.color_packed, false, 0.0, 0.0),
         ));
     }
 
-    // 按音符前缘深度从远到近排序（far-to-near），避免重叠面因绘制顺序
-    // 变化产生颜色闪烁（painter's algorithm + depth test 稳定化）。
-    // 深度相同时使用 x 位置作为稳定次要键。
-    out.sort_by(|a, b| {
-        let a_front = a.translation[2] + a.scale[2];
-        let b_front = b.translation[2] + b.scale[2];
-        a_front
-            .total_cmp(&b_front)
-            .then_with(|| a.translation[0].total_cmp(&b.translation[0]))
+    // 按 Comet MIDITrail 的音符绘制顺序排序：
+    // 1. 白键音符先绘制，黑键音符后绘制（确保黑键音符覆盖白键音符）；
+    // 2. 同颜色组内按前缘深度 far-to-near 排序，使靠近键盘的音符最后绘制。
+    // 这样画家算法 + 音符不写深度，可消除重叠部分的颜色闪烁。
+    entries.sort_by(|a, b| {
+        let a_black = is_black_key(a.0);
+        let b_black = is_black_key(b.0);
+        a_black
+            .cmp(&b_black)
+            .then_with(|| a.1.total_cmp(&b.1))
+            .then_with(|| a.0.cmp(&b.0))
     });
+    out.extend(entries.into_iter().map(|(_, _, instance)| instance));
 }
 
 /// 构建琴键实例。
@@ -252,4 +253,3 @@ pub fn build_aura_instances(
 
 #[cfg(test)]
 mod tests;
-

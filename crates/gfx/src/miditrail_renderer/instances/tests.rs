@@ -170,3 +170,54 @@ fn test_black_key_press_depth_limited() {
         "黑键按下深度应最多为高出白键部分的 0.5"
     );
 }
+
+#[test]
+fn test_note_instances_grouped_by_key_color() {
+    let mut positions = Vec::new();
+    let mut widths = Vec::new();
+    let mut last = 0u32;
+    update_key_positions(128, &mut last, &mut positions, &mut widths);
+
+    let uniform = MiditrailUniformGpu::default();
+    // 黑键音符更远，白键音符更近；按 Comet 顺序应白键先绘制、黑键后绘制。
+    let notes = vec![
+        MiditrailNoteGpu {
+            key: 61, // C#，黑键
+            start_tick: 1000,
+            end_tick: 2000,
+            color_packed: 0xFFFF0000,
+            track_idx: 0,
+            velocity: 100,
+            channel: 0,
+            _padding: 0,
+        },
+        MiditrailNoteGpu {
+            key: 60, // C，白键
+            start_tick: 0,
+            end_tick: 1000,
+            color_packed: 0x00FF0000,
+            track_idx: 0,
+            velocity: 100,
+            channel: 0,
+            _padding: 0,
+        },
+    ];
+    let mut out = Vec::new();
+    build_note_instances(&uniform, &notes, &positions, &widths, &mut out);
+    assert_eq!(out.len(), 2);
+
+    let white_left = positions[60] + widths[60] * 0.04;
+    let black_left = positions[61] + widths[61] * 0.04;
+    eprintln!("white_left={}, black_left={}", white_left, black_left);
+    for (i, inst) in out.iter().enumerate() {
+        eprintln!("out[{}].translation[0] = {}", i, inst.translation[0]);
+    }
+    assert!(
+        (out[0].translation[0] - white_left).abs() < 1e-5,
+        "白键音符应先绘制"
+    );
+    assert!(
+        (out[1].translation[0] - black_left).abs() < 1e-5,
+        "黑键音符应后绘制，覆盖白键音符"
+    );
+}
