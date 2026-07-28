@@ -123,10 +123,8 @@ mod tests {
     fn test_constants() {
         use crate::constants::rendering;
 
-        // 验证初始容量已增大
-        assert!(rendering::INITIAL_INSTANCE_CAPACITY >= 65536);
-        // 验证扩容因子
-        assert_eq!(rendering::BUFFER_GROWTH_FACTOR, 2);
+        const { assert!(rendering::INITIAL_INSTANCE_CAPACITY >= 65536) };
+        const { assert!(rendering::BUFFER_GROWTH_FACTOR == 2) };
     }
 
     /// 测试 DrawIndirectArgs 默认值

@@ -8,6 +8,7 @@ use crate::root::Root;
 use crate::root::handlers::MessageHandler;
 
 /// 设置消息处理器
+#[derive(Default)]
 pub struct SettingsHandler;
 
 impl SettingsHandler {

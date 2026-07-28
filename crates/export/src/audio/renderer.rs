@@ -38,7 +38,7 @@ impl<'a> BatchRenderer<'a> {
         BatchRenderer {
             channel_group,
             sample_rate: params.sample_rate,
-            channel_count: params.channels.count() as u16,
+            channel_count: params.channels.count(),
             vec_pool: Vec::new(),
         }
     }

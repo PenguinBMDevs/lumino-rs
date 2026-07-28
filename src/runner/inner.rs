@@ -396,7 +396,7 @@ impl RunnerInner {
 
     /// 根据 PPQ 与自定义拍号计算自定义精度的 tick 数（纯计算，便于单独测试）
     fn compute_custom_precision_ticks(ppq: f32, numerator: f32, denominator: f32) -> f32 {
-        (ppq as f32) * 4.0 * numerator / denominator
+        ppq * 4.0 * numerator / denominator
     }
 
     /// 检测工具栏切换的自动滚动模式是否与已保存配置不同（纯读取比较）

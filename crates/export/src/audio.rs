@@ -412,7 +412,7 @@ impl<'a> MidiDocEventStream<'a> {
                     param2: note.velocity as u16,
                 }
             };
-            if best.as_ref().map_or(true, |(p, _)| priority < *p) {
+            if best.as_ref().is_none_or(|(p, _)| priority < *p) {
                 best = Some((priority, event));
             }
         }
@@ -456,10 +456,9 @@ impl<'a> MidiDocEventStream<'a> {
                         },
                     )),
                     _ => None,
-                } {
-                    if best.as_ref().map_or(true, |(p, _)| priority < *p) {
-                        best = Some((priority, event));
-                    }
+                } && best.as_ref().is_none_or(|(p, _)| priority < *p)
+                {
+                    best = Some((priority, event));
                 }
             }
         }

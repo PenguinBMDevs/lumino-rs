@@ -1,11 +1,11 @@
 //! RulerRenderer 集成测试
 
-use lumino_gfx::{RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform};
+use lumino_gfx::{RulerPrepareParams, RulerTickInstance, RulerViewportUniform};
 
 /// 测试 RulerViewportUniform 内存布局
 #[test]
 fn test_ruler_viewport_uniform_layout() {
-    let uniform = RulerViewportUniform::from_params(&RulerPrepareParams {
+    let _uniform = RulerViewportUniform::from_params(&RulerPrepareParams {
         viewport_size: (1920.0, 1080.0),
         ruler_height: 30.0,
         keyboard_width: 60.0,
@@ -17,7 +17,7 @@ fn test_ruler_viewport_uniform_layout() {
 
     // 验证大小（实际大小可能因对齐而变化）
     let size = std::mem::size_of::<RulerViewportUniform>();
-    assert!(size >= 40 && size <= 48, "Unexpected size: {}", size);
+    assert!((40..=48).contains(&size), "Unexpected size: {}", size);
 
     // 验证对齐
     assert_eq!(std::mem::align_of::<RulerViewportUniform>(), 4);
@@ -26,7 +26,7 @@ fn test_ruler_viewport_uniform_layout() {
 /// 测试 RulerTickInstance 内存布局
 #[test]
 fn test_ruler_tick_instance_layout() {
-    let instance = RulerTickInstance::new(
+    let _instance = RulerTickInstance::new(
         [100.0, 0.0],
         [2.0, 30.0],
         [0.3, 0.3, 0.3, 1.0],
@@ -45,8 +45,8 @@ fn test_ruler_tick_instance_layout() {
 #[test]
 fn test_ruler_tick_generation() {
     let viewport_width = 1920.0;
-    let keyboard_width = 60.0;
-    let ruler_height = 30.0;
+    let _keyboard_width = 60.0;
+    let _ruler_height = 30.0;
     let scroll_x = 0.0;
     let zoom_x = 0.1;
     let ticks_per_measure = 1920;
@@ -172,9 +172,9 @@ fn test_ruler_tick_generation_performance() {
 #[test]
 fn test_ruler_tick_count_at_different_zoom_levels() {
     let viewport_width = 1920.0;
-    let keyboard_width = 60.0;
+    let _keyboard_width = 60.0;
     let ticks_per_measure = 1920;
-    let ticks_per_beat = 480;
+    let _ticks_per_beat = 480;
 
     let test_cases = [
         (0.01, 10.0), // 很远的缩放
@@ -183,7 +183,7 @@ fn test_ruler_tick_count_at_different_zoom_levels() {
         (0.5, 500.0), // 很大的缩放
     ];
 
-    for (zoom_x, expected_measures) in test_cases.iter() {
+    for (zoom_x, _expected_measures) in test_cases.iter() {
         let visible_tick_end = (viewport_width) / zoom_x;
         let measure_count = (visible_tick_end / ticks_per_measure as f32).ceil() as u32;
 

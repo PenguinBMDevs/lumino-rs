@@ -51,7 +51,7 @@ impl<'a> MidiEventProcessor<'a> {
             tick_conv,
             sink,
             sample_rate: params.sample_rate,
-            channel_count: params.channels.count() as u16,
+            channel_count: params.channels.count(),
             vec_pool: Vec::new(),
         }
     }

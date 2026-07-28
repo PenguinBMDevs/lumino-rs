@@ -147,22 +147,21 @@ fn apply_move_ops_to_clones(
                     modified += 1;
                 }
             }
-            if let Some(track_notes) = track_notes.get_mut(&track_id) {
-                if let Some(note) = track_notes.get_mut(i) {
-                    let new_tick = (note.tick + dt).max(0.0);
-                    let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u16;
-                    note.tick = new_tick;
-                    note.key = new_key;
-                }
+            if let Some(track_notes) = track_notes.get_mut(&track_id)
+                && let Some(note) = track_notes.get_mut(i)
+            {
+                let new_tick = (note.tick + dt).max(0.0);
+                let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u16;
+                note.tick = new_tick;
+                note.key = new_key;
             }
 
             processed += 1;
             if processed >= next_log_threshold {
-                let percent = if total_indices > 0 {
-                    processed * 100 / total_indices
-                } else {
-                    100
-                };
+                let percent = processed
+                    .saturating_mul(100)
+                    .checked_div(total_indices)
+                    .unwrap_or(100);
                 tracing::info!(
                     "异步提交进度: {}% ({} / {})",
                     percent,

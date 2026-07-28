@@ -1,38 +1,32 @@
 //! Eraser 工具：拖拽矩形擦除音符
 
-use iced_core::{Point, Rectangle, mouse};
+use iced_core::{Point, mouse};
 use iced_widget::canvas;
-
-use lumino_core::NotePrecision;
 
 use crate::Message;
 use crate::arrangement::ArrangementViewport;
 use crate::arrangement::interaction::auto_scroll::auto_scroll_on_drag;
 use crate::arrangement::interaction::geometry::{arrange_snapped_bounds, clamped_local, local_pos};
-use crate::arrangement::interaction::{ArrangementInteractionState, InteractionOutput};
+use crate::arrangement::interaction::{
+    ArrangementInteractionContext, ArrangementInteractionState, InteractionOutput,
+};
 
 /// Eraser 工具事件入口。
-#[allow(clippy::too_many_arguments)]
 pub fn handle_eraser_event(
     state: &mut ArrangementInteractionState,
-    event: &canvas::Event,
-    bounds: Rectangle,
-    cursor: mouse::Cursor,
     viewport: &mut ArrangementViewport,
-    track_count: usize,
-    ppq: u16,
-    precision: NotePrecision,
+    ctx: &ArrangementInteractionContext<'_>,
 ) -> InteractionOutput {
     let mut output = InteractionOutput::new();
 
-    match event {
+    match ctx.event {
         canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
             state.primary_down = true;
-            if let Some(pos) = cursor.position() {
-                if !bounds.contains(pos) {
+            if let Some(pos) = ctx.cursor.position() {
+                if !ctx.bounds.contains(pos) {
                     return output;
                 }
-                let local = local_pos(pos, bounds);
+                let local = local_pos(pos, ctx.bounds);
                 let start_tick = viewport.x_to_tick(local.x + viewport.scroll_x);
                 let start_track_f = (local.y + viewport.scroll_y) / viewport.lane_height();
                 state.eraser_drag = Some(((start_tick, start_track_f), local));
@@ -40,9 +34,9 @@ pub fn handle_eraser_event(
         }
         canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
             if let Some((start_music, _)) = state.eraser_drag
-                && let Some(pos) = cursor.position()
+                && let Some(pos) = ctx.cursor.position()
             {
-                let local = clamped_local(pos, bounds);
+                let local = clamped_local(pos, ctx.bounds);
                 state.eraser_drag = Some((start_music, local));
 
                 // 计算拖拽中的框选矩形（GPU 渲染用）
@@ -55,8 +49,13 @@ pub fn handle_eraser_event(
                     (v.x * v.x + v.y * v.y).sqrt()
                 };
                 if dist >= 3.0 {
-                    let (_, _, _, _, t_start, t_end, track_lo, track_hi) =
-                        arrange_snapped_bounds(start_pixel, local, viewport, precision, ppq);
+                    let (_, _, _, _, t_start, t_end, track_lo, track_hi) = arrange_snapped_bounds(
+                        start_pixel,
+                        local,
+                        viewport,
+                        ctx.precision,
+                        ctx.ppq,
+                    );
                     output.push(Message::ArrangementDragSelectionRect(Some((
                         t_start, t_end, track_lo, track_hi,
                     ))));
@@ -66,9 +65,9 @@ pub fn handle_eraser_event(
 
                 auto_scroll_on_drag(
                     pos,
-                    bounds,
+                    ctx.bounds,
                     viewport,
-                    track_count,
+                    ctx.track_count,
                     &mut state.last_auto_scroll_time,
                     &mut output,
                 );
@@ -87,8 +86,13 @@ pub fn handle_eraser_event(
                     (v.x * v.x + v.y * v.y).sqrt()
                 };
                 if dist >= 3.0 {
-                    let (_, _, _, _, t_start, t_end, track_lo, track_hi) =
-                        arrange_snapped_bounds(start_pixel, end_local, viewport, precision, ppq);
+                    let (_, _, _, _, t_start, t_end, track_lo, track_hi) = arrange_snapped_bounds(
+                        start_pixel,
+                        end_local,
+                        viewport,
+                        ctx.precision,
+                        ctx.ppq,
+                    );
                     output.push(Message::ArrangementErase {
                         tick_start: t_start,
                         tick_end: t_end,

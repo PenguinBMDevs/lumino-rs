@@ -442,7 +442,7 @@ mod tests {
 
         for i in 0..20 {
             unsafe {
-                buffer.write_buffer().push(i as i32);
+                buffer.write_buffer().push(i);
             }
             buffer.swap();
             unsafe {

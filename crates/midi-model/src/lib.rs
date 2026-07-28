@@ -10,7 +10,6 @@
 
 pub mod compact;
 pub mod document;
-pub mod document_scan;
 pub mod error;
 pub mod note_event;
 pub mod note_info;

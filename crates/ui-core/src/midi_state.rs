@@ -27,3 +27,9 @@ impl MidiConnectionState {
         }
     }
 }
+
+impl Default for MidiConnectionState {
+    fn default() -> Self {
+        Self::new()
+    }
+}

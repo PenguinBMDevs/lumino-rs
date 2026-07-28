@@ -12,7 +12,9 @@ use lumino_core::{NotePrecision, Tool};
 
 use crate::arrangement::ArrangementViewport;
 use crate::arrangement::interaction::curve::curve_preview_note;
-use crate::arrangement::interaction::{ArrangementInteractionState, handle_event};
+use crate::arrangement::interaction::{
+    ArrangementInteractionContext, ArrangementInteractionState, handle_event,
+};
 use crate::{Message, Renderer, Theme};
 
 /// 工程走带点击 Canvas
@@ -174,21 +176,20 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
 
         // viewport 可变副本：交互可能修改滚动（自动滚动预览）
         let mut viewport = self.viewport.clone();
-        let messages = handle_event(
-            state,
+        let ctx = ArrangementInteractionContext {
             event,
             bounds,
             cursor,
-            &mut viewport,
-            self.current_tool,
-            self.track_count,
-            self.arr_sel_rect,
-            &self.selected_notes,
-            self.ppq,
-            self.precision,
-            self.ctrl_pressed,
-            self.shift_pressed,
-        );
+            current_tool: self.current_tool,
+            track_count: self.track_count,
+            arr_sel_rect: self.arr_sel_rect,
+            selected_notes: &self.selected_notes,
+            ppq: self.ppq,
+            precision: self.precision,
+            ctrl_pressed: self.ctrl_pressed,
+            shift_pressed: self.shift_pressed,
+        };
+        let messages = handle_event(state, &mut viewport, &ctx);
 
         match messages.len() {
             0 => None,
@@ -253,7 +254,6 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn draw_ghost_note(
     frame: &mut Frame<Renderer>,
     viewport: &ArrangementViewport,

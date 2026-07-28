@@ -35,9 +35,9 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
             return None;
         }
 
-        let cursor_pos = match cursor.position() {
-            Some(pos) => Point::new(pos.x - bounds.x, pos.y - bounds.y),
-            None => return None,
+        let cursor_pos = {
+            let pos = cursor.position()?;
+            Point::new(pos.x - bounds.x, pos.y - bounds.y)
         };
 
         match event {

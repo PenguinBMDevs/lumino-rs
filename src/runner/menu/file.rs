@@ -277,6 +277,6 @@ fn format_created_at_from_path(path: &std::path::Path) -> Option<String> {
     let secs = since_epoch.as_secs() as i64;
     let datetime = chrono::DateTime::from_timestamp(secs, 0)
         .map(|dt| dt.with_timezone(&chrono::Local))
-        .unwrap_or_else(|| chrono::Local::now());
+        .unwrap_or_else(chrono::Local::now);
     Some(datetime.format("%Y-%m-%d %H:%M:%S").to_string())
 }

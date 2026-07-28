@@ -26,3 +26,9 @@ impl PlaybackState {
         }
     }
 }
+
+impl Default for PlaybackState {
+    fn default() -> Self {
+        Self::new()
+    }
+}

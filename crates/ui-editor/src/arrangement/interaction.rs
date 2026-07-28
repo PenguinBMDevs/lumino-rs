@@ -66,91 +66,70 @@ impl ArrangementInteractionState {
 /// 一次事件处理可能产生的多条消息。
 pub type InteractionOutput = Vec<Message>;
 
+/// 工程走带交互上下文。
+///
+/// 聚合 `handle_event` 及其子函数所需的事件、视图、工具与修饰键等只读参数，
+/// 将过长的参数列表收拢为单一结构体，避免 clippy `too_many_arguments` 警告。
+#[derive(Debug)]
+pub struct ArrangementInteractionContext<'a> {
+    /// 当前事件
+    pub event: &'a canvas::Event,
+    /// Canvas 屏幕区域
+    pub bounds: Rectangle,
+    /// 鼠标光标状态
+    pub cursor: mouse::Cursor,
+    /// 当前工具
+    pub current_tool: Tool,
+    /// 当前总轨道数
+    pub track_count: usize,
+    /// 当前已提交的选择矩形（来自 `ArrangementView`）
+    pub arr_sel_rect: Option<(f64, f64, usize, usize)>,
+    /// 当前选中的音符，用于生成 ghost 预览（start_tick, end_tick, track, key）
+    pub selected_notes: &'a [(f64, f64, usize, u8)],
+    /// 每四分音符 tick 数
+    pub ppq: u16,
+    /// 网格对齐精度
+    pub precision: NotePrecision,
+    /// Ctrl 键按下状态
+    pub ctrl_pressed: bool,
+    /// Shift 键按下状态
+    pub shift_pressed: bool,
+}
+
 /// 处理单个 canvas 事件，返回需要发布给 `Root` 的消息。
 ///
 /// 参数说明：
 /// - `state`：canvas 持久状态
-/// - `event`：当前事件
-/// - `bounds`：canvas 屏幕区域
-/// - `cursor`：鼠标光标状态
-/// - `viewport`：走带视口
-/// - `current_tool`：当前工具
-/// - `track_count`：当前总轨道数
-/// - `arr_sel_rect`：当前已提交的选择矩形（来自 `ArrangementView`）
-/// - `selected_notes`：当前选中的音符，用于生成 ghost 预览（start_tick, end_tick, track, key）
-/// - `ppq`：每四分音符 tick 数
-/// - `precision`：网格对齐精度
-/// - `ctrl_pressed` / `shift_pressed`：修饰键状态
-#[allow(clippy::too_many_arguments)]
+/// - `viewport`：走带视口（可能被自动滚动修改）
+/// - `ctx`：当前事件与只读上下文
 pub fn handle_event(
     state: &mut ArrangementInteractionState,
-    event: &canvas::Event,
-    bounds: Rectangle,
-    cursor: mouse::Cursor,
     viewport: &mut ArrangementViewport,
-    current_tool: Tool,
-    track_count: usize,
-    arr_sel_rect: Option<(f64, f64, usize, usize)>,
-    selected_notes: &[(f64, f64, usize, u8)],
-    ppq: u16,
-    precision: NotePrecision,
-    ctrl_pressed: bool,
-    shift_pressed: bool,
+    ctx: &ArrangementInteractionContext<'_>,
 ) -> InteractionOutput {
     puffin::profile_function!();
 
     let mut output = InteractionOutput::new();
 
     // 更新鼠标位置与 hover 状态
-    if let Some(pos) = cursor.position() {
-        state.last_local_pos = Some(geometry::local_pos(pos, bounds));
+    if let Some(pos) = ctx.cursor.position() {
+        state.last_local_pos = Some(geometry::local_pos(pos, ctx.bounds));
         state.hover_inside_selection = geometry::inside_selection_rect(
             state.last_local_pos.unwrap_or(Point::new(0.0, 0.0)),
-            arr_sel_rect,
+            ctx.arr_sel_rect,
             viewport,
         );
     }
 
-    match current_tool {
+    match ctx.current_tool {
         Tool::Pointer => {
-            output.extend(pointer::handle_pointer_event(
-                state,
-                event,
-                bounds,
-                cursor,
-                viewport,
-                track_count,
-                arr_sel_rect,
-                selected_notes,
-                ppq,
-                precision,
-                ctrl_pressed,
-                shift_pressed,
-            ));
+            output.extend(pointer::handle_pointer_event(state, viewport, ctx));
         }
         Tool::Eraser => {
-            output.extend(eraser::handle_eraser_event(
-                state,
-                event,
-                bounds,
-                cursor,
-                viewport,
-                track_count,
-                ppq,
-                precision,
-            ));
+            output.extend(eraser::handle_eraser_event(state, viewport, ctx));
         }
         Tool::Curve => {
-            output.extend(curve::handle_curve_event(
-                state,
-                event,
-                bounds,
-                cursor,
-                viewport,
-                track_count,
-                ppq,
-                precision,
-            ));
+            output.extend(curve::handle_curve_event(state, viewport, ctx));
         }
         _ => {}
     }

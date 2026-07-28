@@ -29,10 +29,10 @@ impl EditorData {
         let current_track = self.current_track;
         if let Some(track_notes) = self.track_notes.get_mut(&current_track) {
             for &i in indices {
-                if let Some(src) = self.notes.get(i) {
-                    if let Some(dst) = track_notes.get_mut(i) {
-                        dst.clone_from(src);
-                    }
+                if let Some(src) = self.notes.get(i)
+                    && let Some(dst) = track_notes.get_mut(i)
+                {
+                    dst.clone_from(src);
                 }
             }
         } else if !self.notes.is_empty() {
@@ -71,15 +71,15 @@ impl EditorData {
             if !selected || i >= self.notes.len() {
                 continue;
             }
-            if let Some(note) = self.notes.get_mut(i) {
-                if drag_state.apply_to_note(note, max_key) {
-                    modified += 1;
-                }
+            if let Some(note) = self.notes.get_mut(i)
+                && drag_state.apply_to_note(note, max_key)
+            {
+                modified += 1;
             }
-            if let Some(track_notes) = self.track_notes.get_mut(&current_track) {
-                if let Some(note) = track_notes.get_mut(i) {
-                    drag_state.apply_to_note(note, max_key);
-                }
+            if let Some(track_notes) = self.track_notes.get_mut(&current_track)
+                && let Some(note) = track_notes.get_mut(i)
+            {
+                drag_state.apply_to_note(note, max_key);
             }
         }
 

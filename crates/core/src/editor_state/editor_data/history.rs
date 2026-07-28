@@ -205,18 +205,18 @@ impl EditorData {
                     }
                     let orig_tick = op.original_ticks[idx];
                     let orig_key = op.original_keys[idx];
-                    if let Some(note) = self.notes.get_mut(i) {
-                        if (note.tick - orig_tick).abs() > f32::EPSILON || note.key != orig_key {
-                            note.tick = orig_tick;
-                            note.key = orig_key;
-                            modified += 1;
-                        }
+                    if let Some(note) = self.notes.get_mut(i)
+                        && ((note.tick - orig_tick).abs() > f32::EPSILON || note.key != orig_key)
+                    {
+                        note.tick = orig_tick;
+                        note.key = orig_key;
+                        modified += 1;
                     }
-                    if let Some(track_notes) = self.track_notes.get_mut(&track_id) {
-                        if let Some(note) = track_notes.get_mut(i) {
-                            note.tick = orig_tick;
-                            note.key = orig_key;
-                        }
+                    if let Some(track_notes) = self.track_notes.get_mut(&track_id)
+                        && let Some(note) = track_notes.get_mut(i)
+                    {
+                        note.tick = orig_tick;
+                        note.key = orig_key;
                     }
                 }
             } else {
@@ -232,13 +232,13 @@ impl EditorData {
                             modified += 1;
                         }
                     }
-                    if let Some(track_notes) = self.track_notes.get_mut(&track_id) {
-                        if let Some(note) = track_notes.get_mut(i) {
-                            let new_tick = (note.tick + dt).max(0.0);
-                            let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u16;
-                            note.tick = new_tick;
-                            note.key = new_key;
-                        }
+                    if let Some(track_notes) = self.track_notes.get_mut(&track_id)
+                        && let Some(note) = track_notes.get_mut(i)
+                    {
+                        let new_tick = (note.tick + dt).max(0.0);
+                        let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u16;
+                        note.tick = new_tick;
+                        note.key = new_key;
                     }
                 }
             }

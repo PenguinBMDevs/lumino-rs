@@ -43,13 +43,13 @@ impl History {
         // pop 同 chain 的快照，记录 chain 中最早（最后被 pop）的 snapshot
         let mut earliest_in_chain: Option<HistoryEntry> = None;
         while let Some(top) = self.undo_stack.back() {
-            if let HistoryEntry::Snapshot(s) = top {
-                if Self::snapshot_in_chain(s, &chain_groups) {
-                    let snap = self.undo_stack.pop_back()?;
-                    earliest_in_chain = Some(snap.clone());
-                    self.redo_stack.push_back(snap);
-                    continue;
-                }
+            if let HistoryEntry::Snapshot(s) = top
+                && Self::snapshot_in_chain(s, &chain_groups)
+            {
+                let snap = self.undo_stack.pop_back()?;
+                earliest_in_chain = Some(snap.clone());
+                self.redo_stack.push_back(snap);
+                continue;
             }
             break;
         }
@@ -123,6 +123,6 @@ impl History {
         chain_groups.contains(&snap.group_id)
             || snap
                 .parent_group_id
-                .map_or(false, |p| chain_groups.contains(&Some(p)))
+                .is_some_and(|p| chain_groups.contains(&Some(p)))
     }
 }

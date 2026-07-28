@@ -34,10 +34,7 @@ impl AudioCodec {
 
     /// 该编码器是否能处理浮点样本
     pub fn supports_float(&self) -> bool {
-        match self {
-            AudioCodec::Flac | AudioCodec::Mp3 => false,
-            _ => true,
-        }
+        !matches!(self, AudioCodec::Flac | AudioCodec::Mp3)
     }
 
     /// 是否提供比特率设置
@@ -113,16 +110,16 @@ impl Default for AudioCodec {
 /// 在文件系统中查找 ffmpeg 可执行文件
 pub fn find_ffmpeg() -> Option<PathBuf> {
     // 优先检查程序目录
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let local = dir.join("ffmpeg.exe");
-            if local.exists() {
-                return Some(local);
-            }
-            let local = dir.join("ffmpeg");
-            if local.exists() {
-                return Some(local);
-            }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let local = dir.join("ffmpeg.exe");
+        if local.exists() {
+            return Some(local);
+        }
+        let local = dir.join("ffmpeg");
+        if local.exists() {
+            return Some(local);
         }
     }
 

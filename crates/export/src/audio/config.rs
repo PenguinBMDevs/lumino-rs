@@ -183,18 +183,10 @@ impl AudioRenderConfig {
 
     /// 构造 xsynth 的 SoundfontInitOptions
     pub fn build_sf_options(&self) -> SoundfontInitOptions {
-        let vol_envelope_options = if self.linear_envelope {
-            EnvelopeOptions {
-                attack_curve: EnvelopeCurveType::Exponential,
-                decay_curve: EnvelopeCurveType::Exponential,
-                release_curve: EnvelopeCurveType::Exponential,
-            }
-        } else {
-            EnvelopeOptions {
-                attack_curve: EnvelopeCurveType::Exponential,
-                decay_curve: EnvelopeCurveType::Exponential,
-                release_curve: EnvelopeCurveType::Exponential,
-            }
+        let vol_envelope_options = EnvelopeOptions {
+            attack_curve: EnvelopeCurveType::Exponential,
+            decay_curve: EnvelopeCurveType::Exponential,
+            release_curve: EnvelopeCurveType::Exponential,
         };
 
         SoundfontInitOptions {

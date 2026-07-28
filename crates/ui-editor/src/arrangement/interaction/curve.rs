@@ -1,6 +1,6 @@
 //! Curve 工具：在走带上拖拽绘制音符
 
-use iced_core::{Rectangle, mouse};
+use iced_core::mouse;
 use iced_widget::canvas;
 
 use lumino_core::NotePrecision;
@@ -8,38 +8,34 @@ use lumino_core::NotePrecision;
 use crate::Message;
 use crate::arrangement::ArrangementViewport;
 use crate::arrangement::interaction::geometry::{local_pos, snap_tick};
-use crate::arrangement::interaction::{ArrangementInteractionState, InteractionOutput};
+use crate::arrangement::interaction::{
+    ArrangementInteractionContext, ArrangementInteractionState, InteractionOutput,
+};
 
 /// Curve 工具事件入口：拖拽设定音符长度。
 ///
 /// - 左键按下：记录起点（tick, track）。
 /// - 拖拽：更新当前局部坐标，供预览绘制。
 /// - 左键释放：根据起点与当前点对齐后的 tick 差生成音符。
-#[allow(clippy::too_many_arguments)]
 pub fn handle_curve_event(
     state: &mut ArrangementInteractionState,
-    event: &canvas::Event,
-    bounds: Rectangle,
-    cursor: mouse::Cursor,
     viewport: &ArrangementViewport,
-    track_count: usize,
-    ppq: u16,
-    precision: NotePrecision,
+    ctx: &ArrangementInteractionContext<'_>,
 ) -> InteractionOutput {
     let mut output = InteractionOutput::new();
 
-    match event {
+    match ctx.event {
         canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-            if let Some(pos) = cursor.position() {
-                if !bounds.contains(pos) {
+            if let Some(pos) = ctx.cursor.position() {
+                if !ctx.bounds.contains(pos) {
                     return output;
                 }
-                let local = local_pos(pos, bounds);
+                let local = local_pos(pos, ctx.bounds);
                 let tick = viewport.x_to_tick(local.x + viewport.scroll_x);
-                let snapped = snap_tick(tick, precision, ppq).max(0.0);
+                let snapped = snap_tick(tick, ctx.precision, ctx.ppq).max(0.0);
                 let track_f = (local.y + viewport.scroll_y) / viewport.lane_height();
                 let track = track_f.floor() as usize;
-                if track >= track_count {
+                if track >= ctx.track_count {
                     return output;
                 }
                 state.curve_drag = Some(((snapped, track), local));
@@ -47,9 +43,9 @@ pub fn handle_curve_event(
         }
         canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
             if let Some((start, _)) = state.curve_drag
-                && let Some(pos) = cursor.position()
+                && let Some(pos) = ctx.cursor.position()
             {
-                let local = local_pos(pos, bounds);
+                let local = local_pos(pos, ctx.bounds);
                 state.curve_drag = Some((start, local));
             }
         }
@@ -58,7 +54,7 @@ pub fn handle_curve_event(
                 return output;
             };
             let end_tick = viewport.x_to_tick(end_local.x + viewport.scroll_x);
-            let snapped_end = snap_tick(end_tick, precision, ppq).max(0.0);
+            let snapped_end = snap_tick(end_tick, ctx.precision, ctx.ppq).max(0.0);
             let duration = (snapped_end - start_tick).max(1.0);
 
             output.push(Message::ArrangementAddNote {

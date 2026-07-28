@@ -73,7 +73,7 @@ impl ToolbarHandler {
 
         // 工具栏按钮悬停：驱动底部状态栏左侧描述区
         if let crate::toolbar::Event::ButtonHovered(label) = &event {
-            root.statusbar.set_hover_label(label.clone());
+            root.statusbar.set_hover_label(*label);
         }
     }
 

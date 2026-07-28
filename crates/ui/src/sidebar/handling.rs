@@ -183,17 +183,17 @@ impl Sidebar {
                 }
             }
             TrackMoveUp(id) => {
-                if let Some(idx) = self.tracks.iter().position(|t| t.id == id) {
-                    if idx > 0 {
-                        self.tracks.swap(idx, idx - 1);
-                    }
+                if let Some(idx) = self.tracks.iter().position(|t| t.id == id)
+                    && idx > 0
+                {
+                    self.tracks.swap(idx, idx - 1);
                 }
             }
             TrackMoveDown(id) => {
-                if let Some(idx) = self.tracks.iter().position(|t| t.id == id) {
-                    if idx + 1 < self.tracks.len() {
-                        self.tracks.swap(idx, idx + 1);
-                    }
+                if let Some(idx) = self.tracks.iter().position(|t| t.id == id)
+                    && idx + 1 < self.tracks.len()
+                {
+                    self.tracks.swap(idx, idx + 1);
                 }
             }
             // ── 音轨选项卡右键菜单 ──

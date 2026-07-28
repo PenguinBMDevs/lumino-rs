@@ -1,11 +1,11 @@
 //! KeyboardRenderer 集成测试
 
-use lumino_gfx::{KeyInstance, KeyboardPrepareParams, KeyboardRenderer, KeyboardViewportUniform};
+use lumino_gfx::{KeyInstance, KeyboardPrepareParams, KeyboardViewportUniform};
 
 /// 测试 KeyboardViewportUniform 内存布局
 #[test]
 fn test_keyboard_viewport_uniform_layout() {
-    let uniform = KeyboardViewportUniform::from_params(&KeyboardPrepareParams {
+    let _uniform = KeyboardViewportUniform::from_params(&KeyboardPrepareParams {
         viewport_size: (1920.0, 1080.0),
         keyboard_width: 60.0,
         ruler_height: 30.0,
@@ -16,7 +16,7 @@ fn test_keyboard_viewport_uniform_layout() {
 
     // 验证大小（实际大小可能因对齐而变化）
     let size = std::mem::size_of::<KeyboardViewportUniform>();
-    assert!(size >= 32 && size <= 48, "Unexpected size: {}", size);
+    assert!((32..=48).contains(&size), "Unexpected size: {}", size);
 
     // 验证对齐
     assert_eq!(std::mem::align_of::<KeyboardViewportUniform>(), 4);
@@ -25,7 +25,7 @@ fn test_keyboard_viewport_uniform_layout() {
 /// 测试 KeyInstance 内存布局
 #[test]
 fn test_key_instance_layout() {
-    let instance = KeyInstance::new([10.0, 20.0], [60.0, 20.0], [1.0, 1.0, 1.0, 1.0], false, 60);
+    let _instance = KeyInstance::new([10.0, 20.0], [60.0, 20.0], [1.0, 1.0, 1.0, 1.0], false, 60);
 
     // 验证大小 (4 * 2 + 4 * 2 + 4 * 4 + 4 + 4 + 4 * 2 = 48)
     assert_eq!(std::mem::size_of::<KeyInstance>(), 48);

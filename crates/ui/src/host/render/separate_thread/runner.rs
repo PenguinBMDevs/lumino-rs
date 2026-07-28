@@ -489,9 +489,8 @@ impl Host {
             let mut track_colors = [[0.0_f32; 4]; 16];
             // 使用当前调色板的颜色（来自 PaletteManager），
             // 超出调色板颜色数的轨道循环取色
-            for i in 0..16 {
-                let c = lumino_core::palette::current_track_color_f32(i);
-                track_colors[i] = c;
+            for (i, slot) in track_colors.iter_mut().enumerate() {
+                *slot = lumino_core::palette::current_track_color_f32(i);
             }
             let playhead_x = if self.root.editor.playback_position > 0.0 {
                 self.root.editor.playback_position * av.zoom_x - data.scroll.0

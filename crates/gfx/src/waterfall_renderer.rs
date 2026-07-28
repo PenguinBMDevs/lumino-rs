@@ -157,10 +157,11 @@ impl WaterfallRenderer {
         if width == 0 || height == 0 {
             return;
         }
-        if self.current_width == width && self.current_height == height {
-            if self.output_texture.is_some() {
-                return;
-            }
+        if self.current_width == width
+            && self.current_height == height
+            && self.output_texture.is_some()
+        {
+            return;
         }
         // 释放旧纹理
         if let Some(tex) = self.output_texture.take() {

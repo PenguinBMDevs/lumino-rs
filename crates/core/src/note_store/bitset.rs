@@ -118,10 +118,10 @@ impl BitSet {
         let mut blocks = vec![!0u64; len.div_ceil(64)];
         // 最后一个块的多余位清零
         let remainder = len % 64;
-        if remainder > 0 {
-            if let Some(last) = blocks.last_mut() {
-                *last &= (1u64 << remainder) - 1;
-            }
+        if remainder > 0
+            && let Some(last) = blocks.last_mut()
+        {
+            *last &= (1u64 << remainder) - 1;
         }
         Self { blocks, len }
     }

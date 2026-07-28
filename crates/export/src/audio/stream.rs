@@ -38,7 +38,15 @@ impl VecSampleSink {
             samples: Vec::new(),
         }
     }
+}
 
+impl Default for VecSampleSink {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl VecSampleSink {
     /// 消费自己，返回收集的样本
     pub fn into_samples(mut self) -> Vec<f32> {
         std::mem::take(&mut self.samples)

@@ -209,7 +209,14 @@ fn test_streaming_callback_per_tile() {
         ));
     };
 
-    generate_all_tiles_streaming(&mut notes, &config, 1920, 128, 61440, &hash, None, &cb);
+    let stream_ctx = crate::scheduler::StreamingGenContext {
+        config: &config,
+        ppq: 1920,
+        key_count: 128,
+        total_ticks: 61440,
+        midi_hash: &hash,
+    };
+    generate_all_tiles_streaming(&mut notes, &stream_ctx, None, &cb);
 
     let guard = received.lock().expect("Mutex 未 poison");
     assert_eq!(

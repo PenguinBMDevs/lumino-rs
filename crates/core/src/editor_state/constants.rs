@@ -20,21 +20,21 @@ mod tests {
 
     #[test]
     fn test_default_bpm_value() {
-        assert_eq!(DEFAULT_BPM, 120.0);
+        const { assert!(DEFAULT_BPM == 120.0) };
     }
 
     #[test]
     fn test_default_preview_velocity_value() {
-        assert_eq!(DEFAULT_PREVIEW_VELOCITY, 100);
+        const { assert!(DEFAULT_PREVIEW_VELOCITY == 100) };
     }
 
     #[test]
     fn test_selection_box_edge_threshold_positive() {
-        assert!(SELECTION_BOX_EDGE_THRESHOLD > 0.0);
+        const { assert!(SELECTION_BOX_EDGE_THRESHOLD > 0.0) };
     }
 
     #[test]
     fn test_glue_proximity_threshold_non_negative() {
-        assert!(GLUE_PROXIMITY_THRESHOLD >= 0.0);
+        const { assert!(GLUE_PROXIMITY_THRESHOLD >= 0.0) };
     }
 }

@@ -114,7 +114,6 @@ const DESC_ZH: &[(&str, &str)] = &[
 /// 根据按钮角色与语言，返回 `(按钮名, 解释说明占位)`。
 ///
 /// 解释说明当前为 `{...}` 占位，待人工填写。
-
 const DESC_EN: &[(&str, &str)] = &[
     ("SkipBackward", "Seek to start"),
     ("Play", "Start playback"),

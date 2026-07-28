@@ -115,32 +115,36 @@ pub fn build_cc_bar_instances(
         if data.velocity_curve_style {
             push_velocity_curve_instances(
                 &mut instances,
-                panel_x,
-                actual_panel_y,
-                max_y,
-                graph_height,
-                colors.bar_color,
-                view_params.keyboard_width,
-                view_params.zoom_x,
-                view_params.scroll_x,
-                view_params.canvas_size_x,
-                data.velocity_points,
-                view_params.line_thickness,
+                &VelocityCurveContext {
+                    panel_x,
+                    actual_panel_y,
+                    max_y,
+                    graph_height,
+                    bar_color: colors.bar_color,
+                    keyboard_width: view_params.keyboard_width,
+                    zoom_x: view_params.zoom_x,
+                    scroll_x: view_params.scroll_x,
+                    canvas_size_x: view_params.canvas_size_x,
+                    velocity_points: data.velocity_points,
+                    line_thickness: view_params.line_thickness,
+                },
             );
         } else {
             push_velocity_bar_instances(
                 &mut instances,
-                panel_x,
-                actual_panel_y,
-                TOOLBAR_HEIGHT,
-                max_y,
-                graph_height,
-                colors.bar_color,
-                view_params.keyboard_width,
-                view_params.zoom_x,
-                view_params.scroll_x,
-                view_params.canvas_size_x,
-                data.velocity_points,
+                &VelocityBarContext {
+                    panel_x,
+                    actual_panel_y,
+                    toolbar_height: TOOLBAR_HEIGHT,
+                    max_y,
+                    graph_height,
+                    bar_color: colors.bar_color,
+                    keyboard_width: view_params.keyboard_width,
+                    zoom_x: view_params.zoom_x,
+                    scroll_x: view_params.scroll_x,
+                    canvas_size_x: view_params.canvas_size_x,
+                    velocity_points: data.velocity_points,
+                },
             );
         }
     } else if let Some(lane) = data.automation_lane {
@@ -165,16 +169,18 @@ pub fn build_cc_bar_instances(
             .map(|p| (p.tick, (p.value as f32 - BEND_MIN) / (BEND_MAX - BEND_MIN)));
         push_value_bars(
             &mut instances,
-            points,
-            panel_x,
-            actual_panel_y,
-            view_params.keyboard_width,
-            view_params.zoom_x,
-            view_params.scroll_x,
-            view_params.canvas_size_x,
-            max_y,
-            graph_height,
-            colors.bar_color,
+            ValueBarContext {
+                points,
+                panel_x,
+                actual_panel_y,
+                keyboard_width: view_params.keyboard_width,
+                zoom_x: view_params.zoom_x,
+                scroll_x: view_params.scroll_x,
+                canvas_size_x: view_params.canvas_size_x,
+                max_y,
+                graph_height,
+                bar_color: colors.bar_color,
+            },
         );
     } else {
         // CC 柱状条兼容路径（无 automation lane 时降级）
@@ -185,16 +191,18 @@ pub fn build_cc_bar_instances(
             .map(|p| (p.tick, p.value as f32 / MAX_VALUE));
         push_value_bars(
             &mut instances,
-            points,
-            panel_x,
-            actual_panel_y,
-            view_params.keyboard_width,
-            view_params.zoom_x,
-            view_params.scroll_x,
-            view_params.canvas_size_x,
-            max_y,
-            graph_height,
-            colors.bar_color,
+            ValueBarContext {
+                points,
+                panel_x,
+                actual_panel_y,
+                keyboard_width: view_params.keyboard_width,
+                zoom_x: view_params.zoom_x,
+                scroll_x: view_params.scroll_x,
+                canvas_size_x: view_params.canvas_size_x,
+                max_y,
+                graph_height,
+                bar_color: colors.bar_color,
+            },
         );
     }
 
@@ -248,30 +256,51 @@ fn push_base_overlay_instances(
     ));
 }
 
+/// 力度曲线渲染上下文
+struct VelocityCurveContext<'a> {
+    /// 面板左上角 X 坐标
+    panel_x: f32,
+    /// 面板实际 Y 坐标（已考虑水平滚动条高度）
+    actual_panel_y: f32,
+    /// 绘图区域底部 Y 偏移（相对于面板）
+    max_y: f32,
+    /// 曲线可用高度
+    graph_height: f32,
+    /// 柱条/曲线主色
+    bar_color: [f32; 4],
+    /// 键盘区域宽度
+    keyboard_width: f32,
+    /// X 轴缩放
+    zoom_x: f32,
+    /// X 轴滚动偏移
+    scroll_x: f32,
+    /// 画布宽度
+    canvas_size_x: f32,
+    /// 力度点数据切片
+    velocity_points: &'a [lumino_core::VelocityPoint],
+    /// 曲线/锚点线宽
+    line_thickness: f32,
+}
+
 /// 力度曲线模式：折线连接力度点并绘制锚点圆。
 fn push_velocity_curve_instances(
     instances: &mut Vec<CcBarInstance>,
-    panel_x: f32,
-    actual_panel_y: f32,
-    max_y: f32,
-    graph_height: f32,
-    bar_color: [f32; 4],
-    keyboard_width: f32,
-    zoom_x: f32,
-    scroll_x: f32,
-    canvas_size_x: f32,
-    velocity_points: &[lumino_core::VelocityPoint],
-    line_thickness: f32,
+    ctx: &VelocityCurveContext<'_>,
 ) {
     const TOOLBAR_HEIGHT: f32 = 28.0;
     const CURVE_ANCHOR_RADIUS: f32 = 3.0;
     const LINE_ALPHA: f32 = 0.85;
     const VELOCITY_MAX: f32 = 127.0;
 
-    let anchor_color = [bar_color[0], bar_color[1], bar_color[2], 1.0];
-    let line_color = [bar_color[0], bar_color[1], bar_color[2], LINE_ALPHA];
+    let anchor_color = [ctx.bar_color[0], ctx.bar_color[1], ctx.bar_color[2], 1.0];
+    let line_color = [
+        ctx.bar_color[0],
+        ctx.bar_color[1],
+        ctx.bar_color[2],
+        LINE_ALPHA,
+    ];
 
-    let mut sorted: Vec<&lumino_core::VelocityPoint> = velocity_points.iter().collect();
+    let mut sorted: Vec<&lumino_core::VelocityPoint> = ctx.velocity_points.iter().collect();
     sorted.sort_by(|a, b| {
         a.tick
             .partial_cmp(&b.tick)
@@ -279,15 +308,15 @@ fn push_velocity_curve_instances(
     });
 
     for (i, point) in sorted.iter().enumerate() {
-        let x = panel_x + keyboard_width + point.tick * zoom_x - scroll_x;
-        let y = actual_panel_y + TOOLBAR_HEIGHT + max_y
-            - (point.velocity as f32 / VELOCITY_MAX * graph_height);
+        let x = ctx.panel_x + ctx.keyboard_width + point.tick * ctx.zoom_x - ctx.scroll_x;
+        let y = ctx.actual_panel_y + TOOLBAR_HEIGHT + ctx.max_y
+            - (point.velocity as f32 / VELOCITY_MAX * ctx.graph_height);
 
         if i > 0 {
             let prev = sorted[i - 1];
-            let prev_x = panel_x + keyboard_width + prev.tick * zoom_x - scroll_x;
-            let prev_y = actual_panel_y + TOOLBAR_HEIGHT + max_y
-                - (prev.velocity as f32 / VELOCITY_MAX * graph_height);
+            let prev_x = ctx.panel_x + ctx.keyboard_width + prev.tick * ctx.zoom_x - ctx.scroll_x;
+            let prev_y = ctx.actual_panel_y + TOOLBAR_HEIGHT + ctx.max_y
+                - (prev.velocity as f32 / VELOCITY_MAX * ctx.graph_height);
 
             // Step 水平线段
             let dx = x - prev_x;
@@ -295,8 +324,8 @@ fn push_velocity_curve_instances(
                 instances.push(CcBarInstance::new(
                     prev_x,
                     prev_y,
-                    dx.max(line_thickness),
-                    line_thickness,
+                    dx.max(ctx.line_thickness),
+                    ctx.line_thickness,
                     line_color,
                 ));
             }
@@ -304,9 +333,9 @@ fn push_velocity_curve_instances(
             let dy = y - prev_y;
             if dy.abs() > 0.5 {
                 instances.push(CcBarInstance::new(
-                    x - line_thickness / 2.0,
+                    x - ctx.line_thickness / 2.0,
                     prev_y.min(y),
-                    line_thickness,
+                    ctx.line_thickness,
                     dy.abs(),
                     line_color,
                 ));
@@ -314,7 +343,7 @@ fn push_velocity_curve_instances(
         }
 
         // 锚点圆（用圆角矩形渲染）
-        if x >= panel_x && x <= panel_x + canvas_size_x {
+        if x >= ctx.panel_x && x <= ctx.panel_x + ctx.canvas_size_x {
             instances.push(CcBarInstance::with_props(
                 x - CURVE_ANCHOR_RADIUS,
                 y - CURVE_ANCHOR_RADIUS,
@@ -328,74 +357,116 @@ fn push_velocity_curve_instances(
     }
 }
 
-/// 力度柱状图模式：bar 宽度取 note 长度（从 VelocityPoint 直接读取）。
-fn push_velocity_bar_instances(
-    instances: &mut Vec<CcBarInstance>,
+/// 力度柱状图渲染上下文
+struct VelocityBarContext<'a> {
+    /// 面板左上角 X 坐标
     panel_x: f32,
+    /// 面板实际 Y 坐标
     actual_panel_y: f32,
+    /// 工具栏高度
     toolbar_height: f32,
+    /// 绘图区域底部 Y 偏移
     max_y: f32,
+    /// 曲线可用高度
     graph_height: f32,
+    /// 柱条主色
     bar_color: [f32; 4],
+    /// 键盘区域宽度
     keyboard_width: f32,
+    /// X 轴缩放
     zoom_x: f32,
+    /// X 轴滚动偏移
     scroll_x: f32,
+    /// 画布宽度
     canvas_size_x: f32,
-    velocity_points: &[lumino_core::VelocityPoint],
-) {
+    /// 力度点数据切片
+    velocity_points: &'a [lumino_core::VelocityPoint],
+}
+
+/// 力度柱状图模式：bar 宽度取 note 长度（从 VelocityPoint 直接读取）。
+fn push_velocity_bar_instances(instances: &mut Vec<CcBarInstance>, ctx: &VelocityBarContext<'_>) {
     const MIN_BAR_WIDTH: f32 = 2.0;
     const BAR_MARGIN: f32 = 1.0;
     const VELOCITY_MAX: f32 = 127.0;
 
-    for point in velocity_points {
+    for point in ctx.velocity_points {
         let normalized = point.velocity as f32 / VELOCITY_MAX;
-        let bar_h = normalized * graph_height;
+        let bar_h = normalized * ctx.graph_height;
 
-        let note_x = panel_x + keyboard_width + point.tick * zoom_x - scroll_x;
+        let note_x = ctx.panel_x + ctx.keyboard_width + point.tick * ctx.zoom_x - ctx.scroll_x;
         // 直接从 VelocityPoint 读取 length，避免 im::Vector::get 的 O(log n) 树查找
-        let note_w = point.length * zoom_x;
+        let note_w = point.length * ctx.zoom_x;
         let bar_w = (note_w - BAR_MARGIN * 2.0).max(MIN_BAR_WIDTH);
         let bar_x = note_x + BAR_MARGIN;
-        let bar_y = actual_panel_y + toolbar_height + max_y - bar_h;
+        let bar_y = ctx.actual_panel_y + ctx.toolbar_height + ctx.max_y - bar_h;
 
         // Simple clipping (considering bar width)
-        if bar_x + bar_w < panel_x + keyboard_width || bar_x > panel_x + canvas_size_x {
-            continue;
-        }
-
-        instances.push(CcBarInstance::new(bar_x, bar_y, bar_w, bar_h, bar_color));
-    }
-}
-
-/// 通用数值柱状条（Bend / CC 降级路径）：对给定 (tick, 归一化值) 序列绘制柱条。
-fn push_value_bars(
-    instances: &mut Vec<CcBarInstance>,
-    points: impl IntoIterator<Item = (f32, f32)>,
-    panel_x: f32,
-    actual_panel_y: f32,
-    keyboard_width: f32,
-    zoom_x: f32,
-    scroll_x: f32,
-    canvas_size_x: f32,
-    max_y: f32,
-    graph_height: f32,
-    bar_color: [f32; 4],
-) {
-    const BAR_WIDTH: f32 = 2.0;
-    const TOOLBAR_HEIGHT: f32 = 28.0;
-
-    for (tick, normalized) in points {
-        let bar_h = normalized * graph_height;
-        let bar_x = panel_x + keyboard_width + tick * zoom_x - scroll_x;
-        let bar_y = actual_panel_y + TOOLBAR_HEIGHT + max_y - bar_h;
-
-        // Simple clipping
-        if bar_x + BAR_WIDTH < panel_x + keyboard_width || bar_x > panel_x + canvas_size_x {
+        if bar_x + bar_w < ctx.panel_x + ctx.keyboard_width
+            || bar_x > ctx.panel_x + ctx.canvas_size_x
+        {
             continue;
         }
 
         instances.push(CcBarInstance::new(
-            bar_x, bar_y, BAR_WIDTH, bar_h, bar_color,
+            bar_x,
+            bar_y,
+            bar_w,
+            bar_h,
+            ctx.bar_color,
+        ));
+    }
+}
+
+/// 通用数值柱状条渲染上下文
+struct ValueBarContext<I: IntoIterator<Item = (f32, f32)>> {
+    /// 待绘制的 (tick, 归一化值) 序列
+    points: I,
+    /// 面板左上角 X 坐标
+    panel_x: f32,
+    /// 面板实际 Y 坐标
+    actual_panel_y: f32,
+    /// 键盘区域宽度
+    keyboard_width: f32,
+    /// X 轴缩放
+    zoom_x: f32,
+    /// X 轴滚动偏移
+    scroll_x: f32,
+    /// 画布宽度
+    canvas_size_x: f32,
+    /// 绘图区域底部 Y 偏移
+    max_y: f32,
+    /// 曲线可用高度
+    graph_height: f32,
+    /// 柱条主色
+    bar_color: [f32; 4],
+}
+
+/// 通用数值柱状条（Bend / CC 降级路径）：对给定 (tick, 归一化值) 序列绘制柱条。
+fn push_value_bars<I: IntoIterator<Item = (f32, f32)>>(
+    instances: &mut Vec<CcBarInstance>,
+    ctx: ValueBarContext<I>,
+) {
+    const BAR_WIDTH: f32 = 2.0;
+    const TOOLBAR_HEIGHT: f32 = 28.0;
+
+    for (tick, normalized) in ctx.points {
+        let bar_h = normalized * ctx.graph_height;
+        let bar_x = ctx.panel_x + ctx.keyboard_width + tick * ctx.zoom_x - ctx.scroll_x;
+        let bar_y = ctx.actual_panel_y + TOOLBAR_HEIGHT + ctx.max_y - bar_h;
+
+        // Simple clipping
+        if bar_x + BAR_WIDTH < ctx.panel_x + ctx.keyboard_width
+            || bar_x > ctx.panel_x + ctx.canvas_size_x
+        {
+            continue;
+        }
+
+        instances.push(CcBarInstance::new(
+            bar_x,
+            bar_y,
+            BAR_WIDTH,
+            bar_h,
+            ctx.bar_color,
         ));
     }
 }

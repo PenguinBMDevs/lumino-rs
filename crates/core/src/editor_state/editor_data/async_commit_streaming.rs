@@ -111,17 +111,17 @@ pub(crate) fn apply_drag_state_to_clones(
         }
 
         // 同步修改 track_notes
-        if let Some(track_notes) = track_notes.get_mut(&track_id) {
-            if let Some(note) = track_notes.get_mut(i) {
-                let new_tick = (note.tick + dt).max(0.0);
-                let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u16;
-                note.tick = new_tick;
-                note.key = new_key;
-            }
+        if let Some(track_notes) = track_notes.get_mut(&track_id)
+            && let Some(note) = track_notes.get_mut(i)
+        {
+            let new_tick = (note.tick + dt).max(0.0);
+            let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u16;
+            note.tick = new_tick;
+            note.key = new_key;
         }
 
         processed += 1;
-        if processed % log_interval == 0 {
+        if processed.is_multiple_of(log_interval) {
             tracing::info!(
                 "流式异步提交进度: {}% ({} / {}, 已修改 {})",
                 processed * 100 / selected_count,

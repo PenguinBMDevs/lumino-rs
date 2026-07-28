@@ -183,7 +183,7 @@ impl DialogHandler {
                             .unwrap_or_else(|| format!("export.{ext}")),
                     )
                     .set_directory(default_dir)
-                    .add_filter(&format!("{} 文件", st.format), &[ext])
+                    .add_filter(format!("{} 文件", st.format), &[ext])
                     .save_file()
                 {
                     root.state.audio_export_dialog.output_path = path.to_string_lossy().to_string();

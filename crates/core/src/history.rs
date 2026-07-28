@@ -19,7 +19,7 @@ mod entry;
 pub use entry::{HistoryEntry, MoveOp, OperationEntry};
 
 /// 操作类型（决定是否走合并窗口、是否参与逻辑撤销链）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OpKind {
     /// 音符创建（Pencil 绘制，走 300ms 合并窗口）
     NoteCreate,
@@ -36,6 +36,7 @@ pub enum OpKind {
     /// MIDI 录制
     Recording,
     /// 其他操作（默认）
+    #[default]
     Other,
     /// 逻辑 chain 的 after 标记（undo_logical 时推入 redo_stack，redo_logical 时返回给用户）
     ///
@@ -52,12 +53,6 @@ impl OpKind {
     /// 是否为内部 chain 标记
     pub fn is_chain_marker(self) -> bool {
         matches!(self, OpKind::ChainMarker)
-    }
-}
-
-impl Default for OpKind {
-    fn default() -> Self {
-        OpKind::Other
     }
 }
 

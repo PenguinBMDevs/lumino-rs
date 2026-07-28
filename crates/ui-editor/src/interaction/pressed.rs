@@ -7,7 +7,6 @@ use crate::{Editor, HitType, Note};
 use lumino_core::DragState;
 use lumino_core::editor_state::interaction_ops;
 use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
-use lumino_event;
 use lumino_message::Tool;
 use lumino_ui_constants::editor::{DEFAULT_MIDI_CHANNEL, DEFAULT_NOTE_VELOCITY};
 

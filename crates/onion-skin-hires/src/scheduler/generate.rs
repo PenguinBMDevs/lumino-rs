@@ -38,6 +38,20 @@ pub(super) struct TileGenContext<'a> {
     pub cache_tx: &'a SyncSender<CacheWriteJob>,
 }
 
+/// 单音轨组生成请求参数
+///
+/// 聚合 `generate_one_track_group` 中随每次调用变化的参数，
+/// 与共享的 `TileGenContext` 配合，将函数签名降到 7 个参数以下。
+pub(super) struct TrackGroupRequest<'a> {
+    pub track_group: u32,
+    pub notes: &'a [Vec<OnionSkinNote>],
+    pub ticks_per_group: u32,
+    pub time_groups: u32,
+    pub completed: &'a Arc<AtomicUsize>,
+    pub total_tiles: usize,
+    pub progress_cb: &'a Option<HiResProgressCallback>,
+}
+
 /// 对每轨音符按 `start_ms` 升序排序，供后续二分剪枝使用。
 pub(super) fn sort_notes_per_track(notes: &mut [Vec<OnionSkinNote>]) {
     for track in notes.iter_mut() {
@@ -94,29 +108,23 @@ pub(super) fn generate_one_time_group_tile(
 
 /// 生成单个音轨组的所有时间组贴图
 pub(super) fn generate_one_track_group(
-    track_group: u32,
-    notes: &[Vec<OnionSkinNote>],
-    ticks_per_group: u32,
-    time_groups: u32,
-    completed: &Arc<AtomicUsize>,
-    total_tiles: usize,
-    progress_cb: &Option<HiResProgressCallback>,
+    req: &TrackGroupRequest<'_>,
     ctx: &TileGenContext<'_>,
 ) -> Vec<(TileCoord, GroupTile)> {
-    let track_start = (track_group * crate::config::TRACKS_PER_GROUP as u32) as u16;
-    let track_end =
-        ((track_group + 1) * crate::config::TRACKS_PER_GROUP as u32).min(notes.len() as u32) as u16;
-    let mut group_tiles = Vec::with_capacity(time_groups as usize);
+    let track_start = (req.track_group * crate::config::TRACKS_PER_GROUP as u32) as u16;
+    let track_end = ((req.track_group + 1) * crate::config::TRACKS_PER_GROUP as u32)
+        .min(req.notes.len() as u32) as u16;
+    let mut group_tiles = Vec::with_capacity(req.time_groups as usize);
 
-    for time_group in 0..time_groups {
-        let tick_start = time_group * ticks_per_group;
-        let tick_end = tick_start + ticks_per_group;
+    for time_group in 0..req.time_groups {
+        let tick_start = time_group * req.ticks_per_group;
+        let tick_end = tick_start + req.ticks_per_group;
 
         // 生成组内每轨的单音轨贴图（缓存优先）
         let mut track_tiles = Vec::with_capacity((track_end - track_start) as usize);
         for track_idx in track_start..track_end {
             let tile = generate_or_load_track_tile(
-                &notes[track_idx as usize],
+                &req.notes[track_idx as usize],
                 track_idx,
                 time_group,
                 tick_start,
@@ -127,7 +135,7 @@ pub(super) fn generate_one_track_group(
         }
 
         // 合并为整合组贴图（后轨覆盖前轨重叠区）
-        let coord = TileCoord::new(track_group, time_group);
+        let coord = TileCoord::new(req.track_group, time_group);
         let group_tile = merge_group_tiles(
             &track_tiles,
             coord,
@@ -140,10 +148,10 @@ pub(super) fn generate_one_track_group(
         group_tiles.push((coord, group_tile));
 
         // 更新进度，原子计数替代 Mutex
-        let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
-        if let Some(cb) = progress_cb {
-            let pct = done as f32 / total_tiles as f32;
-            cb(&format!("高精度贴图 {}/{}", done, total_tiles), pct);
+        let done = req.completed.fetch_add(1, Ordering::Relaxed) + 1;
+        if let Some(cb) = req.progress_cb {
+            let pct = done as f32 / req.total_tiles as f32;
+            cb(&format!("高精度贴图 {}/{}", done, req.total_tiles), pct);
         }
     }
 

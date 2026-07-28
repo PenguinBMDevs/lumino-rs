@@ -4,12 +4,15 @@ use crate::{
     GroupTile, HiResConfig, HiResProgressCallback, HiResRenderMode, HiResRenderer, HiResUniform,
     TRACKS_PER_GROUP, TileCoord, generate_track_tile,
 };
-use lumino_onion_skin::OnionSkinNote;
-use lumino_onion_skin_hires::{CacheMeta, merge_track_tile_into, read_track_tile_cache};
+use lumino_onion_skin_hires::{
+    CacheMeta, StreamingGenContext, merge_track_tile_into, read_track_tile_cache,
+};
 
 use super::super::super::commands::{ControlCommand, HiResTrackParams};
 use super::super::super::params::RenderParams;
-use super::context::{RenderContext, UploadHiResTileParams};
+use super::context::{
+    HiResGenerateContext, HiResUploadContext, RenderContext, UploadHiResTileParams,
+};
 use super::types::{HiResMeta, HiResStreamMsg};
 
 /// 向共享进度缓冲推送一条进度（渲染线程 → UI 线程）
@@ -58,20 +61,20 @@ pub(super) fn handle_hires_control(
             total_ticks,
             config,
             midi_hash,
-        } => handle_generate_hires(
+        } => handle_generate_hires(HiResGenerateContext {
+            ctx,
             notes,
             ppq,
             key_count,
             total_ticks,
             config,
             midi_hash,
-            ctx,
             hires_result_tx,
             onion_progress,
             hires_renderer,
             hires_meta,
             hires_config,
-        ),
+        }),
         ControlCommand::DisposeHiResOnionSkin => {
             handle_dispose_hires(hires_renderer, hires_meta, hires_config, onion_progress)
         }
@@ -99,42 +102,49 @@ pub(super) fn handle_hires_control(
 // ── 后台流式全轨生成 ──────────────────────────────────────
 
 /// 处理 GenerateHiResOnionSkin：后台线程流式生成高精度洋葱皮贴图
-fn handle_generate_hires(
-    mut notes: Vec<Vec<OnionSkinNote>>,
-    ppq: u16,
-    key_count: u16,
-    total_ticks: u32,
-    config: HiResConfig,
-    midi_hash: String,
-    ctx: &RenderContext,
-    hires_result_tx: &std::sync::mpsc::SyncSender<HiResStreamMsg>,
-    onion_progress: &Arc<Mutex<Vec<(String, f32)>>>,
-    hires_renderer: &mut Option<HiResRenderer>,
-    hires_meta: &mut Option<HiResMeta>,
-    hires_config: &mut Option<HiResConfig>,
-) {
+fn handle_generate_hires(context: HiResGenerateContext<'_>) {
     // 创建/重建高精度渲染器
-    ensure_renderer_for_config(ctx, hires_renderer, hires_config, &config);
+    ensure_renderer_for_config(
+        context.ctx,
+        context.hires_renderer,
+        context.hires_config,
+        &context.config,
+    );
 
     // 元数据必须在后台线程启动前设置（regen 安全）
-    let track_count = notes.len() as u16;
-    let time_groups = config.time_group_count(total_ticks, ppq);
-    let ticks_per_group = config.ticks_per_group(ppq);
-    *hires_meta = Some(HiResMeta {
+    let track_count = context.notes.len() as u16;
+    let time_groups = context
+        .config
+        .time_group_count(context.total_ticks, context.ppq);
+    let ticks_per_group = context.config.ticks_per_group(context.ppq);
+    *context.hires_meta = Some(HiResMeta {
         track_count,
         track_groups: 1,
-        key_count,
+        key_count: context.key_count,
         time_groups,
         ticks_per_group,
     });
 
-    push_onion_progress(onion_progress, "正在后台生成高精度洋葱皮贴图\u{2026}", 0.0);
+    push_onion_progress(
+        context.onion_progress,
+        "正在后台生成高精度洋葱皮贴图\u{2026}",
+        0.0,
+    );
 
     // 后台线程流式生成（time_group 同步推进），merge 在后台完成，渲染线程仅 upload
-    let progress_buf = onion_progress.clone();
-    let tx = Arc::new(Mutex::new(hires_result_tx.clone()));
-    let tile_width = config.tile_width_px;
-    let tile_height = key_count as u32;
+    let progress_buf = context.onion_progress.clone();
+    let tx = Arc::new(Mutex::new(context.hires_result_tx.clone()));
+    let tile_width = context.config.tile_width_px;
+    let tile_height = context.key_count as u32;
+
+    // 将后台线程需要的 owned 字段提前移出，避免把 context 本身移入线程
+    let mut notes = context.notes;
+    let config = context.config;
+    let midi_hash = context.midi_hash;
+    let ppq = context.ppq;
+    let key_count = context.key_count;
+    let total_ticks = context.total_ticks;
+
     std::thread::spawn(move || {
         let cb: HiResProgressCallback = Arc::new(move |msg, pct| {
             if let Ok(mut buf) = progress_buf.lock() {
@@ -159,13 +169,16 @@ fn handle_generate_hires(
                 }
             }
         };
-        lumino_onion_skin_hires::generate_all_tiles_streaming(
-            &mut notes,
-            &config,
+        let stream_ctx = StreamingGenContext {
+            config: &config,
             ppq,
             key_count,
             total_ticks,
-            &midi_hash,
+            midi_hash: &midi_hash,
+        };
+        lumino_onion_skin_hires::generate_all_tiles_streaming(
+            &mut notes,
+            &stream_ctx,
             Some(cb),
             &time_group_cb,
         );
@@ -472,6 +485,20 @@ pub(super) fn upload_hires_video_tiles(
     });
 }
 
+/// 将 UploadHiResVideoTiles 命令中的字段打包并上传高精度贴图。
+pub(super) fn upload_hires_video_tiles_command(
+    context: &mut HiResUploadContext<'_>,
+    params: UploadHiResTileParams,
+) {
+    upload_hires_video_tiles(
+        context.ctx,
+        context.hires_renderer,
+        context.hires_meta,
+        context.hires_config,
+        params,
+    );
+}
+
 /// 高精度贴图视口驱动：准备 uniform
 pub(super) fn update_hires_viewport(
     renderer: &mut Option<HiResRenderer>,
@@ -549,4 +576,53 @@ pub(super) fn update_hires_viewport(
     renderer.prepare(queue, &visible);
     renderer.prepare_dirty_overlays(queue, &visible);
     visible
+}
+
+/// 流式接收后台生成的高精度贴图并上传到 GPU。
+///
+/// 每帧循环 `try_recv`，收到已合并像素立即 `upload_tile`（GPU DMA，非阻塞）；
+/// 收到 `Finished` 后 flush DMA 并推送完成进度。无更多消息即退出本帧接收。
+pub(super) fn drain_hires_stream(
+    hires_result_rx: &std::sync::mpsc::Receiver<HiResStreamMsg>,
+    ctx: &RenderContext,
+    hires_renderer: &mut Option<HiResRenderer>,
+    onion_progress: &std::sync::Arc<std::sync::Mutex<Vec<(String, f32)>>>,
+) {
+    loop {
+        match hires_result_rx.try_recv() {
+            Ok(HiResStreamMsg::TimeGroupMerged {
+                track_group,
+                time_group,
+                pixels,
+                width,
+                height,
+            }) => {
+                if let Some(renderer) = hires_renderer {
+                    let coord = TileCoord::new(track_group, time_group);
+                    renderer.upload_tile(&ctx.device, &ctx.queue, coord, &pixels, width, height);
+                }
+                // pixels 在此 drop，释放 CPU 像素缓冲
+            }
+            Ok(HiResStreamMsg::ClearDirtyOverlay(track_group)) => {
+                // RegenerateHiResTrack 后台重生已完成，清理该 track_group 的覆层。
+                // 此时新底贴图已全部上传（FIFO 保证），清理覆层后用户看到的就是新底贴图。
+                if let Some(renderer) = hires_renderer {
+                    renderer.clear_dirty_overlays(track_group);
+                }
+            }
+            Ok(HiResStreamMsg::Finished) => {
+                // 后台生成全部完毕：flush DMA
+                if hires_renderer.is_some() {
+                    let flush =
+                        ctx.device
+                            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                                label: Some("hires_stream_flush"),
+                            });
+                    ctx.queue.submit(std::iter::once(flush.finish()));
+                }
+                push_onion_progress(onion_progress, "高精度洋葱皮贴图流式生成+上传完成", 1.0);
+            }
+            Err(_) => break, // 无更多消息，退出本帧接收
+        }
+    }
 }

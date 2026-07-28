@@ -16,6 +16,8 @@ use lumino_gfx::render_thread::{ControlCommand, FrameSender, RenderCommand};
 use super::video_export::cli_progress::CliProgressBar;
 use super::video_export::streaming::StreamingNoteSource;
 
+type EncodeFrameQueue = std::collections::VecDeque<(f32, f32, f32, u32, [u8; 1024], u32)>;
+
 impl RunnerInner {
     pub(crate) fn handle_start_video_export(
         &mut self,
@@ -280,8 +282,7 @@ fn run_video_export_task(
     // 之后每处理完一帧立即补发下一帧，保持 GPU/CPU 流水线持续运转。
     // 每帧参数携带该帧的按键高亮颜色（RGBAx256 键），用于后台线程合成键盘。
     // 元组: (scroll_x, zoom_x, keyboard_width, ppq, key_colors, tick)
-    let mut param_queue: std::collections::VecDeque<(f32, f32, f32, u32, [u8; 1024], u32)> =
-        std::collections::VecDeque::new();
+    let mut param_queue: EncodeFrameQueue = EncodeFrameQueue::with_capacity(16);
     let mut processed_frames = 0u64;
     let mut cancelled = false;
     let mut next_frame_to_send = 0u64;
@@ -299,108 +300,95 @@ fn run_video_export_task(
     let mut note_instances_buf: Vec<lumino_gfx::NoteInstance> = Vec::with_capacity(4096);
 
     // 闭包不捕获 param_queue，而是作为参数传入，避免与主循环中的 pop_front 产生可变借用冲突。
-    let mut enqueue_frame =
-        |queue: &mut std::collections::VecDeque<(f32, f32, f32, u32, [u8; 1024], u32)>,
-         frame_idx: u64|
-         -> bool {
-            let time_sec = frame_idx as f64 / fps_f64;
-            let tick = super::video_export::seconds_to_tick(time_sec, tempo_changes, ppq);
+    let mut enqueue_frame = |queue: &mut EncodeFrameQueue, frame_idx: u64| -> bool {
+        let time_sec = frame_idx as f64 / fps_f64;
+        let tick = super::video_export::seconds_to_tick(time_sec, tempo_changes, ppq);
 
-            // 根据当前播放 tick 增量计算按键高亮颜色
-            super::video_export::keyboard::update_playback_key_colors(
-                &document,
+        // 根据当前播放 tick 增量计算按键高亮颜色
+        super::video_export::keyboard::update_playback_key_colors(
+            &document,
+            tick,
+            &mut key_color_state,
+            &mut key_colors,
+        );
+
+        // 计算 scroll_x / zoom_x，用于标尺小节号合成
+        let video_kb_width = 60.0f32;
+        let video_viewport_tick_span = (ppq * 16).max(1) as f32;
+        let video_zoom_x = (width as f32 - video_kb_width) / video_viewport_tick_span;
+        let video_scroll_x = tick as f32 * video_zoom_x;
+
+        // 入队帧合成参数（与帧数据 FIFO 对应）
+        queue.push_back((
+            video_scroll_x,
+            video_zoom_x,
+            video_kb_width,
+            ppq,
+            key_colors,
+            tick,
+        ));
+
+        // 瀑布流模式（CPU 端渲染）：绕过 GPU compute shader + readback 开销
+        // 参考 Zenith-MIDI 和 fmr 的视频导出策略——CPU 渲染直出 BGRA，无需 GPU 管线参与。
+        // waterfall.wgsl compute shader 每像素扫描所有音符(O(notes×pixels))，
+        // GPU→CPU 回读(staging buffer)引入额外延迟，而 CPU 路径仅需 O(visible_notes)。
+        if is_cpu_renderer {
+            let mut frame_data = vec![0u8; (width as usize) * (height as usize) * 4];
+            use lumino_event::window::video::RenderMode;
+            match render_mode {
+                RenderMode::Waterfall => {
+                    super::video_export::render_waterfall_frame(
+                        &mut frame_data,
+                        width,
+                        height,
+                        &document,
+                        tick,
+                        ppq,
+                        key_count,
+                        waterfall_scroll_speed,
+                    );
+                }
+                RenderMode::NoteRectangle => unreachable!("NoteRectangle 应走 GPU 路径"),
+                RenderMode::MIDITrail => unreachable!("MIDITrail 应走 GPU 3D 路径"),
+            }
+
+            // 帧数据直接送入编码通道，跳过渲染线程的 GPU 路径
+            if frame_tx_waterfall.send(frame_data).is_err() {
+                tracing::error!("CPU 渲染帧发送失败：通道已关闭");
+                let _ =
+                    progress_tx.send(("导出失败：帧通道通信错误".to_string(), -1.0, 0, 0.0, 0.0));
+                return true;
+            }
+        } else {
+            let params = super::video_export::build_video_export_render_params(
+                width,
+                height,
                 tick,
-                &mut key_color_state,
-                &mut key_colors,
+                &document,
+                ppq,
+                key_count,
+                render_mode,
+                waterfall_scroll_speed,
+                miditrail_z_far,
+                fps_f64 as f32,
+                &mut visible_note_buf,
+                &mut note_instances_buf,
             );
 
-            // 计算 scroll_x / zoom_x，用于标尺小节号合成
-            let video_kb_width = 60.0f32;
-            let video_viewport_tick_span = (ppq * 16).max(1) as f32;
-            let video_zoom_x = (width as f32 - video_kb_width) / video_viewport_tick_span;
-            let video_scroll_x = tick as f32 * video_zoom_x;
-
-            // 入队帧合成参数（与帧数据 FIFO 对应）
-            queue.push_back((
-                video_scroll_x,
-                video_zoom_x,
-                video_kb_width,
-                ppq,
-                key_colors,
-                tick,
-            ));
-
-            // 瀑布流模式（CPU 端渲染）：绕过 GPU compute shader + readback 开销
-            // 参考 Zenith-MIDI 和 fmr 的视频导出策略——CPU 渲染直出 BGRA，无需 GPU 管线参与。
-            // waterfall.wgsl compute shader 每像素扫描所有音符(O(notes×pixels))，
-            // GPU→CPU 回读(staging buffer)引入额外延迟，而 CPU 路径仅需 O(visible_notes)。
-            if is_cpu_renderer {
-                let mut frame_data = vec![0u8; (width as usize) * (height as usize) * 4];
-                use lumino_event::window::video::RenderMode;
-                match render_mode {
-                    RenderMode::Waterfall => {
-                        super::video_export::render_waterfall_frame(
-                            &mut frame_data,
-                            width,
-                            height,
-                            &document,
-                            tick,
-                            ppq,
-                            key_count,
-                            waterfall_scroll_speed,
-                        );
-                    }
-                    RenderMode::NoteRectangle => unreachable!("NoteRectangle 应走 GPU 路径"),
-                    RenderMode::MIDITrail => unreachable!("MIDITrail 应走 GPU 3D 路径"),
-                }
-
-                // 帧数据直接送入编码通道，跳过渲染线程的 GPU 路径
-                if frame_tx_waterfall.send(frame_data).is_err() {
-                    tracing::error!("CPU 渲染帧发送失败：通道已关闭");
-                    let _ = progress_tx.send((
-                        "导出失败：帧通道通信错误".to_string(),
-                        -1.0,
-                        0,
-                        0.0,
-                        0.0,
-                    ));
-                    return true;
-                }
-            } else {
-                let params = super::video_export::build_video_export_render_params(
-                    width,
-                    height,
-                    tick,
-                    &document,
-                    ppq,
-                    key_count,
-                    render_mode,
-                    waterfall_scroll_speed,
-                    miditrail_z_far,
-                    fps_f64 as f32,
-                    &mut visible_note_buf,
-                    &mut note_instances_buf,
-                );
-
-                if cmd_sender
-                    .send(RenderCommand::Control(ControlCommand::RenderVideoFrame {
-                        params: Box::new(params),
-                    }))
-                    .is_err()
-                {
-                    tracing::error!("发送 RenderVideoFrame 命令失败");
-                    let _ = progress_tx.send((
-                        "导出失败：渲染线程通信错误".to_string(),
-                        -1.0,
-                        0,
-                        0.0,
-                        0.0,
-                    ));
-                    return true;
-                }
+            if cmd_sender
+                .send(RenderCommand::Control(ControlCommand::RenderVideoFrame {
+                    params: Box::new(params),
+                }))
+                .is_err()
+            {
+                tracing::error!("发送 RenderVideoFrame 命令失败");
+                let _ =
+                    progress_tx.send(("导出失败：渲染线程通信错误".to_string(), -1.0, 0, 0.0, 0.0));
+                return true;
             }
-            false
-        };
+        }
+        false
+    };
 
     // 预填充 inflight，让 GPU 从第一帧就进入流水线满载状态
     for _ in 0..PIPELINE_DEPTH.min(total_frames as usize) {

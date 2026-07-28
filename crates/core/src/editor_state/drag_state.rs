@@ -171,10 +171,10 @@ impl DragState {
             if !selected || i >= notes.len() {
                 continue;
             }
-            if let Some(note) = notes.get_mut(i) {
-                if self.apply_to_note(note, max_key) {
-                    modified += 1;
-                }
+            if let Some(note) = notes.get_mut(i)
+                && self.apply_to_note(note, max_key)
+            {
+                modified += 1;
             }
         }
         modified

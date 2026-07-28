@@ -33,17 +33,15 @@ impl Editor {
             || matches!(edit_state, EditState::DraggingSelection { .. });
 
         // 非 ghost 路径：使用增量维护的 selected_bounds，O(1)
-        if !needs_ghost {
-            if let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
-                return Some((
-                    view.tick_to_x(min_t),
-                    view.tick_to_x(max_te),
-                    view.key_to_y(max_k),
-                    view.key_to_y(min_k) + view.zoom_y,
-                ));
-            }
-            // 缓存失效时回退到全量扫描（理论上不应发生，兜底）
+        if !needs_ghost && let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
+            return Some((
+                view.tick_to_x(min_t),
+                view.tick_to_x(max_te),
+                view.key_to_y(max_k),
+                view.key_to_y(min_k) + view.zoom_y,
+            ));
         }
+        // 缓存失效时回退到全量扫描（理论上不应发生，兜底）
 
         // ═══ ghost 路径：O(1) 快速路径 ═══
         // 所有选中音符共享同一 delta（无论是 drag_state 的 delta 还是 pending 的 delta），
@@ -57,44 +55,42 @@ impl Editor {
         // 注意：pending 非空时（松手后待提交），delta 来源为 pending.delta_tick/delta_key；
         // 否则从 edit_state 中获取。之前的代码用 pending.is_none() 阻塞了 O(1) 路径，
         // 导致松手后每帧走 O(N) 的 ghost_on 回退（5.2s/帧 × 6帧 = 31s）。
-        if needs_ghost {
-            if let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
-                puffin::profile_scope!("get_selection_box_bounds::ghost_o1");
-                // 合并 pending delta 和当前 drag_state delta
-                // 当 pending 存在时（已松手但未提交），当前 drag_state 的 delta 仍需叠加，
-                // 否则第二次拖动时选择框不跟随鼠标移动。
-                let (drag_dt, drag_dk) = {
-                    // 初始值：从 pending 获取（如果有）
-                    let (mut dt, mut dk) = if let Some(pending) = pending {
-                        (pending.delta_tick, pending.delta_key)
-                    } else {
-                        (0i64, 0i16)
-                    };
-                    // 叠加当前 drag_state 的 delta（Dragging 或 DraggingSelection）
-                    match edit_state {
-                        EditState::Dragging { drag_state, .. }
-                        | EditState::DraggingSelection { drag_state } => {
-                            dt = dt.saturating_add(drag_state.delta_tick);
-                            dk = dk.saturating_add(drag_state.delta_key);
-                        }
-                        _ => {}
-                    }
-                    (dt, dk)
+        if needs_ghost && let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
+            puffin::profile_scope!("get_selection_box_bounds::ghost_o1");
+            // 合并 pending delta 和当前 drag_state delta
+            // 当 pending 存在时（已松手但未提交），当前 drag_state 的 delta 仍需叠加，
+            // 否则第二次拖动时选择框不跟随鼠标移动。
+            let (drag_dt, drag_dk) = {
+                // 初始值：从 pending 获取（如果有）
+                let (mut dt, mut dk) = if let Some(pending) = pending {
+                    (pending.delta_tick, pending.delta_key)
+                } else {
+                    (0i64, 0i16)
                 };
-                let min_t = (min_t + drag_dt as f32).max(0.0);
-                let max_te = max_te + drag_dt as f32;
-                let max_k = (max_k as i32 + drag_dk as i32).clamp(0, max_key as i32) as u16;
-                let min_k = (min_k as i32 + drag_dk as i32).clamp(0, max_key as i32) as u16;
-                // 不缓存 ghost 结果（delta 每帧变化）
-                return Some((
-                    view.tick_to_x(min_t),
-                    view.tick_to_x(max_te),
-                    view.key_to_y(max_k),
-                    view.key_to_y(min_k) + view.zoom_y,
-                ));
-            }
-            // 缓存失效时回退到 O(N) 计算（理论上不应发生，兜底）
+                // 叠加当前 drag_state 的 delta（Dragging 或 DraggingSelection）
+                match edit_state {
+                    EditState::Dragging { drag_state, .. }
+                    | EditState::DraggingSelection { drag_state } => {
+                        dt = dt.saturating_add(drag_state.delta_tick);
+                        dk = dk.saturating_add(drag_state.delta_key);
+                    }
+                    _ => {}
+                }
+                (dt, dk)
+            };
+            let min_t = (min_t + drag_dt as f32).max(0.0);
+            let max_te = max_te + drag_dt as f32;
+            let max_k = (max_k as i32 + drag_dk as i32).clamp(0, max_key as i32) as u16;
+            let min_k = (min_k as i32 + drag_dk as i32).clamp(0, max_key as i32) as u16;
+            // 不缓存 ghost 结果（delta 每帧变化）
+            return Some((
+                view.tick_to_x(min_t),
+                view.tick_to_x(max_te),
+                view.key_to_y(max_k),
+                view.key_to_y(min_k) + view.zoom_y,
+            ));
         }
+        // 缓存失效时回退到 O(N) 计算（理论上不应发生，兜底）
 
         // ═══ O(N) 回退路径 ═══
         // 场景：selected_bounds 缓存失效（理论上不应发生，兜底）
@@ -181,13 +177,13 @@ impl Editor {
         if !any {
             return None;
         }
-        let result = Some((
+
+        Some((
             view.tick_to_x(min_t),
             view.tick_to_x(max_te),
             view.key_to_y(max_k),
             view.key_to_y(min_k) + view.zoom_y,
-        ));
-        result
+        ))
     }
 
     pub fn hit_test_selection_box(&self, pos: Point) -> Option<SelectionHitType> {

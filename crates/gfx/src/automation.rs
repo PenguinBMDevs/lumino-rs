@@ -91,6 +91,40 @@ struct SegSpan {
     y2: f32,
 }
 
+/// 单条线段渲染上下文。
+struct SegmentContext {
+    /// 起点 X 坐标
+    x1: f32,
+    /// 起点 Y 坐标
+    y1: f32,
+    /// 终点 X 坐标
+    x2: f32,
+    /// 终点 Y 坐标
+    y2: f32,
+    /// 线段形状
+    shape: SegmentShape,
+    /// 线条颜色
+    color: [f32; 3],
+    /// 线条粗细
+    thickness: f32,
+}
+
+/// 折线采样渲染上下文。
+struct PolylineContext {
+    /// 起点 X 坐标
+    x1: f32,
+    /// 起点 Y 坐标
+    y1: f32,
+    /// 终点 X 坐标
+    x2: f32,
+    /// 终点 Y 坐标
+    y2: f32,
+    /// 线条颜色
+    color: [f32; 3],
+    /// 线条粗细
+    thickness: f32,
+}
+
 /// 收集 lane 在可见范围内的所有线段。
 ///
 /// - chase 段：从网格左边缘到第一个可见事件（保持 chase 值）
@@ -214,7 +248,18 @@ pub fn build_lane_instances(
     let lt = view.line_thickness;
     let segs = collect_segments(lane, view, max_val, width, pad_start, pad_end);
     for seg in &segs {
-        render_segment(out, seg.x1, seg.y1, seg.x2, seg.y2, seg.shape, color, lt);
+        render_segment(
+            out,
+            &SegmentContext {
+                x1: seg.x1,
+                y1: seg.y1,
+                x2: seg.x2,
+                y2: seg.y2,
+                shape: seg.shape,
+                color,
+                thickness: lt,
+            },
+        );
     }
 
     if show_anchors {
@@ -243,62 +288,56 @@ fn visible_tick_range(width: f32, view: &AutomationViewParams) -> (f32, f32) {
 }
 
 /// 渲染单条线段（Step 或 Curve）。
-fn render_segment(
-    out: &mut Vec<CcBarInstance>,
-    x1: f32,
-    y1: f32,
-    x2: f32,
-    y2: f32,
-    shape: SegmentShape,
-    color: [f32; 3],
-    thickness: f32,
-) {
-    let dx = x2 - x1;
+fn render_segment(out: &mut Vec<CcBarInstance>, ctx: &SegmentContext) {
+    let dx = ctx.x2 - ctx.x1;
     if dx <= 0.0 {
         // 同一 tick 多事件：只画竖直跳变
-        let dy = y2 - y1;
+        let dy = ctx.y2 - ctx.y1;
         if dy.abs() > 0.0 {
             out.push(CcBarInstance::new(
-                x2 - thickness * 0.5,
-                y1.min(y2),
-                thickness,
+                ctx.x2 - ctx.thickness * 0.5,
+                ctx.y1.min(ctx.y2),
+                ctx.thickness,
                 dy.abs(),
-                [color[0], color[1], color[2], LINE_ALPHA],
+                [ctx.color[0], ctx.color[1], ctx.color[2], LINE_ALPHA],
             ));
         }
         return;
     }
 
-    match shape {
+    match ctx.shape {
         SegmentShape::Step => {
             out.push(CcBarInstance::new(
-                x1,
-                y1 - thickness * 0.5,
+                ctx.x1,
+                ctx.y1 - ctx.thickness * 0.5,
                 dx,
-                thickness,
-                [color[0], color[1], color[2], LINE_ALPHA],
+                ctx.thickness,
+                [ctx.color[0], ctx.color[1], ctx.color[2], LINE_ALPHA],
             ));
-            let dy = y2 - y1;
+            let dy = ctx.y2 - ctx.y1;
             if dy.abs() > 0.0 {
                 out.push(CcBarInstance::new(
-                    x2 - thickness * 0.5,
-                    y1.min(y2),
-                    thickness,
+                    ctx.x2 - ctx.thickness * 0.5,
+                    ctx.y1.min(ctx.y2),
+                    ctx.thickness,
                     dy.abs(),
-                    [color[0], color[1], color[2], LINE_ALPHA],
+                    [ctx.color[0], ctx.color[1], ctx.color[2], LINE_ALPHA],
                 ));
             }
         }
         SegmentShape::Curve { .. } => {
+            let shape = ctx.shape;
             push_polyline(
                 out,
-                x1,
-                y1,
-                x2,
-                y2,
                 |t| shape.interpolate(t),
-                color,
-                thickness,
+                &PolylineContext {
+                    x1: ctx.x1,
+                    y1: ctx.y1,
+                    x2: ctx.x2,
+                    y2: ctx.y2,
+                    color: ctx.color,
+                    thickness: ctx.thickness,
+                },
             );
         }
     }
@@ -307,29 +346,24 @@ fn render_segment(
 /// 沿两点用插值因子函数子采样并画折线。
 fn push_polyline(
     out: &mut Vec<CcBarInstance>,
-    x1: f32,
-    y1: f32,
-    x2: f32,
-    y2: f32,
     factor_fn: impl Fn(f32) -> f32,
-    color: [f32; 3],
-    thickness: f32,
+    ctx: &PolylineContext,
 ) {
-    let dx = x2 - x1;
-    let dy = y2 - y1;
+    let dx = ctx.x2 - ctx.x1;
+    let dy = ctx.y2 - ctx.y1;
     let pixel_len = dx.hypot(dy);
     if pixel_len < 1.0 {
         return;
     }
     let steps = ((pixel_len / CURVE_SUBSAMPLE_PX).ceil() as usize).max(1);
     let inv = 1.0 / steps as f32;
-    let mut px = x1;
-    let mut py = y1;
+    let mut px = ctx.x1;
+    let mut py = ctx.y1;
     for i in 1..=steps {
         let t = i as f32 * inv;
         let f = factor_fn(t);
-        let nx = x1 + dx * t;
-        let ny = y1 + dy * f;
+        let nx = ctx.x1 + dx * t;
+        let ny = ctx.y1 + dy * f;
         let seg_dx = nx - px;
         let seg_dy = ny - py;
         let len = seg_dx.hypot(seg_dy);
@@ -337,18 +371,18 @@ fn push_polyline(
             if seg_dx.abs() >= seg_dy.abs() {
                 out.push(CcBarInstance::new(
                     px.min(nx),
-                    py - thickness * 0.5,
-                    seg_dx.abs().max(thickness),
-                    thickness,
-                    [color[0], color[1], color[2], LINE_ALPHA],
+                    py - ctx.thickness * 0.5,
+                    seg_dx.abs().max(ctx.thickness),
+                    ctx.thickness,
+                    [ctx.color[0], ctx.color[1], ctx.color[2], LINE_ALPHA],
                 ));
             } else {
                 out.push(CcBarInstance::new(
-                    px - thickness * 0.5,
+                    px - ctx.thickness * 0.5,
                     py.min(ny),
-                    thickness,
-                    seg_dy.abs().max(thickness),
-                    [color[0], color[1], color[2], LINE_ALPHA],
+                    ctx.thickness,
+                    seg_dy.abs().max(ctx.thickness),
+                    [ctx.color[0], ctx.color[1], ctx.color[2], LINE_ALPHA],
                 ));
             }
         }
