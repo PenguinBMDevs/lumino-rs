@@ -192,34 +192,56 @@ impl ToolbarHandler {
         tracing::info!("Root: 执行音符变速操作");
 
         let speed_factor = root.toolbar.speed_factor;
-        let notes = &root.editor.editor_state.data.notes;
-        let selected = &root.editor.editor_state.interaction.selected_notes;
 
-        if notes.is_empty() {
-            tracing::debug!("Root: 没有音符需要变速");
-            return;
-        }
+        if root.is_arrangement_mode() {
+            // ---------- 工程走带模式：基于 arrange_selection（rect 框选） ----------
+            if root.editor.editor_state.data.arrange_selection.is_empty() {
+                tracing::debug!("Root: 工程走带变速 - 没有选中区域");
+                return;
+            }
 
-        // 必须有选中音符才能变速（无选中时对整个音轨变速是灾难性的）
-        if selected.is_empty() {
-            tracing::debug!("Root: 没有选中音符，不执行变速");
-            return;
-        }
+            tracing::info!("Root: 工程走带变速 - 速度因子: {}", speed_factor,);
 
-        tracing::info!(
-            "Root: 变速配置 - 速度因子: {}, 选中 {} 个音符",
-            speed_factor,
-            root.editor.editor_state.interaction.selected_notes.len(),
-        );
+            let modified = root.editor.arrange_apply_speed_change(speed_factor);
 
-        let modified = root.editor.apply_speed_change(speed_factor);
-
-        if modified > 0 {
-            tracing::info!("Root: 变速完成，修改了 {} 个音符", modified);
-            root.update_playback_notes();
-            root.editor.clear_notes_changed();
+            if modified > 0 {
+                tracing::info!("Root: 工程走带变速完成，修改了 {} 个音符", modified);
+                root.update_playback_notes();
+                root.editor.clear_notes_changed();
+            } else {
+                tracing::debug!("Root: 工程走带变速 - 没有音符被修改");
+            }
         } else {
-            tracing::debug!("Root: 没有音符被变速（长度未变化）");
+            // ---------- 钢琴卷帘模式：基于 selected_notes（HashSet 选中索引） ----------
+            let notes = &root.editor.editor_state.data.notes;
+            let selected = &root.editor.editor_state.interaction.selected_notes;
+
+            if notes.is_empty() {
+                tracing::debug!("Root: 没有音符需要变速");
+                return;
+            }
+
+            // 必须有选中音符才能变速（无选中时对整个音轨变速是灾难性的）
+            if selected.is_empty() {
+                tracing::debug!("Root: 没有选中音符，不执行变速");
+                return;
+            }
+
+            tracing::info!(
+                "Root: 变速配置 - 速度因子: {}, 选中 {} 个音符",
+                speed_factor,
+                root.editor.editor_state.interaction.selected_notes.len(),
+            );
+
+            let modified = root.editor.apply_speed_change(speed_factor);
+
+            if modified > 0 {
+                tracing::info!("Root: 变速完成，修改了 {} 个音符", modified);
+                root.update_playback_notes();
+                root.editor.clear_notes_changed();
+            } else {
+                tracing::debug!("Root: 没有音符被变速（长度未变化）");
+            }
         }
     }
 

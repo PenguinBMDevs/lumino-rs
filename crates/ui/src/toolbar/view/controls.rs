@@ -160,7 +160,13 @@ impl Toolbar {
         arrangement_mode: bool,
     ) -> Element<'a> {
         if arrangement_mode {
-            return self.render_arrangement_tools_section(content_height, palette, window, t);
+            return self.render_arrangement_tools_section(
+                content_height,
+                palette,
+                has_selection,
+                t,
+                window,
+            );
         }
 
         let (transpose_down_tooltip, transpose_down_event) = if self.ctrl_pressed {
@@ -328,8 +334,9 @@ impl Toolbar {
         &'a self,
         content_height: f32,
         palette: &'a iced_core::theme::palette::Extended,
-        window: &'a window::Window,
+        _has_selection: bool,
         t: &'static MainTranslations,
+        window: &'a window::Window,
     ) -> Element<'a> {
         container(
             row![
@@ -358,6 +365,15 @@ impl Toolbar {
                     self.current_tool,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::Eraser))),
+                ),
+                space().width(4),
+                flip_button(
+                    icon::Speed,
+                    t.tool_speed,
+                    Event::speed_change(),
+                    true,
+                    window,
+                    Some(Event::button_hovered(Some(ButtonId::Speed))),
                 ),
             ]
             .align_y(Alignment::Center),

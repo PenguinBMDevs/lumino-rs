@@ -4,8 +4,7 @@ use crate::KeyboardPrepareParams;
 
 #[test]
 fn test_key_instance_creation() {
-    let instance =
-        KeyInstance::new([10.0, 20.0], [60.0, 20.0], [1.0, 1.0, 1.0, 1.0], false, 60);
+    let instance = KeyInstance::new([10.0, 20.0], [60.0, 20.0], [1.0, 1.0, 1.0, 1.0], false, 60);
 
     assert_eq!(instance.position, [10.0, 20.0]);
     assert_eq!(instance.size, [60.0, 20.0]);

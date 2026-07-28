@@ -674,6 +674,87 @@ impl Editor {
         self.arrange_delete_selected_notes()
     }
 
+    /// 对工程走带选择区内的音符执行批量变速。
+    ///
+    /// 行为与钢琴卷帘 `apply_speed_change` 一致：以选中音符的最小 tick 为基准，
+    /// 按 `speed_factor` 缩放 tick 和 length。支持跨音轨操作。
+    /// 返回实际修改的音符数。
+    pub fn arrange_apply_speed_change(&mut self, speed_factor: f32) -> usize {
+        if self.editor_state.data.arrange_selection.is_empty() {
+            return 0;
+        }
+
+        self.load_missing_tracks_from_document();
+
+        let selection = self.editor_state.data.arrange_selection.clone();
+        let mut track_indices: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut min_tick = f32::INFINITY;
+
+        // 第一遍：收集所有选中音符的索引和最小 tick
+        {
+            let data = &self.editor_state.data;
+            for (&track_idx, notes) in &data.track_notes {
+                let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
+                for (i, note) in notes.iter().enumerate() {
+                    if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
+                        track_indices.entry(track_idx).or_default().push(i);
+                        min_tick = min_tick.min(note.tick);
+                    }
+                }
+            }
+        }
+
+        if track_indices.is_empty() || min_tick.is_infinite() {
+            return 0;
+        }
+
+        self.push_history();
+
+        let current_track = self.editor_state.data.current_track;
+        let mut current_track_touched = false;
+        let mut modified_count = 0usize;
+        const MIN_LEN: f32 = 1.0;
+
+        // 第二遍：执行变速
+        {
+            let data = &mut self.editor_state.data;
+            for (track_idx, indices) in &track_indices {
+                if *track_idx == current_track {
+                    current_track_touched = true;
+                }
+                if let Some(notes) = data.track_notes.get_mut(track_idx) {
+                    for &i in indices {
+                        if let Some(note) = notes.get_mut(i) {
+                            let nt = min_tick + (note.tick - min_tick) * speed_factor;
+                            let nl = (note.length * speed_factor).max(MIN_LEN);
+                            if (nt - note.tick).abs() > f32::EPSILON
+                                || (nl - note.length).abs() > f32::EPSILON
+                            {
+                                note.tick = nt;
+                                note.length = nl;
+                                modified_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if modified_count == 0 {
+            self.editor_state.data.discard_last_history();
+            return 0;
+        }
+
+        self.sync_current_track_after_arrange_op(current_track_touched);
+        self.editor_state.data.mark_track_notes_changed();
+        tracing::info!(
+            "Arrangement: 变速 {} 个音符 (factor={})",
+            modified_count,
+            speed_factor,
+        );
+        modified_count
+    }
+
     /// 工程走带操作后，若当前音轨受影响则同步 data.notes 与 NoteStore。
     fn sync_current_track_after_arrange_op(&mut self, touched: bool) {
         if !touched {
