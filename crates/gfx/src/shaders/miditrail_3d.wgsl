@@ -18,6 +18,7 @@ struct VertexInput {
     @location(4) color: u32,
     @location(5) is_key: u32,
     @location(6) press_factor: f32,
+    @location(7) press_depth: f32,
 }
 
 struct VertexOutput {
@@ -61,8 +62,9 @@ fn key_color_factor(normal: vec3<f32>) -> f32 {
 fn vs_main(in: VertexInput) -> VertexOutput {
     var translation = in.translation;
     if (in.is_key == 1u) {
-        // 按下时琴键整体向下凹陷，深度约为键自身高度的 0.5
-        translation.y -= in.press_factor * in.scale.y * 0.5;
+        // 按下时琴键整体向下凹陷，位移量限制为白键高度/黑键露出高度的 0.5，
+        // 避免黑键被白键吞没。
+        translation.y -= in.press_factor * in.press_depth;
     }
 
     let model = mat4x4<f32>(

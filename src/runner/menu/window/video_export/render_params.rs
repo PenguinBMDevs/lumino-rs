@@ -34,6 +34,7 @@ pub fn build_video_export_render_params(
     key_count: u16,
     render_mode: RenderMode,
     waterfall_scroll_speed: f32,
+    fps: f32,
     visible_notes: &mut Vec<SortableNote>,
     note_instances_out: &mut Vec<NoteInstance>,
 ) -> RenderParams {
@@ -55,6 +56,7 @@ pub fn build_video_export_render_params(
             ppq,
             key_count,
             waterfall_scroll_speed,
+            fps,
         ),
         RenderMode::NoteRectangle => build_note_rectangle_render_params(
             width,
@@ -216,6 +218,7 @@ fn build_miditrail_render_params(
     ppq: u32,
     key_count: u16,
     waterfall_scroll_speed: f32,
+    fps: f32,
 ) -> RenderParams {
     let w = width.max(1) as f32;
     let h = height.max(1) as f32;
@@ -257,6 +260,7 @@ fn build_miditrail_render_params(
         miditrail_speed: waterfall_scroll_speed.max(0.1),
         miditrail_notes,
         miditrail_current_tick: tick,
+        fps,
         ..Default::default()
     }
 }

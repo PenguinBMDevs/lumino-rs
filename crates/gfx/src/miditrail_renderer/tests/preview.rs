@@ -35,7 +35,7 @@ fn test_frame_renders_visible_content() {
         speed: 1.0,
         param1: 0.0,
         param2: 0.0,
-        _padding0: 0,
+        fps: 60.0,
         _padding1: 0,
     };
     let notes = vec![MiditrailNoteGpu {
@@ -154,7 +154,7 @@ fn test_export_preview_png() {
         speed: 1.0,
         param1: 0.0,
         param2: 0.0,
-        _padding0: 0,
+        fps: 60.0,
         _padding1: 0,
     };
     let notes = vec![

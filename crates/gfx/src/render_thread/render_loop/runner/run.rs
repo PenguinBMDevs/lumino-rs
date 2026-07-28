@@ -525,7 +525,7 @@ fn handle_miditrail_frame(
         speed: params.miditrail_speed.max(0.1),
         param1: params.waterfall_speed.max(0.1),
         param2: 0.0,
-        _padding0: 0,
+        fps: params.fps.max(1.0),
         _padding1: 0,
     };
 

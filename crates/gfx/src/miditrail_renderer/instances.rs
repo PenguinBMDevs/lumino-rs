@@ -15,6 +15,35 @@ const BLACK_KEY_HEIGHT: f32 = 0.024;
 const SCENE_DEPTH: f32 = 7.5;
 const BLACK_KEY_WIDTH_RATIO: f32 = 0.58;
 
+/// 当前 tick 下被按下的键信息（同一键多个音符时取最后一个音符颜色）。
+#[derive(Debug, Clone, Copy)]
+pub struct ActiveKeys {
+    /// 每个键是否被按下。
+    pub pressed: [bool; 128],
+    /// 每个键的激活颜色。
+    pub colors: [u32; 128],
+}
+
+/// 计算当前 tick 下每个键是否被按下及其对应颜色。
+///
+/// 同一键多个音符激活时，取 `notes` 中最后一个音符的颜色，与
+/// `build_key_instances` / `build_aura_instances` 历史行为一致。
+#[must_use]
+pub fn compute_active_keys(tick: u32, notes: &[MiditrailNoteGpu]) -> ActiveKeys {
+    let mut pressed = [false; 128];
+    let mut colors = [0u32; 128];
+    for note in notes {
+        if note.is_active_at(tick) {
+            let key = note.key as usize;
+            if key < 128 {
+                pressed[key] = true;
+                colors[key] = note.color_packed;
+            }
+        }
+    }
+    ActiveKeys { pressed, colors }
+}
+
 /// 更新键位布局缓存。
 pub fn update_key_positions(
     key_count: u32,
@@ -117,34 +146,35 @@ pub fn build_note_instances(
             note.color_packed,
             false,
             0.0,
+            0.0,
         ));
     }
+
+    // 按音符前缘深度从远到近排序（far-to-near），避免重叠面因绘制顺序
+    // 变化产生颜色闪烁（painter's algorithm + depth test 稳定化）。
+    // 深度相同时使用 x 位置作为稳定次要键。
+    out.sort_by(|a, b| {
+        let a_front = a.translation[2] + a.scale[2];
+        let b_front = b.translation[2] + b.scale[2];
+        a_front
+            .total_cmp(&b_front)
+            .then_with(|| a.translation[0].total_cmp(&b.translation[0]))
+    });
 }
 
 /// 构建琴键实例。
+///
+/// `active_keys` 由 `compute_active_keys` 预先计算，避免本函数再次扫描全部音符。
 pub fn build_key_instances(
     uniform: &MiditrailUniformGpu,
-    notes: &[MiditrailNoteGpu],
+    active_keys: &ActiveKeys,
     key_positions: &[f32],
     key_widths: &[f32],
     press_factors: &[f32],
     out: &mut Vec<MiditrailInstanceGpu>,
 ) {
-    let tick = uniform.tick;
     let key_count = uniform.key_count as usize;
     let key_count = key_count.min(key_positions.len());
-
-    // 先找出每个键的激活颜色（有音符时覆盖默认颜色）
-    let mut active_colors = [None; 128];
-    for note in notes {
-        if !note.is_active_at(tick) {
-            continue;
-        }
-        let key = note.key as usize;
-        if key < 128 {
-            active_colors[key] = Some(note.color_packed);
-        }
-    }
 
     for i in 0..key_count {
         let left = key_positions[i];
@@ -155,17 +185,23 @@ pub fn build_key_instances(
         } else {
             (0.0, KEYBOARD_HEIGHT)
         };
-        let color = active_colors[i].unwrap_or_else(|| {
-            if is_black {
-                pack_color([0.2, 0.2, 0.2, 1.0])
-            } else {
-                pack_color([1.0, 1.0, 1.0, 1.0])
-            }
-        });
+        let color = if active_keys.pressed[i] {
+            active_keys.colors[i]
+        } else if is_black {
+            pack_color([0.2, 0.2, 0.2, 1.0])
+        } else {
+            pack_color([1.0, 1.0, 1.0, 1.0])
+        };
         let depth = if is_black {
             BLACK_KEY_DEPTH
         } else {
             WHITE_KEY_DEPTH
+        };
+        let press_depth = if is_black {
+            // 黑键按下深度最多为高出白键部分高度的 0.5，保证按下后仍可见
+            (BLACK_KEY_HEIGHT - KEYBOARD_HEIGHT) * 0.5
+        } else {
+            KEYBOARD_HEIGHT * 0.5
         };
         let scale = [width, height, depth];
         let translation = [left, y, 0.0];
@@ -176,6 +212,7 @@ pub fn build_key_instances(
             color,
             true,
             press,
+            press_depth,
         ));
     }
 }
@@ -183,33 +220,20 @@ pub fn build_key_instances(
 /// 构建 Aura 实例。
 ///
 /// 当某个键在当前 tick 有音符激活时，在对应键下方生成一个光环。
+/// `active_keys` 由 `compute_active_keys` 预先计算。
 pub fn build_aura_instances(
     uniform: &MiditrailUniformGpu,
-    notes: &[MiditrailNoteGpu],
+    active_keys: &ActiveKeys,
     key_positions: &[f32],
     key_widths: &[f32],
     out: &mut Vec<MiditrailAuraInstanceGpu>,
 ) {
-    let tick = uniform.tick;
     let key_count = (uniform.key_count as usize)
         .min(key_positions.len())
         .min(128);
 
-    let mut active = [false; 128];
-    let mut colors = [0u32; 128];
-    for note in notes {
-        if !note.is_active_at(tick) {
-            continue;
-        }
-        let key = note.key as usize;
-        if key < 128 {
-            active[key] = true;
-            colors[key] = note.color_packed;
-        }
-    }
-
     for i in 0..key_count {
-        if !active[i] {
+        if !active_keys.pressed[i] {
             continue;
         }
         let left = key_positions[i];
@@ -220,98 +244,12 @@ pub fn build_aura_instances(
         out.push(MiditrailAuraInstanceGpu {
             size,
             pos: center,
-            color_packed: colors[i],
+            color_packed: active_keys.colors[i],
             _padding: 0,
         });
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod tests;
 
-    #[test]
-    fn test_black_keys() {
-        assert!(is_black_key(1));
-        assert!(is_black_key(61)); // C#4 + 5 octaves
-        assert!(!is_black_key(0));
-        assert!(!is_black_key(60));
-    }
-
-    #[test]
-    fn test_key_positions() {
-        let mut positions = Vec::new();
-        let mut widths = Vec::new();
-        let mut last = 0u32;
-        update_key_positions(128, &mut last, &mut positions, &mut widths);
-        assert_eq!(positions.len(), 128);
-        assert_eq!(widths.len(), 128);
-        // 白键总宽度应约为 1.0
-        let white_total: f32 = positions
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| !is_black_key(*i as u32))
-            .map(|(i, _)| widths[i])
-            .sum();
-        assert!((white_total - 1.0).abs() < 1e-5);
-        // 黑键应比相邻白键窄
-        assert!(widths[1] < widths[0]);
-    }
-
-    #[test]
-    fn test_build_instances() {
-        let mut positions = Vec::new();
-        let mut widths = Vec::new();
-        let mut last = 0u32;
-        update_key_positions(128, &mut last, &mut positions, &mut widths);
-
-        let uniform = MiditrailUniformGpu::default();
-        let notes = vec![MiditrailNoteGpu {
-            key: 60,
-            start_tick: 0,
-            end_tick: 1000,
-            color_packed: 0xFFFF0000,
-            track_idx: 0,
-            velocity: 100,
-            channel: 0,
-            _padding: 0,
-        }];
-        let press_factors = [0.0f32; 128];
-        let mut out = Vec::new();
-        build_note_instances(&uniform, &notes, &positions, &widths, &mut out);
-        build_key_instances(
-            &uniform,
-            &notes,
-            &positions,
-            &widths,
-            &press_factors,
-            &mut out,
-        );
-        // 128 个键 + 1 个音符
-        assert_eq!(out.len(), 129);
-    }
-
-    #[test]
-    fn test_build_aura_instances() {
-        let mut positions = Vec::new();
-        let mut widths = Vec::new();
-        let mut last = 0u32;
-        update_key_positions(128, &mut last, &mut positions, &mut widths);
-
-        let uniform = MiditrailUniformGpu::default();
-        let notes = vec![MiditrailNoteGpu {
-            key: 60,
-            start_tick: 0,
-            end_tick: 1000,
-            color_packed: 0xFFFF0000,
-            track_idx: 0,
-            velocity: 100,
-            channel: 0,
-            _padding: 0,
-        }];
-        let mut auras = Vec::new();
-        build_aura_instances(&uniform, &notes, &positions, &widths, &mut auras);
-        assert_eq!(auras.len(), 1);
-        assert!(auras[0].size > 0.0);
-    }
-}

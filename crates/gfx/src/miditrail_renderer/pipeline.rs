@@ -106,6 +106,11 @@ pub fn create_render_pipeline(
                             offset: 40,
                             shader_location: 6,
                         },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32,
+                            offset: 44,
+                            shader_location: 7,
+                        },
                     ],
                 },
             ],

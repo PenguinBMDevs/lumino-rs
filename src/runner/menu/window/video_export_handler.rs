@@ -373,6 +373,7 @@ fn run_video_export_task(
                     key_count,
                     render_mode,
                     waterfall_scroll_speed,
+                    fps_f64 as f32,
                     &mut visible_note_buf,
                     &mut note_instances_buf,
                 );

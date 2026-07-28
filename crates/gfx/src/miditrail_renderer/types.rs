@@ -62,8 +62,9 @@ pub struct MiditrailUniformGpu {
     pub param1: f32,
     /// 样式附加参数 2
     pub param2: f32,
+    /// 目标帧率（用于琴键按下/回弹动画的时间步长）。
+    pub fps: f32,
     /// 对齐填充
-    pub _padding0: u32,
     pub _padding1: u32,
 }
 
@@ -80,7 +81,7 @@ impl Default for MiditrailUniformGpu {
             speed: 1.0,
             param1: 0.0,
             param2: 0.0,
-            _padding0: 0,
+            fps: 60.0,
             _padding1: 0,
         }
     }
@@ -114,8 +115,8 @@ pub struct MiditrailInstanceGpu {
     pub is_key: u32,
     /// 琴键按下系数（0.0 ~ 1.0）
     pub press_factor: f32,
-    /// 对齐填充到 16 字节边界
-    pub _padding2: u32,
+    /// 按下最大位移量（0.5 倍白键高度或 0.5 倍黑键露出高度）
+    pub press_depth: f32,
 }
 
 impl MiditrailInstanceGpu {
@@ -127,6 +128,7 @@ impl MiditrailInstanceGpu {
         color_packed: u32,
         is_key: bool,
         press_factor: f32,
+        press_depth: f32,
     ) -> Self {
         Self {
             translation,
@@ -136,7 +138,7 @@ impl MiditrailInstanceGpu {
             color_packed,
             is_key: u32::from(is_key),
             press_factor,
-            _padding2: 0,
+            press_depth,
         }
     }
 }

@@ -78,6 +78,8 @@ pub struct RenderParams {
     pub miditrail_notes: Vec<MiditrailNoteGpu>,
     /// Miditrail 当前 MIDI tick 值
     pub miditrail_current_tick: u32,
+    /// Miditrail / 视频导出目标帧率（用于按键动画时间步长）。
+    pub fps: f32,
 }
 
 impl Default for RenderParams {
@@ -122,6 +124,7 @@ impl Default for RenderParams {
             miditrail_speed: 1.0,
             miditrail_notes: Vec::new(),
             miditrail_current_tick: 0,
+            fps: 60.0,
         }
     }
 }
@@ -181,6 +184,7 @@ pub struct RenderParamsBuilder {
     miditrail_speed: f32,
     miditrail_notes: Vec<MiditrailNoteGpu>,
     miditrail_current_tick: u32,
+    fps: f32,
 }
 
 impl Default for RenderParamsBuilder {
@@ -221,6 +225,7 @@ impl Default for RenderParamsBuilder {
             miditrail_speed: 1.0,
             miditrail_notes: Vec::new(),
             miditrail_current_tick: 0,
+            fps: 60.0,
         }
     }
 }
@@ -388,6 +393,12 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置目标帧率（用于动画时间步长）。
+    pub fn fps(mut self, fps: f32) -> Self {
+        self.fps = fps;
+        self
+    }
+
     /// 构建 [`RenderParams`]。
     ///
     /// 自动从 `ppq` 推导 `ticks_per_measure` 和 `ticks_per_beat`，
@@ -433,6 +444,7 @@ impl RenderParamsBuilder {
             miditrail_speed: self.miditrail_speed,
             miditrail_notes: self.miditrail_notes,
             miditrail_current_tick: self.miditrail_current_tick,
+            fps: self.fps,
         }
     }
 }

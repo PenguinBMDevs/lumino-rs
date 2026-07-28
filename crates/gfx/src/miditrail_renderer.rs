@@ -17,7 +17,8 @@ pub use types::{
 };
 
 use instances::{
-    build_aura_instances, build_key_instances, build_note_instances, update_key_positions,
+    ActiveKeys, build_aura_instances, build_key_instances, build_note_instances,
+    compute_active_keys, update_key_positions,
 };
 use math::build_camera_uniform;
 use pipeline::{
@@ -175,7 +176,8 @@ impl MiditrailRenderer {
             &mut self.key_positions,
             &mut self.key_widths,
         );
-        self.update_key_press_factors(uniform, notes);
+        let active_keys = compute_active_keys(uniform.tick, notes);
+        self.update_key_press_factors(&active_keys, uniform.fps);
 
         let mut note_instances = Vec::with_capacity(notes.len());
         build_note_instances(
@@ -188,7 +190,7 @@ impl MiditrailRenderer {
         let mut key_instances = Vec::with_capacity(uniform.key_count as usize);
         build_key_instances(
             uniform,
-            notes,
+            &active_keys,
             &self.key_positions,
             &self.key_widths,
             &self.key_press_factors,
@@ -209,7 +211,7 @@ impl MiditrailRenderer {
         let mut aura_instances = Vec::new();
         build_aura_instances(
             uniform,
-            notes,
+            &active_keys,
             &self.key_positions,
             &self.key_widths,
             &mut aura_instances,
