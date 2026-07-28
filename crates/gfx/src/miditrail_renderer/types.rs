@@ -64,6 +64,8 @@ pub struct MiditrailUniformGpu {
     pub param2: f32,
     /// 目标帧率（用于琴键按下/回弹动画的时间步长）。
     pub fps: f32,
+    /// Z 方向显示距离（决定音符在多远被截断）。
+    pub z_far_distance: f32,
     /// 对齐填充
     pub _padding1: u32,
 }
@@ -82,6 +84,7 @@ impl Default for MiditrailUniformGpu {
             param1: 0.0,
             param2: 0.0,
             fps: 60.0,
+            z_far_distance: 7.5,
             _padding1: 0,
         }
     }

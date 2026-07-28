@@ -5,7 +5,8 @@
 //! 拆分原因：原 `video_export.rs` 超过 400 行限制，
 //! 键盘相关逻辑独立成子模块，便于维护和测试。
 
-use lumino_gfx::{ARRANGEMENT_PALETTE, is_black_key};
+use lumino_core::palette::current_track_color_f32;
+use lumino_gfx::is_black_key;
 use lumino_midi_loader::MidiDocument;
 
 /// 导出视频使用的按键颜色缓冲区大小
@@ -40,9 +41,9 @@ pub struct PlaybackKeyColorState {
 
 /// 获取指定音轨的演奏高亮颜色（RGBA [u8;4]）
 ///
-/// 使用与导出音符相同的 `ARRANGEMENT_PALETTE`，保证琴键颜色与音符颜色一致。
+/// 使用设置面板的调色板样式，保证琴键颜色与音符颜色一致。
 fn track_color_rgba(track_idx: usize) -> [u8; 4] {
-    let c = ARRANGEMENT_PALETTE[track_idx % ARRANGEMENT_PALETTE.len()];
+    let c = current_track_color_f32(track_idx);
     [
         (c[0] * 255.0).round() as u8,
         (c[1] * 255.0).round() as u8,

@@ -4,7 +4,8 @@
 //! 位图字体（draw_digit / DIGIT_BITMAPS 等）也集中于此，
 //! 并通过私有 use 在 video_export.rs 的标尺小节号合成中使用。
 
-use lumino_gfx::{ARRANGEMENT_PALETTE, is_black_key};
+use lumino_core::palette::current_track_color_f32;
+use lumino_gfx::is_black_key;
 use lumino_midi_loader::MidiDocument;
 
 /// 5x7 位图字体：数字 0-9
@@ -234,7 +235,7 @@ pub fn render_waterfall_frame(
 
     // 渲染每个音符
     for note in &notes {
-        let color_f = ARRANGEMENT_PALETTE[note.track_idx as usize % ARRANGEMENT_PALETTE.len()];
+        let color_f = current_track_color_f32(note.track_idx as usize);
         let color: [u8; 4] = [
             (color_f[2] * 255.0).round() as u8,
             (color_f[1] * 255.0).round() as u8,
@@ -273,7 +274,7 @@ pub fn render_waterfall_frame(
     let mut active_key_colors: [Option<[u8; 4]>; 128] = [None; 128];
     for note in &notes {
         if note.start_tick <= tick && note.end_tick > tick {
-            let color_f = ARRANGEMENT_PALETTE[note.track_idx as usize % ARRANGEMENT_PALETTE.len()];
+            let color_f = current_track_color_f32(note.track_idx as usize);
             let b = (color_f[2] * 255.0).round() as u8;
             let g = (color_f[1] * 255.0).round() as u8;
             let r = (color_f[0] * 255.0).round() as u8;

@@ -36,6 +36,7 @@ impl RunnerInner {
             quality,
             render_mode,
             waterfall_scroll_speed,
+            miditrail_z_far,
         } = config;
 
         // 事件层枚举 → 导出层枚举（总映射，无字符串解析、无静默降级）
@@ -165,6 +166,7 @@ impl RunnerInner {
                         is_cpu_renderer,
                         is_gpu_compute_style,
                         waterfall_scroll_speed,
+                        miditrail_z_far,
                         render_mode,
                     );
                 } else if !midi_path.is_empty() {
@@ -211,6 +213,7 @@ fn run_video_export_task(
     is_cpu_renderer: bool,
     is_gpu_compute_style: bool,
     waterfall_scroll_speed: f32,
+    miditrail_z_far: f32,
     render_mode: lumino_event::window::video::RenderMode,
 ) {
     let start = std::time::Instant::now();
@@ -373,6 +376,7 @@ fn run_video_export_task(
                     key_count,
                     render_mode,
                     waterfall_scroll_speed,
+                    miditrail_z_far,
                     fps_f64 as f32,
                     &mut visible_note_buf,
                     &mut note_instances_buf,

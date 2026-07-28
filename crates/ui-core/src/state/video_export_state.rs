@@ -1,5 +1,10 @@
 //! 视频导出面板状态
 
+/// MIDITrail Z 方向显示距离默认值。
+pub const MIDITRAIL_Z_FAR_DEFAULT: f32 = 7.5;
+/// MIDITrail Z 方向显示距离最大值（也是滑杆上限）。
+pub const MIDITRAIL_Z_FAR_MAX: f32 = 15.0;
+
 /// 视频导出覆盖层状态（参照 nezha ExportState）
 #[derive(Debug, Clone, Default)]
 pub enum VideoExportOverlayState {
@@ -41,6 +46,8 @@ pub struct VideoExportDialogState {
     pub render_mode: String,
     /// 瀑布流滚动速度（默认 1.0）
     pub waterfall_speed: f32,
+    /// MIDITrail Z 方向显示距离（默认 7.5，精度 0.1）
+    pub miditrail_z_far: f32,
     /// 分辨率宽度
     pub width: u32,
     /// 分辨率高度
@@ -91,6 +98,7 @@ impl VideoExportDialogState {
             quality: "中".to_string(),
             render_mode: "Lumino瀑布流".to_string(),
             waterfall_speed: 1.0,
+            miditrail_z_far: MIDITRAIL_Z_FAR_DEFAULT,
             width: 1920,
             height: 1080,
             fps: 60,

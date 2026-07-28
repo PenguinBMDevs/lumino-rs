@@ -1,5 +1,6 @@
 //! Miditrail 3D 渲染器实例构建
 
+use super::MIDITRAIL_SCENE_DEPTH;
 use super::types::{
     MiditrailAuraInstanceGpu, MiditrailInstanceGpu, MiditrailNoteGpu, MiditrailUniformGpu,
 };
@@ -12,7 +13,6 @@ const NOTE_Y: f32 = 0.0005;
 const NOTE_Z_OFFSET: f32 = 0.012;
 const BLACK_KEY_ELEVATION: f32 = 0.0;
 const BLACK_KEY_HEIGHT: f32 = 0.024;
-const SCENE_DEPTH: f32 = 7.5;
 const BLACK_KEY_WIDTH_RATIO: f32 = 0.58;
 
 /// 当前 tick 下被按下的键信息（同一键多个音符时取最后一个音符颜色）。
@@ -121,10 +121,12 @@ pub fn build_note_instances(
     let ticks_per_measure = ppq * 4;
     let visible_measure_count = ((4.0 / speed).round()).max(1.0) as u32;
     let viewport_tick_span = (ticks_per_measure * visible_measure_count).max(1) as f32;
-    let scene_depth = SCENE_DEPTH;
+    let scene_depth = MIDITRAIL_SCENE_DEPTH;
     let note_height = NOTE_HEIGHT;
     let note_y = NOTE_Y;
     let note_z_offset = NOTE_Z_OFFSET;
+    let z_far_distance = uniform.z_far_distance.max(0.1);
+    let z_far = note_z_offset - z_far_distance;
 
     let mut entries = Vec::with_capacity(notes.len());
     for note in notes {
@@ -142,8 +144,9 @@ pub fn build_note_instances(
         let visible_end = note.end_tick;
         let z_start = note_z_offset
             - ((visible_start.saturating_sub(tick)) as f32 / viewport_tick_span * scene_depth);
-        let z_end = note_z_offset
+        let mut z_end = note_z_offset
             - ((visible_end.saturating_sub(tick)) as f32 / viewport_tick_span * scene_depth);
+        z_end = z_end.max(z_far);
         if z_end >= z_start {
             continue;
         }

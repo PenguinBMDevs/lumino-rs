@@ -11,9 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bytemuck;
-use lumino_gfx::{
-    ARRANGEMENT_PALETTE, NoteInstance, RenderParams, generate_ruler_instances, pack_color,
-};
+use lumino_core::palette::current_track_color_f32;
+use lumino_gfx::{NoteInstance, RenderParams, generate_ruler_instances, pack_color};
 use midly::mmap::MmapSmf;
 use midly::{MetaMessage, MidiMessage, TrackEventKind};
 use rayon::prelude::*;
@@ -574,8 +573,7 @@ fn build_video_render_params_from_notes(
     let note_instances: Vec<NoteInstance> = temp
         .into_iter()
         .map(|n| {
-            let color = ARRANGEMENT_PALETTE[n.track_idx as usize % ARRANGEMENT_PALETTE.len()];
-            let color_packed = pack_color([color[0], color[1], color[2], 1.0]);
+            let color_packed = pack_color(current_track_color_f32(n.track_idx as usize));
             NoteInstance {
                 position: [n.start_tick as f32, n.key as f32],
                 size_x: (n.length as f32).max(1.0),

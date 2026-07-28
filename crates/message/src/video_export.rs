@@ -39,6 +39,8 @@ pub enum VideoExportAction {
     RenderModeChanged(String),
     /// 瀑布流滚动速度变更（0.1~10.0，精度 0.1）
     WaterfallSpeedChanged(f32),
+    /// MIDITrail Z 方向显示距离变更（0.1~15.0，精度 0.1）
+    MiditrailZFarChanged(f32),
 
     // ── 导出控制 ──
     /// 开始导出（点击「开始导出」按钮，由 handler 发射 StartVideoExport 事件）

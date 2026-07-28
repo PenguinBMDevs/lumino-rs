@@ -20,4 +20,6 @@ pub use memory_monitor_state::MemoryMonitorDialogState;
 pub use project_settings_state::ProjectSettingsDialogState;
 pub use speed_change_state::SpeedChangeDialogState;
 pub use toggle_animation::ToggleAnimationState;
-pub use video_export_state::{VideoExportDialogState, VideoExportOverlayState};
+pub use video_export_state::{
+    MIDITRAIL_Z_FAR_DEFAULT, MIDITRAIL_Z_FAR_MAX, VideoExportDialogState, VideoExportOverlayState,
+};

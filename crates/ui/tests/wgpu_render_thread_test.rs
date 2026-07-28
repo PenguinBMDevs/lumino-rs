@@ -59,6 +59,7 @@ fn test_render_params_clone() {
         arrangement_uniform: lumino_gfx::ArrangementUniform::default(),
         cc_bar_instances: Vec::new(),
         velocity_panel_rect: None,
+        ..Default::default()
     };
 
     let cloned = params.clone();

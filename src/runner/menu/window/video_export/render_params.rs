@@ -2,9 +2,11 @@
 //!
 //! 将 RenderParams 构建逻辑独立拆分，便于维护。
 
+use lumino_core::palette::current_track_color_f32;
 use lumino_event::window::video::RenderMode;
 use lumino_gfx::{
-    ARRANGEMENT_PALETTE, MiditrailNoteGpu, NoteInstance, RenderParams, generate_ruler_instances,
+    MiditrailNoteGpu, NoteInstance, RenderParams, generate_ruler_instances,
+    miditrail_renderer::{MIDITRAIL_MAX_Z_FAR_DISTANCE, MIDITRAIL_SCENE_DEPTH},
     pack_color,
 };
 use lumino_midi_loader::MidiDocument;
@@ -34,6 +36,7 @@ pub fn build_video_export_render_params(
     key_count: u16,
     render_mode: RenderMode,
     waterfall_scroll_speed: f32,
+    miditrail_z_far: f32,
     fps: f32,
     visible_notes: &mut Vec<SortableNote>,
     note_instances_out: &mut Vec<NoteInstance>,
@@ -56,6 +59,7 @@ pub fn build_video_export_render_params(
             ppq,
             key_count,
             waterfall_scroll_speed,
+            miditrail_z_far,
             fps,
         ),
         RenderMode::NoteRectangle => build_note_rectangle_render_params(
@@ -127,8 +131,7 @@ fn build_note_rectangle_render_params(
     note_instances_out.clear();
     note_instances_out.reserve(visible_notes.len());
     for n in visible_notes.iter() {
-        let color = ARRANGEMENT_PALETTE[n.track_idx as usize % ARRANGEMENT_PALETTE.len()];
-        let color_packed = pack_color([color[0], color[1], color[2], 1.0]);
+        let color_packed = pack_color(current_track_color_f32(n.track_idx as usize));
         note_instances_out.push(NoteInstance {
             position: [n.start_tick as f32, n.key as f32],
             size_x: (n.length as f32).max(1.0),
@@ -178,13 +181,13 @@ fn build_waterfall_render_params(
         ppq,
         key_count,
         waterfall_scroll_speed,
+        1.0,
         &mut notes,
     );
 
     let mut waterfall_notes = Vec::with_capacity(notes.len());
     for n in &notes {
-        let color = ARRANGEMENT_PALETTE[n.track_idx as usize % ARRANGEMENT_PALETTE.len()];
-        let color_packed = pack_color([color[0], color[1], color[2], 1.0]);
+        let color_packed = pack_color(current_track_color_f32(n.track_idx as usize));
         waterfall_notes.push(lumino_gfx::WaterfallNoteGpu {
             key: n.key as u32,
             start_tick: n.start_tick,
@@ -218,10 +221,14 @@ fn build_miditrail_render_params(
     ppq: u32,
     key_count: u16,
     waterfall_scroll_speed: f32,
+    miditrail_z_far: f32,
     fps: f32,
 ) -> RenderParams {
     let w = width.max(1) as f32;
     let h = height.max(1) as f32;
+    // 为支持 Z 显示距离拉到最大，收集范围按最大倍数扩展；
+    // 实际截断由 `miditrail_z_far` 在 GPU 实例构建阶段控制。
+    let z_far_scale = MIDITRAIL_MAX_Z_FAR_DISTANCE / MIDITRAIL_SCENE_DEPTH;
 
     let mut notes = Vec::new();
     collect_visible_notes_for_gpu(
@@ -230,13 +237,13 @@ fn build_miditrail_render_params(
         ppq,
         key_count,
         waterfall_scroll_speed,
+        z_far_scale,
         &mut notes,
     );
 
     let mut miditrail_notes = Vec::with_capacity(notes.len());
     for n in &notes {
-        let color = ARRANGEMENT_PALETTE[n.track_idx as usize % ARRANGEMENT_PALETTE.len()];
-        let color_packed = pack_color([color[0], color[1], color[2], 1.0]);
+        let color_packed = pack_color(current_track_color_f32(n.track_idx as usize));
         miditrail_notes.push(MiditrailNoteGpu {
             key: n.key as u32,
             start_tick: n.start_tick,
@@ -260,6 +267,7 @@ fn build_miditrail_render_params(
         miditrail_speed: waterfall_scroll_speed.max(0.1),
         miditrail_notes,
         miditrail_current_tick: tick,
+        miditrail_z_far: miditrail_z_far.max(0.1),
         fps,
         ..Default::default()
     }
@@ -272,15 +280,17 @@ fn collect_visible_notes_for_gpu(
     ppq: u32,
     key_count: u16,
     waterfall_scroll_speed: f32,
+    viewport_scale: f32,
     out: &mut Vec<GpuVisibleNote>,
 ) {
     out.clear();
     let speed = waterfall_scroll_speed.max(0.1);
     let ticks_per_measure = ppq * 4;
     let visible_measure_count = ((4.0 / speed).round()).max(1.0) as u32;
-    let viewport_tick_span = (ticks_per_measure * visible_measure_count).max(1);
+    let viewport_tick_span =
+        (ticks_per_measure * visible_measure_count).max(1) as f32 * viewport_scale;
     let tick_start = tick;
-    let tick_end = tick.saturating_add(viewport_tick_span);
+    let tick_end = tick.saturating_add(viewport_tick_span as u32);
 
     for (track_idx, track_notes) in document.notes.iter().enumerate() {
         for n in track_notes {

@@ -31,6 +31,13 @@ const KEY_PRESS_SPEED_DOWN: f32 = 15.0;
 const KEY_PRESS_SPEED_UP: f32 = 10.0;
 const AURA_TEXTURE_SIZE: u32 = 128;
 
+/// 3D 场景深度（tick 到 Z 坐标的映射比例）。
+pub const MIDITRAIL_SCENE_DEPTH: f32 = 7.5;
+/// Z 方向显示距离默认值（与场景深度相同）。
+pub const MIDITRAIL_DEFAULT_Z_FAR_DISTANCE: f32 = 7.5;
+/// Z 方向显示距离最大值（也是音符收集范围的最大倍数）。
+pub const MIDITRAIL_MAX_Z_FAR_DISTANCE: f32 = 15.0;
+
 /// 3D MIDITrail 渲染器
 ///
 /// 使用实例化立方体渲染键盘与音符，结果写入 `Rgba8Unorm` 离屏纹理。

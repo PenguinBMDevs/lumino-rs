@@ -6,7 +6,9 @@ use iced_widget::{
 };
 
 use crate::message::{Message, VideoExportAction};
-use crate::state::root_state::{VideoExportDialogState, VideoExportOverlayState};
+use crate::state::root_state::{
+    MIDITRAIL_Z_FAR_MAX, VideoExportDialogState, VideoExportOverlayState,
+};
 
 use super::widgets;
 
@@ -153,6 +155,35 @@ fn render_settings_section<'a>(
         ]
         .spacing(8)
         .align_y(Alignment::Center),
+        // MIDITrail Z 方向显示距离滑杆（仅在选择 MIDITrail 时显示）
+        {
+            let z_far_row: crate::Element<'a> = if state.render_mode == "MIDITrail" {
+                row![
+                    text("Z 显示距离:")
+                        .size(14)
+                        .style(move |_t: &iced_core::Theme| text::Style {
+                            color: Some(palette.background.neutral.text),
+                        })
+                        .width(100),
+                    slider(0.1..=MIDITRAIL_Z_FAR_MAX, state.miditrail_z_far, |v| {
+                        Message::VideoExport(VideoExportAction::MiditrailZFarChanged(v))
+                    })
+                    .step(0.1_f32)
+                    .width(200.0),
+                    text(format!("{:.1}", state.miditrail_z_far))
+                        .size(14)
+                        .style(move |_t: &iced_core::Theme| text::Style {
+                            color: Some(palette.background.neutral.text),
+                        }),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center)
+                .into()
+            } else {
+                space().height(0).into()
+            };
+            z_far_row
+        },
         space().height(8),
         // 分辨率行
         row![

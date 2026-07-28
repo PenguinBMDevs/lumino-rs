@@ -174,4 +174,6 @@ pub struct VideoExportConfig {
     pub render_mode: RenderMode,
     /// 瀑布流滚动速度（0.1~10.0，默认 1.0）
     pub waterfall_scroll_speed: f32,
+    /// MIDITrail Z 方向显示距离（0.1~15.0，默认 7.5，精度 0.1）
+    pub miditrail_z_far: f32,
 }

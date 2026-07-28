@@ -63,6 +63,7 @@ impl DialogHandler {
                 let quality = st.quality.clone();
                 let render_mode = st.render_mode.clone();
                 let waterfall_speed = st.waterfall_speed;
+                let miditrail_z_far = st.miditrail_z_far;
 
                 // 设置导出中状态
                 root.state.video_export_dialog.overlay = VideoExportOverlayState::Exporting;
@@ -93,6 +94,7 @@ impl DialogHandler {
                     render_mode: lumino_event::window::video::RenderMode::from_str(&render_mode)
                         .unwrap_or_default(),
                     waterfall_scroll_speed: waterfall_speed,
+                    miditrail_z_far,
                 };
                 let ev = crate::event::window::Event::start_video_export(video_config, document);
                 crate::event::emit(crate::event::Event::Window(ev));
@@ -142,6 +144,9 @@ impl DialogHandler {
             }
             V::WaterfallSpeedChanged(v) => {
                 root.state.video_export_dialog.waterfall_speed = v;
+            }
+            V::MiditrailZFarChanged(v) => {
+                root.state.video_export_dialog.miditrail_z_far = v;
             }
             V::FpsChanged(v) => {
                 root.state.video_export_dialog.fps = v;

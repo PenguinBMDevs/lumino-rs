@@ -4,8 +4,9 @@
 pub use lumino_ui_core::state::{
     AudioExportDialogState, BatchEditDialogState, CollaborationDialogState, CollaborationViewState,
     CustomPrecisionDialogState, ExportProgressDialogState, LoadConfirmDialogState,
-    MemoryMonitorDialogState, ProjectSettingsDialogState, SpeedChangeDialogState,
-    ToggleAnimationState, VideoExportDialogState, VideoExportOverlayState,
+    MIDITRAIL_Z_FAR_DEFAULT, MIDITRAIL_Z_FAR_MAX, MemoryMonitorDialogState,
+    ProjectSettingsDialogState, SpeedChangeDialogState, ToggleAnimationState,
+    VideoExportDialogState, VideoExportOverlayState,
 };
 
 use crate::app_mode::AppMode;

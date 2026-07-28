@@ -231,3 +231,37 @@ fn test_note_instances_grouped_by_key_color() {
         "黑键音符应后绘制，覆盖白键音符"
     );
 }
+
+#[test]
+fn test_note_instances_clipped_at_z_far_distance() {
+    let mut positions = Vec::new();
+    let mut widths = Vec::new();
+    let mut last = 0u32;
+    update_key_positions(128, &mut last, &mut positions, &mut widths);
+
+    let uniform = MiditrailUniformGpu {
+        z_far_distance: 3.0,
+        ..MiditrailUniformGpu::default()
+    };
+    // 音符从当前 tick 开始，长度刚好覆盖整个视口，因此无裁剪时会延伸到 -SCENE_DEPTH。
+    let notes = vec![MiditrailNoteGpu {
+        key: 60,
+        start_tick: 0,
+        end_tick: 480 * 16,
+        color_packed: 0xFF0000FF,
+        track_idx: 0,
+        velocity: 100,
+        channel: 0,
+        _padding: 0,
+    }];
+    let mut out = Vec::new();
+    build_note_instances(&uniform, &notes, &positions, &widths, &mut out);
+    assert_eq!(out.len(), 1);
+    // 立方体锚定在 translation，向 +Z 方向延伸 scale[2]，因此后端直接为 translation[2]。
+    let back_z = out[0].translation[2];
+    let expected_z_far = NOTE_Z_OFFSET - uniform.z_far_distance;
+    assert!(
+        (back_z - expected_z_far).abs() < 1e-5,
+        "音符应被截断到 Z 远平面，期望 {expected_z_far}, 实际 {back_z}"
+    );
+}
