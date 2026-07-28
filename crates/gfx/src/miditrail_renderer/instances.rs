@@ -95,6 +95,18 @@ pub fn pack_color(color: [f32; 4]) -> u32 {
     (r << 24) | (g << 16) | (b << 8) | a
 }
 
+/// 将颜色每个通道提亮指定值并重新打包为 `0xRRGGBBAA`。
+///
+/// 参考 Comet MIDITrail：激活音符在最终颜色上直接 +0.5（clamp 到 1.0）。
+#[must_use]
+pub fn boost_color_packed(packed: u32, amount: f32) -> u32 {
+    let a = packed & 0xFF;
+    let r = (((packed >> 24) & 0xFF) as f32 / 255.0 + amount).clamp(0.0, 1.0);
+    let g = (((packed >> 16) & 0xFF) as f32 / 255.0 + amount).clamp(0.0, 1.0);
+    let b = (((packed >> 8) & 0xFF) as f32 / 255.0 + amount).clamp(0.0, 1.0);
+    (((r * 255.0) as u32) << 24) | (((g * 255.0) as u32) << 16) | (((b * 255.0) as u32) << 8) | a
+}
+
 /// 构建可见音符的实例数据。
 pub fn build_note_instances(
     uniform: &MiditrailUniformGpu,
@@ -141,10 +153,16 @@ pub fn build_note_instances(
         let scale = [width * 0.92, note_height, z_length];
         let translation = [left + width * 0.04, note_y, z_center - z_length * 0.5];
 
+        let color = if note.is_active_at(tick) {
+            boost_color_packed(note.color_packed, 0.5)
+        } else {
+            note.color_packed
+        };
+
         entries.push((
             note.key,
             z_start,
-            MiditrailInstanceGpu::new(translation, scale, note.color_packed, false, 0.0, 0.0),
+            MiditrailInstanceGpu::new(translation, scale, color, false, 0.0, 0.0),
         ));
     }
 

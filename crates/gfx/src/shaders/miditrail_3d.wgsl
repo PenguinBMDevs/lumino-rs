@@ -37,7 +37,7 @@ fn unpack_color(packed: u32) -> vec4<f32> {
     return vec4(r, g, b, a);
 }
 
-fn key_color_factor(normal: vec3<f32>) -> f32 {
+fn face_shade_factor(normal: vec3<f32>) -> f32 {
     let n = normalize(normal);
     let is_top = n.y > 0.75;
     let is_front = n.z > 0.75;
@@ -98,11 +98,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var color = in.color;
     if (in.is_key > 0.5) {
         // 琴键按面着色：顶层高亮，正面淡灰，背面/底面压暗
-        let factor = key_color_factor(normal);
+        let factor = face_shade_factor(normal);
         color = in.color * factor;
-    } else {
-        let n_dot_l = max(dot(normal, camera.light_dir), 0.0);
-        color = in.color * (camera.ambient + (1.0 - camera.ambient) * n_dot_l);
     }
+    // 音符保持平面颜色（Comet 风格：激活音符由 CPU 提亮 +0.5）
     return vec4(color, 1.0);
 }

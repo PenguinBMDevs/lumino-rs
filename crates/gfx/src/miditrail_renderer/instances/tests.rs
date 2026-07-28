@@ -31,6 +31,16 @@ fn test_key_positions() {
 }
 
 #[test]
+fn test_boost_color_packed_clamps_and_preserves_alpha() {
+    // 0xRRGGBBAA 格式：红色 0.5 + 0.5 = 1.0，绿色 0 变 0.5，蓝色 0 变 0.5，alpha 保持不变
+    let boosted = boost_color_packed(0x800000FF, 0.5);
+    assert_eq!((boosted >> 24) & 0xFF, 0xFF);
+    assert_eq!((boosted >> 16) & 0xFF, 0x7F);
+    assert_eq!((boosted >> 8) & 0xFF, 0x7F);
+    assert_eq!(boosted & 0xFF, 0xFF);
+}
+
+#[test]
 fn test_build_instances() {
     let mut positions = Vec::new();
     let mut widths = Vec::new();
