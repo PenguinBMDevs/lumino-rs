@@ -1,6 +1,7 @@
 //! Miditrail 渲染通道执行
 //!
-//! 负责把音符/琴键实例和 Aura 实例绘制到同一个离屏 render pass 中。
+//! 负责把音符、Aura 与琴键实例绘制到同一个离屏 render pass 中。
+//! 绘制顺序：音符 → Aura → 琴键，保证琴键在最顶层并遮挡部分光环。
 
 use super::{MiditrailAuraInstanceGpu, MiditrailInstanceGpu, MiditrailRenderer};
 
@@ -9,7 +10,8 @@ impl MiditrailRenderer {
     pub(super) fn execute_render_pass(
         &self,
         encoder: &mut wgpu::CommandEncoder,
-        instances: &[MiditrailInstanceGpu],
+        note_instances: &[MiditrailInstanceGpu],
+        key_instances: &[MiditrailInstanceGpu],
         aura_instances: &[MiditrailAuraInstanceGpu],
     ) {
         let color_view = self
@@ -25,6 +27,10 @@ impl MiditrailRenderer {
             .instance_buffer
             .as_ref()
             .expect("instance_buffer 应已初始化");
+
+        let note_count = note_instances.len() as u32;
+        let key_count = key_instances.len() as u32;
+        let key_offset = note_count;
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -55,7 +61,19 @@ impl MiditrailRenderer {
                 occlusion_query_set: None,
             });
 
-            // 先绘制音符与琴键
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_bind_group(0, bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, instance_buf.slice(..));
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            // 1. 绘制音符
+            render_pass.draw_indexed(0..Self::CUBE_INDICES.len() as u32, 0, 0..note_count);
+
+            // 2. 绘制 Aura（附加混合，不写入深度）
+            self.draw_aura(&mut render_pass, aura_instances);
+
+            // 3. 绘制琴键，遮挡部分光环
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
@@ -64,11 +82,8 @@ impl MiditrailRenderer {
             render_pass.draw_indexed(
                 0..Self::CUBE_INDICES.len() as u32,
                 0,
-                0..instances.len() as u32,
+                key_offset..key_offset + key_count,
             );
-
-            // 再绘制 Aura（附加混合，不写入深度），使其环绕在音符立方体前缘
-            self.draw_aura(&mut render_pass, aura_instances);
         }
     }
 }

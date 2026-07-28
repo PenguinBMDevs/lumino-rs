@@ -177,26 +177,33 @@ impl MiditrailRenderer {
         );
         self.update_key_press_factors(uniform, notes);
 
-        let mut instances = Vec::with_capacity(notes.len() + uniform.key_count as usize);
+        let mut note_instances = Vec::with_capacity(notes.len());
         build_note_instances(
             uniform,
             notes,
             &self.key_positions,
             &self.key_widths,
-            &mut instances,
+            &mut note_instances,
         );
+        let mut key_instances = Vec::with_capacity(uniform.key_count as usize);
         build_key_instances(
             uniform,
             notes,
             &self.key_positions,
             &self.key_widths,
             &self.key_press_factors,
-            &mut instances,
+            &mut key_instances,
         );
 
-        self.ensure_instance_buffer(device, instances.len());
+        let total_instances = note_instances.len() + key_instances.len();
+        self.ensure_instance_buffer(device, total_instances);
+        let note_bytes =
+            (note_instances.len() * std::mem::size_of::<MiditrailInstanceGpu>()) as u64;
         if let Some(ref buf) = self.instance_buffer {
-            queue.write_buffer(buf, 0, bytemuck::cast_slice(&instances));
+            queue.write_buffer(buf, 0, bytemuck::cast_slice(&note_instances));
+            if !key_instances.is_empty() {
+                queue.write_buffer(buf, note_bytes, bytemuck::cast_slice(&key_instances));
+            }
         }
 
         let mut aura_instances = Vec::new();
@@ -221,7 +228,7 @@ impl MiditrailRenderer {
             self.rebuild_bind_group(device);
         }
 
-        self.execute_render_pass(encoder, &instances, &aura_instances);
+        self.execute_render_pass(encoder, &note_instances, &key_instances, &aura_instances);
     }
 
     /// 获取输出纹理引用。
