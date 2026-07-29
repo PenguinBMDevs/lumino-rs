@@ -96,6 +96,7 @@ fn load_from_folder(path: &Path) -> Result<LuminoProject> {
             .map_err(|e| CoreError::FileFormat(format!("controls 解码失败: {e}")))?;
         project.control_changes = data.control_changes;
         project.program_changes = data.program_changes;
+        project.pitch_bends = data.pitch_bends;
     }
 
     // 读取 track_names（专用格式 LMNM）
@@ -173,6 +174,7 @@ fn load_from_archive(bytes: &[u8]) -> Result<LuminoProject> {
             .map_err(|e| CoreError::FileFormat(format!("controls 解码失败: {e}")))?;
         project.control_changes = data.control_changes;
         project.program_changes = data.program_changes;
+        project.pitch_bends = data.pitch_bends;
     }
 
     // 读取 track_names（专用格式 LMNM）
@@ -245,6 +247,60 @@ mod tests {
 
         assert_eq!(loaded.metadata.project.name, "Test");
         assert_eq!(loaded.tracks.len(), 1);
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    fn create_event_rich_project() -> LuminoProject {
+        let mut project = create_test_project();
+        project.tempo_changes = vec![(0, 120.0), (960, 140.0)];
+        project.time_signatures = vec![(0, 4, 4), (1920, 3, 4)];
+        project.key_signatures = vec![(0, 0, true), (1920, 2, false)];
+        project.control_changes = vec![(0, 0, 0, 7, 100), (480, 0, 0, 10, 64)];
+        project.program_changes = vec![(0, 0, 0, 1), (960, 0, 0, 5)];
+        project.pitch_bends = vec![(240, 0, 0, 2048), (720, 0, 0, -1024)];
+        project.metadata.audio.default_bpm = 120.0;
+        project
+    }
+
+    fn assert_event_rich_project_eq(loaded: &LuminoProject) {
+        assert_eq!(loaded.tempo_changes, &[(0, 120.0), (960, 140.0)]);
+        assert_eq!(loaded.time_signatures, &[(0, 4, 4), (1920, 3, 4)]);
+        assert_eq!(loaded.key_signatures, &[(0, 0, true), (1920, 2, false)]);
+        assert_eq!(
+            loaded.control_changes,
+            &[(0, 0, 0, 7, 100), (480, 0, 0, 10, 64)]
+        );
+        assert_eq!(loaded.program_changes, &[(0, 0, 0, 1), (960, 0, 0, 5)]);
+        assert_eq!(loaded.pitch_bends, &[(240, 0, 0, 2048), (720, 0, 0, -1024)]);
+        assert!((loaded.metadata.audio.default_bpm - 120.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_load_events_roundtrip_folder() {
+        let project = create_event_rich_project();
+        let tmp = std::env::temp_dir().join("lumino_load_events_folder_test");
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        crate::project::save::save_to_folder(&project, &tmp).expect("保存到文件夹失败");
+        let loaded = load_from_folder(&tmp).expect("从文件夹加载项目失败");
+
+        assert_event_rich_project_eq(&loaded);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_load_events_roundtrip_archive() {
+        let project = create_event_rich_project();
+        let tmp = std::env::temp_dir().join("lumino_load_events_archive_test.lmpj");
+        let _ = std::fs::remove_file(&tmp);
+
+        crate::project::save::save_to_archive(&project, &tmp).expect("保存到归档失败");
+        let bytes = std::fs::read(&tmp).expect("读取归档文件失败");
+        let loaded = load_from_archive(&bytes).expect("从归档加载项目失败");
+
+        assert_event_rich_project_eq(&loaded);
 
         let _ = std::fs::remove_file(&tmp);
     }

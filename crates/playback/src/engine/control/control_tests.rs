@@ -179,11 +179,13 @@ fn test_document_streaming_emits_events_in_order() {
             ],
         ],
         tempo_changes: vec![(0, 120.0)],
+        time_signatures: vec![(0, 4, 4)],
         control_events: vec![],
         track_names: vec![None, None],
         total_ticks: 10,
         track_count: 2,
         tracks: TrackManager::new(2),
+        division: 480,
     });
 
     engine.set_document(doc, 0);

@@ -29,6 +29,7 @@ fn make_test_doc() -> MidiDocument {
         total_ticks: 1920,
         track_count,
         tracks: lumino_midi_loader::TrackManager::new(track_count),
+        division: 480,
     }
 }
 

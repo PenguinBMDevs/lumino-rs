@@ -404,11 +404,13 @@ fn test_cc_via_set_midi_document() {
             }],
         ],
         tempo_changes: vec![(0, 120.0)],
+        time_signatures: vec![(0, 4, 4)],
         control_events,
         track_names: vec![Some("Track 0".into()), Some("Track 1".into())],
         total_ticks: 960,
         track_count: 2,
         tracks: TrackManager::new(2),
+        division: 480,
     });
 
     // 模拟 MIDI 加载流程

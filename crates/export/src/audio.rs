@@ -560,6 +560,7 @@ mod tests {
             total_ticks,
             track_count,
             tracks: TrackManager::new(track_count),
+            division: 480,
         }
     }
 
