@@ -69,14 +69,14 @@ pub use midi::export_midi_to_bytes;
 
 // ── 工程文件 ──
 
-/// 从磁盘加载 Lumino 工程文件
-pub use project::load::load_project;
-/// 保存工程为压缩包
-pub use project::save::{save_to_archive, save_to_folder};
 /// 工程文件核心类型
 pub use project::{
-    LoadedFileEntry, LoadedFormat, LuminoProject, TrackSlot,
+    LoadedFileEntry, LoadedFormat, LuminoProject, TrackSlot, TrackVisibilitySer,
     data_formats::{LmctlData, LmnamesData, LmsigData, LmtempData},
     metadata::ProjectMetadata,
-    track::{LmtrackData, TrackMeta, TrackVisibilitySer},
+    track::{LmtrackData, TrackMeta},
 };
+/// 从磁盘加载 Lumino 工程文件（兼容旧版 LMPJ）
+pub use project::{load_project, project_to_parsed_midi};
+/// 保存工程为压缩包/文件夹
+pub use project::{save_to_archive, save_to_folder};

@@ -12,6 +12,7 @@ pub mod note;
 pub mod note_store;
 pub mod palette;
 pub mod pattern;
+pub mod project;
 pub mod smooth_scroll;
 pub mod spatial_index;
 pub mod storage;
@@ -41,6 +42,16 @@ pub use midi_types::{
 pub use note::Note;
 pub use note_store::{BitSet, NoteMut, NoteStore, NoteView};
 pub use pattern::Pattern;
+pub use project::{
+    LoadedFileEntry, LoadedFormat, LuminoProject, TrackSlot, TrackVisibilitySer,
+    archive::{ArchiveHeader, FileEntry, FileTable, build_archive, read_file_from_archive},
+    data_formats::{LmctlData, LmnamesData, LmsigData, LmtempData},
+    folder::FolderPaths,
+    load::load_project,
+    metadata::ProjectMetadata,
+    save::{save_to_archive, save_to_folder},
+    track::{LmtrackData, LmtrackHeader, TrackMeta},
+};
 pub use smooth_scroll::SmoothScrollAnimation;
 pub use spatial_index::{NoteRef, NoteSpatialIndex};
 pub use types::{AudioAction, DotType, NotePrecision, Tool};

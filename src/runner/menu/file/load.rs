@@ -6,13 +6,20 @@
 //! - 1 个 MIDI 文件 → 自动解压并加载
 //! - 多个 MIDI 文件 → 弹出选择对话框（当前自动选择第一个，待完善）
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use lumino_midi_loader::loader::archive_loading::{
     ArchiveLoadResult, extract_entry_with_tempdir, scan_file_for_midi,
 };
 
 use crate::runner::{RunnerInner, async_helper::run_async_task};
+
+/// 判断路径是否为 LMPJ 工程文件
+fn is_lmpj_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("lmpj"))
+}
 
 impl RunnerInner {
     /// 打开文件（支持 MIDI 文件和压缩包自动解压）
@@ -180,6 +187,11 @@ impl RunnerInner {
 
     /// 加载 MIDI 文件（后台异步加载）
     pub(crate) fn load_midi_file(&self, path: PathBuf) {
+        if is_lmpj_path(&path) {
+            self.load_lmpj_project(path);
+            return;
+        }
+
         tracing::info!("开始后台加载 MIDI 文件：{:?}", path);
         let progress_cb = self.window_state.progress_cb.clone();
         tokio::spawn(async move {
@@ -199,6 +211,48 @@ impl RunnerInner {
                 },
             )
             .await;
+        });
+    }
+
+    /// 加载 LMPJ 工程文件（新格式或旧版兼容）
+    fn load_lmpj_project(&self, path: PathBuf) {
+        tracing::info!("开始后台加载 LMPJ 工程：{:?}", path);
+        let progress_cb = self.window_state.progress_cb.clone();
+        tokio::spawn(async move {
+            progress_cb("正在加载 LMPJ 工程", 0.3);
+            let path_for_blocking = path.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                let project = lumino_export::load_project(&path_for_blocking)?;
+                lumino_export::project_to_parsed_midi(&project, path_for_blocking)
+            })
+            .await;
+
+            match result {
+                Ok(Ok(parsed)) => {
+                    progress_cb("工程加载成功", 1.0);
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::MidiParsed(std::sync::Arc::new(
+                            parsed,
+                        )),
+                    ));
+                }
+                Ok(Err(e)) => {
+                    let msg = format!("加载 LMPJ 工程失败: {e}");
+                    progress_cb(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::MidiParseError(msg),
+                    ));
+                }
+                Err(e) => {
+                    let msg = format!("加载 LMPJ 工程任务失败: {e}");
+                    progress_cb(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::MidiParseError(msg),
+                    ));
+                }
+            }
         });
     }
 

@@ -3758,12 +3758,15 @@ dependencies = [
 name = "lumino-core"
 version = "0.2.0-crates-io-preview1"
 dependencies = [
+ "bincode",
  "bit-vec",
  "chrono",
+ "crc32fast",
  "font-kit",
  "im",
  "libc",
  "lumino-midi-model",
+ "lumino-midly",
  "png 0.17.16",
  "puffin",
  "serde",
@@ -3772,6 +3775,7 @@ dependencies = [
  "toml 0.9.12+spec-1.1.0",
  "tracing",
  "winapi",
+ "zstd",
 ]
 
 [[package]]
@@ -3802,8 +3806,6 @@ version = "0.2.0-crates-io-preview1"
 dependencies = [
  "bincode",
  "bytes",
- "chrono",
- "crc32fast",
  "encoding_rs",
  "hound",
  "lumino-core",
@@ -3819,7 +3821,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
  "tracing",
  "xsynth-core",
  "xsynth-soundfonts",

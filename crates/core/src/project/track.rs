@@ -4,7 +4,7 @@
 
 use lumino_midi_model::compact::CompactEvent;
 
-use crate::{ExportError, ExportResult};
+use crate::{CoreError, Result};
 
 /// 音轨可见性（序列化版本）
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -64,9 +64,9 @@ impl LmtrackHeader {
     }
 
     /// 从字节数组解码
-    pub fn from_bytes(bytes: &[u8]) -> ExportResult<Self> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < Self::SIZE {
-            return Err(ExportError::FileFormat("lmtrack header: too short".into()));
+            return Err(CoreError::FileFormat("lmtrack header: too short".into()));
         }
         let mut magic = [0u8; 4];
         magic.copy_from_slice(&bytes[0..4]);
@@ -117,15 +117,23 @@ impl LmtrackData {
     }
 
     /// 获取 CompactEvent 迭代器（零拷贝视图）
-    pub fn compact_events(&self) -> impl Iterator<Item = CompactEvent> + '_ {
-        self.events.chunks_exact(12).map(|chunk| {
-            let bytes: &[u8; 12] = chunk.try_into().unwrap_or(&[0; 12]);
-            CompactEvent::from_bytes(bytes)
-        })
+    pub fn compact_events(&self) -> Result<impl Iterator<Item = CompactEvent> + '_> {
+        let chunks = self.events.chunks_exact(12);
+        if chunks.remainder().is_empty() {
+            Ok(chunks.map(|chunk| {
+                // chunks_exact(12) 保证每个 chunk 长度都是 12
+                let bytes: &[u8; 12] = chunk.try_into().expect("chunk length is 12");
+                CompactEvent::from_bytes(bytes)
+            }))
+        } else {
+            Err(CoreError::FileFormat(
+                "lmtrack: event bytes length is not a multiple of 12".into(),
+            ))
+        }
     }
 
     /// 编码为字节（文件头 + bincode + zstd）
-    pub fn encode(&self) -> ExportResult<Vec<u8>> {
+    pub fn encode(&self) -> Result<Vec<u8>> {
         let mut result = Vec::new();
 
         // 写入文件头
@@ -137,30 +145,29 @@ impl LmtrackData {
         result.extend_from_slice(&header.to_bytes());
 
         // bincode 序列化主体
-        let serialized = bincode::serialize(self)
-            .map_err(|e| ExportError::Encoding(format!("lmtrack bincode: {e}")))?;
+        let serialized = bincode::serialize(self).map_err(CoreError::from)?;
 
         // zstd 压缩
         let compressed = zstd::stream::encode_all(std::io::Cursor::new(serialized), 3)
-            .map_err(|e| ExportError::Compression(format!("lmtrack zstd: {e}")))?;
+            .map_err(|e| CoreError::Compression(format!("lmtrack zstd: {e}")))?;
 
         result.extend_from_slice(&compressed);
         Ok(result)
     }
 
     /// 从字节解码
-    pub fn decode(bytes: &[u8]) -> ExportResult<Self> {
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < LmtrackHeader::SIZE {
-            return Err(ExportError::FileFormat("lmtrack: too short".into()));
+            return Err(CoreError::FileFormat("lmtrack: too short".into()));
         }
 
         // 验证魔数
         let header = LmtrackHeader::from_bytes(bytes)?;
         if &header.magic != b"LMTR" {
-            return Err(ExportError::FileFormat("lmtrack: invalid magic".into()));
+            return Err(CoreError::FileFormat("lmtrack: invalid magic".into()));
         }
         if header.version != 1 {
-            return Err(ExportError::FileFormat(format!(
+            return Err(CoreError::FileFormat(format!(
                 "lmtrack: unsupported version {}",
                 header.version
             )));
@@ -169,11 +176,10 @@ impl LmtrackData {
         // zstd 解压
         let decompressed =
             zstd::stream::decode_all(std::io::Cursor::new(&bytes[LmtrackHeader::SIZE..]))
-                .map_err(|e| ExportError::Compression(format!("lmtrack decompression: {e}")))?;
+                .map_err(|e| CoreError::Compression(format!("lmtrack decompression: {e}")))?;
 
         // bincode 反序列化
-        bincode::deserialize(&decompressed)
-            .map_err(|e| ExportError::Encoding(format!("lmtrack decode: {e}")))
+        bincode::deserialize(&decompressed).map_err(CoreError::from)
     }
 }
 
@@ -273,7 +279,7 @@ mod tests {
         ];
         let data = LmtrackData::from_compact_events(meta, &events);
 
-        let collected: Vec<_> = data.compact_events().collect();
+        let collected: Vec<_> = data.compact_events().expect("构建迭代器失败").collect();
         assert_eq!(collected.len(), 2);
         assert_eq!(collected[0].delta_tick(), 100);
         assert_eq!(collected[1].delta_tick(), 200);

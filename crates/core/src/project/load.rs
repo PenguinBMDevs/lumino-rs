@@ -1,6 +1,8 @@
 //! 工程加载逻辑
 //!
 //! 从文件夹形态或单文件形态加载为内存中的 `LuminoProject`。
+//!
+//! 旧版 LMPJ 兼容加载保留在 `lumino-export` 中，避免核心 crate 依赖加载器。
 
 use std::path::{Path, PathBuf};
 
@@ -11,38 +13,50 @@ use crate::project::{
     metadata::ProjectMetadata,
     track::LmtrackData,
 };
+use crate::{CoreError, Result};
 
-/// 从路径加载工程（自动识别形态）
-pub fn load_project(path: impl AsRef<Path>) -> crate::ExportResult<LuminoProject> {
+/// 判断路径是否为新的工程格式（文件夹或以 LMPJ 魔数开头的文件）
+pub fn is_project_file(path: impl AsRef<Path>) -> bool {
+    let path = path.as_ref();
+    if path.is_dir() {
+        return true;
+    }
+    match std::fs::read(path) {
+        Ok(bytes) if bytes.len() >= 4 => &bytes[0..4] == b"LMPJ",
+        _ => false,
+    }
+}
+
+/// 从路径加载工程（仅识别新格式：文件夹或新归档）
+pub fn load_project(path: impl AsRef<Path>) -> Result<LuminoProject> {
     let path = path.as_ref();
 
     if path.is_dir() {
-        // 文件夹形态
         load_from_folder(path)
     } else {
-        // 单文件形态或旧版 LMPJ
         let bytes = std::fs::read(path)?;
         if bytes.len() >= 4 && &bytes[0..4] == b"LMPJ" {
             load_from_archive(&bytes)
         } else {
-            // 旧版 LMPJ（bincode+zstd）
-            load_legacy_lmpj(&bytes)
+            Err(CoreError::FileFormat(
+                "不是有效的 Lumino 工程文件（缺少 LMPJ 魔数）".into(),
+            ))
         }
     }
 }
 
 /// 从文件夹加载
-fn load_from_folder(path: &Path) -> crate::ExportResult<LuminoProject> {
+fn load_from_folder(path: &Path) -> Result<LuminoProject> {
     // 读取 metadata.toml
     let metadata = ProjectMetadata::from_file(path.join(folder::FolderPaths::METADATA_FILE))
-        .map_err(|e| crate::ExportError::Encoding(format!("读取 metadata.toml 失败: {e}")))?;
+        .map_err(|e| CoreError::FileFormat(format!("读取 metadata.toml 失败: {e}")))?;
 
     let mut project = LuminoProject::new(&metadata.project.name);
     project.metadata = metadata;
 
     // 读取音轨
     let tracks = folder::read_all_tracks(path)
-        .map_err(|e| crate::ExportError::Encoding(format!("读取音轨失败: {e}")))?;
+        .map_err(|e| CoreError::FileFormat(format!("读取音轨失败: {e}")))?;
     for track in tracks {
         let track_id = track.meta.track_id;
         let idx = track_id as usize;
@@ -60,7 +74,7 @@ fn load_from_folder(path: &Path) -> crate::ExportResult<LuminoProject> {
     if tempo_path.exists() {
         let bytes = std::fs::read(&tempo_path)?;
         let data = LmtempData::decode(&bytes)
-            .map_err(|e| crate::ExportError::Encoding(format!("tempo 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(format!("tempo 解码失败: {e}")))?;
         project.tempo_changes = data.tempo_changes;
     }
 
@@ -69,7 +83,7 @@ fn load_from_folder(path: &Path) -> crate::ExportResult<LuminoProject> {
     if sig_path.exists() {
         let bytes = std::fs::read(&sig_path)?;
         let data = LmsigData::decode(&bytes)
-            .map_err(|e| crate::ExportError::Encoding(format!("signature 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(format!("signature 解码失败: {e}")))?;
         project.time_signatures = data.time_signatures;
         project.key_signatures = data.key_signatures;
     }
@@ -79,7 +93,7 @@ fn load_from_folder(path: &Path) -> crate::ExportResult<LuminoProject> {
     if ctl_path.exists() {
         let bytes = std::fs::read(&ctl_path)?;
         let data = LmctlData::decode(&bytes)
-            .map_err(|e| crate::ExportError::Encoding(format!("controls 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(format!("controls 解码失败: {e}")))?;
         project.control_changes = data.control_changes;
         project.program_changes = data.program_changes;
     }
@@ -89,7 +103,7 @@ fn load_from_folder(path: &Path) -> crate::ExportResult<LuminoProject> {
     if names_path.exists() {
         let bytes = std::fs::read(&names_path)?;
         let _data = LmnamesData::decode(&bytes)
-            .map_err(|e| crate::ExportError::Encoding(format!("names 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(format!("names 解码失败: {e}")))?;
         // 名称冗余存储，实际名称从各 .lmtrack 中已读取
     }
 
@@ -97,16 +111,16 @@ fn load_from_folder(path: &Path) -> crate::ExportResult<LuminoProject> {
 }
 
 /// 从归档文件加载
-fn load_from_archive(bytes: &[u8]) -> crate::ExportResult<LuminoProject> {
+fn load_from_archive(bytes: &[u8]) -> Result<LuminoProject> {
     // 读取 metadata.toml
     let meta_bytes = archive::read_file_from_archive(bytes, "metadata.toml")
-        .map_err(|e| crate::ExportError::Encoding(format!("归档读取失败: {e}")))?
-        .ok_or_else(|| crate::ExportError::Encoding("归档中缺少 metadata.toml".into()))?;
+        .map_err(|e| CoreError::FileFormat(format!("归档读取失败: {e}")))?
+        .ok_or_else(|| CoreError::FileFormat("归档中缺少 metadata.toml".into()))?;
     let metadata = ProjectMetadata::from_toml_str(
         std::str::from_utf8(&meta_bytes)
-            .map_err(|e| crate::ExportError::Encoding(format!("metadata 编码错误: {e}")))?,
+            .map_err(|e| CoreError::FileFormat(format!("metadata 编码错误: {e}")))?,
     )
-    .map_err(|e| crate::ExportError::Encoding(format!("metadata 解析失败: {e}")))?;
+    .map_err(|e| CoreError::FileFormat(format!("metadata 解析失败: {e}")))?;
 
     let mut project = LuminoProject::new(&metadata.project.name);
     project.metadata = metadata;
@@ -115,11 +129,10 @@ fn load_from_archive(bytes: &[u8]) -> crate::ExportResult<LuminoProject> {
     for track_id in 0..project.metadata.audio.track_count {
         let path = format!("data/project/tracks/{:03}.lmtrack", track_id);
         if let Some(track_bytes) = archive::read_file_from_archive(bytes, &path)
-            .map_err(|e| crate::ExportError::Encoding(format!("读取音轨 {track_id} 失败: {e}")))?
+            .map_err(|e| CoreError::FileFormat(format!("读取音轨 {track_id} 失败: {e}")))?
         {
-            let track = LmtrackData::decode(&track_bytes).map_err(|e| {
-                crate::ExportError::Encoding(format!("解码音轨 {track_id} 失败: {e}"))
-            })?;
+            let track = LmtrackData::decode(&track_bytes)
+                .map_err(|e| CoreError::FileFormat(format!("解码音轨 {track_id} 失败: {e}")))?;
             let idx = track_id as usize;
             if idx >= project.tracks.len() {
                 project.tracks.resize_with(idx + 1, || TrackSlot::Unloaded {
@@ -134,19 +147,19 @@ fn load_from_archive(bytes: &[u8]) -> crate::ExportResult<LuminoProject> {
     // 读取 tempo（专用格式 LMTM）
     if let Some(tempo_bytes) =
         archive::read_file_from_archive(bytes, "data/project/tempo.lmtemp")
-            .map_err(|e| crate::ExportError::Encoding(format!("读取 tempo 失败: {e}")))?
+            .map_err(|e| CoreError::FileFormat(format!("读取 tempo 失败: {e}")))?
     {
         let data = LmtempData::decode(&tempo_bytes)
-            .map_err(|e| crate::ExportError::Encoding(format!("tempo 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(format!("tempo 解码失败: {e}")))?;
         project.tempo_changes = data.tempo_changes;
     }
 
     // 读取 signature（专用格式 LMSG）
     if let Some(sig_bytes) = archive::read_file_from_archive(bytes, "data/project/signature.lmsig")
-        .map_err(|e| crate::ExportError::Encoding(format!("读取 signature 失败: {e}")))?
+        .map_err(|e| CoreError::FileFormat(format!("读取 signature 失败: {e}")))?
     {
         let data = LmsigData::decode(&sig_bytes)
-            .map_err(|e| crate::ExportError::Encoding(format!("signature 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(format!("signature 解码失败: {e}")))?;
         project.time_signatures = data.time_signatures;
         project.key_signatures = data.key_signatures;
     }
@@ -154,10 +167,10 @@ fn load_from_archive(bytes: &[u8]) -> crate::ExportResult<LuminoProject> {
     // 读取 controls（专用格式 LMCT）
     if let Some(ctl_bytes) =
         archive::read_file_from_archive(bytes, "data/project/controls.lmctl")
-            .map_err(|e| crate::ExportError::Encoding(format!("读取 controls 失败: {e}")))?
+            .map_err(|e| CoreError::FileFormat(format!("读取 controls 失败: {e}")))?
     {
         let data = LmctlData::decode(&ctl_bytes)
-            .map_err(|e| crate::ExportError::Encoding(format!("controls 解码失败: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(format!("controls 解码失败: {e}")))?;
         project.control_changes = data.control_changes;
         project.program_changes = data.program_changes;
     }
@@ -165,42 +178,10 @@ fn load_from_archive(bytes: &[u8]) -> crate::ExportResult<LuminoProject> {
     // 读取 track_names（专用格式 LMNM）
     if let Some(names_bytes) =
         archive::read_file_from_archive(bytes, "data/project/track_names.lmnames")
-            .map_err(|e| crate::ExportError::Encoding(format!("读取 names 失败: {e}")))?
+            .map_err(|e| CoreError::FileFormat(format!("读取 names 失败: {e}")))?
     {
         let _data = LmnamesData::decode(&names_bytes)
-            .map_err(|e| crate::ExportError::Encoding(format!("names 解码失败: {e}")))?;
-    }
-
-    Ok(project)
-}
-
-/// 加载旧版 LMPJ 文件
-fn load_legacy_lmpj(bytes: &[u8]) -> crate::ExportResult<LuminoProject> {
-    let lmpj_data: lumino_midi_loader::LmpjData = crate::format::decode_lmpj(bytes)?;
-    let parsed = lmpj_data.to_parsed_midi();
-
-    let mut project = LuminoProject::new(
-        parsed
-            .info
-            .path
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Untitled".into()),
-    );
-
-    // 填充基本信息
-    project.metadata.audio.track_count = parsed.info.track_count;
-    project.metadata.audio.total_notes = parsed.info.total_notes;
-    project.metadata.audio.total_ticks = parsed.info.duration_ticks;
-    project.metadata.audio.division = parsed.info.division;
-
-    // 旧版 LMPJ 不包含分轨数据，需要重新解析 MIDI 才能获取
-    // 这里仅创建占位符
-    for track_id in 0..parsed.info.track_count {
-        project.tracks.push(TrackSlot::Unloaded {
-            track_id,
-            path: PathBuf::new(),
-        });
+            .map_err(|e| CoreError::FileFormat(format!("names 解码失败: {e}")))?;
     }
 
     Ok(project)

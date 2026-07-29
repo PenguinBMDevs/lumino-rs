@@ -2,7 +2,7 @@
 //!
 //! .lmtemp / .lmsig / .lmctl / .lmnames 均使用专用魔数 + bincode + zstd。
 
-use crate::ExportResult;
+use crate::Result;
 use crate::project::folder::{decode_binary_file, encode_binary_file};
 
 /// 全局速度变化数据（.lmtemp）
@@ -17,11 +17,11 @@ pub struct LmtempData {
 impl LmtempData {
     pub const MAGIC: &[u8; 4] = b"LMTM";
 
-    pub fn encode(&self) -> ExportResult<Vec<u8>> {
+    pub fn encode(&self) -> Result<Vec<u8>> {
         encode_binary_file(Self::MAGIC, 1, self)
     }
 
-    pub fn decode(bytes: &[u8]) -> ExportResult<Self> {
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
         decode_binary_file(bytes, Self::MAGIC)
     }
 }
@@ -38,11 +38,11 @@ pub struct LmsigData {
 impl LmsigData {
     pub const MAGIC: &[u8; 4] = b"LMSG";
 
-    pub fn encode(&self) -> ExportResult<Vec<u8>> {
+    pub fn encode(&self) -> Result<Vec<u8>> {
         encode_binary_file(Self::MAGIC, 1, self)
     }
 
-    pub fn decode(bytes: &[u8]) -> ExportResult<Self> {
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
         decode_binary_file(bytes, Self::MAGIC)
     }
 }
@@ -61,11 +61,11 @@ pub struct LmctlData {
 impl LmctlData {
     pub const MAGIC: &[u8; 4] = b"LMCT";
 
-    pub fn encode(&self) -> ExportResult<Vec<u8>> {
+    pub fn encode(&self) -> Result<Vec<u8>> {
         encode_binary_file(Self::MAGIC, 1, self)
     }
 
-    pub fn decode(bytes: &[u8]) -> ExportResult<Self> {
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
         decode_binary_file(bytes, Self::MAGIC)
     }
 }
@@ -80,11 +80,11 @@ pub struct LmnamesData {
 impl LmnamesData {
     pub const MAGIC: &[u8; 4] = b"LMNM";
 
-    pub fn encode(&self) -> ExportResult<Vec<u8>> {
+    pub fn encode(&self) -> Result<Vec<u8>> {
         encode_binary_file(Self::MAGIC, 1, self)
     }
 
-    pub fn decode(bytes: &[u8]) -> ExportResult<Self> {
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
         decode_binary_file(bytes, Self::MAGIC)
     }
 }

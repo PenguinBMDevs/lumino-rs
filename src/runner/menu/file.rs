@@ -1,5 +1,6 @@
 //! Runner 文件菜单处理
 
+mod editor_midi;
 mod export;
 mod helpers;
 mod load;

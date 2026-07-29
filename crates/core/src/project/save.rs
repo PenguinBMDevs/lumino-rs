@@ -4,6 +4,7 @@
 
 use std::path::Path;
 
+use crate::Result;
 use crate::project::{
     LuminoProject, TrackSlot, archive,
     data_formats::{LmctlData, LmnamesData, LmsigData, LmtempData},
@@ -12,22 +13,18 @@ use crate::project::{
 };
 
 /// 保存为文件夹形态
-pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> crate::ExportResult<()> {
+pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> Result<()> {
     let base = path.as_ref();
 
     // 创建目录结构
-    folder::create_folder_structure(base)
-        .map_err(|e| crate::ExportError::Io(std::io::Error::other(e)))?;
+    folder::create_folder_structure(base)?;
 
     // 写入版本文件
-    folder::write_version_file(base, 1)
-        .map_err(|e| crate::ExportError::Io(std::io::Error::other(e)))?;
+    folder::write_version_file(base, 1)?;
 
     // 更新并写入 metadata.toml
     let metadata = build_metadata(project);
-    metadata
-        .to_file(base.join(folder::FolderPaths::METADATA_FILE))
-        .map_err(|e| crate::ExportError::Io(std::io::Error::other(e)))?;
+    metadata.to_file(base.join(folder::FolderPaths::METADATA_FILE))?;
 
     // 写入音轨
     for (idx, slot) in project.tracks.iter().enumerate() {
@@ -35,8 +32,7 @@ pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> crate:
             TrackSlot::Loaded(d) | TrackSlot::Modified(d) => d,
             TrackSlot::Unloaded { .. } => continue,
         };
-        folder::write_track(base, idx as u16, data)
-            .map_err(|e| crate::ExportError::Io(std::io::Error::other(e)))?;
+        folder::write_track(base, idx as u16, data)?;
     }
 
     // 写入 tempo 数据（专用格式 LMTM）
@@ -44,9 +40,7 @@ pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> crate:
         tempo_changes: project.tempo_changes.clone(),
         default_bpm: project.metadata.audio.default_bpm as f32,
     };
-    let encoded = tempo_data
-        .encode()
-        .map_err(|e| crate::ExportError::Encoding(format!("tempo encode: {e}")))?;
+    let encoded = tempo_data.encode()?;
     std::fs::write(base.join(folder::FolderPaths::TEMPO_FILE), encoded)?;
 
     // 写入 signature 数据（专用格式 LMSG）
@@ -54,20 +48,16 @@ pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> crate:
         time_signatures: project.time_signatures.clone(),
         key_signatures: project.key_signatures.clone(),
     };
-    let encoded = sig_data
-        .encode()
-        .map_err(|e| crate::ExportError::Encoding(format!("signature encode: {e}")))?;
+    let encoded = sig_data.encode()?;
     std::fs::write(base.join(folder::FolderPaths::SIGNATURE_FILE), encoded)?;
 
     // 写入 control 数据（专用格式 LMCT）
     let ctl_data = LmctlData {
         control_changes: project.control_changes.clone(),
         program_changes: project.program_changes.clone(),
-        pitch_bends: Vec::new(), // TODO: 从 MidiDocument 提取弯音事件
+        pitch_bends: project.pitch_bends.clone(),
     };
-    let encoded = ctl_data
-        .encode()
-        .map_err(|e| crate::ExportError::Encoding(format!("controls encode: {e}")))?;
+    let encoded = ctl_data.encode()?;
     std::fs::write(base.join(folder::FolderPaths::CONTROLS_FILE), encoded)?;
 
     // 写入音轨名称映射表（专用格式 LMNM）
@@ -81,34 +71,27 @@ pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> crate:
             })
             .collect(),
     };
-    let encoded = names_data
-        .encode()
-        .map_err(|e| crate::ExportError::Encoding(format!("names encode: {e}")))?;
+    let encoded = names_data.encode()?;
     std::fs::write(base.join(folder::FolderPaths::TRACK_NAMES_FILE), encoded)?;
 
     Ok(())
 }
 
 /// 保存为单文件归档形态
-pub fn save_to_archive(project: &LuminoProject, path: impl AsRef<Path>) -> crate::ExportResult<()> {
+pub fn save_to_archive(project: &LuminoProject, path: impl AsRef<Path>) -> Result<()> {
     let files = build_archive_files(project)?;
-    let archive_bytes = archive::build_archive(&files)
-        .map_err(|e| crate::ExportError::Encoding(format!("构建归档失败: {e}")))?;
+    let archive_bytes = archive::build_archive(&files)?;
     std::fs::write(path, archive_bytes)?;
     Ok(())
 }
 
 /// 构建归档文件列表
-fn build_archive_files(
-    project: &LuminoProject,
-) -> crate::ExportResult<Vec<(String, Vec<u8>, bool)>> {
+fn build_archive_files(project: &LuminoProject) -> Result<Vec<(String, Vec<u8>, bool)>> {
     let mut files: Vec<(String, Vec<u8>, bool)> = Vec::new();
 
     // metadata.toml
     let metadata = build_metadata(project);
-    let meta_str = metadata
-        .to_toml_str()
-        .map_err(|e| crate::ExportError::Encoding(format!("metadata encode: {e}")))?;
+    let meta_str = metadata.to_toml_str()?;
     files.push(("metadata.toml".into(), meta_str.into_bytes(), true));
 
     // version
@@ -120,9 +103,7 @@ fn build_archive_files(
             TrackSlot::Loaded(d) | TrackSlot::Modified(d) => d,
             TrackSlot::Unloaded { .. } => continue,
         };
-        let encoded = data
-            .encode()
-            .map_err(|e| crate::ExportError::Encoding(format!("track encode: {e}")))?;
+        let encoded = data.encode()?;
         let path = format!("data/project/tracks/{:03}.lmtrack", idx);
         files.push((path, encoded, true));
     }
@@ -132,9 +113,7 @@ fn build_archive_files(
         tempo_changes: project.tempo_changes.clone(),
         default_bpm: project.metadata.audio.default_bpm as f32,
     };
-    let encoded = tempo_data
-        .encode()
-        .map_err(|e| crate::ExportError::Encoding(format!("tempo encode: {e}")))?;
+    let encoded = tempo_data.encode()?;
     files.push(("data/project/tempo.lmtemp".into(), encoded, true));
 
     // signature（专用格式 LMSG）
@@ -142,20 +121,16 @@ fn build_archive_files(
         time_signatures: project.time_signatures.clone(),
         key_signatures: project.key_signatures.clone(),
     };
-    let encoded = sig_data
-        .encode()
-        .map_err(|e| crate::ExportError::Encoding(format!("signature encode: {e}")))?;
+    let encoded = sig_data.encode()?;
     files.push(("data/project/signature.lmsig".into(), encoded, true));
 
     // controls（专用格式 LMCT）
     let ctl_data = LmctlData {
         control_changes: project.control_changes.clone(),
         program_changes: project.program_changes.clone(),
-        pitch_bends: Vec::new(),
+        pitch_bends: project.pitch_bends.clone(),
     };
-    let encoded = ctl_data
-        .encode()
-        .map_err(|e| crate::ExportError::Encoding(format!("controls encode: {e}")))?;
+    let encoded = ctl_data.encode()?;
     files.push(("data/project/controls.lmctl".into(), encoded, true));
 
     // track_names（专用格式 LMNM）
@@ -169,9 +144,7 @@ fn build_archive_files(
             })
             .collect(),
     };
-    let encoded = names_data
-        .encode()
-        .map_err(|e| crate::ExportError::Encoding(format!("names encode: {e}")))?;
+    let encoded = names_data.encode()?;
     files.push(("data/project/track_names.lmnames".into(), encoded, true));
 
     Ok(files)

@@ -58,3 +58,21 @@ impl From<serde_json::Error> for CoreError {
         CoreError::Serialization(err.to_string())
     }
 }
+
+impl From<bincode::Error> for CoreError {
+    fn from(err: bincode::Error) -> Self {
+        CoreError::Serialization(err.to_string())
+    }
+}
+
+impl From<toml::de::Error> for CoreError {
+    fn from(err: toml::de::Error) -> Self {
+        CoreError::Serialization(err.to_string())
+    }
+}
+
+impl From<toml::ser::Error> for CoreError {
+    fn from(err: toml::ser::Error) -> Self {
+        CoreError::Serialization(err.to_string())
+    }
+}

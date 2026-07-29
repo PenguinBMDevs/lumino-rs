@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::project::track::LmtrackData;
-use crate::{ExportError, ExportResult};
+use crate::{CoreError, Result};
 
 /// 文件夹形态工程路径常量
 pub struct FolderPaths;
@@ -38,7 +38,7 @@ impl FolderPaths {
 }
 
 /// 创建文件夹工程的基础目录结构
-pub fn create_folder_structure(base: impl AsRef<Path>) -> ExportResult<()> {
+pub fn create_folder_structure(base: impl AsRef<Path>) -> Result<()> {
     let base = base.as_ref();
     std::fs::create_dir_all(base.join(FolderPaths::LUMINO_DIR))?;
     std::fs::create_dir_all(base.join(FolderPaths::TRACKS_DIR))?;
@@ -50,24 +50,24 @@ pub fn create_folder_structure(base: impl AsRef<Path>) -> ExportResult<()> {
 }
 
 /// 写入版本文件
-pub fn write_version_file(base: impl AsRef<Path>, version: u16) -> ExportResult<()> {
+pub fn write_version_file(base: impl AsRef<Path>, version: u16) -> Result<()> {
     let path = base.as_ref().join(FolderPaths::VERSION_FILE);
     std::fs::write(path, version.to_string())?;
     Ok(())
 }
 
 /// 读取版本文件
-pub fn read_version_file(base: impl AsRef<Path>) -> ExportResult<u16> {
+pub fn read_version_file(base: impl AsRef<Path>) -> Result<u16> {
     let path = base.as_ref().join(FolderPaths::VERSION_FILE);
     let content = std::fs::read_to_string(path)?;
     content
         .trim()
         .parse()
-        .map_err(|e| ExportError::FileFormat(format!("version file: {e}")))
+        .map_err(|e| CoreError::FileFormat(format!("version file: {e}")))
 }
 
 /// 读取所有音轨文件
-pub fn read_all_tracks(base: impl AsRef<Path>) -> ExportResult<Vec<LmtrackData>> {
+pub fn read_all_tracks(base: impl AsRef<Path>) -> Result<Vec<LmtrackData>> {
     let tracks_dir = base.as_ref().join(FolderPaths::TRACKS_DIR);
     let mut tracks = Vec::new();
 
@@ -99,7 +99,7 @@ pub fn read_all_tracks(base: impl AsRef<Path>) -> ExportResult<Vec<LmtrackData>>
 }
 
 /// 写入音轨文件
-pub fn write_track(base: impl AsRef<Path>, track_id: u16, data: &LmtrackData) -> ExportResult<()> {
+pub fn write_track(base: impl AsRef<Path>, track_id: u16, data: &LmtrackData) -> Result<()> {
     let tracks_dir = base.as_ref().join(FolderPaths::TRACKS_DIR);
     std::fs::create_dir_all(&tracks_dir)?;
 
@@ -122,15 +122,14 @@ pub fn encode_binary_file(
     magic: &[u8; 4],
     version: u16,
     data: &impl serde::Serialize,
-) -> ExportResult<Vec<u8>> {
+) -> Result<Vec<u8>> {
     let mut result = Vec::new();
     result.extend_from_slice(magic);
     result.extend_from_slice(&version.to_le_bytes());
 
-    let serialized =
-        bincode::serialize(data).map_err(|e| ExportError::Encoding(format!("bincode: {e}")))?;
+    let serialized = bincode::serialize(data).map_err(CoreError::from)?;
     let compressed = zstd::stream::encode_all(std::io::Cursor::new(serialized), 3)
-        .map_err(|e| ExportError::Compression(format!("zstd: {e}")))?;
+        .map_err(|e| CoreError::Compression(format!("zstd: {e}")))?;
 
     result.extend_from_slice(&compressed);
     Ok(result)
@@ -140,24 +139,24 @@ pub fn encode_binary_file(
 pub fn decode_binary_file<T: serde::de::DeserializeOwned>(
     bytes: &[u8],
     expected_magic: &[u8; 4],
-) -> ExportResult<T> {
+) -> Result<T> {
     if bytes.len() < 6 {
-        return Err(ExportError::FileFormat("binary file: too short".into()));
+        return Err(CoreError::FileFormat("binary file: too short".into()));
     }
     if &bytes[0..4] != expected_magic {
-        return Err(ExportError::FileFormat("binary file: invalid magic".into()));
+        return Err(CoreError::FileFormat("binary file: invalid magic".into()));
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
     if version != 1 {
-        return Err(ExportError::FileFormat(format!(
+        return Err(CoreError::FileFormat(format!(
             "binary file: unsupported version {version}"
         )));
     }
 
     let decompressed = zstd::stream::decode_all(std::io::Cursor::new(&bytes[6..]))
-        .map_err(|e| ExportError::Compression(format!("decompression: {e}")))?;
+        .map_err(|e| CoreError::Compression(format!("decompression: {e}")))?;
 
-    bincode::deserialize(&decompressed).map_err(|e| ExportError::Encoding(format!("decode: {e}")))
+    bincode::deserialize(&decompressed).map_err(CoreError::from)
 }
 
 #[cfg(test)]

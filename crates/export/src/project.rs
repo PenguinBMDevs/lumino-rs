@@ -1,279 +1,99 @@
-//! 工程数据模块 — Lumino 项目文件格式核心
+//! 工程文件格式兼容层
 //!
-//! 支持两种形态：
-//! - 文件夹形式（`.lmpj` 包文件夹）
-//! - 单文件形式（`.lmpj` 归档文件）
+//! 核心类型已迁移到 `lumino-core`，本模块仅保留：
+//! - 旧版 LMPJ 文件兼容加载
+//! - 供 Runner 使用的便捷扩展（`LuminoProject -> ParsedMidi`）
 
-pub mod archive;
-pub mod data_formats;
-pub mod folder;
-pub mod load;
-pub mod loaded;
-pub mod metadata;
-pub mod save;
-pub mod track;
+use std::path::{Path, PathBuf};
 
-pub use data_formats::{LmctlData, LmnamesData, LmsigData, LmtempData};
-pub use metadata::ProjectMetadata;
-pub use track::{LmtrackData, LmtrackHeader, TrackMeta, TrackVisibilitySer};
+pub use lumino_core::project::*;
 
-use std::path::PathBuf;
+// 重新导出核心保存函数，保持 `lumino_export::project::save_to_archive` 等路径可用
+pub use lumino_core::project::save::{save_to_archive, save_to_folder};
 
-/// 工程数据（内存中表示）
-#[derive(Debug)]
-pub struct LuminoProject {
-    /// 元数据
-    pub metadata: ProjectMetadata,
-    /// 音轨数据（懒加载：未修改的音轨可保持磁盘映射）
-    pub tracks: Vec<TrackSlot>,
-    /// 全局速度变化
-    pub tempo_changes: Vec<(u32, f32)>,
-    /// 拍号变化
-    pub time_signatures: Vec<(u32, u8, u8)>,
-    /// 调号变化
-    pub key_signatures: Vec<(u32, i8, bool)>,
-    /// 控制事件
-    pub control_changes: Vec<(u32, u16, u8, u8, u8)>,
-    /// 程序变更
-    pub program_changes: Vec<(u32, u16, u8, u8)>,
-    /// 导入的外部文件
-    pub loaded_files: Vec<LoadedFileEntry>,
+/// 将 `LuminoProject` 转换为 `ParsedMidi`，供 Runner 复用现有事件流。
+pub fn project_to_parsed_midi(
+    project: &LuminoProject,
+    original_path: impl Into<PathBuf>,
+) -> crate::ExportResult<lumino_midi_loader::ParsedMidi> {
+    let document = project
+        .to_midi_document()
+        .map_err(crate::ExportError::from)?;
+    let total_notes: u64 = document.notes.iter().map(|v| v.len() as u64).sum();
+
+    let info = lumino_midi_loader::MidiInfo {
+        path: original_path.into(),
+        track_count: document.track_count,
+        total_notes,
+        duration_ticks: document.total_ticks,
+        division: project.metadata.audio.division,
+        parse_progress: Some(100.0),
+    };
+
+    Ok(lumino_midi_loader::ParsedMidi {
+        info,
+        document: Some(std::sync::Arc::new(document)),
+    })
 }
 
-/// 音轨槽（支持懒加载）
-#[derive(Debug)]
-pub enum TrackSlot {
-    /// 未加载（仅在文件中有数据）
-    Unloaded { track_id: u16, path: PathBuf },
-    /// 已加载到内存
-    Loaded(LmtrackData),
-    /// 已修改（需要保存）
-    Modified(LmtrackData),
+/// 从磁盘加载 Lumino 工程，自动识别文件夹、新归档或旧版 LMPJ。
+pub fn load_project(path: impl AsRef<Path>) -> crate::ExportResult<LuminoProject> {
+    let path = path.as_ref();
+
+    if path.is_dir() {
+        return lumino_core::project::load::load_project(path).map_err(crate::ExportError::from);
+    }
+
+    let bytes = std::fs::read(path)?;
+    if bytes.len() >= 4 && &bytes[0..4] == b"LMPJ" {
+        lumino_core::project::load::load_project(path).map_err(crate::ExportError::from)
+    } else {
+        load_legacy_lmpj(&bytes)
+    }
 }
 
-/// 导入文件条目
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LoadedFileEntry {
-    pub id: String,
-    pub original_name: String,
-    pub format: LoadedFormat,
-    pub imported_at: String,
-    pub storage_path: PathBuf,
+/// 加载旧版 LMPJ 文件（bincode + zstd），仅保留基本信息。
+fn load_legacy_lmpj(bytes: &[u8]) -> crate::ExportResult<LuminoProject> {
+    let lmpj_data: lumino_midi_loader::LmpjData = crate::format::decode_lmpj(bytes)?;
+    let parsed = lmpj_data.to_parsed_midi();
+
+    let mut project = LuminoProject::new(
+        parsed
+            .info
+            .path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Untitled".into()),
+    );
+
+    // 填充基本信息
+    project.metadata.audio.track_count = parsed.info.track_count;
+    project.metadata.audio.total_notes = parsed.info.total_notes;
+    project.metadata.audio.total_ticks = parsed.info.duration_ticks;
+    project.metadata.audio.division = parsed.info.division;
+
+    // 旧版 LMPJ 不包含分轨数据，需要重新解析 MIDI 才能获取
+    // 这里仅创建占位符
+    for track_id in 0..parsed.info.track_count {
+        project.tracks.push(TrackSlot::Unloaded {
+            track_id,
+            path: PathBuf::new(),
+        });
+    }
+
+    Ok(project)
 }
 
-/// 导入文件格式
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum LoadedFormat {
-    Mid,
-    Lmpj,
-}
-
-impl LuminoProject {
-    /// 创建空工程
-    pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            metadata: ProjectMetadata::default_with_name(name),
-            tracks: Vec::new(),
-            tempo_changes: Vec::new(),
-            time_signatures: Vec::new(),
-            key_signatures: Vec::new(),
-            control_changes: Vec::new(),
-            program_changes: Vec::new(),
-            loaded_files: Vec::new(),
+impl From<lumino_core::CoreError> for crate::ExportError {
+    fn from(err: lumino_core::CoreError) -> Self {
+        match err {
+            lumino_core::CoreError::Io(e) => crate::ExportError::Io(e),
+            lumino_core::CoreError::Serialization(s) => crate::ExportError::Encoding(s),
+            lumino_core::CoreError::Compression(s) => crate::ExportError::Compression(s),
+            lumino_core::CoreError::FileFormat(s) => crate::ExportError::FileFormat(s),
+            lumino_core::CoreError::MidiParse(s) => crate::ExportError::MidiParse(s),
+            lumino_core::CoreError::InvalidArgument(s) => crate::ExportError::InvalidData(s),
+            _ => crate::ExportError::Encoding(err.to_string()),
         }
-    }
-
-    /// 获取已加载的音轨数量
-    pub fn loaded_track_count(&self) -> usize {
-        self.tracks
-            .iter()
-            .filter(|t| matches!(t, TrackSlot::Loaded(_) | TrackSlot::Modified(_)))
-            .count()
-    }
-
-    /// 获取指定音轨（如果已加载）
-    pub fn get_track(&self, track_id: u16) -> Option<&LmtrackData> {
-        self.tracks
-            .get(track_id as usize)
-            .and_then(|slot| match slot {
-                TrackSlot::Loaded(data) | TrackSlot::Modified(data) => Some(data),
-                TrackSlot::Unloaded { .. } => None,
-            })
-    }
-
-    /// 获取指定音轨（可变）
-    pub fn get_track_mut(&mut self, track_id: u16) -> Option<&mut LmtrackData> {
-        self.tracks
-            .get_mut(track_id as usize)
-            .and_then(|slot| match slot {
-                TrackSlot::Loaded(data) | TrackSlot::Modified(data) => Some(data),
-                TrackSlot::Unloaded { .. } => None,
-            })
-    }
-
-    /// 标记指定音轨为已修改
-    pub fn mark_track_modified(&mut self, track_id: u16) {
-        if let Some(slot) = self.tracks.get_mut(track_id as usize)
-            && let TrackSlot::Loaded(data) = slot
-        {
-            // 取出数据并标记为 Modified
-            let data = std::mem::replace(
-                data,
-                LmtrackData::from_compact_events(
-                    TrackMeta {
-                        track_id: 0,
-                        name: String::new(),
-                        channel: 0,
-                        port: 0,
-                        visibility: TrackVisibilitySer::Visible,
-                        solo: false,
-                        is_drum: false,
-                        max_tick: 0,
-                    },
-                    &[],
-                ),
-            );
-            *slot = TrackSlot::Modified(data);
-        }
-    }
-
-    /// 添加音轨
-    pub fn add_track(&mut self, data: LmtrackData) {
-        let track_id = data.meta.track_id;
-        let idx = track_id as usize;
-        if idx >= self.tracks.len() {
-            self.tracks.resize_with(idx + 1, || TrackSlot::Unloaded {
-                track_id: 0,
-                path: PathBuf::new(),
-            });
-        }
-        self.tracks[idx] = TrackSlot::Modified(data);
-    }
-}
-
-impl LuminoProject {
-    /// 从 `MidiDocument` 构建 `LuminoProject`
-    ///
-    /// 关键路径：用户打开 MIDI 文件后，需要能保存为新格式。
-    /// 将 MidiDocument 中的 per-track 事件拆分为各 `.lmtrack` 文件的数据结构。
-    pub fn from_midi_document(doc: &lumino_midi_loader::MidiDocument) -> Self {
-        let mut project = Self::new("Untitled");
-        project.metadata.audio.division = 480; // 默认值，应由调用方填充
-        project.metadata.audio.total_ticks = doc.total_ticks;
-        project.metadata.audio.track_count = doc.track_count;
-        project.tempo_changes = doc.tempo_changes.clone();
-
-        // 提取每轨事件
-        for track_id in 0..doc.track_count {
-            let track_notes = doc.track_notes(track_id as usize);
-            if track_notes.is_empty() {
-                continue;
-            }
-
-            // 从 NoteEvent 构造 CompactEvent，并过滤出音符事件
-            let mut track_events: Vec<lumino_midi_model::compact::CompactEvent> =
-                Vec::with_capacity(track_notes.len() * 2);
-            for note in track_notes {
-                let [on, off] = note.to_compact_events(track_id);
-                track_events.push(on);
-                track_events.push(off);
-            }
-            track_events.sort_unstable_by_key(|e| e.delta_tick());
-
-            // 推断 channel：取第一个音符事件的 channel
-            let channel = track_events
-                .iter()
-                .find(|ev| ev.kind().is_note())
-                .map(|ev| ev.channel())
-                .unwrap_or(0);
-
-            // 推断 max_tick
-            let max_tick = track_events.last().map(|ev| ev.delta_tick()).unwrap_or(0);
-
-            let name = doc.track_name(track_id as usize).unwrap_or("").to_string();
-
-            let meta = TrackMeta {
-                track_id,
-                name,
-                channel,
-                port: 0,
-                visibility: TrackVisibilitySer::Visible,
-                solo: false,
-                is_drum: channel == 9, // MIDI 通道 10 (0-indexed 9) 为鼓组
-                max_tick,
-            };
-
-            let track_data = LmtrackData::from_compact_events(meta, &track_events);
-            project.add_track(track_data);
-        }
-
-        // 统计总音符数
-        project.metadata.audio.total_notes = project
-            .tracks
-            .iter()
-            .filter_map(|t| match t {
-                TrackSlot::Loaded(d) | TrackSlot::Modified(d) => Some(d.note_count),
-                TrackSlot::Unloaded { .. } => None,
-            })
-            .sum();
-
-        project
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_project_new() {
-        let project = LuminoProject::new("Test");
-        assert_eq!(project.metadata.project.name, "Test");
-        assert!(project.tracks.is_empty());
-        assert!(project.tempo_changes.is_empty());
-    }
-
-    #[test]
-    fn test_add_track() {
-        let mut project = LuminoProject::new("Test");
-        let data = LmtrackData::from_compact_events(
-            TrackMeta {
-                track_id: 0,
-                name: "Piano".into(),
-                channel: 0,
-                port: 0,
-                visibility: TrackVisibilitySer::Visible,
-                solo: false,
-                is_drum: false,
-                max_tick: 100,
-            },
-            &[],
-        );
-        project.add_track(data);
-        assert_eq!(project.tracks.len(), 1);
-        assert!(matches!(project.tracks[0], TrackSlot::Modified(_)));
-    }
-
-    #[test]
-    fn test_get_track() {
-        let mut project = LuminoProject::new("Test");
-        let data = LmtrackData::from_compact_events(
-            TrackMeta {
-                track_id: 0,
-                name: "Piano".into(),
-                channel: 0,
-                port: 0,
-                visibility: TrackVisibilitySer::Visible,
-                solo: false,
-                is_drum: false,
-                max_tick: 100,
-            },
-            &[],
-        );
-        project.add_track(data);
-
-        assert!(project.get_track(0).is_some());
-        assert!(project.get_track(99).is_none());
     }
 }

@@ -4,29 +4,29 @@
 
 use crc32fast::Hasher;
 
-use crate::{ExportError, ExportResult};
+use crate::{CoreError, Result};
 
 /// 从指定偏移读取固定长度的小端字节数组
-fn read_le_bytes<const N: usize>(bytes: &[u8], offset: usize) -> ExportResult<[u8; N]> {
+fn read_le_bytes<const N: usize>(bytes: &[u8], offset: usize) -> Result<[u8; N]> {
     bytes
         .get(offset..offset + N)
-        .ok_or_else(|| ExportError::FileFormat(format!("read at {offset}: out of bounds")))?
+        .ok_or_else(|| CoreError::FileFormat(format!("read at {offset}: out of bounds")))?
         .try_into()
-        .map_err(|_| ExportError::FileFormat(format!("read at {offset}: expected {N} bytes")))
+        .map_err(|_| CoreError::FileFormat(format!("read at {offset}: expected {N} bytes")))
 }
 
 /// 从指定偏移读取 u16（小端）
-fn read_u16_le(bytes: &[u8], offset: usize) -> ExportResult<u16> {
+fn read_u16_le(bytes: &[u8], offset: usize) -> Result<u16> {
     read_le_bytes::<2>(bytes, offset).map(u16::from_le_bytes)
 }
 
 /// 从指定偏移读取 u32（小端）
-fn read_u32_le(bytes: &[u8], offset: usize) -> ExportResult<u32> {
+fn read_u32_le(bytes: &[u8], offset: usize) -> Result<u32> {
     read_le_bytes::<4>(bytes, offset).map(u32::from_le_bytes)
 }
 
 /// 从指定偏移读取 u64（小端）
-fn read_u64_le(bytes: &[u8], offset: usize) -> ExportResult<u64> {
+fn read_u64_le(bytes: &[u8], offset: usize) -> Result<u64> {
     read_le_bytes::<8>(bytes, offset).map(u64::from_le_bytes)
 }
 
@@ -70,9 +70,9 @@ impl ArchiveHeader {
     }
 
     /// 从字节数组解码
-    pub fn from_bytes(bytes: &[u8]) -> ExportResult<Self> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < Self::SIZE {
-            return Err(ExportError::FileFormat("archive header: too short".into()));
+            return Err(CoreError::FileFormat("archive header: too short".into()));
         }
         let mut magic = [0u8; 4];
         magic.copy_from_slice(&bytes[0..4]);
@@ -133,19 +133,19 @@ impl FileEntry {
     }
 
     /// 从字节解码
-    pub fn decode(bytes: &[u8]) -> ExportResult<(Self, usize)> {
+    pub fn decode(bytes: &[u8]) -> Result<(Self, usize)> {
         if bytes.len() < 2 {
-            return Err(ExportError::FileFormat("file entry: too short".into()));
+            return Err(CoreError::FileFormat("file entry: too short".into()));
         }
         let path_len = u16::from_le_bytes([bytes[0], bytes[1]]) as usize;
         let mut pos = 2;
 
         if bytes.len() < pos + path_len + 8 + 8 + 8 + 4 + 1 {
-            return Err(ExportError::FileFormat("file entry: incomplete".into()));
+            return Err(CoreError::FileFormat("file entry: incomplete".into()));
         }
 
         let path = String::from_utf8(bytes[pos..pos + path_len].to_vec())
-            .map_err(|e| ExportError::FileFormat(format!("file entry path: {e}")))?;
+            .map_err(|e| CoreError::FileFormat(format!("file entry path: {e}")))?;
         pos += path_len;
 
         let data_offset = read_u64_le(bytes, pos)?;
@@ -192,9 +192,9 @@ impl FileTable {
     }
 
     /// 从字节解码
-    pub fn decode(bytes: &[u8]) -> ExportResult<Self> {
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < 4 {
-            return Err(ExportError::FileFormat("file table: too short".into()));
+            return Err(CoreError::FileFormat("file table: too short".into()));
         }
         let count = read_u32_le(bytes, 0)? as usize;
         let mut entries = Vec::with_capacity(count);
@@ -218,13 +218,10 @@ pub fn compute_crc32(data: &[u8]) -> u32 {
 }
 
 /// 读取归档中的指定文件
-pub fn read_file_from_archive(
-    archive_bytes: &[u8],
-    file_path: &str,
-) -> ExportResult<Option<Vec<u8>>> {
+pub fn read_file_from_archive(archive_bytes: &[u8], file_path: &str) -> Result<Option<Vec<u8>>> {
     let header = ArchiveHeader::from_bytes(archive_bytes)?;
     if &header.magic != b"LMPJ" {
-        return Err(ExportError::FileFormat("archive: invalid magic".into()));
+        return Err(CoreError::FileFormat("archive: invalid magic".into()));
     }
 
     let ft_start = header.file_table_offset as usize;
@@ -232,7 +229,7 @@ pub fn read_file_from_archive(
     let ft_data = &archive_bytes[ft_start..ft_end];
 
     let decompressed = zstd::stream::decode_all(std::io::Cursor::new(ft_data))
-        .map_err(|e| ExportError::Compression(format!("file table decompression: {e}")))?;
+        .map_err(|e| CoreError::Compression(format!("file table decompression: {e}")))?;
 
     let file_table = FileTable::decode(&decompressed)?;
 
@@ -245,7 +242,7 @@ pub fn read_file_from_archive(
 
             if e.is_compressed {
                 let decompressed = zstd::stream::decode_all(std::io::Cursor::new(data))
-                    .map_err(|e| ExportError::Compression(format!("file decompression: {e}")))?;
+                    .map_err(|e| CoreError::Compression(format!("file decompression: {e}")))?;
                 Ok(Some(decompressed))
             } else {
                 Ok(Some(data.to_vec()))
@@ -256,7 +253,7 @@ pub fn read_file_from_archive(
 }
 
 /// 构建归档文件
-pub fn build_archive(files: &[(String, Vec<u8>, bool)]) -> ExportResult<Vec<u8>> {
+pub fn build_archive(files: &[(String, Vec<u8>, bool)]) -> Result<Vec<u8>> {
     let mut result = Vec::new();
 
     // 预留文件头空间
@@ -271,7 +268,7 @@ pub fn build_archive(files: &[(String, Vec<u8>, bool)]) -> ExportResult<Vec<u8>>
 
         let (stored_data, compressed_size, original_size, is_compressed) = if *should_compress {
             let compressed = zstd::stream::encode_all(std::io::Cursor::new(data), 3)
-                .map_err(|e| ExportError::Compression(format!("archive compress: {e}")))?;
+                .map_err(|e| CoreError::Compression(format!("archive compress: {e}")))?;
             let orig_len = data.len() as u64;
             let comp_len = compressed.len() as u64;
             (compressed, comp_len, orig_len, true)
@@ -298,13 +295,17 @@ pub fn build_archive(files: &[(String, Vec<u8>, bool)]) -> ExportResult<Vec<u8>>
     let ft_encoded = file_table.encode();
     let ft_original_size = ft_encoded.len() as u64;
     let ft_compressed = zstd::stream::encode_all(std::io::Cursor::new(&ft_encoded), 3)
-        .map_err(|e| ExportError::Compression(format!("file table compress: {e}")))?;
+        .map_err(|e| CoreError::Compression(format!("file table compress: {e}")))?;
     let ft_compressed_size = ft_compressed.len() as u64;
 
     let file_table_offset = result.len() as u64;
     result.extend_from_slice(&ft_compressed);
 
     // 写入文件头
+    let created_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     let header = ArchiveHeader {
         magic: *b"LMPJ",
         version: 1,
@@ -312,10 +313,7 @@ pub fn build_archive(files: &[(String, Vec<u8>, bool)]) -> ExportResult<Vec<u8>>
         file_table_offset,
         file_table_compressed_size: ft_compressed_size,
         file_table_original_size: ft_original_size,
-        created_at: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
+        created_at,
         _reserved: [0u8; 16],
     };
 
