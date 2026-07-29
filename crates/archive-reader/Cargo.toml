@@ -1,0 +1,27 @@
+[package]
+name = "lumino-archive-reader"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "Lumino - 压缩包内 MIDI 文件自动解压读取器"
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# 通用压缩包格式解压（ZIP, RAR, 7z, TAR, GZ, LZH, XZ 等）
+unarc-rs = "0.6"
+# ISO 9660 镜像文件
+iso9660 = "0.1"
+# ZPAQ 压缩格式
+zpaq_rs = "1.0"
+
+# 公用
+tracing = { workspace = true }
+thiserror = { workspace = true }
+tempfile = "3"
+
+[dev-dependencies]

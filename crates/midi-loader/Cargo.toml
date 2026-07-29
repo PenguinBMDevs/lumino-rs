@@ -23,8 +23,10 @@ zstd = { workspace = true }
 encoding_rs = { workspace = true }
 lumino-midi-model = { workspace = true }
 lumino-memory-monitor = { workspace = true }
+lumino-archive-reader = { workspace = true }
 thiserror = { workspace = true }
 puffin = { workspace = true }
+tempfile = "3"
 
 [dev-dependencies]
 tokio = { version = "1.42", features = ["fs", "rt", "sync", "rt-multi-thread", "macros"] }

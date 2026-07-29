@@ -34,11 +34,31 @@ pub async fn load_parsed_midi(
         cb(&format!("正在准备加载文件 (内存: {initial_rss} MB)"), 0.0);
     }
 
+    // ── 文件格式验证 ──
+    // 检查扩展名是否为支持的格式（MIDI / LMPJ 或压缩包）
     let extension = path
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|s| s.to_ascii_lowercase())
         .ok_or_else(|| LoaderError::FileFormat("无法获取文件扩展名".to_string()))?;
+
+    // 有效的 MIDI 文件扩展名
+    let is_midi_ext = matches!(extension.as_str(), "mid" | "midi" | "lmpj");
+
+    // 如果是压缩包，调用方应提前处理。这里只检查常规 MIDI/LMPJ 文件。
+    // 如果是压缩包但走到了这里（未提前处理），给出明确错误。
+    if !is_midi_ext {
+        // 检查是否为已知的压缩包格式
+        use lumino_archive_reader::is_archive;
+        if is_archive(&path) {
+            return Err(LoaderError::FileFormat(
+                "文件是压缩包格式，请先解压后再加载。".to_string(),
+            ));
+        }
+        return Err(LoaderError::FileFormat(
+            "本文件不支持加载，请检查文件格式！支持的格式：.mid / .midi / .lmpj".to_string(),
+        ));
+    }
 
     if extension == "lmpj" {
         cb("正在加载 Lumino 工程文件", 0.1);
