@@ -178,6 +178,10 @@ impl Host {
         // 同步拍号变化到编辑器
         self.root.editor.editor_state.data.time_signatures = doc.time_signatures.clone();
         self.root.editor.editor_state.data.document = Some(doc);
+        // 拍号/tempo 变化影响网格与标尺，清空缓存强制重建
+        self.root.editor.grid_cache.clear();
+        self.root.editor.ruler_cache.clear();
+        self.render_ctx.render_cache.grid_viewport_hash = 0;
         // 标记音符数据变化，触发走带缓存重建
         self.root.editor.spatial.note_index_dirty.set(true);
     }

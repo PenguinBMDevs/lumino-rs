@@ -19,7 +19,7 @@ impl LuminoProject {
     /// 将 MidiDocument 中的 per-track 事件拆分为各 `.lmtrack` 文件的数据结构。
     pub fn from_midi_document(doc: &MidiDocument) -> Self {
         let mut project = Self::new("Untitled");
-        project.metadata.audio.division = 480; // 默认值，由调用方后续覆盖
+        project.metadata.audio.division = doc.division;
         project.metadata.audio.total_ticks = doc.total_ticks;
         project.metadata.audio.track_count = doc.track_count;
         project.tempo_changes = doc.tempo_changes.clone();
@@ -226,6 +226,7 @@ impl LuminoProject {
             total_ticks: total_ticks.max(self.metadata.audio.total_ticks),
             track_count,
             tracks: TrackManager::new(track_count),
+            division: self.metadata.audio.division,
         })
     }
 
@@ -281,6 +282,7 @@ mod tests {
             total_ticks: 480,
             track_count: 1,
             tracks: TrackManager::new(1),
+            division: 480,
         }
     }
 
@@ -359,6 +361,7 @@ mod tests {
             total_ticks: 960,
             track_count: 1,
             tracks: TrackManager::new(1),
+            division: 480,
         };
         let project = LuminoProject::from_midi_document(&doc);
         let rebuilt = project.to_midi_document().expect("重叠音符重建失败");

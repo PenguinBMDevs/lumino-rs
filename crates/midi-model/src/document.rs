@@ -40,6 +40,8 @@ pub struct MidiDocument {
     pub track_count: u16,
     /// 音轨可见性管理
     pub tracks: TrackManager,
+    /// MIDI 文件头 division（PPQ）
+    pub division: u16,
 }
 
 impl std::fmt::Debug for MidiDocument {
@@ -49,6 +51,7 @@ impl std::fmt::Debug for MidiDocument {
             .field("track_count", &self.track_count)
             .field("total_ticks", &self.total_ticks)
             .field("total_notes", &total_notes)
+            .field("division", &self.division)
             .field("control_events.len", &self.control_events.len())
             .finish()
     }
@@ -152,12 +155,13 @@ impl MidiDocument {
             let tracks_manager = TrackManager::new(track_count);
 
             tracing::info!(
-                "MidiDocument: 已加载 {} 个音符, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化",
+                "MidiDocument: 已加载 {} 个音符, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化, division={}",
                 total_notes,
                 control_events.len(),
                 track_count,
                 total_ticks,
                 all_tempo_changes.len(),
+                division
             );
 
             if let Some(cb) = progress {
@@ -174,6 +178,7 @@ impl MidiDocument {
                     total_ticks,
                     track_count,
                     tracks: tracks_manager,
+                    division,
                 },
                 division,
                 total_notes,
