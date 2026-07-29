@@ -32,7 +32,7 @@ pub fn draw(
     let keyboard_width = view.keyboard_width;
     let ruler_height = view.ruler_height;
 
-    let measure_ticks = ppq * 4.0;
+    let time_signatures = editor.editor_state.data.time_signatures.as_slice();
     let start_tick = view.scroll_x / view.zoom_x;
     let end_tick = (view.scroll_x + bounds.width - keyboard_width) / view.zoom_x;
 
@@ -53,12 +53,14 @@ pub fn draw(
 
     let text_color = theme.text_color();
 
-    // 绘制小节号和刻度线
-    let mut current_measure_tick = ((start_tick / measure_ticks).floor() * measure_ticks).max(0.0);
-    let mut measure_number = (current_measure_tick / measure_ticks).ceil() as u32;
+    // 绘制小节号和刻度线（按拍号变化分段）
+    let mut measure_iter = MeasureIterator::new(time_signatures, ppq, start_tick.max(0.0));
+    while let Some((measure_tick, measure_number)) = measure_iter.next() {
+        if measure_tick > end_tick {
+            break;
+        }
 
-    while current_measure_tick <= end_tick {
-        let screen_x = (current_measure_tick * view.zoom_x) - view.scroll_x + keyboard_width;
+        let screen_x = (measure_tick * view.zoom_x) - view.scroll_x + keyboard_width;
 
         if screen_x >= keyboard_width && screen_x <= bounds.width {
             // 绘制小节号文本
@@ -86,9 +88,6 @@ pub fn draw(
             );
             frame.stroke(&tick_path, tick_stroke);
         }
-
-        current_measure_tick += measure_ticks;
-        measure_number += 1;
     }
 
     // 绘制循环区域（在刻度线之上）
@@ -223,4 +222,131 @@ fn draw_handle(
             a: 0.5,
         });
     frame.stroke(&handle_path, handle_stroke);
+}
+
+/// 计算 tick 位置所在拍号段（空列表时回退到 4/4）
+fn time_signature_at(tick: f32, time_signatures: &[(u32, u8, u8)]) -> (u8, u8) {
+    let mut active = (4_u8, 4_u8);
+    for &(ts_tick, num, den) in time_signatures {
+        if tick >= ts_tick as f32 {
+            active = (num, den);
+        } else {
+            break;
+        }
+    }
+    active
+}
+
+/// 计算给定拍号下的每小节 tick 数
+fn ticks_per_measure(ppq: f32, numerator: u8, denominator: u8) -> f32 {
+    let beat_ticks = ppq * 4.0 / denominator.max(1) as f32;
+    beat_ticks * numerator.max(1) as f32
+}
+
+/// 小节边界迭代器，按拍号变化分段生成小节起始 tick 与编号
+struct MeasureIterator<'a> {
+    time_signatures: &'a [(u32, u8, u8)],
+    ppq: f32,
+    current_tick: f32,
+    measure_number: u32,
+    ts_index: usize,
+    measure_ticks: f32,
+}
+
+impl<'a> MeasureIterator<'a> {
+    fn new(time_signatures: &'a [(u32, u8, u8)], ppq: f32, start_tick: f32) -> Self {
+        let (num, den) = time_signature_at(0.0, time_signatures);
+        let mut iter = Self {
+            time_signatures,
+            ppq,
+            current_tick: 0.0,
+            measure_number: 1,
+            ts_index: 0,
+            measure_ticks: ticks_per_measure(ppq, num, den),
+        };
+        iter.advance_to(start_tick);
+        iter
+    }
+
+    fn advance_to(&mut self, target_tick: f32) {
+        while self.current_tick < target_tick {
+            self.step();
+        }
+    }
+
+    fn step(&mut self) {
+        let next_measure_tick = self.current_tick + self.measure_ticks;
+        if let Some((next_ts_tick, _, _)) = self.time_signatures.get(self.ts_index + 1) {
+            let next_ts_tick = *next_ts_tick as f32;
+            if next_measure_tick >= next_ts_tick && self.current_tick < next_ts_tick {
+                self.ts_index += 1;
+                let (num, den) = time_signature_at(next_ts_tick, self.time_signatures);
+                self.measure_ticks = ticks_per_measure(self.ppq, num, den);
+                self.current_tick = next_ts_tick;
+                self.measure_number += 1;
+                return;
+            }
+        }
+        self.current_tick = next_measure_tick;
+        self.measure_number += 1;
+    }
+
+    fn next(&mut self) -> Option<(f32, u32)> {
+        let result = (self.current_tick, self.measure_number);
+        self.step();
+        Some(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_time_signature_at_empty_defaults_to_4_4() {
+        assert_eq!(time_signature_at(100.0, &[]), (4, 4));
+    }
+
+    #[test]
+    fn test_time_signature_at_returns_active_signature() {
+        let signatures = [(0, 3, 4), (1920, 4, 4)];
+        assert_eq!(time_signature_at(0.0, &signatures), (3, 4));
+        assert_eq!(time_signature_at(1919.0, &signatures), (3, 4));
+        assert_eq!(time_signature_at(1920.0, &signatures), (4, 4));
+    }
+
+    #[test]
+    fn test_measure_iterator_4_4() {
+        // ppq = 480, 4/4 -> 1920 ticks/measure
+        let mut iter = MeasureIterator::new(&[(0, 4, 4)], 480.0, 0.0);
+        assert_eq!(iter.next(), Some((0.0, 1)));
+        assert_eq!(iter.next(), Some((1920.0, 2)));
+        assert_eq!(iter.next(), Some((3840.0, 3)));
+    }
+
+    #[test]
+    fn test_measure_iterator_advance_to_start() {
+        // ppq = 480, 4/4, start at tick 4000
+        let mut iter = MeasureIterator::new(&[(0, 4, 4)], 480.0, 4000.0);
+        // measure 3 spans [3840, 5760), so the first visible boundary is measure 4 at 5760
+        assert_eq!(iter.next(), Some((5760.0, 4)));
+        assert_eq!(iter.next(), Some((7680.0, 5)));
+    }
+
+    #[test]
+    fn test_measure_iterator_time_signature_change() {
+        // 4/4 for one measure (1920 ticks), then 3/4 (1440 ticks/measure)
+        let signatures = [(0, 4, 4), (1920, 3, 4)];
+        let mut iter = MeasureIterator::new(&signatures, 480.0, 0.0);
+        assert_eq!(iter.next(), Some((0.0, 1)));
+        assert_eq!(iter.next(), Some((1920.0, 2)));
+        assert_eq!(iter.next(), Some((1920.0 + 1440.0, 3)));
+        assert_eq!(iter.next(), Some((1920.0 + 2880.0, 4)));
+    }
+
+    #[test]
+    fn test_ticks_per_measure_different_denominators() {
+        // ppq = 480, 6/8 -> beat = 480 * 4 / 8 = 240, measure = 240 * 6 = 1440
+        assert!((ticks_per_measure(480.0, 6, 8) - 1440.0).abs() < f32::EPSILON);
+    }
 }

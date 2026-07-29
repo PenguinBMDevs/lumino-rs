@@ -50,6 +50,7 @@ pub fn prepare_renderers(
         max_key_index: params.max_key_index,
         canvas_offset_x: params.canvas_offset.0,
         canvas_offset_y: params.canvas_offset.1,
+        time_signatures: params.time_signatures.clone(),
     };
     renderers.grid.prepare(queue, &grid_params);
 
@@ -63,6 +64,8 @@ pub fn prepare_renderers(
             zoom_x: params.zoom.0,
             ticks_per_measure: params.ticks_per_measure,
             ticks_per_beat: params.ticks_per_beat,
+            ppq: params.ppq as u32,
+            time_signatures: params.time_signatures.clone(),
         };
         renderers.ruler.prepare(device, queue, &ruler_params);
     }

@@ -13,6 +13,8 @@ fn test_ruler_viewport_uniform_layout() {
         zoom_x: 0.1,
         ticks_per_measure: 1920,
         ticks_per_beat: 480,
+        ppq: 480,
+        time_signatures: vec![(0, 4, 4)],
     });
 
     // 验证大小（实际大小可能因对齐而变化）

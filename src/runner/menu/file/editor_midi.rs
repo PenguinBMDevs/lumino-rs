@@ -4,9 +4,9 @@
 //! 生成可用于保存/导出的 `MidiDocument` 或 MIDI 字节。
 
 use lumino_core::midi_types::TempoPoint;
-use lumino_export::lmpj::extract_pc_cc_events;
 use lumino_export::midi::{
-    MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTrackData,
+    MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTimeSignatureEvent,
+    MidiTrackData, extract_pc_cc_events,
 };
 use lumino_midi_loader::{MidiDocument, bpm_to_tempo, constants::DEFAULT_PPQN};
 use std::collections::HashMap;
@@ -75,6 +75,7 @@ pub(super) fn build_midi_export_data_from_editor(
     tempos_on_first_track: bool,
 ) -> Option<MidiExportData> {
     let (notes, tempo_points) = editor_notes_and_tempos(runner)?;
+    let time_signatures = editor_time_signatures(runner);
     let pc_cc = extract_current_pc_cc(runner);
 
     let tracks: Vec<MidiTrackData> = notes
@@ -106,6 +107,11 @@ pub(super) fn build_midi_export_data_from_editor(
                 } else {
                     Vec::new()
                 },
+                time_signatures: if tempos_on_first_track && i == 0 {
+                    time_signatures.clone()
+                } else {
+                    Vec::new()
+                },
                 program_changes,
                 control_changes,
                 ..Default::default()
@@ -120,6 +126,42 @@ pub(super) fn build_midi_export_data_from_editor(
         },
         tracks,
     })
+}
+
+/// 读取编辑器中的拍号变化列表
+fn editor_time_signatures(runner: &RunnerInner) -> Vec<MidiTimeSignatureEvent> {
+    let ui = runner.window_state.window.ui();
+    ui.root()
+        .editor
+        .editor_state
+        .data
+        .time_signatures
+        .iter()
+        .map(|(tick, numerator, denominator)| MidiTimeSignatureEvent {
+            tick: *tick,
+            numerator: *numerator,
+            denominator: human_denominator_to_power_of_two(*denominator),
+            clocks_per_tick: 24,
+            notated_32nd_notes_per_beat: 8,
+        })
+        .collect()
+}
+
+/// 将人类可读分母（4/8/16）转换为 MIDI 标准 2 的幂次
+fn human_denominator_to_power_of_two(denominator: u8) -> u8 {
+    match denominator {
+        1 => 0,
+        2 => 1,
+        4 => 2,
+        8 => 3,
+        16 => 4,
+        32 => 5,
+        64 => 6,
+        _ => {
+            tracing::warn!("不常见的拍号分母: {}，回退到 4", denominator);
+            2
+        }
+    }
 }
 
 /// 将内部 tempo 点类型转换为导出用 `MidiTempoEvent`
@@ -141,5 +183,27 @@ fn export_midi_to_bytes(export_data: &MidiExportData) -> Option<Vec<u8>> {
             tracing::error!("导出 MIDI 字节失败: {}", e);
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_human_denominator_to_power_of_two() {
+        assert_eq!(human_denominator_to_power_of_two(1), 0);
+        assert_eq!(human_denominator_to_power_of_two(2), 1);
+        assert_eq!(human_denominator_to_power_of_two(4), 2);
+        assert_eq!(human_denominator_to_power_of_two(8), 3);
+        assert_eq!(human_denominator_to_power_of_two(16), 4);
+        assert_eq!(human_denominator_to_power_of_two(32), 5);
+        assert_eq!(human_denominator_to_power_of_two(64), 6);
+    }
+
+    #[test]
+    fn test_human_denominator_to_power_of_two_fallback() {
+        assert_eq!(human_denominator_to_power_of_two(3), 2);
+        assert_eq!(human_denominator_to_power_of_two(128), 2);
     }
 }

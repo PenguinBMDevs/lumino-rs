@@ -24,6 +24,12 @@ pub struct GridCameraUniform {
     pub ppq: f32,
     pub max_key_index: f32,
     pub canvas_offset: [f32; 2], // (offset_x, offset_y)
+    /// 当前有效的拍号变化数量
+    pub time_signature_count: u32,
+    /// 对齐填充，保证 vec4 数组在 WGSL uniform 中满足 16 字节对齐
+    pub _padding: [u32; 3],
+    /// 拍号变化列表，每个 vec4 存储 (tick, 分子, 分母, 保留)
+    pub time_signatures: [[u32; 4]; 16],
 }
 
 impl GridCameraUniform {
@@ -60,6 +66,7 @@ pub struct GridCameraUniformBuilder {
     ppq: f32,
     max_key_index: f32,
     canvas_offset: [f32; 2],
+    time_signatures: Vec<(u32, u8, u8)>,
 }
 
 impl Default for GridCameraUniformBuilder {
@@ -79,6 +86,7 @@ impl Default for GridCameraUniformBuilder {
             ppq: 1920.0,
             max_key_index: 127.0,
             canvas_offset: [0.0, 0.0],
+            time_signatures: vec![(0, 4, 4)],
         }
     }
 }
@@ -168,8 +176,19 @@ impl GridCameraUniformBuilder {
         self
     }
 
+    /// 设置拍号变化列表
+    pub fn time_signatures(mut self, time_signatures: Vec<(u32, u8, u8)>) -> Self {
+        self.time_signatures = time_signatures;
+        self
+    }
+
     /// 构建 [`GridCameraUniform`]
     pub fn build(self) -> GridCameraUniform {
+        let count = self.time_signatures.len().min(16) as u32;
+        let mut ts_arr = [[0u32; 4]; 16];
+        for (i, (tick, num, den)) in self.time_signatures.iter().take(16).enumerate() {
+            ts_arr[i] = [*tick, *num as u32, *den as u32, 0];
+        }
         GridCameraUniform {
             viewport_size: self.viewport_size,
             camera_pos: self.camera_pos,
@@ -185,6 +204,9 @@ impl GridCameraUniformBuilder {
             ppq: self.ppq,
             max_key_index: self.max_key_index,
             canvas_offset: self.canvas_offset,
+            time_signature_count: count,
+            _padding: [0; 3],
+            time_signatures: ts_arr,
         }
     }
 }
@@ -237,6 +259,8 @@ pub struct GridPrepareParams {
     pub max_key_index: f32,
     pub canvas_offset_x: f32,
     pub canvas_offset_y: f32,
+    /// 拍号变化列表 (tick, 分子, 分母)
+    pub time_signatures: Vec<(u32, u8, u8)>,
 }
 
 /// 网格渲染器
@@ -383,6 +407,7 @@ impl GridRenderer {
             .ppq(params.ppq)
             .max_key_index(params.max_key_index)
             .canvas_offset(params.canvas_offset_x, params.canvas_offset_y)
+            .time_signatures(params.time_signatures.clone())
             .build();
 
         if self.cached_uniform.as_ref() != Some(&viewport) {

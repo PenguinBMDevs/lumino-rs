@@ -9,7 +9,6 @@
 //! |------|------|------|
 //! | MIDI | [`export_midi`] / [`export_midi_to_bytes`] | 导出标准 MIDI 文件 |
 //! | 工程 | [`save_to_archive`] / [`save_to_folder`] | 保存 Lumino 工程文件 |
-//! | LMPJ | [`save`] / [`save_sync`] | 导出 LMPJ 项目包 |
 //!
 //! # 转换器
 //!
@@ -20,7 +19,6 @@ pub mod audio;
 pub mod converter;
 pub mod error;
 pub mod format;
-pub mod lmpj;
 pub mod midi;
 pub mod project;
 pub mod video;
@@ -52,13 +50,6 @@ pub use converter::{copy_file_sync, export_midi_from_parsed_midi_sync};
 
 /// 导出错误类型与 Result 别名
 pub use error::{ExportError, ExportResult};
-
-// ── LMPJ 项目包 ──
-
-/// LMPJ 项目包保存（异步版本）
-pub use lmpj::save;
-/// LMPJ 项目包保存（同步版本）
-pub use lmpj::save_sync;
 
 // ── MIDI 导出 ──
 

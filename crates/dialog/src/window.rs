@@ -189,7 +189,7 @@ impl DialogWindow {
             }
             DialogType::ProjectSettings => {
                 ui.set_project_settings_dialog_open(true);
-                let (title, tempo, copyright, created_display, editing_time) =
+                let (title, tempo, copyright, created_display, editing_time, time_signatures) =
                     main_ui.get_project_settings_data();
                 ui.set_project_settings_data(
                     title,
@@ -197,6 +197,7 @@ impl DialogWindow {
                     copyright,
                     created_display,
                     editing_time,
+                    time_signatures,
                 );
             }
             DialogType::Settings => {

@@ -308,14 +308,16 @@ impl RunnerInner {
                 title,
                 tempo,
                 copyright,
+                time_signatures,
             } => {
                 tracing::info!(
-                    "应用工程设置: 标题={}, BPM={}, 版权={}",
+                    "应用工程设置: 标题={}, BPM={}, 版权={}, 拍号变化数={}",
                     title,
                     tempo,
-                    copyright
+                    copyright,
+                    time_signatures.len()
                 );
-                ui.apply_project_settings(title, tempo, copyright);
+                ui.apply_project_settings(title, tempo, copyright, time_signatures);
             }
             DialogResult::Settings { settings, theme } => {
                 tracing::info!("应用设置面板配置，主题: {}", theme);

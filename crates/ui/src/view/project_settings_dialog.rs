@@ -83,6 +83,36 @@ pub fn view_project_settings_dialog<'a>(
     .width(Length::Fill)
     .style(input_style);
 
+    // 拍号（单拍号编辑，tick 固定为 0）
+    let time_signature_label = text("拍号").size(14).style(label_style);
+    let numerator_input = container(
+        text_input("4", &state.time_signature_numerator)
+            .on_input(|s| {
+                Message::ProjectSettings(ProjectSettingsAction::TimeSignatureNumeratorChanged(s))
+            })
+            .padding([6, 10])
+            .width(Length::Fixed(60.0)),
+    )
+    .style(input_style);
+    let slash = text("/").size(14).style(label_style);
+    let denominator_input = container(
+        text_input("4", &state.time_signature_denominator)
+            .on_input(|s| {
+                Message::ProjectSettings(ProjectSettingsAction::TimeSignatureDenominatorChanged(s))
+            })
+            .padding([6, 10])
+            .width(Length::Fixed(60.0)),
+    )
+    .style(input_style);
+    let time_signature_row = row![
+        numerator_input,
+        space().width(4),
+        slash,
+        space().width(4),
+        denominator_input
+    ]
+    .align_y(iced_core::Alignment::Center);
+
     // 创建日期 (只读)
     let created_label = text(t.project_created_label).size(14).style(label_style);
     let created_value = if state.created_display.is_empty() {
@@ -159,6 +189,9 @@ pub fn view_project_settings_dialog<'a>(
         space().height(12),
         copyright_label,
         copyright_input,
+        space().height(12),
+        time_signature_label,
+        time_signature_row,
         space().height(12),
         created_label,
         created_value,

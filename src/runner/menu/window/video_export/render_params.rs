@@ -107,8 +107,15 @@ fn build_note_rectangle_render_params(
     let scroll_y = 0.0f32;
 
     let grid_instances = Vec::new();
-    let ruler_instances =
-        generate_ruler_instances(w, keyboard_width, ruler_height, scroll_x, zoom_x);
+    let ruler_instances = generate_ruler_instances(
+        w,
+        keyboard_width,
+        ruler_height,
+        scroll_x,
+        zoom_x,
+        ppq,
+        &document.time_signatures,
+    );
     let keyboard_instances = Vec::new();
 
     let tick_start = tick;
@@ -157,6 +164,7 @@ fn build_note_rectangle_render_params(
         ppq: ppq as f32,
         max_key_index,
         canvas_size,
+        time_signatures: document.time_signatures.clone(),
         ..Default::default()
     }
 }
@@ -207,6 +215,7 @@ fn build_waterfall_render_params(
         waterfall_speed: waterfall_scroll_speed.max(0.1),
         waterfall_notes,
         waterfall_current_tick: tick,
+        time_signatures: document.time_signatures.clone(),
         ..Default::default()
     }
 }
@@ -269,6 +278,7 @@ fn build_miditrail_render_params(
         miditrail_current_tick: tick,
         miditrail_z_far: miditrail_z_far.max(0.1),
         fps,
+        time_signatures: document.time_signatures.clone(),
         ..Default::default()
     }
 }

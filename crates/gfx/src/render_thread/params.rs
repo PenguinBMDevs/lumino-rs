@@ -42,6 +42,8 @@ pub struct RenderParams {
     pub ticks_per_measure: u32,
     /// 每拍 tick 数
     pub ticks_per_beat: u32,
+    /// 拍号变化列表 (tick, 分子, 分母)
+    pub time_signatures: Vec<(u32, u8, u8)>,
     /// 是否需要重新生成网格
     pub regenerate_grid: bool,
     /// Canvas 偏移
@@ -118,6 +120,7 @@ impl Default for RenderParams {
             arrangement_uniform: ArrangementUniform::default(),
             cc_bar_instances: Vec::new(),
             velocity_panel_rect: None,
+            time_signatures: vec![(0, 4, 4)],
             is_waterfall_mode: false,
             waterfall_speed: 1.0,
             waterfall_notes: Vec::new(),
@@ -179,6 +182,7 @@ pub struct RenderParamsBuilder {
     canvas_offset: (f32, f32),
     canvas_size: (f32, f32),
     velocity_panel_rect: Option<(f32, f32, f32, f32)>,
+    time_signatures: Vec<(u32, u8, u8)>,
     is_waterfall_mode: bool,
     waterfall_speed: f32,
     waterfall_notes: Vec<WaterfallNoteGpu>,
@@ -221,6 +225,7 @@ impl Default for RenderParamsBuilder {
             canvas_offset: (0.0, 0.0),
             canvas_size: (800.0, 600.0),
             velocity_panel_rect: None,
+            time_signatures: vec![(0, 4, 4)],
             is_waterfall_mode: false,
             waterfall_speed: 1.0,
             waterfall_notes: Vec::new(),
@@ -398,6 +403,12 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置拍号变化列表
+    pub fn time_signatures(mut self, time_signatures: Vec<(u32, u8, u8)>) -> Self {
+        self.time_signatures = time_signatures;
+        self
+    }
+
     /// 设置目标帧率（用于动画时间步长）。
     pub fn fps(mut self, fps: f32) -> Self {
         self.fps = fps;
@@ -406,9 +417,12 @@ impl RenderParamsBuilder {
 
     /// 构建 [`RenderParams`]。
     ///
-    /// 自动从 `ppq` 推导 `ticks_per_measure` 和 `ticks_per_beat`，
+    /// 从首个拍号推导默认 `ticks_per_measure` 和 `ticks_per_beat`
+    ///（供背景 shader 使用；变化拍号由 CPU 标尺实例处理）。
     /// `note_instances` 和 `regenerate_grid` 使用默认值。
     pub fn build(self) -> RenderParams {
+        let (ticks_per_measure, ticks_per_beat) =
+            compute_ticks_from_first_time_signature(self.ppq, &self.time_signatures);
         RenderParams {
             viewport_size: self.viewport_size,
             logical_size: self.logical_size,
@@ -429,8 +443,8 @@ impl RenderParamsBuilder {
             note_instances: Vec::new(),
             ruler_instances: self.ruler_instances,
             keyboard_instances: self.keyboard_instances,
-            ticks_per_measure: (self.ppq as u32) * 4,
-            ticks_per_beat: self.ppq as u32,
+            ticks_per_measure,
+            ticks_per_beat,
             regenerate_grid: false,
             canvas_offset: self.canvas_offset,
             canvas_size: self.canvas_size,
@@ -441,6 +455,7 @@ impl RenderParamsBuilder {
             arrangement_uniform: self.arrangement_uniform,
             cc_bar_instances: self.cc_bar_instances,
             velocity_panel_rect: self.velocity_panel_rect,
+            time_signatures: self.time_signatures,
             is_waterfall_mode: self.is_waterfall_mode,
             waterfall_speed: self.waterfall_speed,
             waterfall_notes: self.waterfall_notes,
@@ -453,4 +468,15 @@ impl RenderParamsBuilder {
             fps: self.fps,
         }
     }
+}
+
+/// 根据首个拍号计算每小节/每拍 tick 数
+fn compute_ticks_from_first_time_signature(
+    ppq: f32,
+    time_signatures: &[(u32, u8, u8)],
+) -> (u32, u32) {
+    let (_, numerator, denominator) = time_signatures.first().copied().unwrap_or((0, 4, 4));
+    let beat_ticks = ppq * 4.0 / denominator.max(1) as f32;
+    let measure_ticks = beat_ticks * numerator.max(1) as f32;
+    (measure_ticks as u32, beat_ticks as u32)
 }

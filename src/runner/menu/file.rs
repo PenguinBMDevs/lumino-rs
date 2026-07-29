@@ -106,17 +106,20 @@ impl RunnerInner {
                 let created_display = self.session_tracker.created_at.clone().unwrap_or_default();
                 let total_editing_time_seconds = self.session_tracker.current_editing_secs();
 
-                // 从编辑器获取当前 BPM
-                let tempo = {
+                // 从编辑器获取当前 BPM 和拍号
+                let (tempo, time_signatures) = {
                     let ui = self.window_state.window.ui();
                     let root = ui.root();
-                    root.editor
+                    let tempo = root
+                        .editor
                         .editor_state
                         .data
                         .tempo_points
                         .first()
                         .map(|tp| format!("{:.1}", tp.bpm))
-                        .unwrap_or_else(|| "120.0".to_string())
+                        .unwrap_or_else(|| "120.0".to_string());
+                    let time_signatures = root.editor.editor_state.data.time_signatures.clone();
+                    (tempo, time_signatures)
                 };
 
                 // 将真实数据设置到 UI 状态中
@@ -126,6 +129,7 @@ impl RunnerInner {
                     String::new(), // copyright 保持默认
                     created_display,
                     total_editing_time_seconds,
+                    time_signatures,
                 );
 
                 self.window_state

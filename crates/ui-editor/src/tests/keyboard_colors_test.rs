@@ -23,6 +23,7 @@ fn make_test_doc() -> MidiDocument {
     MidiDocument {
         notes: vec![track0, track1],
         tempo_changes: vec![(0, 120.0)],
+        time_signatures: vec![(0, 4, 4)],
         control_events: Vec::new(),
         track_names: vec![Some("Track 1".into()), Some("Track 2".into())],
         total_ticks: 1920,

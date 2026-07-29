@@ -71,6 +71,8 @@ pub struct StreamingMidiResult {
     pub total_ticks: u32,
     /// 速度变化列表
     pub tempo_changes: Vec<(u32, f32)>,
+    /// 拍号变化列表 (tick, 分子, 分母)
+    pub time_signatures: Vec<(u32, u8, u8)>,
     /// 总帧数
     pub total_frames: u64,
 }
@@ -112,7 +114,7 @@ pub fn parse_midi_to_cache(
 
         let _ = send_progress(&progress, "正在并行解析所有轨道...".to_string(), 0.05);
 
-        type ScanResult = (Vec<(u32, f32)>, u64, Vec<NoteRecord>);
+        type ScanResult = (Vec<(u32, f32)>, Vec<(u32, u8, u8)>, u64, Vec<NoteRecord>);
         let scan_results: Vec<ScanResult> = mmap_smf
             .tracks()
             .par_iter()
@@ -120,6 +122,7 @@ pub fn parse_midi_to_cache(
             .map(|(track_idx, track)| {
                 let mut local_tick: u64 = 0;
                 let mut local_tempos: Vec<(u32, f32)> = Vec::new();
+                let mut local_time_signatures: Vec<(u32, u8, u8)> = Vec::new();
                 let mut max_tick: u64 = 0;
                 let mut pending: FxHashMap<(u16, u16), PendingNote> = FxHashMap::default();
                 let mut records: Vec<NoteRecord> = Vec::new();
@@ -134,6 +137,10 @@ pub fn parse_midi_to_cache(
                             if bpm > 0.0 {
                                 local_tempos.push((local_tick as u32, bpm));
                             }
+                        }
+                        TrackEventKind::Meta(MetaMessage::TimeSignature(num, den_power, _, _)) => {
+                            let denominator = 1u8 << den_power;
+                            local_time_signatures.push((local_tick as u32, num, denominator));
                         }
                         TrackEventKind::Midi { channel, message } => match message {
                             MidiMessage::NoteOn { key, vel } => {
@@ -195,7 +202,7 @@ pub fn parse_midi_to_cache(
                     });
                 }
 
-                (local_tempos, max_tick, records)
+                (local_tempos, local_time_signatures, max_tick, records)
             })
             .collect();
 
@@ -208,11 +215,13 @@ pub fn parse_midi_to_cache(
     let _ = send_progress(&progress, "正在合并轨道数据...".to_string(), 0.65);
 
     let mut tempo_changes: Vec<(u32, f32)> = Vec::new();
+    let mut time_signatures: Vec<(u32, u8, u8)> = Vec::new();
     let mut total_ticks: u64 = 0;
     let mut all_records: Vec<NoteRecord> = Vec::new();
 
-    for (local_tempos, max_tick, local_records) in scan_results {
+    for (local_tempos, local_time_signatures, max_tick, local_records) in scan_results {
         tempo_changes.extend(local_tempos);
+        time_signatures.extend(local_time_signatures);
         total_ticks = total_ticks.max(max_tick);
         all_records.extend(local_records);
     }
@@ -222,6 +231,19 @@ pub fn parse_midi_to_cache(
     }
     tempo_changes.sort_by_key(|a| a.0);
     tempo_changes.dedup_by(|a, b| {
+        if a.0 == b.0 {
+            std::mem::swap(a, b);
+            true
+        } else {
+            false
+        }
+    });
+
+    if !time_signatures.iter().any(|(t, _, _)| *t == 0) {
+        time_signatures.push((0, 4, 4));
+    }
+    time_signatures.sort_by_key(|a| a.0);
+    time_signatures.dedup_by(|a, b| {
         if a.0 == b.0 {
             std::mem::swap(a, b);
             true
@@ -277,6 +299,7 @@ pub fn parse_midi_to_cache(
         ppqn,
         total_ticks: total_ticks as u32,
         tempo_changes,
+        time_signatures,
         total_frames,
     })
 }
@@ -422,6 +445,8 @@ pub struct StreamingNoteSource {
     ppqn: u32,
     total_ticks: u32,
     tempo_changes: Vec<(u32, f32)>,
+    /// 拍号变化列表 (tick, 分子, 分母)
+    time_signatures: Vec<(u32, u8, u8)>,
     read_buf: Vec<u8>,
 }
 
@@ -437,6 +462,7 @@ impl StreamingNoteSource {
             ppqn: result.ppqn,
             total_ticks: result.total_ticks,
             tempo_changes: result.tempo_changes,
+            time_signatures: result.time_signatures,
             read_buf: Vec::new(),
         })
     }
@@ -518,7 +544,14 @@ impl StreamingNoteSource {
 
         let time_sec = frame_idx as f64 / fps;
         let tick = seconds_to_tick(time_sec, self.ppqn, &self.tempo_changes);
-        let params = build_video_render_params_from_notes(width, height, tick, &notes, self.ppqn);
+        let params = build_video_render_params_from_notes(
+            width,
+            height,
+            tick,
+            &notes,
+            self.ppqn,
+            &self.time_signatures,
+        );
 
         Ok((notes, params))
     }
@@ -533,6 +566,7 @@ fn build_video_render_params_from_notes(
     tick: u32,
     notes: &[NoteRecord],
     ppq: u32,
+    time_signatures: &[(u32, u8, u8)],
 ) -> RenderParams {
     const KEY_COUNT: u16 = 128;
 
@@ -550,8 +584,15 @@ fn build_video_render_params_from_notes(
     let scroll_y = 0.0f32;
 
     let grid_instances = Vec::new();
-    let ruler_instances =
-        generate_ruler_instances(w, keyboard_width, ruler_height, scroll_x, zoom_x);
+    let ruler_instances = generate_ruler_instances(
+        w,
+        keyboard_width,
+        ruler_height,
+        scroll_x,
+        zoom_x,
+        ppq,
+        time_signatures,
+    );
     let keyboard_instances = Vec::new();
 
     let tick_start = tick;
@@ -615,6 +656,7 @@ fn build_video_render_params_from_notes(
         ppq: ppq as f32,
         max_key_index,
         canvas_size,
+        time_signatures: time_signatures.to_vec(),
         ..Default::default()
     }
 }

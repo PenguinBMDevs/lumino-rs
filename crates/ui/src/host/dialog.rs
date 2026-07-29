@@ -89,6 +89,7 @@ impl Host {
         copyright: String,
         created_display: String,
         total_editing_time_seconds: f64,
+        time_signatures: Vec<(u32, u8, u8)>,
     ) {
         self.root.set_project_settings_data(
             title,
@@ -96,14 +97,22 @@ impl Host {
             copyright,
             created_display,
             total_editing_time_seconds,
+            time_signatures,
         );
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
 
     /// 应用工程设置到主窗口
-    pub fn apply_project_settings(&mut self, title: String, tempo: f64, copyright: String) {
-        self.root.apply_project_settings(title, tempo, copyright);
+    pub fn apply_project_settings(
+        &mut self,
+        title: String,
+        tempo: f64,
+        copyright: String,
+        time_signatures: Vec<(u32, u8, u8)>,
+    ) {
+        self.root
+            .apply_project_settings(title, tempo, copyright, time_signatures);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
@@ -128,7 +137,10 @@ impl Host {
     }
 
     /// 获取当前项目设置数据（用于填充工程设置对话框）
-    pub fn get_project_settings_data(&self) -> (String, String, String, String, f64) {
+    #[allow(clippy::type_complexity)]
+    pub fn get_project_settings_data(
+        &self,
+    ) -> (String, String, String, String, f64, Vec<(u32, u8, u8)>) {
         self.root.get_project_settings_data()
     }
 

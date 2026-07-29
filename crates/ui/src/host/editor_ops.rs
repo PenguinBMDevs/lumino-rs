@@ -175,6 +175,8 @@ impl Host {
                 bpm: bpm as f64,
             })
             .collect();
+        // 同步拍号变化到编辑器
+        self.root.editor.editor_state.data.time_signatures = doc.time_signatures.clone();
         self.root.editor.editor_state.data.document = Some(doc);
         // 标记音符数据变化，触发走带缓存重建
         self.root.editor.spatial.note_index_dirty.set(true);

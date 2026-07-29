@@ -5,6 +5,10 @@
 //
 // 缩放缩小时，最细的层级先淡出；落在更粗层级上的点由更粗的层级绘制。
 // 小节线通过 measure_power 间隔翻倍，并在每个 power 内连续淡出。
+//
+// 拍号支持：
+//   从 uniform 读取拍号变化列表，按 tick 查找当前拍号段，
+//   动态计算每小节/每拍 tick 数，实现 3/4、6/8 等非 4/4 拍号及中途变化。
 
 // Viewport & Camera Uniforms
 struct CameraUniform {
@@ -21,8 +25,11 @@ struct CameraUniform {
     color_key_line: vec4<f32>,
     ppq: f32,
     max_key_index: f32,
-    canvas_offset: vec2<f32>,
+    canvas_offset: vec2<f32>, // (offset_x, offset_y)
+    time_signature_count: u32,
+    time_signatures: array<vec4<u32>, 16>,
 };
+
 
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
@@ -66,13 +73,84 @@ fn is_black_key(key: i32) -> bool {
     return k == 1 || k == 3 || k == 6 || k == 8 || k == 10;
 }
 
+// ─── 拍号查询 ───
+
+fn get_time_signature(tick: f32) -> vec3<u32> {
+    var ts = vec3<u32>(0u, 4u, 4u);
+    for (var i: u32 = 0u; i < camera.time_signature_count; i = i + 1u) {
+        let entry = camera.time_signatures[i];
+        let t = f32(entry.x);
+        if (tick >= t) {
+            ts = vec3<u32>(entry.x, entry.y, entry.z);
+        } else {
+            break;
+        }
+    }
+    return ts;
+}
+
+fn ticks_per_beat(ts: vec3<u32>) -> f32 {
+    // ppq 是每四分音符 tick；分母 4 -> ppq，分母 8 -> ppq/2，依此类推
+    return camera.ppq * 4.0 / f32(ts.z);
+}
+
+fn ticks_per_measure(ts: vec3<u32>) -> f32 {
+    return ticks_per_beat(ts) * f32(ts.y);
+}
+
+// 到最近小节线的距离（当前拍号段内）
+fn nearest_measure_distance(world_tick: f32) -> f32 {
+    let ts = get_time_signature(world_tick);
+    let tpm = ticks_per_measure(ts);
+    let segment_start = f32(ts.x);
+    let offset = world_tick - segment_start;
+    let measure_idx = floor(offset / tpm);
+    let measure_start = segment_start + measure_idx * tpm;
+    let dist_to_start = world_tick - measure_start;
+    let dist_to_end = measure_start + tpm - world_tick;
+    return min(dist_to_start, dist_to_end);
+}
+
+// 到最近拍线的距离（当前拍号段内）
+fn nearest_beat_distance(world_tick: f32) -> f32 {
+    let ts = get_time_signature(world_tick);
+    let tpb = ticks_per_beat(ts);
+    let segment_start = f32(ts.x);
+    let offset = world_tick - segment_start;
+    let beat_idx = floor(offset / tpb);
+    let beat_start = segment_start + beat_idx * tpb;
+    let dist_to_start = world_tick - beat_start;
+    let dist_to_end = beat_start + tpb - world_tick;
+    return min(dist_to_start, dist_to_end);
+}
+
+// 到最近半拍线的距离
+fn nearest_half_beat_distance(world_tick: f32) -> f32 {
+    let beat_dist = nearest_beat_distance(world_tick);
+    let ts = get_time_signature(world_tick);
+    let tpb = ticks_per_beat(ts);
+    let half = tpb * 0.5;
+    return min(beat_dist, half - beat_dist);
+}
+
+// 到 interval 网格线的最近距离（用于细分网格）
+fn nearest_grid_distance(world_tick: f32, interval: f32) -> f32 {
+    let ts = get_time_signature(world_tick);
+    let segment_start = f32(ts.x);
+    let offset = world_tick - segment_start;
+    let idx = floor(offset / interval);
+    let line_start = segment_start + idx * interval;
+    let dist_to_start = world_tick - line_start;
+    let dist_to_end = line_start + interval - world_tick;
+    return min(dist_to_start, dist_to_end);
+}
+
 // ─── LOD 阈值（基于可见小节数）───
 
 const BEAT_MAX_MEASURES: f32 = 48.0;       // 拍线（4分音符）完全消失阈值
 const HALF_BEAT_MAX_MEASURES: f32 = 24.0;  // 半拍线（8分音符）完全消失阈值
-const MEASURE_FADE_START: f32 = 48.0;      // 小节线每个 power 的淡出起始
-const MEASURE_FADE_END: f32 = 96.0;        // 小节线每个 power 的淡出结束
-const MAX_MEASURE_POWER: i32 = 6;          // 小节间隔最大翻倍次数
+const MEASURE_FADE_START: f32 = 48.0;      // 小节线淡出起始
+const MEASURE_FADE_END: f32 = 96.0;        // 小节线淡出结束
 const GRID_TIER_COUNT: i32 = 6;            // 细分网格层级数
 
 /// 在 [max/2, max] 内从 1.0 淡出到 0.0。
@@ -140,60 +218,48 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         bg_color = camera.color_bg_black_key;
     }
 
-    // === 计算视口内可见小节数（LOD 核心指标）===
+    // === 计算视口内可见小节数（LOD 核心指标，使用首个拍号近似）===
     let pixel_width = camera.viewport_size.x - camera.margins.x;
-    let ticks_per_measure = camera.ppq * 4.0;
+    let first_ts = get_time_signature(0.0);
+    let first_ticks_per_measure = ticks_per_measure(first_ts);
     let tick_width = pixel_width / camera.zoom.x;
-    let visible_measures = tick_width / ticks_per_measure;
+    let visible_measures = tick_width / first_ticks_per_measure;
 
     // === 各层级 alpha ===
+    let measure_alpha = smooth_fade_range(visible_measures, MEASURE_FADE_START, MEASURE_FADE_END);
     let beat_alpha = smooth_fade(visible_measures, BEAT_MAX_MEASURES);
     let halfbeat_alpha = smooth_fade(visible_measures, HALF_BEAT_MAX_MEASURES);
 
     // === X轴坐标计算 ===
     let world_tick = (screen_x - camera.margins.x - camera.canvas_offset.x + camera.camera_pos.x) / camera.zoom.x;
 
-    let ticks_per_beat = camera.ppq;
-    let ticks_per_half_beat = camera.ppq / 2.0;
-
     let base_width = 1.0;
     let before_tick_zero = world_tick < 0.0;
 
     // X轴网格线（从粗到细检查，粗线优先绘制）
     if !before_tick_zero {
-        // 小节线：从粗到细遍历所有 power，保证细密小节线淡出时更粗的小节线已可见
-        for (var p: i32 = MAX_MEASURE_POWER; p >= 0; p = p - 1) {
-            let power = f32(p);
-            let measure_int = ticks_per_measure * pow(2.0, power);
-            let fade_start = MEASURE_FADE_START * pow(2.0, power);
-            let fade_end = MEASURE_FADE_END * pow(2.0, power);
-            var alpha = smooth_fade_range(visible_measures, fade_start, fade_end);
-            if p > 0 && visible_measures <= fade_start / 2.0 {
-                alpha = 0.0;
-            }
-            if alpha <= 0.0 {
-                continue;
-            }
-            let measure_width = max(2.0, 4.0 - power * 0.5);
-            let measure_frac = fract(world_tick / measure_int);
-            let dist_measure = min(measure_frac, 1.0 - measure_frac) * measure_int * camera.zoom.x;
-            if dist_measure < measure_width * 0.5 {
-                return mix(bg_color, camera.color_bar, alpha);
+        // 小节线
+        if measure_alpha > 0.0 {
+            let measure_dist = nearest_measure_distance(world_tick) * camera.zoom.x;
+            if measure_dist < 2.0 {
+                return mix(bg_color, camera.color_bar, measure_alpha);
             }
         }
 
         // 拍线（4分音符）
-        let beat_frac = fract(world_tick / ticks_per_beat);
-        let dist_beat = min(beat_frac, 1.0 - beat_frac) * ticks_per_beat * camera.zoom.x;
-        if beat_alpha > 0.0 && dist_beat < base_width * 1.5 {
-            return mix(bg_color, camera.color_beat, 0.8 * beat_alpha);
+        if beat_alpha > 0.0 {
+            let beat_dist = nearest_beat_distance(world_tick) * camera.zoom.x;
+            if beat_dist < base_width * 1.5 {
+                return mix(bg_color, camera.color_beat, 0.8 * beat_alpha);
+            }
         }
 
         // 半拍线（8分音符）
-        let half_frac = fract(world_tick / ticks_per_half_beat);
-        let dist_half = min(half_frac, 1.0 - half_frac) * ticks_per_half_beat * camera.zoom.x;
-        if halfbeat_alpha > 0.0 && dist_half < base_width {
-            return mix(bg_color, camera.color_half_beat, 0.7 * halfbeat_alpha);
+        if halfbeat_alpha > 0.0 {
+            let half_dist = nearest_half_beat_distance(world_tick) * camera.zoom.x;
+            if half_dist < base_width {
+                return mix(bg_color, camera.color_half_beat, 0.7 * halfbeat_alpha);
+            }
         }
 
         // 细分网格（16分 → 512分，粗网格优先）
@@ -202,9 +268,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             if tier_alpha <= 0.0 {
                 continue;
             }
-            let interval = camera.ppq / grid_tier_divisor(tier);
-            let frac = fract(world_tick / interval);
-            let dist = min(frac, 1.0 - frac) * interval * camera.zoom.x;
+            let ts = get_time_signature(world_tick);
+            let interval = ticks_per_beat(ts) / grid_tier_divisor(tier);
+            if interval <= 0.0 {
+                continue;
+            }
+            let dist = nearest_grid_distance(world_tick, interval) * camera.zoom.x;
             if dist < grid_threshold_px(tier) {
                 return mix(bg_color, camera.color_grid, 0.5 * tier_alpha);
             }

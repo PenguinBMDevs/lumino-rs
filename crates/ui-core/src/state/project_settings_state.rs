@@ -14,6 +14,10 @@ pub struct ProjectSettingsDialogState {
     pub created_display: String,
     /// 累计创作时间 (秒)
     pub total_editing_time_seconds: f64,
+    /// 拍号分子（字符串形式便于输入框绑定）
+    pub time_signature_numerator: String,
+    /// 拍号分母（字符串形式便于输入框绑定；人类可读，如 4、8、16）
+    pub time_signature_denominator: String,
 }
 
 impl Default for ProjectSettingsDialogState {
@@ -25,6 +29,8 @@ impl Default for ProjectSettingsDialogState {
             copyright: String::new(),
             created_display: String::new(),
             total_editing_time_seconds: 0.0,
+            time_signature_numerator: "4".to_string(),
+            time_signature_denominator: "4".to_string(),
         }
     }
 }
@@ -65,5 +71,15 @@ impl ProjectSettingsDialogState {
         } else {
             None
         }
+    }
+
+    /// 解析拍号，返回 (分子, 分母)
+    pub fn parse_time_signature(&self) -> Option<(u8, u8)> {
+        let numerator = self.time_signature_numerator.parse::<u8>().ok()?;
+        let denominator = self.time_signature_denominator.parse::<u8>().ok()?;
+        if numerator == 0 || denominator == 0 {
+            return None;
+        }
+        Some((numerator, denominator))
     }
 }

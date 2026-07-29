@@ -53,6 +53,7 @@ pub struct RulerRenderer {
     cache_ruler_height: f32,
     cache_ticks_per_measure: u32,
     cache_ticks_per_beat: u32,
+    cache_time_signatures: Vec<(u32, u8, u8)>,
 }
 
 pub use core::{RulerPrepareParams, RulerTickInstance, RulerViewportUniform};

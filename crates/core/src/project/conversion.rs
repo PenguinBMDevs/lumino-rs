@@ -23,6 +23,7 @@ impl LuminoProject {
         project.metadata.audio.total_ticks = doc.total_ticks;
         project.metadata.audio.track_count = doc.track_count;
         project.tempo_changes = doc.tempo_changes.clone();
+        project.time_signatures = doc.time_signatures.clone();
         project.track_names = doc.track_names.clone();
 
         // 从控制事件中拆分 CC / PC / 弯音
@@ -194,6 +195,7 @@ impl LuminoProject {
         Ok(MidiDocument {
             notes,
             tempo_changes: self.tempo_changes.clone(),
+            time_signatures: self.time_signatures.clone(),
             control_events,
             track_names,
             total_ticks: total_ticks.max(self.metadata.audio.total_ticks),

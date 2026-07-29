@@ -6,60 +6,20 @@ use super::{
     GROWTH_FACTOR, RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,
 };
 use crate::gpu_resource_tracker;
+use crate::grid::generate_ruler_instances;
 
 impl RulerRenderer {
-    /// 生成标尺刻度实例
+    /// 生成标尺刻度实例（支持拍号变化）
     fn generate_tick_instances(&self, params: &RulerPrepareParams) -> Vec<RulerTickInstance> {
-        let mut instances = Vec::new();
-
-        // 计算可见时间范围
-        let visible_tick_start = params.scroll_x / params.zoom_x;
-        let visible_tick_end = (params.scroll_x + params.viewport_size.0) / params.zoom_x;
-
-        // 小节线
-        let measure_start = (visible_tick_start / params.ticks_per_measure as f32).floor() as u32;
-        let measure_end = (visible_tick_end / params.ticks_per_measure as f32).ceil() as u32;
-
-        for measure in measure_start..=measure_end {
-            let tick = measure as f32 * params.ticks_per_measure as f32;
-            let x = params.keyboard_width + tick * params.zoom_x - params.scroll_x;
-
-            if x >= params.keyboard_width && x <= params.viewport_size.0 {
-                instances.push(RulerTickInstance::new(
-                    [x, 0.0],
-                    [2.0, params.ruler_height],
-                    self.measure_color,
-                    0, // 小节线
-                    tick,
-                ));
-            }
-        }
-
-        // 拍线
-        let beat_start = (visible_tick_start / params.ticks_per_beat as f32).floor() as u32;
-        let beat_end = (visible_tick_end / params.ticks_per_beat as f32).ceil() as u32;
-
-        for beat in beat_start..=beat_end {
-            let tick = beat as f32 * params.ticks_per_beat as f32;
-            let x = params.keyboard_width + tick * params.zoom_x - params.scroll_x;
-
-            // 跳过小节线位置
-            if tick % params.ticks_per_measure as f32 == 0.0 {
-                continue;
-            }
-
-            if x >= params.keyboard_width && x <= params.viewport_size.0 {
-                instances.push(RulerTickInstance::new(
-                    [x, params.ruler_height * 0.3],
-                    [1.0, params.ruler_height * 0.7],
-                    self.beat_color,
-                    1, // 拍线
-                    tick,
-                ));
-            }
-        }
-
-        instances
+        generate_ruler_instances(
+            params.viewport_size.0,
+            params.keyboard_width,
+            params.ruler_height,
+            params.scroll_x,
+            params.zoom_x,
+            params.ppq,
+            &params.time_signatures,
+        )
     }
 
     /// 准备渲染数据（带缓存优化）
@@ -79,7 +39,8 @@ impl RulerRenderer {
             || self.cache_keyboard_width != p.keyboard_width
             || self.cache_ruler_height != p.ruler_height
             || self.cache_ticks_per_measure != p.ticks_per_measure
-            || self.cache_ticks_per_beat != p.ticks_per_beat;
+            || self.cache_ticks_per_beat != p.ticks_per_beat
+            || self.cache_time_signatures != p.time_signatures;
 
         if params_changed {
             self.cached_instances = self.generate_tick_instances(p);
@@ -90,6 +51,7 @@ impl RulerRenderer {
             self.cache_ruler_height = p.ruler_height;
             self.cache_ticks_per_measure = p.ticks_per_measure;
             self.cache_ticks_per_beat = p.ticks_per_beat;
+            self.cache_time_signatures.clone_from(&p.time_signatures);
             self.cache_valid = true;
         }
 

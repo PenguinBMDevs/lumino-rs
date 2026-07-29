@@ -48,6 +48,7 @@ impl Host {
             max_key_index,
             canvas_offset_x: viewport.canvas_offset.x,
             canvas_offset_y: viewport.canvas_offset.y,
+            time_signatures: self.root.editor.editor_state.data.time_signatures.clone(),
         };
         let Some(grid_renderer) = self.render_ctx.grid_renderer.as_mut() else {
             return;

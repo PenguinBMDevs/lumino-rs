@@ -47,6 +47,8 @@ pub struct EditorData {
     /// lane 数量通常 ≤50，`Vec` 索引写 O(1)。
     pub automation_lanes: Vec<Arc<AutomationLane>>,
     pub tempo_points: Vec<TempoPoint>,
+    /// 拍号变化列表（tick, 分子, 分母）。分母为人类可读值，如 4、8。
+    pub time_signatures: Vec<(u32, u8, u8)>,
     /// 高性能 SoA 音符存储（与 `notes` 并存，用于批量操作热路径）
     ///
     /// 当音符数超过 `NOTE_STORE_THRESHOLD` 时自动启用：
@@ -99,6 +101,7 @@ impl EditorData {
                 tick: 0.0,
                 bpm: DEFAULT_BPM,
             }],
+            time_signatures: vec![(0, 4, 4)],
             note_store: NoteStore::new(),
             note_store_enabled: false,
             note_store_dirty: false,
@@ -123,6 +126,7 @@ impl EditorData {
             tick: 0.0,
             bpm: 120.0,
         }];
+        self.time_signatures = vec![(0, 4, 4)];
         self.note_store.clear();
         self.note_store_enabled = false;
         self.arrange_selection.clear();

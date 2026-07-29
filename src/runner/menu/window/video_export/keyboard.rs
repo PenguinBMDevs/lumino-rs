@@ -346,6 +346,7 @@ mod tests {
         MidiDocument {
             notes: vec![track0, track1],
             tempo_changes: vec![(0, 120.0)],
+            time_signatures: vec![(0, 4, 4)],
             control_events: Vec::new(),
             track_names: vec![Some("Track 1".into()), Some("Track 2".into())],
             total_ticks: 1920,
@@ -413,6 +414,7 @@ mod tests {
         let doc = MidiDocument {
             notes: vec![vec![NoteEvent::new(0, 100, 200, 100, 0)]],
             tempo_changes: vec![(0, 120.0)],
+            time_signatures: vec![(0, 4, 4)],
             control_events: Vec::new(),
             track_names: vec![Some("T".into())],
             total_ticks: 100,

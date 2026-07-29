@@ -564,6 +564,7 @@ impl Host {
             .max_key_index(max_key_index)
             .is_arrangement_mode(is_arrangement_mode)
             .ruler_instances(data.ruler_instances)
+            .time_signatures(es.data.time_signatures.clone())
             .keyboard_instances(data.keyboard_instances)
             .arrangement_note_instances(data.arrangement_note_instances)
             .arrangement_uniform(arrangement_uniform)

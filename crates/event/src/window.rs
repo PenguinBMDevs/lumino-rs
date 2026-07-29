@@ -96,11 +96,17 @@ impl Event {
     pub const fn close_memory_monitor_dialog() -> Self {
         Self::Dialog(dialog::Event::CloseMemoryMonitorDialog)
     }
-    pub fn apply_project_settings(title: String, tempo: f64, copyright: String) -> Self {
+    pub fn apply_project_settings(
+        title: String,
+        tempo: f64,
+        copyright: String,
+        time_signatures: Vec<(u32, u8, u8)>,
+    ) -> Self {
         Self::Dialog(dialog::Event::ApplyProjectSettings {
             title,
             tempo,
             copyright,
+            time_signatures,
         })
     }
     pub fn start_audio_export(

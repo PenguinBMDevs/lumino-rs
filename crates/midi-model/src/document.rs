@@ -27,6 +27,9 @@ pub struct MidiDocument {
     pub notes: Vec<Vec<NoteEvent>>,
     /// 预提取的 tempo 变化（tick, bpm）
     pub tempo_changes: Vec<(u32, f32)>,
+    /// 预提取的拍号变化（tick, 分子, 分母）。
+    /// 分母为人类可读值：4 = 四分音符，8 = 八分音符。
+    pub time_signatures: Vec<(u32, u8, u8)>,
     /// MIDI 控制事件（CC / PC / PB），以 midly PackedControlEvent 紧凑存储
     pub control_events: Vec<midly::loader::PackedControlEvent>,
     /// 音轨名称（索引 = track_index）
@@ -91,13 +94,14 @@ impl MidiDocument {
 
             let mut notes: Vec<Vec<NoteEvent>> = Vec::new();
             let mut all_tempo_changes: Vec<(u32, f32)> = Vec::new();
+            let mut all_time_signatures: Vec<(u32, u8, u8)> = Vec::new();
             let mut control_events: Vec<midly::loader::PackedControlEvent> = Vec::new();
             let mut total_notes: u64 = 0;
             let mut total_ticks: u32 = 0;
 
             midly::loader::extract_notes_and_control_events_per_track_streaming_from_bytes(
                 file_bytes,
-                |track_idx, packed_notes, tempos, ctrls| {
+                |track_idx, packed_notes, tempos, ctrls, time_sigs| {
                     if track_idx >= notes.len() {
                         notes.resize_with(track_idx + 1, Vec::new);
                     }
@@ -115,6 +119,13 @@ impl MidiDocument {
 
                     all_tempo_changes.extend(tempos);
                     control_events.extend_from_slice(&ctrls);
+                    all_time_signatures.extend(time_sigs.into_iter().map(|ts| {
+                        (
+                            ts.tick,
+                            ts.numerator,
+                            1u32.wrapping_shl(ts.denominator as u32) as u8,
+                        )
+                    }));
                 },
             )
             .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
@@ -124,6 +135,13 @@ impl MidiDocument {
             if all_tempo_changes.first().is_none_or(|&(t, _)| t != 0) {
                 all_tempo_changes.insert(0, (0u32, 120.0f32));
             }
+
+            all_time_signatures.sort_unstable_by_key(|&(t, _, _)| t);
+            all_time_signatures.dedup_by(|a, b| a.0 == b.0);
+            if all_time_signatures.first().is_none_or(|&(t, _, _)| t != 0) {
+                all_time_signatures.insert(0, (0u32, 4u8, 4u8));
+            }
+
             control_events.sort_unstable_by_key(|e| e.tick);
 
             if let Some(cb) = progress {
@@ -150,6 +168,7 @@ impl MidiDocument {
                 Self {
                     notes,
                     tempo_changes: all_tempo_changes,
+                    time_signatures: all_time_signatures,
                     control_events,
                     track_names,
                     total_ticks,

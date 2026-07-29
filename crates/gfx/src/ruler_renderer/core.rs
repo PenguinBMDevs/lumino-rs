@@ -77,6 +77,10 @@ pub struct RulerPrepareParams {
     pub zoom_x: f32,
     pub ticks_per_measure: u32,
     pub ticks_per_beat: u32,
+    /// PPQN 分辨率
+    pub ppq: u32,
+    /// 拍号变化列表 (tick, 分子, 分母)
+    pub time_signatures: Vec<(u32, u8, u8)>,
 }
 
 impl RulerViewportUniform {
@@ -186,6 +190,8 @@ impl RulerRenderer {
                     zoom_x: 0.1,
                     ticks_per_measure: 1920,
                     ticks_per_beat: 480,
+                    ppq: 480,
+                    time_signatures: vec![(0, 4, 4)],
                 },
             )]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
@@ -221,6 +227,7 @@ impl RulerRenderer {
             cache_ruler_height: 0.0,
             cache_ticks_per_measure: 0,
             cache_ticks_per_beat: 0,
+            cache_time_signatures: vec![(0, 4, 4)],
         }
     }
 
@@ -330,6 +337,8 @@ mod tests {
             zoom_x: 0.1,
             ticks_per_measure: 1920,
             ticks_per_beat: 480,
+            ppq: 480,
+            time_signatures: vec![(0, 4, 4)],
         };
         let uniform = RulerViewportUniform::from_params(&p);
 

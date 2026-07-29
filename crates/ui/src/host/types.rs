@@ -20,6 +20,8 @@ pub enum DialogResult {
         title: String,
         tempo: f64,
         copyright: String,
+        /// 拍号变化列表 (tick, 分子, 分母)
+        time_signatures: Vec<(u32, u8, u8)>,
     },
     Settings {
         settings: crate::settings::SettingsPanel,

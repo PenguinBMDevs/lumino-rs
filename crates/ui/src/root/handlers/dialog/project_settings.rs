@@ -35,6 +35,18 @@ impl DialogHandler {
             ProjectSettingsAction::CopyrightChanged(value) => {
                 root.state.project_settings_dialog.copyright = value;
             }
+            ProjectSettingsAction::TimeSignatureNumeratorChanged(value) => {
+                if value.chars().all(|c| c.is_ascii_digit()) {
+                    root.state.project_settings_dialog.time_signature_numerator = value;
+                }
+            }
+            ProjectSettingsAction::TimeSignatureDenominatorChanged(value) => {
+                if value.chars().all(|c| c.is_ascii_digit()) {
+                    root.state
+                        .project_settings_dialog
+                        .time_signature_denominator = value;
+                }
+            }
         }
         None
     }
@@ -47,11 +59,22 @@ impl DialogHandler {
             let title = dialog.title.clone();
             let copyright = dialog.copyright.clone();
 
+            // 验证拍号
+            let Some((numerator, denominator)) = dialog.parse_time_signature() else {
+                tracing::warn!(
+                    "工程设置: 拍号无效: {}/{}",
+                    dialog.time_signature_numerator,
+                    dialog.time_signature_denominator
+                );
+                return;
+            };
+
             // 设置对话框结果（触发窗口关闭 + 主窗口处理）
             root.state.dialog_result = Some(DialogResult::ProjectSettings {
                 title,
                 tempo,
                 copyright,
+                time_signatures: vec![(0, numerator, denominator)],
             });
             root.state.project_settings_dialog.is_open = false;
         } else {
