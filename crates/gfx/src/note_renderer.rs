@@ -3,8 +3,8 @@ pub mod types;
 use crate::gpu_resource_tracker;
 
 pub use types::{
-    CameraParams, CameraUniform, CullUniform, NoteInstance, OnionBgTileRef, RenderUniform,
-    pack_color, unpack_color,
+    CameraParams, CameraUniform, CullUniform, FLAG_PREVIEW, NoteInstance, OnionBgTileRef,
+    RenderUniform, pack_color, unpack_color,
 };
 
 // 子模块

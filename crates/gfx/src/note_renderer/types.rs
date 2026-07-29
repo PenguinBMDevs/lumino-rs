@@ -1,12 +1,16 @@
 //! 音符渲染器类型定义
 
-/// 音符逻辑实例数据 — 16 bytes 紧凑布局
+/// 预览音符标记位
+pub const FLAG_PREVIEW: u32 = 1;
+
+/// 音符逻辑实例数据 — 24 bytes 紧凑布局
 ///
 /// 优化（参考 wasabi）：
 ///   1. `size_y` 固定为 1.0（GPU 通过 zoom_y 展开），移除 4 bytes
 ///   2. `color` 从 [f32;4] 压缩为 u32 RGBA，移除 12 bytes
 ///
-/// 总计 32 → 16 bytes，GPU 数据量减半，上传带宽减半
+/// 新增：`flags` 字段标记预览音符等特殊状态
+/// padding 确保 WGSL storage buffer 对齐（vec2<f32> alignment = 8）
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct NoteInstance {
@@ -16,6 +20,10 @@ pub struct NoteInstance {
     pub size_x: f32,
     /// 颜色 RGBA 打包 (0xRRGGBBAA)
     pub color_packed: u32,
+    /// 标记位（bit 0: FLAG_PREVIEW — 预览音符，启用圆角+边框渲染）
+    pub flags: u32,
+    /// WGSL struct alignment padding（vec2<f32> 对齐要求 8 的倍数）
+    pub _padding: u32,
 }
 
 /// 将 [f32; 4] 颜色打包为 u32 (0xRRGGBBAA)
@@ -39,13 +47,21 @@ pub fn unpack_color(packed: u32) -> [f32; 4] {
 }
 
 impl NoteInstance {
-    /// 创建新的音符逻辑实例
+    /// 创建新的音符逻辑实例（默认 flags=0，普通音符）
     #[must_use]
     pub fn new(tick: f32, key: f32, length: f32, color: [f32; 4]) -> Self {
+        Self::new_with_flags(tick, key, length, color, 0)
+    }
+
+    /// 创建新的音符逻辑实例（带标记位）
+    #[must_use]
+    pub fn new_with_flags(tick: f32, key: f32, length: f32, color: [f32; 4], flags: u32) -> Self {
         Self {
             position: [tick, key],
             size_x: length,
             color_packed: pack_color(color),
+            flags,
+            _padding: 0,
         }
     }
 }
@@ -166,8 +182,8 @@ impl Default for DrawIndirectArgs {
     }
 }
 
-/// 顶点属性布局（静态常量）— 16 bytes 紧凑 NoteInstance
-pub const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] = [
+/// 顶点属性布局 — 24 bytes NoteInstance（flags 用于预览/特殊渲染，_padding 仅为对齐不传入）
+pub const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 4] = [
     wgpu::VertexAttribute {
         offset: 0,
         shader_location: 0,
@@ -184,5 +200,13 @@ pub const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] = [
             as wgpu::BufferAddress,
         shader_location: 2,
         format: wgpu::VertexFormat::Uint32, // color_packed
+    },
+    wgpu::VertexAttribute {
+        // position(8) + size_x(4) + color_packed(4) = 16
+        offset: (std::mem::size_of::<[f32; 2]>()
+            + std::mem::size_of::<f32>()
+            + std::mem::size_of::<u32>()) as wgpu::BufferAddress,
+        shader_location: 3,
+        format: wgpu::VertexFormat::Uint32, // flags
     },
 ];

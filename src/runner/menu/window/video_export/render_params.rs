@@ -143,6 +143,8 @@ fn build_note_rectangle_render_params(
             position: [n.start_tick as f32, n.key as f32],
             size_x: (n.length as f32).max(1.0),
             color_packed,
+            flags: 0,
+            _padding: 0,
         });
     }
 

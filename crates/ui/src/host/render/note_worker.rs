@@ -77,8 +77,6 @@ impl Default for ScrollVelocityTracker {
 
 /// 主音轨已放置音符的固定蓝色（与洋葱皮取色区分）
 const MAIN_TRACK_NOTE_COLOR: [f32; 4] = [0.2, 0.55, 1.0, 1.0];
-/// 正在绘制中的音符颜色（蓝色高亮，略亮于已放置音符）
-const DRAWING_NOTE_COLOR: [f32; 4] = [0.4, 0.8, 1.0, 1.0];
 
 pub(super) fn build_main_note_instances(
     buffer: &SwappableBuffer<lumino_gfx::NoteInstance>,
@@ -132,11 +130,12 @@ pub(super) fn build_main_note_instances(
         } else {
             (*start_tick, default_note_length)
         };
-        instances.push(lumino_gfx::NoteInstance::new(
+        instances.push(lumino_gfx::NoteInstance::new_with_flags(
             tick,
             *key as f32,
             length.max(snap_precision),
-            DRAWING_NOTE_COLOR,
+            MAIN_TRACK_NOTE_COLOR,
+            lumino_gfx::FLAG_PREVIEW,
         ));
     }
 

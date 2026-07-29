@@ -1,10 +1,12 @@
-// 音符 GPU 裁剪着色器 — 紧凑 NoteInstance 布局 (16 bytes)
+// 音符 GPU 裁剪着色器 — 紧凑 NoteInstance 布局 (24 bytes)
 // workgroup 批量原子版本：每 workgroup 只做 1 次全局 atomicAdd
 
 struct NoteInstance {
     position: vec2<f32>,
     size_x: f32,
     color_packed: u32,
+    flags: u32,
+    _padding: u32,
 };
 
 struct CameraUniform {

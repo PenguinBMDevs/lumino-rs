@@ -46,8 +46,8 @@ pub use lumino_onion_skin_hires::{
     generate_all_tiles, generate_track_tile, merge_group_tiles, read_track_tile_cache,
 };
 pub use note_renderer::{
-    CameraParams, CameraUniform, CullUniform, NoteInstance, NoteRenderer, OnionBgTileRef,
-    RenderUniform, pack_color, unpack_color,
+    CameraParams, CameraUniform, CullUniform, FLAG_PREVIEW, NoteInstance, NoteRenderer,
+    OnionBgTileRef, RenderUniform, pack_color, unpack_color,
 };
 pub use ruler_renderer::{
     RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,
