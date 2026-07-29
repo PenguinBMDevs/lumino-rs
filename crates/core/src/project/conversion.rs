@@ -7,11 +7,11 @@ use std::path::PathBuf;
 
 use lumino_midi_model::{MidiDocument, NoteEvent, TrackManager};
 
+use crate::Result;
 use crate::project::{
     LoadedFileEntry, LoadedFormat, LuminoProject, TrackMeta, TrackSlot, TrackVisibilitySer,
     track::LmtrackData,
 };
-use crate::{CoreError, Result};
 
 impl LuminoProject {
     /// 从 `MidiDocument` 构建 `LuminoProject`
@@ -60,7 +60,7 @@ impl LuminoProject {
                 continue;
             }
 
-            // 从 NoteEvent 构造 CompactEvent，并过滤出音符事件
+            // 从 NoteEvent 构造 CompactEvent 音符事件
             let mut track_events: Vec<lumino_midi_model::compact::CompactEvent> =
                 Vec::with_capacity(track_notes.len() * 2);
             for note in track_notes {
@@ -70,6 +70,14 @@ impl LuminoProject {
             }
             track_events.sort_unstable_by_key(|e| e.delta_tick());
 
+            // 将绝对 tick 转换为相对 delta_tick，保证 CompactEvent 语义一致
+            let mut last_tick = 0_u32;
+            for ev in &mut track_events {
+                let abs_tick = ev.delta_tick();
+                ev.set_delta_tick(abs_tick.saturating_sub(last_tick));
+                last_tick = abs_tick;
+            }
+
             // 推断 channel：取第一个音符事件的通道
             let channel = track_events
                 .iter()
@@ -77,8 +85,15 @@ impl LuminoProject {
                 .map(|ev| ev.channel())
                 .unwrap_or(0);
 
-            // 推断 max_tick
-            let max_tick = track_events.last().map(|ev| ev.delta_tick()).unwrap_or(0);
+            // 推断 max_tick：最后一对音符的结束 tick（绝对值）
+            let max_tick = track_events
+                .iter()
+                .scan(0_u32, |acc, ev| {
+                    *acc = acc.saturating_add(ev.delta_tick());
+                    Some(*acc)
+                })
+                .last()
+                .unwrap_or(0);
 
             let name = doc.track_name(track_id as usize).unwrap_or("").to_string();
 
@@ -129,38 +144,48 @@ impl LuminoProject {
             track_names.push(Some(track_data.meta.name.clone()));
 
             let compact_events = track_data.compact_events()?;
-            let mut event_iter = compact_events.peekable();
-            while let Some(on) = event_iter.next() {
-                let off = event_iter.next().ok_or_else(|| {
-                    CoreError::FileFormat(format!("track {}: NoteOn without matching NoteOff", idx))
-                })?;
+            let mut active: std::collections::HashMap<(u8, u8), (u32, u8)> =
+                std::collections::HashMap::new();
+            let mut current_tick = 0_u32;
 
-                if !matches!(on.kind(), lumino_midi_model::compact::EventKind::NoteOn) {
-                    return Err(CoreError::FileFormat(format!(
-                        "track {}: expected NoteOn, got {:?}",
-                        idx,
-                        on.kind()
-                    )));
+            for ev in compact_events {
+                current_tick = current_tick.saturating_add(ev.delta_tick());
+                let key = ev.param1() as u8;
+                let channel = ev.channel();
+                let kind = ev.kind();
+                let velocity = ev.param2() as u8;
+
+                if kind == lumino_midi_model::compact::EventKind::NoteOn && velocity > 0 {
+                    active.insert((key, channel), (current_tick, velocity));
+                } else if (kind == lumino_midi_model::compact::EventKind::NoteOff
+                    || (kind == lumino_midi_model::compact::EventKind::NoteOn && velocity == 0))
+                    && let Some((start_tick, note_velocity)) = active.remove(&(key, channel))
+                {
+                    notes[idx].push(NoteEvent::new(
+                        start_tick,
+                        current_tick,
+                        key,
+                        note_velocity,
+                        channel,
+                    ));
+                    total_ticks = total_ticks.max(current_tick);
                 }
-                if !matches!(off.kind(), lumino_midi_model::compact::EventKind::NoteOff) {
-                    return Err(CoreError::FileFormat(format!(
-                        "track {}: expected NoteOff after NoteOn, got {:?}",
-                        idx,
-                        off.kind()
-                    )));
+            }
+
+            // 未关闭的音符延伸到 max_tick
+            if let Some(max_tick) =
+                (track_data.meta.max_tick > 0).then_some(track_data.meta.max_tick)
+            {
+                for ((key, channel), (start_tick, note_velocity)) in active {
+                    notes[idx].push(NoteEvent::new(
+                        start_tick,
+                        max_tick,
+                        key,
+                        note_velocity,
+                        channel,
+                    ));
+                    total_ticks = total_ticks.max(max_tick);
                 }
-
-                let start_tick = on.delta_tick();
-                let end_tick = off.delta_tick();
-                total_ticks = total_ticks.max(end_tick);
-
-                notes[idx].push(NoteEvent::new(
-                    start_tick,
-                    end_tick,
-                    on.param1() as u8,
-                    on.param2() as u8,
-                    on.channel(),
-                ));
             }
         }
 
@@ -247,6 +272,7 @@ mod tests {
     fn make_test_document() -> MidiDocument {
         MidiDocument {
             notes: vec![vec![NoteEvent::new(0, 480, 60, 100, 0)]],
+            time_signatures: vec![(0, 4, 4)],
             tempo_changes: vec![(0, 120.0)],
             control_events: vec![midly::loader::PackedControlEvent::control_change(
                 0, 0, 0, 7, 100,
@@ -316,5 +342,41 @@ mod tests {
         assert_eq!(doc.notes[0][0].end_tick, 480);
         assert_eq!(doc.notes[0][0].key, 60);
         assert_eq!(doc.notes[0][0].velocity, 100);
+    }
+
+    #[test]
+    fn test_to_midi_document_roundtrip_overlapping_notes() {
+        let doc = MidiDocument {
+            notes: vec![vec![
+                NoteEvent::new(0, 480, 60, 100, 0),
+                NoteEvent::new(120, 600, 64, 80, 0),
+                NoteEvent::new(480, 960, 60, 90, 0),
+            ]],
+            time_signatures: vec![(0, 4, 4)],
+            tempo_changes: vec![(0, 120.0)],
+            control_events: vec![],
+            track_names: vec![Some("Piano".into())],
+            total_ticks: 960,
+            track_count: 1,
+            tracks: TrackManager::new(1),
+        };
+        let project = LuminoProject::from_midi_document(&doc);
+        let rebuilt = project.to_midi_document().expect("重叠音符重建失败");
+
+        assert_eq!(rebuilt.notes[0].len(), 3);
+        let mut sorted = rebuilt.notes[0].clone();
+        sorted.sort_by_key(|n| (n.start_tick, n.key));
+        assert_eq!(sorted[0].start_tick, 0);
+        assert_eq!(sorted[0].end_tick, 480);
+        assert_eq!(sorted[0].key, 60);
+        assert_eq!(sorted[0].velocity, 100);
+        assert_eq!(sorted[1].start_tick, 120);
+        assert_eq!(sorted[1].end_tick, 600);
+        assert_eq!(sorted[1].key, 64);
+        assert_eq!(sorted[1].velocity, 80);
+        assert_eq!(sorted[2].start_tick, 480);
+        assert_eq!(sorted[2].end_tick, 960);
+        assert_eq!(sorted[2].key, 60);
+        assert_eq!(sorted[2].velocity, 90);
     }
 }

@@ -49,6 +49,9 @@ pub struct ProjectMetadata {
     /// 统计信息
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stats: Option<StatsMetadata>,
+    /// 高精度洋葱皮贴图配置（导出为文件夹时生成）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<ImageMetadata>,
 }
 
 /// 工程基本信息
@@ -115,6 +118,22 @@ pub struct StatsMetadata {
     pub working_time_seconds: Option<u64>,
 }
 
+/// 高精度洋葱皮贴图元数据
+///
+/// 导出为文件夹时生成 `.lmocache` 贴图缓存到 `data/image`，
+/// 加载时根据此配置恢复运行时缓存上下文。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ImageMetadata {
+    /// 缓存分桶哈希（项目级固定值，避免不同工程缓存冲突）
+    pub cache_hash: String,
+    /// 单张贴图宽度（像素）
+    pub tile_width_px: u32,
+    /// 贴图高度对应 key 数量（128 或 256）
+    pub key_count: u16,
+    /// 每个时间组包含的小节数
+    pub measures_per_group: u32,
+}
+
 impl ProjectMetadata {
     /// 创建默认元数据
     pub fn default_with_name(name: impl Into<String>) -> Self {
@@ -140,6 +159,7 @@ impl ProjectMetadata {
             loaded: None,
             settings: None,
             stats: None,
+            image: None,
         }
     }
 

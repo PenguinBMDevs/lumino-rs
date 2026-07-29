@@ -1,5 +1,7 @@
 //! Runner 文件菜单处理
 
+use std::path::Path;
+
 mod editor_midi;
 mod export;
 mod helpers;
@@ -65,8 +67,11 @@ impl RunnerInner {
                 // 启动洋葱皮概览贴图后台生成
                 // 先 clone Arc 释放 self 的不可变借用，再调可变方法
                 let midi_for_onion = self.midi_state.current_midi.clone();
+                let image_meta = midi_for_onion.as_ref().and_then(|parsed| {
+                    lumino_export::load_project_image_metadata(Path::new(&parsed.info.path))
+                });
                 if let Some(parsed) = midi_for_onion {
-                    self.trigger_onion_skin_generation(&parsed);
+                    self.trigger_onion_skin_generation(&parsed, image_meta);
                 }
 
                 if let Some(state) = &mut self.test_state.test_mode_state {
@@ -179,13 +184,21 @@ impl RunnerInner {
     ///
     /// 单位策略：以 tick 作为时间轴单位（对齐钢琴卷帘的 tick-线性映射），
     /// 因此 `duration_ms` 实为总 tick 数，`OnionSkinNote` 的 start_ms/end_ms 实为 tick。
-    fn trigger_onion_skin_generation(&mut self, parsed: &lumino_midi_loader::ParsedMidi) {
+    ///
+    /// 当传入 `image_meta` 时（从 `.lmpj` 入口文件加载的文件夹工程），使用导出的缓存目录与
+    /// 缓存哈希，避免重新生成；否则按当前运行时配置新建缓存。
+    fn trigger_onion_skin_generation(
+        &mut self,
+        parsed: &lumino_midi_loader::ParsedMidi,
+        image_meta: Option<lumino_core::project::metadata::ImageMetadata>,
+    ) {
         let Some(document) = parsed.document.as_ref() else {
             tracing::debug!("洋葱皮：MIDI 无 document（LMPJ 路径），跳过生成");
             return;
         };
 
         let total_ticks = document.total_ticks.max(parsed.info.duration_ticks);
+        let ppq = parsed.info.division;
         let track_count = document.track_count();
         let mut notes: Vec<Vec<lumino_gfx::OnionSkinNote>> = Vec::with_capacity(track_count);
         let mut editor_track_notes: Vec<Vec<lumino_core::Note>> = Vec::with_capacity(track_count);
@@ -216,30 +229,52 @@ impl RunnerInner {
         }
 
         // 高精度贴图生成
-        let key_count = if self.window_state.storage.config.get().ui.enable_256key {
-            256
-        } else {
-            128
-        };
-        let ppq = parsed.info.division;
-        // 轻量 midi_hash：用 total_ticks + track_count + 每轨音符数组合
-        let mut hash_input = Vec::new();
-        hash_input.extend_from_slice(&total_ticks.to_le_bytes());
-        hash_input.extend_from_slice(&(notes.len() as u32).to_le_bytes());
-        for track in &notes {
-            hash_input.extend_from_slice(&(track.len() as u32).to_le_bytes());
-        }
-        let midi_hash = lumino_gfx::compute_midi_hash(&hash_input);
+        let entry_path = Path::new(&parsed.info.path);
+        let (key_count, midi_hash, measures_per_group, tile_width_px, cache_dir) =
+            if let Some(meta) = image_meta {
+                // 使用导出时记录的缓存配置，缓存文件位于入口文件同级数据文件夹
+                let cache_dir = entry_path.with_extension("").join("data").join("image");
+                (
+                    meta.key_count,
+                    meta.cache_hash,
+                    meta.measures_per_group,
+                    meta.tile_width_px,
+                    cache_dir,
+                )
+            } else {
+                let key_count = if self.window_state.storage.config.get().ui.enable_256key {
+                    256
+                } else {
+                    128
+                };
+                // 轻量 midi_hash：用 total_ticks + track_count + 每轨音符数组合
+                let mut hash_input = Vec::new();
+                hash_input.extend_from_slice(&total_ticks.to_le_bytes());
+                hash_input.extend_from_slice(&(notes.len() as u32).to_le_bytes());
+                for track in &notes {
+                    hash_input.extend_from_slice(&(track.len() as u32).to_le_bytes());
+                }
+                let midi_hash = lumino_gfx::compute_midi_hash(&hash_input);
+                let ui_config = &self.window_state.storage.config.get().ui;
+                (
+                    key_count,
+                    midi_hash,
+                    ui_config.hires_measures_per_group,
+                    ui_config.hires_tile_width_px,
+                    lumino_gfx::HiResConfig::default().cache_dir,
+                )
+            };
+
         let ui_config = &self.window_state.storage.config.get().ui;
         let config = lumino_gfx::HiResConfig {
             enabled: ui_config.hires_onion_enabled,
-            measures_per_group: ui_config.hires_measures_per_group,
-            tile_width_px: ui_config.hires_tile_width_px,
+            measures_per_group,
+            tile_width_px,
             cooldown_secs: ui_config.hires_cooldown_secs,
             gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
             render_mode: lumino_gfx::HiResRenderMode::default(),
             group_tile_mem_limit_mb: 256, // 默认值，P2.5 可加设置项
-            cache_dir: lumino_gfx::HiResConfig::default().cache_dir, // 用默认缓存目录
+            cache_dir,
         };
         tracing::info!(
             "高精度洋葱皮：启动生成，{} 轨，ppq={}，key_count={}，hash={}",

@@ -72,29 +72,35 @@ impl RunnerInner {
 
         let file_stem = get_file_stem(Path::new(&parsed_midi.info.path));
 
-        let Some(save_path) = rfd::FileDialog::new()
+        let Some(entry_path) = rfd::FileDialog::new()
             .set_file_name(format!("{file_stem}.lmpj"))
-            .pick_folder()
+            .add_filter("Lumino 工程入口", &["lmpj"])
+            .save_file()
         else {
             return;
         };
 
         let project = lumino_export::LuminoProject::from_midi_document(document);
+        let key_count = if self.window_state.storage.config.get().ui.enable_256key {
+            256
+        } else {
+            128
+        };
         let cb = self.window_state.progress_cb.clone();
 
         tokio::spawn(async move {
             cb("准备导出工程", 0.0);
             cb("正在导出工程", 0.3);
 
-            let path_clone = save_path.clone();
+            let path_clone = entry_path.clone();
             match tokio::task::spawn_blocking(move || {
-                lumino_export::project::save::save_to_folder(&project, path_clone)
+                lumino_export::save_project_to_folder_with_entry(&project, path_clone, key_count)
             })
             .await
             {
                 Ok(Ok(())) => {
                     cb("工程导出成功", 1.0);
-                    tracing::info!("工程导出成功: {:?}", save_path);
+                    tracing::info!("工程导出成功: {:?}", entry_path);
                 }
                 Ok(Err(e)) => {
                     let msg = format!("导出失败: {e}");

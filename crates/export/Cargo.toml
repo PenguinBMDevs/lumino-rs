@@ -17,6 +17,8 @@ lumino-midi-model = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-memory-monitor = { workspace = true }
 lumino-memtrace = { workspace = true }
+lumino-onion-skin = { workspace = true }
+lumino-onion-skin-hires = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 midly = { workspace = true }
@@ -28,6 +30,8 @@ zstd = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
+xxhash-rust = { workspace = true }
 # 音频渲染依赖
 xsynth-core = { workspace = true }
 xsynth-soundfonts = { workspace = true }

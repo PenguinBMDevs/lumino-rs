@@ -20,6 +20,7 @@ pub mod converter;
 pub mod error;
 pub mod format;
 pub mod midi;
+pub mod onion_skin_export;
 pub mod project;
 pub mod video;
 
@@ -58,8 +59,17 @@ pub use midi::export_midi;
 /// MIDI 文件导出到内存字节流
 pub use midi::export_midi_to_bytes;
 
+/// 高精度洋葱皮贴图导出
+pub use onion_skin_export::export_onion_skin_tiles;
+
 // ── 工程文件 ──
 
+/// 文件夹工程入口文件
+pub use project::LuminoEntryFile;
+/// 读取 `.lmpj` 入口文件对应的高精度洋葱皮元数据
+pub use project::load_project_image_metadata;
+/// 保存工程为文件夹并生成 `.lmpj` 入口文件
+pub use project::save_project_to_folder_with_entry;
 /// 工程文件核心类型
 pub use project::{
     LoadedFileEntry, LoadedFormat, LuminoProject, TrackSlot, TrackVisibilitySer,

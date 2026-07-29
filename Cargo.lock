@@ -3814,6 +3814,8 @@ dependencies = [
  "lumino-midi-loader",
  "lumino-midi-model",
  "lumino-midly",
+ "lumino-onion-skin",
+ "lumino-onion-skin-hires",
  "memmap2",
  "num-bigint",
  "serde",
@@ -3821,9 +3823,11 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "toml 0.9.12+spec-1.1.0",
  "tracing",
  "xsynth-core",
  "xsynth-soundfonts",
+ "xxhash-rust",
  "zstd",
 ]
 

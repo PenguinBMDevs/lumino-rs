@@ -23,8 +23,9 @@ fn decode_and_resave_lmpj_if_present() {
     let mut tmp = std::env::temp_dir();
     tmp.push("lumino_test_resave.lmpj");
 
-    // 使用同步保存，确保不依赖 tokio runtime
-    lumino_export::save_sync(&parsed, &tmp).expect("保存到临时 LMPJ 失败");
+    // 使用同步编码，确保不依赖 tokio runtime
+    let encoded = lumino_export::format::encode_lmpj(&parsed).expect("编码临时 LMPJ 失败");
+    std::fs::write(&tmp, encoded).expect("保存到临时 LMPJ 失败");
 
     // 再次读取并解码，验证基本字段
     let round_bytes = std::fs::read(&tmp).expect("读取临时 LMPJ 失败");

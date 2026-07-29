@@ -553,6 +553,7 @@ mod tests {
         let track_count = notes.len() as u16;
         MidiDocument {
             notes,
+            time_signatures: vec![(0, 4, 4)],
             tempo_changes: vec![(0, 120.0)],
             control_events: vec![],
             track_names: (0..track_count).map(|_| None).collect(),
