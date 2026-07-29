@@ -12,8 +12,16 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
-# 通用压缩包格式解压（ZIP, RAR, 7z, TAR, GZ, LZH, XZ 等）
+# 通用压缩包格式解压（ZIP, RAR, 7z, LZH — unarc-rs 不支持 TAR 大文件和 ZIPX）
 unarc-rs = "0.6"
+# ZIP/ZIPX 标准库（作为 unarc-rs 的 ZIPX 回退）
+zip = "2"
+# TAR 格式（替代 unarc-rs，后者处理大文件 TAR 条目会陷入死循环）
+tar = "0.4"
+# GZIP 解压（用于 .tgz / .tar.gz 和纯 GZ 内容检测）
+flate2 = "1"
+# XZ 解压（用于 .tar.xz 和纯 XZ 内容检测）
+xz2 = "0.1"
 # ISO 9660 镜像文件
 iso9660 = "0.1"
 # ZPAQ 压缩格式

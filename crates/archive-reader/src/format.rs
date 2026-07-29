@@ -8,8 +8,15 @@ pub enum ArchiveFormat {
     Zip,
     Rar,
     SevenZ,
+    /// 纯 TAR（未压缩）
     Tar,
+    /// GZ 压缩的 TAR（.tar.gz / .tgz）
+    TarGz,
+    /// XZ 压缩的 TAR（.tar.xz / .txz）
+    TarXz,
+    /// 纯 GZ 压缩文件（单文件压缩，不是 TAR）
     Gz,
+    /// 纯 XZ 压缩文件（单文件压缩，不是 TAR）
     Xz,
     Lzh,
     Iso,
@@ -24,7 +31,9 @@ impl ArchiveFormat {
             ArchiveFormat::Rar => &["rar"],
             ArchiveFormat::SevenZ => &["7z"],
             ArchiveFormat::Tar => &["tar"],
-            ArchiveFormat::Gz => &["gz", "tgz"],
+            ArchiveFormat::TarGz => &["tgz"],
+            ArchiveFormat::TarXz => &["txz"],
+            ArchiveFormat::Gz => &["gz"],
             ArchiveFormat::Xz => &["xz"],
             ArchiveFormat::Lzh => &["lzh", "lha"],
             ArchiveFormat::Iso => &["iso"],
@@ -46,12 +55,12 @@ pub fn detect_format(path: &Path) -> Option<ArchiveFormat> {
     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let lower_name = file_name.to_ascii_lowercase();
 
-    // 优先检测复合扩展名
-    if lower_name.ends_with(".tar.gz") || lower_name.ends_with(".tgz") {
-        return Some(ArchiveFormat::Gz);
+    // 优先检测复合扩展名（长扩展名在前）
+    if lower_name.ends_with(".tar.gz") {
+        return Some(ArchiveFormat::TarGz);
     }
-    if lower_name.ends_with(".tar.xz") || lower_name.ends_with(".txz") {
-        return Some(ArchiveFormat::Xz);
+    if lower_name.ends_with(".tar.xz") {
+        return Some(ArchiveFormat::TarXz);
     }
     if lower_name.ends_with(".tar.bz2")
         || lower_name.ends_with(".tbz2")
@@ -66,8 +75,10 @@ pub fn detect_format(path: &Path) -> Option<ArchiveFormat> {
         "rar" => Some(ArchiveFormat::Rar),
         "7z" => Some(ArchiveFormat::SevenZ),
         "tar" => Some(ArchiveFormat::Tar),
-        "gz" | "tgz" => Some(ArchiveFormat::Gz),
-        "xz" | "txz" => Some(ArchiveFormat::Xz),
+        "tgz" => Some(ArchiveFormat::TarGz),
+        "txz" => Some(ArchiveFormat::TarXz),
+        "gz" => Some(ArchiveFormat::Gz),
+        "xz" => Some(ArchiveFormat::Xz),
         "lzh" | "lha" => Some(ArchiveFormat::Lzh),
         "iso" => Some(ArchiveFormat::Iso),
         "zpaq" | "zpq" => Some(ArchiveFormat::Zpaq),
@@ -139,9 +150,18 @@ mod tests {
 
     #[test]
     fn test_detect_tgz() {
+        // .tgz 现在是 TarGz（GZ 压缩的 TAR）
         assert_eq!(
             detect_format(&PathBuf::from("test.tgz")),
-            Some(ArchiveFormat::Gz)
+            Some(ArchiveFormat::TarGz)
+        );
+    }
+
+    #[test]
+    fn test_detect_tar_gz() {
+        assert_eq!(
+            detect_format(&PathBuf::from("test.tar.gz")),
+            Some(ArchiveFormat::TarGz)
         );
     }
 
@@ -150,6 +170,22 @@ mod tests {
         assert_eq!(
             detect_format(&PathBuf::from("test.xz")),
             Some(ArchiveFormat::Xz)
+        );
+    }
+
+    #[test]
+    fn test_detect_txz() {
+        assert_eq!(
+            detect_format(&PathBuf::from("test.txz")),
+            Some(ArchiveFormat::TarXz)
+        );
+    }
+
+    #[test]
+    fn test_detect_tar_xz() {
+        assert_eq!(
+            detect_format(&PathBuf::from("test.tar.xz")),
+            Some(ArchiveFormat::TarXz)
         );
     }
 
