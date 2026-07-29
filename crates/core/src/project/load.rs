@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crate::project::{
     LuminoProject, TrackSlot, archive,
-    data_formats::{LmctlData, LmnamesData, LmsigData, LmtempData},
+    data_formats::{LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtxtData},
     folder,
     metadata::ProjectMetadata,
     track::LmtrackData,
@@ -99,6 +99,25 @@ fn load_from_folder(path: &Path) -> Result<LuminoProject> {
         project.pitch_bends = data.pitch_bends;
     }
 
+    // 读取 text events（专用格式 LMTX）
+    let txt_path = path.join(folder::FolderPaths::TEXT_EVENTS_FILE);
+    if txt_path.exists() {
+        let bytes = std::fs::read(&txt_path)?;
+        let data = LmtxtData::decode(&bytes)
+            .map_err(|e| CoreError::FileFormat(format!("text events 解码失败: {e}")))?;
+        project.lyrics = data.lyrics;
+        project.markers = data.markers;
+    }
+
+    // 读取 SysEx（专用格式 LMSY）
+    let syx_path = path.join(folder::FolderPaths::SYSEX_FILE);
+    if syx_path.exists() {
+        let bytes = std::fs::read(&syx_path)?;
+        let data = LmsyxData::decode(&bytes)
+            .map_err(|e| CoreError::FileFormat(format!("SysEx 解码失败: {e}")))?;
+        project.sys_ex = data.sys_ex;
+    }
+
     // 读取 track_names（专用格式 LMNM）
     let names_path = path.join(folder::FolderPaths::TRACK_NAMES_FILE);
     if names_path.exists() {
@@ -175,6 +194,26 @@ fn load_from_archive(bytes: &[u8]) -> Result<LuminoProject> {
         project.control_changes = data.control_changes;
         project.program_changes = data.program_changes;
         project.pitch_bends = data.pitch_bends;
+    }
+
+    // 读取 text events（专用格式 LMTX）
+    if let Some(txt_bytes) =
+        archive::read_file_from_archive(bytes, "data/project/text_events.lmtxt")
+            .map_err(|e| CoreError::FileFormat(format!("读取 text events 失败: {e}")))?
+    {
+        let data = LmtxtData::decode(&txt_bytes)
+            .map_err(|e| CoreError::FileFormat(format!("text events 解码失败: {e}")))?;
+        project.lyrics = data.lyrics;
+        project.markers = data.markers;
+    }
+
+    // 读取 SysEx（专用格式 LMSY）
+    if let Some(syx_bytes) = archive::read_file_from_archive(bytes, "data/project/sysex.lmsyx")
+        .map_err(|e| CoreError::FileFormat(format!("读取 SysEx 失败: {e}")))?
+    {
+        let data = LmsyxData::decode(&syx_bytes)
+            .map_err(|e| CoreError::FileFormat(format!("SysEx 解码失败: {e}")))?;
+        project.sys_ex = data.sys_ex;
     }
 
     // 读取 track_names（专用格式 LMNM）
@@ -259,6 +298,9 @@ mod tests {
         project.control_changes = vec![(0, 0, 0, 7, 100), (480, 0, 0, 10, 64)];
         project.program_changes = vec![(0, 0, 0, 1), (960, 0, 0, 5)];
         project.pitch_bends = vec![(240, 0, 0, 2048), (720, 0, 0, -1024)];
+        project.lyrics = vec![(0, 0, b"la".to_vec()), (480, 0, b"ti".to_vec())];
+        project.markers = vec![(0, 0, b"Intro".to_vec()), (960, 0, b"Chorus".to_vec())];
+        project.sys_ex = vec![(240, 0, b"\x01\x02".to_vec())];
         project.metadata.audio.default_bpm = 120.0;
         project
     }
@@ -273,6 +315,15 @@ mod tests {
         );
         assert_eq!(loaded.program_changes, &[(0, 0, 0, 1), (960, 0, 0, 5)]);
         assert_eq!(loaded.pitch_bends, &[(240, 0, 0, 2048), (720, 0, 0, -1024)]);
+        assert_eq!(
+            loaded.lyrics,
+            &[(0, 0, b"la".to_vec()), (480, 0, b"ti".to_vec())]
+        );
+        assert_eq!(
+            loaded.markers,
+            &[(0, 0, b"Intro".to_vec()), (960, 0, b"Chorus".to_vec())]
+        );
+        assert_eq!(loaded.sys_ex, &[(240, 0, b"\x01\x02".to_vec())]);
         assert!((loaded.metadata.audio.default_bpm - 120.0).abs() < 0.001);
     }
 

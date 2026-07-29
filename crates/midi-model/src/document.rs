@@ -30,8 +30,17 @@ pub struct MidiDocument {
     /// 预提取的拍号变化（tick, 分子, 分母）。
     /// 分母为人类可读值：4 = 四分音符，8 = 八分音符。
     pub time_signatures: Vec<(u32, u8, u8)>,
+    /// 预提取的调号变化（tick, 升降号数, 是否小调）。
+    /// 正数表示升号数量，负数表示降号数量。
+    pub key_signatures: Vec<(u32, i8, bool)>,
     /// MIDI 控制事件（CC / PC / PB），以 midly PackedControlEvent 紧凑存储
     pub control_events: Vec<midly::loader::PackedControlEvent>,
+    /// 歌词文本事件（tick, track_id, 原始字节）
+    pub lyrics: Vec<(u32, u16, Vec<u8>)>,
+    /// 标记文本事件（tick, track_id, 原始字节）
+    pub markers: Vec<(u32, u16, Vec<u8>)>,
+    /// SysEx 事件（tick, track_id, 原始字节）
+    pub sys_ex: Vec<(u32, u16, Vec<u8>)>,
     /// 音轨名称（索引 = track_index）
     pub track_names: Vec<Option<String>>,
     /// MIDI 文件总 tick 数
@@ -98,19 +107,23 @@ impl MidiDocument {
             let mut notes: Vec<Vec<NoteEvent>> = Vec::new();
             let mut all_tempo_changes: Vec<(u32, f32)> = Vec::new();
             let mut all_time_signatures: Vec<(u32, u8, u8)> = Vec::new();
+            let mut all_key_signatures: Vec<(u32, i8, bool)> = Vec::new();
             let mut control_events: Vec<midly::loader::PackedControlEvent> = Vec::new();
+            let mut lyrics: Vec<(u32, u16, Vec<u8>)> = Vec::new();
+            let mut markers: Vec<(u32, u16, Vec<u8>)> = Vec::new();
+            let mut sys_ex: Vec<(u32, u16, Vec<u8>)> = Vec::new();
             let mut total_notes: u64 = 0;
             let mut total_ticks: u32 = 0;
 
-            midly::loader::extract_notes_and_control_events_per_track_streaming_from_bytes(
+            midly::loader::extract_all_events_per_track_streaming_from_bytes(
                 file_bytes,
-                |track_idx, packed_notes, tempos, ctrls, time_sigs| {
+                |track_idx, events| {
                     if track_idx >= notes.len() {
                         notes.resize_with(track_idx + 1, Vec::new);
                     }
 
                     let mut track_notes: Vec<NoteEvent> =
-                        packed_notes.into_iter().map(NoteEvent::from).collect();
+                        events.notes.into_iter().map(NoteEvent::from).collect();
                     if let Some(last) = track_notes.iter().max_by_key(|n| n.end_tick) {
                         total_ticks = total_ticks.max(last.end_tick);
                     }
@@ -120,15 +133,39 @@ impl MidiDocument {
                     total_notes += track_notes.len() as u64;
                     notes[track_idx] = track_notes;
 
-                    all_tempo_changes.extend(tempos);
-                    control_events.extend_from_slice(&ctrls);
-                    all_time_signatures.extend(time_sigs.into_iter().map(|ts| {
+                    all_tempo_changes.extend(events.tempo_changes);
+                    control_events.extend(events.control_events);
+                    all_time_signatures.extend(events.time_signatures.into_iter().map(|ts| {
                         (
                             ts.tick,
                             ts.numerator,
                             1u32.wrapping_shl(ts.denominator as u32) as u8,
                         )
                     }));
+                    all_key_signatures.extend(
+                        events
+                            .key_signatures
+                            .into_iter()
+                            .map(|ks| (ks.tick, ks.sharps, ks.is_minor)),
+                    );
+                    lyrics.extend(
+                        events
+                            .lyrics
+                            .into_iter()
+                            .map(|ev| (ev.tick, ev.track, ev.text.to_vec())),
+                    );
+                    markers.extend(
+                        events
+                            .markers
+                            .into_iter()
+                            .map(|ev| (ev.tick, ev.track, ev.text.to_vec())),
+                    );
+                    sys_ex.extend(
+                        events
+                            .sys_ex
+                            .into_iter()
+                            .map(|ev| (ev.tick, ev.track, ev.data.to_vec())),
+                    );
                 },
             )
             .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
@@ -145,7 +182,16 @@ impl MidiDocument {
                 all_time_signatures.insert(0, (0u32, 4u8, 4u8));
             }
 
+            all_key_signatures.sort_unstable_by_key(|&(t, _, _)| t);
+            all_key_signatures.dedup_by(|a, b| a.0 == b.0);
+            if all_key_signatures.first().is_none_or(|&(t, _, _)| t != 0) {
+                all_key_signatures.insert(0, (0u32, 0i8, false));
+            }
+
             control_events.sort_unstable_by_key(|e| e.tick);
+            lyrics.sort_unstable_by_key(|e| e.0);
+            markers.sort_unstable_by_key(|e| e.0);
+            sys_ex.sort_unstable_by_key(|e| e.0);
 
             if let Some(cb) = progress {
                 (cb)(0.75);
@@ -155,12 +201,15 @@ impl MidiDocument {
             let tracks_manager = TrackManager::new(track_count);
 
             tracing::info!(
-                "MidiDocument: 已加载 {} 个音符, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化, division={}",
+                "MidiDocument: 已加载 {} 个音符, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化, {} 歌词, {} 标记, {} SysEx, division={}",
                 total_notes,
                 control_events.len(),
                 track_count,
                 total_ticks,
                 all_tempo_changes.len(),
+                lyrics.len(),
+                markers.len(),
+                sys_ex.len(),
                 division
             );
 
@@ -173,7 +222,11 @@ impl MidiDocument {
                     notes,
                     tempo_changes: all_tempo_changes,
                     time_signatures: all_time_signatures,
+                    key_signatures: all_key_signatures,
                     control_events,
+                    lyrics,
+                    markers,
+                    sys_ex,
                     track_names,
                     total_ticks,
                     track_count,

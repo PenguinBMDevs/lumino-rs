@@ -70,6 +70,53 @@ impl LmctlData {
     }
 }
 
+/// 文本 meta 事件数据（.lmtxt）
+///
+/// 包含歌词与标记。文本 payload 以原始字节保存，避免在工程格式层强制指定编码；
+/// 渲染/导出时按 Lumino 的 MIDI 文本解码规则（UTF-8 → Shift-JIS → GBK → Latin-1）处理。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LmtxtData {
+    /// 歌词事件: (tick, track_id, text bytes)
+    pub lyrics: Vec<(u32, u16, Vec<u8>)>,
+    /// 标记事件: (tick, track_id, text bytes)
+    pub markers: Vec<(u32, u16, Vec<u8>)>,
+}
+
+impl LmtxtData {
+    pub const MAGIC: &[u8; 4] = b"LMTX";
+
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        encode_binary_file(Self::MAGIC, 1, self)
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
+        decode_binary_file(bytes, Self::MAGIC)
+    }
+}
+
+/// SysEx 事件数据（.lmsyx）
+///
+/// SysEx 可能很大，因此单独成文件，避免与小型控制事件混排导致加载时被迫全部读入内存。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LmsyxData {
+    /// SysEx 事件: (tick, track_id, data bytes)
+    ///
+    /// 注意：保存时不包含 0xF0 前缀，与 midly 的 `SysEx` payload 保持一致。
+    pub sys_ex: Vec<(u32, u16, Vec<u8>)>,
+}
+
+impl LmsyxData {
+    pub const MAGIC: &[u8; 4] = b"LMSY";
+
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        encode_binary_file(Self::MAGIC, 1, self)
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
+        decode_binary_file(bytes, Self::MAGIC)
+    }
+}
+
 /// 音轨名称映射表（.lmnames）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LmnamesData {
@@ -133,6 +180,32 @@ mod tests {
     }
 
     #[test]
+    fn test_lmtxt_roundtrip() {
+        let data = LmtxtData {
+            lyrics: vec![(0, 0, b"la".to_vec()), (480, 0, b"la".to_vec())],
+            markers: vec![(960, 0, b"Chorus".to_vec())],
+        };
+        let encoded = data.encode().expect("编码LmtxtData失败");
+        assert_eq!(&encoded[0..4], LmtxtData::MAGIC);
+        let decoded = LmtxtData::decode(&encoded).expect("解码LmtxtData失败");
+        assert_eq!(decoded.lyrics.len(), 2);
+        assert_eq!(decoded.markers.len(), 1);
+        assert_eq!(decoded.lyrics[0].2, b"la");
+    }
+
+    #[test]
+    fn test_lmsyx_roundtrip() {
+        let data = LmsyxData {
+            sys_ex: vec![(0, 0, b"\x01\x02\x03\xF7".to_vec())],
+        };
+        let encoded = data.encode().expect("编码LmsyxData失败");
+        assert_eq!(&encoded[0..4], LmsyxData::MAGIC);
+        let decoded = LmsyxData::decode(&encoded).expect("解码LmsyxData失败");
+        assert_eq!(decoded.sys_ex.len(), 1);
+        assert_eq!(decoded.sys_ex[0].2, b"\x01\x02\x03\xF7");
+    }
+
+    #[test]
     fn test_lmnames_roundtrip() {
         let data = LmnamesData {
             track_names: vec![Some("Piano".into()), Some("Bass".into()), None],
@@ -152,6 +225,8 @@ mod tests {
         assert!(LmtempData::decode(&bytes).is_err());
         assert!(LmsigData::decode(&bytes).is_err());
         assert!(LmctlData::decode(&bytes).is_err());
+        assert!(LmtxtData::decode(&bytes).is_err());
+        assert!(LmsyxData::decode(&bytes).is_err());
         assert!(LmnamesData::decode(&bytes).is_err());
     }
 }

@@ -7,7 +7,7 @@ use std::path::Path;
 use crate::Result;
 use crate::project::{
     LuminoProject, TrackSlot, archive,
-    data_formats::{LmctlData, LmnamesData, LmsigData, LmtempData},
+    data_formats::{LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtxtData},
     folder,
     metadata::{LoadedFileMetadataEntry, LoadedMetadata, ProjectMetadata, TrackMetadataEntry},
 };
@@ -59,6 +59,21 @@ pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> Result
     };
     let encoded = ctl_data.encode()?;
     std::fs::write(base.join(folder::FolderPaths::CONTROLS_FILE), encoded)?;
+
+    // 写入文本 meta 数据（专用格式 LMTX）
+    let txt_data = LmtxtData {
+        lyrics: project.lyrics.clone(),
+        markers: project.markers.clone(),
+    };
+    let encoded = txt_data.encode()?;
+    std::fs::write(base.join(folder::FolderPaths::TEXT_EVENTS_FILE), encoded)?;
+
+    // 写入 SysEx 数据（专用格式 LMSY）
+    let syx_data = LmsyxData {
+        sys_ex: project.sys_ex.clone(),
+    };
+    let encoded = syx_data.encode()?;
+    std::fs::write(base.join(folder::FolderPaths::SYSEX_FILE), encoded)?;
 
     // 写入音轨名称映射表（专用格式 LMNM）
     let names_data = LmnamesData {
@@ -132,6 +147,21 @@ fn build_archive_files(project: &LuminoProject) -> Result<Vec<(String, Vec<u8>, 
     };
     let encoded = ctl_data.encode()?;
     files.push(("data/project/controls.lmctl".into(), encoded, true));
+
+    // text events（专用格式 LMTX）
+    let txt_data = LmtxtData {
+        lyrics: project.lyrics.clone(),
+        markers: project.markers.clone(),
+    };
+    let encoded = txt_data.encode()?;
+    files.push(("data/project/text_events.lmtxt".into(), encoded, true));
+
+    // sysex（专用格式 LMSY）
+    let syx_data = LmsyxData {
+        sys_ex: project.sys_ex.clone(),
+    };
+    let encoded = syx_data.encode()?;
+    files.push(("data/project/sysex.lmsyx".into(), encoded, true));
 
     // track_names（专用格式 LMNM）
     let names_data = LmnamesData {
@@ -256,6 +286,8 @@ mod tests {
         assert!(tmp.join("data/project/tempo.lmtemp").exists());
         assert!(tmp.join("data/project/signature.lmsig").exists());
         assert!(tmp.join("data/project/controls.lmctl").exists());
+        assert!(tmp.join("data/project/text_events.lmtxt").exists());
+        assert!(tmp.join("data/project/sysex.lmsyx").exists());
         assert!(tmp.join("data/project/track_names.lmnames").exists());
 
         // 验证魔数
@@ -270,6 +302,14 @@ mod tests {
         let ctl_bytes =
             std::fs::read(tmp.join("data/project/controls.lmctl")).expect("读取controls文件失败");
         assert_eq!(&ctl_bytes[0..4], b"LMCT");
+
+        let txt_bytes = std::fs::read(tmp.join("data/project/text_events.lmtxt"))
+            .expect("读取text_events文件失败");
+        assert_eq!(&txt_bytes[0..4], b"LMTX");
+
+        let syx_bytes =
+            std::fs::read(tmp.join("data/project/sysex.lmsyx")).expect("读取sysex文件失败");
+        assert_eq!(&syx_bytes[0..4], b"LMSY");
 
         let names_bytes = std::fs::read(tmp.join("data/project/track_names.lmnames"))
             .expect("读取track_names文件失败");

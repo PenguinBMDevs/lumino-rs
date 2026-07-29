@@ -13,7 +13,7 @@ pub mod metadata;
 pub mod save;
 pub mod track;
 
-pub use data_formats::{LmctlData, LmnamesData, LmsigData, LmtempData};
+pub use data_formats::{LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtxtData};
 pub use metadata::ProjectMetadata;
 pub use track::{LmtrackData, LmtrackHeader, TrackMeta, TrackVisibilitySer};
 
@@ -38,6 +38,12 @@ pub struct LuminoProject {
     pub program_changes: Vec<(u32, u16, u8, u8)>,
     /// 弯音事件（value 为以 8192 为中心的偏移量）
     pub pitch_bends: Vec<(u32, u16, u8, i16)>,
+    /// 歌词文本事件
+    pub lyrics: Vec<(u32, u16, Vec<u8>)>,
+    /// 标记文本事件
+    pub markers: Vec<(u32, u16, Vec<u8>)>,
+    /// SysEx 事件
+    pub sys_ex: Vec<(u32, u16, Vec<u8>)>,
     /// 音轨名称（索引 = track_id）
     pub track_names: Vec<Option<String>>,
     /// 导入的外部文件
@@ -85,6 +91,9 @@ impl LuminoProject {
             control_changes: Vec::new(),
             program_changes: Vec::new(),
             pitch_bends: Vec::new(),
+            lyrics: Vec::new(),
+            markers: Vec::new(),
+            sys_ex: Vec::new(),
             track_names: Vec::new(),
             loaded_files: Vec::new(),
         }

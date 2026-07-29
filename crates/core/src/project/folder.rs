@@ -33,6 +33,10 @@ impl FolderPaths {
     pub const SIGNATURE_FILE: &str = "data/project/signature.lmsig";
     /// 控制事件文件
     pub const CONTROLS_FILE: &str = "data/project/controls.lmctl";
+    /// 文本 meta 事件文件（歌词 + 标记）
+    pub const TEXT_EVENTS_FILE: &str = "data/project/text_events.lmtxt";
+    /// SysEx 事件文件
+    pub const SYSEX_FILE: &str = "data/project/sysex.lmsyx";
     /// 音轨名称文件
     pub const TRACK_NAMES_FILE: &str = "data/project/track_names.lmnames";
 }
