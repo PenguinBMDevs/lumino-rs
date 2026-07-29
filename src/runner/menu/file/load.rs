@@ -80,9 +80,11 @@ impl RunnerInner {
         // 自动选择第一个 MIDI 文件加载
         if let Some(first_midi) = midi_list.first() {
             match extract_entry_with_tempdir(archive_path, first_midi) {
-                Ok((_temp_dir, extracted_path)) => {
-                    // 注意：_temp_dir 在此作用域末尾会被 drop，但文件系统上的文件会被保留
+                Ok((temp_dir, extracted_path)) => {
+                    // 使用 keep() 阻止 TempDir 自动删除，确保 load_midi_file
+                    // 的异步任务能读到文件。临时文件会留在 OS 临时目录中。
                     // TODO: 更好的做法是将 TempDir 存入窗口状态管理其生命周期
+                    let _ = temp_dir.keep();
                     tracing::info!(
                         "自动选择并加载第一个 MIDI 文件：{}（来自：{:?}）",
                         first_midi,

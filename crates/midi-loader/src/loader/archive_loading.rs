@@ -69,8 +69,8 @@ pub fn scan_file_for_midi(path: &Path) -> ArchiveLoadResult {
 
 /// 从压缩包中提取指定条目到临时目录，返回提取后的文件路径
 ///
-/// 注意：返回的 PathBuf 对应的文件可能在程序退出时被清理。
-/// 如需保持文件生命周期，请使用 `extract_entry_with_tempdir`。
+/// 返回的路径在程序关闭后可能仍存在于系统临时目录中。
+/// `TempDir::into_path()` 阻止了自动删除，由 OS 临时目录清理策略负责回收。
 pub fn extract_and_get_path(
     archive_path: &Path,
     entry_name: &str,
@@ -80,25 +80,9 @@ pub fn extract_and_get_path(
     let temp_dir = tempfile::tempdir()?;
     let output_path = extract_entry_to_dir(archive_path, entry_name, temp_dir.path())?;
 
-    // 获取文件名，如果没有文件名则直接返回 output_path
-    let file_name = match output_path.file_name() {
-        Some(name) => name.to_os_string(),
-        None => return Ok(output_path),
-    };
-
-    // 将提取的文件复制到持久的临时路径
-    let persistent_dir = tempfile::tempdir()?;
-    let dest_path = persistent_dir.path().join(file_name);
-    if let Some(parent) = dest_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::copy(&output_path, &dest_path)?;
-
-    // 保持 persistent_dir 存活 - 这里返回 dest_path 但 TempDir 会立即被 drop
-    // 所以调用方需要用 extract_entry_with_tempdir 来获取可以 keep alive 的 TempDir
-    // 这里直接返回 dest_path 但不保证文件持久性
-    let _ = persistent_dir;
-    Ok(dest_path)
+    // 阻止 TempDir drop 时删除临时目录，确保路径在函数返回后仍然有效
+    let _ = temp_dir.keep();
+    Ok(output_path)
 }
 
 /// 将压缩包中的所有内容提取到临时目录，并返回 TempDir 和 MIDI 文件路径
