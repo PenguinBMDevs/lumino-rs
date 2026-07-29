@@ -41,8 +41,6 @@ impl Root {
             return false;
         }
 
-        let notes_changed_before = self.editor.notes_changed();
-        let action_str = format!("{:?}", action);
         let old_tick = self.editor.playback_position;
         {
             puffin::profile_scope!("editor_handle_action");
@@ -58,11 +56,6 @@ impl Root {
         }
 
         if is_playhead_or_scroll {
-            tracing::info!(
-                "Editor: handle_editor_action 跳过 playhead/scroll 脏检查: action={}, notes_changed_before={}",
-                action_str,
-                notes_changed_before
-            );
             return false;
         }
 
