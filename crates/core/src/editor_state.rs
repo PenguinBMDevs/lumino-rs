@@ -120,6 +120,74 @@ impl EditorState {
         self.pitch_bend_curve.take()
     }
 
+    /// 退出弯音编辑模式并将曲线采样写入 AutomationLane
+    ///
+    /// - 曲线模式：按小节 1024 份采样（跳过相邻相同值）
+    /// - 直线模式：仅锚点位置生成事件
+    /// - 尾部延续：最后一个弯音值自动延续至曲目结束
+    pub fn exit_pitch_bend_and_commit(&mut self, ticks_per_measure: u32, total_ticks: u32) {
+        use crate::automation::{AutomationEvent, AutomationTarget};
+        use crate::pitch_bend::BendDrawMode;
+        use std::sync::Arc;
+
+        let Some(curve) = self.pitch_bend_curve.take() else {
+            return;
+        };
+
+        if curve.anchors.is_empty() {
+            return;
+        }
+
+        let target = AutomationTarget::PitchBend;
+        let track = curve.track;
+        let channel = curve.channel;
+
+        // 生成事件列表
+        let events: Vec<AutomationEvent> = match curve.mode {
+            BendDrawMode::Line => {
+                // 直线模式：仅锚点位置生成事件
+                curve
+                    .anchors
+                    .iter()
+                    .map(|a| AutomationEvent {
+                        tick: a.tick,
+                        value: (a.value + crate::midi_types::PITCH_BEND_CENTER) as u16,
+                        shape: crate::automation::SegmentShape::linear_curve(),
+                    })
+                    .collect()
+            }
+            BendDrawMode::Curve => {
+                // 曲线模式：按小节 1024 份采样
+                let start_tick = curve.anchors.first().map(|a| a.tick).unwrap_or(0);
+                let end_tick = total_ticks.max(curve.anchors.last().map(|a| a.tick).unwrap_or(0));
+                let samples = curve.sample_to_events(ticks_per_measure, start_tick, end_tick);
+                samples
+                    .iter()
+                    .map(|s| AutomationEvent {
+                        tick: s.tick,
+                        value: s.value,
+                        shape: crate::automation::SegmentShape::linear_curve(),
+                    })
+                    .collect()
+            }
+        };
+
+        // 查找或创建 PitchBend lane
+        let lane_idx = self.data.find_or_create_automation_lane(track, target);
+        let lane = Arc::make_mut(&mut self.data.automation_lanes[lane_idx]);
+        lane.channel = channel;
+        // 清空旧事件，写入新事件
+        lane.events.clear();
+        lane.events = events;
+        lane.events.sort_by_key(|e| e.tick);
+
+        tracing::info!(
+            "弯音编辑退出：写入 {} 个 PitchBend 事件到轨道 {}",
+            lane.events.len(),
+            track
+        );
+    }
+
     /// 获取选择框内的音符索引列表（委托到 EditorData）
     pub fn get_notes_in_selection_box(
         &self,
