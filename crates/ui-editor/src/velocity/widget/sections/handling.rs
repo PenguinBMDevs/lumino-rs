@@ -32,11 +32,9 @@ impl<'a> super::super::VelocityCanvas<'a> {
 
         match self.edit_mode {
             EditMode::Velocity => {
-                return self.handle_velocity_button_pressed(state, cursor_pos, bounds_size);
+                self.handle_velocity_button_pressed(state, cursor_pos, bounds_size)
             }
-            EditMode::Tempo => {
-                return self.handle_tempo_button_pressed(state, cursor_pos, bounds_size);
-            }
+            EditMode::Tempo => self.handle_tempo_button_pressed(state, cursor_pos, bounds_size),
         }
     }
 

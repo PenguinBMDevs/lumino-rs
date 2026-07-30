@@ -56,6 +56,46 @@ impl Root {
             return true;
         }
 
+        // 弯音编辑面板切换：进入/退出弯音编辑模式
+        if matches!(&event, sidebar::Event::PitchBendPanelToggled) {
+            self.sidebar.update(event);
+            if self.sidebar.pitch_bend_panel_visible {
+                // 进入弯音编辑模式：用当前轨道第一个选中音符或默认 C4(60) 作为基准
+                let base_key = self
+                    .editor
+                    .editor_state
+                    .interaction
+                    .selected_notes
+                    .iter()
+                    .next()
+                    .and_then(|&idx| {
+                        self.editor
+                            .editor_state
+                            .data
+                            .current_track_notes()
+                            .get(idx)
+                            .map(|n| n.key)
+                    })
+                    .unwrap_or(60);
+                let track = self.editor.editor_state.data.current_track as u16;
+                let channel = 0u8;
+                self.editor
+                    .editor_state
+                    .enter_pitch_bend_mode(base_key, track, channel);
+                self.toolbar.pitch_bend_mode = true;
+            } else {
+                // 退出弯音编辑模式：提交写入
+                let view = &self.editor.editor_state.view;
+                let ticks_per_measure = (view.ppq as f32 * 4.0) as u32; // 简化：4/4 拍号
+                let total_ticks = view.total_ticks;
+                self.editor
+                    .editor_state
+                    .exit_pitch_bend_and_commit(ticks_per_measure, total_ticks);
+                self.toolbar.pitch_bend_mode = false;
+            }
+            return true;
+        }
+
         // 钢琴卷帘切换始终触发重绘
         if matches!(&event, sidebar::Event::PianoRollToggled) {
             // 互斥：打开钢琴卷帘时退出瀑布流模式

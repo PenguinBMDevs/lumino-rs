@@ -193,14 +193,26 @@ impl Host {
         };
 
         // 构建 CC 柱状条实例（背景/网格/中心线）
-        // 仅在自动化面板可见时构建，否则跳过 308ms 的无效计算
-        let cc_bar_instances =
-            if self.root.is_arrangement_mode() || !self.root.sidebar.automation_panel_visible {
-                vec![]
-            } else {
-                puffin::profile_scope!("build_cc_bar_instances");
-                self.build_cc_bar_instances()
-            };
+        // 自动化面板可见 或 弯音编辑模式时构建（两者独立）
+        let cc_bar_instances = if self.root.is_arrangement_mode()
+            || (!self.root.sidebar.automation_panel_visible
+                && !self.root.editor.editor_state.is_pitch_bend_mode())
+        {
+            vec![]
+        } else if self.root.editor.editor_state.is_pitch_bend_mode() {
+            // 弯音模式：只构建遮罩矩形，不构建力度面板数据
+            let es = &self.root.editor.editor_state;
+            vec![lumino_gfx::CcBarInstance::new(
+                es.canvas.offset_x,
+                es.canvas.offset_y,
+                es.canvas.size_x,
+                es.canvas.size_y,
+                [0.5, 0.5, 0.5, 0.3],
+            )]
+        } else {
+            puffin::profile_scope!("build_cc_bar_instances");
+            self.build_cc_bar_instances()
+        };
 
         RenderData {
             scroll,

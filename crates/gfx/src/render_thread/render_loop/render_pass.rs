@@ -152,6 +152,15 @@ pub fn execute_render_pass(
             );
         }
 
+        // 弯音编辑模式：在钢琴卷帘区域叠加半透明遮罩（独立于自动化面板的力度面板 scissor）
+        if params.pitch_bend_mode && !params.cc_bar_instances.is_empty() {
+            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+            frame
+                .renderers
+                .cc_bar
+                .draw(&mut render_pass, params.cc_bar_instances.len() as u32);
+        }
+
         // 绘制标尺
         if !params.ruler_instances.is_empty() {
             render_pass.set_scissor_rect(0, 0, width, height);

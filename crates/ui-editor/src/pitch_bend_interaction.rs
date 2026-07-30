@@ -15,20 +15,15 @@ const ANCHOR_HIT_RADIUS_PX: f32 = 8.0;
 const HANDLE_HIT_RADIUS_PX: f32 = 6.0;
 
 /// 弯音拖拽状态
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum PitchBendDragState {
     /// 无拖拽
+    #[default]
     Idle,
     /// 拖拽锚点（锚点索引）
     MoveAnchor(usize),
     /// 拖拽出控制柄（锚点索引, 是否Alt非对称）
     DragHandle(usize, bool),
-}
-
-impl Default for PitchBendDragState {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 impl Editor {
@@ -80,14 +75,14 @@ impl Editor {
                 let tick = self.x_to_tick(pos.x).max(0.0) as u32;
                 let value = self.pitch_bend_y_to_value(pos.y);
 
-                if let Some(curve) = self.editor_state.pitch_bend_curve.as_mut() {
-                    if idx < curve.anchors.len() {
-                        let mut anchor = curve.anchors.remove(idx);
-                        anchor.tick = tick;
-                        anchor.value = value;
-                        let new_idx = curve.insert_anchor(anchor);
-                        curve.selected_anchor = Some(new_idx);
-                    }
+                if let Some(curve) = self.editor_state.pitch_bend_curve.as_mut()
+                    && idx < curve.anchors.len()
+                {
+                    let mut anchor = curve.anchors.remove(idx);
+                    anchor.tick = tick;
+                    anchor.value = value;
+                    let new_idx = curve.insert_anchor(anchor);
+                    curve.selected_anchor = Some(new_idx);
                 }
             }
             PitchBendDragState::DragHandle(idx, alt_asymmetric) => {
@@ -117,14 +112,14 @@ impl Editor {
                     .clamp(-1.0, 1.0);
 
                 // 写回 anchor
-                if let Some(curve) = self.editor_state.pitch_bend_curve.as_mut() {
-                    if idx < curve.anchors.len() {
-                        let anchor = &mut curve.anchors[idx];
-                        anchor.handle_out_x = out_x;
-                        anchor.handle_out_y = out_y;
-                        if !alt_asymmetric {
-                            anchor.symmetrize_in_from_out();
-                        }
+                if let Some(curve) = self.editor_state.pitch_bend_curve.as_mut()
+                    && idx < curve.anchors.len()
+                {
+                    let anchor = &mut curve.anchors[idx];
+                    anchor.handle_out_x = out_x;
+                    anchor.handle_out_y = out_y;
+                    if !alt_asymmetric {
+                        anchor.symmetrize_in_from_out();
                     }
                 }
             }
@@ -181,16 +176,16 @@ impl Editor {
         };
 
         // 再执行删除
-        if let Some(i) = hit_idx {
-            if let Some(curve) = self.editor_state.pitch_bend_curve.as_mut() {
-                curve.remove_anchor(i);
-                if curve.selected_anchor == Some(i) {
-                    curve.selected_anchor = None;
-                } else if let Some(s) = curve.selected_anchor
-                    && s > i
-                {
-                    curve.selected_anchor = Some(s - 1);
-                }
+        if let Some(i) = hit_idx
+            && let Some(curve) = self.editor_state.pitch_bend_curve.as_mut()
+        {
+            curve.remove_anchor(i);
+            if curve.selected_anchor == Some(i) {
+                curve.selected_anchor = None;
+            } else if let Some(s) = curve.selected_anchor
+                && s > i
+            {
+                curve.selected_anchor = Some(s - 1);
             }
         }
     }
