@@ -568,6 +568,7 @@ impl Host {
             .arrangement_uniform(arrangement_uniform)
             .cc_bar_instances(data.cc_bar_instances)
             .velocity_panel_rect(velocity_panel_rect)
+            .pitch_bend_mode(es.is_pitch_bend_mode())
             .build()
     }
 }

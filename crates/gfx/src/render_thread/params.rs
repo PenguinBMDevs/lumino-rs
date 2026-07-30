@@ -84,6 +84,10 @@ pub struct RenderParams {
     pub miditrail_z_far: f32,
     /// Miditrail / 视频导出目标帧率（用于按键动画时间步长）。
     pub fps: f32,
+    /// 是否处于弯音编辑模式（停止原 NoteRenderer，叠加遮罩层）
+    pub pitch_bend_mode: bool,
+    /// 弯音编辑遮罩颜色 [r, g, b, a]
+    pub pitch_bend_overlay_color: [f32; 4],
 }
 
 impl Default for RenderParams {
@@ -131,6 +135,8 @@ impl Default for RenderParams {
             miditrail_current_tick: 0,
             miditrail_z_far: 7.5,
             fps: 60.0,
+            pitch_bend_mode: false,
+            pitch_bend_overlay_color: [0.5, 0.5, 0.5, 0.3],
         }
     }
 }
@@ -193,6 +199,7 @@ pub struct RenderParamsBuilder {
     miditrail_current_tick: u32,
     miditrail_z_far: f32,
     fps: f32,
+    pitch_bend_mode: bool,
 }
 
 impl Default for RenderParamsBuilder {
@@ -236,6 +243,7 @@ impl Default for RenderParamsBuilder {
             miditrail_current_tick: 0,
             miditrail_z_far: 7.5,
             fps: 60.0,
+            pitch_bend_mode: false,
         }
     }
 }
@@ -409,9 +417,15 @@ impl RenderParamsBuilder {
         self
     }
 
-    /// 设置目标帧率（用于动画时间步长）。
+    /// 设置目标帧率（用于按键动画时间步长）。
     pub fn fps(mut self, fps: f32) -> Self {
         self.fps = fps;
+        self
+    }
+
+    /// 设置弯音编辑模式
+    pub fn pitch_bend_mode(mut self, mode: bool) -> Self {
+        self.pitch_bend_mode = mode;
         self
     }
 
@@ -466,6 +480,8 @@ impl RenderParamsBuilder {
             miditrail_current_tick: self.miditrail_current_tick,
             miditrail_z_far: self.miditrail_z_far,
             fps: self.fps,
+            pitch_bend_mode: self.pitch_bend_mode,
+            pitch_bend_overlay_color: [0.5, 0.5, 0.5, 0.3],
         }
     }
 }
