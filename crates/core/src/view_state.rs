@@ -42,6 +42,8 @@ pub struct ViewState {
     pub keyboard_width: f32,
     pub snap_precision: f32,
     pub default_note_length: f32,
+    /// 上一次放置音符的长度（用于预览矩形和下次放置的默认长度）
+    pub last_note_length: Option<f32>,
     pub ruler_height: f32,
     pub eraser_behavior: EraserBehavior,
     pub selection_box_mode: SelectionBoxMode,
@@ -62,6 +64,7 @@ impl Default for ViewState {
             keyboard_width: DEFAULT_KEYBOARD_WIDTH,
             snap_precision: DEFAULT_SNAP_PRECISION,
             default_note_length: DEFAULT_NOTE_LENGTH,
+            last_note_length: None,
             ruler_height: DEFAULT_RULER_HEIGHT,
             eraser_behavior: EraserBehavior::default(),
             selection_box_mode: SelectionBoxMode::default(),
@@ -108,6 +111,11 @@ impl ViewState {
     /// 设置默认音符长度
     pub fn set_default_note_length(&mut self, length: f32) {
         self.default_note_length = length.max(1.0);
+    }
+
+    /// 设置上一次放置音符的长度
+    pub fn set_last_note_length(&mut self, length: f32) {
+        self.last_note_length = Some(length.max(1.0));
     }
 
     /// 设置橡皮擦行为

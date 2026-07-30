@@ -120,13 +120,17 @@ impl Editor {
     /// 完成绘制新音符
     pub(crate) fn finish_drawing(&mut self, start_tick: f32, key: u16, current_tick: f32) {
         let v = &self.editor_state.view;
+        // 默认音符长度优先使用上次放置的长度，其次使用精度设置的默认长度
+        let effective_default_length = v.last_note_length.unwrap_or(v.default_note_length);
         if let Some(note) = self.editor_state.data.finish_drawing(
             start_tick,
             key,
             current_tick,
             v.snap_precision,
-            v.default_note_length,
+            effective_default_length,
         ) {
+            // 保存本次放置的音符长度，作为下次预览和放置的默认长度
+            self.editor_state.view.set_last_note_length(note.length);
             self.emit_note_added_event(&note);
             self.mark_notes_changed();
         }

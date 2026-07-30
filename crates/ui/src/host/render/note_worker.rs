@@ -78,12 +78,28 @@ impl Default for ScrollVelocityTracker {
 /// 主音轨已放置音符的固定蓝色（与洋葱皮取色区分）
 const MAIN_TRACK_NOTE_COLOR: [f32; 4] = [0.2, 0.55, 1.0, 1.0];
 
+/// 预览音符渲染上下文
+///
+/// 封装 hover 预览音符和 Drawing 预览音符所需的额外参数。
+#[derive(Debug)]
+pub(crate) struct PreviewNoteContext {
+    /// 是否渲染 hover 预览音符（铅笔工具 + Idle 状态 + 光标在卷帘区域内 + 菜单未打开）
+    pub hover_preview: bool,
+    /// 光标对应的吸附后 tick
+    pub cursor_tick: f32,
+    /// 光标对应的 key
+    pub cursor_key: u16,
+    /// 上次放置的音符长度（如果有），用于预览矩形和 Drawing 默认长度
+    pub last_note_length: Option<f32>,
+}
+
 pub(super) fn build_main_note_instances(
     buffer: &SwappableBuffer<lumino_gfx::NoteInstance>,
     visible_notes: &[(f32, u16, f32)],
     edit_state: &crate::editor::editor_state::EditState,
     default_note_length: f32,
     snap_precision: f32,
+    preview_ctx: &PreviewNoteContext,
 ) {
     use rayon::prelude::*;
 
@@ -93,7 +109,7 @@ pub(super) fn build_main_note_instances(
 
     let instances = unsafe { buffer.write_buffer() };
     instances.clear();
-    instances.reserve(visible_notes.len() + 1);
+    instances.reserve(visible_notes.len() + 2);
 
     // 大数据量：并行直接写入 SwappableBuffer，避免中间 Vec 分配
     if visible_notes.len() >= PARALLEL_THRESHOLD {
@@ -116,7 +132,10 @@ pub(super) fn build_main_note_instances(
         }));
     }
 
-    // 正在绘制的音符
+    // 预览音符的默认长度：优先使用上次放置的音符长度，其次使用精度设置的默认长度
+    let preview_default_length = preview_ctx.last_note_length.unwrap_or(default_note_length);
+
+    // 正在绘制的音符（Drawing 状态）
     if let crate::editor::editor_state::EditState::Drawing {
         start_tick,
         key,
@@ -128,12 +147,22 @@ pub(super) fn build_main_note_instances(
         } else if *current_tick < *start_tick {
             (*current_tick, *start_tick - *current_tick)
         } else {
-            (*start_tick, default_note_length)
+            // 未拖动时使用 last_note_length 或 default_note_length
+            (*start_tick, preview_default_length)
         };
         instances.push(lumino_gfx::NoteInstance::new_with_flags(
             tick,
             *key as f32,
             length.max(snap_precision),
+            MAIN_TRACK_NOTE_COLOR,
+            lumino_gfx::FLAG_PREVIEW,
+        ));
+    } else if preview_ctx.hover_preview {
+        // hover 预览音符（铅笔工具 + Idle 状态，跟随鼠标指针）
+        instances.push(lumino_gfx::NoteInstance::new_with_flags(
+            preview_ctx.cursor_tick,
+            preview_ctx.cursor_key as f32,
+            preview_default_length.max(snap_precision),
             MAIN_TRACK_NOTE_COLOR,
             lumino_gfx::FLAG_PREVIEW,
         ));

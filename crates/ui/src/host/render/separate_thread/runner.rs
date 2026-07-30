@@ -374,10 +374,17 @@ impl Host {
         let viewport_changed =
             current_viewport_hash != self.render_ctx.render_cache.note_viewport_hash;
 
+        // hover 预览（铅笔工具 + Idle）时光标移动也需要重建实例
+        let cursor_changed =
+            self.window_ctx.cursor_position != self.render_ctx.last_cursor_position;
+        let is_hover_preview = matches!(current_edit_state, crate::editor::EditState::Idle)
+            && self.root.editor.current_tool() == crate::message::Tool::Pencil
+            && self.root.should_render_preview_note();
         let note_data_changed = note_index_dirty
             || self.render_ctx.render_cache.note_instances_is_empty()
             || is_drawing
-            || is_ghost_dragging;
+            || is_ghost_dragging
+            || (is_hover_preview && cursor_changed);
 
         // 计算当前精确视口范围
         let (tick_start, tick_end, key_min, key_max) = self.root.editor.compute_visible_range(0.0);
@@ -404,6 +411,40 @@ impl Host {
             let default_note_length = self.root.editor.editor_state.view.default_note_length;
             let snap_precision = self.root.editor.editor_state.view.snap_precision;
 
+            // 构建预览音符上下文
+            let preview_ctx = {
+                let editor = &self.root.editor;
+                let view = &editor.editor_state.view;
+                let canvas = &editor.editor_state.canvas;
+                let is_idle = matches!(current_edit_state, crate::editor::EditState::Idle);
+                let is_pencil = editor.current_tool() == crate::message::Tool::Pencil;
+                let should_render = self.root.should_render_preview_note();
+
+                let (cursor_tick, cursor_key, cursor_in_canvas) =
+                    if let Some((cx, cy)) = canvas.cursor_position {
+                        let local_x = cx - canvas.offset_x;
+                        let local_y = cy - canvas.offset_y;
+                        let in_canvas = local_x >= view.keyboard_width
+                            && local_y >= view.ruler_height
+                            && local_x < canvas.size_x
+                            && local_y < canvas.size_y;
+                        let tick = view.snap_tick(view.x_to_tick(local_x)).max(0.0);
+                        let key = view.y_to_key(local_y);
+                        (tick, key, in_canvas)
+                    } else {
+                        (0.0, 0u16, false)
+                    };
+
+                let hover_preview = is_idle && is_pencil && should_render && cursor_in_canvas;
+
+                note_worker::PreviewNoteContext {
+                    hover_preview,
+                    cursor_tick,
+                    cursor_key,
+                    last_note_length: view.last_note_length,
+                }
+            };
+
             let visible_count = self.root.editor.collect_visible_note_data(
                 &mut self.render_ctx.render_cache.visible_notes_buffer,
                 OVERSCAN_FACTOR,
@@ -415,12 +456,16 @@ impl Host {
                 &edit_state_clone,
                 default_note_length,
                 snap_precision,
+                &preview_ctx,
             );
             tracing::debug!(
                 "WGPU thread: built {} visible note instances from expanded query",
                 visible_count
             );
         }
+
+        // 更新光标位置缓存
+        self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;
 
         // 更新缓存的渲染视口为本次使用的扩展视口
         let (render_tick_start, render_tick_end, render_key_min, render_key_max) =
