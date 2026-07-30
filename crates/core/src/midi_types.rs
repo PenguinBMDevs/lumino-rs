@@ -10,10 +10,6 @@ pub enum EditMode {
     Velocity,
     /// 速度编辑（Conductor 音轨专用）
     Tempo,
-    /// 弯音编辑（-8192 到 +8191）
-    Bend,
-    /// CC 控制器编辑
-    Cc(u8),
 }
 
 impl EditMode {
@@ -27,14 +23,7 @@ impl EditMode {
         match self {
             EditMode::Velocity => "力度",
             EditMode::Tempo => "速度",
-            EditMode::Bend => "Bend",
-            EditMode::Cc(_) => "CC",
         }
-    }
-
-    /// 是否处于 CC 模式（包括 Bend）
-    pub fn is_cc(&self) -> bool {
-        matches!(self, EditMode::Cc(_) | EditMode::Bend)
     }
 
     /// 是否处于 Tempo 模式
@@ -159,29 +148,6 @@ pub const CC_CONTROLLER_NAMES: &[(u8, &str)] = &[
     (127, "Poly On"),
 ];
 
-/// CC 编号显示包装（下拉框显示 "编号: 名称"）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CcDisplay(pub u8);
-
-/// 弯音显示包装（下拉框显示 "Bend: Pitch Bend (-8192..8191)"）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BendDisplay;
-
-impl std::fmt::Display for BendDisplay {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Bend: Pitch Bend (-8192..8191)")
-    }
-}
-
-impl std::fmt::Display for CcDisplay {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match CC_CONTROLLER_NAMES.iter().find(|(n, _)| *n == self.0) {
-            Some((_, name)) => write!(f, "{}: {}", self.0, name),
-            None => write!(f, "{}", self.0),
-        }
-    }
-}
-
 /// 速度控制点
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TempoPoint {
@@ -202,24 +168,12 @@ mod tests {
     fn test_edit_mode_display_name() {
         assert_eq!(EditMode::Velocity.display_name(), "力度");
         assert_eq!(EditMode::Tempo.display_name(), "速度");
-        assert_eq!(EditMode::Bend.display_name(), "Bend");
-        assert_eq!(EditMode::Cc(7).display_name(), "CC");
-    }
-
-    #[test]
-    fn test_edit_mode_is_cc() {
-        assert!(!EditMode::Velocity.is_cc());
-        assert!(!EditMode::Tempo.is_cc());
-        assert!(EditMode::Bend.is_cc());
-        assert!(EditMode::Cc(1).is_cc());
     }
 
     #[test]
     fn test_edit_mode_is_tempo() {
         assert!(!EditMode::Velocity.is_tempo());
         assert!(EditMode::Tempo.is_tempo());
-        assert!(!EditMode::Bend.is_tempo());
-        assert!(!EditMode::Cc(0).is_tempo());
     }
 
     #[test]
@@ -280,28 +234,6 @@ mod tests {
         };
         assert_eq!(t.tick, 0.0);
         assert_eq!(t.bpm, 120.0);
-    }
-
-    #[test]
-    fn test_cc_display_known_controller() {
-        let d = CcDisplay(7);
-        let s = d.to_string();
-        assert!(s.contains("7"));
-        assert!(s.contains("Volume"));
-    }
-
-    #[test]
-    fn test_cc_display_unknown_controller() {
-        let d = CcDisplay(255);
-        let s = d.to_string();
-        assert_eq!(s, "255");
-    }
-
-    #[test]
-    fn test_bend_display() {
-        let s = BendDisplay.to_string();
-        assert!(s.contains("Bend"));
-        assert!(s.contains("-8192"));
     }
 
     #[test]

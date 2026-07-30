@@ -23,6 +23,7 @@ pub struct GroupSubState {
     pub panel_visible: bool,
     pub panel_route: Route,
     pub automation_panel_visible: bool,
+    pub pitch_bend_panel_visible: bool,
 }
 
 impl Default for GroupSubState {
@@ -31,6 +32,7 @@ impl Default for GroupSubState {
             panel_visible: false,
             panel_route: Route::File,
             automation_panel_visible: false,
+            pitch_bend_panel_visible: false,
         }
     }
 }
@@ -51,7 +53,7 @@ pub enum RouteConfig {
     Space,
 }
 
-pub const ROUTES: [RouteConfig; 10] = [
+pub const ROUTES: [RouteConfig; 11] = [
     // ── 钢琴卷帘组（红色） ──
     RouteConfig::GroupParent {
         group: GroupId::PianoRoll,
@@ -65,6 +67,11 @@ pub const ROUTES: [RouteConfig; 10] = [
     RouteConfig::Item {
         route: Route::Automation,
         icon: icon::WaveForm,
+        group: Some(GroupId::PianoRoll),
+    },
+    RouteConfig::Item {
+        route: Route::PitchBend,
+        icon: icon::Pushpin,
         group: Some(GroupId::PianoRoll),
     },
     RouteConfig::Item {
@@ -144,6 +151,8 @@ pub struct Sidebar {
     pub track_display_mode: TrackDisplayMode,
     /// 自动化面板是否可见（独立于路由面板）
     pub automation_panel_visible: bool,
+    /// 弯音编辑面板是否可见（独立于路由面板）
+    pub pitch_bend_panel_visible: bool,
     /// 钢琴卷帘编辑器是否可见（默认打开）
     pub piano_roll_visible: bool,
     // ── 分组状态 ──
@@ -209,6 +218,7 @@ impl Sidebar {
             resize_start_x: 0.0,
             resize_start_width: DEFAULT_PANEL_WIDTH,
             automation_panel_visible: false,
+            pitch_bend_panel_visible: false,
             piano_roll_visible: true,
             active_group: Some(GroupId::PianoRoll),
             piano_roll_sub_state: GroupSubState::default(),

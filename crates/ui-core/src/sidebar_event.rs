@@ -73,6 +73,8 @@ pub enum Route {
     File,
     Arrangement,
     Automation,
+    /// 弯音编辑（自动化绘制按钮，使用图钉图标）
+    PitchBend,
     EventList,
     VideoExport,
     AudioExport,
@@ -84,7 +86,14 @@ impl Route {
         match self {
             Route::File => t.sidebar_file,
             Route::Arrangement => t.sidebar_arrangement,
-            Route::Automation => t.sidebar_automation,
+            Route::Automation => match lang {
+                Language::ZhCn => "力度绘制",
+                Language::EnUs => "Velocity Panel",
+            },
+            Route::PitchBend => match lang {
+                Language::ZhCn => "自动化绘制",
+                Language::EnUs => "Pitch Bend Editor",
+            },
             Route::EventList => t.sidebar_event_list,
             Route::VideoExport => match lang {
                 Language::ZhCn => "视频渲染",
@@ -133,6 +142,8 @@ pub enum Event {
     ResizeDragEnded,
     /// 自动化面板切换
     AutomationPanelToggled,
+    /// 弯音编辑面板切换（自动化绘制按钮）
+    PitchBendPanelToggled,
     /// 钢琴卷帘面板切换
     PianoRollToggled,
     /// 分组切换
@@ -222,6 +233,10 @@ impl Event {
 
     pub const fn automation_panel_toggled() -> Message {
         Message::Sidebar(Self::AutomationPanelToggled)
+    }
+
+    pub const fn pitch_bend_panel_toggled() -> Message {
+        Message::Sidebar(Self::PitchBendPanelToggled)
     }
 
     pub const fn piano_roll_toggled() -> Message {

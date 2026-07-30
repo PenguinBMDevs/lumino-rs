@@ -12,6 +12,7 @@ pub mod note;
 pub mod note_store;
 pub mod palette;
 pub mod pattern;
+pub mod pitch_bend;
 pub mod project;
 pub mod smooth_scroll;
 pub mod spatial_index;
@@ -36,12 +37,16 @@ pub use error::{CoreError, Result};
 pub use font_scanner::{FontInfo, get_cached_fonts, prewarm_font_cache, scan_system_fonts};
 pub use history::{EditorSnapshot, History, HistoryEntry, MoveOp, OpKind, OperationEntry};
 pub use midi_types::{
-    BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcData, CcDisplay, CcPoint, EditMode,
-    PITCH_BEND_CENTER, TempoPoint, VelocityPoint,
+    BendPoint, CC_CONTROLLER_NAMES, CcData, CcPoint, EditMode, PITCH_BEND_CENTER, TempoPoint,
+    VelocityPoint,
 };
 pub use note::Note;
 pub use note_store::{BitSet, NoteMut, NoteStore, NoteView};
 pub use pattern::Pattern;
+pub use pitch_bend::{
+    BendDrawMode, HANDLE_RATIO, PITCH_BEND_MAX, PITCH_BEND_MIN, PITCH_BEND_RANGE_SEMITONES,
+    PitchBendAnchor, PitchBendCurve, PitchBendSample,
+};
 pub use project::{
     LoadedFileEntry, LoadedFormat, LuminoProject, TrackSlot, TrackVisibilitySer,
     archive::{ArchiveHeader, FileEntry, FileTable, build_archive, read_file_from_archive},

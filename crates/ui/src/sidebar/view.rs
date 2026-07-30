@@ -43,6 +43,7 @@ impl Sidebar {
                 self.route,
                 self.panel_visible,
                 self.automation_panel_visible,
+                self.pitch_bend_panel_visible,
                 self.piano_roll_visible,
                 current_mode,
                 self.active_group,

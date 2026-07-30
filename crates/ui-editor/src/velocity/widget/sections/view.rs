@@ -112,11 +112,7 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                         toolbar_height: TOOLBAR_HEIGHT,
                         line_thickness: self.editor.velocity_panel.automation_line_thickness,
                     };
-                    let max_val = match self.edit_mode {
-                        EditMode::Bend => 16383.0,
-                        EditMode::Cc(_) => 127.0,
-                        _ => 127.0,
-                    };
+                    let max_val = 127.0;
 
                     // 使用自动化节点统一蓝色绘制 ghost 反馈（与主音轨音符视觉一致）
                     let ghost_color = automation_node_color();

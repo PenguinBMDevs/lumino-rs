@@ -35,6 +35,7 @@ pub use interaction_state::{EditState, HitType, InteractionState, SelectionHitTy
 use std::collections::HashSet;
 
 use crate::Tool;
+use crate::pitch_bend::PitchBendCurve;
 use crate::storage::config::AutoScrollConfig;
 use crate::view_state::ViewState;
 
@@ -48,6 +49,8 @@ pub struct EditorState {
     pub auto_scroll: AutoScrollConfig,
     pub max_scroll: (f32, f32),
     pub data: EditorData,
+    /// 弯音编辑曲线（None=未进入弯音编辑模式）
+    pub pitch_bend_curve: Option<PitchBendCurve>,
 }
 
 impl Default for EditorState {
@@ -71,6 +74,7 @@ impl EditorState {
             data: EditorData::new(),
             tool: Tool::Pointer,
             auto_scroll: AutoScrollConfig::default(),
+            pitch_bend_curve: None,
         }
     }
 
@@ -81,6 +85,7 @@ impl EditorState {
         self.view = ViewState::default();
         self.tool = Tool::Pointer;
         self.auto_scroll = AutoScrollConfig::default();
+        self.pitch_bend_curve = None;
         let total_ticks = self.view.total_ticks;
         viewport::Viewport::new(&mut self.view, &mut self.max_scroll)
             .update_max_scroll(total_ticks);
@@ -97,6 +102,22 @@ impl EditorState {
     /// 获取当前工具
     pub fn current_tool(&self) -> Tool {
         self.tool
+    }
+
+    /// 是否处于弯音编辑模式
+    pub fn is_pitch_bend_mode(&self) -> bool {
+        self.pitch_bend_curve.is_some()
+    }
+
+    /// 进入弯音编辑模式
+    pub fn enter_pitch_bend_mode(&mut self, base_key: u16, track: u16, channel: u8) {
+        self.pitch_bend_curve = Some(PitchBendCurve::new(track, channel, base_key));
+        self.tool = Tool::Anchor;
+    }
+
+    /// 退出弯音编辑模式，返回曲线数据用于写入事件
+    pub fn exit_pitch_bend_mode(&mut self) -> Option<PitchBendCurve> {
+        self.pitch_bend_curve.take()
     }
 
     /// 获取选择框内的音符索引列表（委托到 EditorData）

@@ -9,8 +9,7 @@ pub use widget::VelocityCanvasState;
 
 // 重新导出自 lumino-core 的数据类型
 pub use lumino_core::{
-    BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcDisplay, CcPoint, EditMode, EditorTransform,
-    VelocityPoint,
+    BendPoint, CC_CONTROLLER_NAMES, CcPoint, EditMode, EditorTransform, VelocityPoint,
 };
 
 use lumino_core::NoteStore;
@@ -144,12 +143,8 @@ impl VelocityPanel {
 
         let mode_label = if is_tempo {
             t.velocity_panel_tempo
-        } else if is_velocity {
-            t.velocity_panel_velocity
-        } else if self.edit_mode == EditMode::Bend {
-            "Bend"
         } else {
-            "CC"
+            t.velocity_panel_velocity
         };
 
         button(text(mode_label).size(12))
@@ -179,33 +174,10 @@ impl VelocityPanel {
             .into()
     }
 
-    /// 构建 CC 控制器选择器（非 CC/Bend 模式返回空白占位）
+    /// 构建 CC 控制器选择器（已移除 CC/Bend 模式，返回空白占位）
     fn build_cc_selector<'a>(&'a self) -> Element<'a> {
-        use iced_widget::{pick_list, space};
-
-        if self.edit_mode.is_cc() {
-            let mut cc_options: Vec<CcOption> = Vec::with_capacity(129);
-            cc_options.push(CcOption::Bend);
-            for n in 0..=127 {
-                cc_options.push(CcOption::Cc(n));
-            }
-            let selected = if self.edit_mode == EditMode::Bend {
-                CcOption::Bend
-            } else {
-                CcOption::Cc(self.selected_cc)
-            };
-            pick_list(cc_options, Some(selected), move |cc| {
-                lumino_ui_core::message::Message::Velocity(
-                    lumino_ui_core::message::VelocityAction::CcOptionSelected(cc),
-                )
-            })
-            .placeholder("Select CC/Bend")
-            .padding([2, 6])
-            .width(iced_core::Length::Fixed(170.0))
-            .into()
-        } else {
-            space().width(0).into()
-        }
+        use iced_widget::space;
+        space().width(0).into()
     }
 
     /// 构建模式信息文字
@@ -213,12 +185,8 @@ impl VelocityPanel {
         let t = lumino_core::i18n::main_translations(language);
         if self.edit_mode == EditMode::Tempo {
             t.velocity_panel_tempo_info.to_string()
-        } else if self.edit_mode == EditMode::Velocity {
-            t.velocity_panel_velocity_info.to_string()
-        } else if self.edit_mode == EditMode::Bend {
-            "Bend: -8192..8191".to_string()
         } else {
-            format!("{}", CcDisplay(self.selected_cc))
+            t.velocity_panel_velocity_info.to_string()
         }
     }
 

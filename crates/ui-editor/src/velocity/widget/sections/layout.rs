@@ -9,7 +9,6 @@ use super::super::super::{
 };
 use super::super::state::CtrlEnd;
 use crate::editor_state::ViewState;
-use crate::velocity::EditMode;
 use crate::velocity::widget::TempoPoint;
 
 impl super::super::VelocityCanvas<'_> {
@@ -88,11 +87,7 @@ impl super::super::VelocityCanvas<'_> {
 
     /// 当前编辑模式对应的自动化目标。
     pub(super) fn automation_target(&self) -> Option<AutomationTarget> {
-        match self.edit_mode {
-            EditMode::Bend => Some(AutomationTarget::PitchBend),
-            EditMode::Cc(n) => Some(AutomationTarget::CC { controller: n }),
-            _ => None,
-        }
+        None
     }
 
     /// 构造 Canvas 局部坐标系的自动化视图参数。
@@ -200,58 +195,6 @@ impl super::super::VelocityCanvas<'_> {
             }
         }
         best.map(|(tick, _)| tick)
-    }
-
-    /// 命中测试：检测鼠标是否在某个贝塞尔控制点上。
-    /// 返回 (前驱事件 tick, 控制点端别, 该段 shape 的 4 个偏移量)。
-    pub(super) fn hit_test_control_point(
-        lane: &AutomationLane,
-        view: &AutomationViewParams,
-        cursor_pos: Point,
-        max_val: f32,
-    ) -> Option<(u32, CtrlEnd, f32, f32, f32, f32)> {
-        use lumino_core::SegmentShape;
-        let hit_sq = HIT_RADIUS * HIT_RADIUS;
-        // (prev_tick, which, x1, y1, x2, y2, dist_sq)
-        let mut best: Option<(u32, CtrlEnd, f32, f32, f32, f32, f32)> = None;
-        for i in 1..lane.events.len() {
-            let prev = &lane.events[i - 1];
-            let cur = &lane.events[i];
-            let SegmentShape::Curve { x1, y1, x2, y2 } = prev.shape else {
-                continue;
-            };
-            if prev.shape.is_linear() {
-                continue;
-            }
-            let px0 = view.tick_to_x(prev.tick);
-            let py0 = view.value_to_y(prev.value as f32, max_val);
-            let px3 = view.tick_to_x(cur.tick);
-            let py3 = view.value_to_y(cur.value as f32, max_val);
-            // 两个控制点屏幕坐标（偏移量 *4 放大：P1 相对 P0，P2 相对 P3）
-            let c1x = px0 + (px3 - px0) * x1 * SegmentShape::SCALE;
-            let c1y = py0 + (py3 - py0) * y1 * SegmentShape::SCALE;
-            let c2x = px3 + (px3 - px0) * x2 * SegmentShape::SCALE;
-            let c2y = py3 + (py3 - py0) * y2 * SegmentShape::SCALE;
-            let d1 = (c1x - cursor_pos.x).powi(2) + (c1y - cursor_pos.y).powi(2);
-            let d2 = (c2x - cursor_pos.x).powi(2) + (c2y - cursor_pos.y).powi(2);
-            if d1 <= hit_sq
-                && best
-                    .as_ref()
-                    .map(|(_, _, _, _, _, _, d)| d1 < *d)
-                    .unwrap_or(true)
-            {
-                best = Some((prev.tick, CtrlEnd::Out, x1, y1, x2, y2, d1));
-            }
-            if d2 <= hit_sq
-                && best
-                    .as_ref()
-                    .map(|(_, _, _, _, _, _, d)| d2 < *d)
-                    .unwrap_or(true)
-            {
-                best = Some((prev.tick, CtrlEnd::In, x1, y1, x2, y2, d2));
-            }
-        }
-        best.map(|(t, w, x1, y1, x2, y2, _)| (t, w, x1, y1, x2, y2))
     }
 
     /// 从鼠标屏幕位置反推 Curve 段某一端控制点的偏移量 (x, y) ∈ [-0.5, 0.5]。

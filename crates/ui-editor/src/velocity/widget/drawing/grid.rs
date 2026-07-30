@@ -95,25 +95,10 @@ pub fn draw_horizontal_lines(
     let line_color = velocity_grid_line_color(theme);
 
     match edit_mode {
-        EditMode::Velocity | EditMode::Cc(_) => {
+        EditMode::Velocity => {
             let scale_values = [0u8, 32, 64, 96, 127];
             for &v in &scale_values {
                 let y = VelocityCanvas::velocity_to_y(v, size.height);
-                let mut line_builder = path::Builder::new();
-                line_builder.move_to(Point::new(PANEL_PADDING_X, y));
-                line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
-                frame.stroke(
-                    &line_builder.build(),
-                    canvas::Stroke::default()
-                        .with_color(line_color)
-                        .with_width(1.0),
-                );
-            }
-        }
-        EditMode::Bend => {
-            let bend_values: [i16; 5] = [-8192, -4096, 0, 4096, 8191];
-            for &v in &bend_values {
-                let y = bend_value_to_y(v, size.height);
                 let mut line_builder = path::Builder::new();
                 line_builder.move_to(Point::new(PANEL_PADDING_X, y));
                 line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));

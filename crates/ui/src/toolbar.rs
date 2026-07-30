@@ -71,6 +71,8 @@ pub struct Toolbar {
     pub ppq_edit_buffer: String,
     /// 溢出菜单是否打开
     pub overflow_menu_open: bool,
+    /// 是否处于弯音编辑模式（禁用大部分工具）
+    pub pitch_bend_mode: bool,
 }
 
 impl Toolbar {
@@ -94,6 +96,7 @@ impl Toolbar {
             ppq_editing: false,
             ppq_edit_buffer: String::new(),
             overflow_menu_open: false,
+            pitch_bend_mode: false,
         }
     }
 

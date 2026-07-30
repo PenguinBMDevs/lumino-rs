@@ -59,12 +59,7 @@ pub fn build_cc_bar_instances(
     use lumino_core::EditMode;
 
     let is_tempo = matches!(edit_mode, EditMode::Tempo);
-    let (is_bend, is_velocity) = match edit_mode {
-        EditMode::Bend => (true, false),
-        EditMode::Cc(_) => (false, false),
-        EditMode::Velocity => (false, true),
-        EditMode::Tempo => (false, false),
-    };
+    let is_velocity = matches!(edit_mode, EditMode::Velocity);
 
     const PANEL_PADDING_Y: f32 = 12.0;
     const RESIZE_HANDLE_HEIGHT: f32 = 5.0;
@@ -158,51 +153,6 @@ pub fn build_cc_bar_instances(
             lane,
             crate::automation::AUTOMATION_NODE_COLOR,
             true,
-        );
-    } else if is_bend {
-        // Bend 柱状条兼容路径（无 automation lane 时降级）
-        const BEND_MAX: f32 = 8191.0;
-        const BEND_MIN: f32 = -8192.0;
-        let points = data
-            .bend_points
-            .iter()
-            .map(|p| (p.tick, (p.value as f32 - BEND_MIN) / (BEND_MAX - BEND_MIN)));
-        push_value_bars(
-            &mut instances,
-            ValueBarContext {
-                points,
-                panel_x,
-                actual_panel_y,
-                keyboard_width: view_params.keyboard_width,
-                zoom_x: view_params.zoom_x,
-                scroll_x: view_params.scroll_x,
-                canvas_size_x: view_params.canvas_size_x,
-                max_y,
-                graph_height,
-                bar_color: colors.bar_color,
-            },
-        );
-    } else {
-        // CC 柱状条兼容路径（无 automation lane 时降级）
-        const MAX_VALUE: f32 = 127.0;
-        let points = data
-            .cc_points
-            .iter()
-            .map(|p| (p.tick, p.value as f32 / MAX_VALUE));
-        push_value_bars(
-            &mut instances,
-            ValueBarContext {
-                points,
-                panel_x,
-                actual_panel_y,
-                keyboard_width: view_params.keyboard_width,
-                zoom_x: view_params.zoom_x,
-                scroll_x: view_params.scroll_x,
-                canvas_size_x: view_params.canvas_size_x,
-                max_y,
-                graph_height,
-                bar_color: colors.bar_color,
-            },
         );
     }
 
@@ -411,60 +361,6 @@ fn push_velocity_bar_instances(instances: &mut Vec<CcBarInstance>, ctx: &Velocit
             bar_x,
             bar_y,
             bar_w,
-            bar_h,
-            ctx.bar_color,
-        ));
-    }
-}
-
-/// 通用数值柱状条渲染上下文
-struct ValueBarContext<I: IntoIterator<Item = (f32, f32)>> {
-    /// 待绘制的 (tick, 归一化值) 序列
-    points: I,
-    /// 面板左上角 X 坐标
-    panel_x: f32,
-    /// 面板实际 Y 坐标
-    actual_panel_y: f32,
-    /// 键盘区域宽度
-    keyboard_width: f32,
-    /// X 轴缩放
-    zoom_x: f32,
-    /// X 轴滚动偏移
-    scroll_x: f32,
-    /// 画布宽度
-    canvas_size_x: f32,
-    /// 绘图区域底部 Y 偏移
-    max_y: f32,
-    /// 曲线可用高度
-    graph_height: f32,
-    /// 柱条主色
-    bar_color: [f32; 4],
-}
-
-/// 通用数值柱状条（Bend / CC 降级路径）：对给定 (tick, 归一化值) 序列绘制柱条。
-fn push_value_bars<I: IntoIterator<Item = (f32, f32)>>(
-    instances: &mut Vec<CcBarInstance>,
-    ctx: ValueBarContext<I>,
-) {
-    const BAR_WIDTH: f32 = 2.0;
-    const TOOLBAR_HEIGHT: f32 = 28.0;
-
-    for (tick, normalized) in ctx.points {
-        let bar_h = normalized * ctx.graph_height;
-        let bar_x = ctx.panel_x + ctx.keyboard_width + tick * ctx.zoom_x - ctx.scroll_x;
-        let bar_y = ctx.actual_panel_y + TOOLBAR_HEIGHT + ctx.max_y - bar_h;
-
-        // Simple clipping
-        if bar_x + BAR_WIDTH < ctx.panel_x + ctx.keyboard_width
-            || bar_x > ctx.panel_x + ctx.canvas_size_x
-        {
-            continue;
-        }
-
-        instances.push(CcBarInstance::new(
-            bar_x,
-            bar_y,
-            BAR_WIDTH,
             bar_h,
             ctx.bar_color,
         ));

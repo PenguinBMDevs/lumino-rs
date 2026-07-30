@@ -13,7 +13,7 @@ use super::super::super::{
     RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT, VELOCITY_PANEL_MAX_HEIGHT, VELOCITY_PANEL_MIN_HEIGHT,
     VelocityPanel, VelocityPoint,
 };
-use super::super::state::{AutomationDrag, CtrlEnd, VelocityCanvasState};
+use super::super::state::{AutomationDrag, VelocityCanvasState};
 
 impl<'a> super::super::VelocityCanvas<'a> {
     pub(super) fn handle_button_pressed(
@@ -37,99 +37,7 @@ impl<'a> super::super::VelocityCanvas<'a> {
             EditMode::Tempo => {
                 return self.handle_tempo_button_pressed(state, cursor_pos, bounds_size);
             }
-            _ => {}
         }
-
-        // CC / Bend 自动化模式
-        let (view, target, max_val) = self.automation_view_params(bounds_size)?;
-        let in_draw_area = cursor_pos.x >= 0.0
-            && cursor_pos.x <= bounds_size.width
-            && cursor_pos.y >= RESIZE_HANDLE_HEIGHT
-            && cursor_pos.y <= bounds_size.height;
-        if !in_draw_area {
-            return None;
-        }
-
-        let track_idx = self.editor.editor_state.data.current_track as u16;
-        let lane_idx = self
-            .editor
-            .editor_state
-            .data
-            .find_automation_lane(track_idx, &target);
-        let lane_ref =
-            lane_idx.and_then(|idx| self.editor.editor_state.data.automation_lanes.get(idx));
-
-        // 双击切换 shape
-        if state.detect_double_click(cursor_pos) {
-            if let Some(lane) = lane_ref
-                && let Some(tick) =
-                    Self::hit_test_automation_anchor(lane, &view, cursor_pos, max_val)
-                && let Some(lane_idx) = lane_idx
-            {
-                return Some(publish_velocity(VelocityAction::AutomationEdit(
-                    AutomationEdit::CycleShape {
-                        track_idx,
-                        lane_idx,
-                        tick,
-                    },
-                )));
-            }
-            return None;
-        }
-
-        match self.editor.current_tool() {
-            Tool::Eraser => {
-                if let Some(lane) = lane_ref
-                    && let Some(tick) =
-                        Self::hit_test_automation_anchor(lane, &view, cursor_pos, max_val)
-                    && let Some(lane_idx) = lane_idx
-                {
-                    return Some(publish_velocity(VelocityAction::AutomationEdit(
-                        AutomationEdit::Delete {
-                            track_idx,
-                            lane_idx,
-                            tick,
-                        },
-                    )));
-                }
-            }
-            Tool::Pencil | Tool::Pointer => {
-                // 先检测贝塞尔控制点命中
-                if let Some(lane) = lane_ref
-                    && let Some((prev_tick, which, x1, y1, x2, y2)) =
-                        Self::hit_test_control_point(lane, &view, cursor_pos, max_val)
-                {
-                    let (start_x, start_y) = match which {
-                        CtrlEnd::Out => (x1, y1),
-                        CtrlEnd::In => (x2, y2),
-                    };
-                    state.start_drag_control_point(prev_tick, which, start_x, start_y);
-                    return Some(publish_velocity(VelocityAction::AutomationDragStart));
-                }
-                // Pencil/Pointer 只允许拖拽已有锚点，禁止在空白处创建新锚点
-                // 创建 CC 锚点请使用 Curve 曲线编辑工具
-                if let Some(lane) = lane_ref
-                    && let Some(tick) =
-                        Self::hit_test_automation_anchor(lane, &view, cursor_pos, max_val)
-                {
-                    state.start_move_anchor(tick);
-                    state.automation_curve_current = None;
-                    return Some(publish_velocity(VelocityAction::AutomationDragStart));
-                }
-            }
-            Tool::Curve => {
-                let tick = self.snap_tick(self.x_to_tick(cursor_pos.x)).max(0.0) as u32;
-                let value = view
-                    .y_to_value(cursor_pos.y, max_val)
-                    .round()
-                    .clamp(0.0, max_val) as u16;
-                state.start_curve_draw(tick, value);
-                return Some(publish_velocity(VelocityAction::AutomationDragStart));
-            }
-            _ => {}
-        }
-
-        None
     }
 
     pub(super) fn handle_right_button_pressed(
@@ -695,15 +603,6 @@ impl<'a> super::super::VelocityCanvas<'a> {
                 }
                 state.hover_point_idx = None;
                 state.hover_anchor_tick = None;
-            }
-            _ => {
-                if let Some((view, _target, max_val)) = self.automation_view_params(bounds_size)
-                    && let Some(lane) = self.current_automation_lane()
-                {
-                    state.hover_anchor_tick =
-                        Self::hit_test_automation_anchor(lane, &view, cursor_pos, max_val);
-                }
-                state.hover_point_idx = None;
             }
         }
     }

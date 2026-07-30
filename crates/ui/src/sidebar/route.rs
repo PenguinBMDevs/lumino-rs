@@ -13,6 +13,7 @@ pub fn view<'a>(
     active: Route,
     panel_visible: bool,
     automation_panel_visible: bool,
+    pitch_bend_panel_visible: bool,
     piano_roll_visible: bool,
     current_mode: AppMode,
     active_group: Option<GroupId>,
@@ -65,6 +66,8 @@ pub fn view<'a>(
                     route == Route::Arrangement
                 } else if route == Route::Automation {
                     automation_panel_visible
+                } else if route == Route::PitchBend {
+                    pitch_bend_panel_visible
                 } else {
                     panel_visible && route == active
                 };
@@ -186,6 +189,8 @@ fn item_with_color<'a>(
 
     let event = if route == Route::Automation {
         Event::automation_panel_toggled()
+    } else if route == Route::PitchBend {
+        Event::pitch_bend_panel_toggled()
     } else {
         Event::panel_toggled(route)
     };

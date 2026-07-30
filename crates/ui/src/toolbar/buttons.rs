@@ -99,18 +99,32 @@ pub fn tool_selector<'a>(
     window: &'a window::Window,
     on_hover_msg: Option<Message>,
 ) -> Element<'a> {
-    let is_selected = tool == current_tool;
+    tool_selector_enabled(icon_enum, tooltip, tool, current_tool, true, window, on_hover_msg)
+}
+
+/// 带启用/禁用状态的工具选择器
+pub fn tool_selector_enabled<'a>(
+    icon_enum: icon::Icon,
+    tooltip: &'a str,
+    tool: Tool,
+    current_tool: Tool,
+    enabled: bool,
+    window: &'a window::Window,
+    on_hover_msg: Option<Message>,
+) -> Element<'a> {
+    let is_selected = tool == current_tool && enabled;
     let palette = window.theme.extended_palette();
 
-    let btn = button(icon::view_with_size_and_theme(
+    let mut btn = button(icon::view_with_size_and_theme(
         icon_enum,
         17,
         17,
         Some(&window.theme),
     ))
-    .on_press(Event::tool_selected(tool))
     .style(move |_theme: &Theme, status| {
-        let bg = if is_selected {
+        let bg = if !enabled {
+            iced_core::Color::TRANSPARENT
+        } else if is_selected {
             palette.background.strong.color
         } else if status == iced_widget::button::Status::Hovered {
             palette.background.weak.color
@@ -129,6 +143,11 @@ pub fn tool_selector<'a>(
         .with_background(bg)
     })
     .padding(iced_core::Padding::new(4.0));
+
+    // 仅在启用时绑定 on_press
+    if enabled {
+        btn = btn.on_press(Event::tool_selected(tool));
+    }
 
     let btn = apply_hover(btn, on_hover_msg);
 

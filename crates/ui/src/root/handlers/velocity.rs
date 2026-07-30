@@ -54,7 +54,6 @@ impl VelocityHandler {
             }
             VA::CcControllerSelected(cc) => {
                 root.editor.velocity_panel.selected_cc = cc;
-                root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Cc(cc);
                 tracing::debug!("力度面板: 选择 CC 控制器 {}", cc);
                 return; // 不需要重绘
             }
@@ -62,14 +61,10 @@ impl VelocityHandler {
                 use crate::editor::velocity::CcOption;
                 match option {
                     CcOption::Bend => {
-                        root.editor.velocity_panel.edit_mode =
-                            crate::editor::velocity::EditMode::Bend;
-                        tracing::debug!("力度面板: 选择 Bend");
+                        tracing::debug!("力度面板: Bend 模式已移除");
                     }
                     CcOption::Cc(cc) => {
                         root.editor.velocity_panel.selected_cc = cc;
-                        root.editor.velocity_panel.edit_mode =
-                            crate::editor::velocity::EditMode::Cc(cc);
                         tracing::debug!("力度面板: 选择 CC 控制器 {}", cc);
                     }
                 }
@@ -191,38 +186,19 @@ impl VelocityHandler {
     }
 
     /// 根据当前编辑模式、是否在 Conductor 音轨以及选中的 CC 计算下一个编辑模式
-    fn next_edit_mode(mode: EditMode, is_conductor: bool, selected_cc: u8) -> EditMode {
+    fn next_edit_mode(mode: EditMode, is_conductor: bool, _selected_cc: u8) -> EditMode {
         match (mode, is_conductor) {
             // 普通音轨：Velocity → Bend → Cc(selected_cc) → Velocity
-            (EditMode::Velocity, false) => EditMode::Bend,
-            (EditMode::Bend, false) => EditMode::Cc(selected_cc),
-            (EditMode::Cc(_), false) => EditMode::Velocity,
-            // Conductor 音轨：Tempo → Cc(7) → Cc(selected_cc) → Tempo
-            (EditMode::Tempo, true) => EditMode::Cc(7),
-            (EditMode::Cc(7), true) => {
-                if selected_cc == 7 {
-                    EditMode::Tempo
-                } else {
-                    EditMode::Cc(selected_cc)
-                }
-            }
-            (EditMode::Cc(_), true) => EditMode::Tempo,
-            // Velocity → 不该在 Conductor 上出现，安全降级到 Tempo
+            (EditMode::Velocity, false) => EditMode::Velocity,
+            (EditMode::Tempo, true) => EditMode::Tempo,
             (EditMode::Velocity, true) => EditMode::Tempo,
-            (EditMode::Bend, true) => EditMode::Tempo,
-            (EditMode::Tempo, false) => EditMode::Bend,
+            (EditMode::Tempo, false) => EditMode::Velocity,
         }
     }
 
     /// 根据编辑模式返回自动化目标的最大值，用于垂直缩放/滚动裁剪
-    fn automation_max_value(mode: EditMode) -> Option<f32> {
-        match mode {
-            EditMode::Bend => Some(lumino_core::AutomationTarget::PitchBend.max_value() as f32),
-            EditMode::Cc(n) => {
-                Some(lumino_core::AutomationTarget::CC { controller: n }.max_value() as f32)
-            }
-            _ => None,
-        }
+    fn automation_max_value(_mode: EditMode) -> Option<f32> {
+        None
     }
 }
 

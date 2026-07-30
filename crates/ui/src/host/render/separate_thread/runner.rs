@@ -222,12 +222,7 @@ impl Host {
         let panel = &editor.velocity_panel;
 
         // 根据编辑模式获取数据点和模式参数
-        let (is_bend, is_velocity, cc_number) = match panel.edit_mode {
-            EditMode::Bend => (true, false, 0u8),
-            EditMode::Cc(n) => (false, false, n),
-            EditMode::Velocity => (false, true, 0u8),
-            EditMode::Tempo => (false, false, 0u8),
-        };
+        let is_velocity = matches!(panel.edit_mode, EditMode::Velocity);
 
         // Velocity 模式从 notes 获取力度点
         let velocity_points = if is_velocity {
@@ -238,52 +233,10 @@ impl Host {
             Vec::new()
         };
 
-        // CC/Bend 模式从 automation_lanes 获取控制点
-        let (cc_points, bend_points) = if is_bend {
-            let bend_pts = crate::editor::velocity::VelocityPanel::build_bend_points(editor);
-            (Vec::new(), bend_pts)
-        } else if !is_velocity {
-            let cc_pts = crate::editor::velocity::VelocityPanel::build_cc_points(editor, cc_number);
-            (cc_pts, Vec::new())
-        } else {
-            (Vec::new(), Vec::new())
-        };
-
-        let track_idx = editor.editor_state.data.current_track as u16;
-        let automation_lane = if is_bend {
-            editor
-                .editor_state
-                .data
-                .find_automation_lane(track_idx, &lumino_core::AutomationTarget::PitchBend)
-                .and_then(|idx| {
-                    editor
-                        .editor_state
-                        .data
-                        .automation_lanes
-                        .get(idx)
-                        .map(|a| &**a)
-                })
-        } else if !is_velocity {
-            editor
-                .editor_state
-                .data
-                .find_automation_lane(
-                    track_idx,
-                    &lumino_core::AutomationTarget::CC {
-                        controller: cc_number,
-                    },
-                )
-                .and_then(|idx| {
-                    editor
-                        .editor_state
-                        .data
-                        .automation_lanes
-                        .get(idx)
-                        .map(|a| &**a)
-                })
-        } else {
-            None
-        };
+        // CC/Bend 模式已移除，控制点为空
+        let cc_points: Vec<lumino_core::CcPoint> = Vec::new();
+        let bend_points: Vec<lumino_core::BendPoint> = Vec::new();
+        let automation_lane: Option<&lumino_core::AutomationLane> = None;
 
         let view = &editor.editor_state.view;
         let canvas = &editor.editor_state.canvas;

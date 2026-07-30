@@ -15,6 +15,7 @@ impl Sidebar {
         let prev_context_menu_target = self.track_context_menu.target_track_id;
         let prev_renaming = self.renaming_track.as_ref().map(|(id, _)| *id);
         let prev_color_picking = self.color_picking_track;
+        let prev_pitch_bend = self.pitch_bend_panel_visible;
         match event {
             // ── 分组切换（核心逻辑） ──
             GroupToggled(group) => {
@@ -61,7 +62,10 @@ impl Sidebar {
             PanelToggled(r) => {
                 // 子按钮只能在对应分组激活时操作
                 let not_allowed = self.active_group != Some(GroupId::PianoRoll)
-                    && matches!(r, Route::File | Route::Automation | Route::EventList);
+                    && matches!(
+                        r,
+                        Route::File | Route::Automation | Route::PitchBend | Route::EventList
+                    );
                 if not_allowed {
                     // 跨组点击 PianoRoll 子按钮：先切回 PianoRoll 组，始终打开面板
                     self.handle_group_toggle(GroupId::PianoRoll);
@@ -307,6 +311,16 @@ impl Sidebar {
                     self.automation_panel_visible = !self.automation_panel_visible;
                 }
             }
+            PitchBendPanelToggled => {
+                if self.route == Route::Arrangement {
+                    // 从工程走带界面打开弯音编辑面板：恢复钢琴卷帘状态并开启弯音编辑
+                    self.restore_piano_roll_state();
+                    self.pitch_bend_panel_visible = true;
+                    self.active_group = Some(GroupId::PianoRoll);
+                } else {
+                    self.pitch_bend_panel_visible = !self.pitch_bend_panel_visible;
+                }
+            }
             PianoRollToggled => {
                 self.piano_roll_visible = !self.piano_roll_visible;
                 if self.piano_roll_visible && self.route == Route::Arrangement {
@@ -325,6 +339,7 @@ impl Sidebar {
             || self.track_context_menu.target_track_id != prev_context_menu_target
             || self.renaming_track.as_ref().map(|(id, _)| *id) != prev_renaming
             || self.color_picking_track != prev_color_picking
+            || self.pitch_bend_panel_visible != prev_pitch_bend
     }
 
     /// 分组切换：保存旧组状态 → 恢复新组状态，互斥
@@ -360,6 +375,7 @@ impl Sidebar {
         self.save_group_state(GroupId::PianoRoll);
         self.panel_visible = false;
         self.automation_panel_visible = false;
+        self.pitch_bend_panel_visible = false;
         self.piano_roll_visible = false;
         self.route = Route::Arrangement;
     }
@@ -370,6 +386,7 @@ impl Sidebar {
         self.panel_route = state.panel_route;
         self.panel_visible = state.panel_visible;
         self.automation_panel_visible = state.automation_panel_visible;
+        self.pitch_bend_panel_visible = state.pitch_bend_panel_visible;
         self.piano_roll_visible = true;
         self.route = if state.panel_visible {
             state.panel_route
@@ -384,9 +401,13 @@ impl Sidebar {
             GroupId::PianoRoll => {
                 self.piano_roll_sub_state = GroupSubState {
                     panel_visible: self.panel_visible
-                        && !matches!(self.panel_route, Route::Automation | Route::Arrangement),
+                        && !matches!(
+                            self.panel_route,
+                            Route::Automation | Route::PitchBend | Route::Arrangement
+                        ),
                     panel_route: self.panel_route,
                     automation_panel_visible: self.automation_panel_visible,
+                    pitch_bend_panel_visible: self.pitch_bend_panel_visible,
                 };
             }
             GroupId::Project => {
@@ -394,6 +415,7 @@ impl Sidebar {
                     panel_visible: self.panel_visible,
                     panel_route: self.panel_route,
                     automation_panel_visible: self.automation_panel_visible,
+                    pitch_bend_panel_visible: self.pitch_bend_panel_visible,
                 };
             }
             GroupId::Renderer => {
@@ -401,6 +423,7 @@ impl Sidebar {
                     panel_visible: self.panel_visible,
                     panel_route: self.panel_route,
                     automation_panel_visible: self.automation_panel_visible,
+                    pitch_bend_panel_visible: self.pitch_bend_panel_visible,
                 };
             }
             GroupId::Waterfall => {
@@ -419,6 +442,7 @@ impl Sidebar {
                 self.panel_route = state.panel_route;
                 self.panel_visible = state.panel_visible;
                 self.automation_panel_visible = state.automation_panel_visible;
+                self.pitch_bend_panel_visible = state.pitch_bend_panel_visible;
                 self.route = if state.panel_visible {
                     state.panel_route
                 } else {
@@ -433,6 +457,7 @@ impl Sidebar {
                 self.piano_roll_visible = false;
                 self.panel_visible = false;
                 self.automation_panel_visible = false;
+                self.pitch_bend_panel_visible = false;
                 self.route = Route::Arrangement;
                 // 进入走带时清除渲染面板标志
                 self.audio_export_visible = false;
@@ -443,6 +468,7 @@ impl Sidebar {
                 self.piano_roll_visible = false;
                 self.panel_visible = false;
                 self.automation_panel_visible = false;
+                self.pitch_bend_panel_visible = false;
                 self.route = Route::File;
                 // 进入瀑布流时清除渲染面板标志
                 self.audio_export_visible = false;
@@ -453,6 +479,7 @@ impl Sidebar {
                 self.piano_roll_visible = false;
                 self.panel_visible = false;
                 self.automation_panel_visible = false;
+                self.pitch_bend_panel_visible = false;
                 self.route = Route::File;
             }
         }
@@ -466,6 +493,7 @@ impl Sidebar {
                 self.piano_roll_visible = false;
                 self.panel_visible = false;
                 self.automation_panel_visible = false;
+                self.pitch_bend_panel_visible = false;
             }
             GroupId::Project => {
                 // 退出工程走带时恢复钢琴卷帘状态并切回钢琴卷帘组
@@ -474,6 +502,7 @@ impl Sidebar {
                 self.panel_route = state.panel_route;
                 self.panel_visible = state.panel_visible;
                 self.automation_panel_visible = state.automation_panel_visible;
+                self.pitch_bend_panel_visible = state.pitch_bend_panel_visible;
                 self.route = if state.panel_visible {
                     state.panel_route
                 } else {

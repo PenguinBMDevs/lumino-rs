@@ -6,7 +6,7 @@ use iced_core::Alignment;
 use iced_widget::{button, container, mouse_area, row, space};
 
 use crate::resources::icon;
-use crate::toolbar::buttons::{flip_button, tool_button, tool_selector};
+use crate::toolbar::buttons::{flip_button, tool_button, tool_selector, tool_selector_enabled};
 use crate::toolbar::{ButtonId, Event, FlipHorizontalMode, RESIZE_HANDLE_HEIGHT, Tool, Toolbar};
 use crate::widget;
 use crate::{Element, Message, Theme, window};
@@ -180,6 +180,10 @@ impl Toolbar {
             (t.tool_transpose_up, Event::transpose_up(1))
         };
 
+        // 弯音编辑模式下禁用大部分工具，仅保留 Pointer/Eraser/Anchor
+        let pb = self.pitch_bend_mode;
+        let tools_enabled = !pb;
+
         container(
             row![
                 tool_selector(
@@ -191,11 +195,12 @@ impl Toolbar {
                     Some(Event::button_hovered(Some(ButtonId::Pointer))),
                 ),
                 space().width(4),
-                tool_selector(
+                tool_selector_enabled(
                     icon::Pencil,
                     t.tool_pencil,
                     Tool::Pencil,
                     self.current_tool,
+                    tools_enabled,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::Pencil))),
                 ),
@@ -209,19 +214,31 @@ impl Toolbar {
                     Some(Event::button_hovered(Some(ButtonId::Eraser))),
                 ),
                 space().width(4),
-                tool_selector(
+                tool_selector_enabled(
                     icon::Curve,
                     t.tool_curve,
                     Tool::Curve,
                     self.current_tool,
+                    tools_enabled,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::Curve))),
                 ),
                 space().width(4),
-                tool_button(
+                tool_selector_enabled(
+                    icon::Pushpin,
+                    "锚点创建",
+                    Tool::Anchor,
+                    self.current_tool,
+                    pb,
+                    window,
+                    Some(Event::button_hovered(Some(ButtonId::Curve))),
+                ),
+                space().width(4),
+                flip_button(
                     icon::Quantize,
                     t.tool_quantize,
                     Event::quantize(),
+                    tools_enabled,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::Quantize))),
                 ),
@@ -232,7 +249,7 @@ impl Toolbar {
                     icon::Speed,
                     t.tool_speed,
                     Event::speed_change(),
-                    true,
+                    tools_enabled,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::Speed))),
                 ),
@@ -241,7 +258,7 @@ impl Toolbar {
                     icon::FlipVertical,
                     t.tool_flip_vertical,
                     Event::flip_vertical(),
-                    has_selection,
+                    has_selection && tools_enabled,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::FlipVertical))),
                 ),
@@ -256,24 +273,26 @@ impl Toolbar {
                     } else {
                         Event::flip_horizontal(FlipHorizontalMode::Center)
                     },
-                    has_selection,
+                    has_selection && tools_enabled,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::FlipHorizontal))),
                 ),
                 space().width(8),
                 // 分割/合并按钮
-                tool_button(
+                flip_button(
                     icon::Split,
                     t.tool_split,
                     Event::split(),
+                    tools_enabled,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::Split))),
                 ),
                 space().width(4),
-                tool_button(
+                flip_button(
                     icon::Glue,
                     t.tool_glue,
                     Event::glue(),
+                    tools_enabled,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::Glue))),
                 ),
@@ -284,7 +303,7 @@ impl Toolbar {
                     icon::TransposeDown,
                     transpose_down_tooltip,
                     transpose_down_event,
-                    has_selection,
+                    has_selection && tools_enabled,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::TransposeDown))),
                 ),
@@ -293,16 +312,17 @@ impl Toolbar {
                     icon::TransposeUp,
                     transpose_up_tooltip,
                     transpose_up_event,
-                    has_selection,
+                    has_selection && tools_enabled,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::TransposeUp))),
                 ),
                 space().width(8),
                 // 连奏按钮
-                tool_button(
+                flip_button(
                     icon::Tie,
                     t.tool_tie,
                     Event::tie(),
+                    tools_enabled,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::Tie))),
                 ),
