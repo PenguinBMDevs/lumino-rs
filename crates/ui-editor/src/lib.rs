@@ -31,6 +31,7 @@ mod note_ops;
 mod note_split_glue;
 mod note_transform;
 mod note_transpose;
+mod pitch_bend_interaction;
 mod puffin_profiler;
 mod rendering;
 mod scroll;
@@ -156,8 +157,11 @@ pub struct Editor {
     /// 元组: (min_tick, max_tick_end, max_key, min_key)
     pub(crate) selected_bounds: Cell<Option<(f32, f32, u16, u16)>>,
 
-    /// 播放键色增量扫描状态——避免每帧 O(N) 全量扫描导致的线性性能退化
+    /// 播放键色增量扫描状态--避免每帧 O(N) 全量扫描导致的线性性能退化
     pub(crate) playback_scan_state: impls::PlaybackScanState,
+
+    /// 弯音编辑拖拽状态
+    pub pitch_bend_drag_state: pitch_bend_interaction::PitchBendDragState,
 }
 
 /// 框选框弹簧动画状态

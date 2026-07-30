@@ -36,6 +36,7 @@ impl Editor {
                 context_menu: crate::context_menu::PianoRollContextMenuState::default(),
                 selected_bounds: Cell::new(None),
                 playback_scan_state: crate::impls::PlaybackScanState::default(),
+                pitch_bend_drag_state: crate::pitch_bend_interaction::PitchBendDragState::default(),
             }
         })
     }

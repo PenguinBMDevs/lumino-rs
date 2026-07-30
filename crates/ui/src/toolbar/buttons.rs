@@ -99,7 +99,15 @@ pub fn tool_selector<'a>(
     window: &'a window::Window,
     on_hover_msg: Option<Message>,
 ) -> Element<'a> {
-    tool_selector_enabled(icon_enum, tooltip, tool, current_tool, true, window, on_hover_msg)
+    tool_selector_enabled(
+        icon_enum,
+        tooltip,
+        tool,
+        current_tool,
+        true,
+        window,
+        on_hover_msg,
+    )
 }
 
 /// 带启用/禁用状态的工具选择器

@@ -23,6 +23,26 @@ impl Editor {
         puffin::profile_function!();
         self.editor_state.interaction.pending_audio_actions.clear();
 
+        // 弯音编辑模式：拦截所有鼠标事件到弯音交互处理器
+        if self.editor_state.is_pitch_bend_mode() {
+            match action {
+                EditorAction::Pressed { pos, shift } => {
+                    self.handle_pitch_bend_pressed(pos, shift);
+                }
+                EditorAction::Moved(pos) => {
+                    self.handle_pitch_bend_moved(pos);
+                }
+                EditorAction::Released => {
+                    self.handle_pitch_bend_released();
+                }
+                EditorAction::Scrolled { delta_x, delta_y } => {
+                    self.handle_scrolled(delta_x, delta_y);
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match action {
             EditorAction::Pressed { pos, shift } => {
                 self.handle_pressed(iced_core::Point::new(pos.x, pos.y), shift)
