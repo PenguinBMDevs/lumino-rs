@@ -99,9 +99,28 @@ impl EditorData {
                     return false;
                 };
                 evt.shape = match evt.shape {
-                    SegmentShape::Step => SegmentShape::Curve { tension: 0 },
+                    SegmentShape::Step => SegmentShape::linear_curve(),
                     SegmentShape::Curve { .. } => SegmentShape::Step,
                 };
+                true
+            }
+            AutomationEdit::SetShape {
+                track_idx,
+                lane_idx,
+                tick,
+                shape,
+            } => {
+                let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
+                    return false;
+                };
+                let lane = Arc::make_mut(arc_lane);
+                if lane.track != track_idx {
+                    return false;
+                }
+                let Some(evt) = lane.events.iter_mut().find(|e| e.tick == tick) else {
+                    return false;
+                };
+                evt.shape = shape;
                 true
             }
             AutomationEdit::Delete {

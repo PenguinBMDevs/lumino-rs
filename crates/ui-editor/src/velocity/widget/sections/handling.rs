@@ -13,7 +13,7 @@ use super::super::super::{
     RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT, VELOCITY_PANEL_MAX_HEIGHT, VELOCITY_PANEL_MIN_HEIGHT,
     VelocityPanel, VelocityPoint,
 };
-use super::super::state::{AutomationDrag, VelocityCanvasState};
+use super::super::state::{AutomationDrag, CtrlEnd, VelocityCanvasState};
 
 impl<'a> super::super::VelocityCanvas<'a> {
     pub(super) fn handle_button_pressed(
@@ -94,6 +94,18 @@ impl<'a> super::super::VelocityCanvas<'a> {
                 }
             }
             Tool::Pencil | Tool::Pointer => {
+                // 先检测贝塞尔控制点命中
+                if let Some(lane) = lane_ref
+                    && let Some((prev_tick, which, x1, y1, x2, y2)) =
+                        Self::hit_test_control_point(lane, &view, cursor_pos, max_val)
+                {
+                    let (start_x, start_y) = match which {
+                        CtrlEnd::Out => (x1, y1),
+                        CtrlEnd::In => (x2, y2),
+                    };
+                    state.start_drag_control_point(prev_tick, which, start_x, start_y);
+                    return Some(publish_velocity(VelocityAction::AutomationDragStart));
+                }
                 // Pencil/Pointer 只允许拖拽已有锚点，禁止在空白处创建新锚点
                 // 创建 CC 锚点请使用 Curve 曲线编辑工具
                 if let Some(lane) = lane_ref
@@ -221,10 +233,20 @@ impl<'a> super::super::VelocityCanvas<'a> {
     pub(super) fn handle_button_released(
         &self,
         state: &mut VelocityCanvasState,
+        bounds_size: Size,
     ) -> Option<canvas::Action<Message>> {
         if state.resize_dragging {
             state.resize_dragging = false;
             return None;
+        }
+
+        // CurveDraw 在释放时提交编辑（参考 yinhe 模式）
+        if let Some(AutomationDrag::CurveDraw {
+            start_tick,
+            start_value,
+        }) = state.automation_drag
+        {
+            return self.commit_curve_draw(state, start_tick, start_value, bounds_size);
         }
 
         if state.automation_drag.is_some() {
@@ -251,6 +273,59 @@ impl<'a> super::super::VelocityCanvas<'a> {
             return Some(publish_velocity(VelocityAction::TempoDragEnd));
         }
         None
+    }
+
+    /// CurveDraw 释放时提交编辑（参考 yinhe 模式）
+    fn commit_curve_draw(
+        &self,
+        state: &mut VelocityCanvasState,
+        start_tick: u32,
+        start_value: u16,
+        bounds_size: Size,
+    ) -> Option<canvas::Action<Message>> {
+        // 先捕获 ghost 位置，再 reset（reset 会清空 automation_curve_current）
+        let ghost = state.automation_curve_current;
+        state.reset_automation_drag();
+        let (current_tick, current_value) = ghost?;
+        let (_, target, _) = self.automation_view_params(bounds_size)?;
+        let track_idx = self.editor.editor_state.data.current_track as u16;
+        if current_tick == start_tick {
+            // 单击：只创建一个 linear_curve() 锚点
+            return Some(publish_velocity(VelocityAction::AutomationEdit(
+                AutomationEdit::Add {
+                    track_idx,
+                    target: target.clone(),
+                    channel: 0,
+                    tick: current_tick,
+                    value: current_value,
+                    shape: SegmentShape::linear_curve(),
+                },
+            )));
+        }
+        // 拖拽：创建 2 个锚点（起点 linear_curve() + 终点 Step）
+        let (t1, v1, t2, v2) = if start_tick < current_tick {
+            (start_tick, start_value, current_tick, current_value)
+        } else {
+            (current_tick, current_value, start_tick, start_value)
+        };
+        Some(publish_velocity(VelocityAction::AutomationBatch(vec![
+            AutomationEdit::Add {
+                track_idx,
+                target: target.clone(),
+                channel: 0,
+                tick: t1,
+                value: v1,
+                shape: SegmentShape::linear_curve(),
+            },
+            AutomationEdit::Add {
+                track_idx,
+                target: target.clone(),
+                channel: 0,
+                tick: t2,
+                value: v2,
+                shape: SegmentShape::Step,
+            },
+        ])))
     }
 
     pub(super) fn handle_wheel_scrolled(
@@ -527,10 +602,9 @@ impl<'a> super::super::VelocityCanvas<'a> {
                 state.automation_drag = Some(AutomationDrag::MoveAnchor { old_tick: new_tick });
                 Some(publish_velocity(VelocityAction::AutomationBatch(edits)))
             }
-            AutomationDrag::CurveDraw {
-                start_tick,
-                start_value,
-            } => {
+            AutomationDrag::CurveDraw { .. } => {
+                // CurveDraw 移动阶段只更新 ghost 预览，不提交编辑
+                // 编辑在 button_released 时提交（参考 yinhe 模式）
                 let current_tick_f = self.snap_tick(self.x_to_tick(cursor_pos.x)).max(0.0);
                 let current_tick = current_tick_f as u32;
                 let current_value = view
@@ -538,45 +612,42 @@ impl<'a> super::super::VelocityCanvas<'a> {
                     .round()
                     .clamp(0.0, max_val) as u16;
                 state.automation_curve_current = Some((current_tick, current_value));
-
-                if current_tick == start_tick {
-                    // 单点点击：只创建一个 Curve{tension:0} 锚点
-                    return Some(publish_velocity(VelocityAction::AutomationEdit(
-                        AutomationEdit::Add {
-                            track_idx,
-                            target: target.clone(),
-                            channel: 0,
-                            tick: current_tick,
-                            value: current_value,
-                            shape: SegmentShape::Curve { tension: 0 },
-                        },
-                    )));
+                None
+            }
+            AutomationDrag::DragControlPoint {
+                prev_tick,
+                which,
+                start_x,
+                start_y,
+            } => {
+                let lane_idx = lane_idx?;
+                let lane = self
+                    .editor
+                    .editor_state
+                    .data
+                    .automation_lanes
+                    .get(lane_idx)?;
+                // 从鼠标反推控制点偏移量
+                let (new_x, new_y) = Self::compute_ctrl_from_mouse(
+                    lane, prev_tick, which, cursor_pos, &view, max_val,
+                )?;
+                // 如果没有实际移动，不提交
+                if (new_x - start_x).abs() < 1e-4 && (new_y - start_y).abs() < 1e-4 {
+                    return None;
                 }
-
-                // 参考 yinhe 模式：只创建 2 个锚点（起点 Curve{tension:0} + 终点 Step）
-                // 渲染层自动对 Curve 段做插值绘制，不需要逐 tick 插入事件
-                let (t1, v1, t2, v2) = if start_tick < current_tick {
-                    (start_tick, start_value, current_tick, current_value)
-                } else {
-                    (current_tick, current_value, start_tick, start_value)
+                // 合并到 shape
+                let new_shape = Self::merge_ctrl_shape(lane, prev_tick, which, (new_x, new_y));
+                // 更新 ghost
+                state.drag_ctrl_ghost = Some((prev_tick, which, new_shape));
+                // 提交 SetShape 编辑（走 Batch，不重复 push history）
+                let edit = AutomationEdit::SetShape {
+                    track_idx,
+                    lane_idx,
+                    tick: prev_tick,
+                    shape: new_shape,
                 };
                 Some(publish_velocity(VelocityAction::AutomationBatch(vec![
-                    AutomationEdit::Add {
-                        track_idx,
-                        target: target.clone(),
-                        channel: 0,
-                        tick: t1,
-                        value: v1,
-                        shape: SegmentShape::Curve { tension: 0 },
-                    },
-                    AutomationEdit::Add {
-                        track_idx,
-                        target: target.clone(),
-                        channel: 0,
-                        tick: t2,
-                        value: v2,
-                        shape: SegmentShape::Step,
-                    },
+                    edit,
                 ])))
             }
         }

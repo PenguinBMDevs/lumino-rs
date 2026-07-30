@@ -3,6 +3,15 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+/// 贝塞尔控制点端别：cubic Bézier 有两个控制点，分别是 P1（起点出）和 P2（终点入）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CtrlEnd {
+    /// 第一控制点 P1 = P0 + (P3-P0) * (x1, y1)，从起点指出。
+    Out,
+    /// 第二控制点 P2 = P0 + (P3-P0) * (x2, y2)，从终点指入。
+    In,
+}
+
 /// 自动化编辑拖拽状态。
 #[derive(Debug, Clone, Copy)]
 pub enum AutomationDrag {
@@ -10,6 +19,16 @@ pub enum AutomationDrag {
     MoveAnchor { old_tick: u32 },
     /// Curve 工具：从起点绘制到当前点。
     CurveDraw { start_tick: u32, start_value: u16 },
+    /// 拖拽贝塞尔曲线的某个控制点。
+    /// `prev_tick`：被拖段的前驱事件 tick（段的起点，shape 存于此事件）。
+    /// `which`：拖的是 P1（Out）还是 P2（In）。
+    /// `start_x/start_y`：按下时该控制点的归一化 (x, y) 位置，用于判断是否实际移动过。
+    DragControlPoint {
+        prev_tick: u32,
+        which: CtrlEnd,
+        start_x: f32,
+        start_y: f32,
+    },
 }
 
 /// 力度 / CC / Tempo Canvas 状态
@@ -37,7 +56,7 @@ pub struct VelocityCanvasState {
     pub curve_start_x: f32,
     /// 力度曲线绘制起始 Y 对应的力度值
     pub curve_start_velocity: u8,
-    /// 当前笔触影响的音符索引 → 新力度值
+    /// 当前笔触影响的音符索引 -> 新力度值
     pub curve_affected: HashMap<usize, u8>,
     /// 自动化编辑拖拽状态（Pencil/Curve 工具）。
     pub automation_drag: Option<AutomationDrag>,
@@ -53,6 +72,8 @@ pub struct VelocityCanvasState {
     pub tempo_drag_idx: Option<usize>,
     /// 当前悬停的 tempo 点索引
     pub tempo_hover_idx: Option<usize>,
+    /// 当前拖拽的控制点 ghost 信息（prev_tick, which, 新的 shape）。
+    pub drag_ctrl_ghost: Option<(u32, CtrlEnd, lumino_core::SegmentShape)>,
 }
 
 impl Default for VelocityCanvasState {
@@ -84,6 +105,7 @@ impl VelocityCanvasState {
             modifiers: iced_core::keyboard::Modifiers::default(),
             tempo_drag_idx: None,
             tempo_hover_idx: None,
+            drag_ctrl_ghost: None,
         }
     }
 
@@ -119,6 +141,7 @@ impl VelocityCanvasState {
     pub fn reset_automation_drag(&mut self) {
         self.automation_drag = None;
         self.automation_curve_current = None;
+        self.drag_ctrl_ghost = None;
     }
 
     /// 设置 Pencil 工具移动锚点拖拽。
@@ -131,6 +154,22 @@ impl VelocityCanvasState {
         self.automation_drag = Some(AutomationDrag::CurveDraw {
             start_tick,
             start_value,
+        });
+    }
+
+    /// 设置贝塞尔控制点拖拽。
+    pub fn start_drag_control_point(
+        &mut self,
+        prev_tick: u32,
+        which: CtrlEnd,
+        start_x: f32,
+        start_y: f32,
+    ) {
+        self.automation_drag = Some(AutomationDrag::DragControlPoint {
+            prev_tick,
+            which,
+            start_x,
+            start_y,
         });
     }
 

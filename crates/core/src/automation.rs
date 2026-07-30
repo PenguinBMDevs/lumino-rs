@@ -1,7 +1,7 @@
 //! 自动化/控制器数据模型
 //!
 //! 从 yinhe 项目移植的 AutomationLane 数据模型，统一描述 CC、PitchBend、RPN、NRPN
-//! 等可自动化参数的时序事件，并支持 Step / Curve 两种插值形状。
+//! 等可自动化参数的时序事件，并支持 Step / Curve（三次贝塞尔）两种插值形状。
 
 use crate::midi_types::PITCH_BEND_CENTER;
 use serde::{Deserialize, Serialize};
@@ -10,16 +10,21 @@ use serde::{Deserialize, Serialize};
 ///
 /// 存储在每个事件的 `shape` 字段上，描述“从本事件开始”的线段的插值方式。
 /// 最后一个事件的 shape 无实际作用（后面没有线段）。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SegmentShape {
     /// 离散：保持当前值直到下个事件才瞬间跳变。与 MIDI CC 原生语义一致。
     Step,
-    /// 曲线：tension 控制曲线弯曲方向与程度。
-    /// - `0` 等价于直线
-    /// - `> 0` 慢起快落（ease-in）
-    /// - `< 0` 快起慢落（ease-out）
-    ///   范围为 -127..=127。
-    Curve { tension: i8 },
+    /// 三次贝塞尔曲线（CSS handle 风格，偏移量参数化）。
+    ///
+    /// 归一化空间：起点 P0=(0,0) 对应本事件，终点 P3=(1,1) 对应下一事件。
+    /// 存储值为控制点相对各自锚点的归一化偏移量，内部 `*4` 放大得到实际贝塞尔参数：
+    ///
+    /// - `(x1, y1)`：P1 相对 P0 的偏移，实际位置 P1 = P0 + (P3-P0)·(x1·4, y1·4)
+    /// - `(x2, y2)`：P2 相对 P3 的偏移，实际位置 P2 = P3 + (P3-P0)·(x2·4, y2·4)
+    ///
+    /// 每个分量 `∈ [-0.5, 0.5]`，内部 `*4` 后实际参数范围 `[-2, 2]`。
+    /// 直线（退化）：`(0, 0, 0, 0)` - 0 为中性，偏离 0 即弯曲。
+    Curve { x1: f32, y1: f32, x2: f32, y2: f32 },
 }
 
 impl Default for SegmentShape {
@@ -30,32 +35,89 @@ impl Default for SegmentShape {
 }
 
 impl SegmentShape {
+    /// 偏移量参数化的放大系数：存储值 `[-0.5, 0.5]` × 4 = 实际参数 `[-2, 2]`。
+    pub const SCALE: f32 = 4.0;
+
+    /// 直线 Curve 的默认偏移量：全部为 0（中性）。
+    pub const LINEAR_X1: f32 = 0.0;
+    pub const LINEAR_Y1: f32 = 0.0;
+    pub const LINEAR_X2: f32 = 0.0;
+    pub const LINEAR_Y2: f32 = 0.0;
+
+    /// 直线 Curve 的快捷构造。
+    pub const fn linear_curve() -> Self {
+        SegmentShape::Curve {
+            x1: Self::LINEAR_X1,
+            y1: Self::LINEAR_Y1,
+            x2: Self::LINEAR_X2,
+            y2: Self::LINEAR_Y2,
+        }
+    }
+
     /// 在归一化进度 `t ∈ [0, 1]` 上计算插值因子 `f ∈ [0, 1]`。
-    /// 实际值 = v1 + (v2 - v1) * f。
+    /// `value_at = v1 + (v2 - v1) * f`。
+    ///
+    /// 对于 Curve，t 是 tick 进度。三次贝塞尔的参数 u 不等于 t，
+    /// 需要从 x(u)=t 反解 u（数值法），再代入 y(u)。
     #[inline]
     pub fn interpolate(self, t: f32) -> f32 {
         debug_assert!((0.0..=1.0).contains(&t), "interpolate t out of range: {t}");
         let t = t.clamp(0.0, 1.0);
         match self {
-            SegmentShape::Step => 0.0,
-            SegmentShape::Curve { tension } => {
-                let k = (tension as f32) / 127.0; // [-1, 1]
-                if k >= 0.0 {
-                    // 慢起快落: 线性 → x²
-                    (1.0 - k) * t + k * t * t
-                } else {
-                    // 快起慢落: 线性 → 1 - (1-x)²
-                    let k = -k;
-                    (1.0 - k) * t + k * (1.0 - (1.0 - t).powi(2))
+            SegmentShape::Step => 0.0, // Step: hold v1 until next event
+            SegmentShape::Curve { x1, y1, x2, y2 } => {
+                if Self::is_linear_impl(x1, y1, x2, y2) {
+                    return t;
                 }
+                // 实际控制点（归一化空间，P0=(0,0), P3=(1,1)）：
+                // P1 = (x1*4, y1*4), P2 = (1+x2*4, 1+y2*4)
+                let u = solve_cubic_bezier_u_for_x(t, x1, x2);
+                let u1 = 1.0 - u;
+                let p1y = y1 * Self::SCALE;
+                let p2y = 1.0 + y2 * Self::SCALE;
+                3.0 * u1 * u1 * u * p1y + 3.0 * u1 * u * u * p2y + u * u * u
             }
         }
     }
+
+    /// 是否为直线（Curve 且偏移量全部 ≈ 0）。
+    #[inline]
+    pub fn is_linear(self) -> bool {
+        matches!(self, SegmentShape::Curve { x1, y1, x2, y2 }
+            if Self::is_linear_impl(x1, y1, x2, y2))
+    }
+
+    #[inline]
+    fn is_linear_impl(x1: f32, y1: f32, x2: f32, y2: f32) -> bool {
+        x1.abs() < 1e-4 && y1.abs() < 1e-4 && x2.abs() < 1e-4 && y2.abs() < 1e-4
+    }
+}
+
+/// 解三次贝塞尔方程 B_x(u) = t 求 u（Newton 迭代）。
+///
+/// 偏移量参数化：P1.x = x1·4，P2.x = 1 + x2·4。
+/// 初值用 u=t（直线时精确）。6 次迭代对 [0,1] 范围足够收敛。
+#[inline]
+fn solve_cubic_bezier_u_for_x(t: f32, x1: f32, x2: f32) -> f32 {
+    let p1x = x1 * SegmentShape::SCALE;
+    let p2x = 1.0 + x2 * SegmentShape::SCALE;
+    let mut u = t.clamp(0.0, 1.0);
+    for _ in 0..6 {
+        let u1 = 1.0 - u;
+        let f = 3.0 * u1 * u1 * u * p1x + 3.0 * u1 * u * u * p2x + u * u * u - t;
+        let df = 3.0 * u1 * u1 * p1x + 6.0 * u1 * u * (p2x - p1x) + 3.0 * u * u * (1.0 - p2x);
+        if df.abs() < 1e-6 {
+            break;
+        }
+        u -= f / df;
+        u = u.clamp(0.0, 1.0);
+    }
+    u
 }
 
 /// 可自动化参数的标识。
 ///
-/// 这是所有自动化数据的统一键 —— CC、PitchBend、RPN、NRPN 等。
+/// 这是所有自动化数据的统一键 -- CC、PitchBend、RPN、NRPN 等。
 /// 每个 variant 映射到一条按 tick 排序的 `(tick, value)` 事件 lane。
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum AutomationTarget {
@@ -131,17 +193,17 @@ impl AutomationTarget {
     /// 编辑器新建事件时本目标默认采用的插值形状。
     ///
     /// - 开关类 CC（Sustain/Sostenuto/Soft/Legato/Portamento）默认 `Step`
-    /// - 其他连续量（Volume/Pan/PB/FineTune/...）默认 `Curve { tension: 0 }`（=直线）
+    /// - 其他连续量（Volume/Pan/PB/FineTune/...）默认 `Curve` 直线（偏移量 0,0,0,0）
     /// - MIDI 导入时一律使用 `Step`（保留 MIDI 原生语义）
     pub fn default_shape(&self) -> SegmentShape {
         match self {
             AutomationTarget::CC { controller } => match controller {
                 64..=68 => SegmentShape::Step,
-                _ => SegmentShape::Curve { tension: 0 },
+                _ => SegmentShape::linear_curve(),
             },
-            AutomationTarget::PitchBend => SegmentShape::Curve { tension: 0 },
-            AutomationTarget::Rpn { parameter: _ } => SegmentShape::Curve { tension: 0 },
-            AutomationTarget::Nrpn { parameter: _ } => SegmentShape::Curve { tension: 0 },
+            AutomationTarget::PitchBend => SegmentShape::linear_curve(),
+            AutomationTarget::Rpn { parameter: _ } => SegmentShape::linear_curve(),
+            AutomationTarget::Nrpn { parameter: _ } => SegmentShape::linear_curve(),
         }
     }
 
@@ -277,9 +339,12 @@ impl AutomationLane {
             e.value.hash(&mut hasher);
             match e.shape {
                 SegmentShape::Step => 0u8.hash(&mut hasher),
-                SegmentShape::Curve { tension } => {
+                SegmentShape::Curve { x1, y1, x2, y2 } => {
                     1u8.hash(&mut hasher);
-                    tension.hash(&mut hasher);
+                    x1.to_bits().hash(&mut hasher);
+                    y1.to_bits().hash(&mut hasher);
+                    x2.to_bits().hash(&mut hasher);
+                    y2.to_bits().hash(&mut hasher);
                 }
             }
         }
@@ -315,6 +380,13 @@ pub enum AutomationEdit {
         track_idx: u16,
         lane_idx: usize,
         tick: u32,
+    },
+    /// 直接设置已有事件的 shape（用于贝塞尔控制点拖拽）。
+    SetShape {
+        track_idx: u16,
+        lane_idx: usize,
+        tick: u32,
+        shape: SegmentShape,
     },
     /// 删除指定事件。
     Delete {
@@ -398,21 +470,95 @@ mod tests {
 
     #[test]
     fn test_segment_shape_interpolate_endpoints() {
-        let lin0 = SegmentShape::Curve { tension: 0 };
-        assert_eq!(lin0.interpolate(0.0), 0.0);
-        assert_eq!(lin0.interpolate(1.0), 1.0);
-        assert!((lin0.interpolate(0.5) - 0.5).abs() < 1e-6);
-
+        // Step 在区间内始终返回 0（值仍为 v1，由调用方处理）
+        assert_eq!(SegmentShape::Step.interpolate(0.0), 0.0);
         assert_eq!(SegmentShape::Step.interpolate(0.5), 0.0);
+        assert_eq!(SegmentShape::Step.interpolate(1.0), 0.0);
+
+        // 直线 Curve（偏移量全 0）端点和中点
+        let lin = SegmentShape::linear_curve();
+        assert_eq!(lin.interpolate(0.0), 0.0);
+        assert_eq!(lin.interpolate(1.0), 1.0);
+        assert!((lin.interpolate(0.5) - 0.5).abs() < 1e-6);
+
+        // 贝塞尔端点：无论控制点位置，端点始终为 0 和 1
+        assert_eq!(
+            SegmentShape::Curve {
+                x1: 0.1,
+                y1: 0.2,
+                x2: -0.1,
+                y2: -0.2
+            }
+            .interpolate(0.0),
+            0.0
+        );
+        assert_eq!(
+            SegmentShape::Curve {
+                x1: 0.1,
+                y1: 0.2,
+                x2: -0.1,
+                y2: -0.2
+            }
+            .interpolate(1.0),
+            1.0
+        );
     }
 
     #[test]
-    fn test_curve_direction() {
-        let ease_in = SegmentShape::Curve { tension: 127 }.interpolate(0.5);
-        assert!(ease_in < 0.5);
+    fn test_segment_shape_bezier_midpoint() {
+        // 直线（偏移量全 0）：B_y(0.5) = 0.5
+        assert!((SegmentShape::linear_curve().interpolate(0.5) - 0.5).abs() < 1e-6);
 
-        let ease_out = SegmentShape::Curve { tension: -127 }.interpolate(0.5);
-        assert!(ease_out > 0.5);
+        // ease-in-out 近似：偏移量 (0.105, 0, -0.105, 0)，B_y(0.5) 接近 0.5
+        let ease_io = SegmentShape::Curve {
+            x1: 0.105,
+            y1: 0.0,
+            x2: -0.105,
+            y2: 0.0,
+        };
+        let v = ease_io.interpolate(0.5);
+        assert!(
+            (v - 0.5).abs() < 0.02,
+            "ease-in-out mid expected ~0.5, got {v}"
+        );
+
+        // 控制点全部偏到 v_end：B_y(0.5) = 0.875
+        let v_end = SegmentShape::Curve {
+            x1: 0.075,
+            y1: 0.25,
+            x2: -0.075,
+            y2: 0.0,
+        }
+        .interpolate(0.5);
+        assert!((v_end - 0.875).abs() < 1e-6, "expected 0.875, got {v_end}");
+
+        // 控制点全部偏到 v_start：B_y(0.5) = 0.125
+        let v_start = SegmentShape::Curve {
+            x1: 0.075,
+            y1: 0.0,
+            x2: -0.075,
+            y2: -0.25,
+        }
+        .interpolate(0.5);
+        assert!(
+            (v_start - 0.125).abs() < 1e-6,
+            "expected 0.125, got {v_start}"
+        );
+    }
+
+    #[test]
+    fn test_segment_shape_is_linear() {
+        assert!(SegmentShape::linear_curve().is_linear());
+        assert!(
+            !SegmentShape::Curve {
+                x1: 0.0,
+                y1: 0.1,
+                x2: 0.0,
+                y2: 0.0
+            }
+            .is_linear()
+        );
+        assert!(!SegmentShape::Step.is_linear());
     }
 
     #[test]
@@ -438,20 +584,22 @@ mod tests {
                 "CC {cc} should default to Step"
             );
         }
+        let linear = SegmentShape::linear_curve();
         for cc in [0u8, 1, 7, 10, 11, 71, 74] {
             assert_eq!(
                 AutomationTarget::CC { controller: cc }.default_shape(),
-                SegmentShape::Curve { tension: 0 },
-                "CC {cc} should default to Curve{{tension:0}}"
+                linear,
+                "CC {cc} should default to linear Curve"
             );
         }
+        assert_eq!(AutomationTarget::PitchBend.default_shape(), linear);
     }
 
     #[test]
     fn test_automation_event_with_default_shape() {
         let evt =
             AutomationEvent::with_default_shape(100, 64, &AutomationTarget::CC { controller: 7 });
-        assert_eq!(evt.shape, SegmentShape::Curve { tension: 0 });
+        assert_eq!(evt.shape, SegmentShape::linear_curve());
 
         let evt2 =
             AutomationEvent::with_default_shape(100, 0, &AutomationTarget::CC { controller: 64 });

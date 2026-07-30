@@ -7,6 +7,7 @@ use lumino_gfx::automation::AutomationViewParams;
 use super::super::super::{
     HIT_RADIUS, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT, VelocityPoint,
 };
+use super::super::state::CtrlEnd;
 use crate::editor_state::ViewState;
 use crate::velocity::EditMode;
 use crate::velocity::widget::TempoPoint;
@@ -199,5 +200,130 @@ impl super::super::VelocityCanvas<'_> {
             }
         }
         best.map(|(tick, _)| tick)
+    }
+
+    /// 命中测试：检测鼠标是否在某个贝塞尔控制点上。
+    /// 返回 (前驱事件 tick, 控制点端别, 该段 shape 的 4 个偏移量)。
+    pub(super) fn hit_test_control_point(
+        lane: &AutomationLane,
+        view: &AutomationViewParams,
+        cursor_pos: Point,
+        max_val: f32,
+    ) -> Option<(u32, CtrlEnd, f32, f32, f32, f32)> {
+        use lumino_core::SegmentShape;
+        let hit_sq = HIT_RADIUS * HIT_RADIUS;
+        // (prev_tick, which, x1, y1, x2, y2, dist_sq)
+        let mut best: Option<(u32, CtrlEnd, f32, f32, f32, f32, f32)> = None;
+        for i in 1..lane.events.len() {
+            let prev = &lane.events[i - 1];
+            let cur = &lane.events[i];
+            let SegmentShape::Curve { x1, y1, x2, y2 } = prev.shape else {
+                continue;
+            };
+            if prev.shape.is_linear() {
+                continue;
+            }
+            let px0 = view.tick_to_x(prev.tick);
+            let py0 = view.value_to_y(prev.value as f32, max_val);
+            let px3 = view.tick_to_x(cur.tick);
+            let py3 = view.value_to_y(cur.value as f32, max_val);
+            // 两个控制点屏幕坐标（偏移量 *4 放大：P1 相对 P0，P2 相对 P3）
+            let c1x = px0 + (px3 - px0) * x1 * SegmentShape::SCALE;
+            let c1y = py0 + (py3 - py0) * y1 * SegmentShape::SCALE;
+            let c2x = px3 + (px3 - px0) * x2 * SegmentShape::SCALE;
+            let c2y = py3 + (py3 - py0) * y2 * SegmentShape::SCALE;
+            let d1 = (c1x - cursor_pos.x).powi(2) + (c1y - cursor_pos.y).powi(2);
+            let d2 = (c2x - cursor_pos.x).powi(2) + (c2y - cursor_pos.y).powi(2);
+            if d1 <= hit_sq
+                && best
+                    .as_ref()
+                    .map(|(_, _, _, _, _, _, d)| d1 < *d)
+                    .unwrap_or(true)
+            {
+                best = Some((prev.tick, CtrlEnd::Out, x1, y1, x2, y2, d1));
+            }
+            if d2 <= hit_sq
+                && best
+                    .as_ref()
+                    .map(|(_, _, _, _, _, _, d)| d2 < *d)
+                    .unwrap_or(true)
+            {
+                best = Some((prev.tick, CtrlEnd::In, x1, y1, x2, y2, d2));
+            }
+        }
+        best.map(|(t, w, x1, y1, x2, y2, _)| (t, w, x1, y1, x2, y2))
+    }
+
+    /// 从鼠标屏幕位置反推 Curve 段某一端控制点的偏移量 (x, y) ∈ [-0.5, 0.5]。
+    pub(super) fn compute_ctrl_from_mouse(
+        lane: &AutomationLane,
+        prev_tick: u32,
+        which: CtrlEnd,
+        mouse: Point,
+        view: &AutomationViewParams,
+        max_val: f32,
+    ) -> Option<(f32, f32)> {
+        use lumino_core::SegmentShape;
+        let prev_idx = lane.events.iter().position(|e| e.tick == prev_tick)?;
+        let prev = &lane.events[prev_idx];
+        let next = lane.events.get(prev_idx + 1)?;
+        let px0 = view.tick_to_x(prev.tick);
+        let py0 = view.value_to_y(prev.value as f32, max_val);
+        let px3 = view.tick_to_x(next.tick);
+        let py3 = view.value_to_y(next.value as f32, max_val);
+        let dx = px3 - px0;
+        let dy = py3 - py0;
+        // 参考点：Out 用 P0，In 用 P3
+        let (rx, ry) = match which {
+            CtrlEnd::Out => (px0, py0),
+            CtrlEnd::In => (px3, py3),
+        };
+        // x 方向 clamp 到 CSS 单调区间
+        let x_range = match which {
+            CtrlEnd::Out => (0.0, 0.25),
+            CtrlEnd::In => (-0.25, 0.0),
+        };
+        let new_x = if dx.abs() < 1e-3 {
+            0.0
+        } else {
+            ((mouse.x - rx) / dx / SegmentShape::SCALE).clamp(x_range.0, x_range.1)
+        };
+        let new_y = if dy.abs() < 1e-3 {
+            0.0
+        } else {
+            ((mouse.y - ry) / dy / SegmentShape::SCALE).clamp(-0.5, 0.5)
+        };
+        Some((new_x, new_y))
+    }
+
+    /// 把拖拽出的控制点 (x, y) 按端别合并进 prev_tick 事件的 shape。
+    pub(super) fn merge_ctrl_shape(
+        lane: &AutomationLane,
+        prev_tick: u32,
+        which: CtrlEnd,
+        new_ctrl: (f32, f32),
+    ) -> lumino_core::SegmentShape {
+        use lumino_core::SegmentShape;
+        lane.events
+            .iter()
+            .find(|e| e.tick == prev_tick)
+            .map(|e| match e.shape {
+                SegmentShape::Curve { x1, y1, x2, y2 } => match which {
+                    CtrlEnd::Out => SegmentShape::Curve {
+                        x1: new_ctrl.0,
+                        y1: new_ctrl.1,
+                        x2,
+                        y2,
+                    },
+                    CtrlEnd::In => SegmentShape::Curve {
+                        x1,
+                        y1,
+                        x2: new_ctrl.0,
+                        y2: new_ctrl.1,
+                    },
+                },
+                SegmentShape::Step => SegmentShape::Step,
+            })
+            .unwrap_or(SegmentShape::Step)
     }
 }

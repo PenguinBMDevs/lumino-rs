@@ -305,7 +305,7 @@ mod tests {
             channel: 0,
             tick: 100,
             value: 127,
-            shape: SegmentShape::Curve { tension: 0 },
+            shape: SegmentShape::linear_curve(),
         });
         assert!(replaced);
         assert_eq!(
@@ -358,7 +358,7 @@ mod tests {
         assert!(cycled);
         assert_eq!(
             data.automation_lanes[0].events[0].shape,
-            SegmentShape::Curve { tension: 0 }
+            SegmentShape::linear_curve()
         );
 
         let cycled2 = data.apply_automation_edit(AutomationEdit::CycleShape {
@@ -735,7 +735,7 @@ mod tests {
             channel: 0,
             tick: 100,
             value: PITCH_BEND_CENTER as u16,
-            shape: SegmentShape::Curve { tension: 0 },
+            shape: SegmentShape::linear_curve(),
         });
         let points = data.build_bend_points();
         assert_eq!(points.len(), 1);
