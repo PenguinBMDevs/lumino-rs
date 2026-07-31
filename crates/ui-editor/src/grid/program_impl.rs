@@ -299,6 +299,14 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             geometries.push(playback_indicator_geom);
         }
 
+        // 弯音编辑遮罩：覆盖键盘/标尺/左上角区域（WGPU 负责钢琴卷帘音符区域）
+        {
+            puffin::profile_scope!("draw::pitch_bend_overlay");
+            if let Some(overlay_geom) = self.editor.draw_pitch_bend_overlay(renderer, bounds) {
+                geometries.push(overlay_geom);
+            }
+        }
+
         geometries
     }
 }

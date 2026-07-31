@@ -142,8 +142,8 @@ pub fn execute_render_pass(
         }
 
         // 绘制音符（HiRes 贴图模式下音符已包含在贴图中，跳过）
-        // 弯音编辑模式下停止原 NoteRenderer，遮罩层接管
-        if render_notes && !params.pitch_bend_mode {
+        // 弯音编辑模式下音符仍然渲染，半透明遮罩叠加在上方
+        if render_notes {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             frame.renderers.note.draw(
                 &mut render_pass,
