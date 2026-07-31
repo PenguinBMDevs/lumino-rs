@@ -141,7 +141,16 @@ pub fn execute_render_pass(
             hires.render_dirty_overlays(&mut render_pass, hires_visible_coords, has_depth);
         }
 
-        // 绘制音符（HiRes 贴图模式下音符已包含在贴图中，跳过）
+        // 弯音编辑模式：先画半透明遮罩（在音符下方）
+        if params.pitch_bend_mode && !params.pitch_bend_instances.is_empty() {
+            render_pass.set_scissor_rect(0, 0, width, height);
+            frame
+                .renderers
+                .pitch_bend
+                .draw(&mut render_pass, params.pitch_bend_instances.len() as u32);
+        }
+
+        // 绘制音符（弯音模式下音符在遮罩上方）
         if render_notes {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             frame.renderers.note.draw(
@@ -149,15 +158,6 @@ pub fn execute_render_pass(
                 true,
                 Some((scissor_x, scissor_y, scissor_width, scissor_height)),
             );
-        }
-
-        // 弯音编辑模式：在钢琴卷帘区域渲染遮罩+锚点+曲线（专用 WGSL shader）
-        if params.pitch_bend_mode && !params.pitch_bend_instances.is_empty() {
-            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            frame
-                .renderers
-                .pitch_bend
-                .draw(&mut render_pass, params.pitch_bend_instances.len() as u32);
         }
 
         // 绘制标尺

@@ -126,23 +126,10 @@ impl Editor {
         self.pitch_bend_drag_state = PitchBendDragState::Idle;
     }
 
-    /// 尝试创建锚点（仅在音符时间范围内）
+    /// 尝试创建锚点
     fn pitch_bend_try_create_anchor(&mut self, x: f32, y: f32) {
         let tick = self.x_to_tick(x).max(0.0) as u32;
         let value = self.pitch_bend_y_to_value(y);
-
-        // 检查 tick 是否在任一音符的时间范围内
-        let in_note_range = self
-            .editor_state
-            .data
-            .current_track_notes()
-            .iter()
-            .any(|n| tick >= n.tick as u32 && tick <= (n.tick + n.length) as u32);
-
-        if !in_note_range {
-            tracing::debug!("弯音锚点创建失败: tick {} 不在音符时间范围内", tick);
-            return;
-        }
 
         let anchor = PitchBendAnchor::new(tick, value);
         if let Some(curve) = self.editor_state.pitch_bend_curve.as_mut() {

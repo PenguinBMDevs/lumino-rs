@@ -305,12 +305,12 @@ impl Host {
         let rh = v.ruler_height;
         let mut instances = Vec::new();
 
-        // 1. 半透明遮罩矩形（覆盖钢琴卷帘音符区域）
+        // 1. 半透明遮罩矩形（覆盖整个 canvas 区域：钢琴卷帘+键盘+标尺+左上角）
         instances.push(PitchBendInstance::mask(
-            kw + ox,
-            rh + oy,
-            es.canvas.size_x - kw,
-            es.canvas.size_y - rh,
+            ox,
+            oy,
+            es.canvas.size_x,
+            es.canvas.size_y,
             [0.5, 0.5, 0.5, 0.3],
         ));
 
