@@ -55,8 +55,10 @@ impl Editor {
                 self.pitch_bend_drag_state = PitchBendDragState::DragHandle(idx, shift);
             }
             PitchBendHit::None => {
-                // 弯音模式：点击空白处直接创建锚点（不检查 tool 枚举）
-                self.pitch_bend_try_create_anchor(pos.x, pos.y);
+                // 弯音模式：点击空白处创建锚点并立即进入拖拽
+                if let Some(idx) = self.pitch_bend_try_create_anchor(pos.x, pos.y) {
+                    self.pitch_bend_drag_state = PitchBendDragState::MoveAnchor(idx);
+                }
             }
         }
     }
@@ -126,8 +128,8 @@ impl Editor {
         self.pitch_bend_drag_state = PitchBendDragState::Idle;
     }
 
-    /// 尝试创建锚点
-    fn pitch_bend_try_create_anchor(&mut self, x: f32, y: f32) {
+    /// 尝试创建锚点，返回新锚点索引（供调用方进入拖拽状态）
+    fn pitch_bend_try_create_anchor(&mut self, x: f32, y: f32) -> Option<usize> {
         let tick = self.x_to_tick(x).max(0.0) as u32;
         let value = self.pitch_bend_y_to_value(y);
 
@@ -135,6 +137,9 @@ impl Editor {
         if let Some(curve) = self.editor_state.pitch_bend_curve.as_mut() {
             let idx = curve.insert_anchor(anchor);
             curve.selected_anchor = Some(idx);
+            Some(idx)
+        } else {
+            None
         }
     }
 
