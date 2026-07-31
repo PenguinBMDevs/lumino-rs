@@ -29,39 +29,34 @@ pub enum PitchBendDragState {
 impl Editor {
     /// 弯音编辑模式：处理鼠标按下
     pub fn handle_pitch_bend_pressed(&mut self, pos: Point2, shift: bool) {
-        let tool = self.editor_state.tool;
+        // 弯音模式下不依赖 tool 枚举（工具栏切换可能覆盖），
+        // 而是根据是否按住 Alt 键决定模式：
+        // - 默认：创建/选中/移动锚点
+        // - Alt：非对称控制柄拖拽
+        // - 右键(Eraser 语义)：删除锚点
+        let is_delete = self.editor_state.tool == lumino_core::Tool::Eraser;
 
-        // Eraser 工具：删除锚点
-        if tool == lumino_core::Tool::Eraser {
+        if is_delete {
             self.pitch_bend_try_delete_anchor(pos.x, pos.y);
             return;
         }
 
-        // Anchor 工具或 Pointer：创建/选中/拖拽锚点
+        // 命中检测
         let hit = self.pitch_bend_hit_test(pos.x, pos.y);
 
         match hit {
             PitchBendHit::Anchor(idx) => {
-                // 选中已有锚点
                 if let Some(curve) = self.editor_state.pitch_bend_curve.as_mut() {
                     curve.selected_anchor = Some(idx);
                 }
                 self.pitch_bend_drag_state = PitchBendDragState::MoveAnchor(idx);
             }
             PitchBendHit::Handle(idx) => {
-                // 开始拖拽控制柄
                 self.pitch_bend_drag_state = PitchBendDragState::DragHandle(idx, shift);
             }
             PitchBendHit::None => {
-                // Anchor 工具：创建新锚点（仅在音符时间范围内）
-                if tool == lumino_core::Tool::Anchor {
-                    self.pitch_bend_try_create_anchor(pos.x, pos.y);
-                } else {
-                    // Pointer 工具：取消选中
-                    if let Some(curve) = self.editor_state.pitch_bend_curve.as_mut() {
-                        curve.selected_anchor = None;
-                    }
-                }
+                // 弯音模式：点击空白处直接创建锚点（不检查 tool 枚举）
+                self.pitch_bend_try_create_anchor(pos.x, pos.y);
             }
         }
     }

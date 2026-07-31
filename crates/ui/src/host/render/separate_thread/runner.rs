@@ -200,15 +200,8 @@ impl Host {
         {
             vec![]
         } else if self.root.editor.editor_state.is_pitch_bend_mode() {
-            // 弯音模式：只构建遮罩矩形，不构建力度面板数据
-            let es = &self.root.editor.editor_state;
-            vec![lumino_gfx::CcBarInstance::new(
-                es.canvas.offset_x,
-                es.canvas.offset_y,
-                es.canvas.size_x,
-                es.canvas.size_y,
-                [0.5, 0.5, 0.5, 0.3],
-            )]
+            // 弯音模式：构建遮罩矩形 + 锚点 + 曲线 + 控制柄
+            self.build_pitch_bend_instances()
         } else {
             puffin::profile_scope!("build_cc_bar_instances");
             self.build_cc_bar_instances()
@@ -297,6 +290,102 @@ impl Host {
         };
 
         lumino_gfx::build_cc_bar_instances(&panel.edit_mode, &cc_view_params, &cc_data, &cc_colors)
+    }
+
+    /// 构建弯音编辑模式的 WGPU 渲染实例
+    /// 包含：半透明遮罩 + 锚点圆 + 曲线线段 + 控制柄
+    fn build_pitch_bend_instances(&self) -> Vec<lumino_gfx::CcBarInstance> {
+        let editor = &self.root.editor;
+        let es = &editor.editor_state;
+        let curve = match es.pitch_bend_curve.as_ref() {
+            Some(c) => c,
+            None => return vec![],
+        };
+
+        let v = &es.view;
+        let mut instances = Vec::new();
+
+        // 1. 半透明遮罩矩形（覆盖整个钢琴卷帘区域）
+        instances.push(lumino_gfx::CcBarInstance::new(
+            es.canvas.offset_x,
+            es.canvas.offset_y,
+            es.canvas.size_x,
+            es.canvas.size_y,
+            [0.5, 0.5, 0.5, 0.3],
+        ));
+
+        // 2. 基准线（选中音符 key 的水平线）
+        let base_y = v.key_to_y(curve.base_key);
+        let kw = v.keyboard_width;
+        let rh = v.ruler_height;
+        if base_y >= rh {
+            instances.push(lumino_gfx::CcBarInstance::new(
+                kw + es.canvas.offset_x,
+                base_y + es.canvas.offset_y - 0.5,
+                es.canvas.size_x - kw,
+                1.0,
+                [1.0, 0.8, 0.2, 0.5],
+            ));
+        }
+
+        // 3. 锚点之间的曲线线段（用阶梯式线段：水平段+垂直段）
+        if curve.anchors.len() >= 2 {
+            for i in 0..curve.anchors.len() - 1 {
+                let a0 = &curve.anchors[i];
+                let a1 = &curve.anchors[i + 1];
+                let x0 = v.tick_to_x(a0.tick as f32) + es.canvas.offset_x;
+                let y0 = editor.pitch_bend_value_to_y(a0.value) + es.canvas.offset_y;
+                let x1 = v.tick_to_x(a1.tick as f32) + es.canvas.offset_x;
+                let y1 = editor.pitch_bend_value_to_y(a1.value) + es.canvas.offset_y;
+
+                let dx = x1 - x0;
+                let dy = y1 - y0;
+                // 水平段
+                if dx.abs() > 0.5 {
+                    instances.push(lumino_gfx::CcBarInstance::new(
+                        x0.min(x1),
+                        y0.min(y1) - 1.0,
+                        dx.abs(),
+                        2.0,
+                        [0.3, 0.6, 1.0, 0.8],
+                    ));
+                }
+                // 垂直段
+                if dy.abs() > 0.5 {
+                    instances.push(lumino_gfx::CcBarInstance::new(
+                        x1.min(x0) - 1.0,
+                        y0.min(y1),
+                        2.0,
+                        dy.abs(),
+                        [0.3, 0.6, 1.0, 0.8],
+                    ));
+                }
+            }
+        }
+
+        // 4. 锚点圆（用圆角矩形渲染）
+        const ANCHOR_RADIUS: f32 = 5.0;
+        for (i, anchor) in curve.anchors.iter().enumerate() {
+            let ax = v.tick_to_x(anchor.tick as f32) + es.canvas.offset_x;
+            let ay = editor.pitch_bend_value_to_y(anchor.value) + es.canvas.offset_y;
+            let is_selected = curve.selected_anchor == Some(i);
+            let color = if is_selected {
+                [1.0, 0.9, 0.2, 1.0]
+            } else {
+                [0.3, 0.6, 1.0, 1.0]
+            };
+            instances.push(lumino_gfx::CcBarInstance::with_props(
+                ax - ANCHOR_RADIUS,
+                ay - ANCHOR_RADIUS,
+                ANCHOR_RADIUS * 2.0,
+                ANCHOR_RADIUS * 2.0,
+                color,
+                ANCHOR_RADIUS,
+                if is_selected { 2.0 } else { 0.0 },
+            ));
+        }
+
+        instances
     }
 
     /// 更新 WGPU 渲染线程的音符数据（双缓冲 + 异步计算）

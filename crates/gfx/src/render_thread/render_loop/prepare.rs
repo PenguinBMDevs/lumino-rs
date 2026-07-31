@@ -72,7 +72,8 @@ pub fn prepare_renderers(
 
     // 准备 CC 柱状条渲染器（背景/网格/中心线）
     // 视频导出不使用力度面板，此处已受 `velocity_panel_rect.is_some()` 保护
-    if params.velocity_panel_rect.is_some() {
+    // 弯音编辑模式也需要 prepare（遮罩矩形数据需要上传 GPU）
+    if params.velocity_panel_rect.is_some() || params.pitch_bend_mode {
         renderers
             .cc_bar
             .prepare(device, queue, &params.cc_bar_instances, params.logical_size);
