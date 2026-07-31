@@ -29,9 +29,7 @@ struct PitchBendInstance {
     @location(2) color: vec4<f32>,        // RGBA
     @location(3) prim_type: u32,          // 图元类型
     @location(4) radius: f32,             // 锚点半径（仅 TYPE_ANCHOR 使用）
-    @location(5) _pad0: f32,
-    @location(6) _pad1: f32,
-    @location(7) _pad2: f32,
+    @location(5) _pad: vec3<f32>,         // 对齐填充
 }
 
 struct VertexOutput {
