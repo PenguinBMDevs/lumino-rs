@@ -104,10 +104,8 @@ impl Editor {
                 let anchor = &curve.anchors[idx];
                 let ax = self.tick_to_x(anchor.tick as f32);
                 let ay = self.pitch_bend_value_to_y(anchor.value);
-                // 弯音值空间 → 屏幕像素（±2 semitones 对应满量程）
-                let range_px = (PITCH_BEND_MAX as f32 - PITCH_BEND_MIN as f32)
-                    * self.editor_state.view.zoom_y
-                    * PITCH_BEND_RANGE_SEMITONES as f32;
+                // 弯音值空间 → 屏幕像素（±满量程 = ±2 semitones = 2 个琴键高）
+                let range_px = self.editor_state.view.zoom_y * PITCH_BEND_RANGE_SEMITONES as f32;
                 let zoom_x = self.editor_state.view.zoom_x;
 
                 // 控制柄跟随鼠标（scratch-paint 行为）：
@@ -302,11 +300,13 @@ impl Editor {
         Some((ax + hx * seg_px, ay - hy * self.handle_range_px()))
     }
 
-    /// 弯音值满量程对应的屏幕像素高度（value 增大方向 = 屏幕上方）
+    /// 弯音值满量程对应的屏幕像素高度（±满量程 = ±2 semitones = 2 个琴键高）
+    ///
+    /// 注意：hy 的归一化语义是 value/MAX（±1.0 对应 ±8192），
+    /// 所以基数只能是 `zoom_y * RANGE_SEMITONES`，**不能**再乘 (MAX-MIN)，
+    /// 否则会放大 16382 倍把控制柄甩出屏幕（历史 bug：控制柄出现在 CC 面板区域）。
     fn handle_range_px(&self) -> f32 {
-        (PITCH_BEND_MAX as f32 - PITCH_BEND_MIN as f32)
-            * self.editor_state.view.zoom_y
-            * PITCH_BEND_RANGE_SEMITONES as f32
+        self.editor_state.view.zoom_y * PITCH_BEND_RANGE_SEMITONES as f32
     }
 
     /// Y 坐标转弯音值（以选中音符为中心，±2 琴键高度映射 ±8192）
@@ -347,4 +347,143 @@ enum PitchBendHit {
     None,
     Anchor(usize),
     Handle(usize, HandleSide),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lumino_core::BendDrawMode;
+    use lumino_core::pitch_bend::PitchBendAnchor;
+
+    /// 构造处于弯音编辑模式的编辑器（base_key=60，两锚点 480/960，曲线模式）
+    fn bend_editor() -> Editor {
+        let mut editor = Editor::new();
+        editor.editor_state.view.zoom_x = 0.1;
+        editor.editor_state.view.zoom_y = 20.0;
+        editor.editor_state.view.keyboard_width = 120.0;
+        editor.editor_state.view.ruler_height = 24.0;
+        editor.editor_state.enter_pitch_bend_mode(60, 0, 0);
+        let curve = editor.editor_state.pitch_bend_curve.as_mut().unwrap();
+        curve.mode = BendDrawMode::Curve;
+        curve.insert_anchor(PitchBendAnchor::new(480, 0));
+        curve.insert_anchor(PitchBendAnchor::new(960, 0));
+        curve.selected_anchor = Some(0);
+        editor
+    }
+
+    /// 回归测试：控制柄位置必须贴近锚点（±2 semitones = 2*zoom_y 像素内）。
+    ///
+    /// 历史 bug：基数误用 (MAX-MIN)*zoom_y*RANGE_SEMITONES（16382 倍放大），
+    /// 控制柄被甩到 canvas 下方（用户看到的"CC 面板区域"）。
+    #[test]
+    fn test_handle_positions_stay_near_anchor() {
+        let editor = bend_editor();
+        let ax = editor.tick_to_x(480.0);
+        let ay = editor.pitch_bend_value_to_y(0);
+
+        // 默认手柄展示在段中点：x 偏移 = 0.5 * 段宽 = 0.5 * 480 * 0.1 = 24px
+        let (hx, hy) = editor
+            .pitch_bend_handle_out_screen_pos(0)
+            .expect("选中锚点应显示出控制柄");
+        assert!(
+            (hx - ax - 24.0).abs() < 0.01,
+            "控制柄 x 应在段中点，实际偏移 {}px",
+            hx - ax
+        );
+        // y 必须贴近锚点（未拖拽时 = 锚点 y，误差 < 1px）
+        assert!(
+            (hy - ay).abs() < 1.0,
+            "控制柄 y 应贴近锚点，实际偏移 {}px（历史 bug 会偏移数千像素）",
+            hy - ay
+        );
+
+        // 入控制柄同样贴近锚点
+        let (hx, hy) = editor
+            .pitch_bend_handle_in_screen_pos(1)
+            .expect("中间锚点应显示入控制柄");
+        let ax1 = editor.tick_to_x(960.0);
+        let ay1 = editor.pitch_bend_value_to_y(0);
+        assert!(
+            (hx - ax1 + 24.0).abs() < 0.01 && (hy - ay1).abs() < 1.0,
+            "入控制柄应在锚点左侧段中点附近，实际 ({hx}, {hy}) vs 锚点 ({ax1}, {ay1})"
+        );
+    }
+
+    /// 控制柄拖拽必须跟随鼠标（scratch-paint 行为），且对称模式下入控制柄镜像
+    #[test]
+    fn test_handle_drag_follows_mouse() {
+        let mut editor = bend_editor();
+        let ax = editor.tick_to_x(480.0);
+        let ay = editor.pitch_bend_value_to_y(0);
+        let (hx, _) = editor
+            .pitch_bend_handle_out_screen_pos(0)
+            .expect("应显示出控制柄");
+
+        // 按下手柄（命中检测）
+        editor.handle_pitch_bend_pressed(Point2::new(hx, ay), false);
+        assert!(
+            matches!(
+                editor.pitch_bend_drag_state,
+                PitchBendDragState::DragHandle(0, HandleSide::Out, false)
+            ),
+            "按下手柄应进入 DragHandle 状态"
+        );
+
+        // 拖动到锚点右上方：x +12px（段宽 48px → out_x=0.25），y 上移 10px（满量程 40px → out_y=0.25）
+        editor.handle_pitch_bend_moved(Point2::new(ax + 12.0, ay - 10.0));
+
+        let curve = editor.editor_state.pitch_bend_curve.as_ref().unwrap();
+        let a = &curve.anchors[0];
+        assert!(
+            (a.handle_out_x - 0.25).abs() < 0.01 && (a.handle_out_y - 0.25).abs() < 0.01,
+            "控制柄参数应跟随鼠标：out=({}, {})，期望 (0.25, 0.25)",
+            a.handle_out_x,
+            a.handle_out_y
+        );
+        // 对称模式：入控制柄镜像
+        assert!(
+            (a.handle_in_x + a.handle_out_x).abs() < 0.01
+                && (a.handle_in_y + a.handle_out_y).abs() < 0.01,
+            "对称模式下入控制柄应镜像出控制柄"
+        );
+        // 显示位置应与鼠标一致（±1px 内）
+        let (hx2, hy2) = editor
+            .pitch_bend_handle_out_screen_pos(0)
+            .expect("拖拽后仍应显示控制柄");
+        assert!(
+            (hx2 - (ax + 12.0)).abs() < 1.0 && (hy2 - (ay - 10.0)).abs() < 1.0,
+            "手柄应跟随鼠标：显示 ({hx2}, {hy2}) vs 鼠标 ({}, {})",
+            ax + 12.0,
+            ay - 10.0
+        );
+    }
+
+    /// 边界锚点：第一个无入控制柄、最后一个无出控制柄；直线模式不显示手柄
+    #[test]
+    fn test_handle_boundaries_and_line_mode() {
+        let editor = bend_editor();
+        // 第一个锚点：无入
+        assert!(editor.pitch_bend_handle_in_screen_pos(0).is_none());
+        // 最后一个锚点：无出
+        assert!(editor.pitch_bend_handle_out_screen_pos(1).is_none());
+
+        // 直线模式：不显示任何手柄
+        let mut editor = bend_editor();
+        let curve = editor.editor_state.pitch_bend_curve.as_mut().unwrap();
+        curve.mode = BendDrawMode::Line;
+        assert!(editor.pitch_bend_handle_out_screen_pos(0).is_none());
+        assert!(editor.pitch_bend_handle_in_screen_pos(1).is_none());
+        // 直线模式点击段中点不应命中手柄
+        let ax = editor.tick_to_x(480.0);
+        let ay = editor.pitch_bend_value_to_y(0);
+        editor.handle_pitch_bend_pressed(Point2::new(ax + 24.0, ay), false);
+        assert!(
+            matches!(editor.pitch_bend_drag_state, PitchBendDragState::Idle)
+                || matches!(
+                    editor.pitch_bend_drag_state,
+                    PitchBendDragState::MoveAnchor(_)
+                ),
+            "直线模式不应进入 DragHandle 状态"
+        );
+    }
 }
