@@ -20,13 +20,13 @@ mod collab;
 mod file;
 mod midi;
 mod session;
-mod storage;
+mod persist;
 mod test;
 mod window;
 
-pub use collab::CollaborationStatus;
-pub use session::SessionTracker;
-pub use test::TestModeState;
+pub(crate) use collab::CollaborationStatus;
+pub(crate) use session::SessionTracker;
+pub(crate) use test::TestModeState;
 
 // ── 错误类型 ────────────────────────────────────────────────────────────
 

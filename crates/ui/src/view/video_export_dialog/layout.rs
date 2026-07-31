@@ -33,7 +33,7 @@ pub fn pick_list_row<'a, T: 'a + Clone + ToString + PartialEq>(
 }
 
 /// 标题
-pub fn title_section(palette: &iced_core::theme::palette::Extended) -> crate::Element<'static> {
+pub fn title_section<'a>(palette: &'a iced_core::theme::palette::Extended) -> crate::Element<'a> {
     text("视频导出")
         .size(18)
         .font(iced_core::Font::with_name("Microsoft YaHei"))

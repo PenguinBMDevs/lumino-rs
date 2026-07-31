@@ -213,7 +213,7 @@ impl Host {
                 .0
         };
 
-        self.update_cursor_icon(&state);
+        let is_ui_updated = matches!(state, user_interface::State::Updated { .. });
 
         {
             puffin::profile_scope!("cleanup");
@@ -221,7 +221,8 @@ impl Host {
             self.render_ctx.cache = interface.into_cache();
         }
 
-        let is_ui_updated = matches!(state, user_interface::State::Updated { .. });
+        self.update_cursor_icon(&state);
+
         (messages, is_ui_updated)
     }
 

@@ -58,7 +58,7 @@ impl RunnerInner {
         }
     }
 
-    fn compute_custom_precision_ticks(ppq: f32, numerator: f32, denominator: f32) -> f32 {
+    pub(crate) fn compute_custom_precision_ticks(ppq: f32, numerator: f32, denominator: f32) -> f32 {
         ppq * 4.0 * numerator / denominator
     }
 
