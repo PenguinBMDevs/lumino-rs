@@ -142,7 +142,6 @@ pub fn execute_render_pass(
         }
 
         // 绘制音符（HiRes 贴图模式下音符已包含在贴图中，跳过）
-        // 弯音编辑模式下音符仍然渲染，半透明遮罩叠加在上方
         if render_notes {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             frame.renderers.note.draw(
@@ -152,13 +151,13 @@ pub fn execute_render_pass(
             );
         }
 
-        // 弯音编辑模式：在钢琴卷帘区域叠加半透明遮罩（独立于自动化面板的力度面板 scissor）
-        if params.pitch_bend_mode && !params.cc_bar_instances.is_empty() {
+        // 弯音编辑模式：在钢琴卷帘区域渲染遮罩+锚点+曲线（专用 WGSL shader）
+        if params.pitch_bend_mode && !params.pitch_bend_instances.is_empty() {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             frame
                 .renderers
-                .cc_bar
-                .draw(&mut render_pass, params.cc_bar_instances.len() as u32);
+                .pitch_bend
+                .draw(&mut render_pass, params.pitch_bend_instances.len() as u32);
         }
 
         // 绘制标尺

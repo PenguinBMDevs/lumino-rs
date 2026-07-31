@@ -10,6 +10,7 @@ pub mod grid;
 mod grid_renderer;
 mod keyboard_renderer;
 mod note_renderer;
+mod pitch_bend_renderer;
 pub mod render_thread;
 mod ruler_renderer;
 // mod velocity_line_renderer; // 已弃用 — 改用 CcBarRenderer
@@ -48,6 +49,10 @@ pub use lumino_onion_skin_hires::{
 pub use note_renderer::{
     CameraParams, CameraUniform, CullUniform, FLAG_PREVIEW, NoteInstance, NoteRenderer,
     OnionBgTileRef, RenderUniform, pack_color, unpack_color,
+};
+pub use pitch_bend_renderer::{
+    PitchBendCameraUniform, PitchBendInstance, PitchBendRenderer, TYPE_ANCHOR, TYPE_BASELINE,
+    TYPE_LINE, TYPE_MASK,
 };
 pub use ruler_renderer::{
     RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,

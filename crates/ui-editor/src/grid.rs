@@ -18,7 +18,6 @@ pub mod bars;
 pub mod keyboard;
 pub mod keys;
 pub mod loop_range;
-pub mod pitch_bend_overlay;
 pub mod playback_indicator;
 pub mod program;
 pub mod program_impl;

@@ -19,6 +19,7 @@ pub struct Renderers {
     pub ruler: crate::RulerRenderer,
     pub arrangement: crate::ArrangementRenderer,
     pub cc_bar: crate::CcBarRenderer,
+    pub pitch_bend: crate::PitchBendRenderer,
 }
 
 impl Renderers {
@@ -30,6 +31,7 @@ impl Renderers {
             ruler: crate::RulerRenderer::new(device, format),
             arrangement: crate::ArrangementRenderer::new(device, format),
             cc_bar: crate::CcBarRenderer::new(device, format),
+            pitch_bend: crate::PitchBendRenderer::new(device, format),
         }
     }
 
@@ -45,6 +47,7 @@ impl Renderers {
             ruler: crate::RulerRenderer::new_without_depth(device, format),
             arrangement: crate::ArrangementRenderer::new_without_depth(device, format),
             cc_bar: crate::CcBarRenderer::new_without_depth(device, format),
+            pitch_bend: crate::PitchBendRenderer::new_without_depth(device, format),
         }
     }
 }

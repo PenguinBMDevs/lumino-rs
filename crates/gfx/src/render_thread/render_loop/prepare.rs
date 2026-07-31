@@ -72,11 +72,27 @@ pub fn prepare_renderers(
 
     // 准备 CC 柱状条渲染器（背景/网格/中心线）
     // 视频导出不使用力度面板，此处已受 `velocity_panel_rect.is_some()` 保护
-    // 弯音编辑模式也需要 prepare（遮罩矩形数据需要上传 GPU）
-    if params.velocity_panel_rect.is_some() || params.pitch_bend_mode {
+    if params.velocity_panel_rect.is_some() {
         renderers
             .cc_bar
             .prepare(device, queue, &params.cc_bar_instances, params.logical_size);
+    }
+
+    // 准备弯音渲染器（弯音编辑模式）
+    if params.pitch_bend_mode {
+        let camera = crate::PitchBendCameraUniform {
+            scroll: [params.scroll.0, params.scroll.1],
+            zoom: [params.zoom.0, params.zoom.1],
+            viewport_size: [params.logical_size.0, params.logical_size.1],
+            canvas_offset: [params.canvas_offset.0, params.canvas_offset.1],
+            keyboard_width: params.keyboard_width,
+            ruler_height: params.ruler_height,
+            max_key_index: params.max_key_index,
+            _padding: 0.0,
+        };
+        renderers
+            .pitch_bend
+            .prepare(device, queue, &params.pitch_bend_instances, camera);
     }
 
     // 视频导出期间无音符编辑事件，跳过空 channel 的 try_recv

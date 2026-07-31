@@ -1,6 +1,6 @@
 use crate::{
     ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, KeyInstance,
-    MiditrailNoteGpu, NoteInstance, RulerTickInstance, WaterfallNoteGpu,
+    MiditrailNoteGpu, NoteInstance, PitchBendInstance, RulerTickInstance, WaterfallNoteGpu,
 };
 
 /// 渲染参数 - 从 UI 线程传递到 WGPU 线程
@@ -88,6 +88,8 @@ pub struct RenderParams {
     pub pitch_bend_mode: bool,
     /// 弯音编辑遮罩颜色 [r, g, b, a]
     pub pitch_bend_overlay_color: [f32; 4],
+    /// 弯音渲染实例列表（遮罩/锚点/曲线/基准线）
+    pub pitch_bend_instances: Vec<PitchBendInstance>,
 }
 
 impl Default for RenderParams {
@@ -137,6 +139,7 @@ impl Default for RenderParams {
             fps: 60.0,
             pitch_bend_mode: false,
             pitch_bend_overlay_color: [0.5, 0.5, 0.5, 0.3],
+            pitch_bend_instances: Vec::new(),
         }
     }
 }
@@ -200,6 +203,7 @@ pub struct RenderParamsBuilder {
     miditrail_z_far: f32,
     fps: f32,
     pitch_bend_mode: bool,
+    pitch_bend_instances: Vec<PitchBendInstance>,
 }
 
 impl Default for RenderParamsBuilder {
@@ -244,6 +248,7 @@ impl Default for RenderParamsBuilder {
             miditrail_z_far: 7.5,
             fps: 60.0,
             pitch_bend_mode: false,
+            pitch_bend_instances: Vec::new(),
         }
     }
 }
@@ -429,6 +434,12 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置弯音渲染实例
+    pub fn pitch_bend_instances(mut self, instances: Vec<PitchBendInstance>) -> Self {
+        self.pitch_bend_instances = instances;
+        self
+    }
+
     /// 构建 [`RenderParams`]。
     ///
     /// 从首个拍号推导默认 `ticks_per_measure` 和 `ticks_per_beat`
@@ -482,6 +493,7 @@ impl RenderParamsBuilder {
             fps: self.fps,
             pitch_bend_mode: self.pitch_bend_mode,
             pitch_bend_overlay_color: [0.5, 0.5, 0.5, 0.3],
+            pitch_bend_instances: self.pitch_bend_instances,
         }
     }
 }
