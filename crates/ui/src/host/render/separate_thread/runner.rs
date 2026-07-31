@@ -381,6 +381,41 @@ impl Host {
             instances.push(PitchBendInstance::anchor(ax, ay, ANCHOR_RADIUS, color));
         }
 
+        // 5. 贝塞尔控制柄（scratch-paint 风格：实心小圆点 + 锚点连线）
+        //    仅曲线模式、选中锚点显示；位置由 Editor 统一计算，
+        //    与命中检测（pitch_bend_interaction.rs）共用同一公式
+        if let Some(sel) = curve.selected_anchor {
+            const HANDLE_RADIUS: f32 = 3.5;
+            const HANDLE_COLOR: [f32; 4] = [0.85, 0.9, 1.0, 0.95];
+            const HANDLE_LINE_COLOR: [f32; 4] = [0.6, 0.7, 1.0, 0.5];
+            let anchor = &curve.anchors[sel];
+            let ax = v.tick_to_x(anchor.tick as f32) + ox;
+            let ay = editor.pitch_bend_value_to_y(anchor.value) + oy;
+
+            // 出控制柄（控制「本锚点 → 下一锚点」段）
+            if let Some(hp) = editor.pitch_bend_handle_out_screen_pos(sel) {
+                let (hx, hy) = (hp.0 + ox, hp.1 + oy);
+                push_handle_line(&mut instances, ax, ay, hx, hy, HANDLE_LINE_COLOR);
+                instances.push(PitchBendInstance::handle(
+                    hx,
+                    hy,
+                    HANDLE_RADIUS,
+                    HANDLE_COLOR,
+                ));
+            }
+            // 入控制柄（控制「上一锚点 → 本锚点」段）
+            if let Some(hp) = editor.pitch_bend_handle_in_screen_pos(sel) {
+                let (hx, hy) = (hp.0 + ox, hp.1 + oy);
+                push_handle_line(&mut instances, ax, ay, hx, hy, HANDLE_LINE_COLOR);
+                instances.push(PitchBendInstance::handle(
+                    hx,
+                    hy,
+                    HANDLE_RADIUS,
+                    HANDLE_COLOR,
+                ));
+            }
+        }
+
         (instances, underlay_count)
     }
 
@@ -740,5 +775,39 @@ impl Host {
             .pitch_bend_instances(pitch_bend_instances)
             .pitch_bend_underlay_count(pitch_bend_underlay_count)
             .build()
+    }
+}
+
+/// 画一条贝塞尔控制柄连线（按主轴方向用细矩形近似，与 gfx automation.rs 风格一致）
+fn push_handle_line(
+    out: &mut Vec<lumino_gfx::PitchBendInstance>,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    color: [f32; 4],
+) {
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+    if dx.hypot(dy) < 0.5 {
+        return;
+    }
+    let t = 1.0;
+    if dx.abs() >= dy.abs() {
+        out.push(lumino_gfx::PitchBendInstance::line(
+            x1.min(x2),
+            y1.min(y2) - t * 0.5,
+            dx.abs().max(t),
+            t,
+            color,
+        ));
+    } else {
+        out.push(lumino_gfx::PitchBendInstance::line(
+            x1.min(x2) - t * 0.5,
+            y1.min(y2),
+            t,
+            dy.abs().max(t),
+            color,
+        ));
     }
 }

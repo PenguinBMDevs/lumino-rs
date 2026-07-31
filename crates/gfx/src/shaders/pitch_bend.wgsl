@@ -21,6 +21,7 @@ const TYPE_MASK: u32 = 0u;   // 半透明遮罩
 const TYPE_ANCHOR: u32 = 1u; // 锚点圆
 const TYPE_LINE: u32 = 2u;   // 曲线连线段（水平+垂直阶梯）
 const TYPE_BASELINE: u32 = 3u; // 基准线
+const TYPE_HANDLE: u32 = 4u; // 贝塞尔控制柄（实心圆点）
 
 // 弯音实例数据 (48 bytes)
 struct PitchBendInstance {
@@ -88,8 +89,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         return input.color;
     }
 
-    if (input.prim_type == TYPE_ANCHOR) {
-        // 锚点圆：用 SDF 渲染
+    if (input.prim_type == TYPE_ANCHOR || input.prim_type == TYPE_HANDLE) {
+        // 锚点/控制柄圆：用 SDF 渲染（控制柄与锚点共用实心圆逻辑）
         let center = input.screen_size * 0.5;
         let p = input.local_pos - center;
         let dist = length(p);

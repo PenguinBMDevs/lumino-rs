@@ -54,7 +54,7 @@ pub use note_renderer::{
 };
 pub use pitch_bend_renderer::{
     PitchBendCameraUniform, PitchBendInstance, PitchBendRenderer, TYPE_ANCHOR, TYPE_BASELINE,
-    TYPE_LINE, TYPE_MASK,
+    TYPE_HANDLE, TYPE_LINE, TYPE_MASK,
 };
 pub use ruler_renderer::{
     RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,

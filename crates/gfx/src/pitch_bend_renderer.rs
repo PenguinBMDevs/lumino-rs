@@ -5,6 +5,7 @@
 //! - 锚点圆（SDF 抗锯齿）
 //! - 曲线连线段（阶梯式）
 //! - 基准线
+//! - 贝塞尔控制柄（scratch-paint 风格实心圆点，仅选中锚点显示）
 
 use wgpu::util::DeviceExt;
 
@@ -15,6 +16,7 @@ pub const TYPE_MASK: u32 = 0;
 pub const TYPE_ANCHOR: u32 = 1;
 pub const TYPE_LINE: u32 = 2;
 pub const TYPE_BASELINE: u32 = 3;
+pub const TYPE_HANDLE: u32 = 4;
 
 /// 弯音渲染实例 (48 bytes，8 个 f32/u32)
 #[repr(C)]
@@ -26,7 +28,7 @@ pub struct PitchBendInstance {
     pub screen_size: [f32; 2],
     /// RGBA 颜色
     pub color: [f32; 4],
-    /// 图元类型（TYPE_MASK / TYPE_ANCHOR / TYPE_LINE / TYPE_BASELINE）
+    /// 图元类型（TYPE_MASK / TYPE_ANCHOR / TYPE_LINE / TYPE_BASELINE / TYPE_HANDLE）
     pub prim_type: u32,
     /// 锚点半径（仅 TYPE_ANCHOR 使用）
     pub radius: f32,
@@ -83,6 +85,21 @@ impl PitchBendInstance {
             color,
             prim_type: TYPE_BASELINE,
             radius: 0.0,
+            _pad: [0.0; 3],
+        }
+    }
+
+    /// 创建贝塞尔控制柄实例（scratch-paint 风格实心小圆点）
+    ///
+    /// 与锚点同用 SDF 圆渲染，但半径更小、颜色更亮，绘制在锚点之上。
+    #[must_use]
+    pub fn handle(cx: f32, cy: f32, radius: f32, color: [f32; 4]) -> Self {
+        Self {
+            screen_pos: [cx - radius, cy - radius],
+            screen_size: [radius * 2.0, radius * 2.0],
+            color,
+            prim_type: TYPE_HANDLE,
+            radius,
             _pad: [0.0; 3],
         }
     }

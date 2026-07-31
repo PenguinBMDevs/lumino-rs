@@ -4,6 +4,7 @@
 //! 控制柄拖拽（对称/非对称切换）和命中检测。
 
 use crate::Editor;
+use lumino_core::BendDrawMode;
 use lumino_core::pitch_bend::{
     PITCH_BEND_MAX, PITCH_BEND_MIN, PITCH_BEND_RANGE_SEMITONES, PitchBendAnchor,
 };
@@ -13,6 +14,17 @@ use lumino_ui_core::message::Point2;
 const ANCHOR_HIT_RADIUS_PX: f32 = 8.0;
 /// 控制柄命中半径
 const HANDLE_HIT_RADIUS_PX: f32 = 6.0;
+/// 控制柄默认展示位置（直线段手柄未定义时展示在段中点，便于拖出控制柄）
+const HANDLE_DEFAULT_POS: f32 = 0.5;
+
+/// 控制柄方向（贝塞尔段两侧）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HandleSide {
+    /// 出控制柄：控制「本锚点 → 下一锚点」段
+    Out,
+    /// 入控制柄：控制「上一锚点 → 本锚点」段
+    In,
+}
 
 /// 弯音拖拽状态
 #[derive(Debug, Clone, Copy, Default)]
@@ -22,8 +34,8 @@ pub enum PitchBendDragState {
     Idle,
     /// 拖拽锚点（锚点索引）
     MoveAnchor(usize),
-    /// 拖拽出控制柄（锚点索引, 是否Alt非对称）
-    DragHandle(usize, bool),
+    /// 拖拽控制柄（锚点索引, 入/出, 是否Alt非对称）
+    DragHandle(usize, HandleSide, bool),
 }
 
 impl Editor {
@@ -51,8 +63,8 @@ impl Editor {
                 }
                 self.pitch_bend_drag_state = PitchBendDragState::MoveAnchor(idx);
             }
-            PitchBendHit::Handle(idx) => {
-                self.pitch_bend_drag_state = PitchBendDragState::DragHandle(idx, shift);
+            PitchBendHit::Handle(idx, side) => {
+                self.pitch_bend_drag_state = PitchBendDragState::DragHandle(idx, side, shift);
             }
             PitchBendHit::None => {
                 // 弯音模式：点击空白处创建锚点并立即进入拖拽
@@ -82,41 +94,62 @@ impl Editor {
                     curve.selected_anchor = Some(new_idx);
                 }
             }
-            PitchBendDragState::DragHandle(idx, alt_asymmetric) => {
-                // 先取 curve 引用计算邻居数据和基值
-                let (span, zoom_x, zoom_y, next_screen_x, base_y, value_range) =
-                    if let Some(curve) = &self.editor_state.pitch_bend_curve {
-                        if idx >= curve.anchors.len() {
+            PitchBendDragState::DragHandle(idx, side, alt_asymmetric) => {
+                let Some(curve) = &self.editor_state.pitch_bend_curve else {
+                    return;
+                };
+                if idx >= curve.anchors.len() {
+                    return;
+                }
+                let anchor = &curve.anchors[idx];
+                let ax = self.tick_to_x(anchor.tick as f32);
+                let ay = self.pitch_bend_value_to_y(anchor.value);
+                // 弯音值空间 → 屏幕像素（±2 semitones 对应满量程）
+                let range_px = (PITCH_BEND_MAX as f32 - PITCH_BEND_MIN as f32)
+                    * self.editor_state.view.zoom_y
+                    * PITCH_BEND_RANGE_SEMITONES as f32;
+                let zoom_x = self.editor_state.view.zoom_x;
+
+                // 控制柄跟随鼠标（scratch-paint 行为）：
+                // hx = 手柄相对锚点的 x 偏移 / 段宽（归一化）
+                // hy = 锚点与鼠标的 y 差 / 满量程（value 增大方向 = 屏幕上方）
+                let (seg_px, is_out) = match side {
+                    HandleSide::Out => {
+                        let Some(next) = curve.anchors.get(idx + 1) else {
+                            return;
+                        };
+                        let seg = (next.tick.saturating_sub(anchor.tick)).max(1) as f32 * zoom_x;
+                        (seg, true)
+                    }
+                    HandleSide::In => {
+                        if idx == 0 {
                             return;
                         }
-                        let (prev_tick, _, next_tick, _) = get_neighbor_values(curve, idx);
-                        let span = (next_tick.saturating_sub(prev_tick)).max(1) as f32;
-                        let value_range = (PITCH_BEND_MAX as f32) - (PITCH_BEND_MIN as f32);
-                        let prev_value = curve.anchors[idx].value;
-                        let zoom_x = self.editor_state.view.zoom_x;
-                        let zoom_y = self.editor_state.view.zoom_y;
-                        let next_screen_x = self.tick_to_x(next_tick as f32);
-                        let base_y = self.pitch_bend_value_to_y(prev_value);
-                        (span, zoom_x, zoom_y, next_screen_x, base_y, value_range)
-                    } else {
-                        return;
-                    };
-
-                // 计算偏移量
-                let out_x = ((next_screen_x - pos.x).max(0.0) / span / zoom_x).clamp(-0.5, 0.5);
-                let out_y = ((pos.y - base_y)
-                    / (value_range.abs() * zoom_y * PITCH_BEND_RANGE_SEMITONES as f32))
-                    .clamp(-1.0, 1.0);
+                        let prev_tick = curve.anchors[idx - 1].tick;
+                        let seg = (anchor.tick.saturating_sub(prev_tick)).max(1) as f32 * zoom_x;
+                        (seg, false)
+                    }
+                };
+                let hx = ((pos.x - ax) / seg_px.max(1.0)).clamp(-0.5, 0.5);
+                let hy = ((ay - pos.y) / range_px.max(1.0)).clamp(-1.0, 1.0);
 
                 // 写回 anchor
                 if let Some(curve) = self.editor_state.pitch_bend_curve.as_mut()
                     && idx < curve.anchors.len()
                 {
                     let anchor = &mut curve.anchors[idx];
-                    anchor.handle_out_x = out_x;
-                    anchor.handle_out_y = out_y;
-                    if !alt_asymmetric {
-                        anchor.symmetrize_in_from_out();
+                    if is_out {
+                        anchor.handle_out_x = hx;
+                        anchor.handle_out_y = hy;
+                        if !alt_asymmetric {
+                            anchor.symmetrize_in_from_out();
+                        }
+                    } else {
+                        anchor.handle_in_x = hx;
+                        anchor.handle_in_y = hy;
+                        if !alt_asymmetric {
+                            anchor.symmetrize_out_from_in();
+                        }
                     }
                 }
             }
@@ -183,15 +216,18 @@ impl Editor {
             return PitchBendHit::None;
         };
 
-        // 优先检测选中锚点的控制柄
+        // 优先检测选中锚点的控制柄（出 → 入）
         if let Some(idx) = curve.selected_anchor {
-            let anchor = &curve.anchors[idx];
-            // 检测出控制柄位置
-            if anchor.has_handle_out() {
-                let handle_pos = self.pitch_bend_handle_out_screen_pos(anchor, curve, idx);
+            if let Some(handle_pos) = self.pitch_bend_handle_out_screen_pos(idx) {
                 let dist_sq = (handle_pos.0 - x).powi(2) + (handle_pos.1 - y).powi(2);
                 if dist_sq <= HANDLE_HIT_RADIUS_PX.powi(2) {
-                    return PitchBendHit::Handle(idx);
+                    return PitchBendHit::Handle(idx, HandleSide::Out);
+                }
+            }
+            if let Some(handle_pos) = self.pitch_bend_handle_in_screen_pos(idx) {
+                let dist_sq = (handle_pos.0 - x).powi(2) + (handle_pos.1 - y).powi(2);
+                if dist_sq <= HANDLE_HIT_RADIUS_PX.powi(2) {
+                    return PitchBendHit::Handle(idx, HandleSide::In);
                 }
             }
         }
@@ -207,6 +243,70 @@ impl Editor {
         }
 
         PitchBendHit::None
+    }
+
+    /// 锚点出控制柄的屏幕位置（scratch-paint 风格）
+    ///
+    /// 返回 `None` 表示该锚点不显示出手柄：
+    /// - 非曲线模式（直线模式无贝塞尔控制柄）
+    /// - 该锚点是最后一个锚点（无「本锚点 → 下一锚点」段）
+    ///
+    /// 手柄参数为 (0,0)（直线段）时展示在段中点，便于拖出控制柄。
+    pub fn pitch_bend_handle_out_screen_pos(&self, idx: usize) -> Option<(f32, f32)> {
+        let curve = self.editor_state.pitch_bend_curve.as_ref()?;
+        if curve.mode != BendDrawMode::Curve {
+            return None;
+        }
+        let anchor = curve.anchors.get(idx)?;
+        let next = curve.anchors.get(idx + 1)?;
+        let ax = self.tick_to_x(anchor.tick as f32);
+        let ay = self.pitch_bend_value_to_y(anchor.value);
+        let seg_px =
+            (next.tick.saturating_sub(anchor.tick)).max(1) as f32 * self.editor_state.view.zoom_x;
+        let hx = if anchor.has_handle_out() {
+            anchor.handle_out_x
+        } else {
+            HANDLE_DEFAULT_POS
+        };
+        let hy = anchor.handle_out_y;
+        Some((ax + hx * seg_px, ay - hy * self.handle_range_px()))
+    }
+
+    /// 锚点入控制柄的屏幕位置（scratch-paint 风格）
+    ///
+    /// 返回 `None` 表示该锚点不显示入手柄：
+    /// - 非曲线模式
+    /// - 该锚点是第一个锚点（无「上一锚点 → 本锚点」段）
+    ///
+    /// 手柄参数为 (0,0)（直线段）时展示在段中点，便于拖出控制柄。
+    pub fn pitch_bend_handle_in_screen_pos(&self, idx: usize) -> Option<(f32, f32)> {
+        let curve = self.editor_state.pitch_bend_curve.as_ref()?;
+        if curve.mode != BendDrawMode::Curve {
+            return None;
+        }
+        if idx == 0 {
+            return None;
+        }
+        let anchor = curve.anchors.get(idx)?;
+        let prev_tick = curve.anchors[idx - 1].tick;
+        let ax = self.tick_to_x(anchor.tick as f32);
+        let ay = self.pitch_bend_value_to_y(anchor.value);
+        let seg_px =
+            (anchor.tick.saturating_sub(prev_tick)).max(1) as f32 * self.editor_state.view.zoom_x;
+        let hx = if anchor.has_handle_in() {
+            anchor.handle_in_x
+        } else {
+            -HANDLE_DEFAULT_POS
+        };
+        let hy = anchor.handle_in_y;
+        Some((ax + hx * seg_px, ay - hy * self.handle_range_px()))
+    }
+
+    /// 弯音值满量程对应的屏幕像素高度（value 增大方向 = 屏幕上方）
+    fn handle_range_px(&self) -> f32 {
+        (PITCH_BEND_MAX as f32 - PITCH_BEND_MIN as f32)
+            * self.editor_state.view.zoom_y
+            * PITCH_BEND_RANGE_SEMITONES as f32
     }
 
     /// Y 坐标转弯音值（以选中音符为中心，±2 琴键高度映射 ±8192）
@@ -239,30 +339,6 @@ impl Editor {
         // value 正 -> y 减小（向上）
         base_y - (value as f32 / PITCH_BEND_MAX as f32) * two_semitones
     }
-
-    /// 计算出控制柄的屏幕位置
-    fn pitch_bend_handle_out_screen_pos(
-        &self,
-        anchor: &PitchBendAnchor,
-        curve: &lumino_core::pitch_bend::PitchBendCurve,
-        idx: usize,
-    ) -> (f32, f32) {
-        let (prev_tick, _, next_tick, _next_value) = get_neighbor_values(curve, idx);
-
-        let span = (next_tick.saturating_sub(prev_tick)).max(1) as f32;
-        let ax = self.tick_to_x(anchor.tick as f32);
-        let ay = self.pitch_bend_value_to_y(anchor.value);
-
-        let handle_x = ax + anchor.handle_out_x * span * self.editor_state.view.zoom_x;
-        let value_range = (PITCH_BEND_MAX as f32) - (PITCH_BEND_MIN as f32);
-        let handle_y = ay
-            + anchor.handle_out_y
-                * value_range
-                * self.editor_state.view.zoom_y
-                * PITCH_BEND_RANGE_SEMITONES as f32;
-
-        (handle_x, handle_y)
-    }
 }
 
 /// 命中检测结果
@@ -270,33 +346,5 @@ impl Editor {
 enum PitchBendHit {
     None,
     Anchor(usize),
-    Handle(usize),
-}
-
-/// 获取锚点的邻居值（用于控制柄位置计算）
-fn get_neighbor_values(
-    curve: &lumino_core::pitch_bend::PitchBendCurve,
-    idx: usize,
-) -> (u32, i16, u32, i16) {
-    let prev_tick = if idx > 0 {
-        curve.anchors[idx - 1].tick
-    } else {
-        curve.anchors.first().map(|a| a.tick).unwrap_or(0)
-    };
-    let prev_value = if idx > 0 {
-        curve.anchors[idx - 1].value
-    } else {
-        curve.anchors.first().map(|a| a.value).unwrap_or(0)
-    };
-    let next_tick = if idx + 1 < curve.anchors.len() {
-        curve.anchors[idx + 1].tick
-    } else {
-        curve.anchors.last().map(|a| a.tick).unwrap_or(0)
-    };
-    let next_value = if idx + 1 < curve.anchors.len() {
-        curve.anchors[idx + 1].value
-    } else {
-        curve.anchors.last().map(|a| a.value).unwrap_or(0)
-    };
-    (prev_tick, prev_value, next_tick, next_value)
+    Handle(usize, HandleSide),
 }
