@@ -1,0 +1,294 @@
+//! 视频导出对话框主视图区块
+//!
+//! 分解 `render_settings_section` 为多个 ≤50 行的子函数。
+
+use iced_core::{Alignment, Length};
+use iced_widget::{column, container, row, scrollable, slider, space, text, text_input};
+
+use crate::message::{Message, VideoExportAction};
+use crate::view::widgets;
+
+use super::helpers;
+use super::layout::{buttons_section, midi_source_section, output_path_section, pick_list_row, title_section};
+use super::state::{MIDITRAIL_Z_FAR_MAX, VideoExportDialogState, VideoExportOverlayState};
+
+/// 渲染设置区域（容器格式、编码器、硬件加速、质量、分辨率、帧率）
+fn render_settings_section<'a>(
+    state: &'a VideoExportDialogState,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    column![
+        text("渲染设置")
+            .size(16)
+            .font(iced_core::Font::with_name("Microsoft YaHei"))
+            .style(widgets::dialog_label_style(palette)),
+        space().height(12),
+        render_format_options(state, palette),
+        space().height(8),
+        render_quality_mode_options(state, palette),
+        space().height(8),
+        waterfall_speed_slider_row(state, palette),
+        miditrail_z_far_slider_row(state, palette),
+        space().height(8),
+        resolution_input_row(state, palette),
+        pick_list_row(
+            "帧率:",
+            100.0,
+            vec![24u32, 30, 60, 120],
+            Some(state.fps),
+            |v| Message::VideoExport(VideoExportAction::FpsChanged(v)),
+            palette,
+        ),
+    ]
+    .width(Length::Fill)
+    .into()
+}
+
+/// 渲染格式选项（容器格式、编码器、加速后端）
+fn render_format_options<'a>(
+    state: &'a VideoExportDialogState,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    let containers = vec!["MP4", "MOV", "MKV", "AVI"]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
+    let codecs = vec!["H.264", "H.265 / HEVC", "ProRes", "VP9", "AV1"]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
+    let backends = helpers::available_backends();
+
+    column![
+        pick_list_row(
+            "渲染格式:",
+            100.0,
+            containers,
+            Some(state.container.clone()),
+            |v| Message::VideoExport(VideoExportAction::ContainerChanged(v)),
+            palette,
+        ),
+        space().height(8),
+        pick_list_row(
+            "编码器:",
+            100.0,
+            codecs,
+            Some(state.codec.clone()),
+            |v| Message::VideoExport(VideoExportAction::CodecChanged(v)),
+            palette,
+        ),
+        space().height(8),
+        pick_list_row(
+            "加速:",
+            100.0,
+            backends,
+            Some(state.backend.clone()),
+            |v| Message::VideoExport(VideoExportAction::BackendChanged(v)),
+            palette,
+        ),
+    ]
+    .into()
+}
+
+/// 渲染质量与模式选项（质量、渲染风格）
+fn render_quality_mode_options<'a>(
+    state: &'a VideoExportDialogState,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    let qualities = vec!["高", "中", "低"]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
+
+    column![
+        pick_list_row(
+            "质量:",
+            100.0,
+            qualities,
+            Some(state.quality.clone()),
+            |v| Message::VideoExport(VideoExportAction::QualityChanged(v)),
+            palette,
+        ),
+        space().height(8),
+        pick_list_row(
+            "渲染风格:",
+            100.0,
+            vec![
+                "Lumino瀑布流".to_string(),
+                "音符矩形".to_string(),
+                "MIDITrail".to_string(),
+            ],
+            Some(state.render_mode.clone()),
+            |v| Message::VideoExport(VideoExportAction::RenderModeChanged(v)),
+            palette,
+        ),
+    ]
+    .into()
+}
+
+/// 瀑布流滚动速度滑杆
+fn waterfall_speed_slider_row<'a>(
+    state: &'a VideoExportDialogState,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    let label_color = palette.background.neutral.text;
+    let label_style = move |_t: &iced_core::Theme| text::Style {
+        color: Some(label_color),
+    };
+
+    row![
+        text("下落速度:")
+            .size(14)
+            .style(label_style)
+            .width(100),
+        slider(0.1..=10.0, state.waterfall_speed, |v| {
+            Message::VideoExport(VideoExportAction::WaterfallSpeedChanged(v))
+        })
+        .step(0.1_f32)
+        .width(200.0),
+        text(format!("{:.1}x", state.waterfall_speed))
+            .size(14)
+            .style(label_style),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+/// MIDITrail Z 方向显示距离滑杆（仅在选择 MIDITrail 时显示）
+fn miditrail_z_far_slider_row<'a>(
+    state: &'a VideoExportDialogState,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    let label_color = palette.background.neutral.text;
+    let label_style = move |_t: &iced_core::Theme| text::Style {
+        color: Some(label_color),
+    };
+
+    if state.render_mode == "MIDITrail" {
+        row![
+            text("Z 显示距离:")
+                .size(14)
+                .style(label_style)
+                .width(100),
+            slider(0.1..=MIDITRAIL_Z_FAR_MAX, state.miditrail_z_far, |v| {
+                Message::VideoExport(VideoExportAction::MiditrailZFarChanged(v))
+            })
+            .step(0.1_f32)
+            .width(200.0),
+            text(format!("{:.1}", state.miditrail_z_far))
+                .size(14)
+                .style(label_style),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center)
+        .into()
+    } else {
+        space().height(0).into()
+    }
+}
+
+/// 分辨率输入行
+fn resolution_input_row<'a>(
+    state: &'a VideoExportDialogState,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    let width_str = state.width.to_string();
+    let height_str = state.height.to_string();
+
+    row![
+        text("分辨率:")
+            .size(14)
+            .style(widgets::dialog_label_style(palette))
+            .width(100),
+        container(
+            text_input("1920", &width_str)
+                .on_input(|v| Message::VideoExport(VideoExportAction::WidthChanged(v)))
+                .padding([6, 10])
+                .width(Length::Fixed(80.0)),
+        )
+        .style(widgets::dialog_input_style(palette)),
+        text("x")
+            .size(14)
+            .style(widgets::dialog_label_style(palette)),
+        container(
+            text_input("1080", &height_str)
+                .on_input(|v| Message::VideoExport(VideoExportAction::HeightChanged(v)))
+                .padding([6, 10])
+                .width(Length::Fixed(80.0)),
+        )
+        .style(widgets::dialog_input_style(palette)),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+// ── 公开入口 ────────────────────────────────────────────────
+
+/// 渲染视频导出配置面板（侧边栏面板）
+pub fn view_video_export_dialog<'a>(
+    state: &'a VideoExportDialogState,
+    theme: &'a iced_core::Theme,
+) -> crate::Element<'a> {
+    let palette = theme.extended_palette();
+
+    let main_content = column![
+        title_section(palette),
+        space().height(16),
+        midi_source_section(state, palette),
+        space().height(16),
+        render_settings_section(state, palette),
+        space().height(16),
+        output_path_section(state, palette),
+        space().height(24),
+        buttons_section(palette),
+    ];
+
+    let scrollable_content = scrollable(main_content)
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    container(scrollable_content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(24)
+        .style(move |_t: &iced_core::Theme| {
+            container::Style::default().background(palette.background.base.color)
+        })
+        .into()
+}
+
+/// 渲染视频导出覆盖层（浮动 dialog 弹出样式）
+pub fn view_video_export_overlay<'a>(
+    state: &'a VideoExportDialogState,
+    theme: &'a iced_core::Theme,
+) -> Option<crate::Element<'a>> {
+    if matches!(state.overlay, VideoExportOverlayState::None) {
+        return None;
+    }
+    let palette = theme.extended_palette();
+
+    let content: crate::Element<'a> = match &state.overlay {
+        VideoExportOverlayState::Exporting => super::handlers::exporting_overlay(state, theme, palette),
+        VideoExportOverlayState::Finalizing => super::handlers::finalizing_overlay(state, theme, palette),
+        VideoExportOverlayState::Completed {
+            total_frames,
+            elapsed_secs,
+            avg_fps,
+        } => super::handlers::completed_overlay(state, *total_frames, *elapsed_secs, *avg_fps, palette),
+        VideoExportOverlayState::Error(err) => super::handlers::error_overlay(err.clone(), palette),
+        VideoExportOverlayState::None => return None,
+    };
+
+    let full = container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(20)
+        .style(move |_t: &iced_core::Theme| container::Style {
+            background: Some(palette.background.base.color.into()),
+            ..Default::default()
+        });
+
+    Some(full.into())
+}

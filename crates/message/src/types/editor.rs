@@ -44,3 +44,22 @@ pub enum EditorAction {
         x: f32,
     },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_editor_action_clone() {
+        let action = EditorAction::DeletePressed;
+        let cloned = action.clone();
+        assert!(matches!(cloned, EditorAction::DeletePressed));
+    }
+
+    #[test]
+    fn test_editor_action_debug() {
+        let action = EditorAction::Undo;
+        let debug = format!("{:?}", action);
+        assert!(debug.contains("Undo"));
+    }
+}

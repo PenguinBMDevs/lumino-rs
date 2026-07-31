@@ -47,3 +47,25 @@ pub enum CollaborationAction {
     /// 协作远端音符更新
     RemoteNoteUpdate { operation: String },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_collaboration_action_variants() {
+        let action = CollaborationAction::OpenDialog;
+        assert!(matches!(action, CollaborationAction::OpenDialog));
+
+        let action = CollaborationAction::Disconnect;
+        assert!(matches!(action, CollaborationAction::Disconnect));
+
+        let action = CollaborationAction::Connect {
+            host: "localhost".to_string(),
+            port: 3000,
+            username: "test".to_string(),
+            invite_code: None,
+        };
+        assert!(matches!(action, CollaborationAction::Connect { .. }));
+    }
+}

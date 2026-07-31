@@ -139,3 +139,72 @@ impl std::fmt::Display for SpeedFactor {
         write!(f, "{}", self.display_name())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ─── PerfData ───
+
+    #[test]
+    fn test_perf_data_default() {
+        let perf_data = PerfData::default();
+        assert_eq!(perf_data.fps, 0.0);
+        assert_eq!(perf_data.cpu_usage, 0.0);
+        assert_eq!(perf_data.memory_mb, 0.0);
+        assert_eq!(perf_data.gpu_frame_time_ms, 0.0);
+    }
+
+    #[test]
+    fn test_perf_data_new() {
+        let perf_data = PerfData::new(60.0, 25.5, 512.0, 16.7);
+        assert_eq!(perf_data.fps, 60.0);
+        assert_eq!(perf_data.cpu_usage, 25.5);
+        assert_eq!(perf_data.memory_mb, 512.0);
+        assert_eq!(perf_data.gpu_frame_time_ms, 16.7);
+    }
+
+    // ─── TupletType ───
+
+    #[test]
+    fn test_tuplet_type_default() {
+        assert_eq!(TupletType::default(), TupletType::None);
+    }
+
+    #[test]
+    fn test_tuplet_type_value() {
+        assert_eq!(TupletType::Triplet.value(), 3);
+        assert_eq!(TupletType::Quintuplet.value(), 5);
+        assert_eq!(TupletType::Sextuplet.value(), 6);
+        assert_eq!(TupletType::Septuplet.value(), 7);
+        assert_eq!(TupletType::None.value(), 1);
+    }
+
+    #[test]
+    fn test_tuplet_type_all() {
+        let all = TupletType::all();
+        assert_eq!(all.len(), 5);
+    }
+
+    // ─── SpeedFactor ───
+
+    #[test]
+    fn test_speed_factor_default() {
+        assert_eq!(SpeedFactor::default(), SpeedFactor::X05);
+    }
+
+    #[test]
+    fn test_speed_factor_value() {
+        assert_eq!(SpeedFactor::X025.value(), 0.25);
+        assert_eq!(SpeedFactor::X05.value(), 0.5);
+        assert_eq!(SpeedFactor::X1.value(), 1.0);
+        assert_eq!(SpeedFactor::X2.value(), 2.0);
+        assert_eq!(SpeedFactor::X4.value(), 4.0);
+    }
+
+    #[test]
+    fn test_speed_factor_display() {
+        assert_eq!(SpeedFactor::X05.display_name(), "×0.5");
+        assert_eq!(SpeedFactor::X2.display_name(), "×2.0");
+    }
+}

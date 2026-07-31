@@ -50,3 +50,20 @@ pub enum VelocityAction {
     /// 参数: 滚动量（值空间单位）。
     AutomationScroll(f32),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_velocity_action_variants() {
+        let action = VelocityAction::DragStart(0, 100);
+        assert!(matches!(action, VelocityAction::DragStart(_, _)));
+
+        let action = VelocityAction::ToggleMode;
+        assert!(matches!(action, VelocityAction::ToggleMode));
+
+        let action = VelocityAction::TempoAdd(0.0, 120.0);
+        assert!(matches!(action, VelocityAction::TempoAdd(_, _)));
+    }
+}

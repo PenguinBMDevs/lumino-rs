@@ -12,3 +12,17 @@ pub enum SpeedChangeAction {
     /// 速度倍率输入变更
     FactorChanged(String),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_speed_change_action_variants() {
+        let action = SpeedChangeAction::OpenDialog;
+        assert!(matches!(action, SpeedChangeAction::OpenDialog));
+
+        let action = SpeedChangeAction::FactorChanged("0.5".to_string());
+        assert!(matches!(action, SpeedChangeAction::FactorChanged(_)));
+    }
+}

@@ -154,3 +154,36 @@ pub const CC_CONTROLLER_NAMES: &[(u8, &str)] = &[
     (126, "Mono Mode"),
     (127, "Poly Mode"),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cc_option_display() {
+        let bend = CcOption::Bend;
+        assert!(bend.to_string().contains("Bend"));
+
+        let cc7 = CcOption::Cc(7);
+        assert!(cc7.to_string().contains("Volume"));
+    }
+
+    #[test]
+    fn test_cc_controller_names_known() {
+        let names = CC_CONTROLLER_NAMES;
+        assert!(names.contains(&(0, "Bank Select")));
+        assert!(names.contains(&(7, "Volume")));
+        assert!(names.contains(&(10, "Pan")));
+        assert!(names.contains(&(64, "Sustain Pedal")));
+        assert!(names.contains(&(127, "Poly Mode")));
+    }
+
+    #[test]
+    fn test_cc_controller_names_all_128() {
+        assert_eq!(CC_CONTROLLER_NAMES.len(), 128);
+        let mut seen = std::collections::HashSet::new();
+        for (num, _) in CC_CONTROLLER_NAMES {
+            assert!(seen.insert(num), "Duplicate CC number: {}", num);
+        }
+    }
+}

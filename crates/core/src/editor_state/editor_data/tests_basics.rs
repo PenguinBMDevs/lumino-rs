@@ -1,0 +1,70 @@
+//! 基础构造/重置/访问器测试
+
+use crate::automation::{AutomationEdit, AutomationTarget, SegmentShape};
+use crate::editor_state::constants::DEFAULT_BPM;
+use crate::note::Note;
+
+use super::EditorData;
+
+#[test]
+fn test_editor_data_default() {
+    let data = EditorData::default();
+    assert!(data.notes.is_empty());
+    assert_eq!(data.current_track, 0);
+    assert_eq!(data.track_notes_gen, 0);
+    assert!(data.document.is_none());
+}
+
+#[test]
+fn test_editor_data_new() {
+    let data = EditorData::new();
+    assert_eq!(data.tempo_points.len(), 1);
+    assert_eq!(data.tempo_points[0].bpm, DEFAULT_BPM);
+}
+
+#[test]
+fn test_reset_clears_data() {
+    let mut data = EditorData::new();
+    data.notes.push_back(Note::new(0.0, 60, 1.0));
+    data.track_notes.insert(1, data.notes.clone());
+    data.reset();
+    assert!(data.notes.is_empty());
+    assert!(data.track_notes.is_empty());
+    assert_eq!(data.track_notes_gen, 1);
+}
+
+#[test]
+fn test_mark_track_notes_changed() {
+    let mut data = EditorData::new();
+    data.mark_track_notes_changed();
+    assert_eq!(data.track_notes_gen, 1);
+}
+
+#[test]
+fn test_select_all_notes() {
+    let mut data = EditorData::new();
+    data.notes.push_back(Note::new(0.0, 60, 1.0));
+    data.notes.push_back(Note::new(1.0, 62, 1.0));
+    let selected = data.select_all_notes();
+    assert_eq!(selected.len(), 2);
+}
+
+#[test]
+fn test_get_notes_in_selection_box() {
+    let mut data = EditorData::new();
+    data.notes.push_back(Note::new(0.0, 60, 2.0));
+    data.notes.push_back(Note::new(5.0, 62, 1.0));
+
+    let indices = data.get_notes_in_selection_box(-1.0, 59, 3.0, 61);
+    assert_eq!(indices.len(), 1);
+    assert_eq!(indices[0], 0);
+}
+
+#[test]
+fn test_compute_selection() {
+    let mut data = EditorData::new();
+    data.notes.push_back(Note::new(0.0, 60, 2.0));
+    let selected = data.compute_selection(-1.0, 59, 3.0, 61);
+    assert_eq!(selected.len(), 1);
+    assert!(selected.contains(&0));
+}

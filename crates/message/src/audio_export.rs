@@ -70,3 +70,35 @@ pub enum AudioExportAction {
     /// 重置渲染状态
     ResetRendering,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audio_export_action_variants() {
+        let action = AudioExportAction::OpenPanel;
+        assert!(matches!(action, AudioExportAction::OpenPanel));
+
+        let action = AudioExportAction::ClosePanel;
+        assert!(matches!(action, AudioExportAction::ClosePanel));
+
+        let action = AudioExportAction::BitrateChanged("320".to_string());
+        assert!(matches!(action, AudioExportAction::BitrateChanged(_)));
+
+        let action = AudioExportAction::IgnoreProgramChangesChanged(true);
+        assert!(matches!(
+            action,
+            AudioExportAction::IgnoreProgramChangesChanged(_)
+        ));
+
+        let action = AudioExportAction::FilterVelocityChanged(true);
+        assert!(matches!(
+            action,
+            AudioExportAction::FilterVelocityChanged(_)
+        ));
+
+        let action = AudioExportAction::FilterKeyChanged(true);
+        assert!(matches!(action, AudioExportAction::FilterKeyChanged(_)));
+    }
+}

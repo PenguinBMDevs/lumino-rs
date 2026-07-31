@@ -18,3 +18,17 @@ pub enum LoopRangeAction {
     /// 标尺双击（切换循环）
     RulerDoubleClicked { x: f32, y: f32 },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_loop_range_action_variants() {
+        let action = LoopRangeAction::Toggle;
+        assert!(matches!(action, LoopRangeAction::Toggle));
+
+        let action = LoopRangeAction::SetRange(0.0, 100.0);
+        assert!(matches!(action, LoopRangeAction::SetRange(_, _)));
+    }
+}
